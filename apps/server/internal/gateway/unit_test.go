@@ -6,6 +6,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -105,7 +106,7 @@ func TestVisibilityTransitions(t *testing.T) {
 	}
 	// Guests see only members sharing a room with them (M7).
 	carol := uuid.New()
-	st.roles[carol] = perm.RoleMember
+	st.setRole(carol, perm.RoleMember)
 	if st.hiddenFrom(alice, bob) || !st.hiddenFrom(bob, alice) || !st.hiddenFrom(bob, carol) || st.hiddenFrom(bob, bob) {
 		t.Fatal("guest visibility")
 	}
@@ -115,6 +116,29 @@ func TestVisibilityTransitions(t *testing.T) {
 	}})
 	if st.hiddenFrom(bob, carol) {
 		t.Fatal("guest must see a member of a shared room")
+	}
+	// B2: cached viewers are invalidated by role and override changes.
+	st.setRole(carol, perm.RoleGuest)
+	if !st.hiddenFrom(bob, carol) {
+		t.Fatal("stale viewers cache after a role change")
+	}
+	st.setRole(carol, perm.RoleMember)
+	st.setRoom(other, &v1.Room{Id: other.String()})
+	if !st.hiddenFrom(bob, carol) {
+		t.Fatal("stale viewers cache after an override change")
+	}
+	renamed := proto.Clone(st.rooms[rid]).(*v1.Room)
+	renamed.Name = "renamed"
+	if !st.sameVisibility(rid, renamed) {
+		t.Fatal("rename must not trigger guest recomputation")
+	}
+	if ev := (&v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: renamed}}}); changesVisibility(st, ev) {
+		t.Fatal("rename classified as a visibility change")
+	}
+	moved := proto.Clone(renamed).(*v1.Room)
+	moved.CategoryId = uuid.NewString()
+	if st.sameVisibility(rid, moved) || st.sameVisibility(rid, room) || st.sameVisibility(uuid.New(), renamed) {
+		t.Fatal("category / override change or unknown room must count as a visibility change")
 	}
 	upd := &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: room}}}
 	if ev := transition(true, true, upd, room, wid, rid); ev != upd {

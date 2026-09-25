@@ -111,6 +111,14 @@ func (c *conn) writeLoop() {
 			held := c.held
 			c.mu.Unlock()
 			if held {
+				// The stash counts against the same budget as the queue (review B3): a
+				// client that cannot keep up during a long hold is closed like on overflow.
+				if len(stash)+len(c.out) >= sendQueue {
+					c.mu.Lock()
+					c.closeLocked(websocket.StatusCode(v1.GatewayCloseCode_GATEWAY_CLOSE_CODE_RATE_LIMITED), "send queue overflow", false)
+					c.mu.Unlock()
+					return
+				}
 				stash = append(stash, m)
 				continue
 			}

@@ -24,6 +24,43 @@ type wsState struct {
 	rooms   map[uuid.UUID]*v1.Room
 	targets map[uuid.UUID][]perm.OverrideTarget // parsed overrides per room (M13: once per change, not per check)
 	roles   map[uuid.UUID]perm.Role
+	// viewers caches who can view each room, for guest visibility (review B2). Filled lazily
+	// and only under the write lock (the fan-out path); dropped per room by setRoom/delRoom
+	// and entirely by setRole/delRole.
+	viewers map[uuid.UUID]map[uuid.UUID]bool
+}
+
+// setRole changes a member's role and invalidates the viewers cache (mu held).
+func (s *wsState) setRole(uid uuid.UUID, r perm.Role) {
+	if s.roles[uid] != r {
+		s.roles[uid] = r
+		s.viewers = nil
+	}
+}
+
+func (s *wsState) delRole(uid uuid.UUID) {
+	if _, ok := s.roles[uid]; ok {
+		delete(s.roles, uid)
+		s.viewers = nil
+	}
+}
+
+// roomViewers returns the members who can view room id (mu held for write).
+func (s *wsState) roomViewers(id uuid.UUID) map[uuid.UUID]bool {
+	if v, ok := s.viewers[id]; ok {
+		return v
+	}
+	v := map[uuid.UUID]bool{}
+	for u := range s.roles {
+		if s.bits(id, u).Has(perm.ViewRoom) {
+			v[u] = true
+		}
+	}
+	if s.viewers == nil {
+		s.viewers = map[uuid.UUID]map[uuid.UUID]bool{}
+	}
+	s.viewers[id] = v
+	return v
 }
 
 // setRoom stores a room and its parsed overrides (mu held).
@@ -33,37 +70,56 @@ func (s *wsState) setRoom(id uuid.UUID, r *v1.Room) {
 	}
 	s.rooms[id] = r
 	s.targets[id] = pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())
+	delete(s.viewers, id)
 }
 
 func (s *wsState) delRoom(id uuid.UUID) {
 	delete(s.rooms, id)
 	delete(s.targets, id)
+	delete(s.viewers, id)
 }
 
-// coRoom reports whether a and b can both view at least one common room (mu held):
-// what a guest may see of another member (ADR-0016, security review M7).
+// coRoom reports whether a and b can both view at least one common room (mu held for
+// write): what a guest may see of another member (ADR-0016, security review M7).
 func (s *wsState) coRoom(a, b uuid.UUID) bool {
 	for id := range s.rooms {
-		if s.bits(id, a).Has(perm.ViewRoom) && s.bits(id, b).Has(perm.ViewRoom) {
+		if v := s.roomViewers(id); v[a] && v[b] {
 			return true
 		}
 	}
 	return false
 }
 
-// guestVisible returns the members a guest may see (mu held).
+// guestVisible returns the members a guest may see (mu held for write).
 func (s *wsState) guestVisible(guest uuid.UUID) map[uuid.UUID]bool {
 	out := map[uuid.UUID]bool{guest: true}
-	for u := range s.roles {
-		if u != guest && s.coRoom(guest, u) {
-			out[u] = true
+	for id := range s.rooms {
+		if v := s.roomViewers(id); v[guest] {
+			for u := range v {
+				out[u] = true
+			}
 		}
 	}
 	return out
 }
 
+// sameVisibility reports whether replacing room id with r cannot change who sees what:
+// the room exists and keeps its overrides and category (review B2).
+func (s *wsState) sameVisibility(id uuid.UUID, r *v1.Room) bool {
+	old := s.rooms[id]
+	if old == nil || old.GetCategoryId() != r.GetCategoryId() || len(old.GetPermissionOverrides()) != len(r.GetPermissionOverrides()) {
+		return false
+	}
+	for i, o := range old.GetPermissionOverrides() {
+		if !proto.Equal(o, r.GetPermissionOverrides()[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // hiddenFrom reports whether events about subject must not reach viewer: only guests are
-// restricted, to members who share a room with them.
+// restricted, to members who share a room with them (mu held for write).
 func (s *wsState) hiddenFrom(viewer, subject uuid.UUID) bool {
 	if viewer == subject || s.roles[viewer] != perm.RoleGuest {
 		return false

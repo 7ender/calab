@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -110,6 +111,34 @@ func TestPauseKeepsOrder(t *testing.T) {
 	if len(got) != 2 || decode(t, got[0]).GetDispatch().GetTypingStart().GetRoomId() != "r9" ||
 		decode(t, got[1]).GetDispatch().GetTypingStart().GetRoomId() != "r1" {
 		t.Fatalf("order after resume: %d frames", len(got))
+	}
+}
+
+// B1: two overlapping pauses keep their insertion points whichever resumes first.
+func TestOverlappingPauses(t *testing.T) {
+	for _, aFirst := range []bool{true, false} {
+		s := testSession()
+		s.ready = true
+		a := s.pause()
+		s.dispatch(uuid.New(), typingEv(1))
+		b := s.pause()
+		s.dispatch(uuid.New(), typingEv(2))
+		first, second := func() { s.resume(a, uuid.New(), newEnc(typingEv(7))) }, func() { s.resume(b, uuid.New(), newEnc(typingEv(8))) }
+		if !aFirst {
+			first, second = second, first
+		}
+		first()
+		if len(drain(s)) != 0 {
+			t.Fatal("emitted while the other pause is open")
+		}
+		second()
+		var rooms []string
+		for _, e := range drain(s) {
+			rooms = append(rooms, decode(t, e).GetDispatch().GetTypingStart().GetRoomId())
+		}
+		if strings.Join(rooms, ",") != "r7,r1,r8,r2" {
+			t.Fatalf("aFirst=%v: order %v", aFirst, rooms)
+		}
 	}
 }
 

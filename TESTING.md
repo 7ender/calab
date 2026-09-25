@@ -926,3 +926,23 @@ go test -race -tags integration -count=1 -v -run 'TestLocalResumeOrdering|TestLo
   - `TestSkipSurvivesPause` (R6);
   - новый двухуровневый входной лимит (R7).
 - **R9**: миграция 00005 — `CREATE INDEX CONCURRENTLY` вне транзакции; применяется в каждом интеграционном прогоне на чистой БД.
+
+## Server: третий проход ревью (B1–B4)
+
+```sh
+cd apps/server
+go test -race -count=3 -v -run 'TestOverlappingPauses|TestHeldStashOverflowCloses|TestPresenceSoftExempt|TestVisibilityTransitions' ./internal/gateway/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: по три `--- PASS` на каждый из четырёх тестов и `ok`.
+
+Что проверяется:
+- **`TestOverlappingPauses` (B1)**: две пересекающиеся паузы, `resume` в прямом и обратном порядке. Порядок всегда `r7,r1,r8,r2`: каждое подготовленное событие встаёт на своё место паузы.
+- **`TestHeldStashOverflowCloses` (B3)**: сокет в `hold` (RESUME читает replay), в него шлют больше 256 кадров. Ожидается закрытие `4008`, и ни одного кадра до закрытия.
+- **`TestPresenceSoftExempt` (B4)**:
+  - `PRESENCE_UPDATE` с новым статусом проходит сверх мягкого лимита;
+  - повтор того же статуса и `TYPING` — не проходят.
+- **`TestVisibilityTransitions` (B2)**:
+  - кэш viewers комнаты сбрасывается при смене роли и overrides;
+  - переименование комнаты (`ROOM_UPDATE` без смены overrides и категории) не запускает пересчёт гостевой видимости;
+  - смена категории или overrides, а также неизвестная комната — запускают.
+- Регрессия: `make test-integration` целиком (включая `TestSoftLimitAndGuestMemberAdd` и `TestLocalResumeOrdering`).

@@ -301,7 +301,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	case *v1.DispatchEvent_WorkspaceMemberRemove:
 		subject = parseID(e.WorkspaceMemberRemove.GetUserId())
 	}
-	if changesVisibility(ev) {
+	if changesVisibility(st, ev) {
 		for _, s := range sessions {
 			if st.roles[s.user] == perm.RoleGuest {
 				if guestBefore == nil {
@@ -381,7 +381,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		m := e.WorkspaceMemberAdd.GetMember()
 		uid := parseID(m.GetUser().GetId())
 		if r, ok := perm.RoleFromProto(m.GetRole()); ok {
-			st.roles[uid] = r
+			st.setRole(uid, r)
 		}
 		about(uid)
 	case *v1.DispatchEvent_WorkspaceMemberUpdate:
@@ -392,7 +392,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			before[rid] = view(rid, uid)
 		}
 		if r, ok := perm.RoleFromProto(m.GetRole()); ok {
-			st.roles[uid] = r
+			st.setRole(uid, r)
 		}
 		about(uid)
 		// The member's own sessions see rooms appear / disappear with the role change.
@@ -413,7 +413,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 				s.dispatchEnc(id, shared)
 			}
 		}
-		delete(st.roles, uid)
+		st.delRole(uid)
 	case *v1.DispatchEvent_WorkspaceUpdate:
 		st.ws = e.WorkspaceUpdate.GetWorkspace()
 		h.toAll(sessions, id, shared)
@@ -427,9 +427,15 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	}
 }
 
-func changesVisibility(ev *v1.DispatchEvent) bool {
-	switch ev.GetEvent().(type) {
-	case *v1.DispatchEvent_RoomCreate, *v1.DispatchEvent_RoomUpdate, *v1.DispatchEvent_RoomPermissionsUpdate,
+// changesVisibility reports events that may change which members a guest sees (st.mu held).
+// A ROOM_UPDATE that keeps overrides and category (rename, topic, media settings) does not,
+// so the common case skips the recomputation (review B2).
+func changesVisibility(st *wsState, ev *v1.DispatchEvent) bool {
+	switch e := ev.GetEvent().(type) {
+	case *v1.DispatchEvent_RoomUpdate:
+		r := e.RoomUpdate.GetRoom()
+		return !st.sameVisibility(parseID(r.GetId()), r)
+	case *v1.DispatchEvent_RoomCreate, *v1.DispatchEvent_RoomPermissionsUpdate,
 		*v1.DispatchEvent_RoomDelete, *v1.DispatchEvent_WorkspaceMemberAdd, *v1.DispatchEvent_WorkspaceMemberUpdate,
 		*v1.DispatchEvent_WorkspaceMemberRemove:
 		return true
@@ -460,7 +466,7 @@ func (h *Hub) syncGuestMembers(st *wsState, wid uuid.UUID, before map[*Session]m
 			continue
 		}
 		marker := s.pause()
-		go func(s *Session, added []uuid.UUID) {
+		go func(s *Session, added []uuid.UUID, marker *pauseMark) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			var evs []pendingEvent
@@ -478,7 +484,7 @@ func (h *Hub) syncGuestMembers(st *wsState, wid uuid.UUID, before map[*Session]m
 				}
 			}
 			s.resumeMany(marker, evs)
-		}(s, added)
+		}(s, added, marker)
 	}
 }
 
@@ -508,7 +514,7 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 		// keep their order behind the snapshot.
 		snap := e.WorkspaceCreate.GetSnapshot()
 		wid := parseID(snap.GetWorkspace().GetId())
-		markers := make([]int, len(sessions))
+		markers := make([]*pauseMark, len(sessions))
 		for i, s := range sessions {
 			h.joinWorkspace(s, wid)
 			markers[i] = s.pause()

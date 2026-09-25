@@ -47,9 +47,15 @@ func frameBytes(seq uint64, payload []byte) []byte {
 }
 
 type pendingEvent struct {
-	id  uuid.UUID
-	enc *encEvent
+	id   uuid.UUID
+	enc  *encEvent
+	mark *pauseMark // non-nil: placeholder where a paused preparation's events go (B1)
 }
+
+// pauseMark identifies one pause; its sentinel sits in pending at the pause point, so
+// overlapping pauses cannot shift each other's insertion position. Not zero-sized: pointers
+// to distinct zero-size values may compare equal.
+type pauseMark struct{ _ byte }
 
 // Session is a gateway session (one device connection that survives reconnects via RESUME).
 // It lives on its owning instance; while detached (no socket) it keeps buffering events for
@@ -238,38 +244,43 @@ func (s *Session) flushPending(skip map[uuid.UUID]bool) {
 		return
 	}
 	for _, p := range s.pending {
-		if !s.skip[p.id] {
+		if p.mark == nil && !s.skip[p.id] {
 			s.emit(p.id, p.enc)
 		}
 	}
 	s.pending, s.skip = nil, nil
 }
 
-// pause makes later events wait (in order) until resume; returns the marker at which the
-// prepared event will be inserted.
-func (s *Session) pause() int {
+// pause makes later events wait (in order) until resume; the returned mark's sentinel in
+// pending is where the prepared events will be inserted.
+func (s *Session) pause() *pauseMark {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	m := &pauseMark{}
 	s.paused++
-	return len(s.pending)
+	s.pending = append(s.pending, pendingEvent{mark: m})
+	return m
 }
 
-// resume inserts the prepared event(s) where the pause began and releases the queue.
-func (s *Session) resume(marker int, id uuid.UUID, enc *encEvent) {
-	s.resumeMany(marker, []pendingEvent{{id: id, enc: enc}})
+// resume replaces the pause's sentinel with the prepared event and releases the queue.
+func (s *Session) resume(m *pauseMark, id uuid.UUID, enc *encEvent) {
+	s.resumeMany(m, []pendingEvent{{id: id, enc: enc}})
 }
 
-func (s *Session) resumeMany(marker int, evs []pendingEvent) {
+func (s *Session) resumeMany(m *pauseMark, evs []pendingEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.paused--
 	if s.dead {
 		return
 	}
-	marker = min(marker, len(s.pending))
-	p := append([]pendingEvent{}, s.pending[:marker]...)
-	p = append(p, evs...)
-	s.pending = append(p, s.pending[marker:]...)
+	for i, p := range s.pending {
+		if p.mark == m {
+			rest := append([]pendingEvent{}, s.pending[i+1:]...)
+			s.pending = append(append(s.pending[:i], evs...), rest...)
+			break
+		}
+	}
 	s.flushPending(nil)
 }
 

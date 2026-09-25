@@ -177,8 +177,8 @@ func (h *Hub) loop(c *conn, s *Session) {
 			s.detach(c)
 			return
 		}
-		if _, hb := f.GetPayload().(*v1.GatewayFrame_Heartbeat); !ok && !hb {
-			continue // over the soft budget: drop SUBSCRIBE / TYPING / PRESENCE, keep the socket
+		if !ok && !softExempt(s, f) {
+			continue // over the soft budget: drop SUBSCRIBE / TYPING / repeated PRESENCE, keep the socket
 		}
 		switch p := f.GetPayload().(type) {
 		case *v1.GatewayFrame_Heartbeat:
@@ -583,6 +583,22 @@ func (h *Hub) replayTakenOver(ctx context.Context, s *Session, c *conn, clientSe
 	s.flushPending(skip)
 	s.emit(uuid.New(), newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_Resumed{Resumed: &v1.Resumed{Replayed: uint32(len(missed))}}})) //nolint:gosec // ≤ 1000
 	return true
+}
+
+// softExempt reports frames processed even over the soft inbound budget: heartbeats, and a
+// PRESENCE_UPDATE that actually changes the status (review B4) — dropping it silently would
+// leave the user's status wrong until the next change. Repeats are still dropped; the hard
+// flood limit applies to everything.
+func softExempt(s *Session, f *v1.GatewayFrame) bool {
+	switch p := f.GetPayload().(type) {
+	case *v1.GatewayFrame_Heartbeat:
+		return true
+	case *v1.GatewayFrame_SetPresence:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.status != p.SetPresence.GetStatus()
+	}
+	return false
 }
 
 func (h *Hub) setPresence(s *Session, st v1.PresenceStatus) {
