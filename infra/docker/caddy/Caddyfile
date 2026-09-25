@@ -27,7 +27,9 @@
 }
 
 app.{$DOMAIN} {
-	# REST /api, WS /gateway, files — all served by the Go API (host network)
+	# Prometheus metrics of the API are internal (scrape 127.0.0.1:3000/metrics on the host).
+	respond /metrics 404
+	# REST /api, WS /gateway, files, /healthz, /readyz — all served by the Go API (host network)
 	reverse_proxy 127.0.0.1:3000
 }
 

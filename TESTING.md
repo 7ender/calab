@@ -369,3 +369,153 @@ sleep 3; docker exec calaba-hc /server healthcheck; echo "exit=$?"          # ex
 docker exec -e HTTP_ADDR=127.0.0.1:3999 calaba-hc /server healthcheck; echo "exit=$?"   # ERROR ... connection refused, exit=1
 docker rm -f calaba-hc
 ```
+
+---
+
+## Стенд
+
+Стенд: `root@141.105.69.177`, `DOMAIN=141-105-69-177.sslip.io`, код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (как поднят — `docs/06-deployment.md`).
+
+| Адрес | Что |
+|---|---|
+| `https://app.141-105-69-177.sslip.io` | API: REST `/api/*`, gateway `wss://…/gateway?v=1&encoding=json`, файлы, `/healthz`, `/readyz` (`/metrics` снаружи закрыт — 404) |
+| `wss://rtc.141-105-69-177.sslip.io` | LiveKit signal (`https://rtc.…/` → `OK`) |
+| `turn.141-105-69-177.sslip.io:443` | TURN/TLS (TCP), TURN/UDP — `141.105.69.177:443/udp` |
+
+**Нельзя трогать чужое на хосте:** `python` (pid 3695), `ffmpeg`, `chromium`, `Xvfb`, контейнеры `gromtv-broadcast`, `dcgm-exporter`. Не делать `docker system prune`, `docker compose down` вне `/opt/calaba/infra/docker`, `iptables -F`, рестарт Docker. Наш compose-проект называется `calaba`.
+
+Обозначения: `D=141-105-69-177.sslip.io`, `H=root@141.105.69.177`, `DC='cd /opt/calaba/infra/docker && docker compose'`, `A=https://app.$D`.
+
+> Проверки портов (`nc -zv`) делать с машины **без** VPN/TUN-прокси: TUN-режим VPN принимает любой TCP connect сам, и `nc` «успешен» даже для закрытого порта.
+
+### Аккаунты
+
+`REGISTRATION_MODE=open`: любой может зарегистрироваться сам (`POST $A/api/auth/register`, инвайт не нужен). Уже созданы тестовые `owner@calaba.test` (владелец workspace `team`, комнаты `general`, `secret`, `voice`) и `bob@calaba.test` (member); пароль — на хосте в `/opt/calaba/infra/docker/.env.accounts` (`chmod 600`, не синхронизируется `sync.sh`).
+
+Свой аккаунт:
+```sh
+curl -s -XPOST $A/api/auth/register -d '{"email":"me@example.com","password":"<≥8 символов>","displayName":"Me"}' | jq '.me.email'
+```
+В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://app.141-105-69-177.sslip.io`.
+
+Сбросить данные стенда (все пользователи/сообщения/файлы!) — только по согласованию: `ssh $H "$DC exec -T postgres psql -U calaba -c 'drop schema public cascade; create schema public;' && $DC exec -T redis redis-cli flushall && $DC restart api"` (+ очистить volume `calaba_files_data`).
+
+### 0. Деплой
+
+```sh
+infra/docker/sync.sh            # весь стек (rsync в /opt/calaba + deploy.sh)
+infra/docker/sync.sh api        # только api (пересборка образа)
+```
+Ожидается: `Image calaba-api Built`, `Container calaba-… Started/Running`, без ошибок.
+
+### 1. Контейнеры и API
+
+```sh
+ssh $H "$DC ps --format '{{.Name}} {{.Status}}'"
+ssh $H "$DC logs api | grep -E 'migration applied|listening'"
+curl -s $A/healthz; curl -s $A/readyz; curl -s -o /dev/null -w '%{http_code}\n' $A/metrics
+ssh $H 'docker run --rm -v calaba_files_data:/d busybox:1.37 stat -c "%u:%g %a" /d'
+```
+Ожидается: `calaba-api-1 Up (healthy)`, `caddy-1 Up`, `livekit-1 Up`, `postgres-1 / redis-1 Up (healthy)`, `files-init-1 Exited (0)`; в логе api `migration applied` (только при первом старте на пустой БД) и `"msg":"listening","addr":"127.0.0.1:3000","registration":"open","storage":"fs","livekit":true`; `{"status":"ok"}`, `{"postgres":"ok","redis":"ok"}`, `404`; `65532:65532 750`.
+
+### 2. Сертификаты и HTTPS
+
+```sh
+curl -s  https://rtc.$D/                                 # OK
+curl -sI http://app.$D | head -3                         # HTTP/1.1 308 → https://app.$D/
+curl -sI https://rtc.$D | grep -i alt-svc               # пусто (HTTP/3 выключен, UDP 443 — TURN)
+openssl s_client -connect turn.$D:443 -servername turn.$D </dev/null 2>/dev/null \
+  | grep -E 'subject=|issuer=|Verify return'
+# subject=CN=turn.141-105-69-177.sslip.io / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
+```
+`curl https://turn.$D` **висит** — это нормально: SNI `turn.*` уходит в layer4 → TURN, HTTP там никто не отвечает.
+
+### 3. LiveKit
+
+```sh
+ssh $H "$DC logs livekit | grep -E 'using external IPs|Starting TURN|starting LiveKit' | tail -3"
+ssh $H "$DC logs --since 30m livekit | grep -c 'failed to send webhook'"      # 0 (api принимает webhook)
+ssh $H "ss -lntup | grep -E 'livekit|caddy'"
+```
+Ожидается:
+- `using external IPs … ["141.105.69.177/141.105.69.177"]` — только публичный IP (docker-мосты 172.16/12 исключены).
+- `Starting TURN server … "turn.portTLS":5349,"turn.externalTLS":true,…,"turn.portUDP":443`
+- `starting LiveKit server … "bindAddresses":["127.0.0.1"],"rtc.portTCP":7881,"rtc.portUDP":{"Start":7882,…},"portPrometheus":6789`
+- порты: udp `141.105.69.177:7882`, udp `*:443`, tcp `127.0.0.1:7880`, `127.0.0.1:6789`, `*:7881`, `*:5349` (5349 снаружи закрыт файрволом); caddy — tcp `*:80`, `*:443`.
+
+Файрвол (только чтение!): `ssh $H 'iptables -L INPUT -n --line-numbers'` — ACCEPT tcp 80/443/7881 и udp 443/7882 стоят **выше** `DROP all`.
+
+### 4. Сценарии API по HTTPS
+
+Разделы «Server core» → 4 и «Server stage 3» → 2 выполняются против стенда как есть, с заменами:
+- `A=https://app.141-105-69-177.sslip.io`; сервер запускать не нужно; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
+- БД стенда не пустая и регистрация открыта: второй пользователь без инвайта **успешно зарегистрируется**, а не получит 403 (`REGISTRATION_CLOSED` — только в `invite`-режиме). Email-ы брать новые (`…@calaba.test` заняты), slug workspace — новый (`team` занят → ожидаемый `409` на первом же создании).
+- gateway: `A=$A node /tmp/gw.mjs $BT 4` (скрипт сам меняет `https` → `wss`).
+- 2.6: `url` в ответе join — `wss://rtc.141-105-69-177.sslip.io`, `media` — по настройкам комнаты.
+- 4.7 (rate limit) — последним: после него логин с этого IP ~1 мин отвечает 429. Подмена `X-Forwarded-For` не помогает (Caddy перезаписывает заголовок, api видит реальный IP).
+
+Факт 2026-09-25 (все шаги PASS): 4.1–4.8 — ответы и коды как в разделе «Server core»; 2.1 HELLO(41000) → READY seq 1 → presenceUpdate → один messageCreate, повтор nonce → 200; 2.2 RESUME → `while away` seq 4, `{"resumed":{"replayed":1}}`; 2.3 INVALID_SESSION `resumable:false`; 2.4 `{"n":2,"first":"m3","hasMore":true}`; 2.5 upload 201, Range `hello 206`, `304`, 60 MB → 413, 20 MB upload через VPN ~1.5 с; 2.6 join → токен, webhook без подписи 401, voice/self до подключения 409.
+
+### 5. Voice end-to-end (токен от API → LiveKit → webhook → gateway)
+
+`lk room join` не умеет входить с готовым токеном, поэтому используем `infra/docker/tools/relay-check.html` с токеном из `POST /api/rooms/{id}/join`:
+```sh
+J=$(curl -s -XPOST $A/api/rooms/$VOI/join -H "Authorization: Bearer $BT")
+mkdir -p /tmp/rc && cp infra/docker/tools/relay-check.html /tmp/rc/ && echo $J | jq -r .token > /tmp/rc/token.txt
+(cd /tmp/rc && python3 -m http.server 8765 --bind 127.0.0.1) &
+A=$A node /tmp/gw.mjs $OT 60 > /tmp/owner.log &                     # наблюдатель — владелец
+open "http://127.0.0.1:8765/relay-check.html?run=1#url=wss://rtc.$D&tokenfile=token.txt&mode=any"
+# ~15 с спустя:
+jq -c 'select(.dispatch.voiceStateUpdate)|.dispatch.voiceStateUpdate.state|{roomId,muted}' /tmp/owner.log
+curl -s -XPATCH $A/api/voice/self -H "Authorization: Bearer $BT" -d '{"muted":true}' -w '%{http_code}\n'
+ssh $H "$DC logs --since 2m api | grep rtc/webhook | grep -o '\"status\":[0-9]*' | sort | uniq -c"
+# закрыть вкладку, ~5 с:
+jq -c 'select(.dispatch.voiceStateUpdate)|.dispatch.voiceStateUpdate.state|{roomId}' /tmp/owner.log | tail -1
+```
+Ожидается: `voiceStateUpdate` с `roomId` = `$VOI` (`muted:true` — страница ничего не публикует); `voice/self` → `204`; webhook-и от LiveKit → `"status":200` (с `127.0.0.1`); после закрытия вкладки — `voiceStateUpdate` с `roomId:""`; `voice/self` снова `409`.
+
+Факт 2026-09-25: всё так (join → webhook 200 → voiceStateUpdate, leave → `roomId:""`).
+
+### 6. Нагрузочный тест медиа (`lk`)
+
+```sh
+brew install livekit-cli
+eval "$(ssh $H 'grep ^LIVEKIT_API_ /opt/calaba/infra/docker/.env' | sed 's/^/export /')"   # ключи не светить
+export LIVEKIT_URL=wss://rtc.$D
+lk room create --empty-timeout 600 loadtest      # auto_create выключен — комнату создаём сами (обычно это делает API при join)
+lk load-test --room loadtest --audio-publishers 2 --video-publishers 1 --subscribers 3 --duration 30s
+lk room delete loadtest
+```
+Ожидается: `Total 9/9`, `Pkt. Loss 0 (0%)` (допустимо < 1%), аудио ~20 kbps на трек, видео (simulcast) ~1.3 Mbps на подписчика. Факт 2026-09-25 (с мака через VPN): 9/9, потерь 0 (0%), 3.9 Mbps суммарно.
+
+### 7. Принудительный relay (TURN/UDP и TURN/TLS)
+
+Как в п. 5, но токен — `lk token create --join --room loadtest --identity relay-check --valid-for 1h | grep -oE 'eyJ[A-Za-z0-9._-]+'` (или из API join), источник медиа — `lk load-test --room loadtest --audio-publishers 1 --video-publishers 1 --subscribers 0 --duration 5m &`, и `mode=tls` / `mode=udp`.
+
+Ожидается через ~30 с:
+- `mode=tls`: `setConfiguration iceServers: [["turns:turn.<D>:443?transport=tcp"]]`, `PASS [{"local":"relay",…,"relayProtocol":"tls",…,"bytesIn":<растёт>}]`; на сервере `ss -tn '( dport = :5349 )'` — соединения `127.0.0.1:* → 127.0.0.1:5349` (Caddy layer4 → LiveKit TURN).
+- `mode=udp`: `turn:141.105.69.177:443?transport=udp`, `PASS [{"local":"relay",…,"relayProtocol":"udp",…}]`.
+- `mode=any`: `"local":"host"|"srflx"|"prflx","protocol":"udp"`, remote `141.105.69.177:7882/udp`.
+
+Факт 2026-09-25: TLS — PASS (relay/tls, RTT ~40 мс, ~5.9 MB за 30 с); UDP — PASS (relay/udp, ~5.8 MB); без ограничений — prflx/udp → :7882.
+
+ICE/TCP (7881) без блокировки UDP не проверить. Вручную (нужен админ на клиенте или сеть без UDP):
+1. Заблокировать исходящий UDP к 141.105.69.177 (macOS: `pf` `block out proto udp to 141.105.69.177`; Windows: правило брандмауэра; либо сеть/VPN «только TCP»).
+2. Войти в голосовую комнату в десктоп-приложении, открыть панель статистики соединения.
+3. Ожидается: протокол кандидата `tcp` (ICE/TCP 7881); если открыт только 443 — `relay` + `tls`. Звук идёт, в UI — пометка «через relay/TCP».
+4. Снять блокировку — после переподключения снова `udp`.
+
+### 8. Чужие процессы и ресурсы
+
+```sh
+ssh $H 'ps -p 3695 -o pid,etime; docker ps --format "{{.Names}} {{.Status}}" | grep -v ^calaba; echo ffmpeg $(pgrep -c ffmpeg) chromium $(pgrep -c chromium) xvfb $(pgrep -c Xvfb)'
+ssh $H 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" | grep -E "NAME|calaba"'
+```
+Ожидается: pid 3695 жив (etime не сбросился), `gromtv-broadcast Up …`, `dcgm-exporter Up …`, ffmpeg/chromium/Xvfb ≥ 1.
+Факт 2026-09-25 (простой после тестов): api ~79 MiB, livekit ~90 MiB, postgres ~39 MiB, caddy ~16 MiB, redis ~10 MiB; CPU < 2 %.
+
+### Известные особенности
+
+- В логах Caddy `caddy.listeners.layer4 … matching connection … EOF` — сканеры/обрывы до ClientHello, не ошибка.
+- `room.auto_create: false`: комнату в LiveKit создаёт API при join (или `lk room create` в тестах); иначе `requested room does not exist`. После ухода всех участников комната удаляется (`departure_timeout` 20 с).
+- Webhook-и от LiveKit идут на `http://127.0.0.1:3000/api/rtc/webhook`; тот же путь снаружи доступен через Caddy, но без подписи LiveKit → 401.

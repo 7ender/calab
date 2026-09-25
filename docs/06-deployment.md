@@ -10,7 +10,7 @@
 
 | Сервис | Образ | Сеть | Заметки |
 |---|---|---|---|
-| caddy | своя сборка `infra/docker/caddy/Dockerfile` (`caddy:2` + `caddy-l4`, версия запинена) | host | 80/443 TCP, ACME, `Caddyfile`, layer4 как listener wrapper (SNI `turn.*`), h3 выключен |
+| caddy | своя сборка `infra/docker/caddy/Dockerfile` (`caddy:2.11.4` + `caddy-l4` v0.1.2, обе версии запинены) | host | 80/443 TCP, ACME, `Caddyfile`, layer4 как listener wrapper (SNI `turn.*`), h3 выключен |
 | livekit | `livekit/livekit-server:v1.13` | host | signal 7880 (только 127.0.0.1), 7881/tcp, 7882/udp, TURN 443/udp, TURN 5349 (`external_tls`; слушает `*:5349` — LiveKit не умеет bind для TURN, снаружи закрыт файрволом), metrics 6789 (127.0.0.1) |
 | api | `apps/server/Dockerfile` (Go → distroless static, nonroot) | **host**, `HTTP_ADDR=127.0.0.1:3000` | ходит в Postgres/Redis/LiveKit по 127.0.0.1; миграции сам при старте; файлы — `STORAGE_DRIVER=fs`, volume `files_data` → `/data/files` (ADR-0011) |
 | postgres | `postgres:18-alpine` | bridge, `127.0.0.1:5432` | PG 18 — встроенный `uuidv7()`; volume на `/var/lib/postgresql` |
@@ -52,7 +52,9 @@ mkdir -p /opt/calaba
 - Код: `/opt/calaba` (копия рабочего дерева через `sync.sh`), секреты: `/opt/calaba/infra/docker/.env` (`chmod 600`, root; сгенерированы `openssl rand` по `.env.example`, `REGISTRATION_MODE=open`). `sync.sh` этот файл никогда не перезаписывает и не удаляет.
 - Ключ/секрет LiveKit для тестов (`lk`, load-test) брать оттуда: `ssh root@141.105.69.177 'grep ^LIVEKIT_API_ /opt/calaba/infra/docker/.env'` — не коммитить и не вставлять в отчёты.
 - `DOMAIN=141-105-69-177.sslip.io`. Сертификаты Let's Encrypt для `app.`/`rtc.`/`turn.` выпущены Caddy при первом старте (хранятся в volume `calaba_caddy_data`, при передеплое не перевыпускаются).
-- Пока API не готов, поднимается подмножество: `infra/docker/sync.sh caddy livekit postgres redis`. Полный стек — `infra/docker/sync.sh` без аргументов.
+- Весь стек (с api) поднят 2026-09-25: `infra/docker/sync.sh` без аргументов; отдельный сервис — `infra/docker/sync.sh api`. Миграции применились при старте api.
+- Регистрация открыта (`REGISTRATION_MODE=open`); тестовые аккаунты `owner@calaba.test` / `bob@calaba.test` (workspace `team`), пароль — `/opt/calaba/infra/docker/.env.accounts` (600; `sync.sh` не трогает `.env*`). Перед реальным использованием — `REGISTRATION_MODE=invite`.
+- Снаружи через Caddy доступны только `app.*` (API; `/metrics` закрыт — `respond /metrics 404`, скрейпить `127.0.0.1:3000/metrics` на хосте), `rtc.*` (signal), `turn.*` (TURN/TLS).
 - Проверки и ожидаемые выводы — `TESTING.md`, раздел «Стенд».
 
 ### Переход на свой домен
@@ -84,7 +86,7 @@ mkdir -p /opt/calaba
   1. Отдать метрики через Caddy: `rtc.<domain>` → `handle /metrics` → `reverse_proxy 127.0.0.1:6789` с `basic_auth` (или `remote_ip` этих подсетей); у внешнего Prometheus job `scheme: https`, `metrics_path: /metrics`, target `rtc.<domain>`. Файрвол и конфиг LiveKit не трогаем — предпочтительно.
   2. Отдельный порт: `prometheus.port` на публичном интерфейсе нельзя без смены `bind_addresses` (он же signal) → не делать.
   Дашборд — официальный LiveKit Grafana dashboard.
-- API: `slog` JSON-логи, `/metrics` (client_golang): активные сокеты, события/с, латентность REST и fan-out.
+- API: `slog` JSON-логи, `/metrics` (client_golang): активные сокеты, события/с, латентность REST и fan-out. Только с хоста (`127.0.0.1:3000/metrics`); на `app.*` Caddy отвечает 404. Подключать к внешнему Prometheus тем же способом, что и LiveKit (отдельный путь в Caddy с `basic_auth`).
 - Клиент: crash-репорты (Sentry self-hosted — позже), локальный лог в `userData/logs`.
 
 ## Резервные копии
