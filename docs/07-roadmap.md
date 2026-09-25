@@ -26,6 +26,8 @@
 - [ ] Dev-панель getStats; замер реального расхода стрима (текст / скролл / видео) на каждом пресете, на мобильном интернете
 Выход: понимание, что медиа работает как надо; зафиксированные настройки.
 
+- [ ] Замер на Windows (x86, желательно с Intel/NVIDIA GPU) и Linux: `encoderImplementation` (hw/sw) для H.264/AV1, CPU на 1080p15 и original — уточнить ADR-0012
+
 ## 2. Сервер-ядро
 - [ ] Auth (register/login/refresh), users, sessions
 - [ ] Workspaces, members, invites, roles; rooms, permissions (битмаска)
