@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/auth.proto.
  */
 export const file_calaba_v1_auth: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkicgoPUmVnaXN0ZXJSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRITCgtpbnZpdGVfY29kZRgEIAEoCRITCgtkZXZpY2VfbmFtZRgFIAEoCSJUChBSZWdpc3RlclJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lIkQKDExvZ2luUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRITCgtkZXZpY2VfbmFtZRgDIAEoCSJRCg1Mb2dpblJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lIicKDlJlZnJlc2hSZXF1ZXN0EhUKDXJlZnJlc2hfdG9rZW4YASABKAkiOAoPUmVmcmVzaFJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zIiUKDUxvZ291dFJlcXVlc3QSFAoMYWxsX3Nlc3Npb25zGAEgASgIIjwKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEiQKCHNlc3Npb25zGAEgAygLMhIuY2FsYWJhLnYxLlNlc3Npb25ClwEKDWNvbS5jYWxhYmEudjFCCUF1dGhQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_user]);
+  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkicgoPUmVnaXN0ZXJSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRITCgtpbnZpdGVfY29kZRgEIAEoCRITCgtkZXZpY2VfbmFtZRgFIAEoCSJUChBSZWdpc3RlclJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lIkQKDExvZ2luUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRITCgtkZXZpY2VfbmFtZRgDIAEoCSJRCg1Mb2dpblJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lIicKDlJlZnJlc2hSZXF1ZXN0EhUKDXJlZnJlc2hfdG9rZW4YASABKAkiOAoPUmVmcmVzaFJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zIjwKDUxvZ291dFJlcXVlc3QSFAoMYWxsX3Nlc3Npb25zGAEgASgIEhUKDXJlZnJlc2hfdG9rZW4YAiABKAkiPAoUTGlzdFNlc3Npb25zUmVzcG9uc2USJAoIc2Vzc2lvbnMYASADKAsyEi5jYWxhYmEudjEuU2Vzc2lvbkKXAQoNY29tLmNhbGFiYS52MUIJQXV0aFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_user]);
 
 /**
  * A login session = one device. Each session has its own rotating refresh token.
@@ -235,6 +235,8 @@ export const LoginResponseSchema: GenMessage<LoginResponse> = /*@__PURE__*/
 /**
  * POST /api/auth/refresh (no access token needed).
  * Presenting an already rotated refresh token revokes the whole session (reuse detection).
+ * Web clients (X-Client: web) leave refresh_token empty: it comes from the calaba_refresh
+ * cookie, and the rotated token is set as a cookie instead of being returned in the body.
  *
  * @generated from message calaba.v1.RefreshRequest
  */
@@ -270,8 +272,9 @@ export const RefreshResponseSchema: GenMessage<RefreshResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_auth, 7);
 
 /**
- * POST /api/auth/logout (access token required). Revokes the current session,
- * or every session of the user when all_sessions is set.
+ * POST /api/auth/logout. Identifies the session by the access token (Authorization) or,
+ * without one, by the refresh token: this field, else the calaba_refresh cookie (web).
+ * Revokes that session, or every session of the user when all_sessions is set.
  *
  * @generated from message calaba.v1.LogoutRequest
  */
@@ -280,6 +283,11 @@ export type LogoutRequest = Message<"calaba.v1.LogoutRequest"> & {
    * @generated from field: bool all_sessions = 1;
    */
   allSessions: boolean;
+
+  /**
+   * @generated from field: string refresh_token = 2;
+   */
+  refreshToken: string;
 };
 
 /**

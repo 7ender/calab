@@ -31,7 +31,13 @@
 
 TLS для TURN терминирует Caddy (layer4-маршрут `tls` → `proxy 127.0.0.1:5349`), LiveKit работает с `turn.external_tls: true`, `tls_port: 5349` и без собственных сертификатов (ADR-0010). Сайт `turn.<domain>` в Caddyfile (`respond 404`) нужен только чтобы Caddy выпускал и продлевал его сертификат.
 
-Пока своего домена нет, тестовый стенд использует `sslip.io`: `DOMAIN=141-105-69-177.sslip.io` → `app.141-105-69-177.sslip.io`, `rtc.…`, `turn.…` резолвятся в 141.105.69.177 без настройки DNS. Лимиты Let's Encrypt на `sslip.io` общие для всех — только для первых проб.
+### Несколько доменов
+
+- `DOMAIN` — основной, `DOMAIN_ALT` — запасной алиас (опционально), `DOMAIN_LEGACY` — временный третий набор имён на время переезда (опционально). Для каждого непустого — те же три имени `app.`/`rtc.`/`turn.`, свои сертификаты; Caddy обслуживает все наборы одинаково (`infra/docker/caddy/entrypoint.sh` собирает списки хостов, Caddyfile использует `{$APP_HOSTS}`/`{$RTC_HOSTS}`/`{$TURN_HOSTS}`, layer4 матчит SNI любого `turn.*` из списка).
+- **Ограничение:** LiveKit анонсирует клиентам TURN только по основному домену (`turn.domain: turn.${DOMAIN}` — одно значение). Клиент, пришедший через `rtc.<DOMAIN_ALT>`, всё равно получит `turns:turn.<DOMAIN>:443`. Запасной домен — алиас для `app`/`rtc`; `turn.<DOMAIN_ALT>` работает (сертификат, SNI-маршрут), но клиентам не раздаётся. Если основной домен заблокируют — поменять местами `DOMAIN` и `DOMAIN_ALT` и передеплоить (LiveKit перезапустится с новым `turn.domain`). TURN/UDP раздаётся по IP (`turn:141.105.69.177:443?transport=udp`) и от домена не зависит.
+- `PUBLIC_APP_URL` — основной (`https://app.${DOMAIN}`), `PUBLIC_APP_URL_ALT` — `https://app.${DOMAIN_ALT}` (пусто, если алиаса нет).
+
+Стенд: `DOMAIN=colaba.gptunnel.ai`, `DOMAIN_ALT=colaba.gptunnel.ru`, DNS — Cloudflare, A-записи `app.colaba`, `rtc.colaba`, `turn.colaba` → 141.105.69.177 в обеих зонах, **строго DNS-only (proxied=false)**: прокси Cloudflare не пропускает WebRTC/TURN (UDP, TCP 7881, сырой TLS на 443 к `turn.*`) и режет WebSocket-сессии по таймауту. Временно (до отдельной команды) `DOMAIN_LEGACY=141-105-69-177.sslip.io` — старые имена работают параллельно.
 
 ## Caddy: SNI-роутинг на 443
 

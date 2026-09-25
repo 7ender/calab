@@ -28,6 +28,7 @@ type Config struct {
 	HeartbeatInterval  time.Duration // docs/05: ~41 s
 	MaxSessionsPerUser int           // docs/05: 5
 	ShutdownSpread     time.Duration // RECONNECT spread on graceful shutdown
+	AllowedOrigins     []string      // web client origins (PUBLIC_APP_URL[_ALT]), see OriginAllowed
 }
 
 // Hub owns this instance's gateway sessions.

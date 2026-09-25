@@ -35,27 +35,37 @@ func WithIdentity(ctx context.Context, id Identity) context.Context {
 // Redis failure fails closed (503): a revoked session must not slip through.
 func (s *Service) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		tok, found := strings.CutPrefix(h, "Bearer ")
-		if !found || tok == "" {
-			httpx.WriteError(w, r, httpx.Unauthenticated("missing bearer token"))
-			return
-		}
-		id, err := s.tokens.Parse(tok)
+		id, err := s.Authenticate(r)
 		if err != nil {
-			httpx.WriteError(w, r, httpx.Unauthenticated("invalid or expired access token"))
-			return
-		}
-		revoked, err := s.IsRevoked(r.Context(), id.SessionID)
-		if err != nil {
-			slog.ErrorContext(r.Context(), "revocation check failed", "err", err)
-			httpx.WriteError(w, r, httpx.Unavailable(err))
-			return
-		}
-		if revoked {
-			httpx.WriteError(w, r, httpx.Unauthenticated("session revoked"))
+			httpx.WriteError(w, r, err)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 	})
+}
+
+// HasBearer reports whether the request carries an Authorization bearer token.
+func HasBearer(r *http.Request) bool {
+	return strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
+}
+
+// Authenticate validates the bearer access token of r.
+func (s *Service) Authenticate(r *http.Request) (Identity, error) {
+	tok, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !found || tok == "" {
+		return Identity{}, httpx.Unauthenticated("missing bearer token")
+	}
+	id, err := s.tokens.Parse(tok)
+	if err != nil {
+		return Identity{}, httpx.Unauthenticated("invalid or expired access token")
+	}
+	revoked, err := s.IsRevoked(r.Context(), id.SessionID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "revocation check failed", "err", err)
+		return Identity{}, httpx.Unavailable(err)
+	}
+	if revoked {
+		return Identity{}, httpx.Unauthenticated("session revoked")
+	}
+	return id, nil
 }

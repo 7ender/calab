@@ -57,7 +57,8 @@ LiveKit в compose.dev работает с `infra/docker/livekit/livekit.dev.yam
 | `REGISTRATION_MODE` | `invite` | `open` \| `invite` (без кода — только первый пользователь сервера) |
 | `AUTH_RATE_BURST` / `AUTH_RATE_PER_MINUTE` | `10` / `10` | token bucket по IP на login и register |
 | `TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` | кому верить в `X-Forwarded-For` (Caddy) |
-| `PUBLIC_APP_URL` | `http://localhost:3000` | внешний URL |
+| `PUBLIC_APP_URL` | `http://localhost:3000` | внешний URL веб-клиента; его origin разрешён для cookie-auth (CSRF) и WS-апгрейда |
+| `PUBLIC_APP_URL_ALT` | — | запасной домен веб-клиента (например `.ru`), разрешён так же |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error`, JSON в stdout |
 | `MIGRATE_ON_START` | `true` | применять миграции при `serve` |
 | `STORAGE_DRIVER` / `STORAGE_PATH` | `fs` / `./data/files` (образ: `/data/files`) | хранилище файлов (ADR-0011); `s3` — позже |

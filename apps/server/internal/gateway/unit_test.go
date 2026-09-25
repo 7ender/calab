@@ -120,3 +120,25 @@ func TestVisibilityTransitions(t *testing.T) {
 		t.Fatal("visible voice state changed")
 	}
 }
+
+func TestOriginAllowed(t *testing.T) {
+	allowed := []string{"https://app.example.com", "https://app.example.ru"}
+	for origin, want := range map[string]bool{
+		"":                         true,
+		"null":                     true,
+		"file://":                  true,
+		"http://localhost:5173":    true,
+		"http://127.0.0.1:3000":    true,
+		"https://app.example.com":  true,
+		"https://APP.example.ru":   true,
+		"https://evil.example.com": false,
+		"http://app.example.com":   false,
+		"https://localhost":        false,
+		"http://localhost.evil.io": false,
+		"::bad::":                  false,
+	} {
+		if got := OriginAllowed(origin, allowed); got != want {
+			t.Errorf("%q: got %v want %v", origin, got, want)
+		}
+	}
+}

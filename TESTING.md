@@ -311,6 +311,29 @@ curl -s -XPATCH $A/api/voice/self -H "Authorization: Bearer $BT" -d '{"muted":tr
 
 2.7a Webhook'и dev-LiveKit: запусти сервер через `make dev-server` (порт 3000) и сделай `join` в voice-комнату. В логе сервера появится `"path":"/api/rtc/webhook"` со `"status":200` (событие `room_started`), в `docker logs calaba-dev-livekit-1` — строка `sent webhook`.
 
+2.7b Веб-клиент: refresh в cookie и CSRF (сервер запусти с `PUBLIC_APP_URL=http://localhost:3900` и обращайся по `localhost`, не `127.0.0.1`: `Secure`-cookie curl хранит и отправляет только для https и localhost).
+```sh
+A=http://localhost:3900; J=/tmp/jar.txt; rm -f $J
+curl -s -c $J -XPOST $A/api/auth/login -H 'X-Client: web' -H "Origin: $A" -d '{"email":"owner@example.com","password":"password123"}' | jq -c '{refresh:.tokens.refreshToken, hasAccess:(.tokens.accessToken|length>0)}'
+grep calaba_refresh $J | awk '{print $1, $3, $4}'
+curl -s -b $J -c $J -XPOST $A/api/auth/refresh -H "Origin: $A" -o /dev/null -w '%{http_code}\n'
+curl -s -b $J -XPOST $A/api/auth/refresh -H 'Origin: https://evil.example.com' -w ' %{http_code}\n'
+curl -s -b $J -c $J -XPOST $A/api/auth/logout -H "Origin: $A" -w '%{http_code}\n'
+curl -s -b $J -XPOST $A/api/auth/refresh -H "Origin: $A" -w ' %{http_code}\n'
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Origin: https://evil.example.com' -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' $A/gateway
+```
+Ожидается:
+- `{"refresh":"","hasAccess":true}` (refresh-токена в теле нет);
+- `#HttpOnly_localhost /api/auth TRUE` (HttpOnly, путь, Secure);
+- `200`;
+- `ERROR_CODE_FORBIDDEN … 403`;
+- `204`;
+- `ERROR_CODE_INVALID_REFRESH_TOKEN … 401` (cookie очищена logout'ом);
+- `403` (WS-апгрейд с чужого origin).
+
+Полный сценарий (плюс домен ALT, `Sec-Fetch-Site`, десктопный режим без изменений) — тесты `TestWebCookieAuth` и `TestGatewayOrigin`.
+
 2.8 Остановка чужого стрима модератором и публичный профиль покрыты тестами `TestRTC` (stop-stream → `VOICE_STREAM_STOP{MODERATOR}`, повтор → 404, без MUTE_MEMBERS → 403) и `TestProfileBroadcast` (смена имени приходит участникам workspace как `userUpdate.user` без email/настроек; смена только настроек не рассылается).
 
 ### 3. Docker-образ и healthcheck
@@ -328,17 +351,21 @@ docker rm -f calaba-hc
 
 ## Стенд
 
-Стенд: `root@141.105.69.177`, `DOMAIN=141-105-69-177.sslip.io`, код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (как поднят — `docs/06-deployment.md`).
+Стенд: `root@141.105.69.177`, `DOMAIN=colaba.gptunnel.ai` (основной), `DOMAIN_ALT=colaba.gptunnel.ru` (запасной алиас), временно `DOMAIN_LEGACY=141-105-69-177.sslip.io`; код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (как поднят — `docs/06-deployment.md`).
 
 | Адрес | Что |
 |---|---|
-| `https://app.141-105-69-177.sslip.io` | API: REST `/api/*`, gateway `wss://…/gateway?v=1&encoding=json`, файлы, `/healthz`, `/readyz` (`/metrics` снаружи закрыт — 404) |
-| `wss://rtc.141-105-69-177.sslip.io` | LiveKit signal (`https://rtc.…/` → `OK`) |
-| `turn.141-105-69-177.sslip.io:443` | TURN/TLS (TCP), TURN/UDP — `141.105.69.177:443/udp` |
+| `https://app.colaba.gptunnel.ai` | API: REST `/api/*`, gateway `wss://…/gateway?v=1&encoding=json`, файлы, `/healthz`, `/readyz` (`/metrics` снаружи закрыт — 404) |
+| `wss://rtc.colaba.gptunnel.ai` | LiveKit signal (`https://rtc.…/` → `OK`) |
+| `turn.colaba.gptunnel.ai:443` | TURN/TLS (TCP) — именно он раздаётся клиентам; TURN/UDP — `141.105.69.177:443/udp` |
+| `app.` / `rtc.` / `turn.colaba.gptunnel.ru` | то же самое (алиас); TURN клиентам всё равно раздаётся по `.ai` |
+| `*.141-105-69-177.sslip.io` | старые имена, работают параллельно **временно** (уберём отдельным шагом) |
+
+DNS — Cloudflare, записи DNS-only (proxied=false). Если локальный VPN с fake-IP DNS «не видит» новые имена (NXDOMAIN-кэш до 30 мин) — `curl --resolve <имя>:443:141.105.69.177 …` или проверять с машины без VPN.
 
 **Нельзя трогать чужое на хосте:** `python` (pid 3695), `ffmpeg`, `chromium`, `Xvfb`, контейнеры `gromtv-broadcast`, `dcgm-exporter`. Не делать `docker system prune`, `docker compose down` вне `/opt/calaba/infra/docker`, `iptables -F`, рестарт Docker. Наш compose-проект называется `calaba`.
 
-Обозначения: `D=141-105-69-177.sslip.io`, `H=root@141.105.69.177`, `DC='cd /opt/calaba/infra/docker && docker compose'`, `A=https://app.$D`.
+Обозначения: `D=colaba.gptunnel.ai` (для алиаса — `D=colaba.gptunnel.ru`), `H=root@141.105.69.177`, `DC='cd /opt/calaba/infra/docker && docker compose'`, `A=https://app.$D`.
 
 > Проверки портов (`nc -zv`) делать с машины **без** VPN/TUN-прокси: TUN-режим VPN принимает любой TCP connect сам, и `nc` «успешен» даже для закрытого порта.
 
@@ -350,7 +377,7 @@ docker rm -f calaba-hc
 ```sh
 curl -s -XPOST $A/api/auth/register -d '{"email":"me@example.com","password":"<≥8 символов>","displayName":"Me"}' | jq '.me.email'
 ```
-В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://app.141-105-69-177.sslip.io`.
+В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://app.colaba.gptunnel.ai` (или `https://app.colaba.gptunnel.ru`).
 
 Сбросить данные стенда (все пользователи/сообщения/файлы!) — только по согласованию: `ssh $H "$DC exec -T postgres psql -U calaba -c 'drop schema public cascade; create schema public;' && $DC exec -T redis redis-cli flushall && $DC restart api"` (+ очистить volume `calaba_files_data`).
 
@@ -370,7 +397,7 @@ ssh $H "$DC logs api | grep -E 'migration applied|listening'"
 curl -s $A/healthz; curl -s $A/readyz; curl -s -o /dev/null -w '%{http_code}\n' $A/metrics
 ssh $H 'docker run --rm -v calaba_files_data:/d busybox:1.37 stat -c "%u:%g %a" /d'
 ```
-Ожидается: `calaba-api-1 Up (healthy)`, `caddy-1 Up`, `livekit-1 Up`, `postgres-1 / redis-1 Up (healthy)`, `files-init-1 Exited (0)`; в логе api `migration applied` (только при первом старте на пустой БД) и `"msg":"listening","addr":"127.0.0.1:3000","registration":"open","storage":"fs","livekit":true`; `{"status":"ok"}`, `{"postgres":"ok","redis":"ok"}`, `404`; `65532:65532 750`.
+Ожидается: `calaba-api-1 Up (healthy)`, `caddy-1 Up`, `livekit-1 Up`, `postgres-1 / redis-1 Up (healthy)`; в логе api `migration applied` (только при первом старте на пустой БД) и `"msg":"listening","addr":"127.0.0.1:3000","registration":"open","storage":"fs","livekit":true`; `{"status":"ok"}`, `{"postgres":"ok","redis":"ok"}`, `404`; `65532:65532 750`.
 
 ### 2. Сертификаты и HTTPS
 
@@ -380,8 +407,15 @@ curl -sI http://app.$D | head -3                         # HTTP/1.1 308 → http
 curl -sI https://rtc.$D | grep -i alt-svc               # пусто (HTTP/3 выключен, UDP 443 — TURN)
 openssl s_client -connect turn.$D:443 -servername turn.$D </dev/null 2>/dev/null \
   | grep -E 'subject=|issuer=|Verify return'
-# subject=CN=turn.141-105-69-177.sslip.io / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
+# subject=CN=turn.colaba.gptunnel.ai / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
+# все имена разом (9 = 3 домена × app/rtc/turn):
+for d in colaba.gptunnel.ai colaba.gptunnel.ru 141-105-69-177.sslip.io; do
+  echo "$d readyz=$(curl -s -o /dev/null -w %{http_code} https://app.$d/readyz) metrics=$(curl -s -o /dev/null -w %{http_code} https://app.$d/metrics) rtc=$(curl -s https://rtc.$d/) turn=$(openssl s_client -connect turn.$d:443 -servername turn.$d </dev/null 2>/dev/null | grep -c 'Verify return code: 0')"
+done
+# ожидается для каждого: readyz=200 metrics=404 rtc=OK turn=≥1
+ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[^\"]*' | sort -u"   # 9 имён
 ```
+Факт 2026-09-25: все 9 имён — сертификаты LE (YE1), `readyz` 200, `/metrics` 404, `rtc` OK, TURN TLS `Verify return code: 0`.
 `curl https://turn.$D` **висит** — это нормально: SNI `turn.*` уходит в layer4 → TURN, HTTP там никто не отвечает.
 
 ### 3. LiveKit
@@ -402,10 +436,10 @@ ssh $H "ss -lntup | grep -E 'livekit|caddy'"
 ### 4. Сценарии API по HTTPS
 
 Разделы «Server core» → 4 и «Server stage 3» → 2 выполняются против стенда как есть, с заменами:
-- `A=https://app.141-105-69-177.sslip.io`; сервер запускать не нужно; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
+- `A=https://app.colaba.gptunnel.ai`; сервер запускать не нужно; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
 - БД стенда не пустая и регистрация открыта: второй пользователь без инвайта **успешно зарегистрируется**, а не получит 403 (`REGISTRATION_CLOSED` — только в `invite`-режиме). Email-ы брать новые (`…@calaba.test` заняты), slug workspace — новый (`team` занят → ожидаемый `409` на первом же создании).
 - gateway: `A=$A node /tmp/gw.mjs $BT 4` (скрипт сам меняет `https` → `wss`).
-- 2.6: `url` в ответе join — `wss://rtc.141-105-69-177.sslip.io`, `media` — по настройкам комнаты.
+- 2.6: `url` в ответе join — `wss://rtc.colaba.gptunnel.ai`, `media` — по настройкам комнаты.
 - 4.7 (rate limit) — последним: после него логин с этого IP ~1 мин отвечает 429. Подмена `X-Forwarded-For` не помогает (Caddy перезаписывает заголовок, api видит реальный IP).
 
 Факт 2026-09-25 (все шаги PASS): 4.1–4.8 — ответы и коды как в разделе «Server core»; 2.1 HELLO(41000) → READY seq 1 → presenceUpdate → один messageCreate, повтор nonce → 200; 2.2 RESUME → `while away` seq 4, `{"resumed":{"replayed":1}}`; 2.3 INVALID_SESSION `resumable:false`; 2.4 `{"n":2,"first":"m3","hasMore":true}`; 2.5 upload 201, Range `hello 206`, `304`, 60 MB → 413, 20 MB upload через VPN ~1.5 с; 2.6 join → токен, webhook без подписи 401, voice/self до подключения 409.
@@ -440,7 +474,7 @@ lk room create --empty-timeout 600 loadtest      # auto_create выключен 
 lk load-test --room loadtest --audio-publishers 2 --video-publishers 1 --subscribers 3 --duration 30s
 lk room delete loadtest
 ```
-Ожидается: `Total 9/9`, `Pkt. Loss 0 (0%)` (допустимо < 1%), аудио ~20 kbps на трек, видео (simulcast) ~1.3 Mbps на подписчика. Факт 2026-09-25 (с мака через VPN): 9/9, потерь 0 (0%), 3.9 Mbps суммарно.
+Ожидается: `Total 9/9`, `Pkt. Loss 0 (0%)` (допустимо < 1%), аудио ~20 kbps на трек, видео (simulcast) ~1.2–1.3 Mbps на подписчика. Факт 2026-09-25 (с мака через VPN, `wss://rtc.colaba.gptunnel.ai`, 20 с): 9/9, потерь 0 (0%), 3.7 Mbps суммарно.
 
 ### 7. Принудительный relay (TURN/UDP и TURN/TLS)
 

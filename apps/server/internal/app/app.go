@@ -92,6 +92,7 @@ func New(d Deps) *App {
 		HeartbeatInterval:  d.Config.HeartbeatInterval,
 		MaxSessionsPerUser: d.Config.MaxDevicesPerUser,
 		ShutdownSpread:     5 * time.Second,
+		AllowedOrigins:     d.Config.AllowedOrigins(),
 	}, d.DB, d.Redis, authSvc, pub)
 
 	// Authenticated API routes: identity + fresh per-request permission resolver.
@@ -106,7 +107,7 @@ func New(d Deps) *App {
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.Handle("GET /gateway", hub)
 
-	ah := auth.NewHandlers(authSvc, authLimiter)
+	ah := auth.NewHandlers(authSvc, authLimiter, d.Config.AllowedOrigins())
 	ah.Public(mux)
 	ah.Private(mux, private)
 	users.NewHandlers(d.DB, pub).Routes(mux, private)

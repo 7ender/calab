@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -21,9 +23,10 @@ const (
 
 // Config is the full server configuration. See apps/server/README.md for the list.
 type Config struct {
-	HTTPAddr     string `env:"HTTP_ADDR" envDefault:"127.0.0.1:3000"`
-	PublicAppURL string `env:"PUBLIC_APP_URL" envDefault:"http://localhost:3000"`
-	LogLevel     string `env:"LOG_LEVEL" envDefault:"info"`
+	HTTPAddr        string `env:"HTTP_ADDR" envDefault:"127.0.0.1:3000"`
+	PublicAppURL    string `env:"PUBLIC_APP_URL" envDefault:"http://localhost:3000"`
+	PublicAppURLAlt string `env:"PUBLIC_APP_URL_ALT"` // optional second domain of the web client
+	LogLevel        string `env:"LOG_LEVEL" envDefault:"info"`
 
 	DatabaseURL string `env:"DATABASE_URL,required"`
 	RedisURL    string `env:"REDIS_URL,required"`
@@ -92,6 +95,11 @@ func (c *Config) Validate() error {
 	if c.HeartbeatInterval < 5*time.Second || c.MaxDevicesPerUser < 1 {
 		errs = append(errs, errors.New("GATEWAY_HEARTBEAT_INTERVAL must be >= 5s and GATEWAY_MAX_SESSIONS_PER_USER >= 1"))
 	}
+	for name, u := range map[string]string{"PUBLIC_APP_URL": c.PublicAppURL, "PUBLIC_APP_URL_ALT": c.PublicAppURLAlt} {
+		if u != "" && Origin(u) == "" {
+			errs = append(errs, fmt.Errorf("%s must be an absolute http(s) URL, got %q", name, u))
+		}
+	}
 	switch c.StorageDriver {
 	case "fs":
 		if c.StoragePath == "" {
@@ -109,6 +117,27 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config: %w", err)
 	}
 	return nil
+}
+
+// AllowedOrigins returns the browser origins of the web client (scheme://host[:port]),
+// used for CSRF checks on cookie-authenticated requests and for gateway upgrades.
+func (c *Config) AllowedOrigins() []string {
+	var out []string
+	for _, u := range []string{c.PublicAppURL, c.PublicAppURLAlt} {
+		if o := Origin(u); o != "" {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// Origin normalizes a URL to its origin; "" if it is not an absolute http(s) URL.
+func Origin(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ""
+	}
+	return strings.ToLower(u.Scheme + "://" + u.Host)
 }
 
 // LiveKitEnabled reports whether voice is configured.

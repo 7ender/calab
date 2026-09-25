@@ -55,6 +55,8 @@ message LoginResponse {
 
 // POST /api/auth/refresh (no access token needed).
 // Presenting an already rotated refresh token revokes the whole session (reuse detection).
+// Web clients (X-Client: web) leave refresh_token empty: it comes from the calaba_refresh
+// cookie, and the rotated token is set as a cookie instead of being returned in the body.
 message RefreshRequest {
   string refresh_token = 1;
 }
@@ -63,10 +65,12 @@ message RefreshResponse {
   AuthTokens tokens = 1;
 }
 
-// POST /api/auth/logout (access token required). Revokes the current session,
-// or every session of the user when all_sessions is set.
+// POST /api/auth/logout. Identifies the session by the access token (Authorization) or,
+// without one, by the refresh token: this field, else the calaba_refresh cookie (web).
+// Revokes that session, or every session of the user when all_sessions is set.
 message LogoutRequest {
   bool all_sessions = 1;
+  string refresh_token = 2;
 }
 
 // GET /api/me/sessions

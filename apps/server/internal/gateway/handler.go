@@ -5,7 +5,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -32,9 +35,13 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "shutting down", http.StatusServiceUnavailable)
 		return
 	}
+	if !OriginAllowed(r.Header.Get("Origin"), h.cfg.AllowedOrigins) {
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
+	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// Authentication is the IDENTIFY token, not cookies, so cross-origin upgrades carry no
-		// ambient credentials; Electron's origin (file:// / app://) must be accepted.
+		// Origin is checked above (OriginAllowed); coder/websocket's OriginPatterns cannot
+		// express Electron's file:// / "null" origins.
 		InsecureSkipVerify: true,
 		CompressionMode:    websocket.CompressionDisabled,
 	})
@@ -48,6 +55,26 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		HeartbeatIntervalMs: uint32(h.cfg.HeartbeatInterval.Milliseconds()), //nolint:gosec // seconds-scale
 	}}})
 	h.serve(c)
+}
+
+// OriginAllowed decides whether a WebSocket upgrade may proceed. Authentication is the
+// IDENTIFY token (never a cookie), so this is defence in depth against foreign web pages:
+//   - no Origin: native clients (tests, tools) — allowed;
+//   - "null" / file://: the packaged Electron renderer — allowed;
+//   - http://localhost / 127.0.0.1 (any port): local development (Vite dev server) — allowed;
+//   - otherwise the origin must be one of the web client's origins.
+func OriginAllowed(origin string, allowed []string) bool {
+	if origin == "" || origin == "null" || strings.HasPrefix(origin, "file://") {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	if u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1") {
+		return true
+	}
+	return slices.Contains(allowed, strings.ToLower(origin))
 }
 
 type readResult int

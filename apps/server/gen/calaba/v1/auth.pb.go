@@ -446,6 +446,8 @@ func (x *LoginResponse) GetMe() *Me {
 
 // POST /api/auth/refresh (no access token needed).
 // Presenting an already rotated refresh token revokes the whole session (reuse detection).
+// Web clients (X-Client: web) leave refresh_token empty: it comes from the calaba_refresh
+// cookie, and the rotated token is set as a cookie instead of being returned in the body.
 type RefreshRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RefreshToken  string                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
@@ -534,11 +536,13 @@ func (x *RefreshResponse) GetTokens() *AuthTokens {
 	return nil
 }
 
-// POST /api/auth/logout (access token required). Revokes the current session,
-// or every session of the user when all_sessions is set.
+// POST /api/auth/logout. Identifies the session by the access token (Authorization) or,
+// without one, by the refresh token: this field, else the calaba_refresh cookie (web).
+// Revokes that session, or every session of the user when all_sessions is set.
 type LogoutRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AllSessions   bool                   `protobuf:"varint,1,opt,name=all_sessions,json=allSessions,proto3" json:"all_sessions,omitempty"`
+	RefreshToken  string                 `protobuf:"bytes,2,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -578,6 +582,13 @@ func (x *LogoutRequest) GetAllSessions() bool {
 		return x.AllSessions
 	}
 	return false
+}
+
+func (x *LogoutRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
 }
 
 // GET /api/me/sessions
@@ -674,9 +685,10 @@ const file_calaba_v1_auth_proto_rawDesc = "" +
 	"\x0eRefreshRequest\x12#\n" +
 	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"@\n" +
 	"\x0fRefreshResponse\x12-\n" +
-	"\x06tokens\x18\x01 \x01(\v2\x15.calaba.v1.AuthTokensR\x06tokens\"2\n" +
+	"\x06tokens\x18\x01 \x01(\v2\x15.calaba.v1.AuthTokensR\x06tokens\"W\n" +
 	"\rLogoutRequest\x12!\n" +
-	"\fall_sessions\x18\x01 \x01(\bR\vallSessions\"F\n" +
+	"\fall_sessions\x18\x01 \x01(\bR\vallSessions\x12#\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"F\n" +
 	"\x14ListSessionsResponse\x12.\n" +
 	"\bsessions\x18\x01 \x03(\v2\x12.calaba.v1.SessionR\bsessionsB\x97\x01\n" +
 	"\rcom.calaba.v1B\tAuthProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +

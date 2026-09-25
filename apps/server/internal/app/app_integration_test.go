@@ -116,6 +116,8 @@ func run(m *testing.M) int {
 		AccessTokenTTL:         15 * time.Minute,
 		RefreshTokenTTL:        720 * time.Hour,
 		RegistrationMode:       config.RegistrationInvite,
+		PublicAppURL:           "https://app.example.com",
+		PublicAppURLAlt:        "https://app.example.ru",
 		AuthRateBurst:          5,
 		AuthRatePerMinute:      1,
 		MaxFileSizeMB:          1, // small, so the size limit is testable

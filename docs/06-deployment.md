@@ -10,11 +10,11 @@
 
 | Сервис | Образ | Сеть | Заметки |
 |---|---|---|---|
-| caddy | своя сборка `infra/docker/caddy/Dockerfile` (`caddy:2.11.4` + `caddy-l4` v0.1.2, обе версии запинены) | host | 80/443 TCP, ACME, `Caddyfile`, layer4 как listener wrapper (SNI `turn.*`), h3 выключен |
+| caddy | своя сборка `infra/docker/caddy/Dockerfile` (`caddy:2.11.4` + `caddy-l4` v0.1.2, обе версии запинены; `entrypoint.sh` собирает списки хостов из `DOMAIN`/`DOMAIN_ALT`/`DOMAIN_LEGACY`) | host | 80/443 TCP, ACME, `Caddyfile`, layer4 как listener wrapper (SNI `turn.*`), h3 выключен |
 | livekit | `livekit/livekit-server:v1.13` | host | signal 7880 (только 127.0.0.1), 7881/tcp, 7882/udp, TURN 443/udp, TURN 5349 (`external_tls`; слушает `*:5349` — LiveKit не умеет bind для TURN, снаружи закрыт файрволом), metrics 6789 (127.0.0.1) |
 | api | `apps/server/Dockerfile` (Go → distroless static, nonroot) | **host**, `HTTP_ADDR=127.0.0.1:3000` | ходит в Postgres/Redis/LiveKit по 127.0.0.1; миграции сам при старте; файлы — `STORAGE_DRIVER=fs`, volume `files_data` → `/data/files` (ADR-0011; каталог создан в образе с владельцем nonroot 65532, свежий named volume наследует его — отдельный chown не нужен); healthcheck — `/server healthcheck` |
 | postgres | `postgres:18-alpine` | bridge, `127.0.0.1:5432` | PG 18 — встроенный `uuidv7()`; volume на `/var/lib/postgresql` |
-| redis | `redis:7-alpine` | bridge, `127.0.0.1:6379` | AOF; healthcheck `redis-cli ping` |
+| redis | `redis:7.4-alpine` | bridge, `127.0.0.1:6379` | AOF; healthcheck `redis-cli ping` |
 
 Почему api в host network: API обращается к LiveKit (`127.0.0.1:7880`, signal слушает только loopback), а LiveKit шлёт webhook на `127.0.0.1:3000`. Из bridge-сети это требовало бы `host.docker.internal` и правил файрвола для `docker0`; в host network всё идёт по loopback, наружу API не торчит (слушает только 127.0.0.1).
 
@@ -50,21 +50,22 @@ mkdir -p /opt/calaba
 
 - Код: `/opt/calaba` (копия рабочего дерева через `sync.sh`), секреты: `/opt/calaba/infra/docker/.env` (`chmod 600`, root; сгенерированы `openssl rand` по `.env.example`, `REGISTRATION_MODE=open`). `sync.sh` этот файл никогда не перезаписывает и не удаляет.
 - Ключ/секрет LiveKit для тестов (`lk`, load-test) брать оттуда: `ssh root@141.105.69.177 'grep ^LIVEKIT_API_ /opt/calaba/infra/docker/.env'` — не коммитить и не вставлять в отчёты.
-- `DOMAIN=141-105-69-177.sslip.io`. Сертификаты Let's Encrypt для `app.`/`rtc.`/`turn.` выпущены Caddy при первом старте (хранятся в volume `calaba_caddy_data`, при передеплое не перевыпускаются).
+- Домены (с 2026-09-25): `DOMAIN=colaba.gptunnel.ai` (основной), `DOMAIN_ALT=colaba.gptunnel.ru` (запасной алиас), временно `DOMAIN_LEGACY=141-105-69-177.sslip.io` (старые имена работают параллельно, пока клиенты не переедут; убрать — удалить строку из `.env` и `sync.sh caddy`). Итого 9 имён, сертификаты Let's Encrypt на все выпускает Caddy (volume `calaba_caddy_data`, при передеплое не перевыпускаются). Детали и ограничение по TURN — docs/03-network.md, «Несколько доменов».
+- DNS — Cloudflare (зоны `gptunnel.ai`, `gptunnel.ru`), A-записи `app.colaba`, `rtc.colaba`, `turn.colaba` → 141.105.69.177, **proxied=false** (DNS-only), TTL auto. Токен Cloudflare — только у владельца/в локальном `.env` репо (`CFTOKEN`, gitignored), на сервер не копируется.
 - Весь стек (с api) поднят 2026-09-25: `infra/docker/sync.sh` без аргументов; отдельный сервис — `infra/docker/sync.sh api`. Миграции применились при старте api.
 - Регистрация открыта (`REGISTRATION_MODE=open`); тестовые аккаунты `owner@calaba.test` / `bob@calaba.test` (workspace `team`), пароль — `/opt/calaba/infra/docker/.env.accounts` (600; `sync.sh` не трогает `.env*`). Перед реальным использованием — `REGISTRATION_MODE=invite`.
 - Снаружи через Caddy доступны только `app.*` (API; `/metrics` закрыт — `respond /metrics 404`, скрейпить `127.0.0.1:3000/metrics` на хосте), `rtc.*` (signal), `turn.*` (TURN/TLS).
 - Проверки и ожидаемые выводы — `TESTING.md`, раздел «Стенд».
 
-### Переход на свой домен
+### Смена / добавление домена
 
-1. A-записи `app.<домен>`, `rtc.<домен>`, `turn.<домен>` → 141.105.69.177 (AAAA не заводить, пока нет IPv6 на хосте и правил для него). Дождаться, пока `dig +short turn.<домен>` вернёт IP.
-2. На хосте в `/opt/calaba/infra/docker/.env`: `DOMAIN=<домен>`.
-3. `infra/docker/sync.sh` (или на хосте `deploy.sh`): Caddy пересоберётся/перезапустится с новым `DOMAIN` из env и выпустит новые сертификаты; `livekit.gen.yaml` перерендерится (`turn.domain`) → LiveKit перезапустится сам; API получит новые `PUBLIC_APP_URL`/`LIVEKIT_URL`.
-4. Клиентам — новый адрес сервера. Старые sslip-сертификаты в volume просто истекут, чистить не нужно.
-5. Лимиты Let's Encrypt на `sslip.io` общие для всех. Если упрёмся: задать `email` в глобальном блоке Caddyfile — тогда Caddy при неудаче LE автоматически пробует ZeroSSL (без email фолбэк на ZeroSSL не работает); либо явно `acme_ca`/`issuer zerossl`.
+1. A-записи `app.<домен>`, `rtc.<домен>`, `turn.<домен>` → 141.105.69.177, в Cloudflare — **DNS-only** (AAAA не заводить, пока нет IPv6 на хосте и правил для него). Проверить с машины без VPN (или DoH: `curl -s -H 'accept: application/dns-json' 'https://cloudflare-dns.com/dns-query?name=turn.<домен>&type=A'`): VPN с fake-IP DNS и кэшем NXDOMAIN (SOA min 1800 с в зонах Cloudflare) может «не видеть» свежие записи до 30 мин.
+2. На хосте в `/opt/calaba/infra/docker/.env`: `DOMAIN=<основной>`, `DOMAIN_ALT=<запасной или пусто>`; на время переезда старый основной — в `DOMAIN_LEGACY`, чтобы старые клиенты не оборвались.
+3. `infra/docker/sync.sh` (или на хосте `deploy.sh`): Caddy пересоздаётся с новыми списками хостов и выпускает сертификаты; `livekit.gen.yaml` перерендерится (`turn.domain`) → LiveKit перезапустится сам (короткий обрыв медиа); API получит новые `PUBLIC_APP_URL`/`PUBLIC_APP_URL_ALT`/`LIVEKIT_URL`.
+4. Клиентам — новый адрес сервера. Когда старые клиенты переехали — убрать `DOMAIN_LEGACY`, `sync.sh caddy`. Старые сертификаты в volume просто истекут.
+5. Лимиты Let's Encrypt. Если упрёмся: задать `email` в глобальном блоке Caddyfile — тогда Caddy при неудаче LE автоматически пробует ZeroSSL (без email фолбэк на ZeroSSL не работает); либо явно `acme_ca`/`issuer zerossl`.
 
-Домен: A-записи `app`, `rtc`, `turn` → 141.105.69.177. Пока своего домена нет, стенд работает на `sslip.io`: `DOMAIN=141-105-69-177.sslip.io` (→ `app.141-105-69-177.sslip.io`, `rtc.…`, `turn.…`, DNS настраивать не нужно). Лимиты Let's Encrypt на `sslip.io` общие для всех — годится только для первых проб; для постоянной работы владельцу нужен свой домен.
+Домен стенда: `colaba.gptunnel.ai` (+ алиас `colaba.gptunnel.ru`), см. «Стенд: как он поднят».
 
 ## Dev локально (macOS)
 

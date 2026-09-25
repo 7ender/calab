@@ -120,13 +120,32 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 
 Тела запросов и ответов — proto-сообщения из `proto/calaba/v1/*.proto` в JSON (`protojson`): поля в lowerCamelCase (`displayName`), enum — полными именами (`"ROOM_TYPE_VOICE"`), `uint64` (биты прав, байты) — строками, время — RFC 3339; скалярные поля по умолчанию в ответе присутствуют, неизвестные поля в запросе игнорируются. Авторизация — `Authorization: Bearer <access JWT>`.
 
+### Веб-клиент: refresh в cookie (ADR-0015)
+
+- Признак веб-клиента — заголовок **`X-Client: web`**. `Sec-Fetch-*` для этого не годится: его шлёт и Chromium внутри Electron. Без заголовка поведение десктопное, без изменений: refresh-токен приходит в теле ответа.
+- `login` / `register` / `refresh` веб-клиента: `tokens.refreshToken` в теле пустой, токен ставится cookie `calaba_refresh` (`HttpOnly; Secure; SameSite=Strict; Path=/api/auth`, срок = срок сессии). Access-токен приходит в теле, как обычно, и хранится только в памяти страницы.
+- `refresh` с пустым `refreshToken` берёт токен из cookie и ставит новый (ротация). `logout` без `Authorization` и без токена в теле берёт токен из cookie и очищает её (`Max-Age=-1`). Мёртвый токен в cookie → `401`, cookie очищается.
+- **CSRF**: запросы с аутентификацией по cookie (`refresh`/`logout` из cookie), а также веб-`login`/`register`, выставляющие cookie, проходят проверку источника:
+  - `Origin` задан → он должен точно совпадать с origin `PUBLIC_APP_URL` или `PUBLIC_APP_URL_ALT` (схема + хост + порт);
+  - `Origin` нет → нужен `Sec-Fetch-Site: same-origin`;
+  - ни того ни другого → `403 ERROR_CODE_FORBIDDEN`.
+
+  Запросы с `Authorization: Bearer` (все остальные API, десктоп) этой проверке не подлежат: cookie с `Path=/api/auth` в них не участвует.
+- `GET /gateway` проверяет `Origin` при апгрейде:
+  - без `Origin` (нативные клиенты) — пропускается;
+  - `null` / `file://` (собранный Electron) — пропускается;
+  - `http://localhost:*` / `http://127.0.0.1:*` (dev) — пропускается;
+  - иначе — только origin из `PUBLIC_APP_URL[_ALT]`, остальное → `403`.
+
+  Аутентификация в gateway — по-прежнему `IDENTIFY` с access-токеном.
+
 Реализовано (stage 2, server core):
 
 ```
 POST   /api/auth/register              RegisterRequest → 201 RegisterResponse
 POST   /api/auth/login                 LoginRequest → LoginResponse          (rate-limit по IP)
 POST   /api/auth/refresh               RefreshRequest → RefreshResponse      (ротация; повтор старого токена = отзыв сессии)
-POST   /api/auth/logout                LogoutRequest{allSessions} → 204
+POST   /api/auth/logout                LogoutRequest{allSessions, refreshToken?} → 204   (сессия — по access-токену, иначе по refresh из тела или cookie)
 GET    /api/me                         GetMeResponse
 PATCH  /api/me                         UpdateMeRequest → UpdateMeResponse
 GET    /api/me/sessions                ListSessionsResponse

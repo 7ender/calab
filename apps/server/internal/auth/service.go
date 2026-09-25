@@ -362,6 +362,34 @@ func (s *Service) Logout(ctx context.Context, id Identity, all bool) error {
 	return nil
 }
 
+// LogoutByRefresh revokes the session a refresh token belongs to (or all of its user's
+// sessions). The token must be the session's current one or the one rotated within the
+// grace window; anything else is rejected without side effects (no reuse revocation here).
+func (s *Service) LogoutByRefresh(ctx context.Context, token string, all bool) error {
+	sid, secret, ok := ParseRefreshToken(token)
+	if !ok {
+		return errInvalidRefresh
+	}
+	sess, err := s.db.Q.GetSession(ctx, sid)
+	if db.IsNotFound(err) {
+		return errInvalidRefresh
+	}
+	if err != nil {
+		return err
+	}
+	h := HashRefreshSecret(secret)
+	current := subtle.ConstantTimeCompare(h, sess.RefreshTokenHash) == 1
+	recent := sess.PrevRefreshTokenHash != nil && sess.RotatedAt != nil && s.now().Sub(*sess.RotatedAt) < refreshGrace &&
+		subtle.ConstantTimeCompare(h, sess.PrevRefreshTokenHash) == 1
+	if !current && !recent {
+		return errInvalidRefresh
+	}
+	if sess.RevokedAt != nil && !all {
+		return nil // already logged out
+	}
+	return s.Logout(ctx, Identity{UserID: sess.UserID, SessionID: sess.ID}, all)
+}
+
 // RevokeSession revokes one of the user's own sessions.
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error {
 	n, err := s.db.Q.RevokeUserSession(ctx, sqlc.RevokeUserSessionParams{ID: sessionID, UserID: userID})
