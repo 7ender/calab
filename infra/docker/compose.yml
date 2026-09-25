@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
     command: caddy run --config /etc/caddy/Caddyfile
     environment:
-      - DOMAIN=${DOMAIN}                    # primary: app./rtc./turn.<DOMAIN>
+      - DOMAIN=${DOMAIN}                    # primary: <DOMAIN> (app), rtc./turn.<DOMAIN>
       - DOMAIN_ALT=${DOMAIN_ALT:-}          # optional alias domain (same three names)
       - DOMAIN_LEGACY=${DOMAIN_LEGACY:-}    # optional, temporary (migration off an old domain)
     volumes:
@@ -52,8 +52,8 @@ services:
     restart: unless-stopped
     environment:
       - HTTP_ADDR=127.0.0.1:3000
-      - PUBLIC_APP_URL=https://app.${DOMAIN}
-      - PUBLIC_APP_URL_ALT=${DOMAIN_ALT:+https://app.${DOMAIN_ALT}}   # empty when no alias domain
+      - PUBLIC_APP_URL=https://${DOMAIN}
+      - PUBLIC_APP_URL_ALT=${DOMAIN_ALT:+https://${DOMAIN_ALT}}   # empty when no alias domain
       - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD}@127.0.0.1:5432/calaba
       - REDIS_URL=redis://127.0.0.1:6379
       - JWT_SECRET=${JWT_SECRET}

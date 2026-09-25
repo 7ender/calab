@@ -1,9 +1,9 @@
 # Caddy + caddy-l4 as a listener wrapper. One IP, TCP 443:
 #   SNI turn.<any domain> -> layer4: terminate TLS here, proxy plain TURN to LiveKit 127.0.0.1:5349
 #                        (LiveKit runs with turn.external_tls: true)
-#   anything else     -> falls through to the regular HTTPS server (app.*, rtc.*)
+#   anything else     -> falls through to the regular HTTPS server (<domain>, rtc.*)
 # HTTP/3 is disabled: UDP 443 belongs to LiveKit TURN/UDP.
-# Host lists come from entrypoint.sh: APP_HOSTS / RTC_HOSTS / TURN_HOSTS = app.|rtc.|turn. + each of
+# Host lists come from entrypoint.sh: APP_HOSTS = <domain>, RTC_HOSTS / TURN_HOSTS = rtc.|turn.<domain>, for each of
 # DOMAIN (primary), DOMAIN_ALT (alias), DOMAIN_LEGACY (temporary) — see compose.yml / .env.
 {
 	admin off

@@ -25,7 +25,7 @@
 ## Домены и TLS
 
 Нужны **три DNS-имени** на один IP, все с валидными сертификатами (Let's Encrypt через Caddy):
-- `app.<domain>` — API, gateway, файлы (можно и один с `rtc`)
+- `<domain>` (само имя, без префикса) — API, gateway, файлы, веб-клиент
 - `rtc.<domain>` — LiveKit signal
 - `turn.<domain>` — TURN/TLS. Отдельное имя обязательно: по нему Caddy layer4 отличает TURN от HTTPS.
 
@@ -33,11 +33,11 @@ TLS для TURN терминирует Caddy (layer4-маршрут `tls` → `p
 
 ### Несколько доменов
 
-- `DOMAIN` — основной, `DOMAIN_ALT` — запасной алиас (опционально), `DOMAIN_LEGACY` — временный третий набор имён на время переезда (опционально). Для каждого непустого — те же три имени `app.`/`rtc.`/`turn.`, свои сертификаты; Caddy обслуживает все наборы одинаково (`infra/docker/caddy/entrypoint.sh` собирает списки хостов, Caddyfile использует `{$APP_HOSTS}`/`{$RTC_HOSTS}`/`{$TURN_HOSTS}`, layer4 матчит SNI любого `turn.*` из списка).
+- `DOMAIN` — основной, `DOMAIN_ALT` — запасной алиас (опционально), `DOMAIN_LEGACY` — временный третий набор имён на время переезда (опционально). Для каждого непустого — те же три имени `<домен>`/`rtc.<домен>`/`turn.<домен>`, свои сертификаты; Caddy обслуживает все наборы одинаково (`infra/docker/caddy/entrypoint.sh` собирает списки хостов, Caddyfile использует `{$APP_HOSTS}`/`{$RTC_HOSTS}`/`{$TURN_HOSTS}`, layer4 матчит SNI любого `turn.*` из списка).
 - **Ограничение:** LiveKit анонсирует клиентам TURN только по основному домену (`turn.domain: turn.${DOMAIN}` — одно значение). Клиент, пришедший через `rtc.<DOMAIN_ALT>`, всё равно получит `turns:turn.<DOMAIN>:443`. Запасной домен — алиас для `app`/`rtc`; `turn.<DOMAIN_ALT>` работает (сертификат, SNI-маршрут), но клиентам не раздаётся. Если основной домен заблокируют — поменять местами `DOMAIN` и `DOMAIN_ALT` и передеплоить (LiveKit перезапустится с новым `turn.domain`). TURN/UDP раздаётся по IP (`turn:141.105.69.177:443?transport=udp`) и от домена не зависит.
-- `PUBLIC_APP_URL` — основной (`https://app.${DOMAIN}`), `PUBLIC_APP_URL_ALT` — `https://app.${DOMAIN_ALT}` (пусто, если алиаса нет).
+- `PUBLIC_APP_URL` — основной (`https://${DOMAIN}`), `PUBLIC_APP_URL_ALT` — `https://${DOMAIN_ALT}` (пусто, если алиаса нет).
 
-Стенд: `DOMAIN=colaba.gptunnel.ai`, `DOMAIN_ALT=colaba.gptunnel.ru`, DNS — Cloudflare, A-записи `app.colaba`, `rtc.colaba`, `turn.colaba` → 141.105.69.177 в обеих зонах, **строго DNS-only (proxied=false)**: прокси Cloudflare не пропускает WebRTC/TURN (UDP, TCP 7881, сырой TLS на 443 к `turn.*`) и режет WebSocket-сессии по таймауту. Имена `*.141-105-69-177.sslip.io` (первые пробы) сняты 2026-09-25 и не обслуживаются.
+Стенд: `DOMAIN=colaba.gptunnel.ai`, `DOMAIN_ALT=colaba.gptunnel.ru`, DNS — Cloudflare, A-записи `colaba`, `rtc.colaba`, `turn.colaba` → 141.105.69.177 в обеих зонах, **строго DNS-only (proxied=false)**: прокси Cloudflare не пропускает WebRTC/TURN (UDP, TCP 7881, сырой TLS на 443 к `turn.*`) и режет WebSocket-сессии по таймауту. Имена `*.141-105-69-177.sslip.io` (первые пробы) сняты 2026-09-25 и не обслуживаются.
 
 ## Caddy: SNI-роутинг на 443
 
@@ -47,7 +47,7 @@ TLS для TURN терминирует Caddy (layer4-маршрут `tls` → `p
 :443 (TCP)
   SNI turn.<domain>   → layer4: tls (терминация в Caddy) → proxy 127.0.0.1:5349 (LiveKit TURN, external_tls)
   иначе               → обычный HTTPS-сервер Caddy (h1, h2; h3 выключен):
-       app.<domain>   → reverse_proxy 127.0.0.1:3000 (API, host network)
+       <domain>       → /api/*, /gateway, /healthz, /readyz → reverse_proxy 127.0.0.1:3000 (API); остальное — веб-статика
        rtc.<domain>   → reverse_proxy 127.0.0.1:7880 (LiveKit signal)
        turn.<domain>  → respond 404 (только ради сертификата)
 ```
