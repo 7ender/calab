@@ -25,6 +25,7 @@ import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
 import { qualityOf, toggleDeafen, toggleMute, transmitDecision } from '../lib/voiceLogic';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
+import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { setVoice, useVoice, type RemoteStream } from '../stores/voice';
 
@@ -102,7 +103,7 @@ class VoiceEngine {
     }
     if (s.outputDeviceId !== p.outputDeviceId) void this.applyOutputDevice();
     if ((s.rnnoise !== p.rnnoise || s.micDeviceId !== p.micDeviceId) && this.mic) void this.restartMic();
-    if (s.red !== p.red && this.micTrack && this.room) void this.republishMic();
+    if ((s.red !== p.red || s.personalBitrateKbps !== p.personalBitrateKbps) && this.micTrack && this.room) void this.republishMic();
     if (s.userVolumes !== p.userVolumes) this.applyVolumes();
   }
 
@@ -121,7 +122,7 @@ class VoiceEngine {
     return this.roomId;
   }
 
-  async join(roomId: string, workspaceId: string): Promise<void> {
+  async join(roomId: string, workspaceId: string, quiet = false): Promise<void> {
     if (this.roomId === roomId && this.room) return;
     const seq = ++this.joinSeq;
     if (this.room) await this.leave(false);
@@ -139,7 +140,11 @@ class VoiceEngine {
       });
       this.room = room;
       this.wire(room);
-      await room.connect(res.url, res.token, { autoSubscribe: false });
+      const relayOnly = useSession.getState().appInfo?.forceRelay === true;
+      await room.connect(res.url, res.token, {
+        autoSubscribe: false,
+        ...(relayOnly ? { rtcConfig: { iceTransportPolicy: 'relay' } } : {}),
+      });
       if (seq !== this.joinSeq) {
         await room.disconnect();
         return;
@@ -159,10 +164,33 @@ class VoiceEngine {
     } catch (err) {
       if (seq !== this.joinSeq) return;
       log.error('voice join failed', err);
-      toast.error(`Не удалось подключиться к голосу: ${errMsg(err)}`);
+      if (!quiet) toast.error(`Не удалось подключиться к голосу: ${errMsg(err)}`);
       await this.leave(false);
       setVoice({ error: errMsg(err) });
     }
+  }
+
+  private rejoinAttempt = 0;
+
+  /** Rejoin after an unexpected disconnect: 1 s, 2 s, 4 s … up to 5 attempts. */
+  private async rejoin(): Promise<void> {
+    const roomId = this.roomId;
+    const wsId = useVoice.getState().workspaceId;
+    if (!roomId || !wsId) return;
+    const stream = useVoice.getState().myStream;
+    await this.leave(false);
+    for (this.rejoinAttempt = 0; this.rejoinAttempt < 5; this.rejoinAttempt++) {
+      setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting' });
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** this.rejoinAttempt));
+      if (useVoice.getState().roomId !== roomId) return; // user left or switched meanwhile
+      await this.join(roomId, wsId, true);
+      if (this.room) {
+        if (stream) toast.info('Голос переподключён — стрим нужно запустить заново');
+        return;
+      }
+    }
+    toast.error('Не удалось вернуться в голосовую комнату');
+    await this.leave(false);
   }
 
   async leave(sound = true): Promise<void> {
@@ -206,8 +234,16 @@ class VoiceEngine {
       })
       .on(RoomEvent.Disconnected, (reason) => {
         if (this.room !== room) return;
+        log.info('voice disconnected, reason', reason ?? 'none');
         if (reason === DisconnectReason.PARTICIPANT_REMOVED) toast.info('Модератор отключил вас от голосовой комнаты');
         else if (reason === DisconnectReason.DUPLICATE_IDENTITY) toast.info('Вы подключились к голосу с этого устройства в другом окне');
+        else if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) toast.info('Голосовая комната закрыта');
+        else if (reason !== DisconnectReason.CLIENT_INITIATED) {
+          // Network-type loss that LiveKit could not resume itself (sleep, long freeze,
+          // server restart): rejoin with a fresh token instead of dropping the user.
+          void this.rejoin();
+          return;
+        }
         void this.leave();
       })
       .on(RoomEvent.TrackPublished, (pub, p) => {
@@ -424,7 +460,8 @@ class VoiceEngine {
       dtx: AUDIO_PUBLISH_DEFAULTS.dtx,
       red: prefs().red,
       forceStereo: false,
-      audioPreset: { maxBitrate: this.audioBitrateKbps * 1000 },
+      // Room setting, optionally capped by the user's personal limit (UserSettings.audio_bitrate_kbps).
+      audioPreset: { maxBitrate: Math.min(this.audioBitrateKbps, prefs().personalBitrateKbps ?? Infinity) * 1000 },
     };
   }
 
@@ -444,7 +481,7 @@ class VoiceEngine {
     this.applyTransmit();
   }
 
-  /** RED is negotiated at publish time → republish the same track. */
+  /** RED and bitrate are negotiated at publish time → republish the same track. */
   private async republishMic(): Promise<void> {
     const room = this.room;
     const track = this.micTrack;

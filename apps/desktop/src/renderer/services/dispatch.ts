@@ -10,7 +10,6 @@ import { useVoice } from '../stores/voice';
 import { useWorkspaces } from '../stores/workspaces';
 import { onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
-import { fetchLatestMessages } from './unread';
 import { voice } from './voice';
 
 const TYPING_MS = 8000;
@@ -29,12 +28,12 @@ export function applyDispatch(ev: DispatchEvent): void {
       for (const snap of r.workspaces) {
         ws.applySnapshot(snap);
         rooms.upsertMany(snap.rooms);
+        for (const room of snap.rooms) if (room.lastMessageId) rooms.setLastMessage(room.id, room.lastMessageId);
       }
       for (const rs of r.readStates) rooms.setRead(rs.roomId, rs.lastReadMessageId);
       useSession.getState().set({ me: r.me ?? null, ready: true });
       if (r.me?.settings) applyUserSettings(r.me.settings);
       ensureActiveWorkspace();
-      void fetchLatestMessages(Object.keys(useRooms.getState().byId));
       return;
     }
     case 'resumed':
@@ -45,8 +44,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (!snap) return;
       useWorkspaces.getState().applySnapshot(snap);
       useRooms.getState().upsertMany(snap.rooms);
+      for (const room of snap.rooms) if (room.lastMessageId) useRooms.getState().setLastMessage(room.id, room.lastMessageId);
       ensureActiveWorkspace();
-      void fetchLatestMessages(snap.rooms.map((r) => r.id));
       return;
     }
     case 'workspaceUpdate':

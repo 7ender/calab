@@ -1,4 +1,5 @@
 import * as Tabs from '@radix-ui/react-tabs';
+import { AUDIO_BITRATE_OPTIONS_KBPS } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut, Trash2, Upload } from 'lucide-react';
@@ -241,6 +242,19 @@ function VoiceTab(): ReactNode {
 
       <Switch checked={p.rnnoise} onChange={(v) => p.setPrefs({ rnnoise: v })} label={t('voice.rnnoise')} hint={t('voice.rnnoiseHint')} />
       <Switch checked={p.red} onChange={(v) => p.setPrefs({ red: v })} label={t('voice.red')} hint={t('voice.redHint')} />
+      <Field label={t('voice.myBitrate')} hint={t('voice.myBitrateHint')}>
+        <Select
+          value={p.personalBitrateKbps ?? ''}
+          onChange={(e) => p.setPrefs({ personalBitrateKbps: e.target.value === '' ? null : Number(e.target.value) })}
+        >
+          <option value="">{t('voice.myBitrateRoom')}</option>
+          {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
+            <option key={b} value={b}>
+              ≤ {b} кбит/с
+            </option>
+          ))}
+        </Select>
+      </Field>
       <p className="text-[12px] text-faint">{t('voice.aecNote')}</p>
     </div>
   );

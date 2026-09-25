@@ -30,6 +30,7 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 | `CALABA_MULTI_INSTANCE=1` | Disable the single-instance lock (a second instance for local testing) |
 | `CALABA_FAKE_MEDIA=1` | Fake Chromium devices: the mic beeps, the screen is a test pattern, no OS permission prompts. Automation only |
 | `CALABA_MAC_SYSTEM_AUDIO=0` | Do not enable the Chromium features for macOS system audio |
+| `CALABA_FORCE_RELAY=1` | Test flag: ICE relay only (checks the TURN path) |
 | `REMOTE_DEBUGGING_PORT` | (electron-vite dev) CDP port for automation |
 
 ## Structure
@@ -75,8 +76,10 @@ Business logic lives in `services/` and `stores/`; components only render and ca
   - `autoSubscribe: false`: audio is subscribed automatically; the screen and its sound only when the stream is watched (PiP / expanded).
 - **Pop-out stream window.** A same-origin child window (`window.open` + React portal) shows the same MediaStreamTrack. The large element in the main window stays attached, so adaptive stream keeps the top layer.
 - **«N смотрят»** is computed through the LiveKit data topic `calaba.watch` (an ephemeral in-call signal; docs/05 allows data channels for this).
-- **Unread messages.** READY has no `last_message_id` for a room, so after READY the client requests `limit=1` for each room (TODO in the contract).
-- **Synced settings.** RNNoise, RED and PTT are stored in `UserSettings` (PATCH /api/me). All-zero server settings count as «not set» (the client pushes its defaults, RNNoise on).
+- **Unread messages** — `Room.last_message_id` from READY vs `ReadState`, then MESSAGE_CREATE.
+- **Voice reconnect.** When LiveKit cannot resume the session itself (disconnect reason other than «user left», «removed by a moderator», «room closed»), the client repeats `/join`: 1, 2, 4… s, up to 5 attempts.
+- **Dev media stats** (Settings → Приложение): an overlay in the voice room with the ICE path, RTT, loss, bitrates and encoder/decoder per layer.
+- **Synced settings.** RNNoise, RED, `mic_mode`, the PTT key and the personal voice bitrate cap are stored in `UserSettings` (PATCH /api/me, USER_UPDATE). Defaults for new users are set by the server.
 
 ## Packaging and signing
 

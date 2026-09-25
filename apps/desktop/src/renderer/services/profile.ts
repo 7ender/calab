@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf';
-import { UserSettingsSchema, type UserSettings } from '@calaba/protocol';
+import { MicMode, UserSettingsSchema, type UserSettings } from '@calaba/protocol';
 import type { PttBinding } from '../../shared/ipc';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
@@ -8,25 +8,12 @@ import { useSession } from '../stores/session';
 
 /**
  * UserSettings (synced across the user's devices, USER_UPDATE on change) ↔ local prefs.
- * push_to_talk_key is client-defined: we store the uiohook binding as JSON.
+ * The server fills defaults for new users (RNNoise on, VAD). push_to_talk_key is
+ * client-defined: we store the uiohook binding as JSON.
  */
 let applying = false;
 
-/**
- * All-zero settings = the user never saved any (proto3 has no presence for these
- * scalars, and the server stores zero values for new users). Adopting them would
- * switch RNNoise off, contradicting the documented default (docs/02) — push our
- * local defaults up instead.
- */
-function isUnset(s: UserSettings): boolean {
-  return !s.noiseSuppression && !s.unstableNetworkRed && !s.pushToTalk && !s.pushToTalkKey;
-}
-
 export function applyUserSettings(s: UserSettings): void {
-  if (isUnset(s)) {
-    pushNow();
-    return;
-  }
   applying = true;
   let binding: PttBinding | null = prefs().pttBinding;
   if (s.pushToTalkKey) {
@@ -39,8 +26,9 @@ export function applyUserSettings(s: UserSettings): void {
   usePrefs.getState().setPrefs({
     rnnoise: s.noiseSuppression,
     red: s.unstableNetworkRed,
-    micMode: s.pushToTalk ? 'ptt' : 'voice',
+    micMode: s.micMode === MicMode.PUSH_TO_TALK ? 'ptt' : 'voice',
     pttBinding: binding,
+    personalBitrateKbps: s.audioBitrateKbps ?? null,
   });
   applying = false;
 }
@@ -50,8 +38,9 @@ function snapshot(): UserSettings {
   return create(UserSettingsSchema, {
     noiseSuppression: p.rnnoise,
     unstableNetworkRed: p.red,
-    pushToTalk: p.micMode === 'ptt',
+    micMode: p.micMode === 'ptt' ? MicMode.PUSH_TO_TALK : MicMode.VAD,
     pushToTalkKey: p.pttBinding ? JSON.stringify(p.pttBinding) : '',
+    ...(p.personalBitrateKbps !== null ? { audioBitrateKbps: p.personalBitrateKbps } : {}),
   });
 }
 
@@ -70,7 +59,15 @@ function pushNow(): void {
 export function watchSyncedPrefs(): void {
   usePrefs.subscribe((s, p) => {
     if (applying) return;
-    if (s.rnnoise === p.rnnoise && s.red === p.red && s.micMode === p.micMode && s.pttBinding === p.pttBinding) return;
+    if (
+      s.rnnoise === p.rnnoise &&
+      s.red === p.red &&
+      s.micMode === p.micMode &&
+      s.pttBinding === p.pttBinding &&
+      s.personalBitrateKbps === p.personalBitrateKbps
+    ) {
+      return;
+    }
     if (useSession.getState().status !== 'authed') return;
     if (timer !== null) window.clearTimeout(timer);
     timer = window.setTimeout(() => {

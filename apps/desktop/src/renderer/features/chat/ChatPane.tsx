@@ -11,6 +11,7 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
+import { StatsOverlay } from '../voice/StatsOverlay';
 import { StreamArea } from '../voice/StreamArea';
 import { Composer, toOutgoing } from './Composer';
 import { MessageList } from './MessageList';
@@ -84,6 +85,7 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       </header>
 
       {inThisVoice ? <StreamArea /> : null}
+      {inThisVoice ? <StatsOverlay /> : null}
 
       <MessageList workspaceId={workspaceId} roomId={roomId} perms={perms} newMarker={newMarker} />
       <Composer

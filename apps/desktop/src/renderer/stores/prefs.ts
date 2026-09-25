@@ -36,6 +36,8 @@ export interface Prefs {
   devStats: boolean;
   /** Chosen presence (PresenceStatus value), re-sent after every gateway (re)connect. */
   presence: PresenceStatus;
+  /** Personal voice bitrate cap (UserSettings.audio_bitrate_kbps); null = room setting. */
+  personalBitrateKbps: number | null;
 }
 
 const DEFAULTS: Prefs = {
@@ -55,6 +57,7 @@ const DEFAULTS: Prefs = {
   userVolumes: {},
   devStats: false,
   presence: PresenceStatus.ONLINE,
+  personalBitrateKbps: null,
 };
 
 interface PrefsState extends Prefs {

@@ -5,7 +5,7 @@ interface RoomsState {
   byId: Record<string, Room>;
   /** Server read marker per room (READY read_states + READ_STATE_UPDATE). */
   readState: Record<string, string>;
-  /** Newest known message id per room (fetched after READY, then MESSAGE_CREATE). */
+  /** Newest known message id per room (Room.last_message_id in READY, then MESSAGE_CREATE). */
   lastMessage: Record<string, string>;
   /** Mentions of me since the read marker. */
   mentions: Record<string, number>;

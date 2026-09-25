@@ -126,6 +126,7 @@ export function registerIpc(): void {
     chrome: process.versions.chrome,
     packaged: app.isPackaged,
     fakeMedia: process.env['CALABA_FAKE_MEDIA'] === '1',
+    forceRelay: process.env['CALABA_FORCE_RELAY'] === '1',
     systemAudioLoopback: systemAudioSupport(),
     micAccess: mediaAccess('microphone'),
     screenAccess: mediaAccess('screen'),
