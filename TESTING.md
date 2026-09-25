@@ -444,6 +444,20 @@ CSP/RNNoise вручную: открыть `https://colaba.gptunnel.ai`, вой�
 
 Факт 2026-09-25: все коды/заголовки как выше на обоих доменах; e2e:web — 2 passed на `.ai` (в т.ч. с `CALABA_WEB_FF_VOICE=1`) и на `.ru`; Playwright-прогон «регистрация → голос» в Chromium и Firefox — «Голос подключён», нарушений CSP 0, предупреждения RNNoise нет (Firefox: worklet 200 `text/javascript`). Клиент на `.ru` подключается к `wss://rtc.colaba.gptunnel.ai` (основной `LIVEKIT_URL`).
 
+### 2b. Релизы: `/download/`
+
+```sh
+curl -s -o /dev/null -w '%{http_code} %{content_type}\n' https://$D/download/     # 200 text/html (листинг; пустой, пока релизов нет)
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://$D/download      # 308 https://$D/download/
+curl -sI https://$D/download/latest-mac.yml | grep -iE 'content-type|cache-control'  # text/yaml, no-cache (когда релиз опубликован)
+curl -sI https://$D/download/<установщик с версией> | grep -iE 'content-type|cache-control'   # application/octet-stream, immutable
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-99' https://$D/download/<установщик>   # 206
+curl -sI https://$D/manifest.webmanifest | grep -i content-type                    # application/manifest+json (когда он есть в веб-сборке)
+```
+Публикация: собрать релиз в `apps/desktop/dist-release/`, затем `infra/docker/sync.sh` (или `SKIP_WEB=1 infra/docker/sync.sh`, чтобы не трогать веб). Старые файлы на стенде не удаляются.
+
+Факт 2026-09-26 (на временных тестовых файлах, удалены): `/download/` 200 (пустой листинг), `/download` 308; `latest-mac.yml` — `text/yaml`, `no-cache`; `*.dmg` — `application/octet-stream`, `immutable`, Range → 206; `*.json` — `no-cache`; `*.webmanifest` — `application/manifest+json`; `*.svg` — `image/svg+xml`; отсутствующий файл — 404. На `.ai` и `.ru`.
+
 ### 3. LiveKit
 
 ```sh

@@ -40,11 +40,40 @@
 		reverse_proxy 127.0.0.1:3000
 	}
 
+	# Desktop releases + electron-updater feed (generic provider: https://<domain>/download/).
+	# Files from /srv/releases (pushed by sync.sh from apps/desktop/dist-release, never deleted).
+	redir /download /download/ 308
+	handle_path /download/* {
+		root * /srv/releases
+		header {
+			X-Content-Type-Options nosniff
+			-Server
+		}
+		# Update metadata and listings change in place: always revalidate.
+		@mutable path *.yml *.yaml *.json */ /
+		header @mutable Cache-Control "no-cache"
+		@yaml path *.yml *.yaml
+		header @yaml Content-Type "text/yaml; charset=utf-8"
+		# Not in Go's MIME table: without this they go out with no Content-Type at all.
+		@binary path *.dmg *.AppImage *.deb *.exe *.blockmap
+		header @binary Content-Type "application/octet-stream"
+		# Installers/blockmaps carry the version in the file name: cache forever.
+		@immutable {
+			file
+			not path *.yml *.yaml *.json */ /
+		}
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		file_server browse
+	}
+
 	# Web client SPA (ADR-0015): static files from /srv/web (pushed by sync.sh).
 	handle {
 		root * /srv/web
 		# Static only (API responses incl. file downloads with Range stay untouched).
 		encode zstd gzip
+		# Go's MIME table has no .webmanifest; file_server keeps a preset Content-Type.
+		@manifest path *.webmanifest
+		header @manifest Content-Type "application/manifest+json"
 		header {
 			# 'wasm-unsafe-eval': RNNoise noise suppression (WASM in the mic AudioWorklet).
 			Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"

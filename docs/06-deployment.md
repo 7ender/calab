@@ -65,6 +65,15 @@ mkdir -p /opt/calaba
 - Сжатие: `encode zstd gzip` только на статике (ответы API, в т.ч. файлы с Range, не трогаются). JS ~1.3 MB → ~0.4 MB; mic-worklet (RNNoise WASM внутри) ~1.9 MB → ~1.7 MB.
 - `sync.sh` не публикует `*.map`.
 - API разрешает браузерные origin-ы `PUBLIC_APP_URL` и `PUBLIC_APP_URL_ALT` (cookie-refresh, CSRF-проверка, upgrade gateway). `DOMAIN_LEGACY` в этот список **не входит** — веб-клиент по legacy-именам работать не будет (десктоп — будет).
+- Манифест PWA: `*.webmanifest` отдаётся как `application/manifest+json` (в MIME-таблице Go его нет — Caddy ставит заголовок явно), `*.svg` — `image/svg+xml`.
+- Публикация статики без перезапуска: `infra/docker/sync.sh` (если `apps/desktop/dist-web` есть локально). Флаг `SKIP_WEB=1` — не трогать опубликованную статику (например, пока сборка не готова).
+
+### Релизы десктопа: `/download/` (фид electron-updater)
+
+- `https://<домен>/download/` → статика из `/opt/calaba/releases` (bind mount `../../releases:/srv/releases:ro` в caddy), листинг каталога (`file_server browse`) включён только здесь; `/download` → 308 на `/download/`. Это же — фид electron-updater (generic provider, `url: https://colaba.gptunnel.ai/download/`).
+- Кэш: `latest*.yml`, `*.yaml`, `*.json` и листинги — `no-cache` (меняются на месте); установщики и `*.blockmap` (версия в имени) — `public, max-age=31536000, immutable`. Типы: `*.yml` — `text/yaml`, `*.dmg/*.AppImage/*.deb/*.exe/*.blockmap` — `application/octet-stream` (в MIME-таблице Go их нет), `*.zip` — `application/zip`. Range (206) работает — докачка и differential-обновления. Сжатие здесь выключено.
+- Публикация: `sync.sh` — если локально есть `apps/desktop/dist-release/`, копирует `*.dmg *.zip *.AppImage *.deb *.exe *.blockmap latest*.yml *.json` в `/opt/calaba/releases` **без `--delete`** (старые версии остаются доступными) и с `--delay-updates` (`latest*.yml` появляется вместе с установщиками, updater не увидит ссылку на ещё не залитый файл). `SKIP_RELEASES=1` — пропустить. Основной `rsync` репо каталог `/releases/` не трогает. Удалять старые версии — вручную на хосте.
+- Имена файлов с версией обязательны (immutable-кэш): перезалить тот же файл с тем же именем нельзя — только новая версия.
 - Проверки и ожидаемые выводы — `TESTING.md`, раздел «Стенд».
 
 ### Смена / добавление домена
