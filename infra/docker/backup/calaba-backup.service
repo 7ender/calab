@@ -1,0 +1,10 @@
+[Unit]
+Description=Calaba backup (pg_dump + uploaded files + caddy data)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/calaba/infra/docker/backup/backup.sh
+Nice=10
+IOSchedulingClass=idle

@@ -28,15 +28,23 @@
 }
 
 {$APP_HOSTS} {
-	# Prometheus metrics of the API are internal (scrape 127.0.0.1:3000/metrics on the host).
+	# HSTS on the whole site (no preload: the parent gptunnel.* zones are not ours to pin).
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# Internal-only endpoints: Prometheus metrics and the readiness probe (it names the backends).
+	# The api healthcheck and monitoring use 127.0.0.1:3000 directly.
 	# Inside handle: a bare `respond` sorts after `handle` and would never run.
-	handle /metrics {
+	@internal path /metrics /readyz
+	handle @internal {
 		respond 404
 	}
 
-	# Go API (host network): REST, gateway WS, health.
-	@api path /api/* /gateway /healthz /readyz
+	# Go API (host network): REST, gateway WS, liveness.
+	@api path /api/* /gateway /healthz
 	handle @api {
+		# The API sets Cache-Control (no-store on JSON, its own on files/unfurl) and nosniff itself;
+		# only Referrer-Policy is added here (the API never sets it, so no duplicate values).
+		header /api/* Referrer-Policy "same-origin"
 		reverse_proxy 127.0.0.1:3000
 	}
 
@@ -100,6 +108,7 @@
 }
 
 {$RTC_HOSTS} {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	# LiveKit signal (WSS)
 	reverse_proxy 127.0.0.1:7880
 }

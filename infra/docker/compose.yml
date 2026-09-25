@@ -4,6 +4,13 @@
 # talks to everything over 127.0.0.1. postgres/redis publish only on 127.0.0.1.
 # Files: local volume files_data via the API's fs driver (ADR-0011), no S3 service.
 
+# Baseline for every service we run (security review L6): no new privileges, no capabilities
+# unless listed, read-only root filesystem with tmpfs for scratch space.
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  read_only: true
+
 x-logging: &logging
   driver: json-file
   options:
@@ -19,6 +26,12 @@ services:
     build: ./caddy
     network_mode: host
     restart: unless-stopped
+    <<: *hardening
+    cap_add: [NET_BIND_SERVICE]    # 80/443 as root without other capabilities
+    tmpfs: [/tmp]
+    deploy:
+      resources:
+        limits: { memory: 512m }
     command: caddy run --config /etc/caddy/Caddyfile
     environment:
       - DOMAIN=${DOMAIN}                    # primary: <DOMAIN> (app), rtc./turn.<DOMAIN>
@@ -32,7 +45,7 @@ services:
     logging: *logging
 
   livekit:
-    image: livekit/livekit-server:v1.13
+    image: livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
     network_mode: host
     restart: unless-stopped
     command: --config /etc/livekit.yaml
@@ -56,7 +69,7 @@ services:
       - PUBLIC_APP_URL=https://${DOMAIN}
       - PUBLIC_APP_URL_ALT=${DOMAIN_ALT:+https://${DOMAIN_ALT}}   # empty when no alias domain
       - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD}@127.0.0.1:5432/calaba
-      - REDIS_URL=redis://127.0.0.1:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       - JWT_SECRET=${JWT_SECRET}
       - LIVEKIT_URL=wss://rtc.${DOMAIN}
       - LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880
@@ -65,7 +78,10 @@ services:
       - STORAGE_DRIVER=fs
       - STORAGE_PATH=/data/files
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+      - STORAGE_MAX_TOTAL_BYTES=${STORAGE_MAX_TOTAL_BYTES:-53687091200}   # 50 GiB for all uploads (shared host disk)
       - REGISTRATION_MODE=${REGISTRATION_MODE:-invite}
+    <<: *hardening                 # distroless nonroot (65532); writes only to /data/files
+    tmpfs: [/tmp]
     volumes:
       - files_data:/data/files
     deploy:
@@ -83,8 +99,13 @@ services:
     logging: *logging
 
   postgres:
-    image: postgres:18-alpine   # PG 18: built-in uuidv7()
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873   # PG 18: built-in uuidv7()
     restart: unless-stopped
+    <<: *hardening
+    user: "70:70"                  # run as postgres directly: no gosu, no capabilities needed
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql:uid=70,gid=70,mode=2775
     environment:
       - POSTGRES_USER=calaba
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -104,15 +125,31 @@ services:
     logging: *logging
 
   redis:
-    image: redis:7.4-alpine   # ≥7.4: HEXPIRE for presence
+    image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499   # ≥7.4: HEXPIRE for presence
     restart: unless-stopped
-    command: redis-server --save 60 1 --appendonly yes
+    <<: *hardening
+    user: "999:1000"               # redis
+    tmpfs: [/tmp]
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    # Password goes into a tmpfs config file, not argv (visible in `ps` on the shared host).
+    # noeviction: sessions, revocations and gateway buffers must never be silently dropped.
+    command:
+      - sh
+      - -c
+      - |
+        umask 077
+        printf 'requirepass "%s"\n' "$$REDIS_PASSWORD" > /tmp/auth.conf
+        exec redis-server /tmp/auth.conf --save 60 1 --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
+    deploy:
+      resources:
+        limits: { memory: 768m }
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10

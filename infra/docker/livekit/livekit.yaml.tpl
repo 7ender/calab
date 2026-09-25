@@ -29,6 +29,11 @@ turn:
   tls_port: 5349          # plain TURN behind Caddy layer4 (Caddy terminates TLS on :443, SNI turn.*)
   external_tls: true      # TLS for TURN is terminated by Caddy; no cert files here
   udp_port: 443           # TURN/UDP on 443 — passes where UDP is allowed only on 443
+  # Relay sockets live BELOW the kernel ephemeral range (32768–60999), so the host firewall can
+  # filter relayed traffic by source port without touching other processes' UDP (see docs/03,
+  # "TURN relay"): no relaying to loopback/private networks, only to the SFU on :7882.
+  relay_range_start: 20000
+  relay_range_end: 29999
 
 room:
   # Rooms are created only by our API: it calls CreateRoom (idempotent)

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Calaba backup at 03:30
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -22,8 +22,10 @@ SSH=(ssh -o BatchMode=yes)
 # --delete keeps the host tree identical to ours; excluded paths (secrets, rendered
 # config, build outputs) are protected from deletion. First matching rule wins.
 rsync -az --no-owner --no-group --delete -e "ssh -o BatchMode=yes" \
-  --exclude node_modules --exclude .git --exclude dist --exclude dist-web --exclude out \
-  --exclude '/web/' --exclude '/releases/' --exclude dist-release \
+  --exclude node_modules --exclude .git --exclude 'dist*/' --exclude out \
+  --exclude 'apps/server/data/' --exclude test-results --exclude playwright-report \
+  --exclude '*.log' --exclude '*.tsbuildinfo' \
+  --exclude '/web/' --exclude '/releases/' --exclude '/backups/' \
   --exclude .turbo --exclude coverage --exclude .DS_Store \
   --include '.env.example' --exclude '.env' --exclude '.env.*' \
   --exclude 'infra/docker/livekit/livekit.gen.yaml' \
@@ -60,5 +62,6 @@ if [[ -n "${SYNC_ONLY:-}" ]]; then
   exit 0
 fi
 
-# Service names are passed through to deploy.sh -> docker compose up.
-"${SSH[@]}" "$HOST" "$DIR/infra/docker/deploy.sh $*"
+# Service names are passed through to deploy.sh -> docker compose up (shell-quoted for ssh).
+args=""; (( $# )) && args="$(printf '%q ' "$@")"
+"${SSH[@]}" "$HOST" "$DIR/infra/docker/deploy.sh $args"

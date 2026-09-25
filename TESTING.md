@@ -355,7 +355,7 @@ docker rm -f calaba-hc
 
 | Адрес | Что |
 |---|---|
-| `https://colaba.gptunnel.ai` | API: REST `/api/*`, gateway `wss://…/gateway?v=1&encoding=json`, файлы, `/healthz`, `/readyz` (`/metrics` снаружи закрыт — 404) |
+| `https://colaba.gptunnel.ai` | API: REST `/api/*`, gateway `wss://…/gateway?v=1&encoding=json`, файлы, `/healthz` (`/metrics` и `/readyz` снаружи закрыты — 404) |
 | `wss://rtc.colaba.gptunnel.ai` | LiveKit signal (`https://rtc.…/` → `OK`) |
 | `turn.colaba.gptunnel.ai:443` | TURN/TLS (TCP) — именно он раздаётся клиентам; TURN/UDP — `141.105.69.177:443/udp` |
 | `colaba.gptunnel.ru`, `rtc.` / `turn.colaba.gptunnel.ru` | то же самое (алиас); TURN клиентам всё равно раздаётся по `.ai` |
@@ -370,11 +370,13 @@ DNS — Cloudflare, записи DNS-only (proxied=false). Если локаль
 
 ### Аккаунты
 
-`REGISTRATION_MODE=open`: любой может зарегистрироваться сам (`POST $A/api/auth/register`, инвайт не нужен). Уже созданы тестовые `owner@calaba.test` (владелец workspace `team`, комнаты `general`, `secret`, `voice`) и `bob@calaba.test` (member); пароль — на хосте в `/opt/calaba/infra/docker/.env.accounts` (`chmod 600`, не синхронизируется `sync.sh`).
+`REGISTRATION_MODE=invite` (с 2026-09-26): регистрация только с кодом приглашения. Бессрочный инвайт владельца в workspace `team` (10 использований) и пароль тестовых аккаунтов — на хосте в `/opt/calaba/infra/docker/.env.accounts` (`ssh $H 'cat /opt/calaba/infra/docker/.env.accounts'`). Тестовые аккаунты: `owner@calaba.test` (владелец `team`, комнаты `general`, `secret`, `voice`) и `bob@calaba.test` (member).
 
 Свой аккаунт:
 ```sh
-curl -s -XPOST $A/api/auth/register -d '{"email":"me@example.com","password":"<≥8 символов>","displayName":"Me"}' | jq '.me.email'
+CODE=<invite из .env.accounts>
+curl -s -XPOST $A/api/auth/register -d "{\"email\":\"me@example.com\",\"password\":\"<≥8 символов>\",\"displayName\":\"Me\",\"inviteCode\":\"$CODE\"}" | jq '.me.email'
+# без inviteCode → ERROR_CODE_REGISTRATION_CLOSED 403
 ```
 В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://colaba.gptunnel.ai` (или `https://colaba.gptunnel.ru`).
 
@@ -393,7 +395,8 @@ infra/docker/sync.sh api        # только api (пересборка обр�
 ```sh
 ssh $H "$DC ps --format '{{.Name}} {{.Status}}'"
 ssh $H "$DC logs api | grep -E 'migration applied|listening'"
-curl -s $A/healthz; curl -s $A/readyz; curl -s -o /dev/null -w '%{http_code}\n' $A/metrics
+curl -s $A/healthz; ssh $H 'curl -s 127.0.0.1:3000/readyz'
+for p in /readyz /metrics; do curl -s -o /dev/null -w "$p %{http_code}\n" $A$p; done   # оба 404 снаружи
 ssh $H 'docker run --rm -v calaba_files_data:/d busybox:1.37 stat -c "%u:%g %a" /d'
 ```
 Ожидается: `calaba-api-1 Up (healthy)`, `caddy-1 Up`, `livekit-1 Up`, `postgres-1 / redis-1 Up (healthy)`; в логе api `migration applied` (только при первом старте на пустой БД) и `"msg":"listening","addr":"127.0.0.1:3000","registration":"open","storage":"fs","livekit":true`; `{"status":"ok"}`, `{"postgres":"ok","redis":"ok"}`, `404`; `65532:65532 750`.
@@ -409,9 +412,9 @@ openssl s_client -connect turn.$D:443 -servername turn.$D </dev/null 2>/dev/null
 # subject=CN=turn.colaba.gptunnel.ai / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
 # все имена разом (6 = 2 домена × <домен>/rtc/turn):
 for d in colaba.gptunnel.ai colaba.gptunnel.ru; do
-  echo "$d readyz=$(curl -s -o /dev/null -w %{http_code} https://$d/readyz) metrics=$(curl -s -o /dev/null -w %{http_code} https://$d/metrics) rtc=$(curl -s https://rtc.$d/) turn=$(openssl s_client -connect turn.$d:443 -servername turn.$d </dev/null 2>/dev/null | grep -c 'Verify return code: 0')"
+  echo "$d healthz=$(curl -s -o /dev/null -w %{http_code} https://$d/healthz) metrics=$(curl -s -o /dev/null -w %{http_code} https://$d/metrics) rtc=$(curl -s https://rtc.$d/) turn=$(openssl s_client -connect turn.$d:443 -servername turn.$d </dev/null 2>/dev/null | grep -c 'Verify return code: 0')"
 done
-# ожидается для каждого: readyz=200 metrics=404 rtc=OK turn=≥1
+# ожидается для каждого: healthz=200 metrics=404 rtc=OK turn=≥1 (/readyz снаружи 404 с 2026-09-26)
 ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[^\"]*' | sort -u"   # 6 имён (только при первом выпуске; позже — openssl s_client выше)
 ```
 Факт 2026-09-25: все 6 имён — сертификаты LE (YE1), `readyz` 200, `/metrics` 404, `rtc` OK, TURN TLS `Verify return code: 0`.
@@ -424,14 +427,14 @@ ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[
 
 ```sh
 for d in colaba.gptunnel.ai colaba.gptunnel.ru; do A=https://$d
-  for p in / /rooms/x /assets/missing.js /metrics /readyz /api/me; do echo "$d$p $(curl -s -o /dev/null -w '%{http_code}' $A$p)"; done
+  for p in / /rooms/x /assets/missing.js /metrics /readyz /healthz /api/me; do echo "$d$p $(curl -s -o /dev/null -w '%{http_code}' $A$p)"; done
   W=$(curl -s $A/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js'); echo "$W: $(curl -sI $A/$W | grep -iE 'content-type|cache-control' | tr -d '\r' | tr '\n' ' ')"
 done
 curl -sI https://$D/ | grep -iE 'content-security|permissions-policy|x-content|referrer|x-frame|cache-control'
 ```
-Ожидается: `/` и `/rooms/x` → 200 (`<title>Calaba`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` → 404, `/readyz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.colaba.gptunnel.ai https://rtc.colaba.gptunnel.ai wss://rtc.colaba.gptunnel.ru https://rtc.colaba.gptunnel.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
+Ожидается: `/` и `/rooms/x` → 200 (`<title>Calaba`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.colaba.gptunnel.ai https://rtc.colaba.gptunnel.ai wss://rtc.colaba.gptunnel.ru https://rtc.colaba.gptunnel.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
 
-E2E против стенда (создаёт пользователя `web-<browser>-<id>@example.com` на каждом прогоне):
+E2E против стенда (создаёт пользователя `web-<browser>-<id>@example.com` на каждом прогоне). **С 2026-09-26 стенд в `invite`-режиме — спеку нужен код приглашения** (пока спека регистрирует без него и падает на шаге регистрации; TODO клиент):
 ```sh
 CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web                        # 2 passed
 CALABA_WEB_FF_VOICE=1 CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web   # 2 passed (голос и в Firefox)
@@ -476,8 +479,8 @@ ssh $H "ss -lntup | grep -E 'livekit|caddy'"
 ### 4. Сценарии API по HTTPS
 
 Разделы «Server core» → 4 и «Server stage 3» → 2 выполняются против стенда как есть, с заменами:
-- `A=https://colaba.gptunnel.ai`; сервер запускать не нужно; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
-- БД стенда не пустая и регистрация открыта: второй пользователь без инвайта **успешно зарегистрируется**, а не получит 403 (`REGISTRATION_CLOSED` — только в `invite`-режиме). Email-ы брать новые (`…@calaba.test` заняты), slug workspace — новый (`team` занят → ожидаемый `409` на первом же создании).
+- `A=https://colaba.gptunnel.ai`; сервер запускать не нужно; `/readyz` (4.1) — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/readyz'`; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
+- БД стенда не пустая, регистрация по инвайтам: регистрировать новых пользователей с `inviteCode` (инвайт владельца — в `.env.accounts`, или создать свой в своём пространстве); шаг «второй пользователь без инвайта → 403» совпадает. Email-ы брать новые (`…@calaba.test` заняты), slug workspace — новый (`team` занят → ожидаемый `409` на первом же создании).
 - gateway: `A=$A node /tmp/gw.mjs $BT 4` (скрипт сам меняет `https` → `wss`).
 - 2.6: `url` в ответе join — `wss://rtc.colaba.gptunnel.ai`, `media` — по настройкам комнаты.
 - 4.7 (rate limit) — последним: после него логин с этого IP ~1 мин отвечает 429. Подмена `X-Forwarded-For` не помогает (Caddy перезаписывает заголовок, api видит реальный IP).
@@ -541,6 +544,35 @@ ssh $H 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.Mem
 ```
 Ожидается: pid 3695 жив (etime не сбросился), `gromtv-broadcast Up …`, `dcgm-exporter Up …`, ffmpeg/chromium/Xvfb ≥ 1.
 Факт 2026-09-25 (простой после тестов): api ~79 MiB, livekit ~90 MiB, postgres ~39 MiB, caddy ~16 MiB, redis ~10 MiB; CPU < 2 %.
+
+### 9. Защита (security review 2026-09-26)
+
+```sh
+# контейнеры: read-only, без capabilities, no-new-privileges
+ssh $H 'for c in api caddy redis postgres; do docker inspect -f "$c ro={{.HostConfig.ReadonlyRootfs}} drop={{.HostConfig.CapDrop}} add={{.HostConfig.CapAdd}} user={{.Config.User}}" calaba-$c-1; done'
+# redis: пароль, noeviction, 512mb; пароль не виден в ps
+ssh $H 'docker exec calaba-redis-1 redis-cli ping; docker exec calaba-redis-1 sh -c "REDISCLI_AUTH=\$REDIS_PASSWORD redis-cli config get maxmemory-policy"; ps -eo args | grep -c "[r]equirepass"'
+# заголовки
+curl -sI $A/ | grep -i strict-transport; curl -sI $A/api/me | grep -iE 'cache-control|nosniff|referrer'; curl -sI https://rtc.$D/ | grep -i strict
+# регистрация закрыта
+curl -s -w ' %{http_code}\n' -XPOST $A/api/auth/register -d '{"email":"x@example.com","password":"password123","displayName":"X"}'
+# TURN relay ограничен (счётчики растут только при злоупотреблении); IPv6 INPUT DROP
+ssh $H 'iptables -L OUTPUT -n -v | grep calaba-turn; ip6tables -S INPUT | head -1'
+```
+Ожидается: все четыре `ro=true drop=[ALL]`, caddy `add=[CAP_NET_BIND_SERVICE]`, redis `user=999:1000`, postgres `user=70:70`, api `user=65532`; `NOAUTH Authentication required.`, `noeviction`, `0`; `strict-transport-security: max-age=31536000; includeSubDomains` на `<домен>` и `rtc.`; на `/api/me` — `cache-control: no-store`, `x-content-type-options: nosniff`, `referrer-policy: same-origin`; регистрация → `ERROR_CODE_REGISTRATION_CLOSED … 403`; два правила `calaba-turn-relay`; `-P INPUT DROP`.
+Relay-check TLS/UDP (п. 7) после ограничения — PASS (факт 2026-09-26: relay/tls и relay/udp, ~5 MB за 30 с, счётчики правил не выросли).
+
+Проба relay (только для повторной проверки, делает infra): pion-клиент с кредами из JoinResponse → `CreatePermission` к `127.0.0.1`/`10.0.0.1` должен давать 403 (LiveKit), отправка на `141.105.69.177:<не 7882>` и на внешние адреса — дропаться правилами (слушатель на хосте ничего не получает). Никогда не целиться в порты соседа (9001/9002/54241/33621).
+
+### 10. Бэкапы
+
+```sh
+ssh $H 'systemctl list-timers calaba-backup.timer --no-pager | sed -n 2p; journalctl -u calaba-backup.service -n 5 --no-pager -o cat; ls -lt /opt/calaba/backups/*/ | head -20'
+ssh $H '/opt/calaba/infra/docker/backup/restore.sh test'       # восстановление в calaba_restore_test + сравнение + drop
+ssh $H 'systemctl start calaba-backup.service'                  # внеочередной бэкап (например, перед миграцией)
+```
+Ожидается: таймер на ближайшие 03:30; в журнале `pg ok`, `files ok`, `WARNING: no OFFSITE_RCLONE_REMOTE` (пока нет offsite), `done …`; в каталогах `pg/ files/ caddy/ config/` свежие файлы; `restore test`: `tables restored: N`, `row counts: identical to live DB` (или diff, если данные менялись после дампа), `restore test OK (calaba_restore_test dropped)`.
+Факт 2026-09-26: 12 таблиц, счётчики совпали; архив файлов распакован и сравнён `diff -r` с volume — идентично (7 файлов, владелец 65532).
 
 ### Известные особенности
 
@@ -828,3 +860,42 @@ go test -tags integration -count=1 -v -run 'TestAbuseLimits|TestLimiterFailsClos
   - webhook без `exp` или просроченный больше чем на 5 мин отклоняется;
   - `REDIS_URL` с паролем (`redis://:s3cr%40t@host:6379/0`, `redis://user:pw@…`) разбирается rueidis;
   - `OriginAllowed` с cookie и без.
+
+## Server: исправления код-ревью (H1–H2, M1–M13, L1–L16)
+
+```sh
+cd apps/server
+go test -race ./...                                                     # все ok
+go test -race -tags integration -count=1 -v -run 'TestResumeAcrossInstances|TestJoinRevalidation|TestReconcileAndWebhookRetry|TestReviewFixes' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: четыре строки `--- PASS` и `ok` (нужен dev-LiveKit; `TestReconcileAndWebhookRetry` идёт ~4 с).
+
+Что покрыто:
+- **`TestResumeAcrossInstances` (H1)** — два экземпляра gateway на общем Redis:
+  - обрыв на A, сообщение в разрыве, RESUME на B → сообщение досылается, затем `RESUMED`;
+  - `Shutdown` B → `RECONNECT`, сообщение, RESUME на A → `INVALID_SESSION{resumable:false}`, `IDENTIFY` работает.
+- **`TestJoinRevalidation` (H2)**:
+  - потерял CONNECT после выдачи токена → удалён из LiveKit;
+  - кикнутый → удалён;
+  - `user_limit=1` и два одновременных `participant_joined` → в комнате ровно один.
+- **`TestReconcileAndWebhookRetry` (M5, M6)**:
+  - поздний `track_published` без участника не создаёт состояние;
+  - webhook, упавший из-за занятой блокировки, при повторе обрабатывается;
+  - reconcile не выкидывает свежий вход, но убирает старый отсутствующий.
+- **`TestReviewFixes`**:
+  - M11: правка длиннее 4000 символов → 422;
+  - M1: web-refresh старой cookie после ротации → 409 без `Set-Cookie`;
+  - M7: гость не видит участника вне своих комнат (REST и READY);
+  - M8: гость без `ATTACH_FILES` не загружает файл;
+  - M12: `PATCH` guest→member → 422;
+  - L6: гостевой аккаунт с кодом приглашения → 403;
+  - L4: ссылка не снимает явный deny;
+  - L9: модератор без админ-битов может переслать оверрайды без изменений, но не удалить чужие;
+  - L13: модератор-участник не может трогать владельца;
+  - M3: флуд кадрами → 4008.
+- **Unit**:
+  - `frameBytes` совпадает с `proto.Marshal` кадра, событие кодируется один раз (M13);
+  - пауза сохраняет порядок (M2);
+  - входной token bucket (M3);
+  - гостевая видимость в `wsState` (M7);
+  - `events` round trip.

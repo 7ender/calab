@@ -1,0 +1,24 @@
+# Security review L5: keep pinned SHAs/digests fresh via reviewed PRs.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups: { actions: { patterns: ["*"] } }
+  - package-ecosystem: gomod
+    directory: /apps/server
+    schedule: { interval: weekly }
+    groups: { go-minor: { update-types: [minor, patch] } }
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    groups: { npm-minor: { update-types: [minor, patch] } }
+  - package-ecosystem: docker
+    directory: /apps/server
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: /infra/docker/caddy
+    schedule: { interval: weekly }
+  - package-ecosystem: docker-compose
+    directory: /infra/docker
+    schedule: { interval: weekly }

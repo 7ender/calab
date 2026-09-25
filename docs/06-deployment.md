@@ -53,8 +53,18 @@ mkdir -p /opt/calaba
 - Домены (с 2026-09-25): `DOMAIN=colaba.gptunnel.ai` (основной), `DOMAIN_ALT=colaba.gptunnel.ru` (запасной алиас) — 6 имён, сертификаты Let's Encrypt на все выпускает Caddy (volume `calaba_caddy_data`, при передеплое не перевыпускаются). Детали и ограничение по TURN — docs/03-network.md, «Несколько доменов». История: первые пробы шли на `*.141-105-69-177.sslip.io`, после переезда эти имена оставались в `DOMAIN_LEGACY` и сняты 2026-09-25 — больше не обслуживаются.
 - DNS — Cloudflare (зоны `gptunnel.ai`, `gptunnel.ru`), A-записи `colaba` (приложение), `rtc.colaba`, `turn.colaba` → 141.105.69.177, **proxied=false** (DNS-only), TTL auto. Токен Cloudflare — только у владельца/в локальном `.env` репо (`CFTOKEN`, gitignored), на сервер не копируется.
 - Весь стек (с api) поднят 2026-09-25: `infra/docker/sync.sh` без аргументов; отдельный сервис — `infra/docker/sync.sh api`. Миграции применились при старте api.
-- Регистрация открыта (`REGISTRATION_MODE=open`); тестовые аккаунты `owner@calaba.test` / `bob@calaba.test` (workspace `team`), пароль — `/opt/calaba/infra/docker/.env.accounts` (600; `sync.sh` не трогает `.env*`). Перед реальным использованием — `REGISTRATION_MODE=invite`.
-- Снаружи через Caddy доступны только `<домен>` (API + веб-клиент; `/metrics` закрыт — 404, скрейпить `127.0.0.1:3000/metrics` на хосте), `rtc.*` (signal), `turn.*` (TURN/TLS).
+- Регистрация **только по приглашению** (`REGISTRATION_MODE=invite`, с 2026-09-26 — security review H2); бессрочный инвайт владельца в workspace `team` (10 использований) — в `/opt/calaba/infra/docker/.env.accounts` (строка `invite`). Тестовые аккаунты `owner@calaba.test` / `bob@calaba.test` (workspace `team`), пароль — `/opt/calaba/infra/docker/.env.accounts` (600; `sync.sh` не трогает `.env*`). 
+- Снаружи через Caddy доступны только `<домен>` (API + веб-клиент; `/metrics` и `/readyz` закрыты — 404, изнутри `127.0.0.1:3000/metrics`, `127.0.0.1:3000/readyz`; снаружи для мониторинга — `/healthz`), `rtc.*` (signal), `turn.*` (TURN/TLS).
+
+### Защита стенда (security review 2026-09-26)
+
+- Контейнеры api/caddy/postgres/redis: `read_only: true` + tmpfs `/tmp`, `cap_drop: [ALL]`, `no-new-privileges`. Caddy — только `NET_BIND_SERVICE` (80/443); postgres и redis запускаются сразу своими пользователями (`70:70`, `999:1000`) — без gosu и без capabilities; api — distroless nonroot 65532. LiveKit пока без этого (host network, TURN на 443/udp) — TODO.
+- Лимиты памяти: api 1G, caddy 512m, postgres 2G, redis 768m (`maxmemory 512mb`), livekit 4G.
+- Redis: пароль (`REDIS_PASSWORD` в `.env`, в `REDIS_URL` api), пароль передаётся через конфиг в tmpfs, а не в argv (не виден в `ps` на общем хосте); `maxmemory-policy noeviction` — сессии/отзывы/буферы gateway нельзя терять молча (при нехватке — ошибки записи, видно в логах).
+- Диск: `STORAGE_MAX_TOTAL_BYTES` = 50 GiB на все загрузки (плюс квоты пространств и лимит пространств на пользователя — на стороне api).
+- Заголовки: HSTS `max-age=31536000; includeSubDomains` на `<домен>` и `rtc.<домен>` (без preload — зоны `gptunnel.*` не наши); на `/api/*` — `Referrer-Policy: same-origin` (Caddy), `Cache-Control: no-store` и `nosniff` ставит сам api.
+- Образы запинены по digest (compose, Dockerfile Caddy и api, CI); обновления — Dependabot (`.github/dependabot.yml`: actions, gomod, npm, docker, docker-compose), в CI — `govulncheck`, Actions по SHA, golangci-lint запинен.
+- Файрвол: TURN-relay ограничен (docs/03 «TURN relay»), IPv6 INPUT — политика DROP (`/etc/iptables/rules.v6`, `ip6tables-restore.service`).
 
 ### Веб-клиент на `<домен>` (ADR-0015)
 
@@ -110,6 +120,20 @@ mkdir -p /opt/calaba
 
 ## Резервные копии
 
-- Postgres: `pg_dump` ежедневно, хранить 14 дней.
-- **`pg_dump` на том же хосте — не бэкап**: при потере диска/хоста теряются и данные, и копии. Нужна внешняя площадка (другой хост / внешний S3) — **offsite target: TODO владелец**.
-- Файлы (volume `calaba_files_data`, на хосте `/var/lib/docker/volumes/calaba_files_data/_data`): `restic`/`rsync` на ту же внешнюю площадку — после выбора offsite target.
+Работает на стенде с 2026-09-26: host systemd `calaba-backup.timer` (ежедневно 03:30 ± 5 мин, `Persistent=true` — пропущенный запуск догоняется) → `calaba-backup.service` → `infra/docker/backup/backup.sh`. Юниты лежат в репо (`infra/docker/backup/calaba-backup.{service,timer}`), на хост ставятся `install -m 644 … /etc/systemd/system/ && systemctl enable --now calaba-backup.timer`.
+
+| Что | Куда (`/opt/calaba/backups`, 700 root) | Как |
+|---|---|---|
+| Postgres | `pg/calaba-<ts>.dump` | `pg_dump -Fc` через `docker exec`, проверка `pg_restore --list`, атомарный rename |
+| Загруженные файлы (`calaba_files_data`) | `files/files-<ts>.tar.zst` | `tar` + `zstd` (файлы неизменяемы после записи — живой tar консистентен) |
+| Caddy (`calaba_caddy_data`: ACME-аккаунт, сертификаты) | `caddy/caddy-<ts>.tar.zst` | чтобы после потери диска не упереться в лимиты LE |
+| Секреты стенда (`infra/docker/.env`, `.env.accounts`) | `config/env-<ts>.tar.zst` | без них восстановленный стенд — другой (JWT, пароли БД/Redis, ключи LiveKit) |
+
+- Ретенция 14 дней (`RETENTION_DAYS`), `.part`-остатки чистятся. Лог — `journalctl -u calaba-backup.service`. Предупреждение в журнал, если на ФС < 10 % свободно.
+- **Offsite: TODO владелец.** Локальные копии спасают от логических ошибок (кривая миграция, удалённое пространство), но не от потери диска/хоста. `backup.sh` уже умеет: `OFFSITE_RCLONE_REMOTE=<remote:path>` в `infra/docker/.env` → `rclone sync` каталога бэкапов (rclone поставить на хост). Remote должен быть **rclone crypt** (в копиях секреты и данные пользователей).
+- Восстановление — `infra/docker/backup/restore.sh`:
+  - `restore.sh test [dump]` — восстановить в отдельную БД `calaba_restore_test`, сравнить число строк по всем таблицам с живой БД, удалить. Проверено 2026-09-26: 12 таблиц, счётчики совпали. Делать раз в месяц (TODO: отдельный таймер).
+  - `restore.sh pg <dump>` — заменить живую БД (останавливает api, спрашивает подтверждение).
+  - `restore.sh files <tar.zst>` — заменить файлы (останавливает api, `chown 65532`). Архив файлов проверен распаковкой: `diff -r` с живым volume — идентично.
+  - Caddy/секреты — вручную: `zstd -dc … | tar -x` в volume `calaba_caddy_data` / в `infra/docker/`.
+- Основной `rsync` в `sync.sh` каталог `/backups/` не трогает (иначе `--delete` стёр бы копии).
