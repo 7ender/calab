@@ -1,33 +1,61 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { IPC, type PttEvent } from '../shared/ipc';
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
+import { IPC } from '../shared/ipc';
 import type { CalabaApi } from './api';
+
+function on<T>(channel: string, cb: (v: T) => void): () => void {
+  const listener = (_e: IpcRendererEvent, v: T): void => cb(v);
+  ipcRenderer.on(channel, listener);
+  return () => {
+    ipcRenderer.removeListener(channel, listener);
+  };
+}
 
 // Narrow, typed bridge. No raw ipcRenderer is exposed to the renderer.
 const api: CalabaApi = {
-  spike: {
-    mintToken: (req) => ipcRenderer.invoke(IPC.spikeMintToken, req),
-    openWindow: () => ipcRenderer.invoke(IPC.spikeOpenWindow),
+  auth: {
+    restore: () => ipcRenderer.invoke(IPC.authRestore),
+    login: (a) => ipcRenderer.invoke(IPC.authLogin, a),
+    register: (a) => ipcRenderer.invoke(IPC.authRegister, a),
+    logout: (all) => ipcRenderer.invoke(IPC.authLogout, all),
+    accessToken: () => ipcRenderer.invoke(IPC.authAccessToken),
+    forceRefresh: () => ipcRenderer.invoke(IPC.authForceRefresh),
+    revoked: () => ipcRenderer.invoke(IPC.authForceRefresh, 'revoked'),
+    onLoggedOut: (cb) => on(IPC.authLoggedOut, cb),
+  },
+  app: {
+    info: () => ipcRenderer.invoke(IPC.appInfo),
+    getSettings: () => ipcRenderer.invoke(IPC.appGetSettings),
+    setSettings: (p) => ipcRenderer.invoke(IPC.appSetSettings, p),
+    takeDeepLink: () => ipcRenderer.invoke(IPC.appTakeDeepLink),
+    onDeepLink: (cb) => on(IPC.appDeepLink, cb),
+    onPower: (cb) => on(IPC.appPower, cb),
+    checkUpdates: () => ipcRenderer.invoke(IPC.appCheckUpdates),
+    onUpdateStatus: (cb) => on(IPC.appUpdateStatus, cb),
+    log: (level, message) => void ipcRenderer.invoke(IPC.appLog, { level, message }),
+    openExternal: (url) => ipcRenderer.invoke(IPC.appOpenExternal, url),
+    attention: () => void ipcRenderer.invoke(IPC.appAttention),
+  },
+  tray: {
+    setState: (s) => void ipcRenderer.invoke(IPC.trayState, s),
+    onAction: (cb) => on(IPC.trayAction, cb),
+  },
+  files: {
+    download: (a) => ipcRenderer.invoke(IPC.filesDownload, a),
+    pathOf: (f) => webUtils.getPathForFile(f),
   },
   capture: {
     listSources: () => ipcRenderer.invoke(IPC.captureListSources),
     selectSource: (sel) => ipcRenderer.invoke(IPC.captureSelectSource, sel),
   },
   ptt: {
-    setBinding: (binding) => ipcRenderer.invoke(IPC.pttSetBinding, binding),
+    setBinding: (b) => ipcRenderer.invoke(IPC.pttSetBinding, b),
     captureNext: () => ipcRenderer.invoke(IPC.pttCaptureNext),
     status: () => ipcRenderer.invoke(IPC.pttStatus),
-    onEvent: (cb) => {
-      const listener = (_e: IpcRendererEvent, ev: PttEvent): void => cb(ev);
-      ipcRenderer.on(IPC.pttEvent, listener);
-      return () => {
-        ipcRenderer.removeListener(IPC.pttEvent, listener);
-      };
-    },
+    onEvent: (cb) => on(IPC.pttEvent, cb),
   },
   system: {
-    info: () => ipcRenderer.invoke(IPC.systemInfo),
-    metrics: () => ipcRenderer.invoke(IPC.systemMetrics),
     openPrivacySettings: (pane) => ipcRenderer.invoke(IPC.systemOpenPrivacySettings, pane),
+    metrics: () => ipcRenderer.invoke(IPC.systemMetrics),
   },
 };
 

@@ -3,10 +3,41 @@
  * every channel here is an explicit capability granted to the renderer.
  */
 export const IPC = {
-  /** SPIKE ONLY: mint a LiveKit dev token in main. Real tokens come from the API. */
-  spikeMintToken: 'spike:mint-token',
-  /** SPIKE ONLY: open one more spike window for local loopback tests. */
-  spikeOpenWindow: 'spike:open-window',
+  // ---- auth (main is the token broker; the refresh token never leaves main) ----
+  authRestore: 'auth:restore',
+  authLogin: 'auth:login',
+  authRegister: 'auth:register',
+  authLogout: 'auth:logout',
+  authAccessToken: 'auth:access-token',
+  authForceRefresh: 'auth:force-refresh',
+  /** main → renderer: the session ended (refresh failed / revoked / logout elsewhere). */
+  authLoggedOut: 'auth:logged-out',
+
+  // ---- app ----
+  appInfo: 'app:info',
+  appGetSettings: 'app:get-settings',
+  appSetSettings: 'app:set-settings',
+  appTakeDeepLink: 'app:take-deep-link',
+  /** main → renderer */
+  appDeepLink: 'app:deep-link',
+  /** main → renderer: power events (resume after sleep → force gateway reconnect). */
+  appPower: 'app:power',
+  appCheckUpdates: 'app:check-updates',
+  /** main → renderer */
+  appUpdateStatus: 'app:update-status',
+  appLog: 'app:log',
+  appOpenExternal: 'app:open-external',
+  appAttention: 'app:attention',
+
+  // ---- tray ----
+  trayState: 'tray:state',
+  /** main → renderer */
+  trayAction: 'tray:action',
+
+  // ---- files ----
+  filesDownload: 'files:download',
+
+  // ---- media ----
   captureListSources: 'capture:list-sources',
   captureSelectSource: 'capture:select-source',
   pttSetBinding: 'ptt:set-binding',
@@ -14,17 +45,96 @@ export const IPC = {
   pttStatus: 'ptt:status',
   /** main → renderer push: PTT key pressed/released. */
   pttEvent: 'ptt:event',
-  systemInfo: 'system:info',
+  systemOpenPrivacySettings: 'system:open-privacy-settings',
   /** CPU of this window's renderer + GPU process (dev stats panel). */
   systemMetrics: 'system:metrics',
-  systemOpenPrivacySettings: 'system:open-privacy-settings',
 } as const;
 
-export interface MintTokenRequest {
-  room: string;
-  identity: string;
+/** Scheme through which the renderer talks to the API; main adds auth and forwards. */
+export const API_SCHEME = 'calaba-api';
+/** `calaba-api://api/api/me` → `<serverUrl>/api/me`. */
+export const API_ORIGIN = `${API_SCHEME}://api`;
+
+// ---------------------------------------------------------------- auth
+
+/** ApiError JSON (proto calaba.v1.ApiError, protojson) plus the HTTP status. */
+export interface ApiErrorJson {
+  code: string;
+  message: string;
+  field?: string;
+  status: number;
+}
+
+export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: ApiErrorJson };
+
+export interface AuthSession {
+  serverUrl: string;
+  sessionId: string;
+  /** calaba.v1.Me as protojson; the renderer decodes it with MeSchema. */
+  me: unknown;
+}
+
+export interface LoginArgs {
+  serverUrl: string;
+  email: string;
+  password: string;
+}
+
+export interface RegisterArgs extends LoginArgs {
+  displayName: string;
+  inviteCode: string;
+}
+
+export type LogoutReason = 'logout' | 'expired' | 'revoked';
+
+// ---------------------------------------------------------------- app
+
+export interface AppSettings {
+  /** API base URL, e.g. https://app.example.com (no trailing slash). */
+  serverUrl: string;
+  /** electron-updater generic feed URL; empty = updates off. */
+  updateUrl: string;
+  autostart: boolean;
+}
+
+export interface AppInfo {
+  version: string;
+  platform: string;
+  hostname: string;
+  electron: string;
+  chrome: string;
+  packaged: boolean;
+  /** Test/automation flag (fake media devices). */
+  fakeMedia: boolean;
+  systemAudioLoopback: 'supported' | 'experimental' | 'unsupported';
+  micAccess: string;
+  screenAccess: string;
+}
+
+export type PowerEvent = 'suspend' | 'resume' | 'lock-screen' | 'unlock-screen';
+
+export type UpdateStatus =
+  | { state: 'disabled' }
+  | { state: 'checking' }
+  | { state: 'none' }
+  | { state: 'available'; version: string }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; message: string };
+
+export interface TrayState {
+  inVoice: boolean;
+  muted: boolean;
+  deafened: boolean;
+}
+
+export type TrayAction = 'toggle-mute' | 'toggle-deafen' | 'disconnect' | 'show';
+
+export interface DownloadArgs {
+  fileId: string;
   name: string;
 }
+
+// ---------------------------------------------------------------- media
 
 export type CaptureSourceKind = 'screen' | 'window';
 
@@ -61,19 +171,6 @@ export interface PttEvent {
 }
 
 export type PrivacyPane = 'accessibility' | 'input-monitoring' | 'screen' | 'microphone';
-
-export interface SystemInfo {
-  platform: string;
-  electron: string;
-  chrome: string;
-  /** macOS TCC status for mic/screen: 'granted' | 'denied' | 'not-determined' | ... */
-  micAccess: string;
-  screenAccess: string;
-  /** Whether system-audio loopback is expected to work with our capture handler. */
-  systemAudioLoopback: 'supported' | 'experimental' | 'unsupported';
-  /** Test/automation flags set via env (fake media devices etc.). */
-  fakeMedia: boolean;
-}
 
 export interface ProcessMetrics {
   /** % of one core (like ps/top), averaged since the previous sample. */

@@ -1,0 +1,125 @@
+// Package config loads server configuration from environment variables only.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"net/netip"
+	"time"
+
+	"github.com/caarlos0/env/v11"
+)
+
+// RegistrationMode controls who may create an account.
+type RegistrationMode string
+
+// Registration modes (REGISTRATION_MODE).
+const (
+	RegistrationOpen   RegistrationMode = "open"
+	RegistrationInvite RegistrationMode = "invite"
+)
+
+// Config is the full server configuration. See apps/server/README.md for the list.
+type Config struct {
+	HTTPAddr     string `env:"HTTP_ADDR" envDefault:"127.0.0.1:3000"`
+	PublicAppURL string `env:"PUBLIC_APP_URL" envDefault:"http://localhost:3000"`
+	LogLevel     string `env:"LOG_LEVEL" envDefault:"info"`
+
+	DatabaseURL string `env:"DATABASE_URL,required"`
+	RedisURL    string `env:"REDIS_URL,required"`
+
+	JWTSecret       string        `env:"JWT_SECRET,required"`
+	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
+	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"720h"`
+
+	RegistrationMode RegistrationMode `env:"REGISTRATION_MODE" envDefault:"invite"`
+
+	// Login/register rate limit per client IP (token bucket in Redis).
+	AuthRateBurst     int     `env:"AUTH_RATE_BURST" envDefault:"10"`
+	AuthRatePerMinute float64 `env:"AUTH_RATE_PER_MINUTE" envDefault:"10"`
+
+	// Peers allowed to set X-Forwarded-For (Caddy on loopback in prod).
+	TrustedProxies []netip.Prefix `env:"TRUSTED_PROXIES" envDefault:"127.0.0.1/32,::1/128"`
+
+	// LiveKit (rtc). All four empty = voice disabled (rtc endpoints answer 503).
+	LiveKitURL             string `env:"LIVEKIT_URL"`          // for clients, e.g. wss://rtc.<domain>
+	LiveKitInternalURL     string `env:"LIVEKIT_INTERNAL_URL"` // for the API, e.g. http://127.0.0.1:7880
+	LiveKitAPIKey          string `env:"LIVEKIT_API_KEY"`
+	LiveKitAPISecret       string `env:"LIVEKIT_API_SECRET"`
+	LiveKitMaxParticipants uint32 `env:"LIVEKIT_MAX_PARTICIPANTS" envDefault:"50"`
+
+	// Gateway.
+	HeartbeatInterval time.Duration `env:"GATEWAY_HEARTBEAT_INTERVAL" envDefault:"41s"`
+	MaxDevicesPerUser int           `env:"GATEWAY_MAX_SESSIONS_PER_USER" envDefault:"5"`
+
+	// File bytes (ADR-0011): fs = local directory; s3 is planned.
+	StorageDriver  string `env:"STORAGE_DRIVER" envDefault:"fs"`
+	StoragePath    string `env:"STORAGE_PATH" envDefault:"./data/files"`
+	MaxFileSizeMB  int64  `env:"MAX_FILE_SIZE_MB" envDefault:"50"`
+	MigrateOnStart bool   `env:"MIGRATE_ON_START" envDefault:"true"`
+}
+
+// Load parses the environment and validates the result.
+func Load() (*Config, error) {
+	var c Config
+	if err := env.Parse(&c); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	return &c, c.Validate()
+}
+
+// Validate checks invariants that env tags cannot express.
+func (c *Config) Validate() error {
+	var errs []error
+	if len(c.JWTSecret) < 32 {
+		errs = append(errs, errors.New("JWT_SECRET must be at least 32 bytes"))
+	}
+	switch c.RegistrationMode {
+	case RegistrationOpen, RegistrationInvite:
+	default:
+		errs = append(errs, fmt.Errorf("REGISTRATION_MODE must be open or invite, got %q", c.RegistrationMode))
+	}
+	if c.AccessTokenTTL < time.Minute || c.RefreshTokenTTL < c.AccessTokenTTL {
+		errs = append(errs, errors.New("ACCESS_TOKEN_TTL must be >= 1m and REFRESH_TOKEN_TTL >= ACCESS_TOKEN_TTL"))
+	}
+	if c.AuthRateBurst < 1 || c.AuthRatePerMinute <= 0 {
+		errs = append(errs, errors.New("AUTH_RATE_BURST must be >= 1 and AUTH_RATE_PER_MINUTE > 0"))
+	}
+	lk := []string{c.LiveKitURL, c.LiveKitInternalURL, c.LiveKitAPIKey, c.LiveKitAPISecret}
+	if n := countSet(lk); n != 0 && n != len(lk) {
+		errs = append(errs, errors.New("LIVEKIT_URL, LIVEKIT_INTERNAL_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set together"))
+	}
+	if c.HeartbeatInterval < 5*time.Second || c.MaxDevicesPerUser < 1 {
+		errs = append(errs, errors.New("GATEWAY_HEARTBEAT_INTERVAL must be >= 5s and GATEWAY_MAX_SESSIONS_PER_USER >= 1"))
+	}
+	switch c.StorageDriver {
+	case "fs":
+		if c.StoragePath == "" {
+			errs = append(errs, errors.New("STORAGE_PATH is required for STORAGE_DRIVER=fs"))
+		}
+	case "s3":
+		errs = append(errs, errors.New("STORAGE_DRIVER=s3 is not implemented yet (ADR-0011)"))
+	default:
+		errs = append(errs, fmt.Errorf("STORAGE_DRIVER must be fs or s3, got %q", c.StorageDriver))
+	}
+	if c.MaxFileSizeMB < 1 {
+		errs = append(errs, errors.New("MAX_FILE_SIZE_MB must be >= 1"))
+	}
+	if err := errors.Join(errs...); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	return nil
+}
+
+// LiveKitEnabled reports whether voice is configured.
+func (c *Config) LiveKitEnabled() bool { return c.LiveKitAPIKey != "" }
+
+func countSet(ss []string) int {
+	n := 0
+	for _, s := range ss {
+		if s != "" {
+			n++
+		}
+	}
+	return n
+}

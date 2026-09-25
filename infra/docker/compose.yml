@@ -104,7 +104,7 @@ services:
     logging: *logging
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine   # ≥7.4: HEXPIRE for presence
     restart: unless-stopped
     command: redis-server --save 60 1 --appendonly yes
     ports:

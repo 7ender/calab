@@ -14,21 +14,16 @@ docker info --format '{{.ServerVersion}}'   # Docker запущен
 pnpm install
 ```
 
-Postgres 18 и Redis:
+Postgres 18, Redis 7.4 и LiveKit (dev) — порты смещены, чтобы не пересекаться с чужими сервисами на машине:
 
 ```sh
-docker compose -f infra/docker/compose.dev.yml up -d postgres redis
-docker compose -f infra/docker/compose.dev.yml ps      # postgres и redis — running
+docker compose -f infra/docker/compose.dev.yml up -d
+docker compose -f infra/docker/compose.dev.yml ps      # postgres (55432), redis (56379), livekit (7880-7882) — running
+docker exec calaba-dev-postgres-1 psql -U calaba -c 'select uuidv7()'   # одна строка с uuid
+docker exec calaba-dev-redis-1 redis-cli info server | grep redis_version  # 7.4.x или новее
 ```
 
-Если порт 5432 уже занят другим проектом (ошибка `port is already allocated`), **не трогай чужой контейнер**, подними отдельный:
-
-```sh
-docker run -d --name calaba-test-pg -e POSTGRES_USER=calaba -e POSTGRES_PASSWORD=calaba -e POSTGRES_DB=calaba -p 55432:5432 postgres:18-alpine
-export PGPORT_CALABA=55432     # и дальше везде подставляй порт 55432 вместо 5432
-```
-
-Проверка PG 18: `docker exec <контейнер-postgres> psql -U calaba -c 'select uuidv7()'` → одна строка с uuid.
+Чужие контейнеры/сервисы на 5432/6379 **не трогать**.
 
 ### 1. Контракт и генерация
 
@@ -38,7 +33,7 @@ make gen                     # Ожидается: exit 0
 git status --porcelain apps/server/gen packages/protocol/src/gen apps/server/internal/db/sqlc
                              # Ожидается: ничего нового относительно состояния до make gen (генерация идемпотентна)
 pnpm -F @calaba/protocol typecheck   # Ожидается: exit 0, без ошибок tsc
-pnpm -F @calaba/protocol test        # Ожидается: 2 файла, 13 тестов, все passed
+pnpm -F @calaba/protocol test        # Ожидается: 2 файла, все тесты passed
 ```
 
 ### 2. Go: сборка, линт, unit-тесты
@@ -48,7 +43,7 @@ cd apps/server
 gofmt -l .                   # Ожидается: пустой вывод
 go vet ./... && go vet -tags integration ./...   # Ожидается: пустой вывод, exit 0
 golangci-lint run --config ../../.golangci.yml --build-tags integration ./...   # Ожидается: "0 issues."
-go test -race ./...          # Ожидается: ok для internal/auth, internal/httpx, internal/perm, internal/workspaces; остальные [no test files]
+go test -race ./...          # Ожидается: ok для auth, blob, files, gateway, httpx, messages, perm, redisx, rtc, voice, workspaces; остальные [no test files]
 cd ../..
 ```
 
@@ -56,14 +51,12 @@ cd ../..
 
 ```sh
 make test-integration
-# при отдельном контейнере на 55432:
-# make test-integration TEST_DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba
 ```
 
 Ожидается: `ok  github.com/calaba/calaba/server/internal/app` (остальные пакеты — ok / no test files), exit 0. После прогона временных БД не остаётся:
 
 ```sh
-docker exec <контейнер-postgres> psql -U calaba -tAc "select count(*) from pg_database where datname like 'calaba_it_%'"   # Ожидается: 0
+docker exec calaba-dev-postgres-1 psql -U calaba -tAc "select count(*) from pg_database where datname like 'calaba_it_%'"   # Ожидается: 0
 ```
 
 ### 4. Ручной прогон сервера через curl
@@ -72,8 +65,8 @@ docker exec <контейнер-postgres> psql -U calaba -tAc "select count(*) f
 
 ```sh
 cd apps/server
-DATABASE_URL=postgres://calaba:calaba@localhost:5432/calaba \
-REDIS_URL=redis://localhost:6379/0 \
+DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba \
+REDIS_URL=redis://localhost:56379/0 \
 JWT_SECRET=manual-test-secret-manual-test-secret \
 REGISTRATION_MODE=invite HTTP_ADDR=127.0.0.1:3900 \
 go run ./cmd/server
@@ -81,7 +74,7 @@ go run ./cmd/server
 
 Ожидается в логе (JSON): `"msg":"migration applied"` (только при первом запуске на чистой БД) и `"msg":"listening","addr":"127.0.0.1:3900"`.
 
-**Важно:** bootstrap-регистрация без инвайта работает только на пустой БД. Если в БД уже есть пользователи (повторный прогон), шаг 4.2 вернёт 403 — тогда очисти БД: `docker exec <контейнер-postgres> psql -U calaba -c 'drop schema public cascade; create schema public;'` и перезапусти сервер.
+**Важно:** bootstrap-регистрация без инвайта работает только на пустой БД. Если в БД уже есть пользователи (повторный прогон), шаг 4.2 вернёт 403 — тогда очисти БД и Redis: `docker exec calaba-dev-postgres-1 psql -U calaba -c 'drop schema public cascade; create schema public;'`, `docker exec calaba-dev-redis-1 redis-cli flushall` — и перезапусти сервер.
 
 ```sh
 A=http://127.0.0.1:3900
@@ -183,8 +176,6 @@ docker build -f apps/server/Dockerfile -t calaba-api:test .
 docker images calaba-api:test --format '{{.Size}}'    # ~17MB
 ```
 
-### Что НЕ входит в этот этап
-WS gateway, сообщения, файлы, LiveKit (join/webhooks) — эндпоинты отвечают 404 `ERROR_CODE_NOT_FOUND "route not found"`.
 
 ---
 
@@ -241,3 +232,132 @@ LiveKit в Docker на macOS доступен только локально. Д�
 | 2.7 | original 30 fps на Retina, реальная работа (IDE, скролл) 5 мин | CPU renderer (панель или Activity Monitor), fps, `qualityLimitationReason` (`cpu`?), нагрев |
 
 Результаты записывать в `docs/02-media.md`, раздел «Результаты спайка», с датой и описанием машины.
+
+## Server stage 3 (gateway, messages, files, rtc)
+
+Предусловия — как в разделе «Server core», шаг 0 (compose.dev поднят целиком, включая `livekit`). Нужны `jq` и Node ≥ 22 (встроенный `WebSocket`).
+
+### 1. Автотесты
+
+```sh
+cd apps/server
+go test -race ./...                                   # все ok
+make -C ../.. test-integration                        # ok  .../internal/app
+go test -tags integration -count=1 -v -run 'TestGateway|TestMessages|TestRTC' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+cd ../..
+```
+
+Ожидается:
+```
+--- PASS: TestGatewayFlow
+--- PASS: TestGatewayDeviceLimit
+--- PASS: TestMessagesAndFiles
+--- PASS: TestRTC
+ok
+```
+Если вместо `PASS: TestRTC` стоит `SKIP` — не поднят LiveKit (`docker compose -f infra/docker/compose.dev.yml up -d livekit`); это ошибка окружения, повтори.
+
+### 2. Ручной прогон
+
+Сервер (отдельный терминал, чистая БД — см. «Server core» 4.2):
+
+```sh
+cd apps/server
+DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba REDIS_URL=redis://localhost:56379/0 \
+JWT_SECRET=manual-test-secret-manual-test-secret REGISTRATION_MODE=invite HTTP_ADDR=127.0.0.1:3900 \
+STORAGE_PATH=/tmp/calaba-files \
+LIVEKIT_URL=ws://localhost:7880 LIVEKIT_INTERNAL_URL=http://localhost:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret \
+go run ./cmd/server
+```
+Ожидается в логе: `"msg":"listening",...,"storage":"fs","livekit":true`.
+
+Клиент gateway — сохрани как `/tmp/gw.mjs`:
+
+```js
+// node /tmp/gw.mjs <access_token> [seconds] [resume_session_id resume_seq]
+const [token, secs = '10', resumeId, resumeSeq] = process.argv.slice(2);
+const url = (process.env.A || 'http://127.0.0.1:3900').replace(/^http/, 'ws') + '/gateway?v=1&encoding=json';
+const ws = new WebSocket(url);
+ws.onmessage = (m) => {
+  const f = JSON.parse(m.data);
+  console.log(JSON.stringify(f));
+  if (f.op === 'GATEWAY_OPCODE_HELLO') {
+    ws.send(JSON.stringify(resumeId
+      ? { op: 'GATEWAY_OPCODE_RESUME', resume: { token, sessionId: resumeId, seq: resumeSeq } }
+      : { op: 'GATEWAY_OPCODE_IDENTIFY', identify: { token } }));
+    setInterval(() => ws.send(JSON.stringify({ op: 'GATEWAY_OPCODE_HEARTBEAT', heartbeat: {} })), 5000);
+  }
+};
+ws.onclose = (e) => { console.log(JSON.stringify({ closed: e.code, reason: e.reason })); process.exit(0); };
+setTimeout(() => process.exit(0), Number(secs) * 1000); // выход без close-кадра: сессию можно RESUME
+```
+
+Данные (второй терминал):
+
+```sh
+A=http://127.0.0.1:3900
+OT=$(curl -s -XPOST $A/api/auth/register -d '{"email":"owner@example.com","password":"password123","displayName":"Owner"}' | jq -r .tokens.accessToken)
+WS=$(curl -s -XPOST $A/api/workspaces -H "Authorization: Bearer $OT" -d '{"slug":"team","name":"Team"}' | jq -r .workspace.id)
+CODE=$(curl -s -XPOST $A/api/workspaces/$WS/invites -H "Authorization: Bearer $OT" -d '{}' | jq -r .invite.code)
+BT=$(curl -s -XPOST $A/api/auth/register -d "{\"email\":\"bob@example.com\",\"password\":\"password123\",\"displayName\":\"Bob\",\"inviteCode\":\"$CODE\"}" | jq -r .tokens.accessToken)
+VOI=$(curl -s -XPOST $A/api/workspaces/$WS/rooms -H "Authorization: Bearer $OT" -d '{"type":"ROOM_TYPE_VOICE","name":"voice"}' | jq -r .room.id)
+```
+
+2.1 Gateway: READY и событие от REST.
+```sh
+node /tmp/gw.mjs $BT 3 > /tmp/bob.log & sleep 1
+curl -s -XPOST $A/api/rooms/$VOI/messages -H "Authorization: Bearer $OT" -d '{"content":"hi","nonce":"n1"}' | jq -c '.message|{id,content}'
+curl -s -o /dev/null -w '%{http_code}\n' -XPOST $A/api/rooms/$VOI/messages -H "Authorization: Bearer $OT" -d '{"content":"hi","nonce":"n1"}'
+sleep 3; cut -c1-120 /tmp/bob.log
+```
+Ожидается: первый POST → `{"id":"…","content":"hi"}`; повтор с тем же nonce → `200` (а не 201). В `/tmp/bob.log` по порядку: `GATEWAY_OPCODE_HELLO` (`heartbeatIntervalMs: 41000`), `DISPATCH` `seq "1"` с `ready`, затем `DISPATCH` с `messageCreate` (ровно один, повтор не рассылается); `presenceUpdate` может встретиться между ними. `seq` строго растут.
+
+2.2 RESUME после обрыва (скрипт вышел без close-кадра):
+```sh
+SID=$(grep '"ready"' /tmp/bob.log | jq -r .dispatch.ready.sessionId)
+SEQ=$(grep -o '"seq":"[0-9]*"' /tmp/bob.log | tail -1 | grep -o '[0-9]*')
+curl -s -XPOST $A/api/rooms/$VOI/messages -H "Authorization: Bearer $OT" -d '{"content":"while away"}' >/dev/null
+node /tmp/gw.mjs $BT 2 $SID $SEQ | cut -c1-120
+```
+Ожидается: `HELLO`, затем `messageCreate` с текстом `while away` и `seq` = `SEQ+1`, затем `{"resumed":{"replayed":1}}`.
+
+2.3 RESUME с неизвестной сессией:
+```sh
+node /tmp/gw.mjs $BT 2 01890000-0000-7000-8000-000000000000 5 | cut -c1-120
+```
+Ожидается: `HELLO`, затем `GATEWAY_OPCODE_INVALID_SESSION` с `"resumable":false`.
+
+2.4 Сообщения: история и курсор.
+```sh
+for i in 1 2 3; do curl -s -XPOST $A/api/rooms/$VOI/messages -H "Authorization: Bearer $OT" -d "{\"content\":\"m$i\"}" >/dev/null; done
+curl -s "$A/api/rooms/$VOI/messages?limit=2" -H "Authorization: Bearer $BT" | jq -c '{n:(.messages|length), first:.messages[0].content, hasMore}'
+```
+Ожидается: `{"n":2,"first":"m3","hasMore":true}`.
+
+2.5 Файлы.
+```sh
+printf 'hello file' > /tmp/a.txt
+F=$(curl -s -XPOST $A/api/workspaces/$WS/files -H "Authorization: Bearer $BT" -F file=@/tmp/a.txt)
+echo $F | jq -c '.file|{name,mime,size,sha256}'
+FID=$(echo $F | jq -r .file.id)
+curl -s -XPOST $A/api/rooms/$VOI/messages -H "Authorization: Bearer $BT" -d "{\"content\":\"see file\",\"attachmentIds\":[\"$FID\"]}" | jq -c '.message.attachments[0].name'
+curl -s -H "Authorization: Bearer $OT" -H 'Range: bytes=0-4' $A/api/files/$FID -w ' %{http_code}\n'
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $OT" -H "If-None-Match: \"$(echo $F | jq -r .file.sha256)\"" $A/api/files/$FID
+head -c 60000000 /dev/zero > /tmp/big.bin; curl -s -XPOST $A/api/workspaces/$WS/files -H "Authorization: Bearer $BT" -F file=@/tmp/big.bin -w ' %{http_code}\n'
+```
+Ожидается: `{"name":"a.txt","mime":"text/plain","size":"10","sha256":"<64 hex>"}`; `"a.txt"`; `hello 206`; `304`; для 60 MB — `ERROR_CODE_FILE_TOO_LARGE … 413`.
+
+2.6 Voice: join и webhook.
+```sh
+curl -s -XPOST $A/api/rooms/$VOI/join -H "Authorization: Bearer $BT" | jq -c '{url,identity,canSpeak,canStream,media}'
+curl -s -XPOST $A/api/rtc/webhook -d '{}' -w ' %{http_code}\n'
+curl -s -XPATCH $A/api/voice/self -H "Authorization: Bearer $BT" -d '{"muted":true}' -w ' %{http_code}\n'
+```
+Ожидается: `{"url":"ws://localhost:7880","identity":"<user>:<session>","canSpeak":true,"canStream":true,"media":{"audioBitrateKbps":32,"maxStreamPreset":"SCREEN_SHARE_PRESET_H1080","maxStreams":3}}`; webhook без подписи → `ERROR_CODE_UNAUTHENTICATED … 401`; `voice/self` без подключения к LiveKit → `ERROR_CODE_CONFLICT … 409` (голосовое состояние появляется только из webhook LiveKit; полный цикл webhook покрыт `TestRTC`).
+
+2.7 Graceful shutdown: при открытом `node /tmp/gw.mjs $BT 30` нажми Ctrl+C в терминале сервера. Ожидается: клиент получает `GATEWAY_OPCODE_RECONNECT` и `{"closed":4000,…}` в течение ~5 с; сервер пишет `"msg":"shutting down"` и завершается с кодом 0.
+
+### 3. Docker-образ
+```sh
+docker build -f apps/server/Dockerfile -t calaba-api:test .   # собирается; образ ~21 MB
+```

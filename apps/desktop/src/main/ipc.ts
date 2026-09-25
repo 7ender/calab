@@ -1,18 +1,28 @@
-import { cpus } from 'node:os';
-import { app, ipcMain, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron';
+import { cpus, hostname } from 'node:os';
+import { app, BrowserWindow, ipcMain, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron';
+import log from 'electron-log/main';
 import {
   IPC,
+  type AppInfo,
+  type AppSettings,
   type CaptureSelection,
-  type MintTokenRequest,
+  type DownloadArgs,
+  type LoginArgs,
   type PrivacyPane,
   type ProcessMetrics,
   type PttBinding,
-  type SystemInfo,
+  type RegisterArgs,
+  type TrayState,
 } from '../shared/ipc';
+import { forceRefresh, getAccessToken, login, logout, register, restore, revoked } from './auth';
 import { armSelection, forgetWebContents, listSources, systemAudioSupport } from './capture';
+import { takePendingDeepLink } from './deeplink';
+import { downloadFile } from './downloads';
 import { captureNext, pttStatus, setBinding } from './ptt';
-import { mintDevToken } from './token';
-import { createSpikeWindow, isOwnOrigin } from './windows';
+import { getSettings, updateSettings } from './settings';
+import { setTrayState } from './tray';
+import { checkForUpdates } from './updater';
+import { isOwnOrigin } from './windows';
 
 /** Only our own renderer may call privileged IPC. */
 function assertTrusted(e: IpcMainInvokeEvent): void {
@@ -20,31 +30,55 @@ function assertTrusted(e: IpcMainInvokeEvent): void {
   if (!isOwnOrigin(url)) throw new Error(`IPC from untrusted origin: ${url}`);
 }
 
-function isString(v: unknown, max = 256): v is string {
-  return typeof v === 'string' && v.length > 0 && v.length <= max;
+function str(v: unknown, max = 256, allowEmpty = false): string {
+  if (typeof v !== 'string' || v.length > max || (!allowEmpty && v.length === 0)) throw new Error('invalid argument');
+  return v;
 }
 
-function parseMint(v: unknown): MintTokenRequest {
-  const r = v as Partial<MintTokenRequest> | null;
-  if (!r || !isString(r.room, 128) || !isString(r.identity, 128) || !isString(r.name, 128)) {
-    throw new Error('invalid token request');
-  }
-  return { room: r.room, identity: r.identity, name: r.name };
+function obj(v: unknown): Record<string, unknown> {
+  if (typeof v !== 'object' || v === null) throw new Error('invalid argument');
+  return v as Record<string, unknown>;
+}
+
+function parseLogin(v: unknown): LoginArgs {
+  const r = obj(v);
+  return { serverUrl: str(r['serverUrl'], 512), email: str(r['email'], 320), password: str(r['password'], 256) };
+}
+
+function parseRegister(v: unknown): RegisterArgs {
+  const r = obj(v);
+  return {
+    ...parseLogin(v),
+    displayName: str(r['displayName'], 100),
+    inviteCode: str(r['inviteCode'], 128, true),
+  };
 }
 
 function parseSelection(v: unknown): CaptureSelection {
-  const r = v as Partial<CaptureSelection> | null;
-  if (!r || !isString(r.sourceId) || typeof r.audio !== 'boolean') throw new Error('invalid selection');
-  return { sourceId: r.sourceId, audio: r.audio };
+  const r = obj(v);
+  if (typeof r['audio'] !== 'boolean') throw new Error('invalid selection');
+  return { sourceId: str(r['sourceId']), audio: r['audio'] };
 }
 
 function parseBinding(v: unknown): PttBinding | null {
   if (v === null) return null;
-  const r = v as Partial<PttBinding> | null;
-  if (!r || (r.kind !== 'key' && r.kind !== 'mouse') || typeof r.code !== 'number' || !isString(r.label, 64)) {
-    throw new Error('invalid binding');
+  const r = obj(v);
+  const kind = r['kind'];
+  if ((kind !== 'key' && kind !== 'mouse') || typeof r['code'] !== 'number') throw new Error('invalid binding');
+  return { kind, code: r['code'], label: str(r['label'], 64) };
+}
+
+function parseSettings(v: unknown): Partial<AppSettings> {
+  const r = obj(v);
+  const out: Partial<AppSettings> = {};
+  if (r['serverUrl'] !== undefined) {
+    const u = str(r['serverUrl'], 512, true);
+    if (u && !/^https?:\/\//.test(u)) throw new Error('serverUrl must be http(s)');
+    out.serverUrl = u;
   }
-  return { kind: r.kind, code: r.code, label: r.label };
+  if (r['updateUrl'] !== undefined) out.updateUrl = str(r['updateUrl'], 512, true);
+  if (r['autostart'] !== undefined) out.autostart = Boolean(r['autostart']);
+  return out;
 }
 
 const PRIVACY_URLS: Record<PrivacyPane, string> = {
@@ -59,54 +93,91 @@ function mediaAccess(kind: 'microphone' | 'screen'): string {
   return systemPreferences.getMediaAccessStatus(kind);
 }
 
-export function registerIpc(): void {
-  ipcMain.handle(IPC.spikeMintToken, (e, req: unknown) => {
+type Handler = (e: IpcMainInvokeEvent, arg: unknown) => unknown;
+
+function handle(channel: string, fn: Handler): void {
+  ipcMain.handle(channel, (e, arg: unknown) => {
     assertTrusted(e);
-    return mintDevToken(parseMint(req));
+    return fn(e, arg);
   });
-  ipcMain.handle(IPC.spikeOpenWindow, (e) => {
-    assertTrusted(e);
-    createSpikeWindow();
+}
+
+export function registerIpc(): void {
+  // ---- auth ----
+  handle(IPC.authRestore, () => restore());
+  handle(IPC.authLogin, (_e, a) => login(parseLogin(a)));
+  handle(IPC.authRegister, (_e, a) => register(parseRegister(a)));
+  handle(IPC.authLogout, (_e, a) => logout(Boolean(a)));
+  handle(IPC.authAccessToken, () => getAccessToken());
+  handle(IPC.authForceRefresh, (_e, a) => {
+    if (a === 'revoked') {
+      revoked();
+      return null;
+    }
+    return forceRefresh();
   });
 
-  ipcMain.handle(IPC.captureListSources, (e) => {
-    assertTrusted(e);
-    return listSources();
+  // ---- app ----
+  handle(IPC.appInfo, (): AppInfo => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    hostname: hostname(),
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    packaged: app.isPackaged,
+    fakeMedia: process.env['CALABA_FAKE_MEDIA'] === '1',
+    systemAudioLoopback: systemAudioSupport(),
+    micAccess: mediaAccess('microphone'),
+    screenAccess: mediaAccess('screen'),
+  }));
+  handle(IPC.appGetSettings, () => getSettings());
+  handle(IPC.appSetSettings, (_e, a) => updateSettings(parseSettings(a)));
+  handle(IPC.appTakeDeepLink, () => takePendingDeepLink());
+  handle(IPC.appCheckUpdates, () => checkForUpdates());
+  handle(IPC.appLog, (_e, a) => {
+    const r = obj(a);
+    const msg = str(r['message'], 8192, true);
+    if (r['level'] === 'error') log.error('[renderer]', msg);
+    else if (r['level'] === 'warn') log.warn('[renderer]', msg);
+    else log.info('[renderer]', msg);
   });
-  ipcMain.handle(IPC.captureSelectSource, (e, sel: unknown) => {
-    assertTrusted(e);
+  handle(IPC.appOpenExternal, (_e, a) => {
+    const url = str(a, 2048);
+    if (!/^https?:\/\//.test(url)) throw new Error('only http(s) links');
+    return shell.openExternal(url);
+  });
+  handle(IPC.appAttention, (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (win && !win.isFocused()) {
+      if (process.platform === 'darwin') app.dock?.bounce('informational');
+      else win.flashFrame(true);
+    }
+  });
+
+  // ---- tray ----
+  handle(IPC.trayState, (_e, a) => {
+    const r = obj(a);
+    setTrayState({ inVoice: Boolean(r['inVoice']), muted: Boolean(r['muted']), deafened: Boolean(r['deafened']) } satisfies TrayState);
+  });
+
+  // ---- files ----
+  handle(IPC.filesDownload, (_e, a) => {
+    const r = obj(a);
+    const args: DownloadArgs = { fileId: str(r['fileId'], 64), name: str(r['name'], 512) };
+    return downloadFile(args);
+  });
+
+  // ---- media ----
+  handle(IPC.captureListSources, () => listSources());
+  handle(IPC.captureSelectSource, (e, sel) => {
     const wc = e.sender;
     armSelection(wc.id, parseSelection(sel));
     wc.once('destroyed', () => forgetWebContents(wc.id));
   });
-
-  ipcMain.handle(IPC.pttSetBinding, (e, b: unknown) => {
-    assertTrusted(e);
-    return setBinding(e.sender, parseBinding(b));
-  });
-  ipcMain.handle(IPC.pttCaptureNext, (e) => {
-    assertTrusted(e);
-    return captureNext();
-  });
-  ipcMain.handle(IPC.pttStatus, (e) => {
-    assertTrusted(e);
-    return pttStatus();
-  });
-
-  ipcMain.handle(IPC.systemInfo, (e): SystemInfo => {
-    assertTrusted(e);
-    return {
-      platform: process.platform,
-      electron: process.versions.electron,
-      chrome: process.versions.chrome,
-      micAccess: mediaAccess('microphone'),
-      screenAccess: mediaAccess('screen'),
-      systemAudioLoopback: systemAudioSupport(),
-      fakeMedia: process.env['CALABA_FAKE_MEDIA'] === '1',
-    };
-  });
-  ipcMain.handle(IPC.systemMetrics, (e): ProcessMetrics => {
-    assertTrusted(e);
+  handle(IPC.pttSetBinding, (e, b) => setBinding(e.sender, parseBinding(b)));
+  handle(IPC.pttCaptureNext, () => captureNext());
+  handle(IPC.pttStatus, () => pttStatus());
+  handle(IPC.systemMetrics, (e): ProcessMetrics => {
     const pid = e.sender.getOSProcessId();
     const metrics = app.getAppMetrics();
     // percentCPUUsage is normalised to *all* cores on macOS (verified against
@@ -123,8 +194,7 @@ export function registerIpc(): void {
       mainCpu: cpuOf((m) => m.type === 'Browser'),
     };
   });
-  ipcMain.handle(IPC.systemOpenPrivacySettings, (e, pane: unknown) => {
-    assertTrusted(e);
+  handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
     if (process.platform !== 'darwin') return;
     const url = PRIVACY_URLS[pane as PrivacyPane];
     if (url) void shell.openExternal(url);

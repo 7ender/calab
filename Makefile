@@ -7,14 +7,22 @@ gen:            ## generate Go + TS from proto/ and Go from SQL (run `pnpm insta
 	buf generate
 	cd apps/server && sqlc generate
 
+# Dev defaults match infra/docker/compose.dev.yml (postgres :55432, redis :56379, livekit devkey/secret).
 dev-server:
-	cd apps/server && go run ./cmd/server
+	cd apps/server && \
+	DATABASE_URL=$${DATABASE_URL:-postgres://calaba:calaba@localhost:55432/calaba} \
+	REDIS_URL=$${REDIS_URL:-redis://localhost:56379/0} \
+	JWT_SECRET=$${JWT_SECRET:-dev-only-jwt-secret-dev-only-jwt-secret} \
+	REGISTRATION_MODE=$${REGISTRATION_MODE:-open} \
+	LIVEKIT_URL=$${LIVEKIT_URL:-ws://localhost:7880} LIVEKIT_INTERNAL_URL=$${LIVEKIT_INTERNAL_URL:-http://localhost:7880} \
+	LIVEKIT_API_KEY=$${LIVEKIT_API_KEY:-devkey} LIVEKIT_API_SECRET=$${LIVEKIT_API_SECRET:-secret} \
+	go run ./cmd/server
 
 test:           ## unit tests (no external services)
 	cd apps/server && go test ./...
 	pnpm -r test
 
-test-integration: ## Go integration tests against dev Postgres 18 + Redis (pnpm infra:dev)
+test-integration: ## Go integration tests against dev Postgres 18 + Redis 7.4 + LiveKit (pnpm infra:dev)
 	cd apps/server && TEST_DATABASE_URL=$(TEST_DATABASE_URL) TEST_REDIS_URL=$(TEST_REDIS_URL) \
 		go test -tags integration -count=1 ./...
 

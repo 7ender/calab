@@ -36,8 +36,9 @@ room_permissions    room_id, target_type ('role'|'user'), target_id,
 messages            id (DEFAULT uuidv7()), room_id, author_id, content (text, ≤ 4000),
                     reply_to_id?, nonce?, created_at, edited_at, deleted_at
                     UNIQUE (author_id, nonce) WHERE nonce IS NOT NULL
-message_attachments message_id, file_id, position (≤ 20 на сообщение)
-files               id, workspace_id, uploader_id, key, thumbnail_key?, name,
+message_attachments message_id, file_id (UNIQUE — файл прикреплён максимум к одному сообщению),
+                    position (≤ 20 на сообщение)
+files               id, workspace_id? (NULL — файл пользователя: аватар), uploader_id, key, thumbnail_key?, name,
                     mime, size, width?, height?, sha256, created_at
 read_states         user_id, room_id, last_read_message_id      PK (user_id, room_id)
 
@@ -57,9 +58,12 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 
 ### Файлы
 
-- Загрузка и скачивание — **только через API** (`PUT /api/files`, `GET /api/files/:id`), байты лежат в `blob.Store` (ADR-0011: локальный диск, ключи `<workspace_id>/<file_id>[.thumb]`; S3 — позже), наружу хранилище не доступно. sha256 сервер считает сам при потоковой записи.
-- Для `image/*` сервер делает превью (≤ 512 px по большей стороне, WebP) вторым объектом → `thumbnail_key`; в payload сообщения — `thumbnail_url`.
-- Лимиты: файл ≤ 50 MB (`MAX_FILE_SIZE_MB`), ≤ 20 вложений на сообщение, квота workspace `storage_quota_bytes` (по умолчанию 10 GB); `storage_used_bytes` увеличивается в той же транзакции, что и вставка в `files` (с проверкой квоты), уменьшается при удалении.
+- Загрузка и скачивание — **только через API** (`POST /api/workspaces/{id}/files`, `POST /api/me/avatar`, `GET /api/files/{id}`), байты лежат в `blob.Store` (ADR-0011: локальный диск, ключи `<workspace_id>/<file_id>[.thumb]`, аватары — `users/<user_id>/<file_id>`; S3 — позже), наружу хранилище не доступно. sha256 сервер считает сам при потоковой записи, поток обрывается при превышении лимита.
+- `files.id` — uuid v7, но генерирует его **приложение**, а не Postgres: ключ объекта нужен до вставки строки (пишем байты → затем строка + квота в одной транзакции; ошибка → объект удаляется).
+- Тип файла определяется по содержимому (sniffing); заявленный клиентом тип используется, только если sniffing неинформативен, и никогда — чтобы объявить изображение или активный контент (HTML/SVG/JS). Изображения (JPEG/PNG/GIF/WebP) отдаются `inline`, всё остальное — `attachment`, с `nosniff` и `CSP: sandbox`.
+- Для изображений сервер делает превью (≤ 512 px по большей стороне, WebP q80, чистый Go — libwebp, транслированный из WASM, без cgo) вторым объектом → `thumbnail_key`; в payload сообщения — `thumbnail_url`. Изображения > 24 Мпикс превью не получают (бюджет памяти), размеры (`width`/`height`) пишутся всегда.
+- Лимиты: файл ≤ 50 MB (`MAX_FILE_SIZE_MB`), аватар ≤ 5 MB, ≤ 20 вложений на сообщение, квота workspace `storage_quota_bytes` (по умолчанию 10 GB); `storage_used_bytes` увеличивается в той же транзакции, что и вставка в `files` (атомарно с проверкой квоты), уменьшается при удалении. Аватары (`workspace_id IS NULL`) в квоту не входят.
+- Файл прикрепляется максимум к одному сообщению (права на файл = права на комнату этого сообщения). Удаление сообщения открепляет вложения; не прикреплённые более 24 ч файлы (кроме аватаров/иконок) удаляет фоновая чистка раз в час.
 
 ## Роли workspace
 

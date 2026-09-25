@@ -20,7 +20,7 @@ services:
     volumes: [pg_dev:/var/lib/postgresql]
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine   # ≥7.4: HEXPIRE for presence
     ports: ["56379:6379"]   # 6379 is often taken by a native Redis (needs >= 7.4 anyway)
 
   livekit:
