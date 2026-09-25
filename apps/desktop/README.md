@@ -18,6 +18,7 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 | `pnpm -F @calaba/desktop build:app` | build to `out/` only, no installers |
 | `pnpm -F @calaba/desktop typecheck` / `lint` / `test` | TS strict (main, renderer, worklet), eslint, vitest (46 unit tests) |
 | `CALABA_E2E_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop e2e` | Playwright for Electron: register → workspace → room → message → voice |
+| `pnpm -F @calaba/desktop e2e:visual` (`:update` — перезаписать эталон) | Дизайн (docs/08): снимки dark/light × 960/1440 против мок-API, layout-инварианты, axe-core, обход фокуса по Tab. Нужен dev LiveKit. См. TESTING.md «1a» |
 
 ### Environment variables
 

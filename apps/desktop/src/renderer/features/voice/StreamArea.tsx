@@ -20,7 +20,7 @@ function StreamVideo({ trackSid, className }: { trackSid: string; className?: st
       track.detach(el);
     };
   }, [trackSid, epoch]);
-  return <video ref={ref} muted playsInline autoPlay className={cx('bg-black object-contain', className)} />;
+  return <video ref={ref} muted playsInline autoPlay className={cx('bg-[var(--color-video-bg)] object-contain', className)} />;
 }
 
 /** Pop-out window: same-origin child window, React portal; video shows the same MediaStreamTrack. */
@@ -100,7 +100,7 @@ export function StreamArea(): ReactNode {
             onClick={() => voice.watch(s.trackSid)}
             className={cx(
               'rounded-full px-2 py-0.5',
-              s.trackSid === watching ? 'bg-accent text-accent-fg' : 'bg-active text-fg hover:bg-hover',
+              s.trackSid === watching ? 'bg-accent-strong text-accent-fg' : 'bg-active text-fg hover:bg-hover',
             )}
           >
             {nameOf(s)}
@@ -121,7 +121,7 @@ export function StreamArea(): ReactNode {
         {switcher}
         <div
           data-testid="stream-pip"
-          className="mat-popover group absolute right-4 z-[var(--z-pip)] w-[320px] overflow-hidden rounded-[var(--radius-panel)] bg-black"
+          className="mat-popover group absolute right-4 z-[var(--z-pip)] w-[320px] overflow-hidden rounded-[var(--radius-panel)] bg-[var(--color-video-bg)]"
           style={{ bottom: 'calc(var(--composer-height) + 16px)' }}
         >
           <button type="button" className="block" onClick={() => set({ stage: 'expanded' })} aria-label={t('stream.expand')}>
@@ -146,13 +146,13 @@ export function StreamArea(): ReactNode {
   return (
     <>
       {switcher}
-      <div ref={stageRef} className="group relative flex h-[58%] min-h-[220px] shrink-0 items-center justify-center bg-black">
+      <div ref={stageRef} className="group relative flex h-[58%] min-h-[220px] shrink-0 items-center justify-center bg-[var(--color-video-bg)]">
         <StreamVideo trackSid={current.trackSid} className="size-full" />
         {stage === 'popout' ? (
           <div className="absolute inset-0 grid place-items-center bg-black/80 text-white">
             <div className="text-center">
               <div className="font-semibold">{t('stream.inPopout')}</div>
-              <button type="button" className="mt-2 text-accent hover:underline" onClick={() => set({ stage: 'expanded' })}>
+              <button type="button" className="mt-2 text-accent-text hover:underline" onClick={() => set({ stage: 'expanded' })}>
                 {t('stream.returnHere')}
               </button>
             </div>

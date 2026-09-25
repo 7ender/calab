@@ -1,72 +1,105 @@
-import * as Tabs from '@radix-ui/react-tabs';
 import { AUDIO_BITRATE_OPTIONS_KBPS } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LogOut, Trash2, Upload } from 'lucide-react';
+import { AppWindow, Bell, CircleUser, LogOut, Mic, MonitorSmartphone, Palette, Trash2, Upload, Wifi } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, IconButton, Input, Modal, Select, Slider, Spinner, Switch, cx } from '../../components/ui';
+import { SettingsAction, SettingsWindow } from '../../components/SettingsWindow';
+import { Button, Card, IconButton, Input, Row, Segmented, Select, Slider, Spinner, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { ApiError, apiUrl } from '../../lib/api/client';
+import { ApiError } from '../../lib/api/client';
 import { api, uploadAvatar } from '../../lib/api/endpoints';
 import { fmtStamp } from '../../lib/format';
 import { METER_MIN_DB } from '../../lib/media/vad';
+import { platform } from '../../platform';
 import { logout } from '../../services/session';
 import { voice } from '../../services/voice';
 import { usePrefs, type Theme } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useVoice } from '../../stores/voice';
-import { tabTrigger } from '../workspace/WorkspaceSettings';
-import { platform } from '../../platform';
 
 const err = (e: unknown): string => (e instanceof ApiError ? e.message : String(e));
 
-export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
+/** Text field that applies on blur / Enter (System Settings: no «Save» button). */
+export function CommitInput({
+  value,
+  onCommit,
+  label,
+  maxLength,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onCommit: (v: string) => Promise<void> | void;
+  label: string;
+  maxLength?: number;
+  placeholder?: string;
+  className?: string;
+}): ReactNode {
+  const [v, setV] = useState(value);
+  const [prev, setPrev] = useState(value);
+  if (prev !== value) {
+    setPrev(value);
+    setV(value);
+  }
+  const commit = (): void => {
+    const next = v.trim();
+    if (next === value) return;
+    void Promise.resolve(onCommit(next)).catch((e: unknown) => {
+      toast.error(err(e));
+      setV(value);
+    });
+  };
   return (
-    <Modal open wide onClose={onClose} title={t('settings.title')}>
-      <Tabs.Root defaultValue={tab ?? 'voice'} orientation="vertical" className="flex min-h-[480px] gap-5">
-        <Tabs.List className="flex w-48 shrink-0 flex-col gap-0.5">
-          <Tabs.Trigger value="profile" className={tabTrigger}>{t('settings.profile')}</Tabs.Trigger>
-          <Tabs.Trigger value="voice" className={tabTrigger}>{t('settings.voice')}</Tabs.Trigger>
-          <Tabs.Trigger value="appearance" className={tabTrigger}>{t('settings.appearance')}</Tabs.Trigger>
-          <Tabs.Trigger value="notifications" className={tabTrigger}>{t('settings.notifications')}</Tabs.Trigger>
-          <Tabs.Trigger value="connection" className={tabTrigger}>{t('settings.connection')}</Tabs.Trigger>
-          <Tabs.Trigger value="sessions" className={tabTrigger}>{t('settings.sessions')}</Tabs.Trigger>
-          <Tabs.Trigger value="app" className={tabTrigger}>{t('settings.app')}</Tabs.Trigger>
-          <div className="my-2 h-px bg-line" />
-          <button type="button" className={cx(tabTrigger, 'flex items-center gap-2 text-danger')} onClick={() => void logout()}>
-            <LogOut className="size-4" /> {t('settings.logout')}
-          </button>
-        </Tabs.List>
-        <div className="min-w-0 flex-1">
-          <Tabs.Content value="profile"><ProfileTab /></Tabs.Content>
-          <Tabs.Content value="voice"><VoiceTab /></Tabs.Content>
-          <Tabs.Content value="appearance"><AppearanceTab /></Tabs.Content>
-          <Tabs.Content value="notifications"><NotificationsTab /></Tabs.Content>
-          <Tabs.Content value="connection"><ConnectionTab /></Tabs.Content>
-          <Tabs.Content value="sessions"><SessionsTab /></Tabs.Content>
-          <Tabs.Content value="app"><AppTab /></Tabs.Content>
-        </div>
-      </Tabs.Root>
-    </Modal>
+    <Input
+      aria-label={label}
+      value={v}
+      maxLength={maxLength}
+      placeholder={placeholder}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') setV(value);
+      }}
+      className={cx('w-56', className)}
+    />
   );
 }
 
+export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
+  return (
+    <SettingsWindow
+      title={t('settings.title')}
+      initial={tab ?? 'voice'}
+      onClose={onClose}
+      sections={[
+        { id: 'profile', label: t('settings.profile'), icon: CircleUser, content: <ProfileTab /> },
+        { id: 'voice', label: t('settings.voice'), icon: Mic, content: <VoiceTab /> },
+        { id: 'appearance', label: t('settings.appearance'), icon: Palette, content: <AppearanceTab /> },
+        { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
+        { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
+        { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
+        { id: 'app', label: t('settings.app'), icon: AppWindow, content: <AppTab /> },
+      ]}
+      footer={<SettingsAction label={t('settings.logout')} icon={LogOut} destructive onClick={() => void logout()} />}
+    />
+  );
+}
+
+// ---------------------------------------------------------------- profile
+
 function ProfileTab(): ReactNode {
   const me = useSession((s) => s.me);
-  const [name, setName] = useState(me?.user?.displayName ?? '');
-  const [status, setStatus] = useState(me?.user?.statusText ?? '');
   const [busyAvatar, setBusyAvatar] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const save = useMutation({
-    mutationFn: () => api.me.update({ displayName: name.trim(), statusText: status.trim() }),
-    onSuccess: (r) => {
-      if (r.me) useSession.getState().set({ me: r.me });
-      toast.success(t('common.saved'));
-    },
-  });
+  const update = async (init: Parameters<typeof api.me.update>[0]): Promise<void> => {
+    const r = await api.me.update(init);
+    if (r.me) useSession.getState().set({ me: r.me });
+  };
   const setAvatar = async (f: File): Promise<void> => {
     setBusyAvatar(true);
     try {
@@ -80,34 +113,52 @@ function ProfileTab(): ReactNode {
     }
   };
   const u = me?.user;
-  if (!u) return null;
+  if (!me || !u) return null;
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <div className="flex items-center gap-4">
-        <Avatar userId={u.id} name={u.displayName} fileId={u.avatarFileId || undefined} size={72} />
-        <Button variant="secondary" busy={busyAvatar} onClick={() => input.current?.click()}>
-          <Upload className="size-4" /> {t('profile.avatar')}
-        </Button>
-        {u.avatarFileId ? (
-          <Button variant="ghost" onClick={() => void api.me.update({ avatarFileId: '' }).then((r) => r.me && useSession.getState().set({ me: r.me }))}>
-            {t('profile.removeAvatar')}
-          </Button>
-        ) : null}
-        <input ref={input} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void setAvatar(f); e.target.value = ''; }} />
+        <Avatar userId={u.id} name={u.displayName} fileId={u.avatarFileId || undefined} size={64} />
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="truncate text-[16px] font-semibold">{u.displayName}</div>
+          <div className="flex gap-2">
+            <Button variant="secondary" busy={busyAvatar} onClick={() => input.current?.click()}>
+              <Upload className="size-4" aria-hidden /> {t('profile.avatar')}
+            </Button>
+            {u.avatarFileId ? (
+              <Button variant="destructive" onClick={() => void update({ avatarFileId: '' })}>
+                {t('profile.removeAvatar')}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <input
+          ref={input}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void setAvatar(f);
+            e.target.value = '';
+          }}
+        />
       </div>
-      <Field label={t('profile.name')} error={save.error ? err(save.error) : null}>
-        <Input value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
-      </Field>
-      <Field label={t('profile.status')}>
-        <Input value={status} maxLength={128} onChange={(e) => setStatus(e.target.value)} placeholder={t('profile.statusPh')} />
-      </Field>
-      <Field label={t('profile.email')}>
-        <Input value={me.email} disabled />
-      </Field>
-      <div><Button busy={save.isPending} onClick={() => save.mutate()}>{t('common.save')}</Button></div>
-    </div>
+      <Card>
+        <Row label={t('profile.name')}>
+          <CommitInput label={t('profile.name')} value={u.displayName} maxLength={100} onCommit={(v) => (v ? update({ displayName: v }) : undefined)} />
+        </Row>
+        <Row label={t('profile.status')}>
+          <CommitInput label={t('profile.status')} value={u.statusText} maxLength={128} placeholder={t('profile.statusPh')} onCommit={(v) => update({ statusText: v })} />
+        </Row>
+        <Row label={t('profile.email')}>
+          <span className="selectable text-[13px] text-muted">{me.email}</span>
+        </Row>
+      </Card>
+    </>
   );
 }
+
+// ---------------------------------------------------------------- voice & devices
 
 function useDevices(): { inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[] } {
   const [devs, setDevs] = useState<MediaDeviceInfo[]>([]);
@@ -124,17 +175,82 @@ function useDevices(): { inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[] }
   return { inputs: devs.filter((d) => d.kind === 'audioinput'), outputs: devs.filter((d) => d.kind === 'audiooutput') };
 }
 
-function Meter(): ReactNode {
+export function MicMeter(): ReactNode {
   const level = useVoice((s) => s.levelDb);
   const open = useVoice((s) => s.gateOpen);
   const threshold = usePrefs((s) => s.thresholdDb);
   const mode = usePrefs((s) => s.micMode);
   const pct = (db: number): number => Math.max(0, Math.min(100, ((db - METER_MIN_DB) / -METER_MIN_DB) * 100));
   return (
-    <div className="relative h-2.5 overflow-hidden rounded-full bg-active">
-      <div className={cx('h-full transition-[width] duration-75', open ? 'bg-ok' : 'bg-faint')} style={{ width: `${pct(level)}%` }} />
-      {mode === 'voice' ? <div className="absolute inset-y-0 w-0.5 bg-warn" style={{ left: `${pct(threshold)}%` }} /> : null}
+    <div
+      data-testid="mic-meter"
+      role="meter"
+      aria-label={t('voice.level')}
+      aria-valuemin={METER_MIN_DB}
+      aria-valuemax={0}
+      aria-valuenow={Math.round(level)}
+      className="relative h-2 w-full overflow-hidden rounded-full bg-[var(--color-fill-hover)]"
+    >
+      <div className={cx('h-full rounded-full transition-[width] duration-75', open ? 'bg-ok' : 'bg-faint')} style={{ width: `${pct(level)}%` }} />
+      {mode === 'voice' ? <div className="absolute inset-y-0 w-0.5 bg-warn" style={{ left: `${pct(threshold)}%` }} aria-hidden /> : null}
     </div>
+  );
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  granted: 'Разрешено',
+  denied: 'Запрещено',
+  'not-determined': 'Не запрошено',
+  restricted: 'Ограничено',
+  default: 'Не запрошено',
+  'n/a': '—',
+};
+
+export function PermissionsCard(): ReactNode {
+  const [p, setP] = useState<PermissionStatus | null>(null);
+  const os = useSession((s) => s.appInfo?.platform);
+  const mac = os === 'darwin' && platform.kind === 'electron';
+  useEffect(() => {
+    const refresh = (): void => void platform.system.permissions().then(setP);
+    refresh();
+    window.addEventListener('focus', refresh); // back from System Settings
+    return () => window.removeEventListener('focus', refresh);
+  }, []);
+  if (!p) return null;
+  const notif = typeof Notification === 'undefined' ? 'n/a' : Notification.permission;
+  const osButton = (pane: 'microphone' | 'screen' | 'accessibility'): ReactNode =>
+    mac || (pane === 'microphone' && os === 'win32' && platform.kind === 'electron') ? (
+      <Button size="sm" variant="secondary" onClick={() => void platform.system.openPrivacySettings(pane)}>
+        {t('perm.openOs')}
+      </Button>
+    ) : null;
+  return (
+    <Card title={t('perm.title')} footer={t('perm.hint')}>
+      <Row label={t('perm.mic')}>
+        <span className="text-[13px] text-muted">{STATUS_LABEL[p.microphone] ?? p.microphone}</span>
+        {osButton('microphone')}
+      </Row>
+      {mac ? (
+        <>
+          <Row label={t('perm.screen')} hint={t('perm.screenHint')}>
+            <span className="text-[13px] text-muted">{STATUS_LABEL[p.screen] ?? p.screen}</span>
+            {osButton('screen')}
+          </Row>
+          <Row label={t('perm.input')} hint={t('perm.inputHint')}>
+            <span className="text-[13px] text-muted">{p.accessibility ? STATUS_LABEL['granted'] : STATUS_LABEL['not-determined']}</span>
+            {osButton('accessibility')}
+          </Row>
+        </>
+      ) : null}
+      <Row label={t('perm.notifications')}>
+        <span className="text-[13px] text-muted">{STATUS_LABEL[notif] ?? notif}</span>
+        {notif === 'default' ? (
+          <Button size="sm" variant="secondary" onClick={() => void Notification.requestPermission().then(() => platform.system.permissions().then(setP))}>
+            {t('perm.ask')}
+          </Button>
+        ) : null}
+      </Row>
+    </Card>
   );
 }
 
@@ -143,17 +259,15 @@ function VoiceTab(): ReactNode {
   const { inputs, outputs } = useDevices();
   const [testing, setTesting] = useState(false);
   const [binding, setBinding] = useState(false);
-  const [pttStatus, setPttStatus] = useState<Awaited<ReturnType<typeof platform.ptt.status>> | null>(null);
   const vad = useVoice((s) => s.vad);
   const micError = useVoice((s) => s.micError);
-  const isMac = useSession((s) => s.appInfo?.platform === 'darwin');
 
-  useEffect(() => () => {
-    voice.stopMicTest();
-  }, []);
-  useEffect(() => {
-    if (p.micMode === 'ptt') void platform.ptt.status().then(setPttStatus);
-  }, [p.micMode, p.pttBinding]);
+  useEffect(
+    () => () => {
+      voice.stopMicTest();
+    },
+    [],
+  );
 
   const bind = async (): Promise<void> => {
     setBinding(true);
@@ -164,150 +278,186 @@ function VoiceTab(): ReactNode {
       // cancelled
     } finally {
       setBinding(false);
-      setPttStatus(await platform.ptt.status());
     }
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-4">
-        <Field label={t('voice.input')}>
-          <Select value={p.micDeviceId ?? ''} onChange={(e) => p.setPrefs({ micDeviceId: e.target.value || null })}>
+    <>
+      <Card title={t('voice.devices')}>
+        <Row label={t('voice.input')}>
+          <Select aria-label={t('voice.input')} className="w-64" value={p.micDeviceId ?? ''} onChange={(e) => p.setPrefs({ micDeviceId: e.target.value || null })}>
             <option value="">{t('voice.defaultDevice')}</option>
-            {inputs.filter((d) => d.deviceId !== 'default').map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId.slice(0, 8)}</option>)}
+            {inputs
+              .filter((d) => d.deviceId !== 'default')
+              .map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || d.deviceId.slice(0, 8)}
+                </option>
+              ))}
           </Select>
-        </Field>
-        <Field label={t('voice.output')} hint={t('voice.outputHint')}>
-          <Select value={p.outputDeviceId ?? ''} onChange={(e) => p.setPrefs({ outputDeviceId: e.target.value || null })}>
+        </Row>
+        <Row label={t('voice.output')} hint={t('voice.outputHint')}>
+          <Select aria-label={t('voice.output')} className="w-64" value={p.outputDeviceId ?? ''} onChange={(e) => p.setPrefs({ outputDeviceId: e.target.value || null })}>
             <option value="">{t('voice.defaultDevice')}</option>
-            {outputs.filter((d) => d.deviceId !== 'default').map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId.slice(0, 8)}</option>)}
+            {outputs
+              .filter((d) => d.deviceId !== 'default')
+              .map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || d.deviceId.slice(0, 8)}
+                </option>
+              ))}
           </Select>
-        </Field>
-      </div>
-
-      <div className="rounded-md bg-side p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="font-medium">{t('voice.micTest')}</span>
-          <Button
-            size="sm"
-            variant={testing ? 'secondary' : 'primary'}
-            onClick={() => {
-              if (testing) voice.stopMicTest();
-              else void voice.startMicTest();
-              setTesting(!testing);
-            }}
-          >
-            {testing ? t('voice.stopTest') : t('voice.startTest')}
-          </Button>
+        </Row>
+        <div className="flex flex-col gap-2 px-3 py-3">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[13px]">{t('voice.micTest')}</span>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (testing) voice.stopMicTest();
+                else void voice.startMicTest();
+                setTesting(!testing);
+              }}
+            >
+              {testing ? t('voice.stopTest') : t('voice.startTest')}
+            </Button>
+          </div>
+          <MicMeter />
+          {/* Speech probability only means something while the test is running. */}
+          {testing ? (
+            <span className="text-[12px] text-faint">
+              {t('voice.vad')}: {vad === null ? t('voice.vadOff') : `${Math.round(vad * 100)}%`}
+            </span>
+          ) : null}
+          {micError ? (
+            <span className="text-[12px] text-danger-text" role="alert">
+              {micError}
+            </span>
+          ) : null}
         </div>
-        <Meter />
-        <div className="mt-1 text-[12px] text-faint">
-          {t('voice.vad')}: {vad === null ? t('voice.vadOff') : `${Math.round(vad * 100)}%`}
-        </div>
-        {micError ? <p className="mt-1 text-[12px] text-danger">{micError}</p> : null}
-      </div>
+      </Card>
 
-      <Field label={t('voice.mode')}>
-        <div className="flex overflow-hidden rounded-md">
-          {(['voice', 'ptt'] as const).map((m) => (
-            <button key={m} type="button" onClick={() => p.setPrefs({ micMode: m })} className={cx('flex-1 py-2', p.micMode === m ? 'bg-accent text-accent-fg' : 'bg-active hover:bg-hover')}>
-              {m === 'voice' ? t('voice.modeVad') : t('voice.modePtt')}
-            </button>
-          ))}
-        </div>
-      </Field>
-
-      {p.micMode === 'voice' ? (
-        <Field label={t('voice.threshold', { db: p.thresholdDb })} hint={t('voice.thresholdHint')}>
-          <Slider label={t('voice.threshold', { db: p.thresholdDb })} value={p.thresholdDb} min={METER_MIN_DB} max={0} onChange={(v) => p.setPrefs({ thresholdDb: v })} />
-        </Field>
-      ) : (
-        <Field label={t('voice.pttKey')} hint={platform.kind === 'web' ? t('voice.pttHintWeb') : t('voice.pttHint')}>
-          <div className="flex items-center gap-3">
-            <kbd className="min-w-24 rounded-md border border-line bg-input px-3 py-1.5 text-center font-mono">{p.pttBinding?.label ?? t('voice.pttNone')}</kbd>
+      <Card title={t('voice.mode')}>
+        <Row label={t('voice.mode')}>
+          <Segmented
+            label={t('voice.mode')}
+            value={p.micMode}
+            onChange={(m) => p.setPrefs({ micMode: m })}
+            options={[
+              { value: 'voice', label: t('voice.modeVad') },
+              { value: 'ptt', label: t('voice.modePtt') },
+            ]}
+          />
+        </Row>
+        {p.micMode === 'voice' ? (
+          <div className="flex flex-col gap-2 px-3 py-3">
+            <div className="flex justify-between text-[13px]">
+              <span>{t('voice.thresholdLabel')}</span>
+              <span className="text-muted">{p.thresholdDb} дБ</span>
+            </div>
+            <Slider label={t('voice.thresholdLabel')} value={p.thresholdDb} min={METER_MIN_DB} max={0} onChange={(v) => p.setPrefs({ thresholdDb: v })} />
+            <span className="text-[12px] text-faint">{t('voice.thresholdHint')}</span>
+          </div>
+        ) : (
+          <Row label={t('voice.pttKey')} hint={platform.kind === 'web' ? t('voice.pttHintWeb') : t('voice.pttHint')}>
+            <kbd className="min-w-16 rounded-[var(--radius-control)] border border-line bg-elev px-2 py-1 text-center font-mono text-[12px]">
+              {p.pttBinding?.label ?? t('voice.pttNone')}
+            </kbd>
             <Button variant="secondary" busy={binding} onClick={() => void bind()}>
               {binding ? t('voice.pttPress') : t('voice.pttAssign')}
             </Button>
-          </div>
-          {pttStatus?.error ? <span className="text-[12px] text-danger">{pttStatus.error}</span> : null}
-          {isMac && pttStatus && !pttStatus.trusted ? (
-            <span className="text-[12px] text-warn">
-              {t('voice.pttMac')}{' '}
-              <button type="button" className="text-accent hover:underline" onClick={() => void platform.system.openPrivacySettings('accessibility')}>
-                {t('common.openSettings')}
-              </button>
-            </span>
-          ) : null}
-        </Field>
-      )}
+          </Row>
+        )}
+      </Card>
 
-      <Switch checked={p.rnnoise} onChange={(v) => p.setPrefs({ rnnoise: v })} label={t('voice.rnnoise')} hint={t('voice.rnnoiseHint')} />
-      <Switch checked={p.red} onChange={(v) => p.setPrefs({ red: v })} label={t('voice.red')} hint={t('voice.redHint')} />
-      <Field label={t('voice.myBitrate')} hint={t('voice.myBitrateHint')}>
-        <Select
-          value={p.personalBitrateKbps ?? ''}
-          onChange={(e) => p.setPrefs({ personalBitrateKbps: e.target.value === '' ? null : Number(e.target.value) })}
-        >
-          <option value="">{t('voice.myBitrateRoom')}</option>
-          {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
-            <option key={b} value={b}>
-              ≤ {b} кбит/с
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <p className="text-[12px] text-faint">{t('voice.aecNote')}</p>
-    </div>
+      <Card title={t('voice.processing')} footer={t('voice.aecNote')}>
+        <Row label={t('voice.rnnoise')} hint={t('voice.rnnoiseHint')}>
+          <Toggle label={t('voice.rnnoise')} checked={p.rnnoise} onChange={(v) => p.setPrefs({ rnnoise: v })} />
+        </Row>
+        <Row label={t('voice.red')} hint={t('voice.redHint')}>
+          <Toggle label={t('voice.red')} checked={p.red} onChange={(v) => p.setPrefs({ red: v })} />
+        </Row>
+        <Row label={t('voice.myBitrate')} hint={t('voice.myBitrateHint')}>
+          <Select
+            aria-label={t('voice.myBitrate')}
+            className="w-40"
+            value={p.personalBitrateKbps ?? ''}
+            onChange={(e) => p.setPrefs({ personalBitrateKbps: e.target.value === '' ? null : Number(e.target.value) })}
+          >
+            <option value="">{t('voice.myBitrateRoom')}</option>
+            {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
+              <option key={b} value={b}>
+                ≤ {b} кбит/с
+              </option>
+            ))}
+          </Select>
+        </Row>
+      </Card>
+
+      <PermissionsCard />
+    </>
   );
 }
+
+// ---------------------------------------------------------------- appearance / notifications
 
 function AppearanceTab(): ReactNode {
   const theme = usePrefs((s) => s.theme);
   const set = usePrefs((s) => s.setPrefs);
-  const opts: Array<{ v: Theme; key: 'theme.dark' | 'theme.light' | 'theme.system' }> = [
-    { v: 'dark', key: 'theme.dark' },
-    { v: 'light', key: 'theme.light' },
-    { v: 'system', key: 'theme.system' },
-  ];
   return (
-    <Field label={t('settings.theme')}>
-      <div className="flex gap-2">
-        {opts.map((o) => (
-          <button key={o.v} type="button" onClick={() => set({ theme: o.v })} className={cx('rounded-md px-4 py-2', theme === o.v ? 'bg-accent text-accent-fg' : 'bg-active hover:bg-hover')}>
-            {t(o.key)}
-          </button>
-        ))}
-      </div>
-    </Field>
+    <Card>
+      <Row label={t('settings.theme')}>
+        <Segmented<Theme>
+          label={t('settings.theme')}
+          value={theme}
+          onChange={(v) => set({ theme: v })}
+          options={[
+            { value: 'light', label: t('theme.light') },
+            { value: 'dark', label: t('theme.dark') },
+            { value: 'system', label: t('theme.system') },
+          ]}
+        />
+      </Row>
+    </Card>
   );
 }
 
 function NotificationsTab(): ReactNode {
   const p = usePrefs();
+  const show = (): void => {
+    try {
+      new Notification('Calaba', { body: t('notify.testBody') });
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
   return (
-    <div className="flex flex-col gap-2">
-      <Switch checked={p.notifyMentions} onChange={(v) => p.setPrefs({ notifyMentions: v })} label={t('notify.mentions')} hint={t('notify.mentionsHint')} />
-      <Switch checked={p.notifyAll} onChange={(v) => p.setPrefs({ notifyAll: v })} label={t('notify.all')} />
-      <Switch checked={p.voiceSounds} onChange={(v) => p.setPrefs({ voiceSounds: v })} label={t('notify.voiceSounds')} />
-      <div>
+    <Card>
+      <Row label={t('notify.mentions')} hint={t('notify.mentionsHint')}>
+        <Toggle label={t('notify.mentions')} checked={p.notifyMentions} onChange={(v) => p.setPrefs({ notifyMentions: v })} />
+      </Row>
+      <Row label={t('notify.all')}>
+        <Toggle label={t('notify.all')} checked={p.notifyAll} onChange={(v) => p.setPrefs({ notifyAll: v })} />
+      </Row>
+      <Row label={t('notify.voiceSounds')}>
+        <Toggle label={t('notify.voiceSounds')} checked={p.voiceSounds} onChange={(v) => p.setPrefs({ voiceSounds: v })} />
+      </Row>
+      <Row label={t('notify.test')}>
         <Button
-          size="sm"
           variant="secondary"
           onClick={() => {
-            try {
-              if (Notification.permission === 'default') void Notification.requestPermission();
-              new Notification('Calaba', { body: t('notify.testBody') });
-            } catch (e) {
-              toast.error(String(e));
-            }
+            if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission().then(show);
+            else show();
           }}
         >
-          {t('notify.test')}
+          {t('notify.testBtn')}
         </Button>
-      </div>
-    </div>
+      </Row>
+    </Card>
   );
 }
+
+// ---------------------------------------------------------------- connection
 
 interface CheckResult {
   apiMs: number | null;
@@ -330,7 +480,7 @@ function ConnectionTab(): ReactNode {
     let apiMs: number | null = null;
     let apiError: string | null = null;
     try {
-      const r = await fetch(apiUrl('/api/me'));
+      const r = await platform.apiFetch('/api/me');
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       apiMs = Math.round(performance.now() - t0);
     } catch (e) {
@@ -341,38 +491,54 @@ function ConnectionTab(): ReactNode {
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <Field label={t('conn.server')}>
-        <Input value={serverUrl} disabled />
-      </Field>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
-        <dt className="text-muted">{t('conn.gateway')}</dt>
-        <dd>{gateway === 'ready' ? t('conn.ok') : gateway}</dd>
-        <dt className="text-muted">{t('conn.voicePath')}</dt>
-        <dd>{inVoice ? (voice.connectionPath() ?? '…') : t('conn.notInVoice')}</dd>
+    <>
+      <Card>
+        <Row label={t('conn.server')}>
+          <span className="selectable max-w-72 truncate text-[13px] text-muted" title={serverUrl}>
+            {serverUrl}
+          </span>
+        </Row>
+        <Row label={t('conn.gateway')}>
+          <span className={cx('text-[13px]', gateway === 'ready' ? 'text-ok' : 'text-warn')}>{gateway === 'ready' ? t('conn.ok') : gateway}</span>
+        </Row>
+        <Row label={t('conn.voicePath')}>
+          <span className="text-[13px] text-muted">{inVoice ? (voice.connectionPath() ?? '…') : t('conn.notInVoice')}</span>
+        </Row>
         {stats ? (
-          <>
-            <dt className="text-muted">{t('conn.traffic')}</dt>
-            <dd>
+          <Row label={t('conn.traffic')}>
+            <span className="text-[13px] text-muted">
               ↑ {Math.round(stats.totalOutKbps)} / ↓ {Math.round(stats.totalInKbps)} кбит/с
-            </dd>
-          </>
+            </span>
+          </Row>
         ) : null}
-      </dl>
-      <div>
-        <Button busy={busy} onClick={() => void check()}>{t('conn.check')}</Button>
-      </div>
+        <Row label={t('conn.check')}>
+          <Button variant="secondary" busy={busy} onClick={() => void check()}>
+            {t('conn.checkBtn')}
+          </Button>
+        </Row>
+      </Card>
       {res ? (
-        <div className="rounded-md bg-side p-3 text-[13px]">
-          <div>API: {res.apiMs !== null ? t('conn.apiOk', { ms: res.apiMs }) : <span className="text-danger">{res.apiError}</span>}</div>
-          <div>Gateway: {res.gateway === 'ready' ? t('conn.ok') : res.gateway}</div>
-          <div>{t('conn.voicePath')}: {res.path ?? t('conn.joinToCheck')}</div>
-          <p className="mt-2 text-faint">{t('conn.pathLegend')}</p>
-        </div>
+        <Card footer={t('conn.pathLegend')}>
+          <Row label="API">
+            {res.apiMs !== null ? (
+              <span className="text-[13px] text-ok">{t('conn.apiOk', { ms: res.apiMs })}</span>
+            ) : (
+              <span className="text-[13px] text-danger-text">{res.apiError}</span>
+            )}
+          </Row>
+          <Row label="Gateway">
+            <span className="text-[13px]">{res.gateway === 'ready' ? t('conn.ok') : res.gateway}</span>
+          </Row>
+          <Row label={t('conn.voicePath')}>
+            <span className="text-[13px] text-muted">{res.path ?? t('conn.joinToCheck')}</span>
+          </Row>
+        </Card>
       ) : null}
-    </div>
+    </>
   );
 }
+
+// ---------------------------------------------------------------- sessions
 
 function SessionsTab(): ReactNode {
   const qc = useQueryClient();
@@ -382,36 +548,40 @@ function SessionsTab(): ReactNode {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['sessions'] }),
   });
   return (
-    <div className="flex flex-col gap-2">
+    <>
       {q.isLoading ? <Spinner /> : null}
-      {q.data?.sessions.map((s) => (
-        <div key={s.id} className="flex items-center gap-3 border-b border-line py-2">
-          <div className="min-w-0 flex-1">
-            <div className="font-medium">
-              {s.deviceName || s.userAgent || '—'} {s.current ? <span className="ml-1 rounded bg-ok/20 px-1.5 text-[11px] text-ok">{t('sessions.current')}</span> : null}
-            </div>
-            <div className="text-[12px] text-faint">
-              {s.ip} · {t('sessions.lastSeen')} {s.lastSeenAt ? fmtStamp(timestampDate(s.lastSeenAt)) : '—'}
-            </div>
-          </div>
-          {!s.current ? (
-            <IconButton label={t('sessions.revoke')} danger onClick={() => revoke.mutate(s.id)}>
-              <Trash2 className="size-4" />
-            </IconButton>
-          ) : null}
-        </div>
-      ))}
-      <div className="mt-3">
+      {q.data ? (
+        <Card>
+          {q.data.sessions.map((s) => (
+            <Row
+              key={s.id}
+              label={s.deviceName || s.userAgent || '—'}
+              hint={`${s.ip} · ${t('sessions.lastSeen')} ${s.lastSeenAt ? fmtStamp(timestampDate(s.lastSeenAt)) : '—'}`}
+            >
+              {s.current ? (
+                <span className="rounded-full bg-hover px-2 py-0.5 text-[11px] text-fg">{t('sessions.current')}</span>
+              ) : (
+                <IconButton label={t('sessions.revoke')} danger onClick={() => revoke.mutate(s.id)}>
+                  <Trash2 className="size-4" />
+                </IconButton>
+              )}
+            </Row>
+          ))}
+        </Card>
+      ) : null}
+      <div>
         <Button
-          variant="danger"
+          variant="destructive"
           onClick={() => void confirmAction(t('sessions.logoutAll'), t('sessions.logoutAllText'), t('sessions.logoutAll')).then((ok) => ok && void logout(true))}
         >
           {t('sessions.logoutAll')}
         </Button>
       </div>
-    </div>
+    </>
   );
 }
+
+// ---------------------------------------------------------------- app
 
 function AppTab(): ReactNode {
   const info = useSession((s) => s.appInfo);
@@ -419,36 +589,35 @@ function AppTab(): ReactNode {
   const update = useSession((s) => s.update);
   const devStats = usePrefs((s) => s.devStats);
   const setPrefs = usePrefs((s) => s.setPrefs);
-  const [updateUrl, setUpdateUrl] = useState(settings?.updateUrl ?? '');
   const save = async (patch: Parameters<typeof platform.app.setSettings>[0]): Promise<void> => {
     const s = await platform.app.setSettings(patch);
     useSession.getState().set({ settings: s });
   };
+  const desktop = platform.kind === 'electron';
+  const updateHint =
+    update.state === 'disabled' ? t('app.updatesOff') : update.state === 'none' ? t('app.upToDate') : update.state === 'error' ? update.message : update.state;
   return (
-    <div className="flex flex-col gap-3">
-      {platform.kind === 'electron' ? (
-        <>
-      <Switch checked={settings?.autostart ?? false} onChange={(v) => void save({ autostart: v })} label={t('app.autostart')} hint={info?.packaged ? undefined : t('app.autostartDev')} />
-      <Field label={t('app.updateUrl')} hint={t('app.updateHint')}>
-        <div className="flex gap-2">
-          <Input value={updateUrl} onChange={(e) => setUpdateUrl(e.target.value)} placeholder="https://…/updates" spellCheck={false} />
-          <Button variant="secondary" onClick={() => void save({ updateUrl: updateUrl.trim() })}>{t('common.save')}</Button>
-        </div>
-      </Field>
-      <div className="flex items-center gap-3">
-        <Button variant="secondary" onClick={() => void platform.app.checkUpdates().then((u) => useSession.getState().set({ update: u }))}>
-          {t('app.checkUpdates')}
-        </Button>
-        <span className="text-[13px] text-muted">
-          {update.state === 'disabled' ? t('app.updatesOff') : update.state === 'none' ? t('app.upToDate') : update.state === 'error' ? update.message : update.state}
-        </span>
-      </div>
-        </>
+    <>
+      {desktop ? (
+        <Card>
+          <Row label={t('app.autostart')} hint={info?.packaged ? undefined : t('app.autostartDev')}>
+            <Toggle label={t('app.autostart')} checked={settings?.autostart ?? false} onChange={(v) => void save({ autostart: v })} />
+          </Row>
+          <Row label={t('app.updateUrl')} hint={t('app.updateHint')}>
+            <CommitInput label={t('app.updateUrl')} value={settings?.updateUrl ?? ''} placeholder="https://…/updates" onCommit={(v) => save({ updateUrl: v })} />
+          </Row>
+          <Row label={t('app.checkUpdates')} hint={updateHint}>
+            <Button variant="secondary" onClick={() => void platform.app.checkUpdates().then((u) => useSession.getState().set({ update: u }))}>
+              {t('app.checkBtn')}
+            </Button>
+          </Row>
+        </Card>
       ) : null}
-      <Switch checked={devStats} onChange={(v) => setPrefs({ devStats: v })} label={t('app.devStats')} hint={t('app.devStatsHint')} />
-      <p className="mt-4 text-[12px] text-faint">
-        Calaba {info?.version} · {platform.kind === 'web' ? t('app.web') : `Electron ${info?.electron ?? ''}`} · Chrome {info?.chrome || '—'} · {info?.platform}
-      </p>
-    </div>
+      <Card footer={`Calaba ${info?.version ?? ''} · ${desktop ? `Electron ${info?.electron ?? ''}` : t('app.web')} · ${info?.platform ?? ''}`}>
+        <Row label={t('app.devStats')} hint={t('app.devStatsHint')}>
+          <Toggle label={t('app.devStats')} checked={devStats} onChange={(v) => setPrefs({ devStats: v })} />
+        </Row>
+      </Card>
+    </>
   );
 }

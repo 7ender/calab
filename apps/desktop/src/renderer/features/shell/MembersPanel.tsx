@@ -15,7 +15,7 @@ export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
 const online = (s: PresenceStatus | undefined): boolean =>
   s === PresenceStatus.ONLINE || s === PresenceStatus.IDLE || s === PresenceStatus.DND;
 
-export function MembersPanel({ workspaceId }: { workspaceId: string }): ReactNode {
+export function MembersPanel({ workspaceId, floating = false }: { workspaceId: string; floating?: boolean }): ReactNode {
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const presences = useWorkspaces((s) => s.presences);
   const groups = useMemo(() => {
@@ -33,10 +33,13 @@ export function MembersPanel({ workspaceId }: { workspaceId: string }): ReactNod
     if (!u) return null;
     const name = m.nickname || u.displayName;
     return (
-      <div key={u.id} className={dim ? 'flex items-center gap-2.5 rounded-md px-2 py-1.5 opacity-50' : 'flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-hover'}>
-        <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={32} presence />
+      <div key={u.id} className="flex items-center gap-2.5 rounded-[var(--radius-control)] px-2 py-1.5 hover:bg-hover">
+        {/* Offline: grey avatar + secondary label (no opacity — text keeps ≥ 4.5:1). */}
+        <span className={dim ? 'flex shrink-0 grayscale' : 'flex shrink-0'}>
+          <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={32} presence />
+        </span>
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-medium">{name}</div>
+          <div className={dim ? 'truncate text-[13px] font-medium text-muted' : 'truncate text-[13px] font-medium'}>{name}</div>
           <div className="truncate text-[11px] text-faint">{u.statusText || (m.role <= WorkspaceRole.ADMIN ? t(ROLE_LABEL[m.role]) : '')}</div>
         </div>
       </div>
@@ -44,12 +47,19 @@ export function MembersPanel({ workspaceId }: { workspaceId: string }): ReactNod
   };
 
   return (
-    <aside className="w-60 shrink-0 overflow-y-auto bg-side px-2 pb-4 pt-14" aria-label={t('shell.members')}>
-      <h3 className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-faint">
+    <aside
+      className={
+        floating
+          ? 'mat-popover anim-in absolute bottom-[calc(var(--composer-height,64px)+8px)] right-3 top-[60px] z-[var(--z-popover)] w-60 overflow-y-auto rounded-[var(--radius-panel)] px-2 py-3'
+          : 'mat-sidebar w-60 shrink-0 overflow-y-auto border-l border-line px-2 pb-4 pt-14'
+      }
+      aria-label={t('shell.members')}
+    >
+      <h3 className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">
         {t('members.online')} — {groups.on.length}
       </h3>
       {groups.on.map((m) => row(m, false))}
-      <h3 className="px-2 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wide text-faint">
+      <h3 className="px-2 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-faint">
         {t('members.offline')} — {groups.off.length}
       </h3>
       {groups.off.map((m) => row(m, true))}

@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/room.proto.
  */
 export const file_calaba_v1_room: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvcm9vbS5wcm90bxIJY2FsYWJhLnYxIn4KFlJvb21QZXJtaXNzaW9uT3ZlcnJpZGUSNAoLdGFyZ2V0X3R5cGUYASABKA4yHy5jYWxhYmEudjEuUGVybWlzc2lvblRhcmdldFR5cGUSEQoJdGFyZ2V0X2lkGAIgASgJEg0KBWFsbG93GAMgASgEEgwKBGRlbnkYBCABKAQiyQEKEVJvb21NZWRpYU92ZXJyaWRlEh8KEmF1ZGlvX2JpdHJhdGVfa2JwcxgBIAEoDUgAiAEBEjwKEW1heF9zdHJlYW1fcHJlc2V0GAIgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0SAGIAQESGAoLbWF4X3N0cmVhbXMYAyABKA1IAogBAUIVChNfYXVkaW9fYml0cmF0ZV9rYnBzQhQKEl9tYXhfc3RyZWFtX3ByZXNldEIOCgxfbWF4X3N0cmVhbXMisAMKBFJvb20SCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEiEKBHR5cGUYAyABKA4yEy5jYWxhYmEudjEuUm9vbVR5cGUSDAoEbmFtZRgEIAEoCRINCgV0b3BpYxgFIAEoCRIQCghwb3NpdGlvbhgGIAEoBRISCgppc19wcml2YXRlGAcgASgIEisKBW1lZGlhGAggASgLMhwuY2FsYWJhLnYxLlJvb21NZWRpYVNldHRpbmdzEjQKDm1lZGlhX292ZXJyaWRlGAkgASgLMhwuY2FsYWJhLnYxLlJvb21NZWRpYU92ZXJyaWRlEj8KFHBlcm1pc3Npb25fb3ZlcnJpZGVzGAogAygLMiEuY2FsYWJhLnYxLlJvb21QZXJtaXNzaW9uT3ZlcnJpZGUSLgoKY3JlYXRlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFwoPbGFzdF9tZXNzYWdlX2lkGAwgASgJEjMKD2xhc3RfbWVzc2FnZV9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiwQEKEUNyZWF0ZVJvb21SZXF1ZXN0EiEKBHR5cGUYASABKA4yEy5jYWxhYmEudjEuUm9vbVR5cGUSDAoEbmFtZRgCIAEoCRINCgV0b3BpYxgDIAEoCRISCgppc19wcml2YXRlGAQgASgIEjQKDm1lZGlhX292ZXJyaWRlGAUgASgLMhwuY2FsYWJhLnYxLlJvb21NZWRpYU92ZXJyaWRlEhUKCHBvc2l0aW9uGAYgASgFSACIAQFCCwoJX3Bvc2l0aW9uIjMKEkNyZWF0ZVJvb21SZXNwb25zZRIdCgRyb29tGAEgASgLMg8uY2FsYWJhLnYxLlJvb20iMwoRTGlzdFJvb21zUmVzcG9uc2USHgoFcm9vbXMYASADKAsyDy5jYWxhYmEudjEuUm9vbSJFCg9HZXRSb29tUmVzcG9uc2USHQoEcm9vbRgBIAEoCzIPLmNhbGFiYS52MS5Sb29tEhMKC3Blcm1pc3Npb25zGAIgASgEIr8BChFVcGRhdGVSb29tUmVxdWVzdBIRCgRuYW1lGAEgASgJSACIAQESEgoFdG9waWMYAiABKAlIAYgBARIVCghwb3NpdGlvbhgDIAEoBUgCiAEBEjkKDm1lZGlhX292ZXJyaWRlGAQgASgLMhwuY2FsYWJhLnYxLlJvb21NZWRpYU92ZXJyaWRlSAOIAQFCBwoFX25hbWVCCAoGX3RvcGljQgsKCV9wb3NpdGlvbkIRCg9fbWVkaWFfb3ZlcnJpZGUiMwoSVXBkYXRlUm9vbVJlc3BvbnNlEh0KBHJvb20YASABKAsyDy5jYWxhYmEudjEuUm9vbSJRChlTZXRSb29tUGVybWlzc2lvbnNSZXF1ZXN0EjQKCW92ZXJyaWRlcxgBIAMoCzIhLmNhbGFiYS52MS5Sb29tUGVybWlzc2lvbk92ZXJyaWRlIjsKGlNldFJvb21QZXJtaXNzaW9uc1Jlc3BvbnNlEh0KBHJvb20YASABKAsyDy5jYWxhYmEudjEuUm9vbSpOCghSb29tVHlwZRIZChVST09NX1RZUEVfVU5TUEVDSUZJRUQQABITCg9ST09NX1RZUEVfVk9JQ0UQARISCg5ST09NX1RZUEVfVEVYVBACKoABChRQZXJtaXNzaW9uVGFyZ2V0VHlwZRImCiJQRVJNSVNTSU9OX1RBUkdFVF9UWVBFX1VOU1BFQ0lGSUVEEAASHwobUEVSTUlTU0lPTl9UQVJHRVRfVFlQRV9ST0xFEAESHwobUEVSTUlTU0lPTl9UQVJHRVRfVFlQRV9VU0VSEAJClwEKDWNvbS5jYWxhYmEudjFCCVJvb21Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_media]);
+  fileDesc("ChRjYWxhYmEvdjEvcm9vbS5wcm90bxIJY2FsYWJhLnYxIn4KFlJvb21QZXJtaXNzaW9uT3ZlcnJpZGUSNAoLdGFyZ2V0X3R5cGUYASABKA4yHy5jYWxhYmEudjEuUGVybWlzc2lvblRhcmdldFR5cGUSEQoJdGFyZ2V0X2lkGAIgASgJEg0KBWFsbG93GAMgASgEEgwKBGRlbnkYBCABKAQiyQEKEVJvb21NZWRpYU92ZXJyaWRlEh8KEmF1ZGlvX2JpdHJhdGVfa2JwcxgBIAEoDUgAiAEBEjwKEW1heF9zdHJlYW1fcHJlc2V0GAIgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0SAGIAQESGAoLbWF4X3N0cmVhbXMYAyABKA1IAogBAUIVChNfYXVkaW9fYml0cmF0ZV9rYnBzQhQKEl9tYXhfc3RyZWFtX3ByZXNldEIOCgxfbWF4X3N0cmVhbXMi+wMKBFJvb20SCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEiEKBHR5cGUYAyABKA4yEy5jYWxhYmEudjEuUm9vbVR5cGUSDAoEbmFtZRgEIAEoCRINCgV0b3BpYxgFIAEoCRIQCghwb3NpdGlvbhgGIAEoBRISCgppc19wcml2YXRlGAcgASgIEisKBW1lZGlhGAggASgLMhwuY2FsYWJhLnYxLlJvb21NZWRpYVNldHRpbmdzEjQKDm1lZGlhX292ZXJyaWRlGAkgASgLMhwuY2FsYWJhLnYxLlJvb21NZWRpYU92ZXJyaWRlEj8KFHBlcm1pc3Npb25fb3ZlcnJpZGVzGAogAygLMiEuY2FsYWJhLnYxLlJvb21QZXJtaXNzaW9uT3ZlcnJpZGUSLgoKY3JlYXRlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFwoPbGFzdF9tZXNzYWdlX2lkGAwgASgJEjMKD2xhc3RfbWVzc2FnZV9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEwoLY2F0ZWdvcnlfaWQYDiABKAkSNAoQdm9pY2Vfc3RhcnRlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiUAoMUm9vbUNhdGVnb3J5EgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIMCgRuYW1lGAMgASgJEhAKCHBvc2l0aW9uGAQgASgFIkkKFUNyZWF0ZUNhdGVnb3J5UmVxdWVzdBIMCgRuYW1lGAEgASgJEhUKCHBvc2l0aW9uGAIgASgFSACIAQFCCwoJX3Bvc2l0aW9uIkMKFkNyZWF0ZUNhdGVnb3J5UmVzcG9uc2USKQoIY2F0ZWdvcnkYASABKAsyFy5jYWxhYmEudjEuUm9vbUNhdGVnb3J5IkUKFkxpc3RDYXRlZ29yaWVzUmVzcG9uc2USKwoKY2F0ZWdvcmllcxgBIAMoCzIXLmNhbGFiYS52MS5Sb29tQ2F0ZWdvcnkiVwoVVXBkYXRlQ2F0ZWdvcnlSZXF1ZXN0EhEKBG5hbWUYASABKAlIAIgBARIVCghwb3NpdGlvbhgCIAEoBUgBiAEBQgcKBV9uYW1lQgsKCV9wb3NpdGlvbiJDChZVcGRhdGVDYXRlZ29yeVJlc3BvbnNlEikKCGNhdGVnb3J5GAEgASgLMhcuY2FsYWJhLnYxLlJvb21DYXRlZ29yeSKZAgoTU2V0Um9vbU9yZGVyUmVxdWVzdBI6CgVyb29tcxgBIAMoCzIrLmNhbGFiYS52MS5TZXRSb29tT3JkZXJSZXF1ZXN0LlJvb21Qb3NpdGlvbhJDCgpjYXRlZ29yaWVzGAIgAygLMi8uY2FsYWJhLnYxLlNldFJvb21PcmRlclJlcXVlc3QuQ2F0ZWdvcnlQb3NpdGlvbhpGCgxSb29tUG9zaXRpb24SDwoHcm9vbV9pZBgBIAEoCRIQCghwb3NpdGlvbhgCIAEoBRITCgtjYXRlZ29yeV9pZBgDIAEoCRo5ChBDYXRlZ29yeVBvc2l0aW9uEhMKC2NhdGVnb3J5X2lkGAEgASgJEhAKCHBvc2l0aW9uGAIgASgFImMKFFNldFJvb21PcmRlclJlc3BvbnNlEh4KBXJvb21zGAEgAygLMg8uY2FsYWJhLnYxLlJvb20SKwoKY2F0ZWdvcmllcxgCIAMoCzIXLmNhbGFiYS52MS5Sb29tQ2F0ZWdvcnkiwQEKEUNyZWF0ZVJvb21SZXF1ZXN0EiEKBHR5cGUYASABKA4yEy5jYWxhYmEudjEuUm9vbVR5cGUSDAoEbmFtZRgCIAEoCRINCgV0b3BpYxgDIAEoCRISCgppc19wcml2YXRlGAQgASgIEjQKDm1lZGlhX292ZXJyaWRlGAUgASgLMhwuY2FsYWJhLnYxLlJvb21NZWRpYU92ZXJyaWRlEhUKCHBvc2l0aW9uGAYgASgFSACIAQFCCwoJX3Bvc2l0aW9uIjMKEkNyZWF0ZVJvb21SZXNwb25zZRIdCgRyb29tGAEgASgLMg8uY2FsYWJhLnYxLlJvb20iMwoRTGlzdFJvb21zUmVzcG9uc2USHgoFcm9vbXMYASADKAsyDy5jYWxhYmEudjEuUm9vbSJFCg9HZXRSb29tUmVzcG9uc2USHQoEcm9vbRgBIAEoCzIPLmNhbGFiYS52MS5Sb29tEhMKC3Blcm1pc3Npb25zGAIgASgEIukBChFVcGRhdGVSb29tUmVxdWVzdBIRCgRuYW1lGAEgASgJSACIAQESEgoFdG9waWMYAiABKAlIAYgBARIVCghwb3NpdGlvbhgDIAEoBUgCiAEBEjkKDm1lZGlhX292ZXJyaWRlGAQgASgLMhwuY2FsYWJhLnYxLlJvb21NZWRpYU92ZXJyaWRlSAOIAQESGAoLY2F0ZWdvcnlfaWQYBSABKAlIBIgBAUIHCgVfbmFtZUIICgZfdG9waWNCCwoJX3Bvc2l0aW9uQhEKD19tZWRpYV9vdmVycmlkZUIOCgxfY2F0ZWdvcnlfaWQiMwoSVXBkYXRlUm9vbVJlc3BvbnNlEh0KBHJvb20YASABKAsyDy5jYWxhYmEudjEuUm9vbSJRChlTZXRSb29tUGVybWlzc2lvbnNSZXF1ZXN0EjQKCW92ZXJyaWRlcxgBIAMoCzIhLmNhbGFiYS52MS5Sb29tUGVybWlzc2lvbk92ZXJyaWRlIjsKGlNldFJvb21QZXJtaXNzaW9uc1Jlc3BvbnNlEh0KBHJvb20YASABKAsyDy5jYWxhYmEudjEuUm9vbSpOCghSb29tVHlwZRIZChVST09NX1RZUEVfVU5TUEVDSUZJRUQQABITCg9ST09NX1RZUEVfVk9JQ0UQARISCg5ST09NX1RZUEVfVEVYVBACKoABChRQZXJtaXNzaW9uVGFyZ2V0VHlwZRImCiJQRVJNSVNTSU9OX1RBUkdFVF9UWVBFX1VOU1BFQ0lGSUVEEAASHwobUEVSTUlTU0lPTl9UQVJHRVRfVFlQRV9ST0xFEAESHwobUEVSTUlTU0lPTl9UQVJHRVRfVFlQRV9VU0VSEAJClwEKDWNvbS5jYWxhYmEudjFCCVJvb21Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_media]);
 
 /**
  * Room-level override (ADR-0008). allow/deny are Permission bit masks.
@@ -165,6 +165,21 @@ export type Room = Message<"calaba.v1.Room"> & {
    * @generated from field: google.protobuf.Timestamp last_message_at = 13;
    */
   lastMessageAt?: Timestamp | undefined;
+
+  /**
+   * empty = no category (top of the list)
+   *
+   * @generated from field: string category_id = 14;
+   */
+  categoryId: string;
+
+  /**
+   * Voice rooms: when the current call started (first participant joined an empty room).
+   * Filled in READY / WORKSPACE_CREATE snapshots; unset when nobody is in the room.
+   *
+   * @generated from field: google.protobuf.Timestamp voice_started_at = 15;
+   */
+  voiceStartedAt?: Timestamp | undefined;
 };
 
 /**
@@ -173,6 +188,243 @@ export type Room = Message<"calaba.v1.Room"> & {
  */
 export const RoomSchema: GenMessage<Room> = /*@__PURE__*/
   messageDesc(file_calaba_v1_room, 2);
+
+/**
+ * Room category (a collapsible group in the room list). Visible to all members; clients
+ * hide categories without visible rooms.
+ *
+ * @generated from message calaba.v1.RoomCategory
+ */
+export type RoomCategory = Message<"calaba.v1.RoomCategory"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string workspace_id = 2;
+   */
+  workspaceId: string;
+
+  /**
+   * 1..100 chars
+   *
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * @generated from field: int32 position = 4;
+   */
+  position: number;
+};
+
+/**
+ * Describes the message calaba.v1.RoomCategory.
+ * Use `create(RoomCategorySchema)` to create a new message.
+ */
+export const RoomCategorySchema: GenMessage<RoomCategory> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 3);
+
+/**
+ * POST /api/workspaces/{id}/categories (MANAGE_ROOM at workspace level)
+ *
+ * @generated from message calaba.v1.CreateCategoryRequest
+ */
+export type CreateCategoryRequest = Message<"calaba.v1.CreateCategoryRequest"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * default: after the last category
+   *
+   * @generated from field: optional int32 position = 2;
+   */
+  position?: number | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CreateCategoryRequest.
+ * Use `create(CreateCategoryRequestSchema)` to create a new message.
+ */
+export const CreateCategoryRequestSchema: GenMessage<CreateCategoryRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 4);
+
+/**
+ * @generated from message calaba.v1.CreateCategoryResponse
+ */
+export type CreateCategoryResponse = Message<"calaba.v1.CreateCategoryResponse"> & {
+  /**
+   * @generated from field: calaba.v1.RoomCategory category = 1;
+   */
+  category?: RoomCategory | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CreateCategoryResponse.
+ * Use `create(CreateCategoryResponseSchema)` to create a new message.
+ */
+export const CreateCategoryResponseSchema: GenMessage<CreateCategoryResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 5);
+
+/**
+ * GET /api/workspaces/{id}/categories
+ *
+ * @generated from message calaba.v1.ListCategoriesResponse
+ */
+export type ListCategoriesResponse = Message<"calaba.v1.ListCategoriesResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.RoomCategory categories = 1;
+   */
+  categories: RoomCategory[];
+};
+
+/**
+ * Describes the message calaba.v1.ListCategoriesResponse.
+ * Use `create(ListCategoriesResponseSchema)` to create a new message.
+ */
+export const ListCategoriesResponseSchema: GenMessage<ListCategoriesResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 6);
+
+/**
+ * PATCH /api/categories/{id} (MANAGE_ROOM at workspace level)
+ *
+ * @generated from message calaba.v1.UpdateCategoryRequest
+ */
+export type UpdateCategoryRequest = Message<"calaba.v1.UpdateCategoryRequest"> & {
+  /**
+   * @generated from field: optional string name = 1;
+   */
+  name?: string | undefined;
+
+  /**
+   * @generated from field: optional int32 position = 2;
+   */
+  position?: number | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateCategoryRequest.
+ * Use `create(UpdateCategoryRequestSchema)` to create a new message.
+ */
+export const UpdateCategoryRequestSchema: GenMessage<UpdateCategoryRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 7);
+
+/**
+ * @generated from message calaba.v1.UpdateCategoryResponse
+ */
+export type UpdateCategoryResponse = Message<"calaba.v1.UpdateCategoryResponse"> & {
+  /**
+   * @generated from field: calaba.v1.RoomCategory category = 1;
+   */
+  category?: RoomCategory | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateCategoryResponse.
+ * Use `create(UpdateCategoryResponseSchema)` to create a new message.
+ */
+export const UpdateCategoryResponseSchema: GenMessage<UpdateCategoryResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 8);
+
+/**
+ * PUT /api/workspaces/{id}/rooms/order (MANAGE_ROOM at workspace level). Batch reorder after
+ * drag & drop: listed rooms get the given position and category (category_id "" = none),
+ * listed categories the given position. Unlisted items are unchanged.
+ *
+ * @generated from message calaba.v1.SetRoomOrderRequest
+ */
+export type SetRoomOrderRequest = Message<"calaba.v1.SetRoomOrderRequest"> & {
+  /**
+   * @generated from field: repeated calaba.v1.SetRoomOrderRequest.RoomPosition rooms = 1;
+   */
+  rooms: SetRoomOrderRequest_RoomPosition[];
+
+  /**
+   * @generated from field: repeated calaba.v1.SetRoomOrderRequest.CategoryPosition categories = 2;
+   */
+  categories: SetRoomOrderRequest_CategoryPosition[];
+};
+
+/**
+ * Describes the message calaba.v1.SetRoomOrderRequest.
+ * Use `create(SetRoomOrderRequestSchema)` to create a new message.
+ */
+export const SetRoomOrderRequestSchema: GenMessage<SetRoomOrderRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 9);
+
+/**
+ * @generated from message calaba.v1.SetRoomOrderRequest.RoomPosition
+ */
+export type SetRoomOrderRequest_RoomPosition = Message<"calaba.v1.SetRoomOrderRequest.RoomPosition"> & {
+  /**
+   * @generated from field: string room_id = 1;
+   */
+  roomId: string;
+
+  /**
+   * @generated from field: int32 position = 2;
+   */
+  position: number;
+
+  /**
+   * @generated from field: string category_id = 3;
+   */
+  categoryId: string;
+};
+
+/**
+ * Describes the message calaba.v1.SetRoomOrderRequest.RoomPosition.
+ * Use `create(SetRoomOrderRequest_RoomPositionSchema)` to create a new message.
+ */
+export const SetRoomOrderRequest_RoomPositionSchema: GenMessage<SetRoomOrderRequest_RoomPosition> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 9, 0);
+
+/**
+ * @generated from message calaba.v1.SetRoomOrderRequest.CategoryPosition
+ */
+export type SetRoomOrderRequest_CategoryPosition = Message<"calaba.v1.SetRoomOrderRequest.CategoryPosition"> & {
+  /**
+   * @generated from field: string category_id = 1;
+   */
+  categoryId: string;
+
+  /**
+   * @generated from field: int32 position = 2;
+   */
+  position: number;
+};
+
+/**
+ * Describes the message calaba.v1.SetRoomOrderRequest.CategoryPosition.
+ * Use `create(SetRoomOrderRequest_CategoryPositionSchema)` to create a new message.
+ */
+export const SetRoomOrderRequest_CategoryPositionSchema: GenMessage<SetRoomOrderRequest_CategoryPosition> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 9, 1);
+
+/**
+ * @generated from message calaba.v1.SetRoomOrderResponse
+ */
+export type SetRoomOrderResponse = Message<"calaba.v1.SetRoomOrderResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.Room rooms = 1;
+   */
+  rooms: Room[];
+
+  /**
+   * @generated from field: repeated calaba.v1.RoomCategory categories = 2;
+   */
+  categories: RoomCategory[];
+};
+
+/**
+ * Describes the message calaba.v1.SetRoomOrderResponse.
+ * Use `create(SetRoomOrderResponseSchema)` to create a new message.
+ */
+export const SetRoomOrderResponseSchema: GenMessage<SetRoomOrderResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 10);
 
 /**
  * POST /api/workspaces/{id}/rooms (MANAGE_ROOM at workspace level, i.e. admin/owner)
@@ -222,7 +474,7 @@ export type CreateRoomRequest = Message<"calaba.v1.CreateRoomRequest"> & {
  * Use `create(CreateRoomRequestSchema)` to create a new message.
  */
 export const CreateRoomRequestSchema: GenMessage<CreateRoomRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_room, 3);
+  messageDesc(file_calaba_v1_room, 11);
 
 /**
  * @generated from message calaba.v1.CreateRoomResponse
@@ -239,7 +491,7 @@ export type CreateRoomResponse = Message<"calaba.v1.CreateRoomResponse"> & {
  * Use `create(CreateRoomResponseSchema)` to create a new message.
  */
 export const CreateRoomResponseSchema: GenMessage<CreateRoomResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_room, 4);
+  messageDesc(file_calaba_v1_room, 12);
 
 /**
  * GET /api/workspaces/{id}/rooms — only rooms where the caller has VIEW_ROOM.
@@ -258,7 +510,7 @@ export type ListRoomsResponse = Message<"calaba.v1.ListRoomsResponse"> & {
  * Use `create(ListRoomsResponseSchema)` to create a new message.
  */
 export const ListRoomsResponseSchema: GenMessage<ListRoomsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_room, 5);
+  messageDesc(file_calaba_v1_room, 13);
 
 /**
  * GET /api/rooms/{id}
@@ -284,7 +536,7 @@ export type GetRoomResponse = Message<"calaba.v1.GetRoomResponse"> & {
  * Use `create(GetRoomResponseSchema)` to create a new message.
  */
 export const GetRoomResponseSchema: GenMessage<GetRoomResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_room, 6);
+  messageDesc(file_calaba_v1_room, 14);
 
 /**
  * PATCH /api/rooms/{id} (MANAGE_ROOM). Unset fields are left unchanged.
@@ -312,6 +564,13 @@ export type UpdateRoomRequest = Message<"calaba.v1.UpdateRoomRequest"> & {
    * @generated from field: optional calaba.v1.RoomMediaOverride media_override = 4;
    */
   mediaOverride?: RoomMediaOverride | undefined;
+
+  /**
+   * "" = remove from category
+   *
+   * @generated from field: optional string category_id = 5;
+   */
+  categoryId?: string | undefined;
 };
 
 /**
@@ -319,7 +578,7 @@ export type UpdateRoomRequest = Message<"calaba.v1.UpdateRoomRequest"> & {
  * Use `create(UpdateRoomRequestSchema)` to create a new message.
  */
 export const UpdateRoomRequestSchema: GenMessage<UpdateRoomRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_room, 7);
+  messageDesc(file_calaba_v1_room, 15);
 
 /**
  * @generated from message calaba.v1.UpdateRoomResponse
@@ -336,7 +595,7 @@ export type UpdateRoomResponse = Message<"calaba.v1.UpdateRoomResponse"> & {
  * Use `create(UpdateRoomResponseSchema)` to create a new message.
  */
 export const UpdateRoomResponseSchema: GenMessage<UpdateRoomResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_room, 8);
+  messageDesc(file_calaba_v1_room, 16);
 
 /**
  * PUT /api/rooms/{id}/permissions (MANAGE_ROOM). Replaces all overrides of the room.
@@ -355,7 +614,7 @@ export type SetRoomPermissionsRequest = Message<"calaba.v1.SetRoomPermissionsReq
  * Use `create(SetRoomPermissionsRequestSchema)` to create a new message.
  */
 export const SetRoomPermissionsRequestSchema: GenMessage<SetRoomPermissionsRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_room, 9);
+  messageDesc(file_calaba_v1_room, 17);
 
 /**
  * @generated from message calaba.v1.SetRoomPermissionsResponse
@@ -372,7 +631,7 @@ export type SetRoomPermissionsResponse = Message<"calaba.v1.SetRoomPermissionsRe
  * Use `create(SetRoomPermissionsResponseSchema)` to create a new message.
  */
 export const SetRoomPermissionsResponseSchema: GenMessage<SetRoomPermissionsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_room, 10);
+  messageDesc(file_calaba_v1_room, 18);
 
 /**
  * @generated from enum calaba.v1.RoomType

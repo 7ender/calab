@@ -15,6 +15,12 @@ export const SHORTCUTS = {
 export function installHotkeys(): () => void {
   const onKey = (e: KeyboardEvent): void => {
     const mod = e.metaKey || e.ctrlKey;
+    if (e.key === 'Escape' && !mod) {
+      // The floating members panel is a layer too (dialogs/menus close themselves).
+      const ui = useUi.getState();
+      if (ui.membersOverlay && !ui.dialog && !e.defaultPrevented) ui.setMembersOverlay(false);
+      return;
+    }
     if (!mod) return;
     const k = e.key.toLowerCase();
     if (k === 'k' && !e.shiftKey) {

@@ -53,6 +53,66 @@ message Room {
   // no messages or in other events (clients track MESSAGE_CREATE).
   string last_message_id = 12;
   google.protobuf.Timestamp last_message_at = 13;
+  string category_id = 14; // empty = no category (top of the list)
+  // Voice rooms: when the current call started (first participant joined an empty room).
+  // Filled in READY / WORKSPACE_CREATE snapshots; unset when nobody is in the room.
+  google.protobuf.Timestamp voice_started_at = 15;
+}
+
+// Room category (a collapsible group in the room list). Visible to all members; clients
+// hide categories without visible rooms.
+message RoomCategory {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3; // 1..100 chars
+  int32 position = 4;
+}
+
+// POST /api/workspaces/{id}/categories (MANAGE_ROOM at workspace level)
+message CreateCategoryRequest {
+  string name = 1;
+  optional int32 position = 2; // default: after the last category
+}
+
+message CreateCategoryResponse {
+  RoomCategory category = 1;
+}
+
+// GET /api/workspaces/{id}/categories
+message ListCategoriesResponse {
+  repeated RoomCategory categories = 1;
+}
+
+// PATCH /api/categories/{id} (MANAGE_ROOM at workspace level)
+message UpdateCategoryRequest {
+  optional string name = 1;
+  optional int32 position = 2;
+}
+
+message UpdateCategoryResponse {
+  RoomCategory category = 1;
+}
+
+// PUT /api/workspaces/{id}/rooms/order (MANAGE_ROOM at workspace level). Batch reorder after
+// drag & drop: listed rooms get the given position and category (category_id "" = none),
+// listed categories the given position. Unlisted items are unchanged.
+message SetRoomOrderRequest {
+  message RoomPosition {
+    string room_id = 1;
+    int32 position = 2;
+    string category_id = 3;
+  }
+  message CategoryPosition {
+    string category_id = 1;
+    int32 position = 2;
+  }
+  repeated RoomPosition rooms = 1;
+  repeated CategoryPosition categories = 2;
+}
+
+message SetRoomOrderResponse {
+  repeated Room rooms = 1;
+  repeated RoomCategory categories = 2;
 }
 
 // POST /api/workspaces/{id}/rooms (MANAGE_ROOM at workspace level, i.e. admin/owner)
@@ -87,6 +147,7 @@ message UpdateRoomRequest {
   optional string topic = 2;
   optional int32 position = 3;
   optional RoomMediaOverride media_override = 4;
+  optional string category_id = 5; // "" = remove from category
 }
 
 message UpdateRoomResponse {

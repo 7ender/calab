@@ -35,7 +35,7 @@ export function SelfPanel(): ReactNode {
 
   return (
     <div className="flex h-[52px] shrink-0 items-center gap-0.5 border-t border-line px-2">
-      <Dropdown.Root>
+      <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
           <button type="button" aria-label={t('presence.change')} className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] px-1 py-1 text-left hover:bg-hover">
             <span className="relative">

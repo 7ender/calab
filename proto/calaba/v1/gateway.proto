@@ -146,6 +146,11 @@ message DispatchEvent {
     ReadStateUpdate read_state_update = 20;
     UserUpdate user_update = 21;
     Resumed resumed = 22;
+    CategoryCreate category_create = 23;
+    CategoryUpdate category_update = 24;
+    CategoryDelete category_delete = 25;
+    MessageReactionAdd message_reaction_add = 26;
+    MessageReactionRemove message_reaction_remove = 27;
   }
 }
 
@@ -157,12 +162,17 @@ message VoiceState {
   bool muted = 4;     // all sessions in the room muted
   bool deafened = 5;
   bool streaming = 6; // any session in the room streaming
+  google.protobuf.Timestamp joined_at = 7; // earliest join of the user's devices in this room
 }
 
 message Presence {
   string user_id = 1;
   PresenceStatus status = 2;
   google.protobuf.Timestamp last_seen = 3; // unset when hidden (invisible/offline)
+  // Custom status (see PATCH /api/me/status); filled in PRESENCE_UPDATE events.
+  string status_text = 4;
+  string status_emoji = 5;
+  google.protobuf.Timestamp status_expires_at = 6;
 }
 
 message ReadState {
@@ -181,6 +191,7 @@ message WorkspaceSnapshot {
   // Recipient's effective permission bits per visible room (room_id -> bits).
   // After READY, clients recompute from Room.permission_overrides (computeRoomPermissions).
   map<string, uint64> permissions = 7;
+  repeated RoomCategory categories = 8;
 }
 
 message Ready {
@@ -188,6 +199,35 @@ message Ready {
   Me me = 2;
   repeated WorkspaceSnapshot workspaces = 3;
   repeated ReadState read_states = 4;
+}
+
+message CategoryCreate {
+  RoomCategory category = 1;
+}
+
+message CategoryUpdate {
+  RoomCategory category = 1;
+}
+
+message CategoryDelete {
+  string workspace_id = 1;
+  string category_id = 2; // its rooms move out of it (ROOM_UPDATE follows)
+}
+
+message MessageReactionAdd {
+  string workspace_id = 1;
+  string room_id = 2;
+  string message_id = 3;
+  string user_id = 4;
+  string emoji = 5;
+}
+
+message MessageReactionRemove {
+  string workspace_id = 1;
+  string room_id = 2;
+  string message_id = 3;
+  string user_id = 4;
+  string emoji = 5;
 }
 
 // Sent after a successful RESUME, following the replayed events.

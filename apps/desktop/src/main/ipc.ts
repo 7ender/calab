@@ -25,6 +25,8 @@ import { setTrayState } from './tray';
 import { checkForUpdates } from './updater';
 import { isOwnOrigin } from './windows';
 
+const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
+
 /** Only our own renderer may call privileged IPC. */
 function assertTrusted(e: IpcMainInvokeEvent): void {
   const url = e.senderFrame?.url ?? '';
@@ -128,6 +130,7 @@ export function registerIpc(): void {
     packaged: app.isPackaged,
     fakeMedia: process.env['CALABA_FAKE_MEDIA'] === '1',
     forceRelay: process.env['CALABA_FORCE_RELAY'] === '1',
+    visualTest: VISUAL_TEST,
     systemAudioLoopback: systemAudioSupport(),
     micAccess: mediaAccess('microphone'),
     screenAccess: mediaAccess('screen'),
@@ -151,12 +154,17 @@ export function registerIpc(): void {
   handle(IPC.appSetTheme, (_e, a) => {
     if (a === 'dark' || a === 'light' || a === 'system') nativeTheme.themeSource = a;
   });
-  handle(IPC.systemPermissions, (): PermissionStatus => ({
-    microphone: mediaAccess('microphone'),
-    screen: mediaAccess('screen'),
-    accessibility: process.platform === 'darwin' ? systemPreferences.isTrustedAccessibilityClient(false) : true,
-    notifications: 'n/a', // the renderer knows Notification.permission
-  }));
+  handle(IPC.systemPermissions, (): PermissionStatus =>
+    // Visual tests: fixed statuses so screenshots don't depend on the machine's TCC state.
+    VISUAL_TEST
+      ? { microphone: 'granted', screen: 'denied', accessibility: false, notifications: 'n/a' }
+      : {
+          microphone: mediaAccess('microphone'),
+          screen: mediaAccess('screen'),
+          accessibility: process.platform === 'darwin' ? systemPreferences.isTrustedAccessibilityClient(false) : true,
+          notifications: 'n/a', // the renderer knows Notification.permission
+        },
+  );
   handle(IPC.systemRequestMic, async () => {
     if (process.platform !== 'darwin') return true;
     return systemPreferences.askForMediaAccess('microphone');
@@ -191,7 +199,7 @@ export function registerIpc(): void {
   });
   handle(IPC.pttSetBinding, (e, b) => setBinding(e.sender, parseBinding(b)));
   handle(IPC.pttCaptureNext, () => captureNext());
-  handle(IPC.pttStatus, () => pttStatus());
+  handle(IPC.pttStatus, () => (VISUAL_TEST ? { ...pttStatus(), trusted: false } : pttStatus()));
   handle(IPC.systemMetrics, (e): ProcessMetrics => {
     const pid = e.sender.getOSProcessId();
     const metrics = app.getAppMetrics();

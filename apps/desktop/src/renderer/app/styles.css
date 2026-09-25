@@ -23,18 +23,30 @@
   --color-border-popover: rgb(255 255 255 / 8%);
   --color-label: #ececf0;
   --color-label-secondary: #a1a1a6;
-  --color-label-tertiary: #98989d;
+  --color-label-tertiary: #9d9da2;
   --color-accent: #0a84ff; /* icons, toggles, focus ring, selection */
   --color-accent-strong: #0071e3; /* filled primary buttons (white text ≥ 4.5:1) */
   --color-accent-text: #409cff; /* links / accent-coloured text on content */
   --color-on-accent: #ffffff;
   --color-green: #30d158;
   --color-yellow: #ffd60a;
-  --color-red: #ff453a;
+  --color-red: #ff453a; /* icons, dots, fills */
+  --color-red-text: #ff7f75; /* red text on any dark surface (≥ 4.5:1) */
   --color-red-fill: #d70015;
+  --color-green-fill: #1f7a34; /* filled green with white text (≥ 4.5:1) */
   --color-mention: rgb(255 214 10 / 12%);
   --color-code: rgb(118 118 128 / 18%);
   --color-scrim: rgb(0 0 0 / 45%);
+  --color-video-bg: #000000;
+  /* avatar identity colours (white initials, ≥ 4.5:1) */
+  --avatar-1: #0063cc;
+  --avatar-2: #1f7a34;
+  --avatar-3: #5a51d6;
+  --avatar-4: #b3400b;
+  --avatar-5: #b0194f;
+  --avatar-6: #7e3fa0;
+  --avatar-7: #0b6a80;
+  --avatar-8: #5c5c61;
 
   /* ---- spacing: 4 px grid ---- */
   --space-1: 4px;
@@ -101,6 +113,7 @@
   --color-green: #1f7a34;
   --color-yellow: #a05a00;
   --color-red: #d70015;
+  --color-red-text: #b0000d;
   --color-red-fill: #d70015;
   --color-mention: rgb(255 204 0 / 16%);
   --color-code: rgb(118 118 128 / 12%);
@@ -155,7 +168,9 @@
   --color-ok: var(--color-green);
   --color-warn: var(--color-yellow);
   --color-danger: var(--color-red);
+  --color-danger-text: var(--color-red-text);
   --color-danger-fill: var(--color-red-fill);
+  --color-ok-fill: var(--color-green-fill);
   --color-mention: var(--color-mention);
   --color-code: var(--color-code);
   --color-scrim: var(--color-scrim);
@@ -211,6 +226,12 @@ body {
   -webkit-backdrop-filter: var(--blur-toolbar);
   backdrop-filter: var(--blur-toolbar);
 }
+/* Modal windows (macOS sheets): opaque, so the window behind never smears through. */
+.mat-sheet {
+  background: var(--color-popover-solid);
+  border: 1px solid var(--color-border-popover);
+  box-shadow: var(--shadow-popover);
+}
 .mat-popover {
   background: var(--color-popover);
   -webkit-backdrop-filter: var(--blur-popover);
@@ -261,13 +282,21 @@ body {
   background: transparent;
 }
 
-/* Keyboard focus is always visible: 2 px accent ring. */
-:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
+/* Keyboard focus is always visible: 2 px accent ring. In the base layer so a component
+   that draws its own focus indication (e.g. the composer box) can opt out with a utility. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
 }
-:focus:not(:focus-visible) {
-  outline: none;
+/* Keyboard-focusable scrollers (message list): inset ring; beats the library's inline style. */
+[data-virtuoso-scroller]:focus-visible {
+  outline: 2px solid var(--color-accent) !important;
+  outline-offset: -2px;
 }
 
 @keyframes calaba-pulse {

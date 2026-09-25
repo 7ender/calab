@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/user.proto.
  */
 export const file_calaba_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIoUBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLZAQoMVXNlclNldHRpbmdzEhkKEW5vaXNlX3N1cHByZXNzaW9uGAEgASgIEhwKFHVuc3RhYmxlX25ldHdvcmtfcmVkGAIgASgIEhgKDHB1c2hfdG9fdGFsaxgDIAEoCEICGAESGAoQcHVzaF90b190YWxrX2tleRgEIAEoCRIkCghtaWNfbW9kZRgFIAEoDjISLmNhbGFiYS52MS5NaWNNb2RlEh8KEmF1ZGlvX2JpdHJhdGVfa2JwcxgGIAEoDUgAiAEBQhUKE19hdWRpb19iaXRyYXRlX2ticHMiXQoCTWUSHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg0KBWVtYWlsGAIgASgJEikKCHNldHRpbmdzGAMgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5ncyIqCg1HZXRNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lItQBCg9VcGRhdGVNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLc3RhdHVzX3RleHQYAiABKAlIAYgBARIbCg5hdmF0YXJfZmlsZV9pZBgDIAEoCUgCiAEBEi4KCHNldHRpbmdzGAQgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5nc0gDiAEBQg8KDV9kaXNwbGF5X25hbWVCDgoMX3N0YXR1c190ZXh0QhEKD19hdmF0YXJfZmlsZV9pZEILCglfc2V0dGluZ3MiLQoQVXBkYXRlTWVSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZSpQCgdNaWNNb2RlEhgKFE1JQ19NT0RFX1VOU1BFQ0lGSUVEEAASEAoMTUlDX01PREVfVkFEEAESGQoVTUlDX01PREVfUFVTSF9UT19UQUxLEAJClwEKDWNvbS5jYWxhYmEudjFCCVVzZXJQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxItIBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyJdCgJNZRIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISDQoFZW1haWwYAiABKAkSKQoIc2V0dGluZ3MYAyABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzIioKDUdldE1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUi1AEKD1VwZGF0ZU1lUmVxdWVzdBIZCgxkaXNwbGF5X25hbWUYASABKAlIAIgBARIYCgtzdGF0dXNfdGV4dBgCIAEoCUgBiAEBEhsKDmF2YXRhcl9maWxlX2lkGAMgASgJSAKIAQESLgoIc2V0dGluZ3MYBCABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzSAOIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfc3RhdHVzX3RleHRCEQoPX2F2YXRhcl9maWxlX2lkQgsKCV9zZXR0aW5ncyItChBVcGRhdGVNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIk4KE1VwZGF0ZVN0YXR1c1JlcXVlc3QSDAoEdGV4dBgBIAEoCRINCgVlbW9qaRgCIAEoCRIaChJleHBpcmVzX2luX3NlY29uZHMYAyABKA0qUAoHTWljTW9kZRIYChRNSUNfTU9ERV9VTlNQRUNJRklFRBAAEhAKDE1JQ19NT0RFX1ZBRBABEhkKFU1JQ19NT0RFX1BVU0hfVE9fVEFMSxACQpcBCg1jb20uY2FsYWJhLnYxQglVc2VyUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * Public profile, visible to members of shared workspaces.
@@ -46,6 +46,18 @@ export type User = Message<"calaba.v1.User"> & {
    * @generated from field: google.protobuf.Timestamp created_at = 5;
    */
   createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string status_emoji = 6;
+   */
+  statusEmoji: string;
+
+  /**
+   * unset = no expiry; expired status is returned empty
+   *
+   * @generated from field: google.protobuf.Timestamp status_expires_at = 7;
+   */
+  statusExpiresAt?: Timestamp | undefined;
 };
 
 /**
@@ -217,6 +229,42 @@ export type UpdateMeResponse = Message<"calaba.v1.UpdateMeResponse"> & {
  */
 export const UpdateMeResponseSchema: GenMessage<UpdateMeResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_user, 5);
+
+/**
+ * PATCH /api/me/status — custom status. Empty text and emoji clear it. Announced to the
+ * user's workspaces as PRESENCE_UPDATE (+ USER_UPDATE). Response: UpdateMeResponse.
+ *
+ * @generated from message calaba.v1.UpdateStatusRequest
+ */
+export type UpdateStatusRequest = Message<"calaba.v1.UpdateStatusRequest"> & {
+  /**
+   * ≤ 128 chars
+   *
+   * @generated from field: string text = 1;
+   */
+  text: string;
+
+  /**
+   * one emoji sequence, ≤ 32 bytes
+   *
+   * @generated from field: string emoji = 2;
+   */
+  emoji: string;
+
+  /**
+   * 0 = never, ≤ 30 days
+   *
+   * @generated from field: uint32 expires_in_seconds = 3;
+   */
+  expiresInSeconds: number;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateStatusRequest.
+ * Use `create(UpdateStatusRequestSchema)` to create a new message.
+ */
+export const UpdateStatusRequestSchema: GenMessage<UpdateStatusRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 6);
 
 /**
  * @generated from enum calaba.v1.MicMode

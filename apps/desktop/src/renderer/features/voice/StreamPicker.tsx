@@ -69,7 +69,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
       title={t('stream.pickTitle')}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
           <Button onClick={start} disabled={!picked && !web}>
@@ -79,9 +79,9 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
       }
     >
       {noThumbs || info?.screenAccess === 'denied' ? (
-        <p className="mb-3 rounded-md bg-mention px-3 py-2 text-[13px]">
+        <p className="mb-3 rounded-[var(--radius-control)] bg-mention px-3 py-2 text-[13px]">
           {t('stream.noScreenAccess')}{' '}
-          <button type="button" className="text-accent hover:underline" onClick={() => void platform.system.openPrivacySettings('screen')}>
+          <button type="button" className="text-accent-text hover:underline" onClick={() => void platform.system.openPrivacySettings('screen')}>
             {t('common.openSettings')}
           </button>
         </p>
@@ -100,12 +100,12 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
               type="button"
               onClick={() => setPicked(s)}
               onDoubleClick={start}
-              className={cx('flex flex-col gap-1.5 rounded-lg p-2 text-left', picked?.id === s.id ? 'bg-accent/20 ring-2 ring-accent' : 'bg-side hover:bg-hover')}
+              className={cx('flex flex-col gap-1.5 rounded-[var(--radius-card)] p-2 text-left', picked?.id === s.id ? 'bg-accent/20 ring-2 ring-accent' : 'bg-side hover:bg-hover')}
             >
               {s.thumbnail ? (
-                <img src={s.thumbnail} alt="" className="aspect-video w-full rounded bg-black object-contain" />
+                <img src={s.thumbnail} alt="" className="aspect-video w-full rounded bg-[var(--color-video-bg)] object-contain" />
               ) : (
-                <div className="grid aspect-video w-full place-items-center rounded bg-black text-faint">?</div>
+                <div className="grid aspect-video w-full place-items-center rounded bg-[var(--color-video-bg)] text-faint">?</div>
               )}
               <span className="truncate text-[13px]">
                 {s.kind === 'screen' ? '🖥 ' : ''}

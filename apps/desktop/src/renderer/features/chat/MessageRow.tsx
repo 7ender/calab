@@ -68,7 +68,7 @@ export const MessageRow = memo(function MessageRow({
         </div>
       ) : null}
       {meta.newDivider ? (
-        <div className="mx-4 my-1 flex items-center gap-2 text-[11px] font-bold uppercase text-danger">
+        <div className="mx-4 my-1 flex items-center gap-2 text-[11px] font-semibold uppercase text-danger-text">
           <span className="h-px flex-1 bg-danger" />
           {t('chat.new')}
         </div>
@@ -109,7 +109,7 @@ export const MessageRow = memo(function MessageRow({
           {m.attachments.length > 0 ? <Attachments files={m.attachments} /> : null}
           {c.uploads && c.status !== 'sent' ? <Uploads uploads={c.uploads} /> : null}
           {c.status === 'failed' ? (
-            <div className="mt-1 flex items-center gap-2 text-[12px] text-danger">
+            <div className="mt-1 flex items-center gap-2 text-[12px] text-danger-text">
               {t('chat.failed')}
               {c.error ? `: ${c.error}` : ''}
               <button type="button" className="font-semibold hover:underline" onClick={() => void retrySend(workspaceId, roomId, c)}>
@@ -122,7 +122,7 @@ export const MessageRow = memo(function MessageRow({
           ) : null}
         </div>
         {c.status === 'sent' && !editing ? (
-          <div className="absolute -top-3 right-4 hidden rounded-md bg-elev shadow ring-1 ring-line group-hover:flex">
+          <div className="mat-popover absolute -top-3 right-4 hidden rounded-[var(--radius-card)] p-0.5 group-focus-within:flex group-hover:flex">
             {can(perms, 'SEND_MESSAGES') ? (
               <IconButton label={t('chat.reply')} onClick={() => setReply(roomId, m.id)}>
                 <CornerUpLeft className="size-4" />
@@ -189,7 +189,7 @@ function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (t: s
         onKeyDown={onKey}
         rows={Math.min(10, text.split('\n').length)}
         maxLength={4000}
-        className="w-full resize-none rounded-md bg-input px-3 py-2 focus:outline-none"
+        className="w-full resize-none rounded-[var(--radius-control)] bg-input px-3 py-2 focus-visible:outline-none focus:ring-2 focus:ring-accent"
       />
       <div className="text-[11px] text-faint">{t('chat.editHint')}</div>
     </div>
@@ -210,7 +210,7 @@ function Attachments({ files }: { files: FileMeta[] }): ReactNode {
             key={f.id}
             type="button"
             onClick={() => open({ kind: 'image', fileId: f.id, name: f.name })}
-            className="overflow-hidden rounded-md bg-elev ring-1 ring-line"
+            className="overflow-hidden rounded-[var(--radius-control)] bg-elev border border-line"
             style={
               f.width && f.height
                 ? { width: Math.min(400, (f.width * Math.min(300, f.height)) / f.height), aspectRatio: `${f.width} / ${f.height}` }
@@ -220,10 +220,10 @@ function Attachments({ files }: { files: FileMeta[] }): ReactNode {
             <MediaImg path={thumbnailPath(f.id)} alt={f.name} loading="lazy" className="block size-full object-cover" draggable={false} />
           </button>
         ) : (
-          <div key={f.id} className="flex w-[340px] items-center gap-3 rounded-md border border-line bg-elev px-3 py-2.5">
+          <div key={f.id} className="flex w-[340px] items-center gap-3 rounded-[var(--radius-control)] border border-line bg-elev px-3 py-2.5">
             <FileText className="size-8 shrink-0 text-accent" />
             <div className="min-w-0 flex-1">
-              <div className="truncate font-medium text-accent">{f.name}</div>
+              <div className="truncate font-medium text-accent-text">{f.name}</div>
               <div className="text-[12px] text-faint">{fmtSize(f.size)}</div>
             </div>
             <IconButton
@@ -248,7 +248,7 @@ function Uploads({ uploads }: { uploads: PendingUpload[] }): ReactNode {
   return (
     <div className="mt-1 flex flex-col gap-1">
       {uploads.map((u) => (
-        <div key={u.key} className="w-[340px] rounded-md border border-line bg-elev px-3 py-2">
+        <div key={u.key} className="w-[340px] rounded-[var(--radius-control)] border border-line bg-elev px-3 py-2">
           <div className="flex justify-between text-[12px]">
             <span className="truncate">{u.name}</span>
             <span className="text-faint">{Math.round(u.progress * 100)}%</span>

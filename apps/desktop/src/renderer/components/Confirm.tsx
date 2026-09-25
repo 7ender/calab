@@ -27,10 +27,10 @@ export function ConfirmHost(): ReactNode {
       title={req?.title ?? ''}
       footer={
         <>
-          <Button variant="ghost" onClick={() => close(false)}>
+          <Button variant="secondary" onClick={() => close(false)}>
             {t('common.cancel')}
           </Button>
-          <Button variant="danger" onClick={() => close(true)} autoFocus>
+          <Button variant="destructive" onClick={() => close(true)} autoFocus>
             {req?.action}
           </Button>
         </>

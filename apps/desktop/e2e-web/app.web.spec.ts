@@ -14,6 +14,8 @@ test('register → workspace → room → message → reload → voice', async (
   await page.getByLabel('Имя').fill(`Web ${id}`);
   await page.getByLabel('Пароль').fill('password-web-123');
   await page.getByRole('button', { name: 'Зарегистрироваться' }).last().click();
+  // First run: onboarding (docs/08) — skip it, it has its own visual tests.
+  await page.getByRole('button', { name: 'Пропустить настройку' }).click();
 
   await page.getByRole('button', { name: 'Создать пространство' }).first().click();
   await page.getByLabel('Название').fill(`Web ${id}`);

@@ -18,6 +18,9 @@ interface UiState {
   lastRoom: Record<string, string>;
   dialog: Dialog | null;
   membersPanel: boolean;
+  /** Narrow window (< MEMBERS_COLUMN_MIN): the members list floats over the chat; not persisted. */
+  membersOverlay: boolean;
+  setMembersOverlay: (open: boolean) => void;
   /** Reply target per room. */
   replyTo: Record<string, string | undefined>;
   editing: string | null;
@@ -32,6 +35,9 @@ interface UiState {
   setEditing: (id: string | null) => void;
 }
 
+/** Window width from which the members list is a column instead of a floating panel (docs/08: chat keeps ≥ ~600 px). */
+export const MEMBERS_COLUMN_MIN = 1200;
+
 export const useUi = create<UiState>()(
   persist(
     (set) => ({
@@ -39,14 +45,16 @@ export const useUi = create<UiState>()(
       lastRoom: {},
       dialog: null,
       membersPanel: true,
+      membersOverlay: false,
       replyTo: {},
       editing: null,
       sidebarWidth: 240,
       setSidebarWidth: (w) => set({ sidebarWidth: Math.round(Math.max(200, Math.min(320, w))) }),
       setWorkspace: (id) => set({ activeWorkspaceId: id }),
-      openRoom: (wsId, roomId) => set((s) => ({ activeWorkspaceId: wsId, lastRoom: { ...s.lastRoom, [wsId]: roomId }, editing: null })),
+      openRoom: (wsId, roomId) => set((s) => ({ activeWorkspaceId: wsId, lastRoom: { ...s.lastRoom, [wsId]: roomId }, editing: null, membersOverlay: false })),
       openDialog: (dialog) => set({ dialog }),
       toggleMembers: () => set((s) => ({ membersPanel: !s.membersPanel })),
+      setMembersOverlay: (membersOverlay) => set({ membersOverlay }),
       setReply: (roomId, messageId) => set((s) => ({ replyTo: { ...s.replyTo, [roomId]: messageId } })),
       setEditing: (editing) => set({ editing }),
     }),

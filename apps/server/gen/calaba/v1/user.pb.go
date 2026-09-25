@@ -73,14 +73,16 @@ func (MicMode) EnumDescriptor() ([]byte, []int) {
 
 // Public profile, visible to members of shared workspaces.
 type User struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	AvatarFileId  string                 `protobuf:"bytes,3,opt,name=avatar_file_id,json=avatarFileId,proto3" json:"avatar_file_id,omitempty"` // empty = no avatar
-	StatusText    string                 `protobuf:"bytes,4,opt,name=status_text,json=statusText,proto3" json:"status_text,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	DisplayName     string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	AvatarFileId    string                 `protobuf:"bytes,3,opt,name=avatar_file_id,json=avatarFileId,proto3" json:"avatar_file_id,omitempty"` // empty = no avatar
+	StatusText      string                 `protobuf:"bytes,4,opt,name=status_text,json=statusText,proto3" json:"status_text,omitempty"`
+	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	StatusEmoji     string                 `protobuf:"bytes,6,opt,name=status_emoji,json=statusEmoji,proto3" json:"status_emoji,omitempty"`
+	StatusExpiresAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=status_expires_at,json=statusExpiresAt,proto3" json:"status_expires_at,omitempty"` // unset = no expiry; expired status is returned empty
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *User) Reset() {
@@ -144,6 +146,20 @@ func (x *User) GetStatusText() string {
 func (x *User) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *User) GetStatusEmoji() string {
+	if x != nil {
+		return x.StatusEmoji
+	}
+	return ""
+}
+
+func (x *User) GetStatusExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StatusExpiresAt
 	}
 	return nil
 }
@@ -459,11 +475,73 @@ func (x *UpdateMeResponse) GetMe() *Me {
 	return nil
 }
 
+// PATCH /api/me/status — custom status. Empty text and emoji clear it. Announced to the
+// user's workspaces as PRESENCE_UPDATE (+ USER_UPDATE). Response: UpdateMeResponse.
+type UpdateStatusRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Text             string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`                                                    // ≤ 128 chars
+	Emoji            string                 `protobuf:"bytes,2,opt,name=emoji,proto3" json:"emoji,omitempty"`                                                  // one emoji sequence, ≤ 32 bytes
+	ExpiresInSeconds uint32                 `protobuf:"varint,3,opt,name=expires_in_seconds,json=expiresInSeconds,proto3" json:"expires_in_seconds,omitempty"` // 0 = never, ≤ 30 days
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UpdateStatusRequest) Reset() {
+	*x = UpdateStatusRequest{}
+	mi := &file_calaba_v1_user_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateStatusRequest) ProtoMessage() {}
+
+func (x *UpdateStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateStatusRequest.ProtoReflect.Descriptor instead.
+func (*UpdateStatusRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *UpdateStatusRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *UpdateStatusRequest) GetEmoji() string {
+	if x != nil {
+		return x.Emoji
+	}
+	return ""
+}
+
+func (x *UpdateStatusRequest) GetExpiresInSeconds() uint32 {
+	if x != nil {
+		return x.ExpiresInSeconds
+	}
+	return 0
+}
+
 var File_calaba_v1_user_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_user_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/user.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbb\x01\n" +
+	"\x14calaba/v1/user.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa6\x02\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12$\n" +
@@ -471,7 +549,9 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\vstatus_text\x18\x04 \x01(\tR\n" +
 	"statusText\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xb5\x02\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12!\n" +
+	"\fstatus_emoji\x18\x06 \x01(\tR\vstatusEmoji\x12F\n" +
+	"\x11status_expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusExpiresAt\"\xb5\x02\n" +
 	"\fUserSettings\x12+\n" +
 	"\x11noise_suppression\x18\x01 \x01(\bR\x10noiseSuppression\x120\n" +
 	"\x14unstable_network_red\x18\x02 \x01(\bR\x12unstableNetworkRed\x12$\n" +
@@ -498,7 +578,11 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x0f_avatar_file_idB\v\n" +
 	"\t_settings\"1\n" +
 	"\x10UpdateMeResponse\x12\x1d\n" +
-	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me*P\n" +
+	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"m\n" +
+	"\x13UpdateStatusRequest\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12\x14\n" +
+	"\x05emoji\x18\x02 \x01(\tR\x05emoji\x12,\n" +
+	"\x12expires_in_seconds\x18\x03 \x01(\rR\x10expiresInSeconds*P\n" +
 	"\aMicMode\x12\x18\n" +
 	"\x14MIC_MODE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fMIC_MODE_VAD\x10\x01\x12\x19\n" +
@@ -519,7 +603,7 @@ func file_calaba_v1_user_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_user_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_calaba_v1_user_proto_goTypes = []any{
 	(MicMode)(0),                  // 0: calaba.v1.MicMode
 	(*User)(nil),                  // 1: calaba.v1.User
@@ -528,21 +612,23 @@ var file_calaba_v1_user_proto_goTypes = []any{
 	(*GetMeResponse)(nil),         // 4: calaba.v1.GetMeResponse
 	(*UpdateMeRequest)(nil),       // 5: calaba.v1.UpdateMeRequest
 	(*UpdateMeResponse)(nil),      // 6: calaba.v1.UpdateMeResponse
-	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
+	(*UpdateStatusRequest)(nil),   // 7: calaba.v1.UpdateStatusRequest
+	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
 }
 var file_calaba_v1_user_proto_depIdxs = []int32{
-	7, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	0, // 1: calaba.v1.UserSettings.mic_mode:type_name -> calaba.v1.MicMode
-	1, // 2: calaba.v1.Me.user:type_name -> calaba.v1.User
-	2, // 3: calaba.v1.Me.settings:type_name -> calaba.v1.UserSettings
-	3, // 4: calaba.v1.GetMeResponse.me:type_name -> calaba.v1.Me
-	2, // 5: calaba.v1.UpdateMeRequest.settings:type_name -> calaba.v1.UserSettings
-	3, // 6: calaba.v1.UpdateMeResponse.me:type_name -> calaba.v1.Me
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	8, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	8, // 1: calaba.v1.User.status_expires_at:type_name -> google.protobuf.Timestamp
+	0, // 2: calaba.v1.UserSettings.mic_mode:type_name -> calaba.v1.MicMode
+	1, // 3: calaba.v1.Me.user:type_name -> calaba.v1.User
+	2, // 4: calaba.v1.Me.settings:type_name -> calaba.v1.UserSettings
+	3, // 5: calaba.v1.GetMeResponse.me:type_name -> calaba.v1.Me
+	2, // 6: calaba.v1.UpdateMeRequest.settings:type_name -> calaba.v1.UserSettings
+	3, // 7: calaba.v1.UpdateMeResponse.me:type_name -> calaba.v1.Me
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_user_proto_init() }
@@ -558,7 +644,7 @@ func file_calaba_v1_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_user_proto_rawDesc), len(file_calaba_v1_user_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

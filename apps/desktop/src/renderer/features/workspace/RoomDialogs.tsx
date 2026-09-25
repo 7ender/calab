@@ -1,4 +1,3 @@
-import * as Tabs from '@radix-ui/react-tabs';
 import { create } from '@bufbuild/protobuf';
 import {
   AUDIO_BITRATE_OPTIONS_KBPS,
@@ -11,10 +10,10 @@ import {
   type PermissionName,
 } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
-import { Check, Minus, Plus, X } from 'lucide-react';
+import { AudioLines, Check, Minus, Plus, Settings2, ShieldCheck, X } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Field, Input, Modal, Select, Switch, cx } from '../../components/ui';
+import { Button, Card, Field, Input, Modal, Row, Select, Switch, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { api } from '../../lib/api/endpoints';
@@ -24,7 +23,8 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { PRESETS, presetText } from '../voice/StreamPicker';
-import { tabTrigger } from './WorkspaceSettings';
+import { CommitInput } from '../settings/AppSettingsDialog';
+import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 
 const err = (e: unknown): string => (e instanceof ApiError ? e.message : String(e));
 
@@ -51,7 +51,7 @@ export function RoomCreateDialog({ workspaceId, voice, onClose }: { workspaceId:
       title={t('room.createTitle')}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
           <Button busy={m.isPending} disabled={!name.trim()} onClick={() => m.mutate()}>{t('common.create')}</Button>
         </>
       }
@@ -79,35 +79,21 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
   const room = useRooms((s) => s.byId[roomId]);
   if (!room) return null;
   const voice = room.type === RoomType.VOICE;
-  return (
-    <Modal open wide onClose={onClose} title={t('room.settingsTitle', { name: room.name })}>
-      <Tabs.Root defaultValue={tab ?? 'general'} orientation="vertical" className="flex min-h-[440px] gap-5">
-        <Tabs.List className="flex w-44 shrink-0 flex-col gap-0.5">
-          <Tabs.Trigger value="general" className={tabTrigger}>{t('ws.tabGeneral')}</Tabs.Trigger>
-          {voice ? <Tabs.Trigger value="media" className={tabTrigger}>{t('ws.tabMedia')}</Tabs.Trigger> : null}
-          <Tabs.Trigger value="perms" className={tabTrigger}>{t('room.tabPerms')}</Tabs.Trigger>
-        </Tabs.List>
-        <div className="min-w-0 flex-1">
-          <Tabs.Content value="general"><GeneralTab roomId={roomId} onDeleted={onClose} /></Tabs.Content>
-          {voice ? <Tabs.Content value="media"><MediaTab roomId={roomId} /></Tabs.Content> : null}
-          <Tabs.Content value="perms"><PermissionsTab roomId={roomId} /></Tabs.Content>
-        </div>
-      </Tabs.Root>
-    </Modal>
-  );
+  const sections: SettingsSection[] = [
+    { id: 'general', label: t('ws.tabGeneral'), icon: Settings2, content: <GeneralTab roomId={roomId} onDeleted={onClose} /> },
+    ...(voice ? [{ id: 'media', label: t('ws.tabMedia'), icon: AudioLines, content: <MediaTab roomId={roomId} /> }] : []),
+    { id: 'perms', label: t('room.tabPerms'), icon: ShieldCheck, content: <PermissionsTab roomId={roomId} /> },
+  ];
+  return <SettingsWindow title={`${voice ? '' : '#'}${room.name}`} sections={sections} initial={tab ?? 'general'} onClose={onClose} />;
+}
+
+async function patchRoom(roomId: string, init: Parameters<typeof api.rooms.update>[1]): Promise<void> {
+  const r = await api.rooms.update(roomId, init);
+  if (r.room) useRooms.getState().upsert(r.room);
 }
 
 function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => void }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
-  const [name, setName] = useState(room?.name ?? '');
-  const [topic, setTopic] = useState(room?.topic ?? '');
-  const save = useMutation({
-    mutationFn: () => api.rooms.update(roomId, { name: name.trim(), topic: topic.trim() }),
-    onSuccess: (r) => {
-      if (r.room) useRooms.getState().upsert(r.room);
-      toast.success(t('common.saved'));
-    },
-  });
   const del = useMutation({
     mutationFn: () => api.rooms.remove(roomId),
     onSuccess: () => {
@@ -115,74 +101,84 @@ function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => vo
       onDeleted();
     },
   });
+  if (!room) return null;
   return (
-    <div className="flex flex-col gap-4">
-      <Field label={t('room.name')} error={save.error ? err(save.error) : null}>
-        <Input value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
-      </Field>
-      <Field label={t('room.topic')}>
-        <Input value={topic} maxLength={1024} onChange={(e) => setTopic(e.target.value)} />
-      </Field>
-      <div className="flex justify-between">
-        <Button busy={save.isPending} onClick={() => save.mutate()}>{t('common.save')}</Button>
-        <Button
-          variant="danger"
-          busy={del.isPending}
-          onClick={() => void confirmAction(t('room.delete'), t('room.deleteConfirm', { name: room?.name ?? '' }), t('room.delete')).then((ok) => ok && del.mutate())}
-        >
-          {t('room.delete')}
-        </Button>
-      </div>
-    </div>
+    <>
+      <Card>
+        <Row label={t('room.name')}>
+          <CommitInput label={t('room.name')} value={room.name} maxLength={100} onCommit={(v) => (v ? patchRoom(roomId, { name: v }) : undefined)} />
+        </Row>
+        <Row label={t('room.topic')}>
+          <CommitInput label={t('room.topic')} value={room.topic} maxLength={1024} className="w-72" onCommit={(v) => patchRoom(roomId, { topic: v })} />
+        </Row>
+      </Card>
+      <Card footer={del.error ? err(del.error) : undefined}>
+        <Row label={t('room.delete')}>
+          <Button
+            variant="destructive"
+            busy={del.isPending}
+            onClick={() => void confirmAction(t('room.delete'), t('room.deleteConfirm', { name: room.name }), t('room.delete')).then((ok) => ok && del.mutate())}
+          >
+            {t('room.deleteBtn')}
+          </Button>
+        </Row>
+      </Card>
+    </>
   );
 }
 
 function MediaTab({ roomId }: { roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
   const ov = room?.mediaOverride;
-  const [bitrate, setBitrate] = useState<number | ''>(ov?.audioBitrateKbps ?? '');
-  const [preset, setPreset] = useState<number | ''>(ov?.maxStreamPreset ?? '');
-  const [streams, setStreams] = useState<number | ''>(ov?.maxStreams ?? '');
-  const save = useMutation({
-    mutationFn: () =>
-      api.rooms.update(roomId, {
-        mediaOverride: create(RoomMediaOverrideSchema, {
-          ...(bitrate !== '' ? { audioBitrateKbps: bitrate } : {}),
-          ...(preset !== '' ? { maxStreamPreset: preset } : {}),
-          ...(streams !== '' ? { maxStreams: streams } : {}),
-        }),
-      }),
-    onSuccess: (r) => {
-      if (r.room) useRooms.getState().upsert(r.room);
-      toast.success(t('common.saved'));
-    },
-  });
   const eff = room?.media;
+  // media_override replaces the whole override: always send all three fields.
+  const apply = (patch: { bitrate?: number | ''; preset?: number | ''; streams?: number | '' }): void => {
+    const bitrate = patch.bitrate !== undefined ? patch.bitrate : (ov?.audioBitrateKbps ?? '');
+    const preset = patch.preset !== undefined ? patch.preset : (ov?.maxStreamPreset ?? '');
+    const streams = patch.streams !== undefined ? patch.streams : (ov?.maxStreams ?? '');
+    void patchRoom(roomId, {
+      mediaOverride: create(RoomMediaOverrideSchema, {
+        ...(bitrate !== '' ? { audioBitrateKbps: bitrate } : {}),
+        ...(preset !== '' ? { maxStreamPreset: preset } : {}),
+        ...(streams !== '' ? { maxStreams: streams } : {}),
+      }),
+    }).catch((e: unknown) => toast.error(err(e)));
+  };
+  const num = (v: string): number | '' => (v === '' ? '' : Number(v));
   const def = t('media.default');
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-muted">{t('room.mediaText')}</p>
-      <Field label={t('media.bitrate')} hint={t('media.effective', { v: `${eff?.audioBitrateKbps ?? '—'} кбит/с` })}>
-        <Select value={bitrate} onChange={(e) => setBitrate(e.target.value === '' ? '' : Number(e.target.value))}>
+    <Card footer={t('room.mediaText')}>
+      <Row label={t('media.bitrate')} hint={t('media.effective', { v: `${eff?.audioBitrateKbps ?? '—'} кбит/с` })}>
+        <Select aria-label={t('media.bitrate')} className="w-52" value={ov?.audioBitrateKbps ?? ''} onChange={(e) => apply({ bitrate: num(e.target.value) })}>
           <option value="">{def}</option>
-          {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => <option key={b} value={b}>{b} кбит/с</option>)}
+          {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
+            <option key={b} value={b}>
+              {b} кбит/с
+            </option>
+          ))}
         </Select>
-      </Field>
-      <Field label={t('media.maxPreset')}>
-        <Select value={preset} onChange={(e) => setPreset(e.target.value === '' ? '' : Number(e.target.value))}>
+      </Row>
+      <Row label={t('media.maxPreset')}>
+        <Select aria-label={t('media.maxPreset')} className="w-72" value={ov?.maxStreamPreset ?? ''} onChange={(e) => apply({ preset: num(e.target.value) })}>
           <option value="">{def}</option>
-          {PRESETS.map((p) => <option key={p} value={p}>{presetText(p)}</option>)}
+          {PRESETS.map((p) => (
+            <option key={p} value={p}>
+              {presetText(p)}
+            </option>
+          ))}
         </Select>
-      </Field>
-      <Field label={t('media.maxStreams')} hint={t('media.effective', { v: String(eff?.maxStreams ?? '—') })}>
-        <Select value={streams} onChange={(e) => setStreams(e.target.value === '' ? '' : Number(e.target.value))}>
+      </Row>
+      <Row label={t('media.maxStreams')} hint={t('media.effective', { v: String(eff?.maxStreams ?? '—') })}>
+        <Select aria-label={t('media.maxStreams')} className="w-52" value={ov?.maxStreams ?? ''} onChange={(e) => apply({ streams: num(e.target.value) })}>
           <option value="">{def}</option>
-          {Array.from({ length: 11 }, (_, i) => <option key={i} value={i}>{i}</option>)}
+          {Array.from({ length: 11 }, (_, i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
         </Select>
-      </Field>
-      {save.error ? <p className="text-danger">{err(save.error)}</p> : null}
-      <div><Button busy={save.isPending} onClick={() => save.mutate()}>{t('common.save')}</Button></div>
-    </div>
+      </Row>
+    </Card>
   );
 }
 
@@ -216,16 +212,16 @@ function TriToggle({ value, onChange, label }: { value: Tri; onChange: (v: Tri) 
       aria-label={`${label}: ${name}`}
       aria-pressed={value === v}
       onClick={() => onChange(v)}
-      className={cx('grid size-7 place-items-center first:rounded-l-md last:rounded-r-md', value === v ? on : 'bg-active text-faint hover:text-fg')}
+      className={cx('grid size-7 place-items-center', value === v ? on : 'bg-[var(--color-fill-hover)] text-muted hover:text-fg')}
     >
       {icon}
     </button>
   );
   return (
-    <div className="flex overflow-hidden rounded-md">
-      {btn('deny', <X className="size-4" />, 'bg-danger text-white', t('perm.deny'))}
+    <div className="flex overflow-hidden rounded-[var(--radius-control)]" role="group" aria-label={label}>
+      {btn('deny', <X className="size-4" />, 'bg-danger-fill text-white', t('perm.deny'))}
       {btn('inherit', <Minus className="size-4" />, 'bg-hover text-fg', t('perm.inherit'))}
-      {btn('allow', <Check className="size-4" />, 'bg-ok text-white', t('perm.allow'))}
+      {btn('allow', <Check className="size-4" />, 'bg-ok-fill text-white', t('perm.allow'))}
     </div>
   );
 }
@@ -248,13 +244,28 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   const current = targets.find((x) => x.key === selected) ?? targets[0];
   const draft = drafts.find((d) => current && targetKey(d) === current.key);
 
+  const save = useMutation({
+    mutationFn: (next: OverrideDraft[]) =>
+      api.rooms.setPermissions(roomId, {
+        overrides: compactDrafts(next).map((d) => create(RoomPermissionOverrideSchema, d)),
+      }),
+    onSuccess: (r) => {
+      if (r.room) useRooms.getState().upsert(r.room);
+    },
+    onError: (e) => {
+      toast.error(err(e));
+      setDrafts(toDrafts(useRooms.getState().byId[roomId]?.permissionOverrides ?? []));
+    },
+  });
+
+  // Applied immediately (System Settings style): each change PUTs the full override set.
   const setTri = (bit: bigint, v: Tri): void => {
     if (!current) return;
-    setDrafts((ds) => {
-      const exists = ds.some((d) => targetKey(d) === current.key);
-      const base = exists ? ds : [...ds, { targetType: current.type, targetId: current.id, allow: 0n, deny: 0n }];
-      return base.map((d) => (targetKey(d) === current.key ? withTri(d, bit, v) : d));
-    });
+    const exists = drafts.some((d) => targetKey(d) === current.key);
+    const base = exists ? drafts : [...drafts, { targetType: current.type, targetId: current.id, allow: 0n, deny: 0n }];
+    const next = base.map((d) => (targetKey(d) === current.key ? withTri(d, bit, v) : d));
+    setDrafts(next);
+    save.mutate(next);
   };
 
   const addUser = (): void => {
@@ -265,17 +276,6 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
     setAdding('');
   };
 
-  const save = useMutation({
-    mutationFn: () =>
-      api.rooms.setPermissions(roomId, {
-        overrides: compactDrafts(drafts).map((d) => create(RoomPermissionOverrideSchema, d)),
-      }),
-    onSuccess: (r) => {
-      if (r.room) useRooms.getState().upsert(r.room);
-      toast.success(t('common.saved'));
-    },
-  });
-
   const candidates = Object.values(members ?? {}).filter(
     (m) => m.user && m.role !== WorkspaceRole.OWNER && m.role !== WorkspaceRole.ADMIN && !drafts.some((d) => d.targetType === PermissionTargetType.USER && d.targetId === m.user?.id),
   );
@@ -284,13 +284,20 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
     <div className="flex gap-4">
       <div className="flex w-48 shrink-0 flex-col gap-0.5">
         {targets.map((x) => (
-          <button key={x.key} type="button" onClick={() => setSelected(x.key)} className={cx('truncate rounded-md px-3 py-1.5 text-left', current?.key === x.key ? 'bg-active' : 'text-muted hover:bg-hover')}>
+          <button
+            key={x.key}
+            type="button"
+            aria-pressed={current?.key === x.key}
+            title={x.label}
+            onClick={() => setSelected(x.key)}
+            className={cx('h-8 truncate rounded-[var(--radius-control)] px-2 text-left text-[13px]', current?.key === x.key ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
+          >
             {x.type === PermissionTargetType.ROLE ? '@' : ''}
             {x.label}
           </button>
         ))}
         <div className="mt-2 flex gap-1">
-          <Select value={adding} onChange={(e) => setAdding(e.target.value)} className="h-8 text-[13px]">
+          <Select aria-label={t('perm.addUser')} value={adding} onChange={(e) => setAdding(e.target.value)}>
             <option value="">{t('perm.addUser')}</option>
             {candidates.map((m) => <option key={m.user?.id} value={m.user?.id}>{m.nickname || m.user?.displayName}</option>)}
           </Select>
@@ -298,17 +305,20 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
             <Plus className="size-4" />
           </Button>
         </div>
-        <p className="mt-2 text-[11px] text-faint">{t('perm.adminNote')}</p>
+        <p className="mt-2 text-[12px] text-faint">{t('perm.adminNote')}</p>
       </div>
       <div className="min-w-0 flex-1">
-        <table className="w-full">
+        <table className="w-full overflow-hidden rounded-[var(--radius-card)] bg-hover text-[13px]">
+          <caption className="sr-only">{t('room.tabPerms')}</caption>
           <tbody>
             {ROOM_EDITABLE.map((name) => {
               const bit = PERMISSION_BITS[name];
               return (
-                <tr key={name} className="border-b border-line">
-                  <td className="py-2 pr-3">{t(PERM_LABEL[name])}</td>
-                  <td className="w-24 py-2">
+                <tr key={name} className="border-b border-line last:border-b-0">
+                  <th scope="row" className="px-3 py-2 text-left font-normal">
+                    {t(PERM_LABEL[name])}
+                  </th>
+                  <td className="w-28 px-3 py-2">
                     <TriToggle label={t(PERM_LABEL[name])} value={triOf(draft, bit)} onChange={(v) => setTri(bit, v)} />
                   </td>
                 </tr>
@@ -316,11 +326,7 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
             })}
           </tbody>
         </table>
-        {save.error ? <p className="mt-2 text-danger">{err(save.error)}</p> : null}
-        <div className="mt-4 flex gap-2">
-          <Button busy={save.isPending} onClick={() => save.mutate()}>{t('common.save')}</Button>
-          <Button variant="ghost" onClick={() => setDrafts(toDrafts(room?.permissionOverrides ?? []))}>{t('common.reset')}</Button>
-        </div>
+
       </div>
     </div>
   );

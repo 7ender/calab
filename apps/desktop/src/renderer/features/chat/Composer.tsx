@@ -114,7 +114,7 @@ export function Composer({
       {files.length > 0 ? (
         <div className={cx('flex gap-2 overflow-x-auto border border-b-0 border-line bg-elev px-3 pt-3', !replyMsg && 'rounded-t-[var(--radius-card)]')}>
           {files.map((f, i) => (
-            <div key={`${f.name}-${i}`} className="relative w-36 shrink-0 rounded-md bg-side p-2">
+            <div key={`${f.name}-${i}`} className="relative w-36 shrink-0 rounded-[var(--radius-control)] bg-side p-2">
               {f.previewUrl ? (
                 <img src={f.previewUrl} alt="" className="h-20 w-full rounded object-cover" />
               ) : (
@@ -136,7 +136,7 @@ export function Composer({
           ))}
         </div>
       ) : null}
-      <div className={cx('flex items-end gap-1 border border-line bg-elev px-1.5 py-1 shadow-[var(--shadow-card)]', replyMsg || files.length ? 'rounded-b-[var(--radius-card)]' : 'rounded-[var(--radius-card)]')}>
+      <div data-focus-box className={cx('flex items-end gap-1 border border-line bg-elev px-1.5 py-1 shadow-[var(--shadow-card)] focus-within:border-accent', replyMsg || files.length ? 'rounded-b-[var(--radius-card)]' : 'rounded-[var(--radius-card)]')}>
         {canAttach ? (
           <>
             <IconButton label={t('chat.attach')} onClick={() => fileInput.current?.click()} disabled={files.length >= MAX_ATTACHMENTS}>

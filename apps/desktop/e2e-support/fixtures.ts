@@ -106,10 +106,6 @@ export interface UserRec {
   email: string;
   password: string;
   settings: UserSettings;
-  accessToken: string;
-  refreshToken: string;
-  /** Auth session used by this user's tokens. */
-  sessionId: string;
 }
 
 export interface MemberRec {
@@ -143,8 +139,10 @@ export interface MockState {
   presences: Map<string, Presence>;
   invites: Map<string, Invite>;
   files: Map<string, FileRec>;
-  /** userId → auth sessions. */
+  /** userId → auth sessions (tokens are derived from the session id, see tokensFor). */
   sessions: Map<string, Session[]>;
+  /** Revoked (logged out) sessions: their tokens are rejected until the next login. */
+  revokedSessions: Set<string>;
   /** Next sequence number per id kind (runtime-created entities). */
   next: Record<IdKind, number>;
   /** Runtime clock ticks (see RUNTIME_CLOCK_START_MS). */
@@ -187,8 +185,9 @@ export function defaultSettings(): UserSettings {
   });
 }
 
-export function tokensFor(n: number): { accessToken: string; refreshToken: string } {
-  return { accessToken: `mock-access-token-${n}`, refreshToken: `mock-refresh-token-${n}` };
+/** Fixed tokens of an auth session (not JWTs: the mock only maps them back to the session). */
+export function tokensFor(sessionId: string): { accessToken: string; refreshToken: string } {
+  return { accessToken: `mock-access.${sessionId}`, refreshToken: `mock-refresh.${sessionId}` };
 }
 
 export function sha256(b: Buffer): string {
@@ -365,6 +364,7 @@ export function buildState(scenario: Scenario): MockState {
     invites: new Map(),
     files: new Map(),
     sessions: new Map(),
+    revokedSessions: new Set(),
     next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100 },
     clock: 0,
   };
@@ -384,8 +384,6 @@ export function buildState(scenario: Scenario): MockState {
       email: u.email,
       password: PASSWORD,
       settings: defaultSettings(),
-      ...tokensFor(u.n),
-      sessionId,
     });
     s.sessions.set(id, [
       create(SessionSchema, {

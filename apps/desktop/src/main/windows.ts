@@ -70,7 +70,8 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 600,
     title: 'Calaba',
     // macOS: native sidebar material (docs/08) — the renderer keeps content surfaces opaque.
-    ...(process.platform === 'darwin'
+    // CALABA_VISUAL_TEST=1: opaque window so screenshots don't depend on the desktop behind it.
+    ...(process.platform === 'darwin' && process.env['CALABA_VISUAL_TEST'] !== '1'
       ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const, backgroundColor: '#00000000' }
       : { backgroundColor: BG }),
     show: false,

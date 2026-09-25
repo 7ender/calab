@@ -8,7 +8,8 @@ import { openRoom, type OutgoingFile } from '../../services/chat';
 import { subscribeRooms } from '../../services/gateway';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
-import { useUi } from '../../stores/ui';
+import { useMediaQuery } from '../../lib/useMediaQuery';
+import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 import { StatsOverlay } from '../voice/StatsOverlay';
@@ -21,8 +22,13 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
   const room = useRooms((s) => s.byId[roomId]);
   const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const toggleMembers = useUi((s) => s.toggleMembers);
-  const membersOpen = useUi((s) => s.membersPanel);
+  const wide = useMediaQuery(`(min-width: ${MEMBERS_COLUMN_MIN}px)`);
+  const toggleColumn = useUi((s) => s.toggleMembers);
+  const columnOpen = useUi((s) => s.membersPanel);
+  const overlayOpen = useUi((s) => s.membersOverlay);
+  const setOverlay = useUi((s) => s.setMembersOverlay);
+  const membersOpen = wide ? columnOpen : overlayOpen;
+  const toggleMembers = (): void => (wide ? toggleColumn() : setOverlay(!overlayOpen));
   const openDialog = useUi((s) => s.openDialog);
   const inThisVoice = useVoice((s) => s.roomId === roomId);
   const [files, setFiles] = useState<OutgoingFile[]>([]);
@@ -34,7 +40,8 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
   const composerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = composerRef.current;
-    const host = sectionRef.current;
+    // Set on the content column: the PiP (inside) and the floating members panel (sibling) use it.
+    const host = sectionRef.current?.parentElement;
     if (!el || !host) return;
     const ro = new ResizeObserver(() => host.style.setProperty('--composer-height', `${el.offsetHeight}px`));
     ro.observe(el);
@@ -108,7 +115,7 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       {inThisVoice ? <StatsOverlay /> : null}
 
       <MessageList workspaceId={workspaceId} roomId={roomId} perms={perms} newMarker={newMarker} />
-      <div ref={composerRef} className="mat-toolbar shrink-0">
+      <div ref={composerRef} data-testid="composer" className="mat-toolbar shrink-0">
         <Composer
           workspaceId={workspaceId}
           room={room}

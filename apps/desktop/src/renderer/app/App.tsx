@@ -18,12 +18,14 @@ export const queryClient = new QueryClient({
 function useTheme(): void {
   const theme = usePrefs((s) => s.theme);
   const os = useSession((s) => s.appInfo?.platform);
+  const visualTest = useSession((s) => s.appInfo?.visualTest === true);
   useEffect(() => {
     // macOS Electron: native vibrancy behind the sidebar + overlay scrollbars (docs/08).
     const root = document.documentElement;
-    root.classList.toggle('mac', os === 'darwin' || /Mac/.test(navigator.platform));
-    root.classList.toggle('vibrancy', platform.kind === 'electron' && os === 'darwin');
-  }, [os]);
+    root.classList.toggle('mac', os === 'darwin' || /Mac OS X|Macintosh/.test(navigator.userAgent));
+    root.classList.toggle('vibrancy', platform.kind === 'electron' && os === 'darwin' && !visualTest);
+    root.classList.toggle('test-stable', visualTest);
+  }, [os, visualTest]);
   useEffect(() => {
     platform.app.setTheme(theme); // the native material follows the app theme
     const apply = (): void => {

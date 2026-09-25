@@ -41,6 +41,8 @@ test('register → workspace → room → message → voice', async () => {
   await page.getByLabel('Имя').fill(`E2E ${id}`);
   await page.getByLabel('Пароль').fill('password-e2e-123');
   await page.getByRole('button', { name: 'Зарегистрироваться' }).last().click();
+  // First run: onboarding (docs/08) — skip it, it has its own visual tests.
+  await page.getByRole('button', { name: 'Пропустить настройку' }).click();
 
   // Welcome screen → create a workspace.
   await page.getByRole('button', { name: 'Создать пространство' }).first().click();

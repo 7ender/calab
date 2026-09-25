@@ -22,7 +22,7 @@ import { VoiceBar } from './VoiceBar';
 
 /** macOS-style menus: popover material, 24 px items, accent highlight. */
 const menuItem =
-  'flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-[13px] text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent data-[highlighted]:text-accent-fg';
+  'flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-[13px] text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg';
 const menuBox = 'mat-popover anim-in z-[var(--z-popover)] min-w-52 rounded-[var(--radius-card)] p-1';
 
 export { menuBox, menuItem };
@@ -49,7 +49,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
 
   return (
     <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
-      <Dropdown.Root>
+      <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
           <button
             type="button"
@@ -82,7 +82,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
             {entry.role !== WorkspaceRole.OWNER ? (
               <>
                 <Dropdown.Separator className="my-1 h-px bg-line" />
-                <Dropdown.Item className={cx(menuItem, 'text-danger')} onSelect={() => void leave()}>
+                <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void leave()}>
                   <LogOut className="size-4" /> {t('ws.leave')}
                 </Dropdown.Item>
               </>
@@ -131,7 +131,7 @@ function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNo
   const open = useUi((s) => s.openDialog);
   const last = useRooms((s) => s.lastMessage[room.id]);
   return (
-    <ContextMenu.Root>
+    <ContextMenu.Root modal={false}>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className={menuBox}>
@@ -270,7 +270,7 @@ function VoiceMember({
   );
   if (isMe && !canModerate) return row;
   return (
-    <ContextMenu.Root>
+    <ContextMenu.Root modal={false}>
       <ContextMenu.Trigger asChild>{row}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className={cx(menuBox, 'w-60')}>
@@ -295,7 +295,7 @@ function VoiceMember({
                 <MicOff className="size-4" /> {t('voice.serverMute')}
               </ContextMenu.Item>
               <ContextMenu.Item
-                className={cx(menuItem, 'text-danger')}
+                className={cx(menuItem, 'text-danger-text')}
                 onSelect={() => void voice.serverDisconnect(room.id, state.userId).catch((e: unknown) => toast.error(String(e)))}
               >
                 <LogOut className="size-4" /> {t('voice.kick')}

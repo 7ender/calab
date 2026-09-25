@@ -1,0 +1,14 @@
+syntax = "proto3";
+package calaba.v1;
+
+// GET /api/unfurl?url= — link preview (OpenGraph / Twitter card). Image URLs point to the
+// server's image proxy (GET /api/unfurl/image?...), so clients never contact third-party
+// hosts directly and users' IP addresses are not exposed.
+message UnfurlResponse {
+  string url = 1;          // canonical URL (og:url or the final URL after redirects)
+  string title = 2;
+  string description = 3;
+  string site_name = 4;
+  string image_url = 5;    // proxied, empty if none
+  string favicon_url = 6;  // proxied, empty if none
+}

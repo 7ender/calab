@@ -113,6 +113,8 @@ export interface AppInfo {
   fakeMedia: boolean;
   /** Test flag CALABA_FORCE_RELAY=1: ICE relay-only (checks the TURN/TLS 443 path). */
   forceRelay: boolean;
+  /** Test flag CALABA_VISUAL_TEST=1: no native vibrancy, no animations (deterministic screenshots). */
+  visualTest: boolean;
   systemAudioLoopback: 'supported' | 'experimental' | 'unsupported';
   micAccess: string;
   screenAccess: string;

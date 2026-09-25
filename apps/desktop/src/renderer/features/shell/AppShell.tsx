@@ -6,7 +6,8 @@ import { isAdminRole } from '../../lib/permissions';
 import { installHotkeys } from '../../services/hotkeys';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
-import { useUi } from '../../stores/ui';
+import { useMediaQuery } from '../../lib/useMediaQuery';
+import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
 import { ChatPane } from '../chat/ChatPane';
 import { Onboarding } from '../onboarding/Onboarding';
@@ -25,7 +26,10 @@ export function AppShell(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
   const hasWs = useWorkspaces((s) => (wsId ? !!s.byId[wsId] : false));
   const roomId = useUi((s) => (wsId ? s.lastRoom[wsId] : undefined));
-  const membersOpen = useUi((s) => s.membersPanel);
+  // ≥ 1200 px: a column next to the chat; narrower: a floating panel over it (docs/08, Layout).
+  const wide = useMediaQuery(`(min-width: ${MEMBERS_COLUMN_MIN}px)`);
+  const columnOpen = useUi((s) => s.membersPanel);
+  const overlayOpen = useUi((s) => s.membersOverlay);
   const width = useUi((s) => s.sidebarWidth);
 
   useEffect(() => installHotkeys(), []);
@@ -52,9 +56,10 @@ export function AppShell(): ReactNode {
           <>
             <Sidebar workspaceId={wsId} />
             <ResizeHandle />
-            <div className="mat-content flex min-w-0 flex-1">
+            <div className="mat-content relative flex min-w-0 flex-1">
               {roomId ? <ChatPane key={roomId} workspaceId={wsId} roomId={roomId} /> : <NoRoom workspaceId={wsId} />}
-              {membersOpen && roomId ? <MembersPanel workspaceId={wsId} /> : null}
+              {roomId && wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
+              {roomId && !wide && overlayOpen ? <MembersPanel workspaceId={wsId} floating /> : null}
             </div>
           </>
         ) : (

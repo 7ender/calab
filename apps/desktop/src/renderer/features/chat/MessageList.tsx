@@ -106,7 +106,7 @@ export function MessageList({
     return (
       <div className="grid flex-1 place-items-center">
         {state.error ? (
-          <button type="button" className="text-danger hover:underline" onClick={() => void loadOlder(roomId)}>
+          <button type="button" className="text-danger-text hover:underline" onClick={() => void loadOlder(roomId)}>
             {state.error} · {t('common.retry')}
           </button>
         ) : (
@@ -136,7 +136,7 @@ export function MessageList({
               <div className="grid h-12 place-items-center">{state.loading ? <Spinner /> : null}</div>
             ) : (
               <div className="px-4 pb-2 pt-10">
-                <div className="text-2xl font-bold">{t('chat.startTitle', { name: room?.name ?? '' })}</div>
+                <div className="text-[26px] font-semibold">{t('chat.startTitle', { name: room?.name ?? '' })}</div>
                 <div className="text-muted">{t('chat.startText')}</div>
               </div>
             ),
@@ -161,7 +161,7 @@ export function MessageList({
         <button
           type="button"
           onClick={() => virtuoso.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })}
-          className="absolute bottom-3 right-5 flex items-center gap-1 rounded-full bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-fg shadow-lg"
+          className="absolute bottom-3 right-5 flex items-center gap-1 rounded-full bg-accent-strong px-3 py-1.5 text-[13px] font-medium text-accent-fg shadow-[var(--shadow-popover)]"
         >
           <ArrowDown className="size-4" /> {t('chat.toBottom')}
         </button>

@@ -5,12 +5,13 @@ import { MediaImg } from './MediaImg';
 import { useWorkspaces } from '../stores/workspaces';
 import { cx } from './ui';
 
-const PALETTE = ['#5b7cfa', '#3ecf8e', '#f2b33d', '#ec5a5f', '#b26cf5', '#2fb8c9', '#e97fb1', '#8c9bb0'];
+// Identity colours (tokens --avatar-1…8): white initials ≥ 4.5:1 on each.
+const PALETTE = Array.from({ length: 8 }, (_, i) => `var(--avatar-${i + 1})`);
 
 function colorOf(id: string): string {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
-  return PALETTE[Math.abs(h) % PALETTE.length] ?? '#5b7cfa';
+  return PALETTE[Math.abs(h) % PALETTE.length] ?? 'var(--avatar-1)';
 }
 
 const PRESENCE_COLOR: Partial<Record<PresenceStatus, string>> = {

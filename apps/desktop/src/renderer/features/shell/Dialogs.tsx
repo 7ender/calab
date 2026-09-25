@@ -6,6 +6,7 @@ import { filePath } from '../../lib/api/endpoints';
 import { useUi } from '../../stores/ui';
 import { AppSettingsDialog } from '../settings/AppSettingsDialog';
 import { StreamPicker } from '../voice/StreamPicker';
+import { QuickSwitcher } from './QuickSwitcher';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
 import { WorkspaceSettingsDialog } from '../workspace/WorkspaceSettings';
@@ -36,6 +37,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'stream-picker':
         node = <StreamPicker onClose={close} />;
+        break;
+      case 'quick-switcher':
+        node = <QuickSwitcher onClose={close} />;
         break;
       case 'image':
         node = (

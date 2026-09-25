@@ -245,6 +245,7 @@ function info(): AppInfo {
     packaged: true,
     fakeMedia: false,
     forceRelay: false,
+    visualTest: new URLSearchParams(location.search).has('visual-test'),
     // Browsers can offer tab/system audio in their own picker; own-audio exclusion is not guaranteed.
     systemAudioLoopback: 'experimental',
     micAccess: 'n/a',

@@ -10,6 +10,8 @@ message User {
   string avatar_file_id = 3; // empty = no avatar
   string status_text = 4;
   google.protobuf.Timestamp created_at = 5;
+  string status_emoji = 6;
+  google.protobuf.Timestamp status_expires_at = 7; // unset = no expiry; expired status is returned empty
 }
 
 enum MicMode {
@@ -55,4 +57,12 @@ message UpdateMeRequest {
 
 message UpdateMeResponse {
   Me me = 1;
+}
+
+// PATCH /api/me/status — custom status. Empty text and emoji clear it. Announced to the
+// user's workspaces as PRESENCE_UPDATE (+ USER_UPDATE). Response: UpdateMeResponse.
+message UpdateStatusRequest {
+  string text = 1;  // ≤ 128 chars
+  string emoji = 2; // one emoji sequence, ≤ 32 bytes
+  uint32 expires_in_seconds = 3; // 0 = never, ≤ 30 days
 }

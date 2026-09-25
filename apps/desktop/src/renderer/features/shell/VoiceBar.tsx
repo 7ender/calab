@@ -92,7 +92,7 @@ export function VoiceBar(): ReactNode {
       </div>
       {v.myStream ? (
         <div className="mt-2 rounded-[var(--radius-control)] bg-hover px-2 py-1.5 text-[12px]">
-          <span className="font-semibold text-danger">● {t('stream.live')}</span>
+          <span className="font-semibold text-danger-text">● {t('stream.live')}</span>
           <span className="text-muted">
             {' '}
             · {v.myStream.viewers} {plural(v.myStream.viewers, ['смотрит', 'смотрят', 'смотрят'])}
@@ -103,7 +103,7 @@ export function VoiceBar(): ReactNode {
         </div>
       ) : null}
       {v.micError ? (
-        <div className="mt-1 text-[12px] text-danger" role="alert">
+        <div className="mt-1 text-[12px] text-danger-text" role="alert">
           {v.micError}
         </div>
       ) : null}

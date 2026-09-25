@@ -42,14 +42,14 @@ function render(nodes: MdNode[], mentionIsMe: (v: string) => boolean, key = ''):
               e.preventDefault();
               open(n.href);
             }}
-            className="text-accent hover:underline"
+            className="text-accent-text hover:underline"
           >
             {render(n.c, mentionIsMe, `${k}.`)}
           </a>
         );
       case 'mention':
         return (
-          <span key={k} className={mentionIsMe(n.v) ? 'rounded bg-warn/25 px-0.5 font-medium text-fg' : 'rounded bg-accent/15 px-0.5 font-medium text-accent'}>
+          <span key={k} className={mentionIsMe(n.v) ? 'rounded bg-warn/25 px-0.5 font-medium text-fg' : 'rounded bg-accent/15 px-0.5 font-medium text-accent-text'}>
             @{n.v}
           </span>
         );

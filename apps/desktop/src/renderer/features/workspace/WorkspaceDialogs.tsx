@@ -23,7 +23,10 @@ export function slugify(name: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 32)
     .replace(/-+$/g, '');
-  return s.length >= 3 ? s : `${s}${s ? '-' : ''}ws${Math.floor(Math.random() * 900 + 100)}`.slice(0, 32);
+  // Deterministic (it is recomputed on every keystroke): pad short slugs, never invent random ones.
+  if (s.length >= 3) return s;
+  if (s) return `${s}-ws`;
+  return name.trim() ? 'workspace' : '';
 }
 
 function errText(e: unknown): string {
@@ -57,7 +60,7 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): Rea
       description={t('ws.createText')}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
           <Button busy={m.isPending} disabled={!name.trim()} onClick={() => m.mutate()}>
@@ -73,6 +76,7 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): Rea
         <Field label={t('ws.slug')} hint={t('ws.slugHint')} error={m.error ? errText(m.error) : null}>
           <Input
             value={effectiveSlug}
+            placeholder="komanda"
             onChange={(e) => {
               setSlugTouched(true);
               setSlug(e.target.value.toLowerCase());
@@ -112,7 +116,7 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
           <Input autoFocus value={input} onChange={(e) => setInput(e.target.value)} placeholder="calaba://join/…" spellCheck={false} />
         </Field>
         {preview.data?.workspace ? (
-          <div className="flex items-center justify-between rounded-md bg-side px-3 py-2">
+          <div className="flex items-center justify-between rounded-[var(--radius-control)] bg-side px-3 py-2">
             <span className="font-semibold">{preview.data.workspace.name}</span>
             <Button busy={join.isPending} onClick={() => join.mutate({ code: code ?? '' })}>
               {t('ws.joinBtn')}
@@ -125,7 +129,7 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
         {discover.isLoading ? <Spinner /> : null}
         {discover.data && discover.data.workspaces.length === 0 ? <Empty>{t('ws.discoverEmpty')}</Empty> : null}
         {discover.data?.workspaces.map((w) => (
-          <div key={w.id} className="flex items-center justify-between rounded-md bg-side px-3 py-2">
+          <div key={w.id} className="flex items-center justify-between rounded-[var(--radius-control)] bg-side px-3 py-2">
             <span>{w.name}</span>
             <Button size="sm" variant="secondary" busy={join.isPending && join.variables.id === w.id} onClick={() => join.mutate({ id: w.id })}>
               {t('ws.joinBtn')}

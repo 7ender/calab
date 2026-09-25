@@ -65,12 +65,12 @@ export function AuthScreen(): ReactNode {
   const fieldErr = (f: string): string | null => (err?.field === f ? err.text : null);
 
   return (
-    <div className="drag flex h-full items-center justify-center bg-rail">
-      <form onSubmit={(e) => void submit(e)} className="no-drag w-[400px] rounded-xl bg-main p-8 shadow-2xl ring-1 ring-line">
-        <h1 className="text-center text-2xl font-bold">{mode === 'login' ? t('auth.welcome') : t('auth.create')}</h1>
+    <div className="mat-content drag flex h-full items-center justify-center px-4">
+      <form onSubmit={(e) => void submit(e)} className="mat-popover no-drag w-full max-w-[400px] rounded-[var(--radius-panel)] p-8">
+        <h1 className="text-center text-[26px] font-semibold">{mode === 'login' ? t('auth.welcome') : t('auth.create')}</h1>
         <p className="mb-6 mt-1 text-center text-muted">{mode === 'login' ? t('auth.welcomeSub') : t('auth.createSub')}</p>
         {reason === 'revoked' || reason === 'expired' ? (
-          <p className="mb-4 rounded-md bg-mention px-3 py-2 text-[13px]">{reason === 'revoked' ? t('auth.revoked') : t('auth.expired')}</p>
+          <p className="mb-4 rounded-[var(--radius-control)] bg-mention px-3 py-2 text-[13px]">{reason === 'revoked' ? t('auth.revoked') : t('auth.expired')}</p>
         ) : null}
         <div className="flex flex-col gap-4">
           {showServer ? (
@@ -94,13 +94,13 @@ export function AuthScreen(): ReactNode {
               <Input value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} spellCheck={false} />
             </Field>
           ) : null}
-          {err && !err.field ? <p className="text-[13px] text-danger">{err.text}</p> : null}
+          {err && !err.field ? <p className="text-[13px] text-danger-text">{err.text}</p> : null}
           <Button type="submit" busy={busy} className="mt-1 w-full">
             {mode === 'login' ? t('auth.login') : t('auth.register')}
           </Button>
           <p className="text-[13px] text-muted">
             {mode === 'login' ? t('auth.noAccount') : t('auth.haveAccount')}{' '}
-            <button type="button" className="text-accent hover:underline" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(null); }}>
+            <button type="button" className="text-accent-text hover:underline" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(null); }}>
               {mode === 'login' ? t('auth.toRegister') : t('auth.toLogin')}
             </button>
           </p>

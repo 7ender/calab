@@ -12,7 +12,7 @@ import type { Message as Message$1 } from "./message_pb.js";
 import { file_calaba_v1_message } from "./message_pb.js";
 import type { WorkspaceRole } from "./permissions_pb.js";
 import { file_calaba_v1_permissions } from "./permissions_pb.js";
-import type { Room, RoomPermissionOverride } from "./room_pb.js";
+import type { Room, RoomCategory, RoomPermissionOverride } from "./room_pb.js";
 import { file_calaba_v1_room } from "./room_pb.js";
 import type { Me, User } from "./user_pb.js";
 import { file_calaba_v1_user } from "./user_pb.js";
@@ -24,7 +24,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/gateway.proto.
  */
 export const file_calaba_v1_gateway: GenFile = /*@__PURE__*/
-  fileDesc("ChdjYWxhYmEvdjEvZ2F0ZXdheS5wcm90bxIJY2FsYWJhLnYxIqkECgxHYXRld2F5RnJhbWUSJAoCb3AYASABKA4yGC5jYWxhYmEudjEuR2F0ZXdheU9wY29kZRILCgNzZXEYAiABKAQSKQoJaGVhcnRiZWF0GAogASgLMhQuY2FsYWJhLnYxLkhlYXJ0YmVhdEgAEicKCGlkZW50aWZ5GAsgASgLMhMuY2FsYWJhLnYxLklkZW50aWZ5SAASIwoGcmVzdW1lGAwgASgLMhEuY2FsYWJhLnYxLlJlc3VtZUgAEi4KDHNldF9wcmVzZW5jZRgNIAEoCzIWLmNhbGFiYS52MS5TZXRQcmVzZW5jZUgAEiMKBnR5cGluZxgOIAEoCzIRLmNhbGFiYS52MS5UeXBpbmdIABIpCglzdWJzY3JpYmUYDyABKAsyFC5jYWxhYmEudjEuU3Vic2NyaWJlSAASIQoFaGVsbG8YFCABKAsyEC5jYWxhYmEudjEuSGVsbG9IABIwCg1oZWFydGJlYXRfYWNrGBUgASgLMhcuY2FsYWJhLnYxLkhlYXJ0YmVhdEFja0gAEikKCXJlY29ubmVjdBgWIAEoCzIULmNhbGFiYS52MS5SZWNvbm5lY3RIABI0Cg9pbnZhbGlkX3Nlc3Npb24YFyABKAsyGS5jYWxhYmEudjEuSW52YWxpZFNlc3Npb25IABIsCghkaXNwYXRjaBgYIAEoCzIYLmNhbGFiYS52MS5EaXNwYXRjaEV2ZW50SABCCQoHcGF5bG9hZCIdCglIZWFydGJlYXQSEAoIbGFzdF9zZXEYASABKAQiQQoKRGV2aWNlSW5mbxIMCgRuYW1lGAEgASgJEhAKCHBsYXRmb3JtGAIgASgJEhMKC2FwcF92ZXJzaW9uGAMgASgJIlYKCElkZW50aWZ5Eg0KBXRva2VuGAEgASgJEiUKBmRldmljZRgCIAEoCzIVLmNhbGFiYS52MS5EZXZpY2VJbmZvEhQKDGNhcGFiaWxpdGllcxgDIAEoBCI4CgZSZXN1bWUSDQoFdG9rZW4YASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRILCgNzZXEYAyABKAQiOAoLU2V0UHJlc2VuY2USKQoGc3RhdHVzGAEgASgOMhkuY2FsYWJhLnYxLlByZXNlbmNlU3RhdHVzIhkKBlR5cGluZxIPCgdyb29tX2lkGAEgASgJIh0KCVN1YnNjcmliZRIQCghyb29tX2lkcxgBIAMoCSImCgVIZWxsbxIdChVoZWFydGJlYXRfaW50ZXJ2YWxfbXMYASABKA0iDgoMSGVhcnRiZWF0QWNrIgsKCVJlY29ubmVjdCIjCg5JbnZhbGlkU2Vzc2lvbhIRCglyZXN1bWFibGUYASABKAgiugkKDURpc3BhdGNoRXZlbnQSIQoFcmVhZHkYASABKAsyEC5jYWxhYmEudjEuUmVhZHlIABI2ChB3b3Jrc3BhY2VfY3JlYXRlGAIgASgLMhouY2FsYWJhLnYxLldvcmtzcGFjZUNyZWF0ZUgAEjYKEHdvcmtzcGFjZV91cGRhdGUYAyABKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlVXBkYXRlSAASNgoQd29ya3NwYWNlX2RlbGV0ZRgEIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VEZWxldGVIABI9ChR3b3Jrc3BhY2VfbWVtYmVyX2FkZBgFIAEoCzIdLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXJBZGRIABJDChd3b3Jrc3BhY2VfbWVtYmVyX3VwZGF0ZRgGIAEoCzIgLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXJVcGRhdGVIABJDChd3b3Jrc3BhY2VfbWVtYmVyX3JlbW92ZRgHIAEoCzIgLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXJSZW1vdmVIABIsCgtyb29tX2NyZWF0ZRgIIAEoCzIVLmNhbGFiYS52MS5Sb29tQ3JlYXRlSAASLAoLcm9vbV91cGRhdGUYCSABKAsyFS5jYWxhYmEudjEuUm9vbVVwZGF0ZUgAEiwKC3Jvb21fZGVsZXRlGAogASgLMhUuY2FsYWJhLnYxLlJvb21EZWxldGVIABJDChdyb29tX3Blcm1pc3Npb25zX3VwZGF0ZRgLIAEoCzIgLmNhbGFiYS52MS5Sb29tUGVybWlzc2lvbnNVcGRhdGVIABIyCg5tZXNzYWdlX2NyZWF0ZRgMIAEoCzIYLmNhbGFiYS52MS5NZXNzYWdlQ3JlYXRlSAASMgoObWVzc2FnZV91cGRhdGUYDSABKAsyGC5jYWxhYmEudjEuTWVzc2FnZVVwZGF0ZUgAEjIKDm1lc3NhZ2VfZGVsZXRlGA4gASgLMhguY2FsYWJhLnYxLk1lc3NhZ2VEZWxldGVIABIuCgx0eXBpbmdfc3RhcnQYDyABKAsyFi5jYWxhYmEudjEuVHlwaW5nU3RhcnRIABI0Cg9wcmVzZW5jZV91cGRhdGUYECABKAsyGS5jYWxhYmEudjEuUHJlc2VuY2VVcGRhdGVIABI5ChJ2b2ljZV9zdGF0ZV91cGRhdGUYESABKAsyGy5jYWxhYmEudjEuVm9pY2VTdGF0ZVVwZGF0ZUgAEjkKEnZvaWNlX3N0cmVhbV9zdGFydBgSIAEoCzIbLmNhbGFiYS52MS5Wb2ljZVN0cmVhbVN0YXJ0SAASNwoRdm9pY2Vfc3RyZWFtX3N0b3AYEyABKAsyGi5jYWxhYmEudjEuVm9pY2VTdHJlYW1TdG9wSAASNwoRcmVhZF9zdGF0ZV91cGRhdGUYFCABKAsyGi5jYWxhYmEudjEuUmVhZFN0YXRlVXBkYXRlSAASLAoLdXNlcl91cGRhdGUYFSABKAsyFS5jYWxhYmEudjEuVXNlclVwZGF0ZUgAEiUKB3Jlc3VtZWQYFiABKAsyEi5jYWxhYmEudjEuUmVzdW1lZEgAQgcKBWV2ZW50IngKClZvaWNlU3RhdGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3VzZXJfaWQYAiABKAkSDwoHcm9vbV9pZBgDIAEoCRINCgVtdXRlZBgEIAEoCBIQCghkZWFmZW5lZBgFIAEoCBIRCglzdHJlYW1pbmcYBiABKAgidQoIUHJlc2VuY2USDwoHdXNlcl9pZBgBIAEoCRIpCgZzdGF0dXMYAiABKA4yGS5jYWxhYmEudjEuUHJlc2VuY2VTdGF0dXMSLQoJbGFzdF9zZWVuGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI6CglSZWFkU3RhdGUSDwoHcm9vbV9pZBgBIAEoCRIcChRsYXN0X3JlYWRfbWVzc2FnZV9pZBgCIAEoCSL+AgoRV29ya3NwYWNlU25hcHNob3QSJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZRImCgRyb2xlGAIgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGUSHgoFcm9vbXMYAyADKAsyDy5jYWxhYmEudjEuUm9vbRIrCgdtZW1iZXJzGAQgAygLMhouY2FsYWJhLnYxLldvcmtzcGFjZU1lbWJlchIrCgx2b2ljZV9zdGF0ZXMYBSADKAsyFS5jYWxhYmEudjEuVm9pY2VTdGF0ZRImCglwcmVzZW5jZXMYBiADKAsyEy5jYWxhYmEudjEuUHJlc2VuY2USQgoLcGVybWlzc2lvbnMYByADKAsyLS5jYWxhYmEudjEuV29ya3NwYWNlU25hcHNob3QuUGVybWlzc2lvbnNFbnRyeRoyChBQZXJtaXNzaW9uc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoBDoCOAEikwEKBVJlYWR5EhIKCnNlc3Npb25faWQYASABKAkSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUSMAoKd29ya3NwYWNlcxgDIAMoCzIcLmNhbGFiYS52MS5Xb3Jrc3BhY2VTbmFwc2hvdBIpCgtyZWFkX3N0YXRlcxgEIAMoCzIULmNhbGFiYS52MS5SZWFkU3RhdGUiGwoHUmVzdW1lZBIQCghyZXBsYXllZBgBIAEoDSJBCg9Xb3Jrc3BhY2VDcmVhdGUSLgoIc25hcHNob3QYASABKAsyHC5jYWxhYmEudjEuV29ya3NwYWNlU25hcHNob3QiOgoPV29ya3NwYWNlVXBkYXRlEicKCXdvcmtzcGFjZRgBIAEoCzIULmNhbGFiYS52MS5Xb3Jrc3BhY2UiJwoPV29ya3NwYWNlRGVsZXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCSJAChJXb3Jrc3BhY2VNZW1iZXJBZGQSKgoGbWVtYmVyGAEgASgLMhouY2FsYWJhLnYxLldvcmtzcGFjZU1lbWJlciJDChVXb3Jrc3BhY2VNZW1iZXJVcGRhdGUSKgoGbWVtYmVyGAEgASgLMhouY2FsYWJhLnYxLldvcmtzcGFjZU1lbWJlciI+ChVXb3Jrc3BhY2VNZW1iZXJSZW1vdmUSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3VzZXJfaWQYAiABKAkiKwoKUm9vbUNyZWF0ZRIdCgRyb29tGAEgASgLMg8uY2FsYWJhLnYxLlJvb20iKwoKUm9vbVVwZGF0ZRIdCgRyb29tGAEgASgLMg8uY2FsYWJhLnYxLlJvb20iMwoKUm9vbURlbGV0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSDwoHcm9vbV9pZBgCIAEoCSJ2ChVSb29tUGVybWlzc2lvbnNVcGRhdGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSNgoLcGVybWlzc2lvbnMYAyADKAsyIS5jYWxhYmEudjEuUm9vbVBlcm1pc3Npb25PdmVycmlkZSJKCg1NZXNzYWdlQ3JlYXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIjCgdtZXNzYWdlGAIgASgLMhIuY2FsYWJhLnYxLk1lc3NhZ2UiSgoNTWVzc2FnZVVwZGF0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSIwoHbWVzc2FnZRgCIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIkoKDU1lc3NhZ2VEZWxldGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEgoKbWVzc2FnZV9pZBgDIAEoCSJeCgtUeXBpbmdTdGFydBIPCgdyb29tX2lkGAEgASgJEg8KB3VzZXJfaWQYAiABKAkSLQoJdGltZXN0YW1wGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI3Cg5QcmVzZW5jZVVwZGF0ZRIlCghwcmVzZW5jZRgBIAEoCzITLmNhbGFiYS52MS5QcmVzZW5jZSI4ChBWb2ljZVN0YXRlVXBkYXRlEiQKBXN0YXRlGAEgASgLMhUuY2FsYWJhLnYxLlZvaWNlU3RhdGUiiwEKEFZvaWNlU3RyZWFtU3RhcnQSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSDwoHdXNlcl9pZBgDIAEoCRIRCgl0cmFja19zaWQYBCABKAkSLAoGcHJlc2V0GAUgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0Io4BCg9Wb2ljZVN0cmVhbVN0b3ASFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSDwoHdXNlcl9pZBgDIAEoCRIRCgl0cmFja19zaWQYBCABKAkSMAoGcmVhc29uGAUgASgOMiAuY2FsYWJhLnYxLlZvaWNlU3RyZWFtU3RvcFJlYXNvbiI7Cg9SZWFkU3RhdGVVcGRhdGUSKAoKcmVhZF9zdGF0ZRgBIAEoCzIULmNhbGFiYS52MS5SZWFkU3RhdGUiRgoKVXNlclVwZGF0ZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZRIdCgR1c2VyGAIgASgLMg8uY2FsYWJhLnYxLlVzZXIq/QIKDUdhdGV3YXlPcGNvZGUSHgoaR0FURVdBWV9PUENPREVfVU5TUEVDSUZJRUQQABIcChhHQVRFV0FZX09QQ09ERV9IRUFSVEJFQVQQARIbChdHQVRFV0FZX09QQ09ERV9JREVOVElGWRACEhkKFUdBVEVXQVlfT1BDT0RFX1JFU1VNRRADEiIKHkdBVEVXQVlfT1BDT0RFX1BSRVNFTkNFX1VQREFURRAEEhkKFUdBVEVXQVlfT1BDT0RFX1RZUElORxAFEhwKGEdBVEVXQVlfT1BDT0RFX1NVQlNDUklCRRAGEhwKGEdBVEVXQVlfT1BDT0RFX1JFQ09OTkVDVBAHEhsKF0dBVEVXQVlfT1BDT0RFX0RJU1BBVENIEAgSIgoeR0FURVdBWV9PUENPREVfSU5WQUxJRF9TRVNTSU9OEAkSGAoUR0FURVdBWV9PUENPREVfSEVMTE8QChIgChxHQVRFV0FZX09QQ09ERV9IRUFSVEJFQVRfQUNLEAsqpAMKEEdhdGV3YXlDbG9zZUNvZGUSIgoeR0FURVdBWV9DTE9TRV9DT0RFX1VOU1BFQ0lGSUVEEAASJQogR0FURVdBWV9DTE9TRV9DT0RFX1VOS05PV05fRVJST1IQoB8SJgohR0FURVdBWV9DTE9TRV9DT0RFX1VOS05PV05fT1BDT0RFEKEfEiQKH0dBVEVXQVlfQ0xPU0VfQ09ERV9ERUNPREVfRVJST1IQoh8SKQokR0FURVdBWV9DTE9TRV9DT0RFX05PVF9BVVRIRU5USUNBVEVEEKMfEi0KKEdBVEVXQVlfQ0xPU0VfQ09ERV9BVVRIRU5USUNBVElPTl9GQUlMRUQQpB8SIwoeR0FURVdBWV9DTE9TRV9DT0RFX0lOVkFMSURfU0VREKcfEiQKH0dBVEVXQVlfQ0xPU0VfQ09ERV9SQVRFX0xJTUlURUQQqB8SKQokR0FURVdBWV9DTE9TRV9DT0RFX1NFU1NJT05fVElNRURfT1VUEKkfEicKIkdBVEVXQVlfQ0xPU0VfQ09ERV9TRVNTSU9OX1JFVk9LRUQQqh8qvAEKDlByZXNlbmNlU3RhdHVzEh8KG1BSRVNFTkNFX1NUQVRVU19VTlNQRUNJRklFRBAAEhoKFlBSRVNFTkNFX1NUQVRVU19PTkxJTkUQARIYChRQUkVTRU5DRV9TVEFUVVNfSURMRRACEhcKE1BSRVNFTkNFX1NUQVRVU19ETkQQAxIdChlQUkVTRU5DRV9TVEFUVVNfSU5WSVNJQkxFEAQSGwoXUFJFU0VOQ0VfU1RBVFVTX09GRkxJTkUQBSq5AQoVVm9pY2VTdHJlYW1TdG9wUmVhc29uEigKJFZPSUNFX1NUUkVBTV9TVE9QX1JFQVNPTl9VTlNQRUNJRklFRBAAEiIKHlZPSUNFX1NUUkVBTV9TVE9QX1JFQVNPTl9FTkRFRBABEioKJlZPSUNFX1NUUkVBTV9TVE9QX1JFQVNPTl9MSU1JVF9SRUFDSEVEEAISJgoiVk9JQ0VfU1RSRUFNX1NUT1BfUkVBU09OX01PREVSQVRPUhADQpoBCg1jb20uY2FsYWJhLnYxQgxHYXRld2F5UHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_message, file_calaba_v1_permissions, file_calaba_v1_room, file_calaba_v1_user, file_calaba_v1_workspace]);
+  fileDesc("ChdjYWxhYmEvdjEvZ2F0ZXdheS5wcm90bxIJY2FsYWJhLnYxIqkECgxHYXRld2F5RnJhbWUSJAoCb3AYASABKA4yGC5jYWxhYmEudjEuR2F0ZXdheU9wY29kZRILCgNzZXEYAiABKAQSKQoJaGVhcnRiZWF0GAogASgLMhQuY2FsYWJhLnYxLkhlYXJ0YmVhdEgAEicKCGlkZW50aWZ5GAsgASgLMhMuY2FsYWJhLnYxLklkZW50aWZ5SAASIwoGcmVzdW1lGAwgASgLMhEuY2FsYWJhLnYxLlJlc3VtZUgAEi4KDHNldF9wcmVzZW5jZRgNIAEoCzIWLmNhbGFiYS52MS5TZXRQcmVzZW5jZUgAEiMKBnR5cGluZxgOIAEoCzIRLmNhbGFiYS52MS5UeXBpbmdIABIpCglzdWJzY3JpYmUYDyABKAsyFC5jYWxhYmEudjEuU3Vic2NyaWJlSAASIQoFaGVsbG8YFCABKAsyEC5jYWxhYmEudjEuSGVsbG9IABIwCg1oZWFydGJlYXRfYWNrGBUgASgLMhcuY2FsYWJhLnYxLkhlYXJ0YmVhdEFja0gAEikKCXJlY29ubmVjdBgWIAEoCzIULmNhbGFiYS52MS5SZWNvbm5lY3RIABI0Cg9pbnZhbGlkX3Nlc3Npb24YFyABKAsyGS5jYWxhYmEudjEuSW52YWxpZFNlc3Npb25IABIsCghkaXNwYXRjaBgYIAEoCzIYLmNhbGFiYS52MS5EaXNwYXRjaEV2ZW50SABCCQoHcGF5bG9hZCIdCglIZWFydGJlYXQSEAoIbGFzdF9zZXEYASABKAQiQQoKRGV2aWNlSW5mbxIMCgRuYW1lGAEgASgJEhAKCHBsYXRmb3JtGAIgASgJEhMKC2FwcF92ZXJzaW9uGAMgASgJIlYKCElkZW50aWZ5Eg0KBXRva2VuGAEgASgJEiUKBmRldmljZRgCIAEoCzIVLmNhbGFiYS52MS5EZXZpY2VJbmZvEhQKDGNhcGFiaWxpdGllcxgDIAEoBCI4CgZSZXN1bWUSDQoFdG9rZW4YASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRILCgNzZXEYAyABKAQiOAoLU2V0UHJlc2VuY2USKQoGc3RhdHVzGAEgASgOMhkuY2FsYWJhLnYxLlByZXNlbmNlU3RhdHVzIhkKBlR5cGluZxIPCgdyb29tX2lkGAEgASgJIh0KCVN1YnNjcmliZRIQCghyb29tX2lkcxgBIAMoCSImCgVIZWxsbxIdChVoZWFydGJlYXRfaW50ZXJ2YWxfbXMYASABKA0iDgoMSGVhcnRiZWF0QWNrIgsKCVJlY29ubmVjdCIjCg5JbnZhbGlkU2Vzc2lvbhIRCglyZXN1bWFibGUYASABKAgi4AsKDURpc3BhdGNoRXZlbnQSIQoFcmVhZHkYASABKAsyEC5jYWxhYmEudjEuUmVhZHlIABI2ChB3b3Jrc3BhY2VfY3JlYXRlGAIgASgLMhouY2FsYWJhLnYxLldvcmtzcGFjZUNyZWF0ZUgAEjYKEHdvcmtzcGFjZV91cGRhdGUYAyABKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlVXBkYXRlSAASNgoQd29ya3NwYWNlX2RlbGV0ZRgEIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VEZWxldGVIABI9ChR3b3Jrc3BhY2VfbWVtYmVyX2FkZBgFIAEoCzIdLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXJBZGRIABJDChd3b3Jrc3BhY2VfbWVtYmVyX3VwZGF0ZRgGIAEoCzIgLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXJVcGRhdGVIABJDChd3b3Jrc3BhY2VfbWVtYmVyX3JlbW92ZRgHIAEoCzIgLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXJSZW1vdmVIABIsCgtyb29tX2NyZWF0ZRgIIAEoCzIVLmNhbGFiYS52MS5Sb29tQ3JlYXRlSAASLAoLcm9vbV91cGRhdGUYCSABKAsyFS5jYWxhYmEudjEuUm9vbVVwZGF0ZUgAEiwKC3Jvb21fZGVsZXRlGAogASgLMhUuY2FsYWJhLnYxLlJvb21EZWxldGVIABJDChdyb29tX3Blcm1pc3Npb25zX3VwZGF0ZRgLIAEoCzIgLmNhbGFiYS52MS5Sb29tUGVybWlzc2lvbnNVcGRhdGVIABIyCg5tZXNzYWdlX2NyZWF0ZRgMIAEoCzIYLmNhbGFiYS52MS5NZXNzYWdlQ3JlYXRlSAASMgoObWVzc2FnZV91cGRhdGUYDSABKAsyGC5jYWxhYmEudjEuTWVzc2FnZVVwZGF0ZUgAEjIKDm1lc3NhZ2VfZGVsZXRlGA4gASgLMhguY2FsYWJhLnYxLk1lc3NhZ2VEZWxldGVIABIuCgx0eXBpbmdfc3RhcnQYDyABKAsyFi5jYWxhYmEudjEuVHlwaW5nU3RhcnRIABI0Cg9wcmVzZW5jZV91cGRhdGUYECABKAsyGS5jYWxhYmEudjEuUHJlc2VuY2VVcGRhdGVIABI5ChJ2b2ljZV9zdGF0ZV91cGRhdGUYESABKAsyGy5jYWxhYmEudjEuVm9pY2VTdGF0ZVVwZGF0ZUgAEjkKEnZvaWNlX3N0cmVhbV9zdGFydBgSIAEoCzIbLmNhbGFiYS52MS5Wb2ljZVN0cmVhbVN0YXJ0SAASNwoRdm9pY2Vfc3RyZWFtX3N0b3AYEyABKAsyGi5jYWxhYmEudjEuVm9pY2VTdHJlYW1TdG9wSAASNwoRcmVhZF9zdGF0ZV91cGRhdGUYFCABKAsyGi5jYWxhYmEudjEuUmVhZFN0YXRlVXBkYXRlSAASLAoLdXNlcl91cGRhdGUYFSABKAsyFS5jYWxhYmEudjEuVXNlclVwZGF0ZUgAEiUKB3Jlc3VtZWQYFiABKAsyEi5jYWxhYmEudjEuUmVzdW1lZEgAEjQKD2NhdGVnb3J5X2NyZWF0ZRgXIAEoCzIZLmNhbGFiYS52MS5DYXRlZ29yeUNyZWF0ZUgAEjQKD2NhdGVnb3J5X3VwZGF0ZRgYIAEoCzIZLmNhbGFiYS52MS5DYXRlZ29yeVVwZGF0ZUgAEjQKD2NhdGVnb3J5X2RlbGV0ZRgZIAEoCzIZLmNhbGFiYS52MS5DYXRlZ29yeURlbGV0ZUgAEj0KFG1lc3NhZ2VfcmVhY3Rpb25fYWRkGBogASgLMh0uY2FsYWJhLnYxLk1lc3NhZ2VSZWFjdGlvbkFkZEgAEkMKF21lc3NhZ2VfcmVhY3Rpb25fcmVtb3ZlGBsgASgLMiAuY2FsYWJhLnYxLk1lc3NhZ2VSZWFjdGlvblJlbW92ZUgAQgcKBWV2ZW50IqcBCgpWb2ljZVN0YXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgd1c2VyX2lkGAIgASgJEg8KB3Jvb21faWQYAyABKAkSDQoFbXV0ZWQYBCABKAgSEAoIZGVhZmVuZWQYBSABKAgSEQoJc3RyZWFtaW5nGAYgASgIEi0KCWpvaW5lZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi1wEKCFByZXNlbmNlEg8KB3VzZXJfaWQYASABKAkSKQoGc3RhdHVzGAIgASgOMhkuY2FsYWJhLnYxLlByZXNlbmNlU3RhdHVzEi0KCWxhc3Rfc2VlbhgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEwoLc3RhdHVzX3RleHQYBCABKAkSFAoMc3RhdHVzX2Vtb2ppGAUgASgJEjUKEXN0YXR1c19leHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI6CglSZWFkU3RhdGUSDwoHcm9vbV9pZBgBIAEoCRIcChRsYXN0X3JlYWRfbWVzc2FnZV9pZBgCIAEoCSKrAwoRV29ya3NwYWNlU25hcHNob3QSJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZRImCgRyb2xlGAIgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGUSHgoFcm9vbXMYAyADKAsyDy5jYWxhYmEudjEuUm9vbRIrCgdtZW1iZXJzGAQgAygLMhouY2FsYWJhLnYxLldvcmtzcGFjZU1lbWJlchIrCgx2b2ljZV9zdGF0ZXMYBSADKAsyFS5jYWxhYmEudjEuVm9pY2VTdGF0ZRImCglwcmVzZW5jZXMYBiADKAsyEy5jYWxhYmEudjEuUHJlc2VuY2USQgoLcGVybWlzc2lvbnMYByADKAsyLS5jYWxhYmEudjEuV29ya3NwYWNlU25hcHNob3QuUGVybWlzc2lvbnNFbnRyeRIrCgpjYXRlZ29yaWVzGAggAygLMhcuY2FsYWJhLnYxLlJvb21DYXRlZ29yeRoyChBQZXJtaXNzaW9uc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoBDoCOAEikwEKBVJlYWR5EhIKCnNlc3Npb25faWQYASABKAkSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUSMAoKd29ya3NwYWNlcxgDIAMoCzIcLmNhbGFiYS52MS5Xb3Jrc3BhY2VTbmFwc2hvdBIpCgtyZWFkX3N0YXRlcxgEIAMoCzIULmNhbGFiYS52MS5SZWFkU3RhdGUiOwoOQ2F0ZWdvcnlDcmVhdGUSKQoIY2F0ZWdvcnkYASABKAsyFy5jYWxhYmEudjEuUm9vbUNhdGVnb3J5IjsKDkNhdGVnb3J5VXBkYXRlEikKCGNhdGVnb3J5GAEgASgLMhcuY2FsYWJhLnYxLlJvb21DYXRlZ29yeSI7Cg5DYXRlZ29yeURlbGV0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSEwoLY2F0ZWdvcnlfaWQYAiABKAkibwoSTWVzc2FnZVJlYWN0aW9uQWRkEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJEhIKCm1lc3NhZ2VfaWQYAyABKAkSDwoHdXNlcl9pZBgEIAEoCRINCgVlbW9qaRgFIAEoCSJyChVNZXNzYWdlUmVhY3Rpb25SZW1vdmUSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEgoKbWVzc2FnZV9pZBgDIAEoCRIPCgd1c2VyX2lkGAQgASgJEg0KBWVtb2ppGAUgASgJIhsKB1Jlc3VtZWQSEAoIcmVwbGF5ZWQYASABKA0iQQoPV29ya3NwYWNlQ3JlYXRlEi4KCHNuYXBzaG90GAEgASgLMhwuY2FsYWJhLnYxLldvcmtzcGFjZVNuYXBzaG90IjoKD1dvcmtzcGFjZVVwZGF0ZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlIicKD1dvcmtzcGFjZURlbGV0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkiQAoSV29ya3NwYWNlTWVtYmVyQWRkEioKBm1lbWJlchgBIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIiQwoVV29ya3NwYWNlTWVtYmVyVXBkYXRlEioKBm1lbWJlchgBIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIiPgoVV29ya3NwYWNlTWVtYmVyUmVtb3ZlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgd1c2VyX2lkGAIgASgJIisKClJvb21DcmVhdGUSHQoEcm9vbRgBIAEoCzIPLmNhbGFiYS52MS5Sb29tIisKClJvb21VcGRhdGUSHQoEcm9vbRgBIAEoCzIPLmNhbGFiYS52MS5Sb29tIjMKClJvb21EZWxldGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkidgoVUm9vbVBlcm1pc3Npb25zVXBkYXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJEjYKC3Blcm1pc3Npb25zGAMgAygLMiEuY2FsYWJhLnYxLlJvb21QZXJtaXNzaW9uT3ZlcnJpZGUiSgoNTWVzc2FnZUNyZWF0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSIwoHbWVzc2FnZRgCIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIkoKDU1lc3NhZ2VVcGRhdGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEiMKB21lc3NhZ2UYAiABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSJKCg1NZXNzYWdlRGVsZXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJEhIKCm1lc3NhZ2VfaWQYAyABKAkiXgoLVHlwaW5nU3RhcnQSDwoHcm9vbV9pZBgBIAEoCRIPCgd1c2VyX2lkGAIgASgJEi0KCXRpbWVzdGFtcBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiNwoOUHJlc2VuY2VVcGRhdGUSJQoIcHJlc2VuY2UYASABKAsyEy5jYWxhYmEudjEuUHJlc2VuY2UiOAoQVm9pY2VTdGF0ZVVwZGF0ZRIkCgVzdGF0ZRgBIAEoCzIVLmNhbGFiYS52MS5Wb2ljZVN0YXRlIosBChBWb2ljZVN0cmVhbVN0YXJ0EhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJEg8KB3VzZXJfaWQYAyABKAkSEQoJdHJhY2tfc2lkGAQgASgJEiwKBnByZXNldBgFIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldCKOAQoPVm9pY2VTdHJlYW1TdG9wEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJEg8KB3VzZXJfaWQYAyABKAkSEQoJdHJhY2tfc2lkGAQgASgJEjAKBnJlYXNvbhgFIAEoDjIgLmNhbGFiYS52MS5Wb2ljZVN0cmVhbVN0b3BSZWFzb24iOwoPUmVhZFN0YXRlVXBkYXRlEigKCnJlYWRfc3RhdGUYASABKAsyFC5jYWxhYmEudjEuUmVhZFN0YXRlIkYKClVzZXJVcGRhdGUSGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUSHQoEdXNlchgCIAEoCzIPLmNhbGFiYS52MS5Vc2VyKv0CCg1HYXRld2F5T3Bjb2RlEh4KGkdBVEVXQVlfT1BDT0RFX1VOU1BFQ0lGSUVEEAASHAoYR0FURVdBWV9PUENPREVfSEVBUlRCRUFUEAESGwoXR0FURVdBWV9PUENPREVfSURFTlRJRlkQAhIZChVHQVRFV0FZX09QQ09ERV9SRVNVTUUQAxIiCh5HQVRFV0FZX09QQ09ERV9QUkVTRU5DRV9VUERBVEUQBBIZChVHQVRFV0FZX09QQ09ERV9UWVBJTkcQBRIcChhHQVRFV0FZX09QQ09ERV9TVUJTQ1JJQkUQBhIcChhHQVRFV0FZX09QQ09ERV9SRUNPTk5FQ1QQBxIbChdHQVRFV0FZX09QQ09ERV9ESVNQQVRDSBAIEiIKHkdBVEVXQVlfT1BDT0RFX0lOVkFMSURfU0VTU0lPThAJEhgKFEdBVEVXQVlfT1BDT0RFX0hFTExPEAoSIAocR0FURVdBWV9PUENPREVfSEVBUlRCRUFUX0FDSxALKqQDChBHYXRld2F5Q2xvc2VDb2RlEiIKHkdBVEVXQVlfQ0xPU0VfQ09ERV9VTlNQRUNJRklFRBAAEiUKIEdBVEVXQVlfQ0xPU0VfQ09ERV9VTktOT1dOX0VSUk9SEKAfEiYKIUdBVEVXQVlfQ0xPU0VfQ09ERV9VTktOT1dOX09QQ09ERRChHxIkCh9HQVRFV0FZX0NMT1NFX0NPREVfREVDT0RFX0VSUk9SEKIfEikKJEdBVEVXQVlfQ0xPU0VfQ09ERV9OT1RfQVVUSEVOVElDQVRFRBCjHxItCihHQVRFV0FZX0NMT1NFX0NPREVfQVVUSEVOVElDQVRJT05fRkFJTEVEEKQfEiMKHkdBVEVXQVlfQ0xPU0VfQ09ERV9JTlZBTElEX1NFURCnHxIkCh9HQVRFV0FZX0NMT1NFX0NPREVfUkFURV9MSU1JVEVEEKgfEikKJEdBVEVXQVlfQ0xPU0VfQ09ERV9TRVNTSU9OX1RJTUVEX09VVBCpHxInCiJHQVRFV0FZX0NMT1NFX0NPREVfU0VTU0lPTl9SRVZPS0VEEKofKrwBCg5QcmVzZW5jZVN0YXR1cxIfChtQUkVTRU5DRV9TVEFUVVNfVU5TUEVDSUZJRUQQABIaChZQUkVTRU5DRV9TVEFUVVNfT05MSU5FEAESGAoUUFJFU0VOQ0VfU1RBVFVTX0lETEUQAhIXChNQUkVTRU5DRV9TVEFUVVNfRE5EEAMSHQoZUFJFU0VOQ0VfU1RBVFVTX0lOVklTSUJMRRAEEhsKF1BSRVNFTkNFX1NUQVRVU19PRkZMSU5FEAUquQEKFVZvaWNlU3RyZWFtU3RvcFJlYXNvbhIoCiRWT0lDRV9TVFJFQU1fU1RPUF9SRUFTT05fVU5TUEVDSUZJRUQQABIiCh5WT0lDRV9TVFJFQU1fU1RPUF9SRUFTT05fRU5ERUQQARIqCiZWT0lDRV9TVFJFQU1fU1RPUF9SRUFTT05fTElNSVRfUkVBQ0hFRBACEiYKIlZPSUNFX1NUUkVBTV9TVE9QX1JFQVNPTl9NT0RFUkFUT1IQA0KaAQoNY29tLmNhbGFiYS52MUIMR2F0ZXdheVByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_message, file_calaba_v1_permissions, file_calaba_v1_room, file_calaba_v1_user, file_calaba_v1_workspace]);
 
 /**
  * One gateway frame. `op` must match the payload case; `seq` is set on DISPATCH only
@@ -494,6 +494,36 @@ export type DispatchEvent = Message<"calaba.v1.DispatchEvent"> & {
      */
     value: Resumed;
     case: "resumed";
+  } | {
+    /**
+     * @generated from field: calaba.v1.CategoryCreate category_create = 23;
+     */
+    value: CategoryCreate;
+    case: "categoryCreate";
+  } | {
+    /**
+     * @generated from field: calaba.v1.CategoryUpdate category_update = 24;
+     */
+    value: CategoryUpdate;
+    case: "categoryUpdate";
+  } | {
+    /**
+     * @generated from field: calaba.v1.CategoryDelete category_delete = 25;
+     */
+    value: CategoryDelete;
+    case: "categoryDelete";
+  } | {
+    /**
+     * @generated from field: calaba.v1.MessageReactionAdd message_reaction_add = 26;
+     */
+    value: MessageReactionAdd;
+    case: "messageReactionAdd";
+  } | {
+    /**
+     * @generated from field: calaba.v1.MessageReactionRemove message_reaction_remove = 27;
+     */
+    value: MessageReactionRemove;
+    case: "messageReactionRemove";
   } | { case: undefined; value?: undefined };
 };
 
@@ -545,6 +575,13 @@ export type VoiceState = Message<"calaba.v1.VoiceState"> & {
    * @generated from field: bool streaming = 6;
    */
   streaming: boolean;
+
+  /**
+   * earliest join of the user's devices in this room
+   *
+   * @generated from field: google.protobuf.Timestamp joined_at = 7;
+   */
+  joinedAt?: Timestamp | undefined;
 };
 
 /**
@@ -574,6 +611,23 @@ export type Presence = Message<"calaba.v1.Presence"> & {
    * @generated from field: google.protobuf.Timestamp last_seen = 3;
    */
   lastSeen?: Timestamp | undefined;
+
+  /**
+   * Custom status (see PATCH /api/me/status); filled in PRESENCE_UPDATE events.
+   *
+   * @generated from field: string status_text = 4;
+   */
+  statusText: string;
+
+  /**
+   * @generated from field: string status_emoji = 5;
+   */
+  statusEmoji: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp status_expires_at = 6;
+   */
+  statusExpiresAt?: Timestamp | undefined;
 };
 
 /**
@@ -648,6 +702,11 @@ export type WorkspaceSnapshot = Message<"calaba.v1.WorkspaceSnapshot"> & {
    * @generated from field: map<string, uint64> permissions = 7;
    */
   permissions: { [key: string]: bigint };
+
+  /**
+   * @generated from field: repeated calaba.v1.RoomCategory categories = 8;
+   */
+  categories: RoomCategory[];
 };
 
 /**
@@ -692,6 +751,138 @@ export const ReadySchema: GenMessage<Ready> = /*@__PURE__*/
   messageDesc(file_calaba_v1_gateway, 17);
 
 /**
+ * @generated from message calaba.v1.CategoryCreate
+ */
+export type CategoryCreate = Message<"calaba.v1.CategoryCreate"> & {
+  /**
+   * @generated from field: calaba.v1.RoomCategory category = 1;
+   */
+  category?: RoomCategory | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CategoryCreate.
+ * Use `create(CategoryCreateSchema)` to create a new message.
+ */
+export const CategoryCreateSchema: GenMessage<CategoryCreate> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_gateway, 18);
+
+/**
+ * @generated from message calaba.v1.CategoryUpdate
+ */
+export type CategoryUpdate = Message<"calaba.v1.CategoryUpdate"> & {
+  /**
+   * @generated from field: calaba.v1.RoomCategory category = 1;
+   */
+  category?: RoomCategory | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CategoryUpdate.
+ * Use `create(CategoryUpdateSchema)` to create a new message.
+ */
+export const CategoryUpdateSchema: GenMessage<CategoryUpdate> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_gateway, 19);
+
+/**
+ * @generated from message calaba.v1.CategoryDelete
+ */
+export type CategoryDelete = Message<"calaba.v1.CategoryDelete"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+
+  /**
+   * its rooms move out of it (ROOM_UPDATE follows)
+   *
+   * @generated from field: string category_id = 2;
+   */
+  categoryId: string;
+};
+
+/**
+ * Describes the message calaba.v1.CategoryDelete.
+ * Use `create(CategoryDeleteSchema)` to create a new message.
+ */
+export const CategoryDeleteSchema: GenMessage<CategoryDelete> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_gateway, 20);
+
+/**
+ * @generated from message calaba.v1.MessageReactionAdd
+ */
+export type MessageReactionAdd = Message<"calaba.v1.MessageReactionAdd"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+
+  /**
+   * @generated from field: string room_id = 2;
+   */
+  roomId: string;
+
+  /**
+   * @generated from field: string message_id = 3;
+   */
+  messageId: string;
+
+  /**
+   * @generated from field: string user_id = 4;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string emoji = 5;
+   */
+  emoji: string;
+};
+
+/**
+ * Describes the message calaba.v1.MessageReactionAdd.
+ * Use `create(MessageReactionAddSchema)` to create a new message.
+ */
+export const MessageReactionAddSchema: GenMessage<MessageReactionAdd> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_gateway, 21);
+
+/**
+ * @generated from message calaba.v1.MessageReactionRemove
+ */
+export type MessageReactionRemove = Message<"calaba.v1.MessageReactionRemove"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+
+  /**
+   * @generated from field: string room_id = 2;
+   */
+  roomId: string;
+
+  /**
+   * @generated from field: string message_id = 3;
+   */
+  messageId: string;
+
+  /**
+   * @generated from field: string user_id = 4;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string emoji = 5;
+   */
+  emoji: string;
+};
+
+/**
+ * Describes the message calaba.v1.MessageReactionRemove.
+ * Use `create(MessageReactionRemoveSchema)` to create a new message.
+ */
+export const MessageReactionRemoveSchema: GenMessage<MessageReactionRemove> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_gateway, 22);
+
+/**
  * Sent after a successful RESUME, following the replayed events.
  *
  * @generated from message calaba.v1.Resumed
@@ -710,7 +901,7 @@ export type Resumed = Message<"calaba.v1.Resumed"> & {
  * Use `create(ResumedSchema)` to create a new message.
  */
 export const ResumedSchema: GenMessage<Resumed> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 18);
+  messageDesc(file_calaba_v1_gateway, 23);
 
 /**
  * @generated from message calaba.v1.WorkspaceCreate
@@ -729,7 +920,7 @@ export type WorkspaceCreate = Message<"calaba.v1.WorkspaceCreate"> & {
  * Use `create(WorkspaceCreateSchema)` to create a new message.
  */
 export const WorkspaceCreateSchema: GenMessage<WorkspaceCreate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 19);
+  messageDesc(file_calaba_v1_gateway, 24);
 
 /**
  * @generated from message calaba.v1.WorkspaceUpdate
@@ -746,7 +937,7 @@ export type WorkspaceUpdate = Message<"calaba.v1.WorkspaceUpdate"> & {
  * Use `create(WorkspaceUpdateSchema)` to create a new message.
  */
 export const WorkspaceUpdateSchema: GenMessage<WorkspaceUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 20);
+  messageDesc(file_calaba_v1_gateway, 25);
 
 /**
  * @generated from message calaba.v1.WorkspaceDelete
@@ -765,7 +956,7 @@ export type WorkspaceDelete = Message<"calaba.v1.WorkspaceDelete"> & {
  * Use `create(WorkspaceDeleteSchema)` to create a new message.
  */
 export const WorkspaceDeleteSchema: GenMessage<WorkspaceDelete> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 21);
+  messageDesc(file_calaba_v1_gateway, 26);
 
 /**
  * @generated from message calaba.v1.WorkspaceMemberAdd
@@ -782,7 +973,7 @@ export type WorkspaceMemberAdd = Message<"calaba.v1.WorkspaceMemberAdd"> & {
  * Use `create(WorkspaceMemberAddSchema)` to create a new message.
  */
 export const WorkspaceMemberAddSchema: GenMessage<WorkspaceMemberAdd> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 22);
+  messageDesc(file_calaba_v1_gateway, 27);
 
 /**
  * @generated from message calaba.v1.WorkspaceMemberUpdate
@@ -799,7 +990,7 @@ export type WorkspaceMemberUpdate = Message<"calaba.v1.WorkspaceMemberUpdate"> &
  * Use `create(WorkspaceMemberUpdateSchema)` to create a new message.
  */
 export const WorkspaceMemberUpdateSchema: GenMessage<WorkspaceMemberUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 23);
+  messageDesc(file_calaba_v1_gateway, 28);
 
 /**
  * @generated from message calaba.v1.WorkspaceMemberRemove
@@ -821,7 +1012,7 @@ export type WorkspaceMemberRemove = Message<"calaba.v1.WorkspaceMemberRemove"> &
  * Use `create(WorkspaceMemberRemoveSchema)` to create a new message.
  */
 export const WorkspaceMemberRemoveSchema: GenMessage<WorkspaceMemberRemove> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 24);
+  messageDesc(file_calaba_v1_gateway, 29);
 
 /**
  * @generated from message calaba.v1.RoomCreate
@@ -838,7 +1029,7 @@ export type RoomCreate = Message<"calaba.v1.RoomCreate"> & {
  * Use `create(RoomCreateSchema)` to create a new message.
  */
 export const RoomCreateSchema: GenMessage<RoomCreate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 25);
+  messageDesc(file_calaba_v1_gateway, 30);
 
 /**
  * @generated from message calaba.v1.RoomUpdate
@@ -855,7 +1046,7 @@ export type RoomUpdate = Message<"calaba.v1.RoomUpdate"> & {
  * Use `create(RoomUpdateSchema)` to create a new message.
  */
 export const RoomUpdateSchema: GenMessage<RoomUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 26);
+  messageDesc(file_calaba_v1_gateway, 31);
 
 /**
  * @generated from message calaba.v1.RoomDelete
@@ -877,7 +1068,7 @@ export type RoomDelete = Message<"calaba.v1.RoomDelete"> & {
  * Use `create(RoomDeleteSchema)` to create a new message.
  */
 export const RoomDeleteSchema: GenMessage<RoomDelete> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 27);
+  messageDesc(file_calaba_v1_gateway, 32);
 
 /**
  * @generated from message calaba.v1.RoomPermissionsUpdate
@@ -904,7 +1095,7 @@ export type RoomPermissionsUpdate = Message<"calaba.v1.RoomPermissionsUpdate"> &
  * Use `create(RoomPermissionsUpdateSchema)` to create a new message.
  */
 export const RoomPermissionsUpdateSchema: GenMessage<RoomPermissionsUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 28);
+  messageDesc(file_calaba_v1_gateway, 33);
 
 /**
  * @generated from message calaba.v1.MessageCreate
@@ -926,7 +1117,7 @@ export type MessageCreate = Message<"calaba.v1.MessageCreate"> & {
  * Use `create(MessageCreateSchema)` to create a new message.
  */
 export const MessageCreateSchema: GenMessage<MessageCreate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 29);
+  messageDesc(file_calaba_v1_gateway, 34);
 
 /**
  * @generated from message calaba.v1.MessageUpdate
@@ -948,7 +1139,7 @@ export type MessageUpdate = Message<"calaba.v1.MessageUpdate"> & {
  * Use `create(MessageUpdateSchema)` to create a new message.
  */
 export const MessageUpdateSchema: GenMessage<MessageUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 30);
+  messageDesc(file_calaba_v1_gateway, 35);
 
 /**
  * @generated from message calaba.v1.MessageDelete
@@ -975,7 +1166,7 @@ export type MessageDelete = Message<"calaba.v1.MessageDelete"> & {
  * Use `create(MessageDeleteSchema)` to create a new message.
  */
 export const MessageDeleteSchema: GenMessage<MessageDelete> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 31);
+  messageDesc(file_calaba_v1_gateway, 36);
 
 /**
  * @generated from message calaba.v1.TypingStart
@@ -1002,7 +1193,7 @@ export type TypingStart = Message<"calaba.v1.TypingStart"> & {
  * Use `create(TypingStartSchema)` to create a new message.
  */
 export const TypingStartSchema: GenMessage<TypingStart> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 32);
+  messageDesc(file_calaba_v1_gateway, 37);
 
 /**
  * @generated from message calaba.v1.PresenceUpdate
@@ -1019,7 +1210,7 @@ export type PresenceUpdate = Message<"calaba.v1.PresenceUpdate"> & {
  * Use `create(PresenceUpdateSchema)` to create a new message.
  */
 export const PresenceUpdateSchema: GenMessage<PresenceUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 33);
+  messageDesc(file_calaba_v1_gateway, 38);
 
 /**
  * @generated from message calaba.v1.VoiceStateUpdate
@@ -1036,7 +1227,7 @@ export type VoiceStateUpdate = Message<"calaba.v1.VoiceStateUpdate"> & {
  * Use `create(VoiceStateUpdateSchema)` to create a new message.
  */
 export const VoiceStateUpdateSchema: GenMessage<VoiceStateUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 34);
+  messageDesc(file_calaba_v1_gateway, 39);
 
 /**
  * @generated from message calaba.v1.VoiceStreamStart
@@ -1073,7 +1264,7 @@ export type VoiceStreamStart = Message<"calaba.v1.VoiceStreamStart"> & {
  * Use `create(VoiceStreamStartSchema)` to create a new message.
  */
 export const VoiceStreamStartSchema: GenMessage<VoiceStreamStart> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 35);
+  messageDesc(file_calaba_v1_gateway, 40);
 
 /**
  * @generated from message calaba.v1.VoiceStreamStop
@@ -1110,7 +1301,7 @@ export type VoiceStreamStop = Message<"calaba.v1.VoiceStreamStop"> & {
  * Use `create(VoiceStreamStopSchema)` to create a new message.
  */
 export const VoiceStreamStopSchema: GenMessage<VoiceStreamStop> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 36);
+  messageDesc(file_calaba_v1_gateway, 41);
 
 /**
  * @generated from message calaba.v1.ReadStateUpdate
@@ -1127,7 +1318,7 @@ export type ReadStateUpdate = Message<"calaba.v1.ReadStateUpdate"> & {
  * Use `create(ReadStateUpdateSchema)` to create a new message.
  */
 export const ReadStateUpdateSchema: GenMessage<ReadStateUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 37);
+  messageDesc(file_calaba_v1_gateway, 42);
 
 /**
  * Profile change. On the user's own devices `me` is set (profile + email + settings);
@@ -1152,7 +1343,7 @@ export type UserUpdate = Message<"calaba.v1.UserUpdate"> & {
  * Use `create(UserUpdateSchema)` to create a new message.
  */
 export const UserUpdateSchema: GenMessage<UserUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_gateway, 38);
+  messageDesc(file_calaba_v1_gateway, 43);
 
 /**
  * Gateway opcodes (docs/05-realtime-protocol.md). DISPATCH is 8 (not 0 as in Discord):

@@ -273,8 +273,12 @@ type Room struct {
 	// no messages or in other events (clients track MESSAGE_CREATE).
 	LastMessageId string                 `protobuf:"bytes,12,opt,name=last_message_id,json=lastMessageId,proto3" json:"last_message_id,omitempty"`
 	LastMessageAt *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=last_message_at,json=lastMessageAt,proto3" json:"last_message_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CategoryId    string                 `protobuf:"bytes,14,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"` // empty = no category (top of the list)
+	// Voice rooms: when the current call started (first participant joined an empty room).
+	// Filled in READY / WORKSPACE_CREATE snapshots; unset when nobody is in the room.
+	VoiceStartedAt *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=voice_started_at,json=voiceStartedAt,proto3" json:"voice_started_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Room) Reset() {
@@ -398,6 +402,436 @@ func (x *Room) GetLastMessageAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Room) GetCategoryId() string {
+	if x != nil {
+		return x.CategoryId
+	}
+	return ""
+}
+
+func (x *Room) GetVoiceStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.VoiceStartedAt
+	}
+	return nil
+}
+
+// Room category (a collapsible group in the room list). Visible to all members; clients
+// hide categories without visible rooms.
+type RoomCategory struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"` // 1..100 chars
+	Position      int32                  `protobuf:"varint,4,opt,name=position,proto3" json:"position,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RoomCategory) Reset() {
+	*x = RoomCategory{}
+	mi := &file_calaba_v1_room_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoomCategory) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoomCategory) ProtoMessage() {}
+
+func (x *RoomCategory) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoomCategory.ProtoReflect.Descriptor instead.
+func (*RoomCategory) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *RoomCategory) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RoomCategory) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *RoomCategory) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RoomCategory) GetPosition() int32 {
+	if x != nil {
+		return x.Position
+	}
+	return 0
+}
+
+// POST /api/workspaces/{id}/categories (MANAGE_ROOM at workspace level)
+type CreateCategoryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Position      *int32                 `protobuf:"varint,2,opt,name=position,proto3,oneof" json:"position,omitempty"` // default: after the last category
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCategoryRequest) Reset() {
+	*x = CreateCategoryRequest{}
+	mi := &file_calaba_v1_room_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCategoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCategoryRequest) ProtoMessage() {}
+
+func (x *CreateCategoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCategoryRequest.ProtoReflect.Descriptor instead.
+func (*CreateCategoryRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CreateCategoryRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateCategoryRequest) GetPosition() int32 {
+	if x != nil && x.Position != nil {
+		return *x.Position
+	}
+	return 0
+}
+
+type CreateCategoryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Category      *RoomCategory          `protobuf:"bytes,1,opt,name=category,proto3" json:"category,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCategoryResponse) Reset() {
+	*x = CreateCategoryResponse{}
+	mi := &file_calaba_v1_room_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCategoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCategoryResponse) ProtoMessage() {}
+
+func (x *CreateCategoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCategoryResponse.ProtoReflect.Descriptor instead.
+func (*CreateCategoryResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CreateCategoryResponse) GetCategory() *RoomCategory {
+	if x != nil {
+		return x.Category
+	}
+	return nil
+}
+
+// GET /api/workspaces/{id}/categories
+type ListCategoriesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Categories    []*RoomCategory        `protobuf:"bytes,1,rep,name=categories,proto3" json:"categories,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListCategoriesResponse) Reset() {
+	*x = ListCategoriesResponse{}
+	mi := &file_calaba_v1_room_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCategoriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCategoriesResponse) ProtoMessage() {}
+
+func (x *ListCategoriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCategoriesResponse.ProtoReflect.Descriptor instead.
+func (*ListCategoriesResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListCategoriesResponse) GetCategories() []*RoomCategory {
+	if x != nil {
+		return x.Categories
+	}
+	return nil
+}
+
+// PATCH /api/categories/{id} (MANAGE_ROOM at workspace level)
+type UpdateCategoryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Position      *int32                 `protobuf:"varint,2,opt,name=position,proto3,oneof" json:"position,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateCategoryRequest) Reset() {
+	*x = UpdateCategoryRequest{}
+	mi := &file_calaba_v1_room_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateCategoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateCategoryRequest) ProtoMessage() {}
+
+func (x *UpdateCategoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateCategoryRequest.ProtoReflect.Descriptor instead.
+func (*UpdateCategoryRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *UpdateCategoryRequest) GetName() string {
+	if x != nil && x.Name != nil {
+		return *x.Name
+	}
+	return ""
+}
+
+func (x *UpdateCategoryRequest) GetPosition() int32 {
+	if x != nil && x.Position != nil {
+		return *x.Position
+	}
+	return 0
+}
+
+type UpdateCategoryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Category      *RoomCategory          `protobuf:"bytes,1,opt,name=category,proto3" json:"category,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateCategoryResponse) Reset() {
+	*x = UpdateCategoryResponse{}
+	mi := &file_calaba_v1_room_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateCategoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateCategoryResponse) ProtoMessage() {}
+
+func (x *UpdateCategoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateCategoryResponse.ProtoReflect.Descriptor instead.
+func (*UpdateCategoryResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *UpdateCategoryResponse) GetCategory() *RoomCategory {
+	if x != nil {
+		return x.Category
+	}
+	return nil
+}
+
+// PUT /api/workspaces/{id}/rooms/order (MANAGE_ROOM at workspace level). Batch reorder after
+// drag & drop: listed rooms get the given position and category (category_id "" = none),
+// listed categories the given position. Unlisted items are unchanged.
+type SetRoomOrderRequest struct {
+	state         protoimpl.MessageState                  `protogen:"open.v1"`
+	Rooms         []*SetRoomOrderRequest_RoomPosition     `protobuf:"bytes,1,rep,name=rooms,proto3" json:"rooms,omitempty"`
+	Categories    []*SetRoomOrderRequest_CategoryPosition `protobuf:"bytes,2,rep,name=categories,proto3" json:"categories,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetRoomOrderRequest) Reset() {
+	*x = SetRoomOrderRequest{}
+	mi := &file_calaba_v1_room_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRoomOrderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRoomOrderRequest) ProtoMessage() {}
+
+func (x *SetRoomOrderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRoomOrderRequest.ProtoReflect.Descriptor instead.
+func (*SetRoomOrderRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SetRoomOrderRequest) GetRooms() []*SetRoomOrderRequest_RoomPosition {
+	if x != nil {
+		return x.Rooms
+	}
+	return nil
+}
+
+func (x *SetRoomOrderRequest) GetCategories() []*SetRoomOrderRequest_CategoryPosition {
+	if x != nil {
+		return x.Categories
+	}
+	return nil
+}
+
+type SetRoomOrderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rooms         []*Room                `protobuf:"bytes,1,rep,name=rooms,proto3" json:"rooms,omitempty"`
+	Categories    []*RoomCategory        `protobuf:"bytes,2,rep,name=categories,proto3" json:"categories,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetRoomOrderResponse) Reset() {
+	*x = SetRoomOrderResponse{}
+	mi := &file_calaba_v1_room_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRoomOrderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRoomOrderResponse) ProtoMessage() {}
+
+func (x *SetRoomOrderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRoomOrderResponse.ProtoReflect.Descriptor instead.
+func (*SetRoomOrderResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SetRoomOrderResponse) GetRooms() []*Room {
+	if x != nil {
+		return x.Rooms
+	}
+	return nil
+}
+
+func (x *SetRoomOrderResponse) GetCategories() []*RoomCategory {
+	if x != nil {
+		return x.Categories
+	}
+	return nil
+}
+
 // POST /api/workspaces/{id}/rooms (MANAGE_ROOM at workspace level, i.e. admin/owner)
 type CreateRoomRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -413,7 +847,7 @@ type CreateRoomRequest struct {
 
 func (x *CreateRoomRequest) Reset() {
 	*x = CreateRoomRequest{}
-	mi := &file_calaba_v1_room_proto_msgTypes[3]
+	mi := &file_calaba_v1_room_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -425,7 +859,7 @@ func (x *CreateRoomRequest) String() string {
 func (*CreateRoomRequest) ProtoMessage() {}
 
 func (x *CreateRoomRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[3]
+	mi := &file_calaba_v1_room_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -438,7 +872,7 @@ func (x *CreateRoomRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRoomRequest.ProtoReflect.Descriptor instead.
 func (*CreateRoomRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CreateRoomRequest) GetType() RoomType {
@@ -492,7 +926,7 @@ type CreateRoomResponse struct {
 
 func (x *CreateRoomResponse) Reset() {
 	*x = CreateRoomResponse{}
-	mi := &file_calaba_v1_room_proto_msgTypes[4]
+	mi := &file_calaba_v1_room_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -504,7 +938,7 @@ func (x *CreateRoomResponse) String() string {
 func (*CreateRoomResponse) ProtoMessage() {}
 
 func (x *CreateRoomResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[4]
+	mi := &file_calaba_v1_room_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -517,7 +951,7 @@ func (x *CreateRoomResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRoomResponse.ProtoReflect.Descriptor instead.
 func (*CreateRoomResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CreateRoomResponse) GetRoom() *Room {
@@ -537,7 +971,7 @@ type ListRoomsResponse struct {
 
 func (x *ListRoomsResponse) Reset() {
 	*x = ListRoomsResponse{}
-	mi := &file_calaba_v1_room_proto_msgTypes[5]
+	mi := &file_calaba_v1_room_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -549,7 +983,7 @@ func (x *ListRoomsResponse) String() string {
 func (*ListRoomsResponse) ProtoMessage() {}
 
 func (x *ListRoomsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[5]
+	mi := &file_calaba_v1_room_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -562,7 +996,7 @@ func (x *ListRoomsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRoomsResponse.ProtoReflect.Descriptor instead.
 func (*ListRoomsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListRoomsResponse) GetRooms() []*Room {
@@ -583,7 +1017,7 @@ type GetRoomResponse struct {
 
 func (x *GetRoomResponse) Reset() {
 	*x = GetRoomResponse{}
-	mi := &file_calaba_v1_room_proto_msgTypes[6]
+	mi := &file_calaba_v1_room_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -595,7 +1029,7 @@ func (x *GetRoomResponse) String() string {
 func (*GetRoomResponse) ProtoMessage() {}
 
 func (x *GetRoomResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[6]
+	mi := &file_calaba_v1_room_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -608,7 +1042,7 @@ func (x *GetRoomResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoomResponse.ProtoReflect.Descriptor instead.
 func (*GetRoomResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetRoomResponse) GetRoom() *Room {
@@ -633,13 +1067,14 @@ type UpdateRoomRequest struct {
 	Topic         *string                `protobuf:"bytes,2,opt,name=topic,proto3,oneof" json:"topic,omitempty"`
 	Position      *int32                 `protobuf:"varint,3,opt,name=position,proto3,oneof" json:"position,omitempty"`
 	MediaOverride *RoomMediaOverride     `protobuf:"bytes,4,opt,name=media_override,json=mediaOverride,proto3,oneof" json:"media_override,omitempty"`
+	CategoryId    *string                `protobuf:"bytes,5,opt,name=category_id,json=categoryId,proto3,oneof" json:"category_id,omitempty"` // "" = remove from category
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateRoomRequest) Reset() {
 	*x = UpdateRoomRequest{}
-	mi := &file_calaba_v1_room_proto_msgTypes[7]
+	mi := &file_calaba_v1_room_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -651,7 +1086,7 @@ func (x *UpdateRoomRequest) String() string {
 func (*UpdateRoomRequest) ProtoMessage() {}
 
 func (x *UpdateRoomRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[7]
+	mi := &file_calaba_v1_room_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -664,7 +1099,7 @@ func (x *UpdateRoomRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRoomRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRoomRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{7}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdateRoomRequest) GetName() string {
@@ -695,6 +1130,13 @@ func (x *UpdateRoomRequest) GetMediaOverride() *RoomMediaOverride {
 	return nil
 }
 
+func (x *UpdateRoomRequest) GetCategoryId() string {
+	if x != nil && x.CategoryId != nil {
+		return *x.CategoryId
+	}
+	return ""
+}
+
 type UpdateRoomResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Room          *Room                  `protobuf:"bytes,1,opt,name=room,proto3" json:"room,omitempty"`
@@ -704,7 +1146,7 @@ type UpdateRoomResponse struct {
 
 func (x *UpdateRoomResponse) Reset() {
 	*x = UpdateRoomResponse{}
-	mi := &file_calaba_v1_room_proto_msgTypes[8]
+	mi := &file_calaba_v1_room_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -716,7 +1158,7 @@ func (x *UpdateRoomResponse) String() string {
 func (*UpdateRoomResponse) ProtoMessage() {}
 
 func (x *UpdateRoomResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[8]
+	mi := &file_calaba_v1_room_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -729,7 +1171,7 @@ func (x *UpdateRoomResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRoomResponse.ProtoReflect.Descriptor instead.
 func (*UpdateRoomResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{8}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UpdateRoomResponse) GetRoom() *Room {
@@ -749,7 +1191,7 @@ type SetRoomPermissionsRequest struct {
 
 func (x *SetRoomPermissionsRequest) Reset() {
 	*x = SetRoomPermissionsRequest{}
-	mi := &file_calaba_v1_room_proto_msgTypes[9]
+	mi := &file_calaba_v1_room_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -761,7 +1203,7 @@ func (x *SetRoomPermissionsRequest) String() string {
 func (*SetRoomPermissionsRequest) ProtoMessage() {}
 
 func (x *SetRoomPermissionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[9]
+	mi := &file_calaba_v1_room_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -774,7 +1216,7 @@ func (x *SetRoomPermissionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRoomPermissionsRequest.ProtoReflect.Descriptor instead.
 func (*SetRoomPermissionsRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{9}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SetRoomPermissionsRequest) GetOverrides() []*RoomPermissionOverride {
@@ -793,7 +1235,7 @@ type SetRoomPermissionsResponse struct {
 
 func (x *SetRoomPermissionsResponse) Reset() {
 	*x = SetRoomPermissionsResponse{}
-	mi := &file_calaba_v1_room_proto_msgTypes[10]
+	mi := &file_calaba_v1_room_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -805,7 +1247,7 @@ func (x *SetRoomPermissionsResponse) String() string {
 func (*SetRoomPermissionsResponse) ProtoMessage() {}
 
 func (x *SetRoomPermissionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_room_proto_msgTypes[10]
+	mi := &file_calaba_v1_room_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -818,7 +1260,7 @@ func (x *SetRoomPermissionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRoomPermissionsResponse.ProtoReflect.Descriptor instead.
 func (*SetRoomPermissionsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_room_proto_rawDescGZIP(), []int{10}
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SetRoomPermissionsResponse) GetRoom() *Room {
@@ -826,6 +1268,118 @@ func (x *SetRoomPermissionsResponse) GetRoom() *Room {
 		return x.Room
 	}
 	return nil
+}
+
+type SetRoomOrderRequest_RoomPosition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	Position      int32                  `protobuf:"varint,2,opt,name=position,proto3" json:"position,omitempty"`
+	CategoryId    string                 `protobuf:"bytes,3,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetRoomOrderRequest_RoomPosition) Reset() {
+	*x = SetRoomOrderRequest_RoomPosition{}
+	mi := &file_calaba_v1_room_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRoomOrderRequest_RoomPosition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRoomOrderRequest_RoomPosition) ProtoMessage() {}
+
+func (x *SetRoomOrderRequest_RoomPosition) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRoomOrderRequest_RoomPosition.ProtoReflect.Descriptor instead.
+func (*SetRoomOrderRequest_RoomPosition) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{9, 0}
+}
+
+func (x *SetRoomOrderRequest_RoomPosition) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *SetRoomOrderRequest_RoomPosition) GetPosition() int32 {
+	if x != nil {
+		return x.Position
+	}
+	return 0
+}
+
+func (x *SetRoomOrderRequest_RoomPosition) GetCategoryId() string {
+	if x != nil {
+		return x.CategoryId
+	}
+	return ""
+}
+
+type SetRoomOrderRequest_CategoryPosition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CategoryId    string                 `protobuf:"bytes,1,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
+	Position      int32                  `protobuf:"varint,2,opt,name=position,proto3" json:"position,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetRoomOrderRequest_CategoryPosition) Reset() {
+	*x = SetRoomOrderRequest_CategoryPosition{}
+	mi := &file_calaba_v1_room_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRoomOrderRequest_CategoryPosition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRoomOrderRequest_CategoryPosition) ProtoMessage() {}
+
+func (x *SetRoomOrderRequest_CategoryPosition) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_room_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRoomOrderRequest_CategoryPosition.ProtoReflect.Descriptor instead.
+func (*SetRoomOrderRequest_CategoryPosition) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_room_proto_rawDescGZIP(), []int{9, 1}
+}
+
+func (x *SetRoomOrderRequest_CategoryPosition) GetCategoryId() string {
+	if x != nil {
+		return x.CategoryId
+	}
+	return ""
+}
+
+func (x *SetRoomOrderRequest_CategoryPosition) GetPosition() int32 {
+	if x != nil {
+		return x.Position
+	}
+	return 0
 }
 
 var File_calaba_v1_room_proto protoreflect.FileDescriptor
@@ -846,7 +1400,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"maxStreams\x88\x01\x01B\x15\n" +
 	"\x13_audio_bitrate_kbpsB\x14\n" +
 	"\x12_max_stream_presetB\x0e\n" +
-	"\f_max_streams\"\xbd\x04\n" +
+	"\f_max_streams\"\xa4\x05\n" +
 	"\x04Room\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12'\n" +
@@ -863,7 +1417,51 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12&\n" +
 	"\x0flast_message_id\x18\f \x01(\tR\rlastMessageId\x12B\n" +
-	"\x0flast_message_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\rlastMessageAt\"\xf8\x01\n" +
+	"\x0flast_message_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\rlastMessageAt\x12\x1f\n" +
+	"\vcategory_id\x18\x0e \x01(\tR\n" +
+	"categoryId\x12D\n" +
+	"\x10voice_started_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x0evoiceStartedAt\"q\n" +
+	"\fRoomCategory\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x1a\n" +
+	"\bposition\x18\x04 \x01(\x05R\bposition\"Y\n" +
+	"\x15CreateCategoryRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
+	"\bposition\x18\x02 \x01(\x05H\x00R\bposition\x88\x01\x01B\v\n" +
+	"\t_position\"M\n" +
+	"\x16CreateCategoryResponse\x123\n" +
+	"\bcategory\x18\x01 \x01(\v2\x17.calaba.v1.RoomCategoryR\bcategory\"Q\n" +
+	"\x16ListCategoriesResponse\x127\n" +
+	"\n" +
+	"categories\x18\x01 \x03(\v2\x17.calaba.v1.RoomCategoryR\n" +
+	"categories\"g\n" +
+	"\x15UpdateCategoryRequest\x12\x17\n" +
+	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x1f\n" +
+	"\bposition\x18\x02 \x01(\x05H\x01R\bposition\x88\x01\x01B\a\n" +
+	"\x05_nameB\v\n" +
+	"\t_position\"M\n" +
+	"\x16UpdateCategoryResponse\x123\n" +
+	"\bcategory\x18\x01 \x01(\v2\x17.calaba.v1.RoomCategoryR\bcategory\"\xe0\x02\n" +
+	"\x13SetRoomOrderRequest\x12A\n" +
+	"\x05rooms\x18\x01 \x03(\v2+.calaba.v1.SetRoomOrderRequest.RoomPositionR\x05rooms\x12O\n" +
+	"\n" +
+	"categories\x18\x02 \x03(\v2/.calaba.v1.SetRoomOrderRequest.CategoryPositionR\n" +
+	"categories\x1ad\n" +
+	"\fRoomPosition\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12\x1a\n" +
+	"\bposition\x18\x02 \x01(\x05R\bposition\x12\x1f\n" +
+	"\vcategory_id\x18\x03 \x01(\tR\n" +
+	"categoryId\x1aO\n" +
+	"\x10CategoryPosition\x12\x1f\n" +
+	"\vcategory_id\x18\x01 \x01(\tR\n" +
+	"categoryId\x12\x1a\n" +
+	"\bposition\x18\x02 \x01(\x05R\bposition\"v\n" +
+	"\x14SetRoomOrderResponse\x12%\n" +
+	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\x127\n" +
+	"\n" +
+	"categories\x18\x02 \x03(\v2\x17.calaba.v1.RoomCategoryR\n" +
+	"categories\"\xf8\x01\n" +
 	"\x11CreateRoomRequest\x12'\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x13.calaba.v1.RoomTypeR\x04type\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -879,16 +1477,19 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\"X\n" +
 	"\x0fGetRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12 \n" +
-	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\xe5\x01\n" +
+	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\x9b\x02\n" +
 	"\x11UpdateRoomRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x19\n" +
 	"\x05topic\x18\x02 \x01(\tH\x01R\x05topic\x88\x01\x01\x12\x1f\n" +
 	"\bposition\x18\x03 \x01(\x05H\x02R\bposition\x88\x01\x01\x12H\n" +
-	"\x0emedia_override\x18\x04 \x01(\v2\x1c.calaba.v1.RoomMediaOverrideH\x03R\rmediaOverride\x88\x01\x01B\a\n" +
+	"\x0emedia_override\x18\x04 \x01(\v2\x1c.calaba.v1.RoomMediaOverrideH\x03R\rmediaOverride\x88\x01\x01\x12$\n" +
+	"\vcategory_id\x18\x05 \x01(\tH\x04R\n" +
+	"categoryId\x88\x01\x01B\a\n" +
 	"\x05_nameB\b\n" +
 	"\x06_topicB\v\n" +
 	"\t_positionB\x11\n" +
-	"\x0f_media_override\"9\n" +
+	"\x0f_media_overrideB\x0e\n" +
+	"\f_category_id\"9\n" +
 	"\x12UpdateRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\"\\\n" +
 	"\x19SetRoomPermissionsRequest\x12?\n" +
@@ -919,48 +1520,66 @@ func file_calaba_v1_room_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_room_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_room_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_calaba_v1_room_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_calaba_v1_room_proto_goTypes = []any{
-	(RoomType)(0),                      // 0: calaba.v1.RoomType
-	(PermissionTargetType)(0),          // 1: calaba.v1.PermissionTargetType
-	(*RoomPermissionOverride)(nil),     // 2: calaba.v1.RoomPermissionOverride
-	(*RoomMediaOverride)(nil),          // 3: calaba.v1.RoomMediaOverride
-	(*Room)(nil),                       // 4: calaba.v1.Room
-	(*CreateRoomRequest)(nil),          // 5: calaba.v1.CreateRoomRequest
-	(*CreateRoomResponse)(nil),         // 6: calaba.v1.CreateRoomResponse
-	(*ListRoomsResponse)(nil),          // 7: calaba.v1.ListRoomsResponse
-	(*GetRoomResponse)(nil),            // 8: calaba.v1.GetRoomResponse
-	(*UpdateRoomRequest)(nil),          // 9: calaba.v1.UpdateRoomRequest
-	(*UpdateRoomResponse)(nil),         // 10: calaba.v1.UpdateRoomResponse
-	(*SetRoomPermissionsRequest)(nil),  // 11: calaba.v1.SetRoomPermissionsRequest
-	(*SetRoomPermissionsResponse)(nil), // 12: calaba.v1.SetRoomPermissionsResponse
-	(ScreenSharePreset)(0),             // 13: calaba.v1.ScreenSharePreset
-	(*RoomMediaSettings)(nil),          // 14: calaba.v1.RoomMediaSettings
-	(*timestamppb.Timestamp)(nil),      // 15: google.protobuf.Timestamp
+	(RoomType)(0),                                // 0: calaba.v1.RoomType
+	(PermissionTargetType)(0),                    // 1: calaba.v1.PermissionTargetType
+	(*RoomPermissionOverride)(nil),               // 2: calaba.v1.RoomPermissionOverride
+	(*RoomMediaOverride)(nil),                    // 3: calaba.v1.RoomMediaOverride
+	(*Room)(nil),                                 // 4: calaba.v1.Room
+	(*RoomCategory)(nil),                         // 5: calaba.v1.RoomCategory
+	(*CreateCategoryRequest)(nil),                // 6: calaba.v1.CreateCategoryRequest
+	(*CreateCategoryResponse)(nil),               // 7: calaba.v1.CreateCategoryResponse
+	(*ListCategoriesResponse)(nil),               // 8: calaba.v1.ListCategoriesResponse
+	(*UpdateCategoryRequest)(nil),                // 9: calaba.v1.UpdateCategoryRequest
+	(*UpdateCategoryResponse)(nil),               // 10: calaba.v1.UpdateCategoryResponse
+	(*SetRoomOrderRequest)(nil),                  // 11: calaba.v1.SetRoomOrderRequest
+	(*SetRoomOrderResponse)(nil),                 // 12: calaba.v1.SetRoomOrderResponse
+	(*CreateRoomRequest)(nil),                    // 13: calaba.v1.CreateRoomRequest
+	(*CreateRoomResponse)(nil),                   // 14: calaba.v1.CreateRoomResponse
+	(*ListRoomsResponse)(nil),                    // 15: calaba.v1.ListRoomsResponse
+	(*GetRoomResponse)(nil),                      // 16: calaba.v1.GetRoomResponse
+	(*UpdateRoomRequest)(nil),                    // 17: calaba.v1.UpdateRoomRequest
+	(*UpdateRoomResponse)(nil),                   // 18: calaba.v1.UpdateRoomResponse
+	(*SetRoomPermissionsRequest)(nil),            // 19: calaba.v1.SetRoomPermissionsRequest
+	(*SetRoomPermissionsResponse)(nil),           // 20: calaba.v1.SetRoomPermissionsResponse
+	(*SetRoomOrderRequest_RoomPosition)(nil),     // 21: calaba.v1.SetRoomOrderRequest.RoomPosition
+	(*SetRoomOrderRequest_CategoryPosition)(nil), // 22: calaba.v1.SetRoomOrderRequest.CategoryPosition
+	(ScreenSharePreset)(0),                       // 23: calaba.v1.ScreenSharePreset
+	(*RoomMediaSettings)(nil),                    // 24: calaba.v1.RoomMediaSettings
+	(*timestamppb.Timestamp)(nil),                // 25: google.protobuf.Timestamp
 }
 var file_calaba_v1_room_proto_depIdxs = []int32{
 	1,  // 0: calaba.v1.RoomPermissionOverride.target_type:type_name -> calaba.v1.PermissionTargetType
-	13, // 1: calaba.v1.RoomMediaOverride.max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
+	23, // 1: calaba.v1.RoomMediaOverride.max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
 	0,  // 2: calaba.v1.Room.type:type_name -> calaba.v1.RoomType
-	14, // 3: calaba.v1.Room.media:type_name -> calaba.v1.RoomMediaSettings
+	24, // 3: calaba.v1.Room.media:type_name -> calaba.v1.RoomMediaSettings
 	3,  // 4: calaba.v1.Room.media_override:type_name -> calaba.v1.RoomMediaOverride
 	2,  // 5: calaba.v1.Room.permission_overrides:type_name -> calaba.v1.RoomPermissionOverride
-	15, // 6: calaba.v1.Room.created_at:type_name -> google.protobuf.Timestamp
-	15, // 7: calaba.v1.Room.last_message_at:type_name -> google.protobuf.Timestamp
-	0,  // 8: calaba.v1.CreateRoomRequest.type:type_name -> calaba.v1.RoomType
-	3,  // 9: calaba.v1.CreateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
-	4,  // 10: calaba.v1.CreateRoomResponse.room:type_name -> calaba.v1.Room
-	4,  // 11: calaba.v1.ListRoomsResponse.rooms:type_name -> calaba.v1.Room
-	4,  // 12: calaba.v1.GetRoomResponse.room:type_name -> calaba.v1.Room
-	3,  // 13: calaba.v1.UpdateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
-	4,  // 14: calaba.v1.UpdateRoomResponse.room:type_name -> calaba.v1.Room
-	2,  // 15: calaba.v1.SetRoomPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
-	4,  // 16: calaba.v1.SetRoomPermissionsResponse.room:type_name -> calaba.v1.Room
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	25, // 6: calaba.v1.Room.created_at:type_name -> google.protobuf.Timestamp
+	25, // 7: calaba.v1.Room.last_message_at:type_name -> google.protobuf.Timestamp
+	25, // 8: calaba.v1.Room.voice_started_at:type_name -> google.protobuf.Timestamp
+	5,  // 9: calaba.v1.CreateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
+	5,  // 10: calaba.v1.ListCategoriesResponse.categories:type_name -> calaba.v1.RoomCategory
+	5,  // 11: calaba.v1.UpdateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
+	21, // 12: calaba.v1.SetRoomOrderRequest.rooms:type_name -> calaba.v1.SetRoomOrderRequest.RoomPosition
+	22, // 13: calaba.v1.SetRoomOrderRequest.categories:type_name -> calaba.v1.SetRoomOrderRequest.CategoryPosition
+	4,  // 14: calaba.v1.SetRoomOrderResponse.rooms:type_name -> calaba.v1.Room
+	5,  // 15: calaba.v1.SetRoomOrderResponse.categories:type_name -> calaba.v1.RoomCategory
+	0,  // 16: calaba.v1.CreateRoomRequest.type:type_name -> calaba.v1.RoomType
+	3,  // 17: calaba.v1.CreateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
+	4,  // 18: calaba.v1.CreateRoomResponse.room:type_name -> calaba.v1.Room
+	4,  // 19: calaba.v1.ListRoomsResponse.rooms:type_name -> calaba.v1.Room
+	4,  // 20: calaba.v1.GetRoomResponse.room:type_name -> calaba.v1.Room
+	3,  // 21: calaba.v1.UpdateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
+	4,  // 22: calaba.v1.UpdateRoomResponse.room:type_name -> calaba.v1.Room
+	2,  // 23: calaba.v1.SetRoomPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
+	4,  // 24: calaba.v1.SetRoomPermissionsResponse.room:type_name -> calaba.v1.Room
+	25, // [25:25] is the sub-list for method output_type
+	25, // [25:25] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_room_proto_init() }
@@ -970,15 +1589,17 @@ func file_calaba_v1_room_proto_init() {
 	}
 	file_calaba_v1_media_proto_init()
 	file_calaba_v1_room_proto_msgTypes[1].OneofWrappers = []any{}
-	file_calaba_v1_room_proto_msgTypes[3].OneofWrappers = []any{}
+	file_calaba_v1_room_proto_msgTypes[4].OneofWrappers = []any{}
 	file_calaba_v1_room_proto_msgTypes[7].OneofWrappers = []any{}
+	file_calaba_v1_room_proto_msgTypes[11].OneofWrappers = []any{}
+	file_calaba_v1_room_proto_msgTypes[15].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_room_proto_rawDesc), len(file_calaba_v1_room_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   11,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

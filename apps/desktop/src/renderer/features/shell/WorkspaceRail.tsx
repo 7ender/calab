@@ -59,7 +59,7 @@ export function WorkspaceRail(): ReactNode {
                 onClick={() => setWs(id)}
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={`${w.name}${unread ? `, ${t('ws.unread')}` : ''}`}
-                className={cx(tile, isActive ? 'bg-accent text-accent-fg' : 'bg-hover text-fg hover:bg-[var(--color-fill-hover)]')}
+                className={cx(tile, isActive ? 'bg-accent-strong text-accent-fg' : 'bg-hover text-fg hover:bg-[var(--color-fill-hover)]')}
               >
                 {w.iconFileId ? (
                   <MediaImg path={thumbnailPath(w.iconFileId)} alt="" className="size-full rounded-[inherit] object-cover" />
