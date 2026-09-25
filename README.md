@@ -25,6 +25,7 @@ Desktop-приложение для общения сотрудников: го�
 - [docs/05-realtime-protocol.md](docs/05-realtime-protocol.md) — протокол WS-gateway
 - [docs/06-deployment.md](docs/06-deployment.md) — docker compose сейчас, k8s потом, тестовый стенд
 - [docs/07-roadmap.md](docs/07-roadmap.md) — этапы
+- [docs/08-design.md](docs/08-design.md) — дизайн-система, UX-правила, онбординг, визуальные тесты
 - [docs/adr/](docs/adr/) — записи архитектурных решений (почему так)
 
 ## Структура репозитория

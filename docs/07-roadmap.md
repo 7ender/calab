@@ -51,6 +51,12 @@
 - [ ] Caddy: SPA-статика на app.* рядом с /api и /gateway, CSP
 - [ ] Прогон в Chrome и Firefox против стенда
 
+## 3c. Дизайн и UX (docs/08-design.md)
+- [ ] Токены, стекло на плавающих слоях, сетка отступов, состояния, фокус
+- [ ] Онбординг с выдачей разрешений (mic / PTT Input Monitoring / Screen Recording / уведомления)
+- [ ] Visual regression + layout-инварианты + axe в Playwright
+- [ ] Независимое ревью по скриншотам, список замечаний закрыт
+
 ## 4. Полировка и релиз
 - [ ] Автообновление, подпись (Apple notarization, Windows signing), AppImage/deb
 - [ ] **Apple Developer ID + сертификат подписи кода для Windows — получает владелец, срок получения — недели, начинать заранее**
