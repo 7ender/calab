@@ -1,5 +1,12 @@
-/** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. */
+import { ruChat } from './ru.chat';
+import { ruPeople } from './ru.people';
+import { ruShell } from './ru.shell';
+
+/** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
+  ...ruShell,
+  ...ruChat,
+  ...ruPeople,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',
@@ -67,7 +74,8 @@ export const ru = {
   'ws.createText': 'Пространство — это комнаты, участники и права вашей команды.',
   'ws.join': 'Присоединиться',
   'ws.joinTitle': 'Присоединиться к пространству',
-  'ws.joinText': 'Вставьте ссылку calaba://join/… или код приглашения.',
+  'ws.joinText': 'Вставьте ссылку-приглашение или код.',
+  'ws.joinPlaceholder': 'https://…/join/… или код',
   'ws.joinBtn': 'Войти',
   'ws.inviteCode': 'Приглашение',
   'ws.inviteInvalid': 'Приглашение не найдено или истекло',
@@ -117,7 +125,7 @@ export const ru = {
   'invite.hour': '1 час',
   'invite.day': '1 день',
   'invite.week': '7 дней',
-  'invite.hint': 'Ссылка calaba://join/… открывает приложение и сразу предлагает войти в пространство.',
+  'invite.hint': 'По ссылке можно войти в браузере; в приложении её достаточно вставить в «Присоединиться».',
   'invite.none': 'Активных приглашений нет',
   'invite.copy': 'Скопировать ссылку',
   'invite.copied': 'Ссылка-приглашение скопирована',
@@ -162,6 +170,8 @@ export const ru = {
   'perm.STREAM': 'Показывать экран',
   'perm.MUTE_MEMBERS': 'Выключать микрофон и отключать других',
   'perm.MANAGE_ROOM': 'Управлять комнатой',
+  'perm.MOVE_MEMBERS': 'Перемещать участников между голосовыми комнатами',
+  'perm.MANAGE_NICKNAMES': 'Менять ники другим',
   'perm.MANAGE_WORKSPACE': 'Управлять пространством',
   'perm.ADMINISTRATOR': 'Администратор',
   'perm.allow': 'разрешено',

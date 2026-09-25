@@ -83,5 +83,6 @@ export const ROOM_EDITABLE: PermissionName[] = [
   'SPEAK',
   'STREAM',
   'MUTE_MEMBERS',
+  'MOVE_MEMBERS',
   'MANAGE_ROOM',
 ];

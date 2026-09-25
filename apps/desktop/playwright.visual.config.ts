@@ -5,14 +5,17 @@ import { defineConfig } from '@playwright/test';
 // renderer from out/. Needs the dev LiveKit (pnpm infra:dev) for the voice/stream shots.
 //   pnpm e2e:visual            — compare with the committed snapshots
 //   pnpm e2e:visual:update     — re-record after an intended design change
+// CALABA_VISUAL_OUT: separate result folders for parallel local runs.
+const OUT = process.env['CALABA_VISUAL_OUT'] ?? 'test-results/visual';
+
 export default defineConfig({
   testDir: './e2e-visual',
   timeout: 240_000,
   workers: 1,
   // Electron + LiveKit on one machine: one retry; a retried test is reported as «flaky».
   retries: 1,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: 'test-results/visual-report' }]],
-  outputDir: 'test-results/visual',
+  reporter: [['list'], ['html', { open: 'never', outputFolder: `${OUT}-report` }]],
+  outputDir: OUT,
   // Snapshots are per-OS (fonts/rendering differ); the committed baseline is macOS.
   snapshotPathTemplate: '{testDir}/__screenshots__/{platform}/{arg}{ext}',
   expect: {

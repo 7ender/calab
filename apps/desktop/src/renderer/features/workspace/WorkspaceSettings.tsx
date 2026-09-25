@@ -18,6 +18,7 @@ import { ApiError } from '../../lib/api/client';
 import { api, thumbnailPath, uploadFile } from '../../lib/api/endpoints';
 import { fmtStamp } from '../../lib/format';
 import { isAdminRole } from '../../lib/permissions';
+import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useWorkspaces } from '../../stores/workspaces';
@@ -238,7 +239,7 @@ const EXPIRY = [
 ] as const;
 
 function inviteLink(i: Invite): string {
-  return `calaba://join/${i.code}`;
+  return inviteUrl(useSession.getState().serverUrl, i.code);
 }
 
 function InvitesTab({ workspaceId }: { workspaceId: string }): ReactNode {

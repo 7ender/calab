@@ -127,9 +127,10 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
   return (
     <select
       className={cx(
-        // macOS pop-up button: no native chevron; our own chevron sits 8px from the right edge with room reserved for it.
-        'h-7 w-full min-w-0 appearance-none rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-[13px] text-fg shadow-[var(--shadow-card)] focus-visible:outline-offset-0 disabled:opacity-50',
-        'bg-[url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%2710%27 viewBox=%270 0 10 10%27 fill=%27none%27 stroke=%27%238e8e93%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27><path d=%27M2.5 3.5 5 1l2.5 2.5M2.5 6.5 5 9l2.5-2.5%27/></svg>")] bg-[length:10px_10px] bg-[position:right_8px_center] bg-no-repeat',
+        // macOS pop-up button: no native chevron; our own ↕ chevron (10 px) sits 8 px from the right edge,
+        // the text keeps clear of it (pr-7) and long values end with an ellipsis.
+        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-[13px] text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] focus-visible:outline-offset-0 disabled:opacity-50 disabled:hover:bg-elev',
+        'select-chevron',
         className,
       )}
       {...rest}

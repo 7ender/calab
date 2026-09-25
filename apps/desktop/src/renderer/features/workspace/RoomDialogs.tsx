@@ -194,6 +194,8 @@ const PERM_LABEL: Record<PermissionName, MessageKey> = {
   MANAGE_ROOM: 'perm.MANAGE_ROOM',
   MANAGE_WORKSPACE: 'perm.MANAGE_WORKSPACE',
   ADMINISTRATOR: 'perm.ADMINISTRATOR',
+  MOVE_MEMBERS: 'perm.MOVE_MEMBERS',
+  MANAGE_NICKNAMES: 'perm.MANAGE_NICKNAMES',
 };
 
 const ROLE_TARGETS: Array<{ id: string; key: MessageKey }> = [

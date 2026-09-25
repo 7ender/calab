@@ -271,7 +271,7 @@ function info(): AppInfo {
 
 const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', autostart: false });
 
-/** calaba://join/<code> equivalent on the web: https://app.<domain>/join/<code>. */
+/** Invite links on the web: https://<domain>/join/<code> (the same URL the app shares). */
 function takeDeepLink(): Promise<string | null> {
   const m = /^\/join\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
   if (!m?.[1]) return Promise.resolve(null);

@@ -22,6 +22,48 @@ function stripMetaCsp(): Plugin {
   };
 }
 
+/**
+ * Web app icons (owner artwork, build/icons/web — see scripts/gen-icons.sh): the files are the
+ * `publicDir`, this adds the <link>s and the PWA manifest. Only for the web build: the Electron
+ * window/Dock/tray icons come from electron-builder and main.
+ */
+const WEB_THEME = '#1c1c1e'; // --color-bg (dark), the app opens dark by default
+function webIcons(): Plugin {
+  const manifest = {
+    name: 'Calaba',
+    short_name: 'Calaba',
+    start_url: '/',
+    display: 'standalone',
+    background_color: WEB_THEME,
+    theme_color: WEB_THEME,
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  };
+  return {
+    name: 'calaba:web-icons',
+    transformIndexHtml: () => [
+      { tag: 'link', attrs: { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }, injectTo: 'head' },
+      { tag: 'link', attrs: { rel: 'icon', href: '/favicon-32.png', sizes: '32x32', type: 'image/png' }, injectTo: 'head' },
+      { tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }, injectTo: 'head' },
+      { tag: 'link', attrs: { rel: 'manifest', href: '/manifest.webmanifest' }, injectTo: 'head' },
+      { tag: 'meta', attrs: { name: 'theme-color', content: WEB_THEME }, injectTo: 'head' },
+    ],
+    // dev/preview serve it from memory, build emits it next to index.html
+    configureServer(server) {
+      server.middlewares.use('/manifest.webmanifest', (_req, res) => {
+        res.setHeader('Content-Type', 'application/manifest+json');
+        res.end(JSON.stringify(manifest));
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'manifest.webmanifest', source: JSON.stringify(manifest, null, 2) });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '');
   const target = env['CALABA_WEB_PROXY'] ?? process.env['CALABA_WEB_PROXY'] ?? 'http://127.0.0.1:3000';
@@ -36,7 +78,8 @@ export default defineConfig(({ mode }) => {
     define: { 'import.meta.env.VITE_APP_VERSION': JSON.stringify(version) },
     resolve: { alias: { '@rnnoise-dist': rnnoiseDist } },
     worker: { format: 'es' },
-    plugins: [react(), tailwindcss(), stripMetaCsp()],
+    plugins: [react(), tailwindcss(), stripMetaCsp(), webIcons()],
+    publicDir: resolve(__dirname, 'build/icons/web'),
     build: {
       outDir: resolve(__dirname, 'dist-web'),
       emptyOutDir: true,

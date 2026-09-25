@@ -23,8 +23,11 @@ export const VIEWPORTS: Viewport[] = [
 ];
 export const THEMES: Theme[] = ['dark', 'light'];
 
-/** A fixed port: the login screen prints the server URL. */
-export const MOCK_PORT = 39170;
+/**
+ * A fixed port: the login screen prints the server URL, so the baseline is taken on 39170.
+ * CALABA_VISUAL_MOCK_PORT lets parallel local runs coexist (their auth shots then differ).
+ */
+export const MOCK_PORT = Number(process.env['CALABA_VISUAL_MOCK_PORT'] ?? 39170);
 /** «Now» for the client: the fixtures are dated 2026-01-14/15. */
 export const NOW = new Date('2026-01-15T13:30:00+03:00');
 export const PASSWORD = 'password123';

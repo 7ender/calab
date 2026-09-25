@@ -130,6 +130,19 @@ for (const theme of THEMES) {
         await page.getByRole('button', { name: 'Настройки', exact: true }).click();
         await expect(page.getByRole('dialog')).toBeVisible();
         await everyTab(s, 'settings');
+        // The pop-up button itself (owner bug: chevron flush right): a long value must end with
+        // «…» before the ↕ chevron (8 px inset); hover is a step lighter.
+        await page.getByRole('dialog').getByRole('tab', { name: 'Голос и устройства' }).click();
+        const select = page.getByRole('dialog').getByRole('combobox', { name: 'Микрофон' });
+        await select.evaluate((el: HTMLSelectElement) => {
+          // The value is React-controlled: change the text of the selected option instead.
+          const o = el.options[el.selectedIndex];
+          if (o) o.text = 'Внешний USB-микрофон с очень длинным названием (Built-in Audio Device)';
+        });
+        await page.mouse.move(0, 0);
+        await expect.soft(select, 'screenshot: select-long').toHaveScreenshot(`select-long-${theme}-${viewport.width}.png`);
+        await select.hover();
+        await expect.soft(select, 'screenshot: select-hover').toHaveScreenshot(`select-hover-${theme}-${viewport.width}.png`);
         await closeDialog(page);
 
         // ---- voice room + stream (needs the dev LiveKit)

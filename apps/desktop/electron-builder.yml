@@ -10,11 +10,18 @@ files:
   - package.json
 asarUnpack:
   - '**/*.node'
+# Owner artwork (scripts/gen-icons.sh). Tray + Linux window icons are loaded by main at runtime.
+extraResources:
+  - from: build/icons/tray
+    to: icons/tray
+  - from: build/icons/linux/512x512.png
+    to: icons/window.png
 npmRebuild: true
 protocols:
   - name: Calaba
     schemes: [calaba]
 mac:
+  icon: build/icons/mac/icon.icns
   category: public.app-category.business
   target: [dmg, zip]
   # Unsigned until the Developer ID arrives (stage 4); CSC_LINK in env enables signing.
@@ -28,11 +35,13 @@ mac:
     NSAudioCaptureUsageDescription: Calaba захватывает системный звук при показе экрана.
     NSAppleEventsUsageDescription: Calaba открывает системные настройки разрешений.
 win:
+  icon: build/icons/win/icon.png
   target: [nsis]
 nsis:
   oneClick: false
   perMachine: false
 linux:
+  icon: build/icons/linux
   target: [AppImage, deb]
   category: Network
   maintainer: Calaba

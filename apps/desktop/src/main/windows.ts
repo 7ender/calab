@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, screen, shell, type Rectangle } from 'electron';
 import { API_SCHEME } from '../shared/ipc';
+import { windowIconPath } from './icons';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const PRELOAD = join(here, '../preload/index.cjs');
@@ -59,6 +60,11 @@ export const webPreferences = {
   spellcheck: true,
 } as const;
 
+function windowIcon(): { icon?: string } {
+  const icon = windowIconPath();
+  return icon ? { icon } : {};
+}
+
 export function createMainWindow(): BrowserWindow {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
   const state = loadState();
@@ -76,6 +82,7 @@ export function createMainWindow(): BrowserWindow {
       : { backgroundColor: BG }),
     show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    ...windowIcon(),
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: { ...webPreferences },
   });

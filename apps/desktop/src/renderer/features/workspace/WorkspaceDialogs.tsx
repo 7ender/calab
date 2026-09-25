@@ -113,7 +113,7 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
     <Modal open onClose={onClose} title={t('ws.joinTitle')} description={t('ws.joinText')}>
       <div className="flex flex-col gap-3">
         <Field label={t('ws.inviteCode')} error={preview.error ? errText(preview.error) : join.error ? errText(join.error) : null}>
-          <Input autoFocus value={input} onChange={(e) => setInput(e.target.value)} placeholder="calaba://join/…" spellCheck={false} />
+          <Input autoFocus value={input} onChange={(e) => setInput(e.target.value)} placeholder={t('ws.joinPlaceholder')} spellCheck={false} />
         </Field>
         {preview.data?.workspace ? (
           <div className="flex items-center justify-between rounded-[var(--radius-control)] bg-side px-3 py-2">
