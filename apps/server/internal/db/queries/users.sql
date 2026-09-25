@@ -2,8 +2,8 @@
 SELECT count(*) FROM users;
 
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash, display_name)
-VALUES ($1, $2, $3)
+INSERT INTO users (email, password_hash, display_name, settings)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetUser :one

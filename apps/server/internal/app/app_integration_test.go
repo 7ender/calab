@@ -289,8 +289,8 @@ func TestBootstrapAndInviteOnlyRegistration(t *testing.T) {
 		t.Fatal("GET /api/me returned another user")
 	}
 	name := "Owner Renamed"
-	o.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{DisplayName: &name, Settings: &v1.UserSettings{PushToTalk: true, PushToTalkKey: "F13"}}, &me)
-	if me.GetMe().GetUser().GetDisplayName() != name || !me.GetMe().GetSettings().GetPushToTalk() {
+	o.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{DisplayName: &name, Settings: &v1.UserSettings{MicMode: v1.MicMode_MIC_MODE_PUSH_TO_TALK, PushToTalkKey: "F13"}}, &me)
+	if me.GetMe().GetUser().GetDisplayName() != name || me.GetMe().GetSettings().GetMicMode() != v1.MicMode_MIC_MODE_PUSH_TO_TALK {
 		t.Fatalf("PATCH /api/me not applied: %v", me.GetMe())
 	}
 	// Invalid invite.

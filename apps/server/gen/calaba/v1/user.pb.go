@@ -22,6 +22,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type MicMode int32
+
+const (
+	MicMode_MIC_MODE_UNSPECIFIED  MicMode = 0 // treated as VAD
+	MicMode_MIC_MODE_VAD          MicMode = 1 // voice activation (default)
+	MicMode_MIC_MODE_PUSH_TO_TALK MicMode = 2
+)
+
+// Enum value maps for MicMode.
+var (
+	MicMode_name = map[int32]string{
+		0: "MIC_MODE_UNSPECIFIED",
+		1: "MIC_MODE_VAD",
+		2: "MIC_MODE_PUSH_TO_TALK",
+	}
+	MicMode_value = map[string]int32{
+		"MIC_MODE_UNSPECIFIED":  0,
+		"MIC_MODE_VAD":          1,
+		"MIC_MODE_PUSH_TO_TALK": 2,
+	}
+)
+
+func (x MicMode) Enum() *MicMode {
+	p := new(MicMode)
+	*p = x
+	return p
+}
+
+func (x MicMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MicMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_user_proto_enumTypes[0].Descriptor()
+}
+
+func (MicMode) Type() protoreflect.EnumType {
+	return &file_calaba_v1_user_proto_enumTypes[0]
+}
+
+func (x MicMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MicMode.Descriptor instead.
+func (MicMode) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{0}
+}
+
 // Public profile, visible to members of shared workspaces.
 type User struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -101,14 +150,21 @@ func (x *User) GetCreatedAt() *timestamppb.Timestamp {
 
 // Per-user settings synced across the user's devices (USER_UPDATE on change).
 // Device-specific things (selected mic/speaker, PTT key hook state) stay local on the client.
+// The server always returns every field explicitly, with defaults for new users
+// (noise_suppression = true, mic_mode = VAD, audio_bitrate_kbps unset = room setting), so a
+// zero value is a real choice, never "missing". PATCH /api/me replaces all settings: send
+// the full message.
 type UserSettings struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	NoiseSuppression   bool                   `protobuf:"varint,1,opt,name=noise_suppression,json=noiseSuppression,proto3" json:"noise_suppression,omitempty"`         // RNNoise worklet on/off (docs/02-media.md)
-	UnstableNetworkRed bool                   `protobuf:"varint,2,opt,name=unstable_network_red,json=unstableNetworkRed,proto3" json:"unstable_network_red,omitempty"` // opt-in Opus RED (ADR-0004)
-	PushToTalk         bool                   `protobuf:"varint,3,opt,name=push_to_talk,json=pushToTalk,proto3" json:"push_to_talk,omitempty"`
-	PushToTalkKey      string                 `protobuf:"bytes,4,opt,name=push_to_talk_key,json=pushToTalkKey,proto3" json:"push_to_talk_key,omitempty"` // accelerator string, client-defined format
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	NoiseSuppression   bool                   `protobuf:"varint,1,opt,name=noise_suppression,json=noiseSuppression,proto3" json:"noise_suppression,omitempty"`         // RNNoise worklet on/off (docs/02-media.md); default true
+	UnstableNetworkRed bool                   `protobuf:"varint,2,opt,name=unstable_network_red,json=unstableNetworkRed,proto3" json:"unstable_network_red,omitempty"` // opt-in Opus RED (ADR-0004); default false
+	// Deprecated: Marked as deprecated in calaba/v1/user.proto.
+	PushToTalk       bool    `protobuf:"varint,3,opt,name=push_to_talk,json=pushToTalk,proto3" json:"push_to_talk,omitempty"`                         // use mic_mode; kept in sync by the server
+	PushToTalkKey    string  `protobuf:"bytes,4,opt,name=push_to_talk_key,json=pushToTalkKey,proto3" json:"push_to_talk_key,omitempty"`               // accelerator string, client-defined format
+	MicMode          MicMode `protobuf:"varint,5,opt,name=mic_mode,json=micMode,proto3,enum=calaba.v1.MicMode" json:"mic_mode,omitempty"`             // default VAD
+	AudioBitrateKbps *uint32 `protobuf:"varint,6,opt,name=audio_bitrate_kbps,json=audioBitrateKbps,proto3,oneof" json:"audio_bitrate_kbps,omitempty"` // personal cap for published voice; unset = room setting
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UserSettings) Reset() {
@@ -155,6 +211,7 @@ func (x *UserSettings) GetUnstableNetworkRed() bool {
 	return false
 }
 
+// Deprecated: Marked as deprecated in calaba/v1/user.proto.
 func (x *UserSettings) GetPushToTalk() bool {
 	if x != nil {
 		return x.PushToTalk
@@ -167,6 +224,20 @@ func (x *UserSettings) GetPushToTalkKey() string {
 		return x.PushToTalkKey
 	}
 	return ""
+}
+
+func (x *UserSettings) GetMicMode() MicMode {
+	if x != nil {
+		return x.MicMode
+	}
+	return MicMode_MIC_MODE_UNSPECIFIED
+}
+
+func (x *UserSettings) GetAudioBitrateKbps() uint32 {
+	if x != nil && x.AudioBitrateKbps != nil {
+		return *x.AudioBitrateKbps
+	}
+	return 0
 }
 
 // The authenticated user: public profile + private fields.
@@ -400,13 +471,16 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\vstatus_text\x18\x04 \x01(\tR\n" +
 	"statusText\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xb8\x01\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xb5\x02\n" +
 	"\fUserSettings\x12+\n" +
 	"\x11noise_suppression\x18\x01 \x01(\bR\x10noiseSuppression\x120\n" +
-	"\x14unstable_network_red\x18\x02 \x01(\bR\x12unstableNetworkRed\x12 \n" +
-	"\fpush_to_talk\x18\x03 \x01(\bR\n" +
+	"\x14unstable_network_red\x18\x02 \x01(\bR\x12unstableNetworkRed\x12$\n" +
+	"\fpush_to_talk\x18\x03 \x01(\bB\x02\x18\x01R\n" +
 	"pushToTalk\x12'\n" +
-	"\x10push_to_talk_key\x18\x04 \x01(\tR\rpushToTalkKey\"t\n" +
+	"\x10push_to_talk_key\x18\x04 \x01(\tR\rpushToTalkKey\x12-\n" +
+	"\bmic_mode\x18\x05 \x01(\x0e2\x12.calaba.v1.MicModeR\amicMode\x121\n" +
+	"\x12audio_bitrate_kbps\x18\x06 \x01(\rH\x00R\x10audioBitrateKbps\x88\x01\x01B\x15\n" +
+	"\x13_audio_bitrate_kbps\"t\n" +
 	"\x02Me\x12#\n" +
 	"\x04user\x18\x01 \x01(\v2\x0f.calaba.v1.UserR\x04user\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x123\n" +
@@ -424,7 +498,11 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x0f_avatar_file_idB\v\n" +
 	"\t_settings\"1\n" +
 	"\x10UpdateMeResponse\x12\x1d\n" +
-	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02meB\x97\x01\n" +
+	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me*P\n" +
+	"\aMicMode\x12\x18\n" +
+	"\x14MIC_MODE_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fMIC_MODE_VAD\x10\x01\x12\x19\n" +
+	"\x15MIC_MODE_PUSH_TO_TALK\x10\x02B\x97\x01\n" +
 	"\rcom.calaba.v1B\tUserProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -440,28 +518,31 @@ func file_calaba_v1_user_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_user_proto_rawDescData
 }
 
+var file_calaba_v1_user_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_calaba_v1_user_proto_goTypes = []any{
-	(*User)(nil),                  // 0: calaba.v1.User
-	(*UserSettings)(nil),          // 1: calaba.v1.UserSettings
-	(*Me)(nil),                    // 2: calaba.v1.Me
-	(*GetMeResponse)(nil),         // 3: calaba.v1.GetMeResponse
-	(*UpdateMeRequest)(nil),       // 4: calaba.v1.UpdateMeRequest
-	(*UpdateMeResponse)(nil),      // 5: calaba.v1.UpdateMeResponse
-	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(MicMode)(0),                  // 0: calaba.v1.MicMode
+	(*User)(nil),                  // 1: calaba.v1.User
+	(*UserSettings)(nil),          // 2: calaba.v1.UserSettings
+	(*Me)(nil),                    // 3: calaba.v1.Me
+	(*GetMeResponse)(nil),         // 4: calaba.v1.GetMeResponse
+	(*UpdateMeRequest)(nil),       // 5: calaba.v1.UpdateMeRequest
+	(*UpdateMeResponse)(nil),      // 6: calaba.v1.UpdateMeResponse
+	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
 }
 var file_calaba_v1_user_proto_depIdxs = []int32{
-	6, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	0, // 1: calaba.v1.Me.user:type_name -> calaba.v1.User
-	1, // 2: calaba.v1.Me.settings:type_name -> calaba.v1.UserSettings
-	2, // 3: calaba.v1.GetMeResponse.me:type_name -> calaba.v1.Me
-	1, // 4: calaba.v1.UpdateMeRequest.settings:type_name -> calaba.v1.UserSettings
-	2, // 5: calaba.v1.UpdateMeResponse.me:type_name -> calaba.v1.Me
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	7, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	0, // 1: calaba.v1.UserSettings.mic_mode:type_name -> calaba.v1.MicMode
+	1, // 2: calaba.v1.Me.user:type_name -> calaba.v1.User
+	2, // 3: calaba.v1.Me.settings:type_name -> calaba.v1.UserSettings
+	3, // 4: calaba.v1.GetMeResponse.me:type_name -> calaba.v1.Me
+	2, // 5: calaba.v1.UpdateMeRequest.settings:type_name -> calaba.v1.UserSettings
+	3, // 6: calaba.v1.UpdateMeResponse.me:type_name -> calaba.v1.Me
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_user_proto_init() }
@@ -469,19 +550,21 @@ func file_calaba_v1_user_proto_init() {
 	if File_calaba_v1_user_proto != nil {
 		return
 	}
+	file_calaba_v1_user_proto_msgTypes[1].OneofWrappers = []any{}
 	file_calaba_v1_user_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_user_proto_rawDesc), len(file_calaba_v1_user_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_calaba_v1_user_proto_goTypes,
 		DependencyIndexes: file_calaba_v1_user_proto_depIdxs,
+		EnumInfos:         file_calaba_v1_user_proto_enumTypes,
 		MessageInfos:      file_calaba_v1_user_proto_msgTypes,
 	}.Build()
 	File_calaba_v1_user_proto = out.File

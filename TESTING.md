@@ -309,6 +309,8 @@ curl -s -XPATCH $A/api/voice/self -H "Authorization: Bearer $BT" -d '{"muted":tr
 
 2.7 Graceful shutdown: при открытом `node /tmp/gw.mjs $BT 30` нажми Ctrl+C в терминале сервера. Ожидается: клиент получает `GATEWAY_OPCODE_RECONNECT` и `{"closed":4000,…}` в течение ~5 с; сервер пишет `"msg":"shutting down"` и завершается с кодом 0.
 
+2.7a Webhook'и dev-LiveKit: запусти сервер через `make dev-server` (порт 3000) и сделай `join` в voice-комнату. В логе сервера появится `"path":"/api/rtc/webhook"` со `"status":200` (событие `room_started`), в `docker logs calaba-dev-livekit-1` — строка `sent webhook`.
+
 2.8 Остановка чужого стрима модератором и публичный профиль покрыты тестами `TestRTC` (stop-stream → `VOICE_STREAM_STOP{MODERATOR}`, повтор → 404, без MUTE_MEMBERS → 403) и `TestProfileBroadcast` (смена имени приходит участникам workspace как `userUpdate.user` без email/настроек; смена только настроек не рассылается).
 
 ### 3. Docker-образ и healthcheck

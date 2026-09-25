@@ -59,3 +59,10 @@ RETURNING *;
 SELECT rs.* FROM read_states rs
 JOIN rooms r ON r.id = rs.room_id AND r.archived_at IS NULL
 WHERE rs.user_id = $1;
+
+-- name: LastMessages :many
+-- Newest live message per room (uses messages_room_id_id_idx).
+SELECT DISTINCT ON (room_id) room_id, id, created_at
+FROM messages
+WHERE room_id = ANY(sqlc.arg('room_ids')::uuid[]) AND deleted_at IS NULL
+ORDER BY room_id, id DESC;

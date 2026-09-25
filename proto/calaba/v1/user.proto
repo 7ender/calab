@@ -12,13 +12,25 @@ message User {
   google.protobuf.Timestamp created_at = 5;
 }
 
+enum MicMode {
+  MIC_MODE_UNSPECIFIED = 0; // treated as VAD
+  MIC_MODE_VAD = 1;         // voice activation (default)
+  MIC_MODE_PUSH_TO_TALK = 2;
+}
+
 // Per-user settings synced across the user's devices (USER_UPDATE on change).
 // Device-specific things (selected mic/speaker, PTT key hook state) stay local on the client.
+// The server always returns every field explicitly, with defaults for new users
+// (noise_suppression = true, mic_mode = VAD, audio_bitrate_kbps unset = room setting), so a
+// zero value is a real choice, never "missing". PATCH /api/me replaces all settings: send
+// the full message.
 message UserSettings {
-  bool noise_suppression = 1;    // RNNoise worklet on/off (docs/02-media.md)
-  bool unstable_network_red = 2; // opt-in Opus RED (ADR-0004)
-  bool push_to_talk = 3;
+  bool noise_suppression = 1;    // RNNoise worklet on/off (docs/02-media.md); default true
+  bool unstable_network_red = 2; // opt-in Opus RED (ADR-0004); default false
+  bool push_to_talk = 3 [deprecated = true]; // use mic_mode; kept in sync by the server
   string push_to_talk_key = 4;   // accelerator string, client-defined format
+  MicMode mic_mode = 5;          // default VAD
+  optional uint32 audio_bitrate_kbps = 6; // personal cap for published voice; unset = room setting
 }
 
 // The authenticated user: public profile + private fields.

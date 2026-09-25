@@ -2,8 +2,8 @@
 // @generated from file calaba/v1/user.proto (package calaba.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/user.proto.
  */
 export const file_calaba_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIoUBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJ3CgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSFAoMcHVzaF90b190YWxrGAMgASgIEhgKEHB1c2hfdG9fdGFsa19rZXkYBCABKAkiXQoCTWUSHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg0KBWVtYWlsGAIgASgJEikKCHNldHRpbmdzGAMgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5ncyIqCg1HZXRNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lItQBCg9VcGRhdGVNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLc3RhdHVzX3RleHQYAiABKAlIAYgBARIbCg5hdmF0YXJfZmlsZV9pZBgDIAEoCUgCiAEBEi4KCHNldHRpbmdzGAQgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5nc0gDiAEBQg8KDV9kaXNwbGF5X25hbWVCDgoMX3N0YXR1c190ZXh0QhEKD19hdmF0YXJfZmlsZV9pZEILCglfc2V0dGluZ3MiLQoQVXBkYXRlTWVSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZUKXAQoNY29tLmNhbGFiYS52MUIJVXNlclByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIoUBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLZAQoMVXNlclNldHRpbmdzEhkKEW5vaXNlX3N1cHByZXNzaW9uGAEgASgIEhwKFHVuc3RhYmxlX25ldHdvcmtfcmVkGAIgASgIEhgKDHB1c2hfdG9fdGFsaxgDIAEoCEICGAESGAoQcHVzaF90b190YWxrX2tleRgEIAEoCRIkCghtaWNfbW9kZRgFIAEoDjISLmNhbGFiYS52MS5NaWNNb2RlEh8KEmF1ZGlvX2JpdHJhdGVfa2JwcxgGIAEoDUgAiAEBQhUKE19hdWRpb19iaXRyYXRlX2ticHMiXQoCTWUSHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg0KBWVtYWlsGAIgASgJEikKCHNldHRpbmdzGAMgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5ncyIqCg1HZXRNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lItQBCg9VcGRhdGVNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLc3RhdHVzX3RleHQYAiABKAlIAYgBARIbCg5hdmF0YXJfZmlsZV9pZBgDIAEoCUgCiAEBEi4KCHNldHRpbmdzGAQgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5nc0gDiAEBQg8KDV9kaXNwbGF5X25hbWVCDgoMX3N0YXR1c190ZXh0QhEKD19hdmF0YXJfZmlsZV9pZEILCglfc2V0dGluZ3MiLQoQVXBkYXRlTWVSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZSpQCgdNaWNNb2RlEhgKFE1JQ19NT0RFX1VOU1BFQ0lGSUVEEAASEAoMTUlDX01PREVfVkFEEAESGQoVTUlDX01PREVfUFVTSF9UT19UQUxLEAJClwEKDWNvbS5jYWxhYmEudjFCCVVzZXJQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * Public profile, visible to members of shared workspaces.
@@ -58,26 +58,33 @@ export const UserSchema: GenMessage<User> = /*@__PURE__*/
 /**
  * Per-user settings synced across the user's devices (USER_UPDATE on change).
  * Device-specific things (selected mic/speaker, PTT key hook state) stay local on the client.
+ * The server always returns every field explicitly, with defaults for new users
+ * (noise_suppression = true, mic_mode = VAD, audio_bitrate_kbps unset = room setting), so a
+ * zero value is a real choice, never "missing". PATCH /api/me replaces all settings: send
+ * the full message.
  *
  * @generated from message calaba.v1.UserSettings
  */
 export type UserSettings = Message<"calaba.v1.UserSettings"> & {
   /**
-   * RNNoise worklet on/off (docs/02-media.md)
+   * RNNoise worklet on/off (docs/02-media.md); default true
    *
    * @generated from field: bool noise_suppression = 1;
    */
   noiseSuppression: boolean;
 
   /**
-   * opt-in Opus RED (ADR-0004)
+   * opt-in Opus RED (ADR-0004); default false
    *
    * @generated from field: bool unstable_network_red = 2;
    */
   unstableNetworkRed: boolean;
 
   /**
-   * @generated from field: bool push_to_talk = 3;
+   * use mic_mode; kept in sync by the server
+   *
+   * @generated from field: bool push_to_talk = 3 [deprecated = true];
+   * @deprecated
    */
   pushToTalk: boolean;
 
@@ -87,6 +94,20 @@ export type UserSettings = Message<"calaba.v1.UserSettings"> & {
    * @generated from field: string push_to_talk_key = 4;
    */
   pushToTalkKey: string;
+
+  /**
+   * default VAD
+   *
+   * @generated from field: calaba.v1.MicMode mic_mode = 5;
+   */
+  micMode: MicMode;
+
+  /**
+   * personal cap for published voice; unset = room setting
+   *
+   * @generated from field: optional uint32 audio_bitrate_kbps = 6;
+   */
+  audioBitrateKbps?: number | undefined;
 };
 
 /**
@@ -196,4 +217,34 @@ export type UpdateMeResponse = Message<"calaba.v1.UpdateMeResponse"> & {
  */
 export const UpdateMeResponseSchema: GenMessage<UpdateMeResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_user, 5);
+
+/**
+ * @generated from enum calaba.v1.MicMode
+ */
+export enum MicMode {
+  /**
+   * treated as VAD
+   *
+   * @generated from enum value: MIC_MODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * voice activation (default)
+   *
+   * @generated from enum value: MIC_MODE_VAD = 1;
+   */
+  VAD = 1,
+
+  /**
+   * @generated from enum value: MIC_MODE_PUSH_TO_TALK = 2;
+   */
+  PUSH_TO_TALK = 2,
+}
+
+/**
+ * Describes the enum calaba.v1.MicMode.
+ */
+export const MicModeSchema: GenEnum<MicMode> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_user, 0);
 

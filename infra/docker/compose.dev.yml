@@ -25,8 +25,12 @@ services:
 
   livekit:
     image: livekit/livekit-server:v1.13
-    command: --dev --bind 0.0.0.0 --node-ip 127.0.0.1
-    # --dev: ключи devkey / secret, UDP mux 7882 через порты ниже
+    # livekit.dev.yaml: ключи devkey / secret, UDP mux 7882, webhook → API на хосте (:3000)
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit/livekit.dev.yaml:/etc/livekit.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux; Docker Desktop resolves it natively
     ports:
       - "7880:7880"
       - "7881:7881"

@@ -268,8 +268,13 @@ type Room struct {
 	// All overrides; clients feed them to computePermissions for UI decisions.
 	PermissionOverrides []*RoomPermissionOverride `protobuf:"bytes,10,rep,name=permission_overrides,json=permissionOverrides,proto3" json:"permission_overrides,omitempty"`
 	CreatedAt           *timestamppb.Timestamp    `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Newest live message (for unread counts against ReadState). Filled in READY /
+	// WORKSPACE_CREATE snapshots and GET /api/workspaces/{id}/rooms; empty when the room has
+	// no messages or in other events (clients track MESSAGE_CREATE).
+	LastMessageId string                 `protobuf:"bytes,12,opt,name=last_message_id,json=lastMessageId,proto3" json:"last_message_id,omitempty"`
+	LastMessageAt *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=last_message_at,json=lastMessageAt,proto3" json:"last_message_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Room) Reset() {
@@ -375,6 +380,20 @@ func (x *Room) GetPermissionOverrides() []*RoomPermissionOverride {
 func (x *Room) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Room) GetLastMessageId() string {
+	if x != nil {
+		return x.LastMessageId
+	}
+	return ""
+}
+
+func (x *Room) GetLastMessageAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastMessageAt
 	}
 	return nil
 }
@@ -827,7 +846,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"maxStreams\x88\x01\x01B\x15\n" +
 	"\x13_audio_bitrate_kbpsB\x14\n" +
 	"\x12_max_stream_presetB\x0e\n" +
-	"\f_max_streams\"\xd1\x03\n" +
+	"\f_max_streams\"\xbd\x04\n" +
 	"\x04Room\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12'\n" +
@@ -842,7 +861,9 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x14permission_overrides\x18\n" +
 	" \x03(\v2!.calaba.v1.RoomPermissionOverrideR\x13permissionOverrides\x129\n" +
 	"\n" +
-	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xf8\x01\n" +
+	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12&\n" +
+	"\x0flast_message_id\x18\f \x01(\tR\rlastMessageId\x12B\n" +
+	"\x0flast_message_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\rlastMessageAt\"\xf8\x01\n" +
 	"\x11CreateRoomRequest\x12'\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x13.calaba.v1.RoomTypeR\x04type\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -925,20 +946,21 @@ var file_calaba_v1_room_proto_depIdxs = []int32{
 	3,  // 4: calaba.v1.Room.media_override:type_name -> calaba.v1.RoomMediaOverride
 	2,  // 5: calaba.v1.Room.permission_overrides:type_name -> calaba.v1.RoomPermissionOverride
 	15, // 6: calaba.v1.Room.created_at:type_name -> google.protobuf.Timestamp
-	0,  // 7: calaba.v1.CreateRoomRequest.type:type_name -> calaba.v1.RoomType
-	3,  // 8: calaba.v1.CreateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
-	4,  // 9: calaba.v1.CreateRoomResponse.room:type_name -> calaba.v1.Room
-	4,  // 10: calaba.v1.ListRoomsResponse.rooms:type_name -> calaba.v1.Room
-	4,  // 11: calaba.v1.GetRoomResponse.room:type_name -> calaba.v1.Room
-	3,  // 12: calaba.v1.UpdateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
-	4,  // 13: calaba.v1.UpdateRoomResponse.room:type_name -> calaba.v1.Room
-	2,  // 14: calaba.v1.SetRoomPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
-	4,  // 15: calaba.v1.SetRoomPermissionsResponse.room:type_name -> calaba.v1.Room
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	15, // 7: calaba.v1.Room.last_message_at:type_name -> google.protobuf.Timestamp
+	0,  // 8: calaba.v1.CreateRoomRequest.type:type_name -> calaba.v1.RoomType
+	3,  // 9: calaba.v1.CreateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
+	4,  // 10: calaba.v1.CreateRoomResponse.room:type_name -> calaba.v1.Room
+	4,  // 11: calaba.v1.ListRoomsResponse.rooms:type_name -> calaba.v1.Room
+	4,  // 12: calaba.v1.GetRoomResponse.room:type_name -> calaba.v1.Room
+	3,  // 13: calaba.v1.UpdateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
+	4,  // 14: calaba.v1.UpdateRoomResponse.room:type_name -> calaba.v1.Room
+	2,  // 15: calaba.v1.SetRoomPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
+	4,  // 16: calaba.v1.SetRoomPermissionsResponse.room:type_name -> calaba.v1.Room
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_room_proto_init() }

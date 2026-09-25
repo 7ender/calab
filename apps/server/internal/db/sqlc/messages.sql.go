@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -119,6 +120,40 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const lastMessages = `-- name: LastMessages :many
+SELECT DISTINCT ON (room_id) room_id, id, created_at
+FROM messages
+WHERE room_id = ANY($1::uuid[]) AND deleted_at IS NULL
+ORDER BY room_id, id DESC
+`
+
+type LastMessagesRow struct {
+	RoomID    uuid.UUID
+	ID        uuid.UUID
+	CreatedAt time.Time
+}
+
+// Newest live message per room (uses messages_room_id_id_idx).
+func (q *Queries) LastMessages(ctx context.Context, roomIds []uuid.UUID) ([]LastMessagesRow, error) {
+	rows, err := q.db.Query(ctx, lastMessages, roomIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LastMessagesRow{}
+	for rows.Next() {
+		var i LastMessagesRow
+		if err := rows.Scan(&i.RoomID, &i.ID, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAttachments = `-- name: ListAttachments :many

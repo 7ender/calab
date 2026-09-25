@@ -41,6 +41,8 @@ pnpm infra:dev                            # postgres 18 (:55432), redis 7.4 (:56
 make dev-server                           # дефолты под compose.dev: REGISTRATION_MODE=open, LiveKit devkey/secret
 ```
 
+LiveKit в compose.dev работает с `infra/docker/livekit/livekit.dev.yaml`: ключи `devkey`/`secret` и webhook на `http://host.docker.internal:3000/api/rtc/webhook`, то есть на `make dev-server`. Поэтому voice state в dev обновляется сразу, без ожидания reconcile.
+
 Порты dev-стенда смещены (55432, 56379): на машинах разработчиков 5432/6379 часто заняты чужими Postgres/Redis (в т.ч. нативным Redis < 7.4 — сервер с ним не стартует).
 
 ## Переменные окружения

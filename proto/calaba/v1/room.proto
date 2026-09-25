@@ -48,6 +48,11 @@ message Room {
   // All overrides; clients feed them to computePermissions for UI decisions.
   repeated RoomPermissionOverride permission_overrides = 10;
   google.protobuf.Timestamp created_at = 11;
+  // Newest live message (for unread counts against ReadState). Filled in READY /
+  // WORKSPACE_CREATE snapshots and GET /api/workspaces/{id}/rooms; empty when the room has
+  // no messages or in other events (clients track MESSAGE_CREATE).
+  string last_message_id = 12;
+  google.protobuf.Timestamp last_message_at = 13;
 }
 
 // POST /api/workspaces/{id}/rooms (MANAGE_ROOM at workspace level, i.e. admin/owner)

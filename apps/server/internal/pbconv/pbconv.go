@@ -3,6 +3,7 @@
 package pbconv
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -122,13 +123,41 @@ func User(u sqlc.User) *v1.User {
 	}
 }
 
-// Settings decodes users.settings (protojson); corrupt data yields defaults.
+// Settings decodes users.settings (protojson). Fields missing from the stored JSON (rows
+// created before a field existed) get their defaults; corrupt data yields defaults.
 func Settings(raw []byte) *v1.UserSettings {
 	s := &v1.UserSettings{}
-	if len(raw) > 0 {
+	var present map[string]json.RawMessage
+	if len(raw) > 0 && json.Unmarshal(raw, &present) == nil {
 		_ = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(raw, s)
 	}
+	if _, ok := present["noiseSuppression"]; !ok {
+		s.NoiseSuppression = true
+	}
+	return NormalizeSettings(s)
+}
+
+// NormalizeSettings resolves mic_mode (UNSPECIFIED → from the legacy push_to_talk flag,
+// else VAD) and keeps the deprecated push_to_talk flag in sync with it.
+func NormalizeSettings(s *v1.UserSettings) *v1.UserSettings {
+	if s.GetMicMode() == v1.MicMode_MIC_MODE_UNSPECIFIED {
+		s.MicMode = v1.MicMode_MIC_MODE_VAD
+		if s.GetPushToTalk() { //nolint:staticcheck // legacy field
+			s.MicMode = v1.MicMode_MIC_MODE_PUSH_TO_TALK
+		}
+	}
+	s.PushToTalk = s.GetMicMode() == v1.MicMode_MIC_MODE_PUSH_TO_TALK //nolint:staticcheck // legacy field
 	return s
+}
+
+// EncodeSettings stores settings with every field explicit, so a stored false stays false.
+func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
+	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(NormalizeSettings(s))
+}
+
+// DefaultSettings are the settings of a new user.
+func DefaultSettings() *v1.UserSettings {
+	return &v1.UserSettings{NoiseSuppression: true, MicMode: v1.MicMode_MIC_MODE_VAD}
 }
 
 // Me is the authenticated user's own view.

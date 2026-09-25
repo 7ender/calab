@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
@@ -18,6 +17,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/profile"
+	"github.com/calaba/calaba/server/internal/rooms"
 )
 
 // Handlers serves /api/me.
@@ -83,7 +83,11 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if req.Settings != nil {
-		b, err := protojson.Marshal(req.GetSettings())
+		st := req.GetSettings()
+		if st.AudioBitrateKbps != nil && !rooms.ValidAudioBitrate(st.GetAudioBitrateKbps()) {
+			return httpx.Validation("settings.audioBitrateKbps", "audio bitrate must be one of 16, 24, 32, 48, 64")
+		}
+		b, err := pbconv.EncodeSettings(st)
 		if err != nil {
 			return err
 		}

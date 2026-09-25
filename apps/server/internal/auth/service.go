@@ -182,6 +182,10 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 	if err != nil {
 		return nil, err
 	}
+	settings, err := pbconv.EncodeSettings(pbconv.DefaultSettings())
+	if err != nil {
+		return nil, err
+	}
 
 	var (
 		user   sqlc.User
@@ -212,7 +216,7 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			}
 			inv = &i
 		}
-		user, err = q.CreateUser(ctx, sqlc.CreateUserParams{Email: email, PasswordHash: &hash, DisplayName: name})
+		user, err = q.CreateUser(ctx, sqlc.CreateUserParams{Email: email, PasswordHash: &hash, DisplayName: name, Settings: settings})
 		if db.UniqueViolation(err) != "" {
 			return httpx.Conflict("email is already registered")
 		}

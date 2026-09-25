@@ -522,6 +522,12 @@ func TestMessagesAndFiles(t *testing.T) {
 		t.Fatalf("after: %v", page.GetMessages())
 	}
 	bob.must(400, "GET", "/api/rooms/"+rid+"/messages?limit=500", nil, nil)
+	// Room listing carries the newest message (unread counts without extra requests).
+	var lr v1.ListRoomsResponse
+	bob.must(200, "GET", "/api/workspaces/"+ws.GetId()+"/rooms", nil, &lr)
+	if lr.GetRooms()[0].GetLastMessageId() != ids[3] || lr.GetRooms()[0].GetLastMessageAt() == nil {
+		t.Fatalf("last message: %v, want %s", lr.GetRooms()[0].GetLastMessageId(), ids[3])
+	}
 
 	// Edit own, not others'; delete others' needs MANAGE_MESSAGES.
 	var upd v1.UpdateMessageResponse
@@ -792,6 +798,27 @@ func TestProfileBroadcast(t *testing.T) {
 		return e.GetUserUpdate().GetMe().GetEmail() != ""
 	})
 	// Settings-only changes stay private.
-	bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{Settings: &v1.UserSettings{PushToTalk: true}}, nil)
+	bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{Settings: &v1.UserSettings{MicMode: v1.MicMode_MIC_MODE_PUSH_TO_TALK}}, nil)
 	og.quiet("settings broadcast", 300*time.Millisecond, func(e *v1.DispatchEvent) bool { return e.GetUserUpdate() != nil })
+}
+
+func TestSettingsDefaults(t *testing.T) {
+	o := owner(t)
+	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	u := register(t, invite(t, o, ws.GetId()))
+	var me v1.GetMeResponse
+	u.must(200, "GET", "/api/me", nil, &me)
+	st := me.GetMe().GetSettings()
+	if !st.GetNoiseSuppression() || st.GetMicMode() != v1.MicMode_MIC_MODE_VAD || st.AudioBitrateKbps != nil {
+		t.Fatalf("new user defaults: %v", st)
+	}
+	// protojson omits false: the server must still store "off" as off.
+	var upd v1.UpdateMeResponse
+	u.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{Settings: &v1.UserSettings{NoiseSuppression: false, MicMode: v1.MicMode_MIC_MODE_PUSH_TO_TALK}}, &upd)
+	u.must(200, "GET", "/api/me", nil, &me)
+	if st := me.GetMe().GetSettings(); st.GetNoiseSuppression() || st.GetMicMode() != v1.MicMode_MIC_MODE_PUSH_TO_TALK {
+		t.Fatalf("explicit off lost: %v", st)
+	}
+	bad := uint32(33)
+	u.must(422, "PATCH", "/api/me", &v1.UpdateMeRequest{Settings: &v1.UserSettings{AudioBitrateKbps: &bad}}, nil)
 }

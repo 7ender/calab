@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
@@ -60,12 +61,30 @@ func Visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uui
 	defaults := pbconv.WorkspaceDefaults(ws)
 	uid := userID.String()
 	out := make([]*v1.Room, 0, len(rows))
+	ids := make([]uuid.UUID, 0, len(rows))
 	for _, r := range rows {
 		ovs := byRoom[r.ID]
 		if !perm.ComputeIn(role, uid, pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
 			continue
 		}
 		out = append(out, pbconv.Room(r, defaults, ovs))
+		ids = append(ids, r.ID)
+	}
+	if len(ids) > 0 {
+		last, err := q.LastMessages(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		byID := make(map[string]sqlc.LastMessagesRow, len(last))
+		for _, l := range last {
+			byID[l.RoomID.String()] = l
+		}
+		for _, r := range out {
+			if l, ok := byID[r.GetId()]; ok {
+				r.LastMessageId = l.ID.String()
+				r.LastMessageAt = timestamppb.New(l.CreatedAt)
+			}
+		}
 	}
 	return out, nil
 }

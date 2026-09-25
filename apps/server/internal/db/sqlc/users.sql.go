@@ -23,8 +23,8 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, password_hash, display_name)
-VALUES ($1, $2, $3)
+INSERT INTO users (email, password_hash, display_name, settings)
+VALUES ($1, $2, $3, $4)
 RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at
 `
 
@@ -32,10 +32,16 @@ type CreateUserParams struct {
 	Email        string
 	PasswordHash *string
 	DisplayName  string
+	Settings     []byte
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash, arg.DisplayName)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Email,
+		arg.PasswordHash,
+		arg.DisplayName,
+		arg.Settings,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,

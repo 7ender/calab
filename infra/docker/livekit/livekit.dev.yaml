@@ -1,0 +1,29 @@
+# LiveKit config for local development (compose.dev.yml). Not for production:
+# the production config is livekit.yaml.tpl rendered by deploy.sh.
+# Keys are the well-known dev pair (same as `--dev`): API key devkey / secret secret.
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  tcp_port: 7881
+  udp_port: 7882          # UDP mux, published by compose
+  node_ip: 127.0.0.1      # Docker Desktop has no host network: clients on this machine only
+  use_external_ip: false
+
+keys:
+  devkey: secret
+
+# Webhooks go to the API running on the host (make dev-server, 127.0.0.1:3000), so voice
+# state updates arrive instantly instead of via the 30 s reconcile.
+webhook:
+  api_key: devkey
+  urls:
+    - http://host.docker.internal:3000/api/rtc/webhook
+
+room:
+  auto_create: false      # as in production: only the API creates rooms
+  empty_timeout: 300
+
+logging:
+  level: info
