@@ -358,6 +358,11 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
+	// Length first (the DB CHECK would otherwise surface as a 500); "empty only with
+	// attachments" needs the attachment count and is checked in the transaction.
+	if utf8.RuneCountInString(req.GetContent()) > MaxContent {
+		return httpx.Validation("content", "content must be at most 4000 characters")
+	}
 	var out []*v1.Message
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		upd, err := q.UpdateMessageContent(r.Context(), sqlc.UpdateMessageContentParams{ID: m.ID, Content: req.GetContent()})

@@ -188,6 +188,7 @@ func (h *Handlers) setOrder(w http.ResponseWriter, r *http.Request) error {
 	resp := &v1.SetRoomOrderResponse{}
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		resp.Rooms, resp.Categories = nil, nil
+		var updated []sqlc.Room
 		for _, c := range req.GetCategories() {
 			id, err := uuid.Parse(c.GetCategoryId())
 			if err != nil {
@@ -218,11 +219,27 @@ func (h *Handlers) setOrder(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
-			pb, err := h.load(r.Context(), q, row)
-			if err != nil {
-				return err
-			}
-			resp.Rooms = append(resp.Rooms, pb)
+			updated = append(updated, row)
+		}
+		if len(updated) == 0 {
+			return nil
+		}
+		// One lookup for defaults and overrides instead of two queries per room.
+		ws, err := q.GetWorkspace(r.Context(), wsID)
+		if err != nil {
+			return err
+		}
+		ovs, err := q.ListWorkspaceRoomOverrides(r.Context(), wsID)
+		if err != nil {
+			return err
+		}
+		byRoom := map[uuid.UUID][]sqlc.RoomPermission{}
+		for _, o := range ovs {
+			byRoom[o.RoomID] = append(byRoom[o.RoomID], o)
+		}
+		defaults := pbconv.WorkspaceDefaults(ws)
+		for _, row := range updated {
+			resp.Rooms = append(resp.Rooms, pbconv.Room(row, defaults, byRoom[row.ID]))
 		}
 		return nil
 	})

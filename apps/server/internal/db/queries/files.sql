@@ -56,3 +56,9 @@ SELECT pg_advisory_xact_lock(hashtext('calaba.storage.total'));
 -- All stored bytes: workspace usage plus user-scoped files (avatars, not quota-counted).
 SELECT ((SELECT coalesce(sum(storage_used_bytes), 0) FROM workspaces)
       + (SELECT coalesce(sum(size), 0) FROM files WHERE workspace_id IS NULL))::bigint;
+
+-- name: UnattachedBytesByUploader :one
+-- Bytes a user uploaded to a workspace that are not attached to any message yet.
+SELECT coalesce(sum(f.size), 0)::bigint FROM files f
+WHERE f.uploader_id = $1 AND f.workspace_id = $2
+  AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id);

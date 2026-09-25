@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,6 +40,7 @@ type recordingLiveKit struct {
 	mu       sync.Mutex
 	muted    []string
 	moves    []string
+	removed  []string
 	fakeMove bool // pretend MoveParticipant succeeded (no real WebRTC participant in tests)
 }
 
@@ -68,6 +70,24 @@ func (r *recordingLiveKit) MuteTrack(ctx context.Context, room, identity, sid st
 	r.muted = append(r.muted, identity+"/"+sid)
 	r.mu.Unlock()
 	return r.LiveKit.MuteTrack(ctx, room, identity, sid, muted)
+}
+
+func (r *recordingLiveKit) RemoveParticipant(ctx context.Context, room, identity string) error {
+	r.mu.Lock()
+	r.removed = append(r.removed, identity)
+	r.mu.Unlock()
+	return r.LiveKit.RemoveParticipant(ctx, room, identity)
+}
+
+func (r *recordingLiveKit) wasRemoved(identity string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, id := range r.removed {
+		if id == identity {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *recordingLiveKit) mutedTracks() []string {
@@ -655,12 +675,12 @@ func webhook(t *testing.T, ev *livekit.WebhookEvent, secret string) int {
 	return resp.StatusCode
 }
 
-var whSeq int
+var whSeq atomic.Int64
 
 func whEvent(kind string, roomName, identity string, track *livekit.TrackInfo) *livekit.WebhookEvent {
-	whSeq++
+	n := whSeq.Add(1)
 	return &livekit.WebhookEvent{
-		Event: kind, Id: fmt.Sprintf("EV_%d_%d", time.Now().UnixNano(), whSeq), CreatedAt: time.Now().Unix(),
+		Event: kind, Id: fmt.Sprintf("EV_%d_%d", time.Now().UnixNano(), n), CreatedAt: time.Now().Unix(),
 		Room:        &livekit.Room{Name: roomName},
 		Participant: &livekit.ParticipantInfo{Identity: identity},
 		Track:       track,

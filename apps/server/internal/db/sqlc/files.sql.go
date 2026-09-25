@@ -333,3 +333,22 @@ func (q *Queries) TryAdvisoryXactLock(ctx context.Context, name string) (bool, e
 	err := row.Scan(&pg_try_advisory_xact_lock)
 	return pg_try_advisory_xact_lock, err
 }
+
+const unattachedBytesByUploader = `-- name: UnattachedBytesByUploader :one
+SELECT coalesce(sum(f.size), 0)::bigint FROM files f
+WHERE f.uploader_id = $1 AND f.workspace_id = $2
+  AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
+`
+
+type UnattachedBytesByUploaderParams struct {
+	UploaderID  uuid.UUID
+	WorkspaceID *uuid.UUID
+}
+
+// Bytes a user uploaded to a workspace that are not attached to any message yet.
+func (q *Queries) UnattachedBytesByUploader(ctx context.Context, arg UnattachedBytesByUploaderParams) (int64, error) {
+	row := q.db.QueryRow(ctx, unattachedBytesByUploader, arg.UploaderID, arg.WorkspaceID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}

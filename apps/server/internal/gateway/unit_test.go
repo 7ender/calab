@@ -90,7 +90,8 @@ func TestCodec(t *testing.T) {
 func TestVisibilityTransitions(t *testing.T) {
 	wid, rid, alice, bob := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	room := &v1.Room{Id: rid.String()}
-	st := &wsState{rooms: map[uuid.UUID]*v1.Room{rid: room}, roles: map[uuid.UUID]perm.Role{alice: perm.RoleMember, bob: perm.RoleGuest}}
+	st := &wsState{rooms: map[uuid.UUID]*v1.Room{}, roles: map[uuid.UUID]perm.Role{alice: perm.RoleMember, bob: perm.RoleGuest}}
+	st.setRoom(rid, room)
 	if !st.canView(rid, alice) || st.canView(rid, bob) {
 		t.Fatal("defaults: member sees, guest does not")
 	}
@@ -98,9 +99,22 @@ func TestVisibilityTransitions(t *testing.T) {
 		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_ROLE, TargetId: "member", Deny: uint64(perm.ViewRoom)},
 		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: bob.String(), Allow: uint64(perm.ViewRoom)},
 	}
-	st.rooms[rid] = withPermissions(room, private)
+	st.setRoom(rid, withPermissions(room, private))
 	if st.canView(rid, alice) || !st.canView(rid, bob) {
 		t.Fatal("private room: alice hidden, bob allowed")
+	}
+	// Guests see only members sharing a room with them (M7).
+	carol := uuid.New()
+	st.roles[carol] = perm.RoleMember
+	if st.hiddenFrom(alice, bob) || !st.hiddenFrom(bob, alice) || !st.hiddenFrom(bob, carol) || st.hiddenFrom(bob, bob) {
+		t.Fatal("guest visibility")
+	}
+	other := uuid.New()
+	st.setRoom(other, &v1.Room{Id: other.String(), PermissionOverrides: []*v1.RoomPermissionOverride{
+		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: bob.String(), Allow: uint64(perm.ViewRoom)},
+	}})
+	if st.hiddenFrom(bob, carol) {
+		t.Fatal("guest must see a member of a shared room")
 	}
 	upd := &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: room}}}
 	if ev := transition(true, true, upd, room, wid, rid); ev != upd {

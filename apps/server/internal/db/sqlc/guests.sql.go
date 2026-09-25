@@ -318,6 +318,21 @@ func (q *Queries) ListUserFiles(ctx context.Context, uploaderID uuid.UUID) ([]Fi
 	return items, nil
 }
 
+const lockExpiredGuest = `-- name: LockExpiredGuest :one
+SELECT id FROM users
+WHERE id = $1 AND is_guest AND guest_expires_at IS NOT NULL AND guest_expires_at < now() AND disabled_at IS NULL
+FOR UPDATE
+`
+
+// Re-checks expiry under a row lock inside the cleanup transaction (a refresh may have
+// just extended it).
+func (q *Queries) LockExpiredGuest(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockExpiredGuest, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const promoteGuest = `-- name: PromoteGuest :one
 UPDATE workspace_members SET role = 'member'
 WHERE workspace_id = $1 AND user_id = $2 AND role = 'guest'
@@ -377,8 +392,7 @@ const upsertUserOverride = `-- name: UpsertUserOverride :one
 INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
 VALUES ($1, 'user', $2::text, $3, 0)
 ON CONFLICT (room_id, target_type, target_id) DO UPDATE
-    SET allow = room_permissions.allow | EXCLUDED.allow,
-        deny  = room_permissions.deny & ~EXCLUDED.allow
+    SET allow = room_permissions.allow | (EXCLUDED.allow & ~room_permissions.deny)
 RETURNING room_id, target_type, target_id, allow, deny
 `
 
@@ -388,7 +402,8 @@ type UpsertUserOverrideParams struct {
 	Allow  int64
 }
 
-// Grants `allow` to one user in a room on top of an existing override (and lifts those denies).
+// Grants `allow` to one user in a room on top of an existing override. Bits an admin
+// explicitly denied to this user stay denied (a link must not lift a deny).
 func (q *Queries) UpsertUserOverride(ctx context.Context, arg UpsertUserOverrideParams) (RoomPermission, error) {
 	row := q.db.QueryRow(ctx, upsertUserOverride, arg.RoomID, arg.UserID, arg.Allow)
 	var i RoomPermission

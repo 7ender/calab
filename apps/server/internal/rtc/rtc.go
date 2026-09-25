@@ -276,6 +276,9 @@ func (s *Service) moderate(r *http.Request) (sqlc.Room, uuid.UUID, []voice.Sessi
 	if err != nil {
 		return sqlc.Room{}, uuid.Nil, nil, err
 	}
+	if err := outranks(r, acc.WorkspaceID, target); err != nil {
+		return sqlc.Room{}, uuid.Nil, nil, err
+	}
 	room, err := s.db.Q.GetRoom(r.Context(), roomID)
 	if err != nil {
 		return room, target, nil, err
@@ -437,6 +440,42 @@ func (s *Service) roomFull(ctx context.Context, wid, rid uuid.UUID, limit int, s
 		}
 	}
 	return len(users) >= limit, nil
+}
+
+func rank(r perm.Role) int {
+	switch r {
+	case perm.RoleOwner:
+		return 3
+	case perm.RoleAdmin:
+		return 2
+	}
+	return 1
+}
+
+// outranks enforces the moderation hierarchy for mute/disconnect/stop-stream/move: the
+// owner is untouchable, an admin can be moderated only by the owner; moderators among
+// members (via room overrides) act on members and guests only. Acting on oneself is fine.
+func outranks(r *http.Request, wsID, target uuid.UUID) error {
+	actor := auth.MustFromContext(r.Context()).UserID
+	if actor == target {
+		return nil
+	}
+	res := perm.FromContext(r.Context())
+	ar, err := res.Role(r.Context(), wsID, actor)
+	if err != nil {
+		return err
+	}
+	tr, err := res.Role(r.Context(), wsID, target)
+	if errors.Is(err, perm.ErrNotMember) {
+		return httpx.NotFound("member")
+	}
+	if err != nil {
+		return err
+	}
+	if rank(tr) >= 2 && rank(ar) <= rank(tr) {
+		return httpx.Forbidden("cannot moderate a member of equal or higher rank")
+	}
+	return nil
 }
 
 // DisabledRoutes answers rtc endpoints with 503 when LiveKit is not configured.

@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -27,14 +28,24 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Unauthenticated("invalid webhook signature")
 	}
-	if id := ev.ID; id != "" { // LiveKit retries: handle each event once
-		set := s.redis.B().Set().Key("rtc:wh:" + id).Value("1").Nx().Ex(24 * time.Hour).Build()
+	// LiveKit retries: handle each event once. The key is claimed before handling (so a
+	// concurrent redelivery is skipped) and released again if handling fails, so that the
+	// retry is processed instead of being swallowed as a duplicate.
+	key := ""
+	if ev.ID != "" {
+		key = "rtc:wh:" + ev.ID
+		set := s.redis.B().Set().Key(key).Value("1").Nx().Ex(24 * time.Hour).Build()
 		if err := s.redis.Do(r.Context(), set).Error(); rueidis.IsRedisNil(err) {
 			w.WriteHeader(http.StatusOK)
 			return nil
+		} else if err != nil {
+			return httpx.Unavailable(err)
 		}
 	}
 	if err := s.HandleEvent(r.Context(), ev); err != nil {
+		if key != "" {
+			_ = s.redis.Do(context.WithoutCancel(r.Context()), s.redis.B().Del().Key(key).Build()).Error()
+		}
 		return err
 	}
 	w.WriteHeader(http.StatusOK)
@@ -80,21 +91,7 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 	}
 	switch ev.Event {
 	case EventParticipantJoined:
-		if s.Revoked != nil {
-			if revoked, err := s.Revoked(ctx, sid); err == nil && revoked {
-				s.removeIdentities(ctx, ev.Room.Name, []string{identity})
-				return nil
-			}
-		}
-		muted := micMuted(p)
-		return s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
-			n := voice.SessionState{RoomID: rid, Muted: muted}
-			if cur != nil && cur.RoomID == rid {
-				n = *cur
-				n.Muted = muted
-			}
-			return &n
-		})
+		return s.participantJoined(ctx, wid, rid, uid, sid, ev.Room.Name, p)
 	case EventParticipantLeft, EventParticipantAborted:
 		s.stopStreams(ctx, wid, rid, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
 		return s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
@@ -135,16 +132,91 @@ func (s *Service) update(ctx context.Context, wid, uid, sid uuid.UUID, fn func(*
 	return nil
 }
 
-// setFlag changes a device's flags if it is (or becomes) connected to rid.
+// setFlag changes a device's flags if it is connected to rid. Late track events (after
+// participant_left, or for a device that moved) must not resurrect a "ghost" state.
 func (s *Service) setFlag(ctx context.Context, wid, rid, uid, sid uuid.UUID, fn func(*voice.SessionState)) error {
 	return s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
-		n := voice.SessionState{RoomID: rid, Muted: true}
-		if cur != nil && cur.RoomID == rid {
-			n = *cur
+		if cur == nil || cur.RoomID != rid {
+			return cur
 		}
+		n := *cur
 		fn(&n)
 		return &n
 	})
+}
+
+// participantJoined admits a device that connected to LiveKit. A join token lives 10 min,
+// so everything it was issued for is re-checked now (security review H2): the session is
+// not revoked, the user still has VIEW_ROOM+CONNECT, and the room's user_limit is not
+// exceeded. The limit check and the state write happen under the workspace voice lock, so
+// concurrent joins cannot all squeeze in. Rejected devices are removed from LiveKit.
+func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid.UUID, lkRoom string, p *Participant) error {
+	identity := p.Identity
+	reject := func(reason string) error {
+		slog.InfoContext(ctx, "voice join rejected", "identity", identity, "reason", reason)
+		s.removeIdentities(ctx, lkRoom, []string{identity})
+		return nil
+	}
+	if s.Revoked != nil {
+		if revoked, err := s.Revoked(ctx, sid); err != nil {
+			return err
+		} else if revoked {
+			return reject("session revoked")
+		}
+	}
+	acc, err := perm.NewResolver(s.db.Q).Room(ctx, rid, uid)
+	if errors.Is(err, perm.ErrNoRoom) {
+		return reject("no access to the room")
+	}
+	if err != nil {
+		return err
+	}
+	if !acc.Bits.Has(perm.ViewRoom | perm.Connect) {
+		return reject("missing CONNECT")
+	}
+	room, media, err := s.roomInfo(ctx, rid)
+	if err != nil {
+		return err
+	}
+	muted := micMuted(p)
+	var (
+		full bool
+		c    voice.Change
+	)
+	err = s.voice.WithLock(ctx, wid, func() error {
+		if room.UserLimit > 0 && !acc.Bits.Has(perm.MoveMembers) {
+			var err error
+			if full, err = s.roomFull(ctx, wid, rid, int(room.UserLimit), uid); err != nil || full {
+				return err
+			}
+		}
+		var err error
+		c, err = s.voice.UpdateLocked(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
+			n := voice.SessionState{RoomID: rid, Muted: muted}
+			if cur != nil && cur.RoomID == rid {
+				n = *cur
+				n.Muted = muted
+			}
+			return &n
+		})
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if full {
+		return reject("room is full")
+	}
+	s.publishVoice(ctx, wid, c)
+	// The token's grant may be stale: align it with the current permissions.
+	slot := false
+	if acc.Bits.Has(perm.Stream) {
+		slot, _ = s.streamSlotFree(ctx, rid, identity, media.GetMaxStreams())
+	}
+	if err := s.lk.UpdatePermission(ctx, lkRoom, identity, Grant(acc.Bits, slot)); err != nil && !IsNotFound(err) {
+		slog.WarnContext(ctx, "livekit update permission on join", "identity", identity, "err", err)
+	}
+	return nil
 }
 
 func (s *Service) refreshStreaming(ctx context.Context, wid, rid, uid, sid uuid.UUID, identity string) error {
@@ -172,13 +244,20 @@ func (s *Service) streamStarted(ctx context.Context, wid, rid, uid, sid uuid.UUI
 	if err != nil {
 		return err
 	}
-	preset := s.voice.ReservedStream(ctx, identity)
-	preset = ClampPreset(preset, media.GetMaxStreamPreset())
-	n, err := s.voice.AddStream(ctx, rid, t.Sid, voice.Stream{Identity: identity, UserID: uid, Preset: preset, Started: time.Now().UnixMilli()})
+	states, err := s.voice.List(ctx, wid)
 	if err != nil {
 		return err
 	}
-	if n > int64(media.GetMaxStreams()) {
+	if !hasState(states, sid, rid) {
+		return nil // late event for a device that is not (or no longer) in the room; reconcile catches up
+	}
+	preset := s.voice.ReservedStream(ctx, identity)
+	preset = ClampPreset(preset, media.GetMaxStreamPreset())
+	added, err := s.voice.AddStream(ctx, rid, t.Sid, voice.Stream{Identity: identity, UserID: uid, Preset: preset, Started: time.Now().UnixMilli()}, int(media.GetMaxStreams()))
+	if err != nil {
+		return err
+	}
+	if !added {
 		room := voice.RoomName(wid, rid)
 		if err := s.lk.MuteTrack(ctx, room, identity, t.Sid, true); err != nil && !IsNotFound(err) {
 			slog.WarnContext(ctx, "mute over-limit stream", "err", err)
@@ -186,7 +265,6 @@ func (s *Service) streamStarted(ctx context.Context, wid, rid, uid, sid uuid.UUI
 		if acc, err := perm.NewResolver(s.db.Q).Room(ctx, rid, uid); err == nil {
 			_ = s.lk.UpdatePermission(ctx, room, identity, Grant(acc.Bits, false))
 		}
-		_, _ = s.voice.RemoveStream(ctx, rid, t.Sid)
 		s.publishStreamStop(ctx, wid, rid, uid, t.Sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_LIMIT_REACHED)
 		return nil
 	}

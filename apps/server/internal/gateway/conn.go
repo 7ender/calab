@@ -15,6 +15,10 @@ const (
 	readLimit    = 64 << 10
 	sendQueue    = 256
 	writeTimeout = 10 * time.Second
+	// Inbound frames per socket: burst and sustained rate (security review M3). A normal
+	// client sends a heartbeat every 41 s plus occasional presence/typing/subscribe.
+	inboundBurst = 10
+	inboundRate  = 2.0 // frames per second
 )
 
 type outMsg struct {
@@ -37,19 +41,54 @@ type conn struct {
 	closed       bool
 	serverClosed bool     // we initiated the close; session fate already decided
 	replay       []outMsg // written before anything from out (RESUME)
+	held         bool     // writer does not take from out until the replay is set
 	wake         chan struct{}
+
+	tokens float64 // inbound token bucket
+	last   time.Time
 }
 
 func newConn(ws *websocket.Conn, c codec) *conn {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &conn{ws: ws, codec: c, out: make(chan outMsg, sendQueue), ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
+	return &conn{ws: ws, codec: c, out: make(chan outMsg, sendQueue), ctx: ctx, cancel: cancel,
+		wake: make(chan struct{}, 1), tokens: inboundBurst, last: time.Now()}
 }
 
-// writeLoop writes queued messages. Replay frames (set by setReplay) always go out before
-// any message taken from the queue, so a resumed client sees events in seq order.
+// allowInbound takes one token for an inbound frame (read loop only, no locking needed).
+func (c *conn) allowInbound() bool {
+	now := time.Now()
+	c.tokens = min(inboundBurst, c.tokens+now.Sub(c.last).Seconds()*inboundRate)
+	c.last = now
+	if c.tokens < 1 {
+		return false
+	}
+	c.tokens--
+	return true
+}
+
+// writeLoop writes queued messages. Replay frames always go out before any message taken
+// from the queue; while held, queued messages wait (RESUME reads the replay from Redis
+// without blocking fan-out, then releases the hold with setReplay).
 func (c *conn) writeLoop() {
 	defer c.cancel()
 	for {
+		c.mu.Lock()
+		replay, held := c.replay, c.held
+		c.replay = nil
+		c.mu.Unlock()
+		for _, m := range replay {
+			if !c.write(m) {
+				return
+			}
+		}
+		if held {
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-c.wake:
+			}
+			continue
+		}
 		var next *outMsg
 		select {
 		case <-c.ctx.Done():
@@ -59,7 +98,7 @@ func (c *conn) writeLoop() {
 			next = &m
 		}
 		c.mu.Lock()
-		replay := c.replay
+		replay = c.replay
 		c.replay = nil
 		c.mu.Unlock()
 		for _, m := range replay {
@@ -73,10 +112,18 @@ func (c *conn) writeLoop() {
 	}
 }
 
-// setReplay queues frames that must precede everything already or later enqueued.
+// hold stops the writer from taking queued messages until setReplay.
+func (c *conn) hold() {
+	c.mu.Lock()
+	c.held = true
+	c.mu.Unlock()
+}
+
+// setReplay queues frames that must precede everything queued, and releases a hold.
 func (c *conn) setReplay(ms []outMsg) {
 	c.mu.Lock()
 	c.replay = append(c.replay, ms...)
+	c.held = false
 	c.mu.Unlock()
 	select {
 	case c.wake <- struct{}{}:
@@ -126,10 +173,14 @@ func (c *conn) closeGraceful(code websocket.StatusCode, why string) {
 	if c.closed {
 		return
 	}
-	c.closed, c.serverClosed = true, true
+	c.closed, c.serverClosed, c.held = true, true, false
 	closeMetric(code)
 	select {
 	case c.out <- outMsg{close: code, why: why}:
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
 	default:
 		go func() { _ = c.ws.Close(code, why) }()
 	}

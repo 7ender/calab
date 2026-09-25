@@ -4,6 +4,7 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -22,11 +23,14 @@ func Routes(mux *http.ServeMux, pool *pgxpool.Pool, redis rueidis.Client) {
 		defer cancel()
 		checks := map[string]string{"postgres": "ok", "redis": "ok"}
 		status := http.StatusOK
+		// Details go to the log, not to the (possibly public) response.
 		if err := pool.Ping(ctx); err != nil {
-			checks["postgres"], status = err.Error(), http.StatusServiceUnavailable
+			slog.WarnContext(ctx, "readyz: postgres", "err", err)
+			checks["postgres"], status = "down", http.StatusServiceUnavailable
 		}
 		if err := redis.Do(ctx, redis.B().Ping().Build()).Error(); err != nil {
-			checks["redis"], status = err.Error(), http.StatusServiceUnavailable
+			slog.WarnContext(ctx, "readyz: redis", "err", err)
+			checks["redis"], status = "down", http.StatusServiceUnavailable
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)

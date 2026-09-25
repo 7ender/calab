@@ -115,12 +115,28 @@ func (s *Service) closeRoom(ctx context.Context, wid, rid uuid.UUID) {
 	_ = s.roomFinished(ctx, wid, rid)
 }
 
+// joinGrace: voice states younger than this are not removed by reconcile (they may have
+// joined between our Redis snapshot and the LiveKit listing).
+const joinGrace = 15 * time.Second
+
 // Reconcile compares LiveKit participants with Redis voice state and fixes drift from
-// missed webhooks. Only one instance runs it per period (Redis lock).
+// missed webhooks. Only one instance runs it per period (Redis lock). Redis state is
+// snapshotted before LiveKit is listed; fresh states are never removed (joinGrace).
 func (s *Service) Reconcile(ctx context.Context) error {
 	lock := s.redis.B().Set().Key("rtc:reconcile").Value("1").Nx().Ex(25 * time.Second).Build()
 	if err := s.redis.Do(ctx, lock).Error(); err != nil {
 		return nil //nolint:nilerr // another instance holds the lock (or Redis is down)
+	}
+	start := time.Now()
+	known, err := s.voice.Workspaces(ctx)
+	if err != nil {
+		return err
+	}
+	snap := map[uuid.UUID][]voice.SessionState{}
+	for _, w := range known {
+		if snap[w], err = s.voice.List(ctx, w); err != nil {
+			return err
+		}
 	}
 	lkRooms, err := s.lk.ListRooms(ctx)
 	if err != nil {
@@ -128,7 +144,6 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	}
 	type roomRef struct{ wid, rid uuid.UUID }
 	live := map[roomRef][]Participant{}
-	wids := map[uuid.UUID]bool{}
 	for _, r := range lkRooms {
 		wid, rid, ok := voice.ParseRoomName(r.Name)
 		if !ok {
@@ -139,20 +154,11 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			return err
 		}
 		live[roomRef{wid, rid}] = ps
-		wids[wid] = true
-	}
-	known, err := s.voice.Workspaces(ctx)
-	if err != nil {
-		return err
-	}
-	for _, w := range known {
-		wids[w] = true
-	}
-	for wid := range wids {
-		states, err := s.voice.List(ctx, wid)
-		if err != nil {
-			return err
+		if _, ok := snap[wid]; !ok {
+			snap[wid] = nil
 		}
+	}
+	for wid, states := range snap {
 		present := map[string]uuid.UUID{} // identity -> room
 		for ref, ps := range live {
 			if ref.wid != wid {
@@ -167,23 +173,35 @@ func (s *Service) Reconcile(ctx context.Context) error {
 				if !hasState(states, sid, ref.rid) {
 					muted := micMuted(&p)
 					rid := ref.rid
-					_ = s.update(ctx, wid, uid, sid, func(*voice.SessionState) *voice.SessionState {
+					_ = s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
+						if cur != nil && cur.RoomID == rid {
+							return cur // appeared meanwhile via webhook
+						}
 						return &voice.SessionState{RoomID: rid, Muted: muted}
 					})
 				}
 			}
 			s.reconcileStreams(ctx, wid, ref.rid, ps)
 		}
+		cutoff := start.Add(-joinGrace).UnixMilli()
 		for _, st := range states {
-			if rid, ok := present[voice.Identity(st.UserID, st.SessionID)]; !ok || rid != st.RoomID {
-				s.stopStreams(ctx, wid, st.RoomID, voice.Identity(st.UserID, st.SessionID), v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
-				_ = s.update(ctx, wid, st.UserID, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
-					if cur != nil && cur.RoomID == st.RoomID {
-						return nil
-					}
-					return cur
-				})
+			if rid, ok := present[voice.Identity(st.UserID, st.SessionID)]; ok && rid == st.RoomID {
+				continue
 			}
+			if st.JoinedAt > cutoff {
+				continue // too fresh to judge: may have joined after the listing
+			}
+			s.stopStreams(ctx, wid, st.RoomID, voice.Identity(st.UserID, st.SessionID), v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
+			joined := st.JoinedAt
+			_ = s.update(ctx, wid, st.UserID, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
+				if cur != nil && cur.RoomID == st.RoomID && cur.JoinedAt == joined {
+					return nil
+				}
+				return cur // changed since the snapshot: leave it
+			})
+		}
+		if len(states) == 0 {
+			_ = s.voice.Forget(ctx, wid) // drop idle workspaces from the reconcile set
 		}
 	}
 	return nil
@@ -198,13 +216,14 @@ func hasState(states []voice.SessionState, sid, rid uuid.UUID) bool {
 	return false
 }
 
-// reconcileStreams drops recorded streams whose tracks are gone.
+// reconcileStreams drops recorded streams whose tracks are gone and records live screen
+// shares that were missed (e.g. a track_published that arrived before participant_joined).
 func (s *Service) reconcileStreams(ctx context.Context, wid, rid uuid.UUID, ps []Participant) {
-	actual := map[string]bool{}
+	actual := map[string]Participant{}
 	for _, p := range ps {
 		for _, t := range p.Tracks {
 			if t.Source == SourceScreenShare && !t.Muted {
-				actual[t.Sid] = true
+				actual[t.Sid] = p
 			}
 		}
 	}
@@ -213,11 +232,21 @@ func (s *Service) reconcileStreams(ctx context.Context, wid, rid uuid.UUID, ps [
 		return
 	}
 	for sidTrack, st := range streams {
-		if !actual[sidTrack] {
+		if _, ok := actual[sidTrack]; !ok {
 			if ok, _ := s.voice.RemoveStream(ctx, rid, sidTrack); ok {
 				s.publishStreamStop(ctx, wid, rid, st.UserID, sidTrack, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
 			}
 		}
+	}
+	for sidTrack, p := range actual {
+		if _, ok := streams[sidTrack]; ok {
+			continue
+		}
+		uid, sid, ok := voice.ParseIdentity(p.Identity)
+		if !ok {
+			continue
+		}
+		_ = s.streamStarted(ctx, wid, rid, uid, sid, p.Identity, &Track{Sid: sidTrack, Source: SourceScreenShare})
 	}
 }
 

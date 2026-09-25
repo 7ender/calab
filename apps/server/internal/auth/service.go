@@ -114,6 +114,10 @@ var (
 	errInvalidRefresh     = httpx.Coded(http.StatusUnauthorized, v1.ErrorCode_ERROR_CODE_INVALID_REFRESH_TOKEN, "invalid refresh token")
 	errInviteInvalid      = httpx.Coded(http.StatusNotFound, v1.ErrorCode_ERROR_CODE_INVITE_INVALID, "invite is invalid, expired or used up")
 	errRegistrationClosed = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_REGISTRATION_CLOSED, "registration requires an invite")
+	// errRefreshRace: the previous refresh token was presented within the grace window
+	// right after a rotation (another tab / request won). The session is intact: retry with
+	// the current token (web: the cookie already holds it). Must not clear the cookie.
+	errRefreshRace = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_CONFLICT, "refresh token was just rotated; retry with the current one")
 )
 
 // ErrInviteInvalid is shared with the workspaces package.
@@ -323,7 +327,7 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 			if sess.PrevRefreshTokenHash != nil && sess.RotatedAt != nil &&
 				now.Sub(*sess.RotatedAt) < refreshGrace &&
 				subtle.ConstantTimeCompare(presented, sess.PrevRefreshTokenHash) == 1 {
-				return errInvalidRefresh // lost a race with a concurrent refresh; keep the session
+				return errRefreshRace // lost a race with a concurrent refresh; keep the session
 			}
 			if _, err := q.RevokeSession(ctx, sess.ID); err != nil {
 				return err
@@ -343,7 +347,7 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 			return nil
 		}
 		ttl := s.refresh
-		if user.IsGuest {
+		if user.IsGuest && user.GuestExpiresAt != nil { // promoted guests get normal sessions
 			ttl = GuestSessionTTL // renewed by activity; the account itself lives 7 days past the last refresh
 			if err := q.TouchGuest(ctx, sqlc.TouchGuestParams{ID: user.ID, GuestExpiresAt: ptrTime(now.Add(GuestInactivity))}); err != nil {
 				return err

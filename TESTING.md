@@ -434,12 +434,16 @@ curl -sI https://$D/ | grep -iE 'content-security|permissions-policy|x-content|r
 ```
 Ожидается: `/` и `/rooms/x` → 200 (`<title>Calaba`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.colaba.gptunnel.ai https://rtc.colaba.gptunnel.ai wss://rtc.colaba.gptunnel.ru https://rtc.colaba.gptunnel.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
 
-E2E против стенда (создаёт пользователя `web-<browser>-<id>@example.com` на каждом прогоне). **С 2026-09-26 стенд в `invite`-режиме — спеку нужен код приглашения** (пока спека регистрирует без него и падает на шаге регистрации; TODO клиент):
+E2E против стенда. С 2026-09-26 стенд в `invite`-режиме, поэтому спека умеет два пути:
+- **вход существующим аккаунтом** (предпочтительно, не тратит использования кода): `CALABA_WEB_LOGIN` + `CALABA_WEB_PASSWORD` (например `owner@calaba.test`; пароль в `/opt/calaba/infra/docker/.env.accounts` на стенде). Каждый прогон создаёт у аккаунта новое пространство `Web <browser>-<id>`;
+- **регистрация по коду**: `CALABA_WEB_INVITE=<код>` (код пространства `team` — в том же `.env.accounts`; 10 использований, каждый прогон тратит одно на браузер). Создаёт пользователя `web-<browser>-<id>@example.com`.
 ```sh
-CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web                        # 2 passed
-CALABA_WEB_FF_VOICE=1 CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web   # 2 passed (голос и в Firefox)
-CALABA_WEB_URL=https://colaba.gptunnel.ru pnpm -F @calaba/desktop e2e:web                        # 2 passed
+P=$(ssh root@141.105.69.177 "awk '\$1==\"owner@calaba.test\"{print \$2}' /opt/calaba/infra/docker/.env.accounts")   # строки файла: «email пароль»
+CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web   # 2 passed
+CALABA_WEB_FF_VOICE=1 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web   # 2 passed (голос и в Firefox)
+CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://colaba.gptunnel.ru pnpm -F @calaba/desktop e2e:web   # 2 passed
 ```
+Electron-E2E так же: `CALABA_LOGIN` + `CALABA_PASSWORD` или `CALABA_INVITE`, плюс `CALABA_E2E_SERVER_URL`.
 Если падает на `cookie?.httpOnly` (`undefined`) — на стенде старый api без cookie-режима: `infra/docker/sync.sh api`.
 Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve colaba.gptunnel.ai:443:141.105.69.177 https://colaba.gptunnel.ai/readyz` даёт 200 — это локальный VPN/прокси (fake-IP DNS, особые правила для `gptunnel.ai`), а не стенд. Обход для прогона: Chromium — `--host-resolver-rules=MAP colaba.gptunnel.ai 141.105.69.177 --proxy-server=direct://`, Firefox — prefs `network.proxy.type=0`, `network.dns.forceResolve=141.105.69.177` (через локальный playwright-конфиг, не в репо). Факт 2026-09-26: так `e2e:web` на `.ai` — 2 passed (Firefox с `CALABA_WEB_FF_VOICE=1`), на `.ru` — 2 passed без обхода.
 

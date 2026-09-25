@@ -36,6 +36,9 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := outranks(r, acc.WorkspaceID, target); err != nil {
+		return err
+	}
 	var req v1.MoveMemberRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
@@ -112,7 +115,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 			if ok, _ := s.voice.RemoveStream(r.Context(), srcID, sid); ok {
 				s.publishStreamStop(r.Context(), acc.WorkspaceID, srcID, target, sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
 			}
-			if _, err := s.voice.AddStream(r.Context(), dstID, sid, rec); err == nil {
+			if ok, err := s.voice.AddStream(r.Context(), dstID, sid, rec, -1); err == nil && ok {
 				s.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStreamStart{VoiceStreamStart: &v1.VoiceStreamStart{
 					WorkspaceId: acc.WorkspaceID.String(), RoomId: dstID.String(), UserId: target.String(), TrackSid: sid, Preset: rec.Preset,
 				}}})

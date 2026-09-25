@@ -22,7 +22,42 @@ type wsState struct {
 	backlog []pendingEvent // events received while loading
 	ws      *v1.Workspace
 	rooms   map[uuid.UUID]*v1.Room
+	targets map[uuid.UUID][]perm.OverrideTarget // parsed overrides per room (M13: once per change, not per check)
 	roles   map[uuid.UUID]perm.Role
+}
+
+// setRoom stores a room and its parsed overrides (mu held).
+func (s *wsState) setRoom(id uuid.UUID, r *v1.Room) {
+	if s.targets == nil {
+		s.targets = map[uuid.UUID][]perm.OverrideTarget{}
+	}
+	s.rooms[id] = r
+	s.targets[id] = pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())
+}
+
+func (s *wsState) delRoom(id uuid.UUID) {
+	delete(s.rooms, id)
+	delete(s.targets, id)
+}
+
+// coRoom reports whether a and b can both view at least one common room (mu held):
+// what a guest may see of another member (ADR-0016, security review M7).
+func (s *wsState) coRoom(a, b uuid.UUID) bool {
+	for id := range s.rooms {
+		if s.bits(id, a).Has(perm.ViewRoom) && s.bits(id, b).Has(perm.ViewRoom) {
+			return true
+		}
+	}
+	return false
+}
+
+// hiddenFrom reports whether events about subject must not reach viewer: only guests are
+// restricted, to members who share a room with them.
+func (s *wsState) hiddenFrom(viewer, subject uuid.UUID) bool {
+	if viewer == subject || s.roles[viewer] != perm.RoleGuest {
+		return false
+	}
+	return !s.coRoom(viewer, subject)
 }
 
 func loadState(ctx context.Context, q *sqlc.Queries, wid uuid.UUID) (*wsState, error) {
@@ -49,7 +84,7 @@ func loadState(ctx context.Context, q *sqlc.Queries, wid uuid.UUID) (*wsState, e
 	st := &wsState{ws: pbconv.Workspace(ws), rooms: map[uuid.UUID]*v1.Room{}, roles: map[uuid.UUID]perm.Role{}}
 	defaults := pbconv.WorkspaceDefaults(ws)
 	for _, r := range rs {
-		st.rooms[r.ID] = pbconv.Room(r, defaults, byRoom[r.ID])
+		st.setRoom(r.ID, pbconv.Room(r, defaults, byRoom[r.ID]))
 	}
 	for _, m := range roles {
 		st.roles[m.UserID] = perm.Role(m.Role)
@@ -67,7 +102,14 @@ func roomBits(room *v1.Room, role perm.Role, userID uuid.UUID) perm.Bits {
 
 // bits must be called with mu held (read).
 func (s *wsState) bits(roomID, userID uuid.UUID) perm.Bits {
-	return roomBits(s.rooms[roomID], s.roles[userID], userID)
+	role := s.roles[userID]
+	if role == "" || s.rooms[roomID] == nil {
+		return 0
+	}
+	if t, ok := s.targets[roomID]; ok {
+		return perm.ComputeIn(role, userID.String(), t)
+	}
+	return roomBits(s.rooms[roomID], role, userID)
 }
 
 func (s *wsState) canView(roomID, userID uuid.UUID) bool {

@@ -78,21 +78,17 @@ func (h *Handlers) searchWorkspace(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
+	role, err := rooms.WorkspaceRole(r, wsID) // 404 for non-members
+	if err != nil {
+		return err
+	}
 	ws, err := h.db.Q.GetWorkspace(r.Context(), wsID)
 	if err != nil {
-		return httpx.NotFound("workspace")
-	}
-	role, err := rooms.WorkspaceRole(r, wsID)
-	if err != nil {
 		return err
 	}
-	visible, err := rooms.Visible(r.Context(), h.db.Q, ws, uid(r), role)
+	ids, err := rooms.VisibleIDs(r.Context(), h.db.Q, ws, uid(r), role)
 	if err != nil {
 		return err
-	}
-	ids := make([]uuid.UUID, 0, len(visible))
-	for _, room := range visible {
-		ids = append(ids, uuid.MustParse(room.GetId()))
 	}
 	v := r.URL.Query()
 	if s := v.Get("room_id"); s != "" {

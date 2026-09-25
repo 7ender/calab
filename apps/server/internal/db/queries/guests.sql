@@ -6,6 +6,13 @@ RETURNING *;
 -- name: TouchGuest :exec
 UPDATE users SET guest_expires_at = $2 WHERE id = $1 AND is_guest AND guest_expires_at IS NOT NULL;
 
+-- name: LockExpiredGuest :one
+-- Re-checks expiry under a row lock inside the cleanup transaction (a refresh may have
+-- just extended it).
+SELECT id FROM users
+WHERE id = $1 AND is_guest AND guest_expires_at IS NOT NULL AND guest_expires_at < now() AND disabled_at IS NULL
+FOR UPDATE;
+
 -- name: ListExpiredGuests :many
 SELECT id FROM users
 WHERE is_guest AND guest_expires_at IS NOT NULL AND guest_expires_at < $1 AND disabled_at IS NULL
@@ -30,12 +37,12 @@ DELETE FROM room_permissions WHERE target_type = 'user' AND target_id = sqlc.arg
 SELECT * FROM files WHERE uploader_id = $1;
 
 -- name: UpsertUserOverride :one
--- Grants `allow` to one user in a room on top of an existing override (and lifts those denies).
+-- Grants `allow` to one user in a room on top of an existing override. Bits an admin
+-- explicitly denied to this user stay denied (a link must not lift a deny).
 INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
 VALUES (sqlc.arg('room_id'), 'user', sqlc.arg('user_id')::text, sqlc.arg('allow'), 0)
 ON CONFLICT (room_id, target_type, target_id) DO UPDATE
-    SET allow = room_permissions.allow | EXCLUDED.allow,
-        deny  = room_permissions.deny & ~EXCLUDED.allow
+    SET allow = room_permissions.allow | (EXCLUDED.allow & ~room_permissions.deny)
 RETURNING *;
 
 -- name: CreateRoomInvite :one

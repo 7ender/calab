@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -34,6 +35,11 @@ func Connect(ctx context.Context, url string) (*DB, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("db: parse url: %w", err)
+	}
+	// pgx's default (max(4, NumCPU)) is too small for IDENTIFY storms after a deploy
+	// (review L16). ?pool_max_conns=N in DATABASE_URL overrides this.
+	if !strings.Contains(url, "pool_max_conns") {
+		cfg.MaxConns = 20
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {

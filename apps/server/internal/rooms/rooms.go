@@ -46,6 +46,23 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 
 // Visible returns the workspace's rooms that userID can see (VIEW_ROOM), in display order.
 func Visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uuid.UUID, role perm.Role) ([]*v1.Room, error) {
+	return visible(ctx, q, ws, userID, role, true)
+}
+
+// VisibleIDs returns the ids of rooms userID can see (no last-message lookup).
+func VisibleIDs(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uuid.UUID, role perm.Role) ([]uuid.UUID, error) {
+	rs, err := visible(ctx, q, ws, userID, role, false)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]uuid.UUID, len(rs))
+	for i, r := range rs {
+		out[i] = uuid.MustParse(r.GetId())
+	}
+	return out, nil
+}
+
+func visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uuid.UUID, role perm.Role, withLast bool) ([]*v1.Room, error) {
 	rows, err := q.ListRooms(ctx, ws.ID)
 	if err != nil {
 		return nil, err
@@ -70,7 +87,7 @@ func Visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uui
 		out = append(out, pbconv.Room(r, defaults, ovs))
 		ids = append(ids, r.ID)
 	}
-	if len(ids) > 0 {
+	if withLast && len(ids) > 0 {
 		last, err := q.LastMessages(ctx, ids)
 		if err != nil {
 			return nil, err
@@ -431,10 +448,18 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 
 // validateOverrides checks targets and bits. A non-administrator may only allow bits
 // they hold in this room themselves (no privilege escalation through overrides).
-func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, actor perm.RoomAccess, in []*v1.RoomPermissionOverride) ([]sqlc.InsertRoomOverrideParams, error) {
+func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, actor perm.RoomAccess, existing []sqlc.RoomPermission, in []*v1.RoomPermissionOverride) ([]sqlc.InsertRoomOverrideParams, error) {
 	if len(in) > MaxOverrides {
 		return nil, httpx.Validation("overrides", "too many overrides")
 	}
+	// A non-administrator may only change what is within their own bits: they cannot add
+	// allows they lack, and cannot drop allows (set by an admin) that they lack either.
+	// Re-submitting an existing entry unchanged is always fine.
+	prev := map[string]perm.Bits{}
+	for _, e := range existing {
+		prev[e.TargetType+":"+e.TargetID] = perm.Bits(uint64(e.Allow)) //nolint:gosec // bit mask
+	}
+	admin := actor.Bits.Has(perm.Administrator)
 	seen := map[string]bool{}
 	out := make([]sqlc.InsertRoomOverrideParams, 0, len(in))
 	for i, o := range in {
@@ -473,13 +498,27 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 		if allow&deny != 0 {
 			return nil, httpx.Validation(field, "a bit cannot be both allowed and denied")
 		}
-		if !actor.Bits.Has(perm.Administrator) && allow&^actor.Bits != 0 {
-			return nil, httpx.Forbidden("cannot allow permissions you do not have")
+		if !admin {
+			old := prev[tt+":"+target]
+			if (allow&^old)&^actor.Bits != 0 {
+				return nil, httpx.Forbidden("cannot allow permissions you do not have")
+			}
+			if (old&^allow)&^actor.Bits != 0 {
+				return nil, httpx.Forbidden("cannot remove permissions you do not have")
+			}
+			delete(prev, tt+":"+target)
 		}
 		out = append(out, sqlc.InsertRoomOverrideParams{
 			TargetType: tt, TargetID: target,
 			Allow: int64(allow), Deny: int64(deny), //nolint:gosec // bits < 2^11
 		})
+	}
+	if !admin {
+		for _, old := range prev { // entries the request drops entirely
+			if old&^actor.Bits != 0 {
+				return nil, httpx.Forbidden("cannot remove permissions you do not have")
+			}
+		}
 	}
 	return out, nil
 }
@@ -495,7 +534,11 @@ func (h *Handlers) setPermissions(w http.ResponseWriter, r *http.Request) error 
 	}
 	var pb *v1.Room
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		params, err := validateOverrides(r.Context(), q, acc.WorkspaceID, acc, req.GetOverrides())
+		existing, err := q.ListRoomOverrides(r.Context(), roomID)
+		if err != nil {
+			return err
+		}
+		params, err := validateOverrides(r.Context(), q, acc.WorkspaceID, acc, existing, req.GetOverrides())
 		if err != nil {
 			return err
 		}

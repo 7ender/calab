@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"github.com/redis/rueidis"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
@@ -170,6 +171,11 @@ func (h *Hub) loop(c *conn, s *Session) {
 			}
 			return
 		}
+		if !c.allowInbound() {
+			c.closeGraceful(4008, "rate limited")
+			s.detach(c)
+			return
+		}
 		switch p := f.GetPayload().(type) {
 		case *v1.GatewayFrame_Heartbeat:
 			c.sendFrame(&v1.GatewayFrame{Payload: &v1.GatewayFrame_HeartbeatAck{HeartbeatAck: &v1.HeartbeatAck{}}})
@@ -214,35 +220,49 @@ func asessKey(asess uuid.UUID) string     { return "gw:asess:" + asess.String() 
 func typingKey(r, u uuid.UUID) string     { return "gw:typing:" + r.String() + ":" + u.String() }
 func expiryScore(d time.Duration) float64 { return float64(time.Now().Add(d).UnixMilli()) }
 
+// claimScript atomically enforces the per-user device limit and binds the auth session
+// (device) to the new gateway session (L1). Returns the previous gateway session of the
+// same device ("" if none), or false when the limit is reached.
+var claimScript = rueidis.NewLuaScript(`
+local zkey, akey = KEYS[1], KEYS[2]
+local now, expiry, max, asess, gsid, ttl = ARGV[1], ARGV[2], tonumber(ARGV[3]), ARGV[4], ARGV[5], tonumber(ARGV[6])
+redis.call('ZREMRANGEBYSCORE', zkey, '-inf', now)
+local same = redis.call('ZSCORE', zkey, asess)
+if not same and redis.call('ZCARD', zkey) >= max then return false end
+redis.call('ZADD', zkey, expiry, asess)
+redis.call('EXPIRE', zkey, ttl)
+local prev = redis.call('GET', akey)
+redis.call('SET', akey, gsid, 'EX', ttl)
+if prev and prev ~= gsid then return prev end
+return ''`)
+
+// forgetScript removes the device binding only if it still points to this gateway
+// session (a newer session of the same device must not be unbound).
+var forgetScript = rueidis.NewLuaScript(`
+if redis.call('GET', KEYS[2]) == ARGV[1] then
+  redis.call('DEL', KEYS[2])
+  redis.call('ZREM', KEYS[1], ARGV[2])
+end
+return 1`)
+
 // claimDevice enforces the per-user device limit. One auth session (device) has at most
 // one gateway session: a new IDENTIFY from the same device replaces the previous one.
 func (h *Hub) claimDevice(ctx context.Context, user, asess, gsid uuid.UUID) (bool, error) {
-	key := deviceKey(user)
-	now := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	res := h.redis.DoMulti(ctx,
-		h.redis.B().Zremrangebyscore().Key(key).Min("-inf").Max(now).Build(),
-		h.redis.B().Zscore().Key(key).Member(asess.String()).Build(),
-		h.redis.B().Zcard().Key(key).Build(),
-		h.redis.B().Get().Key(asessKey(asess)).Build())
-	for _, r := range res[:3] {
-		if err := r.Error(); err != nil && !isNil(err) {
-			return false, err
-		}
+	ttl := 2*h.cfg.HeartbeatInterval + resumeWindow
+	res := claimScript.Exec(ctx, h.redis, []string{deviceKey(user), asessKey(asess)}, []string{
+		strconv.FormatInt(time.Now().UnixMilli(), 10), strconv.FormatInt(int64(expiryScore(ttl)), 10),
+		strconv.Itoa(h.cfg.MaxSessionsPerUser), asess.String(), gsid.String(), strconv.Itoa(int(ttl.Seconds())),
+	})
+	prev, err := res.ToString()
+	if rueidis.IsRedisNil(err) {
+		return false, nil // limit reached (Lua false → nil)
 	}
-	_, scoreErr := res[1].AsFloat64()
-	sameDevice := scoreErr == nil
-	n, _ := res[2].AsInt64()
-	if !sameDevice && n >= int64(h.cfg.MaxSessionsPerUser) {
-		return false, nil
+	if err != nil {
+		return false, err
 	}
-	if prev, err := res[3].ToString(); err == nil && prev != gsid.String() {
+	if prev != "" {
 		h.kill(ctx, parseID(prev))
 	}
-	ttl := 2*h.cfg.HeartbeatInterval + resumeWindow
-	h.redis.DoMulti(ctx,
-		h.redis.B().Zadd().Key(key).ScoreMember().ScoreMember(expiryScore(ttl), asess.String()).Build(),
-		h.redis.B().Expire().Key(key).Seconds(int64(ttl.Seconds())).Build(),
-		h.redis.B().Set().Key(asessKey(asess)).Value(gsid.String()).Ex(ttl).Build())
 	return true, nil
 }
 
@@ -262,11 +282,7 @@ func (h *Hub) kill(ctx context.Context, gsid uuid.UUID) {
 }
 
 func (h *Hub) forgetDevice(ctx context.Context, s *Session) {
-	if cur, err := h.redis.Do(ctx, h.redis.B().Get().Key(asessKey(s.asess)).Build()).ToString(); err == nil && cur == s.id.String() {
-		h.redis.DoMulti(ctx,
-			h.redis.B().Del().Key(asessKey(s.asess)).Build(),
-			h.redis.B().Zrem().Key(deviceKey(s.user)).Member(s.asess.String()).Build())
-	}
+	_ = forgetScript.Exec(ctx, h.redis, []string{deviceKey(s.user), asessKey(s.asess)}, []string{s.id.String(), s.asess.String()}).Error()
 }
 
 func (h *Hub) touch(s *Session) {
@@ -323,8 +339,9 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		return nil
 	}
 	s.mu.Lock()
-	s.attachLocked(c, nil)
-	s.emit(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_Ready{Ready: ready}})
+	s.attachLocked(c)
+	s.ready = true
+	s.emit(uuid.New(), newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_Ready{Ready: ready}}))
 	s.flushPending(nil)
 	s.mu.Unlock()
 	h.publishPresence(ctx, s.user)
@@ -368,9 +385,11 @@ func (h *Hub) invalid(c *conn) {
 	c.sendFrame(&v1.GatewayFrame{Payload: &v1.GatewayFrame_InvalidSession{InvalidSession: &v1.InvalidSession{Resumable: false}}})
 }
 
-// resume re-attaches a socket to an existing session and replays missed events. On an
-// unknown / expired session it sends INVALID_SESSION{resumable:false} and returns retry=true
-// so the client can IDENTIFY on the same socket.
+// resume re-attaches a socket to an existing session and replays missed events. When
+// continuity cannot be guaranteed — unknown / expired session, owner released it on
+// shutdown, owner dead, or the handover was not confirmed — it answers
+// INVALID_SESSION{resumable:false} and returns retry=true so the client can IDENTIFY on the
+// same socket. A RESUME therefore never silently drops events (security review H1).
 func (h *Hub) resume(c *conn, req *v1.Resume) (s *Session, retry bool) {
 	id, ok := h.authenticate(c, req.GetToken())
 	if !ok {
@@ -391,15 +410,15 @@ func (h *Hub) resume(c *conn, req *v1.Resume) (s *Session, retry bool) {
 	h.mu.RLock()
 	local := h.sessions[gsid]
 	h.mu.RUnlock()
-	if local == nil {
-		local = h.takeover(ctx, gsid, meta)
-		if local == nil {
-			h.invalid(c)
-			return nil, true
-		}
+	if local != nil {
+		ok = h.replayLocal(ctx, local, c, req.GetSeq())
+	} else if local = h.takeover(ctx, gsid, meta); local != nil {
+		ok = h.replayTakenOver(ctx, local, c, req.GetSeq())
 	}
-	if !h.replay(ctx, local, c, req.GetSeq()) {
-		h.destroy(local, 0, "")
+	if local == nil || !ok {
+		if local != nil {
+			h.destroy(local, 0, "")
+		}
 		h.invalid(c)
 		return nil, true
 	}
@@ -408,86 +427,148 @@ func (h *Hub) resume(c *conn, req *v1.Resume) (s *Session, retry bool) {
 	return local, false
 }
 
-// takeover moves a session owned by another (or a dead) instance to this one.
+// takeover moves a session from another live instance to this one. It succeeds only if
+// the owner confirms the release (it has then flushed everything it dispatched into the
+// buffer); events for the session arriving here meanwhile wait in the pending queue.
 func (h *Hub) takeover(ctx context.Context, gsid uuid.UUID, meta sessMeta) *Session {
-	s := newSession(h, gsid, meta.user, meta.asess)
+	if meta.owner == "" || meta.owner == h.instance {
+		return nil // released on shutdown (or lost here): nobody buffered the gap
+	}
+	alive, err := h.redis.Do(ctx, h.redis.B().Exists().Key(instKey(meta.owner)).Build()).AsInt64()
+	if err != nil || alive == 0 {
+		return nil // owner crashed: its unflushed and later events are gone
+	}
 	wids, err := h.db.Q.ListUserWorkspaceIDs(ctx, meta.user)
 	if err != nil {
 		return nil
 	}
+	s := newSession(h, gsid, meta.user, meta.asess)
 	h.register(s, wids) // events from now on are queued (s.ready=false)
 	for _, w := range wids {
 		h.ensureState(ctx, w)
 	}
-	if meta.owner != "" && meta.owner != h.instance {
-		alive, _ := h.redis.Do(ctx, h.redis.B().Exists().Key(instKey(meta.owner)).Build()).AsInt64()
-		if alive > 0 {
-			ch := make(chan struct{})
-			h.mu.Lock()
-			h.releases[gsid] = ch
-			h.mu.Unlock()
-			h.sendControl(ctx, meta.owner, "release "+gsid.String()+" "+h.instance)
-			select {
-			case <-ch:
-			case <-time.After(3 * time.Second):
-			case <-ctx.Done():
-			}
-		}
+	ch := make(chan struct{})
+	h.mu.Lock()
+	h.releases[gsid] = ch
+	h.mu.Unlock()
+	h.sendControl(ctx, meta.owner, "release "+gsid.String()+" "+h.instance)
+	confirmed := false
+	select {
+	case <-ch:
+		confirmed = true
+	case <-time.After(3 * time.Second):
+	case <-ctx.Done():
 	}
-	if err := h.buf.setOwner(ctx, gsid, h.instance); err != nil {
-		h.unregister(s)
+	h.mu.Lock()
+	delete(h.releases, gsid)
+	h.mu.Unlock()
+	if !confirmed || h.buf.setOwner(ctx, gsid, h.instance) != nil {
+		h.abandon(s)
 		return nil
 	}
 	return s
 }
 
-// replay sends buffered events after clientSeq and attaches the socket.
-func (h *Hub) replay(ctx context.Context, s *Session, c *conn, clientSeq uint64) bool {
+// abandon forgets a session that never became usable (no Redis cleanup: another instance
+// or the TTL owns that).
+func (h *Hub) abandon(s *Session) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.dead {
+	s.dead = true
+	s.mu.Unlock()
+	h.unregister(s)
+	s.closeQueue()
+}
+
+func transcodeAll(c *conn, es []entry) ([]outMsg, bool) {
+	out := make([]outMsg, 0, len(es))
+	for _, e := range es {
+		typ, b, err := c.codec.transcode(e.frame)
+		if err != nil {
+			return nil, false
+		}
+		out = append(out, outMsg{typ: typ, data: b})
+	}
+	return out, true
+}
+
+// replayLocal resumes a session owned here without holding s.mu during Redis I/O (M2):
+// the socket is attached "held" (new events queue behind), the buffer is flushed and read,
+// and the missed frames are released ahead of the queue.
+func (h *Hub) replayLocal(ctx context.Context, s *Session, c *conn, clientSeq uint64) bool {
+	c.hold()
+	s.mu.Lock()
+	if s.dead || s.broken.Load() {
+		s.mu.Unlock()
+		c.setReplay(nil)
 		return false
 	}
-	if s.ready {
-		s.flush() // everything emitted so far is in Redis
+	upTo := s.seq
+	s.attachLocked(c)
+	s.mu.Unlock()
+
+	s.flush() // everything up to upTo is in Redis now
+	entries, err := h.buf.entries(ctx, s.id)
+	if err != nil || s.broken.Load() {
+		c.setReplay(nil)
+		return false
 	}
-	if s.broken.Load() {
+	missed, ok := since(entries, clientSeq, upTo)
+	if !ok {
+		c.setReplay(nil)
+		return false
+	}
+	kept := missed[:0]
+	for _, e := range missed {
+		if e.seq <= upTo { // later frames are already queued on the socket
+			kept = append(kept, e)
+		}
+	}
+	frames, ok := transcodeAll(c, kept)
+	if !ok {
+		c.setReplay(nil)
+		return false
+	}
+	c.setReplay(frames)
+	s.mu.Lock()
+	s.emit(uuid.New(), newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_Resumed{Resumed: &v1.Resumed{Replayed: uint32(len(kept))}}})) //nolint:gosec // ≤ 1000
+	s.mu.Unlock()
+	return true
+}
+
+// replayTakenOver finishes a takeover: the released buffer is read without locks (events
+// for the session wait in pending), then numbering continues and pending events follow.
+func (h *Hub) replayTakenOver(ctx context.Context, s *Session, c *conn, clientSeq uint64) bool {
+	meta, ok, err := h.buf.meta(ctx, s.id)
+	if err != nil || !ok {
 		return false
 	}
 	entries, err := h.buf.entries(ctx, s.id)
 	if err != nil {
 		return false
 	}
-	last := s.seq
-	if !s.ready { // taken over from another instance: continue its numbering
-		meta, ok, err := h.buf.meta(ctx, s.id)
-		if err != nil || !ok {
-			return false
-		}
-		last = meta.seq
-		s.seq = meta.seq
-	}
-	missed, ok := since(entries, clientSeq, last)
+	missed, ok := since(entries, clientSeq, meta.seq)
 	if !ok {
 		return false
 	}
-	out := make([]outMsg, 0, len(missed))
-	for _, e := range missed {
-		typ, b, err := c.codec.transcode(e.frame)
-		if err != nil {
-			return false
-		}
-		out = append(out, outMsg{typ: typ, data: b})
+	frames, ok := transcodeAll(c, missed)
+	if !ok {
+		return false
 	}
-	s.attachLocked(c, out)
-	if !s.ready {
-		skip := map[uuid.UUID]bool{}
-		for _, e := range entries {
-			skip[e.id] = true
-		}
-		s.flushPending(skip)
+	skip := make(map[uuid.UUID]bool, len(entries))
+	for _, e := range entries {
+		skip[e.id] = true
 	}
-	s.emit(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_Resumed{Resumed: &v1.Resumed{Replayed: uint32(len(missed))}}}) //nolint:gosec // ≤ 1000
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dead {
+		return false
+	}
+	s.seq = meta.seq
+	s.attachLocked(c)
+	c.setReplay(frames)
+	s.ready = true
+	s.flushPending(skip)
+	s.emit(uuid.New(), newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_Resumed{Resumed: &v1.Resumed{Replayed: uint32(len(missed))}}})) //nolint:gosec // ≤ 1000
 	return true
 }
 
@@ -499,8 +580,12 @@ func (h *Hub) setPresence(s *Session, st v1.PresenceStatus) {
 		return
 	}
 	s.mu.Lock()
+	same := s.status == st
 	s.status = st
 	s.mu.Unlock()
+	if same {
+		return // debounce: no Redis write / broadcast for a repeated status (M3)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := h.pres.set(ctx, s.user, s.id, st); err == nil {

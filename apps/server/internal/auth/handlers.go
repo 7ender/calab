@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -169,9 +170,10 @@ func (h *Handlers) refresh(w http.ResponseWriter, r *http.Request) error {
 	}
 	resp, err := h.svc.Refresh(r.Context(), &v1.RefreshRequest{RefreshToken: tok}, client(r, ""))
 	if err != nil {
-		if cookie {
+		if cookie && errors.Is(err, errInvalidRefresh) {
 			clearRefreshCookie(w) // dead token: stop the browser from resending it
 		}
+		// errRefreshRace keeps the cookie: a parallel request already stored the new token.
 		return err
 	}
 	if cookie || isWeb(r) {

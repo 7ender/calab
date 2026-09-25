@@ -123,7 +123,7 @@ func (h *Hub) onMessage(m rueidis.PubSubMessage) {
 	case strings.HasPrefix(ch, events.RevokedPrefix):
 		if sid, err := uuid.Parse(strings.TrimPrefix(ch, events.RevokedPrefix)); err == nil {
 			for _, s := range h.sessionsWhere(func(s *Session) bool { return s.asess == sid }) {
-				h.destroy(s, 4010, "session revoked")
+				go h.destroy(s, 4010, "session revoked") // Redis/DB work off the fan-out path
 			}
 		}
 		return
@@ -181,19 +181,37 @@ func (h *Hub) ofUser(uid uuid.UUID) []*Session {
 
 // ---- workspace state ----
 
-// ensureState makes sure the workspace state is loaded (or loading). Events that arrive
-// while loading are kept in a backlog and routed right after the load.
+// ensureState loads the workspace state synchronously (IDENTIFY / RESUME paths).
 func (h *Hub) ensureState(ctx context.Context, wid uuid.UUID) {
-	h.mu.Lock()
-	st := h.states[wid]
-	if st != nil {
-		h.mu.Unlock()
-		return
+	if st, created := h.placeholder(wid); created {
+		h.loadInto(ctx, st, wid)
 	}
-	st = &wsState{loading: true}
-	h.states[wid] = st
-	h.mu.Unlock()
+}
 
+// startState makes sure the state is loading without blocking the caller (fan-out path):
+// events arriving meanwhile are kept in the backlog and routed after the load.
+func (h *Hub) startState(wid uuid.UUID) {
+	if st, created := h.placeholder(wid); created {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			h.loadInto(ctx, st, wid)
+		}()
+	}
+}
+
+func (h *Hub) placeholder(wid uuid.UUID) (*wsState, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if st := h.states[wid]; st != nil {
+		return st, false
+	}
+	st := &wsState{loading: true}
+	h.states[wid] = st
+	return st, true
+}
+
+func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
 	loaded, err := loadState(ctx, h.db.Q, wid)
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -201,11 +219,11 @@ func (h *Hub) ensureState(ctx context.Context, wid uuid.UUID) {
 		slog.Error("gateway: load workspace state", "workspace", wid, "err", err)
 		loaded = &wsState{rooms: map[uuid.UUID]*v1.Room{}, roles: map[uuid.UUID]perm.Role{}}
 	}
-	st.ws, st.rooms, st.roles = loaded.ws, loaded.rooms, loaded.roles
+	st.ws, st.rooms, st.targets, st.roles = loaded.ws, loaded.rooms, loaded.targets, loaded.roles
 	for len(st.backlog) > 0 {
 		p := st.backlog[0]
 		st.backlog = st.backlog[1:]
-		h.routeLocked(st, wid, p.id, p.ev)
+		h.routeLocked(st, wid, p.id, p.enc.ev)
 	}
 	st.loading = false
 }
@@ -226,7 +244,7 @@ func (h *Hub) routeWorkspace(wid, id uuid.UUID, ev *v1.DispatchEvent) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.loading {
-		st.backlog = append(st.backlog, pendingEvent{id: id, ev: ev})
+		st.backlog = append(st.backlog, pendingEvent{id: id, enc: newEnc(ev)})
 		return
 	}
 	h.routeLocked(st, wid, id, ev)
@@ -238,11 +256,21 @@ func parseID(s string) uuid.UUID {
 }
 
 // routeLocked applies ev to the workspace state and delivers it to each local session as
-// that recipient should see it. st.mu is held (write).
+// that recipient should see it. st.mu is held (write). The event is encoded once and shared
+// by all recipients that get it unchanged.
 func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) {
 	sessions := h.inWorkspace(wid)
+	shared := newEnc(ev)
 	view := func(rid, uid uuid.UUID) bool { return st.bits(rid, uid).Has(perm.ViewRoom) }
-	roomChange := func(rid uuid.UUID, apply func(), changed func(room *v1.Room) *v1.DispatchEvent) {
+	// about(subject): deliver to everyone except guests who share no room with subject.
+	about := func(subject uuid.UUID) {
+		for _, s := range sessions {
+			if !st.hiddenFrom(s.user, subject) {
+				s.dispatchEnc(id, shared)
+			}
+		}
+	}
+	roomChange := func(rid uuid.UUID, apply func(), changed func() *v1.DispatchEvent) {
 		before := make(map[*Session]bool, len(sessions))
 		for _, s := range sessions {
 			before[s] = view(rid, s.user)
@@ -251,7 +279,11 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		room := st.rooms[rid]
 		for _, s := range sessions {
 			after := room != nil && view(rid, s.user)
-			if out := transition(before[s], after, changed(room), room, wid, rid); out != nil {
+			switch out := transition(before[s], after, changed(), room, wid, rid); out {
+			case nil:
+			case ev:
+				s.dispatchEnc(id, shared)
+			default:
 				s.dispatch(id, out)
 			}
 		}
@@ -266,22 +298,18 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			r = ev.GetRoomUpdate().GetRoom()
 		}
 		rid := parseID(r.GetId())
-		roomChange(rid, func() { st.rooms[rid] = r }, func(*v1.Room) *v1.DispatchEvent { return ev })
+		roomChange(rid, func() { st.setRoom(rid, r) }, func() *v1.DispatchEvent { return ev })
 	case *v1.DispatchEvent_RoomPermissionsUpdate:
 		rid := parseID(e.RoomPermissionsUpdate.GetRoomId())
 		if st.rooms[rid] == nil {
 			return
 		}
-		roomChange(rid, func() { st.rooms[rid] = withPermissions(st.rooms[rid], e.RoomPermissionsUpdate.GetPermissions()) },
-			func(*v1.Room) *v1.DispatchEvent { return ev })
+		roomChange(rid, func() { st.setRoom(rid, withPermissions(st.rooms[rid], e.RoomPermissionsUpdate.GetPermissions())) },
+			func() *v1.DispatchEvent { return ev })
 	case *v1.DispatchEvent_RoomDelete:
 		rid := parseID(e.RoomDelete.GetRoomId())
-		for _, s := range sessions {
-			if view(rid, s.user) {
-				s.dispatch(id, ev)
-			}
-		}
-		delete(st.rooms, rid)
+		h.toViewers(sessions, view, rid, id, shared)
+		st.delRoom(rid)
 	case *v1.DispatchEvent_MessageCreate, *v1.DispatchEvent_MessageUpdate:
 		var m *v1.Message
 		if mc := ev.GetMessageCreate(); mc != nil {
@@ -289,40 +317,49 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		} else {
 			m = ev.GetMessageUpdate().GetMessage()
 		}
-		h.toViewers(sessions, view, parseID(m.GetRoomId()), id, ev)
+		h.toViewers(sessions, view, parseID(m.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_MessageDelete:
-		h.toViewers(sessions, view, parseID(e.MessageDelete.GetRoomId()), id, ev)
+		h.toViewers(sessions, view, parseID(e.MessageDelete.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_MessageReactionAdd:
-		h.toViewers(sessions, view, parseID(e.MessageReactionAdd.GetRoomId()), id, ev)
+		h.toViewers(sessions, view, parseID(e.MessageReactionAdd.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_MessageReactionRemove:
-		h.toViewers(sessions, view, parseID(e.MessageReactionRemove.GetRoomId()), id, ev)
+		h.toViewers(sessions, view, parseID(e.MessageReactionRemove.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_VoiceStreamStart:
-		h.toViewers(sessions, view, parseID(e.VoiceStreamStart.GetRoomId()), id, ev)
+		h.toViewers(sessions, view, parseID(e.VoiceStreamStart.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_VoiceStreamStop:
-		h.toViewers(sessions, view, parseID(e.VoiceStreamStop.GetRoomId()), id, ev)
+		h.toViewers(sessions, view, parseID(e.VoiceStreamStop.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_TypingStart:
 		rid, typer := parseID(e.TypingStart.GetRoomId()), parseID(e.TypingStart.GetUserId())
 		for _, s := range sessions {
 			if s.user != typer && view(rid, s.user) && s.isSubscribed(rid) {
-				s.dispatch(id, ev)
+				s.dispatchEnc(id, shared)
 			}
 		}
 	case *v1.DispatchEvent_VoiceStateUpdate:
+		subject := parseID(e.VoiceStateUpdate.GetState().GetUserId())
 		for _, s := range sessions {
+			if st.hiddenFrom(s.user, subject) {
+				continue
+			}
 			uid := s.user
 			vs := sanitizeVoice(e.VoiceStateUpdate.GetState(), func(rid uuid.UUID) bool { return view(rid, uid) })
 			if vs == e.VoiceStateUpdate.GetState() {
-				s.dispatch(id, ev)
+				s.dispatchEnc(id, shared)
 			} else {
 				s.dispatch(id, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStateUpdate{VoiceStateUpdate: &v1.VoiceStateUpdate{State: vs}}})
 			}
 		}
+	case *v1.DispatchEvent_PresenceUpdate:
+		about(parseID(e.PresenceUpdate.GetPresence().GetUserId()))
+	case *v1.DispatchEvent_UserUpdate:
+		about(parseID(e.UserUpdate.GetUser().GetId()))
 	case *v1.DispatchEvent_WorkspaceMemberAdd:
 		m := e.WorkspaceMemberAdd.GetMember()
+		uid := parseID(m.GetUser().GetId())
 		if r, ok := perm.RoleFromProto(m.GetRole()); ok {
-			st.roles[parseID(m.GetUser().GetId())] = r
+			st.roles[uid] = r
 		}
-		h.toAll(sessions, id, ev)
+		about(uid)
 	case *v1.DispatchEvent_WorkspaceMemberUpdate:
 		m := e.WorkspaceMemberUpdate.GetMember()
 		uid := parseID(m.GetUser().GetId())
@@ -333,7 +370,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		if r, ok := perm.RoleFromProto(m.GetRole()); ok {
 			st.roles[uid] = r
 		}
-		h.toAll(sessions, id, ev)
+		about(uid)
 		// The member's own sessions see rooms appear / disappear with the role change.
 		for _, s := range sessions {
 			if s.user != uid {
@@ -347,35 +384,35 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		}
 	case *v1.DispatchEvent_WorkspaceMemberRemove:
 		uid := parseID(e.WorkspaceMemberRemove.GetUserId())
-		delete(st.roles, uid)
 		for _, s := range sessions {
-			if s.user != uid {
-				s.dispatch(id, ev)
+			if s.user != uid && !st.hiddenFrom(s.user, uid) {
+				s.dispatchEnc(id, shared)
 			}
 		}
+		delete(st.roles, uid)
 	case *v1.DispatchEvent_WorkspaceUpdate:
 		st.ws = e.WorkspaceUpdate.GetWorkspace()
-		h.toAll(sessions, id, ev)
+		h.toAll(sessions, id, shared)
 	case *v1.DispatchEvent_WorkspaceDelete:
-		h.toAll(sessions, id, ev)
+		h.toAll(sessions, id, shared)
 		for _, s := range sessions {
 			h.leaveWorkspace(s, wid)
 		}
-	default: // presence, other workspace-wide events
-		h.toAll(sessions, id, ev)
+	default: // categories and other workspace-wide events
+		h.toAll(sessions, id, shared)
 	}
 }
 
-func (h *Hub) toAll(sessions []*Session, id uuid.UUID, ev *v1.DispatchEvent) {
+func (h *Hub) toAll(sessions []*Session, id uuid.UUID, enc *encEvent) {
 	for _, s := range sessions {
-		s.dispatch(id, ev)
+		s.dispatchEnc(id, enc)
 	}
 }
 
-func (h *Hub) toViewers(sessions []*Session, view func(rid, uid uuid.UUID) bool, rid, id uuid.UUID, ev *v1.DispatchEvent) {
+func (h *Hub) toViewers(sessions []*Session, view func(rid, uid uuid.UUID) bool, rid, id uuid.UUID, enc *encEvent) {
 	for _, s := range sessions {
 		if view(rid, s.user) {
-			s.dispatch(id, ev)
+			s.dispatchEnc(id, enc)
 		}
 	}
 }
@@ -387,15 +424,27 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 	}
 	switch e := ev.GetEvent().(type) {
 	case *v1.DispatchEvent_WorkspaceCreate:
+		// Filling the snapshot needs Redis and loading the state needs Postgres: neither may
+		// run on the fan-out path (M2). The user's sessions pause, so events that follow
+		// keep their order behind the snapshot.
 		snap := e.WorkspaceCreate.GetSnapshot()
 		wid := parseID(snap.GetWorkspace().GetId())
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		h.fillLive(ctx, wid, snap)
-		for _, s := range sessions {
+		markers := make([]int, len(sessions))
+		for i, s := range sessions {
 			h.joinWorkspace(s, wid)
+			markers[i] = s.pause()
 		}
-		h.ensureState(ctx, wid)
+		h.startState(wid)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			h.fillLive(ctx, wid, snap)
+			enc := newEnc(ev)
+			for i, s := range sessions {
+				s.resume(markers[i], id, enc)
+			}
+		}()
+		return
 	case *v1.DispatchEvent_WorkspaceDelete:
 		wid := parseID(e.WorkspaceDelete.GetWorkspaceId())
 		defer func() {
@@ -404,21 +453,22 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 			}
 		}()
 	}
+	enc := newEnc(ev)
 	for _, s := range sessions {
-		s.dispatch(id, ev)
+		s.dispatchEnc(id, enc)
 	}
 }
 
-// fillLive adds Redis-backed parts (voice states, presences) to a snapshot.
+// fillLive adds Redis-backed parts (voice states, presences, call start times) to a
+// snapshot. Only members listed in the snapshot are included (guests see a filtered list).
 func (h *Hub) fillLive(ctx context.Context, wid uuid.UUID, snap *v1.WorkspaceSnapshot) {
 	visible := map[uuid.UUID]bool{}
-	for _, r := range snap.GetRooms() {
-		visible[parseID(r.GetId())] = true
-	}
 	var voiceRooms []uuid.UUID
 	for _, r := range snap.GetRooms() {
+		id := parseID(r.GetId())
+		visible[id] = true
 		if r.GetType() == v1.RoomType_ROOM_TYPE_VOICE {
-			voiceRooms = append(voiceRooms, parseID(r.GetId()))
+			voiceRooms = append(voiceRooms, id)
 		}
 	}
 	if started, err := h.voice.StartedAt(ctx, voiceRooms); err == nil {
@@ -428,15 +478,19 @@ func (h *Hub) fillLive(ctx context.Context, wid uuid.UUID, snap *v1.WorkspaceSna
 			}
 		}
 	}
+	members := map[string]bool{}
+	users := make([]uuid.UUID, 0, len(snap.GetMembers()))
+	for _, m := range snap.GetMembers() {
+		members[m.GetUser().GetId()] = true
+		users = append(users, parseID(m.GetUser().GetId()))
+	}
 	if states, err := h.voice.List(ctx, wid); err == nil {
 		snap.VoiceStates = nil
 		for _, vs := range voice.AggregateAll(wid, states) {
-			snap.VoiceStates = append(snap.VoiceStates, sanitizeVoice(vs, func(rid uuid.UUID) bool { return visible[rid] }))
+			if members[vs.GetUserId()] {
+				snap.VoiceStates = append(snap.VoiceStates, sanitizeVoice(vs, func(rid uuid.UUID) bool { return visible[rid] }))
+			}
 		}
-	}
-	users := make([]uuid.UUID, 0, len(snap.GetMembers()))
-	for _, m := range snap.GetMembers() {
-		users = append(users, parseID(m.GetUser().GetId()))
 	}
 	if pres, err := h.pres.get(ctx, users); err == nil {
 		snap.Presences = nil
@@ -539,7 +593,7 @@ func (h *Hub) destroy(s *Session, code int, why string) {
 		}
 	}
 	h.unregister(s)
-	close(s.wq)
+	s.closeQueue()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	h.buf.drop(ctx, s.id)
@@ -637,7 +691,7 @@ func (h *Hub) onControl(msg string) {
 		h.mu.RUnlock()
 		go func() {
 			if s != nil {
-				h.release(s, "resumed elsewhere")
+				h.release(s, "resumed elsewhere", false)
 			}
 			if len(f) > 2 {
 				h.sendControl(context.Background(), f[2], "released "+gsid.String())
@@ -662,8 +716,9 @@ func (h *Hub) onControl(msg string) {
 }
 
 // release hands a session over to another instance: stop dispatching, flush the buffer,
-// forget it locally without touching Redis state.
-func (h *Hub) release(s *Session, why string) {
+// forget it locally without touching Redis state. graceful lets already queued frames
+// (e.g. RECONNECT) reach the client before the close.
+func (h *Hub) release(s *Session, why string, graceful bool) {
 	s.mu.Lock()
 	if s.dead {
 		s.mu.Unlock()
@@ -678,15 +733,20 @@ func (h *Hub) release(s *Session, why string) {
 	s.mu.Unlock()
 	if c != nil {
 		h.sockets(-1)
-		c.closeNow(4000, why)
+		if graceful {
+			c.closeGraceful(4000, why)
+		} else {
+			c.closeNow(4000, why)
+		}
 	}
 	h.unregister(s)
 	s.flush()
-	close(s.wq)
+	s.closeQueue()
 }
 
 // Shutdown asks every client to reconnect (spread over cfg.ShutdownSpread to avoid a
-// thundering herd) and hands sessions off so that any instance can resume them.
+// thundering herd). Events published after a session is released are not buffered by
+// anyone, so its RESUME gets INVALID_SESSION and the client re-IDENTIFYs (no silent loss).
 func (h *Hub) Shutdown(ctx context.Context) {
 	h.closing.Store(true)
 	all := h.sessionsWhere(func(*Session) bool { return true })
@@ -709,7 +769,9 @@ func (h *Hub) Shutdown(ctx context.Context) {
 			if c != nil {
 				c.sendFrame(&v1.GatewayFrame{Payload: &v1.GatewayFrame_Reconnect{Reconnect: &v1.Reconnect{}}})
 			}
-			h.release(s, "server restart")
+			h.release(s, "server restart", true)
+			// Owner "" = released without a successor: nobody buffers this session's events
+			// any more, so a RESUME elsewhere is answered with INVALID_SESSION (H1).
 			_ = h.buf.setOwner(context.WithoutCancel(ctx), s.id, "")
 		}()
 	}

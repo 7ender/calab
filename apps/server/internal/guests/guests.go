@@ -413,8 +413,11 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 		sessions []uuid.UUID
 	)
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
-		ok, err := q.TryAdvisoryXactLock(ctx, "calaba.guests.cleanup:"+uid.String())
-		if err != nil || !ok {
+		// Row lock + re-check: a refresh may have extended the guest since the listing.
+		if _, err := q.LockExpiredGuest(ctx, uid); err != nil {
+			if db.IsNotFound(err) {
+				return errNotExpired
+			}
 			return err
 		}
 		files, err := q.ListUserFiles(ctx, uid)
@@ -422,8 +425,12 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 			return err
 		}
 		for _, f := range files {
-			if _, err := q.DeleteFile(ctx, f.ID); err != nil {
+			n, err := q.DeleteFile(ctx, f.ID)
+			if err != nil {
 				return err
+			}
+			if n == 0 {
+				continue // removed concurrently (orphan cleanup): its quota is already released
 			}
 			if f.WorkspaceID != nil {
 				if err := q.ReleaseQuota(ctx, sqlc.ReleaseQuotaParams{ID: *f.WorkspaceID, Size: f.Size}); err != nil {
@@ -443,6 +450,9 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 		}
 		return q.AnonymizeGuest(ctx, uid)
 	})
+	if errors.Is(err, errNotExpired) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -462,6 +472,8 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 	}
 	return nil
 }
+
+var errNotExpired = errors.New("guests: no longer expired")
 
 // RunCleanup runs Cleanup every interval until ctx is done.
 func (s *Service) RunCleanup(ctx context.Context, interval time.Duration) {

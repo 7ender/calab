@@ -35,6 +35,7 @@ import (
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/profile"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // MaxAvatarBytes caps avatar uploads (they are user-scoped and not quota-counted).
@@ -49,8 +50,16 @@ type Service struct {
 	store    blob.Store
 	events   events.Publisher
 	maxBytes int64
-	maxTotal int64 // server-wide cap on stored bytes (STORAGE_MAX_TOTAL_BYTES)
+	maxTotal int64               // server-wide cap on stored bytes (STORAGE_MAX_TOTAL_BYTES)
+	limiter  *redisx.RateLimiter // uploads per user
 }
+
+// MaxUnattachedBytes caps what one user may keep uploaded-but-not-attached in a workspace,
+// so that nobody (e.g. a guest) can occupy the quota with orphans until the 24 h cleanup.
+const MaxUnattachedBytes = 1 << 30
+
+// SetLimiter sets the per-user upload rate limiter.
+func (s *Service) SetLimiter(l *redisx.RateLimiter) { s.limiter = l }
 
 // NewService creates the files service; maxBytes is MAX_FILE_SIZE_MB in bytes, maxTotal the
 // server-wide storage cap.
@@ -280,7 +289,29 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
-	// ATTACH_FILES is checked per room when the file is attached to a message.
+	// Uploads are only useful to attach: require ATTACH_FILES in at least one room (it is
+	// checked again per room when attaching).
+	uid := auth.MustFromContext(r.Context()).UserID
+	can, err := s.canAttachSomewhere(r.Context(), wsID, uid)
+	if err != nil {
+		return err
+	}
+	if !can {
+		return httpx.Forbidden("ATTACH_FILES required")
+	}
+	if s.limiter != nil {
+		if err := s.limiter.Take(r.Context(), uid.String()); err != nil {
+			return err
+		}
+	}
+	pending, err := s.db.Q.UnattachedBytesByUploader(r.Context(), sqlc.UnattachedBytesByUploaderParams{UploaderID: uid, WorkspaceID: &wsID})
+	if err != nil {
+		return err
+	}
+	if pending+max(r.ContentLength, 0) > MaxUnattachedBytes {
+		return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED,
+			"too many uploaded files are not attached to messages yet")
+	}
 	ws, err := s.db.Q.GetWorkspace(r.Context(), wsID)
 	if err != nil {
 		return err
@@ -312,6 +343,35 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.Write(w, http.StatusCreated, &v1.UploadFileResponse{File: pbconv.File(f)})
 	return nil
+}
+
+// canAttachSomewhere reports whether the user has ATTACH_FILES in any room of the workspace.
+func (s *Service) canAttachSomewhere(ctx context.Context, wsID, uid uuid.UUID) (bool, error) {
+	role, err := perm.FromContext(ctx).Role(ctx, wsID, uid)
+	if err != nil {
+		return false, err
+	}
+	if perm.Workspace(role).Has(perm.AttachFiles) {
+		return true, nil
+	}
+	rooms, err := s.db.Q.ListRooms(ctx, wsID)
+	if err != nil {
+		return false, err
+	}
+	ovs, err := s.db.Q.ListWorkspaceRoomOverrides(ctx, wsID)
+	if err != nil {
+		return false, err
+	}
+	byRoom := map[uuid.UUID][]sqlc.RoomPermission{}
+	for _, o := range ovs {
+		byRoom[o.RoomID] = append(byRoom[o.RoomID], o)
+	}
+	for _, room := range rooms {
+		if perm.ComputeIn(role, uid.String(), pbconv.OverrideTargets(byRoom[room.ID])).Has(perm.ViewRoom | perm.AttachFiles) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *Service) row(st *stored, wsID *uuid.UUID, uploader uuid.UUID) sqlc.InsertFileParams {

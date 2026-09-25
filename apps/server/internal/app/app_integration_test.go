@@ -518,8 +518,8 @@ func TestRefreshRotationAndReuseDetection(t *testing.T) {
 		t.Fatalf("second refresh: %d", st)
 	}
 	// Previous token inside the grace window: rejected, session kept.
-	if _, st := refresh(t1.GetRefreshToken()); st != 401 {
-		t.Fatalf("previous token: %d, want 401", st)
+	if _, st := refresh(t1.GetRefreshToken()); st != 409 { // lost a race: retry with the current token
+		t.Fatalf("previous token: %d, want 409", st)
 	}
 	t3, st := refresh(t2.GetRefreshToken())
 	if st != 200 {

@@ -113,7 +113,7 @@ func (p presenceStore) get(ctx context.Context, users []uuid.UUID) (map[uuid.UUI
 // changed stores the aggregate and reports whether it differs from the last published one.
 func (p presenceStore) changed(ctx context.Context, pr *v1.Presence) (bool, error) {
 	u, _ := uuid.Parse(pr.GetUserId())
-	prev, err := p.c.Do(ctx, p.c.B().Getset().Key(presLastKey(u)).Value(strconv.Itoa(int(pr.GetStatus()))).Build()).ToString()
+	prev, err := p.c.Do(ctx, p.c.B().Set().Key(presLastKey(u)).Value(strconv.Itoa(int(pr.GetStatus()))).Get().Ex(30*24*time.Hour).Build()).ToString()
 	if err != nil && !rueidis.IsRedisNil(err) {
 		return false, err
 	}

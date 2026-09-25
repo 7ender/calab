@@ -127,9 +127,17 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uu
 	if err != nil {
 		return nil, err
 	}
-	members := make([]*v1.WorkspaceMember, len(ms))
-	for i, m := range ms {
-		members[i] = pbconv.Member(m.WorkspaceMember, m.User)
+	var allowed map[uuid.UUID]bool
+	if role == perm.RoleGuest {
+		if allowed, err = guestVisibleUsers(ctx, q, ws.ID, userID); err != nil {
+			return nil, err
+		}
+	}
+	members := make([]*v1.WorkspaceMember, 0, len(ms))
+	for _, m := range ms {
+		if allowed == nil || allowed[m.User.ID] {
+			members = append(members, pbconv.Member(m.WorkspaceMember, m.User))
+		}
 	}
 	bits := make(map[string]uint64, len(rs))
 	for _, r := range rs {
@@ -406,11 +414,18 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 	if role != perm.RoleOwner {
 		return httpx.Forbidden("only the owner can delete a workspace")
 	}
-	keys, err := h.db.Q.ListWorkspaceFileKeys(r.Context(), &wsID)
-	if err != nil {
+	var keys []sqlc.ListWorkspaceFileKeysRow
+	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		// Keys and deletion in one transaction: an upload committed in between would
+		// otherwise leave its blob behind (uploads after the delete fail on the FK).
+		var err error
+		if keys, err = q.ListWorkspaceFileKeys(r.Context(), &wsID); err != nil {
+			return err
+		}
+		_, err = q.DeleteWorkspace(r.Context(), wsID)
 		return err
-	}
-	if _, err := h.db.Q.DeleteWorkspace(r.Context(), wsID); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 	if h.store != nil { // rows cascaded; remove the bytes
@@ -502,6 +517,9 @@ func (h *Handlers) getInvite(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
+	if err := h.notGuestAccount(r); err != nil { // guests only use room links (ADR-0016)
+		return err
+	}
 	code := r.PathValue("code")
 	var (
 		ws    sqlc.Workspace
@@ -629,7 +647,7 @@ func (h *Handlers) deleteInvite(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) listMembers(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, _, err := access(r)
+	wsID, _, role, err := access(r)
 	if err != nil {
 		return err
 	}
@@ -637,12 +655,54 @@ func (h *Handlers) listMembers(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := &v1.ListMembersResponse{Members: make([]*v1.WorkspaceMember, len(rows))}
-	for i, m := range rows {
-		out.Members[i] = pbconv.Member(m.WorkspaceMember, m.User)
+	var allowed map[uuid.UUID]bool
+	if role == perm.RoleGuest {
+		if allowed, err = guestVisibleUsers(r.Context(), h.db.Q, wsID, uid(r)); err != nil {
+			return err
+		}
+	}
+	out := &v1.ListMembersResponse{Members: make([]*v1.WorkspaceMember, 0, len(rows))}
+	for _, m := range rows {
+		if allowed == nil || allowed[m.User.ID] {
+			out.Members = append(out.Members, pbconv.Member(m.WorkspaceMember, m.User))
+		}
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
+}
+
+// guestVisibleUsers is what a guest may see of a workspace (ADR-0016): the members who can
+// view at least one of the rooms the guest can view (the guest included).
+func guestVisibleUsers(ctx context.Context, q *sqlc.Queries, wsID, guest uuid.UUID) (map[uuid.UUID]bool, error) {
+	roles, err := q.ListMemberRoles(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	ovRows, err := q.ListWorkspaceRoomOverrides(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	byRoom := map[uuid.UUID][]perm.OverrideTarget{}
+	for _, o := range ovRows {
+		byRoom[o.RoomID] = append(byRoom[o.RoomID], pbconv.OverrideTargets([]sqlc.RoomPermission{o})...)
+	}
+	rs, err := q.ListRooms(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[uuid.UUID]bool{guest: true}
+	for _, room := range rs {
+		ovs := byRoom[room.ID]
+		if !perm.ComputeIn(perm.RoleGuest, guest.String(), ovs).Has(perm.ViewRoom) {
+			continue
+		}
+		for _, m := range roles {
+			if perm.ComputeIn(perm.Role(m.Role), m.UserID.String(), ovs).Has(perm.ViewRoom) {
+				out[m.UserID] = true
+			}
+		}
+	}
+	return out, nil
 }
 
 // targetUser resolves the {userId} path value; "@me" is the caller.
@@ -707,6 +767,9 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Forbidden("ownership cannot be changed here")
 		case (newRole == perm.RoleAdmin || perm.Role(cur.Role) == perm.RoleAdmin) && actorRole != perm.RoleOwner:
 			return httpx.Forbidden("only the owner can grant or revoke admin")
+		case perm.Role(cur.Role) == perm.RoleGuest && newRole != perm.RoleGuest:
+			// Promotion also keeps guest accounts from being cleaned up: one path only.
+			return httpx.Validation("role", "use POST …/members/{userId}/promote to make a guest a member")
 		}
 		s := string(newRole)
 		p.Role = &s
@@ -769,7 +832,7 @@ func (h *Handlers) removeMember(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	perm.FromContext(r.Context()).Invalidate()
-	// TODO(rtc stage): RemoveParticipant for the user's LiveKit identities in this workspace.
+	// LiveKit participants of the removed user are disconnected by rtc.SyncPublisher.
 	h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
 		WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: wsID.String(), UserId: target.String()},
 	}})

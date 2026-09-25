@@ -15,6 +15,7 @@ package voice
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -187,9 +188,51 @@ type Change struct {
 // Changed reports whether the aggregate changed (i.e. VOICE_STATE_UPDATE is due).
 func (c Change) Changed() bool { return !Equal(c.Before, c.After) }
 
+var errLockTimeout = errors.New("voice: workspace lock timeout")
+
+// unlockScript deletes the lock only if we still own it.
+var unlockScript = rueidis.NewLuaScript(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`)
+
+// WithLock runs fn holding the workspace's voice lock: all read-modify-write of voice
+// state (and checks that must be atomic with it, like user_limit) happen under it.
+func (s Store) WithLock(ctx context.Context, wid uuid.UUID, fn func() error) error {
+	key, token := "voice:lock:"+wid.String(), uuid.NewString()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		err := s.C.Do(ctx, s.C.B().Set().Key(key).Value(token).Nx().Px(5*time.Second).Build()).Error()
+		if err == nil {
+			break
+		}
+		if !rueidis.IsRedisNil(err) {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return errLockTimeout
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	defer unlockScript.Exec(context.WithoutCancel(ctx), s.C, []string{key}, []string{token})
+	return fn()
+}
+
 // Update applies fn to the session's state (nil = absent; returning nil removes it) and
-// returns the user's aggregate before/after.
+// returns the user's aggregate before/after. Atomic per workspace (WithLock).
 func (s Store) Update(ctx context.Context, wid, userID, sessionID uuid.UUID, fn func(cur *SessionState) *SessionState) (Change, error) {
+	var c Change
+	err := s.WithLock(ctx, wid, func() error {
+		var err error
+		c, err = s.UpdateLocked(ctx, wid, userID, sessionID, fn)
+		return err
+	})
+	return c, err
+}
+
+// UpdateLocked is Update for callers already inside WithLock.
+func (s Store) UpdateLocked(ctx context.Context, wid, userID, sessionID uuid.UUID, fn func(cur *SessionState) *SessionState) (Change, error) {
 	all, err := s.List(ctx, wid)
 	if err != nil {
 		return Change{}, err
@@ -281,6 +324,17 @@ func (s Store) StartedAt(ctx context.Context, rids []uuid.UUID) (map[uuid.UUID]t
 	return out, nil
 }
 
+// Forget removes a workspace from the reconcile set if it has no voice state.
+func (s Store) Forget(ctx context.Context, wid uuid.UUID) error {
+	return s.WithLock(ctx, wid, func() error {
+		n, err := s.C.Do(ctx, s.C.B().Hlen().Key(wsKey(wid)).Build()).AsInt64()
+		if err != nil || n > 0 {
+			return err
+		}
+		return s.C.Do(ctx, s.C.B().Srem().Key(workspacesKey).Member(wid.String()).Build()).Error()
+	})
+}
+
 // Location returns where a device session is connected (ok=false if not in voice).
 func (s Store) Location(ctx context.Context, sessionID uuid.UUID) (wid, rid uuid.UUID, ok bool, err error) {
 	v, err := s.C.Do(ctx, s.C.B().Get().Key(sessKey(sessionID)).Build()).ToString()
@@ -312,16 +366,20 @@ func (s Store) Streams(ctx context.Context, rid uuid.UUID) (map[string]Stream, e
 	return out, nil
 }
 
-// AddStream records a stream and returns the number of streams in the room after adding.
-func (s Store) AddStream(ctx context.Context, rid uuid.UUID, trackSID string, st Stream) (int64, error) {
+// addStream atomically records a stream unless the room already has `max` other streams.
+var addStream = rueidis.NewLuaScript(`
+if redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1 then return 1 end
+local max = tonumber(ARGV[3])
+if max >= 0 and redis.call('HLEN', KEYS[1]) >= max then return 0 end
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+return 1`)
+
+// AddStream records a stream if the room has fewer than limit streams (limit < 0: none).
+// Check and insert are one atomic step, so two concurrent streams cannot both pass.
+func (s Store) AddStream(ctx context.Context, rid uuid.UUID, trackSID string, st Stream, limit int) (bool, error) {
 	b, _ := json.Marshal(st)
-	res := s.C.DoMulti(ctx,
-		s.C.B().Hset().Key(streamsKey(rid)).FieldValue().FieldValue(trackSID, string(b)).Build(),
-		s.C.B().Hlen().Key(streamsKey(rid)).Build())
-	if err := res[0].Error(); err != nil {
-		return 0, err
-	}
-	return res[1].AsInt64()
+	n, err := addStream.Exec(ctx, s.C, []string{streamsKey(rid)}, []string{trackSID, string(b), strconv.Itoa(limit)}).AsInt64()
+	return n == 1, err
 }
 
 // RemoveStream deletes a stream; ok=false if it was not recorded.

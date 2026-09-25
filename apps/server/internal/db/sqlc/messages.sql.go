@@ -159,10 +159,14 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 }
 
 const lastMessages = `-- name: LastMessages :many
-SELECT DISTINCT ON (room_id) room_id, id, created_at
-FROM messages
-WHERE room_id = ANY($1::uuid[]) AND deleted_at IS NULL
-ORDER BY room_id, id DESC
+SELECT r.id::uuid AS room_id, lm.id, lm.created_at
+FROM unnest($1::uuid[]) AS r(id)
+CROSS JOIN LATERAL (
+    SELECT m.id, m.created_at FROM messages m
+    WHERE m.room_id = r.id AND m.deleted_at IS NULL
+    ORDER BY m.id DESC
+    LIMIT 1
+) lm
 `
 
 type LastMessagesRow struct {
@@ -171,7 +175,8 @@ type LastMessagesRow struct {
 	CreatedAt time.Time
 }
 
-// Newest live message per room (uses messages_room_id_id_idx).
+// Newest live message per room: one backwards index probe per room (LATERAL … LIMIT 1),
+// independent of history size.
 func (q *Queries) LastMessages(ctx context.Context, roomIds []uuid.UUID) ([]LastMessagesRow, error) {
 	rows, err := q.db.Query(ctx, lastMessages, roomIds)
 	if err != nil {
