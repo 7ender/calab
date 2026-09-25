@@ -41,6 +41,10 @@ message_attachments message_id, file_id (UNIQUE — файл прикреплё�
 files               id, workspace_id? (NULL — файл пользователя: аватар), uploader_id, key, thumbnail_key?, name,
                     mime, size, width?, height?, sha256, created_at
 read_states         user_id, room_id, last_read_message_id      PK (user_id, room_id)
+room_categories     id, workspace_id, name, position            (rooms.category_id → ON DELETE SET NULL)
+message_reactions   message_id, emoji, user_id, created_at      PK (message_id, emoji, user_id)
+                    messages += pinned_at?, pinned_by?;  users += status_emoji, status_expires_at?
+                    поиск: GIN по выражению to_tsvector('russian', content) || to_tsvector('simple', content)
 
 voice_states        (не в Postgres — в Redis, источник LiveKit webhooks)
                     ключ — сессия (LiveKit identity = <user_id>:<session_id>):

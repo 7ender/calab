@@ -19,3 +19,4 @@
 | [0013](0013-livekit-minimal-client.md) | Свой минимальный клиент LiveKit (twirp JSON + JWT) вместо server-sdk-go / livekit/protocol | принято, уточняет 0009 |
 | [0014](0014-vad-no-track-mute.md) | VAD/PTT глушат звук тишиной, `track.mute()` только для явного mute/deafen | принято, уточняет 0004 |
 | [0015](0015-web-client.md) | Веб-клиент из того же renderer через слой `platform`; статика на app.* через Caddy; cookie-refresh | принято |
+| [0016](0016-guest-access.md) | Гостевой доступ в комнату по ссылке: гостевые пользователи без регистрации, room_invites | принято |

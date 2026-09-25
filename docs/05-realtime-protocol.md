@@ -75,6 +75,8 @@ READ_STATE_UPDATE
 USER_UPDATE                   { me } — своим устройствам (профиль, email, настройки);
                               { user } — участникам всех workspace пользователя (публичный профиль: имя, статус, аватар)
 RESUMED                       { replayed }  — после успешного RESUME
+CATEGORY_CREATE / UPDATE / DELETE
+MESSAGE_REACTION_ADD / REMOVE { workspace_id, room_id, message_id, user_id, emoji }
 ```
 
 Фильтрация по получателю (выполняет gateway, без запросов в БД — у инстанса кэш комнат и ролей каждого workspace, обновляемый самими событиями):
@@ -195,6 +197,41 @@ POST   /api/rooms/{id}/voice/{userId}/disconnect   204   (MUTE_MEMBERS: RemovePa
 POST   /api/rooms/{id}/voice/{userId}/stop-stream  204   (MUTE_MEMBERS: screen-треки заглушены, grant на экран снят → VOICE_STREAM_STOP{MODERATOR}; 404 — стримов нет)
 POST   /api/rtc/webhook                LiveKit → сервер (подпись API key/secret + sha256 тела)
 ```
+
+UI-бэклог (docs/09):
+
+```
+GET    /api/workspaces/{id}/categories                 ListCategoriesResponse
+POST   /api/workspaces/{id}/categories                 CreateCategoryRequest → 201   (MANAGE_ROOM на уровне workspace)
+PATCH  /api/categories/{id}                            UpdateCategoryRequest          (то же)
+DELETE /api/categories/{id}                            204; комнаты выходят из категории (ROOM_UPDATE)
+PUT    /api/workspaces/{id}/rooms/order                SetRoomOrderRequest → SetRoomOrderResponse   (drag & drop, одна транзакция)
+PATCH  /api/rooms/{id}                                 + categoryId ("" — без категории); POST …/rooms — + categoryId
+GET    /api/rooms/{id}/messages?q=&before=&limit=      поиск в комнате (FTS)
+GET    /api/workspaces/{id}/messages/search?q=&room_id=&author_id=&before=&limit=   поиск по видимым комнатам
+PUT    /api/messages/{id}/reactions/{emoji}            204, идемпотентно  (SEND_MESSAGES; ≤ 20 разных эмодзи на сообщение)
+DELETE /api/messages/{id}/reactions/{emoji}            204, своя реакция
+PUT    /api/messages/{id}/pin | DELETE …/pin           204   (MANAGE_MESSAGES; ≤ 50 на комнату) → MESSAGE_UPDATE
+GET    /api/rooms/{id}/pins                            ListMessagesResponse (закреплённые, свежие первыми)
+PATCH  /api/me/status                                  UpdateStatusRequest{text, emoji, expiresInSeconds} → UpdateMeResponse
+GET    /api/unfurl?url=                                UnfurlResponse (превью ссылки) | 404 — превью нет
+GET    /api/unfurl/image?url=&sig=                     прокси картинки превью (подписанная ссылка из UnfurlResponse)
+```
+
+- **Поиск.** Postgres FTS: `to_tsvector('russian') || to_tsvector('simple')`, так что работают и стемминг («кошка» → «Кошки»), и точные слова и идентификаторы (`deploy`). Индекс — GIN по выражению, а не по сохранённой колонке. Синтаксис запроса — `websearch_to_tsquery`: `"фраза"`, `OR`, `-исключить`. Результаты идут от новых к старым, курсор `before`, `limit` ≤ 50 (по умолчанию 25), ответ — `ListMessagesResponse`.
+- **Реакции.** В REST-ответах `Message.reactions` — `[{emoji, count, me}]` в порядке первого использования. В `MESSAGE_UPDATE` `count` актуальны, `me` всегда `false`: клиент хранит свой `me` и применяет `MESSAGE_REACTION_ADD/REMOVE { workspace_id, room_id, message_id, user_id, emoji }` (приходят только тем, у кого `VIEW_ROOM`).
+- **Статус.** Кастомный статус (`User.status_text/status_emoji/status_expires_at`) после `expires_at` отдаётся пустым. `PATCH /api/me/status` рассылает `PRESENCE_UPDATE` (поля `status_*` в `Presence`) и `USER_UPDATE` во все workspace пользователя.
+- **Unfurl.** Защита от SSRF:
+  - только http(s) без userinfo;
+  - адрес проверяется при подключении, после DNS: запрещены loopback, private, link-local, CGNAT, NAT64/6to4, multicast и служебные сети — это закрывает и DNS rebinding;
+  - ≤ 3 редиректа, каждый проверяется заново;
+  - таймаут 5 с, ≤ 1 MB, только `text/html`, кодировка по заголовку или `<meta charset>`.
+
+  Для dev-машин с VPN в режиме fake-IP есть явное исключение `UNFURL_ALLOW_CIDRS`; в проде эта переменная не задаётся.
+
+  Кэш в Redis: 24 ч, негативный — 1 ч. Rate limit — 30 подряд, 120 в минуту на пользователя. Картинки и favicon идут только через `/api/unfurl/image`: ссылка подписана HMAC, поэтому это не открытый прокси; только растровые типы по сигнатуре (SVG — никогда), ≤ 5 MB, таймаут 10 с. IP пользователей сторонним сайтам не виден.
+- **Время звонка.** `VoiceState.joined_at` — самый ранний вход устройств пользователя в эту комнату. `Room.voice_started_at` приходит в READY / WORKSPACE_CREATE: когда в пустой комнате появился первый участник; сбрасывается, когда комната опустела.
+- **Категории.** `Room.category_id`, `WorkspaceSnapshot.categories`. События `CATEGORY_CREATE/UPDATE/DELETE` приходят всем участникам workspace; клиент скрывает категории без видимых ему комнат.
 
 Изменения относительно первоначального плана: `PUT /api/files` → `POST /api/workspaces/{id}/files` (файл принадлежит workspace, квота — его); `?thumb=1` → `/thumbnail`. Скачивание требует `Authorization`; клиент грузит через `fetch` и показывает через blob URL. Доступ к файлу: загрузивший; аватары — любой пользователь; иконка workspace — участники; вложение — `VIEW_ROOM` комнаты сообщения. Файл прикрепляется только к одному сообщению; при удалении сообщения вложения открепляются и удаляются чисткой сирот (не прикреплённые > 24 ч).
 
