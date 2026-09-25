@@ -1,0 +1,46 @@
+syntax = "proto3";
+package calaba.v1;
+
+// Machine-readable error code. REST errors are returned as `ApiError` with a matching
+// HTTP status (see docs/05-realtime-protocol.md, "Errors").
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_INTERNAL = 1;             // 500
+  ERROR_CODE_BAD_REQUEST = 2;          // 400: malformed body / query
+  ERROR_CODE_VALIDATION = 3;           // 422: well-formed but invalid field values
+  ERROR_CODE_UNAUTHENTICATED = 4;      // 401: missing / invalid / expired access token
+  ERROR_CODE_FORBIDDEN = 5;            // 403: authenticated, but lacks permission
+  ERROR_CODE_NOT_FOUND = 6;            // 404 (also used instead of 403 when the resource must stay hidden)
+  ERROR_CODE_CONFLICT = 7;             // 409: unique violation (slug, email, ...)
+  ERROR_CODE_RATE_LIMITED = 8;         // 429
+  ERROR_CODE_INVALID_CREDENTIALS = 9;  // 401: login failed
+  ERROR_CODE_INVALID_REFRESH_TOKEN = 10; // 401: refresh token unknown / expired / reused
+  ERROR_CODE_REGISTRATION_CLOSED = 11; // 403: REGISTRATION_MODE=invite and no valid invite
+  ERROR_CODE_INVITE_INVALID = 12;      // 404/410: invite unknown, expired or used up
+  ERROR_CODE_FILE_TOO_LARGE = 13;      // 413
+  ERROR_CODE_FILE_QUOTA_EXCEEDED = 14; // 413: workspace storage quota
+  ERROR_CODE_PAYLOAD_TOO_LARGE = 15;   // 413: request body too large
+  ERROR_CODE_UNAVAILABLE = 16;         // 503
+}
+
+// Error body of every non-2xx REST response.
+message ApiError {
+  ErrorCode code = 1;
+  string message = 2;
+  // Offending field for ERROR_CODE_VALIDATION (lowerCamelCase JSON name), if any.
+  string field = 3;
+}
+
+// Cursor pagination over time-ordered ids (uuidv7). At most one of before/after is set.
+message PageRequest {
+  string before = 1; // return items with id < before (newest first)
+  string after = 2;  // return items with id > after (oldest first)
+  uint32 limit = 3;  // 1..100, server default 50
+}
+
+message PageInfo {
+  bool has_more = 1;
+}
+
+// Empty response body (e.g. logout, delete).
+message Empty {}

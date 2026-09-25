@@ -1,0 +1,24 @@
+# golangci-lint v2 config. Run from apps/server: `golangci-lint run`.
+# Note: in v2 `gosimple` is merged into `staticcheck` (listing it separately is an error),
+# so gosimple checks are covered by staticcheck below.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck   # includes former gosimple + stylecheck
+    - errcheck
+    - unused
+    - revive
+    - gosec
+    - bodyclose
+    - noctx
+    - sqlclosecheck
+  exclusions:
+    paths:
+      - gen/          # generated protobuf code
+
+formatters:
+  enable:
+    - gofmt

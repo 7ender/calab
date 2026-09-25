@@ -1,0 +1,46 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Public profile, visible to members of shared workspaces.
+message User {
+  string id = 1;
+  string display_name = 2;
+  string avatar_file_id = 3; // empty = no avatar
+  string status_text = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// Per-user settings synced across the user's devices (USER_UPDATE on change).
+// Device-specific things (selected mic/speaker, PTT key hook state) stay local on the client.
+message UserSettings {
+  bool noise_suppression = 1;    // RNNoise worklet on/off (docs/02-media.md)
+  bool unstable_network_red = 2; // opt-in Opus RED (ADR-0004)
+  bool push_to_talk = 3;
+  string push_to_talk_key = 4;   // accelerator string, client-defined format
+}
+
+// The authenticated user: public profile + private fields.
+message Me {
+  User user = 1;
+  string email = 2;
+  UserSettings settings = 3;
+}
+
+// GET /api/me
+message GetMeResponse {
+  Me me = 1;
+}
+
+// PATCH /api/me. Unset fields are left unchanged; `settings`, when present, replaces all settings.
+message UpdateMeRequest {
+  optional string display_name = 1;
+  optional string status_text = 2;
+  optional string avatar_file_id = 3; // "" clears the avatar
+  optional UserSettings settings = 4;
+}
+
+message UpdateMeResponse {
+  Me me = 1;
+}

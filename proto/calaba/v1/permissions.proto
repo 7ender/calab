@@ -1,0 +1,31 @@
+syntax = "proto3";
+package calaba.v1;
+
+// Permission bits. See docs/04-data-model.md and ADR-0008. Never reuse a freed bit.
+enum Permission {
+  PERMISSION_UNSPECIFIED = 0;
+  PERMISSION_VIEW_ROOM = 1;         // 1 << 0
+  PERMISSION_SEND_MESSAGES = 2;     // 1 << 1
+  PERMISSION_ATTACH_FILES = 4;      // 1 << 2
+  PERMISSION_MANAGE_MESSAGES = 8;   // 1 << 3
+  PERMISSION_CONNECT = 16;          // 1 << 4
+  PERMISSION_SPEAK = 32;            // 1 << 5
+  PERMISSION_STREAM = 64;           // 1 << 6
+  PERMISSION_MUTE_MEMBERS = 128;    // 1 << 7
+  PERMISSION_MANAGE_ROOM = 256;     // 1 << 8
+  PERMISSION_MANAGE_WORKSPACE = 512; // 1 << 9
+  PERMISSION_ADMINISTRATOR = 1024;  // 1 << 10
+}
+
+enum WorkspaceRole {
+  WORKSPACE_ROLE_UNSPECIFIED = 0;
+  WORKSPACE_ROLE_OWNER = 1;
+  WORKSPACE_ROLE_ADMIN = 2;
+  WORKSPACE_ROLE_MEMBER = 3;
+  WORKSPACE_ROLE_GUEST = 4;
+}
+
+message PermissionOverride {
+  uint64 allow = 1;
+  uint64 deny = 2;
+}

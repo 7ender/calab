@@ -1,0 +1,75 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/user.proto";
+
+// A login session = one device. Each session has its own rotating refresh token.
+message Session {
+  string id = 1;
+  string device_name = 2;
+  string ip = 3;
+  string user_agent = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp last_seen_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  bool current = 8; // true for the session that made the request
+}
+
+// Token pair returned by register / login / refresh.
+message AuthTokens {
+  string access_token = 1; // JWT HS256, `Authorization: Bearer <token>`
+  google.protobuf.Timestamp access_expires_at = 2;
+  string refresh_token = 3; // opaque, single use (rotated on every refresh)
+  google.protobuf.Timestamp refresh_expires_at = 4;
+  string session_id = 5;
+}
+
+// POST /api/auth/register
+message RegisterRequest {
+  string email = 1;
+  string password = 2; // 8..256 chars
+  string display_name = 3;
+  // Required when REGISTRATION_MODE=invite: a valid workspace invite code.
+  // The new user also joins that workspace.
+  string invite_code = 4;
+  string device_name = 5;
+}
+
+message RegisterResponse {
+  AuthTokens tokens = 1;
+  Me me = 2;
+}
+
+// POST /api/auth/login
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+  string device_name = 3;
+}
+
+message LoginResponse {
+  AuthTokens tokens = 1;
+  Me me = 2;
+}
+
+// POST /api/auth/refresh (no access token needed).
+// Presenting an already rotated refresh token revokes the whole session (reuse detection).
+message RefreshRequest {
+  string refresh_token = 1;
+}
+
+message RefreshResponse {
+  AuthTokens tokens = 1;
+}
+
+// POST /api/auth/logout (access token required). Revokes the current session,
+// or every session of the user when all_sessions is set.
+message LogoutRequest {
+  bool all_sessions = 1;
+}
+
+// GET /api/me/sessions
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}

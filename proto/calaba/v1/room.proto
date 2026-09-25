@@ -1,0 +1,98 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/media.proto";
+
+enum RoomType {
+  ROOM_TYPE_UNSPECIFIED = 0;
+  ROOM_TYPE_VOICE = 1; // voice room with its own text chat
+  ROOM_TYPE_TEXT = 2;
+}
+
+enum PermissionTargetType {
+  PERMISSION_TARGET_TYPE_UNSPECIFIED = 0;
+  PERMISSION_TARGET_TYPE_ROLE = 1;
+  PERMISSION_TARGET_TYPE_USER = 2;
+}
+
+// Room-level override (ADR-0008). allow/deny are Permission bit masks.
+message RoomPermissionOverride {
+  PermissionTargetType target_type = 1;
+  // ROLE: "owner" | "admin" | "member" | "guest"; USER: user id.
+  string target_id = 2;
+  uint64 allow = 3;
+  uint64 deny = 4;
+}
+
+// Per-room media override; an unset field means "use the workspace default".
+message RoomMediaOverride {
+  optional uint32 audio_bitrate_kbps = 1; // 16|24|32|48|64
+  optional ScreenSharePreset max_stream_preset = 2;
+  optional uint32 max_streams = 3;        // 0..10
+}
+
+message Room {
+  string id = 1;
+  string workspace_id = 2;
+  RoomType type = 3;
+  string name = 4;
+  string topic = 5;
+  int32 position = 6;
+  // Informational: private rooms get `deny VIEW_ROOM` for role member on creation.
+  bool is_private = 7;
+  // Effective settings (override merged over workspace defaults). Clients apply these.
+  RoomMediaSettings media = 8;
+  // Raw override, for the room settings UI.
+  RoomMediaOverride media_override = 9;
+  // All overrides; clients feed them to computePermissions for UI decisions.
+  repeated RoomPermissionOverride permission_overrides = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+
+// POST /api/workspaces/{id}/rooms (MANAGE_ROOM at workspace level, i.e. admin/owner)
+message CreateRoomRequest {
+  RoomType type = 1;
+  string name = 2; // 1..100 chars
+  string topic = 3; // ≤ 1024 chars
+  bool is_private = 4;
+  RoomMediaOverride media_override = 5;
+  optional int32 position = 6; // default: after the last room
+}
+
+message CreateRoomResponse {
+  Room room = 1;
+}
+
+// GET /api/workspaces/{id}/rooms — only rooms where the caller has VIEW_ROOM.
+message ListRoomsResponse {
+  repeated Room rooms = 1;
+}
+
+// GET /api/rooms/{id}
+message GetRoomResponse {
+  Room room = 1;
+  uint64 permissions = 2; // caller's effective permissions in this room
+}
+
+// PATCH /api/rooms/{id} (MANAGE_ROOM). Unset fields are left unchanged.
+// media_override, when present, replaces the whole override (unset inner fields = default).
+message UpdateRoomRequest {
+  optional string name = 1;
+  optional string topic = 2;
+  optional int32 position = 3;
+  optional RoomMediaOverride media_override = 4;
+}
+
+message UpdateRoomResponse {
+  Room room = 1;
+}
+
+// PUT /api/rooms/{id}/permissions (MANAGE_ROOM). Replaces all overrides of the room.
+message SetRoomPermissionsRequest {
+  repeated RoomPermissionOverride overrides = 1;
+}
+
+message SetRoomPermissionsResponse {
+  Room room = 1;
+}

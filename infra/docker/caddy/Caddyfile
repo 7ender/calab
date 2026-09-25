@@ -1,0 +1,42 @@
+# Caddy + caddy-l4 as a listener wrapper. One IP, TCP 443:
+#   SNI turn.<DOMAIN> -> layer4: terminate TLS here, proxy plain TURN to LiveKit 127.0.0.1:5349
+#                        (LiveKit runs with turn.external_tls: true)
+#   anything else     -> falls through to the regular HTTPS server (app.*, rtc.*)
+# HTTP/3 is disabled: UDP 443 belongs to LiveKit TURN/UDP.
+# DOMAIN comes from the container env (see compose.yml / .env).
+{
+	admin off
+	log {
+		output stdout
+		format json
+	}
+	servers :443 {
+		listener_wrappers {
+			layer4 {
+				@turn tls sni turn.{$DOMAIN}
+				route @turn {
+					tls
+					proxy 127.0.0.1:5349
+				}
+			}
+			# must come after layer4 so SNI routing sees the raw ClientHello
+			tls
+		}
+		protocols h1 h2
+	}
+}
+
+app.{$DOMAIN} {
+	# REST /api, WS /gateway, files — all served by the Go API (host network)
+	reverse_proxy 127.0.0.1:3000
+}
+
+rtc.{$DOMAIN} {
+	# LiveKit signal (WSS)
+	reverse_proxy 127.0.0.1:7880
+}
+
+turn.{$DOMAIN} {
+	# Exists only so Caddy obtains and renews the turn.* certificate used by the layer4 route above.
+	respond 404
+}

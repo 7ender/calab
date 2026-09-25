@@ -1,0 +1,36 @@
+# Локальная разработка (macOS): БД, Redis, LiveKit в dev-режиме без TLS.
+# Файлы API пишет на локальный диск (STORAGE_DRIVER=fs, ADR-0011) — сервиса S3 нет.
+# API и Electron запускаются на хосте через pnpm.
+# Примечание: Docker на macOS не даёт host network → LiveKit в контейнере годится только
+# для клиентов на этой же машине. Для тестов между машинами в LAN: `brew install livekit`
+# и `livekit-server --dev --bind 0.0.0.0`.
+
+# Explicit project name: volumes/containers are calaba_*, and --remove-orphans
+# never touches other compose projects on a shared host.
+name: calaba-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine   # PG 18: built-in uuidv7()
+    environment:
+      - POSTGRES_USER=calaba
+      - POSTGRES_PASSWORD=calaba
+      - POSTGRES_DB=calaba
+    ports: ["55432:5432"]   # 5432 is often taken by other local projects
+    volumes: [pg_dev:/var/lib/postgresql]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["56379:6379"]   # 6379 is often taken by a native Redis (needs >= 7.4 anyway)
+
+  livekit:
+    image: livekit/livekit-server:v1.13
+    command: --dev --bind 0.0.0.0 --node-ip 127.0.0.1
+    # --dev: ключи devkey / secret, UDP mux 7882 через порты ниже
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
+volumes:
+  pg_dev:

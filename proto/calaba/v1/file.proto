@@ -1,0 +1,26 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Stored file. Bytes are served only through the API (MinIO is never public).
+message FileMeta {
+  string id = 1;
+  string workspace_id = 2;
+  string uploader_id = 3;
+  string name = 4;
+  string mime = 5;
+  uint64 size = 6;
+  uint32 width = 7;  // images only, 0 otherwise
+  uint32 height = 8; // images only, 0 otherwise
+  string sha256 = 9; // hex, computed by the server while streaming
+  string url = 10;   // /api/files/{id} (Authorization header required)
+  string thumbnail_url = 11; // /api/files/{id}/thumbnail for images, empty otherwise
+  google.protobuf.Timestamp created_at = 12;
+}
+
+// POST /api/workspaces/{id}/files (multipart field "file", streamed). Also the response of
+// POST /api/me/avatar is UpdateMeResponse.
+message UploadFileResponse {
+  FileMeta file = 1;
+}

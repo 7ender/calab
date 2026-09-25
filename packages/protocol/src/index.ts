@@ -1,0 +1,16 @@
+// Generated contract (proto/calaba/v1 via buf; do not edit src/gen by hand).
+export * from './gen/calaba/v1/auth_pb.js';
+export * from './gen/calaba/v1/common_pb.js';
+export * from './gen/calaba/v1/file_pb.js';
+export * from './gen/calaba/v1/gateway_pb.js';
+export * from './gen/calaba/v1/media_pb.js';
+export * from './gen/calaba/v1/message_pb.js';
+export * from './gen/calaba/v1/permissions_pb.js';
+export * from './gen/calaba/v1/room_pb.js';
+export * from './gen/calaba/v1/rtc_pb.js';
+export * from './gen/calaba/v1/user_pb.js';
+export * from './gen/calaba/v1/workspace_pb.js';
+
+// Hand-written helpers on top of the contract.
+export * from './permissions.js';
+export * from './media.js';

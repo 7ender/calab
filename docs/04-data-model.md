@@ -1,0 +1,138 @@
+# 04 — Модель данных и права
+
+PostgreSQL 18, `pgx` + `sqlc` + `goose` (миграции). Все id — `uuid v7` (сортируемые по времени), генерируются в Postgres встроенной `uuidv7()` (`DEFAULT uuidv7()`), а не в приложении. Все времена — `timestamptz`.
+
+## Сущности
+
+```
+users               id, email (unique, citext), password_hash (argon2id), display_name,
+                    avatar_file_id, status_text, settings (jsonb, UserSettings),
+                    created_at, disabled_at
+sessions            id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at,
+                    device_name, ip, user_agent,
+                    created_at, last_seen_at, expires_at, revoked_at
+
+workspaces          id, slug (unique), name, icon_file_id, visibility ('private'|'open'),
+                    owner_id, created_at,
+                    default_audio_bitrate_kbps (32), default_max_stream_preset ('h1080'),
+                    default_max_streams (3),
+                    storage_quota_bytes (10 GB), storage_used_bytes (0)
+workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest'),
+                    nickname, joined_at            PK (workspace_id, user_id)
+workspace_invites   id, workspace_id, code (unique), created_by, max_uses, uses,
+                    expires_at, created_at
+
+rooms               id, workspace_id, type ('voice'|'text'), name, topic,
+                    position, category_id?, is_private,
+                    -- медиа-настройки комнаты (для voice), NULL = дефолт workspace:
+                    audio_bitrate_kbps?  (16|24|32|48|64),
+                    max_stream_preset?   ('economy'|'h720'|'h1080'|'original'),
+                    max_streams?         (0..10),
+                    created_at, archived_at
+room_permissions    room_id, target_type ('role'|'user'), target_id,
+                    allow bigint, deny bigint            -- overrides, как в Discord
+                    PK (room_id, target_type, target_id)
+
+messages            id (DEFAULT uuidv7()), room_id, author_id, content (text, ≤ 4000),
+                    reply_to_id?, nonce?, created_at, edited_at, deleted_at
+                    UNIQUE (author_id, nonce) WHERE nonce IS NOT NULL
+message_attachments message_id, file_id, position (≤ 20 на сообщение)
+files               id, workspace_id, uploader_id, key, thumbnail_key?, name,
+                    mime, size, width?, height?, sha256, created_at
+read_states         user_id, room_id, last_read_message_id      PK (user_id, room_id)
+
+voice_states        (не в Postgres — в Redis, источник LiveKit webhooks)
+                    ключ — сессия (LiveKit identity = <user_id>:<session_id>):
+                    workspace_id → { session_id → { user_id, room_id, muted, deafened,
+                                                    streaming, joined_at } }
+                    наружу агрегируется по пользователю (см. docs/05)
+```
+
+Индексы: `messages (room_id, id desc)` для пагинации курсором; `workspace_members (user_id)`; `files (workspace_id)`.
+
+### Сообщения: порядок и идемпотентность
+
+- `messages.id` генерирует Postgres (`uuidv7()` в PG 18) в момент вставки → порядок id совпадает с порядком коммитов на одном сервере БД; курсорная пагинация и `before=<id>` работают без отдельного `created_at`-индекса. Клиентские часы в id не участвуют.
+- `nonce` — клиентский идентификатор optimistic-сообщения. `UNIQUE (author_id, nonce) WHERE nonce IS NOT NULL`: повторный `POST` с тем же `nonce` (ретрай после обрыва) не создаёт дубль, а возвращает уже существующее сообщение (`INSERT … ON CONFLICT DO NOTHING` → `SELECT`), `MESSAGE_CREATE` повторно не рассылается.
+
+### Файлы
+
+- Загрузка и скачивание — **только через API** (`PUT /api/files`, `GET /api/files/:id`), байты лежат в `blob.Store` (ADR-0011: локальный диск, ключи `<workspace_id>/<file_id>[.thumb]`; S3 — позже), наружу хранилище не доступно. sha256 сервер считает сам при потоковой записи.
+- Для `image/*` сервер делает превью (≤ 512 px по большей стороне, WebP) вторым объектом → `thumbnail_key`; в payload сообщения — `thumbnail_url`.
+- Лимиты: файл ≤ 50 MB (`MAX_FILE_SIZE_MB`), ≤ 20 вложений на сообщение, квота workspace `storage_quota_bytes` (по умолчанию 10 GB); `storage_used_bytes` увеличивается в той же транзакции, что и вставка в `files` (с проверкой квоты), уменьшается при удалении.
+
+## Роли workspace
+
+| Роль | Кто |
+|---|---|
+| `owner` | создатель; единственный, кто может удалить workspace и передать владение |
+| `admin` | управление комнатами, участниками, инвайтами, правами |
+| `member` | обычный сотрудник |
+| `guest` | ограниченный: видит только комнаты с явным `allow VIEW_ROOM` |
+
+Видимость workspace:
+- `private` — вход только по инвайту (код/ссылка `calaba://join/<code>`).
+- `open` — любой зарегистрированный пользователь сервера может зайти и получает роль `member`.
+
+## Права (битмаска)
+
+Проще Discord: один набор битов, действующий на уровне workspace (по роли) с overrides на уровне комнаты.
+
+```ts
+export const Permission = {
+  VIEW_ROOM:        1n << 0n,   // видеть комнату в списке, читать
+  SEND_MESSAGES:    1n << 1n,
+  ATTACH_FILES:     1n << 2n,
+  MANAGE_MESSAGES:  1n << 3n,   // удалять чужие
+  CONNECT:          1n << 4n,   // войти в voice
+  SPEAK:            1n << 5n,   // публиковать микрофон
+  STREAM:           1n << 6n,   // публиковать экран
+  MUTE_MEMBERS:     1n << 7n,   // серверный мьют/кик из voice
+  MANAGE_ROOM:      1n << 8n,   // название, права, удаление комнаты
+  MANAGE_WORKSPACE: 1n << 9n,   // настройки, инвайты, роли
+  ADMINISTRATOR:    1n << 10n,  // всё, игнорирует deny
+} as const;
+```
+
+Дефолты по ролям:
+- `owner`, `admin` → `ADMINISTRATOR`
+- `member` → `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM`
+- `guest` → `CONNECT | SPEAK` — без `VIEW_ROOM`, поэтому по умолчанию гость не видит ни одной комнаты; видит только комнаты с явным override `allow VIEW_ROOM` (для роли `guest` или для конкретного пользователя)
+
+Вычисление эффективных прав в комнате (единственная функция, живёт в `packages/protocol`, используется и сервером, и клиентом для UI):
+
+```
+base   = defaults[role]
+if base & ADMINISTRATOR → all
+perms  = base
+perms &= ~roleOverride.deny;  perms |= roleOverride.allow     (override для роли)
+perms &= ~userOverride.deny;  perms |= userOverride.allow     (override для конкретного пользователя — приоритетнее)
+if !(perms & VIEW_ROOM) → 0
+```
+
+Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
+
+## Маппинг прав → LiveKit grant
+
+При выдаче токена на вход в voice-комнату:
+
+```
+canSubscribe        = VIEW_ROOM & CONNECT
+canPublish          = SPEAK | STREAM
+canPublishSources   = [ SPEAK ? 'microphone' : null, STREAM ? 'screen_share','screen_share_audio' : null ]
+roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/remove через API — но делаем через наш сервер, не даём клиенту)
+```
+
+Лимит «3 стрима в комнате» — проверяется сервером перед выдачей права STREAM в токене **и** контролируется через webhook `track_published` (если четвёртый прорвался — `mutePublishedTrack`/`removeParticipant` через server SDK). Токен на вход короткий (10 мин), при изменении прав сервер обновляет grant через `UpdateParticipant` в LiveKit API.
+
+## Медиа-настройки комнаты
+
+Админ (право `MANAGE_ROOM`) задаёт на комнате, как в Discord: битрейт голоса, максимальный пресет стрима, лимит стримов. Пусто → дефолт workspace. Клиент получает эффективные значения в объекте комнаты (`room.media`) и применяет при публикации; сервер использует `max_streams` при выдаче права STREAM и режет пресет выше разрешённого в `POST /rooms/:id/stream/request`.
+
+## Auth (MVP)
+
+- Email + пароль (argon2id: 19 MiB, t=2, p=1 — профиль OWASP; не больше 4 хэшей одновременно), refresh-токены с ротацией (в `sessions`), access JWT HS256 15 мин (`sub` = user, `sid` = session).
+- Refresh-токен = `<session_id>.<secret>`, в БД — только `sha256(secret)`. Каждый refresh выдаёт новый секрет. Предъявлен не текущий секрет живой сессии → это повтор уже ротированного токена (или подделка) → сессия отзывается целиком. Исключение: предыдущий секрет в течение 30 с после ротации (гонка двух параллельных refresh) → `401` без отзыва.
+- Отзыв сессии (logout, reuse, «выйти везде») мгновенно действует и на выданные access-токены: API ставит в Redis `auth:revoked:<session_id>` (TTL = время жизни access-токена), middleware проверяет его (rueidis client-side cache, инвалидация сервером Redis). Redis недоступен → `503` (fail closed).
+- Регистрация: открытая или по инвайту (флаг сервера `REGISTRATION_MODE=open|invite`). В режиме `invite` без кода может зарегистрироваться только **первый пользователь сервера** (bootstrap владельца, под `pg_advisory_xact_lock`). Регистрация с инвайтом сразу добавляет в workspace ролью `member`.
+- Позже: OIDC (Google Workspace / Keycloak) — таблица `users` уже без привязки к паролю как единственному способу (`password_hash` nullable).

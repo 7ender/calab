@@ -1,0 +1,25 @@
+{
+  "name": "calaba",
+  "private": true,
+  "packageManager": "pnpm@10.17.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:desktop": "pnpm -F @calaba/desktop dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "infra:dev": "docker compose -f infra/docker/compose.dev.yml up -d"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "uiohook-napi"
+    ],
+    "ignoredBuiltDependencies": [
+      "electron-winstaller"
+    ]
+  }
+}

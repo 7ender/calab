@@ -1,0 +1,92 @@
+# 03 — Сеть и доступность
+
+Цель: соединение устанавливается из любой сети — корпоративный файрвол, VPN «только 443», симметричный NAT, мобильный хотспот.
+
+## Порты на сервере (один публичный IPv4)
+
+| Порт | Протокол | Кто | Назначение |
+|---|---|---|---|
+| 443 | TCP | Caddy | HTTPS API, WSS gateway, WSS signal LiveKit, **TURN/TLS** (SNI `turn.*` → layer4, TLS терминирует Caddy) |
+| 443 | UDP | LiveKit | **TURN/UDP** (поэтому HTTP/3 в Caddy выключен) |
+| 80 | TCP | Caddy | ACME + redirect |
+| 7881 | TCP | LiveKit | ICE over TCP (нельзя за прокси/LB — сырой) |
+| 7882 | UDP | LiveKit | UDP mux — весь медиа-трафик в одном порту (вместо диапазона 50000–60000) |
+| 7880 | TCP | LiveKit | signal — только localhost, за Caddy |
+| 5349 | TCP | LiveKit | TURN (TLS снят в Caddy, `external_tls`), за Caddy layer4. LiveKit не умеет привязать TURN к loopback — слушает `*:5349`, снаружи закрыт файрволом (порта нет в accept-списке) |
+| 3000 | TCP | API | только 127.0.0.1, за Caddy |
+| 5432 / 6379 | TCP | Postgres / Redis | только 127.0.0.1 |
+
+Порядок попыток клиента (libwebrtc + LiveKit SDK, `allow_tcp_fallback: true`):
+1. Прямой UDP host/srflx (STUN) → 7882
+2. ICE/TCP → 7881
+3. TURN/UDP → 443
+4. TURN/TLS → 443 (работает почти везде: выглядит как HTTPS)
+
+## Домены и TLS
+
+Нужны **три DNS-имени** на один IP, все с валидными сертификатами (Let's Encrypt через Caddy):
+- `app.<domain>` — API, gateway, файлы (можно и один с `rtc`)
+- `rtc.<domain>` — LiveKit signal
+- `turn.<domain>` — TURN/TLS. Отдельное имя обязательно: по нему Caddy layer4 отличает TURN от HTTPS.
+
+TLS для TURN терминирует Caddy (layer4-маршрут `tls` → `proxy 127.0.0.1:5349`), LiveKit работает с `turn.external_tls: true`, `tls_port: 5349` и без собственных сертификатов (ADR-0010). Сайт `turn.<domain>` в Caddyfile (`respond 404`) нужен только чтобы Caddy выпускал и продлевал его сертификат.
+
+Пока своего домена нет, тестовый стенд использует `sslip.io`: `DOMAIN=141-105-69-177.sslip.io` → `app.141-105-69-177.sslip.io`, `rtc.…`, `turn.…` резолвятся в 141.105.69.177 без настройки DNS. Лимиты Let's Encrypt на `sslip.io` общие для всех — только для первых проб.
+
+## Caddy: SNI-роутинг на 443
+
+Своя сборка Caddy (`infra/docker/caddy/Dockerfile`: `xcaddy` + `mholt/caddy-l4`, версия запинена), конфиг — `infra/docker/caddy/Caddyfile`. layer4 подключён как `listener_wrapper` HTTP-сервера `:443` (стоит до `tls`, поэтому видит сырой ClientHello):
+
+```
+:443 (TCP)
+  SNI turn.<domain>   → layer4: tls (терминация в Caddy) → proxy 127.0.0.1:5349 (LiveKit TURN, external_tls)
+  иначе               → обычный HTTPS-сервер Caddy (h1, h2; h3 выключен):
+       app.<domain>   → reverse_proxy 127.0.0.1:3000 (API, host network)
+       rtc.<domain>   → reverse_proxy 127.0.0.1:7880 (LiveKit signal)
+       turn.<domain>  → respond 404 (только ради сертификата)
+```
+
+Альтернатива — nginx `stream { ssl_preread }`; функционально то же.
+
+## Файрвол на тестовом стенде (141.105.69.177)
+
+Фактически: `iptables` (бэкенд nf_tables), цепочка INPUT с финальным `DROP all` («всё, что не разрешено — drop»). Правила сохранены в `/etc/iptables/rules.v4`, при загрузке их восстанавливает `iptables-restore.service` (свой unit, не `netfilter-persistent`; сервис `nftables` выключен). Для Calaba правила **только добавляем** (никогда не `flush`, не трогаем существующие правила GPU-сервисов). Уже добавлены и сохранены (2026-09-25) перед финальным DROP:
+
+```
+-A INPUT -p tcp --dport 80   -j ACCEPT
+-A INPUT -p tcp --dport 443  -j ACCEPT
+-A INPUT -p tcp --dport 7881 -j ACCEPT
+-A INPUT -p udp --dport 443  -j ACCEPT
+-A INPUT -p udp --dport 7882 -j ACCEPT
+```
+
+- Проверка: `iptables -L INPUT -n -v --line-numbers` — наши ACCEPT стоят выше `DROP all`. Правило для lo (`ACCEPT all -- lo`) уже есть, поэтому 7880/5349/6789/3000 на loopback работают, а снаружи (5349, 6789) — дропаются.
+- Добавлять точечно (`iptables -I INPUT <n> …` перед DROP) и сохранять `iptables-save > /etc/iptables/rules.v4` (предварительно сделать `.bak`). Не делать `iptables -F`, не перезапускать Docker.
+- Проверять доступность портов снаружи — с машины **без** VPN/TUN-прокси: TUN-режим VPN (например, на маке разработчика) сам принимает любой TCP connect, и `nc -zv` «успешен» даже для закрытого порта.
+- Caddy, LiveKit и API — в host network → трафик идёт через цепочку INPUT, правила обязательны. API слушает только 127.0.0.1 и ходит в Postgres/Redis через 127.0.0.1 (их порты опубликованы Docker'ом на loopback), поэтому отдельное правило для `docker0` не нужно.
+- Цепочку forward управляет Docker — её не трогаем.
+- Существующие `ffmpeg` слушают UDP 9001/9002/54241/33621 — не пересекается.
+
+## MTU и VPN
+
+- libwebrtc держит RTP ≤ ~1200 байт — запас под VPN/TURN-обёртки. SFU не перепаковывает.
+- Типичная проблема на туннелях — фрагментация DTLS-handshake. Симптом: ICE connected, а медиа нет. Лечится переходом на TCP/TURN-TLS (SDK делает сам), в диагностике показываем «соединение через relay».
+- Кернел на сервере: поднять `net.core.rmem_max/wmem_max` до 4–8 MB (в compose через `sysctls` нельзя для host-net → ставим на хосте). На стенде уже 16 MB.
+
+## Ограничения из-за цензуры (РФ)
+
+- TSPU режет TLS к диапазонам Cloudflare/Hetzner/DO/OVH после ~16 KB → там не хостимся. Текущий IP не из этих диапазонов.
+- ECH/ESNI дропаются — не включаем.
+- Мобильные «белые списки» в отдельных регионах — обойти невозможно, честно показываем статус.
+- TURN/TLS терминирует Caddy (`external_tls`), поэтому TLS-фингерпринт TURN совпадает с HTTPS-сайтами того же сервера — отдельно от веба его по TLS не отличить.
+
+## Диагностика в клиенте
+
+- Кнопка «Проверить соединение»: STUN-тест, TCP 7881, TURN allocate; показывает, какой путь используется (`candidate-pair` из getStats: host/srflx/relay + protocol).
+- Индикатор качества (RTT/loss) рядом с комнатой.
+
+## Kubernetes (позже)
+
+- LiveKit: официальный Helm-чарт, `hostNetwork: true`, один pod на ноду, Redis обязателен; TURN-passthrough через Traefik `IngressRouteTCP HostSNI(turn.*)` или ingress-nginx ssl-passthrough.
+- Всё остальное — обычные Deployment + Ingress + cert-manager; Postgres — CloudNativePG.
+- Не подходит: private/serverless кластеры (лишний NAT ломает WebRTC).

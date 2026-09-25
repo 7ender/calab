@@ -1,0 +1,49 @@
+{
+  "name": "@calaba/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Calaba desktop client (stage 1: media spike)",
+  "author": "Calaba",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "electron-vite build",
+    "dist": "electron-vite build && electron-builder",
+    "rebuild:native": "electron-rebuild -f -o uiohook-napi",
+    "postinstall": "electron-rebuild -f -o uiohook-napi",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.worklet.json",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "uiohook-napi": "^1.5.5",
+    "livekit-server-sdk": "^2.19.1"
+  },
+  "devDependencies": {
+    "@calaba/protocol": "workspace:*",
+    "@electron/rebuild": "^4.2.0",
+    "@eslint/js": "^10.0.1",
+    "@timephy/rnnoise-wasm": "1.0.0",
+    "@types/audioworklet": "^0.0.100",
+    "@types/node": "^22.20.4",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "44.4.5",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "livekit-client": "^2.22.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^7.1.0",
+    "vitest": "^3.0.0",
+    "zustand": "^5.0.15"
+  }
+}

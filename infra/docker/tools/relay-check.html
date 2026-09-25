@@ -1,0 +1,105 @@
+<!doctype html>
+<!--
+  Forced-relay connectivity check for the LiveKit/TURN edge (see TESTING.md, "Stand").
+  Serve locally (python3 -m http.server 8765 --bind 127.0.0.1 in a dir with this file) and open
+    http://127.0.0.1:8765/relay-check.html?run=1#url=wss://rtc.<domain>&token=<join token>&mode=tls
+  or put the token in a file next to the page and pass &tokenfile=<name> instead of &token=.
+  Change ?run= to re-run (a hash-only change does not reload the page).
+    mode=tls  -> only turns: servers (TURN/TLS via Caddy layer4 on TCP 443)
+    mode=udp  -> only turn: ?transport=udp servers (TURN/UDP 443)
+    mode=relay-> any TURN server, relay only
+    mode=any  -> no restriction (normal ICE: UDP 7882 / TCP 7881 / TURN)
+  The token goes in the #fragment so it is never sent to any server.
+  Result: selected candidate pair (local type + relayProtocol) and received bytes.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Relay check</title>
+<style>
+  body { font: 14px/1.4 ui-monospace, monospace; margin: 16px; background: #fff; color: #111; }
+  pre { white-space: pre-wrap; }
+  #verdict { font-size: 18px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="verdict">running…</div>
+<pre id="log"></pre>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<script>
+const p = new URLSearchParams(location.hash.slice(1));
+const mode = p.get('mode') || 'tls';
+const logEl = document.getElementById('log');
+const log = (...a) => { logEl.textContent += a.join(' ') + '\n'; console.log('[relay-check]', ...a); };
+const verdict = (t) => { document.getElementById('verdict').textContent = t; console.log('[relay-check] VERDICT', t); };
+
+// Filter ICE servers handed to every RTCPeerConnection the SDK creates — both in the
+// constructor and in setConfiguration() (the SDK sets server-provided TURN there after join).
+const pcs = [];
+const Orig = window.RTCPeerConnection;
+function restrict(cfg, where) {
+  if (mode !== 'any') {
+    const keep = (u) => mode === 'tls' ? u.startsWith('turns:')
+      : mode === 'udp' ? (u.startsWith('turn:') && u.includes('transport=udp'))
+      : (u.startsWith('turn:') || u.startsWith('turns:'));
+    cfg.iceServers = (cfg.iceServers || [])
+      .map((s) => ({ ...s, urls: [].concat(s.urls).filter(keep) }))
+      .filter((s) => s.urls.length);
+    cfg.iceTransportPolicy = 'relay';
+  }
+  log(where, 'iceServers:', JSON.stringify((cfg.iceServers || []).map((s) => s.urls)), 'policy:', cfg.iceTransportPolicy || 'all');
+  return cfg;
+}
+const origSetConfiguration = Orig.prototype.setConfiguration;
+Orig.prototype.setConfiguration = function (cfg = {}) {
+  return origSetConfiguration.call(this, restrict({ ...cfg }, 'setConfiguration'));
+};
+window.RTCPeerConnection = function (cfg = {}, ...rest) {
+  const pc = new Orig(restrict({ ...cfg }, 'new PC'), ...rest);
+  pcs.push(pc);
+  return pc;
+};
+window.RTCPeerConnection.prototype = Orig.prototype;
+
+async function selectedPairs() {
+  const out = [];
+  for (const pc of pcs) {
+    const st = await pc.getStats();
+    let bytesIn = 0;
+    st.forEach((r) => { if (r.type === 'inbound-rtp') bytesIn += r.bytesReceived || 0; });
+    st.forEach((r) => {
+      if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') {
+        const l = st.get(r.localCandidateId), rm = st.get(r.remoteCandidateId);
+        out.push({ local: l.candidateType, protocol: l.protocol, relayProtocol: l.relayProtocol || '-',
+                   remote: `${rm.address}:${rm.port}/${rm.protocol}`, rttMs: Math.round((r.currentRoundTripTime || 0) * 1000),
+                   bytesIn });
+      }
+    });
+  }
+  return out;
+}
+
+(async () => {
+  if (p.get('tokenfile')) p.set('token', (await (await fetch(p.get('tokenfile'))).text()).trim());
+  if (!p.get('url') || !p.get('token')) { verdict('missing #url=…&token=…'); return; }
+  log('mode:', mode);
+  const room = new LivekitClient.Room();
+  room.on(LivekitClient.RoomEvent.TrackSubscribed, (t, pub, part) => log('subscribed', t.kind, 'from', part.identity));
+  try {
+    await room.connect(p.get('url'), p.get('token'));
+    log('connected to room', room.name);
+  } catch (e) { verdict('FAIL: ' + e.message); return; }
+  for (let i = 0; i < 6; i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const s = await selectedPairs();
+    log(new Date().toISOString().slice(11, 19), JSON.stringify(s));
+    window.relayResult = s;
+  }
+  const s = window.relayResult || [];
+  const ok = s.length && (mode === 'any' || s.every((x) => x.local === 'relay'));
+  verdict((ok ? 'PASS ' : 'FAIL ') + JSON.stringify(s));
+  room.disconnect();
+})();
+</script>
+</body>
+</html>

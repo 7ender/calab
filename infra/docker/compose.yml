@@ -1,0 +1,126 @@
+# Production-like stack on a single host. Secrets live in infra/docker/.env (see .env.example).
+# Deploy with ./deploy.sh (renders livekit/livekit.gen.yaml, then `docker compose up`).
+# caddy, livekit and api use host network: WebRTC/TURN need direct ports, and the API
+# talks to everything over 127.0.0.1. postgres/redis publish only on 127.0.0.1.
+# Files: local volume files_data via the API's fs driver (ADR-0011), no S3 service.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+# Explicit project name: volumes/containers are calaba_*, and --remove-orphans
+# never touches other compose projects on a shared host.
+name: calaba
+
+services:
+  caddy:
+    build: ./caddy
+    network_mode: host
+    restart: unless-stopped
+    command: caddy run --config /etc/caddy/Caddyfile
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+
+  livekit:
+    image: livekit/livekit-server:v1.13
+    network_mode: host
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit/livekit.gen.yaml:/etc/livekit.yaml:ro   # rendered by deploy.sh
+    environment:
+      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+    deploy:
+      resources:
+        limits: { memory: 4g }
+    logging: *logging
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - HTTP_ADDR=127.0.0.1:3000
+      - PUBLIC_APP_URL=https://app.${DOMAIN}
+      - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD}@127.0.0.1:5432/calaba
+      - REDIS_URL=redis://127.0.0.1:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - LIVEKIT_URL=wss://rtc.${DOMAIN}
+      - LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - STORAGE_DRIVER=fs
+      - STORAGE_PATH=/data/files
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+      - REGISTRATION_MODE=${REGISTRATION_MODE:-invite}
+    volumes:
+      - files_data:/data/files
+    deploy:
+      resources:
+        limits: { memory: 1g }
+    depends_on:
+      files-init: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    logging: *logging
+
+  # One-shot: a fresh named volume is root-owned, but the API runs as distroless
+  # nonroot (uid/gid 65532) and must write to it. Idempotent, runs before every api start.
+  files-init:
+    image: busybox:1.37
+    command: ["sh", "-c", "chown 65532:65532 /data/files && chmod 750 /data/files"]
+    volumes:
+      - files_data:/data/files
+    restart: "no"
+    logging: *logging
+
+  postgres:
+    image: postgres:18-alpine   # PG 18: built-in uuidv7()
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=calaba
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=calaba
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql   # PG 18 images keep PGDATA in a versioned subdir here
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calaba"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: { memory: 2g }
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --appendonly yes
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pg_data:
+  redis_data:
+  files_data:   # uploaded files (API fs driver); back up offsite, see docs/06

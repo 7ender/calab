@@ -1,0 +1,132 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/media.proto";
+import "calaba/v1/permissions.proto";
+import "calaba/v1/user.proto";
+
+enum WorkspaceVisibility {
+  WORKSPACE_VISIBILITY_UNSPECIFIED = 0;
+  WORKSPACE_VISIBILITY_PRIVATE = 1; // join by invite only
+  WORKSPACE_VISIBILITY_OPEN = 2;    // any registered user may join as member
+}
+
+message Workspace {
+  string id = 1;
+  string slug = 2; // 3..32 chars, [a-z0-9-], no leading/trailing/double '-'
+  string name = 3;
+  string icon_file_id = 4;
+  WorkspaceVisibility visibility = 5;
+  string owner_id = 6;
+  google.protobuf.Timestamp created_at = 7;
+  // Defaults applied to voice rooms that do not override them.
+  RoomMediaSettings media_defaults = 8;
+  uint64 storage_quota_bytes = 9;
+  uint64 storage_used_bytes = 10;
+}
+
+message WorkspaceMember {
+  string workspace_id = 1;
+  User user = 2;
+  WorkspaceRole role = 3;
+  string nickname = 4;
+  google.protobuf.Timestamp joined_at = 5;
+}
+
+message Invite {
+  string id = 1;
+  string workspace_id = 2;
+  string code = 3; // use as calaba://join/<code>
+  string created_by = 4;
+  uint32 max_uses = 5; // 0 = unlimited
+  uint32 uses = 6;
+  google.protobuf.Timestamp expires_at = 7; // unset = never
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// POST /api/workspaces
+message CreateWorkspaceRequest {
+  string slug = 1;
+  string name = 2;
+  WorkspaceVisibility visibility = 3; // UNSPECIFIED = PRIVATE
+}
+
+message CreateWorkspaceResponse {
+  Workspace workspace = 1;
+}
+
+// GET /api/workspaces — workspaces the caller is a member of.
+message ListWorkspacesResponse {
+  repeated Workspace workspaces = 1;
+}
+
+// GET /api/workspaces/discover — open workspaces the caller is not a member of.
+message DiscoverWorkspacesResponse {
+  repeated Workspace workspaces = 1;
+}
+
+// GET /api/workspaces/{id}
+message GetWorkspaceResponse {
+  Workspace workspace = 1;
+  WorkspaceRole role = 2; // caller's role
+}
+
+// PATCH /api/workspaces/{id} (MANAGE_WORKSPACE). Unset fields are left unchanged.
+message UpdateWorkspaceRequest {
+  optional string slug = 1;
+  optional string name = 2;
+  optional WorkspaceVisibility visibility = 3;
+  optional string icon_file_id = 4; // "" clears
+  optional uint32 default_audio_bitrate_kbps = 5; // 16|24|32|48|64
+  optional ScreenSharePreset default_max_stream_preset = 6;
+  optional uint32 default_max_streams = 7; // 0..10
+}
+
+message UpdateWorkspaceResponse {
+  Workspace workspace = 1;
+}
+
+// POST /api/workspaces/{id}/join (open workspaces) and POST /api/workspaces/join/{code} (invites).
+message JoinWorkspaceResponse {
+  Workspace workspace = 1;
+  WorkspaceMember member = 2;
+}
+
+// POST /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
+message CreateInviteRequest {
+  uint32 max_uses = 1;           // 0 = unlimited
+  uint32 expires_in_seconds = 2; // 0 = never
+}
+
+message CreateInviteResponse {
+  Invite invite = 1;
+}
+
+// GET /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
+message ListInvitesResponse {
+  repeated Invite invites = 1;
+}
+
+// GET /api/workspaces/{id}/members
+message ListMembersResponse {
+  repeated WorkspaceMember members = 1;
+}
+
+// PATCH /api/workspaces/{id}/members/{user_id}.
+// role: MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
+// nickname: the member themself or MANAGE_WORKSPACE.
+message UpdateMemberRequest {
+  optional WorkspaceRole role = 1;
+  optional string nickname = 2;
+}
+
+message UpdateMemberResponse {
+  WorkspaceMember member = 1;
+}
+
+// GET /api/invites/{code} — preview before joining (any authenticated user with the code).
+message GetInviteResponse {
+  Workspace workspace = 1;
+  google.protobuf.Timestamp expires_at = 2; // unset = never
+}

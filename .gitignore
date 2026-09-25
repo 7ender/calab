@@ -1,0 +1,17 @@
+node_modules/
+dist/
+out/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+infra/docker/data/
+coverage/
+.turbo/
+
+# rendered by infra/docker/deploy.sh
+infra/docker/livekit/livekit.gen.yaml
+
+# local file storage (STORAGE_DRIVER=fs, dev default ./data/files)
+apps/server/data/

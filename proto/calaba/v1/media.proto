@@ -1,0 +1,19 @@
+syntax = "proto3";
+package calaba.v1;
+
+// Screen share presets. Bitrate is a cap, not typical usage (docs/02-media.md).
+// SVC mode depends on contentHint, not on the preset: detail -> L1T3, motion -> L3T3_KEY (ADR-0005).
+enum ScreenSharePreset {
+  SCREEN_SHARE_PRESET_UNSPECIFIED = 0;
+  SCREEN_SHARE_PRESET_ECONOMY = 1;  // 720p  5fps  0.4 Mbps
+  SCREEN_SHARE_PRESET_H720 = 2;     // 720p  15fps 1.0 Mbps
+  SCREEN_SHARE_PRESET_H1080 = 3;    // 1080p 15fps 2.0 Mbps
+  SCREEN_SHARE_PRESET_ORIGINAL = 4; // native 30fps 4.0 Mbps
+}
+
+// Effective per-room media settings (workspace defaults already applied).
+message RoomMediaSettings {
+  uint32 audio_bitrate_kbps = 1;          // 16 | 24 | 32 | 48 | 64; default 32 (per-room, workspace default)
+  ScreenSharePreset max_stream_preset = 2;
+  uint32 max_streams = 3;
+}

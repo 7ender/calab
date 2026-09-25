@@ -1,0 +1,301 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/media.proto";
+import "calaba/v1/message.proto";
+import "calaba/v1/permissions.proto";
+import "calaba/v1/room.proto";
+import "calaba/v1/user.proto";
+import "calaba/v1/workspace.proto";
+
+// Gateway opcodes (docs/05-realtime-protocol.md). DISPATCH is 8 (not 0 as in Discord):
+// proto3 requires the zero value to be UNSPECIFIED.
+enum GatewayOpcode {
+  GATEWAY_OPCODE_UNSPECIFIED = 0;
+  GATEWAY_OPCODE_HEARTBEAT = 1;       // c→s
+  GATEWAY_OPCODE_IDENTIFY = 2;        // c→s
+  GATEWAY_OPCODE_RESUME = 3;          // c→s
+  GATEWAY_OPCODE_PRESENCE_UPDATE = 4; // c→s
+  GATEWAY_OPCODE_TYPING = 5;          // c→s
+  GATEWAY_OPCODE_SUBSCRIBE = 6;       // c→s
+  GATEWAY_OPCODE_RECONNECT = 7;       // s→c
+  GATEWAY_OPCODE_DISPATCH = 8;        // s→c
+  GATEWAY_OPCODE_INVALID_SESSION = 9; // s→c
+  GATEWAY_OPCODE_HELLO = 10;          // s→c
+  GATEWAY_OPCODE_HEARTBEAT_ACK = 11;  // s→c
+}
+
+// WebSocket close codes used by the gateway (sent as the close status, not in frames).
+enum GatewayCloseCode {
+  GATEWAY_CLOSE_CODE_UNSPECIFIED = 0;
+  GATEWAY_CLOSE_CODE_UNKNOWN_ERROR = 4000;         // reconnect + RESUME
+  GATEWAY_CLOSE_CODE_UNKNOWN_OPCODE = 4001;        // reconnect + RESUME
+  GATEWAY_CLOSE_CODE_DECODE_ERROR = 4002;          // reconnect + RESUME
+  GATEWAY_CLOSE_CODE_NOT_AUTHENTICATED = 4003;     // new IDENTIFY
+  GATEWAY_CLOSE_CODE_AUTHENTICATION_FAILED = 4004; // refresh token, else login screen
+  GATEWAY_CLOSE_CODE_INVALID_SEQ = 4007;           // new IDENTIFY
+  GATEWAY_CLOSE_CODE_RATE_LIMITED = 4008;          // backoff + RESUME; before READY = too many sessions
+  GATEWAY_CLOSE_CODE_SESSION_TIMED_OUT = 4009;     // new IDENTIFY
+  GATEWAY_CLOSE_CODE_SESSION_REVOKED = 4010;       // do not reconnect; login screen
+}
+
+enum PresenceStatus {
+  PRESENCE_STATUS_UNSPECIFIED = 0;
+  PRESENCE_STATUS_ONLINE = 1;
+  PRESENCE_STATUS_IDLE = 2;
+  PRESENCE_STATUS_DND = 3;
+  PRESENCE_STATUS_INVISIBLE = 4; // client → server only; others see OFFLINE
+  PRESENCE_STATUS_OFFLINE = 5;   // server → client only
+}
+
+// One gateway frame. `op` must match the payload case; `seq` is set on DISPATCH only
+// (monotonic per gateway session; clients ignore seq <= last seen).
+message GatewayFrame {
+  GatewayOpcode op = 1;
+  uint64 seq = 2;
+  oneof payload {
+    // c→s
+    Heartbeat heartbeat = 10;
+    Identify identify = 11;
+    Resume resume = 12;
+    SetPresence set_presence = 13;
+    Typing typing = 14;
+    Subscribe subscribe = 15;
+    // s→c
+    Hello hello = 20;
+    HeartbeatAck heartbeat_ack = 21;
+    Reconnect reconnect = 22;
+    InvalidSession invalid_session = 23;
+    DispatchEvent dispatch = 24;
+  }
+}
+
+// ---- client → server ----
+
+message Heartbeat {
+  uint64 last_seq = 1;
+}
+
+message DeviceInfo {
+  string name = 1;     // e.g. hostname
+  string platform = 2; // darwin | win32 | linux
+  string app_version = 3;
+}
+
+message Identify {
+  string token = 1; // access JWT
+  DeviceInfo device = 2;
+  uint64 capabilities = 3; // reserved bit flags for future protocol features
+}
+
+message Resume {
+  string token = 1; // fresh access JWT
+  string session_id = 2; // gateway session id from READY
+  uint64 seq = 3; // last seq the client processed
+}
+
+message SetPresence {
+  PresenceStatus status = 1; // ONLINE | IDLE | DND | INVISIBLE
+}
+
+message Typing {
+  string room_id = 1;
+}
+
+message Subscribe {
+  repeated string room_ids = 1; // replaces the previous subscription set
+}
+
+// ---- server → client ----
+
+message Hello {
+  uint32 heartbeat_interval_ms = 1;
+}
+
+message HeartbeatAck {}
+
+message Reconnect {}
+
+message InvalidSession {
+  bool resumable = 1;
+}
+
+// DISPATCH payload: exactly one event.
+message DispatchEvent {
+  oneof event {
+    Ready ready = 1;
+    WorkspaceCreate workspace_create = 2;
+    WorkspaceUpdate workspace_update = 3;
+    WorkspaceDelete workspace_delete = 4;
+    WorkspaceMemberAdd workspace_member_add = 5;
+    WorkspaceMemberUpdate workspace_member_update = 6;
+    WorkspaceMemberRemove workspace_member_remove = 7;
+    RoomCreate room_create = 8;
+    RoomUpdate room_update = 9;
+    RoomDelete room_delete = 10;
+    RoomPermissionsUpdate room_permissions_update = 11;
+    MessageCreate message_create = 12;
+    MessageUpdate message_update = 13;
+    MessageDelete message_delete = 14;
+    TypingStart typing_start = 15;
+    PresenceUpdate presence_update = 16;
+    VoiceStateUpdate voice_state_update = 17;
+    VoiceStreamStart voice_stream_start = 18;
+    VoiceStreamStop voice_stream_stop = 19;
+    ReadStateUpdate read_state_update = 20;
+    UserUpdate user_update = 21;
+    Resumed resumed = 22;
+  }
+}
+
+// Aggregated per user (docs/05, "multiple devices").
+message VoiceState {
+  string workspace_id = 1;
+  string user_id = 2;
+  string room_id = 3; // empty = not in voice
+  bool muted = 4;     // all sessions in the room muted
+  bool deafened = 5;
+  bool streaming = 6; // any session in the room streaming
+}
+
+message Presence {
+  string user_id = 1;
+  PresenceStatus status = 2;
+  google.protobuf.Timestamp last_seen = 3; // unset when hidden (invisible/offline)
+}
+
+message ReadState {
+  string room_id = 1;
+  string last_read_message_id = 2;
+}
+
+// Full state of one workspace, as seen by the recipient (only rooms with VIEW_ROOM).
+message WorkspaceSnapshot {
+  Workspace workspace = 1;
+  WorkspaceRole role = 2;
+  repeated Room rooms = 3;
+  repeated WorkspaceMember members = 4;
+  repeated VoiceState voice_states = 5;
+  repeated Presence presences = 6;
+  // Recipient's effective permission bits per visible room (room_id -> bits).
+  // After READY, clients recompute from Room.permission_overrides (computeRoomPermissions).
+  map<string, uint64> permissions = 7;
+}
+
+message Ready {
+  string session_id = 1; // gateway session id (for RESUME)
+  Me me = 2;
+  repeated WorkspaceSnapshot workspaces = 3;
+  repeated ReadState read_states = 4;
+}
+
+// Sent after a successful RESUME, following the replayed events.
+message Resumed {
+  uint32 replayed = 1; // number of events re-sent from the session buffer
+}
+
+message WorkspaceCreate {
+  WorkspaceSnapshot snapshot = 1; // sent to a user who created/joined a workspace
+}
+
+message WorkspaceUpdate {
+  Workspace workspace = 1;
+}
+
+message WorkspaceDelete {
+  string workspace_id = 1; // also sent to a user who left / was kicked
+}
+
+message WorkspaceMemberAdd {
+  WorkspaceMember member = 1;
+}
+
+message WorkspaceMemberUpdate {
+  WorkspaceMember member = 1;
+}
+
+message WorkspaceMemberRemove {
+  string workspace_id = 1;
+  string user_id = 2;
+}
+
+message RoomCreate {
+  Room room = 1;
+}
+
+message RoomUpdate {
+  Room room = 1;
+}
+
+message RoomDelete {
+  string workspace_id = 1;
+  string room_id = 2;
+}
+
+message RoomPermissionsUpdate {
+  string workspace_id = 1;
+  string room_id = 2;
+  repeated RoomPermissionOverride permissions = 3;
+}
+
+message MessageCreate {
+  string workspace_id = 1;
+  Message message = 2;
+}
+
+message MessageUpdate {
+  string workspace_id = 1;
+  Message message = 2;
+}
+
+message MessageDelete {
+  string workspace_id = 1;
+  string room_id = 2;
+  string message_id = 3;
+}
+
+message TypingStart {
+  string room_id = 1;
+  string user_id = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+message PresenceUpdate {
+  Presence presence = 1;
+}
+
+message VoiceStateUpdate {
+  VoiceState state = 1;
+}
+
+message VoiceStreamStart {
+  string workspace_id = 1;
+  string room_id = 2;
+  string user_id = 3;
+  string track_sid = 4;
+  ScreenSharePreset preset = 5;
+}
+
+enum VoiceStreamStopReason {
+  VOICE_STREAM_STOP_REASON_UNSPECIFIED = 0;
+  VOICE_STREAM_STOP_REASON_ENDED = 1;         // publisher stopped / left
+  VOICE_STREAM_STOP_REASON_LIMIT_REACHED = 2; // room max_streams exceeded: track muted by the server
+  VOICE_STREAM_STOP_REASON_MODERATOR = 3;     // stopped by a member with MUTE_MEMBERS
+}
+
+message VoiceStreamStop {
+  string workspace_id = 1;
+  string room_id = 2;
+  string user_id = 3;
+  string track_sid = 4;
+  VoiceStreamStopReason reason = 5;
+}
+
+message ReadStateUpdate {
+  ReadState read_state = 1;
+}
+
+message UserUpdate {
+  Me me = 1; // own profile/settings changed from another device
+}

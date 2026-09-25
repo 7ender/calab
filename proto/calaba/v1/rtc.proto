@@ -1,0 +1,31 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "calaba/v1/media.proto";
+
+// POST /api/rooms/{id}/join (CONNECT). Returns a LiveKit token for this device
+// (identity "<user_id>:<session_id>", TTL 10 min, use it to connect right away).
+message JoinVoiceResponse {
+  string url = 1;   // LiveKit signal URL (LIVEKIT_URL)
+  string token = 2; // LiveKit access JWT
+  string identity = 3;
+  RoomMediaSettings media = 4; // effective settings to apply when publishing
+  bool can_speak = 5;
+  bool can_stream = 6; // STREAM granted and a stream slot was free at join time
+}
+
+// POST /api/rooms/{id}/stream/request (STREAM). Reserves a stream slot for this device and
+// grants screen share sources; 409 ERROR_CODE_CONFLICT when max_streams is reached.
+message RequestStreamRequest {
+  ScreenSharePreset preset = 1; // wanted preset; UNSPECIFIED = room maximum
+}
+
+message RequestStreamResponse {
+  ScreenSharePreset preset = 1; // granted preset (≤ room max_stream_preset)
+}
+
+// PATCH /api/voice/self — optimistic self mute/deafen of this device; 204.
+message UpdateVoiceSelfRequest {
+  optional bool muted = 1;
+  optional bool deafened = 2;
+}

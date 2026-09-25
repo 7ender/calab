@@ -1,0 +1,21 @@
+# Local plugins, versions pinned by the repo itself (BSR remote plugins are not used):
+#   protoc-gen-go — `tool` directive in apps/server/go.mod (matches the runtime version)
+#   protoc-gen-es — devDependency of packages/protocol (matches @bufbuild/protobuf)
+# Run `pnpm install` once before `make gen`.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/calaba/calaba/server/gen
+plugins:
+  - local: ["go", "-C", "apps/server", "tool", "protoc-gen-go"]
+    out: apps/server/gen
+    opt: paths=source_relative
+  - local: node_modules/.bin/protoc-gen-es
+    out: packages/protocol/src/gen
+    opt:
+      - target=ts
+      - import_extension=js
+    include_imports: false
+clean: true

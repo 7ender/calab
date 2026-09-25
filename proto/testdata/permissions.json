@@ -1,0 +1,13 @@
+[
+  { "name": "owner defaults", "role": "owner", "expected": 2047 },
+  { "name": "admin ignores deny", "role": "admin", "roleOverride": { "allow": 0, "deny": 1 }, "expected": 2047 },
+  { "name": "admin ignores user deny of everything", "role": "admin", "userOverride": { "allow": 0, "deny": 2047 }, "expected": 2047 },
+  { "name": "member defaults", "role": "member", "expected": 119 },
+  { "name": "member role deny STREAM only", "role": "member", "roleOverride": { "allow": 0, "deny": 64 }, "expected": 55 },
+  { "name": "member user allow MANAGE_ROOM", "role": "member", "userOverride": { "allow": 256, "deny": 0 }, "expected": 375 },
+  { "name": "guest defaults see nothing", "role": "guest", "expected": 0 },
+  { "name": "guest with role allow VIEW_ROOM", "role": "guest", "roleOverride": { "allow": 1, "deny": 0 }, "expected": 49 },
+  { "name": "deny VIEW_ROOM hides everything", "role": "member", "roleOverride": { "allow": 0, "deny": 1 }, "expected": 0 },
+  { "name": "user override beats role override", "role": "member",
+    "roleOverride": { "allow": 0, "deny": 1 }, "userOverride": { "allow": 1, "deny": 64 }, "expected": 55 }
+]

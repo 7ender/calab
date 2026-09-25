@@ -1,0 +1,30 @@
+# Packaging config. Signing/notarization come in stage 4 (docs/07-roadmap.md);
+# certificates are provided via env (CSC_LINK, APPLE_ID, ...), never committed.
+appId: app.calaba.desktop
+productName: Calaba
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - '**/*.node'
+npmRebuild: true
+mac:
+  category: public.app-category.business
+  target: [dmg, zip]
+  hardenedRuntime: true
+  extendInfo:
+    NSMicrophoneUsageDescription: Calaba использует микрофон для голосовых комнат.
+    NSCameraUsageDescription: Calaba может использовать камеру для видео.
+    NSAudioCaptureUsageDescription: Calaba захватывает системный звук при показе экрана.
+win:
+  target: [nsis]
+nsis:
+  oneClick: false
+  perMachine: false
+linux:
+  target: [AppImage, deb]
+  category: Network
+  maintainer: Calaba

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2023"
+    ],
+    "types": [
+      "audioworklet"
+    ],
+    "noEmit": true,
+    "composite": true
+  },
+  "include": [
+    "src/renderer/lib/media/worklets/**/*",
+    "src/renderer/lib/media/micReport.ts"
+  ]
+}
