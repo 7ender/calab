@@ -45,6 +45,12 @@
 - [ ] Настройки: устройства, режим микрофона, порог VAD, PTT-клавиша, пресет стрима, шумодав
 - [ ] Presence, typing, непрочитанные, нотификации (tray/системные)
 
+## 3b. Веб-клиент (ADR-0015)
+- [ ] Слой `platform` (electron | web) в renderer, сборка `--mode web`
+- [ ] Сервер: refresh через httpOnly cookie, проверка Origin
+- [ ] Caddy: SPA-статика на app.* рядом с /api и /gateway, CSP
+- [ ] Прогон в Chrome и Firefox против стенда
+
 ## 4. Полировка и релиз
 - [ ] Автообновление, подпись (Apple notarization, Windows signing), AppImage/deb
 - [ ] **Apple Developer ID + сертификат подписи кода для Windows — получает владелец, срок получения — недели, начинать заранее**

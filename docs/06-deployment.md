@@ -12,10 +12,9 @@
 |---|---|---|---|
 | caddy | своя сборка `infra/docker/caddy/Dockerfile` (`caddy:2.11.4` + `caddy-l4` v0.1.2, обе версии запинены) | host | 80/443 TCP, ACME, `Caddyfile`, layer4 как listener wrapper (SNI `turn.*`), h3 выключен |
 | livekit | `livekit/livekit-server:v1.13` | host | signal 7880 (только 127.0.0.1), 7881/tcp, 7882/udp, TURN 443/udp, TURN 5349 (`external_tls`; слушает `*:5349` — LiveKit не умеет bind для TURN, снаружи закрыт файрволом), metrics 6789 (127.0.0.1) |
-| api | `apps/server/Dockerfile` (Go → distroless static, nonroot) | **host**, `HTTP_ADDR=127.0.0.1:3000` | ходит в Postgres/Redis/LiveKit по 127.0.0.1; миграции сам при старте; файлы — `STORAGE_DRIVER=fs`, volume `files_data` → `/data/files` (ADR-0011) |
+| api | `apps/server/Dockerfile` (Go → distroless static, nonroot) | **host**, `HTTP_ADDR=127.0.0.1:3000` | ходит в Postgres/Redis/LiveKit по 127.0.0.1; миграции сам при старте; файлы — `STORAGE_DRIVER=fs`, volume `files_data` → `/data/files` (ADR-0011; каталог создан в образе с владельцем nonroot 65532, свежий named volume наследует его — отдельный chown не нужен); healthcheck — `/server healthcheck` |
 | postgres | `postgres:18-alpine` | bridge, `127.0.0.1:5432` | PG 18 — встроенный `uuidv7()`; volume на `/var/lib/postgresql` |
 | redis | `redis:7-alpine` | bridge, `127.0.0.1:6379` | AOF; healthcheck `redis-cli ping` |
-| files-init | `busybox:1.37` | — | одноразовый: `chown 65532:65532` на volume `files_data` (свежий named volume принадлежит root, а API в distroless работает как nonroot 65532); идемпотентен, api стартует после него (`service_completed_successfully`) |
 
 Почему api в host network: API обращается к LiveKit (`127.0.0.1:7880`, signal слушает только loopback), а LiveKit шлёт webhook на `127.0.0.1:3000`. Из bridge-сети это требовало бы `host.docker.internal` и правил файрвола для `docker0`; в host network всё идёт по loopback, наружу API не торчит (слушает только 127.0.0.1).
 

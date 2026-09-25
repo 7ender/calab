@@ -18,3 +18,4 @@
 | [0012](0012-screen-simulcast.md) | Стрим: AV1 simulcast вместо SVC; hw-кодирования нет; системный звук на macOS off | принято, уточняет 0005 |
 | [0013](0013-livekit-minimal-client.md) | Свой минимальный клиент LiveKit (twirp JSON + JWT) вместо server-sdk-go / livekit/protocol | принято, уточняет 0009 |
 | [0014](0014-vad-no-track-mute.md) | VAD/PTT глушат звук тишиной, `track.mute()` только для явного mute/deafen | принято, уточняет 0004 |
+| [0015](0015-web-client.md) | Веб-клиент из того же renderer через слой `platform`; статика на app.* через Caddy; cookie-refresh | принято |

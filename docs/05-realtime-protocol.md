@@ -39,8 +39,8 @@
 | 2 `IDENTIFY` | c→s | `{ token, device, capabilities }` |
 | 3 `RESUME` | c→s | `{ session_id, seq }` |
 | 4 `PRESENCE_UPDATE` | c→s | `{ status: online|idle|dnd|invisible }` |
-| 5 `TYPING` | c→s | `{ room_id }` (rate-limited) |
-| 6 `SUBSCRIBE` | c→s | `{ rooms: [...] }` — тонкая подписка на typing/read-state тяжёлых комнат |
+| 5 `TYPING` | c→s | `{ room_id }` — нужны `VIEW_ROOM` + `SEND_MESSAGES`; не чаще 1 раза в 3 с на пользователя и комнату (лишние молча отбрасываются) |
+| 6 `SUBSCRIBE` | c→s | `{ room_ids: [...] }` (≤ 100) — **заменяет** набор комнат, для которых сессия получает `TYPING_START`. Клиент шлёт его при каждом открытии/закрытии комнаты: `[id открытой комнаты]` (или `[]`). Без подписки `TYPING_START` не приходит вообще |
 | 10 `HELLO` | s→c | `{ heartbeat_interval }` |
 | 11 `HEARTBEAT_ACK` | s→c | |
 | 7 `RECONNECT` | s→c | сервер просит переподключиться (деплой) |
@@ -67,7 +67,7 @@ WORKSPACE_MEMBER_ADD / UPDATE (роль, ник) / REMOVE
 ROOM_CREATE / UPDATE / DELETE
 ROOM_PERMISSIONS_UPDATE      { room_id, permissions[] }
 MESSAGE_CREATE / UPDATE / DELETE
-TYPING_START                  { room_id, user_id }
+TYPING_START                  { room_id, user_id, timestamp } — только сессиям с SUBSCRIBE на комнату (см. опкод 6), показывать ~8 с
 PRESENCE_UPDATE               { user_id, status, last_seen }
 VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming }
 VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- для PiP-плитки
