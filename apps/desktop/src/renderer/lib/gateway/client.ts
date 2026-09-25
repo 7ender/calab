@@ -55,7 +55,8 @@ export interface GatewayDeps {
   onStatus(s: GatewayStatus): void;
   onFatal(kind: GatewayFatal): void;
   log?(msg: string): void;
-  random?(): number;
+  /** Random source for jitter (tests inject a constant). */
+  random?: () => number;
 }
 
 const OPEN = 1;
@@ -85,7 +86,7 @@ export class GatewayClient {
   private readonly rnd: () => number;
 
   constructor(private readonly deps: GatewayDeps) {
-    this.rnd = deps.random ?? Math.random;
+    this.rnd = deps.random ?? (() => Math.random());
   }
 
   get state(): { status: GatewayStatus; sessionId: string; seq: bigint; attempts: number } {
@@ -323,7 +324,8 @@ export class GatewayClient {
     this.log(`closed ${code}`);
     if (this.stopped) return;
 
-    switch (code as GatewayCloseCode) {
+    const closeCode: GatewayCloseCode = code;
+    switch (closeCode) {
       case GatewayCloseCode.AUTHENTICATION_FAILED:
         void this.deps.refreshToken().then((t) => {
           if (this.stopped) return;

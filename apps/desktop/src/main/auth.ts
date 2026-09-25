@@ -185,6 +185,10 @@ export async function forceRefresh(): Promise<string | null> {
   return t?.accessToken ?? null;
 }
 
+function hasSession(): boolean {
+  return tokens !== null;
+}
+
 export function currentServerUrl(): string {
   return serverUrl || getSettings().serverUrl;
 }
@@ -196,8 +200,8 @@ export async function restore(): Promise<AuthSession | null> {
   tokens = { accessToken: '', accessExpiresAt: 0, refreshToken: stored.refreshToken, sessionId: stored.sessionId };
   const t = await refreshOnce();
   if (!t) {
-    // Either rejected (already cleared) or offline: stay logged in only if we still hold tokens.
-    if (!tokens) return null;
+    // Either rejected (doRefresh cleared the session) or offline (session kept).
+    if (!hasSession()) return null;
     throw new Error('offline');
   }
   const me = await fetchMe();

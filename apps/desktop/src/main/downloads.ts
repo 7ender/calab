@@ -2,12 +2,12 @@ import { createWriteStream, existsSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { app, net, shell } from 'electron';
 import type { DownloadArgs } from '../shared/ipc';
 import { currentServerUrl, getAccessToken } from './auth';
 
 function uniquePath(dir: string, name: string): string {
+  // eslint-disable-next-line no-control-regex -- strip control chars from user-supplied file names
   const safe = basename(name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_') || 'file';
   const ext = extname(safe);
   const stem = safe.slice(0, safe.length - ext.length);
@@ -25,7 +25,7 @@ export async function downloadFile(args: DownloadArgs): Promise<string> {
   });
   if (!res.ok || !res.body) throw new Error(`download failed: HTTP ${res.status}`);
   const path = uniquePath(app.getPath('downloads'), args.name);
-  await pipeline(Readable.fromWeb(res.body as unknown as NodeReadableStream), createWriteStream(path));
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(path));
   shell.showItemInFolder(path);
   return path;
 }

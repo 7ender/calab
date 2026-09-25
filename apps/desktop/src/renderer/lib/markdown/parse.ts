@@ -73,7 +73,7 @@ export function parseInline(src: string, depth: number): MdNode[] {
     const rest = src.slice(i);
 
     if (ch === '\\' && i + 1 < src.length && /[\\`*_~[\]()@]/.test(src[i + 1] ?? '')) {
-      buf += src[i + 1];
+      buf += src[i + 1] ?? '';
       i += 2;
       continue;
     }

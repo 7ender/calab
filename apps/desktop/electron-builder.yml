@@ -11,14 +11,22 @@ files:
 asarUnpack:
   - '**/*.node'
 npmRebuild: true
+protocols:
+  - name: Calaba
+    schemes: [calaba]
 mac:
   category: public.app-category.business
   target: [dmg, zip]
+  # Unsigned until the Developer ID arrives (stage 4); CSC_LINK in env enables signing.
+  identity: null
   hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSMicrophoneUsageDescription: Calaba использует микрофон для голосовых комнат.
     NSCameraUsageDescription: Calaba может использовать камеру для видео.
     NSAudioCaptureUsageDescription: Calaba захватывает системный звук при показе экрана.
+    NSAppleEventsUsageDescription: Calaba открывает системные настройки разрешений.
 win:
   target: [nsis]
 nsis:

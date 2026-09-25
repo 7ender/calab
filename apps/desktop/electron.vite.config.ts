@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
@@ -59,6 +60,6 @@ export default defineConfig({
       include: ['@rnnoise-dist/polyfills.js', '@rnnoise-dist/generated/rnnoise-sync.js', 'livekit-client'],
     },
     worker: { format: 'es' },
-    plugins: [react(), fullReloadOnly()],
+    plugins: [react(), tailwindcss(), fullReloadOnly()],
   },
 });

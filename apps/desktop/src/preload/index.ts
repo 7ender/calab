@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import { IPC } from '../shared/ipc';
 import type { CalabaApi } from './api';
 
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- typed per channel by the caller
 function on<T>(channel: string, cb: (v: T) => void): () => void {
   const listener = (_e: IpcRendererEvent, v: T): void => cb(v);
   ipcRenderer.on(channel, listener);

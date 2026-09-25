@@ -1,5 +1,6 @@
 import {
   DEFAULT_AUDIO_BITRATE_KBPS,
+  PresenceStatus,
   ScreenSharePreset,
   type ConcreteScreenSharePreset,
   type ScreenShareContentHint,
@@ -33,6 +34,8 @@ export interface Prefs {
   /** userId → playback volume 0..2 (element.volume ≤ 1; >1 unsupported, clamped). */
   userVolumes: Record<string, number>;
   devStats: boolean;
+  /** Chosen presence (PresenceStatus value), re-sent after every gateway (re)connect. */
+  presence: PresenceStatus;
 }
 
 const DEFAULTS: Prefs = {
@@ -51,6 +54,7 @@ const DEFAULTS: Prefs = {
   voiceSounds: true,
   userVolumes: {},
   devStats: false,
+  presence: PresenceStatus.ONLINE,
 };
 
 interface PrefsState extends Prefs {

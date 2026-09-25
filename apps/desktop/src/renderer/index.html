@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' ws: wss: http://127.0.0.1:* http://localhost:* https:; worker-src 'self' blob:"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: calaba-api:; media-src 'self' blob: mediastream: calaba-api:; connect-src 'self' calaba-api: ws: wss: http: https:; worker-src 'self' blob:; font-src 'self' data:"
     />
-    <title>Calaba — медиа-спайк</title>
+    <title>Calaba</title>
   </head>
   <body>
     <div id="root"></div>
