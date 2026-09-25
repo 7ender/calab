@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -25,7 +26,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, display_name, settings)
 VALUES ($1, $2, $3, $4)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at
 `
 
 type CreateUserParams struct {
@@ -53,12 +54,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Settings,
 		&i.CreatedAt,
 		&i.DisabledAt,
+		&i.StatusEmoji,
+		&i.StatusExpiresAt,
 	)
 	return i, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at FROM users WHERE id = $1
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -74,12 +77,14 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.Settings,
 		&i.CreatedAt,
 		&i.DisabledAt,
+		&i.StatusEmoji,
+		&i.StatusExpiresAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at FROM users WHERE email = $1
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -95,6 +100,8 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Settings,
 		&i.CreatedAt,
 		&i.DisabledAt,
+		&i.StatusEmoji,
+		&i.StatusExpiresAt,
 	)
 	return i, err
 }
@@ -109,6 +116,43 @@ func (q *Queries) LockRegistration(ctx context.Context) error {
 	return err
 }
 
+const updateStatus = `-- name: UpdateStatus :one
+UPDATE users SET status_text = $2, status_emoji = $3, status_expires_at = $4
+WHERE id = $1
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at
+`
+
+type UpdateStatusParams struct {
+	ID              uuid.UUID
+	StatusText      string
+	StatusEmoji     string
+	StatusExpiresAt *time.Time
+}
+
+func (q *Queries) UpdateStatus(ctx context.Context, arg UpdateStatusParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateStatus,
+		arg.ID,
+		arg.StatusText,
+		arg.StatusEmoji,
+		arg.StatusExpiresAt,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.DisplayName,
+		&i.AvatarFileID,
+		&i.StatusText,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.StatusEmoji,
+		&i.StatusExpiresAt,
+	)
+	return i, err
+}
+
 const updateUser = `-- name: UpdateUser :one
 UPDATE users SET
     display_name   = coalesce($1, display_name),
@@ -116,7 +160,7 @@ UPDATE users SET
     avatar_file_id = CASE WHEN $3::boolean THEN $4::uuid ELSE avatar_file_id END,
     settings       = coalesce($5, settings)
 WHERE id = $6
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at
 `
 
 type UpdateUserParams struct {
@@ -148,6 +192,8 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Settings,
 		&i.CreatedAt,
 		&i.DisabledAt,
+		&i.StatusEmoji,
+		&i.StatusExpiresAt,
 	)
 	return i, err
 }

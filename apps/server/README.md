@@ -22,6 +22,7 @@ internal/rooms        комнаты, медиа-настройки, overrides �
 internal/messages     история (курсор по uuidv7), идемпотентная отправка по nonce, правка/удаление, read state
 internal/files        загрузка потоком в blob.Store (sha256, лимит, квота), WebP-превью, скачивание с Range/ETag, чистка сирот
 internal/blob         blob.Store + драйвер fs (ADR-0011)
+internal/unfurl       превью ссылок (OpenGraph) и прокси их картинок: SSRF-защита, кэш в Redis, подписанные ссылки
 internal/voice        voice state в Redis (по сессии устройства, агрегация по пользователю), стримы
 internal/rtc          LiveKit (свой минимальный клиент, ADR-0013): токены и grant'ы, stream/request, voice/self, модерация, webhook, reconcile, синхронизация прав
 internal/gateway      WS gateway: HELLO/IDENTIFY/RESUME/HEARTBEAT, seq + буфер для RESUME, presence, typing, fan-out
@@ -67,6 +68,7 @@ LiveKit в compose.dev работает с `infra/docker/livekit/livekit.dev.yam
 | `LIVEKIT_INTERNAL_URL` | — | URL для API (`http://127.0.0.1:7880`) |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | — | задаются все четыре LIVEKIT_* или ни одной (тогда voice-эндпоинты → 503) |
 | `LIVEKIT_MAX_PARTICIPANTS` | `50` | `max_participants` комнаты LiveKit |
+| `UNFURL_ALLOW_CIDRS` | — | только dev: диапазоны, которые превью ссылок может запрашивать, хотя они не публичные (VPN с fake-IP, напр. `198.18.0.0/15`); loopback/link-local всё равно запрещены |
 | `GATEWAY_HEARTBEAT_INTERVAL` | `41s` | интервал heartbeat (presence TTL = 2×) |
 | `GATEWAY_MAX_SESSIONS_PER_USER` | `5` | лимит устройств с активным gateway |
 

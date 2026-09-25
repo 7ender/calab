@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
 	"testing"
@@ -142,7 +143,8 @@ func run(m *testing.M) int {
 		return 1
 	}
 	lkRec = &recordingLiveKit{LiveKit: rtc.NewLiveKit(cfg.LiveKitInternalURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)}
-	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Events: events.Redis{C: rc}, Blob: store, LiveKit: lkRec})
+	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Events: events.Redis{C: rc}, Blob: store, LiveKit: lkRec,
+		UnfurlAllowAddr: func(netip.Addr) bool { return true }}) // test pages are served on loopback
 	testApp, testDB, testRedis, testCfg = a, d, rc, cfg
 	bg, stop := context.WithCancel(ctx)
 	defer stop()

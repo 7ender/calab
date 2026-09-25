@@ -112,15 +112,24 @@ func targetTypeFromDB(s string) v1.PermissionTargetType {
 
 // ---- users / sessions ----
 
-// User is the public profile.
+// User is the public profile. An expired custom status is returned empty.
 func User(u sqlc.User) *v1.User {
-	return &v1.User{
+	out := &v1.User{
 		Id:           u.ID.String(),
 		DisplayName:  u.DisplayName,
 		AvatarFileId: idp(u.AvatarFileID),
-		StatusText:   u.StatusText,
 		CreatedAt:    ts(u.CreatedAt),
 	}
+	out.StatusText, out.StatusEmoji, out.StatusExpiresAt = Status(u)
+	return out
+}
+
+// Status returns the user's current custom status (empty once expired).
+func Status(u sqlc.User) (text, emoji string, expires *timestamppb.Timestamp) {
+	if u.StatusExpiresAt != nil && !time.Now().Before(*u.StatusExpiresAt) {
+		return "", "", nil
+	}
+	return u.StatusText, u.StatusEmoji, tsp(u.StatusExpiresAt)
 }
 
 // Settings decodes users.settings (protojson). Fields missing from the stored JSON (rows
@@ -312,7 +321,22 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		MediaOverride:       MediaOverride(r),
 		PermissionOverrides: ovs,
 		CreatedAt:           ts(r.CreatedAt),
+		CategoryId:          idp(r.CategoryID),
 	}
+}
+
+// Category converts a room category row.
+func Category(c sqlc.RoomCategory) *v1.RoomCategory {
+	return &v1.RoomCategory{Id: c.ID.String(), WorkspaceId: c.WorkspaceID.String(), Name: c.Name, Position: c.Position}
+}
+
+// Categories converts category rows.
+func Categories(cs []sqlc.RoomCategory) []*v1.RoomCategory {
+	out := make([]*v1.RoomCategory, len(cs))
+	for i, c := range cs {
+		out[i] = Category(c)
+	}
+	return out
 }
 
 // ---- files / messages ----
@@ -363,6 +387,7 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 	if m.Nonce != nil {
 		out.Nonce = *m.Nonce
 	}
+	out.PinnedAt, out.PinnedBy = tsp(m.PinnedAt), idp(m.PinnedBy)
 	for i, f := range files {
 		out.Attachments[i] = File(f)
 	}

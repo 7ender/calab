@@ -12,6 +12,36 @@ import (
 	"github.com/google/uuid"
 )
 
+const addReaction = `-- name: AddReaction :execrows
+INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING
+`
+
+type AddReactionParams struct {
+	MessageID uuid.UUID
+	UserID    uuid.UUID
+	Emoji     string
+}
+
+func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addReaction, arg.MessageID, arg.UserID, arg.Emoji)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const countPins = `-- name: CountPins :one
+SELECT count(*)::integer FROM messages WHERE room_id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL
+`
+
+func (q *Queries) CountPins(ctx context.Context, roomID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countPins, roomID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const detachMessageFiles = `-- name: DetachMessageFiles :exec
 DELETE FROM message_attachments WHERE message_id = $1
 `
@@ -22,7 +52,7 @@ func (q *Queries) DetachMessageFiles(ctx context.Context, messageID uuid.UUID) e
 }
 
 const getMessage = `-- name: GetMessage :one
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at FROM messages WHERE id = $1 AND deleted_at IS NULL
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by FROM messages WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error) {
@@ -38,12 +68,14 @@ func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error)
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.PinnedAt,
+		&i.PinnedBy,
 	)
 	return i, err
 }
 
 const getMessageByNonce = `-- name: GetMessageByNonce :one
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at FROM messages WHERE author_id = $1 AND nonce = $2
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by FROM messages WHERE author_id = $1 AND nonce = $2
 `
 
 type GetMessageByNonceParams struct {
@@ -64,6 +96,8 @@ func (q *Queries) GetMessageByNonce(ctx context.Context, arg GetMessageByNoncePa
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.PinnedAt,
+		&i.PinnedBy,
 	)
 	return i, err
 }
@@ -87,7 +121,7 @@ const insertMessage = `-- name: InsertMessage :one
 INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (author_id, nonce) WHERE nonce IS NOT NULL DO NOTHING
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by
 `
 
 type InsertMessageParams struct {
@@ -118,6 +152,8 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.PinnedAt,
+		&i.PinnedBy,
 	)
 	return i, err
 }
@@ -203,7 +239,7 @@ func (q *Queries) ListAttachments(ctx context.Context, ids []uuid.UUID) ([]ListA
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at FROM messages
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by FROM messages
 WHERE room_id = $1 AND deleted_at IS NULL AND id > $2::uuid
 ORDER BY id ASC
 LIMIT $3
@@ -235,6 +271,8 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
+			&i.PinnedAt,
+			&i.PinnedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -247,7 +285,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at FROM messages
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by FROM messages
 WHERE room_id = $1 AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR id < $2::uuid)
 ORDER BY id DESC
@@ -280,6 +318,96 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
+			&i.PinnedAt,
+			&i.PinnedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPins = `-- name: ListPins :many
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by FROM messages
+WHERE room_id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL
+ORDER BY pinned_at DESC
+LIMIT 50
+`
+
+func (q *Queries) ListPins(ctx context.Context, roomID uuid.UUID) ([]Message, error) {
+	rows, err := q.db.Query(ctx, listPins, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.AuthorID,
+			&i.Content,
+			&i.ReplyToID,
+			&i.Nonce,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.PinnedAt,
+			&i.PinnedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReactions = `-- name: ListReactions :many
+SELECT message_id, emoji, count(*)::integer AS count,
+       bool_or(user_id = $1)::boolean AS me, min(created_at)::timestamptz AS first_at
+FROM message_reactions
+WHERE message_id = ANY($2::uuid[])
+GROUP BY message_id, emoji
+ORDER BY message_id, first_at
+`
+
+type ListReactionsParams struct {
+	Viewer uuid.UUID
+	Ids    []uuid.UUID
+}
+
+type ListReactionsRow struct {
+	MessageID uuid.UUID
+	Emoji     string
+	Count     int32
+	Me        bool
+	FirstAt   time.Time
+}
+
+// Aggregates per message and emoji, in order of first use; me = the viewer reacted.
+func (q *Queries) ListReactions(ctx context.Context, arg ListReactionsParams) ([]ListReactionsRow, error) {
+	rows, err := q.db.Query(ctx, listReactions, arg.Viewer, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReactionsRow{}
+	for rows.Next() {
+		var i ListReactionsRow
+		if err := rows.Scan(
+			&i.MessageID,
+			&i.Emoji,
+			&i.Count,
+			&i.Me,
+			&i.FirstAt,
 		); err != nil {
 			return nil, err
 		}
@@ -317,6 +445,136 @@ func (q *Queries) ListReadStates(ctx context.Context, userID uuid.UUID) ([]ReadS
 	return items, nil
 }
 
+const pinMessage = `-- name: PinMessage :one
+UPDATE messages SET pinned_at = now(), pinned_by = $1
+WHERE id = $2 AND deleted_at IS NULL AND pinned_at IS NULL
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by
+`
+
+type PinMessageParams struct {
+	PinnedBy *uuid.UUID
+	ID       uuid.UUID
+}
+
+func (q *Queries) PinMessage(ctx context.Context, arg PinMessageParams) (Message, error) {
+	row := q.db.QueryRow(ctx, pinMessage, arg.PinnedBy, arg.ID)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.RoomID,
+		&i.AuthorID,
+		&i.Content,
+		&i.ReplyToID,
+		&i.Nonce,
+		&i.CreatedAt,
+		&i.EditedAt,
+		&i.DeletedAt,
+		&i.PinnedAt,
+		&i.PinnedBy,
+	)
+	return i, err
+}
+
+const reactionEmojiStats = `-- name: ReactionEmojiStats :one
+SELECT count(DISTINCT emoji)::integer AS distinct_emojis,
+       coalesce(bool_or(emoji = $1), false)::boolean AS has_emoji
+FROM message_reactions WHERE message_id = $2
+`
+
+type ReactionEmojiStatsParams struct {
+	Emoji     string
+	MessageID uuid.UUID
+}
+
+type ReactionEmojiStatsRow struct {
+	DistinctEmojis int32
+	HasEmoji       bool
+}
+
+// Distinct emojis on a message and whether this emoji is among them (for the per-message cap).
+func (q *Queries) ReactionEmojiStats(ctx context.Context, arg ReactionEmojiStatsParams) (ReactionEmojiStatsRow, error) {
+	row := q.db.QueryRow(ctx, reactionEmojiStats, arg.Emoji, arg.MessageID)
+	var i ReactionEmojiStatsRow
+	err := row.Scan(&i.DistinctEmojis, &i.HasEmoji)
+	return i, err
+}
+
+const removeReaction = `-- name: RemoveReaction :execrows
+DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3
+`
+
+type RemoveReactionParams struct {
+	MessageID uuid.UUID
+	UserID    uuid.UUID
+	Emoji     string
+}
+
+func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeReaction, arg.MessageID, arg.UserID, arg.Emoji)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const searchMessages = `-- name: SearchMessages :many
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by FROM messages
+WHERE room_id = ANY($1::uuid[]) AND deleted_at IS NULL
+  AND (to_tsvector('russian', content) || to_tsvector('simple', content))
+      @@ (websearch_to_tsquery('russian', $2::text) || websearch_to_tsquery('simple', $2::text))
+  AND ($3::uuid IS NULL OR id < $3::uuid)
+  AND ($4::uuid IS NULL OR author_id = $4::uuid)
+ORDER BY id DESC
+LIMIT $5
+`
+
+type SearchMessagesParams struct {
+	RoomIds  []uuid.UUID
+	Q        string
+	Before   *uuid.UUID
+	AuthorID *uuid.UUID
+	Lim      int32
+}
+
+// Full-text search, newest first. The tsvector expression must match messages_search_idx.
+func (q *Queries) SearchMessages(ctx context.Context, arg SearchMessagesParams) ([]Message, error) {
+	rows, err := q.db.Query(ctx, searchMessages,
+		arg.RoomIds,
+		arg.Q,
+		arg.Before,
+		arg.AuthorID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.AuthorID,
+			&i.Content,
+			&i.ReplyToID,
+			&i.Nonce,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.PinnedAt,
+			&i.PinnedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const softDeleteMessage = `-- name: SoftDeleteMessage :execrows
 UPDATE messages SET deleted_at = now(), content = ''
 WHERE id = $1 AND deleted_at IS NULL
@@ -330,10 +588,35 @@ func (q *Queries) SoftDeleteMessage(ctx context.Context, id uuid.UUID) (int64, e
 	return result.RowsAffected(), nil
 }
 
+const unpinMessage = `-- name: UnpinMessage :one
+UPDATE messages SET pinned_at = NULL, pinned_by = NULL
+WHERE id = $1 AND deleted_at IS NULL AND pinned_at IS NOT NULL
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by
+`
+
+func (q *Queries) UnpinMessage(ctx context.Context, id uuid.UUID) (Message, error) {
+	row := q.db.QueryRow(ctx, unpinMessage, id)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.RoomID,
+		&i.AuthorID,
+		&i.Content,
+		&i.ReplyToID,
+		&i.Nonce,
+		&i.CreatedAt,
+		&i.EditedAt,
+		&i.DeletedAt,
+		&i.PinnedAt,
+		&i.PinnedBy,
+	)
+	return i, err
+}
+
 const updateMessageContent = `-- name: UpdateMessageContent :one
 UPDATE messages SET content = $2, edited_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by
 `
 
 type UpdateMessageContentParams struct {
@@ -354,6 +637,8 @@ func (q *Queries) UpdateMessageContent(ctx context.Context, arg UpdateMessageCon
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.PinnedAt,
+		&i.PinnedBy,
 	)
 	return i, err
 }

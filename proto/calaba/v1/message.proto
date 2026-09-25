@@ -14,8 +14,9 @@ message Message {
   string nonce = 7; // client id of the optimistic message, echoed back
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp edited_at = 9;
-  // Aggregated reactions in order of first use. `me` is relative to the requesting user
-  // and is only filled in REST responses; events carry MESSAGE_REACTION_ADD/REMOVE instead.
+  // Aggregated reactions in order of first use. `me` is relative to the requesting user and
+  // is filled only in REST responses; in events (MESSAGE_UPDATE) counts are current but `me`
+  // is always false — clients keep their own `me` and apply MESSAGE_REACTION_ADD/REMOVE.
   repeated Reaction reactions = 10;
   google.protobuf.Timestamp pinned_at = 11; // unset = not pinned
   string pinned_by = 12;

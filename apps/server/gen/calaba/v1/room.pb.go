@@ -840,7 +840,8 @@ type CreateRoomRequest struct {
 	Topic         string                 `protobuf:"bytes,3,opt,name=topic,proto3" json:"topic,omitempty"` // ≤ 1024 chars
 	IsPrivate     bool                   `protobuf:"varint,4,opt,name=is_private,json=isPrivate,proto3" json:"is_private,omitempty"`
 	MediaOverride *RoomMediaOverride     `protobuf:"bytes,5,opt,name=media_override,json=mediaOverride,proto3" json:"media_override,omitempty"`
-	Position      *int32                 `protobuf:"varint,6,opt,name=position,proto3,oneof" json:"position,omitempty"` // default: after the last room
+	Position      *int32                 `protobuf:"varint,6,opt,name=position,proto3,oneof" json:"position,omitempty"`                // default: after the last room
+	CategoryId    string                 `protobuf:"bytes,7,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"` // optional category of the same workspace
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -915,6 +916,13 @@ func (x *CreateRoomRequest) GetPosition() int32 {
 		return *x.Position
 	}
 	return 0
+}
+
+func (x *CreateRoomRequest) GetCategoryId() string {
+	if x != nil {
+		return x.CategoryId
+	}
+	return ""
 }
 
 type CreateRoomResponse struct {
@@ -1461,7 +1469,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\x127\n" +
 	"\n" +
 	"categories\x18\x02 \x03(\v2\x17.calaba.v1.RoomCategoryR\n" +
-	"categories\"\xf8\x01\n" +
+	"categories\"\x99\x02\n" +
 	"\x11CreateRoomRequest\x12'\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x13.calaba.v1.RoomTypeR\x04type\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -1469,7 +1477,9 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\n" +
 	"is_private\x18\x04 \x01(\bR\tisPrivate\x12C\n" +
 	"\x0emedia_override\x18\x05 \x01(\v2\x1c.calaba.v1.RoomMediaOverrideR\rmediaOverride\x12\x1f\n" +
-	"\bposition\x18\x06 \x01(\x05H\x00R\bposition\x88\x01\x01B\v\n" +
+	"\bposition\x18\x06 \x01(\x05H\x00R\bposition\x88\x01\x01\x12\x1f\n" +
+	"\vcategory_id\x18\a \x01(\tR\n" +
+	"categoryIdB\v\n" +
 	"\t_position\"9\n" +
 	"\x12CreateRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\":\n" +

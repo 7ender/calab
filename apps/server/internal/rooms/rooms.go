@@ -102,6 +102,12 @@ func workspaceAccess(r *http.Request, wsID uuid.UUID) (perm.Bits, perm.Role, err
 // are reported as 404 so that their existence does not leak.
 func Access(r *http.Request, roomID uuid.UUID) (perm.RoomAccess, error) { return roomAccess(r, roomID) }
 
+// WorkspaceRole returns the caller's role in a workspace (404 for non-members).
+func WorkspaceRole(r *http.Request, wsID uuid.UUID) (perm.Role, error) {
+	_, role, err := workspaceAccess(r, wsID)
+	return role, err
+}
+
 func roomAccess(r *http.Request, roomID uuid.UUID) (perm.RoomAccess, error) {
 	acc, err := perm.FromContext(r.Context()).Room(r.Context(), roomID, auth.MustFromContext(r.Context()).UserID)
 	if errors.Is(err, perm.ErrNoRoom) || (err == nil && !acc.Bits.Has(perm.ViewRoom)) {
@@ -195,6 +201,10 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if typ != "voice" && (audio != nil || preset != nil || streams != nil) {
 		return httpx.Validation("mediaOverride", "media settings apply to voice rooms only")
 	}
+	category, err := parseCategory(r.Context(), h.db.Q, wsID, req.GetCategoryId())
+	if err != nil {
+		return err
+	}
 
 	var (
 		room sqlc.Room
@@ -216,6 +226,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			AudioBitrateKbps: audio,
 			MaxStreamPreset:  preset,
 			MaxStreams:       streams,
+			CategoryID:       category,
 		})
 		if err != nil {
 			return err
@@ -336,6 +347,12 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		p.Topic = &t
+	}
+	if req.CategoryId != nil {
+		p.SetCategory = true
+		if p.CategoryID, err = parseCategory(r.Context(), h.db.Q, acc.WorkspaceID, req.GetCategoryId()); err != nil {
+			return err
+		}
 	}
 	if req.MediaOverride != nil {
 		p.SetMedia = true

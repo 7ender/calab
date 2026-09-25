@@ -51,6 +51,11 @@ type Config struct {
 	LiveKitAPISecret       string `env:"LIVEKIT_API_SECRET"`
 	LiveKitMaxParticipants uint32 `env:"LIVEKIT_MAX_PARTICIPANTS" envDefault:"50"`
 
+	// Link previews: extra address ranges the unfurler may fetch from although they are not
+	// public. Only for dev machines whose VPN resolves names into a fake-IP range
+	// (e.g. 198.18.0.0/15). Loopback and link-local stay blocked regardless. Never set in prod.
+	UnfurlAllowCIDRs []netip.Prefix `env:"UNFURL_ALLOW_CIDRS"`
+
 	// Gateway.
 	HeartbeatInterval time.Duration `env:"GATEWAY_HEARTBEAT_INTERVAL" envDefault:"41s"`
 	MaxDevicesPerUser int           `env:"GATEWAY_MAX_SESSIONS_PER_USER" envDefault:"5"`

@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -24,6 +25,7 @@ import (
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/rtc"
+	"github.com/calaba/calaba/server/internal/unfurl"
 	"github.com/calaba/calaba/server/internal/users"
 	"github.com/calaba/calaba/server/internal/workspaces"
 )
@@ -37,6 +39,9 @@ type Deps struct {
 	Blob   blob.Store
 	// LiveKit overrides the LiveKit client (tests); nil = real client from config.
 	LiveKit rtc.LiveKit
+	// UnfurlAllowAddr overrides the link-preview address policy (tests only, to reach a
+	// loopback test server); nil = public addresses only. Deliberately not an env var.
+	UnfurlAllowAddr func(netip.Addr) bool
 }
 
 // App is the assembled server.
@@ -56,6 +61,16 @@ func (a *App) Run(ctx context.Context) {
 	if a.RTC != nil {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)
 	}
+}
+
+func unfurlPolicy(d Deps) func(netip.Addr) bool {
+	if d.UnfurlAllowAddr != nil {
+		return d.UnfurlAllowAddr
+	}
+	if len(d.Config.UnfurlAllowCIDRs) > 0 {
+		return unfurl.PublicOrAllowed(d.Config.UnfurlAllowCIDRs)
+	}
+	return nil // unfurl.PublicAddr
 }
 
 // New builds the router. Next stages (gateway, messages, files, rtc) register their
@@ -110,11 +125,15 @@ func New(d Deps) *App {
 	ah := auth.NewHandlers(authSvc, authLimiter, d.Config.AllowedOrigins())
 	ah.Public(mux)
 	ah.Private(mux, private)
-	users.NewHandlers(d.DB, pub).Routes(mux, private)
+	users.NewHandlers(d.DB, pub, hub).Routes(mux, private)
 	workspaces.NewHandlers(d.DB, pub, d.Blob).Routes(mux, private)
-	rooms.NewHandlers(d.DB, pub).Routes(mux, private)
+	roomHandlers := rooms.NewHandlers(d.DB, pub)
+	roomHandlers.Routes(mux, private)
+	roomHandlers.CategoryRoutes(mux, private)
 	messages.NewHandlers(d.DB, pub, msgLimiter).Routes(mux, private)
 	filesSvc.Routes(mux, private)
+	unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
+		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
 	if rtcSvc != nil {
 		rtcSvc.Routes(mux, private)
 	} else {

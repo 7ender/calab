@@ -1,12 +1,12 @@
 -- name: CreateRoom :one
 INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
-                   audio_bitrate_kbps, max_stream_preset, max_streams)
+                   audio_bitrate_kbps, max_stream_preset, max_streams, category_id)
 VALUES (sqlc.arg('workspace_id'), sqlc.arg('type'), sqlc.arg('name'), sqlc.arg('topic'),
         coalesce(sqlc.narg('position')::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
                   WHERE workspace_id = sqlc.arg('workspace_id') AND archived_at IS NULL)),
         sqlc.arg('is_private'), sqlc.narg('audio_bitrate_kbps'), sqlc.narg('max_stream_preset'),
-        sqlc.narg('max_streams'))
+        sqlc.narg('max_streams'), sqlc.narg('category_id'))
 RETURNING *;
 
 -- name: GetRoom :one
@@ -24,7 +24,8 @@ UPDATE rooms SET
     position = coalesce(sqlc.narg('position'), position),
     audio_bitrate_kbps = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('audio_bitrate_kbps')::integer ELSE audio_bitrate_kbps END,
     max_stream_preset  = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_stream_preset')::text ELSE max_stream_preset END,
-    max_streams        = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_streams')::integer ELSE max_streams END
+    max_streams        = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_streams')::integer ELSE max_streams END,
+    category_id        = CASE WHEN sqlc.arg('set_category')::boolean THEN sqlc.narg('category_id')::uuid ELSE category_id END
 WHERE id = sqlc.arg('id') AND archived_at IS NULL
 RETURNING *;
 
@@ -58,3 +59,44 @@ JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = sqlc
 LEFT JOIN room_permissions ro ON ro.room_id = r.id AND ro.target_type = 'role' AND ro.target_id = m.role
 LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = sqlc.arg('user_id')::text
 WHERE r.id = sqlc.arg('room_id') AND r.archived_at IS NULL;
+
+-- name: CreateCategory :one
+INSERT INTO room_categories (workspace_id, name, position)
+VALUES (sqlc.arg('workspace_id'), sqlc.arg('name'),
+        coalesce(sqlc.narg('position')::integer,
+                 (SELECT coalesce(max(position) + 1, 0) FROM room_categories WHERE workspace_id = sqlc.arg('workspace_id'))))
+RETURNING *;
+
+-- name: ListCategories :many
+SELECT * FROM room_categories WHERE workspace_id = $1 ORDER BY position, id;
+
+-- name: GetCategory :one
+SELECT * FROM room_categories WHERE id = $1;
+
+-- name: UpdateCategory :one
+UPDATE room_categories SET
+    name     = coalesce(sqlc.narg('name'), name),
+    position = coalesce(sqlc.narg('position'), position)
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
+-- name: DeleteCategory :many
+-- Deletes a category; returns the rooms that were in it (their category_id becomes NULL).
+WITH moved AS (
+    UPDATE rooms SET category_id = NULL
+    WHERE category_id = sqlc.arg('id')::uuid AND archived_at IS NULL
+    RETURNING id
+), gone AS (
+    DELETE FROM room_categories WHERE room_categories.id = sqlc.arg('id')::uuid
+)
+SELECT id FROM moved;
+
+-- name: SetRoomPlacement :one
+UPDATE rooms SET position = sqlc.arg('position'), category_id = sqlc.narg('category_id')
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id') AND archived_at IS NULL
+RETURNING *;
+
+-- name: SetCategoryPosition :one
+UPDATE room_categories SET position = sqlc.arg('position')
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
+RETURNING *;

@@ -33,8 +33,9 @@ type Message struct {
 	Nonce       string                 `protobuf:"bytes,7,opt,name=nonce,proto3" json:"nonce,omitempty"` // client id of the optimistic message, echoed back
 	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	EditedAt    *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=edited_at,json=editedAt,proto3" json:"edited_at,omitempty"`
-	// Aggregated reactions in order of first use. `me` is relative to the requesting user
-	// and is only filled in REST responses; events carry MESSAGE_REACTION_ADD/REMOVE instead.
+	// Aggregated reactions in order of first use. `me` is relative to the requesting user and
+	// is filled only in REST responses; in events (MESSAGE_UPDATE) counts are current but `me`
+	// is always false — clients keep their own `me` and apply MESSAGE_REACTION_ADD/REMOVE.
 	Reactions     []*Reaction            `protobuf:"bytes,10,rep,name=reactions,proto3" json:"reactions,omitempty"`
 	PinnedAt      *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=pinned_at,json=pinnedAt,proto3" json:"pinned_at,omitempty"` // unset = not pinned
 	PinnedBy      string                 `protobuf:"bytes,12,opt,name=pinned_by,json=pinnedBy,proto3" json:"pinned_by,omitempty"`

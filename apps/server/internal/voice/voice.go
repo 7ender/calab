@@ -9,6 +9,7 @@
 //	voice:streams:<room_id>      hash  track_sid -> JSON Stream
 //	voice:streamreq:<identity>   string preset reserved by /stream/request (TTL 10 min)
 //	voice:workspaces             set   workspaces with any voice state (for reconcile)
+//	voice:started:<room_id>      string unix ms when the current call began (first device in an empty room)
 package voice
 
 import (
@@ -16,11 +17,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
@@ -99,6 +102,7 @@ func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.Voice
 	}
 	out.RoomId = latest.RoomID.String()
 	out.Muted, out.Deafened = true, true
+	joined := latest.JoinedAt
 	for _, s := range sessions {
 		if s.UserID != userID || s.RoomID != latest.RoomID {
 			continue
@@ -106,7 +110,9 @@ func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.Voice
 		out.Muted = out.Muted && s.Muted
 		out.Deafened = out.Deafened && s.Deafened
 		out.Streaming = out.Streaming || s.Streaming
+		joined = min(joined, s.JoinedAt)
 	}
+	out.JoinedAt = timestamppb.New(time.UnixMilli(joined))
 	return out
 }
 
@@ -127,7 +133,8 @@ func AggregateAll(workspaceID uuid.UUID, sessions []SessionState) []*v1.VoiceSta
 // Equal compares two aggregated states.
 func Equal(a, b *v1.VoiceState) bool {
 	return a.GetRoomId() == b.GetRoomId() && a.GetMuted() == b.GetMuted() &&
-		a.GetDeafened() == b.GetDeafened() && a.GetStreaming() == b.GetStreaming()
+		a.GetDeafened() == b.GetDeafened() && a.GetStreaming() == b.GetStreaming() &&
+		a.GetJoinedAt().AsTime().Equal(b.GetJoinedAt().AsTime())
 }
 
 // Store is the Redis-backed voice state.
@@ -137,6 +144,7 @@ func wsKey(wid uuid.UUID) string          { return "voice:ws:" + wid.String() }
 func sessKey(sid uuid.UUID) string        { return "voice:sess:" + sid.String() }
 func streamsKey(rid uuid.UUID) string     { return "voice:streams:" + rid.String() }
 func streamReqKey(identity string) string { return "voice:streamreq:" + identity }
+func startedKey(rid uuid.UUID) string     { return "voice:started:" + rid.String() }
 
 const workspacesKey = "voice:workspaces"
 
@@ -214,12 +222,63 @@ func (s Store) Update(ctx context.Context, wid, userID, sessionID uuid.UUID, fn 
 			s.C.B().Sadd().Key(workspacesKey).Member(wid.String()).Build())
 		rest = append(rest, *next)
 	}
+	// Call start per room: set when a room gains its first device, cleared when it empties.
+	for _, rid := range touchedRooms(cur, next) {
+		if occupied(rest, rid) {
+			cmds = append(cmds, s.C.B().Set().Key(startedKey(rid)).Value(strconv.FormatInt(time.Now().UnixMilli(), 10)).Nx().Build())
+		} else {
+			cmds = append(cmds, s.C.B().Del().Key(startedKey(rid)).Build())
+		}
+	}
 	for _, r := range s.C.DoMulti(ctx, cmds...) {
-		if err := r.Error(); err != nil {
+		if err := r.Error(); err != nil && !rueidis.IsRedisNil(err) {
 			return Change{}, err
 		}
 	}
 	return Change{Before: before, After: Aggregate(wid, userID, rest)}, nil
+}
+
+func touchedRooms(cur, next *SessionState) []uuid.UUID {
+	var out []uuid.UUID
+	if cur != nil {
+		out = append(out, cur.RoomID)
+	}
+	if next != nil && (cur == nil || next.RoomID != cur.RoomID) {
+		out = append(out, next.RoomID)
+	}
+	return out
+}
+
+func occupied(sessions []SessionState, rid uuid.UUID) bool {
+	for _, s := range sessions {
+		if s.RoomID == rid {
+			return true
+		}
+	}
+	return false
+}
+
+// StartedAt returns when the current call in each room began (rooms without a call are absent).
+func (s Store) StartedAt(ctx context.Context, rids []uuid.UUID) (map[uuid.UUID]time.Time, error) {
+	out := map[uuid.UUID]time.Time{}
+	if len(rids) == 0 {
+		return out, nil
+	}
+	cmds := make(rueidis.Commands, len(rids))
+	for i, r := range rids {
+		cmds[i] = s.C.B().Get().Key(startedKey(r)).Build()
+	}
+	for i, res := range s.C.DoMulti(ctx, cmds...) {
+		ms, err := res.AsInt64()
+		if rueidis.IsRedisNil(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[rids[i]] = time.UnixMilli(ms)
+	}
+	return out, nil
 }
 
 // Location returns where a device session is connected (ok=false if not in voice).

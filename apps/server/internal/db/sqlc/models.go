@@ -35,12 +35,21 @@ type Message struct {
 	CreatedAt time.Time
 	EditedAt  *time.Time
 	DeletedAt *time.Time
+	PinnedAt  *time.Time
+	PinnedBy  *uuid.UUID
 }
 
 type MessageAttachment struct {
 	MessageID uuid.UUID
 	FileID    uuid.UUID
 	Position  int16
+}
+
+type MessageReaction struct {
+	MessageID uuid.UUID
+	UserID    uuid.UUID
+	Emoji     string
+	CreatedAt time.Time
 }
 
 type ReadState struct {
@@ -62,6 +71,15 @@ type Room struct {
 	MaxStreams       *int32
 	CreatedAt        time.Time
 	ArchivedAt       *time.Time
+	CategoryID       *uuid.UUID
+}
+
+type RoomCategory struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Name        string
+	Position    int32
+	CreatedAt   time.Time
 }
 
 type RoomPermission struct {
@@ -88,15 +106,17 @@ type Session struct {
 }
 
 type User struct {
-	ID           uuid.UUID
-	Email        string
-	PasswordHash *string
-	DisplayName  string
-	AvatarFileID *uuid.UUID
-	StatusText   string
-	Settings     []byte
-	CreatedAt    time.Time
-	DisabledAt   *time.Time
+	ID              uuid.UUID
+	Email           string
+	PasswordHash    *string
+	DisplayName     string
+	AvatarFileID    *uuid.UUID
+	StatusText      string
+	Settings        []byte
+	CreatedAt       time.Time
+	DisabledAt      *time.Time
+	StatusEmoji     string
+	StatusExpiresAt *time.Time
 }
 
 type Workspace struct {

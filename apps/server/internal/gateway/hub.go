@@ -14,11 +14,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/voice"
 )
@@ -290,6 +292,10 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		h.toViewers(sessions, view, parseID(m.GetRoomId()), id, ev)
 	case *v1.DispatchEvent_MessageDelete:
 		h.toViewers(sessions, view, parseID(e.MessageDelete.GetRoomId()), id, ev)
+	case *v1.DispatchEvent_MessageReactionAdd:
+		h.toViewers(sessions, view, parseID(e.MessageReactionAdd.GetRoomId()), id, ev)
+	case *v1.DispatchEvent_MessageReactionRemove:
+		h.toViewers(sessions, view, parseID(e.MessageReactionRemove.GetRoomId()), id, ev)
 	case *v1.DispatchEvent_VoiceStreamStart:
 		h.toViewers(sessions, view, parseID(e.VoiceStreamStart.GetRoomId()), id, ev)
 	case *v1.DispatchEvent_VoiceStreamStop:
@@ -408,6 +414,19 @@ func (h *Hub) fillLive(ctx context.Context, wid uuid.UUID, snap *v1.WorkspaceSna
 	visible := map[uuid.UUID]bool{}
 	for _, r := range snap.GetRooms() {
 		visible[parseID(r.GetId())] = true
+	}
+	var voiceRooms []uuid.UUID
+	for _, r := range snap.GetRooms() {
+		if r.GetType() == v1.RoomType_ROOM_TYPE_VOICE {
+			voiceRooms = append(voiceRooms, parseID(r.GetId()))
+		}
+	}
+	if started, err := h.voice.StartedAt(ctx, voiceRooms); err == nil {
+		for _, r := range snap.GetRooms() {
+			if t, ok := started[parseID(r.GetId())]; ok {
+				r.VoiceStartedAt = timestamppb.New(t)
+			}
+		}
 	}
 	if states, err := h.voice.List(ctx, wid); err == nil {
 		snap.VoiceStates = nil
@@ -545,14 +564,27 @@ func (h *Hub) invalidateAll() {
 // ---- presence ----
 
 func (h *Hub) publishPresence(ctx context.Context, user uuid.UUID) {
+	h.announcePresence(ctx, user, false)
+}
+
+// StatusChanged announces a custom status change (PATCH /api/me/status) even if the
+// online status did not change.
+func (h *Hub) StatusChanged(ctx context.Context, user uuid.UUID) {
+	h.announcePresence(context.WithoutCancel(ctx), user, true)
+}
+
+func (h *Hub) announcePresence(ctx context.Context, user uuid.UUID, force bool) {
 	ps, err := h.pres.get(ctx, []uuid.UUID{user})
 	if err != nil {
 		return
 	}
 	p := ps[user]
 	changed, err := h.pres.changed(ctx, p)
-	if err != nil || !changed {
+	if err != nil || (!changed && !force) {
 		return
+	}
+	if u, err := h.db.Q.GetUser(ctx, user); err == nil {
+		p.StatusText, p.StatusEmoji, p.StatusExpiresAt = pbconv.Status(u)
 	}
 	wids, err := h.db.Q.ListUserWorkspaceIDs(ctx, user)
 	if err != nil || len(wids) == 0 {

@@ -23,16 +23,43 @@ func (q *Queries) ArchiveRoom(ctx context.Context, id uuid.UUID) (int64, error) 
 	return result.RowsAffected(), nil
 }
 
+const createCategory = `-- name: CreateCategory :one
+INSERT INTO room_categories (workspace_id, name, position)
+VALUES ($1, $2,
+        coalesce($3::integer,
+                 (SELECT coalesce(max(position) + 1, 0) FROM room_categories WHERE workspace_id = $1)))
+RETURNING id, workspace_id, name, position, created_at
+`
+
+type CreateCategoryParams struct {
+	WorkspaceID uuid.UUID
+	Name        string
+	Position    *int32
+}
+
+func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) (RoomCategory, error) {
+	row := q.db.QueryRow(ctx, createCategory, arg.WorkspaceID, arg.Name, arg.Position)
+	var i RoomCategory
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createRoom = `-- name: CreateRoom :one
 INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
-                   audio_bitrate_kbps, max_stream_preset, max_streams)
+                   audio_bitrate_kbps, max_stream_preset, max_streams, category_id)
 VALUES ($1, $2, $3, $4,
         coalesce($5::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
                   WHERE workspace_id = $1 AND archived_at IS NULL)),
         $6, $7, $8,
-        $9)
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at
+        $9, $10)
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id
 `
 
 type CreateRoomParams struct {
@@ -45,6 +72,7 @@ type CreateRoomParams struct {
 	AudioBitrateKbps *int32
 	MaxStreamPreset  *string
 	MaxStreams       *int32
+	CategoryID       *uuid.UUID
 }
 
 func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, error) {
@@ -58,6 +86,7 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 		arg.AudioBitrateKbps,
 		arg.MaxStreamPreset,
 		arg.MaxStreams,
+		arg.CategoryID,
 	)
 	var i Room
 	err := row.Scan(
@@ -73,8 +102,41 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 		&i.MaxStreams,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.CategoryID,
 	)
 	return i, err
+}
+
+const deleteCategory = `-- name: DeleteCategory :many
+WITH moved AS (
+    UPDATE rooms SET category_id = NULL
+    WHERE category_id = $1::uuid AND archived_at IS NULL
+    RETURNING id
+), gone AS (
+    DELETE FROM room_categories WHERE room_categories.id = $1::uuid
+)
+SELECT id FROM moved
+`
+
+// Deletes a category; returns the rooms that were in it (their category_id becomes NULL).
+func (q *Queries) DeleteCategory(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteCategory, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteRoomOverrides = `-- name: DeleteRoomOverrides :exec
@@ -86,8 +148,25 @@ func (q *Queries) DeleteRoomOverrides(ctx context.Context, roomID uuid.UUID) err
 	return err
 }
 
+const getCategory = `-- name: GetCategory :one
+SELECT id, workspace_id, name, position, created_at FROM room_categories WHERE id = $1
+`
+
+func (q *Queries) GetCategory(ctx context.Context, id uuid.UUID) (RoomCategory, error) {
+	row := q.db.QueryRow(ctx, getCategory, id)
+	var i RoomCategory
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getRoom = `-- name: GetRoom :one
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at FROM rooms WHERE id = $1 AND archived_at IS NULL
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id FROM rooms WHERE id = $1 AND archived_at IS NULL
 `
 
 func (q *Queries) GetRoom(ctx context.Context, id uuid.UUID) (Room, error) {
@@ -106,6 +185,7 @@ func (q *Queries) GetRoom(ctx context.Context, id uuid.UUID) (Room, error) {
 		&i.MaxStreams,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.CategoryID,
 	)
 	return i, err
 }
@@ -175,6 +255,36 @@ func (q *Queries) InsertRoomOverride(ctx context.Context, arg InsertRoomOverride
 	return err
 }
 
+const listCategories = `-- name: ListCategories :many
+SELECT id, workspace_id, name, position, created_at FROM room_categories WHERE workspace_id = $1 ORDER BY position, id
+`
+
+func (q *Queries) ListCategories(ctx context.Context, workspaceID uuid.UUID) ([]RoomCategory, error) {
+	rows, err := q.db.Query(ctx, listCategories, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RoomCategory{}
+	for rows.Next() {
+		var i RoomCategory
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Position,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoomOverrides = `-- name: ListRoomOverrides :many
 SELECT room_id, target_type, target_id, allow, deny FROM room_permissions WHERE room_id = $1 ORDER BY target_type, target_id
 `
@@ -206,7 +316,7 @@ func (q *Queries) ListRoomOverrides(ctx context.Context, roomID uuid.UUID) ([]Ro
 }
 
 const listRooms = `-- name: ListRooms :many
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at FROM rooms
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id FROM rooms
 WHERE workspace_id = $1 AND archived_at IS NULL
 ORDER BY position, id
 `
@@ -233,6 +343,7 @@ func (q *Queries) ListRooms(ctx context.Context, workspaceID uuid.UUID) ([]Room,
 			&i.MaxStreams,
 			&i.CreatedAt,
 			&i.ArchivedAt,
+			&i.CategoryID,
 		); err != nil {
 			return nil, err
 		}
@@ -277,6 +388,97 @@ func (q *Queries) ListWorkspaceRoomOverrides(ctx context.Context, workspaceID uu
 	return items, nil
 }
 
+const setCategoryPosition = `-- name: SetCategoryPosition :one
+UPDATE room_categories SET position = $1
+WHERE id = $2 AND workspace_id = $3
+RETURNING id, workspace_id, name, position, created_at
+`
+
+type SetCategoryPositionParams struct {
+	Position    int32
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+func (q *Queries) SetCategoryPosition(ctx context.Context, arg SetCategoryPositionParams) (RoomCategory, error) {
+	row := q.db.QueryRow(ctx, setCategoryPosition, arg.Position, arg.ID, arg.WorkspaceID)
+	var i RoomCategory
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const setRoomPlacement = `-- name: SetRoomPlacement :one
+UPDATE rooms SET position = $1, category_id = $2
+WHERE id = $3 AND workspace_id = $4 AND archived_at IS NULL
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id
+`
+
+type SetRoomPlacementParams struct {
+	Position    int32
+	CategoryID  *uuid.UUID
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+func (q *Queries) SetRoomPlacement(ctx context.Context, arg SetRoomPlacementParams) (Room, error) {
+	row := q.db.QueryRow(ctx, setRoomPlacement,
+		arg.Position,
+		arg.CategoryID,
+		arg.ID,
+		arg.WorkspaceID,
+	)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+	)
+	return i, err
+}
+
+const updateCategory = `-- name: UpdateCategory :one
+UPDATE room_categories SET
+    name     = coalesce($1, name),
+    position = coalesce($2, position)
+WHERE id = $3
+RETURNING id, workspace_id, name, position, created_at
+`
+
+type UpdateCategoryParams struct {
+	Name     *string
+	Position *int32
+	ID       uuid.UUID
+}
+
+func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (RoomCategory, error) {
+	row := q.db.QueryRow(ctx, updateCategory, arg.Name, arg.Position, arg.ID)
+	var i RoomCategory
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const updateRoom = `-- name: UpdateRoom :one
 UPDATE rooms SET
     name     = coalesce($1, name),
@@ -284,9 +486,10 @@ UPDATE rooms SET
     position = coalesce($3, position),
     audio_bitrate_kbps = CASE WHEN $4::boolean THEN $5::integer ELSE audio_bitrate_kbps END,
     max_stream_preset  = CASE WHEN $4::boolean THEN $6::text ELSE max_stream_preset END,
-    max_streams        = CASE WHEN $4::boolean THEN $7::integer ELSE max_streams END
-WHERE id = $8 AND archived_at IS NULL
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at
+    max_streams        = CASE WHEN $4::boolean THEN $7::integer ELSE max_streams END,
+    category_id        = CASE WHEN $8::boolean THEN $9::uuid ELSE category_id END
+WHERE id = $10 AND archived_at IS NULL
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id
 `
 
 type UpdateRoomParams struct {
@@ -297,6 +500,8 @@ type UpdateRoomParams struct {
 	AudioBitrateKbps *int32
 	MaxStreamPreset  *string
 	MaxStreams       *int32
+	SetCategory      bool
+	CategoryID       *uuid.UUID
 	ID               uuid.UUID
 }
 
@@ -309,6 +514,8 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (Room, e
 		arg.AudioBitrateKbps,
 		arg.MaxStreamPreset,
 		arg.MaxStreams,
+		arg.SetCategory,
+		arg.CategoryID,
 		arg.ID,
 	)
 	var i Room
@@ -325,6 +532,7 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (Room, e
 		&i.MaxStreams,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.CategoryID,
 	)
 	return i, err
 }

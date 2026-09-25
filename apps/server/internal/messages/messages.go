@@ -50,6 +50,12 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	mux.Handle("PATCH /api/messages/{id}", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("DELETE /api/messages/{id}", wrap(httpx.HandlerFunc(h.delete)))
 	mux.Handle("PUT /api/rooms/{id}/read", wrap(httpx.HandlerFunc(h.read)))
+	mux.Handle("GET /api/workspaces/{id}/messages/search", wrap(httpx.HandlerFunc(h.searchWorkspace)))
+	mux.Handle("PUT /api/messages/{id}/reactions/{emoji}", wrap(httpx.HandlerFunc(h.addReaction)))
+	mux.Handle("DELETE /api/messages/{id}/reactions/{emoji}", wrap(httpx.HandlerFunc(h.removeReaction)))
+	mux.Handle("PUT /api/messages/{id}/pin", wrap(httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return h.setPin(w, r, true) })))
+	mux.Handle("DELETE /api/messages/{id}/pin", wrap(httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return h.setPin(w, r, false) })))
+	mux.Handle("GET /api/rooms/{id}/pins", wrap(httpx.HandlerFunc(h.listPins)))
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -117,6 +123,9 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if _, err := rooms.Access(r, roomID); err != nil {
 		return err
 	}
+	if r.URL.Query().Has("q") {
+		return h.search(w, r, []uuid.UUID{roomID}, nil)
+	}
 	p, err := ParsePage(r)
 	if err != nil {
 		return err
@@ -134,7 +143,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if more {
 		ms = ms[:p.Limit]
 	}
-	out, err := withAttachments(r.Context(), h.db.Q, ms)
+	out, err := h.withDetails(r, ms)
 	if err != nil {
 		return err
 	}
@@ -366,8 +375,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	full, err := h.details(r.Context(), []sqlc.Message{{ID: parseMsgID(out[0])}}, uid(r))
+	if err != nil {
+		return err
+	}
+	out[0].Reactions = full[0].GetReactions()
 	h.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
-		MessageUpdate: &v1.MessageUpdate{WorkspaceId: acc.WorkspaceID.String(), Message: out[0]},
+		MessageUpdate: &v1.MessageUpdate{WorkspaceId: acc.WorkspaceID.String(), Message: forEvent(out[0])},
 	}})
 	httpx.Write(w, http.StatusOK, &v1.UpdateMessageResponse{Message: out[0]})
 	return nil

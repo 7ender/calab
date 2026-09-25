@@ -24,3 +24,8 @@ RETURNING *;
 -- name: LockRegistration :exec
 -- Serializes the first-user bootstrap check (see auth.Register).
 SELECT pg_advisory_xact_lock(hashtext('calaba.registration'));
+
+-- name: UpdateStatus :one
+UPDATE users SET status_text = $2, status_emoji = $3, status_expires_at = $4
+WHERE id = $1
+RETURNING *;

@@ -711,3 +711,32 @@ CALABA_WEB_URL=http://localhost:4173 pnpm -F @calaba/desktop e2e:web            
 
 ### 3. Стенд (`https://colaba.gptunnel.ai`, запасной адрес `https://colaba.gptunnel.ru`)
 После публикации `dist-web` (infra, `sync.sh`): сценарий W1–W12 и `CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web`. E2E регистрирует тестового пользователя и создаёт пространство — на стенде включена открытая регистрация.
+
+## Server: UI-бэклог (категории, поиск, unfurl, реакции, статус, закрепы, время звонка)
+
+```sh
+cd apps/server
+go test -race ./internal/unfurl/ ./internal/voice/        # ok
+go test -tags integration -count=1 -v -run 'TestCategories|TestSearch|TestUnfurl|TestReactionsPinsStatus|TestVoiceTimes' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: пять строк `--- PASS` (TestVoiceTimes требует dev-LiveKit, иначе `SKIP`) и `ok`.
+
+Что покрыто:
+- **Категории**: CRUD, `categoryId` при создании и `PATCH` комнаты, чужая категория → 422, batch-reorder, категории в READY, удаление → `ROOM_UPDATE` с пустой категорией, у member нет прав → 403.
+- **Поиск**: стемминг («кошка» находит «Кошки»), точное слово (`deploy`), `VIEW_ROOM` (bob не видит приватную комнату), фильтры `author_id`/`room_id`, курсор `before`, лимиты.
+- **Unfurl**: карточка из OG-тегов, кэш (сайт не запрашивается повторно), картинка через прокси с `nosniff`, подделка подписи → 403, не-HTML → 404, ftp → 422. SSRF-блок loopback/private проверяется unit-тестом `TestFetchSSRFAndLimits`: интеграционный тест для локального сайта разрешает loopback только через тестовый хук `Deps.UnfurlAllowAddr`.
+- **Реакции**: идемпотентность, `me`, события ADD/REMOVE, «не эмодзи» → 422.
+- **Закрепы**: только `MANAGE_MESSAGES`, `MESSAGE_UPDATE` с `pinnedAt` и счётчиками реакций, `GET /pins`.
+- **Статус**: `PRESENCE_UPDATE` со статусом, истёкший статус отдаётся пустым.
+- **Время звонка**: `joined_at` в `VOICE_STATE_UPDATE`, `voice_started_at` в READY: сохраняется, пока в комнате кто-то есть, и пропадает, когда комната пуста.
+
+Ручная проверка unfurl на реальном сайте (сервер запущен как в «Server stage 3», `$BT` — токен). **Если на машине VPN/прокси в режиме fake-IP** (проверка: `dig +short github.com` отдаёт `198.18.x.x`), без доп. настройки SSRF-фильтр справедливо блокирует все сайты — запусти сервер с `UNFURL_ALLOW_CIDRS=198.18.0.0/15` (только dev).
+```sh
+curl -s "$A/api/unfurl?url=https%3A%2F%2Fgithub.com" -H "Authorization: Bearer $BT" | jq -c '{title,siteName,img:(.imageUrl|length>0)}'
+curl -s -o /dev/null -w '%{http_code}\n' "$A/api/unfurl?url=http%3A%2F%2F127.0.0.1%3A3900%2Fhealthz" -H "Authorization: Bearer $BT"
+curl -s -o /dev/null -w '%{http_code}\n' "$A/api/unfurl?url=http%3A%2F%2F169.254.169.254%2Flatest%2Fmeta-data" -H "Authorization: Bearer $BT"
+```
+Ожидается:
+- карточка GitHub: `title` непустой, `img:true` (нужен выход в интернет);
+- `404` — свой loopback не запрашивается;
+- `404` — metadata-адрес облака заблокирован.

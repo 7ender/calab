@@ -124,7 +124,12 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uu
 	for _, r := range rs {
 		bits[r.GetId()] = uint64(perm.ComputeIn(role, userID.String(), pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())))
 	}
-	return &v1.WorkspaceSnapshot{Workspace: pbconv.Workspace(ws), Role: role.Proto(), Rooms: rs, Members: members, Permissions: bits}, nil
+	cats, err := q.ListCategories(ctx, ws.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.WorkspaceSnapshot{Workspace: pbconv.Workspace(ws), Role: role.Proto(), Rooms: rs, Members: members,
+		Permissions: bits, Categories: pbconv.Categories(cats)}, nil
 }
 
 // joined publishes membership events after a user joined a workspace.

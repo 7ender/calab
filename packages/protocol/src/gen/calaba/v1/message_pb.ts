@@ -74,8 +74,9 @@ export type Message = Message$1<"calaba.v1.Message"> & {
   editedAt?: Timestamp | undefined;
 
   /**
-   * Aggregated reactions in order of first use. `me` is relative to the requesting user
-   * and is only filled in REST responses; events carry MESSAGE_REACTION_ADD/REMOVE instead.
+   * Aggregated reactions in order of first use. `me` is relative to the requesting user and
+   * is filled only in REST responses; in events (MESSAGE_UPDATE) counts are current but `me`
+   * is always false — clients keep their own `me` and apply MESSAGE_REACTION_ADD/REMOVE.
    *
    * @generated from field: repeated calaba.v1.Reaction reactions = 10;
    */

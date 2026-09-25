@@ -66,3 +66,55 @@ SELECT DISTINCT ON (room_id) room_id, id, created_at
 FROM messages
 WHERE room_id = ANY(sqlc.arg('room_ids')::uuid[]) AND deleted_at IS NULL
 ORDER BY room_id, id DESC;
+
+-- name: SearchMessages :many
+-- Full-text search, newest first. The tsvector expression must match messages_search_idx.
+SELECT * FROM messages
+WHERE room_id = ANY(sqlc.arg('room_ids')::uuid[]) AND deleted_at IS NULL
+  AND (to_tsvector('russian', content) || to_tsvector('simple', content))
+      @@ (websearch_to_tsquery('russian', sqlc.arg('q')::text) || websearch_to_tsquery('simple', sqlc.arg('q')::text))
+  AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
+  AND (sqlc.narg('author_id')::uuid IS NULL OR author_id = sqlc.narg('author_id')::uuid)
+ORDER BY id DESC
+LIMIT sqlc.arg('lim');
+
+-- name: AddReaction :execrows
+INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING;
+
+-- name: RemoveReaction :execrows
+DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3;
+
+-- name: ReactionEmojiStats :one
+-- Distinct emojis on a message and whether this emoji is among them (for the per-message cap).
+SELECT count(DISTINCT emoji)::integer AS distinct_emojis,
+       coalesce(bool_or(emoji = sqlc.arg('emoji')), false)::boolean AS has_emoji
+FROM message_reactions WHERE message_id = sqlc.arg('message_id');
+
+-- name: ListReactions :many
+-- Aggregates per message and emoji, in order of first use; me = the viewer reacted.
+SELECT message_id, emoji, count(*)::integer AS count,
+       bool_or(user_id = sqlc.arg('viewer'))::boolean AS me, min(created_at)::timestamptz AS first_at
+FROM message_reactions
+WHERE message_id = ANY(sqlc.arg('ids')::uuid[])
+GROUP BY message_id, emoji
+ORDER BY message_id, first_at;
+
+-- name: PinMessage :one
+UPDATE messages SET pinned_at = now(), pinned_by = sqlc.arg('pinned_by')
+WHERE id = sqlc.arg('id') AND deleted_at IS NULL AND pinned_at IS NULL
+RETURNING *;
+
+-- name: UnpinMessage :one
+UPDATE messages SET pinned_at = NULL, pinned_by = NULL
+WHERE id = $1 AND deleted_at IS NULL AND pinned_at IS NOT NULL
+RETURNING *;
+
+-- name: CountPins :one
+SELECT count(*)::integer FROM messages WHERE room_id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL;
+
+-- name: ListPins :many
+SELECT * FROM messages
+WHERE room_id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL
+ORDER BY pinned_at DESC
+LIMIT 50;

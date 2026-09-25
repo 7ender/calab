@@ -123,6 +123,7 @@ message CreateRoomRequest {
   bool is_private = 4;
   RoomMediaOverride media_override = 5;
   optional int32 position = 6; // default: after the last room
+  string category_id = 7;       // optional category of the same workspace
 }
 
 message CreateRoomResponse {
