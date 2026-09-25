@@ -4,6 +4,7 @@ import type { PttBinding } from '../../shared/ipc';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { prefs, usePrefs } from '../stores/prefs';
+import { platform } from '../platform';
 import { useSession } from '../stores/session';
 
 /**
@@ -13,16 +14,32 @@ import { useSession } from '../stores/session';
  */
 let applying = false;
 
+/**
+ * push_to_talk_key holds one binding per platform: `{"desktop": …, "web": …}` — a desktop
+ * uiohook keycode means nothing in a browser and vice versa. A bare binding (older client)
+ * is read as the desktop one.
+ */
+type SyncedBindings = { desktop?: PttBinding; web?: PttBinding };
+let synced: SyncedBindings = {};
+const mine = (): keyof SyncedBindings => (platform.kind === 'web' ? 'web' : 'desktop');
+
+export function parseBindings(raw: string): SyncedBindings {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw) as SyncedBindings | PttBinding;
+    if ('kind' in v) return { desktop: v };
+    return v;
+  } catch {
+    return {};
+  }
+}
+
 export function applyUserSettings(s: UserSettings): void {
   applying = true;
-  let binding: PttBinding | null = prefs().pttBinding;
-  if (s.pushToTalkKey) {
-    try {
-      binding = JSON.parse(s.pushToTalkKey) as PttBinding;
-    } catch {
-      // other client format: keep local binding
-    }
-  }
+  synced = parseBindings(s.pushToTalkKey);
+  const own = synced[mine()];
+  const fits = own && (platform.kind === 'web' ? own.kind === 'dom' : own.kind !== 'dom');
+  const binding: PttBinding | null = fits ? own : prefs().pttBinding;
   usePrefs.getState().setPrefs({
     rnnoise: s.noiseSuppression,
     red: s.unstableNetworkRed,
@@ -39,7 +56,7 @@ function snapshot(): UserSettings {
     noiseSuppression: p.rnnoise,
     unstableNetworkRed: p.red,
     micMode: p.micMode === 'ptt' ? MicMode.PUSH_TO_TALK : MicMode.VAD,
-    pushToTalkKey: p.pttBinding ? JSON.stringify(p.pttBinding) : '',
+    pushToTalkKey: JSON.stringify({ ...synced, [mine()]: p.pttBinding ?? undefined }),
     ...(p.personalBitrateKbps !== null ? { audioBitrateKbps: p.personalBitrateKbps } : {}),
   });
 }

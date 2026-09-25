@@ -5,6 +5,7 @@ import { t } from '../../i18n';
 import { beginSession } from '../../services/session';
 import { takePendingInvite } from '../../services/links';
 import { useSession } from '../../stores/session';
+import { platform } from '../../platform';
 
 function authError(e: ApiErrorJson): { text: string; field?: string } {
   switch (e.code) {
@@ -39,7 +40,8 @@ export function AuthScreen(): ReactNode {
   const [inviteCode, setInviteCode] = useState(invite);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<{ text: string; field?: string } | null>(null);
-  const [showServer, setShowServer] = useState(!settings?.serverUrl);
+  // Web: the API is the page's own origin — nothing to configure.
+  const [showServer, setShowServer] = useState(platform.kind === 'electron' && !settings?.serverUrl);
 
   const submit = async (e: { preventDefault(): void }): Promise<void> => {
     e.preventDefault();
@@ -53,8 +55,8 @@ export function AuthScreen(): ReactNode {
     const args = { serverUrl: serverUrl.trim(), email: email.trim(), password };
     const res =
       mode === 'login'
-        ? await window.calaba.auth.login(args)
-        : await window.calaba.auth.register({ ...args, displayName: name.trim(), inviteCode: inviteCode.trim() });
+        ? await platform.auth.login(args)
+        : await platform.auth.register({ ...args, displayName: name.trim(), inviteCode: inviteCode.trim() });
     setBusy(false);
     if (res.ok) beginSession(res.data);
     else setErr(authError(res.error));
@@ -102,7 +104,7 @@ export function AuthScreen(): ReactNode {
               {mode === 'login' ? t('auth.toRegister') : t('auth.toLogin')}
             </button>
           </p>
-          {!showServer ? (
+          {!showServer && platform.kind === 'electron' ? (
             <button type="button" className={cx('self-start text-[12px] text-faint hover:text-muted')} onClick={() => setShowServer(true)}>
               {t('auth.server')}: {serverUrl}
             </button>

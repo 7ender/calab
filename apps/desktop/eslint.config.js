@@ -5,14 +5,14 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'node_modules/**'] },
+  { ignores: ['out/**', 'dist/**', 'dist-web/**', 'test-results/**', 'playwright-report/**', 'node_modules/**'] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['eslint.config.js'],
+          allowDefaultProject: ['eslint.config.js', 'scripts/*.mjs'],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -26,7 +26,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/main/**/*.ts', 'src/preload/**/*.ts', '*.config.{js,ts}'],
+    files: ['src/main/**/*.ts', 'src/preload/**/*.ts', '*.config.{js,ts}', 'scripts/*.mjs'],
     languageOptions: { globals: globals.node },
   },
   {
@@ -37,7 +37,7 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       // Main/preload modules must never be imported into the sandboxed renderer.
-      'no-restricted-imports': ['error', { patterns: ['**/main/**', 'electron', 'node:*'] }],
+      'no-restricted-imports': ['error', { paths: ['electron'], patterns: ['**/main/**', 'node:*'] }],
     },
   },
   {
@@ -45,7 +45,7 @@ export default tseslint.config(
     languageOptions: { globals: globals.audioWorklet },
   },
   {
-    files: ['eslint.config.js'],
+    files: ['eslint.config.js', 'scripts/*.mjs'],
     ...tseslint.configs.disableTypeChecked,
   },
 );

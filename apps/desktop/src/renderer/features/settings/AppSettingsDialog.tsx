@@ -19,6 +19,7 @@ import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useVoice } from '../../stores/voice';
 import { tabTrigger } from '../workspace/WorkspaceSettings';
+import { platform } from '../../platform';
 
 const err = (e: unknown): string => (e instanceof ApiError ? e.message : String(e));
 
@@ -142,7 +143,7 @@ function VoiceTab(): ReactNode {
   const { inputs, outputs } = useDevices();
   const [testing, setTesting] = useState(false);
   const [binding, setBinding] = useState(false);
-  const [pttStatus, setPttStatus] = useState<Awaited<ReturnType<typeof window.calaba.ptt.status>> | null>(null);
+  const [pttStatus, setPttStatus] = useState<Awaited<ReturnType<typeof platform.ptt.status>> | null>(null);
   const vad = useVoice((s) => s.vad);
   const micError = useVoice((s) => s.micError);
   const isMac = useSession((s) => s.appInfo?.platform === 'darwin');
@@ -151,19 +152,19 @@ function VoiceTab(): ReactNode {
     voice.stopMicTest();
   }, []);
   useEffect(() => {
-    if (p.micMode === 'ptt') void window.calaba.ptt.status().then(setPttStatus);
+    if (p.micMode === 'ptt') void platform.ptt.status().then(setPttStatus);
   }, [p.micMode, p.pttBinding]);
 
   const bind = async (): Promise<void> => {
     setBinding(true);
     try {
-      const b = await window.calaba.ptt.captureNext();
+      const b = await platform.ptt.captureNext();
       p.setPrefs({ pttBinding: b });
     } catch {
       // cancelled
     } finally {
       setBinding(false);
-      setPttStatus(await window.calaba.ptt.status());
+      setPttStatus(await platform.ptt.status());
     }
   };
 
@@ -221,7 +222,7 @@ function VoiceTab(): ReactNode {
           <Slider label={t('voice.threshold', { db: p.thresholdDb })} value={p.thresholdDb} min={METER_MIN_DB} max={0} onChange={(v) => p.setPrefs({ thresholdDb: v })} />
         </Field>
       ) : (
-        <Field label={t('voice.pttKey')} hint={t('voice.pttHint')}>
+        <Field label={t('voice.pttKey')} hint={platform.kind === 'web' ? t('voice.pttHintWeb') : t('voice.pttHint')}>
           <div className="flex items-center gap-3">
             <kbd className="min-w-24 rounded-md border border-line bg-input px-3 py-1.5 text-center font-mono">{p.pttBinding?.label ?? t('voice.pttNone')}</kbd>
             <Button variant="secondary" busy={binding} onClick={() => void bind()}>
@@ -232,7 +233,7 @@ function VoiceTab(): ReactNode {
           {isMac && pttStatus && !pttStatus.trusted ? (
             <span className="text-[12px] text-warn">
               {t('voice.pttMac')}{' '}
-              <button type="button" className="text-accent hover:underline" onClick={() => void window.calaba.system.openPrivacySettings('accessibility')}>
+              <button type="button" className="text-accent hover:underline" onClick={() => void platform.system.openPrivacySettings('accessibility')}>
                 {t('common.openSettings')}
               </button>
             </span>
@@ -294,6 +295,7 @@ function NotificationsTab(): ReactNode {
           variant="secondary"
           onClick={() => {
             try {
+              if (Notification.permission === 'default') void Notification.requestPermission();
               new Notification('Calaba', { body: t('notify.testBody') });
             } catch (e) {
               toast.error(String(e));
@@ -418,12 +420,14 @@ function AppTab(): ReactNode {
   const devStats = usePrefs((s) => s.devStats);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const [updateUrl, setUpdateUrl] = useState(settings?.updateUrl ?? '');
-  const save = async (patch: Parameters<typeof window.calaba.app.setSettings>[0]): Promise<void> => {
-    const s = await window.calaba.app.setSettings(patch);
+  const save = async (patch: Parameters<typeof platform.app.setSettings>[0]): Promise<void> => {
+    const s = await platform.app.setSettings(patch);
     useSession.getState().set({ settings: s });
   };
   return (
     <div className="flex flex-col gap-3">
+      {platform.kind === 'electron' ? (
+        <>
       <Switch checked={settings?.autostart ?? false} onChange={(v) => void save({ autostart: v })} label={t('app.autostart')} hint={info?.packaged ? undefined : t('app.autostartDev')} />
       <Field label={t('app.updateUrl')} hint={t('app.updateHint')}>
         <div className="flex gap-2">
@@ -432,16 +436,18 @@ function AppTab(): ReactNode {
         </div>
       </Field>
       <div className="flex items-center gap-3">
-        <Button variant="secondary" onClick={() => void window.calaba.app.checkUpdates().then((u) => useSession.getState().set({ update: u }))}>
+        <Button variant="secondary" onClick={() => void platform.app.checkUpdates().then((u) => useSession.getState().set({ update: u }))}>
           {t('app.checkUpdates')}
         </Button>
         <span className="text-[13px] text-muted">
           {update.state === 'disabled' ? t('app.updatesOff') : update.state === 'none' ? t('app.upToDate') : update.state === 'error' ? update.message : update.state}
         </span>
       </div>
+        </>
+      ) : null}
       <Switch checked={devStats} onChange={(v) => setPrefs({ devStats: v })} label={t('app.devStats')} hint={t('app.devStatsHint')} />
       <p className="mt-4 text-[12px] text-faint">
-        Calaba {info?.version} · Electron {info?.electron} · Chrome {info?.chrome} · {info?.platform}
+        Calaba {info?.version} · {platform.kind === 'web' ? t('app.web') : `Electron ${info?.electron ?? ''}`} · Chrome {info?.chrome || '—'} · {info?.platform}
       </p>
     </div>
   );

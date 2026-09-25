@@ -538,17 +538,17 @@ cd apps/server && DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba R
   LIVEKIT_URL=ws://127.0.0.1:7880 LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret \
   go run ./cmd/server                                            # слушает 127.0.0.1:3000
 ```
-Порты postgres и redis смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://app.141-105-69-177.sslip.io` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://app.141-105-69-177.sslip.io`.
+Порты postgres и redis смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://app.colaba.gptunnel.ai` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://app.colaba.gptunnel.ai`.
 
-### 0a. Против стенда (`https://app.141-105-69-177.sslip.io`)
-Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.141-105-69-177.sslip.io`) клиент получает из `/join` сам.
+### 0a. Против стенда (`https://app.colaba.gptunnel.ai`, запасной адрес `https://app.colaba.gptunnel.ru`)
+Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.colaba.gptunnel.ai`) клиент получает из `/join` сам.
 ```bash
 pnpm -F @calaba/desktop build                 # → apps/desktop/dist/mac-arm64/Calaba.app (+ dmg/zip)
 APP=apps/desktop/dist/mac-arm64/Calaba.app/Contents/MacOS/Calaba
 # клиент А (owner, настоящие микрофон и экран):
-CALABA_SERVER_URL=https://app.141-105-69-177.sslip.io CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
+CALABA_SERVER_URL=https://app.colaba.gptunnel.ai CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
 # клиент Б (bob; fake-медиа, чтобы не было эха на одной машине):
-CALABA_SERVER_URL=https://app.141-105-69-177.sslip.io CALABA_USER_DATA=/tmp/cal-bob CALABA_MULTI_INSTANCE=1 CALABA_FAKE_MEDIA=1 "$APP" &
+CALABA_SERVER_URL=https://app.colaba.gptunnel.ai CALABA_USER_DATA=/tmp/cal-bob CALABA_MULTI_INSTANCE=1 CALABA_FAKE_MEDIA=1 "$APP" &
 ```
 Dev-режим тоже работает: `CALABA_SERVER_URL=… pnpm -F @calaba/desktop dev`. Но тест с заморозкой процесса (пункт 2.29) в dev не показателен: Vite перезагружает страницу, когда его HMR-сокет переподключается.
 
@@ -634,3 +634,50 @@ open apps/desktop/dist/mac-arm64/Calaba.app   # при первом запуск
 - **PTT.** Настройки → Голос → Push-to-talk → «Назначить» → клавиша. Удержание в любом приложении включает эфир, отпускание выключает через ~0,2 с. На macOS нужны «Универсальный доступ» и «Мониторинг ввода».
 - **Системный звук стрима.** macOS: переключатель доступен с предупреждением; ожидаемо звук участников тоже попадает в стрим. Windows: проверить, что голоса участников не попадают в стрим.
 - **Уведомления и трей.** Меню трея: «Выключить микрофон», «Выключить звук», «Отключиться от голоса».
+
+---
+
+## Web client (ADR-0015: `apps/desktop`, сборка `dist-web`)
+
+Тот же renderer, что у десктопа, со слоем `platform = web`. Отличия от десктопа:
+- refresh-токен лежит в HttpOnly-cookie `calaba_refresh` (Path=/api/auth, Secure, SameSite=Strict), access-токен — только в памяти;
+- API и gateway работают на том же origin, что и страница;
+- PTT работает только при активной вкладке;
+- экран выбирается в стандартном окне браузера;
+- файлы скачиваются через `a[download]`;
+- ссылка-приглашение: `https://app.<домен>/join/<код>`.
+
+### 0. Сборка и проверка бандла
+```bash
+pnpm -F @calaba/desktop build:web      # → apps/desktop/dist-web; в конце "web bundle OK: no Electron-only code"
+```
+
+### 1. Локально (API + LiveKit dev)
+```bash
+# API должен знать origin веб-клиента (CSRF / cookie / gateway):
+cd apps/server && PUBLIC_APP_URL=http://localhost:4173 … go run ./cmd/server        # остальные env — как в «Desktop app», п. 0
+CALABA_WEB_PROXY=http://127.0.0.1:3000 pnpm -F @calaba/desktop preview:web          # dist-web на :4173, /api и /gateway проксируются
+CALABA_WEB_URL=http://localhost:4173 pnpm -F @calaba/desktop e2e:web                # ожидается: 2 passed (chromium + firefox)
+```
+Для dev-режима с HMR: `pnpm -F @calaba/desktop dev:web` (порт 5174; `PUBLIC_APP_URL=http://localhost:5174`).
+
+### 2. Ручной сценарий (Chrome, плюс Firefox по возможности)
+| # | Действие | Ожидается |
+|---|---|---|
+| W1 | Открыть `http://localhost:4173` (или стенд) | экран входа **без** поля «Сервер» |
+| W2 | Войти | главное окно. DevTools → Application → Cookies: `calaba_refresh`, HttpOnly ✓, Secure ✓, SameSite Strict. `document.cookie` в консоли её не показывает |
+| W3 | Перезагрузить страницу | вход сохраняется (`POST /api/auth/refresh` → 200, новая cookie) |
+| W4 | Вторая вкладка с тем же адресом | обе вкладки работают. Одновременные refresh не выбрасывают из сессии (Web Locks сериализуют ротацию) |
+| W5 | Чат, картинка, файл, скачивание | как в «Desktop app», 2.6–2.11. Превью картинок — `blob:` URL. «Скачать» сохраняет файл средствами браузера |
+| W6 | Голос: клик по голосовой комнате | браузер спросит микрофон, затем «Голос подключён». Звук другого участника слышен |
+| W7 | Настройки → Голос → Push-to-talk → «Назначить» → клавиша | подсказка «только когда вкладка активна». Пока вкладка в фокусе — работает. Переключились в другую вкладку — передача прекращается |
+| W8 | «Показать экран» → «Начать стрим» | открывается окно выбора браузера (экран / окно / вкладка). После выбора — «В эфире». Зритель (десктоп или веб) видит плитку в углу чата |
+| W9 | Зритель: развернуть и открыть во всплывающем окне | работает как в десктопе (popup-окно браузера) |
+| W10 | Открыть `https://app.<домен>/join/<код>` без входа, затем войти | после входа открывается диалог «Присоединиться к пространству» с этим кодом |
+| W11 | «Выйти» | cookie удалена, повторная загрузка страницы показывает экран входа |
+| W12 | Firefox | W1–W6 и W8 (Firefox умеет AV1; если нет — стрим уходит в VP9 или VP8) |
+
+Известно: Firefox не проходит ICE до LiveKit в Docker на `127.0.0.1` (локальный dev-стенд). На стенде с публичным IP это ограничение не действует.
+
+### 3. Стенд (`https://app.colaba.gptunnel.ai`, запасной адрес `https://app.colaba.gptunnel.ru`)
+После публикации `dist-web` (infra, `sync.sh`): сценарий W1–W12 и `CALABA_WEB_URL=https://app.colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web`. E2E регистрирует тестового пользователя и создаёт пространство — на стенде включена открытая регистрация.

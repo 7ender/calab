@@ -15,7 +15,8 @@ import { confirmAction } from '../../components/Confirm';
 import { Button, Empty, Field, IconButton, Input, Modal, Select, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
-import { api, thumbnailUrl, uploadFile } from '../../lib/api/endpoints';
+import { MediaImg } from '../../components/MediaImg';
+import { api, thumbnailPath, uploadFile } from '../../lib/api/endpoints';
 import { fmtStamp } from '../../lib/format';
 import { isAdminRole } from '../../lib/permissions';
 import { useSession } from '../../stores/session';
@@ -95,7 +96,7 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-4">
         <div className="grid size-20 place-items-center overflow-hidden rounded-2xl bg-accent text-2xl font-bold text-accent-fg">
-          {ws.iconFileId ? <img src={thumbnailUrl(ws.iconFileId)} alt="" className="size-full object-cover" /> : ws.name.slice(0, 2).toUpperCase()}
+          {ws.iconFileId ? <MediaImg path={thumbnailPath(ws.iconFileId)} alt="" className="size-full object-cover" /> : ws.name.slice(0, 2).toUpperCase()}
         </div>
         <Button variant="secondary" busy={uploading} onClick={() => input.current?.click()}>
           <Upload className="size-4" /> {t('ws.icon')}

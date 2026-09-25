@@ -19,6 +19,9 @@ export interface MicPipelineOptions {
   onReport: (r: MicReport) => void;
 }
 
+/** The RNNoise worklet could not start (the caller falls back to built-in noise suppression). */
+export class RnnoiseUnavailable extends Error {}
+
 export class MicPipeline {
   private constructor(
     /** Track to publish. With RNNoise: the worklet output; otherwise the raw capture track. */
@@ -30,7 +33,28 @@ export class MicPipeline {
     private readonly owned: MediaStreamTrack[],
   ) {}
 
+  /**
+   * Firefox cannot connect a MediaStream whose sample rate differs from the AudioContext
+   * (NotSupportedError). RNNoise needs 48 kHz, so on such devices we fall back to the
+   * built-in noise suppression and analyse at the device rate (web client, ADR-0015).
+   */
   static async start(opts: MicPipelineOptions): Promise<MicPipeline> {
+    try {
+      return await MicPipeline.startWith(opts, 48000);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'NotSupportedError') {
+        return MicPipeline.startWith({ ...opts, rnnoise: false }, undefined);
+      }
+      if (err instanceof RnnoiseUnavailable && opts.rnnoise) {
+        // e.g. a CSP without 'wasm-unsafe-eval' (web): keep the mic working with built-in NS.
+        console.warn('RNNoise unavailable, falling back to built-in noise suppression:', err.message);
+        return MicPipeline.startWith({ ...opts, rnnoise: false }, 48000);
+      }
+      throw err;
+    }
+  }
+
+  private static async startWith(opts: MicPipelineOptions, sampleRate: number | undefined): Promise<MicPipeline> {
     const constraints: MediaTrackConstraints = {
       ...audioCaptureConstraints(opts.rnnoise),
       ...(opts.deviceId ? { deviceId: { exact: opts.deviceId } } : {}),
@@ -40,11 +64,11 @@ export class MicPipeline {
     if (!raw) throw new Error('getUserMedia returned no audio track');
 
     // RNNoise is trained for 48 kHz; Chromium resamples the device if needed.
-    const ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+    const ctx = new AudioContext({ ...(sampleRate ? { sampleRate } : {}), latencyHint: 'interactive' });
     try {
       await ctx.audioWorklet.addModule(workletUrl);
 
-      // Without RNNoise we publish the raw track, and track.mute() sets
+      // Without RNNoise we publish the raw track, and the gate / mute set
       // raw.enabled=false — which would silence our own analysis and the gate
       // could never reopen. Analyse an independent clone instead.
       const analysisTrack = opts.rnnoise ? raw : raw.clone();
@@ -59,7 +83,21 @@ export class MicPipeline {
         channelInterpretation: 'speakers',
         processorOptions: { denoise: opts.rnnoise },
       });
-      node.port.onmessage = (e: MessageEvent<MicReport>) => opts.onReport(e.data);
+      // The worklet reports every 20 ms once running. A processor that failed to construct
+      // (WASM blocked by CSP, …) never reports: detect it instead of shipping a dead meter.
+      const alive = new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new RnnoiseUnavailable('no reports from the worklet')), 2000);
+        node.onprocessorerror = () => {
+          window.clearTimeout(timer);
+          reject(new RnnoiseUnavailable('worklet processor error'));
+        };
+        node.port.onmessage = (e: MessageEvent<MicReport>) => {
+          window.clearTimeout(timer);
+          resolve();
+          opts.onReport(e.data);
+          node.port.onmessage = (ev: MessageEvent<MicReport>) => opts.onReport(ev.data);
+        };
+      });
       source.connect(node);
 
       let publishTrack = raw;
@@ -72,6 +110,9 @@ export class MicPipeline {
         publishTrack = t;
       }
       if (ctx.state !== 'running') await ctx.resume();
+      // Only the RNNoise path needs WASM; analysis-only never blocks start-up.
+      if (opts.rnnoise) await alive;
+      else alive.catch(() => undefined);
 
       const owned = opts.rnnoise ? [raw, publishTrack] : [raw, analysisTrack];
       return new MicPipeline(publishTrack, opts.rnnoise, raw.label, ctx, node, owned);

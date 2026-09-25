@@ -1,8 +1,9 @@
 import { memo, type ReactNode } from 'react';
 import { isSafeHref, parseMarkdown, type MdNode } from './parse';
+import { platform } from '../../platform';
 
 function open(href: string): void {
-  if (isSafeHref(href)) void window.calaba.app.openExternal(href);
+  if (isSafeHref(href)) void platform.app.openExternal(href);
 }
 
 function render(nodes: MdNode[], mentionIsMe: (v: string) => boolean, key = ''): ReactNode[] {

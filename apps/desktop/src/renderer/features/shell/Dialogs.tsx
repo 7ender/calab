@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { ConfirmHost } from '../../components/Confirm';
 import { Modal } from '../../components/ui';
-import { fileUrl } from '../../lib/api/endpoints';
+import { MediaImg } from '../../components/MediaImg';
+import { filePath } from '../../lib/api/endpoints';
 import { useUi } from '../../stores/ui';
 import { AppSettingsDialog } from '../settings/AppSettingsDialog';
 import { StreamPicker } from '../voice/StreamPicker';
@@ -39,7 +40,7 @@ export function Dialogs(): ReactNode {
       case 'image':
         node = (
           <Modal open wide title={d.name} onClose={close}>
-            <img src={fileUrl(d.fileId)} alt={d.name} className="mx-auto max-h-[72vh] max-w-full object-contain" />
+            <MediaImg path={filePath(d.fileId)} alt={d.name} className="mx-auto max-h-[72vh] max-w-full object-contain" />
           </Modal>
         );
         break;

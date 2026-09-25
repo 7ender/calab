@@ -7,7 +7,7 @@ import {
   type MessageInitShape,
   type MessageShape,
 } from '@bufbuild/protobuf';
-import { API_ORIGIN } from '../../../shared/ipc';
+import { platform } from '../../platform';
 
 /**
  * Typed REST client. Bodies are protojson (lowerCamelCase, enum names,
@@ -42,7 +42,8 @@ export async function toApiError(res: Response): Promise<ApiError> {
   }
 }
 
-export const apiUrl = (path: string): string => `${API_ORIGIN}${path}`;
+/** Absolute URL of an API path for the current platform (Electron: calaba-api://, web: same origin). */
+export const apiUrl = (path: string): string => `${platform.apiBase}${path}`;
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -51,7 +52,7 @@ const JSON_OPTS = { ignoreUnknownFields: true } as const;
 async function send(method: Method, path: string, body?: JsonValue, signal?: AbortSignal): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(apiUrl(path), {
+    res = await platform.apiFetch(path, {
       method,
       headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),

@@ -1,7 +1,8 @@
 import { Compass, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
-import { thumbnailUrl } from '../../lib/api/endpoints';
+import { MediaImg } from '../../components/MediaImg';
+import { thumbnailPath } from '../../lib/api/endpoints';
 import { t } from '../../i18n';
 import { isUnread, useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
@@ -50,7 +51,7 @@ export function WorkspaceRail(): ReactNode {
                   isActive ? 'rounded-2xl bg-accent text-accent-fg' : 'rounded-3xl bg-main text-fg hover:rounded-2xl hover:bg-accent hover:text-accent-fg',
                 )}
               >
-                {w.iconFileId ? <img src={thumbnailUrl(w.iconFileId)} alt="" className="size-full rounded-[inherit] object-cover" /> : initials(w.name)}
+                {w.iconFileId ? <MediaImg path={thumbnailPath(w.iconFileId)} alt="" className="size-full rounded-[inherit] object-cover" /> : initials(w.name)}
                 {mentions > 0 ? (
                   <span className="absolute -bottom-0.5 -right-0.5 min-w-5 rounded-full border-[3px] border-rail bg-danger px-1 text-center text-[11px] font-bold leading-4 text-white">
                     {mentions > 99 ? '99+' : mentions}

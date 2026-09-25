@@ -6,6 +6,7 @@ import { useRooms } from '../stores/rooms';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
 import { memberName } from '../stores/workspaces';
+import { platform } from '../platform';
 
 /** True when the message mentions me by display name / nickname (markdown-lite @mention). */
 export function mentionsMe(content: string, names: string[]): boolean {
@@ -38,5 +39,5 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
     // notifications unavailable
   }
   playSound('message');
-  window.calaba.app.attention();
+  platform.app.attention();
 }

@@ -13,6 +13,7 @@ import { usePrefs } from '../../stores/prefs';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
+import { platform } from '../../platform';
 
 export const PRESET_LABEL: Record<ConcreteScreenSharePreset, MessageKey> = {
   [ScreenSharePreset.ECONOMY]: 'preset.economy',
@@ -40,17 +41,21 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   const max = (room?.media?.maxStreamPreset || ScreenSharePreset.H1080);
   const preset = clampStreamPreset(prefs.streamPreset, max);
 
+  const web = platform.kind === 'web';
+
   useEffect(() => {
-    void window.calaba.capture.listSources().then((s) => {
+    if (web) return; // the browser shows its own picker on getDisplayMedia()
+    void platform.capture.listSources().then((s) => {
       setSources(s);
       setPicked(s.find((x) => x.kind === 'screen') ?? s[0] ?? null);
     });
-  }, []);
+  }, [web]);
 
   const start = (): void => {
-    if (!picked) return;
+    if (!picked && !web) return;
     onClose();
-    void voice.startStream({ source: { id: picked.id, name: picked.name }, preset, contentHint: prefs.contentHint, systemAudio });
+    const source = picked ? { id: picked.id, name: picked.name } : { id: '', name: '' };
+    void voice.startStream({ source, preset, contentHint: prefs.contentHint, systemAudio });
   };
 
   const noThumbs = sources !== null && sources.length > 0 && sources.every((s) => !s.thumbnail);
@@ -67,7 +72,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
           <Button variant="ghost" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={start} disabled={!picked}>
+          <Button onClick={start} disabled={!picked && !web}>
             {t('stream.go')}
           </Button>
         </>
@@ -76,12 +81,14 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
       {noThumbs || info?.screenAccess === 'denied' ? (
         <p className="mb-3 rounded-md bg-mention px-3 py-2 text-[13px]">
           {t('stream.noScreenAccess')}{' '}
-          <button type="button" className="text-accent hover:underline" onClick={() => void window.calaba.system.openPrivacySettings('screen')}>
+          <button type="button" className="text-accent hover:underline" onClick={() => void platform.system.openPrivacySettings('screen')}>
             {t('common.openSettings')}
           </button>
         </p>
       ) : null}
-      {sources === null ? (
+      {web ? (
+        <p className="text-muted">{t('stream.webPicker')}</p>
+      ) : sources === null ? (
         <div className="grid h-40 place-items-center">
           <Spinner />
         </div>

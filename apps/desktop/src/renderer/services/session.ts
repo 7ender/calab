@@ -13,20 +13,21 @@ import { reconnectGateway, startGateway, stopGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
 import { watchSyncedPrefs } from './profile';
 import { voice } from './voice';
+import { platform } from '../platform';
 
 /** App bootstrap: restore session, wire main-process events, start the gateway. */
 export async function bootstrap(): Promise<void> {
-  const [appInfo, settings] = await Promise.all([window.calaba.app.info(), window.calaba.app.getSettings()]);
+  const [appInfo, settings] = await Promise.all([platform.app.info(), platform.app.getSettings()]);
   useSession.getState().set({ appInfo, settings, serverUrl: settings.serverUrl });
 
-  window.calaba.auth.onLoggedOut((reason) => void endSession(reason));
-  window.calaba.app.onPower((ev) => {
+  platform.auth.onLoggedOut((reason) => void endSession(reason));
+  platform.app.onPower((ev) => {
     // After sleep the socket is usually dead but not closed: reconnect right away.
     if (ev === 'resume' || ev === 'unlock-screen') reconnectGateway();
   });
-  window.calaba.app.onDeepLink((url) => handleDeepLink(url));
-  window.calaba.app.onUpdateStatus((update) => useSession.getState().set({ update }));
-  window.calaba.tray.onAction((a) => {
+  platform.app.onDeepLink((url) => handleDeepLink(url));
+  platform.app.onUpdateStatus((update) => useSession.getState().set({ update }));
+  platform.tray.onAction((a) => {
     if (a === 'toggle-mute') voice.toggleMute();
     else if (a === 'toggle-deafen') voice.toggleDeafen();
     else if (a === 'disconnect') void voice.leave();
@@ -35,14 +36,14 @@ export async function bootstrap(): Promise<void> {
   watchSyncedPrefs();
 
   try {
-    const s = await window.calaba.auth.restore();
+    const s = await platform.auth.restore();
     if (s) beginSession(s);
     else useSession.getState().set({ status: 'anon' });
   } catch (e) {
     log.warn('session restore failed (offline?)', e);
     useSession.getState().set({ status: 'offline' });
   }
-  const link = await window.calaba.app.takeDeepLink();
+  const link = await platform.app.takeDeepLink();
   if (link) handleDeepLink(link);
 }
 
@@ -67,7 +68,7 @@ function connectGateway(): void {
   startGateway((kind) => {
     if (kind === 'too-many-sessions') useSession.getState().set({ tooManySessions: true });
     else if (kind === 'revoked') {
-      void window.calaba.auth.revoked();
+      void platform.auth.revoked();
       void endSession('revoked');
     } else void endSession('expired');
   });
@@ -82,7 +83,7 @@ export async function retryConnect(): Promise<void> {
   }
   useSession.getState().set({ status: 'booting' });
   try {
-    const s = await window.calaba.auth.restore();
+    const s = await platform.auth.restore();
     if (s) beginSession(s);
     else useSession.getState().set({ status: 'anon' });
   } catch {
@@ -92,7 +93,7 @@ export async function retryConnect(): Promise<void> {
 
 export async function logout(allSessions = false): Promise<void> {
   await voice.leave(false);
-  await window.calaba.auth.logout(allSessions);
+  await platform.auth.logout(allSessions);
   await endSession('logout');
 }
 

@@ -5,7 +5,8 @@ import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { thumbnailUrl } from '../../lib/api/endpoints';
+import { MediaImg } from '../../components/MediaImg';
+import { thumbnailPath } from '../../lib/api/endpoints';
 import { fmtDay, fmtFull, fmtSize, fmtStamp, fmtTime, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { parseMarkdown, toPlainText } from '../../lib/markdown/parse';
@@ -18,6 +19,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import type { RowMeta } from './MessageList';
+import { platform } from '../../platform';
 
 function useMentionMatcher(workspaceId: string): (v: string) => boolean {
   const me = useSession((s) => s.me?.user);
@@ -215,7 +217,7 @@ function Attachments({ files }: { files: FileMeta[] }): ReactNode {
                 : { maxWidth: 400, maxHeight: 300 }
             }
           >
-            <img src={thumbnailUrl(f.id)} alt={f.name} loading="lazy" className="size-full object-cover" draggable={false} />
+            <MediaImg path={thumbnailPath(f.id)} alt={f.name} loading="lazy" className="block size-full object-cover" draggable={false} />
           </button>
         ) : (
           <div key={f.id} className="flex w-[340px] items-center gap-3 rounded-md border border-line bg-elev px-3 py-2.5">
@@ -227,7 +229,7 @@ function Attachments({ files }: { files: FileMeta[] }): ReactNode {
             <IconButton
               label={t('chat.download')}
               onClick={() =>
-                void window.calaba.files.download({ fileId: f.id, name: f.name }).then(
+                void platform.files.download({ fileId: f.id, name: f.name }).then(
                   () => toast.success(t('chat.downloaded', { name: f.name })),
                   (e: unknown) => toast.error(String(e)),
                 )

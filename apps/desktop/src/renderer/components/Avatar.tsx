@@ -1,6 +1,7 @@
 import { PresenceStatus } from '@calaba/protocol';
 import type { ReactNode } from 'react';
-import { thumbnailUrl } from '../lib/api/endpoints';
+import { thumbnailPath } from '../lib/api/endpoints';
+import { MediaImg } from './MediaImg';
 import { useWorkspaces } from '../stores/workspaces';
 import { cx } from './ui';
 
@@ -40,8 +41,8 @@ export function Avatar({
   return (
     <span className={cx('relative inline-block shrink-0', className)} style={{ width: size, height: size }}>
       {fileId ? (
-        <img
-          src={thumbnailUrl(fileId)}
+        <MediaImg
+          path={thumbnailPath(fileId)}
           alt=""
           draggable={false}
           className={cx('size-full rounded-full object-cover', speaking && 'ring-2 ring-ok ring-offset-2 ring-offset-side')}

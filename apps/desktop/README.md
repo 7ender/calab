@@ -33,6 +33,22 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 | `CALABA_FORCE_RELAY=1` | Test flag: ICE relay only (checks the TURN path) |
 | `REMOTE_DEBUGGING_PORT` | (electron-vite dev) CDP port for automation |
 
+## Web client (ADR-0015)
+
+The same renderer runs in a browser at `https://app.<domain>`. Platform differences live in `src/renderer/platform/` (`electron.ts` — preload bridge, `web.ts` — browser APIs). The choice is made at build time: `VITE_PLATFORM=web` (`.env.web`), and the other branch is dropped from the bundle.
+
+| Command | What it does |
+|---|---|
+| `pnpm -F @calaba/desktop build:web` | `dist-web/` (Vite `--mode web`) + check that no Electron code reached the bundle (`scripts/check-web-bundle.mjs`) |
+| `pnpm -F @calaba/desktop preview:web` | serves `dist-web` on :4173, proxies `/api` and `/gateway` to `CALABA_WEB_PROXY` (default `http://127.0.0.1:3000`) |
+| `pnpm -F @calaba/desktop dev:web` | the same with HMR on :5174 |
+| `CALABA_WEB_URL=… pnpm -F @calaba/desktop e2e:web` | Playwright: Chromium + Firefox |
+
+- **Auth.** Requests carry `X-Client: web`. The server puts the refresh token into the `calaba_refresh` cookie (HttpOnly, Secure, SameSite=Strict, Path=/api/auth); the access token is kept in memory only. Refresh is a `POST /api/auth/refresh` with an empty body. If the server returns the refresh token in the response body instead (no cookie mode), it is kept in memory only. Tabs serialize refresh with Web Locks.
+- **API.** Same-origin `fetch` with Bearer and one repeat after refresh on a 401. Images go through a blob: URL of an authenticated fetch (`MediaImg` / `useMediaUrl`).
+- **Web vs desktop:** PTT works only while the tab is focused; the screen is chosen in the browser's own picker (capture happens before `/stream/request` — the click's user activation is needed); notifications use the Notification API; downloads use `a[download]`; invites use `/join/<code>`; there is no tray, auto-update or autostart.
+- **Codecs.** The stream codec is AV1 if the browser can encode it, otherwise VP9, otherwise VP8. In Firefox, if the microphone runs at a sample rate other than 48 kHz, RNNoise is turned off and built-in noise suppression is used.
+
 ## Structure
 
 ```

@@ -38,6 +38,7 @@ import {
   type ScreenSharePreset,
 } from '@calaba/protocol';
 import type { MessageInitShape } from '@bufbuild/protobuf';
+import { platform } from '../../platform';
 import { ApiError, apiUrl, body, call, callEmpty, qs, toApiError } from './client';
 import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 
@@ -137,7 +138,11 @@ export function uploadFile(workspaceId: string, file: Blob, name: string, onProg
     xhr.onabort = () => reject(new DOMException('aborted', 'AbortError'));
     const form = new FormData();
     form.append('file', file, name);
-    xhr.send(form);
+    // Web: Bearer header (Electron: main adds it to calaba-api:// requests).
+    void platform.authHeaders().then((headers) => {
+      for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+      xhr.send(form);
+    }, reject);
   });
   return { promise, abort: () => xhr.abort() };
 }
@@ -145,10 +150,11 @@ export function uploadFile(workspaceId: string, file: Blob, name: string, onProg
 export async function uploadAvatar(file: Blob, name: string): Promise<void> {
   const form = new FormData();
   form.append('file', file, name);
-  const res = await fetch(apiUrl('/api/me/avatar'), { method: 'POST', body: form });
+  const res = await platform.apiFetch('/api/me/avatar', { method: 'POST', body: form });
   if (!res.ok) throw await toApiError(res);
 }
 
 /** URL usable in <img src>: main attaches the bearer token. */
-export const fileUrl = (fileId: string): string => apiUrl(`/api/files/${fileId}`);
-export const thumbnailUrl = (fileId: string): string => apiUrl(`/api/files/${fileId}/thumbnail`);
+/** API paths of file bytes; render them through <MediaImg> / useMediaUrl (auth differs per platform). */
+export const filePath = (fileId: string): string => `/api/files/${fileId}`;
+export const thumbnailPath = (fileId: string): string => `/api/files/${fileId}/thumbnail`;

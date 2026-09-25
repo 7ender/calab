@@ -19,7 +19,14 @@ import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { MicPipeline } from '../lib/media/micPipeline';
 import type { MicReport } from '../lib/media/micReport';
-import { startScreenShare, type ActiveScreenShare, type DesktopSource } from '../lib/media/screenShare';
+import {
+  applyPreset,
+  captureScreen,
+  startScreenShare,
+  type ActiveScreenShare,
+  type CapturedScreen,
+  type DesktopSource,
+} from '../lib/media/screenShare';
 import { RateTracker, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
@@ -28,6 +35,7 @@ import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { setVoice, useVoice, type RemoteStream } from '../stores/voice';
+import { platform } from '../platform';
 
 /**
  * One voice connection (LiveKit room) of this device. Rules that must not be
@@ -87,7 +95,7 @@ class VoiceEngine {
   }
 
   init(): void {
-    window.calaba.ptt.onEvent((ev) => this.onPtt(ev));
+    platform.ptt.onEvent((ev) => this.onPtt(ev));
     this.gate.configure({ thresholdDb: prefs().thresholdDb });
     usePrefs.subscribe((s, p) => this.onPrefs(s, p));
     void this.syncPttBinding();
@@ -110,7 +118,7 @@ class VoiceEngine {
   private async syncPttBinding(): Promise<void> {
     const s = prefs();
     try {
-      await window.calaba.ptt.setBinding(s.micMode === 'ptt' ? s.pttBinding : null);
+      await platform.ptt.setBinding(s.micMode === 'ptt' ? s.pttBinding : null);
     } catch (e) {
       log.warn('ptt binding failed', e);
     }
@@ -605,7 +613,7 @@ class VoiceEngine {
 
   syncTray(): void {
     const v = useVoice.getState();
-    window.calaba.tray.setState({ inVoice: v.roomId !== null, muted: v.muted, deafened: v.deafened });
+    platform.tray.setState({ inVoice: v.roomId !== null, muted: v.muted, deafened: v.deafened });
   }
 
   // ------------------------------------------------------------ moderation
@@ -626,18 +634,29 @@ class VoiceEngine {
     const roomId = this.roomId;
     if (!room || !roomId) return;
     setVoice({ streamBusy: true });
+    let captured: CapturedScreen | null = null;
     try {
       await this.stopStream();
-      // Reserve a slot + get the screen_share grant (409 when max_streams is reached).
+      // 1) capture first (browsers need the click's transient activation for the picker);
+      captured = await captureScreen(opts);
+      // 2) reserve a slot + get the screen_share grant (409 when max_streams is reached);
       const granted = await api.voice.requestStream(roomId, opts.preset);
-      const preset = (granted.preset || opts.preset);
+      const preset = granted.preset || opts.preset;
+      if (preset !== opts.preset) await applyPreset(captured, preset);
       await this.waitForScreenGrant(room);
-      const share = await startScreenShare(room.localParticipant, { ...opts, preset }, () => {
-        if (this.screen === share) {
-          this.screen = null;
-          setVoice({ myStream: null });
-        }
-      });
+      // 3) publish.
+      const share = await startScreenShare(
+        room.localParticipant,
+        { ...opts, preset },
+        () => {
+          if (this.screen === share) {
+            this.screen = null;
+            setVoice({ myStream: null });
+          }
+        },
+        captured,
+      );
+      captured = null;
       this.screen = share;
       this.viewers.set(share.video.sid ?? '', new Set());
       setVoice({
@@ -651,6 +670,8 @@ class VoiceEngine {
       else if (err instanceof ApiError && err.is('ERROR_CODE_FORBIDDEN')) toast.error('Нет права на стрим в этой комнате');
       else toast.error(`Не удалось начать стрим: ${errMsg(err)}`);
     } finally {
+      // Captured but never published (409, grant timeout…): release the screen.
+      captured?.stream.getTracks().forEach((t) => t.stop());
       setVoice({ streamBusy: false });
     }
   }
@@ -787,7 +808,7 @@ class VoiceEngine {
     let rendererCpu: number | null = null;
     if (prefs().devStats) {
       try {
-        rendererCpu = (await window.calaba.system.metrics()).rendererCpu;
+        rendererCpu = (await platform.system.metrics()).rendererCpu;
       } catch {
         rendererCpu = null;
       }

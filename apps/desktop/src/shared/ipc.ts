@@ -155,10 +155,14 @@ export interface CaptureSelection {
   audio: boolean;
 }
 
-/** A global PTT binding: keyboard key (uiohook keycode) or mouse button. */
+/**
+ * PTT binding. Desktop: global uiohook key/mouse codes. Web: DOM `KeyboardEvent.code`
+ * or `Mouse<button>` (works only while the tab is focused, ADR-0015).
+ */
 export type PttBinding =
   | { kind: 'key'; code: number; label: string }
-  | { kind: 'mouse'; code: number; label: string };
+  | { kind: 'mouse'; code: number; label: string }
+  | { kind: 'dom'; code: string; label: string };
 
 export interface PttStatus {
   active: boolean;

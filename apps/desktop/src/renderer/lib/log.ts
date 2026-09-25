@@ -1,3 +1,5 @@
+import { platform } from '../platform';
+
 /** Renderer logging → electron-log file in userData/logs (via main). */
 export const log = {
   info: (...a: unknown[]): void => send('info', a),
@@ -7,11 +9,13 @@ export const log = {
 
 function send(level: 'info' | 'warn' | 'error', a: unknown[]): void {
   const msg = a.map((x) => (x instanceof Error ? `${x.name}: ${x.message}` : typeof x === 'string' ? x : safeJson(x))).join(' ');
-  (level === 'error' ? console.error : level === 'warn' ? console.warn : console.info)(msg);
-  try {
-    window.calaba.app.log(level, msg.slice(0, 8000));
-  } catch {
-    // preload not available (tests)
+  (level === 'error' ? console.error : level === 'warn' ? console.warn : console.info)(msg); // web: console only
+  if (platform.kind === 'electron') {
+    try {
+      platform.app.log(level, msg.slice(0, 8000));
+    } catch {
+      // preload not available (tests)
+    }
   }
 }
 

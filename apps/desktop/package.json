@@ -16,7 +16,11 @@
     "lint": "eslint .",
     "test": "vitest run",
     "e2e": "electron-vite build && playwright test",
-    "build:app": "electron-vite build"
+    "build:app": "electron-vite build",
+    "build:web": "vite build --config vite.web.config.ts --mode web && node scripts/check-web-bundle.mjs",
+    "dev:web": "vite --config vite.web.config.ts --mode web",
+    "preview:web": "vite preview --config vite.web.config.ts --mode web",
+    "e2e:web": "playwright test --config playwright.web.config.ts"
   },
   "dependencies": {
     "electron-log": "^5.4.4",

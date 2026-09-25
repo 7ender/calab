@@ -4,6 +4,7 @@ import { GatewayClient, gatewayUrl } from '../lib/gateway/client';
 import { log } from '../lib/log';
 import { useSession } from '../stores/session';
 import { applyDispatch } from './dispatch';
+import { platform } from '../platform';
 
 let client: GatewayClient | null = null;
 /** Rooms we want typing/read-state for (SUBSCRIBE replaces the set; resent after READY/RESUMED). */
@@ -15,8 +16,8 @@ export function startGateway(onFatal: (kind: 'auth' | 'revoked' | 'too-many-sess
   const info = s.appInfo;
   client = new GatewayClient({
     url: () => gatewayUrl(useSession.getState().serverUrl),
-    getToken: () => window.calaba.auth.accessToken(),
-    refreshToken: () => window.calaba.auth.forceRefresh(),
+    getToken: () => platform.auth.accessToken(),
+    refreshToken: () => platform.auth.forceRefresh(),
     device: { name: info?.hostname ?? 'desktop', platform: info?.platform ?? '', appVersion: info?.version ?? '' },
     createSocket: (url) => new WebSocket(url),
     onDispatch: (ev) => {
