@@ -2,13 +2,16 @@
 //
 //	server [serve]          run the HTTP server (migrates first unless MIGRATE_ON_START=false)
 //	server migrate [status] apply pending migrations (or print their status) and exit
+//	server healthcheck      GET /readyz on HTTP_ADDR, exit 0 if ready (container healthcheck)
 package main
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -43,6 +46,9 @@ func run(args []string) error {
 	if len(args) > 0 {
 		cmd = args[0]
 	}
+	if cmd == "healthcheck" { // needs only HTTP_ADDR, not the full config
+		return healthcheck(os.Getenv("HTTP_ADDR"))
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -57,7 +63,7 @@ func run(args []string) error {
 	case "migrate":
 		return migrate(ctx, cfg, args[1:])
 	default:
-		return fmt.Errorf("unknown command %q (want serve | migrate [status])", cmd)
+		return fmt.Errorf("unknown command %q (want serve | migrate [status] | healthcheck)", cmd)
 	}
 }
 
@@ -137,6 +143,38 @@ func serve(ctx context.Context, cfg *config.Config) error {
 			return err
 		}
 		stopBG()
+	}
+	return nil
+}
+
+// healthcheck probes the local server's readiness (postgres + redis) for container
+// healthchecks in images without curl.
+func healthcheck(addr string) error {
+	if addr == "" {
+		addr = "127.0.0.1:3000"
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	// Target = our own HTTP_ADDR (operator config), probed on loopback.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(host, port)+"/readyz", nil) //nolint:gosec // G704, see above
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: own address
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("not ready: %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
 }

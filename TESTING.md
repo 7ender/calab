@@ -357,7 +357,15 @@ curl -s -XPATCH $A/api/voice/self -H "Authorization: Bearer $BT" -d '{"muted":tr
 
 2.7 Graceful shutdown: при открытом `node /tmp/gw.mjs $BT 30` нажми Ctrl+C в терминале сервера. Ожидается: клиент получает `GATEWAY_OPCODE_RECONNECT` и `{"closed":4000,…}` в течение ~5 с; сервер пишет `"msg":"shutting down"` и завершается с кодом 0.
 
-### 3. Docker-образ
+2.8 Остановка чужого стрима модератором и публичный профиль покрыты тестами `TestRTC` (stop-stream → `VOICE_STREAM_STOP{MODERATOR}`, повтор → 404, без MUTE_MEMBERS → 403) и `TestProfileBroadcast` (смена имени приходит участникам workspace как `userUpdate.user` без email/настроек; смена только настроек не рассылается).
+
+### 3. Docker-образ и healthcheck
 ```sh
 docker build -f apps/server/Dockerfile -t calaba-api:test .   # собирается; образ ~21 MB
+docker run -d --rm --name calaba-hc -e HTTP_ADDR=0.0.0.0:3000 \
+  -e DATABASE_URL=postgres://calaba:calaba@host.docker.internal:55432/calaba \
+  -e REDIS_URL=redis://host.docker.internal:56379/4 -e JWT_SECRET=docker-test-secret-docker-test-secret calaba-api:test
+sleep 3; docker exec calaba-hc /server healthcheck; echo "exit=$?"          # exit=0
+docker exec -e HTTP_ADDR=127.0.0.1:3999 calaba-hc /server healthcheck; echo "exit=$?"   # ERROR ... connection refused, exit=1
+docker rm -f calaba-hc
 ```

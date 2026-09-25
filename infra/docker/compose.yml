@@ -66,6 +66,12 @@ services:
     deploy:
       resources:
         limits: { memory: 1g }
+    healthcheck:   # distroless has no curl: the binary probes its own /readyz (postgres + redis)
+      test: ["CMD", "/server", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     depends_on:
       files-init: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }

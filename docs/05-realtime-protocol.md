@@ -72,7 +72,8 @@ PRESENCE_UPDATE               { user_id, status, last_seen }
 VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming }
 VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- для PiP-плитки
 READ_STATE_UPDATE
-USER_UPDATE                   (свой профиль/настройки с другого устройства)
+USER_UPDATE                   { me } — своим устройствам (профиль, email, настройки);
+                              { user } — участникам всех workspace пользователя (публичный профиль: имя, статус, аватар)
 RESUMED                       { replayed }  — после успешного RESUME
 ```
 
@@ -172,6 +173,7 @@ POST   /api/rooms/{id}/stream/request  RequestStreamRequest → RequestStreamRes
 PATCH  /api/voice/self                 UpdateVoiceSelfRequest → 204        (409 — устройство не в голосе)
 POST   /api/rooms/{id}/voice/{userId}/mute         204   (MUTE_MEMBERS: серверный mute микрофона на всех устройствах)
 POST   /api/rooms/{id}/voice/{userId}/disconnect   204   (MUTE_MEMBERS: RemoveParticipant)
+POST   /api/rooms/{id}/voice/{userId}/stop-stream  204   (MUTE_MEMBERS: screen-треки заглушены, grant на экран снят → VOICE_STREAM_STOP{MODERATOR}; 404 — стримов нет)
 POST   /api/rtc/webhook                LiveKit → сервер (подпись API key/secret + sha256 тела)
 ```
 

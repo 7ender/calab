@@ -296,6 +296,9 @@ message ReadStateUpdate {
   ReadState read_state = 1;
 }
 
+// Profile change. On the user's own devices `me` is set (profile + email + settings);
+// to the members of the user's workspaces only the public `user` is sent.
 message UserUpdate {
-  Me me = 1; // own profile/settings changed from another device
+  Me me = 1;
+  User user = 2;
 }

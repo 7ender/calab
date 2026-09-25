@@ -17,6 +17,7 @@ import (
 	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
+	"github.com/calaba/calaba/server/internal/profile"
 )
 
 // Handlers serves /api/me.
@@ -95,8 +96,8 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	me := pbconv.Me(u)
-	h.events.User(r.Context(), id.UserID, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: me}}})
-	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: me})
+	public := req.DisplayName != nil || req.StatusText != nil || req.AvatarFileId != nil
+	profile.Publish(r.Context(), h.db.Q, h.events, u, public)
+	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
 	return nil
 }

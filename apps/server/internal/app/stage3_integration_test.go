@@ -733,7 +733,18 @@ func TestRTC(t *testing.T) {
 	if !mutedOK {
 		t.Fatalf("over-limit track not muted in LiveKit: %v", lkRec.mutedTracks())
 	}
-	webhook(t, whEvent("track_unpublished", roomName, j.GetIdentity(), &livekit.TrackInfo{Sid: "TR_s1", Source: livekit.TrackSource_SCREEN_SHARE}), "secret")
+	// Moderator stops bob's stream; bob cannot stop the owner's.
+	bob.must(403, "POST", "/api/rooms/"+rid+"/voice/"+o.id+"/stop-stream", nil, nil)
+	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-stream", nil, nil)
+	g.wait("VOICE_STREAM_STOP moderator", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStreamStop()
+		return s.GetTrackSid() == "TR_s1" && s.GetReason() == v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_MODERATOR
+	})
+	o.must(404, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-stream", nil, nil) // nothing left to stop
+	// A new stream that ends normally.
+	webhook(t, whEvent("track_published", roomName, j.GetIdentity(), &livekit.TrackInfo{Sid: "TR_s3", Source: livekit.TrackSource_SCREEN_SHARE}), "secret")
+	g.wait("VOICE_STREAM_START s3", func(e *v1.DispatchEvent) bool { return e.GetVoiceStreamStart().GetTrackSid() == "TR_s3" })
+	webhook(t, whEvent("track_unpublished", roomName, j.GetIdentity(), &livekit.TrackInfo{Sid: "TR_s3", Source: livekit.TrackSource_SCREEN_SHARE}), "secret")
 	g.wait("VOICE_STREAM_STOP ended", func(e *v1.DispatchEvent) bool {
 		return e.GetVoiceStreamStop().GetReason() == v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED
 	})
@@ -761,4 +772,26 @@ func TestRTC(t *testing.T) {
 		s := e.GetVoiceStateUpdate().GetState()
 		return s.GetUserId() == bob.id && s.GetRoomId() == ""
 	})
+}
+
+func TestProfileBroadcast(t *testing.T) {
+	o, bob, _, _ := setupTeam(t)
+	og := dialGW(t)
+	og.identify(o.token)
+	bg := dialGW(t)
+	bg.identify(bob.token)
+	name := "Bob Renamed"
+	bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{DisplayName: &name}, nil)
+	ev := og.wait("USER_UPDATE (public)", func(e *v1.DispatchEvent) bool {
+		return e.GetUserUpdate().GetUser().GetId() == bob.id
+	}).GetUserUpdate()
+	if ev.GetUser().GetDisplayName() != name || ev.GetMe() != nil {
+		t.Fatalf("public update leaks private fields or lacks the name: %v", ev)
+	}
+	bg.wait("USER_UPDATE (own devices get Me)", func(e *v1.DispatchEvent) bool {
+		return e.GetUserUpdate().GetMe().GetEmail() != ""
+	})
+	// Settings-only changes stay private.
+	bob.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{Settings: &v1.UserSettings{PushToTalk: true}}, nil)
+	og.quiet("settings broadcast", 300*time.Millisecond, func(e *v1.DispatchEvent) bool { return e.GetUserUpdate() != nil })
 }

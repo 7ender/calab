@@ -87,7 +87,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U calaba" --health-interval 2s --health-timeout 2s --health-retries 20
       redis:
-        image: redis:7-alpine
+        image: redis:7.4-alpine   # >= 7.4 required (HEXPIRE)
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 2s --health-retries 20
@@ -100,6 +100,11 @@ jobs:
         with:
           go-version: '1.26.x'
           cache-dependency-path: apps/server/go.sum
+      - name: start LiveKit (dev mode; services cannot pass --dev)
+        run: |
+          docker run -d --name livekit -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
+            livekit/livekit-server:v1.13 --dev --bind 0.0.0.0
+          for i in $(seq 1 30); do curl -sf http://localhost:7880 >/dev/null && break; sleep 1; done
       - run: go test -race -tags integration -count=1 ./...
         env:
           TEST_DATABASE_URL: postgres://calaba:calaba@localhost:5432/calaba

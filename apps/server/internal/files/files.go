@@ -32,6 +32,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/profile"
 )
 
 // MaxAvatarBytes caps avatar uploads (they are user-scoped and not quota-counted).
@@ -294,9 +295,8 @@ func (s *Service) avatar(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// The previous avatar is now unreferenced and is removed by the orphan cleanup.
-	me := pbconv.Me(u)
-	s.events.User(r.Context(), uid, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: me}}})
-	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: me})
+	profile.Publish(r.Context(), s.db.Q, s.events, u, true)
+	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
 	return nil
 }
 

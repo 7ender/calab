@@ -2831,9 +2831,12 @@ func (x *ReadStateUpdate) GetReadState() *ReadState {
 	return nil
 }
 
+// Profile change. On the user's own devices `me` is set (profile + email + settings);
+// to the members of the user's workspaces only the public `user` is sent.
 type UserUpdate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Me            *Me                    `protobuf:"bytes,1,opt,name=me,proto3" json:"me,omitempty"` // own profile/settings changed from another device
+	Me            *Me                    `protobuf:"bytes,1,opt,name=me,proto3" json:"me,omitempty"`
+	User          *User                  `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2871,6 +2874,13 @@ func (*UserUpdate) Descriptor() ([]byte, []int) {
 func (x *UserUpdate) GetMe() *Me {
 	if x != nil {
 		return x.Me
+	}
+	return nil
+}
+
+func (x *UserUpdate) GetUser() *User {
+	if x != nil {
+		return x.User
 	}
 	return nil
 }
@@ -3051,10 +3061,11 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x06reason\x18\x05 \x01(\x0e2 .calaba.v1.VoiceStreamStopReasonR\x06reason\"F\n" +
 	"\x0fReadStateUpdate\x123\n" +
 	"\n" +
-	"read_state\x18\x01 \x01(\v2\x14.calaba.v1.ReadStateR\treadState\"+\n" +
+	"read_state\x18\x01 \x01(\v2\x14.calaba.v1.ReadStateR\treadState\"P\n" +
 	"\n" +
 	"UserUpdate\x12\x1d\n" +
-	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me*\xfd\x02\n" +
+	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\x12#\n" +
+	"\x04user\x18\x02 \x01(\v2\x0f.calaba.v1.UserR\x04user*\xfd\x02\n" +
 	"\rGatewayOpcode\x12\x1e\n" +
 	"\x1aGATEWAY_OPCODE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18GATEWAY_OPCODE_HEARTBEAT\x10\x01\x12\x1b\n" +
@@ -3163,6 +3174,7 @@ var file_calaba_v1_gateway_proto_goTypes = []any{
 	(*RoomPermissionOverride)(nil), // 50: calaba.v1.RoomPermissionOverride
 	(*Message)(nil),                // 51: calaba.v1.Message
 	(ScreenSharePreset)(0),         // 52: calaba.v1.ScreenSharePreset
+	(*User)(nil),                   // 53: calaba.v1.User
 }
 var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.GatewayFrame.op:type_name -> calaba.v1.GatewayOpcode
@@ -3229,11 +3241,12 @@ var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	3,  // 61: calaba.v1.VoiceStreamStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
 	19, // 62: calaba.v1.ReadStateUpdate.read_state:type_name -> calaba.v1.ReadState
 	49, // 63: calaba.v1.UserUpdate.me:type_name -> calaba.v1.Me
-	64, // [64:64] is the sub-list for method output_type
-	64, // [64:64] is the sub-list for method input_type
-	64, // [64:64] is the sub-list for extension type_name
-	64, // [64:64] is the sub-list for extension extendee
-	0,  // [0:64] is the sub-list for field type_name
+	53, // 64: calaba.v1.UserUpdate.user:type_name -> calaba.v1.User
+	65, // [65:65] is the sub-list for method output_type
+	65, // [65:65] is the sub-list for method input_type
+	65, // [65:65] is the sub-list for extension type_name
+	65, // [65:65] is the sub-list for extension extendee
+	0,  // [0:65] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_gateway_proto_init() }

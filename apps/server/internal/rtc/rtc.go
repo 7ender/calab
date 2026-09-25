@@ -61,6 +61,7 @@ func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handle
 	mux.Handle("PATCH /api/voice/self", wrap(httpx.HandlerFunc(s.voiceSelf)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/mute", wrap(httpx.HandlerFunc(s.muteMember)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/disconnect", wrap(httpx.HandlerFunc(s.disconnectMember)))
+	mux.Handle("POST /api/rooms/{id}/voice/{userId}/stop-stream", wrap(httpx.HandlerFunc(s.stopStream)))
 	mux.Handle("POST /api/rtc/webhook", httpx.HandlerFunc(s.webhook))
 }
 
@@ -315,6 +316,73 @@ func (s *Service) muteMember(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// stopStream stops the member's screen shares on all devices: tracks are muted server-side,
+// the screen share grant is withdrawn (a new stream needs /stream/request) and
+// VOICE_STREAM_STOP{MODERATOR} is published.
+func (s *Service) stopStream(w http.ResponseWriter, r *http.Request) error {
+	room, target, sess, err := s.moderate(r)
+	if err != nil {
+		return err
+	}
+	name := voice.RoomName(room.WorkspaceID, room.ID)
+	acc, err := perm.NewResolver(s.db.Q).Room(r.Context(), room.ID, target)
+	if err != nil && !errors.Is(err, perm.ErrNoRoom) {
+		return err
+	}
+	streams, err := s.voice.Streams(r.Context(), room.ID)
+	if err != nil {
+		return err
+	}
+	stopped := 0
+	for _, st := range sess {
+		identity := voice.Identity(st.UserID, st.SessionID)
+		muted := map[string]bool{}
+		if p, err := s.lk.GetParticipant(r.Context(), name, identity); err == nil {
+			for _, t := range p.Tracks {
+				if (t.Source == SourceScreenShare || t.Source == SourceScreenShareAudio) && !t.Muted {
+					if err := s.lk.MuteTrack(r.Context(), name, identity, t.Sid, true); err != nil && !IsNotFound(err) {
+						return httpx.Unavailable(err)
+					}
+					muted[t.Sid] = true
+				}
+			}
+		} else if !IsNotFound(err) {
+			return httpx.Unavailable(err)
+		}
+		if err := s.lk.UpdatePermission(r.Context(), name, identity, Grant(acc.Bits, false)); err != nil && !IsNotFound(err) {
+			return httpx.Unavailable(err)
+		}
+		// Recorded streams of this device (also covers tracks LiveKit no longer reports).
+		for sid, rec := range streams {
+			if rec.Identity == identity {
+				muted[sid] = true
+			}
+		}
+		for sid := range muted {
+			if ok, _ := s.voice.RemoveStream(r.Context(), room.ID, sid); ok {
+				s.publishStreamStop(r.Context(), room.WorkspaceID, room.ID, target, sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_MODERATOR)
+				stopped++
+			}
+		}
+		c, err := s.voice.Update(r.Context(), room.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
+			if cur == nil {
+				return nil
+			}
+			n := *cur
+			n.Streaming = false
+			return &n
+		})
+		if err == nil {
+			s.publishVoice(r.Context(), room.WorkspaceID, c)
+		}
+	}
+	if stopped == 0 {
+		return httpx.NotFound("stream of this member")
+	}
+	httpx.NoContent(w)
+	return nil
+}
+
 func (s *Service) disconnectMember(w http.ResponseWriter, r *http.Request) error {
 	room, _, sess, err := s.moderate(r)
 	if err != nil {
@@ -346,7 +414,8 @@ func DisabledRoutes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 		return httpx.Unavailable(errors.New("rtc: LiveKit is not configured"))
 	})
 	for _, p := range []string{"POST /api/rooms/{id}/join", "POST /api/rooms/{id}/stream/request", "PATCH /api/voice/self",
-		"POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/disconnect"} {
+		"POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/disconnect",
+		"POST /api/rooms/{id}/voice/{userId}/stop-stream"} {
 		mux.Handle(p, wrap(h))
 	}
 	mux.Handle("POST /api/rtc/webhook", h)

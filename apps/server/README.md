@@ -5,7 +5,7 @@
 ## Структура
 
 ```
-cmd/server            main: `serve` (по умолчанию) | `migrate [status]`
+cmd/server            main: `serve` (по умолчанию) | `migrate [status]` | `healthcheck` (GET /readyz на HTTP_ADDR, exit 0/1 — для healthcheck в distroless-образе)
 internal/config       env → Config (caarlos0/env), валидация
 internal/app          сборка зависимостей и роутера, фоновые задачи (используется main и интеграционными тестами)
 internal/httpx        ApiError, protojson, middleware (request-id, client IP, access log + метрики, recover)
@@ -16,6 +16,7 @@ internal/redisx       rueidis-клиент (проверка Redis ≥ 7.4), tok
 internal/events       публикация DispatchEvent в Redis pub/sub (16-байтный id события + protobuf)
 internal/auth         argon2id, access JWT, refresh-ротация + reuse detection, middleware, /api/auth/*
 internal/users        /api/me
+internal/profile      рассылка USER_UPDATE (Me — своим устройствам, публичный User — в workspace пользователя)
 internal/workspaces   workspaces, участники, роли, инвайты, снапшот workspace (READY / WORKSPACE_CREATE)
 internal/rooms        комнаты, медиа-настройки, overrides прав, фильтрация по VIEW_ROOM
 internal/messages     история (курсор по uuidv7), идемпотентная отправка по nonce, правка/удаление, read state
