@@ -19,6 +19,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -288,6 +289,29 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			}
 		}
 	}
+	// Guests see only members they share a room with; events that change rooms, overrides or
+	// roles can grow or shrink that set (review R8).
+	var guestBefore map[*Session]map[uuid.UUID]bool
+	subject := uuid.Nil
+	switch e := ev.GetEvent().(type) {
+	case *v1.DispatchEvent_WorkspaceMemberAdd:
+		subject = parseID(e.WorkspaceMemberAdd.GetMember().GetUser().GetId())
+	case *v1.DispatchEvent_WorkspaceMemberUpdate:
+		subject = parseID(e.WorkspaceMemberUpdate.GetMember().GetUser().GetId())
+	case *v1.DispatchEvent_WorkspaceMemberRemove:
+		subject = parseID(e.WorkspaceMemberRemove.GetUserId())
+	}
+	if changesVisibility(ev) {
+		for _, s := range sessions {
+			if st.roles[s.user] == perm.RoleGuest {
+				if guestBefore == nil {
+					guestBefore = map[*Session]map[uuid.UUID]bool{}
+				}
+				guestBefore[s] = st.guestVisible(s.user)
+			}
+		}
+		defer h.syncGuestMembers(st, wid, guestBefore, subject)
+	}
 	switch e := ev.GetEvent().(type) {
 	case *v1.DispatchEvent_RoomCreate, *v1.DispatchEvent_RoomUpdate:
 		_ = e
@@ -400,6 +424,61 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		}
 	default: // categories and other workspace-wide events
 		h.toAll(sessions, id, shared)
+	}
+}
+
+func changesVisibility(ev *v1.DispatchEvent) bool {
+	switch ev.GetEvent().(type) {
+	case *v1.DispatchEvent_RoomCreate, *v1.DispatchEvent_RoomUpdate, *v1.DispatchEvent_RoomPermissionsUpdate,
+		*v1.DispatchEvent_RoomDelete, *v1.DispatchEvent_WorkspaceMemberAdd, *v1.DispatchEvent_WorkspaceMemberUpdate,
+		*v1.DispatchEvent_WorkspaceMemberRemove:
+		return true
+	}
+	return false
+}
+
+// syncGuestMembers sends guests synthetic MEMBER_ADD (+ presence) for members that became
+// visible and MEMBER_REMOVE for those that became hidden (st.mu held). Member profiles are
+// loaded off the fan-out path; the guest's session is paused meanwhile to keep order.
+// The event's own subject is covered by the event itself.
+func (h *Hub) syncGuestMembers(st *wsState, wid uuid.UUID, before map[*Session]map[uuid.UUID]bool, subject uuid.UUID) {
+	for s, was := range before {
+		now := st.guestVisible(s.user)
+		var added []uuid.UUID
+		for u := range now {
+			if !was[u] && u != subject {
+				added = append(added, u)
+			}
+		}
+		for u := range was {
+			if !now[u] && u != subject && u != s.user {
+				s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
+					WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: wid.String(), UserId: u.String()}}})
+			}
+		}
+		if len(added) == 0 {
+			continue
+		}
+		marker := s.pause()
+		go func(s *Session, added []uuid.UUID) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var evs []pendingEvent
+			pres, _ := h.pres.get(ctx, added)
+			for _, u := range added {
+				row, err := h.db.Q.GetMemberWithUser(ctx, sqlc.GetMemberWithUserParams{WorkspaceID: wid, UserID: u})
+				if err != nil {
+					continue
+				}
+				evs = append(evs, pendingEvent{id: uuid.New(), enc: newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
+					WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(row.WorkspaceMember, row.User)}}})})
+				if p := pres[u]; p != nil {
+					evs = append(evs, pendingEvent{id: uuid.New(), enc: newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{
+						PresenceUpdate: &v1.PresenceUpdate{Presence: p}}})})
+				}
+			}
+			s.resumeMany(marker, evs)
+		}(s, added)
 	}
 }
 
@@ -690,10 +769,9 @@ func (h *Hub) onControl(msg string) {
 		s := h.sessions[gsid]
 		h.mu.RUnlock()
 		go func() {
-			if s != nil {
-				h.release(s, "resumed elsewhere", false)
-			}
-			if len(f) > 2 {
+			// Confirm only a session that was live here and is now flushed: a session that
+			// was already released (shutdown) or destroyed has an unbuffered gap (review R2).
+			if s != nil && h.release(s, "resumed elsewhere", false) && len(f) > 2 {
 				h.sendControl(context.Background(), f[2], "released "+gsid.String())
 			}
 		}()
@@ -718,11 +796,11 @@ func (h *Hub) onControl(msg string) {
 // release hands a session over to another instance: stop dispatching, flush the buffer,
 // forget it locally without touching Redis state. graceful lets already queued frames
 // (e.g. RECONNECT) reach the client before the close.
-func (h *Hub) release(s *Session, why string, graceful bool) {
+func (h *Hub) release(s *Session, why string, graceful bool) bool {
 	s.mu.Lock()
 	if s.dead {
 		s.mu.Unlock()
-		return
+		return false
 	}
 	s.dead = true
 	c := s.conn
@@ -742,6 +820,7 @@ func (h *Hub) release(s *Session, why string, graceful bool) {
 	h.unregister(s)
 	s.flush()
 	s.closeQueue()
+	return !s.broken.Load()
 }
 
 // Shutdown asks every client to reconnect (spread over cfg.ShutdownSpread to avoid a
@@ -769,10 +848,10 @@ func (h *Hub) Shutdown(ctx context.Context) {
 			if c != nil {
 				c.sendFrame(&v1.GatewayFrame{Payload: &v1.GatewayFrame_Reconnect{Reconnect: &v1.Reconnect{}}})
 			}
-			h.release(s, "server restart", true)
-			// Owner "" = released without a successor: nobody buffers this session's events
-			// any more, so a RESUME elsewhere is answered with INVALID_SESSION (H1).
+			// Owner "" first = released without a successor: a RESUME elsewhere, even one
+			// racing this shutdown, is answered with INVALID_SESSION (H1, review R2).
 			_ = h.buf.setOwner(context.WithoutCancel(ctx), s.id, "")
+			h.release(s, "server restart", true)
 		}()
 	}
 	wg.Wait()

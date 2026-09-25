@@ -114,19 +114,29 @@ func TestPauseKeepsOrder(t *testing.T) {
 }
 
 func TestInboundBucket(t *testing.T) {
-	c := &conn{tokens: inboundBurst, last: time.Now()}
-	n := 0
-	for c.allowInbound() {
-		n++
-		if n > 100 {
-			break
+	c := &conn{tokens: inboundBurst, flood: floodBurst, last: time.Now()}
+	allowed, dropped := 0, 0
+	for i := 0; i < floodBurst; i++ {
+		ok, flood := c.inbound()
+		if flood {
+			t.Fatalf("flood at frame %d, within the hard burst", i)
+		}
+		if ok {
+			allowed++
+		} else {
+			dropped++
 		}
 	}
-	if n != inboundBurst {
-		t.Fatalf("burst %d, want %d", n, inboundBurst)
+	if allowed != inboundBurst || dropped != floodBurst-inboundBurst {
+		t.Fatalf("allowed %d dropped %d", allowed, dropped)
 	}
-	c.last = c.last.Add(-time.Second) // 1 s later: 2 more
-	a, b, third := c.allowInbound(), c.allowInbound(), c.allowInbound()
+	if _, flood := c.inbound(); !flood {
+		t.Fatal("sustained flooding not detected")
+	}
+	c.last = c.last.Add(-time.Second) // 1 s later: 2 soft tokens again
+	a, _ := c.inbound()
+	b, _ := c.inbound()
+	third, _ := c.inbound()
 	if !a || !b || third {
 		t.Fatal("refill rate")
 	}
@@ -141,5 +151,30 @@ func TestSubscribeCap(t *testing.T) {
 	s.setSubscribed(append(ids, "garbage"))
 	if len(s.subscribed) != maxSubscribed {
 		t.Fatalf("subscribed %d rooms", len(s.subscribed))
+	}
+}
+
+// R6: ids replayed after a takeover stay skipped even if a pause postpones the flush.
+func TestSkipSurvivesPause(t *testing.T) {
+	s := testSession()
+	x, y := uuid.New(), uuid.New()
+	s.dispatch(x, typingEv(1))
+	s.dispatch(y, typingEv(2))
+	marker := s.pause()
+	s.mu.Lock()
+	s.ready = true
+	s.flushPending(map[uuid.UUID]bool{x: true}) // paused: nothing yet
+	s.mu.Unlock()
+	if len(drain(s)) != 0 {
+		t.Fatal("emitted while paused")
+	}
+	s.resume(marker, uuid.New(), newEnc(typingEv(9)))
+	got := drain(s)
+	var rooms []string
+	for _, e := range got {
+		rooms = append(rooms, decode(t, e).GetDispatch().GetTypingStart().GetRoomId())
+	}
+	if len(got) != 2 || rooms[0] != "r2" || rooms[1] != "r9" {
+		t.Fatalf("after resume: %v (x must stay skipped)", rooms)
 	}
 }

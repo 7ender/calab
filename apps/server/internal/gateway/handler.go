@@ -171,10 +171,14 @@ func (h *Hub) loop(c *conn, s *Session) {
 			}
 			return
 		}
-		if !c.allowInbound() {
+		ok, flood := c.inbound()
+		if flood {
 			c.closeGraceful(4008, "rate limited")
 			s.detach(c)
 			return
+		}
+		if _, hb := f.GetPayload().(*v1.GatewayFrame_Heartbeat); !ok && !hb {
+			continue // over the soft budget: drop SUBSCRIBE / TYPING / PRESENCE, keep the socket
 		}
 		switch p := f.GetPayload().(type) {
 		case *v1.GatewayFrame_Heartbeat:
@@ -417,6 +421,15 @@ func (h *Hub) resume(c *conn, req *v1.Resume) (s *Session, retry bool) {
 	}
 	if local == nil || !ok {
 		if local != nil {
+			// Detach this socket first so destroying the session does not close it before
+			// INVALID_SESSION goes out (review R4): the client then IDENTIFYs right here.
+			local.mu.Lock()
+			if local.conn == c {
+				local.conn = nil
+				h.sockets(-1)
+			}
+			local.mu.Unlock()
+			c.setReplay(nil)
 			h.destroy(local, 0, "")
 		}
 		h.invalid(c)

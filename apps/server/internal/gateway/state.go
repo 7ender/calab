@@ -51,6 +51,17 @@ func (s *wsState) coRoom(a, b uuid.UUID) bool {
 	return false
 }
 
+// guestVisible returns the members a guest may see (mu held).
+func (s *wsState) guestVisible(guest uuid.UUID) map[uuid.UUID]bool {
+	out := map[uuid.UUID]bool{guest: true}
+	for u := range s.roles {
+		if u != guest && s.coRoom(guest, u) {
+			out[u] = true
+		}
+	}
+	return out
+}
+
 // hiddenFrom reports whether events about subject must not reach viewer: only guests are
 // restricted, to members who share a room with them.
 func (s *wsState) hiddenFrom(viewer, subject uuid.UUID) bool {

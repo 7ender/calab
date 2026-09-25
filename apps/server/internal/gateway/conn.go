@@ -15,10 +15,13 @@ const (
 	readLimit    = 64 << 10
 	sendQueue    = 256
 	writeTimeout = 10 * time.Second
-	// Inbound frames per socket: burst and sustained rate (security review M3). A normal
-	// client sends a heartbeat every 41 s plus occasional presence/typing/subscribe.
+	// Inbound frames per socket (review M3/R7). Soft budget: extra SUBSCRIBE / TYPING /
+	// PRESENCE frames beyond it are dropped (fast room switching must not disconnect).
+	// Hard budget: sustained flooding closes the socket with 4008.
 	inboundBurst = 10
 	inboundRate  = 2.0 // frames per second
+	floodBurst   = 100
+	floodRate    = 50.0
 )
 
 type outMsg struct {
@@ -44,33 +47,43 @@ type conn struct {
 	held         bool     // writer does not take from out until the replay is set
 	wake         chan struct{}
 
-	tokens float64 // inbound token bucket
+	tokens float64 // soft inbound bucket
+	flood  float64 // hard inbound bucket
 	last   time.Time
 }
 
 func newConn(ws *websocket.Conn, c codec) *conn {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &conn{ws: ws, codec: c, out: make(chan outMsg, sendQueue), ctx: ctx, cancel: cancel,
-		wake: make(chan struct{}, 1), tokens: inboundBurst, last: time.Now()}
+		wake: make(chan struct{}, 1), tokens: inboundBurst, flood: floodBurst, last: time.Now()}
 }
 
-// allowInbound takes one token for an inbound frame (read loop only, no locking needed).
-func (c *conn) allowInbound() bool {
+// inbound meters one inbound frame (read loop only, no locking needed): ok=false means the
+// frame should be ignored (soft budget exhausted), flood=true that the socket must close.
+func (c *conn) inbound() (ok, flood bool) {
 	now := time.Now()
-	c.tokens = min(inboundBurst, c.tokens+now.Sub(c.last).Seconds()*inboundRate)
+	dt := now.Sub(c.last).Seconds()
 	c.last = now
+	c.tokens = min(inboundBurst, c.tokens+dt*inboundRate)
+	c.flood = min(floodBurst, c.flood+dt*floodRate)
+	if c.flood < 1 {
+		return false, true
+	}
+	c.flood--
 	if c.tokens < 1 {
-		return false
+		return false, false
 	}
 	c.tokens--
-	return true
+	return true, false
 }
 
 // writeLoop writes queued messages. Replay frames always go out before any message taken
-// from the queue; while held, queued messages wait (RESUME reads the replay from Redis
-// without blocking fan-out, then releases the hold with setReplay).
+// from the queue. While held (RESUME is reading the replay from Redis), messages taken from
+// the queue are stashed — held is re-checked after every receive, because the writer may
+// already be blocked on the queue when hold() is called — and written after the replay.
 func (c *conn) writeLoop() {
 	defer c.cancel()
+	var stash []outMsg
 	for {
 		c.mu.Lock()
 		replay, held := c.replay, c.held
@@ -81,33 +94,44 @@ func (c *conn) writeLoop() {
 				return
 			}
 		}
-		if held {
-			select {
-			case <-c.ctx.Done():
-				return
-			case <-c.wake:
+		if !held {
+			for _, m := range stash {
+				if !c.write(m) {
+					return
+				}
 			}
-			continue
+			stash = nil
 		}
-		var next *outMsg
 		select {
 		case <-c.ctx.Done():
 			return
 		case <-c.wake:
 		case m := <-c.out:
-			next = &m
-		}
-		c.mu.Lock()
-		replay = c.replay
-		c.replay = nil
-		c.mu.Unlock()
-		for _, m := range replay {
+			c.mu.Lock()
+			held := c.held
+			c.mu.Unlock()
+			if held {
+				stash = append(stash, m)
+				continue
+			}
+			c.mu.Lock()
+			replay := c.replay // set before this message was queued (takeover path)
+			c.replay = nil
+			c.mu.Unlock()
+			for _, r := range replay {
+				if !c.write(r) {
+					return
+				}
+			}
+			for _, st := range stash {
+				if !c.write(st) {
+					return
+				}
+			}
+			stash = nil
 			if !c.write(m) {
 				return
 			}
-		}
-		if next != nil && !c.write(*next) {
-			return
 		}
 	}
 }

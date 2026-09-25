@@ -444,6 +444,7 @@ CALABA_WEB_FF_VOICE=1 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P
 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://colaba.gptunnel.ru pnpm -F @calaba/desktop e2e:web   # 2 passed
 ```
 Electron-E2E так же: `CALABA_LOGIN` + `CALABA_PASSWORD` или `CALABA_INVITE`, плюс `CALABA_E2E_SERVER_URL`.
+Сервер ограничивает частоту создания пространств: три прогона подряд одним аккаунтом за минуту дают «too many requests» на шаге «Создать». Поэтому между прогонами делайте паузу ≥ 1 мин или используйте для `.ru` другой аккаунт (`bob@calaba.test`). После прогонов удалите тестовые пространства `Web …` (Настройки пространства → «Удаление» или `DELETE /api/workspaces/<id>`), чтобы не засорять стенд.
 Если падает на `cookie?.httpOnly` (`undefined`) — на стенде старый api без cookie-режима: `infra/docker/sync.sh api`.
 Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve colaba.gptunnel.ai:443:141.105.69.177 https://colaba.gptunnel.ai/readyz` даёт 200 — это локальный VPN/прокси (fake-IP DNS, особые правила для `gptunnel.ai`), а не стенд. Обход для прогона: Chromium — `--host-resolver-rules=MAP colaba.gptunnel.ai 141.105.69.177 --proxy-server=direct://`, Firefox — prefs `network.proxy.type=0`, `network.dns.forceResolve=141.105.69.177` (через локальный playwright-конфиг, не в репо). Факт 2026-09-26: так `e2e:web` на `.ai` — 2 passed (Firefox с `CALABA_WEB_FF_VOICE=1`), на `.ru` — 2 passed без обхода.
 
@@ -903,3 +904,25 @@ go test -race -tags integration -count=1 -v -run 'TestResumeAcrossInstances|Test
   - входной token bucket (M3);
   - гостевая видимость в `wsState` (M7);
   - `events` round trip.
+
+## Server: второй проход ревью (R1–R9)
+
+```sh
+cd apps/server
+go test ./internal/gateway/                                             # ok
+go test -race -tags integration -count=1 -v -run 'TestLocalResumeOrdering|TestLocalResumeInvalidFirst|TestReleaseNotConfirmedForGoneSession|TestAdminMoveIntoFullRoom|TestSoftLimitAndGuestMemberAdd' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: пять строк `--- PASS` и `ok`. `TestReleaseNotConfirmedForGoneSession` идёт ~8 с (ожидание подтверждения передачи и lease).
+
+Что покрыто:
+- **`TestLocalResumeOrdering` (R1)**: 6 раундов «обрыв → RESUME на том же хабе под потоком из 40 событий». Каждый `seq` приходит строго по порядку и без пропусков, каждое событие — ровно один раз. На старом writer'е тест падал 3/3, на новом проходит.
+- **`TestLocalResumeInvalidFirst` (R4)**: неудачный локальный RESUME → `INVALID_SESSION` в том же сокете, затем `IDENTIFY` в нём же.
+- **`TestReleaseNotConfirmedForGoneSession` (R2)**: владелец жив, но сессию уже отпустил → передача не подтверждается → `INVALID_SESSION`.
+- **`TestAdminMoveIntoFullRoom` (R3)**: админ переносит участника в полную комнату, и `participant_joined` в ней его не выкидывает.
+- **`TestSoftLimitAndGuestMemberAdd` (R7, R8)**:
+  - 40 `SUBSCRIBE` подряд → сокет жив, heartbeat отвечает;
+  - гость получает синтетический `MEMBER_ADD` и `MEMBER_REMOVE`, когда участник становится видимым или скрытым.
+- **Unit**:
+  - `TestSkipSurvivesPause` (R6);
+  - новый двухуровневый входной лимит (R7).
+- **R9**: миграция 00005 — `CREATE INDEX CONCURRENTLY` вне транзакции; применяется в каждом интеграционном прогоне на чистой БД.

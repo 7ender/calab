@@ -73,8 +73,10 @@ type Session struct {
 	detachT    *time.Timer
 
 	wq     chan entry
-	broken atomic.Bool // buffer overflow / Redis error: no longer resumable
-	closed atomic.Bool // wq closed
+	qmu    sync.RWMutex       // guards sends on wq against closeQueue (no send on a closed channel)
+	qdone  bool               // wq closed (qmu)
+	broken atomic.Bool        // buffer overflow / Redis error: no longer resumable
+	skip   map[uuid.UUID]bool // event ids already replayed from the buffer (takeover), until pending drains
 }
 
 func newSession(h *Hub, id, user, asess uuid.UUID) *Session {
@@ -88,10 +90,29 @@ func newSession(h *Hub, id, user, asess uuid.UUID) *Session {
 	return s
 }
 
-// closeQueue stops the buffer writer (idempotent).
+// closeQueue stops the buffer writer (idempotent, safe against concurrent sends).
 func (s *Session) closeQueue() {
-	if s.closed.CompareAndSwap(false, true) {
+	s.qmu.Lock()
+	defer s.qmu.Unlock()
+	if !s.qdone {
+		s.qdone = true
 		close(s.wq)
+	}
+}
+
+// enqueue offers an entry to the buffer writer without blocking; false if the queue is
+// closed or full.
+func (s *Session) enqueue(e entry) bool {
+	s.qmu.RLock()
+	defer s.qmu.RUnlock()
+	if s.qdone {
+		return false
+	}
+	select {
+	case s.wq <- e:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -139,14 +160,13 @@ func (s *Session) bufferWriter() {
 // flush waits until everything dispatched so far is in Redis (must not hold s.mu).
 func (s *Session) flush() {
 	done := make(chan struct{})
+	if !s.enqueue(entry{flush: done}) {
+		s.broken.Store(true)
+		return
+	}
 	select {
-	case s.wq <- entry{flush: done}:
-		select {
-		case <-done:
-		case <-time.After(6 * time.Second):
-			s.broken.Store(true)
-		}
-	default:
+	case <-done:
+	case <-time.After(6 * time.Second):
 		s.broken.Store(true)
 	}
 }
@@ -181,18 +201,17 @@ func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
 
 // emit assigns the next seq, buffers the frame and sends it; s.mu must be held.
 func (s *Session) emit(id uuid.UUID, enc *encEvent) {
+	if s.dead {
+		return
+	}
 	payload, err := enc.bytes()
 	if err != nil {
 		return
 	}
 	s.seq++
 	bin := frameBytes(s.seq, payload)
-	if !s.closed.Load() {
-		select {
-		case s.wq <- entry{id: id, seq: s.seq, frame: bin}:
-		default:
-			s.broken.Store(true)
-		}
+	if !s.enqueue(entry{id: id, seq: s.seq, frame: bin}) {
+		s.broken.Store(true)
 	}
 	eventsDispatched.Inc()
 	if s.conn != nil {
@@ -204,16 +223,26 @@ func (s *Session) emit(id uuid.UUID, enc *encEvent) {
 }
 
 // flushPending emits queued events once nothing holds them back; s.mu must be held.
+// skip (ids already replayed from the buffer after a takeover) is kept on the session until
+// the pending queue has actually drained — a pause may postpone the flush (review R6).
 func (s *Session) flushPending(skip map[uuid.UUID]bool) {
+	if len(skip) > 0 {
+		if s.skip == nil {
+			s.skip = map[uuid.UUID]bool{}
+		}
+		for id := range skip {
+			s.skip[id] = true
+		}
+	}
 	if !s.ready || s.paused > 0 {
 		return
 	}
 	for _, p := range s.pending {
-		if !skip[p.id] {
+		if !s.skip[p.id] {
 			s.emit(p.id, p.enc)
 		}
 	}
-	s.pending = nil
+	s.pending, s.skip = nil, nil
 }
 
 // pause makes later events wait (in order) until resume; returns the marker at which the
@@ -225,18 +254,22 @@ func (s *Session) pause() int {
 	return len(s.pending)
 }
 
-// resume inserts the prepared event where the pause began and releases the queue.
+// resume inserts the prepared event(s) where the pause began and releases the queue.
 func (s *Session) resume(marker int, id uuid.UUID, enc *encEvent) {
+	s.resumeMany(marker, []pendingEvent{{id: id, enc: enc}})
+}
+
+func (s *Session) resumeMany(marker int, evs []pendingEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.paused--
 	if s.dead {
 		return
 	}
 	marker = min(marker, len(s.pending))
 	p := append([]pendingEvent{}, s.pending[:marker]...)
-	p = append(p, pendingEvent{id: id, enc: enc})
+	p = append(p, evs...)
 	s.pending = append(p, s.pending[marker:]...)
-	s.paused--
 	s.flushPending(nil)
 }
 

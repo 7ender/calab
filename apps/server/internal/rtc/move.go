@@ -97,13 +97,37 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	moved := 0
 	for _, st := range sess {
 		identity := voice.Identity(st.UserID, st.SessionID)
+		prev := st
+		// Record the device in the target first: LiveKit may deliver participant_joined for
+		// the target before we get here again, and the join revalidation must then see the
+		// user as already inside (an admin may move into a full room — review R3).
+		c, err := s.voice.Update(r.Context(), acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
+			if cur == nil || cur.RoomID != srcID {
+				return cur
+			}
+			n := *cur
+			n.RoomID, n.JoinedAt = dstID, time.Now().UnixMilli()
+			return &n
+		})
+		if err != nil {
+			return err
+		}
 		if err := s.lk.MoveParticipant(r.Context(), srcName, identity, dstName); err != nil {
+			// Roll back to the source room.
+			_, _ = s.voice.Update(r.Context(), acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
+				if cur == nil || cur.RoomID != dstID {
+					return cur
+				}
+				n := prev
+				return &n
+			})
 			if IsNotFound(err) {
 				continue // device already left; webhook / reconcile clean up
 			}
 			return httpx.Unavailable(err)
 		}
 		moved++
+		s.publishVoice(r.Context(), acc.WorkspaceID, c)
 		if err := s.lk.UpdatePermission(r.Context(), dstName, identity, Grant(movedDst.Bits, st.Streaming)); err != nil && !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}
@@ -120,17 +144,6 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 					WorkspaceId: acc.WorkspaceID.String(), RoomId: dstID.String(), UserId: target.String(), TrackSid: sid, Preset: rec.Preset,
 				}}})
 			}
-		}
-		c, err := s.voice.Update(r.Context(), acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
-			if cur == nil {
-				return nil
-			}
-			n := *cur
-			n.RoomID, n.JoinedAt = dstID, time.Now().UnixMilli()
-			return &n
-		})
-		if err == nil {
-			s.publishVoice(r.Context(), acc.WorkspaceID, c)
 		}
 	}
 	if moved == 0 {

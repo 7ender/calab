@@ -299,7 +299,7 @@ func TestReviewFixes(t *testing.T) {
 	// M3: inbound flood closes the socket with 4008.
 	g := dialGW(t)
 	g.identify(bob.token)
-	for range 30 {
+	for range 250 {
 		g.send(&v1.GatewayFrame{Op: v1.GatewayOpcode_GATEWAY_OPCODE_HEARTBEAT, Payload: &v1.GatewayFrame_Heartbeat{Heartbeat: &v1.Heartbeat{}}})
 	}
 	if st := g.closeStatus(); st != websocket.StatusCode(4008) {
