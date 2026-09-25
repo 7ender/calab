@@ -1,7 +1,14 @@
 -- name: CreateWorkspace :one
-INSERT INTO workspaces (slug, name, visibility, owner_id)
-VALUES ($1, $2, $3, $4)
+INSERT INTO workspaces (slug, name, visibility, owner_id, storage_quota_bytes)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
+
+-- name: CountOwnedWorkspaces :one
+SELECT count(*)::integer FROM workspaces WHERE owner_id = $1;
+
+-- name: LockUserWorkspaces :exec
+-- Serializes workspace creation per user (limit check + insert).
+SELECT pg_advisory_xact_lock(hashtext('calaba.ws.create:' || sqlc.arg('user_id')::text));
 
 -- name: GetWorkspace :one
 SELECT * FROM workspaces WHERE id = $1;

@@ -807,3 +807,24 @@ curl -s -XPOST $A/api/room-invites/$CODE/join -H 'X-Forwarded-For: 10.9.0.1' -d 
 Ожидается:
 - `{"roomName":"voice","workspaceName":"Team","allowGuests":true}`;
 - `{"roomId":"<$VOI>","isGuest":true,"hasToken":true}`.
+
+## Server: исправления security-ревью (лимиты, brute force, заголовки)
+
+```sh
+cd apps/server
+go test ./internal/redisx/ ./internal/rtc/ ./internal/gateway/ ./internal/httpx/   # ok
+go test -tags integration -count=1 -v -run 'TestAbuseLimits|TestLimiterFailsClosed|TestAPIHeadersAndNullOrigin' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: три строки `--- PASS` и `ok`.
+
+Что покрыто:
+- **Workspace**: коды создания `201, 201, 409 WORKSPACE_LIMIT, 429` (+ `Retry-After`), квота нового workspace — из env.
+- **Хранилище**: загрузка сверх глобального потолка → `507 STORAGE_FULL`.
+- **Login**: 3 неверные попытки с разных IP → 4-я (даже с верным паролем, другим IP и email в другом регистре) → `429` + `Retry-After`.
+- **Redis недоступен**: лимитер отвечает `503` (fail closed).
+- **`/api/*`**: заголовки `Cache-Control: no-store` и `nosniff`.
+- **Gateway**: `Origin: null` без cookie → `101`, с cookie → `403`.
+- **Unit**:
+  - webhook без `exp` или просроченный больше чем на 5 мин отклоняется;
+  - `REDIS_URL` с паролем (`redis://:s3cr%40t@host:6379/0`, `redis://user:pw@…`) разбирается rueidis;
+  - `OriginAllowed` с cookie и без.

@@ -185,3 +185,16 @@ func Observe(next http.Handler) http.Handler {
 			"ip", ClientIP(r.Context()), "request_id", RequestID(r.Context()))
 	})
 }
+
+// APIHeaders sets defaults for /api/* responses: JSON is never cached by intermediaries or
+// the browser, and never MIME-sniffed. Handlers serving files override Cache-Control.
+func APIHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			h := w.Header()
+			h.Set("Cache-Control", "no-store")
+			h.Set("X-Content-Type-Options", "nosniff")
+		}
+		next.ServeHTTP(w, r)
+	})
+}

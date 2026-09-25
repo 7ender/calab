@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 )
 
@@ -52,11 +54,19 @@ type Handlers struct {
 	db     *db.DB
 	events events.Publisher
 	store  blob.Store
+	limits Limits
+}
+
+// Limits against abuse of the shared disk (security review H2).
+type Limits struct {
+	MaxOwned      int                 // workspaces a user may own
+	Quota         int64               // storage quota of a new workspace
+	CreateLimiter *redisx.RateLimiter // creations per user (3/h)
 }
 
 // NewHandlers creates the workspace handlers.
-func NewHandlers(d *db.DB, ev events.Publisher, store blob.Store) *Handlers {
-	return &Handlers{db: d, events: ev, store: store}
+func NewHandlers(d *db.DB, ev events.Publisher, store blob.Store, limits Limits) *Handlers {
+	return &Handlers{db: d, events: ev, store: store, limits: limits}
 }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
@@ -195,13 +205,32 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if !ok {
 		return httpx.Validation("visibility", "invalid visibility")
 	}
+	if h.limits.CreateLimiter != nil {
+		if err := h.limits.CreateLimiter.Take(r.Context(), uid(r).String()); err != nil {
+			return err
+		}
+	}
 	var (
 		ws sqlc.Workspace
 		m  sqlc.WorkspaceMember
 	)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		if err := q.LockUserWorkspaces(r.Context(), uid(r).String()); err != nil {
+			return err
+		}
+		if h.limits.MaxOwned > 0 {
+			n, err := q.CountOwnedWorkspaces(r.Context(), uid(r))
+			if err != nil {
+				return err
+			}
+			if int(n) >= h.limits.MaxOwned {
+				return httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_WORKSPACE_LIMIT,
+					fmt.Sprintf("you can own at most %d workspaces", h.limits.MaxOwned))
+			}
+		}
 		var err error
-		ws, err = q.CreateWorkspace(r.Context(), sqlc.CreateWorkspaceParams{Slug: req.GetSlug(), Name: name, Visibility: vis, OwnerID: uid(r)})
+		ws, err = q.CreateWorkspace(r.Context(), sqlc.CreateWorkspaceParams{Slug: req.GetSlug(), Name: name, Visibility: vis,
+			OwnerID: uid(r), StorageQuotaBytes: h.limits.Quota})
 		if err != nil {
 			return slugConflict(err)
 		}

@@ -60,6 +60,7 @@ type App struct {
 func (a *App) Run(ctx context.Context) {
 	go a.Gateway.Run(ctx)
 	go a.Files.RunCleanup(ctx, time.Hour)
+	go a.Files.RunStorageMetrics(ctx, time.Minute)
 	go a.Guests.RunCleanup(ctx, time.Hour)
 	if a.RTC != nil {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)
@@ -104,8 +105,9 @@ func New(d Deps) *App {
 		rtcSvc.Revoked = authSvc.IsRevoked
 	}
 	authLimiter := redisx.NewRateLimiter(d.Redis, "rl:auth:", d.Config.AuthRateBurst, d.Config.AuthRatePerMinute)
-	msgLimiter := redisx.NewRateLimiter(d.Redis, "rl:msg:", 5, 60) // 5 per 5 s per room and user
-	filesSvc := files.NewService(d.DB, d.Blob, pub, d.Config.MaxFileSizeMB<<20)
+	accountLimiter := redisx.NewRateLimiter(d.Redis, "rl:login-acct:", d.Config.LoginAccountBurst, float64(d.Config.LoginAccountBurst)/15) // N per 15 min
+	msgLimiter := redisx.NewRateLimiter(d.Redis, "rl:msg:", 5, 60)                                                                         // 5 per 5 s per room and user
+	filesSvc := files.NewService(d.DB, d.Blob, pub, d.Config.MaxFileSizeMB<<20, d.Config.StorageMaxTotalBytes)
 	hub := gateway.New(gateway.Config{
 		HeartbeatInterval:  d.Config.HeartbeatInterval,
 		MaxSessionsPerUser: d.Config.MaxDevicesPerUser,
@@ -125,11 +127,15 @@ func New(d Deps) *App {
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.Handle("GET /gateway", hub)
 
-	ah := auth.NewHandlers(authSvc, authLimiter, d.Config.AllowedOrigins())
+	ah := auth.NewHandlers(authSvc, authLimiter, accountLimiter, d.Config.AllowedOrigins())
 	ah.Public(mux)
 	ah.Private(mux, private)
 	users.NewHandlers(d.DB, pub, hub).Routes(mux, private)
-	workspaces.NewHandlers(d.DB, pub, d.Blob).Routes(mux, private)
+	workspaces.NewHandlers(d.DB, pub, d.Blob, workspaces.Limits{
+		MaxOwned:      d.Config.MaxWorkspacesPerUser,
+		Quota:         d.Config.DefaultWorkspaceQuotaBytes,
+		CreateLimiter: redisx.NewRateLimiter(d.Redis, "rl:ws-create:", d.Config.WorkspaceCreatesPerHour, float64(d.Config.WorkspaceCreatesPerHour)/60),
+	}).Routes(mux, private)
 	roomHandlers := rooms.NewHandlers(d.DB, pub)
 	roomHandlers.Routes(mux, private)
 	roomHandlers.CategoryRoutes(mux, private)
@@ -152,6 +158,7 @@ func New(d Deps) *App {
 	h := httpx.Chain(mux,
 		httpx.WithRequestID,
 		httpx.WithClientIP(d.Config.TrustedProxies),
+		httpx.APIHeaders,
 		httpx.Observe,
 		httpx.Recover,
 	)

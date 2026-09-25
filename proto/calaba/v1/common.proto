@@ -22,6 +22,8 @@ enum ErrorCode {
   ERROR_CODE_PAYLOAD_TOO_LARGE = 15;   // 413: request body too large
   ERROR_CODE_UNAVAILABLE = 16;         // 503
   ERROR_CODE_ROOM_FULL = 17;           // 409: voice room user_limit reached
+  ERROR_CODE_WORKSPACE_LIMIT = 18;     // 409: MAX_WORKSPACES_PER_USER owned workspaces
+  ERROR_CODE_STORAGE_FULL = 19;        // 507: server-wide storage cap (STORAGE_MAX_TOTAL_BYTES)
 }
 
 // Error body of every non-2xx REST response.

@@ -53,11 +53,16 @@ LiveKit в compose.dev работает с `infra/docker/livekit/livekit.dev.yam
 |---|---|---|
 | `HTTP_ADDR` | `127.0.0.1:3000` | адрес HTTP (REST + `/gateway`) |
 | `DATABASE_URL` | — (обязательна) | Postgres 18 (`uuidv7()`) |
-| `REDIS_URL` | — (обязательна) | `redis://host:port/db`, **Redis ≥ 7.4** (HEXPIRE для presence) |
+| `REDIS_URL` | — (обязательна) | `redis://host:port/db`, с паролем — `redis://:pass@host:port/db` (спецсимволы в пароле URL-кодировать); **Redis ≥ 7.4** (HEXPIRE для presence) |
 | `JWT_SECRET` | — (обязательна, ≥ 32 байт) | подпись access JWT (HS256) |
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL` | `15m` / `720h` | время жизни access JWT / сессии (скользящее) |
 | `REGISTRATION_MODE` | `invite` | `open` \| `invite` (без кода — только первый пользователь сервера) |
 | `AUTH_RATE_BURST` / `AUTH_RATE_PER_MINUTE` | `10` / `10` | token bucket по IP на login и register |
+| `LOGIN_ACCOUNT_ATTEMPTS` | `10` | попыток входа на один email за 15 мин с любых IP (429 + `Retry-After`) |
+| `MAX_WORKSPACES_PER_USER` | `5` | сколько workspace может принадлежать одному пользователю (409 `WORKSPACE_LIMIT`) |
+| `WORKSPACE_CREATES_PER_HOUR` | `3` | создание workspace на пользователя в час |
+| `DEFAULT_WORKSPACE_QUOTA_BYTES` | `10737418240` (10 GiB) | квота нового workspace |
+| `STORAGE_MAX_TOTAL_BYTES` | `53687091200` (50 GiB) | потолок всех файлов сервера (507 `STORAGE_FULL`); метрика `calaba_storage_used_bytes` |
 | `TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` | кому верить в `X-Forwarded-For` (Caddy) |
 | `PUBLIC_APP_URL` | `http://localhost:3000` | внешний URL веб-клиента; его origin разрешён для cookie-auth (CSRF) и WS-апгрейда |
 | `PUBLIC_APP_URL_ALT` | — | запасной домен веб-клиента (например `.ru`), разрешён так же |

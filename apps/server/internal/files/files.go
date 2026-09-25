@@ -22,6 +22,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
@@ -47,11 +49,52 @@ type Service struct {
 	store    blob.Store
 	events   events.Publisher
 	maxBytes int64
+	maxTotal int64 // server-wide cap on stored bytes (STORAGE_MAX_TOTAL_BYTES)
 }
 
-// NewService creates the files service; maxBytes is MAX_FILE_SIZE_MB in bytes.
-func NewService(d *db.DB, store blob.Store, ev events.Publisher, maxBytes int64) *Service {
-	return &Service{db: d, store: store, events: ev, maxBytes: maxBytes}
+// NewService creates the files service; maxBytes is MAX_FILE_SIZE_MB in bytes, maxTotal the
+// server-wide storage cap.
+func NewService(d *db.DB, store blob.Store, ev events.Publisher, maxBytes, maxTotal int64) *Service {
+	return &Service{db: d, store: store, events: ev, maxBytes: maxBytes, maxTotal: maxTotal}
+}
+
+var storageUsed = promauto.NewGauge(prometheus.GaugeOpts{
+	Namespace: "calaba", Name: "storage_used_bytes", Help: "Bytes stored in files (all workspaces + avatars).",
+})
+
+var errStorageFull = httpx.Coded(http.StatusInsufficientStorage, v1.ErrorCode_ERROR_CODE_STORAGE_FULL, "server storage is full")
+
+// checkTotal enforces the server-wide cap inside the upload transaction. The advisory lock
+// serializes concurrent uploads between the check and their quota reservation.
+func (s *Service) checkTotal(ctx context.Context, q *sqlc.Queries, size int64) error {
+	if err := q.LockStorage(ctx); err != nil {
+		return err
+	}
+	total, err := q.TotalStorageBytes(ctx)
+	if err != nil {
+		return err
+	}
+	storageUsed.Set(float64(total))
+	if s.maxTotal > 0 && total+size > s.maxTotal {
+		return errStorageFull
+	}
+	return nil
+}
+
+// RunStorageMetrics refreshes calaba_storage_used_bytes every interval.
+func (s *Service) RunStorageMetrics(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		if total, err := s.db.Q.TotalStorageBytes(ctx); err == nil {
+			storageUsed.Set(float64(total))
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
@@ -251,6 +294,9 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 	}
 	var f sqlc.File
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		if err := s.checkTotal(r.Context(), q, st.size); err != nil {
+			return err
+		}
 		if _, err := q.ReserveQuota(r.Context(), sqlc.ReserveQuotaParams{ID: wsID, Size: st.size}); err != nil {
 			if db.IsNotFound(err) {
 				return errQuota
@@ -289,6 +335,9 @@ func (s *Service) avatar(w http.ResponseWriter, r *http.Request) error {
 	}
 	var u sqlc.User
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		if err := s.checkTotal(r.Context(), q, st.size); err != nil {
+			return err
+		}
 		if _, err := q.InsertFile(r.Context(), s.row(st, nil, uid)); err != nil {
 			return err
 		}

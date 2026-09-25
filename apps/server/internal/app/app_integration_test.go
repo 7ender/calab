@@ -50,6 +50,7 @@ var (
 	testRedis rueidis.Client
 	testCfg   *config.Config
 	lkRec     *recordingLiveKit
+	testStore *blob.FS
 )
 
 func env(k, def string) string {
@@ -112,25 +113,31 @@ func run(m *testing.M) int {
 	_ = rc.Do(ctx, rc.B().Flushdb().Build()).Error()
 
 	cfg := &config.Config{
-		DatabaseURL:            u.String(),
-		JWTSecret:              "integration-secret-integration-secret",
-		AccessTokenTTL:         15 * time.Minute,
-		RefreshTokenTTL:        720 * time.Hour,
-		RegistrationMode:       config.RegistrationInvite,
-		PublicAppURL:           "https://app.example.com",
-		PublicAppURLAlt:        "https://app.example.ru",
-		AuthRateBurst:          5,
-		AuthRatePerMinute:      1,
-		MaxFileSizeMB:          1, // small, so the size limit is testable
-		StorageDriver:          "fs",
-		StoragePath:            storageDir,
-		HeartbeatInterval:      41 * time.Second,
-		MaxDevicesPerUser:      5,
-		LiveKitURL:             env("TEST_LIVEKIT_URL", "ws://localhost:7880"),
-		LiveKitInternalURL:     env("TEST_LIVEKIT_INTERNAL_URL", "http://localhost:7880"),
-		LiveKitAPIKey:          "devkey",
-		LiveKitAPISecret:       "secret",
-		LiveKitMaxParticipants: 50,
+		DatabaseURL:      u.String(),
+		JWTSecret:        "integration-secret-integration-secret",
+		AccessTokenTTL:   15 * time.Minute,
+		RefreshTokenTTL:  720 * time.Hour,
+		RegistrationMode: config.RegistrationInvite,
+		PublicAppURL:     "https://app.example.com",
+		// Abuse limits are exercised separately (TestAbuseLimits) with small values.
+		LoginAccountBurst:          1000,
+		MaxWorkspacesPerUser:       1000,
+		WorkspaceCreatesPerHour:    1000,
+		StorageMaxTotalBytes:       1 << 40,
+		DefaultWorkspaceQuotaBytes: 10 << 30,
+		PublicAppURLAlt:            "https://app.example.ru",
+		AuthRateBurst:              5,
+		AuthRatePerMinute:          1,
+		MaxFileSizeMB:              1, // small, so the size limit is testable
+		StorageDriver:              "fs",
+		StoragePath:                storageDir,
+		HeartbeatInterval:          41 * time.Second,
+		MaxDevicesPerUser:          5,
+		LiveKitURL:                 env("TEST_LIVEKIT_URL", "ws://localhost:7880"),
+		LiveKitInternalURL:         env("TEST_LIVEKIT_INTERNAL_URL", "http://localhost:7880"),
+		LiveKitAPIKey:              "devkey",
+		LiveKitAPISecret:           "secret",
+		LiveKitMaxParticipants:     50,
 	}
 	cfg.TrustedProxies = mustPrefixes("127.0.0.1/32", "::1/128")
 	if err := cfg.Validate(); err != nil {
@@ -145,7 +152,7 @@ func run(m *testing.M) int {
 	lkRec = &recordingLiveKit{LiveKit: rtc.NewLiveKit(cfg.LiveKitInternalURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)}
 	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Events: events.Redis{C: rc}, Blob: store, LiveKit: lkRec,
 		UnfurlAllowAddr: func(netip.Addr) bool { return true }}) // test pages are served on loopback
-	testApp, testDB, testRedis, testCfg = a, d, rc, cfg
+	testApp, testDB, testRedis, testCfg, testStore = a, d, rc, cfg, store
 	bg, stop := context.WithCancel(ctx)
 	defer stop()
 	a.Run(bg)

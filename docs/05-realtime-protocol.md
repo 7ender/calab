@@ -260,6 +260,15 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 
 Файлы: хранилище (ADR-0011, `blob.Store`) наружу не публикуется, загрузка и скачивание идут только через API. Лимиты — 50 MB на файл (`MAX_FILE_SIZE_MB`, иначе `413`), 20 вложений на сообщение, квота workspace (`storage_quota_bytes`, по умолчанию 10 GB; превышение → `ERROR_CODE_FILE_QUOTA_EXCEEDED`). Для `image/*` сервер генерирует превью (≤ 512 px, WebP), в сообщении приходит `thumbnail_url`.
 
+Защита от злоупотреблений (security review, 2026-09-26):
+- **Rate limit.** Все лимитеры — token bucket в Redis. При исчерпании — `429` с `Retry-After` (секунды). При недоступности Redis лимитеры **fail closed**: `503`, как и проверка отзыва сессий.
+- **Login.** Два лимита: по IP и по аккаунту — `LOGIN_ACCOUNT_ATTEMPTS` (10) за 15 мин на email с любых IP. Лимит по аккаунту работает одинаково и для несуществующих email, поэтому не раскрывает, есть ли аккаунт.
+- **Workspace.** Не больше `MAX_WORKSPACES_PER_USER` (5) во владении (`409 ERROR_CODE_WORKSPACE_LIMIT`) и `WORKSPACE_CREATES_PER_HOUR` (3) созданий в час; квота нового — `DEFAULT_WORKSPACE_QUOTA_BYTES`.
+- **Хранилище.** Потолок `STORAGE_MAX_TOTAL_BYTES` на всё хранилище сервера (квоты всех workspace + аватары) проверяется при загрузке, под advisory lock вместе с резервированием квоты → `507 ERROR_CODE_STORAGE_FULL`.
+- **Заголовки.** Ответы `/api/*` по умолчанию идут с `Cache-Control: no-store` и `X-Content-Type-Options: nosniff`; файлы и прокси картинок ставят свой `Cache-Control`.
+- **Webhook LiveKit.** `exp` обязателен, допуск по часам — 5 мин.
+- **Gateway.** Origin `null` / `file://` пропускается только без cookie: у десктопа их нет, а `null` с cookie — это чужая sandbox-страница → `403`.
+
 Ошибки: `ApiError { code: "ERROR_CODE_FORBIDDEN" | "ERROR_CODE_RATE_LIMITED" | …, message, field }` + HTTP-статус (коды и статусы — enum `ErrorCode` в `common.proto`). Недоступный пользователю ресурс (чужой workspace, комната без `VIEW_ROOM`) — `404`, а не `403`, чтобы не раскрывать существование. Rate-limit на сообщения (5/5с на комнату), typing (1/3с), login и register (token bucket по IP в Redis: `AUTH_RATE_BURST`, `AUTH_RATE_PER_MINUTE`).
 
 REST-мутации после коммита публикуют `DispatchEvent` в Redis (`ws:<workspace_id>`, `user:<user_id>`, `session:revoked:<session_id>`) — gateway (следующий этап) подписывается и рассылает с фильтрацией по правам.

@@ -84,11 +84,7 @@ func cacheKey(u string) string {
 }
 
 func (s *Service) limit(r *http.Request, kind string) error {
-	ok, err := s.limiter.Allow(r.Context(), kind+":"+auth.MustFromContext(r.Context()).UserID.String())
-	if err == nil && !ok {
-		return httpx.RateLimited()
-	}
-	return nil
+	return s.limiter.Take(r.Context(), kind+":"+auth.MustFromContext(r.Context()).UserID.String())
 }
 
 var errNoPreview = httpx.NotFound("preview")

@@ -163,7 +163,8 @@ func VerifyWebhook(key, secret string, authHeader string, body []byte) (*Webhook
 	}
 	var c lkClaims
 	_, err := jwt.ParseWithClaims(tok, &c, func(*jwt.Token) (any, error) { return []byte(secret), nil },
-		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer(key), jwt.WithLeeway(time.Minute))
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer(key),
+		jwt.WithExpirationRequired(), jwt.WithLeeway(5*time.Minute)) // exp/nbf set by LiveKit; 5 min clock skew
 	if err != nil {
 		return nil, fmt.Errorf("livekit webhook: %w", err)
 	}

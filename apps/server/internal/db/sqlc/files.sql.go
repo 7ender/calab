@@ -266,6 +266,16 @@ func (q *Queries) ListWorkspaceFileKeys(ctx context.Context, workspaceID *uuid.U
 	return items, nil
 }
 
+const lockStorage = `-- name: LockStorage :exec
+SELECT pg_advisory_xact_lock(hashtext('calaba.storage.total'))
+`
+
+// Serializes the server-wide storage check with the reservation that follows it.
+func (q *Queries) LockStorage(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockStorage)
+	return err
+}
+
 const releaseQuota = `-- name: ReleaseQuota :exec
 UPDATE workspaces SET storage_used_bytes = greatest(0, storage_used_bytes - $1::bigint)
 WHERE id = $2
@@ -298,6 +308,19 @@ func (q *Queries) ReserveQuota(ctx context.Context, arg ReserveQuotaParams) (int
 	var storage_used_bytes int64
 	err := row.Scan(&storage_used_bytes)
 	return storage_used_bytes, err
+}
+
+const totalStorageBytes = `-- name: TotalStorageBytes :one
+SELECT ((SELECT coalesce(sum(storage_used_bytes), 0) FROM workspaces)
+      + (SELECT coalesce(sum(size), 0) FROM files WHERE workspace_id IS NULL))::bigint
+`
+
+// All stored bytes: workspace usage plus user-scoped files (avatars, not quota-counted).
+func (q *Queries) TotalStorageBytes(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, totalStorageBytes)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const tryAdvisoryXactLock = `-- name: TryAdvisoryXactLock :one

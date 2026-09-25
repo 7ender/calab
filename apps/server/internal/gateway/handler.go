@@ -35,7 +35,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "shutting down", http.StatusServiceUnavailable)
 		return
 	}
-	if !OriginAllowed(r.Header.Get("Origin"), h.cfg.AllowedOrigins) {
+	if !OriginAllowed(r.Header.Get("Origin"), r.Header.Get("Cookie") != "", h.cfg.AllowedOrigins) {
 		http.Error(w, "origin not allowed", http.StatusForbidden)
 		return
 	}
@@ -60,12 +60,16 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // OriginAllowed decides whether a WebSocket upgrade may proceed. Authentication is the
 // IDENTIFY token (never a cookie), so this is defence in depth against foreign web pages:
 //   - no Origin: native clients (tests, tools) — allowed;
-//   - "null" / file://: the packaged Electron renderer — allowed;
+//   - "null" / file://: the packaged Electron renderer — allowed only without cookies (the
+//     desktop never sends any; a cookie-carrying "null" origin is a sandboxed foreign page);
 //   - http://localhost / 127.0.0.1 (any port): local development (Vite dev server) — allowed;
 //   - otherwise the origin must be one of the web client's origins.
-func OriginAllowed(origin string, allowed []string) bool {
-	if origin == "" || origin == "null" || strings.HasPrefix(origin, "file://") {
+func OriginAllowed(origin string, hasCookie bool, allowed []string) bool {
+	if origin == "" {
 		return true
+	}
+	if origin == "null" || strings.HasPrefix(origin, "file://") {
+		return !hasCookie
 	}
 	u, err := url.Parse(origin)
 	if err != nil {

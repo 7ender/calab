@@ -140,8 +140,13 @@ func TestOriginAllowed(t *testing.T) {
 		"http://localhost.evil.io": false,
 		"::bad::":                  false,
 	} {
-		if got := OriginAllowed(origin, allowed); got != want {
+		if got := OriginAllowed(origin, false, allowed); got != want {
 			t.Errorf("%q: got %v want %v", origin, got, want)
+		}
+	}
+	for origin, want := range map[string]bool{"null": false, "file://": false, "https://app.example.com": true, "": true} {
+		if got := OriginAllowed(origin, true, allowed); got != want {
+			t.Errorf("%q with cookie: got %v want %v", origin, got, want)
 		}
 	}
 }

@@ -237,8 +237,8 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	if ok, err := h.limiter.Allow(r.Context(), roomID.String()+":"+uid(r).String()); err == nil && !ok {
-		return httpx.RateLimited()
+	if err := h.limiter.Take(r.Context(), roomID.String()+":"+uid(r).String()); err != nil {
+		return err
 	}
 	var replyTo *uuid.UUID
 	if s := req.GetReplyToId(); s != "" {

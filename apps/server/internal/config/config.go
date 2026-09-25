@@ -41,6 +41,15 @@ type Config struct {
 	AuthRateBurst     int     `env:"AUTH_RATE_BURST" envDefault:"10"`
 	AuthRatePerMinute float64 `env:"AUTH_RATE_PER_MINUTE" envDefault:"10"`
 
+	// Login attempts per account (email) per 15 minutes, from any IP.
+	LoginAccountBurst int `env:"LOGIN_ACCOUNT_ATTEMPTS" envDefault:"10"`
+
+	// Abuse limits (disk is shared with other tenants of the host).
+	MaxWorkspacesPerUser       int   `env:"MAX_WORKSPACES_PER_USER" envDefault:"5"`
+	WorkspaceCreatesPerHour    int   `env:"WORKSPACE_CREATES_PER_HOUR" envDefault:"3"`
+	StorageMaxTotalBytes       int64 `env:"STORAGE_MAX_TOTAL_BYTES" envDefault:"53687091200"`       // 50 GiB, all files
+	DefaultWorkspaceQuotaBytes int64 `env:"DEFAULT_WORKSPACE_QUOTA_BYTES" envDefault:"10737418240"` // 10 GiB per new workspace
+
 	// Peers allowed to set X-Forwarded-For (Caddy on loopback in prod).
 	TrustedProxies []netip.Prefix `env:"TRUSTED_PROXIES" envDefault:"127.0.0.1/32,::1/128"`
 
@@ -114,6 +123,10 @@ func (c *Config) Validate() error {
 		errs = append(errs, errors.New("STORAGE_DRIVER=s3 is not implemented yet (ADR-0011)"))
 	default:
 		errs = append(errs, fmt.Errorf("STORAGE_DRIVER must be fs or s3, got %q", c.StorageDriver))
+	}
+	if c.LoginAccountBurst < 1 || c.MaxWorkspacesPerUser < 1 || c.WorkspaceCreatesPerHour < 1 ||
+		c.StorageMaxTotalBytes < 1 || c.DefaultWorkspaceQuotaBytes < 0 {
+		errs = append(errs, errors.New("LOGIN_ACCOUNT_ATTEMPTS, MAX_WORKSPACES_PER_USER, WORKSPACE_CREATES_PER_HOUR, STORAGE_MAX_TOTAL_BYTES must be >= 1 and DEFAULT_WORKSPACE_QUOTA_BYTES >= 0"))
 	}
 	if c.MaxFileSizeMB < 1 {
 		errs = append(errs, errors.New("MAX_FILE_SIZE_MB must be >= 1"))

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -30,14 +31,16 @@ func SetRefreshCookie(w http.ResponseWriter, t *v1.AuthTokens) { setRefreshCooki
 // Handlers exposes the auth REST API.
 type Handlers struct {
 	svc     *Service
-	limiter *redisx.RateLimiter
-	origins []string // allowed browser origins (PUBLIC_APP_URL, PUBLIC_APP_URL_ALT)
+	limiter *redisx.RateLimiter // per client IP: login and register
+	account *redisx.RateLimiter // per account (email): login attempts, against distributed guessing
+	origins []string            // allowed browser origins (PUBLIC_APP_URL, PUBLIC_APP_URL_ALT)
 }
 
-// NewHandlers creates the handlers; limiter throttles login/register per client IP,
-// origins are the web client's origins for the CSRF check of cookie requests.
-func NewHandlers(svc *Service, limiter *redisx.RateLimiter, origins []string) *Handlers {
-	return &Handlers{svc: svc, limiter: limiter, origins: origins}
+// NewHandlers creates the handlers. limiter throttles login/register per client IP,
+// account throttles login attempts per email; origins are the web client's origins for the
+// CSRF check of cookie requests.
+func NewHandlers(svc *Service, limiter, account *redisx.RateLimiter, origins []string) *Handlers {
+	return &Handlers{svc: svc, limiter: limiter, account: account, origins: origins}
 }
 
 func client(r *http.Request, device string) Client {
@@ -79,16 +82,9 @@ func refreshFromCookie(r *http.Request) string {
 	return c.Value
 }
 
-// rateLimit fails open on Redis errors: a Redis blip must not lock everyone out of login.
+// rateLimit throttles per client IP; like every limiter it fails closed (503 without Redis).
 func (h *Handlers) rateLimit(r *http.Request, action string) error {
-	ok, err := h.limiter.Allow(r.Context(), action+":"+httpx.ClientIP(r.Context()))
-	if err != nil {
-		return nil //nolint:nilerr // fail open, see above
-	}
-	if !ok {
-		return httpx.RateLimited()
-	}
-	return nil
+	return h.limiter.Take(r.Context(), action+":"+httpx.ClientIP(r.Context()))
 }
 
 // Public routes (no access token).
@@ -141,6 +137,11 @@ func (h *Handlers) login(w http.ResponseWriter, r *http.Request) error {
 	}
 	var req v1.LoginRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	// Per-account bucket (also for unknown emails, so it reveals nothing): stops guessing a
+	// password from many IPs.
+	if err := h.account.Take(r.Context(), strings.ToLower(strings.TrimSpace(req.GetEmail()))); err != nil {
 		return err
 	}
 	resp, err := h.svc.Login(r.Context(), &req, client(r, req.GetDeviceName()))

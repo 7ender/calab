@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -60,6 +61,9 @@ func NoContent(w http.ResponseWriter) {
 // WriteError writes err as ApiError JSON and logs server-side failures.
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	e := AsError(err)
+	if e.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(e.RetryAfter.Seconds())))
+	}
 	if e.Status >= 500 {
 		slog.ErrorContext(r.Context(), "request failed", "err", err, "request_id", RequestID(r.Context()),
 			"method", r.Method, "path", r.URL.Path)

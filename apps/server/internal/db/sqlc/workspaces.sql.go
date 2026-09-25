@@ -37,17 +37,29 @@ func (q *Queries) AddMember(ctx context.Context, arg AddMemberParams) (Workspace
 	return i, err
 }
 
+const countOwnedWorkspaces = `-- name: CountOwnedWorkspaces :one
+SELECT count(*)::integer FROM workspaces WHERE owner_id = $1
+`
+
+func (q *Queries) CountOwnedWorkspaces(ctx context.Context, ownerID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countOwnedWorkspaces, ownerID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createWorkspace = `-- name: CreateWorkspace :one
-INSERT INTO workspaces (slug, name, visibility, owner_id)
-VALUES ($1, $2, $3, $4)
+INSERT INTO workspaces (slug, name, visibility, owner_id, storage_quota_bytes)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname
 `
 
 type CreateWorkspaceParams struct {
-	Slug       string
-	Name       string
-	Visibility string
-	OwnerID    uuid.UUID
+	Slug              string
+	Name              string
+	Visibility        string
+	OwnerID           uuid.UUID
+	StorageQuotaBytes int64
 }
 
 func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error) {
@@ -56,6 +68,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		arg.Name,
 		arg.Visibility,
 		arg.OwnerID,
+		arg.StorageQuotaBytes,
 	)
 	var i Workspace
 	err := row.Scan(
@@ -416,6 +429,16 @@ func (q *Queries) ListUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]W
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockUserWorkspaces = `-- name: LockUserWorkspaces :exec
+SELECT pg_advisory_xact_lock(hashtext('calaba.ws.create:' || $1::text))
+`
+
+// Serializes workspace creation per user (limit check + insert).
+func (q *Queries) LockUserWorkspaces(ctx context.Context, userID string) error {
+	_, err := q.db.Exec(ctx, lockUserWorkspaces, userID)
+	return err
 }
 
 const removeMember = `-- name: RemoveMember :execrows

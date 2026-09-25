@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
@@ -16,6 +17,8 @@ type Error struct {
 	Message string
 	Field   string
 	Err     error // internal cause, logged but never sent
+	// RetryAfter, if set, is sent as the Retry-After header (429).
+	RetryAfter time.Duration
 }
 
 func (e *Error) Error() string {

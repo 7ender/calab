@@ -352,8 +352,8 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Validation("nickname", "name must be 1..64 characters")
 	}
-	if ok, err := s.limiter.Allow(r.Context(), httpx.ClientIP(r.Context())); err == nil && !ok {
-		return httpx.RateLimited()
+	if err := s.limiter.Take(r.Context(), httpx.ClientIP(r.Context())); err != nil {
+		return err
 	}
 	var (
 		user   sqlc.User

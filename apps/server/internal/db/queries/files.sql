@@ -47,3 +47,12 @@ SELECT key, thumbnail_key FROM files WHERE workspace_id = $1;
 
 -- name: TryAdvisoryXactLock :one
 SELECT pg_try_advisory_xact_lock(hashtext(sqlc.arg('name')::text));
+
+-- name: LockStorage :exec
+-- Serializes the server-wide storage check with the reservation that follows it.
+SELECT pg_advisory_xact_lock(hashtext('calaba.storage.total'));
+
+-- name: TotalStorageBytes :one
+-- All stored bytes: workspace usage plus user-scoped files (avatars, not quota-counted).
+SELECT ((SELECT coalesce(sum(storage_used_bytes), 0) FROM workspaces)
+      + (SELECT coalesce(sum(size), 0) FROM files WHERE workspace_id IS NULL))::bigint;

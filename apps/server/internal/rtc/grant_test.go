@@ -113,3 +113,23 @@ func TestTwirpBodiesMatchLiveKit(t *testing.T) {
 		t.Fatalf("UpdateParticipant permission: %v", p)
 	}
 }
+
+func TestWebhookRequiresExpiry(t *testing.T) {
+	body := []byte(`{"event":"room_started","id":"EV_2","room":{"name":"r"}}`)
+	sum := sha256.Sum256(body)
+	mk := func(exp *jwt.NumericDate) string {
+		c := lkClaims{Sha256: base64.StdEncoding.EncodeToString(sum[:])}
+		c.Issuer, c.ExpiresAt = "key", exp
+		tok, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString([]byte("secret"))
+		return tok
+	}
+	if _, err := VerifyWebhook("key", "secret", mk(nil), body); err == nil {
+		t.Error("token without exp accepted")
+	}
+	if _, err := VerifyWebhook("key", "secret", mk(jwt.NewNumericDate(time.Now().Add(-10*time.Minute))), body); err == nil {
+		t.Error("expired token accepted")
+	}
+	if _, err := VerifyWebhook("key", "secret", mk(jwt.NewNumericDate(time.Now().Add(-2*time.Minute))), body); err != nil {
+		t.Errorf("token within 5 min skew rejected: %v", err)
+	}
+}
