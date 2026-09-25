@@ -57,6 +57,7 @@ message Room {
   // Voice rooms: when the current call started (first participant joined an empty room).
   // Filled in READY / WORKSPACE_CREATE snapshots; unset when nobody is in the room.
   google.protobuf.Timestamp voice_started_at = 15;
+  uint32 user_limit = 16; // voice rooms: max users (0 = unlimited, 1..99); MOVE_MEMBERS ignores it
 }
 
 // Room category (a collapsible group in the room list). Visible to all members; clients
@@ -124,6 +125,7 @@ message CreateRoomRequest {
   RoomMediaOverride media_override = 5;
   optional int32 position = 6; // default: after the last room
   string category_id = 7;       // optional category of the same workspace
+  uint32 user_limit = 8;        // voice rooms only, 0..99
 }
 
 message CreateRoomResponse {
@@ -149,6 +151,7 @@ message UpdateRoomRequest {
   optional int32 position = 3;
   optional RoomMediaOverride media_override = 4;
   optional string category_id = 5; // "" = remove from category
+  optional uint32 user_limit = 6;  // 0 = unlimited
 }
 
 message UpdateRoomResponse {

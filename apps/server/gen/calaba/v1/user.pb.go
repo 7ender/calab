@@ -81,6 +81,7 @@ type User struct {
 	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	StatusEmoji     string                 `protobuf:"bytes,6,opt,name=status_emoji,json=statusEmoji,proto3" json:"status_emoji,omitempty"`
 	StatusExpiresAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=status_expires_at,json=statusExpiresAt,proto3" json:"status_expires_at,omitempty"` // unset = no expiry; expired status is returned empty
+	IsGuest         bool                   `protobuf:"varint,8,opt,name=is_guest,json=isGuest,proto3" json:"is_guest,omitempty"`                          // guest account from a room link (ADR-0016): show a "Guest" badge
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -162,6 +163,13 @@ func (x *User) GetStatusExpiresAt() *timestamppb.Timestamp {
 		return x.StatusExpiresAt
 	}
 	return nil
+}
+
+func (x *User) GetIsGuest() bool {
+	if x != nil {
+		return x.IsGuest
+	}
+	return false
 }
 
 // Per-user settings synced across the user's devices (USER_UPDATE on change).
@@ -541,7 +549,7 @@ var File_calaba_v1_user_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_user_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/user.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa6\x02\n" +
+	"\x14calaba/v1/user.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc1\x02\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12$\n" +
@@ -551,7 +559,8 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12!\n" +
 	"\fstatus_emoji\x18\x06 \x01(\tR\vstatusEmoji\x12F\n" +
-	"\x11status_expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusExpiresAt\"\xb5\x02\n" +
+	"\x11status_expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusExpiresAt\x12\x19\n" +
+	"\bis_guest\x18\b \x01(\bR\aisGuest\"\xb5\x02\n" +
 	"\fUserSettings\x12+\n" +
 	"\x11noise_suppression\x18\x01 \x01(\bR\x10noiseSuppression\x120\n" +
 	"\x14unstable_network_red\x18\x02 \x01(\bR\x12unstableNetworkRed\x12$\n" +

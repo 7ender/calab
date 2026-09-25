@@ -107,7 +107,7 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 
 **Presence:**
 - Redis-хэш `presence:<user_id>`: поле на каждую gateway-сессию (`<session_id>` → `status`) со своим TTL (HEXPIRE) = 2 × `heartbeat_interval`, продлевается каждым heartbeat; `presence:seen:<user_id>` — `last_seen`. Сессия умерла без закрытия → её поле истекает; sweeper (раз в 15 с, один инстанс) публикует OFFLINE, когда у пользователя не осталось живых сессий.
-- Итоговый статус — максимум по приоритету среди сессий: `dnd` > `online` > `idle`. Сессия со статусом `invisible` для других выглядит как отсутствующая (если все сессии `invisible` — пользователь показан offline, `last_seen` не раскрывается).
+- Итоговый статус — максимум по приоритету среди сессий: `dnd` > `invisible` > `online` > `idle` (ручной статус не перебивается AFK-`idle` с другого устройства); `invisible` показывается как offline, `last_seen` не раскрывается.
 - `PRESENCE_UPDATE` рассылается только при смене агрегированного статуса.
 
 ## Voice state — источник LiveKit
@@ -197,6 +197,27 @@ POST   /api/rooms/{id}/voice/{userId}/disconnect   204   (MUTE_MEMBERS: RemovePa
 POST   /api/rooms/{id}/voice/{userId}/stop-stream  204   (MUTE_MEMBERS: screen-треки заглушены, grant на экран снят → VOICE_STREAM_STOP{MODERATOR}; 404 — стримов нет)
 POST   /api/rtc/webhook                LiveKit → сервер (подпись API key/secret + sha256 тела)
 ```
+
+P0.5 (docs/09 #31–35):
+
+```
+PATCH  /api/rooms/{id}                         + userLimit (0..99, только voice); POST …/rooms — + userLimit
+POST   /api/rooms/{id}/join                    409 ERROR_CODE_ROOM_FULL, если различных пользователей в комнате ≥ userLimit
+                                               (MOVE_MEMBERS — вход сверх лимита; второе устройство того же пользователя не считается)
+POST   /api/rooms/{id}/voice/{userId}/move     MoveMemberRequest{targetRoomId} → 204   (MOVE_MEMBERS в обеих комнатах;
+                                               у перемещаемого VIEW_ROOM+CONNECT в цели; лимит цели — кроме ADMINISTRATOR)
+PATCH  /api/workspaces/{id}/members/{userId}   nickname: чужой — MANAGE_NICKNAMES; свой — если workspace.allowSelfNickname
+POST   /api/workspaces/{id}/members/{userId}/promote   гость → member (MANAGE_WORKSPACE)
+POST   /api/rooms/{id}/invites                 CreateRoomInviteRequest → 201 RoomInvite   (MANAGE_ROOM)
+GET    /api/rooms/{id}/invites                 активные ссылки;  DELETE /api/rooms/{id}/invites/{inviteId} — отзыв
+GET    /api/room-invites/{code}                превью для страницы /r/<code> (без auth)
+POST   /api/room-invites/{code}/join           JoinRoomInviteRequest{nickname} → {roomId, workspaceId[, tokens, me]}
+```
+
+- Публичные пути — `/api/room-invites/…`, а не `/api/rooms/invites/…`: второй вариант конфликтует в `net/http.ServeMux` с `/api/rooms/{id}/invites` (путь `/api/rooms/invites/invites` подходит под оба шаблона, и mux паникует).
+- **Перемещение.** LiveKit `MoveParticipant` переносит все устройства пользователя из исходной комнаты без переподключения; записи о стримах переезжают вместе с ним. Все получают `VOICE_STATE_UPDATE`, перемещённый — ещё и `VOICE_MOVED { from_room_id, to_room_id, by_user_id }`.
+- **Гость (c).** Без `Authorization` и при `allowGuests` создаётся гостевой аккаунт: ответ `201` с токенами, как у login; веб-клиент (`X-Client: web`) получает refresh в cookie, и проверяется Origin. Лимит — 5 гостей в час с одного IP. С `Authorization` — сценарии (a)/(b), ответ `200`. `User.is_guest` — для бейджа «Гость».
+- **Presence / AFK.** Агрегация по устройствам идёт по приоритету `dnd > invisible > online > idle`: ручной статус с одного устройства не перебивается автоматическим `idle` с другого; invisible показывается как offline. Heartbeat не меняет статус сессии.
 
 UI-бэклог (docs/09):
 

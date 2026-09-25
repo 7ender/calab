@@ -3,10 +3,13 @@ package rtc
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/livekit/protocol/livekit"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -88,5 +91,25 @@ func TestVerifyWebhook(t *testing.T) {
 	}
 	if _, err := VerifyWebhook("key", "secret", signedWebhook(t, "secret", body, false), append(body, ' ')); err == nil {
 		t.Error("modified body accepted")
+	}
+}
+
+// Our twirp JSON bodies must decode into LiveKit's own request messages (field names, enum
+// names). The official library is a test-only dependency (ADR-0013).
+func TestTwirpBodiesMatchLiveKit(t *testing.T) {
+	var mv livekit.MoveParticipantRequest
+	b, _ := json.Marshal(map[string]any{"room": "a", "identity": "u:s", "destinationRoom": "b"})
+	if err := protojson.Unmarshal(b, &mv); err != nil || mv.GetRoom() != "a" || mv.GetIdentity() != "u:s" || mv.GetDestinationRoom() != "b" {
+		t.Fatalf("MoveParticipant body: %v %v", &mv, err)
+	}
+	var up livekit.UpdateParticipantRequest
+	b, _ = json.Marshal(map[string]any{"room": "a", "identity": "u:s", "permission": Grant(perm.ViewRoom|perm.Connect|perm.Speak|perm.Stream, true)})
+	if err := protojson.Unmarshal(b, &up); err != nil {
+		t.Fatal(err)
+	}
+	p := up.GetPermission()
+	if !p.GetCanSubscribe() || !p.GetCanPublish() || len(p.GetCanPublishSources()) != 3 ||
+		p.GetCanPublishSources()[0] != livekit.TrackSource_MICROPHONE || p.GetCanPublishSources()[1] != livekit.TrackSource_SCREEN_SHARE {
+		t.Fatalf("UpdateParticipant permission: %v", p)
 	}
 }

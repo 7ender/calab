@@ -119,6 +119,7 @@ func User(u sqlc.User) *v1.User {
 		DisplayName:  u.DisplayName,
 		AvatarFileId: idp(u.AvatarFileID),
 		CreatedAt:    ts(u.CreatedAt),
+		IsGuest:      u.IsGuest,
 	}
 	out.StatusText, out.StatusEmoji, out.StatusExpiresAt = Status(u)
 	return out
@@ -171,7 +172,11 @@ func DefaultSettings() *v1.UserSettings {
 
 // Me is the authenticated user's own view.
 func Me(u sqlc.User) *v1.Me {
-	return &v1.Me{User: User(u), Email: u.Email, Settings: Settings(u.Settings)}
+	email := ""
+	if u.Email != nil {
+		email = *u.Email
+	}
+	return &v1.Me{User: User(u), Email: email, Settings: Settings(u.Settings)}
 }
 
 // Session converts a session; current marks the caller's own session.
@@ -212,6 +217,7 @@ func Workspace(w sqlc.Workspace) *v1.Workspace {
 		MediaDefaults:     WorkspaceDefaults(w),
 		StorageQuotaBytes: uint64(max(w.StorageQuotaBytes, 0)),
 		StorageUsedBytes:  uint64(max(w.StorageUsedBytes, 0)),
+		AllowSelfNickname: w.AllowSelfNickname,
 	}
 }
 
@@ -322,6 +328,7 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		PermissionOverrides: ovs,
 		CreatedAt:           ts(r.CreatedAt),
 		CategoryId:          idp(r.CategoryID),
+		UserLimit:           uint32(max(r.UserLimit, 0)),
 	}
 }
 

@@ -277,6 +277,11 @@ func (s *Service) row(st *stored, wsID *uuid.UUID, uploader uuid.UUID) sqlc.Inse
 
 func (s *Service) avatar(w http.ResponseWriter, r *http.Request) error {
 	uid := auth.MustFromContext(r.Context()).UserID
+	if u, err := s.db.Q.GetUser(r.Context(), uid); err != nil {
+		return err
+	} else if u.IsGuest {
+		return httpx.Forbidden("not available for guest accounts")
+	}
 	st, err := s.receive(w, r, min(MaxAvatarBytes, s.maxBytes),
 		func(id uuid.UUID) string { return "users/" + uid.String() + "/" + id.String() }, true)
 	if err != nil {

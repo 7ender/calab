@@ -22,6 +22,7 @@ internal/rooms        комнаты, медиа-настройки, overrides �
 internal/messages     история (курсор по uuidv7), идемпотентная отправка по nonce, правка/удаление, read state
 internal/files        загрузка потоком в blob.Store (sha256, лимит, квота), WebP-превью, скачивание с Range/ETag, чистка сирот
 internal/blob         blob.Store + драйвер fs (ADR-0011)
+internal/guests       ссылки на комнату и гостевые аккаунты (ADR-0016): превью, вход по сценариям a/b/c, promote, чистка неактивных
 internal/unfurl       превью ссылок (OpenGraph) и прокси их картинок: SSRF-защита, кэш в Redis, подписанные ссылки
 internal/voice        voice state в Redis (по сессии устройства, агрегация по пользователю), стримы
 internal/rtc          LiveKit (свой минимальный клиент, ADR-0013): токены и grant'ы, stream/request, voice/self, модерация, webhook, reconcile, синхронизация прав

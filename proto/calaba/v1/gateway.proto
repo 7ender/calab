@@ -151,6 +151,7 @@ message DispatchEvent {
     CategoryDelete category_delete = 25;
     MessageReactionAdd message_reaction_add = 26;
     MessageReactionRemove message_reaction_remove = 27;
+    VoiceMoved voice_moved = 28;
   }
 }
 
@@ -228,6 +229,15 @@ message MessageReactionRemove {
   string message_id = 3;
   string user_id = 4;
   string emoji = 5;
+}
+
+// To the moved user's devices: a moderator moved them to another voice room. LiveKit
+// switches the connection (RoomEvent.Moved); VOICE_STATE_UPDATE follows for everyone.
+message VoiceMoved {
+  string workspace_id = 1;
+  string from_room_id = 2;
+  string to_room_id = 3;
+  string by_user_id = 4;
 }
 
 // Sent after a successful RESUME, following the replayed events.

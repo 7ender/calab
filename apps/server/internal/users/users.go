@@ -63,6 +63,11 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
+	if cur, err := h.db.Q.GetUser(r.Context(), id.UserID); err != nil {
+		return err
+	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil) {
+		return httpx.Forbidden("guests can only change their name and settings") // ADR-0016
+	}
 	p := sqlc.UpdateUserParams{ID: id.UserID}
 	if req.DisplayName != nil {
 		name, err := auth.ValidateDisplayName(req.GetDisplayName())
@@ -127,6 +132,11 @@ func (h *Handlers) updateStatus(w http.ResponseWriter, r *http.Request) error {
 	var req v1.UpdateStatusRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
+	}
+	if cur, err := h.db.Q.GetUser(r.Context(), id.UserID); err != nil {
+		return err
+	} else if cur.IsGuest {
+		return httpx.Forbidden("not available for guest accounts")
 	}
 	text := strings.TrimSpace(req.GetText())
 	if utf8.RuneCountInString(text) > 128 {

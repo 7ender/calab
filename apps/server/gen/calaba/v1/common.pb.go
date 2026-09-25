@@ -43,6 +43,7 @@ const (
 	ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED   ErrorCode = 14 // 413: workspace storage quota
 	ErrorCode_ERROR_CODE_PAYLOAD_TOO_LARGE     ErrorCode = 15 // 413: request body too large
 	ErrorCode_ERROR_CODE_UNAVAILABLE           ErrorCode = 16 // 503
+	ErrorCode_ERROR_CODE_ROOM_FULL             ErrorCode = 17 // 409: voice room user_limit reached
 )
 
 // Enum value maps for ErrorCode.
@@ -65,6 +66,7 @@ var (
 		14: "ERROR_CODE_FILE_QUOTA_EXCEEDED",
 		15: "ERROR_CODE_PAYLOAD_TOO_LARGE",
 		16: "ERROR_CODE_UNAVAILABLE",
+		17: "ERROR_CODE_ROOM_FULL",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":           0,
@@ -84,6 +86,7 @@ var (
 		"ERROR_CODE_FILE_QUOTA_EXCEEDED":   14,
 		"ERROR_CODE_PAYLOAD_TOO_LARGE":     15,
 		"ERROR_CODE_UNAVAILABLE":           16,
+		"ERROR_CODE_ROOM_FULL":             17,
 	}
 )
 
@@ -333,7 +336,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x05limit\x18\x03 \x01(\rR\x05limit\"%\n" +
 	"\bPageInfo\x12\x19\n" +
 	"\bhas_more\x18\x01 \x01(\bR\ahasMore\"\a\n" +
-	"\x05Empty*\x8f\x04\n" +
+	"\x05Empty*\xa9\x04\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -352,7 +355,8 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x19ERROR_CODE_FILE_TOO_LARGE\x10\r\x12\"\n" +
 	"\x1eERROR_CODE_FILE_QUOTA_EXCEEDED\x10\x0e\x12 \n" +
 	"\x1cERROR_CODE_PAYLOAD_TOO_LARGE\x10\x0f\x12\x1a\n" +
-	"\x16ERROR_CODE_UNAVAILABLE\x10\x10B\x99\x01\n" +
+	"\x16ERROR_CODE_UNAVAILABLE\x10\x10\x12\x18\n" +
+	"\x14ERROR_CODE_ROOM_FULL\x10\x11B\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

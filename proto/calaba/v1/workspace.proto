@@ -24,6 +24,7 @@ message Workspace {
   RoomMediaSettings media_defaults = 8;
   uint64 storage_quota_bytes = 9;
   uint64 storage_used_bytes = 10;
+  bool allow_self_nickname = 11; // members may set their own nickname (default true)
 }
 
 message WorkspaceMember {
@@ -81,6 +82,7 @@ message UpdateWorkspaceRequest {
   optional uint32 default_audio_bitrate_kbps = 5; // 16|24|32|48|64
   optional ScreenSharePreset default_max_stream_preset = 6;
   optional uint32 default_max_streams = 7; // 0..10
+  optional bool allow_self_nickname = 8;
 }
 
 message UpdateWorkspaceResponse {

@@ -277,6 +277,7 @@ type Room struct {
 	// Voice rooms: when the current call started (first participant joined an empty room).
 	// Filled in READY / WORKSPACE_CREATE snapshots; unset when nobody is in the room.
 	VoiceStartedAt *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=voice_started_at,json=voiceStartedAt,proto3" json:"voice_started_at,omitempty"`
+	UserLimit      uint32                 `protobuf:"varint,16,opt,name=user_limit,json=userLimit,proto3" json:"user_limit,omitempty"` // voice rooms: max users (0 = unlimited, 1..99); MOVE_MEMBERS ignores it
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -414,6 +415,13 @@ func (x *Room) GetVoiceStartedAt() *timestamppb.Timestamp {
 		return x.VoiceStartedAt
 	}
 	return nil
+}
+
+func (x *Room) GetUserLimit() uint32 {
+	if x != nil {
+		return x.UserLimit
+	}
+	return 0
 }
 
 // Room category (a collapsible group in the room list). Visible to all members; clients
@@ -842,6 +850,7 @@ type CreateRoomRequest struct {
 	MediaOverride *RoomMediaOverride     `protobuf:"bytes,5,opt,name=media_override,json=mediaOverride,proto3" json:"media_override,omitempty"`
 	Position      *int32                 `protobuf:"varint,6,opt,name=position,proto3,oneof" json:"position,omitempty"`                // default: after the last room
 	CategoryId    string                 `protobuf:"bytes,7,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"` // optional category of the same workspace
+	UserLimit     uint32                 `protobuf:"varint,8,opt,name=user_limit,json=userLimit,proto3" json:"user_limit,omitempty"`   // voice rooms only, 0..99
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -923,6 +932,13 @@ func (x *CreateRoomRequest) GetCategoryId() string {
 		return x.CategoryId
 	}
 	return ""
+}
+
+func (x *CreateRoomRequest) GetUserLimit() uint32 {
+	if x != nil {
+		return x.UserLimit
+	}
+	return 0
 }
 
 type CreateRoomResponse struct {
@@ -1076,6 +1092,7 @@ type UpdateRoomRequest struct {
 	Position      *int32                 `protobuf:"varint,3,opt,name=position,proto3,oneof" json:"position,omitempty"`
 	MediaOverride *RoomMediaOverride     `protobuf:"bytes,4,opt,name=media_override,json=mediaOverride,proto3,oneof" json:"media_override,omitempty"`
 	CategoryId    *string                `protobuf:"bytes,5,opt,name=category_id,json=categoryId,proto3,oneof" json:"category_id,omitempty"` // "" = remove from category
+	UserLimit     *uint32                `protobuf:"varint,6,opt,name=user_limit,json=userLimit,proto3,oneof" json:"user_limit,omitempty"`   // 0 = unlimited
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1143,6 +1160,13 @@ func (x *UpdateRoomRequest) GetCategoryId() string {
 		return *x.CategoryId
 	}
 	return ""
+}
+
+func (x *UpdateRoomRequest) GetUserLimit() uint32 {
+	if x != nil && x.UserLimit != nil {
+		return *x.UserLimit
+	}
+	return 0
 }
 
 type UpdateRoomResponse struct {
@@ -1408,7 +1432,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"maxStreams\x88\x01\x01B\x15\n" +
 	"\x13_audio_bitrate_kbpsB\x14\n" +
 	"\x12_max_stream_presetB\x0e\n" +
-	"\f_max_streams\"\xa4\x05\n" +
+	"\f_max_streams\"\xc3\x05\n" +
 	"\x04Room\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12'\n" +
@@ -1428,7 +1452,9 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x0flast_message_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\rlastMessageAt\x12\x1f\n" +
 	"\vcategory_id\x18\x0e \x01(\tR\n" +
 	"categoryId\x12D\n" +
-	"\x10voice_started_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x0evoiceStartedAt\"q\n" +
+	"\x10voice_started_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x0evoiceStartedAt\x12\x1d\n" +
+	"\n" +
+	"user_limit\x18\x10 \x01(\rR\tuserLimit\"q\n" +
 	"\fRoomCategory\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -1469,7 +1495,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\x127\n" +
 	"\n" +
 	"categories\x18\x02 \x03(\v2\x17.calaba.v1.RoomCategoryR\n" +
-	"categories\"\x99\x02\n" +
+	"categories\"\xb8\x02\n" +
 	"\x11CreateRoomRequest\x12'\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x13.calaba.v1.RoomTypeR\x04type\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -1479,7 +1505,9 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x0emedia_override\x18\x05 \x01(\v2\x1c.calaba.v1.RoomMediaOverrideR\rmediaOverride\x12\x1f\n" +
 	"\bposition\x18\x06 \x01(\x05H\x00R\bposition\x88\x01\x01\x12\x1f\n" +
 	"\vcategory_id\x18\a \x01(\tR\n" +
-	"categoryIdB\v\n" +
+	"categoryId\x12\x1d\n" +
+	"\n" +
+	"user_limit\x18\b \x01(\rR\tuserLimitB\v\n" +
 	"\t_position\"9\n" +
 	"\x12CreateRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\":\n" +
@@ -1487,19 +1515,22 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\"X\n" +
 	"\x0fGetRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12 \n" +
-	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\x9b\x02\n" +
+	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\xce\x02\n" +
 	"\x11UpdateRoomRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x19\n" +
 	"\x05topic\x18\x02 \x01(\tH\x01R\x05topic\x88\x01\x01\x12\x1f\n" +
 	"\bposition\x18\x03 \x01(\x05H\x02R\bposition\x88\x01\x01\x12H\n" +
 	"\x0emedia_override\x18\x04 \x01(\v2\x1c.calaba.v1.RoomMediaOverrideH\x03R\rmediaOverride\x88\x01\x01\x12$\n" +
 	"\vcategory_id\x18\x05 \x01(\tH\x04R\n" +
-	"categoryId\x88\x01\x01B\a\n" +
+	"categoryId\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"user_limit\x18\x06 \x01(\rH\x05R\tuserLimit\x88\x01\x01B\a\n" +
 	"\x05_nameB\b\n" +
 	"\x06_topicB\v\n" +
 	"\t_positionB\x11\n" +
 	"\x0f_media_overrideB\x0e\n" +
-	"\f_category_id\"9\n" +
+	"\f_category_idB\r\n" +
+	"\v_user_limit\"9\n" +
 	"\x12UpdateRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\"\\\n" +
 	"\x19SetRoomPermissionsRequest\x12?\n" +

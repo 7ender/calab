@@ -119,8 +119,34 @@ var (
 // ErrInviteInvalid is shared with the workspaces package.
 func ErrInviteInvalid() error { return errInviteInvalid }
 
+// Guest accounts (ADR-0016): short sessions renewed by activity; the account is removed
+// (anonymised) after GuestInactivity without a refresh.
+const (
+	GuestSessionTTL = 24 * time.Hour
+	GuestInactivity = 7 * 24 * time.Hour
+)
+
+// NewGuest creates a guest account named name and its first session inside q.
+func (s *Service) NewGuest(ctx context.Context, q *sqlc.Queries, name string, c Client) (sqlc.User, *v1.AuthTokens, error) {
+	settings, err := pbconv.EncodeSettings(pbconv.DefaultSettings())
+	if err != nil {
+		return sqlc.User{}, nil, err
+	}
+	exp := s.now().Add(GuestInactivity)
+	u, err := q.CreateGuestUser(ctx, sqlc.CreateGuestUserParams{DisplayName: name, Settings: settings, GuestExpiresAt: &exp})
+	if err != nil {
+		return u, nil, err
+	}
+	tokens, err := s.newSessionTTL(ctx, q, u.ID, c, GuestSessionTTL)
+	return u, tokens, err
+}
+
 // newSession creates a session row inside q and returns the token pair.
 func (s *Service) newSession(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, c Client) (*v1.AuthTokens, error) {
+	return s.newSessionTTL(ctx, q, userID, c, s.refresh)
+}
+
+func (s *Service) newSessionTTL(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, c Client, ttl time.Duration) (*v1.AuthTokens, error) {
 	secret, hash, err := NewRefreshSecret()
 	if err != nil {
 		return nil, err
@@ -131,7 +157,7 @@ func (s *Service) newSession(ctx context.Context, q *sqlc.Queries, userID uuid.U
 		DeviceName:       clip(c.DeviceName, 64),
 		Ip:               clip(c.IP, 64),
 		UserAgent:        clip(c.UserAgent, 256),
-		ExpiresAt:        s.now().Add(s.refresh),
+		ExpiresAt:        s.now().Add(ttl),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
@@ -216,7 +242,7 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			}
 			inv = &i
 		}
-		user, err = q.CreateUser(ctx, sqlc.CreateUserParams{Email: email, PasswordHash: &hash, DisplayName: name, Settings: settings})
+		user, err = q.CreateUser(ctx, sqlc.CreateUserParams{Email: &email, PasswordHash: &hash, DisplayName: name, Settings: settings})
 		if db.UniqueViolation(err) != "" {
 			return httpx.Conflict("email is already registered")
 		}
@@ -247,7 +273,7 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 // Login verifies credentials and opens a new session.
 func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v1.LoginResponse, error) {
 	email := strings.TrimSpace(req.GetEmail())
-	user, err := s.db.Q.GetUserByEmail(ctx, email)
+	user, err := s.db.Q.GetUserByEmail(ctx, &email)
 	if err != nil && !db.IsNotFound(err) {
 		return nil, err
 	}
@@ -316,6 +342,13 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 			revoked = true
 			return nil
 		}
+		ttl := s.refresh
+		if user.IsGuest {
+			ttl = GuestSessionTTL // renewed by activity; the account itself lives 7 days past the last refresh
+			if err := q.TouchGuest(ctx, sqlc.TouchGuestParams{ID: user.ID, GuestExpiresAt: ptrTime(now.Add(GuestInactivity))}); err != nil {
+				return err
+			}
+		}
 		newSecret, newHash, err := NewRefreshSecret()
 		if err != nil {
 			return err
@@ -323,7 +356,7 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 		sess, err = q.RotateSession(ctx, sqlc.RotateSessionParams{
 			ID:               sess.ID,
 			RefreshTokenHash: newHash,
-			ExpiresAt:        now.Add(s.refresh),
+			ExpiresAt:        now.Add(ttl),
 			Ip:               clip(c.IP, 64),
 			UserAgent:        clip(c.UserAgent, 256),
 		})
@@ -416,6 +449,10 @@ func (s *Service) ListSessions(ctx context.Context, id Identity) (*v1.ListSessio
 	return out, nil
 }
 
+// MarkRevoked makes a session revoked in the DB by someone else (e.g. guest cleanup)
+// effective immediately: live access tokens are rejected and the gateway drops the socket.
+func (s *Service) MarkRevoked(ctx context.Context, sid uuid.UUID) { s.afterRevoke(ctx, sid) }
+
 func revokedKey(sid uuid.UUID) string { return "auth:revoked:" + sid.String() }
 
 // afterRevoke makes outstanding access tokens of the session invalid immediately (Redis
@@ -440,3 +477,5 @@ func (s *Service) IsRevoked(ctx context.Context, sid uuid.UUID) (bool, error) {
 	}
 	return err == nil, err
 }
+
+func ptrTime(t time.Time) *time.Time { return &t }

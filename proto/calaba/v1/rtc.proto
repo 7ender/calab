@@ -24,6 +24,13 @@ message RequestStreamResponse {
   ScreenSharePreset preset = 1; // granted preset (≤ room max_stream_preset)
 }
 
+// POST /api/rooms/{id}/voice/{userId}/move (MOVE_MEMBERS in both rooms): moves all of the
+// user's devices in room {id} to the target voice room of the same workspace (LiveKit
+// MoveParticipant, no reconnect). 204. The moved user gets VOICE_MOVED.
+message MoveMemberRequest {
+  string target_room_id = 1;
+}
+
 // PATCH /api/voice/self — optimistic self mute/deafen of this device; 204.
 message UpdateVoiceSelfRequest {
   optional bool muted = 1;

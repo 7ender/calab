@@ -116,6 +116,19 @@ func roomAccess(r *http.Request, roomID uuid.UUID) (perm.RoomAccess, error) {
 	return acc, err
 }
 
+// MaxUserLimit caps rooms.user_limit (0 = unlimited).
+const MaxUserLimit = 99
+
+func validLimit(limit uint32, roomType string) error {
+	if limit > MaxUserLimit {
+		return httpx.Validation("userLimit", "user limit must be 0..99")
+	}
+	if limit > 0 && roomType != "voice" {
+		return httpx.Validation("userLimit", "user limit applies to voice rooms only")
+	}
+	return nil
+}
+
 var audioBitrates = map[uint32]bool{16: true, 24: true, 32: true, 48: true, 64: true}
 
 // ValidAudioBitrate reports whether kbps is an allowed voice bitrate.
@@ -205,6 +218,9 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := validLimit(req.GetUserLimit(), typ); err != nil {
+		return err
+	}
 
 	var (
 		room sqlc.Room
@@ -227,6 +243,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			MaxStreamPreset:  preset,
 			MaxStreams:       streams,
 			CategoryID:       category,
+			UserLimit:        int32(req.GetUserLimit()), //nolint:gosec // ≤ 99
 		})
 		if err != nil {
 			return err
@@ -348,6 +365,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.Topic = &t
 	}
+	if req.UserLimit != nil {
+		if req.GetUserLimit() > MaxUserLimit {
+			return httpx.Validation("userLimit", "user limit must be 0..99")
+		}
+		v := int32(req.GetUserLimit()) //nolint:gosec // ≤ 99
+		p.UserLimit = &v
+	}
 	if req.CategoryId != nil {
 		p.SetCategory = true
 		if p.CategoryID, err = parseCategory(r.Context(), h.db.Q, acc.WorkspaceID, req.GetCategoryId()); err != nil {
@@ -368,6 +392,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		if err != nil {
 			return err
+		}
+		if room.Type != "voice" && room.UserLimit > 0 {
+			return httpx.Validation("userLimit", "user limit applies to voice rooms only")
 		}
 		if room.Type != "voice" && (room.AudioBitrateKbps != nil || room.MaxStreamPreset != nil || room.MaxStreams != nil) {
 			return httpx.Validation("mediaOverride", "media settings apply to voice rooms only")

@@ -197,6 +197,53 @@ func (x *RequestStreamResponse) GetPreset() ScreenSharePreset {
 	return ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED
 }
 
+// POST /api/rooms/{id}/voice/{userId}/move (MOVE_MEMBERS in both rooms): moves all of the
+// user's devices in room {id} to the target voice room of the same workspace (LiveKit
+// MoveParticipant, no reconnect). 204. The moved user gets VOICE_MOVED.
+type MoveMemberRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetRoomId  string                 `protobuf:"bytes,1,opt,name=target_room_id,json=targetRoomId,proto3" json:"target_room_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveMemberRequest) Reset() {
+	*x = MoveMemberRequest{}
+	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveMemberRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveMemberRequest) ProtoMessage() {}
+
+func (x *MoveMemberRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveMemberRequest.ProtoReflect.Descriptor instead.
+func (*MoveMemberRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *MoveMemberRequest) GetTargetRoomId() string {
+	if x != nil {
+		return x.TargetRoomId
+	}
+	return ""
+}
+
 // PATCH /api/voice/self — optimistic self mute/deafen of this device; 204.
 type UpdateVoiceSelfRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -208,7 +255,7 @@ type UpdateVoiceSelfRequest struct {
 
 func (x *UpdateVoiceSelfRequest) Reset() {
 	*x = UpdateVoiceSelfRequest{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -220,7 +267,7 @@ func (x *UpdateVoiceSelfRequest) String() string {
 func (*UpdateVoiceSelfRequest) ProtoMessage() {}
 
 func (x *UpdateVoiceSelfRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -233,7 +280,7 @@ func (x *UpdateVoiceSelfRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateVoiceSelfRequest.ProtoReflect.Descriptor instead.
 func (*UpdateVoiceSelfRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *UpdateVoiceSelfRequest) GetMuted() bool {
@@ -266,7 +313,9 @@ const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\x14RequestStreamRequest\x124\n" +
 	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\"M\n" +
 	"\x15RequestStreamResponse\x124\n" +
-	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\"k\n" +
+	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\"9\n" +
+	"\x11MoveMemberRequest\x12$\n" +
+	"\x0etarget_room_id\x18\x01 \x01(\tR\ftargetRoomId\"k\n" +
 	"\x16UpdateVoiceSelfRequest\x12\x19\n" +
 	"\x05muted\x18\x01 \x01(\bH\x00R\x05muted\x88\x01\x01\x12\x1f\n" +
 	"\bdeafened\x18\x02 \x01(\bH\x01R\bdeafened\x88\x01\x01B\b\n" +
@@ -287,19 +336,20 @@ func file_calaba_v1_rtc_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_rtc_proto_rawDescData
 }
 
-var file_calaba_v1_rtc_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_calaba_v1_rtc_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_calaba_v1_rtc_proto_goTypes = []any{
 	(*JoinVoiceResponse)(nil),      // 0: calaba.v1.JoinVoiceResponse
 	(*RequestStreamRequest)(nil),   // 1: calaba.v1.RequestStreamRequest
 	(*RequestStreamResponse)(nil),  // 2: calaba.v1.RequestStreamResponse
-	(*UpdateVoiceSelfRequest)(nil), // 3: calaba.v1.UpdateVoiceSelfRequest
-	(*RoomMediaSettings)(nil),      // 4: calaba.v1.RoomMediaSettings
-	(ScreenSharePreset)(0),         // 5: calaba.v1.ScreenSharePreset
+	(*MoveMemberRequest)(nil),      // 3: calaba.v1.MoveMemberRequest
+	(*UpdateVoiceSelfRequest)(nil), // 4: calaba.v1.UpdateVoiceSelfRequest
+	(*RoomMediaSettings)(nil),      // 5: calaba.v1.RoomMediaSettings
+	(ScreenSharePreset)(0),         // 6: calaba.v1.ScreenSharePreset
 }
 var file_calaba_v1_rtc_proto_depIdxs = []int32{
-	4, // 0: calaba.v1.JoinVoiceResponse.media:type_name -> calaba.v1.RoomMediaSettings
-	5, // 1: calaba.v1.RequestStreamRequest.preset:type_name -> calaba.v1.ScreenSharePreset
-	5, // 2: calaba.v1.RequestStreamResponse.preset:type_name -> calaba.v1.ScreenSharePreset
+	5, // 0: calaba.v1.JoinVoiceResponse.media:type_name -> calaba.v1.RoomMediaSettings
+	6, // 1: calaba.v1.RequestStreamRequest.preset:type_name -> calaba.v1.ScreenSharePreset
+	6, // 2: calaba.v1.RequestStreamResponse.preset:type_name -> calaba.v1.ScreenSharePreset
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -313,14 +363,14 @@ func file_calaba_v1_rtc_proto_init() {
 		return
 	}
 	file_calaba_v1_media_proto_init()
-	file_calaba_v1_rtc_proto_msgTypes[3].OneofWrappers = []any{}
+	file_calaba_v1_rtc_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_rtc_proto_rawDesc), len(file_calaba_v1_rtc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

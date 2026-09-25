@@ -36,8 +36,31 @@ import (
 // recordingLiveKit wraps the real client and records server-side mutes.
 type recordingLiveKit struct {
 	rtc.LiveKit
-	mu    sync.Mutex
-	muted []string
+	mu       sync.Mutex
+	muted    []string
+	moves    []string
+	fakeMove bool // pretend MoveParticipant succeeded (no real WebRTC participant in tests)
+}
+
+func (r *recordingLiveKit) MoveParticipant(ctx context.Context, room, identity, dst string) error {
+	r.mu.Lock()
+	r.moves = append(r.moves, identity+"→"+dst)
+	fake := r.fakeMove
+	r.mu.Unlock()
+	if fake {
+		return nil
+	}
+	return r.LiveKit.MoveParticipant(ctx, room, identity, dst)
+}
+
+func (r *recordingLiveKit) UpdatePermission(ctx context.Context, room, identity string, p rtc.Permission) error {
+	r.mu.Lock()
+	fake := r.fakeMove
+	r.mu.Unlock()
+	if fake {
+		return nil
+	}
+	return r.LiveKit.UpdatePermission(ctx, room, identity, p)
 }
 
 func (r *recordingLiveKit) MuteTrack(ctx context.Context, room, identity, sid string, muted bool) error {
@@ -78,6 +101,7 @@ func dialGW(t *testing.T) *gw {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ws.SetReadLimit(16 << 20) // READY grows with the owner's many test workspaces
 	g := &gw{t: t, ws: ws, in: make(chan gwMsg, 1024)}
 	go func() {
 		for {

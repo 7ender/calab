@@ -75,6 +75,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	handle("GET /api/workspaces/{id}/members", h.listMembers)
 	handle("PATCH /api/workspaces/{id}/members/{userId}", h.updateMember)
 	handle("DELETE /api/workspaces/{id}/members/{userId}", h.removeMember)
+	handle("POST /api/workspaces/{id}/members/{userId}/promote", h.promote)
 	handle("GET /api/invites/{code}", h.getInvite)
 	handle("POST /api/invites/{code}/join", h.joinInvite)
 }
@@ -134,17 +135,36 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uu
 
 // joined publishes membership events after a user joined a workspace.
 func (h *Handlers) joined(ctx context.Context, ws sqlc.Workspace, m sqlc.WorkspaceMember) {
-	u, err := h.db.Q.GetUser(ctx, m.UserID)
+	AnnounceJoin(ctx, h.db.Q, h.events, ws, m)
+}
+
+// AnnounceJoin publishes WORKSPACE_MEMBER_ADD to the workspace and WORKSPACE_CREATE (with a
+// snapshot) to the new member's devices.
+func AnnounceJoin(ctx context.Context, q *sqlc.Queries, pub events.Publisher, ws sqlc.Workspace, m sqlc.WorkspaceMember) {
+	u, err := q.GetUser(ctx, m.UserID)
 	if err == nil {
-		h.events.Workspace(ctx, ws.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
+		pub.Workspace(ctx, ws.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
 			WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(m, u)},
 		}})
 	}
-	if snap, err := Snapshot(ctx, h.db.Q, ws, m.UserID, perm.Role(m.Role)); err == nil {
-		h.events.User(ctx, m.UserID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceCreate{
+	if snap, err := Snapshot(ctx, q, ws, m.UserID, perm.Role(m.Role)); err == nil {
+		pub.User(ctx, m.UserID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceCreate{
 			WorkspaceCreate: &v1.WorkspaceCreate{Snapshot: snap},
 		}})
 	}
+}
+
+// notGuestAccount rejects guest accounts (ADR-0016: guests only use the rooms they were
+// invited to; they cannot create or join workspaces on their own).
+func (h *Handlers) notGuestAccount(r *http.Request) error {
+	u, err := h.db.Q.GetUser(r.Context(), uid(r))
+	if err != nil {
+		return err
+	}
+	if u.IsGuest {
+		return httpx.Forbidden("not available for guest accounts")
+	}
+	return nil
 }
 
 func slugConflict(err error) error {
@@ -157,6 +177,9 @@ func slugConflict(err error) error {
 }
 
 func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
+	if err := h.notGuestAccount(r); err != nil {
+		return err
+	}
 	var req v1.CreateWorkspaceRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
@@ -211,6 +234,9 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) discover(w http.ResponseWriter, r *http.Request) error {
+	if err := h.notGuestAccount(r); err != nil {
+		return err
+	}
 	rows, err := h.db.Q.ListOpenWorkspacesForUser(r.Context(), uid(r))
 	if err != nil {
 		return err
@@ -300,6 +326,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		v := int32(req.GetDefaultMaxStreams()) //nolint:gosec // validated
 		p.DefaultMaxStreams, mediaChanged = &v, true
 	}
+	p.AllowSelfNickname = req.AllowSelfNickname
 	ws, err := h.db.Q.UpdateWorkspace(r.Context(), p)
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("iconFileId", "file not found")
@@ -386,6 +413,9 @@ func (h *Handlers) memberResponse(ctx context.Context, ws sqlc.Workspace, m sqlc
 }
 
 func (h *Handlers) joinOpen(w http.ResponseWriter, r *http.Request) error {
+	if err := h.notGuestAccount(r); err != nil {
+		return err
+	}
 	wsID, err := httpx.PathUUID(r, "id", "workspace")
 	if err != nil {
 		return err
@@ -617,8 +647,17 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 	}
 	p := sqlc.UpdateMemberParams{WorkspaceID: wsID, UserID: target}
 	if req.Nickname != nil {
-		if !self && !bits.Has(perm.ManageWorkspace) {
-			return httpx.Forbidden("MANAGE_WORKSPACE required to change others' nicknames")
+		if !bits.Has(perm.ManageNicknames) {
+			if !self {
+				return httpx.Forbidden("MANAGE_NICKNAMES required to change others' nicknames")
+			}
+			ws, err := h.db.Q.GetWorkspace(r.Context(), wsID)
+			if err != nil {
+				return err
+			}
+			if !ws.AllowSelfNickname {
+				return httpx.Forbidden("nicknames are set by admins in this workspace")
+			}
 		}
 		n, err := validateNickname(req.GetNickname())
 		if err != nil {
@@ -709,5 +748,44 @@ func (h *Handlers) removeMember(w http.ResponseWriter, r *http.Request) error {
 		WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: wsID.String()},
 	}})
 	httpx.NoContent(w)
+	return nil
+}
+
+// promote: POST /api/workspaces/{id}/members/{userId}/promote (MANAGE_WORKSPACE) turns a
+// guest into a member. A guest account is kept from then on (no inactivity cleanup).
+func (h *Handlers) promote(w http.ResponseWriter, r *http.Request) error {
+	wsID, _, err := requireManage(r)
+	if err != nil {
+		return err
+	}
+	target, err := httpx.PathUUID(r, "userId", "member")
+	if err != nil {
+		return err
+	}
+	var m sqlc.WorkspaceMember
+	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		var err error
+		m, err = q.PromoteGuest(r.Context(), sqlc.PromoteGuestParams{WorkspaceID: wsID, UserID: target})
+		if db.IsNotFound(err) {
+			return httpx.NotFound("guest")
+		}
+		if err != nil {
+			return err
+		}
+		return q.ClearGuestExpiry(r.Context(), target)
+	})
+	if err != nil {
+		return err
+	}
+	perm.FromContext(r.Context()).Invalidate()
+	u, err := h.db.Q.GetUser(r.Context(), target)
+	if err != nil {
+		return err
+	}
+	pb := pbconv.Member(m, u)
+	h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberUpdate{
+		WorkspaceMemberUpdate: &v1.WorkspaceMemberUpdate{Member: pb},
+	}})
+	httpx.Write(w, http.StatusOK, &v1.UpdateMemberResponse{Member: pb})
 	return nil
 }

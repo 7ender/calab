@@ -1075,6 +1075,7 @@ type DispatchEvent struct {
 	//	*DispatchEvent_CategoryDelete
 	//	*DispatchEvent_MessageReactionAdd
 	//	*DispatchEvent_MessageReactionRemove
+	//	*DispatchEvent_VoiceMoved
 	Event         isDispatchEvent_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1360,6 +1361,15 @@ func (x *DispatchEvent) GetMessageReactionRemove() *MessageReactionRemove {
 	return nil
 }
 
+func (x *DispatchEvent) GetVoiceMoved() *VoiceMoved {
+	if x != nil {
+		if x, ok := x.Event.(*DispatchEvent_VoiceMoved); ok {
+			return x.VoiceMoved
+		}
+	}
+	return nil
+}
+
 type isDispatchEvent_Event interface {
 	isDispatchEvent_Event()
 }
@@ -1472,6 +1482,10 @@ type DispatchEvent_MessageReactionRemove struct {
 	MessageReactionRemove *MessageReactionRemove `protobuf:"bytes,27,opt,name=message_reaction_remove,json=messageReactionRemove,proto3,oneof"`
 }
 
+type DispatchEvent_VoiceMoved struct {
+	VoiceMoved *VoiceMoved `protobuf:"bytes,28,opt,name=voice_moved,json=voiceMoved,proto3,oneof"`
+}
+
 func (*DispatchEvent_Ready) isDispatchEvent_Event() {}
 
 func (*DispatchEvent_WorkspaceCreate) isDispatchEvent_Event() {}
@@ -1525,6 +1539,8 @@ func (*DispatchEvent_CategoryDelete) isDispatchEvent_Event() {}
 func (*DispatchEvent_MessageReactionAdd) isDispatchEvent_Event() {}
 
 func (*DispatchEvent_MessageReactionRemove) isDispatchEvent_Event() {}
+
+func (*DispatchEvent_VoiceMoved) isDispatchEvent_Event() {}
 
 // Aggregated per user (docs/05, "multiple devices").
 type VoiceState struct {
@@ -2219,6 +2235,76 @@ func (x *MessageReactionRemove) GetEmoji() string {
 	return ""
 }
 
+// To the moved user's devices: a moderator moved them to another voice room. LiveKit
+// switches the connection (RoomEvent.Moved); VOICE_STATE_UPDATE follows for everyone.
+type VoiceMoved struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	FromRoomId    string                 `protobuf:"bytes,2,opt,name=from_room_id,json=fromRoomId,proto3" json:"from_room_id,omitempty"`
+	ToRoomId      string                 `protobuf:"bytes,3,opt,name=to_room_id,json=toRoomId,proto3" json:"to_room_id,omitempty"`
+	ByUserId      string                 `protobuf:"bytes,4,opt,name=by_user_id,json=byUserId,proto3" json:"by_user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VoiceMoved) Reset() {
+	*x = VoiceMoved{}
+	mi := &file_calaba_v1_gateway_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VoiceMoved) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VoiceMoved) ProtoMessage() {}
+
+func (x *VoiceMoved) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_gateway_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VoiceMoved.ProtoReflect.Descriptor instead.
+func (*VoiceMoved) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *VoiceMoved) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *VoiceMoved) GetFromRoomId() string {
+	if x != nil {
+		return x.FromRoomId
+	}
+	return ""
+}
+
+func (x *VoiceMoved) GetToRoomId() string {
+	if x != nil {
+		return x.ToRoomId
+	}
+	return ""
+}
+
+func (x *VoiceMoved) GetByUserId() string {
+	if x != nil {
+		return x.ByUserId
+	}
+	return ""
+}
+
 // Sent after a successful RESUME, following the replayed events.
 type Resumed struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2229,7 +2315,7 @@ type Resumed struct {
 
 func (x *Resumed) Reset() {
 	*x = Resumed{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[23]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2241,7 +2327,7 @@ func (x *Resumed) String() string {
 func (*Resumed) ProtoMessage() {}
 
 func (x *Resumed) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[23]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2254,7 +2340,7 @@ func (x *Resumed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resumed.ProtoReflect.Descriptor instead.
 func (*Resumed) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{23}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *Resumed) GetReplayed() uint32 {
@@ -2273,7 +2359,7 @@ type WorkspaceCreate struct {
 
 func (x *WorkspaceCreate) Reset() {
 	*x = WorkspaceCreate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[24]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2285,7 +2371,7 @@ func (x *WorkspaceCreate) String() string {
 func (*WorkspaceCreate) ProtoMessage() {}
 
 func (x *WorkspaceCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[24]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2298,7 +2384,7 @@ func (x *WorkspaceCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceCreate.ProtoReflect.Descriptor instead.
 func (*WorkspaceCreate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{24}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *WorkspaceCreate) GetSnapshot() *WorkspaceSnapshot {
@@ -2317,7 +2403,7 @@ type WorkspaceUpdate struct {
 
 func (x *WorkspaceUpdate) Reset() {
 	*x = WorkspaceUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[25]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2329,7 +2415,7 @@ func (x *WorkspaceUpdate) String() string {
 func (*WorkspaceUpdate) ProtoMessage() {}
 
 func (x *WorkspaceUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[25]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2342,7 +2428,7 @@ func (x *WorkspaceUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceUpdate.ProtoReflect.Descriptor instead.
 func (*WorkspaceUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{25}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *WorkspaceUpdate) GetWorkspace() *Workspace {
@@ -2361,7 +2447,7 @@ type WorkspaceDelete struct {
 
 func (x *WorkspaceDelete) Reset() {
 	*x = WorkspaceDelete{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[26]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2373,7 +2459,7 @@ func (x *WorkspaceDelete) String() string {
 func (*WorkspaceDelete) ProtoMessage() {}
 
 func (x *WorkspaceDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[26]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2386,7 +2472,7 @@ func (x *WorkspaceDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceDelete.ProtoReflect.Descriptor instead.
 func (*WorkspaceDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{26}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *WorkspaceDelete) GetWorkspaceId() string {
@@ -2405,7 +2491,7 @@ type WorkspaceMemberAdd struct {
 
 func (x *WorkspaceMemberAdd) Reset() {
 	*x = WorkspaceMemberAdd{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[27]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2417,7 +2503,7 @@ func (x *WorkspaceMemberAdd) String() string {
 func (*WorkspaceMemberAdd) ProtoMessage() {}
 
 func (x *WorkspaceMemberAdd) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[27]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2430,7 +2516,7 @@ func (x *WorkspaceMemberAdd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceMemberAdd.ProtoReflect.Descriptor instead.
 func (*WorkspaceMemberAdd) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{27}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *WorkspaceMemberAdd) GetMember() *WorkspaceMember {
@@ -2449,7 +2535,7 @@ type WorkspaceMemberUpdate struct {
 
 func (x *WorkspaceMemberUpdate) Reset() {
 	*x = WorkspaceMemberUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[28]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2461,7 +2547,7 @@ func (x *WorkspaceMemberUpdate) String() string {
 func (*WorkspaceMemberUpdate) ProtoMessage() {}
 
 func (x *WorkspaceMemberUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[28]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2474,7 +2560,7 @@ func (x *WorkspaceMemberUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceMemberUpdate.ProtoReflect.Descriptor instead.
 func (*WorkspaceMemberUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{28}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *WorkspaceMemberUpdate) GetMember() *WorkspaceMember {
@@ -2494,7 +2580,7 @@ type WorkspaceMemberRemove struct {
 
 func (x *WorkspaceMemberRemove) Reset() {
 	*x = WorkspaceMemberRemove{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[29]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2506,7 +2592,7 @@ func (x *WorkspaceMemberRemove) String() string {
 func (*WorkspaceMemberRemove) ProtoMessage() {}
 
 func (x *WorkspaceMemberRemove) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[29]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2519,7 +2605,7 @@ func (x *WorkspaceMemberRemove) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceMemberRemove.ProtoReflect.Descriptor instead.
 func (*WorkspaceMemberRemove) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{29}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *WorkspaceMemberRemove) GetWorkspaceId() string {
@@ -2545,7 +2631,7 @@ type RoomCreate struct {
 
 func (x *RoomCreate) Reset() {
 	*x = RoomCreate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[30]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2557,7 +2643,7 @@ func (x *RoomCreate) String() string {
 func (*RoomCreate) ProtoMessage() {}
 
 func (x *RoomCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[30]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2570,7 +2656,7 @@ func (x *RoomCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomCreate.ProtoReflect.Descriptor instead.
 func (*RoomCreate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{30}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *RoomCreate) GetRoom() *Room {
@@ -2589,7 +2675,7 @@ type RoomUpdate struct {
 
 func (x *RoomUpdate) Reset() {
 	*x = RoomUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[31]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2601,7 +2687,7 @@ func (x *RoomUpdate) String() string {
 func (*RoomUpdate) ProtoMessage() {}
 
 func (x *RoomUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[31]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2614,7 +2700,7 @@ func (x *RoomUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomUpdate.ProtoReflect.Descriptor instead.
 func (*RoomUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{31}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RoomUpdate) GetRoom() *Room {
@@ -2634,7 +2720,7 @@ type RoomDelete struct {
 
 func (x *RoomDelete) Reset() {
 	*x = RoomDelete{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[32]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2646,7 +2732,7 @@ func (x *RoomDelete) String() string {
 func (*RoomDelete) ProtoMessage() {}
 
 func (x *RoomDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[32]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2659,7 +2745,7 @@ func (x *RoomDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomDelete.ProtoReflect.Descriptor instead.
 func (*RoomDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{32}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *RoomDelete) GetWorkspaceId() string {
@@ -2687,7 +2773,7 @@ type RoomPermissionsUpdate struct {
 
 func (x *RoomPermissionsUpdate) Reset() {
 	*x = RoomPermissionsUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[33]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2699,7 +2785,7 @@ func (x *RoomPermissionsUpdate) String() string {
 func (*RoomPermissionsUpdate) ProtoMessage() {}
 
 func (x *RoomPermissionsUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[33]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2712,7 +2798,7 @@ func (x *RoomPermissionsUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomPermissionsUpdate.ProtoReflect.Descriptor instead.
 func (*RoomPermissionsUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{33}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *RoomPermissionsUpdate) GetWorkspaceId() string {
@@ -2746,7 +2832,7 @@ type MessageCreate struct {
 
 func (x *MessageCreate) Reset() {
 	*x = MessageCreate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[34]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2758,7 +2844,7 @@ func (x *MessageCreate) String() string {
 func (*MessageCreate) ProtoMessage() {}
 
 func (x *MessageCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[34]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2771,7 +2857,7 @@ func (x *MessageCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageCreate.ProtoReflect.Descriptor instead.
 func (*MessageCreate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{34}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *MessageCreate) GetWorkspaceId() string {
@@ -2798,7 +2884,7 @@ type MessageUpdate struct {
 
 func (x *MessageUpdate) Reset() {
 	*x = MessageUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[35]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2810,7 +2896,7 @@ func (x *MessageUpdate) String() string {
 func (*MessageUpdate) ProtoMessage() {}
 
 func (x *MessageUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[35]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2823,7 +2909,7 @@ func (x *MessageUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageUpdate.ProtoReflect.Descriptor instead.
 func (*MessageUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{35}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *MessageUpdate) GetWorkspaceId() string {
@@ -2851,7 +2937,7 @@ type MessageDelete struct {
 
 func (x *MessageDelete) Reset() {
 	*x = MessageDelete{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[36]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2863,7 +2949,7 @@ func (x *MessageDelete) String() string {
 func (*MessageDelete) ProtoMessage() {}
 
 func (x *MessageDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[36]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2876,7 +2962,7 @@ func (x *MessageDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageDelete.ProtoReflect.Descriptor instead.
 func (*MessageDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{36}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *MessageDelete) GetWorkspaceId() string {
@@ -2911,7 +2997,7 @@ type TypingStart struct {
 
 func (x *TypingStart) Reset() {
 	*x = TypingStart{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[37]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2923,7 +3009,7 @@ func (x *TypingStart) String() string {
 func (*TypingStart) ProtoMessage() {}
 
 func (x *TypingStart) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[37]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2936,7 +3022,7 @@ func (x *TypingStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TypingStart.ProtoReflect.Descriptor instead.
 func (*TypingStart) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{37}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *TypingStart) GetRoomId() string {
@@ -2969,7 +3055,7 @@ type PresenceUpdate struct {
 
 func (x *PresenceUpdate) Reset() {
 	*x = PresenceUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[38]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2981,7 +3067,7 @@ func (x *PresenceUpdate) String() string {
 func (*PresenceUpdate) ProtoMessage() {}
 
 func (x *PresenceUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[38]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2994,7 +3080,7 @@ func (x *PresenceUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresenceUpdate.ProtoReflect.Descriptor instead.
 func (*PresenceUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{38}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PresenceUpdate) GetPresence() *Presence {
@@ -3013,7 +3099,7 @@ type VoiceStateUpdate struct {
 
 func (x *VoiceStateUpdate) Reset() {
 	*x = VoiceStateUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[39]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3025,7 +3111,7 @@ func (x *VoiceStateUpdate) String() string {
 func (*VoiceStateUpdate) ProtoMessage() {}
 
 func (x *VoiceStateUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[39]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3038,7 +3124,7 @@ func (x *VoiceStateUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VoiceStateUpdate.ProtoReflect.Descriptor instead.
 func (*VoiceStateUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{39}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *VoiceStateUpdate) GetState() *VoiceState {
@@ -3061,7 +3147,7 @@ type VoiceStreamStart struct {
 
 func (x *VoiceStreamStart) Reset() {
 	*x = VoiceStreamStart{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[40]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3073,7 +3159,7 @@ func (x *VoiceStreamStart) String() string {
 func (*VoiceStreamStart) ProtoMessage() {}
 
 func (x *VoiceStreamStart) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[40]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3086,7 +3172,7 @@ func (x *VoiceStreamStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VoiceStreamStart.ProtoReflect.Descriptor instead.
 func (*VoiceStreamStart) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{40}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *VoiceStreamStart) GetWorkspaceId() string {
@@ -3137,7 +3223,7 @@ type VoiceStreamStop struct {
 
 func (x *VoiceStreamStop) Reset() {
 	*x = VoiceStreamStop{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[41]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3149,7 +3235,7 @@ func (x *VoiceStreamStop) String() string {
 func (*VoiceStreamStop) ProtoMessage() {}
 
 func (x *VoiceStreamStop) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[41]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3162,7 +3248,7 @@ func (x *VoiceStreamStop) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VoiceStreamStop.ProtoReflect.Descriptor instead.
 func (*VoiceStreamStop) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{41}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *VoiceStreamStop) GetWorkspaceId() string {
@@ -3209,7 +3295,7 @@ type ReadStateUpdate struct {
 
 func (x *ReadStateUpdate) Reset() {
 	*x = ReadStateUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[42]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3221,7 +3307,7 @@ func (x *ReadStateUpdate) String() string {
 func (*ReadStateUpdate) ProtoMessage() {}
 
 func (x *ReadStateUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[42]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3234,7 +3320,7 @@ func (x *ReadStateUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadStateUpdate.ProtoReflect.Descriptor instead.
 func (*ReadStateUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{42}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ReadStateUpdate) GetReadState() *ReadState {
@@ -3256,7 +3342,7 @@ type UserUpdate struct {
 
 func (x *UserUpdate) Reset() {
 	*x = UserUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[43]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3268,7 +3354,7 @@ func (x *UserUpdate) String() string {
 func (*UserUpdate) ProtoMessage() {}
 
 func (x *UserUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[43]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3281,7 +3367,7 @@ func (x *UserUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserUpdate.ProtoReflect.Descriptor instead.
 func (*UserUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{43}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *UserUpdate) GetMe() *Me {
@@ -3347,7 +3433,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\fHeartbeatAck\"\v\n" +
 	"\tReconnect\".\n" +
 	"\x0eInvalidSession\x12\x1c\n" +
-	"\tresumable\x18\x01 \x01(\bR\tresumable\"\x97\x0f\n" +
+	"\tresumable\x18\x01 \x01(\bR\tresumable\"\xd1\x0f\n" +
 	"\rDispatchEvent\x12(\n" +
 	"\x05ready\x18\x01 \x01(\v2\x10.calaba.v1.ReadyH\x00R\x05ready\x12G\n" +
 	"\x10workspace_create\x18\x02 \x01(\v2\x1a.calaba.v1.WorkspaceCreateH\x00R\x0fworkspaceCreate\x12G\n" +
@@ -3380,7 +3466,9 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x0fcategory_update\x18\x18 \x01(\v2\x19.calaba.v1.CategoryUpdateH\x00R\x0ecategoryUpdate\x12D\n" +
 	"\x0fcategory_delete\x18\x19 \x01(\v2\x19.calaba.v1.CategoryDeleteH\x00R\x0ecategoryDelete\x12Q\n" +
 	"\x14message_reaction_add\x18\x1a \x01(\v2\x1d.calaba.v1.MessageReactionAddH\x00R\x12messageReactionAdd\x12Z\n" +
-	"\x17message_reaction_remove\x18\x1b \x01(\v2 .calaba.v1.MessageReactionRemoveH\x00R\x15messageReactionRemoveB\a\n" +
+	"\x17message_reaction_remove\x18\x1b \x01(\v2 .calaba.v1.MessageReactionRemoveH\x00R\x15messageReactionRemove\x128\n" +
+	"\vvoice_moved\x18\x1c \x01(\v2\x15.calaba.v1.VoiceMovedH\x00R\n" +
+	"voiceMovedB\a\n" +
 	"\x05event\"\xea\x01\n" +
 	"\n" +
 	"VoiceState\x12!\n" +
@@ -3446,7 +3534,16 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\n" +
 	"message_id\x18\x03 \x01(\tR\tmessageId\x12\x17\n" +
 	"\auser_id\x18\x04 \x01(\tR\x06userId\x12\x14\n" +
-	"\x05emoji\x18\x05 \x01(\tR\x05emoji\"%\n" +
+	"\x05emoji\x18\x05 \x01(\tR\x05emoji\"\x8d\x01\n" +
+	"\n" +
+	"VoiceMoved\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12 \n" +
+	"\ffrom_room_id\x18\x02 \x01(\tR\n" +
+	"fromRoomId\x12\x1c\n" +
+	"\n" +
+	"to_room_id\x18\x03 \x01(\tR\btoRoomId\x12\x1c\n" +
+	"\n" +
+	"by_user_id\x18\x04 \x01(\tR\bbyUserId\"%\n" +
 	"\aResumed\x12\x1a\n" +
 	"\breplayed\x18\x01 \x01(\rR\breplayed\"K\n" +
 	"\x0fWorkspaceCreate\x128\n" +
@@ -3567,7 +3664,7 @@ func file_calaba_v1_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_calaba_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
+var file_calaba_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
 var file_calaba_v1_gateway_proto_goTypes = []any{
 	(GatewayOpcode)(0),             // 0: calaba.v1.GatewayOpcode
 	(GatewayCloseCode)(0),          // 1: calaba.v1.GatewayCloseCode
@@ -3596,39 +3693,40 @@ var file_calaba_v1_gateway_proto_goTypes = []any{
 	(*CategoryDelete)(nil),         // 24: calaba.v1.CategoryDelete
 	(*MessageReactionAdd)(nil),     // 25: calaba.v1.MessageReactionAdd
 	(*MessageReactionRemove)(nil),  // 26: calaba.v1.MessageReactionRemove
-	(*Resumed)(nil),                // 27: calaba.v1.Resumed
-	(*WorkspaceCreate)(nil),        // 28: calaba.v1.WorkspaceCreate
-	(*WorkspaceUpdate)(nil),        // 29: calaba.v1.WorkspaceUpdate
-	(*WorkspaceDelete)(nil),        // 30: calaba.v1.WorkspaceDelete
-	(*WorkspaceMemberAdd)(nil),     // 31: calaba.v1.WorkspaceMemberAdd
-	(*WorkspaceMemberUpdate)(nil),  // 32: calaba.v1.WorkspaceMemberUpdate
-	(*WorkspaceMemberRemove)(nil),  // 33: calaba.v1.WorkspaceMemberRemove
-	(*RoomCreate)(nil),             // 34: calaba.v1.RoomCreate
-	(*RoomUpdate)(nil),             // 35: calaba.v1.RoomUpdate
-	(*RoomDelete)(nil),             // 36: calaba.v1.RoomDelete
-	(*RoomPermissionsUpdate)(nil),  // 37: calaba.v1.RoomPermissionsUpdate
-	(*MessageCreate)(nil),          // 38: calaba.v1.MessageCreate
-	(*MessageUpdate)(nil),          // 39: calaba.v1.MessageUpdate
-	(*MessageDelete)(nil),          // 40: calaba.v1.MessageDelete
-	(*TypingStart)(nil),            // 41: calaba.v1.TypingStart
-	(*PresenceUpdate)(nil),         // 42: calaba.v1.PresenceUpdate
-	(*VoiceStateUpdate)(nil),       // 43: calaba.v1.VoiceStateUpdate
-	(*VoiceStreamStart)(nil),       // 44: calaba.v1.VoiceStreamStart
-	(*VoiceStreamStop)(nil),        // 45: calaba.v1.VoiceStreamStop
-	(*ReadStateUpdate)(nil),        // 46: calaba.v1.ReadStateUpdate
-	(*UserUpdate)(nil),             // 47: calaba.v1.UserUpdate
-	nil,                            // 48: calaba.v1.WorkspaceSnapshot.PermissionsEntry
-	(*timestamppb.Timestamp)(nil),  // 49: google.protobuf.Timestamp
-	(*Workspace)(nil),              // 50: calaba.v1.Workspace
-	(WorkspaceRole)(0),             // 51: calaba.v1.WorkspaceRole
-	(*Room)(nil),                   // 52: calaba.v1.Room
-	(*WorkspaceMember)(nil),        // 53: calaba.v1.WorkspaceMember
-	(*RoomCategory)(nil),           // 54: calaba.v1.RoomCategory
-	(*Me)(nil),                     // 55: calaba.v1.Me
-	(*RoomPermissionOverride)(nil), // 56: calaba.v1.RoomPermissionOverride
-	(*Message)(nil),                // 57: calaba.v1.Message
-	(ScreenSharePreset)(0),         // 58: calaba.v1.ScreenSharePreset
-	(*User)(nil),                   // 59: calaba.v1.User
+	(*VoiceMoved)(nil),             // 27: calaba.v1.VoiceMoved
+	(*Resumed)(nil),                // 28: calaba.v1.Resumed
+	(*WorkspaceCreate)(nil),        // 29: calaba.v1.WorkspaceCreate
+	(*WorkspaceUpdate)(nil),        // 30: calaba.v1.WorkspaceUpdate
+	(*WorkspaceDelete)(nil),        // 31: calaba.v1.WorkspaceDelete
+	(*WorkspaceMemberAdd)(nil),     // 32: calaba.v1.WorkspaceMemberAdd
+	(*WorkspaceMemberUpdate)(nil),  // 33: calaba.v1.WorkspaceMemberUpdate
+	(*WorkspaceMemberRemove)(nil),  // 34: calaba.v1.WorkspaceMemberRemove
+	(*RoomCreate)(nil),             // 35: calaba.v1.RoomCreate
+	(*RoomUpdate)(nil),             // 36: calaba.v1.RoomUpdate
+	(*RoomDelete)(nil),             // 37: calaba.v1.RoomDelete
+	(*RoomPermissionsUpdate)(nil),  // 38: calaba.v1.RoomPermissionsUpdate
+	(*MessageCreate)(nil),          // 39: calaba.v1.MessageCreate
+	(*MessageUpdate)(nil),          // 40: calaba.v1.MessageUpdate
+	(*MessageDelete)(nil),          // 41: calaba.v1.MessageDelete
+	(*TypingStart)(nil),            // 42: calaba.v1.TypingStart
+	(*PresenceUpdate)(nil),         // 43: calaba.v1.PresenceUpdate
+	(*VoiceStateUpdate)(nil),       // 44: calaba.v1.VoiceStateUpdate
+	(*VoiceStreamStart)(nil),       // 45: calaba.v1.VoiceStreamStart
+	(*VoiceStreamStop)(nil),        // 46: calaba.v1.VoiceStreamStop
+	(*ReadStateUpdate)(nil),        // 47: calaba.v1.ReadStateUpdate
+	(*UserUpdate)(nil),             // 48: calaba.v1.UserUpdate
+	nil,                            // 49: calaba.v1.WorkspaceSnapshot.PermissionsEntry
+	(*timestamppb.Timestamp)(nil),  // 50: google.protobuf.Timestamp
+	(*Workspace)(nil),              // 51: calaba.v1.Workspace
+	(WorkspaceRole)(0),             // 52: calaba.v1.WorkspaceRole
+	(*Room)(nil),                   // 53: calaba.v1.Room
+	(*WorkspaceMember)(nil),        // 54: calaba.v1.WorkspaceMember
+	(*RoomCategory)(nil),           // 55: calaba.v1.RoomCategory
+	(*Me)(nil),                     // 56: calaba.v1.Me
+	(*RoomPermissionOverride)(nil), // 57: calaba.v1.RoomPermissionOverride
+	(*Message)(nil),                // 58: calaba.v1.Message
+	(ScreenSharePreset)(0),         // 59: calaba.v1.ScreenSharePreset
+	(*User)(nil),                   // 60: calaba.v1.User
 }
 var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.GatewayFrame.op:type_name -> calaba.v1.GatewayOpcode
@@ -3646,71 +3744,72 @@ var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	6,  // 12: calaba.v1.Identify.device:type_name -> calaba.v1.DeviceInfo
 	2,  // 13: calaba.v1.SetPresence.status:type_name -> calaba.v1.PresenceStatus
 	21, // 14: calaba.v1.DispatchEvent.ready:type_name -> calaba.v1.Ready
-	28, // 15: calaba.v1.DispatchEvent.workspace_create:type_name -> calaba.v1.WorkspaceCreate
-	29, // 16: calaba.v1.DispatchEvent.workspace_update:type_name -> calaba.v1.WorkspaceUpdate
-	30, // 17: calaba.v1.DispatchEvent.workspace_delete:type_name -> calaba.v1.WorkspaceDelete
-	31, // 18: calaba.v1.DispatchEvent.workspace_member_add:type_name -> calaba.v1.WorkspaceMemberAdd
-	32, // 19: calaba.v1.DispatchEvent.workspace_member_update:type_name -> calaba.v1.WorkspaceMemberUpdate
-	33, // 20: calaba.v1.DispatchEvent.workspace_member_remove:type_name -> calaba.v1.WorkspaceMemberRemove
-	34, // 21: calaba.v1.DispatchEvent.room_create:type_name -> calaba.v1.RoomCreate
-	35, // 22: calaba.v1.DispatchEvent.room_update:type_name -> calaba.v1.RoomUpdate
-	36, // 23: calaba.v1.DispatchEvent.room_delete:type_name -> calaba.v1.RoomDelete
-	37, // 24: calaba.v1.DispatchEvent.room_permissions_update:type_name -> calaba.v1.RoomPermissionsUpdate
-	38, // 25: calaba.v1.DispatchEvent.message_create:type_name -> calaba.v1.MessageCreate
-	39, // 26: calaba.v1.DispatchEvent.message_update:type_name -> calaba.v1.MessageUpdate
-	40, // 27: calaba.v1.DispatchEvent.message_delete:type_name -> calaba.v1.MessageDelete
-	41, // 28: calaba.v1.DispatchEvent.typing_start:type_name -> calaba.v1.TypingStart
-	42, // 29: calaba.v1.DispatchEvent.presence_update:type_name -> calaba.v1.PresenceUpdate
-	43, // 30: calaba.v1.DispatchEvent.voice_state_update:type_name -> calaba.v1.VoiceStateUpdate
-	44, // 31: calaba.v1.DispatchEvent.voice_stream_start:type_name -> calaba.v1.VoiceStreamStart
-	45, // 32: calaba.v1.DispatchEvent.voice_stream_stop:type_name -> calaba.v1.VoiceStreamStop
-	46, // 33: calaba.v1.DispatchEvent.read_state_update:type_name -> calaba.v1.ReadStateUpdate
-	47, // 34: calaba.v1.DispatchEvent.user_update:type_name -> calaba.v1.UserUpdate
-	27, // 35: calaba.v1.DispatchEvent.resumed:type_name -> calaba.v1.Resumed
+	29, // 15: calaba.v1.DispatchEvent.workspace_create:type_name -> calaba.v1.WorkspaceCreate
+	30, // 16: calaba.v1.DispatchEvent.workspace_update:type_name -> calaba.v1.WorkspaceUpdate
+	31, // 17: calaba.v1.DispatchEvent.workspace_delete:type_name -> calaba.v1.WorkspaceDelete
+	32, // 18: calaba.v1.DispatchEvent.workspace_member_add:type_name -> calaba.v1.WorkspaceMemberAdd
+	33, // 19: calaba.v1.DispatchEvent.workspace_member_update:type_name -> calaba.v1.WorkspaceMemberUpdate
+	34, // 20: calaba.v1.DispatchEvent.workspace_member_remove:type_name -> calaba.v1.WorkspaceMemberRemove
+	35, // 21: calaba.v1.DispatchEvent.room_create:type_name -> calaba.v1.RoomCreate
+	36, // 22: calaba.v1.DispatchEvent.room_update:type_name -> calaba.v1.RoomUpdate
+	37, // 23: calaba.v1.DispatchEvent.room_delete:type_name -> calaba.v1.RoomDelete
+	38, // 24: calaba.v1.DispatchEvent.room_permissions_update:type_name -> calaba.v1.RoomPermissionsUpdate
+	39, // 25: calaba.v1.DispatchEvent.message_create:type_name -> calaba.v1.MessageCreate
+	40, // 26: calaba.v1.DispatchEvent.message_update:type_name -> calaba.v1.MessageUpdate
+	41, // 27: calaba.v1.DispatchEvent.message_delete:type_name -> calaba.v1.MessageDelete
+	42, // 28: calaba.v1.DispatchEvent.typing_start:type_name -> calaba.v1.TypingStart
+	43, // 29: calaba.v1.DispatchEvent.presence_update:type_name -> calaba.v1.PresenceUpdate
+	44, // 30: calaba.v1.DispatchEvent.voice_state_update:type_name -> calaba.v1.VoiceStateUpdate
+	45, // 31: calaba.v1.DispatchEvent.voice_stream_start:type_name -> calaba.v1.VoiceStreamStart
+	46, // 32: calaba.v1.DispatchEvent.voice_stream_stop:type_name -> calaba.v1.VoiceStreamStop
+	47, // 33: calaba.v1.DispatchEvent.read_state_update:type_name -> calaba.v1.ReadStateUpdate
+	48, // 34: calaba.v1.DispatchEvent.user_update:type_name -> calaba.v1.UserUpdate
+	28, // 35: calaba.v1.DispatchEvent.resumed:type_name -> calaba.v1.Resumed
 	22, // 36: calaba.v1.DispatchEvent.category_create:type_name -> calaba.v1.CategoryCreate
 	23, // 37: calaba.v1.DispatchEvent.category_update:type_name -> calaba.v1.CategoryUpdate
 	24, // 38: calaba.v1.DispatchEvent.category_delete:type_name -> calaba.v1.CategoryDelete
 	25, // 39: calaba.v1.DispatchEvent.message_reaction_add:type_name -> calaba.v1.MessageReactionAdd
 	26, // 40: calaba.v1.DispatchEvent.message_reaction_remove:type_name -> calaba.v1.MessageReactionRemove
-	49, // 41: calaba.v1.VoiceState.joined_at:type_name -> google.protobuf.Timestamp
-	2,  // 42: calaba.v1.Presence.status:type_name -> calaba.v1.PresenceStatus
-	49, // 43: calaba.v1.Presence.last_seen:type_name -> google.protobuf.Timestamp
-	49, // 44: calaba.v1.Presence.status_expires_at:type_name -> google.protobuf.Timestamp
-	50, // 45: calaba.v1.WorkspaceSnapshot.workspace:type_name -> calaba.v1.Workspace
-	51, // 46: calaba.v1.WorkspaceSnapshot.role:type_name -> calaba.v1.WorkspaceRole
-	52, // 47: calaba.v1.WorkspaceSnapshot.rooms:type_name -> calaba.v1.Room
-	53, // 48: calaba.v1.WorkspaceSnapshot.members:type_name -> calaba.v1.WorkspaceMember
-	17, // 49: calaba.v1.WorkspaceSnapshot.voice_states:type_name -> calaba.v1.VoiceState
-	18, // 50: calaba.v1.WorkspaceSnapshot.presences:type_name -> calaba.v1.Presence
-	48, // 51: calaba.v1.WorkspaceSnapshot.permissions:type_name -> calaba.v1.WorkspaceSnapshot.PermissionsEntry
-	54, // 52: calaba.v1.WorkspaceSnapshot.categories:type_name -> calaba.v1.RoomCategory
-	55, // 53: calaba.v1.Ready.me:type_name -> calaba.v1.Me
-	20, // 54: calaba.v1.Ready.workspaces:type_name -> calaba.v1.WorkspaceSnapshot
-	19, // 55: calaba.v1.Ready.read_states:type_name -> calaba.v1.ReadState
-	54, // 56: calaba.v1.CategoryCreate.category:type_name -> calaba.v1.RoomCategory
-	54, // 57: calaba.v1.CategoryUpdate.category:type_name -> calaba.v1.RoomCategory
-	20, // 58: calaba.v1.WorkspaceCreate.snapshot:type_name -> calaba.v1.WorkspaceSnapshot
-	50, // 59: calaba.v1.WorkspaceUpdate.workspace:type_name -> calaba.v1.Workspace
-	53, // 60: calaba.v1.WorkspaceMemberAdd.member:type_name -> calaba.v1.WorkspaceMember
-	53, // 61: calaba.v1.WorkspaceMemberUpdate.member:type_name -> calaba.v1.WorkspaceMember
-	52, // 62: calaba.v1.RoomCreate.room:type_name -> calaba.v1.Room
-	52, // 63: calaba.v1.RoomUpdate.room:type_name -> calaba.v1.Room
-	56, // 64: calaba.v1.RoomPermissionsUpdate.permissions:type_name -> calaba.v1.RoomPermissionOverride
-	57, // 65: calaba.v1.MessageCreate.message:type_name -> calaba.v1.Message
-	57, // 66: calaba.v1.MessageUpdate.message:type_name -> calaba.v1.Message
-	49, // 67: calaba.v1.TypingStart.timestamp:type_name -> google.protobuf.Timestamp
-	18, // 68: calaba.v1.PresenceUpdate.presence:type_name -> calaba.v1.Presence
-	17, // 69: calaba.v1.VoiceStateUpdate.state:type_name -> calaba.v1.VoiceState
-	58, // 70: calaba.v1.VoiceStreamStart.preset:type_name -> calaba.v1.ScreenSharePreset
-	3,  // 71: calaba.v1.VoiceStreamStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
-	19, // 72: calaba.v1.ReadStateUpdate.read_state:type_name -> calaba.v1.ReadState
-	55, // 73: calaba.v1.UserUpdate.me:type_name -> calaba.v1.Me
-	59, // 74: calaba.v1.UserUpdate.user:type_name -> calaba.v1.User
-	75, // [75:75] is the sub-list for method output_type
-	75, // [75:75] is the sub-list for method input_type
-	75, // [75:75] is the sub-list for extension type_name
-	75, // [75:75] is the sub-list for extension extendee
-	0,  // [0:75] is the sub-list for field type_name
+	27, // 41: calaba.v1.DispatchEvent.voice_moved:type_name -> calaba.v1.VoiceMoved
+	50, // 42: calaba.v1.VoiceState.joined_at:type_name -> google.protobuf.Timestamp
+	2,  // 43: calaba.v1.Presence.status:type_name -> calaba.v1.PresenceStatus
+	50, // 44: calaba.v1.Presence.last_seen:type_name -> google.protobuf.Timestamp
+	50, // 45: calaba.v1.Presence.status_expires_at:type_name -> google.protobuf.Timestamp
+	51, // 46: calaba.v1.WorkspaceSnapshot.workspace:type_name -> calaba.v1.Workspace
+	52, // 47: calaba.v1.WorkspaceSnapshot.role:type_name -> calaba.v1.WorkspaceRole
+	53, // 48: calaba.v1.WorkspaceSnapshot.rooms:type_name -> calaba.v1.Room
+	54, // 49: calaba.v1.WorkspaceSnapshot.members:type_name -> calaba.v1.WorkspaceMember
+	17, // 50: calaba.v1.WorkspaceSnapshot.voice_states:type_name -> calaba.v1.VoiceState
+	18, // 51: calaba.v1.WorkspaceSnapshot.presences:type_name -> calaba.v1.Presence
+	49, // 52: calaba.v1.WorkspaceSnapshot.permissions:type_name -> calaba.v1.WorkspaceSnapshot.PermissionsEntry
+	55, // 53: calaba.v1.WorkspaceSnapshot.categories:type_name -> calaba.v1.RoomCategory
+	56, // 54: calaba.v1.Ready.me:type_name -> calaba.v1.Me
+	20, // 55: calaba.v1.Ready.workspaces:type_name -> calaba.v1.WorkspaceSnapshot
+	19, // 56: calaba.v1.Ready.read_states:type_name -> calaba.v1.ReadState
+	55, // 57: calaba.v1.CategoryCreate.category:type_name -> calaba.v1.RoomCategory
+	55, // 58: calaba.v1.CategoryUpdate.category:type_name -> calaba.v1.RoomCategory
+	20, // 59: calaba.v1.WorkspaceCreate.snapshot:type_name -> calaba.v1.WorkspaceSnapshot
+	51, // 60: calaba.v1.WorkspaceUpdate.workspace:type_name -> calaba.v1.Workspace
+	54, // 61: calaba.v1.WorkspaceMemberAdd.member:type_name -> calaba.v1.WorkspaceMember
+	54, // 62: calaba.v1.WorkspaceMemberUpdate.member:type_name -> calaba.v1.WorkspaceMember
+	53, // 63: calaba.v1.RoomCreate.room:type_name -> calaba.v1.Room
+	53, // 64: calaba.v1.RoomUpdate.room:type_name -> calaba.v1.Room
+	57, // 65: calaba.v1.RoomPermissionsUpdate.permissions:type_name -> calaba.v1.RoomPermissionOverride
+	58, // 66: calaba.v1.MessageCreate.message:type_name -> calaba.v1.Message
+	58, // 67: calaba.v1.MessageUpdate.message:type_name -> calaba.v1.Message
+	50, // 68: calaba.v1.TypingStart.timestamp:type_name -> google.protobuf.Timestamp
+	18, // 69: calaba.v1.PresenceUpdate.presence:type_name -> calaba.v1.Presence
+	17, // 70: calaba.v1.VoiceStateUpdate.state:type_name -> calaba.v1.VoiceState
+	59, // 71: calaba.v1.VoiceStreamStart.preset:type_name -> calaba.v1.ScreenSharePreset
+	3,  // 72: calaba.v1.VoiceStreamStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
+	19, // 73: calaba.v1.ReadStateUpdate.read_state:type_name -> calaba.v1.ReadState
+	56, // 74: calaba.v1.UserUpdate.me:type_name -> calaba.v1.Me
+	60, // 75: calaba.v1.UserUpdate.user:type_name -> calaba.v1.User
+	76, // [76:76] is the sub-list for method output_type
+	76, // [76:76] is the sub-list for method input_type
+	76, // [76:76] is the sub-list for extension type_name
+	76, // [76:76] is the sub-list for extension extendee
+	0,  // [0:76] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_gateway_proto_init() }
@@ -3765,6 +3864,7 @@ func file_calaba_v1_gateway_proto_init() {
 		(*DispatchEvent_CategoryDelete)(nil),
 		(*DispatchEvent_MessageReactionAdd)(nil),
 		(*DispatchEvent_MessageReactionRemove)(nil),
+		(*DispatchEvent_VoiceMoved)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -3772,7 +3872,7 @@ func file_calaba_v1_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_gateway_proto_rawDesc), len(file_calaba_v1_gateway_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   45,
+			NumMessages:   46,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

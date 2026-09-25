@@ -1,0 +1,74 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/auth.proto";
+import "calaba/v1/room.proto";
+import "calaba/v1/user.proto";
+
+// Room link (ADR-0016): https://<domain>/r/<code>, calaba://r/<code>. A capability for one
+// room: registered users join the workspace as `guest` (if not members) with access to this
+// room; without an account (allow_guests) a guest account is created from a nickname.
+message RoomInvite {
+  string id = 1;
+  string room_id = 2;
+  string workspace_id = 3;
+  string code = 4;
+  string created_by = 5;
+  google.protobuf.Timestamp expires_at = 6; // unset = never
+  uint32 max_uses = 7;                      // 0 = unlimited
+  uint32 uses = 8;
+  bool allow_guests = 9;                    // people without an account may join by nickname
+  // What joiners may do in the room (VIEW_ROOM and CONNECT are always granted).
+  bool allow_speak = 10;
+  bool allow_messages = 11;
+  bool allow_files = 12;
+  bool allow_stream = 13;
+  google.protobuf.Timestamp created_at = 14;
+}
+
+// POST /api/rooms/{id}/invites (MANAGE_ROOM). Unset fields take the defaults:
+// 7 days, unlimited uses, allow_guests true, speak true, messages true, files false, stream false.
+message CreateRoomInviteRequest {
+  optional uint32 expires_in_seconds = 1; // 0 = never; ≤ 365 days
+  uint32 max_uses = 2;
+  optional bool allow_guests = 3;
+  optional bool allow_speak = 4;
+  optional bool allow_messages = 5;
+  optional bool allow_files = 6;
+  optional bool allow_stream = 7;
+}
+
+message CreateRoomInviteResponse {
+  RoomInvite invite = 1;
+}
+
+// GET /api/rooms/{id}/invites (MANAGE_ROOM): active links.
+message ListRoomInvitesResponse {
+  repeated RoomInvite invites = 1;
+}
+
+// GET /api/room-invites/{code} — public preview for the /r/<code> page (no auth).
+message GetRoomInviteResponse {
+  string room_name = 1;
+  RoomType room_type = 2;
+  string workspace_name = 3;
+  string workspace_icon_file_id = 4;
+  bool allow_guests = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// POST /api/room-invites/{code}/join. With an access token: joins as the current user.
+// Without one (allow_guests): creates a guest account named `nickname` and signs it in
+// (web clients with X-Client: web get the refresh token as a cookie, as on login).
+message JoinRoomInviteRequest {
+  string nickname = 1;
+  string device_name = 2;
+}
+
+message JoinRoomInviteResponse {
+  string room_id = 1;
+  string workspace_id = 2;
+  AuthTokens tokens = 3; // only when a guest account was created
+  Me me = 4;             // only when a guest account was created
+}

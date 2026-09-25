@@ -62,6 +62,7 @@ func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handle
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/mute", wrap(httpx.HandlerFunc(s.muteMember)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/disconnect", wrap(httpx.HandlerFunc(s.disconnectMember)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/stop-stream", wrap(httpx.HandlerFunc(s.stopStream)))
+	mux.Handle("POST /api/rooms/{id}/voice/{userId}/move", wrap(httpx.HandlerFunc(s.moveMember)))
 	mux.Handle("POST /api/rtc/webhook", httpx.HandlerFunc(s.webhook))
 }
 
@@ -125,6 +126,15 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	id := auth.MustFromContext(r.Context())
 	identity := voice.Identity(id.UserID, id.SessionID)
 	name := voice.RoomName(room.WorkspaceID, room.ID)
+	if room.UserLimit > 0 && !acc.Bits.Has(perm.MoveMembers) {
+		full, err := s.roomFull(r.Context(), room.WorkspaceID, room.ID, int(room.UserLimit), id.UserID)
+		if err != nil {
+			return err
+		}
+		if full {
+			return errRoomFull
+		}
+	}
 	if err := s.lk.CreateRoom(r.Context(), name, EmptyTimeout, s.cfg.MaxParticipants); err != nil {
 		return httpx.Unavailable(err)
 	}
@@ -408,6 +418,27 @@ func (s *Service) removeIdentities(ctx context.Context, room string, ids []strin
 	}
 }
 
+var errRoomFull = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL, "the room is full")
+
+// roomFull reports whether the room already has `limit` distinct users other than self
+// (a user already inside, e.g. joining from a second device, does not take a new place).
+func (s *Service) roomFull(ctx context.Context, wid, rid uuid.UUID, limit int, self uuid.UUID) (bool, error) {
+	states, err := s.voice.List(ctx, wid)
+	if err != nil {
+		return false, err
+	}
+	users := map[uuid.UUID]bool{}
+	for _, st := range states {
+		if st.RoomID == rid {
+			if st.UserID == self {
+				return false, nil
+			}
+			users[st.UserID] = true
+		}
+	}
+	return len(users) >= limit, nil
+}
+
 // DisabledRoutes answers rtc endpoints with 503 when LiveKit is not configured.
 func DisabledRoutes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 	h := httpx.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
@@ -415,7 +446,7 @@ func DisabledRoutes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 	})
 	for _, p := range []string{"POST /api/rooms/{id}/join", "POST /api/rooms/{id}/stream/request", "PATCH /api/voice/self",
 		"POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/disconnect",
-		"POST /api/rooms/{id}/voice/{userId}/stop-stream"} {
+		"POST /api/rooms/{id}/voice/{userId}/stop-stream", "POST /api/rooms/{id}/voice/{userId}/move"} {
 		mux.Handle(p, wrap(h))
 	}
 	mux.Handle("POST /api/rtc/webhook", h)

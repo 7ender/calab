@@ -136,7 +136,7 @@ curl -s -XPUT $A/api/rooms/$SEC/permissions -H "Authorization: Bearer $OT" -d "{
 curl -s -XPUT $A/api/rooms/$VOI/permissions -H "Authorization: Bearer $OT" -d '{"overrides":[{"targetType":"PERMISSION_TARGET_TYPE_ROLE","targetId":"member","deny":"64"}]}' >/dev/null
 curl -s $A/api/rooms/$SEC -H "Authorization: Bearer $BT" | jq -r .permissions   # "119"
 curl -s $A/api/rooms/$VOI -H "Authorization: Bearer $BT" | jq -r .permissions   # "55"  (119 без STREAM=64)
-curl -s $A/api/rooms/$VOI -H "Authorization: Bearer $OT" | jq -r .permissions   # "2047" (owner = ADMINISTRATOR)
+curl -s $A/api/rooms/$VOI -H "Authorization: Bearer $OT" | jq -r .permissions   # "8191" (owner = ADMINISTRATOR: все 13 битов)
 curl -s $A/api/workspaces/$WS/rooms -H "Authorization: Bearer $BT" | jq '[.rooms[].name]'   # ["general","secret","voice"]
 # Недопустимый override:
 curl -s -XPUT $A/api/rooms/$GEN/permissions -H "Authorization: Bearer $OT" -d '{"overrides":[{"targetType":"PERMISSION_TARGET_TYPE_ROLE","targetId":"member","allow":"1024"}]}' -w ' %{http_code}\n'   # ERROR_CODE_VALIDATION 422
@@ -754,3 +754,42 @@ curl -s -o /dev/null -w '%{http_code}\n' "$A/api/unfurl?url=http%3A%2F%2F169.254
 - карточка GitHub: `title` непустой, `img:true` (нужен выход в интернет);
 - `404` — свой loopback не запрашивается;
 - `404` — metadata-адрес облака заблокирован.
+
+## Server P0.5 (лимит комнаты, перемещение, ники, гости, AFK)
+
+```sh
+cd apps/server
+go test ./internal/perm/ ./internal/rtc/ ./internal/gateway/ && pnpm -F @calaba/protocol test   # ok; protocol — 16 тестов
+go test -tags integration -count=1 -v -run 'TestUserLimit|TestMoveMember|TestNicknames|TestGuests|TestAFKPresence' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: пять строк `--- PASS` и `ok`. `TestUserLimit` и `TestMoveMember` требуют dev-LiveKit (иначе `SKIP`); `TestMoveMember` идёт ~3 с — реальный LiveKit отвечает на перемещение отсутствующего участника по таймауту.
+
+Что покрыто:
+- **Биты прав**: тест-векторы `proto/testdata/permissions.json` (owner = 8191, у member нет MOVE_MEMBERS и MANAGE_NICKNAMES).
+- **Лимит**: `409 ERROR_CODE_ROOM_FULL`; админ и второе устройство проходят; лимит для текстовой комнаты и больше 99 → 422.
+- **Перемещение**:
+  - без MOVE_MEMBERS → 403, цель текстовая → 422, у перемещаемого нет CONNECT в цели → 403;
+  - `VOICE_MOVED` + `VOICE_STATE_UPDATE`;
+  - в полную комнату: модератор без admin → 409, admin → 204;
+  - JSON-тела `MoveParticipant` / `UpdateParticipant` совпадают с proto LiveKit (unit), реальный LiveKit принимает наш запрос (не auth-ошибка).
+- **Ники**: свой / чужой, `allowSelfNickname=false`, событие `WORKSPACE_MEMBER_UPDATE`.
+- **Гости**:
+  - дефолты ссылки, превью без auth;
+  - гость (c): TTL сессии 24 ч, видит одну комнату, права 51, пишет в комнату, не может создать workspace, статус и ссылку;
+  - веб-cookie и Origin;
+  - (b) — роль `guest`, (a) — использование не тратится;
+  - `allowGuests=false` → 401, `maxUses` → 404, отзыв;
+  - rate limit 5 гостей в час с IP;
+  - promote → member;
+  - чистка: токен → 401, сообщение сохранено, имя «Гость (удалён)», членства нет.
+- **AFK**: `idle` на втором устройстве не перебивает `dnd` и `invisible`; после закрытия первого устройства — `idle`, heartbeat его не сбрасывает.
+
+Ручной сценарий гостя (сервер как в «Server stage 3», `$OT` — токен владельца, `$VOI` — voice-комната):
+```sh
+CODE=$(curl -s -XPOST $A/api/rooms/$VOI/invites -H "Authorization: Bearer $OT" -d '{}' | jq -r .invite.code)
+curl -s $A/api/room-invites/$CODE | jq -c '{roomName,workspaceName,allowGuests}'
+curl -s -XPOST $A/api/room-invites/$CODE/join -H 'X-Forwarded-For: 10.9.0.1' -d '{"nickname":"Гость"}' | jq -c '{roomId, isGuest:.me.user.isGuest, hasToken:(.tokens.accessToken|length>0)}'
+```
+Ожидается:
+- `{"roomName":"voice","workspaceName":"Team","allowGuests":true}`;
+- `{"roomId":"<$VOI>","isGuest":true,"hasToken":true}`.

@@ -49,8 +49,11 @@ func TestAggregateStatus(t *testing.T) {
 		in   []v1.PresenceStatus
 		want v1.PresenceStatus
 	}{
-		{nil, off}, {[]v1.PresenceStatus{inv}, off}, {[]v1.PresenceStatus{idle, inv}, idle},
-		{[]v1.PresenceStatus{idle, on}, on}, {[]v1.PresenceStatus{on, dnd, idle}, dnd},
+		{nil, off}, {[]v1.PresenceStatus{inv}, off},
+		{[]v1.PresenceStatus{idle, inv}, off}, // AFK on one device does not reveal a manual invisible
+		{[]v1.PresenceStatus{on, inv}, off},
+		{[]v1.PresenceStatus{idle, dnd}, dnd}, // nor override a manual dnd
+		{[]v1.PresenceStatus{idle, on}, on}, {[]v1.PresenceStatus{on, dnd, idle, inv}, dnd}, {[]v1.PresenceStatus{idle}, idle},
 	} {
 		if got := AggregateStatus(c.in); got != c.want {
 			t.Errorf("%v: got %v want %v", c.in, got, c.want)

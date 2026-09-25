@@ -18,6 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/gateway"
+	"github.com/calaba/calaba/server/internal/guests"
 	"github.com/calaba/calaba/server/internal/health"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/messages"
@@ -50,6 +51,7 @@ type App struct {
 	Auth    *auth.Service
 	Gateway *gateway.Hub
 	Files   *files.Service
+	Guests  *guests.Service
 	RTC     *rtc.Service // nil when LiveKit is not configured
 }
 
@@ -58,6 +60,7 @@ type App struct {
 func (a *App) Run(ctx context.Context) {
 	go a.Gateway.Run(ctx)
 	go a.Files.RunCleanup(ctx, time.Hour)
+	go a.Guests.RunCleanup(ctx, time.Hour)
 	if a.RTC != nil {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)
 	}
@@ -132,6 +135,9 @@ func New(d Deps) *App {
 	roomHandlers.CategoryRoutes(mux, private)
 	messages.NewHandlers(d.DB, pub, msgLimiter).Routes(mux, private)
 	filesSvc.Routes(mux, private)
+	guestSvc := guests.NewService(d.DB, authSvc, pub, d.Blob,
+		redisx.NewRateLimiter(d.Redis, "rl:guest:", 5, 5.0/60), d.Config.AllowedOrigins()) // 5 guests/h per IP
+	guestSvc.Routes(mux, private)
 	unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
 		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
 	if rtcSvc != nil {
@@ -149,5 +155,5 @@ func New(d Deps) *App {
 		httpx.Observe,
 		httpx.Recover,
 	)
-	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, RTC: rtcSvc}
+	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc}
 }

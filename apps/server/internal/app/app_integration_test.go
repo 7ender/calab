@@ -197,6 +197,22 @@ func (c *client) do(method, path string, in, out proto.Message) int {
 	return resp.StatusCode
 }
 
+// rawErr performs a request and decodes the ApiError body.
+func (c *client) rawErr(method, path string) *v1.ApiError {
+	c.t.Helper()
+	req, _ := http.NewRequestWithContext(context.Background(), method, srv.URL+path, http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	var e v1.ApiError
+	_ = protojson.Unmarshal(raw, &e)
+	return &e
+}
+
 func (c *client) must(want int, method, path string, in, out proto.Message) {
 	c.t.Helper()
 	if got := c.do(method, path, in, out); got != want {

@@ -20,20 +20,26 @@ import (
 //	presence:seen:<user_id>  unix ms of the last activity of a visible session
 //	presence:users           zset user_id -> last touch (for the offline sweeper)
 
+// Session statuses combine by priority: manual statuses (dnd, invisible) always win over
+// automatic ones, so an AFK "idle" from one device never overrides a manual choice made on
+// another: dnd > invisible > online > idle. Invisible shows as offline.
 var statusRank = map[v1.PresenceStatus]int{
-	v1.PresenceStatus_PRESENCE_STATUS_IDLE:   1,
-	v1.PresenceStatus_PRESENCE_STATUS_ONLINE: 2,
-	v1.PresenceStatus_PRESENCE_STATUS_DND:    3,
+	v1.PresenceStatus_PRESENCE_STATUS_IDLE:      1,
+	v1.PresenceStatus_PRESENCE_STATUS_ONLINE:    2,
+	v1.PresenceStatus_PRESENCE_STATUS_INVISIBLE: 3,
+	v1.PresenceStatus_PRESENCE_STATUS_DND:       4,
 }
 
-// AggregateStatus combines per-session statuses: dnd > online > idle; invisible sessions
-// count as absent; no visible session = offline.
+// AggregateStatus combines per-session statuses (see statusRank); no session = offline.
 func AggregateStatus(statuses []v1.PresenceStatus) v1.PresenceStatus {
 	best := v1.PresenceStatus_PRESENCE_STATUS_OFFLINE
 	for _, s := range statuses {
 		if statusRank[s] > statusRank[best] {
 			best = s
 		}
+	}
+	if best == v1.PresenceStatus_PRESENCE_STATUS_INVISIBLE {
+		return v1.PresenceStatus_PRESENCE_STATUS_OFFLINE
 	}
 	return best
 }
@@ -95,7 +101,7 @@ func (p presenceStore) get(ctx context.Context, users []uuid.UUID) (map[uuid.UUI
 			sts = append(sts, v1.PresenceStatus(n)) //nolint:gosec // small enum
 		}
 		pr := &v1.Presence{UserId: u.String(), Status: AggregateStatus(sts)}
-		allInvisible := len(sts) > 0 && pr.GetStatus() == v1.PresenceStatus_PRESENCE_STATUS_OFFLINE
+		allInvisible := len(sts) > 0 && pr.GetStatus() == v1.PresenceStatus_PRESENCE_STATUS_OFFLINE // invisible wins: hide last_seen
 		if ms, err := res[2*i+1].AsInt64(); err == nil && !allInvisible {
 			pr.LastSeen = timestamppb.New(time.UnixMilli(ms))
 		}

@@ -88,6 +88,8 @@ type LiveKit interface {
 	UpdatePermission(ctx context.Context, room, identity string, p Permission) error
 	MuteTrack(ctx context.Context, room, identity, trackSID string, muted bool) error
 	RemoveParticipant(ctx context.Context, room, identity string) error
+	// MoveParticipant moves a participant with its tracks to another (existing) room.
+	MoveParticipant(ctx context.Context, room, identity, destination string) error
 }
 
 // Error is a twirp error returned by LiveKit.
@@ -117,6 +119,7 @@ type videoGrant struct {
 	CanSubscribe      *bool    `json:"canSubscribe,omitempty"`
 	CanPublishData    *bool    `json:"canPublishData,omitempty"`
 	CanPublishSources []string `json:"canPublishSources,omitempty"`
+	DestinationRoom   string   `json:"destinationRoom,omitempty"` // MoveParticipant target
 }
 
 type lkClaims struct {
@@ -188,7 +191,11 @@ func NewLiveKit(internalURL, key, secret string) LiveKit {
 }
 
 func (c *client) call(ctx context.Context, method, room string, in, out any) error {
-	tok, err := sign(c.key, c.secret, lkClaims{Video: &videoGrant{RoomCreate: true, RoomList: true, RoomAdmin: room != "", Room: room}}, time.Minute)
+	return c.callGrant(ctx, method, &videoGrant{RoomCreate: true, RoomList: true, RoomAdmin: room != "", Room: room}, in, out)
+}
+
+func (c *client) callGrant(ctx context.Context, method string, g *videoGrant, in, out any) error {
+	tok, err := sign(c.key, c.secret, lkClaims{Video: g}, time.Minute)
 	if err != nil {
 		return err
 	}
@@ -268,4 +275,9 @@ func (c *client) MuteTrack(ctx context.Context, room, identity, trackSID string,
 
 func (c *client) RemoveParticipant(ctx context.Context, room, identity string) error {
 	return c.call(ctx, "RemoveParticipant", room, map[string]any{"room": room, "identity": identity}, nil)
+}
+
+func (c *client) MoveParticipant(ctx context.Context, room, identity, destination string) error {
+	g := &videoGrant{RoomAdmin: true, Room: room, DestinationRoom: destination}
+	return c.callGrant(ctx, "MoveParticipant", g, map[string]any{"room": room, "identity": identity, "destinationRoom": destination}, nil)
 }

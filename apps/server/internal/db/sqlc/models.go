@@ -72,6 +72,7 @@ type Room struct {
 	CreatedAt        time.Time
 	ArchivedAt       *time.Time
 	CategoryID       *uuid.UUID
+	UserLimit        int32
 }
 
 type RoomCategory struct {
@@ -79,6 +80,20 @@ type RoomCategory struct {
 	WorkspaceID uuid.UUID
 	Name        string
 	Position    int32
+	CreatedAt   time.Time
+}
+
+type RoomInvite struct {
+	ID          uuid.UUID
+	RoomID      uuid.UUID
+	Code        string
+	CreatedBy   uuid.UUID
+	ExpiresAt   *time.Time
+	MaxUses     int32
+	Uses        int32
+	AllowGuests bool
+	AllowBits   int64
+	RevokedAt   *time.Time
 	CreatedAt   time.Time
 }
 
@@ -107,7 +122,7 @@ type Session struct {
 
 type User struct {
 	ID              uuid.UUID
-	Email           string
+	Email           *string
 	PasswordHash    *string
 	DisplayName     string
 	AvatarFileID    *uuid.UUID
@@ -117,6 +132,8 @@ type User struct {
 	DisabledAt      *time.Time
 	StatusEmoji     string
 	StatusExpiresAt *time.Time
+	IsGuest         bool
+	GuestExpiresAt  *time.Time
 }
 
 type Workspace struct {
@@ -132,6 +149,7 @@ type Workspace struct {
 	DefaultMaxStreams       int32
 	StorageQuotaBytes       int64
 	StorageUsedBytes        int64
+	AllowSelfNickname       bool
 }
 
 type WorkspaceInvite struct {

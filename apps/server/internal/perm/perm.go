@@ -19,8 +19,10 @@ const (
 	ManageRoom      Bits = 1 << 8
 	ManageWorkspace Bits = 1 << 9
 	Administrator   Bits = 1 << 10
+	MoveMembers     Bits = 1 << 11 // move others between voice rooms, join over user_limit
+	ManageNicknames Bits = 1 << 12 // workspace-level: change others' nicknames
 
-	All Bits = Administrator<<1 - 1
+	All Bits = ManageNicknames<<1 - 1
 )
 
 // Role is a workspace role as stored in the DB.

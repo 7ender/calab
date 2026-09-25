@@ -44,9 +44,9 @@ func Workspace(role Role) Bits {
 	return Compute(role, nil, nil)
 }
 
-// RoomOnly are the bits that may appear in room overrides. ADMINISTRATOR and
-// MANAGE_WORKSPACE are workspace-level and cannot be granted per room.
-const RoomOnly = All &^ (Administrator | ManageWorkspace)
+// RoomOnly are the bits that may appear in room overrides. ADMINISTRATOR,
+// MANAGE_WORKSPACE and MANAGE_NICKNAMES are workspace-level and cannot be granted per room.
+const RoomOnly = All &^ (Administrator | ManageWorkspace | ManageNicknames)
 
 // OverrideTarget is one row of room_permissions.
 type OverrideTarget struct {

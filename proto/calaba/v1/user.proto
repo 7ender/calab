@@ -12,6 +12,7 @@ message User {
   google.protobuf.Timestamp created_at = 5;
   string status_emoji = 6;
   google.protobuf.Timestamp status_expires_at = 7; // unset = no expiry; expired status is returned empty
+  bool is_guest = 8; // guest account from a room link (ADR-0016): show a "Guest" badge
 }
 
 enum MicMode {

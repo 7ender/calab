@@ -84,6 +84,7 @@ type Workspace struct {
 	MediaDefaults     *RoomMediaSettings `protobuf:"bytes,8,opt,name=media_defaults,json=mediaDefaults,proto3" json:"media_defaults,omitempty"`
 	StorageQuotaBytes uint64             `protobuf:"varint,9,opt,name=storage_quota_bytes,json=storageQuotaBytes,proto3" json:"storage_quota_bytes,omitempty"`
 	StorageUsedBytes  uint64             `protobuf:"varint,10,opt,name=storage_used_bytes,json=storageUsedBytes,proto3" json:"storage_used_bytes,omitempty"`
+	AllowSelfNickname bool               `protobuf:"varint,11,opt,name=allow_self_nickname,json=allowSelfNickname,proto3" json:"allow_self_nickname,omitempty"` // members may set their own nickname (default true)
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -186,6 +187,13 @@ func (x *Workspace) GetStorageUsedBytes() uint64 {
 		return x.StorageUsedBytes
 	}
 	return 0
+}
+
+func (x *Workspace) GetAllowSelfNickname() bool {
+	if x != nil {
+		return x.AllowSelfNickname
+	}
+	return false
 }
 
 type WorkspaceMember struct {
@@ -622,6 +630,7 @@ type UpdateWorkspaceRequest struct {
 	DefaultAudioBitrateKbps *uint32                `protobuf:"varint,5,opt,name=default_audio_bitrate_kbps,json=defaultAudioBitrateKbps,proto3,oneof" json:"default_audio_bitrate_kbps,omitempty"` // 16|24|32|48|64
 	DefaultMaxStreamPreset  *ScreenSharePreset     `protobuf:"varint,6,opt,name=default_max_stream_preset,json=defaultMaxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset,oneof" json:"default_max_stream_preset,omitempty"`
 	DefaultMaxStreams       *uint32                `protobuf:"varint,7,opt,name=default_max_streams,json=defaultMaxStreams,proto3,oneof" json:"default_max_streams,omitempty"` // 0..10
+	AllowSelfNickname       *bool                  `protobuf:"varint,8,opt,name=allow_self_nickname,json=allowSelfNickname,proto3,oneof" json:"allow_self_nickname,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -703,6 +712,13 @@ func (x *UpdateWorkspaceRequest) GetDefaultMaxStreams() uint32 {
 		return *x.DefaultMaxStreams
 	}
 	return 0
+}
+
+func (x *UpdateWorkspaceRequest) GetAllowSelfNickname() bool {
+	if x != nil && x.AllowSelfNickname != nil {
+		return *x.AllowSelfNickname
+	}
+	return false
 }
 
 type UpdateWorkspaceResponse struct {
@@ -1145,7 +1161,7 @@ var File_calaba_v1_workspace_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\n" +
-	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/user.proto\"\x9e\x03\n" +
+	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/user.proto\"\xce\x03\n" +
 	"\tWorkspace\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x12\n" +
@@ -1161,7 +1177,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x0emedia_defaults\x18\b \x01(\v2\x1c.calaba.v1.RoomMediaSettingsR\rmediaDefaults\x12.\n" +
 	"\x13storage_quota_bytes\x18\t \x01(\x04R\x11storageQuotaBytes\x12,\n" +
 	"\x12storage_used_bytes\x18\n" +
-	" \x01(\x04R\x10storageUsedBytes\"\xdc\x01\n" +
+	" \x01(\x04R\x10storageUsedBytes\x12.\n" +
+	"\x13allow_self_nickname\x18\v \x01(\bR\x11allowSelfNickname\"\xdc\x01\n" +
 	"\x0fWorkspaceMember\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12#\n" +
 	"\x04user\x18\x02 \x01(\v2\x0f.calaba.v1.UserR\x04user\x12,\n" +
@@ -1198,7 +1215,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"workspaces\"x\n" +
 	"\x14GetWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12,\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\x92\x04\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xdf\x04\n" +
 	"\x16UpdateWorkspaceRequest\x12\x17\n" +
 	"\x04slug\x18\x01 \x01(\tH\x00R\x04slug\x88\x01\x01\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x01R\x04name\x88\x01\x01\x12C\n" +
@@ -1209,14 +1226,16 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"iconFileId\x88\x01\x01\x12@\n" +
 	"\x1adefault_audio_bitrate_kbps\x18\x05 \x01(\rH\x04R\x17defaultAudioBitrateKbps\x88\x01\x01\x12\\\n" +
 	"\x19default_max_stream_preset\x18\x06 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetH\x05R\x16defaultMaxStreamPreset\x88\x01\x01\x123\n" +
-	"\x13default_max_streams\x18\a \x01(\rH\x06R\x11defaultMaxStreams\x88\x01\x01B\a\n" +
+	"\x13default_max_streams\x18\a \x01(\rH\x06R\x11defaultMaxStreams\x88\x01\x01\x123\n" +
+	"\x13allow_self_nickname\x18\b \x01(\bH\aR\x11allowSelfNickname\x88\x01\x01B\a\n" +
 	"\x05_slugB\a\n" +
 	"\x05_nameB\r\n" +
 	"\v_visibilityB\x0f\n" +
 	"\r_icon_file_idB\x1d\n" +
 	"\x1b_default_audio_bitrate_kbpsB\x1c\n" +
 	"\x1a_default_max_stream_presetB\x16\n" +
-	"\x14_default_max_streams\"M\n" +
+	"\x14_default_max_streamsB\x16\n" +
+	"\x14_allow_self_nickname\"M\n" +
 	"\x17UpdateWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\"\x7f\n" +
 	"\x15JoinWorkspaceResponse\x122\n" +

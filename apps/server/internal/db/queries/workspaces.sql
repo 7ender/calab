@@ -27,7 +27,8 @@ UPDATE workspaces SET
     icon_file_id               = CASE WHEN sqlc.arg('set_icon')::boolean THEN sqlc.narg('icon_file_id')::uuid ELSE icon_file_id END,
     default_audio_bitrate_kbps = coalesce(sqlc.narg('default_audio_bitrate_kbps'), default_audio_bitrate_kbps),
     default_max_stream_preset  = coalesce(sqlc.narg('default_max_stream_preset'), default_max_stream_preset),
-    default_max_streams        = coalesce(sqlc.narg('default_max_streams'), default_max_streams)
+    default_max_streams        = coalesce(sqlc.narg('default_max_streams'), default_max_streams),
+    allow_self_nickname        = coalesce(sqlc.narg('allow_self_nickname'), allow_self_nickname)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 

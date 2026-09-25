@@ -21,6 +21,12 @@ const (
 
 func isWeb(r *http.Request) bool { return r.Header.Get(webHeader) == "web" }
 
+// IsWeb reports a web-client request (X-Client: web).
+func IsWeb(r *http.Request) bool { return isWeb(r) }
+
+// SetRefreshCookie moves the refresh token of t into the calaba_refresh cookie (web).
+func SetRefreshCookie(w http.ResponseWriter, t *v1.AuthTokens) { setRefreshCookie(w, t) }
+
 // Handlers exposes the auth REST API.
 type Handlers struct {
 	svc     *Service

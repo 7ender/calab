@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/rtc.proto.
  */
 export const file_calaba_v1_rtc: GenFile = /*@__PURE__*/
-  fileDesc("ChNjYWxhYmEvdjEvcnRjLnByb3RvEgljYWxhYmEudjEilQEKEUpvaW5Wb2ljZVJlc3BvbnNlEgsKA3VybBgBIAEoCRINCgV0b2tlbhgCIAEoCRIQCghpZGVudGl0eRgDIAEoCRIrCgVtZWRpYRgEIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIRCgljYW5fc3BlYWsYBSABKAgSEgoKY2FuX3N0cmVhbRgGIAEoCCJEChRSZXF1ZXN0U3RyZWFtUmVxdWVzdBIsCgZwcmVzZXQYASABKA4yHC5jYWxhYmEudjEuU2NyZWVuU2hhcmVQcmVzZXQiRQoVUmVxdWVzdFN0cmVhbVJlc3BvbnNlEiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldCJaChZVcGRhdGVWb2ljZVNlbGZSZXF1ZXN0EhIKBW11dGVkGAEgASgISACIAQESFQoIZGVhZmVuZWQYAiABKAhIAYgBAUIICgZfbXV0ZWRCCwoJX2RlYWZlbmVkQpYBCg1jb20uY2FsYWJhLnYxQghSdGNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_calaba_v1_media]);
+  fileDesc("ChNjYWxhYmEvdjEvcnRjLnByb3RvEgljYWxhYmEudjEilQEKEUpvaW5Wb2ljZVJlc3BvbnNlEgsKA3VybBgBIAEoCRINCgV0b2tlbhgCIAEoCRIQCghpZGVudGl0eRgDIAEoCRIrCgVtZWRpYRgEIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIRCgljYW5fc3BlYWsYBSABKAgSEgoKY2FuX3N0cmVhbRgGIAEoCCJEChRSZXF1ZXN0U3RyZWFtUmVxdWVzdBIsCgZwcmVzZXQYASABKA4yHC5jYWxhYmEudjEuU2NyZWVuU2hhcmVQcmVzZXQiRQoVUmVxdWVzdFN0cmVhbVJlc3BvbnNlEiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldCIrChFNb3ZlTWVtYmVyUmVxdWVzdBIWCg50YXJnZXRfcm9vbV9pZBgBIAEoCSJaChZVcGRhdGVWb2ljZVNlbGZSZXF1ZXN0EhIKBW11dGVkGAEgASgISACIAQESFQoIZGVhZmVuZWQYAiABKAhIAYgBAUIICgZfbXV0ZWRCCwoJX2RlYWZlbmVkQpYBCg1jb20uY2FsYWJhLnYxQghSdGNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_calaba_v1_media]);
 
 /**
  * POST /api/rooms/{id}/join (CONNECT). Returns a LiveKit token for this device
@@ -109,6 +109,27 @@ export const RequestStreamResponseSchema: GenMessage<RequestStreamResponse> = /*
   messageDesc(file_calaba_v1_rtc, 2);
 
 /**
+ * POST /api/rooms/{id}/voice/{userId}/move (MOVE_MEMBERS in both rooms): moves all of the
+ * user's devices in room {id} to the target voice room of the same workspace (LiveKit
+ * MoveParticipant, no reconnect). 204. The moved user gets VOICE_MOVED.
+ *
+ * @generated from message calaba.v1.MoveMemberRequest
+ */
+export type MoveMemberRequest = Message<"calaba.v1.MoveMemberRequest"> & {
+  /**
+   * @generated from field: string target_room_id = 1;
+   */
+  targetRoomId: string;
+};
+
+/**
+ * Describes the message calaba.v1.MoveMemberRequest.
+ * Use `create(MoveMemberRequestSchema)` to create a new message.
+ */
+export const MoveMemberRequestSchema: GenMessage<MoveMemberRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_rtc, 3);
+
+/**
  * PATCH /api/voice/self — optimistic self mute/deafen of this device; 204.
  *
  * @generated from message calaba.v1.UpdateVoiceSelfRequest
@@ -130,5 +151,5 @@ export type UpdateVoiceSelfRequest = Message<"calaba.v1.UpdateVoiceSelfRequest">
  * Use `create(UpdateVoiceSelfRequestSchema)` to create a new message.
  */
 export const UpdateVoiceSelfRequestSchema: GenMessage<UpdateVoiceSelfRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 3);
+  messageDesc(file_calaba_v1_rtc, 4);
 

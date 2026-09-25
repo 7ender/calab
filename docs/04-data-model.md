@@ -42,6 +42,10 @@ files               id, workspace_id? (NULL — файл пользовател�
                     mime, size, width?, height?, sha256, created_at
 read_states         user_id, room_id, last_read_message_id      PK (user_id, room_id)
 room_categories     id, workspace_id, name, position            (rooms.category_id → ON DELETE SET NULL)
+room_invites        id, room_id, code (unique, 12 символов), created_by, expires_at?, max_uses, uses,
+                    allow_guests, allow_bits, revoked_at?       — ссылка на комнату (ADR-0016)
+                    rooms += user_limit (0..99);  workspaces += allow_self_nickname (true)
+                    users += is_guest, guest_expires_at?;  users.email nullable (только у гостей)
 message_reactions   message_id, emoji, user_id, created_at      PK (message_id, emoji, user_id)
                     messages += pinned_at?, pinned_by?;  users += status_emoji, status_expires_at?
                     поиск: GIN по выражению to_tsvector('russian', content) || to_tsvector('simple', content)
@@ -99,6 +103,8 @@ export const Permission = {
   MANAGE_ROOM:      1n << 8n,   // название, права, удаление комнаты
   MANAGE_WORKSPACE: 1n << 9n,   // настройки, инвайты, роли
   ADMINISTRATOR:    1n << 10n,  // всё, игнорирует deny
+  MOVE_MEMBERS:     1n << 11n,  // перемещать других между voice-комнатами, входить сверх user_limit
+  MANAGE_NICKNAMES: 1n << 12n,  // менять ники других (только уровень workspace)
 } as const;
 ```
 
@@ -144,3 +150,14 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - Отзыв сессии (logout, reuse, «выйти везде») мгновенно действует и на выданные access-токены: API ставит в Redis `auth:revoked:<session_id>` (TTL = время жизни access-токена), middleware проверяет его (rueidis client-side cache, инвалидация сервером Redis). Redis недоступен → `503` (fail closed).
 - Регистрация: открытая или по инвайту (флаг сервера `REGISTRATION_MODE=open|invite`). В режиме `invite` без кода может зарегистрироваться только **первый пользователь сервера** (bootstrap владельца, под `pg_advisory_xact_lock`). Регистрация с инвайтом сразу добавляет в workspace ролью `member`.
 - Позже: OIDC (Google Workspace / Keycloak) — таблица `users` уже без привязки к паролю как единственному способу (`password_hash` nullable).
+
+## Гости (ADR-0016)
+
+- Ссылка на комнату (`room_invites`) — это capability. По умолчанию: срок 7 дней, без лимита использований, гости разрешены. Права приглашённого: `VIEW_ROOM | CONNECT` всегда, плюс `SPEAK` / `SEND_MESSAGES` (по умолчанию да) и `ATTACH_FILES` / `STREAM` (по умолчанию нет). Не-админ не может выдать через ссылку права, которых нет у него самого.
+- Переход по ссылке:
+  - (a) уже есть доступ к комнате — ничего не меняется, использование не тратится;
+  - (b) зарегистрированный пользователь не из workspace → членство `guest` + user-override на комнату; если он участник без доступа к комнате — только override;
+  - (c) без аккаунта → гостевой аккаунт `is_guest` (без email и пароля, имя = введённый ник), сессия 24 ч, продлевается каждым refresh.
+- Гость без активности 7 дней (`guest_expires_at`, сдвигается при refresh) **анонимизируется**, а не удаляется: членства, overrides, файлы и сессии удаляются, имя → «Гость (удалён)», сообщения остаются. Фоновая чистка — раз в час.
+- Гостевой аккаунт не может: создавать и находить workspace, входить в открытые workspace, менять статус и аватар (только имя и настройки). Роль `guest` не видит комнат без override, поэтому не создаёт ссылок и не видит чужих комнат.
+- `POST …/members/{userId}/promote` (MANAGE_WORKSPACE): `guest` → `member`. Аккаунт гостя после этого не чистится.
