@@ -351,7 +351,7 @@ docker rm -f calaba-hc
 
 ## Стенд
 
-Стенд: `root@141.105.69.177`, `DOMAIN=colaba.gptunnel.ai` (основной), `DOMAIN_ALT=colaba.gptunnel.ru` (запасной алиас), временно `DOMAIN_LEGACY=141-105-69-177.sslip.io`; код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (как поднят — `docs/06-deployment.md`).
+Стенд: `root@141.105.69.177`, `DOMAIN=colaba.gptunnel.ai` (основной), `DOMAIN_ALT=colaba.gptunnel.ru` (запасной алиас); код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (как поднят — `docs/06-deployment.md`).
 
 | Адрес | Что |
 |---|---|
@@ -359,7 +359,6 @@ docker rm -f calaba-hc
 | `wss://rtc.colaba.gptunnel.ai` | LiveKit signal (`https://rtc.…/` → `OK`) |
 | `turn.colaba.gptunnel.ai:443` | TURN/TLS (TCP) — именно он раздаётся клиентам; TURN/UDP — `141.105.69.177:443/udp` |
 | `app.` / `rtc.` / `turn.colaba.gptunnel.ru` | то же самое (алиас); TURN клиентам всё равно раздаётся по `.ai` |
-| `*.141-105-69-177.sslip.io` | старые имена, работают параллельно **временно** (уберём отдельным шагом) |
 
 DNS — Cloudflare, записи DNS-only (proxied=false). Если локальный VPN с fake-IP DNS «не видит» новые имена (NXDOMAIN-кэш до 30 мин) — `curl --resolve <имя>:443:141.105.69.177 …` или проверять с машины без VPN.
 
@@ -408,28 +407,40 @@ curl -sI https://rtc.$D | grep -i alt-svc               # пусто (HTTP/3 в�
 openssl s_client -connect turn.$D:443 -servername turn.$D </dev/null 2>/dev/null \
   | grep -E 'subject=|issuer=|Verify return'
 # subject=CN=turn.colaba.gptunnel.ai / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
-# все имена разом (9 = 3 домена × app/rtc/turn):
-for d in colaba.gptunnel.ai colaba.gptunnel.ru 141-105-69-177.sslip.io; do
+# все имена разом (6 = 2 домена × app/rtc/turn):
+for d in colaba.gptunnel.ai colaba.gptunnel.ru; do
   echo "$d readyz=$(curl -s -o /dev/null -w %{http_code} https://app.$d/readyz) metrics=$(curl -s -o /dev/null -w %{http_code} https://app.$d/metrics) rtc=$(curl -s https://rtc.$d/) turn=$(openssl s_client -connect turn.$d:443 -servername turn.$d </dev/null 2>/dev/null | grep -c 'Verify return code: 0')"
 done
 # ожидается для каждого: readyz=200 metrics=404 rtc=OK turn=≥1
-ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[^\"]*' | sort -u"   # 9 имён
+ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[^\"]*' | sort -u"   # 6 имён (только при первом выпуске; позже — openssl s_client выше)
 ```
-Факт 2026-09-25: все 9 имён — сертификаты LE (YE1), `readyz` 200, `/metrics` 404, `rtc` OK, TURN TLS `Verify return code: 0`.
+Факт 2026-09-25: все 6 имён — сертификаты LE (YE1), `readyz` 200, `/metrics` 404, `rtc` OK, TURN TLS `Verify return code: 0`.
 `curl https://turn.$D` **висит** — это нормально: SNI `turn.*` уходит в layer4 → TURN, HTTP там никто не отвечает.
 
 ### 2a. Веб-клиент (статика на `app.*`)
 
+Публикация: `pnpm -F @calaba/desktop build:web` (→ `apps/desktop/dist-web`), затем `infra/docker/sync.sh caddy` (статика уезжает в `/opt/calaba/web` без `*.map`; `caddy` в аргументах — чтобы заодно применить правки Caddyfile, для одной статики перезапуск не нужен).
+
 ```sh
 for d in colaba.gptunnel.ai colaba.gptunnel.ru; do A=https://app.$d
   for p in / /rooms/x /assets/missing.js /metrics /readyz /api/me; do echo "$d$p $(curl -s -o /dev/null -w '%{http_code}' $A$p)"; done
+  W=$(curl -s $A/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js'); echo "$W: $(curl -sI $A/$W | grep -iE 'content-type|cache-control' | tr -d '\r' | tr '\n' ' ')"
 done
-curl -sI https://app.$D/ | grep -iE 'content-security|x-content|referrer|x-frame|cache-control'
+curl -sI https://app.$D/ | grep -iE 'content-security|permissions-policy|x-content|referrer|x-frame|cache-control'
 ```
-Ожидается: `/` и `/rooms/x` → 200 (SPA: тот же `index.html`; пока нет сборки — заглушка «Calaba web — скоро»), `/assets/missing.js` → 404, `/metrics` → 404, `/readyz` → 200, `/api/me` → 401. Заголовки: `cache-control: no-cache`, CSP с `connect-src 'self' wss://rtc.colaba.gptunnel.ai https://rtc.colaba.gptunnel.ai wss://rtc.colaba.gptunnel.ru …`, `x-content-type-options: nosniff`, `referrer-policy: same-origin`, `x-frame-options: DENY`. Существующий файл под `/assets/` — `cache-control: public, max-age=31536000, immutable`.
-После публикации сборки (веб-сборка renderer → `apps/desktop/dist-web`, команда — см. раздел «Desktop app»; затем `infra/docker/sync.sh caddy`): открыть `https://app.colaba.gptunnel.ai` в Chrome/Firefox, в DevTools → Console не должно быть `Refused to … Content Security Policy`.
+Ожидается: `/` и `/rooms/x` → 200 (`<title>Calaba`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` → 404, `/readyz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.colaba.gptunnel.ai https://rtc.colaba.gptunnel.ai wss://rtc.colaba.gptunnel.ru https://rtc.colaba.gptunnel.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
 
-Факт 2026-09-25 (заглушка): все коды и заголовки как выше на `.ai` и `.ru`; gateway по обоим доменам — HELLO → READY.
+E2E против стенда (создаёт пользователя `web-<browser>-<id>@example.com` на каждом прогоне):
+```sh
+CALABA_WEB_URL=https://app.colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web                        # 2 passed
+CALABA_WEB_FF_VOICE=1 CALABA_WEB_URL=https://app.colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web   # 2 passed (голос и в Firefox)
+CALABA_WEB_URL=https://app.colaba.gptunnel.ru pnpm -F @calaba/desktop e2e:web                        # 2 passed
+```
+Если падает на `cookie?.httpOnly` (`undefined`) — на стенде старый api без cookie-режима: `infra/docker/sync.sh api`.
+
+CSP/RNNoise вручную: открыть `https://app.colaba.gptunnel.ai`, войти, зайти в голосовую комнату, DevTools → Console. Не должно быть `Refused to …`/`Content Security Policy` и `RNNoise unavailable, falling back…` (это предупреждение пишется, если worklet с WASM не стартовал за 2 с). Допустимо: `Unrecognized feature: 'speaker-selection'` (Chrome), `401` на первый `/api/auth/refresh` до входа. В «Настройки → Голос и устройства» строка «Вероятность речи (RNNoise)» показывает проценты, а не «нет — RNNoise выключен».
+
+Факт 2026-09-25: все коды/заголовки как выше на обоих доменах; e2e:web — 2 passed на `.ai` (в т.ч. с `CALABA_WEB_FF_VOICE=1`) и на `.ru`; Playwright-прогон «регистрация → голос» в Chromium и Firefox — «Голос подключён», нарушений CSP 0, предупреждения RNNoise нет (Firefox: worklet 200 `text/javascript`). Клиент на `.ru` подключается к `wss://rtc.colaba.gptunnel.ai` (основной `LIVEKIT_URL`).
 
 ### 3. LiveKit
 

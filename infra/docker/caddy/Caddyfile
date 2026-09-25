@@ -43,12 +43,15 @@
 	# Web client SPA (ADR-0015): static files from /srv/web (pushed by sync.sh).
 	handle {
 		root * /srv/web
+		# Static only (API responses incl. file downloads with Range stay untouched).
+		encode zstd gzip
 		header {
-			# TODO(web client): add script-src 'self' 'wasm-unsafe-eval' if audio worklets/WASM need it.
-			Content-Security-Policy "default-src 'self'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+			# 'wasm-unsafe-eval': RNNoise noise suppression (WASM in the mic AudioWorklet).
+			Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 			X-Content-Type-Options nosniff
 			Referrer-Policy same-origin
 			X-Frame-Options DENY
+			Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)"
 			-Server
 		}
 		# Vite puts content-hashed files under /assets/: cache forever; a missing asset is a 404,

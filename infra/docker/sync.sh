@@ -31,7 +31,7 @@ rsync -az --no-owner --no-group --delete -e "ssh -o BatchMode=yes" \
 # --delete-after), so a browser never gets an index.html pointing at missing assets.
 WEB_SRC="$ROOT/apps/desktop/dist-web"
 if [[ -f "$WEB_SRC/index.html" ]]; then
-  rsync -az --no-owner --no-group --delete-after --delay-updates -e "ssh -o BatchMode=yes" "$WEB_SRC/" "$HOST:$DIR/web/"
+  rsync -az --no-owner --no-group --delete-after --delay-updates --exclude '*.map' -e "ssh -o BatchMode=yes" "$WEB_SRC/" "$HOST:$DIR/web/"
   echo "web: pushed apps/desktop/dist-web"
 else
   "${SSH[@]}" "$HOST" "mkdir -p '$DIR/web' && { test -f '$DIR/web/index.html' || cp '$DIR/infra/docker/web-placeholder/index.html' '$DIR/web/'; }"
