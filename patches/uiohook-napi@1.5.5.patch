@@ -1,0 +1,59 @@
+diff --git a/libuiohook/include/uiohook.h b/libuiohook/include/uiohook.h
+index 0242f327371700cb4b06bc9d9da96a007936368d..619529c4f28793bf627bdb93c66124ee3427d8a3 100644
+--- a/libuiohook/include/uiohook.h
++++ b/libuiohook/include/uiohook.h
+@@ -182,6 +182,8 @@ typedef void (*dispatcher_t)(uiohook_event *const);
+ 
+ #define VC_TAB                                   0x000F
+ #define VC_CAPS_LOCK                             0x003A
++// Calaba patch: macOS Caps Lock *state* change (on = pressed, off = released), from kCGEventFlagsChanged.
++#define VC_CAPS_LOCK_STATE                       0x0F3A
+ 
+ #define VC_A                                     0x001E
+ #define VC_B                                     0x0030
+diff --git a/libuiohook/src/darwin/input_hook.c b/libuiohook/src/darwin/input_hook.c
+index e6cd6cec9c3c5a26cda5eccc5fe9eb087752eef9..0197b99122f75b56842dfbaa36c4a422496aa653 100644
+--- a/libuiohook/src/darwin/input_hook.c
++++ b/libuiohook/src/darwin/input_hook.c
+@@ -369,6 +369,23 @@ static inline void process_key_released(uint64_t timestamp, CGEventRef event_ref
+     dispatch_event(&event);
+ }
+ 
++/* Calaba patch: hardware Caps Lock on macOS only produces kCGEventFlagsChanged (once per
++ * press, when the lock state flips); the NX_SYSDEFINED path below never sees it. Report the
++ * state flip as VC_CAPS_LOCK_STATE so a client can use Caps Lock as a toggle key. */
++static inline void process_caps_lock_state(uint64_t timestamp, bool on) {
++    event.time = timestamp;
++    event.reserved = 0x00;
++
++    event.type = on ? EVENT_KEY_PRESSED : EVENT_KEY_RELEASED;
++    event.mask = get_modifiers();
++
++    event.data.keyboard.keycode = VC_CAPS_LOCK_STATE;
++    event.data.keyboard.rawcode = kVK_CapsLock;
++    event.data.keyboard.keychar = CHAR_UNDEFINED;
++
++    dispatch_event(&event);
++}
++
+ static inline void process_modifier_changed(uint64_t timestamp, CGEventRef event_ref) {
+     CGEventFlags event_mask = CGEventGetFlags(event_ref);
+     UInt64 keycode = CGEventGetIntegerValueField(event_ref, kCGKeyboardEventKeycode);
+@@ -468,6 +485,7 @@ static inline void process_modifier_changed(uint64_t timestamp, CGEventRef event
+             process_key_released(timestamp, event_ref);
+         }
+     } else if (keycode == kVK_CapsLock) {
++        process_caps_lock_state(timestamp, (event_mask & kCGEventFlagMaskAlphaShift) != 0);
+         if (current_modifiers & MASK_CAPS_LOCK) {
+             // Process as a key pressed event.
+             unset_modifier_mask(MASK_CAPS_LOCK);
+@@ -958,7 +976,8 @@ CGEventRef hook_event_proc(CGEventTapProxy tap_proxy, CGEventType type, CGEventR
+                     unset_modifier_mask(MOUSE_BUTTON5);
+                 }
+ 
+-                process_button_pressed(timestamp, event_ref, button);
++                // Calaba patch: upstream fired «pressed» here, so side buttons never released.
++                process_button_released(timestamp, event_ref, button);
+             }
+             break;
+ 

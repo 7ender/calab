@@ -1,3 +1,5 @@
+import type { PttMode } from './pttGate';
+
 /**
  * IPC contract between main and renderer (via preload). Keep it narrow:
  * every channel here is an explicit capability granted to the renderer.
@@ -166,17 +168,29 @@ export interface CaptureSelection {
  * PTT binding. Desktop: global uiohook key/mouse codes. Web: DOM `KeyboardEvent.code`
  * or `Mouse<button>` (works only while the tab is focused, ADR-0015).
  */
+/**
+ * PTT binding. `key`/`mouse` codes are libuiohook codes (see shared/pttKeys.ts), `dom` is the
+ * web fallback (`KeyboardEvent.code` / `Mouse<N>`). `mode` defaults to 'hold'.
+ * `remap: 'caps-f18'` (macOS): Caps Lock is remapped to F18 with hidutil while Calaba runs,
+ * the binding listens to F18 — true hold-to-talk, no upper-case toggling.
+ */
+export type { PttMode };
+
 export type PttBinding =
-  | { kind: 'key'; code: number; label: string }
-  | { kind: 'mouse'; code: number; label: string }
-  | { kind: 'dom'; code: string; label: string };
+  | { kind: 'key'; code: number; label: string; mode?: PttMode; remap?: 'caps-f18' }
+  | { kind: 'mouse'; code: number; label: string; mode?: PttMode }
+  | { kind: 'dom'; code: string; label: string; mode?: PttMode };
 
 export interface PttStatus {
   active: boolean;
   binding: PttBinding | null;
-  /** macOS: Accessibility trust; always true elsewhere. */
+  /** macOS: Accessibility / Input Monitoring trust; always true elsewhere. */
   trusted: boolean;
   error: string | null;
+  /** macOS Caps Lock → F18 remap: 'active' while applied. */
+  capsRemap: 'unsupported' | 'available' | 'active';
+  /** Linux Wayland: no global key hooks (and the GlobalShortcuts portal has no Caps Lock). */
+  wayland: boolean;
 }
 
 export interface PttEvent {

@@ -68,7 +68,10 @@ function parseBinding(v: unknown): PttBinding | null {
   const r = obj(v);
   const kind = r['kind'];
   if ((kind !== 'key' && kind !== 'mouse') || typeof r['code'] !== 'number') throw new Error('invalid binding');
-  return { kind, code: r['code'], label: str(r['label'], 64) };
+  const mode = r['mode'] === 'toggle' ? 'toggle' : 'hold';
+  const label = str(r['label'], 64);
+  if (kind === 'mouse') return { kind, code: r['code'], label, mode };
+  return { kind, code: r['code'], label, mode, ...(r['remap'] === 'caps-f18' ? { remap: 'caps-f18' as const } : {}) };
 }
 
 function parseSettings(v: unknown): Partial<AppSettings> {

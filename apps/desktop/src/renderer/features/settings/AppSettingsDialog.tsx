@@ -20,6 +20,7 @@ import { usePrefs, type Theme } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useVoice } from '../../stores/voice';
+import { PttBinder } from './PttBinder';
 
 const err = (e: unknown): string => (e instanceof ApiError ? e.message : String(e));
 
@@ -258,7 +259,6 @@ function VoiceTab(): ReactNode {
   const p = usePrefs();
   const { inputs, outputs } = useDevices();
   const [testing, setTesting] = useState(false);
-  const [binding, setBinding] = useState(false);
   const vad = useVoice((s) => s.vad);
   const micError = useVoice((s) => s.micError);
 
@@ -269,17 +269,7 @@ function VoiceTab(): ReactNode {
     [],
   );
 
-  const bind = async (): Promise<void> => {
-    setBinding(true);
-    try {
-      const b = await platform.ptt.captureNext();
-      p.setPrefs({ pttBinding: b });
-    } catch {
-      // cancelled
-    } finally {
-      setBinding(false);
-    }
-  };
+
 
   return (
     <>
@@ -359,14 +349,7 @@ function VoiceTab(): ReactNode {
             <span className="text-[12px] text-faint">{t('voice.thresholdHint')}</span>
           </div>
         ) : (
-          <Row label={t('voice.pttKey')} hint={platform.kind === 'web' ? t('voice.pttHintWeb') : t('voice.pttHint')}>
-            <kbd className="min-w-16 rounded-[var(--radius-control)] border border-line bg-elev px-2 py-1 text-center font-mono text-[12px]">
-              {p.pttBinding?.label ?? t('voice.pttNone')}
-            </kbd>
-            <Button variant="secondary" busy={binding} onClick={() => void bind()}>
-              {binding ? t('voice.pttPress') : t('voice.pttAssign')}
-            </Button>
-          </Row>
+          <PttBinder />
         )}
       </Card>
 

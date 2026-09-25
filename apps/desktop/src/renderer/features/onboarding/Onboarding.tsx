@@ -1,6 +1,6 @@
-import { Bell, CheckCircle2, Keyboard, Mic, MonitorUp, Sparkles } from 'lucide-react';
+import { Bell, Keyboard, Mic, MonitorUp, Sparkles } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import type { PermissionStatus, PttStatus } from '../../../shared/ipc';
+import type { PermissionStatus } from '../../../shared/ipc';
 import { Button, Segmented, Select, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { platform } from '../../platform';
@@ -11,6 +11,7 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 import { MicMeter } from '../settings/AppSettingsDialog';
+import { PttBinder } from '../settings/PttBinder';
 
 /**
  * First run (docs/08, «Онбординг»): one screen per step, everything skippable. Each
@@ -164,27 +165,6 @@ function MicStep({ onNext }: { onNext: () => void }): ReactNode {
 
 function ModeStep({ onNext }: { onNext: () => void }): ReactNode {
   const p = usePrefs();
-  const mac = useIsMacDesktop();
-  const [status, setStatus] = useState<PttStatus | null>(null);
-  const [binding, setBinding] = useState(false);
-  useEffect(() => {
-    if (p.micMode !== 'ptt') return;
-    const check = (): void => void platform.ptt.status().then(setStatus);
-    check();
-    window.addEventListener('focus', check); // re-check after returning from System Settings
-    return () => window.removeEventListener('focus', check);
-  }, [p.micMode]);
-  const bind = async (): Promise<void> => {
-    setBinding(true);
-    try {
-      p.setPrefs({ pttBinding: await platform.ptt.captureNext() });
-    } catch {
-      // cancelled
-    } finally {
-      setBinding(false);
-      setStatus(await platform.ptt.status());
-    }
-  };
   return (
     <StepFrame
       icon={Keyboard}
@@ -207,32 +187,8 @@ function ModeStep({ onNext }: { onNext: () => void }): ReactNode {
           ]}
         />
         {p.micMode === 'ptt' ? (
-          <div className="flex w-full flex-col gap-3 rounded-[var(--radius-card)] bg-elev p-3 text-[13px]">
-            <div className="flex items-center justify-between gap-3">
-              <span>{t('voice.pttKey')}</span>
-              <span className="flex items-center gap-2">
-                <kbd className="min-w-16 rounded-[var(--radius-control)] border border-line px-2 py-1 text-center font-mono text-[12px]">
-                  {p.pttBinding?.label ?? t('voice.pttNone')}
-                </kbd>
-                <Button variant="secondary" busy={binding} onClick={() => void bind()}>
-                  {binding ? t('voice.pttPress') : t('voice.pttAssign')}
-                </Button>
-              </span>
-            </div>
-            {mac ? (
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-muted">{status?.trusted ? t('onb.inputOk') : t('onb.inputNeeded')}</span>
-                {!status?.trusted ? (
-                  <Button variant="secondary" onClick={() => void platform.system.openPrivacySettings('input-monitoring')}>
-                    {t('perm.openOs')}
-                  </Button>
-                ) : (
-                  <CheckCircle2 className="size-5 text-ok" aria-label={t('onb.inputOk')} />
-                )}
-              </div>
-            ) : (
-              <p className="text-muted">{platform.kind === 'web' ? t('voice.pttHintWeb') : t('voice.pttHint')}</p>
-            )}
+          <div className="w-full rounded-[var(--radius-card)] bg-elev p-3">
+            <PttBinder compact />
           </div>
         ) : (
           <p className="text-center text-[13px] text-muted">{t('onb.vadText')}</p>

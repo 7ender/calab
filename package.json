@@ -20,6 +20,9 @@
     ],
     "ignoredBuiltDependencies": [
       "electron-winstaller"
-    ]
+    ],
+    "patchedDependencies": {
+      "uiohook-napi@1.5.5": "patches/uiohook-napi@1.5.5.patch"
+    }
   }
 }

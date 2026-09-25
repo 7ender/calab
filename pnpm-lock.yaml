@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  uiohook-napi@1.5.5:
+    hash: 9867e89c182f0756c8e8eed77de53e6a09ac8a9cf952788a1e1eec7b38ff201a
+    path: patches/uiohook-napi@1.5.5.patch
+
 importers:
 
   .: {}
@@ -18,7 +23,7 @@ importers:
         version: 6.8.9
       uiohook-napi:
         specifier: ^1.5.5
-        version: 1.5.5
+        version: 1.5.5(patch_hash=9867e89c182f0756c8e8eed77de53e6a09ac8a9cf952788a1e1eec7b38ff201a)
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.13.0
@@ -6137,7 +6142,7 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  uiohook-napi@1.5.5:
+  uiohook-napi@1.5.5(patch_hash=9867e89c182f0756c8e8eed77de53e6a09ac8a9cf952788a1e1eec7b38ff201a):
     dependencies:
       node-gyp-build: 4.8.4
 

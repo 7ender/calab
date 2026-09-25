@@ -5,6 +5,7 @@ import { installDisplayMediaHandler, MAC_SYSTEM_AUDIO_FEATURES, macSystemAudioEn
 import { findDeepLink, handleDeepLink, registerProtocolClient } from './deeplink';
 import { registerIpc } from './ipc';
 import { initLogging, log } from './logging';
+import { recoverCapsRemap } from './capsRemap';
 import { shutdownPtt } from './ptt';
 import { createTray } from './tray';
 import { checkForUpdates } from './updater';
@@ -62,6 +63,9 @@ function forwardPower(ev: PowerEvent): void {
 
 void app.whenReady().then(() => {
   lockDownSession();
+  // A crash with the Caps Lock → F18 remap applied leaves the keyboard remapped: undo it
+  // before the renderer re-applies it for a binding that still wants it.
+  void recoverCapsRemap();
   handleApiScheme();
   registerIpc();
   createMainWindow();

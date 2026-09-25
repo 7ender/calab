@@ -12,6 +12,8 @@ import type {
   PttStatus,
   RegisterArgs,
 } from '../../shared/ipc';
+import { PttGate } from '../../shared/pttGate';
+import { mouseName } from '../../shared/pttKeys';
 import type { Platform } from './types';
 
 /**
@@ -161,14 +163,24 @@ function mediaUrl(path: string): Promise<string> {
 // ---------------------------------------------------------------- PTT (focused tab only)
 
 let binding: PttBinding | null = null;
-let pressed = false;
+let gate: PttGate | null = null;
 const pttListeners = new Set<(e: PttEvent) => void>();
 let capture: { resolve: (b: PttBinding) => void; reject: (e: Error) => void } | null = null;
+const MAC = /Mac OS X|Macintosh/.test(navigator.userAgent);
 
-function pttEmit(down: boolean): void {
-  if (pressed === down) return;
-  pressed = down;
-  for (const cb of pttListeners) cb({ down });
+function pttEmit(talking: boolean): void {
+  for (const cb of pttListeners) cb({ down: talking });
+}
+
+/** Browsers on macOS report Caps Lock as lock-state flips (down = on, up = off): toggle only. */
+function isLockCode(code: string): boolean {
+  return MAC && code === 'CapsLock';
+}
+
+function setWebBinding(b: PttBinding | null): void {
+  gate?.reset();
+  binding = b?.kind === 'dom' ? b : null;
+  gate = binding ? new PttGate(isLockCode(binding.code) ? 'toggle' : (binding.mode ?? 'hold'), isLockCode(binding.code), pttEmit) : null;
 }
 
 function isTyping(e: Event): boolean {
@@ -178,7 +190,8 @@ function isTyping(e: Event): boolean {
 
 function keyLabel(e: KeyboardEvent): string {
   if (e.code === 'Space') return 'Space';
-  return e.code.replace(/^Key/, '').replace(/^Digit/, '');
+  if (e.code === 'CapsLock') return '⇪ Caps Lock';
+  return e.code.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ');
 }
 
 window.addEventListener('keydown', (e) => {
@@ -187,35 +200,38 @@ window.addEventListener('keydown', (e) => {
     const c = capture;
     capture = null;
     if (e.code === 'Escape') c.reject(new Error('cancelled'));
-    else c.resolve({ kind: 'dom', code: e.code, label: keyLabel(e) });
+    else c.resolve({ kind: 'dom', code: e.code, label: keyLabel(e), mode: isLockCode(e.code) ? 'toggle' : 'hold' });
     return;
   }
   if (binding?.kind === 'dom' && binding.code === e.code && !isTyping(e)) {
     e.preventDefault();
-    pttEmit(true);
+    gate?.input(true);
   }
 });
 window.addEventListener('keyup', (e) => {
-  if (binding?.kind === 'dom' && binding.code === e.code) pttEmit(false);
+  if (binding?.kind === 'dom' && binding.code === e.code) gate?.input(false);
 });
 window.addEventListener('mousedown', (e) => {
+  // DOM buttons: 1 middle, 3 back, 4 forward (uiohook numbering is +1).
   const code = `Mouse${e.button}`;
-  if (capture && e.button >= 3) {
+  if (capture && (e.button === 1 || e.button >= 3)) {
     const c = capture;
     capture = null;
-    c.resolve({ kind: 'dom', code, label: `Mouse ${e.button + 1}` });
+    c.resolve({ kind: 'dom', code, label: mouseName(e.button + 1), mode: 'hold' });
     return;
   }
-  if (binding?.kind === 'dom' && binding.code === code) pttEmit(true);
+  if (binding?.kind === 'dom' && binding.code === code) gate?.input(true);
 });
 window.addEventListener('mouseup', (e) => {
-  if (binding?.kind === 'dom' && binding.code === `Mouse${e.button}`) pttEmit(false);
+  if (binding?.kind === 'dom' && binding.code === `Mouse${e.button}`) gate?.input(false);
 });
-// Losing focus releases the key (keyup never arrives in another app).
-window.addEventListener('blur', () => pttEmit(false));
+// Losing focus releases a held key (keyup never arrives in another app); a toggle stays.
+window.addEventListener('blur', () => {
+  if (binding && !isLockCode(binding.code as string) && (binding.mode ?? 'hold') === 'hold') gate?.reset();
+});
 
 function pttStatus(): PttStatus {
-  return { active: binding !== null, binding, trusted: true, error: null };
+  return { active: binding !== null, binding, trusted: true, error: null, capsRemap: 'unsupported', wayland: false };
 }
 
 // ---------------------------------------------------------------- downloads
@@ -343,8 +359,7 @@ export function createWebPlatform(): Platform {
     },
     ptt: {
       setBinding: (b) => {
-        binding = b?.kind === 'dom' ? b : null;
-        pressed = false;
+        setWebBinding(b);
         return Promise.resolve(pttStatus());
       },
       captureNext: () =>
