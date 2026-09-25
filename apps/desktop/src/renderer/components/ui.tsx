@@ -4,18 +4,23 @@ import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { Loader2, X } from 'lucide-react';
 import { forwardRef, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { twMerge } from 'tailwind-merge';
 
 /*
  * UI primitives (docs/08-design.md): macOS-like controls on design tokens only.
  * Controls are 28 px high, radius 6; cards 8; panels/dialogs 12; 4 px spacing grid.
  */
 
+/**
+ * Class names with Tailwind conflict resolution: a caller's `className` wins over the
+ * component's defaults (e.g. `w-36` over the Select's `w-full`) regardless of CSS order.
+ */
 export function cx(...c: Array<string | false | null | undefined>): string {
-  return c.filter(Boolean).join(' ');
+  return twMerge(c.filter(Boolean).join(' '));
 }
 
 /** Platform modifier label for shortcuts (⌘ on macOS, Ctrl elsewhere). */
-export const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+export const MOD = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
 
 type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost';
 
@@ -23,7 +28,8 @@ const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent-strong text-accent-fg hover:brightness-110 active:brightness-95',
   secondary: 'bg-hover text-fg hover:bg-[var(--color-fill-hover)] active:brightness-95',
   // HIG: destructive actions are red *text* on a neutral control.
-  destructive: 'bg-hover text-danger hover:bg-[var(--color-fill-hover)] active:brightness-95',
+  // macOS: destructive = red text (docs/08); a faint red tint keeps the text ≥ 4.5:1 on any surface.
+  destructive: 'bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] text-danger-text hover:bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] active:brightness-95',
   ghost: 'bg-transparent text-muted hover:bg-hover hover:text-fg',
 };
 
@@ -109,7 +115,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cx(
-        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-[13px] text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus:border-accent focus:outline-none focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50',
+        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-[13px] text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus-visible:outline-offset-0 disabled:opacity-50',
         className,
       )}
       {...rest}
@@ -121,7 +127,9 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
   return (
     <select
       className={cx(
-        'h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-[13px] text-fg shadow-[var(--shadow-card)] focus:border-accent disabled:opacity-50',
+        // macOS pop-up button: no native chevron; our own chevron sits 8px from the right edge with room reserved for it.
+        'h-7 w-full min-w-0 appearance-none rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-[13px] text-fg shadow-[var(--shadow-card)] focus-visible:outline-offset-0 disabled:opacity-50',
+        'bg-[url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%2710%27 viewBox=%270 0 10 10%27 fill=%27none%27 stroke=%27%238e8e93%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27><path d=%27M2.5 3.5 5 1l2.5 2.5M2.5 6.5 5 9l2.5-2.5%27/></svg>")] bg-[length:10px_10px] bg-[position:right_8px_center] bg-no-repeat',
         className,
       )}
       {...rest}
@@ -138,7 +146,7 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
       <span className="text-[12px] font-medium text-muted">{label}</span>
       {children}
       {error ? (
-        <span className="text-[12px] text-danger" role="alert">
+        <span className="text-[12px] text-danger-text" role="alert">
           {error}
         </span>
       ) : hint ? (
@@ -199,7 +207,7 @@ export function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={cx(
             'h-6 rounded-[5px] px-3 text-[12px] font-medium transition-colors duration-[var(--motion-fast)]',
-            value === o.value ? 'bg-elev text-fg shadow-[var(--shadow-card)]' : 'text-muted hover:text-fg',
+            value === o.value ? 'bg-elev text-fg shadow-[var(--shadow-card)]' : 'text-fg hover:bg-[var(--color-fill)]',
           )}
         >
           {o.label}
@@ -286,7 +294,7 @@ export function Modal({
         <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content
           className={cx(
-            'mat-popover anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[86vh] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-[13px] focus:outline-none',
+            'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[86vh] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-[13px] focus:outline-none',
             wide ? 'max-w-[880px]' : 'max-w-[440px]',
           )}
         >
