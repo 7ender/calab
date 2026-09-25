@@ -21,7 +21,9 @@ services:
     restart: unless-stopped
     command: caddy run --config /etc/caddy/Caddyfile
     environment:
-      - DOMAIN=${DOMAIN}
+      - DOMAIN=${DOMAIN}                    # primary: app./rtc./turn.<DOMAIN>
+      - DOMAIN_ALT=${DOMAIN_ALT:-}          # optional alias domain (same three names)
+      - DOMAIN_LEGACY=${DOMAIN_LEGACY:-}    # optional, temporary (migration off an old domain)
     volumes:
       - caddy_data:/data
       - caddy_config:/config
@@ -50,6 +52,7 @@ services:
     environment:
       - HTTP_ADDR=127.0.0.1:3000
       - PUBLIC_APP_URL=https://app.${DOMAIN}
+      - PUBLIC_APP_URL_ALT=${DOMAIN_ALT:+https://app.${DOMAIN_ALT}}   # empty when no alias domain
       - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD}@127.0.0.1:5432/calaba
       - REDIS_URL=redis://127.0.0.1:6379
       - JWT_SECRET=${JWT_SECRET}
@@ -73,19 +76,8 @@ services:
       retries: 3
       start_period: 20s
     depends_on:
-      files-init: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-    logging: *logging
-
-  # One-shot: a fresh named volume is root-owned, but the API runs as distroless
-  # nonroot (uid/gid 65532) and must write to it. Idempotent, runs before every api start.
-  files-init:
-    image: busybox:1.37
-    command: ["sh", "-c", "chown 65532:65532 /data/files && chmod 750 /data/files"]
-    volumes:
-      - files_data:/data/files
-    restart: "no"
     logging: *logging
 
   postgres:

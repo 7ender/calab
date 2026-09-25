@@ -1,9 +1,10 @@
 # Caddy + caddy-l4 as a listener wrapper. One IP, TCP 443:
-#   SNI turn.<DOMAIN> -> layer4: terminate TLS here, proxy plain TURN to LiveKit 127.0.0.1:5349
+#   SNI turn.<any domain> -> layer4: terminate TLS here, proxy plain TURN to LiveKit 127.0.0.1:5349
 #                        (LiveKit runs with turn.external_tls: true)
 #   anything else     -> falls through to the regular HTTPS server (app.*, rtc.*)
 # HTTP/3 is disabled: UDP 443 belongs to LiveKit TURN/UDP.
-# DOMAIN comes from the container env (see compose.yml / .env).
+# Host lists come from entrypoint.sh: APP_HOSTS / RTC_HOSTS / TURN_HOSTS = app.|rtc.|turn. + each of
+# DOMAIN (primary), DOMAIN_ALT (alias), DOMAIN_LEGACY (temporary) — see compose.yml / .env.
 {
 	admin off
 	log {
@@ -13,7 +14,7 @@
 	servers :443 {
 		listener_wrappers {
 			layer4 {
-				@turn tls sni turn.{$DOMAIN}
+				@turn tls sni {$TURN_HOSTS}
 				route @turn {
 					tls
 					proxy 127.0.0.1:5349
@@ -26,19 +27,19 @@
 	}
 }
 
-app.{$DOMAIN} {
+{$APP_HOSTS} {
 	# Prometheus metrics of the API are internal (scrape 127.0.0.1:3000/metrics on the host).
 	respond /metrics 404
 	# REST /api, WS /gateway, files, /healthz, /readyz — all served by the Go API (host network)
 	reverse_proxy 127.0.0.1:3000
 }
 
-rtc.{$DOMAIN} {
+{$RTC_HOSTS} {
 	# LiveKit signal (WSS)
 	reverse_proxy 127.0.0.1:7880
 }
 
-turn.{$DOMAIN} {
-	# Exists only so Caddy obtains and renews the turn.* certificate used by the layer4 route above.
+{$TURN_HOSTS} {
+	# Exists only so Caddy obtains and renews the turn.* certificates used by the layer4 route above.
 	respond 404
 }
