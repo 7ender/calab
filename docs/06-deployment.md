@@ -54,7 +54,16 @@ mkdir -p /opt/calaba
 - DNS — Cloudflare (зоны `gptunnel.ai`, `gptunnel.ru`), A-записи `app.colaba`, `rtc.colaba`, `turn.colaba` → 141.105.69.177, **proxied=false** (DNS-only), TTL auto. Токен Cloudflare — только у владельца/в локальном `.env` репо (`CFTOKEN`, gitignored), на сервер не копируется.
 - Весь стек (с api) поднят 2026-09-25: `infra/docker/sync.sh` без аргументов; отдельный сервис — `infra/docker/sync.sh api`. Миграции применились при старте api.
 - Регистрация открыта (`REGISTRATION_MODE=open`); тестовые аккаунты `owner@calaba.test` / `bob@calaba.test` (workspace `team`), пароль — `/opt/calaba/infra/docker/.env.accounts` (600; `sync.sh` не трогает `.env*`). Перед реальным использованием — `REGISTRATION_MODE=invite`.
-- Снаружи через Caddy доступны только `app.*` (API; `/metrics` закрыт — `respond /metrics 404`, скрейпить `127.0.0.1:3000/metrics` на хосте), `rtc.*` (signal), `turn.*` (TURN/TLS).
+- Снаружи через Caddy доступны только `app.*` (API + веб-клиент; `/metrics` закрыт — 404, скрейпить `127.0.0.1:3000/metrics` на хосте), `rtc.*` (signal), `turn.*` (TURN/TLS).
+
+### Веб-клиент на `app.*` (ADR-0015)
+
+- Маршруты Caddy на каждом `app.<домен>`: `/metrics` → 404; `/api/*`, `/gateway`, `/healthz`, `/readyz` → `reverse_proxy 127.0.0.1:3000`; остальное — SPA-статика из `/srv/web` (`file_server`, `try_files {path} /index.html`).
+- Статика: на хосте `/opt/calaba/web` (bind mount `../../web:/srv/web:ro` в caddy). `sync.sh`: если локально есть `apps/desktop/dist-web/index.html` — `rsync --delete-after --delay-updates` в `/opt/calaba/web` (новые ассеты появляются раньше нового `index.html`, старые удаляются после); иначе при пустом каталоге кладёт заглушку `infra/docker/web-placeholder/index.html` («Calaba web — скоро»). Основной `rsync` репо каталог `/web/` не трогает. Caddy при обновлении статики не перезапускается.
+- Кэш: `/assets/*` (хэшированные файлы Vite) — `public, max-age=31536000, immutable` только если файл существует (отсутствующий ассет — 404 без долгого кэша, не `index.html`); всё остальное (`index.html`, SPA-маршруты) — `no-cache`.
+- Заголовки на статике: `Content-Security-Policy: default-src 'self'; connect-src 'self' wss://rtc.<каждый домен> https://rtc.<каждый домен>; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` (список rtc-origin-ов собирает `entrypoint.sh` из `DOMAIN`/`DOMAIN_ALT`/`DOMAIN_LEGACY`; `https://rtc.*` — для `/rtc/validate` livekit-client при ошибке подключения), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, без `Server`.
+- **TODO (веб-клиент):** точные требования CSP от клиента ещё не пришли — если аудио-worklet/WASM (шумодав и т.п.) потребуют, добавить `script-src 'self' 'wasm-unsafe-eval'` в Caddyfile (там же TODO-комментарий). Проверять по консоли браузера (`Refused to …` = нарушение CSP).
+- API разрешает браузерные origin-ы `PUBLIC_APP_URL` и `PUBLIC_APP_URL_ALT` (cookie-refresh, CSRF-проверка, upgrade gateway). `DOMAIN_LEGACY` в этот список **не входит** — веб-клиент по sslip-именам работать не будет (десктоп — будет).
 - Проверки и ожидаемые выводы — `TESTING.md`, раздел «Стенд».
 
 ### Смена / добавление домена

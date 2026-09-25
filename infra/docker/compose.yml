@@ -27,6 +27,7 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      - ../../web:/srv/web:ro              # <repo root on host>/web = web client static (sync.sh: apps/desktop/dist-web or placeholder)
     logging: *logging
 
   livekit:

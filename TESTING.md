@@ -418,6 +418,19 @@ ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[
 Факт 2026-09-25: все 9 имён — сертификаты LE (YE1), `readyz` 200, `/metrics` 404, `rtc` OK, TURN TLS `Verify return code: 0`.
 `curl https://turn.$D` **висит** — это нормально: SNI `turn.*` уходит в layer4 → TURN, HTTP там никто не отвечает.
 
+### 2a. Веб-клиент (статика на `app.*`)
+
+```sh
+for d in colaba.gptunnel.ai colaba.gptunnel.ru; do A=https://app.$d
+  for p in / /rooms/x /assets/missing.js /metrics /readyz /api/me; do echo "$d$p $(curl -s -o /dev/null -w '%{http_code}' $A$p)"; done
+done
+curl -sI https://app.$D/ | grep -iE 'content-security|x-content|referrer|x-frame|cache-control'
+```
+Ожидается: `/` и `/rooms/x` → 200 (SPA: тот же `index.html`; пока нет сборки — заглушка «Calaba web — скоро»), `/assets/missing.js` → 404, `/metrics` → 404, `/readyz` → 200, `/api/me` → 401. Заголовки: `cache-control: no-cache`, CSP с `connect-src 'self' wss://rtc.colaba.gptunnel.ai https://rtc.colaba.gptunnel.ai wss://rtc.colaba.gptunnel.ru …`, `x-content-type-options: nosniff`, `referrer-policy: same-origin`, `x-frame-options: DENY`. Существующий файл под `/assets/` — `cache-control: public, max-age=31536000, immutable`.
+После публикации сборки (веб-сборка renderer → `apps/desktop/dist-web`, команда — см. раздел «Desktop app»; затем `infra/docker/sync.sh caddy`): открыть `https://app.colaba.gptunnel.ai` в Chrome/Firefox, в DevTools → Console не должно быть `Refused to … Content Security Policy`.
+
+Факт 2026-09-25 (заглушка): все коды и заголовки как выше на `.ai` и `.ru`; gateway по обоим доменам — HELLO → READY.
+
 ### 3. LiveKit
 
 ```sh
@@ -527,6 +540,38 @@ cd apps/server && DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba R
 ```
 Порты postgres и redis смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://app.141-105-69-177.sslip.io` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://app.141-105-69-177.sslip.io`.
 
+### 0a. Против стенда (`https://app.141-105-69-177.sslip.io`)
+Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.141-105-69-177.sslip.io`) клиент получает из `/join` сам.
+```bash
+pnpm -F @calaba/desktop build                 # → apps/desktop/dist/mac-arm64/Calaba.app (+ dmg/zip)
+APP=apps/desktop/dist/mac-arm64/Calaba.app/Contents/MacOS/Calaba
+# клиент А (owner, настоящие микрофон и экран):
+CALABA_SERVER_URL=https://app.141-105-69-177.sslip.io CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
+# клиент Б (bob; fake-медиа, чтобы не было эха на одной машине):
+CALABA_SERVER_URL=https://app.141-105-69-177.sslip.io CALABA_USER_DATA=/tmp/cal-bob CALABA_MULTI_INSTANCE=1 CALABA_FAKE_MEDIA=1 "$APP" &
+```
+Dev-режим тоже работает: `CALABA_SERVER_URL=… pnpm -F @calaba/desktop dev`. Но тест с заморозкой процесса (пункт 2.29) в dev не показателен: Vite перезагружает страницу, когда его HMR-сокет переподключается.
+
+Включите статистику: Настройки → «Приложение» → «Статистика медиа для разработчиков». В голосовой комнате справа сверху появится панель со строками:
+- `ICE: <local>→<remote> <протокол>` — путь (`host`/`srflx` — напрямую, `relay` — через TURN);
+- `RTT`, `loss`;
+- `total ↑↓` — весь трафик ICE;
+- `mic` — битрейт микрофона;
+- `send h/q <разрешение>@<fps> <kbps>/<потолок>` у стримера — слои simulcast, `(off)` = dynacast выключил слой, потому что его никто не смотрит;
+- `recv …` у зрителя — принимаемый слой и декодер.
+
+Ожидаемые значения (замер 2026-09-25, этот Mac → стенд):
+
+| Что | Ожидается |
+|---|---|
+| Путь ICE | `srflx→host udp`, RTT ≈ 35 мс, потери 0 % |
+| Голос | `mic` ≈ 30–45 кбит/с при речи, ≈ 0,1 кбит/с в тишине (гейт) |
+| Стрим 1080p (реальный экран) | `send h 1658×1078@15`: 80–110 кбит/с на статике, до ~950 при смене картинки. `q 553×359` ≤ 250. У Б `recv 1658×1078@15`, декодер `VideoToolbox` |
+| Стрим «Оригинал» | доступен, только если в комнате разрешён максимум «Оригинал» (по умолчанию в «Team» — 1080p: пресет выше недоступен в списке, а сервер урежет запрошенный). `send h 2940×1912@20–26`: 230–1800 кбит/с, CPU renderer 40–65 % ядра |
+| Путь через TURN | запустить Б с `CALABA_FORCE_RELAY=1` → `ICE: relay→host udp/relay-udp`, RTT ≈ 35 мс |
+
+Важно: окно зрителя должно быть видимым. Если окно полностью перекрыто, macOS считает страницу скрытой, adaptive stream ставит видео на паузу (`recv 0 kbps`), а стример показывает оба слоя `(off)` — это ожидаемое поведение.
+
 ### 1. Автоматический E2E
 ```bash
 CALABA_E2E_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop e2e
@@ -573,6 +618,9 @@ cd apps/desktop && ELECTRON_RENDERER_URL=http://localhost:5173 CALABA_MULTI_INST
 | 2.26 | Закрыть А и запустить снова | вход не требуется: сессия восстановлена из Keychain (`session.bin` в профиле зашифрован) |
 | 2.27 | Настройки → «Устройства» → завершить сессию Б | Б выбрасывает на экран входа с сообщением «Сессия была завершена на другом устройстве» (gateway 4010) |
 | 2.28 | Остановить API на 10 с и запустить снова | жёлтая полоса «Нет соединения с сервером — переподключаемся…», затем она исчезает, пропущенные события досылаются (RESUME) |
+| 2.29 | Б (собранное приложение, в голосе и в #general): найти PID renderer — `pgrep -lf 'Calaba Helper \(Renderer\)'` (при двух экземплярах — в Мониторинге системы по времени запуска). `kill -STOP <pid>`, А за это время пишет сообщение, через 20 с `kill -CONT <pid>` | сообщение появилось у Б сразу (сокет пережил 20 с: это меньше двух интервалов heartbeat), голос вернулся сам за ≤ 5 с (resume LiveKit) |
+| 2.30 | То же, но пауза 95 с | в логе Б (`<профиль>/logs/main.log`): `[gateway] closed 1006` → `invalid session (resumable=false)` → новый IDENTIFY. Жёлтая полоса ≤ 3 с, пропущенное сообщение на месте, голос снова «Голос подключён» через ≤ 5 с |
+| 2.31 | Выключить Wi-Fi на 10 с (только на отдельной машине: на общем Mac это рвёт связь другим агентам) | то же, что в 2.30: полоса, RESUME или IDENTIFY, голос возвращается сам (переподключение LiveKit, иначе повторный `/join` с паузами 1, 2, 4… с) |
 
 ### 3. Сборка
 ```bash
