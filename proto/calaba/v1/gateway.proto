@@ -152,6 +152,7 @@ message DispatchEvent {
     MessageReactionAdd message_reaction_add = 26;
     MessageReactionRemove message_reaction_remove = 27;
     VoiceMoved voice_moved = 28;
+    RoomNotificationUpdate room_notification_update = 29;
   }
 }
 
@@ -200,6 +201,8 @@ message Ready {
   Me me = 2;
   repeated WorkspaceSnapshot workspaces = 3;
   repeated ReadState read_states = 4;
+  // The user's stored per-room notification settings (rooms not listed use the default).
+  repeated RoomNotificationSettings notification_settings = 5;
 }
 
 message CategoryCreate {
@@ -344,6 +347,11 @@ message VoiceStreamStop {
 
 message ReadStateUpdate {
   ReadState read_state = 1;
+}
+
+// The user's notification settings of a room changed (sent to the user's own devices only).
+message RoomNotificationUpdate {
+  RoomNotificationSettings settings = 1;
 }
 
 // Profile change. On the user's own devices `me` is set (profile + email + settings);

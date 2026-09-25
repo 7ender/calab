@@ -946,3 +946,28 @@ go test -race -count=3 -v -run 'TestOverlappingPauses|TestHeldStashOverflowClose
   - переименование комнаты (`ROOM_UPDATE` без смены overrides и категории) не запускает пересчёт гостевой видимости;
   - смена категории или overrides, а также неизвестная комната — запускают.
 - Регрессия: `make test-integration` целиком (включая `TestSoftLimitAndGuestMemberAdd` и `TestLocalResumeOrdering`).
+
+## Server: voice_started_at в событиях, упоминания, уведомления комнаты
+
+```sh
+cd apps/server
+go test ./internal/messages/ -run TestParseMentions -v 2>&1 | grep -E '^(--- |ok|FAIL)'
+go test -race -tags integration -count=1 -v -run 'TestVoiceTimes|TestMentions|TestRoomNotificationSettings' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: `--- PASS` для каждого теста и `ok`. `TestVoiceTimes` пропускается (`SKIP`), если dev-LiveKit не запущен.
+
+Что проверяется:
+- **`TestVoiceTimes`**:
+  - первый участник в пустой комнате → `ROOM_UPDATE` с `voiceStartedAt`, равным его `joined_at`;
+  - переименование комнаты во время звонка → `ROOM_UPDATE` с тем же `voiceStartedAt`;
+  - последний вышел → `ROOM_UPDATE` без `voiceStartedAt`.
+- **`TestMentions`**:
+  - `@<user_id>` и `@everyone` попадают в `GET /api/me/mentions`;
+  - код в `` `…` ``, `mail@…`, упоминание себя, своё `@everyone` и упоминание в невидимой (приватной) комнате — не попадают;
+  - пагинация `limit` / `before`, фильтр `workspace_id`;
+  - правка, убравшая упоминание, и удаление сообщения убирают его из истории, правка с новым упоминанием — добавляет;
+  - `after` → 400.
+- **`TestRoomNotificationSettings`**:
+  - `PUT` `MENTIONS` + `mutedUntil` → ответ, `ROOM_NOTIFICATION_UPDATE` своему устройству, настройки в новом READY (и не видны другому пользователю);
+  - `mutedUntil` > 1 года и неизвестный `level` → 422, невидимая комната → 404;
+  - `ALL` без `mutedUntil` → сброс, READY пустой.

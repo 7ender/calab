@@ -56,6 +56,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	mux.Handle("PUT /api/messages/{id}/pin", wrap(httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return h.setPin(w, r, true) })))
 	mux.Handle("DELETE /api/messages/{id}/pin", wrap(httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return h.setPin(w, r, false) })))
 	mux.Handle("GET /api/rooms/{id}/pins", wrap(httpx.HandlerFunc(h.listPins)))
+	mux.Handle("GET /api/me/mentions", wrap(httpx.HandlerFunc(h.listMentions)))
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -301,6 +302,9 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
+		if err := saveMentions(r.Context(), q, msg, acc, false); err != nil {
+			return err
+		}
 		_, err = q.UpsertReadState(r.Context(), sqlc.UpsertReadStateParams{UserID: uid(r), RoomID: roomID, LastReadMessageID: msg.ID})
 		return err
 	})
@@ -375,6 +379,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		if out, err = withAttachments(r.Context(), q, []sqlc.Message{upd}); err != nil {
 			return err
 		}
+		if err := saveMentions(r.Context(), q, upd, acc, true); err != nil {
+			return err
+		}
 		return ValidateContent(req.GetContent(), len(out[0].GetAttachments())) // rolls back if empty
 	})
 	if err != nil {
@@ -407,6 +414,9 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 		}
 		if n == 0 {
 			return httpx.NotFound("message")
+		}
+		if err := clearMentions(r.Context(), q, m.ID); err != nil {
+			return err
 		}
 		// Detached files become orphans and are removed by the cleanup job.
 		return q.DetachMessageFiles(r.Context(), m.ID)

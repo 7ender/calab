@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
@@ -208,6 +209,43 @@ func (s *Service) publishVoice(ctx context.Context, wsID uuid.UUID, c voice.Chan
 		s.events.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStateUpdate{
 			VoiceStateUpdate: &v1.VoiceStateUpdate{State: c.After},
 		}})
+	}
+	for _, rid := range c.Calls {
+		s.publishCall(ctx, wsID, rid)
+	}
+}
+
+// publishCall announces a call start or end as ROOM_UPDATE carrying voice_started_at, so
+// every client counts the call timer from server time. The start is re-read from Redis at
+// publish time: if a start and an end race, the later event carries the current state.
+func (s *Service) publishCall(ctx context.Context, wsID, rid uuid.UUID) {
+	row, err := s.db.Q.GetRoom(ctx, rid)
+	if err != nil {
+		return // room deleted meanwhile: ROOM_DELETE covers it
+	}
+	room, err := rooms.Load(ctx, s.db.Q, row)
+	if err != nil {
+		slog.WarnContext(ctx, "load room for call update", "room", rid, "err", err)
+		return
+	}
+	s.fillStarted(ctx, room)
+	s.events.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: room}}})
+}
+
+// fillStarted sets room.voice_started_at from Redis (unset when nobody is in the call).
+func (s *Service) fillStarted(ctx context.Context, room *v1.Room) {
+	if room.GetType() != v1.RoomType_ROOM_TYPE_VOICE {
+		return
+	}
+	rid, err := uuid.Parse(room.GetId())
+	if err != nil {
+		return
+	}
+	room.VoiceStartedAt = nil
+	if started, err := s.voice.StartedAt(ctx, []uuid.UUID{rid}); err == nil {
+		if t, ok := started[rid]; ok {
+			room.VoiceStartedAt = timestamppb.New(t)
+		}
 	}
 }
 

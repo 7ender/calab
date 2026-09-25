@@ -183,6 +183,9 @@ func (s Store) Workspaces(ctx context.Context) ([]uuid.UUID, error) {
 // Change is the result of a mutation: the user's aggregate before and after.
 type Change struct {
 	Before, After *v1.VoiceState
+	// Calls lists rooms whose call started (first device in an empty room) or ended (last
+	// device left) with this change; ROOM_UPDATE with voice_started_at is due for them.
+	Calls []uuid.UUID
 }
 
 // Changed reports whether the aggregate changed (i.e. VOICE_STATE_UPDATE is due).
@@ -266,11 +269,25 @@ func (s Store) UpdateLocked(ctx context.Context, wid, userID, sessionID uuid.UUI
 		rest = append(rest, *next)
 	}
 	// Call start per room: set when a room gains its first device, cleared when it empties.
+	var calls []uuid.UUID
+	now := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	for _, rid := range touchedRooms(cur, next) {
-		if occupied(rest, rid) {
-			cmds = append(cmds, s.C.B().Set().Key(startedKey(rid)).Value(strconv.FormatInt(time.Now().UnixMilli(), 10)).Nx().Build())
-		} else {
+		was, is := occupied(all, rid), occupied(rest, rid)
+		switch {
+		case !was && is:
+			start := now
+			if next != nil && next.RoomID == rid {
+				start = strconv.FormatInt(next.JoinedAt, 10) // the call starts with this join
+			}
+			cmds = append(cmds, s.C.B().Set().Key(startedKey(rid)).Value(start).Build())
+			calls = append(calls, rid)
+		case was && is: // heals a missing key, keeps the running call's start
+			cmds = append(cmds, s.C.B().Set().Key(startedKey(rid)).Value(now).Nx().Build())
+		default:
 			cmds = append(cmds, s.C.B().Del().Key(startedKey(rid)).Build())
+			if was {
+				calls = append(calls, rid)
+			}
 		}
 	}
 	for _, r := range s.C.DoMulti(ctx, cmds...) {
@@ -278,7 +295,7 @@ func (s Store) UpdateLocked(ctx context.Context, wid, userID, sessionID uuid.UUI
 			return Change{}, err
 		}
 	}
-	return Change{Before: before, After: Aggregate(wid, userID, rest)}, nil
+	return Change{Before: before, After: Aggregate(wid, userID, rest), Calls: calls}, nil
 }
 
 func touchedRooms(cur, next *SessionState) []uuid.UUID {

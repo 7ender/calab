@@ -49,3 +49,25 @@ func TestParseAttachments(t *testing.T) {
 		t.Fatal("21 attachments accepted")
 	}
 }
+
+func TestParseMentions(t *testing.T) {
+	a, b := uuid.New(), uuid.New()
+	users, all := ParseMentions("hi @" + a.String() + ", @" + strings.ToUpper(b.String()) + " and @" + a.String() +
+		" mail@" + b.String() + " `@everyone` ```\n@here\n``` @everyone2")
+	if len(users) != 2 || users[0] != a || users[1] != b || all {
+		t.Fatalf("users %v everyone %v", users, all)
+	}
+	if _, all := ParseMentions("(@here)"); !all {
+		t.Fatal("@here")
+	}
+	if _, all := ParseMentions("@Everyone!"); !all {
+		t.Fatal("@everyone is case-insensitive")
+	}
+	var sb strings.Builder
+	for range maxMentions + 10 {
+		sb.WriteString("@" + uuid.NewString() + " ")
+	}
+	if users, _ := ParseMentions(sb.String()); len(users) != maxMentions {
+		t.Fatalf("cap: %d", len(users))
+	}
+}

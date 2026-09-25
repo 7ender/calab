@@ -49,7 +49,7 @@
 ## Жизненный цикл
 
 1. Открыли сокет → `HELLO { heartbeat_interval_ms }`.
-2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль, видимые комнаты, участники, voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
+2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль, видимые комнаты, участники, voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states, notification_settings }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
 3. Клиент шлёт `HEARTBEAT` каждые `heartbeat_interval` (~41 с) с jitter; нет `ACK` за 2 интервала → закрыть и переподключиться.
 4. Обрыв → переподключение с экспоненциальным backoff (1s → 30s, jitter) → `RESUME { token, session_id, seq }` (token — свежий access JWT):
    - сервер держит буфер событий сессии в Redis (последние ~5 мин / 1000 событий) → досылает пропущенное по порядку, затем событие `RESUMED { replayed }`;
@@ -74,6 +74,7 @@ PRESENCE_UPDATE               { user_id, status, last_seen }
 VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming }
 VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- для PiP-плитки
 READ_STATE_UPDATE
+ROOM_NOTIFICATION_UPDATE      { settings: { room_id, level, muted_until } } — только своим устройствам
 USER_UPDATE                   { me } — своим устройствам (профиль, email, настройки);
                               { user } — участникам всех workspace пользователя (публичный профиль: имя, статус, аватар)
 RESUMED                       { replayed }  — после успешного RESUME
@@ -236,6 +237,8 @@ PUT    /api/messages/{id}/reactions/{emoji}            204, идемпотент
 DELETE /api/messages/{id}/reactions/{emoji}            204, своя реакция
 PUT    /api/messages/{id}/pin | DELETE …/pin           204   (MANAGE_MESSAGES; ≤ 50 на комнату) → MESSAGE_UPDATE
 GET    /api/rooms/{id}/pins                            ListMessagesResponse (закреплённые, свежие первыми)
+GET    /api/me/mentions?before=&limit=&workspace_id=   ListMessagesResponse — сообщения с упоминанием меня (по видимым сейчас комнатам)
+PUT    /api/rooms/{id}/notifications                   UpdateRoomNotificationSettingsRequest{level, mutedUntil} → …Response  (VIEW_ROOM)
 PATCH  /api/me/status                                  UpdateStatusRequest{text, emoji, expiresInSeconds} → UpdateMeResponse
 GET    /api/unfurl?url=                                UnfurlResponse (превью ссылки) | 404 — превью нет
 GET    /api/unfurl/image?url=&sig=                     прокси картинки превью (подписанная ссылка из UnfurlResponse)
@@ -257,7 +260,9 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
   Для dev-машин с VPN в режиме fake-IP есть явное исключение `UNFURL_ALLOW_CIDRS`; в проде эта переменная не задаётся.
 
   Кэш в Redis: 24 ч, негативный — 1 ч. Rate limit — 30 подряд, 120 в минуту на пользователя. Картинки и favicon идут только через `/api/unfurl/image`: ссылка подписана HMAC, поэтому это не открытый прокси; только растровые типы по сигнатуре (SVG — никогда), ≤ 5 MB, таймаут 10 с. IP пользователей сторонним сайтам не виден.
-- **Время звонка.** `VoiceState.joined_at` — самый ранний вход устройств пользователя в эту комнату. `Room.voice_started_at` приходит в READY / WORKSPACE_CREATE: когда в пустой комнате появился первый участник; сбрасывается, когда комната опустела.
+- **Время звонка.** `VoiceState.joined_at` — самый ранний вход устройств пользователя в эту комнату. `Room.voice_started_at` — когда в пустой комнате появился первый участник (равно его `joined_at`), сбрасывается, когда комната опустела. Приходит в READY / WORKSPACE_CREATE и в `ROOM_UPDATE`: при старте звонка (с `voice_started_at`) и при его конце (без поля) сервер рассылает `ROOM_UPDATE` с комнатой; любой другой `ROOM_UPDATE` голосовой комнаты (переименование, настройки) тоже несёт текущее значение, так что клиент просто берёт поле из последнего события. Таймер считается от серверного времени.
+- **Упоминания.** Формат в `content`: `@<user_id>` (UUID; клиент вставляет его при выборе участника и рендерит как имя), `@everyone` и `@here` — все, кто видит комнату (гости не могут упоминать всех; для истории `@here` = `@everyone`). Внутри `` `код` `` и блоков кода упоминаний нет; своё сообщение себя не упоминает; учитываются только участники workspace, ≤ 50 прямых упоминаний на сообщение. Сервер сохраняет упоминания при создании и правке (правка пересчитывает), удаление сообщения их убирает. `MESSAGE_CREATE` несёт `content` — бейджи клиент считает сам; `GET /api/me/mentions` нужен для истории: от новых к старым, курсор `before`, `limit` ≤ 100 (по умолчанию 50), `workspace_id` — фильтр, `after` не поддерживается.
+- **Уведомления комнаты.** `level`: `ALL` (по умолчанию) | `MENTIONS` | `NONE`; `muted_until` — временное отключение (≤ 1 год вперёд; навсегда — `NONE`). `PUT` заменяет настройки целиком; `ALL` без `muted_until` — сброс к умолчанию (строка удаляется). READY `notification_settings` содержит только сохранённые настройки; комнаты не из списка — по умолчанию. Уведомления показывает клиент; сервер хранит и синхронизирует настройки между устройствами (`ROOM_NOTIFICATION_UPDATE`).
 - **Категории.** `Room.category_id`, `WorkspaceSnapshot.categories`. События `CATEGORY_CREATE/UPDATE/DELETE` приходят всем участникам workspace; клиент скрывает категории без видимых ему комнат.
 
 Изменения относительно первоначального плана: `PUT /api/files` → `POST /api/workspaces/{id}/files` (файл принадлежит workspace, квота — его); `?thumb=1` → `/thumbnail`. Скачивание требует `Authorization`; клиент грузит через `fetch` и показывает через blob URL. Доступ к файлу: загрузивший; аватары — любой пользователь; иконка workspace — участники; вложение — `VIEW_ROOM` комнаты сообщения. Файл прикрепляется только к одному сообщению; при удалении сообщения вложения открепляются и удаляются чисткой сирот (не прикреплённые > 24 ч).

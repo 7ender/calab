@@ -42,6 +42,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	mux.Handle("PATCH /api/rooms/{id}", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("DELETE /api/rooms/{id}", wrap(httpx.HandlerFunc(h.delete)))
 	mux.Handle("PUT /api/rooms/{id}/permissions", wrap(httpx.HandlerFunc(h.setPermissions)))
+	mux.Handle("PUT /api/rooms/{id}/notifications", wrap(httpx.HandlerFunc(h.setNotifications)))
 }
 
 // Visible returns the workspace's rooms that userID can see (VIEW_ROOM), in display order.
@@ -308,6 +309,11 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 
 // load returns the wire room (effective media + overrides).
 func (h *Handlers) load(ctx context.Context, q *sqlc.Queries, room sqlc.Room) (*v1.Room, error) {
+	return Load(ctx, q, room)
+}
+
+// Load returns the wire room (effective media + overrides), as sent in ROOM_UPDATE.
+func Load(ctx context.Context, q *sqlc.Queries, room sqlc.Room) (*v1.Room, error) {
 	ws, err := q.GetWorkspace(ctx, room.WorkspaceID)
 	if err != nil {
 		return nil, err

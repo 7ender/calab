@@ -382,6 +382,13 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	for _, r := range rs {
 		ready.ReadStates = append(ready.ReadStates, &v1.ReadState{RoomId: r.RoomID.String(), LastReadMessageId: r.LastReadMessageID.String()})
 	}
+	ns, err := h.db.Q.ListRoomNotificationSettings(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range ns {
+		ready.NotificationSettings = append(ready.NotificationSettings, pbconv.RoomNotificationSettings(n))
+	}
 	return ready, nil
 }
 

@@ -287,6 +287,11 @@ func TestVoiceTimes(t *testing.T) {
 	if time.Since(joined) > time.Minute || time.Since(joined) < 0 {
 		t.Fatalf("joined_at: %v", joined)
 	}
+	// The call start is broadcast as ROOM_UPDATE (server time for every client's timer).
+	g.wait("ROOM_UPDATE call started", func(e *v1.DispatchEvent) bool {
+		r := e.GetRoomUpdate().GetRoom()
+		return r.GetId() == rid && r.GetVoiceStartedAt() != nil && r.GetVoiceStartedAt().AsTime().Equal(joined)
+	})
 	time.Sleep(20 * time.Millisecond)
 	webhook(t, whEvent("participant_joined", roomName, oj.GetIdentity(), nil), "secret")
 	g.wait("VOICE_STATE_UPDATE owner", func(e *v1.DispatchEvent) bool { return e.GetVoiceStateUpdate().GetState().GetUserId() == o.id })
@@ -303,6 +308,13 @@ func TestVoiceTimes(t *testing.T) {
 	if r := started(); r.GetVoiceStartedAt() == nil || !r.GetVoiceStartedAt().AsTime().Equal(joined) {
 		t.Fatalf("voice_started_at %v, want %v (first join)", r.GetVoiceStartedAt(), joined)
 	}
+	// Other ROOM_UPDATEs (a rename) keep the running call's start.
+	name := "renamed"
+	o.must(200, "PATCH", "/api/rooms/"+rid, &v1.UpdateRoomRequest{Name: &name}, nil)
+	g.wait("ROOM_UPDATE rename keeps call start", func(e *v1.DispatchEvent) bool {
+		r := e.GetRoomUpdate().GetRoom()
+		return r.GetId() == rid && r.GetName() == name && r.GetVoiceStartedAt().AsTime().Equal(joined)
+	})
 	// The first participant leaves: the call continues, start time unchanged.
 	webhook(t, whEvent("participant_left", roomName, bj.GetIdentity(), nil), "secret")
 	time.Sleep(100 * time.Millisecond)
@@ -310,7 +322,10 @@ func TestVoiceTimes(t *testing.T) {
 		t.Fatalf("after first left: %v", r.GetVoiceStartedAt())
 	}
 	webhook(t, whEvent("participant_left", roomName, oj.GetIdentity(), nil), "secret")
-	time.Sleep(100 * time.Millisecond)
+	g.wait("ROOM_UPDATE call ended", func(e *v1.DispatchEvent) bool {
+		r := e.GetRoomUpdate().GetRoom()
+		return r.GetId() == rid && r.GetVoiceStartedAt() == nil
+	})
 	if r := started(); r.GetVoiceStartedAt() != nil {
 		t.Fatal("empty room still has voice_started_at")
 	}

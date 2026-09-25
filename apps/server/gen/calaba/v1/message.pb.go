@@ -218,6 +218,8 @@ func (x *Reaction) GetMe() bool {
 }
 
 // GET /api/rooms/{id}/messages?before=&after=&limit= (VIEW_ROOM). Newest first for `before`.
+// Also the response of GET /api/me/mentions?before=&limit=&workspace_id= : messages that
+// mention the caller (@<user_id>, @everyone, @here) in rooms the caller can view, newest first.
 type ListMessagesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Messages      []*Message             `protobuf:"bytes,1,rep,name=messages,proto3" json:"messages,omitempty"`

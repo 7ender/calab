@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/events"
@@ -31,6 +32,13 @@ func (p SyncPublisher) async(fn func(ctx context.Context)) {
 
 // Workspace implements events.Publisher.
 func (p SyncPublisher) Workspace(ctx context.Context, wid uuid.UUID, ev *v1.DispatchEvent) {
+	// A ROOM_UPDATE replaces the room on clients: carry the running call's start so that
+	// e.g. a rename does not reset the call timer.
+	if r := ev.GetRoomUpdate().GetRoom(); r.GetType() == v1.RoomType_ROOM_TYPE_VOICE {
+		r = proto.Clone(r).(*v1.Room)
+		p.S.fillStarted(ctx, r)
+		ev = &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: r}}}
+	}
 	p.Publisher.Workspace(ctx, wid, ev)
 	switch e := ev.GetEvent().(type) {
 	case *v1.DispatchEvent_RoomPermissionsUpdate:

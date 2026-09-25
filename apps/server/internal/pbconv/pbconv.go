@@ -414,3 +414,29 @@ func ProtoOverrideTargets(ovs []*v1.RoomPermissionOverride) []perm.OverrideTarge
 	}
 	return out
 }
+
+var levelToDB = map[v1.NotificationLevel]string{
+	v1.NotificationLevel_NOTIFICATION_LEVEL_ALL:      "all",
+	v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS: "mentions",
+	v1.NotificationLevel_NOTIFICATION_LEVEL_NONE:     "none",
+}
+
+// NotificationLevelToDB maps a level to its DB text; UNSPECIFIED is the default "all".
+func NotificationLevelToDB(l v1.NotificationLevel) (string, bool) {
+	if l == v1.NotificationLevel_NOTIFICATION_LEVEL_UNSPECIFIED {
+		return "all", true
+	}
+	s, ok := levelToDB[l]
+	return s, ok
+}
+
+// RoomNotificationSettings converts a stored row.
+func RoomNotificationSettings(s sqlc.RoomNotificationSetting) *v1.RoomNotificationSettings {
+	out := &v1.RoomNotificationSettings{RoomId: s.RoomID.String(), Level: v1.NotificationLevel_NOTIFICATION_LEVEL_ALL, MutedUntil: tsp(s.MutedUntil)}
+	for l, v := range levelToDB {
+		if v == s.Level {
+			out.Level = l
+		}
+	}
+	return out
+}

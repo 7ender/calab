@@ -41,6 +41,9 @@ message_attachments message_id, file_id (UNIQUE — файл прикреплё�
 files               id, workspace_id? (NULL — файл пользователя: аватар), uploader_id, key, thumbnail_key?, name,
                     mime, size, width?, height?, sha256, created_at
 read_states         user_id, room_id, last_read_message_id      PK (user_id, room_id)
+message_mentions    user_id, message_id, room_id                PK (user_id, message_id) — прямые @<user_id>
+message_everyone_mentions  message_id PK, room_id                — @everyone / @here
+room_notification_settings user_id, room_id, level (all|mentions|none), muted_until?   PK (user_id, room_id)
 room_categories     id, workspace_id, name, position            (rooms.category_id → ON DELETE SET NULL)
 room_invites        id, room_id, code (unique, 12 символов), created_by, expires_at?, max_uses, uses,
                     allow_guests, allow_bits, revoked_at?       — ссылка на комнату (ADR-0016)

@@ -45,6 +45,17 @@ type MessageAttachment struct {
 	Position  int16
 }
 
+type MessageEveryoneMention struct {
+	MessageID uuid.UUID
+	RoomID    uuid.UUID
+}
+
+type MessageMention struct {
+	UserID    uuid.UUID
+	MessageID uuid.UUID
+	RoomID    uuid.UUID
+}
+
 type MessageReaction struct {
 	MessageID uuid.UUID
 	UserID    uuid.UUID
@@ -95,6 +106,13 @@ type RoomInvite struct {
 	AllowBits   int64
 	RevokedAt   *time.Time
 	CreatedAt   time.Time
+}
+
+type RoomNotificationSetting struct {
+	UserID     uuid.UUID
+	RoomID     uuid.UUID
+	Level      string
+	MutedUntil *time.Time
 }
 
 type RoomPermission struct {
