@@ -119,7 +119,11 @@ export function StreamArea(): ReactNode {
     return (
       <>
         {switcher}
-        <div className="group absolute bottom-24 right-4 z-10 w-[320px] overflow-hidden rounded-lg bg-black shadow-2xl ring-1 ring-line">
+        <div
+          data-testid="stream-pip"
+          className="mat-popover group absolute right-4 z-[var(--z-pip)] w-[320px] overflow-hidden rounded-[var(--radius-panel)] bg-black"
+          style={{ bottom: 'calc(var(--composer-height) + 16px)' }}
+        >
           <button type="button" className="block" onClick={() => set({ stage: 'expanded' })} aria-label={t('stream.expand')}>
             <StreamVideo trackSid={current.trackSid} className="h-[180px] w-[320px]" />
           </button>

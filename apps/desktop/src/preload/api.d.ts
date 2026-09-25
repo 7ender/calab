@@ -9,6 +9,7 @@ import type {
   LoginArgs,
   LogoutReason,
   PowerEvent,
+  PermissionStatus,
   PrivacyPane,
   ProcessMetrics,
   PttBinding,
@@ -51,6 +52,7 @@ export interface CalabaApi {
     openExternal(url: string): Promise<void>;
     /** Bounce the dock / flash the taskbar when the window is not focused. */
     attention(): void;
+    setTheme(theme: 'dark' | 'light' | 'system'): void;
   };
   tray: {
     setState(s: TrayState): void;
@@ -77,6 +79,10 @@ export interface CalabaApi {
   system: {
     openPrivacySettings(pane: PrivacyPane): Promise<void>;
     metrics(): Promise<ProcessMetrics>;
+    /** OS permission statuses (onboarding, Settings → devices). */
+    permissions(): Promise<PermissionStatus>;
+    /** Ask the OS for microphone access (macOS prompt); resolves with the result. */
+    requestMic(): Promise<boolean>;
   };
 }
 

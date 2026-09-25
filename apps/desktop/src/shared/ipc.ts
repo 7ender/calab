@@ -28,6 +28,11 @@ export const IPC = {
   appLog: 'app:log',
   appOpenExternal: 'app:open-external',
   appAttention: 'app:attention',
+  /** Renderer theme → nativeTheme.themeSource (vibrancy follows the app theme). */
+  appSetTheme: 'app:set-theme',
+  /** macOS permission statuses + requesting microphone access (onboarding). */
+  systemPermissions: 'system:permissions',
+  systemRequestMic: 'system:request-mic',
 
   // ---- tray ----
   trayState: 'tray:state',
@@ -177,6 +182,15 @@ export interface PttEvent {
 }
 
 export type PrivacyPane = 'accessibility' | 'input-monitoring' | 'screen' | 'microphone';
+
+export interface PermissionStatus {
+  /** 'granted' | 'denied' | 'not-determined' | 'restricted' | 'n/a' */
+  microphone: string;
+  screen: string;
+  /** Accessibility trust (global PTT on macOS); true elsewhere. */
+  accessibility: boolean;
+  notifications: 'granted' | 'denied' | 'default' | 'n/a';
+}
 
 export interface ProcessMetrics {
   /** % of one core (like ps/top), averaged since the previous sample. */

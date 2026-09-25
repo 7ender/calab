@@ -1,5 +1,5 @@
 import { cpus, hostname } from 'node:os';
-import { app, BrowserWindow, ipcMain, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron';
 import log from 'electron-log/main';
 import {
   IPC,
@@ -8,6 +8,7 @@ import {
   type CaptureSelection,
   type DownloadArgs,
   type LoginArgs,
+  type PermissionStatus,
   type PrivacyPane,
   type ProcessMetrics,
   type PttBinding,
@@ -147,6 +148,19 @@ export function registerIpc(): void {
     if (!/^https?:\/\//.test(url)) throw new Error('only http(s) links');
     return shell.openExternal(url);
   });
+  handle(IPC.appSetTheme, (_e, a) => {
+    if (a === 'dark' || a === 'light' || a === 'system') nativeTheme.themeSource = a;
+  });
+  handle(IPC.systemPermissions, (): PermissionStatus => ({
+    microphone: mediaAccess('microphone'),
+    screen: mediaAccess('screen'),
+    accessibility: process.platform === 'darwin' ? systemPreferences.isTrustedAccessibilityClient(false) : true,
+    notifications: 'n/a', // the renderer knows Notification.permission
+  }));
+  handle(IPC.systemRequestMic, async () => {
+    if (process.platform !== 'darwin') return true;
+    return systemPreferences.askForMediaAccess('microphone');
+  });
   handle(IPC.appAttention, (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     if (win && !win.isFocused()) {
@@ -196,6 +210,12 @@ export function registerIpc(): void {
     };
   });
   handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
+    if (process.platform === 'win32') {
+      const win: Partial<Record<PrivacyPane, string>> = { microphone: 'ms-settings:privacy-microphone' };
+      const url = win[pane as PrivacyPane];
+      if (url) void shell.openExternal(url);
+      return;
+    }
     if (process.platform !== 'darwin') return;
     const url = PRIVACY_URLS[pane as PrivacyPane];
     if (url) void shell.openExternal(url);

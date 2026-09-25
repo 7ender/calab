@@ -20,7 +20,7 @@ export function TypingIndicator({ workspaceId, roomId }: { workspaceId: string; 
   else if (who.length === 2) text = `${who[0] ?? ''} и ${who[1] ?? ''} печатают…`;
   else if (who.length > 2) text = `${who.length} ${plural(who.length, ['человек', 'человека', 'человек'])} печатают…`;
   return (
-    <div className="-mt-5 h-5 truncate px-5 text-[12px] text-muted" aria-live="polite">
+    <div className="h-6 truncate px-5 pt-1 text-[12px] text-muted" aria-live="polite">
       {text ? (
         <span>
           <span className="typing-dot">•</span>

@@ -1,12 +1,14 @@
 import { Compass, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Tip, cx } from '../../components/ui';
 import { MediaImg } from '../../components/MediaImg';
-import { thumbnailPath } from '../../lib/api/endpoints';
+import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { thumbnailPath } from '../../lib/api/endpoints';
 import { isUnread, useRooms } from '../../stores/rooms';
+import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
+import { platform } from '../../platform';
 
 function initials(name: string): string {
   return name
@@ -17,6 +19,10 @@ function initials(name: string): string {
     .join('');
 }
 
+const tile =
+  'relative grid size-10 place-items-center rounded-[var(--radius-panel)] text-[14px] font-semibold transition-colors duration-[var(--motion-fast)]';
+
+/** Workspace rail, 64 px, sidebar material; macOS traffic lights sit above it (hiddenInset). */
 export function WorkspaceRail(): ReactNode {
   const order = useWorkspaces((s) => s.order);
   const byId = useWorkspaces((s) => s.byId);
@@ -24,36 +30,44 @@ export function WorkspaceRail(): ReactNode {
   const setWs = useUi((s) => s.setWorkspace);
   const open = useUi((s) => s.openDialog);
   const rooms = useRooms();
+  const mac = useSession((s) => s.appInfo?.platform === 'darwin') && platform.kind === 'electron';
 
   return (
-    <nav className="drag flex w-[68px] shrink-0 flex-col items-center gap-2 overflow-y-auto bg-rail pb-3 pt-10" aria-label={t('ws.list')}>
+    <nav
+      className={cx('mat-rail drag flex w-[var(--rail-width)] shrink-0 flex-col items-center gap-2 overflow-y-auto pb-3', mac ? 'pt-11' : 'pt-3')}
+      aria-label={t('ws.list')}
+    >
       {order.map((id) => {
         const w = byId[id]?.ws;
         if (!w) return null;
-        const roomIds = Object.values(rooms.byId).filter((r) => r.workspaceId === id);
-        const unread = roomIds.some((r) => isUnread(r.id, rooms));
-        const mentions = roomIds.reduce((n, r) => n + (rooms.mentions[r.id] ?? 0), 0);
+        const list = Object.values(rooms.byId).filter((r) => r.workspaceId === id);
+        const unread = list.some((r) => isUnread(r.id, rooms));
+        const mentions = list.reduce((n, r) => n + (rooms.mentions[r.id] ?? 0), 0);
         const isActive = id === active;
         return (
-          <div key={id} className="no-drag relative flex w-full justify-center">
+          <div key={id} className="relative flex w-full justify-center">
             <span
+              aria-hidden
               className={cx(
-                'absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r bg-fg transition-all',
-                isActive ? 'h-9' : unread ? 'h-2' : 'h-0',
+                'absolute left-0 top-1/2 w-[3px] -translate-y-1/2 rounded-r-full bg-fg transition-[height] duration-[var(--motion)]',
+                isActive ? 'h-6' : unread ? 'h-2' : 'h-0',
               )}
             />
             <Tip label={w.name} side="right">
               <button
                 type="button"
                 onClick={() => setWs(id)}
-                className={cx(
-                  'relative grid size-12 place-items-center overflow-visible text-[15px] font-semibold transition-all',
-                  isActive ? 'rounded-2xl bg-accent text-accent-fg' : 'rounded-3xl bg-main text-fg hover:rounded-2xl hover:bg-accent hover:text-accent-fg',
-                )}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={`${w.name}${unread ? `, ${t('ws.unread')}` : ''}`}
+                className={cx(tile, isActive ? 'bg-accent text-accent-fg' : 'bg-hover text-fg hover:bg-[var(--color-fill-hover)]')}
               >
-                {w.iconFileId ? <MediaImg path={thumbnailPath(w.iconFileId)} alt="" className="size-full rounded-[inherit] object-cover" /> : initials(w.name)}
+                {w.iconFileId ? (
+                  <MediaImg path={thumbnailPath(w.iconFileId)} alt="" className="size-full rounded-[inherit] object-cover" />
+                ) : (
+                  initials(w.name)
+                )}
                 {mentions > 0 ? (
-                  <span className="absolute -bottom-0.5 -right-0.5 min-w-5 rounded-full border-[3px] border-rail bg-danger px-1 text-center text-[11px] font-bold leading-4 text-white">
+                  <span className="absolute -bottom-1 -right-1 min-w-4 rounded-full bg-danger-fill px-1 text-center text-[11px] font-semibold leading-4 text-white">
                     {mentions > 99 ? '99+' : mentions}
                   </span>
                 ) : null}
@@ -62,15 +76,15 @@ export function WorkspaceRail(): ReactNode {
           </div>
         );
       })}
-      <div className="no-drag my-1 h-px w-8 bg-line" />
+      {order.length ? <div className="my-0.5 h-px w-6 bg-line" aria-hidden /> : null}
       <Tip label={t('ws.create')} side="right">
-        <button type="button" onClick={() => open({ kind: 'create-workspace' })} className="no-drag grid size-12 place-items-center rounded-3xl bg-main text-ok transition-all hover:rounded-2xl hover:bg-ok hover:text-white" aria-label={t('ws.create')}>
-          <Plus className="size-5" />
+        <button type="button" onClick={() => open({ kind: 'create-workspace' })} className={cx(tile, 'bg-hover text-muted hover:text-fg')} aria-label={t('ws.create')}>
+          <Plus className="size-5" strokeWidth={1.75} />
         </button>
       </Tip>
       <Tip label={t('ws.join')} side="right">
-        <button type="button" onClick={() => open({ kind: 'join-workspace' })} className="no-drag grid size-12 place-items-center rounded-3xl bg-main text-ok transition-all hover:rounded-2xl hover:bg-ok hover:text-white" aria-label={t('ws.join')}>
-          <Compass className="size-5" />
+        <button type="button" onClick={() => open({ kind: 'join-workspace' })} className={cx(tile, 'bg-hover text-muted hover:text-fg')} aria-label={t('ws.join')}>
+          <Compass className="size-5" strokeWidth={1.75} />
         </button>
       </Tip>
     </nav>

@@ -3,7 +3,8 @@ import { PresenceStatus } from '@calaba/protocol';
 import { Headphones, HeadphoneOff, Mic, MicOff, Settings } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { IconButton, cx } from '../../components/ui';
+import { IconButton, MOD, cx } from '../../components/ui';
+import { SHORTCUTS } from '../../services/hotkeys';
 import { t, type MessageKey } from '../../i18n';
 import { setPresence } from '../../services/gateway';
 import { voice } from '../../services/voice';
@@ -33,17 +34,17 @@ export function SelfPanel(): ReactNode {
   const cur = STATUSES.find((x) => x.s === status) ?? STATUSES[0];
 
   return (
-    <div className="flex h-[52px] items-center gap-1 bg-rail/60 px-2">
+    <div className="flex h-[52px] shrink-0 items-center gap-0.5 border-t border-line px-2">
       <Dropdown.Root>
         <Dropdown.Trigger asChild>
-          <button type="button" className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-hover">
+          <button type="button" aria-label={t('presence.change')} className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] px-1 py-1 text-left hover:bg-hover">
             <span className="relative">
               <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={transmitting} />
-              <span className={cx('absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-[3px] border-side', cur?.dot)} />
+              <span className={cx('absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-[var(--color-bg-elevated)]', cur?.dot)} aria-hidden />
             </span>
             <span className="min-w-0">
               <span className="block truncate text-[13px] font-semibold">{user.displayName}</span>
-              <span className="block truncate text-[11px] text-muted">{user.statusText || (cur ? t(cur.key) : '')}</span>
+              <span className="block truncate text-[11px] text-faint">{user.statusText || (cur ? t(cur.key) : '')}</span>
             </span>
           </button>
         </Dropdown.Trigger>
@@ -68,10 +69,10 @@ export function SelfPanel(): ReactNode {
           </Dropdown.Content>
         </Dropdown.Portal>
       </Dropdown.Root>
-      <IconButton label={muted ? t('voice.unmute') : t('voice.mute')} danger={muted} onClick={() => voice.toggleMute()}>
+      <IconButton label={muted ? t('voice.unmute') : t('voice.mute')} shortcut={`${MOD}${SHORTCUTS.mute}`} danger={muted} onClick={() => voice.toggleMute()}>
         {muted ? <MicOff className="size-[18px]" /> : <Mic className="size-[18px]" />}
       </IconButton>
-      <IconButton label={deafened ? t('voice.undeafen') : t('voice.deafen')} danger={deafened} onClick={() => voice.toggleDeafen()}>
+      <IconButton label={deafened ? t('voice.undeafen') : t('voice.deafen')} shortcut={`${MOD}${SHORTCUTS.deafen}`} danger={deafened} onClick={() => voice.toggleDeafen()}>
         {deafened ? <HeadphoneOff className="size-[18px]" /> : <Headphones className="size-[18px]" />}
       </IconButton>
       <IconButton label={t('settings.title')} onClick={() => open({ kind: 'settings' })}>

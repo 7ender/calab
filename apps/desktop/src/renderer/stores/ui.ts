@@ -9,7 +9,8 @@ export type Dialog =
   | { kind: 'room-settings'; roomId: string; tab?: string }
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }
-  | { kind: 'image'; fileId: string; name: string };
+  | { kind: 'image'; fileId: string; name: string }
+  | { kind: 'quick-switcher' };
 
 interface UiState {
   activeWorkspaceId: string | null;
@@ -20,6 +21,9 @@ interface UiState {
   /** Reply target per room. */
   replyTo: Record<string, string | undefined>;
   editing: string | null;
+  /** Room column width (docs/08: 240 px, 200–320, resizable). */
+  sidebarWidth: number;
+  setSidebarWidth: (w: number) => void;
   setWorkspace: (id: string | null) => void;
   openRoom: (workspaceId: string, roomId: string) => void;
   openDialog: (d: Dialog | null) => void;
@@ -37,6 +41,8 @@ export const useUi = create<UiState>()(
       membersPanel: true,
       replyTo: {},
       editing: null,
+      sidebarWidth: 240,
+      setSidebarWidth: (w) => set({ sidebarWidth: Math.round(Math.max(200, Math.min(320, w))) }),
       setWorkspace: (id) => set({ activeWorkspaceId: id }),
       openRoom: (wsId, roomId) => set((s) => ({ activeWorkspaceId: wsId, lastRoom: { ...s.lastRoom, [wsId]: roomId }, editing: null })),
       openDialog: (dialog) => set({ dialog }),
@@ -46,7 +52,7 @@ export const useUi = create<UiState>()(
     }),
     {
       name: 'calaba-ui',
-      partialize: (s) => ({ activeWorkspaceId: s.activeWorkspaceId, lastRoom: s.lastRoom, membersPanel: s.membersPanel }),
+      partialize: (s) => ({ activeWorkspaceId: s.activeWorkspaceId, lastRoom: s.lastRoom, membersPanel: s.membersPanel, sidebarWidth: s.sidebarWidth }),
     },
   ),
 );

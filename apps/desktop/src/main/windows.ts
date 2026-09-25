@@ -66,10 +66,13 @@ export function createMainWindow(): BrowserWindow {
     width: state?.bounds.width ?? 1280,
     height: state?.bounds.height ?? 820,
     ...(state ? { x: state.bounds.x, y: state.bounds.y } : {}),
-    minWidth: 940,
-    minHeight: 560,
+    minWidth: 960,
+    minHeight: 600,
     title: 'Calaba',
-    backgroundColor: BG,
+    // macOS: native sidebar material (docs/08) — the renderer keeps content surfaces opaque.
+    ...(process.platform === 'darwin'
+      ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const, backgroundColor: '#00000000' }
+      : { backgroundColor: BG }),
     show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 14 },

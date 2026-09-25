@@ -1,71 +1,177 @@
 @import 'tailwindcss';
 
-/* Theme tokens. Dark by default; light via <html data-theme="light">. */
+/*
+ * Design tokens (docs/08-design.md): macOS / Apple HIG. Components use only these
+ * variables (through the Tailwind theme below) — no raw colours or sizes.
+ * Dark is the default; light via <html data-theme="light">. On macOS Electron the
+ * window has native vibrancy (<html class="vibrancy">): sidebar surfaces become
+ * transparent tints over the system material.
+ */
 :root {
-  --c-rail: #111214;
-  --c-side: #1b1c20;
-  --c-main: #222328;
-  --c-elev: #2a2b31;
-  --c-hover: #2f3137;
-  --c-active: #373941;
-  --c-input: #17181b;
-  --c-border: #33353c;
-  --c-text: #e8e9ec;
-  --c-muted: #9a9ca5;
-  --c-faint: #6c6f78;
-  --c-accent: #5b7cfa;
-  --c-accent-fg: #ffffff;
-  --c-ok: #3ecf8e;
-  --c-warn: #f2b33d;
-  --c-danger: #ec5a5f;
-  --c-mention: rgb(242 179 61 / 12%);
-  --c-code: #17181b;
+  /* ---- colour: neutral cool grey scale + one accent + semantics ---- */
+  --color-bg: #1c1c1e; /* content (messages): always opaque */
+  --color-bg-elevated: #2c2c2e; /* cards, inputs on content */
+  --color-sidebar: rgb(38 38 42 / 88%);
+  --color-rail: rgb(28 28 31 / 92%);
+  --color-toolbar: rgb(30 30 32 / 78%);
+  --color-popover: rgb(44 44 48 / 82%);
+  --color-popover-solid: #2c2c30;
+  --color-fill: rgb(118 118 128 / 24%);
+  --color-fill-hover: rgb(118 118 128 / 32%);
+  --color-selection: rgb(255 255 255 / 10%);
+  --color-separator: rgb(255 255 255 / 8%);
+  --color-border-popover: rgb(255 255 255 / 8%);
+  --color-label: #ececf0;
+  --color-label-secondary: #a1a1a6;
+  --color-label-tertiary: #98989d;
+  --color-accent: #0a84ff; /* icons, toggles, focus ring, selection */
+  --color-accent-strong: #0071e3; /* filled primary buttons (white text ≥ 4.5:1) */
+  --color-accent-text: #409cff; /* links / accent-coloured text on content */
+  --color-on-accent: #ffffff;
+  --color-green: #30d158;
+  --color-yellow: #ffd60a;
+  --color-red: #ff453a;
+  --color-red-fill: #d70015;
+  --color-mention: rgb(255 214 10 / 12%);
+  --color-code: rgb(118 118 128 / 18%);
+  --color-scrim: rgb(0 0 0 / 45%);
+
+  /* ---- spacing: 4 px grid ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* ---- radius ---- */
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-panel: 12px;
+
+  /* ---- shadow / blur (materials) ---- */
+  --shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 35%), 0 2px 6px rgb(0 0 0 / 25%);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 25%);
+  --blur-sidebar: blur(20px) saturate(180%);
+  --blur-toolbar: blur(12px) saturate(160%);
+  --blur-popover: blur(20px) saturate(180%);
+
+  /* ---- layers ---- */
+  --z-sticky: 10;
+  --z-pip: 20;
+  --z-popover: 30;
+  --z-modal: 40;
+  --z-toast: 50;
+
+  /* ---- motion ---- */
+  --motion-fast: 120ms;
+  --motion: 160ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- layout ---- */
+  --rail-width: 64px;
+  --sidebar-width: 240px;
+  --composer-height: 64px;
+
   color-scheme: dark;
+  accent-color: var(--color-accent);
 }
 
 :root[data-theme='light'] {
-  --c-rail: #e6e7ea;
-  --c-side: #f1f2f4;
-  --c-main: #ffffff;
-  --c-elev: #ffffff;
-  --c-hover: #eceef1;
-  --c-active: #e2e4e9;
-  --c-input: #f4f5f7;
-  --c-border: #dcdee3;
-  --c-text: #1d1f24;
-  --c-muted: #5d626c;
-  --c-faint: #8b909a;
-  --c-accent: #4a6cf0;
-  --c-accent-fg: #ffffff;
-  --c-ok: #1f9d63;
-  --c-warn: #b7791f;
-  --c-danger: #d33b40;
-  --c-mention: rgb(183 121 31 / 12%);
-  --c-code: #f1f2f4;
+  --color-bg: #ffffff;
+  --color-bg-elevated: #ffffff;
+  --color-sidebar: rgb(236 236 240 / 88%);
+  --color-rail: rgb(226 226 231 / 92%);
+  --color-toolbar: rgb(250 250 252 / 80%);
+  --color-popover: rgb(250 250 252 / 84%);
+  --color-popover-solid: #f7f7f9;
+  --color-fill: rgb(118 118 128 / 12%);
+  --color-fill-hover: rgb(118 118 128 / 20%);
+  --color-selection: rgb(0 0 0 / 7%);
+  --color-separator: rgb(0 0 0 / 9%);
+  --color-border-popover: rgb(0 0 0 / 6%);
+  --color-label: #1d1d1f;
+  --color-label-secondary: #57575c;
+  --color-label-tertiary: #636366;
+  --color-accent: #007aff;
+  --color-accent-strong: #0071e3;
+  --color-accent-text: #0066cc;
+  --color-green: #1f7a34;
+  --color-yellow: #a05a00;
+  --color-red: #d70015;
+  --color-red-fill: #d70015;
+  --color-mention: rgb(255 204 0 / 16%);
+  --color-code: rgb(118 118 128 / 12%);
+  --color-scrim: rgb(0 0 0 / 25%);
+  --shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 12px 32px rgb(0 0 0 / 14%), 0 2px 6px rgb(0 0 0 / 8%);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 8%);
   color-scheme: light;
 }
 
+/* macOS Electron: the window shows the native sidebar material through these surfaces. */
+:root.vibrancy {
+  --color-sidebar: rgb(30 30 32 / 30%);
+  --color-rail: rgb(20 20 22 / 38%);
+}
+:root.vibrancy[data-theme='light'] {
+  --color-sidebar: rgb(246 246 248 / 30%);
+  --color-rail: rgb(232 232 236 / 40%);
+}
+
+/* Reduced transparency: every material becomes solid. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --color-sidebar: #26262a;
+    --color-rail: #1c1c1f;
+    --color-toolbar: #1e1e20;
+    --color-popover: var(--color-popover-solid);
+  }
+  :root[data-theme='light'] {
+    --color-sidebar: #ececf0;
+    --color-rail: #e2e2e7;
+    --color-toolbar: #fafafc;
+    --color-popover: var(--color-popover-solid);
+  }
+}
+
 @theme inline {
-  --color-rail: var(--c-rail);
-  --color-side: var(--c-side);
-  --color-main: var(--c-main);
-  --color-elev: var(--c-elev);
-  --color-hover: var(--c-hover);
-  --color-active: var(--c-active);
-  --color-input: var(--c-input);
-  --color-line: var(--c-border);
-  --color-fg: var(--c-text);
-  --color-muted: var(--c-muted);
-  --color-faint: var(--c-faint);
-  --color-accent: var(--c-accent);
-  --color-accent-fg: var(--c-accent-fg);
-  --color-ok: var(--c-ok);
-  --color-warn: var(--c-warn);
-  --color-danger: var(--c-danger);
-  --color-mention: var(--c-mention);
-  --color-code: var(--c-code);
+  --color-rail: var(--color-rail);
+  --color-side: var(--color-sidebar);
+  --color-main: var(--color-bg);
+  --color-elev: var(--color-bg-elevated);
+  --color-hover: var(--color-fill);
+  --color-active: var(--color-selection);
+  --color-input: var(--color-fill);
+  --color-line: var(--color-separator);
+  --color-fg: var(--color-label);
+  --color-muted: var(--color-label-secondary);
+  --color-faint: var(--color-label-tertiary);
+  --color-accent: var(--color-accent);
+  --color-accent-strong: var(--color-accent-strong);
+  --color-accent-text: var(--color-accent-text);
+  --color-accent-fg: var(--color-on-accent);
+  --color-ok: var(--color-green);
+  --color-warn: var(--color-yellow);
+  --color-danger: var(--color-red);
+  --color-danger-fill: var(--color-red-fill);
+  --color-mention: var(--color-mention);
+  --color-code: var(--color-code);
+  --color-scrim: var(--color-scrim);
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', sans-serif;
   --font-mono: 'SF Mono', Menlo, Consolas, 'JetBrains Mono', monospace;
+  /* HIG type scale */
+  --text-caption: 11px;
+  --text-footnote: 12px;
+  --text-list: 13px;
+  --text-body: 14px;
+  --text-headline: 16px;
+  --text-title: 20px;
+  --text-large: 26px;
+  --radius-control: var(--radius-control);
+  --radius-card: var(--radius-card);
+  --radius-panel: var(--radius-panel);
 }
 
 html,
@@ -76,14 +182,50 @@ body,
 
 body {
   margin: 0;
-  background: var(--c-main);
-  color: var(--c-text);
+  background: var(--color-bg);
+  color: var(--color-label);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;
+}
+:root.vibrancy body {
+  background: transparent; /* the window's vibrancy shows through the sidebar */
+}
+
+/* ---- materials (docs/08, "Материалы") ---- */
+.mat-sidebar {
+  background: var(--color-sidebar);
+  -webkit-backdrop-filter: var(--blur-sidebar);
+  backdrop-filter: var(--blur-sidebar);
+}
+.mat-rail {
+  background: var(--color-rail);
+  -webkit-backdrop-filter: var(--blur-sidebar);
+  backdrop-filter: var(--blur-sidebar);
+}
+.mat-toolbar {
+  background: var(--color-toolbar);
+  -webkit-backdrop-filter: var(--blur-toolbar);
+  backdrop-filter: var(--blur-toolbar);
+}
+.mat-popover {
+  background: var(--color-popover);
+  -webkit-backdrop-filter: var(--blur-popover);
+  backdrop-filter: var(--blur-popover);
+  border: 1px solid var(--color-border-popover);
+  box-shadow: var(--shadow-popover);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .mat-popover {
+    background: var(--color-popover-solid);
+  }
+}
+/* Opaque content surface (messages): never translucent. */
+.mat-content {
+  background: var(--color-bg);
 }
 
 /* Text the user may want to copy. */
@@ -96,27 +238,36 @@ body {
 .drag {
   -webkit-app-region: drag;
 }
-.no-drag {
+.no-drag,
+.drag button,
+.drag input,
+.drag a,
+.drag select {
   -webkit-app-region: no-drag;
 }
 
-::-webkit-scrollbar {
+/* Native overlay scrollbars on macOS; thin neutral ones elsewhere. */
+:root:not(.mac) ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-::-webkit-scrollbar-thumb {
-  background: var(--c-border);
+:root:not(.mac) ::-webkit-scrollbar-thumb {
+  background: var(--color-fill-hover);
   border-radius: 8px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
-::-webkit-scrollbar-track {
+:root:not(.mac) ::-webkit-scrollbar-track {
   background: transparent;
 }
 
+/* Keyboard focus is always visible: 2 px accent ring. */
 :focus-visible {
-  outline: 2px solid var(--c-accent);
+  outline: 2px solid var(--color-accent);
   outline-offset: 1px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 @keyframes calaba-pulse {
@@ -130,4 +281,41 @@ body {
 }
 .typing-dot {
   animation: calaba-pulse 1.2s infinite;
+}
+
+@keyframes calaba-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-in {
+  animation: calaba-fade-in var(--motion) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
+  }
+}
+
+/* Screenshot tests (Playwright): no caret blink, no transitions. */
+:root.test-stable *,
+:root.test-stable *::before,
+:root.test-stable *::after {
+  animation: none !important;
+  transition: none !important;
+  caret-color: transparent !important;
+}
+
+/* SF-Symbols-like icons: one set (Lucide), thinner strokes (docs/08, «Иконки»). */
+svg.lucide {
+  stroke-width: 1.75;
 }

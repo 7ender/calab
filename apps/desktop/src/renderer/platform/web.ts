@@ -331,6 +331,7 @@ export function createWebPlatform(): Platform {
         return Promise.resolve();
       },
       attention: () => undefined,
+      setTheme: () => undefined,
     },
     tray: { setState: () => undefined, onAction: noop },
     files: { download, pathOf: (f) => f.name },
@@ -359,6 +360,31 @@ export function createWebPlatform(): Platform {
     system: {
       openPrivacySettings: () => Promise.resolve(),
       metrics: () => Promise.resolve({ rendererCpu: null, gpuCpu: null, mainCpu: null, rendererPid: 0 }),
+      permissions: async () => {
+        const q = async (name: string): Promise<string> => {
+          try {
+            const s = await navigator.permissions.query({ name: name as PermissionName });
+            return s.state === 'prompt' ? 'not-determined' : s.state;
+          } catch {
+            return 'n/a';
+          }
+        };
+        return {
+          microphone: await q('microphone'),
+          screen: 'n/a',
+          accessibility: true,
+          notifications: typeof Notification === 'undefined' ? 'n/a' : Notification.permission,
+        };
+      },
+      requestMic: async () => {
+        try {
+          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+          s.getTracks().forEach((t) => t.stop());
+          return true;
+        } catch {
+          return false;
+        }
+      },
     },
   };
 }

@@ -8,6 +8,7 @@ import { AppShell } from '../features/shell/AppShell';
 import { Dialogs } from '../features/shell/Dialogs';
 import { Toasts } from '../features/shell/Toasts';
 import { usePrefs } from '../stores/prefs';
+import { platform } from '../platform';
 import { useSession } from '../stores/session';
 
 export const queryClient = new QueryClient({
@@ -16,7 +17,15 @@ export const queryClient = new QueryClient({
 
 function useTheme(): void {
   const theme = usePrefs((s) => s.theme);
+  const os = useSession((s) => s.appInfo?.platform);
   useEffect(() => {
+    // macOS Electron: native vibrancy behind the sidebar + overlay scrollbars (docs/08).
+    const root = document.documentElement;
+    root.classList.toggle('mac', os === 'darwin' || /Mac/.test(navigator.platform));
+    root.classList.toggle('vibrancy', platform.kind === 'electron' && os === 'darwin');
+  }, [os]);
+  useEffect(() => {
+    platform.app.setTheme(theme); // the native material follows the app theme
     const apply = (): void => {
       const dark = theme === 'system' ? window.matchMedia('(prefers-color-scheme: dark)').matches : theme === 'dark';
       document.documentElement.dataset['theme'] = dark ? 'dark' : 'light';

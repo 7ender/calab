@@ -38,6 +38,8 @@ export interface Prefs {
   presence: PresenceStatus;
   /** Personal voice bitrate cap (UserSettings.audio_bitrate_kbps); null = room setting. */
   personalBitrateKbps: number | null;
+  /** First-run onboarding finished on this device (docs/08, «Онбординг»). */
+  onboarded: boolean;
 }
 
 const DEFAULTS: Prefs = {
@@ -58,6 +60,7 @@ const DEFAULTS: Prefs = {
   devStats: false,
   presence: PresenceStatus.ONLINE,
   personalBitrateKbps: null,
+  onboarded: false,
 };
 
 interface PrefsState extends Prefs {

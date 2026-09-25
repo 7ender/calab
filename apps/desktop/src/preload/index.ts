@@ -35,6 +35,7 @@ const api: CalabaApi = {
     log: (level, message) => void ipcRenderer.invoke(IPC.appLog, { level, message }),
     openExternal: (url) => ipcRenderer.invoke(IPC.appOpenExternal, url),
     attention: () => void ipcRenderer.invoke(IPC.appAttention),
+    setTheme: (theme) => void ipcRenderer.invoke(IPC.appSetTheme, theme),
   },
   tray: {
     setState: (s) => void ipcRenderer.invoke(IPC.trayState, s),
@@ -57,6 +58,8 @@ const api: CalabaApi = {
   system: {
     openPrivacySettings: (pane) => ipcRenderer.invoke(IPC.systemOpenPrivacySettings, pane),
     metrics: () => ipcRenderer.invoke(IPC.systemMetrics),
+    permissions: () => ipcRenderer.invoke(IPC.systemPermissions),
+    requestMic: () => ipcRenderer.invoke(IPC.systemRequestMic),
   },
 };
 

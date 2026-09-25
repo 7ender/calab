@@ -20,9 +20,10 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { SelfPanel } from './SelfPanel';
 import { VoiceBar } from './VoiceBar';
 
+/** macOS-style menus: popover material, 24 px items, accent highlight. */
 const menuItem =
-  'flex cursor-default items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-fg';
-const menuBox = 'z-50 min-w-52 rounded-md bg-rail p-1.5 shadow-xl ring-1 ring-line';
+  'flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-[13px] text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent data-[highlighted]:text-accent-fg';
+const menuBox = 'mat-popover anim-in z-[var(--z-popover)] min-w-52 rounded-[var(--radius-card)] p-1';
 
 export { menuBox, menuItem };
 
@@ -47,12 +48,16 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   };
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col bg-side">
+    <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <Dropdown.Root>
         <Dropdown.Trigger asChild>
-          <button type="button" className="drag flex h-12 items-center justify-between border-b border-rail px-4 pt-1 font-semibold hover:bg-hover">
-            <span className="no-drag truncate">{entry.ws.name}</span>
-            <ChevronDown className="no-drag size-4 text-muted" />
+          <button
+            type="button"
+            className="drag flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line px-4 text-[14px] font-semibold hover:bg-hover"
+            title={entry.ws.name}
+          >
+            <span className="no-drag min-w-0 truncate">{entry.ws.name}</span>
+            <ChevronDown className="no-drag size-4 shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
           </button>
         </Dropdown.Trigger>
         <Dropdown.Portal>
@@ -107,12 +112,12 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
 function Section({ title, onAdd, children }: { title: string; onAdd: (() => void) | undefined; children: ReactNode }): ReactNode {
   return (
     <div className="mb-4">
-      <div className="group flex items-center justify-between px-2 pb-1">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-faint">{title}</span>
+      <div className="group flex h-6 items-center justify-between px-2">
+        <h2 className="truncate text-[11px] font-semibold text-faint">{title}</h2>
         {onAdd ? (
           <Tip label={t('room.create')}>
-            <button type="button" onClick={onAdd} className="text-faint hover:text-fg" aria-label={t('room.create')}>
-              <Plus className="size-4" />
+            <button type="button" onClick={onAdd} className="grid size-6 place-items-center rounded-[var(--radius-control)] text-faint hover:bg-hover hover:text-fg" aria-label={t('room.create')}>
+              <Plus className="size-4" strokeWidth={1.75} />
             </button>
           </Tip>
         ) : null}
@@ -165,14 +170,14 @@ function TextRoomRow({ room, workspaceId, me, role }: { room: Room; workspaceId:
         type="button"
         onClick={() => openRoom(workspaceId, room.id)}
         className={cx(
-          'group flex h-8 items-center gap-1.5 rounded-md px-2 text-left',
+          'group flex h-8 items-center gap-2 rounded-[var(--radius-control)] px-2 text-left text-[13px]',
           active ? 'bg-active text-fg' : unread ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-fg',
         )}
       >
-        <Hash className="size-4 shrink-0 text-faint" />
-        <span className={cx('flex-1 truncate', unread && !active && 'font-semibold')}>{room.name}</span>
-        {room.isPrivate ? <Lock className="size-3 text-faint" /> : null}
-        {mentions > 0 ? <span className="rounded-full bg-danger px-1.5 text-[11px] font-bold text-white">{mentions}</span> : null}
+        <Hash className="size-4 shrink-0 text-faint" strokeWidth={1.75} aria-hidden />
+        <span className={cx('min-w-0 flex-1 truncate', unread && !active && 'font-semibold text-fg')} title={room.name}>{room.name}</span>
+        {room.isPrivate ? <Lock className="size-3 shrink-0 text-faint" strokeWidth={1.75} aria-label={t('room.private')} /> : null}
+        {mentions > 0 ? <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-[11px] font-semibold text-white">{mentions}</span> : null}
       </button>
     </RoomMenu>
   );
@@ -212,13 +217,13 @@ function VoiceRoomRow({
           onClick={click}
           title={canConnect ? undefined : t('voice.noConnect')}
           className={cx(
-            'flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left',
+            'flex h-8 w-full items-center gap-2 rounded-[var(--radius-control)] px-2 text-left text-[13px]',
             active ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
           )}
         >
-          <Volume2 className={cx('size-4 shrink-0', inRoom ? 'text-ok' : 'text-faint')} />
-          <span className={cx('flex-1 truncate', unread && !active && 'font-semibold text-fg')}>{room.name}</span>
-          {room.isPrivate ? <Lock className="size-3 text-faint" /> : null}
+          <Volume2 className={cx('size-4 shrink-0', inRoom ? 'text-ok' : 'text-faint')} strokeWidth={1.75} aria-hidden />
+          <span className={cx('min-w-0 flex-1 truncate', unread && !active && 'font-semibold text-fg')} title={room.name}>{room.name}</span>
+          {room.isPrivate ? <Lock className="size-3 shrink-0 text-faint" strokeWidth={1.75} aria-label={t('room.private')} /> : null}
         </button>
       </RoomMenu>
       {people.length > 0 ? (
@@ -251,11 +256,11 @@ function VoiceMember({
   const user = useWorkspaces((s) => s.users[state.userId]);
   const name = memberName(workspaceId, state.userId);
   const row = (
-    <div className="flex h-7 items-center gap-2 rounded-md px-2 text-[13px] text-muted hover:bg-hover hover:text-fg">
+    <div className="flex h-7 items-center gap-2 rounded-[var(--radius-control)] px-2 text-[13px] text-muted hover:bg-hover hover:text-fg" title={name}>
       <Avatar userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={20} speaking={speaking && !state.muted} />
-      <span className={cx('flex-1 truncate', speaking && !state.muted && 'text-fg')}>{name}</span>
+      <span className={cx('min-w-0 flex-1 truncate', speaking && !state.muted && 'text-fg')}>{name}</span>
       {state.streaming ? (
-        <span className="rounded bg-danger px-1 text-[9px] font-bold uppercase text-white" title={t('voice.streaming')}>
+        <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-semibold uppercase text-white" title={t('voice.streaming')}>
           live
         </span>
       ) : null}

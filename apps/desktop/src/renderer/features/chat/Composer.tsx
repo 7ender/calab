@@ -96,13 +96,13 @@ export function Composer({
   };
 
   if (!canSend) {
-    return <div className="mx-4 mb-5 rounded-lg bg-elev px-4 py-3 text-muted">{t('chat.noSend')}</div>;
+    return <div className="mx-4 my-3 rounded-[var(--radius-card)] bg-hover px-4 py-3 text-[13px] text-muted">{t('chat.noSend')}</div>;
   }
 
   return (
-    <div className="px-4 pb-5">
+    <div className="px-4 pt-3">
       {replyMsg ? (
-        <div className="flex items-center justify-between rounded-t-lg bg-side px-3 py-1.5 text-[13px] text-muted">
+        <div className="flex items-center justify-between rounded-t-[var(--radius-card)] border border-b-0 border-line bg-hover px-3 py-1.5 text-[12px] text-muted">
           <span className="truncate">
             {t('chat.replyingTo')} <span className="font-semibold text-fg">{memberName(workspaceId, replyMsg.authorId)}</span>
           </span>
@@ -112,7 +112,7 @@ export function Composer({
         </div>
       ) : null}
       {files.length > 0 ? (
-        <div className={cx('flex gap-2 overflow-x-auto bg-elev px-3 pt-3', !replyMsg && 'rounded-t-lg')}>
+        <div className={cx('flex gap-2 overflow-x-auto border border-b-0 border-line bg-elev px-3 pt-3', !replyMsg && 'rounded-t-[var(--radius-card)]')}>
           {files.map((f, i) => (
             <div key={`${f.name}-${i}`} className="relative w-36 shrink-0 rounded-md bg-side p-2">
               {f.previewUrl ? (
@@ -136,7 +136,7 @@ export function Composer({
           ))}
         </div>
       ) : null}
-      <div className={cx('flex items-end gap-1 bg-elev px-2 py-1.5', replyMsg || files.length ? 'rounded-b-lg' : 'rounded-lg')}>
+      <div className={cx('flex items-end gap-1 border border-line bg-elev px-1.5 py-1 shadow-[var(--shadow-card)]', replyMsg || files.length ? 'rounded-b-[var(--radius-card)]' : 'rounded-[var(--radius-card)]')}>
         {canAttach ? (
           <>
             <IconButton label={t('chat.attach')} onClick={() => fileInput.current?.click()} disabled={files.length >= MAX_ATTACHMENTS}>
@@ -166,7 +166,8 @@ export function Composer({
           }}
           onKeyDown={onKey}
           onPaste={onPaste}
-          className="selectable max-h-[280px] min-h-8 flex-1 resize-none bg-transparent py-1.5 leading-snug placeholder:text-faint focus:outline-none focus-visible:outline-none"
+          aria-label={t('chat.placeholder', { name: room.name })}
+          className="selectable max-h-[280px] min-h-8 flex-1 resize-none bg-transparent py-1.5 text-[14px] leading-snug placeholder:text-faint focus:outline-none focus-visible:outline-none"
         />
         <IconButton label={t('chat.send')} onClick={send} disabled={!text.trim() && files.length === 0}>
           <SendHorizontal className="size-5" />

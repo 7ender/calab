@@ -9,6 +9,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 # --- macOS: Apple-style icon = artwork at 80.5% of canvas, squircle-ish mask, transparent margins.
+cp "$SRC/icon_macos.svg" "$TMP/artwork.svg"   # librsvg only loads external files next to the input
 cat > "$TMP/mac.svg" <<SVG
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
@@ -18,7 +19,7 @@ cat > "$TMP/mac.svg" <<SVG
     </filter>
   </defs>
   <g clip-path="url(#sq)" filter="url(#sh)">
-    <image x="100" y="100" width="824" height="824" xlink:href="$(pwd)/$SRC/icon_macos.svg"/>
+    <image x="100" y="100" width="824" height="824" xlink:href="artwork.svg"/>
   </g>
 </svg>
 SVG
