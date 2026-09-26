@@ -1,5 +1,6 @@
-import { desktopCapturer, nativeImage, webContents, type Session, type WebContents } from 'electron';
-import type { CaptureSelection, CaptureSource } from '../shared/ipc';
+import { desktopCapturer, nativeImage, shell, systemPreferences, webContents, type Session, type WebContents } from 'electron';
+import log from 'electron-log/main';
+import type { CaptureSelection, CaptureSource, ScreenAccess } from '../shared/ipc';
 
 /**
  * Screen capture with our own picker (docs/02-media.md, "Захват").
@@ -177,4 +178,43 @@ export function installDisplayMediaHandler(ses: Session): void {
     },
     { useSystemPicker: false },
   );
+}
+
+const SCREEN_PRIVACY_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
+
+/** One small screen grab: true when it returns real pixels (the process can capture now). */
+async function probeCapture(): Promise<boolean> {
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 8, height: 8 } });
+    return sources.some((s) => !s.thumbnail.isEmpty());
+  } catch (err) {
+    log.warn('[capture] screen probe failed', err);
+    return false;
+  }
+}
+
+/**
+ * Screen Recording state for the onboarding step (docs/09 P0 #3). macOS only; elsewhere capture
+ * needs no OS grant. Probes only when the OS says «granted» — a probe without the grant would
+ * show the system prompt, which only `requestScreenAccess` may do.
+ */
+export async function screenAccess(): Promise<ScreenAccess> {
+  if (VISUAL_TEST) return { status: 'denied', canCapture: false };
+  if (process.platform !== 'darwin') return { status: 'n/a', canCapture: true };
+  const status = systemPreferences.getMediaAccessStatus('screen');
+  return { status, canCapture: status === 'granted' ? await probeCapture() : false };
+}
+
+/**
+ * «Запросить доступ и открыть настройки»: macOS lists an app under Privacy → Screen Recording only
+ * after its first capture attempt, so opening the pane alone shows a list without Calab. Attempt a
+ * capture first (registers the app in TCC; macOS may show its own prompt), then open the pane.
+ */
+export async function requestScreenAccess(): Promise<ScreenAccess> {
+  if (VISUAL_TEST || process.platform !== 'darwin') return screenAccess();
+  if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+    await probeCapture();
+    await shell.openExternal(SCREEN_PRIVACY_URL).catch((err: unknown) => log.warn('[capture] open privacy pane failed', err));
+  }
+  return screenAccess();
 }

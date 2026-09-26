@@ -14,6 +14,7 @@ import type {
   PermissionStatus,
   PrivacyPane,
   ProcessMetrics,
+  ScreenAccess,
   PttBinding,
   PttEvent,
   PttStatus,
@@ -100,6 +101,15 @@ export interface CalabaApi {
     permissions(): Promise<PermissionStatus>;
     /** Ask the OS for microphone access (macOS prompt); resolves with the result. */
     requestMic(): Promise<boolean>;
+    /** Screen Recording status and whether capture works in this process (no prompt). */
+    screenAccess(): Promise<ScreenAccess>;
+    /**
+     * macOS: when not granted, makes a capture attempt (adds Calab to the Screen Recording list)
+     * and opens that Privacy pane. Resolves with the status after the attempt.
+     */
+    requestScreenAccess(): Promise<ScreenAccess>;
+    /** Quit and start the app again (a new Screen Recording grant needs it). */
+    relaunch(): Promise<void>;
     /**
      * Seconds without keyboard/mouse input. Desktop: system-wide (powerMonitor, no permission
      * needed); web: input inside this tab only.

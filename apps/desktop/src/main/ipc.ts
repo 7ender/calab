@@ -20,7 +20,7 @@ import {
 } from '../shared/ipc';
 import { serverUrlProblem } from '../shared/serverUrl';
 import { forceRefresh, getAccessToken, guestJoin, login, logout, register, restore, revoked } from './auth';
-import { armSelection, listSources, systemAudioSupport } from './capture';
+import { armSelection, listSources, requestScreenAccess, screenAccess, systemAudioSupport } from './capture';
 import { takePendingDeepLink } from './deeplink';
 import { downloadFile } from './downloads';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
@@ -230,6 +230,14 @@ export function registerIpc(): void {
   handle(IPC.systemRequestMic, async () => {
     if (process.platform !== 'darwin') return true;
     return systemPreferences.askForMediaAccess('microphone');
+  });
+  handle(IPC.screenAccess, () => screenAccess());
+  handle(IPC.screenRequestAccess, () => requestScreenAccess());
+  handle(IPC.appRelaunch, () => {
+    if (VISUAL_TEST) return;
+    log.info('[app] relaunch requested (screen recording grant)');
+    app.relaunch();
+    app.exit(0);
   });
   handle(IPC.appAttention, (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);

@@ -1,6 +1,6 @@
 import { AudioWaveform, Bell, Mic, MonitorUp, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import type { PermissionStatus } from '../../../shared/ipc';
+import type { PermissionStatus, ScreenAccess } from '../../../shared/ipc';
 import { Logo } from '../../components/Logo';
 import { Button, Segmented, Select, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -14,6 +14,7 @@ import { useWorkspaces } from '../../stores/workspaces';
 import { MicMeter } from '../settings/AppSettingsDialog';
 import { PttBinder, bindingLabel } from '../settings/PttBinder';
 import { notifyStepView, readNotifyState, requestNotify, type NotifyState } from '../../lib/notifyPermission';
+import { screenStepState, screenStepView } from '../../lib/screenPermission';
 
 /**
  * First run (docs/08 «Онбординг», docs/09 #20, #55): one card per step — an icon illustration, a
@@ -275,14 +276,30 @@ function ModeStep({ nav }: { nav: Nav }): ReactNode {
 }
 
 function ScreenStep({ nav }: { nav: Nav }): ReactNode {
-  const [p, setP] = useState<PermissionStatus | null>(null);
+  // docs/09 P0 #3: macOS lists Calab under Screen Recording only after a capture attempt, and a
+  // new grant usually applies after a relaunch — see lib/screenPermission.
+  const [access, setAccess] = useState<ScreenAccess | null>(null);
+  const [requested, setRequested] = useState(false);
+  const [asking, setAsking] = useState(false);
   useEffect(() => {
-    const check = (): void => void platform.system.permissions().then(setP);
+    const check = (): void => void platform.system.screenAccess().then(setAccess);
     check();
+    // Back from System Settings: re-read the status.
     window.addEventListener('focus', check);
     return () => window.removeEventListener('focus', check);
   }, []);
-  const granted = p?.screen === 'granted';
+  const view = screenStepView(screenStepState(access, requested));
+  const request = (): void => {
+    setAsking(true);
+    void platform.system
+      .requestScreenAccess()
+      .then(setAccess)
+      .finally(() => {
+        setRequested(true);
+        setAsking(false);
+      });
+  };
+  const relaunch = (): void => void platform.system.relaunch();
   return (
     <StepFrame
       illustration={<Illustration icon={MonitorUp} />}
@@ -291,22 +308,53 @@ function ScreenStep({ nav }: { nav: Nav }): ReactNode {
       back={nav.back}
       actions={
         <>
-          <Button variant="secondary" size="lg" onClick={nav.next}>
-            {t('onb.later')}
-          </Button>
-          {granted ? (
-            <Button size="lg" onClick={nav.next}>
-              {t('onb.next')}
+          {view.later ? (
+            <Button variant="secondary" size="lg" onClick={nav.next}>
+              {t('onb.later')}
+            </Button>
+          ) : null}
+          {view.primary === 'request' ? (
+            <Button size="lg" busy={asking} onClick={request}>
+              {t('onb.screenRequest')}
+            </Button>
+          ) : view.primary === 'reopen' ? (
+            <Button size="lg" busy={asking} onClick={request}>
+              {t('perm.openOs')}
+            </Button>
+          ) : view.primary === 'restart' ? (
+            <Button size="lg" onClick={relaunch}>
+              {t('onb.relaunch')}
             </Button>
           ) : (
-            <Button size="lg" onClick={() => void platform.system.openPrivacySettings('screen')}>
-              {t('perm.openOs')}
+            <Button size="lg" onClick={nav.next}>
+              {t('onb.next')}
             </Button>
           )}
         </>
       }
     >
-      {granted ? <p className="rounded-[var(--radius-card)] bg-[var(--color-card)] p-3 text-center text-body text-ok">{t('onb.screenOk')}</p> : <WarnNote>{t('onb.screenRestart')}</WarnNote>}
+      {view.note === 'granted' ? (
+        <p className="rounded-[var(--radius-card)] bg-[var(--color-card)] p-3 text-center text-body text-ok" role="status">
+          {t('onb.screenOk')}
+        </p>
+      ) : (
+        <WarnNote>
+          <p>
+            {view.note === 'waiting'
+              ? t('onb.screenWaiting')
+              : view.note === 'restart'
+                ? t('onb.screenNeedsRestart')
+                : view.note === 'restricted'
+                  ? t('onb.screenRestricted')
+                  : t('onb.screenRestart')}
+          </p>
+          {view.restartInNote ? (
+            <Button variant="secondary" size="sm" className="self-start" onClick={relaunch}>
+              {t('onb.relaunch')}
+            </Button>
+          ) : null}
+        </WarnNote>
+      )}
     </StepFrame>
   );
 }

@@ -535,6 +535,13 @@ export function createWebPlatform(): Platform {
         }
       },
       idleSeconds: () => Promise.resolve(webIdleSeconds()),
+      // The browser asks at getDisplayMedia() itself; the onboarding screen step is macOS desktop only.
+      screenAccess: () => Promise.resolve({ status: 'n/a', canCapture: true }),
+      requestScreenAccess: () => Promise.resolve({ status: 'n/a', canCapture: true }),
+      relaunch: () => {
+        window.location.reload();
+        return Promise.resolve();
+      },
     },
   };
 }

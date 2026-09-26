@@ -66,6 +66,9 @@ const api: CalabaApi = {
     metrics: () => ipcRenderer.invoke(IPC.systemMetrics),
     permissions: () => ipcRenderer.invoke(IPC.systemPermissions),
     requestMic: () => ipcRenderer.invoke(IPC.systemRequestMic),
+    screenAccess: () => ipcRenderer.invoke(IPC.screenAccess),
+    requestScreenAccess: () => ipcRenderer.invoke(IPC.screenRequestAccess),
+    relaunch: () => ipcRenderer.invoke(IPC.appRelaunch),
     idleSeconds: () => ipcRenderer.invoke(IPC.systemIdleSeconds),
   },
 };
