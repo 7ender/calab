@@ -92,6 +92,18 @@ func (d *DB) Migrate(ctx context.Context) error {
 	return nil
 }
 
+// MigrateTo applies pending migrations up to and including version (data-migration tests).
+func (d *DB) MigrateTo(ctx context.Context, version int64) error {
+	p, err := newProvider(d)
+	if err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	if _, err := p.UpTo(ctx, version); err != nil {
+		return fmt.Errorf("migrate to %d: %w", version, err)
+	}
+	return nil
+}
+
 // MigrationStatus returns "version applied|pending" lines.
 func (d *DB) MigrationStatus(ctx context.Context) ([]string, error) {
 	p, err := newProvider(d)

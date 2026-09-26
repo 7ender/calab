@@ -35,6 +35,7 @@ const KEY = new Set([
   'onboarding-layout',
   'welcome',
   'main-chat',
+  'sidebar-drag',
   'chat-hover-actions',
   'chat-context-menu',
   'dm-list',
@@ -359,6 +360,32 @@ test('main-chat', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await checkpoint(shot, 'main-chat');
+});
+
+/**
+ * Room drag & drop (docs/09 P1 #19): «разработка» held by the pointer over the top half of
+ * «общий» — the room chip follows the pointer, the row fades, the accent line marks the place.
+ * Esc cancels: the line goes and nothing moves.
+ */
+test('sidebar-drag', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const list = win.getByTestId('room-list');
+  const from = await list.locator(`[data-room-slot="${IDS.rooms.dev}"]`).boundingBox();
+  const to = await list.locator(`[data-room-slot="${IDS.rooms.general}"]`).boundingBox();
+  if (!from || !to) throw new Error('room rows are not laid out');
+  await win.mouse.move(from.x + 60, from.y + from.height / 2);
+  await win.mouse.down();
+  await win.mouse.move(from.x + 60, from.y + from.height / 2 - 10, { steps: 4 });
+  await win.mouse.move(to.x + 60, to.y + 6, { steps: 8 });
+  await expect(win.getByTestId('drop-line')).toBeVisible();
+  await settle(win);
+  await checkpoint(shot, 'sidebar-drag');
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('drop-line')).toHaveCount(0);
+  await win.mouse.up();
+  const after = await list.locator('[data-room-slot]').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset['roomSlot']));
+  expect(after.indexOf(IDS.rooms.general)).toBeLessThan(after.indexOf(IDS.rooms.dev));
 });
 
 // ---------------------------------------------------------------- localization (ADR-0022)
