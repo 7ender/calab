@@ -83,6 +83,7 @@ for (const theme of ['dark', 'light'] as const) {
     const userData = mkdtempSync(join(tmpdir(), 'calab-shots-'));
     const app = await electron.launch({
       executablePath: APP,
+      args: ['--lang=ru'], // Russian UI on any host (ADR-0022)
       env: {
         ...process.env,
         CALABA_SERVER_URL: mock.url,

@@ -24,7 +24,7 @@ for (const theme of THEMES) {
         await page.setViewportSize(viewport);
         await page.clock.setFixedTime(NOW);
         await page.goto(`${mock.url}/?visual-test`);
-        await page.evaluate((t) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: t, onboarded: true }, version: 1 })), theme);
+        await page.evaluate((t) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: t, onboarded: true, locale: 'ru' }, version: 1 })), theme);
         await page.reload();
         await page.getByLabel('Email').fill('owner@calaba.test');
         await page.getByLabel('Пароль').fill(PASSWORD);
@@ -73,7 +73,7 @@ async function openLink(page: import('@playwright/test').Page, base: string, pat
   await page.goto(`${base}/?visual-test`);
   await page.evaluate(
     ({ t, e }) => {
-      localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: t, onboarded: true }, version: 1 }));
+      localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: t, onboarded: true, locale: 'ru' }, version: 1 }));
       for (const [k, v] of Object.entries(e)) localStorage.setItem(k, v);
     },
     { t: theme, e: extra },

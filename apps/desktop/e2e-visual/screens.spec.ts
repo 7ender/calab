@@ -314,6 +314,20 @@ test('main-chat', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'main-chat');
 });
 
+// ---------------------------------------------------------------- localization (ADR-0022)
+
+/**
+ * The baselines are Russian; English gets one shot per main screen (`-g "i18n-en"`), dark 1440
+ * only — overflow in other locales is caught by the string-length unit test.
+ */
+test('i18n-en-main-chat', async ({ open, win, mock, shot, theme, size: viewport }) => {
+  test.skip(theme !== 'dark' || viewport.width !== 1440, 'English is checked in dark 1440 only');
+  await open({ prefs: { locale: 'en' } });
+  await expect(win.locator('html')).toHaveAttribute('lang', 'en');
+  await mainWindow(win, mock);
+  await checkpoint(shot, 'i18n-en-main-chat');
+});
+
 // ---------------------------------------------------------------- direct messages (ADR-0020)
 
 /**
