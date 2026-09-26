@@ -331,7 +331,7 @@ window.addEventListener('blur', () => {
 });
 
 function pttStatus(): PttStatus {
-  return { active: binding !== null, binding, trusted: true, error: null, capsRemap: 'unsupported', wayland: false };
+  return { active: binding !== null, binding, trusted: true, error: null, capsRemap: 'unsupported', wayland: false, hid: 'unsupported' };
 }
 
 // ---------------------------------------------------------------- downloads
@@ -504,6 +504,8 @@ export function createWebPlatform(): Platform {
         pttListeners.add(cb);
         return () => pttListeners.delete(cb);
       },
+      // No global hook in the browser: nothing to diagnose.
+      onRawKey: () => () => undefined,
     },
     system: {
       openPrivacySettings: () => Promise.resolve(),

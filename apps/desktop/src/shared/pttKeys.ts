@@ -148,3 +148,31 @@ export function mouseName(button: number): string {
 export function isToggleOnly(code: number): boolean {
   return code === KEY.CAPS_LOCK_STATE;
 }
+
+/** What main listens to for a key binding (`hid`: the macOS HID listener runs, shared/keySource.ts). */
+export interface ResolvedKeyBinding {
+  code: number;
+  mode: 'hold' | 'toggle';
+  /** The code reports lock-state flips (PttGate lockKey). */
+  lockKey: boolean;
+  /** Needs the hidutil Caps Lock → F18 remap (fallback without the HID listener). */
+  remap: boolean;
+}
+
+/**
+ * Bindings saved before the HID listener (≤ 0.2.1) keep working and use it when it runs: Caps Lock
+ * remapped to F18 becomes the physical Caps Lock (no hidutil remap), and the lock-state toggle
+ * becomes a toggle on the physical key — so a layout-switching Caps Lock works for both.
+ */
+export function resolveKeyBinding(b: { code: number; mode?: 'hold' | 'toggle'; remap?: 'caps-f18' }, hid: boolean): ResolvedKeyBinding {
+  const mode = b.mode ?? 'hold';
+  if (b.remap === 'caps-f18') {
+    return hid ? { code: KEY.CAPS_LOCK, mode, lockKey: false, remap: false } : { code: b.code, mode, lockKey: false, remap: true };
+  }
+  if (isToggleOnly(b.code)) {
+    return hid
+      ? { code: KEY.CAPS_LOCK, mode: 'toggle', lockKey: false, remap: false }
+      : { code: b.code, mode: 'toggle', lockKey: true, remap: false };
+  }
+  return { code: b.code, mode, lockKey: false, remap: false };
+}

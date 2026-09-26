@@ -1,6 +1,6 @@
 import { TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { PttBinding, PttStatus } from '../../../shared/ipc';
+import type { PttBinding, PttRawKey, PttStatus } from '../../../shared/ipc';
 import { KEY, keyName, mouseName } from '../../../shared/pttKeys';
 import { Button, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -39,8 +39,12 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
   const talking = useVoice((s) => s.pttDown);
   const [capturing, setCapturing] = useState(false);
   const [status, setStatus] = useState<PttStatus | null>(null);
+  const [lastKey, setLastKey] = useState<PttRawKey | null>(null);
   const web = platform.kind === 'web';
   const mac = os === 'darwin' && !web;
+
+  // Diagnostics: main sends every raw key event while our capture is armed (source tap / hid).
+  useEffect(() => platform.ptt.onRawKey(setLastKey), []);
 
   useEffect(() => {
     const check = (): void => void platform.ptt.status().then(setStatus);
@@ -84,6 +88,9 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
   const caps = isCaps(b);
   const toggle = b?.mode === 'toggle' || (b?.kind === 'key' && b.code === KEY.CAPS_LOCK_STATE);
   const remapped = b?.kind === 'key' && b.remap === 'caps-f18';
+  // macOS HID listener: the physical Caps Lock is a real hold key, the hidutil remap is not needed.
+  const hid = status?.hid === 'running';
+  const hidBlocked = mac && (status?.hid === 'denied' || status?.hid === 'restart');
   const setRemap = (on: boolean): void => {
     setPrefs({
       pttBinding: on
@@ -115,10 +122,32 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
       </div>
 
       {capturing ? <p className="text-caption text-muted">{t('voice.pttCaptureHint')}</p> : null}
+      {lastKey && !web ? (
+        <p className="text-caption text-muted" data-testid="ptt-last-key">
+          {t('voice.pttLastKey', {
+            key: keyName(lastKey.code, os),
+            dir: lastKey.down ? '↓' : '↑',
+            source: lastKey.source === 'hid' ? 'HID' : t('voice.pttSourceTap'),
+            code: String(lastKey.code),
+            raw: `0x${lastKey.rawcode.toString(16)}`,
+          })}
+          {lastKey.dropped ? ` ${t('voice.pttLastKeyDup')}` : ''}
+        </p>
+      ) : null}
 
-      {caps && toggle && !remapped ? <p className="rounded-[var(--radius-row)] bg-mention px-2 py-1.5 text-caption">{t('voice.pttCapsToggle')}</p> : null}
-      {toggle && !caps ? <p className="text-caption text-muted">{t('voice.pttToggleNote')}</p> : null}
-      {mac && caps ? (
+      {caps && toggle && !remapped && !hid ? <p className="rounded-[var(--radius-row)] bg-mention px-2 py-1.5 text-caption">{t('voice.pttCapsToggle')}</p> : null}
+      {toggle && (!caps || hid) ? <p className="text-caption text-muted">{t('voice.pttToggleNote')}</p> : null}
+      {hidBlocked && status.trusted ? (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-caption text-muted">{status.hid === 'restart' ? t('voice.pttHidRestart') : t('voice.pttHidDenied')}</span>
+          {status.hid === 'denied' ? (
+            <Button variant="secondary" size="sm" onClick={() => void platform.system.openPrivacySettings('input-monitoring')}>
+              {t('perm.openOs')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {mac && caps && !hid ? (
         <div className="flex items-center justify-between gap-3">
           <span className="flex flex-col">
             <span className="text-body">{t('voice.pttCapsRemap')}</span>

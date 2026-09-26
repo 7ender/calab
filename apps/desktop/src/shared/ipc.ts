@@ -1,3 +1,4 @@
+import type { KeySource } from './keySource';
 import type { PttMode } from './pttGate';
 
 /**
@@ -70,6 +71,8 @@ export const IPC = {
   pttStatus: 'ptt:status',
   /** main → renderer push: PTT key pressed/released. */
   pttEvent: 'ptt:event',
+  /** main → renderer push while a capture is armed: raw key event (PttRawKey, diagnostics). */
+  pttRawKey: 'ptt:raw-key',
   systemOpenPrivacySettings: 'system:open-privacy-settings',
   /** CPU of this window's renderer + GPU process (dev stats panel). */
   systemMetrics: 'system:metrics',
@@ -222,13 +225,14 @@ export interface CaptureSelection {
 /**
  * PTT binding. `key`/`mouse` codes are libuiohook codes (see shared/pttKeys.ts), `dom` is the
  * web fallback (`KeyboardEvent.code` / `Mouse<N>`). `mode` defaults to 'hold'.
- * `remap: 'caps-f18'` (macOS): Caps Lock is remapped to F18 with hidutil while Calaba runs,
- * the binding listens to F18 — true hold-to-talk, no upper-case toggling.
+ * `remap: 'caps-f18'` (macOS fallback without the HID listener): Caps Lock is remapped to F18 with
+ * hidutil while Calaba runs, the binding listens to F18. `source` (informational): which hook
+ * source delivered the key at capture — 'hid' = the macOS IOHIDManager listener (Caps Lock).
  */
 export type { PttMode };
 
 export type PttBinding =
-  | { kind: 'key'; code: number; label: string; mode?: PttMode; remap?: 'caps-f18' }
+  | { kind: 'key'; code: number; label: string; mode?: PttMode; remap?: 'caps-f18'; source?: KeySource }
   | { kind: 'mouse'; code: number; label: string; mode?: PttMode }
   | { kind: 'dom'; code: string; label: string; mode?: PttMode };
 
@@ -242,10 +246,27 @@ export interface PttStatus {
   capsRemap: 'unsupported' | 'available' | 'active';
   /** Linux Wayland: no global key hooks (and the GlobalShortcuts portal has no Caps Lock). */
   wayland: boolean;
+  /**
+   * macOS IOHIDManager listener (physical Caps Lock): 'running'; 'denied' = no Input Monitoring;
+   * 'restart' = granted since, reopen failed (restart Calab); 'off' until the hook starts.
+   */
+  hid: PttHidState;
 }
+
+export type PttHidState = 'unsupported' | 'off' | 'starting' | 'running' | 'denied' | 'restart' | 'error';
 
 export interface PttEvent {
   down: boolean;
+}
+
+/** main → renderer while a PTT capture is armed: the last raw key event (diagnostics line). */
+export interface PttRawKey {
+  code: number;
+  rawcode: number;
+  source: KeySource;
+  down: boolean;
+  /** Dropped as a duplicate of the other source (shared/keySource.ts). */
+  dropped: boolean;
 }
 
 export type PrivacyPane = 'accessibility' | 'input-monitoring' | 'screen' | 'microphone' | 'camera';

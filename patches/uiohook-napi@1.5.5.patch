@@ -1,21 +1,99 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index bea57600bf7d03db29e4b38c76afe5d6d8cae1e1..2ccd5feb719f30535a29f5808884d171a1faaa22 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -16,7 +16,23 @@ export interface UiohookKeyboardEvent {
+     metaKey: boolean;
+     shiftKey: boolean;
+     keycode: number;
++    /** Calaba patch: platform raw code (macOS: kVK_* for the tap, HID usage for "hid"). */
++    rawcode?: number;
++    /** Calaba patch: libuiohook modifier mask. */
++    mask?: number;
++    /** Calaba patch: "hid" = macOS IOHIDManager listener, "tap" = the regular hook. */
++    source?: 'tap' | 'hid';
+ }
++/** Calaba patch: the native module (absent members on the upstream Windows prebuild). */
++export interface CalabaNative {
++    calabaPatch?: string;
++    calabaHid?: string;
++    hidStatus?: () => 'off' | 'starting' | 'running' | 'denied' | 'error' | 'unsupported';
++    hidAccess?: () => 'granted' | 'denied' | 'unknown' | 'unsupported';
++    hidDevices?: () => number;
++    hidRetry?: () => void;
++}
++export declare const calabaNative: CalabaNative;
+ export interface UiohookMouseEvent {
+     type: EventType.EVENT_MOUSE_CLICKED | EventType.EVENT_MOUSE_MOVED | EventType.EVENT_MOUSE_PRESSED | EventType.EVENT_MOUSE_RELEASED;
+     time: number;
+diff --git a/dist/index.js b/dist/index.js
+index 61acc012eeb9ebcb75fc9ebaf3bbc3f677864a84..59a3b5da44c4a4bee78b8c0fa0140b0c0ead23a2 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -4,6 +4,8 @@ exports.uIOhook = exports.UiohookKey = exports.WheelDirection = exports.EventTyp
+ const events_1 = require("events");
+ const path_1 = require("path");
+ const lib = require('node-gyp-build')((0, path_1.join)(__dirname, '..'));
++// Calaba patch: the native module itself (hidStatus/hidAccess/hidDevices/hidRetry, calabaPatch).
++exports.calabaNative = lib;
+ var KeyToggle;
+ (function (KeyToggle) {
+     KeyToggle[KeyToggle["Tap"] = 0] = "Tap";
 diff --git a/libuiohook/include/uiohook.h b/libuiohook/include/uiohook.h
-index 0242f327371700cb4b06bc9d9da96a007936368d..619529c4f28793bf627bdb93c66124ee3427d8a3 100644
+index 0242f327371700cb4b06bc9d9da96a007936368d..b0221fa485b4a3a2aa211d45af4f517374a320f0 100644
 --- a/libuiohook/include/uiohook.h
 +++ b/libuiohook/include/uiohook.h
-@@ -182,6 +182,8 @@ typedef void (*dispatcher_t)(uiohook_event *const);
+@@ -182,6 +182,11 @@ typedef void (*dispatcher_t)(uiohook_event *const);
  
  #define VC_TAB                                   0x000F
  #define VC_CAPS_LOCK                             0x003A
 +// Calaba patch: macOS Caps Lock *state* change (on = pressed, off = released), from kCGEventFlagsChanged.
 +#define VC_CAPS_LOCK_STATE                       0x0F3A
++// Calaba patch: `reserved` bit of an event that came from the macOS IOHIDManager keyboard listener
++// (physical key, read at the HID level) instead of the CGEventTap. Never set by the tap paths.
++#define CALABA_EVENT_SOURCE_HID                  0x4000
  
  #define VC_A                                     0x001E
  #define VC_B                                     0x0030
+@@ -450,6 +455,19 @@ extern "C" {
+     // Retrieves the double/triple click interval.
+     UIOHOOK_API long int hook_get_multi_click_time();
+ 
++#ifdef __APPLE__
++    // Calaba patch: IOHIDManager keyboard listener (Caps Lock), runs on the hook's run loop.
++    // Status: "off" | "starting" | "running" | "denied" | "error".
++    UIOHOOK_API extern const char calaba_hid_marker[];
++    UIOHOOK_API const char* calaba_hid_status(void);
++    // Input Monitoring (kIOHIDRequestTypeListenEvent): "granted" | "denied" | "unknown".
++    UIOHOOK_API const char* calaba_hid_access(void);
++    // Keyboards currently matched by the listener.
++    UIOHOOK_API int calaba_hid_devices(void);
++    // Re-open the listener (e.g. after Input Monitoring was granted); no-op unless the hook runs.
++    UIOHOOK_API void calaba_hid_retry(void);
++#endif
++
+ #ifdef __cplusplus
+ }
+ #endif
 diff --git a/libuiohook/src/darwin/input_hook.c b/libuiohook/src/darwin/input_hook.c
-index e6cd6cec9c3c5a26cda5eccc5fe9eb087752eef9..0197b99122f75b56842dfbaa36c4a422496aa653 100644
+index e6cd6cec9c3c5a26cda5eccc5fe9eb087752eef9..b68f05de677ed9b59b4c9abc5b172d43aa855b5c 100644
 --- a/libuiohook/src/darwin/input_hook.c
 +++ b/libuiohook/src/darwin/input_hook.c
-@@ -369,6 +369,23 @@ static inline void process_key_released(uint64_t timestamp, CGEventRef event_ref
+@@ -32,6 +32,13 @@
+ #include "input_helper.h"
+ #include "logger.h"
+ 
++// Calaba patch: IOHIDManager keyboard listener (see calaba_hid_* below).
++#include <string.h>
++#include <IOKit/hid/IOHIDManager.h>
++#include <IOKit/hid/IOHIDUsageTables.h>
++#include <IOKit/hidsystem/IOHIDLib.h>
++#include <dispatch/dispatch.h>
++
+ 
+ typedef struct _event_runloop_info {
+     CFMachPortRef port;
+@@ -369,6 +376,230 @@ static inline void process_key_released(uint64_t timestamp, CGEventRef event_ref
      dispatch_event(&event);
  }
  
@@ -36,10 +114,217 @@ index e6cd6cec9c3c5a26cda5eccc5fe9eb087752eef9..0197b99122f75b56842dfbaa36c4a422
 +    dispatch_event(&event);
 +}
 +
++/* ---- Calaba patch: IOHIDManager keyboard listener ------------------------------------------
++ *
++ * With «Use Caps Lock to switch input source» (default once a second layout is added) a short Caps
++ * Lock press only switches the layout: the lock state never flips, so the CGEventTap sees neither
++ * kCGEventFlagsChanged nor NX_SYSDEFINED, and a hidutil Caps->F18 remap did not reach the tap either
++ * (owner, 0.2.1). The physical key is still visible at the HID level, which is what Discord reads.
++ *
++ * An IOHIDManager on the hook's own run loop (same thread as the tap, so dispatch is serialized with
++ * tap events) reports Caps Lock (page 0x07, usage 0x39) down/up as VC_CAPS_LOCK with the `reserved`
++ * bit CALABA_EVENT_SOURCE_HID. The client dedups against tap events of the same key. Opening the
++ * manager needs Input Monitoring (kIOHIDRequestTypeListenEvent); when undetermined it is requested
++ * off-thread (IOHIDRequestAccess may wait for the user) and the open is retried afterwards. */
++
++UIOHOOK_API const char calaba_hid_marker[] = "CALABA_HID_CAPS_V1";
++
++enum { CALABA_HID_OFF, CALABA_HID_STARTING, CALABA_HID_RUNNING, CALABA_HID_DENIED, CALABA_HID_ERROR };
++
++static IOHIDManagerRef calaba_hid_manager = NULL;
++static volatile int calaba_hid_state = CALABA_HID_OFF;
++static volatile int calaba_hid_device_count = 0;
++static bool calaba_hid_requested = false;
++static CFRunLoopSourceRef calaba_hid_retry_source = NULL;
++static pthread_mutex_t calaba_hid_mutex = PTHREAD_MUTEX_INITIALIZER;
++
++static IOHIDAccessType calaba_hid_check_access(void) {
++    if (__builtin_available(macOS 10.15, *)) {
++        return IOHIDCheckAccess(kIOHIDRequestTypeListenEvent);
++    }
++    return kIOHIDAccessTypeGranted;
++}
++
++UIOHOOK_API const char* calaba_hid_status(void) {
++    switch (calaba_hid_state) {
++        case CALABA_HID_STARTING: return "starting";
++        case CALABA_HID_RUNNING: return "running";
++        case CALABA_HID_DENIED: return "denied";
++        case CALABA_HID_ERROR: return "error";
++        default: return "off";
++    }
++}
++
++UIOHOOK_API const char* calaba_hid_access(void) {
++    switch (calaba_hid_check_access()) {
++        case kIOHIDAccessTypeGranted: return "granted";
++        case kIOHIDAccessTypeDenied: return "denied";
++        default: return "unknown";
++    }
++}
++
++UIOHOOK_API int calaba_hid_devices(void) {
++    return calaba_hid_device_count;
++}
++
++UIOHOOK_API void calaba_hid_retry(void) {
++    pthread_mutex_lock(&calaba_hid_mutex);
++    if (calaba_hid_retry_source != NULL && event_loop != NULL) {
++        CFRunLoopSourceSignal(calaba_hid_retry_source);
++        CFRunLoopWakeUp(event_loop);
++    }
++    pthread_mutex_unlock(&calaba_hid_mutex);
++}
++
++static void calaba_hid_value(void *context, IOReturn result, void *sender, IOHIDValueRef value) {
++    if (result != kIOReturnSuccess || value == NULL) return;
++    IOHIDElementRef element = IOHIDValueGetElement(value);
++    if (element == NULL) return;
++    uint32_t page = IOHIDElementGetUsagePage(element);
++    uint32_t usage = IOHIDElementGetUsage(element);
++    if (page != kHIDPage_KeyboardOrKeypad || usage != kHIDUsage_KeyboardCapsLock) return;
++
++    struct timeval now;
++    gettimeofday(&now, NULL);
++
++    // A local event, kept apart from the tap's static `event` (same thread, but not the same record).
++    uiohook_event hid_event;
++    memset(&hid_event, 0, sizeof(hid_event));
++    hid_event.time = (uint64_t) now.tv_sec * 1000 + (uint64_t) now.tv_usec / 1000;
++    hid_event.reserved = CALABA_EVENT_SOURCE_HID;
++    hid_event.type = IOHIDValueGetIntegerValue(value) != 0 ? EVENT_KEY_PRESSED : EVENT_KEY_RELEASED;
++    hid_event.mask = get_modifiers();
++    hid_event.data.keyboard.keycode = VC_CAPS_LOCK;
++    hid_event.data.keyboard.rawcode = (uint16_t) usage;
++    hid_event.data.keyboard.keychar = CHAR_UNDEFINED;
++
++    dispatch_event(&hid_event);
++}
++
++static void calaba_hid_device_added(void *context, IOReturn result, void *sender, IOHIDDeviceRef device) {
++    calaba_hid_device_count++;
++}
++
++static void calaba_hid_device_removed(void *context, IOReturn result, void *sender, IOHIDDeviceRef device) {
++    if (calaba_hid_device_count > 0) calaba_hid_device_count--;
++}
++
++static CFMutableDictionaryRef calaba_hid_match(CFStringRef page_key, int page, CFStringRef usage_key, int usage) {
++    CFMutableDictionaryRef dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 2,
++            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
++    if (dict == NULL) return NULL;
++    CFNumberRef page_num = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &page);
++    CFNumberRef usage_num = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &usage);
++    CFDictionarySetValue(dict, page_key, page_num);
++    CFDictionarySetValue(dict, usage_key, usage_num);
++    CFRelease(page_num);
++    CFRelease(usage_num);
++    return dict;
++}
++
++static void calaba_hid_request_access(void *context) {
++    // May block until the user answers the Input Monitoring prompt: never on the hook thread.
++    if (__builtin_available(macOS 10.15, *)) {
++        IOHIDRequestAccess(kIOHIDRequestTypeListenEvent);
++    }
++    calaba_hid_retry();
++}
++
++// Runs on the hook run loop (the retry source's perform callback).
++static void calaba_hid_open(void *info) {
++    if (calaba_hid_manager != NULL || event_loop == NULL) return;
++
++    IOHIDAccessType access = calaba_hid_check_access();
++    if (access == kIOHIDAccessTypeDenied) {
++        calaba_hid_state = CALABA_HID_DENIED;
++        logger(LOG_LEVEL_WARN, "%s [%u]: %s: Input Monitoring denied.\n", __FUNCTION__, __LINE__, calaba_hid_marker);
++        return;
++    }
++    if (access == kIOHIDAccessTypeUnknown && !calaba_hid_requested) {
++        calaba_hid_requested = true;
++        calaba_hid_state = CALABA_HID_STARTING;
++        dispatch_async_f(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), NULL, calaba_hid_request_access);
++        return;
++    }
++
++    IOHIDManagerRef manager = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
++    if (manager == NULL) {
++        calaba_hid_state = CALABA_HID_ERROR;
++        return;
++    }
++
++    CFMutableDictionaryRef devices = calaba_hid_match(CFSTR(kIOHIDDeviceUsagePageKey), kHIDPage_GenericDesktop,
++            CFSTR(kIOHIDDeviceUsageKey), kHIDUsage_GD_Keyboard);
++    IOHIDManagerSetDeviceMatching(manager, devices);
++    if (devices != NULL) CFRelease(devices);
++
++    CFMutableDictionaryRef values = calaba_hid_match(CFSTR(kIOHIDElementUsagePageKey), kHIDPage_KeyboardOrKeypad,
++            CFSTR(kIOHIDElementUsageKey), kHIDUsage_KeyboardCapsLock);
++    IOHIDManagerSetInputValueMatching(manager, values);
++    if (values != NULL) CFRelease(values);
++
++    IOHIDManagerRegisterDeviceMatchingCallback(manager, calaba_hid_device_added, NULL);
++    IOHIDManagerRegisterDeviceRemovalCallback(manager, calaba_hid_device_removed, NULL);
++    IOHIDManagerRegisterInputValueCallback(manager, calaba_hid_value, NULL);
++    IOHIDManagerScheduleWithRunLoop(manager, event_loop, kCFRunLoopDefaultMode);
++
++    IOReturn status = IOHIDManagerOpen(manager, kIOHIDOptionsTypeNone);
++    if (status != kIOReturnSuccess) {
++        IOHIDManagerUnscheduleFromRunLoop(manager, event_loop, kCFRunLoopDefaultMode);
++        CFRelease(manager);
++        calaba_hid_device_count = 0;
++        calaba_hid_state = status == kIOReturnNotPermitted ? CALABA_HID_DENIED : CALABA_HID_ERROR;
++        logger(LOG_LEVEL_WARN, "%s [%u]: %s: IOHIDManagerOpen failed: %#X.\n", __FUNCTION__, __LINE__, calaba_hid_marker, status);
++        return;
++    }
++
++    calaba_hid_manager = manager;
++    calaba_hid_state = CALABA_HID_RUNNING;
++}
++
++// hook_run, before CFRunLoopRun: the open itself runs inside the loop, so the hook start is not delayed.
++static void calaba_hid_setup(void) {
++    CFRunLoopSourceContext context = {
++        .version = 0, .info = NULL, .retain = NULL, .release = NULL, .copyDescription = NULL,
++        .equal = NULL, .hash = NULL, .schedule = NULL, .cancel = NULL, .perform = calaba_hid_open
++    };
++    calaba_hid_requested = false;
++    calaba_hid_state = CALABA_HID_STARTING;
++    pthread_mutex_lock(&calaba_hid_mutex);
++    calaba_hid_retry_source = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &context);
++    if (calaba_hid_retry_source != NULL) {
++        CFRunLoopAddSource(event_loop, calaba_hid_retry_source, kCFRunLoopDefaultMode);
++        CFRunLoopSourceSignal(calaba_hid_retry_source);
++    } else {
++        calaba_hid_state = CALABA_HID_ERROR;
++    }
++    pthread_mutex_unlock(&calaba_hid_mutex);
++}
++
++// hook_run, after CFRunLoopRun returned (same thread).
++static void calaba_hid_teardown(void) {
++    pthread_mutex_lock(&calaba_hid_mutex);
++    if (calaba_hid_retry_source != NULL) {
++        CFRunLoopRemoveSource(event_loop, calaba_hid_retry_source, kCFRunLoopDefaultMode);
++        CFRunLoopSourceInvalidate(calaba_hid_retry_source);
++        CFRelease(calaba_hid_retry_source);
++        calaba_hid_retry_source = NULL;
++    }
++    pthread_mutex_unlock(&calaba_hid_mutex);
++    if (calaba_hid_manager != NULL) {
++        IOHIDManagerUnscheduleFromRunLoop(calaba_hid_manager, event_loop, kCFRunLoopDefaultMode);
++        IOHIDManagerClose(calaba_hid_manager, kIOHIDOptionsTypeNone);
++        CFRelease(calaba_hid_manager);
++        calaba_hid_manager = NULL;
++    }
++    calaba_hid_device_count = 0;
++    calaba_hid_state = CALABA_HID_OFF;
++}
++
  static inline void process_modifier_changed(uint64_t timestamp, CGEventRef event_ref) {
      CGEventFlags event_mask = CGEventGetFlags(event_ref);
      UInt64 keycode = CGEventGetIntegerValueField(event_ref, kCGKeyboardEventKeycode);
-@@ -468,6 +485,7 @@ static inline void process_modifier_changed(uint64_t timestamp, CGEventRef event
+@@ -468,6 +699,7 @@ static inline void process_modifier_changed(uint64_t timestamp, CGEventRef event
              process_key_released(timestamp, event_ref);
          }
      } else if (keycode == kVK_CapsLock) {
@@ -47,7 +332,7 @@ index e6cd6cec9c3c5a26cda5eccc5fe9eb087752eef9..0197b99122f75b56842dfbaa36c4a422
          if (current_modifiers & MASK_CAPS_LOCK) {
              // Process as a key pressed event.
              unset_modifier_mask(MASK_CAPS_LOCK);
-@@ -958,7 +976,8 @@ CGEventRef hook_event_proc(CGEventTapProxy tap_proxy, CGEventType type, CGEventR
+@@ -958,7 +1190,8 @@ CGEventRef hook_event_proc(CGEventTapProxy tap_proxy, CGEventType type, CGEventR
                      unset_modifier_mask(MOUSE_BUTTON5);
                  }
  
@@ -57,18 +342,142 @@ index e6cd6cec9c3c5a26cda5eccc5fe9eb087752eef9..0197b99122f75b56842dfbaa36c4a422
              }
              break;
  
+@@ -1369,9 +1602,14 @@ UIOHOOK_API int hook_run() {
+             #endif
+ 
+ 
++            // Calaba patch: IOHIDManager keyboard listener on this run loop.
++            calaba_hid_setup();
++
+             // Start the hook thread runloop.
+             CFRunLoopRun();
+ 
++            calaba_hid_teardown();
++
+ 
+             #ifdef USE_OBJC
+             // Contributed by Alex <universailp@web.de>
 diff --git a/src/lib/addon.c b/src/lib/addon.c
-index d4dffe9e74cb2da2dbb99b65dd92173702f8beb7..fa848fdfd755cdd115ad85c18e12be39cd65b1a3 100644
+index d4dffe9e74cb2da2dbb99b65dd92173702f8beb7..f5969b9c0d08b8753b8c71af63758f691a4ac500 100644
 --- a/src/lib/addon.c
 +++ b/src/lib/addon.c
-@@ -330,6 +330,14 @@ NAPI_MODULE_INIT() {
+@@ -62,6 +62,19 @@ napi_value uiohook_to_js_event(napi_env env, uiohook_event* event) {
+     status = napi_create_uint32(env, event->data.keyboard.keycode, &e_keycode);
+     NAPI_FATAL_IF_FAILED(status, "uiohook_to_js_event", "napi_create_uint32");
+ 
++    // Calaba patch: raw code, modifier mask and source ("tap" | "hid") for PTT diagnostics / dedup.
++    napi_value e_rawcode;
++    status = napi_create_uint32(env, event->data.keyboard.rawcode, &e_rawcode);
++    NAPI_FATAL_IF_FAILED(status, "uiohook_to_js_event", "napi_create_uint32");
++
++    napi_value e_mask;
++    status = napi_create_uint32(env, event->mask, &e_mask);
++    NAPI_FATAL_IF_FAILED(status, "uiohook_to_js_event", "napi_create_uint32");
++
++    napi_value e_source;
++    status = napi_create_string_utf8(env, (event->reserved & CALABA_EVENT_SOURCE_HID) ? "hid" : "tap", NAPI_AUTO_LENGTH, &e_source);
++    NAPI_FATAL_IF_FAILED(status, "uiohook_to_js_event", "napi_create_string_utf8");
++
+     napi_property_descriptor descriptors[] = {
+       { "type",     NULL, NULL, NULL, NULL, e_type,     napi_enumerable, NULL },
+       { "time",     NULL, NULL, NULL, NULL, e_time,     napi_enumerable, NULL },
+@@ -70,6 +83,9 @@ napi_value uiohook_to_js_event(napi_env env, uiohook_event* event) {
+       { "metaKey",  NULL, NULL, NULL, NULL, e_metaKey,  napi_enumerable, NULL },
+       { "shiftKey", NULL, NULL, NULL, NULL, e_shiftKey, napi_enumerable, NULL },
+       { "keycode",  NULL, NULL, NULL, NULL, e_keycode,  napi_enumerable, NULL },
++      { "rawcode",  NULL, NULL, NULL, NULL, e_rawcode,  napi_enumerable, NULL },
++      { "mask",     NULL, NULL, NULL, NULL, e_mask,     napi_enumerable, NULL },
++      { "source",   NULL, NULL, NULL, NULL, e_source,   napi_enumerable, NULL },
+     };
+     status = napi_define_properties(env, event_obj, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
+     NAPI_FATAL_IF_FAILED(status, "uiohook_to_js_event", "napi_define_properties");
+@@ -311,6 +327,49 @@ napi_value AddonKeyTap (napi_env env, napi_callback_info info) {
+   return NULL;
+ }
+ 
++// Calaba patch: macOS IOHIDManager keyboard listener status (libuiohook darwin/input_hook.c).
++// Elsewhere the listener does not exist: "unsupported".
++static napi_value calaba_string(napi_env env, const char* s) {
++  napi_value v;
++  napi_status status = napi_create_string_utf8(env, s, NAPI_AUTO_LENGTH, &v);
++  NAPI_THROW_IF_FAILED(env, status, NULL);
++  return v;
++}
++
++napi_value AddonHidStatus(napi_env env, napi_callback_info info) {
++#ifdef __APPLE__
++  return calaba_string(env, calaba_hid_status());
++#else
++  return calaba_string(env, "unsupported");
++#endif
++}
++
++napi_value AddonHidAccess(napi_env env, napi_callback_info info) {
++#ifdef __APPLE__
++  return calaba_string(env, calaba_hid_access());
++#else
++  return calaba_string(env, "unsupported");
++#endif
++}
++
++napi_value AddonHidDevices(napi_env env, napi_callback_info info) {
++  napi_value v;
++  int n = 0;
++#ifdef __APPLE__
++  n = calaba_hid_devices();
++#endif
++  napi_status status = napi_create_int32(env, n, &v);
++  NAPI_THROW_IF_FAILED(env, status, NULL);
++  return v;
++}
++
++napi_value AddonHidRetry(napi_env env, napi_callback_info info) {
++#ifdef __APPLE__
++  calaba_hid_retry();
++#endif
++  return NULL;
++}
++
+ NAPI_MODULE_INIT() {
+   napi_status status;
+   napi_value export_fn;
+@@ -330,6 +389,43 @@ NAPI_MODULE_INIT() {
    status = napi_set_named_property(env, exports, "keyTap", export_fn);
    NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
  
++  status = napi_create_function(env, NULL, 0, AddonHidStatus, NULL, &export_fn);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_function");
++  status = napi_set_named_property(env, exports, "hidStatus", export_fn);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
++
++  status = napi_create_function(env, NULL, 0, AddonHidAccess, NULL, &export_fn);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_function");
++  status = napi_set_named_property(env, exports, "hidAccess", export_fn);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
++
++  status = napi_create_function(env, NULL, 0, AddonHidDevices, NULL, &export_fn);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_function");
++  status = napi_set_named_property(env, exports, "hidDevices", export_fn);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
++
++  status = napi_create_function(env, NULL, 0, AddonHidRetry, NULL, &export_fn);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_function");
++  status = napi_set_named_property(env, exports, "hidRetry", export_fn);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
++
++#ifdef __APPLE__
++  // The darwin HID listener's own marker (check-native.mjs requires it in macOS binaries).
++  napi_value calaba_hid;
++  status = napi_create_string_utf8(env, calaba_hid_marker, NAPI_AUTO_LENGTH, &calaba_hid);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_string_utf8");
++  status = napi_set_named_property(env, exports, "calabaHid", calaba_hid);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
++#endif
++
 +  // Calaba patch marker: proves the packaged binary was compiled from the patched sources
 +  // (apps/desktop/scripts/check-native.mjs greps the .node for it). Bump with the patch.
 +  napi_value calaba_marker;
-+  status = napi_create_string_utf8(env, "CALABA_UIOHOOK_PATCH_V1", NAPI_AUTO_LENGTH, &calaba_marker);
++  status = napi_create_string_utf8(env, "CALABA_UIOHOOK_PATCH_V2", NAPI_AUTO_LENGTH, &calaba_marker);
 +  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_string_utf8");
 +  status = napi_set_named_property(env, exports, "calabaPatch", calaba_marker);
 +  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");

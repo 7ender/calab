@@ -105,7 +105,7 @@ build_mac() {
   # The patched module is compiled per arch into build/Release by electron-builder (node-gyp-build loads
   # that first). Drop the postinstall copy in bin/ (host arch only — it would land in the x64 app too)
   # and the unpatched upstream prebuilds.
-  grep -q VC_CAPS_LOCK_STATE "$SRC/node_modules/uiohook-napi/libuiohook/include/uiohook.h" \
+  grep -q CALABA_EVENT_SOURCE_HID "$SRC/node_modules/uiohook-napi/libuiohook/include/uiohook.h" \
     || { echo "uiohook-napi patch is NOT applied" >&2; exit 1; }
   rm -rf "$SRC/node_modules/uiohook-napi/bin" "$SRC/node_modules/uiohook-napi/prebuilds"
   local sign_env=(CSC_IDENTITY_AUTO_DISCOVERY=false) mac_args=(--mac)
@@ -181,7 +181,7 @@ write_container_script() {
       # --ignore-scripts: no electron postinstall download (electron-builder fetches the Electron dist
       # itself); esbuild uses its optional platform package; uiohook is compiled by electron-builder.
       pnpm install --frozen-lockfile --ignore-scripts
-      grep -q VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h || { echo "uiohook patch NOT applied"; exit 1; }
+      grep -q CALABA_EVENT_SOURCE_HID node_modules/uiohook-napi/libuiohook/include/uiohook.h || { echo "uiohook patch NOT applied"; exit 1; }
       cd apps/desktop && pnpm build:app && test -s build/.gen/THIRD-PARTY-NOTICES.txt
       # electron-builder.yml ships only our patched uiohook build (upstream prebuilds excluded,
       # buildDependenciesFromSource). Linux: compile it here (X11 headers). Windows: node-gyp cannot
