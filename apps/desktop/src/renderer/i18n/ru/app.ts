@@ -84,6 +84,8 @@ export const ruApp = {
   'settings.hotkeys': 'Горячие клавиши',
   'hotkeys.ptt': 'Push-to-talk',
   'hotkeys.pttFooter': 'Клавиша работает, только когда выбран режим «Push‑to‑talk» в разделе «Голос и устройства».',
+  'hotkeys.pttReleaseWhere': 'Настраивается в разделе «Голос и устройства».',
+  'hotkeys.pttReleaseOpen': 'Изменить',
   'hotkeys.app': 'В окне приложения',
   'hotkeys.appFooter': 'Сочетания работают, пока окно Calab активно.',
 

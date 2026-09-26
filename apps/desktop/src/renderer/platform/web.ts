@@ -268,8 +268,8 @@ const pttListeners = new Set<(e: PttEvent) => void>();
 let capture: { id: number; resolve: (b: PttBinding) => void; reject: (e: Error) => void } | null = null;
 const MAC = /Mac OS X|Macintosh/.test(navigator.userAgent);
 
-function pttEmit(talking: boolean): void {
-  for (const cb of pttListeners) cb({ down: talking });
+function pttEmit(talking: boolean, immediate: boolean): void {
+  for (const cb of pttListeners) cb({ down: talking, immediate, at: Date.now() });
 }
 
 /** Browsers on macOS report Caps Lock as lock-state flips (down = on, up = off): toggle only. */

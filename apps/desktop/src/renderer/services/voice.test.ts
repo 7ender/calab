@@ -662,6 +662,73 @@ describe('VoiceEngine', () => {
     expect(announce).toHaveBeenCalledWith({ kind: 'input', label: 'MacBook Mic' });
   });
 
+  describe('push-to-talk release', () => {
+    const track = () => FakeRoom.all[0]?.published[0]?.mediaStreamTrack;
+    const ring = () => useVoice.getState().speaking['u1'] === true;
+    const inPtt = async (releaseMs: number, mode: 'hold' | 'toggle' = 'hold'): Promise<void> => {
+      const { useSession } = await import('../stores/session');
+      useSession.setState({ me: { user: { id: 'u1' } } } as never);
+      usePrefs.getState().setPrefs({ micMode: 'ptt', pttReleaseMs: releaseMs, pttBinding: { kind: 'key', code: 66, label: 'F8', mode } });
+      await voice.join('A', 'ws');
+      await settle();
+    };
+    const hold = (down: boolean, immediate?: boolean) => (voice as unknown as { onPtt(ev: { down: boolean; immediate?: boolean }): void }).onPtt({ down, ...(immediate ? { immediate } : {}) });
+
+    it('key-up gates the sender synchronously with 0 ms, the ring goes off at once', async () => {
+      await inPtt(0);
+      hold(true);
+      expect(track()?.enabled).toBe(true);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(ring()).toBe(true);
+      hold(false);
+      // Synchronous: no timer, no await — the fake track is silenced in the same tick.
+      expect(track()?.enabled).toBe(false);
+      expect(useVoice.getState().transmitting).toBe(false);
+      expect(ring()).toBe(false);
+    });
+
+    it.each([20, 2000])('key-up keeps the mic on for %i ms, then gate and ring off together', async (ms) => {
+      await inPtt(ms);
+      hold(true);
+      await vi.advanceTimersByTimeAsync(100);
+      hold(false);
+      await vi.advanceTimersByTimeAsync(ms - 1);
+      expect(track()?.enabled).toBe(true);
+      expect(ring()).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(track()?.enabled).toBe(false);
+      expect(ring()).toBe(false); // not the 300 ms speaking hold on top
+    });
+
+    it('a press inside the tail keeps transmitting without a gap', async () => {
+      await inPtt(500);
+      hold(true);
+      hold(false);
+      await vi.advanceTimersByTimeAsync(200);
+      hold(true);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(track()?.enabled).toBe(true);
+      expect(useVoice.getState().pttDown).toBe(true);
+    });
+
+    it('toggle-off (immediate) ignores the delay', async () => {
+      await inPtt(2000, 'toggle');
+      hold(true);
+      hold(false, true);
+      expect(track()?.enabled).toBe(false);
+      expect(useVoice.getState().pttDown).toBe(false);
+    });
+
+    it('mute during the tail ends it at once', async () => {
+      await inPtt(2000);
+      hold(true);
+      hold(false);
+      voice.toggleMute();
+      expect(useVoice.getState().pttDown).toBe(false);
+      expect(useVoice.getState().transmitting).toBe(false);
+    });
+  });
+
   it('resetPtt clears a stuck key (review M6)', async () => {
     await voice.join('A', 'ws');
     useVoice.setState({ pttDown: true });

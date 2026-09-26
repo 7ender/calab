@@ -260,6 +260,9 @@ export const en: Dict = {
   'voice.pttCapsToggle':
     'Caps Lock works as a toggle: press once to turn the mic on, press again to turn it off. To hold instead, allow “Input Monitoring” or turn on “Caps Lock doesn’t change case”.',
   'voice.pttToggleNote': 'Toggle mode: press once to turn the mic on, press again to turn it off.',
+  'voice.pttRelease': 'Release delay',
+  'voice.pttReleaseHint': 'How long the mic stays on after you release the key.',
+  'voice.pttReleaseToggle': 'Not used in toggle mode: the mic turns off as soon as you press the key again.',
   'voice.pttLastKey': 'Last key: {key} {dir} ({source}; code {code}, raw {raw})',
   'voice.pttLastKeyDup': '— duplicate, skipped',
   'voice.pttSourceTap': 'hook',

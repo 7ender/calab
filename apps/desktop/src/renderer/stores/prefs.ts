@@ -8,6 +8,7 @@ import {
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { PttBinding } from '../../shared/ipc';
+import { PTT_RELEASE_DEFAULT_MS } from '../lib/pttRelease';
 import type { EchoMode } from '../lib/media/echo';
 import type { LocalePref } from '../i18n/types';
 import type { OpenChatSound } from '../lib/chatSound';
@@ -40,6 +41,8 @@ export interface Prefs {
   micMode: MicMode;
   thresholdDb: number;
   pttBinding: PttBinding | null;
+  /** PTT «Задержка отпускания» (lib/pttRelease.ts): the mic stays on this long after a hold key-up. */
+  pttReleaseMs: number;
   rnnoise: boolean;
   red: boolean;
   /** «Как вы слушаете» (docs/02 «Эхо: колонки»): per device — a laptop on speakers, a desk with headphones. */
@@ -90,6 +93,7 @@ const DEFAULTS: Prefs = {
   micMode: 'voice',
   thresholdDb: -50,
   pttBinding: null,
+  pttReleaseMs: PTT_RELEASE_DEFAULT_MS,
   rnnoise: true,
   red: false,
   echoMode: 'headphones',
