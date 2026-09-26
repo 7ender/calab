@@ -94,17 +94,20 @@ function RailItem({ id }: { id: string }): ReactNode {
           ) : (
             <span aria-hidden>{workspaceInitials(w.name)}</span>
           )}
+          {/* Discord: the «in voice» badge sits top-right (green, speaker), the mention count
+              bottom-right — they never cover each other. */}
           {inVoice ? (
-            <span className="absolute -bottom-1 -right-1 grid size-5 place-items-center rounded-full border-[3px] border-[var(--color-rail)] bg-ok-fill text-white" aria-hidden>
-              <Volume2 className="size-2.5" strokeWidth={2.5} />
+            <span
+              className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full border-[3px] border-[var(--color-rail)] bg-ok-fill text-white"
+              data-testid="rail-voice-badge"
+              aria-hidden
+            >
+              <Volume2 className="size-3" strokeWidth={2.5} />
             </span>
           ) : null}
           {mentions > 0 ? (
             <span
-              className={cx(
-                'absolute -right-1 min-w-5 rounded-full border-[3px] border-[var(--color-rail)] bg-danger-fill px-1 text-center text-micro font-bold leading-[14px] text-white',
-                inVoice ? '-top-1' : '-bottom-1',
-              )}
+              className="absolute -bottom-1 -right-1 min-w-5 rounded-full border-[3px] border-[var(--color-rail)] bg-danger-fill px-1 text-center text-micro font-bold leading-[14px] text-white"
               aria-hidden
             >
               {mentions > 99 ? '99+' : mentions}
