@@ -18,6 +18,7 @@ import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway,
 import { handleDeepLink, takePendingInvite } from './links';
 import { showLinkLanding } from './linkLanding';
 import { watchSyncedPrefs } from './profile';
+import { resetTimeZoneSync } from './timezone';
 import { voice } from './voice';
 import { platform } from '../platform';
 
@@ -168,6 +169,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useTyping.getState().reset();
   useInbox.getState().reset();
   resetChatCaches();
+  resetTimeZoneSync();
   // Nothing of the previous account may show in the next one (review L9).
   queryClient.clear();
   useRoomLink.setState({ code: null, preferLogin: false });
