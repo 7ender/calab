@@ -92,6 +92,8 @@ async function editRoomStatus(page: Page, save: boolean): Promise<Locator> {
     await statusInput.press('Enter');
     await expect(statusRow).toContainText(STATUS);
     await expect(statusRow).toBeFocused(); // keyboard close returns focus to the row
+    // The shots show the room as everyone sees it: no focus ring on the status line.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   }
   return statusRow;
 }
