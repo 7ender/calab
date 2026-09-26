@@ -112,6 +112,35 @@ mkdir -p /opt/calaba
 - Windows: без подписи SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае»; репутация копится только у подписанных сборок. Нужно: сертификат подписи кода (OV/EV; с 2023 ключ только на токене/HSM — практичнее облачная подпись: Azure Trusted Signing, SSL.com eSigner, DigiCert KeyLocker) → `win.azureSignOptions`/`signtoolOptions` в `electron-builder.yml`, секреты в env. Облачную подпись удобно делать в том же Windows-раннере CI.
 - Linux: подпись не нужна (AppImage/deb без подписи — норма; при желании GPG-подпись .deb/репозитория).
 
+### Релизы: GitHub Actions → S3 → releases.calab.ru
+
+Основной путь выпуска (решение владельца 2026-09-26): сборка в GitHub Actions на нативных раннерах, хранение в S3-совместимом бакете, фид автообновления `https://releases.calab.ru/`. `build-release.sh`/`release.sh` с Mac остаются запасным путём и для проверок стенда.
+
+**Выпуск:** `git tag v0.1.0 && git push origin v0.1.0` → `.github/workflows/release.yml`:
+1. `build` — матрица macos-latest (arm64 + x64), ubuntu-22.04 (AppImage + deb), windows-latest (NSIS); пропатченный `uiohook` компилируется из исходников везде; проверка «в пакете есть `.node`».
+2. `github-release` — GitHub Release `v0.1.0` со всеми файлами (`gh release create`, репозиторий `itrcz/calab`).
+3. `publish-s3` — в бакет: `releases/<version>/` ← установщики и `*.blockmap` (`Cache-Control: public, max-age=31536000, immutable`); затем **последними** в корень — `latest-mac.yml`, `latest-linux.yml`, `latest.yml` (их `url:`/`path:` переписаны на `releases/<version>/…`, `sha512` не меняется) и `index.html` со ссылками (`no-cache`). Клиент никогда не увидит фид, ссылающийся на ещё не залитый файл.
+4. `publish-stand` — запасной: только если S3-секретов нет — `rsync` на стенд в `/opt/calaba/releases` (плоско, как раньше). Если нет ни тех, ни других — сборка есть в GitHub Release, публикации нет (warning).
+Ручной запуск (`workflow_dispatch`): `version`, `publish` (по умолчанию нет); Release создаётся черновиком.
+
+**Подпись — условная** (без секретов сборки не подписаны, как сейчас):
+- macOS: `MAC_CSC_LINK` (Developer ID Application .p12, base64) + `MAC_CSC_KEY_PASSWORD` → CI удаляет `identity: null` из `electron-builder.yml` в своей копии и подписывает; нотаризация — если есть `APPLE_API_KEY` (.p8 App Store Connect API key), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` (`-c.mac.notarize=true`); без них — подписано, но не нотаризовано (warning).
+- Windows: `WIN_CSC_LINK` (.pfx, base64) + `WIN_CSC_KEY_PASSWORD` → signtool на windows-раннере. Для EV/облачной подписи (Azure Trusted Signing и т.п.) — отдельный шаг позже.
+
+**Фид `releases.calab.ru` (Caddy):** хост `RELEASES_HOST` (по умолчанию `releases.<DOMAIN>`; пусто — выключен). Если заданы `S3_PUBLIC_ENDPOINT` (напр. `https://s3.example.com`) и `S3_BUCKET` — `reverse_proxy` в бакет path-style (`/<bucket>/<key>`, `Host` апстрима), `/` → `index.html`; `*.yml` и `index.html` — `no-cache`, остальное — `immutable` (заголовки ставит Caddy поверх ответа S3). Без S3 — раздаёт `/srv/releases` (то же, что `/download/`). При заданном `RELEASES_HOST` `/download/*` на приложении и лендинге — **302 на тот же путь** хоста релизов: старые клиенты с фидом `<сервер>/download/` продолжают обновляться (electron-updater разрешает `releases/<ver>/…` относительно своего фида и идёт по редиректу). DNS: `releases.calab.ru` A → 141.105.69.177 (Cloudflare, DNS-only) — заведён вместе с зоной. На стенде до переключения на calab.ru `RELEASES_HOST=` (пусто, `/download/` локально).
+
+**Что нужно от владельца** (в корневой `.env` репо, не коммитится; затем `infra/ci/set-secrets.sh`):
+| Ключ | Что |
+|---|---|
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | S3-совместимый бакет и ключ **только на запись в этот бакет**; бакет — **публичное чтение** (bucket policy `s3:GetObject` на `*`), листинг не нужен |
+| `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` | Developer ID Application (.p12; путь к файлу или base64) — Apple Developer Program |
+| `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` | ключ App Store Connect API (.p8, путь) для нотаризации |
+| `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | сертификат подписи кода Windows (.pfx) |
+| `STAND_SSH_KEY`, `STAND_HOST`, `STAND_KNOWN_HOSTS` | (необязательно) запасная публикация на стенд — отдельный deploy-пользователь с записью только в `/opt/calaba/releases` |
+На стенд (`infra/docker/.env`): `RELEASES_HOST=releases.calab.ru`, `S3_PUBLIC_ENDPOINT`, `S3_BUCKET` → `sync.sh caddy`.
+
+**Секреты в GitHub:** `infra/ci/set-secrets.sh [--dry-run] [.env]` — читает `.env` без `source` (никакого выполнения), берёт только ключи из таблицы (прочее, напр. `CFTOKEN`, игнорирует), пути к файлам разворачивает (.p12/.pfx → base64, .p8/ssh-ключ → содержимое), ставит через `gh secret set --repo itrcz/calab` (авторизация — `gh auth login` владельца или `GITHUB_TOKEN` с правом «Secrets: read and write»). Значения не печатает; `--dry-run` показывает только имена и длины.
+
 ### Релиз: runbook (v0.1.0)
 
 Одна команда на один коммит (`infra/docker/release.sh`); запуск — по решению лида, с указанием коммита:

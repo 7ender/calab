@@ -40,6 +40,10 @@ services:
       - LANDING_HOST=${LANDING_HOST:-}
       - DOMAIN_ALT=${DOMAIN_ALT:-}          # extra app host (alias), optional
       - DOMAIN_LEGACY=${DOMAIN_LEGACY:-}    # extra app host (transitional), optional
+      # desktop release feed: unset → releases.<DOMAIN>; set to empty → none (/download/ served locally)
+      - RELEASES_HOST=${RELEASES_HOST-releases.${DOMAIN}}
+      - S3_PUBLIC_ENDPOINT=${S3_PUBLIC_ENDPOINT:-}   # public-read bucket (path-style); empty → /srv/releases
+      - S3_BUCKET=${S3_BUCKET:-}
     volumes:
       - caddy_data:/data
       - caddy_config:/config

@@ -5,6 +5,9 @@
 #   LANDING_HOST   static landing (optional; empty = no landing site)
 #   DOMAIN_ALT, DOMAIN_LEGACY  extra app hosts (transitional aliases, optional); their rtc./turn. names
 #                  are served too so older clients keep working while they move over
+#   RELEASES_HOST  desktop release feed (optional; empty = none): reverse proxy to a public S3 bucket when
+#                  S3_PUBLIC_ENDPOINT + S3_BUCKET are set (path-style), else /srv/releases. With it set,
+#                  /download/* on the app and landing hosts redirects there (302, same path).
 # Caddy substitutes {$VAR} before parsing, so a list expands into several site addresses / SNI values.
 # The landing site is generated into /tmp/landing.caddy (imported by the Caddyfile; empty when unset),
 # because a site block with an empty address would not parse.
@@ -25,5 +28,50 @@ if [ -n "${LANDING_HOST:-}" ]; then
 else
 	: > /tmp/landing.caddy
 fi
+
+# /download/ on app + landing: redirect to the release host, or serve /srv/releases locally.
+if [ -n "${RELEASES_HOST:-}" ]; then
+	printf '@dl path_regexp dl ^/download/(.*)$\nredir @dl https://%s/{re.dl.1} 302\n' "$RELEASES_HOST" > /tmp/download.caddy
+else
+	printf 'handle_path /download/* {\n\timport releases_files\n}\n' > /tmp/download.caddy
+fi
+
+# The release host itself.
+if [ -z "${RELEASES_HOST:-}" ]; then
+	: > /tmp/releases.caddy
+elif [ -n "${S3_PUBLIC_ENDPOINT:-}" ] && [ -n "${S3_BUCKET:-}" ]; then
+	# public-read bucket, path-style: https://<endpoint>/<bucket>/<key>; S3 sees its own Host header
+	cat > /tmp/releases.caddy <<EOF_S3
+$RELEASES_HOST {
+	import releases_host_headers
+	# (several rewrites in one block are mutually exclusive in Caddy — hence a separate handle for /)
+	handle / {
+		rewrite * /$S3_BUCKET/index.html
+		reverse_proxy $S3_PUBLIC_ENDPOINT {
+			header_up Host {upstream_hostport}
+			header_down Cache-Control "no-cache"
+		}
+	}
+	@meta path /index.html *.yml *.yaml
+	handle @meta {
+		rewrite * /$S3_BUCKET{uri}
+		reverse_proxy $S3_PUBLIC_ENDPOINT {
+			header_up Host {upstream_hostport}
+			header_down Cache-Control "no-cache"
+		}
+	}
+	handle {
+		rewrite * /$S3_BUCKET{uri}
+		reverse_proxy $S3_PUBLIC_ENDPOINT {
+			header_up Host {upstream_hostport}
+			header_down Cache-Control "public, max-age=31536000, immutable"
+		}
+	}
+}
+EOF_S3
+else
+	printf '%s {\n\timport releases_host_headers\n\timport releases_files\n}\n' "$RELEASES_HOST" > /tmp/releases.caddy
+fi
+
 export APP_HOSTS RTC_HOSTS TURN_HOSTS RTC_ORIGINS
 exec "$@"

@@ -1,21 +1,23 @@
-# Desktop releases of Calab (github.com/itrcz/calab) on native runners (docs/06, "Релизы десктопа: сборка").
+# Desktop releases of Calab (github.com/itrcz/calab) on native runners (docs/06, "Релизы: GitHub Actions → S3").
 #
-#   - tag push `v1.2.3`        → build all three OSes with version 1.2.3, create a GitHub Release,
-#                                 publish to <domain>/download/ if the stand secrets are configured
-#   - workflow_dispatch         → same; version from the input (or apps/desktop/package.json), Release is a draft
+#   git tag v0.1.0 && git push origin v0.1.0   → build all three OSes as 0.1.0, GitHub Release, publish
+#   workflow_dispatch (version, publish)        → same; the GitHub Release is a draft, publishing is opt-in
 #
-# Unlike apps/desktop/scripts/build-release.sh (one Mac + an x86_64 Docker host), every OS builds natively
-# here, so the patched uiohook-napi is compiled from source everywhere — including Windows (MSVC on the
-# runner). electron-builder.yml's strict policy (upstream prebuilds excluded, buildDependenciesFromSource)
-# therefore needs no Windows override in CI.
+# Publishing (the update feed https://releases.calab.ru/ proxies this bucket, infra/docker/caddy):
+#   S3 (preferred) — bucket layout: releases/<version>/<installers, blockmaps>   (Cache-Control immutable)
+#                                   latest-mac.yml, latest-linux.yml, latest.yml, index.html at the root
+#                                   (no-cache, uploaded LAST; their `url:`/`path:` point into releases/<version>/)
+#   stand (fallback, when S3 secrets are absent) — rsync to /opt/calaba/releases (flat, as before)
 #
-# Secrets for publishing to the stand (all optional; without them the publish job is skipped):
-#   STAND_SSH_KEY     private key of a deploy user allowed to write /opt/calaba/releases (not root, ideally
-#                     with a forced rsync command / restricted to that directory)
-#   STAND_HOST        user@host, e.g. deploy@141.105.69.177
-#   STAND_KNOWN_HOSTS output of `ssh-keyscan -t ed25519 <host>` (pinned host key, no TOFU)
-# Signing (stage 4, not configured): macOS CSC_LINK/CSC_KEY_PASSWORD + APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/
-# APPLE_TEAM_ID; Windows cloud signing (Azure Trusted Signing / eSigner) — see docs/06.
+# Every OS builds natively, so the patched uiohook-napi is compiled from source everywhere (MSVC on Windows).
+#
+# Secrets (set by infra/ci/set-secrets.sh from the owner's .env — never in the repo). All optional:
+#   S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY    publishing to S3
+#   STAND_SSH_KEY STAND_HOST STAND_KNOWN_HOSTS                               fallback publishing to the stand
+#   MAC_CSC_LINK MAC_CSC_KEY_PASSWORD                                        macOS Developer ID (.p12, base64)
+#   APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER                          notarization (App Store Connect key .p8)
+#   WIN_CSC_LINK WIN_CSC_KEY_PASSWORD                                        Windows code signing (.pfx, base64)
+# Without the signing secrets the builds are unsigned (docs/06).
 name: release
 
 on:
@@ -27,8 +29,8 @@ on:
         description: 'Version (e.g. 1.0.0). Empty = apps/desktop/package.json'
         required: false
         default: ''
-      publish_stand:
-        description: 'Publish to <domain>/download/ (needs STAND_* secrets)'
+      publish:
+        description: 'Publish to the update feed (S3, or the stand when S3 secrets are absent)'
         type: boolean
         default: false
 
@@ -94,13 +96,43 @@ jobs:
         run: grep -q VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h
       - run: pnpm -F @calaba/desktop exec electron-vite build
 
+      # Signing only when the certificates are configured (secrets can't be used in `if:` directly).
+      - name: signing setup
+        id: sign
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          sign=0 args=""
+          if [[ "${{ matrix.target }}" == mac && -n "$MAC_CSC_LINK" ]]; then
+            # electron-builder.yml keeps local builds unsigned (identity: null); drop it for this CI build only
+            sed -i.bak '/^  identity: null/d' apps/desktop/electron-builder.yml
+            sign=1
+            if [[ -n "$APPLE_API_KEY_P8" ]]; then
+              printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple_api_key.p8"
+              echo "APPLE_API_KEY=$RUNNER_TEMP/apple_api_key.p8" >> "$GITHUB_ENV"
+              args="-c.mac.notarize=true"
+            else
+              echo "::warning::macOS build is signed but NOT notarized (APPLE_API_KEY* secrets absent)"
+            fi
+          elif [[ "${{ matrix.target }}" == win && -n "$WIN_CSC_LINK" ]]; then
+            sign=1
+          fi
+          [[ $sign == 1 ]] || echo "::notice::${{ matrix.target }}: no signing secrets — unsigned build"
+          echo "sign=$sign" >> "$GITHUB_OUTPUT"; echo "args=$args" >> "$GITHUB_OUTPUT"
+
       - name: electron-builder
         working-directory: apps/desktop
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # unsigned until stage 4
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.sign.outputs.sign == '1' && 'true' || 'false' }}
+          CSC_LINK: ${{ matrix.target == 'mac' && secrets.MAC_CSC_LINK || (matrix.target == 'win' && secrets.WIN_CSC_LINK || '') }}
+          CSC_KEY_PASSWORD: ${{ matrix.target == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || (matrix.target == 'win' && secrets.WIN_CSC_KEY_PASSWORD || '') }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           rm -rf ../../node_modules/uiohook-napi/bin   # postinstall copy for the runner arch only
-          pnpm exec electron-builder ${{ matrix.eb }} --publish never \
+          pnpm exec electron-builder ${{ matrix.eb }} --publish never ${{ steps.sign.outputs.args }} \
             -c.publish.provider=generic "-c.publish.url=$UPDATE_URL" \
             '-c.mac.artifactName=Calab-${version}-${arch}.${ext}' \
             '-c.nsis.artifactName=Calab-Setup-${version}-${arch}.${ext}' \
@@ -150,32 +182,85 @@ jobs:
           tag="${GITHUB_REF_NAME}"; draft=""
           if [[ "$GITHUB_REF" != refs/tags/v* ]]; then tag="v$ver"; draft="--draft"; fi
           gh release create "$tag" $draft --repo "$RELEASE_REPO" --target "$GITHUB_SHA" \
-            --title "Calab $ver" --notes "Unsigned test build. Installers and update feeds (latest*.yml)." \
+            --title "Calab $ver" --notes "Installers and update feeds (latest*.yml). Update feed: https://releases.calab.ru/" \
             dist-release/*
 
-  publish-stand:
+  publish-s3:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish_stand
-    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    runs-on: ubuntu-22.04          # AWS CLI v2 is preinstalled
+    outputs:
+      published: ${{ steps.s3.outputs.published }}
+    env:
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_REGION: ${{ secrets.S3_REGION }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: release-*
           merge-multiple: true
           path: dist-release
-      - name: publish to /download/ (skipped without STAND_* secrets)
+      - name: publish to S3 (skipped without S3_* secrets)
+        id: s3
+        run: |
+          if [[ -z "$S3_ENDPOINT" || -z "$S3_BUCKET" || -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
+            echo "::notice::S3_* secrets not configured — S3 publishing skipped (stand fallback runs instead)"
+            echo "published=0" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          export AWS_DEFAULT_REGION="${S3_REGION:-us-east-1}"
+          aws configure set default.s3.addressing_style path
+          s3() { aws --endpoint-url "$S3_ENDPOINT" s3 "$@"; }
+          cd dist-release
+          ver=$(sed -n 's/^version: //p' latest-linux.yml); [[ -n "$ver" ]]
+          # 1. installers + blockmaps under releases/<version>/ — immutable (versioned names, never overwritten)
+          s3 cp . "s3://$S3_BUCKET/releases/$ver/" --recursive --exclude '*' \
+            --include '*.dmg' --include '*.zip' --include '*.AppImage' --include '*.deb' --include '*.exe' --include '*.blockmap' \
+            --cache-control 'public, max-age=31536000, immutable' --only-show-errors
+          # 2. feeds: point url:/path: into releases/<version>/ (sha512/size unchanged — same bytes)
+          for y in latest-mac.yml latest-linux.yml latest.yml; do
+            sed -E -i "s#^(\s*- url: |path: )#\1releases/$ver/#" "$y"
+          done
+          # 3. a small index for humans (https://releases.calab.ru/)
+          {
+            echo "<!doctype html><meta charset=utf-8><title>Calab $ver</title><h1>Calab $ver</h1><ul>"
+            for f in *.dmg *.exe *.AppImage *.deb; do [[ -f "$f" ]] && echo "<li><a href=\"releases/$ver/$f\">$f</a></li>"; done
+            echo "</ul><p>Update feeds: latest-mac.yml, latest-linux.yml, latest.yml</p>"
+          } > index.html
+          # 4. feeds + index LAST, no-cache: clients never see a feed pointing at a file that is not there yet
+          for y in latest-mac.yml latest-linux.yml latest.yml; do
+            s3 cp "$y" "s3://$S3_BUCKET/$y" --cache-control 'no-cache' --content-type 'text/yaml; charset=utf-8' --only-show-errors
+          done
+          s3 cp index.html "s3://$S3_BUCKET/index.html" --cache-control 'no-cache' --content-type 'text/html; charset=utf-8' --only-show-errors
+          echo "published=1" >> "$GITHUB_OUTPUT"
+          echo "::notice::published Calab $ver to s3://$S3_BUCKET (feed: https://releases.calab.ru/)"
+
+  publish-stand:
+    needs: [build, publish-s3]
+    # fallback: only when the S3 publishing did not happen (no S3 secrets)
+    if: always() && needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/v') || inputs.publish) && needs.publish-s3.outputs.published != '1'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist-release
+      - name: publish to the stand /opt/calaba/releases (skipped without STAND_* secrets)
         env:
           STAND_SSH_KEY: ${{ secrets.STAND_SSH_KEY }}
           STAND_HOST: ${{ secrets.STAND_HOST }}
           STAND_KNOWN_HOSTS: ${{ secrets.STAND_KNOWN_HOSTS }}
         run: |
           if [[ -z "$STAND_SSH_KEY" || -z "$STAND_HOST" || -z "$STAND_KNOWN_HOSTS" ]]; then
-            echo "::notice::STAND_* secrets not configured — publishing skipped"; exit 0
+            echo "::warning::neither S3_* nor STAND_* secrets configured — the release was NOT published"; exit 0
           fi
           install -d -m 700 ~/.ssh
           printf '%s\n' "$STAND_SSH_KEY" > ~/.ssh/id_stand && chmod 600 ~/.ssh/id_stand
           printf '%s\n' "$STAND_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          # Same semantics as infra/docker/sync.sh: installers first, latest*.yml together at the end
-          # (--delay-updates), never --delete (old versions stay downloadable; /download/ caches them as immutable).
+          # Same semantics as infra/docker/sync.sh: flat layout, installers first, latest*.yml together at the
+          # end (--delay-updates), never --delete (old versions stay downloadable; cached as immutable).
           rsync -az --delay-updates -e "ssh -i ~/.ssh/id_stand -o StrictHostKeyChecking=yes" \
             dist-release/ "$STAND_HOST:/opt/calaba/releases/"
