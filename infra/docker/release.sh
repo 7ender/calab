@@ -71,8 +71,8 @@ bad() { printf '  FAIL  %s\n' "$*"; FAILS=$((FAILS + 1)); }
 check() { local what="$1"; shift; if "$@" >/dev/null 2>&1; then ok "$what"; else bad "$what"; fi; }
 on_stand() { "${SSH[@]}" "$HOST" "$@"; }
 
-foreign_state() { # the other tenant's job — must be identical before and after
-  on_stand 'pgrep -f "ComfyUI/.venv" | sort | tr "\n" " "; echo; docker ps --format "{{.Names}} {{.CreatedAt}}" | grep -v "^calaba-" | sort'
+foreign_state() { # the other tenant's job — must be identical before and after ([C]: pgrep -f must not match its own ssh shell)
+  on_stand 'pgrep -f "[C]omfyUI/.venv" | sort | tr "\n" " "; echo; docker ps --format "{{.Names}} {{.CreatedAt}}" | grep -v "^calaba-" | sort'
 }
 backup() { on_stand 'systemctl start calaba-backup.service && journalctl -u calaba-backup.service -n 8 --no-pager -o cat | grep "calaba-backup: done"'; }
 
@@ -140,6 +140,10 @@ fi
 # --- verify ----------------------------------------------------------------------------------------
 if step verify; then
   log "verify v$VERSION ($COMMIT)"
+  SRC_DIR="$WORK/src"
+  if [[ ! -d "$SRC_DIR/node_modules" || "$(cat "$SRC_DIR/.release-commit" 2>/dev/null)" != "$COMMIT" ]]; then
+    bad "no export of $COMMIT in $SRC_DIR (run the web step first)"; exit 1
+  fi
   sleep 10
   # 1. health + build info on both domains (.ai via IP), readiness inside
   for d in "$D1" "$D2"; do
@@ -181,8 +185,10 @@ if step verify; then
       ok "created e2e account $email (password stored in .env.accounts on the stand)"
     fi
     # both through the IP-forcing config: no dependency on local DNS/VPN
+    # specs + config from the release commit's export (web step), never from the working tree: other
+    # work in progress there may test features this commit does not have
     cfg=../../infra/docker/tools/playwright.stand.config.ts; force_ip="$IP"
-    if (cd apps/desktop && CALABA_FORCE_IP="$force_ip" CALABA_WEB_URL="https://$d" CALABA_WEB_LOGIN="$email" \
+    if (cd "$SRC_DIR/apps/desktop" && CALABA_FORCE_IP="$force_ip" CALABA_WEB_URL="https://$d" CALABA_WEB_LOGIN="$email" \
           CALABA_WEB_PASSWORD="$pw" CALABA_WEB_FF_VOICE=1 pnpm exec playwright test --config "$cfg" >"$WORK.e2e-$tag.log" 2>&1); then
       ok "e2e:web $d (chromium + firefox, voice) — $(grep -oE '[0-9]+ passed' "$WORK.e2e-$tag.log" | tail -1)"
     else
@@ -207,7 +213,7 @@ if step verify; then
     LIVEKIT_URL="wss://$RTC" lk load-test --room "ws_${ws}_room_${voi}" --audio-publishers 1 --video-publishers 1 \
       --subscribers 0 --duration 4m >"$WORK.publisher.log" 2>&1 & pub=$!
     sleep 8
-    if node infra/docker/tools/relay-check.mjs "wss://$RTC" "$tok" tls,udp,any | tee "$WORK.relay.log" | sed 's/^/        /'; then
+    if node "$SRC_DIR/infra/docker/tools/relay-check.mjs" "wss://$RTC" "$tok" tls,udp,any | tee "$WORK.relay.log" | sed 's/^/        /'; then
       ok "relay-check tls/udp/any with media"
     else bad "relay-check (see $WORK.relay.log)"; fi
     kill "$pub" 2>/dev/null || true
