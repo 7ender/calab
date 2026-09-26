@@ -79,4 +79,15 @@ export const ruVideo = {
   'mediaErr.camera.unsupported': 'Камера не поддерживается на этом устройстве',
   'mediaErr.camera.generic': 'Не удалось включить камеру',
   'mediaErr.camera.publish': 'Не удалось показать видео — попробуйте ещё раз',
+
+  // noise suppression popover (docs/09 #12), voice room chat without voice (docs/09 #14)
+  'noise.about': 'Включите шумоподавление: похлопайте в ладоши во время речи — собеседники услышат только голос',
+  'noise.checkHint': '3 секунды записи, затем вы услышите себя',
+  'noise.recording': 'Говорите — идёт запись…',
+  'noise.playing': 'Так вас слышат собеседники',
+  'noise.poweredBy': 'На базе RNNoise',
+  'noise.learnMore': 'Подробнее',
+  'voicePreview.notInVoice': 'Вы не в голосе',
+  'voicePreview.join': 'Войти в голос',
+  'voicePreview.openChat': 'Открыть чат',
 } as const;

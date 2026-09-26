@@ -79,4 +79,15 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'mediaErr.camera.unsupported': '此设备不支持摄像头功能',
   'mediaErr.camera.generic': '摄像头开启失败',
   'mediaErr.camera.publish': '视频共享失败——请重试',
+
+  // noise suppression popover (docs/09 #12), voice room chat without voice (docs/09 #14)
+  'noise.about': '开启降噪：说话时拍拍手试试——其他人只会听到你的声音',
+  'noise.checkHint': '录音 3 秒，然后播放给你听',
+  'noise.recording': '请说话——正在录音…',
+  'noise.playing': '这就是其他人听到的你',
+  'noise.poweredBy': '基于 RNNoise',
+  'noise.learnMore': '了解更多',
+  'voicePreview.notInVoice': '你不在语音中',
+  'voicePreview.join': '加入语音',
+  'voicePreview.openChat': '打开聊天',
 } as const;

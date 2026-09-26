@@ -54,6 +54,7 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
+import { joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
@@ -502,6 +503,7 @@ function RoomActions({ room, canInvite, canSettings, active }: { room: Room; can
 
 function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNode; canManage: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
+  const openRoom = useUi((s) => s.openRoom);
   const last = useRooms((s) => s.lastMessage[room.id]);
   const unread = useRooms((s) => isUnread(room.id, s));
   return (
@@ -509,6 +511,12 @@ function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNo
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className={menuBox}>
+          {/* A voice room's chat without joining (docs/09 #14): the phone has no hover actions, long-press opens this menu. */}
+          {isVoice(room) ? (
+            <ContextMenu.Item className={menuItem} onSelect={() => openRoom(room.workspaceId, room.id)}>
+              <MessageSquare className="size-4" /> {t('voicePreview.openChat')}
+            </ContextMenu.Item>
+          ) : null}
           <ContextMenu.Item
             className={menuItem}
             disabled={!last || !unread}
@@ -649,9 +657,7 @@ function VoiceRoomRow({
   const statusLine = useStatusLine(room.id, inRoom, canConnect, can(perms, 'MANAGE_ROOM'));
   const card = statusLine.shown;
   const limit = room.userLimit;
-  const full = limit > 0 && people.length >= limit && !inRoom;
-  // Unlike `full` above (a click guard, so it never blocks re-entering my own room), the invite
-  // row (docs/09 #10) hides whenever the room is actually at its limit, me included.
+  // Unlike the click guard (joinOutcome: never blocks re-entering my own room), the invite row (docs/09 #10) hides whenever the room is actually at its limit, me included.
   const atCapacity = limit > 0 && people.length >= limit;
   const { setNodeRef, isOver, active: dragging } = useDroppable({ id: `room:${room.id}`, data: { roomId: room.id, canMove } satisfies DropRoom });
   const dragFrom = (dragging?.data.current as DragMember | undefined)?.fromRoomId;
@@ -659,12 +665,9 @@ function VoiceRoomRow({
 
   const click = (): void => {
     openRoom(workspaceId, room.id);
-    if (inRoom || !canConnect) return;
-    if (full && !canMove) {
-      toast.info(t('shell.roomFull'));
-      return;
-    }
-    void voice.join(room.id, workspaceId);
+    const next = joinOutcome({ inRoom, canConnect, canMove, people: people.length, limit });
+    if (next === 'full') toast.info(t('shell.roomFull'));
+    else if (next === 'join') void voice.join(room.id, workspaceId);
   };
 
   return (
@@ -712,9 +715,9 @@ function VoiceRoomRow({
             </button>
             <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-2.5')}>
               <MentionBadge n={mentions} />
-              {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
-              {/* Card: the timer stays on the name line (green, Discord) and gives way to the actions on hover only. */}
-              <span className={cx('flex items-center gap-2', card ? 'group-hover/row:hidden group-focus-within/row:hidden' : admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
+              {/* Hover / focus swaps the timer and N/M for the actions (Discord; «чат» is always there,
+                  docs/09 #14), so the name keeps ≥ 120 px. On the card the timer stays green on the name line. */}
+              <span className={cx('flex items-center gap-2', 'group-hover/row:hidden group-focus-within/row:hidden')}>
                 {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom && 'text-[var(--color-green-text)]') : undefined} /> : null}
                 {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
               </span>

@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { AudioLines, Check, ChevronDown, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
+import { Check, ChevronDown, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DisplayedPhase, offerRetry } from '../../lib/voiceLink';
 import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
@@ -14,6 +14,7 @@ import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
+import { NoiseButton } from './NoisePopover';
 import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
 import { viewersText } from '../voice/streamFormat';
 
@@ -120,20 +121,14 @@ function QualityButton({ phase }: { phase: VoicePhase }): ReactNode {
  * Big button of the voice panel (docs/09 v0.2, Discord reference): ~56×40, fill on hover,
  * accent fill when on. `children` is the 20 px icon.
  */
-/** `live`: accent fill (camera / stream on air); `tint`: an «on» setting (Шумодав) — accent-tinted, not a second solid blue. */
-type Tone = 'live' | 'tint';
-const ON: Record<Tone, string> = {
-  live: 'bg-accent-strong text-white hover:bg-[color-mix(in_srgb,var(--color-accent-strong)_88%,white)]',
-  tint: 'bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)] text-accent-text hover:bg-[color-mix(in_srgb,var(--color-accent)_28%,transparent)]',
-};
+const ON = 'bg-accent-strong text-white hover:bg-[color-mix(in_srgb,var(--color-accent-strong)_88%,white)]';
 const OFF = 'bg-[var(--color-fill)] text-fg hover:bg-[var(--color-fill-hover)] disabled:hover:bg-[var(--color-fill)]';
-const panelBtn = (active: boolean, tone: Tone = 'live'): string =>
-  cx('grid h-9 min-w-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40', active ? ON[tone] : OFF);
+const panelBtn = (active: boolean): string =>
+  cx('grid h-9 min-w-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40', active ? ON : OFF);
 
 function PanelButton({
   label,
   active = false,
-  tone = 'live',
   disabled,
   onClick,
   testId,
@@ -141,7 +136,6 @@ function PanelButton({
 }: {
   label: string;
   active?: boolean;
-  tone?: Tone;
   disabled?: boolean;
   onClick?: () => void;
   testId?: string;
@@ -157,7 +151,7 @@ function PanelButton({
         aria-disabled={disabled || undefined}
         data-testid={testId}
         onClick={disabled ? undefined : onClick}
-        className={cx(panelBtn(active, tone), disabled && 'cursor-default opacity-40 hover:bg-[var(--color-fill)]')}
+        className={cx(panelBtn(active), disabled && 'cursor-default opacity-40 hover:bg-[var(--color-fill)]')}
       >
         {children}
       </button>
@@ -346,10 +340,8 @@ export function VoiceBar(): ReactNode {
   const serverMuted = useVoice((s) => s.serverMuted);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
   const wsName = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.name : undefined));
-  const rnnoise = usePrefs((s) => s.rnnoise);
   const devStats = usePrefs((s) => s.devStats);
   const saveTraffic = usePrefs((s) => s.saveTraffic);
-  const collapsed = usePrefs((s) => s.voicePanelCollapsed);
   const anyVideo = useVoice((s) => s.cameras.length > 0 || s.camera === 'on');
   const stage = useVoice((s) => s.stage);
   const videoPip = useVoice((s) => s.videoPip);
@@ -371,7 +363,8 @@ export function VoiceBar(): ReactNode {
   return (
     <div className="shrink-0 px-2 pb-2 pt-1.5" role="region" aria-label={t('voice.panel')}>
       {/* Header (Discord): signal in a 40 px square (click = connection details), «Голос
-          подключён» 15 px + «Комната / Пространство» 13 px, then collapse and the red hang-up. */}
+          подключён» 15 px + «Комната / Пространство» 13 px, then noise suppression (popover, docs/09
+          #12) and the red hang-up. */}
       <div className="flex items-center gap-2">
         <QualityButton phase={phase} />
         <div className="min-w-0 flex-1" aria-live="polite">
@@ -380,17 +373,7 @@ export function VoiceBar(): ReactNode {
             {full}
           </button>
         </div>
-        <Tip label={collapsed ? t('voiceUi.expandPanel') : t('voiceUi.collapsePanel')}>
-          <button
-            type="button"
-            aria-label={collapsed ? t('voiceUi.expandPanel') : t('voiceUi.collapsePanel')}
-            aria-expanded={!collapsed}
-            onClick={() => setPrefs({ voicePanelCollapsed: !collapsed })}
-            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
-          >
-            <ChevronDown className={cx('size-5 transition-transform duration-[var(--motion-fast)]', collapsed && 'rotate-180')} aria-hidden />
-          </button>
-        </Tip>
+        <NoiseButton />
         <Tip label={t('voice.leave')}>
           <button
             type="button"
@@ -429,8 +412,9 @@ export function VoiceBar(): ReactNode {
         </div>
       ) : null}
 
-      {/* Discord: four 36 px buttons 10 px apart across the island (hidden while collapsed). */}
-      <div className={cx('mt-2 grid-cols-4 gap-2.5', collapsed ? 'hidden' : 'grid')}>
+      {/* Three equal 36 px buttons 10 px apart across the island (docs/09 #12): camera ▾, screen,
+          more. Noise suppression lives in the header's popover and in Settings. */}
+      <div className="mt-2 grid grid-cols-3 gap-2.5">
         <CameraButton roomId={roomId} />
         {myStream ? (
           <PanelButton label={t('shell.stopShare')} active onClick={() => void voice.stopStream()}>
@@ -441,9 +425,6 @@ export function VoiceBar(): ReactNode {
             <MonitorUp className="size-5" aria-hidden />
           </PanelButton>
         )}
-        <PanelButton label={rnnoise ? t('shell.noiseOn') : t('shell.noiseOff')} active={rnnoise} tone="tint" onClick={() => setPrefs({ rnnoise: !rnnoise })}>
-          <AudioLines className="size-5" aria-hidden />
-        </PanelButton>
         <Dropdown.Root modal={false}>
           <Tip label={t('shell.more')}>
             <Dropdown.Trigger asChild>
