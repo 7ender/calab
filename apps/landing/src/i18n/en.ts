@@ -49,6 +49,16 @@ const en: Dict = {
         text: 'Files, reactions, replies, pins, mentions and search. Every voice room has its own chat.',
         alt: 'A message with a link preview card, followed by a message with an image',
       },
+      dm: {
+        title: 'Direct messages',
+        text: 'One-on-one conversations with anyone from your shared workspaces, in their own section with an unread counter. Same feed: files, reactions, pins.',
+        alt: 'The list of direct messages and a conversation with Boris Petrov: a release checklist and an invitation to a call',
+      },
+      mobile: {
+        title: 'On your phone',
+        text: 'The web app adapts to a phone screen: rooms and conversations in a drawer, voice and push-to-talk at the bottom. Add it to the home screen like an app.',
+        alt: 'Calab on an iPhone: the “общий” channel with messages and the message field',
+      },
       roles: {
         title: 'Roles, permissions and guest links',
         text: 'Permissions at the workspace and room level. Guests join with a link, no account needed, and see only their room.',

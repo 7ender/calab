@@ -1,4 +1,4 @@
-import { AudioLines, Globe, MessagesSquare, MonitorUp, Server, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { AudioLines, Globe, MessageCircle, MessagesSquare, MonitorUp, Server, ShieldCheck, Smartphone, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Dict } from '@/i18n';
 import { Section, SectionHeading, ThemedImage } from './ui';
@@ -10,6 +10,8 @@ const features: { id: FeatureId; icon: LucideIcon; shot?: string; extra?: (t: Di
   { id: 'voice', icon: AudioLines, shot: 'voice' },
   { id: 'stream', icon: MonitorUp, shot: 'stream' },
   { id: 'chat', icon: MessagesSquare, shot: 'chat' },
+  { id: 'dm', icon: MessageCircle, shot: 'dm' },
+  { id: 'mobile', icon: Smartphone, shot: 'mobile' },
   { id: 'roles', icon: ShieldCheck, shot: 'guests' },
   {
     id: 'network',

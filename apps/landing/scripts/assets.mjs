@@ -1,6 +1,8 @@
 // Regenerates landing images from the shared 2x (Retina) macOS window captures in docs/images/
 // (also used by README): <file>-{dark,light}@2x.png, 2880×1742 (window 1440×871 pt), no shadow;
 // <file>-{dark,light}-shadow@2x.png — same window with the system shadow (hero).
+// mobile-dark@2x.png — the web client on an iPhone 14 (WebKit, 390 pt wide at 2x): its top part,
+// rounded like a phone screen, centred on a transparent feature card (same art in both themes).
 // Output (public/screens): <name>-<theme>@2x.webp at full resolution (no downscale) and
 // <name>-<theme>.webp — a 1x Lanczos resample for non-Retina screens; plus public/og.png.
 // Usage: pnpm -F @calaba/landing assets
@@ -28,6 +30,8 @@ const shots = [
   { name: 'chat', file: 'chat', crop: { left: 331, top: 100, ...CROP } },
   // room settings → guest link: guest options, create button, active link
   { name: 'guests', file: 'settings', crop: { left: 482, top: 296, ...CROP } },
+  // direct messages: the conversation list and the chat with Борис (a 1.5× wider area, scaled to fit)
+  { name: 'dm', file: 'dm', crop: { left: 72, top: 36, width: 990, height: 600 } },
 ];
 
 const scaled = (c) => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, Math.round(v * SCALE)]));
@@ -39,6 +43,8 @@ for (const s of shots) {
     if (!existsSync(file)) throw new Error(`missing ${file}`);
     let img = sharp(file);
     if (s.crop) img = img.extract(scaled(s.crop));
+    // Areas larger than a feature card are resampled once (Lanczos) to the card's 2x size.
+    if (s.crop && s.crop.width !== CROP.width) img = sharp(await img.png().toBuffer()).resize(CROP.width * SCALE, CROP.height * SCALE, { kernel: 'lanczos3' });
     const full = await img.png().toBuffer();
     const { width, height } = await sharp(full).metadata();
     await sharp(full).webp(WEBP).toFile(join(out, `${s.name}-${theme}@2x.webp`));
@@ -47,6 +53,37 @@ for (const s of shots) {
       .webp(WEBP)
       .toFile(join(out, `${s.name}-${theme}.webp`));
     console.log(`${s.name}-${theme}: ${width}×${height} @2x`);
+  }
+}
+
+// Phone card: the top of the iPhone capture at 560 px (2x) wide, rounded like the screen (the
+// bottom edge runs off the card), on a transparent 660×400 pt canvas; both themes share it.
+{
+  const phone = join(src, 'mobile-dark@2x.png');
+  if (!existsSync(phone)) throw new Error(`missing ${phone}`);
+  const W2 = CROP.width * SCALE;
+  const H2 = CROP.height * SCALE;
+  const PW = 560;
+  const TOP = 48;
+  const R = 64;
+  const resized = await sharp(phone).resize(PW, null, { kernel: 'lanczos3' }).png().toBuffer();
+  const ph = Math.min((await sharp(resized).metadata()).height, H2 - TOP);
+  const mask = Buffer.from(`<svg width="${PW}" height="${ph}"><rect width="${PW}" height="${ph + R}" rx="${R}" ry="${R}"/></svg>`);
+  const screen = await sharp(resized).extract({ left: 0, top: 0, width: PW, height: ph }).composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+  const frame = Buffer.from(
+    `<svg width="${PW + 12}" height="${ph + 6}"><rect x="3" y="3" width="${PW + 6}" height="${ph + R}" rx="${R + 3}" ry="${R + 3}" fill="none" stroke="rgba(128,128,128,0.35)" stroke-width="4"/></svg>`,
+  );
+  const card = await sharp({ create: { width: W2, height: H2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([
+      { input: frame, left: Math.round((W2 - PW) / 2) - 6, top: TOP - 6 },
+      { input: screen, left: Math.round((W2 - PW) / 2), top: TOP },
+    ])
+    .png()
+    .toBuffer();
+  for (const theme of ['dark', 'light']) {
+    await sharp(card).webp(WEBP).toFile(join(out, `mobile-${theme}@2x.webp`));
+    await sharp(card).resize(CROP.width, CROP.height, { kernel: 'lanczos3' }).webp(WEBP).toFile(join(out, `mobile-${theme}.webp`));
+    console.log(`mobile-${theme}: ${W2}×${H2} @2x`);
   }
 }
 

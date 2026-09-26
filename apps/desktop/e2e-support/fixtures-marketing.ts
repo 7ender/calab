@@ -48,6 +48,12 @@ export const MARKETING_IDS = {
     standup: '00000000-0000-7000-8003-000000000025',
     meeting: '00000000-0000-7000-8003-000000000026',
   },
+  /** Direct messages (Анна with Борис, Вера, Григорий). */
+  dms: {
+    boris: '00000000-0000-7000-8003-000000000027',
+    vera: '00000000-0000-7000-8003-000000000028',
+    grigory: '00000000-0000-7000-8003-000000000029',
+  },
   categories: { voice: '00000000-0000-7000-8008-000000000021' },
   files: {
     screenshot: '00000000-0000-7000-8005-000000000021',
@@ -101,7 +107,7 @@ export function buildMarketingState(s: MockState): MockState {
     { id: U.boris, name: 'Борис Петров', email: 'boris@calaba.test', status: 'На созвоне', device: 'Desktop (win32)' },
     { id: U.vera, name: 'Вера Ким', email: 'vera@calaba.test', status: '', avatar: F.veraAvatar, device: 'MacBook Air (darwin)' },
     { id: U.grigory, name: 'Григорий Соколов', email: 'grigory@calaba.test', status: 'В отпуске до 26.01', device: 'Desktop (linux)' },
-    { id: U.dina, name: 'Дина Лебедева', email: 'dina@calaba.test', status: 'Тестирую 0.2', guest: true, device: 'Chrome (web)' },
+    { id: U.dina, name: 'Дина Лебедева', email: 'dina@calaba.test', status: 'Тестирую 0.3', guest: true, device: 'Chrome (web)' },
   ];
   users.forEach((u, i) => {
     s.users.set(u.id, {
@@ -229,7 +235,7 @@ export function buildMarketingState(s: MockState): MockState {
       reactions: { '👍': [U.boris, U.anna] },
     },
     { room: R.general, at: '11:46', author: U.anna, content: 'Отлично получилось, забираю в релиз.', replyTo: 'shot' },
-    { room: R.releases, at: '12:30', author: U.boris, content: 'Сборка 0.2.0-rc.1 готова, ставьте и пишите, если что-то не так.' },
+    { room: R.releases, at: '12:30', author: U.boris, content: 'Сборка 0.3.2-rc.1 готова, ставьте и пишите, если что-то не так.' },
     { room: R.general, at: '13:12', author: U.boris, content: `@${U.anna} глянешь чек-лист релиза перед планёркой?` },
     { room: R.general, at: '13:14', author: U.anna, content: 'Да, уже открыла. Иду.' },
   ];
@@ -259,10 +265,51 @@ export function buildMarketingState(s: MockState): MockState {
     s.messages.set(m.room, list);
   });
 
-  // ---- read states: Анна has read everything except the fresh RC note in «релизы» (one badge).
+  // ---- direct messages (ADR-0020, the DM shot): Борис (2 unread → the rail badge), Вера and
+  // Григорий (read). Messages in their own id range (0x200+).
+  const D = MARKETING_IDS.dms;
+  const dm = (roomId: string, peer: string, created: string): void => {
+    s.rooms.set(roomId, create(RoomSchema, { id: roomId, workspaceId: '', type: RoomType.DM, name: '', createdAt: ts(created) }));
+    s.dmMembers.set(roomId, [U.anna, peer]);
+  };
+  dm(D.boris, U.boris, '2025-12-03T09:00:00Z');
+  dm(D.vera, U.vera, '2025-12-04T09:00:00Z');
+  dm(D.grigory, U.grigory, '2025-12-05T09:00:00Z');
+  const dmMessages: { room: string; author: string; at: string; content: string; read?: boolean; reactions?: Record<string, string[]> }[] = [
+    { room: D.grigory, author: U.grigory, at: '2026-01-09T15:05:00Z', content: 'Ухожу в отпуск до 26-го, дежурство по стенду передал Борису.' },
+    { room: D.grigory, author: U.anna, at: '2026-01-09T15:12:00Z', content: 'Хорошего отдыха! 🌴' },
+    { room: D.vera, author: U.vera, at: '2026-01-14T15:02:00Z', content: 'Иконки для панели комнат выложила в #дизайн — глянь, как будет минутка.', reactions: { '👍': [U.anna] } },
+    { room: D.vera, author: U.anna, at: '2026-01-14T15:07:00Z', content: 'Спасибо, посмотрю вечером.' },
+    { room: D.boris, author: U.boris, at: '2026-01-15T08:40:00Z', content: 'Привет! Посмотришь сегодня PR с миграцией гостевых ссылок?' },
+    { room: D.boris, author: U.anna, at: '2026-01-15T08:44:00Z', content: 'Да, после стендапа.', read: true },
+    { room: D.boris, author: U.boris, at: '2026-01-15T10:12:00Z', content: 'Чек-лист релиза:\n1. миграции на стенде\n2. смоук-тесты\n3. заметки к релизу' },
+    { room: D.boris, author: U.boris, at: '2026-01-15T10:14:00Z', content: 'Созвонимся в «Переговорке» в 13:30?' },
+  ];
+  const dmRead = new Map<string, string>();
+  dmMessages.forEach((m, i) => {
+    const id = mockId('message', 0x200 + i);
+    if (m.read) dmRead.set(m.room, id);
+    const msg = create(MessageSchema, {
+      id,
+      roomId: m.room,
+      authorId: m.author,
+      content: m.content,
+      nonce: '',
+      createdAt: ts(m.at),
+      reactions: Object.entries(m.reactions ?? {}).map(([emoji, list]) => ({ emoji, count: list.length, me: false })),
+    });
+    if (m.reactions) s.reactions.set(id, new Map(Object.entries(m.reactions).map(([e, list]) => [e, new Set(list)])));
+    const list = s.messages.get(m.room) ?? [];
+    list.push(msg);
+    s.messages.set(m.room, list);
+  });
+
+  // ---- read states: Анна has read everything except the fresh RC note in «релизы» (one badge)
+  // and Борис's last two direct messages.
   const last = (roomId: string): string => s.messages.get(roomId)?.at(-1)?.id ?? '';
-  s.readStates.set(U.anna, new Map([R.general, R.design, R.backend].map((rid) => [rid, last(rid)])));
+  s.readStates.set(U.anna, new Map([R.general, R.design, R.backend, D.vera, D.grigory].map((rid) => [rid, last(rid)])));
   s.readStates.get(U.anna)?.set(R.releases, '');
+  s.readStates.get(U.anna)?.set(D.boris, dmRead.get(D.boris) ?? '');
   for (const u of [U.boris, U.vera, U.grigory, U.dina]) {
     s.readStates.set(u, new Map([...s.messages.keys()].map((rid) => [rid, last(rid)])));
   }

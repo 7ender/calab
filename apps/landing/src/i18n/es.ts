@@ -49,6 +49,16 @@ const es: Dict = {
         text: 'Archivos, reacciones, respuestas, mensajes fijados, menciones y búsqueda. Cada sala de voz tiene su propio chat.',
         alt: 'Un mensaje con la vista previa de un enlace y, debajo, un mensaje con una imagen',
       },
+      dm: {
+        title: 'Mensajes directos',
+        text: 'Conversaciones uno a uno con cualquier miembro de tus espacios compartidos, en su propia sección con contador de no leídos. El mismo chat: archivos, reacciones, mensajes fijados.',
+        alt: 'La lista de mensajes directos y una conversación con Borís Petrov: la lista de comprobación del lanzamiento y una invitación a una llamada',
+      },
+      mobile: {
+        title: 'En el teléfono',
+        text: 'La versión web se adapta a la pantalla del teléfono: salas y conversaciones en un panel lateral, voz y push-to-talk en la parte inferior. Se instala en la pantalla de inicio como una app.',
+        alt: 'Calab en un iPhone: el canal «общий» con mensajes y el campo de texto',
+      },
       roles: {
         title: 'Roles, permisos y enlaces de invitado',
         text: 'Permisos por espacio y por sala. Un invitado entra con un enlace, sin cuenta, y solo ve su sala.',

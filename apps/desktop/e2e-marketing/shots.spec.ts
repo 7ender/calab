@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { _electron as electron, devices, expect, test, webkit, type ElectronApplication, type Page } from '@playwright/test';
 import { IDS, MARKETING_IDS, startMockServer } from '../e2e-support/mock-server';
 import { NOW } from '../e2e-visual/harness';
 import { startPublisher } from '../e2e-visual/publisher';
@@ -13,14 +13,19 @@ import { startPublisher } from '../e2e-visual/publisher';
  * native 2x. No resizing, no 1x copies. `<name>-<theme>@2x.png` has no shadow (exact window size);
  * `chat-<theme>-shadow@2x.png` keeps the system shadow for the hero.
  * Data: the mock's `marketing` scenario (e2e-support/fixtures-marketing.ts); Вера shares a
- * release checklist slide (e2e-support/assets/stream-slide.png).
+ * release checklist slide (e2e-support/assets/stream-slide.png). Shots: onboarding, chat (hero: in
+ * voice, Борис speaking, the room card with its status, a DM badge on the rail), settings (guest
+ * link), dm (list + conversation), stream; `mobile-dark@2x.png` — the web client in WebKit on an
+ * iPhone 14 viewport (390×844 pt at 2x; needs dist-web: `pnpm build:web`).
+ * CALABA_MARKETING_PORT: the mock's port (a worktree run keeps its own, README «Parallel visual runs»).
  */
 const APP = process.env['CALABA_APP'] ?? resolve(import.meta.dirname, '../dist/mac-arm64/Calab.app/Contents/MacOS/Calab');
 const OUT = resolve(import.meta.dirname, '../../../docs/images');
 const WINDOW = { width: 1440, height: 900 };
-const PORT = 39180;
+const PORT = Number(process.env['CALABA_MARKETING_PORT'] ?? 39180);
+const DIST_WEB = resolve(import.meta.dirname, '../dist-web');
+const STATUS = 'Планёрка по релизу 0.2';
 
-test.skip(process.platform !== 'darwin', 'macOS only');
 
 function windowId(owner: string): string {
   const out = execFileSync('swift', [resolve(import.meta.dirname, '../scripts/window-id.swift'), owner], { encoding: 'utf8' });
@@ -77,13 +82,19 @@ async function shoot(app: ElectronApplication, page: Page, name: string, shadow 
   console.log(name, size.replace(/\s+/g, ' ').trim(), `${(statSync(file).size / 1e6).toFixed(1)} MB`);
 }
 
+/** Who speaks (VoiceBar's visual-test hook): fixture members have no LiveKit audio. */
+async function speaking(page: Page, ids: string[]): Promise<void> {
+  await page.evaluate((list) => (window as unknown as { __calabaSpeaking?: (ids: string[]) => void }).__calabaSpeaking?.(list), ids);
+}
+
 for (const theme of ['dark', 'light'] as const) {
   test(`marketing ${theme}`, async () => {
+    test.skip(process.platform !== 'darwin', 'macOS only (screencapture, vibrancy)');
     const mock = await startMockServer({ port: PORT, scenario: 'marketing' });
     const userData = mkdtempSync(join(tmpdir(), 'calab-shots-'));
     const app = await electron.launch({
       executablePath: APP,
-      args: ['--lang=ru'], // Russian UI on any host (ADR-0022)
+      args: ['--lang=ru', '--mute-audio'], // Russian UI on any host (ADR-0022); no test sound
       env: {
         ...process.env,
         CALABA_SERVER_URL: mock.url,
@@ -117,11 +128,27 @@ for (const theme of ['dark', 'light'] as const) {
       await shoot(app, page, `onboarding-${theme}`);
       await page.getByRole('button', { name: 'Пропустить настройку' }).click();
 
-      // ---- chat (hero)
-      await page.locator('aside').getByRole('button', { name: /общий/ }).first().click();
+      // ---- in voice: «Переговорка» with a status, muted (the fake mic would light my own ring)
+      const sidebar = page.locator('aside').first();
+      await sidebar.getByRole('button', { name: /Переговорка/ }).first().click();
+      await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
+      await page.keyboard.press(`Meta+Shift+m`);
+      await expect(page.getByRole('button', { name: 'Включить микрофон' }).first()).toBeVisible();
+      await sidebar.getByTestId('voice-status-row').click();
+      await sidebar.getByTestId('voice-status-input').fill(STATUS);
+      await sidebar.getByTestId('voice-status-input').press('Enter');
+      await expect(sidebar.getByTestId('voice-status-row')).toContainText(STATUS);
+      // Joined a minute ago: past the «Пригласить» row's 30 s window.
+      await page.evaluate(() => (window as unknown as { __calabaJoinedAt?: (ms: number) => void }).__calabaJoinedAt?.(Date.now() - 60_000));
+      await expect(page.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 15_000 });
+
+      // ---- chat (hero): «общий» while in voice, Борис speaking
+      await sidebar.getByRole('button', { name: /общий/ }).first().click();
       await expect(page.locator('[data-message-id]').first()).toBeVisible();
       await page.waitForTimeout(800);
       await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await speaking(page, [IDS.users.boris]);
+      await expect(sidebar.getByRole('listitem', { name: /Борис Петров/ })).toHaveAttribute('data-speaking', 'true');
       await shoot(app, page, `chat-${theme}`);
       await shoot(app, page, `chat-${theme}-shadow`, true);
 
@@ -138,15 +165,23 @@ for (const theme of ['dark', 'light'] as const) {
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toHaveCount(0);
 
+      // ---- direct messages: the list and the conversation with Борис
+      await page.getByTestId('rail-home').getByRole('button').click();
+      const dms = page.getByTestId('dm-list');
+      await expect(dms.getByRole('button')).toHaveCount(3);
+      await expect(dms).toContainText('Созвонимся в «Переговорке»');
+      await expect(dms).toContainText('Спасибо, посмотрю вечером');
+      await expect(dms).toContainText('Хорошего отдыха');
+      await dms.getByRole('button', { name: /Борис Петров/ }).click();
+      await expect(page.getByTestId('dm-header')).toContainText('Борис Петров');
+      await expect(page.locator('[data-message-id]')).toHaveCount(4);
+      await page.waitForTimeout(800);
+      await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await shoot(app, page, `dm-${theme}`);
+
       // ---- voice room with a screen share on the stage
-      await page.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
-      await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
-      const sidebar = page.locator('aside').first();
-      await sidebar.getByTestId('voice-status-row').click();
-      await sidebar.getByTestId('voice-status-input').fill('Планёрка по релизу 0.2');
-      await sidebar.getByTestId('voice-status-input').press('Enter');
-      await expect(sidebar.getByTestId('voice-status-row')).toContainText('Планёрка по релизу 0.2');
-      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.getByLabel('Пространства').getByRole('button', { name: /Команда Calab/ }).click();
+      await sidebar.getByRole('button', { name: /Переговорка/ }).first().click();
       publisher = await startPublisher({
         userId: IDS.users.vera,
         name: 'Вера Ким',
@@ -161,6 +196,7 @@ for (const theme of ['dark', 'light'] as const) {
       const expand = page.getByTestId('stream-pip').getByRole('button', { name: 'Развернуть' });
       if (await expand.count()) await expand.first().click();
       await expect(page.getByTestId('stream-stage')).toBeVisible();
+      await speaking(page, [IDS.users.boris]);
       await shoot(app, page, `stream-${theme}`);
       await page.getByRole('button', { name: 'Отключиться' }).click();
     } finally {
@@ -171,3 +207,37 @@ for (const theme of ['dark', 'light'] as const) {
     }
   });
 }
+
+// ---- mobile web: iPhone 14 in WebKit (Safari's engine), dark, «общий» (docs/09 #21)
+test('marketing mobile', async () => {
+  test.skip(!existsSync(join(DIST_WEB, 'index.html')), 'dist-web is missing: run `pnpm build:web` first');
+  const mock = await startMockServer({ port: PORT, scenario: 'marketing', staticDir: DIST_WEB });
+  const browser = await webkit.launch();
+  try {
+    const context = await browser.newContext({ ...devices['iPhone 14'], deviceScaleFactor: 2, locale: 'ru-RU', timezoneId: 'Europe/Moscow', colorScheme: 'dark' });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(NOW);
+    await page.goto(mock.url);
+    await page.evaluate(() => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru' }, version: 1 })));
+    await page.goto(mock.url);
+    await page.getByLabel('Email').fill('owner@calaba.test');
+    await page.getByLabel('Пароль').fill('password123');
+    await page.getByRole('button', { name: 'Войти', exact: true }).tap();
+    await expect(page.getByTestId('mobile-shell')).toBeVisible();
+    await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+    await page.getByTestId('mobile-nav').getByRole('button', { name: /^общий/ }).first().tap();
+    await expect(page.getByTestId('mobile-nav')).toHaveCount(0);
+    await expect(page.locator('[data-message-id]').first()).toBeVisible();
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await page.waitForTimeout(600);
+    const file = join(OUT, 'mobile-dark@2x.png');
+    await page.screenshot({ path: file, scale: 'device', animations: 'disabled', caret: 'hide' });
+    console.log('mobile-dark', `${(statSync(file).size / 1e6).toFixed(1)} MB`);
+    await context.close();
+  } finally {
+    await browser.close();
+    await mock.close();
+  }
+});

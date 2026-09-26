@@ -54,8 +54,9 @@ without JS (the Next runtime chunk still ships, ~100 kB).
 ## Updating screenshots
 
 Sources are the shared 2x (Retina) macOS window captures in `docs/images/` (also used by the root README):
-`chat`, `stream`, `settings`, `onboarding` as `<name>-{dark,light}@2x.png` (2880×1800, window 1440×900 pt,
-`screencapture -l` without shadow) and `chat-{dark,light}-shadow@2x.png` for the hero.
+`chat`, `stream`, `settings`, `onboarding`, `dm` as `<name>-{dark,light}@2x.png` (2880×1742, window 1440×871 pt,
+`screencapture -l` without shadow), `chat-{dark,light}-shadow@2x.png` for the hero and `mobile-dark@2x.png`
+(iPhone 14 in WebKit, 390 pt wide) for the «На телефоне» card — all from `pnpm -F @calaba/desktop screenshots:marketing`.
 
 1. Replace the PNGs in `docs/images/` (keep names; PNG > 3 MB → `oxipng` / `pngquant --quality 90-100`).
 2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` writes `public/screens/<name>-<theme>@2x.webp` at full
