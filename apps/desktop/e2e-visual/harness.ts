@@ -43,7 +43,7 @@ export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?
   const mock = await startMockServer({ port: opts.port ?? MOCK_PORT, scenario: opts.scenario ?? 'data' });
   const userData = mkdtempSync(join(tmpdir(), 'calaba-visual-'));
   const app = await electron.launch({
-    args: ['.'],
+    args: ['.', '--mute-audio'], // no join/leave sounds through the machine's speakers during the run
     cwd: join(import.meta.dirname, '..'),
     env: {
       ...process.env,

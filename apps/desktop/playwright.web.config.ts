@@ -20,7 +20,7 @@ export default defineConfig({
         // Full Chromium in new headless mode: the default headless shell has no notifications at
         // all (Notification.permission is always «denied»), unlike a real Chrome.
         channel: 'chromium',
-        launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
+        launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio'] },
       },
     },
     {
@@ -42,7 +42,7 @@ export default defineConfig({
         ...devices[device],
         browserName: 'chromium' as const,
         channel: 'chromium',
-        launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
+        launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio'] },
       },
     })),
   ],
