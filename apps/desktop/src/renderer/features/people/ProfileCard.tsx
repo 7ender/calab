@@ -5,6 +5,7 @@ import { MessageCircle, MonitorUp, Pencil, Volume2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, Toggle } from '../../components/ui';
+import { fmt } from '../../lib/format';
 import { t, type MessageKey } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
@@ -30,8 +31,6 @@ const PRESENCE_KEY: Partial<Record<PresenceStatus, MessageKey>> = {
   [PresenceStatus.IDLE]: 'presence.idle',
   [PresenceStatus.DND]: 'presence.dnd',
 };
-
-const dateFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 
 /**
  * Member profile (docs/09 #12): avatar, name (nickname) + profile name, presence, custom
@@ -120,7 +119,7 @@ export function ProfileCard({
         {m.joinedAt ? (
           <>
             <dt className="text-muted">{t('people.profile.joined')}</dt>
-            <dd>{dateFmt.format(timestampDate(m.joinedAt))}</dd>
+            <dd>{fmt.date(timestampDate(m.joinedAt))}</dd>
           </>
         ) : null}
       </dl>

@@ -8,6 +8,7 @@ import type {
 } from '@calaba/protocol';
 import { WorkspaceRole } from '@calaba/protocol';
 import { create } from 'zustand';
+import { t } from '../i18n';
 
 export interface WorkspaceEntry {
   ws: Workspace;
@@ -111,14 +112,14 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
 export function memberName(wsId: string | null, userId: string): string {
   const st = useWorkspaces.getState();
   const m = wsId ? st.byId[wsId]?.members[userId] : undefined;
-  return m?.nickname || m?.user?.displayName || st.users[userId]?.displayName || 'Неизвестный';
+  return m?.nickname || m?.user?.displayName || st.users[userId]?.displayName || t('common.unknownUser');
 }
 
 /** Reactive memberName(): re-renders when the nickname or profile name changes. */
 export function useMemberName(wsId: string | null, userId: string): string {
   return useWorkspaces((st) => {
     const m = wsId ? st.byId[wsId]?.members[userId] : undefined;
-    return m?.nickname || m?.user?.displayName || st.users[userId]?.displayName || 'Неизвестный';
+    return m?.nickname || m?.user?.displayName || st.users[userId]?.displayName || t('common.unknownUser');
   });
 }
 

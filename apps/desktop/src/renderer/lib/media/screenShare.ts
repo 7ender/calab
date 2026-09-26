@@ -10,6 +10,7 @@ import {
 } from 'livekit-client';
 import { platform } from '../../platform';
 import { publishOptionalAudio, type StreamAudioProblem } from './streamAudio';
+import { t } from '../../i18n';
 
 export type { StreamAudioProblem } from './streamAudio';
 
@@ -202,6 +203,6 @@ export async function startScreenShare(
   });
 
   // Web: the browser picked the source; its label is the best name we have.
-  const sourceName = opts.source.name || videoTrack.label || 'Экран';
+  const sourceName = opts.source.name || videoTrack.label || t('common.screen');
   return { video, audio, audioProblem, sourceName, stop };
 }

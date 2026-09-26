@@ -7,6 +7,7 @@ import {
   type VoiceState,
   type WorkspaceMember,
 } from '@calaba/protocol';
+import { getLocale } from '../../i18n';
 import { can, roomPerms, workspacePerms } from '../../lib/permissions';
 
 /*
@@ -48,7 +49,7 @@ export function groupMembers(
   voice: Readonly<Record<string, VoiceState | undefined>> = {},
 ): MemberGroups {
   const list = members.filter((m) => m.user);
-  list.sort((a, b) => roleRank(a.role) - roleRank(b.role) || nameOf(a).localeCompare(nameOf(b), 'ru'));
+  list.sort((a, b) => roleRank(a.role) - roleRank(b.role) || nameOf(a).localeCompare(nameOf(b), getLocale()));
   const on = (m: WorkspaceMember): boolean => {
     const id = m.user?.id ?? '';
     return isOnline(presences[id]?.status) || !!voice[id]?.roomId;

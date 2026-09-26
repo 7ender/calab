@@ -5,6 +5,7 @@ import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
 import { forwardRef, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { extendTailwindMerge } from 'tailwind-merge';
+import { t } from '../i18n';
 
 /*
  * UI primitives (docs/08-design.md): macOS-like controls on design tokens only.
@@ -373,7 +374,7 @@ export function Modal({
               )}
             </div>
             {closeButton ? (
-              <IconButton label="Закрыть" shortcut="Esc" size="sm" className="-mr-1 -mt-1" onClick={onClose}>
+              <IconButton label={t('common.close')} shortcut="Esc" size="sm" className="-mr-1 -mt-1" onClick={onClose}>
                 <X className="size-4" strokeWidth={1.75} />
               </IconButton>
             ) : null}
@@ -387,8 +388,8 @@ export function Modal({
   );
 }
 
-export function Spinner({ className, label = 'Загрузка' }: { className?: string; label?: string }): ReactNode {
-  return <Loader2 className={cx('size-5 animate-spin text-muted', className)} aria-label={label} role="status" />;
+export function Spinner({ className, label }: { className?: string; label?: string }): ReactNode {
+  return <Loader2 className={cx('size-5 animate-spin text-muted', className)} aria-label={label ?? t('common.loading')} role="status" />;
 }
 
 /** Empty state: short text + one action (docs/08, Layout). */
@@ -495,10 +496,10 @@ export function Stepper({
         }}
       />
       <span className="flex w-5 flex-col border-l border-line">
-        <button type="button" tabIndex={-1} aria-label={`${label}: больше`} title="Больше" disabled={value >= max} onClick={() => step(1)} className="grid flex-1 place-items-center text-muted hover:bg-hover hover:text-fg disabled:opacity-40">
+        <button type="button" tabIndex={-1} aria-label={t('common.increase', { label })} title={t('common.more')} disabled={value >= max} onClick={() => step(1)} className="grid flex-1 place-items-center text-muted hover:bg-hover hover:text-fg disabled:opacity-40">
           <ChevronUp className="size-3" aria-hidden />
         </button>
-        <button type="button" tabIndex={-1} aria-label={`${label}: меньше`} title="Меньше" disabled={value <= min} onClick={() => step(-1)} className="grid flex-1 place-items-center border-t border-line text-muted hover:bg-hover hover:text-fg disabled:opacity-40">
+        <button type="button" tabIndex={-1} aria-label={t('common.decrease', { label })} title={t('common.less')} disabled={value <= min} onClick={() => step(-1)} className="grid flex-1 place-items-center border-t border-line text-muted hover:bg-hover hover:text-fg disabled:opacity-40">
           <ChevronDown className="size-3" aria-hidden />
         </button>
       </span>

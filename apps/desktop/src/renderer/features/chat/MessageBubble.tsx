@@ -7,7 +7,7 @@ import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
-import { fmtFull, fmtSize, fmtTime, toDate } from '../../lib/format';
+import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse';
 import { platform } from '../../platform';
@@ -91,13 +91,13 @@ export function DatePill({ date, floating }: { date: Date; floating?: boolean })
   if (floating) {
     return (
       <span className={cx(pill, 'text-fg')} aria-hidden data-testid="sticky-date">
-        {fmtDayLabel(date)}
+        {fmt.dayLabel(date)}
       </span>
     );
   }
   return (
-    <div className="flex justify-center py-2" role="separator" aria-label={fmtDayLabel(date)}>
-      <span className={cx(pill, 'text-fg')}>{fmtDayLabel(date)}</span>
+    <div className="flex justify-center py-2" role="separator" aria-label={fmt.dayLabel(date)}>
+      <span className={cx(pill, 'text-fg')}>{fmt.dayLabel(date)}</span>
     </div>
   );
 }
@@ -112,18 +112,6 @@ function NewMessagesPill(): ReactNode {
       <span className={line} aria-hidden />
     </div>
   );
-}
-
-const dayFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
-const dayYearFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-
-/** «Сегодня», «Вчера», «14 января», «14 января 2025» (year only when not the current one). */
-export function fmtDayLabel(d: Date, now = new Date()): string {
-  const y = new Date(now);
-  y.setDate(now.getDate() - 1);
-  if (d.toDateString() === now.toDateString()) return t('chat.today');
-  if (d.toDateString() === y.toDateString()) return t('chat.yesterday');
-  return d.getFullYear() === now.getFullYear() ? dayFmt.format(d) : dayYearFmt.format(d);
 }
 
 function Bubble({
@@ -251,7 +239,7 @@ function Bubble({
           // Keyboard: Tab reaches the message, which shows its action bar (docs/09 #47).
           tabIndex={bar.enabled ? 0 : undefined}
           role={bar.enabled ? 'article' : undefined}
-          aria-label={bar.enabled ? `${name}, ${fmtTime(toDate(m.createdAt))}` : undefined}
+          aria-label={bar.enabled ? `${name}, ${fmt.time(toDate(m.createdAt))}` : undefined}
           {...bar.handlers}
         >
           {body}
@@ -373,8 +361,8 @@ function MetaInfo({ c, own }: { c: ChatMessage; own: boolean }): ReactNode {
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap text-caption leading-none text-[color:var(--bubble-meta)]">
       {c.msg.editedAt ? <span>{t('chat.editedShort')}</span> : null}
-      <Tip label={fmtFull(d)}>
-        <span>{fmtTime(d)}</span>
+      <Tip label={fmt.full(d)}>
+        <span>{fmt.time(d)}</span>
       </Tip>
       {own ? (
         c.status === 'pending' ? (
@@ -488,7 +476,7 @@ function FileRow({ f }: { f: FileMeta }): ReactNode {
         <div className="truncate text-body font-medium" title={f.name}>
           {f.name}
         </div>
-        <div className="text-caption text-[color:var(--bubble-meta)]">{fmtSize(f.size)}</div>
+        <div className="text-caption text-[color:var(--bubble-meta)]">{fmt.size(f.size)}</div>
       </div>
     </div>
   );

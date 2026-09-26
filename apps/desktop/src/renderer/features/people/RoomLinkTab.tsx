@@ -6,6 +6,7 @@ import { useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, IconButton, Row, Select, Spinner, Toggle } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
+import { fmt } from '../../lib/format';
 import { api } from '../../lib/api/endpoints';
 import { roomInviteUrl } from '../../services/links';
 import { useRooms } from '../../stores/rooms';
@@ -20,18 +21,6 @@ const EXPIRY: Array<{ s: number; key: MessageKey }> = [
   { s: 0, key: 'people.link.never' },
 ];
 export const MAX_USES = [0, 1, 5, 10, 25, 50, 100];
-
-/** «1 окт., 12:00»; with the year when it is not this year. */
-const dateFmt = {
-  format: (d: Date): string =>
-    new Intl.DateTimeFormat('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-      ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }),
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(d),
-};
 
 /** Always https (docs/09 #53); '' only without a known server (nothing to copy then). */
 export const linkOf = (i: Pick<RoomInvite, 'code'>): string => roomInviteUrl(useSession.getState().serverUrl, i.code) ?? '';
@@ -58,7 +47,7 @@ export function linkSummary(i: RoomInvite, voice: boolean): string {
     .filter(Boolean)
     .map((s) => s.toLowerCase());
   return [
-    i.expiresAt ? t('people.link.until', { date: dateFmt.format(timestampDate(i.expiresAt)) }) : t('people.link.forever'),
+    i.expiresAt ? t('people.link.until', { date: fmt.dateTime(timestampDate(i.expiresAt), 'short') }) : t('people.link.forever'),
     i.maxUses ? t('people.link.uses', { uses: i.uses, max: i.maxUses }) : t('people.link.usesUnlimited', { uses: i.uses }),
     i.allowGuests ? '' : t('people.link.guestsOff'),
     rights.join(', '),

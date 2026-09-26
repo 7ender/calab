@@ -61,9 +61,3 @@ export function updateLabel(u: UpdateStatus): string | null {
   }
 }
 
-const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-
-/** «1 дек 2025» — compact date for lists (member since, …). */
-export function fmtShortDate(d: Date): string {
-  return `${d.getDate()} ${MONTHS[d.getMonth()] ?? ''} ${d.getFullYear()}`;
-}

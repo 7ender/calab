@@ -4,6 +4,7 @@
  * `@query` under the caret. Code spans / blocks are never touched (the server ignores them too).
  */
 
+import { getLocale } from '../i18n';
 import { mentionTargets, parseMarkdown } from './markdown/parse';
 
 /**
@@ -147,7 +148,7 @@ export function filterCandidates(query: string, list: readonly MentionCandidate[
   return list
     .map((c) => ({ c, s: score(c) }))
     .filter((x) => x.s > 0)
-    .sort((a, b) => b.s - a.s || a.c.name.localeCompare(b.c.name, 'ru'))
+    .sort((a, b) => b.s - a.s || a.c.name.localeCompare(b.c.name, getLocale()))
     .slice(0, limit)
     .map((x) => x.c);
 }

@@ -5,7 +5,7 @@ import { Avatar } from '../../components/Avatar';
 import { Button, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { fmtTime } from '../../lib/format';
+import { fmt } from '../../lib/format';
 import { openDm } from '../../services/dms';
 import { shareOrigin } from '../../services/links';
 import { HOME, sortedDms, useDms, type DmEntry } from '../../stores/dms';
@@ -73,18 +73,6 @@ export function DmSidebar(): ReactNode {
   );
 }
 
-const dateFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' });
-
-/** «14:05» today, «вчера», «14 янв.» earlier. */
-export function fmtListTime(ms: number, now = new Date()): string {
-  if (!ms) return '';
-  const d = new Date(ms);
-  if (d.toDateString() === now.toDateString()) return fmtTime(d);
-  const y = new Date(now);
-  y.setDate(now.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return 'вчера';
-  return dateFmt.format(d);
-}
 
 const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
   const { roomId, peerId } = entry;
@@ -97,7 +85,8 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const text = usePreviewText(null, preview?.content ?? '');
   const line = preview === undefined ? '' : preview === null ? t('dm.noMessages') : `${preview.authorId === me ? `${t('dm.you')}: ` : ''}${text || (preview.attachments ? t('chat.attachment') : '')}`;
-  const time = fmtListTime(preview?.at ?? entry.activity);
+  const at = preview?.at ?? entry.activity;
+  const time = at ? fmt.listTime(new Date(at)) : '';
   const bright = active || unread;
   return (
     <DmMenu roomId={roomId} unread={unread}>

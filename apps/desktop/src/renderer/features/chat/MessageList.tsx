@@ -5,7 +5,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { RoomType } from '@calaba/protocol';
 import { Spinner, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
-import { fmtTime, toDate } from '../../lib/format';
+import { fmt, toDate } from '../../lib/format';
 import { ensureLoaded, loadNewer, loadOlder, loadPresent, markRead } from '../../services/chat';
 import { EMPTY_ROOM_MESSAGES, useMessages, type ChatMessage } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
@@ -288,7 +288,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
           <button type="button" className="min-w-0 flex-1 truncate text-left font-medium hover:underline" onClick={toFirstUnread}>
             {plural('chat.unreadBanner', unread, {
               n: `${unread}${moreUnread ? '+' : ''}`,
-              time: fmtTime(toDate(firstUnreadMsg.msg.createdAt)),
+              time: fmt.time(toDate(firstUnreadMsg.msg.createdAt)),
             })}
           </button>
           <button

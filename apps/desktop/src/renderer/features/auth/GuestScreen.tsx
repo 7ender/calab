@@ -6,6 +6,7 @@ import { useState, type ReactNode } from 'react';
 import { Logo } from '../../components/Logo';
 import { Button, Field, Input, Spinner } from '../../components/ui';
 import { t } from '../../i18n';
+import { fmt } from '../../lib/format';
 import { ApiError } from '../../lib/api/client';
 import { api } from '../../lib/api/endpoints';
 import { platform } from '../../platform';
@@ -14,18 +15,6 @@ import { beginSession } from '../../services/session';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { openWhenReady, roomLinkError, useRoomLink } from '../people/roomLink';
-
-/** «1 окт., 12:00»; with the year when it is not this year. */
-const dateFmt = {
-  format: (d: Date): string =>
-    new Intl.DateTimeFormat('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-      ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }),
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(d),
-};
 
 /**
  * `/r/<code>` without a session (docs/09 #35, ADR-0016): logo, room + workspace, «Ваше имя» →
@@ -145,7 +134,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
           ) : null}
         </div>
         {body}
-        {p?.expiresAt ? <p className="mt-4 text-center text-caption text-faint">{t('guest.expires', { date: dateFmt.format(timestampDate(p.expiresAt)) })}</p> : null}
+        {p?.expiresAt ? <p className="mt-4 text-center text-caption text-faint">{t('guest.expires', { date: fmt.dateTime(timestampDate(p.expiresAt)) })}</p> : null}
       </div>
     </div>
   );

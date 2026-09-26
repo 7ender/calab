@@ -18,7 +18,7 @@ export const MAX_CONTENT = 4000;
 
 function errText(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.is('ERROR_CODE_RATE_LIMITED')) return 'Слишком часто — подождите пару секунд';
+    if (e.is('ERROR_CODE_RATE_LIMITED')) return t('chat.rateLimited');
   }
   return errorText(e);
 }
@@ -117,7 +117,7 @@ export async function ensureLoaded(roomId: string, messageId: string): Promise<b
     return true;
   } catch (e) {
     log.warn('jump failed', e);
-    toast.fail(e, 'Не удалось загрузить сообщение');
+    toast.fail(e, t('err.ctx.loadMessage'));
     return false;
   }
 }
@@ -148,7 +148,7 @@ export async function loadPresent(roomId: string): Promise<void> {
     const res = await api.messages.list(roomId, { limit: PAGE });
     useMessages.getState().setWindow(roomId, [...res.messages].reverse(), res.hasMore, false);
   } catch (e) {
-    toast.fail(e, 'Не удалось загрузить сообщения', () => void loadPresent(roomId));
+    toast.fail(e, t('err.ctx.loadMessages'), () => void loadPresent(roomId));
   }
 }
 
@@ -162,7 +162,7 @@ export async function toggleReaction(roomId: string, m: Message, emoji: string):
     await (add ? api.messages.addReaction(m.id, emoji) : api.messages.removeReaction(m.id, emoji));
   } catch (e) {
     useMessages.getState().applyReaction(roomId, m.id, emoji, !add, true);
-    toast.fail(e, 'Не удалось поставить реакцию');
+    toast.fail(e, t('err.ctx.react'));
   }
 }
 
@@ -171,7 +171,7 @@ export async function setPinned(m: Message, pin: boolean): Promise<void> {
     await (pin ? api.messages.pin(m.id) : api.messages.unpin(m.id));
     // MESSAGE_UPDATE brings pinned_at to everyone, including us.
   } catch (e) {
-    toast.fail(e, pin ? 'Не удалось закрепить' : 'Не удалось открепить');
+    toast.fail(e, t(pin ? 'err.ctx.pin' : 'err.ctx.unpin'));
   }
 }
 
@@ -314,7 +314,7 @@ export async function editMessage(id: string, content: string): Promise<void> {
     const r = await api.messages.update(id, content);
     if (r.message) useMessages.getState().upsert(r.message, { rest: true });
   } catch (e) {
-    toast.fail(e, 'Не удалось изменить');
+    toast.fail(e, t('err.ctx.edit'));
   }
 }
 
@@ -323,7 +323,7 @@ export async function deleteMessage(roomId: string, id: string): Promise<void> {
     await api.messages.remove(id);
     useMessages.getState().remove(roomId, id);
   } catch (e) {
-    toast.fail(e, 'Не удалось удалить');
+    toast.fail(e, t('err.ctx.delete'));
   }
 }
 

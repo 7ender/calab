@@ -6,7 +6,7 @@ import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
-import { fmtTime, toDate } from '../../lib/format';
+import { fmt, toDate } from '../../lib/format';
 import { can, mayPin } from '../../lib/permissions';
 import { setPinned } from '../../services/chat';
 import { useHotkeyLabel } from '../../services/hotkeys';
@@ -21,7 +21,6 @@ import { useDms } from '../../stores/dms';
 import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
-import { fmtDayLabel } from './MessageBubble';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 import { previewText } from './mentionText';
 import { TypingDots, useTypingText } from './TypingIndicator';
@@ -217,16 +216,9 @@ const MUTES = [
 
 /** «Выключены до 14:30». Open-ended «Пока не включу» is level NONE without muted_until (docs/05). */
 function mutedText(until: number): string {
-  return t('chat.notifyMutedUntil', { time: fmtUntil(until) });
+  return t('chat.notifyMutedUntil', { time: fmt.until(new Date(until)) });
 }
 
-const untilFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-
-/** «14:30» today, «16 янв., 14:30» on another day. */
-function fmtUntil(ms: number): string {
-  const d = new Date(ms);
-  return d.toDateString() === new Date().toDateString() ? fmtTime(d) : untilFmt.format(d);
-}
 
 /**
  * Room notifications (docs/05, «Уведомления комнаты»): level (all / mentions / nothing) and a
@@ -378,7 +370,7 @@ function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; r
                       <span className="flex items-baseline gap-2">
                         <span className="truncate text-body font-semibold">{memberName(workspaceId, m.authorId)}</span>
                         <span className="shrink-0 text-caption text-faint">
-                          {fmtDayLabel(d)}, {fmtTime(d)}
+                          {fmt.dayLabel(d)}, {fmt.time(d)}
                         </span>
                       </span>
                       <span className="line-clamp-2 text-body text-muted">

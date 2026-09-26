@@ -12,6 +12,7 @@ import { memberName, useWorkspaces } from '../stores/workspaces';
 import { platform } from '../platform';
 import { previewText } from '../features/chat/mentionText';
 import { roomLabel } from '../features/chat/roomLabel';
+import { t } from '../i18n';
 
 export { mentionsMe };
 
@@ -41,7 +42,7 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   const p = prefs();
   if (!(mention && p.notifyMentions) && !p.notifyAll) return;
   const author = memberName(workspaceId || null, m.authorId);
-  const body = previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? '📎 вложение' : '');
+  const body = previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? t('notify.attachment') : '');
   try {
     // A DM is titled with its author alone (the chat is them).
     const n = new Notification(`${author}${room && !dm ? ` · ${roomLabel(room)}` : ''}`, { body, silent: true, tag: m.roomId });

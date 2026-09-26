@@ -23,6 +23,7 @@ import { watchSyncedPrefs } from './profile';
 import { resetTimeZoneSync } from './timezone';
 import { voice } from './voice';
 import { platform } from '../platform';
+import { t } from '../i18n';
 
 const OFFLINE_RETRY_MS = 30_000;
 
@@ -179,6 +180,6 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useRoomLink.setState({ code: null, preferLogin: false });
   useUi.getState().openDialog(null);
   useSession.getState().set({ status: 'anon', me: null, sessionId: '', ready: false, gateway: 'idle', loggedOutReason: reason });
-  if (reason === 'revoked') toast.info('Сессия завершена на другом устройстве');
-  else if (reason === 'expired') toast.info('Сессия истекла — войдите снова');
+  if (reason === 'revoked') toast.info(t('session.revokedToast'));
+  else if (reason === 'expired') toast.info(t('session.expiredToast'));
 }

@@ -2,9 +2,12 @@
  * A compact emoji set for the picker (no dependency: ~400 common emoji in 8 groups).
  * Rendered with the system emoji font (Apple Color Emoji on macOS).
  */
+import type { MessageKey } from '../../i18n';
+
 export interface EmojiGroup {
   id: string;
-  label: string;
+  /** i18n key of the group title. */
+  label: MessageKey;
   icon: string;
   list: string[];
 }
@@ -18,7 +21,7 @@ export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🔥', '🎉', '😮'
 export const EMOJI_GROUPS: EmojiGroup[] = [
   {
     id: 'smileys',
-    label: 'Смайлы',
+    label: 'emoji.cat.smileys',
     icon: '😀',
     list: split(`😀 😃 😄 😁 😆 😅 😂 🤣 🥲 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🥸 🤩 🥳 😏 😒
       😞 😔 😟 😕 🙁 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦
@@ -26,14 +29,14 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
   },
   {
     id: 'people',
-    label: 'Жесты и люди',
+    label: 'emoji.cat.people',
     icon: '👋',
     list: split(`👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🫰 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 🫶 👐 🤲 🤝 🙏 ✍️ 💪 🦾
       🧠 👀 👁️ 👅 👄 🫦 👶 🧒 👦 👧 🧑 👱 👨 🧔 👩 🧓 👴 👵 🙍 🙎 🙅 🙆 💁 🙋 🧏 🙇 🤦 🤷 🧑‍💻 👩‍💻 👨‍💻 🧑‍🔧 🧑‍🎨 🧑‍🚀 🥷 🦸 🧙 🧚 💃 🕺 🚶 🏃`),
   },
   {
     id: 'nature',
-    label: 'Животные и природа',
+    label: 'emoji.cat.nature',
     icon: '🐶',
     list: split(`🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🐢 🐍
       🦎 🐙 🦑 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐅 🐆 🦓 🦍 🐘 🦒 🐪 🦘 🐕 🐈 🐓 🦃 🦜 🕊️ 🐇 🦔 🌵 🎄 🌲 🌳 🌴 🌱 🌿 ☘️ 🍀 🍁 🍂 🍄 🌷 🌹
@@ -41,7 +44,7 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
   },
   {
     id: 'food',
-    label: 'Еда и напитки',
+    label: 'emoji.cat.food',
     icon: '🍕',
     list: split(`🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🍆 🥔 🥕 🌽 🌶️ 🥒 🥬 🥦 🧄 🧅 🥐 🥯 🍞 🥖 🧀 🥚 🍳 🥞 🧇
       🥓 🥩 🍗 🍖 🌭 🍔 🍟 🍕 🥪 🌮 🌯 🥗 🍝 🍜 🍲 🍛 🍣 🍱 🥟 🍤 🍙 🍚 🍘 🍥 🥠 🍢 🍡 🍧 🍨 🍦 🥧 🧁 🍰 🎂 🍮 🍭 🍬 🍫 🍿 🍩 🍪
@@ -49,14 +52,14 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
   },
   {
     id: 'activity',
-    label: 'Занятия',
+    label: 'emoji.cat.activity',
     icon: '⚽',
     list: split(`⚽ 🏀 🏈 ⚾ 🥎 🎾 🏐 🏉 🥏 🎱 🏓 🏸 🏒 🥊 🥋 ⛳ 🏹 🎣 🤿 🎿 🛷 ⛸️ 🏂 🏋️ 🤸 🚴 🏆 🥇 🥈 🥉 🏅 🎖️ 🎗️ 🎫 🎟️ 🎪 🎭 🎨
       🎬 🎤 🎧 🎼 🎹 🥁 🎷 🎺 🎸 🎻 🎲 ♟️ 🎯 🎳 🎮 🕹️ 🧩 🎉 🎊 🎈 🎁 🎀`),
   },
   {
     id: 'travel',
-    label: 'Путешествия',
+    label: 'emoji.cat.travel',
     icon: '🚗',
     list: split(`🚗 🚕 🚙 🚌 🚎 🏎️ 🚓 🚑 🚒 🚐 🛻 🚚 🚛 🚜 🛵 🏍️ 🚲 🛴 🚨 🚔 🚍 🚘 🚖 🚡 🚠 🚟 🚃 🚋 🚞 🚝 🚄 🚅 🚈 🚂 🚆 🚇 🚊
       🚉 ✈️ 🛫 🛬 🛩️ 💺 🛰️ 🚀 🛸 🚁 🛶 ⛵ 🚤 🛥️ 🚢 ⚓ ⛽ 🚧 🚦 🗺️ 🗿 🗽 🗼 🏰 🏯 🏟️ 🎡 🎢 🎠 ⛲ 🏖️ 🏝️ 🏜️ 🌋 ⛰️ 🏔️ 🗻 🏕️ 🏠
@@ -64,7 +67,7 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
   },
   {
     id: 'objects',
-    label: 'Предметы',
+    label: 'emoji.cat.objects',
     icon: '💡',
     list: split(`⌚ 📱 💻 ⌨️ 🖥️ 🖨️ 🖱️ 💽 💾 💿 📀 📷 📸 📹 🎥 📞 ☎️ 📺 📻 🎙️ ⏱️ ⏰ ⌛ ⏳ 📡 🔋 🔌 💡 🔦 🕯️ 🧯 💸 💵 💰 💳 💎
       ⚖️ 🧰 🔧 🔨 ⚒️ 🛠️ ⛏️ 🔩 ⚙️ 🧱 ⛓️ 🧲 🔫 💣 🧨 🪓 🔪 🛡️ 🔮 📿 🧿 💈 🔭 🔬 🩺 💊 💉 🧬 🦠 🧪 🌡️ 🧹 🧺 🧻 🚽 🛁 🔑 🗝️ 🚪 🛋️
@@ -73,7 +76,7 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
   },
   {
     id: 'symbols',
-    label: 'Символы',
+    label: 'emoji.cat.symbols',
     icon: '❤️',
     list: split(`❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☯️ ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓ 🆔 ⚛️ 📴 📳
       🈶 🆚 💮 🉐 🅰️ 🅱️ 🆎 🆑 🅾️ 🆘 ❌ ⭕ 🛑 ⛔ 📛 🚫 💯 💢 ♨️ 🚷 🚯 🚳 🚱 🔞 📵 🚭 ❗ ❕ ❓ ❔ ‼️ ⁉️ 🔅 🔆 〽️ ⚠️ 🚸 🔱 ⚜️ 🔰

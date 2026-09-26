@@ -247,7 +247,7 @@ function DeviceMenu({ kind }: { kind: 'audioinput' | 'audiooutput' }): ReactNode
           <div className="px-2 pb-2 pt-1">
             <div className="mb-1 flex justify-between text-caption text-muted">
               <span>{t('shell.inputVolume')}</span>
-              <span className="tabular-nums">{threshold} дБ</span>
+              <span className="tabular-nums">{t('unit.db', { n: threshold })}</span>
             </div>
             <Slider label={t('shell.inputVolume')} value={threshold} min={-80} max={-10} step={1} onChange={(v) => setPrefs({ thresholdDb: v })} />
           </div>
