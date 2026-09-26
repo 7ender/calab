@@ -183,7 +183,7 @@ function MemberMenuContent({
       ) : null}
       {a.roles ? (
         <ContextMenu.Sub>
-          <ContextMenu.SubTrigger className={cx(row, 'data-[state=open]:bg-hover')}>
+          <ContextMenu.SubTrigger className={cx(row, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
             <Shield className="size-4" aria-hidden />
             <span className="flex-1">{t('people.menu.roles')}</span>
             <ChevronRight className="size-4" aria-hidden />
@@ -211,7 +211,7 @@ function MemberMenuContent({
       ) : null}
       {a.moveTargets.length > 0 ? (
         <ContextMenu.Sub>
-          <ContextMenu.SubTrigger className={cx(row, 'data-[state=open]:bg-hover')}>
+          <ContextMenu.SubTrigger className={cx(row, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
             <ArrowRightLeft className="size-4" aria-hidden />
             <span className="flex-1">{t('people.menu.move')}</span>
             <ChevronRight className="size-4" aria-hidden />

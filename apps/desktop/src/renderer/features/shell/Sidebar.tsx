@@ -274,7 +274,7 @@ function WorkspaceNotifyMenu({ workspaceId }: { workspaceId: string }): ReactNod
   };
   return (
     <Dropdown.Sub>
-      <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:bg-hover')}>
+      <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
         <Bell className="size-4" aria-hidden />
         <span className="flex-1">{t('shell.wsNotify')}</span>
         <ChevronRight className="size-4" aria-hidden />
