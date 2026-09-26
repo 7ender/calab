@@ -27,6 +27,7 @@ import { useVoice } from '../../stores/voice';
 import { ChangeEmailDialog, ChangePasswordDialog } from './CredentialDialogs';
 import { LicenseCard } from '../legal/Legal';
 import { HotkeyRow } from './HotkeyRow';
+import { EchoCard } from './EchoCard';
 import { PttBinder } from './PttBinder';
 import { deviceLabel, osLabel, updateLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
@@ -441,6 +442,8 @@ function VoiceTab(): ReactNode {
           <PttBinder />
         )}
       </Card>
+
+      <EchoCard />
 
       <Card title={t('voice.processing')} footer={t('voice.aecNote')}>
         <Row label={t('voice.rnnoise')} hint={t('voice.rnnoiseHint')}>

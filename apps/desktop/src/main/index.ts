@@ -3,6 +3,7 @@ import { app, BrowserWindow, powerMonitor, session } from 'electron';
 import { IPC, type PowerEvent } from '../shared/ipc';
 import { handleApiScheme, registerApiScheme } from './apiProtocol';
 import { installDisplayMediaHandler, MAC_SYSTEM_AUDIO_FEATURES, macSystemAudioEnabled } from './capture';
+import { echoFeatures } from './echoFeatures';
 import { findDeepLink, handleDeepLink, registerProtocolClient } from './deeplink';
 import { registerIpc } from './ipc';
 import { initLogging, log } from './logging';
@@ -47,9 +48,13 @@ app.on('open-url', (e, url) => {
 registerProtocolClient();
 
 // ---- Chromium switches: must be set before `ready` ----
-const features: string[] = [];
+// One --enable-features switch: a second appendSwitch of the same name would replace the first.
+const echo = echoFeatures(process.env);
+const features: string[] = [...echo.enable];
 if (macSystemAudioEnabled()) features.push(...MAC_SYSTEM_AUDIO_FEATURES);
-if (features.length > 0) app.commandLine.appendSwitch('enable-features', features.join(','));
+app.commandLine.appendSwitch('enable-features', features.join(','));
+if (echo.disable.length > 0) app.commandLine.appendSwitch('disable-features', echo.disable.join(','));
+log.info('chromium features', { enable: features, disable: echo.disable });
 
 // Test/automation only: synthetic mic (beep), no OS permission prompts.
 if (process.env['CALABA_FAKE_MEDIA'] === '1') {

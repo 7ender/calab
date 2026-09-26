@@ -126,7 +126,8 @@ export function durationMs(name: SoundName): number {
   return Math.round(SOUNDS[name].reduce((a, n) => Math.max(a, n.at + n.dur), 0) * 1000);
 }
 
-function wav(pcm: Int16Array, sr = SAMPLE_RATE): Blob {
+/** 16-bit mono PCM → WAV blob (UI sounds; the echo check fallback player). */
+export function wav(pcm: Int16Array, sr = SAMPLE_RATE): Blob {
   const dv = new DataView(new ArrayBuffer(44 + pcm.length * 2));
   const w = (o: number, s: string): void => {
     for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i));

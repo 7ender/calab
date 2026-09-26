@@ -1,5 +1,7 @@
 import { audioCaptureConstraints } from '@calaba/protocol';
 import workletUrl from './worklets/mic-processor.worklet.ts?worker&url';
+import { log } from '../log';
+import { DUCK_GAIN, ECHO } from './echo';
 import type { MicReport } from './micReport';
 
 /**
@@ -7,7 +9,13 @@ import type { MicReport } from './micReport';
  *
  *   getUserMedia (AEC3, AGC; built-in NS only when RNNoise is off)
  *     → [RNNoise AudioWorklet]  (when enabled)
+ *     → [GainNode]              (RNNoise on, or `duckable`: the speakerphone duck, lib/media/echo.ts)
  *     → MediaStreamTrack to publish
+ *
+ * Everything after getUserMedia works on the AEC3 output, so RNNoise, the VAD and the duck
+ * never feed the echo canceller anything but its own result (echo rule 3). The gain stage is
+ * on the *input* path: it only lowers what we send, remote playback stays plain <audio>.
+ * Without RNNoise and ducking the raw capture track is published as is (no WebAudio at all).
  *
  * The worklet always reports level + VAD every 20 ms for the voice gate.
  * WebAudio is used strictly on the capture side; remote audio never goes
@@ -16,6 +24,8 @@ import type { MicReport } from './micReport';
 export interface MicPipelineOptions {
   deviceId: string | null;
   rnnoise: boolean;
+  /** Needs the duck (speakerphone modes): without RNNoise too, publish through a gain stage. */
+  duckable?: boolean;
   onReport: (r: MicReport) => void;
   /** The capture ended by itself (device unplugged / revoked) — not fired by `stop()`. */
   onEnded?: () => void;
@@ -33,7 +43,32 @@ export class MicPipeline {
     private readonly ctx: AudioContext,
     private readonly node: AudioWorkletNode,
     private readonly owned: MediaStreamTrack[],
+    /** The duck stage; null = the raw track is published (headphones mode without RNNoise). */
+    private readonly gain: GainNode | null,
   ) {}
+
+  /** The duck can act on this pipeline (a gain stage exists). */
+  get duckable(): boolean {
+    return this.gain !== null;
+  }
+
+  private ducked = false;
+
+  /** Speakerphone duck: −18 dB with a 20 ms attack, back to 0 dB with a 300 ms release. */
+  setDuck(on: boolean): void {
+    const g = this.gain;
+    if (!g || on === this.ducked) return;
+    this.ducked = on;
+    const now = this.ctx.currentTime;
+    g.gain.cancelScheduledValues(now);
+    g.gain.setValueAtTime(g.gain.value, now);
+    // setTargetAtTime reaches 95 % after 3 time constants.
+    g.gain.setTargetAtTime(on ? DUCK_GAIN : 1, now, (on ? ECHO.attackMs : ECHO.releaseMs) / 3000);
+  }
+
+  get isDucked(): boolean {
+    return this.ducked;
+  }
 
   /**
    * Firefox cannot connect a MediaStream whose sample rate differs from the AudioContext
@@ -66,16 +101,20 @@ export class MicPipeline {
     if (!raw) throw new Error('getUserMedia returned no audio track');
     const onEnded = opts.onEnded;
     if (onEnded) raw.addEventListener('ended', () => onEnded());
+    // What the browser actually applied (docs/02, «Эхо: колонки» — how to verify AEC is on).
+    const st = raw.getSettings();
+    log.info('[mic] capture settings', { echoCancellation: st.echoCancellation, autoGainControl: st.autoGainControl, noiseSuppression: st.noiseSuppression, sampleRate: st.sampleRate, device: raw.label });
 
     // RNNoise is trained for 48 kHz; Chromium resamples the device if needed.
     const ctx = new AudioContext({ ...(sampleRate ? { sampleRate } : {}), latencyHint: 'interactive' });
     try {
       await ctx.audioWorklet.addModule(workletUrl);
 
-      // Without RNNoise we publish the raw track, and the gate / mute set
-      // raw.enabled=false — which would silence our own analysis and the gate
-      // could never reopen. Analyse an independent clone instead.
-      const analysisTrack = opts.rnnoise ? raw : raw.clone();
+      // With a graph (RNNoise or the duck) the published track is the graph's output. Without
+      // one we publish the raw track, and the gate / mute set raw.enabled=false — which would
+      // silence our own analysis and the gate could never reopen: analyse a clone instead.
+      const graph = opts.rnnoise || opts.duckable === true;
+      const analysisTrack = graph ? raw : raw.clone();
       const source = ctx.createMediaStreamSource(new MediaStream([analysisTrack]));
       const node = new AudioWorkletNode(ctx, 'calaba-mic', {
         numberOfInputs: 1,
@@ -105,10 +144,14 @@ export class MicPipeline {
       source.connect(node);
 
       let publishTrack = raw;
-      if (opts.rnnoise) {
+      let gain: GainNode | null = null;
+      if (graph) {
+        // Worklet (level/VAD) → gain: the gate and the meter see the level before the duck.
+        gain = ctx.createGain();
         const dest = ctx.createMediaStreamDestination();
         dest.channelCount = 1;
-        node.connect(dest);
+        (opts.rnnoise ? node : source).connect(gain);
+        gain.connect(dest);
         const t = dest.stream.getAudioTracks()[0];
         if (!t) throw new Error('MediaStreamDestination has no track');
         publishTrack = t;
@@ -118,8 +161,8 @@ export class MicPipeline {
       if (opts.rnnoise) await alive;
       else alive.catch(() => undefined);
 
-      const owned = opts.rnnoise ? [raw, publishTrack] : [raw, analysisTrack];
-      return new MicPipeline(publishTrack, opts.rnnoise, raw.label, ctx, node, owned);
+      const owned = graph ? [raw, publishTrack] : [raw, analysisTrack];
+      return new MicPipeline(publishTrack, opts.rnnoise, raw.label, ctx, node, owned, gain);
     } catch (err) {
       raw.stop();
       void ctx.close();
@@ -131,6 +174,7 @@ export class MicPipeline {
     this.node.port.postMessage('destroy');
     this.node.port.onmessage = null;
     this.node.disconnect();
+    this.gain?.disconnect();
     for (const t of this.owned) t.stop();
     void this.ctx.close();
   }
