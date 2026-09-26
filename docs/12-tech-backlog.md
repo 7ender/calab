@@ -9,3 +9,4 @@
 - Смена `camera_limit` на 0 (комната/workspace) не останавливает уже включённые камеры — действует только на новые `/camera/request`.
 - `users.ValidateTimezone`: на case-insensitive ФС (macOS dev) `Europe/MOSCOW` проходит; в distroless (tzdata) — нет. Сравнивать с `loc.String()`.
 - `rtc/camera.go stopOwnCamera` требует `rooms.Access`: при потере VIEW_ROOM во время звонка свою камеру через API не остановить (резерв живёт до выхода / TTL 10 мин).
+- 2026-09-26 · `apps/desktop/src/main/ptt.ts` · если закрыть настройки во время захвата Caps Lock, ремап caps→F18 остаётся до смены биндинга/выхода; снимать ремап при закрытии окна настроек/отмене захвата (unmount). Не блокер.
