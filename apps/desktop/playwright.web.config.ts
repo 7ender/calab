@@ -14,6 +14,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: /mobile\.web\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         // Full Chromium in new headless mode: the default headless shell has no notifications at
@@ -24,6 +25,7 @@ export default defineConfig({
     },
     {
       name: 'firefox',
+      testIgnore: /mobile\.web\.spec\.ts/,
       use: {
         ...devices['Desktop Firefox'],
         launchOptions: {
@@ -31,5 +33,17 @@ export default defineConfig({
         },
       },
     },
+    // Phone layout (ADR-0021): mobile.web.spec.ts only — self-contained (mock API + dist-web), in
+    // Chromium with the phone's viewport, touch, DPR and UA (WebKit has no fake media devices).
+    ...(['iPhone 14', 'Pixel 7'] as const).map((device) => ({
+      name: device.toLowerCase().replace(' ', '-'),
+      testMatch: /mobile\.web\.spec\.ts/,
+      use: {
+        ...devices[device],
+        browserName: 'chromium' as const,
+        channel: 'chromium',
+        launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
+      },
+    })),
   ],
 });
