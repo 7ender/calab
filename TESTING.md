@@ -360,6 +360,12 @@ docker rm -f calaba-hc
 | `turn.colaba.gptunnel.ai:443` | TURN/TLS (TCP) — именно он раздаётся клиентам; TURN/UDP — `141.105.69.177:443/udp` |
 | `colaba.gptunnel.ru`, `rtc.` / `turn.colaba.gptunnel.ru` | то же самое (алиас); TURN клиентам всё равно раздаётся по `.ai` |
 
+**Переименование (docs/10-branding.md):** целевые адреса — `https://app.calab.ru` (приложение, API, gateway, `/download/`), `https://calab.ru` (лендинг, там же `/download/`), `rtc.calab.ru`, `turn.calab.ru`; `colaba.gptunnel.ai/.ru` остаются алиасами приложения. Стенд переключится, когда `calab.ru` начнёт резолвиться (зона `.ru` пока отдаёт NXDOMAIN) — до этого действуют адреса ниже. Проверять лендинг:
+```sh
+for p in / /about/ /nope /download/; do curl -s -o /dev/null -w "$p %{http_code}\n" https://calab.ru$p; done   # 200, 200, 404, 200
+curl -sI https://calab.ru/ | grep -iE 'strict-transport|content-security|cache-control'                        # HSTS, CSP лендинга, no-cache
+```
+
 DNS — Cloudflare, записи DNS-only (proxied=false). Если локальный VPN с fake-IP DNS «не видит» новые имена (NXDOMAIN-кэш до 30 мин) — `curl --resolve <имя>:443:141.105.69.177 …` или проверять с машины без VPN.
 
 **Нельзя трогать чужое на хосте:** `python` (pid 3695), `ffmpeg`, `chromium`, `Xvfb`, контейнеры `gromtv-broadcast`, `dcgm-exporter`. Не делать `docker system prune`, `docker compose down` вне `/opt/calaba/infra/docker`, `iptables -F`, рестарт Docker. Наш compose-проект называется `calaba`.
@@ -433,7 +439,7 @@ for d in colaba.gptunnel.ai colaba.gptunnel.ru; do A=https://$d
 done
 curl -sI https://$D/ | grep -iE 'content-security|permissions-policy|x-content|referrer|x-frame|cache-control'
 ```
-Ожидается: `/` и `/rooms/x` → 200 (`<title>Calaba`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.colaba.gptunnel.ai https://rtc.colaba.gptunnel.ai wss://rtc.colaba.gptunnel.ru https://rtc.colaba.gptunnel.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
+Ожидается: `/` и `/rooms/x` → 200 (`<title>Calab`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.colaba.gptunnel.ai https://rtc.colaba.gptunnel.ai wss://rtc.colaba.gptunnel.ru https://rtc.colaba.gptunnel.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
 
 E2E против стенда. С 2026-09-26 стенд в `invite`-режиме, поэтому спека умеет два пути:
 - **вход существующим аккаунтом** (предпочтительно, не тратит использования кода): `CALABA_WEB_LOGIN` + `CALABA_WEB_PASSWORD` (например `owner@calaba.test`; пароль в `/opt/calaba/infra/docker/.env.accounts` на стенде). Каждый прогон создаёт у аккаунта новое пространство `Web <browser>-<id>`;
@@ -473,10 +479,10 @@ curl -sI https://$D/manifest.webmanifest | grep -i content-type                 
 
 | ОС | Файл | Установка |
 |---|---|---|
-| macOS Apple Silicon (M1–M4) / Intel | `Calaba-<версия>-arm64.dmg` / `Calaba-<версия>-x64.dmg` (не знаете какой —  → «Об этом Mac»: «Чип Apple M…» = arm64) | открыть dmg, перетащить Calaba в «Программы». Сборка **не подписана**: первый запуск — ПКМ по приложению → «Открыть» → «Открыть» (или `xattr -dr com.apple.quarantine /Applications/Calaba.app`). Автообновление на macOS без подписи не работает — приложение только сообщает о новой версии |
-| Windows 10/11 x64 | `Calaba-Setup-<версия>-x64.exe` | запустить; SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» (сборка не подписана) |
-| Linux x64 (любой дистрибутив) | `Calaba-<версия>-x86_64.AppImage` | `chmod +x Calaba-*.AppImage && ./Calaba-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calaba-*.AppImage --appimage-extract-and-run`) |
-| Debian/Ubuntu x64 | `calaba_<версия>_amd64.deb` | `sudo apt install ./calaba_*_amd64.deb`, запуск — «Calaba» в меню или `calaba` |
+| macOS Apple Silicon (M1–M4) / Intel | `Calab-<версия>-arm64.dmg` / `Calab-<версия>-x64.dmg` (не знаете какой —  → «Об этом Mac»: «Чип Apple M…» = arm64) | открыть dmg, перетащить Calab в «Программы». Сборка **не подписана**: первый запуск — ПКМ по приложению → «Открыть» → «Открыть» (или `xattr -dr com.apple.quarantine /Applications/Calab.app`). Автообновление на macOS без подписи не работает — приложение только сообщает о новой версии |
+| Windows 10/11 x64 | `Calab-Setup-<версия>-x64.exe` | запустить; SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» (сборка не подписана) |
+| Linux x64 (любой дистрибутив) | `Calab-<версия>-x86_64.AppImage` | `chmod +x Calab-*.AppImage && ./Calab-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calab-*.AppImage --appimage-extract-and-run`) |
+| Debian/Ubuntu x64 | `calab_<версия>_amd64.deb` | `sudo apt install ./calab_*_amd64.deb`, запуск — «Calab» в меню или `calab` |
 
 После запуска — в поле «Сервер» ввести `https://colaba.gptunnel.ai` (или `.ru`), войти (регистрация — по коду приглашения, см. «Аккаунты»).
 
@@ -625,8 +631,8 @@ cd apps/server && DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba R
 ### 0a. Против стенда (`https://colaba.gptunnel.ai`, запасной адрес `https://colaba.gptunnel.ru`)
 Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.colaba.gptunnel.ai`) клиент получает из `/join` сам.
 ```bash
-pnpm -F @calaba/desktop build                 # → apps/desktop/dist/mac-arm64/Calaba.app (+ dmg/zip)
-APP=apps/desktop/dist/mac-arm64/Calaba.app/Contents/MacOS/Calaba
+pnpm -F @calaba/desktop build                 # → apps/desktop/dist/mac-arm64/Calab.app (+ dmg/zip)
+APP=apps/desktop/dist/mac-arm64/Calab.app/Contents/MacOS/Calab
 # клиент А (owner, настоящие микрофон и экран):
 CALABA_SERVER_URL=https://colaba.gptunnel.ai CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
 # клиент Б (bob; fake-медиа, чтобы не было эха на одной машине):
@@ -689,7 +695,7 @@ cd apps/desktop && ELECTRON_RENDERER_URL=http://localhost:5173 CALABA_MULTI_INST
 | 2.1 | А: «Нет аккаунта? Зарегистрироваться» → email, имя, пароль (≥ 8 символов) | онбординг: «Микрофон» → «Разрешить микрофон» (индикатор уровня двигается) → «Как включать микрофон» → (macOS) «Показ экрана» → «Уведомления» → «Всё готово». Любой шаг можно пропустить («Пропустить настройку»). Затем экран «Добро пожаловать в Calaba» |
 | 2.2 | А: «Создать пространство» → название → «Создать» | в левой полосе иконка пространства, в колонке секции «Текстовые / Голосовые комнаты» |
 | 2.3 | А: «+» у текстовых → «общий» | комната открыта, «Добро пожаловать в #общий», справа панель участников (1 в сети) |
-| 2.4 | А: меню пространства (стрелка у названия) → «Пригласить людей» → «Создать приглашение» | тост «Ссылка-приглашение скопирована», в списке появилась строка `calaba://join/<код>` |
+| 2.4 | А: меню пространства (стрелка у названия) → «Пригласить людей» → «Создать приглашение» | тост «Ссылка-приглашение скопирована», в списке появилась строка `https://<сервер>/join/<код>` (без адреса сервера — `calab://join/<код>`) |
 | 2.5 | Б: регистрация с этим кодом в поле «Код приглашения» | Б сразу в пространстве. У А в панели участников «В сети — 2» |
 | 2.6 | Б: открыть «общий» | до открытия название комнаты у Б жирное (непрочитанное) |
 | 2.7 | Б: начать печатать | у А под полем ввода «Боб печатает…» |
@@ -714,7 +720,7 @@ cd apps/desktop && ELECTRON_RENDERER_URL=http://localhost:5173 CALABA_MULTI_INST
 | 2.26 | Закрыть А и запустить снова | вход не требуется: сессия восстановлена из Keychain (`session.bin` в профиле зашифрован) |
 | 2.27 | Настройки → «Сеансы» → завершить сессию Б | Б выбрасывает на экран входа с сообщением «Сессия была завершена на другом устройстве» (gateway 4010) |
 | 2.28 | Остановить API на 10 с и запустить снова | жёлтая полоса «Нет соединения с сервером — переподключаемся…», затем она исчезает, пропущенные события досылаются (RESUME) |
-| 2.29 | Б (собранное приложение, в голосе и в #general): найти PID renderer — `pgrep -lf 'Calaba Helper \(Renderer\)'` (при двух экземплярах — в Мониторинге системы по времени запуска). `kill -STOP <pid>`, А за это время пишет сообщение, через 20 с `kill -CONT <pid>` | сообщение появилось у Б сразу (сокет пережил 20 с: это меньше двух интервалов heartbeat), голос вернулся сам за ≤ 5 с (resume LiveKit) |
+| 2.29 | Б (собранное приложение, в голосе и в #general): найти PID renderer — `pgrep -lf 'Calab Helper \(Renderer\)'` (при двух экземплярах — в Мониторинге системы по времени запуска). `kill -STOP <pid>`, А за это время пишет сообщение, через 20 с `kill -CONT <pid>` | сообщение появилось у Б сразу (сокет пережил 20 с: это меньше двух интервалов heartbeat), голос вернулся сам за ≤ 5 с (resume LiveKit) |
 | 2.30 | То же, но пауза 95 с | в логе Б (`<профиль>/logs/main.log`): `[gateway] closed 1006` → `invalid session (resumable=false)` → новый IDENTIFY. Жёлтая полоса ≤ 3 с, пропущенное сообщение на месте, голос снова «Голос подключён» через ≤ 5 с |
 | 2.31 | Выключить Wi-Fi на 10 с (только на отдельной машине: на общем Mac это рвёт связь другим агентам) | то же, что в 2.30: полоса, RESUME или IDENTIFY, голос возвращается сам (переподключение LiveKit, иначе повторный `/join` с паузами 1, 2, 4… с) |
 | 2.32 | ⌘K (Ctrl+K), набрать часть названия комнаты, ↓/↑, Enter | окно быстрого перехода вверху по центру, выбранная строка синяя, Enter открывает комнату, Esc закрывает |
@@ -723,15 +729,15 @@ cd apps/desktop && ELECTRON_RENDERER_URL=http://localhost:5173 CALABA_MULTI_INST
 
 ### 3. Сборка
 ```bash
-pnpm -F @calaba/desktop build        # → apps/desktop/dist/Calaba-<ver>-arm64.dmg и -mac.zip (без подписи)
-open apps/desktop/dist/mac-arm64/Calaba.app   # при первом запуске ПКМ → «Открыть» (приложение не подписано)
+pnpm -F @calaba/desktop build        # → apps/desktop/dist/Calab-<ver>-arm64.dmg и -mac.zip (без подписи)
+open apps/desktop/dist/mac-arm64/Calab.app   # при первом запуске ПКМ → «Открыть» (приложение не подписано)
 ```
-Ожидается: окно входа. В поле «Сервер» надо ввести адрес (адрес в сборку не зашит; при сборке можно задать `MAIN_VITE_DEFAULT_SERVER_URL`). Логи пишутся в `~/Library/Application Support/Calaba/logs/main.log`. Ссылка `calaba://join/<код>`, открытая из браузера или через `open calaba://join/<код>`, запускает Calaba и показывает диалог входа в пространство.
+Ожидается: окно входа. В поле «Сервер» надо ввести адрес (по умолчанию `https://app.calab.ru` из `.env.production`; переопределяется `MAIN_VITE_DEFAULT_SERVER_URL` при сборке). Логи пишутся в `~/Library/Application Support/Calaba/logs/main.log` (папка данных сохранила имя до переименования, docs/10). Ссылка `calab://join/<код>` (и старая `calaba://join/<код>`), открытая из браузера или через `open calab://join/<код>`, запускает Calab и показывает диалог входа в пространство.
 
 ### 3a. Безопасность десктопа (ревью 2026-09-26: M2, M3, L1–L3)
 | # | Проверка | Ожидается |
 |---|---|---|
-| S.1 | Скачать вложение из чата, затем `xattr -l ~/Downloads/<файл>` | `com.apple.quarantine: 0083;…;Calaba;`. Windows: у файла есть `Zone.Identifier` (ZoneId=3) — «Свойства» → «Разблокировать» |
+| S.1 | Скачать вложение из чата, затем `xattr -l ~/Downloads/<файл>` | `com.apple.quarantine: 0083;…;Calab;`. Windows: у файла есть `Zone.Identifier` (ZoneId=3) — «Свойства» → «Разблокировать» |
 | S.2 | Собранное приложение, сервер `https://…` | обновления проверяются только по `https://<сервер>/download/`. Задать адрес из интерфейса нельзя. Новая версия → системное уведомление «Доступна версия X — скачать» (открывает страницу), без автоустановки. Автоскачивание и установка при выходе — только в подписанных сборках с `MAIN_VITE_UPDATES_SIGNED=1` |
 | S.3 | DevTools renderer: `await fetch('https://example.com')` | ошибка CSP (`connect-src` ограничен сервером, его поддоменами (`rtc.`) и `calaba-api:`). Голос и gateway работают. LiveKit на другом домене → `CALABA_CSP_CONNECT="wss://… https://…"` |
 | S.4 | DevTools: `location.href = 'file:///etc/hosts'` или `<iframe src=…>` на внешний сайт | навигация заблокирована, `<webview>` не создаётся |
@@ -742,7 +748,7 @@ open apps/desktop/dist/mac-arm64/Calaba.app   # при первом запуск
 | L.1 | `pnpm -F @calaba/desktop build:app` / `build:web` | в выводе `third-party notices: N packages`. Сборка падает, если в бандле появилась GPL/AGPL/SSPL/EUPL. LGPL допустима только у перечисленных в скрипте: libuiohook внутри uiohook-napi, с текстами LGPL/GPL в THIRD-PARTY-NOTICES |
 | L.2 | Настройки → «О программе» | карточка «Лицензия»: «Business Source License 1.1» → текст лицензии + NOTICE; «Коммерческая лицензия» → COMMERCIAL-LICENSE.md; «Лицензии сторонних компонентов» → THIRD-PARTY-NOTICES. Ниже строка «© 2026 GPTunneL · Powered by GPTunneL» со ссылкой |
 | L.3 | Экран входа (веб и десктоп) | внизу та же строка, «Лицензия: Business Source License 1.1» и «Лицензии сторонних компонентов» — открывают тексты |
-| L.4 | Собранный dmg: `ls Calaba.app/Contents/Resources` | есть `LICENSE`, `NOTICE`, `COMMERCIAL-LICENSE.md`, `THIRD-PARTY-NOTICES.txt`. Установщик DMG/NSIS показывает лицензию |
+| L.4 | Собранный dmg: `ls Calab.app/Contents/Resources` | есть `LICENSE`, `NOTICE`, `COMMERCIAL-LICENSE.md`, `THIRD-PARTY-NOTICES.txt`. Установщик DMG/NSIS показывает лицензию |
 | K.1 | Настройки → «Горячие клавиши» → «Изменить» у «Выключить микрофон» → ⌘⇧J | подпись в строке, в tooltip панели «я» и в «?» — «⌘⇧J». ⌘⇧J выключает микрофон, ⌘⇧M больше нет |
 | K.2 | «Изменить» → ⌘Q / ⌘⇧D (занято «Заглушить всех») / J без ⌘ | отказ с причиной под строкой, прежнее сочетание остаётся. Esc отменяет запись |
 | K.3 | «Сбросить» | вернулось сочетание по умолчанию |
@@ -757,8 +763,8 @@ open apps/desktop/dist/mac-arm64/Calaba.app   # при первом запуск
   | P.2 | В голосе: Caps Lock (индикатор загорелся) → говорить → Caps Lock ещё раз | после первого нажатия точка зелёная, у второго клиента `↓` ≈ 20–25 кбит/с. После второго — тишина, `↓` ≈ 2–3 кбит/с |
   | P.3 | Включить «Caps Lock не меняет регистр» | `hidutil property --get UserKeyMapping` показывает `Src = 30064771129 → Dst = 30064771181` (Caps → F18). В логе `remap applied` |
   | P.4 | Удерживать Caps Lock 3 с, отпустить | эфир ровно пока держим, отпускание — через 0,2 с. Регистр букв не переключается, индикатор Caps не горит |
-  | P.5 | Закрыть Calaba (⌘Q) | `hidutil … --get` пустой: раскладка вернулась. Ваш собственный маппинг, если был, остался |
-  | P.6 | С включённой опцией: `kill -9` процесса Calaba → Caps Lock снова печатает F18 → запустить Calaba | в логе `restored the keyboard mapping left by a previous crash`, затем ремап снова применён. После ⌘Q раскладка обычная |
+  | P.5 | Закрыть Calab (⌘Q) | `hidutil … --get` пустой: раскладка вернулась. Ваш собственный маппинг, если был, остался |
+  | P.6 | С включённой опцией: `kill -9` процесса Calab → Caps Lock снова печатает F18 → запустить Calab | в логе `restored the keyboard mapping left by a previous crash`, затем ремап снова применён. После ⌘Q раскладка обычная |
   | P.7 | «Назначить» → боковая кнопка мыши | «Кнопка мыши 4 (назад)». Удержание — эфир, отпускание — тишина (раньше на macOS кнопка мыши «залипала») |
   | P.8 | «Назначить» → F18 / правый ⌥ / Num 0 | «F18» / «Правый ⌥ Option» / «Num 0». Работают как удержание |
   | P.9 | Windows / Linux X11: «Назначить» → Caps Lock | «⇪ Caps Lock» без плашки: режим удержания. Linux Wayland: подсказка, что глобальные клавиши недоступны |

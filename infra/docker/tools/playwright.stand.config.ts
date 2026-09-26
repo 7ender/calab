@@ -1,6 +1,7 @@
 // Web e2e against the stand, bypassing local DNS/proxies (TESTING.md "Стенд", 2a): some VPN clients
-// (fake-IP DNS + system HTTPS proxy) break exactly `colaba.gptunnel.ai`. With CALABA_FORCE_IP set,
-// Chromium resolves every *.gptunnel.* name to that IP and connects directly; Firefox likewise.
+// (fake-IP DNS + system HTTPS proxy) break exactly `colaba.gptunnel.ai`, and fresh names may not resolve
+// locally yet. With CALABA_FORCE_IP set, every hostname resolves to that IP (the stand serves all of its
+// names — app, aliases, rtc., turn. — from one address) and connections go direct, in Chromium and Firefox.
 //
 //   cd apps/desktop && CALABA_FORCE_IP=141.105.69.177 CALABA_WEB_URL=https://colaba.gptunnel.ai \
 //     CALABA_WEB_LOGIN=… CALABA_WEB_PASSWORD=… \
@@ -28,7 +29,7 @@ export default {
             ...launch,
             args: [
               ...(launch['args'] ?? []),
-              `--host-resolver-rules=MAP *.gptunnel.ai ${ip}, MAP *.gptunnel.ru ${ip}, MAP colaba.gptunnel.ai ${ip}, MAP colaba.gptunnel.ru ${ip}`,
+              `--host-resolver-rules=MAP * ${ip}, EXCLUDE localhost`,
               '--proxy-server=direct://',
               '--proxy-bypass-list=*',
             ],

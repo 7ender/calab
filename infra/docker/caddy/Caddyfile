@@ -1,10 +1,10 @@
 # Caddy + caddy-l4 as a listener wrapper. One IP, TCP 443:
 #   SNI turn.<any domain> -> layer4: terminate TLS here, proxy plain TURN to LiveKit 127.0.0.1:5349
 #                        (LiveKit runs with turn.external_tls: true)
-#   anything else     -> falls through to the regular HTTPS server (<domain>, rtc.*)
+#   anything else     -> falls through to the regular HTTPS server (app, landing, rtc.*)
 # HTTP/3 is disabled: UDP 443 belongs to LiveKit TURN/UDP.
-# Host lists come from entrypoint.sh: APP_HOSTS = <domain>, RTC_HOSTS / TURN_HOSTS = rtc.|turn.<domain>, for each of
-# DOMAIN (primary), DOMAIN_ALT (alias), DOMAIN_LEGACY (temporary) — see compose.yml / .env.
+# Host lists come from entrypoint.sh (APP_HOST/LANDING_HOST/DOMAIN/DOMAIN_ALT/DOMAIN_LEGACY → APP_HOSTS,
+# RTC_HOSTS, TURN_HOSTS, RTC_ORIGINS, /tmp/landing.caddy) — see docs/10-branding.md.
 {
 	admin off
 	log {
@@ -24,6 +24,85 @@
 			tls
 		}
 		protocols h1 h2
+	}
+}
+
+# Desktop releases + electron-updater feed (generic provider: https://<app host>/download/), served on the
+# app hosts and the landing. Files from /srv/releases (pushed by sync.sh, never deleted).
+(releases) {
+# Desktop releases + electron-updater feed (generic provider: https://<domain>/download/).
+# Files from /srv/releases (pushed by sync.sh from apps/desktop/dist-release, never deleted).
+redir /download /download/ 308
+handle_path /download/* {
+	root * /srv/releases
+	header {
+		X-Content-Type-Options nosniff
+		-Server
+	}
+	# Update metadata and listings change in place: always revalidate.
+	@mutable path *.yml *.yaml *.json */ /
+	header @mutable Cache-Control "no-cache"
+	@yaml path *.yml *.yaml
+	header @yaml Content-Type "text/yaml; charset=utf-8"
+	# Not in Go's MIME table: without this they go out with no Content-Type at all.
+	@binary path *.dmg *.AppImage *.deb *.exe *.blockmap
+	header @binary Content-Type "application/octet-stream"
+	# Installers/blockmaps carry the version in the file name: cache forever.
+	@immutable {
+		file
+		not path *.yml *.yaml *.json */ /
+	}
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	file_server browse
+}
+}
+
+# Security headers of the web client (SPA on the app hosts).
+(web_security_headers) {
+header {
+	# 'wasm-unsafe-eval': RNNoise noise suppression (WASM in the mic AudioWorklet).
+	Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	X-Content-Type-Options nosniff
+	Referrer-Policy same-origin
+	X-Frame-Options DENY
+	Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)"
+	-Server
+}
+}
+
+# Static landing (Next.js static export in /srv/landing, pushed by sync.sh from apps/landing/out).
+# Not a SPA: /foo → foo.html or foo/index.html (trailingSlash export); unknown paths → 404.html.
+(landing_site) {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	import releases
+	handle {
+		root * /srv/landing
+		encode zstd gzip
+		header {
+			# Next.js static export hydrates through inline <script> tags: 'unsafe-inline' for scripts is the
+			# price of a no-server export (no nonces). No connect targets beyond self; no framing.
+			Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+			X-Content-Type-Options nosniff
+			Referrer-Policy strict-origin-when-cross-origin
+			X-Frame-Options DENY
+			Permissions-Policy "camera=(), microphone=(), geolocation=()"
+			-Server
+		}
+		# content-hashed build output: cache forever (only if the file exists)
+		@hashed {
+			path /_next/static/*
+			file
+		}
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@pages not path /_next/static/*
+		header @pages Cache-Control "no-cache"
+		try_files {path} {path}.html {path}/index.html
+		file_server
+	}
+	handle_errors 404 {
+		root * /srv/landing
+		rewrite * /404.html
+		file_server
 	}
 }
 
@@ -48,31 +127,7 @@
 		reverse_proxy 127.0.0.1:3000
 	}
 
-	# Desktop releases + electron-updater feed (generic provider: https://<domain>/download/).
-	# Files from /srv/releases (pushed by sync.sh from apps/desktop/dist-release, never deleted).
-	redir /download /download/ 308
-	handle_path /download/* {
-		root * /srv/releases
-		header {
-			X-Content-Type-Options nosniff
-			-Server
-		}
-		# Update metadata and listings change in place: always revalidate.
-		@mutable path *.yml *.yaml *.json */ /
-		header @mutable Cache-Control "no-cache"
-		@yaml path *.yml *.yaml
-		header @yaml Content-Type "text/yaml; charset=utf-8"
-		# Not in Go's MIME table: without this they go out with no Content-Type at all.
-		@binary path *.dmg *.AppImage *.deb *.exe *.blockmap
-		header @binary Content-Type "application/octet-stream"
-		# Installers/blockmaps carry the version in the file name: cache forever.
-		@immutable {
-			file
-			not path *.yml *.yaml *.json */ /
-		}
-		header @immutable Cache-Control "public, max-age=31536000, immutable"
-		file_server browse
-	}
+	import releases
 
 	# Web client SPA (ADR-0015): static files from /srv/web (pushed by sync.sh).
 	handle {
@@ -82,15 +137,7 @@
 		# Go's MIME table has no .webmanifest; file_server keeps a preset Content-Type.
 		@manifest path *.webmanifest
 		header @manifest Content-Type "application/manifest+json"
-		header {
-			# 'wasm-unsafe-eval': RNNoise noise suppression (WASM in the mic AudioWorklet).
-			Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-			X-Content-Type-Options nosniff
-			Referrer-Policy same-origin
-			X-Frame-Options DENY
-			Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)"
-			-Server
-		}
+		import web_security_headers
 		# Vite puts content-hashed files under /assets/: cache forever; a missing asset is a 404,
 		# never index.html (otherwise a stale index would get HTML cached as JS for a year).
 		handle /assets/* {
@@ -117,3 +164,6 @@
 	# Exists only so Caddy obtains and renews the turn.* certificates used by the layer4 route above.
 	respond 404
 }
+
+# Landing site (LANDING_HOST), generated by entrypoint.sh; an empty file when there is no landing.
+import /tmp/landing.caddy

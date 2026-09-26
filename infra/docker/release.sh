@@ -6,7 +6,10 @@
 #   STEPS="deploy verify" infra/docker/release.sh <commit>   # a subset (order is always the canonical one)
 #
 # Env: VERSION (default 0.1.0) · STAND_HOST (root@141.105.69.177) · STAND_IP (141.105.69.177)
-#      DOMAIN / DOMAIN_ALT (colaba.gptunnel.ai / .ru) · WORK_DIR ($TMPDIR/calaba-release-$VERSION)
+#      APP_HOST (app.calab.ru) · ALIAS_HOST (colaba.gptunnel.ai) · LANDING_HOST (calab.ru, empty = none)
+#      RTC_HOST (rtc.calab.ru) · WORK_DIR ($TMPDIR/calaba-release-$VERSION)
+# Every HTTP check and the e2e go to STAND_IP directly (curl --resolve / forced browser DNS): local VPNs and
+# not-yet-propagated names cannot fake a result.
 #
 # What it does:
 #   preflight  commit resolves, tag v$VERSION absent, lockfile frozen-installable, disk, stand reachable,
@@ -34,8 +37,14 @@ VERSION="${VERSION:-0.1.0}"
 STEPS="${STEPS:-preflight build web deploy verify tag}"
 HOST="${STAND_HOST:-root@141.105.69.177}"
 IP="${STAND_IP:-141.105.69.177}"
-D1="${DOMAIN:-colaba.gptunnel.ai}"
-D2="${DOMAIN_ALT:-colaba.gptunnel.ru}"
+D1="${APP_HOST:-app.calab.ru}"          # the app
+D2="${ALIAS_HOST:-colaba.gptunnel.ai}"  # an alias of the app (must behave the same)
+LAND="${LANDING_HOST-calab.ru}"
+RTC="${RTC_HOST:-rtc.calab.ru}"
+rcurl() { # curl pinned to the stand IP for the host of the first https:// argument
+  local a h=""; for a in "$@"; do [[ "$a" == https://* ]] && { h="${a#https://}"; h="${h%%/*}"; break; }; done
+  curl -sS --max-time 30 ${h:+--resolve "$h:443:$IP"} "$@"
+}
 WORK="${WORK_DIR:-${TMPDIR:-/tmp}/calaba-release-$VERSION}"
 OUT="$WORK/dist-release"
 SSH=(ssh -o BatchMode=yes -o ConnectTimeout=20)
@@ -102,13 +111,16 @@ if step verify; then
   sleep 10
   # 1. health + build info on both domains (.ai via IP), readiness inside
   for d in "$D1" "$D2"; do
-    # .ai via the IP: some local VPNs break exactly that name (docs/06)
-    args=(); if [[ "$d" == "$D1" ]]; then args=(--resolve "$d:443:$IP"); fi
-    code=$(curl -sS --max-time 20 ${args[@]+"${args[@]}"} -o /dev/null -w '%{http_code}' "https://$d/healthz" || echo 000)
+    code=$(rcurl -o /dev/null -w '%{http_code}' "https://$d/healthz" || echo 000)
     [[ "$code" == 200 ]] && ok "$d/healthz 200" || bad "$d/healthz $code"
-    ver=$(curl -sS --max-time 20 ${args[@]+"${args[@]}"} "https://$d/api/version" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.version+"/"+j.commit)})' 2>/dev/null || echo "?")
+    ver=$(rcurl "https://$d/api/version" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.version+"/"+j.commit)})' 2>/dev/null || echo "?")
     [[ "$ver" == "$VERSION/$COMMIT" ]] && ok "$d/api/version = $ver" || bad "$d/api/version = $ver (want $VERSION/$COMMIT)"
   done
+  if [[ -n "$LAND" ]]; then
+    code=$(rcurl -o /dev/null -w '%{http_code}' "https://$LAND/"); [[ "$code" == 200 ]] && ok "landing https://$LAND/ 200" || bad "landing $LAND → $code"
+    code=$(rcurl -o /dev/null -w '%{http_code}' "https://$LAND/download/"); [[ "$code" == 200 ]] && ok "landing /download/ 200" || bad "landing /download/ → $code"
+  fi
+  code=$(rcurl -o /dev/null -w '%{http_code}' "https://$RTC/"); [[ "$code" == 200 ]] && ok "$RTC/ 200 (LiveKit)" || bad "$RTC/ → $code"
   r=$(on_stand 'curl -s 127.0.0.1:3000/readyz'); [[ "$r" == *'"postgres":"ok"'*'"redis":"ok"'* ]] && ok "readyz (inside): $r" || bad "readyz: $r"
 
   # 2. /download/: every built file served (200 + exact size), sha512 in latest*.yml recomputed on the stand
@@ -116,7 +128,7 @@ if step verify; then
     n_inst=0
     for f in "$OUT"/*; do
       b=$(basename "$f"); size=$(stat -f %z "$f" 2>/dev/null || stat -c %s "$f")
-      got=$(curl -sS -I --max-time 30 "https://$D2/download/$b" | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2} /^HTTP/{c=$2} END{print c}' | tr '\n' ' ')
+      got=$(rcurl -I "https://$D1/download/$b" | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2} /^HTTP/{c=$2} END{print c}' | tr '\n' ' ')
       [[ "$got" == "$size 200 " ]] && ok "/download/$b (200, $size B)" || bad "/download/$b → '$got' (want $size 200)"
       [[ "$b" =~ \.(dmg|zip|AppImage|deb|exe)$ ]] && n_inst=$((n_inst + 1))
     done
@@ -138,25 +150,24 @@ PY') && ok "sha512 in latest*.yml match the files on the stand ($sha)" || bad "s
   # credentials for the checks (over ssh, never printed)
   acc="$(on_stand 'cat /opt/calaba/infra/docker/.env.accounts')"
   OWNER_PW="$(awk '/^owner@/{print $2}' <<<"$acc")"; INVITE="$(awk '/^invite /{print $2}' <<<"$acc")"
-  api() { curl -sS --max-time 30 "$@"; }
-  login() { api -X POST "https://$D2/api/auth/login" -d "{\"email\":\"$1\",\"password\":\"$2\"}" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).tokens.accessToken||"")}catch{console.log("")}})'; }
+  api() { rcurl "$@"; }
+  login() { api -X POST "https://$D1/api/auth/login" -d "{\"email\":\"$1\",\"password\":\"$2\"}" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).tokens.accessToken||"")}catch{console.log("")}})'; }
 
   # 3. e2e:web — dedicated accounts per domain (workspace creation is rate-limited per user), created once
   #    with the owner's invite; the workspaces the spec creates are deleted afterwards.
-  for pair in "ai:$D1" "ru:$D2"; do
+  for pair in "app:$D1" "alias:$D2"; do
     tag="${pair%%:*}"; d="${pair#*:}"; email="e2e-$tag@calaba.test"
     pw="$(awk -v e="$email" '$1==e{print $2}' <<<"$acc")"
     if [[ -z "$pw" ]]; then
       pw="$(openssl rand -hex 12)"
-      code=$(api -o /dev/null -w '%{http_code}' -X POST "https://$D2/api/auth/register" \
+      code=$(api -o /dev/null -w '%{http_code}' -X POST "https://$D1/api/auth/register" \
         -d "{\"email\":\"$email\",\"password\":\"$pw\",\"displayName\":\"E2E $tag\",\"inviteCode\":\"$INVITE\"}")
       [[ "$code" == 20? ]] || { bad "create $email ($code)"; continue; }
       printf '%s %s\n' "$email" "$pw" | on_stand 'umask 077; cat >> /opt/calaba/infra/docker/.env.accounts'
       ok "created e2e account $email (password stored in .env.accounts on the stand)"
     fi
-    # .ai through the IP-forcing config (local VPNs break that name), .ru through the normal one
-    cfg=playwright.web.config.ts; force_ip=""
-    if [[ "$tag" == ai ]]; then cfg=../../infra/docker/tools/playwright.stand.config.ts; force_ip="$IP"; fi
+    # both through the IP-forcing config: no dependency on local DNS/VPN
+    cfg=../../infra/docker/tools/playwright.stand.config.ts; force_ip="$IP"
     if (cd apps/desktop && CALABA_FORCE_IP="$force_ip" CALABA_WEB_URL="https://$d" CALABA_WEB_LOGIN="$email" \
           CALABA_WEB_PASSWORD="$pw" CALABA_WEB_FF_VOICE=1 pnpm exec playwright test --config "$cfg" >"$WORK.e2e-$tag.log" 2>&1); then
       ok "e2e:web $d (chromium + firefox, voice) — $(grep -oE '[0-9]+ passed' "$WORK.e2e-$tag.log" | tail -1)"
@@ -166,23 +177,23 @@ PY') && ok "sha512 in latest*.yml match the files on the stand ($sha)" || bad "s
     # cleanup: delete the workspaces the spec created (named "Web <browser>-<id>")
     t="$(login "$email" "$pw")"
     if [[ -n "$t" ]]; then
-      ids=$(api "https://$D2/api/workspaces" -H "Authorization: Bearer $t" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const w of JSON.parse(s).workspaces||[]) if(/^Web /.test(w.name)) console.log(w.id)})')
-      for id in $ids; do api -o /dev/null -X DELETE "https://$D2/api/workspaces/$id" -H "Authorization: Bearer $t"; done
+      ids=$(api "https://$D1/api/workspaces" -H "Authorization: Bearer $t" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const w of JSON.parse(s).workspaces||[]) if(/^Web /.test(w.name)) console.log(w.id)})')
+      for id in $ids; do api -o /dev/null -X DELETE "https://$D1/api/workspaces/$id" -H "Authorization: Bearer $t"; done
       ok "cleanup: deleted $(echo $ids | wc -w | tr -d ' ') e2e workspace(s) of $email"
     fi
   done
 
   # 4. voice: API join token (owner, room "voice" in workspace "team") + a publisher in that LiveKit room
   OT="$(login owner@calaba.test "$OWNER_PW")"
-  ws=$(api "https://$D2/api/workspaces" -H "Authorization: Bearer $OT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const w=(JSON.parse(s).workspaces||[]).find(w=>w.slug==="team");console.log(w?w.id:"")})')
-  voi=$(api "https://$D2/api/workspaces/$ws/rooms" -H "Authorization: Bearer $OT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=(JSON.parse(s).rooms||[]).find(r=>r.name==="voice");console.log(r?r.id:"")})')
-  tok=$(api -X POST "https://$D2/api/rooms/$voi/join" -H "Authorization: Bearer $OT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{console.log(JSON.parse(s).token||"")})')
+  ws=$(api "https://$D1/api/workspaces" -H "Authorization: Bearer $OT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const w=(JSON.parse(s).workspaces||[]).find(w=>w.slug==="team");console.log(w?w.id:"")})')
+  voi=$(api "https://$D1/api/workspaces/$ws/rooms" -H "Authorization: Bearer $OT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=(JSON.parse(s).rooms||[]).find(r=>r.name==="voice");console.log(r?r.id:"")})')
+  tok=$(api -X POST "https://$D1/api/rooms/$voi/join" -H "Authorization: Bearer $OT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{console.log(JSON.parse(s).token||"")})')
   if [[ -n "$tok" ]]; then
     eval "$(on_stand 'grep -E "^LIVEKIT_API_(KEY|SECRET)=" /opt/calaba/infra/docker/.env' | sed 's/^/export /')"
-    LIVEKIT_URL="wss://rtc.$D2" lk load-test --room "ws_${ws}_room_${voi}" --audio-publishers 1 --video-publishers 1 \
+    LIVEKIT_URL="wss://$RTC" lk load-test --room "ws_${ws}_room_${voi}" --audio-publishers 1 --video-publishers 1 \
       --subscribers 0 --duration 4m >"$WORK.publisher.log" 2>&1 & pub=$!
     sleep 8
-    if node infra/docker/tools/relay-check.mjs "wss://rtc.$D2" "$tok" tls,udp,any | tee "$WORK.relay.log" | sed 's/^/        /'; then
+    if node infra/docker/tools/relay-check.mjs "wss://$RTC" "$tok" tls,udp,any | tee "$WORK.relay.log" | sed 's/^/        /'; then
       ok "relay-check tls/udp/any with media"
     else bad "relay-check (see $WORK.relay.log)"; fi
     kill "$pub" 2>/dev/null || true

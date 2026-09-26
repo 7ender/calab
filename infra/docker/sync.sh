@@ -9,7 +9,8 @@
 # (mounted into caddy as /srv/web); otherwise a placeholder is seeded once if $DIR/web is empty.
 # Releases: if apps/desktop/dist-release exists locally, it is pushed to $DIR/releases
 # (/download/* and the electron-updater feed) WITHOUT --delete: old versions stay downloadable.
-# SKIP_WEB=1 / SKIP_RELEASES=1 skip those steps; WEB_DIST= / RELEASE_DIST= point them at other dirs
+# Landing: apps/landing/out (LANDING_DIST) → $DIR/landing (LANDING_HOST).
+# SKIP_WEB=1 / SKIP_RELEASES=1 / SKIP_LANDING=1 skip those steps; WEB_DIST= / RELEASE_DIST= point them at other dirs
 # (infra/docker/release.sh uses the web/release builds of the release commit).
 # SYNC_REF=<git ref>: deploy that commit (clean `git archive` export) instead of the working tree —
 # use it whenever others have uncommitted work in the tree. Web/release artifacts (not in git) still
@@ -47,7 +48,7 @@ rsync -az --no-owner --no-group --delete -e "ssh -o BatchMode=yes" \
   --exclude node_modules --exclude .git --exclude 'dist*/' --exclude out \
   --exclude 'apps/server/data/' --exclude test-results --exclude playwright-report \
   --exclude '*.log' --exclude '*.tsbuildinfo' \
-  --exclude '/web/' --exclude '/releases/' --exclude '/backups/' \
+  --exclude '/web/' --exclude '/releases/' --exclude '/backups/' --exclude '/landing/' \
   --exclude .turbo --exclude coverage --exclude .DS_Store \
   --include '.env.example' --exclude '.env' --exclude '.env.*' \
   --exclude 'infra/docker/livekit/livekit.gen.yaml' \
@@ -65,6 +66,19 @@ elif [[ -f "$WEB_SRC/index.html" ]]; then
 else
   "${SSH[@]}" "$HOST" "mkdir -p '$DIR/web' && { test -f '$DIR/web/index.html' || cp '$DIR/infra/docker/web-placeholder/index.html' '$DIR/web/'; }"
   echo "web: no local dist-web, kept existing (or placeholder)"
+fi
+
+# Landing (LANDING_HOST, docs/10-branding.md): Next.js static export, same publish semantics as the web
+# client; a placeholder is seeded once if nothing was ever published.
+LANDING_SRC="${LANDING_DIST:-$ROOT/apps/landing/out}"
+if [[ -n "${SKIP_LANDING:-}" ]]; then
+  echo "landing: skipped (SKIP_LANDING)"
+elif [[ -f "$LANDING_SRC/index.html" ]]; then
+  rsync -az --no-owner --no-group --delete-after --delay-updates --exclude '*.map' -e "ssh -o BatchMode=yes" "$LANDING_SRC/" "$HOST:$DIR/landing/"
+  echo "landing: pushed $LANDING_SRC"
+else
+  "${SSH[@]}" "$HOST" "mkdir -p '$DIR/landing' && { test -f '$DIR/landing/index.html' || cp '$DIR/infra/docker/web-placeholder/index.html' '$DIR/landing/'; }"
+  echo "landing: no local build, kept existing (or placeholder)"
 fi
 
 # Releases: installers first, latest*.yml last (--delay-updates), so the updater never sees

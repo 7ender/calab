@@ -34,14 +34,18 @@ services:
         limits: { memory: 512m }
     command: caddy run --config /etc/caddy/Caddyfile
     environment:
-      - DOMAIN=${DOMAIN}                    # primary: <DOMAIN> (app), rtc./turn.<DOMAIN>
-      - DOMAIN_ALT=${DOMAIN_ALT:-}          # optional alias domain (same three names)
-      - DOMAIN_LEGACY=${DOMAIN_LEGACY:-}    # optional, temporary (migration off an old domain)
+      # docs/10-branding.md: rtc./turn.<DOMAIN>; the app on APP_HOST (default DOMAIN); optional landing
+      - DOMAIN=${DOMAIN}
+      - APP_HOST=${APP_HOST:-}
+      - LANDING_HOST=${LANDING_HOST:-}
+      - DOMAIN_ALT=${DOMAIN_ALT:-}          # extra app host (alias), optional
+      - DOMAIN_LEGACY=${DOMAIN_LEGACY:-}    # extra app host (transitional), optional
     volumes:
       - caddy_data:/data
       - caddy_config:/config
       - ../../web:/srv/web:ro              # <repo root on host>/web = web client static (sync.sh: apps/desktop/dist-web or placeholder)
       - ../../releases:/srv/releases:ro    # <repo root on host>/releases = /download/* (sync.sh: apps/desktop/dist-release)
+      - ../../landing:/srv/landing:ro      # <repo root on host>/landing = LANDING_HOST static (sync.sh: apps/landing/out)
     logging: *logging
 
   livekit:
@@ -71,8 +75,8 @@ services:
     restart: unless-stopped
     environment:
       - HTTP_ADDR=127.0.0.1:3000
-      - PUBLIC_APP_URL=https://${DOMAIN}
-      - PUBLIC_APP_URL_ALT=${DOMAIN_ALT:+https://${DOMAIN_ALT}}   # empty when no alias domain
+      - PUBLIC_APP_URL=https://${APP_HOST:-${DOMAIN}}
+      - PUBLIC_APP_URL_ALT=${DOMAIN_ALT:+https://${DOMAIN_ALT}}   # empty when no alias host
       - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD}@127.0.0.1:5432/calaba
       - REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       - JWT_SECRET=${JWT_SECRET}
