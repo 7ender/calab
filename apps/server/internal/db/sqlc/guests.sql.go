@@ -63,7 +63,7 @@ func (q *Queries) ConsumeRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvi
 const createGuestUser = `-- name: CreateGuestUser :one
 INSERT INTO users (email, password_hash, display_name, settings, is_guest, guest_expires_at)
 VALUES (NULL, NULL, $1, $2, true, $3)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone
 `
 
 type CreateGuestUserParams struct {
@@ -89,6 +89,7 @@ func (q *Queries) CreateGuestUser(ctx context.Context, arg CreateGuestUserParams
 		&i.StatusExpiresAt,
 		&i.IsGuest,
 		&i.GuestExpiresAt,
+		&i.Timezone,
 	)
 	return i, err
 }

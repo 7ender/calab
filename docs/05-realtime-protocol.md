@@ -154,7 +154,7 @@ POST   /api/auth/refresh               RefreshRequest → RefreshResponse      (
 POST   /api/auth/logout                LogoutRequest{allSessions, refreshToken?} → 204   (сессия — по access-токену, иначе по refresh из тела или cookie)
 GET    /api/version                    GetVersionResponse {product "Calab", version, commit, license "BUSL-1.1", commercialLicense, attribution "Powered by GPTunneL", url} — публичный
 GET    /api/me                         GetMeResponse
-PATCH  /api/me                         UpdateMeRequest → UpdateMeResponse
+PATCH  /api/me                         UpdateMeRequest → UpdateMeResponse   (+ timezone: IANA-имя, "" — сбросить; публичное поле User.timezone → USER_UPDATE, READY)
 GET    /api/me/sessions                ListSessionsResponse
 DELETE /api/me/sessions/{id}           204
 PATCH  /api/me/password                ChangePasswordRequest{currentPassword, newPassword} → 204; остальные сессии отзываются

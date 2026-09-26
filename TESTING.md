@@ -1596,3 +1596,15 @@ make test-integration TEST_REDIS_URL=redis://localhost:56379/12 TEST_RTC_REDIS_D
      TEST_DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba_test_webcam
 ```
 Занятые номера: main — 15/14; `calab-webcam-server` — 12/11.
+
+## Server: часовой пояс профиля (`User.timezone`)
+
+```sh
+cd apps/server
+go test ./internal/users/ -run TestValidateTimezone -v 2>&1 | grep -E '^(--- |ok|FAIL)'
+go test -race -tags integration -count=1 -v -run TestProfileTimezone ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: оба `--- PASS`. Проверяется:
+- **Валидация.** IANA-имена принимаются, в том числе `America/Argentina/Buenos_Aires` и `UTC`. `Local`, несуществующие зоны, пути и имена не в том регистре → 422, одинаково на macOS и Linux.
+- **Round-trip.** `PATCH /api/me {timezone}` → ответ и `GET /api/me`; другим участникам приходит `USER_UPDATE`, поле видно в READY-списке участников. `""` сбрасывает.
+- **Образ.** База зон встроена в бинарник (`time/tzdata`): в distroless zoneinfo нет.

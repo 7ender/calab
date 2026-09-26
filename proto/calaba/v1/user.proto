@@ -13,6 +13,8 @@ message User {
   string status_emoji = 6;
   google.protobuf.Timestamp status_expires_at = 7; // unset = no expiry; expired status is returned empty
   bool is_guest = 8; // guest account from a room link (ADR-0016): show a "Guest" badge
+  // IANA time zone ("Europe/Moscow"); empty = not set. Clients show the offset ("+3 UTC").
+  string timezone = 9;
 }
 
 enum MicMode {
@@ -54,6 +56,7 @@ message UpdateMeRequest {
   optional string status_text = 2;
   optional string avatar_file_id = 3; // "" clears the avatar
   optional UserSettings settings = 4;
+  optional string timezone = 5; // IANA name (validated by the server); "" clears
 }
 
 message UpdateMeResponse {

@@ -127,6 +127,7 @@ func User(u sqlc.User) *v1.User {
 		AvatarFileId: idp(u.AvatarFileID),
 		CreatedAt:    ts(u.CreatedAt),
 		IsGuest:      u.IsGuest,
+		Timezone:     deref(u.Timezone),
 	}
 	out.StatusText, out.StatusEmoji, out.StatusExpiresAt = Status(u)
 	return out

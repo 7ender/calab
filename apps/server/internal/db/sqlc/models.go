@@ -155,6 +155,7 @@ type User struct {
 	StatusExpiresAt *time.Time
 	IsGuest         bool
 	GuestExpiresAt  *time.Time
+	Timezone        *string
 }
 
 type Workspace struct {

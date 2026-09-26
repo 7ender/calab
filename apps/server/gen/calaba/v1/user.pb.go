@@ -82,8 +82,10 @@ type User struct {
 	StatusEmoji     string                 `protobuf:"bytes,6,opt,name=status_emoji,json=statusEmoji,proto3" json:"status_emoji,omitempty"`
 	StatusExpiresAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=status_expires_at,json=statusExpiresAt,proto3" json:"status_expires_at,omitempty"` // unset = no expiry; expired status is returned empty
 	IsGuest         bool                   `protobuf:"varint,8,opt,name=is_guest,json=isGuest,proto3" json:"is_guest,omitempty"`                          // guest account from a room link (ADR-0016): show a "Guest" badge
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// IANA time zone ("Europe/Moscow"); empty = not set. Clients show the offset ("+3 UTC").
+	Timezone      string `protobuf:"bytes,9,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *User) Reset() {
@@ -170,6 +172,13 @@ func (x *User) GetIsGuest() bool {
 		return x.IsGuest
 	}
 	return false
+}
+
+func (x *User) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
 }
 
 // Per-user settings synced across the user's devices (USER_UPDATE on change).
@@ -377,6 +386,7 @@ type UpdateMeRequest struct {
 	StatusText    *string                `protobuf:"bytes,2,opt,name=status_text,json=statusText,proto3,oneof" json:"status_text,omitempty"`
 	AvatarFileId  *string                `protobuf:"bytes,3,opt,name=avatar_file_id,json=avatarFileId,proto3,oneof" json:"avatar_file_id,omitempty"` // "" clears the avatar
 	Settings      *UserSettings          `protobuf:"bytes,4,opt,name=settings,proto3,oneof" json:"settings,omitempty"`
+	Timezone      *string                `protobuf:"bytes,5,opt,name=timezone,proto3,oneof" json:"timezone,omitempty"` // IANA name (validated by the server); "" clears
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -437,6 +447,13 @@ func (x *UpdateMeRequest) GetSettings() *UserSettings {
 		return x.Settings
 	}
 	return nil
+}
+
+func (x *UpdateMeRequest) GetTimezone() string {
+	if x != nil && x.Timezone != nil {
+		return *x.Timezone
+	}
+	return ""
 }
 
 type UpdateMeResponse struct {
@@ -658,7 +675,7 @@ var File_calaba_v1_user_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_user_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/user.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc1\x02\n" +
+	"\x14calaba/v1/user.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdd\x02\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12$\n" +
@@ -669,7 +686,8 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12!\n" +
 	"\fstatus_emoji\x18\x06 \x01(\tR\vstatusEmoji\x12F\n" +
 	"\x11status_expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusExpiresAt\x12\x19\n" +
-	"\bis_guest\x18\b \x01(\bR\aisGuest\"\xb5\x02\n" +
+	"\bis_guest\x18\b \x01(\bR\aisGuest\x12\x1a\n" +
+	"\btimezone\x18\t \x01(\tR\btimezone\"\xb5\x02\n" +
 	"\fUserSettings\x12+\n" +
 	"\x11noise_suppression\x18\x01 \x01(\bR\x10noiseSuppression\x120\n" +
 	"\x14unstable_network_red\x18\x02 \x01(\bR\x12unstableNetworkRed\x12$\n" +
@@ -684,17 +702,19 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x123\n" +
 	"\bsettings\x18\x03 \x01(\v2\x17.calaba.v1.UserSettingsR\bsettings\".\n" +
 	"\rGetMeResponse\x12\x1d\n" +
-	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"\x85\x02\n" +
+	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"\xb3\x02\n" +
 	"\x0fUpdateMeRequest\x12&\n" +
 	"\fdisplay_name\x18\x01 \x01(\tH\x00R\vdisplayName\x88\x01\x01\x12$\n" +
 	"\vstatus_text\x18\x02 \x01(\tH\x01R\n" +
 	"statusText\x88\x01\x01\x12)\n" +
 	"\x0eavatar_file_id\x18\x03 \x01(\tH\x02R\favatarFileId\x88\x01\x01\x128\n" +
-	"\bsettings\x18\x04 \x01(\v2\x17.calaba.v1.UserSettingsH\x03R\bsettings\x88\x01\x01B\x0f\n" +
+	"\bsettings\x18\x04 \x01(\v2\x17.calaba.v1.UserSettingsH\x03R\bsettings\x88\x01\x01\x12\x1f\n" +
+	"\btimezone\x18\x05 \x01(\tH\x04R\btimezone\x88\x01\x01B\x0f\n" +
 	"\r_display_nameB\x0e\n" +
 	"\f_status_textB\x11\n" +
 	"\x0f_avatar_file_idB\v\n" +
-	"\t_settings\"1\n" +
+	"\t_settingsB\v\n" +
+	"\t_timezone\"1\n" +
 	"\x10UpdateMeResponse\x12\x1d\n" +
 	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"e\n" +
 	"\x15ChangePasswordRequest\x12)\n" +

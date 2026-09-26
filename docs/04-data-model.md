@@ -7,7 +7,7 @@ PostgreSQL 18, `pgx` + `sqlc` + `goose` (миграции). Все id — `uuid 
 ```
 users               id, email (unique, citext), password_hash (argon2id), display_name,
                     avatar_file_id, status_text, settings (jsonb, UserSettings),
-                    created_at, disabled_at
+                    created_at, disabled_at, timezone? (IANA, «+3 UTC» у участников)
 sessions            id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at,
                     device_name, ip, user_agent,
                     created_at, last_seen_at, expires_at, revoked_at
