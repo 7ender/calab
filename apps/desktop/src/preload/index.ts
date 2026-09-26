@@ -60,6 +60,7 @@ const api: CalabaApi = {
     cancelCapture: (id: number) => void ipcRenderer.invoke(IPC.pttCancelCapture, id),
     status: () => ipcRenderer.invoke(IPC.pttStatus),
     onEvent: (cb) => on(IPC.pttEvent, cb),
+    onRawKey: (cb) => on(IPC.pttRawKey, cb),
   },
   system: {
     openPrivacySettings: (pane) => ipcRenderer.invoke(IPC.systemOpenPrivacySettings, pane),

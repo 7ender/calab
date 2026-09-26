@@ -109,7 +109,8 @@ jobs:
       - name: uiohook patch applied
         run: |
           grep -q VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h
-          grep -q CALABA_UIOHOOK_PATCH_V1 node_modules/uiohook-napi/src/lib/addon.c
+          grep -q CALABA_UIOHOOK_PATCH_V2 node_modules/uiohook-napi/src/lib/addon.c
+          grep -q CALABA_HID_CAPS_V1 node_modules/uiohook-napi/libuiohook/src/darwin/input_hook.c
       # Signing only with VALID material: the base64 must decode into a PKCS#12 that opens with its password
       # (and, for notarization, a private key .p8). Anything else — absent, stub, wrong password — is an
       # unsigned build with a notice, never a failure. Secrets can't be used in `if:`, hence one bash step.

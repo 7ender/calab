@@ -76,7 +76,9 @@ function parseBinding(v: unknown): PttBinding | null {
   const mode = r['mode'] === 'toggle' ? 'toggle' : 'hold';
   const label = str(r['label'], 64);
   if (kind === 'mouse') return { kind, code: r['code'], label, mode };
-  return { kind, code: r['code'], label, mode, ...(r['remap'] === 'caps-f18' ? { remap: 'caps-f18' as const } : {}) };
+  const src = r['source'];
+  const source: { source?: 'hid' | 'tap' } = src === 'hid' || src === 'tap' ? { source: src } : {};
+  return { kind, code: r['code'], label, mode, ...(r['remap'] === 'caps-f18' ? { remap: 'caps-f18' as const } : {}), ...source };
 }
 
 function parseCaptureId(v: unknown): number {
@@ -266,9 +268,9 @@ export function registerIpc(): void {
     armSelection(e.sender, parseSelection(sel));
   });
   handle(IPC.pttSetBinding, (e, b) => setBinding(e.sender, parseBinding(b)));
-  handle(IPC.pttCaptureNext, (_e, id) => captureNext(parseCaptureId(id)));
+  handle(IPC.pttCaptureNext, (e, id) => captureNext(e.sender, parseCaptureId(id)));
   handle(IPC.pttCancelCapture, (_e, id) => cancelCapture(parseCaptureId(id)));
-  handle(IPC.pttStatus, () => (VISUAL_TEST ? { ...pttStatus(), trusted: false } : pttStatus()));
+  handle(IPC.pttStatus, () => (VISUAL_TEST ? { ...pttStatus(), trusted: false, hid: 'unsupported' as const } : pttStatus()));
   handle(IPC.systemIdleSeconds, () => powerMonitor.getSystemIdleTime());
   handle(IPC.systemMetrics, (e): ProcessMetrics => {
     const pid = e.sender.getOSProcessId();
