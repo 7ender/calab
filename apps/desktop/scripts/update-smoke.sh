@@ -64,8 +64,8 @@ launch() {
 }
 
 # Graceful quit of OUR process only (by pid, not by bundle id — the user's own Calab has the same
-# id). Electron turns SIGTERM into app.quit(), so before-quit/will-quit run and Squirrel.Mac
-# installs a downloaded update on the way out.
+# id). Electron turns SIGTERM into a normal quit (verified with Electron 44: before-quit →
+# will-quit → quit, like ⌘Q), so Squirrel.Mac installs a staged update on the way out.
 quit_app() {
   [[ -n "$PID" ]] || return 0
   kill -TERM "$PID" 2>/dev/null
@@ -134,6 +134,16 @@ if wait_log "\[update\] downloaded ${NEW//./\\.}|New version ${NEW//./\\.} has b
   pass "downloaded $NEW (ready to install on quit)"
 else
   fail "download not finished within ${TIMEOUT}s"; info "$(grep -E '\[update\]|Download|error' "$LOG" 2>/dev/null | tail -5 | tr '\n' ' ')"; exit 1
+fi
+
+# 5b. On macOS electron-updater reports «downloaded» BEFORE Squirrel.Mac has fetched the update
+#     from its local proxy (MacUpdater calls nativeUpdater.checkForUpdates() right after): quitting
+#     now could skip the install. Wait for Squirrel's own «update-downloaded» (a debug line; the
+#     electron-log file transport logs from «silly» up).
+if wait_log "nativeUpdater\.update-downloaded" "$TIMEOUT"; then
+  pass "Squirrel.Mac staged $NEW (installs on quit)"
+else
+  fail "Squirrel.Mac did not stage the update within ${TIMEOUT}s"; info "$(grep -E 'nativeUpdater|Squirrel|error' "$LOG" 2>/dev/null | tail -5 | tr '\n' ' ')"; exit 1
 fi
 
 # 6. Quit: Squirrel.Mac (ShipIt) replaces the bundle after the app exits.
