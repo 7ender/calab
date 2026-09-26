@@ -131,4 +131,18 @@ export const ruPeople = {
   'guest.openBrowser': 'Открыть в браузере',
   'guest.back': 'Назад к ссылке',
   'guest.expires': 'Ссылка действует до {date}',
+  // Web link page /join/<code>, /r/<code> (docs/09 #53)
+  'landing.workspaceTitle': 'Вас пригласили в пространство',
+  'landing.workspaceGeneric': 'Откройте его в приложении Calab или в браузере.',
+  'landing.open': 'Открыть в Calab',
+  'landing.retry': 'Открыть в Calab ещё раз',
+  'landing.browser': 'Продолжить в браузере',
+  'landing.download': 'Скачать приложение',
+  'landing.always': 'Всегда открывать в приложении',
+  'landing.trying': 'Открываем Calab…',
+  'landing.opened': 'Ссылка передана в приложение Calab.',
+  'landing.notFound': 'Приложение не найдено',
+  'landing.notFoundHint': 'Продолжите в браузере или установите Calab.',
+  'landing.inBrowser': 'Открыть в браузере',
+  'landing.invalid': 'Ссылка недействительна или истекла.',
 } as const;

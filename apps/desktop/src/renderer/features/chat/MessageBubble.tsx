@@ -1,7 +1,7 @@
 import type { FileMeta, Message, PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AlertCircle, Check, CheckCheck, Clock3, Download, FileText, RotateCw } from 'lucide-react';
-import { memo, useCallback, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
@@ -11,7 +11,8 @@ import { fmtFull, fmtSize, fmtTime, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse';
 import { platform } from '../../platform';
-import { retrySend, toggleReaction } from '../../services/chat';
+import { can } from '../../lib/permissions';
+import { retrySend, setEmbedsHidden, toggleReaction } from '../../services/chat';
 import { useMessages, type ChatMessage, type PendingUpload } from '../../stores/messages';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -20,6 +21,8 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { userColorIndex, type RowMeta } from './grouping';
 import { LinkPreview } from './LinkPreview';
+import { MessageActions, hasMessageActions } from './MessageActions';
+import { HOVER_DELAY_MS, createHoverIntent } from './hoverIntent';
 import { previewText, useMentionLabel } from './mentionText';
 import { MessageMenu } from './MessageMenu';
 
@@ -147,7 +150,10 @@ function Bubble({
   const hit = useChatView((s) => (s.searchHits?.roomId === roomId && s.searchHits.ids.has(m.id) ? (s.searchHits.current === m.id ? 2 : 1) : 0));
   const words = useChatView((s) => s.searchHits?.words);
   const highlight = useMemo(() => (hit && words?.length ? { words, current: hit === 2 } : undefined), [hit, words]);
-  const link = useMemo(() => firstLink(nodes), [nodes]);
+  // Hidden previews (Message.embeds_hidden) are not rendered at all, for everyone.
+  const link = useMemo(() => (m.embedsHidden ? null : firstLink(nodes)), [nodes, m.embedsHidden]);
+  const canHideEmbed = c.status === 'sent' && (own || can(perms, 'MANAGE_MESSAGES'));
+  const bar = useActionBar(hasMessageActions(c, own, perms));
   const images = m.attachments.filter(isImage);
   const files = m.attachments.filter((f) => !isImage(f));
   const uploads = c.uploads && c.status !== 'sent' ? c.uploads : [];
@@ -203,7 +209,7 @@ function Bubble({
         ) : null}
         {link && hasText ? (
           <div className="px-3 pb-1">
-            <LinkPreview url={link} />
+            <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />
           </div>
         ) : null}
         {files.length ? (
@@ -233,16 +239,93 @@ function Bubble({
     <ContextMenu.Root modal={false}>
       <ContextMenu.Trigger asChild disabled={c.status !== 'sent'}>
         <div
-          className={cx('relative min-w-0 max-w-[min(70%,640px)]', own ? 'bubble-out' : 'bubble-in', c.status === 'pending' && 'opacity-80')}
+          className={cx(
+            'relative min-w-0 max-w-[min(70%,640px)] rounded-[var(--radius-bubble)]',
+            own ? 'bubble-out' : 'bubble-in',
+            c.status === 'pending' && 'opacity-80',
+          )}
           data-testid="message-bubble"
           data-own={own || undefined}
+          // Keyboard: Tab reaches the message, which shows its action bar (docs/09 #47).
+          tabIndex={bar.enabled ? 0 : undefined}
+          role={bar.enabled ? 'article' : undefined}
+          aria-label={bar.enabled ? `${name}, ${fmtTime(toDate(m.createdAt))}` : undefined}
+          {...bar.handlers}
         >
           {body}
+          {bar.visible ? (
+            // Beside the bubble, level with its top, on the free side of the row (a bubble is at
+            // most 70 % wide): never over this or a neighbouring message's text. The gap is the
+            // strip's own padding, so moving the pointer from the bubble to the bar keeps it open.
+            <div
+              data-message-actions
+              className={cx('absolute top-0 z-[var(--z-sticky)] flex w-max', own ? 'right-full pr-1.5' : 'left-full pl-1.5')}
+            >
+              <MessageActions c={c} roomId={roomId} perms={perms} onPickerOpenChange={bar.setPicker} />
+            </div>
+          ) : null}
         </div>
       </ContextMenu.Trigger>
       <MessageMenu c={c} own={own} roomId={roomId} perms={perms} />
     </ContextMenu.Root>
   );
+}
+
+/**
+ * Hover / keyboard-focus state of the action bar: shown 150 ms after the pointer settles, gone
+ * on leave; hidden while the primary button is held (a text selection may be in progress);
+ * kept while its emoji picker is open. Keyboard focus shows it at once (focus-visible only, so a
+ * click on the text doesn't pin it).
+ */
+function useActionBar(enabled: boolean): {
+  enabled: boolean;
+  visible: boolean;
+  setPicker: (open: boolean) => void;
+  handlers: {
+    onMouseEnter?: (e: MouseEvent<HTMLDivElement>) => void;
+    onMouseLeave?: () => void;
+    onPointerDown?: (e: PointerEvent<HTMLDivElement>) => void;
+    onFocus?: (e: FocusEvent<HTMLDivElement>) => void;
+    onBlur?: (e: FocusEvent<HTMLDivElement>) => void;
+  };
+} {
+  const [hover, setHover] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [picker, setPicker] = useState(false);
+  const [intent] = useState(() => createHoverIntent(HOVER_DELAY_MS, setHover));
+  useEffect(() => () => intent.dispose(), [intent]);
+  if (!enabled) return { enabled, visible: false, setPicker, handlers: {} };
+  const press = (): void => {
+    intent.press();
+    const up = (): void => {
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      intent.release();
+    };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+  return {
+    enabled,
+    visible: hover || focused || picker,
+    setPicker,
+    handlers: {
+      onMouseEnter: (e) => {
+        // A selection dragged in from another message: stay hidden until the button is released.
+        if (e.buttons & 1) press();
+        intent.enter();
+      },
+      onMouseLeave: () => intent.leave(),
+      onPointerDown: (e) => {
+        if (e.button !== 0 || (e.target as Element).closest('[data-message-actions]')) return;
+        press();
+      },
+      onFocus: (e) => setFocused((e.target as Element).matches(':focus-visible')),
+      onBlur: (e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
+      },
+    },
+  };
 }
 
 /** Bubble tail (Telegram): a curved corner piece in the bubble colour at the bottom. */
@@ -314,7 +397,7 @@ function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string
       <button
         type="button"
         onClick={() => jump(roomId, replyToId)}
-        className="flex w-full min-w-0 flex-col rounded-[var(--radius-control)] border-l-[3px] border-[color:var(--bubble-accent)] bg-[color-mix(in_srgb,var(--bubble-accent)_12%,transparent)] px-2 py-1 text-left hover:bg-[color-mix(in_srgb,var(--bubble-accent)_18%,transparent)]"
+        className="flex w-full min-w-0 flex-col rounded-[var(--radius-row)] border-l-[3px] border-[color:var(--bubble-accent)] bg-[color-mix(in_srgb,var(--bubble-accent)_12%,transparent)] px-2 py-1 text-left hover:bg-[color-mix(in_srgb,var(--bubble-accent)_18%,transparent)]"
       >
         <span className="truncate text-body font-semibold text-[color:var(--bubble-accent)]">{who}</span>
         <span className="truncate text-body text-fg">{target ? snippet : t('chat.replyOpen')}</span>

@@ -76,6 +76,9 @@ function getFlow(): UpdateFlow {
 
 /** App start: first check in 10 s, then every 6 h; re-check after wake / back online. */
 export function startUpdates(): void {
+  // Visual tests fake the status (window.__calabaUpdateStatus); a real check 10 s in would
+  // overwrite it mid-run (and there is nothing to update in a test build anyway).
+  if (process.env['CALABA_VISUAL_TEST'] === '1') return;
   const f = getFlow();
   f.start();
   powerMonitor.on('resume', () => f.resume());

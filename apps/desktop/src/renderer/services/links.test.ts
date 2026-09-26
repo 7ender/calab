@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../stores/session', () => ({ useSession: { getState: () => ({ status: 'anon' }) } }));
+const session = vi.hoisted(() => ({ status: 'anon', settings: null as { serverUrl: string } | null }));
+vi.mock('../stores/session', () => ({ useSession: { getState: () => session } }));
 vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => undefined }) } }));
 vi.mock('../features/people/roomLink', () => ({ openRoomLink: () => undefined }));
 
@@ -23,7 +24,45 @@ describe('invite links', () => {
   it('builds the shareable link from the server URL', () => {
     expect(inviteUrl('https://colaba.gptunnel.ai', 'abcd1234')).toBe('https://colaba.gptunnel.ai/join/abcd1234');
     expect(inviteUrl('https://colaba.gptunnel.ai/', 'abcd1234')).toBe('https://colaba.gptunnel.ai/join/abcd1234');
-    expect(inviteUrl('', 'abcd1234')).toBe('calab://join/abcd1234');
+  });
+});
+
+describe('shared links are https only (docs/09 #53)', () => {
+  afterEach(() => {
+    session.settings = null;
+    vi.unstubAllEnvs();
+  });
+  it('never falls back to a deep link', () => {
+    expect(inviteUrl('', 'abcd1234')).toBeNull();
+    expect(roomInviteUrl('', 'abcd1234')).toBeNull();
+    expect(inviteUrl('calab://join', 'abcd1234')).toBeNull();
+  });
+  it('falls back to the configured server URL', () => {
+    session.settings = { serverUrl: 'https://app.calab.ru/' };
+    expect(inviteUrl('', 'abcd1234')).toBe('https://app.calab.ru/join/abcd1234');
+    expect(roomInviteUrl('', 'abcd1234')).toBe('https://app.calab.ru/r/abcd1234');
+  });
+  it('prefers the session server over settings', () => {
+    session.settings = { serverUrl: 'https://old.example.org' };
+    expect(inviteUrl('https://app.calab.ru', 'abcd1234')).toBe('https://app.calab.ru/join/abcd1234');
+  });
+  it('on the web uses the page origin', () => {
+    vi.stubEnv('VITE_PLATFORM', 'web');
+    vi.stubGlobal('location', { origin: 'https://app.calab.ru' });
+    try {
+      expect(inviteUrl('', 'abcd1234')).toBe('https://app.calab.ru/join/abcd1234');
+      expect(roomInviteUrl('', 'abcd1234')).toBe('https://app.calab.ru/r/abcd1234');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('does not use the page origin in the desktop app (file:// or the dev server)', () => {
+    vi.stubGlobal('location', { origin: 'http://localhost:5173' });
+    try {
+      expect(inviteUrl('', 'abcd1234')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -42,6 +81,5 @@ describe('room links', () => {
   });
   it('builds the shareable link', () => {
     expect(roomInviteUrl('https://colaba.gptunnel.ai/', 'abcd1234')).toBe('https://colaba.gptunnel.ai/r/abcd1234');
-    expect(roomInviteUrl('', 'abcd1234')).toBe('calab://r/abcd1234');
   });
 });

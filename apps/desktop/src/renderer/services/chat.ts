@@ -1,6 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampNow } from '@bufbuild/protobuf/wkt';
 import { MessageSchema, type FileMeta, type Message, type UnfurlResponse } from '@calaba/protocol';
+import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
 import { api, uploadFile, type UploadHandle } from '../lib/api/endpoints';
@@ -171,6 +172,25 @@ export async function setPinned(m: Message, pin: boolean): Promise<void> {
     // MESSAGE_UPDATE brings pinned_at to everyone, including us.
   } catch (e) {
     toast.fail(e, pin ? 'Не удалось закрепить' : 'Не удалось открепить');
+  }
+}
+
+/**
+ * «Скрыть превью» (docs/09 #51): author or MANAGE_MESSAGES. Optimistic; the server answers with
+ * the message and fans out MESSAGE_UPDATE (no edited_at: it is not an edit). Rolls back on error.
+ */
+export async function setEmbedsHidden(m: Message, hidden: boolean): Promise<void> {
+  const apply = (v: boolean): void => {
+    const cur = useMessages.getState().rooms[m.roomId]?.items.find((c) => c.key === m.id)?.msg ?? m;
+    if (cur.embedsHidden !== v) useMessages.getState().upsert({ ...cur, embedsHidden: v }, { rest: true });
+  };
+  apply(hidden);
+  try {
+    const r = await api.messages.setEmbedsHidden(m.id, hidden);
+    if (r.message) useMessages.getState().upsert(r.message, { rest: true });
+  } catch (e) {
+    apply(!hidden);
+    toast.fail(e, hidden ? t('chat.embedHideFailed') : t('chat.embedShowFailed'));
   }
 }
 

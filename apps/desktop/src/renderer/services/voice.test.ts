@@ -23,7 +23,18 @@ vi.stubGlobal('localStorage', {
   setItem: (k: string, v: string) => void mem.set(k, v),
   removeItem: (k: string) => void mem.delete(k),
 });
-vi.stubGlobal('navigator', { userAgent: 'test', mediaDevices: { addEventListener: () => undefined, enumerateDevices: () => Promise.resolve([]) } });
+/** The audio devices `enumerateDevices()` reports; `devicechange` handlers are kept to fire them. */
+let deviceList: { deviceId: string; groupId: string; kind: string; label: string }[] = [];
+const deviceChange: (() => void)[] = [];
+vi.stubGlobal('navigator', {
+  userAgent: 'test',
+  mediaDevices: {
+    addEventListener: (ev: string, fn: () => void) => {
+      if (ev === 'devicechange') deviceChange.push(fn);
+    },
+    enumerateDevices: () => Promise.resolve(deviceList),
+  },
+});
 
 // ---------------------------------------------------------------- livekit-client mock
 
@@ -142,6 +153,7 @@ interface FakePipeline {
   track: FakeTrack;
   stop: ReturnType<typeof vi.fn>;
   deviceId: string | null;
+  deviceLabel: string;
   onEnded?: () => void;
 }
 /** Device ids that are unplugged (getUserMedia with {exact} fails). */
@@ -154,7 +166,7 @@ vi.mock('../lib/media/micPipeline', () => ({
       if (gate) await gate;
       if (opts.deviceId && gone.has(opts.deviceId)) throw Object.assign(new Error('gone'), { name: 'OverconstrainedError' });
       const track = new FakeTrack();
-      const p: FakePipeline = { track, deviceId: opts.deviceId, stop: vi.fn(() => track.stop()), ...(opts.onEnded ? { onEnded: opts.onEnded } : {}) };
+      const p: FakePipeline = { track, deviceId: opts.deviceId, deviceLabel: opts.deviceId ?? 'Default - Built-in Mic', stop: vi.fn(() => track.stop()), ...(opts.onEnded ? { onEnded: opts.onEnded } : {}) };
       pipelines.push(p);
       return p;
     }),
@@ -163,6 +175,8 @@ vi.mock('../lib/media/micPipeline', () => ({
 vi.mock('../lib/media/screenShare', () => ({ applyPreset: vi.fn(), captureScreen: vi.fn(), startScreenShare: vi.fn() }));
 vi.mock('../lib/sounds', () => ({ playSound: () => undefined }));
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
+const announce = vi.fn();
+vi.mock('./deviceToast', () => ({ announceDeviceSwitch: (...a: unknown[]) => void announce(...a) }));
 vi.mock('./mediaErrors', () => ({
   humanMediaError: () => ({ text: 'err', action: null }),
   reportMediaError: () => ({ text: 'err', action: null }),
@@ -193,6 +207,9 @@ beforeEach(async () => {
   gate = null;
   gone.clear();
   joinVoice.mockClear();
+  deviceChange.length = 0;
+  deviceList = [];
+  announce.mockClear();
   ({ voice } = await import('./voice'));
   ({ useVoice } = await import('../stores/voice'));
   ({ usePrefs } = await import('../stores/prefs'));
@@ -389,8 +406,26 @@ describe('VoiceEngine', () => {
     expect(now?.deviceId).toBeNull();
     expect(now?.track.readyState).toBe('live');
     expect(FakeRoom.all[0]?.published[0]?.mediaStreamTrack).toBe(now?.track);
+    // In a call the device-switch toast names the device now in use (docs/09 #49).
+    expect(announce).toHaveBeenCalledWith({ kind: 'input', label: 'Built-in Mic' });
     const { toast } = await import('../stores/toasts');
-    expect(toast.info).toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it('the OS switching the default device is announced in a call only (docs/09 #49)', async () => {
+    const mbp = { deviceId: 'default', groupId: 'g1', kind: 'audioinput', label: 'Default - MacBook Mic' };
+    const air = { deviceId: 'default', groupId: 'g2', kind: 'audioinput', label: 'Default - AirPods' };
+    const fire = async (list: (typeof deviceList)[number][]): Promise<void> => {
+      deviceList = list;
+      for (const fn of deviceChange) fn();
+      await settle();
+    };
+    await fire([mbp]); // baseline, not in a call
+    await fire([air]);
+    expect(announce).not.toHaveBeenCalled();
+    await voice.join('A', 'ws');
+    await fire([mbp]);
+    expect(announce).toHaveBeenCalledWith({ kind: 'input', label: 'MacBook Mic' });
   });
 
   it('resetPtt clears a stuck key (review M6)', async () => {

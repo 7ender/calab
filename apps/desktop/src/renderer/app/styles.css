@@ -96,7 +96,12 @@
   --space-8: 40px;
 
   /* ---- radius ---- */
-  --radius-control: 6px;
+  /* Controls (buttons, fields, selects, segmented controls, search, chips, toasts) are pills
+     (owner, 26.09; docs/08). Exceptions keep their own tokens: square icon-only buttons (8),
+     list rows, notes, thumbnails and keycaps (6). */
+  --radius-control: 9999px;
+  --radius-icon: 8px;
+  --radius-row: 6px;
   --radius-card: 8px;
   --radius-panel: 12px;
 
@@ -127,6 +132,8 @@
   /* ---- layout ---- */
   --rail-width: 72px;
   --titlebar-height: 38px;
+  /* web (docs/09 #46): no window chrome to share the bar with — a compact toolbar */
+  --titlebar-height-web: 30px;
   --sidebar-width: 256px;
   --composer-height: 64px;
 
@@ -279,6 +286,8 @@
   --text-large: 26px;
   --text-large--line-height: 32px;
   --radius-control: var(--radius-control);
+  --radius-icon: var(--radius-icon);
+  --radius-row: var(--radius-row);
   --radius-card: var(--radius-card);
   --radius-panel: var(--radius-panel);
 }

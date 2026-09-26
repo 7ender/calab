@@ -373,13 +373,13 @@ const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: ''
 
 /**
  * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>
- * (room link, ADR-0016) — the same URLs the app shares.
+ * (room link, ADR-0016) — the same URLs the app shares. Handed on as the https link; the address
+ * bar keeps the path while the link card is shown (docs/09 #53, services/linkLanding.ts).
  */
 function takeDeepLink(): Promise<string | null> {
   const m = /^\/(join|r)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
   if (!m?.[1] || !m[2]) return Promise.resolve(null);
-  history.replaceState(null, '', '/');
-  return Promise.resolve(`calab://${m[1]}/${m[2]}`);
+  return Promise.resolve(`${location.origin}/${m[1]}/${m[2]}`);
 }
 
 const noop = (): (() => void) => () => undefined;

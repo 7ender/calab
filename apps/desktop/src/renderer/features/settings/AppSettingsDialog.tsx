@@ -444,7 +444,7 @@ function VoiceTab(): ReactNode {
 
 function Kbd({ children }: { children: ReactNode }): ReactNode {
   return (
-    <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-control)] border border-line bg-elev px-1.5 font-sans text-caption tabular-nums text-fg shadow-[var(--shadow-card)]">
+    <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-row)] border border-line bg-elev px-1.5 font-sans text-caption tabular-nums text-fg shadow-[var(--shadow-card)]">
       {children}
     </kbd>
   );

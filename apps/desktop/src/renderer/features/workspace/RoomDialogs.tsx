@@ -315,7 +315,7 @@ function TriToggle({ value, onChange, label }: { value: Tri; onChange: (v: Tri) 
         aria-label={`${label}: ${name}`}
         aria-checked={value === v}
         onClick={() => onChange(v)}
-        className={cx('grid h-6 w-8 place-items-center rounded-[5px]', value === v ? SEL[v] : 'text-muted hover:bg-[var(--color-fill)] hover:text-fg')}
+        className={cx('grid h-6 w-8 place-items-center rounded-full', value === v ? SEL[v] : 'text-muted hover:bg-[var(--color-fill)] hover:text-fg')}
       >
         <Icon className="size-4" strokeWidth={value === v ? 2.25 : 1.75} aria-hidden />
       </button>
@@ -395,7 +395,7 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
             aria-pressed={current?.key === x.key}
             title={x.label}
             onClick={() => setSelected(x.key)}
-            className={cx('h-8 shrink-0 truncate rounded-[var(--radius-control)] px-2 text-left text-body', current?.key === x.key ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
+            className={cx('h-8 shrink-0 truncate rounded-[var(--radius-row)] px-2 text-left text-body', current?.key === x.key ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
           >
             {x.type === PermissionTargetType.ROLE ? '@' : ''}
             {x.label}

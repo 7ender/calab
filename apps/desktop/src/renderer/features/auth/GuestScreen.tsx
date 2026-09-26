@@ -61,6 +61,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
   };
 
   const p = preview.data;
+  const browserLink = roomInviteUrl(serverUrl, code); // https (docs/09 #53)
   const voice = p?.roomType === RoomType.VOICE;
   let body: ReactNode;
   if (preview.isLoading) {
@@ -85,8 +86,8 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
     body = (
       <div className="flex flex-col gap-4">
         <p className="text-center text-body text-muted">{!p.allowGuests ? t('guest.accountOnly') : t('guest.desktop')}</p>
-        {p.allowGuests && serverUrl ? (
-          <Button variant="secondary" className="h-9 w-full" onClick={() => void platform.app.openExternal(roomInviteUrl(serverUrl, code))}>
+        {p.allowGuests && browserLink ? (
+          <Button variant="secondary" className="h-9 w-full" onClick={() => void platform.app.openExternal(browserLink)}>
             {t('guest.openBrowser')}
           </Button>
         ) : null}

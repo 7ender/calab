@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, type ReactNode } from 'react';
 import { Spinner } from '../components/ui';
 import { AuthScreen } from '../features/auth/AuthScreen';
+import { LinkLandingScreen } from '../features/auth/LinkLanding';
 import { OfflineScreen, TooManySessions } from '../features/auth/SessionScreens';
 import { AppShell } from '../features/shell/AppShell';
 import { Dialogs } from '../features/shell/Dialogs';
@@ -10,6 +11,7 @@ import { Toasts } from '../features/shell/Toasts';
 import { usePrefs } from '../stores/prefs';
 import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
+import { useLinkLanding } from '../services/linkLanding';
 import { useSession } from '../stores/session';
 
 export { queryClient };
@@ -43,6 +45,7 @@ export function App(): ReactNode {
   useTheme();
   const status = useSession((s) => s.status);
   const tooMany = useSession((s) => s.tooManySessions);
+  const landing = useLinkLanding((s) => s.link);
   let screen: ReactNode;
   if (status === 'booting')
     screen = (
@@ -50,6 +53,8 @@ export function App(): ReactNode {
         <Spinner className="size-8" />
       </div>
     );
+  // Web /join/<code>, /r/<code>: the link card first, signed in or not (docs/09 #53).
+  else if (landing) screen = <LinkLandingScreen link={landing} />;
   else if (status === 'anon') screen = <AuthScreen />;
   else if (status === 'offline') screen = <OfflineScreen />;
   else if (tooMany) screen = <TooManySessions />;

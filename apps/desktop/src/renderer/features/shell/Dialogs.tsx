@@ -37,7 +37,7 @@ export function Dialogs(): ReactNode {
         node = <StreamPicker onClose={close} />;
         break;
       case 'quick-switcher':
-        node = <QuickSwitcher onClose={close} />;
+        node = <QuickSwitcher onClose={close} initialQuery={d.query ?? ''} />;
         break;
       case 'image':
         node = <Lightbox fileId={d.fileId} name={d.name} onClose={close} />;

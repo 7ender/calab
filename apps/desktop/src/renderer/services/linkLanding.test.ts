@@ -1,0 +1,55 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const handled = vi.hoisted(() => [] as string[]);
+vi.mock('../stores/session', () => ({ useSession: { getState: () => ({ status: 'anon', settings: null }) } }));
+vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => undefined }) } }));
+vi.mock('../features/people/roomLink', () => ({ openRoomLink: (c: string) => handled.push(`room:${c}`) }));
+
+const { alwaysOpenInApp, continueInBrowser, landingFor, setAlwaysOpenInApp, showLinkLanding, useLinkLanding } = await import('./linkLanding');
+
+describe('link landing (docs/09 #53)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useLinkLanding.setState({ link: null });
+    handled.length = 0;
+  });
+
+  it('recognises web /join and /r links only', () => {
+    expect(landingFor('https://app.calab.ru/join/calaba-team-2026')).toEqual({ kind: 'join', code: 'calaba-team-2026', url: 'https://app.calab.ru/join/calaba-team-2026' });
+    expect(landingFor('https://app.calab.ru/r/call-guest-link')).toMatchObject({ kind: 'r', code: 'call-guest-link' });
+    expect(landingFor('calaba-team-2026')).toBeNull(); // a bare code is not a link
+    expect(landingFor('https://app.calab.ru/rooms/x')).toBeNull();
+  });
+
+  it('continue in the browser hands the link to the app flow and clears the card', () => {
+    const replaceState = vi.fn();
+    vi.stubGlobal('history', { replaceState });
+    expect(showLinkLanding('https://app.calab.ru/r/call-guest-link')).toBe(true);
+    expect(useLinkLanding.getState().link?.code).toBe('call-guest-link');
+    continueInBrowser();
+    expect(useLinkLanding.getState().link).toBeNull();
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/');
+    expect(handled).toEqual(['room:call-guest-link']);
+  });
+
+  it('«always open in the app» persists and survives blocked storage', () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => store.set(k, v),
+      removeItem: (k: string) => store.delete(k),
+    });
+    expect(alwaysOpenInApp()).toBe(false);
+    setAlwaysOpenInApp(true);
+    expect(alwaysOpenInApp()).toBe(true);
+    setAlwaysOpenInApp(false);
+    expect(alwaysOpenInApp()).toBe(false);
+
+    const boom = (): never => {
+      throw new Error('SecurityError');
+    };
+    vi.stubGlobal('localStorage', { getItem: boom, setItem: boom, removeItem: boom });
+    expect(alwaysOpenInApp()).toBe(false);
+    expect(() => setAlwaysOpenInApp(true)).not.toThrow();
+  });
+});

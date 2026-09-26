@@ -19,7 +19,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/hero-dark.png" width="880" alt="Calab — чат и голосовая комната">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/chat-light-shadow@2x.png">
+    <img src="docs/images/chat-dark-shadow@2x.png" width="880" alt="Calab — чат и голосовая комната">
+  </picture>
 </p>
 
 ---
@@ -79,7 +82,10 @@ Calab — корпоративный мессенджер, в котором г�
 - **Desktop + Web** из одного кода: Electron для macOS (Apple Silicon / Intel), Windows, Linux (AppImage / deb) и браузерная версия на `app.<домен>`; автообновление с `/download/`.
 
 <p align="center">
-  <img src="docs/images/stream-dark.png" width="880" alt="Стрим экрана в голосовой комнате">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/stream-light@2x.png">
+    <img src="docs/images/stream-dark@2x.png" width="880" alt="Стрим экрана в голосовой комнате">
+  </picture>
 </p>
 
 ## Архитектура

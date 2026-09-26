@@ -15,7 +15,7 @@ export function RoomLinkPreview({ code, onDone }: { code: string; onDone: () => 
   if (q.error || !q.data) return <p className="text-caption text-danger-text">{roomLinkError(q.error)}</p>;
   const voice = q.data.roomType === RoomType.VOICE;
   return (
-    <div className="flex items-center gap-3 rounded-[var(--radius-control)] bg-side px-3 py-2">
+    <div className="flex items-center gap-3 rounded-[var(--radius-row)] bg-side px-3 py-2">
       {voice ? <Volume2 className="size-4 shrink-0 text-muted" aria-hidden /> : <Hash className="size-4 shrink-0 text-muted" aria-hidden />}
       <div className="min-w-0 flex-1">
         <div className="truncate font-semibold" title={q.data.roomName}>

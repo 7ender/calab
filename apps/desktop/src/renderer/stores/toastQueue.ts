@@ -12,6 +12,8 @@ export interface Toast {
   action?: ToastAction;
   /** How many times the same toast was raised in a row («×3»). */
   count?: number;
+  /** Auto-hide delay; TOAST_MS when unset. */
+  durationMs?: number;
 }
 
 /** At most this many toasts on screen; the oldest go first. */

@@ -30,14 +30,22 @@ import { popoverBox } from './menu';
  * history. Centre: the workspace name. Right: search (opens the quick switcher), mentions,
  * shortcuts help; on Windows the native caption buttons (Window Controls Overlay) take the
  * space given by env(titlebar-area-*).
+ * Web (docs/09 #46): a compact 30 px toolbar — no window chrome, so no reserved inset and no
+ * drag region; from 1200 px the room header has its own search field, so the pill hides there
+ * (below it stays: ⌘K must remain discoverable).
  */
 export function TitleBar(): ReactNode {
   const os = useSession((s) => s.appInfo?.platform);
   const electron = platform.kind === 'electron';
+  const web = !electron;
   const mac = electron && os === 'darwin';
   const wsId = useUi((s) => s.activeWorkspaceId);
   const ws = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws : undefined));
   const searchKeys = useHotkeyLabel('search');
+  // With a room open, the room header has the search field from 1200 px (docs/09 #50): one entry
+  // point, not two. Without a room (welcome, empty workspace) this pill is the only one.
+  const lastRoomId = useUi((s) => (s.activeWorkspaceId ? s.lastRoom[s.activeWorkspaceId] : undefined));
+  const roomOpen = useRooms((s) => !!lastRoomId && !!s.byId[lastRoomId]);
   const back = useUi(canGoBack);
   const fwd = useUi(canGoForward);
   const goBack = useUi((s) => s.goBack);
@@ -48,15 +56,18 @@ export function TitleBar(): ReactNode {
     <header
       aria-label={t('shell.titlebar')}
       className={cx(
-        'mat-rail relative z-[var(--z-sticky)] grid h-[var(--titlebar-height)] shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3',
+        'mat-rail relative z-[var(--z-sticky)] grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3',
+        web ? 'h-[var(--titlebar-height-web)]' : 'h-[var(--titlebar-height)]',
         electron && 'drag',
       )}
-      // Windows (WCO): keep clear of the native caption buttons; 0 elsewhere.
-      style={{ paddingRight: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' }}
+      data-testid="titlebar"
+      data-variant={web ? 'web' : 'window'}
+      // Windows (WCO): keep clear of the native caption buttons; 0 elsewhere (none on the web).
+      style={web ? undefined : { paddingRight: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' }}
     >
-      <div className="flex min-w-0 items-center gap-0.5">
-        {/* macOS traffic lights live here — nothing is drawn under them. */}
-        <div className={cx('shrink-0', mac ? 'w-[80px]' : 'w-2')} aria-hidden />
+      <div className={cx('flex min-w-0 items-center gap-0.5', web && 'pl-2')}>
+        {/* macOS traffic lights live here — nothing is drawn under them. The web has no window chrome. */}
+        {web ? null : <div className={cx('shrink-0', mac ? 'w-[80px]' : 'w-2')} aria-hidden />}
         <IconButton size="sm" label={t('shell.back')} shortcut={NAV_SHORTCUTS.back} disabled={!back} onClick={goBack} className="size-7">
           <ChevronLeft className="size-[18px]" />
         </IconButton>
@@ -79,7 +90,10 @@ export function TitleBar(): ReactNode {
           type="button"
           onClick={() => open({ kind: 'quick-switcher' })}
           aria-label={t('shell.search')}
-          className="flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
+          className={cx(
+            'flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg',
+            roomOpen && 'min-[1200px]:hidden',
+          )}
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">{t('shell.search')}</span>
@@ -126,7 +140,7 @@ function InboxButton(): ReactNode {
           <button
             type="button"
             aria-label={total ? `${t('shell.inbox')}: ${total}` : t('shell.inbox')}
-            className="relative grid size-7 place-items-center rounded-[var(--radius-control)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
+            className="relative grid size-7 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
           >
             <Inbox className="size-[18px]" aria-hidden />
             {total > 0 ? (
@@ -235,7 +249,7 @@ function InboxItem({ m }: { m: Message }): ReactNode {
             openRoom(room.workspaceId, room.id);
             useChatView.getState().requestJump(room.id, m.id);
           }}
-          className="flex w-full items-start gap-2.5 rounded-[var(--radius-control)] px-2 py-2 text-left hover:bg-hover"
+          className="flex w-full items-start gap-2.5 rounded-[var(--radius-row)] px-2 py-2 text-left hover:bg-hover"
         >
           <Avatar userId={m.authorId} name={author} fileId={avatar || undefined} size={28} />
           <span className="min-w-0 flex-1">
@@ -276,7 +290,7 @@ function HelpButton(): ReactNode {
           <button
             type="button"
             aria-label={t('shell.help')}
-            className="grid size-7 place-items-center rounded-[var(--radius-control)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
+            className="grid size-7 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
           >
             <CircleHelp className="size-[18px]" aria-hidden />
           </button>

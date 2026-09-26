@@ -16,6 +16,7 @@ import { resetChatCaches } from './chat';
 import { startMessageRetention } from './retention';
 import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
+import { showLinkLanding } from './linkLanding';
 import { watchSyncedPrefs } from './profile';
 import { voice } from './voice';
 import { platform } from '../platform';
@@ -65,6 +66,11 @@ export async function bootstrap(): Promise<void> {
   watchSyncedPrefs();
   startMessageRetention();
 
+  // Web /join/<code>, /r/<code>: the «open in the app / continue in the browser» card (docs/09 #53)
+  // is set up before the status leaves 'booting', so the login screen never flashes first.
+  const webLink = platform.kind === 'web' ? await platform.app.takeDeepLink() : null;
+  const landed = webLink !== null && showLinkLanding(webLink);
+
   try {
     const s = await platform.auth.restore();
     if (s) beginSession(s);
@@ -73,10 +79,10 @@ export async function bootstrap(): Promise<void> {
     log.warn('session restore failed (offline?)', e);
     useSession.getState().set({ status: 'offline' });
   }
-  const link = await platform.app.takeDeepLink();
+  const link = platform.kind === 'web' ? webLink : await platform.app.takeDeepLink();
   booted = true;
   for (const url of early.splice(0)) if (url !== link) handleDeepLink(url);
-  if (link) handleDeepLink(link);
+  if (link && !landed) handleDeepLink(link);
 }
 
 /** The offline screen retries on its own every 30 s (plus on `online` / resume, above). */

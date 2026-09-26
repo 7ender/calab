@@ -8,7 +8,8 @@ import { extendTailwindMerge } from 'tailwind-merge';
 
 /*
  * UI primitives (docs/08-design.md): macOS-like controls on design tokens only.
- * Controls are 28 px high, radius 6; cards 8; panels/dialogs 12; 4 px spacing grid.
+ * Controls are 28 px high and pill-shaped (--radius-control); icon-only buttons 8, list rows 6;
+ * cards 8; panels/dialogs 12; 4 px spacing grid.
  */
 
 /**
@@ -74,7 +75,7 @@ export const IconButton = forwardRef<
       aria-label={label}
       aria-pressed={active}
       className={cx(
-        'inline-grid shrink-0 place-items-center rounded-[var(--radius-control)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
+        'inline-grid shrink-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
         size === 'sm' ? 'size-7' : 'size-8',
         danger ? 'text-danger hover:bg-hover' : active ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
         className,
@@ -106,7 +107,7 @@ export function Tip({
           side={side}
           sideOffset={6}
           collisionPadding={8}
-          className="mat-popover anim-in z-[var(--z-tooltip)] flex max-w-72 items-center gap-2 rounded-[var(--radius-control)] px-2 py-1 text-caption text-fg"
+          className="mat-popover anim-in z-[var(--z-tooltip)] flex max-w-72 items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-caption text-fg"
         >
           {label}
           {shortcut ? <kbd className="font-sans text-micro text-faint">{shortcut}</kbd> : null}
@@ -217,7 +218,7 @@ export function Segmented<T extends string>({
           className={cx(
             // nowrap: «Push-to-talk» must never break at its hyphen. Selected = a raised, lighter
             // segment (macOS), in dark too — not a darker «pressed» one.
-            'h-6 whitespace-nowrap rounded-[5px] px-3 text-control font-medium transition-colors duration-[var(--motion-fast)]',
+            'h-6 whitespace-nowrap rounded-full px-3 text-control font-medium transition-colors duration-[var(--motion-fast)]',
             value === o.value ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
           )}
         >
@@ -392,7 +393,7 @@ export function Empty({ children, action }: { children: ReactNode; action?: Reac
 }
 
 /**
- * Small label chip («Гость», «LIVE», role names): 11/600, sentence case, radius 4 — one style
+ * Small label chip («Гость», «LIVE», role names): 11/600, sentence case, pill — one style
  * for every badge (UX review). `danger` = white on the red fill (LIVE), `accent` = white on
  * accent-strong, `neutral` = label on a fill.
  */
@@ -401,7 +402,7 @@ export function Badge({ children, tone = 'neutral', className, title }: { childr
     <span
       title={title}
       className={cx(
-        'inline-flex h-4 shrink-0 items-center rounded-[4px] px-1 text-micro font-semibold leading-4',
+        'inline-flex h-4 shrink-0 items-center rounded-full px-1.5 text-micro font-semibold leading-4',
         tone === 'danger' ? 'bg-danger-fill text-white' : tone === 'accent' ? 'bg-accent-strong text-accent-fg' : 'bg-hover text-fg',
         className,
       )}

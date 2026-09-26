@@ -41,6 +41,7 @@ import {
   UpdateStatusRequestSchema,
   UpdateMessageRequestSchema,
   UpdateMessageResponseSchema,
+  SetEmbedsHiddenRequestSchema,
   UpdateReadStateRequestSchema,
   UnfurlResponseSchema,
   UpdateRoomRequestSchema,
@@ -48,6 +49,7 @@ import {
   UpdateRoomNotificationSettingsRequestSchema,
   UpdateRoomNotificationSettingsResponseSchema,
   UpdateVoiceSelfRequestSchema,
+  UpdateVoiceStatusRequestSchema,
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
   UploadFileResponseSchema,
@@ -130,6 +132,9 @@ export const api = {
     update: (id: string, init: MessageInitShape<typeof UpdateRoomRequestSchema>) =>
       call('PATCH', `/api/rooms/${id}`, UpdateRoomResponseSchema, body(UpdateRoomRequestSchema, init)),
     remove: (id: string) => callEmpty('DELETE', `/api/rooms/${id}`),
+    /** Voice rooms: the status line of the current call (≤ 60 chars; '' clears); everyone gets ROOM_UPDATE. */
+    setVoiceStatus: (id: string, status: string) =>
+      call('PATCH', `/api/rooms/${id}/voice-status`, UpdateRoomResponseSchema, body(UpdateVoiceStatusRequestSchema, { status })),
     setPermissions: (id: string, init: MessageInitShape<typeof SetRoomPermissionsRequestSchema>) =>
       call('PUT', `/api/rooms/${id}/permissions`, SetRoomPermissionsResponseSchema, body(SetRoomPermissionsRequestSchema, init)),
     /** My notification settings of the room; replaces them (ALL without mutedUntil = default). */
@@ -164,6 +169,9 @@ export const api = {
     removeReaction: (id: string, emoji: string) => callEmpty('DELETE', `/api/messages/${id}/reactions/${encodeURIComponent(emoji)}`),
     pin: (id: string) => callEmpty('PUT', `/api/messages/${id}/pin`),
     unpin: (id: string) => callEmpty('DELETE', `/api/messages/${id}/pin`),
+    /** Hide / show the link previews (author or MANAGE_MESSAGES); MESSAGE_UPDATE, not an edit. */
+    setEmbedsHidden: (id: string, hidden: boolean) =>
+      call('PUT', `/api/messages/${id}/embeds-hidden`, UpdateMessageResponseSchema, body(SetEmbedsHiddenRequestSchema, { hidden })),
     pins: (roomId: string) => call('GET', `/api/rooms/${roomId}/pins`, ListMessagesResponseSchema),
   },
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */

@@ -92,7 +92,7 @@ function LoginScreen(): ReactNode {
         </div>
         <div className="mat-popover flex flex-col gap-4 rounded-[var(--radius-panel)] p-6">
           {reason === 'revoked' || reason === 'expired' ? (
-            <p className="rounded-[var(--radius-control)] bg-mention px-3 py-2 text-body">{reason === 'revoked' ? t('auth.revoked') : t('auth.expired')}</p>
+            <p className="rounded-[var(--radius-row)] bg-mention px-3 py-2 text-body">{reason === 'revoked' ? t('auth.revoked') : t('auth.expired')}</p>
           ) : null}
           <Field label={t('auth.email')} error={fieldErr('email')}>
             <Input type="email" autoFocus required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" className="h-8" />

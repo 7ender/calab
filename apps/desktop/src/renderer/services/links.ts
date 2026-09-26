@@ -6,6 +6,9 @@ import { useUi } from '../stores/ui';
  * Invite links: `https://<server>/join/<code>` (shareable: opens the web client, and the
  * desktop app accepts it pasted or via the join dialog), the `calab://join/<code>` deep
  * link (legacy `calaba://` too), or the bare code. → join dialog (after login if needed).
+ *
+ * Shared links are ALWAYS https (docs/09 #53): the web page `/join/<code>` / `/r/<code>` offers
+ * «Открыть в Calab» itself; `calab://` stays an internal mechanism, never copied or shown.
  */
 let pendingInvite: string | null = null;
 
@@ -22,15 +25,31 @@ export function parseInviteCode(input: string): string | null {
   return m?.[1] ?? null;
 }
 
-/** The shareable link for an invite code on this server. */
-export function inviteUrl(serverUrl: string, code: string): string {
-  const origin = serverUrl.replace(/\/+$/, '');
-  return origin ? `${origin}/join/${code}` : `calab://join/${code}`;
+const HTTP_ORIGIN = /^https?:\/\/[^/\s]+/;
+
+/**
+ * The base for shared links: the session's server, else the configured server (settings), else
+ * — on the web — the page's own origin (same origin as the API, ADR-0015). null = nothing to
+ * build an https link from (never falls back to a deep link).
+ */
+export function shareOrigin(serverUrl: string): string | null {
+  const web = import.meta.env.VITE_PLATFORM === 'web' && typeof location !== 'undefined' ? location.origin : '';
+  for (const c of [serverUrl, useSession.getState().settings?.serverUrl ?? '', web]) {
+    const o = c.trim().replace(/\/+$/, '');
+    if (HTTP_ORIGIN.test(o)) return o;
+  }
+  return null;
+}
+
+/** The shareable https link for an invite code on this server (null: no server known). */
+export function inviteUrl(serverUrl: string, code: string): string | null {
+  const origin = shareOrigin(serverUrl);
+  return origin ? `${origin}/join/${code}` : null;
 }
 
 /**
- * Room links (ADR-0016): `https://<server>/r/<code>` or `calab://r/<code>`. No bare codes:
- * a bare code is a workspace invite.
+ * Room links (ADR-0016): `https://<server>/r/<code>` or the `calab://r/<code>` deep link. No bare
+ * codes: a bare code is a workspace invite.
  */
 export function parseRoomInviteCode(input: string): string | null {
   const s = input.trim();
@@ -38,10 +57,10 @@ export function parseRoomInviteCode(input: string): string | null {
   return m?.[1] ?? null;
 }
 
-/** The shareable link for a room invite code on this server. */
-export function roomInviteUrl(serverUrl: string, code: string): string {
-  const origin = serverUrl.replace(/\/+$/, '');
-  return origin ? `${origin}/r/${code}` : `calab://r/${code}`;
+/** The shareable https link for a room invite code on this server (null: no server known). */
+export function roomInviteUrl(serverUrl: string, code: string): string | null {
+  const origin = shareOrigin(serverUrl);
+  return origin ? `${origin}/r/${code}` : null;
 }
 
 export function handleDeepLink(url: string): void {

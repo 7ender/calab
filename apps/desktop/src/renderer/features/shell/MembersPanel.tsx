@@ -125,7 +125,7 @@ const MemberRow = memo(function MemberRow({
             aria-label={t('people.openProfile', { name })}
             title={name}
             className={cx(
-              'flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-control)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+              'flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
               open && 'bg-active',
             )}
           >

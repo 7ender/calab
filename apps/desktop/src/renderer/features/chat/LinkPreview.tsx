@@ -1,23 +1,23 @@
 import type { UnfurlResponse } from '@calaba/protocol';
-import { useEffect, useState, type ReactNode } from 'react';
+import { X } from 'lucide-react';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { MediaImg } from '../../components/MediaImg';
+import { Tip, cx } from '../../components/ui';
+import { t } from '../../i18n';
 import { isSafeHref } from '../../lib/markdown/parse';
 import { platform } from '../../platform';
 import { unfurl } from '../../services/chat';
+import { hostOf, siteColor, siteKey } from './siteColor';
 
 /** Server-proxied images only: never load third-party hosts from the client (proto/unfurl.proto). */
 const isProxied = (p: string): boolean => p.startsWith('/api/unfurl/image');
 
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
-}
-
-/** Telegram-like link preview inside a bubble: accent bar, site, title, description, image. */
-export function LinkPreview({ url }: { url: string }): ReactNode {
+/**
+ * Telegram-like link preview inside a bubble (docs/09 #51): a left bar in the site's colour,
+ * site name, the title as a link, description, image. Whoever may hide it (the author or
+ * MANAGE_MESSAGES) gets «×» on hover / keyboard focus.
+ */
+export function LinkPreview({ url, onHide }: { url: string; onHide?: (() => void) | undefined }): ReactNode {
   const [card, setCard] = useState<UnfurlResponse | null>(null);
   useEffect(() => {
     let alive = true;
@@ -31,31 +31,57 @@ export function LinkPreview({ url }: { url: string }): ReactNode {
   if (!card) return null;
   const href = card.url && isSafeHref(card.url) ? card.url : url;
   const image = card.imageUrl && isProxied(card.imageUrl) ? card.imageUrl : '';
+  const site = card.siteName || hostOf(href);
+  // Same path as links in message text: only safe schemes, opened by the OS browser.
+  const open = (e: MouseEvent): void => {
+    e.preventDefault();
+    if (isSafeHref(href)) void platform.app.openExternal(href);
+  };
+  const link = 'rounded-[4px] outline-offset-0 hover:underline';
   return (
-    <a
-      href={href}
-      title={href}
-      onClick={(e) => {
-        e.preventDefault();
-        if (isSafeHref(href)) void platform.app.openExternal(href);
-      }}
+    <div
       data-testid="link-preview"
-      className="mt-1.5 flex min-w-0 max-w-[400px] rounded-[var(--radius-control)] border-l-[3px] border-[color:var(--bubble-accent)] bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] py-1.5 pl-2 pr-2 hover:bg-[color-mix(in_srgb,var(--bubble-accent)_16%,transparent)]"
+      className="group/embed relative mt-1.5 flex min-w-0 max-w-[400px] flex-col rounded-[var(--radius-row)] border-l-[3px] bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] py-1.5 pl-2 pr-2"
+      style={{ borderLeftColor: siteColor(siteKey(href, card.siteName)) }}
     >
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-body font-semibold text-[color:var(--bubble-accent)]">{card.siteName || hostOf(href)}</span>
-        {card.title ? <span className="line-clamp-2 text-body font-semibold leading-5 text-fg">{card.title}</span> : null}
-        {card.description ? <span className="line-clamp-3 text-body leading-[18px] text-fg">{card.description}</span> : null}
-        {image ? (
+      {card.title ? (
+        <span className={cx('truncate text-body font-semibold text-[color:var(--bubble-accent)]', onHide && 'pr-6')}>{site}</span>
+      ) : (
+        <a href={href} title={href} onClick={open} className={cx(link, 'truncate text-body font-semibold text-[color:var(--bubble-accent)]', onHide && 'mr-6')}>
+          {site}
+        </a>
+      )}
+      {card.title ? (
+        <a href={href} title={href} onClick={open} className={cx(link, 'line-clamp-2 text-body font-semibold leading-5 text-fg')}>
+          {card.title}
+        </a>
+      ) : null}
+      {card.description ? <span className="line-clamp-3 text-body leading-[18px] text-fg">{card.description}</span> : null}
+      {image ? (
+        // The picture opens the page too (mouse convenience; the title is the keyboard stop).
+        <a href={href} onClick={open} tabIndex={-1} aria-hidden className="mt-1.5 block">
           <MediaImg
             path={image}
             alt=""
             loading="lazy"
             draggable={false}
-            className="mt-1.5 block aspect-[1.91/1] w-full rounded-[var(--radius-control)] bg-[color-mix(in_srgb,var(--bubble-accent)_12%,transparent)] object-cover"
+            className="block aspect-[1.91/1] w-full rounded-[var(--radius-row)] bg-[color-mix(in_srgb,var(--bubble-accent)_12%,transparent)] object-cover"
           />
-        ) : null}
-      </span>
-    </a>
+        </a>
+      ) : null}
+      {onHide ? (
+        <Tip label={t('chat.embedHide')}>
+          <button
+            type="button"
+            aria-label={t('chat.embedHide')}
+            onClick={onHide}
+            data-testid="link-preview-hide"
+            className="absolute right-1 top-1 grid size-6 place-items-center rounded-full text-[color:var(--bubble-meta)] opacity-0 transition-opacity duration-[var(--motion-fast)] hover:bg-[color-mix(in_srgb,var(--bubble-accent)_16%,transparent)] hover:text-fg focus-visible:opacity-100 group-hover/embed:opacity-100"
+          >
+            <X className="size-3.5" aria-hidden />
+          </button>
+        </Tip>
+      ) : null}
+    </div>
   );
 }

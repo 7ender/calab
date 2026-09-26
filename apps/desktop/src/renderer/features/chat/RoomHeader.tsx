@@ -2,17 +2,19 @@ import { NotificationLevel, RoomType, type PermissionBits, type Room } from '@ca
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Bell, BellDot, BellOff, Check, Hash, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmtTime, toDate } from '../../lib/format';
 import { can } from '../../lib/permissions';
 import { setPinned } from '../../services/chat';
+import { useHotkeyLabel } from '../../services/hotkeys';
 import { setRoomNotifications } from '../../services/mentions';
+import { useMediaQuery } from '../../lib/useMediaQuery';
 import { isQuiet, roomNotify, useRooms } from '../../stores/rooms';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
-import { memberName } from '../../stores/workspaces';
+import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
 import { fmtDayLabel } from './MessageBubble';
@@ -22,9 +24,13 @@ import { TypingDots, useTypingText } from './TypingIndicator';
 
 const NO_PINS: never[] = [];
 
+/** From this window width the header has a search field; narrower windows keep the ⌘K entry in the title bar. */
+export const HEADER_SEARCH_MIN = 1200;
+
 /**
  * Room header (docs/09 #7): icon, name, • topic (or «… печатает» while someone types), and on
- * the right: search, pinned, notifications, settings, members.
+ * the right: workspace search field (≥ 1200 px, docs/09 #50), search in room, pinned,
+ * notifications, settings, members.
  */
 export function RoomHeader({
   workspaceId,
@@ -45,6 +51,7 @@ export function RoomHeader({
   const setSearch = useChatView((s) => s.setSearch);
   const voiceRoom = room.type === RoomType.VOICE;
   const Icon = voiceRoom ? Volume2 : Hash;
+  const wide = useMediaQuery(`(min-width: ${HEADER_SEARCH_MIN}px)`);
 
   return (
     <header className="mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2">
@@ -66,6 +73,7 @@ export function RoomHeader({
         <div className="flex-1" />
       )}
       <div className="no-drag flex shrink-0 items-center gap-0.5">
+        {wide ? <HeaderSearch workspaceId={workspaceId} /> : null}
         <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
           <Search className="size-[18px]" />
         </IconButton>
@@ -81,6 +89,44 @@ export function RoomHeader({
         </IconButton>
       </div>
     </header>
+  );
+}
+
+/**
+ * «Поиск в <пространство>» (docs/09 #50): a bigger entry point to the one workspace search —
+ * the ⌘K quick switcher (rooms, members, messages). Clicking or Enter opens it; typing opens it
+ * with the typed text. The shortcut hint follows the rebindable hotkey.
+ */
+function HeaderSearch({ workspaceId }: { workspaceId: string }): ReactNode {
+  const name = useWorkspaces((s) => s.byId[workspaceId]?.ws.name ?? '');
+  const keys = useHotkeyLabel('search');
+  const label = t('chat.searchWorkspace', { name });
+  const open = (query = ''): void => useUi.getState().openDialog({ kind: 'quick-switcher', query });
+  const onKey = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      open();
+    }
+  };
+  return (
+    <div className="relative mr-1 w-[240px] shrink-0" data-testid="header-search">
+      <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted" aria-hidden />
+      <input
+        type="search"
+        value=""
+        onChange={(e) => open(e.target.value)}
+        onKeyDown={onKey}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          open();
+        }}
+        placeholder={label}
+        aria-label={label}
+        aria-haspopup="dialog"
+        className="h-7 w-full min-w-0 cursor-default text-ellipsis rounded-[var(--radius-control)] bg-hover pl-7 pr-11 text-body text-fg transition-colors duration-[var(--motion-fast)] placeholder:text-muted hover:bg-[var(--color-fill-hover)] focus-visible:outline-offset-0 [&::-webkit-search-cancel-button]:hidden"
+      />
+      <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-sans text-micro text-muted">{keys}</kbd>
+    </div>
   );
 }
 
@@ -248,7 +294,7 @@ function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; r
               {pins.map((m) => {
                 const d = toDate(m.createdAt);
                 return (
-                  <li key={m.id} className="group flex items-start gap-1 rounded-[var(--radius-control)] hover:bg-hover">
+                  <li key={m.id} className="group flex items-start gap-1 rounded-[var(--radius-row)] hover:bg-hover">
                     <button
                       type="button"
                       className="min-w-0 flex-1 px-3 py-2 text-left"

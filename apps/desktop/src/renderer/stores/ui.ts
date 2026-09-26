@@ -12,7 +12,8 @@ export type Dialog =
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }
   | { kind: 'image'; fileId: string; name: string }
-  | { kind: 'quick-switcher' };
+  /** ⌘K search; `query` pre-fills it (typed into the room header's search field). */
+  | { kind: 'quick-switcher'; query?: string };
 
 interface UiState {
   activeWorkspaceId: string | null;

@@ -6,14 +6,18 @@ import { ApiError } from '../../lib/api/client';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
+import { queryClient } from '../../lib/queryClient';
+import { roomInviteUrl } from '../../services/links';
 import { voice } from '../../services/voice';
 import { isVoice, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
+import { reusableInvite } from './inviteChoice';
 
 /**
- * Room links (ADR-0016): `https://<server>/r/<code>` and `calab://r/<code>`.
+ * Room links (ADR-0016): shared as `https://<server>/r/<code>`; `calab://r/<code>` is the internal
+ * deep link the web page fires to open the app (docs/09 #53).
  * - signed in → POST /api/room-invites/{code}/join, then open the room (voice: connect);
  * - signed out → the code waits here; the auth screen shows the guest screen for it, and
  *   signing in (as a guest or with an account) completes the join.
@@ -76,6 +80,31 @@ export async function joinRoomLink(code: string): Promise<boolean> {
     log.warn('room link join failed', e);
     toast.error(roomLinkError(e));
     return false;
+  }
+}
+
+/**
+ * «Пригласить в комнату» under my voice room (docs/09 #48): copies a room link — an existing
+ * usable one, else a new one with the server defaults (7 days, unlimited, guests may join and
+ * speak, ADR-0016). Needs MANAGE_ROOM (listing and creating links is server-checked); the row is
+ * shown only with it.
+ */
+export async function copyRoomInviteLink(roomId: string): Promise<void> {
+  try {
+    const list = await api.roomInvites.list(roomId);
+    let invite = reusableInvite(list.invites, Date.now());
+    if (!invite) {
+      invite = (await api.roomInvites.create(roomId, {})).invite ?? null;
+      void queryClient.invalidateQueries({ queryKey: ['roomInvites', roomId] });
+    }
+    if (!invite) throw new Error('no invite in the answer');
+    const link = roomInviteUrl(useSession.getState().serverUrl, invite.code); // https only (docs/09 #53)
+    if (!link) throw new Error('no server URL for the room link');
+    await navigator.clipboard.writeText(link);
+    toast.success(t('people.link.copied'));
+  } catch (e) {
+    log.warn('room invite copy failed', e);
+    toast.error(roomLinkError(e));
   }
 }
 

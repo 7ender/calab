@@ -33,6 +33,16 @@ export const ruChat = {
   'chat.react': 'Реакции',
   'chat.pin': 'Закрепить',
   'chat.unpin': 'Открепить',
+  // hover action bar (docs/09 #47)
+  'chat.actions': 'Действия',
+  'chat.reactWith': 'Реакция {emoji}',
+  'chat.addReaction': 'Добавить реакцию',
+  'chat.more': 'Ещё…',
+  // link previews (docs/09 #51)
+  'chat.embedHide': 'Скрыть превью',
+  'chat.embedShow': 'Показать превью',
+  'chat.embedHideFailed': 'Не удалось скрыть превью',
+  'chat.embedShowFailed': 'Не удалось показать превью',
   // composer
   'chat.placeholderIn': 'Сообщение в {room}',
   'chat.attachImage': 'Изображение',
@@ -87,6 +97,8 @@ export const ruChat = {
   'chat.searchOlder': 'Предыдущее совпадение',
   'chat.searchNewer': 'Следующее совпадение',
   'chat.searchClose': 'Закрыть поиск',
+  // header search field (docs/09 #50): the entry to the ⌘K search
+  'chat.searchWorkspace': 'Поиск: {name}',
   // global search (⌘K)
   'search.title': 'Поиск',
   'search.hint': 'Комнаты, участники и сообщения; стрелки — выбор, Enter — открыть',

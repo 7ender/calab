@@ -32,12 +32,14 @@ import { RateTracker, candidatePair, inboundAudio, inboundVideo, outboundAudio, 
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
 import { SpeakingDebouncer } from '../lib/speaking';
+import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
 import { canSpeakFrom, isDeviceGone, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { setVoice, useVoice, type RemoteStream, type StreamQuality } from '../stores/voice';
 import { platform } from '../platform';
+import { announceDeviceSwitch } from './deviceToast';
 import { humanMediaError, reportMediaError } from './mediaErrors';
 import { sameBinding } from './profile';
 
@@ -121,7 +123,11 @@ class VoiceEngine {
   init(): void {
     platform.ptt.onEvent((ev) => this.onPtt(ev));
     // mediaDevices is missing on insecure origins (web over plain http).
-    (navigator.mediaDevices as MediaDevices | undefined)?.addEventListener('devicechange', () => void this.onDevicesChanged());
+    (navigator.mediaDevices as MediaDevices | undefined)?.addEventListener('devicechange', () => {
+      this.snapshotDevices(true);
+      void this.onDevicesChanged();
+    });
+    this.snapshotDevices(false);
     this.gate.configure({ thresholdDb: prefs().thresholdDb });
     usePrefs.subscribe((s, p) => this.onPrefs(s, p));
     void this.syncPttBinding();
@@ -610,6 +616,36 @@ class VoiceEngine {
   private micOps: Promise<void> = Promise.resolve();
   /** Capturing the default device because the chosen one is gone (review M3). */
   private micFallback = false;
+  /** The capture ended because the device went away: the device-switch toast tells the user. */
+  private micLost = false;
+  /** Last audio device list (docs/09 #49): diffed on `devicechange` to tell OS switches apart. */
+  private devices: AudioDevice[] | null = null;
+  private devicesOps: Promise<void> = Promise.resolve();
+
+  /**
+   * Re-reads the audio device list; with `announce`, toasts what the OS switched in a call
+   * («Микрофон: AirPods»). Snapshots run in order, each diffed against the one before.
+   */
+  private snapshotDevices(announce: boolean, onlyUnlabelled = false): void {
+    const md = navigator.mediaDevices as MediaDevices | undefined;
+    if (!md) return;
+    this.devicesOps = this.devicesOps.then(async () => {
+      // Label refresh only: a full re-read here could swallow a switch the pending
+      // `devicechange` is about to announce.
+      if (onlyUnlabelled && this.devices?.every((d) => d.label)) return;
+      let next: AudioDevice[];
+      try {
+        next = audioDevices(await md.enumerateDevices());
+      } catch {
+        return;
+      }
+      const prev = this.devices;
+      this.devices = next;
+      if (!announce || !prev || !this.roomId) return;
+      const p = prefs();
+      for (const sw of deviceSwitches(prev, next, { micDeviceId: p.micDeviceId, outputDeviceId: p.outputDeviceId })) announceDeviceSwitch(sw);
+    });
+  }
 
   private queueMic(op: () => Promise<void>): Promise<void> {
     const run = this.micOps.then(op);
@@ -661,9 +697,16 @@ class VoiceEngine {
       if (!p.micDeviceId || !isDeviceGone(err)) throw err;
       log.warn('chosen mic unavailable, using the default device', err);
       built = await MicPipeline.start({ ...opts, deviceId: null });
-      if (!this.micFallback) toast.info(t('core.mic.fallback'));
+      // Unplugged during a call: «Микрофон: <default device>» (docs/09 #49; the `devicechange`
+      // diff raises the same toast, deduplicated); otherwise the generic notice.
+      const label = deviceName(built.deviceLabel);
+      if (this.micLost && this.roomId && label) announceDeviceSwitch({ kind: 'input', label });
+      else if (!this.micFallback) toast.info(t('core.mic.fallback'));
       this.micFallback = true;
     }
+    this.micLost = false;
+    // Capture permission reveals device labels: the list the next change is diffed against needs them.
+    this.snapshotDevices(false, true);
     this.gate.reset();
     setVoice({ micError: null, micErrorAction: null });
     return built;
@@ -671,6 +714,7 @@ class VoiceEngine {
 
   private onMicLost(): void {
     log.warn('mic capture ended (device lost?), restarting');
+    this.micLost = true;
     void this.restartMic();
   }
 
@@ -685,7 +729,8 @@ class VoiceEngine {
       return;
     }
     await this.restartMic();
-    if (!this.usingFallback()) toast.info(t('core.mic.back'));
+    // In a call the device-switch toast («Микрофон: <chosen>») announces it.
+    if (!this.usingFallback() && !this.roomId) toast.info(t('core.mic.back'));
   }
 
   private usingFallback(): boolean {

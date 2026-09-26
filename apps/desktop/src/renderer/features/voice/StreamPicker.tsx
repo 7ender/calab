@@ -32,7 +32,7 @@ function InlineTip({ label, children }: { label: string; children: ReactNode }):
         side="top"
         sideOffset={6}
         collisionPadding={8}
-        className="mat-popover anim-in z-[var(--z-popover)] max-w-72 rounded-[var(--radius-control)] px-2 py-1 text-[12px] text-fg"
+        className="mat-popover anim-in z-[var(--z-popover)] max-w-72 rounded-[var(--radius-row)] px-2 py-1 text-[12px] text-fg"
       >
         {label}
       </TooltipP.Content>
@@ -64,7 +64,7 @@ function QualitySegment({
               if (!o.disabledReason) onChange(o.preset);
             }}
             className={cx(
-              'h-6 rounded-[5px] px-2.5 text-[12px] font-medium transition-colors duration-[var(--motion-fast)]',
+              'h-6 rounded-full px-2.5 text-[12px] font-medium transition-colors duration-[var(--motion-fast)]',
               value === o.preset ? 'bg-elev text-fg shadow-[var(--shadow-card)]' : o.disabledReason ? 'cursor-default text-faint' : 'text-fg hover:bg-[var(--color-fill)]',
             )}
           >
@@ -100,9 +100,9 @@ function SourceCard({ source, selected, onSelect, onStart }: { source: CaptureSo
         aria-label={source.name}
         onClick={onSelect}
         onDoubleClick={onStart}
-        className="flex w-full flex-col gap-1.5 rounded-[var(--radius-control)] text-left"
+        className="flex w-full flex-col gap-1.5 rounded-[var(--radius-row)] text-left"
       >
-        <span className="grid aspect-video w-full place-items-center overflow-hidden rounded-[var(--radius-control)] bg-[var(--color-video-bg)]">
+        <span className="grid aspect-video w-full place-items-center overflow-hidden rounded-[var(--radius-row)] bg-[var(--color-video-bg)]">
           {source.thumbnail ? (
             <img src={source.thumbnail} alt="" draggable={false} className="size-full object-contain" />
           ) : (
@@ -121,7 +121,7 @@ function SourceCard({ source, selected, onSelect, onStart }: { source: CaptureSo
         </span>
       </button>
       {/* Over the preview; the card button stays the click target around it. */}
-      <div className="pointer-events-none absolute inset-x-1.5 top-1.5 grid aspect-video place-items-center rounded-[var(--radius-control)] bg-black/45 opacity-0 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 group-hover:opacity-100">
+      <div className="pointer-events-none absolute inset-x-1.5 top-1.5 grid aspect-video place-items-center rounded-[var(--radius-row)] bg-black/45 opacity-0 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 group-hover:opacity-100">
         <Button size="lg" className="pointer-events-auto" aria-label={t('streamPick.streamSource', { name: source.name })} onClick={onStart}>
           <MonitorUp className="size-4" aria-hidden />
           {t('streamPick.stream')}
@@ -224,7 +224,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
                 />
               )}
               <DialogP.Close
-                className="-mr-1 grid size-7 shrink-0 place-items-center justify-self-end rounded-[var(--radius-control)] text-muted hover:bg-hover hover:text-fg"
+                className="-mr-1 grid size-7 shrink-0 place-items-center justify-self-end rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg"
                 aria-label={t('streamPick.close')}
               >
                 <X className="size-4" aria-hidden />
@@ -232,7 +232,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
             </div>
 
             {denied && !web ? (
-              <div className="mx-5 mb-3 flex items-center gap-3 rounded-[var(--radius-control)] bg-mention px-3 py-2 text-[13px]" role="alert">
+              <div className="mx-5 mb-3 flex items-center gap-3 rounded-[var(--radius-row)] bg-mention px-3 py-2 text-[13px]" role="alert">
                 <TriangleAlert className="size-4 shrink-0 text-warn" aria-hidden />
                 <span className="min-w-0 flex-1">{t('stream.noScreenAccess')}</span>
                 <Button size="sm" variant="secondary" onClick={() => void platform.system.openPrivacySettings('screen')}>
@@ -266,7 +266,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
 
             <div className="flex flex-col gap-3 border-t border-line px-5 py-3">
               {systemAudio && loopback === 'experimental' ? (
-                <p className="flex items-start gap-2 rounded-[var(--radius-control)] bg-mention px-3 py-2 text-[12px]" role="note">
+                <p className="flex items-start gap-2 rounded-[var(--radius-row)] bg-mention px-3 py-2 text-[12px]" role="note">
                   <TriangleAlert className="mt-px size-4 shrink-0 text-warn" aria-hidden />
                   {t('stream.systemAudioMac')}
                 </p>
@@ -304,7 +304,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
                   aria-expanded={advanced}
                   onClick={() => setAdvanced(!advanced)}
                   className={cx(
-                    'ml-auto grid size-7 place-items-center rounded-[var(--radius-control)] transition-colors duration-[var(--motion-fast)]',
+                    'ml-auto grid size-7 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)]',
                     advanced ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
                   )}
                 >

@@ -24,10 +24,28 @@ const GROUP_ICONS: Record<string, LucideIcon> = {
  * Lightweight emoji picker (no dependency): search by name, recent, 8 groups with a tab row.
  * Arrow keys move inside the grid (roving focus), Enter picks, Esc closes.
  */
-export function EmojiPicker({ onPick, label, children }: { onPick: (emoji: string) => void; label: string; children: ReactNode }): ReactNode {
+export function EmojiPicker({
+  onPick,
+  label,
+  children,
+  onOpenChange,
+  closeOnPick = false,
+}: {
+  onPick: (emoji: string) => void;
+  label: string;
+  children: ReactNode;
+  /** Lets a host that shows the trigger only on hover keep it while the picker is open. */
+  onOpenChange?: (open: boolean) => void;
+  /** Reactions pick one emoji; the composer keeps the picker open for several. */
+  closeOnPick?: boolean;
+}): ReactNode {
   const [open, setOpen] = useState(false);
+  const change = (v: boolean): void => {
+    setOpen(v);
+    onOpenChange?.(v);
+  };
   return (
-    <Popover.Root open={open} onOpenChange={setOpen} modal={false}>
+    <Popover.Root open={open} onOpenChange={change} modal={false}>
       <Tip label={label}>
         <Popover.Trigger asChild>{children}</Popover.Trigger>
       </Tip>
@@ -45,6 +63,7 @@ export function EmojiPicker({ onPick, label, children }: { onPick: (emoji: strin
             onPick={(e) => {
               useChatView.getState().pushRecent(e);
               onPick(e);
+              if (closeOnPick) change(false);
             }}
           />
         </Popover.Content>
@@ -121,7 +140,7 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
                   tabIndex={s === sections[0] && i === 0 ? 0 : -1}
                   onClick={() => onPick(e)}
                   aria-label={e}
-                  className="grid h-9 w-full min-w-0 place-items-center rounded-[var(--radius-control)] text-[22px] leading-none hover:bg-hover focus-visible:bg-hover focus-visible:outline-offset-[-2px]"
+                  className="grid h-9 w-full min-w-0 place-items-center rounded-[var(--radius-row)] text-[22px] leading-none hover:bg-hover focus-visible:bg-hover focus-visible:outline-offset-[-2px]"
                 >
                   {e}
                 </button>
@@ -166,7 +185,7 @@ function GroupTab({ label, active, onClick, children }: { label: string; active:
         aria-current={active || undefined}
         onClick={onClick}
         className={cx(
-          'relative grid size-8 place-items-center rounded-[var(--radius-control)] hover:bg-hover hover:text-fg',
+          'relative grid size-8 place-items-center rounded-[var(--radius-icon)] hover:bg-hover hover:text-fg',
           active ? 'text-accent' : 'text-muted',
         )}
       >

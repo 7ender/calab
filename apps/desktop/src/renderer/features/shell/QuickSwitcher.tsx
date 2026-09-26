@@ -30,12 +30,12 @@ const MAX_MEMBERS = 5;
  * ⌘/Ctrl+K — global search (docs/09 #3): rooms of every workspace, members and messages of the
  * active one (server FTS). Choosing a member filters messages by that author.
  */
-export function QuickSwitcher({ onClose }: { onClose: () => void }): ReactNode {
+export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => void; initialQuery?: string }): ReactNode {
   const rooms = useRooms((s) => s.byId);
   const workspaces = useWorkspaces((s) => s.byId);
   const activeWs = useUi((s) => s.activeWorkspaceId);
   const openRoom = useUi((s) => s.openRoom);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(initialQuery);
   const [author, setAuthor] = useState<WorkspaceMember | null>(null);
   const [sel, setSel] = useState(0);
   // Server results tagged with the request they answer (no state reset inside effects).
@@ -157,6 +157,8 @@ export function QuickSwitcher({ onClose }: { onClose: () => void }): ReactNode {
             ) : null}
             <input
               autoFocus
+              // Pre-filled from the header field: the caret goes after the typed text.
+              onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
               value={q}
               onChange={(e) => {
                 setQ(e.target.value);
@@ -193,7 +195,7 @@ export function QuickSwitcher({ onClose }: { onClose: () => void }): ReactNode {
                   onMouseMove={() => i !== cur && setSel(i)}
                   onClick={() => go(i)}
                   className={cx(
-                    'flex w-full cursor-default items-center gap-2 rounded-[var(--radius-control)] px-3 text-left text-body',
+                    'flex w-full cursor-default items-center gap-2 rounded-[var(--radius-row)] px-3 text-left text-body',
                     it.kind === 'message' ? 'py-1.5' : 'h-9',
                     i === cur ? 'bg-accent-strong text-accent-fg' : 'text-fg',
                   )}

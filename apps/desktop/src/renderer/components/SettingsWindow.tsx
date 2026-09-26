@@ -231,7 +231,7 @@ export function SettingsWindow({
                           onClick={() => openSection(s.id)}
                           aria-current={tab === s.id && !hit ? 'true' : undefined}
                           className={cx(
-                            'flex h-8 items-center gap-2.5 rounded-[var(--radius-control)] px-2 text-left text-body hover:bg-hover',
+                            'flex h-8 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover',
                             tab === s.id && !hit ? 'bg-active' : '',
                             s.destructive ? 'text-danger-text' : 'text-fg',
                           )}
@@ -247,7 +247,7 @@ export function SettingsWindow({
                             aria-current={hit === r.key ? 'true' : undefined}
                             title={r.hint ? `${r.label}\n${r.hint}` : r.label}
                             className={cx(
-                              'flex min-h-7 flex-col justify-center rounded-[var(--radius-control)] py-1 pl-[34px] pr-2 text-left text-body text-muted hover:bg-hover hover:text-fg',
+                              'flex min-h-7 flex-col justify-center rounded-[var(--radius-row)] py-1 pl-[34px] pr-2 text-left text-body text-muted hover:bg-hover hover:text-fg',
                               hit === r.key ? 'bg-active text-fg' : '',
                             )}
                           >
@@ -273,7 +273,7 @@ export function SettingsWindow({
                       key={s.id}
                       value={s.id}
                       className={cx(
-                        'flex h-8 shrink-0 items-center gap-2.5 rounded-[var(--radius-control)] px-2 text-left text-body',
+                        'flex h-8 shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body',
                         'hover:bg-hover data-[state=active]:bg-accent-strong data-[state=active]:text-accent-fg data-[state=active]:hover:bg-accent-strong',
                         s.destructive ? 'text-danger-text' : 'text-fg',
                       )}
@@ -320,7 +320,7 @@ export function SettingsAction({ label, icon: Icon, onClick, destructive }: { la
     <button
       type="button"
       onClick={onClick}
-      className={cx('flex h-8 items-center gap-2.5 rounded-[var(--radius-control)] px-2 text-left text-body hover:bg-hover', destructive ? 'text-danger-text' : 'text-fg')}
+      className={cx('flex h-8 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover', destructive ? 'text-danger-text' : 'text-fg')}
     >
       <Icon className="size-4 shrink-0" aria-hidden />
       {label}

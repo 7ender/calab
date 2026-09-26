@@ -12,14 +12,15 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 import { MicMeter } from '../settings/AppSettingsDialog';
-import { PttBinder } from '../settings/PttBinder';
+import { PttBinder, bindingLabel } from '../settings/PttBinder';
 
 /**
- * First run (docs/08 «Онбординг», docs/09 #20): one card per step — an icon illustration, a
- * title, one sentence of «why», the step's controls, and Setup-Assistant actions (Назад on the
- * left, «Позже» + the primary action on the right). The card top is anchored and its height
- * has a floor, so the progress dots never jump between steps. Everything is skippable; each
- * permission is requested at the step that needs it.
+ * First run (docs/08 «Онбординг», docs/09 #20, #55): one card per step — an icon illustration, a
+ * title, one sentence of «why», the step's body, and Setup-Assistant actions (Назад on the left,
+ * «Позже» + the primary action on the right). Three zones inside a card of one height: the
+ * header is anchored at the top (titles at the same height on every step), the footer at the
+ * bottom (buttons too), and the body is centred between them — every step has one, so no step
+ * shows an empty card. Everything is skippable; each permission is asked at its step.
  */
 type Step = 'mic' | 'mode' | 'screen' | 'notifications' | 'done';
 
@@ -66,7 +67,7 @@ export function Onboarding(): ReactNode {
             />
           ))}
         </ol>
-        <div className="flex flex-col [@media(min-height:700px)]:min-h-[500px]" data-onb-card>
+        <div className="flex flex-col [@media(min-height:600px)]:min-h-[488px]" data-onb-card>
           {step === 'mic' ? <MicStep nav={nav} onResult={setMicChecked} /> : null}
           {step === 'mode' ? <ModeStep nav={nav} /> : null}
           {step === 'screen' ? <ScreenStep nav={nav} /> : null}
@@ -104,14 +105,21 @@ function StepFrame({
   back: (() => void) | null;
 }): ReactNode {
   return (
-    <section className="mat-popover flex min-h-[300px] flex-1 flex-col gap-5 rounded-[var(--radius-panel)] p-6">
-      <div className="flex flex-col items-center gap-3 text-center">
+    <section className="mat-popover flex min-h-[300px] flex-1 flex-col rounded-[var(--radius-panel)] p-6">
+      <div className="flex shrink-0 flex-col items-center gap-3 text-center" data-onb-head>
         {illustration}
         <h1 className="text-large font-semibold">{title}</h1>
         <p className="max-w-[420px] text-body text-muted">{text}</p>
       </div>
-      {children}
-      <div className="mt-auto flex items-center gap-2 pt-1">
+      {/* Symmetric padding: the body's centre is the centre of the space between header and footer. */}
+      <div className="flex min-h-10 flex-1 flex-col justify-center py-5" data-onb-area>
+        {children ? (
+          <div className="flex flex-col gap-3" data-onb-body>
+            {children}
+          </div>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-2" data-onb-footer>
         {back ? (
           <Button variant="ghost" size="lg" onClick={back}>
             {t('onb.back')}
@@ -199,6 +207,7 @@ function MicStep({ nav, onResult }: { nav: Nav; onResult: (checked: boolean) => 
         </>
       }
     >
+      {state === 'idle' || state === 'asking' ? <MicPreview /> : null}
       {ok ? (
         <div className="flex flex-col gap-3">
           <Select aria-label={t('voice.input')} value={micId ?? ''} onChange={(e) => setPrefs({ micDeviceId: e.target.value || null })}>
@@ -347,6 +356,7 @@ function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
         </>
       }
     >
+      <NotificationSample />
       {denied ? <WarnNote>{platform.kind === 'web' ? t('onb.notifDeniedWeb') : t('onb.notifDenied')}</WarnNote> : null}
     </StepFrame>
   );
@@ -355,6 +365,7 @@ function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
 function DoneStep({ nav, onFinish, micChecked }: { nav: Nav; onFinish: () => void; micChecked: boolean }): ReactNode {
   const hasWs = useWorkspaces((s) => s.order.length > 0);
   const open = useUi((s) => s.openDialog);
+  const summary = useSetupSummary(micChecked);
   return (
     <StepFrame
       illustration={<Logo size={64} />}
@@ -390,6 +401,102 @@ function DoneStep({ nav, onFinish, micChecked }: { nav: Nav; onFinish: () => voi
           </>
         )
       }
-    />
+    >
+      <dl className="mx-auto w-full max-w-[380px] divide-y divide-[var(--color-card-line)] overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)] text-body" data-testid="onboarding-summary">
+        {summary.map((r) => (
+          <div key={r.label} className="flex items-center justify-between gap-4 px-3 py-2">
+            <dt className="shrink-0 text-muted">{r.label}</dt>
+            <dd className={cx('min-w-0 truncate text-right', r.pending ? 'text-muted' : 'text-fg')} title={r.value}>
+              {r.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </StepFrame>
+  );
+}
+
+interface SummaryRow {
+  label: string;
+  value: string;
+  /** Skipped / not set: muted. */
+  pending: boolean;
+}
+
+/** «Всё готово»: what the user actually set up (docs/09 #55) — device, mode, screen, notifications. */
+function useSetupSummary(micChecked: boolean): SummaryRow[] {
+  const micId = usePrefs((s) => s.micDeviceId);
+  const mode = usePrefs((s) => s.micMode);
+  const binding = usePrefs((s) => s.pttBinding);
+  const notifyMentions = usePrefs((s) => s.notifyMentions);
+  const os = useSession((s) => s.appInfo?.platform) ?? '';
+  const mac = useIsMacDesktop();
+  const [micLabel, setMicLabel] = useState<string | null>(null);
+  const [screen, setScreen] = useState<PermissionStatus['screen'] | null>(null);
+  useEffect(() => {
+    if (!micChecked || !micId) return;
+    void navigator.mediaDevices
+      .enumerateDevices()
+      .then((ds) => setMicLabel(ds.find((d) => d.kind === 'audioinput' && d.deviceId === micId)?.label || null))
+      .catch(() => undefined);
+  }, [micChecked, micId]);
+  useEffect(() => {
+    if (mac) void platform.system.permissions().then((p) => setScreen(p.screen));
+  }, [mac]);
+  const notifOn = notifyMentions && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  const rows: SummaryRow[] = [
+    {
+      label: t('onb.sumMic'),
+      value: micChecked ? (micLabel ?? t('voice.defaultDevice')) : t('onb.sumMicSkipped'),
+      pending: !micChecked,
+    },
+    {
+      label: t('onb.sumMode'),
+      value: mode === 'ptt' ? `${t('voice.modePtt')} · ${binding ? bindingLabel(binding, os) : t('onb.sumNoKey')}` : t('voice.modeVad'),
+      pending: mode === 'ptt' && !binding,
+    },
+  ];
+  if (mac) rows.push({ label: t('onb.sumScreen'), value: screen === 'granted' ? t('onb.sumAllowed') : t('onb.sumLater'), pending: screen !== 'granted' });
+  rows.push({ label: t('onb.sumNotif'), value: notifOn ? t('onb.sumOn') : t('onb.sumLater'), pending: !notifOn });
+  return rows;
+}
+
+/** Before the mic is allowed: the device picker and the level track the next state will fill. */
+function MicPreview(): ReactNode {
+  return (
+    <>
+      <div className="flex flex-col gap-3" aria-hidden>
+        <Select disabled value="" onChange={() => undefined} tabIndex={-1}>
+          <option value="">{t('voice.defaultDevice')}</option>
+        </Select>
+        <div className="relative h-3 w-full">
+          <div className="absolute inset-x-0 top-[3px] h-1.5 rounded-[3px] bg-[var(--color-fill-hover)]" />
+        </div>
+      </div>
+      <p className="text-center text-caption text-muted">{t('onb.micPreview')}</p>
+    </>
+  );
+}
+
+/** What a mention notification will look like (illustration, not a real notification). */
+function NotificationSample(): ReactNode {
+  return (
+    <>
+      <div
+        className="mx-auto flex w-full max-w-[360px] items-start gap-3 rounded-[var(--radius-card)] bg-[var(--color-card)] p-3 text-left shadow-[var(--shadow-card)]"
+        aria-hidden
+      >
+        <Logo size={32} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center justify-between gap-2 text-caption">
+            <span className="font-semibold text-fg">Calab</span>
+            <span className="text-muted">{t('onb.notifSampleWhen')}</span>
+          </div>
+          <span className="truncate text-body font-medium text-fg">{t('onb.notifSampleFrom')}</span>
+          <span className="truncate text-body text-muted">{t('onb.notifSampleText')}</span>
+        </div>
+      </div>
+      <p className="text-center text-caption text-muted">{t('onb.notifSample')}</p>
+    </>
   );
 }

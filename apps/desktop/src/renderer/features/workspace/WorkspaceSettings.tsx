@@ -271,8 +271,9 @@ const EXPIRY = [
   { s: 7 * 86400, key: 'invite.week' },
 ] as const;
 
+/** Always https (docs/09 #53); without a known server — the bare code (the join dialog accepts it). */
 function inviteLink(i: Invite): string {
-  return inviteUrl(useSession.getState().serverUrl, i.code);
+  return inviteUrl(useSession.getState().serverUrl, i.code) ?? i.code;
 }
 
 function InvitesTab({ workspaceId }: { workspaceId: string }): ReactNode {

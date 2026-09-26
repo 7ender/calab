@@ -62,7 +62,7 @@ function QualityButton(): ReactNode {
         <button
           type="button"
           aria-label={`${t('quality.title')}: ${t(Q_LABEL[q])}`}
-          className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] transition-colors duration-[var(--motion-fast)] hover:bg-hover"
+          className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover"
         >
           <SignalBars lit={Q_BARS[q]} className={phase === 'connected' ? Q_COLOR[q] : 'text-warn'} />
         </button>
@@ -187,7 +187,7 @@ export function VoiceBar(): ReactNode {
             type="button"
             aria-label={t('voice.leave')}
             onClick={() => void voice.leave()}
-            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] text-danger transition-colors duration-[var(--motion-fast)] hover:bg-[color-mix(in_srgb,var(--color-danger)_14%,transparent)]"
+            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-danger transition-colors duration-[var(--motion-fast)] hover:bg-[color-mix(in_srgb,var(--color-danger)_14%,transparent)]"
           >
             <PhoneOff className="size-[18px]" aria-hidden />
           </button>
@@ -196,7 +196,7 @@ export function VoiceBar(): ReactNode {
 
       {phase === 'reconnecting' ? (
         // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it back.
-        <div className="mt-1.5 flex items-start gap-2 rounded-[var(--radius-control)] bg-mention px-2 py-1.5 text-[12px]" role="status" data-testid="voice-reconnecting">
+        <div className="mt-1.5 flex items-start gap-2 rounded-[var(--radius-row)] bg-mention px-2 py-1.5 text-[12px]" role="status" data-testid="voice-reconnecting">
           <WifiOff className="mt-px size-4 shrink-0 text-warn" aria-hidden />
           <span className="min-w-0 text-fg">{t('voiceUi.reconnectHint')}</span>
         </div>
@@ -247,7 +247,7 @@ export function VoiceBar(): ReactNode {
       </div>
 
       {myStream ? (
-        <div className="mt-2 flex items-center gap-2 rounded-[var(--radius-control)] bg-hover px-2 py-1.5 text-[12px]" data-testid="my-stream">
+        <div className="mt-2 flex items-center gap-2 rounded-[var(--radius-row)] bg-hover px-2 py-1.5 text-[12px]" data-testid="my-stream">
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white">{t('shell.live')}</span>

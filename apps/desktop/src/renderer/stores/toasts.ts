@@ -16,7 +16,7 @@ export const TOAST_MS = 6000;
 
 interface ToastState {
   items: Toast[];
-  push: (kind: Toast['kind'], text: string, action?: ToastAction) => number;
+  push: (kind: Toast['kind'], text: string, action?: ToastAction, durationMs?: number) => number;
   dismiss: (id: number) => void;
 }
 
@@ -24,8 +24,8 @@ let nextId = 1;
 
 export const useToasts = create<ToastState>()((set, get) => ({
   items: [],
-  push: (kind, text, action) => {
-    const items = pushToast(get().items, { id: nextId++, kind, text, ...(action ? { action } : {}) });
+  push: (kind, text, action, durationMs) => {
+    const items = pushToast(get().items, { id: nextId++, kind, text, ...(action ? { action } : {}), ...(durationMs ? { durationMs } : {}) });
     set({ items });
     return items[items.length - 1]?.id ?? 0;
   },

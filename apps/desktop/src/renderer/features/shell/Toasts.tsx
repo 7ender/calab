@@ -2,6 +2,8 @@ import { CircleAlert, CircleCheck, Info, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import type { DeviceSwitch } from '../../lib/deviceSwitch';
+import { announceDeviceSwitch } from '../../services/deviceToast';
 import { useSession } from '../../stores/session';
 import { isSticky, type Toast, type ToastAction } from '../../stores/toastQueue';
 import { TOAST_MS, useToasts } from '../../stores/toasts';
@@ -10,6 +12,8 @@ declare global {
   interface Window {
     /** Visual tests only (CALABA_VISUAL_TEST / ?visual-test): raise a toast without a real failure. */
     __calabaToast?: (kind: Toast['kind'], text: string, action?: ToastAction) => void;
+    /** Visual tests only: the «the OS switched the audio device» toast (docs/09 #49) without a real device change. */
+    __calabaDeviceToast?: (kind: DeviceSwitch['kind'], label: string) => void;
   }
 }
 
@@ -37,8 +41,10 @@ export function Toasts(): ReactNode {
   useEffect(() => {
     if (!visualTest) return;
     window.__calabaToast = (kind, text, action) => void useToasts.getState().push(kind, text, action);
+    window.__calabaDeviceToast = (kind, label) => announceDeviceSwitch({ kind, label });
     return () => {
       delete window.__calabaToast;
+      delete window.__calabaDeviceToast;
     };
   }, [visualTest]);
 
@@ -65,7 +71,7 @@ const ICON = { error: CircleAlert, success: CircleCheck, info: Info } as const;
 
 function ToastItem({ toast: x, paused }: { toast: Toast; paused: boolean }): ReactNode {
   const dismiss = useToasts((s) => s.dismiss);
-  const left = useRef(TOAST_MS);
+  const left = useRef(x.durationMs ?? TOAST_MS);
   const sticky = isSticky(x);
 
   useEffect(() => {
@@ -90,7 +96,7 @@ function ToastItem({ toast: x, paused }: { toast: Toast; paused: boolean }): Rea
           dismiss(x.id);
         }
       }}
-      className="mat-popover anim-in pointer-events-auto flex items-start gap-2.5 rounded-[var(--radius-card)] py-2.5 pl-3 pr-2 text-body text-fg"
+      className="mat-popover anim-in pointer-events-auto flex items-start gap-2.5 rounded-[var(--radius-control)] py-2.5 pl-4 pr-2.5 text-body text-fg"
     >
       <Icon className={cx('mt-0.5 size-4 shrink-0', x.kind === 'error' ? 'text-danger' : x.kind === 'success' ? 'text-ok' : 'text-accent')} aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">

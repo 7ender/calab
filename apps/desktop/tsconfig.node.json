@@ -22,6 +22,7 @@
     "vite.web.config.ts",
     "playwright.web.config.ts",
     "playwright.visual.config.ts",
+    "playwright.marketing.config.ts",
     "e2e-web/**/*",
     "scripts/*.ts"
   ]

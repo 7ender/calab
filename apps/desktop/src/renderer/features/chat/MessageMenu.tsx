@@ -1,12 +1,13 @@
 import type { PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Copy, CornerUpLeft, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Copy, CornerUpLeft, Link2, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { can } from '../../lib/permissions';
-import { deleteMessage, setPinned, toggleReaction } from '../../services/chat';
+import { firstLink, parseMarkdown } from '../../lib/markdown/parse';
+import { deleteMessage, setEmbedsHidden, setPinned, toggleReaction } from '../../services/chat';
 import type { ChatMessage } from '../../stores/messages';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -37,13 +38,15 @@ function menuPadding(): { top: number; right: number; bottom: number; left: numb
   return { top: 8, right: 8, left: 8, bottom: Math.max(8, window.innerHeight - top + 8) };
 }
 
-/** Right click / long press on a bubble (docs/09 #38). No hover toolbar. */
+/** Right click / long press on a bubble (docs/09 #38); also «Ещё…» of the hover bar (MessageActions.tsx). */
 export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: boolean; roomId: string; perms: PermissionBits }): ReactNode {
   const m = c.msg;
   const canSend = can(perms, 'SEND_MESSAGES');
   const canManage = can(perms, 'MANAGE_MESSAGES');
   const canDelete = own || canManage;
   const pinned = !!m.pinnedAt;
+  // A hidden link preview can be brought back by whoever may hide it (the menu renders only open).
+  const canShowEmbed = m.embedsHidden && (own || canManage) && !!firstLink(parseMarkdown(m.content));
 
   const copy = (): void => {
     const text = selectionWithin(c.key) || m.content;
@@ -94,6 +97,11 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
           <ContextMenu.Item className={menuItem} onSelect={() => void setPinned(m, !pinned)}>
             {pinned ? <PinOff className="size-4" aria-hidden /> : <Pin className="size-4" aria-hidden />}
             {pinned ? t('chat.unpin') : t('chat.pin')}
+          </ContextMenu.Item>
+        ) : null}
+        {canShowEmbed ? (
+          <ContextMenu.Item className={menuItem} onSelect={() => void setEmbedsHidden(m, false)}>
+            <Link2 className="size-4" aria-hidden /> {t('chat.embedShow')}
           </ContextMenu.Item>
         ) : null}
         {own ? (

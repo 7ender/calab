@@ -57,6 +57,7 @@ import { SelfPanel } from './SelfPanel';
 import { UpdateBanner } from './UpdateBanner';
 import { errorText } from '../../lib/api/errors';
 import { VoiceBar } from './VoiceBar';
+import { VoiceRoomRows } from './VoiceRoomRows';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
 
 export { menuBox, menuItem };
@@ -180,7 +181,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
         <Dropdown.Trigger asChild>
           <button
             type="button"
-            className="group flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] px-2 text-left text-list font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+            className="group flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-left text-list font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
             title={entry.ws.name}
           >
             <span className="min-w-0 flex-1 truncate">{entry.ws.name}</span>
@@ -236,7 +237,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
             type="button"
             aria-label={t('ws.invite')}
             onClick={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}
-            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
           >
             <UserPlus className="size-[18px]" aria-hidden />
           </button>
@@ -360,7 +361,7 @@ function CategoryGroup({
             type="button"
             onClick={() => open(kind ? { kind: 'room-create', workspaceId, voice: kind === 'voice' } : { kind: 'room-create', workspaceId, voice: false, categoryId: category.id })}
             aria-label={t('shell.roomCreateIn', { name: category.name })}
-            className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-control)] text-muted opacity-0 transition-opacity duration-[var(--motion-fast)] hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/cat:opacity-100"
+            className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 transition-opacity duration-[var(--motion-fast)] hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/cat:opacity-100"
           >
             <Plus className="size-4" aria-hidden />
           </button>
@@ -454,7 +455,7 @@ function CategoryDialog({ workspaceId, category, onClose }: { workspaceId: strin
 // ---------------------------------------------------------------- room rows
 
 /** Row shell shared by text and voice rooms: 34 px, hover background, unread pill, hover actions. */
-const rowBox = 'group/row relative flex h-[34px] items-center rounded-[var(--radius-control)] transition-colors duration-[var(--motion-fast)]';
+const rowBox = 'group/row relative flex h-[34px] items-center rounded-[var(--radius-row)] transition-colors duration-[var(--motion-fast)]';
 
 function UnreadPill({ show }: { show: boolean }): ReactNode {
   // A whole 4 × 8 pill just inside the column (a half-dot on the seam read as a glitch).
@@ -544,7 +545,7 @@ function TextRoomRow({ room, workspaceId, me, role, admin }: { room: Room; works
           onClick={() => openRoom(workspaceId, room.id)}
           aria-current={active ? 'page' : undefined}
           className={cx(
-            'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] pl-2 pr-1 text-left text-list leading-5',
+            'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pl-2 pr-1 text-left text-list leading-5',
             bright ? 'text-fg' : 'text-muted group-hover/row:text-fg',
             unread && !active && 'font-semibold',
           )}
@@ -625,7 +626,7 @@ function VoiceRoomRow({
             aria-current={active ? 'page' : undefined}
             title={canConnect ? undefined : t('voice.noConnect')}
             className={cx(
-              'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] pl-2 pr-1 text-left text-list leading-5',
+              'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pl-2 pr-1 text-left text-list leading-5',
               active || unread || inRoom ? 'text-fg' : 'text-muted group-hover/row:text-fg',
               unread && !active && 'font-semibold',
             )}
@@ -648,7 +649,7 @@ function VoiceRoomRow({
               {limit > 0 ? (
                 <span
                   className={cx(
-                    'rounded-[4px] bg-hover px-1 text-micro font-medium tabular-nums leading-4',
+                    'rounded-full bg-hover px-1.5 text-micro font-medium tabular-nums leading-4',
                     people.length >= limit ? 'text-danger-text' : 'text-fg',
                   )}
                   aria-label={t('shell.userLimit', { n: people.length, max: limit })}
@@ -661,6 +662,7 @@ function VoiceRoomRow({
           </span>
         </div>
       </RoomMenu>
+      <VoiceRoomRows roomId={room.id} inRoom={inRoom} canConnect={canConnect} canManage={can(perms, 'MANAGE_ROOM')} />
       {people.length > 0 ? (
         <ul className="flex flex-col gap-px pb-1 pt-0.5" aria-label={room.name}>
           {people.map((v) => (
@@ -736,7 +738,7 @@ function VoiceMember({
         if (stream && inSameRoom) voice.watch(stream.trackSid);
       }}
       className={cx(
-        'group/member flex h-8 items-center gap-2 rounded-[var(--radius-control)] pl-7 pr-1.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+        'group/member flex h-8 items-center gap-2 rounded-[var(--radius-row)] pl-7 pr-1.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
         canMove ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}

@@ -93,6 +93,7 @@ import {
   RoomType,
   ScreenSharePreset,
   SessionSchema,
+  SetEmbedsHiddenRequestSchema,
   SetRoomPermissionsRequestSchema,
   SetRoomPermissionsResponseSchema,
   UpdateCategoryRequestSchema,
@@ -111,6 +112,7 @@ import {
   NotificationLevel,
   UpdateRoomRequestSchema,
   UpdateRoomResponseSchema,
+  UpdateVoiceStatusRequestSchema,
   UpdateStatusRequestSchema,
   UpdateVoiceSelfRequestSchema,
   UpdateWorkspaceRequestSchema,
@@ -846,8 +848,11 @@ class MockImpl {
       const r = rid ? this.state.rooms.get(rid) : undefined;
       if (!r) continue;
       const occupied = [...this.state.voiceStates.values()].some((x) => x.roomId === r.id);
-      if (!occupied && r.voiceStartedAt) r.voiceStartedAt = undefined;
-      else if (occupied && !r.voiceStartedAt) r.voiceStartedAt = tick(this.state);
+      // The call status (Room.voice_status) belongs to the call: cleared when the room empties.
+      if (!occupied && (r.voiceStartedAt || r.voiceStatus)) {
+        r.voiceStartedAt = undefined;
+        r.voiceStatus = '';
+      } else if (occupied && !r.voiceStartedAt) r.voiceStartedAt = tick(this.state);
       else continue;
       timers.push(r);
     }
@@ -1614,6 +1619,19 @@ class MockImpl {
       sendMsg(c.res, 200, UpdateMessageResponseSchema, { message: msg });
     });
 
+    // Hide / show the link previews of a message (author or MANAGE_MESSAGES); not an edit.
+    this.route('PUT', '/api/messages/:id/embeds-hidden', (c) => {
+      const me = this.uid(c);
+      const { room, list, index } = this.findMessage(c.params[0] ?? '');
+      if (!this.canView(room, me)) throw notFound('message not found');
+      const msg = list[index];
+      if (!msg) throw notFound('message not found');
+      if (msg.authorId !== me) this.requireRoomPerm(room, me, MANAGE_MESSAGES);
+      msg.embedsHidden = parseBody(c, SetEmbedsHiddenRequestSchema).hidden;
+      this.toWorkspace(room.workspaceId, { event: { case: 'messageUpdate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+      sendMsg(c.res, 200, UpdateMessageResponseSchema, { message: this.msgOut(msg, me) });
+    });
+
     this.route('DELETE', '/api/messages/:id', (c) => {
       const me = this.uid(c);
       const { room, list, index } = this.findMessage(c.params[0] ?? '');
@@ -1799,6 +1817,23 @@ class MockImpl {
     this.route('GET', '/api/files/:id/thumbnail', (c) => serveFile(c, true));
 
     // ---------------- voice
+    // Call status (docs/09 #48): a participant of the call (CONNECT + in the room now) or MANAGE_ROOM.
+    this.route('PATCH', '/api/rooms/:id/voice-status', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      if (room.type !== RoomType.VOICE) throw invalid('id', 'only voice rooms have a call status');
+      const b = parseBody(c, UpdateVoiceStatusRequestSchema);
+      const status = b.status.trim();
+      if (Array.from(status).length > 60) throw invalid('status', 'status must be at most 60 characters');
+      if (!has(this.perms(room, me), MANAGE_ROOM)) {
+        this.requireRoomPerm(room, me, CONNECT);
+        if (s().voiceStates.get(me)?.roomId !== room.id) throw forbidden('join the call to set its status (or MANAGE_ROOM)');
+      }
+      const before = create(RoomSchema, room);
+      room.voiceStatus = status;
+      this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
+      sendMsg(c.res, 200, UpdateRoomResponseSchema, { room });
+    });
     this.route('POST', '/api/rooms/:id/join', async (c) => {
       const { user, sessionId } = this.auth(c);
       const me = user.user.id;

@@ -33,11 +33,14 @@ const dateFmt = {
     }).format(d),
 };
 
-export const linkOf = (i: Pick<RoomInvite, 'code'>): string => roomInviteUrl(useSession.getState().serverUrl, i.code);
+/** Always https (docs/09 #53); '' only without a known server (nothing to copy then). */
+export const linkOf = (i: Pick<RoomInvite, 'code'>): string => roomInviteUrl(useSession.getState().serverUrl, i.code) ?? '';
 
 async function copy(i: RoomInvite, created = false): Promise<void> {
   try {
-    await navigator.clipboard.writeText(linkOf(i));
+    const link = linkOf(i);
+    if (!link) throw new Error('no server URL for the room link');
+    await navigator.clipboard.writeText(link);
     toast.success(created ? `${t('people.link.created')} · ${t('people.link.copied').toLowerCase()}` : t('people.link.copied'));
   } catch {
     if (created) toast.success(t('people.link.created'));

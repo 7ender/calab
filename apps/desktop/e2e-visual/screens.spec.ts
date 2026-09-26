@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { IDS } from '../e2e-support/mock-server';
 import { THEMES, VIEWPORTS, checkpoint, launch, login, settle, type Env, type Shot } from './harness';
 import { startPublisher } from './publisher';
@@ -22,6 +22,14 @@ async function everyTab(s: Shot, prefix: string): Promise<void> {
     await expect(tab).toHaveAttribute('data-state', 'active');
     await checkpoint(s, `${prefix}-${i + 1}`);
   }
+}
+
+/** Keyboard focus (matches :focus-visible, unlike a bare focus() after a click). */
+async function keyboardFocus(target: Locator): Promise<void> {
+  await target.focus();
+  await target.page().keyboard.press('Tab');
+  await target.page().keyboard.press('Shift+Tab');
+  await expect(target).toBeFocused();
 }
 
 async function closeDialog(page: Page): Promise<void> {
@@ -145,6 +153,20 @@ for (const theme of THEMES) {
         await checkpoint(s, 'quick-switcher-filtered');
         await closeDialog(page);
 
+        // ---- header search field (docs/09 #50): ≥ 1200 px only (960 keeps the icon); it is an
+        // entry to the same ⌘K search — typing opens the switcher with the text.
+        if (viewport.width >= 1200) {
+          const field = page.getByRole('searchbox', { name: 'Поиск: Команда Calab' });
+          await expect(field).toBeVisible();
+          await field.focus();
+          await checkpoint(s, 'chat-header-search');
+          await page.keyboard.type('р');
+          await expect(page.getByRole('dialog')).toBeVisible();
+          await page.keyboard.type('аз');
+          await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('раз');
+          await closeDialog(page);
+        }
+
         // ---- chat (docs/09 #36–#39): context menu, emoji picker, in-room search
         await page.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал' }).click({ button: 'right' });
         await expect(page.getByRole('menu')).toBeVisible();
@@ -159,6 +181,24 @@ for (const theme of THEMES) {
         await expect(page.getByText('1 из 3')).toBeVisible();
         await checkpoint(s, 'chat-search');
         await page.keyboard.press('Escape');
+
+        // ---- message action bar (docs/09 #47) and link preview (#51). checkpoint() parks the
+        // pointer, so both use keyboard focus (Tab / Shift+Tab: :focus-visible, like a real Tab
+        // walk); toBeVisible() passes at opacity 0 — check the opacity.
+        await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+        await settle(page);
+        await keyboardFocus(page.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал' }));
+        const actions = page.getByTestId('message-actions');
+        await expect(actions).toHaveCount(1);
+        await expect(actions).toHaveCSS('opacity', '1');
+        await expect(actions.getByRole('button', { name: 'Ответить' })).toBeVisible();
+        await checkpoint(s, 'chat-hover-actions');
+        // The owner has MANAGE_MESSAGES: «Скрыть превью» on Вера's preview (site colour bar on the left).
+        const hidePreview = page.getByTestId('link-preview-hide').first();
+        await keyboardFocus(hidePreview);
+        await expect(hidePreview).toHaveCSS('opacity', '1');
+        await checkpoint(s, 'chat-link-preview');
+        await page.keyboard.press('Escape'); // closes the focus tooltip
 
         // ---- mentions (docs/05): composer autocomplete, room notification menu
         const composer = page.getByPlaceholder('Сообщение в #общий');
@@ -276,6 +316,31 @@ for (const theme of THEMES) {
         // LiveKit's steady «good» instead of masking the indicator.
         await expect(page.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 15_000 });
 
+        // Rows under my voice room (docs/09 #48): «Задать статус комнаты ✎» → inline field
+        // (Enter saves, PATCH …/voice-status → ROOM_UPDATE), then the status and «Пригласить в комнату ›».
+        const sidebar = page.locator('aside').first();
+        const statusRow = sidebar.getByTestId('voice-status-row');
+        await expect(statusRow).toContainText('Задать статус комнаты');
+        await expect(sidebar.getByTestId('voice-invite-row')).toBeVisible();
+        await statusRow.click();
+        const statusInput = sidebar.getByTestId('voice-status-input');
+        await expect(statusInput).toBeFocused();
+        await statusInput.fill('Планёрка по релизу 0.2');
+        await checkpoint(s, 'voice-room-status-edit');
+        await statusInput.press('Enter');
+        await expect(statusRow).toContainText('Планёрка по релизу 0.2');
+        await expect(statusRow).toBeFocused(); // keyboard close returns focus to the row
+        await checkpoint(s, 'voice-room-status');
+
+        // The OS switched the audio device (docs/09 #49): green toast with «Изменить» (faked switch).
+        await page.evaluate(() => (window as unknown as { __calabaDeviceToast?: (k: string, l: string) => void }).__calabaDeviceToast?.('input', 'AirPods Pro'));
+        await expect(page.getByTestId('toast')).toHaveCount(1);
+        await expect(page.getByTestId('toast')).toContainText('Микрофон: AirPods Pro');
+        await checkpoint(s, 'toast-device');
+        await page.getByTestId('toast').getByRole('button', { name: 'Изменить' }).click();
+        await expect(page.getByRole('dialog').getByRole('tab', { name: 'Голос и устройства' })).toHaveAttribute('data-state', 'active');
+        await closeDialog(page);
+
         // Stream picker (docs/09 #13): synthetic sources from main (CALABA_VISUAL_TEST), no real screens.
         await page.getByRole('button', { name: 'Показать экран' }).first().click();
         await expect(page.getByTestId('stream-source').first()).toBeVisible();
@@ -368,6 +433,9 @@ interface OnbGeometry {
   dots: number;
   title: number;
   card: { top: number; bottom: number; height: number };
+  footer: number;
+  /** Body centre minus the centre of the space between header and footer (null: no body). */
+  bodyOffset: number | null;
   /** Gap above / below the whole composition inside the content area. */
   above: number;
   below: number;
@@ -389,6 +457,15 @@ async function onboardingGeometry(page: Page, step: string): Promise<OnbGeometry
       dots: Math.round(r(dots).top),
       title: Math.round(r(title).top),
       card: { top: Math.round(r(card).top), bottom: Math.round(r(card).bottom), height: Math.round(r(card).height) },
+      footer: Math.round(r(col.querySelector('[data-onb-footer]') ?? card).top),
+      bodyOffset: (() => {
+        const a = col.querySelector('[data-onb-area]');
+        const b = col.querySelector('[data-onb-body]');
+        if (!a || !b) return null;
+        const ra = r(a);
+        const rb = r(b);
+        return Math.round(rb.top + rb.height / 2 - (ra.top + ra.height / 2));
+      })(),
       above: Math.round(box.top - area.top),
       below: Math.round(area.bottom - box.bottom),
     };
@@ -396,18 +473,28 @@ async function onboardingGeometry(page: Page, step: string): Promise<OnbGeometry
 }
 
 /**
- * Owner's rule for onboarding: the composition is centred in the window, and on windows ≥ 700 px
+ * Owner's rule for onboarding: the composition is centred in the window, and on windows ≥ 600 px
  * tall the dots, the title and the card edges (Back/Continue sit on its bottom) stay put between
- * steps — the card is as tall as the tallest step (500 px) and no step outgrows it.
+ * steps — the card is as tall as the tallest step (488 px) and no step outgrows it.
  */
 function expectStableOnboarding(steps: OnbGeometry[], windowHeight: number): void {
-  for (const g of steps) expect(Math.abs(g.above - g.below), `onboarding centred: ${g.step}`).toBeLessThanOrEqual(2);
-  if (windowHeight < 700) return;
+  for (const g of steps) {
+    expect(Math.abs(g.above - g.below), `onboarding centred: ${g.step}`).toBeLessThanOrEqual(2);
+    // docs/09 #55: every step has a body, centred between the header and the footer.
+    expect(g.bodyOffset, `onboarding body present: ${g.step}`).not.toBeNull();
+    expect(Math.abs(g.bodyOffset ?? 99), `onboarding body centred: ${g.step}`).toBeLessThanOrEqual(4);
+  }
+  if (windowHeight < 600) return;
   const [first] = steps;
   if (!first) return;
   for (const g of steps) {
-    expect(g.card.height, `onboarding card height: ${g.step}`).toBe(500);
-    expect({ dots: g.dots, title: g.title, card: g.card }, `onboarding geometry: ${g.step}`).toEqual({ dots: first.dots, title: first.title, card: first.card });
+    expect(g.card.height, `onboarding card height: ${g.step}`).toBe(488);
+    expect({ dots: g.dots, title: g.title, card: g.card, footer: g.footer }, `onboarding geometry: ${g.step}`).toEqual({
+      dots: first.dots,
+      title: first.title,
+      card: first.card,
+      footer: first.footer,
+    });
   }
 }
 

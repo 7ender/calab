@@ -256,6 +256,40 @@ describe('mentions and room notifications (docs/05)', () => {
     gw.ws.close(1000);
     server.reset('data');
   });
+
+  it('voice status: a participant or MANAGE_ROOM sets it (≤ 60), ROOM_UPDATE fans out, cleared when the call empties', async () => {
+    const put = async (email: string, status: string): Promise<Response> =>
+      fetch(`${server.url}/api/rooms/${IDS.rooms.call}/voice-status`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${await login(email)}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+    const token = await login();
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } });
+    await gw.next((f) => dispatchOf(f)?.event.case === 'ready');
+    const roomUpdate = (): Promise<GatewayFrame> => gw.next((f) => dispatchOf(f)?.event.case === 'roomUpdate');
+
+    // A member outside the call cannot; inside it can.
+    expect((await put('grigory@calaba.test', 'Планёрка')).status).toBe(403);
+    server.setVoiceState({ userId: IDS.users.grigory, roomId: IDS.rooms.call });
+    await roomUpdate(); // call started
+    expect((await put('grigory@calaba.test', 'x'.repeat(61))).status).toBe(422);
+    const ok = await put('grigory@calaba.test', '  Планёрка  ');
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ room: { voiceStatus: 'Планёрка' } });
+    const set = dispatchOf(await roomUpdate())?.event;
+    expect(set?.case === 'roomUpdate' && set.value.room?.voiceStatus).toBe('Планёрка');
+
+    server.setVoiceState({ userId: IDS.users.grigory, roomId: '' });
+    const ended = dispatchOf(await roomUpdate())?.event;
+    expect(ended?.case === 'roomUpdate' && ended.value.room?.voiceStatus).toBe('');
+    // MANAGE_ROOM (the owner) may set it without being in the call.
+    expect((await put('owner@calaba.test', 'Скоро начнём')).status).toBe(200);
+    gw.ws.close(1000);
+    server.reset('data');
+  });
 });
 
 describe('room links and people (ADR-0016)', () => {
@@ -320,6 +354,28 @@ describe('password and email change (user.proto)', () => {
     const ok = await patch('/api/me/email', { newEmail: 'Boris.New@calaba.test', currentPassword: 'newpassword1' });
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as { me: { email: string } }).me.email).toBe('boris.new@calaba.test');
+    server.reset('data');
+  });
+});
+
+describe('link previews (docs/09 #51)', () => {
+  it('embeds-hidden: the author or MANAGE_MESSAGES toggles it; not an edit', async () => {
+    const msg = server.state.messages.get(IDS.rooms.general)?.find((m) => m.content.includes('https://calaba.test/docs/08-design'));
+    expect(msg?.authorId).toBe(IDS.users.vera);
+    const put = async (email: string, hidden: boolean): Promise<Response> =>
+      fetch(`${server.url}/api/messages/${msg?.id ?? ''}/embeds-hidden`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${await login(email)}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hidden }),
+      });
+    expect((await put('dina@calaba.test', true)).status).toBe(403); // a guest: no MANAGE_MESSAGES here
+    const own = await put('vera@calaba.test', true);
+    expect(own.status).toBe(200);
+    const body = (await own.json()) as { message: { embedsHidden: boolean; editedAt?: string } };
+    expect(body.message.embedsHidden).toBe(true);
+    expect(body.message.editedAt).toBeUndefined();
+    expect((await put('owner@calaba.test', false)).status).toBe(200);
+    expect(msg?.embedsHidden).toBe(false);
     server.reset('data');
   });
 });

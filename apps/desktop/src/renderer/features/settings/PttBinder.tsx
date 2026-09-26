@@ -105,7 +105,7 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
             aria-label={talking ? t('voice.pttLive') : t('voice.pttIdle')}
             title={talking ? t('voice.pttLive') : t('voice.pttIdle')}
           />
-          <kbd className="min-w-20 truncate rounded-[var(--radius-control)] border border-line bg-elev px-2 py-1 text-center font-sans text-caption">
+          <kbd className="min-w-20 truncate rounded-[var(--radius-row)] border border-line bg-elev px-2 py-1 text-center font-sans text-caption">
             {capturing ? t('voice.pttPress') : bindingLabel(b, os)}
           </kbd>
           <Button variant="secondary" busy={capturing} onClick={() => void bind()}>
@@ -116,7 +116,7 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
 
       {capturing ? <p className="text-caption text-muted">{t('voice.pttCaptureHint')}</p> : null}
 
-      {caps && toggle && !remapped ? <p className="rounded-[var(--radius-control)] bg-mention px-2 py-1.5 text-caption">{t('voice.pttCapsToggle')}</p> : null}
+      {caps && toggle && !remapped ? <p className="rounded-[var(--radius-row)] bg-mention px-2 py-1.5 text-caption">{t('voice.pttCapsToggle')}</p> : null}
       {toggle && !caps ? <p className="text-caption text-muted">{t('voice.pttToggleNote')}</p> : null}
       {mac && caps ? (
         <div className="flex items-center justify-between gap-3">
@@ -130,7 +130,7 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
 
       {status && !status.trusted ? (
         // A permission still to grant is a warning, not an error (UX review): yellow tint + ⚠︎.
-        <div className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] bg-mention px-2.5 py-2 text-caption text-fg" role="status">
+        <div className="flex items-center justify-between gap-3 rounded-[var(--radius-row)] bg-mention px-2.5 py-2 text-caption text-fg" role="status">
           <span className="flex items-start gap-2">
             <TriangleAlert className="mt-px size-4 shrink-0 text-warn" aria-hidden />
             {t('voice.pttNoAccess')}

@@ -62,7 +62,7 @@ export function SelfPanel(): ReactNode {
           <button
             type="button"
             aria-label={`${t('shell.profile')}: ${user.displayName}, ${cur ? t(cur.key) : ''}`}
-            className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] pl-1 pr-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+            className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-row)] pl-1 pr-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
           >
             <span className="relative shrink-0">
               <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} />
@@ -148,7 +148,7 @@ function SplitButton({
 }): ReactNode {
   return (
     // The ▾ appears on hover / keyboard focus (Discord-like), so the name keeps its width at rest.
-    <div className="group/split flex shrink-0 items-center rounded-[var(--radius-control)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
+    <div className="group/split flex shrink-0 items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
       <IconButton size="sm" label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="hover:bg-transparent group-hover/split:rounded-r-none">
         {children}
       </IconButton>
@@ -158,7 +158,7 @@ function SplitButton({
           <button
             type="button"
             aria-label={menuName}
-            className="grid h-7 w-0 place-items-center overflow-hidden rounded-r-[var(--radius-control)] text-muted opacity-0 transition-[width,opacity] duration-[var(--motion-fast)] hover:text-fg focus-visible:w-3.5 focus-visible:opacity-100 group-hover/split:w-3.5 group-hover/split:opacity-100 group-focus-within/split:w-3.5 group-focus-within/split:opacity-100 data-[state=open]:w-3.5 data-[state=open]:text-fg data-[state=open]:opacity-100"
+            className="grid h-7 w-0 place-items-center overflow-hidden rounded-r-[var(--radius-icon)] text-muted opacity-0 transition-[width,opacity] duration-[var(--motion-fast)] hover:text-fg focus-visible:w-3.5 focus-visible:opacity-100 group-hover/split:w-3.5 group-hover/split:opacity-100 group-focus-within/split:w-3.5 group-focus-within/split:opacity-100 data-[state=open]:w-3.5 data-[state=open]:text-fg data-[state=open]:opacity-100"
           >
             <ChevronDown className="size-3" strokeWidth={2.25} aria-hidden />
           </button>
