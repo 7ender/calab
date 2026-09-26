@@ -38,6 +38,8 @@ export const ruShell = {
   'shell.ownerCannotLeave': 'Владелец не может покинуть пространство',
   'shell.invite': 'Пригласить',
   'shell.inviteTo': 'Пригласить в «{name}»',
+  'shell.roomChat': 'Чат комнаты',
+  'shell.roomChatOf': 'Чат комнаты «{name}»',
   'shell.roomSettingsOf': 'Настроить «{name}»',
   // voice room rows under the room I am in (docs/09 #48)
   'shell.voiceStatus.label': 'Статус комнаты',

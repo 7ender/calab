@@ -15,6 +15,7 @@ import { useWorkspaces } from '../../stores/workspaces';
 import { ChatPane } from '../chat/ChatPane';
 import { Onboarding } from '../onboarding/Onboarding';
 import { MembersPanel } from './MembersPanel';
+import { BottomIsland } from './BottomIsland';
 import { Sidebar } from './Sidebar';
 import { TitleBar } from './TitleBar';
 import { WorkspaceRail } from './WorkspaceRail';
@@ -55,7 +56,7 @@ export function AppShell(): ReactNode {
       ) : null}
       {/* The rail sits on the window layer (same material as the title bar); the room column and
           the chat are one «island» with a 12 px top-left corner and a hairline edge (docs/09 v0.2). */}
-      <div className="mat-rail flex min-h-0 flex-1">
+      <div className="mat-rail relative flex min-h-0 flex-1">
         <WorkspaceRail />
         {!ready ? (
           <div className="mat-content grid flex-1 place-items-center">
@@ -77,6 +78,7 @@ export function AppShell(): ReactNode {
         ) : (
           <Welcome />
         )}
+        {ready && hasWs && wsId ? <BottomIsland /> : null}
       </div>
     </div>
   );

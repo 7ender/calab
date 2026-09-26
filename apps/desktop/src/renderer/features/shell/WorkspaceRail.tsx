@@ -25,7 +25,12 @@ export function WorkspaceRail(): ReactNode {
   const open = useUi((s) => s.openDialog);
 
   return (
-    <nav className="flex w-[var(--rail-width)] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3" aria-label={t('ws.list')}>
+    <nav
+      className="flex w-[var(--rail-width)] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden pt-3"
+      // The bottom island (AppShell) spans the rail too: the icons end above it.
+      style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
+      aria-label={t('ws.list')}
+    >
       {order.map((id) => (
         <RailItem key={id} id={id} />
       ))}

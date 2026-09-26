@@ -1,28 +1,28 @@
-import { ChevronRight, Pencil } from 'lucide-react';
+import { ChevronRight, Pencil, UserPlus } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Input, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { VOICE_STATUS_MAX, setVoiceStatus, useVoiceStatus } from '../../services/roomStatus';
 import { copyRoomInviteLink } from '../people/roomLink';
 
-/** Secondary rows under a voice room: 28 px, text aligned with the room name (8 + 18 + 6 px). */
-const rowBox = 'flex h-7 w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-row)] pl-8 pr-2 text-left text-caption';
-const rowButton = cx(rowBox, 'text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg');
-
 /**
- * Under a voice room (docs/09 #48, like Discord): the call status line — visible to everyone
- * when set — and, when I am in the call, «Задать статус комнаты» and «Пригласить в комнату ›».
- * Editing: a participant with CONNECT, or MANAGE_ROOM (the server checks the same); ✎ → inline
- * field, Enter or leaving the field saves, Esc cancels. The invite row copies a room link
- * (MANAGE_ROOM only: room links are created and listed with it, ADR-0016).
+ * The call status inside the voice room card (docs/09 #48, Discord reference): a 20 px line under
+ * the room name, aligned with it (18 px icon + 6 px gap). Visible to everyone when set; «Задать
+ * статус комнаты ✎» for who may set it (a participant with CONNECT, or MANAGE_ROOM — the server
+ * checks the same). ✎ → inline field, Enter or leaving the field saves, Esc cancels.
  */
-export function VoiceRoomRows({ roomId, inRoom, canConnect, canManage }: { roomId: string; inRoom: boolean; canConnect: boolean; canManage: boolean }): ReactNode {
+const lineBox = 'flex h-5 w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-row)] pl-6 pr-1 text-left text-caption';
+
+/** Does the room show a status line (and therefore the two-line card)? */
+export function useStatusLine(roomId: string, inRoom: boolean, canConnect: boolean, canManage: boolean): { shown: boolean; canEdit: boolean; status: string } {
   const status = useVoiceStatus(roomId);
-  const [editing, setEditing] = useState(false);
   const canEdit = (inRoom && canConnect) || canManage;
-  const showStatus = !!status || (inRoom && canEdit);
-  const showInvite = inRoom && canManage;
-  // Keyboard close (Enter / Esc) returns focus to the row that opened the field.
+  return { shown: !!status || (inRoom && canEdit), canEdit, status };
+}
+
+export function VoiceStatusLine({ roomId, canEdit, status }: { roomId: string; canEdit: boolean; status: string }): ReactNode {
+  const [editing, setEditing] = useState(false);
+  // Keyboard close (Enter / Esc) returns focus to the line that opened the field.
   const editButton = useRef<HTMLButtonElement>(null);
   const refocus = useRef(false);
   useEffect(() => {
@@ -33,49 +33,61 @@ export function VoiceRoomRows({ roomId, inRoom, canConnect, canManage }: { roomI
   }, [editing]);
   // Lost the right to edit (left the call) while the field was open: close it.
   if (editing && !canEdit) setEditing(false);
-  if (!showStatus && !showInvite) return null;
-
+  if (editing)
+    return (
+      <StatusEditor
+        roomId={roomId}
+        initial={status}
+        onClose={(keyboard) => {
+          refocus.current = keyboard;
+          setEditing(false);
+        }}
+      />
+    );
+  if (!canEdit)
+    return (
+      <div data-testid="voice-status-row" className={cx(lineBox, 'text-fg')} aria-label={`${t('shell.voiceStatus.label')}: ${status}`} role="note">
+        <span className="min-w-0 truncate" title={status}>
+          {status}
+        </span>
+      </div>
+    );
   return (
-    <div className="flex flex-col gap-px pb-0.5">
-      {editing ? (
-        <StatusEditor
-          roomId={roomId}
-          initial={status}
-          onClose={(keyboard) => {
-            refocus.current = keyboard;
-            setEditing(false);
-          }}
-        />
-      ) : showStatus ? (
-        canEdit ? (
-          <button
-            ref={editButton}
-            type="button"
-            data-testid="voice-status-row"
-            onClick={() => setEditing(true)}
-            aria-label={status ? `${t('shell.voiceStatus.label')}: ${status}. ${t('shell.voiceStatus.edit')}` : t('shell.voiceStatus.placeholder')}
-            className={cx(rowButton, status && 'text-fg')}
-          >
-            <span className="min-w-0 truncate" title={status || undefined}>
-              {status || t('shell.voiceStatus.placeholder')}
-            </span>
-            <Pencil className="size-3.5 shrink-0 text-muted" aria-hidden />
-          </button>
-        ) : (
-          <div data-testid="voice-status-row" className={cx(rowBox, 'text-fg')} aria-label={`${t('shell.voiceStatus.label')}: ${status}`} role="note">
-            <span className="min-w-0 truncate" title={status}>
-              {status}
-            </span>
-          </div>
-        )
-      ) : null}
-      {showInvite ? (
-        <button type="button" data-testid="voice-invite-row" onClick={() => void copyRoomInviteLink(roomId)} title={t('shell.voiceInviteHint')} className={rowButton}>
-          <span className="min-w-0 flex-1 truncate">{t('shell.voiceInvite')}</span>
-          <ChevronRight className="size-3.5 shrink-0" aria-hidden />
-        </button>
-      ) : null}
-    </div>
+    <button
+      ref={editButton}
+      type="button"
+      data-testid="voice-status-row"
+      onClick={() => setEditing(true)}
+      aria-label={status ? `${t('shell.voiceStatus.label')}: ${status}. ${t('shell.voiceStatus.edit')}` : t('shell.voiceStatus.placeholder')}
+      className={cx(lineBox, 'transition-colors duration-[var(--motion-fast)] hover:text-fg', status ? 'text-fg' : 'text-muted')}
+    >
+      <span className="min-w-0 truncate" title={status || undefined}>
+        {status || t('shell.voiceStatus.placeholder')}
+      </span>
+      <Pencil className="size-3.5 shrink-0 text-muted" aria-hidden />
+    </button>
+  );
+}
+
+/**
+ * «Пригласить в комнату ›» under my voice room card (MANAGE_ROOM: room links are created and
+ * listed with it, ADR-0016): a 32 px dashed circle with the add-person icon, like Discord's.
+ */
+export function VoiceInviteRow({ roomId }: { roomId: string }): ReactNode {
+  return (
+    <button
+      type="button"
+      data-testid="voice-invite-row"
+      onClick={() => void copyRoomInviteLink(roomId)}
+      title={t('shell.voiceInviteHint')}
+      className="group/inv flex h-10 w-full min-w-0 items-center gap-2 rounded-[var(--radius-row)] pl-[34px] pr-1.5 text-left text-[13px] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+    >
+      <span className="grid size-8 shrink-0 place-items-center rounded-full border border-dashed border-[var(--color-label-tertiary)]" aria-hidden>
+        <UserPlus className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{t('shell.voiceInvite')}</span>
+      <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+    </button>
   );
 }
 
@@ -90,7 +102,7 @@ function StatusEditor({ roomId, initial, onClose }: { roomId: string; initial: s
     onClose(keyboard);
   };
   return (
-    <div className="flex h-7 items-center pl-6 pr-1">
+    <div className="flex h-6 items-center pl-5 pr-0">
       <Input
         autoFocus
         data-testid="voice-status-input"

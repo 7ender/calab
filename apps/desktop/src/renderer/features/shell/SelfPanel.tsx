@@ -58,27 +58,27 @@ export function SelfPanel(): ReactNode {
   const second = inVoice ? t('shell.inVoiceStatus') : custom || (cur ? t(cur.key) : '');
 
   return (
-    // Inside the bottom island (240 px in the 256 px column): buttons 24 px, ▾ 10 px, no gaps,
-    // tight paddings — the name keeps ~100 px («Анна Смирнова» fits, UX review).
-    <div className="flex h-[52px] shrink-0 items-center pl-1 pr-0.5">
+    // Bottom island across the rail + room column (Discord): 56 px, 40 px avatar, 15 / 13 px
+    // text that fades out when long; three 32 × 32 controls 12 px apart, 12 px from the edge.
+    <div className="flex h-14 shrink-0 items-center gap-1 pl-2 pr-3">
       <Popover.Root>
         <Popover.Trigger asChild>
           <button
             type="button"
             aria-label={`${t('shell.profile')}: ${user.displayName}, ${cur ? t(cur.key) : ''}`}
-            className="flex h-10 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pl-0.5 pr-0 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+            className="-my-1 flex h-12 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-1 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
           >
             <span className="relative shrink-0">
-              <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} />
-              <span className={cx('absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-[3px] border-[var(--color-bg)]', cur?.dot)} aria-hidden />
+              <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={40} speaking={speaking && !muted} />
+              <span className={cx('absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-[var(--color-bg)]', cur?.dot)} aria-hidden />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-control font-semibold leading-4" title={user.displayName}>
+              <span className="fade-end block overflow-hidden whitespace-nowrap text-[15px] font-semibold leading-5 text-fg" title={user.displayName}>
                 {user.displayName}
               </span>
               {/* Secondary line: a long status fades out at the right edge (Discord) instead of «…»
                   in the middle of its meaning; the row is full width, so short text is untouched. */}
-              <span className="fade-end flex min-w-0 items-center gap-1 text-caption leading-4 text-muted" title={second}>
+              <span className="fade-end flex min-w-0 items-center gap-1 text-[13px] leading-[18px] text-muted" title={second}>
                 {voiceLine ? <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden /> : null}
                 <span className="min-w-0 overflow-hidden whitespace-nowrap">{second}</span>
               </span>
@@ -108,29 +108,32 @@ export function SelfPanel(): ReactNode {
         </Popover.Portal>
       </Popover.Root>
 
-      <SplitButton
-        label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
-        shortcut={muteKeys}
-        danger={muted}
-        onClick={() => voice.toggleMute()}
-        menuLabel={t('shell.micOptions')}
-        menu={<DeviceMenu kind="audioinput" />}
-      >
-        {muted ? <MicOff className="size-[18px]" /> : <Mic className="size-[18px]" />}
-      </SplitButton>
-      <SplitButton
-        label={deafened ? t('voice.undeafen') : t('voice.deafen')}
-        shortcut={deafenKeys}
-        danger={deafened}
-        onClick={() => voice.toggleDeafen()}
-        menuLabel={t('shell.outputOptions')}
-        menu={<DeviceMenu kind="audiooutput" />}
-      >
-        {deafened ? <HeadphoneOff className="size-[18px]" /> : <Headphones className="size-[18px]" />}
-      </SplitButton>
-      <IconButton size="sm" className="size-6" label={t('settings.title')} onClick={() => open({ kind: 'settings' })}>
-        <Settings className="size-[18px]" />
-      </IconButton>
+      {/* The three controls, 12 px apart. */}
+      <span className="flex shrink-0 items-center gap-3">
+        <SplitButton
+          label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
+          shortcut={muteKeys}
+          danger={muted}
+          onClick={() => voice.toggleMute()}
+          menuLabel={t('shell.micOptions')}
+          menu={<DeviceMenu kind="audioinput" />}
+        >
+          {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+        </SplitButton>
+        <SplitButton
+          label={deafened ? t('voice.undeafen') : t('voice.deafen')}
+          shortcut={deafenKeys}
+          danger={deafened}
+          onClick={() => voice.toggleDeafen()}
+          menuLabel={t('shell.outputOptions')}
+          menu={<DeviceMenu kind="audiooutput" />}
+        >
+          {deafened ? <HeadphoneOff className="size-5" /> : <Headphones className="size-5" />}
+        </SplitButton>
+        <IconButton className="size-8" label={t('settings.title')} onClick={() => open({ kind: 'settings' })}>
+          <Settings className="size-5" />
+        </IconButton>
+      </span>
     </div>
   );
 }
@@ -154,9 +157,10 @@ function SplitButton({
   children: ReactNode;
 }): ReactNode {
   return (
-    // The ▾ is always visible (Discord): the device menu is one click away, not hidden behind hover.
-    <div className="group/split flex shrink-0 items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
-      <IconButton size="sm" label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="size-6 rounded-r-none hover:bg-transparent">
+    // One split control (Discord): a 32 × 32 icon and the ▾ next to it share one hover background;
+    // the ▾ is always visible — the device menu is one click away.
+    <div className="group/split flex h-8 shrink-0 items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
+      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="size-8 rounded-r-none hover:bg-transparent">
         {children}
       </IconButton>
       <Dropdown.Root modal={false}>
@@ -165,9 +169,9 @@ function SplitButton({
           <button
             type="button"
             aria-label={menuName}
-            className="grid h-6 w-2 place-items-center rounded-r-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
+            className="-ml-1 grid h-8 w-4 place-items-center rounded-r-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
           >
-            <ChevronDown className="size-2 shrink-0" strokeWidth={3} aria-hidden />
+            <ChevronDown className="size-3 shrink-0" strokeWidth={2.5} aria-hidden />
           </button>
         </Dropdown.Trigger>
         </Tip>

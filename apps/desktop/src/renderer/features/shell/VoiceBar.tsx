@@ -104,7 +104,7 @@ const ON: Record<Tone, string> = {
 };
 const OFF = 'bg-[var(--color-fill)] text-fg hover:bg-[var(--color-fill-hover)] disabled:hover:bg-[var(--color-fill)]';
 const panelBtn = (active: boolean, tone: Tone = 'live'): string =>
-  cx('grid h-10 min-w-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40', active ? ON[tone] : OFF);
+  cx('grid h-9 min-w-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40', active ? ON[tone] : OFF);
 
 function PanelButton({
   label,
@@ -178,7 +178,7 @@ function CameraButton({ roomId }: { roomId: string }): ReactNode {
   // hairline between them; right-click on the toggle opens the device menu too.
   const part = on ? 'hover:bg-white/15' : 'hover:bg-[var(--color-fill-hover)]';
   return (
-    <div className={cx('flex h-10 min-w-0 overflow-hidden rounded-[var(--radius-icon)]', on ? 'bg-accent-strong text-white' : 'bg-[var(--color-fill)] text-fg')}>
+    <div className={cx('flex h-9 min-w-0 overflow-hidden rounded-[var(--radius-icon)]', on ? 'bg-accent-strong text-white' : 'bg-[var(--color-fill)] text-fg')}>
       <Tip label={label}>
         <button
           type="button"
@@ -369,7 +369,8 @@ export function VoiceBar(): ReactNode {
         </div>
       ) : null}
 
-      <div className="mt-2 grid grid-cols-4 gap-2">
+      {/* Discord: four 36 px buttons 10 px apart across the island. */}
+      <div className="mt-2 grid grid-cols-4 gap-2.5">
         <CameraButton roomId={roomId} />
         {myStream ? (
           <PanelButton label={t('shell.stopShare')} active onClick={() => void voice.stopStream()}>
