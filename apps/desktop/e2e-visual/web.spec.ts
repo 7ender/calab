@@ -14,9 +14,16 @@ import { NOW, PASSWORD, THEMES, VIEWPORTS, checkpoint, type Shot } from './harne
 
 const DIST = join(import.meta.dirname, '..', 'dist-web');
 
+/**
+ * Locally (owner, 26.09) only the join card in dark 960 with one snapshot; the top bar, the other
+ * themes/widths, the «not found» shot and the room-preview flow run with CALABA_VISUAL_ALL=1 (nightly).
+ */
+const ALL = process.env['CALABA_VISUAL_ALL'] === '1';
+
 for (const theme of THEMES) {
   for (const viewport of VIEWPORTS) {
     test(`web top bar: ${theme} ${viewport.width}`, async ({ page }) => {
+      test.skip(!ALL, 'full matrix only (CALABA_VISUAL_ALL=1, nightly CI)');
       expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
       let mock: MockServer | undefined;
       try {
@@ -85,6 +92,7 @@ async function openLink(page: import('@playwright/test').Page, base: string, pat
 for (const theme of THEMES) {
   for (const viewport of VIEWPORTS) {
     test(`web join card: ${theme} ${viewport.width}`, async ({ page }) => {
+      test.skip(!ALL && (theme !== 'dark' || viewport.width !== 960), 'full matrix only (CALABA_VISUAL_ALL=1, nightly CI)');
       expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
       let mock: MockServer | undefined;
       try {
@@ -122,7 +130,7 @@ for (const theme of THEMES) {
         await expect(card.getByRole('button', { name: 'Открыть в Calab ещё раз' })).toBeVisible();
         // «Всегда открывать в приложении» contradicts «не найдено»: hidden in this state.
         await expect(card.getByRole('checkbox')).toHaveCount(0);
-        await checkpoint(s, 'web-join-card-not-found');
+        if (ALL) await checkpoint(s, 'web-join-card-not-found');
 
         // «Продолжить в браузере» → the regular web flow: registration with the invite code.
         await card.getByRole('button', { name: 'Продолжить в браузере' }).click();
@@ -137,6 +145,7 @@ for (const theme of THEMES) {
 }
 
 test('web link card: room preview, «always in the app», signed in', async ({ page }) => {
+  test.skip(!ALL, 'full matrix only (CALABA_VISUAL_ALL=1, nightly CI)');
   expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
   let mock: MockServer | undefined;
   try {

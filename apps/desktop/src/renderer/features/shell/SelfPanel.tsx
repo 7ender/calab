@@ -58,23 +58,24 @@ export function SelfPanel(): ReactNode {
   const second = inVoice ? t('shell.inVoiceStatus') : custom || (cur ? t(cur.key) : '');
 
   return (
-    // Bottom island across the rail + room column (Discord): 56 px, 40 px avatar, 15 / 13 px text
+    // Bottom island across the rail + room column (Discord 2x reference): 52 px, 32 px avatar with a
+    // 10 px status dot, 14 px semibold name / 13 px status
     // that fades out when long; controls ≤ 134 px (mic ▾ 40, headphones ▾ 40, gear 32, 6 px
     // apart, 10 px from the edge), so the name keeps ≥ 110 px.
-    <div className="flex h-14 shrink-0 items-center gap-1 pl-2 pr-2.5">
+    <div className="flex h-[52px] shrink-0 items-center gap-1 pl-2 pr-2.5">
       <Popover.Root>
         <Popover.Trigger asChild>
           <button
             type="button"
             aria-label={`${t('shell.profile')}: ${user.displayName}, ${cur ? t(cur.key) : ''}`}
-            className="-my-1 flex h-12 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-1 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+            className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-1 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
           >
             <span className="relative shrink-0">
-              <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={40} speaking={speaking && !muted} />
+              <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} />
               <span className={cx('absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-[var(--color-bg)]', cur?.dot)} aria-hidden />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="fade-end block overflow-hidden whitespace-nowrap text-[15px] font-semibold leading-5 text-fg" title={user.displayName}>
+              <span className="fade-end block overflow-hidden whitespace-nowrap text-[14px] font-semibold leading-[18px] text-fg" title={user.displayName}>
                 {user.displayName}
               </span>
               {/* Secondary line: a long status fades out at the right edge (Discord) instead of «…»

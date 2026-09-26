@@ -18,12 +18,12 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 | `pnpm -F @calaba/desktop build:app` | build to `out/` only, no installers |
 | `pnpm -F @calaba/desktop typecheck` / `lint` / `test` | TS strict (main, renderer, worklet), eslint, vitest (46 unit tests) |
 | `CALABA_E2E_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop e2e` | Playwright for Electron: register → workspace → room → message → voice |
-| `pnpm -F @calaba/desktop e2e:visual` (`:update` — перезаписать эталон) | Дизайн (docs/08): снимки против мок-API, layout-инварианты, axe-core, обход фокуса по Tab. Нужен dev LiveKit. Локально — только `dark-1440` и только выбранные экраны (`-g`); полная матрица (`light`, `960`) — nightly CI, `CALABA_VISUAL_ALL=1`. См. TESTING.md «1a» и «Parallel visual runs» ниже |
+| `pnpm -F @calaba/desktop e2e:visual` (`:update` — перезаписать эталон) | Дизайн (docs/08): снимки против мок-API, layout-инварианты, axe-core, обход фокуса по Tab. Нужен dev LiveKit. Локально — только `dark-960` и только ~25 ключевых экранов (`KEY` в `screens.spec.ts`), в работе — `-g`; полная матрица (все экраны, `light`, `1440`) — nightly CI, `CALABA_VISUAL_ALL=1`. См. TESTING.md «1a» и «Parallel visual runs» ниже |
 
 
 ### Parallel visual runs (git worktrees)
 
-**Locally always `dark-1440` and always `-g "<screens>"`** — never a full run on the owner's machine, not even before a release (`CALABA_VISUAL_ALL` unset). The other three configurations (`dark-960`, `light-960`, `light-1440`) and the `misc` project (focus walk, web screens) exist only for `CALABA_VISUAL_ALL=1`, which the nightly CI workflow sets to cover the full matrix on Linux (`.github/workflows/visual-nightly.yml`); their darwin baselines are not committed.
+**Locally: `dark-960` (the minimum window, 960×600) and only the key screens** (owner, 26.09). `screens.spec.ts` lists ~25 of them in `KEY` (login, onboarding first/screen/done, first run, main chat, message actions and one context menu, DMs, voice room states, stream stage + PiP, camera grid + PiP, noise popover, members panel + one member menu, workspace menu, ⌘K, three settings tabs, one room-settings tab, `i18n-en`); from the `misc` project only the web join card (dark 960) runs. Every other screen (each settings tab, every menu variant, toasts…) is `skip`ped unless `CALABA_VISUAL_ALL=1`; the code stays. Only the key `*-dark-960.png` darwin baselines are committed. The other configurations (`dark-1440`, `light-960`, `light-1440`), all other screens, the focus walk and the other web screens run only with `CALABA_VISUAL_ALL=1`, which the nightly CI workflow sets to cover the full matrix on Linux (`.github/workflows/visual-nightly.yml`, baselines in `__screenshots__/linux/`). While working on a feature, run only the touched screens with `-g`; the whole local set (29 tests, ~1.7 min with the build on an M-series Mac) is a pre-release check.
 
 On the owner's machine it is always 1 worker; never run two Electron instances at once (`CALABA_VISUAL_WORKERS` defaults to 1, see `playwright.visual.config.ts`). Electron and the web chromium projects launch with `--mute-audio` — no room join/leave sounds during a run.
 
@@ -34,12 +34,12 @@ CALABA_VISUAL_MOCK_PORT=39270 MOCK_LIVEKIT_ROOM_PREFIX=wt_ CALABA_VISUAL_OUT=tes
   pnpm -F @calaba/desktop e2e:visual -g "<screens>"
 ```
 
-Each screen is its own test named like its snapshot (`e2e-visual/screens.spec.ts`); the four configurations are Playwright projects (`dark-960`, `dark-1440`, `light-960`, `light-1440`, the first three gated by `CALABA_VISUAL_ALL=1` above); focus walk and web screens are the `misc` project (same gate).
+Each screen is its own test named like its snapshot (`e2e-visual/screens.spec.ts`); the four configurations are Playwright projects (`dark-960`, `dark-1440`, `light-960`, `light-1440`; all but `dark-960` gated by `CALABA_VISUAL_ALL=1` above); focus walk and web screens are the `misc` project (locally only the join card).
 
 ```bash
-pnpm -F @calaba/desktop e2e:visual -g "voice-pip$"                                    # one screen, dark-1440
+pnpm -F @calaba/desktop e2e:visual -g "voice-pip$"                                    # one screen, dark-960
 CALABA_VISUAL_ALL=1 pnpm -F @calaba/desktop e2e:visual -g "voice-pip$"                # one screen, all 4 configs
-pnpm -F @calaba/desktop e2e:visual:update -g "voice-camera-(grid|focus)$"             # re-record two screens (dark-1440)
+pnpm -F @calaba/desktop e2e:visual:update -g "voice-camera-(grid|pip)$"               # re-record two screens (dark-960)
 CALABA_VISUAL_ALL=1 npx playwright test --config playwright.visual.config.ts --list   # all names, all projects
 ```
 

@@ -27,6 +27,9 @@ const PRESENCE_COLOR: Partial<Record<PresenceStatus, string>> = {
  * (`.speak-ring` in styles.css; no motion with prefers-reduced-motion). Pass `speaking` from
  * useVoice().speaking — it is already debounced (on at once, 300 ms hold off).
  *
+ * `ringInside`: both rings drawn inside the avatar's own box (Discord's voice list, 24 px rows):
+ * a 2 px inset ring with a 1 px gap, so nothing sticks out of a dense row.
+ *
  * `connecting`: the «подключается» ring of a voice participant pending for more than 3 s
  * (stores/voicePending): a thin muted→accent arc turning around the avatar (`.connect-ring`;
  * static with prefers-reduced-motion). It replaces the speaking ring while shown.
@@ -39,6 +42,7 @@ export function Avatar({
   presence,
   speaking,
   connecting,
+  ringInside = false,
   className,
 }: {
   userId: string;
@@ -48,9 +52,13 @@ export function Avatar({
   presence?: boolean;
   speaking?: boolean;
   connecting?: boolean;
+  ringInside?: boolean;
   className?: string;
 }): ReactNode {
   if (connecting) speaking = false;
+  // Outset ring: on the picture itself (outline). Inset ring: an overlay above it (an inset
+  // box-shadow on an <img> would be painted under the picture).
+  const outsetSpeaking = !ringInside && speaking ? 'true' : undefined;
   const status = useWorkspaces((s) => (presence ? s.presences[userId]?.status : undefined));
   const dot = status !== undefined ? PRESENCE_COLOR[status] : undefined;
   return (
@@ -60,13 +68,13 @@ export function Avatar({
           path={thumbnailPath(fileId)}
           alt=""
           draggable={false}
-          data-speaking={speaking ? 'true' : undefined}
-          className="speak-ring size-full rounded-full object-cover"
+          data-speaking={outsetSpeaking}
+          className={cx(!ringInside && 'speak-ring', 'size-full rounded-full object-cover')}
         />
       ) : (
         <span
-          data-speaking={speaking ? 'true' : undefined}
-          className="speak-ring grid size-full place-items-center rounded-full font-semibold text-white"
+          data-speaking={outsetSpeaking}
+          className={cx(!ringInside && 'speak-ring', 'grid size-full place-items-center rounded-full font-semibold text-white')}
           style={{ background: colorOf(userId), fontSize: Math.round(size * 0.42) }}
         >
           {(name.trim()[0] ?? '?').toUpperCase()}
@@ -81,7 +89,8 @@ export function Avatar({
           style={{ width: Math.max(10, size * 0.38), height: Math.max(10, size * 0.38) }}
         />
       ) : null}
-      {connecting ? <span className="connect-ring" data-testid="connect-ring" aria-hidden /> : null}
+      {ringInside && !connecting ? <span data-speaking={speaking ? 'true' : undefined} className="speak-ring-inset" aria-hidden /> : null}
+      {connecting ? <span className={cx('connect-ring', ringInside && 'connect-ring-inset')} data-testid="connect-ring" aria-hidden /> : null}
     </span>
   );
 }

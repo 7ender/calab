@@ -500,6 +500,23 @@ body {
 .speak-ring[data-speaking='true'] {
   outline-color: var(--color-green);
 }
+/* The same ring inside the avatar's box (voice participants, 24 px): 2 px green + 1 px gap in
+   the column colour, drawn over the picture — the row keeps its size, nothing is clipped. */
+.speak-ring-inset {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 2px transparent,
+    inset 0 0 0 3px transparent;
+  transition: box-shadow 100ms ease-out;
+}
+.speak-ring-inset[data-speaking='true'] {
+  box-shadow:
+    inset 0 0 0 2px var(--color-green),
+    inset 0 0 0 3px var(--color-side);
+}
 /* «Подключается…» (docs/08): a voice participant pending > 3 s — a 2 px ring in the speaking
    ring's place (2 px gap), muted fading into accent, turning once per 1.2 s. With
    prefers-reduced-motion the global rule stops it: a static muted→accent ring. */
@@ -517,6 +534,9 @@ body {
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
   animation: calaba-spin 1.2s linear infinite;
+}
+.connect-ring-inset {
+  inset: 0;
 }
 
 @keyframes calaba-pulse {
