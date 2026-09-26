@@ -15,16 +15,17 @@
 -- Archived rooms and DMs (workspace_id NULL) are not touched beyond losing a dissolved category.
 
 -- +goose Up
-CREATE TEMP TABLE dissolved_categories ON COMMIT DROP AS
-SELECT c.id,
-       row_number() OVER (PARTITION BY c.workspace_id ORDER BY c.position, c.id) AS rank
-FROM room_categories c
-JOIN workspaces w ON w.id = c.workspace_id
-WHERE c.name IN ('Текстовые комнаты', 'Голосовые комнаты', 'Text rooms', 'Voice rooms',
-                 'Salas de texto', 'Salas de voz', '文字房间', '语音房间')
-  AND c.created_at < w.created_at + interval '1 minute';
-
-WITH ordered AS (
+-- The "dissolved" predicate is spelled twice (rooms first, then the categories) rather than kept
+-- in a temp table: sqlc reads this directory as the schema and would model a temp table.
+WITH dissolved AS (
+    SELECT c.id,
+           row_number() OVER (PARTITION BY c.workspace_id ORDER BY c.position, c.id) AS rank
+    FROM room_categories c
+    JOIN workspaces w ON w.id = c.workspace_id
+    WHERE c.name IN ('Текстовые комнаты', 'Голосовые комнаты', 'Text rooms', 'Voice rooms',
+                     'Salas de texto', 'Salas de voz', '文字房间', '语音房间')
+      AND c.created_at < w.created_at + interval '1 minute'
+), ordered AS (
     SELECT r.id,
            CASE WHEN d.id IS NULL THEN r.category_id END AS new_category,
            row_number() OVER (
@@ -34,7 +35,7 @@ WITH ordered AS (
                         r.position, r.name, r.id
            ) - 1 AS new_position
     FROM rooms r
-    LEFT JOIN dissolved_categories d ON d.id = r.category_id
+    LEFT JOIN dissolved d ON d.id = r.category_id
     WHERE r.workspace_id IS NOT NULL AND r.archived_at IS NULL
 )
 UPDATE rooms r
@@ -44,7 +45,12 @@ WHERE r.id = o.id
   AND (r.position IS DISTINCT FROM o.new_position OR r.category_id IS DISTINCT FROM o.new_category);
 
 -- Archived rooms of dissolved categories: ON DELETE SET NULL clears their category.
-DELETE FROM room_categories WHERE id IN (SELECT id FROM dissolved_categories);
+DELETE FROM room_categories c
+USING workspaces w
+WHERE w.id = c.workspace_id
+  AND c.name IN ('Текстовые комнаты', 'Голосовые комнаты', 'Text rooms', 'Voice rooms',
+                 'Salas de texto', 'Salas de voz', '文字房间', '语音房间')
+  AND c.created_at < w.created_at + interval '1 minute';
 
 -- +goose Down
 -- Irreversible by design: the dissolved categories held no user data (default names, created

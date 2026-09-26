@@ -81,4 +81,18 @@ func TestRoomOrderFlat(t *testing.T) {
 	name := "renamed"
 	bob.must(403, "PATCH", "/api/categories/"+a, &v1.UpdateCategoryRequest{Name: &name}, nil)
 	bob.must(403, "DELETE", "/api/categories/"+a, nil, nil)
+
+	// Deleting a category: its rooms go to the top level after the rooms already there.
+	var inA v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "in-a", CategoryId: a}, &inA)
+	o.must(200, "PUT", "/api/workspaces/"+wid+"/rooms/order", &v1.SetRoomOrderRequest{Rooms: []*v1.SetRoomOrderRequest_RoomPosition{
+		{RoomId: inA.GetRoom().GetId(), Position: 0, CategoryId: a},
+	}}, nil)
+	o.must(204, "DELETE", "/api/categories/"+a, nil, nil)
+	o.must(200, "GET", "/api/workspaces/"+wid+"/rooms", nil, &lr)
+	for _, r := range lr.GetRooms() {
+		if r.GetId() == inA.GetRoom().GetId() && (r.GetCategoryId() != "" || r.GetPosition() != 2) {
+			t.Fatalf("room of a deleted category: %v, want top level at 2", r)
+		}
+	}
 }

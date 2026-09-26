@@ -88,11 +88,20 @@ WHERE id = sqlc.arg('id')
 RETURNING *;
 
 -- name: DeleteCategory :many
--- Deletes a category; returns the rooms that were in it (their category_id becomes NULL).
-WITH moved AS (
-    UPDATE rooms SET category_id = NULL
-    WHERE category_id = sqlc.arg('id')::uuid AND archived_at IS NULL
-    RETURNING id
+-- Deletes a category; returns the rooms that were in it. They move to the top level, after the
+-- rooms already there, in their order (docs/09 P1 #19): no position ties with top-level rooms.
+WITH base AS (
+    SELECT coalesce(max(r.position) + 1, 0) AS p FROM rooms r
+    WHERE r.workspace_id = (SELECT c.workspace_id FROM room_categories c WHERE c.id = sqlc.arg('id')::uuid)
+      AND r.category_id IS NULL AND r.archived_at IS NULL
+), ordered AS (
+    SELECT r.id, row_number() OVER (ORDER BY r.position, r.name, r.id) - 1 AS n FROM rooms r
+    WHERE r.category_id = sqlc.arg('id')::uuid AND r.archived_at IS NULL
+), moved AS (
+    UPDATE rooms SET category_id = NULL, position = base.p + ordered.n
+    FROM base, ordered
+    WHERE rooms.id = ordered.id
+    RETURNING rooms.id
 ), gone AS (
     DELETE FROM room_categories WHERE room_categories.id = sqlc.arg('id')::uuid
 )
