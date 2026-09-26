@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/user.proto.
  */
 export const file_calaba_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIuQBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyJdCgJNZRIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISDQoFZW1haWwYAiABKAkSKQoIc2V0dGluZ3MYAyABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzIioKDUdldE1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUi1AEKD1VwZGF0ZU1lUmVxdWVzdBIZCgxkaXNwbGF5X25hbWUYASABKAlIAIgBARIYCgtzdGF0dXNfdGV4dBgCIAEoCUgBiAEBEhsKDmF2YXRhcl9maWxlX2lkGAMgASgJSAKIAQESLgoIc2V0dGluZ3MYBCABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzSAOIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfc3RhdHVzX3RleHRCEQoPX2F2YXRhcl9maWxlX2lkQgsKCV9zZXR0aW5ncyItChBVcGRhdGVNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIk4KE1VwZGF0ZVN0YXR1c1JlcXVlc3QSDAoEdGV4dBgBIAEoCRINCgVlbW9qaRgCIAEoCRIaChJleHBpcmVzX2luX3NlY29uZHMYAyABKA0qUAoHTWljTW9kZRIYChRNSUNfTU9ERV9VTlNQRUNJRklFRBAAEhAKDE1JQ19NT0RFX1ZBRBABEhkKFU1JQ19NT0RFX1BVU0hfVE9fVEFMSxACQpcBCg1jb20uY2FsYWJhLnYxQglVc2VyUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIuQBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyJdCgJNZRIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISDQoFZW1haWwYAiABKAkSKQoIc2V0dGluZ3MYAyABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzIioKDUdldE1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUi1AEKD1VwZGF0ZU1lUmVxdWVzdBIZCgxkaXNwbGF5X25hbWUYASABKAlIAIgBARIYCgtzdGF0dXNfdGV4dBgCIAEoCUgBiAEBEhsKDmF2YXRhcl9maWxlX2lkGAMgASgJSAKIAQESLgoIc2V0dGluZ3MYBCABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzSAOIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfc3RhdHVzX3RleHRCEQoPX2F2YXRhcl9maWxlX2lkQgsKCV9zZXR0aW5ncyItChBVcGRhdGVNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIkcKFUNoYW5nZVBhc3N3b3JkUmVxdWVzdBIYChBjdXJyZW50X3Bhc3N3b3JkGAEgASgJEhQKDG5ld19wYXNzd29yZBgCIAEoCSJBChJDaGFuZ2VFbWFpbFJlcXVlc3QSEQoJbmV3X2VtYWlsGAEgASgJEhgKEGN1cnJlbnRfcGFzc3dvcmQYAiABKAkiTgoTVXBkYXRlU3RhdHVzUmVxdWVzdBIMCgR0ZXh0GAEgASgJEg0KBWVtb2ppGAIgASgJEhoKEmV4cGlyZXNfaW5fc2Vjb25kcxgDIAEoDSpQCgdNaWNNb2RlEhgKFE1JQ19NT0RFX1VOU1BFQ0lGSUVEEAASEAoMTUlDX01PREVfVkFEEAESGQoVTUlDX01PREVfUFVTSF9UT19UQUxLEAJClwEKDWNvbS5jYWxhYmEudjFCCVVzZXJQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * Public profile, visible to members of shared workspaces.
@@ -238,6 +238,59 @@ export const UpdateMeResponseSchema: GenMessage<UpdateMeResponse> = /*@__PURE__*
   messageDesc(file_calaba_v1_user, 5);
 
 /**
+ * PATCH /api/me/password → 204. The current password is required; every other session of
+ * the user is revoked (this one stays). 403 INVALID_CREDENTIALS: wrong current password;
+ * 403 FORBIDDEN: guest account. Password attempts share a 5 / 15 min bucket per account.
+ *
+ * @generated from message calaba.v1.ChangePasswordRequest
+ */
+export type ChangePasswordRequest = Message<"calaba.v1.ChangePasswordRequest"> & {
+  /**
+   * @generated from field: string current_password = 1;
+   */
+  currentPassword: string;
+
+  /**
+   * 8..256 characters
+   *
+   * @generated from field: string new_password = 2;
+   */
+  newPassword: string;
+};
+
+/**
+ * Describes the message calaba.v1.ChangePasswordRequest.
+ * Use `create(ChangePasswordRequestSchema)` to create a new message.
+ */
+export const ChangePasswordRequestSchema: GenMessage<ChangePasswordRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 6);
+
+/**
+ * PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices). No
+ * confirmation mail (the server sends no email). 409 CONFLICT: address taken; 403 as above.
+ *
+ * @generated from message calaba.v1.ChangeEmailRequest
+ */
+export type ChangeEmailRequest = Message<"calaba.v1.ChangeEmailRequest"> & {
+  /**
+   * @generated from field: string new_email = 1;
+   */
+  newEmail: string;
+
+  /**
+   * @generated from field: string current_password = 2;
+   */
+  currentPassword: string;
+};
+
+/**
+ * Describes the message calaba.v1.ChangeEmailRequest.
+ * Use `create(ChangeEmailRequestSchema)` to create a new message.
+ */
+export const ChangeEmailRequestSchema: GenMessage<ChangeEmailRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 7);
+
+/**
  * PATCH /api/me/status — custom status. Empty text and emoji clear it. Announced to the
  * user's workspaces as PRESENCE_UPDATE (+ USER_UPDATE). Response: UpdateMeResponse.
  *
@@ -271,7 +324,7 @@ export type UpdateStatusRequest = Message<"calaba.v1.UpdateStatusRequest"> & {
  * Use `create(UpdateStatusRequestSchema)` to create a new message.
  */
 export const UpdateStatusRequestSchema: GenMessage<UpdateStatusRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 6);
+  messageDesc(file_calaba_v1_user, 8);
 
 /**
  * @generated from enum calaba.v1.MicMode

@@ -1750,8 +1750,13 @@ type ReadState struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	RoomId            string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
 	LastReadMessageId string                 `protobuf:"bytes,2,opt,name=last_read_message_id,json=lastReadMessageId,proto3" json:"last_read_message_id,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Filled in READY only (0 in READ_STATE_UPDATE): messages of others after
+	// last_read_message_id, capped at 999, and how many of them mention the user
+	// (@<user_id>, @everyone, @here).
+	UnreadCount   uint32 `protobuf:"varint,3,opt,name=unread_count,json=unreadCount,proto3" json:"unread_count,omitempty"`
+	MentionCount  uint32 `protobuf:"varint,4,opt,name=mention_count,json=mentionCount,proto3" json:"mention_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReadState) Reset() {
@@ -1796,6 +1801,20 @@ func (x *ReadState) GetLastReadMessageId() string {
 		return x.LastReadMessageId
 	}
 	return ""
+}
+
+func (x *ReadState) GetUnreadCount() uint32 {
+	if x != nil {
+		return x.UnreadCount
+	}
+	return 0
+}
+
+func (x *ReadState) GetMentionCount() uint32 {
+	if x != nil {
+		return x.MentionCount
+	}
+	return 0
 }
 
 // Full state of one workspace, as seen by the recipient (only rooms with VIEW_ROOM).
@@ -3568,10 +3587,12 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\vstatus_text\x18\x04 \x01(\tR\n" +
 	"statusText\x12!\n" +
 	"\fstatus_emoji\x18\x05 \x01(\tR\vstatusEmoji\x12F\n" +
-	"\x11status_expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusExpiresAt\"U\n" +
+	"\x11status_expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusExpiresAt\"\x9d\x01\n" +
 	"\tReadState\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12/\n" +
-	"\x14last_read_message_id\x18\x02 \x01(\tR\x11lastReadMessageId\"\x89\x04\n" +
+	"\x14last_read_message_id\x18\x02 \x01(\tR\x11lastReadMessageId\x12!\n" +
+	"\funread_count\x18\x03 \x01(\rR\vunreadCount\x12#\n" +
+	"\rmention_count\x18\x04 \x01(\rR\fmentionCount\"\x89\x04\n" +
 	"\x11WorkspaceSnapshot\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12,\n" +
 	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\x12%\n" +

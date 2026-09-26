@@ -35,13 +35,21 @@ type Handlers struct {
 	limiter *redisx.RateLimiter // per client IP: login and register
 	account *redisx.RateLimiter // per account (email): login attempts, against distributed guessing
 	origins []string            // allowed browser origins (PUBLIC_APP_URL, PUBLIC_APP_URL_ALT)
+	cred    *redisx.RateLimiter // per user: password checks of password / email changes
 }
+
+// Password checks of an authenticated account: 5 per 15 minutes.
+const (
+	credBurst     = 5
+	credPerMinute = 5.0 / 15
+)
 
 // NewHandlers creates the handlers. limiter throttles login/register per client IP,
 // account throttles login attempts per email; origins are the web client's origins for the
 // CSRF check of cookie requests.
 func NewHandlers(svc *Service, limiter, account *redisx.RateLimiter, origins []string) *Handlers {
-	return &Handlers{svc: svc, limiter: limiter, account: account, origins: origins}
+	return &Handlers{svc: svc, limiter: limiter, account: account, origins: origins,
+		cred: redisx.NewRateLimiter(svc.redis, "rl:cred:", credBurst, credPerMinute)}
 }
 
 func client(r *http.Request, device string) Client {
@@ -101,6 +109,8 @@ func (h *Handlers) Public(mux *http.ServeMux) {
 func (h *Handlers) Private(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/me/sessions", wrap(httpx.HandlerFunc(h.listSessions)))
 	mux.Handle("DELETE /api/me/sessions/{id}", wrap(httpx.HandlerFunc(h.revokeSession)))
+	mux.Handle("PATCH /api/me/password", wrap(httpx.HandlerFunc(h.changePassword)))
+	mux.Handle("PATCH /api/me/email", wrap(httpx.HandlerFunc(h.changeEmail)))
 }
 
 func (h *Handlers) register(w http.ResponseWriter, r *http.Request) error {

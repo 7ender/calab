@@ -483,6 +483,115 @@ func (x *UpdateMeResponse) GetMe() *Me {
 	return nil
 }
 
+// PATCH /api/me/password → 204. The current password is required; every other session of
+// the user is revoked (this one stays). 403 INVALID_CREDENTIALS: wrong current password;
+// 403 FORBIDDEN: guest account. Password attempts share a 5 / 15 min bucket per account.
+type ChangePasswordRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CurrentPassword string                 `protobuf:"bytes,1,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	NewPassword     string                 `protobuf:"bytes,2,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"` // 8..256 characters
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ChangePasswordRequest) Reset() {
+	*x = ChangePasswordRequest{}
+	mi := &file_calaba_v1_user_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangePasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangePasswordRequest) ProtoMessage() {}
+
+func (x *ChangePasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangePasswordRequest.ProtoReflect.Descriptor instead.
+func (*ChangePasswordRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ChangePasswordRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
+func (x *ChangePasswordRequest) GetNewPassword() string {
+	if x != nil {
+		return x.NewPassword
+	}
+	return ""
+}
+
+// PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices). No
+// confirmation mail (the server sends no email). 409 CONFLICT: address taken; 403 as above.
+type ChangeEmailRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	NewEmail        string                 `protobuf:"bytes,1,opt,name=new_email,json=newEmail,proto3" json:"new_email,omitempty"`
+	CurrentPassword string                 `protobuf:"bytes,2,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ChangeEmailRequest) Reset() {
+	*x = ChangeEmailRequest{}
+	mi := &file_calaba_v1_user_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeEmailRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeEmailRequest) ProtoMessage() {}
+
+func (x *ChangeEmailRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeEmailRequest.ProtoReflect.Descriptor instead.
+func (*ChangeEmailRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ChangeEmailRequest) GetNewEmail() string {
+	if x != nil {
+		return x.NewEmail
+	}
+	return ""
+}
+
+func (x *ChangeEmailRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
 // PATCH /api/me/status — custom status. Empty text and emoji clear it. Announced to the
 // user's workspaces as PRESENCE_UPDATE (+ USER_UPDATE). Response: UpdateMeResponse.
 type UpdateStatusRequest struct {
@@ -496,7 +605,7 @@ type UpdateStatusRequest struct {
 
 func (x *UpdateStatusRequest) Reset() {
 	*x = UpdateStatusRequest{}
-	mi := &file_calaba_v1_user_proto_msgTypes[6]
+	mi := &file_calaba_v1_user_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -508,7 +617,7 @@ func (x *UpdateStatusRequest) String() string {
 func (*UpdateStatusRequest) ProtoMessage() {}
 
 func (x *UpdateStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_user_proto_msgTypes[6]
+	mi := &file_calaba_v1_user_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -521,7 +630,7 @@ func (x *UpdateStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateStatusRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_user_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *UpdateStatusRequest) GetText() string {
@@ -587,7 +696,13 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x0f_avatar_file_idB\v\n" +
 	"\t_settings\"1\n" +
 	"\x10UpdateMeResponse\x12\x1d\n" +
-	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"m\n" +
+	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"e\n" +
+	"\x15ChangePasswordRequest\x12)\n" +
+	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"\\\n" +
+	"\x12ChangeEmailRequest\x12\x1b\n" +
+	"\tnew_email\x18\x01 \x01(\tR\bnewEmail\x12)\n" +
+	"\x10current_password\x18\x02 \x01(\tR\x0fcurrentPassword\"m\n" +
 	"\x13UpdateStatusRequest\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x14\n" +
 	"\x05emoji\x18\x02 \x01(\tR\x05emoji\x12,\n" +
@@ -612,7 +727,7 @@ func file_calaba_v1_user_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_user_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_calaba_v1_user_proto_goTypes = []any{
 	(MicMode)(0),                  // 0: calaba.v1.MicMode
 	(*User)(nil),                  // 1: calaba.v1.User
@@ -621,23 +736,25 @@ var file_calaba_v1_user_proto_goTypes = []any{
 	(*GetMeResponse)(nil),         // 4: calaba.v1.GetMeResponse
 	(*UpdateMeRequest)(nil),       // 5: calaba.v1.UpdateMeRequest
 	(*UpdateMeResponse)(nil),      // 6: calaba.v1.UpdateMeResponse
-	(*UpdateStatusRequest)(nil),   // 7: calaba.v1.UpdateStatusRequest
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
+	(*ChangePasswordRequest)(nil), // 7: calaba.v1.ChangePasswordRequest
+	(*ChangeEmailRequest)(nil),    // 8: calaba.v1.ChangeEmailRequest
+	(*UpdateStatusRequest)(nil),   // 9: calaba.v1.UpdateStatusRequest
+	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
 }
 var file_calaba_v1_user_proto_depIdxs = []int32{
-	8, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	8, // 1: calaba.v1.User.status_expires_at:type_name -> google.protobuf.Timestamp
-	0, // 2: calaba.v1.UserSettings.mic_mode:type_name -> calaba.v1.MicMode
-	1, // 3: calaba.v1.Me.user:type_name -> calaba.v1.User
-	2, // 4: calaba.v1.Me.settings:type_name -> calaba.v1.UserSettings
-	3, // 5: calaba.v1.GetMeResponse.me:type_name -> calaba.v1.Me
-	2, // 6: calaba.v1.UpdateMeRequest.settings:type_name -> calaba.v1.UserSettings
-	3, // 7: calaba.v1.UpdateMeResponse.me:type_name -> calaba.v1.Me
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	10, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	10, // 1: calaba.v1.User.status_expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 2: calaba.v1.UserSettings.mic_mode:type_name -> calaba.v1.MicMode
+	1,  // 3: calaba.v1.Me.user:type_name -> calaba.v1.User
+	2,  // 4: calaba.v1.Me.settings:type_name -> calaba.v1.UserSettings
+	3,  // 5: calaba.v1.GetMeResponse.me:type_name -> calaba.v1.Me
+	2,  // 6: calaba.v1.UpdateMeRequest.settings:type_name -> calaba.v1.UserSettings
+	3,  // 7: calaba.v1.UpdateMeResponse.me:type_name -> calaba.v1.Me
+	8,  // [8:8] is the sub-list for method output_type
+	8,  // [8:8] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_user_proto_init() }
@@ -653,7 +770,7 @@ func file_calaba_v1_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_user_proto_rawDesc), len(file_calaba_v1_user_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

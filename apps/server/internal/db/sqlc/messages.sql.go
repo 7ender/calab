@@ -425,21 +425,53 @@ func (q *Queries) ListReactions(ctx context.Context, arg ListReactionsParams) ([
 }
 
 const listReadStates = `-- name: ListReadStates :many
-SELECT rs.user_id, rs.room_id, rs.last_read_message_id FROM read_states rs
-JOIN rooms r ON r.id = rs.room_id AND r.archived_at IS NULL
-WHERE rs.user_id = $1
+SELECT rs.room_id, rs.last_read_message_id,
+    (SELECT count(*) FROM (
+        SELECT 1 FROM messages m
+        WHERE m.room_id = rs.room_id AND m.id > rs.last_read_message_id
+          AND m.deleted_at IS NULL AND m.author_id <> rs.user_id
+        LIMIT 999) u)::integer AS unread_count,
+    (SELECT count(*) FROM (
+        SELECT mm.message_id FROM message_mentions mm
+        WHERE mm.user_id = rs.user_id AND mm.room_id = rs.room_id AND mm.message_id > rs.last_read_message_id
+        UNION
+        SELECT e.message_id FROM message_everyone_mentions e
+        JOIN messages em ON em.id = e.message_id AND em.author_id <> rs.user_id
+        WHERE e.room_id = rs.room_id AND e.message_id > rs.last_read_message_id
+        LIMIT 999) x)::integer AS mention_count
+FROM read_states rs
+WHERE rs.user_id = $1::uuid AND rs.room_id = ANY($2::uuid[])
 `
 
-func (q *Queries) ListReadStates(ctx context.Context, userID uuid.UUID) ([]ReadState, error) {
-	rows, err := q.db.Query(ctx, listReadStates, userID)
+type ListReadStatesParams struct {
+	UserID  uuid.UUID
+	RoomIds []uuid.UUID
+}
+
+type ListReadStatesRow struct {
+	RoomID            uuid.UUID
+	LastReadMessageID uuid.UUID
+	UnreadCount       int32
+	MentionCount      int32
+}
+
+// Read markers of the given (visible) rooms with unread and mention counts after the
+// marker, both capped at 999: every count is a bounded index range scan per room.
+func (q *Queries) ListReadStates(ctx context.Context, arg ListReadStatesParams) ([]ListReadStatesRow, error) {
+	rows, err := q.db.Query(ctx, listReadStates, arg.UserID, arg.RoomIds)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ReadState{}
+	items := []ListReadStatesRow{}
 	for rows.Next() {
-		var i ReadState
-		if err := rows.Scan(&i.UserID, &i.RoomID, &i.LastReadMessageID); err != nil {
+		var i ListReadStatesRow
+		if err := rows.Scan(
+			&i.RoomID,
+			&i.LastReadMessageID,
+			&i.UnreadCount,
+			&i.MentionCount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

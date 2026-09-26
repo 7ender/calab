@@ -38,3 +38,8 @@ RETURNING id;
 SELECT * FROM sessions
 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
 ORDER BY last_seen_at DESC;
+
+-- name: RevokeOtherUserSessions :many
+UPDATE sessions SET revoked_at = now()
+WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL
+RETURNING id;

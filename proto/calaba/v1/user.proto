@@ -60,6 +60,21 @@ message UpdateMeResponse {
   Me me = 1;
 }
 
+// PATCH /api/me/password → 204. The current password is required; every other session of
+// the user is revoked (this one stays). 403 INVALID_CREDENTIALS: wrong current password;
+// 403 FORBIDDEN: guest account. Password attempts share a 5 / 15 min bucket per account.
+message ChangePasswordRequest {
+  string current_password = 1;
+  string new_password = 2; // 8..256 characters
+}
+
+// PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices). No
+// confirmation mail (the server sends no email). 409 CONFLICT: address taken; 403 as above.
+message ChangeEmailRequest {
+  string new_email = 1;
+  string current_password = 2;
+}
+
 // PATCH /api/me/status — custom status. Empty text and emoji clear it. Announced to the
 // user's workspaces as PRESENCE_UPDATE (+ USER_UPDATE). Response: UpdateMeResponse.
 message UpdateStatusRequest {

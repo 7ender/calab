@@ -103,3 +103,34 @@ func TestRoomNotificationSettings(t *testing.T) {
 		t.Fatal("default settings still stored")
 	}
 }
+
+func TestReadStateCounts(t *testing.T) {
+	o, bob, _, room := setupTeam(t)
+	rid := room.GetId()
+	counts := func(u *user) (unread, mentions uint32, ok bool) {
+		for _, rs := range dialGW(t).identify(u.token).GetReadStates() {
+			if rs.GetRoomId() == rid {
+				return rs.GetUnreadCount(), rs.GetMentionCount(), true
+			}
+		}
+		return 0, 0, false
+	}
+	send(t, bob, rid, "first", "") // bob's read marker
+	send(t, o, rid, "hey @"+bob.id, "")
+	everyone := send(t, o, rid, "@here standup", "")
+	last := send(t, o, rid, "plain", "")
+	if u, m, ok := counts(bob); !ok || u != 3 || m != 2 {
+		t.Fatalf("bob: unread %d mentions %d (ok %v), want 3 / 2", u, m, ok)
+	}
+	if u, m, _ := counts(o); u != 0 || m != 0 {
+		t.Fatalf("owner's own messages counted: %d / %d", u, m)
+	}
+	o.must(204, "DELETE", "/api/messages/"+everyone.GetId(), nil, nil)
+	if u, m, _ := counts(bob); u != 2 || m != 1 {
+		t.Fatalf("after delete: %d / %d, want 2 / 1", u, m)
+	}
+	bob.must(204, "PUT", "/api/rooms/"+rid+"/read", &v1.UpdateReadStateRequest{MessageId: last.GetId()}, nil)
+	if u, m, _ := counts(bob); u != 0 || m != 0 {
+		t.Fatalf("after read: %d / %d", u, m)
+	}
+}

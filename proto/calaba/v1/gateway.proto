@@ -183,6 +183,11 @@ message Presence {
 message ReadState {
   string room_id = 1;
   string last_read_message_id = 2;
+  // Filled in READY only (0 in READ_STATE_UPDATE): messages of others after
+  // last_read_message_id, capped at 999, and how many of them mention the user
+  // (@<user_id>, @everyone, @here).
+  uint32 unread_count = 3;
+  uint32 mention_count = 4;
 }
 
 // Full state of one workspace, as seen by the recipient (only rooms with VIEW_ROOM).

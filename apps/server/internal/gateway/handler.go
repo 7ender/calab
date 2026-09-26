@@ -17,6 +17,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/workspaces"
@@ -375,12 +376,22 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		h.fillLive(ctx, w.ID, snap)
 		ready.Workspaces = append(ready.Workspaces, snap)
 	}
-	rs, err := h.db.Q.ListReadStates(ctx, uid)
+	// Read markers (with unread / mention counts) only for rooms the user can see now.
+	var visible []uuid.UUID
+	for _, snap := range ready.Workspaces {
+		for _, r := range snap.GetRooms() {
+			visible = append(visible, parseID(r.GetId()))
+		}
+	}
+	rs, err := h.db.Q.ListReadStates(ctx, sqlc.ListReadStatesParams{UserID: uid, RoomIds: visible})
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range rs {
-		ready.ReadStates = append(ready.ReadStates, &v1.ReadState{RoomId: r.RoomID.String(), LastReadMessageId: r.LastReadMessageID.String()})
+		ready.ReadStates = append(ready.ReadStates, &v1.ReadState{
+			RoomId: r.RoomID.String(), LastReadMessageId: r.LastReadMessageID.String(),
+			UnreadCount: uint32(max(r.UnreadCount, 0)), MentionCount: uint32(max(r.MentionCount, 0)), //nolint:gosec // 0..999
+		})
 	}
 	ns, err := h.db.Q.ListRoomNotificationSettings(ctx, uid)
 	if err != nil {

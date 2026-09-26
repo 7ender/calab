@@ -1011,3 +1011,32 @@ go test -race -tags integration -count=1 -v -run TestServerMute ./internal/app/ 
 - микрофон, опубликованный незаглушённым, сервер глушит (`MutePublishedTrack`);
 - флаг сохраняется в READY и после выхода и повторного входа (`can_speak = false`);
 - `unmute` (MUTE_MEMBERS) → `server_muted = false`, microphone возвращается в grant, самостоятельный unmute снова разрешён.
+
+## Server: счётчики непрочитанного в READY
+
+```sh
+cd apps/server
+go test -race -tags integration -count=1 -v -run TestReadStateCounts ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: `--- PASS: TestReadStateCounts` и `ok`.
+
+Что проверяется:
+- после маркера bob три сообщения owner'а, из них `@bob` и `@here` → `unread_count = 3`, `mention_count = 2`;
+- свои сообщения owner'а не считаются (0 / 0);
+- удаление сообщения с `@here` → 2 / 1;
+- `PUT …/read` до последнего → 0 / 0.
+
+## Server: смена пароля и email (`PATCH /api/me/password`, `PATCH /api/me/email`)
+
+```sh
+cd apps/server
+go test -race -tags integration -count=1 -v -run TestChangeCredentials ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: `--- PASS: TestChangeCredentials` и `ok`.
+
+Что проверяется:
+- неверный текущий пароль → 403, короткий новый → 422;
+- успешная смена → 204: вторая сессия сразу получает 401, текущая работает, вход со старым паролем → 401, с новым → 200;
+- email: занятый (в любом регистре) → 409, невалидный → 422, успех → новый email в ответе и `USER_UPDATE {me}` на устройство, вход по новому email;
+- шестая проверка пароля за 15 минут → 429 (невалидные запросы не считаются);
+- гость → 403 на оба эндпоинта.

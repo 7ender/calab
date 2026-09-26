@@ -29,3 +29,10 @@ SELECT pg_advisory_xact_lock(hashtext('calaba.registration'));
 UPDATE users SET status_text = $2, status_emoji = $3, status_expires_at = $4
 WHERE id = $1
 RETURNING *;
+
+-- name: SetPasswordHash :exec
+UPDATE users SET password_hash = $2 WHERE id = $1;
+
+-- name: SetEmail :one
+UPDATE users SET email = $2 WHERE id = $1
+RETURNING *;

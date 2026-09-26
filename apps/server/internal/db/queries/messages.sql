@@ -56,9 +56,24 @@ ON CONFLICT (user_id, room_id) DO UPDATE
 RETURNING *;
 
 -- name: ListReadStates :many
-SELECT rs.* FROM read_states rs
-JOIN rooms r ON r.id = rs.room_id AND r.archived_at IS NULL
-WHERE rs.user_id = $1;
+-- Read markers of the given (visible) rooms with unread and mention counts after the
+-- marker, both capped at 999: every count is a bounded index range scan per room.
+SELECT rs.room_id, rs.last_read_message_id,
+    (SELECT count(*) FROM (
+        SELECT 1 FROM messages m
+        WHERE m.room_id = rs.room_id AND m.id > rs.last_read_message_id
+          AND m.deleted_at IS NULL AND m.author_id <> rs.user_id
+        LIMIT 999) u)::integer AS unread_count,
+    (SELECT count(*) FROM (
+        SELECT mm.message_id FROM message_mentions mm
+        WHERE mm.user_id = rs.user_id AND mm.room_id = rs.room_id AND mm.message_id > rs.last_read_message_id
+        UNION
+        SELECT e.message_id FROM message_everyone_mentions e
+        JOIN messages em ON em.id = e.message_id AND em.author_id <> rs.user_id
+        WHERE e.room_id = rs.room_id AND e.message_id > rs.last_read_message_id
+        LIMIT 999) x)::integer AS mention_count
+FROM read_states rs
+WHERE rs.user_id = sqlc.arg('user_id')::uuid AND rs.room_id = ANY(sqlc.arg('room_ids')::uuid[]);
 
 -- name: LastMessages :many
 -- Newest live message per room: one backwards index probe per room (LATERAL … LIMIT 1),

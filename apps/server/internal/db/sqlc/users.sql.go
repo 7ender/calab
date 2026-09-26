@@ -122,6 +122,51 @@ func (q *Queries) LockRegistration(ctx context.Context) error {
 	return err
 }
 
+const setEmail = `-- name: SetEmail :one
+UPDATE users SET email = $2 WHERE id = $1
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at
+`
+
+type SetEmailParams struct {
+	ID    uuid.UUID
+	Email *string
+}
+
+func (q *Queries) SetEmail(ctx context.Context, arg SetEmailParams) (User, error) {
+	row := q.db.QueryRow(ctx, setEmail, arg.ID, arg.Email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.DisplayName,
+		&i.AvatarFileID,
+		&i.StatusText,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.StatusEmoji,
+		&i.StatusExpiresAt,
+		&i.IsGuest,
+		&i.GuestExpiresAt,
+	)
+	return i, err
+}
+
+const setPasswordHash = `-- name: SetPasswordHash :exec
+UPDATE users SET password_hash = $2 WHERE id = $1
+`
+
+type SetPasswordHashParams struct {
+	ID           uuid.UUID
+	PasswordHash *string
+}
+
+func (q *Queries) SetPasswordHash(ctx context.Context, arg SetPasswordHashParams) error {
+	_, err := q.db.Exec(ctx, setPasswordHash, arg.ID, arg.PasswordHash)
+	return err
+}
+
 const updateStatus = `-- name: UpdateStatus :one
 UPDATE users SET status_text = $2, status_emoji = $3, status_expires_at = $4
 WHERE id = $1

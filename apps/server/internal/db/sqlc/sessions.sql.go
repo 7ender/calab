@@ -167,6 +167,37 @@ func (q *Queries) RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) (
 	return items, nil
 }
 
+const revokeOtherUserSessions = `-- name: RevokeOtherUserSessions :many
+UPDATE sessions SET revoked_at = now()
+WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL
+RETURNING id
+`
+
+type RevokeOtherUserSessionsParams struct {
+	UserID uuid.UUID
+	ID     uuid.UUID
+}
+
+func (q *Queries) RevokeOtherUserSessions(ctx context.Context, arg RevokeOtherUserSessionsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, revokeOtherUserSessions, arg.UserID, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const revokeSession = `-- name: RevokeSession :execrows
 UPDATE sessions SET revoked_at = now()
 WHERE id = $1 AND revoked_at IS NULL
