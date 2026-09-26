@@ -4,7 +4,10 @@
  * and browsers enforce both. Pure for tests.
  *
  * Allowed: our own origin, the API proxy scheme, blob/data (media previews), the server
- * origin over ws(s)/http(s) (gateway), and its subdomains (LiveKit lives on `rtc.<domain>`).
+ * origin over ws(s)/http(s) (gateway), and its subdomains. For a host with >= 3 labels the
+ * sibling subdomains are allowed too (`app.calab.ru` → `*.calab.ru`): LiveKit and TURN live on
+ * `rtc.<domain>` / `turn.<domain>` next to the app host, not under it. A 2-label host
+ * (`calab.ru`) never widens to its public suffix.
  * A loopback server (dev, tests) allows any loopback port (local LiveKit on :7880).
  * `extra`: space-separated sources for deployments with LiveKit on another domain
  * (CALABA_CSP_CONNECT / MAIN_VITE_CSP_CONNECT).
@@ -22,6 +25,12 @@ export function connectSrc(serverUrl: string, apiScheme: string, extra = ''): st
     } else {
       const [http, ws] = secure ? ['https:', 'wss:'] : ['http:', 'ws:'];
       out.push(`${http}//${host}${port}`, `${ws}//${host}${port}`, `${http}//*.${host}`, `${ws}//*.${host}`);
+      const labels = host.split('.');
+      const ip = /^\d+(\.\d+){3}$/.test(host) || host.startsWith('[');
+      if (!ip && labels.length >= 3) {
+        const parent = labels.slice(1).join('.');
+        out.push(`${http}//*.${parent}`, `${ws}//*.${parent}`);
+      }
     }
   } catch {
     // no/invalid server URL: only the local sources
