@@ -393,6 +393,10 @@ func (s *Service) Cleanup(ctx context.Context) (int, error) {
 	if err != nil || len(ids) == 0 {
 		return 0, err
 	}
+	// One post-commit budget for the whole pass (session revocations and MEMBER_REMOVE of
+	// every guest in every workspace): with a hung Redis the pass must not wait 3 s per
+	// publish — once the budget is spent, the remaining publishes fail at once.
+	ctx = events.WithBudget(ctx, events.RequestBudget)
 	n := 0
 	for _, uid := range ids {
 		if err := s.removeGuest(ctx, uid); err != nil {
@@ -462,9 +466,7 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 			_ = s.store.Delete(ctx, *f.ThumbnailKey)
 		}
 	}
-	for _, sid := range sessions {
-		s.auth.MarkRevoked(ctx, sid) // access tokens die now, gateway closes with 4010
-	}
+	s.auth.MarkRevoked(ctx, sessions...) // access tokens die now, gateway closes with 4010 (own budget)
 	for _, w := range wids {
 		s.events.Workspace(ctx, w, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
 			WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: w.String(), UserId: uid.String()},

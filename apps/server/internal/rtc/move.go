@@ -12,6 +12,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/rooms"
@@ -210,17 +211,35 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		}
 		return &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceMoved{VoiceMoved: ev}}
 	}
+	var moves []*v1.DispatchEvent
 	if len(apps) < moved { // some devices were moved inside the SFU
-		s.events.User(ctx, target, moveEv(nil))
+		moves = append(moves, moveEv(nil))
 	}
 	for i := range apps {
-		s.events.User(ctx, target, moveEv(&apps[i]))
+		moves = append(moves, moveEv(&apps[i]))
+	}
+	s.publishMoved(ctx, target, moves)
+	for i := range apps {
 		m := apps[i]
 		time.AfterFunc(moveDropOld, func() { s.dropFromOldRoom(srcID, m.sessionID, srcName, m.identity) })
 		time.AfterFunc(moveConfirm, func() { s.confirmMove(acc.WorkspaceID, dstID, target, m.sessionID, dstName, m.identity) })
 	}
 	httpx.NoContent(w)
 	return nil
+}
+
+// movedBudget is the Redis time VOICE_MOVED gets on its own. It carries the join token of
+// an app-level move: if it is lost because the request's shared post-commit budget was used
+// up by the VOICE_STATE_UPDATE / stream events before it, the user is left in limbo until
+// the 15 s rollback. So it does not share that budget.
+const movedBudget = 3 * time.Second
+
+// publishMoved sends VOICE_MOVED to the moved user's devices with its own budget.
+func (s *Service) publishMoved(ctx context.Context, target uuid.UUID, evs []*v1.DispatchEvent) {
+	ctx = events.WithBudget(context.WithoutCancel(ctx), movedBudget)
+	for _, ev := range evs {
+		s.events.User(ctx, target, ev)
+	}
 }
 
 // dropFromOldRoom removes an app-level-moved device from the old LiveKit room if it is

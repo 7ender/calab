@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/events"
@@ -30,36 +31,56 @@ func (p SyncPublisher) async(fn func(ctx context.Context)) {
 	}()
 }
 
-// withCallStart: a ROOM_UPDATE replaces the room on clients, so it carries the running
-// call's start (e.g. a rename must not reset the call timer). The Redis read is post-commit
-// work and shares the request's budget with publishing (events.Detached).
-func (p SyncPublisher) withCallStart(ctx context.Context, ev *v1.DispatchEvent) *v1.DispatchEvent {
-	r := ev.GetRoomUpdate().GetRoom()
-	if r.GetType() != v1.RoomType_ROOM_TYPE_VOICE {
-		return ev
+// withCallStarts: a ROOM_UPDATE replaces the room on clients, so it carries the running
+// call's start (e.g. a rename must not reset the call timer). All voice rooms of evs are read
+// in ONE Redis round trip: this is post-commit work sharing the request's budget with
+// publishing (events.Detached), and a per-room read would let a reorder of hundreds of rooms
+// spend the whole budget before the first PUBLISH (and log one warning per room once it is
+// gone). evs is not modified; on a read error the rooms go out as they are.
+func (p SyncPublisher) withCallStarts(ctx context.Context, evs []*v1.DispatchEvent) []*v1.DispatchEvent {
+	var idx []int
+	var rids []uuid.UUID
+	for i, ev := range evs {
+		r := ev.GetRoomUpdate().GetRoom()
+		if r.GetType() != v1.RoomType_ROOM_TYPE_VOICE {
+			continue
+		}
+		if rid, err := uuid.Parse(r.GetId()); err == nil {
+			idx, rids = append(idx, i), append(rids, rid)
+		}
 	}
-	r = proto.Clone(r).(*v1.Room)
+	if len(rids) == 0 {
+		return evs
+	}
 	dctx, done := events.Detached(ctx, 3*time.Second)
-	defer done()
-	if err := p.S.fillStarted(dctx, r); err != nil {
-		slog.WarnContext(ctx, "read call start for ROOM_UPDATE", "room", r.GetId(), "err", err)
+	started, err := p.S.voice.StartedAt(dctx, rids)
+	done()
+	if err != nil {
+		slog.WarnContext(ctx, "read call start for ROOM_UPDATE", "rooms", len(rids), "err", err)
+		return evs
 	}
-	return &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: r}}}
+	out := append([]*v1.DispatchEvent(nil), evs...)
+	for k, i := range idx {
+		r := proto.Clone(evs[i].GetRoomUpdate().GetRoom()).(*v1.Room)
+		r.VoiceStartedAt = nil
+		if t, ok := started[rids[k]]; ok {
+			r.VoiceStartedAt = timestamppb.New(t)
+		}
+		out[i] = &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: r}}}
+	}
+	return out
 }
 
 // Workspace implements events.Publisher.
 func (p SyncPublisher) Workspace(ctx context.Context, wid uuid.UUID, ev *v1.DispatchEvent) {
-	ev = p.withCallStart(ctx, ev)
+	ev = p.withCallStarts(ctx, []*v1.DispatchEvent{ev})[0]
 	p.Publisher.Workspace(ctx, wid, ev)
 	p.sync(wid, ev)
 }
 
 // WorkspaceEvents implements events.Publisher.
 func (p SyncPublisher) WorkspaceEvents(ctx context.Context, wid uuid.UUID, evs []*v1.DispatchEvent) {
-	out := make([]*v1.DispatchEvent, len(evs))
-	for i, ev := range evs {
-		out[i] = p.withCallStart(ctx, ev)
-	}
+	out := p.withCallStarts(ctx, evs)
 	p.Publisher.WorkspaceEvents(ctx, wid, out)
 	for _, ev := range out {
 		p.sync(wid, ev)

@@ -76,9 +76,7 @@ func (s *Service) ChangePassword(ctx context.Context, id Identity, current, next
 	if err != nil {
 		return err
 	}
-	for _, sid := range revoked {
-		s.afterRevoke(ctx, sid)
-	}
+	s.afterRevokeMany(ctx, revoked)
 	return nil
 }
 

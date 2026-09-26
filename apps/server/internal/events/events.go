@@ -170,13 +170,25 @@ func (r Redis) WorkspaceEvents(ctx context.Context, id uuid.UUID, evs []*v1.Disp
 		}
 		cmds = append(cmds, r.C.B().Publish().Channel(ch).Message(rueidis.BinaryString(b)).Build())
 	}
+	if len(cmds) == 0 {
+		return
+	}
 	dctx, done := Detached(ctx, publishTimeout)
 	defer done()
-	for _, res := range r.C.DoMulti(dctx, cmds...) {
+	// A pipeline can fail part-way (deadline mid-batch): the prefix is delivered, the rest is
+	// lost. Report how many were lost, not the batch size.
+	failed, first := 0, -1
+	var firstErr error
+	for i, res := range r.C.DoMulti(dctx, cmds...) {
 		if err := res.Error(); err != nil {
-			slog.WarnContext(dctx, "publish events failed", "channel", ch, "count", len(cmds), "err", err)
-			return
+			if failed == 0 {
+				first, firstErr = i, err
+			}
+			failed++
 		}
+	}
+	if failed > 0 {
+		slog.WarnContext(ctx, "publish events failed", "channel", ch, "failed", failed, "total", len(cmds), "first_failed", first, "err", firstErr)
 	}
 }
 

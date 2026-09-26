@@ -400,9 +400,7 @@ func (s *Service) Logout(ctx context.Context, id Identity, all bool) error {
 		if err != nil {
 			return err
 		}
-		for _, sid := range ids {
-			s.afterRevoke(ctx, sid)
-		}
+		s.afterRevokeMany(ctx, ids)
 		return nil
 	}
 	if _, err := s.db.Q.RevokeSession(ctx, id.SessionID); err != nil {
@@ -466,23 +464,52 @@ func (s *Service) ListSessions(ctx context.Context, id Identity) (*v1.ListSessio
 	return out, nil
 }
 
-// MarkRevoked makes a session revoked in the DB by someone else (e.g. guest cleanup)
-// effective immediately: live access tokens are rejected and the gateway drops the socket.
-func (s *Service) MarkRevoked(ctx context.Context, sid uuid.UUID) { s.afterRevoke(ctx, sid) }
+// MarkRevoked makes sessions revoked in the DB by someone else (e.g. guest cleanup)
+// effective immediately: live access tokens are rejected and the gateway drops the sockets.
+func (s *Service) MarkRevoked(ctx context.Context, sids ...uuid.UUID) { s.afterRevokeMany(ctx, sids) }
 
 func revokedKey(sid uuid.UUID) string { return "auth:revoked:" + sid.String() }
+
+// revokeBudget is the Redis time a revocation gets for its markers, and again for its
+// socket-close events. It is deliberately not taken from the request's shared post-commit
+// budget (events.RequestBudget): "log out everywhere" after a slow reorder or with a
+// sluggish Redis must still kill the access tokens now, not leave them alive until they
+// expire (≤ ACCESS_TOKEN_TTL).
+const revokeBudget = 3 * time.Second
 
 // afterRevoke makes outstanding access tokens of the session invalid immediately (Redis
 // marker living as long as an access token can) and tells the gateway to drop the socket.
 func (s *Service) afterRevoke(ctx context.Context, sid uuid.UUID) {
+	s.afterRevokeMany(ctx, []uuid.UUID{sid})
+}
+
+// afterRevokeMany is afterRevoke for several sessions: all markers in one pipeline, then
+// the socket-close events — each step with its own revokeBudget.
+func (s *Service) afterRevokeMany(ctx context.Context, sids []uuid.UUID) {
+	if len(sids) == 0 {
+		return
+	}
 	ctx = context.WithoutCancel(ctx)
 	ttl := s.accessTL + time.Minute
-	cmd := s.redis.B().Set().Key(revokedKey(sid)).Value("1").Ex(ttl).Build()
-	if err := s.redis.Do(ctx, cmd).Error(); err != nil {
-		// Access tokens of this session stay valid until expiry (≤ ACCESS_TOKEN_TTL).
-		slog.WarnContext(ctx, "mark session revoked failed", "session_id", sid, "err", err)
+	cmds := make(rueidis.Commands, len(sids))
+	for i, sid := range sids {
+		cmds[i] = s.redis.B().Set().Key(revokedKey(sid)).Value("1").Ex(ttl).Build()
 	}
-	s.events.SessionRevoked(ctx, sid)
+	mctx, done := events.Detached(events.WithBudget(ctx, revokeBudget), revokeBudget)
+	res := s.redis.DoMulti(mctx, cmds...)
+	for i, sid := range sids {
+		if i < len(res) {
+			if err := res[i].Error(); err != nil {
+				// Access tokens of this session stay valid until expiry (≤ ACCESS_TOKEN_TTL).
+				slog.WarnContext(ctx, "mark session revoked failed", "session_id", sid, "err", err)
+			}
+		}
+	}
+	done()
+	pctx := events.WithBudget(ctx, revokeBudget)
+	for _, sid := range sids {
+		s.events.SessionRevoked(pctx, sid)
+	}
 }
 
 // IsRevoked reports whether the session was revoked while access tokens may still be live.
