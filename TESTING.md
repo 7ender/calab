@@ -14,13 +14,13 @@ docker info --format '{{.ServerVersion}}'   # Docker запущен
 pnpm install
 ```
 
-Postgres 18, Redis 7.4 и LiveKit (dev) — порты смещены, чтобы не пересекаться с чужими сервисами на машине:
+Postgres 18, Valkey 9 (совместим с Redis) и LiveKit (dev) — порты смещены, чтобы не пересекаться с чужими сервисами на машине:
 
 ```sh
 docker compose -f infra/docker/compose.dev.yml up -d
-docker compose -f infra/docker/compose.dev.yml ps      # postgres (55432), redis (56379), livekit (7880-7882) — running
+docker compose -f infra/docker/compose.dev.yml ps      # postgres (55432), valkey (56379), livekit (7880-7882) — running
 docker exec calaba-dev-postgres-1 psql -U calaba -c 'select uuidv7()'   # одна строка с uuid
-docker exec calaba-dev-redis-1 redis-cli info server | grep redis_version  # 7.4.x или новее
+docker exec calaba-dev-valkey-1 valkey-cli info server | grep valkey_version  # 9.x или новее
 ```
 
 Чужие контейнеры/сервисы на 5432/6379 **не трогать**.
@@ -74,7 +74,7 @@ go run ./cmd/server
 
 Ожидается в логе (JSON): `"msg":"migration applied"` (только при первом запуске на чистой БД) и `"msg":"listening","addr":"127.0.0.1:3900"`.
 
-**Важно:** bootstrap-регистрация без инвайта работает только на пустой БД. Если в БД уже есть пользователи (повторный прогон), шаг 4.2 вернёт 403 — тогда очисти БД и Redis: `docker exec calaba-dev-postgres-1 psql -U calaba -c 'drop schema public cascade; create schema public;'`, `docker exec calaba-dev-redis-1 redis-cli flushall` — и перезапусти сервер.
+**Важно:** bootstrap-регистрация без инвайта работает только на пустой БД. Если в БД уже есть пользователи (повторный прогон), шаг 4.2 вернёт 403 — тогда очисти БД и Redis: `docker exec calaba-dev-postgres-1 psql -U calaba -c 'drop schema public cascade; create schema public;'`, `docker exec calaba-dev-valkey-1 valkey-cli flushall` — и перезапусти сервер.
 
 ```sh
 A=http://127.0.0.1:3900
@@ -380,7 +380,7 @@ curl -s -XPOST $A/api/auth/register -d "{\"email\":\"me@example.com\",\"password
 ```
 В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://colaba.gptunnel.ai` (или `https://colaba.gptunnel.ru`).
 
-Сбросить данные стенда (все пользователи/сообщения/файлы!) — только по согласованию: `ssh $H "$DC exec -T postgres psql -U calaba -c 'drop schema public cascade; create schema public;' && $DC exec -T redis redis-cli flushall && $DC restart api"` (+ очистить volume `calaba_files_data`).
+Сбросить данные стенда (все пользователи/сообщения/файлы!) — только по согласованию: `ssh $H "$DC exec -T postgres psql -U calaba -c 'drop schema public cascade; create schema public;' && $DC exec -T valkey sh -c 'VALKEYCLI_AUTH="$REDIS_PASSWORD" valkey-cli flushall' && $DC restart api"` (+ очистить volume `calaba_files_data`).
 
 ### 0. Деплой
 
@@ -399,7 +399,7 @@ curl -s $A/healthz; ssh $H 'curl -s 127.0.0.1:3000/readyz'
 for p in /readyz /metrics; do curl -s -o /dev/null -w "$p %{http_code}\n" $A$p; done   # оба 404 снаружи
 ssh $H 'docker run --rm -v calaba_files_data:/d busybox:1.37 stat -c "%u:%g %a" /d'
 ```
-Ожидается: `calaba-api-1 Up (healthy)`, `caddy-1 Up`, `livekit-1 Up`, `postgres-1 / redis-1 Up (healthy)`; в логе api `migration applied` (только при первом старте на пустой БД) и `"msg":"listening","addr":"127.0.0.1:3000","registration":"open","storage":"fs","livekit":true`; `{"status":"ok"}`, `{"postgres":"ok","redis":"ok"}`, `404`; `65532:65532 750`.
+Ожидается: `calaba-api-1 Up (healthy)`, `caddy-1 Up`, `livekit-1 Up`, `postgres-1 / valkey-1 Up (healthy)`; в логе api `migration applied` (только при первом старте на пустой БД) и `"msg":"listening","addr":"127.0.0.1:3000","registration":"open","storage":"fs","livekit":true`; `{"status":"ok"}`, `{"postgres":"ok","redis":"ok"}`, `404`; `65532:65532 750`.
 
 ### 2. Сертификаты и HTTPS
 
@@ -472,8 +472,8 @@ curl -sI https://$D/manifest.webmanifest | grep -i content-type                 
 
 | ОС | Файл | Установка |
 |---|---|---|
-| macOS (Apple Silicon и Intel) | `Calaba-<версия>-universal.dmg` | открыть dmg, перетащить Calaba в «Программы». Сборка **не подписана**: первый запуск — ПКМ по приложению → «Открыть» → «Открыть» (или `xattr -dr com.apple.quarantine /Applications/Calaba.app`). Автообновление на macOS без подписи не работает — приложение только сообщает о новой версии |
-| Windows 10/11 x64 | `Calaba-Setup-<версия>-x64.exe` | запустить; SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» (сборка не подписана) |
+| macOS Apple Silicon (M1–M4) / Intel | `Calaba-<версия>-arm64.dmg` / `Calaba-<версия>-x64.dmg` (не знаете какой —  → «Об этом Mac»: «Чип Apple M…» = arm64) | открыть dmg, перетащить Calaba в «Программы». Сборка **не подписана**: первый запуск — ПКМ по приложению → «Открыть» → «Открыть» (или `xattr -dr com.apple.quarantine /Applications/Calaba.app`). Автообновление на macOS без подписи не работает — приложение только сообщает о новой версии |
+| Windows 10/11 x64 | `Calaba-Setup-<версия>-x64.exe` (пока не публикуется — см. docs/06, блокер сборки Windows) | запустить; SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» (сборка не подписана) |
 | Linux x64 (любой дистрибутив) | `Calaba-<версия>-x86_64.AppImage` | `chmod +x Calaba-*.AppImage && ./Calaba-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calaba-*.AppImage --appimage-extract-and-run`) |
 | Debian/Ubuntu x64 | `calaba_<версия>_amd64.deb` | `sudo apt install ./calaba_*_amd64.deb`, запуск — «Calaba» в меню или `calaba` |
 
@@ -571,9 +571,9 @@ ssh $H 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.Mem
 
 ```sh
 # контейнеры: read-only, без capabilities, no-new-privileges
-ssh $H 'for c in api caddy redis postgres; do docker inspect -f "$c ro={{.HostConfig.ReadonlyRootfs}} drop={{.HostConfig.CapDrop}} add={{.HostConfig.CapAdd}} user={{.Config.User}}" calaba-$c-1; done'
-# redis: пароль, noeviction, 512mb; пароль не виден в ps
-ssh $H 'docker exec calaba-redis-1 redis-cli ping; docker exec calaba-redis-1 sh -c "REDISCLI_AUTH=\$REDIS_PASSWORD redis-cli config get maxmemory-policy"; ps -eo args | grep -c "[r]equirepass"'
+ssh $H 'for c in api caddy valkey postgres; do docker inspect -f "$c ro={{.HostConfig.ReadonlyRootfs}} drop={{.HostConfig.CapDrop}} add={{.HostConfig.CapAdd}} user={{.Config.User}}" calaba-$c-1; done'
+# valkey: пароль, noeviction, 512mb; пароль не виден в ps
+ssh $H 'docker exec calaba-valkey-1 valkey-cli ping; docker exec calaba-valkey-1 sh -c "VALKEYCLI_AUTH=\$REDIS_PASSWORD valkey-cli config get maxmemory-policy"; ps -eo args | grep -c "[r]equirepass"'
 # заголовки
 curl -sI $A/ | grep -i strict-transport; curl -sI $A/api/me | grep -iE 'cache-control|nosniff|referrer'; curl -sI https://rtc.$D/ | grep -i strict
 # регистрация закрыта
@@ -581,7 +581,7 @@ curl -s -w ' %{http_code}\n' -XPOST $A/api/auth/register -d '{"email":"x@example
 # TURN relay ограничен (счётчики растут только при злоупотреблении); IPv6 INPUT DROP
 ssh $H 'iptables -L OUTPUT -n -v | grep calaba-turn; ip6tables -S INPUT | head -1'
 ```
-Ожидается: все четыре `ro=true drop=[ALL]`, caddy `add=[CAP_NET_BIND_SERVICE]`, redis `user=999:1000`, postgres `user=70:70`, api `user=65532`; `NOAUTH Authentication required.`, `noeviction`, `0`; `strict-transport-security: max-age=31536000; includeSubDomains` на `<домен>` и `rtc.`; на `/api/me` — `cache-control: no-store`, `x-content-type-options: nosniff`, `referrer-policy: same-origin`; регистрация → `ERROR_CODE_REGISTRATION_CLOSED … 403`; два правила `calaba-turn-relay`; `-P INPUT DROP`.
+Ожидается: все четыре `ro=true drop=[ALL]`, caddy `add=[CAP_NET_BIND_SERVICE]`, valkey `user=999:1000`, postgres `user=70:70`, api `user=65532`; `NOAUTH Authentication required.`, `noeviction`, `0`; `strict-transport-security: max-age=31536000; includeSubDomains` на `<домен>` и `rtc.`; на `/api/me` — `cache-control: no-store`, `x-content-type-options: nosniff`, `referrer-policy: same-origin`; регистрация → `ERROR_CODE_REGISTRATION_CLOSED … 403`; два правила `calaba-turn-relay`; `-P INPUT DROP`.
 Relay-check TLS/UDP (п. 7) после ограничения — PASS (факт 2026-09-26: relay/tls и relay/udp, ~5 MB за 30 с, счётчики правил не выросли).
 
 Проба relay (только для повторной проверки, делает infra): pion-клиент с кредами из JoinResponse → `CreatePermission` к `127.0.0.1`/`10.0.0.1` должен давать 403 (LiveKit), отправка на `141.105.69.177:<не 7882>` и на внешние адреса — дропаться правилами (слушатель на хосте ничего не получает). Никогда не целиться в порты соседа (9001/9002/54241/33621).
@@ -612,14 +612,14 @@ ssh $H 'systemctl start calaba-backup.service'                  # внеочер
 ```bash
 pnpm install                                                     # в конце: "Rebuild Complete" (uiohook-napi)
 pnpm -F @calaba/desktop typecheck && pnpm -F @calaba/desktop lint && pnpm -F @calaba/desktop test   # 46 тестов
-docker compose -f infra/docker/compose.dev.yml up -d postgres redis livekit
+docker compose -f infra/docker/compose.dev.yml up -d postgres valkey livekit
 # API (apps/server/README.md). Для локального теста:
 cd apps/server && DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba REDIS_URL=redis://localhost:56379/0 \
   JWT_SECRET=$(openssl rand -base64 48) REGISTRATION_MODE=open \
   LIVEKIT_URL=ws://127.0.0.1:7880 LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret \
   go run ./cmd/server                                            # слушает 127.0.0.1:3000
 ```
-Порты postgres и redis смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://colaba.gptunnel.ai` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://colaba.gptunnel.ai`.
+Порты postgres и valkey смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://colaba.gptunnel.ai` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://colaba.gptunnel.ai`.
 
 ### 0a. Против стенда (`https://colaba.gptunnel.ai`, запасной адрес `https://colaba.gptunnel.ru`)
 Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.colaba.gptunnel.ai`) клиент получает из `/join` сам.
@@ -1054,3 +1054,17 @@ id=$(docker create calaba-api:check); docker export $id | tar -t | grep -E '^(LI
 - `make third-party-notices` завершается с кодом 0 (нет GPL/LGPL/AGPL/UNKNOWN), без дрейфа файла;
 - в образе четыре файла;
 - на запущенном сервере `curl -s localhost:3000/api/version` → `{"version":"…","commit":"…","license":"BUSL-1.1","commercialLicense":"https://gptunnel.ai","attribution":"Powered by GPTunneL","url":"https://gptunnel.ai"}`, в логе `listening` есть `version` и `commit`.
+
+## Server: Valkey вместо Redis (ADR-0017)
+
+```sh
+docker compose -f infra/docker/compose.dev.yml up -d --remove-orphans     # заменит redis на valkey (новый volume)
+docker exec calaba-dev-valkey-1 valkey-cli info server | grep -E 'valkey_version|redis_version'
+cd apps/server && go test ./internal/redisx/ -v -run TestVersion 2>&1 | grep -E '^(--- |ok|FAIL)'
+cd ../.. && make test-integration 2>&1 | grep internal/app
+```
+Ожидается:
+- `valkey_version:9.x` (и `redis_version:7.2.4` — так Valkey сообщает о совместимости);
+- `TestVersion` проходит: Valkey 9 и Redis 7.4 принимаются, Valkey 8 и Redis 7.2 — нет; пароль в ошибке скрыт;
+- `ok … internal/app` — весь интеграционный набор против Valkey (presence на `HEXPIRE`, Lua-лимитеры, pub/sub, client-side caching).
+- Сервер со старым Redis 7.2 или Valkey 8 не стартует: `need Valkey >= 9.0 or Redis >= 7.4`.

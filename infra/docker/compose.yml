@@ -1,7 +1,7 @@
 # Production-like stack on a single host. Secrets live in infra/docker/.env (see .env.example).
 # Deploy with ./deploy.sh (renders livekit/livekit.gen.yaml, then `docker compose up`).
 # caddy, livekit and api use host network: WebRTC/TURN need direct ports, and the API
-# talks to everything over 127.0.0.1. postgres/redis publish only on 127.0.0.1.
+# talks to everything over 127.0.0.1. postgres/valkey publish only on 127.0.0.1.
 # Files: local volume files_data via the API's fs driver (ADR-0011), no S3 service.
 
 # Baseline for every service we run (security review L6): no new privileges, no capabilities
@@ -92,7 +92,7 @@ services:
     deploy:
       resources:
         limits: { memory: 1g }
-    healthcheck:   # distroless has no curl: the binary probes its own /readyz (postgres + redis)
+    healthcheck:   # distroless has no curl: the binary probes its own /readyz (postgres + valkey)
       test: ["CMD", "/server", "healthcheck"]
       interval: 10s
       timeout: 5s
@@ -100,7 +100,7 @@ services:
       start_period: 20s
     depends_on:
       postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
+      valkey: { condition: service_healthy }
     logging: *logging
 
   postgres:
@@ -129,11 +129,14 @@ services:
         limits: { memory: 2g }
     logging: *logging
 
-  redis:
-    image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499   # ≥7.4: HEXPIRE for presence
+  # Valkey (BSD-3-Clause, Redis-compatible) instead of Redis 7.4+ (RSAL/SSPL). ≥ 9.0: hash
+  # field TTL (HEXPIRE) for presence; the API checks the version at startup. Clients still
+  # speak the Redis protocol (REDIS_URL, rueidis).
+  valkey:
+    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
     restart: unless-stopped
     <<: *hardening
-    user: "999:1000"               # redis
+    user: "999:1000"               # valkey
     tmpfs: [/tmp]
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -144,17 +147,20 @@ services:
       - -c
       - |
         umask 077
-        printf 'requirepass "%s"\n' "$$REDIS_PASSWORD" > /tmp/auth.conf
-        exec redis-server /tmp/auth.conf --save 60 1 --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+        pw=$$(printf '%s' "$$REDIS_PASSWORD" | sed 's/[\\"]/\\&/g')   # escape \ and " for the config
+        printf 'requirepass "%s"\n' "$$pw" > /tmp/auth.conf
+        exec valkey-server /tmp/auth.conf --save 60 1 --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
-      - redis_data:/data
+      # New volume: Valkey does not read Redis 7.4 persistence files (RDB 12). Only transient
+      # state lives here (revocation markers, limits, voice, presence, gateway buffers).
+      - valkey_data:/data
     deploy:
       resources:
         limits: { memory: 768m }
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "VALKEYCLI_AUTH=\"$$REDIS_PASSWORD\" valkey-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -164,5 +170,5 @@ volumes:
   caddy_data:
   caddy_config:
   pg_data:
-  redis_data:
+  valkey_data:
   files_data:   # uploaded files (API fs driver); back up offsite, see docs/06

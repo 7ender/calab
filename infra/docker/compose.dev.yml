@@ -1,4 +1,4 @@
-# Локальная разработка (macOS): БД, Redis, LiveKit в dev-режиме без TLS.
+# Локальная разработка (macOS): БД, Valkey (совместим с Redis), LiveKit в dev-режиме без TLS.
 # Файлы API пишет на локальный диск (STORAGE_DRIVER=fs, ADR-0011) — сервиса S3 нет.
 # API и Electron запускаются на хосте через pnpm.
 # Примечание: Docker на macOS не даёт host network → LiveKit в контейнере годится только
@@ -19,9 +19,9 @@ services:
     ports: ["55432:5432"]   # 5432 is often taken by other local projects
     volumes: [pg_dev:/var/lib/postgresql]
 
-  redis:
-    image: redis:7.4-alpine   # ≥7.4: HEXPIRE for presence
-    ports: ["56379:6379"]   # 6379 is often taken by a native Redis (needs >= 7.4 anyway)
+  valkey:
+    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11   # ≥ 9.0: HEXPIRE for presence
+    ports: ["56379:6379"]   # 6379 is often taken by a native Redis
 
   livekit:
     image: livekit/livekit-server:v1.13

@@ -8,8 +8,22 @@ import (
 
 func TestVersion(t *testing.T) {
 	info := "# Server\r\nredis_version:7.4.11\r\nredis_mode:standalone\r\n"
-	if v := serverVersion(info); v != "7.4.11" {
+	if v := infoField(info, "redis_version"); v != "7.4.11" {
 		t.Fatalf("parsed %q", v)
+	}
+	valkey := "# Server\r\nredis_version:7.2.4\r\nserver_name:valkey\r\nvalkey_version:9.1.2\r\n"
+	for info, ok := range map[string]bool{
+		info:   true, // Redis 7.4
+		valkey: true, // Valkey 9 (its redis_version 7.2.4 must not decide)
+		"# Server\r\nredis_version:7.2.4\r\nvalkey_version:8.1.1\r\n": false, // Valkey 8: no HEXPIRE
+		"# Server\r\nredis_version:7.2.7\r\n":                         false,
+	} {
+		if err := checkVersion(info); (err == nil) != ok {
+			t.Errorf("%q: err %v", info, err)
+		}
+	}
+	if got := redactURL("redis://:s3cret@127.0.0.1:6379/0"); got != "redis://:xxxxx@127.0.0.1:6379/0" {
+		t.Errorf("redacted: %s", got)
 	}
 	for v, want := range map[string]bool{"7.4.0": true, "7.4.11": true, "8.0.1": true, "7.2.7": false, "6.2": false, "": false, "x.y": false} {
 		if atLeast(v, 7, 4) != want {

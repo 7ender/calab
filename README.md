@@ -11,7 +11,7 @@ Desktop-приложение для общения сотрудников: го�
 | Desktop | Electron 44 + React + TypeScript + Vite (`electron-vite`) |
 | Медиа (SFU) | LiveKit (self-hosted, OSS), кодеки Opus / AV1 / VP8 |
 | API + realtime | **Go** — `net/http` + `coder/websocket`, protobuf-контракт (`buf`) |
-| БД | PostgreSQL 18 (`pgx` + `sqlc` + `goose`), Redis 7 (`rueidis`) |
+| БД | PostgreSQL 18 (`pgx` + `sqlc` + `goose`), Valkey 9 — совместим с Redis (`rueidis`, ADR-0017) |
 | Файлы | MinIO (S3-совместимо, позже — любой S3), только через API |
 | Edge | Caddy + caddy-l4 (своя сборка; SNI-роутинг 443: HTTPS/WSS и TURN/TLS на одном IP) |
 | Деплой | docker compose (MVP) → Kubernetes (k3s + Helm) |
@@ -49,7 +49,7 @@ docs/          архитектура, ADR
 ```bash
 corepack enable && corepack prepare pnpm@latest --activate
 pnpm install
-docker compose -f infra/docker/compose.dev.yml up -d   # postgres, redis, minio, livekit
+docker compose -f infra/docker/compose.dev.yml up -d   # postgres, valkey, livekit
 make gen                                                # buf generate (Go + TS)
 cd apps/server && go run ./cmd/server
 # pnpm -F @calaba/desktop dev                         # клиент (появится на этапе 1)

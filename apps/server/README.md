@@ -12,7 +12,7 @@ internal/httpx        ApiError, protojson, middleware (request-id, client IP, ac
 internal/db           pgxpool, goose-миграции (embed, pg_advisory_lock), транзакции
 internal/db/migrations/*.sql   схема (goose)
 internal/db/queries/*.sql      запросы (sqlc) → internal/db/sqlc (сгенерировано, коммитится)
-internal/redisx       rueidis-клиент (проверка Redis ≥ 7.4), token bucket rate limiter (Lua)
+internal/redisx       rueidis-клиент (проверка версии: Valkey ≥ 9.0 или Redis ≥ 7.4), token bucket rate limiter (Lua)
 internal/events       публикация DispatchEvent в Redis pub/sub (16-байтный id события + protobuf)
 internal/auth         argon2id, access JWT, refresh-ротация + reuse detection, middleware, /api/auth/*
 internal/users        /api/me
@@ -39,7 +39,7 @@ gen/calaba/v1         Go из proto (buf, коммитится)
 
 ```sh
 pnpm install && make gen                  # из корня репо (генерация идемпотентна)
-pnpm infra:dev                            # postgres 18 (:55432), redis 7.4 (:56379), livekit --dev (:7880)
+pnpm infra:dev                            # postgres 18 (:55432), valkey 9 (:56379), livekit --dev (:7880)
 make dev-server                           # дефолты под compose.dev: REGISTRATION_MODE=open, LiveKit devkey/secret
 ```
 
@@ -47,13 +47,15 @@ LiveKit в compose.dev работает с `infra/docker/livekit/livekit.dev.yam
 
 Порты dev-стенда смещены (55432, 56379): на машинах разработчиков 5432/6379 часто заняты чужими Postgres/Redis (в т.ч. нативным Redis < 7.4 — сервер с ним не стартует).
 
+KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В коде и переменных остаётся имя протокола: `REDIS_URL`, пакет `redisx`, ключ `redis` в `/readyz`.
+
 ## Переменные окружения
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
 | `HTTP_ADDR` | `127.0.0.1:3000` | адрес HTTP (REST + `/gateway`) |
 | `DATABASE_URL` | — (обязательна) | Postgres 18 (`uuidv7()`) |
-| `REDIS_URL` | — (обязательна) | `redis://host:port/db`, с паролем — `redis://:pass@host:port/db` (спецсимволы в пароле URL-кодировать); **Redis ≥ 7.4** (HEXPIRE для presence) |
+| `REDIS_URL` | — (обязательна) | `redis://host:port/db`, с паролем — `redis://:pass@host:port/db` (спецсимволы в пароле URL-кодировать); **Valkey ≥ 9.0** (или Redis ≥ 7.4): HEXPIRE для presence |
 | `JWT_SECRET` | — (обязательна, ≥ 32 байт) | подпись access JWT (HS256) |
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL` | `15m` / `720h` | время жизни access JWT / сессии (скользящее) |
 | `REGISTRATION_MODE` | `invite` | `open` \| `invite` (без кода — только первый пользователь сервера) |
@@ -106,7 +108,7 @@ LiveKit в compose.dev работает с `infra/docker/livekit/livekit.dev.yam
 
 ```sh
 make test                  # unit: go test ./... + pnpm -r test
-make test-integration      # нужен pnpm infra:dev (postgres :55432, redis :56379, livekit :7880)
+make test-integration      # нужен pnpm infra:dev (postgres :55432, valkey :56379, livekit :7880)
                            # TEST_DATABASE_URL, TEST_REDIS_URL (DB 15 очищается!), TEST_LIVEKIT_URL / TEST_LIVEKIT_INTERNAL_URL
 make lint                  # go vet + golangci-lint (+ pnpm lint)
 ```

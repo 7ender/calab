@@ -1,7 +1,8 @@
 // Command notices writes THIRD-PARTY-NOTICES.txt: the license texts of every Go module
 // linked into the server binary (go list -deps ./cmd/server, as built in the Dockerfile).
-// It fails on copyleft (GPL / LGPL / AGPL), unknown licenses and modules without a
-// license file, so a new dependency with such terms cannot slip in unnoticed.
+// It fails on copyleft (GPL / LGPL / AGPL), source-available terms (SSPL, RSAL, BUSL),
+// unknown licenses and modules without a license file, so a new dependency with such
+// terms cannot slip in unnoticed.
 //
 //	go run ./tools/notices > THIRD-PARTY-NOTICES.txt   (make third-party-notices)
 package main
@@ -39,6 +40,12 @@ var licenseFile = regexp.MustCompile(`(?i)^(licen[cs]e|copying|notice)(\.(md|txt
 func classify(text string) string {
 	t := strings.Join(strings.Fields(text), " ")
 	switch {
+	case strings.Contains(t, "Server Side Public License"):
+		return "SSPL"
+	case strings.Contains(t, "Redis Source Available License"):
+		return "RSAL"
+	case strings.Contains(t, "Business Source License"):
+		return "BUSL"
 	case strings.Contains(t, "GNU AFFERO GENERAL PUBLIC LICENSE"):
 		return "AGPL"
 	case strings.Contains(t, "GNU LESSER GENERAL PUBLIC LICENSE"):
@@ -63,7 +70,7 @@ func classify(text string) string {
 	return "UNKNOWN"
 }
 
-var forbidden = map[string]bool{"GPL": true, "LGPL": true, "AGPL": true, "UNKNOWN": true}
+var forbidden = map[string]bool{"GPL": true, "LGPL": true, "AGPL": true, "SSPL": true, "RSAL": true, "BUSL": true, "UNKNOWN": true}
 
 func modules() ([]module, error) {
 	cmd := exec.CommandContext(context.Background(), "go", "list", "-deps", "-tags", "nodynamic", "-json=Standard,Module", "./cmd/server")
@@ -144,7 +151,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	var body strings.Builder
+	var body, table strings.Builder
 	var problems []string
 	summary := map[string][]string{}
 	for _, m := range mods {
@@ -157,6 +164,7 @@ func run() error {
 			id = classify(lic)
 		}
 		summary[id] = append(summary[id], m.Path)
+		fmt.Fprintf(&table, "  %-40s %-22s %s\n", m.Path, m.Version, id)
 		if forbidden[id] {
 			problems = append(problems, fmt.Sprintf("%s %s: %s", m.Path, m.Version, id))
 		}
@@ -172,9 +180,13 @@ func run() error {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	fmt.Println("License audit: no GPL / LGPL / AGPL / SSPL / RSAL / BUSL (the generator fails on them).")
 	for _, id := range ids {
-		fmt.Printf("%s (%d): %s\n", id, len(summary[id]), strings.Join(summary[id], ", "))
+		fmt.Printf("  %s: %d\n", id, len(summary[id]))
 	}
+	fmt.Println()
+	fmt.Printf("  %-40s %-22s %s\n", "MODULE", "VERSION", "LICENSE")
+	fmt.Print(table.String())
 	fmt.Print(body.String())
 	if len(problems) > 0 {
 		return fmt.Errorf("licenses that need review:\n  %s", strings.Join(problems, "\n  "))
