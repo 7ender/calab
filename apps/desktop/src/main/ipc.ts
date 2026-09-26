@@ -23,14 +23,15 @@ import { captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
 import { setTrayState } from './tray';
 import { checkForUpdates } from './updater';
-import { isOwnOrigin } from './windows';
+import { reloadIfServerChanged } from './csp';
+import { isOwnPage } from './windows';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
 
 /** Only our own renderer may call privileged IPC. */
 function assertTrusted(e: IpcMainInvokeEvent): void {
   const url = e.senderFrame?.url ?? '';
-  if (!isOwnOrigin(url)) throw new Error(`IPC from untrusted origin: ${url}`);
+  if (!isOwnPage(url)) throw new Error(`IPC from untrusted origin: ${url}`);
 }
 
 function str(v: unknown, max = 256, allowEmpty = false): string {
@@ -82,7 +83,7 @@ function parseSettings(v: unknown): Partial<AppSettings> {
     if (u && !/^https?:\/\//.test(u)) throw new Error('serverUrl must be http(s)');
     out.serverUrl = u;
   }
-  if (r['updateUrl'] !== undefined) out.updateUrl = str(r['updateUrl'], 512, true);
+  // updateUrl is NOT settable from the renderer (security review M3): main derives the feed.
   if (r['autostart'] !== undefined) out.autostart = Boolean(r['autostart']);
   return out;
 }
@@ -111,13 +112,18 @@ function handle(channel: string, fn: Handler): void {
 export function registerIpc(): void {
   // ---- auth ----
   handle(IPC.authRestore, () => restore());
-  handle(IPC.authLogin, (_e, a) => login(parseLogin(a)));
-  handle(IPC.authRegister, (_e, a) => register(parseRegister(a)));
+  // A login to another server changes the renderer CSP (review L3): reload after the reply.
+  const afterAuth = <T extends { ok: boolean }>(r: T): T => {
+    if (r.ok) reloadIfServerChanged();
+    return r;
+  };
+  handle(IPC.authLogin, async (_e, a) => afterAuth(await login(parseLogin(a))));
+  handle(IPC.authRegister, async (_e, a) => afterAuth(await register(parseRegister(a))));
   handle(IPC.authGuestJoin, (_e, a) => {
     const r = obj(a);
     const code = str(r['code'], 64);
     if (!/^[A-Za-z0-9_-]{4,64}$/.test(code)) throw new Error('invalid code');
-    return guestJoin(code, str(r['nickname'], 64));
+    return guestJoin(code, str(r['nickname'], 64)).then(afterAuth);
   });
   handle(IPC.authLogout, (_e, a) => logout(Boolean(a)));
   handle(IPC.authAccessToken, () => getAccessToken());
@@ -145,7 +151,11 @@ export function registerIpc(): void {
     screenAccess: mediaAccess('screen'),
   }));
   handle(IPC.appGetSettings, () => getSettings());
-  handle(IPC.appSetSettings, (_e, a) => updateSettings(parseSettings(a)));
+  handle(IPC.appSetSettings, (_e, a) => {
+    const next = updateSettings(parseSettings(a));
+    reloadIfServerChanged();
+    return next;
+  });
   handle(IPC.appTakeDeepLink, () => takePendingDeepLink());
   handle(IPC.appCheckUpdates, () => checkForUpdates());
   handle(IPC.appLog, (_e, a) => {

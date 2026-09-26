@@ -44,6 +44,7 @@ export const IPC = {
 
   // ---- files ----
   filesDownload: 'files:download',
+  filesProgress: 'files:progress',
 
   // ---- media ----
   captureListSources: 'capture:list-sources',
@@ -131,7 +132,8 @@ export type UpdateStatus =
   | { state: 'disabled' }
   | { state: 'checking' }
   | { state: 'none' }
-  | { state: 'available'; version: string }
+  /** `downloadPage`: unsigned builds don't auto-download; the user gets the server's /download/ page. */
+  | { state: 'available'; version: string; downloadPage?: string }
   | { state: 'downloaded'; version: string }
   | { state: 'error'; message: string };
 
@@ -146,6 +148,15 @@ export type TrayAction = 'toggle-mute' | 'toggle-deafen' | 'disconnect' | 'show'
 export interface DownloadArgs {
   fileId: string;
   name: string;
+}
+
+/** Attachment download progress (main → renderer), from Chromium's DownloadItem. */
+export interface DownloadProgress {
+  fileId: string;
+  received: number;
+  /** 0 = unknown. */
+  total: number;
+  state: 'progressing' | 'completed' | 'cancelled' | 'interrupted';
 }
 
 // ---------------------------------------------------------------- media

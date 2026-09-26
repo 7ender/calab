@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions } from 'electron';
 import { API_SCHEME } from '../shared/ipc';
 import { windowIconPath } from './icons';
@@ -151,8 +151,13 @@ export function createMainWindow(): BrowserWindow {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
-    if (!isOwnOrigin(url)) e.preventDefault();
+    if (!isOwnPage(url)) e.preventDefault();
   });
+  // Frames never navigate anywhere (L1), and <webview> is never allowed.
+  win.webContents.on('will-frame-navigate', (e) => {
+    if (!e.isMainFrame && !isOwnPage(e.url)) e.preventDefault();
+  });
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
 
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
   if (devUrl) void win.loadURL(devUrl);
@@ -176,9 +181,33 @@ export function showMainWindow(): void {
 }
 
 /** Origins our renderer is served from; used to scope permission grants and IPC. */
-export function isOwnOrigin(url: string): boolean {
+/**
+ * Our renderer page, exactly: the packaged index.html (any hash/query), the dev server origin,
+ * or an about:blank stream pop-out opened by it. Security review L1: a bare `file://` prefix
+ * would trust any local HTML (e.g. a downloaded file) with the full preload API.
+ */
+const RENDERER_FILE_URL = pathToFileURL(RENDERER_HTML).href;
+
+export function isOwnPage(url: string): boolean {
+  if (url === 'about:blank') return true;
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
-  if (devUrl && url.startsWith(new URL(devUrl).origin)) return true;
-  // Pop-out windows are about:blank children of our renderer.
-  return url.startsWith('file://') || url === 'about:blank' || url.startsWith(`${API_SCHEME}:`);
+  if (devUrl) {
+    try {
+      if (new URL(url).origin === new URL(devUrl).origin) return true;
+    } catch {
+      return false;
+    }
+  }
+  return url.split(/[?#]/)[0] === RENDERER_FILE_URL;
+}
+
+/**
+ * Permission checks only get an origin (`file:///` for any local page), so they also require
+ * the asking webContents to show our page.
+ */
+export function isOwnOrigin(origin: string, pageUrl?: string): boolean {
+  if (pageUrl !== undefined && !isOwnPage(pageUrl)) return false;
+  const devUrl = process.env['ELECTRON_RENDERER_URL'];
+  if (devUrl && origin.startsWith(new URL(devUrl).origin)) return true;
+  return origin.startsWith('file://') || origin === 'about:blank' || origin.startsWith(`${API_SCHEME}:`);
 }

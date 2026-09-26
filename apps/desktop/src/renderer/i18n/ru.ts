@@ -1,3 +1,4 @@
+import { ruApp } from './ru.app';
 import { ruChat } from './ru.chat';
 import { ruPeople } from './ru.people';
 import { ruShell } from './ru.shell';
@@ -7,6 +8,7 @@ export const ru = {
   ...ruShell,
   ...ruChat,
   ...ruPeople,
+  ...ruApp,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',

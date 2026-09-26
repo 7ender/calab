@@ -6,11 +6,12 @@ import { findDeepLink, handleDeepLink, registerProtocolClient } from './deeplink
 import { registerIpc } from './ipc';
 import { initLogging, log } from './logging';
 import { recoverCapsRemap } from './capsRemap';
+import { installRendererCsp } from './csp';
 import { applyDevDockIcon } from './icons';
 import { shutdownPtt } from './ptt';
 import { createTray } from './tray';
 import { checkForUpdates } from './updater';
-import { createMainWindow, getMainWindow, isOwnOrigin, showMainWindow } from './windows';
+import { createMainWindow, getMainWindow, isOwnOrigin, isOwnPage, showMainWindow } from './windows';
 
 // Tests/automation may run several isolated instances side by side.
 if (process.env['CALABA_USER_DATA']) app.setPath('userData', process.env['CALABA_USER_DATA']);
@@ -51,10 +52,13 @@ const ALLOWED_PERMISSIONS = new Set(['media', 'display-capture', 'speaker-select
 function lockDownSession(): void {
   const ses = session.defaultSession;
   ses.setPermissionRequestHandler((wc, permission, callback) => {
-    callback(isOwnOrigin(wc.getURL()) && ALLOWED_PERMISSIONS.has(permission));
+    callback(isOwnPage(wc.getURL()) && ALLOWED_PERMISSIONS.has(permission));
   });
-  ses.setPermissionCheckHandler((_wc, permission, origin) => isOwnOrigin(origin) && ALLOWED_PERMISSIONS.has(permission));
+  ses.setPermissionCheckHandler(
+    (wc, permission, origin) => isOwnOrigin(origin, wc?.getURL()) && ALLOWED_PERMISSIONS.has(permission),
+  );
   installDisplayMediaHandler(ses);
+  installRendererCsp();
 }
 
 function forwardPower(ev: PowerEvent): void {

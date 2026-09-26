@@ -384,7 +384,7 @@ export function createWebPlatform(): Platform {
       setTheme: () => undefined,
     },
     tray: { setState: () => undefined, onAction: noop },
-    files: { download, pathOf: (f) => f.name },
+    files: { download, onProgress: noop, pathOf: (f) => f.name },
     capture: {
       // The browser shows its own picker on getDisplayMedia().
       listSources: () => Promise.resolve([]),

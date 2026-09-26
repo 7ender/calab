@@ -5,6 +5,7 @@ import type {
   CaptureSelection,
   CaptureSource,
   DownloadArgs,
+  DownloadProgress,
   IpcResult,
   LoginArgs,
   LogoutReason,
@@ -63,6 +64,8 @@ export interface CalabaApi {
   files: {
     /** Saves an attachment to ~/Downloads, reveals it, resolves with the path. */
     download(args: DownloadArgs): Promise<string>;
+    /** Progress of downloads started with `download` (quarantined by Chromium's download manager). */
+    onProgress(cb: (p: DownloadProgress) => void): Unsubscribe;
     /** Absolute path of a dropped/picked File (for display only). */
     pathOf(file: File): string;
   };

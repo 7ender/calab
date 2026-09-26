@@ -44,6 +44,7 @@ const api: CalabaApi = {
   },
   files: {
     download: (a) => ipcRenderer.invoke(IPC.filesDownload, a),
+    onProgress: (cb) => on(IPC.filesProgress, cb),
     pathOf: (f) => webUtils.getPathForFile(f),
   },
   capture: {
