@@ -51,6 +51,8 @@ var (
 	testCfg   *config.Config
 	lkRec     *recordingLiveKit
 	testStore *blob.FS
+	// testRedisURL is TEST_REDIS_URL with the logical DB leased for this run (leaseRedisDB).
+	testRedisURL string
 )
 
 func env(k, def string) string {
@@ -104,7 +106,14 @@ func run(m *testing.M) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	rc, err := redisx.Connect(ctx, env("TEST_REDIS_URL", "redis://localhost:56379/15"))
+	redisURL, releaseDB, err := leaseRedisDB(ctx, env("TEST_REDIS_URL", "redis://localhost:56379/15"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "integration: redis unavailable:", err)
+		return 1
+	}
+	defer releaseDB()
+	testRedisURL = redisURL
+	rc, err := redisx.Connect(ctx, redisURL)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "integration: redis unavailable:", err)
 		return 1
@@ -156,6 +165,7 @@ func run(m *testing.M) int {
 	testApp, testDB, testRedis, testCfg, testStore = a, d, rc, cfg, store
 	bg, stop := context.WithCancel(ctx)
 	defer stop()
+	holdReconcileLock(bg, rc)
 	a.Run(bg)
 	srv = httptest.NewServer(a.Handler)
 	defer srv.Close()

@@ -100,7 +100,7 @@ func TestReorderWithHungRedisIsBounded(t *testing.T) {
 		order.Rooms = append(order.Rooms, &v1.SetRoomOrderRequest_RoomPosition{RoomId: id, Position: int32(n - i)}) //nolint:gosec // small
 	}
 
-	opt, err := rueidis.ParseURL(env("TEST_REDIS_URL", "redis://localhost:56379/15"))
+	opt, err := rueidis.ParseURL(testRedisURL)
 	if err != nil {
 		t.Fatal(err)
 	}

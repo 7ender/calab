@@ -129,7 +129,7 @@ func TestAbuseLimits(t *testing.T) {
 }
 
 func TestLimiterFailsClosed(t *testing.T) {
-	c, err := redisx.Connect(context.Background(), env("TEST_REDIS_URL", "redis://localhost:56379/15"))
+	c, err := redisx.Connect(context.Background(), testRedisURL)
 	if err != nil {
 		t.Fatal(err)
 	}

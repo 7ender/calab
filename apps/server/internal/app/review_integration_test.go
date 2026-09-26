@@ -181,12 +181,7 @@ func TestReconcileAndWebhookRetry(t *testing.T) {
 
 	// Reconcile: bob is not really in LiveKit, but the join is fresh → kept; once older than
 	// the grace window → removed.
-	reconcile := func() {
-		_ = testRedis.Do(context.Background(), testRedis.B().Del().Key("rtc:reconcile").Build()).Error()
-		if err := testApp.RTC.Reconcile(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-	}
+	reconcile := func() { runReconcile(t) } // pauses the harness's reconcile-lock holder
 	reconcile()
 	if !inVoice(t, o, bob.id, rid) {
 		t.Fatal("reconcile removed a fresh join")
