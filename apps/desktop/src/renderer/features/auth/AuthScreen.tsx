@@ -6,6 +6,8 @@ import { beginSession } from '../../services/session';
 import { takePendingInvite } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { platform } from '../../platform';
+import { useRoomLink } from '../people/roomLink';
+import { GuestScreen } from './GuestScreen';
 
 function authError(e: ApiErrorJson): { text: string; field?: string } {
   switch (e.code) {
@@ -29,6 +31,14 @@ function authError(e: ApiErrorJson): { text: string; field?: string } {
 }
 
 export function AuthScreen(): ReactNode {
+  const roomLink = useRoomLink((s) => (s.preferLogin ? null : s.code));
+  // A room link without a session (ADR-0016): the guest screen first.
+  if (roomLink) return <GuestScreen code={roomLink} />;
+  return <LoginScreen />;
+}
+
+function LoginScreen(): ReactNode {
+  const pendingRoom = useRoomLink((s) => s.code);
   const settings = useSession((s) => s.settings);
   const reason = useSession((s) => s.loggedOutReason);
   const [invite] = useState(() => takePendingInvite() ?? '');
@@ -104,6 +114,11 @@ export function AuthScreen(): ReactNode {
               {mode === 'login' ? t('auth.toRegister') : t('auth.toLogin')}
             </button>
           </p>
+          {pendingRoom ? (
+            <button type="button" className="self-start text-[13px] text-accent-text hover:underline" onClick={() => useRoomLink.setState({ preferLogin: false })}>
+              {t('guest.back')}
+            </button>
+          ) : null}
           {!showServer && platform.kind === 'electron' ? (
             <button type="button" className={cx('self-start text-[12px] text-faint hover:text-muted')} onClick={() => setShowServer(true)}>
               {t('auth.server')}: {serverUrl}

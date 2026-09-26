@@ -2,6 +2,7 @@ import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 import { MeSchema } from '@calaba/protocol';
 import type { AuthSession, LogoutReason } from '../../shared/ipc';
 import { log } from '../lib/log';
+import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
 import { useSession } from '../stores/session';
@@ -104,6 +105,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useWorkspaces.getState().reset();
   useRooms.getState().reset();
   useMessages.getState().reset();
+  useInbox.getState().reset();
   resetChatCaches();
   useUi.getState().openDialog(null);
   useSession.getState().set({ status: 'anon', me: null, sessionId: '', ready: false, gateway: 'idle', loggedOutReason: reason });

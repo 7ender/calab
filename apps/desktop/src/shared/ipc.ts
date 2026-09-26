@@ -9,6 +9,7 @@ export const IPC = {
   authRestore: 'auth:restore',
   authLogin: 'auth:login',
   authRegister: 'auth:register',
+  authGuestJoin: 'auth:guest-join',
   authLogout: 'auth:logout',
   authAccessToken: 'auth:access-token',
   authForceRefresh: 'auth:force-refresh',
@@ -55,6 +56,8 @@ export const IPC = {
   systemOpenPrivacySettings: 'system:open-privacy-settings',
   /** CPU of this window's renderer + GPU process (dev stats panel). */
   systemMetrics: 'system:metrics',
+  /** Seconds since the last keyboard/mouse input anywhere in the OS (AFK presence). */
+  systemIdleSeconds: 'system:idle-seconds',
 } as const;
 
 /** Scheme through which the renderer talks to the API; main adds auth and forwards. */

@@ -38,7 +38,7 @@ export function SettingsWindow({
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
         <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
-        <DialogP.Content
+        <DialogP.Content aria-modal="true"
           aria-describedby={undefined}
           className="mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex h-[min(640px,calc(100vh-48px))] w-[min(880px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[var(--radius-panel)] focus:outline-none"
         >

@@ -5,7 +5,8 @@ import { Button, Empty, Field, Input, Modal, Select, Spinner } from '../../compo
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { api } from '../../lib/api/endpoints';
-import { parseInviteCode } from '../../services/links';
+import { parseInviteCode, parseRoomInviteCode } from '../../services/links';
+import { RoomLinkPreview } from '../people/RoomLinkPreview';
 import { useUi } from '../../stores/ui';
 
 const TRANSLIT: Record<string, string> = {
@@ -98,6 +99,7 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): Rea
 export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => void; initialCode: string }): ReactNode {
   const [input, setInput] = useState(initialCode);
   const code = parseInviteCode(input);
+  const roomCode = parseRoomInviteCode(input);
   const setWs = useUi((s) => s.setWorkspace);
   const preview = useQuery({ queryKey: ['invite', code], queryFn: () => api.invites.get(code ?? ''), enabled: !!code, retry: false });
   const discover = useQuery({ queryKey: ['discover'], queryFn: () => api.workspaces.discover() });
@@ -115,6 +117,7 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
         <Field label={t('ws.inviteCode')} error={preview.error ? errText(preview.error) : join.error ? errText(join.error) : null}>
           <Input autoFocus value={input} onChange={(e) => setInput(e.target.value)} placeholder={t('ws.joinPlaceholder')} spellCheck={false} />
         </Field>
+        {roomCode ? <RoomLinkPreview code={roomCode} onDone={onClose} /> : null}
         {preview.data?.workspace ? (
           <div className="flex items-center justify-between rounded-[var(--radius-control)] bg-side px-3 py-2">
             <span className="font-semibold">{preview.data.workspace.name}</span>

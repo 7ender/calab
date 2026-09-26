@@ -9,13 +9,29 @@ import { expect, test } from '@playwright/test';
 test('register → workspace → room → message → reload → voice', async ({ page, browserName }) => {
   const id = `${browserName}-${Date.now().toString(36)}`;
   await page.goto('/');
-  await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
-  await page.getByLabel('Email').fill(`web-${id}@example.com`);
-  await page.getByLabel('Имя').fill(`Web ${id}`);
-  await page.getByLabel('Пароль').fill('password-web-123');
-  await page.getByRole('button', { name: 'Зарегистрироваться' }).last().click();
-  // First run: onboarding (docs/08) — skip it, it has its own visual tests.
-  await page.getByRole('button', { name: 'Пропустить настройку' }).click();
+  // Invite-only servers (the stand): CALABA_WEB_LOGIN + CALABA_WEB_PASSWORD sign in with an
+  // existing account (preferred — doesn't spend invite uses); otherwise register, with
+  // CALABA_WEB_INVITE as the invite code when set.
+  const login = process.env['CALABA_WEB_LOGIN'];
+  const password = process.env['CALABA_WEB_PASSWORD'];
+  if (login && password) {
+    await page.getByLabel('Email').fill(login);
+    await page.getByLabel('Пароль').fill(password);
+    await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  } else {
+    await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
+    await page.getByLabel('Email').fill(`web-${id}@example.com`);
+    await page.getByLabel('Имя').fill(`Web ${id}`);
+    await page.getByLabel('Пароль').fill('password-web-123');
+    const invite = process.env['CALABA_WEB_INVITE'];
+    if (invite) await page.getByLabel('Код приглашения').fill(invite);
+    await page.getByRole('button', { name: 'Зарегистрироваться' }).last().click();
+  }
+  // First run: onboarding (docs/08) — skip it, it has its own visual tests. (Builds from
+  // before the onboarding go straight to the main window.)
+  const skip = page.getByRole('button', { name: 'Пропустить настройку' });
+  await expect(skip.or(page.getByRole('button', { name: 'Создать пространство' }).first())).toBeVisible({ timeout: 20_000 });
+  if (await skip.isVisible()) await skip.click();
 
   await page.getByRole('button', { name: 'Создать пространство' }).first().click();
   await page.getByLabel('Название').fill(`Web ${id}`);

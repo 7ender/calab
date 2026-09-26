@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, screen, shell, type Rectangle } from 'electron';
+import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions } from 'electron';
 import { API_SCHEME } from '../shared/ipc';
 import { windowIconPath } from './icons';
 
@@ -60,6 +60,33 @@ export const webPreferences = {
   spellcheck: true,
 } as const;
 
+/** Height of the renderer's title bar (docs/09 #1; --titlebar-height in styles.css). */
+const TITLEBAR_HEIGHT = 38;
+
+/**
+ * Window chrome per platform (docs/09 #1):
+ * - macOS: `hiddenInset`, traffic lights at (12, 12) — vertically centred in the 38 px bar; the
+ *   renderer keeps the first 80 px of the bar empty for them.
+ * - Windows: `hidden` + Window Controls Overlay — the native min/max/close buttons sit in our
+ *   own 38 px bar (like Discord/VS Code), so the chrome is one row instead of an OS caption plus
+ *   our bar. The renderer reserves their width via `env(titlebar-area-*)`; colours follow the theme.
+ * - Linux: the standard frame. WCO buttons there are Chromium-drawn (not the GTK/KDE theme),
+ *   and client-side decorations misbehave under tiling WMs and some compositors — the native
+ *   frame is the predictable choice; our bar then is just a toolbar below it.
+ */
+function chrome(): Partial<Electron.BrowserWindowConstructorOptions> {
+  if (process.platform === 'darwin') return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } };
+  if (process.platform === 'win32') return { titleBarStyle: 'hidden', titleBarOverlay: overlayColors() };
+  return { titleBarStyle: 'default' };
+}
+
+function overlayColors(): TitleBarOverlayOptions {
+  // Same colours as the rail/title bar material (--color-rail, --color-label).
+  return nativeTheme.shouldUseDarkColors
+    ? { color: '#1c1c1f', symbolColor: '#ececf0', height: TITLEBAR_HEIGHT }
+    : { color: '#e2e2e7', symbolColor: '#1d1d1f', height: TITLEBAR_HEIGHT };
+}
+
 function windowIcon(): { icon?: string } {
   const icon = windowIconPath();
   return icon ? { icon } : {};
@@ -81,12 +108,18 @@ export function createMainWindow(): BrowserWindow {
       ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const, backgroundColor: '#00000000' }
       : { backgroundColor: BG }),
     show: false,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    ...chrome(),
     ...windowIcon(),
-    trafficLightPosition: { x: 14, y: 14 },
     webPreferences: { ...webPreferences },
   });
   if (state?.maximized) win.maximize();
+  if (process.platform === 'win32') {
+    const recolor = (): void => {
+      if (!win.isDestroyed()) win.setTitleBarOverlay(overlayColors());
+    };
+    nativeTheme.on('updated', recolor);
+    win.on('closed', () => nativeTheme.off('updated', recolor));
+  }
   win.once('ready-to-show', () => win.show());
 
   let saveTimer: NodeJS.Timeout | null = null;

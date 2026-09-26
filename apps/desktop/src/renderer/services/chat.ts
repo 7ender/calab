@@ -1,11 +1,11 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampNow } from '@bufbuild/protobuf/wkt';
-import { MessageSchema, type FileMeta } from '@calaba/protocol';
+import { MessageSchema, type FileMeta, type Message, type UnfurlResponse } from '@calaba/protocol';
 import { ApiError } from '../lib/api/client';
 import { api, uploadFile, type UploadHandle } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
-import { useRooms } from '../stores/rooms';
+import { idAfter, useRooms } from '../stores/rooms';
 import { myUserId } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { sendTyping } from './gateway';
@@ -27,10 +27,32 @@ function errText(e: unknown): string {
 
 const loading = new Set<string>();
 
-/** First page of a room (newest 50). */
+/**
+ * First load of a room. With unread messages it loads a window starting just above the
+ * first unread one (the list opens there, docs/09 #39); otherwise the newest page.
+ */
 export async function openRoom(roomId: string): Promise<void> {
   const st = useMessages.getState().rooms[roomId];
   if (st?.loaded || loading.has(roomId)) return;
+  const rooms = useRooms.getState();
+  const marker = rooms.readState[roomId];
+  if (marker && idAfter(rooms.lastMessage[roomId], marker)) {
+    loading.add(roomId);
+    useMessages.getState().setLoading(roomId, true);
+    try {
+      const after = await api.messages.list(roomId, { after: marker, limit: PAGE });
+      const first = after.messages[0];
+      if (first) {
+        const before = await api.messages.list(roomId, { before: first.id, limit: 30 });
+        useMessages.getState().setWindow(roomId, [...before.messages].reverse().concat(after.messages), before.hasMore, after.hasMore);
+        return;
+      }
+    } catch (e) {
+      log.warn('load unread window failed', e);
+    } finally {
+      loading.delete(roomId);
+    }
+  }
   await loadOlder(roomId);
 }
 
@@ -53,6 +75,141 @@ export async function loadOlder(roomId: string): Promise<void> {
   } finally {
     loading.delete(roomId);
   }
+}
+
+/** Cursor pagination downwards, while the loaded window doesn't reach the newest message. */
+export async function loadNewer(roomId: string): Promise<void> {
+  const key = `${roomId}:after`;
+  if (loading.has(key)) return;
+  const st = useMessages.getState().rooms[roomId];
+  if (!st?.loaded || !st.hasMoreAfter) return;
+  const newest = [...st.items].reverse().find((c) => c.status === 'sent')?.msg.id;
+  if (!newest) return;
+  loading.add(key);
+  try {
+    const res = await api.messages.list(roomId, { after: newest, limit: PAGE });
+    useMessages.getState().appendPage(roomId, res.messages, res.hasMore);
+    if (!res.hasMore) {
+      // Events that arrived while the window was detached were skipped: one catch-up page.
+      const last = res.messages.at(-1)?.id ?? newest;
+      const tail = await api.messages.list(roomId, { after: last, limit: PAGE });
+      useMessages.getState().appendPage(roomId, tail.messages, tail.hasMore);
+    }
+  } catch (e) {
+    log.warn('load newer failed', e);
+  } finally {
+    loading.delete(key);
+  }
+}
+
+/**
+ * Makes sure `messageId` is in the loaded window (search result, reply quote, pin).
+ * Returns false if it no longer exists.
+ */
+export async function ensureLoaded(roomId: string, messageId: string): Promise<boolean> {
+  const has = (): boolean => !!useMessages.getState().rooms[roomId]?.items.some((c) => c.key === messageId);
+  if (has()) return true;
+  try {
+    const after = await api.messages.list(roomId, { after: messageId, limit: 25 });
+    const first = after.messages[0];
+    const before = await api.messages.list(roomId, { ...(first ? { before: first.id } : {}), limit: first ? 26 : PAGE });
+    const asc = [...before.messages].reverse().concat(after.messages);
+    if (!asc.some((m) => m.id === messageId)) return false;
+    useMessages.getState().setWindow(roomId, asc, before.hasMore, after.hasMore);
+    return true;
+  } catch (e) {
+    log.warn('jump failed', e);
+    toast.error(`Не удалось загрузить сообщение: ${errText(e)}`);
+    return false;
+  }
+}
+
+/**
+ * After a fresh IDENTIFY (server deploy → INVALID_SESSION{resumable:false}) missed events are
+ * not replayed: refetch the newest page of every loaded room and merge it in place (no flicker).
+ */
+export async function resyncLoadedRooms(): Promise<void> {
+  const loaded = Object.entries(useMessages.getState().rooms).filter(([, r]) => r.loaded && !r.hasMoreAfter);
+  await Promise.all(
+    loaded.map(async ([roomId]) => {
+      try {
+        const res = await api.messages.list(roomId, { limit: PAGE });
+        useMessages.getState().resyncLatest(roomId, res.messages, res.hasMore);
+      } catch (e) {
+        log.warn('resync failed', roomId, e);
+      }
+    }),
+  );
+}
+
+/** Back to the newest messages after browsing an older window. */
+export async function loadPresent(roomId: string): Promise<void> {
+  const st = useMessages.getState().rooms[roomId];
+  if (!st?.hasMoreAfter) return;
+  try {
+    const res = await api.messages.list(roomId, { limit: PAGE });
+    useMessages.getState().setWindow(roomId, [...res.messages].reverse(), res.hasMore, false);
+  } catch (e) {
+    toast.error(`Не удалось загрузить сообщения: ${errText(e)}`);
+  }
+}
+
+// ---- reactions / pins
+
+export async function toggleReaction(roomId: string, m: Message, emoji: string): Promise<void> {
+  const mine = m.reactions.find((r) => r.emoji === emoji)?.me ?? false;
+  const add = !mine;
+  useMessages.getState().applyReaction(roomId, m.id, emoji, add, true);
+  try {
+    await (add ? api.messages.addReaction(m.id, emoji) : api.messages.removeReaction(m.id, emoji));
+  } catch (e) {
+    useMessages.getState().applyReaction(roomId, m.id, emoji, !add, true);
+    toast.error(`Не удалось поставить реакцию: ${errText(e)}`);
+  }
+}
+
+export async function setPinned(m: Message, pin: boolean): Promise<void> {
+  try {
+    await (pin ? api.messages.pin(m.id) : api.messages.unpin(m.id));
+    // MESSAGE_UPDATE brings pinned_at to everyone, including us.
+  } catch (e) {
+    toast.error(`${pin ? 'Не удалось закрепить' : 'Не удалось открепить'}: ${errText(e)}`);
+  }
+}
+
+const pinsLoading = new Set<string>();
+
+export async function loadPins(roomId: string): Promise<void> {
+  if (pinsLoading.has(roomId)) return;
+  pinsLoading.add(roomId);
+  try {
+    const res = await api.messages.pins(roomId);
+    useMessages.getState().setPins(roomId, res.messages);
+  } catch (e) {
+    log.warn('load pins failed', e);
+  } finally {
+    pinsLoading.delete(roomId);
+  }
+}
+
+// ---- link previews: one request per URL per session (the server caches for everyone)
+
+const unfurlCache = new Map<string, Promise<UnfurlResponse | null>>();
+const UNFURL_CACHE_MAX = 300;
+
+export function unfurl(url: string): Promise<UnfurlResponse | null> {
+  const hit = unfurlCache.get(url);
+  if (hit) return hit;
+  const p = api.unfurl.get(url).then(
+    (r) => (r.title || r.description || r.imageUrl ? r : null),
+    () => null,
+  );
+  unfurlCache.set(url, p);
+  if (unfurlCache.size > UNFURL_CACHE_MAX) {
+    const oldest = unfurlCache.keys().next().value;
+    if (oldest !== undefined) unfurlCache.delete(oldest);
+  }
+  return p;
 }
 
 export interface OutgoingFile {
@@ -120,7 +277,7 @@ export async function sendMessage(
       nonce,
     });
     if (res.message) {
-      useMessages.getState().upsert(res.message);
+      useMessages.getState().upsert(res.message, { rest: true, delivered: false });
       useRooms.getState().setLastMessage(roomId, res.message.id);
       useRooms.getState().setRead(roomId, res.message.id);
     }
@@ -138,7 +295,7 @@ export function retrySend(workspaceId: string, roomId: string, c: ChatMessage, f
 export async function editMessage(id: string, content: string): Promise<void> {
   try {
     const r = await api.messages.update(id, content);
-    if (r.message) useMessages.getState().upsert(r.message);
+    if (r.message) useMessages.getState().upsert(r.message, { rest: true });
   } catch (e) {
     toast.error(`Не удалось изменить: ${errText(e)}`);
   }
@@ -187,6 +344,8 @@ export function notifyTyping(roomId: string): void {
 
 export function resetChatCaches(): void {
   loading.clear();
+  pinsLoading.clear();
+  unfurlCache.clear();
   sentRead.clear();
   lastTyping.clear();
   for (const t of readTimers.values()) window.clearTimeout(t);

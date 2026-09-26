@@ -1,87 +1,216 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { WorkspaceRole, type Room, type VoiceState } from '@calaba/protocol';
-import { ChevronDown, Hash, HeadphoneOff, Lock, LogOut, MicOff, MonitorUp, Plus, Settings, UserPlus, Volume2 } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { create } from '@bufbuild/protobuf';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
+import { RoomCategorySchema, WorkspaceRole, type Room, type RoomCategory, type VoiceState } from '@calaba/protocol';
+import {
+  ChevronDown,
+  FolderPlus,
+  Hash,
+  HeadphoneOff,
+  Lock,
+  LogOut,
+  MicOff,
+  Pencil,
+  Plus,
+  Settings,
+  Trash2,
+  UserPlus,
+  Users,
+  Volume2,
+} from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
-import { Slider, Tip, cx } from '../../components/ui';
+import { Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, isAdminRole, roomPerms } from '../../lib/permissions';
+import { can, isAdminRole, roomPerms, workspacePerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
-import { usePrefs } from '../../stores/prefs';
-import { isUnread, isVoice, roomsOfWorkspace, useRooms } from '../../stores/rooms';
+import { groupRooms, isUnread, isVoice, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { formatDuration, limitLabel, useNow } from './voiceFormat';
+import { menuBox, menuItem, menuSeparator } from './menu';
+import { MemberContextMenu } from '../people/MemberContextMenu';
+import { moveMember } from '../people/actions';
 import { SelfPanel } from './SelfPanel';
 import { VoiceBar } from './VoiceBar';
 
-/** macOS-style menus: popover material, 24 px items, accent highlight. */
-const menuItem =
-  'flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-[13px] text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg';
-const menuBox = 'mat-popover anim-in z-[var(--z-popover)] min-w-52 rounded-[var(--radius-card)] p-1';
-
 export { menuBox, menuItem };
 
+const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Drag payloads (docs/09 #32): a voice participant onto a voice room. */
+interface DragMember {
+  userId: string;
+  fromRoomId: string;
+  name: string;
+}
+interface DropRoom {
+  roomId: string;
+  canMove: boolean;
+}
+
+/**
+ * Room column (docs/09 #4): workspace header with ▾ menu and «invite», rooms grouped by
+ * collapsible categories, voice rooms with their participants (drag between voice rooms with
+ * MOVE_MEMBERS), then the voice panel and the self panel.
+ */
 export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const roomsById = useRooms((s) => s.byId);
+  const categoriesById = useRooms((s) => s.categories);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const open = useUi((s) => s.openDialog);
-  const rooms = useMemo(() => roomsOfWorkspace(roomsById, workspaceId), [roomsById, workspaceId]);
+  const [catDialog, setCatDialog] = useState<{ category?: RoomCategory } | null>(null);
+  const role = entry?.role;
+  const admin = isAdminRole(role);
+  const manageRooms = can(workspacePerms(role), 'MANAGE_ROOM');
+  const groups = useMemo(() => {
+    const rooms = roomsOfWorkspace(roomsById, workspaceId);
+    const cats = Object.values(categoriesById).filter((c) => c.workspaceId === workspaceId);
+    if (cats.length) return groupRooms(rooms, cats, manageRooms).map((g) => ({ ...g, kind: undefined }));
+    // No categories yet: the classic two sections (not stored on the server), each with «+».
+    return (['text', 'voice'] as const)
+      .map((kind) => ({
+        kind,
+        category: create(RoomCategorySchema, {
+          id: `__${kind}:${workspaceId}`,
+          workspaceId,
+          name: kind === 'text' ? t('room.textRooms') : t('room.voiceRooms'),
+        }),
+        rooms: rooms.filter((r) => isVoice(r) === (kind === 'voice')),
+      }))
+      .filter((g) => g.rooms.length || manageRooms);
+  }, [roomsById, categoriesById, workspaceId, manageRooms]);
+  if (!entry) return null;
+  const empty = groups.length === 0;
+
+  return (
+    <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
+      <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog({})} />
+      <VoiceDnd workspaceId={workspaceId}>
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3 pt-2">
+          {empty ? (
+            <Empty
+              action={
+                manageRooms ? (
+                  <Button size="sm" onClick={() => open({ kind: 'room-create', workspaceId, voice: false })}>
+                    <Plus className="size-3.5" /> {t('room.create')}
+                  </Button>
+                ) : undefined
+              }
+            >
+              {manageRooms ? t('shell.noRooms') : t('shell.noRoomsMember')}
+            </Empty>
+          ) : null}
+          {groups.map((g) => (
+            <CategoryGroup
+              key={g.category?.id ?? 'none'}
+              category={g.category}
+              kind={g.kind}
+              workspaceId={workspaceId}
+              canManage={manageRooms}
+              onEdit={(category) => setCatDialog({ category })}
+            >
+              {g.rooms.map((r) =>
+                isVoice(r) ? (
+                  <VoiceRoomRow key={r.id} room={r} workspaceId={workspaceId} me={me} role={entry.role} admin={admin} voiceStates={entry.voice} />
+                ) : (
+                  <TextRoomRow key={r.id} room={r} workspaceId={workspaceId} me={me} role={entry.role} admin={admin} />
+                ),
+              )}
+            </CategoryGroup>
+          ))}
+        </div>
+      </VoiceDnd>
+      <VoiceBar />
+      <SelfPanel />
+      {catDialog ? <CategoryDialog workspaceId={workspaceId} category={catDialog.category} onClose={() => setCatDialog(null)} /> : null}
+    </aside>
+  );
+}
+
+// ---------------------------------------------------------------- header
+
+function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: string; onCreateCategory: () => void }): ReactNode {
+  const entry = useWorkspaces((s) => s.byId[workspaceId]);
+  const open = useUi((s) => s.openDialog);
   if (!entry) return null;
   const admin = isAdminRole(entry.role);
-  const text = rooms.filter((r) => !isVoice(r));
-  const voiceRooms = rooms.filter((r) => isVoice(r));
+  const manageRooms = can(workspacePerms(entry.role), 'MANAGE_ROOM');
 
   const leave = async (): Promise<void> => {
     if (!(await confirmAction(t('ws.leave'), t('ws.leaveConfirm', { name: entry.ws.name }), t('ws.leave')))) return;
     try {
       await api.workspaces.removeMember(workspaceId, '@me');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      toast.error(errText(e));
     }
   };
 
   return (
-    <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2">
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
           <button
             type="button"
-            className="drag flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line px-4 text-[14px] font-semibold hover:bg-hover"
+            className="group flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] px-2 text-left text-[15px] font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
             title={entry.ws.name}
           >
-            <span className="no-drag min-w-0 truncate">{entry.ws.name}</span>
-            <ChevronDown className="no-drag size-4 shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{entry.ws.name}</span>
+            <ChevronDown
+              className="size-4 shrink-0 text-muted transition-transform duration-[var(--motion-fast)] group-data-[state=open]:rotate-180"
+              aria-hidden
+            />
           </button>
         </Dropdown.Trigger>
         <Dropdown.Portal>
-          <Dropdown.Content className={menuBox} sideOffset={4} align="start">
+          <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="start">
             {admin ? (
+              <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}>
+                <UserPlus className="size-4" /> {t('ws.invite')}
+              </Dropdown.Item>
+            ) : null}
+            {admin ? (
+              <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId })}>
+                <Settings className="size-4" /> {t('ws.settings')}
+              </Dropdown.Item>
+            ) : null}
+            <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'members' })}>
+              <Users className="size-4" /> {t('ws.members')}
+            </Dropdown.Item>
+            {manageRooms ? (
               <>
-                <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}>
-                  <UserPlus className="size-4" /> {t('ws.invite')}
-                </Dropdown.Item>
-                <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId })}>
-                  <Settings className="size-4" /> {t('ws.settings')}
-                </Dropdown.Item>
+                <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'room-create', workspaceId, voice: false })}>
                   <Plus className="size-4" /> {t('room.create')}
                 </Dropdown.Item>
+                <Dropdown.Item className={menuItem} onSelect={onCreateCategory}>
+                  <FolderPlus className="size-4" /> {t('shell.categoryCreate')}
+                </Dropdown.Item>
               </>
-            ) : (
-              <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'members' })}>
-                <Settings className="size-4" /> {t('ws.members')}
-              </Dropdown.Item>
-            )}
+            ) : null}
             {entry.role !== WorkspaceRole.OWNER ? (
               <>
-                <Dropdown.Separator className="my-1 h-px bg-line" />
+                <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void leave()}>
                   <LogOut className="size-4" /> {t('ws.leave')}
                 </Dropdown.Item>
@@ -90,46 +219,213 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
           </Dropdown.Content>
         </Dropdown.Portal>
       </Dropdown.Root>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-        <Section title={t('room.textRooms')} onAdd={admin ? () => open({ kind: 'room-create', workspaceId, voice: false }) : undefined}>
-          {text.map((r) => (
-            <TextRoomRow key={r.id} room={r} workspaceId={workspaceId} me={me} role={entry.role} />
-          ))}
-        </Section>
-        <Section title={t('room.voiceRooms')} onAdd={admin ? () => open({ kind: 'room-create', workspaceId, voice: true }) : undefined}>
-          {voiceRooms.map((r) => (
-            <VoiceRoomRow key={r.id} room={r} workspaceId={workspaceId} me={me} role={entry.role} voiceStates={entry.voice} />
-          ))}
-        </Section>
-      </div>
-      <VoiceBar />
-      <SelfPanel />
-    </aside>
+      {admin ? (
+        <Tip label={t('shell.invite')}>
+          <button
+            type="button"
+            aria-label={t('ws.invite')}
+            onClick={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}
+            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+          >
+            <UserPlus className="size-[18px]" aria-hidden />
+          </button>
+        </Tip>
+      ) : null}
+    </div>
   );
 }
 
-function Section({ title, onAdd, children }: { title: string; onAdd: (() => void) | undefined; children: ReactNode }): ReactNode {
-  return (
-    <div className="mb-4">
-      <div className="group flex h-6 items-center justify-between px-2">
-        <h2 className="truncate text-[11px] font-semibold text-faint">{title}</h2>
-        {onAdd ? (
-          <Tip label={t('room.create')}>
-            <button type="button" onClick={onAdd} className="grid size-6 place-items-center rounded-[var(--radius-control)] text-faint hover:bg-hover hover:text-fg" aria-label={t('room.create')}>
-              <Plus className="size-4" strokeWidth={1.75} />
-            </button>
-          </Tip>
-        ) : null}
-      </div>
-      <div className="flex flex-col gap-px">{children}</div>
+// ---------------------------------------------------------------- categories
+
+function CategoryGroup({
+  category,
+  kind,
+  workspaceId,
+  canManage,
+  onEdit,
+  children,
+}: {
+  category: RoomCategory | null;
+  /** Built-in section of a workspace without categories: no server id, no context menu. */
+  kind: 'text' | 'voice' | undefined;
+  workspaceId: string;
+  canManage: boolean;
+  onEdit: (c: RoomCategory) => void;
+  children: ReactNode[];
+}): ReactNode {
+  const collapsed = useUi((s) => (category ? !!s.collapsed[category.id] : false));
+  const toggle = useUi((s) => s.toggleCategory);
+  const open = useUi((s) => s.openDialog);
+  // Collapsed: keep the open room and my voice room visible (Discord behaviour).
+  const activeRoom = useUi((s) => s.lastRoom[workspaceId]);
+  const voiceRoom = useVoice((s) => s.roomId);
+  if (!category) return <div className="mb-2 flex flex-col gap-px">{children}</div>;
+
+  const visible = collapsed
+    ? children.filter((c) => {
+        const key = (c as { key?: string | null }).key;
+        return key === activeRoom || key === voiceRoom;
+      })
+    : children;
+
+  const remove = async (): Promise<void> => {
+    if (!(await confirmAction(t('shell.categoryDelete'), t('shell.categoryDeleteConfirm', { name: category.name }), t('common.delete')))) return;
+    try {
+      await api.categories.remove(category.id);
+    } catch (e) {
+      toast.error(errText(e));
+    }
+  };
+
+  const header = (
+    <div className="group/cat flex h-7 items-center pr-1 pt-1">
+      <button
+        type="button"
+        onClick={() => toggle(category.id)}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? t('shell.categoryExpand', { name: category.name }) : t('shell.categoryCollapse', { name: category.name })}
+        className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-[11px] font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+        title={category.name}
+      >
+        <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
+        <span className="truncate">{category.name}</span>
+      </button>
+      {canManage ? (
+        <Tip label={t('room.create')}>
+          <button
+            type="button"
+            onClick={() => open(kind ? { kind: 'room-create', workspaceId, voice: kind === 'voice' } : { kind: 'room-create', workspaceId, voice: false, categoryId: category.id })}
+            aria-label={t('shell.roomCreateIn', { name: category.name })}
+            className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-control)] text-muted opacity-0 transition-opacity duration-[var(--motion-fast)] hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/cat:opacity-100"
+          >
+            <Plus className="size-4" aria-hidden />
+          </button>
+        </Tip>
+      ) : null}
     </div>
+  );
+
+  return (
+    <section className="mb-1" aria-label={category.name}>
+      {canManage && !kind ? (
+        <ContextMenu.Root modal={false}>
+          <ContextMenu.Trigger asChild>{header}</ContextMenu.Trigger>
+          <ContextMenu.Portal>
+            <ContextMenu.Content className={menuBox}>
+              <ContextMenu.Item className={menuItem} onSelect={() => onEdit(category)}>
+                <Pencil className="size-4" /> {t('shell.categoryRename')}
+              </ContextMenu.Item>
+              <ContextMenu.Item className={menuItem} onSelect={() => open({ kind: 'room-create', workspaceId, voice: false, categoryId: category.id })}>
+                <Plus className="size-4" /> {t('room.create')}
+              </ContextMenu.Item>
+              <ContextMenu.Separator className={menuSeparator} />
+              <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()}>
+                <Trash2 className="size-4" /> {t('shell.categoryDelete')}
+              </ContextMenu.Item>
+            </ContextMenu.Content>
+          </ContextMenu.Portal>
+        </ContextMenu.Root>
+      ) : (
+        header
+      )}
+      {visible.length ? <div className="mt-0.5 flex flex-col gap-px">{visible}</div> : null}
+    </section>
+  );
+}
+
+/** Create / rename a category (MANAGE_ROOM). */
+function CategoryDialog({ workspaceId, category, onClose }: { workspaceId: string; category: RoomCategory | undefined; onClose: () => void }): ReactNode {
+  const [name, setName] = useState(category?.name ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (): Promise<void> => {
+    const v = name.trim();
+    if (!v) return;
+    setBusy(true);
+    try {
+      if (category) {
+        const r = await api.categories.update(category.id, { name: v });
+        if (r.category) useRooms.getState().upsertCategory(r.category);
+      } else {
+        const r = await api.categories.create(workspaceId, { name: v });
+        if (r.category) useRooms.getState().upsertCategory(r.category);
+      }
+      onClose();
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={category ? t('shell.categoryRename') : t('shell.categoryCreate')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button busy={busy} disabled={!name.trim()} onClick={() => void submit()}>
+            {category ? t('common.save') : t('common.create')}
+          </Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <Field label={t('shell.categoryName')} error={error}>
+          <Input autoFocus value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
+        </Field>
+      </form>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- room rows
+
+/** Row shell shared by text and voice rooms: 34 px, hover background, unread pill, hover actions. */
+const rowBox = 'group/row relative flex h-[34px] items-center rounded-[var(--radius-control)] transition-colors duration-[var(--motion-fast)]';
+
+function UnreadPill({ show }: { show: boolean }): ReactNode {
+  return show ? <span aria-hidden className="absolute -left-2 top-1/2 h-2 w-1 -translate-y-1/2 rounded-r-full bg-fg" /> : null;
+}
+
+function RoomActions({ room, admin, active }: { room: Room; admin: boolean; active: boolean }): ReactNode {
+  const open = useUi((s) => s.openDialog);
+  if (!admin) return null;
+  const btn =
+    'grid size-6 place-items-center rounded-[4px] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
+  return (
+    <span className={cx('shrink-0 items-center gap-0.5', active ? 'flex' : 'hidden group-hover/row:flex group-focus-within/row:flex')}>
+      <Tip label={t('shell.invite')}>
+        <button
+          type="button"
+          className={btn}
+          aria-label={t('shell.inviteTo', { name: room.name })}
+          onClick={() => open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' })}
+        >
+          <UserPlus className="size-4" aria-hidden />
+        </button>
+      </Tip>
+      <Tip label={t('room.settings')}>
+        <button type="button" className={btn} aria-label={t('shell.roomSettingsOf', { name: room.name })} onClick={() => open({ kind: 'room-settings', roomId: room.id })}>
+          <Settings className="size-4" aria-hidden />
+        </button>
+      </Tip>
+    </span>
   );
 }
 
 function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNode; canManage: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const last = useRooms((s) => s.lastMessage[room.id]);
+  const unread = useRooms((s) => isUnread(room.id, s));
   return (
     <ContextMenu.Root modal={false}>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
@@ -137,7 +433,7 @@ function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNo
         <ContextMenu.Content className={menuBox}>
           <ContextMenu.Item
             className={menuItem}
-            disabled={!last}
+            disabled={!last || !unread}
             onSelect={() => {
               if (last) {
                 useRooms.getState().setRead(room.id, last);
@@ -158,27 +454,50 @@ function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNo
   );
 }
 
-function TextRoomRow({ room, workspaceId, me, role }: { room: Room; workspaceId: string; me: string; role: WorkspaceRole }): ReactNode {
-  const active = useUi((s) => s.lastRoom[workspaceId] === room.id);
+function MentionBadge({ n }: { n: number }): ReactNode {
+  if (n <= 0) return null;
+  return (
+    <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-[11px] font-bold leading-4 text-white group-hover/row:hidden" aria-label={t('shell.unreadMentions', { n })}>
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
+
+function TextRoomRow({ room, workspaceId, me, role, admin }: { room: Room; workspaceId: string; me: string; role: WorkspaceRole; admin: boolean }): ReactNode {
+  const active = useUi((s) => s.lastRoom[workspaceId] === room.id && s.activeWorkspaceId === workspaceId);
   const openRoom = useUi((s) => s.openRoom);
   const unread = useRooms((s) => isUnread(room.id, s));
   const mentions = useRooms((s) => s.mentions[room.id] ?? 0);
   const perms = roomPerms(role, me, room);
+  const bright = active || unread;
   return (
     <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')}>
-      <button
-        type="button"
-        onClick={() => openRoom(workspaceId, room.id)}
-        className={cx(
-          'group flex h-8 items-center gap-2 rounded-[var(--radius-control)] px-2 text-left text-[13px]',
-          active ? 'bg-active text-fg' : unread ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-fg',
-        )}
-      >
-        <Hash className="size-4 shrink-0 text-faint" strokeWidth={1.75} aria-hidden />
-        <span className={cx('min-w-0 flex-1 truncate', unread && !active && 'font-semibold text-fg')} title={room.name}>{room.name}</span>
-        {room.isPrivate ? <Lock className="size-3 shrink-0 text-faint" strokeWidth={1.75} aria-label={t('room.private')} /> : null}
-        {mentions > 0 ? <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-[11px] font-semibold text-white">{mentions}</span> : null}
-      </button>
+      <div className={cx(rowBox, active ? 'bg-active' : 'hover:bg-hover')}>
+        <UnreadPill show={unread && !active} />
+        <button
+          type="button"
+          onClick={() => openRoom(workspaceId, room.id)}
+          aria-current={active ? 'page' : undefined}
+          className={cx(
+            'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] pl-2 pr-1 text-left text-[15px] leading-5',
+            bright ? 'text-fg' : 'text-muted group-hover/row:text-fg',
+            unread && !active && 'font-semibold',
+          )}
+        >
+          {room.isPrivate ? (
+            <Lock className="size-[18px] shrink-0 text-muted" aria-label={t('room.private')} />
+          ) : (
+            <Hash className="size-[18px] shrink-0 text-muted" aria-hidden />
+          )}
+          <span className="min-w-0 flex-1 truncate" title={room.name}>
+            {room.name}
+          </span>
+        </button>
+        <span className="flex shrink-0 items-center gap-1 pr-1.5">
+          <MentionBadge n={mentions} />
+          <RoomActions room={room} admin={admin} active={active} />
+        </span>
+      </div>
     </RoomMenu>
   );
 }
@@ -188,122 +507,241 @@ function VoiceRoomRow({
   workspaceId,
   me,
   role,
+  admin,
   voiceStates,
 }: {
   room: Room;
   workspaceId: string;
   me: string;
   role: WorkspaceRole;
+  admin: boolean;
   voiceStates: Record<string, VoiceState>;
 }): ReactNode {
-  const active = useUi((s) => s.lastRoom[workspaceId] === room.id);
+  const active = useUi((s) => s.lastRoom[workspaceId] === room.id && s.activeWorkspaceId === workspaceId);
   const openRoom = useUi((s) => s.openRoom);
   const inRoom = useVoice((s) => s.roomId === room.id);
   const unread = useRooms((s) => isUnread(room.id, s));
+  const mentions = useRooms((s) => s.mentions[room.id] ?? 0);
   const perms = roomPerms(role, me, room);
-  const people = Object.values(voiceStates).filter((v) => v.roomId === room.id);
+  const people = useMemo(
+    () =>
+      Object.values(voiceStates)
+        .filter((v) => v.roomId === room.id)
+        .sort((a, b) => Number(a.joinedAt?.seconds ?? 0n) - Number(b.joinedAt?.seconds ?? 0n) || a.userId.localeCompare(b.userId)),
+    [voiceStates, room.id],
+  );
   const canConnect = can(perms, 'CONNECT');
+  const canMove = can(perms, 'MOVE_MEMBERS');
+  const limit = room.userLimit;
+  const full = limit > 0 && people.length >= limit && !inRoom;
+  const { setNodeRef, isOver, active: dragging } = useDroppable({ id: `room:${room.id}`, data: { roomId: room.id, canMove } satisfies DropRoom });
+  const dragFrom = (dragging?.data.current as DragMember | undefined)?.fromRoomId;
+  const dropOk = isOver && canMove && dragFrom !== room.id;
 
   const click = (): void => {
     openRoom(workspaceId, room.id);
-    if (!inRoom && canConnect) void voice.join(room.id, workspaceId);
+    if (inRoom || !canConnect) return;
+    if (full && !canMove) {
+      toast.info(t('shell.roomFull'));
+      return;
+    }
+    void voice.join(room.id, workspaceId);
   };
 
   return (
-    <div>
+    <div ref={setNodeRef} className={cx('rounded-[var(--radius-card)] transition-colors duration-[var(--motion-fast)]', dropOk && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] outline outline-1 outline-accent')}>
       <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')}>
-        <button
-          type="button"
-          onClick={click}
-          title={canConnect ? undefined : t('voice.noConnect')}
-          className={cx(
-            'flex h-8 w-full items-center gap-2 rounded-[var(--radius-control)] px-2 text-left text-[13px]',
-            active ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
-          )}
-        >
-          <Volume2 className={cx('size-4 shrink-0', inRoom ? 'text-ok' : 'text-faint')} strokeWidth={1.75} aria-hidden />
-          <span className={cx('min-w-0 flex-1 truncate', unread && !active && 'font-semibold text-fg')} title={room.name}>{room.name}</span>
-          {room.isPrivate ? <Lock className="size-3 shrink-0 text-faint" strokeWidth={1.75} aria-label={t('room.private')} /> : null}
-        </button>
+        <div className={cx(rowBox, active ? 'bg-active' : 'hover:bg-hover')}>
+          <UnreadPill show={unread && !active} />
+          <button
+            type="button"
+            onClick={click}
+            aria-current={active ? 'page' : undefined}
+            title={canConnect ? undefined : t('voice.noConnect')}
+            className={cx(
+              'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] pl-2 pr-1 text-left text-[15px] leading-5',
+              active || unread || inRoom ? 'text-fg' : 'text-muted group-hover/row:text-fg',
+              unread && !active && 'font-semibold',
+            )}
+          >
+            <Volume2 className={cx('size-[18px] shrink-0', inRoom ? 'text-ok' : 'text-muted')} aria-hidden />
+            <span className="min-w-0 flex-1 truncate" title={room.name}>
+              {room.name}
+            </span>
+            {room.isPrivate ? <Lock className="size-3.5 shrink-0 text-muted" aria-label={t('room.private')} /> : null}
+          </button>
+          <span className="flex shrink-0 items-center gap-1 pr-1.5">
+            <MentionBadge n={mentions} />
+            <span className={cx('flex items-center gap-1', admin && !active && 'group-hover/row:hidden group-focus-within/row:hidden')}>
+              {people.length ? <CallTimer roomId={room.id} /> : null}
+              {limit > 0 ? (
+                <span
+                  className={cx(
+                    'rounded-[4px] bg-hover px-1 text-[11px] font-medium tabular-nums leading-4',
+                    people.length >= limit ? 'text-danger-text' : 'text-fg',
+                  )}
+                  aria-label={t('shell.userLimit', { n: people.length, max: limit })}
+                >
+                  {limitLabel(people.length, limit)}
+                </span>
+              ) : null}
+            </span>
+            <RoomActions room={room} admin={admin} active={active} />
+          </span>
+        </div>
       </RoomMenu>
       {people.length > 0 ? (
-        <div className="ml-6 flex flex-col gap-px py-0.5">
+        <ul className="flex flex-col gap-px pb-1 pt-0.5" aria-label={room.name}>
           {people.map((v) => (
-            <VoiceMember key={v.userId} state={v} room={room} workspaceId={workspaceId} isMe={v.userId === me} canModerate={can(perms, 'MUTE_MEMBERS')} />
+            <VoiceMember
+              key={v.userId}
+              state={v}
+              room={room}
+              workspaceId={workspaceId}
+              isMe={v.userId === me}
+              canMove={canMove}
+            />
           ))}
-        </div>
+        </ul>
       ) : null}
     </div>
   );
 }
+
+function CallTimer({ roomId }: { roomId: string }): ReactNode {
+  // Room.voice_started_at from the server (READY snapshot + ROOM_UPDATE); unset = no call.
+  const startedAt = useRooms((s) => s.byId[roomId]?.voiceStartedAt);
+  const now = useNow();
+  if (!startedAt) return null;
+  const text = formatDuration(Math.max(0, now - timestampMs(startedAt)));
+  return (
+    <span className="text-[11px] tabular-nums text-fg" aria-label={t('shell.callTime', { time: text })}>
+      {text}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------- voice participants
 
 function VoiceMember({
   state,
   room,
   workspaceId,
   isMe,
-  canModerate,
+  canMove,
 }: {
   state: VoiceState;
   room: Room;
   workspaceId: string;
   isMe: boolean;
-  canModerate: boolean;
+  canMove: boolean;
 }): ReactNode {
   const speaking = useVoice((s) => s.speaking[state.userId] ?? false);
   const inSameRoom = useVoice((s) => s.roomId === room.id);
-  const volume = usePrefs((s) => s.userVolumes[state.userId] ?? 1);
+  const stream = useVoice((s) => s.streams.find((x) => x.userId === state.userId));
   const user = useWorkspaces((s) => s.users[state.userId]);
-  const name = memberName(workspaceId, state.userId);
+  const name = useWorkspaces(() => memberName(workspaceId, state.userId));
+  const talking = speaking && !state.muted;
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
+    id: `member:${room.id}:${state.userId}`,
+    data: { userId: state.userId, fromRoomId: room.id, name } satisfies DragMember,
+    disabled: !canMove,
+  });
+
   const row = (
-    <div className="flex h-7 items-center gap-2 rounded-[var(--radius-control)] px-2 text-[13px] text-muted hover:bg-hover hover:text-fg" title={name}>
-      <Avatar userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={20} speaking={speaking && !state.muted} />
-      <span className={cx('min-w-0 flex-1 truncate', speaking && !state.muted && 'text-fg')}>{name}</span>
+    <li
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      // Pointer drag only (the context menu «Переместить в…» is the keyboard path): keep list
+      // semantics instead of dnd-kit's role="button"; focusable for the context menu key.
+      role="listitem"
+      aria-roledescription={undefined}
+      tabIndex={0}
+      aria-label={canMove ? `${name}. ${t('shell.dragHint')}` : name}
+      onClick={() => {
+        if (stream && inSameRoom) voice.watch(stream.trackSid);
+      }}
+      className={cx(
+        'group/member flex h-8 items-center gap-2 rounded-[var(--radius-control)] pl-7 pr-1.5 text-[14px] transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+        canMove ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
+        isDragging && 'opacity-40',
+      )}
+      title={name}
+    >
+      <Avatar userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} speaking={talking} />
+      <span className={cx('min-w-0 flex-1 truncate', talking || isMe ? 'text-fg' : 'text-muted group-hover/member:text-fg')}>{name}</span>
       {state.streaming ? (
-        <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-semibold uppercase text-white" title={t('voice.streaming')}>
-          live
+        <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white" title={t('voice.streaming')}>
+          {t('shell.live')}
         </span>
       ) : null}
-      {state.deafened ? <HeadphoneOff className="size-3.5 text-danger" /> : state.muted ? <MicOff className="size-3.5 text-danger" /> : null}
-      {state.streaming && !isMe ? <MonitorUp className="size-3.5 text-faint" /> : null}
-    </div>
+      {state.muted && !state.deafened ? <MicOff className="size-4 shrink-0 text-muted" aria-label={t('shell.mutedState')} /> : null}
+      {state.deafened ? <HeadphoneOff className="size-4 shrink-0 text-muted" aria-label={t('shell.deafenedState')} /> : null}
+    </li>
   );
-  if (isMe && !canModerate) return row;
+  // Shared member menu (PEOPLE): volume, server mute, «Переместить в…», rename, kick…
   return (
-    <ContextMenu.Root modal={false}>
-      <ContextMenu.Trigger asChild>{row}</ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content className={cx(menuBox, 'w-60')}>
-          <div className="px-2 py-1 text-[12px] font-semibold text-muted">{name}</div>
-          {!isMe && inSameRoom ? (
-            <div className="px-2 py-2">
-              <div className="mb-1 flex justify-between text-[12px] text-muted">
-                <span>{t('voice.userVolume')}</span>
-                <span>{Math.round(volume * 100)}%</span>
-              </div>
-              <Slider label={t('voice.userVolume')} value={volume} min={0} max={1} step={0.01} onChange={(v) => voice.setUserVolume(state.userId, v)} />
-            </div>
-          ) : null}
-          {canModerate && !isMe ? (
-            <>
-              <ContextMenu.Separator className="my-1 h-px bg-line" />
-              <ContextMenu.Item
-                className={menuItem}
-                disabled={!inSameRoom || state.muted}
-                onSelect={() => void voice.serverMute(state.userId).catch((e: unknown) => toast.error(String(e)))}
-              >
-                <MicOff className="size-4" /> {t('voice.serverMute')}
-              </ContextMenu.Item>
-              <ContextMenu.Item
-                className={cx(menuItem, 'text-danger-text')}
-                onSelect={() => void voice.serverDisconnect(room.id, state.userId).catch((e: unknown) => toast.error(String(e)))}
-              >
-                <LogOut className="size-4" /> {t('voice.kick')}
-              </ContextMenu.Item>
-            </>
-          ) : null}
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
+    <MemberContextMenu workspaceId={workspaceId} userId={state.userId}>
+      {row}
+    </MemberContextMenu>
+  );
+}
+
+// ---------------------------------------------------------------- drag & drop (docs/09 #32)
+
+function VoiceDnd({ workspaceId, children }: { workspaceId: string; children: ReactNode }): ReactNode {
+  // 6 px before a drag starts: a click on a participant stays a click.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [dragged, setDragged] = useState<DragMember | null>(null);
+  const [blocked, setBlocked] = useState(false);
+
+  // «Not allowed» cursor over a room where I cannot move members; grabbing otherwise.
+  useEffect(() => {
+    if (!dragged) return;
+    const prev = document.body.style.cursor;
+    document.body.style.cursor = blocked ? 'not-allowed' : 'grabbing';
+    return () => {
+      document.body.style.cursor = prev;
+    };
+  }, [dragged, blocked]);
+
+  const onStart = (e: DragStartEvent): void => {
+    setDragged((e.active.data.current as DragMember | undefined) ?? null);
+    setBlocked(false);
+  };
+  const onOver = (e: DragOverEvent): void => {
+    const target = e.over?.data.current as DropRoom | undefined;
+    const from = (e.active.data.current as DragMember | undefined)?.fromRoomId;
+    setBlocked(!!target && target.roomId !== from && !target.canMove);
+  };
+  const onEnd = (e: DragEndEvent): void => {
+    setDragged(null);
+    setBlocked(false);
+    const m = e.active.data.current as DragMember | undefined;
+    const target = e.over?.data.current as DropRoom | undefined;
+    if (!m || !target || target.roomId === m.fromRoomId) return;
+    if (!target.canMove) {
+      toast.info(t('shell.moveNotAllowed'));
+      return;
+    }
+    moveMember(workspaceId, m.fromRoomId, m.userId, target.roomId);
+  };
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={onStart} onDragOver={onOver} onDragEnd={onEnd} onDragCancel={() => setDragged(null)}>
+      {children}
+      <DragOverlay dropAnimation={null}>{dragged ? <DragChip member={dragged} /> : null}</DragOverlay>
+    </DndContext>
+  );
+}
+
+function DragChip({ member }: { member: DragMember }): ReactNode {
+  const user = useWorkspaces((s) => s.users[member.userId]);
+  return (
+    <div className="mat-popover flex h-8 w-max max-w-[220px] items-center gap-2 rounded-full pl-1 pr-3 text-[13px] font-medium">
+      <Avatar userId={member.userId} name={member.name} fileId={user?.avatarFileId || undefined} size={24} />
+      <span className="truncate">{member.name}</span>
+    </div>
   );
 }

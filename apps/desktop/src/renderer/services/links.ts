@@ -1,3 +1,4 @@
+import { openRoomLink } from '../features/people/roomLink';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
 
@@ -25,7 +26,28 @@ export function inviteUrl(serverUrl: string, code: string): string {
   return origin ? `${origin}/join/${code}` : `calaba://join/${code}`;
 }
 
+/**
+ * Room links (ADR-0016): `https://<server>/r/<code>` or `calaba://r/<code>`. No bare codes:
+ * a bare code is a workspace invite.
+ */
+export function parseRoomInviteCode(input: string): string | null {
+  const s = input.trim();
+  const m = new RegExp(`^calaba://r/${CODE}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/r/${CODE}/?(?:[?#].*)?$`).exec(s);
+  return m?.[1] ?? null;
+}
+
+/** The shareable link for a room invite code on this server. */
+export function roomInviteUrl(serverUrl: string, code: string): string {
+  const origin = serverUrl.replace(/\/+$/, '');
+  return origin ? `${origin}/r/${code}` : `calaba://r/${code}`;
+}
+
 export function handleDeepLink(url: string): void {
+  const room = parseRoomInviteCode(url);
+  if (room) {
+    openRoomLink(room);
+    return;
+  }
   const code = parseInviteCode(url);
   if (!code) return;
   if (useSession.getState().status === 'authed') useUi.getState().openDialog({ kind: 'join-workspace', code });

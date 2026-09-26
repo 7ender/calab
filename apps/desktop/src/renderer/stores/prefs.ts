@@ -8,6 +8,7 @@ import {
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { PttBinding } from '../../shared/ipc';
+import type { SoundName } from '../lib/sounds';
 
 /**
  * Device-local preferences (localStorage — nothing secret here). Settings that
@@ -30,7 +31,12 @@ export interface Prefs {
   contentHint: ScreenShareContentHint;
   notifyMentions: boolean;
   notifyAll: boolean;
+  /** Master switch for event sounds (docs/09 #29, «Звуки»). */
   voiceSounds: boolean;
+  /** Per-event sound toggles; a missing key = on. */
+  sounds: Partial<Record<SoundName, boolean>>;
+  /** Event sound volume 0..1. */
+  soundVolume: number;
   /** userId → playback volume 0..2 (element.volume ≤ 1; >1 unsupported, clamped). */
   userVolumes: Record<string, number>;
   devStats: boolean;
@@ -40,6 +46,8 @@ export interface Prefs {
   personalBitrateKbps: number | null;
   /** First-run onboarding finished on this device (docs/08, «Онбординг»). */
   onboarded: boolean;
+  /** AFK: minutes without input before presence becomes idle; 0 = off (docs/09 #34). */
+  afkMinutes: number;
 }
 
 const DEFAULTS: Prefs = {
@@ -56,11 +64,14 @@ const DEFAULTS: Prefs = {
   notifyMentions: true,
   notifyAll: false,
   voiceSounds: true,
+  sounds: {},
+  soundVolume: 0.5,
   userVolumes: {},
   devStats: false,
   presence: PresenceStatus.ONLINE,
   personalBitrateKbps: null,
   onboarded: false,
+  afkMinutes: 10,
 };
 
 interface PrefsState extends Prefs {

@@ -1,8 +1,8 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { GatewayFrameSchema, GatewayOpcode, RoomType, type DispatchEvent, type GatewayFrame } from '@calaba/protocol';
+import { GatewayFrameSchema, GatewayOpcode, NotificationLevel, RoomType, type DispatchEvent, type GatewayFrame } from '@calaba/protocol';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { GENERAL_MESSAGE_COUNT, IDS, startMockServer, type MockServer } from './mock-server';
+import { GENERAL_MESSAGE_COUNT, IDS, parseMentions, startMockServer, type MockServer } from './mock-server';
 
 // Smoke test: pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts
 
@@ -143,7 +143,7 @@ describe('mock server', () => {
     await gw.next((f) => f.op === GatewayOpcode.HEARTBEAT_ACK);
 
     // Injected mention → MESSAGE_CREATE with seq 2.
-    server.injectMessage({ roomId: IDS.rooms.dev, authorId: IDS.users.boris, content: '@АннаСмирнова созвон через 5 минут' });
+    server.injectMessage({ roomId: IDS.rooms.dev, authorId: IDS.users.boris, content: `@${IDS.users.anna} созвон через 5 минут` });
     const created = await gw.next((f) => f.op === GatewayOpcode.DISPATCH);
     expect(created.seq).toBe(2n);
     const ce = dispatchOf(created)?.event;
@@ -186,5 +186,113 @@ describe('mock server', () => {
     } finally {
       await empty.close();
     }
+  });
+});
+
+describe('mentions and room notifications (docs/05)', () => {
+  it('parses mentions like the server', () => {
+    const a = IDS.users.anna;
+    expect(parseMentions(`@${a.toUpperCase()} mail@${IDS.users.boris} \`@${IDS.users.vera}\` @here`)).toEqual({ users: [a], everyone: true });
+    expect(parseMentions('```\n@everyone\n``` @everyones')).toEqual({ users: [], everyone: false });
+  });
+
+  it('lists my mentions newest first, with the before cursor', async () => {
+    const auth = { Authorization: `Bearer ${await login()}` };
+    const page = (await (await fetch(`${server.url}/api/me/mentions?limit=2`, { headers: auth })).json()) as {
+      messages: { id: string; content: string }[];
+      hasMore: boolean;
+    };
+    expect(page.messages).toHaveLength(2);
+    expect(page.hasMore).toBe(true);
+    expect(page.messages[0]?.id && page.messages[1]?.id && page.messages[0].id > page.messages[1].id).toBe(true);
+    const rest = (await (
+      await fetch(`${server.url}/api/me/mentions?before=${page.messages[1]?.id ?? ''}`, { headers: auth })
+    ).json()) as { messages: { id: string }[]; hasMore: boolean };
+    expect(rest.hasMore).toBe(false);
+    expect(rest.messages.every((m) => m.id < (page.messages[1]?.id ?? ''))).toBe(true);
+    expect((await fetch(`${server.url}/api/me/mentions?after=x`, { headers: auth })).status).toBe(422);
+  });
+
+  it('stores notification settings, echoes ROOM_NOTIFICATION_UPDATE, READY carries them', async () => {
+    const token = await login();
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } });
+    const ready = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'ready'))?.event;
+    const stored = ready?.case === 'ready' ? ready.value.notificationSettings : [];
+    expect(stored.map((n) => [n.roomId, n.level])).toEqual([[IDS.rooms.longPrivate, NotificationLevel.MENTIONS]]);
+
+    const put = await fetch(`${server.url}/api/rooms/${IDS.rooms.general}/notifications`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'NOTIFICATION_LEVEL_NONE' }),
+    });
+    expect(put.status).toBe(200);
+    const ev = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'roomNotificationUpdate'))?.event;
+    expect(ev?.case === 'roomNotificationUpdate' && ev.value.settings?.level).toBe(NotificationLevel.NONE);
+    gw.ws.close(1000);
+    server.reset('data');
+  });
+
+  it('ROOM_UPDATE carries voice_started_at when a call starts and ends', async () => {
+    const token = await login();
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } });
+    await gw.next((f) => dispatchOf(f)?.event.case === 'ready');
+    const roomUpdate = (): Promise<GatewayFrame> => gw.next((f) => dispatchOf(f)?.event.case === 'roomUpdate');
+    server.setVoiceState({ userId: IDS.users.grigory, roomId: IDS.rooms.call });
+    const started = dispatchOf(await roomUpdate())?.event;
+    expect(started?.case === 'roomUpdate' && started.value.room?.voiceStartedAt).toBeTruthy();
+    server.setVoiceState({ userId: IDS.users.grigory, roomId: '' });
+    const ended = dispatchOf(await roomUpdate())?.event;
+    expect(ended?.case === 'roomUpdate' && ended.value.room?.id).toBe(IDS.rooms.call);
+    expect(ended?.case === 'roomUpdate' && ended.value.room?.voiceStartedAt).toBeUndefined();
+    gw.ws.close(1000);
+    server.reset('data');
+  });
+});
+
+describe('room links and people (ADR-0016)', () => {
+  it('previews a link publicly, signs a guest in (web cookie) and lets an admin promote them', async () => {
+    const preview = await fetch(`${server.url}/api/room-invites/call-guest-link`);
+    expect(preview.status).toBe(200);
+    expect(await preview.json()).toMatchObject({ roomName: 'Созвон', workspaceName: 'Команда Calaba', allowGuests: true });
+
+    const join = await fetch(`${server.url}/api/room-invites/call-guest-link/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Client': 'web' },
+      body: JSON.stringify({ nickname: 'Гость Ира', deviceName: 'vitest (web)' }),
+    });
+    expect(join.status).toBe(201);
+    expect(join.headers.get('set-cookie')).toContain('calaba_refresh=');
+    const body = (await join.json()) as { roomId: string; workspaceId: string; me: { user: { id: string; isGuest: boolean } } };
+    expect(body.roomId).toBe(IDS.rooms.call);
+    expect(body.me.user.isGuest).toBe(true);
+
+    const token = await login();
+    const promote = await fetch(`${server.url}/api/workspaces/${IDS.workspaces.main}/members/${body.me.user.id}/promote`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(promote.status).toBe(200);
+    expect(await promote.json()).toMatchObject({ member: { role: 'WORKSPACE_ROLE_MEMBER' } });
+  });
+
+  it('sets nicknames within the workspace rules', async () => {
+    const token = await login('vera@calaba.test');
+    const own = await fetch(`${server.url}/api/workspaces/${IDS.workspaces.main}/members/${IDS.users.vera}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nickname: 'Верочка' }),
+    });
+    expect(own.status).toBe(200);
+    const other = await fetch(`${server.url}/api/workspaces/${IDS.workspaces.main}/members/${IDS.users.boris}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nickname: 'Боря' }),
+    });
+    expect(other.status).toBe(403);
+    server.reset('data');
   });
 });

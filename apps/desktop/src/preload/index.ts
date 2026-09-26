@@ -17,6 +17,7 @@ const api: CalabaApi = {
     restore: () => ipcRenderer.invoke(IPC.authRestore),
     login: (a) => ipcRenderer.invoke(IPC.authLogin, a),
     register: (a) => ipcRenderer.invoke(IPC.authRegister, a),
+    guestJoin: (code, nickname) => ipcRenderer.invoke(IPC.authGuestJoin, { code, nickname }),
     logout: (all) => ipcRenderer.invoke(IPC.authLogout, all),
     accessToken: () => ipcRenderer.invoke(IPC.authAccessToken),
     forceRefresh: () => ipcRenderer.invoke(IPC.authForceRefresh),
@@ -60,6 +61,7 @@ const api: CalabaApi = {
     metrics: () => ipcRenderer.invoke(IPC.systemMetrics),
     permissions: () => ipcRenderer.invoke(IPC.systemPermissions),
     requestMic: () => ipcRenderer.invoke(IPC.systemRequestMic),
+    idleSeconds: () => ipcRenderer.invoke(IPC.systemIdleSeconds),
   },
 };
 

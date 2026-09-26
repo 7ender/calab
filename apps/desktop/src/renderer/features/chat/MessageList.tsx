@@ -1,74 +1,87 @@
-import type { PermissionBits } from '@calaba/protocol';
-import { ArrowDown } from 'lucide-react';
+import type { PermissionBits, Room } from '@calaba/protocol';
+import { ArrowDown, Hash, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { Spinner } from '../../components/ui';
-import { t } from '../../i18n';
-import { toDate } from '../../lib/format';
-import { loadOlder, markRead } from '../../services/chat';
+import { RoomType } from '@calaba/protocol';
+import { Spinner, cx } from '../../components/ui';
+import { plural, t } from '../../i18n';
+import { fmtTime, toDate } from '../../lib/format';
+import { ensureLoaded, loadNewer, loadOlder, loadPresent, markRead } from '../../services/chat';
 import { EMPTY_ROOM_MESSAGES, useMessages, type ChatMessage } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
-import { MessageRow } from './MessageRow';
+import { toast } from '../../stores/toasts';
+import { useChatView } from './chatView';
+import { buildMetas, type RowMeta } from './grouping';
+import { DatePill, MessageRow } from './MessageBubble';
+import { EmptyRoom } from './RoomPanels';
 
 const START_INDEX = 1_000_000;
-const GROUP_MS = 7 * 60 * 1000;
-
-function sameDay(a: Date, b: Date): boolean {
-  return a.toDateString() === b.toDateString();
-}
-
-export interface RowMeta {
-  grouped: boolean;
-  dayDivider: boolean;
-  newDivider: boolean;
-}
-
-export function rowMeta(c: ChatMessage, prev: ChatMessage | undefined, newMarker: string, me: string): RowMeta {
-  const d = toDate(c.msg.createdAt);
-  const pd = prev ? toDate(prev.msg.createdAt) : undefined;
-  const dayDivider = !pd || !sameDay(d, pd);
-  const newDivider =
-    !!newMarker && c.status === 'sent' && c.msg.id > newMarker && c.msg.authorId !== me && (!prev || prev.status !== 'sent' || prev.msg.id <= newMarker);
-  const grouped =
-    !!prev &&
-    !dayDivider &&
-    !newDivider &&
-    prev.msg.authorId === c.msg.authorId &&
-    !c.msg.replyToId &&
-    d.getTime() - pd.getTime() < GROUP_MS;
-  return { grouped, dayDivider, newDivider };
-}
+const HIGHLIGHT_MS = 1800;
 
 export function MessageList({
   workspaceId,
-  roomId,
+  room,
   perms,
   newMarker,
 }: {
   workspaceId: string;
-  roomId: string;
+  room: Room;
   perms: PermissionBits;
   newMarker: string;
 }): ReactNode {
+  const state = useMessages((s) => s.rooms[room.id] ?? EMPTY_ROOM_MESSAGES);
+  if (!state.loaded) {
+    return (
+      <div className="grid min-h-0 flex-1 place-items-center bg-feed">
+        {state.error ? (
+          <button type="button" className="text-danger-text hover:underline" onClick={() => void loadOlder(room.id)}>
+            {state.error} · {t('common.retry')}
+          </button>
+        ) : (
+          <Spinner />
+        )}
+      </div>
+    );
+  }
+  if (state.items.length === 0 && !state.hasMoreBefore && !state.hasMoreAfter) {
+    return <EmptyRoom workspaceId={workspaceId} room={room} perms={perms} />;
+  }
+  return <Feed workspaceId={workspaceId} room={room} perms={perms} newMarker={newMarker} />;
+}
+
+/** The virtualised feed; mounted once the first window is loaded (so the initial position is known). */
+function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; room: Room; perms: PermissionBits; newMarker: string }): ReactNode {
+  const roomId = room.id;
   const state = useMessages((s) => s.rooms[roomId] ?? EMPTY_ROOM_MESSAGES);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const room = useRooms((s) => s.byId[roomId]);
+  const readMarker = useRooms((s) => s.readState[roomId] ?? '');
+  const newestKnown = useRooms((s) => s.lastMessage[roomId] ?? '');
+  const highlight = useChatView((s) => s.highlight);
+  const jump = useChatView((s) => s.jump);
   const items = state.items;
   const virtuoso = useRef<VirtuosoHandle>(null);
-  const [atBottom, setAtBottom] = useState(true);
+  // False until Virtuoso reports it: opening at the first unread must not mark the room read.
+  const [atBottom, setAtBottom] = useState(false);
 
-  // Prepending keeps the scroll position via Virtuoso's firstItemIndex.
-  const firstKey = useRef<string | undefined>(undefined);
-  const [firstIndex, setFirstIndex] = useState(START_INDEX);
-  useEffect(() => {
-    const prevFirst = firstKey.current;
-    if (prevFirst) {
-      const k = items.findIndex((c) => c.key === prevFirst);
-      if (k > 0) setFirstIndex((i) => i - k);
-    }
-    firstKey.current = items[0]?.key;
-  }, [items]);
+  // Grouping, memoised per message (unchanged rows keep their meta object → no re-render).
+  const [cache] = useState(() => new Map<string, RowMeta>());
+  const metas = useMemo(() => buildMetas(items, newMarker, me, cache), [items, newMarker, me, cache]);
+
+  // Prepending keeps the scroll position via Virtuoso's firstItemIndex (derived during render).
+  const [track, setTrack] = useState(() => ({ first: items[0]?.key, index: START_INDEX }));
+  let firstIndex = track.index;
+  if (items[0]?.key !== track.first) {
+    const k = track.first ? items.findIndex((c) => c.key === track.first) : -1;
+    firstIndex = k > 0 ? track.index - k : track.index;
+    setTrack({ first: items[0]?.key, index: firstIndex });
+  }
+
+  // Opens at the first unread message (docs/09 #39), otherwise at the bottom.
+  const [initialIndex] = useState(() => {
+    const i = metas.findIndex((m) => m.isNew);
+    return i >= 0 ? { index: i, align: 'start' as const, offset: -40 } : Math.max(0, items.length - 1);
+  });
 
   const lastSentId = useMemo(() => {
     for (let i = items.length - 1; i >= 0; i--) {
@@ -77,6 +90,21 @@ export function MessageList({
     }
     return '';
   }, [items]);
+
+  const firstUnread = useMemo(
+    () => items.findIndex((c) => c.status === 'sent' && !!readMarker && c.msg.id > readMarker && c.msg.authorId !== me),
+    [items, readMarker, me],
+  );
+  const unread = useMemo(() => {
+    if (firstUnread < 0) return 0;
+    let n = 0;
+    for (let i = firstUnread; i < items.length; i++) {
+      const c = items[i];
+      if (c && c.status === 'sent' && c.msg.authorId !== me) n++;
+    }
+    return n;
+  }, [items, firstUnread, me]);
+  const moreUnread = state.hasMoreAfter && newestKnown > lastSentId;
 
   // Read state: the newest message is on screen and the window is focused.
   useEffect(() => {
@@ -89,83 +117,205 @@ export function MessageList({
     return () => window.removeEventListener('focus', mark);
   }, [atBottom, lastSentId, roomId]);
 
+  // Jump requests (search, reply quotes, pins): load the window if needed, scroll, highlight.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!jump || jump.roomId !== roomId) return;
+    // Clearing the request re-runs this effect; the pending load must survive that (no cleanup).
+    useChatView.getState().clearJump();
+    const target = jump.messageId;
+    void ensureLoaded(roomId, target).then((ok) => {
+      if (!alive.current) return;
+      if (!ok) {
+        toast.info(t('chat.messageGone'));
+        return;
+      }
+      // Two frames: the list has rendered the (possibly new) window before we scroll.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const i = useMessages.getState().rooms[roomId]?.items.findIndex((c) => c.key === target) ?? -1;
+          if (!alive.current || i < 0) return;
+          virtuoso.current?.scrollToIndex({ index: i, align: 'center', behavior: 'auto' });
+          useChatView.getState().setHighlight(target);
+          window.setTimeout(() => {
+            if (useChatView.getState().highlight === target) useChatView.getState().setHighlight(null);
+          }, HIGHLIGHT_MS);
+        }),
+      );
+    });
+  }, [jump, roomId]);
+
   const startReached = useCallback(() => {
     if (state.hasMoreBefore && !state.loading) void loadOlder(roomId);
   }, [roomId, state.hasMoreBefore, state.loading]);
+  const endReached = useCallback(() => {
+    if (state.hasMoreAfter) void loadNewer(roomId);
+  }, [roomId, state.hasMoreAfter]);
 
   const followOutput = useCallback(
     (isAtBottom: boolean) => {
+      if (state.hasMoreAfter) return false;
       const last = items[items.length - 1];
       if (last && last.msg.authorId === me && last.status !== 'sent') return 'auto';
       return isAtBottom ? 'smooth' : false;
     },
-    [items, me],
+    [items, me, state.hasMoreAfter],
   );
 
-  if (!state.loaded) {
-    return (
-      <div className="grid flex-1 place-items-center">
-        {state.error ? (
-          <button type="button" className="text-danger-text hover:underline" onClick={() => void loadOlder(roomId)}>
-            {state.error} · {t('common.retry')}
-          </button>
-        ) : (
-          <Spinner />
-        )}
-      </div>
-    );
-  }
+  // Floating date: the day of the topmost visible row, hidden while that day's own pill is in view.
+  const scroller = useRef<HTMLElement | null>(null);
+  const [sticky, setSticky] = useState<string | null>(null);
+  const frame = useRef(0);
+  const onScroll = useCallback(() => {
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const el = scroller.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const rows = el.querySelectorAll<HTMLElement>('[data-message-id]');
+      const list = Array.from(rows);
+      const i = list.findIndex((row) => row.getBoundingClientRect().bottom > top + 8);
+      const row = list[i];
+      if (row) {
+        const r = row.getBoundingClientRect();
+        const pillInView = row.dataset['dayStart'] === '1' && r.top >= top - 4;
+        // The next day's pill is about to reach the top: let it take over (no two pills at once).
+        const nextPillNear = list.slice(i + 1, i + 4).some((n) => n.dataset['dayStart'] === '1' && n.getBoundingClientRect().top < top + 72);
+        setSticky(pillInView || nextPillNear || el.scrollTop < 8 ? null : (row.dataset['messageId'] ?? null));
+        return;
+      }
+      setSticky(null);
+    });
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+
+  const toBottom = (): void => {
+    if (state.hasMoreAfter) {
+      void loadPresent(roomId).then(() => virtuoso.current?.scrollToIndex({ index: 'LAST', behavior: 'auto' }));
+      return;
+    }
+    virtuoso.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' });
+  };
+  const toFirstUnread = (): void => {
+    const i = metas.findIndex((m) => m.isNew);
+    const at = i >= 0 ? i : firstUnread;
+    if (at >= 0) virtuoso.current?.scrollToIndex({ index: at, align: 'start', offset: -40, behavior: 'smooth' });
+  };
+
+  const stickyMsg = sticky ? items.find((c) => c.key === sticky) : undefined;
+  const stickyDate = stickyMsg ? toDate(stickyMsg.msg.createdAt) : null;
+  const showBanner = !!newMarker && unread > 0;
+  const firstUnreadMsg = firstUnread >= 0 ? items[firstUnread] : undefined;
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative min-h-0 flex-1 bg-feed">
       <Virtuoso
         ref={virtuoso}
-        className="selectable h-full"
+        className="h-full"
         data={items}
         firstItemIndex={firstIndex}
-        initialTopMostItemIndex={Math.max(0, items.length - 1)}
+        initialTopMostItemIndex={initialIndex}
         startReached={startReached}
+        endReached={endReached}
         followOutput={followOutput}
         atBottomStateChange={setAtBottom}
         atBottomThreshold={48}
-        increaseViewportBy={{ top: 600, bottom: 300 }}
-        computeItemKey={(_i, c) => c.key}
+        scrollerRef={(r) => {
+          scroller.current = r instanceof HTMLElement ? r : null;
+        }}
+        onScroll={onScroll}
+        increaseViewportBy={{ top: 800, bottom: 400 }}
+        computeItemKey={(_i, c: ChatMessage) => c.key}
         components={{
           Header: () =>
             state.hasMoreBefore ? (
               <div className="grid h-12 place-items-center">{state.loading ? <Spinner /> : null}</div>
             ) : (
-              <div className="px-4 pb-2 pt-10">
-                <div className="text-[26px] font-semibold">{t('chat.startTitle', { name: room?.name ?? '' })}</div>
-                <div className="text-muted">{t('chat.startText')}</div>
-              </div>
+              <HistoryStart room={room} />
             ),
-          Footer: () => <div className="h-3" />,
+          Footer: () => (state.hasMoreAfter ? <div className="grid h-12 place-items-center"><Spinner /></div> : <div className="h-3" />),
         }}
-        itemContent={(index, c) => {
-          const i = index - firstIndex;
-          const prev = i > 0 ? items[i - 1] : undefined;
+        itemContent={(index, c: ChatMessage) => {
+          const meta = metas[index - firstIndex] ?? FALLBACK_META;
           return (
             <MessageRow
               c={c}
-              meta={rowMeta(c, prev, newMarker, me)}
+              meta={meta}
+              own={c.msg.authorId === me}
               workspaceId={workspaceId}
               roomId={roomId}
               perms={perms}
-              isMe={c.msg.authorId === me}
+              highlighted={highlight === c.key}
             />
           );
         }}
       />
-      {!atBottom ? (
+
+      {showBanner && firstUnreadMsg ? (
+        <div className="absolute inset-x-0 top-0 z-[var(--z-sticky)] flex h-8 items-center gap-2 bg-accent-strong pl-4 pr-2 text-[13px] text-accent-fg shadow-[var(--shadow-card)]" data-testid="unread-banner">
+          <button type="button" className="min-w-0 flex-1 truncate text-left font-medium hover:underline" onClick={toFirstUnread}>
+            {t('chat.unreadBanner', {
+              n: `${unread}${moreUnread ? '+' : ''}`,
+              messages: plural(unread, ['новое сообщение', 'новых сообщения', 'новых сообщений']),
+              time: fmtTime(toDate(firstUnreadMsg.msg.createdAt)),
+            })}
+          </button>
+          <button
+            type="button"
+            className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 font-semibold hover:bg-[rgb(255_255_255/15%)]"
+            onClick={() => markRead(roomId, newestKnown > lastSentId ? newestKnown : lastSentId)}
+          >
+            {t('chat.markRead')}
+          </button>
+        </div>
+      ) : null}
+
+      {stickyDate ? (
+        <div className={cx('pointer-events-none absolute inset-x-0 z-[var(--z-sticky)] flex justify-center', showBanner ? 'top-10' : 'top-2')}>
+          <DatePill date={stickyDate} floating />
+        </div>
+      ) : null}
+
+      {!atBottom || state.hasMoreAfter ? (
         <button
           type="button"
-          onClick={() => virtuoso.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })}
-          className="absolute bottom-3 right-5 flex items-center gap-1 rounded-full bg-accent-strong px-3 py-1.5 text-[13px] font-medium text-accent-fg shadow-[var(--shadow-popover)]"
+          onClick={toBottom}
+          aria-label={unread ? t('chat.toBottomUnread', { n: unread }) : t('chat.toBottom')}
+          title={t('chat.toBottom')}
+          className="mat-popover anim-in absolute bottom-4 right-5 z-[var(--z-sticky)] grid size-10 place-items-center rounded-full text-muted hover:text-fg"
         >
-          <ArrowDown className="size-4" /> {t('chat.toBottom')}
+          <ArrowDown className="size-5" />
+          {unread ? (
+            <span className="absolute -top-2 left-1/2 min-w-5 -translate-x-1/2 rounded-full bg-accent-strong px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-accent-fg">
+              {unread > 99 ? '99+' : unread}
+            </span>
+          ) : null}
         </button>
       ) : null}
+    </div>
+  );
+}
+
+const FALLBACK_META: RowMeta = { day: false, isNew: false, first: true, last: true };
+
+/** Top of the history: what this room is. */
+function HistoryStart({ room }: { room: Room }): ReactNode {
+  const voice = room.type === RoomType.VOICE;
+  const Icon = voice ? Volume2 : Hash;
+  return (
+    <div className="flex flex-col items-center px-4 pb-2 pt-8 text-center">
+      <span className="grid size-14 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text">
+        <Icon className="size-7" strokeWidth={1.5} aria-hidden />
+      </span>
+      <div className="mt-2 text-[16px] font-semibold">{t('chat.welcomeTitle', { name: voice ? room.name : `#${room.name}` })}</div>
+      <div className="text-[13px] text-muted">{t('chat.historyStart')}</div>
     </div>
   );
 }

@@ -1,92 +1,129 @@
-import { Compass, Plus } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Compass, Plus, Volume2 } from 'lucide-react';
+import { useMemo, type ReactNode } from 'react';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { isUnread, useRooms } from '../../stores/rooms';
-import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
+import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
-import { platform } from '../../platform';
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('');
+/** Two letters for a workspace without an icon: «Команда Calaba» → «КC», «Дизайн» → «Ди». */
+export function wsInitials(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return words.slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
+  const w = words[0] ?? '?';
+  return (w[0]?.toUpperCase() ?? '?') + (w[1] ?? '');
 }
 
+/** 48 px tile: squircle radius 16 → 12 on hover/active (Discord-like morph, 160 ms). */
 const tile =
-  'relative grid size-10 place-items-center rounded-[var(--radius-panel)] text-[14px] font-semibold transition-colors duration-[var(--motion-fast)]';
+  'relative grid size-12 place-items-center rounded-[16px] text-[15px] font-semibold transition-[border-radius,background-color,color] duration-[var(--motion)] ease-out hover:rounded-[12px]';
 
-/** Workspace rail, 64 px, sidebar material; macOS traffic lights sit above it (hiddenInset). */
+/**
+ * Workspace rail (docs/09 #2): 72 px, rail material. Left pill = state (8 px unread, 20 px
+ * hover, 40 px active), red mention badge, green speaker where I am in voice; tooltips on the
+ * right; «+» (create) and «Обзор» (join / discover) at the bottom of the list.
+ */
 export function WorkspaceRail(): ReactNode {
   const order = useWorkspaces((s) => s.order);
-  const byId = useWorkspaces((s) => s.byId);
-  const active = useUi((s) => s.activeWorkspaceId);
-  const setWs = useUi((s) => s.setWorkspace);
   const open = useUi((s) => s.openDialog);
-  const rooms = useRooms();
-  const mac = useSession((s) => s.appInfo?.platform === 'darwin') && platform.kind === 'electron';
 
   return (
-    <nav
-      className={cx('mat-rail drag flex w-[var(--rail-width)] shrink-0 flex-col items-center gap-2 overflow-y-auto pb-3', mac ? 'pt-11' : 'pt-3')}
-      aria-label={t('ws.list')}
-    >
-      {order.map((id) => {
-        const w = byId[id]?.ws;
-        if (!w) return null;
-        const list = Object.values(rooms.byId).filter((r) => r.workspaceId === id);
-        const unread = list.some((r) => isUnread(r.id, rooms));
-        const mentions = list.reduce((n, r) => n + (rooms.mentions[r.id] ?? 0), 0);
-        const isActive = id === active;
-        return (
-          <div key={id} className="relative flex w-full justify-center">
-            <span
-              aria-hidden
-              className={cx(
-                'absolute left-0 top-1/2 w-[3px] -translate-y-1/2 rounded-r-full bg-fg transition-[height] duration-[var(--motion)]',
-                isActive ? 'h-6' : unread ? 'h-2' : 'h-0',
-              )}
-            />
-            <Tip label={w.name} side="right">
-              <button
-                type="button"
-                onClick={() => setWs(id)}
-                aria-current={isActive ? 'page' : undefined}
-                aria-label={`${w.name}${unread ? `, ${t('ws.unread')}` : ''}`}
-                className={cx(tile, isActive ? 'bg-accent-strong text-accent-fg' : 'bg-hover text-fg hover:bg-[var(--color-fill-hover)]')}
-              >
-                {w.iconFileId ? (
-                  <MediaImg path={thumbnailPath(w.iconFileId)} alt="" className="size-full rounded-[inherit] object-cover" />
-                ) : (
-                  initials(w.name)
-                )}
-                {mentions > 0 ? (
-                  <span className="absolute -bottom-1 -right-1 min-w-4 rounded-full bg-danger-fill px-1 text-center text-[11px] font-semibold leading-4 text-white">
-                    {mentions > 99 ? '99+' : mentions}
-                  </span>
-                ) : null}
-              </button>
-            </Tip>
-          </div>
-        );
-      })}
-      {order.length ? <div className="my-0.5 h-px w-6 bg-line" aria-hidden /> : null}
-      <Tip label={t('ws.create')} side="right">
-        <button type="button" onClick={() => open({ kind: 'create-workspace' })} className={cx(tile, 'bg-hover text-muted hover:text-fg')} aria-label={t('ws.create')}>
-          <Plus className="size-5" strokeWidth={1.75} />
-        </button>
-      </Tip>
-      <Tip label={t('ws.join')} side="right">
-        <button type="button" onClick={() => open({ kind: 'join-workspace' })} className={cx(tile, 'bg-hover text-muted hover:text-fg')} aria-label={t('ws.join')}>
-          <Compass className="size-5" strokeWidth={1.75} />
-        </button>
-      </Tip>
+    <nav className="mat-rail flex w-[var(--rail-width)] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3" aria-label={t('ws.list')}>
+      {order.map((id) => (
+        <RailItem key={id} id={id} />
+      ))}
+      {order.length ? <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden /> : null}
+      <RailAction label={t('ws.create')} onClick={() => open({ kind: 'create-workspace' })}>
+        <Plus className="size-6" strokeWidth={1.75} />
+      </RailAction>
+      <RailAction label={t('shell.explore')} onClick={() => open({ kind: 'join-workspace' })}>
+        <Compass className="size-6" strokeWidth={1.75} />
+      </RailAction>
     </nav>
+  );
+}
+
+function RailItem({ id }: { id: string }): ReactNode {
+  const w = useWorkspaces((s) => s.byId[id]?.ws);
+  const isActive = useUi((s) => s.activeWorkspaceId === id);
+  const setWs = useUi((s) => s.setWorkspace);
+  const inVoice = useVoice((s) => s.workspaceId === id && s.roomId !== null);
+  const byId = useRooms((s) => s.byId);
+  const readState = useRooms((s) => s.readState);
+  const lastMessage = useRooms((s) => s.lastMessage);
+  const mentionMap = useRooms((s) => s.mentions);
+  const { unread, mentions } = useMemo(() => {
+    const list = Object.values(byId).filter((r) => r.workspaceId === id);
+    return {
+      unread: list.some((r) => isUnread(r.id, { readState, lastMessage })),
+      mentions: list.reduce((n, r) => n + (mentionMap[r.id] ?? 0), 0),
+    };
+  }, [byId, readState, lastMessage, mentionMap, id]);
+  if (!w) return null;
+
+  const label = [w.name, mentions > 0 ? t('shell.unreadMentions', { n: mentions }) : unread ? t('ws.unread') : '', inVoice ? t('shell.inVoice') : '']
+    .filter(Boolean)
+    .join(', ');
+
+  return (
+    <div className="group relative flex w-full shrink-0 justify-center">
+      <span
+        aria-hidden
+        className={cx(
+          'absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-fg transition-[height,opacity] duration-[var(--motion)] ease-out',
+          isActive ? 'h-10' : unread ? 'h-2 group-hover:h-5' : 'h-0 opacity-0 group-hover:h-5 group-hover:opacity-100',
+        )}
+      />
+      <Tip label={w.name} side="right">
+        <button
+          type="button"
+          onClick={() => setWs(id)}
+          aria-current={isActive ? 'page' : undefined}
+          aria-label={label}
+          className={cx(
+            tile,
+            w.iconFileId ? 'bg-transparent' : isActive ? 'bg-accent-strong text-accent-fg' : 'bg-hover text-fg hover:bg-accent-strong hover:text-accent-fg',
+            isActive && 'rounded-[12px]',
+          )}
+        >
+          {w.iconFileId ? (
+            <MediaImg path={thumbnailPath(w.iconFileId)} alt="" draggable={false} className="size-full rounded-[inherit] object-cover" />
+          ) : (
+            <span aria-hidden>{wsInitials(w.name)}</span>
+          )}
+          {inVoice ? (
+            <span className="absolute -bottom-1 -right-1 grid size-5 place-items-center rounded-full border-[3px] border-[var(--color-rail)] bg-ok-fill text-white" aria-hidden>
+              <Volume2 className="size-2.5" strokeWidth={2.5} />
+            </span>
+          ) : null}
+          {mentions > 0 ? (
+            <span
+              className={cx(
+                'absolute -right-1 min-w-5 rounded-full border-[3px] border-[var(--color-rail)] bg-danger-fill px-1 text-center text-[11px] font-bold leading-[14px] text-white',
+                inVoice ? '-top-1' : '-bottom-1',
+              )}
+              aria-hidden
+            >
+              {mentions > 99 ? '99+' : mentions}
+            </span>
+          ) : null}
+        </button>
+      </Tip>
+    </div>
+  );
+}
+
+function RailAction({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }): ReactNode {
+  return (
+    <div className="group relative flex w-full shrink-0 justify-center">
+      <Tip label={label} side="right">
+        <button type="button" onClick={onClick} aria-label={label} className={cx(tile, 'bg-hover text-ok hover:bg-ok-fill hover:text-white')}>
+          {children}
+        </button>
+      </Tip>
+    </div>
   );
 }

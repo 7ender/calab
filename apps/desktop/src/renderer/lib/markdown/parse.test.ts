@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMarkdown, toPlainText } from './parse';
+import { firstLink, isEmojiOnly, mentionTargets, parseMarkdown, toPlainText } from './parse';
 
 describe('markdown-lite', () => {
   it('plain text stays text', () => {
@@ -55,15 +55,62 @@ describe('markdown-lite', () => {
     expect(parseMarkdown('<b>hi</b><script>x</script>')).toEqual([{ t: 'text', v: '<b>hi</b><script>x</script>' }]);
   });
 
-  it('mentions and escapes', () => {
-    expect(parseMarkdown('привет @Аня, mail@x.io \\*не курсив\\*')).toEqual([
+  const A = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b';
+
+  it('mentions: @<user_id>, @everyone, @here only', () => {
+    expect(parseMarkdown(`привет @${A.toUpperCase()}, @everyone и @Here! @Аня`)).toEqual([
       { t: 'text', v: 'привет ' },
-      { t: 'mention', v: 'Аня' },
-      { t: 'text', v: ', mail@x.io *не курсив*' },
+      { t: 'mention', v: A },
+      { t: 'text', v: ', ' },
+      { t: 'mention', v: 'everyone' },
+      { t: 'text', v: ' и ' },
+      { t: 'mention', v: 'here' },
+      { t: 'text', v: '! @Аня' },
     ]);
   });
 
+  it('mentions: boundary rule mirrors the server', () => {
+    for (const s of [`mail@${A}`, `a.@here`, `x-@everyone`, `_@here`, `@@here`, `@everyones`, `@here_x`, `@${A}0`]) {
+      expect(parseMarkdown(s).some((n) => n.t === 'mention'), s).toBe(false);
+    }
+    expect(parseMarkdown('(@here)')[1]).toEqual({ t: 'mention', v: 'here' });
+    expect(parseMarkdown('**@here**')).toEqual([{ t: 'b', c: [{ t: 'mention', v: 'here' }] }]);
+    expect(parseMarkdown('@hereЖ')[0]).toEqual({ t: 'mention', v: 'here' });
+  });
+
+  it('mentions: not inside code', () => {
+    expect(parseMarkdown('`@here`')).toEqual([{ t: 'code', v: '@here' }]);
+    expect(parseMarkdown('```\n@everyone\n```')).toEqual([{ t: 'codeblock', lang: '', v: '@everyone' }]);
+  });
+
+  it('mentionTargets', () => {
+    expect(mentionTargets(parseMarkdown(`*@${A}* @${A} [@here](https://x.test) \`@everyone\``))).toEqual({ users: [A], everyone: true });
+    expect(mentionTargets(parseMarkdown('нет упоминаний'))).toEqual({ users: [], everyone: false });
+  });
+
+  it('escapes', () => {
+    expect(parseMarkdown('\\*не курсив\\*')).toEqual([{ t: 'text', v: '*не курсив*' }]);
+  });
+
   it('plain-text preview', () => {
-    expect(toPlainText(parseMarkdown('**a**\n`b` @c'))).toBe('a b @c');
+    expect(toPlainText(parseMarkdown('**a**\n`b` @here'))).toBe('a b @here');
+    expect(toPlainText(parseMarkdown(`@${A} ок`), (v) => (v === A ? '@Аня' : `@${v}`))).toBe('@Аня ок');
+  });
+
+  it('firstLink finds bare, markdown and nested links', () => {
+    expect(firstLink(parseMarkdown('см. https://a.test/x и https://b.test'))).toBe('https://a.test/x');
+    expect(firstLink(parseMarkdown('**[док](https://c.test/d)**'))).toBe('https://c.test/d');
+    expect(firstLink(parseMarkdown('`https://code.test` нет'))).toBeUndefined();
+  });
+
+  it('isEmojiOnly: 1–3 emoji only', () => {
+    expect(isEmojiOnly('👍')).toBe(true);
+    expect(isEmojiOnly('🔥 🔥')).toBe(true);
+    expect(isEmojiOnly('❤️')).toBe(true);
+    expect(isEmojiOnly('👍🏽')).toBe(true);
+    expect(isEmojiOnly('👍 ок')).toBe(false);
+    expect(isEmojiOnly('1')).toBe(false);
+    expect(isEmojiOnly('😀😀😀😀')).toBe(false);
   });
 });
+

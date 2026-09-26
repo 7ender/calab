@@ -1,8 +1,6 @@
 import type { ReactNode } from 'react';
 import { ConfirmHost } from '../../components/Confirm';
-import { Modal } from '../../components/ui';
-import { MediaImg } from '../../components/MediaImg';
-import { filePath } from '../../lib/api/endpoints';
+import { Lightbox } from '../chat/Lightbox';
 import { useUi } from '../../stores/ui';
 import { AppSettingsDialog } from '../settings/AppSettingsDialog';
 import { StreamPicker } from '../voice/StreamPicker';
@@ -27,7 +25,7 @@ export function Dialogs(): ReactNode {
         node = <WorkspaceSettingsDialog onClose={close} workspaceId={d.workspaceId} tab={d.tab} />;
         break;
       case 'room-create':
-        node = <RoomCreateDialog onClose={close} workspaceId={d.workspaceId} voice={d.voice} />;
+        node = <RoomCreateDialog onClose={close} workspaceId={d.workspaceId} voice={d.voice} categoryId={d.categoryId} />;
         break;
       case 'room-settings':
         node = <RoomSettingsDialog onClose={close} roomId={d.roomId} tab={d.tab} />;
@@ -42,11 +40,7 @@ export function Dialogs(): ReactNode {
         node = <QuickSwitcher onClose={close} />;
         break;
       case 'image':
-        node = (
-          <Modal open wide title={d.name} onClose={close}>
-            <MediaImg path={filePath(d.fileId)} alt={d.name} className="mx-auto max-h-[72vh] max-w-full object-contain" />
-          </Modal>
-        );
+        node = <Lightbox fileId={d.fileId} name={d.name} onClose={close} />;
         break;
     }
   }

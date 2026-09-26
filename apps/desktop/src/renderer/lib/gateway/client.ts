@@ -69,6 +69,13 @@ export function backoffDelay(attempt: number, random: number): number {
   return Math.round(base * (0.5 + random * 0.5));
 }
 
+/**
+ * Client → server rate limit (server closes with 4008 on inbound flood): a token bucket of
+ * 10 frames refilled at 2/s for the «chatty» ops. HEARTBEAT / IDENTIFY / RESUME are exempt.
+ */
+export const OUT_BURST = 10;
+export const OUT_PER_SEC = 2;
+
 export class GatewayClient {
   private ws: SocketLike | null = null;
   private status: GatewayStatus = 'idle';
@@ -84,6 +91,11 @@ export class GatewayClient {
   private established = false;
   private stopped = true;
   private readonly rnd: () => number;
+  private tokens = OUT_BURST;
+  private tokensAt = Date.now();
+  /** Latest presence / subscription waiting for a token (coalesced: only the newest matters). */
+  private deferred = new Map<GatewayOpcode, GatewayFrame['payload']>();
+  private deferTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: GatewayDeps) {
     this.rnd = deps.random ?? (() => Math.random());
@@ -103,6 +115,9 @@ export class GatewayClient {
   stop(): void {
     this.stopped = true;
     this.clearTimers();
+    if (this.deferTimer) clearTimeout(this.deferTimer);
+    this.deferTimer = null;
+    this.deferred.clear();
     this.sessionId = '';
     this.seq = 0n;
     this.dropSocket(1000);
@@ -121,16 +136,57 @@ export class GatewayClient {
 
   // ---- outgoing ops ----
 
+  /** Best effort: dropped when over the rate limit (the next keystroke sends it again). */
   sendTyping(roomId: string): void {
-    this.sendFrame(GatewayOpcode.TYPING, { case: 'typing', value: create(TypingSchema, { roomId }) });
+    if (this.takeToken()) this.sendFrame(GatewayOpcode.TYPING, { case: 'typing', value: create(TypingSchema, { roomId }) });
   }
 
   setPresence(status: PresenceStatus): void {
-    this.sendFrame(GatewayOpcode.PRESENCE_UPDATE, { case: 'setPresence', value: create(SetPresenceSchema, { status }) });
+    this.sendLimited(GatewayOpcode.PRESENCE_UPDATE, { case: 'setPresence', value: create(SetPresenceSchema, { status }) });
   }
 
   subscribe(roomIds: string[]): void {
-    this.sendFrame(GatewayOpcode.SUBSCRIBE, { case: 'subscribe', value: create(SubscribeSchema, { roomIds }) });
+    this.sendLimited(GatewayOpcode.SUBSCRIBE, { case: 'subscribe', value: create(SubscribeSchema, { roomIds }) });
+  }
+
+  // ---- outgoing rate limit ----
+
+  private refill(): void {
+    const now = Date.now();
+    this.tokens = Math.min(OUT_BURST, this.tokens + ((now - this.tokensAt) / 1000) * OUT_PER_SEC);
+    this.tokensAt = now;
+  }
+
+  private takeToken(): boolean {
+    this.refill();
+    if (this.tokens < 1) return false;
+    this.tokens -= 1;
+    return true;
+  }
+
+  /** Sends now if a token is free, else keeps only the newest frame of this op and flushes later. */
+  private sendLimited(op: GatewayOpcode, payload: GatewayFrame['payload']): void {
+    if (!this.deferred.has(op) && this.takeToken()) {
+      this.sendFrame(op, payload);
+      return;
+    }
+    this.deferred.set(op, payload);
+    this.scheduleFlush();
+  }
+
+  private scheduleFlush(): void {
+    if (this.deferTimer || this.deferred.size === 0) return;
+    this.refill();
+    const wait = this.tokens >= 1 ? 0 : Math.ceil(((1 - this.tokens) / OUT_PER_SEC) * 1000);
+    this.deferTimer = setTimeout(() => {
+      this.deferTimer = null;
+      for (const [op, payload] of this.deferred) {
+        if (!this.takeToken()) break;
+        this.deferred.delete(op);
+        this.sendFrame(op, payload);
+      }
+      this.scheduleFlush();
+    }, wait);
   }
 
   // ---- internals ----

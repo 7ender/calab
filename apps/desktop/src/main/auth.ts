@@ -138,11 +138,19 @@ function deviceName(): string {
   return `${hostname()} (${process.platform})`;
 }
 
-async function doRefresh(): Promise<Tokens | null> {
+/** 409 on /api/auth/refresh = another refresh of the same session won the race: just retry. */
+const REFRESH_CONFLICT_RETRIES = 3;
+
+async function doRefresh(attempt = 0): Promise<Tokens | null> {
   const current = tokens;
   if (!current) return null;
   try {
     const res = await postJson(serverUrl, '/api/auth/refresh', { refreshToken: current.refreshToken });
+    if (res.status === 409 && attempt < REFRESH_CONFLICT_RETRIES) {
+      log.info('refresh conflict (concurrent refresh), retrying');
+      await new Promise((r) => setTimeout(r, 150 + Math.round(Math.random() * 250)));
+      return await doRefresh(attempt + 1);
+    }
     if (res.ok) {
       const body = (await res.json()) as { tokens: TokensJson };
       tokens = toTokens(body.tokens);
@@ -244,6 +252,28 @@ export function register(args: RegisterArgs): Promise<IpcResult<AuthSession>> {
     inviteCode: args.inviteCode,
     deviceName: deviceName(),
   });
+}
+
+/**
+ * Guest sign-in from a room link (ADR-0016, `calaba://r/<code>` or a pasted https link):
+ * POST /api/room-invites/{code}/join {nickname} without a session → the server creates a
+ * guest account and returns tokens like a login; the refresh token is kept in main as usual.
+ */
+export async function guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string }>> {
+  const base = normalizeServerUrl(currentServerUrl());
+  try {
+    const res = await postJson(base, `/api/room-invites/${encodeURIComponent(code)}/join`, { nickname, deviceName: deviceName() });
+    if (!res.ok) return { ok: false, error: await readError(res) };
+    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown };
+    if (!data.tokens) return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
+    serverUrl = base;
+    tokens = toTokens(data.tokens);
+    persist();
+    const me = data.me ?? (await fetchMe());
+    return { ok: true, data: { session: { serverUrl: base, sessionId: tokens.sessionId, me }, roomId: data.roomId, workspaceId: data.workspaceId } };
+  } catch (e) {
+    return { ok: false, error: networkError(e) };
+  }
 }
 
 export async function logout(allSessions: boolean): Promise<void> {

@@ -1,8 +1,8 @@
 import { PresenceStatus } from '@calaba/protocol';
-import { prefs } from '../stores/prefs';
 import { GatewayClient, gatewayUrl } from '../lib/gateway/client';
 import { log } from '../lib/log';
 import { useSession } from '../stores/session';
+import { effectivePresence } from './afk';
 import { applyDispatch } from './dispatch';
 import { platform } from '../platform';
 
@@ -25,7 +25,7 @@ export function startGateway(onFatal: (kind: 'auth' | 'revoked' | 'too-many-sess
         applyDispatch(ev);
         if (ev.event.case === 'ready' || ev.event.case === 'resumed') {
           if (subscribed.length) client?.subscribe(subscribed);
-          const presence = prefs().presence;
+          const presence = effectivePresence();
           if (presence !== PresenceStatus.ONLINE) client?.setPresence(presence);
         }
       } catch (e) {

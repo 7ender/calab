@@ -1,5 +1,13 @@
 import {
+  CreateCategoryRequestSchema,
+  CreateCategoryResponseSchema,
   CreateInviteRequestSchema,
+  CreateRoomInviteRequestSchema,
+  CreateRoomInviteResponseSchema,
+  GetRoomInviteResponseSchema,
+  JoinRoomInviteRequestSchema,
+  JoinRoomInviteResponseSchema,
+  ListRoomInvitesResponseSchema,
   CreateInviteResponseSchema,
   CreateMessageRequestSchema,
   CreateMessageResponseSchema,
@@ -16,20 +24,27 @@ import {
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
   ListMessagesResponseSchema,
+  MoveMemberRequestSchema,
   ListSessionsResponseSchema,
   RequestStreamRequestSchema,
   RequestStreamResponseSchema,
   SetRoomPermissionsRequestSchema,
   SetRoomPermissionsResponseSchema,
+  UpdateCategoryRequestSchema,
+  UpdateCategoryResponseSchema,
   UpdateMeRequestSchema,
   UpdateMeResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberResponseSchema,
+  UpdateStatusRequestSchema,
   UpdateMessageRequestSchema,
   UpdateMessageResponseSchema,
   UpdateReadStateRequestSchema,
+  UnfurlResponseSchema,
   UpdateRoomRequestSchema,
   UpdateRoomResponseSchema,
+  UpdateRoomNotificationSettingsRequestSchema,
+  UpdateRoomNotificationSettingsResponseSchema,
   UpdateVoiceSelfRequestSchema,
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
@@ -51,6 +66,12 @@ export const api = {
       call('PATCH', '/api/me', UpdateMeResponseSchema, body(UpdateMeRequestSchema, init)),
     sessions: () => call('GET', '/api/me/sessions', ListSessionsResponseSchema),
     revokeSession: (id: string) => callEmpty('DELETE', `/api/me/sessions/${id}`),
+    /** Custom status (text + emoji, optional expiry); empty text and emoji clear it. */
+    setStatus: (init: MessageInitShape<typeof UpdateStatusRequestSchema>) =>
+      call('PATCH', '/api/me/status', UpdateMeResponseSchema, body(UpdateStatusRequestSchema, init)),
+    /** Messages mentioning me in rooms I can view, newest first (cursor `before`, limit ≤ 100). */
+    mentions: (p: { limit?: number; before?: string; workspace_id?: string }, signal?: AbortSignal) =>
+      call('GET', `/api/me/mentions${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
   },
   workspaces: {
     create: (init: MessageInitShape<typeof CreateWorkspaceRequestSchema>) =>
@@ -64,10 +85,32 @@ export const api = {
     updateMember: (id: string, userId: string, init: MessageInitShape<typeof UpdateMemberRequestSchema>) =>
       call('PATCH', `/api/workspaces/${id}/members/${userId}`, UpdateMemberResponseSchema, body(UpdateMemberRequestSchema, init)),
     removeMember: (id: string, userId: string) => callEmpty('DELETE', `/api/workspaces/${id}/members/${userId}`),
+    /** Guest → member (MANAGE_WORKSPACE; ADR-0016). */
+    promoteGuest: (id: string, userId: string) =>
+      call('POST', `/api/workspaces/${id}/members/${userId}/promote`, UpdateMemberResponseSchema),
     invites: (id: string) => call('GET', `/api/workspaces/${id}/invites`, ListInvitesResponseSchema),
     createInvite: (id: string, init: MessageInitShape<typeof CreateInviteRequestSchema>) =>
       call('POST', `/api/workspaces/${id}/invites`, CreateInviteResponseSchema, body(CreateInviteRequestSchema, init)),
     deleteInvite: (id: string, inviteId: string) => callEmpty('DELETE', `/api/workspaces/${id}/invites/${inviteId}`),
+  },
+  categories: {
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateCategoryRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/categories`, CreateCategoryResponseSchema, body(CreateCategoryRequestSchema, init)),
+    update: (id: string, init: MessageInitShape<typeof UpdateCategoryRequestSchema>) =>
+      call('PATCH', `/api/categories/${id}`, UpdateCategoryResponseSchema, body(UpdateCategoryRequestSchema, init)),
+    remove: (id: string) => callEmpty('DELETE', `/api/categories/${id}`),
+  },
+  /** Room links (ADR-0016): `/r/<code>`; list/create/revoke need MANAGE_ROOM. */
+  roomInvites: {
+    list: (roomId: string) => call('GET', `/api/rooms/${roomId}/invites`, ListRoomInvitesResponseSchema),
+    create: (roomId: string, init: MessageInitShape<typeof CreateRoomInviteRequestSchema>) =>
+      call('POST', `/api/rooms/${roomId}/invites`, CreateRoomInviteResponseSchema, body(CreateRoomInviteRequestSchema, init)),
+    revoke: (roomId: string, inviteId: string) => callEmpty('DELETE', `/api/rooms/${roomId}/invites/${inviteId}`),
+    /** Public preview (no auth needed). */
+    get: (code: string) => call('GET', `/api/room-invites/${encodeURIComponent(code)}`, GetRoomInviteResponseSchema),
+    /** Signed in: joins as the current user (becomes a guest of the workspace if not a member). */
+    join: (code: string) =>
+      call('POST', `/api/room-invites/${encodeURIComponent(code)}/join`, JoinRoomInviteResponseSchema, body(JoinRoomInviteRequestSchema, {})),
   },
   invites: {
     get: (code: string) => call('GET', `/api/invites/${encodeURIComponent(code)}`, GetInviteResponseSchema),
@@ -82,6 +125,14 @@ export const api = {
     remove: (id: string) => callEmpty('DELETE', `/api/rooms/${id}`),
     setPermissions: (id: string, init: MessageInitShape<typeof SetRoomPermissionsRequestSchema>) =>
       call('PUT', `/api/rooms/${id}/permissions`, SetRoomPermissionsResponseSchema, body(SetRoomPermissionsRequestSchema, init)),
+    /** My notification settings of the room; replaces them (ALL without mutedUntil = default). */
+    setNotifications: (id: string, init: MessageInitShape<typeof UpdateRoomNotificationSettingsRequestSchema>) =>
+      call(
+        'PUT',
+        `/api/rooms/${id}/notifications`,
+        UpdateRoomNotificationSettingsResponseSchema,
+        body(UpdateRoomNotificationSettingsRequestSchema, init),
+      ),
   },
   messages: {
     list: (roomId: string, p: { before?: string; after?: string; limit?: number }, signal?: AbortSignal) =>
@@ -93,6 +144,24 @@ export const api = {
     remove: (id: string) => callEmpty('DELETE', `/api/messages/${id}`),
     markRead: (roomId: string, messageId: string) =>
       callEmpty('PUT', `/api/rooms/${roomId}/read`, body(UpdateReadStateRequestSchema, { messageId })),
+    /** Full-text search in one room (newest first, cursor `before`). */
+    searchRoom: (roomId: string, p: { q: string; before?: string; limit?: number }, signal?: AbortSignal) =>
+      call('GET', `/api/rooms/${roomId}/messages${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
+    /** Full-text search over every room of a workspace the caller can view. */
+    searchWorkspace: (
+      workspaceId: string,
+      p: { q: string; room_id?: string; author_id?: string; before?: string; limit?: number },
+      signal?: AbortSignal,
+    ) => call('GET', `/api/workspaces/${workspaceId}/messages/search${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
+    addReaction: (id: string, emoji: string) => callEmpty('PUT', `/api/messages/${id}/reactions/${encodeURIComponent(emoji)}`),
+    removeReaction: (id: string, emoji: string) => callEmpty('DELETE', `/api/messages/${id}/reactions/${encodeURIComponent(emoji)}`),
+    pin: (id: string) => callEmpty('PUT', `/api/messages/${id}/pin`),
+    unpin: (id: string) => callEmpty('DELETE', `/api/messages/${id}/pin`),
+    pins: (roomId: string) => call('GET', `/api/rooms/${roomId}/pins`, ListMessagesResponseSchema),
+  },
+  /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
+  unfurl: {
+    get: (url: string, signal?: AbortSignal) => call('GET', `/api/unfurl${qs({ url })}`, UnfurlResponseSchema, undefined, signal),
   },
   voice: {
     join: (roomId: string) => call('POST', `/api/rooms/${roomId}/join`, JoinVoiceResponseSchema),
@@ -103,6 +172,9 @@ export const api = {
     muteMember: (roomId: string, userId: string) => callEmpty('POST', `/api/rooms/${roomId}/voice/${userId}/mute`),
     disconnectMember: (roomId: string, userId: string) =>
       callEmpty('POST', `/api/rooms/${roomId}/voice/${userId}/disconnect`),
+    /** MOVE_MEMBERS in both rooms; 409 ROOM_FULL when the target is full (admins bypass). */
+    moveMember: (roomId: string, userId: string, targetRoomId: string) =>
+      callEmpty('POST', `/api/rooms/${roomId}/voice/${userId}/move`, body(MoveMemberRequestSchema, { targetRoomId })),
   },
 };
 

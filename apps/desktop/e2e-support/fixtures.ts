@@ -5,13 +5,17 @@ import {
   FileMetaSchema,
   InviteSchema,
   MessageSchema,
+  NotificationLevel,
   MicMode,
   PERMISSION_BITS,
   PermissionTargetType,
   PresenceSchema,
   PresenceStatus,
+  RoomCategorySchema,
   RoomMediaOverrideSchema,
+  RoomInviteSchema,
   RoomMediaSettingsSchema,
+  RoomNotificationSettingsSchema,
   RoomPermissionOverrideSchema,
   RoomSchema,
   RoomType,
@@ -28,8 +32,11 @@ import {
   type Message,
   type Presence,
   type Room,
+  type RoomCategory,
+  type RoomInvite,
   type RoomMediaOverride,
   type RoomMediaSettings,
+  type RoomNotificationSettings,
   type RoomPermissionOverride,
   type Session,
   type User,
@@ -50,7 +57,7 @@ import { avatarPicture, cardPicture, encodePng } from './png';
 
 export type Scenario = 'data' | 'empty';
 
-const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7 } as const;
+const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8 } as const;
 export type IdKind = keyof typeof KIND;
 
 export function mockId(kind: IdKind, n: number): string {
@@ -87,6 +94,10 @@ export const IDS = {
     designMockups: mockId('room', 6),
     designReview: mockId('room', 7),
     communityWelcome: mockId('room', 8),
+  },
+  categories: {
+    dev: mockId('category', 1),
+    voice: mockId('category', 2),
   },
   files: {
     image: mockId('file', 1),
@@ -136,8 +147,16 @@ export interface MockState {
   readStates: Map<string, Map<string, string>>;
   /** userId → voice state (room_id set = in voice). */
   voiceStates: Map<string, VoiceState>;
+  /** Room categories (collapsible groups in the room list). */
+  categories: Map<string, RoomCategory>;
   presences: Map<string, Presence>;
   invites: Map<string, Invite>;
+  /** Room links (ADR-0016), by id. */
+  roomInvites: Map<string, RoomInvite>;
+  /** userId → roomId → stored notification settings (READY notification_settings; absent = default). */
+  notifySettings: Map<string, Map<string, RoomNotificationSettings>>;
+  /** Chat reactions: messageId → emoji → users (Message.reactions keeps the counts). */
+  reactions: Map<string, Map<string, Set<string>>>;
   files: Map<string, FileRec>;
   /** userId → auth sessions (tokens are derived from the session id, see tokensFor). */
   sessions: Map<string, Session[]>;
@@ -260,6 +279,10 @@ interface MsgSpec {
   replyTo?: string;
   editedAt?: string;
   attachments?: string[];
+  /** emoji → users who reacted (chat reactions). */
+  reactions?: Record<string, string[]>;
+  /** Pinned by this user (5 minutes after the message). */
+  pinnedBy?: string;
 }
 
 const U = IDS.users;
@@ -281,7 +304,7 @@ const CODE_BLOCK = [
 const MESSAGES: MsgSpec[] = [
   // ---- общий, day 1 (2026-01-14)
   { room: R.general, at: '2026-01-14T09:02:00Z', author: U.boris, content: 'Всем доброе утро! Сегодня в 11:00 синк по релизу.' },
-  { room: R.general, at: '2026-01-14T09:03:00Z', author: U.boris, content: 'Повестка в **закреплённом** документе.' },
+  { room: R.general, at: '2026-01-14T09:03:00Z', author: U.boris, content: 'Повестка в **закреплённом** документе.', pinnedBy: U.boris },
   { room: R.general, at: '2026-01-14T09:05:00Z', author: U.vera, content: 'Утро! Буду, но на *пять минут* позже.' },
   { room: R.general, at: '2026-01-14T09:20:00Z', author: U.grigory, content: 'Коллеги, напоминаю про ревью `apps/server` до обеда.' },
   { room: R.general, at: '2026-01-14T09:21:00Z', author: U.grigory, content: 'Особенно `internal/perm` — там поменялись тест-векторы.' },
@@ -289,7 +312,7 @@ const MESSAGES: MsgSpec[] = [
   { room: R.dev, at: '2026-01-14T09:40:00Z', author: U.boris, content: 'Собрал ветку `release/0.4`, CI зелёный.' },
   { room: R.general, at: '2026-01-14T10:15:00Z', author: U.anna, content: 'Посмотрела — выглядит хорошо. Одно замечание по кэшу.' },
   { key: 'code', room: R.general, at: '2026-01-14T10:17:00Z', author: U.anna, content: CODE_BLOCK },
-  { room: R.general, at: '2026-01-14T10:30:00Z', author: U.boris, content: 'Согласен, так и сделаем.', replyTo: 'code' },
+  { room: R.general, at: '2026-01-14T10:30:00Z', author: U.boris, content: 'Согласен, так и сделаем.', replyTo: 'code', reactions: { '🔥': [U.anna] } },
   { room: R.longPrivate, at: '2026-01-14T11:00:00Z', author: U.vera, content: 'Здесь обсуждаем закрытые вопросы.' },
   {
     room: R.general,
@@ -300,7 +323,7 @@ const MESSAGES: MsgSpec[] = [
   },
   { room: R.general, at: '2026-01-14T12:41:00Z', author: U.vera, content: 'Фидбек приветствуется!' },
   { room: R.general, at: '2026-01-14T14:05:00Z', author: U.dina, content: 'Здравствуйте! Я гость, помогаю с тестированием.' },
-  { room: R.general, at: '2026-01-14T14:10:00Z', author: U.anna, content: '@Дина добро пожаловать!' },
+  { room: R.general, at: '2026-01-14T14:10:00Z', author: U.anna, content: `@${U.dina} добро пожаловать!` },
   { room: R.call, at: '2026-01-14T15:00:00Z', author: U.boris, content: 'Ссылка на доску для созвона: https://calaba.test/board' },
   { room: R.call, at: '2026-01-14T15:01:00Z', author: U.anna, content: 'Спасибо, подключаюсь.' },
   { room: R.designMockups, at: '2026-01-14T15:30:00Z', author: U.vera, content: 'Выложила макеты экрана настроек.' },
@@ -319,7 +342,14 @@ const MESSAGES: MsgSpec[] = [
     content: 'Дашборд: [Grafana — голос](https://grafana.calaba.test/d/voice)',
   },
   // ---- day 2 (2026-01-15)
-  { room: R.general, at: '2026-01-15T08:55:00Z', author: U.boris, content: 'Доброе утро! Релиз сегодня в 15:00.' },
+  {
+    room: R.general,
+    at: '2026-01-15T08:55:00Z',
+    author: U.boris,
+    content: 'Доброе утро! Релиз сегодня в 15:00.',
+    reactions: { '👍': [U.anna, U.vera, U.grigory], '🎉': [U.vera] },
+    pinnedBy: U.anna,
+  },
   {
     room: R.general,
     at: '2026-01-15T08:56:00Z',
@@ -327,7 +357,7 @@ const MESSAGES: MsgSpec[] = [
     content: 'Чек-лист: миграции, конфиг LiveKit, смоук-тесты.',
     editedAt: '2026-01-15T09:10:00Z',
   },
-  { room: R.general, at: '2026-01-15T09:01:00Z', author: U.vera, content: '@АннаСмирнова посмотришь макет настроек?' },
+  { room: R.general, at: '2026-01-15T09:01:00Z', author: U.vera, content: `@${U.anna} посмотришь макет настроек?` },
   { room: R.general, at: '2026-01-15T09:04:00Z', author: U.anna, content: 'Да, после обеда.' },
   {
     room: R.general,
@@ -341,8 +371,8 @@ const MESSAGES: MsgSpec[] = [
   { room: R.dev, at: '2026-01-15T09:45:00Z', author: U.grigory, content: 'Упал тест `gateway_resume_test.go`, смотрю.' },
   { key: 'readMark', room: R.general, at: '2026-01-15T10:12:00Z', author: U.vera, content: 'Ещё ссылка без разметки: https://calaba.test/docs/08-design' },
   { room: R.general, at: '2026-01-15T10:13:00Z', author: U.vera, content: 'Итог: **жирный**, *курсив*, ~~зачёркнутый~~, `код` — всё на месте.' },
-  { room: R.dev, at: '2026-01-15T10:20:00Z', author: U.boris, content: '@АннаСмирнова глянь, пожалуйста, PR с миграциями.' },
-  { room: R.general, at: '2026-01-15T11:00:00Z', author: U.boris, content: 'Кто сегодня дежурит по стенду?' },
+  { room: R.dev, at: '2026-01-15T10:20:00Z', author: U.boris, content: `@${U.anna} глянь, пожалуйста, PR с миграциями.` },
+  { room: R.general, at: '2026-01-15T11:00:00Z', author: U.boris, content: '@here кто сегодня дежурит по стенду?' },
   { room: R.general, at: '2026-01-15T11:02:00Z', author: U.dina, content: 'Могу я, если дадите доступ.' },
   { room: R.general, at: '2026-01-15T11:05:00Z', author: U.boris, content: 'Готово, выдал.' },
 ];
@@ -359,13 +389,17 @@ export function buildState(scenario: Scenario): MockState {
     rooms: new Map(),
     messages: new Map(),
     readStates: new Map(),
+    notifySettings: new Map(),
     voiceStates: new Map(),
+    categories: new Map(),
     presences: new Map(),
     invites: new Map(),
+    roomInvites: new Map(),
+    reactions: new Map(),
     files: new Map(),
     sessions: new Map(),
     revokedSessions: new Set(),
-    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100 },
+    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100 },
     clock: 0,
   };
 
@@ -380,6 +414,7 @@ export function buildState(scenario: Scenario): MockState {
         avatarFileId: scenario === 'data' ? (u.avatar ?? '') : '',
         statusText: scenario === 'data' ? u.status : '',
         createdAt: created,
+        isGuest: u.key === 'dina', // guest account from a room link (ADR-0016)
       }),
       email: u.email,
       password: PASSWORD,
@@ -460,6 +495,7 @@ export function buildState(scenario: Scenario): MockState {
         mediaDefaults: DEFAULT_MEDIA,
         storageQuotaBytes: 10n * 1024n * 1024n * 1024n,
         storageUsedBytes: used,
+        allowSelfNickname: true,
       }),
     );
   };
@@ -489,7 +525,14 @@ export function buildState(scenario: Scenario): MockState {
     name: string,
     topic: string,
     position: number,
-    opts: { isPrivate?: boolean; overrides?: RoomPermissionOverride[]; media?: RoomMediaOverride } = {},
+    opts: {
+      isPrivate?: boolean;
+      overrides?: RoomPermissionOverride[];
+      media?: RoomMediaOverride;
+      categoryId?: string;
+      userLimit?: number;
+      voiceStartedAt?: string;
+    } = {},
   ): void => {
     const mediaOverride = opts.media ?? create(RoomMediaOverrideSchema, {});
     s.rooms.set(
@@ -506,23 +549,35 @@ export function buildState(scenario: Scenario): MockState {
         mediaOverride,
         permissionOverrides: opts.overrides ?? [],
         createdAt: ts('2025-12-01T10:10:00Z'),
+        categoryId: opts.categoryId ?? '',
+        userLimit: opts.userLimit ?? 0,
+        ...(opts.voiceStartedAt ? { voiceStartedAt: ts(opts.voiceStartedAt) } : {}),
       }),
     );
   };
+  // ---- categories: «Разработка» (text) and «Голосовые»; `общий` stays outside (top of the list).
+  const C = IDS.categories;
+  s.categories.set(C.dev, create(RoomCategorySchema, { id: C.dev, workspaceId: W.main, name: 'Разработка', position: 0 }));
+  s.categories.set(C.voice, create(RoomCategorySchema, { id: C.voice, workspaceId: W.main, name: 'Голосовые', position: 1 }));
   const ROLE = PermissionTargetType.ROLE;
   const USER = PermissionTargetType.USER;
   room(R.general, W.main, RoomType.TEXT, 'общий', 'Общие вопросы команды', 0, {
     overrides: [override(ROLE, 'guest', VIEW_ROOM | SEND_MESSAGES, 0n)],
   });
-  room(R.dev, W.main, RoomType.TEXT, 'разработка', 'Код, ревью, CI', 1);
+  room(R.dev, W.main, RoomType.TEXT, 'разработка', 'Код, ревью, CI', 1, { categoryId: C.dev });
   room(R.longPrivate, W.main, RoomType.TEXT, 'очень-длинное-название-комнаты-для-проверки-обрезки', 'Закрытая комната', 2, {
     isPrivate: true,
     overrides: [override(ROLE, 'member', 0n, VIEW_ROOM), override(USER, U.vera, VIEW_ROOM, 0n)],
+    categoryId: C.dev,
   });
-  room(R.call, W.main, RoomType.VOICE, 'Созвон', '', 3);
+  room(R.call, W.main, RoomType.VOICE, 'Созвон', '', 3, { categoryId: C.voice });
   room(R.meeting, W.main, RoomType.VOICE, 'Переговорка', 'Для встреч', 4, {
     overrides: [override(ROLE, 'guest', VIEW_ROOM, 0n)],
     media: create(RoomMediaOverrideSchema, { audioBitrateKbps: 48, maxStreams: 2 }),
+    categoryId: C.voice,
+    userLimit: 4,
+    // The call runs since 13:05 MSK; the visual tests freeze the clock at 13:30 → «25:00».
+    voiceStartedAt: '2026-01-15T10:05:00Z',
   });
   room(R.designMockups, W.design, RoomType.TEXT, 'макеты', '', 0);
   room(R.designReview, W.design, RoomType.VOICE, 'Ревью', '', 1);
@@ -550,7 +605,10 @@ export function buildState(scenario: Scenario): MockState {
       nonce: '',
       createdAt: ts(m.at),
       ...(m.editedAt ? { editedAt: ts(m.editedAt) } : {}),
+      ...(m.pinnedBy ? { pinnedAt: timestampFromMs(Date.parse(m.at) + 5 * 60_000), pinnedBy: m.pinnedBy } : {}),
+      reactions: Object.entries(m.reactions ?? {}).map(([emoji, users]) => ({ emoji, count: users.length, me: false })),
     });
+    if (m.reactions) s.reactions.set(id, new Map(Object.entries(m.reactions).map(([e, users]) => [e, new Set(users)])));
     const list = s.messages.get(m.room) ?? [];
     list.push(msg);
     s.messages.set(m.room, list);
@@ -569,6 +627,18 @@ export function buildState(scenario: Scenario): MockState {
   for (const u of [U.boris, U.vera, U.grigory, U.dina]) {
     s.readStates.set(u, new Map([...s.messages.keys()].map((rid) => [rid, last(rid)])));
   }
+
+  // ---- notifications: Anna gets only mentions from the long private room, muted until 14:30 MSK
+  // (the visual tests' clock is 13:30 → the bell shows «muted»; later it reads «only mentions»).
+  s.notifySettings.set(
+    U.anna,
+    new Map([
+      [
+        R.longPrivate,
+        create(RoomNotificationSettingsSchema, { roomId: R.longPrivate, level: NotificationLevel.MENTIONS, mutedUntil: ts('2026-01-15T11:30:00Z') }),
+      ],
+    ]),
+  );
 
   // ---- voice: Boris (muted) and Vera (streaming) in «Переговорка».
   s.voiceStates.set(U.boris, create(VoiceStateSchema, { workspaceId: W.main, userId: U.boris, roomId: R.meeting, muted: true }));
@@ -601,5 +671,43 @@ export function buildState(scenario: Scenario): MockState {
     }),
   );
 
+  // ---- room link for «Созвон» (ADR-0016)
+  s.roomInvites.set(
+    mockId('invite', 3),
+    create(RoomInviteSchema, {
+      id: mockId('invite', 3),
+      roomId: R.call,
+      workspaceId: W.main,
+      code: 'call-guest-link',
+      createdBy: U.anna,
+      maxUses: 10,
+      uses: 2,
+      allowGuests: true,
+      allowSpeak: true,
+      allowMessages: true,
+      allowFiles: false,
+      allowStream: false,
+      expiresAt: ts('2099-01-01T00:00:00Z'),
+      createdAt: ts('2026-01-12T09:00:00Z'),
+    }),
+  );
+
   return s;
 }
+
+/** Link previews served by GET /api/unfurl (the image is a local PNG behind /api/unfurl/image). */
+export const UNFURLS: Record<string, { title: string; description: string; siteName: string; image: boolean }> = {
+  'https://calaba.test/docs/08-design': {
+    siteName: 'Calaba Docs',
+    title: 'Дизайн и UX',
+    description: 'Визуальный язык macOS: сдержанные цвета, много воздуха, чёткая иерархия, материал «стекло» на панелях.',
+    image: true,
+  },
+  'https://calaba.test/board': {
+    siteName: 'calaba.test',
+    title: 'Доска созвона',
+    description: 'Задачи на неделю и заметки встречи.',
+    image: false,
+  },
+};
+

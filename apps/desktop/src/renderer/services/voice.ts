@@ -14,6 +14,7 @@ import {
   type TrackPublishOptions,
 } from 'livekit-client';
 import type { PttEvent } from '../../shared/ipc';
+import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
@@ -30,6 +31,7 @@ import {
 import { RateTracker, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
+import { SpeakingDebouncer } from '../lib/speaking';
 import { qualityOf, toggleDeafen, toggleMute, transmitDecision } from '../lib/voiceLogic';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
@@ -86,6 +88,10 @@ class VoiceEngine {
   /** Set while we mute the mic ourselves, to tell a moderator mute apart. */
   private selfMuting = false;
   private micTesting = false;
+  /** Speaking rings: 100 ms to appear, 300 ms to disappear (docs/09 #30). */
+  private readonly speakers = new SpeakingDebouncer((speaking) => setVoice({ speaking }));
+  /** Gateway VOICE_MOVED seen, waiting for LiveKit RoomEvent.Moved (else: rejoin). */
+  private moveTimer: number | null = null;
 
   constructor() {
     this.audioSink = document.createElement('div');
@@ -172,7 +178,8 @@ class VoiceEngine {
     } catch (err) {
       if (seq !== this.joinSeq) return;
       log.error('voice join failed', err);
-      if (!quiet) toast.error(`Не удалось подключиться к голосу: ${errMsg(err)}`);
+      if (err instanceof ApiError && err.is('ERROR_CODE_ROOM_FULL')) toast.info(t('shell.roomFull'));
+      else if (!quiet) toast.error(`Не удалось подключиться к голосу: ${errMsg(err)}`);
       await this.leave(false);
       setVoice({ error: errMsg(err) });
     }
@@ -203,6 +210,8 @@ class VoiceEngine {
 
   async leave(sound = true): Promise<void> {
     this.joinSeq++;
+    this.speakers.reset();
+    this.clearMoveTimer();
     this.stopStats();
     await this.stopStream();
     const room = this.room;
@@ -237,8 +246,14 @@ class VoiceEngine {
     room
       .on(RoomEvent.ConnectionStateChanged, (st) => {
         if (this.room !== room) return;
-        if (st === ConnectionState.Reconnecting || st === ConnectionState.SignalReconnecting) setVoice({ phase: 'reconnecting' });
-        else if (st === ConnectionState.Connected) setVoice({ phase: 'connected' });
+        const was = useVoice.getState().phase;
+        if (st === ConnectionState.Reconnecting || st === ConnectionState.SignalReconnecting) {
+          if (was === 'connected') playSound('disconnect');
+          setVoice({ phase: 'reconnecting' });
+        } else if (st === ConnectionState.Connected) {
+          if (was === 'reconnecting') playSound('reconnect');
+          setVoice({ phase: 'connected' });
+        }
       })
       .on(RoomEvent.Disconnected, (reason) => {
         if (this.room !== room) return;
@@ -255,6 +270,7 @@ class VoiceEngine {
         void this.leave();
       })
       .on(RoomEvent.TrackPublished, (pub, p) => {
+        if (pub.source === Track.Source.ScreenShare) playSound('streamStart');
         this.onPublished(pub, p);
         this.refreshStreams();
       })
@@ -273,15 +289,25 @@ class VoiceEngine {
           setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
         }
       })
+      .on(RoomEvent.ParticipantConnected, () => playSound('join'))
       .on(RoomEvent.ParticipantDisconnected, (p) => {
+        playSound('leave');
         for (const set of this.viewers.values()) set.delete(p.identity);
         this.publishViewers();
         this.refreshStreams();
       })
       .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
-        const speaking: Record<string, boolean> = {};
-        for (const s of speakers) speaking[userIdOf(s.identity)] = true;
-        setVoice({ speaking });
+        this.speakers.update(speakers.map((s) => userIdOf(s.identity)));
+      })
+      .on(RoomEvent.Moved, () => {
+        // A moderator moved us (LiveKit MoveParticipant): same connection, new room.
+        if (this.room !== room) return;
+        log.info('voice: moved by the server');
+        this.clearMoveTimer();
+        this.speakers.reset();
+        for (const set of this.viewers.values()) set.clear();
+        for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub, p);
+        this.refreshStreams();
       })
       .on(RoomEvent.TrackMuted, (pub, p) => {
         // A moderator mute arrives as a mute of our mic that we did not initiate.
@@ -564,12 +590,15 @@ class VoiceEngine {
       window.clearTimeout(this.releaseTimer);
       this.releaseTimer = null;
     }
+    const inCall = this.room !== null && useVoice.getState().phase === 'connected';
     if (ev.down) {
+      if (inCall && !useVoice.getState().pttDown) playSound('pttOn');
       setVoice({ pttDown: true });
       this.applyTransmit();
     } else {
       this.releaseTimer = window.setTimeout(() => {
         this.releaseTimer = null;
+        if (inCall && useVoice.getState().pttDown) playSound('pttOff');
         setVoice({ pttDown: false });
         this.applyTransmit();
       }, PTT_RELEASE_MS);
@@ -577,6 +606,35 @@ class VoiceEngine {
   }
 
   // ------------------------------------------------------------ mute / deafen
+
+  /**
+   * Gateway VOICE_MOVED for this user. LiveKit keeps the connection (RoomEvent.Moved); we only
+   * switch our room id. If this device is not the one LiveKit moved (or Moved never comes),
+   * rejoin the target room cleanly after a grace period.
+   */
+  onMoved(fromRoomId: string, toRoomId: string, workspaceId: string): void {
+    if (!this.room || this.roomId !== fromRoomId || fromRoomId === toRoomId) return;
+    this.roomId = toRoomId;
+    setVoice({ roomId: toRoomId, workspaceId });
+    playSound('moved');
+    this.syncTray();
+    this.clearMoveTimer();
+    const room = this.room;
+    this.moveTimer = window.setTimeout(() => {
+      this.moveTimer = null;
+      // Still connected to the old LiveKit room name → the server move did not reach us.
+      if (this.room === room && room.name && !room.name.endsWith(toRoomId)) {
+        log.warn('voice: no RoomEvent.Moved, rejoining', room.name);
+        this.roomId = fromRoomId; // let join() see a change
+        void this.join(toRoomId, workspaceId, true);
+      }
+    }, 4000);
+  }
+
+  private clearMoveTimer(): void {
+    if (this.moveTimer !== null) window.clearTimeout(this.moveTimer);
+    this.moveTimer = null;
+  }
 
   toggleMute(): void {
     setVoice(toggleMute(useVoice.getState()));
@@ -586,7 +644,7 @@ class VoiceEngine {
 
   toggleDeafen(): void {
     setVoice(toggleDeafen(useVoice.getState()));
-    playSound(useVoice.getState().deafened ? 'mute' : 'unmute');
+    playSound(useVoice.getState().deafened ? 'deafen' : 'undeafen');
     this.afterSelfChange();
   }
 

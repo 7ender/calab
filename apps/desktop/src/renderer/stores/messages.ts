@@ -1,4 +1,4 @@
-import type { Message } from '@calaba/protocol';
+import type { Message, Reaction } from '@calaba/protocol';
 import { create } from 'zustand';
 
 export type SendStatus = 'sent' | 'pending' | 'failed';
@@ -16,35 +16,63 @@ export interface ChatMessage {
   key: string;
   msg: Message;
   status: SendStatus;
+  /**
+   * Own messages: `false` between the POST response (✓) and the gateway echo (✓✓, fanned
+   * out to the room). History and other people's messages are always delivered.
+   */
+  delivered?: boolean;
   uploads?: PendingUpload[];
   error?: string;
 }
 
+/**
+ * A contiguous window of a room's history. Normally it ends at the newest message
+ * (`hasMoreAfter = false`); after a jump to an old message (search, reply, first unread)
+ * it may end earlier and grows downwards with `appendPage`.
+ */
 export interface RoomMessages {
   items: ChatMessage[]; // ascending by id (oldest first)
   hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
   loading: boolean;
   loaded: boolean;
   error: string | null;
 }
 
-const EMPTY: RoomMessages = { items: [], hasMoreBefore: true, loading: false, loaded: false, error: null };
+const EMPTY: RoomMessages = { items: [], hasMoreBefore: true, hasMoreAfter: false, loading: false, loaded: false, error: null };
+
+export interface UpsertOptions {
+  /** REST responses carry a meaningful `Reaction.me`; events don't (proto/message.proto). */
+  rest?: boolean;
+  delivered?: boolean;
+}
 
 interface MessagesState {
   rooms: Record<string, RoomMessages>;
   /** roomId → userId → expiry (ms epoch). */
   typing: Record<string, Record<string, number>>;
+  /** Pinned messages per room (most recently pinned first); undefined = not loaded. */
+  pins: Record<string, Message[] | undefined>;
   reset: () => void;
   setLoading: (roomId: string, loading: boolean, error?: string | null) => void;
   /** Older page, as returned by the API (newest first). */
   prependPage: (roomId: string, page: Message[], hasMore: boolean) => void;
-  /** Server message (MESSAGE_CREATE or POST response): replaces the optimistic copy by nonce. */
-  upsert: (m: Message) => void;
+  /** Newer page, as returned by the API for `after` (oldest first). */
+  appendPage: (roomId: string, page: Message[], hasMore: boolean) => void;
+  /** Replaces the loaded window (ascending), e.g. around a message we jump to. */
+  setWindow: (roomId: string, asc: Message[], hasMoreBefore: boolean, hasMoreAfter: boolean) => void;
+  /** Server message (MESSAGE_CREATE/UPDATE or a REST response): replaces the optimistic copy by nonce. */
+  upsert: (m: Message, opts?: UpsertOptions) => void;
   addPending: (roomId: string, c: ChatMessage) => void;
   patchPending: (roomId: string, key: string, patch: Partial<ChatMessage>) => void;
   dropPending: (roomId: string, key: string) => void;
   remove: (roomId: string, id: string) => void;
   unload: (roomId: string) => void;
+  /** After a fresh IDENTIFY (missed events are not replayed): merge the newest page into the window. */
+  resyncLatest: (roomId: string, latestDesc: Message[], hasMore: boolean) => void;
+  /** MESSAGE_REACTION_ADD/REMOVE or an optimistic toggle; `mine` = the reacting user is me. */
+  applyReaction: (roomId: string, messageId: string, emoji: string, add: boolean, mine: boolean) => void;
+  setPins: (roomId: string, pins: Message[]) => void;
   setTyping: (roomId: string, userId: string, until: number) => void;
   clearTyping: (roomId: string, userId: string) => void;
 }
@@ -68,10 +96,80 @@ function insertSorted(items: ChatMessage[], c: ChatMessage): ChatMessage[] {
   return out;
 }
 
+/** Keeps my own `me` flags when the incoming copy comes from an event (where `me` is always false). */
+export function mergeReactions(incoming: Reaction[], previous: Reaction[] | undefined): Reaction[] {
+  if (!previous?.length) return incoming;
+  return incoming.map((r) => {
+    const old = previous.find((p) => p.emoji === r.emoji);
+    return old?.me && !r.me ? { ...r, me: r.count > 0 } : r;
+  });
+}
+
+/**
+ * Applies one reaction change. For my own changes the flag `me` makes it idempotent: an
+ * optimistic toggle followed by its gateway echo (or an echo from my other device) counts once.
+ */
+export function reactWith(list: Reaction[], emoji: string, add: boolean, mine: boolean): Reaction[] {
+  const i = list.findIndex((r) => r.emoji === emoji);
+  const cur = list[i];
+  if (mine && cur && cur.me === add) return list;
+  if (mine && !cur && !add) return list;
+  if (add) {
+    if (!cur) return [...list, { $typeName: 'calaba.v1.Reaction', emoji, count: 1, me: mine } satisfies Reaction];
+    const next = list.slice();
+    next[i] = { ...cur, count: cur.count + 1, me: cur.me || mine };
+    return next;
+  }
+  if (!cur) return list;
+  if (cur.count <= 1) return list.filter((_, j) => j !== i);
+  const next = list.slice();
+  next[i] = { ...cur, count: cur.count - 1, me: mine ? false : cur.me };
+  return next;
+}
+
+function updatePins(pins: Message[] | undefined, m: Message): Message[] | undefined {
+  if (!pins) return pins;
+  const rest = pins.filter((p) => p.id !== m.id);
+  if (!m.pinnedAt) return rest.length === pins.length ? pins : rest;
+  const next = [m, ...rest];
+  const at = (x: Message): number => Number(x.pinnedAt?.seconds ?? 0n) * 1000 + (x.pinnedAt?.nanos ?? 0) / 1e6;
+  return next.sort((a, b) => at(b) - at(a));
+}
+
+const sent = (m: Message, delivered = true): ChatMessage => ({ key: m.id, msg: m, status: 'sent', delivered });
+
+/**
+ * Merges the newest page (API order: newest first) into a room window after a re-IDENTIFY,
+ * without clearing what is on screen:
+ * - the covered range (ids ≥ the page's oldest id) is replaced by the page — picks up missed
+ *   new messages, edits and deletions;
+ * - older loaded messages stay; pending (unsent) ones stay at the end;
+ * - if our newest message is older than the whole page (a gap we can't bridge), the window
+ *   becomes the page, so the list never shows a hole.
+ * A window browsing old history (hasMoreAfter) is left alone — it reloads when it reaches the end.
+ */
+export function mergeLatest(r: RoomMessages, latestDesc: Message[], hasMore: boolean): RoomMessages {
+  if (r.hasMoreAfter || latestDesc.length === 0) return r;
+  const page = [...latestDesc].reverse();
+  const oldest = page[0]?.id ?? '';
+  const sentItems = r.items.filter((c) => c.status === 'sent');
+  const pending = r.items.filter((c) => c.status !== 'sent');
+  const newestKnown = sentItems[sentItems.length - 1]?.msg.id ?? '';
+  const prev = new Map(sentItems.map((c) => [c.msg.id, c]));
+  // Keep reactions' `me` flags we knew (the page from REST carries them too; prefer the page).
+  const fresh = page.map((m) => ({ ...(prev.get(m.id) ?? sent(m)), msg: m, key: m.id, status: 'sent' as const, delivered: true }));
+  if (newestKnown && newestKnown < oldest && sentItems.length > 0) {
+    return { ...r, items: [...fresh, ...pending], hasMoreBefore: hasMore, loaded: true, loading: false, error: null };
+  }
+  const kept = sentItems.filter((c) => c.msg.id < oldest);
+  return { ...r, items: [...kept, ...fresh, ...pending], hasMoreBefore: kept.length > 0 ? r.hasMoreBefore : hasMore, loaded: true, loading: false, error: null };
+}
+
 export const useMessages = create<MessagesState>()((set) => ({
   rooms: {},
   typing: {},
-  reset: () => set({ rooms: {}, typing: {} }),
+  pins: {},
+  reset: () => set({ rooms: {}, typing: {}, pins: {} }),
   setLoading: (roomId, loading, error = null) =>
     set((s) => ({ rooms: { ...s.rooms, [roomId]: { ...room(s, roomId), loading, error } } })),
   prependPage: (roomId, page, hasMore) =>
@@ -81,28 +179,57 @@ export const useMessages = create<MessagesState>()((set) => ({
       const older = page
         .filter((m) => !known.has(m.id))
         .reverse()
-        .map((m): ChatMessage => ({ key: m.id, msg: m, status: 'sent' }));
+        .map((m) => sent(m));
       return {
         rooms: {
           ...s.rooms,
-          [roomId]: { items: [...older, ...r.items], hasMoreBefore: hasMore, loading: false, loaded: true, error: null },
+          [roomId]: { ...r, items: [...older, ...r.items], hasMoreBefore: hasMore, loading: false, loaded: true, error: null },
         },
       };
     }),
-  upsert: (m) =>
+  appendPage: (roomId, page, hasMore) =>
     set((s) => {
+      const r = room(s, roomId);
+      let items = r.items;
+      for (const m of page) if (!items.some((c) => c.key === m.id)) items = insertSorted(items, sent(m));
+      return { rooms: { ...s.rooms, [roomId]: { ...r, items, hasMoreAfter: hasMore, loading: false, loaded: true, error: null } } };
+    }),
+  setWindow: (roomId, asc, hasMoreBefore, hasMoreAfter) =>
+    set((s) => {
+      const pending = room(s, roomId).items.filter((c) => c.status !== 'sent');
+      return {
+        rooms: {
+          ...s.rooms,
+          [roomId]: { items: [...asc.map((m) => sent(m)), ...pending], hasMoreBefore, hasMoreAfter, loading: false, loaded: true, error: null },
+        },
+      };
+    }),
+  upsert: (m, opts = {}) =>
+    set((s) => {
+      const pins = updatePins(s.pins[m.roomId], m);
+      const pinsPatch = pins !== s.pins[m.roomId] ? { pins: { ...s.pins, [m.roomId]: pins } } : {};
       const r = s.rooms[m.roomId];
-      if (!r?.loaded) return {}; // not open: fetched fresh when opened
+      if (!r?.loaded) return pinsPatch; // not open: fetched fresh when opened
       const idx = r.items.findIndex((c) => c.key === m.id || (m.nonce !== '' && c.status !== 'sent' && c.msg.nonce === m.nonce));
+      const old = r.items[idx];
+      const delivered = (opts.delivered ?? true) || (old?.status === 'sent' && old.delivered !== false);
+      const msg = opts.rest ? m : { ...m, reactions: mergeReactions(m.reactions, old?.msg.reactions) };
       let items: ChatMessage[];
       if (idx >= 0) {
         items = r.items.slice();
-        items.splice(idx, 1);
-        items = insertSorted(items, { key: m.id, msg: m, status: 'sent' });
+        if (old?.key === m.id) {
+          items[idx] = { key: m.id, msg, status: 'sent', delivered };
+        } else {
+          items.splice(idx, 1);
+          items = insertSorted(items, { key: m.id, msg, status: 'sent', delivered });
+        }
       } else {
-        items = insertSorted(r.items, { key: m.id, msg: m, status: 'sent' });
+        // Viewing an older window: newer messages arrive when the user scrolls down / jumps to present.
+        const lastSent = [...r.items].reverse().find((c) => c.status === 'sent');
+        if (r.hasMoreAfter && (!lastSent || m.id > lastSent.msg.id)) return pinsPatch;
+        items = insertSorted(r.items, { key: m.id, msg, status: 'sent', delivered });
       }
-      return { rooms: { ...s.rooms, [m.roomId]: { ...r, items } } };
+      return { ...pinsPatch, rooms: { ...s.rooms, [m.roomId]: { ...r, items } } };
     }),
   addPending: (roomId, c) =>
     set((s) => {
@@ -124,15 +251,39 @@ export const useMessages = create<MessagesState>()((set) => ({
   remove: (roomId, id) =>
     set((s) => {
       const r = s.rooms[roomId];
-      if (!r) return {};
-      return { rooms: { ...s.rooms, [roomId]: { ...r, items: r.items.filter((c) => c.key !== id) } } };
+      const pins = s.pins[roomId];
+      const pinsPatch = pins?.some((p) => p.id === id) ? { pins: { ...s.pins, [roomId]: pins.filter((p) => p.id !== id) } } : {};
+      if (!r) return pinsPatch;
+      return { ...pinsPatch, rooms: { ...s.rooms, [roomId]: { ...r, items: r.items.filter((c) => c.key !== id) } } };
+    }),
+  resyncLatest: (roomId, latestDesc, hasMore) =>
+    set((s) => {
+      const r = s.rooms[roomId];
+      if (!r?.loaded) return {};
+      return { rooms: { ...s.rooms, [roomId]: mergeLatest(r, latestDesc, hasMore) } };
     }),
   unload: (roomId) =>
     set((s) => {
       const rooms = { ...s.rooms };
       delete rooms[roomId];
-      return { rooms };
+      const pins = { ...s.pins };
+      delete pins[roomId];
+      return { rooms, pins };
     }),
+  applyReaction: (roomId, messageId, emoji, add, mine) =>
+    set((s) => {
+      const r = s.rooms[roomId];
+      if (!r) return {};
+      const idx = r.items.findIndex((c) => c.key === messageId);
+      const c = r.items[idx];
+      if (!c) return {};
+      const reactions = reactWith(c.msg.reactions, emoji, add, mine);
+      if (reactions === c.msg.reactions) return {};
+      const items = r.items.slice();
+      items[idx] = { ...c, msg: { ...c.msg, reactions } };
+      return { rooms: { ...s.rooms, [roomId]: { ...r, items } } };
+    }),
+  setPins: (roomId, pins) => set((s) => ({ pins: { ...s.pins, [roomId]: pins } })),
   setTyping: (roomId, userId, until) =>
     set((s) => ({ typing: { ...s.typing, [roomId]: { ...s.typing[roomId], [userId]: until } } })),
   clearTyping: (roomId, userId) =>

@@ -5,8 +5,8 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 
 /**
  * Main scenario (TESTING.md "Desktop app"): register → create workspace → text room →
- * send a message → create a voice room and join it. Needs a running API server with
- * REGISTRATION_MODE=open and LiveKit configured.
+ * send a message → create a voice room and join it. Needs a running API server with LiveKit.
+ * Open registration, or CALABA_INVITE (invite code), or CALABA_LOGIN + CALABA_PASSWORD.
  */
 const SERVER = process.env['CALABA_E2E_SERVER_URL'];
 test.skip(!SERVER, 'set CALABA_E2E_SERVER_URL to run E2E');
@@ -36,13 +36,29 @@ test.afterAll(async () => {
 
 test('register → workspace → room → message → voice', async () => {
   const id = Date.now().toString(36);
-  await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
-  await page.getByLabel('Email').fill(`e2e-${id}@example.com`);
-  await page.getByLabel('Имя').fill(`E2E ${id}`);
-  await page.getByLabel('Пароль').fill('password-e2e-123');
-  await page.getByRole('button', { name: 'Зарегистрироваться' }).last().click();
-  // First run: onboarding (docs/08) — skip it, it has its own visual tests.
-  await page.getByRole('button', { name: 'Пропустить настройку' }).click();
+  // Invite-only servers (the stand): CALABA_LOGIN + CALABA_PASSWORD sign in with an existing
+  // account (preferred — doesn't spend invite uses); otherwise register, with CALABA_INVITE
+  // as the invite code when set.
+  const login = process.env['CALABA_LOGIN'];
+  const password = process.env['CALABA_PASSWORD'];
+  if (login && password) {
+    await page.getByLabel('Email').fill(login);
+    await page.getByLabel('Пароль').fill(password);
+    await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  } else {
+    await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
+    await page.getByLabel('Email').fill(`e2e-${id}@example.com`);
+    await page.getByLabel('Имя').fill(`E2E ${id}`);
+    await page.getByLabel('Пароль').fill('password-e2e-123');
+    const invite = process.env['CALABA_INVITE'];
+    if (invite) await page.getByLabel('Код приглашения').fill(invite);
+    await page.getByRole('button', { name: 'Зарегистрироваться' }).last().click();
+  }
+  // First run: onboarding (docs/08) — skip it, it has its own visual tests. (Builds from
+  // before the onboarding go straight to the main window.)
+  const skip = page.getByRole('button', { name: 'Пропустить настройку' });
+  await expect(skip.or(page.getByRole('button', { name: 'Создать пространство' }).first())).toBeVisible({ timeout: 20_000 });
+  if (await skip.isVisible()) await skip.click();
 
   // Welcome screen → create a workspace.
   await page.getByRole('button', { name: 'Создать пространство' }).first().click();

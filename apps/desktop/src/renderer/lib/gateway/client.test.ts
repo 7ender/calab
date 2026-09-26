@@ -7,6 +7,7 @@ import {
   HelloSchema,
   HeartbeatAckSchema,
   InvalidSessionSchema,
+  PresenceStatus,
   ReadySchema,
   ResumedSchema,
   TypingStartSchema,
@@ -14,7 +15,7 @@ import {
   type GatewayFrame,
 } from '@calaba/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BACKOFF_MAX_MS, GatewayClient, backoffDelay, gatewayUrl, type GatewayFatal, type SocketLike } from './client';
+import { BACKOFF_MAX_MS, GatewayClient, OUT_BURST, backoffDelay, gatewayUrl, type GatewayFatal, type SocketLike } from './client';
 
 class FakeSocket implements SocketLike {
   binaryType: BinaryType = 'blob';
@@ -296,6 +297,73 @@ describe('GatewayClient', () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(t.sockets).toHaveLength(1);
     expect(t.client.state.status).toBe('stopped');
+  });
+
+  it('server deploy: RECONNECT → RESUME rejected (INVALID_SESSION resumable=false) → fresh IDENTIFY → READY', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(7, 'before-deploy'));
+    s.deliver(create(GatewayFrameSchema, { op: GatewayOpcode.RECONNECT, payload: { case: 'reconnect', value: {} as never } }));
+    await vi.advanceTimersByTimeAsync(0);
+    const s2 = await handshake(t);
+    expect(s2.sent[0]?.payload.case).toBe('resume');
+    s2.deliver(
+      create(GatewayFrameSchema, {
+        op: GatewayOpcode.INVALID_SESSION,
+        payload: { case: 'invalidSession', value: create(InvalidSessionSchema, { resumable: false }) },
+      }),
+    );
+    expect(t.client.state.sessionId).toBe('');
+    expect(t.client.state.seq).toBe(0n);
+    await vi.advanceTimersByTimeAsync(3000); // re-identify after 1–5 s (jitter 0.5 → 3 s)
+    const s3 = await handshake(t);
+    expect(s3.sent[0]?.payload.case).toBe('identify');
+    s3.deliver(ready(1, 'after-deploy'));
+    expect(t.client.state.status).toBe('ready');
+    expect(t.events.filter((e) => e.kind === 'ready')).toHaveLength(2);
+    expect(t.fatals).toEqual([]);
+  });
+
+  it('outgoing rate limit: typing bursts are capped at 10, then 2 per second', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1));
+    const typingSent = (): number => s.sent.filter((f) => f.op === GatewayOpcode.TYPING).length;
+    for (let i = 0; i < 25; i++) t.client.sendTyping('r');
+    expect(typingSent()).toBe(OUT_BURST);
+    await vi.advanceTimersByTimeAsync(1000);
+    for (let i = 0; i < 25; i++) t.client.sendTyping('r');
+    expect(typingSent()).toBe(OUT_BURST + 2);
+  });
+
+  it('presence over the limit is deferred and coalesced to the newest value', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1));
+    for (let i = 0; i < OUT_BURST; i++) t.client.sendTyping('r'); // use up the burst
+    t.client.setPresence(PresenceStatus.IDLE);
+    t.client.setPresence(PresenceStatus.DND);
+    t.client.setPresence(PresenceStatus.ONLINE);
+    const presences = (): PresenceStatus[] =>
+      s.sent.flatMap((f) => (f.payload.case === 'setPresence' ? [f.payload.value.status] : []));
+    expect(presences()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(600); // one token after 0.5 s
+    expect(presences()).toEqual([PresenceStatus.ONLINE]);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(presences()).toEqual([PresenceStatus.ONLINE]);
+  });
+
+  it('heartbeats are never rate limited', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t, 1000);
+    s.deliver(ready(1));
+    for (let i = 0; i < 40; i++) t.client.sendTyping('r');
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(s.sent.some((f) => f.op === GatewayOpcode.HEARTBEAT)).toBe(true);
   });
 
   it('builds ws/wss URL from the server URL', () => {

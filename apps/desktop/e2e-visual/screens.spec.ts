@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { IDS } from '../e2e-support/mock-server';
-import { THEMES, VIEWPORTS, checkpoint, launch, login, type Env, type Shot } from './harness';
+import { THEMES, VIEWPORTS, checkpoint, launch, login, settle, type Env, type Shot } from './harness';
 import { startPublisher } from './publisher';
 
 /**
@@ -84,14 +84,36 @@ for (const theme of THEMES) {
         // ---- main window with data
         await page.locator('aside').getByRole('button', { name: /общий/ }).first().click();
         await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
-        mock.injectMessage({ roomId: IDS.rooms.dev, authorId: IDS.users.boris, content: '@АннаСмирнова глянь, пожалуйста, ревью' });
+        mock.injectMessage({ roomId: IDS.rooms.dev, authorId: IDS.users.boris, content: `@${IDS.users.anna} глянь, пожалуйста, ревью` });
         await expect(page.getByRole('navigation').or(page.locator('aside')).getByText('1', { exact: true }).first()).toBeVisible();
+        // The room opens at the first unread; that anchor lands ±1 px apart between runs
+        // (fractional row heights). Photograph the feed at its bottom, which is exact.
+        // Only after the history is in and the app placed the first-unread anchor, or the app
+        // re-positions the list after our scroll.
+        await expect(page.locator('[data-message-id]').first()).toBeVisible();
+        await settle(page);
+        await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
         await checkpoint(s, 'main-chat');
 
         // Members: a column from 1200 px (open by default), a floating panel below (closed by default).
         await page.getByRole('button', { name: 'Участники' }).click();
         await checkpoint(s, 'main-members-toggled');
         await page.getByRole('button', { name: 'Участники' }).click();
+
+        // Members list: profile popover and member context menu (docs/09 #12).
+        const members = page.getByRole('complementary', { name: 'Участники' });
+        if (!(await members.isVisible())) await page.getByRole('button', { name: 'Участники' }).click();
+        await members.getByRole('button', { name: /Борис Петров/ }).click();
+        await expect(page.getByRole('dialog', { name: 'Борис Петров' })).toBeVisible();
+        await checkpoint(s, 'members-profile');
+        await page.keyboard.press('Escape');
+        await members.getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
+        await expect(page.getByRole('menu')).toBeVisible();
+        await checkpoint(s, 'members-menu');
+        await page.keyboard.press('Escape');
+        if (await page.getByRole('complementary', { name: 'Участники' }).evaluate((el) => el.classList.contains('mat-popover'))) {
+          await page.getByRole('button', { name: 'Участники' }).click();
+        }
 
         // ---- quick switcher
         await page.keyboard.press(`${MOD}+k`);
@@ -100,6 +122,52 @@ for (const theme of THEMES) {
         await page.keyboard.type('раз');
         await checkpoint(s, 'quick-switcher-filtered');
         await closeDialog(page);
+
+        // ---- chat (docs/09 #36–#39): context menu, emoji picker, in-room search
+        await page.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал' }).click({ button: 'right' });
+        await expect(page.getByRole('menu')).toBeVisible();
+        await checkpoint(s, 'chat-context-menu');
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: 'Эмодзи' }).click();
+        await expect(page.getByRole('dialog', { name: 'Эмодзи' })).toBeVisible();
+        await checkpoint(s, 'chat-emoji-picker');
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: 'Поиск в комнате' }).click();
+        await page.keyboard.type('релиз');
+        await expect(page.getByText('1 из 3')).toBeVisible();
+        await checkpoint(s, 'chat-search');
+        await page.keyboard.press('Escape');
+
+        // ---- mentions (docs/05): composer autocomplete, room notification menu
+        const composer = page.getByPlaceholder('Написать в #общий');
+        await composer.click();
+        await composer.pressSequentially('@');
+        await expect(page.getByRole('listbox', { name: 'Упомянуть' })).toBeVisible();
+        await checkpoint(s, 'chat-mention-popover');
+        await page.keyboard.press('Escape');
+        await composer.fill('');
+        await page.getByRole('button', { name: /^Уведомления:/ }).click();
+        await expect(page.getByRole('menuitemradio', { name: 'Только упоминания' })).toBeVisible();
+        await checkpoint(s, 'chat-notify-menu');
+        await page.keyboard.press('Escape');
+        // Focus returns to the bell and its tooltip opens (keyboard-focus tooltip); at 960 it
+        // covers the title bar. Close it before the next step.
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('tooltip')).toHaveCount(0);
+
+        // ---- shell popovers (docs/09 #1, #6): title bar help + mentions, self profile/status
+        await page.getByRole('button', { name: 'Горячие клавиши' }).click();
+        await expect(page.getByText('Назад по комнатам')).toBeVisible();
+        await checkpoint(s, 'shell-shortcuts');
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: /^Упоминания/ }).click();
+        await expect(page.getByText(/посмотришь макет настроек/)).toBeVisible();
+        await checkpoint(s, 'shell-mentions');
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: /^Мой статус/ }).click();
+        await expect(page.getByRole('radiogroup', { name: 'Статус и профиль' })).toBeVisible();
+        await checkpoint(s, 'shell-profile');
+        await page.keyboard.press('Escape');
 
         // ---- workspace menu + settings
         await page.locator('aside').getByRole('button', { name: /Команда Calaba/ }).click();

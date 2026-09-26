@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { IPC } from '../shared/ipc';
 import { getMainWindow, showMainWindow } from './windows';
 
-/** `calaba://join/<code>` deep links (docs/04, "Видимость workspace"). */
+/** Deep links: `calaba://join/<code>` (workspace invite, docs/04) and `calaba://r/<code>` (room link, ADR-0016). */
 export const PROTOCOL = 'calaba';
 
 let pending: string | null = null;

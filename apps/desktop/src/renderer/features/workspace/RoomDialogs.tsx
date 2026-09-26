@@ -10,7 +10,7 @@ import {
   type PermissionName,
 } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
-import { AudioLines, Check, Minus, Plus, Settings2, ShieldCheck, X } from 'lucide-react';
+import { AudioLines, Check, Link2, Minus, Plus, Settings2, ShieldCheck, X } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Field, Input, Modal, Row, Select, Switch, cx } from '../../components/ui';
@@ -25,17 +25,30 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { PRESETS, presetText } from '../voice/StreamPicker';
 import { CommitInput } from '../settings/AppSettingsDialog';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
+import { UserLimitCard } from '../shell/UserLimitCard';
+import { RoomLinkTab } from '../people/RoomLinkTab';
 
 const err = (e: unknown): string => (e instanceof ApiError ? e.message : String(e));
 
-export function RoomCreateDialog({ workspaceId, voice, onClose }: { workspaceId: string; voice: boolean; onClose: () => void }): ReactNode {
+export function RoomCreateDialog({
+  workspaceId,
+  voice,
+  categoryId = '',
+  onClose,
+}: {
+  workspaceId: string;
+  voice: boolean;
+  /** Category «+» in the room list (docs/09 #4): create the room inside it. */
+  categoryId?: string;
+  onClose: () => void;
+}): ReactNode {
   const [type, setType] = useState(voice ? RoomType.VOICE : RoomType.TEXT);
   const [name, setName] = useState('');
   const [topic, setTopic] = useState('');
   const [isPrivate, setPrivate] = useState(false);
   const openRoom = useUi((s) => s.openRoom);
   const m = useMutation({
-    mutationFn: () => api.rooms.create(workspaceId, { type, name: name.trim(), topic: topic.trim(), isPrivate }),
+    mutationFn: () => api.rooms.create(workspaceId, { type, name: name.trim(), topic: topic.trim(), isPrivate, categoryId }),
     onSuccess: (r) => {
       if (r.room) {
         useRooms.getState().upsert(r.room);
@@ -83,6 +96,7 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
     { id: 'general', label: t('ws.tabGeneral'), icon: Settings2, content: <GeneralTab roomId={roomId} onDeleted={onClose} /> },
     ...(voice ? [{ id: 'media', label: t('ws.tabMedia'), icon: AudioLines, content: <MediaTab roomId={roomId} /> }] : []),
     { id: 'perms', label: t('room.tabPerms'), icon: ShieldCheck, content: <PermissionsTab roomId={roomId} /> },
+    { id: 'guests', label: t('people.link.tab'), icon: Link2, content: <RoomLinkTab roomId={roomId} /> },
   ];
   return <SettingsWindow title={`${voice ? '' : '#'}${room.name}`} sections={sections} initial={tab ?? 'general'} onClose={onClose} />;
 }
@@ -147,6 +161,8 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
   const num = (v: string): number | '' => (v === '' ? '' : Number(v));
   const def = t('media.default');
   return (
+    <>
+    <UserLimitCard roomId={roomId} />
     <Card footer={t('room.mediaText')}>
       <Row label={t('media.bitrate')} hint={t('media.effective', { v: `${eff?.audioBitrateKbps ?? '—'} кбит/с` })}>
         <Select aria-label={t('media.bitrate')} className="w-52" value={ov?.audioBitrateKbps ?? ''} onChange={(e) => apply({ bitrate: num(e.target.value) })}>
@@ -179,6 +195,7 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
         </Select>
       </Row>
     </Card>
+    </>
   );
 }
 

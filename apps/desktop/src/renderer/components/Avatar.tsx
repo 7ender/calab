@@ -20,6 +20,12 @@ const PRESENCE_COLOR: Partial<Record<PresenceStatus, string>> = {
   [PresenceStatus.DND]: 'bg-danger',
 };
 
+/**
+ * Round avatar (image or initial on an identity colour), optional presence dot and speaking
+ * ring. The ring (docs/09 #15/#30): 2 px green outline with a 2 px gap, fades in over 100 ms
+ * (`.speak-ring` in styles.css; no motion with prefers-reduced-motion). Pass `speaking` from
+ * useVoice().speaking — it is already debounced (100 ms on / 300 ms off).
+ */
 export function Avatar({
   userId,
   name,
@@ -46,11 +52,13 @@ export function Avatar({
           path={thumbnailPath(fileId)}
           alt=""
           draggable={false}
-          className={cx('size-full rounded-full object-cover', speaking && 'ring-2 ring-ok ring-offset-2 ring-offset-side')}
+          data-speaking={speaking ? 'true' : undefined}
+          className="speak-ring size-full rounded-full object-cover"
         />
       ) : (
         <span
-          className={cx('grid size-full place-items-center rounded-full font-semibold text-white', speaking && 'ring-2 ring-ok ring-offset-2 ring-offset-side')}
+          data-speaking={speaking ? 'true' : undefined}
+          className="speak-ring grid size-full place-items-center rounded-full font-semibold text-white"
           style={{ background: colorOf(userId), fontSize: Math.round(size * 0.42) }}
         >
           {(name.trim()[0] ?? '?').toUpperCase()}

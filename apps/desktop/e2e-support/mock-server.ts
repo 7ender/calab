@@ -12,6 +12,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
+  clone,
   create,
   fromBinary,
   fromJson,
@@ -26,9 +27,13 @@ import { timestampFromMs, timestampMs } from '@bufbuild/protobuf/wkt';
 import {
   ApiErrorSchema,
   AuthTokensSchema,
+  CreateCategoryRequestSchema,
+  CreateCategoryResponseSchema,
   CreateInviteRequestSchema,
   CreateInviteResponseSchema,
   CreateMessageRequestSchema,
+  CreateRoomInviteRequestSchema,
+  CreateRoomInviteResponseSchema,
   CreateMessageResponseSchema,
   CreateRoomRequestSchema,
   CreateRoomResponseSchema,
@@ -42,14 +47,19 @@ import {
   GatewayOpcode,
   GetInviteResponseSchema,
   GetMeResponseSchema,
+  GetRoomInviteResponseSchema,
   GetRoomResponseSchema,
   GetWorkspaceResponseSchema,
   InviteSchema,
+  JoinRoomInviteRequestSchema,
+  JoinRoomInviteResponseSchema,
   JoinVoiceResponseSchema,
   JoinWorkspaceResponseSchema,
+  ListCategoriesResponseSchema,
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
   ListMessagesResponseSchema,
+  ListRoomInvitesResponseSchema,
   ListRoomsResponseSchema,
   ListSessionsResponseSchema,
   ListWorkspacesResponseSchema,
@@ -57,12 +67,14 @@ import {
   LoginResponseSchema,
   LogoutRequestSchema,
   MeSchema,
+  MoveMemberRequestSchema,
   MessageSchema,
   MicMode,
   PERMISSION_BITS,
   PermissionTargetType,
   PresenceSchema,
   PresenceStatus,
+  ReactionSchema,
   ReadStateSchema,
   ReadySchema,
   RefreshRequestSchema,
@@ -71,6 +83,8 @@ import {
   RegisterResponseSchema,
   RequestStreamRequestSchema,
   RequestStreamResponseSchema,
+  RoomCategorySchema,
+  RoomInviteSchema,
   RoomMediaOverrideSchema,
   RoomPermissionOverrideSchema,
   RoomSchema,
@@ -79,15 +93,23 @@ import {
   SessionSchema,
   SetRoomPermissionsRequestSchema,
   SetRoomPermissionsResponseSchema,
+  UpdateCategoryRequestSchema,
+  UpdateCategoryResponseSchema,
   UpdateMeRequestSchema,
   UpdateMeResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberResponseSchema,
   UpdateMessageRequestSchema,
   UpdateMessageResponseSchema,
+  UnfurlResponseSchema,
   UpdateReadStateRequestSchema,
+  UpdateRoomNotificationSettingsRequestSchema,
+  UpdateRoomNotificationSettingsResponseSchema,
+  RoomNotificationSettingsSchema,
+  NotificationLevel,
   UpdateRoomRequestSchema,
   UpdateRoomResponseSchema,
+  UpdateStatusRequestSchema,
   UpdateVoiceSelfRequestSchema,
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
@@ -108,6 +130,9 @@ import {
   type Me,
   type Message,
   type Room,
+  type RoomNotificationSettings,
+  type RoomCategory,
+  type RoomInvite,
   type Session,
   type VoiceState,
   type WorkspaceMember,
@@ -131,8 +156,9 @@ import {
   type MockState,
   type Scenario,
   type UserRec,
+  UNFURLS,
 } from './fixtures';
-import { pngSize } from './png';
+import { cardPicture, encodePng, pngSize } from './png';
 
 export { IDS, GENERAL_MESSAGE_COUNT, PASSWORD, mockId, type Scenario } from './fixtures';
 
@@ -198,7 +224,7 @@ const JSON_WRITE = { alwaysEmitImplicit: true } as const;
 const JSON_READ = { ignoreUnknownFields: true } as const;
 const FAR_FUTURE = ts('2099-01-01T00:00:00Z');
 const REFRESH_COOKIE = 'calaba_refresh';
-const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES, CONNECT, SPEAK, STREAM, MUTE_MEMBERS, MANAGE_ROOM } =
+const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES, CONNECT, SPEAK, STREAM, MUTE_MEMBERS, MANAGE_ROOM, MOVE_MEMBERS } =
   PERMISSION_BITS;
 
 class HttpError extends Error {
@@ -216,6 +242,22 @@ const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
 const invalid = (field: string, what: string): HttpError => new HttpError(422, ErrorCode.VALIDATION, what, field);
 const conflict = (what: string, field = ''): HttpError => new HttpError(409, ErrorCode.CONFLICT, what, field);
+
+// Mentions as the server parses them (apps/server/internal/messages/mentions.go).
+const MENTION_RE =
+  /(?:^|[^\p{L}\p{N}_.@-])@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|everyone|here)(?![A-Za-z0-9_])/giu;
+
+export function parseMentions(content: string): { users: string[]; everyone: boolean } {
+  const text = content.replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ');
+  const users = new Set<string>();
+  let everyone = false;
+  for (const m of text.matchAll(MENTION_RE)) {
+    const tok = (m[1] ?? '').toLowerCase();
+    if (tok === 'everyone' || tok === 'here') everyone = true;
+    else if (users.size < 50) users.add(tok);
+  }
+  return { users: [...users], everyone };
+}
 
 const isAdminRole = (r: WorkspaceRole): boolean => r === WorkspaceRole.OWNER || r === WorkspaceRole.ADMIN;
 
@@ -273,6 +315,13 @@ function cookies(req: IncomingMessage): Record<string, string> {
     if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
   }
   return out;
+}
+
+let unfurlPng: Buffer | undefined;
+/** Deterministic link-preview picture (1.91:1, like og:image). */
+function unfurlImage(): Buffer {
+  unfurlPng ??= encodePng(382, 200, cardPicture([52, 120, 246], [255, 255, 255], [199, 222, 255], 382 / 200));
+  return unfurlPng;
 }
 
 function send(res: ServerResponse, status: number, body: string | Buffer, type: string, extra: Record<string, string> = {}): void {
@@ -487,6 +536,9 @@ class MockImpl {
         .filter((v) => v.roomId),
       presences: members.map((x) => this.presenceOut(x.userId)),
       permissions: Object.fromEntries(rooms.map((r) => [r.id, this.perms(r, userId)])),
+      categories: [...this.state.categories.values()]
+        .filter((c) => c.workspaceId === wsId)
+        .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)),
     });
   }
 
@@ -507,6 +559,12 @@ class MockImpl {
             })
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([roomId, lastReadMessageId]) => create(ReadStateSchema, { roomId, lastReadMessageId })),
+          notificationSettings: [...(this.state.notifySettings.get(u.user.id)?.values() ?? [])]
+            .filter((n) => {
+              const r = this.state.rooms.get(n.roomId);
+              return r && this.canView(r, u.user.id);
+            })
+            .sort((a, b) => a.roomId.localeCompare(b.roomId)),
         }),
       },
     });
@@ -763,10 +821,47 @@ class MockImpl {
     }
     if (room) this.state.voiceStates.set(userId, v);
     else this.state.voiceStates.delete(userId);
+    // Room.voice_started_at: set when a room gets its first participant, cleared when it
+    // empties; the change goes out as ROOM_UPDATE (call timers).
+    const timers: Room[] = [];
+    for (const rid of new Set([prev?.roomId, room?.id])) {
+      const r = rid ? this.state.rooms.get(rid) : undefined;
+      if (!r) continue;
+      const occupied = [...this.state.voiceStates.values()].some((x) => x.roomId === r.id);
+      if (!occupied && r.voiceStartedAt) r.voiceStartedAt = undefined;
+      else if (occupied && !r.voiceStartedAt) r.voiceStartedAt = tick(this.state);
+      else continue;
+      timers.push(r);
+    }
     this.toWorkspace(workspaceId, (u) => ({ event: { case: 'voiceStateUpdate', value: { state: this.voiceOut(v, u) } } }));
+    for (const r of timers) this.toWorkspace(r.workspaceId, { event: { case: 'roomUpdate', value: { room: this.roomOut(r) } } }, r.id);
   }
 
   // ------------------------------------------------ messages
+
+  /** A message as `userId` sees it in REST responses (Reaction.me filled). */
+  private msgOut(m: Message, userId: string): Message {
+    const byEmoji = this.state.reactions.get(m.id);
+    if (!byEmoji?.size) return m;
+    return { ...m, reactions: m.reactions.map((r) => ({ ...r, me: byEmoji.get(r.emoji)?.has(userId) ?? false })) };
+  }
+
+  /** Full-text search stand-in: case-insensitive substring over rooms, newest first (cursor `before`). */
+  private search(c: Ctx, roomIds: string[]): void {
+    const me = this.uid(c);
+    const q = (c.url.searchParams.get('q') ?? '').trim().toLowerCase();
+    if (!q || q.length > 200) throw invalid('q', 'search query must be 1..200 characters');
+    const limit = Math.min(50, Math.max(1, Number(c.url.searchParams.get('limit') ?? '25') || 25));
+    const before = c.url.searchParams.get('before') ?? '';
+    const author = c.url.searchParams.get('author_id') ?? '';
+    const words = q.split(/\s+/);
+    const hits = roomIds
+      .flatMap((id) => this.state.messages.get(id) ?? [])
+      .filter((m) => (!before || m.id < before) && (!author || m.authorId === author))
+      .filter((m) => words.every((w) => m.content.toLowerCase().includes(w)))
+      .sort((a, b) => (a.id < b.id ? 1 : -1));
+    sendMsg(c.res, 200, ListMessagesResponseSchema, { messages: hits.slice(0, limit).map((m) => this.msgOut(m, me)), hasMore: hits.length > limit });
+  }
 
   private createMessage(room: Room, authorId: string, content: string, replyToId: string, nonce: string, attachmentIds: string[]): Message {
     const attachments = attachmentIds.map((id) => {
@@ -992,6 +1087,16 @@ class MockImpl {
       sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
     });
 
+    this.route('PATCH', '/api/me/status', (c) => {
+      const u = this.auth(c).user;
+      const b = parseBody(c, UpdateStatusRequestSchema);
+      if (b.text.length > 128) throw invalid('text', 'status too long');
+      u.user.statusText = b.text;
+      u.user.statusEmoji = b.emoji;
+      this.emitUserUpdate(u);
+      sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
+    });
+
     this.route('POST', '/api/me/avatar', async (c) => {
       const u = this.auth(c).user;
       const f = await parseMultipartFile(c);
@@ -1083,6 +1188,7 @@ class MockImpl {
       }
       if (b.visibility !== undefined) ws.visibility = b.visibility;
       if (b.iconFileId !== undefined) ws.iconFileId = b.iconFileId;
+      if (b.allowSelfNickname !== undefined) ws.allowSelfNickname = b.allowSelfNickname;
       const media = create(RoomMediaOverrideSchema, {});
       if (b.defaultAudioBitrateKbps !== undefined) media.audioBitrateKbps = b.defaultAudioBitrateKbps;
       if (b.defaultMaxStreamPreset !== undefined) media.maxStreamPreset = b.defaultMaxStreamPreset;
@@ -1180,7 +1286,12 @@ class MockImpl {
           throw forbidden('only the owner manages admins');
         }
       }
-      if (b.nickname !== undefined && targetId !== me) this.requireAdmin(caller);
+      if (b.nickname !== undefined) {
+        // MANAGE_NICKNAMES = admins by default; one's own nickname when the workspace allows it.
+        if (targetId !== me) this.requireAdmin(caller);
+        else if (!ws.allowSelfNickname && !isAdminRole(caller.role)) throw forbidden('nicknames are set by admins in this workspace');
+        if (Array.from(b.nickname.trim()).length > 64) throw invalid('nickname', 'nickname must be at most 64 characters');
+      }
       // Visibility before the change, for ROOM_CREATE / ROOM_DELETE to the target.
       const rooms = [...s().rooms.values()].filter((r) => r.workspaceId === ws.id);
       const visibleBefore = new Set(rooms.filter((r) => this.canView(r, targetId)).map((r) => r.id));
@@ -1214,6 +1325,17 @@ class MockImpl {
       s().members = s().members.filter((x) => x !== target);
       this.toWorkspace(ws.id, { event: { case: 'workspaceMemberRemove', value: { workspaceId: ws.id, userId: targetId } } });
       noContent(c.res);
+    });
+
+    this.route('POST', '/api/workspaces/:id/members/:userId/promote', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireAdmin(caller);
+      const target = this.member(ws.id, c.params[1] ?? '');
+      if (target?.role !== WorkspaceRole.GUEST) throw notFound('guest not found');
+      target.role = WorkspaceRole.MEMBER;
+      const member = this.memberOut(target);
+      this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member } } });
+      sendMsg(c.res, 200, UpdateMemberResponseSchema, { member });
     });
 
     this.route('GET', '/api/invites/:code', (c) => {
@@ -1261,10 +1383,66 @@ class MockImpl {
           ? [create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.ROLE, targetId: 'member', allow: 0n, deny: VIEW_ROOM })]
           : [],
         createdAt: tick(s()),
+        categoryId: b.categoryId && s().categories.get(b.categoryId)?.workspaceId === ws.id ? b.categoryId : '',
+        userLimit: b.type === RoomType.VOICE ? Math.min(99, b.userLimit) : 0,
       });
       s().rooms.set(room.id, room);
       this.toWorkspace(ws.id, { event: { case: 'roomCreate', value: { room } } }, room.id);
       sendMsg(c.res, 201, CreateRoomResponseSchema, { room });
+    });
+
+    // ---------------- categories (MANAGE_ROOM at workspace level = admins)
+    this.route('GET', '/api/workspaces/:id/categories', (c) => {
+      const me = this.uid(c);
+      const { ws } = this.workspaceFor(c.params[0] ?? '', me);
+      sendMsg(c.res, 200, ListCategoriesResponseSchema, { categories: this.snapshot(ws.id, me).categories });
+    });
+    this.route('POST', '/api/workspaces/:id/categories', (c) => {
+      const me = this.uid(c);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      this.requireAdmin(m);
+      const b = parseBody(c, CreateCategoryRequestSchema);
+      const name = b.name.trim();
+      if (!name || name.length > 100) throw invalid('name', 'name must be 1..100 characters');
+      const positions = [...s().categories.values()].filter((x) => x.workspaceId === ws.id).map((x) => x.position);
+      const category = create(RoomCategorySchema, {
+        id: nextId(s(), 'category'),
+        workspaceId: ws.id,
+        name,
+        position: b.position ?? (positions.length ? Math.max(...positions) + 1 : 0),
+      });
+      s().categories.set(category.id, category);
+      this.toWorkspace(ws.id, { event: { case: 'categoryCreate', value: { category } } });
+      sendMsg(c.res, 201, CreateCategoryResponseSchema, { category });
+    });
+    const categoryFor = (c: Ctx): RoomCategory => {
+      const me = this.uid(c);
+      const cat = s().categories.get(c.params[0] ?? '');
+      if (!cat) throw notFound('category not found');
+      this.requireAdmin(this.workspaceFor(cat.workspaceId, me).m);
+      return cat;
+    };
+    this.route('PATCH', '/api/categories/:id', (c) => {
+      const cat = categoryFor(c);
+      const b = parseBody(c, UpdateCategoryRequestSchema);
+      if (b.name !== undefined) {
+        if (!b.name.trim() || b.name.length > 100) throw invalid('name', 'name must be 1..100 characters');
+        cat.name = b.name.trim();
+      }
+      if (b.position !== undefined) cat.position = b.position;
+      this.toWorkspace(cat.workspaceId, { event: { case: 'categoryUpdate', value: { category: cat } } });
+      sendMsg(c.res, 200, UpdateCategoryResponseSchema, { category: cat });
+    });
+    this.route('DELETE', '/api/categories/:id', (c) => {
+      const cat = categoryFor(c);
+      s().categories.delete(cat.id);
+      this.toWorkspace(cat.workspaceId, { event: { case: 'categoryDelete', value: { workspaceId: cat.workspaceId, categoryId: cat.id } } });
+      for (const r of s().rooms.values()) {
+        if (r.categoryId !== cat.id) continue;
+        r.categoryId = '';
+        this.toWorkspace(r.workspaceId, { event: { case: 'roomUpdate', value: { room: r } } }, r.id);
+      }
+      noContent(c.res);
     });
 
     this.route('GET', '/api/workspaces/:id/rooms', (c) => {
@@ -1294,6 +1472,14 @@ class MockImpl {
       if (b.mediaOverride !== undefined) {
         room.mediaOverride = b.mediaOverride;
         room.media = effectiveMedia(s().workspaces.get(room.workspaceId), b.mediaOverride);
+      }
+      if (b.userLimit !== undefined) {
+        if (b.userLimit > 99) throw invalid('userLimit', 'user limit must be 0..99');
+        room.userLimit = b.userLimit;
+      }
+      if (b.categoryId !== undefined) {
+        if (b.categoryId && s().categories.get(b.categoryId)?.workspaceId !== room.workspaceId) throw invalid('categoryId', 'unknown category');
+        room.categoryId = b.categoryId;
       }
       this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
       sendMsg(c.res, 200, UpdateRoomResponseSchema, { room });
@@ -1325,6 +1511,10 @@ class MockImpl {
     // ---------------- messages
     this.route('GET', '/api/rooms/:id/messages', (c) => {
       const room = this.roomFor(c.params[0] ?? '', this.uid(c));
+      if (c.url.searchParams.has('q')) {
+        this.search(c, [room.id]);
+        return;
+      }
       const all = s().messages.get(room.id) ?? [];
       const limit = Math.min(100, Math.max(1, Number(c.url.searchParams.get('limit') ?? '50') || 50));
       const before = c.url.searchParams.get('before') ?? '';
@@ -1340,7 +1530,8 @@ class MockImpl {
         messages = older.slice(-limit).reverse();
         hasMore = older.length > limit;
       }
-      sendMsg(c.res, 200, ListMessagesResponseSchema, { messages, hasMore });
+      const me = this.uid(c);
+      sendMsg(c.res, 200, ListMessagesResponseSchema, { messages: messages.map((m) => this.msgOut(m, me)), hasMore });
     });
 
     this.route('POST', '/api/rooms/:id/messages', (c) => {
@@ -1410,6 +1601,131 @@ class MockImpl {
       noContent(c.res);
     });
 
+    // ---------------- mentions and room notification settings (docs/05)
+    this.route('GET', '/api/me/mentions', (c) => {
+      const me = this.uid(c);
+      const q = c.url.searchParams;
+      if (q.get('after')) throw invalid('after', 'only before is supported');
+      const limit = Math.min(100, Math.max(1, Number(q.get('limit') ?? '50') || 50));
+      const before = q.get('before') ?? '';
+      const only = q.get('workspace_id') ?? '';
+      const hits = [...this.state.rooms.values()]
+        .filter((r) => (!only || r.workspaceId === only) && this.member(r.workspaceId, me) && this.canView(r, me))
+        .flatMap((r) =>
+          (s().messages.get(r.id) ?? []).filter((m) => {
+            if (m.authorId === me || (before && m.id >= before)) return false;
+            const { users, everyone } = parseMentions(m.content);
+            const guest = this.member(r.workspaceId, m.authorId)?.role === WorkspaceRole.GUEST;
+            return users.includes(me) || (everyone && !guest);
+          }),
+        )
+        .sort((a, b) => (a.id < b.id ? 1 : -1));
+      sendMsg(c.res, 200, ListMessagesResponseSchema, {
+        messages: hits.slice(0, limit).map((m) => this.msgOut(m, me)),
+        hasMore: hits.length > limit,
+      });
+    });
+
+    this.route('PUT', '/api/rooms/:id/notifications', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      const b = parseBody(c, UpdateRoomNotificationSettingsRequestSchema);
+      if (b.mutedUntil && timestampMs(b.mutedUntil) > Date.now() + 366 * 86_400_000) throw invalid('mutedUntil', 'at most 1 year ahead');
+      const level = b.level === NotificationLevel.UNSPECIFIED ? NotificationLevel.ALL : b.level;
+      const settings = create(RoomNotificationSettingsSchema, { roomId: room.id, level, ...(b.mutedUntil ? { mutedUntil: b.mutedUntil } : {}) });
+      const mine = s().notifySettings.get(me) ?? new Map<string, RoomNotificationSettings>();
+      if (level === NotificationLevel.ALL && !b.mutedUntil) mine.delete(room.id);
+      else mine.set(room.id, settings);
+      s().notifySettings.set(me, mine);
+      this.toUser(me, { event: { case: 'roomNotificationUpdate', value: { settings } } });
+      sendMsg(c.res, 200, UpdateRoomNotificationSettingsResponseSchema, { settings });
+    });
+
+    // ---------------- chat: search, reactions, pins, link previews
+    this.route('GET', '/api/workspaces/:id/messages/search', (c) => {
+      const me = this.uid(c);
+      const { ws } = this.workspaceFor(c.params[0] ?? '', me);
+      const roomId = c.url.searchParams.get('room_id') ?? '';
+      const ids = [...s().rooms.values()].filter((r) => r.workspaceId === ws.id && this.canView(r, me) && (!roomId || r.id === roomId)).map((r) => r.id);
+      this.search(c, ids);
+    });
+
+    const reaction = (c: Ctx, add: boolean): void => {
+      const me = this.uid(c);
+      const { room, list, index } = this.findMessage(c.params[0] ?? '');
+      if (!this.canView(room, me)) throw notFound('message not found');
+      if (add) this.requireRoomPerm(room, me, SEND_MESSAGES);
+      const msg = list[index];
+      const emoji = c.params[1] ?? '';
+      if (!msg || !emoji || emoji.length > 32) throw invalid('emoji', 'bad emoji');
+      const byEmoji = s().reactions.get(msg.id) ?? new Map<string, Set<string>>();
+      const users = byEmoji.get(emoji) ?? new Set<string>();
+      const changed = add ? !users.has(me) : users.has(me);
+      if (add) users.add(me);
+      else users.delete(me);
+      if (users.size) byEmoji.set(emoji, users);
+      else byEmoji.delete(emoji);
+      s().reactions.set(msg.id, byEmoji);
+      msg.reactions = [...byEmoji].map(([e, u]) => create(ReactionSchema, { emoji: e, count: u.size }));
+      if (changed) {
+        const value = { workspaceId: room.workspaceId, roomId: room.id, messageId: msg.id, userId: me, emoji };
+        this.toWorkspace(room.workspaceId, { event: add ? { case: 'messageReactionAdd', value } : { case: 'messageReactionRemove', value } }, room.id);
+      }
+      noContent(c.res);
+    };
+    this.route('PUT', '/api/messages/:id/reactions/:emoji', (c) => reaction(c, true));
+    this.route('DELETE', '/api/messages/:id/reactions/:emoji', (c) => reaction(c, false));
+
+    const pin = (c: Ctx, on: boolean): void => {
+      const me = this.uid(c);
+      const { room, list, index } = this.findMessage(c.params[0] ?? '');
+      if (!this.canView(room, me)) throw notFound('message not found');
+      this.requireRoomPerm(room, me, MANAGE_MESSAGES);
+      const msg = list[index];
+      if (!msg) throw notFound('message not found');
+      if (on === !!msg.pinnedAt) {
+        noContent(c.res);
+        return;
+      }
+      if (on) {
+        msg.pinnedAt = tick(s());
+        msg.pinnedBy = me;
+      } else {
+        msg.pinnedAt = undefined;
+        msg.pinnedBy = '';
+      }
+      this.toWorkspace(room.workspaceId, { event: { case: 'messageUpdate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+      noContent(c.res);
+    };
+    this.route('PUT', '/api/messages/:id/pin', (c) => pin(c, true));
+    this.route('DELETE', '/api/messages/:id/pin', (c) => pin(c, false));
+    this.route('GET', '/api/rooms/:id/pins', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      const pinned = (s().messages.get(room.id) ?? [])
+        .filter((m) => m.pinnedAt)
+        .sort((a, b) => (a.pinnedAt && b.pinnedAt ? timestampMs(b.pinnedAt) - timestampMs(a.pinnedAt) : 0));
+      sendMsg(c.res, 200, ListMessagesResponseSchema, { messages: pinned.map((m) => this.msgOut(m, me)), hasMore: false });
+    });
+
+    this.route('GET', '/api/unfurl', (c) => {
+      this.uid(c);
+      const url = c.url.searchParams.get('url') ?? '';
+      const card = UNFURLS[url];
+      if (!card) throw notFound('preview not found');
+      sendMsg(c.res, 200, UnfurlResponseSchema, {
+        url,
+        title: card.title,
+        description: card.description,
+        siteName: card.siteName,
+        imageUrl: card.image ? `/api/unfurl/image?${new URLSearchParams({ url: `${url}/og.png`, sig: 'mock' }).toString()}` : '',
+      });
+    });
+    this.route('GET', '/api/unfurl/image', (c) => {
+      this.uid(c);
+      send(c.res, 200, unfurlImage(), 'image/png', { 'Cache-Control': 'private, max-age=31536000' });
+    });
+
     // ---------------- files
     this.route('POST', '/api/workspaces/:id/files', async (c) => {
       const me = this.uid(c);
@@ -1447,6 +1763,10 @@ class MockImpl {
       if (room.type !== RoomType.VOICE) throw conflict('not a voice room');
       this.requireRoomPerm(room, me, CONNECT);
       const perms = this.perms(room, me);
+      if (room.userLimit > 0 && !has(perms, MOVE_MEMBERS) && s().voiceStates.get(me)?.roomId !== room.id) {
+        const inRoom = [...s().voiceStates.values()].filter((v) => v.roomId === room.id).length;
+        if (inRoom >= room.userLimit) throw new HttpError(409, ErrorCode.ROOM_FULL, 'the room is full');
+      }
       const identity = `${me}:${sessionId}`;
       // LiveKit runs with room.auto_create=false (as in production): like the real API,
       // create the room before handing out a token (idempotent).
@@ -1502,6 +1822,30 @@ class MockImpl {
       if (s().voiceStates.get(target)?.roomId !== room.id) throw notFound('user is not in this room');
       return { room, target };
     };
+    // MOVE_MEMBERS in both rooms; the target's user_limit applies unless the actor is an admin.
+    this.route('POST', '/api/rooms/:id/voice/:userId/move', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireRoomPerm(room, me, MOVE_MEMBERS);
+      const target = c.params[1] ?? '';
+      const b = parseBody(c, MoveMemberRequestSchema);
+      const dst = s().rooms.get(b.targetRoomId);
+      if (!dst || dst.id === room.id || dst.workspaceId !== room.workspaceId || dst.type !== RoomType.VOICE) {
+        throw invalid('targetRoomId', 'target must be another voice room of the same workspace');
+      }
+      this.requireRoomPerm(dst, me, MOVE_MEMBERS);
+      if (s().voiceStates.get(target)?.roomId !== room.id) throw notFound('member in this voice room');
+      const actor = this.member(room.workspaceId, me);
+      if (dst.userLimit > 0 && !(actor && isAdminRole(actor.role))) {
+        const inDst = [...s().voiceStates.values()].filter((v) => v.roomId === dst.id).length;
+        if (inDst >= dst.userLimit) throw new HttpError(409, ErrorCode.ROOM_FULL, 'the room is full');
+      }
+      const prev = s().voiceStates.get(target);
+      this.setVoice(target, dst.id, { muted: prev?.muted ?? false, deafened: prev?.deafened ?? false, streaming: prev?.streaming ?? false });
+      this.toUser(target, { event: { case: 'voiceMoved', value: { workspaceId: room.workspaceId, fromRoomId: room.id, toRoomId: dst.id, byUserId: me } } });
+      noContent(c.res);
+    });
+
     this.route('POST', '/api/rooms/:id/voice/:userId/mute', (c) => {
       const { room, target } = moderate(c);
       this.setVoice(target, room.id, { muted: true });
@@ -1527,6 +1871,100 @@ class MockImpl {
         room.id,
       );
       noContent(c.res);
+    });
+
+    // ---------------- room links (ADR-0016)
+    const roomInvite = (code: string): { inv: RoomInvite; room: Room; ws: NonNullable<ReturnType<MockState['workspaces']['get']>> } => {
+      const inv = [...s().roomInvites.values()].find((i) => i.code === code);
+      const room = inv ? s().rooms.get(inv.roomId) : undefined;
+      const ws = inv ? s().workspaces.get(inv.workspaceId) : undefined;
+      if (!inv || !room || !ws || (inv.maxUses && inv.uses >= inv.maxUses)) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+      return { inv, room, ws };
+    };
+    this.route('GET', '/api/rooms/:id/invites', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      const invites = [...s().roomInvites.values()].filter((i) => i.roomId === room.id).sort((a, b) => b.id.localeCompare(a.id));
+      sendMsg(c.res, 200, ListRoomInvitesResponseSchema, { invites });
+    });
+    this.route('POST', '/api/rooms/:id/invites', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      const b = parseBody(c, CreateRoomInviteRequestSchema);
+      const expiresIn = b.expiresInSeconds ?? 7 * 86400;
+      if (expiresIn > 365 * 86400) throw invalid('expiresInSeconds', 'at most 365 days');
+      const id = nextId(s(), 'invite');
+      const at = tick(s());
+      const invite = create(RoomInviteSchema, {
+        id,
+        roomId: room.id,
+        workspaceId: room.workspaceId,
+        code: `mock-room-${id.slice(-4)}`,
+        createdBy: me,
+        maxUses: b.maxUses,
+        uses: 0,
+        allowGuests: b.allowGuests ?? true,
+        allowSpeak: b.allowSpeak ?? true,
+        allowMessages: b.allowMessages ?? true,
+        allowFiles: b.allowFiles ?? false,
+        allowStream: b.allowStream ?? false,
+        ...(expiresIn ? { expiresAt: timestampFromMs(timestampMs(at) + expiresIn * 1000) } : {}),
+        createdAt: at,
+      });
+      s().roomInvites.set(id, invite);
+      sendMsg(c.res, 201, CreateRoomInviteResponseSchema, { invite });
+    });
+    this.route('DELETE', '/api/rooms/:id/invites/:inviteId', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      const inv = s().roomInvites.get(c.params[1] ?? '');
+      if (inv?.roomId !== room.id) throw notFound('invite not found');
+      s().roomInvites.delete(inv.id);
+      noContent(c.res);
+    });
+    // Public preview for the /r/<code> page (no auth).
+    this.route('GET', '/api/room-invites/:code', (c) => {
+      const { inv, room, ws } = roomInvite(c.params[0] ?? '');
+      sendMsg(c.res, 200, GetRoomInviteResponseSchema, {
+        roomName: room.name,
+        roomType: room.type,
+        workspaceName: ws.name,
+        workspaceIconFileId: ws.iconFileId,
+        allowGuests: inv.allowGuests,
+        ...(inv.expiresAt ? { expiresAt: inv.expiresAt } : {}),
+      });
+    });
+    // With a bearer: join as the current user; without one (allow_guests): a guest account.
+    this.route('POST', '/api/room-invites/:code/join', (c) => {
+      const { inv, room, ws } = roomInvite(c.params[0] ?? '');
+      const b = parseBody(c, JoinRoomInviteRequestSchema);
+      if ((c.req.headers.authorization ?? '').startsWith('Bearer ')) {
+        this.grantRoomLink(inv, this.uid(c));
+        sendMsg(c.res, 200, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id });
+        return;
+      }
+      if (!inv.allowGuests) throw new HttpError(401, ErrorCode.UNAUTHENTICATED, 'sign in to use this link');
+      const name = b.nickname.trim();
+      if (!name || Array.from(name).length > 64) throw invalid('nickname', 'name must be 1..64 characters');
+      const id = nextId(s(), 'user');
+      const at = tick(s());
+      const rec: UserRec = {
+        user: create(UserSchema, { id, displayName: name, avatarFileId: '', statusText: '', createdAt: at, isGuest: true }),
+        email: '',
+        password: '',
+        settings: defaultSettings(),
+      };
+      s().users.set(id, rec);
+      s().presences.set(id, create(PresenceSchema, { userId: id, status: PresenceStatus.ONLINE, lastSeen: at }));
+      const sessionId = nextId(s(), 'session');
+      s().sessions.set(id, [
+        create(SessionSchema, { id: sessionId, deviceName: b.deviceName || 'Guest', ip: '192.0.2.10', userAgent: 'mock', createdAt: at, lastSeenAt: at, expiresAt: FAR_FUTURE }),
+      ]);
+      this.grantRoomLink(inv, id);
+      sendMsg(c.res, 201, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id, tokens: this.tokensJson(c, sessionId), me: this.me(rec) });
     });
 
     // ---------------- mock control (tests; no auth)
@@ -1598,6 +2036,45 @@ class MockImpl {
           : null,
     );
     return m;
+  }
+
+  /**
+   * Room link join (ADR-0016): non-members become `guest`; a user override grants the room with
+   * the link's rights. A use is counted only when access actually changes.
+   */
+  private grantRoomLink(inv: RoomInvite, userId: string): void {
+    const room = this.state.rooms.get(inv.roomId);
+    if (!room) return;
+    const existing = this.member(inv.workspaceId, userId);
+    if (existing && this.canView(room, userId)) return;
+    const allow =
+      VIEW_ROOM |
+      CONNECT |
+      (inv.allowSpeak ? SPEAK : 0n) |
+      (inv.allowMessages ? SEND_MESSAGES : 0n) |
+      (inv.allowFiles ? ATTACH_FILES : 0n) |
+      (inv.allowStream ? STREAM : 0n);
+    const before = clone(RoomSchema, room); // create() would return the same instance
+    room.permissionOverrides = [
+      ...room.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.USER && o.targetId === userId)),
+      create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: userId, allow, deny: 0n }),
+    ];
+    inv.uses += 1;
+    if (!existing) {
+      const m: MemberRec = { workspaceId: inv.workspaceId, userId, role: WorkspaceRole.GUEST, nickname: '', joinedAt: tick(this.state) };
+      this.state.members.push(m);
+      const member = this.memberOut(m);
+      this.fanout((u) =>
+        u === userId
+          ? { event: { case: 'workspaceCreate', value: { snapshot: this.snapshot(inv.workspaceId, userId) } } }
+          : this.member(inv.workspaceId, u)
+            ? { event: { case: 'workspaceMemberAdd', value: { member } } }
+            : null,
+      );
+    }
+    this.emitRoomChange(before, room, {
+      event: { case: 'roomPermissionsUpdate', value: { workspaceId: room.workspaceId, roomId: room.id, permissions: room.permissionOverrides } },
+    });
   }
 
   private emitUserUpdate(u: UserRec): void {

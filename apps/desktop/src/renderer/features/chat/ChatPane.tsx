@@ -1,7 +1,5 @@
-import { RoomType } from '@calaba/protocol';
-import { Hash, Settings, Users, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { IconButton, cx } from '../../components/ui';
+import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { can, roomPerms } from '../../lib/permissions';
 import { openRoom, type OutgoingFile } from '../../services/chat';
@@ -14,9 +12,11 @@ import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 import { StatsOverlay } from '../voice/StatsOverlay';
 import { StreamArea } from '../voice/StreamArea';
+import { useChatView } from './chatView';
 import { Composer, toOutgoing } from './Composer';
 import { MessageList } from './MessageList';
-import { TypingIndicator } from './TypingIndicator';
+import { RoomHeader } from './RoomHeader';
+import { PinnedBar, SearchPanel } from './RoomPanels';
 
 export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
@@ -29,8 +29,8 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
   const setOverlay = useUi((s) => s.setMembersOverlay);
   const membersOpen = wide ? columnOpen : overlayOpen;
   const toggleMembers = (): void => (wide ? toggleColumn() : setOverlay(!overlayOpen));
-  const openDialog = useUi((s) => s.openDialog);
   const inThisVoice = useVoice((s) => s.roomId === roomId);
+  const searchOpen = useChatView((s) => s.searchRoom === roomId);
   const [files, setFiles] = useState<OutgoingFile[]>([]);
   const [dragging, setDragging] = useState(false);
   // "New messages" marker: the read position at the moment the room was opened.
@@ -53,6 +53,20 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
     subscribeRooms([roomId]);
   }, [roomId]);
 
+  // The search panel belongs to the room it was opened in; ⌘/Ctrl+F opens it here.
+  useEffect(() => {
+    const view = useChatView.getState();
+    if (view.searchRoom && view.searchRoom !== roomId) view.setSearch(null);
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'f' && !useUi.getState().dialog) {
+        e.preventDefault();
+        useChatView.getState().setSearch(roomId);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [roomId]);
+
   const perms = useMemo(() => roomPerms(role, me, room), [role, me, room]);
   const canAttach = can(perms, 'ATTACH_FILES');
 
@@ -65,7 +79,6 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
   );
 
   if (!room) return <div className="mat-content flex-1" />;
-  const voiceRoom = room.type === RoomType.VOICE;
 
   const onDrop = (e: DragEvent): void => {
     e.preventDefault();
@@ -89,42 +102,15 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       }}
       onDrop={onDrop}
     >
-      <header className="mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
-        {voiceRoom ? <Volume2 className="size-5 shrink-0 text-faint" aria-hidden /> : <Hash className="size-5 shrink-0 text-faint" aria-hidden />}
-        <h1 className="min-w-0 max-w-[40%] shrink-0 truncate text-[14px] font-semibold" title={room.name}>
-          {room.name}
-        </h1>
-        {room.topic ? (
-          <span className="min-w-0 flex-1 truncate border-l border-line pl-3 text-[13px] text-muted" title={room.topic}>
-            {room.topic}
-          </span>
-        ) : (
-          <div className="flex-1" />
-        )}
-        {can(perms, 'MANAGE_ROOM') ? (
-          <IconButton className="no-drag" label={t('room.settings')} onClick={() => openDialog({ kind: 'room-settings', roomId })}>
-            <Settings className="size-[18px]" />
-          </IconButton>
-        ) : null}
-        <IconButton className="no-drag" label={t('shell.members')} active={membersOpen} onClick={toggleMembers}>
-          <Users className="size-[18px]" />
-        </IconButton>
-      </header>
+      <RoomHeader workspaceId={workspaceId} room={room} perms={perms} membersOpen={membersOpen} toggleMembers={toggleMembers} />
+      {searchOpen ? <SearchPanel roomId={roomId} /> : <PinnedBar workspaceId={workspaceId} roomId={roomId} />}
 
       {inThisVoice ? <StreamArea /> : null}
       {inThisVoice ? <StatsOverlay /> : null}
 
-      <MessageList workspaceId={workspaceId} roomId={roomId} perms={perms} newMarker={newMarker} />
-      <div ref={composerRef} data-testid="composer" className="mat-toolbar shrink-0">
-        <Composer
-          workspaceId={workspaceId}
-          room={room}
-          perms={perms}
-          files={files}
-          setFiles={setFiles}
-          addFiles={addFiles}
-        />
-        <TypingIndicator workspaceId={workspaceId} roomId={roomId} />
+      <MessageList workspaceId={workspaceId} room={room} perms={perms} newMarker={newMarker} />
+      <div ref={composerRef} data-testid="composer" className="shrink-0 bg-feed">
+        <Composer workspaceId={workspaceId} room={room} perms={perms} files={files} setFiles={setFiles} addFiles={addFiles} />
       </div>
 
       {dragging ? (

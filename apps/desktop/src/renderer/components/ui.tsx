@@ -293,7 +293,7 @@ export function Modal({
     <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
         <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
-        <DialogP.Content
+        <DialogP.Content aria-modal="true"
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[86vh] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-[13px] focus:outline-none',
             wide ? 'max-w-[880px]' : 'max-w-[440px]',

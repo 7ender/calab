@@ -6,7 +6,7 @@ function open(href: string): void {
   if (isSafeHref(href)) void platform.app.openExternal(href);
 }
 
-function render(nodes: MdNode[], mentionIsMe: (v: string) => boolean, key = ''): ReactNode[] {
+function render(nodes: MdNode[], mention: MentionRenderer, key = ''): ReactNode[] {
   return nodes.map((n, i) => {
     const k = `${key}${i}`;
     switch (n.t) {
@@ -27,11 +27,11 @@ function render(nodes: MdNode[], mentionIsMe: (v: string) => boolean, key = ''):
           </pre>
         );
       case 'b':
-        return <strong key={k}>{render(n.c, mentionIsMe, `${k}.`)}</strong>;
+        return <strong key={k}>{render(n.c, mention, `${k}.`)}</strong>;
       case 'i':
-        return <em key={k}>{render(n.c, mentionIsMe, `${k}.`)}</em>;
+        return <em key={k}>{render(n.c, mention, `${k}.`)}</em>;
       case 's':
-        return <s key={k}>{render(n.c, mentionIsMe, `${k}.`)}</s>;
+        return <s key={k}>{render(n.c, mention, `${k}.`)}</s>;
       case 'link':
         return (
           <a
@@ -44,21 +44,20 @@ function render(nodes: MdNode[], mentionIsMe: (v: string) => boolean, key = ''):
             }}
             className="text-accent-text hover:underline"
           >
-            {render(n.c, mentionIsMe, `${k}.`)}
+            {render(n.c, mention, `${k}.`)}
           </a>
         );
       case 'mention':
-        return (
-          <span key={k} className={mentionIsMe(n.v) ? 'rounded bg-warn/25 px-0.5 font-medium text-fg' : 'rounded bg-accent/15 px-0.5 font-medium text-accent-text'}>
-            @{n.v}
-          </span>
-        );
+        return mention(n.v, k);
       default:
         return null;
     }
   });
 }
 
-export const Markdown = memo(function Markdown({ text, mentionIsMe }: { text: string; mentionIsMe: (v: string) => boolean }): ReactNode {
-  return <>{render(parseMarkdown(text), mentionIsMe)}</>;
+/** Renders a mention node (`v`: user id, 'everyone' or 'here'); the caller knows the names. */
+export type MentionRenderer = (v: string, key: string) => ReactNode;
+
+export const Markdown = memo(function Markdown({ text, mention }: { text: string; mention: MentionRenderer }): ReactNode {
+  return <>{render(parseMarkdown(text), mention)}</>;
 });

@@ -1,5 +1,5 @@
 import { cpus, hostname } from 'node:os';
-import { app, BrowserWindow, ipcMain, nativeTheme, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, powerMonitor, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron';
 import log from 'electron-log/main';
 import {
   IPC,
@@ -15,7 +15,7 @@ import {
   type RegisterArgs,
   type TrayState,
 } from '../shared/ipc';
-import { forceRefresh, getAccessToken, login, logout, register, restore, revoked } from './auth';
+import { forceRefresh, getAccessToken, guestJoin, login, logout, register, restore, revoked } from './auth';
 import { armSelection, forgetWebContents, listSources, systemAudioSupport } from './capture';
 import { takePendingDeepLink } from './deeplink';
 import { downloadFile } from './downloads';
@@ -113,6 +113,12 @@ export function registerIpc(): void {
   handle(IPC.authRestore, () => restore());
   handle(IPC.authLogin, (_e, a) => login(parseLogin(a)));
   handle(IPC.authRegister, (_e, a) => register(parseRegister(a)));
+  handle(IPC.authGuestJoin, (_e, a) => {
+    const r = obj(a);
+    const code = str(r['code'], 64);
+    if (!/^[A-Za-z0-9_-]{4,64}$/.test(code)) throw new Error('invalid code');
+    return guestJoin(code, str(r['nickname'], 64));
+  });
   handle(IPC.authLogout, (_e, a) => logout(Boolean(a)));
   handle(IPC.authAccessToken, () => getAccessToken());
   handle(IPC.authForceRefresh, (_e, a) => {
@@ -203,6 +209,7 @@ export function registerIpc(): void {
   handle(IPC.pttSetBinding, (e, b) => setBinding(e.sender, parseBinding(b)));
   handle(IPC.pttCaptureNext, () => captureNext());
   handle(IPC.pttStatus, () => (VISUAL_TEST ? { ...pttStatus(), trusted: false } : pttStatus()));
+  handle(IPC.systemIdleSeconds, () => powerMonitor.getSystemIdleTime());
   handle(IPC.systemMetrics, (e): ProcessMetrics => {
     const pid = e.sender.getOSProcessId();
     const metrics = app.getAppMetrics();

@@ -23,7 +23,7 @@
   --color-separator: rgb(255 255 255 / 8%);
   --color-border-popover: rgb(255 255 255 / 8%);
   --color-label: #ececf0;
-  --color-label-secondary: #a1a1a6;
+  --color-label-secondary: #aeaeb2; /* ≥ 4.5:1 also on hover/active rows */
   --color-label-tertiary: #9d9da2;
   --color-accent: #0a84ff; /* icons, toggles, focus ring, selection */
   --color-accent-strong: #0071e3; /* filled primary buttons (white text ≥ 4.5:1) */
@@ -35,6 +35,9 @@
   --color-red-text: #ff7f75; /* red text on any dark surface (≥ 4.5:1) */
   --color-red-fill: #d70015;
   --color-green-fill: #1f7a34; /* filled green with white text (≥ 4.5:1) */
+  /* role name colours in member lists (≥ 4.5:1 on the sidebar incl. hover) */
+  --color-role-owner: #f2c94c;
+  --color-role-admin: #6cb4ff;
   --color-mention: rgb(255 214 10 / 12%);
   --color-code: rgb(118 118 128 / 18%);
   --color-scrim: rgb(0 0 0 / 45%);
@@ -48,6 +51,25 @@
   --avatar-6: #7e3fa0;
   --avatar-7: #0b6a80;
   --avatar-8: #5c5c61;
+  /* chat (docs/09 P0.4, Telegram-like bubbles): feed, bubbles, author names (≥ 4.5:1 on the incoming bubble) */
+  --color-feed: #161618;
+  --color-bubble-in: #2a2a2d;
+  --color-bubble-out: #2b5278;
+  --color-bubble-out-meta: #a9c7e8;
+  --color-bubble-out-link: #a8d4ff;
+  --color-bubble-in-accent: #5eadff;
+  --color-bubble-highlight: rgb(10 132 255 / 22%);
+  --shadow-bubble: none;
+  --radius-bubble: 16px;
+  --radius-bubble-inner: 6px;
+  --name-1: #5eadff;
+  --name-2: #5fd47a;
+  --name-3: #a79dff;
+  --name-4: #ff9a5c;
+  --name-5: #ff7aa6;
+  --name-6: #d399f0;
+  --name-7: #4fcfe6;
+  --name-8: #b4b4ba;
 
   /* ---- spacing: 4 px grid ---- */
   --space-1: 4px;
@@ -84,7 +106,8 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- layout ---- */
-  --rail-width: 64px;
+  --rail-width: 72px;
+  --titlebar-height: 38px;
   --sidebar-width: 240px;
   --composer-height: 64px;
 
@@ -117,9 +140,27 @@
   --color-red: #d70015;
   --color-red-text: #b0000d;
   --color-red-fill: #d70015;
+  --color-role-owner: #7a4a00;
+  --color-role-admin: #0058b0;
   --color-mention: rgb(255 204 0 / 16%);
   --color-code: rgb(118 118 128 / 12%);
   --color-scrim: rgb(0 0 0 / 25%);
+  --color-feed: #e4e9ee;
+  --color-bubble-in: #ffffff;
+  --color-bubble-out: #ddf5cb;
+  --color-bubble-out-meta: #2a6e2f;
+  --color-bubble-out-link: #005bb8;
+  --color-bubble-in-accent: #0060c0;
+  --color-bubble-highlight: rgb(0 122 255 / 16%);
+  --shadow-bubble: 0 1px 1px rgb(0 0 0 / 10%);
+  --name-1: #0063cc;
+  --name-2: #1f7a34;
+  --name-3: #5a51d6;
+  --name-4: #b3400b;
+  --name-5: #b0194f;
+  --name-6: #7e3fa0;
+  --name-7: #0b6a80;
+  --name-8: #5c5c61;
   --shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 12px 32px rgb(0 0 0 / 14%), 0 2px 6px rgb(0 0 0 / 8%);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 8%);
   color-scheme: light;
@@ -173,9 +214,16 @@
   --color-danger-text: var(--color-red-text);
   --color-danger-fill: var(--color-red-fill);
   --color-ok-fill: var(--color-green-fill);
+  --color-role-owner: var(--color-role-owner);
+  --color-role-admin: var(--color-role-admin);
   --color-mention: var(--color-mention);
   --color-code: var(--color-code);
   --color-scrim: var(--color-scrim);
+  --color-feed: var(--color-feed);
+  --color-bubble-in: var(--color-bubble-in);
+  --color-bubble-out: var(--color-bubble-out);
+  --color-bubble-out-meta: var(--color-bubble-out-meta);
+  --color-bubble-out-link: var(--color-bubble-out-link);
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', sans-serif;
   --font-mono: 'SF Mono', Menlo, Consolas, 'JetBrains Mono', monospace;
   /* HIG type scale */
@@ -310,6 +358,16 @@ body {
   outline-offset: -2px;
 }
 
+/* Speaking ring (components/Avatar.tsx): 2 px green, 2 px gap, 100 ms fade. */
+.speak-ring {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 100ms ease-out;
+}
+.speak-ring[data-speaking='true'] {
+  outline-color: var(--color-green);
+}
+
 @keyframes calaba-pulse {
   0%,
   100% {
@@ -359,3 +417,51 @@ body {
 svg.lucide {
   stroke-width: 1.75;
 }
+
+/* ---- chat bubbles (features/chat): per-bubble colours as variables so nested parts (tail,
+   links, meta) follow the bubble kind ---- */
+.bubble-in {
+  --bubble-bg: var(--color-bubble-in);
+  --bubble-meta: var(--color-label-tertiary);
+  --bubble-link: var(--color-bubble-in-accent);
+  --bubble-accent: var(--color-bubble-in-accent);
+  --bubble-chip-bg: var(--color-accent-strong);
+  --bubble-chip-fg: var(--color-on-accent);
+}
+.bubble-out {
+  --bubble-bg: var(--color-bubble-out);
+  --bubble-meta: var(--color-bubble-out-meta);
+  --bubble-link: var(--color-bubble-out-link);
+  --bubble-accent: var(--color-bubble-out-link);
+  --bubble-chip-bg: var(--color-bubble-out-meta);
+  --bubble-chip-fg: var(--color-bubble-out);
+}
+.bubble-in .text-accent-text,
+.bubble-out .text-accent-text {
+  color: var(--bubble-link);
+}
+@keyframes calaba-highlight {
+  from {
+    background: var(--color-bubble-highlight);
+  }
+  to {
+    background: transparent;
+  }
+}
+.row-highlight {
+  animation: calaba-highlight 1.6s var(--ease);
+}
+@keyframes calaba-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-pop {
+  animation: calaba-pop var(--motion) var(--ease);
+}
+

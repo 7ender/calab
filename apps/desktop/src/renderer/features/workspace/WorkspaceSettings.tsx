@@ -12,7 +12,7 @@ import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { MediaImg } from '../../components/MediaImg';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
-import { Button, Card, Empty, IconButton, Input, Row, Select, Spinner } from '../../components/ui';
+import { Button, Card, Empty, IconButton, Input, Row, Select, Spinner, Toggle } from '../../components/ui';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { api, thumbnailPath, uploadFile } from '../../lib/api/endpoints';
@@ -110,6 +110,13 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
             <option value={WorkspaceVisibility.PRIVATE}>{t('ws.private')}</option>
             <option value={WorkspaceVisibility.OPEN}>{t('ws.open')}</option>
           </Select>
+        </Row>
+        <Row label={t('people.nick.allowSelf')} hint={t('people.nick.allowSelfHint')}>
+          <Toggle
+            label={t('people.nick.allowSelf')}
+            checked={ws.allowSelfNickname}
+            onChange={(v) => void patchWorkspace(workspaceId, { allowSelfNickname: v }).catch((x: unknown) => toast.error(err(x)))}
+          />
         </Row>
       </Card>
     </>

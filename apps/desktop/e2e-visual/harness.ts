@@ -99,6 +99,19 @@ export async function settle(page: Page): Promise<void> {
       [...document.images].filter((i) => !i.complete).map((i) => new Promise((r) => i.addEventListener('load', r, { once: true }))),
     );
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    // The virtualized feed measures rows and loads previews asynchronously: wait until every
+    // scroller keeps the same scrollTop / scrollHeight for 300 ms (max 5 s).
+    const snapshot = (): string =>
+      [...document.querySelectorAll('[data-virtuoso-scroller]')].map((e) => `${e.scrollTop}:${e.scrollHeight}`).join('|');
+    // (Iteration counts, not Date.now(): the page clock is frozen by page.clock.setFixedTime.)
+    let last = snapshot();
+    let stable = 0;
+    for (let i = 0; i < 100 && stable < 6; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      const now = snapshot();
+      stable = now === last ? stable + 1 : 0;
+      last = now;
+    }
   });
 }
 
@@ -213,8 +226,8 @@ export async function layoutProblems(page: Page): Promise<LayoutProblem[]> {
         out.push({ kind: 'offscreen', detail: `${describe(el)}: ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}` });
       }
     }
-    // 4. Modals centred.
-    for (const d of document.querySelectorAll('[role="dialog"], [role="alertdialog"]')) {
+    // 4. Modals centred (anchored popovers also use role="dialog", but without aria-modal).
+    for (const d of document.querySelectorAll('[role="dialog"][aria-modal="true"], [role="alertdialog"]')) {
       if (!visible(d) || d.hasAttribute('data-layout-anchor')) continue;
       const r = d.getBoundingClientRect();
       const dx = Math.abs(r.left + r.width / 2 - W / 2);

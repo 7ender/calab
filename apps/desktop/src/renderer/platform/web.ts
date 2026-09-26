@@ -14,7 +14,7 @@ import type {
 } from '../../shared/ipc';
 import { PttGate } from '../../shared/pttGate';
 import { mouseName } from '../../shared/pttKeys';
-import type { Platform } from './types';
+import type { GuestJoin, Platform } from './types';
 
 /**
  * Web platform (ADR-0015). Same origin as the API (`https://app.<domain>`):
@@ -70,10 +70,17 @@ function postAuth(path: string, body: unknown, bearer?: string): Promise<Respons
   });
 }
 
+/** 409 on /api/auth/refresh = another refresh of the same session won the race: just retry. */
+const REFRESH_CONFLICT_RETRIES = 3;
+
 async function doRefresh(): Promise<string | null> {
-  const run = async (): Promise<string | null> => {
+  const run = async (attempt = 0): Promise<string | null> => {
     try {
       const res = await postAuth('/api/auth/refresh', bodyRefresh ? { refreshToken: bodyRefresh } : {});
+      if (res.status === 409 && attempt < REFRESH_CONFLICT_RETRIES) {
+        await new Promise((r) => setTimeout(r, 150 + Math.round(Math.random() * 250)));
+        return await run(attempt + 1);
+      }
       if (res.ok) {
         applyTokens(((await res.json()) as { tokens: TokensJson }).tokens);
         return access?.token ?? null;
@@ -90,7 +97,7 @@ async function doRefresh(): Promise<string | null> {
   };
   // One refresh at a time across tabs (they share the cookie).
   // Web Locks: all current browsers; the guard keeps very old Safari working (single-tab refresh).
-  return 'locks' in navigator ? navigator.locks.request('calaba-refresh', run) : run();
+  return 'locks' in navigator ? navigator.locks.request('calaba-refresh', () => run()) : run();
 }
 
 function refreshOnce(): Promise<string | null> {
@@ -118,6 +125,27 @@ async function authenticate(path: string, body: Record<string, unknown>): Promis
     const data = (await res.json()) as { tokens: TokensJson; me: unknown };
     applyTokens(data.tokens);
     return { ok: true, data: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me } };
+  } catch (e) {
+    return { ok: false, error: { code: 'ERROR_CODE_UNAVAILABLE', message: e instanceof Error ? e.message : String(e), status: 0 } };
+  }
+}
+
+/** Guest account from a room link (ADR-0016): the server sets the refresh cookie like on login. */
+async function guestJoin(code: string, nickname: string): Promise<IpcResult<GuestJoin>> {
+  try {
+    const res = await postAuth(`/api/room-invites/${encodeURIComponent(code)}/join`, { nickname, deviceName: deviceName() });
+    if (!res.ok) return { ok: false, error: await readError(res) };
+    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown };
+    if (!data.tokens) return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
+    applyTokens(data.tokens);
+    return {
+      ok: true,
+      data: {
+        session: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me },
+        roomId: data.roomId,
+        workspaceId: data.workspaceId,
+      },
+    };
   } catch (e) {
     return { ok: false, error: { code: 'ERROR_CODE_UNAVAILABLE', message: e instanceof Error ? e.message : String(e), status: 0 } };
   }
@@ -271,12 +299,15 @@ function info(): AppInfo {
 
 const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', autostart: false });
 
-/** Invite links on the web: https://<domain>/join/<code> (the same URL the app shares). */
+/**
+ * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>
+ * (room link, ADR-0016) — the same URLs the app shares.
+ */
 function takeDeepLink(): Promise<string | null> {
-  const m = /^\/join\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
-  if (!m?.[1]) return Promise.resolve(null);
+  const m = /^\/(join|r)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
+  if (!m?.[1] || !m[2]) return Promise.resolve(null);
   history.replaceState(null, '', '/');
-  return Promise.resolve(`calaba://join/${m[1]}`);
+  return Promise.resolve(`calaba://${m[1]}/${m[2]}`);
 }
 
 const noop = (): (() => void) => () => undefined;
@@ -292,6 +323,7 @@ export function createWebPlatform(): Platform {
     },
     mediaUrl,
     directMedia: false,
+    guestJoin,
     auth: {
       restore: async () => {
         const t = await refreshOnce();
@@ -307,6 +339,7 @@ export function createWebPlatform(): Platform {
       login: (a: LoginArgs) => authenticate('/api/auth/login', { email: a.email, password: a.password }),
       register: (a: RegisterArgs) =>
         authenticate('/api/auth/register', { email: a.email, password: a.password, displayName: a.displayName, inviteCode: a.inviteCode }),
+      guestJoin,
       logout: async (allSessions) => {
         const t = access?.token;
         try {
@@ -401,6 +434,32 @@ export function createWebPlatform(): Platform {
           return false;
         }
       },
+      idleSeconds: () => Promise.resolve(webIdleSeconds()),
     },
   };
+}
+
+// ---------------------------------------------------------------- AFK (web)
+
+/**
+ * A browser only sees input inside its own tab: activity = keyboard/pointer/wheel events here
+ * and the tab becoming visible again. A hidden tab accumulates idle time.
+ */
+let lastInput = Date.now();
+let idleTracking = false;
+
+function webIdleSeconds(): number {
+  if (!idleTracking) {
+    idleTracking = true;
+    const bump = (): void => {
+      lastInput = Date.now();
+    };
+    for (const ev of ['keydown', 'pointerdown', 'pointermove', 'wheel', 'touchstart'] as const) {
+      window.addEventListener(ev, bump, { passive: true, capture: true });
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') bump();
+    });
+  }
+  return Math.floor((Date.now() - lastInput) / 1000);
 }

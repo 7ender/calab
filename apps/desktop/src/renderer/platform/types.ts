@@ -1,4 +1,12 @@
 import type { CalabaApi } from '../../preload/api';
+import type { AuthSession, IpcResult } from '../../shared/ipc';
+
+/** Result of a guest sign-in by a room link (ADR-0016). */
+export interface GuestJoin {
+  session: AuthSession;
+  roomId: string;
+  workspaceId: string;
+}
 
 /**
  * Platform layer (ADR-0015): everything the renderer needs from its host.
@@ -19,4 +27,10 @@ export interface Platform extends CalabaApi {
   mediaUrl(path: string): Promise<string>;
   /** Whether the platform can hand out a synchronous media URL (no blob fetch needed). */
   directMedia: boolean;
+  /**
+   * Guest sign-in by a room link without an account (POST /api/room-invites/{code}/join with a
+   * nickname, ADR-0016). Web only; undefined where the host cannot adopt a session (Electron:
+   * tokens live in main — the guest path there is the browser).
+   */
+  guestJoin?: (code: string, nickname: string) => Promise<IpcResult<GuestJoin>>;
 }

@@ -30,6 +30,8 @@ export interface CalabaApi {
     restore(): Promise<AuthSession | null>;
     login(args: LoginArgs): Promise<IpcResult<AuthSession>>;
     register(args: RegisterArgs): Promise<IpcResult<AuthSession>>;
+    /** Guest sign-in by a room link (ADR-0016): creates a guest account, keeps its session like a login. */
+    guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string }>>;
     logout(allSessions: boolean): Promise<void>;
     /** Fresh access JWT for the gateway IDENTIFY (null = logged out / offline). */
     accessToken(): Promise<string | null>;
@@ -83,6 +85,11 @@ export interface CalabaApi {
     permissions(): Promise<PermissionStatus>;
     /** Ask the OS for microphone access (macOS prompt); resolves with the result. */
     requestMic(): Promise<boolean>;
+    /**
+     * Seconds without keyboard/mouse input. Desktop: system-wide (powerMonitor, no permission
+     * needed); web: input inside this tab only.
+     */
+    idleSeconds(): Promise<number>;
   };
 }
 

@@ -4,9 +4,9 @@ import type {
   VoiceState,
   Workspace,
   WorkspaceMember,
-  WorkspaceRole,
   WorkspaceSnapshot,
 } from '@calaba/protocol';
+import { WorkspaceRole } from '@calaba/protocol';
 import { create } from 'zustand';
 
 export interface WorkspaceEntry {
@@ -112,4 +112,21 @@ export function memberName(wsId: string | null, userId: string): string {
   const st = useWorkspaces.getState();
   const m = wsId ? st.byId[wsId]?.members[userId] : undefined;
   return m?.nickname || m?.user?.displayName || st.users[userId]?.displayName || 'Неизвестный';
+}
+
+/** Reactive memberName(): re-renders when the nickname or profile name changes. */
+export function useMemberName(wsId: string | null, userId: string): string {
+  return useWorkspaces((st) => {
+    const m = wsId ? st.byId[wsId]?.members[userId] : undefined;
+    return m?.nickname || m?.user?.displayName || st.users[userId]?.displayName || 'Неизвестный';
+  });
+}
+
+/**
+ * Guest of this workspace (ADR-0016) → «Гость» badge. By role, not only User.is_guest: a
+ * registered user who came by a room link is a guest too, and «Сделать участником» keeps
+ * the account's is_guest (no password yet) while the role becomes member — no badge then.
+ */
+export function isGuest(m: WorkspaceMember | undefined): boolean {
+  return m?.role === WorkspaceRole.GUEST;
 }

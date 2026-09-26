@@ -21,6 +21,8 @@ import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useVoice } from '../../stores/voice';
 import { PttBinder } from './PttBinder';
+import { AfkCard } from '../shell/AfkCard';
+import { SoundSettings } from '../people/SoundSettings';
 
 const err = (e: unknown): string => (e instanceof ApiError ? e.message : String(e));
 
@@ -155,6 +157,7 @@ function ProfileTab(): ReactNode {
           <span className="selectable text-[13px] text-muted">{me.email}</span>
         </Row>
       </Card>
+      <AfkCard />
     </>
   );
 }
@@ -415,28 +418,28 @@ function NotificationsTab(): ReactNode {
     }
   };
   return (
-    <Card>
-      <Row label={t('notify.mentions')} hint={t('notify.mentionsHint')}>
-        <Toggle label={t('notify.mentions')} checked={p.notifyMentions} onChange={(v) => p.setPrefs({ notifyMentions: v })} />
-      </Row>
-      <Row label={t('notify.all')}>
-        <Toggle label={t('notify.all')} checked={p.notifyAll} onChange={(v) => p.setPrefs({ notifyAll: v })} />
-      </Row>
-      <Row label={t('notify.voiceSounds')}>
-        <Toggle label={t('notify.voiceSounds')} checked={p.voiceSounds} onChange={(v) => p.setPrefs({ voiceSounds: v })} />
-      </Row>
-      <Row label={t('notify.test')}>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission().then(show);
-            else show();
-          }}
-        >
-          {t('notify.testBtn')}
-        </Button>
-      </Row>
-    </Card>
+    <>
+      <Card>
+        <Row label={t('notify.mentions')} hint={t('notify.mentionsHint')}>
+          <Toggle label={t('notify.mentions')} checked={p.notifyMentions} onChange={(v) => p.setPrefs({ notifyMentions: v })} />
+        </Row>
+        <Row label={t('notify.all')}>
+          <Toggle label={t('notify.all')} checked={p.notifyAll} onChange={(v) => p.setPrefs({ notifyAll: v })} />
+        </Row>
+        <Row label={t('notify.test')}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission().then(show);
+              else show();
+            }}
+          >
+            {t('notify.testBtn')}
+          </Button>
+        </Row>
+      </Card>
+      <SoundSettings />
+    </>
   );
 }
 
