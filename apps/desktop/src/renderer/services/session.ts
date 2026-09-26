@@ -12,6 +12,7 @@ import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
 import { useRoomLink } from '../features/people/roomLink';
+import { onUpdateStatus } from '../features/shell/updateBannerState';
 import { queryClient } from '../lib/queryClient';
 import { resetChatCaches } from './chat';
 import { resetDmCaches } from './dms';
@@ -50,13 +51,15 @@ export async function bootstrap(): Promise<void> {
     }
   });
   window.addEventListener('online', () => {
+    // Main has no `online` event: it checks for updates (throttled, desktop only).
+    platform.app.networkOnline();
     if (useSession.getState().status === 'offline') void retryConnect();
   });
   watchOffline();
-  platform.app.onUpdateStatus((update) => useSession.getState().set({ update }));
+  platform.app.onUpdateStatus((update) => useSession.getState().set(onUpdateStatus(update)));
   // A reloaded renderer (server switch) must still show a downloaded update.
   void platform.app.updateStatus().then(
-    (update) => useSession.getState().set({ update }),
+    (update) => useSession.getState().set(onUpdateStatus(update)),
     () => undefined,
   );
   platform.tray.onAction((a) => {

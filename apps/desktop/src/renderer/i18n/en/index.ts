@@ -539,5 +539,6 @@ export const en: Dict = {
   'main.trayInVoice': 'Calab — in voice',
   'main.trayInVoiceMuted': 'Calab — in voice (muted)',
   'main.updateAvailable': 'Version {version} is available — Download',
+  'main.trayRestartUpdate': 'Restart to update to {version}',
   'main.streamWindow': 'Calab — screen share',
 };

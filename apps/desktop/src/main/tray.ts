@@ -6,6 +6,9 @@ import { getMainWindow, showMainWindow } from './windows';
 
 let tray: Tray | null = null;
 let state: TrayState = { inVoice: false, muted: false, deafened: false };
+/** Version of the downloaded update («Перезапустить для обновления X»), null = none. */
+let updateReady: string | null = null;
+let installUpdate: () => void = () => undefined;
 
 function send(action: TrayAction): void {
   if (action === 'show') {
@@ -19,6 +22,9 @@ function rebuild(): void {
   if (!tray) return;
   const s = mainStrings();
   const menu = Menu.buildFromTemplate([
+    ...(updateReady
+      ? [{ label: s.trayRestartUpdate.replaceAll('{version}', updateReady), click: () => installUpdate() }, { type: 'separator' as const }]
+      : []),
     { label: s.trayOpen, click: () => send('show') },
     { type: 'separator' },
     { label: s.trayMute, type: 'checkbox', checked: state.muted, enabled: state.inVoice, click: () => send('toggle-mute') },
@@ -39,6 +45,14 @@ export function createTray(): void {
   });
   rebuild();
   onMainStrings(rebuild);
+}
+
+/** Update status → the «Перезапустить для обновления X» item (main/updater.ts). */
+export function setTrayUpdate(version: string | null, install: () => void): void {
+  installUpdate = install;
+  if (updateReady === version) return;
+  updateReady = version;
+  rebuild();
 }
 
 export function setTrayState(next: TrayState): void {

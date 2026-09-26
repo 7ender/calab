@@ -27,7 +27,7 @@ import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
 import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayState } from './tray';
-import { checkForUpdates, installUpdate, updateSettingsChanged, updateStatus } from './updater';
+import { checkForUpdates, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { getMainWindow, isOwnPage } from './windows';
 
@@ -99,6 +99,7 @@ function parseSettings(v: unknown): Partial<AppSettings> {
   // updateUrl is NOT settable from the renderer (security review M3): main derives the feed.
   if (r['autostart'] !== undefined) out.autostart = Boolean(r['autostart']);
   if (r['autoUpdate'] !== undefined) out.autoUpdate = Boolean(r['autoUpdate']);
+  if (r['autoCheckUpdates'] !== undefined) out.autoCheckUpdates = Boolean(r['autoCheckUpdates']);
   return out;
 }
 
@@ -176,7 +177,7 @@ export function registerIpc(): void {
   handle(IPC.appSetSettings, (_e, a) => {
     const patch = parseSettings(a);
     const next = updateSettings(patch);
-    if (patch.autoUpdate !== undefined) updateSettingsChanged();
+    if (patch.autoUpdate !== undefined || patch.autoCheckUpdates !== undefined) updateSettingsChanged();
     reloadIfServerChanged();
     return next;
   });
@@ -184,6 +185,7 @@ export function registerIpc(): void {
   handle(IPC.appCheckUpdates, () => checkForUpdates());
   handle(IPC.appGetUpdateStatus, () => updateStatus());
   handle(IPC.appInstallUpdate, () => installUpdate());
+  handle(IPC.appNetworkOnline, () => updatesNudge('online'));
   handle(IPC.appLog, (_e, a) => {
     const r = obj(a);
     const msg = str(r['message'], 8192, true);
@@ -260,7 +262,10 @@ export function registerIpc(): void {
   // ---- tray ----
   handle(IPC.trayState, (_e, a) => {
     const r = obj(a);
-    setTrayState({ inVoice: Boolean(r['inVoice']), muted: Boolean(r['muted']), deafened: Boolean(r['deafened']) } satisfies TrayState);
+    const inVoice = Boolean(r['inVoice']);
+    setTrayState({ inVoice, muted: Boolean(r['muted']), deafened: Boolean(r['deafened']) } satisfies TrayState);
+    // A call / stream in progress: an update does not start downloading until it ends.
+    setUpdateInCall(inVoice);
   });
 
   // ---- files ----

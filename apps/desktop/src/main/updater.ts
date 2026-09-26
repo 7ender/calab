@@ -1,4 +1,4 @@
-import { app, BrowserWindow, net, Notification, powerMonitor, shell } from 'electron';
+import { app, BrowserWindow, Notification, powerMonitor, shell } from 'electron';
 import log from 'electron-log/main';
 import electronUpdater from 'electron-updater';
 import { IPC, type UpdateStatus } from '../shared/ipc';
@@ -6,7 +6,8 @@ import { downloadPage, feedUrl, httpsFeed } from '../shared/updateFeed';
 import { currentServerUrl } from './auth';
 import { getSettings } from './settings';
 import { mainStrings } from './strings';
-import { createUpdateFlow, type UpdateFlow } from './updateFlow';
+import { setTrayUpdate } from './tray';
+import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlow';
 
 /**
  * Auto-update (electron-updater, generic provider). The logic lives in updateFlow.ts (pure,
@@ -18,11 +19,13 @@ import { createUpdateFlow, type UpdateFlow } from './updateFlow';
  *   (dev / self-built) the feed derived from the server (`https://app.X` → `https://releases.X/`,
  *   else `https://<host>/download/`) is used for notify-only. CALABA_UPDATE_URL (runtime) is a
  *   notify-only override: it replaces the feed and disables auto-install.
- * - Checks: 10 s after start, every 6 h, «Проверить» in «О программе», after wake from sleep,
- *   and when the network returns after a failed check.
+ * - Checks: 10 s after start, then hourly (± 5 min), «Проверить» in «О программе», and — at most
+ *   once per 10 min — after wake from sleep, screen unlock and when the network returns (the
+ *   renderer's `online` event). «Проверять обновления автоматически» off → only «Проверить».
+ * - During a call / stream (tray state inVoice) a found update is not downloaded until it ends.
  * - Auto (build feed + «Автоматически обновлять» on + Windows / Linux AppImage / macOS built with
- *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, a «Обновление X готово —
- *   Перезапустить» banner in the self panel, install on restart or on quit.
+ *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, a «Calab X готова ·
+ *   Перезапустить» banner in the bottom island and a tray item, install on restart or on quit.
  * - Otherwise notify only — «Доступна версия X — Скачать» opens `<server>/download/`.
  * - Errors go to the log (electron-log) only; the status turns 'error' for «О программе».
  */
@@ -37,6 +40,7 @@ let flow: UpdateFlow | null = null;
 let notification: Notification | null = null;
 
 function broadcast(s: UpdateStatus): void {
+  setTrayUpdate(s.state === 'downloaded' ? s.version : null, installUpdate);
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.appUpdateStatus, s);
 }
 
@@ -63,11 +67,11 @@ function getFlow(): UpdateFlow {
     signed: SIGNED,
     appImage: Boolean(process.env['APPIMAGE']),
     autoUpdate: () => getSettings().autoUpdate,
+    autoCheck: () => getSettings().autoCheckUpdates,
     // Dev (unpackaged) builds never check; an override replaces the pinned feed (notify-only).
     buildFeed: app.isPackaged && !FEED_OVERRIDE.trim() ? BUILD_FEED : null,
     notifyFeed: () => (app.isPackaged ? feedUrl(currentServerUrl(), FEED_OVERRIDE) : null),
     downloadPage: () => downloadPage(currentServerUrl(), BUILD_FEED),
-    isOnline: () => net.isOnline(),
     publish: broadcast,
     notify: notifyAvailable,
     log,
@@ -75,14 +79,26 @@ function getFlow(): UpdateFlow {
   return flow;
 }
 
-/** App start: first check in 10 s, then every 6 h; re-check after wake / back online. */
+/** App start: first check in 10 s, then hourly; re-check after wake / unlock / back online. */
 export function startUpdates(): void {
   // Visual tests fake the status (window.__calabaUpdateStatus); a real check 10 s in would
   // overwrite it mid-run (and there is nothing to update in a test build anyway).
   if (process.env['CALABA_VISUAL_TEST'] === '1') return;
   const f = getFlow();
   f.start();
-  powerMonitor.on('resume', () => f.resume());
+  powerMonitor.on('resume', () => f.nudge('resume'));
+  powerMonitor.on('unlock-screen', () => f.nudge('unlock'));
+}
+
+/** Wake / unlock / back online (renderer `online`): a throttled check. No-op before startUpdates(). */
+export function updatesNudge(reason: NudgeReason): void {
+  flow?.nudge(reason);
+}
+
+/** A call / stream started or ended: a found update waits for the end of the call to download. */
+export function setUpdateInCall(inCall: boolean): void {
+  if (process.env['CALABA_VISUAL_TEST'] === '1') return;
+  getFlow().setInCall(inCall);
 }
 
 /** «Проверить» in «О программе». Never throws. */

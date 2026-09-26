@@ -840,6 +840,13 @@ function DesktopAppCards({
       </Card>
       {/* Main decides what «auto» means per platform (updateFlow.ts); the renderer only toggles. */}
       <Card title={t('about.updates')}>
+        <Row label={t('app.autoCheckUpdates')} hint={t('app.autoCheckUpdatesHint')}>
+          <Toggle
+            label={t('app.autoCheckUpdates')}
+            checked={settings?.autoCheckUpdates ?? true}
+            onChange={(v) => void save({ autoCheckUpdates: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
+          />
+        </Row>
         <Row label={t('app.autoUpdate')} hint={t('app.autoUpdateHint')}>
           <Toggle
             label={t('app.autoUpdate')}

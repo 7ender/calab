@@ -370,7 +370,7 @@ function info(): AppInfo {
   };
 }
 
-const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', autostart: false, autoUpdate: false });
+const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', autostart: false, autoUpdate: false, autoCheckUpdates: false });
 
 /**
  * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>
@@ -466,6 +466,7 @@ export function createWebPlatform(): Platform {
       onUpdateStatus: noop,
       updateStatus: () => Promise.resolve({ state: 'disabled' }),
       installUpdate: () => Promise.resolve(false),
+      networkOnline: () => undefined,
       log: (level, message) => {
         (level === 'error' ? console.error : level === 'warn' ? console.warn : console.info)(message);
       },

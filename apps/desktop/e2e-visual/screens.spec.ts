@@ -429,7 +429,7 @@ test('dm-new', async ({ open, win, shot }) => {
 test('update-banner', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  // Auto-update: «Обновление X готово — Перезапустить» above the self panel (faked status).
+  // Auto-update: «Calab X готова · Перезапустить ✕» in the bottom island (faked status).
   await win.evaluate(() => (window as unknown as { __calabaUpdateStatus?: (s: object) => void }).__calabaUpdateStatus?.({ state: 'downloaded', version: '0.1.1' }));
   await expect(win.getByTestId('update-banner')).toBeVisible();
   await checkpoint(shot, 'update-banner');
