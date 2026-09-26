@@ -40,7 +40,7 @@ test('register → workspace → room → message → reload → voice', async (
   await page.getByLabel('Название').fill('общий');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
-  const box = page.getByPlaceholder('Написать в #общий');
+  const box = page.getByPlaceholder('Сообщение в #общий');
   await box.fill('Привет из **веба**');
   await box.press('Enter');
   await expect(page.locator('strong', { hasText: 'веба' })).toBeVisible();

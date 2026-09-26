@@ -1,5 +1,5 @@
 import * as TooltipP from '@radix-ui/react-tooltip';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, type ReactNode } from 'react';
 import { Spinner } from '../components/ui';
 import { AuthScreen } from '../features/auth/AuthScreen';
@@ -8,12 +8,11 @@ import { AppShell } from '../features/shell/AppShell';
 import { Dialogs } from '../features/shell/Dialogs';
 import { Toasts } from '../features/shell/Toasts';
 import { usePrefs } from '../stores/prefs';
+import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
 import { useSession } from '../stores/session';
 
-export const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 15_000, retry: 1, refetchOnWindowFocus: false } },
-});
+export { queryClient };
 
 function useTheme(): void {
   const theme = usePrefs((s) => s.theme);
@@ -57,7 +56,7 @@ export function App(): ReactNode {
   else screen = <AppShell />;
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipP.Provider>
+      <TooltipP.Provider delayDuration={400} skipDelayDuration={300}>
         {screen}
         {status === 'authed' ? <Dialogs /> : null}
         <Toasts />

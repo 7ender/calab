@@ -1,5 +1,5 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { ArrowRightLeft, ChevronRight, LogOut, MicOff, Pencil, UserCheck, UserMinus, UserRound, UserX, Volume2 } from 'lucide-react';
+import { ArrowRightLeft, Check, ChevronRight, LogOut, MicOff, Pencil, UserCheck, UserMinus, UserRound, UserX, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -88,8 +88,8 @@ function MemberMenuContent({
   const name = useMemberName(workspaceId, userId);
   const self = useSession((s) => s.me?.user?.id) === userId;
   const roomId = useWorkspaces((s) => s.byId[workspaceId]?.voice[userId]?.roomId ?? '');
-  const volume = usePrefs((s) => s.userVolumes[userId] ?? 1);
-  const voiceBlock = a.volume || a.serverMute || a.disconnect || a.moveTargets.length > 0;
+  const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
+  const voiceBlock = a.volume || (a.serverMute && !a.alreadyMuted) || a.disconnect || a.moveTargets.length > 0;
   const adminBlock = a.promote || a.removeGuest || a.kick;
   return (
     <ContextMenu.Content className={cx(menuBox, 'w-72')} collisionPadding={8}>
@@ -108,22 +108,23 @@ function MemberMenuContent({
       ) : null}
       {voiceBlock ? <ContextMenu.Separator className={menuSeparator} /> : null}
       {a.volume ? (
-        // Not a menu item: a slider row (arrow keys adjust it once focused with Tab).
-        <div className="px-2 pb-2 pt-1">
-          <div className="mb-1 flex items-center justify-between text-[12px] text-muted">
-            <span className="flex items-center gap-1.5">
-              <Volume2 className="size-3.5" aria-hidden /> {t('people.menu.volume')}
+        <>
+          <VolumeRow userId={userId} />
+          <ContextMenu.CheckboxItem className={menuItem} checked={localMuted} onCheckedChange={(v) => voice.setUserMuted(userId, v)}>
+            <span className="grid w-4 place-items-center">
+              <ContextMenu.ItemIndicator>
+                <Check className="size-4" aria-hidden />
+              </ContextMenu.ItemIndicator>
             </span>
-            <span className="tabular-nums">{Math.round(volume * 100)}%</span>
-          </div>
-          <Slider label={t('people.menu.volume')} value={volume} min={0} max={1} step={0.01} onChange={(v) => voice.setUserVolume(userId, v)} />
-        </div>
+            {t('people.menu.localMute')}
+          </ContextMenu.CheckboxItem>
+        </>
       ) : null}
-      {a.serverMute ? (
-        <ContextMenu.Item className={menuItem} disabled={a.alreadyMuted} onSelect={() => serverMute(roomId, userId)}>
+      {/* Moderation items appear only with the right; «already muted» is shown on the row itself. */}
+      {a.serverMute && !a.alreadyMuted ? (
+        <ContextMenu.Item className={menuItem} onSelect={() => serverMute(roomId, userId)}>
           <MicOff className="size-4" aria-hidden />
           <span className="min-w-0 flex-1 truncate">{t('people.menu.serverMute')}</span>
-          <span className="shrink-0 text-[11px] opacity-80">{t('people.menu.serverMuteHint')}</span>
         </ContextMenu.Item>
       ) : null}
       {a.moveTargets.length > 0 ? (
@@ -169,5 +170,26 @@ function MemberMenuContent({
         </ContextMenu.Item>
       ) : null}
     </ContextMenu.Content>
+  );
+}
+
+/**
+ * Per-user playback volume («Громкость», 0–100 %; element.volume caps at 1 — no WebAudio boost,
+ * docs/02 echo rules). Shared by the member menu and the profile card.
+ */
+export function VolumeRow({ userId, className }: { userId: string; className?: string }): ReactNode {
+  const volume = usePrefs((s) => s.userVolumes[userId] ?? 1);
+  const muted = usePrefs((s) => !!s.mutedUsers[userId]);
+  return (
+    // Not a menu item: a slider row (arrow keys adjust it once focused with Tab).
+    <div className={cx('px-2 pb-2 pt-1', className)}>
+      <div className="mb-1 flex items-center justify-between text-caption text-muted">
+        <span className="flex items-center gap-1.5">
+          {muted ? <VolumeX className="size-3.5" aria-hidden /> : <Volume2 className="size-3.5" aria-hidden />} {t('people.menu.volume')}
+        </span>
+        <span className="tabular-nums">{muted ? t('people.menu.localMuted') : `${Math.round(volume * 100)}%`}</span>
+      </div>
+      <Slider label={t('people.menu.volume')} value={volume} min={0} max={1} step={0.01} onChange={(v) => voice.setUserVolume(userId, v)} />
+    </div>
   );
 }

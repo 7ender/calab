@@ -3,8 +3,9 @@ import log from 'electron-log/main';
 import uiohookModule from 'uiohook-napi';
 import { IPC, type PttBinding, type PttEvent, type PttStatus } from '../shared/ipc';
 import { PttGate } from '../shared/pttGate';
-import { KEY, MIN_MOUSE_BUTTON, isToggleOnly, keyName, mouseName } from '../shared/pttKeys';
-import { applyCapsRemap, capsRemapActive, capsRemapSupported, restoreCapsRemap, restoreCapsRemapSync } from './capsRemap';
+import { PttCapture } from '../shared/pttCapture';
+import { isToggleOnly } from '../shared/pttKeys';
+import { capsRemapActive, capsRemapSupported, restoreCapsRemapSync, setCapsRemap } from './capsRemap';
 
 /**
  * Global push-to-talk via uiohook-napi (docs/02-media.md, «Push-to-talk»).
@@ -24,8 +25,6 @@ import { applyCapsRemap, capsRemapActive, capsRemapSupported, restoreCapsRemap, 
 
 const { uIOhook } = uiohookModule;
 const OS = process.platform;
-/** After a Caps Lock event during capture, wait this long to see whether a real press/release follows. */
-const CAPS_PROBE_MS = 350;
 
 let hookRunning = false;
 let hookError: string | null = null;
@@ -33,13 +32,14 @@ let binding: PttBinding | null = null;
 let gate: PttGate | null = null;
 const subscribers = new Set<WebContents>();
 
-interface Capture {
-  resolve: (b: PttBinding) => void;
-  reject: (e: Error) => void;
-  /** Caps Lock probe in progress: which Caps Lock signals arrived. */
-  caps?: { hold: boolean; timer: NodeJS.Timeout };
-}
-let capture: Capture | null = null;
+/** Key capture for the binder (shared/pttCapture.ts: cancel + timeout, review H2). */
+const capture = new PttCapture({
+  os: OS,
+  capsRemapActive,
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (h) => clearTimeout(h as NodeJS.Timeout),
+  log: (msg, data) => log.info(msg, data ?? ''),
+});
 
 function trusted(prompt: boolean): boolean {
   if (OS !== 'darwin') return true;
@@ -54,55 +54,8 @@ function send(talking: boolean): void {
   }
 }
 
-function finishCapture(b: PttBinding): void {
-  const c = capture;
-  capture = null;
-  if (c?.caps) clearTimeout(c.caps.timer);
-  log.info('[ptt] captured', b);
-  c?.resolve(b);
-}
-
-function captureKey(code: number): void {
-  if (!capture) return;
-  if (code === KEY.ESCAPE) {
-    const c = capture;
-    capture = null;
-    c.reject(new Error('cancelled'));
-    return;
-  }
-  if (code === KEY.CAPS_LOCK || code === KEY.CAPS_LOCK_STATE) {
-    // Collect Caps Lock signals briefly: a real press (KEY.CAPS_LOCK) means hold works.
-    if (!capture.caps) {
-      capture.caps = {
-        hold: false,
-        timer: setTimeout(() => {
-          const hold = capture?.caps?.hold ?? false;
-          finishCapture(
-            hold
-              ? { kind: 'key', code: KEY.CAPS_LOCK, label: keyName(KEY.CAPS_LOCK, OS), mode: 'hold' }
-              : { kind: 'key', code: KEY.CAPS_LOCK_STATE, label: keyName(KEY.CAPS_LOCK_STATE, OS), mode: 'toggle' },
-          );
-        }, CAPS_PROBE_MS),
-      };
-    }
-    if (code === KEY.CAPS_LOCK) capture.caps.hold = true;
-    return;
-  }
-  if (capture.caps) return; // other keys while probing Caps Lock are ignored
-  if (code === KEY.F18 && capsRemapActive()) {
-    // Caps Lock is currently remapped to F18: the user pressed Caps Lock.
-    finishCapture({ kind: 'key', code: KEY.F18, label: keyName(KEY.CAPS_LOCK, OS), mode: 'hold', remap: 'caps-f18' });
-    return;
-  }
-  finishCapture({ kind: 'key', code, label: keyName(code, OS), mode: 'hold' });
-}
-
 function onKey(code: number, down: boolean): void {
-  if (capture) {
-    // The macOS lock-state code arrives as «up» when Caps Lock turns off — still a press.
-    if (down || code === KEY.CAPS_LOCK_STATE) captureKey(code);
-    return;
-  }
+  if (capture.onKey(code, down)) return;
   if (binding?.kind === 'key' && binding.code === code) gate?.input(down);
 }
 
@@ -112,10 +65,7 @@ function mouseButton(raw: unknown): number {
 
 function onMouse(raw: unknown, down: boolean): void {
   const b = mouseButton(raw);
-  if (capture && down && b >= MIN_MOUSE_BUTTON && !capture.caps) {
-    finishCapture({ kind: 'mouse', code: b, label: mouseName(b), mode: 'hold' });
-    return;
-  }
+  if (capture.onMouse(b, down)) return;
   if (binding?.kind === 'mouse' && binding.code === b) gate?.input(down);
 }
 
@@ -150,6 +100,14 @@ export function pttStatus(): PttStatus {
   };
 }
 
+/**
+ * Sleep / screen lock: a key-up lost meanwhile (or swallowed by secure input) must not leave
+ * PTT transmitting after wake (review M6). A toggle is switched off too — the safe side.
+ */
+export function resetPttGate(): void {
+  gate?.reset();
+}
+
 export async function setBinding(owner: WebContents, next: PttBinding | null): Promise<PttStatus> {
   gate?.reset();
   binding = next;
@@ -162,10 +120,10 @@ export async function setBinding(owner: WebContents, next: PttBinding | null): P
     gate = null;
     subscribers.delete(owner);
   }
-  // The remap lives exactly as long as a binding that needs it.
+  // The remap lives exactly as long as a binding that needs it (capsRemap serializes the
+  // apply/restore calls in call order, so the last setBinding wins — review L4).
   try {
-    if (next?.kind === 'key' && next.remap === 'caps-f18') await applyCapsRemap();
-    else await restoreCapsRemap();
+    await setCapsRemap(next?.kind === 'key' && next.remap === 'caps-f18');
   } catch (e) {
     log.error('[ptt] Caps Lock remap failed', e);
     hookError = `Не удалось переназначить Caps Lock: ${e instanceof Error ? e.message : String(e)}`;
@@ -176,13 +134,12 @@ export async function setBinding(owner: WebContents, next: PttBinding | null): P
 export function captureNext(): Promise<PttBinding> {
   ensureHook();
   if (!hookRunning) return Promise.reject(new Error(hookError ?? 'uiohook is not running'));
-  if (capture) {
-    if (capture.caps) clearTimeout(capture.caps.timer);
-    capture.reject(new Error('superseded'));
-  }
-  return new Promise((resolve, reject) => {
-    capture = { resolve, reject };
-  });
+  return capture.start();
+}
+
+/** The binder closed (unmount): an armed capture must not grab the next key (review H2). */
+export function cancelCapture(): void {
+  capture.cancel();
 }
 
 export function shutdownPtt(): void {

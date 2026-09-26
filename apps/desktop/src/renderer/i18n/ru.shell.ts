@@ -19,7 +19,7 @@ export const ruShell = {
   'shell.kbd.back': 'Назад по комнатам',
   'shell.kbd.forward': 'Вперёд по комнатам',
   'shell.kbd.mute': 'Микрофон вкл/выкл',
-  'shell.kbd.deafen': 'Звук вкл/выкл',
+  'shell.kbd.deafen': 'Заглушить всех (deafen)',
   'shell.kbd.esc': 'Закрыть окно или панель',
   'shell.kbd.ptt': 'Push-to-talk',
   'shell.kbd.pttNone': 'не назначена',
@@ -33,6 +33,9 @@ export const ruShell = {
 
   // room column
   'shell.wsMenu': 'Меню пространства',
+  'shell.wsNotify': 'Уведомления…',
+  'shell.wsNotifyAll': 'Для всех комнат',
+  'shell.ownerCannotLeave': 'Владелец не может покинуть пространство',
   'shell.invite': 'Пригласить',
   'shell.inviteTo': 'Пригласить в «{name}»',
   'shell.roomSettingsOf': 'Настроить «{name}»',
@@ -81,8 +84,8 @@ export const ruShell = {
   'shell.systemDefault': 'Системное по умолчанию',
   'shell.noDevices': 'Устройства не найдены',
   'shell.profile': 'Мой статус',
-  'shell.statusText': 'Статус',
-  'shell.statusPh': 'Чем вы заняты?',
+  'shell.statusText': 'Что вы делаете',
+  'shell.statusPh': 'Статус…',
   'shell.statusClear': 'Очистить статус',
   'shell.editProfile': 'Редактировать профиль',
 
@@ -99,6 +102,7 @@ export const ruShell = {
   // ---- voice & stream UI (docs/09 #13–#16), VOICE-UI block ----
   // stream picker (#13)
   'streamPick.title': 'Показ экрана',
+  'streamPick.close': 'Закрыть',
   'streamPick.kind': 'Источник',
   'streamPick.apps': 'Приложения',
   'streamPick.screens': 'Весь экран',
@@ -138,6 +142,7 @@ export const ruShell = {
   'streamView.watching': 'Смотрите сейчас',
   'streamView.viewers': '{n} {word}',
   'streamView.stop': 'Остановить стрим',
+  'streamView.exitFullscreen': 'Выйти из полноэкранного режима',
   // voice states (#15)
   'voiceUi.serverMuted': 'Микрофон выключен модератором',
   'voiceUi.reconnectHint': 'Голос вернётся сам, как только появится связь',

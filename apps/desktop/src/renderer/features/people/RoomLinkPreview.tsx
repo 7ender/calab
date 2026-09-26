@@ -12,7 +12,7 @@ export function RoomLinkPreview({ code, onDone }: { code: string; onDone: () => 
   const q = useQuery({ queryKey: ['roomLink', code], queryFn: () => api.roomInvites.get(code), retry: false });
   const [busy, setBusy] = useState(false);
   if (q.isLoading) return <Spinner />;
-  if (q.error || !q.data) return <p className="text-[12px] text-danger-text">{roomLinkError(q.error)}</p>;
+  if (q.error || !q.data) return <p className="text-caption text-danger-text">{roomLinkError(q.error)}</p>;
   const voice = q.data.roomType === RoomType.VOICE;
   return (
     <div className="flex items-center gap-3 rounded-[var(--radius-control)] bg-side px-3 py-2">
@@ -21,7 +21,7 @@ export function RoomLinkPreview({ code, onDone }: { code: string; onDone: () => 
         <div className="truncate font-semibold" title={q.data.roomName}>
           {q.data.roomName}
         </div>
-        <div className="truncate text-[12px] text-muted">{q.data.workspaceName}</div>
+        <div className="truncate text-caption text-muted">{q.data.workspaceName}</div>
       </div>
       <Button
         busy={busy}

@@ -3,7 +3,7 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useQuery } from '@tanstack/react-query';
 import { Hash, Volume2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import logo from '../../../../build/icons/web/icon-192.png';
+import { Logo } from '../../components/Logo';
 import { Button, Field, Input, Spinner } from '../../components/ui';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
@@ -65,7 +65,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
   let body: ReactNode;
   if (preview.isLoading) {
     body = (
-      <div className="flex flex-col items-center gap-3 py-6 text-[13px] text-muted">
+      <div className="flex flex-col items-center gap-3 py-6 text-body text-muted">
         <Spinner />
         {t('guest.loading')}
       </div>
@@ -73,7 +73,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
   } else if (preview.error || !p) {
     body = (
       <div className="flex flex-col gap-4">
-        <p className="text-center text-[14px] text-danger-text" role="alert">
+        <p className="text-center text-body text-danger-text" role="alert">
           {roomLinkError(preview.error)}
         </p>
         <Button className="h-9 w-full" onClick={login}>
@@ -84,7 +84,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
   } else if (!p.allowGuests || !guestJoin) {
     body = (
       <div className="flex flex-col gap-4">
-        <p className="text-center text-[13px] text-muted">{!p.allowGuests ? t('guest.accountOnly') : t('guest.desktop')}</p>
+        <p className="text-center text-body text-muted">{!p.allowGuests ? t('guest.accountOnly') : t('guest.desktop')}</p>
         {p.allowGuests && serverUrl ? (
           <Button variant="secondary" className="h-9 w-full" onClick={() => void platform.app.openExternal(roomInviteUrl(serverUrl, code))}>
             {t('guest.openBrowser')}
@@ -107,13 +107,13 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
             autoComplete="nickname"
             placeholder={t('guest.namePlaceholder')}
             onChange={(e) => setName(e.target.value)}
-            className="h-9 text-[14px]"
+            className="h-9 text-body"
           />
         </Field>
-        <Button type="submit" busy={busy} disabled={!name.trim()} className="h-9 w-full text-[14px]">
+        <Button type="submit" busy={busy} disabled={!name.trim()} className="h-9 w-full text-body">
           {t('guest.join')}
         </Button>
-        <p className="text-center text-[13px] text-muted">
+        <p className="text-center text-body text-muted">
           {t('guest.haveAccount')}{' '}
           <button type="button" className="text-accent-text hover:underline" onClick={login}>
             {t('guest.login')}
@@ -127,24 +127,24 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
     <div className="mat-content drag flex h-full items-center justify-center overflow-y-auto px-4 py-8">
       <div className="mat-popover no-drag w-full max-w-[400px] rounded-[var(--radius-panel)] p-8">
         <div className="mb-6 flex flex-col items-center text-center">
-          <img src={logo} alt="Calaba" width={64} height={64} className="mb-4 size-16 rounded-[14px]" draggable={false} />
+          <Logo size={64} alt="Calaba" className="mb-4" />
           {p ? (
             <>
-              <p className="text-[13px] text-muted">{t('guest.title')}</p>
-              <h1 className="mt-2 flex max-w-full items-center gap-2 text-[22px] font-semibold leading-tight">
+              <p className="text-body text-muted">{t('guest.title')}</p>
+              <h1 className="mt-2 flex max-w-full items-center gap-2 text-title font-semibold">
                 {voice ? <Volume2 className="size-5 shrink-0 text-muted" aria-label={t('guest.voice')} /> : <Hash className="size-5 shrink-0 text-muted" aria-label={t('guest.text')} />}
                 <span className="truncate" title={p.roomName}>
                   {p.roomName}
                 </span>
               </h1>
-              <p className="mt-1 max-w-full truncate text-[14px] text-muted" title={p.workspaceName}>
+              <p className="mt-1 max-w-full truncate text-body text-muted" title={p.workspaceName}>
                 {t('guest.in', { ws: p.workspaceName })}
               </p>
             </>
           ) : null}
         </div>
         {body}
-        {p?.expiresAt ? <p className="mt-4 text-center text-[12px] text-faint">{t('guest.expires', { date: dateFmt.format(timestampDate(p.expiresAt)) })}</p> : null}
+        {p?.expiresAt ? <p className="mt-4 text-center text-caption text-faint">{t('guest.expires', { date: dateFmt.format(timestampDate(p.expiresAt)) })}</p> : null}
       </div>
     </div>
   );

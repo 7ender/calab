@@ -37,8 +37,10 @@ export interface Prefs {
   sounds: Partial<Record<SoundName, boolean>>;
   /** Event sound volume 0..1. */
   soundVolume: number;
-  /** userId → playback volume 0..2 (element.volume ≤ 1; >1 unsupported, clamped). */
+  /** userId → playback volume 0..1: `element.volume` caps at 1, a boost would need WebAudio (breaks AEC). */
   userVolumes: Record<string, number>;
+  /** userId → muted for me only («Заглушить для меня»); their <audio> stays attached, muted. */
+  mutedUsers: Record<string, true>;
   devStats: boolean;
   /** Chosen presence (PresenceStatus value), re-sent after every gateway (re)connect. */
   presence: PresenceStatus;
@@ -67,6 +69,7 @@ const DEFAULTS: Prefs = {
   sounds: {},
   soundVolume: 0.5,
   userVolumes: {},
+  mutedUsers: {},
   devStats: false,
   presence: PresenceStatus.ONLINE,
   personalBitrateKbps: null,

@@ -1,24 +1,50 @@
+import { useMemo } from 'react';
 import { t } from '../../i18n';
-import { parseMarkdown, toPlainText } from '../../lib/markdown/parse';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { mentionTargets, parseMarkdown, toPlainText } from '../../lib/markdown/parse';
+import { useWorkspaces } from '../../stores/workspaces';
+
+type WsState = ReturnType<typeof useWorkspaces.getState>;
+
+/** The label of one mention from a store snapshot (pure: selectors call it with their state). */
+function labelIn(st: WsState, wsId: string | null, v: string): string {
+  if (v === 'everyone' || v === 'here') return `@${v}`;
+  const m = wsId ? st.byId[wsId]?.members[v] : undefined;
+  const name = m?.nickname || m?.user?.displayName || st.users[v]?.displayName;
+  return name ? `@${name}` : `@${t('chat.mentionUnknown')}`;
+}
 
 /**
  * How a mention reads (docs/05, «Упоминания»): `@everyone` / `@here` as such, a user id as
  * `@<nickname-aware name>`, an id nobody here knows as «@неизвестный».
  */
 export function mentionLabel(wsId: string | null, v: string): string {
-  if (v === 'everyone' || v === 'here') return `@${v}`;
-  const st = useWorkspaces.getState();
-  const known = (wsId && st.byId[wsId]?.members[v]) || st.users[v];
-  return known ? `@${memberName(wsId, v)}` : `@${t('chat.mentionUnknown')}`;
+  return labelIn(useWorkspaces.getState(), wsId, v);
 }
 
-/** Reactive mentionLabel(): follows nickname / profile name changes. */
+/**
+ * Reactive mentionLabel(): follows nickname / profile name changes. The selector is a couple of
+ * lookups returning a string, so presence storms re-run it cheaply and never re-render.
+ */
 export function useMentionLabel(wsId: string | null, v: string): string {
-  return useWorkspaces(() => mentionLabel(wsId, v));
+  return useWorkspaces((st) => labelIn(st, wsId, v));
 }
 
 /** One-line plain text of a message with mentions as names (previews, notifications, snippets). */
 export function previewText(wsId: string | null, content: string): string {
   return toPlainText(parseMarkdown(content), (v) => mentionLabel(wsId, v));
+}
+
+/**
+ * Reactive previewText(): the markdown is parsed once per content; the store selector only
+ * joins the labels of the mentioned users (a string), so unrelated store updates (presence,
+ * other members) cost a few lookups and no re-render.
+ */
+export function usePreviewText(wsId: string | null, content: string): string {
+  const nodes = useMemo(() => parseMarkdown(content), [content]);
+  const ids = useMemo(() => mentionTargets(nodes).users, [nodes]);
+  const labels = useWorkspaces((st) => ids.map((v) => labelIn(st, wsId, v)).join('\u0000'));
+  return useMemo(() => {
+    const byId = new Map(ids.map((v, i) => [v, labels.split('\u0000')[i] ?? '']));
+    return toPlainText(nodes, (v) => byId.get(v) ?? labelIn(useWorkspaces.getState(), wsId, v));
+  }, [nodes, ids, labels, wsId]);
 }

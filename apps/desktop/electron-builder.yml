@@ -8,6 +8,9 @@ directories:
 files:
   - out/**
   - package.json
+  # uiohook-napi must be our patched build (Caps Lock, mouse 3–5 release; patches/uiohook-napi@*.patch),
+  # compiled per arch below — never the upstream prebuilt binaries it ships.
+  - '!**/node_modules/uiohook-napi/prebuilds/**'
 asarUnpack:
   - '**/*.node'
 # Owner artwork (scripts/gen-icons.sh). Tray + Linux window icons are loaded by main at runtime.
@@ -17,21 +20,30 @@ extraResources:
   - from: build/icons/linux/512x512.png
     to: icons/window.png
 npmRebuild: true
+# Compile native deps from source for every target arch (x64 is cross-compiled on Apple Silicon),
+# so the packaged uiohook_napi.node is the patched build/Release of that arch.
+buildDependenciesFromSource: true
 protocols:
   - name: Calaba
     schemes: [calaba]
 mac:
   icon: build/icons/mac/icon.icns
   category: public.app-category.business
-  target: [dmg, zip]
+  # Apple Silicon and Intel as separate artifacts (the update feed serves the matching one).
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
   # Unsigned until the Developer ID arrives (stage 4); CSC_LINK in env enables signing.
   identity: null
+  # Stage 4: notarization (needs APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID in env).
+  # notarize: true
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSMicrophoneUsageDescription: Calaba использует микрофон для голосовых комнат.
-    NSCameraUsageDescription: Calaba может использовать камеру для видео.
     NSAudioCaptureUsageDescription: Calaba захватывает системный звук при показе экрана.
     NSAppleEventsUsageDescription: Calaba открывает системные настройки разрешений.
 win:

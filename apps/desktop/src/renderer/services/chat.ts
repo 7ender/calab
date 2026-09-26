@@ -2,6 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { timestampNow } from '@bufbuild/protobuf/wkt';
 import { MessageSchema, type FileMeta, type Message, type UnfurlResponse } from '@calaba/protocol';
 import { ApiError } from '../lib/api/client';
+import { errorText } from '../lib/api/errors';
 import { api, uploadFile, type UploadHandle } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
@@ -17,12 +18,8 @@ export const MAX_CONTENT = 4000;
 function errText(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.is('ERROR_CODE_RATE_LIMITED')) return 'Слишком часто — подождите пару секунд';
-    if (e.is('ERROR_CODE_FILE_TOO_LARGE')) return 'Файл слишком большой';
-    if (e.is('ERROR_CODE_FILE_QUOTA_EXCEEDED')) return 'Закончилось место в workspace';
-    if (e.is('ERROR_CODE_FORBIDDEN')) return 'Недостаточно прав';
-    return e.message;
   }
-  return e instanceof Error ? e.message : String(e);
+  return errorText(e);
 }
 
 const loading = new Set<string>();
@@ -119,7 +116,7 @@ export async function ensureLoaded(roomId: string, messageId: string): Promise<b
     return true;
   } catch (e) {
     log.warn('jump failed', e);
-    toast.error(`Не удалось загрузить сообщение: ${errText(e)}`);
+    toast.fail(e, 'Не удалось загрузить сообщение');
     return false;
   }
 }
@@ -150,7 +147,7 @@ export async function loadPresent(roomId: string): Promise<void> {
     const res = await api.messages.list(roomId, { limit: PAGE });
     useMessages.getState().setWindow(roomId, [...res.messages].reverse(), res.hasMore, false);
   } catch (e) {
-    toast.error(`Не удалось загрузить сообщения: ${errText(e)}`);
+    toast.fail(e, 'Не удалось загрузить сообщения', () => void loadPresent(roomId));
   }
 }
 
@@ -164,7 +161,7 @@ export async function toggleReaction(roomId: string, m: Message, emoji: string):
     await (add ? api.messages.addReaction(m.id, emoji) : api.messages.removeReaction(m.id, emoji));
   } catch (e) {
     useMessages.getState().applyReaction(roomId, m.id, emoji, !add, true);
-    toast.error(`Не удалось поставить реакцию: ${errText(e)}`);
+    toast.fail(e, 'Не удалось поставить реакцию');
   }
 }
 
@@ -173,7 +170,7 @@ export async function setPinned(m: Message, pin: boolean): Promise<void> {
     await (pin ? api.messages.pin(m.id) : api.messages.unpin(m.id));
     // MESSAGE_UPDATE brings pinned_at to everyone, including us.
   } catch (e) {
-    toast.error(`${pin ? 'Не удалось закрепить' : 'Не удалось открепить'}: ${errText(e)}`);
+    toast.fail(e, pin ? 'Не удалось закрепить' : 'Не удалось открепить');
   }
 }
 
@@ -297,7 +294,7 @@ export async function editMessage(id: string, content: string): Promise<void> {
     const r = await api.messages.update(id, content);
     if (r.message) useMessages.getState().upsert(r.message, { rest: true });
   } catch (e) {
-    toast.error(`Не удалось изменить: ${errText(e)}`);
+    toast.fail(e, 'Не удалось изменить');
   }
 }
 
@@ -306,7 +303,7 @@ export async function deleteMessage(roomId: string, id: string): Promise<void> {
     await api.messages.remove(id);
     useMessages.getState().remove(roomId, id);
   } catch (e) {
-    toast.error(`Не удалось удалить: ${errText(e)}`);
+    toast.fail(e, 'Не удалось удалить');
   }
 }
 

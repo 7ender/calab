@@ -13,7 +13,7 @@ export function Lightbox({ fileId, name, onClose }: { fileId: string; name: stri
   const download = (): void =>
     void platform.files.download({ fileId, name }).then(
       () => toast.success(t('chat.downloaded', { name })),
-      (e: unknown) => toast.error(String(e)),
+      (e: unknown) => toast.fail(e, t('err.ctx.download')),
     );
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
@@ -31,7 +31,7 @@ export function Lightbox({ fileId, name, onClose }: { fileId: string; name: stri
           }}
         >
           <div className="flex h-12 shrink-0 items-center gap-2 px-4 text-[color:var(--color-on-accent)]">
-            <DialogP.Title className="min-w-0 flex-1 truncate text-[14px] font-medium" title={name}>
+            <DialogP.Title className="min-w-0 flex-1 truncate text-body font-medium" title={name}>
               {name}
             </DialogP.Title>
             <DialogP.Description className="sr-only">{name}</DialogP.Description>

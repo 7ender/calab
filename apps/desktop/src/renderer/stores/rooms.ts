@@ -19,6 +19,8 @@ interface RoomsState {
   setRead: (roomId: string, messageId: string) => void;
   setLastMessage: (roomId: string, messageId: string) => void;
   addMention: (roomId: string) => void;
+  /** Unread mentions found in the inbox history (not counted live): raises a room's counter to at least `n`. */
+  seedMentions: (counts: Record<string, number>) => void;
   /** Room categories of every workspace (READY snapshots + CATEGORY_* events). */
   categories: Record<string, RoomCategory>;
   setCategories: (workspaceId: string, list: RoomCategory[]) => void;
@@ -74,6 +76,11 @@ export const useRooms = create<RoomsState>()((set) => ({
   setLastMessage: (roomId, messageId) =>
     set((s) => (idAfter(messageId, s.lastMessage[roomId]) ? { lastMessage: { ...s.lastMessage, [roomId]: messageId } } : {})),
   addMention: (roomId) => set((s) => ({ mentions: { ...s.mentions, [roomId]: (s.mentions[roomId] ?? 0) + 1 } })),
+  seedMentions: (counts) =>
+    set((s) => {
+      const raise = Object.entries(counts).filter(([id, n]) => n > (s.mentions[id] ?? 0));
+      return raise.length ? { mentions: { ...s.mentions, ...Object.fromEntries(raise) } } : {};
+    }),
   setCategories: (wsId, list) =>
     set((s) => {
       const categories = Object.fromEntries(Object.entries(s.categories).filter(([, c]) => c.workspaceId !== wsId));
@@ -155,6 +162,13 @@ export function roomsOfWorkspace(byId: Record<string, Room>, wsId: string): Room
   return Object.values(byId)
     .filter((r) => r.workspaceId === wsId)
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+}
+
+/** Unread mentions per room among inbox messages (id after the room's read marker). */
+export function unreadMentionCounts(items: ReadonlyArray<{ id: string; roomId: string }>, readState: Record<string, string>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const m of items) if (idAfter(m.id, readState[m.roomId])) out[m.roomId] = (out[m.roomId] ?? 0) + 1;
+  return out;
 }
 
 export function isUnread(roomId: string, s: Pick<RoomsState, 'readState' | 'lastMessage'>): boolean {

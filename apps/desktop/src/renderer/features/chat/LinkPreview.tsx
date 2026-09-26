@@ -43,9 +43,9 @@ export function LinkPreview({ url }: { url: string }): ReactNode {
       className="mt-1.5 flex min-w-0 max-w-[400px] rounded-[var(--radius-control)] border-l-[3px] border-[color:var(--bubble-accent)] bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] py-1.5 pl-2 pr-2 hover:bg-[color-mix(in_srgb,var(--bubble-accent)_16%,transparent)]"
     >
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[13px] font-semibold text-[color:var(--bubble-accent)]">{card.siteName || hostOf(href)}</span>
-        {card.title ? <span className="line-clamp-2 text-[14px] font-semibold leading-5 text-fg">{card.title}</span> : null}
-        {card.description ? <span className="line-clamp-3 text-[13px] leading-[18px] text-fg">{card.description}</span> : null}
+        <span className="truncate text-body font-semibold text-[color:var(--bubble-accent)]">{card.siteName || hostOf(href)}</span>
+        {card.title ? <span className="line-clamp-2 text-body font-semibold leading-5 text-fg">{card.title}</span> : null}
+        {card.description ? <span className="line-clamp-3 text-body leading-[18px] text-fg">{card.description}</span> : null}
         {image ? (
           <MediaImg
             path={image}

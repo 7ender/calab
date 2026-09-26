@@ -1,0 +1,83 @@
+import { create } from '@bufbuild/protobuf';
+import { MessageSchema, type Message } from '@calaba/protocol';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const createMessage = vi.fn<(roomId: string, body: { nonce: string; content: string }) => Promise<{ message?: Message }>>();
+vi.mock('../lib/api/endpoints', () => ({
+  api: { messages: { create: (roomId: string, body: { nonce: string; content: string }) => createMessage(roomId, body) } },
+  uploadFile: vi.fn(),
+}));
+vi.mock('./gateway', () => ({ sendTyping: () => undefined }));
+vi.mock('../stores/toasts', () => ({ toast: { fail: vi.fn(), info: vi.fn(), error: vi.fn() } }));
+vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined } } }));
+
+const { sendMessage, retrySend } = await import('./chat');
+const { useMessages } = await import('../stores/messages');
+
+const ROOM = 'room-1';
+const server = (nonce: string, id = '0190a0b0-0000-7000-8000-000000000001'): Message =>
+  create(MessageSchema, { id, roomId: ROOM, authorId: 'me', content: 'hi', nonce });
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+const items = () => useMessages.getState().rooms[ROOM]?.items ?? [];
+
+beforeEach(() => {
+  useMessages.getState().reset();
+  useMessages.getState().setWindow(ROOM, [], false, false); // the room is open (loaded)
+  createMessage.mockReset();
+});
+
+describe('chat.sendMessage', () => {
+  it('POST response first (✓), then the gateway echo (✓✓)', async () => {
+    createMessage.mockImplementation((_r, b) => Promise.resolve({ message: server(b.nonce) }));
+    await sendMessage('ws', ROOM, 'hi', [], undefined, 'n1');
+    expect(items()).toHaveLength(1);
+    expect(items()[0]).toMatchObject({ status: 'sent', delivered: false });
+    useMessages.getState().upsert(server('n1')); // echo
+    expect(items()).toHaveLength(1);
+    expect(items()[0]?.delivered).toBe(true);
+  });
+
+  it('echo before the POST response: one message, stays delivered', async () => {
+    const d = deferred<{ message?: Message }>();
+    createMessage.mockImplementation(() => d.promise);
+    const p = sendMessage('ws', ROOM, 'hi', [], undefined, 'n2');
+    await Promise.resolve();
+    expect(items()[0]?.status).toBe('pending');
+    useMessages.getState().upsert(server('n2')); // echo overtakes the response
+    d.resolve({ message: server('n2') });
+    await p;
+    expect(items()).toHaveLength(1);
+    expect(items()[0]).toMatchObject({ status: 'sent', delivered: true });
+  });
+
+  it('failed POST, then the echo arrives (server did store it): the failed copy is replaced', async () => {
+    createMessage.mockImplementation(() => Promise.reject(new Error('timeout')));
+    await sendMessage('ws', ROOM, 'hi', [], undefined, 'n3');
+    expect(items()[0]?.status).toBe('failed');
+    useMessages.getState().upsert(server('n3'));
+    expect(items()).toHaveLength(1);
+    expect(items()[0]?.status).toBe('sent');
+  });
+
+  it('retry keeps the nonce (the server deduplicates)', async () => {
+    createMessage.mockImplementationOnce(() => Promise.reject(new Error('offline')));
+    await sendMessage('ws', ROOM, 'hi', [], undefined, 'n4');
+    const failed = items()[0];
+    expect(failed?.status).toBe('failed');
+    createMessage.mockImplementation((_r, b) => Promise.resolve({ message: server(b.nonce) }));
+    if (failed) await retrySend('ws', ROOM, failed);
+    expect(createMessage.mock.calls.map((c) => c[1].nonce)).toEqual(['n4', 'n4']);
+    expect(items()).toHaveLength(1);
+    expect(items()[0]?.status).toBe('sent');
+  });
+});

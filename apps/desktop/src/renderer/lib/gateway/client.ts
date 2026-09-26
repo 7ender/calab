@@ -45,9 +45,13 @@ export type GatewayFatal = 'auth' | 'revoked' | 'too-many-sessions';
 export interface GatewayDeps {
   /** ws(s)://host/gateway?v=1 */
   url(): string;
-  /** Current access JWT (null = logged out). */
+  /**
+   * Current access JWT. `null` = no token right now (offline, 5xx, rate limit) → retried with
+   * backoff. A real logout never shows up here: it arrives separately (platform
+   * `auth.onLoggedOut`) and the owner calls `stop()` (review H3).
+   */
   getToken(): Promise<string | null>;
-  /** Forced refresh after close 4004; null = refresh failed → login screen. */
+  /** Forced refresh after close 4004; `null` = could not refresh now → retried with backoff. */
   refreshToken(): Promise<string | null>;
   device: { name: string; platform: string; appVersion: string };
   createSocket(url: string): SocketLike;
@@ -62,6 +66,8 @@ export interface GatewayDeps {
 const OPEN = 1;
 export const BACKOFF_BASE_MS = 1000;
 export const BACKOFF_MAX_MS = 30_000;
+/** Socket open + HELLO must arrive within this time, else the connect is treated as a drop. */
+export const HELLO_TIMEOUT_MS = 10_000;
 
 /** Exponential backoff 1 s → 30 s with ±50 % jitter (full attempts counter). */
 export function backoffDelay(attempt: number, random: number): number {
@@ -85,6 +91,9 @@ export class GatewayClient {
   private heartbeatMs = 41_000;
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private helloTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Consecutive 4004 closes without READY in between (the first one reconnects at once). */
+  private authFailures = 0;
   private lastAckAt = 0;
   private awaitingAck = false;
   /** READY/RESUMED received on the current socket. */
@@ -204,8 +213,10 @@ export class GatewayClient {
   private clearTimers(): void {
     if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.helloTimer) clearTimeout(this.helloTimer);
     this.heartbeatTimer = null;
     this.reconnectTimer = null;
+    this.helloTimer = null;
   }
 
   private dropSocket(code: number): void {
@@ -224,7 +235,15 @@ export class GatewayClient {
     if (this.stopped) return;
     this.established = false;
     this.setStatus(this.sessionId ? 'resuming' : 'connecting');
-    const ws = this.deps.createSocket(this.deps.url());
+    let ws: SocketLike;
+    try {
+      ws = this.deps.createSocket(this.deps.url());
+    } catch (err) {
+      // Bad URL / blocked by CSP: the constructor throws synchronously. Retry like a drop.
+      this.log(`socket create failed: ${String(err)}`);
+      this.backoff();
+      return;
+    }
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     ws.onmessage = (ev) => this.onMessage(ws, ev);
@@ -232,6 +251,15 @@ export class GatewayClient {
     ws.onerror = () => {
       // onclose follows; nothing to do here.
     };
+    // A black-holed connect would otherwise wait for the OS TCP timeout (minutes).
+    this.helloTimer = setTimeout(() => {
+      this.helloTimer = null;
+      if (ws !== this.ws) return;
+      this.log('no HELLO in time, reconnecting');
+      this.clearTimers();
+      this.dropSocket(4000);
+      this.backoff();
+    }, HELLO_TIMEOUT_MS);
   }
 
   private sendFrame(op: GatewayOpcode, payload: GatewayFrame['payload']): boolean {
@@ -253,6 +281,8 @@ export class GatewayClient {
     }
     switch (frame.payload.case) {
       case 'hello':
+        if (this.helloTimer) clearTimeout(this.helloTimer);
+        this.helloTimer = null;
         this.heartbeatMs = frame.payload.value.heartbeatIntervalMs || this.heartbeatMs;
         this.startHeartbeat();
         void this.authenticate();
@@ -301,6 +331,7 @@ export class GatewayClient {
   private markEstablished(): void {
     this.established = true;
     this.attempts = 0;
+    this.authFailures = 0;
     this.setStatus('ready');
   }
 
@@ -308,10 +339,14 @@ export class GatewayClient {
     const ws = this.ws;
     const token = await this.deps.getToken();
     if (ws !== this.ws) return; // socket replaced meanwhile
+    if (this.stopped) return;
     if (!token) {
-      this.stopped = true;
-      this.dropSocket(1000);
-      this.deps.onFatal('auth');
+      // Transient (offline / 5xx / rate limit): keep the session and retry. A real logout is
+      // signalled separately and stops this client (review H3).
+      this.log('no access token now, retrying');
+      this.clearTimers();
+      this.dropSocket(4000);
+      this.backoff();
       return;
     }
     if (this.sessionId) {
@@ -383,15 +418,19 @@ export class GatewayClient {
     const closeCode: GatewayCloseCode = code;
     switch (closeCode) {
       case GatewayCloseCode.AUTHENTICATION_FAILED:
-        void this.deps.refreshToken().then((t) => {
-          if (this.stopped) return;
-          if (t) this.scheduleReconnect(0);
-          else {
-            this.stopped = true;
-            this.setStatus('stopped');
-            this.deps.onFatal('auth');
-          }
-        });
+        this.authFailures++;
+        this.setStatus('reconnecting');
+        void this.deps.refreshToken().then(
+          (t) => {
+            if (this.stopped || this.ws || this.reconnectTimer) return;
+            // Fresh token: reconnect at once, but back off if the server keeps rejecting it.
+            if (t && this.authFailures <= 1) this.scheduleReconnect(0);
+            else this.backoff(); // refresh failed now (offline / 5xx): not a logout (review H3)
+          },
+          () => {
+            if (!this.stopped && !this.ws && !this.reconnectTimer) this.backoff();
+          },
+        );
         return;
       case GatewayCloseCode.SESSION_REVOKED:
         this.stopped = true;

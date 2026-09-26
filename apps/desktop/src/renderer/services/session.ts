@@ -4,37 +4,61 @@ import type { AuthSession, LogoutReason } from '../../shared/ipc';
 import { log } from '../lib/log';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
+import { useTyping } from '../stores/typing';
 import { useRooms } from '../stores/rooms';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
+import { useRoomLink } from '../features/people/roomLink';
+import { queryClient } from '../lib/queryClient';
 import { resetChatCaches } from './chat';
-import { reconnectGateway, startGateway, stopGateway } from './gateway';
+import { startMessageRetention } from './retention';
+import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
 import { watchSyncedPrefs } from './profile';
 import { voice } from './voice';
 import { platform } from '../platform';
 
+const OFFLINE_RETRY_MS = 30_000;
+
 /** App bootstrap: restore session, wire main-process events, start the gateway. */
 export async function bootstrap(): Promise<void> {
-  const [appInfo, settings] = await Promise.all([platform.app.info(), platform.app.getSettings()]);
-  useSession.getState().set({ appInfo, settings, serverUrl: settings.serverUrl });
-
+  // Listeners first, before any await: main sends deep links / logout as soon as the page
+  // has loaded, and an event fired during the first IPC round-trip would be lost (review L10).
+  let booted = false;
+  const early: string[] = [];
+  platform.app.onDeepLink((url) => {
+    if (booted) handleDeepLink(url);
+    else early.push(url);
+  });
   platform.auth.onLoggedOut((reason) => void endSession(reason));
   platform.app.onPower((ev) => {
-    // After sleep the socket is usually dead but not closed: reconnect right away.
-    if (ev === 'resume' || ev === 'unlock-screen') reconnectGateway();
+    // A key-up lost during sleep / lock must not leave PTT transmitting (review M6).
+    voice.resetPtt();
+    if (ev === 'resume' || ev === 'unlock-screen') {
+      // After sleep the socket is usually dead but not closed: reconnect right away.
+      reconnectGateway();
+      if (useSession.getState().status === 'offline') void retryConnect();
+    }
   });
-  platform.app.onDeepLink((url) => handleDeepLink(url));
+  window.addEventListener('online', () => {
+    if (useSession.getState().status === 'offline') void retryConnect();
+  });
+  watchOffline();
   platform.app.onUpdateStatus((update) => useSession.getState().set({ update }));
   platform.tray.onAction((a) => {
     if (a === 'toggle-mute') voice.toggleMute();
     else if (a === 'toggle-deafen') voice.toggleDeafen();
     else if (a === 'disconnect') void voice.leave();
   });
+
+  const [appInfo, settings] = await Promise.all([platform.app.info(), platform.app.getSettings()]);
+  useSession.getState().set({ appInfo, settings, serverUrl: settings.serverUrl });
+
   voice.init();
   watchSyncedPrefs();
+  startMessageRetention();
 
   try {
     const s = await platform.auth.restore();
@@ -45,7 +69,22 @@ export async function bootstrap(): Promise<void> {
     useSession.getState().set({ status: 'offline' });
   }
   const link = await platform.app.takeDeepLink();
+  booted = true;
+  for (const url of early.splice(0)) if (url !== link) handleDeepLink(url);
   if (link) handleDeepLink(link);
+}
+
+/** The offline screen retries on its own every 30 s (plus on `online` / resume, above). */
+function watchOffline(): void {
+  let timer: number | null = null;
+  useSession.subscribe((s) => {
+    if (s.status === 'offline' && timer === null) {
+      timer = window.setInterval(() => void retryConnect(), OFFLINE_RETRY_MS);
+    } else if (s.status !== 'offline' && timer !== null) {
+      window.clearInterval(timer);
+      timer = null;
+    }
+  });
 }
 
 export function beginSession(s: AuthSession): void {
@@ -75,13 +114,17 @@ function connectGateway(): void {
   });
 }
 
+let retrying = false;
+
 /** Retry after "too many devices" or an offline start. */
 export async function retryConnect(): Promise<void> {
+  if (retrying) return;
   if (useSession.getState().status === 'authed') {
     useSession.getState().set({ tooManySessions: false, ready: false });
     connectGateway();
     return;
   }
+  retrying = true;
   useSession.getState().set({ status: 'booting' });
   try {
     const s = await platform.auth.restore();
@@ -89,6 +132,8 @@ export async function retryConnect(): Promise<void> {
     else useSession.getState().set({ status: 'anon' });
   } catch {
     useSession.getState().set({ status: 'offline' });
+  } finally {
+    retrying = false;
   }
 }
 
@@ -101,12 +146,17 @@ export async function logout(allSessions = false): Promise<void> {
 async function endSession(reason: LogoutReason): Promise<void> {
   if (useSession.getState().status === 'anon') return;
   stopGateway();
+  resetGatewaySubscriptions();
   await voice.leave(false);
   useWorkspaces.getState().reset();
   useRooms.getState().reset();
   useMessages.getState().reset();
+  useTyping.getState().reset();
   useInbox.getState().reset();
   resetChatCaches();
+  // Nothing of the previous account may show in the next one (review L9).
+  queryClient.clear();
+  useRoomLink.setState({ code: null, preferLogin: false });
   useUi.getState().openDialog(null);
   useSession.getState().set({ status: 'anon', me: null, sessionId: '', ready: false, gateway: 'idle', loggedOutReason: reason });
   if (reason === 'revoked') toast.info('Сессия завершена на другом устройстве');

@@ -53,7 +53,7 @@ export function SoundSettings(): ReactNode {
         <Row label={t('sounds.volume')}>
           <div className="flex w-52 items-center gap-3">
             <Slider label={t('sounds.volume')} value={volume} min={0} max={1} step={0.05} onChange={(v) => setPrefs({ soundVolume: v })} />
-            <span className="w-9 text-right text-[12px] tabular-nums text-muted">{Math.round(volume * 100)}%</span>
+            <span className="w-9 text-right text-caption tabular-nums text-muted">{Math.round(volume * 100)}%</span>
           </div>
         </Row>
       </Card>

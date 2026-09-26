@@ -51,3 +51,20 @@ export function qualityOf(rttMs: number | null, lossPct: number | null): LinkQua
   if (r < 300 && l < 8) return 'fair';
   return 'poor';
 }
+
+/** LiveKit protocol TrackSource.MICROPHONE. */
+const LK_SOURCE_MICROPHONE = 2;
+
+/**
+ * SPEAK from our LiveKit grant: the server lists the allowed sources (rtc/grant.go), so a
+ * stream-only grant (`canPublish` with screen sources) must not count as SPEAK.
+ */
+export function canSpeakFrom(p: { canPublish: boolean; canPublishSources: readonly number[] }): boolean {
+  return p.canPublish && (p.canPublishSources.length === 0 || p.canPublishSources.includes(LK_SOURCE_MICROPHONE));
+}
+
+/** getUserMedia failed because the chosen device is gone (unplugged / id changed). */
+export function isDeviceGone(err: unknown): boolean {
+  const name = typeof err === 'object' && err !== null && 'name' in err ? err.name : null;
+  return name === 'OverconstrainedError' || name === 'NotFoundError' || name === 'NotReadableError';
+}

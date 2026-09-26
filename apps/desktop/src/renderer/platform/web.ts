@@ -46,9 +46,14 @@ function applyTokens(t: TokensJson): void {
   if (t.refreshToken) bodyRefresh = t.refreshToken; // server without cookie mode
 }
 
+/** Bumped on every sign-out: a refresh answer that arrives later must not resurrect it. */
+let epoch = 0;
+
 function clear(reason: LogoutReason | null): void {
+  epoch++;
   access = null;
   bodyRefresh = null;
+  clearMediaCache(); // images of the previous account (review M10)
   if (reason) for (const cb of loggedOutListeners) cb(reason);
 }
 
@@ -73,16 +78,25 @@ function postAuth(path: string, body: unknown, bearer?: string): Promise<Respons
 /** 409 on /api/auth/refresh = another refresh of the same session won the race: just retry. */
 const REFRESH_CONFLICT_RETRIES = 3;
 
+/**
+ * null = no token now. Transient failures (offline, 5xx, 429) keep the session — callers retry
+ * (the gateway backs off); only a rejected refresh signs out, via `onLoggedOut` (review H3).
+ */
 async function doRefresh(): Promise<string | null> {
+  const started = epoch;
   const run = async (attempt = 0): Promise<string | null> => {
     try {
       const res = await postAuth('/api/auth/refresh', bodyRefresh ? { refreshToken: bodyRefresh } : {});
+      if (started !== epoch) return null; // signed out meanwhile
+      // 409 = another tab rotated the cookie a moment ago: the cookie already holds the new token.
       if (res.status === 409 && attempt < REFRESH_CONFLICT_RETRIES) {
         await new Promise((r) => setTimeout(r, 150 + Math.round(Math.random() * 250)));
         return await run(attempt + 1);
       }
       if (res.ok) {
-        applyTokens(((await res.json()) as { tokens: TokensJson }).tokens);
+        const body = (await res.json()) as { tokens: TokensJson };
+        if (started !== epoch) return null;
+        applyTokens(body.tokens);
         return access?.token ?? null;
       }
       if (res.status === 401 || res.status === 400 || res.status === 403) {
@@ -169,23 +183,78 @@ async function apiFetch(path: string, init: RequestInit = {}): Promise<Response>
 
 // ---------------------------------------------------------------- media URLs (blob cache)
 
-const mediaCache = new Map<string, Promise<string>>();
+/**
+ * LRU of blob: URLs for authenticated media (review M10). Evicted blobs are revoked — before,
+ * eviction only dropped the map entry and the blob stayed alive until the tab closed.
+ * Consumers hold the URL string only (no release call), so the revoke waits a grace period:
+ * an element that got the URL just before eviction has loaded it by then (a loaded <img> keeps
+ * its decoded image after the revoke; a remount asks `mediaUrl` again and refetches).
+ */
+interface MediaEntry {
+  url: Promise<string>;
+  objectUrl: string | null;
+  bytes: number;
+  evicted: boolean;
+}
+const MEDIA_MAX_ENTRIES = 300;
+const MEDIA_MAX_BYTES = 150 * 1024 * 1024;
+const MEDIA_REVOKE_GRACE_MS = 60_000;
+const mediaCache = new Map<string, MediaEntry>(); // Map order = LRU order (re-inserted on hit)
+let mediaBytes = 0;
+
+function evictMedia(path: string, e: MediaEntry, graceMs: number): void {
+  if (mediaCache.get(path) === e) mediaCache.delete(path);
+  if (e.evicted) return;
+  e.evicted = true;
+  const u = e.objectUrl;
+  if (!u) return; // still loading: revoked when it resolves
+  mediaBytes -= e.bytes;
+  if (graceMs > 0) window.setTimeout(() => URL.revokeObjectURL(u), graceMs);
+  else URL.revokeObjectURL(u);
+}
+
+function trimMedia(): void {
+  while (mediaCache.size > 1 && (mediaCache.size > MEDIA_MAX_ENTRIES || mediaBytes > MEDIA_MAX_BYTES)) {
+    const oldest = mediaCache.entries().next().value;
+    if (!oldest) break;
+    evictMedia(oldest[0], oldest[1], MEDIA_REVOKE_GRACE_MS);
+  }
+}
+
+function clearMediaCache(): void {
+  for (const [path, e] of [...mediaCache]) evictMedia(path, e, 0);
+  mediaBytes = 0;
+}
 
 function mediaUrl(path: string): Promise<string> {
-  let p = mediaCache.get(path);
-  if (!p) {
-    p = apiFetch(path).then(async (res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return URL.createObjectURL(await res.blob());
-    });
-    p.catch(() => mediaCache.delete(path));
-    if (mediaCache.size > 500) {
-      const first = mediaCache.keys().next().value;
-      if (first) mediaCache.delete(first);
-    }
-    mediaCache.set(path, p);
+  const hit = mediaCache.get(path);
+  if (hit) {
+    mediaCache.delete(path);
+    mediaCache.set(path, hit);
+    return hit.url;
   }
-  return p;
+  const e: MediaEntry = { url: Promise.resolve(''), objectUrl: null, bytes: 0, evicted: false };
+  e.url = apiFetch(path).then(async (res) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const u = URL.createObjectURL(blob);
+    if (e.evicted) {
+      // Evicted (or signed out) while loading: the caller still gets a URL for a moment.
+      window.setTimeout(() => URL.revokeObjectURL(u), MEDIA_REVOKE_GRACE_MS);
+      return u;
+    }
+    e.objectUrl = u;
+    e.bytes = blob.size;
+    mediaBytes += blob.size;
+    trimMedia();
+    return u;
+  });
+  e.url.catch(() => {
+    if (mediaCache.get(path) === e) mediaCache.delete(path);
+  });
+  mediaCache.set(path, e);
+  trimMedia();
+  return e.url;
 }
 
 // ---------------------------------------------------------------- PTT (focused tab only)
@@ -400,6 +469,11 @@ export function createWebPlatform(): Platform {
           capture?.reject(new Error('superseded'));
           capture = { resolve, reject };
         }),
+      cancelCapture: () => {
+        const c = capture;
+        capture = null;
+        c?.reject(new Error('cancelled'));
+      },
       status: () => Promise.resolve(pttStatus()),
       onEvent: (cb) => {
         pttListeners.add(cb);

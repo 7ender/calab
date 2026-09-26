@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions } from 'electron';
+import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
 import { API_SCHEME } from '../shared/ipc';
 import { windowIconPath } from './icons';
 
@@ -150,14 +150,7 @@ export function createMainWindow(): BrowserWindow {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
-  win.webContents.on('will-navigate', (e, url) => {
-    if (!isOwnPage(url)) e.preventDefault();
-  });
-  // Frames never navigate anywhere (L1), and <webview> is never allowed.
-  win.webContents.on('will-frame-navigate', (e) => {
-    if (!e.isMainFrame && !isOwnPage(e.url)) e.preventDefault();
-  });
-  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
+  // Navigation / frame / <webview> guards: installWebContentsGuards (every webContents).
 
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
   if (devUrl) void win.loadURL(devUrl);
@@ -167,6 +160,35 @@ export function createMainWindow(): BrowserWindow {
     if (mainWindow === win) mainWindow = null;
   });
   return win;
+}
+
+/**
+ * Guards for every webContents the app creates — the main window, stream pop-outs (their
+ * `about:blank` page gets the full preload) and anything added later (review L12):
+ * - no navigation away from our page (main frame or sub-frames);
+ * - no <webview>;
+ * - window.open: denied (http(s) goes to the browser) unless the owner installs its own
+ *   handler afterwards (the main window allows its stream pop-out).
+ */
+export function guardWebContents(wc: WebContents): void {
+  wc.on('will-navigate', (e, url) => {
+    if (!isOwnPage(url)) e.preventDefault();
+  });
+  wc.on('will-frame-navigate', (e) => {
+    if (!e.isMainFrame && !isOwnPage(e.url)) e.preventDefault();
+  });
+  wc.on('will-redirect', (e, url) => {
+    if (!isOwnPage(url)) e.preventDefault();
+  });
+  wc.on('will-attach-webview', (e) => e.preventDefault());
+  wc.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
+
+export function installWebContentsGuards(): void {
+  app.on('web-contents-created', (_e, wc) => guardWebContents(wc));
 }
 
 export function getMainWindow(): BrowserWindow | null {

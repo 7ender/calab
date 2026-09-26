@@ -1,28 +1,28 @@
 import * as Popover from '@radix-ui/react-popover';
 import { AtSign, ChevronLeft, ChevronRight, CircleHelp, Hash, Inbox, Search, Volume2 } from 'lucide-react';
 import type { Message } from '@calaba/protocol';
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Empty, IconButton, MOD, Spinner, Tip, cx } from '../../components/ui';
 import { MediaImg } from '../../components/MediaImg';
 import { t } from '../../i18n';
 import { api, thumbnailPath } from '../../lib/api/endpoints';
+import { workspaceInitials } from '../../lib/initials';
 import { fmtTime, toDate } from '../../lib/format';
 import { loadMentions } from '../../services/mentions';
 import { NAV_SHORTCUTS, SHORTCUTS, shortcutHelp } from '../../services/hotkeys';
 import { platform } from '../../platform';
 import { usePrefs } from '../../stores/prefs';
 import { useInbox } from '../../stores/inbox';
-import { idAfter, isVoice, useRooms } from '../../stores/rooms';
+import { idAfter, isVoice, unreadMentionCounts, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { canGoBack, canGoForward, useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from '../chat/chatView';
 import { fmtDayLabel } from '../chat/MessageBubble';
-import { previewText } from '../chat/mentionText';
+import { usePreviewText } from '../chat/mentionText';
 import { bindingLabel } from '../settings/PttBinder';
 import { popoverBox } from './menu';
-import { wsInitials } from './WorkspaceRail';
 
 /**
  * Window title bar (docs/09 #1): 38 px across the whole window, drag region in Electron.
@@ -64,10 +64,10 @@ export function TitleBar(): ReactNode {
         </IconButton>
       </div>
 
-      <div className="flex min-w-0 max-w-[40vw] items-center justify-center gap-2 text-[13px] font-semibold text-fg" title={ws?.name ?? 'Calaba'}>
+      <div className="flex min-w-0 max-w-[40vw] items-center justify-center gap-2 text-body font-semibold text-fg" title={ws?.name ?? 'Calaba'}>
         {ws ? (
           <span className="grid size-4 shrink-0 place-items-center overflow-hidden rounded-[4px] bg-hover text-[8px] font-bold text-muted" aria-hidden>
-            {ws.iconFileId ? <MediaImg path={thumbnailPath(ws.iconFileId)} alt="" className="size-full object-cover" /> : wsInitials(ws.name)}
+            {ws.iconFileId ? <MediaImg path={thumbnailPath(ws.iconFileId)} alt="" className="size-full object-cover" /> : workspaceInitials(ws.name)}
           </span>
         ) : null}
         <span className="truncate">{ws?.name ?? 'Calaba'}</span>
@@ -79,11 +79,11 @@ export function TitleBar(): ReactNode {
           onClick={() => open({ kind: 'quick-switcher' })}
           aria-label={t('shell.search')}
           aria-keyshortcuts={MOD === '⌘' ? 'Meta+K' : 'Control+K'}
-          className="flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-[12px] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
+          className="flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">{t('shell.search')}</span>
-          <kbd className="shrink-0 font-sans text-[11px] text-muted">
+          <kbd className="shrink-0 font-sans text-micro text-muted">
             {MOD}
             {SHORTCUTS.quickSwitch}
           </kbd>
@@ -104,7 +104,20 @@ export function TitleBar(): ReactNode {
  */
 function InboxButton(): ReactNode {
   const mentions = useRooms((s) => s.mentions);
-  const total = Object.values(mentions).reduce((a, b) => a + b, 0);
+  const readState = useRooms((s) => s.readState);
+  const items = useInbox((s) => s.items);
+  const loaded = useInbox((s) => s.loaded);
+  const ready = useSession((s) => s.ready);
+  // The badge counts what the list marks unread (one dot = one), so both always agree; before
+  // the history arrives, the live counters.
+  const total = useMemo(
+    () => Object.values(loaded ? unreadMentionCounts(items, readState) : mentions).reduce((a, b) => a + b, 0),
+    [loaded, items, readState, mentions],
+  );
+  // History mentions (from before this session) belong in the badge from the start.
+  useEffect(() => {
+    if (ready && !useInbox.getState().loaded) void loadMentions();
+  }, [ready]);
   return (
     <Popover.Root
       onOpenChange={(open) => {
@@ -128,7 +141,7 @@ function InboxButton(): ReactNode {
         </Popover.Trigger>
       </Tip>
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={6} collisionPadding={8} aria-label={t('shell.inbox')} className={cx(popoverBox, 'w-[380px] p-0')}>
+        <Popover.Content align="end" sideOffset={6} collisionPadding={16} aria-label={t('shell.inbox')} className={cx(popoverBox, 'w-[380px] p-0')}>
           <InboxList />
         </Popover.Content>
       </Popover.Portal>
@@ -159,12 +172,12 @@ function InboxList(): ReactNode {
   return (
     <div className="flex max-h-[min(520px,70vh)] flex-col">
       <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line px-3">
-        <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <span className="flex items-center gap-1.5 text-body font-semibold">
           <AtSign className="size-4 text-muted" aria-hidden />
           {t('shell.inbox')}
         </span>
         {unreadRooms.length ? (
-          <button type="button" onClick={markAll} className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[12px] text-accent-text hover:bg-hover">
+          <button type="button" onClick={markAll} className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-caption text-accent-text hover:bg-hover">
             {t('shell.inboxMarkRead')}
           </button>
         ) : null}
@@ -177,7 +190,7 @@ function InboxList(): ReactNode {
         ) : (
           <Empty>
             <div className="font-semibold text-fg">{t('shell.inboxEmpty')}</div>
-            <div className="mt-1 text-[12px]">{t('shell.inboxHint')}</div>
+            <div className="mt-1 text-caption">{t('shell.inboxHint')}</div>
           </Empty>
         )
       ) : (
@@ -191,7 +204,7 @@ function InboxList(): ReactNode {
                 type="button"
                 disabled={loading}
                 onClick={() => void loadMentions(true)}
-                className="rounded-[var(--radius-control)] px-2 py-1 text-[12px] text-accent-text hover:bg-hover disabled:opacity-40"
+                className="rounded-[var(--radius-control)] px-2 py-1 text-caption text-accent-text hover:bg-hover disabled:opacity-40"
               >
                 {t('chat.inboxLoadMore')}
               </button>
@@ -210,8 +223,8 @@ function InboxItem({ m }: { m: Message }): ReactNode {
   const wsName = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.name : undefined));
   const author = useMemberName(wsId, m.authorId);
   const avatar = useWorkspaces((s) => s.users[m.authorId]?.avatarFileId);
-  // Re-render on nickname changes of mentioned people too.
-  const text = useWorkspaces(() => previewText(wsId, m.content)) || t('chat.attachment');
+  // Re-renders on nickname changes of mentioned people only.
+  const text = usePreviewText(wsId, m.content) || t('chat.attachment');
   const openRoom = useUi((s) => s.openRoom);
   if (!room) return null;
   const Icon = isVoice(room) ? Volume2 : Hash;
@@ -230,20 +243,20 @@ function InboxItem({ m }: { m: Message }): ReactNode {
           <Avatar userId={m.authorId} name={author} fileId={avatar || undefined} size={28} />
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline gap-1.5">
-              <span className="min-w-0 truncate text-[13px] font-semibold" title={author}>
+              <span className="min-w-0 truncate text-body font-semibold" title={author}>
                 {author}
               </span>
-              <span className="ml-auto shrink-0 text-[11px] text-muted">
+              <span className="ml-auto shrink-0 text-micro text-muted">
                 {fmtDayLabel(d)}, {fmtTime(d)}
               </span>
             </span>
-            <span className="flex min-w-0 items-center gap-1 text-[12px] text-muted">
+            <span className="flex min-w-0 items-center gap-1 text-caption text-muted">
               <Icon className="size-3 shrink-0" aria-hidden />
               <span className="truncate" title={`${room.name} · ${wsName ?? ''}`}>
                 {room.name} · {wsName}
               </span>
             </span>
-            <span className="mt-0.5 line-clamp-2 break-words text-[13px] text-fg">{text}</span>
+            <span className="mt-0.5 line-clamp-2 break-words text-body text-fg">{text}</span>
           </span>
           {unread ? <span className="mt-1.5 size-2 shrink-0 rounded-full bg-accent" role="img" aria-label={t('chat.inboxUnread')} /> : null}
         </button>
@@ -273,20 +286,20 @@ function HelpButton(): ReactNode {
         </Popover.Trigger>
       </Tip>
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={6} collisionPadding={8} aria-label={t('shell.help')} className={cx(popoverBox, 'w-[300px] p-3')}>
-          <div className="mb-2 text-[13px] font-semibold">{t('shell.help')}</div>
+        <Popover.Content align="end" sideOffset={6} collisionPadding={16} aria-label={t('shell.help')} className={cx(popoverBox, 'w-[300px] p-3')}>
+          <div className="mb-2 text-body font-semibold">{t('shell.help')}</div>
           <dl className="flex flex-col gap-1.5">
             {rows.map((r) => (
               <div key={r.label} className="flex items-center justify-between gap-3">
-                <dt className="min-w-0 truncate text-[13px] text-muted">{r.label}</dt>
+                <dt className="min-w-0 truncate text-body text-muted">{r.label}</dt>
                 <dd className="shrink-0">
-                  <kbd className="rounded-[4px] border border-line bg-hover px-1.5 py-px font-sans text-[12px] text-fg">{r.keys}</kbd>
+                  <kbd className="rounded-[4px] border border-line bg-hover px-1.5 py-px font-sans text-caption text-fg">{r.keys}</kbd>
                 </dd>
               </div>
             ))}
           </dl>
           <Popover.Close asChild>
-            <button type="button" onClick={() => open({ kind: 'settings', tab: 'voice' })} className="mt-3 text-[12px] text-accent-text hover:underline">
+            <button type="button" onClick={() => open({ kind: 'settings', tab: 'voice' })} className="mt-3 text-caption text-accent-text hover:underline">
               {t('shell.kbd.settings')}
             </button>
           </Popover.Close>

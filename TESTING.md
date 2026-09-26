@@ -466,6 +466,23 @@ curl -sI https://$D/manifest.webmanifest | grep -i content-type                 
 
 Факт 2026-09-26 (на временных тестовых файлах, удалены): `/download/` 200 (пустой листинг), `/download` 308; `latest-mac.yml` — `text/yaml`, `no-cache`; `*.dmg` — `application/octet-stream`, `immutable`, Range → 206; `*.json` — `no-cache`; `*.webmanifest` — `application/manifest+json`; `*.svg` — `image/svg+xml`; отсутствующий файл — 404. На `.ai` и `.ru`.
 
+### 2c. Сборки десктопа для тестировщика
+
+Сборки публикуются на `https://colaba.gptunnel.ai/download/` (листинг каталога; то же на `.ru`). Какой файл брать:
+
+| ОС | Файл | Установка |
+|---|---|---|
+| macOS (Apple Silicon и Intel) | `Calaba-<версия>-universal.dmg` | открыть dmg, перетащить Calaba в «Программы». Сборка **не подписана**: первый запуск — ПКМ по приложению → «Открыть» → «Открыть» (или `xattr -dr com.apple.quarantine /Applications/Calaba.app`). Автообновление на macOS без подписи не работает — приложение только сообщает о новой версии |
+| Windows 10/11 x64 | `Calaba-Setup-<версия>-x64.exe` | запустить; SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» (сборка не подписана) |
+| Linux x64 (любой дистрибутив) | `Calaba-<версия>-x86_64.AppImage` | `chmod +x Calaba-*.AppImage && ./Calaba-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calaba-*.AppImage --appimage-extract-and-run`) |
+| Debian/Ubuntu x64 | `calaba_<версия>_amd64.deb` | `sudo apt install ./calaba_*_amd64.deb`, запуск — «Calaba» в меню или `calaba` |
+
+После запуска — в поле «Сервер» ввести `https://colaba.gptunnel.ai` (или `.ru`), войти (регистрация — по коду приглашения, см. «Аккаунты»).
+
+Проверка целостности (если скачано с ошибками): `latest-mac.yml` / `latest-linux.yml` / `latest.yml` рядом содержат `sha512` (base64) и `size` каждого файла: `shasum -a 512 -b <файл> | cut -d' ' -f1 | xxd -r -p | base64` (macOS/Linux) должно совпасть.
+
+Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — `SKIP_WEB=1 infra/docker/sync.sh`.
+
 ### 3. LiveKit
 
 ```sh
@@ -650,7 +667,7 @@ pnpm -F @calaba/desktop e2e:visual              # сравнить с этало
 pnpm -F @calaba/desktop e2e:visual:update       # перезаписать эталон после намеренного изменения дизайна
 ```
 Ожидается `9 passed` (~2 мин): 4 конфигурации (dark/light × 960×600/1440×800) × {основной сценарий, первый запуск без пространств} + обход фокуса по Tab.
-- Эталонные снимки: `apps/desktop/e2e-visual/__screenshots__/darwin/*.png` (в репо, 38 экранов × 4 конфигурации, ~10 МБ). Порог — 0,2 % отличающихся пикселей. Снимки платформенные: эталон снят на macOS; на Linux/Windows сначала `e2e:visual:update`.
+- Эталонные снимки: `apps/desktop/e2e-visual/__screenshots__/darwin/*.png` (в репо, 63 экрана × 4 конфигурации). Порог — 0,2 % отличающихся пикселей. Снимки платформенные: эталон снят на macOS; на Linux/Windows сначала `e2e:visual:update`.
 - Экраны: вход/регистрация, каждый шаг онбординга (микрофон до/после разрешения, режим VAD/PTT, запись экрана, уведомления, готово), главное окно с данными, участники, ⌘K, меню пространства, все вкладки настроек пространства/комнаты/голосовой комнаты/приложения, создание комнаты, подтверждение удаления, голос со стримом в PiP и развёрнутым, приветствие без пространств с диалогами «Создать пространство» и «Присоединиться». Видео и индикатор качества маскируются.
 - В каждой точке, кроме снимка: layout-инварианты (нет горизонтального скролла; текст не выходит за кнопки/заголовки/строки/вкладки, обрезка только с «…»; обрезанный текст не сжат до нуля; ничего не торчит за окно; модалки по центру; PiP не пересекает композер) и axe-core WCAG 2.1 A/AA — 0 нарушений serious/critical (контраст ≥ 4,5:1).
 - Детерминизм: `CALABA_VISUAL_TEST=1` — окно без нативного vibrancy (непрозрачные фоллбэки материалов), без анимаций и каретки, фиксированные статусы разрешений ОС; часы клиента зафиксированы на 2026-01-15 13:30 MSK, `TZ=Europe/Moscow`, порт мока фиксирован (39170).
@@ -979,3 +996,18 @@ go test -race -tags integration -count=1 -v -run 'TestVoiceTimes|TestMentions|Te
   - `PUT` `MENTIONS` + `mutedUntil` → ответ, `ROOM_NOTIFICATION_UPDATE` своему устройству, настройки в новом READY (и не видны другому пользователю);
   - `mutedUntil` > 1 года и неизвестный `level` → 422, невидимая комната → 404;
   - `ALL` без `mutedUntil` → сброс, READY пустой.
+
+## Server: серверный mute (`VoiceState.server_muted`)
+
+```sh
+cd apps/server
+go test -race -tags integration -count=1 -v -run TestServerMute ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: `--- PASS: TestServerMute` и `ok`. Тест пропускается (`SKIP`), если dev-LiveKit не запущен.
+
+Что проверяется:
+- участник без `MUTE_MEMBERS` не может ни заглушить другого, ни снять mute с себя (403); `PATCH /api/voice/self {muted:false}` у заглушённого → 403;
+- `mute` → `VOICE_STATE_UPDATE` с `server_muted = true`, в grant нет microphone;
+- микрофон, опубликованный незаглушённым, сервер глушит (`MutePublishedTrack`);
+- флаг сохраняется в READY и после выхода и повторного входа (`can_speak = false`);
+- `unmute` (MUTE_MEMBERS) → `server_muted = false`, microphone возвращается в grant, самостоятельный unmute снова разрешён.

@@ -44,6 +44,11 @@ export function stopGateway(): void {
   client = null;
 }
 
+/** Logout: forget the previous account's room subscriptions (review L9). */
+export function resetGatewaySubscriptions(): void {
+  subscribed = [];
+}
+
 export function reconnectGateway(): void {
   client?.forceReconnect();
 }

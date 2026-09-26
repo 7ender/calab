@@ -1560,14 +1560,17 @@ func (*DispatchEvent_RoomNotificationUpdate) isDispatchEvent_Event() {}
 
 // Aggregated per user (docs/05, "multiple devices").
 type VoiceState struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	RoomId        string                 `protobuf:"bytes,3,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"` // empty = not in voice
-	Muted         bool                   `protobuf:"varint,4,opt,name=muted,proto3" json:"muted,omitempty"`                // all sessions in the room muted
-	Deafened      bool                   `protobuf:"varint,5,opt,name=deafened,proto3" json:"deafened,omitempty"`
-	Streaming     bool                   `protobuf:"varint,6,opt,name=streaming,proto3" json:"streaming,omitempty"`              // any session in the room streaming
-	JoinedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"` // earliest join of the user's devices in this room
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	UserId      string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	RoomId      string                 `protobuf:"bytes,3,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"` // empty = not in voice
+	Muted       bool                   `protobuf:"varint,4,opt,name=muted,proto3" json:"muted,omitempty"`                // all sessions in the room muted
+	Deafened    bool                   `protobuf:"varint,5,opt,name=deafened,proto3" json:"deafened,omitempty"`
+	Streaming   bool                   `protobuf:"varint,6,opt,name=streaming,proto3" json:"streaming,omitempty"`              // any session in the room streaming
+	JoinedAt    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"` // earliest join of the user's devices in this room
+	// Muted by a moderator (POST …/voice/{userId}/mute) until a moderator unmutes: the
+	// microphone is muted server-side on all devices and cannot be unmuted by the user.
+	ServerMuted   bool `protobuf:"varint,8,opt,name=server_muted,json=serverMuted,proto3" json:"server_muted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1649,6 +1652,13 @@ func (x *VoiceState) GetJoinedAt() *timestamppb.Timestamp {
 		return x.JoinedAt
 	}
 	return nil
+}
+
+func (x *VoiceState) GetServerMuted() bool {
+	if x != nil {
+		return x.ServerMuted
+	}
+	return false
 }
 
 type Presence struct {
@@ -3540,7 +3550,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\vvoice_moved\x18\x1c \x01(\v2\x15.calaba.v1.VoiceMovedH\x00R\n" +
 	"voiceMoved\x12]\n" +
 	"\x18room_notification_update\x18\x1d \x01(\v2!.calaba.v1.RoomNotificationUpdateH\x00R\x16roomNotificationUpdateB\a\n" +
-	"\x05event\"\xea\x01\n" +
+	"\x05event\"\x8d\x02\n" +
 	"\n" +
 	"VoiceState\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
@@ -3549,7 +3559,8 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x05muted\x18\x04 \x01(\bR\x05muted\x12\x1a\n" +
 	"\bdeafened\x18\x05 \x01(\bR\bdeafened\x12\x1c\n" +
 	"\tstreaming\x18\x06 \x01(\bR\tstreaming\x127\n" +
-	"\tjoined_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\"\x9b\x02\n" +
+	"\tjoined_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12!\n" +
+	"\fserver_muted\x18\b \x01(\bR\vserverMuted\"\x9b\x02\n" +
 	"\bPresence\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x121\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x19.calaba.v1.PresenceStatusR\x06status\x127\n" +

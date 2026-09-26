@@ -1,4 +1,5 @@
-import { memo, type ReactNode } from 'react';
+import { Fragment, memo, type ReactNode } from 'react';
+import { splitHits } from './highlight';
 import { isSafeHref, parseMarkdown, type MdNode } from './parse';
 import { platform } from '../../platform';
 
@@ -6,12 +7,33 @@ function open(href: string): void {
   if (isSafeHref(href)) void platform.app.openExternal(href);
 }
 
-function render(nodes: MdNode[], mention: MentionRenderer, key = ''): ReactNode[] {
+/** Search hits inside a message (in-room search): words to mark; `current` = the hit being viewed. */
+export interface MdHighlight {
+  words: string[];
+  current: boolean;
+}
+
+function marked(text: string, hl: MdHighlight | undefined, k: string): ReactNode {
+  if (!hl) return text;
+  const parts = splitHits(text, hl.words);
+  if (parts.length === 1) return text;
+  return parts.map((p, i) =>
+    i % 2 === 1 ? (
+      <mark key={`${k}m${i}`} className={hl.current ? 'search-hit search-hit-current' : 'search-hit'}>
+        {p}
+      </mark>
+    ) : (
+      p
+    ),
+  );
+}
+
+function render(nodes: MdNode[], mention: MentionRenderer, key = '', hl?: MdHighlight): ReactNode[] {
   return nodes.map((n, i) => {
     const k = `${key}${i}`;
     switch (n.t) {
       case 'text':
-        return n.v;
+        return hl ? <Fragment key={k}>{marked(n.v, hl, k)}</Fragment> : n.v;
       case 'br':
         return <br key={k} />;
       case 'code':
@@ -27,11 +49,11 @@ function render(nodes: MdNode[], mention: MentionRenderer, key = ''): ReactNode[
           </pre>
         );
       case 'b':
-        return <strong key={k}>{render(n.c, mention, `${k}.`)}</strong>;
+        return <strong key={k}>{render(n.c, mention, `${k}.`, hl)}</strong>;
       case 'i':
-        return <em key={k}>{render(n.c, mention, `${k}.`)}</em>;
+        return <em key={k}>{render(n.c, mention, `${k}.`, hl)}</em>;
       case 's':
-        return <s key={k}>{render(n.c, mention, `${k}.`)}</s>;
+        return <s key={k}>{render(n.c, mention, `${k}.`, hl)}</s>;
       case 'link':
         return (
           <a
@@ -44,7 +66,7 @@ function render(nodes: MdNode[], mention: MentionRenderer, key = ''): ReactNode[
             }}
             className="text-accent-text hover:underline"
           >
-            {render(n.c, mention, `${k}.`)}
+            {render(n.c, mention, `${k}.`, hl)}
           </a>
         );
       case 'mention':
@@ -58,6 +80,6 @@ function render(nodes: MdNode[], mention: MentionRenderer, key = ''): ReactNode[
 /** Renders a mention node (`v`: user id, 'everyone' or 'here'); the caller knows the names. */
 export type MentionRenderer = (v: string, key: string) => ReactNode;
 
-export const Markdown = memo(function Markdown({ text, mention }: { text: string; mention: MentionRenderer }): ReactNode {
-  return <>{render(parseMarkdown(text), mention)}</>;
+export const Markdown = memo(function Markdown({ text, mention, highlight }: { text: string; mention: MentionRenderer; highlight?: MdHighlight | undefined }): ReactNode {
+  return <>{render(parseMarkdown(text), mention, '', highlight)}</>;
 });

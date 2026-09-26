@@ -15,3 +15,6 @@ infra/docker/livekit/livekit.gen.yaml
 
 # local file storage (STORAGE_DRIVER=fs, dev default ./data/files)
 apps/server/data/
+
+# desktop release artifacts (apps/desktop/scripts/build-release.sh)
+apps/desktop/dist-release/

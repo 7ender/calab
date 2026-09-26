@@ -1,6 +1,9 @@
+import { RoomType } from '@calaba/protocol';
 import { create } from 'zustand';
+import { confirmAction } from '../../components/Confirm';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
+import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
 import { voice } from '../../services/voice';
@@ -30,15 +33,38 @@ export function roomLinkError(e: unknown): string {
     if (e.is('ERROR_CODE_RATE_LIMITED')) return t('auth.err.rate');
     if (e.is('ERROR_CODE_UNAUTHENTICATED')) return t('people.link.needAccount');
     if (e.is('ERROR_CODE_UNAVAILABLE')) return t('people.link.unreachable');
-    return e.message;
   }
-  return String(e);
+  return errorText(e);
 }
 
 /** Entry point for a parsed room-link code (deep link, pasted link, web /r/<code>). */
 export function openRoomLink(code: string): void {
-  if (useSession.getState().status === 'authed') void joinRoomLink(code);
+  if (useSession.getState().status === 'authed') void confirmAndJoinRoomLink(code);
   else useRoomLink.setState({ code, preferLogin: false });
+}
+
+/**
+ * Links from outside the app (any web page can fire `calaba://r/<code>`, a web /r/<code>, the
+ * code kept across a login) never join silently: joining may create a guest membership and
+ * connects voice (review M9). Shows «Войти в комнату X пространства Y?» from the public preview.
+ */
+export async function confirmAndJoinRoomLink(code: string): Promise<boolean> {
+  let preview: Awaited<ReturnType<typeof api.roomInvites.get>>;
+  try {
+    preview = await api.roomInvites.get(code);
+  } catch (e) {
+    log.warn('room link preview failed', e);
+    toast.error(roomLinkError(e));
+    return false;
+  }
+  const ok = await confirmAction(
+    t('core.link.title', { room: preview.roomName, workspace: preview.workspaceName }),
+    t(preview.roomType === RoomType.VOICE ? 'core.link.textVoice' : 'core.link.text'),
+    t('core.link.join'),
+    'primary',
+  );
+  if (!ok || useSession.getState().status !== 'authed') return false;
+  return joinRoomLink(code);
 }
 
 export async function joinRoomLink(code: string): Promise<boolean> {
@@ -88,5 +114,5 @@ useSession.subscribe((s, prev) => {
   const code = useRoomLink.getState().code;
   if (!code) return;
   useRoomLink.setState({ code: null, preferLogin: false });
-  void joinRoomLink(code);
+  void confirmAndJoinRoomLink(code);
 });

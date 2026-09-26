@@ -39,7 +39,7 @@ export function MembersPanel({ workspaceId, floating = false }: { workspaceId: s
   const section = (key: 'on' | 'off', title: string, list: WorkspaceMember[]): ReactNode =>
     list.length > 0 ? (
       <section aria-labelledby={`members-${key}`} className="mt-4 flex flex-col first:mt-0">
-        <h3 id={`members-${key}`} className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">
+        <h3 id={`members-${key}`} className="px-2 pb-1 text-micro font-semibold uppercase tracking-wide text-faint">
           {title} — {list.length}
         </h3>
         <ul className="flex flex-col gap-px">
@@ -69,7 +69,7 @@ export function MembersPanel({ workspaceId, floating = false }: { workspaceId: s
     >
       {section('on', t('members.online'), groups.online)}
       {section('off', t('members.offline'), groups.offline)}
-      {groups.online.length + groups.offline.length === 0 ? <p className="px-2 text-[13px] text-muted">{t('people.empty')}</p> : null}
+      {groups.online.length + groups.offline.length === 0 ? <p className="px-2 text-body text-muted">{t('people.empty')}</p> : null}
     </aside>
   );
 }
@@ -135,13 +135,13 @@ const MemberRow = memo(function MemberRow({
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex min-w-0 items-center gap-1">
-                <span className={cx('truncate text-[14px] font-medium leading-[18px]', offline ? 'text-muted' : roleTextClass(m.role))}>{name}</span>
+                <span className={cx('truncate text-body font-medium leading-[18px]', offline ? 'text-muted' : roleTextClass(m.role))}>{name}</span>
                 {m.role === WorkspaceRole.OWNER ? (
                   <Crown className={cx('size-3.5 shrink-0', offline ? 'text-muted' : 'text-role-owner')} aria-label={t('people.owner')} role="img" />
                 ) : null}
                 {isGuest(m) ? <GuestBadge /> : null}
               </span>
-              {second ? <span className="flex min-w-0 items-center gap-1 text-[12px] leading-4 text-muted">{second}</span> : null}
+              {second ? <span className="flex min-w-0 items-center gap-1 text-caption leading-4 text-muted">{second}</span> : null}
             </span>
           </button>
         </Popover.Trigger>
@@ -151,7 +151,7 @@ const MemberRow = memo(function MemberRow({
           side="left"
           align="start"
           sideOffset={8}
-          collisionPadding={12}
+          collisionPadding={16}
           className="mat-popover anim-in z-[var(--z-popover)] rounded-[var(--radius-panel)] text-fg focus:outline-none"
           aria-label={name}
         >

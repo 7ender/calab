@@ -1,16 +1,12 @@
 import { WorkspaceRole } from '@calaba/protocol';
 import { Crown, ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { cx } from '../../components/ui';
+import { Badge, cx } from '../../components/ui';
 import { t } from '../../i18n';
 
-/** «Гость» pill next to a name (ADR-0016). */
+/** «Гость» next to a name (ADR-0016): the shared badge (11/600, sentence case, radius 4). */
 export function GuestBadge({ className }: { className?: string }): ReactNode {
-  return (
-    <span className={cx('shrink-0 rounded-[4px] bg-hover px-1 text-[10px] font-semibold uppercase leading-4 tracking-wide text-fg', className)}>
-      {t('people.guest')}
-    </span>
-  );
+  return <Badge {...(className ? { className } : {})}>{t('people.guest')}</Badge>;
 }
 
 /** Name colour per role (tokens --color-role-*; ≥ 4.5:1 on the sidebar incl. hover). */

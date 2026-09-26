@@ -15,7 +15,7 @@ import {
   type GatewayFrame,
 } from '@calaba/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BACKOFF_MAX_MS, GatewayClient, OUT_BURST, backoffDelay, gatewayUrl, type GatewayFatal, type SocketLike } from './client';
+import { BACKOFF_MAX_MS, GatewayClient, HELLO_TIMEOUT_MS, OUT_BURST, backoffDelay, gatewayUrl, type GatewayFatal, type SocketLike } from './client';
 
 class FakeSocket implements SocketLike {
   binaryType: BinaryType = 'blob';
@@ -67,17 +67,18 @@ const ready = (seq: number, sessionId = 'gs1'): GatewayFrame =>
 const typing = (seq: number): GatewayFrame =>
   dispatch(seq, { case: 'typingStart', value: create(TypingStartSchema, { roomId: 'r', userId: 'u' }) });
 
-function setup(opts: { refresh?: string | null } = {}) {
+function setup(opts: { refresh?: string | null; getToken?: () => Promise<string | null>; failCreate?: () => boolean } = {}) {
   const sockets: FakeSocket[] = [];
   const events: Array<{ seq: bigint; kind: string | undefined }> = [];
   const fatals: GatewayFatal[] = [];
   const statuses: string[] = [];
   const client = new GatewayClient({
     url: () => 'ws://x/gateway?v=1',
-    getToken: () => Promise.resolve('tok'),
+    getToken: opts.getToken ?? (() => Promise.resolve('tok')),
     refreshToken: () => Promise.resolve(opts.refresh === undefined ? 'tok2' : opts.refresh),
     device: { name: 'test', platform: 'darwin', appVersion: '0.0.1' },
     createSocket: (url) => {
+      if (opts.failCreate?.()) throw new SyntaxError('bad url');
       const s = new FakeSocket(url);
       sockets.push(s);
       return s;
@@ -210,13 +211,98 @@ describe('GatewayClient', () => {
     expect(ok.sockets).toHaveLength(2);
     expect(ok.fatals).toEqual([]);
 
+    // A failed refresh is not a logout (review H3): back off and retry, never fatal.
     const bad = setup({ refresh: null });
     bad.client.start();
     await handshake(bad);
     bad.last().serverClose(GatewayCloseCode.AUTHENTICATION_FAILED);
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(bad.fatals).toEqual(['auth']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bad.client.state.status).toBe('reconnecting');
     expect(bad.sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    expect(bad.sockets).toHaveLength(2);
+    expect(bad.fatals).toEqual([]);
+  });
+
+  it('repeated 4004 with a fresh token backs off instead of a tight loop', async () => {
+    const t = setup();
+    t.client.start();
+    await handshake(t);
+    t.last().serverClose(GatewayCloseCode.AUTHENTICATION_FAILED);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.sockets).toHaveLength(2); // first 4004: immediate retry
+    await handshake(t);
+    t.last().serverClose(GatewayCloseCode.AUTHENTICATION_FAILED);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.sockets).toHaveLength(2); // second in a row: backoff
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    expect(t.sockets).toHaveLength(3);
+  });
+
+  it('getToken → null keeps the client reconnecting (transient), then recovers', async () => {
+    const tokens: Array<string | null> = [null, null, 'tok'];
+    const t = setup({ getToken: () => Promise.resolve(tokens.length ? (tokens.shift() ?? null) : 'tok') });
+    t.client.start();
+    await handshake(t);
+    expect(t.client.state.status).toBe('reconnecting');
+    expect(t.last().closedWith).toBe(4000);
+    expect(t.fatals).toEqual([]);
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    await handshake(t);
+    expect(t.client.state.status).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(backoffDelay(1, 0.5));
+    const s = await handshake(t);
+    expect(s.sent[0]?.payload.case).toBe('identify');
+    s.deliver(ready(1));
+    expect(t.client.state.status).toBe('ready');
+    expect(t.fatals).toEqual([]);
+  });
+
+  it('no HELLO within the timeout → drop and back off', async () => {
+    const t = setup();
+    t.client.start();
+    t.last().open(); // TCP ok, but the server never says HELLO
+    await vi.advanceTimersByTimeAsync(HELLO_TIMEOUT_MS);
+    expect(t.last().closedWith).toBe(4000);
+    expect(t.client.state.status).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    expect(t.sockets).toHaveLength(2);
+  });
+
+  it('createSocket throwing is retried with backoff, not an unhandled error', async () => {
+    let fail = true;
+    const t = setup({ failCreate: () => fail });
+    t.client.start();
+    expect(t.sockets).toHaveLength(0);
+    expect(t.client.state.status).toBe('reconnecting');
+    fail = false;
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    expect(t.sockets).toHaveLength(1);
+  });
+
+  it('non-resumable INVALID_SESSION resets seq; READY after a RESUME attempt starts over', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1, 'a'));
+    s.deliver(typing(9));
+    s.serverClose(1006);
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    const s2 = await handshake(t);
+    expect(s2.sent[0]?.payload.case).toBe('resume');
+    s2.deliver(
+      create(GatewayFrameSchema, {
+        op: GatewayOpcode.INVALID_SESSION,
+        payload: { case: 'invalidSession', value: create(InvalidSessionSchema, { resumable: false }) },
+      }),
+    );
+    expect(t.client.state.seq).toBe(0n);
+    expect(t.client.state.sessionId).toBe('');
+    await vi.advanceTimersByTimeAsync(3000);
+    const s3 = await handshake(t);
+    s3.deliver(ready(1, 'b')); // seq 1 again is accepted after the reset
+    expect(t.events.filter((e) => e.kind === 'ready')).toHaveLength(2);
+    expect(t.client.state.sessionId).toBe('b');
   });
 
   it('4010 → fatal revoked, no reconnect', async () => {

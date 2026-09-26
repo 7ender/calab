@@ -14,11 +14,21 @@ interface ChatViewState {
   jump: { roomId: string; messageId: string; seq: number } | null;
   /** Message briefly highlighted after a jump. */
   highlight: string | null;
+  /** In-room search results to mark in the feed (words of the query, hit ids, the current one). */
+  searchHits: SearchHits | null;
+  setSearchHits: (v: SearchHits | null) => void;
   pushRecent: (emoji: string) => void;
   setSearch: (roomId: string | null) => void;
   requestJump: (roomId: string, messageId: string) => void;
   clearJump: () => void;
   setHighlight: (key: string | null) => void;
+}
+
+export interface SearchHits {
+  roomId: string;
+  words: string[];
+  ids: ReadonlySet<string>;
+  current: string | null;
 }
 
 let seq = 0;
@@ -30,8 +40,10 @@ export const useChatView = create<ChatViewState>()(
       searchRoom: null,
       jump: null,
       highlight: null,
+      searchHits: null,
+      setSearchHits: (searchHits) => set({ searchHits }),
       pushRecent: (emoji) => set((s) => ({ recentEmoji: [emoji, ...s.recentEmoji.filter((e) => e !== emoji)].slice(0, 24) })),
-      setSearch: (searchRoom) => set({ searchRoom }),
+      setSearch: (searchRoom) => set(searchRoom ? { searchRoom } : { searchRoom, searchHits: null }),
       requestJump: (roomId, messageId) => set({ jump: { roomId, messageId, seq: ++seq } }),
       clearJump: () => set({ jump: null }),
       setHighlight: (highlight) => set({ highlight }),

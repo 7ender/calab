@@ -10,9 +10,9 @@ export function AfkCard(): ReactNode {
   const minutes = usePrefs((s) => s.afkMinutes);
   const setPrefs = usePrefs((s) => s.setPrefs);
   return (
-    <Card footer={t('shell.afkHint')}>
+    <Card title={t('card.presence')} footer={t('shell.afkHint')}>
       <Row label={t('shell.afk')} htmlFor="afk-minutes">
-        <Select id="afk-minutes" className="w-36" value={minutes} onChange={(e) => setPrefs({ afkMinutes: Number(e.target.value) })}>
+        <Select id="afk-minutes" className="w-60" value={minutes} onChange={(e) => setPrefs({ afkMinutes: Number(e.target.value) })}>
           {OPTIONS.map((m) => (
             <option key={m} value={m}>
               {m === 0 ? t('shell.afkOff') : t('shell.afkMin', { n: m })}

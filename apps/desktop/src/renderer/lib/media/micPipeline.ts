@@ -17,6 +17,8 @@ export interface MicPipelineOptions {
   deviceId: string | null;
   rnnoise: boolean;
   onReport: (r: MicReport) => void;
+  /** The capture ended by itself (device unplugged / revoked) — not fired by `stop()`. */
+  onEnded?: () => void;
 }
 
 /** The RNNoise worklet could not start (the caller falls back to built-in noise suppression). */
@@ -62,6 +64,8 @@ export class MicPipeline {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
     const raw = stream.getAudioTracks()[0];
     if (!raw) throw new Error('getUserMedia returned no audio track');
+    const onEnded = opts.onEnded;
+    if (onEnded) raw.addEventListener('ended', () => onEnded());
 
     // RNNoise is trained for 48 kHz; Chromium resamples the device if needed.
     const ctx = new AudioContext({ ...(sampleRate ? { sampleRate } : {}), latencyHint: 'interactive' });

@@ -10,6 +10,7 @@
 //	voice:streamreq:<identity>   string preset reserved by /stream/request (TTL 10 min)
 //	voice:workspaces             set   workspaces with any voice state (for reconcile)
 //	voice:started:<room_id>      string unix ms when the current call began (first device in an empty room)
+//	voice:smuted:<workspace_id>  set   user ids server-muted by a moderator (kept until unmuted, across rejoins)
 package voice
 
 import (
@@ -135,14 +136,67 @@ func AggregateAll(workspaceID uuid.UUID, sessions []SessionState) []*v1.VoiceSta
 func Equal(a, b *v1.VoiceState) bool {
 	return a.GetRoomId() == b.GetRoomId() && a.GetMuted() == b.GetMuted() &&
 		a.GetDeafened() == b.GetDeafened() && a.GetStreaming() == b.GetStreaming() &&
-		a.GetJoinedAt().AsTime().Equal(b.GetJoinedAt().AsTime())
+		a.GetJoinedAt().AsTime().Equal(b.GetJoinedAt().AsTime()) && a.GetServerMuted() == b.GetServerMuted()
 }
 
 // Store is the Redis-backed voice state.
 type Store struct{ C rueidis.Client }
 
-func wsKey(wid uuid.UUID) string          { return "voice:ws:" + wid.String() }
-func sessKey(sid uuid.UUID) string        { return "voice:sess:" + sid.String() }
+func wsKey(wid uuid.UUID) string     { return "voice:ws:" + wid.String() }
+func sessKey(sid uuid.UUID) string   { return "voice:sess:" + sid.String() }
+func smutedKey(wid uuid.UUID) string { return "voice:smuted:" + wid.String() }
+
+// ServerMuted reports whether a moderator muted userID in the workspace.
+func (s Store) ServerMuted(ctx context.Context, wid, userID uuid.UUID) (bool, error) {
+	return s.C.Do(ctx, s.C.B().Sismember().Key(smutedKey(wid)).Member(userID.String()).Build()).AsBool()
+}
+
+// SetServerMuted sets or clears a user's server mute and returns the aggregate change.
+func (s Store) SetServerMuted(ctx context.Context, wid, userID uuid.UUID, on bool) (Change, error) {
+	var c Change
+	err := s.WithLock(ctx, wid, func() error {
+		all, err := s.List(ctx, wid)
+		if err != nil {
+			return err
+		}
+		was, err := s.ServerMuted(ctx, wid, userID)
+		if err != nil {
+			return err
+		}
+		cmd := s.C.B().Srem().Key(smutedKey(wid)).Member(userID.String()).Build()
+		if on {
+			cmd = s.C.B().Sadd().Key(smutedKey(wid)).Member(userID.String()).Build()
+		}
+		if err := s.C.Do(ctx, cmd).Error(); err != nil {
+			return err
+		}
+		c.Before, c.After = Aggregate(wid, userID, all), Aggregate(wid, userID, all)
+		c.Before.ServerMuted, c.After.ServerMuted = was, on
+		return nil
+	})
+	return c, err
+}
+
+// States returns every user's aggregated voice state in the workspace (READY snapshots).
+func (s Store) States(ctx context.Context, wid uuid.UUID) ([]*v1.VoiceState, error) {
+	all, err := s.List(ctx, wid)
+	if err != nil {
+		return nil, err
+	}
+	muted, err := s.C.Do(ctx, s.C.B().Smembers().Key(smutedKey(wid)).Build()).AsStrSlice()
+	if err != nil {
+		return nil, err
+	}
+	sm := map[string]bool{}
+	for _, u := range muted {
+		sm[u] = true
+	}
+	out := AggregateAll(wid, all)
+	for _, vs := range out {
+		vs.ServerMuted = sm[vs.GetUserId()]
+	}
+	return out, nil
+}
 func streamsKey(rid uuid.UUID) string     { return "voice:streams:" + rid.String() }
 func streamReqKey(identity string) string { return "voice:streamreq:" + identity }
 func startedKey(rid uuid.UUID) string     { return "voice:started:" + rid.String() }
@@ -295,7 +349,13 @@ func (s Store) UpdateLocked(ctx context.Context, wid, userID, sessionID uuid.UUI
 			return Change{}, err
 		}
 	}
-	return Change{Before: before, After: Aggregate(wid, userID, rest), Calls: calls}, nil
+	after := Aggregate(wid, userID, rest)
+	sm, err := s.ServerMuted(ctx, wid, userID)
+	if err != nil {
+		return Change{}, err
+	}
+	before.ServerMuted, after.ServerMuted = sm, sm
+	return Change{Before: before, After: after, Calls: calls}, nil
 }
 
 func touchedRooms(cur, next *SessionState) []uuid.UUID {

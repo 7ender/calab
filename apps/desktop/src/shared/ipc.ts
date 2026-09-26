@@ -51,6 +51,8 @@ export const IPC = {
   captureSelectSource: 'capture:select-source',
   pttSetBinding: 'ptt:set-binding',
   pttCaptureNext: 'ptt:capture-next',
+  /** The binder closed: disarm a pending capture (review H2). */
+  pttCancelCapture: 'ptt:cancel-capture',
   pttStatus: 'ptt:status',
   /** main → renderer push: PTT key pressed/released. */
   pttEvent: 'ptt:event',
@@ -170,6 +172,8 @@ export interface CaptureSource {
   /** PNG data URL, 320×180 max. Empty when the OS denied screen recording. */
   thumbnail: string;
   displayId: string;
+  /** PNG data URL of the owning app's icon (windows only; empty when unknown). */
+  appIcon?: string;
 }
 
 export interface CaptureSelection {

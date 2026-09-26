@@ -6,6 +6,7 @@ import {
   Room,
   RoomEvent,
   Track,
+  VideoQuality,
   type Participant,
   type RemoteParticipant,
   type RemoteTrack,
@@ -15,7 +16,6 @@ import {
 } from 'livekit-client';
 import type { PttEvent } from '../../shared/ipc';
 import { t } from '../i18n';
-import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { MicPipeline } from '../lib/media/micPipeline';
@@ -32,12 +32,14 @@ import { RateTracker, candidatePair, inboundAudio, inboundVideo, outboundAudio, 
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
 import { SpeakingDebouncer } from '../lib/speaking';
-import { qualityOf, toggleDeafen, toggleMute, transmitDecision } from '../lib/voiceLogic';
+import { canSpeakFrom, isDeviceGone, qualityOf, toggleDeafen, toggleMute, transmitDecision } from '../lib/voiceLogic';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
-import { setVoice, useVoice, type RemoteStream } from '../stores/voice';
+import { setVoice, useVoice, type RemoteStream, type StreamQuality } from '../stores/voice';
 import { platform } from '../platform';
+import { humanMediaError, reportMediaError } from './mediaErrors';
+import { sameBinding } from './profile';
 
 /**
  * One voice connection (LiveKit room) of this device. Rules that must not be
@@ -45,7 +47,9 @@ import { platform } from '../platform';
  *  1. remote audio only through <audio> elements (`webAudioMix: false`), no WebAudio on output;
  *  2. output device switched with setSinkId on the same elements;
  *  3. RNNoise after AEC3, built-in NS off while RNNoise is on;
- *  4. closed VAD gate / PTT released / self-mute = `track.mute()`, never unpublish.
+ *  4. never unpublish to go quiet. Explicit mute (self-mute, deafen, moderator, no SPEAK) =
+ *     LiveKit `track.mute()`; closed VAD gate / released PTT = `mediaStreamTrack.enabled =
+ *     false` only — the sender emits silence (Opus DTX), no signalling (ADR-0014, lib/voiceLogic.ts).
  */
 
 const PTT_RELEASE_MS = 200;
@@ -57,9 +61,17 @@ const WATCH_TOPIC = 'calaba.watch';
 /** LiveKit identity is `<user_id>:<session_id>` (rtc.proto). */
 export const userIdOf = (identity: string): string => identity.split(':')[0] ?? identity;
 
-function errMsg(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
-  return err instanceof Error ? err.message : String(err);
+const LK_QUALITY: Record<Exclude<StreamQuality, 'auto'>, VideoQuality> = {
+  high: VideoQuality.HIGH,
+  medium: VideoQuality.MEDIUM,
+  low: VideoQuality.LOW,
+};
+
+/** One simulcast layer of a remote stream, as published (for the viewer's quality menu). */
+export interface StreamLayer {
+  quality: Exclude<StreamQuality, 'auto'>;
+  width: number;
+  height: number;
 }
 
 export interface StreamOptions {
@@ -80,7 +92,12 @@ class VoiceEngine {
   private lastMeterPush = 0;
   private audioBitrateKbps = 32;
   private screen: ActiveScreenShare | null = null;
-  private readonly audioEls = new Map<string, { el: HTMLMediaElement; userId: string }>();
+  /** Remote audio: one <audio> per track (echo rule 1); `stream` = a screen share's system audio. */
+  private readonly audioEls = new Map<string, { el: HTMLMediaElement; userId: string; stream: boolean }>();
+  /** Stream subscriptions we requested (setSubscribed signals on every call, so dedupe). */
+  private readonly wanted = new Map<string, boolean>();
+  /** Whose stream we told «I'm watching» (calaba.watch), to send the matching «stopped». */
+  private announced: { owner: string; sid: string } | null = null;
   private readonly audioSink: HTMLDivElement;
   private readonly viewers = new Map<string, Set<string>>(); // my trackSid → viewer identities
   private readonly rates = new RateTracker();
@@ -98,10 +115,13 @@ class VoiceEngine {
     this.audioSink.id = 'remote-audio-sink';
     this.audioSink.hidden = true;
     document.body.appendChild(this.audioSink);
+    document.addEventListener('visibilitychange', () => this.applyWatching());
   }
 
   init(): void {
     platform.ptt.onEvent((ev) => this.onPtt(ev));
+    // mediaDevices is missing on insecure origins (web over plain http).
+    (navigator.mediaDevices as MediaDevices | undefined)?.addEventListener('devicechange', () => void this.onDevicesChanged());
     this.gate.configure({ thresholdDb: prefs().thresholdDb });
     usePrefs.subscribe((s, p) => this.onPrefs(s, p));
     void this.syncPttBinding();
@@ -111,14 +131,14 @@ class VoiceEngine {
 
   private onPrefs(s: Prefs, p: Prefs): void {
     if (s.thresholdDb !== p.thresholdDb) this.gate.configure({ thresholdDb: s.thresholdDb });
-    if (s.micMode !== p.micMode || s.pttBinding !== p.pttBinding) {
+    if (s.micMode !== p.micMode || !sameBinding(s.pttBinding, p.pttBinding)) {
       void this.syncPttBinding();
       this.applyTransmit();
     }
     if (s.outputDeviceId !== p.outputDeviceId) void this.applyOutputDevice();
     if ((s.rnnoise !== p.rnnoise || s.micDeviceId !== p.micDeviceId) && this.mic) void this.restartMic();
     if ((s.red !== p.red || s.personalBitrateKbps !== p.personalBitrateKbps) && this.micTrack && this.room) void this.republishMic();
-    if (s.userVolumes !== p.userVolumes) this.applyVolumes();
+    if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers) this.applyVolumes();
   }
 
   private async syncPttBinding(): Promise<void> {
@@ -136,10 +156,18 @@ class VoiceEngine {
     return this.roomId;
   }
 
-  async join(roomId: string, workspaceId: string, quiet = false): Promise<void> {
+  /** User intent: connect to a voice room (switches rooms; cancels a pending rejoin). */
+  async join(roomId: string, workspaceId: string): Promise<void> {
+    this.rejoinGen++;
+    await this.connect(roomId, workspaceId, false);
+  }
+
+  private async connect(roomId: string, workspaceId: string, quiet: boolean): Promise<void> {
     if (this.roomId === roomId && this.room) return;
+    // Tear down first, *then* take the sequence number: teardown bumps it too, so taking it
+    // before made every room switch abort itself after /join (review H1).
+    if (this.room) await this.teardown(false);
     const seq = ++this.joinSeq;
-    if (this.room) await this.leave(false);
     this.roomId = roomId;
     setVoice({ roomId, workspaceId, phase: 'connecting', error: null, streams: [], watching: null, speaking: {}, myStream: null });
     try {
@@ -160,12 +188,13 @@ class VoiceEngine {
         ...(relayOnly ? { rtcConfig: { iceTransportPolicy: 'relay' } } : {}),
       });
       if (seq !== this.joinSeq) {
-        await room.disconnect();
+        if (this.room === room) this.room = null;
+        await room.disconnect(false);
         return;
       }
       setVoice({ canSpeak: res.canSpeak, canStream: res.canStream, phase: 'connected' });
       // Subscribe to audio of everyone already here; video only when watched.
-      for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub, p);
+      for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
       if (res.canSpeak) {
         await this.ensureMic();
         await this.publishMic();
@@ -178,51 +207,70 @@ class VoiceEngine {
     } catch (err) {
       if (seq !== this.joinSeq) return;
       log.error('voice join failed', err);
-      if (err instanceof ApiError && err.is('ERROR_CODE_ROOM_FULL')) toast.info(t('shell.roomFull'));
-      else if (!quiet) toast.error(`Не удалось подключиться к голосу: ${errMsg(err)}`);
-      await this.leave(false);
-      setVoice({ error: errMsg(err) });
+      // Rejoin attempts (quiet) only log: the reconnect banner already tells the user.
+      const h = quiet ? humanMediaError(err, 'voice') : reportMediaError(err, 'voice');
+      await this.teardown(false);
+      setVoice({ error: h.text });
     }
   }
 
-  private rejoinAttempt = 0;
+  /** Bumped by every user join/leave: a running rejoin loop stops when it changes. */
+  private rejoinGen = 0;
 
   /** Rejoin after an unexpected disconnect: 1 s, 2 s, 4 s … up to 5 attempts. */
   private async rejoin(): Promise<void> {
     const roomId = this.roomId;
     const wsId = useVoice.getState().workspaceId;
     if (!roomId || !wsId) return;
+    const gen = ++this.rejoinGen;
     const stream = useVoice.getState().myStream;
-    await this.leave(false);
-    for (this.rejoinAttempt = 0; this.rejoinAttempt < 5; this.rejoinAttempt++) {
+    await this.teardown(false);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (gen !== this.rejoinGen) return; // the user left or switched meanwhile
       setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting' });
-      await new Promise((r) => setTimeout(r, 1000 * 2 ** this.rejoinAttempt));
-      if (useVoice.getState().roomId !== roomId) return; // user left or switched meanwhile
-      await this.join(roomId, wsId, true);
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      if (gen !== this.rejoinGen) return;
+      await this.connect(roomId, wsId, true);
+      if (gen !== this.rejoinGen) return;
       if (this.room) {
-        if (stream) toast.info('Голос переподключён — стрим нужно запустить заново');
+        if (stream) toast.info(t('mediaErr.stream.restart'));
         return;
       }
     }
-    toast.error('Не удалось вернуться в голосовую комнату');
-    await this.leave(false);
+    toast.error(t('mediaErr.voice.lost'));
+    await this.teardown(false);
   }
 
+  /** User intent: leave voice (also stops a pending rejoin). */
   async leave(sound = true): Promise<void> {
+    this.rejoinGen++;
+    await this.teardown(sound);
+  }
+
+  private async teardown(sound: boolean): Promise<void> {
     this.joinSeq++;
     this.speakers.reset();
     this.clearMoveTimer();
     this.stopStats();
     await this.stopStream();
     const room = this.room;
+    const micTrack = this.micTrack;
     this.room = null;
     this.roomId = null;
     this.micTrack = null;
-    if (room) await room.disconnect(true).catch(() => undefined);
-    if (!this.micTesting) this.stopMicPipeline();
+    // disconnect(false): unpublish without stopping. disconnect(true) would stop the pipeline's
+    // publish track, and a running mic test keeps that pipeline for the next call → a dead
+    // mic there (review M1). The pipeline is stopped below when nobody needs it.
+    if (room) await room.disconnect(false).catch(() => undefined);
+    if (!this.micTesting) {
+      micTrack?.stop();
+      this.stopMicPipeline();
+    }
     for (const { el } of this.audioEls.values()) el.remove();
     this.audioEls.clear();
     this.viewers.clear();
+    this.wanted.clear();
+    this.announced = null;
     setVoice({
       roomId: null,
       workspaceId: null,
@@ -232,6 +280,8 @@ class VoiceEngine {
       streams: [],
       watching: null,
       stage: 'pip',
+      streamQuality: {},
+      serverMuted: false,
       myStream: null,
       quality: 'unknown',
       rttMs: null,
@@ -258,9 +308,9 @@ class VoiceEngine {
       .on(RoomEvent.Disconnected, (reason) => {
         if (this.room !== room) return;
         log.info('voice disconnected, reason', reason ?? 'none');
-        if (reason === DisconnectReason.PARTICIPANT_REMOVED) toast.info('Модератор отключил вас от голосовой комнаты');
-        else if (reason === DisconnectReason.DUPLICATE_IDENTITY) toast.info('Вы подключились к голосу с этого устройства в другом окне');
-        else if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) toast.info('Голосовая комната закрыта');
+        if (reason === DisconnectReason.PARTICIPANT_REMOVED) toast.info(t('mediaErr.voice.kicked'));
+        else if (reason === DisconnectReason.DUPLICATE_IDENTITY) toast.info(t('mediaErr.voice.duplicate'));
+        else if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) toast.info(t('mediaErr.voice.closed'));
         else if (reason !== DisconnectReason.CLIENT_INITIATED) {
           // Network-type loss that LiveKit could not resume itself (sleep, long freeze,
           // server restart): rejoin with a fresh token instead of dropping the user.
@@ -269,23 +319,24 @@ class VoiceEngine {
         }
         void this.leave();
       })
-      .on(RoomEvent.TrackPublished, (pub, p) => {
+      .on(RoomEvent.TrackPublished, (pub) => {
         if (pub.source === Track.Source.ScreenShare) playSound('streamStart');
-        this.onPublished(pub, p);
+        this.onPublished(pub);
         this.refreshStreams();
       })
       .on(RoomEvent.TrackUnpublished, () => this.refreshStreams())
       .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
-        if (track.kind === Track.Kind.Audio) this.attachAudio(track, p);
+        if (track.kind === Track.Kind.Audio) this.attachAudio(track, p, pub.source === Track.Source.ScreenShareAudio);
         if (pub.source === Track.Source.ScreenShare) {
-          this.announceWatch(p, pub.trackSid, true);
+          this.applyQuality(pub);
+          this.syncAnnounce();
           setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
         }
       })
-      .on(RoomEvent.TrackUnsubscribed, (track, pub, p) => {
+      .on(RoomEvent.TrackUnsubscribed, (track, pub) => {
         if (track.kind === Track.Kind.Audio) this.detachAudio(track);
         if (pub.source === Track.Source.ScreenShare) {
-          this.announceWatch(p, pub.trackSid, false);
+          this.syncAnnounce();
           setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
         }
       })
@@ -306,42 +357,65 @@ class VoiceEngine {
         this.clearMoveTimer();
         this.speakers.reset();
         for (const set of this.viewers.values()) set.clear();
-        for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub, p);
+        for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
         this.refreshStreams();
       })
       .on(RoomEvent.TrackMuted, (pub, p) => {
         // A moderator mute arrives as a mute of our mic that we did not initiate.
         if (p === room.localParticipant && pub.source === Track.Source.Microphone && !this.selfMuting && !useVoice.getState().muted) {
-          setVoice({ muted: true });
-          toast.info('Модератор выключил вам микрофон');
+          setVoice({ muted: true, serverMuted: true });
+          toast.info(t('mediaErr.voice.modMuted'));
           this.pushSelfState();
           this.syncTray();
         }
       })
       .on(RoomEvent.ParticipantPermissionsChanged, (_prev, p) => {
-        if (p !== room.localParticipant) return;
+        if (p !== room.localParticipant || this.room !== room) return;
         const perm = p.permissions;
-        if (perm) setVoice({ canSpeak: perm.canPublish });
+        if (perm) this.onSpeakPermission(canSpeakFrom(perm));
       })
       .on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
         if (topic !== WATCH_TOPIC || !participant) return;
         this.onWatchMessage(payload, participant);
       })
+      // Device changes are watched globally (navigator devicechange, init) — mic tests too.
       .on(RoomEvent.MediaDevicesChanged, () => undefined);
   }
 
-  /** Subscription policy: all audio except stream audio; stream video/audio only when watched. */
-  private onPublished(pub: RemoteTrackPublication, _p: RemoteParticipant): void {
-    if (pub.source === Track.Source.Microphone) pub.setSubscribed(true);
-    else if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio) {
-      const watching = useVoice.getState().watching;
-      if (watching && this.streamOwner(watching) === _p.identity) pub.setSubscribed(true);
+  /**
+   * SPEAK granted or revoked mid-call (review M4). Granted: capture + publish the mic (LiveKit
+   * may have unpublished — and stopped — it on revoke). Revoked: explicit mute via applyTransmit.
+   */
+  private onSpeakPermission(canSpeak: boolean): void {
+    const was = useVoice.getState().canSpeak;
+    setVoice({ canSpeak });
+    const room = this.room;
+    if (canSpeak && !was && room) {
+      void this.ensureMic().then(async () => {
+        if (this.room !== room || !useVoice.getState().canSpeak) return;
+        if (!room.localParticipant.getTrackPublication(Track.Source.Microphone)) await this.publishMic();
+        else this.applyTransmit();
+      }).catch((e: unknown) => log.warn('mic publish after SPEAK grant failed', e));
+      return;
     }
+    this.applyTransmit();
   }
 
-  private streamOwner(trackSid: string): string | null {
-    for (const p of this.room?.remoteParticipants.values() ?? []) if (p.getTrackPublicationBySid(trackSid)) return p.identity;
-    return null;
+  /**
+   * Subscription policy (docs/02, «Подписки»): all mics; a stream's video + audio only when
+   * watched. While the stage is expanded, the other streams' *video* is subscribed too, for the
+   * preview strip — its 160×90 tiles make adaptive stream pick the low simulcast layer.
+   */
+  private onPublished(pub: RemoteTrackPublication): void {
+    if (pub.source === Track.Source.Microphone) pub.setSubscribed(true);
+    else if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio) this.applyWatching();
+  }
+
+  private subscribe(pub: RemoteTrackPublication, on: boolean): void {
+    const sid = pub.trackSid;
+    if (this.wanted.get(sid) === on) return;
+    this.wanted.set(sid, on);
+    pub.setSubscribed(on);
   }
 
   private refreshStreams(): void {
@@ -350,7 +424,10 @@ class VoiceEngine {
     const streams: RemoteStream[] = [];
     for (const p of room.remoteParticipants.values()) {
       const pub = p.getTrackPublication(Track.Source.ScreenShare);
-      if (pub?.trackSid) streams.push({ trackSid: pub.trackSid, identity: p.identity, userId: userIdOf(p.identity) });
+      if (pub?.trackSid) {
+        const hasAudio = p.getTrackPublication(Track.Source.ScreenShareAudio) !== undefined;
+        streams.push({ trackSid: pub.trackSid, identity: p.identity, userId: userIdOf(p.identity), hasAudio });
+      }
     }
     const st = useVoice.getState();
     let watching = st.watching;
@@ -359,25 +436,78 @@ class VoiceEngine {
     const fresh = streams.find((s) => !st.streams.some((o) => o.trackSid === s.trackSid));
     if (!watching && fresh) watching = fresh.trackSid;
     setVoice({ streams, ...(watching !== st.watching ? { watching, stage: watching ? st.stage : 'pip' } : {}) });
-    if (watching !== st.watching) this.applyWatching(watching);
+    this.applyWatching();
   }
 
-  /** Subscribe only to the watched stream (video + its audio); unsubscribe the rest. */
-  private applyWatching(trackSid: string | null): void {
+  /** Watched stream: video + audio; expanded stage: the others' video for previews; rest off. */
+  private applyWatching(): void {
     const room = this.room;
     if (!room) return;
+    const { watching, stage } = useVoice.getState();
+    const previews = watching !== null && stage === 'expanded';
     for (const p of room.remoteParticipants.values()) {
       const video = p.getTrackPublication(Track.Source.ScreenShare);
       const audio = p.getTrackPublication(Track.Source.ScreenShareAudio);
-      const on = !!video && video.trackSid === trackSid;
-      video?.setSubscribed(on);
-      audio?.setSubscribed(on);
+      const on = !!video && video.trackSid === watching;
+      if (video) this.subscribe(video, on || previews);
+      if (audio) this.subscribe(audio, on);
+      // Adaptive stream pauses video while the main window is hidden (docs/02, «Перекрытое окно»);
+      // a pop-out lives in another window, so the popped-out stream is forced on (review M7).
+      // The rest follows the main window's visibility, as adaptive stream would do itself.
+      if (video && (on || previews)) video.setEnabled((on && stage === 'popout') || document.visibilityState === 'visible');
     }
+    this.syncAnnounce();
   }
 
   watch(trackSid: string | null): void {
     setVoice({ watching: trackSid, ...(trackSid ? {} : { stage: 'pip' }) });
-    this.applyWatching(trackSid);
+    this.applyWatching();
+  }
+
+  /** PiP ↔ expanded ↔ pop-out (the preview strip exists only while expanded). */
+  setStage(stage: 'pip' | 'expanded' | 'popout'): void {
+    setVoice({ stage });
+    this.applyWatching();
+  }
+
+  /** Viewer's layer cap; 'auto' leaves the choice to adaptive stream (element size + bandwidth). */
+  setStreamQuality(trackSid: string, q: StreamQuality): void {
+    setVoice({ streamQuality: { ...useVoice.getState().streamQuality, [trackSid]: q } });
+    const pub = this.remotePub(trackSid);
+    if (pub) this.applyQuality(pub);
+  }
+
+  private applyQuality(pub: RemoteTrackPublication): void {
+    const q = useVoice.getState().streamQuality[pub.trackSid] ?? 'auto';
+    // HIGH = no cap: adaptive stream still picks by element size (docs/02, «Эффективность доставки»).
+    pub.setVideoQuality(q === 'auto' ? VideoQuality.HIGH : LK_QUALITY[q]);
+  }
+
+  /** Published simulcast layers of a stream, largest first (empty = unknown / single layer). */
+  streamLayers(trackSid: string): StreamLayer[] {
+    const info = this.remotePub(trackSid)?.trackInfo;
+    // Protocol VideoQuality: 0 LOW, 1 MEDIUM, 2 HIGH (same numbering as livekit-client's enum).
+    const names: ReadonlyArray<StreamLayer['quality']> = ['low', 'medium', 'high']; // 3 = OFF
+    const out: StreamLayer[] = [];
+    for (const l of info?.codecs.flatMap((c) => c.layers) ?? []) {
+      const quality = names[l.quality];
+      if (quality && l.width > 0 && l.height > 0 && !out.some((o) => o.quality === quality)) out.push({ quality, width: l.width, height: l.height });
+    }
+    return out.sort((a, b) => b.height - a.height);
+  }
+
+  /** Volume of a stream's own audio (system sound), via its <audio> element — no WebAudio. */
+  setStreamVolume(userId: string, volume: number): void {
+    setVoice({ streamVolume: { ...useVoice.getState().streamVolume, [userId]: Math.max(0, Math.min(1, volume)) } });
+    this.applyVolumes();
+  }
+
+  private remotePub(trackSid: string): RemoteTrackPublication | undefined {
+    for (const p of this.room?.remoteParticipants.values() ?? []) {
+      const pub = p.getTrackPublicationBySid(trackSid);
+      if (pub) return pub;
+    }
+    return undefined;
   }
 
   remoteVideo(trackSid: string): RemoteVideoTrack | null {
@@ -390,14 +520,14 @@ class VoiceEngine {
 
   // ------------------------------------------------------------ audio out
 
-  private attachAudio(track: RemoteTrack, p: Participant): void {
+  private attachAudio(track: RemoteTrack, p: Participant, stream: boolean): void {
     const sid = track.sid;
     if (!sid || this.audioEls.has(sid)) return;
     const el = track.attach(); // plain <audio>, WebRTC renders it (AEC reference)
     const userId = userIdOf(p.identity);
     this.audioSink.appendChild(el);
-    this.audioEls.set(sid, { el, userId });
-    this.applyElement(el, userId);
+    this.audioEls.set(sid, { el, userId, stream });
+    this.applyElement(el, userId, stream);
     const sink = prefs().outputDeviceId;
     if (sink) void el.setSinkId(sink).catch(() => undefined);
   }
@@ -407,20 +537,30 @@ class VoiceEngine {
     if (track.sid) this.audioEls.delete(track.sid);
   }
 
-  private applyElement(el: HTMLMediaElement, userId: string): void {
-    el.muted = useVoice.getState().deafened;
+  private applyElement(el: HTMLMediaElement, userId: string, stream: boolean): void {
+    // Local mute («Заглушить для меня») silences the voice, not their stream audio.
+    el.muted = useVoice.getState().deafened || (!stream && !!prefs().mutedUsers[userId]);
     // element.volume caps at 1.0 — boosting would need WebAudio, which breaks AEC.
-    el.volume = Math.max(0, Math.min(1, prefs().userVolumes[userId] ?? 1));
+    const v = stream ? (useVoice.getState().streamVolume[userId] ?? 1) : (prefs().userVolumes[userId] ?? 1);
+    el.volume = Math.max(0, Math.min(1, v));
   }
 
   private applyVolumes(): void {
-    for (const { el, userId } of this.audioEls.values()) this.applyElement(el, userId);
+    for (const { el, userId, stream } of this.audioEls.values()) this.applyElement(el, userId, stream);
   }
 
   /** Echo rule 2: switch output with setSinkId on the same <audio> elements. */
   private async applyOutputDevice(): Promise<void> {
     const id = prefs().outputDeviceId ?? '';
     await Promise.all([...this.audioEls.values()].map(({ el }) => el.setSinkId(id).catch(() => undefined)));
+  }
+
+  /** Mute someone for me only (CHAT-SHELL, member menu); persisted per device like volumes. */
+  setUserMuted(userId: string, muted: boolean): void {
+    const m = { ...prefs().mutedUsers };
+    if (muted) m[userId] = true;
+    else delete m[userId];
+    usePrefs.getState().setPrefs({ mutedUsers: m });
   }
 
   setUserVolume(userId: string, volume: number): void {
@@ -442,27 +582,90 @@ class VoiceEngine {
     if (!this.room) this.stopMicPipeline();
   }
 
-  private async ensureMic(): Promise<void> {
-    if (this.mic) return;
-    try {
-      this.mic = await this.buildMic();
-    } catch (err) {
-      log.error('mic start failed', err);
-      setVoice({ micError: errMsg(err) });
-      toast.error(`Микрофон недоступен: ${errMsg(err)}`);
-    }
+  /** Pipeline builds / swaps run one at a time: concurrent builds leaked a capture (review M2). */
+  private micOps: Promise<void> = Promise.resolve();
+  /** Capturing the default device because the chosen one is gone (review M3). */
+  private micFallback = false;
+
+  private queueMic(op: () => Promise<void>): Promise<void> {
+    const run = this.micOps.then(op);
+    this.micOps = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Someone needs the capture: a call or the mic test. */
+  private micWanted(): boolean {
+    return this.micTesting || this.room !== null;
+  }
+
+  private ensureMic(): Promise<void> {
+    return this.queueMic(async () => {
+      // A pipeline whose publish track ended (LiveKit stopped it on a server unpublish) is rebuilt.
+      if (this.mic && this.mic.track.readyState !== 'ended') return;
+      if (this.mic) this.stopMicPipeline();
+      if (!this.micWanted()) return;
+      try {
+        const next = await this.buildMic();
+        if (!this.micWanted() || this.mic) {
+          next.stop(); // the call / test ended while capture was starting
+          return;
+        }
+        this.mic = next;
+      } catch (err) {
+        log.error('mic start failed', err);
+        const h = reportMediaError(err, 'mic');
+        setVoice({ micError: h.text, micErrorAction: h.action });
+      }
+    });
   }
 
   private async buildMic(): Promise<MicPipeline> {
     const p = prefs();
-    const pipeline = await MicPipeline.start({
-      deviceId: p.micDeviceId,
+    let built: MicPipeline | null = null;
+    const opts = {
       rnnoise: p.rnnoise,
-      onReport: (r) => this.onMicReport(r),
-    });
+      onReport: (r: MicReport) => this.onMicReport(r),
+      // Capture ended by the OS (device unplugged): rebuild, falling back to the default device.
+      onEnded: () => {
+        if (built !== null && built === this.mic) this.onMicLost();
+      },
+    };
+    try {
+      built = await MicPipeline.start({ ...opts, deviceId: p.micDeviceId });
+      this.micFallback = false;
+    } catch (err) {
+      if (!p.micDeviceId || !isDeviceGone(err)) throw err;
+      log.warn('chosen mic unavailable, using the default device', err);
+      built = await MicPipeline.start({ ...opts, deviceId: null });
+      if (!this.micFallback) toast.info(t('core.mic.fallback'));
+      this.micFallback = true;
+    }
     this.gate.reset();
-    setVoice({ micError: null });
-    return pipeline;
+    setVoice({ micError: null, micErrorAction: null });
+    return built;
+  }
+
+  private onMicLost(): void {
+    log.warn('mic capture ended (device lost?), restarting');
+    void this.restartMic();
+  }
+
+  /** The chosen mic came back while we used the default one → switch back to it. */
+  private async onDevicesChanged(): Promise<void> {
+    const want = prefs().micDeviceId;
+    if (!this.mic || !this.micFallback || !want) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      if (!devices.some((d) => d.kind === 'audioinput' && d.deviceId === want)) return;
+    } catch {
+      return;
+    }
+    await this.restartMic();
+    if (!this.usingFallback()) toast.info(t('core.mic.back'));
+  }
+
+  private usingFallback(): boolean {
+    return this.micFallback;
   }
 
   private stopMicPipeline(): void {
@@ -472,20 +675,29 @@ class VoiceEngine {
     setVoice({ levelDb: -80, vad: null, gateOpen: false, transmitting: false });
   }
 
-  /** Device or RNNoise changed: rebuild capture and swap the published track in place. */
-  private async restartMic(): Promise<void> {
-    const old = this.mic;
-    try {
-      const next = await this.buildMic();
-      this.mic = next;
-      if (this.micTrack) {
-        next.track.enabled = !this.micTrack.isMuted && this.gateWantsAudio();
-        await this.micTrack.replaceTrack(next.track, { userProvidedTrack: true });
+  /** Device or RNNoise changed / device lost: rebuild capture, swap the published track in place. */
+  private restartMic(): Promise<void> {
+    return this.queueMic(async () => {
+      const old = this.mic;
+      if (!old) return;
+      try {
+        const next = await this.buildMic();
+        // Stopped (left the call / test) or replaced meanwhile: never keep an orphan capture.
+        if (this.mic !== old || !this.micWanted()) {
+          next.stop();
+          return;
+        }
+        this.mic = next;
+        if (this.micTrack) {
+          next.track.enabled = !this.micTrack.isMuted && this.gateWantsAudio();
+          await this.micTrack.replaceTrack(next.track, { userProvidedTrack: true });
+        }
+        old.stop();
+      } catch (err) {
+        const h = humanMediaError(err, 'mic');
+        setVoice({ micError: h.text, micErrorAction: h.action });
       }
-      old?.stop();
-    } catch (err) {
-      setVoice({ micError: errMsg(err) });
-    }
+    });
   }
 
   private micPublishOptions(): TrackPublishOptions {
@@ -571,18 +783,39 @@ class VoiceEngine {
     const d = this.decision();
     setVoice({ transmitting: d.transmitting && t !== null });
     if (!t) return;
-    if (d.livekitMuted && !t.isMuted) {
-      this.selfMuting = true;
-      void t.mute().finally(() => {
-        this.selfMuting = false;
-      });
-    } else if (!d.livekitMuted && t.isMuted) {
-      void t.unmute().then(() => {
-        t.mediaStreamTrack.enabled = this.gateWantsAudio();
-      });
+    // `isMuted` flips only after LiveKit's async mute lock: while a mute/unmute is in flight,
+    // wait for it and re-evaluate, so mute→unmute in quick succession ends in the state the
+    // UI shows (review L2).
+    if (this.muteOp) return;
+    if (d.livekitMuted !== t.isMuted) {
+      if (d.livekitMuted) this.selfMuting = true;
+      const op = d.livekitMuted ? t.mute() : t.unmute();
+      this.muteOp = op
+        .then(
+          () => undefined,
+          (e: unknown) => log.warn('mic mute/unmute failed', e),
+        )
+        .finally(() => {
+          this.muteOp = null;
+          this.selfMuting = false;
+          if (this.micTrack === t) this.applyTransmit();
+        });
       return;
     }
     if (!t.isMuted) t.mediaStreamTrack.enabled = d.audioEnabled;
+  }
+
+  private muteOp: Promise<void> | null = null;
+
+  /** Power events (sleep / lock): a key-up lost meanwhile must not leave PTT on (review M6). */
+  resetPtt(): void {
+    if (this.releaseTimer !== null) {
+      window.clearTimeout(this.releaseTimer);
+      this.releaseTimer = null;
+    }
+    if (!useVoice.getState().pttDown) return;
+    setVoice({ pttDown: false });
+    this.applyTransmit();
   }
 
   private onPtt(ev: PttEvent): void {
@@ -625,8 +858,8 @@ class VoiceEngine {
       // Still connected to the old LiveKit room name → the server move did not reach us.
       if (this.room === room && room.name && !room.name.endsWith(toRoomId)) {
         log.warn('voice: no RoomEvent.Moved, rejoining', room.name);
-        this.roomId = fromRoomId; // let join() see a change
-        void this.join(toRoomId, workspaceId, true);
+        this.roomId = fromRoomId; // let connect() see a change
+        void this.connect(toRoomId, workspaceId, true);
       }
     }, 4000);
   }
@@ -638,6 +871,7 @@ class VoiceEngine {
 
   toggleMute(): void {
     setVoice(toggleMute(useVoice.getState()));
+    if (!useVoice.getState().muted) setVoice({ serverMuted: false });
     playSound(useVoice.getState().muted ? 'mute' : 'unmute');
     this.afterSelfChange();
   }
@@ -693,10 +927,13 @@ class VoiceEngine {
     if (!room || !roomId) return;
     setVoice({ streamBusy: true });
     let captured: CapturedScreen | null = null;
+    let step: 'screen' | 'stream' = 'screen';
+    const codec = useVoice.getState().streamCodec;
     try {
       await this.stopStream();
       // 1) capture first (browsers need the click's transient activation for the picker);
       captured = await captureScreen(opts);
+      step = 'stream';
       // 2) reserve a slot + get the screen_share grant (409 when max_streams is reached);
       const granted = await api.voice.requestStream(roomId, opts.preset);
       const preset = granted.preset || opts.preset;
@@ -705,7 +942,7 @@ class VoiceEngine {
       // 3) publish.
       const share = await startScreenShare(
         room.localParticipant,
-        { ...opts, preset },
+        { ...opts, preset, codec },
         () => {
           if (this.screen === share) {
             this.screen = null;
@@ -717,16 +954,16 @@ class VoiceEngine {
       captured = null;
       this.screen = share;
       this.viewers.set(share.video.sid ?? '', new Set());
+      const audio = share.audioProblem
+        ? reportMediaError(share.audioProblem.raw, 'streamAudio', share.audioProblem.code === 'no-loopback' ? 'no-loopback' : undefined)
+        : null;
       setVoice({
-        myStream: { sourceName: share.sourceName, preset, hasAudio: share.audio !== null, audioError: share.audioError, viewers: 0 },
+        myStream: { sourceName: share.sourceName, preset, hasAudio: share.audio !== null, audioError: audio?.text ?? null, viewers: 0 },
       });
-      if (preset !== opts.preset) toast.info('Пресет стрима ограничен настройками комнаты');
-      if (share.audioError) toast.info(`Звук стрима: ${share.audioError}`);
+      if (preset !== opts.preset) toast.info(t('mediaErr.stream.limited'));
     } catch (err) {
       log.error('stream start failed', err);
-      if (err instanceof ApiError && err.is('ERROR_CODE_CONFLICT')) toast.error('В комнате уже максимум стримов');
-      else if (err instanceof ApiError && err.is('ERROR_CODE_FORBIDDEN')) toast.error('Нет права на стрим в этой комнате');
-      else toast.error(`Не удалось начать стрим: ${errMsg(err)}`);
+      reportMediaError(err, step);
     } finally {
       // Captured but never published (409, grant timeout…): release the screen.
       captured?.stream.getTracks().forEach((t) => t.stop());
@@ -769,13 +1006,33 @@ class VoiceEngine {
 
   // ---- viewers count over LiveKit data (ephemeral, in-call only) ----
 
-  private announceWatch(owner: RemoteParticipant, trackSid: string | undefined, on: boolean): void {
+  /**
+   * «I watch your stream» goes to the streamer only for the stream on my stage (PiP, expanded or
+   * pop-out) once its video is subscribed — preview tiles in the strip don't count as watching.
+   */
+  private syncAnnounce(): void {
     const room = this.room;
-    if (!room || !trackSid) return;
+    if (!room) return;
+    const watching = useVoice.getState().watching;
+    let next: { owner: string; sid: string } | null = null;
+    if (watching) {
+      for (const p of room.remoteParticipants.values()) {
+        const pub = p.getTrackPublicationBySid(watching);
+        if (pub?.isSubscribed) next = { owner: p.identity, sid: watching };
+      }
+    }
+    const prev = this.announced;
+    if (prev?.sid === next?.sid && prev?.owner === next?.owner) return;
+    this.announced = next;
+    if (prev) this.announceWatch(prev.owner, prev.sid, false);
+    if (next) this.announceWatch(next.owner, next.sid, true);
+  }
+
+  private announceWatch(owner: string, trackSid: string, on: boolean): void {
+    const room = this.room;
+    if (!room) return;
     const data = new TextEncoder().encode(JSON.stringify({ sid: trackSid, on }));
-    void room.localParticipant
-      .publishData(data, { reliable: true, topic: WATCH_TOPIC, destinationIdentities: [owner.identity] })
-      .catch(() => undefined);
+    void room.localParticipant.publishData(data, { reliable: true, topic: WATCH_TOPIC, destinationIdentities: [owner] }).catch(() => undefined);
   }
 
   private onWatchMessage(payload: Uint8Array, from: RemoteParticipant): void {
@@ -800,9 +1057,20 @@ class VoiceEngine {
 
   // ------------------------------------------------------------ stats / quality
 
+  private statsBusy = false;
+
   private startStats(): void {
     this.stopStats();
-    this.statsTimer = window.setInterval(() => void this.collectStats(), STATS_INTERVAL_MS);
+    this.statsTimer = window.setInterval(() => {
+      // getStats can take longer than the interval on a loaded machine: never overlap (review L8).
+      if (this.statsBusy) return;
+      this.statsBusy = true;
+      void this.collectStats()
+        .catch((e: unknown) => log.warn('stats failed', e))
+        .finally(() => {
+          this.statsBusy = false;
+        });
+    }, STATS_INTERVAL_MS);
   }
 
   private stopStats(): void {
@@ -838,21 +1106,19 @@ class VoiceEngine {
     }
     let watching = null;
     const watchedSid = useVoice.getState().watching;
-    for (const p of room.remoteParticipants.values()) {
-      for (const pub of p.trackPublications.values()) {
-        const track = pub.track;
-        if (!track || !pub.trackSid) continue;
-        const report = await track.getRTCStatsReport();
-        if (!report) continue;
-        note(report);
-        pair ??= candidatePair(report);
-        if (track.kind === Track.Kind.Audio) {
-          const a = inboundAudio(report, this.rates, pub.trackSid);
-          if (a?.lossPct !== null && a?.lossPct !== undefined) losses.push(a.lossPct);
-        } else if (pub.trackSid === watchedSid) {
-          watching = inboundVideo(report, this.rates, pub.trackSid);
-        }
+    // One getStats() on the subscriber connection for every remote track instead of one per
+    // track (30 mics = 30 calls every 2 s, review L8); split by inbound-rtp entry.
+    const inbound = await room.engine.pcManager?.subscriber?.getStats();
+    if (inbound) {
+      note(inbound);
+      pair ??= candidatePair(inbound);
+      for (const entry of inboundRtp(inbound, 'audio')) {
+        const a = inboundAudio(withOnly(inbound, entry), this.rates, entry.id);
+        if (a?.lossPct !== null && a?.lossPct !== undefined) losses.push(a.lossPct);
       }
+      const watchedTrack = watchedSid ? this.remotePub(watchedSid)?.track?.mediaStreamTrack.id : undefined;
+      const v = watchedTrack ? inboundRtp(inbound, 'video').find((e) => e['trackIdentifier'] === watchedTrack) : undefined;
+      if (v && watchedSid) watching = inboundVideo(withOnly(inbound, v), this.rates, watchedSid);
     }
     const rtt = pair?.rttMs ?? null;
     let out = 0;
@@ -887,6 +1153,25 @@ class VoiceEngine {
     const relay = p.localType === 'relay' ? ` через TURN (${p.relayProtocol ?? '?'})` : '';
     return `${p.localType} → ${p.remoteType}, ${p.protocol.toUpperCase()}${relay}`;
   }
+}
+
+type StatsEntry = Record<string, unknown> & { id: string; type: string };
+
+function inboundRtp(report: RTCStatsReport, kind: 'audio' | 'video'): StatsEntry[] {
+  const out: StatsEntry[] = [];
+  report.forEach((e: StatsEntry) => {
+    if (e.type === 'inbound-rtp' && e['kind'] === kind) out.push(e);
+  });
+  return out;
+}
+
+/** The report with `keep` as its only inbound-rtp (codecs, transport, candidates stay). */
+function withOnly(report: RTCStatsReport, keep: StatsEntry): RTCStatsReport {
+  const m = new Map<string, StatsEntry>();
+  report.forEach((e: StatsEntry) => {
+    if (e.type !== 'inbound-rtp' || e.id === keep.id) m.set(e.id, e);
+  });
+  return m;
 }
 
 export const voice = new VoiceEngine();

@@ -1,12 +1,24 @@
 import * as Popover from '@radix-ui/react-popover';
-import { Clock3, Search } from 'lucide-react';
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Car, Clock3, Hand, Heart, Leaf, Lightbulb, Pizza, Search, Smile, Trophy, type LucideIcon } from 'lucide-react';
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useChatView } from './chatView';
 import { EMOJI_GROUPS, searchEmoji } from './emoji';
 
 const COLS = 9;
+
+/** Category bar glyphs: monochrome, SF-Symbols-like (Telegram / macOS), not colour emoji. */
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  smileys: Smile,
+  people: Hand,
+  nature: Leaf,
+  food: Pizza,
+  activity: Trophy,
+  travel: Car,
+  objects: Lightbulb,
+  symbols: Heart,
+};
 
 /**
  * Lightweight emoji picker (no dependency): search by name, recent, 8 groups with a tab row.
@@ -24,9 +36,9 @@ export function EmojiPicker({ onPick, label, children }: { onPick: (emoji: strin
           side="top"
           align="end"
           sideOffset={10}
-          collisionPadding={8}
+          collisionPadding={16}
           aria-label={t('chat.emoji')}
-          className="mat-popover anim-in z-[var(--z-popover)] flex h-[360px] w-[340px] flex-col overflow-hidden rounded-[var(--radius-panel)]"
+          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[372px] w-[348px] flex-col overflow-hidden rounded-[var(--radius-panel)]"
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <PickerBody
@@ -45,6 +57,17 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
   const [q, setQ] = useState('');
   const recent = useChatView((s) => s.recentEmoji);
   const scroller = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<string | null>(null);
+  // The category under the top edge gets the underline in the bar.
+  const onScroll = useCallback(() => {
+    const el = scroller.current;
+    if (!el) return;
+    let cur: string | null = null;
+    for (const sec of Array.from(el.querySelectorAll<HTMLElement>('section[data-group]'))) {
+      if (sec.offsetTop - el.offsetTop <= el.scrollTop + 8) cur = sec.dataset['group'] ?? null;
+    }
+    setActive(cur);
+  }, []);
   const sections = useMemo(() => {
     if (q.trim()) return [{ id: 'search', label: t('chat.emojiFound'), list: searchEmoji(q) }];
     return [...(recent.length ? [{ id: 'recent', label: t('chat.emojiRecent'), list: recent }] : []), ...EMOJI_GROUPS];
@@ -78,14 +101,17 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
           }}
           placeholder={t('chat.emojiSearch')}
           aria-label={t('chat.emojiSearch')}
-          className="h-10 min-w-0 flex-1 bg-transparent text-[13px] text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+          className="h-10 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
         />
       </div>
-      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" onKeyDown={onGridKey}>
+      {/* 12 px inset on both sides: 9 × 36 px cells fill the 348 px popover (narrower if a classic scrollbar takes room). */}
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-3 pb-2" onKeyDown={onGridKey} onScroll={onScroll}>
         {sections.map((s) => (
-          <section key={s.id} id={`emoji-${s.id}`} aria-label={s.label}>
-            <h3 className="sticky top-0 z-[1] bg-[var(--color-popover-solid)] px-1 pb-1 pt-2 text-[12px] font-semibold text-muted">{s.label}</h3>
-            {s.list.length === 0 ? <p className="px-1 py-4 text-center text-[13px] text-muted">{t('chat.emojiNone')}</p> : null}
+          <section key={s.id} id={`emoji-${s.id}`} data-group={s.id} aria-label={s.label} className="-mx-3 px-3">
+            {/* The section bleeds into the scroller's 12 px padding, so the band spans the whole
+                width without sticking out of its section; its text starts at the grid's inset. */}
+            <h3 className="sticky top-0 z-[1] -mx-3 bg-[var(--color-popover-solid)] px-3 pb-1 pt-2 text-caption font-semibold text-muted">{s.label}</h3>
+            {s.list.length === 0 ? <p className="px-1 py-4 text-center text-body text-muted">{t('chat.emojiNone')}</p> : null}
             <div className="grid grid-cols-9">
               {s.list.map((e, i) => (
                 <button
@@ -95,7 +121,7 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
                   tabIndex={s === sections[0] && i === 0 ? 0 : -1}
                   onClick={() => onPick(e)}
                   aria-label={e}
-                  className="grid size-9 place-items-center rounded-[var(--radius-control)] text-[22px] leading-none hover:bg-hover focus-visible:bg-hover focus-visible:outline-offset-[-2px]"
+                  className="grid h-9 w-full min-w-0 place-items-center rounded-[var(--radius-control)] text-[22px] leading-none hover:bg-hover focus-visible:bg-hover focus-visible:outline-offset-[-2px]"
                 >
                   {e}
                 </button>
@@ -105,17 +131,21 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
         ))}
       </div>
       {!q.trim() ? (
-        <nav className="flex shrink-0 items-center justify-between border-t border-line px-2 py-1" aria-label={t('chat.emojiGroups')}>
+        <nav className="flex shrink-0 items-center justify-between border-t border-line px-3 py-1" aria-label={t('chat.emojiGroups')}>
           {recent.length ? (
-            <GroupTab label={t('chat.emojiRecent')} onClick={() => jumpTo(scroller.current, 'recent')}>
-              <Clock3 className="size-4" aria-hidden />
+            <GroupTab label={t('chat.emojiRecent')} active={(active ?? 'recent') === 'recent'} onClick={() => jumpTo(scroller.current, 'recent')}>
+              <Clock3 className="size-5" aria-hidden />
             </GroupTab>
           ) : null}
-          {EMOJI_GROUPS.map((g) => (
-            <GroupTab key={g.id} label={g.label} onClick={() => jumpTo(scroller.current, g.id)}>
-              <span className="text-[16px] leading-none grayscale-[35%]">{g.icon}</span>
-            </GroupTab>
-          ))}
+          {EMOJI_GROUPS.map((g, i) => {
+            const Icon = GROUP_ICONS[g.id] ?? Smile;
+            const on = active ? active === g.id : !recent.length && i === 0;
+            return (
+              <GroupTab key={g.id} label={g.label} active={on} onClick={() => jumpTo(scroller.current, g.id)}>
+                <Icon className="size-5" aria-hidden />
+              </GroupTab>
+            );
+          })}
         </nav>
       ) : null}
     </>
@@ -127,16 +157,22 @@ function jumpTo(scroller: HTMLDivElement | null, id: string): void {
   if (scroller && el) scroller.scrollTo({ top: el.offsetTop - scroller.offsetTop });
 }
 
-function GroupTab({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }): ReactNode {
+function GroupTab({ label, active, onClick, children }: { label: string; active: boolean; onClick: () => void; children: ReactNode }): ReactNode {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className={cx('grid size-8 place-items-center rounded-[var(--radius-control)] text-muted hover:bg-hover hover:text-fg')}
-    >
-      {children}
-    </button>
+    <Tip label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-current={active || undefined}
+        onClick={onClick}
+        className={cx(
+          'relative grid size-8 place-items-center rounded-[var(--radius-control)] hover:bg-hover hover:text-fg',
+          active ? 'text-accent' : 'text-muted',
+        )}
+      >
+        {children}
+        {active ? <span className="absolute inset-x-1.5 -bottom-1 h-0.5 rounded-full bg-accent" aria-hidden /> : null}
+      </button>
+    </Tip>
   );
 }

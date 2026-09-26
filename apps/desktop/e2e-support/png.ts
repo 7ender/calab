@@ -79,15 +79,43 @@ export function cardPicture(bg: Rgb, circle: Rgb, bar: Rgb, aspect: number): (u:
   };
 }
 
-/** Avatar picture: background with a centred "head and shoulders" silhouette. */
-export function avatarPicture(bg: Rgb, fg: Rgb): (u: number, v: number) => Rgb {
+/**
+ * Avatar picture (a user-chosen image, not the letter default): a diagonal dusk gradient with a
+ * soft sun and two hill layers, 4× supersampled so the edges are smooth. `size` = the pixel
+ * width it will be encoded at (for the supersampling step).
+ */
+export function avatarPicture(from: Rgb, to: Rgb, size = 128): (u: number, v: number) => Rgb {
+  const mix = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const sun: Rgb = [255, 226, 170];
+  const far: Rgb = mix(to, [20, 24, 48], 0.45);
+  const near: Rgb = mix(to, [12, 14, 30], 0.75);
+  const sample = (u: number, v: number): Rgb => {
+    const back = mix(from, to, Math.min(1, Math.max(0, (u * 0.35 + v * 0.65) * 1.05)));
+    if (v > 0.74 + 0.07 * Math.sin(u * 5.2 + 0.4)) return near;
+    if (v > 0.62 + 0.09 * Math.sin(u * 3.4 + 2.1)) return far;
+    const dx = u - 0.64;
+    const dy = v - 0.5;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < 0.16) return sun;
+    // Glow around the sun, fading into the sky.
+    return d < 0.34 ? mix(back, sun, ((0.34 - d) / 0.18) ** 2 * 0.35) : back;
+  };
+  const h = 1 / size / 4;
   return (u, v) => {
-    const hx = u - 0.5;
-    const hy = v - 0.38;
-    if (hx * hx + hy * hy < 0.17 * 0.17) return fg;
-    const bx = (u - 0.5) / 0.34;
-    const by = (v - 1.02) / 0.4;
-    if (bx * bx + by * by < 1) return fg;
-    return bg;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    for (const [du, dv] of [
+      [h, h],
+      [3 * h, h],
+      [h, 3 * h],
+      [3 * h, 3 * h],
+    ] as const) {
+      const c = sample(u + du, v + dv);
+      r += c[0];
+      g += c[1];
+      b += c[2];
+    }
+    return [Math.round(r / 4), Math.round(g / 4), Math.round(b / 4)];
   };
 }

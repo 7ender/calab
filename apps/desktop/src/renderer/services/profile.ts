@@ -34,12 +34,22 @@ export function parseBindings(raw: string): SyncedBindings {
   }
 }
 
+/** Same key, kind, mode and remap (the label is derived from the code). */
+export function sameBinding(a: PttBinding | null | undefined, b: PttBinding | null | undefined): boolean {
+  if (!a || !b) return !a && !b;
+  const remap = (x: PttBinding): string => (x.kind === 'key' ? (x.remap ?? '') : '');
+  return a.kind === b.kind && a.code === b.code && (a.mode ?? 'hold') === (b.mode ?? 'hold') && remap(a) === remap(b);
+}
+
 export function applyUserSettings(s: UserSettings): void {
   applying = true;
   synced = parseBindings(s.pushToTalkKey);
   const own = synced[mine()];
   const fits = own && (platform.kind === 'web' ? own.kind === 'dom' : own.kind !== 'dom');
-  const binding: PttBinding | null = fits ? own : prefs().pttBinding;
+  const current = prefs().pttBinding;
+  // Every READY / USER_UPDATE (incl. the echo of our own PATCH) parses a new object: keep the
+  // current one when nothing changed, else PTT is re-bound and cut mid-speech (review M5).
+  const binding: PttBinding | null = fits && !sameBinding(own, current) ? own : current;
   usePrefs.getState().setPrefs({
     rnnoise: s.noiseSuppression,
     red: s.unstableNetworkRed,

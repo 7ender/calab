@@ -198,12 +198,17 @@ export function uploadFile(workspaceId: string, file: Blob, name: string, onProg
     xhr.onload = () => {
       const res = new Response(xhr.responseText, { status: xhr.status });
       if (xhr.status >= 200 && xhr.status < 300) {
-        const json = JSON.parse(xhr.responseText) as JsonValue;
-        const file = fromJson(UploadFileResponseSchema, json, { ignoreUnknownFields: true }).file;
+        // A throw inside onload would leave the promise (and the message) pending forever (review L6).
+        let file: FileMeta | undefined;
+        try {
+          file = fromJson(UploadFileResponseSchema, JSON.parse(xhr.responseText) as JsonValue, { ignoreUnknownFields: true }).file;
+        } catch {
+          file = undefined;
+        }
         if (file) resolve(file);
-        else reject(new ApiError('ERROR_CODE_INTERNAL', 'empty upload response', xhr.status));
+        else reject(new ApiError('ERROR_CODE_INTERNAL', 'bad upload response', xhr.status));
       } else {
-        void toApiError(res).then(reject);
+        toApiError(res).then(reject, () => reject(new ApiError('ERROR_CODE_INTERNAL', `HTTP ${xhr.status}`, xhr.status)));
       }
     };
     xhr.onerror = () => reject(new ApiError('ERROR_CODE_UNAVAILABLE', 'upload failed', 0));

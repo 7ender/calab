@@ -1,13 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { plural, t } from '../../i18n';
-import { useMessages } from '../../stores/messages';
+import { useTyping } from '../../stores/typing';
 import { memberName } from '../../stores/workspaces';
 
 const NONE: Record<string, number> = {};
 
 /** «Bob печатает…» for the room header (Telegram shows it instead of the subtitle); '' when nobody types. */
 export function useTypingText(workspaceId: string, roomId: string): string {
-  const typing = useMessages((s) => s.typing[roomId] ?? NONE);
+  const typing = useTyping((s) => s.rooms[roomId] ?? NONE);
   // Expired entries are removed by the dispatcher; the tick only re-filters between events.
   const [now, setNow] = useState(() => Date.now());
   const active = Object.keys(typing).length > 0;

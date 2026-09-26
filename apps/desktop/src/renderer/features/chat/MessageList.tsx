@@ -3,7 +3,7 @@ import { ArrowDown, Hash, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { RoomType } from '@calaba/protocol';
-import { Spinner, cx } from '../../components/ui';
+import { Spinner, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { fmtTime, toDate } from '../../lib/format';
 import { ensureLoaded, loadNewer, loadOlder, loadPresent, markRead } from '../../services/chat';
@@ -18,6 +18,8 @@ import { EmptyRoom } from './RoomPanels';
 
 const START_INDEX = 1_000_000;
 const HIGHLIGHT_MS = 1800;
+/** The floating date fades out this long after scrolling stops (Telegram). */
+const STICKY_IDLE_MS = 1000;
 
 export function MessageList({
   workspaceId,
@@ -172,7 +174,18 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const scroller = useRef<HTMLElement | null>(null);
   const [sticky, setSticky] = useState<string | null>(null);
   const frame = useRef(0);
+  // Telegram: the floating date shows while scrolling and fades out 1 s after it stops; the
+  // overlay scrollbar (styles.css, non-mac) follows the same [data-scrolling] flag.
+  const [scrolling, setScrolling] = useState(false);
+  const idle = useRef(0);
   const onScroll = useCallback(() => {
+    setScrolling(true);
+    scroller.current?.setAttribute('data-scrolling', '');
+    window.clearTimeout(idle.current);
+    idle.current = window.setTimeout(() => {
+      setScrolling(false);
+      scroller.current?.removeAttribute('data-scrolling');
+    }, STICKY_IDLE_MS);
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
@@ -194,7 +207,13 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
       setSticky(null);
     });
   }, []);
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(frame.current);
+      window.clearTimeout(idle.current);
+    },
+    [],
+  );
 
   const toBottom = (): void => {
     if (state.hasMoreAfter) {
@@ -259,7 +278,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
       />
 
       {showBanner && firstUnreadMsg ? (
-        <div className="absolute inset-x-0 top-0 z-[var(--z-sticky)] flex h-8 items-center gap-2 bg-accent-strong pl-4 pr-2 text-[13px] text-accent-fg shadow-[var(--shadow-card)]" data-testid="unread-banner">
+        <div className="absolute inset-x-0 top-0 z-[var(--z-sticky)] flex h-8 items-center gap-2 bg-accent-strong pl-4 pr-2 text-body text-accent-fg shadow-[var(--shadow-card)]" data-testid="unread-banner">
           <button type="button" className="min-w-0 flex-1 truncate text-left font-medium hover:underline" onClick={toFirstUnread}>
             {t('chat.unreadBanner', {
               n: `${unread}${moreUnread ? '+' : ''}`,
@@ -278,26 +297,34 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
       ) : null}
 
       {stickyDate ? (
-        <div className={cx('pointer-events-none absolute inset-x-0 z-[var(--z-sticky)] flex justify-center', showBanner ? 'top-10' : 'top-2')}>
+        <div
+          className={cx(
+            'pointer-events-none absolute inset-x-0 z-[var(--z-sticky)] flex justify-center transition-opacity duration-[var(--motion)] ease-out',
+            showBanner ? 'top-10' : 'top-2',
+            scrolling ? 'opacity-100' : 'opacity-0',
+          )}
+          data-idle={scrolling ? undefined : ''}
+        >
           <DatePill date={stickyDate} floating />
         </div>
       ) : null}
 
       {!atBottom || state.hasMoreAfter ? (
+        <Tip label={t('chat.toBottom')} side="left">
         <button
           type="button"
           onClick={toBottom}
           aria-label={unread ? t('chat.toBottomUnread', { n: unread }) : t('chat.toBottom')}
-          title={t('chat.toBottom')}
           className="mat-popover anim-in absolute bottom-4 right-5 z-[var(--z-sticky)] grid size-10 place-items-center rounded-full text-muted hover:text-fg"
         >
           <ArrowDown className="size-5" />
           {unread ? (
-            <span className="absolute -top-2 left-1/2 min-w-5 -translate-x-1/2 rounded-full bg-accent-strong px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-accent-fg">
+            <span className="absolute -top-2 left-1/2 min-w-5 -translate-x-1/2 rounded-full bg-accent-strong px-1.5 py-0.5 text-center text-micro font-semibold leading-none text-accent-fg">
               {unread > 99 ? '99+' : unread}
             </span>
           ) : null}
         </button>
+        </Tip>
       ) : null}
     </div>
   );
@@ -314,8 +341,8 @@ function HistoryStart({ room }: { room: Room }): ReactNode {
       <span className="grid size-14 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text">
         <Icon className="size-7" strokeWidth={1.5} aria-hidden />
       </span>
-      <div className="mt-2 text-[16px] font-semibold">{t('chat.welcomeTitle', { name: voice ? room.name : `#${room.name}` })}</div>
-      <div className="text-[13px] text-muted">{t('chat.historyStart')}</div>
+      <div className="mt-2 text-headline font-semibold">{voice ? t('chat.welcomeVoiceTitle', { name: room.name }) : t('chat.welcomeTitle', { name: room.name })}</div>
+      <div className="text-body text-muted">{t('chat.historyStart')}</div>
     </div>
   );
 }

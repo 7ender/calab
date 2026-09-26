@@ -61,6 +61,7 @@ func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handle
 	mux.Handle("POST /api/rooms/{id}/stream/request", wrap(httpx.HandlerFunc(s.requestStream)))
 	mux.Handle("PATCH /api/voice/self", wrap(httpx.HandlerFunc(s.voiceSelf)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/mute", wrap(httpx.HandlerFunc(s.muteMember)))
+	mux.Handle("POST /api/rooms/{id}/voice/{userId}/unmute", wrap(httpx.HandlerFunc(s.unmuteMember)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/disconnect", wrap(httpx.HandlerFunc(s.disconnectMember)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/stop-stream", wrap(httpx.HandlerFunc(s.stopStream)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/move", wrap(httpx.HandlerFunc(s.moveMember)))
@@ -146,13 +147,13 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	tok, err := JoinToken(s.cfg.APIKey, s.cfg.Secret, name, identity,
-		s.displayName(r.Context(), room.WorkspaceID, id.UserID), Grant(acc.Bits, slot), TokenTTL)
+		s.displayName(r.Context(), room.WorkspaceID, id.UserID), s.grant(r.Context(), room.WorkspaceID, id.UserID, acc.Bits, slot), TokenTTL)
 	if err != nil {
 		return err
 	}
 	httpx.Write(w, http.StatusOK, &v1.JoinVoiceResponse{
 		Url: s.cfg.PublicURL, Token: tok, Identity: identity, Media: media,
-		CanSpeak: acc.Bits.Has(perm.Speak), CanStream: slot,
+		CanSpeak: s.canSpeak(r.Context(), room.WorkspaceID, id.UserID, acc.Bits), CanStream: slot,
 	})
 	return nil
 }
@@ -197,11 +198,33 @@ func (s *Service) requestStream(w http.ResponseWriter, r *http.Request) error {
 	if err := s.voice.ReserveStream(r.Context(), identity, preset); err != nil {
 		return err
 	}
-	if err := s.lk.UpdatePermission(r.Context(), name, identity, Grant(acc.Bits, true)); err != nil {
+	if err := s.lk.UpdatePermission(r.Context(), name, identity, s.grant(r.Context(), room.WorkspaceID, id.UserID, acc.Bits, true)); err != nil {
 		return httpx.Unavailable(err)
 	}
 	httpx.Write(w, http.StatusOK, &v1.RequestStreamResponse{Preset: preset})
 	return nil
+}
+
+// serverMuted reports a moderator's mute; a Redis error counts as not muted (logged).
+func (s *Service) serverMuted(ctx context.Context, wid, uid uuid.UUID) bool {
+	sm, err := s.voice.ServerMuted(ctx, wid, uid)
+	if err != nil {
+		slog.WarnContext(ctx, "read server mute", "user", uid, "err", err)
+	}
+	return sm
+}
+
+// grant is Grant for a concrete user: a server-muted user loses the microphone source, so
+// the SFU itself refuses to publish or unmute a microphone track.
+func (s *Service) grant(ctx context.Context, wid, uid uuid.UUID, bits perm.Bits, slot bool) Permission {
+	if bits.Has(perm.Speak) && s.serverMuted(ctx, wid, uid) {
+		bits &^= perm.Speak
+	}
+	return Grant(bits, slot)
+}
+
+func (s *Service) canSpeak(ctx context.Context, wid, uid uuid.UUID, bits perm.Bits) bool {
+	return bits.Has(perm.Speak) && !s.serverMuted(ctx, wid, uid)
 }
 
 func (s *Service) publishVoice(ctx context.Context, wsID uuid.UUID, c voice.Change) {
@@ -262,6 +285,9 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 	if !ok {
 		return httpx.Conflict("not connected to a voice room")
 	}
+	if req.Muted != nil && !req.GetMuted() && s.serverMuted(r.Context(), wsID, id.UserID) {
+		return httpx.Forbidden("muted by a moderator")
+	}
 	c, err := s.voice.Update(r.Context(), wsID, id.UserID, id.SessionID, func(cur *voice.SessionState) *voice.SessionState {
 		if cur == nil {
 			return nil
@@ -299,6 +325,16 @@ func (s *Service) memberSessions(ctx context.Context, wsID, roomID, userID uuid.
 }
 
 func (s *Service) moderate(r *http.Request) (sqlc.Room, uuid.UUID, []voice.SessionState, error) {
+	room, target, sess, err := s.moderateAny(r)
+	if err == nil && len(sess) == 0 {
+		err = httpx.NotFound("member in this voice room")
+	}
+	return room, target, sess, err
+}
+
+// moderateAny checks MUTE_MEMBERS in the path room and the moderation hierarchy; the
+// target's devices in that room may be none (e.g. unmute after they left).
+func (s *Service) moderateAny(r *http.Request) (sqlc.Room, uuid.UUID, []voice.SessionState, error) {
 	roomID, err := httpx.PathUUID(r, "id", "room")
 	if err != nil {
 		return sqlc.Room{}, uuid.Nil, nil, err
@@ -325,18 +361,23 @@ func (s *Service) moderate(r *http.Request) (sqlc.Room, uuid.UUID, []voice.Sessi
 	if err != nil {
 		return room, target, nil, err
 	}
-	if len(sess) == 0 {
-		return room, target, nil, httpx.NotFound("member in this voice room")
-	}
 	return room, target, sess, nil
 }
 
-// muteMember server-mutes the member's microphone tracks on all of their devices.
+// muteMember server-mutes the member (VoiceState.server_muted) until a moderator unmutes:
+// the microphone source is withdrawn from the grants of all their devices (LiveKit then
+// refuses to publish or unmute it) and published microphone tracks are muted.
 func (s *Service) muteMember(w http.ResponseWriter, r *http.Request) error {
 	room, target, sess, err := s.moderate(r)
 	if err != nil {
 		return err
 	}
+	c, err := s.voice.SetServerMuted(r.Context(), room.WorkspaceID, target, true)
+	if err != nil {
+		return err
+	}
+	s.publishVoice(r.Context(), room.WorkspaceID, c)
+	s.resync(r.Context(), room.WorkspaceID, func(st voice.SessionState) bool { return st.UserID == target })
 	name := voice.RoomName(room.WorkspaceID, room.ID)
 	for _, st := range sess {
 		identity := voice.Identity(st.UserID, st.SessionID)
@@ -363,6 +404,23 @@ func (s *Service) muteMember(w http.ResponseWriter, r *http.Request) error {
 			s.publishVoice(r.Context(), room.WorkspaceID, c)
 		}
 	}
+	httpx.NoContent(w)
+	return nil
+}
+
+// unmuteMember lifts a server mute (MUTE_MEMBERS; the member cannot lift it). The
+// microphone grant is restored; the member unmutes themselves.
+func (s *Service) unmuteMember(w http.ResponseWriter, r *http.Request) error {
+	room, target, _, err := s.moderateAny(r)
+	if err != nil {
+		return err
+	}
+	c, err := s.voice.SetServerMuted(r.Context(), room.WorkspaceID, target, false)
+	if err != nil {
+		return err
+	}
+	s.publishVoice(r.Context(), room.WorkspaceID, c)
+	s.resync(r.Context(), room.WorkspaceID, func(st voice.SessionState) bool { return st.UserID == target })
 	httpx.NoContent(w)
 	return nil
 }
@@ -400,7 +458,7 @@ func (s *Service) stopStream(w http.ResponseWriter, r *http.Request) error {
 		} else if !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}
-		if err := s.lk.UpdatePermission(r.Context(), name, identity, Grant(acc.Bits, false)); err != nil && !IsNotFound(err) {
+		if err := s.lk.UpdatePermission(r.Context(), name, identity, s.grant(r.Context(), room.WorkspaceID, st.UserID, acc.Bits, false)); err != nil && !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}
 		// Recorded streams of this device (also covers tracks LiveKit no longer reports).
@@ -522,7 +580,7 @@ func DisabledRoutes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 		return httpx.Unavailable(errors.New("rtc: LiveKit is not configured"))
 	})
 	for _, p := range []string{"POST /api/rooms/{id}/join", "POST /api/rooms/{id}/stream/request", "PATCH /api/voice/self",
-		"POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/disconnect",
+		"POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/unmute", "POST /api/rooms/{id}/voice/{userId}/disconnect",
 		"POST /api/rooms/{id}/voice/{userId}/stop-stream", "POST /api/rooms/{id}/voice/{userId}/move"} {
 		mux.Handle(p, wrap(h))
 	}

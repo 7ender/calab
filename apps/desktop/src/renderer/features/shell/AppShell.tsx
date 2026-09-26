@@ -23,7 +23,7 @@ import { WorkspaceRail } from './WorkspaceRail';
 /**
  * Main layout (docs/08, «Layout»; docs/09 #1–#2):
  * title bar 38 px across the window, then
- * rail 72 px │ rooms 240 px (200–320, resizable) │ content (opaque) │ members (optional).
+ * rail 72 px │ rooms 256 px (200–320, resizable) │ content (opaque) │ members (optional).
  */
 export function AppShell(): ReactNode {
   const ready = useSession((s) => s.ready);
@@ -50,7 +50,7 @@ export function AppShell(): ReactNode {
     <div className="flex h-full flex-col" style={{ ['--sidebar-width' as string]: `${width}px` }}>
       <TitleBar />
       {showReconnect ? (
-        <div role="status" className="z-[var(--z-sticky)] bg-warn px-3 py-1 text-center text-[12px] font-medium text-black">
+        <div role="status" className="z-[var(--z-sticky)] bg-warn px-3 py-1 text-center text-caption font-medium text-black">
           {t('gateway.reconnecting')}
         </div>
       ) : null}
@@ -58,7 +58,7 @@ export function AppShell(): ReactNode {
         <WorkspaceRail />
         {!ready ? (
           <div className="mat-content grid flex-1 place-items-center">
-            <div className="flex flex-col items-center gap-3 text-[13px] text-muted">
+            <div className="flex flex-col items-center gap-3 text-body text-muted">
               <Spinner className="size-6" />
               {t('gateway.connecting')}
             </div>
@@ -144,7 +144,7 @@ function NoRoom({ workspaceId }: { workspaceId: string }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 text-[13px] text-muted">
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 text-body text-muted">
       <MessagesSquare className="size-10 text-muted" strokeWidth={1.25} aria-hidden />
       <p>{isAdminRole(role) ? t('shell.noRooms') : t('shell.noRoomsMember')}</p>
       {isAdminRole(role) ? (
@@ -159,8 +159,8 @@ function Welcome(): ReactNode {
   return (
     <div className="mat-content grid flex-1 place-items-center">
       <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-        <h1 className="text-[20px] font-semibold">{t('shell.welcome')}</h1>
-        <p className="text-[13px] text-muted">{t('shell.welcomeText')}</p>
+        <h1 className="text-title font-semibold">{t('shell.welcome')}</h1>
+        <p className="text-body text-muted">{t('shell.welcomeText')}</p>
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" onClick={() => open({ kind: 'join-workspace' })}>
             <Compass className="size-4" strokeWidth={1.75} />

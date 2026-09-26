@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { NotificationLevel, RoomCategorySchema, RoomNotificationSettingsSchema, RoomSchema, RoomType } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { defaultRoom, groupRooms, isQuiet, roomNotify, useRooms } from './rooms';
+import { defaultRoom, groupRooms, isQuiet, roomNotify, unreadMentionCounts, useRooms } from './rooms';
 
 const room = (id: string, type: RoomType, position: number, categoryId = ''): ReturnType<typeof create<typeof RoomSchema>> =>
   create(RoomSchema, { id, workspaceId: 'w', type, name: id, position, categoryId });
@@ -58,5 +58,25 @@ describe('room notifications', () => {
     expect(useRooms.getState().notify.r?.level).toBe(NotificationLevel.NONE);
     useRooms.getState().setNotify(n(NotificationLevel.ALL));
     expect(useRooms.getState().notify.r).toBeUndefined();
+  });
+});
+
+describe('mention counters', () => {
+  it('counts inbox mentions after each room read marker', () => {
+    const items = [
+      { id: '03', roomId: 'a' },
+      { id: '02', roomId: 'a' },
+      { id: '01', roomId: 'b' },
+      { id: '05', roomId: 'c' },
+    ];
+    expect(unreadMentionCounts(items, { a: '02', b: '01' })).toEqual({ a: 1, c: 1 });
+  });
+
+  it('seedMentions only raises counters', () => {
+    useRooms.getState().reset();
+    useRooms.getState().addMention('a');
+    useRooms.getState().addMention('a');
+    useRooms.getState().seedMentions({ a: 1, b: 2 });
+    expect(useRooms.getState().mentions).toEqual({ a: 2, b: 2 });
   });
 });

@@ -79,7 +79,8 @@ function fromStatus(status: number): HumanError {
 
 /** Transport-level failures: fetch() rejections, offline, CORS, aborted requests. */
 function isNetworkError(e: unknown): boolean {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  // Some runtimes have no navigator.onLine at all (undefined): that is not «offline».
+  if (typeof navigator !== 'undefined' && 'onLine' in navigator && !navigator.onLine) return true;
   if (!(e instanceof Error)) return false;
   return e.name === 'TypeError' && /fetch|network|load failed/i.test(e.message);
 }

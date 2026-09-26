@@ -8,10 +8,10 @@ import { initLogging, log } from './logging';
 import { recoverCapsRemap } from './capsRemap';
 import { installRendererCsp } from './csp';
 import { applyDevDockIcon } from './icons';
-import { shutdownPtt } from './ptt';
+import { resetPttGate, shutdownPtt } from './ptt';
 import { createTray } from './tray';
 import { checkForUpdates } from './updater';
-import { createMainWindow, getMainWindow, isOwnOrigin, isOwnPage, showMainWindow } from './windows';
+import { createMainWindow, getMainWindow, installWebContentsGuards, isOwnOrigin, isOwnPage, showMainWindow } from './windows';
 
 // Tests/automation may run several isolated instances side by side.
 if (process.env['CALABA_USER_DATA']) app.setPath('userData', process.env['CALABA_USER_DATA']);
@@ -46,6 +46,9 @@ if (process.env['CALABA_FAKE_MEDIA'] === '1') {
 }
 
 registerApiScheme();
+// Every webContents (main window, stream pop-outs, anything created later) gets the same
+// navigation / window.open / <webview> guards (review L12).
+installWebContentsGuards();
 
 const ALLOWED_PERMISSIONS = new Set(['media', 'display-capture', 'speaker-selection', 'fullscreen', 'notifications', 'clipboard-sanitized-write']);
 
@@ -81,8 +84,16 @@ void app.whenReady().then(() => {
   if (initialLink) handleDeepLink(initialLink);
 
   powerMonitor.on('resume', () => forwardPower('resume'));
-  powerMonitor.on('suspend', () => forwardPower('suspend'));
-  powerMonitor.on('lock-screen', () => forwardPower('lock-screen'));
+  // A PTT key-up lost during sleep / lock (or eaten by secure input) must not leave the mic
+  // transmitting after wake (review M6).
+  powerMonitor.on('suspend', () => {
+    resetPttGate();
+    forwardPower('suspend');
+  });
+  powerMonitor.on('lock-screen', () => {
+    resetPttGate();
+    forwardPower('lock-screen');
+  });
   powerMonitor.on('unlock-screen', () => forwardPower('unlock-screen'));
 
   app.on('activate', () => {

@@ -16,7 +16,7 @@ import { QUICK_REACTIONS } from './emoji';
 /** macOS menu look (popover glass, 28 px rows, accent highlight). */
 export const menuBox = 'mat-popover anim-in z-[var(--z-popover)] min-w-56 rounded-[var(--radius-card)] p-1';
 export const menuItem =
-  'flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-[13px] text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg';
+  'flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-body text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg';
 
 /** Text selected inside this message, if any (copy copies the selection first, like Telegram). */
 function selectionWithin(key: string): string {
@@ -25,6 +25,16 @@ function selectionWithin(key: string): string {
   if (!text || !sel?.anchorNode) return '';
   const el = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode.parentElement;
   return el?.closest(`[data-message-id="${CSS.escape(key)}"]`) ? text : '';
+}
+
+/**
+ * The menu never grows over the composer: its bottom boundary is the composer's top edge (plus a
+ * gap), so near the bottom it opens upward from the pointer (Radix shifts it inside the boundary).
+ */
+function menuPadding(): { top: number; right: number; bottom: number; left: number } {
+  const composer = document.querySelector('[data-testid="composer"]');
+  const top = composer ? composer.getBoundingClientRect().top : window.innerHeight;
+  return { top: 8, right: 8, left: 8, bottom: Math.max(8, window.innerHeight - top + 8) };
 }
 
 /** Right click / long press on a bubble (docs/09 #38). No hover toolbar. */
@@ -45,7 +55,7 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
 
   return (
     <ContextMenu.Portal>
-      <ContextMenu.Content className={menuBox} aria-label={t('chat.menu')} collisionPadding={8}>
+      <ContextMenu.Content className={menuBox} aria-label={t('chat.menu')} collisionPadding={menuPadding()}>
         {canSend ? (
           <>
             <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-0.5" role="group" aria-label={t('chat.react')}>
@@ -60,7 +70,7 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
                       void toggleReaction(roomId, m, e);
                     }}
                     className={cx(
-                      'grid size-8 cursor-default place-items-center rounded-full text-[20px] outline-none transition-transform duration-[var(--motion-fast)] data-[highlighted]:scale-110 data-[highlighted]:bg-hover',
+                      'grid size-8 cursor-default place-items-center rounded-full text-title outline-none transition-transform duration-[var(--motion-fast)] data-[highlighted]:scale-110 data-[highlighted]:bg-hover',
                       mine && 'bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]',
                     )}
                   >

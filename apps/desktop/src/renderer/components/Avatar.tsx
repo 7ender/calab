@@ -16,7 +16,8 @@ function colorOf(id: string): string {
 
 const PRESENCE_COLOR: Partial<Record<PresenceStatus, string>> = {
   [PresenceStatus.ONLINE]: 'bg-ok',
-  [PresenceStatus.IDLE]: 'bg-warn',
+  // Dots are non-text: the system yellow in both themes (the light --color-yellow is a text tone).
+  [PresenceStatus.IDLE]: 'bg-[var(--color-presence-idle)]',
   [PresenceStatus.DND]: 'bg-danger',
 };
 

@@ -59,14 +59,16 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
   return (
     <div className={cx('pl-4', own ? 'pr-6' : 'pr-4', meta.first ? 'pt-2' : 'pt-0.5')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(m.createdAt)} /> : null}
-      {meta.isNew ? (
-        <div className="flex justify-center py-2" role="separator" aria-label={t('chat.newPill')}>
-          <span className="rounded-full bg-accent-strong px-3 py-1 text-[13px] font-medium text-accent-fg shadow-[var(--shadow-card)]">
-            {t('chat.newPill')}
-          </span>
-        </div>
-      ) : null}
-      <div className={cx('flex items-end gap-3 rounded-[var(--radius-card)]', own ? 'justify-end' : 'justify-start', highlighted && 'row-highlight')}>
+      {meta.isNew ? <NewMessagesPill /> : null}
+      <div
+        className={cx(
+          'flex items-end gap-3 rounded-[var(--radius-card)] transition-[background-color,box-shadow] duration-[var(--motion-fast)]',
+          // Telegram tints the message whose menu is open (Radix marks the trigger data-state=open).
+          'has-[>[data-state=open]]:bg-[var(--color-bubble-highlight)] has-[>[data-state=open]]:shadow-[0_0_0_4px_var(--color-bubble-highlight)]',
+          own ? 'justify-end' : 'justify-start',
+          highlighted && 'row-highlight',
+        )}
+      >
         {!own ? (
           <div className="w-9 shrink-0 self-end">
             {meta.last ? <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} /> : null}
@@ -79,17 +81,32 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
   );
 });
 
+/** Date / «new» pills: 24 px, 12/500, dense popover glass with a 0.5 px hairline (UX review). */
+const pill = 'mat-glass inline-flex h-6 items-center rounded-full px-2.5 text-caption font-medium';
+
 export function DatePill({ date, floating }: { date: Date; floating?: boolean }): ReactNode {
   if (floating) {
     return (
-      <span className="mat-popover rounded-full px-3 py-1 text-[13px] font-medium text-fg" aria-hidden data-testid="sticky-date">
+      <span className={cx(pill, 'text-fg')} aria-hidden data-testid="sticky-date">
         {fmtDayLabel(date)}
       </span>
     );
   }
   return (
     <div className="flex justify-center py-2" role="separator" aria-label={fmtDayLabel(date)}>
-      <span className="mat-popover rounded-full px-3 py-1 text-[13px] font-medium text-fg">{fmtDayLabel(date)}</span>
+      <span className={cx(pill, 'text-fg')}>{fmtDayLabel(date)}</span>
+    </div>
+  );
+}
+
+/** «Новые сообщения» (Telegram): accent text on the pill glass, hairlines to both sides. */
+function NewMessagesPill(): ReactNode {
+  const line = 'h-px flex-1 bg-[color-mix(in_srgb,var(--color-accent)_40%,transparent)]';
+  return (
+    <div className="flex items-center gap-3 py-2" role="separator" aria-label={t('chat.newPill')}>
+      <span className={line} aria-hidden />
+      <span className={cx(pill, 'text-accent-text')}>{t('chat.newPill')}</span>
+      <span className={line} aria-hidden />
     </div>
   );
 }
@@ -126,6 +143,10 @@ function Bubble({
   const m = c.msg;
   const mention = useCallback((v: string, key: string) => <MentionChip key={key} workspaceId={workspaceId} v={v} own={own} />, [workspaceId, own]);
   const nodes = useMemo(() => parseMarkdown(m.content), [m.content]);
+  // In-room search: 0 = not a hit, 1 = hit, 2 = the current hit (primitive → no extra renders).
+  const hit = useChatView((s) => (s.searchHits?.roomId === roomId && s.searchHits.ids.has(m.id) ? (s.searchHits.current === m.id ? 2 : 1) : 0));
+  const words = useChatView((s) => s.searchHits?.words);
+  const highlight = useMemo(() => (hit && words?.length ? { words, current: hit === 2 } : undefined), [hit, words]);
   const link = useMemo(() => firstLink(nodes), [nodes]);
   const images = m.attachments.filter(isImage);
   const files = m.attachments.filter((f) => !isImage(f));
@@ -160,7 +181,7 @@ function Bubble({
       {tail ? <Tail own={own} /> : null}
       <div className="overflow-hidden" style={radius}>
         {showName ? (
-          <div className="truncate px-3 pt-1.5 text-[14px] font-semibold leading-[18px]" style={{ color: `var(--name-${userColorIndex(m.authorId) + 1})` }} title={name}>
+          <div className="truncate px-3 pt-1.5 text-body font-semibold leading-[18px]" style={{ color: `var(--name-${userColorIndex(m.authorId) + 1})` }} title={name}>
             {name}
           </div>
         ) : null}
@@ -170,8 +191,8 @@ function Bubble({
         ) : null}
         {uploads.length ? <Uploads uploads={uploads} /> : null}
         {hasText ? (
-          <div className="selectable whitespace-pre-wrap break-words px-3 pb-1.5 pt-1.5 text-[15px] leading-5 [overflow-wrap:anywhere]">
-            <Markdown text={m.content} mention={mention} />
+          <div className="selectable whitespace-pre-wrap break-words px-3 pb-1.5 pt-1.5 text-list leading-5 [overflow-wrap:anywhere]">
+            <Markdown text={m.content} mention={mention} highlight={highlight} />
             {!link && !files.length && !m.reactions.length ? (
               // Reserve room for the time on the last line (it is drawn absolutely, Telegram-style).
               <span className="invisible ml-2 inline-flex select-none" aria-hidden>
@@ -242,7 +263,7 @@ function Tail({ own }: { own: boolean }): ReactNode {
 function MetaInfo({ c, own }: { c: ChatMessage; own: boolean }): ReactNode {
   const d = toDate(c.msg.createdAt);
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap text-[12px] leading-none text-[color:var(--bubble-meta)]">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap text-caption leading-none text-[color:var(--bubble-meta)]">
       {c.msg.editedAt ? <span>{t('chat.editedShort')}</span> : null}
       <Tip label={fmtFull(d)}>
         <span>{fmtTime(d)}</span>
@@ -271,14 +292,14 @@ function ReactionChip({ roomId, m, emoji, count, me, canReact }: { roomId: strin
       aria-label={t('chat.reactionLabel', { emoji, count })}
       onClick={() => void toggleReaction(roomId, m, emoji)}
       className={cx(
-        'inline-flex h-7 items-center gap-1 rounded-full px-2 text-[14px] leading-none transition-colors duration-[var(--motion-fast)]',
+        'inline-flex h-7 items-center gap-1 rounded-full px-2 text-body leading-none transition-colors duration-[var(--motion-fast)]',
         me
           ? 'bg-[var(--bubble-chip-bg)] text-[color:var(--bubble-chip-fg)]'
           : 'bg-[color-mix(in_srgb,var(--bubble-accent)_14%,transparent)] text-fg hover:bg-[color-mix(in_srgb,var(--bubble-accent)_22%,transparent)]',
       )}
     >
-      <span className="text-[16px]">{emoji}</span>
-      <span className="text-[13px] font-semibold tabular-nums">{count}</span>
+      <span className="text-headline">{emoji}</span>
+      <span className="text-body font-semibold tabular-nums">{count}</span>
     </button>
   );
 }
@@ -295,8 +316,8 @@ function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string
         onClick={() => jump(roomId, replyToId)}
         className="flex w-full min-w-0 flex-col rounded-[var(--radius-control)] border-l-[3px] border-[color:var(--bubble-accent)] bg-[color-mix(in_srgb,var(--bubble-accent)_12%,transparent)] px-2 py-1 text-left hover:bg-[color-mix(in_srgb,var(--bubble-accent)_18%,transparent)]"
       >
-        <span className="truncate text-[13px] font-semibold text-[color:var(--bubble-accent)]">{who}</span>
-        <span className="truncate text-[13px] text-fg">{target ? snippet : t('chat.replyOpen')}</span>
+        <span className="truncate text-body font-semibold text-[color:var(--bubble-accent)]">{who}</span>
+        <span className="truncate text-body text-fg">{target ? snippet : t('chat.replyOpen')}</span>
       </button>
     </div>
   );
@@ -340,24 +361,26 @@ function FileRow({ f }: { f: FileMeta }): ReactNode {
   const download = (): void =>
     void platform.files.download({ fileId: f.id, name: f.name }).then(
       () => toast.success(t('chat.downloaded', { name: f.name })),
-      (e: unknown) => toast.error(String(e)),
+      (e: unknown) => toast.fail(e, t('err.ctx.download')),
     );
   return (
     <div className="group/file flex min-w-[220px] items-center gap-3 py-1">
-      <button
-        type="button"
-        onClick={download}
-        aria-label={`${t('chat.download')} ${f.name}`}
-        className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--bubble-chip-bg)] text-[color:var(--bubble-chip-fg)]"
-      >
-        <FileText className="size-5 group-hover/file:hidden" aria-hidden />
-        <Download className="hidden size-5 group-hover/file:block" aria-hidden />
-      </button>
+      <Tip label={t('chat.download')}>
+        <button
+          type="button"
+          onClick={download}
+          aria-label={`${t('chat.download')} ${f.name}`}
+          className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--bubble-chip-bg)] text-[color:var(--bubble-chip-fg)]"
+        >
+          <FileText className="size-5 group-hover/file:hidden" aria-hidden />
+          <Download className="hidden size-5 group-hover/file:block" aria-hidden />
+        </button>
+      </Tip>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px] font-medium" title={f.name}>
+        <div className="truncate text-body font-medium" title={f.name}>
           {f.name}
         </div>
-        <div className="text-[12px] text-[color:var(--bubble-meta)]">{fmtSize(f.size)}</div>
+        <div className="text-caption text-[color:var(--bubble-meta)]">{fmtSize(f.size)}</div>
       </div>
     </div>
   );
@@ -368,7 +391,7 @@ function Uploads({ uploads }: { uploads: PendingUpload[] }): ReactNode {
     <div className="flex min-w-[240px] flex-col gap-1.5 px-3 pt-2">
       {uploads.map((u) => (
         <div key={u.key}>
-          <div className="flex justify-between gap-3 text-[12px]">
+          <div className="flex justify-between gap-3 text-caption">
             <span className="truncate">{u.name}</span>
             <span className="shrink-0 text-[color:var(--bubble-meta)]">{Math.round(u.progress * 100)}%</span>
           </div>
@@ -383,7 +406,7 @@ function Uploads({ uploads }: { uploads: PendingUpload[] }): ReactNode {
 
 function FailedLine({ c, workspaceId, roomId }: { c: ChatMessage; workspaceId: string; roomId: string }): ReactNode {
   return (
-    <div className="mt-1 flex items-center justify-end gap-2 text-[12px] text-danger-text">
+    <div className="mt-1 flex items-center justify-end gap-2 text-caption text-danger-text">
       <span className="truncate">
         {t('chat.failed')}
         {c.error ? `: ${c.error}` : ''}

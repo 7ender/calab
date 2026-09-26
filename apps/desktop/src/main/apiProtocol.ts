@@ -1,4 +1,5 @@
 import { net, protocol } from 'electron';
+import { readBodyUpTo } from '../shared/bodyBuffer';
 import { API_SCHEME } from '../shared/ipc';
 import { currentServerUrl, forceRefresh, getAccessToken } from './auth';
 
@@ -59,13 +60,15 @@ const MAX_REDIRECTS = 3;
  * Redirects are followed by hand: to the API origin with the token; to another origin
  * (e.g. object storage) only for GET/HEAD and WITHOUT Authorization; non-GET never.
  */
-async function forward(req: Request, target: string, token: string | null, body: ReadableStream | null): Promise<Response> {
+async function forward(req: Request, target: string, token: string | null, body: ReadableStream | Uint8Array | null): Promise<Response> {
   const headers = new Headers(req.headers);
   headers.delete('origin');
   headers.delete('referer');
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const init: RequestInit & { duplex?: 'half' } = { method: req.method, headers, redirect: 'manual' };
-  if (body) {
+  if (body instanceof Uint8Array) {
+    init.body = body;
+  } else if (body) {
     init.body = body;
     init.duplex = 'half'; // streamed request body (uploads)
   }
@@ -94,13 +97,17 @@ export function handleApiScheme(): void {
     if (!base) return withCors(Response.json({ code: 'ERROR_CODE_UNAVAILABLE', message: 'server URL not set' }, { status: 503 }), origin);
     const target = `${base}${url.pathname}${url.search}`;
     const idempotent = req.method === 'GET' || req.method === 'HEAD';
-    // Bodies of non-idempotent requests are streamed (uploads) and cannot be replayed.
-    const body = idempotent ? null : req.body;
     try {
+      // Small bodies (JSON) are buffered so a POST/PATCH/DELETE can be replayed once after a 401
+      // (clock skew / expired token → spurious send failures, review L6). A 401 means the server
+      // did nothing, so the replay is safe. Big bodies (uploads) stream and are never replayed.
+      const read = idempotent ? null : await readBodyUpTo(req.body as ReadableStream<Uint8Array> | null);
+      const body = read ? (read.kind === 'bytes' ? read.bytes : read.stream) : null;
+      const replayable = !read || read.kind === 'bytes';
       let res = await forward(req, target, await getAccessToken(), body);
-      if (res.status === 401 && idempotent) {
+      if (res.status === 401 && replayable) {
         const t = await forceRefresh();
-        if (t) res = await forward(req, target, t, null);
+        if (t) res = await forward(req, target, t, body);
       }
       return withCors(res, origin);
     } catch (err) {

@@ -54,6 +54,7 @@ const api: CalabaApi = {
   ptt: {
     setBinding: (b) => ipcRenderer.invoke(IPC.pttSetBinding, b),
     captureNext: () => ipcRenderer.invoke(IPC.pttCaptureNext),
+    cancelCapture: () => void ipcRenderer.invoke(IPC.pttCancelCapture),
     status: () => ipcRenderer.invoke(IPC.pttStatus),
     onEvent: (cb) => on(IPC.pttEvent, cb),
   },

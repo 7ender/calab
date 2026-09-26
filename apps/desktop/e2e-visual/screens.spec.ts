@@ -50,6 +50,11 @@ for (const theme of THEMES) {
         // ---- auth
         await expect(page.getByRole('button', { name: 'Войти', exact: true })).toBeVisible();
         await checkpoint(s, 'auth-login');
+        // docs/09 #19: the server field lives under the «Другой сервер» disclosure.
+        await page.getByRole('button', { name: 'Другой сервер' }).click();
+        await expect(page.getByLabel('Сервер')).toBeVisible();
+        await checkpoint(s, 'auth-server');
+        await page.getByRole('button', { name: 'Скрыть' }).click();
         await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
         await expect(page.getByLabel('Имя')).toBeVisible();
         await checkpoint(s, 'auth-register');
@@ -68,7 +73,7 @@ for (const theme of THEMES) {
         await page.getByRole('radio', { name: 'Push-to-talk' }).click();
         await checkpoint(s, 'onboarding-mode-ptt');
         await page.getByRole('radio', { name: 'Активация голосом' }).click();
-        await page.getByRole('button', { name: 'Дальше' }).click();
+        await page.getByRole('button', { name: 'Продолжить' }).click();
         if (process.platform === 'darwin') {
           await expect(page.getByTestId('onboarding-screen')).toBeVisible();
           await checkpoint(s, 'onboarding-screen');
@@ -85,7 +90,8 @@ for (const theme of THEMES) {
         await page.locator('aside').getByRole('button', { name: /общий/ }).first().click();
         await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
         mock.injectMessage({ roomId: IDS.rooms.dev, authorId: IDS.users.boris, content: `@${IDS.users.anna} глянь, пожалуйста, ревью` });
-        await expect(page.getByRole('navigation').or(page.locator('aside')).getByText('1', { exact: true }).first()).toBeVisible();
+        // Mention badge on «разработка»: 1 from the history loaded at startup + this live one.
+        await expect(page.locator('aside').first().getByText('2', { exact: true })).toBeVisible();
         // The room opens at the first unread; that anchor lands ±1 px apart between runs
         // (fractional row heights). Photograph the feed at its bottom, which is exact.
         // Only after the history is in and the app placed the first-unread anchor, or the app
@@ -132,14 +138,14 @@ for (const theme of THEMES) {
         await expect(page.getByRole('dialog', { name: 'Эмодзи' })).toBeVisible();
         await checkpoint(s, 'chat-emoji-picker');
         await page.keyboard.press('Escape');
-        await page.getByRole('button', { name: 'Поиск в комнате' }).click();
+        await page.getByRole('button', { name: 'Поиск в #общий' }).click();
         await page.keyboard.type('релиз');
         await expect(page.getByText('1 из 3')).toBeVisible();
         await checkpoint(s, 'chat-search');
         await page.keyboard.press('Escape');
 
         // ---- mentions (docs/05): composer autocomplete, room notification menu
-        const composer = page.getByPlaceholder('Написать в #общий');
+        const composer = page.getByPlaceholder('Сообщение в #общий');
         await composer.click();
         await composer.pressSequentially('@');
         await expect(page.getByRole('listbox', { name: 'Упомянуть' })).toBeVisible();
@@ -161,7 +167,8 @@ for (const theme of THEMES) {
         await checkpoint(s, 'shell-shortcuts');
         await page.keyboard.press('Escape');
         await page.getByRole('button', { name: /^Упоминания/ }).click();
-        await expect(page.getByText(/посмотришь макет настроек/)).toBeVisible();
+        // The same text is also in the feed behind the popover: look inside the popover.
+        await expect(page.getByRole('dialog').getByText(/посмотришь макет настроек/)).toBeVisible();
         await checkpoint(s, 'shell-mentions');
         await page.keyboard.press('Escape');
         await page.getByRole('button', { name: /^Мой статус/ }).click();
@@ -198,6 +205,16 @@ for (const theme of THEMES) {
         await page.getByRole('button', { name: 'Настройки', exact: true }).click();
         await expect(page.getByRole('dialog')).toBeVisible();
         await everyTab(s, 'settings');
+        // docs/09 #18: search over section titles and row labels; Enter jumps to the first row.
+        const search = page.getByRole('dialog').getByRole('searchbox', { name: 'Поиск настроек' });
+        await search.fill('клав');
+        await expect(page.getByRole('navigation', { name: 'Результаты поиска' })).toBeVisible();
+        await checkpoint(s, 'settings-search', { mask: [page.getByTestId('mic-meter')] });
+        await search.press('Enter');
+        await expect(page.locator('[data-settings-hit="true"]')).toBeVisible();
+        await checkpoint(s, 'settings-search-jump', { mask: [page.getByTestId('mic-meter')] });
+        await page.keyboard.press('Escape'); // clears the search, the window stays
+        await expect(search).toHaveValue('');
         // The pop-up button itself (owner bug: chevron flush right): a long value must end with
         // «…» before the ↕ chevron (8 px inset); hover is a step lighter.
         await page.getByRole('dialog').getByRole('tab', { name: 'Голос и устройства' }).click();
@@ -213,32 +230,77 @@ for (const theme of THEMES) {
         await expect.soft(select, 'screenshot: select-hover').toHaveScreenshot(`select-hover-${theme}-${viewport.width}.png`);
         await closeDialog(page);
 
+        // ---- toasts (docs/09 #16): glass stack bottom-right; visual-test mode keeps them on screen
+        await page.evaluate(() => {
+          type Push = (kind: string, text: string, action?: { label: string; run: () => void }) => void;
+          const push = (window as unknown as { __calabaToast?: Push }).__calabaToast;
+          push?.('info', 'Ссылка-приглашение скопирована');
+          push?.('success', 'Файл сохранён в «Загрузки»');
+          push?.('error', 'Не удалось загрузить сообщения. Нет связи с сервером. Проверьте интернет', { label: 'Повторить', run: () => undefined });
+        });
+        await expect(page.getByTestId('toast')).toHaveCount(3);
+        await checkpoint(s, 'toasts');
+        for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Закрыть уведомление' }).first().click();
+        await expect(page.getByTestId('toast')).toHaveCount(0);
+
         // ---- voice room + stream (needs the dev LiveKit)
         await page.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
         await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
         await page.keyboard.press(`${MOD}+Shift+m`); // muted: the fake mic beeps → speaking rings would flicker
         await expect(page.getByRole('button', { name: 'Включить микрофон' }).first()).toBeVisible();
+        // Signal bars stay in the shots (docs/08: quality always visible): wait for the loopback
+        // LiveKit's steady «good» instead of masking the indicator.
+        await expect(page.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 15_000 });
+
+        // Stream picker (docs/09 #13): synthetic sources from main (CALABA_VISUAL_TEST), no real screens.
+        await page.getByRole('button', { name: 'Показать экран' }).first().click();
+        await expect(page.getByTestId('stream-source').first()).toBeVisible();
+        await checkpoint(s, 'stream-picker');
+        await page.getByRole('radio', { name: 'Весь экран' }).click();
+        await page.getByRole('button', { name: 'Дополнительно' }).click();
+        await expect(page.getByTestId('stream-advanced')).toBeVisible();
+        await checkpoint(s, 'stream-picker-screens');
+        await closeDialog(page);
+
+        // Connection lost (docs/09 #15): the yellow notice in the voice panel.
+        await page.evaluate(() => (window as unknown as { __calabaVoicePhase?: (p: string) => void }).__calabaVoicePhase?.('reconnecting'));
+        await expect(page.getByTestId('voice-reconnecting')).toBeVisible();
+        await checkpoint(s, 'voice-reconnecting');
+        await page.evaluate(() => (window as unknown as { __calabaVoicePhase?: (p: string) => void }).__calabaVoicePhase?.('connected'));
+        await expect(page.getByTestId('voice-reconnecting')).toHaveCount(0);
+
         // LiveKit creates the room on the first join, so the publisher comes second.
         const publisher = await startPublisher({ userId: IDS.users.vera, name: 'Вера Ким', roomId: IDS.rooms.meeting });
+        let second: Awaited<ReturnType<typeof startPublisher>> | null = null;
         try {
           const video = page.locator('video');
           const chip = page.getByRole('button', { name: 'Вера Ким', exact: true });
           await expect(video.or(chip).first()).toBeVisible({ timeout: 30_000 });
           if ((await video.count()) === 0) await chip.first().click();
           await expect(video.first()).toBeVisible();
-          const dynamic = [video, page.getByRole('button', { name: /^Качество связи/ })];
-          // Default stage while chatting: PiP in the corner, clear of the composer.
+          // Decoded frames differ run to run: hide the pixels, keep the stage chrome (name, LIVE,
+          // controls) in the shots on the stage's black background.
+          await page.addStyleTag({ content: 'video { visibility: hidden !important; }' });
+          // Default stage while chatting: PiP in the top-right corner, clear of the composer.
           await expect(page.getByTestId('stream-pip')).toBeVisible();
-          await checkpoint(s, 'voice-pip', { mask: dynamic });
+          await checkpoint(s, 'voice-pip');
           await page.getByTestId('stream-pip').getByRole('button', { name: 'Развернуть' }).first().click();
           await expect(page.getByTestId('stream-pip')).toHaveCount(0);
-          await checkpoint(s, 'voice-stream', { mask: dynamic });
+          await checkpoint(s, 'voice-stream');
+          // Control bar (docs/09 #14): shows on hover / keyboard focus.
+          await page.getByTestId('stream-controls').getByRole('button', { name: /^Качество:/ }).focus();
+          await checkpoint(s, 'voice-stream-controls');
+          // Several streams: a strip of previews under the stage.
+          second = await startPublisher({ userId: IDS.users.boris, name: 'Борис Петров', roomId: IDS.rooms.meeting });
+          await expect(page.getByTestId('stream-strip').getByRole('button')).toHaveCount(2, { timeout: 30_000 });
+          await checkpoint(s, 'voice-streams-strip');
           await page.getByRole('button', { name: 'Настройки комнаты' }).click();
           await expect(page.getByRole('dialog')).toBeVisible();
           await everyTab(s, 'voice-room-settings');
           await closeDialog(page);
           await page.getByRole('button', { name: 'Отключиться' }).click();
         } finally {
+          await second?.stop();
           await publisher.stop();
         }
       });

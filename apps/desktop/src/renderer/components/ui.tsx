@@ -2,9 +2,9 @@ import * as DialogP from '@radix-ui/react-dialog';
 import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
-import { Loader2, X } from 'lucide-react';
-import { forwardRef, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
-import { twMerge } from 'tailwind-merge';
+import { ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
+import { forwardRef, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { extendTailwindMerge } from 'tailwind-merge';
 
 /*
  * UI primitives (docs/08-design.md): macOS-like controls on design tokens only.
@@ -15,6 +15,12 @@ import { twMerge } from 'tailwind-merge';
  * Class names with Tailwind conflict resolution: a caller's `className` wins over the
  * component's defaults (e.g. `w-36` over the Select's `w-full`) regardless of CSS order.
  */
+const twMerge = extendTailwindMerge({
+  // Our type scale (app/styles.css, docs/09 #17): `text-body` is a font size, not a colour —
+  // without this `cx('text-body', 'text-fg')` would drop one of them.
+  extend: { theme: { text: ['micro', 'caption', 'control', 'body', 'list', 'headline', 'title', 'large'] } },
+});
+
 export function cx(...c: Array<string | false | null | undefined>): string {
   return twMerge(c.filter(Boolean).join(' '));
 }
@@ -45,7 +51,7 @@ export const Button = forwardRef<
       aria-busy={busy || undefined}
       className={cx(
         'inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-control)] font-medium transition-[filter,background-color] duration-[var(--motion-fast)] disabled:cursor-default disabled:opacity-40',
-        size === 'sm' ? 'h-6 px-2 text-[12px]' : size === 'lg' ? 'h-8 px-4 text-[14px]' : 'h-7 px-3 text-[13px]',
+        size === 'sm' ? 'h-6 px-2 text-caption' : size === 'lg' ? 'h-8 px-4 text-body' : 'h-7 px-3 text-body',
         VARIANTS[variant],
         className,
       )}
@@ -100,10 +106,10 @@ export function Tip({
           side={side}
           sideOffset={6}
           collisionPadding={8}
-          className="mat-popover anim-in z-[var(--z-popover)] flex max-w-72 items-center gap-2 rounded-[var(--radius-control)] px-2 py-1 text-[12px] text-fg"
+          className="mat-popover anim-in z-[var(--z-tooltip)] flex max-w-72 items-center gap-2 rounded-[var(--radius-control)] px-2 py-1 text-caption text-fg"
         >
           {label}
-          {shortcut ? <kbd className="font-sans text-[11px] text-faint">{shortcut}</kbd> : null}
+          {shortcut ? <kbd className="font-sans text-micro text-faint">{shortcut}</kbd> : null}
         </TooltipP.Content>
       </TooltipP.Portal>
     </TooltipP.Root>
@@ -115,7 +121,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cx(
-        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-[13px] text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus-visible:outline-offset-0 disabled:opacity-50',
+        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus-visible:outline-offset-0 disabled:opacity-50',
         className,
       )}
       {...rest}
@@ -129,7 +135,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
       className={cx(
         // macOS pop-up button: no native chevron; our own ↕ chevron (10 px) sits 8 px from the right edge,
         // the text keeps clear of it (pr-7) and long values end with an ellipsis.
-        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-[13px] text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] focus-visible:outline-offset-0 disabled:opacity-50 disabled:hover:bg-elev',
+        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-body text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] focus-visible:outline-offset-0 disabled:opacity-50 disabled:hover:bg-elev',
         'select-chevron',
         className,
       )}
@@ -144,14 +150,14 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
 export function Field({ label, hint, error, children }: { label: string; hint?: ReactNode; error?: string | null | undefined; children: ReactNode }): ReactNode {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[12px] font-medium text-muted">{label}</span>
+      <span className="text-caption font-medium text-muted">{label}</span>
       {children}
       {error ? (
-        <span className="text-[12px] text-danger-text" role="alert">
+        <span className="text-caption text-danger-text" role="alert">
           {error}
         </span>
       ) : hint ? (
-        <span className="text-[12px] text-faint">{hint}</span>
+        <span className="text-caption text-faint">{hint}</span>
       ) : null}
     </label>
   );
@@ -175,10 +181,12 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
 /** Row with a toggle (used in dialogs). */
 export function Switch({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: ReactNode; disabled?: boolean }): ReactNode {
   return (
-    <div className={cx('flex items-start justify-between gap-4 py-1', disabled && 'opacity-50')}>
+    <div className={cx('flex items-start justify-between gap-4 py-1', disabled && 'opacity-50')} data-settings-row>
       <span className="flex min-w-0 flex-col">
-        <span className="text-[13px]">{label}</span>
-        {hint ? <span className="text-[12px] text-faint">{hint}</span> : null}
+        <span className="text-body" data-settings-label data-settings-hint={typeof hint === 'string' ? hint : undefined}>
+          {label}
+        </span>
+        {hint ? <span className="text-caption text-faint">{hint}</span> : null}
       </span>
       <Toggle checked={checked} onChange={onChange} label={label} disabled={disabled} />
     </div>
@@ -207,8 +215,10 @@ export function Segmented<T extends string>({
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
           className={cx(
-            'h-6 rounded-[5px] px-3 text-[12px] font-medium transition-colors duration-[var(--motion-fast)]',
-            value === o.value ? 'bg-elev text-fg shadow-[var(--shadow-card)]' : 'text-fg hover:bg-[var(--color-fill)]',
+            // nowrap: «Push-to-talk» must never break at its hyphen. Selected = a raised, lighter
+            // segment (macOS), in dark too — not a darker «pressed» one.
+            'h-6 whitespace-nowrap rounded-[5px] px-3 text-control font-medium transition-colors duration-[var(--motion-fast)]',
+            value === o.value ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
           )}
         >
           {o.label}
@@ -242,28 +252,38 @@ export function Slider({ value, min, max, step = 1, onChange, label }: { value: 
 /** Rounded card grouping settings rows (System Settings). */
 export function Card({ title, children, footer }: { title?: string; children: ReactNode; footer?: ReactNode }): ReactNode {
   return (
-    <section className="flex flex-col gap-1.5">
-      {title ? <h3 className="px-1 text-[12px] font-semibold text-muted">{title}</h3> : null}
-      <div className="divide-y divide-[var(--color-separator)] overflow-hidden rounded-[var(--radius-card)] bg-hover">{children}</div>
-      {footer ? <p className="px-1 text-[12px] text-faint">{footer}</p> : null}
+    <section className="flex flex-col gap-1.5 rounded-[var(--radius-card)]" data-settings-row>
+      {title ? (
+        <h3 className="px-1 text-caption font-semibold text-muted" data-settings-label>
+          {title}
+        </h3>
+      ) : null}
+      <div className="divide-y divide-[var(--color-card-line)] overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)]">{children}</div>
+      {footer ? <p className="px-1 text-caption text-faint">{footer}</p> : null}
     </section>
   );
 }
 
-/** Settings row: title (and hint) left, control right. */
+/**
+ * Settings row: title (and hint) left, control right. `data-settings-*` make it findable by the
+ * settings search (components/SettingsWindow.tsx).
+ */
 export function Row({ label, hint, children, htmlFor }: { label: string; hint?: ReactNode; children?: ReactNode; htmlFor?: string }): ReactNode {
   const id = useId();
+  const searchHint = typeof hint === 'string' ? hint : undefined;
   return (
-    <div className="flex min-h-10 items-center justify-between gap-4 px-3 py-2">
+    <div className="flex min-h-10 items-center justify-between gap-4 px-3 py-2" data-settings-row>
       <div className="flex min-w-0 flex-col" id={id}>
         {htmlFor ? (
-          <label htmlFor={htmlFor} className="text-[13px]">
+          <label htmlFor={htmlFor} className="text-body" data-settings-label data-settings-hint={searchHint}>
             {label}
           </label>
         ) : (
-          <span className="text-[13px]">{label}</span>
+          <span className="text-body" data-settings-label data-settings-hint={searchHint}>
+            {label}
+          </span>
         )}
-        {hint ? <span className="text-[12px] text-faint">{hint}</span> : null}
+        {hint ? <span className="text-caption text-faint">{hint}</span> : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">{children}</div>
     </div>
@@ -280,6 +300,7 @@ export function Modal({
   children,
   wide,
   footer,
+  closeButton = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -288,6 +309,8 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
   footer?: ReactNode;
+  /** macOS alerts have no close box (confirmations): only «Отмена» and the action. */
+  closeButton?: boolean;
 }): ReactNode {
   return (
     <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -295,22 +318,24 @@ export function Modal({
         <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content aria-modal="true"
           className={cx(
-            'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[86vh] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-[13px] focus:outline-none',
+            'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
             wide ? 'max-w-[880px]' : 'max-w-[440px]',
           )}
         >
           <div className="flex items-start justify-between gap-4 px-5 pt-5">
             <div className="min-w-0">
-              <DialogP.Title className="text-[16px] font-semibold">{title}</DialogP.Title>
+              <DialogP.Title className="text-headline font-semibold">{title}</DialogP.Title>
               {description ? (
-                <DialogP.Description className="mt-1 text-[13px] text-muted">{description}</DialogP.Description>
+                <DialogP.Description className="mt-1 text-body text-muted">{description}</DialogP.Description>
               ) : (
                 <DialogP.Description className="sr-only">{title}</DialogP.Description>
               )}
             </div>
-            <DialogP.Close className="-mr-1 -mt-1 grid size-7 shrink-0 place-items-center rounded-[var(--radius-control)] text-muted hover:bg-hover hover:text-fg" aria-label="Закрыть">
-              <X className="size-4" strokeWidth={1.75} />
-            </DialogP.Close>
+            {closeButton ? (
+              <IconButton label="Закрыть" shortcut="Esc" size="sm" className="-mr-1 -mt-1" onClick={onClose}>
+                <X className="size-4" strokeWidth={1.75} />
+              </IconButton>
+            ) : null}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">{children}</div>
           {/* macOS order: secondary/cancel on the left of the primary action, primary rightmost. */}
@@ -328,9 +353,114 @@ export function Spinner({ className, label = 'Загрузка' }: { className?:
 /** Empty state: short text + one action (docs/08, Layout). */
 export function Empty({ children, action }: { children: ReactNode; action?: ReactNode }): ReactNode {
   return (
-    <div className="flex flex-col items-center gap-3 px-4 py-8 text-center text-[13px] text-muted">
+    <div className="flex flex-col items-center gap-3 px-4 py-8 text-center text-body text-muted">
       <div>{children}</div>
       {action}
     </div>
+  );
+}
+
+/**
+ * Small label chip («Гость», «LIVE», role names): 11/600, sentence case, radius 4 — one style
+ * for every badge (UX review). `danger` = white on the red fill (LIVE), `accent` = white on
+ * accent-strong, `neutral` = label on a fill.
+ */
+export function Badge({ children, tone = 'neutral', className, title }: { children: ReactNode; tone?: 'neutral' | 'accent' | 'danger'; className?: string; title?: string }): ReactNode {
+  return (
+    <span
+      title={title}
+      className={cx(
+        'inline-flex h-4 shrink-0 items-center rounded-[4px] px-1 text-micro font-semibold leading-4',
+        tone === 'danger' ? 'bg-danger-fill text-white' : tone === 'accent' ? 'bg-accent-strong text-accent-fg' : 'bg-hover text-fg',
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Numeric field with a stepper (macOS NSStepper): 80 px, ↑/↓ keys and the − / + buttons change
+ * the value by one; typing commits on blur / Enter; Esc restores.
+ */
+export function Stepper({
+  value,
+  min,
+  max,
+  onCommit,
+  label,
+  id,
+  format,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (v: number) => void;
+  label: string;
+  id?: string;
+  /** Text for a value (e.g. 0 → «∞»); the field shows it while not focused. */
+  format?: (v: number) => string;
+}): ReactNode {
+  const [draft, setDraft] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const clamp = (n: number): number => Math.min(max, Math.max(min, n));
+  const commit = (raw: string | null): void => {
+    setDraft(null);
+    if (raw === null) return;
+    const n = Number.parseInt(raw, 10);
+    if (Number.isNaN(n)) return;
+    const next = clamp(n);
+    if (next !== value) onCommit(next);
+  };
+  const step = (d: number): void => {
+    const next = clamp((draft !== null ? Number.parseInt(draft, 10) || 0 : value) + d);
+    // While typing in the field keep showing the raw number; otherwise the formatted value.
+    setDraft(document.activeElement === input.current ? String(next) : null);
+    if (next !== value) onCommit(next);
+  };
+  return (
+    <span className="inline-flex h-7 w-20 shrink-0 items-stretch overflow-hidden rounded-[var(--radius-control)] border border-line bg-elev shadow-[var(--shadow-card)] focus-within:outline focus-within:outline-2 focus-within:outline-accent">
+      <input
+        ref={input}
+        id={id}
+        aria-label={label}
+        inputMode="numeric"
+        role="spinbutton"
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-valuenow={value}
+        aria-valuetext={format ? format(value) : undefined}
+        className="selectable w-0 min-w-0 flex-1 bg-transparent px-2 text-right text-body tabular-nums text-fg outline-none"
+        value={draft ?? (format ? format(value) : String(value))}
+        onFocus={(e) => {
+          setDraft(String(value));
+          const el = e.currentTarget;
+          requestAnimationFrame(() => el.select());
+        }}
+        onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, '').slice(0, String(max).length))}
+        onBlur={() => commit(draft)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            step(e.key === 'ArrowUp' ? 1 : -1);
+          } else if (e.key === 'Escape' && draft !== null) {
+            e.preventDefault();
+            e.stopPropagation();
+            setDraft(null);
+            e.currentTarget.blur();
+          }
+        }}
+      />
+      <span className="flex w-5 flex-col border-l border-line">
+        <button type="button" tabIndex={-1} aria-label={`${label}: больше`} title="Больше" disabled={value >= max} onClick={() => step(1)} className="grid flex-1 place-items-center text-muted hover:bg-hover hover:text-fg disabled:opacity-40">
+          <ChevronUp className="size-3" aria-hidden />
+        </button>
+        <button type="button" tabIndex={-1} aria-label={`${label}: меньше`} title="Меньше" disabled={value <= min} onClick={() => step(-1)} className="grid flex-1 place-items-center border-t border-line text-muted hover:bg-hover hover:text-fg disabled:opacity-40">
+          <ChevronDown className="size-3" aria-hidden />
+        </button>
+      </span>
+    </span>
   );
 }

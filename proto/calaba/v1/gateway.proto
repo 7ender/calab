@@ -165,6 +165,9 @@ message VoiceState {
   bool deafened = 5;
   bool streaming = 6; // any session in the room streaming
   google.protobuf.Timestamp joined_at = 7; // earliest join of the user's devices in this room
+  // Muted by a moderator (POST …/voice/{userId}/mute) until a moderator unmutes: the
+  // microphone is muted server-side on all devices and cannot be unmuted by the user.
+  bool server_muted = 8;
 }
 
 message Presence {

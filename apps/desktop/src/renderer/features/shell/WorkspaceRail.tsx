@@ -4,22 +4,16 @@ import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
+import { workspaceInitials } from '../../lib/initials';
 import { isUnread, useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
+import { RailContextMenu } from './RailContextMenu';
 import { useWorkspaces } from '../../stores/workspaces';
-
-/** Two letters for a workspace without an icon: «Команда Calaba» → «КC», «Дизайн» → «Ди». */
-export function wsInitials(name: string): string {
-  const words = name.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) return words.slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
-  const w = words[0] ?? '?';
-  return (w[0]?.toUpperCase() ?? '?') + (w[1] ?? '');
-}
 
 /** 48 px tile: squircle radius 16 → 12 on hover/active (Discord-like morph, 160 ms). */
 const tile =
-  'relative grid size-12 place-items-center rounded-[16px] text-[15px] font-semibold transition-[border-radius,background-color,color] duration-[var(--motion)] ease-out hover:rounded-[12px]';
+  'relative grid size-12 place-items-center rounded-[16px] text-list font-semibold transition-[border-radius,background-color,color] duration-[var(--motion)] ease-out hover:rounded-[12px]';
 
 /**
  * Workspace rail (docs/09 #2): 72 px, rail material. Left pill = state (8 px unread, 20 px
@@ -77,7 +71,7 @@ function RailItem({ id }: { id: string }): ReactNode {
           isActive ? 'h-10' : unread ? 'h-2 group-hover:h-5' : 'h-0 opacity-0 group-hover:h-5 group-hover:opacity-100',
         )}
       />
-      <Tip label={w.name} side="right">
+      <RailContextMenu workspaceId={id} tip={w.name}>
         <button
           type="button"
           onClick={() => setWs(id)}
@@ -92,7 +86,7 @@ function RailItem({ id }: { id: string }): ReactNode {
           {w.iconFileId ? (
             <MediaImg path={thumbnailPath(w.iconFileId)} alt="" draggable={false} className="size-full rounded-[inherit] object-cover" />
           ) : (
-            <span aria-hidden>{wsInitials(w.name)}</span>
+            <span aria-hidden>{workspaceInitials(w.name)}</span>
           )}
           {inVoice ? (
             <span className="absolute -bottom-1 -right-1 grid size-5 place-items-center rounded-full border-[3px] border-[var(--color-rail)] bg-ok-fill text-white" aria-hidden>
@@ -102,7 +96,7 @@ function RailItem({ id }: { id: string }): ReactNode {
           {mentions > 0 ? (
             <span
               className={cx(
-                'absolute -right-1 min-w-5 rounded-full border-[3px] border-[var(--color-rail)] bg-danger-fill px-1 text-center text-[11px] font-bold leading-[14px] text-white',
+                'absolute -right-1 min-w-5 rounded-full border-[3px] border-[var(--color-rail)] bg-danger-fill px-1 text-center text-micro font-bold leading-[14px] text-white',
                 inVoice ? '-top-1' : '-bottom-1',
               )}
               aria-hidden
@@ -111,7 +105,7 @@ function RailItem({ id }: { id: string }): ReactNode {
             </span>
           ) : null}
         </button>
-      </Tip>
+      </RailContextMenu>
     </div>
   );
 }
@@ -120,7 +114,7 @@ function RailAction({ label, onClick, children }: { label: string; onClick: () =
   return (
     <div className="group relative flex w-full shrink-0 justify-center">
       <Tip label={label} side="right">
-        <button type="button" onClick={onClick} aria-label={label} className={cx(tile, 'bg-hover text-ok hover:bg-ok-fill hover:text-white')}>
+        <button type="button" onClick={onClick} aria-label={label} className={cx(tile, 'bg-hover text-muted hover:bg-accent-strong hover:text-accent-fg active:bg-accent-strong active:text-accent-fg')}>
           {children}
         </button>
       </Tip>

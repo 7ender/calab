@@ -41,7 +41,15 @@ type recordingLiveKit struct {
 	muted    []string
 	moves    []string
 	removed  []string
-	fakeMove bool // pretend MoveParticipant succeeded (no real WebRTC participant in tests)
+	fakeMove bool                      // pretend MoveParticipant succeeded (no real WebRTC participant in tests)
+	perms    map[string]rtc.Permission // last permission sent per identity
+}
+
+func (r *recordingLiveKit) lastPerm(identity string) (rtc.Permission, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.perms[identity]
+	return p, ok
 }
 
 func (r *recordingLiveKit) MoveParticipant(ctx context.Context, room, identity, dst string) error {
@@ -57,6 +65,10 @@ func (r *recordingLiveKit) MoveParticipant(ctx context.Context, room, identity, 
 
 func (r *recordingLiveKit) UpdatePermission(ctx context.Context, room, identity string, p rtc.Permission) error {
 	r.mu.Lock()
+	if r.perms == nil {
+		r.perms = map[string]rtc.Permission{}
+	}
+	r.perms[identity] = p
 	fake := r.fakeMove
 	r.mu.Unlock()
 	if fake {

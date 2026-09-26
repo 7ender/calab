@@ -15,7 +15,7 @@ export function StatsOverlay(): ReactNode {
   return (
     <div
       data-testid="media-stats"
-      className="selectable pointer-events-auto absolute right-3 top-14 z-[var(--z-sticky)] w-80 rounded-[var(--radius-control)] bg-black/80 p-2.5 font-mono text-[11px] leading-snug text-white shadow-[var(--shadow-popover)]"
+      className="selectable pointer-events-auto absolute left-3 top-14 z-[var(--z-pip)] w-80 rounded-[var(--radius-control)] bg-black/80 p-2.5 font-mono text-[11px] leading-snug text-white shadow-[var(--shadow-popover)]"
     >
       <div>
         ICE: {p ? `${p.localType}→${p.remoteType} ${p.protocol}${p.relayProtocol ? `/relay-${p.relayProtocol}` : ''}` : '—'}

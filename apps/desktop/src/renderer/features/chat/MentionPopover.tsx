@@ -57,8 +57,9 @@ export function MentionPopover({
 }): ReactNode {
   const users = useWorkspaces((s) => s.users);
   return (
-    <div className="mat-popover anim-in absolute bottom-full left-0 right-0 z-[var(--z-popover)] mb-2 overflow-hidden rounded-[var(--radius-card)]">
-      <div className="px-3 pb-1 pt-2 text-[11px] font-semibold text-muted" aria-hidden>
+    // A name list needs no full composer width: ≤ 420 px, anchored to the field's left edge.
+    <div className="mat-popover dense anim-in absolute bottom-full left-0 z-[var(--z-popover)] mb-2 w-full max-w-[420px] overflow-hidden rounded-[var(--radius-card)]">
+      <div className="px-3 pb-1 pt-2 text-micro font-semibold text-muted" aria-hidden>
         {t('chat.mentionList')}
       </div>
       <ul id={id} role="listbox" aria-label={t('chat.mentionList')} className="max-h-[min(320px,40vh)] overflow-y-auto p-1 pt-0">
@@ -78,7 +79,7 @@ export function MentionPopover({
               }}
               onMouseMove={() => (active ? undefined : onHover(i))}
               className={cx(
-                'flex h-9 cursor-default items-center gap-2.5 rounded-[5px] px-2 text-[13px]',
+                'flex h-9 cursor-default items-center gap-2.5 rounded-[5px] px-2 text-body',
                 active ? 'bg-accent-strong text-accent-fg' : 'text-fg',
               )}
             >
@@ -90,7 +91,7 @@ export function MentionPopover({
                   </span>
                   {o.c.alt[0] ? <span className={cx('min-w-0 truncate', active ? 'text-accent-fg' : 'text-muted')}>{o.c.alt[0]}</span> : null}
                   {o.guest ? (
-                    <span className={cx('ml-auto shrink-0 text-[11px]', active ? 'text-accent-fg' : 'text-muted')}>{t('chat.mentionGuest')}</span>
+                    <span className={cx('ml-auto shrink-0 text-micro', active ? 'text-accent-fg' : 'text-muted')}>{t('chat.mentionGuest')}</span>
                   ) : null}
                 </>
               ) : (

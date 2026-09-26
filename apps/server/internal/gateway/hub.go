@@ -569,9 +569,9 @@ func (h *Hub) fillLive(ctx context.Context, wid uuid.UUID, snap *v1.WorkspaceSna
 		members[m.GetUser().GetId()] = true
 		users = append(users, parseID(m.GetUser().GetId()))
 	}
-	if states, err := h.voice.List(ctx, wid); err == nil {
+	if states, err := h.voice.States(ctx, wid); err == nil {
 		snap.VoiceStates = nil
-		for _, vs := range voice.AggregateAll(wid, states) {
+		for _, vs := range states {
 			if members[vs.GetUserId()] {
 				snap.VoiceStates = append(snap.VoiceStates, sanitizeVoice(vs, func(rid uuid.UUID) bool { return visible[rid] }))
 			}

@@ -9,6 +9,7 @@ import { useUi } from '../stores/ui';
 import { isGuest, memberName, useWorkspaces } from '../stores/workspaces';
 import { platform } from '../platform';
 import { previewText } from '../features/chat/mentionText';
+import { roomLabel } from '../features/chat/roomLabel';
 
 export { mentionsMe };
 
@@ -33,7 +34,7 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   const author = memberName(workspaceId, m.authorId);
   const body = previewText(workspaceId, m.content).slice(0, 180) || (m.attachments.length ? '📎 вложение' : '');
   try {
-    const n = new Notification(`${author}${room ? ` · #${room.name}` : ''}`, { body, silent: true, tag: m.roomId });
+    const n = new Notification(`${author}${room ? ` · ${roomLabel(room)}` : ''}`, { body, silent: true, tag: m.roomId });
     n.onclick = () => {
       window.focus();
       useUi.getState().openRoom(workspaceId, m.roomId);

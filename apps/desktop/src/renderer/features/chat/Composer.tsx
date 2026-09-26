@@ -15,6 +15,7 @@ import { isGuest, memberName, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from './EmojiPicker';
 import { MentionPopover, optionKey, useMentionables, type MentionOption } from './MentionPopover';
 import { previewText } from './mentionText';
+import { roomLabel } from './roomLabel';
 import { menuBox, menuItem } from './MessageMenu';
 
 const drafts = new Map<string, string>();
@@ -241,10 +242,11 @@ export function Composer({
   };
 
   if (!canSend) {
-    return <div className="mx-4 my-3 rounded-[var(--radius-card)] bg-hover px-4 py-3 text-[13px] text-muted">{t('chat.noSend')}</div>;
+    return <div className="mx-4 my-3 rounded-[var(--radius-card)] bg-hover px-4 py-3 text-body text-muted">{t('chat.noSend')}</div>;
   }
 
   const hasContent = !!text.trim() || (!editMsg && files.length > 0);
+  const placeholder = t('chat.placeholderIn', { room: roomLabel(room) });
   const bar = editMsg ? (
     <ContextBar
       icon={<Pencil className="size-4" aria-hidden />}
@@ -320,7 +322,7 @@ export function Composer({
             value={text}
             rows={1}
             maxLength={MAX_CONTENT}
-            placeholder={t('chat.placeholder', { name: room.name })}
+            placeholder={placeholder}
             onChange={(e) => {
               setText(e.target.value);
               setCaret(e.target.selectionStart);
@@ -334,8 +336,8 @@ export function Composer({
             aria-activedescendant={popover && options[selIdx] ? `${listId}-${optionKey(options[selIdx])}` : undefined}
             onKeyDown={onKey}
             onPaste={onPaste}
-            aria-label={t('chat.placeholder', { name: room.name })}
-            className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-[15px] leading-5 placeholder:text-faint focus:outline-none focus-visible:outline-none"
+            aria-label={placeholder}
+            className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint focus:outline-none focus-visible:outline-none"
             style={{ maxHeight: MAX_FIELD_H }}
           />
           <EmojiPicker onPick={insert} label={t('chat.emoji')}>
@@ -345,19 +347,20 @@ export function Composer({
           </EmojiPicker>
         </div>
         {hasContent ? (
-          <button
-            type="button"
-            onClick={send}
-            aria-label={editMsg ? t('common.save') : t('chat.send')}
-            title={editMsg ? t('common.save') : t('chat.send')}
-            className="anim-pop mb-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-accent-strong text-accent-fg shadow-[var(--shadow-card)] hover:brightness-110 active:brightness-95"
-          >
-            {editMsg ? <Check className="size-5" strokeWidth={2.25} /> : <ArrowUp className="size-5" strokeWidth={2.25} />}
-          </button>
+          <Tip label={editMsg ? t('common.save') : t('chat.send')} shortcut="↵">
+            <button
+              type="button"
+              onClick={send}
+              aria-label={editMsg ? t('common.save') : t('chat.send')}
+              className="anim-pop mb-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-accent-strong text-accent-fg shadow-[var(--shadow-card)] hover:brightness-110 active:brightness-95"
+            >
+              {editMsg ? <Check className="size-5" strokeWidth={2.25} /> : <ArrowUp className="size-5" strokeWidth={2.25} />}
+            </button>
+          </Tip>
         ) : null}
       </div>
       {text.length > MAX_CONTENT - 200 ? (
-        <div className="mt-1 text-right text-[11px] text-warn">
+        <div className="mt-1 text-right text-micro text-warn">
           {text.length}/{MAX_CONTENT}
         </div>
       ) : null}
@@ -375,8 +378,8 @@ function ContextBar({ icon, title, text, onClose }: { icon: ReactNode; title: st
     <div className="mb-2 flex items-center gap-3 pl-2">
       <span className="text-accent-text">{icon}</span>
       <div className="min-w-0 flex-1 border-l-2 border-accent pl-2">
-        <div className="truncate text-[13px] font-semibold text-accent-text">{title}</div>
-        <div className="truncate text-[13px] text-muted">{text}</div>
+        <div className="truncate text-body font-semibold text-accent-text">{title}</div>
+        <div className="truncate text-body text-muted">{text}</div>
       </div>
       <IconButton label={t('common.cancel')} size="sm" className="rounded-full" onClick={onClose}>
         <X className="size-4" />
@@ -405,19 +408,21 @@ function AttachmentGrid({ files, setFiles }: { files: OutgoingFile[]; setFiles: 
                 <FileText className="size-5" aria-hidden />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-[13px] font-medium">{f.name}</span>
-                <span className="block text-[12px] text-muted">{fmtSize(f.file.size)}</span>
+                <span className="block truncate text-body font-medium">{f.name}</span>
+                <span className="block text-caption text-muted">{fmtSize(f.file.size)}</span>
               </span>
             </>
           )}
-          <button
-            type="button"
-            className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-[rgb(0_0_0/55%)] text-[color:var(--color-on-accent)] hover:bg-[rgb(0_0_0/70%)]"
-            aria-label={t('chat.removeAttachment', { name: f.name })}
-            onClick={() => setFiles(files.filter((_, j) => j !== i))}
-          >
-            <X className="size-3.5" />
-          </button>
+          <Tip label={t('chat.removeAttachment', { name: f.name })}>
+            <button
+              type="button"
+              className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-[rgb(0_0_0/55%)] text-[color:var(--color-on-accent)] hover:bg-[rgb(0_0_0/70%)]"
+              aria-label={t('chat.removeAttachment', { name: f.name })}
+              onClick={() => setFiles(files.filter((_, j) => j !== i))}
+            >
+              <X className="size-3.5" />
+            </button>
+          </Tip>
         </div>
       ))}
     </div>

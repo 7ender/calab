@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { TriangleAlert } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PttBinding, PttStatus } from '../../../shared/ipc';
 import { KEY, keyName, mouseName } from '../../../shared/pttKeys';
 import { Button, Toggle, cx } from '../../components/ui';
@@ -44,16 +45,31 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
     return () => window.removeEventListener('focus', check);
   }, [b]);
 
+  // Closing the binder (Settings / onboarding) with a capture armed must disarm it: otherwise the
+  // next key typed anywhere in the OS became the PTT key (review H2).
+  const mounted = useRef(true);
+  const alive = (): boolean => mounted.current;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      platform.ptt.cancelCapture();
+    };
+  }, []);
+
   const bind = async (): Promise<void> => {
     setCapturing(true);
     try {
       const next = await platform.ptt.captureNext();
-      setPrefs({ pttBinding: next });
+      if (alive()) setPrefs({ pttBinding: next });
     } catch {
-      // cancelled (Esc) or superseded
+      // cancelled (Esc / closed), superseded or timed out
     } finally {
-      setCapturing(false);
-      setStatus(await platform.ptt.status());
+      if (alive()) {
+        setCapturing(false);
+        const st = await platform.ptt.status();
+        if (alive()) setStatus(st);
+      }
     }
   };
 
@@ -69,9 +85,11 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
   };
 
   return (
-    <div className={cx('flex flex-col gap-3', compact ? '' : 'px-3 py-3')} data-testid="ptt-binder">
+    <div className={cx('flex flex-col gap-3', compact ? '' : 'px-3 py-3')} data-testid="ptt-binder" data-settings-row>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[13px]">{t('voice.pttKey')}</span>
+        <span className="text-body" data-settings-label data-settings-hint={t('voice.pttHint')}>
+          {t('voice.pttKey')}
+        </span>
         <span className="flex items-center gap-2">
           <span
             className={cx('size-2 rounded-full', talking ? 'bg-ok' : 'bg-[var(--color-fill-hover)]')}
@@ -79,7 +97,7 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
             aria-label={talking ? t('voice.pttLive') : t('voice.pttIdle')}
             title={talking ? t('voice.pttLive') : t('voice.pttIdle')}
           />
-          <kbd className="min-w-20 truncate rounded-[var(--radius-control)] border border-line bg-elev px-2 py-1 text-center font-sans text-[12px]">
+          <kbd className="min-w-20 truncate rounded-[var(--radius-control)] border border-line bg-elev px-2 py-1 text-center font-sans text-caption">
             {capturing ? t('voice.pttPress') : bindingLabel(b, os)}
           </kbd>
           <Button variant="secondary" busy={capturing} onClick={() => void bind()}>
@@ -88,31 +106,35 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
         </span>
       </div>
 
-      {capturing ? <p className="text-[12px] text-muted">{t('voice.pttCaptureHint')}</p> : null}
+      {capturing ? <p className="text-caption text-muted">{t('voice.pttCaptureHint')}</p> : null}
 
-      {caps && toggle && !remapped ? <p className="rounded-[var(--radius-control)] bg-mention px-2 py-1.5 text-[12px]">{t('voice.pttCapsToggle')}</p> : null}
-      {toggle && !caps ? <p className="text-[12px] text-muted">{t('voice.pttToggleNote')}</p> : null}
+      {caps && toggle && !remapped ? <p className="rounded-[var(--radius-control)] bg-mention px-2 py-1.5 text-caption">{t('voice.pttCapsToggle')}</p> : null}
+      {toggle && !caps ? <p className="text-caption text-muted">{t('voice.pttToggleNote')}</p> : null}
       {mac && caps ? (
         <div className="flex items-center justify-between gap-3">
           <span className="flex flex-col">
-            <span className="text-[13px]">{t('voice.pttCapsRemap')}</span>
-            <span className="text-[12px] text-muted">{t('voice.pttCapsRemapHint')}</span>
+            <span className="text-body">{t('voice.pttCapsRemap')}</span>
+            <span className="text-caption text-muted">{t('voice.pttCapsRemapHint')}</span>
           </span>
           <Toggle label={t('voice.pttCapsRemap')} checked={remapped} onChange={setRemap} />
         </div>
       ) : null}
 
       {status && !status.trusted ? (
-        <div className="flex items-center justify-between gap-3 text-[12px]">
-          <span className="text-danger-text">{t('voice.pttNoAccess')}</span>
-          <Button variant="secondary" onClick={() => void platform.system.openPrivacySettings('input-monitoring')}>
+        // A permission still to grant is a warning, not an error (UX review): yellow tint + ⚠︎.
+        <div className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] bg-mention px-2.5 py-2 text-caption text-fg" role="status">
+          <span className="flex items-start gap-2">
+            <TriangleAlert className="mt-px size-4 shrink-0 text-warn" aria-hidden />
+            {t('voice.pttNoAccess')}
+          </span>
+          <Button variant="secondary" size="sm" onClick={() => void platform.system.openPrivacySettings('input-monitoring')}>
             {t('perm.openOs')}
           </Button>
         </div>
       ) : null}
-      {status?.wayland ? <p className="text-[12px] text-muted">{t('voice.pttWayland')}</p> : null}
-      {status?.error && status.trusted && !status.wayland ? <p className="text-[12px] text-danger-text">{status.error}</p> : null}
-      <p className="text-[12px] text-faint">{web ? t('voice.pttHintWeb') : t('voice.pttHint')}</p>
+      {status?.wayland ? <p className="text-caption text-muted">{t('voice.pttWayland')}</p> : null}
+      {status?.error && status.trusted && !status.wayland ? <p className="text-caption text-danger-text">{t('voice.pttError')}</p> : null}
+      <p className="text-caption text-faint">{web ? t('voice.pttHintWeb') : t('voice.pttHint')}</p>
     </div>
   );
 }

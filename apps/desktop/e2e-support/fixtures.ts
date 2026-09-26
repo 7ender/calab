@@ -473,7 +473,7 @@ export function buildState(scenario: Scenario): MockState {
     meta: fileMeta(IDS.files.pdf, IDS.workspaces.main, U.grigory, 'load-test-report.pdf', 'application/pdf', pdf, ts('2026-01-14T16:29:00Z')),
     bytes: pdf,
   });
-  const avatar = encodePng(128, 128, avatarPicture([46, 160, 140], [236, 248, 245]));
+  const avatar = encodePng(128, 128, avatarPicture([255, 150, 120], [96, 72, 190]));
   s.files.set(IDS.files.veraAvatar, {
     meta: fileMeta(IDS.files.veraAvatar, '', U.vera, 'avatar.png', 'image/png', avatar, ts('2025-12-02T10:00:00Z'), { width: 128, height: 128 }),
     bytes: avatar,

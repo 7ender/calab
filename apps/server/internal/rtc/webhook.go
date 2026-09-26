@@ -103,7 +103,16 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 	case EventTrackPublished:
 		switch t.Source {
 		case SourceMicrophone:
-			return s.setFlag(ctx, wid, rid, uid, sid, func(n *voice.SessionState) { n.Muted = t.Muted })
+			muted := t.Muted
+			if !muted && s.serverMuted(ctx, wid, uid) {
+				// The grant already forbids the microphone; this catches a track published
+				// with a token issued before the mute.
+				if err := s.lk.MuteTrack(ctx, ev.Room.Name, identity, t.Sid, true); err != nil && !IsNotFound(err) {
+					slog.WarnContext(ctx, "mute track of a server-muted user", "identity", identity, "err", err)
+				}
+				muted = true
+			}
+			return s.setFlag(ctx, wid, rid, uid, sid, func(n *voice.SessionState) { n.Muted = muted })
 		case SourceScreenShare:
 			return s.streamStarted(ctx, wid, rid, uid, sid, identity, t)
 		}
@@ -213,7 +222,7 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 	if acc.Bits.Has(perm.Stream) {
 		slot, _ = s.streamSlotFree(ctx, rid, identity, media.GetMaxStreams())
 	}
-	if err := s.lk.UpdatePermission(ctx, lkRoom, identity, Grant(acc.Bits, slot)); err != nil && !IsNotFound(err) {
+	if err := s.lk.UpdatePermission(ctx, lkRoom, identity, s.grant(ctx, wid, uid, acc.Bits, slot)); err != nil && !IsNotFound(err) {
 		slog.WarnContext(ctx, "livekit update permission on join", "identity", identity, "err", err)
 	}
 	return nil
@@ -263,7 +272,7 @@ func (s *Service) streamStarted(ctx context.Context, wid, rid, uid, sid uuid.UUI
 			slog.WarnContext(ctx, "mute over-limit stream", "err", err)
 		}
 		if acc, err := perm.NewResolver(s.db.Q).Room(ctx, rid, uid); err == nil {
-			_ = s.lk.UpdatePermission(ctx, room, identity, Grant(acc.Bits, false))
+			_ = s.lk.UpdatePermission(ctx, room, identity, s.grant(ctx, wid, uid, acc.Bits, false))
 		}
 		s.publishStreamStop(ctx, wid, rid, uid, t.Sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_LIMIT_REACHED)
 		return nil

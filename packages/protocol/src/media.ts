@@ -48,12 +48,11 @@ export function audioCaptureConstraints(rnnoiseEnabled: boolean): MediaTrackCons
   };
 }
 
-/** Screen share SVC mode by contentHint (ADR-0005). */
-export const SCREEN_SHARE_SCALABILITY_MODE = {
-  detail: 'L1T3',
-  motion: 'L3T3_KEY',
-} as const;
-export type ScreenShareContentHint = keyof typeof SCREEN_SHARE_SCALABILITY_MODE;
+/**
+ * `MediaStreamTrack.contentHint` of a screen share. Both hints publish AV1 simulcast with L1T3
+ * layers (ADR-0012 superseded the per-hint SVC table of ADR-0005, which is gone).
+ */
+export type ScreenShareContentHint = 'detail' | 'motion';
 
 /**
  * Preset not above the room maximum (`room.media.maxStreamPreset`).

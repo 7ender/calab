@@ -1,11 +1,16 @@
-import { Maximize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, X } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import { Check, ChevronDown, Maximize2, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Volume2, VolumeX, X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { IconButton, cx } from '../../components/ui';
+import { Avatar } from '../../components/Avatar';
+import { IconButton, Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
-import { useVoice, type RemoteStream } from '../../stores/voice';
-import { memberName } from '../../stores/workspaces';
+import { useVoice, type RemoteStream, type StreamQuality } from '../../stores/voice';
+import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { menuBox, menuItem } from '../shell/menu';
+import { pipSize, qualityOptions } from './streamFormat';
 
 /** <video> bound to a remote stream track. Its on-screen size drives adaptive stream (layer choice). */
 function StreamVideo({ trackSid, className }: { trackSid: string; className?: string }): ReactNode {
@@ -75,110 +80,329 @@ function Popout({ trackSid, title, onClose }: { trackSid: string; title: string;
   );
 }
 
-export function StreamArea(): ReactNode {
-  const streams = useVoice((s) => s.streams);
-  const watching = useVoice((s) => s.watching);
-  const stage = useVoice((s) => s.stage);
-  const wsId = useVoice((s) => s.workspaceId);
-  const set = useVoice((s) => s.set);
-  const stageRef = useRef<HTMLDivElement>(null);
+interface Box {
+  /** Offset of the message area's top inside the chat column (below header / pinned bar). */
+  top: number;
+  /** Height between that top and the composer. */
+  height: number;
+}
 
-  if (streams.length === 0) return null;
-  const current = streams.find((s) => s.trackSid === watching);
-  const nameOf = (s: RemoteStream): string => memberName(wsId, s.userId);
-  const others = streams.filter((s) => s.trackSid !== watching);
+/**
+ * Where the message area is: StreamArea renders a zero-height anchor right before the message
+ * list, so its offsetTop is the list's top whatever sits above it (pinned bar, search panel).
+ */
+function useMessageBox(anchor: RefObject<HTMLDivElement | null>): Box {
+  const [box, setBox] = useState<Box>({ top: 0, height: 0 });
+  useLayoutEffect(() => {
+    const el = anchor.current;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    const measure = (): void => {
+      const composer = parseFloat(getComputedStyle(el).getPropertyValue('--composer-height')) || 64;
+      const next = { top: el.offsetTop, height: Math.max(0, parent.clientHeight - el.offsetTop - composer) };
+      setBox((b) => (b.top === next.top && b.height === next.height ? b : next));
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(parent);
+    for (let s = el.previousElementSibling; s; s = s.previousElementSibling) ro.observe(s);
+    const composer = parent.querySelector('[data-testid="composer"]');
+    if (composer) ro.observe(composer);
+    return () => ro.disconnect();
+  });
+  return box;
+}
 
-  const switcher =
-    others.length > 0 || !current ? (
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-rail px-4 py-1.5 text-[12px]">
-        <MonitorPlay className="size-4 text-danger" />
-        <span className="text-muted">{t('stream.live')}:</span>
-        {streams.map((s) => (
-          <button
-            key={s.trackSid}
-            type="button"
-            onClick={() => voice.watch(s.trackSid)}
-            className={cx(
-              'rounded-full px-2 py-0.5',
-              s.trackSid === watching ? 'bg-accent-strong text-accent-fg' : 'bg-active text-fg hover:bg-hover',
-            )}
-          >
-            {nameOf(s)}
-          </button>
-        ))}
-      </div>
-    ) : null;
+const PIP_GAP = 12;
 
-  if (!current) return switcher;
+function LiveBadge(): ReactNode {
+  return <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white">{t('shell.live')}</span>;
+}
 
-  const fullscreen = (): void => {
-    void stageRef.current?.requestFullscreen().catch(() => undefined);
-  };
+/** Streamer chip over the video: avatar (speaking ring), name, LIVE. */
+function StreamerChip({ stream, wsId, size = 'md' }: { stream: RemoteStream; wsId: string | null; size?: 'sm' | 'md' }): ReactNode {
+  const name = useMemberName(wsId, stream.userId);
+  const avatar = useWorkspaces((s) => s.users[stream.userId]?.avatarFileId);
+  const speaking = useVoice((s) => s.speaking[stream.userId] ?? false);
+  return (
+    <span
+      className={cx(
+        'pointer-events-none flex min-w-0 items-center gap-1.5 rounded-full bg-black/60 py-0.5 pl-0.5 pr-1.5 text-white',
+        size === 'sm' ? 'text-[11px]' : 'text-[12px]',
+      )}
+    >
+      <Avatar userId={stream.userId} name={name} fileId={avatar || undefined} size={size === 'sm' ? 16 : 20} speaking={speaking} />
+      <span className="min-w-0 truncate font-semibold" title={name}>
+        {name}
+      </span>
+      <LiveBadge />
+    </span>
+  );
+}
 
-  if (stage === 'pip') {
-    return (
-      <>
-        {switcher}
-        <div
-          data-testid="stream-pip"
-          className="mat-popover group absolute right-4 z-[var(--z-pip)] w-[320px] overflow-hidden rounded-[var(--radius-panel)] bg-[var(--color-video-bg)]"
-          style={{ bottom: 'calc(var(--composer-height) + 16px)' }}
+const overlayBtn = 'text-white hover:bg-white/15 hover:text-white';
+
+// ---------------------------------------------------------------- PiP
+
+function Pip({ stream, others, wsId, box }: { stream: RemoteStream; others: number; wsId: string | null; box: Box }): ReactNode {
+  const wide = useMediaQuery('(min-width: 1200px)');
+  const { w, h } = pipSize(wide, box.height, PIP_GAP);
+  const name = useMemberName(wsId, stream.userId);
+  return (
+    <div
+      data-testid="stream-pip"
+      className="mat-popover group absolute right-4 z-[var(--z-pip)] overflow-hidden rounded-[var(--radius-panel)] bg-[var(--color-video-bg)]"
+      // Top-right of the message area (docs/08 layout): clear of the composer, the latest
+      // messages and the bottom-aligned empty state.
+      style={{ top: box.top + PIP_GAP, width: w, height: h }}
+      aria-label={t('streamView.of', { name })}
+      role="region"
+    >
+      <StreamVideo trackSid={stream.trackSid} className="size-full" />
+      <button type="button" className="absolute inset-0 rounded-[var(--radius-panel)]" onClick={() => voice.setStage('expanded')} aria-label={t('stream.expand')} />
+      <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-16px)]">
+        <StreamerChip stream={stream} wsId={wsId} size={w < 240 ? 'sm' : 'md'} />
+      </span>
+      {others > 0 ? (
+        <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/60 px-2 text-[11px] font-medium leading-5 text-white">{t('streamView.more', { n: others })}</span>
+      ) : null}
+      <span className="absolute right-1.5 top-1.5 flex gap-0.5 rounded-[var(--radius-card)] bg-black/60 p-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 group-hover:opacity-100">
+        <IconButton size="sm" label={t('stream.expand')} className={overlayBtn} onClick={() => voice.setStage('expanded')}>
+          <Maximize2 className="size-4" aria-hidden />
+        </IconButton>
+        <IconButton size="sm" label={t('stream.close')} className={overlayBtn} onClick={() => voice.watch(null)}>
+          <X className="size-4" aria-hidden />
+        </IconButton>
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- expanded stage
+
+function QualityMenu({ stream, onOpenChange }: { stream: RemoteStream; onOpenChange: (open: boolean) => void }): ReactNode {
+  const current = useVoice((s) => s.streamQuality[stream.trackSid] ?? 'auto');
+  const [options, setOptions] = useState(() => qualityOptions(voice.streamLayers(stream.trackSid)));
+  const label = options.find((o) => o.value === current)?.label ?? t('streamView.qualityAuto');
+  return (
+    <Dropdown.Root
+      modal={false}
+      onOpenChange={(open) => {
+        // Layers come from the SFU's track info, which may arrive after the first render.
+        if (open) setOptions(qualityOptions(voice.streamLayers(stream.trackSid)));
+        onOpenChange(open);
+      }}
+    >
+      <Dropdown.Trigger asChild>
+        <button
+          type="button"
+          aria-label={t('streamView.quality', { q: label })}
+          className="flex h-7 items-center gap-1 rounded-[var(--radius-control)] px-2 text-[12px] font-medium text-white transition-colors duration-[var(--motion-fast)] hover:bg-white/15 data-[state=open]:bg-white/15"
         >
-          <button type="button" className="block" onClick={() => set({ stage: 'expanded' })} aria-label={t('stream.expand')}>
-            <StreamVideo trackSid={current.trackSid} className="h-[180px] w-[320px]" />
-          </button>
-          <div className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/70 px-2 py-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <span className="truncate text-[12px] font-semibold text-white">{nameOf(current)}</span>
-            <span className="flex">
-              <IconButton label={t('stream.expand')} className="text-white" onClick={() => set({ stage: 'expanded' })}>
-                <Maximize className="size-4" />
-              </IconButton>
-              <IconButton label={t('stream.close')} className="text-white" onClick={() => voice.watch(null)}>
-                <X className="size-4" />
-              </IconButton>
-            </span>
-          </div>
-        </div>
-      </>
+          {label}
+          <ChevronDown className="size-3.5" aria-hidden />
+        </button>
+      </Dropdown.Trigger>
+      <Dropdown.Portal>
+        <Dropdown.Content className={cx(menuBox, 'min-w-36')} side="top" align="start" sideOffset={8}>
+          <Dropdown.RadioGroup value={current} onValueChange={(v) => voice.setStreamQuality(stream.trackSid, v as StreamQuality)}>
+            {options.map((o) => (
+              <Dropdown.RadioItem key={o.value} value={o.value} className={menuItem}>
+                <span className="grid size-4 place-items-center">
+                  <Dropdown.ItemIndicator>
+                    <Check className="size-4" aria-hidden />
+                  </Dropdown.ItemIndicator>
+                </span>
+                {o.label}
+              </Dropdown.RadioItem>
+            ))}
+          </Dropdown.RadioGroup>
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
+  );
+}
+
+/** Stream audio volume: the stream's own <audio> element (docs/02 echo rule 1 — no WebAudio). */
+function VolumeControl({ stream }: { stream: RemoteStream }): ReactNode {
+  const volume = useVoice((s) => s.streamVolume[stream.userId] ?? 1);
+  const [before, setBefore] = useState(1);
+  if (!stream.hasAudio) {
+    return (
+      <IconButton size="sm" label={t('streamView.noAudio')} className={cx(overlayBtn, 'opacity-60')} aria-disabled onClick={() => undefined}>
+        <VolumeX className="size-4" aria-hidden />
+      </IconButton>
     );
   }
-
+  const muted = volume === 0;
   return (
-    <>
-      {switcher}
-      <div ref={stageRef} className="group relative flex h-[58%] min-h-[220px] shrink-0 items-center justify-center bg-[var(--color-video-bg)]">
-        <StreamVideo trackSid={current.trackSid} className="size-full" />
+    <span className="flex items-center gap-1">
+      <IconButton
+        size="sm"
+        label={muted ? t('streamView.unmute') : t('streamView.mute')}
+        className={overlayBtn}
+        onClick={() => {
+          if (!muted) setBefore(volume);
+          voice.setStreamVolume(stream.userId, muted ? before || 1 : 0);
+        }}
+      >
+        {muted ? <VolumeX className="size-4" aria-hidden /> : <Volume2 className="size-4" aria-hidden />}
+      </IconButton>
+      <span className="w-20">
+        <Slider label={t('streamView.volume')} value={Math.round(volume * 100)} min={0} max={100} onChange={(v) => voice.setStreamVolume(stream.userId, v / 100)} />
+      </span>
+    </span>
+  );
+}
+
+function useFullscreen(target: RefObject<HTMLElement | null>): [boolean, () => void] {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const sync = (): void => setOn(document.fullscreenElement !== null && document.fullscreenElement === target.current);
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, [target]);
+  const toggle = (): void => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    else void target.current?.requestFullscreen().catch(() => undefined);
+  };
+  return [on, toggle];
+}
+
+function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: string | null; current: boolean }): ReactNode {
+  const name = useMemberName(wsId, stream.userId);
+  return (
+    <button
+      type="button"
+      aria-pressed={current}
+      aria-label={t('streamView.of', { name })}
+      title={current ? t('streamView.watching') : name}
+      onClick={() => voice.watch(stream.trackSid)}
+      className={cx(
+        'relative h-[90px] w-[160px] shrink-0 overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-video-bg)] transition-shadow duration-[var(--motion-fast)]',
+        current ? 'ring-2 ring-accent' : 'ring-1 ring-[var(--color-border-popover)] hover:ring-2 hover:ring-[var(--color-fill-hover)]',
+      )}
+    >
+      <StreamVideo trackSid={stream.trackSid} className="size-full" />
+      <span className="absolute bottom-1 left-1 flex max-w-[calc(100%-8px)]">
+        <StreamerChip stream={stream} wsId={wsId} size="sm" />
+      </span>
+    </button>
+  );
+}
+
+function Stage({ stream, streams, wsId, box }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box }): ReactNode {
+  const stage = useVoice((s) => s.stage);
+  const frame = useRef<HTMLDivElement>(null);
+  const [fullscreen, toggleFullscreen] = useFullscreen(frame);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const name = useMemberName(wsId, stream.userId);
+  return (
+    <div
+      data-testid="stream-stage"
+      role="region"
+      aria-label={t('streamView.of', { name })}
+      className="absolute inset-x-0 z-[var(--z-sticky)] flex flex-col gap-2 bg-feed px-3 pb-3 pt-3"
+      // Over the message area only: header and composer stay usable.
+      style={{ top: box.top, bottom: 'var(--composer-height)' }}
+    >
+      <div
+        ref={frame}
+        className="mat-popover group relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-panel)] bg-[var(--color-video-bg)]"
+      >
+        <StreamVideo trackSid={stream.trackSid} className="size-full" />
+        <span className="absolute left-3 top-3 flex max-w-[calc(100%-24px)]">
+          <StreamerChip stream={stream} wsId={wsId} />
+        </span>
         {stage === 'popout' ? (
           <div className="absolute inset-0 grid place-items-center bg-black/80 text-white">
             <div className="text-center">
               <div className="font-semibold">{t('stream.inPopout')}</div>
-              <button type="button" className="mt-2 text-accent-text hover:underline" onClick={() => set({ stage: 'expanded' })}>
+              <button type="button" className="mt-2 rounded-[var(--radius-control)] px-2 py-1 text-white underline hover:bg-white/15" onClick={() => voice.setStage('expanded')}>
                 {t('stream.returnHere')}
               </button>
             </div>
           </div>
         ) : null}
-        <div className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/70 px-3 py-2 opacity-0 transition-opacity group-hover:opacity-100">
-          <span className="truncate text-[13px] font-semibold text-white">{nameOf(current)}</span>
-          <span className="flex gap-0.5">
-            <IconButton label={t('stream.collapse')} className="text-white" onClick={() => set({ stage: 'pip' })}>
-              <Minimize2 className="size-4" />
-            </IconButton>
-            <IconButton label={t('stream.popout')} className="text-white" onClick={() => set({ stage: 'popout' })}>
-              <SquareArrowOutUpRight className="size-4" />
-            </IconButton>
-            <IconButton label={t('stream.fullscreen')} className="text-white" onClick={fullscreen}>
-              <Fullscreen className="size-4" />
-            </IconButton>
-            <IconButton label={t('stream.close')} className="text-white" onClick={() => voice.watch(null)}>
-              <X className="size-4" />
-            </IconButton>
-          </span>
+        {/* Control bar: shows on hover / keyboard focus (and while its menu is open). */}
+        <div
+          data-testid="stream-controls"
+          className={cx(
+            'absolute bottom-3 left-1/2 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 rounded-[var(--radius-card)] bg-black/70 p-1 ring-1 ring-white/10 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 group-hover:opacity-100',
+            menuOpen ? 'opacity-100' : 'opacity-0',
+          )}
+        >
+          <QualityMenu stream={stream} onOpenChange={setMenuOpen} />
+          <span className="mx-0.5 h-4 w-px bg-white/25" aria-hidden />
+          <VolumeControl stream={stream} />
+          <span className="mx-0.5 h-4 w-px bg-white/25" aria-hidden />
+          <IconButton size="sm" label={t('stream.collapse')} className={overlayBtn} onClick={() => voice.setStage('pip')}>
+            <Minimize2 className="size-4" aria-hidden />
+          </IconButton>
+          <IconButton size="sm" label={t('stream.popout')} className={overlayBtn} onClick={() => voice.setStage(stage === 'popout' ? 'expanded' : 'popout')}>
+            <SquareArrowOutUpRight className="size-4" aria-hidden />
+          </IconButton>
+          <IconButton size="sm" label={fullscreen ? t('streamView.exitFullscreen') : t('stream.fullscreen')} className={overlayBtn} onClick={toggleFullscreen}>
+            {fullscreen ? <Minimize className="size-4" aria-hidden /> : <Fullscreen className="size-4" aria-hidden />}
+          </IconButton>
+          <IconButton size="sm" label={t('stream.close')} className={overlayBtn} onClick={() => voice.watch(null)}>
+            <X className="size-4" aria-hidden />
+          </IconButton>
         </div>
       </div>
-      {stage === 'popout' ? (
-        <Popout trackSid={current.trackSid} title={`${nameOf(current)} — Calaba`} onClose={() => set({ stage: 'expanded' })} />
+      {streams.length > 1 ? (
+        <div className="flex shrink-0 gap-2 overflow-x-auto p-0.5" role="group" aria-label={t('streamView.others')} data-testid="stream-strip">
+          {streams.map((s) => (
+            <PreviewTile key={s.trackSid} stream={s} wsId={wsId} current={s.trackSid === stream.trackSid} />
+          ))}
+        </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Nobody watched: a slim bar with who is live (click = watch). */
+function LiveBar({ streams, wsId }: { streams: RemoteStream[]; wsId: string | null }): ReactNode {
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-4 py-1.5 text-[12px]" data-testid="stream-live-bar">
+      <MonitorPlay className="size-4 text-danger" aria-hidden />
+      <span className="text-muted">{t('stream.live')}:</span>
+      {streams.map((s) => (
+        <LiveChip key={s.trackSid} stream={s} wsId={wsId} />
+      ))}
+    </div>
+  );
+}
+
+function LiveChip({ stream, wsId }: { stream: RemoteStream; wsId: string | null }): ReactNode {
+  const name = useMemberName(wsId, stream.userId);
+  return (
+    <button type="button" onClick={() => voice.watch(stream.trackSid)} className="max-w-48 truncate rounded-full bg-active px-2 py-0.5 text-fg hover:bg-hover" title={name}>
+      {name}
+    </button>
+  );
+}
+
+export function StreamArea(): ReactNode {
+  const streams = useVoice((s) => s.streams);
+  const watching = useVoice((s) => s.watching);
+  const stage = useVoice((s) => s.stage);
+  const wsId = useVoice((s) => s.workspaceId);
+  const anchor = useRef<HTMLDivElement>(null);
+  const box = useMessageBox(anchor);
+  const current = streams.find((s) => s.trackSid === watching);
+  const name = useMemberName(wsId, current?.userId ?? '');
+
+  return (
+    <>
+      <div ref={anchor} aria-hidden className="h-0 shrink-0" />
+      {streams.length === 0 ? null : !current ? (
+        <LiveBar streams={streams} wsId={wsId} />
+      ) : stage === 'pip' ? (
+        <Pip stream={current} others={streams.length - 1} wsId={wsId} box={box} />
+      ) : (
+        <Stage stream={current} streams={streams} wsId={wsId} box={box} />
+      )}
+      {current && stage === 'popout' ? <Popout trackSid={current.trackSid} title={`${name} — Calaba`} onClose={() => voice.setStage('expanded')} /> : null}
     </>
   );
 }

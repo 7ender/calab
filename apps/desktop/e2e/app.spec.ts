@@ -73,7 +73,7 @@ test('register → workspace → room → message → voice', async () => {
   await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
 
   // Message with markdown; it must survive the optimistic → server round trip.
-  const box = page.getByPlaceholder('Написать в #общий');
+  const box = page.getByPlaceholder('Сообщение в #общий');
   await box.fill('Привет из **E2E**');
   await box.press('Enter');
   const msg = page.locator('strong', { hasText: 'E2E' });

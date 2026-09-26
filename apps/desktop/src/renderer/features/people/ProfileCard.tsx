@@ -3,13 +3,15 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { MonitorUp, Pencil, Volume2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Button } from '../../components/ui';
+import { Button, Toggle } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { isGuest, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { GuestBadge, RoleIcon, roleTextClass } from './MemberBits';
-import { useMemberActions } from './MemberContextMenu';
+import { VolumeRow, useMemberActions } from './MemberContextMenu';
+import { voice } from '../../services/voice';
+import { usePrefs } from '../../stores/prefs';
 
 const ROLE_KEY: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -39,6 +41,7 @@ export function ProfileCard({ workspaceId, userId, onRename }: { workspaceId: st
   const self = useSession((s) => s.me?.user?.id) === userId;
   const name = useMemberName(workspaceId, userId);
   const actions = useMemberActions(workspaceId, userId);
+  const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
   const u = m?.user;
   if (!m || !u) return null;
   const presence = status !== undefined ? PRESENCE_KEY[status] : undefined;
@@ -49,21 +52,21 @@ export function ProfileCard({ workspaceId, userId, onRename }: { workspaceId: st
         <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={56} presence className="[&>span:last-child]:border-[var(--color-popover-solid)]" />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
-            <h3 className={`truncate text-[16px] font-semibold ${roleTextClass(m.role)}`} title={name}>
+            <h3 className={`truncate text-headline font-semibold ${roleTextClass(m.role)}`} title={name}>
               {name}
             </h3>
             {isGuest(m) ? <GuestBadge /> : null}
           </div>
           {m.nickname && m.nickname !== u.displayName ? (
-            <div className="truncate text-[13px] text-muted" title={u.displayName}>
+            <div className="truncate text-body text-muted" title={u.displayName}>
               {u.displayName}
             </div>
           ) : null}
-          <div className="text-[12px] text-muted">{t(presence ?? 'members.offline')}</div>
+          <div className="text-caption text-muted">{t(presence ?? 'members.offline')}</div>
         </div>
       </div>
-      {statusLine ? <p className="selectable break-words text-[13px]">{statusLine}</p> : null}
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-t border-line pt-3 text-[12px]">
+      {statusLine ? <p className="selectable break-words text-body">{statusLine}</p> : null}
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-t border-line pt-3 text-caption">
         <dt className="text-muted">{t('people.profile.role')}</dt>
         <dd className="flex min-w-0 items-center gap-1.5">
           <RoleIcon role={m.role} />
@@ -88,6 +91,16 @@ export function ProfileCard({ workspaceId, userId, onRename }: { workspaceId: st
           </>
         ) : null}
       </dl>
+      {actions?.volume ? (
+        // Discord's most-used member actions: volume and «mute for me» (docs/09 #12).
+        <div className="-mx-2 flex flex-col border-t border-line pt-2">
+          <VolumeRow userId={userId} />
+          <label className="flex h-8 items-center justify-between gap-3 px-2 text-body">
+            <span>{t('people.menu.localMute')}</span>
+            <Toggle checked={localMuted} onChange={(v) => voice.setUserMuted(userId, v)} label={t('people.menu.localMute')} />
+          </label>
+        </div>
+      ) : null}
       {actions?.rename ? (
         <Button variant="secondary" className="w-full" onClick={onRename}>
           <Pencil className="size-3.5" aria-hidden />

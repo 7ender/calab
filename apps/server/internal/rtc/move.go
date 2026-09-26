@@ -132,7 +132,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		}
 		moved++
 		s.publishVoice(r.Context(), acc.WorkspaceID, c)
-		if err := s.lk.UpdatePermission(r.Context(), dstName, identity, Grant(movedDst.Bits, st.Streaming)); err != nil && !IsNotFound(err) {
+		if err := s.lk.UpdatePermission(r.Context(), dstName, identity, s.grant(r.Context(), acc.WorkspaceID, target, movedDst.Bits, st.Streaming)); err != nil && !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}
 		// Tracks move with the participant: carry the stream records over.

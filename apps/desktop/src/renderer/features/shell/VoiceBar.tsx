@@ -1,16 +1,20 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Activity, AudioLines, Ellipsis, MessageSquare, MonitorUp, MonitorX, PhoneOff, Settings, Signal, SignalMedium, SignalLow, Wifi } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Activity, AudioLines, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, PhoneOff, Settings, Signal, SignalMedium, SignalLow, Wifi, WifiOff } from 'lucide-react';
+import { useEffect, type ReactNode } from 'react';
 import { Button, Tip, cx } from '../../components/ui';
-import { plural, t } from '../../i18n';
+import { t } from '../../i18n';
+import { mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
+import { useSession } from '../../stores/session';
 import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
-import { useVoice, type LinkQuality } from '../../stores/voice';
+import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, popoverBox } from './menu';
+import { viewersText } from '../voice/streamFormat';
+import { CallTimer } from './Sidebar';
 
 const Q_COLOR: Record<LinkQuality, string> = { good: 'text-ok', fair: 'text-warn', poor: 'text-danger', unknown: 'text-muted' };
 const Q_ICON: Record<LinkQuality, typeof Signal> = { good: Signal, fair: SignalMedium, poor: SignalLow, unknown: Signal };
@@ -30,6 +34,14 @@ function QualityButton(): ReactNode {
   const q: LinkQuality = phase === 'connected' ? quality : 'poor';
   const Icon = Q_ICON[q];
   const open = useUi((s) => s.openDialog);
+  if (phase === 'connecting') {
+    // «подключение…» (docs/09 #15): a spinner where the signal bars will be.
+    return (
+      <span className="grid size-8 shrink-0 place-items-center" role="status" aria-label={t('voice.connecting')}>
+        <Loader2 className="size-[18px] animate-spin text-muted" aria-hidden />
+      </span>
+    );
+  }
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -98,8 +110,23 @@ function PanelButton({
   );
 }
 
+declare global {
+  interface Window {
+    /** Visual tests only (CALABA_VISUAL_TEST): show a voice phase (e.g. «Переподключение…») without breaking the network. */
+    __calabaVoicePhase?: (phase: VoicePhase) => void;
+  }
+}
+
 /** «Голос подключён» (docs/09 #5), above the self panel while in voice. */
 export function VoiceBar(): ReactNode {
+  const visualTest = useSession((s) => s.appInfo?.visualTest === true);
+  useEffect(() => {
+    if (!visualTest) return;
+    window.__calabaVoicePhase = (phase) => setVoice({ phase });
+    return () => {
+      delete window.__calabaVoicePhase;
+    };
+  }, [visualTest]);
   const roomId = useVoice((s) => s.roomId);
   const wsId = useVoice((s) => s.workspaceId);
   const phase = useVoice((s) => s.phase);
@@ -107,6 +134,9 @@ export function VoiceBar(): ReactNode {
   const streamBusy = useVoice((s) => s.streamBusy);
   const canStream = useVoice((s) => s.canStream);
   const micError = useVoice((s) => s.micError);
+  const micAction = useVoice((s) => s.micErrorAction);
+  const serverMuted = useVoice((s) => s.serverMuted);
+  const activeWs = useUi((s) => s.activeWorkspaceId);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
   const wsName = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.name : undefined));
   const rnnoise = usePrefs((s) => s.rnnoise);
@@ -116,7 +146,10 @@ export function VoiceBar(): ReactNode {
   const open = useUi((s) => s.openDialog);
   if (!roomId) return null;
   const phaseText = phase === 'connected' ? t('voice.connected') : phase === 'reconnecting' ? t('voice.reconnecting') : t('voice.connecting');
-  const where = t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
+  const full = t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
+  // The workspace name only when the call is in another workspace than the one on screen (it
+  // otherwise just truncated the room name); the full path is always in the tooltip.
+  const where = wsName && wsId !== activeWs ? full : (room?.name ?? '');
   const goRoom = (): void => {
     if (wsId) openRoom(wsId, roomId);
   };
@@ -127,9 +160,13 @@ export function VoiceBar(): ReactNode {
         <QualityButton />
         <div className="min-w-0 flex-1" aria-live="polite">
           <div className={cx('truncate text-[13px] font-semibold leading-4', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
-          <button type="button" className="block max-w-full truncate text-left text-[12px] leading-4 text-muted hover:text-fg hover:underline" onClick={goRoom} title={where}>
-            {where}
-          </button>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <button type="button" className="block min-w-0 truncate text-left text-[12px] leading-4 text-muted hover:text-fg hover:underline" onClick={goRoom} title={full}>
+              {where}
+            </button>
+            {/* The call timer lives here too: in the room list it gives way to the row actions. */}
+            <CallTimer roomId={roomId} className="shrink-0 text-muted" />
+          </div>
         </div>
         <Tip label={t('voice.leave')}>
           <button
@@ -142,6 +179,14 @@ export function VoiceBar(): ReactNode {
           </button>
         </Tip>
       </div>
+
+      {phase === 'reconnecting' ? (
+        // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it back.
+        <div className="mt-1.5 flex items-start gap-2 rounded-[var(--radius-control)] bg-mention px-2 py-1.5 text-[12px]" role="status" data-testid="voice-reconnecting">
+          <WifiOff className="mt-px size-4 shrink-0 text-warn" aria-hidden />
+          <span className="min-w-0 text-fg">{t('voiceUi.reconnectHint')}</span>
+        </div>
+      ) : null}
 
       <div className="mt-1.5 grid grid-cols-4 gap-1.5">
         {myStream ? (
@@ -188,20 +233,36 @@ export function VoiceBar(): ReactNode {
       </div>
 
       {myStream ? (
-        <div className="mt-2 rounded-[var(--radius-control)] bg-hover px-2 py-1.5 text-[12px]">
-          <span className="font-semibold text-danger-text">● {t('stream.live')}</span>
-          <span className="text-muted">
-            {' '}
-            · {myStream.viewers} {plural(myStream.viewers, ['смотрит', 'смотрят', 'смотрят'])}
-          </span>
-          <span className="block truncate text-muted" title={myStream.sourceName}>
-            {myStream.sourceName}
+        <div className="mt-2 flex items-center gap-2 rounded-[var(--radius-control)] bg-hover px-2 py-1.5 text-[12px]" data-testid="my-stream">
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5">
+              <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white">{t('shell.live')}</span>
+              <span className="flex items-center gap-1 text-fg" aria-label={viewersText(myStream.viewers)}>
+                <Eye className="size-3.5 text-muted" aria-hidden />
+                {viewersText(myStream.viewers)}
+              </span>
+            </span>
+            <span className="mt-0.5 block truncate text-muted" title={myStream.sourceName}>
+              {myStream.sourceName}
+            </span>
+            {myStream.audioError ? <span className="mt-0.5 block text-muted">{myStream.audioError}</span> : null}
           </span>
         </div>
       ) : null}
+      {serverMuted ? (
+        <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-danger-text" role="status">
+          <MicOff className="size-4 shrink-0 text-danger" aria-hidden />
+          {t('voiceUi.serverMuted')}
+        </div>
+      ) : null}
       {micError ? (
-        <div className="mt-1 text-[12px] text-danger-text" role="alert">
-          {micError}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]" role="alert">
+          <span className="text-danger-text">{micError}</span>
+          {micAction ? (
+            <button type="button" className="rounded-[var(--radius-control)] font-medium text-accent-text hover:underline" onClick={() => runMediaAction(micAction)}>
+              {mediaActionLabel(micAction)}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

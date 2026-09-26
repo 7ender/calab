@@ -19,6 +19,12 @@ const { autoUpdater } = electronUpdater;
 let status: UpdateStatus = { state: 'disabled' };
 let wired = false;
 let notifiedVersion = '';
+/** The feed / download page of the current check (not frozen at the first one: the server can change). */
+let downloadPage = '';
+/** Kept referenced: a garbage-collected Notification loses its click handler (review L5). */
+let notification: Notification | null = null;
+let periodic: NodeJS.Timeout | null = null;
+const RECHECK_MS = 6 * 60 * 60 * 1000;
 
 const SIGNED = (process.env['CALABA_UPDATES_SIGNED'] ?? import.meta.env.MAIN_VITE_UPDATES_SIGNED ?? '') === '1';
 
@@ -31,11 +37,18 @@ function notifyAvailable(version: string, page: string): void {
   if (notifiedVersion === version || !Notification.isSupported()) return;
   notifiedVersion = version;
   const n = new Notification({ title: 'Calaba', body: `Доступна версия ${version} — скачать` });
-  n.on('click', () => void shell.openExternal(page));
+  n.on('click', () => {
+    void shell.openExternal(page);
+    notification = null;
+  });
+  n.on('close', () => {
+    if (notification === n) notification = null;
+  });
+  notification = n;
   n.show();
 }
 
-function wire(page: string): void {
+function wire(): void {
   if (wired) return;
   wired = true;
   autoUpdater.logger = log;
@@ -44,8 +57,8 @@ function wire(page: string): void {
   autoUpdater.on('checking-for-update', () => publish({ state: 'checking' }));
   autoUpdater.on('update-not-available', () => publish({ state: 'none' }));
   autoUpdater.on('update-available', (i) => {
-    publish({ state: 'available', version: i.version, downloadPage: page });
-    if (!SIGNED) notifyAvailable(i.version, page);
+    publish({ state: 'available', version: i.version, downloadPage });
+    if (!SIGNED) notifyAvailable(i.version, downloadPage);
   });
   autoUpdater.on('update-downloaded', (i) => publish({ state: 'downloaded', version: i.version }));
   autoUpdater.on('error', (e) => {
@@ -60,7 +73,10 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     publish({ state: 'disabled' });
     return status;
   }
-  wire(url);
+  downloadPage = url;
+  wire();
+  // A long-running app (tray) otherwise only learns about updates at the next launch.
+  periodic ??= setInterval(() => void checkForUpdates(), RECHECK_MS);
   autoUpdater.setFeedURL({ provider: 'generic', url });
   try {
     await autoUpdater.checkForUpdates();

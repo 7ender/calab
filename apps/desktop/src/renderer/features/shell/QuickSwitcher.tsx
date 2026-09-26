@@ -3,7 +3,7 @@ import { RoomType, type Message, type Room, type WorkspaceMember } from '@calaba
 import { Hash, Search, Volume2, X } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Spinner, cx } from '../../components/ui';
+import { Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmtTime, toDate } from '../../lib/format';
@@ -15,6 +15,8 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from '../chat/chatView';
 import { fmtDayLabel } from '../chat/MessageBubble';
 import { previewText } from '../chat/mentionText';
+import { searchWords, splitHits } from '../../lib/markdown/highlight';
+import { roomLabel } from '../chat/roomLabel';
 
 type Item =
   | { kind: 'room'; id: string; room: Room }
@@ -137,18 +139,20 @@ export function QuickSwitcher({ onClose }: { onClose: () => void }): ReactNode {
         <DialogP.Content aria-modal="true"
           aria-label={t('search.title')}
           data-layout-anchor="top" // Spotlight-like: anchored near the top, not centred
-          className="mat-popover anim-in fixed left-1/2 top-[14vh] z-[var(--z-modal)] flex max-h-[70vh] w-[min(600px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] focus:outline-none"
+          className="mat-popover dense anim-in fixed left-1/2 top-[14vh] z-[var(--z-modal)] flex max-h-[70vh] w-[min(600px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] focus:outline-none"
         >
           <DialogP.Title className="sr-only">{t('search.title')}</DialogP.Title>
           <DialogP.Description className="sr-only">{t('search.hint')}</DialogP.Description>
           <div className="flex shrink-0 items-center gap-2 border-b border-line px-4">
             <Search className="size-4 shrink-0 text-faint" strokeWidth={1.75} aria-hidden />
             {author ? (
-              <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-strong py-0.5 pl-2 pr-1 text-[12px] font-medium text-accent-fg">
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-strong py-0.5 pl-2 pr-1 text-caption font-medium text-accent-fg">
                 {t('search.from', { name: memberName(activeWs, author.user?.id ?? '') })}
-                <button type="button" aria-label={t('search.clearFrom')} className="grid size-4 place-items-center rounded-full hover:bg-[rgb(255_255_255/20%)]" onClick={() => setAuthor(null)}>
-                  <X className="size-3" />
-                </button>
+                <Tip label={t('search.clearFrom')}>
+                  <button type="button" aria-label={t('search.clearFrom')} className="grid size-4 place-items-center rounded-full hover:bg-[rgb(255_255_255/20%)]" onClick={() => setAuthor(null)}>
+                    <X className="size-3" />
+                  </button>
+                </Tip>
               </span>
             ) : null}
             <input
@@ -165,20 +169,20 @@ export function QuickSwitcher({ onClose }: { onClose: () => void }): ReactNode {
               aria-activedescendant={items[cur] ? `qs-${items[cur].id}` : undefined}
               placeholder={t('search.placeholder')}
               aria-label={t('search.placeholder')}
-              className="h-12 min-w-0 flex-1 bg-transparent text-[16px] text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+              className="h-12 min-w-0 flex-1 bg-transparent text-headline text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
             />
             {busy ? <Spinner className="size-4" /> : null}
           </div>
           <ul id="quick-switcher-list" role="listbox" aria-label={t('search.title')} className="min-h-0 overflow-y-auto p-1.5">
             {items.length === 0 ? (
-              <li role="presentation" className="px-3 py-6 text-center text-[13px] text-muted">
+              <li role="presentation" className="px-3 py-6 text-center text-body text-muted">
                 {busy ? t('search.searching') : author && !q.trim() ? t('search.memberHint') : t('search.empty')}
               </li>
             ) : null}
             {items.map((it, i) => (
               <Fragment key={it.id}>
                 {needle && (i === 0 || items[i - 1]?.kind !== it.kind) ? (
-                  <li role="presentation" className="px-3 pb-1 pt-2 text-[12px] font-semibold text-muted">
+                  <li role="presentation" className="px-3 pb-1 pt-2 text-caption font-semibold text-muted">
                     {section(it.kind)}
                   </li>
                 ) : null}
@@ -189,7 +193,7 @@ export function QuickSwitcher({ onClose }: { onClose: () => void }): ReactNode {
                   onMouseMove={() => i !== cur && setSel(i)}
                   onClick={() => go(i)}
                   className={cx(
-                    'flex w-full cursor-default items-center gap-2 rounded-[var(--radius-control)] px-3 text-left text-[13px]',
+                    'flex w-full cursor-default items-center gap-2 rounded-[var(--radius-control)] px-3 text-left text-body',
                     it.kind === 'message' ? 'py-1.5' : 'h-9',
                     i === cur ? 'bg-accent-strong text-accent-fg' : 'text-fg',
                   )}
@@ -218,14 +222,16 @@ function Row({
   workspaceName: (id: string) => string;
   rooms: Record<string, Room>;
 }): ReactNode {
-  const sub = cx('shrink-0 truncate text-[12px]', selected ? 'text-accent-fg' : 'text-muted');
+  const sub = cx('shrink-0 truncate text-caption', selected ? 'text-accent-fg' : 'text-muted');
   if (it.kind === 'room') {
     const r = it.room;
     const Icon = r.type === RoomType.VOICE ? Volume2 : Hash;
     return (
       <>
         <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-        <span className="min-w-0 flex-1 truncate">{r.name}</span>
+        <span className="min-w-0 flex-1 truncate">
+          <Highlight text={r.name} q={q} selected={selected} />
+        </span>
         <span className={sub}>{workspaceName(r.workspaceId)}</span>
       </>
     );
@@ -236,7 +242,9 @@ function Row({
     return (
       <>
         <Avatar userId={u?.id ?? ''} name={name} fileId={u?.avatarFileId || undefined} size={20} />
-        <span className="min-w-0 flex-1 truncate">{name}</span>
+        <span className="min-w-0 flex-1 truncate">
+          <Highlight text={name} q={q} selected={selected} />
+        </span>
         <span className={sub}>{t('search.memberHint')}</span>
       </>
     );
@@ -255,12 +263,12 @@ function Row({
         <span className="flex items-baseline gap-2">
           <span className="truncate font-semibold">{author}</span>
           <span className={sub}>
-            {room ? `#${room.name} · ` : ''}
+            {room ? `${roomLabel(room)} · ` : ''}
             {fmtDayLabel(d)}, {fmtTime(d)}
           </span>
         </span>
         <span className="line-clamp-2 break-words">
-          <Highlight text={snippetAround(text, q)} q={q} />
+          <Highlight text={snippetAround(text, q)} q={q} selected={selected} />
         </span>
       </span>
     </>
@@ -275,12 +283,17 @@ export function snippetAround(text: string, q: string, span = 140): string {
   return `${start > 0 ? '…' : ''}${text.slice(start, start + span)}${start + span < text.length ? '…' : ''}`;
 }
 
-function Highlight({ text, q }: { text: string; q: string }): ReactNode {
-  const words = q
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 1);
-  if (!words.length) return text;
-  const re = new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
-  return text.split(re).map((part, i) => (i % 2 === 1 ? <mark key={i} className="bg-transparent font-semibold text-inherit underline decoration-2 underline-offset-2">{part}</mark> : part));
+/** Hits: 600 weight + accent text (on the selected row the accent fill already marks it: inherit). */
+function Highlight({ text, q, selected }: { text: string; q: string; selected: boolean }): ReactNode {
+  const parts = splitHits(text, searchWords(q));
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    i % 2 === 1 ? (
+      <mark key={i} className={cx('bg-transparent font-semibold', selected ? 'text-inherit' : 'text-accent-text')}>
+        {part}
+      </mark>
+    ) : (
+      part
+    ),
+  );
 }

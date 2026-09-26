@@ -17,6 +17,7 @@ import { Composer, toOutgoing } from './Composer';
 import { MessageList } from './MessageList';
 import { RoomHeader } from './RoomHeader';
 import { PinnedBar, SearchPanel } from './RoomPanels';
+import { roomLabel } from './roomLabel';
 
 export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
@@ -116,8 +117,8 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       {dragging ? (
         <div className={cx('mat-popover pointer-events-none absolute inset-3 z-[var(--z-popover)] grid place-items-center rounded-[var(--radius-panel)] border-2 border-dashed border-accent')}>
           <div className="text-center">
-            <div className="text-[16px] font-semibold">{t('chat.dropHere')}</div>
-            <div className="text-muted">#{room.name}</div>
+            <div className="text-headline font-semibold">{t('chat.dropHere')}</div>
+            <div className="text-muted">{roomLabel(room)}</div>
           </div>
         </div>
       ) : null}

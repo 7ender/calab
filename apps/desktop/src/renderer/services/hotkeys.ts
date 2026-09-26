@@ -38,6 +38,16 @@ const isNavBack = (e: KeyboardEvent): boolean =>
 const isNavForward = (e: KeyboardEvent): boolean =>
   IS_MAC ? e.metaKey && !e.shiftKey && !e.altKey && e.code === 'BracketRight' : e.altKey && !e.ctrlKey && !e.shiftKey && e.key === 'ArrowRight';
 
+/**
+ * The letter of a shortcut: `e.key` when it is a Latin letter (keeps Dvorak/Colemak users on
+ * their own letters), else the physical key from `e.code` — on the Russian layout ⌘K gives
+ * `e.key === 'л'` (review M8).
+ */
+export function shortcutLetter(e: Pick<KeyboardEvent, 'key' | 'code'>): string {
+  if (/^[a-z]$/i.test(e.key)) return e.key.toLowerCase();
+  return /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : '';
+}
+
 export function installHotkeys(): () => void {
   const onKey = (e: KeyboardEvent): void => {
     const mod = e.metaKey || e.ctrlKey;
@@ -58,7 +68,7 @@ export function installHotkeys(): () => void {
       return;
     }
     if (!mod) return;
-    const k = e.key.toLowerCase();
+    const k = shortcutLetter(e);
     if (k === 'k' && !e.shiftKey) {
       e.preventDefault();
       const ui = useUi.getState();

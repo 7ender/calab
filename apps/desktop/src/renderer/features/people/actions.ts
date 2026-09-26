@@ -1,6 +1,7 @@
 import { confirmAction } from '../../components/Confirm';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
+import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
@@ -11,9 +12,8 @@ export function peopleError(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.is('ERROR_CODE_ROOM_FULL')) return t('people.err.roomFull');
     if (e.is('ERROR_CODE_FORBIDDEN')) return t('people.err.forbidden');
-    return e.message;
   }
-  return String(e);
+  return errorText(e);
 }
 
 const run = (p: Promise<unknown>): void => void p.catch((e: unknown) => toast.error(peopleError(e)));

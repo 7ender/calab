@@ -14,6 +14,7 @@ import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
 import { memberName } from '../../stores/workspaces';
 import { useChatView } from './chatView';
+import { roomLabel } from './roomLabel';
 import { fmtDayLabel } from './MessageBubble';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 import { previewText } from './mentionText';
@@ -48,11 +49,11 @@ export function RoomHeader({
   return (
     <header className="mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2">
       <Icon className="size-5 shrink-0 text-faint" aria-hidden />
-      <h1 className="min-w-0 max-w-[40%] shrink-0 truncate text-[15px] font-semibold" title={room.name}>
+      <h1 className="min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold" title={room.name}>
         {room.name}
       </h1>
       {typing ? (
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-accent-text" aria-live="polite">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-accent-text" aria-live="polite">
           <span className="text-faint" aria-hidden>
             •
           </span>
@@ -65,7 +66,7 @@ export function RoomHeader({
         <div className="flex-1" />
       )}
       <div className="no-drag flex shrink-0 items-center gap-0.5">
-        <IconButton label={t('chat.searchInRoom')} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
+        <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
           <Search className="size-[18px]" />
         </IconButton>
         <PinsButton workspaceId={workspaceId} roomId={room.id} canManage={can(perms, 'MANAGE_MESSAGES')} />
@@ -89,12 +90,25 @@ const LEVELS = [
   { level: NotificationLevel.NONE, label: 'chat.notifyNone' },
 ] as const;
 
+/**
+ * «Пока не включу»: the API has no open-ended mute (muted_until ≤ 1 year ahead), so it is the
+ * longest allowed one; anything past FOREVER_FROM reads as «выключены» without a date.
+ */
+const FOREVER_MS = 364 * 24 * 60 * 60_000;
+const FOREVER_FROM = 180 * 24 * 60 * 60_000;
+
 const MUTES = [
   { ms: 15 * 60_000, label: 'chat.notifyMute15m' },
   { ms: 60 * 60_000, label: 'chat.notifyMute1h' },
   { ms: 8 * 60 * 60_000, label: 'chat.notifyMute8h' },
   { ms: 24 * 60 * 60_000, label: 'chat.notifyMute24h' },
+  { ms: FOREVER_MS, label: 'chat.notifyMuteForever' },
 ] as const;
+
+/** «Выключены до 14:30» / «Выключены» (open-ended). */
+function mutedText(until: number, now: number): string {
+  return until - now > FOREVER_FROM ? t('chat.notifyMutedForever') : t('chat.notifyMutedUntil', { time: fmtUntil(until) });
+}
 
 const untilFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
@@ -122,7 +136,7 @@ function NotifyButton({ roomId }: { roomId: string }): ReactNode {
   const quiet = isQuiet(n);
   const Icon = quiet ? BellOff : n.level === NotificationLevel.MENTIONS ? BellDot : Bell;
   const levelText = t(LEVELS.find((l) => l.level === n.level)?.label ?? 'chat.notifyAll');
-  const state = n.mutedUntil ? t('chat.notifyMutedUntil', { time: fmtUntil(n.mutedUntil) }) : levelText;
+  const state = n.mutedUntil ? mutedText(n.mutedUntil, now) : levelText;
   return (
     <Dropdown.Root modal={false} open={open} onOpenChange={(v) => {
         setOpen(v);
@@ -136,7 +150,7 @@ function NotifyButton({ roomId }: { roomId: string }): ReactNode {
         </Dropdown.Trigger>
       </Tip>
       <Dropdown.Portal>
-        <Dropdown.Content align="end" sideOffset={8} collisionPadding={8} className={menuBox} aria-label={t('chat.notify')}>
+        <Dropdown.Content align="end" sideOffset={8} collisionPadding={16} className={menuBox} aria-label={t('chat.notify')}>
           <Dropdown.Label className={menuLabel}>{t('chat.notify')}</Dropdown.Label>
           <Dropdown.RadioGroup
             value={String(n.level)}
@@ -155,7 +169,7 @@ function NotifyButton({ roomId }: { roomId: string }): ReactNode {
           </Dropdown.RadioGroup>
           <Dropdown.Separator className={menuSeparator} />
           <Dropdown.Label className={menuLabel}>
-            {n.mutedUntil ? t('chat.notifyMutedUntil', { time: fmtUntil(n.mutedUntil) }) : t('chat.notifyMute')}
+            {n.mutedUntil ? mutedText(n.mutedUntil, now) : t('chat.notifyMute')}
           </Dropdown.Label>
           {MUTES.map((m) => (
             <Dropdown.Item key={m.ms} className={menuItem} onSelect={() => void setRoomNotifications(roomId, n.level, Date.now() + m.ms)}>
@@ -185,7 +199,7 @@ function Topic({ topic }: { topic: string }): ReactNode {
         •
       </span>
       <Popover.Trigger asChild>
-        <button type="button" className="no-drag min-w-0 flex-1 truncate text-left text-[13px] text-muted hover:text-fg" title={topic} aria-label={t('chat.topic')}>
+        <button type="button" className="no-drag min-w-0 flex-1 truncate text-left text-body text-muted hover:text-fg" title={topic} aria-label={t('chat.topic')}>
           {topic}
         </button>
       </Popover.Trigger>
@@ -193,8 +207,8 @@ function Topic({ topic }: { topic: string }): ReactNode {
         <Popover.Content
           align="start"
           sideOffset={8}
-          collisionPadding={8}
-          className="mat-popover anim-in selectable z-[var(--z-popover)] max-w-[min(480px,calc(100vw-32px))] whitespace-pre-wrap break-words rounded-[var(--radius-card)] px-3 py-2 text-[13px] text-fg"
+          collisionPadding={16}
+          className="mat-popover anim-in selectable z-[var(--z-popover)] max-w-[min(480px,calc(100vw-32px))] whitespace-pre-wrap break-words rounded-[var(--radius-card)] px-3 py-2 text-body text-fg"
         >
           {topic}
         </Popover.Content>
@@ -220,13 +234,13 @@ function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; r
         <Popover.Content
           align="end"
           sideOffset={8}
-          collisionPadding={8}
+          collisionPadding={16}
           aria-label={t('chat.pinned')}
           className="mat-popover anim-in z-[var(--z-popover)] flex max-h-[min(480px,70vh)] w-[360px] flex-col overflow-hidden rounded-[var(--radius-panel)]"
         >
-          <div className="border-b border-line px-4 py-2.5 text-[13px] font-semibold">{t('chat.pinned')}</div>
+          <div className="border-b border-line px-4 py-2.5 text-body font-semibold">{t('chat.pinned')}</div>
           {pins.length === 0 ? (
-            <p className="px-4 py-8 text-center text-[13px] text-muted">{t('chat.noPins')}</p>
+            <p className="px-4 py-8 text-center text-body text-muted">{t('chat.noPins')}</p>
           ) : (
             <ul className="min-h-0 overflow-y-auto p-1">
               {pins.map((m) => {
@@ -242,12 +256,12 @@ function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; r
                       }}
                     >
                       <span className="flex items-baseline gap-2">
-                        <span className="truncate text-[13px] font-semibold">{memberName(workspaceId, m.authorId)}</span>
-                        <span className="shrink-0 text-[12px] text-faint">
+                        <span className="truncate text-body font-semibold">{memberName(workspaceId, m.authorId)}</span>
+                        <span className="shrink-0 text-caption text-faint">
                           {fmtDayLabel(d)}, {fmtTime(d)}
                         </span>
                       </span>
-                      <span className="line-clamp-2 text-[13px] text-muted">
+                      <span className="line-clamp-2 text-body text-muted">
                         {previewText(workspaceId, m.content) || (m.attachments.length ? t('chat.attachment') : '')}
                       </span>
                     </button>

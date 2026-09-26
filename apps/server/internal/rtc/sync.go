@@ -57,6 +57,10 @@ func (p SyncPublisher) Workspace(ctx context.Context, wid uuid.UUID, ev *v1.Disp
 		if uid, err := uuid.Parse(e.WorkspaceMemberRemove.GetUserId()); err == nil {
 			p.async(func(ctx context.Context) {
 				p.S.disconnect(ctx, wid, func(st voice.SessionState) bool { return st.UserID == uid })
+				// A server mute does not follow a member who left the workspace.
+				if _, err := p.S.voice.SetServerMuted(ctx, wid, uid, false); err != nil {
+					slog.WarnContext(ctx, "clear server mute", "user", uid, "err", err)
+				}
 			})
 		}
 	case *v1.DispatchEvent_RoomDelete:
@@ -98,7 +102,7 @@ func (s *Service) resync(ctx context.Context, wid uuid.UUID, match func(voice.Se
 			s.removeIdentities(ctx, room, []string{identity})
 			continue
 		}
-		if err := s.lk.UpdatePermission(ctx, room, identity, Grant(acc.Bits, st.Streaming)); err != nil && !IsNotFound(err) {
+		if err := s.lk.UpdatePermission(ctx, room, identity, s.grant(ctx, wid, st.UserID, acc.Bits, st.Streaming)); err != nil && !IsNotFound(err) {
 			slog.WarnContext(ctx, "livekit update permission", "identity", identity, "err", err)
 		}
 	}

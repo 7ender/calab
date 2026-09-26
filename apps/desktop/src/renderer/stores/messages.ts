@@ -49,8 +49,6 @@ export interface UpsertOptions {
 
 interface MessagesState {
   rooms: Record<string, RoomMessages>;
-  /** roomId → userId → expiry (ms epoch). */
-  typing: Record<string, Record<string, number>>;
   /** Pinned messages per room (most recently pinned first); undefined = not loaded. */
   pins: Record<string, Message[] | undefined>;
   reset: () => void;
@@ -68,13 +66,13 @@ interface MessagesState {
   dropPending: (roomId: string, key: string) => void;
   remove: (roomId: string, id: string) => void;
   unload: (roomId: string) => void;
+  /** Background room: keep only its newest `keep` messages (memory, review M10). */
+  trim: (roomId: string, keep: number) => void;
   /** After a fresh IDENTIFY (missed events are not replayed): merge the newest page into the window. */
   resyncLatest: (roomId: string, latestDesc: Message[], hasMore: boolean) => void;
   /** MESSAGE_REACTION_ADD/REMOVE or an optimistic toggle; `mine` = the reacting user is me. */
   applyReaction: (roomId: string, messageId: string, emoji: string, add: boolean, mine: boolean) => void;
   setPins: (roomId: string, pins: Message[]) => void;
-  setTyping: (roomId: string, userId: string, until: number) => void;
-  clearTyping: (roomId: string, userId: string) => void;
 }
 
 function room(s: MessagesState, id: string): RoomMessages {
@@ -165,11 +163,23 @@ export function mergeLatest(r: RoomMessages, latestDesc: Message[], hasMore: boo
   return { ...r, items: [...kept, ...fresh, ...pending], hasMoreBefore: kept.length > 0 ? r.hasMoreBefore : hasMore, loaded: true, loading: false, error: null };
 }
 
+/**
+ * A background room's window cut to its newest `keep` sent messages (+ pending ones). A window
+ * that browses old history (hasMoreAfter) returns null: drop it, the room reloads at the present
+ * when opened again. Returns `r` itself when nothing needs to go.
+ */
+export function trimWindow(r: RoomMessages, keep: number): RoomMessages | null {
+  if (r.hasMoreAfter) return null;
+  const sentItems = r.items.filter((c) => c.status === 'sent');
+  if (sentItems.length <= keep) return r;
+  const pending = r.items.filter((c) => c.status !== 'sent');
+  return { ...r, items: [...sentItems.slice(sentItems.length - keep), ...pending], hasMoreBefore: true };
+}
+
 export const useMessages = create<MessagesState>()((set) => ({
   rooms: {},
-  typing: {},
   pins: {},
-  reset: () => set({ rooms: {}, typing: {}, pins: {} }),
+  reset: () => set({ rooms: {}, pins: {} }),
   setLoading: (roomId, loading, error = null) =>
     set((s) => ({ rooms: { ...s.rooms, [roomId]: { ...room(s, roomId), loading, error } } })),
   prependPage: (roomId, page, hasMore) =>
@@ -270,6 +280,17 @@ export const useMessages = create<MessagesState>()((set) => ({
       delete pins[roomId];
       return { rooms, pins };
     }),
+  trim: (roomId, keep) =>
+    set((s) => {
+      const r = s.rooms[roomId];
+      if (!r) return {};
+      const next = trimWindow(r, keep);
+      if (next === r) return {};
+      const rooms = { ...s.rooms };
+      if (next) rooms[roomId] = next;
+      else delete rooms[roomId];
+      return { rooms };
+    }),
   applyReaction: (roomId, messageId, emoji, add, mine) =>
     set((s) => {
       const r = s.rooms[roomId];
@@ -284,14 +305,6 @@ export const useMessages = create<MessagesState>()((set) => ({
       return { rooms: { ...s.rooms, [roomId]: { ...r, items } } };
     }),
   setPins: (roomId, pins) => set((s) => ({ pins: { ...s.pins, [roomId]: pins } })),
-  setTyping: (roomId, userId, until) =>
-    set((s) => ({ typing: { ...s.typing, [roomId]: { ...s.typing[roomId], [userId]: until } } })),
-  clearTyping: (roomId, userId) =>
-    set((s) => {
-      const t = { ...s.typing[roomId] };
-      delete t[userId];
-      return { typing: { ...s.typing, [roomId]: t } };
-    }),
 }));
 
 export const EMPTY_ROOM_MESSAGES = EMPTY;

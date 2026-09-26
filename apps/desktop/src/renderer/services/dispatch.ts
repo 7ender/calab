@@ -4,12 +4,14 @@ import { log } from '../lib/log';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
 import { toast } from '../stores/toasts';
-import { useRooms } from '../stores/rooms';
+import { isUnread, useRooms } from '../stores/rooms';
+import { useTyping } from '../stores/typing';
 import { myUserId, useSession } from '../stores/session';
 import { activeRoomId, useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
 import { isGuest, useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms } from './chat';
+import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
 import { voice } from './voice';
@@ -41,7 +43,11 @@ export function applyDispatch(ev: DispatchEvent): void {
       for (const rs of r.readStates) rooms.setRead(rs.roomId, rs.lastReadMessageId);
       const alive = useRooms.getState().byId;
       useInbox.getState().removeRooms((id) => id in alive);
-      useRooms.setState({ mentions: Object.fromEntries(Object.entries(mentions).filter(([id]) => id in alive)) });
+      // Live badges survive, except for rooms gone or read elsewhere meanwhile; then the badges
+      // are derived again from the mentions history (missed mentions aren't replayed, review M12).
+      const now = useRooms.getState();
+      useRooms.setState({ mentions: Object.fromEntries(Object.entries(mentions).filter(([id]) => id in alive && isUnread(id, now))) });
+      void loadMentions();
       const msgs = useMessages.getState();
       for (const id of Object.keys(msgs.rooms)) if (!(id in alive)) msgs.unload(id);
       void resyncLoadedRooms();
@@ -120,11 +126,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (userId === myUserId()) return;
       const at = e.value.timestamp ? timestampMs(e.value.timestamp) : Date.now();
       const until = Math.max(Date.now(), at) + TYPING_MS;
-      useMessages.getState().setTyping(roomId, userId, until);
-      window.setTimeout(() => {
-        const cur = useMessages.getState().typing[roomId]?.[userId];
-        if (cur !== undefined && cur <= Date.now()) useMessages.getState().clearTyping(roomId, userId);
-      }, TYPING_MS + 50);
+      useTyping.getState().set(roomId, userId, until);
+      window.setTimeout(() => useTyping.getState().expire(roomId, userId), TYPING_MS + 50);
       return;
     }
     case 'presenceUpdate':
@@ -174,8 +177,23 @@ export function applyDispatch(ev: DispatchEvent): void {
   }
 }
 
+/** Recently applied MESSAGE_CREATE ids: a replay (RESUME / events queued behind READY) counts once. */
+const seenMessages = new Set<string>();
+const SEEN_MAX = 1000;
+
+export function firstSeen(id: string): boolean {
+  if (seenMessages.has(id)) return false;
+  seenMessages.add(id);
+  if (seenMessages.size > SEEN_MAX) {
+    const oldest = seenMessages.values().next().value;
+    if (oldest !== undefined) seenMessages.delete(oldest);
+  }
+  return true;
+}
+
 function onMessage(m: Message, workspaceId: string): void {
   useMessages.getState().upsert(m);
+  if (!firstSeen(m.id)) return; // duplicate: no second badge / sound / notification
   const rooms = useRooms.getState();
   rooms.setLastMessage(m.roomId, m.id);
   if (m.authorId === myUserId()) {

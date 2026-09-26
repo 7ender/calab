@@ -9,10 +9,11 @@ import {
   type AuthSession,
   type IpcResult,
   type LoginArgs,
-  type LogoutReason,
   type RegisterArgs,
 } from '../shared/ipc';
+import { INSECURE_SERVER_CODE, serverUrlProblem } from '../shared/serverUrl';
 import { getSettings, normalizeServerUrl, updateSettings } from './settings';
+import { TokenBroker, toTokens, type Tokens, type TokensJson } from './tokenBroker';
 
 /**
  * Token broker (docs/04-data-model.md, "Auth").
@@ -24,30 +25,20 @@ import { getSettings, normalizeServerUrl, updateSettings } from './settings';
  *   windows or parallel requests never race a rotation → reuse detection).
  */
 
-interface Tokens {
-  accessToken: string;
-  accessExpiresAt: number; // ms epoch
-  refreshToken: string;
-  sessionId: string;
-}
-
 interface StoredSession {
   serverUrl: string;
   refreshToken: string;
   sessionId: string;
 }
 
-const REFRESH_MARGIN_MS = 60_000;
-
-let tokens: Tokens | null = null;
-let serverUrl = '';
-let refreshing: Promise<Tokens | null> | null = null;
+/** CALABA_ALLOW_INSECURE_HTTP=1: accept a plain-http server outside loopback (LAN tests only). */
+const ALLOW_INSECURE = process.env['CALABA_ALLOW_INSECURE_HTTP'] === '1';
 
 function storeFile(): string {
   return join(app.getPath('userData'), 'session.bin');
 }
 
-function persist(): void {
+function persist(serverUrl: string, tokens: Tokens | null): void {
   if (!tokens) {
     rmSync(storeFile(), { force: true });
     return;
@@ -74,27 +65,17 @@ function broadcast(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload);
 }
 
-function clearSession(reason: LogoutReason, notify: boolean): void {
-  tokens = null;
-  persist();
-  if (notify) broadcast(IPC.authLoggedOut, reason);
-}
-
-interface TokensJson {
-  accessToken: string;
-  accessExpiresAt: string;
-  refreshToken: string;
-  sessionId: string;
-}
-
-function toTokens(t: TokensJson): Tokens {
-  return {
-    accessToken: t.accessToken,
-    accessExpiresAt: Date.parse(t.accessExpiresAt),
-    refreshToken: t.refreshToken,
-    sessionId: t.sessionId,
-  };
-}
+/** Token state + refresh policy (tokenBroker.ts: single-flight, 401/409 end, rest transient). */
+const broker = new TokenBroker({
+  refresh: async (base, refreshToken) => {
+    const res = await postJson(base, '/api/auth/refresh', { refreshToken });
+    if (res.ok) return { status: res.status, tokens: ((await res.json()) as { tokens: TokensJson }).tokens };
+    return { status: res.status, code: (await readError(res)).code };
+  },
+  persist,
+  onLoggedOut: (reason) => broadcast(IPC.authLoggedOut, reason),
+  log,
+});
 
 async function readError(res: Response): Promise<ApiErrorJson> {
   try {
@@ -128,7 +109,7 @@ async function postJson(base: string, path: string, body: unknown, access?: stri
 async function fetchMe(): Promise<unknown> {
   const t = await getAccessToken();
   if (!t) throw new Error('not authenticated');
-  const res = await net.fetch(`${serverUrl}/api/me`, { headers: { Authorization: `Bearer ${t}` } });
+  const res = await net.fetch(`${broker.serverUrl}/api/me`, { headers: { Authorization: `Bearer ${t}` } });
   if (!res.ok) throw new Error(`GET /api/me: ${res.status}`);
   const body = (await res.json()) as { me: unknown };
   return body.me;
@@ -138,82 +119,52 @@ function deviceName(): string {
   return `${hostname()} (${process.platform})`;
 }
 
-/** 409 on /api/auth/refresh = another refresh of the same session won the race: just retry. */
-const REFRESH_CONFLICT_RETRIES = 3;
-
-async function doRefresh(attempt = 0): Promise<Tokens | null> {
-  const current = tokens;
-  if (!current) return null;
-  try {
-    const res = await postJson(serverUrl, '/api/auth/refresh', { refreshToken: current.refreshToken });
-    if (res.status === 409 && attempt < REFRESH_CONFLICT_RETRIES) {
-      log.info('refresh conflict (concurrent refresh), retrying');
-      await new Promise((r) => setTimeout(r, 150 + Math.round(Math.random() * 250)));
-      return await doRefresh(attempt + 1);
-    }
-    if (res.ok) {
-      const body = (await res.json()) as { tokens: TokensJson };
-      tokens = toTokens(body.tokens);
-      persist();
-      return tokens;
-    }
-    const err = await readError(res);
-    if (res.status === 401) {
-      log.info('refresh rejected, session ended', err.code);
-      clearSession('expired', true);
-      return null;
-    }
-    log.warn('refresh failed', err);
-    return null; // transient (5xx / rate limit): keep the session, caller retries later
-  } catch (e) {
-    log.warn('refresh network error', e);
-    return null;
-  }
+/** A valid access token (refreshed if it expires within a minute); null = none right now (logged out / offline). */
+export function getAccessToken(): Promise<string | null> {
+  return broker.getAccessToken();
 }
 
-function refreshOnce(): Promise<Tokens | null> {
-  refreshing ??= doRefresh().finally(() => {
-    refreshing = null;
-  });
-  return refreshing;
-}
-
-/** A valid access token (refreshed if it expires within a minute), or null when logged out / offline. */
-export async function getAccessToken(): Promise<string | null> {
-  if (!tokens) return null;
-  if (tokens.accessExpiresAt - Date.now() > REFRESH_MARGIN_MS) return tokens.accessToken;
-  const t = await refreshOnce();
-  return t?.accessToken ?? null;
-}
-
-/** Forced refresh (gateway close 4004 / an API 401). */
-export async function forceRefresh(): Promise<string | null> {
-  if (!tokens) return null;
-  const t = await refreshOnce();
-  return t?.accessToken ?? null;
-}
-
-function hasSession(): boolean {
-  return tokens !== null;
+/** Forced refresh (gateway close 4004 / an API 401); null = could not refresh now. */
+export function forceRefresh(): Promise<string | null> {
+  return broker.forceRefresh();
 }
 
 export function currentServerUrl(): string {
-  return serverUrl || getSettings().serverUrl;
+  return broker.serverUrl || getSettings().serverUrl;
+}
+
+function insecure(base: string): IpcResult<never> | null {
+  const problem = serverUrlProblem(base, ALLOW_INSECURE);
+  if (!problem) return null;
+  return {
+    ok: false,
+    error: {
+      code: problem === 'insecure' ? INSECURE_SERVER_CODE : 'ERROR_CODE_INVALID_ARGUMENT',
+      message: problem === 'insecure' ? 'plain http is allowed only for localhost' : 'invalid server URL',
+      field: 'serverUrl',
+      status: 0,
+    },
+  };
 }
 
 export async function restore(): Promise<AuthSession | null> {
   const stored = loadStored();
   if (!stored) return null;
-  serverUrl = stored.serverUrl;
-  tokens = { accessToken: '', accessExpiresAt: 0, refreshToken: stored.refreshToken, sessionId: stored.sessionId };
-  const t = await refreshOnce();
+  if (insecure(stored.serverUrl)) {
+    // A session saved for a plain-http server (before review L11): don't send its token again.
+    log.warn('stored session for an insecure server URL dropped', stored.serverUrl);
+    broker.clear('logout', false);
+    return null;
+  }
+  broker.set(stored.serverUrl, { accessToken: '', accessExpiresAt: 0, refreshToken: stored.refreshToken, sessionId: stored.sessionId }, false);
+  const t = await broker.refreshOnce();
   if (!t) {
-    // Either rejected (doRefresh cleared the session) or offline (session kept).
-    if (!hasSession()) return null;
+    // Either rejected (the broker cleared the session) or offline (session kept).
+    if (!broker.hasSession) return null;
     throw new Error('offline');
   }
   const me = await fetchMe();
-  return { serverUrl, sessionId: t.sessionId, me };
+  return { serverUrl: broker.serverUrl, sessionId: t.sessionId, me };
 }
 
 async function authenticate(
@@ -222,13 +173,14 @@ async function authenticate(
   body: Record<string, unknown>,
 ): Promise<IpcResult<AuthSession>> {
   const base = normalizeServerUrl(args.serverUrl);
+  const bad = insecure(base);
+  if (bad) return bad;
   try {
     const res = await postJson(base, path, body);
     if (!res.ok) return { ok: false, error: await readError(res) };
     const data = (await res.json()) as { tokens: TokensJson; me: unknown };
-    serverUrl = base;
-    tokens = toTokens(data.tokens);
-    persist();
+    const tokens = toTokens(data.tokens);
+    broker.set(base, tokens);
     if (getSettings().serverUrl !== base) updateSettings({ serverUrl: base });
     return { ok: true, data: { serverUrl: base, sessionId: tokens.sessionId, me: data.me } };
   } catch (e) {
@@ -261,14 +213,15 @@ export function register(args: RegisterArgs): Promise<IpcResult<AuthSession>> {
  */
 export async function guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string }>> {
   const base = normalizeServerUrl(currentServerUrl());
+  const bad = insecure(base);
+  if (bad) return bad;
   try {
     const res = await postJson(base, `/api/room-invites/${encodeURIComponent(code)}/join`, { nickname, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
     const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown };
     if (!data.tokens) return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
-    serverUrl = base;
-    tokens = toTokens(data.tokens);
-    persist();
+    const tokens = toTokens(data.tokens);
+    broker.set(base, tokens);
     const me = data.me ?? (await fetchMe());
     return { ok: true, data: { session: { serverUrl: base, sessionId: tokens.sessionId, me }, roomId: data.roomId, workspaceId: data.workspaceId } };
   } catch (e) {
@@ -280,15 +233,15 @@ export async function logout(allSessions: boolean): Promise<void> {
   const access = await getAccessToken();
   if (access) {
     try {
-      await postJson(serverUrl, '/api/auth/logout', { allSessions }, access);
+      await postJson(broker.serverUrl, '/api/auth/logout', { allSessions }, access);
     } catch (e) {
       log.warn('logout request failed (session cleared locally anyway)', e);
     }
   }
-  clearSession('logout', true);
+  broker.clear('logout', true);
 }
 
 /** Called when the gateway reports the session revoked (4010). */
 export function revoked(): void {
-  clearSession('revoked', false);
+  broker.clear('revoked', false);
 }

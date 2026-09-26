@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
-    "build": "electron-vite build && electron-builder --publish never",
+    "build": "electron-vite build && electron-builder --publish never && electron-rebuild -f -o uiohook-napi",
     "rebuild:native": "electron-rebuild -f -o uiohook-napi",
     "postinstall": "electron-rebuild -f -o uiohook-napi",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.worklet.json",

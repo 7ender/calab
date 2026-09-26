@@ -20,10 +20,9 @@ export function humanMediaError(err: unknown, ctx: MediaContext, code?: MediaErr
 export function reportMediaError(err: unknown, ctx: MediaContext, code?: MediaErrorCode): HumanError {
   const h = humanMediaError(err, ctx, code);
   if (!h.silent) {
-    const kind = h.code === 'room-full' || h.code === 'no-loopback' ? 'info' : 'error';
-    toast[kind](h.text);
-    // A toast has no room for a button yet: the action lives where the error is shown inline
-    // (voice panel, settings). See mediaActionLabel / runMediaAction.
+    const action = h.action;
+    if (h.code === 'room-full' || ctx === 'streamAudio') toast.info(h.text);
+    else toast.error(h.text, action ? { label: mediaActionLabel(action), run: () => runMediaAction(action) } : undefined);
   }
   return h;
 }

@@ -26,7 +26,7 @@ interface UiState {
   /** Reply target per room. */
   replyTo: Record<string, string | undefined>;
   editing: string | null;
-  /** Room column width (docs/08: 240 px, 200–320, resizable). */
+  /** Room column width (docs/08: 256 px by default, 200–320, resizable). */
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
   setWorkspace: (id: string | null) => void;
@@ -49,6 +49,9 @@ interface UiState {
 /** Window width from which the members list is a column instead of a floating panel (docs/08: chat keeps ≥ ~600 px). */
 export const MEMBERS_COLUMN_MIN = 1200;
 
+/** Default room column: the self panel keeps ≥ 104 px for the name next to its three buttons. */
+export const SIDEBAR_DEFAULT = 256;
+
 export const useUi = create<UiState>()(
   persist(
     (set) => ({
@@ -59,7 +62,7 @@ export const useUi = create<UiState>()(
       membersOverlay: false,
       replyTo: {},
       editing: null,
-      sidebarWidth: 240,
+      sidebarWidth: SIDEBAR_DEFAULT,
       setSidebarWidth: (w) => set({ sidebarWidth: Math.round(Math.max(200, Math.min(320, w))) }),
       history: emptyHistory(),
       collapsed: {},
@@ -94,6 +97,12 @@ export const useUi = create<UiState>()(
     }),
     {
       name: 'calaba-ui',
+      version: 1,
+      // v0 defaulted the column to 240: move untouched defaults to the new one.
+      migrate: (old, version) => {
+        const o = (old ?? {}) as Partial<UiState>;
+        return (version < 1 && o.sidebarWidth === 240 ? { ...o, sidebarWidth: SIDEBAR_DEFAULT } : o) as UiState;
+      },
       partialize: (s) => ({
         activeWorkspaceId: s.activeWorkspaceId,
         lastRoom: s.lastRoom,

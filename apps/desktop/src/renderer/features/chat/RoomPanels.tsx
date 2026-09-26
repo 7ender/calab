@@ -1,7 +1,7 @@
 import { RoomType, type Message, type PermissionBits, type Room } from '@calaba/protocol';
 import { ChevronDown, ChevronUp, Hash, Pin, Search, Settings, UserPlus, Volume2, X } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Button, IconButton, Spinner } from '../../components/ui';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Button, IconButton, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, isAdminRole } from '../../lib/permissions';
@@ -11,6 +11,7 @@ import { useUi } from '../../stores/ui';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { previewText } from './mentionText';
+import { searchWords } from '../../lib/markdown/highlight';
 
 const NO_PINS: Message[] = [];
 
@@ -43,10 +44,10 @@ export function PinnedBar({ workspaceId, roomId }: { workspaceId: string; roomId
         ))}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-semibold text-accent-text">
+        <span className="block text-body font-semibold text-accent-text">
           {pins.length > 1 ? t('chat.pinnedN', { n: idx + 1, total: pins.length }) : t('chat.pinnedOne')}
         </span>
-        <span className="block truncate text-[13px] text-fg">
+        <span className="block truncate text-body text-fg">
           <span className="text-muted">{memberName(workspaceId, m.authorId)}: </span>
           {text}
         </span>
@@ -59,6 +60,7 @@ export function PinnedBar({ workspaceId, roomId }: { workspaceId: string; roomId
 /** In-room search (docs/09 #39): a strip under the header, ↑/↓ walk through results. */
 export function SearchPanel({ roomId }: { roomId: string }): ReactNode {
   const setSearch = useChatView((s) => s.setSearch);
+  const setHits = useChatView((s) => s.setSearchHits);
   const jump = useChatView((s) => s.requestJump);
   const [q, setQ] = useState('');
   const [found, setFound] = useState<{ q: string; list: Message[] } | null>(null);
@@ -89,6 +91,17 @@ export function SearchPanel({ roomId }: { roomId: string }): ReactNode {
   }, [needle, roomId, jump]);
   const results = needle && found?.q === needle ? found.list : null;
   const busy = !!needle && found?.q !== needle;
+
+  // Every hit is marked in the feed, the current one stronger (Top 10 #9).
+  const currentId = results?.[i]?.id ?? null;
+  // Stable per query: bubbles subscribe to the words, so ↑/↓ must not hand them a new array.
+  const foundQ = found?.q ?? '';
+  const words = useMemo(() => searchWords(foundQ), [foundQ]);
+  const ids = useMemo(() => new Set((results ?? []).map((m) => m.id)), [results]);
+  useEffect(() => {
+    setHits(ids.size ? { roomId, words, ids, current: currentId } : null);
+  }, [ids, words, currentId, roomId, setHits]);
+  useEffect(() => () => setHits(null), [setHits]);
 
   const go = (next: number): void => {
     if (!results?.length) return;
@@ -122,11 +135,11 @@ export function SearchPanel({ roomId }: { roomId: string }): ReactNode {
         onKeyDown={onKey}
         placeholder={t('chat.searchPlaceholder')}
         aria-label={t('chat.searchPlaceholder')}
-        className="selectable h-8 min-w-0 flex-1 bg-transparent text-[14px] text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+        className="selectable h-8 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
       />
       {busy ? <Spinner className="size-4" /> : null}
       {results ? (
-        <span className="shrink-0 text-[12px] tabular-nums text-muted" aria-live="polite">
+        <span className="shrink-0 text-caption tabular-nums text-muted" aria-live="polite">
           {total ? t('chat.searchCount', { n: i + 1, total }) : t('chat.searchNone')}
         </span>
       ) : null}
@@ -143,7 +156,14 @@ export function SearchPanel({ roomId }: { roomId: string }): ReactNode {
   );
 }
 
-/** Empty room (docs/09 #11): big icon, welcome line, «Пригласить» / «Настроить». */
+/** Below this chat height the welcome block collapses to one row (voice room with the stream open). */
+const COMPACT_BELOW = 280;
+
+/**
+ * Empty room (docs/09 #11): big icon, welcome line, «Пригласить» / «Настроить». It lives in a
+ * scroll viewport and sits at the bottom, like the start of a Telegram chat, so a stream stage
+ * above never clips it; when the chat is short it becomes a single row.
+ */
 export function EmptyRoom({ workspaceId, room, perms }: { workspaceId: string; room: Room; perms: PermissionBits }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
@@ -151,29 +171,55 @@ export function EmptyRoom({ workspaceId, room, perms }: { workspaceId: string; r
   const Icon = voice ? Volume2 : Hash;
   const canInvite = isAdminRole(role);
   const canSetup = can(perms, 'MANAGE_ROOM');
-  return (
-    <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto bg-[var(--color-feed)] p-6" data-testid="empty-room">
-      <div className="flex max-w-sm flex-col items-center text-center">
-        <span className="grid size-20 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text">
-          <Icon className="size-10" strokeWidth={1.5} aria-hidden />
-        </span>
-        <h2 className="mt-4 text-[20px] font-semibold">{t('chat.welcomeTitle', { name: voice ? room.name : `#${room.name}` })}</h2>
-        <p className="mt-1 text-[14px] text-muted">{voice ? t('chat.welcomeVoice') : t('chat.welcomeText')}</p>
-        {canInvite || canSetup ? (
-          <div className="mt-5 flex gap-2">
-            {canInvite ? (
-              <Button onClick={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}>
-                <UserPlus className="size-4" aria-hidden /> {t('chat.invite')}
-              </Button>
-            ) : null}
-            {canSetup ? (
-              <Button variant="secondary" onClick={() => open({ kind: 'room-settings', roomId: room.id })}>
-                <Settings className="size-4" aria-hidden /> {t('chat.setup')}
-              </Button>
-            ) : null}
-          </div>
+  const ref = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = (): void => setCompact(el.clientHeight < COMPACT_BELOW);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const title = voice ? t('chat.welcomeVoiceTitle', { name: room.name }) : t('chat.welcomeTitle', { name: room.name });
+  const actions =
+    canInvite || canSetup ? (
+      <div className={cx('flex shrink-0 gap-2', !compact && 'mt-5')}>
+        {canInvite ? (
+          <Button onClick={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}>
+            <UserPlus className="size-4" aria-hidden /> {t('chat.invite')}
+          </Button>
+        ) : null}
+        {canSetup ? (
+          <Button variant="secondary" onClick={() => open({ kind: 'room-settings', roomId: room.id })}>
+            <Settings className="size-4" aria-hidden /> {t('chat.setup')}
+          </Button>
         ) : null}
       </div>
+    ) : null;
+  return (
+    <div ref={ref} className={cx('flex min-h-0 flex-1 flex-col overflow-y-auto bg-feed', compact ? 'px-4' : 'px-6')} data-testid="empty-room" data-compact={compact || undefined}>
+      {compact ? (
+        <div className="mt-auto flex min-w-0 items-center gap-3 py-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text">
+            <Icon className="size-4" strokeWidth={1.75} aria-hidden />
+          </span>
+          <h2 className="min-w-0 flex-1 truncate text-body font-semibold" title={title}>
+            {title}
+          </h2>
+          {actions}
+        </div>
+      ) : (
+        <div className="mx-auto mt-auto flex max-w-sm flex-col items-center pb-6 pt-6 text-center">
+          <span className="grid size-20 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text">
+            <Icon className="size-10" strokeWidth={1.5} aria-hidden />
+          </span>
+          <h2 className="mt-4 text-title font-semibold">{title}</h2>
+          <p className="mt-1 text-body text-muted">{voice ? t('chat.welcomeVoice') : t('chat.welcomeText')}</p>
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

@@ -84,7 +84,23 @@ export default defineConfig(({ mode }) => {
       outDir: resolve(__dirname, 'dist-web'),
       emptyOutDir: true,
       target: 'es2022',
-      sourcemap: true,
+      // No source maps in the deployed bundle (review): nothing consumes them (no error
+      // reporting service yet) and they would publish the full client source. For debugging a
+      // build: CALABA_WEB_SOURCEMAP=1 → 'hidden' maps (files only, no sourceMappingURL comment).
+      sourcemap: (env['CALABA_WEB_SOURCEMAP'] ?? process.env['CALABA_WEB_SOURCEMAP']) === '1' ? 'hidden' : false,
+      rollupOptions: {
+        output: {
+          // Vendor chunks change less often than the app: better caching across deploys, and no
+          // single 1.6 MB chunk.
+          manualChunks(id: string): string | undefined {
+            if (!id.includes('node_modules')) return undefined;
+            if (/[\\/]node_modules[\\/](livekit-client|@livekit)[\\/]/.test(id)) return 'livekit';
+            if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react';
+            if (/[\\/]node_modules[\\/]@bufbuild[\\/]/.test(id)) return 'protobuf';
+            return undefined;
+          },
+        },
+      },
     },
     server: { port: 5174, strictPort: true, proxy },
     // CALABA_WEB_CSP: emulate the stand's Content-Security-Policy header in `preview` (TESTING.md).

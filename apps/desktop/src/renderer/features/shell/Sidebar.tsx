@@ -15,15 +15,17 @@ import {
 } from '@dnd-kit/core';
 import { create } from '@bufbuild/protobuf';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { RoomCategorySchema, WorkspaceRole, type Room, type RoomCategory, type VoiceState } from '@calaba/protocol';
+import { NotificationLevel, RoomCategorySchema, WorkspaceRole, type Room, type RoomCategory, type VoiceState } from '@calaba/protocol';
 import {
+  Bell,
+  Check,
   ChevronDown,
+  ChevronRight,
   FolderPlus,
   Hash,
-  HeadphoneOff,
+  Loader2,
   Lock,
   LogOut,
-  MicOff,
   Pencil,
   Plus,
   Settings,
@@ -35,27 +37,30 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
+import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, isAdminRole, roomPerms, workspacePerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
-import { groupRooms, isUnread, isVoice, roomsOfWorkspace, useRooms } from '../../stores/rooms';
+import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, useRooms } from '../../stores/rooms';
+import { setRoomNotifications } from '../../services/mentions';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { formatDuration, limitLabel, useNow } from './voiceFormat';
-import { menuBox, menuItem, menuSeparator } from './menu';
+import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { moveMember } from '../people/actions';
 import { SelfPanel } from './SelfPanel';
+import { errorText } from '../../lib/api/errors';
 import { VoiceBar } from './VoiceBar';
+import { VoiceStateIcons } from '../voice/VoiceStateIcons';
 
 export { menuBox, menuItem };
 
-const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+const errText = (e: unknown): string => errorText(e);
 
 /** Drag payloads (docs/09 #32): a voice participant onto a voice room. */
 interface DragMember {
@@ -172,7 +177,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
         <Dropdown.Trigger asChild>
           <button
             type="button"
-            className="group flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] px-2 text-left text-[15px] font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+            className="group flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] px-2 text-left text-list font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
             title={entry.ws.name}
           >
             <span className="min-w-0 flex-1 truncate">{entry.ws.name}</span>
@@ -197,6 +202,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
             <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'members' })}>
               <Users className="size-4" /> {t('ws.members')}
             </Dropdown.Item>
+            <WorkspaceNotifyMenu workspaceId={workspaceId} />
             {manageRooms ? (
               <>
                 <Dropdown.Separator className={menuSeparator} />
@@ -208,14 +214,16 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
                 </Dropdown.Item>
               </>
             ) : null}
-            {entry.role !== WorkspaceRole.OWNER ? (
-              <>
-                <Dropdown.Separator className={menuSeparator} />
-                <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void leave()}>
-                  <LogOut className="size-4" /> {t('ws.leave')}
-                </Dropdown.Item>
-              </>
-            ) : null}
+            <Dropdown.Separator className={menuSeparator} />
+            {/* The owner cannot leave (ownership is not transferable yet): shown, disabled, with the reason. */}
+            <Dropdown.Item
+              className={cx(menuItem, 'text-danger-text')}
+              disabled={entry.role === WorkspaceRole.OWNER}
+              title={entry.role === WorkspaceRole.OWNER ? t('shell.ownerCannotLeave') : undefined}
+              onSelect={() => void leave()}
+            >
+              <LogOut className="size-4" /> {t('ws.leave')}
+            </Dropdown.Item>
           </Dropdown.Content>
         </Dropdown.Portal>
       </Dropdown.Root>
@@ -232,6 +240,59 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
         </Tip>
       ) : null}
     </div>
+  );
+}
+
+const WS_LEVELS = [
+  { level: NotificationLevel.ALL, label: 'chat.notifyAll' },
+  { level: NotificationLevel.MENTIONS, label: 'chat.notifyMentions' },
+  { level: NotificationLevel.NONE, label: 'chat.notifyNone' },
+] as const;
+
+/**
+ * «Уведомления…» in the workspace menu: one level for every room of the workspace (the server
+ * stores settings per room, so this sets each; temporary mutes are kept). The mark shows the
+ * level only when all rooms agree.
+ */
+function WorkspaceNotifyMenu({ workspaceId }: { workspaceId: string }): ReactNode {
+  const roomsById = useRooms((s) => s.byId);
+  const notify = useRooms((s) => s.notify);
+  const rooms = useMemo(() => roomsOfWorkspace(roomsById, workspaceId), [roomsById, workspaceId]);
+  if (!rooms.length) return null;
+  const levels = new Set(rooms.map((r) => roomNotify(notify[r.id]).level));
+  const common = levels.size === 1 ? String([...levels][0]) : '';
+  const apply = (v: string): void => {
+    const level: NotificationLevel = Number(v);
+    for (const r of rooms) {
+      const n = roomNotify(useRooms.getState().notify[r.id]);
+      if (n.level !== level) void setRoomNotifications(r.id, level, n.mutedUntil);
+    }
+  };
+  return (
+    <Dropdown.Sub>
+      <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:bg-hover')}>
+        <Bell className="size-4" aria-hidden />
+        <span className="flex-1">{t('shell.wsNotify')}</span>
+        <ChevronRight className="size-4" aria-hidden />
+      </Dropdown.SubTrigger>
+      <Dropdown.Portal>
+        <Dropdown.SubContent className={cx(menuBox, 'w-56')} sideOffset={4} collisionPadding={16}>
+          <Dropdown.Label className={menuLabel}>{t('shell.wsNotifyAll')}</Dropdown.Label>
+          <Dropdown.RadioGroup value={common} onValueChange={apply}>
+            {WS_LEVELS.map((l) => (
+              <Dropdown.RadioItem key={l.level} value={String(l.level)} className={menuItem}>
+                <span className="grid w-4 place-items-center">
+                  <Dropdown.ItemIndicator>
+                    <Check className="size-4" aria-hidden />
+                  </Dropdown.ItemIndicator>
+                </span>
+                {t(l.label)}
+              </Dropdown.RadioItem>
+            ))}
+          </Dropdown.RadioGroup>
+        </Dropdown.SubContent>
+      </Dropdown.Portal>
+    </Dropdown.Sub>
   );
 }
 
@@ -284,7 +345,7 @@ function CategoryGroup({
         onClick={() => toggle(category.id)}
         aria-expanded={!collapsed}
         aria-label={collapsed ? t('shell.categoryExpand', { name: category.name }) : t('shell.categoryCollapse', { name: category.name })}
-        className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-[11px] font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+        className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
         title={category.name}
       >
         <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
@@ -393,7 +454,8 @@ function CategoryDialog({ workspaceId, category, onClose }: { workspaceId: strin
 const rowBox = 'group/row relative flex h-[34px] items-center rounded-[var(--radius-control)] transition-colors duration-[var(--motion-fast)]';
 
 function UnreadPill({ show }: { show: boolean }): ReactNode {
-  return show ? <span aria-hidden className="absolute -left-2 top-1/2 h-2 w-1 -translate-y-1/2 rounded-r-full bg-fg" /> : null;
+  // A whole 4 × 8 pill just inside the column (a half-dot on the seam read as a glitch).
+  return show ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg" /> : null;
 }
 
 function RoomActions({ room, admin, active }: { room: Room; admin: boolean; active: boolean }): ReactNode {
@@ -457,7 +519,7 @@ function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNo
 function MentionBadge({ n }: { n: number }): ReactNode {
   if (n <= 0) return null;
   return (
-    <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-[11px] font-bold leading-4 text-white group-hover/row:hidden" aria-label={t('shell.unreadMentions', { n })}>
+    <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white group-hover/row:hidden" aria-label={t('shell.unreadMentions', { n })}>
       {n > 99 ? '99+' : n}
     </span>
   );
@@ -479,7 +541,7 @@ function TextRoomRow({ room, workspaceId, me, role, admin }: { room: Room; works
           onClick={() => openRoom(workspaceId, room.id)}
           aria-current={active ? 'page' : undefined}
           className={cx(
-            'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] pl-2 pr-1 text-left text-[15px] leading-5',
+            'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] pl-2 pr-1 text-left text-list leading-5',
             bright ? 'text-fg' : 'text-muted group-hover/row:text-fg',
             unread && !active && 'font-semibold',
           )}
@@ -520,6 +582,7 @@ function VoiceRoomRow({
   const active = useUi((s) => s.lastRoom[workspaceId] === room.id && s.activeWorkspaceId === workspaceId);
   const openRoom = useUi((s) => s.openRoom);
   const inRoom = useVoice((s) => s.roomId === room.id);
+  const connecting = useVoice((s) => s.roomId === room.id && s.phase === 'connecting');
   const unread = useRooms((s) => isUnread(room.id, s));
   const mentions = useRooms((s) => s.mentions[room.id] ?? 0);
   const perms = roomPerms(role, me, room);
@@ -559,12 +622,16 @@ function VoiceRoomRow({
             aria-current={active ? 'page' : undefined}
             title={canConnect ? undefined : t('voice.noConnect')}
             className={cx(
-              'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] pl-2 pr-1 text-left text-[15px] leading-5',
+              'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-control)] pl-2 pr-1 text-left text-list leading-5',
               active || unread || inRoom ? 'text-fg' : 'text-muted group-hover/row:text-fg',
               unread && !active && 'font-semibold',
             )}
           >
-            <Volume2 className={cx('size-[18px] shrink-0', inRoom ? 'text-ok' : 'text-muted')} aria-hidden />
+            {connecting ? (
+              <Loader2 className="size-[18px] shrink-0 animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
+            ) : (
+              <Volume2 className={cx('size-[18px] shrink-0', inRoom ? 'text-ok' : 'text-muted')} aria-hidden />
+            )}
             <span className="min-w-0 flex-1 truncate" title={room.name}>
               {room.name}
             </span>
@@ -572,12 +639,13 @@ function VoiceRoomRow({
           </button>
           <span className="flex shrink-0 items-center gap-1 pr-1.5">
             <MentionBadge n={mentions} />
-            <span className={cx('flex items-center gap-1', admin && !active && 'group-hover/row:hidden group-focus-within/row:hidden')}>
+            {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
+            <span className={cx('flex items-center gap-1', admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
               {people.length ? <CallTimer roomId={room.id} /> : null}
               {limit > 0 ? (
                 <span
                   className={cx(
-                    'rounded-[4px] bg-hover px-1 text-[11px] font-medium tabular-nums leading-4',
+                    'rounded-[4px] bg-hover px-1 text-micro font-medium tabular-nums leading-4',
                     people.length >= limit ? 'text-danger-text' : 'text-fg',
                   )}
                   aria-label={t('shell.userLimit', { n: people.length, max: limit })}
@@ -608,14 +676,14 @@ function VoiceRoomRow({
   );
 }
 
-function CallTimer({ roomId }: { roomId: string }): ReactNode {
+export function CallTimer({ roomId, className }: { roomId: string; className?: string }): ReactNode {
   // Room.voice_started_at from the server (READY snapshot + ROOM_UPDATE); unset = no call.
   const startedAt = useRooms((s) => s.byId[roomId]?.voiceStartedAt);
   const now = useNow();
   if (!startedAt) return null;
   const text = formatDuration(Math.max(0, now - timestampMs(startedAt)));
   return (
-    <span className="text-[11px] tabular-nums text-fg" aria-label={t('shell.callTime', { time: text })}>
+    <span className={cx('text-micro tabular-nums text-fg', className)} aria-label={t('shell.callTime', { time: text })}>
       {text}
     </span>
   );
@@ -638,6 +706,8 @@ function VoiceMember({
 }): ReactNode {
   const speaking = useVoice((s) => s.speaking[state.userId] ?? false);
   const inSameRoom = useVoice((s) => s.roomId === room.id);
+  // Only our own moderator mute is known (VoiceState has no server-mute flag yet).
+  const serverMuted = useVoice((s) => s.serverMuted);
   const stream = useVoice((s) => s.streams.find((x) => x.userId === state.userId));
   const user = useWorkspaces((s) => s.users[state.userId]);
   const name = useWorkspaces(() => memberName(workspaceId, state.userId));
@@ -663,7 +733,7 @@ function VoiceMember({
         if (stream && inSameRoom) voice.watch(stream.trackSid);
       }}
       className={cx(
-        'group/member flex h-8 items-center gap-2 rounded-[var(--radius-control)] pl-7 pr-1.5 text-[14px] transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+        'group/member flex h-8 items-center gap-2 rounded-[var(--radius-control)] pl-7 pr-1.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
         canMove ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}
@@ -672,12 +742,11 @@ function VoiceMember({
       <Avatar userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} speaking={talking} />
       <span className={cx('min-w-0 flex-1 truncate', talking || isMe ? 'text-fg' : 'text-muted group-hover/member:text-fg')}>{name}</span>
       {state.streaming ? (
-        <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white" title={t('voice.streaming')}>
+        <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}
-        </span>
+        </Badge>
       ) : null}
-      {state.muted && !state.deafened ? <MicOff className="size-4 shrink-0 text-muted" aria-label={t('shell.mutedState')} /> : null}
-      {state.deafened ? <HeadphoneOff className="size-4 shrink-0 text-muted" aria-label={t('shell.deafenedState')} /> : null}
+      <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={isMe && serverMuted} />
     </li>
   );
   // Shared member menu (PEOPLE): volume, server mute, «Переместить в…», rename, kick…
@@ -739,7 +808,7 @@ function VoiceDnd({ workspaceId, children }: { workspaceId: string; children: Re
 function DragChip({ member }: { member: DragMember }): ReactNode {
   const user = useWorkspaces((s) => s.users[member.userId]);
   return (
-    <div className="mat-popover flex h-8 w-max max-w-[220px] items-center gap-2 rounded-full pl-1 pr-3 text-[13px] font-medium">
+    <div className="mat-popover flex h-8 w-max max-w-[220px] items-center gap-2 rounded-full pl-1 pr-3 text-body font-medium">
       <Avatar userId={member.userId} name={member.name} fileId={user?.avatarFileId || undefined} size={24} />
       <span className="truncate">{member.name}</span>
     </div>

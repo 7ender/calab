@@ -15,16 +15,17 @@ import {
   type RegisterArgs,
   type TrayState,
 } from '../shared/ipc';
+import { serverUrlProblem } from '../shared/serverUrl';
 import { forceRefresh, getAccessToken, guestJoin, login, logout, register, restore, revoked } from './auth';
-import { armSelection, forgetWebContents, listSources, systemAudioSupport } from './capture';
+import { armSelection, listSources, systemAudioSupport } from './capture';
 import { takePendingDeepLink } from './deeplink';
 import { downloadFile } from './downloads';
-import { captureNext, pttStatus, setBinding } from './ptt';
+import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
 import { setTrayState } from './tray';
 import { checkForUpdates } from './updater';
 import { reloadIfServerChanged } from './csp';
-import { isOwnPage } from './windows';
+import { getMainWindow, isOwnPage } from './windows';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
 
@@ -80,7 +81,8 @@ function parseSettings(v: unknown): Partial<AppSettings> {
   const out: Partial<AppSettings> = {};
   if (r['serverUrl'] !== undefined) {
     const u = str(r['serverUrl'], 512, true);
-    if (u && !/^https?:\/\//.test(u)) throw new Error('serverUrl must be http(s)');
+    // https, or plain http on loopback only (review L11; CALABA_ALLOW_INSECURE_HTTP=1 for LAN tests).
+    if (u && serverUrlProblem(u, process.env['CALABA_ALLOW_INSECURE_HTTP'] === '1')) throw new Error('serverUrl must be https (http only for localhost)');
     out.serverUrl = u;
   }
   // updateUrl is NOT settable from the renderer (security review M3): main derives the feed.
@@ -171,7 +173,16 @@ export function registerIpc(): void {
     return shell.openExternal(url);
   });
   handle(IPC.appSetTheme, (_e, a) => {
-    if (a === 'dark' || a === 'light' || a === 'system') nativeTheme.themeSource = a;
+    if (a !== 'dark' && a !== 'light' && a !== 'system') return;
+    if (nativeTheme.themeSource === a) return;
+    nativeTheme.themeSource = a;
+    // Re-apply the sidebar material so it follows the new appearance right away (it could stay
+    // in the old appearance until the next window activation).
+    if (process.platform === 'darwin' && !VISUAL_TEST) {
+      const w = getMainWindow();
+      w?.setVibrancy(null);
+      w?.setVibrancy('sidebar');
+    }
   });
   handle(IPC.systemPermissions, (): PermissionStatus =>
     // Visual tests: fixed statuses so screenshots don't depend on the machine's TCC state.
@@ -212,12 +223,11 @@ export function registerIpc(): void {
   // ---- media ----
   handle(IPC.captureListSources, () => listSources());
   handle(IPC.captureSelectSource, (e, sel) => {
-    const wc = e.sender;
-    armSelection(wc.id, parseSelection(sel));
-    wc.once('destroyed', () => forgetWebContents(wc.id));
+    armSelection(e.sender, parseSelection(sel));
   });
   handle(IPC.pttSetBinding, (e, b) => setBinding(e.sender, parseBinding(b)));
   handle(IPC.pttCaptureNext, () => captureNext());
+  handle(IPC.pttCancelCapture, () => cancelCapture());
   handle(IPC.pttStatus, () => (VISUAL_TEST ? { ...pttStatus(), trusted: false } : pttStatus()));
   handle(IPC.systemIdleSeconds, () => powerMonitor.getSystemIdleTime());
   handle(IPC.systemMetrics, (e): ProcessMetrics => {

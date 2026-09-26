@@ -9,6 +9,9 @@ import {
   type TrackPublishOptions,
 } from 'livekit-client';
 import { platform } from '../../platform';
+import { publishOptionalAudio, type StreamAudioProblem } from './streamAudio';
+
+export type { StreamAudioProblem } from './streamAudio';
 
 /**
  * Screen share publishing per ADR-0012 (refines ADR-0005):
@@ -21,17 +24,26 @@ import { platform } from '../../platform';
  */
 const THUMB_LAYER = { width: 640, height: 360, maxBitrate: 250_000 };
 
-type Codec = 'av1' | 'vp9' | 'vp8';
+export type ScreenCodec = 'av1' | 'vp9' | 'h264' | 'vp8';
+
+const MIME: Record<ScreenCodec, string> = { av1: 'video/av1', vp9: 'video/vp9', h264: 'video/h264', vp8: 'video/vp8' };
+
+/** Codecs this runtime can encode for WebRTC (RTCRtpSender capabilities). */
+export function encodableCodecs(): Set<ScreenCodec> {
+  const caps = typeof RTCRtpSender !== 'undefined' ? (RTCRtpSender.getCapabilities('video')?.codecs ?? []) : [];
+  const mimes = new Set(caps.map((c) => c.mimeType.toLowerCase()));
+  return new Set((Object.keys(MIME) as ScreenCodec[]).filter((k) => mimes.has(MIME[k])));
+}
 
 /**
  * AV1 per ADR-0012. Browsers without an AV1 WebRTC encoder (Firefox, Safari — web
  * client, ADR-0015) fall back to VP9, then VP8; the SFU forwards whatever was published.
+ * `preferred` (picker → «Дополнительно») wins when this runtime can encode it.
  */
-export function pickScreenCodec(): Codec {
-  const codecs = RTCRtpSender.getCapabilities('video')?.codecs ?? [];
-  const has = (mime: string): boolean => codecs.some((c) => c.mimeType.toLowerCase() === mime);
-  if (has('video/av1')) return 'av1';
-  if (has('video/vp9')) return 'vp9';
+export function pickScreenCodec(preferred: ScreenCodec | 'auto' = 'auto', available: Set<ScreenCodec> = encodableCodecs()): ScreenCodec {
+  if (preferred !== 'auto' && available.has(preferred)) return preferred;
+  if (available.has('av1')) return 'av1';
+  if (available.has('vp9')) return 'vp9';
   return 'vp8';
 }
 
@@ -45,13 +57,14 @@ export interface ScreenShareOptions {
   preset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
   systemAudio: boolean;
+  /** Codec override (default 'auto' = ADR-0012). */
+  codec?: ScreenCodec | 'auto';
 }
 
 export interface ActiveScreenShare {
   video: LocalVideoTrack;
   audio: LocalAudioTrack | null;
-  /** Human-readable reason system audio is absent although requested. */
-  audioError: string | null;
+  audioProblem: StreamAudioProblem;
   sourceName: string;
   stop(): Promise<void>;
 }
@@ -75,7 +88,7 @@ async function captureDesktop(
   source: DesktopSource,
   preset: ConcreteScreenSharePreset,
   systemAudio: boolean,
-): Promise<{ stream: MediaStream; audioError: string | null }> {
+): Promise<CapturedScreen> {
   const video = videoConstraints(preset);
   if (systemAudio) {
     const audio: DisplayAudioConstraints = {
@@ -90,24 +103,23 @@ async function captureDesktop(
     try {
       await platform.capture.selectSource({ sourceId: source.id, audio: true });
       const stream = await navigator.mediaDevices.getDisplayMedia({ video, audio });
-      if (stream.getAudioTracks().length > 0) return { stream, audioError: null };
-      return { stream, audioError: 'система не отдала звук (loopback не поддерживается)' };
+      if (stream.getAudioTracks().length > 0) return { stream, audioProblem: null };
+      return { stream, audioProblem: { code: 'no-loopback', raw: null } };
     } catch (err) {
       // Known: custom picker + audio on macOS (electron#52738). Retry video-only.
-      const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       await platform.capture.selectSource({ sourceId: source.id, audio: false });
       const stream = await navigator.mediaDevices.getDisplayMedia({ video, audio: false });
-      return { stream, audioError: `захват со звуком не удался (${msg}); стрим без звука` };
+      return { stream, audioProblem: { code: 'failed', raw: err } };
     }
   }
   await platform.capture.selectSource({ sourceId: source.id, audio: false });
   const stream = await navigator.mediaDevices.getDisplayMedia({ video, audio: false });
-  return { stream, audioError: null };
+  return { stream, audioProblem: null };
 }
 
 export interface CapturedScreen {
   stream: MediaStream;
-  audioError: string | null;
+  audioProblem: StreamAudioProblem;
 }
 
 /**
@@ -140,14 +152,14 @@ export async function startScreenShare(
   // Encoder hint: 'detail' keeps text sharp (drops fps), 'motion' keeps fps.
   videoTrack.contentHint = opts.contentHint;
   const video = new LocalVideoTrack(videoTrack, undefined, true);
-  const codec = pickScreenCodec();
+  const codec = pickScreenCodec(opts.codec ?? 'auto');
   const publishOpts: TrackPublishOptions = {
     source: Track.Source.ScreenShare,
     videoCodec: codec,
     backupCodec: false,
     simulcast: true,
-    // VP8 has no scalabilityMode in libwebrtc; AV1/VP9 use L1T3 per simulcast layer.
-    ...(codec === 'vp8' ? {} : { scalabilityMode: 'L1T3' as const }),
+    // VP8/H.264: plain simulcast (no scalabilityMode in libwebrtc); AV1/VP9 use L1T3 per simulcast layer.
+    ...(codec === 'vp8' || codec === 'h264' ? {} : { scalabilityMode: 'L1T3' as const }),
     screenShareEncoding: { maxBitrate: preset.maxBitrate, maxFramerate: preset.fps },
     screenShareSimulcastLayers: [
       new VideoPreset(THUMB_LAYER.width, THUMB_LAYER.height, THUMB_LAYER.maxBitrate, preset.fps),
@@ -162,14 +174,19 @@ export async function startScreenShare(
   }
 
   let audio: LocalAudioTrack | null = null;
+  let audioProblem = cap.audioProblem;
   if (audioTrack) {
-    audio = new LocalAudioTrack(audioTrack, undefined, true);
-    await lp.publishTrack(audio, {
-      source: Track.Source.ScreenShareAudio,
-      audioPreset: AudioPresets.musicStereo,
-      dtx: false,
-      red: false,
-    });
+    const track = new LocalAudioTrack(audioTrack, undefined, true);
+    // Optional: a failed audio publish must not leave the video half-published (continue video-only).
+    const problem = await publishOptionalAudio(
+      () => lp.publishTrack(track, { source: Track.Source.ScreenShareAudio, audioPreset: AudioPresets.musicStereo, dtx: false, red: false }),
+      () => {
+        void lp.unpublishTrack(track, true).catch(() => undefined);
+        audioTrack.stop();
+      },
+    );
+    if (problem) audioProblem = problem;
+    else audio = track;
   }
 
   let stopped = false;
@@ -186,5 +203,5 @@ export async function startScreenShare(
 
   // Web: the browser picked the source; its label is the best name we have.
   const sourceName = opts.source.name || videoTrack.label || 'Экран';
-  return { video, audio, audioError: cap.audioError, sourceName, stop };
+  return { video, audio, audioProblem, sourceName, stop };
 }

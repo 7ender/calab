@@ -76,8 +76,13 @@ export interface CalabaApi {
   };
   ptt: {
     setBinding(binding: PttBinding | null): Promise<PttStatus>;
-    /** Resolves with the next key/mouse button pressed anywhere (global). */
+    /**
+     * Resolves with the next key/mouse button pressed anywhere (global). Rejects on Esc,
+     * `cancelCapture()`, a newer capture or after ~15 s.
+     */
     captureNext(): Promise<PttBinding>;
+    /** Disarms a pending `captureNext` (the binder UI closed). */
+    cancelCapture(): void;
     status(): Promise<PttStatus>;
     onEvent(cb: (ev: PttEvent) => void): Unsubscribe;
   };

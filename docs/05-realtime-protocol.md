@@ -24,7 +24,7 @@
 | 4001 | unknown opcode (или опкод не к месту, напр. второй `IDENTIFY`) | переподключиться, `RESUME` (баг клиента — в лог) |
 | 4002 | decode error (в т.ч. `op` не совпадает с типом payload) | переподключиться, `RESUME` (баг клиента — в лог) |
 | 4003 | not authenticated (кадр до `IDENTIFY`, кроме `HEARTBEAT`; или нет `IDENTIFY` за 30 с) | новый `IDENTIFY` |
-| 4004 | authentication failed | обновить access-token через refresh; не вышло → экран логина |
+| 4004 | authentication failed | обновить access-token через refresh; refresh отклонён (401) → экран логина; нет сети / 5xx → повтор с backoff (сессию не терять) |
 | 4007 | invalid seq (`RESUME` с неизвестным `seq`) | новый `IDENTIFY` |
 | 4008 | rate limited / переполнена очередь отправки / лимит сессий | переподключиться с backoff, `RESUME` |
 | 4009 | session timed out (нет heartbeat) | новый `IDENTIFY` |
@@ -71,7 +71,7 @@ ROOM_PERMISSIONS_UPDATE      { room_id, permissions[] }
 MESSAGE_CREATE / UPDATE / DELETE
 TYPING_START                  { room_id, user_id, timestamp } — только сессиям с SUBSCRIBE на комнату (см. опкод 6), показывать ~8 с
 PRESENCE_UPDATE               { user_id, status, last_seen }
-VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming }
+VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming, joined_at, server_muted }
 VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- для PiP-плитки
 READ_STATE_UPDATE
 ROOM_NOTIFICATION_UPDATE      { settings: { room_id, level, muted_until } } — только своим устройствам
@@ -195,7 +195,8 @@ GET    /api/files/{id}/thumbnail       WebP-превью ≤ 512 px (для из
 POST   /api/rooms/{id}/join            JoinVoiceResponse { url, token, identity, media, can_speak, can_stream }   (CONNECT, только voice)
 POST   /api/rooms/{id}/stream/request  RequestStreamRequest → RequestStreamResponse { preset }   (STREAM; 409 — лимит или не в комнате)
 PATCH  /api/voice/self                 UpdateVoiceSelfRequest → 204        (409 — устройство не в голосе)
-POST   /api/rooms/{id}/voice/{userId}/mute         204   (MUTE_MEMBERS: серверный mute микрофона на всех устройствах)
+POST   /api/rooms/{id}/voice/{userId}/mute         204   (MUTE_MEMBERS: серверный mute → server_muted, до unmute модератором)
+POST   /api/rooms/{id}/voice/{userId}/unmute       204   (MUTE_MEMBERS: снять server_muted; участник может быть уже не в комнате)
 POST   /api/rooms/{id}/voice/{userId}/disconnect   204   (MUTE_MEMBERS: RemoveParticipant)
 POST   /api/rooms/{id}/voice/{userId}/stop-stream  204   (MUTE_MEMBERS: screen-треки заглушены, grant на экран снят → VOICE_STREAM_STOP{MODERATOR}; 404 — стримов нет)
 POST   /api/rtc/webhook                LiveKit → сервер (подпись API key/secret + sha256 тела)
@@ -247,7 +248,13 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 - **Поиск.** Postgres FTS: `to_tsvector('russian') || to_tsvector('simple')`, так что работают и стемминг («кошка» → «Кошки»), и точные слова и идентификаторы (`deploy`). Индекс — GIN по выражению, а не по сохранённой колонке. Синтаксис запроса — `websearch_to_tsquery`: `"фраза"`, `OR`, `-исключить`. Результаты идут от новых к старым, курсор `before`, `limit` ≤ 50 (по умолчанию 25), ответ — `ListMessagesResponse`.
 - **Реакции.** В REST-ответах `Message.reactions` — `[{emoji, count, me}]` в порядке первого использования. В `MESSAGE_UPDATE` `count` актуальны, `me` всегда `false`: клиент хранит свой `me` и применяет `MESSAGE_REACTION_ADD/REMOVE { workspace_id, room_id, message_id, user_id, emoji }` (приходят только тем, у кого `VIEW_ROOM`).
 - **Гости** (`role = guest`) видят участников, presence, voice-state и события о людях только из тех комнат, которые видят сами (READY, `GET …/members`, gateway). Когда общая комната появляется или пропадает, гость получает синтетические `WORKSPACE_MEMBER_ADD` (+ `PRESENCE_UPDATE`) / `WORKSPACE_MEMBER_REMOVE`.
-- **Модерация** (mute / disconnect / stop-stream / move) идёт по иерархии: владельца не трогает никто, админа — только владелец; модераторы-участники (через override) действуют на участников и гостей.
+- **Серверный mute.** `VoiceState.server_muted` (в READY и `VOICE_STATE_UPDATE`) хранится в Redis на пользователя в workspace и держится, пока модератор не снимет его через `/unmute`: переживает переподключение и вход с другого устройства; исчезает, если участник покинул workspace. Пока флаг стоит:
+  - из LiveKit-grant всех устройств убран источник microphone, поэтому SFU сам не даст опубликовать или включить микрофон;
+  - опубликованные треки микрофона заглушены (`MutePublishedTrack`); трек, опубликованный токеном, выданным до mute, глушится на `track_published`;
+  - `PATCH /api/voice/self {muted:false}` → 403, `join` отвечает `can_speak = false`.
+
+  Отдельного webhook `track_unmuted` в LiveKit нет, поэтому самостоятельное включение микрофона блокирует grant. После `/unmute` grant восстанавливается, а микрофон участник включает сам. Клиент при `server_muted` показывает «заглушён модератором» и блокирует кнопку микрофона.
+- **Модерация** (mute / unmute / disconnect / stop-stream / move) идёт по иерархии: владельца не трогает никто, админа — только владелец; модераторы-участники (через override) действуют на участников и гостей.
 - **Вход в голос перепроверяется** на `participant_joined`: отозванная сессия, пропавшие `VIEW_ROOM`/`CONNECT` (например, кик за время жизни 10-минутного токена) или превышенный `user_limit` → участник удаляется из LiveKit. Проверка лимита атомарна вместе с записью voice-state (блокировка workspace). Grant участника выравнивается под текущие права.
 - **Загрузка файлов** требует `ATTACH_FILES` хотя бы в одной комнате, ограничена 30 подряд / 120 в час на пользователя и 1 GiB неприкреплённых файлов на пользователя в workspace.
 - **Статус.** Кастомный статус (`User.status_text/status_emoji/status_expires_at`) после `expires_at` отдаётся пустым. `PATCH /api/me/status` рассылает `PRESENCE_UPDATE` (поля `status_*` в `Presence`) и `USER_UPDATE` во все workspace пользователя.

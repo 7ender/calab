@@ -1,6 +1,7 @@
-import { Bell, Keyboard, Mic, MonitorUp, Sparkles } from 'lucide-react';
+import { AudioWaveform, Bell, Mic, MonitorUp, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { PermissionStatus } from '../../../shared/ipc';
+import { Logo } from '../../components/Logo';
 import { Button, Segmented, Select, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { platform } from '../../platform';
@@ -14,8 +15,11 @@ import { MicMeter } from '../settings/AppSettingsDialog';
 import { PttBinder } from '../settings/PttBinder';
 
 /**
- * First run (docs/08, «Онбординг»): one screen per step, everything skippable. Each
- * permission is requested at the step that needs it, with one sentence of «why».
+ * First run (docs/08 «Онбординг», docs/09 #20): one card per step — an icon illustration, a
+ * title, one sentence of «why», the step's controls, and Setup-Assistant actions (Назад on the
+ * left, «Позже» + the primary action on the right). The card top is anchored and its height
+ * has a floor, so the progress dots never jump between steps. Everything is skippable; each
+ * permission is requested at the step that needs it.
  */
 type Step = 'mic' | 'mode' | 'screen' | 'notifications' | 'done';
 
@@ -24,32 +28,44 @@ function useIsMacDesktop(): boolean {
   return os === 'darwin' && platform.kind === 'electron';
 }
 
+interface Nav {
+  next: () => void;
+  back: (() => void) | null;
+}
+
 export function Onboarding(): ReactNode {
   const mac = useIsMacDesktop();
   const steps: Step[] = ['mic', 'mode', ...(mac ? (['screen'] as Step[]) : []), 'notifications', 'done'];
   const [i, setI] = useState(0);
   const step = steps[i] ?? 'done';
-  const next = (): void => setI((v) => Math.min(steps.length - 1, v + 1));
+  const nav: Nav = {
+    next: () => setI((v) => Math.min(steps.length - 1, v + 1)),
+    back: i > 0 ? () => setI((v) => Math.max(0, v - 1)) : null,
+  };
   const finish = (): void => {
     voice.stopMicTest();
     usePrefs.getState().setPrefs({ onboarded: true });
   };
 
   return (
-    <div className="mat-content drag flex h-full flex-col items-center justify-center px-4">
-      <div className="no-drag flex w-full max-w-[520px] flex-col gap-6" data-testid={`onboarding-${step}`}>
-        <ol className="flex justify-center gap-2" aria-label={t('onb.progress', { n: i + 1, total: steps.length })}>
+    <div className="mat-content drag flex h-full flex-col items-center overflow-y-auto px-4 pb-8 pt-[max(40px,10vh)]">
+      <div className="no-drag flex w-full max-w-[520px] flex-col gap-5" data-testid={`onboarding-${step}`}>
+        <ol className="flex h-2 items-center justify-center gap-2" aria-label={t('onb.progress', { n: i + 1, total: steps.length })}>
           {steps.map((s, n) => (
-            <li key={s} aria-current={n === i ? 'step' : undefined} className={cx('h-1.5 w-8 rounded-full', n <= i ? 'bg-accent' : 'bg-[var(--color-fill-hover)]')} />
+            <li
+              key={s}
+              aria-current={n === i ? 'step' : undefined}
+              className={cx('h-2 rounded-full transition-[width,background-color] duration-[var(--motion)]', n === i ? 'w-5 bg-accent' : n < i ? 'w-2 bg-accent' : 'w-2 bg-[var(--color-fill-hover)]')}
+            />
           ))}
         </ol>
-        {step === 'mic' ? <MicStep onNext={next} /> : null}
-        {step === 'mode' ? <ModeStep onNext={next} /> : null}
-        {step === 'screen' ? <ScreenStep onNext={next} /> : null}
-        {step === 'notifications' ? <NotificationsStep onNext={next} /> : null}
-        {step === 'done' ? <DoneStep onFinish={finish} /> : null}
+        {step === 'mic' ? <MicStep nav={nav} /> : null}
+        {step === 'mode' ? <ModeStep nav={nav} /> : null}
+        {step === 'screen' ? <ScreenStep nav={nav} /> : null}
+        {step === 'notifications' ? <NotificationsStep nav={nav} /> : null}
+        {step === 'done' ? <DoneStep nav={nav} onFinish={finish} /> : null}
         {step !== 'done' ? (
-          <button type="button" onClick={finish} className="self-center text-[12px] text-muted hover:text-fg hover:underline">
+          <button type="button" onClick={finish} className="self-center rounded-[var(--radius-control)] px-2 py-1 text-caption text-muted hover:text-fg hover:underline">
             {t('onb.skipAll')}
           </button>
         ) : null}
@@ -59,34 +75,60 @@ export function Onboarding(): ReactNode {
 }
 
 function StepFrame({
-  icon: Icon,
+  illustration,
   title,
   text,
   children,
   actions,
+  back,
 }: {
-  icon: typeof Mic;
+  illustration: ReactNode;
   title: string;
   text: string;
   children?: ReactNode;
   actions: ReactNode;
+  back: (() => void) | null;
 }): ReactNode {
   return (
-    <section className="mat-popover flex flex-col gap-5 rounded-[var(--radius-panel)] p-6">
+    <section className="mat-popover flex min-h-[360px] flex-col gap-5 rounded-[var(--radius-panel)] p-6">
       <div className="flex flex-col items-center gap-3 text-center">
-        <span className="grid size-12 place-items-center rounded-full bg-accent text-accent-fg">
-          <Icon className="size-6" aria-hidden />
-        </span>
-        <h1 className="text-[26px] font-semibold leading-tight">{title}</h1>
-        <p className="text-[14px] text-muted">{text}</p>
+        {illustration}
+        <h1 className="text-large font-semibold">{title}</h1>
+        <p className="max-w-[420px] text-body text-muted">{text}</p>
       </div>
       {children}
-      <div className="flex justify-end gap-2">{actions}</div>
+      <div className="mt-auto flex items-center gap-2 pt-1">
+        {back ? (
+          <Button variant="ghost" size="lg" onClick={back}>
+            {t('onb.back')}
+          </Button>
+        ) : null}
+        <div className="ml-auto flex gap-2">{actions}</div>
+      </div>
     </section>
   );
 }
 
-function MicStep({ onNext }: { onNext: () => void }): ReactNode {
+/** Step illustration: a large glyph on a soft accent disc (no gradients, docs/08). */
+function Illustration({ icon: Icon }: { icon: typeof Mic }): ReactNode {
+  return (
+    <span className="grid size-16 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent" aria-hidden>
+      <Icon className="size-8" strokeWidth={1.75} />
+    </span>
+  );
+}
+
+/** Yellow-tint note with ⚠︎ for something still to do (not an error). */
+function WarnNote({ children }: { children: ReactNode }): ReactNode {
+  return (
+    <div className="flex items-start gap-2 rounded-[var(--radius-card)] bg-mention px-3 py-2.5 text-left text-body text-fg" role="status">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />
+      <div className="flex min-w-0 flex-col gap-2">{children}</div>
+    </div>
+  );
+}
+
+function MicStep({ nav }: { nav: Nav }): ReactNode {
   const [state, setState] = useState<'idle' | 'asking' | 'ok' | 'denied'>('idle');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const micId = usePrefs((s) => s.micDeviceId);
@@ -106,34 +148,31 @@ function MicStep({ onNext }: { onNext: () => void }): ReactNode {
     setState(useVoice.getState().micError ? 'denied' : 'ok');
   };
 
+  const ok = state === 'ok';
   return (
     <StepFrame
-      icon={Mic}
-      title={t('onb.micTitle')}
-      text={t('onb.micText')}
+      illustration={<Illustration icon={Mic} />}
+      title={ok ? t('onb.micCheckTitle') : t('onb.micTitle')}
+      text={ok ? t('onb.micCheckText') : t('onb.micText')}
+      back={nav.back}
       actions={
-        state === 'ok' ? (
-          <>
-            <Button variant="secondary" size="lg" onClick={onNext}>
-              {t('onb.later')}
-            </Button>
-            <Button size="lg" onClick={onNext}>
+        <>
+          <Button variant="secondary" size="lg" onClick={nav.next}>
+            {t('onb.later')}
+          </Button>
+          {ok ? (
+            <Button size="lg" onClick={nav.next}>
               {t('onb.micGood')}
             </Button>
-          </>
-        ) : (
-          <>
-            <Button variant="secondary" size="lg" onClick={onNext}>
-              {t('onb.later')}
-            </Button>
+          ) : (
             <Button size="lg" busy={state === 'asking'} onClick={() => void ask()}>
               {t('onb.micAllow')}
             </Button>
-          </>
-        )
+          )}
+        </>
       }
     >
-      {state === 'ok' ? (
+      {ok ? (
         <div className="flex flex-col gap-3">
           <Select aria-label={t('voice.input')} value={micId ?? ''} onChange={(e) => setPrefs({ micDeviceId: e.target.value || null })}>
             <option value="">{t('voice.defaultDevice')}</option>
@@ -144,34 +183,34 @@ function MicStep({ onNext }: { onNext: () => void }): ReactNode {
             ))}
           </Select>
           <MicMeter />
-          <p className="text-[12px] text-faint">{t('onb.micSay')}</p>
         </div>
       ) : null}
       {state === 'denied' ? (
-        <div className="flex flex-col gap-2 rounded-[var(--radius-card)] bg-mention p-3 text-[13px]" role="alert">
+        <WarnNote>
           <p>{micError ?? t('onb.micDenied')}</p>
           {platform.kind === 'electron' && (os === 'darwin' || os === 'win32') ? (
-            <Button variant="secondary" className="self-start" onClick={() => void platform.system.openPrivacySettings('microphone')}>
+            <Button variant="secondary" size="sm" className="self-start" onClick={() => void platform.system.openPrivacySettings('microphone')}>
               {t('perm.openOs')}
             </Button>
           ) : (
             <p className="text-muted">{t('onb.micDeniedWeb')}</p>
           )}
-        </div>
+        </WarnNote>
       ) : null}
     </StepFrame>
   );
 }
 
-function ModeStep({ onNext }: { onNext: () => void }): ReactNode {
+function ModeStep({ nav }: { nav: Nav }): ReactNode {
   const p = usePrefs();
   return (
     <StepFrame
-      icon={Keyboard}
+      illustration={<Illustration icon={AudioWaveform} />}
       title={t('onb.modeTitle')}
       text={t('onb.modeText')}
+      back={nav.back}
       actions={
-        <Button size="lg" onClick={onNext}>
+        <Button size="lg" onClick={nav.next}>
           {t('onb.next')}
         </Button>
       }
@@ -187,18 +226,18 @@ function ModeStep({ onNext }: { onNext: () => void }): ReactNode {
           ]}
         />
         {p.micMode === 'ptt' ? (
-          <div className="w-full rounded-[var(--radius-card)] bg-elev p-3">
+          <div className="w-full rounded-[var(--radius-card)] bg-[var(--color-card)] p-3">
             <PttBinder compact />
           </div>
         ) : (
-          <p className="text-center text-[13px] text-muted">{t('onb.vadText')}</p>
+          <p className="text-center text-body text-muted">{t('onb.vadText')}</p>
         )}
       </div>
     </StepFrame>
   );
 }
 
-function ScreenStep({ onNext }: { onNext: () => void }): ReactNode {
+function ScreenStep({ nav }: { nav: Nav }): ReactNode {
   const [p, setP] = useState<PermissionStatus | null>(null);
   useEffect(() => {
     const check = (): void => void platform.system.permissions().then(setP);
@@ -209,16 +248,17 @@ function ScreenStep({ onNext }: { onNext: () => void }): ReactNode {
   const granted = p?.screen === 'granted';
   return (
     <StepFrame
-      icon={MonitorUp}
+      illustration={<Illustration icon={MonitorUp} />}
       title={t('onb.screenTitle')}
       text={t('onb.screenText')}
+      back={nav.back}
       actions={
         <>
-          <Button variant="secondary" size="lg" onClick={onNext}>
+          <Button variant="secondary" size="lg" onClick={nav.next}>
             {t('onb.later')}
           </Button>
           {granted ? (
-            <Button size="lg" onClick={onNext}>
+            <Button size="lg" onClick={nav.next}>
               {t('onb.next')}
             </Button>
           ) : (
@@ -229,31 +269,38 @@ function ScreenStep({ onNext }: { onNext: () => void }): ReactNode {
         </>
       }
     >
-      <p className={cx('rounded-[var(--radius-card)] p-3 text-center text-[13px]', granted ? 'bg-elev text-ok' : 'bg-mention')}>
-        {granted ? t('onb.screenOk') : t('onb.screenRestart')}
-      </p>
+      {granted ? <p className="rounded-[var(--radius-card)] bg-[var(--color-card)] p-3 text-center text-body text-ok">{t('onb.screenOk')}</p> : <WarnNote>{t('onb.screenRestart')}</WarnNote>}
     </StepFrame>
   );
 }
 
-function NotificationsStep({ onNext }: { onNext: () => void }): ReactNode {
+function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
   const [perm, setPerm] = useState(typeof Notification === 'undefined' ? 'denied' : Notification.permission);
   return (
     <StepFrame
-      icon={Bell}
+      illustration={<Illustration icon={Bell} />}
       title={t('onb.notifTitle')}
       text={t('onb.notifText')}
+      back={nav.back}
       actions={
         <>
-          <Button variant="secondary" size="lg" onClick={onNext}>
+          <Button variant="secondary" size="lg" onClick={nav.next}>
             {t('onb.later')}
           </Button>
           {perm === 'default' ? (
-            <Button size="lg" onClick={() => void Notification.requestPermission().then((p) => { setPerm(p); onNext(); })}>
+            <Button
+              size="lg"
+              onClick={() =>
+                void Notification.requestPermission().then((p) => {
+                  setPerm(p);
+                  nav.next();
+                })
+              }
+            >
               {t('onb.notifAllow')}
             </Button>
           ) : (
-            <Button size="lg" onClick={onNext}>
+            <Button size="lg" onClick={nav.next}>
               {t('onb.next')}
             </Button>
           )}
@@ -263,14 +310,15 @@ function NotificationsStep({ onNext }: { onNext: () => void }): ReactNode {
   );
 }
 
-function DoneStep({ onFinish }: { onFinish: () => void }): ReactNode {
+function DoneStep({ nav, onFinish }: { nav: Nav; onFinish: () => void }): ReactNode {
   const hasWs = useWorkspaces((s) => s.order.length > 0);
   const open = useUi((s) => s.openDialog);
   return (
     <StepFrame
-      icon={Sparkles}
+      illustration={<Logo size={64} />}
       title={t('onb.doneTitle')}
       text={hasWs ? t('onb.doneText') : t('onb.doneNoWs')}
+      back={nav.back}
       actions={
         hasWs ? (
           <Button size="lg" onClick={onFinish}>

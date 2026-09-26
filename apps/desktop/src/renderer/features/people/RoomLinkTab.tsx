@@ -19,7 +19,7 @@ const EXPIRY: Array<{ s: number; key: MessageKey }> = [
   { s: 7 * 86400, key: 'people.link.week' },
   { s: 0, key: 'people.link.never' },
 ];
-const MAX_USES = [0, 1, 5, 10, 25, 50, 100];
+export const MAX_USES = [0, 1, 5, 10, 25, 50, 100];
 
 /** «1 окт., 12:00»; with the year when it is not this year. */
 const dateFmt = {
@@ -109,7 +109,7 @@ export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
     <>
       <Card title={t('people.link.new')} footer={t('people.link.newHint')}>
         <Row label={t('people.link.expiry')}>
-          <Select aria-label={t('people.link.expiry')} className="w-44" value={expires} onChange={(e) => setExpires(Number(e.target.value))}>
+          <Select aria-label={t('people.link.expiry')} className="w-60" value={expires} onChange={(e) => setExpires(Number(e.target.value))}>
             {EXPIRY.map((x) => (
               <option key={x.s} value={x.s}>
                 {t(x.key)}
@@ -118,7 +118,7 @@ export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
           </Select>
         </Row>
         <Row label={t('people.link.maxUses')}>
-          <Select aria-label={t('people.link.maxUses')} className="w-44" value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))}>
+          <Select aria-label={t('people.link.maxUses')} className="w-60" value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))}>
             {MAX_USES.map((n) => (
               <option key={n} value={n}>
                 {n === 0 ? t('people.link.unlimited') : n}
@@ -159,15 +159,15 @@ export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
             <Spinner className="size-4" />
           </div>
         ) : invites.length === 0 ? (
-          <p className="flex min-h-10 items-center px-3 text-[13px] text-muted">{t('people.link.none')}</p>
+          <p className="flex min-h-10 items-center px-3 text-body text-muted">{t('people.link.none')}</p>
         ) : (
           invites.map((i) => (
             <div key={i.id} className="flex min-h-12 items-center gap-3 px-3 py-2">
               <div className="min-w-0 flex-1">
-                <code className="selectable block truncate font-mono text-[12px]" title={linkOf(i)}>
+                <code className="selectable block truncate font-mono text-caption" title={linkOf(i)}>
                   {linkOf(i)}
                 </code>
-                <div className="truncate text-[12px] text-muted" title={linkSummary(i, voice)}>
+                <div className="truncate text-caption text-muted" title={linkSummary(i, voice)}>
                   {linkSummary(i, voice)}
                 </div>
               </div>

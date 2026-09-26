@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { promisify } from 'node:util';
-import { basename, extname, join } from 'node:path';
+import { join } from 'node:path';
 import { app, BrowserWindow, session, shell, type DownloadItem, type Session } from 'electron';
 import log from 'electron-log/main';
+import { safeFileName, numberedName } from '../shared/fileName';
 import { IPC, type DownloadArgs, type DownloadProgress } from '../shared/ipc';
 import { currentServerUrl, getAccessToken } from './auth';
 
@@ -16,13 +17,11 @@ import { currentServerUrl, getAccessToken } from './auth';
  * not set these itself (verified on macOS: no xattr), so we do it right after completion.
  */
 
+/** A free path in `dir` for a user-supplied name (shared/fileName.ts: `..`, CON, trailing dots…). */
 export function uniquePath(dir: string, name: string): string {
-  // eslint-disable-next-line no-control-regex -- strip control chars from user-supplied file names
-  const safe = basename(name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_') || 'file';
-  const ext = extname(safe);
-  const stem = safe.slice(0, safe.length - ext.length);
+  const safe = safeFileName(name);
   let p = join(dir, safe);
-  for (let i = 1; existsSync(p); i++) p = join(dir, `${stem} (${i})${ext}`);
+  for (let i = 1; existsSync(p); i++) p = join(dir, numberedName(safe, i));
   return p;
 }
 

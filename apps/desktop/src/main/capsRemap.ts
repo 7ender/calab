@@ -43,18 +43,38 @@ export function capsRemapActive(): boolean {
   return applied !== null;
 }
 
-export async function applyCapsRemap(): Promise<void> {
+let ops: Promise<void> = Promise.resolve();
+
+/**
+ * Apply (true) or restore (false) the remap. Calls run strictly one after another in call
+ * order: interleaved awaits of a fast toggle could leave Caps→F18 applied with no binding
+ * until quit (review L4).
+ */
+export function setCapsRemap(on: boolean): Promise<void> {
+  const run = ops.then(() => (on ? applyCapsRemap() : restoreCapsRemap()));
+  ops = run.catch(() => undefined);
+  return run;
+}
+
+async function applyCapsRemap(): Promise<void> {
   if (!capsRemapSupported() || applied) return;
   await recovery;
   // Never save our own mapping as «the user's» (e.g. left over by a crash).
   const original = (await getMapping()).filter((m) => !(m.src === HID_CAPS_LOCK && m.dst === HID_F18));
   writeFileSync(markerFile(), JSON.stringify({ original }));
-  await setMapping(withCapsToF18(original));
+  // Mark as applied before the set: a quit during it must still restore synchronously.
   applied = original;
+  try {
+    await setMapping(withCapsToF18(original));
+  } catch (e) {
+    applied = null;
+    rmSync(markerFile(), { force: true });
+    throw e;
+  }
   log.info('[ptt] Caps Lock → F18 remap applied', { kept: original.length });
 }
 
-export async function restoreCapsRemap(): Promise<void> {
+async function restoreCapsRemap(): Promise<void> {
   if (!applied) return;
   const original = applied;
   applied = null;

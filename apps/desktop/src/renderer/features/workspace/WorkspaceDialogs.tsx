@@ -3,7 +3,9 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Button, Empty, Field, Input, Modal, Select, Spinner } from '../../components/ui';
 import { t } from '../../i18n';
+import { workspaceInitials } from '../../lib/initials';
 import { ApiError } from '../../lib/api/client';
+import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { parseInviteCode, parseRoomInviteCode } from '../../services/links';
 import { RoomLinkPreview } from '../people/RoomLinkPreview';
@@ -34,9 +36,8 @@ function errText(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.is('ERROR_CODE_CONFLICT')) return t('ws.slugTaken');
     if (e.is('ERROR_CODE_INVITE_INVALID') || e.is('ERROR_CODE_NOT_FOUND')) return t('ws.inviteInvalid');
-    return e.message;
   }
-  return String(e);
+  return errorText(e);
 }
 
 export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): ReactNode {
@@ -112,28 +113,56 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
   });
 
   return (
-    <Modal open onClose={onClose} title={t('ws.joinTitle')} description={t('ws.joinText')}>
+    <Modal
+      open
+      onClose={onClose}
+      title={t('ws.joinTitle')}
+      description={t('ws.joinText')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button busy={join.isPending && !join.variables.id} disabled={!preview.data?.workspace} onClick={() => join.mutate({ code: code ?? '' })}>
+            {t('ws.join')}
+          </Button>
+        </>
+      }
+    >
       <div className="flex flex-col gap-3">
         <Field label={t('ws.inviteCode')} error={preview.error ? errText(preview.error) : join.error ? errText(join.error) : null}>
-          <Input autoFocus value={input} onChange={(e) => setInput(e.target.value)} placeholder={t('ws.joinPlaceholder')} spellCheck={false} />
+          <Input
+            autoFocus
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && preview.data?.workspace) join.mutate({ code: code ?? '' });
+            }}
+            placeholder={t('ws.joinPlaceholder')}
+            spellCheck={false}
+          />
         </Field>
         {roomCode ? <RoomLinkPreview code={roomCode} onDone={onClose} /> : null}
         {preview.data?.workspace ? (
-          <div className="flex items-center justify-between rounded-[var(--radius-control)] bg-side px-3 py-2">
-            <span className="font-semibold">{preview.data.workspace.name}</span>
-            <Button busy={join.isPending} onClick={() => join.mutate({ code: code ?? '' })}>
-              {t('ws.joinBtn')}
-            </Button>
+          <div className="flex items-center gap-3 rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2">
+            <span className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-card)] bg-accent-strong text-caption font-semibold text-accent-fg" aria-hidden>
+              {workspaceInitials(preview.data.workspace.name)}
+            </span>
+            <span className="min-w-0 truncate font-semibold" title={preview.data.workspace.name}>
+              {preview.data.workspace.name}
+            </span>
           </div>
         ) : preview.isFetching ? (
           <Spinner />
         ) : null}
-        <h3 className="mt-3 text-[12px] font-semibold uppercase tracking-wide text-muted">{t('ws.discover')}</h3>
+        <h3 className="mt-3 text-caption font-semibold uppercase tracking-wide text-muted">{t('ws.discover')}</h3>
         {discover.isLoading ? <Spinner /> : null}
         {discover.data && discover.data.workspaces.length === 0 ? <Empty>{t('ws.discoverEmpty')}</Empty> : null}
         {discover.data?.workspaces.map((w) => (
-          <div key={w.id} className="flex items-center justify-between rounded-[var(--radius-control)] bg-side px-3 py-2">
-            <span>{w.name}</span>
+          <div key={w.id} className="flex items-center justify-between gap-3 rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2">
+            <span className="min-w-0 truncate" title={w.name}>
+              {w.name}
+            </span>
             <Button size="sm" variant="secondary" busy={join.isPending && join.variables.id === w.id} onClick={() => join.mutate({ id: w.id })}>
               {t('ws.joinBtn')}
             </Button>
