@@ -22,12 +22,12 @@ const shots = [
   { name: 'hero', file: 'chat', suffix: '-shadow', crop: null },
   // mode picker: step dots, title, VAD / PTT segmented control
   { name: 'voice', file: 'onboarding', crop: { left: 390, top: 140, ...CROP } },
-  // voice room in the sidebar (status, members, LIVE) + the stream with its LIVE badge
-  { name: 'stream', file: 'stream', crop: { left: 76, top: 96, ...CROP } },
-  // new-messages divider, messages, composer
-  { name: 'chat', file: 'chat', crop: { left: 331, top: 460, ...CROP } },
-  // room settings → guest link
-  { name: 'guests', file: 'settings', crop: { left: 482, top: 118, ...CROP } },
+  // stream area only: streamer chip + LIVE and the shared screen
+  { name: 'stream', file: 'stream', crop: { left: 344, top: 99, ...CROP } },
+  // link preview + image message with a reaction
+  { name: 'chat', file: 'chat', crop: { left: 331, top: 100, ...CROP } },
+  // room settings → guest link: guest options, create button, active link
+  { name: 'guests', file: 'settings', crop: { left: 482, top: 296, ...CROP } },
 ];
 
 const scaled = (c) => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, Math.round(v * SCALE)]));
