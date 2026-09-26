@@ -235,6 +235,9 @@ class VoiceEngine {
     this.rejoinRoomId = null;
     this.failedSeat = null;
     setLink({ attempts: 0, lastError: null, blockedHost: null });
+    // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
+    // call is still being torn down; connect() takes over with phase 'connecting'.
+    if (!(this.roomId === roomId && this.room)) setVoice({ joining: { roomId, workspaceId } });
     await this.connect(roomId, workspaceId, false);
   }
 
@@ -310,6 +313,7 @@ class VoiceEngine {
     setVoice({
       roomId,
       workspaceId,
+      joining: null,
       // A reconnect cycle (quiet) keeps my original joinedAt: only a fresh join or a move to
       // another room restarts the invite row's 30 s window (docs/09 #10).
       ...(quiet ? {} : { joinedAt: Date.now() }),
@@ -330,6 +334,12 @@ class VoiceEngine {
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
       const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await api.voice.join(roomId);
       if (seq !== this.joinSeq) return;
+      // The server recorded this device as pending with default flags: tell it my mute /
+      // deafen now, so the others' pending row is right before LiveKit connects.
+      if ('pending' in res && res.pending) {
+        const { muted, deafened } = useVoice.getState();
+        if (muted || deafened) void api.voice.updateSelf({ muted, deafened }).catch((e: unknown) => log.warn('voice/self failed', e));
+      }
       this.lastJoin = { url: res.url, token: res.token };
       setLink({ rtcHost: hostOfUrl(res.url) });
       this.audioBitrateKbps = res.media?.audioBitrateKbps || 32;
@@ -479,6 +489,7 @@ class VoiceEngine {
     this.rejoinRoomId = null;
     this.moveIntent = null;
     this.intentSeq++;
+    setVoice({ joining: null });
     await this.teardown(sound);
   }
 

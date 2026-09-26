@@ -500,6 +500,24 @@ body {
 .speak-ring[data-speaking='true'] {
   outline-color: var(--color-green);
 }
+/* «Подключается…» (docs/08): a voice participant pending > 3 s — a 2 px ring in the speaking
+   ring's place (2 px gap), muted fading into accent, turning once per 1.2 s. With
+   prefers-reduced-motion the global rule stops it: a static muted→accent ring. */
+@keyframes calaba-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+.connect-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: conic-gradient(from 0deg, transparent 0turn, var(--color-muted) 0.15turn, var(--color-accent) 0.85turn, transparent 1turn);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  animation: calaba-spin 1.2s linear infinite;
+}
 
 @keyframes calaba-pulse {
   0%,

@@ -6,6 +6,7 @@ import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
+import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 import { isGuest, useWorkspaces } from '../../stores/workspaces';
 import { GuestBadge, roleTextClass } from '../people/MemberBits';
@@ -32,7 +33,7 @@ export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
 export function MembersPanel({ workspaceId, floating = false, drawer = false }: { workspaceId: string; floating?: boolean; drawer?: boolean }): ReactNode {
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const presences = useWorkspaces((s) => s.presences);
-  const voice = useWorkspaces((s) => s.byId[workspaceId]?.voice);
+  const voice = useVoiceStates(workspaceId); // + me while connecting (optimistic join)
   const groups = useMemo(() => groupMembers(Object.values(members ?? {}), presences, voice), [members, presences, voice]);
   const [profile, setProfile] = useState<string | null>(null);
 
@@ -93,7 +94,8 @@ const MemberRow = memo(function MemberRow({
 }): ReactNode {
   const u = m.user;
   const userId = u?.id ?? '';
-  const v = useWorkspaces((s) => s.byId[workspaceId]?.voice[userId]);
+  const v = useVoiceStateOf(workspaceId, userId);
+  const connectingRing = useConnectingRing(workspaceId, userId, v?.pending ?? false);
   const roomName = useRooms((s) => (v?.roomId ? s.byId[v.roomId]?.name : undefined));
   const speaking = useVoice((s) => s.speaking[userId] ?? false);
   const [renaming, setRenaming] = useState(false);
@@ -127,7 +129,7 @@ const MemberRow = memo(function MemberRow({
           <button
             type="button"
             aria-label={t('people.openProfile', { name })}
-            title={name}
+            title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
             className={cx(
               'flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
               open && 'bg-active',
@@ -135,7 +137,7 @@ const MemberRow = memo(function MemberRow({
           >
             {/* Offline: grey, faded avatar + secondary text — never opacity on text (≥ 4.5:1). */}
             <span className={cx('flex shrink-0', offline && 'opacity-60 grayscale')}>
-              <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={32} presence speaking={speaking && !v?.muted} />
+              <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={32} presence speaking={speaking && !v?.muted} connecting={connectingRing} />
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex min-w-0 items-center gap-1">

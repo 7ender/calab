@@ -324,6 +324,33 @@ describe('mentions and room notifications (docs/05)', () => {
   });
 });
 
+describe('optimistic voice join (docs/05)', () => {
+  it('/join answers pending and announces the pending state, the simulated connect clears it; a repeated /join is idempotent', async () => {
+    const owner = await login();
+    const grigory = await login('grigory@calaba.test');
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token: owner } } });
+    await gw.next((f) => dispatchOf(f)?.event.case === 'ready');
+    const stateOf = (pending: boolean) => (f: GatewayFrame): boolean => {
+      const e = dispatchOf(f)?.event;
+      return e?.case === 'voiceStateUpdate' && e.value.state?.userId === IDS.users.grigory && e.value.state.roomId === IDS.rooms.call && e.value.state.pending === pending;
+    };
+    const join = async (): Promise<{ pending?: boolean }> => {
+      const r = await fetch(`${server.url}/api/rooms/${IDS.rooms.call}/join`, { method: 'POST', headers: { Authorization: `Bearer ${grigory}` } });
+      expect(r.status).toBe(200);
+      return (await r.json()) as { pending?: boolean };
+    };
+    const pendingSeen = gw.next(stateOf(true));
+    expect((await join()).pending).toBe(true);
+    await pendingSeen;
+    await gw.next(stateOf(false)); // «participant_joined»
+    expect((await join()).pending ?? false).toBe(false);
+    gw.ws.close(1000);
+    server.reset('data');
+  });
+});
+
 describe('moving a participant (ADR-0019)', () => {
   it('app-level move: VOICE_MOVED with a target-room token for the device, VOICE_STATE_UPDATE for all', async () => {
     const res = await fetch(`${server.url}/api/auth/login`, {

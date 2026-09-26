@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/rtc.proto.
  */
 export const file_calaba_v1_rtc: GenFile = /*@__PURE__*/
-  fileDesc("ChNjYWxhYmEvdjEvcnRjLnByb3RvEgljYWxhYmEudjEiqAEKEUpvaW5Wb2ljZVJlc3BvbnNlEgsKA3VybBgBIAEoCRINCgV0b2tlbhgCIAEoCRIQCghpZGVudGl0eRgDIAEoCRIrCgVtZWRpYRgEIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIRCgljYW5fc3BlYWsYBSABKAgSEgoKY2FuX3N0cmVhbRgGIAEoCBIRCgljYW5fdmlkZW8YByABKAgiRAoUUmVxdWVzdFN0cmVhbVJlcXVlc3QSLAoGcHJlc2V0GAEgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0IkUKFVJlcXVlc3RTdHJlYW1SZXNwb25zZRIsCgZwcmVzZXQYASABKA4yHC5jYWxhYmEudjEuU2NyZWVuU2hhcmVQcmVzZXQiKwoRTW92ZU1lbWJlclJlcXVlc3QSFgoOdGFyZ2V0X3Jvb21faWQYASABKAkiWgoWVXBkYXRlVm9pY2VTZWxmUmVxdWVzdBISCgVtdXRlZBgBIAEoCEgAiAEBEhUKCGRlYWZlbmVkGAIgASgISAGIAQFCCAoGX211dGVkQgsKCV9kZWFmZW5lZEKWAQoNY29tLmNhbGFiYS52MUIIUnRjUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_calaba_v1_media]);
+  fileDesc("ChNjYWxhYmEvdjEvcnRjLnByb3RvEgljYWxhYmEudjEiuQEKEUpvaW5Wb2ljZVJlc3BvbnNlEgsKA3VybBgBIAEoCRINCgV0b2tlbhgCIAEoCRIQCghpZGVudGl0eRgDIAEoCRIrCgVtZWRpYRgEIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIRCgljYW5fc3BlYWsYBSABKAgSEgoKY2FuX3N0cmVhbRgGIAEoCBIRCgljYW5fdmlkZW8YByABKAgSDwoHcGVuZGluZxgIIAEoCCJEChRSZXF1ZXN0U3RyZWFtUmVxdWVzdBIsCgZwcmVzZXQYASABKA4yHC5jYWxhYmEudjEuU2NyZWVuU2hhcmVQcmVzZXQiRQoVUmVxdWVzdFN0cmVhbVJlc3BvbnNlEiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldCIrChFNb3ZlTWVtYmVyUmVxdWVzdBIWCg50YXJnZXRfcm9vbV9pZBgBIAEoCSJaChZVcGRhdGVWb2ljZVNlbGZSZXF1ZXN0EhIKBW11dGVkGAEgASgISACIAQESFQoIZGVhZmVuZWQYAiABKAhIAYgBAUIICgZfbXV0ZWRCCwoJX2RlYWZlbmVkQpYBCg1jb20uY2FsYWJhLnYxQghSdGNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_calaba_v1_media]);
 
 /**
  * POST /api/rooms/{id}/join (CONNECT). Returns a LiveKit token for this device
@@ -66,6 +66,14 @@ export type JoinVoiceResponse = Message<"calaba.v1.JoinVoiceResponse"> & {
    * @generated from field: bool can_video = 7;
    */
   canVideo: boolean;
+
+  /**
+   * The device is recorded in the room as pending (VoiceState.pending) until it connects to
+   * LiveKit; false when it was already connected there (a repeated /join).
+   *
+   * @generated from field: bool pending = 8;
+   */
+  pending: boolean;
 };
 
 /**

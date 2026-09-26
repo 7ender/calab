@@ -1641,3 +1641,13 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - ⌘K находит DM по имени; ссылка `https://<сервер>/dm/<id>` (контекстное меню DM → «Копировать ссылку») открывает DM в вебе, `calab://dm/<id>` — в десктопе; чужая ссылка — тост «Переписка по ссылке недоступна».
 - Превью последних сообщений приходят в READY (`DmSummary.last_message`): при открытии «Личных» в Network нет запросов `…/messages?limit=1`.
 - Телефон (≤ 768 px): `CALABA_MOBILE_MOCK_PORT=39572 npx playwright test --config playwright.web.config.ts --project=iphone-14 --project=pixel-7` — тест «Личные» (список DM в шторке ☰, переписка на весь экран) и прежние мобильные сценарии зелёные.
+
+## Оптимистичный вход в голос (docs/09 P1 #8, ветка `feat/optimistic-join`)
+Авто: `go test -tags integration -run TestOptimisticJoin ./internal/app/` (dev LiveKit), `-run Pending ./internal/rtc/`; клиент — `stores/voicePending.test.ts`, `services/voice.test.ts` («optimistic join…»), mock — «optimistic voice join». Снимок `voice-room-pending`.
+Руками (два клиента A и B в одном пространстве):
+1. A кликает голосовую комнату → A в списке сразу, у B тоже (до «Голос подключён»).
+2. Медленная сеть у A (Network Link Conditioner) → через 3 с у A и B вокруг аватара A вращается кольцо, tooltip «Подключается…»; после подключения — обычный вид, кольцо речи работает.
+3. У A заблокирован LiveKit (7880/7881/7882) → через 15 с A исчезает из комнаты у B.
+4. Комната с лимитом 1: пока A подключается, B получает «Комната заполнена».
+5. `/join` с ошибкой (сервер остановлен) → A сразу пропадает из списка, тост.
+6. macOS «Уменьшить движение» → кольцо статичное.

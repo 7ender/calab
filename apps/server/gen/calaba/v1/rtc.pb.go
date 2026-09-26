@@ -33,7 +33,10 @@ type JoinVoiceResponse struct {
 	CanStream bool                   `protobuf:"varint,6,opt,name=can_stream,json=canStream,proto3" json:"can_stream,omitempty"` // STREAM granted and a stream slot was free at join time
 	// VIDEO granted and the room allows cameras (camera_limit > 0). The camera source is not in
 	// the join token: call POST /api/rooms/{id}/camera/request before publishing a webcam.
-	CanVideo      bool `protobuf:"varint,7,opt,name=can_video,json=canVideo,proto3" json:"can_video,omitempty"`
+	CanVideo bool `protobuf:"varint,7,opt,name=can_video,json=canVideo,proto3" json:"can_video,omitempty"`
+	// The device is recorded in the room as pending (VoiceState.pending) until it connects to
+	// LiveKit; false when it was already connected there (a repeated /join).
+	Pending       bool `protobuf:"varint,8,opt,name=pending,proto3" json:"pending,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -113,6 +116,13 @@ func (x *JoinVoiceResponse) GetCanStream() bool {
 func (x *JoinVoiceResponse) GetCanVideo() bool {
 	if x != nil {
 		return x.CanVideo
+	}
+	return false
+}
+
+func (x *JoinVoiceResponse) GetPending() bool {
+	if x != nil {
+		return x.Pending
 	}
 	return false
 }
@@ -311,7 +321,7 @@ var File_calaba_v1_rtc_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\n" +
-	"\x13calaba/v1/rtc.proto\x12\tcalaba.v1\x1a\x15calaba/v1/media.proto\"\xe4\x01\n" +
+	"\x13calaba/v1/rtc.proto\x12\tcalaba.v1\x1a\x15calaba/v1/media.proto\"\xfe\x01\n" +
 	"\x11JoinVoiceResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1a\n" +
@@ -320,7 +330,8 @@ const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\tcan_speak\x18\x05 \x01(\bR\bcanSpeak\x12\x1d\n" +
 	"\n" +
 	"can_stream\x18\x06 \x01(\bR\tcanStream\x12\x1b\n" +
-	"\tcan_video\x18\a \x01(\bR\bcanVideo\"L\n" +
+	"\tcan_video\x18\a \x01(\bR\bcanVideo\x12\x18\n" +
+	"\apending\x18\b \x01(\bR\apending\"L\n" +
 	"\x14RequestStreamRequest\x124\n" +
 	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\"M\n" +
 	"\x15RequestStreamResponse\x124\n" +

@@ -141,6 +141,12 @@ func (s *Service) displayName(ctx context.Context, wsID, userID uuid.UUID) strin
 	return name
 }
 
+// join issues a LiveKit token for a voice room and records the device there at once as
+// pending (optimistic join, docs/05): everyone sees the user in the room before LiveKit
+// connects; participant_joined clears pending, a device that does not connect within
+// connectConfirm is removed again. The user_limit check (pending devices count) and the
+// write happen under the workspace voice lock. A repeated /join of a device already recorded
+// in the room changes nothing.
 func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	roomID, err := httpx.PathUUID(r, "id", "room")
 	if err != nil {
@@ -163,7 +169,8 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	id := auth.MustFromContext(r.Context())
 	identity := voice.Identity(id.UserID, id.SessionID)
 	name := voice.RoomName(room.WorkspaceID, room.ID)
-	if room.UserLimit > 0 && !acc.Bits.Has(perm.MoveMembers) {
+	limited := room.UserLimit > 0 && !acc.Bits.Has(perm.MoveMembers)
+	if limited { // early answer without LiveKit; repeated atomically with the write below
 		full, err := s.roomFull(r.Context(), room.WorkspaceID, room.ID, int(room.UserLimit), id.UserID)
 		if err != nil {
 			return err
@@ -186,12 +193,62 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	pending, joinedAt, err := s.recordPending(r.Context(), room, id.UserID, id.SessionID, limited)
+	if err != nil {
+		return err
+	}
+	if pending {
+		s.expectConnect(room.WorkspaceID, room.ID, id.UserID, id.SessionID, joinedAt)
+	}
 	httpx.Write(w, http.StatusOK, &v1.JoinVoiceResponse{
 		Url: s.cfg.PublicURL, Token: tok, Identity: identity, Media: media,
 		CanSpeak: s.canSpeak(r.Context(), room.WorkspaceID, id.UserID, acc.Bits), CanStream: slot,
 		CanVideo: acc.Bits.Has(perm.Video) && media.GetCameraLimit() > 0,
+		Pending:  pending,
 	})
 	return nil
+}
+
+// recordPending records the device in the room as pending under the workspace voice lock
+// (with the user_limit check when limited) and publishes the new state. A device already
+// recorded in the room is left as it is: pending reports whether it still waits for its
+// LiveKit connection, joinedAt identifies that wait (expectConnect). A device recorded in
+// another room (switching rooms) moves here and keeps its mute / deafen.
+func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.UUID, limited bool) (pending bool, joinedAt int64, err error) {
+	var (
+		full bool
+		c    voice.Change
+	)
+	err = s.voice.WithLock(ctx, room.WorkspaceID, func() error {
+		if limited {
+			var err error
+			if full, err = s.roomFull(ctx, room.WorkspaceID, room.ID, int(room.UserLimit), uid); err != nil || full {
+				return err
+			}
+		}
+		var err error
+		c, err = s.voice.UpdateLocked(ctx, room.WorkspaceID, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
+			if cur != nil && cur.RoomID == room.ID {
+				pending, joinedAt = cur.Pending, cur.JoinedAt
+				return cur // repeated /join: idempotent
+			}
+			n := voice.SessionState{RoomID: room.ID, Pending: true, JoinedAt: time.Now().UnixMilli()}
+			if cur != nil {
+				n.Muted, n.Deafened = cur.Muted, cur.Deafened
+			}
+			pending, joinedAt = true, n.JoinedAt
+			return &n
+		})
+		return err
+	})
+	if err != nil {
+		return false, 0, err
+	}
+	if full {
+		return false, 0, errRoomFull
+	}
+	s.publishVoice(ctx, room.WorkspaceID, c)
+	return pending, joinedAt, nil
 }
 
 func (s *Service) requestStream(w http.ResponseWriter, r *http.Request) error {

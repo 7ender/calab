@@ -742,6 +742,19 @@ test('voice-room-speaking', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'voice-room-speaking');
 });
 
+// Optimistic join (docs/05, docs/08): Григорий is in the room list at once but still connecting
+// (VoiceState.pending) for more than 3 s — the «Подключается…» ring around his avatar (static
+// under test-stable) in the sidebar row and the members column.
+test('voice-room-pending', async ({ open, win, mock, shot }) => {
+  await open();
+  await inVoice(win, mock);
+  mock.setVoiceState({ userId: IDS.users.grigory, roomId: IDS.rooms.meeting, pending: true });
+  const row = win.locator('aside').first().getByRole('listitem', { name: /Григорий/ });
+  await expect(row).toHaveAttribute('data-pending', 'true');
+  await expect(row.getByTestId('connect-ring')).toBeVisible({ timeout: 6000 }); // after 3 s
+  await checkpoint(shot, 'voice-room-pending');
+});
+
 test('toast-device', async ({ open, win, mock, shot }) => {
   await open();
   await inVoice(win, mock);

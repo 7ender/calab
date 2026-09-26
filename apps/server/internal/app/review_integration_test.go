@@ -119,24 +119,46 @@ func TestJoinRevalidation(t *testing.T) {
 		t.Fatal("kicked member was admitted")
 	}
 
-	// user_limit=1 with two concurrent joins: exactly one gets in.
-	one := uint32(1)
+	// c3 gets a token for the room while it has no limit, then goes to another room: its
+	// token outlives its (pending) place here.
 	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{}, nil)
+	c3 := register(t, invite(t, o, wid))
+	var j3 v1.JoinVoiceResponse
+	c3.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &j3)
+	var other v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_VOICE, Name: "other"}, &other)
+	c3.must(200, "POST", "/api/rooms/"+other.GetRoom().GetId()+"/join", nil, nil)
+
+	// user_limit=1 with two concurrent /joins: exactly one gets the place (the optimistic
+	// pending state is written under the voice lock with the limit check).
+	one := uint32(1)
 	o.must(200, "PATCH", "/api/rooms/"+rid, &v1.UpdateRoomRequest{UserLimit: &one}, nil)
 	c1 := register(t, invite(t, o, wid))
 	c2 := register(t, invite(t, o, wid))
 	var j1, j2 v1.JoinVoiceResponse
-	c1.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &j1)
-	c2.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &j2)
+	var st1, st2 int
 	var wg sync.WaitGroup
-	for _, id := range []string{j1.GetIdentity(), j2.GetIdentity()} {
-		wg.Add(1)
-		go func() { defer wg.Done(); webhook(t, whEvent("participant_joined", lkName, id, nil), "secret") }()
-	}
+	wg.Add(2)
+	go func() { defer wg.Done(); st1 = c1.do("POST", "/api/rooms/"+rid+"/join", nil, &j1) }()
+	go func() { defer wg.Done(); st2 = c2.do("POST", "/api/rooms/"+rid+"/join", nil, &j2) }()
 	wg.Wait()
-	in1, in2 := inVoice(t, o, c1.id, rid), inVoice(t, o, c2.id, rid)
-	if in1 == in2 {
-		t.Fatalf("user_limit=1 with concurrent joins: c1 in=%v c2 in=%v (want exactly one)", in1, in2)
+	if (st1 == 200) == (st2 == 200) || st1+st2 != 200+409 {
+		t.Fatalf("user_limit=1 with concurrent /joins: %d, %d (want exactly one 200, the other 409)", st1, st2)
+	}
+	winner, id := c1, j1.GetIdentity()
+	if st2 == 200 {
+		winner, id = c2, j2.GetIdentity()
+	}
+	webhook(t, whEvent("participant_joined", lkName, id, nil), "secret")
+	if !inVoice(t, o, winner.id, rid) {
+		t.Fatal("the member who got the place was not admitted")
+	}
+	// The stale token is re-checked at participant_joined: the room is full → removed; c3
+	// stays where it is now.
+	webhook(t, whEvent("participant_joined", lkName, j3.GetIdentity(), nil), "secret")
+	time.Sleep(50 * time.Millisecond)
+	if !lkRec.wasRemoved(j3.GetIdentity()) || inVoice(t, o, c3.id, rid) || !inVoice(t, o, c3.id, other.GetRoom().GetId()) {
+		t.Fatal("a join over user_limit was admitted (or took the device out of its current room)")
 	}
 }
 
@@ -159,14 +181,13 @@ func TestReconcileAndWebhookRetry(t *testing.T) {
 	o, bob, ws, room := setupTeam(t)
 	wid, rid := ws.GetId(), room.GetId()
 	lkName := "ws_" + wid + "_room_" + rid
-	var bj v1.JoinVoiceResponse
-	bob.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &bj)
-
-	// Late track event without participant: no ghost state.
-	webhook(t, whEvent("track_published", lkName, bj.GetIdentity(), nil), "secret")
+	// Late track event without participant (no /join either): no ghost state.
+	webhook(t, whEvent("track_published", lkName, bob.id+":"+bob.session, nil), "secret")
 	if inVoice(t, o, bob.id, rid) {
 		t.Fatal("late track event created voice state")
 	}
+	var bj v1.JoinVoiceResponse
+	bob.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &bj)
 
 	// Webhook failure (voice lock held beyond the 3 s wait) → retry of the same event works.
 	ev := whEvent("participant_joined", lkName, bj.GetIdentity(), nil)

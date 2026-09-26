@@ -173,7 +173,8 @@ func (s *Service) setFlag(ctx context.Context, wid, rid, uid, sid uuid.UUID, fn 
 	})
 }
 
-// participantJoined admits a device that connected to LiveKit. A join token lives 10 min,
+// participantJoined admits a device that connected to LiveKit (clearing the pending state
+// its /join recorded, docs/05). A join token lives 10 min,
 // so everything it was issued for is re-checked now (security review H2): the session is
 // not revoked, the user still has VIEW_ROOM+CONNECT, and the room's user_limit is not
 // exceeded. The limit check and the state write happen under the workspace voice lock, so
@@ -183,7 +184,13 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 	reject := func(reason string) error {
 		slog.InfoContext(ctx, "voice join rejected", "identity", identity, "reason", reason)
 		s.removeIdentities(ctx, lkRoom, []string{identity})
-		return nil
+		// The device's state in this room (pending since its /join) goes with it.
+		return s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
+			if cur == nil || cur.RoomID != rid {
+				return cur
+			}
+			return nil
+		})
 	}
 	if s.Revoked != nil {
 		if revoked, err := s.Revoked(ctx, sid); err != nil {
@@ -222,8 +229,8 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 		c, err = s.voice.UpdateLocked(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
 			n := voice.SessionState{RoomID: rid, Muted: muted}
 			if cur != nil && cur.RoomID == rid {
-				n = *cur
-				n.Muted = muted
+				n = *cur // e.g. pending since /join: keeps its joined_at
+				n.Muted, n.Pending = muted, false
 			}
 			return &n
 		})

@@ -26,6 +26,15 @@ describe('SpeakerIdentity (voice participant row)', () => {
     expect(html).toContain('(+2 UTC)');
   });
 
+  it('pending > 3 s: the connecting ring with «Подключается…» replaces the speaking ring', () => {
+    const html = renderToStaticMarkup(createElement(SpeakerIdentity, { userId: 'u-g', name: 'Григорий', size: 32, talking: true, pending: true }));
+    expect(html).toContain('data-testid="connect-ring"');
+    expect(html).toContain('title="Подключается…"');
+    expect(html).not.toContain('data-speaking');
+    expect(html).toMatch(/data-testid="speaker-name" class="[^"]*\btext-muted\b/);
+    expect(render(true)).not.toContain('connect-ring');
+  });
+
   it('name class: primary while talking, muted (hover-bright) otherwise', () => {
     expect(speakerNameClass(true)).toBe('text-fg');
     expect(speakerNameClass(false)).toContain('text-muted');

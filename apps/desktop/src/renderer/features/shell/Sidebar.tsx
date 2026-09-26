@@ -53,6 +53,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
 import { formatDuration, pad2, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
@@ -86,6 +87,8 @@ interface DropRoom {
  */
 export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
+  // Server voice states + me while connecting (optimistic join, docs/05).
+  const voiceStates = useVoiceStates(workspaceId);
   const roomsById = useRooms((s) => s.byId);
   const categoriesById = useRooms((s) => s.categories);
   const me = useSession((s) => s.me?.user?.id ?? '');
@@ -144,7 +147,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
             >
               {g.rooms.map((r) =>
                 isVoice(r) ? (
-                  <VoiceRoomRow key={r.id} room={r} workspaceId={workspaceId} me={me} role={entry.role} admin={admin} voiceStates={entry.voice} />
+                  <VoiceRoomRow key={r.id} room={r} workspaceId={workspaceId} me={me} role={entry.role} admin={admin} voiceStates={voiceStates} />
                 ) : (
                   <TextRoomRow key={r.id} room={r} workspaceId={workspaceId} me={me} role={entry.role} admin={admin} />
                 ),
@@ -809,7 +812,9 @@ function VoiceMember({
   const tz = useTimeZoneLabel(state.userId);
   const [profileOpen, setProfileOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const talking = speaking && !state.muted;
+  // Pending (optimistic join, docs/05) for more than 3 s: the «connecting» ring.
+  const connectingRing = useConnectingRing(workspaceId, state.userId, state.pending);
+  const talking = speaking && !state.muted && !connectingRing;
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `member:${room.id}:${state.userId}`,
     data: { userId: state.userId, fromRoomId: room.id, name } satisfies DragMember,
@@ -836,10 +841,11 @@ function VoiceMember({
         canMove ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}
-      title={name}
+      title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
       data-speaking={talking || undefined}
+      data-pending={state.pending || undefined}
     >
-      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={32} talking={talking} suffix={tz} />
+      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={32} talking={talking} pending={connectingRing} suffix={tz} />
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}
