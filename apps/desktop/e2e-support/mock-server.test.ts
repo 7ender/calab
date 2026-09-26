@@ -292,6 +292,66 @@ describe('mentions and room notifications (docs/05)', () => {
   });
 });
 
+describe('moving a participant (ADR-0019)', () => {
+  it('app-level move: VOICE_MOVED with a target-room token for the device, VOICE_STATE_UPDATE for all', async () => {
+    const res = await fetch(`${server.url}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'grigory@calaba.test', password: 'password123', deviceName: 'vitest' }),
+    });
+    const { tokens } = (await res.json()) as { tokens: { accessToken: string; sessionId: string } };
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token: tokens.accessToken } } });
+    await gw.next((f) => dispatchOf(f)?.event.case === 'ready');
+
+    const joined = await fetch(`${server.url}/api/rooms/${IDS.rooms.call}/join`, { method: 'POST', headers: { Authorization: `Bearer ${tokens.accessToken}` } });
+    expect(joined.status).toBe(200);
+    const move = (userId: string, from: string, to: string, token: string): Promise<Response> =>
+      fetch(`${server.url}/api/rooms/${from}/voice/${userId}/move`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetRoomId: to }),
+      });
+    // A member without MOVE_MEMBERS cannot move anyone.
+    expect((await move(IDS.users.grigory, IDS.rooms.call, IDS.rooms.meeting, tokens.accessToken)).status).toBe(403);
+    const owner = await login();
+    expect((await move(IDS.users.grigory, IDS.rooms.call, IDS.rooms.meeting, owner)).status).toBe(204);
+
+    const moved = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'voiceMoved'))?.event;
+    if (moved?.case !== 'voiceMoved') throw new Error('expected VOICE_MOVED');
+    const identity = `${IDS.users.grigory}:${tokens.sessionId}`;
+    expect(moved.value).toMatchObject({
+      workspaceId: IDS.workspaces.main,
+      fromRoomId: IDS.rooms.call,
+      toRoomId: IDS.rooms.meeting,
+      byUserId: IDS.users.anna,
+      url: 'ws://127.0.0.1:7880',
+      sessionId: tokens.sessionId,
+      identity,
+    });
+    // A LiveKit token for the target room with the same identity as /join.
+    const claims = JSON.parse(Buffer.from(moved.value.token.split('.')[1] ?? '', 'base64url').toString()) as { sub: string; video: { room: string; roomJoin: boolean } };
+    expect(claims.sub).toBe(identity);
+    expect(claims.video).toMatchObject({ room: `mock_${IDS.rooms.meeting}`, roomJoin: true });
+
+    const upd = dispatchOf(
+      await gw.next((f) => {
+        const e = dispatchOf(f)?.event;
+        return e?.case === 'voiceStateUpdate' && e.value.state?.userId === IDS.users.grigory && e.value.state.roomId === IDS.rooms.meeting;
+      }),
+    )?.event;
+    expect(upd?.case === 'voiceStateUpdate' && upd.value.state?.muted).toBe(false);
+    expect(server.state.voiceStates.get(IDS.users.grigory)?.roomId).toBe(IDS.rooms.meeting);
+
+    // A fixture voice state has no device: the token-less (SFU move) event.
+    expect((await move(IDS.users.boris, IDS.rooms.meeting, IDS.rooms.call, owner)).status).toBe(204);
+    expect(server.state.voiceStates.get(IDS.users.boris)?.roomId).toBe(IDS.rooms.call);
+    gw.ws.close(1000);
+    server.reset('data');
+  });
+});
+
 describe('room links and people (ADR-0016)', () => {
   it('previews a link publicly, signs a guest in (web cookie) and lets an admin promote them', async () => {
     const preview = await fetch(`${server.url}/api/room-invites/call-guest-link`);

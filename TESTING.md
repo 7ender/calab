@@ -1339,6 +1339,23 @@ cd apps/desktop && npx vitest run src/renderer/services/voice.test.ts -t "VOICE_
 
 Если что-то не так — у B в логах рендерера строка `voice: moved by a moderator, reconnecting to the target room`, у A — ответ `POST …/move`.
 
+**Автотест шага 2** (`apps/desktop/e2e-web/move.web.spec.ts`, веб-клиент, два браузерных контекста в одном тесте). A заходит, при необходимости создаёт пространство «E2E web» (или `CALABA_WEB_WORKSPACE`) и голосовые комнаты «Созвон» / «Созвон 2»; если B ещё не участник — A создаёт (или переиспользует) бессрочное многоразовое приглашение, B вступает по нему. B входит в «Созвон», включает «Статистика»; A: правый клик по B в списке комнаты → «Переместить в…» → «Созвон 2». Проверяется: `POST …/move` → 204; у B в течение 10 с — тост «… переместил(а) вас в «Созвон 2»», панель голоса «Голос подключён / Созвон 2», в статистике `mic N kbps` > 0 (микрофон снова опубликован), B подключился по токену из `VOICE_MOVED` (без `POST /join`); у A — B в списке под «Созвон 2» и не под «Созвон». В конце B отключается. Firefox пропускается, если не задан `CALABA_WEB_FF_VOICE=1`.
+
+Локально против mock (нужен dev-LiveKit на `ws://127.0.0.1:7880` из `pnpm infra:dev` и собранный `dist-web`; без переменных — фикстуры owner@ / vera@calaba.test):
+```sh
+cd apps/desktop
+npx tsx e2e-support/mock-server.ts --port 4173 --scenario data --static dist-web --quiet &
+CALABA_WEB_URL=http://127.0.0.1:4173 npx playwright test --config playwright.web.config.ts move --project chromium
+kill %1
+```
+Против стенда (A — администратор своего пространства «E2E web», B — второй аккаунт; идемпотентно, повторные прогоны ничего не создают):
+```sh
+cd apps/desktop && CALABA_FORCE_IP=141.105.69.177 CALABA_WEB_URL=https://app.calab.ru \
+  CALABA_WEB_LOGIN=… CALABA_WEB_PASSWORD=… CALABA_WEB_LOGIN2=… CALABA_WEB_PASSWORD2=… \
+  pnpm exec playwright test --config ../../infra/docker/tools/playwright.stand.config.ts move --project chromium
+```
+Ожидается: `1 passed`. Шаги 3–9 — вручную.
+
 ## Server: оборванные клиентом запросы (499 вместо 500)
 
 ```sh

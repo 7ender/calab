@@ -375,6 +375,8 @@ class MockImpl {
   private readonly http = createServer((req, res) => void this.handle(req, res));
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
   private readonly lk: { url: string; key: string; secret: string };
+  /** userId → auth session (device) that joined voice through /join; fixture voice states have none. */
+  private readonly voiceSessions = new Map<string, string>();
   private readonly staticDir: string | null;
   private readonly log: (line: string) => void;
 
@@ -424,7 +426,23 @@ class MockImpl {
 
   reset(scenario: Scenario): void {
     this.state = buildState(scenario);
+    this.voiceSessions.clear();
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
+  }
+
+  /**
+   * A LiveKit join token for a voice room (identity `<user_id>:<session_id>`). LiveKit runs with
+   * room.auto_create=false (as in production): like the real API, the room is created first
+   * (idempotent).
+   */
+  private async voiceToken(room: Room, identity: string, name: string): Promise<string> {
+    const lkRoom = `mock_${room.id}`;
+    await new RoomServiceClient(this.lk.url.replace(/^ws/, 'http'), this.lk.key, this.lk.secret)
+      .createRoom({ name: lkRoom, emptyTimeout: 60 })
+      .catch((e: unknown) => this.log(`livekit createRoom ${lkRoom}: ${String(e)}`));
+    const at = new AccessToken(this.lk.key, this.lk.secret, { identity, name, ttl: '10m' });
+    at.addGrant({ roomJoin: true, room: lkRoom, canPublish: true, canSubscribe: true, canPublishData: true });
+    return at.toJwt();
   }
 
   // ------------------------------------------------ lookups
@@ -843,7 +861,10 @@ class MockImpl {
       this.toWorkspace(prev.workspaceId, { event: { case: 'voiceStateUpdate', value: { state: left } } });
     }
     if (room) this.state.voiceStates.set(userId, v);
-    else this.state.voiceStates.delete(userId);
+    else {
+      this.state.voiceStates.delete(userId);
+      this.voiceSessions.delete(userId);
+    }
     // Room.voice_started_at: set when a room gets its first participant, cleared when it
     // empties; the change goes out as ROOM_UPDATE (call timers).
     const timers: Room[] = [];
@@ -1849,22 +1870,9 @@ class MockImpl {
         if (inRoom >= room.userLimit) throw new HttpError(409, ErrorCode.ROOM_FULL, 'the room is full');
       }
       const identity = `${me}:${sessionId}`;
-      // LiveKit runs with room.auto_create=false (as in production): like the real API,
-      // create the room before handing out a token (idempotent).
-      const lkRoom = `mock_${room.id}`;
-      await new RoomServiceClient(this.lk.url.replace(/^ws/, 'http'), this.lk.key, this.lk.secret)
-        .createRoom({ name: lkRoom, emptyTimeout: 60 })
-        .catch((e: unknown) => this.log(`livekit createRoom ${lkRoom}: ${String(e)}`));
-      const at = new AccessToken(this.lk.key, this.lk.secret, { identity, name: user.user.displayName, ttl: '10m' });
-      at.addGrant({
-        roomJoin: true,
-        room: lkRoom,
-        canPublish: true,
-        canSubscribe: true,
-        canPublishData: true,
-      });
-      const token = await at.toJwt();
+      const token = await this.voiceToken(room, identity, user.user.displayName);
       this.setVoice(me, room.id, { muted: false, deafened: false, streaming: false });
+      this.voiceSessions.set(me, sessionId);
       sendMsg(c.res, 200, JoinVoiceResponseSchema, {
         url: this.lk.url,
         token,
@@ -1904,7 +1912,9 @@ class MockImpl {
       return { room, target };
     };
     // MOVE_MEMBERS in both rooms; the target's user_limit applies unless the actor is an admin.
-    this.route('POST', '/api/rooms/:id/voice/:userId/move', (c) => {
+    // App-level move (ADR-0019, open-source LiveKit): the moved device gets a join token for the
+    // target room in VOICE_MOVED and reconnects itself; everyone sees VOICE_STATE_UPDATE.
+    this.route('POST', '/api/rooms/:id/voice/:userId/move', async (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
       this.requireRoomPerm(room, me, MOVE_MEMBERS);
@@ -1921,9 +1931,19 @@ class MockImpl {
         const inDst = [...s().voiceStates.values()].filter((v) => v.roomId === dst.id).length;
         if (inDst >= dst.userLimit) throw new HttpError(409, ErrorCode.ROOM_FULL, 'the room is full');
       }
+      const base = { workspaceId: room.workspaceId, fromRoomId: room.id, toRoomId: dst.id, byUserId: me };
+      // The device that joined through /join. Fixture voice states have none (no client is
+      // connected): they get the token-less event, as after an SFU move.
+      const sessionId = this.voiceSessions.get(target);
+      const identity = sessionId ? `${target}:${sessionId}` : '';
+      const token = sessionId ? await this.voiceToken(dst, identity, s().users.get(target)?.user.displayName ?? '') : '';
       const prev = s().voiceStates.get(target);
-      this.setVoice(target, dst.id, { muted: prev?.muted ?? false, deafened: prev?.deafened ?? false, streaming: prev?.streaming ?? false });
-      this.toUser(target, { event: { case: 'voiceMoved', value: { workspaceId: room.workspaceId, fromRoomId: room.id, toRoomId: dst.id, byUserId: me } } });
+      if (prev?.roomId !== room.id) throw notFound('member in this voice room'); // left while minting
+      // The stream ends with the old connection (the client requests it again).
+      this.setVoice(target, dst.id, { muted: prev.muted, deafened: prev.deafened, streaming: sessionId ? false : prev.streaming });
+      // To every device of the user, as the server does; only the one with this session_id acts on it.
+      const value = sessionId ? { ...base, url: this.lk.url, token, sessionId, identity } : base;
+      this.toUser(target, { event: { case: 'voiceMoved', value } });
       noContent(c.res);
     });
 
