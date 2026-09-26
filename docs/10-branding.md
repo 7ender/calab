@@ -10,7 +10,7 @@
 | `app.calab.ru` | приложение (веб-клиент, API, gateway, `/download/`) | Caddy → api :3000 + `/srv/web` |
 | `rtc.calab.ru` | LiveKit signal | Caddy → :7880 |
 | `turn.calab.ru` | TURN/TLS | Caddy layer4 → :5349 |
-| `colaba.gptunnel.ai`, `colaba.gptunnel.ru` | алиасы приложения на переходный период (не лендинг) | как `app.` |
+| `meet.gptunnel.ru` | алиас приложения (бренд GPTunneL) | как `app.` |
 
 Конфиг Caddy: `DOMAIN=calab.ru`, `APP_HOST=app.calab.ru` (по умолчанию = DOMAIN), `LANDING_HOST=calab.ru` (пусто = без лендинга), `DOMAIN_ALT`/`DOMAIN_LEGACY` — дополнительные app-хосты. Сервер: `PUBLIC_APP_URLS` — список разрешённых origin через запятую (`PUBLIC_APP_URL`/`_ALT` остаются для совместимости). LiveKit `turn.domain = turn.${DOMAIN}`. DNS — Cloudflare, только DNS-only.
 
