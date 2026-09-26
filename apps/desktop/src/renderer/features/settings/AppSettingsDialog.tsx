@@ -3,13 +3,13 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppWindow, Bell, CircleUser, Info, Keyboard, LogOut, Mic, MonitorSmartphone, Palette, Trash2, Upload, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { PermissionStatus } from '../../../shared/ipc';
+import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { Logo } from '../../components/Logo';
 import { SettingsAction, SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { Badge, Button, Card, IconButton, Input, Row, Segmented, Select, Slider, Spinner, Toggle, cx } from '../../components/ui';
-import { t, type MessageKey } from '../../i18n';
+import { availableLocales, LOCALE_NAMES, t, type LocalePref, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api, uploadAvatar } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
@@ -86,7 +86,6 @@ export function CommitInput({
 }
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
-  const desktop = platform.kind === 'electron';
   const sections: SettingsSection[] = [
     { id: 'profile', label: t('settings.profile'), icon: CircleUser, content: <ProfileTab /> },
     { id: 'voice', label: t('settings.voice'), icon: Mic, content: <VoiceTab /> },
@@ -95,7 +94,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
-    ...(desktop ? [{ id: 'app', label: t('settings.app'), icon: AppWindow, content: <AppTab /> }] : []),
+    // The web has no startup / updates, but the language lives here too (ADR-0022).
+    { id: 'app', label: t('settings.app'), icon: AppWindow, content: <AppTab /> },
     { id: 'about', label: t('settings.about'), icon: Info, content: <AboutTab /> },
   ];
   return (
@@ -782,6 +782,43 @@ function AppTab(): ReactNode {
     const s = await platform.app.setSettings(patch);
     useSession.getState().set({ settings: s });
   };
+  const desktop = platform.kind === 'electron';
+  return (
+    <>
+      <LanguageCard />
+      {desktop ? <DesktopAppCards info={info} settings={settings} save={save} /> : null}
+    </>
+  );
+}
+
+function LanguageCard(): ReactNode {
+  const locale = usePrefs((s) => s.locale);
+  const set = usePrefs((s) => s.setPrefs);
+  return (
+    <Card title={t('lang.label')}>
+      <Row label={t('lang.label')} hint={t('lang.hint')}>
+        <Select aria-label={t('lang.label')} className="w-60" value={locale} onChange={(e) => set({ locale: e.target.value as LocalePref })}>
+          <option value="auto">{t('lang.auto')}</option>
+          {availableLocales().map((l) => (
+            <option key={l} value={l} lang={l}>
+              {LOCALE_NAMES[l]}
+            </option>
+          ))}
+        </Select>
+      </Row>
+    </Card>
+  );
+}
+
+function DesktopAppCards({
+  info,
+  settings,
+  save,
+}: {
+  info: AppInfo | null;
+  settings: AppSettings | null;
+  save: (patch: Partial<AppSettings>) => Promise<void>;
+}): ReactNode {
   return (
     <>
       <Card title={t('card.startup')}>

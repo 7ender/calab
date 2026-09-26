@@ -1,9 +1,9 @@
-import { AudioWaveform, Bell, Mic, MonitorUp, TriangleAlert } from 'lucide-react';
+import { AudioWaveform, Bell, Languages, Mic, MonitorUp, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { PermissionStatus, ScreenAccess } from '../../../shared/ipc';
 import { Logo } from '../../components/Logo';
 import { Button, Segmented, Select, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { availableLocales, getLocale, LOCALE_NAMES, t, useLocale, type Locale } from '../../i18n';
 import { platform } from '../../platform';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -24,7 +24,7 @@ import { screenStepState, screenStepView } from '../../lib/screenPermission';
  * bottom (buttons too), and the body is centred between them — every step has one, so no step
  * shows an empty card. Everything is skippable; each permission is asked at its step.
  */
-type Step = 'mic' | 'mode' | 'screen' | 'notifications' | 'done';
+type Step = 'lang' | 'mic' | 'mode' | 'screen' | 'notifications' | 'done';
 
 function useIsMacDesktop(): boolean {
   const os = useSession((s) => s.appInfo?.platform);
@@ -38,7 +38,10 @@ interface Nav {
 
 export function Onboarding(): ReactNode {
   const mac = useIsMacDesktop();
-  const steps: Step[] = ['mic', 'mode', ...(mac ? (['screen'] as Step[]) : []), 'notifications', 'done'];
+  // Language first (ADR-0022) when nothing was chosen explicitly and the OS is not Russian. Fixed
+  // at mount: picking «Русский» on the step must not make the step disappear under the cursor.
+  const [withLang] = useState(() => usePrefs.getState().locale === 'auto' && getLocale() !== 'ru' && availableLocales().length > 1);
+  const steps: Step[] = [...(withLang ? (['lang'] as Step[]) : []), 'mic', 'mode', ...(mac ? (['screen'] as Step[]) : []), 'notifications', 'done'];
   const [i, setI] = useState(0);
   // What the user actually set up, so «Всё готово» does not claim a mic check that was skipped.
   const [micChecked, setMicChecked] = useState(false);
@@ -70,6 +73,7 @@ export function Onboarding(): ReactNode {
           ))}
         </ol>
         <div className="flex flex-col [@media(min-height:600px)]:min-h-[488px]" data-onb-card>
+          {step === 'lang' ? <LangStep nav={nav} /> : null}
           {step === 'mic' ? <MicStep nav={nav} onResult={setMicChecked} /> : null}
           {step === 'mode' ? <ModeStep nav={nav} /> : null}
           {step === 'screen' ? <ScreenStep nav={nav} /> : null}
@@ -235,6 +239,33 @@ function MicStep({ nav, onResult }: { nav: Nav; onResult: (checked: boolean) => 
           )}
         </WarnNote>
       ) : null}
+    </StepFrame>
+  );
+}
+
+function LangStep({ nav }: { nav: Nav }): ReactNode {
+  const locale = useLocale();
+  const set = usePrefs((s) => s.setPrefs);
+  return (
+    <StepFrame
+      illustration={<Illustration icon={Languages} />}
+      title={t('onb.lang.title')}
+      text={t('onb.lang.text')}
+      back={nav.back}
+      actions={
+        <Button size="lg" onClick={nav.next}>
+          {t('onb.next')}
+        </Button>
+      }
+    >
+      <div className="flex justify-center">
+        <Segmented<Locale>
+          label={t('lang.label')}
+          value={locale}
+          onChange={(l) => set({ locale: l })}
+          options={availableLocales().map((l) => ({ value: l, label: LOCALE_NAMES[l] }))}
+        />
+      </div>
     </StepFrame>
   );
 }

@@ -25,6 +25,7 @@ import { takePendingDeepLink } from './deeplink';
 import { downloadFile } from './downloads';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
+import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayState } from './tray';
 import { checkForUpdates, installUpdate, updateSettingsChanged, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
@@ -163,7 +164,14 @@ export function registerIpc(): void {
     systemAudioLoopback: systemAudioSupport(),
     micAccess: mediaAccess('microphone'),
     screenAccess: mediaAccess('screen'),
+    // app.getLocale() follows --lang (tests pin it to ru); the system list covers languages
+    // Chromium has no UI pack for (ADR-0022: kk, be → ru).
+    locales: [app.getLocale(), ...app.getPreferredSystemLanguages()],
   }));
+  handle(IPC.appSetStrings, (_e, a) => {
+    const s = parseMainStrings(a);
+    if (s) setMainStrings(s);
+  });
   handle(IPC.appGetSettings, () => getSettings());
   handle(IPC.appSetSettings, (_e, a) => {
     const patch = parseSettings(a);

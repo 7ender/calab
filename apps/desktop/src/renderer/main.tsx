@@ -4,6 +4,7 @@ import { App } from './app/App';
 import { log } from './lib/log';
 import { installSheetGuard, installVisualViewport, registerServiceWorker } from './lib/mobile';
 import { isWeb } from './platform';
+import { startLocale } from './services/locale';
 import { bootstrap } from './services/session';
 import './app/styles.css';
 
@@ -23,8 +24,12 @@ if (isWeb) {
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing');
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// The dictionary first (ADR-0022): a non-Russian UI must not flash Russian. startLocale never
+// rejects (a failed chunk falls back to en / ru).
+void startLocale().finally(() => {
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+});

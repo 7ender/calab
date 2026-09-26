@@ -9,7 +9,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   // members column
   'people.inVoice': 'In voice',
   'people.inVoiceRoom': 'In voice: {room}',
-  'people.streaming': 'Sharing screen',
+  'people.streaming': 'Sharing',
   'people.guest': 'Guest',
   'people.owner': 'Owner',
   'people.you': 'you',

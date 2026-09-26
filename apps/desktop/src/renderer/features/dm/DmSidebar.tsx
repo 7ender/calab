@@ -3,7 +3,7 @@ import { MessageCirclePlus, Search, Plus } from 'lucide-react';
 import { memo, useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, Tip, cx } from '../../components/ui';
-import { plural, t } from '../../i18n';
+import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { openDm } from '../../services/dms';
@@ -75,6 +75,8 @@ export function DmSidebar(): ReactNode {
 
 
 const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
+  // Memo row: re-render on a language switch too (ADR-0022).
+  useLocale();
   const { roomId, peerId } = entry;
   const active = useUi((s) => s.activeWorkspaceId === HOME && s.lastRoom[HOME] === roomId);
   const name = useMemberName(null, peerId);

@@ -44,8 +44,8 @@ export const enChat: DictShape<typeof ruChat> = {
   // link previews (docs/09 #51)
   'chat.embedHide': 'Hide preview',
   'chat.embedShow': 'Show preview',
-  'chat.embedHideFailed': "Couldn't hide the preview",
-  'chat.embedShowFailed': "Couldn't show the preview",
+  'chat.embedHideFailed': 'Couldn’t hide the preview',
+  'chat.embedShowFailed': 'Couldn’t show the preview',
   // composer
   'chat.placeholderIn': 'Message {room}',
   'chat.attachImage': 'Image',
@@ -79,10 +79,10 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.notifyMute1h': '1 hour',
   'chat.notifyMute8h': '8 hours',
   'chat.notifyMute24h': '24 hours',
-  'chat.notifyMuteForever': 'Until I turn it back on',
+  'chat.notifyMuteForever': 'Until I turn it on',
   'chat.notifyMutedUntil': 'Muted until {time}',
   'chat.notifyUnmute': 'Unmute notifications',
-  'chat.notifyFailed': "Couldn't save notification settings",
+  'chat.notifyFailed': 'Couldn’t save notification settings',
   // mentions
   'chat.mentionUnknown': 'unknown',
   'chat.mentionEveryone': 'Notify everyone in the room',

@@ -40,6 +40,7 @@ const api: CalabaApi = {
     legal: () => ipcRenderer.invoke(IPC.appLegal),
     attention: () => void ipcRenderer.invoke(IPC.appAttention),
     setTheme: (theme) => void ipcRenderer.invoke(IPC.appSetTheme, theme),
+    setStrings: (s) => void ipcRenderer.invoke(IPC.appSetStrings, s),
   },
   tray: {
     setState: (s) => void ipcRenderer.invoke(IPC.trayState, s),

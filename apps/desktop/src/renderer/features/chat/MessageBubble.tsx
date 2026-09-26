@@ -5,7 +5,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProper
 import { Avatar } from '../../components/Avatar';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { t, useLocale } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
@@ -56,6 +56,8 @@ export interface RowProps {
 
 /** One feed row: optional date / «new» pills, avatar column (others), the bubble. */
 export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, roomId, perms, highlighted }: RowProps): ReactNode {
+  // Memo row: re-render on a language switch too (ADR-0022).
+  useLocale();
   const m = c.msg;
   const author = useWorkspaces((s) => s.users[m.authorId]);
   const name = memberName(workspaceId, m.authorId);

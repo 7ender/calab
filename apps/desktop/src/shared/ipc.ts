@@ -39,6 +39,8 @@ export const IPC = {
   appAttention: 'app:attention',
   /** Renderer theme → nativeTheme.themeSource (vibrancy follows the app theme). */
   appSetTheme: 'app:set-theme',
+  /** Renderer locale → the few strings main shows itself (tray, notifications, window titles; ADR-0022). */
+  appSetStrings: 'app:set-strings',
   /** macOS permission statuses + requesting microphone access (onboarding). */
   systemPermissions: 'system:permissions',
   systemRequestMic: 'system:request-mic',
@@ -156,7 +158,35 @@ export interface AppInfo {
   systemAudioLoopback: 'supported' | 'experimental' | 'unsupported';
   micAccess: string;
   screenAccess: string;
+  /** OS / app UI languages, most preferred first (`app.getLocale()`, then the system list; ADR-0022). */
+  locales: string[];
 }
+
+/** Strings main shows itself, translated by the renderer (ADR-0022). Main starts with the Russian ones. */
+export interface MainStrings {
+  trayOpen: string;
+  trayMute: string;
+  trayDeafen: string;
+  trayDisconnect: string;
+  trayQuit: string;
+  trayInVoice: string;
+  trayInVoiceMuted: string;
+  /** `{version}` placeholder. */
+  updateAvailable: string;
+  streamWindow: string;
+}
+
+export const MAIN_STRING_KEYS = [
+  'trayOpen',
+  'trayMute',
+  'trayDeafen',
+  'trayDisconnect',
+  'trayQuit',
+  'trayInVoice',
+  'trayInVoiceMuted',
+  'updateAvailable',
+  'streamWindow',
+] as const satisfies ReadonlyArray<keyof MainStrings>;
 
 export type PowerEvent = 'suspend' | 'resume' | 'lock-screen' | 'unlock-screen';
 

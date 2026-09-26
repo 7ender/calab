@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { ru } from './ru';
-import { LOCALES, type Dict, type Locale, type LocalePref, type MessageKey, type PluralForms, type PluralKey } from './types';
+import { LOCALE_NAMES, LOCALES, type Dict, type Locale, type LocalePref, type MessageKey, type PluralForms, type PluralKey } from './types';
 
-export { LOCALES, type Dict, type Locale, type LocalePref, type MessageKey, type PluralForms, type PluralKey };
+export { LOCALE_NAMES, LOCALES, type Dict, type Locale, type LocalePref, type MessageKey, type PluralForms, type PluralKey };
 
 /**
  * i18n core (ADR-0022, docs/08 «Язык»).
@@ -81,8 +81,13 @@ export const getLocale = (): Locale => state.locale;
  * Switches the UI language: loads the dictionary (and `en` for the fallback), then swaps the
  * state in one step — no half-translated frame. A locale without a dictionary becomes `en`.
  */
+let switching = 0;
+
 export async function setLocale(want: Locale): Promise<Locale> {
+  const seq = ++switching;
   const [primary, en] = await Promise.all([load(want), want === 'ru' ? Promise.resolve(null) : load('en')]);
+  // A later switch started while this one was loading: it wins.
+  if (seq !== switching) return state.locale;
   const locale: Locale = primary ? want : en ? 'en' : 'ru';
   const chain = [...new Set([loaded.get(locale), en, ru].filter((d): d is Dict => d !== null && d !== undefined))];
   if (locale !== state.locale || chain.length !== state.chain.length) {

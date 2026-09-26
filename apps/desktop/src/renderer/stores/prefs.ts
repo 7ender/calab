@@ -8,6 +8,7 @@ import {
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { PttBinding } from '../../shared/ipc';
+import type { LocalePref } from '../i18n/types';
 import type { SoundName } from '../lib/sounds';
 import type { Combo, HotkeyAction } from '../lib/shortcuts';
 
@@ -21,6 +22,8 @@ export type MicMode = 'voice' | 'ptt';
 
 export interface Prefs {
   theme: Theme;
+  /** UI language (ADR-0022): 'auto' follows the OS until the user picks one. */
+  locale: LocalePref;
   micDeviceId: string | null;
   outputDeviceId: string | null;
   cameraDeviceId: string | null;
@@ -72,6 +75,7 @@ export interface Prefs {
 
 const DEFAULTS: Prefs = {
   theme: 'dark',
+  locale: 'auto',
   micDeviceId: null,
   outputDeviceId: null,
   cameraDeviceId: null,
