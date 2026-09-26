@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
+import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -809,12 +810,9 @@ function VoiceMember({
         isDragging && 'opacity-40',
       )}
       title={name}
+      data-speaking={talking || undefined}
     >
-      <Avatar userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={32} speaking={talking} />
-      <span className={cx('min-w-0 flex-1 truncate', talking || isMe ? 'text-fg' : 'text-muted group-hover/member:text-fg')}>
-        {name}
-        {tz ? <span className="text-muted"> {tz}</span> : null}
-      </span>
+      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={32} talking={talking} suffix={tz} />
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}

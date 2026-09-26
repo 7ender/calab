@@ -93,7 +93,11 @@ export interface VoiceStore {
   micErrorAction: MediaErrorAction | null;
   /** A moderator muted my mic (not me): shown as a red crossed mic, distinct from self-mute. */
   serverMuted: boolean;
-  /** userId → speaking (LiveKit active speakers of our room). */
+  /**
+   * userId → speaking, for the rings and bright names (lib/speaking.ts): remote LiveKit active
+   * speakers of our room (any of a user's devices) + me from the local VAD / PTT; on at once,
+   * off 300 ms after the speech, batched. Subscribe per user (`s.speaking[id]`), never the map.
+   */
   speaking: Record<string, boolean>;
   quality: LinkQuality;
   rttMs: number | null;
