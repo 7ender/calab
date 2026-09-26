@@ -1,6 +1,6 @@
-# Calaba
+# Calab
 
-Desktop-приложение для общения сотрудников: голосовые комнаты (voice-first), текстовые чаты, стрим экрана. Self-hosted. macOS / Windows / Linux.
+Calab (ранее рабочее имя Calaba; внутренние идентификаторы `calaba` сохранены) — desktop-приложение для общения сотрудников: голосовые комнаты (voice-first), текстовые чаты, стрим экрана. Self-hosted. macOS / Windows / Linux.
 
 Ощущение: «Discord, но проще и свой». Workspace → комнаты (voice/text) → участники.
 
@@ -26,6 +26,7 @@ Desktop-приложение для общения сотрудников: го�
 - [docs/06-deployment.md](docs/06-deployment.md) — docker compose сейчас, k8s потом, тестовый стенд
 - [docs/07-roadmap.md](docs/07-roadmap.md) — этапы
 - [docs/08-design.md](docs/08-design.md) — дизайн-система, UX-правила, онбординг, визуальные тесты
+- [docs/10-branding.md](docs/10-branding.md) — имя Calab, домены calab.ru / app.calab.ru, лендинг
 - [docs/09-ui-backlog.md](docs/09-ui-backlog.md) — UI/UX бэклог по сравнению с Discord (P0–P2)
 - [docs/adr/](docs/adr/) — записи архитектурных решений (почему так)
 

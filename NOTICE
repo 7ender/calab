@@ -1,4 +1,4 @@
-Calaba
+Calab
 Copyright 2026 GPTunneL (https://gptunnel.ai)
 
 Licensed under the Business Source License 1.1 (see LICENSE).
@@ -7,7 +7,7 @@ attribution "Powered by GPTunneL" (https://gptunnel.ai) is displayed in the
 user interface and this NOTICE is retained. Commercial use requires a
 commercial license from GPTunneL — see COMMERCIAL-LICENSE.md.
 
-Calaba and GPTunneL are trademarks of GPTunneL. See TRADEMARKS.md.
+Calab and GPTunneL are trademarks of GPTunneL. See TRADEMARKS.md.
 
 Each version of this software becomes available under the Apache License 2.0
 four years after its first public release (Change Date).
@@ -15,6 +15,6 @@ four years after its first public release (Change Date).
 Third-party components are listed with their licences in THIRD-PARTY-NOTICES.txt
 (shipped with the app). The desktop app includes libuiohook (Copyright (C) 2006-2023
 Alexander Barker), licensed under the GNU Lesser General Public License v3.0 or later.
-libuiohook (LGPL-3.0) собран в нативный модуль uiohook-napi; исходный код Calaba и патч
+libuiohook (LGPL-3.0) собран в нативный модуль uiohook-napi; исходный код Calab и патч
 (patches/uiohook-napi@1.5.5.patch в репозитории) доступны, что позволяет
 пересборку и перелинковку (LGPL §4).

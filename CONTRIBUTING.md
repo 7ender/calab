@@ -1,6 +1,6 @@
-# Contributing to Calaba
+# Contributing to Calab
 
-Thanks for helping. Calaba is licensed under the Business Source License 1.1 with a commercial license offered by GPTunneL.
+Thanks for helping. Calab is licensed under the Business Source License 1.1 with a commercial license offered by GPTunneL.
 
 ## Contributor License Agreement (CLA)
 By submitting a contribution you (a) certify that you have the right to submit it and (b) grant GPTunneL a perpetual, worldwide, irrevocable, royalty-free license to use, modify, sublicense and relicense your contribution under any license, including commercial licenses and the Change License (Apache-2.0). You retain copyright in your contribution. Add `Signed-off-by: Name <email>` to your commits (`git commit -s`) to confirm.
