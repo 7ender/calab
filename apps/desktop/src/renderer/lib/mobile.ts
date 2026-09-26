@@ -24,6 +24,12 @@ export function isMobileNow(): boolean {
 const KEYBOARD_MIN_PX = 120;
 /** iOS animates the keyboard away and may report the final viewport late (or not at all): re-check then. */
 const KEYBOARD_SETTLE_MS = [120, 400];
+/**
+ * iOS home-screen web app: at most this much shorter than the screen is taken as WebKit's
+ * standalone viewport bug (the status bar and / or home-indicator inset subtracted), not a real
+ * window (an iPad Stage Manager window is narrower anyway).
+ */
+const STANDALONE_MAX_SHORTFALL_PX = 100;
 const NON_TEXT_INPUTS = new Set(['button', 'checkbox', 'radio', 'range', 'submit', 'reset', 'file', 'color', 'image']);
 
 /** A text field — the only thing that raises the on-screen keyboard — has the focus. */
@@ -32,6 +38,32 @@ function editableFocused(): boolean {
   if (!(a instanceof HTMLElement)) return false;
   if (a.isContentEditable || a instanceof HTMLTextAreaElement) return true;
   return a instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(a.type);
+}
+
+/**
+ * Opened from the home screen (an installed PWA / iOS «На экран Домой»): no browser toolbars, so
+ * nothing below the app but the home indicator (env(safe-area-inset-bottom)).
+ */
+export function isStandalone(): boolean {
+  return window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
+/**
+ * The full screen height (CSS px) of an iOS home-screen web app when WebKit reports a shorter
+ * viewport, else null. Standalone with `viewport-fit=cover` + the black-translucent status bar the
+ * page covers the whole screen, but WebKit may size the viewport (100dvh, innerHeight) short by
+ * the status bar / home-indicator inset, which leaves an empty band at the bottom of the screen.
+ * iOS only (`navigator.standalone`); only for a full-width window; screen.* are portrait on iOS.
+ */
+function standaloneFullHeight(): number | null {
+  if ((navigator as Navigator & { standalone?: boolean }).standalone !== true) return null;
+  const { width, height } = window.screen;
+  const portrait = window.innerWidth < window.innerHeight;
+  const w = portrait ? Math.min(width, height) : Math.max(width, height);
+  const h = portrait ? Math.max(width, height) : Math.min(width, height);
+  if (Math.abs(window.innerWidth - w) > 1) return null;
+  const short = h - window.innerHeight;
+  return short > 0 && short <= STANDALONE_MAX_SHORTFALL_PX ? h : null;
 }
 
 /**
@@ -46,7 +78,10 @@ function editableFocused(): boolean {
  *    strip hides and the bottom safe-area inset drops to 0 (the keyboard covers the home bar);
  *  - iOS scrolls the whole document to reveal a focused field even when nothing overflows, and
  *    leaves it scrolled after the keyboard closes (content shifted up, a gap under it): the
- *    document is always scrolled back to the top — the shell fits the screen, only the feed scrolls.
+ *    document is always scrolled back to the top — the shell fits the screen, only the feed scrolls;
+ *  - standalone (home screen, <html> gets `pwa-standalone`) there are no toolbars: the shell stays
+ *    `100dvh`, unless iOS reports a viewport shorter than the screen (standaloneFullHeight) — then
+ *    `--app-height` = the screen height, so no empty band is left under the composer / voice strip.
  * Chrome on Android resizes the layout viewport itself (`interactive-widget=resizes-content`), so
  * the keyboard branch never triggers there. Returns the uninstall function.
  */
@@ -55,6 +90,8 @@ export function installVisualViewport(): () => void {
   const root = document.documentElement;
   if (!vv) return () => undefined;
   let frame = 0;
+  let standalone = false;
+  const displayMode = window.matchMedia('(display-mode: standalone)');
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const apply = (): void => {
     frame = 0;
@@ -65,13 +102,21 @@ export function installVisualViewport(): () => void {
       root.style.setProperty('--app-height', `${Math.round(vv.height)}px`);
       root.style.setProperty('--kb-inset', `${Math.round(Math.max(0, window.innerHeight - vv.height - vv.offsetTop))}px`);
     } else {
-      root.style.removeProperty('--app-height');
+      const full = mobile && standalone ? standaloneFullHeight() : null;
+      if (full) root.style.setProperty('--app-height', `${full}px`);
+      else root.style.removeProperty('--app-height');
       root.style.removeProperty('--kb-inset');
     }
     if (mobile && (window.scrollY !== 0 || window.scrollX !== 0)) window.scrollTo(0, 0);
   };
   const schedule = (): void => {
     if (!frame) frame = requestAnimationFrame(apply);
+  };
+  /** Installed / opened from the home screen while running (display-mode changes). */
+  const onDisplayMode = (): void => {
+    standalone = isStandalone();
+    root.classList.toggle('pwa-standalone', standalone);
+    schedule();
   };
   /** A focus move raises / drops the keyboard: re-check now and once it has finished animating. */
   const settle = (): void => {
@@ -84,7 +129,10 @@ export function installVisualViewport(): () => void {
       timers.add(id);
     }
   };
+  standalone = isStandalone();
+  root.classList.toggle('pwa-standalone', standalone);
   apply();
+  displayMode.addEventListener('change', onDisplayMode);
   vv.addEventListener('resize', schedule);
   vv.addEventListener('scroll', schedule);
   window.addEventListener('scroll', schedule, { passive: true });
@@ -100,9 +148,10 @@ export function installVisualViewport(): () => void {
     window.removeEventListener('orientationchange', settle);
     document.removeEventListener('focusin', settle);
     document.removeEventListener('focusout', settle);
+    displayMode.removeEventListener('change', onDisplayMode);
     root.style.removeProperty('--app-height');
     root.style.removeProperty('--kb-inset');
-    root.classList.remove('kb-open');
+    root.classList.remove('kb-open', 'pwa-standalone');
   };
 }
 

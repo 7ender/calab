@@ -736,7 +736,10 @@ svg.lucide {
 @media (max-width: 768px) {
   :root.web {
     /* The app's height: the dynamic viewport (follows Safari's toolbars); while the on-screen
-       keyboard is up, lib/mobile.ts sets it to the visual viewport's height (inline on <html>). */
+       keyboard is up, lib/mobile.ts sets it to the visual viewport's height (inline on <html>).
+       Home screen (`pwa-standalone`): no toolbars, nothing is subtracted — only the last element
+       carries the home-indicator inset; if iOS reports a viewport shorter than the screen,
+       lib/mobile.ts sets it to the screen height. */
     --app-height: 100dvh;
     /* how much of the layout viewport the keyboard covers (lib/mobile.ts), 0 without it */
     --kb-inset: 0px;

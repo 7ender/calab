@@ -301,3 +301,81 @@ test('phone: PWA manifest and service worker', async ({ page, request }) => {
     .poll(() => page.evaluate('navigator.serviceWorker.getRegistration().then((r) => !!r && !!(r.active || r.installing || r.waiting))'), { timeout: 10_000 })
     .toBe(true);
 });
+
+type Size = { width: number; height: number };
+
+/** Home-screen web app emulation: display-mode: standalone + iOS navigator.standalone. */
+async function emulateStandalone(page: Page): Promise<void> {
+  await page.addInitScript(`{
+    const mm = window.matchMedia.bind(window);
+    window.matchMedia = (q) => (q.replace(/\\s/g, '') === '(display-mode:standalone)' ? mm('(min-width: 0px)') : mm(q));
+    Object.defineProperty(navigator, 'standalone', { configurable: true, get: () => true });
+  }`);
+}
+
+/** Where the composer ends and how much is under its content, against the viewport. */
+async function bottomOf(page: Page): Promise<{ vh: number; edge: number; gap: number; shell: number; app: string; standalone: boolean }> {
+  await expect(page.getByTestId('composer')).toBeVisible();
+  return page.evaluate(`(() => {
+    const el = document.querySelector('[data-testid="composer"]');
+    const root = document.documentElement;
+    return {
+      vh: innerHeight,
+      edge: el.getBoundingClientRect().bottom,
+      gap: innerHeight - (el.firstElementChild?.getBoundingClientRect().bottom ?? 0),
+      shell: document.querySelector('[data-testid="mobile-shell"]')?.getBoundingClientRect().height ?? 0,
+      app: root.style.getPropertyValue('--app-height'),
+      standalone: root.classList.contains('pwa-standalone'),
+    };
+  })()`);
+}
+
+test('phone: a Safari tab — the shell is the viewport, no standalone handling', async ({ page }) => {
+  await signIn(page);
+  const b = await bottomOf(page);
+  expect(b.standalone).toBe(false);
+  expect(b.app).toBe('');
+  expect(Math.abs(b.edge - b.vh)).toBeLessThanOrEqual(1);
+  expect(Math.abs(b.shell - b.vh)).toBeLessThanOrEqual(1);
+});
+
+test('phone: home-screen app (standalone) — no band under the composer', async ({ page, browser }) => {
+  const use = test.info().project.use;
+  // The iPhone SE descriptor has no screen size: its screen is 16:9 (375×667).
+  const screen = (use as { screen?: Size }).screen ?? (use.viewport ? { width: use.viewport.width, height: Math.round((use.viewport.width * 16) / 9) } : undefined);
+  test.skip(!screen, 'the device has no screen size');
+  if (!screen) return;
+  await emulateStandalone(page);
+  // The whole screen is the viewport (no toolbars): the composer ends at the bottom edge.
+  await page.setViewportSize(screen);
+  await signIn(page);
+  const b = await bottomOf(page);
+  expect(b.standalone).toBe(true);
+  expect(b.app).toBe('');
+  expect(Math.abs(b.edge - b.vh)).toBeLessThanOrEqual(1);
+  // env(safe-area-inset-bottom) is 0 here; on an iPhone it is the home indicator (≤ 34 px).
+  expect(b.gap).toBeLessThanOrEqual(34);
+
+  // WebKit reporting a viewport shorter than the screen by the status bar (the iOS standalone
+  // bug): the shell is stretched to the screen height, the composer to the real bottom edge.
+  const ctx = await browser.newContext({
+    viewport: { width: screen.width, height: screen.height - 47 },
+    screen,
+    ...(use.userAgent ? { userAgent: use.userAgent } : {}),
+    ...(use.deviceScaleFactor ? { deviceScaleFactor: use.deviceScaleFactor } : {}),
+    isMobile: use.isMobile ?? false,
+    hasTouch: use.hasTouch ?? false,
+    locale: 'ru-RU',
+  });
+  try {
+    const short = await ctx.newPage();
+    await emulateStandalone(short);
+    await signIn(short);
+    await expect.poll(async () => (await bottomOf(short)).app).toBe(`${screen.height}px`);
+    const s = await bottomOf(short);
+    expect(Math.abs(s.shell - screen.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(s.edge - screen.height)).toBeLessThanOrEqual(1);
+  } finally {
+    await ctx.close();
+  }
+});

@@ -231,6 +231,7 @@ test('m-chat', async ({ page }) => {
   await expect(page.getByTestId('composer')).toBeVisible();
   await expectNoFieldFocus(page, 'first room');
   await feedToBottom(page);
+  await expect.soft(page.locator('html'), 'a Safari tab is not standalone').not.toHaveClass(/pwa-standalone/);
   await checkpoint(page, 'm-chat', { main: true });
   // Switching rooms from the drawer does not focus the composer either.
   await openRoom(page, /^разработка/);
@@ -245,6 +246,41 @@ test('m-chat', async ({ page }) => {
   await box.fill('Длинное сообщение\nв несколько\nстрок\nс переносами\nи ещё одной');
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(page, 'm-chat-multiline', { main: true, snapshot: false });
+});
+
+type Size = { width: number; height: number };
+
+/**
+ * Home-screen web app (standalone PWA): no Safari toolbars, the viewport is the whole screen.
+ * Emulated: display-mode: standalone + navigator.standalone, the viewport = the device's screen.
+ */
+async function standalone(page: Page): Promise<void> {
+  const use = test.info().project.use;
+  // The iPhone SE descriptor has no screen size: its screen is 16:9 (375×667).
+  const screen = (use as { screen?: Size }).screen ?? (use.viewport ? { width: use.viewport.width, height: Math.round((use.viewport.width * 16) / 9) } : undefined);
+  if (screen) await page.setViewportSize(screen);
+  await page.addInitScript(() => {
+    const mm = window.matchMedia.bind(window);
+    window.matchMedia = (q: string) => (q.replace(/\s/g, '') === '(display-mode:standalone)' ? mm('(min-width: 0px)') : mm(q));
+    Object.defineProperty(navigator, 'standalone', { configurable: true, get: () => true });
+  });
+}
+
+test('m-chat-standalone', async ({ page }) => {
+  await standalone(page);
+  await signedIn(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  await expect(page.locator('html')).toHaveClass(/pwa-standalone/);
+  await feedToBottom(page);
+  await checkpoint(page, 'm-chat-standalone', { main: true });
+  // The composer block ends at the bottom edge; under its content only the home-indicator inset.
+  const g = await page.getByTestId('composer').evaluate((el) => {
+    const inner = el.firstElementChild?.getBoundingClientRect().bottom ?? 0;
+    return { edge: innerHeight - el.getBoundingClientRect().bottom, gap: innerHeight - inner, app: document.documentElement.style.getPropertyValue('--app-height') };
+  });
+  expect.soft(Math.abs(g.edge), 'composer ends at the bottom edge').toBeLessThanOrEqual(1);
+  expect.soft(g.gap, 'no more than the home-indicator inset under the composer').toBeLessThanOrEqual(INSETS.bottom + 1);
+  expect.soft(g.app, 'no --app-height override when the viewport is the whole screen').toBe('');
 });
 
 test('m-chat-empty', async ({ page }) => {
