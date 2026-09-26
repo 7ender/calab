@@ -210,13 +210,16 @@ if step verify; then
   #    export (web step), never from the working tree, through the IP-forcing config (no local DNS/VPN).
   #    M.1 (move a participant between voice rooms, ADR-0019): A = the e2e account (admin of its «E2E web»),
   #    B = e2e-app2@; the spec is idempotent (reuses the workspace, rooms and invite) — no creation limit.
+  #    Only the specs written for a real server: the others (e.g. notifications.web) target the mock
+  #    (e2e-support) with its fixed accounts; move.web runs separately below with the second account.
+  STAND_SPECS=(app.web link.web)
   d="$D1"; email="e2e-app@calaba.test"; cfg=../../infra/docker/tools/playwright.stand.config.ts
   pw="$(ensure_account "$email" "E2E app")"
   if [[ -z "$pw" ]]; then
     bad "e2e:web $d — no account $email"
   else
     if (cd "$SRC_DIR/apps/desktop" && CALABA_FORCE_IP="$IP" CALABA_WEB_URL="https://$d" CALABA_WEB_LOGIN="$email" \
-          CALABA_WEB_PASSWORD="$pw" pnpm exec playwright test --config "$cfg" --project chromium >"$WORK.e2e-app.log" 2>&1); then
+          CALABA_WEB_PASSWORD="$pw" pnpm exec playwright test --config "$cfg" --project=chromium "${STAND_SPECS[@]}" >"$WORK.e2e-app.log" 2>&1); then
       ok "e2e:web $d (chromium, voice) — $(grep -oE '[0-9]+ passed' "$WORK.e2e-app.log" | tail -1)"
     else
       bad "e2e:web $d — see $WORK.e2e-app.log"
@@ -227,7 +230,7 @@ if step verify; then
         bad "e2e:web move (M.1) $d — no account $email2"
       elif (cd "$SRC_DIR/apps/desktop" && CALABA_FORCE_IP="$IP" CALABA_WEB_URL="https://$d" \
             CALABA_WEB_LOGIN="$email" CALABA_WEB_PASSWORD="$pw" CALABA_WEB_LOGIN2="$email2" CALABA_WEB_PASSWORD2="$pw2" \
-            pnpm exec playwright test --config "$cfg" move --project chromium >"$WORK.e2e-move.log" 2>&1); then
+            pnpm exec playwright test --config "$cfg" move --project=chromium >"$WORK.e2e-move.log" 2>&1); then
         ok "e2e:web move (M.1) $d, chromium — $(grep -oE '[0-9]+ passed' "$WORK.e2e-move.log" | tail -1)"
       else
         bad "e2e:web move (M.1) $d — see $WORK.e2e-move.log"
