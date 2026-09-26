@@ -33,6 +33,8 @@ export const IPC = {
   appInstallUpdate: 'app:install-update',
   /** main → renderer */
   appUpdateStatus: 'app:update-status',
+  /** renderer → main: the `online` event (main has none) — a throttled update check. */
+  appNetworkOnline: 'app:network-online',
   appLog: 'app:log',
   appOpenExternal: 'app:open-external',
   appLegal: 'app:legal',
@@ -132,6 +134,11 @@ export interface AppSettings {
    * quit where the platform can (Windows, Linux AppImage, signed macOS). Off → notify only.
    */
   autoUpdate: boolean;
+  /**
+   * «Проверять обновления автоматически» (default on): at start, hourly, after wake / unlock /
+   * back online. Off → only «Проверить» in «О программе».
+   */
+  autoCheckUpdates: boolean;
 }
 
 /** Licence texts for «О программе» (BUSL-1.1 LICENSE, NOTICE, commercial terms, third-party notices). */
@@ -173,6 +180,8 @@ export interface MainStrings {
   trayInVoiceMuted: string;
   /** `{version}` placeholder. */
   updateAvailable: string;
+  /** Tray item when an update is downloaded; `{version}` placeholder. */
+  trayRestartUpdate: string;
   streamWindow: string;
 }
 
@@ -185,6 +194,7 @@ export const MAIN_STRING_KEYS = [
   'trayInVoice',
   'trayInVoiceMuted',
   'updateAvailable',
+  'trayRestartUpdate',
   'streamWindow',
 ] as const satisfies ReadonlyArray<keyof MainStrings>;
 

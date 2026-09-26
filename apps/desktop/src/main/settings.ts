@@ -22,6 +22,7 @@ const DEFAULTS = (): AppSettings => ({
   updateUrl: process.env['CALABA_UPDATE_URL'] ?? import.meta.env.MAIN_VITE_UPDATE_FEED ?? '',
   autostart: false,
   autoUpdate: true,
+  autoCheckUpdates: true,
 });
 
 let cache: AppSettings | null = null;

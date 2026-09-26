@@ -539,5 +539,6 @@ export const zhCN: Dict = {
   'main.trayInVoice': 'Calab——语音中',
   'main.trayInVoiceMuted': 'Calab——语音中（已静音）',
   'main.updateAvailable': '版本 {version} 现已可用——下载',
+  'main.trayRestartUpdate': '重启以更新到 {version}',
   'main.streamWindow': 'Calab——屏幕共享',
 };

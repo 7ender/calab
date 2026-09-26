@@ -21,6 +21,8 @@ export interface SessionState {
   appInfo: AppInfo | null;
   settings: AppSettings | null;
   update: UpdateStatus;
+  /** The update banner was closed; the next status from main shows it again (features/shell/updateBannerState.ts). */
+  updateDismissed: boolean;
   set: (patch: Partial<SessionState>) => void;
 }
 
@@ -37,6 +39,7 @@ export const useSession = create<SessionState>()((set) => ({
   appInfo: null,
   settings: null,
   update: { state: 'disabled' },
+  updateDismissed: false,
   set: (patch) => set(patch),
 }));
 

@@ -14,6 +14,7 @@ let strings: MainStrings = {
   trayInVoice: 'Calab — в голосе',
   trayInVoiceMuted: 'Calab — в голосе (микрофон выкл.)',
   updateAvailable: 'Доступна версия {version} — Скачать',
+  trayRestartUpdate: 'Перезапустить для обновления {version}',
   streamWindow: 'Calab — стрим',
 };
 

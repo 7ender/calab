@@ -59,6 +59,8 @@ export interface CalabaApi {
     updateStatus(): Promise<UpdateStatus>;
     /** «Перезапустить»: quit and install the downloaded update; false when none is downloaded. */
     installUpdate(): Promise<boolean>;
+    /** The window's `online` event: main runs a throttled update check (main has no such event). */
+    networkOnline(): void;
     log(level: 'info' | 'warn' | 'error', message: string): void;
     openExternal(url: string): Promise<void>;
     /** LICENSE, NOTICE and THIRD-PARTY-NOTICES.txt texts («О программе»). */

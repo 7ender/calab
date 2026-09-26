@@ -1,7 +1,16 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UpdateStatus } from '../shared/ipc';
-import { FIRST_CHECK_MS, NUDGE_MS, ONLINE_POLL_MS, RECHECK_MS, canAutoInstall, createUpdateFlow, type UpdateFlowEnv, type UpdaterLike } from './updateFlow';
+import {
+  FIRST_CHECK_MS,
+  NUDGE_MIN_GAP_MS,
+  NUDGE_MS,
+  RECHECK_JITTER_MS,
+  RECHECK_MS,
+  canAutoInstall,   createUpdateFlow,
+  type UpdateFlowEnv,
+  type UpdaterLike,
+} from './updateFlow';
 
 const FEED = 'https://releases.calab.ru/';
 const SERVER_FEED = 'https://chat.example.com/download/';
@@ -51,17 +60,22 @@ class FakeUpdater extends EventEmitter implements UpdaterLike {
   }
 }
 
-function setup(over: Partial<UpdateFlowEnv> & { auto?: boolean } = {}) {
+function setup(opts: Omit<Partial<UpdateFlowEnv>, 'autoCheck'> & { auto?: boolean; autoCheck?: boolean } = {}) {
+  const { auto, autoCheck: autoCheckInit, ...over } = opts;
   const updater = new FakeUpdater();
   const statuses: UpdateStatus[] = [];
   const notified: Array<[string, string]> = [];
   const warns: unknown[][] = [];
-  let autoUpdate = over.auto ?? true;
+  let autoUpdate = auto ?? true;
+  let autoCheck = autoCheckInit ?? true;
   const flow = createUpdateFlow(updater, {
     platform: 'win32',
     signed: false,
     appImage: false,
     autoUpdate: () => autoUpdate,
+    autoCheck: () => autoCheck,
+    // 0.5 → no jitter: the periodic check runs exactly every RECHECK_MS.
+    random: () => 0.5,
     buildFeed: FEED,
     notifyFeed: () => null,
     downloadPage: () => PAGE,
@@ -78,6 +92,9 @@ function setup(over: Partial<UpdateFlowEnv> & { auto?: boolean } = {}) {
     warns,
     setAuto: (v: boolean) => {
       autoUpdate = v;
+    },
+    setAutoCheck: (v: boolean) => {
+      autoCheck = v;
     },
     states: () => statuses.map((s) => s.state),
   };
@@ -317,7 +334,7 @@ describe('update flow', () => {
       vi.useRealTimers();
     });
 
-    it('first check after 10 s, then every 6 h; start() is idempotent; manual checks add no timers', async () => {
+    it('first check after 10 s, then every hour; start() is idempotent; manual checks add no timers', async () => {
       const t = setup();
       t.flow.start();
       t.flow.start();
@@ -336,76 +353,162 @@ describe('update flow', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('resume: one debounced check, no duplicate timers; nothing before start()', async () => {
+    for (const [r, shift] of [
+      [0, -RECHECK_JITTER_MS],
+      [0.999999, RECHECK_JITTER_MS],
+    ] as const) {
+      it(`the hourly period is shifted by the jitter (random ${r} → ${shift / 60_000} min)`, async () => {
+        const t = setup({ random: () => r });
+        t.flow.start();
+        const period = RECHECK_MS + shift;
+        await vi.advanceTimersByTimeAsync(period - 1_000);
+        expect(t.updater.checks).toBe(1); // only the startup check
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(t.updater.checks).toBe(2);
+        await vi.advanceTimersByTimeAsync(period);
+        expect(t.updater.checks).toBe(3);
+        t.flow.stop();
+      });
+    }
+
+    it('«Проверять обновления автоматически» off: no startup / hourly / nudge checks, «Проверить» still works', async () => {
+      const t = setup({ autoCheck: false });
+      t.flow.start();
+      await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS + RECHECK_MS * 3);
+      t.flow.nudge('online');
+      await vi.advanceTimersByTimeAsync(NUDGE_MS);
+      expect(t.updater.checks).toBe(0);
+      expect(await t.flow.check()).toEqual({ state: 'none' });
+      expect(t.updater.checks).toBe(1);
+      // Turned back on: the next hourly tick checks again.
+      t.setAutoCheck(true);
+      await vi.advanceTimersByTimeAsync(RECHECK_MS);
+      expect(t.updater.checks).toBe(2);
+      t.flow.stop();
+    });
+
+    it('nudge: debounced, one timer, nothing before start(); throttled to once per 10 min', async () => {
       const t = setup();
-      t.flow.resume();
+      t.flow.nudge('resume');
       expect(vi.getTimerCount()).toBe(0);
       t.flow.start();
       await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS);
       expect(t.updater.checks).toBe(1);
-      t.flow.resume();
-      t.flow.resume();
-      t.flow.resume();
+      // Right after the startup check: throttled.
+      t.flow.nudge('resume');
+      t.flow.nudge('online');
+      await vi.advanceTimersByTimeAsync(NUDGE_MS);
+      expect(t.updater.checks).toBe(1);
+      await vi.advanceTimersByTimeAsync(NUDGE_MIN_GAP_MS);
+      t.flow.nudge('resume');
+      t.flow.nudge('unlock');
+      t.flow.nudge('online');
       expect(vi.getTimerCount()).toBe(2); // periodic + one nudge
       await vi.advanceTimersByTimeAsync(NUDGE_MS);
       expect(t.updater.checks).toBe(2);
       expect(vi.getTimerCount()).toBe(1);
+      // Unlock 1 min later: within 10 min of the last check → nothing.
+      await vi.advanceTimersByTimeAsync(60_000);
+      t.flow.nudge('unlock');
+      await vi.advanceTimersByTimeAsync(NUDGE_MS);
+      expect(t.updater.checks).toBe(2);
       t.flow.stop();
     });
 
-    it('resume while downloading / downloaded: no check', async () => {
+    it('a manual check during the nudge debounce throttles the nudge', async () => {
+      const t = setup();
+      t.flow.start();
+      await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS + NUDGE_MIN_GAP_MS);
+      t.flow.nudge('online');
+      await t.flow.check();
+      await vi.advanceTimersByTimeAsync(NUDGE_MS);
+      expect(t.updater.checks).toBe(2);
+      t.flow.stop();
+    });
+
+    it('nudge while downloading / downloaded: no check', async () => {
       const t = setup();
       t.updater.next = { version: '0.1.1' };
       t.flow.start();
-      await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS);
+      await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS + NUDGE_MIN_GAP_MS);
       expect(t.flow.status().state).toBe('downloading');
-      t.flow.resume();
+      t.flow.nudge('resume');
       await vi.advanceTimersByTimeAsync(NUDGE_MS);
       t.updater.finishDownload('0.1.1');
-      t.flow.resume();
+      t.flow.nudge('online');
       await vi.advanceTimersByTimeAsync(NUDGE_MS);
       expect(t.updater.checks).toBe(1);
       expect(vi.getTimerCount()).toBe(1);
       t.flow.stop();
     });
 
-    it('failed check offline → re-check once the network is back (debounced, single watcher)', async () => {
-      let online = false;
-      const t = setup({ isOnline: () => online });
-      t.updater.next = new Error('ENOTFOUND');
+    it('downloaded: the hourly check re-announces it (a closed banner comes back), no updater call', async () => {
+      const t = setup();
+      t.updater.next = { version: '0.1.1' };
       t.flow.start();
       await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS);
-      expect(t.flow.status().state).toBe('error');
-      expect(vi.getTimerCount()).toBe(2); // periodic + online watcher
-      await t.flow.check(); // another failure does not add a watcher
-      expect(vi.getTimerCount()).toBe(2);
-      await vi.advanceTimersByTimeAsync(ONLINE_POLL_MS * 3);
-      expect(t.updater.checks).toBe(2);
-      online = true;
-      t.updater.next = 'none';
-      await vi.advanceTimersByTimeAsync(ONLINE_POLL_MS);
-      expect(t.updater.checks).toBe(2); // debounced
-      await vi.advanceTimersByTimeAsync(NUDGE_MS);
-      expect(t.updater.checks).toBe(3);
-      expect(t.flow.status()).toEqual({ state: 'none' });
-      expect(vi.getTimerCount()).toBe(1); // watcher gone
+      t.updater.finishDownload('0.1.1');
+      const before = t.statuses.length;
+      await vi.advanceTimersByTimeAsync(RECHECK_MS);
+      expect(t.statuses.slice(before)).toEqual([{ state: 'downloaded', version: '0.1.1' }]);
+      expect(t.updater.checks).toBe(1);
       t.flow.stop();
     });
+  });
 
-    it('failed check while online: waits for an offline → online transition, not a retry loop', async () => {
-      let online = true;
-      const t = setup({ isOnline: () => online });
-      t.updater.next = new Error('404');
-      t.flow.start();
-      await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS + ONLINE_POLL_MS * 5 + NUDGE_MS);
-      expect(t.updater.checks).toBe(1);
-      online = false;
-      await vi.advanceTimersByTimeAsync(ONLINE_POLL_MS);
-      online = true;
-      await vi.advanceTimersByTimeAsync(ONLINE_POLL_MS + NUDGE_MS);
-      expect(t.updater.checks).toBe(2);
-      t.flow.stop();
-      expect(vi.getTimerCount()).toBe(0);
+  describe('call in progress', () => {
+    it('an update found during a call is not downloaded until the call ends', async () => {
+      const t = setup();
+      t.flow.setInCall(true);
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      expect(t.updater.autoDownload).toBe(false);
+      expect(t.updater.autoInstallOnAppQuit).toBe(true);
+      expect(t.updater.downloads).toBe(0);
+      expect(t.flow.status()).toEqual({ state: 'available', version: '0.1.1' });
+      expect(t.notified).toEqual([]); // auto mode: no «Скачать» notification
+      t.flow.setInCall(true); // repeated state: nothing
+      expect(t.updater.downloads).toBe(0);
+      t.flow.setInCall(false);
+      expect(t.updater.autoDownload).toBe(true);
+      expect(t.updater.downloads).toBe(1);
+      expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.1', percent: 0 });
+      t.updater.finishDownload('0.1.1');
+      expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
+    });
+
+    it('a download already running when the call starts keeps going', async () => {
+      const t = setup();
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      t.flow.setInCall(true);
+      t.updater.finishDownload('0.1.1');
+      expect(t.flow.status().state).toBe('downloaded');
+      t.flow.setInCall(false);
+      expect(t.updater.downloads).toBe(1);
+    });
+
+    it('notify-only mode: the call changes nothing (notification as usual, never a download)', async () => {
+      const t = setup({ platform: 'darwin' });
+      t.flow.setInCall(true);
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      expect(t.notified).toEqual([['0.1.1', PAGE]]);
+      t.flow.setInCall(false);
+      expect(t.updater.downloads).toBe(0);
+      expect(t.flow.status().state).toBe('available');
+    });
+
+    it('turning «Автоматически обновлять» on during a call waits for the call to end', async () => {
+      const t = setup({ auto: false });
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      t.flow.setInCall(true);
+      t.setAuto(true);
+      t.flow.applySettings();
+      expect(t.updater.downloads).toBe(0);
+      t.flow.setInCall(false);
+      expect(t.updater.downloads).toBe(1);
     });
   });
 });

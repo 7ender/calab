@@ -42,6 +42,7 @@ function pushMainStrings(): void {
     trayInVoice: t('main.trayInVoice'),
     trayInVoiceMuted: t('main.trayInVoiceMuted'),
     updateAvailable: t('main.updateAvailable'),
+    trayRestartUpdate: t('main.trayRestartUpdate'),
     streamWindow: t('main.streamWindow'),
   };
   platform.app.setStrings(s);

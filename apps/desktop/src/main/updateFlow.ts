@@ -19,8 +19,13 @@ import type { UpdateStatus } from '../shared/ipc';
  *            «Автоматически обновлять» off.
  * Errors are logged and end in status 'error' (shown only in «О программе»); never thrown.
  *
- * Checks: 10 s after start, every 6 h, «Проверить», and (debounced) after wake from sleep or
- * when the network comes back after a failed check.
+ * Checks (docs/09 P1 #16): 10 s after start, then every hour (the period is shifted by a random
+ * ±5 min once per run so a fleet of clients does not hit the feed on the hour), «Проверить», and
+ * — debounced and at most once per 10 min — after wake from sleep, screen unlock and when the
+ * network comes back (the renderer's `online` event). «Проверять обновления автоматически» off →
+ * only «Проверить» checks. During a call / stream (renderer tray state `inVoice`) nothing starts
+ * downloading: the update waits as 'available' and downloads when the call ends. A downloaded
+ * update is re-announced on every later check (the banner the user closed comes back).
  */
 
 /** The part of electron-updater's AppUpdater the flow uses. */
@@ -44,6 +49,10 @@ export interface UpdateFlowEnv {
   appImage: boolean;
   /** The «Автоматически обновлять» setting, read live. */
   autoUpdate: () => boolean;
+  /** «Проверять обновления автоматически», read live: off → only «Проверить» checks. */
+  autoCheck: () => boolean;
+  /** Jitter source in [0, 1) (Math.random; fixed in tests). */
+  random?: () => number;
   /**
    * The feed pinned at build time (validated https) — the only one auto mode uses. null → no
    * auto-install at all (dev build, self-built without MAIN_VITE_UPDATE_FEED, runtime override).
@@ -53,8 +62,6 @@ export interface UpdateFlowEnv {
   notifyFeed: () => string | null;
   /** Human download page for the notification / «Скачать» (https); null → the checked feed. */
   downloadPage: () => string | null;
-  /** Network state (Electron `net.isOnline()`); enables the re-check when it comes back. */
-  isOnline?: () => boolean;
   publish: (s: UpdateStatus) => void;
   /** Notify-only: «Доступна версия X — Скачать» opening `page`. Called once per version. */
   notify: (version: string, page: string) => void;
@@ -62,11 +69,15 @@ export interface UpdateFlowEnv {
 }
 
 export const FIRST_CHECK_MS = 10_000;
-export const RECHECK_MS = 6 * 60 * 60 * 1000;
-/** Debounce of the wake / back-online re-check (the network needs a moment after resume). */
+export const RECHECK_MS = 60 * 60 * 1000;
+/** The periodic check runs every RECHECK_MS ± RECHECK_JITTER_MS (drawn once per start()). */
+export const RECHECK_JITTER_MS = 5 * 60 * 1000;
+/** Debounce of the wake / unlock / back-online re-check (the network needs a moment after resume). */
 export const NUDGE_MS = 5_000;
-/** How often the network state is polled after a failed check (main has no online event). */
-export const ONLINE_POLL_MS = 30_000;
+/** A wake / unlock / online nudge checks only if the last check started at least this long ago. */
+export const NUDGE_MIN_GAP_MS = 10 * 60 * 1000;
+
+export type NudgeReason = 'resume' | 'unlock' | 'online';
 
 export interface AutoInstallInput {
   platform: string;
@@ -90,17 +101,22 @@ export function canAutoInstall(i: AutoInstallInput): boolean {
 }
 
 export interface UpdateFlow {
-  /** Schedules the first check (+10 s) and the periodic one (every 6 h). Idempotent. */
+  /** Schedules the first check (+10 s) and the periodic one (every hour ± 5 min). Idempotent. */
   start(): void;
   /** Stops all timers (tests / shutdown). */
   stop(): void;
-  /** Woke from sleep: a debounced check (once started; not while downloading / downloaded). */
-  resume(): void;
+  /**
+   * Wake / unlock / back online: a debounced check (once started, automatic checks on, not while
+   * downloading / downloaded, and not within NUDGE_MIN_GAP_MS of the last check).
+   */
+  nudge(reason: NudgeReason): void;
+  /** A call / stream started or ended (renderer tray state). Ending it starts a deferred download. */
+  setInCall(inCall: boolean): void;
   /** A check now (startup timer, periodic timer, «Проверить»). Concurrent calls share one check. */
   check(): Promise<UpdateStatus>;
   /** «Перезапустить»: quit and install the downloaded update. false when nothing is downloaded. */
   install(): boolean;
-  /** Re-reads the settings (autoUpdate toggled); may start a download of an available update. */
+  /** Re-reads the settings (autoUpdate / autoCheck toggled); may start a download of an available update. */
   applySettings(): void;
   status(): UpdateStatus;
 }
@@ -121,7 +137,9 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   let first: ReturnType<typeof setTimeout> | null = null;
   let periodic: ReturnType<typeof setInterval> | null = null;
   let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
-  let onlineWatch: ReturnType<typeof setInterval> | null = null;
+  let inCall = false;
+  /** Date.now() when the last updater check started (0 = never). */
+  let lastCheckAt = 0;
   /** The feed last handed to the updater ('' before the first check). */
   let feed = '';
 
@@ -139,44 +157,43 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
 
   const busy = (): boolean => status.state === 'downloading' || status.state === 'downloaded';
 
-  const nudge = (): void => {
-    if (!periodic || nudgeTimer || busy()) return;
+  const gapOk = (): boolean => Date.now() - lastCheckAt >= NUDGE_MIN_GAP_MS;
+
+  const nudge = (reason: NudgeReason): void => {
+    if (!periodic || nudgeTimer || busy() || !env.autoCheck() || !gapOk()) return;
     nudgeTimer = setTimeout(() => {
       nudgeTimer = null;
+      // Re-tested: a scheduled / manual check may have run during the debounce.
+      if (busy() || !env.autoCheck() || !gapOk()) return;
+      env.log.info('[update] check on', reason);
       void check();
     }, NUDGE_MS);
   };
 
-  const stopOnlineWatch = (): void => {
-    if (onlineWatch) clearInterval(onlineWatch);
-    onlineWatch = null;
-  };
-
-  /** After a failure: re-check once the network goes offline → online (e.g. Wi-Fi back). */
-  const startOnlineWatch = (): void => {
-    const isOnline = env.isOnline;
-    if (!isOnline || onlineWatch || !periodic) return;
-    let wasOffline = !isOnline();
-    onlineWatch = setInterval(() => {
-      const online = isOnline();
-      if (online && wasOffline) {
-        stopOnlineWatch();
-        nudge();
-      }
-      wasOffline = !online;
-    }, ONLINE_POLL_MS);
+  /** Startup / periodic check: skipped with «Проверять обновления автоматически» off. */
+  const scheduled = (): void => {
+    if (env.autoCheck()) void check();
   };
 
   const publish = (s: UpdateStatus): void => {
     status = s;
     env.publish(s);
-    if (s.state === 'error') startOnlineWatch();
-    else if (s.state !== 'checking') stopOnlineWatch();
+  };
+
+  /** Starts a download now if one may run (auto mode, not in a call) and an update is waiting. */
+  const downloadIfWaiting = (): void => {
+    if (status.state === 'available' && updater.autoDownload) {
+      env.log.info('[update] download', status.version);
+      publish({ state: 'downloading', version: status.version, percent: 0 });
+      startDownload();
+    }
   };
 
   const applyFlags = (): void => {
     const on = feed !== '' && autoFor(feed);
-    updater.autoDownload = on;
+    // In a call nothing starts downloading (bandwidth / CPU belong to the call); an update that
+    // is already downloading keeps going. Install-on-quit is unaffected.
+    updater.autoDownload = on && !inCall;
     updater.autoInstallOnAppQuit = on;
   };
 
@@ -205,6 +222,12 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
       publish({ state: 'downloading', version, percent: 0 });
       return;
     }
+    if (inCall && feed !== '' && autoFor(feed)) {
+      // Auto mode, deferred: no notification, no download page — it downloads after the call.
+      env.log.info('[update] download deferred until the call ends', version);
+      publish({ state: 'available', version });
+      return;
+    }
     publish({ state: 'available', version, downloadPage: page });
     if (notified !== version && page) {
       notified = version;
@@ -230,8 +253,12 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   });
 
   const run = async (): Promise<UpdateStatus> => {
-    // Downloading / ready: nothing new to learn, and a new check would reset the banner.
-    if (busy()) return status;
+    // Downloading / ready: nothing new to learn, and a new check would reset the banner. A ready
+    // update is re-announced: the banner the user closed comes back on the next check.
+    if (busy()) {
+      if (status.state === 'downloaded') publish(status);
+      return status;
+    }
     const url = nextFeed();
     if (!url) {
       publish({ state: 'disabled' });
@@ -241,6 +268,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     feed = url;
     applyFlags();
     updater.setFeedURL({ provider: 'generic', url });
+    lastCheckAt = Date.now();
     try {
       const r = await updater.checkForUpdates();
       if (r === null || r === undefined) publish({ state: 'disabled' });
@@ -263,19 +291,29 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
 
   return {
     start() {
-      first ??= setTimeout(() => void check(), FIRST_CHECK_MS);
-      periodic ??= setInterval(() => void check(), RECHECK_MS);
+      first ??= setTimeout(scheduled, FIRST_CHECK_MS);
+      if (!periodic) {
+        const r = Math.min(Math.max((env.random ?? Math.random)(), 0), 1);
+        const every = Math.round(RECHECK_MS + (r * 2 - 1) * RECHECK_JITTER_MS);
+        env.log.info('[update] periodic check every', Math.round(every / 1000), 's');
+        periodic = setInterval(scheduled, every);
+      }
     },
     stop() {
       if (first) clearTimeout(first);
       if (periodic) clearInterval(periodic);
       if (nudgeTimer) clearTimeout(nudgeTimer);
-      stopOnlineWatch();
       first = null;
       periodic = null;
       nudgeTimer = null;
     },
-    resume: nudge,
+    nudge,
+    setInCall(next) {
+      if (inCall === next) return;
+      inCall = next;
+      applyFlags();
+      if (!inCall) downloadIfWaiting();
+    },
     check,
     install() {
       if (status.state !== 'downloaded') return false;
@@ -286,10 +324,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     },
     applySettings() {
       applyFlags();
-      if (status.state === 'available' && updater.autoDownload) {
-        publish({ state: 'downloading', version: status.version, percent: 0 });
-        startDownload();
-      }
+      downloadIfWaiting();
     },
     status: () => status,
   };

@@ -532,6 +532,7 @@ export const ru = {
   'main.trayInVoice': 'Calab — в голосе',
   'main.trayInVoiceMuted': 'Calab — в голосе (микрофон выкл.)',
   'main.updateAvailable': 'Доступна версия {version} — Скачать',
+  'main.trayRestartUpdate': 'Перезапустить для обновления {version}',
   'main.streamWindow': 'Calab — стрим',
 } as const;
 
