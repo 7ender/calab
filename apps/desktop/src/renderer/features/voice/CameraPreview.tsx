@@ -36,8 +36,9 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
   const [error, setError] = useState<{ text: string; action: MediaErrorAction | null } | null>(null);
   const handed = useRef<LocalVideoTrack | null>(null);
   const video = useRef<HTMLVideoElement>(null);
-  // Focus the device choice on open (Radix would focus the close box first — and show its tooltip).
-  const select = useRef<HTMLSelectElement>(null);
+  // Initial focus on the preview frame (not focusable by Tab): Radix would focus the close box and
+  // show its tooltip, and a focused select draws a ring on a sheet opened with the mouse.
+  const frame = useRef<HTMLDivElement>(null);
   const cameras = useCameras(track);
 
   // (Re)open the camera for the chosen device; release it when the device changes or on close.
@@ -90,7 +91,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
       onClose={onClose}
       title={t('video.preview.title')}
       description={t('video.preview.text')}
-      initialFocus={select}
+      initialFocus={frame}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -102,7 +103,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
         </>
       }
     >
-      <div className="relative aspect-video w-full overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-video-bg)]" data-testid="camera-preview">
+      <div ref={frame} tabIndex={-1} className="relative aspect-video w-full overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-video-bg)] outline-none" data-testid="camera-preview">
         {/* Mirrored like a mirror: moving right moves right (the others see it unmirrored). */}
         <video ref={video} muted playsInline autoPlay className="size-full -scale-x-100 object-cover" />
         {!track && !error ? (
@@ -127,7 +128,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
       </div>
       <div className="mt-4">
         <Field label={t('video.device')}>
-          <Select ref={select} aria-label={t('video.device')} value={deviceId ?? ''} onChange={(e) => setPrefs({ cameraDeviceId: e.target.value || null })}>
+          <Select aria-label={t('video.device')} value={deviceId ?? ''} onChange={(e) => setPrefs({ cameraDeviceId: e.target.value || null })}>
             <option value="">{t('voice.defaultDevice')}</option>
             {cameras.map((d) => (
               <option key={d.deviceId} value={d.deviceId}>

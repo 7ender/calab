@@ -149,10 +149,14 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
           ))}
         </div>
       </VoiceDnd>
-      <VoiceBar />
-      {/* «Обновление X готово — Перезапустить», right above the self panel. */}
-      <UpdateBanner />
-      <SelfPanel />
+      {/* Bottom island (docs/09 v0.2): «Голос подключён» + the update notice + «я» as one floating
+          block, 8 px from the column edges, radius 12, sections split by hairlines. */}
+      <div className="mat-toolbar mx-2 mb-2 flex shrink-0 flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-panel)] shadow-[var(--shadow-island)]" data-testid="bottom-island">
+        <VoiceBar />
+        {/* «Обновление X готово — Перезапустить», right above the self panel. */}
+        <UpdateBanner />
+        <SelfPanel />
+      </div>
       {catDialog ? <CategoryDialog workspaceId={workspaceId} category={catDialog.category} onClose={() => setCatDialog(null)} /> : null}
     </aside>
   );

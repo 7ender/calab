@@ -1,5 +1,5 @@
 import { LocalVideoTrack, Track, VideoPreset, createLocalVideoTrack, type TrackPublishOptions } from 'livekit-client';
-import { CAMERA_CAPTURE, CAMERA_LAYERS, CAMERA_CPU_CAPTURE, pickCameraCodec, type CameraCodec } from './cameraLogic';
+import { CAMERA_CAPTURE, CAMERA_LAYERS, CAMERA_CPU_CAPTURE, isChromium, pickCameraCodec, type CameraCodec } from './cameraLogic';
 
 /**
  * Webcam capture and publishing (docs/02 «Камера», ADR-0018). LiveKit-specific glue only; the
@@ -29,7 +29,9 @@ export async function captureCamera(deviceId: string | null): Promise<LocalVideo
   return track;
 }
 
-export function cameraPublishOptions(codec: CameraCodec = pickCameraCodec(encodableVideoCodecs())): TrackPublishOptions {
+export function cameraPublishOptions(
+  codec: CameraCodec = pickCameraCodec(encodableVideoCodecs(), typeof navigator === 'undefined' || isChromium(navigator.userAgent)),
+): TrackPublishOptions {
   const [low, mid, top] = CAMERA_LAYERS;
   return {
     source: Track.Source.Camera,

@@ -62,8 +62,8 @@ export interface VoiceStore {
   cameraCpuLimited: boolean;
   /** Remote webcams of my room, in publication order. */
   cameras: RemoteCamera[];
-  /** userId → sequence number of their latest start of speech (active speaker order for tiles). */
-  lastSpoke: Record<string, number>;
+  /** Active speaker for video: spoke ≥ 2 s continuously, stays until someone else does (lib/activeSpeaker.ts). */
+  activeSpeaker: string | null;
   /** Tile the viewer clicked in the video grid (large until clicked again). */
   focusedTile: string | null;
   /** The camera PiP over the chat (closed with ×, back from «Ещё → Показать видео»). */
@@ -112,7 +112,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   camera: 'off',
   cameraCpuLimited: false,
   cameras: [],
-  lastSpoke: {},
+  activeSpeaker: null,
   focusedTile: null,
   videoPip: true,
   muted: false,

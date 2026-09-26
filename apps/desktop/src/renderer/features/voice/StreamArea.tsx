@@ -3,7 +3,7 @@ import { Check, ChevronDown, Maximize2, MessageSquare, Minimize, Minimize2, Moni
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
-import { IconButton, Slider, cx } from '../../components/ui';
+import { Badge, IconButton, Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
@@ -140,10 +140,11 @@ function useMessageBox(anchor: RefObject<HTMLDivElement | null>): Box {
   return box;
 }
 
-const PIP_GAP = 12;
+const PIP_GAP = 16;
 
+/** The same pill LIVE badge as in the room list (one style for every badge). */
 function LiveBadge(): ReactNode {
-  return <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white">{t('shell.live')}</span>;
+  return <Badge tone="danger">{t('shell.live')}</Badge>;
 }
 
 /** Streamer chip over the video: avatar (speaking ring), name, LIVE. */
@@ -394,7 +395,7 @@ function Stage({ stream, streams, wsId, box }: { stream: RemoteStream; streams: 
       </div>
       {/* The stream is the main picture; other streams and the cameras line up underneath (docs/09 #42). */}
       {streams.length > 1 || cameras.length > 0 ? (
-        <div className="flex shrink-0 gap-2 overflow-x-auto p-0.5" role="group" aria-label={t('streamView.others')} data-testid="stream-strip">
+        <div className="flex shrink-0 justify-center-safe gap-2 overflow-x-auto p-0.5" role="group" aria-label={t('streamView.others')} data-testid="stream-strip">
           {streams.length > 1 ? streams.map((s) => <PreviewTile key={s.trackSid} stream={s} wsId={wsId} current={s.trackSid === stream.trackSid} />) : null}
           {cameras.map((id) => (
             <CameraStripTile key={`cam:${id}`} userId={id} wsId={wsId} />

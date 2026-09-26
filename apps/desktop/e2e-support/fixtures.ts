@@ -648,8 +648,9 @@ export function buildState(scenario: Scenario): MockState {
     ]),
   );
 
-  // ---- voice: Boris (muted, camera on) and Vera (streaming) in «Переговорка».
-  s.voiceStates.set(U.boris, create(VoiceStateSchema, { workspaceId: W.main, userId: U.boris, roomId: R.meeting, muted: true, camera: true }));
+  // ---- voice: Boris (muted) and Vera (streaming) in «Переговорка». Cameras: none (the visual
+  // test turns Boris's on together with a real LiveKit camera track, so tiles and icons agree).
+  s.voiceStates.set(U.boris, create(VoiceStateSchema, { workspaceId: W.main, userId: U.boris, roomId: R.meeting, muted: true }));
   s.voiceStates.set(U.vera, create(VoiceStateSchema, { workspaceId: W.main, userId: U.vera, roomId: R.meeting, streaming: true }));
 
   // ---- invites

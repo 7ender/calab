@@ -3,6 +3,11 @@
  * no stores: the engine (services/camera.ts) and the UI call these.
  */
 
+/** Chromium-based runtime (Electron, Chrome, Edge): user agent has `Chrome/` or `Chromium/`. */
+export function isChromium(userAgent: string): boolean {
+  return /\bChrom(e|ium)\//.test(userAgent) && !/\b(Firefox|FxiOS)\//.test(userAgent);
+}
+
 /** Capture: 720p30. The encoder gets three rid layers from it (CAMERA_LAYERS). */
 export const CAMERA_CAPTURE = { width: 1280, height: 720, fps: 30 } as const;
 
@@ -28,10 +33,13 @@ export type CameraCodec = 'vp9' | 'av1' | 'vp8' | 'h264';
 
 /**
  * VP9 first: at 720p30 realtime its software encoder costs noticeably less CPU than AV1's while
- * the quality at 0.5–1.5 Mbps is close (ADR-0018). AV1 where VP9 is missing, VP8 last (Safari
- * and old Firefox builds); the SFU forwards whatever was published.
+ * the quality at 0.5–1.5 Mbps is close (ADR-0018). AV1 where VP9 is missing, VP8 last; the SFU
+ * forwards whatever was published. Outside Chromium (Firefox, Safari — web client) VP9/AV1 rid
+ * simulcast with a per-rid `scalabilityMode` is unreliable, so those get plain VP8 simulcast
+ * (review L10).
  */
-export function pickCameraCodec(available: ReadonlySet<CameraCodec>): CameraCodec {
+export function pickCameraCodec(available: ReadonlySet<CameraCodec>, chromium = true): CameraCodec {
+  if (!chromium) return !available.has('vp8') && available.has('h264') ? 'h264' : 'vp8';
   for (const c of ['vp9', 'av1', 'vp8'] as const) if (available.has(c)) return c;
   return available.has('h264') ? 'h264' : 'vp8';
 }
@@ -105,9 +113,9 @@ export function cameraStopText(reason: 'limit' | 'moderator' | 'other'): 'video.
  */
 export function cameraWanted(
   cameras: readonly string[],
-  o: { hidden: Readonly<Record<string, true>>; saveTraffic: boolean; primary: string | null },
+  o: { hidden: Readonly<Record<string, true>>; saveTraffic: boolean; primary: string | null; me?: string },
 ): Set<string> {
-  return new Set(cameras.filter((id) => !o.hidden[id] && (!o.saveTraffic || id === o.primary)));
+  return new Set(cameras.filter((id) => id !== o.me && !o.hidden[id] && (!o.saveTraffic || id === o.primary)));
 }
 
 /** Consecutive CPU-limited stats samples (2 s apart) before dropping the capture to 360p. */

@@ -1,4 +1,4 @@
-import { RoomEvent, type LocalVideoTrack, type Room } from 'livekit-client';
+import { RoomEvent, Track, type LocalVideoTrack, type Room } from 'livekit-client';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
@@ -29,6 +29,8 @@ export interface CameraHost {
  */
 export class CameraController {
   private track: LocalVideoTrack | null = null;
+  /** The `ended` listener of the live capture (removed on release, review L12). */
+  private onEnded: (() => void) | null = null;
   private gen = 0;
   private cpuSamples = 0;
   /** When the grant withdrawal stopped the camera (quietly): the VOICE_CAMERA_STOP after it still explains why. */
@@ -102,9 +104,10 @@ export class CameraController {
       const live = track;
       track = null; // owned by this.track now
       // Camera unplugged / taken away by the OS: stop cleanly.
-      live.mediaStreamTrack.addEventListener('ended', () => {
+      this.onEnded = () => {
         if (this.track === live) void this.stop(t('video.lost'));
-      });
+      };
+      live.mediaStreamTrack.addEventListener('ended', this.onEnded);
       this.step('published');
       this.bump();
     } catch (err) {
@@ -166,10 +169,43 @@ export class CameraController {
   /** Left / lost the call: the room is gone (its disconnect unpublished everything). */
   onLeave(): void {
     this.gen++;
+    if (this.track && this.onEnded) this.track.mediaStreamTrack.removeEventListener('ended', this.onEnded);
+    this.onEnded = null;
     this.track?.stop();
     this.track = null;
     this.cpuSamples = 0;
     setVoice({ camera: cameraNext(useVoice.getState().camera, 'left'), cameraCpuLimited: false });
+  }
+
+  /**
+   * LiveKit came back after a full reconnect (new signalling session): the server dropped our
+   * camera reservation with the old participant, and the re-join grant has no camera source, so
+   * the republished camera would be refused. Ask for the slot again and republish the same track;
+   * if that is impossible (limit taken meanwhile, no VIDEO), stop with a notice (review L11).
+   */
+  async restore(): Promise<void> {
+    const { room, roomId } = this.host;
+    const track = this.track;
+    if (!room || !roomId || !track || useVoice.getState().camera !== 'on') return;
+    // A plain resume keeps the publication and the grant: nothing to do.
+    const live = room.localParticipant.getTrackPublication(Track.Source.Camera);
+    if (live?.track === track && !cameraGrantMissing(room.localParticipant.permissions)) return;
+    const gen = this.gen;
+    try {
+      await api.voice.requestCamera(roomId);
+      await waitForGrant(room, LK_SOURCE_CAMERA);
+      if (gen !== this.gen || this.track !== track) return;
+      const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+      if (!pub || pub.track !== track) await room.localParticipant.publishTrack(track, cameraPublishOptions());
+      this.bump();
+    } catch (err) {
+      log.warn('camera restore after reconnect failed', err);
+      if (gen !== this.gen) return;
+      this.gen++;
+      this.step('server-stop');
+      await this.release(room);
+      toast.info(t('video.rejoin'));
+    }
   }
 
   /** Settings / ▾ menu changed the device: switch the live camera in place. */
@@ -178,6 +214,8 @@ export class CameraController {
     if (!track) return;
     try {
       await switchCameraDevice(track, deviceId);
+      // The restart captures at 720p again: keep the CPU limit of this session (review L3).
+      if (useVoice.getState().cameraCpuLimited) await limitCameraForCpu(track);
       this.bump();
     } catch (err) {
       reportMediaError(err, 'camera');
@@ -202,6 +240,8 @@ export class CameraController {
     const track = this.track;
     this.track = null;
     if (!track) return;
+    if (this.onEnded) track.mediaStreamTrack.removeEventListener('ended', this.onEnded);
+    this.onEnded = null;
     if (room) await room.localParticipant.unpublishTrack(track, true).catch(() => undefined);
     track.stop();
     this.bump();

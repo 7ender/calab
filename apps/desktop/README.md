@@ -18,7 +18,19 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 | `pnpm -F @calaba/desktop build:app` | build to `out/` only, no installers |
 | `pnpm -F @calaba/desktop typecheck` / `lint` / `test` | TS strict (main, renderer, worklet), eslint, vitest (46 unit tests) |
 | `CALABA_E2E_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop e2e` | Playwright for Electron: register → workspace → room → message → voice |
-| `pnpm -F @calaba/desktop e2e:visual` (`:update` — перезаписать эталон) | Дизайн (docs/08): снимки dark/light × 960/1440 против мок-API, layout-инварианты, axe-core, обход фокуса по Tab. Нужен dev LiveKit. См. TESTING.md «1a» |
+| `pnpm -F @calaba/desktop e2e:visual` (`:update` — перезаписать эталон) | Дизайн (docs/08): снимки dark/light × 960/1440 против мок-API, layout-инварианты, axe-core, обход фокуса по Tab. Нужен dev LiveKit. См. TESTING.md «1a» и «Parallel visual runs» ниже |
+
+
+### Parallel visual runs (git worktrees)
+
+Every checkout on this machine shares one dev LiveKit. Two visual runs must not share the mock's port or its LiveKit room names, or their participants meet in one room. The main tree keeps the defaults: port 39170 and prefix `mock_`. The baseline for the auth shots is taken there, because the login screen prints the port. A **worktree** always runs with its own port and prefix:
+
+```bash
+CALABA_VISUAL_MOCK_PORT=39270 MOCK_LIVEKIT_ROOM_PREFIX=wt_ CALABA_VISUAL_OUT=test-results/wt \
+  pnpm -F @calaba/desktop e2e:visual -g "<screens>"
+```
+
+`auth-*` snapshots from a worktree show 39270; do not commit them (`git checkout -- 'e2e-visual/__screenshots__/darwin/auth-*'`).
 
 ### Environment variables
 

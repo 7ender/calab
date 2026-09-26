@@ -41,6 +41,7 @@ import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQu
 import { platform } from '../platform';
 import { cameraWanted } from '../lib/media/cameraLogic';
 import { pipCamera } from '../features/voice/tileLayout';
+import { ActiveSpeaker } from '../lib/activeSpeaker';
 import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
 import { humanMediaError, reportMediaError } from './mediaErrors';
@@ -112,7 +113,7 @@ class VoiceEngine {
   private micTesting = false;
   /** Speaking rings: 100 ms to appear, 300 ms to disappear (docs/09 #30). */
   private readonly speakers = new SpeakingDebouncer((speaking) => this.onSpeaking(speaking));
-  private speechSeq = 0;
+  private readonly active = new ActiveSpeaker((id) => this.onActiveSpeaker(id));
   /** My webcam (services/camera.ts). */
   readonly camera: CameraController;
   /** Gateway VOICE_MOVED seen, waiting for LiveKit RoomEvent.Moved (else: rejoin). */
@@ -207,7 +208,7 @@ class VoiceEngine {
     if (intent !== this.intentSeq) return;
     const seq = ++this.joinSeq;
     this.roomId = roomId;
-    setVoice({ roomId, workspaceId, phase: 'connecting', error: null, streams: [], watching: null, speaking: {}, myStream: null, cameras: [], lastSpoke: {}, focusedTile: null, videoPip: true });
+    setVoice({ roomId, workspaceId, phase: 'connecting', error: null, streams: [], watching: null, speaking: {}, myStream: null, cameras: [], activeSpeaker: null, focusedTile: null, videoPip: true });
     try {
       const res = await api.voice.join(roomId);
       if (seq !== this.joinSeq) return;
@@ -277,7 +278,8 @@ class VoiceEngine {
       if (gen !== this.rejoinGen) return;
       if (this.room) {
         if (stream) toast.info(t('mediaErr.stream.restart'));
-        if (camera) toast.info(t('video.rejoin'));
+        // The camera comes back by itself (a new capture, no preview); start() explains a failure.
+        if (camera) void this.camera.start();
         return;
       }
     }
@@ -308,6 +310,7 @@ class VoiceEngine {
   private async doTeardown(sound: boolean): Promise<void> {
     this.joinSeq++;
     this.speakers.reset();
+    this.active.reset();
     this.clearMoveTimer();
     this.stopStats();
     await this.stopStream();
@@ -344,7 +347,7 @@ class VoiceEngine {
       myStream: null,
       canVideo: false,
       cameras: [],
-      lastSpoke: {},
+      activeSpeaker: null,
       focusedTile: null,
       quality: 'unknown',
       rttMs: null,
@@ -392,6 +395,10 @@ class VoiceEngine {
         this.refreshStreams();
         this.refreshCameras();
       })
+      // Full reconnect (a new LiveKit session): bring the camera back (services/camera.ts restore).
+      .on(RoomEvent.Reconnected, () => {
+        if (this.room === room) void this.camera.restore();
+      })
       .on(RoomEvent.TrackUnmuted, (pub, p) => {
         if (p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
       })
@@ -418,6 +425,8 @@ class VoiceEngine {
       })
       .on(RoomEvent.ParticipantConnected, () => playSound('join'))
       .on(RoomEvent.ParticipantDisconnected, (p) => {
+        const gone = userIdOf(p.identity);
+        if (![...room.remoteParticipants.values()].some((o) => userIdOf(o.identity) === gone)) this.active.drop(gone);
         playSound('leave');
         for (const set of this.viewers.values()) set.delete(p.identity);
         this.publishViewers();
@@ -433,6 +442,7 @@ class VoiceEngine {
         log.info('voice: moved by the server');
         this.clearMoveTimer();
         this.speakers.reset();
+    this.active.reset();
         for (const set of this.viewers.values()) set.clear();
         for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
         this.refreshStreams();
@@ -604,17 +614,16 @@ class VoiceEngine {
 
   // ------------------------------------------------------------ cameras
 
-  /** Speaking rings + «who spoke last» (tile order, the featured tile, the camera PiP). */
+  /** Speaking rings now; the active speaker for video only after 2 s of speech (lib/activeSpeaker.ts). */
   private onSpeaking(speaking: Record<string, boolean>): void {
-    const prev = useVoice.getState().speaking;
-    let lastSpoke = useVoice.getState().lastSpoke;
-    for (const [id, on] of Object.entries(speaking)) {
-      if (on && !prev[id]) lastSpoke = { ...lastSpoke, [id]: ++this.speechSeq };
-    }
-    const changed = lastSpoke !== useVoice.getState().lastSpoke;
-    setVoice(changed ? { speaking, lastSpoke } : { speaking });
-    // «Экономить трафик» receives only the active speaker's camera: follow the speaker.
-    if (changed && prefs().saveTraffic) this.applyCameras();
+    setVoice({ speaking });
+    this.active.update(speaking);
+  }
+
+  /** The held active speaker changed: the large tile / PiP follow; «Экономить трафик» resubscribes. */
+  private onActiveSpeaker(activeSpeaker: string | null): void {
+    setVoice({ activeSpeaker });
+    this.applyCameras();
   }
 
   private anyCamera(): boolean {
@@ -629,6 +638,8 @@ class VoiceEngine {
     for (const p of room.remoteParticipants.values()) {
       const pub = p.getTrackPublication(Track.Source.Camera);
       const userId = userIdOf(p.identity);
+      // My own camera from another device (web + desktop) is not a tile here (review L9).
+      if (userId === this.myId()) continue;
       if (pub?.trackSid && !pub.isMuted && !cameras.some((c) => c.userId === userId)) cameras.push({ trackSid: pub.trackSid, identity: p.identity, userId });
     }
     const st = useVoice.getState();
@@ -646,13 +657,21 @@ class VoiceEngine {
     return false;
   }
 
-  /** The camera shown large: the clicked tile, else the active speaker's (as in the PiP). */
+  private myId(): string {
+    return useSession.getState().me?.user?.id ?? '';
+  }
+
+  /**
+   * The camera shown large / in the PiP: the clicked tile, else the active speaker's, else the
+   * first remote one. Hidden cameras («Не показывать видео») never qualify, so the PiP, the grid
+   * and the «Экономить трафик» subscription agree (review M1).
+   */
   primaryCamera(): string | null {
     const st = useVoice.getState();
-    const me = useSession.getState().me?.user?.id ?? '';
-    const ids = st.cameras.map((c) => c.userId);
+    const hidden = prefs().hiddenVideo;
+    const ids = st.cameras.map((c) => c.userId).filter((id) => !hidden[id]);
     if (st.focusedTile && ids.includes(st.focusedTile)) return st.focusedTile;
-    return pipCamera(ids, me, st.lastSpoke);
+    return pipCamera(ids, this.myId(), st.activeSpeaker);
   }
 
   /**
@@ -664,7 +683,7 @@ class VoiceEngine {
     const room = this.room;
     if (!room) return;
     const p = prefs();
-    const wanted = cameraWanted(useVoice.getState().cameras.map((c) => c.userId), { hidden: p.hiddenVideo, saveTraffic: p.saveTraffic, primary: this.primaryCamera() });
+    const wanted = cameraWanted(useVoice.getState().cameras.map((c) => c.userId), { hidden: p.hiddenVideo, saveTraffic: p.saveTraffic, primary: this.primaryCamera(), me: this.myId() });
     for (const rp of room.remoteParticipants.values()) {
       const pub = rp.getTrackPublication(Track.Source.Camera);
       if (!pub) continue;

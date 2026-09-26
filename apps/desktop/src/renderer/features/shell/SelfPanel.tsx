@@ -52,19 +52,21 @@ export function SelfPanel(): ReactNode {
   if (!user) return null;
   const cur = STATUSES.find((x) => x.s === status) ?? STATUSES[0];
   const custom = [user.statusEmoji, user.statusText].filter(Boolean).join(' ');
-  // In a call the second line says so, with the speaker icon (Discord «In voice»); a custom status wins.
-  const voiceLine = !custom && inVoice;
-  const second = custom || (inVoice ? t('shell.inVoiceStatus') : cur ? t(cur.key) : '');
+  // In a call the second line says so, with the speaker icon (Discord «In voice»); otherwise the
+  // custom status, else the presence. (The custom status is in the profile popover and the members column.)
+  const voiceLine = inVoice;
+  const second = inVoice ? t('shell.inVoiceStatus') : custom || (cur ? t(cur.key) : '');
 
   return (
-    // Buttons 28 × 28 with no gaps: the name keeps ≥ 104 px in the 256 px column (UX review).
-    <div className="mat-toolbar flex h-[52px] shrink-0 items-center gap-0.5 border-t border-line px-1.5">
+    // Inside the bottom island (240 px in the 256 px column): buttons 24 px, ▾ 10 px, no gaps,
+    // tight paddings — the name keeps ~100 px («Анна Смирнова» fits, UX review).
+    <div className="flex h-[52px] shrink-0 items-center pl-1 pr-0.5">
       <Popover.Root>
         <Popover.Trigger asChild>
           <button
             type="button"
             aria-label={`${t('shell.profile')}: ${user.displayName}, ${cur ? t(cur.key) : ''}`}
-            className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-row)] pl-1 pr-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+            className="flex h-10 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pl-0.5 pr-0 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
           >
             <span className="relative shrink-0">
               <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} />
@@ -124,7 +126,7 @@ export function SelfPanel(): ReactNode {
       >
         {deafened ? <HeadphoneOff className="size-[18px]" /> : <Headphones className="size-[18px]" />}
       </SplitButton>
-      <IconButton size="sm" label={t('settings.title')} onClick={() => open({ kind: 'settings' })}>
+      <IconButton size="sm" className="size-6" label={t('settings.title')} onClick={() => open({ kind: 'settings' })}>
         <Settings className="size-[18px]" />
       </IconButton>
     </div>
@@ -152,7 +154,7 @@ function SplitButton({
   return (
     // The ▾ is always visible (Discord): the device menu is one click away, not hidden behind hover.
     <div className="group/split flex shrink-0 items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
-      <IconButton size="sm" label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="rounded-r-none hover:bg-transparent">
+      <IconButton size="sm" label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="size-6 rounded-r-none hover:bg-transparent">
         {children}
       </IconButton>
       <Dropdown.Root modal={false}>
@@ -161,9 +163,9 @@ function SplitButton({
           <button
             type="button"
             aria-label={menuName}
-            className="-ml-1 grid h-7 w-3.5 place-items-center rounded-r-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
+            className="grid h-6 w-2 place-items-center rounded-r-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
           >
-            <ChevronDown className="size-3" strokeWidth={2.25} aria-hidden />
+            <ChevronDown className="size-2 shrink-0" strokeWidth={3} aria-hidden />
           </button>
         </Dropdown.Trigger>
         </Tip>

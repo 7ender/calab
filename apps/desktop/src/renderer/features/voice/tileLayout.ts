@@ -17,37 +17,41 @@ export interface TileSelection {
   tiles: TilePerson[];
   /** People who did not fit (shown as «+N» on the last tile). */
   overflow: number;
-  /** Large tile: the one the viewer clicked, else the active speaker once there are ≥ 3 tiles. */
+  /**
+   * Large tile: the one the viewer clicked, else (≥ 3 tiles) the latest *remote* speaker with a
+   * camera, else the first remote camera. My own camera is never large unless I click it
+   * (Discord / FaceTime: the self-view stays small).
+   */
   featured: string | null;
 }
 
 /**
- * Tile order: the clicked (focused) tile, then cameras, then everyone else; inside each group
- * the most recent speakers first, then the call order. At most MAX_TILES: with more people the
- * last slot turns into «+N».
+ * Tile order is stable: the clicked (focused) tile, then cameras, then everyone else, each group
+ * in call order — tiles don't jump when someone starts talking (review L5). At most MAX_TILES:
+ * with more people the last slot turns into «+N».
  */
 export function selectTiles(
   people: readonly TilePerson[],
-  opts: { focused: string | null; lastSpoke: Readonly<Record<string, number>>; max?: number },
+  opts: { focused: string | null; active: string | null; me?: string; max?: number },
 ): TileSelection {
   const max = opts.max ?? MAX_TILES;
   const order = new Map(people.map((p, i) => [p.userId, i]));
-  const spoke = (id: string): number => opts.lastSpoke[id] ?? -1;
   const focused = opts.focused && order.has(opts.focused) ? opts.focused : null;
   const sorted = [...people].sort((a, b) => {
     if (a.userId === focused) return -1;
     if (b.userId === focused) return 1;
     if (a.video !== b.video) return a.video ? -1 : 1;
-    return spoke(b.userId) - spoke(a.userId) || (order.get(a.userId) ?? 0) - (order.get(b.userId) ?? 0);
+    return (order.get(a.userId) ?? 0) - (order.get(b.userId) ?? 0);
   });
   const fits = sorted.length <= max;
   const tiles = fits ? sorted : sorted.slice(0, max - 1);
   const overflow = fits ? 0 : sorted.length - tiles.length;
   let featured: string | null = focused;
   if (!featured && tiles.length >= 3) {
-    // The active speaker, preferring one with video; else the first camera.
-    const bySpeech = [...tiles].filter((t) => spoke(t.userId) >= 0).sort((a, b) => spoke(b.userId) - spoke(a.userId));
-    featured = bySpeech.find((t) => t.video)?.userId ?? tiles.find((t) => t.video)?.userId ?? null;
+    // The active speaker (held 2 s, lib/activeSpeaker.ts) if they show video, else the first
+    // remote camera. Never my own camera by default.
+    const remote = tiles.filter((t) => t.video && t.userId !== opts.me);
+    featured = remote.find((t) => t.userId === opts.active)?.userId ?? remote[0]?.userId ?? null;
   }
   if (featured) {
     const i = tiles.findIndex((t) => t.userId === featured);
@@ -112,28 +116,40 @@ export function layoutTiles(n: number, featured: boolean, width: number, height:
   const box: Rect = { x: 0, y: 0, w: width, h: height };
   if (!featured || n === 1) return grid(n, box, gap).map(round);
   const rest = n - 1;
-  const landscape = width / height >= 1.3;
-  if (landscape) {
-    const side = Math.min(320, Math.max(160, Math.round(width * 0.24)));
-    const main = fit(width - side - gap, height);
-    const mainRect: Rect = { x: (width - side - gap - main.w) / 2, y: (height - main.h) / 2, w: main.w, h: main.h };
-    return [mainRect, ...strip(rest, { x: width - side, y: 0, w: side, h: height }, gap, true)].map(round);
-  }
-  const low = Math.min(180, Math.max(90, Math.round(height * 0.22)));
-  const main = fit(width, height - low - gap);
-  const mainRect: Rect = { x: (width - main.w) / 2, y: (height - low - gap - main.h) / 2, w: main.w, h: main.h };
-  return [mainRect, ...strip(rest, { x: 0, y: height - low, w: width, h: low }, gap, false)].map(round);
+  // Two arrangements — the strip on the right or underneath; the one with the larger main tile
+  // wins (a wide-but-short area used to leave empty bands above and below). The main tile and
+  // the strip are centred together as one group.
+  const side = (): Rect[] => {
+    const main = fit(width * 0.8, height);
+    // The strip takes what the main tile leaves, within 120–320 px, and never less than it needs.
+    const s = Math.min(320, Math.max(120, width - main.w - gap));
+    const m = fit(width - s - gap, height);
+    const tiles = strip(rest, { x: 0, y: 0, w: s, h: height }, gap, true);
+    const stripW = Math.max(...tiles.map((t) => t.w));
+    const left = (width - (m.w + gap + stripW)) / 2;
+    return [{ x: left, y: (height - m.h) / 2, w: m.w, h: m.h }, ...tiles.map((t) => ({ ...t, x: left + m.w + gap + (stripW - t.w) / 2 }))];
+  };
+  const below = (): Rect[] => {
+    const low = Math.min(180, Math.max(90, Math.round(height * 0.22)));
+    const m = fit(width, height - low - gap);
+    const tiles = strip(rest, { x: 0, y: 0, w: width, h: low }, gap, false);
+    const stripH = Math.max(...tiles.map((t) => t.h));
+    const top = (height - (m.h + gap + stripH)) / 2;
+    return [{ x: (width - m.w) / 2, y: top, w: m.w, h: m.h }, ...tiles.map((t) => ({ ...t, y: top + m.h + gap + (stripH - t.h) / 2 }))];
+  };
+  const a = side();
+  const b = below();
+  const area = (r: Rect[]): number => (r[0] ? r[0].w * r[0].h : 0);
+  return (area(a) >= area(b) ? a : b).map(round);
 }
 
 /**
- * The camera for the PiP while the chat is open: the latest remote speaker with a camera, else
- * the first remote camera, else my own (a self-view is better than nothing).
+ * The camera for the PiP while the chat is open: the active speaker's (remote), else the first
+ * remote camera, else my own (a self-view is better than nothing). `cameras` must already
+ * exclude hidden ones («Не показывать видео»).
  */
-export function pipCamera(cameras: readonly string[], me: string, lastSpoke: Readonly<Record<string, number>>): string | null {
+export function pipCamera(cameras: readonly string[], me: string, active: string | null): string | null {
   const remote = cameras.filter((id) => id !== me);
-  if (remote.length) {
-    const spoke = (id: string): number => lastSpoke[id] ?? -1;
-    return [...remote].sort((a, b) => spoke(b) - spoke(a))[0] ?? null;
-  }
+  if (remote.length) return active && remote.includes(active) ? active : (remote[0] ?? null);
   return cameras.includes(me) ? me : null;
 }

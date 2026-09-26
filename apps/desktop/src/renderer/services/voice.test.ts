@@ -457,6 +457,35 @@ describe('VoiceEngine', () => {
     voice.resetPtt();
     expect(useVoice.getState().pttDown).toBe(false);
   });
+
+  it('primaryCamera never picks a hidden camera: PiP, grid and «Экономить трафик» agree (review M1)', () => {
+    const cam = (userId: string) => ({ trackSid: `TR_${userId}`, identity: `${userId}:s`, userId });
+    useVoice.setState({ cameras: [cam('a'), cam('b')], activeSpeaker: 'a' });
+    expect(voice.primaryCamera()).toBe('a');
+    usePrefs.getState().setPrefs({ hiddenVideo: { a: true } });
+    expect(voice.primaryCamera()).toBe('b');
+    usePrefs.getState().setPrefs({ hiddenVideo: { a: true, b: true } });
+    expect(voice.primaryCamera()).toBeNull();
+    usePrefs.getState().setPrefs({ hiddenVideo: {} });
+  });
+
+  it('the active speaker for video switches only after 2 s of continuous speech (review M2)', async () => {
+    await voice.join('A', 'ws');
+    const room = FakeRoom.all[0];
+    const p = (id: string) => ({ identity: `${id}:s` });
+    room?.emit('ActiveSpeakersChanged', [p('b')]);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(useVoice.getState().speaking['b']).toBe(true);
+    expect(useVoice.getState().activeSpeaker).toBeNull();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(useVoice.getState().activeSpeaker).toBe('b');
+    // A short interjection by c does not take the picture.
+    room?.emit('ActiveSpeakersChanged', [p('c')]);
+    await vi.advanceTimersByTimeAsync(800);
+    room?.emit('ActiveSpeakersChanged', []);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(useVoice.getState().activeSpeaker).toBe('b');
+  });
 });
 
 describe('VOICE_MOVED (ADR-0019)', () => {

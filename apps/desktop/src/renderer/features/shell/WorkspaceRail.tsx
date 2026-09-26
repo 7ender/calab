@@ -25,7 +25,7 @@ export function WorkspaceRail(): ReactNode {
   const open = useUi((s) => s.openDialog);
 
   return (
-    <nav className="mat-rail flex w-[var(--rail-width)] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3" aria-label={t('ws.list')}>
+    <nav className="flex w-[var(--rail-width)] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3" aria-label={t('ws.list')}>
       {order.map((id) => (
         <RailItem key={id} id={id} />
       ))}

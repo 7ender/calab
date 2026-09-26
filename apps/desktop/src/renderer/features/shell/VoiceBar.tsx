@@ -3,7 +3,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { AudioLines, Check, ChevronDown, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
-import { Button, Tip, cx } from '../../components/ui';
+import { Badge, Button, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
 import { voice } from '../../services/voice';
@@ -96,15 +96,20 @@ function QualityButton(): ReactNode {
  * Big button of the voice panel (docs/09 v0.2, Discord reference): ~56×40, fill on hover,
  * accent fill when on. `children` is the 20 px icon.
  */
-const panelBtn = (active: boolean): string =>
-  cx(
-    'grid h-10 min-w-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
-    active ? 'bg-accent-strong text-white hover:bg-[color-mix(in_srgb,var(--color-accent-strong)_88%,white)]' : 'bg-[var(--color-fill)] text-fg hover:bg-[var(--color-fill-hover)] disabled:hover:bg-[var(--color-fill)]',
-  );
+/** `live`: accent fill (camera / stream on air); `tint`: an «on» setting (Шумодав) — accent-tinted, not a second solid blue. */
+type Tone = 'live' | 'tint';
+const ON: Record<Tone, string> = {
+  live: 'bg-accent-strong text-white hover:bg-[color-mix(in_srgb,var(--color-accent-strong)_88%,white)]',
+  tint: 'bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)] text-accent-text hover:bg-[color-mix(in_srgb,var(--color-accent)_28%,transparent)]',
+};
+const OFF = 'bg-[var(--color-fill)] text-fg hover:bg-[var(--color-fill-hover)] disabled:hover:bg-[var(--color-fill)]';
+const panelBtn = (active: boolean, tone: Tone = 'live'): string =>
+  cx('grid h-10 min-w-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40', active ? ON[tone] : OFF);
 
 function PanelButton({
   label,
   active = false,
+  tone = 'live',
   disabled,
   onClick,
   testId,
@@ -112,6 +117,7 @@ function PanelButton({
 }: {
   label: string;
   active?: boolean;
+  tone?: Tone;
   disabled?: boolean;
   onClick?: () => void;
   testId?: string;
@@ -127,7 +133,7 @@ function PanelButton({
         aria-disabled={disabled || undefined}
         data-testid={testId}
         onClick={disabled ? undefined : onClick}
-        className={cx(panelBtn(active), disabled && 'cursor-default opacity-40 hover:bg-[var(--color-fill)]')}
+        className={cx(panelBtn(active, tone), disabled && 'cursor-default opacity-40 hover:bg-[var(--color-fill)]')}
       >
         {children}
       </button>
@@ -159,6 +165,7 @@ function CameraButton({ roomId }: { roomId: string }): ReactNode {
   const checked = usePrefs((s) => s.cameraChecked);
   const open = useUi((s) => s.openDialog);
   const { label, disabled } = useCameraLabel(roomId);
+  const [menu, setMenu] = useState(false);
   const on = phase === 'on';
   const busy = phase === 'starting' || phase === 'stopping';
   const click = (): void => {
@@ -167,8 +174,11 @@ function CameraButton({ roomId }: { roomId: string }): ReactNode {
     else if (!checked) open({ kind: 'camera-preview' });
     else void voice.camera.start();
   };
+  // One 56×40 split button: the camera toggle and a 20 px ▾ (the full 40 px height) with a
+  // hairline between them; right-click on the toggle opens the device menu too.
+  const part = on ? 'hover:bg-white/15' : 'hover:bg-[var(--color-fill-hover)]';
   return (
-    <div className={cx(panelBtn(on), 'relative grid-cols-1 overflow-hidden', disabled && 'hover:bg-[var(--color-fill)]')}>
+    <div className={cx('flex h-10 min-w-0 overflow-hidden rounded-[var(--radius-icon)]', on ? 'bg-accent-strong text-white' : 'bg-[var(--color-fill)] text-fg')}>
       <Tip label={label}>
         <button
           type="button"
@@ -177,23 +187,29 @@ function CameraButton({ roomId }: { roomId: string }): ReactNode {
           aria-disabled={disabled || undefined}
           data-testid="camera-button"
           onClick={disabled ? undefined : click}
-          className={cx('grid size-full place-items-center pr-2.5', disabled && 'cursor-default opacity-40')}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu(true);
+          }}
+          className={cx('grid min-w-0 flex-1 place-items-center transition-colors duration-[var(--motion-fast)]', disabled ? 'cursor-default opacity-40' : part)}
         >
           {busy ? <Loader2 className="size-5 animate-spin" aria-hidden /> : on ? <Video className="size-5" aria-hidden /> : <VideoOff className="size-5" aria-hidden />}
         </button>
       </Tip>
-      <Dropdown.Root modal={false}>
+      <span aria-hidden className={cx('my-2 w-px shrink-0', on ? 'bg-white/30' : 'bg-[var(--color-fill-hover)]')} />
+      <Dropdown.Root modal={false} open={menu} onOpenChange={setMenu}>
         <Tip label={t('video.options')}>
           <Dropdown.Trigger asChild>
             <button
               type="button"
               aria-label={t('video.options')}
               className={cx(
-                'absolute inset-y-0 right-0 grid w-3.5 place-items-center rounded-r-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)]',
-                on ? 'text-white/85 hover:bg-white/15 hover:text-white' : 'text-muted hover:bg-[var(--color-fill-hover)] hover:text-fg data-[state=open]:text-fg',
+                'grid w-5 shrink-0 place-items-center transition-colors duration-[var(--motion-fast)]',
+                on ? 'text-white/85 hover:text-white data-[state=open]:bg-white/15' : 'text-muted hover:text-fg data-[state=open]:bg-[var(--color-fill-hover)] data-[state=open]:text-fg',
+                part,
               )}
             >
-              <ChevronDown className="size-3" strokeWidth={2.25} aria-hidden />
+              <ChevronDown className="size-3.5" strokeWidth={2.25} aria-hidden />
             </button>
           </Dropdown.Trigger>
         </Tip>
@@ -232,7 +248,8 @@ export function CameraMenu(): ReactNode {
   }, []);
   const list = (devices ?? []).filter((d) => d.kind === 'videoinput');
   return (
-    <Dropdown.Content className={cx(menuBox, 'w-72')} side="top" align="start" sideOffset={6} collisionPadding={16}>
+    // To the right of the panel, over the chat: it doesn't cover the «Голос подключён» header.
+    <Dropdown.Content className={cx(menuBox, 'w-72')} side="right" align="end" sideOffset={8} collisionPadding={16}>
       <Dropdown.Label className={menuLabel}>{t('video.device')}</Dropdown.Label>
       <Dropdown.RadioGroup value={current} onValueChange={(v) => setPrefs({ cameraDeviceId: v === DEFAULT_CAMERA ? null : v })}>
         <Dropdown.RadioItem value={DEFAULT_CAMERA} className={cx(menuItem, 'relative pl-7')}>
@@ -317,7 +334,7 @@ export function VoiceBar(): ReactNode {
   };
 
   return (
-    <div className="shrink-0 border-t border-line px-2 pb-2 pt-1.5" role="region" aria-label={t('voice.panel')}>
+    <div className="shrink-0 px-2 pb-2 pt-1.5" role="region" aria-label={t('voice.panel')}>
       <div className="flex items-center gap-1">
         <div className="min-w-0 flex-1 pl-1" aria-live="polite">
           <div className={cx('truncate text-[13px] font-semibold leading-4', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
@@ -352,7 +369,7 @@ export function VoiceBar(): ReactNode {
         </div>
       ) : null}
 
-      <div className="mt-2 grid grid-cols-4 gap-1.5">
+      <div className="mt-2 grid grid-cols-4 gap-2">
         <CameraButton roomId={roomId} />
         {myStream ? (
           <PanelButton label={t('shell.stopShare')} active onClick={() => void voice.stopStream()}>
@@ -363,7 +380,7 @@ export function VoiceBar(): ReactNode {
             <MonitorUp className="size-5" aria-hidden />
           </PanelButton>
         )}
-        <PanelButton label={rnnoise ? t('shell.noiseOn') : t('shell.noiseOff')} active={rnnoise} onClick={() => setPrefs({ rnnoise: !rnnoise })}>
+        <PanelButton label={rnnoise ? t('shell.noiseOn') : t('shell.noiseOff')} active={rnnoise} tone="tint" onClick={() => setPrefs({ rnnoise: !rnnoise })}>
           <AudioLines className="size-5" aria-hidden />
         </PanelButton>
         <Dropdown.Root modal={false}>
@@ -412,7 +429,7 @@ export function VoiceBar(): ReactNode {
         <div className="mt-2 flex items-center gap-2 rounded-[var(--radius-row)] bg-hover px-2 py-1.5 text-[12px]" data-testid="my-stream">
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
-              <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white">{t('shell.live')}</span>
+              <Badge tone="danger">{t('shell.live')}</Badge>
               <span className="flex items-center gap-1 text-fg" aria-label={viewersText(myStream.viewers)}>
                 <Eye className="size-3.5 text-muted" aria-hidden />
                 {viewersText(myStream.viewers)}

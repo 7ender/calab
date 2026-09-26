@@ -202,6 +202,12 @@ export interface MockServer {
   setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
   setPresence(userId: string, status: PresenceStatus): void;
+  /**
+   * The server stops a user's camera like the real one (docs/05 «Камеры»): `camera = false` and
+   * VOICE_CAMERA_STOP{reason} to the room's viewers — LIMIT_REACHED is what an over-limit
+   * `track_published` produces (the mock has no LiveKit webhooks to detect it by itself).
+   */
+  stopCamera(userId: string, reason: VoiceStreamStopReason): void;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -219,6 +225,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     injectMessage: (a) => impl.injectMessage(a),
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
+    stopCamera: (u, r) => impl.stopCamera(u, r),
   };
 }
 
@@ -818,6 +825,14 @@ class MockImpl {
       default:
         return;
     }
+  }
+
+  stopCamera(userId: string, reason: VoiceStreamStopReason): void {
+    const v = this.state.voiceStates.get(userId);
+    const room = v?.roomId ? this.state.rooms.get(v.roomId) : undefined;
+    if (!room) return;
+    this.setVoice(userId, room.id, { camera: false });
+    this.toWorkspace(room.workspaceId, { event: { case: 'voiceCameraStop', value: { workspaceId: room.workspaceId, roomId: room.id, userId, trackSid: '', reason } } }, room.id);
   }
 
   setPresence(userId: string, status: PresenceStatus): void {

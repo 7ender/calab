@@ -53,7 +53,9 @@ export function AppShell(): ReactNode {
           {t('gateway.reconnecting')}
         </div>
       ) : null}
-      <div className="flex min-h-0 flex-1">
+      {/* The rail sits on the window layer (same material as the title bar); the room column and
+          the chat are one «island» with a 12 px top-left corner and a hairline edge (docs/09 v0.2). */}
+      <div className="mat-rail flex min-h-0 flex-1">
         <WorkspaceRail />
         {!ready ? (
           <div className="mat-content grid flex-1 place-items-center">
@@ -63,7 +65,7 @@ export function AppShell(): ReactNode {
             </div>
           </div>
         ) : hasWs && wsId ? (
-          <>
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
             <Sidebar workspaceId={wsId} />
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
@@ -71,7 +73,7 @@ export function AppShell(): ReactNode {
               {roomId && wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
               {roomId && !wide && overlayOpen ? <MembersPanel workspaceId={wsId} floating /> : null}
             </div>
-          </>
+          </div>
         ) : (
           <Welcome />
         )}

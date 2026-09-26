@@ -110,6 +110,8 @@
   /* ---- shadow / blur (materials) ---- */
   --shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 35%), 0 2px 6px rgb(0 0 0 / 25%);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 25%);
+  /* the bottom island of the room column: hairline edge + soft lift */
+  --shadow-island: 0 0 0 1px var(--color-separator), 0 4px 14px rgb(0 0 0 / 28%);
   --blur-sidebar: blur(20px) saturate(180%);
   --blur-toolbar: blur(12px) saturate(160%);
   --blur-popover: blur(20px) saturate(180%);
@@ -176,7 +178,8 @@
   --color-search-current: #ffcc00;
   --color-code: rgb(118 118 128 / 12%);
   --color-scrim: rgb(0 0 0 / 25%);
-  --color-tile-bg: #dcdde2;
+  /* tiles stay dark in light theme too (video letterboxing, like the stream stage) */
+  --color-tile-bg: #2c2c2e;
   --color-sheet-pane: #f5f5f7;
   --color-card: #ffffff;
   --color-card-line: rgb(0 0 0 / 8%);
@@ -201,6 +204,7 @@
   --name-8: #5c5c61;
   --shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 12px 32px rgb(0 0 0 / 14%), 0 2px 6px rgb(0 0 0 / 8%);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 8%);
+  --shadow-island: 0 0 0 1px var(--color-separator), 0 4px 14px rgb(0 0 0 / 10%);
   color-scheme: light;
 }
 

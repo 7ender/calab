@@ -15,11 +15,11 @@ vi.stubGlobal('localStorage', {
 
 vi.mock('../lib/log', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('../platform', () => ({ platform: { kind: 'web' } }));
-vi.mock('livekit-client', () => ({ RoomEvent: { ParticipantPermissionsChanged: 'perm' } }));
+vi.mock('livekit-client', () => ({ RoomEvent: { ParticipantPermissionsChanged: 'perm' }, Track: { Source: { Camera: 'camera' } } }));
 
 class FakeTrack {
   stopped = false;
-  mediaStreamTrack = { addEventListener: vi.fn() };
+  mediaStreamTrack = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
   stop(): void {
     this.stopped = true;
   }
@@ -27,6 +27,7 @@ class FakeTrack {
 const captured: FakeTrack[] = [];
 let captureError: Error | null = null;
 const limitCpu = vi.fn(() => Promise.resolve());
+const switchDevice = vi.fn(() => Promise.resolve());
 vi.mock('../lib/media/camera', () => ({
   captureCamera: vi.fn(() => {
     if (captureError) return Promise.reject(captureError);
@@ -36,7 +37,7 @@ vi.mock('../lib/media/camera', () => ({
   }),
   cameraPublishOptions: () => ({ source: 'camera' }),
   limitCameraForCpu: (...a: unknown[]) => limitCpu(...(a as [])),
-  switchCameraDevice: vi.fn(() => Promise.resolve()),
+  switchCameraDevice: (...a: unknown[]) => switchDevice(...(a as [])),
 }));
 
 let requestGate: Promise<void> | null = null;
@@ -53,8 +54,16 @@ vi.mock('../stores/toasts', () => ({ toast: { info: (...a: unknown[]) => void in
 const report = vi.fn();
 vi.mock('./mediaErrors', () => ({ reportMediaError: (...a: unknown[]) => void report(...a) }));
 
-function fakeRoom(): { localParticipant: Record<string, unknown>; on: () => void; off: () => void; published: FakeTrack[]; unpublished: FakeTrack[] } {
+function fakeRoom(): {
+  localParticipant: Record<string, unknown>;
+  on: () => void;
+  off: () => void;
+  pub: { track: FakeTrack } | undefined;
+  published: FakeTrack[];
+  unpublished: FakeTrack[];
+} {
   const r = {
+    pub: undefined as { track: FakeTrack } | undefined,
     published: [] as FakeTrack[],
     unpublished: [] as FakeTrack[],
     on: () => undefined,
@@ -65,12 +74,15 @@ function fakeRoom(): { localParticipant: Record<string, unknown>; on: () => void
     permissions: { canPublishSources: [] },
     publishTrack: (t: FakeTrack) => {
       r.published.push(t);
+      r.pub = { track: t };
       return Promise.resolve();
     },
     unpublishTrack: (t: FakeTrack) => {
       r.unpublished.push(t);
+      if (r.pub?.track === t) r.pub = undefined;
       return Promise.resolve();
     },
+    getTrackPublication: () => r.pub,
   };
   return r;
 }
@@ -92,6 +104,7 @@ beforeEach(async () => {
   info.mockClear();
   report.mockClear();
   limitCpu.mockClear();
+  switchDevice.mockClear();
   ({ useVoice } = await import('../stores/voice'));
   ({ ApiError } = await import('../lib/api/client'));
   const { CameraController } = await import('./camera');
@@ -178,6 +191,37 @@ describe('CameraController', () => {
     for (let i = 0; i < 5; i++) ctl.onStats(cpu);
     await vi.waitFor(() => expect(limitCpu).toHaveBeenCalledTimes(1));
     expect(useVoice.getState().cameraCpuLimited).toBe(true);
+  });
+
+  it('device switch keeps the 360p CPU limit of the session (L3)', async () => {
+    await ctl.start();
+    await ctl.setDevice('cam-2');
+    expect(limitCpu).not.toHaveBeenCalled();
+    useVoice.getState().set({ cameraCpuLimited: true });
+    await ctl.setDevice('cam-3');
+    expect(switchDevice).toHaveBeenCalledTimes(2);
+    expect(limitCpu).toHaveBeenCalledTimes(1);
+  });
+
+  it('full reconnect: the lost publication is re-requested and republished (L11)', async () => {
+    await ctl.start();
+    await ctl.restore(); // plain resume: publication and grant intact → nothing
+    expect(requestCamera).toHaveBeenCalledTimes(1);
+    room.pub = undefined; // the new session has no camera
+    await ctl.restore();
+    expect(requestCamera).toHaveBeenCalledTimes(2);
+    expect(room.published).toEqual([captured[0], captured[0]]);
+    expect(phase()).toBe('on');
+  });
+
+  it('full reconnect without a free slot: camera off with a notice', async () => {
+    await ctl.start();
+    room.pub = undefined;
+    requestError = new ApiError('ERROR_CODE_CONFLICT', 'limit', 409);
+    await ctl.restore();
+    expect(phase()).toBe('off');
+    expect(info).toHaveBeenCalledWith('Связь восстановлена — включите камеру снова');
+    expect(captured[0]?.stopped).toBe(true);
   });
 
   it('leaving the call releases the camera', async () => {

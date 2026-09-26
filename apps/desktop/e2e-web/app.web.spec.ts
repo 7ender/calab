@@ -7,6 +7,7 @@ import { expect, test } from '@playwright/test';
  * does not connect; on the stand it should.
  */
 test('register → workspace → room → message → reload → voice', async ({ page, browserName }) => {
+  test.setTimeout(120_000);
   const id = `${browserName}-${Date.now().toString(36)}`;
   await page.goto('/');
   // Invite-only servers (the stand): CALABA_WEB_LOGIN + CALABA_WEB_PASSWORD sign in with an
@@ -82,6 +83,17 @@ test('register → workspace → room → message → reload → voice', async (
   }
   await page.locator('aside button', { hasText: 'Созвон' }).first().click();
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
+  // Camera (docs/09 #41; server from feat/webcam): the browser's fake camera, first start through
+  // the preview sheet. Chromium publishes VP9 simulcast, Firefox / Safari plain VP8 simulcast.
+  if (process.env['CALABA_WEB_CAMERA'] !== '0') {
+    await page.getByTestId('camera-button').click();
+    await expect(page.getByTestId('camera-preview-enable')).toBeEnabled({ timeout: 15_000 });
+    await page.getByTestId('camera-preview-enable').click();
+    await expect(page.getByTestId('camera-button')).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
+    await expect(page.getByTestId('camera-pip')).toBeVisible();
+    await page.getByTestId('camera-button').click();
+    await expect(page.getByTestId('camera-button')).toHaveAttribute('aria-pressed', 'false', { timeout: 15_000 });
+  }
   await page.getByRole('button', { name: 'Отключиться' }).click();
   await expect(page.getByText('Голос подключён')).toHaveCount(0);
 });

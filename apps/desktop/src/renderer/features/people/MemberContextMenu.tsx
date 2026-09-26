@@ -121,24 +121,22 @@ function MemberMenuContent({
         <>
           <VolumeRow userId={userId} menu />
           <ContextMenu.CheckboxItem className={menuItem} checked={localMuted} onCheckedChange={(v) => voice.setUserMuted(userId, v)}>
-            <span className="grid w-4 place-items-center">
-              <ContextMenu.ItemIndicator>
-                <Check className="size-4" aria-hidden />
-              </ContextMenu.ItemIndicator>
-            </span>
-            {t('people.menu.localMute')}
+            <VolumeX className="size-4" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{t('people.menu.localMute')}</span>
+            <ContextMenu.ItemIndicator>
+              <Check className="size-4" aria-hidden />
+            </ContextMenu.ItemIndicator>
           </ContextMenu.CheckboxItem>
         </>
       ) : null}
       {/* Local: stop receiving their camera (unsubscribe), an avatar tile instead (docs/09 #42). */}
       {a.hideVideo ? (
         <ContextMenu.CheckboxItem className={menuItem} checked={videoHidden} onCheckedChange={setHidden}>
-          <span className="grid w-4 place-items-center">
-            <ContextMenu.ItemIndicator>
-              <Check className="size-4" aria-hidden />
-            </ContextMenu.ItemIndicator>
-          </span>
-          {t('video.hide')}
+          <VideoOff className="size-4" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{t('video.hide')}</span>
+          <ContextMenu.ItemIndicator>
+            <Check className="size-4" aria-hidden />
+          </ContextMenu.ItemIndicator>
         </ContextMenu.CheckboxItem>
       ) : null}
       {/* Local actions and moderation are separate groups (docs/09 v0.2 «Меню участника»). */}

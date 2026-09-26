@@ -384,24 +384,36 @@ for (const theme of THEMES) {
         await checkpoint(s, 'camera-preview');
         await page.getByTestId('camera-preview-enable').click();
         await expect(page.getByTestId('camera-button')).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
-        // Chat open: the camera PiP (my self-view while nobody else has a camera).
-        await expect(page.getByTestId('camera-pip')).toBeVisible();
-        await expectFrames(page, 1);
-        await checkpoint(s, 'voice-camera-pip');
+        // Chat open: the camera PiP — my self-view while nobody else has a camera.
+        await expect(page.getByTestId('camera-pip')).toHaveAccessibleName('Камера: Анна Смирнова');
+        // Борис turns his camera on (a LiveKit camera track + VoiceState.camera, as the server would).
         const cameraPub = await startPublisher({ userId: IDS.users.boris, name: 'Борис Петров', roomId: IDS.rooms.meeting, source: 'camera' });
+        mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.meeting, muted: true, camera: true });
         try {
           const borisTile = page.getByRole('button', { name: 'Камера: Борис Петров' });
+          // The PiP prefers a remote camera over the self-view.
+          await expect(page.getByTestId('camera-pip')).toHaveAccessibleName('Камера: Борис Петров', { timeout: 30_000 });
+          await expectFrames(page, 1);
+          await checkpoint(s, 'voice-camera-pip');
           await page.getByTestId('camera-pip').getByRole('button', { name: 'Развернуть видео' }).first().click();
           await expect(page.getByTestId('video-grid')).toBeVisible();
           await expect(borisTile).toBeVisible({ timeout: 30_000 });
           await expectFrames(page, 2);
           // Grid: two cameras + Вера's avatar tile; with 3 tiles the latest speaker / first camera is large.
           await expect(page.getByTestId('video-tile')).toHaveCount(3);
-          await checkpoint(s, 'voice-camera-grid');
-          await borisTile.click();
-          await expect(borisTile).toHaveAttribute('aria-pressed', 'true');
+          // My own camera is never the large tile by default: Борис's is.
           await expect(page.locator('[data-testid="video-tile"][data-featured]')).toHaveAccessibleName('Камера: Борис Петров');
+          await checkpoint(s, 'voice-camera-grid');
+          const meTile = page.getByRole('button', { name: 'Камера: Анна Смирнова' });
+          // Pin a tile: accent ring + pin badge, «Вернуться к сетке» in the header; Esc unpins.
+          await meTile.click();
+          await expect(meTile).toHaveAttribute('aria-pressed', 'true');
+          await expect(page.locator('[data-testid="video-tile"][data-featured]')).toHaveAccessibleName('Камера: Анна Смирнова');
+          await expect(page.getByRole('button', { name: 'Вернуться к сетке' })).toBeVisible();
           await checkpoint(s, 'voice-camera-focus');
+          await page.mouse.move(0, 0);
+          await page.keyboard.press('Escape');
+          await expect(meTile).toHaveAttribute('aria-pressed', 'false');
           // Member menu on a tile: local «Не показывать видео», moderator «Выключить камеру».
           await borisTile.click({ button: 'right' });
           await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Выключить камеру' })).toBeVisible();
@@ -413,6 +425,7 @@ for (const theme of THEMES) {
           await expect(page.getByTestId('video-grid')).toHaveCount(0);
         } finally {
           await cameraPub.stop();
+          mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.meeting, muted: true, camera: false });
         }
         // Борис's camera left the room: only my camera remains (for the stream strip below).
         await expect.poll(() => page.evaluate(() => (window as unknown as { __calabaCameras?: () => number }).__calabaCameras?.() ?? -1), { timeout: 30_000 }).toBe(0);
