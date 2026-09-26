@@ -4,7 +4,7 @@
 #   anything else     -> falls through to the regular HTTPS server (app, landing, rtc.*)
 # HTTP/3 is disabled: UDP 443 belongs to LiveKit TURN/UDP.
 # Host lists come from entrypoint.sh (APP_HOST/LANDING_HOST/DOMAIN/DOMAIN_ALT/DOMAIN_LEGACY → APP_HOSTS,
-# RTC_HOSTS, TURN_HOSTS, RTC_ORIGINS, /tmp/landing.caddy) — see docs/10-branding.md.
+# RTC_HOSTS, TURN_HOSTS, RTC_ORIGINS, RELEASES_ORIGIN, /tmp/landing.caddy, /tmp/download.caddy, /tmp/releases.caddy) — see docs/10-branding.md.
 {
 	admin off
 	log {
@@ -54,8 +54,9 @@
 }
 
 # /download/ on the app and landing hosts: the generated /tmp/download.caddy either redirects to
-# RELEASES_HOST (same path — electron-updater resolves file URLs relative to its feed) or serves
-# /srv/releases here (releases_files).
+# RELEASES_HOST (same path — electron-updater resolves file URLs relative to its feed; plus the stable
+# shortcuts /download/<mac-arm64|mac-x64|win|linux|deb> → latest/<file> and /download/ by User-Agent) or
+# serves /srv/releases here (releases_files).
 (releases) {
 	redir /download /download/ 308
 	import /tmp/download.caddy
@@ -94,7 +95,7 @@
 		header {
 			# Next.js static export hydrates through inline <script> tags: 'unsafe-inline' for scripts is the
 			# price of a no-server export (no nonces). No connect targets beyond self; no framing.
-			Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+			Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'{$RELEASES_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 			X-Content-Type-Options nosniff
 			Referrer-Policy strict-origin-when-cross-origin
 			X-Frame-Options DENY

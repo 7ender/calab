@@ -1,15 +1,28 @@
-import { Download, Laptop, Monitor, Terminal, type LucideIcon } from 'lucide-react';
+import { Laptop, Monitor, Terminal, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { APP_URL, DOWNLOAD_URL, REPO_URL, repoFile } from '@/lib/site';
+import { APP_URL, DOWNLOADS, REPO_URL, repoFile } from '@/lib/site';
+import { DownloadPrimary } from './download-primary';
 import { Button, Section, SectionHeading } from './ui';
 
-const platforms: { icon: LucideIcon; name: string; variants: string; format: string; note: ReactNode }[] = [
+// Direct links to the stable latest/ names (no directory listing, no redirect hop).
+const platforms: {
+  icon: LucideIcon;
+  name: string;
+  variants: string;
+  format: string;
+  note: ReactNode;
+  files: { label: string; href: string }[];
+}[] = [
   {
     icon: Laptop,
     name: 'macOS',
     variants: 'Apple Silicon · Intel',
     format: 'DMG, macOS 12 и новее',
     note: 'Подписано Developer ID и нотаризовано Apple — открывается без предупреждений.',
+    files: [
+      { label: 'Apple Silicon', href: DOWNLOADS.macArm64 },
+      { label: 'Intel', href: DOWNLOADS.macX64 },
+    ],
   },
   {
     icon: Monitor,
@@ -17,6 +30,7 @@ const platforms: { icon: LucideIcon; name: string; variants: string; format: str
     variants: 'x64',
     format: 'Установщик .exe, Windows 10 и 11',
     note: 'Сборка пока без подписи: при первом запуске SmartScreen покажет «Неизвестный издатель» → «Подробнее» → «Выполнить в любом случае».',
+    files: [{ label: 'Скачать .exe', href: DOWNLOADS.win }],
   },
   {
     icon: Terminal,
@@ -28,6 +42,10 @@ const platforms: { icon: LucideIcon; name: string; variants: string; format: str
         AppImage перед запуском сделайте исполняемым: <code className="font-mono text-[13px]">chmod +x</code>.
       </>
     ),
+    files: [
+      { label: 'AppImage', href: DOWNLOADS.appImage },
+      { label: '.deb', href: DOWNLOADS.deb },
+    ],
   },
 ];
 
@@ -40,7 +58,8 @@ export function Downloads() {
         title="Приложение для всех платформ"
         lead="Клиент на Electron: глобальные хоткеи, push-to-talk в фоне, стрим любого окна."
       />
-      <ul className="mx-auto mt-12 grid max-w-[960px] gap-4 sm:mt-16 md:grid-cols-3 md:gap-6">
+      <DownloadPrimary />
+      <ul className="mx-auto mt-10 grid max-w-[960px] gap-4 sm:mt-12 md:grid-cols-3 md:gap-6">
         {platforms.map((p) => (
           <li key={p.name} className="flex flex-col items-center rounded-[20px] border border-line bg-card p-6 text-center sm:p-8">
             <p.icon aria-hidden="true" className="size-8 text-fg" strokeWidth={1.5} />
@@ -48,11 +67,13 @@ export function Downloads() {
             <p className="mt-1 text-[15px] leading-6 text-fg">{p.variants}</p>
             <p className="text-[14px] leading-5 text-fg-2">{p.format}</p>
             <p className="mt-4 text-[13px] leading-5 text-pretty text-fg-2">{p.note}</p>
-            <div className="mt-auto w-full pt-6">
-              <Button href={DOWNLOAD_URL} className="w-full">
-                <Download aria-hidden="true" className="size-4" strokeWidth={2} />
-                Скачать<span className="sr-only"> для {p.name}</span>
-              </Button>
+            <div className="mt-auto flex w-full gap-2 pt-6">
+              {p.files.map((f) => (
+                <Button key={f.href} href={f.href} variant="secondary" className="min-w-0 flex-1 px-4">
+                  {f.label}
+                  <span className="sr-only"> — {p.name}</span>
+                </Button>
+              ))}
             </div>
           </li>
         ))}

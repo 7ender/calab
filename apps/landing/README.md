@@ -19,15 +19,16 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
 
 `https://calab.ru` — Caddy `file_server` from `/srv/landing` (see `docs/10-branding.md`, `LANDING_HOST`).
 Copy the contents of `out/` there. `trailingSlash: true`, so any future page `/x/` is exported as `x/index.html`.
-Links: «Открыть в браузере» → `https://app.calab.ru`, downloads → `https://app.calab.ru/download/` (directory
-listing, never versioned file names), licence and support → `it@gptunnel.ai` (`CONTACT_EMAIL`), source → `https://github.com/itrcz/calab` (`REPO_URL` in `src/lib/site.ts`; LICENSE/SECURITY/TRADEMARKS links point to `blob/main/…`).
+Links: «Открыть в браузере» → `https://app.calab.ru`, downloads → direct links to the stable names
+`https://releases.calab.ru/latest/<file>` (`DOWNLOADS` in `src/lib/site.ts`; the main button picks the visitor's OS
+in the browser, the version comes from `latest/VERSION`, never versioned file names), licence and support → `it@gptunnel.ai` (`CONTACT_EMAIL`), source → `https://github.com/itrcz/calab` (`REPO_URL` in `src/lib/site.ts`; LICENSE/SECURITY/TRADEMARKS links point to `blob/main/…`).
 
 ## Design
 
 Follows `docs/08-design.md`: system font stack, one accent (`#0A84FF`/`#007AFF`, white-on-accent fills use
 `#0071e3`), 4 px grid, glass only on the sticky header (solid with `prefers-reduced-transparency`), light/dark
 via `prefers-color-scheme` only, motion only under `prefers-reduced-motion: no-preference`. Tokens live in
-`src/app/globals.css`. All components are server components; the FAQ uses native `<details>`, so the page works
+`src/app/globals.css`. All components are server components except `download-primary.tsx` (OS detection + `latest/VERSION`); the FAQ uses native `<details>`, so the page works
 without JS (the Next runtime chunk still ships, ~100 kB).
 
 ## Updating screenshots

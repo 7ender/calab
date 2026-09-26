@@ -8,6 +8,8 @@
 #   S3 (preferred) — bucket layout: releases/<version>/<installers, blockmaps>   (Cache-Control immutable)
 #                                   latest-mac.yml, latest-linux.yml, latest.yml, index.html at the root
 #                                   (no-cache, uploaded LAST; their `url:`/`path:` point into releases/<version>/)
+#                                   latest/<stable name> + latest/VERSION — server-side copies of the newest stable
+#                                   release (no-cache), for the landing and /download/<os> (infra/docker/caddy)
 #   stand (fallback, when S3 secrets are absent) — rsync to /opt/calaba/releases (flat, as before)
 #
 # Every OS builds natively, so the patched uiohook-napi is compiled from source everywhere (MSVC on Windows).
@@ -356,6 +358,32 @@ jobs:
             s3 cp "$y" "s3://$S3_BUCKET/$y" --cache-control 'no-cache' --content-type 'text/yaml; charset=utf-8' --only-show-errors
           done
           s3 cp index.html "s3://$S3_BUCKET/index.html" --cache-control 'no-cache' --content-type 'text/html; charset=utf-8' --only-show-errors
+          # 5. stable download names under latest/ (the landing's buttons and /download/<os> link there; the
+          #    updater feeds above are untouched): server-side copies of this release (no re-upload), stable
+          #    releases only. Content-Disposition keeps the versioned name for the saved file. VERSION last.
+          if [[ "$ver" == *-* ]]; then
+            echo "::notice::prerelease $ver — latest/ left as is"
+          else
+            latest=(
+              "Calab-$ver-arm64.dmg:Calab-mac-arm64.dmg"
+              "Calab-$ver-x64.dmg:Calab-mac-x64.dmg"
+              "Calab-Setup-$ver-x64.exe:Calab-win-x64.exe"
+              "Calab-$ver-x86_64.AppImage:Calab-linux-x86_64.AppImage"
+              "calab_${ver}_amd64.deb:calab-linux-amd64.deb"
+            )
+            for pair in "${latest[@]}"; do
+              src="${pair%%:*}" dst="${pair#*:}"
+              [[ -f "$src" ]] || { echo "::error::$src is not in this release — latest/$dst not updated"; exit 1; }
+            done
+            for pair in "${latest[@]}"; do
+              src="${pair%%:*}" dst="${pair#*:}"
+              s3 cp "s3://$S3_BUCKET/releases/$ver/$src" "s3://$S3_BUCKET/latest/$dst" \
+                --metadata-directive REPLACE --cache-control 'no-cache' --content-type 'application/octet-stream' \
+                --content-disposition "attachment; filename=\"$src\"" --only-show-errors
+            done
+            printf '%s\n' "$ver" > VERSION
+            s3 cp VERSION "s3://$S3_BUCKET/latest/VERSION" --cache-control 'no-cache' --content-type 'text/plain; charset=utf-8' --only-show-errors
+          fi
           echo "published=1" >> "$GITHUB_OUTPUT"
           echo "::notice::published Calab $ver to s3://$S3_BUCKET (feed: https://releases.calab.ru/)"
 

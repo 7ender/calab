@@ -27,14 +27,15 @@
 #   deploy     infra/docker/sync.sh with SYNC_REF=<commit>, VERSION: whole stack (api rebuilt with the build
 #              info, unchanged services untouched), web static, landing (from the same export); SKIP_RELEASES
 #   verify     smoke on both app hosts (/healthz, /api/version, TLS chain), landing, /download/ → 302 to
-#              RELEASES_HOST (app, alias, landing), /readyz inside; e2e:web on APP_HOST only, Chromium only
-#              (Firefox and the alias are covered by nightly — CLAUDE.md) with a dedicated e2e account (its
-#              «Web …» workspaces are deleted afterwards) and the move scenario M.1 (a second e2e account;
+#              RELEASES_HOST (app, alias, landing; /download/win and /download/ by UA → latest/), REL/ →
+#              the landing, /readyz inside; e2e:web on APP_HOST only, Chromium only (Firefox and the alias
+#              are covered by nightly — CLAUDE.md) with a dedicated e2e account (its «Web …» workspaces are deleted afterwards) and the move scenario M.1 (a second e2e account;
 #              when the commit has the spec); relay-check tls/udp/any with an API join token + a publisher,
 #              api/LiveKit logs clean, foreign job intact, backup AFTER
 #   desktop    only when nothing failed: git tag -a v$VERSION <commit>, push the tag to origin, wait for the
 #              release.yml run of that tag (all jobs green), then the feed: latest*.yml on RELEASES_HOST,
-#              every file in them 200 with the size from the yml, sha512 recomputed ON the stand, the GitHub
+#              every file in them 200 with the size from the yml, sha512 recomputed ON the stand, latest/VERSION
+#              and the five latest/<stable name> files (stable versions only), the GitHub
 #              Release published (not a draft)
 #
 # Nothing here prints secrets: credentials are read over ssh into variables and used directly.
@@ -179,7 +180,16 @@ if step verify; then
   for d in "$D1" "$D2" ${LAND:+"$LAND"}; do
     r=$(rcurl -o /dev/null -w '%{http_code} %{redirect_url}' "https://$d/download/latest.yml" || echo 000)
     [[ "$r" == "302 https://$REL/latest.yml" ]] && ok "$d/download/ → https://$REL/" || bad "$d/download/latest.yml → '$r' (want 302 https://$REL/latest.yml)"
+    # stable shortcuts → latest/<file>; bare /download/ picks the file by User-Agent
+    r=$(rcurl -o /dev/null -w '%{http_code} %{redirect_url}' "https://$d/download/win" || echo 000)
+    [[ "$r" == "302 https://$REL/latest/Calab-win-x64.exe" ]] && ok "$d/download/win → latest/" || bad "$d/download/win → '$r'"
+    r=$(rcurl -o /dev/null -w '%{http_code} %{redirect_url}' -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' "https://$d/download/" || echo 000)
+    [[ "$r" == "302 https://$REL/latest/Calab-mac-arm64.dmg" ]] && ok "$d/download/ (Mac UA) → latest/Calab-mac-arm64.dmg" || bad "$d/download/ (Mac UA) → '$r'"
   done
+  if [[ -n "$LAND" ]]; then   # the release host's root is no bare listing: → the landing's download section
+    r=$(rcurl -o /dev/null -w '%{http_code} %{redirect_url}' "https://$REL/" || echo 000)
+    [[ "$r" == "302 https://$LAND/#download" ]] && ok "$REL/ → https://$LAND/#download" || bad "$REL/ → '$r' (want 302 https://$LAND/#download)"
+  fi
 
   # credentials for the checks (over ssh, never printed)
   acc="$(on_stand 'cat /opt/calaba/infra/docker/.env.accounts')"
@@ -317,6 +327,15 @@ if step desktop; then
       [[ "$got" == "200 $size" ]] && ok "$REL/$u (200, $size B)" || bad "$REL/$u → '$got' (want 200 $size)"
     done <<<"$files"
     (( n >= 5 )) && ok "feeds list $n files (mac arm64+x64 zip/dmg, AppImage, deb, exe)" || bad "feeds list only $n files"
+    # latest/ (stable releases only): VERSION and the five stable names the landing links to
+    if [[ "$VERSION" != *-* ]]; then
+      lv=$(rcurl -f "https://$REL/latest/VERSION" 2>/dev/null | tr -d '[:space:]' || true)
+      [[ "$lv" == "$VERSION" ]] && ok "$REL/latest/VERSION = $lv" || bad "$REL/latest/VERSION = '${lv:-missing}' (want $VERSION)"
+      for f in Calab-mac-arm64.dmg Calab-mac-x64.dmg Calab-win-x64.exe Calab-linux-x86_64.AppImage calab-linux-amd64.deb; do
+        c=$(rcurl -o /dev/null -I -w '%{http_code}' "https://$REL/latest/$f" || echo 000)
+        [[ "$c" == 200 ]] && ok "$REL/latest/$f 200" || bad "$REL/latest/$f → $c"
+      done
+    fi
     sha=$(on_stand "python3 - https://$REL" <<'PY'
 import base64, hashlib, re, sys, urllib.request
 base = sys.argv[1]; bad = n = 0
