@@ -90,6 +90,8 @@ async function openWorkspace(c: Client, createIfMissing: boolean): Promise<void>
 
 const sidebar = (page: Page) => page.locator('aside').first();
 const voicePanel = (page: Page) => page.getByRole('region', { name: 'Голосовое подключение' });
+/** The voice panel's room link reads «Комната / Пространство» (Discord); anchored so «Созвон» ≠ «Созвон 2». */
+const panelRoom = (room: string): RegExp => new RegExp(`^${escapeRe(room)}( / |$)`);
 /** Voice participants listed under a voice room in the room list. */
 const participants = (page: Page, room: string) => sidebar(page).getByRole('list', { name: room, exact: true });
 
@@ -129,9 +131,11 @@ test('M.1: a moderator moves a participant to another voice room (ADR-0019)', as
     await openWorkspace(b, false);
     await sidebar(b.page).getByRole('button', { name: FROM, exact: true }).click();
     await expect(voicePanel(b.page).getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
-    await expect(voicePanel(b.page).getByRole('button', { name: FROM, exact: true })).toBeVisible();
+    await expect(voicePanel(b.page).getByRole('button', { name: panelRoom(FROM) })).toBeVisible();
     const stats = b.page.getByTestId('media-stats');
-    await voicePanel(b.page).getByRole('button', { name: 'Статистика' }).click();
+    // «Статистика» is a checkbox item in the voice panel's «Ещё» menu (v0.2 panel, Discord layout).
+    await voicePanel(b.page).getByRole('button', { name: 'Ещё', exact: true }).click();
+    await b.page.getByRole('menuitemcheckbox', { name: 'Статистика' }).click();
     const micKbps = async (): Promise<number> => {
       const m = /mic (\d+(?:\.\d+)?) kbps/.exec((await stats.textContent().catch(() => null)) ?? '');
       return m ? Number(m[1]) : 0;
@@ -157,7 +161,7 @@ test('M.1: a moderator moves a participant to another voice room (ADR-0019)', as
     // ---- B: in «Созвон 2» within 10 s, the move toast, the mic published again
     const toast = b.page.getByText(new RegExp(`(переместил\\(а\\) вас|Вас переместили) в «${escapeRe(TO)}»`));
     await expect(toast).toBeVisible({ timeout: 10_000 });
-    await expect(voicePanel(b.page).getByRole('button', { name: TO, exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(voicePanel(b.page).getByRole('button', { name: panelRoom(TO) })).toBeVisible({ timeout: 10_000 });
     await expect(voicePanel(b.page).getByText('Голос подключён')).toBeVisible({ timeout: 10_000 });
     // Stats are reset when the old connection is torn down, so a bitrate now is the new mic's.
     await expect.poll(micKbps, { message: 'B sends mic audio in «Созвон 2»', timeout: 10_000 }).toBeGreaterThan(0);

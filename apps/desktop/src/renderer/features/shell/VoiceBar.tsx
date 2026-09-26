@@ -325,8 +325,8 @@ export function VoiceBar(): ReactNode {
   if (!roomId) return null;
   const phaseText = phase === 'connected' ? t('voice.connected') : phase === 'reconnecting' ? t('voice.reconnecting') : t('voice.connecting');
   const full = t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
-  // The workspace name only when the call is in another workspace than the one on screen (it
-  // otherwise just truncated the room name); the full path is always in the tooltip.
+  // Always «room / workspace» (Discord's «Room / Server»); truncated in the panel, the full path
+  // is in the tooltip.
   const goRoom = (): void => {
     if (wsId) openRoom(wsId, roomId);
   };
