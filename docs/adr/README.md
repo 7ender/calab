@@ -21,3 +21,4 @@
 | [0015](0015-web-client.md) | Веб-клиент из того же renderer через слой `platform`; статика на app.* через Caddy; cookie-refresh | принято |
 | [0016](0016-guest-access.md) | Гостевой доступ в комнату по ссылке: гостевые пользователи без регистрации, room_invites | принято |
 | [0017](0017-valkey.md) | Valkey (BSD-3) вместо Redis 7.4 (RSAL/SSPL) — лицензионная чистота стека | принято |
+| [0019](0019-move-without-sfu.md) | Перемещение участников без SFU-move (LiveKit OSS не реализует MoveParticipant): токен + реконнект клиента | принято |
