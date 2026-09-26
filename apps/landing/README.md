@@ -32,15 +32,16 @@ without JS (the Next runtime chunk still ships, ~100 kB).
 
 ## Updating screenshots
 
-Images come from the desktop visual-regression snapshots
-(`apps/desktop/e2e-visual/__screenshots__/darwin/*-{dark,light}-1440.png`, 1440×800 @1x):
+Sources are the shared 2x (Retina) macOS window captures in `docs/images/` (also used by the root README):
+`chat`, `stream`, `settings`, `onboarding` as `<name>-{dark,light}@2x.png` (2880×1800, window 1440×900 pt,
+`screencapture -l` without shadow) and `chat-{dark,light}-shadow@2x.png` for the hero.
 
-1. Update the snapshots in `apps/desktop` (its visual tests).
-2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` copies the hero (`main-chat`) and crops four
-   660×400 feature images (`onboarding-mode`, `voice-room-settings-2`, `chat-context-menu`, `room-settings-3`)
-   into `public/screens/<name>-{dark,light}.webp`, and composes the 1200×630 `public/og.png`.
-   If the app layout moved, adjust the crop rectangles in the script and check the result.
-3. Rebuild and commit `public/`.
+1. Replace the PNGs in `docs/images/` (keep names; PNG > 3 MB → `oxipng` / `pngquant --quality 90-100`).
+2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` writes `public/screens/<name>-<theme>@2x.webp` at full
+   resolution (no downscale, WebP q92) plus a 1x Lanczos resample `<name>-<theme>.webp`; feature cards are crops
+   (660×400 pt → 1320×800 px) whose offsets are in window points at the top of the script — check them when the
+   app layout changes. The 1200×630 `public/og.png` is composed from the 2x chat capture.
+3. Pages use `srcset` 1x/2x with `width`/`height` in CSS pixels. Rebuild and commit `public/`.
 
 ## TODO
 

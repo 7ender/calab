@@ -65,7 +65,11 @@ export function Button({ href, children, variant = 'primary', size = 'md', class
   );
 }
 
-/** Light/dark screenshot pair switched by prefers-color-scheme. */
+/**
+ * Light/dark screenshot pair switched by prefers-color-scheme. Sources are 2x (Retina) captures;
+ * `<name>-<theme>@2x.webp` is the full-resolution file, `<name>-<theme>.webp` a 1x Lanczos resample.
+ * width/height are CSS pixels (half of the 2x pixel size).
+ */
 export function ThemedImage({
   name,
   alt,
@@ -81,11 +85,13 @@ export function ThemedImage({
   priority?: boolean;
   className?: string;
 }) {
+  const set = (theme: 'dark' | 'light') => `/screens/${name}-${theme}.webp 1x, /screens/${name}-${theme}@2x.webp 2x`;
   return (
     <picture>
-      <source srcSet={`/screens/${name}-dark.webp`} media="(prefers-color-scheme: dark)" />
+      <source srcSet={set('dark')} media="(prefers-color-scheme: dark)" />
       <img
-        src={`/screens/${name}-light.webp`}
+        src={`/screens/${name}-light@2x.webp`}
+        srcSet={set('light')}
         alt={alt}
         width={width}
         height={height}

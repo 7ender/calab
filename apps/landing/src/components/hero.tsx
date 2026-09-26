@@ -1,10 +1,9 @@
 import { APP_URL } from '@/lib/site';
 import { Button, Container, ThemedImage } from './ui';
-import { MacWindow } from './window';
 
 export function Hero() {
   return (
-    <section id="top" aria-labelledby="hero-title" className="hero-bg overflow-hidden pt-16 pb-20 sm:pt-24 sm:pb-28">
+    <section id="top" aria-labelledby="hero-title" className="hero-bg overflow-hidden pt-16 pb-12 sm:pt-24 sm:pb-16">
       <Container className="text-center">
         <img src="/icon-512.png" alt="" width={96} height={96} className="mx-auto size-20 sm:size-24" />
         <h1 id="hero-title" className="mt-6 text-[48px] leading-[56px] font-bold tracking-tight sm:text-[64px] sm:leading-[72px]">
@@ -23,17 +22,16 @@ export function Hero() {
         </div>
         <p className="mt-4 text-[14px] leading-5 text-fg-2">macOS, Windows, Linux и браузер</p>
       </Container>
-      <Container className="mt-12 sm:mt-16">
-        <div className="mx-auto max-w-[1080px]">
-          <MacWindow>
-            <ThemedImage
-              name="hero"
-              width={1440}
-              height={800}
-              priority
-              alt="Окно Calab: список комнат с голосовой комнатой «Переговорка», чат канала «общий» и участники в сети"
-            />
-          </MacWindow>
+      <Container className="mt-8 sm:mt-10">
+        {/* Real macOS window capture with the system shadow (margins included in the image). */}
+        <div className="mx-auto max-w-[1160px]">
+          <ThemedImage
+            name="hero"
+            width={1552}
+            height={983}
+            priority
+            alt="Окно Calab: пространство «Команда Calab», канал «общий» с сообщениями и участники в сети"
+          />
         </div>
       </Container>
     </section>
