@@ -13,7 +13,11 @@ permissions:
 
 jobs:
   triage:
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'itrcz/calab'
+    # PR author AND the actor that triggered this run: a human push onto a Dependabot branch does not
+    # get triaged (metadata comes from commit messages, skip-commit-verification below)
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]' &&
+      github.repository == 'itrcz/calab'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -43,36 +47,45 @@ jobs:
           esac
           # uiohook-napi carries patches/uiohook-napi@1.5.5.patch — every bump needs the patch re-applied by hand
           case ",$DEPS," in *uiohook-napi*) reason="uiohook-napi: patches/uiohook-napi@*.patch must be re-applied" ;; esac
-          echo "reason=$reason" >> "$GITHUB_OUTPUT"
-          echo "decision: ${reason:-auto-merge} ($ECOSYSTEM, $UPDATE_TYPE, $DEPS)"
+          # values come from commit messages: one line only (no extra GITHUB_OUTPUT keys, no ::commands:: in the log)
+          oneline() { local v="${1//[$'\r\n']/ }"; printf '%s' "${v//::/: :}"; }
+          echo "reason=$(oneline "$reason")" >> "$GITHUB_OUTPUT"
+          echo "decision: $(oneline "${reason:-auto-merge} ($ECOSYSTEM, $UPDATE_TYPE, $DEPS)")"
 
       # go.mod changes must come with a regenerated THIRD-PARTY-NOTICES.txt (ci.yml checks it)
       - if: steps.decide.outputs.reason == '' && steps.meta.outputs.package-ecosystem == 'go_modules'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.DEPENDABOT_PUSH_TOKEN || github.token }}
+          persist-credentials: false   # the next steps build and run PR code; the push token is added only for the push
       - if: steps.decide.outputs.reason == '' && steps.meta.outputs.package-ecosystem == 'go_modules'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: apps/server/go.mod
           cache-dependency-path: apps/server/go.sum
-      - name: regenerate Go third-party notices
+      - name: regenerate Go third-party notices   # no token in this step: it builds and runs PR code
+        id: notices
         if: steps.decide.outputs.reason == '' && steps.meta.outputs.package-ecosystem == 'go_modules'
-        env:
-          HAS_PUSH_TOKEN: ${{ secrets.DEPENDABOT_PUSH_TOKEN != '' }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           make third-party-notices
-          if git diff --quiet; then echo "notices already up to date"; exit 0; fi
-          if [ "$HAS_PUSH_TOKEN" != "true" ]; then
+          if git diff --quiet; then echo "notices already up to date"; echo "changed=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -qam "build(deps): regenerate THIRD-PARTY-NOTICES.txt"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: push regenerated notices
+        if: steps.notices.outputs.changed == 'true'
+        env:
+          PUSH_TOKEN: ${{ secrets.DEPENDABOT_PUSH_TOKEN }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [ -z "$PUSH_TOKEN" ]; then
             # a GITHUB_TOKEN push would not re-trigger ci.yml, so the required checks would never report
             echo "::warning::DEPENDABOT_PUSH_TOKEN (Dependabot secret) is not set: run 'make third-party-notices' and push to this PR by hand"
             exit 0
           fi
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            commit -qam "build(deps): regenerate THIRD-PARTY-NOTICES.txt"
-          git push -q origin "HEAD:$HEAD_REF"
+          # token only for this one command (not in .git/config); GitHub masks it in the log
+          auth=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push -q origin "HEAD:refs/heads/$HEAD_REF"
 
       - name: enable auto-merge
         if: steps.decide.outputs.reason == ''
