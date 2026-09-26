@@ -352,6 +352,8 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		h.toViewers(sessions, view, parseID(e.VoiceStreamStart.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_VoiceStreamStop:
 		h.toViewers(sessions, view, parseID(e.VoiceStreamStop.GetRoomId()), id, shared)
+	case *v1.DispatchEvent_VoiceCameraStop:
+		h.toViewers(sessions, view, parseID(e.VoiceCameraStop.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_TypingStart:
 		rid, typer := parseID(e.TypingStart.GetRoomId()), parseID(e.TypingStart.GetUserId())
 		for _, s := range sessions {

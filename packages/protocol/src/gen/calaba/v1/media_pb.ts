@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/media.proto.
  */
 export const file_calaba_v1_media: GenFile = /*@__PURE__*/
-  fileDesc("ChVjYWxhYmEvdjEvbWVkaWEucHJvdG8SCWNhbGFiYS52MSJ9ChFSb29tTWVkaWFTZXR0aW5ncxIaChJhdWRpb19iaXRyYXRlX2ticHMYASABKA0SNwoRbWF4X3N0cmVhbV9wcmVzZXQYAiABKA4yHC5jYWxhYmEudjEuU2NyZWVuU2hhcmVQcmVzZXQSEwoLbWF4X3N0cmVhbXMYAyABKA0quAEKEVNjcmVlblNoYXJlUHJlc2V0EiMKH1NDUkVFTl9TSEFSRV9QUkVTRVRfVU5TUEVDSUZJRUQQABIfChtTQ1JFRU5fU0hBUkVfUFJFU0VUX0VDT05PTVkQARIcChhTQ1JFRU5fU0hBUkVfUFJFU0VUX0g3MjAQAhIdChlTQ1JFRU5fU0hBUkVfUFJFU0VUX0gxMDgwEAMSIAocU0NSRUVOX1NIQVJFX1BSRVNFVF9PUklHSU5BTBAEQpgBCg1jb20uY2FsYWJhLnYxQgpNZWRpYVByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw");
+  fileDesc("ChVjYWxhYmEvdjEvbWVkaWEucHJvdG8SCWNhbGFiYS52MSKTAQoRUm9vbU1lZGlhU2V0dGluZ3MSGgoSYXVkaW9fYml0cmF0ZV9rYnBzGAEgASgNEjcKEW1heF9zdHJlYW1fcHJlc2V0GAIgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0EhMKC21heF9zdHJlYW1zGAMgASgNEhQKDGNhbWVyYV9saW1pdBgEIAEoDSq4AQoRU2NyZWVuU2hhcmVQcmVzZXQSIwofU0NSRUVOX1NIQVJFX1BSRVNFVF9VTlNQRUNJRklFRBAAEh8KG1NDUkVFTl9TSEFSRV9QUkVTRVRfRUNPTk9NWRABEhwKGFNDUkVFTl9TSEFSRV9QUkVTRVRfSDcyMBACEh0KGVNDUkVFTl9TSEFSRV9QUkVTRVRfSDEwODAQAxIgChxTQ1JFRU5fU0hBUkVfUFJFU0VUX09SSUdJTkFMEARCmAEKDWNvbS5jYWxhYmEudjFCCk1lZGlhUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z");
 
 /**
  * Effective per-room media settings (workspace defaults already applied).
@@ -34,6 +34,13 @@ export type RoomMediaSettings = Message<"calaba.v1.RoomMediaSettings"> & {
    * @generated from field: uint32 max_streams = 3;
    */
   maxStreams: number;
+
+  /**
+   * webcams at once in the room, 0..25; 0 = cameras off; default 6
+   *
+   * @generated from field: uint32 camera_limit = 4;
+   */
+  cameraLimit: number;
 };
 
 /**

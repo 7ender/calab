@@ -1,12 +1,12 @@
 -- name: CreateRoom :one
 INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
-                   audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit)
+                   audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit, camera_limit)
 VALUES (sqlc.arg('workspace_id'), sqlc.arg('type'), sqlc.arg('name'), sqlc.arg('topic'),
         coalesce(sqlc.narg('position')::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
                   WHERE workspace_id = sqlc.arg('workspace_id') AND archived_at IS NULL)),
         sqlc.arg('is_private'), sqlc.narg('audio_bitrate_kbps'), sqlc.narg('max_stream_preset'),
-        sqlc.narg('max_streams'), sqlc.narg('category_id'), sqlc.arg('user_limit'))
+        sqlc.narg('max_streams'), sqlc.narg('category_id'), sqlc.arg('user_limit'), sqlc.narg('camera_limit'))
 RETURNING *;
 
 -- name: GetRoom :one
@@ -26,6 +26,7 @@ UPDATE rooms SET
     audio_bitrate_kbps = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('audio_bitrate_kbps')::integer ELSE audio_bitrate_kbps END,
     max_stream_preset  = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_stream_preset')::text ELSE max_stream_preset END,
     max_streams        = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_streams')::integer ELSE max_streams END,
+    camera_limit       = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('camera_limit')::integer ELSE camera_limit END,
     category_id        = CASE WHEN sqlc.arg('set_category')::boolean THEN sqlc.narg('category_id')::uuid ELSE category_id END
 WHERE id = sqlc.arg('id') AND archived_at IS NULL
 RETURNING *;

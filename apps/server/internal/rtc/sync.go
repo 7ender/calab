@@ -228,6 +228,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 				}
 			}
 			s.reconcileStreams(ctx, wid, ref.rid, ps)
+			s.reconcileCameras(ctx, wid, ref.rid, ps)
 		}
 		cutoff := start.Add(-joinGrace).UnixMilli()
 		for _, st := range states {

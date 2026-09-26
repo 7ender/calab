@@ -8,6 +8,8 @@
 //	voice:sess:<session_id>      string "<workspace_id>/<room_id>" (where a device is connected)
 //	voice:streams:<room_id>      hash  track_sid -> JSON Stream
 //	voice:streamreq:<identity>   string preset reserved by /stream/request (TTL 10 min)
+//	voice:cameras:<room_id>      hash  track_sid -> JSON Camera (webcams, limited by camera_limit)
+//	voice:camreq:<identity>      string camera grant reserved by /camera/request (TTL 10 min)
 //	voice:workspaces             set   workspaces with any voice state (for reconcile)
 //	voice:started:<room_id>      string unix ms when the current call began (first device in an empty room)
 //	voice:smuted:<workspace_id>  set   user ids server-muted by a moderator (kept until unmuted, across rejoins)
@@ -38,6 +40,7 @@ type SessionState struct {
 	Muted     bool      `json:"m,omitempty"`
 	Deafened  bool      `json:"d,omitempty"`
 	Streaming bool      `json:"st,omitempty"`
+	Camera    bool      `json:"c,omitempty"`
 	JoinedAt  int64     `json:"j"` // unix ms
 }
 
@@ -112,6 +115,7 @@ func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.Voice
 		out.Muted = out.Muted && s.Muted
 		out.Deafened = out.Deafened && s.Deafened
 		out.Streaming = out.Streaming || s.Streaming
+		out.Camera = out.Camera || s.Camera
 		joined = min(joined, s.JoinedAt)
 	}
 	out.JoinedAt = timestamppb.New(time.UnixMilli(joined))
@@ -135,7 +139,7 @@ func AggregateAll(workspaceID uuid.UUID, sessions []SessionState) []*v1.VoiceSta
 // Equal compares two aggregated states.
 func Equal(a, b *v1.VoiceState) bool {
 	return a.GetRoomId() == b.GetRoomId() && a.GetMuted() == b.GetMuted() &&
-		a.GetDeafened() == b.GetDeafened() && a.GetStreaming() == b.GetStreaming() &&
+		a.GetDeafened() == b.GetDeafened() && a.GetStreaming() == b.GetStreaming() && a.GetCamera() == b.GetCamera() &&
 		a.GetJoinedAt().AsTime().Equal(b.GetJoinedAt().AsTime()) && a.GetServerMuted() == b.GetServerMuted()
 }
 
@@ -205,6 +209,8 @@ func (s Store) States(ctx context.Context, wid uuid.UUID) ([]*v1.VoiceState, err
 }
 func streamsKey(rid uuid.UUID) string     { return "voice:streams:" + rid.String() }
 func streamReqKey(identity string) string { return "voice:streamreq:" + identity }
+func camerasKey(rid uuid.UUID) string     { return "voice:cameras:" + rid.String() }
+func cameraReqKey(identity string) string { return "voice:camreq:" + identity }
 func startedKey(rid uuid.UUID) string     { return "voice:started:" + rid.String() }
 
 const workspacesKey = "voice:workspaces"
@@ -474,9 +480,74 @@ func (s Store) RemoveStream(ctx context.Context, rid uuid.UUID, trackSID string)
 	return n > 0, err
 }
 
-// ClearRoom removes a room's streams (room finished).
+// ClearRoom removes a room's streams and cameras (room finished).
 func (s Store) ClearRoom(ctx context.Context, rid uuid.UUID) error {
-	return s.C.Do(ctx, s.C.B().Del().Key(streamsKey(rid)).Build()).Error()
+	return s.C.Do(ctx, s.C.B().Del().Key(streamsKey(rid), camerasKey(rid)).Build()).Error()
+}
+
+// Camera is an active webcam track.
+type Camera struct {
+	Identity string    `json:"i"`
+	UserID   uuid.UUID `json:"u"`
+}
+
+// Cameras returns active webcams in a room keyed by track sid.
+func (s Store) Cameras(ctx context.Context, rid uuid.UUID) (map[string]Camera, error) {
+	m, err := s.C.Do(ctx, s.C.B().Hgetall().Key(camerasKey(rid)).Build()).AsStrMap()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Camera, len(m))
+	for sid, raw := range m {
+		var c Camera
+		if json.Unmarshal([]byte(raw), &c) == nil {
+			out[sid] = c
+		}
+	}
+	return out, nil
+}
+
+// AddCamera records a webcam if the room has fewer than limit cameras (limit < 0: none);
+// the check and the insert are one atomic step (same script as streams).
+func (s Store) AddCamera(ctx context.Context, rid uuid.UUID, trackSID string, c Camera, limit int) (bool, error) {
+	b, _ := json.Marshal(c)
+	n, err := addStream.Exec(ctx, s.C, []string{camerasKey(rid)}, []string{trackSID, string(b), strconv.Itoa(limit)}).AsInt64()
+	return n == 1, err
+}
+
+// RemoveCamera deletes a webcam record; ok=false if it was not recorded.
+func (s Store) RemoveCamera(ctx context.Context, rid uuid.UUID, trackSID string) (bool, error) {
+	n, err := s.C.Do(ctx, s.C.B().Hdel().Key(camerasKey(rid)).Field(trackSID).Build()).AsInt64()
+	return n > 0, err
+}
+
+// ReserveCamera lets a device publish a webcam (grant) for 10 minutes; ReleaseCamera ends it.
+func (s Store) ReserveCamera(ctx context.Context, identity string) error {
+	return s.C.Do(ctx, s.C.B().Set().Key(cameraReqKey(identity)).Value("1").Ex(10*time.Minute).Build()).Error()
+}
+
+// ReleaseCamera drops a device's camera reservation.
+func (s Store) ReleaseCamera(ctx context.Context, identity string) error {
+	return s.C.Do(ctx, s.C.B().Del().Key(cameraReqKey(identity)).Build()).Error()
+}
+
+// CameraHeld reports whether a device may keep the camera source in its grant: it has a
+// reservation or a recorded webcam in the room.
+func (s Store) CameraHeld(ctx context.Context, rid uuid.UUID, identity string) (bool, error) {
+	n, err := s.C.Do(ctx, s.C.B().Exists().Key(cameraReqKey(identity)).Build()).AsInt64()
+	if err != nil || n > 0 {
+		return n > 0, err
+	}
+	cams, err := s.Cameras(ctx, rid)
+	if err != nil {
+		return false, err
+	}
+	for _, c := range cams {
+		if c.Identity == identity {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ReserveStream stores the preset requested by a device (consumed by track_published).

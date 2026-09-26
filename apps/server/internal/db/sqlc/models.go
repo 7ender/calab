@@ -86,6 +86,7 @@ type Room struct {
 	CategoryID       *uuid.UUID
 	UserLimit        int32
 	VoiceStatus      *string
+	CameraLimit      *int32
 }
 
 type RoomCategory struct {
@@ -170,6 +171,7 @@ type Workspace struct {
 	StorageQuotaBytes       int64
 	StorageUsedBytes        int64
 	AllowSelfNickname       bool
+	DefaultCameraLimit      int32
 }
 
 type WorkspaceInvite struct {

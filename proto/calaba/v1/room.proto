@@ -30,6 +30,7 @@ message RoomMediaOverride {
   optional uint32 audio_bitrate_kbps = 1; // 16|24|32|48|64
   optional ScreenSharePreset max_stream_preset = 2;
   optional uint32 max_streams = 3;        // 0..10
+  optional uint32 camera_limit = 4;       // 0..25 (0 = cameras off)
 }
 
 message Room {

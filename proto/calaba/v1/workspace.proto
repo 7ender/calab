@@ -83,6 +83,7 @@ message UpdateWorkspaceRequest {
   optional ScreenSharePreset default_max_stream_preset = 6;
   optional uint32 default_max_streams = 7; // 0..10
   optional bool allow_self_nickname = 8;
+  optional uint32 default_camera_limit = 9; // 0..25 (0 = cameras off)
 }
 
 message UpdateWorkspaceResponse {

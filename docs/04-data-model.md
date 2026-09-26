@@ -109,12 +109,13 @@ export const Permission = {
   MOVE_MEMBERS:     1n << 11n,  // перемещать других между voice-комнатами, входить сверх user_limit
   MANAGE_NICKNAMES: 1n << 12n,  // менять ники других (только уровень workspace)
   MENTION_EVERYONE: 1n << 13n,  // @everyone / @here (у member по умолчанию нет)
+  VIDEO:            1n << 14n,  // веб-камера в voice (у member по умолчанию есть)
 } as const;
 ```
 
 Дефолты по ролям:
 - `owner`, `admin` → `ADMINISTRATOR`
-- `member` → `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM`
+- `member` → `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM | VIDEO`
 - `guest` → `CONNECT | SPEAK` — без `VIEW_ROOM`, поэтому по умолчанию гость не видит ни одной комнаты; видит только комнаты с явным override `allow VIEW_ROOM` (для роли `guest` или для конкретного пользователя)
 
 Вычисление эффективных прав в комнате (единственная функция, живёт в `packages/protocol`, используется и сервером, и клиентом для UI):

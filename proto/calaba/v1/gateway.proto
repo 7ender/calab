@@ -153,6 +153,7 @@ message DispatchEvent {
     MessageReactionRemove message_reaction_remove = 27;
     VoiceMoved voice_moved = 28;
     RoomNotificationUpdate room_notification_update = 29;
+    VoiceCameraStop voice_camera_stop = 30;
   }
 }
 
@@ -168,6 +169,7 @@ message VoiceState {
   // Muted by a moderator (POST …/voice/{userId}/mute) until a moderator unmutes: the
   // microphone is muted server-side on all devices and cannot be unmuted by the user.
   bool server_muted = 8;
+  bool camera = 9; // any of the user's devices in the room publishes a webcam
 }
 
 message Presence {
@@ -357,6 +359,17 @@ enum VoiceStreamStopReason {
 }
 
 message VoiceStreamStop {
+  string workspace_id = 1;
+  string room_id = 2;
+  string user_id = 3;
+  string track_sid = 4;
+  VoiceStreamStopReason reason = 5;
+}
+
+// A webcam was stopped by the server: over the room's camera_limit (LIMIT_REACHED, the track
+// is muted and the camera grant withdrawn) or by a moderator (MODERATOR). A camera the user
+// turns off himself only clears VoiceState.camera (reason ENDED is not sent separately).
+message VoiceCameraStop {
   string workspace_id = 1;
   string room_id = 2;
   string user_id = 3;

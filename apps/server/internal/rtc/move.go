@@ -121,6 +121,10 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	cameras, err := s.voice.Cameras(r.Context(), srcID)
+	if err != nil {
+		return err
+	}
 	moved := 0
 	var apps []appMove
 	for _, st := range sess {
@@ -182,6 +186,16 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		}
 		moved++
 		s.publishVoice(ctx, acc.WorkspaceID, c)
+		// Webcams move with the participant too (moderator action: the target's camera_limit
+		// is not applied, like user_limit); carried before the grant so it keeps the camera.
+		for sid, rec := range cameras {
+			if rec.Identity != identity {
+				continue
+			}
+			if ok, _ := s.voice.RemoveCamera(ctx, srcID, sid); ok {
+				_, _ = s.voice.AddCamera(ctx, dstID, sid, rec, -1)
+			}
+		}
 		if err := s.pushGrant(ctx, dstName, identity, acc.WorkspaceID, target, movedDst.Bits, st.Streaming); err != nil && !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}

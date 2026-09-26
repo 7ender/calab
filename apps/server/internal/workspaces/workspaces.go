@@ -363,6 +363,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		v := int32(req.GetDefaultMaxStreams()) //nolint:gosec // validated
 		p.DefaultMaxStreams, mediaChanged = &v, true
 	}
+	if req.DefaultCameraLimit != nil {
+		if req.GetDefaultCameraLimit() > rooms.MaxCameraLimit {
+			return httpx.Validation("defaultCameraLimit", "camera limit must be 0..25")
+		}
+		v := int32(req.GetDefaultCameraLimit()) //nolint:gosec // validated
+		p.DefaultCameraLimit, mediaChanged = &v, true
+	}
 	p.AllowSelfNickname = req.AllowSelfNickname
 	ws, err := h.db.Q.UpdateWorkspace(r.Context(), p)
 	if db.IsForeignKeyViolation(err) {

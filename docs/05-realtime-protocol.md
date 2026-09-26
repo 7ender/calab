@@ -71,8 +71,9 @@ ROOM_PERMISSIONS_UPDATE      { room_id, permissions[] }
 MESSAGE_CREATE / UPDATE / DELETE
 TYPING_START                  { room_id, user_id, timestamp } — только сессиям с SUBSCRIBE на комнату (см. опкод 6), показывать ~8 с
 PRESENCE_UPDATE               { user_id, status, last_seen }
-VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming, joined_at, server_muted }
+VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming, joined_at, server_muted, camera }
 VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- для PiP-плитки
+VOICE_CAMERA_STOP             { room_id, user_id, track_sid, reason: LIMIT_REACHED | MODERATOR }   -- камеру остановил сервер
 READ_STATE_UPDATE
 ROOM_NOTIFICATION_UPDATE      { settings: { room_id, level, muted_until } } — только своим устройствам
 USER_UPDATE                   { me } — своим устройствам (профиль, email, настройки);
@@ -197,10 +198,13 @@ GET    /api/files/{id}                 байты: Range, ETag (= sha256), Conte
 GET    /api/files/{id}/thumbnail       WebP-превью ≤ 512 px (для изображений)
 POST   /api/rooms/{id}/join            JoinVoiceResponse { url, token, identity, media, can_speak, can_stream }   (CONNECT, только voice)
 POST   /api/rooms/{id}/stream/request  RequestStreamRequest → RequestStreamResponse { preset }   (STREAM; 409 — лимит или не в комнате)
+POST   /api/rooms/{id}/camera/request  204   (VIDEO + CONNECT; 409 — camera_limit достигнут, камеры выключены (0) или не в комнате)
+POST   /api/rooms/{id}/camera/stop     204   (своя камера: снять резерв и grant)
 PATCH  /api/voice/self                 UpdateVoiceSelfRequest → 204        (409 — устройство не в голосе)
 POST   /api/rooms/{id}/voice/{userId}/mute         204   (MUTE_MEMBERS на уровне workspace: серверный mute → server_muted, до unmute)
 POST   /api/rooms/{id}/voice/{userId}/unmute       204   (MUTE_MEMBERS на уровне workspace: снять server_muted; участник может быть уже не в комнате)
 POST   /api/rooms/{id}/voice/{userId}/disconnect   204   (MUTE_MEMBERS: RemoveParticipant)
+POST   /api/rooms/{id}/voice/{userId}/stop-camera  204   (MUTE_MEMBERS: камеры заглушены, grant снят → VOICE_CAMERA_STOP{MODERATOR}; 404 — камер нет)
 POST   /api/rooms/{id}/voice/{userId}/stop-stream  204   (MUTE_MEMBERS: screen-треки заглушены, grant на экран снят → VOICE_STREAM_STOP{MODERATOR}; 404 — стримов нет)
 POST   /api/rtc/webhook                LiveKit → сервер (подпись API key/secret + sha256 тела)
 ```
@@ -260,6 +264,13 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 - **Поиск.** Postgres FTS: `to_tsvector('russian') || to_tsvector('simple')`, так что работают и стемминг («кошка» → «Кошки»), и точные слова и идентификаторы (`deploy`). Индекс — GIN по выражению, а не по сохранённой колонке. Синтаксис запроса — `websearch_to_tsquery`: `"фраза"`, `OR`, `-исключить`. Результаты идут от новых к старым, курсор `before`, `limit` ≤ 50 (по умолчанию 25), ответ — `ListMessagesResponse`.
 - **Реакции.** В REST-ответах `Message.reactions` — `[{emoji, count, me}]` в порядке первого использования. В `MESSAGE_UPDATE` `count` актуальны, `me` всегда `false`: клиент хранит свой `me` и применяет `MESSAGE_REACTION_ADD/REMOVE { workspace_id, room_id, message_id, user_id, emoji }` (приходят только тем, у кого `VIEW_ROOM`).
 - **Гости** (`role = guest`) видят участников, presence, voice-state и события о людях только из тех комнат, которые видят сами (READY, `GET …/members`, gateway). Когда общая комната появляется или пропадает, гость получает синтетические `WORKSPACE_MEMBER_ADD` (+ `PRESENCE_UPDATE`) / `WORKSPACE_MEMBER_REMOVE`.
+- **Камеры** (v0.2).
+  - Право `VIDEO` (1<<14; у member по умолчанию есть, у guest — нет). Лимит — `RoomMediaSettings.camera_limit`: 0..25, 0 — камеры в комнате выключены. Default workspace — 6 (`UpdateWorkspaceRequest.default_camera_limit`), override комнаты — `RoomMediaOverride.camera_limit`. `JoinVoiceResponse.can_video` = VIDEO и лимит > 0.
+  - Порядок как у стримов. В join-токене camera-источника нет. Перед публикацией клиент вызывает `POST …/camera/request`: сервер проверяет, что есть свободное место, резервирует его на 10 мин и добавляет `camera` в `canPublishSources`. Источник остаётся в grant, пока у устройства есть резерв или включённая камера.
+  - Лимит проверяется атомарно на `track_published` (Lua). Лишняя камера глушится сервером, grant снимается, всем, кто видит комнату, приходит `VOICE_CAMERA_STOP{LIMIT_REACHED}`.
+  - `VoiceState.camera` — камера устройства в эфире (`track_published` / `track_unpublished` source CAMERA; заглушённый трек reconcile считает выключенным). Приходит в READY и `VOICE_STATE_UPDATE`. Выключая камеру, клиент снимает публикацию трека (unpublish) и вызывает `…/camera/stop`. Отдельного события для собственного выключения нет — хватает `VoiceState.camera`.
+  - Модератор (`MUTE_MEMBERS` в комнате, иерархия как у mute) — `…/voice/{userId}/stop-camera`: трек глушится, grant снимается (dev-LiveKit при этом сам снимает публикацию), `VOICE_CAMERA_STOP{MODERATOR}`. Чтобы снова включить камеру, нужен новый `/camera/request`.
+  - При перемещении (move) камера переезжает вместе с участником; лимит целевой комнаты при этом не применяется, как и `user_limit`.
 - **Серверный mute.** Ставит и снимает только `MUTE_MEMBERS` **на уровне workspace** (owner / admin по роли): mute действует во всех комнатах, поэтому модератору одной комнаты (override) он недоступен, у того остаются disconnect / stop-stream в своей комнате. `VoiceState.server_muted` (в READY и `VOICE_STATE_UPDATE`) хранится в Valkey на пользователя в workspace и держится, пока модератор не снимет его через `/unmute`: переживает переподключение и вход с другого устройства; исчезает, если участник покинул workspace. Пока флаг стоит:
   - из LiveKit-grant всех устройств убран источник microphone, поэтому SFU сам не даст опубликовать или включить микрофон;
   - опубликованные треки микрофона заглушены (`MutePublishedTrack`); трек, опубликованный токеном, выданным до mute, глушится на `track_published`;

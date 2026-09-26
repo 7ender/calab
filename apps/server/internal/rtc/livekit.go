@@ -31,6 +31,7 @@ const (
 	SourceMicrophone       TrackSource = "MICROPHONE"
 	SourceScreenShare      TrackSource = "SCREEN_SHARE"
 	SourceScreenShareAudio TrackSource = "SCREEN_SHARE_AUDIO"
+	SourceCamera           TrackSource = "CAMERA"
 )
 
 // Permission is livekit.ParticipantPermission (only the fields we set).

@@ -1500,3 +1500,27 @@ go test -race -tags integration -count=1 -v -run TestEventSurvivesCanceledReques
 - событие, опубликованное с уже отменённым контекстом запроса, всё равно доходит до gateway (публикация не зависит от запроса).
 
 Проверка на стенде: в логах api после reload сразу после отправки сообщения — строка `"status":499` уровня INFO вместо `ERROR … 500 "context canceled"`.
+
+## Server: веб-камеры (v0.2, ветка `feat/webcam`)
+
+Нужен `lk` CLI (`brew install livekit-cli`): тест публикует в dev-LiveKit настоящий camera-трек (`lk room join --publish-demo`). Без `lk` или без dev-LiveKit тест пропускается (`SKIP`).
+
+```sh
+cd apps/server
+go test ./internal/rtc/ ./internal/perm/ && (cd ../.. && pnpm --filter ./packages/protocol test)
+go test -race -tags integration -count=1 -v -run TestCameras ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: `ok` и `--- PASS: TestCameras` (~5 с).
+
+Что проверяется:
+- **Лимиты.** `camera_limit`: default workspace 6 → 4, override комнаты; 30 → 422 в обоих местах.
+- **Join.** `can_video` и `media.camera_limit` в ответе; `camera/request` до подключения к LiveKit → 409.
+- **Grant.** Настоящий участник с demo-камерой; `camera/request` → 204, в grant появляется `CAMERA`. `track_published` (CAMERA) → `VOICE_STATE_UPDATE camera = true`, флаг есть и в READY.
+- **Лимит 1.** Камера второго участника → сервер глушит её, приходит `VOICE_CAMERA_STOP{LIMIT_REACHED}`.
+- **Остановка модератором.**
+  - Без `MUTE_MEMBERS` → 403.
+  - С правом → `VOICE_CAMERA_STOP{MODERATOR}` и `camera = false`; `CAMERA` уходит из grant; трек в LiveKit заглушён или снят.
+  - Повторная остановка → 404.
+- **Свой `camera/stop`** снимает grant.
+- **Отказы.** `camera_limit = 0` → 409; override `deny VIDEO` для member → 403 и `can_video = false`.
+- **Unit.** `TestGrant` (источник `CAMERA` только при VIDEO и занятом месте), векторы `permissions.json` (VIDEO = 1<<14 у member по умолчанию).

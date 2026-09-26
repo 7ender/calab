@@ -631,6 +631,7 @@ type UpdateWorkspaceRequest struct {
 	DefaultMaxStreamPreset  *ScreenSharePreset     `protobuf:"varint,6,opt,name=default_max_stream_preset,json=defaultMaxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset,oneof" json:"default_max_stream_preset,omitempty"`
 	DefaultMaxStreams       *uint32                `protobuf:"varint,7,opt,name=default_max_streams,json=defaultMaxStreams,proto3,oneof" json:"default_max_streams,omitempty"` // 0..10
 	AllowSelfNickname       *bool                  `protobuf:"varint,8,opt,name=allow_self_nickname,json=allowSelfNickname,proto3,oneof" json:"allow_self_nickname,omitempty"`
+	DefaultCameraLimit      *uint32                `protobuf:"varint,9,opt,name=default_camera_limit,json=defaultCameraLimit,proto3,oneof" json:"default_camera_limit,omitempty"` // 0..25 (0 = cameras off)
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -719,6 +720,13 @@ func (x *UpdateWorkspaceRequest) GetAllowSelfNickname() bool {
 		return *x.AllowSelfNickname
 	}
 	return false
+}
+
+func (x *UpdateWorkspaceRequest) GetDefaultCameraLimit() uint32 {
+	if x != nil && x.DefaultCameraLimit != nil {
+		return *x.DefaultCameraLimit
+	}
+	return 0
 }
 
 type UpdateWorkspaceResponse struct {
@@ -1215,7 +1223,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"workspaces\"x\n" +
 	"\x14GetWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12,\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xdf\x04\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\"\xaf\x05\n" +
 	"\x16UpdateWorkspaceRequest\x12\x17\n" +
 	"\x04slug\x18\x01 \x01(\tH\x00R\x04slug\x88\x01\x01\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x01R\x04name\x88\x01\x01\x12C\n" +
@@ -1227,7 +1235,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x1adefault_audio_bitrate_kbps\x18\x05 \x01(\rH\x04R\x17defaultAudioBitrateKbps\x88\x01\x01\x12\\\n" +
 	"\x19default_max_stream_preset\x18\x06 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetH\x05R\x16defaultMaxStreamPreset\x88\x01\x01\x123\n" +
 	"\x13default_max_streams\x18\a \x01(\rH\x06R\x11defaultMaxStreams\x88\x01\x01\x123\n" +
-	"\x13allow_self_nickname\x18\b \x01(\bH\aR\x11allowSelfNickname\x88\x01\x01B\a\n" +
+	"\x13allow_self_nickname\x18\b \x01(\bH\aR\x11allowSelfNickname\x88\x01\x01\x125\n" +
+	"\x14default_camera_limit\x18\t \x01(\rH\bR\x12defaultCameraLimit\x88\x01\x01B\a\n" +
 	"\x05_slugB\a\n" +
 	"\x05_nameB\r\n" +
 	"\v_visibilityB\x0f\n" +
@@ -1235,7 +1244,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x1b_default_audio_bitrate_kbpsB\x1c\n" +
 	"\x1a_default_max_stream_presetB\x16\n" +
 	"\x14_default_max_streamsB\x16\n" +
-	"\x14_allow_self_nickname\"M\n" +
+	"\x14_allow_self_nicknameB\x17\n" +
+	"\x15_default_camera_limit\"M\n" +
 	"\x17UpdateWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\"\x7f\n" +
 	"\x15JoinWorkspaceResponse\x122\n" +

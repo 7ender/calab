@@ -12,7 +12,19 @@ message JoinVoiceResponse {
   RoomMediaSettings media = 4; // effective settings to apply when publishing
   bool can_speak = 5;
   bool can_stream = 6; // STREAM granted and a stream slot was free at join time
+  // VIDEO granted and the room allows cameras (camera_limit > 0). The camera source is not in
+  // the join token: call POST /api/rooms/{id}/camera/request before publishing a webcam.
+  bool can_video = 7;
 }
+
+// POST /api/rooms/{id}/camera/request (VIDEO + CONNECT, device in the call) → 204: grants the
+// camera source to this device (reservation for 10 min, kept while the camera is on);
+// 409 ERROR_CODE_CONFLICT when camera_limit is reached (0 = cameras off). The limit itself is
+// enforced atomically when the track is published: an extra camera is muted by the server
+// (VOICE_CAMERA_STOP{LIMIT_REACHED}).
+// POST /api/rooms/{id}/camera/stop → 204: withdraws the camera source from this device.
+// POST /api/rooms/{id}/voice/{userId}/stop-camera (MUTE_MEMBERS) → 204 | 404 (no camera):
+// mutes the member's webcams, withdraws the grant, VOICE_CAMERA_STOP{MODERATOR}.
 
 // POST /api/rooms/{id}/stream/request (STREAM). Reserves a stream slot for this device and
 // grants screen share sources; 409 ERROR_CODE_CONFLICT when max_streams is reached.
