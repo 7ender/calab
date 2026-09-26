@@ -9,6 +9,7 @@
 #   UPDATE_URL=…        electron-updater generic feed baked into app-update.yml / latest*.yml
 #                       (default https://colaba.gptunnel.ai/download/)
 #   HOMEPAGE=…          package homepage (deb metadata; default: UPDATE_URL without /download/)
+#   OUT_DIR=…           artifacts dir (default apps/desktop/dist-release)
 #   WORK_DIR=…          scratch dir (default $TMPDIR/calaba-release; removed on exit unless KEEP_WORK=1)
 #   SMOKE=0             skip the Linux smoke start (AppImage under Xvfb, inside the build container)
 #   BUILD_DOCKER_HOST=ssh://user@host  x86_64 Linux Docker host for the Linux/Windows builds (recommended on
@@ -28,7 +29,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-OUT="$ROOT/apps/desktop/dist-release"
+OUT="${OUT_DIR:-$ROOT/apps/desktop/dist-release}"
 SRC_REF="${SRC_REF:-HEAD}"
 UPDATE_URL="${UPDATE_URL:-https://colaba.gptunnel.ai/download/}"
 HOMEPAGE="${HOMEPAGE:-${UPDATE_URL%/download/}}"
@@ -119,7 +120,9 @@ write_container_script() {
       # buildDependenciesFromSource). Linux: compile it here (X11 headers). Windows: node-gyp cannot
       # cross-compile for win32, so there is no module — the check below fails the build.
       rebuild=false
-      if [[ "$PLATFORM" == win ]]; then
+      if [[ "$PLATFORM" == win ]] && ! grep -q "prebuilds/win32-x64" electron-builder.yml; then
+        echo "electron-builder.yml has no win32-x64 prebuild FileSet (older commit): using a generated override"
+        EB_ARGS="$EB_ARGS --config electron-builder.win.yml"
         cat > electron-builder.win.yml <<'YML'
 extends: ./electron-builder.yml
 win:
@@ -172,10 +175,9 @@ build_docker() { # $1 = linux | win
     # upstream N-API prebuild prebuilds/win32-x64 is re-included for the win target only. Our patch touches
     # only libuiohook's darwin code (+ a define used there), so on Windows it is the same module.
     # macOS/Linux keep the strict "patched build from source" policy of electron-builder.yml.
-    # electron-builder takes only `!exclusions` from plain `files` strings for node_modules; an inclusion
-    # must be a FileSet {from: ".", filter: [...]}, which the CLI cannot express — hence a generated
-    # config (electron-builder.win.yml, extends electron-builder.yml) inside the build copy only.
-    win)   args="--win nsis --config electron-builder.win.yml"
+    # electron-builder.yml carries this as a `win.files` FileSet (client, 2026-09-26). For commits made
+    # before that, the container generates the same override (electron-builder.win.yml) — see below.
+    win)   args="--win nsis"
            host="${WIN_DOCKER_HOST:-${BUILD_DOCKER_HOST:-}}" ;;
   esac
   write_container_script

@@ -9,7 +9,8 @@
 # (mounted into caddy as /srv/web); otherwise a placeholder is seeded once if $DIR/web is empty.
 # Releases: if apps/desktop/dist-release exists locally, it is pushed to $DIR/releases
 # (/download/* and the electron-updater feed) WITHOUT --delete: old versions stay downloadable.
-# SKIP_WEB=1 / SKIP_RELEASES=1 skip those steps.
+# SKIP_WEB=1 / SKIP_RELEASES=1 skip those steps; WEB_DIST= / RELEASE_DIST= point them at other dirs
+# (infra/docker/release.sh uses the web/release builds of the release commit).
 # SYNC_REF=<git ref>: deploy that commit (clean `git archive` export) instead of the working tree —
 # use it whenever others have uncommitted work in the tree. Web/release artifacts (not in git) still
 # come from the working tree.
@@ -55,7 +56,7 @@ rsync -az --no-owner --no-group --delete -e "ssh -o BatchMode=yes" \
 
 # Web static: new hashed assets land first, index.html and deletions last (--delay-updates,
 # --delete-after), so a browser never gets an index.html pointing at missing assets.
-WEB_SRC="$ROOT/apps/desktop/dist-web"
+WEB_SRC="${WEB_DIST:-$ROOT/apps/desktop/dist-web}"
 if [[ -n "${SKIP_WEB:-}" ]]; then
   echo "web: skipped (SKIP_WEB)"
 elif [[ -f "$WEB_SRC/index.html" ]]; then
@@ -68,7 +69,7 @@ fi
 
 # Releases: installers first, latest*.yml last (--delay-updates), so the updater never sees
 # metadata pointing at a file that is not there yet. No --delete.
-REL_SRC="$ROOT/apps/desktop/dist-release"
+REL_SRC="${RELEASE_DIST:-$ROOT/apps/desktop/dist-release}"
 "${SSH[@]}" "$HOST" "mkdir -p '$DIR/releases'"
 if [[ -z "${SKIP_RELEASES:-}" && -d "$REL_SRC" ]]; then
   rsync -az --no-owner --no-group --delay-updates \
