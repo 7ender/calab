@@ -201,18 +201,19 @@ export interface RoomGroup {
   rooms: Room[];
 }
 
-const byPosition = (a: { position: number; name: string; id: string }, b: { position: number; name: string; id: string }): number =>
+export const byPosition = (a: { position: number; name: string; id: string }, b: { position: number; name: string; id: string }): number =>
   a.position - b.position || a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
 
 /**
- * Room list layout (docs/09 #4, Discord-like): rooms without a category first, then the
- * categories by position. Inside a group text rooms come before voice rooms, each by position.
- * Categories without visible rooms are hidden unless `keepEmpty` (admins add rooms to them).
+ * Room list layout (docs/09 #4 and P1 #19, Discord-like): rooms without a category first (a
+ * flat list, no header), then the categories by position. Inside a group rooms follow
+ * `position` only — drag & drop may interleave text and voice rooms (migration 00012 kept the
+ * old text-before-voice order). Categories without rooms are hidden unless `keepEmpty`
+ * (admins drop and add rooms into them).
  */
 export function groupRooms(rooms: Room[], categories: RoomCategory[], keepEmpty = false): RoomGroup[] {
   const known = new Set(categories.map((c) => c.id));
-  const sortRooms = (list: Room[]): Room[] =>
-    [...list].sort((a, b) => Number(isVoice(a)) - Number(isVoice(b)) || byPosition(a, b));
+  const sortRooms = (list: Room[]): Room[] => [...list].sort(byPosition);
   const groups: RoomGroup[] = [];
   const loose = rooms.filter((r) => !r.categoryId || !known.has(r.categoryId));
   if (loose.length) groups.push({ category: null, rooms: sortRooms(loose) });

@@ -143,8 +143,6 @@ export const es: Dict = {
   'invite.revoke': 'Revocar',
 
   // rooms
-  'room.textRooms': 'Salas de texto',
-  'room.voiceRooms': 'Salas de voz',
   'room.create': 'Crear sala',
   'room.createTitle': 'Nueva sala',
   'room.type': 'Tipo',

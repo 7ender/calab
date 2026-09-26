@@ -141,8 +141,6 @@ export const ru = {
   'invite.revoke': 'Отозвать',
 
   // rooms
-  'room.textRooms': 'Текстовые комнаты',
-  'room.voiceRooms': 'Голосовые комнаты',
   'room.create': 'Создать комнату',
   'room.createTitle': 'Новая комната',
   'room.type': 'Тип',

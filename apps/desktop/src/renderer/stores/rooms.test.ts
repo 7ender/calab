@@ -13,12 +13,12 @@ const T = RoomType.TEXT;
 const V = RoomType.VOICE;
 
 describe('groupRooms', () => {
-  it('puts loose rooms first, then categories by position; text before voice', () => {
+  it('puts loose rooms first, then categories by position; rooms by position only', () => {
     const rooms = [room('v1', V, 0), room('t2', T, 2), room('t1', T, 1, 'b'), room('v2', V, 0, 'a'), room('t3', T, 5, 'a')];
     const groups = groupRooms(rooms, [cat('b', 1), cat('a', 0)]);
     expect(groups.map((g) => [g.category?.id ?? null, g.rooms.map((r) => r.id)])).toEqual([
-      [null, ['t2', 'v1']],
-      ['a', ['t3', 'v2']],
+      [null, ['v1', 't2']],
+      ['a', ['v2', 't3']],
       ['b', ['t1']],
     ]);
   });

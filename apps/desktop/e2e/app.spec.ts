@@ -64,7 +64,8 @@ test('register → workspace → room → message → voice', async () => {
   await page.getByRole('button', { name: 'Создать пространство' }).first().click();
   await page.getByLabel('Название').fill(`E2E ${id}`);
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
-  await expect(page.getByText('Текстовые комнаты', { exact: false })).toBeVisible();
+  // New workspaces have no categories (docs/09 P1 #19): an empty flat list.
+  await expect(page.getByText('В этом пространстве пока нет комнат.')).toBeVisible();
 
   // Text room.
   await page.getByRole('button', { name: 'Создать комнату' }).first().click();

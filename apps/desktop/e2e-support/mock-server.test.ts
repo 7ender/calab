@@ -613,3 +613,50 @@ describe('direct messages (ADR-0020)', () => {
     vera.gw.ws.close(1000);
   });
 });
+
+describe('room order (docs/09 P1 #19)', () => {
+  const put = (token: string, body: unknown): Promise<Response> =>
+    fetch(`${server.url}/api/workspaces/${IDS.workspaces.main}/rooms/order`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  it('applies one batch (rooms + categories) for admins; all or nothing; 403 for members', async () => {
+    const anna = await login();
+    const grigory = await login('grigory@calaba.test');
+    expect((await put(grigory, { rooms: [{ roomId: IDS.rooms.dev, position: 0 }] })).status).toBe(403);
+
+    // A room of another workspace: 422, and the valid item before it is not applied.
+    const bad = await put(anna, {
+      rooms: [
+        { roomId: IDS.rooms.dev, position: 0 },
+        { roomId: IDS.rooms.designMockups, position: 1 },
+      ],
+    });
+    expect(bad.status).toBe(422);
+
+    const ok = await put(anna, {
+      rooms: [{ roomId: IDS.rooms.dev, position: 1, categoryId: '' }],
+      categories: [
+        { categoryId: IDS.categories.voice, position: 0 },
+        { categoryId: IDS.categories.dev, position: 1 },
+      ],
+    });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as { rooms: { id: string; categoryId?: string; position?: number }[]; categories: { id: string }[] };
+    expect(body.rooms).toMatchObject([{ id: IDS.rooms.dev, position: 1 }]);
+    expect(body.rooms[0]?.categoryId ?? '').toBe('');
+    expect(body.categories).toHaveLength(2);
+
+    // Restore the fixture for the other tests.
+    const back = await put(anna, {
+      rooms: [{ roomId: IDS.rooms.dev, position: 1, categoryId: IDS.categories.dev }],
+      categories: [
+        { categoryId: IDS.categories.dev, position: 0 },
+        { categoryId: IDS.categories.voice, position: 1 },
+      ],
+    });
+    expect(back.status).toBe(200);
+  });
+});

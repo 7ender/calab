@@ -99,6 +99,8 @@ import {
   ScreenSharePreset,
   SessionSchema,
   SetEmbedsHiddenRequestSchema,
+  SetRoomOrderRequestSchema,
+  SetRoomOrderResponseSchema,
   SetRoomPermissionsRequestSchema,
   SetRoomPermissionsResponseSchema,
   UpdateCategoryRequestSchema,
@@ -1611,12 +1613,43 @@ class MockImpl {
       const cat = categoryFor(c);
       s().categories.delete(cat.id);
       this.toWorkspace(cat.workspaceId, { event: { case: 'categoryDelete', value: { workspaceId: cat.workspaceId, categoryId: cat.id } } });
-      for (const r of s().rooms.values()) {
-        if (r.categoryId !== cat.id) continue;
+      // Like the server (DeleteCategory): the rooms go to the top level after the rooms there, in their order.
+      const all = [...s().rooms.values()].filter((r) => r.workspaceId === cat.workspaceId);
+      const base = Math.max(-1, ...all.filter((r) => !r.categoryId).map((r) => r.position)) + 1;
+      const moved = all.filter((r) => r.categoryId === cat.id).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+      moved.forEach((r, i) => {
         r.categoryId = '';
+        r.position = base + i;
         this.toWorkspace(r.workspaceId, { event: { case: 'roomUpdate', value: { room: r } } }, r.id);
-      }
+      });
       noContent(c.res);
+    });
+    // Drag & drop result (docs/09 P1 #19): one batch, all or nothing, like the server's transaction.
+    this.route('PUT', '/api/workspaces/:id/rooms/order', (c) => {
+      const me = this.uid(c);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      this.requireAdmin(m);
+      const b = parseBody(c, SetRoomOrderRequestSchema);
+      if (b.rooms.length > 500 || b.categories.length > 200) throw invalid('rooms', 'too many items');
+      const cats = b.categories.map((p) => {
+        const cat = s().categories.get(p.categoryId);
+        if (!cat || cat.workspaceId !== ws.id) throw invalid('categories', `category ${p.categoryId} not found in this workspace`);
+        return { cat, position: p.position };
+      });
+      const rooms = b.rooms.map((p) => {
+        const room = s().rooms.get(p.roomId);
+        if (!room || room.workspaceId !== ws.id) throw invalid('rooms', `room ${p.roomId} not found in this workspace`);
+        if (p.categoryId && s().categories.get(p.categoryId)?.workspaceId !== ws.id) throw invalid('categoryId', 'category not found in this workspace');
+        return { room, position: p.position, categoryId: p.categoryId };
+      });
+      for (const x of cats) x.cat.position = x.position;
+      for (const x of rooms) {
+        x.room.position = x.position;
+        x.room.categoryId = x.categoryId;
+      }
+      for (const x of cats) this.toWorkspace(ws.id, { event: { case: 'categoryUpdate', value: { category: x.cat } } });
+      for (const x of rooms) this.toWorkspace(ws.id, { event: { case: 'roomUpdate', value: { room: x.room } } }, x.room.id);
+      sendMsg(c.res, 200, SetRoomOrderResponseSchema, { rooms: rooms.map((x) => this.roomOut(x.room)), categories: cats.map((x) => x.cat) });
     });
 
     this.route('GET', '/api/workspaces/:id/rooms', (c) => {

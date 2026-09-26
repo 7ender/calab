@@ -54,6 +54,9 @@ interface UiState {
   /** Collapsed room categories (category id → true), persisted. */
   collapsed: Record<string, true>;
   toggleCategory: (categoryId: string) => void;
+  /** «Скрыть заглушённые» (docs/09 P1 #19): muted rooms leave the sidebar (open/voice room stays), persisted. */
+  hideMuted: boolean;
+  setHideMuted: (v: boolean) => void;
 }
 
 /** Window width from which the members list is a column instead of a floating panel (docs/08: chat keeps ≥ ~600 px). */
@@ -77,6 +80,8 @@ export const useUi = create<UiState>()(
       setSidebarWidth: (w) => set({ sidebarWidth: Math.round(Math.max(200, Math.min(320, w))) }),
       history: emptyHistory(),
       collapsed: {},
+      hideMuted: false,
+      setHideMuted: (hideMuted) => set({ hideMuted }),
       setWorkspace: (id) =>
         set((s) => ({
           activeWorkspaceId: id,
@@ -123,6 +128,7 @@ export const useUi = create<UiState>()(
         membersPanel: s.membersPanel,
         sidebarWidth: s.sidebarWidth,
         collapsed: s.collapsed,
+        hideMuted: s.hideMuted,
       }),
     },
   ),

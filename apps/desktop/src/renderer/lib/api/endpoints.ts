@@ -19,6 +19,8 @@ import {
   CreateMessageResponseSchema,
   CreateRoomRequestSchema,
   CreateRoomResponseSchema,
+  SetRoomOrderRequestSchema,
+  SetRoomOrderResponseSchema,
   CreateWorkspaceRequestSchema,
   CreateWorkspaceResponseSchema,
   DiscoverWorkspacesResponseSchema,
@@ -133,6 +135,9 @@ export const api = {
     create: (workspaceId: string, init: MessageInitShape<typeof CreateRoomRequestSchema>) =>
       call('POST', `/api/workspaces/${workspaceId}/rooms`, CreateRoomResponseSchema, body(CreateRoomRequestSchema, init)),
     get: (id: string) => call('GET', `/api/rooms/${id}`, GetRoomResponseSchema),
+    /** Drag & drop result (docs/09 P1 #19): positions + categories of the changed rooms and categories, one batch (MANAGE_ROOM). */
+    setOrder: (workspaceId: string, init: MessageInitShape<typeof SetRoomOrderRequestSchema>) =>
+      call('PUT', `/api/workspaces/${workspaceId}/rooms/order`, SetRoomOrderResponseSchema, body(SetRoomOrderRequestSchema, init)),
     update: (id: string, init: MessageInitShape<typeof UpdateRoomRequestSchema>) =>
       call('PATCH', `/api/rooms/${id}`, UpdateRoomResponseSchema, body(UpdateRoomRequestSchema, init)),
     remove: (id: string) => callEmpty('DELETE', `/api/rooms/${id}`),

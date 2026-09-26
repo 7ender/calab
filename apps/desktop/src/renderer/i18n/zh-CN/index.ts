@@ -143,8 +143,6 @@ export const zhCN: Dict = {
   'invite.revoke': '撤销',
 
   // rooms
-  'room.textRooms': '文字房间',
-  'room.voiceRooms': '语音房间',
   'room.create': '创建房间',
   'room.createTitle': '新建房间',
   'room.type': '类型',
