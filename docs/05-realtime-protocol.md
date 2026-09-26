@@ -123,6 +123,9 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 - Webhook-события дедуплицируются по `id` (LiveKit ретраит доставку). Устройство отозванной сессии, успевшее подключиться, отключается при `participant_joined`.
 - Изменение прав/роли/членства/отзыв сессии → сервер обновляет grant участника (`UpdateParticipant`) или отключает его (`RemoveParticipant`); удаление комнаты → `DeleteRoom`.
 - Reconcile: раз в 30 с сервер сверяет `ListParticipants` с Redis (пропущенные webhook'и).
+- **Оптимистичный вход** (docs/09 P1 #8). `POST /api/rooms/{id}/join` сразу записывает voice-state устройства с `pending = true` и шлёт всем `VOICE_STATE_UPDATE` — участник виден в комнате до подключения к LiveKit. Запись и проверка `user_limit` идут под блокировкой workspace: pending-устройства занимают место. Ответ несёт `pending`. Повторный `/join` устройства, уже записанного в комнате, ничего не меняет (`pending = false`, если оно уже подключено). При переходе из другой комнаты mute/deafen устройства сохраняются.
+  - `participant_joined` снимает `pending` (`joined_at` остаётся от `/join`). Если за 15 с устройство не подключилось, состояние снимается (`VOICE_STATE_UPDATE` с пустой комнатой); если подключилось, но webhook потерян, — снимается `pending`. Таймер тот же, что у app-level move (ADR-0019; там перемещённое устройство тоже `pending`). Страховка — reconcile: pending моложе 15 с он не трогает, старше и без участника в LiveKit — удаляет, с участником — снимает `pending`.
+  - Агрегат по пользователю: `pending` = все его устройства в этой комнате ещё подключаются. Клиент до ответа `/join` вставляет себя в список сам, а при ошибке `/join` убирает.
   Свежие записи не удаляются (grace 15 с от начала прохода): состояние с `joinedAt` и стрим (демонстрация экрана) со `startedAt` моложе «начало − 15 с» могли появиться по webhook'у уже после листинга; запись стрима без времени старта считается старой.
 
 ## REST
@@ -199,7 +202,7 @@ POST   /api/workspaces/{id}/files      multipart, поле "file" → 201 Upload
 POST   /api/me/avatar                  multipart, только изображение ≤ 5 MB → UpdateMeResponse
 GET    /api/files/{id}                 байты: Range, ETag (= sha256), Content-Disposition
 GET    /api/files/{id}/thumbnail       WebP-превью ≤ 512 px (для изображений)
-POST   /api/rooms/{id}/join            JoinVoiceResponse { url, token, identity, media, can_speak, can_stream }   (CONNECT, только voice)
+POST   /api/rooms/{id}/join            JoinVoiceResponse { url, token, identity, media, can_speak, can_stream, can_video, pending }   (CONNECT, только voice)
 POST   /api/rooms/{id}/stream/request  RequestStreamRequest → RequestStreamResponse { preset }   (STREAM; 409 — лимит или не в комнате)
 POST   /api/rooms/{id}/camera/request  204   (VIDEO + CONNECT; 409 — camera_limit достигнут, камеры выключены (0) или не в комнате)
 POST   /api/rooms/{id}/camera/stop     204   (своя камера: снять резерв и grant)

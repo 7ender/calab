@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
 
 func TestAggregate(t *testing.T) {
@@ -35,6 +37,30 @@ func TestAggregate(t *testing.T) {
 	all := AggregateAll(ws, sessions)
 	if len(all) != 2 {
 		t.Fatalf("AggregateAll: %d users", len(all))
+	}
+}
+
+// A user is pending only while every device in their room is still connecting (optimistic
+// join, docs/05): one connected device makes them connected; a change of pending is a change.
+func TestAggregatePending(t *testing.T) {
+	ws, u, r := uuid.New(), uuid.New(), uuid.New()
+	sessions := []SessionState{{UserID: u, SessionID: uuid.New(), RoomID: r, Pending: true, JoinedAt: 100}}
+	pending := Aggregate(ws, u, sessions)
+	if !pending.GetPending() {
+		t.Fatalf("single connecting device: %v", pending)
+	}
+	sessions = append(sessions, SessionState{UserID: u, SessionID: uuid.New(), RoomID: r, JoinedAt: 50})
+	connected := Aggregate(ws, u, sessions)
+	if connected.GetPending() {
+		t.Fatalf("one connected device: %v", connected)
+	}
+	sessions[1].Pending = true
+	if !Aggregate(ws, u, sessions).GetPending() {
+		t.Fatal("all devices connecting: pending")
+	}
+	if Equal(pending, &v1.VoiceState{WorkspaceId: pending.GetWorkspaceId(), UserId: pending.GetUserId(), RoomId: pending.GetRoomId(),
+		Muted: pending.GetMuted(), Deafened: pending.GetDeafened(), JoinedAt: pending.GetJoinedAt()}) {
+		t.Fatal("Equal ignores pending: the flip would not be published")
 	}
 }
 
