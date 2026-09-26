@@ -2291,12 +2291,23 @@ func (x *MessageReactionRemove) GetEmoji() string {
 
 // To the moved user's devices: a moderator moved them to another voice room. LiveKit
 // switches the connection (RoomEvent.Moved); VOICE_STATE_UPDATE follows for everyone.
+// Sent to the moved user's devices (ADR-0019). With the SFU move (LiveKit Cloud) the device
+// is already in the target room: url/token are empty. With the app-level move (open-source
+// LiveKit) one event per moved device carries a join token for the target room: the device
+// whose auth session is session_id disconnects from the old room and connects with it at
+// once (token TTL 2 min); other devices of the user ignore it. A device that does not
+// connect to the target within 15 s is rolled back (VOICE_STATE_UPDATE); the old room drops
+// it after 5 s.
 type VoiceMoved struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
 	FromRoomId    string                 `protobuf:"bytes,2,opt,name=from_room_id,json=fromRoomId,proto3" json:"from_room_id,omitempty"`
 	ToRoomId      string                 `protobuf:"bytes,3,opt,name=to_room_id,json=toRoomId,proto3" json:"to_room_id,omitempty"`
 	ByUserId      string                 `protobuf:"bytes,4,opt,name=by_user_id,json=byUserId,proto3" json:"by_user_id,omitempty"`
+	Url           string                 `protobuf:"bytes,5,opt,name=url,proto3" json:"url,omitempty"`                              // LiveKit signal URL; empty = SFU move, nothing to do
+	Token         string                 `protobuf:"bytes,6,opt,name=token,proto3" json:"token,omitempty"`                          // join token for the target room (same identity)
+	SessionId     string                 `protobuf:"bytes,7,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // auth session (device) the token is for
+	Identity      string                 `protobuf:"bytes,8,opt,name=identity,proto3" json:"identity,omitempty"`                    // LiveKit identity "<user_id>:<session_id>"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2355,6 +2366,34 @@ func (x *VoiceMoved) GetToRoomId() string {
 func (x *VoiceMoved) GetByUserId() string {
 	if x != nil {
 		return x.ByUserId
+	}
+	return ""
+}
+
+func (x *VoiceMoved) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *VoiceMoved) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *VoiceMoved) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *VoiceMoved) GetIdentity() string {
+	if x != nil {
+		return x.Identity
 	}
 	return ""
 }
@@ -3638,7 +3677,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\n" +
 	"message_id\x18\x03 \x01(\tR\tmessageId\x12\x17\n" +
 	"\auser_id\x18\x04 \x01(\tR\x06userId\x12\x14\n" +
-	"\x05emoji\x18\x05 \x01(\tR\x05emoji\"\x8d\x01\n" +
+	"\x05emoji\x18\x05 \x01(\tR\x05emoji\"\xf0\x01\n" +
 	"\n" +
 	"VoiceMoved\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12 \n" +
@@ -3647,7 +3686,12 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\n" +
 	"to_room_id\x18\x03 \x01(\tR\btoRoomId\x12\x1c\n" +
 	"\n" +
-	"by_user_id\x18\x04 \x01(\tR\bbyUserId\"%\n" +
+	"by_user_id\x18\x04 \x01(\tR\bbyUserId\x12\x10\n" +
+	"\x03url\x18\x05 \x01(\tR\x03url\x12\x14\n" +
+	"\x05token\x18\x06 \x01(\tR\x05token\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\a \x01(\tR\tsessionId\x12\x1a\n" +
+	"\bidentity\x18\b \x01(\tR\bidentity\"%\n" +
 	"\aResumed\x12\x1a\n" +
 	"\breplayed\x18\x01 \x01(\rR\breplayed\"K\n" +
 	"\x0fWorkspaceCreate\x128\n" +

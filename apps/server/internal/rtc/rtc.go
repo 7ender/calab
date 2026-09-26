@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -50,6 +51,9 @@ type Service struct {
 	events events.Publisher
 	// Revoked reports revoked auth sessions (set by the app); joins of revoked devices are kicked.
 	Revoked func(ctx context.Context, sessionID uuid.UUID) (bool, error)
+	// noSFUMove is set once LiveKit answered MoveParticipant with "not implemented"
+	// (open-source LiveKit): moves then go the app-level way right away (ADR-0019).
+	noSFUMove atomic.Bool
 }
 
 // NewService wires the rtc service. ev must be the plain publisher (not the Sync decorator).

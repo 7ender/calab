@@ -1,7 +1,9 @@
 package rtc
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -16,10 +18,30 @@ import (
 	"github.com/calaba/calaba/server/internal/voice"
 )
 
+// App-level move timing (ADR-0019): the moved device gets a target-room token valid for
+// moveTokenTTL; after moveDropOld it is removed from the old room if still there; if it has
+// not connected to the target within moveConfirm, its voice state is rolled back.
+const (
+	moveTokenTTL = 2 * time.Minute
+	moveDropOld  = 5 * time.Second
+	moveConfirm  = 15 * time.Second
+)
+
+// appMove is a device moved at app level, waiting to reconnect to the target room.
+type appMove struct {
+	sessionID uuid.UUID
+	identity  string
+	token     string
+}
+
 // moveMember: POST /api/rooms/{id}/voice/{userId}/move {targetRoomId}. The actor needs
 // MOVE_MEMBERS in both rooms; the moved user needs VIEW_ROOM + CONNECT in the target; the
-// target's user_limit applies unless the actor is an administrator. Every device of the
-// user in the source room is moved with LiveKit MoveParticipant (no reconnect).
+// target's user_limit applies unless the actor is an administrator.
+//
+// Every device of the user in the source room is moved. LiveKit MoveParticipant (Cloud)
+// moves it inside the SFU without a reconnect. Open-source LiveKit answers "not
+// implemented" (remembered per process); then the move is done by the app (ADR-0019): the
+// device gets a join token for the target room in VOICE_MOVED and reconnects itself.
 func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	srcID, err := httpx.PathUUID(r, "id", "room")
 	if err != nil {
@@ -95,6 +117,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	moved := 0
+	var apps []appMove
 	for _, st := range sess {
 		identity := voice.Identity(st.UserID, st.SessionID)
 		prev := st
@@ -112,8 +135,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if err := s.lk.MoveParticipant(r.Context(), srcName, identity, dstName); err != nil {
-			// Roll back to the source room.
+		rollback := func() {
 			// Call starts of both rooms are announced by the updates themselves (OnCalls).
 			_, _ = s.voice.Update(r.Context(), acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
 				if cur == nil || cur.RoomID != dstID {
@@ -122,10 +144,36 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 				n := prev
 				return &n
 			})
-			if IsNotFound(err) {
+		}
+		if !s.noSFUMove.Load() {
+			err := s.lk.MoveParticipant(r.Context(), srcName, identity, dstName)
+			switch {
+			case err == nil:
+			case IsNotImplemented(err):
+				slog.InfoContext(r.Context(), "LiveKit has no MoveParticipant: moving participants at app level (ADR-0019)")
+				s.noSFUMove.Store(true)
+			case IsNotFound(err):
+				rollback()
 				continue // device already left; webhook / reconcile clean up
+			default:
+				rollback()
+				return httpx.Unavailable(err)
 			}
-			return httpx.Unavailable(err)
+		}
+		if s.noSFUMove.Load() {
+			// App-level move: a token for the target room, the device reconnects itself.
+			// Its streams end with the old connection (the client requests them again).
+			tok, err := JoinToken(s.cfg.APIKey, s.cfg.Secret, dstName, identity,
+				s.displayName(r.Context(), acc.WorkspaceID, target), s.grant(r.Context(), acc.WorkspaceID, target, movedDst.Bits, false), moveTokenTTL)
+			if err != nil {
+				rollback()
+				return err
+			}
+			moved++
+			s.publishVoice(r.Context(), acc.WorkspaceID, c)
+			s.stopStreams(r.Context(), acc.WorkspaceID, srcID, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
+			apps = append(apps, appMove{sessionID: st.SessionID, identity: identity, token: tok})
+			continue
 		}
 		moved++
 		s.publishVoice(r.Context(), acc.WorkspaceID, c)
@@ -150,9 +198,51 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	if moved == 0 {
 		return httpx.NotFound("member in this voice room")
 	}
-	s.events.User(r.Context(), target, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceMoved{VoiceMoved: &v1.VoiceMoved{
-		WorkspaceId: acc.WorkspaceID.String(), FromRoomId: srcID.String(), ToRoomId: dstID.String(), ByUserId: actor.String(),
-	}}})
+	moveEv := func(m *appMove) *v1.DispatchEvent {
+		ev := &v1.VoiceMoved{WorkspaceId: acc.WorkspaceID.String(), FromRoomId: srcID.String(), ToRoomId: dstID.String(), ByUserId: actor.String()}
+		if m != nil {
+			ev.Url, ev.Token, ev.SessionId, ev.Identity = s.cfg.PublicURL, m.token, m.sessionID.String(), m.identity
+		}
+		return &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceMoved{VoiceMoved: ev}}
+	}
+	if len(apps) < moved { // some devices were moved inside the SFU
+		s.events.User(r.Context(), target, moveEv(nil))
+	}
+	for i := range apps {
+		s.events.User(r.Context(), target, moveEv(&apps[i]))
+		m := apps[i]
+		time.AfterFunc(moveDropOld, func() { s.dropFromOldRoom(srcName, m.identity) })
+		time.AfterFunc(moveConfirm, func() { s.confirmMove(acc.WorkspaceID, dstID, target, m.sessionID, dstName, m.identity) })
+	}
 	httpx.NoContent(w)
 	return nil
+}
+
+// dropFromOldRoom removes an app-level-moved device from the old LiveKit room if it is
+// still connected there (the client did not disconnect itself).
+func (s *Service) dropFromOldRoom(lkRoom, identity string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := s.lk.RemoveParticipant(ctx, lkRoom, identity); err != nil && !IsNotFound(err) {
+		slog.WarnContext(ctx, "remove moved participant from the old room", "identity", identity, "err", err)
+	}
+}
+
+// confirmMove rolls back an app-level move whose device did not connect to the target room
+// in time: it is then in no call (it was removed from the old room), which VOICE_STATE_UPDATE
+// tells everyone. A late connect is admitted normally by participant_joined.
+func (s *Service) confirmMove(wid, dstID, uid, sid uuid.UUID, dstName, identity string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := s.lk.GetParticipant(ctx, dstName, identity); err == nil || !IsNotFound(err) {
+		return // connected (or LiveKit unreachable: reconcile decides later)
+	}
+	if err := s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
+		if cur == nil || cur.RoomID != dstID {
+			return cur
+		}
+		return nil
+	}); err != nil {
+		slog.WarnContext(ctx, "roll back a move", "identity", identity, "err", err)
+	}
 }

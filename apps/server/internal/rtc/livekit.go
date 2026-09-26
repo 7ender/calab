@@ -101,6 +101,13 @@ type Error struct {
 
 func (e *Error) Error() string { return fmt.Sprintf("livekit: %d %s: %s", e.Status, e.Code, e.Msg) }
 
+// IsNotImplemented reports an API the LiveKit server does not implement (e.g. MoveParticipant
+// in open-source LiveKit, ADR-0019): twirp "unimplemented", or "not implemented" in the message.
+func IsNotImplemented(err error) bool {
+	var e *Error
+	return errors.As(err, &e) && (e.Code == "unimplemented" || strings.Contains(strings.ToLower(e.Msg), "not implemented"))
+}
+
 // IsNotFound reports a twirp "not_found" (participant/room gone): callers treat it as done.
 func IsNotFound(err error) bool {
 	var e *Error

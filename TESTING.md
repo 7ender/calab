@@ -1292,3 +1292,20 @@ curl -sI https://$D/manifest.webmanifest | grep -i content-type                 
 Факт 2026-09-25 (с мака через VPN, `wss://rtc.colaba.gptunnel.ai`, 20 с): 9/9, потерь 0 (0%), 3.7 Mbps суммарно.
 
 </details>
+
+## Server: перемещение без SFU-move (хотфикс 0.1.1, ADR-0019)
+
+Нужны dev-LiveKit и `lk` CLI (`brew install livekit-cli`); без них — `SKIP`. Фейков нет: тест идёт против настоящего open-source LiveKit, который на `MoveParticipant` отвечает `not implemented`.
+
+```sh
+cd apps/server
+go test -race -tags integration -count=1 -v -run TestMoveAppLevel ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)|no MoveParticipant'
+```
+Ожидается: строка лога `LiveKit has no MoveParticipant: moving participants at app level (ADR-0019)`, `--- PASS: TestMoveAppLevel` (~16 с) и `ok`.
+
+Что проверяется:
+- **Подготовка.** Устройство bob — настоящий участник исходной комнаты (`lk room join`).
+- **`VOICE_MOVED`.** После move bob получает событие с `url`, `token`, своим `session_id` и `identity`; остальные получают `VOICE_STATE_UPDATE` с целевой комнатой.
+- **Токен рабочий.** Подключение к signal-эндпоинту LiveKit (`/rtc?access_token=…`) с ним даёт `JoinResponse`: целевая комната, та же identity, `canSubscribe`.
+- **Старая комната.** Через 5 с участника bob в исходной комнате LiveKit нет, хотя `lk` оставался подключён.
+- **Откат.** Устройство carl, которое к цели так и не подключилось, через 15 с откатывается (`VOICE_STATE_UPDATE` с пустой комнатой); bob остаётся в целевой.

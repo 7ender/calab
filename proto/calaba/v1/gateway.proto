@@ -244,11 +244,22 @@ message MessageReactionRemove {
 
 // To the moved user's devices: a moderator moved them to another voice room. LiveKit
 // switches the connection (RoomEvent.Moved); VOICE_STATE_UPDATE follows for everyone.
+// Sent to the moved user's devices (ADR-0019). With the SFU move (LiveKit Cloud) the device
+// is already in the target room: url/token are empty. With the app-level move (open-source
+// LiveKit) one event per moved device carries a join token for the target room: the device
+// whose auth session is session_id disconnects from the old room and connects with it at
+// once (token TTL 2 min); other devices of the user ignore it. A device that does not
+// connect to the target within 15 s is rolled back (VOICE_STATE_UPDATE); the old room drops
+// it after 5 s.
 message VoiceMoved {
   string workspace_id = 1;
   string from_room_id = 2;
   string to_room_id = 3;
   string by_user_id = 4;
+  string url = 5;        // LiveKit signal URL; empty = SFU move, nothing to do
+  string token = 6;      // join token for the target room (same identity)
+  string session_id = 7; // auth session (device) the token is for
+  string identity = 8;   // LiveKit identity "<user_id>:<session_id>"
 }
 
 // Sent after a successful RESUME, following the replayed events.
