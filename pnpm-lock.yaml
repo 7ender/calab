@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   uiohook-napi@1.5.5:
-    hash: 90a1656ed15487a00c8aeaa54f968b2419b2dda54c581cc21b1e8d4aeed5dbe6
+    hash: 282705c768f79df9506bd71d711536ae16356835462851a2ffb3a566c427412e
     path: patches/uiohook-napi@1.5.5.patch
 
 importers:
@@ -23,7 +23,7 @@ importers:
         version: 6.8.9
       uiohook-napi:
         specifier: ^1.5.5
-        version: 1.5.5(patch_hash=90a1656ed15487a00c8aeaa54f968b2419b2dda54c581cc21b1e8d4aeed5dbe6)
+        version: 1.5.5(patch_hash=282705c768f79df9506bd71d711536ae16356835462851a2ffb3a566c427412e)
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.13.0
@@ -7111,7 +7111,7 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  uiohook-napi@1.5.5(patch_hash=90a1656ed15487a00c8aeaa54f968b2419b2dda54c581cc21b1e8d4aeed5dbe6):
+  uiohook-napi@1.5.5(patch_hash=282705c768f79df9506bd71d711536ae16356835462851a2ffb3a566c427412e):
     dependencies:
       node-gyp-build: 4.8.4
 

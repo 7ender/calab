@@ -1,4 +1,5 @@
 import type { PttBinding } from './ipc';
+import type { KeySource } from './keySource';
 import { KEY, MIN_MOUSE_BUTTON, keyName, mouseName, type OsKind } from './pttKeys';
 
 /**
@@ -11,9 +12,11 @@ import { KEY, MIN_MOUSE_BUTTON, keyName, mouseName, type OsKind } from './pttKey
  * so a stale binder cannot cancel another one's capture — review N6), a newer `start()`, or the
  * timeout: an abandoned capture must never turn the next key typed in another app into PTT.
  *
- * macOS Caps Lock: a hardware Caps Lock only reports lock-state flips (KEY.CAPS_LOCK_STATE →
- * toggle-only). If the system also delivers a real press/release (KEY.CAPS_LOCK) within the
- * probe window, hold works. While Caps Lock is remapped to F18, F18 means «Caps Lock».
+ * macOS Caps Lock: the IOHIDManager listener (source 'hid', shared/keySource.ts) reports the
+ * physical press/release as KEY.CAPS_LOCK → bound at once as hold, source 'hid'. Without it (no
+ * Input Monitoring) the tap only reports lock-state flips (KEY.CAPS_LOCK_STATE → toggle-only); if
+ * the system also delivers a real press/release (KEY.CAPS_LOCK) within the probe window, hold
+ * works. While Caps Lock is remapped to F18 (fallback), F18 means «Caps Lock».
  */
 
 export const CAPTURE_TIMEOUT_MS = 15_000;
@@ -70,8 +73,8 @@ export class PttCapture {
     this.end(p, new Error(reason));
   }
 
-  /** A key event from the hook. Returns true when the capture consumed it. */
-  onKey(code: number, down: boolean): boolean {
+  /** A key event from the hook (after KeySourceMerger). Returns true when the capture consumed it. */
+  onKey(code: number, down: boolean, source: KeySource = 'tap'): boolean {
     const p = this.pending;
     if (!p) return false;
     // The macOS lock-state code arrives as «up» when Caps Lock turns off — still a press.
@@ -80,6 +83,11 @@ export class PttCapture {
     if (!down && code !== KEY.CAPS_LOCK_STATE) return false;
     if (code === KEY.ESCAPE) {
       this.end(p, new Error('cancelled'));
+      return true;
+    }
+    if (code === KEY.CAPS_LOCK && source === 'hid') {
+      // The physical key, read at the HID level: a real hold key, no probe needed.
+      this.end(p, { kind: 'key', code, label: keyName(code, this.deps.os), source, mode: 'hold' });
       return true;
     }
     if (code === KEY.CAPS_LOCK || code === KEY.CAPS_LOCK_STATE) {
@@ -91,7 +99,7 @@ export class PttCapture {
           this.end(
             p,
             caps.hold
-              ? { kind: 'key', code: KEY.CAPS_LOCK, label: keyName(KEY.CAPS_LOCK, os), mode: 'hold' }
+              ? { kind: 'key', code: KEY.CAPS_LOCK, label: keyName(KEY.CAPS_LOCK, os), source: 'tap', mode: 'hold' }
               : { kind: 'key', code: KEY.CAPS_LOCK_STATE, label: keyName(KEY.CAPS_LOCK_STATE, os), mode: 'toggle' },
           );
         }, CAPS_PROBE_MS);

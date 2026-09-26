@@ -17,6 +17,7 @@ import type {
   ScreenAccess,
   PttBinding,
   PttEvent,
+  PttRawKey,
   PttStatus,
   RegisterArgs,
   TrayAction,
@@ -93,6 +94,8 @@ export interface CalabaApi {
     cancelCapture(id: number): void;
     status(): Promise<PttStatus>;
     onEvent(cb: (ev: PttEvent) => void): Unsubscribe;
+    /** While a capture is armed: each raw key event seen by the hook (diagnostics line in the binder). */
+    onRawKey(cb: (ev: PttRawKey) => void): Unsubscribe;
   };
   system: {
     openPrivacySettings(pane: PrivacyPane): Promise<void>;
