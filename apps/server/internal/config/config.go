@@ -25,8 +25,12 @@ const (
 type Config struct {
 	HTTPAddr        string `env:"HTTP_ADDR" envDefault:"127.0.0.1:3000"`
 	PublicAppURL    string `env:"PUBLIC_APP_URL" envDefault:"http://localhost:3000"`
-	PublicAppURLAlt string `env:"PUBLIC_APP_URL_ALT"` // optional second domain of the web client
-	LogLevel        string `env:"LOG_LEVEL" envDefault:"info"`
+	PublicAppURLAlt string `env:"PUBLIC_APP_URL_ALT"` // optional second domain of the web client (compatibility)
+	// All origins the web client is served from, comma-separated (app host, aliases). The
+	// CSRF / gateway Origin checks accept these plus PUBLIC_APP_URL and PUBLIC_APP_URL_ALT;
+	// PUBLIC_APP_URL stays the primary one (links).
+	PublicAppURLs []string `env:"PUBLIC_APP_URLS" envSeparator:","`
+	LogLevel      string   `env:"LOG_LEVEL" envDefault:"info"`
 
 	DatabaseURL string `env:"DATABASE_URL,required"`
 	RedisURL    string `env:"REDIS_URL,required"`
@@ -114,6 +118,11 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("%s must be an absolute http(s) URL, got %q", name, u))
 		}
 	}
+	for _, u := range c.PublicAppURLs {
+		if strings.TrimSpace(u) != "" && Origin(u) == "" {
+			errs = append(errs, fmt.Errorf("PUBLIC_APP_URLS: %q is not an absolute http(s) URL", u))
+		}
+	}
 	switch c.StorageDriver {
 	case "fs":
 		if c.StoragePath == "" {
@@ -139,10 +148,13 @@ func (c *Config) Validate() error {
 
 // AllowedOrigins returns the browser origins of the web client (scheme://host[:port]),
 // used for CSRF checks on cookie-authenticated requests and for gateway upgrades.
+// Sources: PUBLIC_APP_URL, PUBLIC_APP_URL_ALT and PUBLIC_APP_URLS, deduplicated in order.
 func (c *Config) AllowedOrigins() []string {
 	var out []string
-	for _, u := range []string{c.PublicAppURL, c.PublicAppURLAlt} {
-		if o := Origin(u); o != "" {
+	seen := map[string]bool{}
+	for _, u := range append([]string{c.PublicAppURL, c.PublicAppURLAlt}, c.PublicAppURLs...) {
+		if o := Origin(u); o != "" && !seen[o] {
+			seen[o] = true
 			out = append(out, o)
 		}
 	}

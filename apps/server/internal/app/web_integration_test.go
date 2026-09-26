@@ -82,6 +82,9 @@ func TestWebCookieAuth(t *testing.T) {
 	if r := webPost(t, "/api/auth/login", login, map[string]string{"X-Client": "web", "Origin": "https://evil.example.com"}, ""); r.status != 403 || r.cookie != nil {
 		t.Fatalf("foreign-origin web login: %d", r.status)
 	}
+	if r := webPost(t, "/api/auth/login", login, map[string]string{"X-Client": "web", "Origin": "https://alias.example.org"}, ""); r.status != 200 {
+		t.Fatalf("login from a PUBLIC_APP_URLS origin: %d", r.status)
+	}
 	if r := webPost(t, "/api/auth/login", login, map[string]string{"X-Client": "web", "Origin": "https://app.example.ru"}, ""); r.status != 200 {
 		t.Fatalf("alt-domain web login: %d", r.status)
 	}
@@ -167,11 +170,12 @@ func TestGatewayOrigin(t *testing.T) {
 		return resp.StatusCode, err
 	}
 	for origin, want := range map[string]int{
-		"https://app.example.com":  http.StatusSwitchingProtocols,
-		"https://app.example.ru":   http.StatusSwitchingProtocols,
-		"file://":                  http.StatusSwitchingProtocols,
-		"":                         http.StatusSwitchingProtocols,
-		"https://evil.example.com": http.StatusForbidden,
+		"https://app.example.com":   http.StatusSwitchingProtocols,
+		"https://app.example.ru":    http.StatusSwitchingProtocols,
+		"https://alias.example.org": http.StatusSwitchingProtocols, // from PUBLIC_APP_URLS
+		"file://":                   http.StatusSwitchingProtocols,
+		"":                          http.StatusSwitchingProtocols,
+		"https://evil.example.com":  http.StatusForbidden,
 	} {
 		if st, _ := dial(origin); st != want {
 			t.Errorf("origin %q: status %d, want %d", origin, st, want)

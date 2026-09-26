@@ -131,7 +131,7 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 - `login` / `register` / `refresh` веб-клиента: `tokens.refreshToken` в теле пустой, токен ставится cookie `calaba_refresh` (`HttpOnly; Secure; SameSite=Strict; Path=/api/auth`, срок = срок сессии). Access-токен приходит в теле, как обычно, и хранится только в памяти страницы.
 - `refresh` с пустым `refreshToken` берёт токен из cookie и ставит новый (ротация). Если параллельный запрос (другая вкладка) только что ротировал токен, старый в пределах 30 с получает `409 ERROR_CODE_CONFLICT`, cookie не трогается: повторите refresh, в cookie уже новый токен. `logout` без `Authorization` и без токена в теле берёт токен из cookie и очищает её (`Max-Age=-1`). Мёртвый токен в cookie → `401`, cookie очищается.
 - **CSRF**: запросы с аутентификацией по cookie (`refresh`/`logout` из cookie), а также веб-`login`/`register`, выставляющие cookie, проходят проверку источника:
-  - `Origin` задан → он должен точно совпадать с origin `PUBLIC_APP_URL` или `PUBLIC_APP_URL_ALT` (схема + хост + порт);
+  - `Origin` задан → он должен точно совпадать с одним из разрешённых origin (схема + хост + порт): `PUBLIC_APP_URLS` (список через запятую) плюс `PUBLIC_APP_URL` и `PUBLIC_APP_URL_ALT`;
   - `Origin` нет → нужен `Sec-Fetch-Site: same-origin`;
   - ни того ни другого → `403 ERROR_CODE_FORBIDDEN`.
 
@@ -140,7 +140,7 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
   - без `Origin` (нативные клиенты) — пропускается;
   - `null` / `file://` (собранный Electron) — пропускается;
   - `http://localhost:*` / `http://127.0.0.1:*` (dev) — пропускается;
-  - иначе — только origin из `PUBLIC_APP_URL[_ALT]`, остальное → `403`.
+  - иначе — только разрешённые origin (`PUBLIC_APP_URLS`, `PUBLIC_APP_URL[_ALT]`), остальное → `403`.
 
   Аутентификация в gateway — по-прежнему `IDENTIFY` с access-токеном.
 
@@ -151,7 +151,7 @@ POST   /api/auth/register              RegisterRequest → 201 RegisterResponse
 POST   /api/auth/login                 LoginRequest → LoginResponse          (rate-limit по IP)
 POST   /api/auth/refresh               RefreshRequest → RefreshResponse      (ротация; повтор старого токена = отзыв сессии)
 POST   /api/auth/logout                LogoutRequest{allSessions, refreshToken?} → 204   (сессия — по access-токену, иначе по refresh из тела или cookie)
-GET    /api/version                    GetVersionResponse {version, commit, license "BUSL-1.1", commercialLicense, attribution "Powered by GPTunneL", url} — публичный
+GET    /api/version                    GetVersionResponse {product "Calab", version, commit, license "BUSL-1.1", commercialLicense, attribution "Powered by GPTunneL", url} — публичный
 GET    /api/me                         GetMeResponse
 PATCH  /api/me                         UpdateMeRequest → UpdateMeResponse
 GET    /api/me/sessions                ListSessionsResponse

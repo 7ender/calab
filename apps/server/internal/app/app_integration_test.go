@@ -126,6 +126,7 @@ func run(m *testing.M) int {
 		StorageMaxTotalBytes:       1 << 40,
 		DefaultWorkspaceQuotaBytes: 10 << 30,
 		PublicAppURLAlt:            "https://app.example.ru",
+		PublicAppURLs:              []string{"https://app.example.com", "https://alias.example.org"},
 		AuthRateBurst:              5,
 		AuthRatePerMinute:          1,
 		MaxFileSizeMB:              1, // small, so the size limit is testable

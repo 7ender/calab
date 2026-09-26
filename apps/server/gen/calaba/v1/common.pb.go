@@ -337,6 +337,7 @@ type GetVersionResponse struct {
 	CommercialLicense string                 `protobuf:"bytes,4,opt,name=commercial_license,json=commercialLicense,proto3" json:"commercial_license,omitempty"` // where to obtain a commercial license
 	Attribution       string                 `protobuf:"bytes,5,opt,name=attribution,proto3" json:"attribution,omitempty"`                                      // "Powered by GPTunneL"
 	Url               string                 `protobuf:"bytes,6,opt,name=url,proto3" json:"url,omitempty"`                                                      // attribution link
+	Product           string                 `protobuf:"bytes,7,opt,name=product,proto3" json:"product,omitempty"`                                              // product name shown to users: "Calab"
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -413,6 +414,13 @@ func (x *GetVersionResponse) GetUrl() string {
 	return ""
 }
 
+func (x *GetVersionResponse) GetProduct() string {
+	if x != nil {
+		return x.Product
+	}
+	return ""
+}
+
 var File_calaba_v1_common_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_common_proto_rawDesc = "" +
@@ -428,14 +436,15 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x05limit\x18\x03 \x01(\rR\x05limit\"%\n" +
 	"\bPageInfo\x12\x19\n" +
 	"\bhas_more\x18\x01 \x01(\bR\ahasMore\"\a\n" +
-	"\x05Empty\"\xc3\x01\n" +
+	"\x05Empty\"\xdd\x01\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
 	"\x06commit\x18\x02 \x01(\tR\x06commit\x12\x18\n" +
 	"\alicense\x18\x03 \x01(\tR\alicense\x12-\n" +
 	"\x12commercial_license\x18\x04 \x01(\tR\x11commercialLicense\x12 \n" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
-	"\x03url\x18\x06 \x01(\tR\x03url*\xe6\x04\n" +
+	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
+	"\aproduct\x18\a \x01(\tR\aproduct*\xe6\x04\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +

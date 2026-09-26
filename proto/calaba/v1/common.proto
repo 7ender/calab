@@ -57,4 +57,5 @@ message GetVersionResponse {
   string commercial_license = 4; // where to obtain a commercial license
   string attribution = 5;        // "Powered by GPTunneL"
   string url = 6;                // attribution link
+  string product = 7;            // product name shown to users: "Calab"
 }

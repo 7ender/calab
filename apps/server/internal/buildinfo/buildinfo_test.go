@@ -25,7 +25,7 @@ func TestVersionEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.GetVersion() != "1.2.3" || got.GetCommit() != "abc1234" || got.GetLicense() != "BUSL-1.1" ||
-		got.GetAttribution() != "Powered by GPTunneL" || got.GetCommercialLicense() == "" || got.GetUrl() == "" {
+		got.GetAttribution() != "Powered by GPTunneL" || got.GetProduct() != "Calab" || got.GetCommercialLicense() == "" || got.GetUrl() == "" {
 		t.Fatalf("%v", &got)
 	}
 }

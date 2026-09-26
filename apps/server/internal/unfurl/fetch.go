@@ -21,7 +21,7 @@ import (
 const (
 	maxRedirects = 3
 	maxURLLen    = 2048
-	userAgent    = "Mozilla/5.0 (compatible; CalabaBot/1.0; link preview)"
+	userAgent    = "Mozilla/5.0 (compatible; CalabBot/1.0; link preview)"
 )
 
 // ErrBlocked is returned for URLs or addresses the fetcher refuses.

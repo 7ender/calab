@@ -23,6 +23,8 @@ const (
 	CommercialLicense = "https://gptunnel.ai"
 	Attribution       = "Powered by GPTunneL"
 	AttributionURL    = "https://gptunnel.ai"
+	// Product is the user-facing name (docs/10-branding.md); "calaba" stays in identifiers.
+	Product = "Calab"
 )
 
 // commit returns the stamped commit, else the VCS revision Go embedded (local builds from
@@ -45,7 +47,7 @@ func commit() string {
 func Info() *v1.GetVersionResponse {
 	return &v1.GetVersionResponse{
 		Version: Version, Commit: commit(), License: License,
-		CommercialLicense: CommercialLicense, Attribution: Attribution, Url: AttributionURL,
+		CommercialLicense: CommercialLicense, Attribution: Attribution, Url: AttributionURL, Product: Product,
 	}
 }
 

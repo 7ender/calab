@@ -1,4 +1,4 @@
-# apps/server — Calaba API + gateway (Go)
+# apps/server — Calab API + gateway (Go)
 
 Один статический бинарник: REST API, WS gateway, выдача LiveKit-токенов, файлы. Архитектура — `docs/01-architecture.md`, данные и права — `docs/04-data-model.md`, протокол — `docs/05-realtime-protocol.md`, решения — `docs/adr/` (ADR-0007, 0008, 0009, 0011).
 
@@ -67,7 +67,8 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `STORAGE_MAX_TOTAL_BYTES` | `53687091200` (50 GiB) | потолок всех файлов сервера (507 `STORAGE_FULL`); метрика `calaba_storage_used_bytes` |
 | `TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` | кому верить в `X-Forwarded-For` (Caddy) |
 | `PUBLIC_APP_URL` | `http://localhost:3000` | внешний URL веб-клиента; его origin разрешён для cookie-auth (CSRF) и WS-апгрейда |
-| `PUBLIC_APP_URL_ALT` | — | запасной домен веб-клиента (например `.ru`), разрешён так же |
+| `PUBLIC_APP_URL_ALT` | — | запасной домен веб-клиента (совместимость), разрешён так же |
+| `PUBLIC_APP_URLS` | — | все origin веб-клиента через запятую (`https://app.calab.ru,https://colaba.gptunnel.ai,…`); разрешённый список = `PUBLIC_APP_URL` + `PUBLIC_APP_URL_ALT` + этот; `PUBLIC_APP_URL` остаётся основным (ссылки) |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error`, JSON в stdout |
 | `MIGRATE_ON_START` | `true` | применять миграции при `serve` |
 | `STORAGE_DRIVER` / `STORAGE_PATH` | `fs` / `./data/files` (образ: `/data/files`) | хранилище файлов (ADR-0011); `s3` — позже |
@@ -91,7 +92,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 ## Сборка, версия, лицензии
 
 - Проект — Business Source License 1.1 (`LICENSE`, `NOTICE`, `COMMERCIAL-LICENSE.md` в корне). Образ кладёт их в `/`, туда же — `/THIRD-PARTY-NOTICES.txt` (лицензии Go-зависимостей).
-- `GET /api/version` (без авторизации) → `{version, commit, license, commercialLicense, attribution, url}`. Клиенты показывают `attribution` в «О программе» — этого требует NOTICE.
+- `GET /api/version` (без авторизации) → `{product: "Calab", version, commit, license, commercialLicense, attribution, url}`. Клиенты показывают `attribution` в «О программе» — этого требует NOTICE.
 - Версия и коммит зашиваются при сборке: `ARG VERSION` / `ARG COMMIT` в Dockerfile → `-ldflags -X …/internal/buildinfo.{Version,Commit}`. compose передаёт `CALABA_VERSION` / `CALABA_COMMIT` из окружения (на хосте нет `.git`, поэтому значение задаёт вызывающий: `CALABA_COMMIT=$(git rev-parse --short HEAD)`). Локальный `go build` из git-checkout берёт коммит из VCS-информации Go.
 - `make third-party-notices` пересобирает `THIRD-PARTY-NOTICES.txt` из модулей, реально слинкованных в бинарник (`go list -deps ./cmd/server`). Это делает `tools/notices`: файлы LICENSE/NOTICE модуля и его подкаталогов первого уровня (так попадает и `lib/LICENSE.libwebp`, встроенный в `gen2brain/webp`). На GPL/LGPL/AGPL или нераспознанной лицензии команда падает. Запускать после изменения зависимостей и коммитить результат.
 
