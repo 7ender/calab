@@ -1,6 +1,6 @@
 import { Download, Laptop, Monitor, Terminal, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { APP_URL, DOWNLOAD_URL } from '@/lib/site';
+import { APP_URL, DOWNLOAD_URL, REPO_URL, repoFile } from '@/lib/site';
 import { Button, Section, SectionHeading } from './ui';
 
 const platforms: { icon: LucideIcon; name: string; variants: string; format: string; note: ReactNode }[] = [
@@ -64,6 +64,15 @@ export function Downloads() {
         </a>{' '}
         — в Chrome, Edge, Safari или Firefox.
       </p>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <span className="text-[14px] leading-5 text-fg-2">Что нового:</span>
+        <Button href={repoFile('CHANGELOG.md')} variant="secondary" size="sm">
+          Список изменений
+        </Button>
+        <Button href={`${REPO_URL}/releases`} variant="secondary" size="sm">
+          Релизы на GitHub
+        </Button>
+      </div>
     </Section>
   );
 }
