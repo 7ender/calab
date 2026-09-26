@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { AudioLines } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 import { Button, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { MIC_CHECK_SEGMENTS, litSegments } from '../../lib/media/micCheck';
@@ -45,12 +45,28 @@ export function NoiseButton(): ReactNode {
   const error = useMicCheck((s) => s.error);
   // The panel goes away (left the call) with the check running: release the mic.
   useEffect(() => () => stopMicCheck(), []);
+  const trigger = useRef<HTMLButtonElement>(null);
+  // Anchored at the island's right edge (level with the button), not at the button: «right of
+  // the button» alone would lie over the hang-up and the island's right part.
+  const anchor = useMemo<RefObject<{ getBoundingClientRect: () => DOMRect }>>(
+    () => ({
+      current: {
+        getBoundingClientRect: () => {
+          const b = trigger.current?.getBoundingClientRect() ?? new DOMRect();
+          const island = trigger.current?.closest('[data-island]')?.getBoundingClientRect();
+          return new DOMRect(island ? island.right : b.right, b.top, 0, b.height);
+        },
+      },
+    }),
+    [],
+  );
   const label = rnnoise ? t('shell.noiseOn') : t('shell.noiseOff');
   return (
     <Popover.Root onOpenChange={(open) => (open ? undefined : stopMicCheck())}>
       <Tip label={label}>
         <Popover.Trigger asChild>
           <button
+            ref={trigger}
             type="button"
             aria-label={label}
             data-testid="noise-button"
@@ -65,13 +81,13 @@ export function NoiseButton(): ReactNode {
           </button>
         </Popover.Trigger>
       </Tip>
+      <Popover.Anchor virtualRef={anchor} />
       <Popover.Portal>
         {/* Right of the island, bottom-aligned with the button, so it grows up over the chat and never covers the panel. */}
         <Popover.Content
           side="right"
           align="end"
-          sideOffset={16}
-          alignOffset={-8}
+          sideOffset={12}
           collisionPadding={16}
           aria-label={t('voice.rnnoise')}
           data-testid="noise-popover"

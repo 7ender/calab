@@ -27,6 +27,7 @@ export function BottomIsland(): ReactNode {
     <div
       ref={ref}
       data-testid="bottom-island"
+      data-island
       className="mat-toolbar absolute bottom-2 left-2 z-[var(--z-sticky)] flex flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-panel)] shadow-[var(--shadow-island)]"
       style={{ width: 'calc(var(--rail-width) + var(--sidebar-width) - 16px)' }}
     >
