@@ -142,6 +142,9 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 			}
 			n := *cur
 			n.RoomID, n.JoinedAt = dstID, time.Now().UnixMilli()
+			// App-level moves (known already) reconnect: pending in the target from the start,
+			// so its call starts with the device's LiveKit connection, not with the move.
+			n.Pending = s.noSFUMove.Load()
 			joinedAt = n.JoinedAt
 			return &n
 		})

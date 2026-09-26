@@ -20,7 +20,24 @@ const connectConfirm = 15 * time.Second
 // meanwhile has a newer one and is not touched by this timer). The timer is per process;
 // Reconcile is the fallback when this instance goes away.
 func (s *Service) expectConnect(wid, rid, uid, sid uuid.UUID, joinedAt int64) {
-	time.AfterFunc(connectConfirm, func() { s.confirmConnect(wid, rid, uid, sid, joinedAt) })
+	w := &connectWait{}
+	w.t = time.AfterFunc(connectConfirm, func() {
+		s.waits.CompareAndDelete(sid, w)
+		s.confirmConnect(wid, rid, uid, sid, joinedAt)
+	})
+	if old, ok := s.waits.Swap(sid, w); ok {
+		old.(*connectWait).t.Stop() // a newer pending episode of this device: the old wait is moot
+	}
+}
+
+// connectWait is an armed expectConnect of a device session (Service.waits).
+type connectWait struct{ t *time.Timer }
+
+// cancelConnect disarms this instance's expectConnect of a device that left (/voice/leave).
+// A wait armed on another instance finds the state gone and does nothing.
+func (s *Service) cancelConnect(sid uuid.UUID) bool {
+	w, ok := s.waits.LoadAndDelete(sid)
+	return ok && w.(*connectWait).t.Stop()
 }
 
 // confirmConnect settles a pending device state after connectConfirm: connected to the room

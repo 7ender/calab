@@ -282,9 +282,9 @@ func TestVoiceTimes(t *testing.T) {
 	bob.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &bj)
 	o.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &oj)
 	webhook(t, whEvent("participant_joined", roomName, bj.GetIdentity(), nil), "secret")
-	// Bob's voice state (pending from his /join: the optimistic join starts the call) and the
-	// call start (ROOM_UPDATE, server time for every client's timer; published under the voice
-	// lock, so it may come first) — in any order.
+	// Bob's voice state (joined_at from his pending /join) and the call start (ROOM_UPDATE,
+	// server time for every client's timer, set by the first connect — not by the pending
+	// /join; published under the voice lock, so it may come first) — in any order.
 	var joined, callStart time.Time
 	g.wait("VOICE_STATE_UPDATE bob + ROOM_UPDATE call started", func(e *v1.DispatchEvent) bool {
 		if vs := e.GetVoiceStateUpdate().GetState(); vs.GetUserId() == bob.id {
@@ -295,7 +295,7 @@ func TestVoiceTimes(t *testing.T) {
 		}
 		return !joined.IsZero() && !callStart.IsZero()
 	})
-	if time.Since(joined) > time.Minute || time.Since(joined) < 0 || !callStart.Equal(joined) {
+	if time.Since(joined) > time.Minute || time.Since(joined) < 0 || callStart.Before(joined) {
 		t.Fatalf("joined_at %v, call start %v", joined, callStart)
 	}
 	time.Sleep(20 * time.Millisecond)
@@ -311,20 +311,20 @@ func TestVoiceTimes(t *testing.T) {
 		}
 		return nil
 	}
-	if r := started(); r.GetVoiceStartedAt() == nil || !r.GetVoiceStartedAt().AsTime().Equal(joined) {
-		t.Fatalf("voice_started_at %v, want %v (first join)", r.GetVoiceStartedAt(), joined)
+	if r := started(); r.GetVoiceStartedAt() == nil || !r.GetVoiceStartedAt().AsTime().Equal(callStart) {
+		t.Fatalf("voice_started_at %v, want %v (first connect)", r.GetVoiceStartedAt(), callStart)
 	}
 	// Other ROOM_UPDATEs (a rename) keep the running call's start.
 	name := "renamed"
 	o.must(200, "PATCH", "/api/rooms/"+rid, &v1.UpdateRoomRequest{Name: &name}, nil)
 	g.wait("ROOM_UPDATE rename keeps call start", func(e *v1.DispatchEvent) bool {
 		r := e.GetRoomUpdate().GetRoom()
-		return r.GetId() == rid && r.GetName() == name && r.GetVoiceStartedAt().AsTime().Equal(joined)
+		return r.GetId() == rid && r.GetName() == name && r.GetVoiceStartedAt().AsTime().Equal(callStart)
 	})
 	// The first participant leaves: the call continues, start time unchanged.
 	webhook(t, whEvent("participant_left", roomName, bj.GetIdentity(), nil), "secret")
 	time.Sleep(100 * time.Millisecond)
-	if r := started(); r.GetVoiceStartedAt() == nil || !r.GetVoiceStartedAt().AsTime().Equal(joined) {
+	if r := started(); r.GetVoiceStartedAt() == nil || !r.GetVoiceStartedAt().AsTime().Equal(callStart) {
 		t.Fatalf("after first left: %v", r.GetVoiceStartedAt())
 	}
 	webhook(t, whEvent("participant_left", roomName, oj.GetIdentity(), nil), "secret")
