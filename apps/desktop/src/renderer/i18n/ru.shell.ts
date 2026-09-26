@@ -208,4 +208,12 @@ export const ruShell = {
   'mediaErr.voice.movedBy': '{name} переместил(а) вас в «{room}»',
   'mediaErr.voice.movedStream': '{text}; стрим остановлен',
   'mediaErr.voice.modMuted': 'Модератор выключил вам микрофон',
+  // phone layout (ADR-0021)
+  'mobile.openNav': 'Комнаты и пространства',
+  'mobile.closeNav': 'Закрыть панель',
+  'mobile.closeMembers': 'Закрыть список участников',
+  'mobile.voiceStrip': 'Голосовой звонок',
+  'mobile.ptt': 'Удерживайте, чтобы говорить',
+  'mobile.pttOn': 'В эфире',
+  'mobile.takePhoto': 'Камера',
 } as const;

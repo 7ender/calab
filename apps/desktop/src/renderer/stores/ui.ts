@@ -25,6 +25,9 @@ interface UiState {
   /** Narrow window (< MEMBERS_COLUMN_MIN): the members list floats over the chat; not persisted. */
   membersOverlay: boolean;
   setMembersOverlay: (open: boolean) => void;
+  /** Phone layout (ADR-0021): the rail + room column slide in from the left; not persisted. */
+  navDrawer: boolean;
+  setNavDrawer: (open: boolean) => void;
   /** Reply target per room. */
   replyTo: Record<string, string | undefined>;
   editing: string | null;
@@ -62,6 +65,7 @@ export const useUi = create<UiState>()(
       dialog: null,
       membersPanel: true,
       membersOverlay: false,
+      navDrawer: false,
       replyTo: {},
       editing: null,
       sidebarWidth: SIDEBAR_DEFAULT,
@@ -79,6 +83,7 @@ export const useUi = create<UiState>()(
           lastRoom: { ...s.lastRoom, [wsId]: roomId },
           editing: null,
           membersOverlay: false,
+          navDrawer: false,
           history: pushLoc(s.history, here(s), { ws: wsId, room: roomId }),
         })),
       selectDefaultRoom: (wsId, roomId) => set((s) => ({ lastRoom: { ...s.lastRoom, [wsId]: roomId } })),
@@ -91,9 +96,11 @@ export const useUi = create<UiState>()(
           else collapsed[id] = true;
           return { collapsed };
         }),
-      openDialog: (dialog) => set({ dialog }),
+      // A dialog opened from the phone drawer replaces it (one layer at a time, ADR-0021).
+      openDialog: (dialog) => set(dialog ? { dialog, navDrawer: false } : { dialog }),
       toggleMembers: () => set((s) => ({ membersPanel: !s.membersPanel })),
-      setMembersOverlay: (membersOverlay) => set({ membersOverlay }),
+      setMembersOverlay: (membersOverlay) => set(membersOverlay ? { membersOverlay, navDrawer: false } : { membersOverlay }),
+      setNavDrawer: (navDrawer) => set(navDrawer ? { navDrawer, membersOverlay: false } : { navDrawer }),
       setReply: (roomId, messageId) => set((s) => ({ replyTo: { ...s.replyTo, [roomId]: messageId } })),
       setEditing: (editing) => set({ editing }),
     }),
@@ -137,6 +144,7 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
     lastRoom: room ? { ...s.lastRoom, [ws]: room } : s.lastRoom,
     editing: null,
     membersOverlay: false,
+    navDrawer: false,
   };
 }
 

@@ -110,7 +110,8 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       {inThisVoice ? <StatsOverlay /> : null}
 
       <MessageList workspaceId={workspaceId} room={room} perms={perms} newMarker={newMarker} />
-      <div ref={composerRef} data-testid="composer" className="shrink-0 bg-feed">
+      {/* Phone layout: the bottom safe-area inset when nothing is below the composer (MobileShell). */}
+      <div ref={composerRef} data-testid="composer" className="shrink-0 bg-feed mobile:pb-[var(--composer-safe,0px)]">
         <Composer workspaceId={workspaceId} room={room} perms={perms} files={files} setFiles={setFiles} addFiles={addFiles} />
       </div>
 

@@ -11,6 +11,8 @@ import { setPinned } from '../../services/chat';
 import { useHotkeyLabel } from '../../services/hotkeys';
 import { setRoomNotifications } from '../../services/mentions';
 import { useMediaQuery } from '../../lib/useMediaQuery';
+import { useMobile } from '../../lib/mobile';
+import { NavButton } from '../shell/MobileShell';
 import { isQuiet, roomNotify, useRooms } from '../../stores/rooms';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
@@ -52,14 +54,20 @@ export function RoomHeader({
   const voiceRoom = room.type === RoomType.VOICE;
   const Icon = voiceRoom ? Volume2 : Hash;
   const wide = useMediaQuery(`(min-width: ${HEADER_SEARCH_MIN}px)`);
+  // Phone layout (ADR-0021): this header is the top bar — ☰ (rooms drawer) first, the name takes
+  // the room; search, notifications and members stay (pins show in the pinned bar, room settings in
+  // the drawer's room menu), 40 px touch targets.
+  const mobile = useMobile();
+  const touch = mobile ? 'size-10 rounded-full' : undefined;
 
   return (
-    <header className="mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2">
+    <header className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2', mobile && 'gap-1 pl-1 pr-1')}>
+      {mobile ? <NavButton /> : null}
       <Icon className="size-5 shrink-0 text-faint" aria-hidden />
-      <h1 className="min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold" title={room.name}>
+      <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', mobile && 'max-w-none flex-1 shrink')} title={room.name}>
         {room.name}
       </h1>
-      {typing ? (
+      {mobile ? null : typing ? (
         <span className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-accent-text" aria-live="polite">
           <span className="text-faint" aria-hidden>
             •
@@ -74,17 +82,17 @@ export function RoomHeader({
       )}
       <div className="no-drag flex shrink-0 items-center gap-0.5">
         {wide ? <HeaderSearch workspaceId={workspaceId} /> : null}
-        <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
+        <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
           <Search className="size-[18px]" />
         </IconButton>
-        <PinsButton workspaceId={workspaceId} roomId={room.id} canManage={can(perms, 'MANAGE_MESSAGES')} />
-        <NotifyButton roomId={room.id} />
-        {can(perms, 'MANAGE_ROOM') ? (
+        {mobile ? null : <PinsButton workspaceId={workspaceId} roomId={room.id} canManage={can(perms, 'MANAGE_MESSAGES')} />}
+        <NotifyButton roomId={room.id} className={touch} />
+        {can(perms, 'MANAGE_ROOM') && !mobile ? (
           <IconButton label={t('room.settings')} onClick={() => openDialog({ kind: 'room-settings', roomId: room.id })}>
             <Settings className="size-[18px]" />
           </IconButton>
         ) : null}
-        <IconButton label={t('shell.members')} active={membersOpen} onClick={toggleMembers}>
+        <IconButton label={t('shell.members')} active={membersOpen} onClick={toggleMembers} className={touch}>
           <Users className="size-[18px]" />
         </IconButton>
       </div>
@@ -160,7 +168,7 @@ function fmtUntil(ms: number): string {
  * Room notifications (docs/05, «Уведомления комнаты»): level (all / mentions / nothing) and a
  * temporary «do not disturb». Server-synced across devices; the bell shows the state.
  */
-function NotifyButton({ roomId }: { roomId: string }): ReactNode {
+function NotifyButton({ roomId, className }: { roomId: string; className?: string | undefined }): ReactNode {
   const stored = useRooms((s) => s.notify[roomId]);
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -182,7 +190,7 @@ function NotifyButton({ roomId }: { roomId: string }): ReactNode {
       }}>
       <Tip label={t('chat.notifyState', { state: state.toLowerCase() })}>
         <Dropdown.Trigger asChild>
-          <IconButton tip={false} label={t('chat.notifyState', { state: state.toLowerCase() })} active={open} className={cx(quiet && !open && 'text-faint')}>
+          <IconButton tip={false} label={t('chat.notifyState', { state: state.toLowerCase() })} active={open} className={cx(quiet && !open && 'text-faint', className)}>
             <Icon className="size-[18px]" />
           </IconButton>
         </Dropdown.Trigger>

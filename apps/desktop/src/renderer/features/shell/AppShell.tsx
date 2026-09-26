@@ -10,6 +10,8 @@ import { defaultRoom, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useMediaQuery } from '../../lib/useMediaQuery';
+import { useMobile } from '../../lib/mobile';
+import { MobileShell } from './MobileShell';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
 import { ChatPane } from '../chat/ChatPane';
@@ -41,10 +43,37 @@ export function AppShell(): ReactNode {
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
   const showReconnect = useSession((s) => s.ready && s.reconnectBanner);
 
+  const mobile = useMobile();
+
   useEffect(() => installHotkeys(), []);
   useEffect(() => installAfk(), []);
 
   if (!onboarded) return <Onboarding />;
+  if (mobile) {
+    // Phone layout (ADR-0021): one column — the chat full screen, the rail + rooms and the members
+    // list in drawers, the voice strip at the bottom.
+    const ws = hasWs && wsId ? wsId : null;
+    return (
+      <MobileShell workspaceId={ws} roomId={ws ? roomId : undefined} showReconnect={showReconnect}>
+        {!ready ? (
+          <div className="grid flex-1 place-items-center">
+            <div className="flex flex-col items-center gap-3 text-body text-muted">
+              <Spinner className="size-6" />
+              {t('gateway.connecting')}
+            </div>
+          </div>
+        ) : ws ? (
+          roomId ? (
+            <ChatPane key={roomId} workspaceId={ws} roomId={roomId} />
+          ) : (
+            <NoRoom workspaceId={ws} />
+          )
+        ) : (
+          <Welcome />
+        )}
+      </MobileShell>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col" style={{ ['--sidebar-width' as string]: `${width}px` }}>

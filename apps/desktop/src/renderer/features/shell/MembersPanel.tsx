@@ -29,7 +29,7 @@ export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
  * one, so the role shows as the name colour (+ crown) instead — the Discord look without
  * the noise. Click → profile, right click → member menu.
  */
-export function MembersPanel({ workspaceId, floating = false }: { workspaceId: string; floating?: boolean }): ReactNode {
+export function MembersPanel({ workspaceId, floating = false, drawer = false }: { workspaceId: string; floating?: boolean; drawer?: boolean }): ReactNode {
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const presences = useWorkspaces((s) => s.presences);
   const voice = useWorkspaces((s) => s.byId[workspaceId]?.voice);
@@ -61,7 +61,10 @@ export function MembersPanel({ workspaceId, floating = false }: { workspaceId: s
   return (
     <aside
       className={
-        floating
+        drawer
+          ? // phone layout (ADR-0021): fills the right drawer (MobileShell)
+            'min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(var(--safe-bottom,0px)+16px)] pt-4'
+          : floating
           ? 'mat-popover dense anim-in absolute bottom-[calc(var(--composer-height,64px)+8px)] right-3 top-[60px] z-[var(--z-popover)] w-60 overflow-y-auto rounded-[var(--radius-panel)] px-2 py-3'
           : 'mat-sidebar w-60 shrink-0 overflow-y-auto border-l border-line px-2 pb-4 pt-4'
       }

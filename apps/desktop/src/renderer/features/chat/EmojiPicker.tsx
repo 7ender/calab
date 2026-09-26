@@ -56,7 +56,7 @@ export function EmojiPicker({
           sideOffset={10}
           collisionPadding={16}
           aria-label={t('chat.emoji')}
-          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[372px] w-[348px] flex-col overflow-hidden rounded-[var(--radius-panel)]"
+          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[372px] w-[348px] mobile:h-[min(75dvh,560px)] flex-col overflow-hidden rounded-[var(--radius-panel)]"
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <PickerBody
