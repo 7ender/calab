@@ -25,7 +25,7 @@ export function useTypingText(workspaceId: string, roomId: string): string {
 export function typingText(who: string[]): string {
   if (who.length === 1) return t('chat.typing1', { name: who[0] ?? '' });
   if (who.length === 2) return t('chat.typing2', { a: who[0] ?? '', b: who[1] ?? '' });
-  if (who.length > 2) return t('chat.typingN', { n: who.length, people: plural(who.length, ['человек', 'человека', 'человек']) });
+  if (who.length > 2) return plural('chat.typingN', who.length);
   return '';
 }
 

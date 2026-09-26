@@ -1,10 +1,10 @@
-import { ruApp } from './ru.app';
-import { ruChat } from './ru.chat';
-import { ruDm } from './ru.dm';
-import { ruEcho } from './ru.echo';
-import { ruPeople } from './ru.people';
-import { ruShell } from './ru.shell';
-import { ruVideo } from './ru.video';
+import { ruApp } from './app';
+import { ruChat } from './chat';
+import { ruDm } from './dm';
+import { ruEcho } from './echo';
+import { ruPeople } from './people';
+import { ruShell } from './shell';
+import { ruVideo } from './video';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
@@ -471,6 +471,64 @@ export const ru = {
   'core.device.output': 'Вывод: {name}',
   'core.device.change': 'Изменить',
   'auth.err.insecure': 'Нужен адрес с https:// — без шифрования пароль уйдёт открытым текстом',
+
+  // i18n core (ADR-0022): strings that used to be inline, units, the language picker
+  'common.close': 'Закрыть',
+  'common.loading': 'Загрузка',
+  'common.more': 'Больше',
+  'common.less': 'Меньше',
+  'common.increase': '{label}: больше',
+  'common.decrease': '{label}: меньше',
+  'common.unknownUser': 'Неизвестный',
+  'unit.db': '{n} дБ',
+  'unit.ms': '{n} мс',
+  'unit.kbps': '{n} кбит/с',
+  'unit.b': '{n} Б',
+  'unit.kb': '{n} КБ',
+  'unit.mb': '{n} МБ',
+  'unit.gb': '{n} ГБ',
+  'date.todayAt': 'сегодня в {time}',
+  'date.yesterday': 'вчера',
+  'perm.granted': 'Разрешено',
+  'perm.denied': 'Запрещено',
+  'perm.notDetermined': 'Не запрошено',
+  'perm.restricted': 'Ограничено',
+  'emoji.cat.smileys': 'Смайлы',
+  'emoji.cat.people': 'Жесты и люди',
+  'emoji.cat.nature': 'Животные и природа',
+  'emoji.cat.food': 'Еда и напитки',
+  'emoji.cat.activity': 'Занятия',
+  'emoji.cat.travel': 'Путешествия',
+  'emoji.cat.objects': 'Предметы',
+  'emoji.cat.symbols': 'Символы',
+  'common.screen': 'Экран',
+  'err.ctx.loadMessage': 'Не удалось загрузить сообщение',
+  'err.ctx.loadMessages': 'Не удалось загрузить сообщения',
+  'err.ctx.react': 'Не удалось поставить реакцию',
+  'err.ctx.pin': 'Не удалось закрепить',
+  'err.ctx.unpin': 'Не удалось открепить',
+  'err.ctx.edit': 'Не удалось изменить',
+  'chat.rateLimited': 'Слишком часто — подождите пару секунд',
+  'notify.attachment': '📎 вложение',
+  'session.revokedToast': 'Сессия завершена на другом устройстве',
+  'session.expiredToast': 'Сессия истекла — войдите снова',
+  'stream.stoppedLimit': 'Стрим остановлен: в комнате превышен лимит стримов',
+  'stream.stoppedModerator': 'Модератор остановил ваш стрим',
+  'conn.viaTurn': 'через TURN ({proto})',
+  'lang.label': 'Язык',
+  'lang.hint': 'Язык интерфейса. «Как в системе» — по языку ОС.',
+  'lang.auto': 'Как в системе',
+  'onb.lang.title': 'Выберите язык',
+  'onb.lang.text': 'Его можно изменить позже: Настройки → Приложение → Язык.',
+  // main-process strings (tray, notifications, windows): pushed to main on a locale change
+  'main.trayOpen': 'Открыть Calab',
+  'main.trayMute': 'Выключить микрофон',
+  'main.trayDeafen': 'Выключить звук',
+  'main.trayDisconnect': 'Отключиться от голоса',
+  'main.trayQuit': 'Выход',
+  'main.trayInVoice': 'Calab — в голосе',
+  'main.trayInVoiceMuted': 'Calab — в голосе (микрофон выкл.)',
+  'main.updateAvailable': 'Доступна версия {version} — Скачать',
+  'main.streamWindow': 'Calab — стрим',
 } as const;
 
-export type Dict = { readonly [K in keyof typeof ru]: string };

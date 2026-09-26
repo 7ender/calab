@@ -2,7 +2,7 @@ import { LayoutGrid, Maximize2, MessageSquare, MicOff, Pin, VideoOff, X } from '
 import { forwardRef, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Badge, IconButton, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { t, useLocale } from '../../i18n';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -135,6 +135,8 @@ type TileProps = ComponentPropsWithoutRef<'button'> & {
 
 /** One participant tile; a button (click = show large / back to the grid). */
 const Tile = memo(forwardRef<HTMLButtonElement, TileProps>(function Tile({ userId, wsId, video, featured, small, avatarSize, className, style, ...rest }, ref) {
+  // Memo row: re-render on a language switch too (ADR-0022).
+  useLocale();
   const name = useMemberName(wsId, userId);
   const speaking = useVoice((s) => s.speaking[userId] ?? false);
   const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));

@@ -4,9 +4,9 @@ import { Hash, Search, Volume2, X } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Spinner, Tip, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { fmtTime, toDate } from '../../lib/format';
+import { fmt, toDate } from '../../lib/format';
 import { voice } from '../../services/voice';
 import { HOME, sortedDms, useDms } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
@@ -14,7 +14,6 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from '../chat/chatView';
-import { fmtDayLabel } from '../chat/MessageBubble';
 import { previewText } from '../chat/mentionText';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
 import { roomLabel } from '../chat/roomLabel';
@@ -67,7 +66,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
       .filter((r) => workspaces[r.workspaceId])
       .filter((r) => !needle || r.name.toLowerCase().includes(needle))
       // The active workspace first, then by name.
-      .sort((a, b) => Number(b.workspaceId === activeWs) - Number(a.workspaceId === activeWs) || a.name.localeCompare(b.name, 'ru'));
+      .sort((a, b) => Number(b.workspaceId === activeWs) - Number(a.workspaceId === activeWs) || a.name.localeCompare(b.name, getLocale()));
     return list.slice(0, needle ? MAX_ROOMS_QUERY : 50);
   }, [needle, rooms, workspaces, activeWs, author]);
 
@@ -301,7 +300,7 @@ function Row({
           <span className="truncate font-semibold">{author}</span>
           <span className={sub}>
             {room ? `${roomLabel(room)} · ` : ''}
-            {fmtDayLabel(d)}, {fmtTime(d)}
+            {fmt.dayLabel(d)}, {fmt.time(d)}
           </span>
         </span>
         <span className="line-clamp-2 break-words">

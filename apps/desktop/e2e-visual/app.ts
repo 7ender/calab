@@ -97,7 +97,7 @@ async function reset(env: Env, theme: Theme, seed: Seed): Promise<void> {
     ({ theme, onboarded, prefs, ui }) => {
       localStorage.clear();
       sessionStorage.clear();
-      localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme, onboarded, ...prefs }, version: 1 }));
+      localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme, onboarded, locale: 'ru', ...prefs }, version: 1 }));
       if (ui) localStorage.setItem('calaba-ui', JSON.stringify({ state: ui, version: 1 }));
     },
     { theme, onboarded: seed.onboarded ?? true, prefs: seed.prefs ?? {}, ui: seed.ui ?? null },

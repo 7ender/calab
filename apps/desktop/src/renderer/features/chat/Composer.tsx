@@ -4,7 +4,7 @@ import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Pap
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { fmtSize } from '../../lib/format';
+import { fmt } from '../../lib/format';
 import { MENTION_EVENT, type MentionRequest } from './mentionRequest';
 import { applyMention, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, toWire } from '../../lib/mentions';
 import { can } from '../../lib/permissions';
@@ -448,7 +448,7 @@ function AttachmentGrid({ files, setFiles }: { files: OutgoingFile[]; setFiles: 
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-body font-medium">{f.name}</span>
-                <span className="block text-caption text-muted">{fmtSize(f.file.size)}</span>
+                <span className="block text-caption text-muted">{fmt.size(f.file.size)}</span>
               </span>
             </>
           )}

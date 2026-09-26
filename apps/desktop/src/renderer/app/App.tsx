@@ -8,6 +8,7 @@ import { OfflineScreen, TooManySessions } from '../features/auth/SessionScreens'
 import { AppShell } from '../features/shell/AppShell';
 import { Dialogs } from '../features/shell/Dialogs';
 import { Toasts } from '../features/shell/Toasts';
+import { useLocale } from '../i18n';
 import { usePrefs } from '../stores/prefs';
 import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
@@ -57,6 +58,8 @@ function useTheme(): void {
 
 export function App(): ReactNode {
   useTheme();
+  // A language switch re-renders the tree from here (memo rows subscribe themselves); no reload.
+  useLocale();
   const status = useSession((s) => s.status);
   const tooMany = useSession((s) => s.tooManySessions);
   const landing = useLinkLanding((s) => s.link);

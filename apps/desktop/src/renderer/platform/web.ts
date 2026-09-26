@@ -366,6 +366,7 @@ function info(): AppInfo {
     systemAudioLoopback: 'experimental',
     micAccess: 'n/a',
     screenAccess: 'n/a',
+    locales: [...navigator.languages],
   };
 }
 
@@ -474,6 +475,7 @@ export function createWebPlatform(): Platform {
       },
       attention: () => undefined,
       setTheme: () => undefined,
+      setStrings: () => undefined,
     },
     tray: { setState: () => undefined, onAction: noop },
     files: { download, onProgress: noop, pathOf: (f) => f.name },

@@ -1835,7 +1835,7 @@ class VoiceEngine {
   connectionPath(): string | null {
     const p = useVoice.getState().stats?.pair;
     if (!p) return null;
-    const relay = p.localType === 'relay' ? ` через TURN (${p.relayProtocol ?? '?'})` : '';
+    const relay = p.localType === 'relay' ? ` ${t('conn.viaTurn', { proto: p.relayProtocol ?? '?' })}` : '';
     return `${p.localType} → ${p.remoteType}, ${p.protocol.toUpperCase()}${relay}`;
   }
 }

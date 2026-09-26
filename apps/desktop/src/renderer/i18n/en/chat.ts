@@ -1,0 +1,120 @@
+import type { ruChat } from '../ru/chat';
+import type { DictShape } from '../types';
+
+/**
+ * English UI strings — chat area (ADR-0022). Same keys as ru/chat.ts; `{param}` placeholders,
+ * short, verb-first, sentence case, no exclamation marks (docs/08, docs/i18n-glossary.md).
+ */
+export const enChat: DictShape<typeof ruChat> = {
+  // feed
+  'chat.today': 'Today',
+  'chat.yesterday': 'Yesterday',
+  'chat.newPill': 'New messages',
+  'chat.editedShort': 'edited',
+  'chat.statusPending': 'Sending',
+  'chat.statusSent': 'Sent',
+  'chat.statusDelivered': 'Delivered',
+  'chat.attachment': 'Attachment',
+  'chat.openImage': 'Open image “{name}”',
+  'chat.reactionLabel': 'Reaction {emoji}: {count}',
+  'chat.replyOpen': 'Show original message',
+  'chat.messageGone': 'Message deleted or unavailable',
+  'chat.historyStart': 'Start of room history',
+  // plural keys: one object of Intl.PluralRules forms (one/other for English), picked by plural()
+  'chat.unreadBanner': { one: '{n} new message since {time}', other: '{n} new messages since {time}' },
+  'chat.markRead': 'Mark as read',
+  'chat.toBottomUnread': 'Jump to latest, unread: {n}',
+  // empty room
+  'chat.welcomeTitle': 'Welcome to #{name}',
+  'chat.welcomeVoiceTitle': 'This is the start of “{name}”',
+  'chat.welcomeText': 'This is the start of the room. Invite your team or set up the room your way.',
+  'chat.welcomeVoice': 'You can chat here during the call.',
+  'chat.invite': 'Invite',
+  'chat.setup': 'Set up',
+  // context menu
+  'chat.menu': 'Message actions',
+  'chat.react': 'Reactions',
+  'chat.pin': 'Pin',
+  'chat.unpin': 'Unpin',
+  // hover action bar (docs/09 #47)
+  'chat.actions': 'Actions',
+  'chat.reactWith': 'React with {emoji}',
+  'chat.addReaction': 'Add reaction',
+  'chat.more': 'More…',
+  // link previews (docs/09 #51)
+  'chat.embedHide': 'Hide preview',
+  'chat.embedShow': 'Show preview',
+  'chat.embedHideFailed': 'Couldn’t hide the preview',
+  'chat.embedShowFailed': 'Couldn’t show the preview',
+  // composer
+  'chat.placeholderIn': 'Message {room}',
+  'chat.attachImage': 'Image',
+  'chat.attachFile': 'File',
+  'chat.removeAttachment': 'Remove “{name}”',
+  'chat.editing': 'Editing',
+  'chat.replyTo': 'Replying to {name}',
+  'chat.emoji': 'Emoji',
+  'chat.emojiSearch': 'Search emoji',
+  'chat.emojiRecent': 'Recent',
+  'chat.emojiFound': 'Results',
+  'chat.emojiNone': 'Nothing found',
+  'chat.emojiGroups': 'Emoji categories',
+  // header
+  'chat.topic': 'Show room description',
+  'chat.typing1': '{name} is typing',
+  'chat.typing2': '{a} and {b} are typing',
+  'chat.typingN': { one: '{n} person is typing', other: '{n} people are typing' },
+  'chat.pinned': 'Pinned',
+  'chat.pinnedOne': 'Pinned message',
+  'chat.pinnedN': 'Pinned message {n} of {total}',
+  'chat.noPins': 'No pinned messages',
+  // room notifications (bell menu)
+  'chat.notify': 'Notifications',
+  'chat.notifyState': 'Notifications: {state}',
+  'chat.notifyAll': 'All messages',
+  'chat.notifyMentions': 'Mentions only',
+  'chat.notifyNone': 'Nothing',
+  'chat.notifyMute': 'Mute for…',
+  'chat.notifyMute15m': '15 min',
+  'chat.notifyMute1h': '1 hour',
+  'chat.notifyMute8h': '8 hours',
+  'chat.notifyMute24h': '24 hours',
+  'chat.notifyMuteForever': 'Until I turn it on',
+  'chat.notifyMutedUntil': 'Muted until {time}',
+  'chat.notifyUnmute': 'Unmute notifications',
+  'chat.notifyFailed': 'Couldn’t save notification settings',
+  // mentions
+  'chat.mentionUnknown': 'unknown',
+  'chat.mentionEveryone': 'Notify everyone in the room',
+  'chat.mentionHere': 'Notify everyone online',
+  'chat.mentionGuest': 'Guest',
+  'chat.mentionList': 'Mention',
+  // mentions inbox (title bar)
+  'chat.inboxLoadMore': 'Show more',
+  'chat.inboxUnread': 'Unread',
+  // search in room
+  'chat.searchInRoom': 'Search in {room}',
+  'chat.searchPlaceholder': 'Search this room',
+  'chat.searchCount': '{n} of {total}',
+  'chat.searchNone': 'No results',
+  'chat.searchOlder': 'Previous match',
+  'chat.searchNewer': 'Next match',
+  'chat.searchClose': 'Close search',
+  // header search field (docs/09 #50): the entry to the ⌘K search
+  'chat.searchWorkspace': 'Search {name}',
+  // global search (⌘K)
+  'search.title': 'Search',
+  'search.hint': 'Rooms, members and messages; arrows to select, Enter to open',
+  'search.placeholder': 'Find a room, person or message',
+  'search.rooms': 'Rooms',
+  'search.members': 'Members',
+  'search.messages': 'Messages',
+  'search.from': 'from: {name}',
+  'search.clearFrom': 'Clear author filter',
+  'search.searching': 'Searching…',
+  'search.empty': 'Nothing found',
+  'search.memberHint': 'messages from this member',
+  // lightbox
+  'lightbox.close': 'Close',
+  'lightbox.download': 'Download',
+};

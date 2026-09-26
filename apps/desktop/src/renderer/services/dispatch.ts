@@ -18,6 +18,7 @@ import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
 import { voice } from './voice';
+import { t } from '../i18n';
 
 const TYPING_MS = 8000;
 
@@ -186,8 +187,8 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'voiceStreamStop':
       // Our own room's streams come from LiveKit; the sidebar uses VoiceState.streaming.
       if (e.case === 'voiceStreamStop' && e.value.userId === myUserId()) {
-        if (e.value.reason === VoiceStreamStopReason.LIMIT_REACHED) toast.info('Стрим остановлен: в комнате превышен лимит стримов');
-        if (e.value.reason === VoiceStreamStopReason.MODERATOR) toast.info('Модератор остановил ваш стрим');
+        if (e.value.reason === VoiceStreamStopReason.LIMIT_REACHED) toast.info(t('stream.stoppedLimit'));
+        if (e.value.reason === VoiceStreamStopReason.MODERATOR) toast.info(t('stream.stoppedModerator'));
         if (e.value.reason !== VoiceStreamStopReason.ENDED) void voice.stopStream();
       }
       return;

@@ -13,10 +13,10 @@ import { confirmAction } from '../../components/Confirm';
 import { MediaImg } from '../../components/MediaImg';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { Button, Card, Empty, IconButton, Input, Row, Select, Spinner, Toggle } from '../../components/ui';
-import { t } from '../../i18n';
+import { getLocale, t } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
-import { fmtStamp } from '../../lib/format';
+import { fmt } from '../../lib/format';
 import { workspaceInitials } from '../../lib/initials';
 import { isAdminRole } from '../../lib/permissions';
 import { inviteUrl } from '../../services/links';
@@ -24,7 +24,6 @@ import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useWorkspaces } from '../../stores/workspaces';
 import { CommitInput } from '../settings/AppSettingsDialog';
-import { fmtShortDate } from '../settings/format';
 import { MAX_USES } from '../people/RoomLinkTab';
 import { ROLE_LABEL } from '../shell/MembersPanel';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
@@ -155,7 +154,7 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
         <Select aria-label={t('media.bitrate')} className="w-60" value={md?.audioBitrateKbps ?? 32} onChange={(e) => apply({ defaultAudioBitrateKbps: Number(e.target.value) })}>
           {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
             <option key={b} value={b}>
-              {b} кбит/с
+              {t('unit.kbps', { n: b })}
             </option>
           ))}
         </Select>
@@ -206,7 +205,7 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const nameOf = (m: (typeof entry.members)[string]): string => m.nickname || m.user?.displayName || '';
   const members = Object.values(entry.members)
     .filter((m) => nameOf(m).toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => a.role - b.role || nameOf(a).localeCompare(nameOf(b), 'ru'));
+    .sort((a, b) => a.role - b.role || nameOf(a).localeCompare(nameOf(b), getLocale()));
 
   const setRole = async (userId: string, role: WorkspaceRole): Promise<void> => {
     try {
@@ -246,7 +245,7 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
                 <div className="truncate text-body font-medium" title={name}>
                   {name}
                 </div>
-                <div className="truncate text-caption text-faint">{t('ws.joinedSince', { date: m.joinedAt ? fmtShortDate(timestampDate(m.joinedAt)) : '—' })}</div>
+                <div className="truncate text-caption text-faint">{t('ws.joinedSince', { date: m.joinedAt ? fmt.shortDate(timestampDate(m.joinedAt)) : '—' })}</div>
               </div>
               {/* Role column: a fixed 176 px, so plain labels and pop-ups share one left edge. */}
               {editable ? (
@@ -339,7 +338,7 @@ function InvitesTab({ workspaceId }: { workspaceId: string }): ReactNode {
                 {inviteLink(i)}
               </code>
               <span className="shrink-0 text-caption text-faint">
-                {i.uses}/{i.maxUses || '∞'} · {i.expiresAt ? fmtStamp(timestampDate(i.expiresAt)) : t('invite.never')}
+                {i.uses}/{i.maxUses || '∞'} · {i.expiresAt ? fmt.stamp(timestampDate(i.expiresAt)) : t('invite.never')}
               </span>
               <IconButton label={t('invite.copy')} onClick={() => void navigator.clipboard.writeText(inviteLink(i)).then(() => toast.success(t('invite.copied')))}>
                 <Copy className="size-4" />

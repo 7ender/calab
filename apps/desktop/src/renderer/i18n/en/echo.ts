@@ -1,0 +1,23 @@
+/** English UI strings — echo on loudspeakers (docs/02, docs/08). Same keys as ru/echo.ts. */
+export const enEcho = {
+  'echo.risk': 'It looks like the other person can hear themselves. Put on headphones or switch to “Speakers” mode',
+  'echo.riskAction': 'Turn on “Speakers”',
+  'echo.riskAuto': 'It looks like the other person can hear themselves. While others talk, your microphone will be quieter (“Auto” mode)',
+  'echo.riskSpeakers': 'It looks like the other person can still hear themselves. Put on headphones or turn your speakers down',
+  'echo.card': 'Speakers and echo',
+  'echo.mode': 'How you listen',
+  'echo.modeHeadphones': 'Headphones',
+  'echo.modeSpeakers': 'Speakers',
+  'echo.modeAuto': 'Auto',
+  'echo.hintHeadphones': 'Your microphone always plays at full level. If others start hearing themselves, Calab will let you know.',
+  'echo.hintSpeakers': 'While others talk, your microphone is quieter, so their voice from your speakers does not come back to them. You can still interrupt.',
+  'echo.hintAuto': 'Your microphone is lowered while others talk, but only when Calab notices that they can hear themselves.',
+  'echo.check': 'Echo check',
+  'echo.checkHint': 'Your speakers will play a quiet sound for 3 seconds while we listen for it in the microphone',
+  'echo.checkBtn': 'Check',
+  'echo.checkInCall': 'Not available during a call',
+  'echo.none': 'No echo detected.',
+  'echo.weak': 'Weak echo: others may occasionally hear themselves. Turn your speakers down or choose “Auto”.',
+  'echo.strong': 'Strong echo: others will hear themselves. Put on headphones or choose “Speakers”.',
+  'echo.failed': 'Could not check: {error}',
+} as const;

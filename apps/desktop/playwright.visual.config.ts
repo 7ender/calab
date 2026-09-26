@@ -49,5 +49,6 @@ export default defineConfig<VisualOptions>({
     timeout: 15_000,
     toHaveScreenshot: { maxDiffPixelRatio: 0.002, animations: 'disabled', caret: 'hide', scale: 'css' },
   },
-  use: { trace: 'retain-on-failure' },
+  // locale: web.spec.ts browsers show the Russian UI on any host (ADR-0022).
+  use: { trace: 'retain-on-failure', locale: 'ru-RU' },
 });

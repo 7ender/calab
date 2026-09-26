@@ -3,7 +3,7 @@ import { useMemo, type ReactNode } from 'react';
 import { Logo } from '../../components/Logo';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { plural, t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { workspaceInitials } from '../../lib/initials';
 import { HOME, isDm } from '../../stores/dms';
@@ -70,7 +70,7 @@ function RailItem({ id }: { id: string }): ReactNode {
   }, [byId, readState, lastMessage, unreadMap, mentionMap, id]);
   if (!w) return null;
 
-  const label = [w.name, mentions > 0 ? t('shell.unreadMentions', { n: mentions }) : unread ? t('ws.unread') : '', inVoice ? t('shell.inVoice') : '']
+  const label = [w.name, mentions > 0 ? plural('shell.unreadMentions', mentions) : unread ? t('ws.unread') : '', inVoice ? t('shell.inVoice') : '']
     .filter(Boolean)
     .join(', ');
 

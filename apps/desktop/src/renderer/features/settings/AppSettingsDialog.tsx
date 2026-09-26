@@ -3,16 +3,16 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppWindow, Bell, CircleUser, Info, Keyboard, LogOut, Mic, MonitorSmartphone, Palette, Trash2, Upload, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { PermissionStatus } from '../../../shared/ipc';
+import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { Logo } from '../../components/Logo';
 import { SettingsAction, SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { Badge, Button, Card, IconButton, Input, Row, Segmented, Select, Slider, Spinner, Toggle, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { availableLocales, LOCALE_NAMES, t, type LocalePref, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api, uploadAvatar } from '../../lib/api/endpoints';
-import { fmtStamp } from '../../lib/format';
+import { fmt } from '../../lib/format';
 import { CHECK_IDS, runConnectionCheck, type CheckId, type CheckRow } from '../../lib/connCheck';
 import { log } from '../../lib/log';
 import { METER_MIN_DB } from '../../lib/media/vad';
@@ -87,7 +87,6 @@ export function CommitInput({
 }
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
-  const desktop = platform.kind === 'electron';
   const sections: SettingsSection[] = [
     { id: 'profile', label: t('settings.profile'), icon: CircleUser, content: <ProfileTab /> },
     { id: 'voice', label: t('settings.voice'), icon: Mic, content: <VoiceTab /> },
@@ -96,7 +95,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
-    ...(desktop ? [{ id: 'app', label: t('settings.app'), icon: AppWindow, content: <AppTab /> }] : []),
+    // The web has no startup / updates, but the language lives here too (ADR-0022).
+    { id: 'app', label: t('settings.app'), icon: AppWindow, content: <AppTab /> },
     { id: 'about', label: t('settings.about'), icon: Info, content: <AboutTab /> },
   ];
   return (
@@ -257,14 +257,19 @@ export function MicMeter(): ReactNode {
   );
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  granted: 'Разрешено',
-  denied: 'Запрещено',
-  'not-determined': 'Не запрошено',
-  restricted: 'Ограничено',
-  default: 'Не запрошено',
-  'n/a': '—',
+const STATUS_LABEL: Record<string, MessageKey | null> = {
+  granted: 'perm.granted',
+  denied: 'perm.denied',
+  'not-determined': 'perm.notDetermined',
+  restricted: 'perm.restricted',
+  default: 'perm.notDetermined',
+  'n/a': null,
 };
+
+function statusText(s: string): string {
+  const k = STATUS_LABEL[s];
+  return k === undefined ? s : k === null ? '—' : t(k);
+}
 
 export function PermissionsCard(): ReactNode {
   const [p, setP] = useState<PermissionStatus | null>(null);
@@ -287,27 +292,27 @@ export function PermissionsCard(): ReactNode {
   return (
     <Card title={t('perm.title')} footer={t('perm.hint')}>
       <Row label={t('perm.mic')}>
-        <span className="text-body text-muted">{STATUS_LABEL[p.microphone] ?? p.microphone}</span>
+        <span className="text-body text-muted">{statusText(p.microphone)}</span>
         {osButton('microphone')}
       </Row>
       <Row label={t('video.device')}>
-        <span className="text-body text-muted">{STATUS_LABEL[p.camera] ?? p.camera}</span>
+        <span className="text-body text-muted">{statusText(p.camera)}</span>
         {osButton('camera')}
       </Row>
       {mac ? (
         <>
           <Row label={t('perm.screen')} hint={t('perm.screenHint')}>
-            <span className="text-body text-muted">{STATUS_LABEL[p.screen] ?? p.screen}</span>
+            <span className="text-body text-muted">{statusText(p.screen)}</span>
             {osButton('screen')}
           </Row>
           <Row label={t('perm.input')} hint={t('perm.inputHint')}>
-            <span className="text-body text-muted">{p.accessibility ? STATUS_LABEL['granted'] : STATUS_LABEL['not-determined']}</span>
+            <span className="text-body text-muted">{statusText(p.accessibility ? 'granted' : 'not-determined')}</span>
             {osButton('accessibility')}
           </Row>
         </>
       ) : null}
       <Row label={t('perm.notifications')}>
-        <span className="text-body text-muted">{STATUS_LABEL[notif] ?? notif}</span>
+        <span className="text-body text-muted">{statusText(notif)}</span>
         {notif === 'default' ? (
           <Button size="sm" variant="secondary" onClick={() => void Notification.requestPermission().then(() => platform.system.permissions().then(setP))}>
             {t('perm.ask')}
@@ -433,7 +438,7 @@ function VoiceTab(): ReactNode {
               <span data-settings-label data-settings-hint={t('voice.thresholdHint')}>
                 {t('voice.thresholdLabel')}
               </span>
-              <span className="tabular-nums text-muted">{p.thresholdDb} дБ</span>
+              <span className="tabular-nums text-muted">{t('unit.db', { n: p.thresholdDb })}</span>
             </div>
             <Slider label={t('voice.thresholdLabel')} value={p.thresholdDb} min={METER_MIN_DB} max={0} onChange={(v) => p.setPrefs({ thresholdDb: v })} />
             <span className="text-caption text-faint">{t('voice.thresholdHint')}</span>
@@ -462,7 +467,7 @@ function VoiceTab(): ReactNode {
             <option value="">{t('voice.myBitrateRoom')}</option>
             {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
               <option key={b} value={b}>
-                ≤ {b} кбит/с
+                ≤ {t('unit.kbps', { n: b })}
               </option>
             ))}
           </Select>
@@ -661,7 +666,7 @@ function ConnectionTab(): ReactNode {
       {stats ? (
         <Row label={t('conn.traffic')}>
           <span className="text-body tabular-nums text-muted">
-            ↑ {Math.round(stats.totalOutKbps)} / ↓ {Math.round(stats.totalInKbps)} кбит/с
+            ↑ {Math.round(stats.totalOutKbps)} / ↓ {t('unit.kbps', { n: Math.round(stats.totalInKbps) })}
           </span>
         </Row>
       ) : null}
@@ -696,7 +701,7 @@ function CheckResultRow({ id, row }: { id: CheckId; row: CheckRow | undefined })
       {row ? (
         <span className={cx('shrink-0 text-body', row.status === 'pass' ? 'text-ok' : row.status === 'fail' ? 'text-danger-text' : 'text-muted')}>
           {row.status === 'pass' ? t('conn.pass') : row.status === 'fail' ? t('conn.fail') : t('conn.skip')}
-          {row.ms !== null ? <span className="tabular-nums text-muted"> · {row.ms} мс</span> : null}
+          {row.ms !== null ? <span className="tabular-nums text-muted"> · {t('unit.ms', { n: row.ms })}</span> : null}
         </span>
       ) : (
         <Spinner />
@@ -754,7 +759,7 @@ function SessionsTab(): ReactNode {
             <Row
               key={s.id}
               label={deviceLabel(s.deviceName || s.userAgent || '—')}
-              hint={`${s.ip} · ${t('sessions.lastSeen')} ${s.lastSeenAt ? fmtStamp(timestampDate(s.lastSeenAt)) : '—'}`}
+              hint={`${s.ip} · ${t('sessions.lastSeen')} ${s.lastSeenAt ? fmt.stamp(timestampDate(s.lastSeenAt)) : '—'}`}
             >
               {s.current ? (
                 <Badge>{t('sessions.current')}</Badge>
@@ -780,6 +785,43 @@ function AppTab(): ReactNode {
     const s = await platform.app.setSettings(patch);
     useSession.getState().set({ settings: s });
   };
+  const desktop = platform.kind === 'electron';
+  return (
+    <>
+      <LanguageCard />
+      {desktop ? <DesktopAppCards info={info} settings={settings} save={save} /> : null}
+    </>
+  );
+}
+
+function LanguageCard(): ReactNode {
+  const locale = usePrefs((s) => s.locale);
+  const set = usePrefs((s) => s.setPrefs);
+  return (
+    <Card title={t('lang.label')}>
+      <Row label={t('lang.label')} hint={t('lang.hint')}>
+        <Select aria-label={t('lang.label')} className="w-60" value={locale} onChange={(e) => set({ locale: e.target.value as LocalePref })}>
+          <option value="auto">{t('lang.auto')}</option>
+          {availableLocales().map((l) => (
+            <option key={l} value={l} lang={l}>
+              {LOCALE_NAMES[l]}
+            </option>
+          ))}
+        </Select>
+      </Row>
+    </Card>
+  );
+}
+
+function DesktopAppCards({
+  info,
+  settings,
+  save,
+}: {
+  info: AppInfo | null;
+  settings: AppSettings | null;
+  save: (patch: Partial<AppSettings>) => Promise<void>;
+}): ReactNode {
   return (
     <>
       <Card title={t('card.startup')}>

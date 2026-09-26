@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
 import { API_SCHEME } from '../shared/ipc';
 import { windowIconPath } from './icons';
+import { mainStrings } from './strings';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const PRELOAD = join(here, '../preload/index.cjs');
@@ -141,7 +142,7 @@ export function createMainWindow(): BrowserWindow {
           minWidth: 320,
           minHeight: 200,
           backgroundColor: '#000000',
-          title: 'Calab — стрим',
+          title: mainStrings().streamWindow,
           autoHideMenuBar: true,
           webPreferences: { ...webPreferences },
         },

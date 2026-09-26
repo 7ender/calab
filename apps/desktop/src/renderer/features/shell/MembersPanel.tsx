@@ -4,7 +4,7 @@ import { Crown, MonitorUp, Video, Volume2 } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
-import { t, type MessageKey } from '../../i18n';
+import { type MessageKey, t, useLocale } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
@@ -92,6 +92,8 @@ const MemberRow = memo(function MemberRow({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }): ReactNode {
+  // Memo row: re-render on a language switch too (ADR-0022).
+  useLocale();
   const u = m.user;
   const userId = u?.id ?? '';
   const v = useVoiceStateOf(workspaceId, userId);
