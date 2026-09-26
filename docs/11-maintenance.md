@@ -8,7 +8,7 @@
 | GitHub Actions | `actions` | экшены закреплены по SHA, в комментарии указан тег |
 | Go (`apps/server`) | `gomod` | каждый PR обязан обновить `apps/server/THIRD-PARTY-NOTICES.txt`, иначе CI красный |
 | npm (pnpm workspace, корень) | `minor-and-patch`, `electron`, `uiohook` | мажоры `electron` и `next` игнорируются: их поднимаем руками |
-| Docker (`apps/server`, `infra/docker/caddy`) | `docker` | образы закреплены по digest |
+| Docker (`apps/server`, `infra/docker/caddy`) | `docker` | образы закреплены по digest; minor/major образа `golang` игнорируются (см. «Go-тулчейн») |
 | docker-compose (`infra/docker`) | `docker-compose` | |
 
 ## Автомерж (`.github/workflows/dependabot-auto-merge.yml`)
@@ -20,7 +20,9 @@
   - minor-бамп Docker-тега, например `golang:1.26` → `1.27`: это смена тулчейна или рантайма, а CI образы не собирает;
   - любой бамп `uiohook-napi`, см. ниже.
 
-Для Go-PR workflow сам запускает `make third-party-notices` и пушит коммит в ветку PR. Для этого нужен Dependabot-секрет `DEPENDABOT_PUSH_TOKEN` (fine-grained PAT на этот репозиторий, `contents: write`). Пуш через `GITHUB_TOKEN` не запускает CI повторно, и обязательные проверки так и остались бы висеть. Если секрета нет, workflow выводит предупреждение, и notices обновляют руками: `make third-party-notices`, затем коммит в ветку PR.
+Для Go-PR workflow сам запускает `make third-party-notices` и пушит коммит в ветку PR. Пуш через `GITHUB_TOKEN` не запускает CI повторно, и обязательные проверки так и остались бы висеть, поэтому workflow пушит с отдельным токеном `DEPENDABOT_PUSH_TOKEN`.
+
+**`DEPENDABOT_PUSH_TOKEN`.** Это fine-grained PAT на этот репозиторий с правом `contents: write`. Хранится в Settings → Secrets and variables → **Dependabot** (не Actions: workflow на PR от Dependabot видит только Dependabot-секреты). Исходное значение лежит в `.env` (`GITHUB_TOKEN`). После ротации или истечения PAT обновите секрет: `gh secret set DEPENDABOT_PUSH_TOKEN --app dependabot --repo itrcz/calab`. Если секрета нет или токен протух, workflow выводит предупреждение или падает на пуше, и notices обновляют руками: `make third-party-notices`, затем коммит в ветку PR.
 
 **Защита `main`.** Обязательны все джобы `ci.yml`: `buf lint / breaking`, `generated code is up to date`, `go vet / test / lint`, `govulncheck`, `go integration tests`, `pnpm typecheck / test`, `landing lint / typecheck / build`. Ревью не требуется, ветку перед мержем обновлять не обязательно (strict выключен), админы могут обойти защиту. Если переименовали джобу в `ci.yml`, обновите список required checks (`gh api repos/itrcz/calab/branches/main/protection`), иначе автомерж зависнет.
 
@@ -47,7 +49,7 @@
   4. Пересобрать и проверить горячие клавиши на macOS, Windows и Linux.
 - **`livekit-client`.** Закреплён точно (`2.22.3`, без `^`) намеренно: медиа-стек проверяется вручную. Dependabot будет предлагать каждую новую версию. Patch с зелёным CI можно брать. На minor и major смотрим changelog (изменения в `Room`/`RoomOptions`, `adaptiveStream`/`dynacast`, публикации треков, E2EE) и проверяем звонок вручную: 2–3 участника, переподключение, демонстрация экрана. Версию сервера LiveKit (`livekit/livekit-server` в compose и CI) поднимаем отдельно, сверяясь с матрицей совместимости.
 - **Next.js, мажор.** `apps/landing`, static export. Поднимаем руками. Проверяем `pnpm -F @calaba/landing lint typecheck build` и наличие `apps/landing/out/index.html`, затем глазами сравниваем лендинг.
-- **Go-тулчейн** (Docker `golang:*`). Поднимаем разом в трёх местах: `apps/server/Dockerfile`, `go-version` во всех джобах `ci.yml` и, при необходимости, `go` в `go.mod`. Затем проверяем, что текущая версия `golangci-lint` поддерживает новый Go.
+- **Go-тулчейн** (Docker `golang:*`). Dependabot предлагает только patch/digest образа `golang`: minor и major игнорируются в `dependabot.yml`. Смена версии Go — отдельный запланированный PR (ближайший — после 0.2). Поднимаем разом в трёх местах: `apps/server/Dockerfile`, `go-version` во всех джобах `ci.yml` и, при необходимости, `go` в `go.mod`. Затем проверяем, что текущая версия `golangci-lint` поддерживает новый Go.
 - **Мажоры GitHub Actions.** Проверяем, что затронуто в `release.yml`: `upload-artifact`/`download-artifact` (`pattern` + `merge-multiple`, digest-проверки), `pnpm/action-setup` (версия pnpm берётся из `packageManager`).
 
 ## Внешние PR

@@ -41,6 +41,10 @@ updates:
     directories: [/apps/server, /infra/docker/caddy]
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
+    ignore:
+      # Go toolchain bumps are coordinated by hand: go.mod + ci.yml go-version + Dockerfile in one PR
+      - dependency-name: golang
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     groups:
       docker: { patterns: ["*"] }
 
