@@ -5,6 +5,7 @@ package rtc
 import (
 	"context"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -17,8 +18,8 @@ import (
 )
 
 // These tests need Redis (voice state, locks) but no Postgres or LiveKit: LiveKit is faked.
-// They use Redis DB 14 so that Reconcile never sees the voice state of internal/app's tests,
-// which may run in parallel on DB 15.
+// They use Redis DB 14 (override: TEST_RTC_REDIS_DB, e.g. for parallel worktrees) so that
+// Reconcile never sees the voice state of internal/app's tests, which may run in parallel on DB 15.
 
 type fakeLK struct {
 	LiveKit // unused methods panic (nil)
@@ -72,6 +73,11 @@ func testService(t *testing.T, lk LiveKit) (*Service, rueidis.Client) {
 		t.Fatal(err)
 	}
 	opt.SelectDB = 14
+	if v := os.Getenv("TEST_RTC_REDIS_DB"); v != "" {
+		if opt.SelectDB, err = strconv.Atoi(v); err != nil {
+			t.Fatalf("TEST_RTC_REDIS_DB: %v", err)
+		}
+	}
 	rc, err := rueidis.NewClient(opt)
 	if err != nil {
 		t.Fatal(err)

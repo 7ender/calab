@@ -248,7 +248,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 					})
 				}
 			}
-			s.reconcileStreams(ctx, wid, ref.rid, ps)
+			s.reconcileStreams(ctx, wid, ref.rid, ps, start)
 		}
 		cutoff := start.Add(-joinGrace).UnixMilli()
 		for _, st := range states {
@@ -285,7 +285,10 @@ func hasState(states []voice.SessionState, sid, rid uuid.UUID) bool {
 
 // reconcileStreams drops recorded streams whose tracks are gone and records live screen
 // shares that were missed (e.g. a track_published that arrived before participant_joined).
-func (s *Service) reconcileStreams(ctx context.Context, wid, rid uuid.UUID, ps []Participant) {
+// Streams recorded after start−joinGrace are never dropped: their track_published may have
+// arrived after ps was listed (start is taken before listing). A record without a start time
+// (Started == 0) counts as old.
+func (s *Service) reconcileStreams(ctx context.Context, wid, rid uuid.UUID, ps []Participant, start time.Time) {
 	actual := map[string]Participant{}
 	for _, p := range ps {
 		for _, t := range p.Tracks {
@@ -298,7 +301,11 @@ func (s *Service) reconcileStreams(ctx context.Context, wid, rid uuid.UUID, ps [
 	if err != nil {
 		return
 	}
+	fresh := start.Add(-joinGrace).UnixMilli()
 	for sidTrack, st := range streams {
+		if st.Started > fresh {
+			continue // too fresh to judge: may have been published after the listing
+		}
 		if _, ok := actual[sidTrack]; !ok {
 			if ok, _ := s.voice.RemoveStream(ctx, rid, sidTrack); ok {
 				s.publishStreamStop(ctx, wid, rid, st.UserID, sidTrack, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
