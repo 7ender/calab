@@ -46,6 +46,8 @@ export default defineConfig<VisualOptions>({
   workers: Number(process.env['CALABA_VISUAL_WORKERS'] ?? 1),
   projects: [
     ...CONFIGS.map((c) => ({ name: c.name, testMatch: /screens\.spec\.ts/, use: { theme: c.theme, size: c.viewport } })),
+    // Stream UX (docs/09 #17, #18): the minimal desktop size only (dark 960×600).
+    { name: 'stream-dark-960', testMatch: /stream\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     // Focus walk and the web client's own screens (they start their own mock / app); nightly-only, see above.
     ...(ALL_CONFIGS ? [{ name: 'misc', testMatch: /(focus|web)\.spec\.ts/ }] : []),
   ],
