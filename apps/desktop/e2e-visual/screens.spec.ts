@@ -721,6 +721,21 @@ test('voice-room-status', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'voice-room-status');
 });
 
+// Speaking indication (docs/08): Борис talks — green ring + bright name in the sidebar row
+// and the members column; Вера (silent) stays muted. Fixture members have no LiveKit audio, so
+// the speaking set is injected (VoiceBar's visual-test hook).
+test('voice-room-speaking', async ({ open, win, mock, shot }) => {
+  await open();
+  await inVoice(win, mock);
+  await editRoomStatus(win, true);
+  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.meeting, muted: false });
+  await win.evaluate((id) => (window as unknown as { __calabaSpeaking?: (ids: string[]) => void }).__calabaSpeaking?.([id]), IDS.users.boris);
+  const row = win.locator('aside').first().getByRole('listitem', { name: /Борис Петров/ });
+  await expect(row).toHaveAttribute('data-speaking', 'true');
+  await expect(win.locator('aside').first().getByRole('listitem', { name: /Вера/ })).not.toHaveAttribute('data-speaking', 'true');
+  await checkpoint(shot, 'voice-room-speaking');
+});
+
 test('toast-device', async ({ open, win, mock, shot }) => {
   await open();
   await inVoice(win, mock);

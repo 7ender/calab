@@ -1,10 +1,14 @@
 /**
- * Speaking indicator hysteresis (docs/09 #15/#30): LiveKit ActiveSpeakersChanged flickers on
- * short pauses, so a participant is shown as speaking only after 100 ms of speech and stays
- * shown for 300 ms after the last speech. Pure timer logic, no React / LiveKit.
+ * Speaking indicator (docs/08 «Индикация речи», docs/09 #15/#30): the ring around a speaker's
+ * avatar and their brighter name. The ring appears at once (LiveKit already needs speech to call
+ * someone an active speaker) and stays 300 ms after the last speech, so short pauses between
+ * words don't flicker. Store updates are coalesced (≤ one per `BATCH_MS`) and only emitted when
+ * the set actually changed, so a busy call doesn't re-render the store's subscribers per event.
+ * Pure timer logic, no React / LiveKit.
  */
-export const SPEAKING_SHOW_MS = 100;
+export const SPEAKING_SHOW_MS = 0;
 export const SPEAKING_HIDE_MS = 300;
+export const SPEAKING_BATCH_MS = 50;
 
 export interface Timers {
   set(fn: () => void, ms: number): number;
@@ -16,15 +20,35 @@ const windowTimers: Timers = {
   clear: (id) => window.clearTimeout(id),
 };
 
+/** LiveKit identity is `<user_id>:<session_id>` (rtc.proto). */
+const userIdOfIdentity = (identity: string): string => identity.split(':')[0] ?? identity;
+
+/**
+ * Who speaks, by user id, from the two sources (one person may be in the room from several
+ * devices — any of them speaking lights the person up once):
+ *  - remote participants: LiveKit ActiveSpeakersChanged identities, my own session excluded;
+ *  - me: the local VAD gate / PTT (`transmitting`) — instant, not the server's round trip.
+ */
+export function speakingUserIds(remoteIdentities: Iterable<string>, localIdentity: string | null, me: { userId: string | null; on: boolean }): Set<string> {
+  const out = new Set<string>();
+  for (const identity of remoteIdentities) if (identity !== localIdentity) out.add(userIdOfIdentity(identity));
+  if (me.on && me.userId) out.add(me.userId);
+  return out;
+}
+
 export class SpeakingDebouncer {
   private shown = new Set<string>();
   private pending = new Map<string, { timer: number; to: boolean }>();
+  private flushTimer: number | null = null;
+  /** The last emitted set, as a sorted key (dedupes no-op emits). */
+  private emitted = '';
 
   constructor(
     private readonly onChange: (speaking: Record<string, boolean>) => void,
     private readonly timers: Timers = windowTimers,
     private readonly showMs = SPEAKING_SHOW_MS,
     private readonly hideMs = SPEAKING_HIDE_MS,
+    private readonly batchMs = SPEAKING_BATCH_MS,
   ) {}
 
   /** The current raw set of active speakers (user ids). */
@@ -39,10 +63,10 @@ export class SpeakingDebouncer {
   /** Drop everything immediately (leaving the room). */
   reset(): void {
     for (const id of [...this.pending.keys()]) this.cancel(id);
-    if (this.shown.size) {
-      this.shown.clear();
-      this.emit();
-    }
+    if (this.flushTimer !== null) this.timers.clear(this.flushTimer);
+    this.flushTimer = null;
+    this.shown.clear();
+    this.flush();
   }
 
   private want(id: string, on: boolean): void {
@@ -55,16 +79,22 @@ export class SpeakingDebouncer {
     }
     if (p?.to === on) return; // already scheduled
     if (p) this.cancel(id);
-    const timer = this.timers.set(
-      () => {
-        this.pending.delete(id);
-        if (on) this.shown.add(id);
-        else this.shown.delete(id);
-        this.emit();
-      },
-      on ? this.showMs : this.hideMs,
-    );
+    const delay = on ? this.showMs : this.hideMs;
+    if (delay <= 0) {
+      this.apply(id, on);
+      return;
+    }
+    const timer = this.timers.set(() => {
+      this.pending.delete(id);
+      this.apply(id, on);
+    }, delay);
     this.pending.set(id, { timer, to: on });
+  }
+
+  private apply(id: string, on: boolean): void {
+    if (on) this.shown.add(id);
+    else this.shown.delete(id);
+    this.schedule();
   }
 
   private cancel(id: string): void {
@@ -74,9 +104,21 @@ export class SpeakingDebouncer {
     this.pending.delete(id);
   }
 
-  private emit(): void {
+  private schedule(): void {
+    if (this.flushTimer !== null) return;
+    this.flushTimer = this.timers.set(() => {
+      this.flushTimer = null;
+      this.flush();
+    }, this.batchMs);
+  }
+
+  private flush(): void {
+    const ids = [...this.shown].sort();
+    const key = ids.join('\n');
+    if (key === this.emitted) return;
+    this.emitted = key;
     const out: Record<string, boolean> = {};
-    for (const id of this.shown) out[id] = true;
+    for (const id of ids) out[id] = true;
     this.onChange(out);
   }
 }

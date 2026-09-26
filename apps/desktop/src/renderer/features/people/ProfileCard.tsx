@@ -13,6 +13,7 @@ import { GuestBadge, RoleIcon, roleTextClass } from './MemberBits';
 import { VolumeRow, useMemberActions } from './MemberContextMenu';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
+import { useVoice } from '../../stores/voice';
 import { useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
 
@@ -58,6 +59,8 @@ export function ProfileCard({
   const actions = useMemberActions(workspaceId, userId);
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
   const canDm = useCanDm(workspaceId, userId);
+  // Speaking ring while they talk in my call (docs/08 «Индикация речи»).
+  const speaking = useVoice((st) => st.speaking[userId] ?? false);
   const u = m?.user;
   if (!m || !u) return null;
   const presence = status !== undefined ? PRESENCE_KEY[status] : undefined;
@@ -65,7 +68,7 @@ export function ProfileCard({
   return (
     <div className="flex w-72 flex-col gap-3 p-4">
       <div className="flex items-center gap-3">
-        <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={56} presence className="[&>span:last-child]:border-[var(--color-popover-solid)]" />
+        <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={56} presence speaking={speaking && !v?.muted} className="[&>span:last-child]:border-[var(--color-popover-solid)]" />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <h3 className={`truncate text-headline font-semibold ${roleTextClass(m.role)}`} title={name}>

@@ -1,11 +1,13 @@
 import { Headphones, HeadphoneOff, Mic, MicOff, Phone, Radio } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { haptic } from '../../lib/mobile';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useRooms } from '../../stores/rooms';
+import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 
@@ -30,6 +32,9 @@ export function MobileVoiceStrip(): ReactNode {
   const ptt = usePrefs((s) => s.micMode === 'ptt');
   const onAir = useVoice((s) => s.pttDown && s.transmitting);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
+  const me = useSession((s) => s.me?.user);
+  // My speaking ring (local VAD / PTT, docs/08 «Индикация речи»).
+  const speaking = useVoice((s) => (me ? (s.speaking[me.id] ?? false) : false));
   const openRoom = useUi((s) => s.openRoom);
   if (!roomId) return null;
   const connected = phase === 'connected';
@@ -38,6 +43,11 @@ export function MobileVoiceStrip(): ReactNode {
   return (
     <div className="shrink-0 px-2 pb-[calc(var(--safe-bottom,0px)+8px)] pt-1 [.kb-open_&]:hidden" data-testid="mobile-voice-strip">
       <div role="region" aria-label={t('mobile.voiceStrip')} className="mat-toolbar flex h-14 items-center gap-1.5 rounded-[var(--radius-panel)] pl-3 pr-2 shadow-[var(--shadow-island)]">
+        {me ? (
+          <span className="mr-1 flex shrink-0" data-speaking={(speaking && !muted) || undefined} data-testid="mobile-voice-avatar">
+            <Avatar userId={me.id} name={me.displayName} fileId={me.avatarFileId || undefined} size={32} speaking={speaking && !muted} />
+          </span>
+        ) : null}
         <button
           type="button"
           className="flex min-w-0 flex-1 flex-col items-start text-left"
