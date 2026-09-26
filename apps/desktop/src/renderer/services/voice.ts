@@ -1,4 +1,4 @@
-import { AUDIO_PUBLISH_DEFAULTS, type ConcreteScreenSharePreset, type ScreenShareContentHint } from '@calaba/protocol';
+import { AUDIO_PUBLISH_DEFAULTS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceMoved } from '@calaba/protocol';
 import {
   ConnectionState,
   DisconnectReason,
@@ -18,6 +18,7 @@ import type { PttEvent } from '../../shared/ipc';
 import { t } from '../i18n';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
+import { can, roomPerms } from '../lib/permissions';
 import { MicPipeline } from '../lib/media/micPipeline';
 import type { MicReport } from '../lib/media/micReport';
 import {
@@ -39,6 +40,7 @@ import { useRooms } from '../stores/rooms';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
+import { memberName, useWorkspaces } from '../stores/workspaces';
 import { setVoice, useVoice, type RemoteStream, type StreamQuality } from '../stores/voice';
 import { platform } from '../platform';
 import { announceDeviceSwitch } from './deviceToast';
@@ -76,6 +78,16 @@ export interface StreamLayer {
   quality: Exclude<StreamQuality, 'auto'>;
   width: number;
   height: number;
+}
+
+/**
+ * Join credentials handed over by the server for an app-level move (ADR-0019): connect with them
+ * instead of calling /join; `serverMuted` carries the moderator mute over the teardown.
+ */
+interface MoveCreds {
+  url: string;
+  token: string;
+  serverMuted: boolean;
 }
 
 export interface StreamOptions {
@@ -186,7 +198,7 @@ class VoiceEngine {
     await this.connect(roomId, workspaceId, false);
   }
 
-  private async connect(roomId: string, workspaceId: string, quiet: boolean): Promise<void> {
+  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds): Promise<void> {
     if (this.roomId === roomId && this.room) return;
     // The intent token is taken *before* the teardown (which awaits a network disconnect):
     // a leave() or a newer join during that window bumps it, and this call bails out, so the
@@ -203,9 +215,20 @@ class VoiceEngine {
     if (intent !== this.intentSeq) return;
     const seq = ++this.joinSeq;
     this.roomId = roomId;
-    setVoice({ roomId, workspaceId, phase: 'connecting', error: null, streams: [], watching: null, speaking: {}, myStream: null });
+    setVoice({
+      roomId,
+      workspaceId,
+      phase: 'connecting',
+      error: null,
+      streams: [],
+      watching: null,
+      speaking: {},
+      myStream: null,
+      ...(moved ? { serverMuted: moved.serverMuted } : {}),
+    });
     try {
-      const res = await api.voice.join(roomId);
+      // A move (ADR-0019) comes with a token for the target room: no /join round trip.
+      const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await api.voice.join(roomId);
       if (seq !== this.joinSeq) return;
       this.audioBitrateKbps = res.media?.audioBitrateKbps || 32;
       const room = new Room({
@@ -226,10 +249,13 @@ class VoiceEngine {
         await room.disconnect(false);
         return;
       }
-      setVoice({ canSpeak: res.canSpeak, canStream: res.canStream, phase: 'connected' });
+      // Moved: SPEAK comes from the token's grant (it repeats the server's rights in the target).
+      const perm = room.localParticipant.permissions;
+      const canSpeak = moved ? (perm ? canSpeakFrom(perm) : true) : res.canSpeak;
+      setVoice({ canSpeak, canStream: res.canStream, phase: 'connected' });
       // Subscribe to audio of everyone already here; video only when watched.
       for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
-      if (res.canSpeak) {
+      if (canSpeak) {
         await this.ensureMic();
         await this.publishMic();
       }
@@ -248,6 +274,24 @@ class VoiceEngine {
     }
   }
 
+  /**
+   * What /join would have said, for a move with server-issued credentials: the target's media
+   * settings from the room store; STREAM from the client-side permissions (UI only — the stream
+   * slot is still checked by /stream/request).
+   */
+  private movedJoin(roomId: string, workspaceId: string, moved: MoveCreds): { url: string; token: string; canSpeak: boolean; canStream: boolean; media: { audioBitrateKbps: number } } {
+    const room = useRooms.getState().byId[roomId];
+    const me = useSession.getState().me?.user?.id ?? '';
+    const role = useWorkspaces.getState().byId[workspaceId]?.members[me]?.role;
+    return {
+      url: moved.url,
+      token: moved.token,
+      canSpeak: true,
+      canStream: can(roomPerms(role, me, room), 'STREAM'),
+      media: { audioBitrateKbps: room?.media?.audioBitrateKbps || this.audioBitrateKbps },
+    };
+  }
+
   /** Bumped by every user join/leave: a running rejoin loop stops when it changes. */
   private rejoinGen = 0;
 
@@ -261,22 +305,30 @@ class VoiceEngine {
     if (!roomId || !wsId) return;
     const gen = ++this.rejoinGen;
     const stream = useVoice.getState().myStream;
-    await this.teardown(false);
-    for (let attempt = 0; attempt < 5; attempt++) {
-      if (gen !== this.rejoinGen) return; // the user left or switched meanwhile
-      setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting' });
-      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
-      if (gen !== this.rejoinGen) return;
-      await this.connect(roomId, wsId, true);
-      if (gen !== this.rejoinGen) return;
-      if (this.room) {
-        if (stream) toast.info(t('mediaErr.stream.restart'));
-        return;
+    this.rejoinRoomId = roomId;
+    try {
+      await this.teardown(false);
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (gen !== this.rejoinGen) return; // the user left or switched meanwhile
+        setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting' });
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+        if (gen !== this.rejoinGen) return;
+        await this.connect(roomId, wsId, true);
+        if (gen !== this.rejoinGen) return;
+        if (this.room) {
+          if (stream) toast.info(t('mediaErr.stream.restart'));
+          return;
+        }
       }
+      toast.error(t('mediaErr.voice.lost'));
+      await this.teardown(false);
+    } finally {
+      if (this.rejoinGen === gen) this.rejoinRoomId = null;
     }
-    toast.error(t('mediaErr.voice.lost'));
-    await this.teardown(false);
   }
+
+  /** The room a running rejoin loop is trying to get back into (a move may redirect it). */
+  private rejoinRoomId: string | null = null;
 
   /** User intent: leave voice (also stops a pending rejoin). */
   async leave(sound = true): Promise<void> {
@@ -942,11 +994,67 @@ class VoiceEngine {
   // ------------------------------------------------------------ mute / deafen
 
   /**
-   * Gateway VOICE_MOVED for this user. LiveKit keeps the connection (RoomEvent.Moved); we only
-   * switch our room id. If this device is not the one LiveKit moved (or Moved never comes),
+   * Gateway VOICE_MOVED for this user (ADR-0019). With a token (open-source LiveKit, app-level
+   * move) this device reconnects to the target room with it; returns true when it does (the UI
+   * then follows to the target). Without a token the SFU moved us (see onSfuMoved).
+   */
+  onMoved(ev: Pick<VoiceMoved, 'workspaceId' | 'fromRoomId' | 'toRoomId' | 'byUserId' | 'url' | 'token' | 'sessionId' | 'identity'>): boolean {
+    if (!ev.token || !ev.url) {
+      this.onSfuMoved(ev.fromRoomId, ev.toRoomId, ev.workspaceId);
+      return false;
+    }
+    // One event per moved device: the others of this user ignore it. session_id is the auth
+    // session (the LiveKit identity is `<user_id>:<session_id>`); the identity double-checks it.
+    const mySession = useSession.getState().sessionId;
+    if (ev.sessionId && mySession && ev.sessionId !== mySession) return false;
+    const myIdentity = this.room?.localParticipant.identity;
+    if (ev.identity && myIdentity && ev.identity !== myIdentity) return false;
+    if (ev.fromRoomId === ev.toRoomId || ev.token === this.lastMoveToken) return false; // duplicate
+    // Already connected to the target (a duplicate after the reconnect, or an SFU move): nothing to do.
+    if (this.room?.name && this.room.name.endsWith(ev.toRoomId) && this.roomId === ev.toRoomId) return false;
+    const rejoining = this.rejoinRoomId === ev.fromRoomId && this.roomId === null;
+    // In the source room (connected or still connecting), or the SFU-path event came first and
+    // optimistically switched our room id to the target.
+    const inSource = this.roomId === ev.fromRoomId || (this.moveTimer !== null && this.roomId === ev.toRoomId);
+    if (!inSource && !rejoining) return false;
+    // A teardown in flight is a user's leave or switch (newer intent than the move): it wins.
+    if (this.teardownRun && !rejoining) return false;
+    this.lastMoveToken = ev.token;
+    const wasStreaming = useVoice.getState().myStream !== null;
+    const serverMuted = useVoice.getState().serverMuted;
+    log.info('voice: moved by a moderator, reconnecting to the target room');
+    playSound('moved');
+    this.announceMove(ev, wasStreaming);
+    // Like a join: the latest intent, stops a pending rejoin. mute / deafen / PTT stay in the
+    // voice store (teardown keeps them) and are applied to the new mic; the stream is not
+    // restored (docs/05: requested again by the user).
+    this.rejoinGen++;
+    this.rejoinRoomId = null;
+    this.clearMoveTimer();
+    if (this.roomId === ev.toRoomId) this.roomId = ev.fromRoomId; // let connect() see a change
+    void this.connect(ev.toRoomId, ev.workspaceId, false, { url: ev.url, token: ev.token, serverMuted });
+    return true;
+  }
+
+  /** Token of the last app-level move acted upon (duplicate events are ignored). */
+  private lastMoveToken = '';
+
+  private announceMove(ev: Pick<VoiceMoved, 'workspaceId' | 'toRoomId' | 'byUserId'>, wasStreaming: boolean): void {
+    const room = useRooms.getState().byId[ev.toRoomId]?.name ?? '';
+    const me = useSession.getState().me?.user?.id ?? '';
+    const ws = useWorkspaces.getState();
+    const known = ev.byUserId !== '' && ev.byUserId !== me && (ws.byId[ev.workspaceId]?.members[ev.byUserId] !== undefined || ws.users[ev.byUserId] !== undefined);
+    const by = known ? memberName(ev.workspaceId, ev.byUserId) : '';
+    const text = by ? t('mediaErr.voice.movedBy', { name: by, room }) : t('mediaErr.voice.moved', { room });
+    toast.info(wasStreaming ? t('mediaErr.voice.movedStream', { text }) : text);
+  }
+
+  /**
+   * SFU move (LiveKit Cloud MoveParticipant): LiveKit keeps the connection (RoomEvent.Moved); we
+   * only switch our room id. If this device is not the one LiveKit moved (or Moved never comes),
    * rejoin the target room cleanly after a grace period.
    */
-  onMoved(fromRoomId: string, toRoomId: string, workspaceId: string): void {
+  private onSfuMoved(fromRoomId: string, toRoomId: string, workspaceId: string): void {
     if (!this.room || this.roomId !== fromRoomId || fromRoomId === toRoomId) return;
     this.roomId = toRoomId;
     setVoice({ roomId: toRoomId, workspaceId });

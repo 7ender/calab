@@ -157,7 +157,9 @@ export function applyDispatch(ev: DispatchEvent): void {
       useRooms.getState().removeCategory(e.value.categoryId);
       return;
     case 'voiceMoved':
-      voice.onMoved(e.value.fromRoomId, e.value.toRoomId, e.value.workspaceId);
+      // App-level move (ADR-0019): the UI follows to the target room, as when joining it, if the
+      // user was looking at the room they were moved out of.
+      if (voice.onMoved(e.value) && activeRoomId() === e.value.fromRoomId) useUi.getState().openRoom(e.value.workspaceId, e.value.toRoomId);
       return;
     case 'voiceStateUpdate':
       if (e.value.state) {

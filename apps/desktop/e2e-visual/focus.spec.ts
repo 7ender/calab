@@ -32,9 +32,13 @@ async function tabWalk(page: Page, max: number): Promise<Stop[]> {
         boxRing = getComputedStyle(box).borderTopColor === getComputedStyle(probe).color;
         probe.remove();
       }
+      // A shaped element (a chat bubble with its tail) draws the ring on its shape child as a
+      // stack of drop-shadows that follow the outline instead of a rectangular outline.
+      const shape = el.querySelector(':scope > [data-focus-shape]');
+      const shapeRing = !!shape && getComputedStyle(shape).filter.includes('drop-shadow');
       const label = el.getAttribute('aria-label') ?? el.textContent.trim().slice(0, 30);
       const key = `${el.tagName}|${label}|${Math.round(el.getBoundingClientRect().left)}|${Math.round(el.getBoundingClientRect().top)}`;
-      return { what: `<${el.tagName.toLowerCase()} role=${el.getAttribute('role') ?? ''}> ${label}`, ring: outline || shadow || boxRing, key };
+      return { what: `<${el.tagName.toLowerCase()} role=${el.getAttribute('role') ?? ''}> ${label}`, ring: outline || shadow || boxRing || shapeRing, key };
     });
     if (!stop) continue;
     if (seen.has(stop.key)) break; // wrapped around

@@ -538,7 +538,8 @@ svg.lucide {
 /* ---- chat bubbles (features/chat): per-bubble colours as variables so nested parts (tail,
    links, meta) follow the bubble kind ---- */
 .bubble-in {
-  --bubble-bg: var(--color-bubble-in);
+  --bubble-fill: var(--color-bubble-in);
+  --bubble-bg: var(--bubble-fill);
   --bubble-meta: var(--color-label-tertiary);
   --bubble-link: var(--color-bubble-in-accent);
   --bubble-accent: var(--color-bubble-in-accent);
@@ -546,7 +547,8 @@ svg.lucide {
   --bubble-chip-fg: var(--color-on-accent);
 }
 .bubble-out {
-  --bubble-bg: var(--color-bubble-out);
+  --bubble-fill: var(--color-bubble-out);
+  --bubble-bg: var(--bubble-fill);
   --bubble-meta: var(--color-bubble-out-meta);
   --bubble-link: var(--color-bubble-out-link);
   --bubble-accent: var(--color-bubble-out-link);
@@ -556,6 +558,26 @@ svg.lucide {
 .bubble-in .text-accent-text,
 .bubble-out .text-accent-text {
   color: var(--bubble-link);
+}
+/* Keyboard focus on a message (docs/09 #47): not a rectangle around the bubble but its own shape.
+   The fill (body and tail read --bubble-bg) takes a 12 % accent tint, and a 2 px accent ring is
+   drawn by four stacked zero-blur drop-shadows, which follow the rounded corners and the tail.
+   Ring vs the feed: 4.9:1 dark, 3.5:1 light (≥ 3:1). Text on the tinted fill stays ≥ 4.5:1; the
+   own bubble's meta (4.2:1 in dark on the tint) moves towards the label colour (5.0:1).
+   A sticker (no bubble shape) keeps the default outline. Mouse presses never focus the bubble
+   (MessageBubble.tsx, useActionBar), so this shows for the keyboard only. */
+.bubble-in:focus-visible:has(> [data-focus-shape]),
+.bubble-out:focus-visible:has(> [data-focus-shape]) {
+  --bubble-bg: color-mix(in srgb, var(--color-accent) 12%, var(--bubble-fill));
+  outline: none;
+}
+.bubble-out:focus-visible:has(> [data-focus-shape]) {
+  --bubble-meta: color-mix(in srgb, var(--color-bubble-out-meta) 60%, var(--color-label));
+}
+.bubble-in:focus-visible > [data-focus-shape],
+.bubble-out:focus-visible > [data-focus-shape] {
+  filter: drop-shadow(2px 0 0 var(--color-accent)) drop-shadow(-2px 0 0 var(--color-accent))
+    drop-shadow(0 2px 0 var(--color-accent)) drop-shadow(0 -2px 0 var(--color-accent));
 }
 .search-hit {
   background: var(--color-search-hit);

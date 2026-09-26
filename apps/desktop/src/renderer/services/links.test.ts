@@ -5,7 +5,7 @@ vi.mock('../stores/session', () => ({ useSession: { getState: () => session } })
 vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => undefined }) } }));
 vi.mock('../features/people/roomLink', () => ({ openRoomLink: () => undefined }));
 
-const { inviteUrl, parseInviteCode, parseRoomInviteCode, roomInviteUrl } = await import('./links');
+const { INVITE_EXAMPLE_CODE, inviteUrl, joinPlaceholder, parseInviteCode, parseRoomInviteCode, roomInviteUrl } = await import('./links');
 
 describe('invite links', () => {
   it('parses https links, deep links and bare codes', () => {
@@ -81,5 +81,32 @@ describe('room links', () => {
   });
   it('builds the shareable link', () => {
     expect(roomInviteUrl('https://colaba.gptunnel.ai/', 'abcd1234')).toBe('https://colaba.gptunnel.ai/r/abcd1234');
+  });
+});
+
+describe('join dialog placeholder', () => {
+  afterEach(() => {
+    session.settings = null;
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+  it('is a real-looking link on the session server', () => {
+    expect(joinPlaceholder('https://app.calab.ru')).toBe('https://app.calab.ru/join/AbC123xYz');
+    expect(joinPlaceholder('https://app.calab.ru/')).toBe('https://app.calab.ru/join/AbC123xYz');
+  });
+  it('falls back to the configured server, then to the web page origin', () => {
+    session.settings = { serverUrl: 'https://team.example.org' };
+    expect(joinPlaceholder('')).toBe('https://team.example.org/join/AbC123xYz');
+    session.settings = null;
+    vi.stubEnv('VITE_PLATFORM', 'web');
+    vi.stubGlobal('location', { origin: 'https://web.example.org' });
+    expect(joinPlaceholder('')).toBe('https://web.example.org/join/AbC123xYz');
+  });
+  it('is the bare example code without a server', () => {
+    expect(joinPlaceholder('')).toBe('AbC123xYz');
+  });
+  it('the example itself is accepted by the parser (it shows a valid shape)', () => {
+    expect(parseInviteCode(joinPlaceholder('https://app.calab.ru'))).toBe(INVITE_EXAMPLE_CODE);
+    expect(parseInviteCode(joinPlaceholder(''))).toBe(INVITE_EXAMPLE_CODE);
   });
 });

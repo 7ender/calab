@@ -47,6 +47,17 @@ export function inviteUrl(serverUrl: string, code: string): string | null {
   return origin ? `${origin}/join/${code}` : null;
 }
 
+/** The made-up code in the join field's placeholder (a valid code shape, never a real invite). */
+export const INVITE_EXAMPLE_CODE = 'AbC123xYz';
+
+/**
+ * Placeholder for the «join a workspace» field: a real-looking link on this server
+ * (`https://<server>/join/AbC123xYz`; on the web the page's origin), else the bare example code.
+ */
+export function joinPlaceholder(serverUrl: string): string {
+  return inviteUrl(serverUrl, INVITE_EXAMPLE_CODE) ?? INVITE_EXAMPLE_CODE;
+}
+
 /**
  * Room links (ADR-0016): `https://<server>/r/<code>` or the `calab://r/<code>` deep link. No bare
  * codes: a bare code is a workspace invite.

@@ -198,5 +198,8 @@ export const ruShell = {
   'mediaErr.voice.kicked': 'Модератор отключил вас от голосовой комнаты',
   'mediaErr.voice.duplicate': 'Вы подключились к голосу с этого устройства в другом окне',
   'mediaErr.voice.closed': 'Голосовая комната закрыта',
+  'mediaErr.voice.moved': 'Вас переместили в «{room}»',
+  'mediaErr.voice.movedBy': '{name} переместил(а) вас в «{room}»',
+  'mediaErr.voice.movedStream': '{text}; стрим остановлен',
   'mediaErr.voice.modMuted': 'Модератор выключил вам микрофон',
 } as const;

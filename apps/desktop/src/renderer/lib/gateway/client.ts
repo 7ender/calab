@@ -70,6 +70,13 @@ export const BACKOFF_BASE_MS = 1000;
 export const BACKOFF_MAX_MS = 30_000;
 /** Socket open + HELLO must arrive within this time, else the connect is treated as a drop. */
 export const HELLO_TIMEOUT_MS = 10_000;
+/** A heartbeat (or a wake-up probe) without ACK for this long means the socket is dead. */
+export const ACK_TIMEOUT_MS = 10_000;
+/** getToken / refreshToken that never settle (a stuck IPC or fetch) count as «no token now». */
+export const TOKEN_TIMEOUT_MS = 15_000;
+/** Delay before re-IDENTIFY after INVALID_SESSION (Discord-style 1–5 s, spreads a deploy herd). */
+export const INVALID_SESSION_MIN_MS = 1000;
+export const INVALID_SESSION_JITTER_MS = 4000;
 
 /** Exponential backoff 1 s → 30 s with ±50 % jitter (full attempts counter). */
 export function backoffDelay(attempt: number, random: number): number {
@@ -94,6 +101,14 @@ export class GatewayClient {
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private helloTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Re-IDENTIFY on the same socket after INVALID_SESSION. */
+  private identifyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** ACK deadline of a wake-up probe heartbeat. */
+  private probeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the current socket was created / got HELLO (0 = not yet). */
+  private connectAt = 0;
+  private helloAt = 0;
+  private lastBeatAt = 0;
   /** Consecutive 4004 closes without READY in between (the first one reconnects at once). */
   private authFailures = 0;
   private lastAckAt = 0;
@@ -136,13 +151,43 @@ export class GatewayClient {
   }
 
   /** Immediate reconnect with RESUME (e.g. after the laptop wakes up). */
-  forceReconnect(): void {
+  forceReconnect(reason = 'force reconnect'): void {
     if (this.stopped) return;
-    this.log('force reconnect');
+    this.log(reason);
     this.clearTimers();
     this.dropSocket(4000);
     this.attempts = 0;
     this.connect();
+  }
+
+  /**
+   * The window became visible / the network came back / the screen was unlocked: timers may
+   * have been throttled or frozen meanwhile, so do not trust them. Reconnect at once when the
+   * socket is gone or dead (no socket, a pending backoff, closed without onclose, HELLO or a
+   * heartbeat ACK overdue); a quiet but possibly healthy socket gets a probe heartbeat that
+   * must be ACKed within ACK_TIMEOUT_MS.
+   */
+  wake(): void {
+    if (this.stopped) return;
+    const now = Date.now();
+    const ws = this.ws;
+    if (!ws) {
+      this.forceReconnect('wake: no socket, reconnecting now');
+      return;
+    }
+    if (ws.readyState > OPEN) {
+      this.forceReconnect('wake: socket closed, reconnecting now');
+      return;
+    }
+    if (!this.helloAt) {
+      if (now - this.connectAt > HELLO_TIMEOUT_MS) this.forceReconnect('wake: HELLO overdue, reconnecting now');
+      return;
+    }
+    if (this.awaitingAck) {
+      if (now - this.lastBeatAt > ACK_TIMEOUT_MS) this.forceReconnect('wake: heartbeat ACK overdue, reconnecting now');
+      return;
+    }
+    if (now - this.lastAckAt > this.heartbeatMs) this.probe(ws);
   }
 
   // ---- outgoing ops ----
@@ -216,9 +261,13 @@ export class GatewayClient {
     if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.helloTimer) clearTimeout(this.helloTimer);
+    if (this.identifyTimer) clearTimeout(this.identifyTimer);
+    if (this.probeTimer) clearTimeout(this.probeTimer);
     this.heartbeatTimer = null;
     this.reconnectTimer = null;
     this.helloTimer = null;
+    this.identifyTimer = null;
+    this.probeTimer = null;
   }
 
   private dropSocket(code: number): void {
@@ -236,6 +285,9 @@ export class GatewayClient {
   private connect(): void {
     if (this.stopped) return;
     this.established = false;
+    this.awaitingAck = false;
+    this.connectAt = Date.now();
+    this.helloAt = 0;
     this.setStatus(this.sessionId ? 'resuming' : 'connecting');
     let ws: SocketLike;
     try {
@@ -249,7 +301,7 @@ export class GatewayClient {
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     ws.onmessage = (ev) => this.onMessage(ws, ev);
-    ws.onclose = (ev) => this.onClose(ws, ev.code);
+    ws.onclose = (ev) => this.onClose(ws, ev.code, ev.reason);
     ws.onerror = () => {
       // onclose follows; nothing to do here.
     };
@@ -285,6 +337,7 @@ export class GatewayClient {
       case 'hello':
         if (this.helloTimer) clearTimeout(this.helloTimer);
         this.helloTimer = null;
+        this.helloAt = Date.now();
         this.heartbeatMs = frame.payload.value.heartbeatIntervalMs || this.heartbeatMs;
         this.startHeartbeat();
         void this.authenticate();
@@ -292,6 +345,8 @@ export class GatewayClient {
       case 'heartbeatAck':
         this.awaitingAck = false;
         this.lastAckAt = Date.now();
+        if (this.probeTimer) clearTimeout(this.probeTimer);
+        this.probeTimer = null;
         return;
       case 'reconnect':
         this.log('server asked to reconnect');
@@ -303,8 +358,14 @@ export class GatewayClient {
           this.sessionId = '';
           this.seq = 0n;
         }
-        // Discord-style: wait 1–5 s before re-identifying.
-        this.reconnectSoon(1000 + Math.round(this.rnd() * 4000));
+        {
+          const delay = INVALID_SESSION_MIN_MS + Math.round(this.rnd() * INVALID_SESSION_JITTER_MS);
+          // A rejected RESUME keeps the socket open and the server waits for IDENTIFY on it
+          // (docs/05): re-authenticate here instead of paying a new TCP/TLS/HELLO round. After
+          // READY (a server-side resync) the server closes the socket itself: start over.
+          if (this.established) this.reconnectSoon(delay);
+          else this.reauthSoon(ws, delay);
+        }
         return;
       case 'dispatch':
         this.onDispatch(frame);
@@ -337,9 +398,35 @@ export class GatewayClient {
     this.setStatus('ready');
   }
 
+  private reauthSoon(ws: SocketLike, delay: number): void {
+    if (this.identifyTimer) clearTimeout(this.identifyTimer);
+    this.setStatus(this.sessionId ? 'resuming' : 'connecting');
+    this.identifyTimer = setTimeout(() => {
+      this.identifyTimer = null;
+      if (ws !== this.ws || this.stopped) return; // stale: that socket is gone
+      void this.authenticate();
+    }, delay);
+  }
+
+  /** Heartbeat now; no ACK within ACK_TIMEOUT_MS → the socket is a zombie. */
+  private probe(ws: SocketLike): void {
+    this.log('wake: probing the socket');
+    this.awaitingAck = true;
+    this.lastBeatAt = Date.now();
+    this.sendFrame(GatewayOpcode.HEARTBEAT, { case: 'heartbeat', value: create(HeartbeatSchema, { lastSeq: this.seq }) });
+    if (this.probeTimer) clearTimeout(this.probeTimer);
+    this.probeTimer = setTimeout(() => {
+      this.probeTimer = null;
+      if (ws !== this.ws || !this.awaitingAck) return;
+      this.log('probe ACK missing, reconnecting');
+      this.attempts = 0;
+      this.reconnectSoon(0);
+    }, ACK_TIMEOUT_MS);
+  }
+
   private async authenticate(): Promise<void> {
     const ws = this.ws;
-    const token = await this.deps.getToken();
+    const token = await withTimeout(this.deps.getToken(), TOKEN_TIMEOUT_MS);
     if (ws !== this.ws) return; // socket replaced meanwhile
     if (this.stopped) return;
     if (!token) {
@@ -382,6 +469,7 @@ export class GatewayClient {
       return;
     }
     this.awaitingAck = true;
+    this.lastBeatAt = Date.now();
     this.sendFrame(GatewayOpcode.HEARTBEAT, { case: 'heartbeat', value: create(HeartbeatSchema, { lastSeq: this.seq }) });
     this.heartbeatTimer = setTimeout(() => this.beat(), this.heartbeatMs);
   }
@@ -408,7 +496,7 @@ export class GatewayClient {
     this.scheduleReconnect(d);
   }
 
-  private onClose(ws: SocketLike, code: number): void {
+  private onClose(ws: SocketLike, code: number, reason: string): void {
     if (ws !== this.ws) return;
     this.ws = null;
     this.clearTimers();
@@ -422,17 +510,14 @@ export class GatewayClient {
       case GatewayCloseCode.AUTHENTICATION_FAILED:
         this.authFailures++;
         this.setStatus('reconnecting');
-        void this.deps.refreshToken().then(
-          (t) => {
-            if (this.stopped || this.ws || this.reconnectTimer) return;
-            // Fresh token: reconnect at once, but back off if the server keeps rejecting it.
-            if (t && this.authFailures <= 1) this.scheduleReconnect(0);
-            else this.backoff(); // refresh failed now (offline / 5xx): not a logout (review H3)
-          },
-          () => {
-            if (!this.stopped && !this.ws && !this.reconnectTimer) this.backoff();
-          },
-        );
+        // Bounded: a refresh that never settles would otherwise leave the client in
+        // 'reconnecting' with neither a socket nor a timer — the banner forever.
+        void withTimeout(this.deps.refreshToken(), TOKEN_TIMEOUT_MS).then((t) => {
+          if (this.stopped || this.ws || this.reconnectTimer) return;
+          // Fresh token: reconnect at once, but back off if the server keeps rejecting it.
+          if (t && this.authFailures <= 1) this.scheduleReconnect(0);
+          else this.backoff(); // refresh failed now (offline / 5xx): not a logout (review H3)
+        });
         return;
       case GatewayCloseCode.SESSION_REVOKED:
         this.stopped = true;
@@ -440,7 +525,9 @@ export class GatewayClient {
         this.deps.onFatal('revoked');
         return;
       case GatewayCloseCode.RATE_LIMITED:
-        if (!wasEstablished && !this.sessionId) {
+        // 4008 also means «send queue overflow» / «rate limited» (a slow consumer, e.g. a big
+        // READY after a deploy): only the IDENTIFY rejection «too many active devices» is fatal.
+        if (!wasEstablished && !this.sessionId && !/queue|rate/i.test(reason)) {
           // Rejected before READY: too many sessions. Do not retry in a loop.
           this.stopped = true;
           this.setStatus('stopped');
@@ -460,6 +547,23 @@ export class GatewayClient {
         this.backoff(); // network drop, 4000–4002, 1006: RESUME
     }
   }
+}
+
+/** Resolves `null` if `p` does not settle within `ms` (or rejects). */
+function withTimeout<T>(p: Promise<T | null>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(null), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(t);
+        resolve(null);
+      },
+    );
+  });
 }
 
 export function gatewayUrl(serverUrl: string): string {

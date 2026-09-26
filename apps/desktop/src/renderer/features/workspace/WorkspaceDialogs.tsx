@@ -1,14 +1,15 @@
 import { WorkspaceVisibility } from '@calaba/protocol';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { Button, Empty, Field, Input, Modal, Select, Spinner } from '../../components/ui';
+import { Button, Field, Input, Modal, Select, Spinner } from '../../components/ui';
 import { t } from '../../i18n';
 import { workspaceInitials } from '../../lib/initials';
 import { ApiError } from '../../lib/api/client';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
-import { parseInviteCode, parseRoomInviteCode } from '../../services/links';
+import { joinPlaceholder, parseInviteCode, parseRoomInviteCode } from '../../services/links';
 import { RoomLinkPreview } from '../people/RoomLinkPreview';
+import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 
 const TRANSLIT: Record<string, string> = {
@@ -102,8 +103,11 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
   const code = parseInviteCode(input);
   const roomCode = parseRoomInviteCode(input);
   const setWs = useUi((s) => s.setWorkspace);
+  const serverUrl = useSession((s) => s.serverUrl);
   const preview = useQuery({ queryKey: ['invite', code], queryFn: () => api.invites.get(code ?? ''), enabled: !!code, retry: false });
   const discover = useQuery({ queryKey: ['discover'], queryFn: () => api.workspaces.discover() });
+  // Enabled only for a well-formed invite (parseInviteCode) that the server resolved to a workspace.
+  const canJoin = !!code && !!preview.data?.workspace;
   const join = useMutation({
     mutationFn: (arg: { code?: string; id?: string }) => (arg.code ? api.invites.join(arg.code) : api.workspaces.joinOpen(arg.id ?? '')),
     onSuccess: (r) => {
@@ -123,7 +127,7 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
           <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button busy={join.isPending && !join.variables.id} disabled={!preview.data?.workspace} onClick={() => join.mutate({ code: code ?? '' })}>
+          <Button busy={join.isPending && !join.variables.id} disabled={!canJoin} onClick={() => join.mutate({ code: code ?? '' })}>
             {t('ws.join')}
           </Button>
         </>
@@ -136,9 +140,9 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && preview.data?.workspace) join.mutate({ code: code ?? '' });
+              if (e.key === 'Enter' && canJoin) join.mutate({ code });
             }}
-            placeholder={t('ws.joinPlaceholder')}
+            placeholder={joinPlaceholder(serverUrl)}
             spellCheck={false}
           />
         </Field>
@@ -155,9 +159,8 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
         ) : preview.isFetching ? (
           <Spinner />
         ) : null}
-        <h3 className="mt-3 text-caption font-semibold text-muted">{t('ws.discover')}</h3>
-        {discover.isLoading ? <Spinner /> : null}
-        {discover.data && discover.data.workspaces.length === 0 ? <Empty>{t('ws.discoverEmpty')}</Empty> : null}
+        {/* Only when there is something to offer: no header, empty text or spinner otherwise. */}
+        {discover.data?.workspaces.length ? <h3 className="mt-3 text-caption font-semibold text-muted">{t('ws.discover')}</h3> : null}
         {discover.data?.workspaces.map((w) => (
           <div key={w.id} className="flex items-center justify-between gap-3 rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2">
             <span className="min-w-0 truncate" title={w.name}>

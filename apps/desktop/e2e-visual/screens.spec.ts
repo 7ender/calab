@@ -187,7 +187,11 @@ for (const theme of THEMES) {
         // walk); toBeVisible() passes at opacity 0 — check the opacity.
         await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
         await settle(page);
-        await keyboardFocus(page.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал' }));
+        const doneBubble = page.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал' });
+        // A mouse press never focuses the bubble (only the keyboard draws its focus ring).
+        await doneBubble.click();
+        await expect(doneBubble).not.toBeFocused();
+        await keyboardFocus(doneBubble);
         const actions = page.getByTestId('message-actions');
         await expect(actions).toHaveCount(1);
         await expect(actions).toHaveCSS('opacity', '1');

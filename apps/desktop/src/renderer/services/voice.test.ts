@@ -93,6 +93,7 @@ class FakeRoom {
   name = '';
   engine = {};
   localParticipant = {
+    identity: 'u1:mine',
     permissions: undefined as undefined | { canPublish: boolean; canPublishSources: number[] },
     publishTrack: vi.fn((t: FakeLocalAudioTrack) => {
       this.published.push(t);
@@ -118,7 +119,9 @@ class FakeRoom {
   emit(ev: string, ...a: unknown[]): void {
     for (const h of this.handlers.get(ev) ?? []) h(...a);
   }
-  connect(): Promise<void> {
+  connectedWith: [string, string] | null = null;
+  connect(url: string, token: string): Promise<void> {
+    this.connectedWith = [url, token];
     return Promise.resolve();
   }
   /** When set, disconnect() waits for it (a slow network disconnect). */
@@ -433,6 +436,123 @@ describe('VoiceEngine', () => {
     useVoice.setState({ pttDown: true });
     voice.resetPtt();
     expect(useVoice.getState().pttDown).toBe(false);
+  });
+});
+
+describe('VOICE_MOVED (ADR-0019)', () => {
+  const move = (over: Partial<Parameters<Engine['onMoved']>[0]> = {}): Parameters<Engine['onMoved']>[0] => ({
+    workspaceId: 'ws',
+    fromRoomId: 'A',
+    toRoomId: 'B',
+    byUserId: '',
+    url: 'wss://lk-move',
+    token: 'tok-B',
+    sessionId: '',
+    identity: '',
+    ...over,
+  });
+  const roomNamed = async (id: string, name: string): Promise<void> => {
+    const { useRooms } = await import('../stores/rooms');
+    useRooms.setState({ byId: { ...useRooms.getState().byId, [id]: { id, name } as never } });
+  };
+
+  it('with a token: old room dropped, target connected with it, no /join, mute + deafen kept, stream stopped', async () => {
+    await roomNamed('B', 'Кухня');
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    voice.toggleDeafen();
+    await settle();
+    useVoice.setState({ myStream: { sourceName: 'Screen', preset: 0 as never, hasAudio: false, audioError: null, viewers: 0 } });
+    expect(voice.onMoved(move())).toBe(true);
+    await settle();
+    await settle();
+    expect(FakeRoom.all[0]?.disconnects).toEqual([false]);
+    expect(FakeRoom.all[1]?.connectedWith).toEqual(['wss://lk-move', 'tok-B']);
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A']); // no /join for the target
+    const v = useVoice.getState();
+    expect(v.roomId).toBe('B');
+    expect(voice.currentRoomId).toBe('B');
+    expect(v.phase).toBe('connected');
+    expect(v.muted).toBe(true);
+    expect(v.deafened).toBe(true);
+    expect(v.myStream).toBeNull();
+    expect(FakeRoom.all[1]?.published).toHaveLength(1);
+    expect(FakeRoom.all[1]?.published[0]?.isMuted).toBe(true); // re-published, explicitly muted
+    const { toast } = await import('../stores/toasts');
+    expect(toast.info).toHaveBeenCalledWith('Вас переместили в «Кухня»; стрим остановлен');
+  });
+
+  it('with a token, not streaming: short toast, the server mute survives the reconnect', async () => {
+    await roomNamed('B', 'Кухня');
+    await voice.join('A', 'ws');
+    useVoice.setState({ muted: true, serverMuted: true });
+    expect(voice.onMoved(move())).toBe(true);
+    await settle();
+    await settle();
+    expect(useVoice.getState().serverMuted).toBe(true);
+    expect(useVoice.getState().muted).toBe(true);
+    const { toast } = await import('../stores/toasts');
+    expect(toast.info).toHaveBeenCalledWith('Вас переместили в «Кухня»');
+  });
+
+  it('without a token (SFU move): the old path — room id switched, /join rejoin after 4 s if LiveKit did not move us', async () => {
+    await voice.join('A', 'ws');
+    const room = FakeRoom.all[0];
+    if (room) room.name = 'ws:A';
+    expect(voice.onMoved(move({ url: '', token: '' }))).toBe(false);
+    expect(useVoice.getState().roomId).toBe('B');
+    expect(FakeRoom.all).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(4000);
+    await settle();
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A', 'B']);
+    expect(voice.currentRoomId).toBe('B');
+  });
+
+  it('a leave in progress wins: a move arriving meanwhile is ignored', async () => {
+    await voice.join('A', 'ws');
+    let release!: () => void;
+    FakeRoom.disconnectGate = new Promise<void>((r) => (release = r));
+    const leaving = voice.leave();
+    expect(voice.onMoved(move())).toBe(false);
+    FakeRoom.disconnectGate = null;
+    release();
+    await leaving;
+    await settle();
+    expect(useVoice.getState().phase).toBe('idle');
+    expect(voice.currentRoomId).toBeNull();
+    expect(FakeRoom.all).toHaveLength(1);
+  });
+
+  it('a leave right after the move wins over the reconnect', async () => {
+    await voice.join('A', 'ws');
+    let release!: () => void;
+    FakeRoom.disconnectGate = new Promise<void>((r) => (release = r));
+    expect(voice.onMoved(move())).toBe(true);
+    await settle();
+    const leaving = voice.leave();
+    FakeRoom.disconnectGate = null;
+    release();
+    await leaving;
+    await settle();
+    expect(useVoice.getState().phase).toBe('idle');
+    expect(voice.currentRoomId).toBeNull();
+    expect(FakeRoom.all).toHaveLength(1); // never connected to the target
+  });
+
+  it('duplicates, other devices and moves to the current room are ignored', async () => {
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ sessionId: 'mine' });
+    await voice.join('A', 'ws');
+    expect(voice.onMoved(move({ sessionId: 'other' }))).toBe(false);
+    expect(voice.onMoved(move({ identity: 'u1:other' }))).toBe(false);
+    expect(voice.onMoved(move({ toRoomId: 'A' }))).toBe(false);
+    expect(voice.onMoved(move({ sessionId: 'mine', identity: 'u1:mine' }))).toBe(true);
+    expect(voice.onMoved(move({ sessionId: 'mine' }))).toBe(false); // same event again
+    await settle();
+    await settle();
+    expect(FakeRoom.all).toHaveLength(2);
+    expect(voice.currentRoomId).toBe('B');
+    expect(voice.onMoved(move({ token: 'tok-2' }))).toBe(false); // no longer in A
   });
 });
 

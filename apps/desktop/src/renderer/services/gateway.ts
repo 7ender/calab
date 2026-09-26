@@ -1,4 +1,5 @@
 import { PresenceStatus } from '@calaba/protocol';
+import { ReconnectBanner } from '../lib/gateway/banner';
 import { GatewayClient, gatewayUrl, type GatewayFatal } from '../lib/gateway/client';
 import { log } from '../lib/log';
 import { useSession } from '../stores/session';
@@ -9,9 +10,26 @@ import { platform } from '../platform';
 let client: GatewayClient | null = null;
 /** Rooms we want typing/read-state for (SUBSCRIBE replaces the set; resent after READY/RESUMED). */
 let subscribed: string[] = [];
+/** «переподключаемся…» banner: only after a real drop > 3 s, gone at once on READY/RESUMED. */
+const banner = new ReconnectBanner((reconnectBanner) => useSession.getState().set({ reconnectBanner }));
+let wakeInstalled = false;
+
+/**
+ * Timers of a hidden tab / a sleeping machine are throttled or frozen: when the window comes
+ * back or the network returns, check the socket instead of waiting for them (GatewayClient.wake).
+ */
+function installWake(): void {
+  if (wakeInstalled || typeof document === 'undefined') return;
+  wakeInstalled = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') client?.wake();
+  });
+  window.addEventListener('online', () => client?.wake());
+}
 
 export function startGateway(onFatal: (kind: GatewayFatal) => void): void {
   stopGateway();
+  installWake();
   const s = useSession.getState();
   const info = s.appInfo;
   client = new GatewayClient({
@@ -32,7 +50,10 @@ export function startGateway(onFatal: (kind: GatewayFatal) => void): void {
         log.error('dispatch failed', ev.event.case, e);
       }
     },
-    onStatus: (gateway) => useSession.getState().set({ gateway }),
+    onStatus: (gateway) => {
+      useSession.getState().set({ gateway });
+      banner.update(gateway);
+    },
     onFatal,
     log: (m) => log.info(m),
   });
@@ -42,6 +63,7 @@ export function startGateway(onFatal: (kind: GatewayFatal) => void): void {
 export function stopGateway(): void {
   client?.stop();
   client = null;
+  banner.reset();
 }
 
 /** Logout: forget the previous account's room subscriptions (review L9). */
@@ -51,6 +73,11 @@ export function resetGatewaySubscriptions(): void {
 
 export function reconnectGateway(): void {
   client?.forceReconnect();
+}
+
+/** Reconnect now only if the socket is gone or dead (screen unlock, window shown, back online). */
+export function wakeGateway(): void {
+  client?.wake();
 }
 
 /** Fine-grained subscription (docs/05, SUBSCRIBE): the server sends TYPING_START only for these rooms. */

@@ -9,7 +9,6 @@ import { installHotkeys } from '../../services/hotkeys';
 import { defaultRoom, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
-import { useDelayed } from '../../lib/useDelayed';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
@@ -27,7 +26,6 @@ import { WorkspaceRail } from './WorkspaceRail';
  */
 export function AppShell(): ReactNode {
   const ready = useSession((s) => s.ready);
-  const gateway = useSession((s) => s.gateway);
   const onboarded = usePrefs((s) => s.onboarded);
   const wsId = useUi((s) => s.activeWorkspaceId);
   const hasWs = useWorkspaces((s) => (wsId ? !!s.byId[wsId] : false));
@@ -38,8 +36,9 @@ export function AppShell(): ReactNode {
   const overlayOpen = useUi((s) => s.membersOverlay);
   const width = useUi((s) => s.sidebarWidth);
 
-  // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner.
-  const showReconnect = useDelayed(ready && gateway !== 'ready', 3000);
+  // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
+  // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
+  const showReconnect = useSession((s) => s.ready && s.reconnectBanner);
 
   useEffect(() => installHotkeys(), []);
   useEffect(() => installAfk(), []);

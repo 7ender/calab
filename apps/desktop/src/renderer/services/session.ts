@@ -14,7 +14,7 @@ import { useRoomLink } from '../features/people/roomLink';
 import { queryClient } from '../lib/queryClient';
 import { resetChatCaches } from './chat';
 import { startMessageRetention } from './retention';
-import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway } from './gateway';
+import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway, wakeGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
 import { showLinkLanding } from './linkLanding';
 import { watchSyncedPrefs } from './profile';
@@ -38,8 +38,10 @@ export async function bootstrap(): Promise<void> {
     // A key-up lost during sleep / lock must not leave PTT transmitting (review M6).
     voice.resetPtt();
     if (ev === 'resume' || ev === 'unlock-screen') {
-      // After sleep the socket is usually dead but not closed: reconnect right away.
-      reconnectGateway();
+      // After sleep the socket is usually dead but not closed: reconnect right away. A screen
+      // lock alone keeps the network: reconnect only if the socket turns out dead.
+      if (ev === 'resume') reconnectGateway();
+      else wakeGateway();
       if (useSession.getState().status === 'offline') void retryConnect();
     }
   });

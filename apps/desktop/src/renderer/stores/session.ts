@@ -11,6 +11,8 @@ export interface SessionState {
   sessionId: string;
   me: Me | null;
   gateway: GatewayStatus;
+  /** «Нет соединения с сервером» banner (lib/gateway/banner.ts decides). */
+  reconnectBanner: boolean;
   /** Gateway READY received at least once for this login. */
   ready: boolean;
   /** Close 4008 before READY: too many active devices. */
@@ -28,6 +30,7 @@ export const useSession = create<SessionState>()((set) => ({
   sessionId: '',
   me: null,
   gateway: 'idle',
+  reconnectBanner: false,
   ready: false,
   tooManySessions: false,
   loggedOutReason: null,

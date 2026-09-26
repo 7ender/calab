@@ -1,7 +1,7 @@
 import type { FileMeta, Message, PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AlertCircle, Check, CheckCheck, Clock3, Download, FileText, RotateCw } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
@@ -180,9 +180,11 @@ function Bubble({
       <span className="rounded-full bg-[var(--bubble-bg)] px-2 py-0.5 shadow-[var(--shadow-bubble)]">{metaNode}</span>
     </div>
   ) : (
+    // data-focus-shape: keyboard focus draws the ring on this shape (body + tail), app/styles.css.
     <div
       className="relative bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]"
       style={{ ...radius, ...(width ? { width } : {}) }}
+      data-focus-shape
     >
       {tail ? <Tail own={own} /> : null}
       <div className="overflow-hidden" style={radius}>
@@ -276,6 +278,13 @@ function Bubble({
  * on leave; hidden while the primary button is held (a text selection may be in progress);
  * kept while its emoji picker is open. Keyboard focus shows it at once (focus-visible only, so a
  * click on the text doesn't pin it).
+ *
+ * The bubble is a Tab stop (tabIndex 0) only for the keyboard: a mouse press would focus it as
+ * the nearest focusable ancestor of the text, and a later key press (Ctrl+C after selecting) then
+ * turns that into :focus-visible and draws the ring. So a focus that a press put on the bubble
+ * itself is dropped at once (blur, as if the bubble weren't focusable). preventDefault on
+ * mousedown would do the same but also kill text selection; blur leaves the selection alone.
+ * Presses on the controls inside (reactions, links, the action bar) focus those as usual.
  */
 function useActionBar(enabled: boolean): {
   enabled: boolean;
@@ -284,6 +293,7 @@ function useActionBar(enabled: boolean): {
   handlers: {
     onMouseEnter?: (e: MouseEvent<HTMLDivElement>) => void;
     onMouseLeave?: () => void;
+    onMouseDown?: () => void;
     onPointerDown?: (e: PointerEvent<HTMLDivElement>) => void;
     onFocus?: (e: FocusEvent<HTMLDivElement>) => void;
     onBlur?: (e: FocusEvent<HTMLDivElement>) => void;
@@ -293,6 +303,8 @@ function useActionBar(enabled: boolean): {
   const [focused, setFocused] = useState(false);
   const [picker, setPicker] = useState(false);
   const [intent] = useState(() => createHoverIntent(HOVER_DELAY_MS, setHover));
+  // True from a mouse press until the end of its task: the focus it causes runs in between.
+  const pressing = useRef(false);
   useEffect(() => () => intent.dispose(), [intent]);
   if (!enabled) return { enabled, visible: false, setPicker, handlers: {} };
   const press = (): void => {
@@ -316,11 +328,24 @@ function useActionBar(enabled: boolean): {
         intent.enter();
       },
       onMouseLeave: () => intent.leave(),
+      onMouseDown: () => {
+        pressing.current = true;
+        setTimeout(() => {
+          pressing.current = false;
+        }, 0);
+      },
       onPointerDown: (e) => {
         if (e.button !== 0 || (e.target as Element).closest('[data-message-actions]')) return;
         press();
       },
-      onFocus: (e) => setFocused((e.target as Element).matches(':focus-visible')),
+      onFocus: (e) => {
+        const keyboard = (e.target as Element).matches(':focus-visible');
+        if (pressing.current && !keyboard && e.target === e.currentTarget) {
+          e.currentTarget.blur();
+          return;
+        }
+        setFocused(keyboard);
+      },
       onBlur: (e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
       },

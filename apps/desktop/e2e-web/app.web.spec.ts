@@ -33,17 +33,35 @@ test('register → workspace → room → message → reload → voice', async (
   await expect(skip.or(page.getByRole('button', { name: 'Создать пространство' }).first())).toBeVisible({ timeout: 20_000 });
   if (await skip.isVisible()) await skip.click();
 
-  await page.getByRole('button', { name: 'Создать пространство' }).first().click();
-  await page.getByLabel('Название').fill(`Web ${id}`);
-  await page.getByRole('button', { name: 'Создать', exact: true }).click();
-  await page.getByRole('button', { name: 'Создать комнату' }).first().click();
-  await page.getByLabel('Название').fill('общий');
-  await page.getByRole('button', { name: 'Создать', exact: true }).click();
+  // Idempotent on a shared account (the stand limits workspace creation, 3/hour): reuse the
+  // «E2E web» workspace and its rooms when they exist, create them only when missing.
+  const rail = page.getByRole('navigation', { name: 'Пространства' });
+  const existing = rail.getByRole('button', { name: /^E2E web\b/ });
+  if ((await existing.count()) > 0) {
+    await existing.first().click();
+  } else {
+    await page.getByRole('button', { name: 'Создать пространство' }).first().click();
+    await page.getByLabel('Название').fill('E2E web');
+    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+  }
+  const rooms = page.locator('aside').first();
+  await expect(rooms.getByRole('button', { name: 'Создать комнату' }).first()).toBeVisible();
+  const general = rooms.getByRole('button', { name: /^общий(,|$)/ });
+  if ((await general.count()) > 0) {
+    await general.first().click();
+  } else {
+    await page.getByRole('button', { name: 'Создать комнату' }).first().click();
+    await page.getByLabel('Название').fill('общий');
+    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+  }
 
   const box = page.getByPlaceholder('Сообщение в #общий');
-  await box.fill('Привет из **веба**');
+  await box.fill(`Привет из **веба** ${id}`);
+  // Wait for the POST before reloading: a reload mid-request cancels it (API: 500 «context canceled»).
+  const sent = page.waitForResponse((r) => r.request().method() === 'POST' && /\/api\/rooms\/[^/]+\/messages$/.test(new URL(r.url()).pathname));
   await box.press('Enter');
-  await expect(page.locator('strong', { hasText: 'веба' })).toBeVisible();
+  expect((await sent).ok()).toBe(true);
+  await expect(page.getByText(id, { exact: false }).last()).toBeVisible();
 
   // The refresh token lives only in the HttpOnly cookie: JS must not see it, reload must keep us in.
   expect(String(await page.evaluate('document.cookie'))).not.toContain('calaba_refresh');
@@ -51,13 +69,15 @@ test('register → workspace → room → message → reload → voice', async (
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.sameSite).toBe('Strict');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'общий', exact: true })).toBeVisible();
 
   if (browserName === 'firefox' && process.env['CALABA_WEB_FF_VOICE'] !== '1') return;
-  await page.getByRole('button', { name: 'Создать комнату' }).nth(1).click();
-  await page.getByLabel('Название').fill('Созвон');
-  await page.getByRole('button', { name: 'Создать', exact: true }).click();
-  await page.locator('aside button', { hasText: 'Созвон' }).click();
+  if ((await page.locator('aside button', { hasText: 'Созвон' }).count()) === 0) {
+    await page.getByRole('button', { name: 'Создать комнату' }).nth(1).click();
+    await page.getByLabel('Название').fill('Созвон');
+    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+  }
+  await page.locator('aside button', { hasText: 'Созвон' }).first().click();
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Отключиться' }).click();
   await expect(page.getByText('Голос подключён')).toHaveCount(0);

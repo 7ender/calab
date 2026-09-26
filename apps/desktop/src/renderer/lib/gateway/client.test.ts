@@ -15,7 +15,20 @@ import {
   type GatewayFrame,
 } from '@calaba/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BACKOFF_MAX_MS, GatewayClient, HELLO_TIMEOUT_MS, OUT_BURST, backoffDelay, gatewayUrl, type GatewayFatal, type SocketLike } from './client';
+import { ReconnectBanner, RECONNECT_BANNER_DELAY_MS } from './banner';
+import {
+  ACK_TIMEOUT_MS,
+  BACKOFF_MAX_MS,
+  GatewayClient,
+  HELLO_TIMEOUT_MS,
+  OUT_BURST,
+  TOKEN_TIMEOUT_MS,
+  backoffDelay,
+  gatewayUrl,
+  type GatewayFatal,
+  type GatewayStatus,
+  type SocketLike,
+} from './client';
 
 class FakeSocket implements SocketLike {
   binaryType: BinaryType = 'blob';
@@ -43,9 +56,9 @@ class FakeSocket implements SocketLike {
   deliver(frame: GatewayFrame): void {
     this.onmessage?.({ data: toBinary(GatewayFrameSchema, frame).buffer } as MessageEvent);
   }
-  serverClose(code: number): void {
+  serverClose(code: number, reason = ''): void {
     this.readyState = 3;
-    this.onclose?.({ code } as CloseEvent);
+    this.onclose?.({ code, reason } as CloseEvent);
   }
   ops(): GatewayOpcode[] {
     return this.sent.map((f) => f.op);
@@ -67,7 +80,15 @@ const ready = (seq: number, sessionId = 'gs1'): GatewayFrame =>
 const typing = (seq: number): GatewayFrame =>
   dispatch(seq, { case: 'typingStart', value: create(TypingStartSchema, { roomId: 'r', userId: 'u' }) });
 
-function setup(opts: { refresh?: string | null; getToken?: () => Promise<string | null>; failCreate?: () => boolean } = {}) {
+function setup(
+  opts: {
+    refresh?: string | null;
+    refreshToken?: () => Promise<string | null>;
+    getToken?: () => Promise<string | null>;
+    failCreate?: () => boolean;
+    onStatus?: (s: GatewayStatus) => void;
+  } = {},
+) {
   const sockets: FakeSocket[] = [];
   const events: Array<{ seq: bigint; kind: string | undefined }> = [];
   const fatals: GatewayFatal[] = [];
@@ -75,7 +96,7 @@ function setup(opts: { refresh?: string | null; getToken?: () => Promise<string 
   const client = new GatewayClient({
     url: () => 'ws://x/gateway?v=1',
     getToken: opts.getToken ?? (() => Promise.resolve('tok')),
-    refreshToken: () => Promise.resolve(opts.refresh === undefined ? 'tok2' : opts.refresh),
+    refreshToken: opts.refreshToken ?? (() => Promise.resolve(opts.refresh === undefined ? 'tok2' : opts.refresh)),
     device: { name: 'test', platform: 'darwin', appVersion: '0.0.1' },
     createSocket: (url) => {
       if (opts.failCreate?.()) throw new SyntaxError('bad url');
@@ -84,7 +105,10 @@ function setup(opts: { refresh?: string | null; getToken?: () => Promise<string 
       return s;
     },
     onDispatch: (ev, seq) => events.push({ seq, kind: ev.event.case }),
-    onStatus: (s) => statuses.push(s),
+    onStatus: (s) => {
+      statuses.push(s);
+      opts.onStatus?.(s);
+    },
     onFatal: (k) => fatals.push(k),
     random: () => 0.5,
   });
@@ -299,8 +323,10 @@ describe('GatewayClient', () => {
     expect(t.client.state.seq).toBe(0n);
     expect(t.client.state.sessionId).toBe('');
     await vi.advanceTimersByTimeAsync(3000);
-    const s3 = await handshake(t);
-    s3.deliver(ready(1, 'b')); // seq 1 again is accepted after the reset
+    // The server keeps the socket open after a rejected RESUME: IDENTIFY goes out on it.
+    expect(t.sockets).toHaveLength(2);
+    expect(s2.sent.map((f) => f.payload.case)).toEqual(['resume', 'identify']);
+    s2.deliver(ready(1, 'b')); // seq 1 again is accepted after the reset
     expect(t.events.filter((e) => e.kind === 'ready')).toHaveLength(2);
     expect(t.client.state.sessionId).toBe('b');
   });
@@ -402,10 +428,12 @@ describe('GatewayClient', () => {
     );
     expect(t.client.state.sessionId).toBe('');
     expect(t.client.state.seq).toBe(0n);
-    await vi.advanceTimersByTimeAsync(3000); // re-identify after 1–5 s (jitter 0.5 → 3 s)
-    const s3 = await handshake(t);
-    expect(s3.sent[0]?.payload.case).toBe('identify');
-    s3.deliver(ready(1, 'after-deploy'));
+    await vi.advanceTimersByTimeAsync(2999); // re-identify after 1–5 s (jitter 0.5 → 3 s)
+    expect(s2.sent.map((f) => f.payload.case)).toEqual(['resume']);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s2.sent.map((f) => f.payload.case)).toEqual(['resume', 'identify']); // same socket
+    expect(t.sockets).toHaveLength(2);
+    s2.deliver(ready(1, 'after-deploy'));
     expect(t.client.state.status).toBe('ready');
     expect(t.events.filter((e) => e.kind === 'ready')).toHaveLength(2);
     expect(t.fatals).toEqual([]);
@@ -455,5 +483,193 @@ describe('GatewayClient', () => {
   it('builds ws/wss URL from the server URL', () => {
     expect(gatewayUrl('https://app.example.com')).toBe('wss://app.example.com/gateway?v=1');
     expect(gatewayUrl('http://localhost:3000')).toBe('ws://localhost:3000/gateway?v=1');
+  });
+});
+
+const invalidSession = (): GatewayFrame =>
+  create(GatewayFrameSchema, {
+    op: GatewayOpcode.INVALID_SESSION,
+    payload: { case: 'invalidSession', value: create(InvalidSessionSchema, { resumable: false }) },
+  });
+const reconnectOp = (): GatewayFrame =>
+  create(GatewayFrameSchema, { op: GatewayOpcode.RECONNECT, payload: { case: 'reconnect', value: {} as never } });
+const resumed = (seq: number): GatewayFrame => dispatch(seq, { case: 'resumed', value: create(ResumedSchema, { replayed: 0 }) });
+
+/** The machine may sleep: wall clock jumps, timers do not fire (throttled / frozen). */
+function sleepWallClock(ms: number): void {
+  vi.setSystemTime(Date.now() + ms);
+}
+
+describe('GatewayClient.wake (window visible / online / unlock)', () => {
+  it('heartbeat ACK overdue → reconnect at once with RESUME', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1, 'w'));
+    await vi.advanceTimersByTimeAsync(5_000); // first beat, never ACKed
+    expect(s.ops()).toContain(GatewayOpcode.HEARTBEAT);
+    sleepWallClock(ACK_TIMEOUT_MS + 1);
+    t.client.wake();
+    expect(s.closedWith).toBe(4000);
+    expect(t.sockets).toHaveLength(2);
+    const s2 = await handshake(t);
+    expect(s2.sent[0]?.payload.case).toBe('resume');
+  });
+
+  it('a quiet socket gets a probe heartbeat; no ACK in time → reconnect, ACK → keep it', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t, 30_000);
+    s.deliver(ready(1, 'p'));
+    await vi.advanceTimersByTimeAsync(15_000); // first beat
+    s.deliver(ack());
+    sleepWallClock(40_000);
+    const beats = s.ops().filter((o) => o === GatewayOpcode.HEARTBEAT).length;
+    t.client.wake();
+    expect(s.ops().filter((o) => o === GatewayOpcode.HEARTBEAT)).toHaveLength(beats + 1);
+    expect(t.sockets).toHaveLength(1);
+    s.deliver(ack());
+    await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 1);
+    expect(t.sockets).toHaveLength(1);
+    expect(t.client.state.status).toBe('ready');
+
+    sleepWallClock(40_000);
+    t.client.wake();
+    await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 1); // probe unanswered
+    expect(t.sockets).toHaveLength(2);
+    expect(s.closedWith).toBe(4000);
+  });
+
+  it('a recently ACKed socket is left alone', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1));
+    await vi.advanceTimersByTimeAsync(5_000);
+    s.deliver(ack());
+    const sent = s.sent.length;
+    t.client.wake();
+    expect(s.sent).toHaveLength(sent);
+    expect(t.sockets).toHaveLength(1);
+  });
+
+  it('waiting for a long backoff → reconnect now', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1, 'b'));
+    for (let i = 0; i < 5; i++) {
+      t.last().serverClose(1006);
+      await vi.advanceTimersByTimeAsync(backoffDelay(i, 0.5));
+      t.last().open();
+    }
+    t.last().serverClose(1006); // next wait: 16 s
+    const n = t.sockets.length;
+    t.client.wake();
+    expect(t.sockets).toHaveLength(n + 1);
+    const s2 = await handshake(t);
+    expect(s2.sent[0]?.payload.case).toBe('resume');
+    s2.deliver(resumed(2));
+    expect(t.client.state.status).toBe('ready');
+  });
+
+  it('a closed socket whose onclose never fired → reconnect now', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1));
+    s.readyState = 3;
+    t.client.wake();
+    expect(t.sockets).toHaveLength(2);
+  });
+});
+
+describe('GatewayClient robustness', () => {
+  it('a token refresh that never settles does not leave the client stuck', async () => {
+    const t = setup({ refreshToken: () => new Promise<string | null>(() => undefined) });
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1));
+    s.serverClose(GatewayCloseCode.AUTHENTICATION_FAILED);
+    expect(t.client.state.status).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(TOKEN_TIMEOUT_MS + backoffDelay(0, 0.5));
+    expect(t.sockets).toHaveLength(2);
+  });
+
+  it('4008 «send queue overflow» before READY is a slow consumer, not the device limit', async () => {
+    const t = setup();
+    t.client.start();
+    await handshake(t);
+    t.last().serverClose(GatewayCloseCode.RATE_LIMITED, 'send queue overflow');
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    expect(t.fatals).toEqual([]);
+    expect(t.sockets).toHaveLength(2);
+    t.last().serverClose(GatewayCloseCode.RATE_LIMITED, 'too many active devices');
+    expect(t.fatals).toEqual(['too-many-sessions']);
+  });
+});
+
+describe('reconnect banner driven by the real client', () => {
+  function withBanner() {
+    const shown: boolean[] = [];
+    const banner = new ReconnectBanner((v) => shown.push(v));
+    const t = setup({ onStatus: (s) => banner.update(s) });
+    return { t, banner, shown };
+  }
+
+  it('not shown on the first connect, nor for a drop shorter than 3 s', async () => {
+    const { t, banner } = withBanner();
+    t.client.start();
+    await vi.advanceTimersByTimeAsync(RECONNECT_BANNER_DELAY_MS + 1_000); // slow first connect
+    expect(banner.shown).toBe(false);
+    const s = await handshake(t);
+    s.deliver(ready(1, 'a'));
+    s.serverClose(1006);
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5)); // 750 ms
+    const s2 = await handshake(t);
+    s2.deliver(resumed(2));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(banner.shown).toBe(false);
+  });
+
+  it('shown after 3 s down, removed at once on RESUMED', async () => {
+    const { t, banner } = withBanner();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1, 'a'));
+    s.serverClose(1006);
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    t.last().serverClose(1006); // still down
+    await vi.advanceTimersByTimeAsync(RECONNECT_BANNER_DELAY_MS);
+    expect(banner.shown).toBe(true);
+    await vi.advanceTimersByTimeAsync(backoffDelay(1, 0.5));
+    const s3 = await handshake(t);
+    expect(banner.shown).toBe(true); // socket open, RESUME sent, not yet RESUMED
+    s3.deliver(resumed(2));
+    expect(banner.shown).toBe(false);
+  });
+
+  it('deploy: RECONNECT → INVALID_SESSION → IDENTIFY → READY clears the banner', async () => {
+    const { t, banner } = withBanner();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(5, 'before'));
+    s.deliver(reconnectOp());
+    await vi.advanceTimersByTimeAsync(0);
+    const s2 = t.last();
+    await vi.advanceTimersByTimeAsync(2_000); // new instance slow to answer
+    s2.open();
+    s2.deliver(hello());
+    await vi.advanceTimersByTimeAsync(0);
+    s2.deliver(invalidSession());
+    await vi.advanceTimersByTimeAsync(3_000); // re-IDENTIFY on the same socket
+    expect(banner.shown).toBe(true); // > 3 s without the gateway
+    expect(s2.sent.map((f) => f.payload.case)).toEqual(['resume', 'identify']);
+    s2.deliver(ready(1, 'after'));
+    expect(t.client.state.status).toBe('ready');
+    expect(banner.shown).toBe(false);
+    s2.deliver(ack());
+    await vi.advanceTimersByTimeAsync(RECONNECT_BANNER_DELAY_MS * 2); // no stale timer resurfaces
+    expect(banner.shown).toBe(false);
   });
 });
