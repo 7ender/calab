@@ -17,7 +17,8 @@
 # https://$RELEASES_HOST/ (docs/06 «Релизы: GitHub Actions → S3»). The stand only redirects /download/ there.
 #
 # What it does:
-#   preflight  commit resolves, tag v$VERSION absent (local + origin), release.yml in the commit, gh auth,
+#   preflight  commit resolves, tag v$VERSION absent (local + origin), release.yml in the commit, CHANGELOG
+#              section for $VERSION (WARN only), gh auth,
 #              lockfile frozen-installable, disk, stand reachable, baseline of the foreign GPU job, backup BEFORE
 #   build      (optional, not in the default) local desktop build for checks: build-release.sh mac linux win
 #              (SIGN=1 NOTARIZE=1, Linux/Windows on the stand's Docker) → $WORK_DIR/dist-release; never published
@@ -85,6 +86,15 @@ if step preflight; then
   if git ls-remote -q --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then bad "tag v$VERSION already exists on origin"; exit 1; fi
   ok "tag v$VERSION is free (local + origin)"
   git cat-file -e "$COMMIT:.github/workflows/release.yml" 2>/dev/null && ok "release.yml present in $COMMIT" || { bad "no .github/workflows/release.yml in $COMMIT"; exit 1; }
+  # GitHub Release body = the CHANGELOG.md section of this version (release.yml); without one GitHub
+  # auto-generates notes from commits — allowed, but user-facing notes are expected for every release
+  chl="$(mktemp)"
+  if git show "$COMMIT:CHANGELOG.md" > "$chl" 2>/dev/null && n=$(infra/ci/changelog-section.sh "$VERSION" "$chl" 2>/dev/null | wc -l | tr -d ' ') && (( n > 0 )); then
+    ok "CHANGELOG.md in $COMMIT has a $VERSION section ($n lines) — used as the GitHub Release body"
+  else
+    printf '  WARN  %s\n' "CHANGELOG.md in $COMMIT has no $VERSION section — the GitHub Release gets auto-generated notes"
+  fi
+  rm -f "$chl"
   if step desktop; then
     gh api "repos/$REPO" --jq .full_name >/dev/null 2>&1 && ok "gh: access to $REPO" || { bad "gh: no access to $REPO (GH_TOKEN)"; exit 1; }
   fi

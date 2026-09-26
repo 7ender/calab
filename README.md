@@ -124,6 +124,8 @@ infra/docker/deploy.sh                            # Caddy, LiveKit, API, Postgre
 
 Сборки для macOS, Windows и Linux — на `https://app.<домен>/download/` (для публичного сервера — [app.calab.ru/download](https://app.calab.ru/download/)). Веб-версия — по тому же адресу без `/download`.
 
+Что нового в каждой версии — в [CHANGELOG.md](CHANGELOG.md) (тот же текст попадает в описание [GitHub Release](https://github.com/itrcz/calab/releases)).
+
 ### Разработка
 
 ```bash
