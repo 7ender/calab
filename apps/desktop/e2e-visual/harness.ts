@@ -188,7 +188,14 @@ export async function layoutProblems(page: Page): Promise<LayoutProblem[]> {
         if (abs) continue;
         if (clipper) {
           const cs = getComputedStyle(clipper);
-          if (clipper.scrollWidth > clipper.clientWidth + 1 && cs.textOverflow !== 'ellipsis' && cs.overflowX !== 'auto') {
+          // An intentional fade-out (mask) instead of an ellipsis counts as proper truncation.
+          let faded = false;
+          for (let a: HTMLElement | null = clipper; a && a !== el.parentElement; a = a.parentElement) {
+            const m = getComputedStyle(a);
+            const mask = m.maskImage || m.getPropertyValue('-webkit-mask-image');
+            if (mask && mask !== 'none') faded = true;
+          }
+          if (!faded && clipper.scrollWidth > clipper.clientWidth + 1 && cs.textOverflow !== 'ellipsis' && cs.overflowX !== 'auto') {
             out.push({ kind: 'text-clipped', detail: `${describe(el)}: clipped without ellipsis` });
           }
           continue;

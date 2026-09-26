@@ -402,6 +402,13 @@ body {
   background: var(--color-bg);
 }
 
+/* Secondary text that may not fit: fade the last 16 px out instead of an ellipsis (Discord's
+   status line). Put it on a full-width row, so text that fits never reaches the fade. */
+.fade-end {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+}
+
 /* Text the user may want to copy. */
 .selectable,
 .selectable * {

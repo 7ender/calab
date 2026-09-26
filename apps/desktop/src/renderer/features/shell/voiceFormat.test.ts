@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, limitLabel, limitSegments, parseUserLimit } from './voiceFormat';
+import { formatDuration, limitLabel, parseUserLimit } from './voiceFormat';
 
 describe('formatDuration', () => {
   it('formats minutes and hours', () => {
@@ -12,9 +12,6 @@ describe('formatDuration', () => {
   it('limit label only with a limit', () => {
     expect(limitLabel(2, 4)).toBe('2/4');
     expect(limitLabel(3, 0)).toBe('');
-    expect(limitSegments(0, 2)).toEqual(['00', '02']);
-    expect(limitSegments(12, 25)).toEqual(['12', '25']);
-    expect(limitSegments(3, 0)).toBeNull();
   });
 });
 

@@ -50,7 +50,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
-import { formatDuration, limitSegments, useNow } from './voiceFormat';
+import { formatDuration, limitLabel, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { moveMember } from '../people/actions';
@@ -651,7 +651,7 @@ function VoiceRoomRow({
             {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
             <span className={cx('flex items-center gap-1', admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
               {people.length ? <CallTimer roomId={room.id} /> : null}
-              {limit > 0 ? <LimitPill n={people.length} max={limit} /> : null}
+              {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
             </span>
             <RoomActions room={room} admin={admin} active={active} />
           </span>
@@ -677,21 +677,20 @@ function VoiceRoomRow({
 }
 
 /**
- * `00 | 02` (Discord): people in the room | the limit, two segments of one pill — the count on
- * a darker fill, the limit on a lighter one; red count when the room is full.
+ * People in a voice room: one muted pill with the people icon — «2/4» with a limit (red when
+ * full), «2» without one. The call timer stands apart from it (review: «02 | 04» read as noise).
  */
-function LimitPill({ n, max }: { n: number; max: number }): ReactNode {
-  const seg = limitSegments(n, max);
-  if (!seg) return null;
+function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
+  const full = max > 0 && n >= max;
   return (
     <span
-      className="flex overflow-hidden rounded-full text-micro font-medium tabular-nums leading-4 ring-1 ring-inset ring-[var(--color-fill-hover)]"
-      aria-label={t('shell.userLimit', { n, max })}
+      className={cx('flex items-center gap-0.5 rounded-full bg-[var(--color-fill)] py-px pl-1 pr-1.5 text-micro font-medium tabular-nums leading-4', full ? 'text-danger-text' : 'text-muted')}
+      aria-label={max > 0 ? t('shell.userLimit', { n, max }) : t('shell.peopleIn', { n })}
       role="img"
       data-testid="room-limit"
     >
-      <span className={cx('bg-[var(--color-fill)] py-px pl-1.5 pr-1', n >= max ? 'text-danger-text' : 'text-fg')}>{seg[0]}</span>
-      <span className="border-l border-[var(--color-fill-hover)] bg-[var(--color-fill-hover)] py-px pl-1 pr-1.5 text-fg">{seg[1]}</span>
+      <Users className="size-3" aria-hidden />
+      {max > 0 ? limitLabel(n, max) : n}
     </span>
   );
 }

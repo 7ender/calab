@@ -76,9 +76,11 @@ export function SelfPanel(): ReactNode {
               <span className="block truncate text-control font-semibold leading-4" title={user.displayName}>
                 {user.displayName}
               </span>
-              <span className="flex min-w-0 items-center gap-1 text-caption leading-4 text-muted" title={second}>
+              {/* Secondary line: a long status fades out at the right edge (Discord) instead of «…»
+                  in the middle of its meaning; the row is full width, so short text is untouched. */}
+              <span className="fade-end flex min-w-0 items-center gap-1 text-caption leading-4 text-muted" title={second}>
                 {voiceLine ? <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden /> : null}
-                <span className="truncate">{second}</span>
+                <span className="min-w-0 overflow-hidden whitespace-nowrap">{second}</span>
               </span>
             </span>
           </button>

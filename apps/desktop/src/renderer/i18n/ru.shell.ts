@@ -59,6 +59,7 @@ export const ruShell = {
   'shell.noRoomsMember': 'Комнат пока нет. Их создают администраторы.',
   'shell.callTime': 'Идёт {time}',
   'shell.userLimit': '{n} из {max} участников',
+  'shell.peopleIn': 'В комнате: {n}',
   'shell.roomFull': 'Комната заполнена',
   'shell.live': 'LIVE',
   'shell.moveTo': 'Переместить в…',
