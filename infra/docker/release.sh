@@ -1,30 +1,38 @@
 #!/usr/bin/env bash
 # Release runbook as one command (docs/06, "Релиз: runbook"). Builds, deploys and verifies ONE commit.
 #
-#   infra/docker/release.sh <commit>                 # all steps: preflight build web deploy verify tag
+#   infra/docker/release.sh <commit>                 # default: preflight web deploy verify desktop
 #   infra/docker/release.sh verify <commit>          # post-checks only (against what is deployed now)
 #   STEPS="deploy verify" infra/docker/release.sh <commit>   # a subset (order is always the canonical one)
 #
 # Env: VERSION (default 0.1.0) · STAND_HOST (root@141.105.69.177) · STAND_IP (141.105.69.177)
 #      APP_HOST (app.calab.ru) · ALIAS_HOST (meet.gptunnel.ru) · LANDING_HOST (calab.ru, empty = none)
-#      RTC_HOST (rtc.calab.ru) · WORK_DIR ($TMPDIR/calaba-release-$VERSION)
+#      RELEASES_HOST (releases.calab.ru) · RTC_HOST (rtc.calab.ru) · WORK_DIR ($TMPDIR/calaba-release-$VERSION)
+#      GH_TOKEN (default: GITHUB_TOKEN from the root .env; for gh only)
 # Every HTTP check and the e2e go to STAND_IP directly (curl --resolve / forced browser DNS): local VPNs and
 # not-yet-propagated names cannot fake a result.
 #
+# Desktop installers are NOT built or published from this Mac: the tag push in `desktop` triggers
+# .github/workflows/release.yml (native runners, mac signed + notarized) → GitHub Release + S3 →
+# https://$RELEASES_HOST/ (docs/06 «Релизы: GitHub Actions → S3»). The stand only redirects /download/ there.
+#
 # What it does:
-#   preflight  commit resolves, tag v$VERSION absent, lockfile frozen-installable, disk, stand reachable,
-#              baseline of the foreign GPU job, backup BEFORE
-#   build      apps/desktop/scripts/build-release.sh mac linux win (VERSION, SRC_REF=<commit>; Linux/Windows
-#              on the stand's Docker with limits) → $WORK_DIR/dist-release
-#   web        `pnpm -F @calaba/desktop build:web` inside the same clean export → $WORK_DIR/src/apps/desktop/dist-web
-#   deploy     infra/docker/sync.sh with SYNC_REF=<commit>, VERSION: whole stack (api rebuilt with the
-#              build info, unchanged services untouched), web static, releases → /download/ (no --delete)
-#   verify     /healthz + /api/version on both domains, /readyz inside, every artifact on /download/
-#              (HTTP 200 + size) and sha512 of latest*.yml recomputed ON the stand, e2e:web on .ai (via IP)
-#              and .ru with dedicated e2e accounts (their workspaces are deleted afterwards), relay-check
-#              tls/udp/any with an API join token + a publisher, api/LiveKit logs clean, foreign job intact,
-#              backup AFTER
-#   tag        git tag -a v$VERSION <commit> (local only, never pushed)
+#   preflight  commit resolves, tag v$VERSION absent (local + origin), release.yml in the commit, gh auth,
+#              lockfile frozen-installable, disk, stand reachable, baseline of the foreign GPU job, backup BEFORE
+#   build      (optional, not in the default) local desktop build for checks: build-release.sh mac linux win
+#              (SIGN=1 NOTARIZE=1, Linux/Windows on the stand's Docker) → $WORK_DIR/dist-release; never published
+#   web        clean export of <commit> (git archive + frozen install) → `pnpm -F @calaba/desktop build:web`
+#              → dist-web, and (LANDING_HOST set) `pnpm -F @calaba/landing build` → apps/landing/out
+#   deploy     infra/docker/sync.sh with SYNC_REF=<commit>, VERSION: whole stack (api rebuilt with the build
+#              info, unchanged services untouched), web static, landing (from the same export); SKIP_RELEASES
+#   verify     /healthz + /api/version on both app hosts, landing, /download/ → 302 to RELEASES_HOST, /readyz
+#              inside, e2e:web on both hosts (via IP) with dedicated e2e accounts (their workspaces are deleted
+#              afterwards), relay-check tls/udp/any with an API join token + a publisher, api/LiveKit logs
+#              clean, foreign job intact, backup AFTER
+#   desktop    only when nothing failed: git tag -a v$VERSION <commit>, push the tag to origin, wait for the
+#              release.yml run of that tag (all jobs green), then the feed: latest*.yml on RELEASES_HOST,
+#              every file in them 200 with the size from the yml, sha512 recomputed ON the stand, the GitHub
+#              Release published (not a draft)
 #
 # Nothing here prints secrets: credentials are read over ssh into variables and used directly.
 set -euo pipefail
@@ -34,13 +42,18 @@ cd "$ROOT"
 if [[ "${1:-}" == verify ]]; then STEPS="verify"; shift; fi
 COMMIT_REF="${1:?usage: release.sh [verify] <commit>}"
 VERSION="${VERSION:-0.1.0}"
-STEPS="${STEPS:-preflight build web deploy verify tag}"
+STEPS="${STEPS:-preflight web deploy verify desktop}"
 HOST="${STAND_HOST:-root@141.105.69.177}"
 IP="${STAND_IP:-141.105.69.177}"
 D1="${APP_HOST:-app.calab.ru}"          # the app
 D2="${ALIAS_HOST:-meet.gptunnel.ru}"  # an alias of the app (must behave the same)
 LAND="${LANDING_HOST-calab.ru}"
 RTC="${RTC_HOST:-rtc.calab.ru}"
+REL="${RELEASES_HOST:-releases.calab.ru}"
+REPO="${RELEASE_REPO:-itrcz/calab}"
+if [[ -z "${GH_TOKEN:-}" && -f .env ]]; then   # gh only; never printed
+  GH_TOKEN="$(sed -nE 's/^GITHUB_TOKEN=["'"'"']?([^"'"'"']*)["'"'"']?$/\1/p' .env | tail -1)"; export GH_TOKEN
+fi
 rcurl() { # curl pinned to the stand IP for the host of the first https:// argument
   local a h=""; for a in "$@"; do [[ "$a" == https://* ]] && { h="${a#https://}"; h="${h%%/*}"; break; }; done
   curl -sS --max-time 30 ${h:+--resolve "$h:443:$IP"} "$@"
@@ -69,7 +82,12 @@ log "release v$VERSION from $COMMIT ($(git log -1 --format=%s "$COMMIT" | cut -c
 if step preflight; then
   log preflight
   if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then bad "tag v$VERSION already exists"; exit 1; fi
-  ok "tag v$VERSION is free"
+  if git ls-remote -q --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then bad "tag v$VERSION already exists on origin"; exit 1; fi
+  ok "tag v$VERSION is free (local + origin)"
+  git cat-file -e "$COMMIT:.github/workflows/release.yml" 2>/dev/null && ok "release.yml present in $COMMIT" || { bad "no .github/workflows/release.yml in $COMMIT"; exit 1; }
+  if step desktop; then
+    gh api "repos/$REPO" --jq .full_name >/dev/null 2>&1 && ok "gh: access to $REPO" || { bad "gh: no access to $REPO (GH_TOKEN)"; exit 1; }
+  fi
   tmp="$(mktemp -d)"; git archive "$COMMIT" package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc patches apps/*/package.json packages/*/package.json | tar -x -C "$tmp"
   if (cd "$tmp" && pnpm install --frozen-lockfile --lockfile-only --ignore-scripts >/dev/null 2>&1); then ok "lockfile in sync (frozen install)"; else rm -rf "$tmp"; bad "pnpm-lock.yaml out of sync with package.json in $COMMIT"; exit 1; fi
   rm -rf "$tmp"
@@ -85,23 +103,37 @@ fi
 if step build; then
   log "build desktop $VERSION ($COMMIT)"
   rm -rf "$OUT"
-  VERSION="$VERSION" SRC_REF="$COMMIT" WORK_DIR="$WORK" OUT_DIR="$OUT" BUILD_DOCKER_HOST="ssh://$HOST" \
-    apps/desktop/scripts/build-release.sh mac linux win
+  SIGN="${SIGN-1}" NOTARIZE="${NOTARIZE-1}" VERSION="$VERSION" SRC_REF="$COMMIT" WORK_DIR="$WORK" OUT_DIR="$OUT" \
+    BUILD_DOCKER_HOST="ssh://$HOST" apps/desktop/scripts/build-release.sh mac linux win
+  ok "local desktop build in $OUT (checks only — the published installers come from release.yml)"
 fi
 
-# --- web (same clean export; node_modules from the macOS build) -----------------------------------
+# --- web + landing (clean export of the commit; reused from the build step when present) -----------
 if step web; then
   log "build web client ($COMMIT)"
-  [[ -d "$WORK/src/node_modules" ]] || { bad "no build export in $WORK/src (run the build step first)"; exit 1; }
+  if [[ ! -d "$WORK/src/node_modules" || "$(cat "$WORK/src/.release-commit" 2>/dev/null)" != "$COMMIT" ]]; then
+    rm -rf "$WORK/src"; mkdir -p "$WORK/src"
+    git archive "$COMMIT" | tar -x -C "$WORK/src"
+    (cd "$WORK/src" && pnpm install --frozen-lockfile)
+    echo "$COMMIT" > "$WORK/src/.release-commit"
+  fi
   (cd "$WORK/src" && pnpm -F @calaba/desktop build:web)
   [[ -f "$WORK/src/apps/desktop/dist-web/index.html" ]] && ok "dist-web built" || { bad "dist-web missing"; exit 1; }
+  if [[ -n "$LAND" ]]; then
+    log "build landing ($COMMIT)"
+    (cd "$WORK/src" && pnpm -F @calaba/landing build)
+    [[ -f "$WORK/src/apps/landing/out/index.html" ]] && ok "landing built (static export)" || { bad "landing out/ missing"; exit 1; }
+  fi
 fi
 
 # --- deploy ----------------------------------------------------------------------------------------
 if step deploy; then
   log "deploy $COMMIT to $HOST"
-  [[ -f "$OUT/latest.yml" && -f "$OUT/latest-mac.yml" && -f "$OUT/latest-linux.yml" ]] || { bad "incomplete $OUT"; exit 1; }
-  SYNC_REF="$COMMIT" VERSION="$VERSION" WEB_DIST="$WORK/src/apps/desktop/dist-web" RELEASE_DIST="$OUT" \
+  [[ -f "$WORK/src/apps/desktop/dist-web/index.html" ]] || { bad "no web build in $WORK/src (run the web step first)"; exit 1; }
+  # landing only from this commit's export: never a stale local apps/landing/out
+  landing_env=(SKIP_LANDING=1)
+  [[ -n "$LAND" ]] && { [[ -f "$WORK/src/apps/landing/out/index.html" ]] || { bad "no landing build in $WORK/src (run the web step first)"; exit 1; }; landing_env=(LANDING_DIST="$WORK/src/apps/landing/out"); }
+  env SYNC_REF="$COMMIT" VERSION="$VERSION" WEB_DIST="$WORK/src/apps/desktop/dist-web" SKIP_RELEASES=1 "${landing_env[@]}" \
     infra/docker/sync.sh
 fi
 
@@ -118,34 +150,16 @@ if step verify; then
   done
   if [[ -n "$LAND" ]]; then
     code=$(rcurl -o /dev/null -w '%{http_code}' "https://$LAND/"); [[ "$code" == 200 ]] && ok "landing https://$LAND/ 200" || bad "landing $LAND → $code"
-    code=$(rcurl -o /dev/null -w '%{http_code}' "https://$LAND/download/"); [[ "$code" == 200 ]] && ok "landing /download/ 200" || bad "landing /download/ → $code"
   fi
   code=$(rcurl -o /dev/null -w '%{http_code}' "https://$RTC/"); [[ "$code" == 200 ]] && ok "$RTC/ 200 (LiveKit)" || bad "$RTC/ → $code"
   r=$(on_stand 'curl -s 127.0.0.1:3000/readyz'); [[ "$r" == *'"postgres":"ok"'*'"redis":"ok"'* ]] && ok "readyz (inside): $r" || bad "readyz: $r"
 
-  # 2. /download/: every built file served (200 + exact size), sha512 in latest*.yml recomputed on the stand
-  if [[ -d "$OUT" ]]; then
-    n_inst=0
-    for f in "$OUT"/*; do
-      b=$(basename "$f"); size=$(stat -f %z "$f" 2>/dev/null || stat -c %s "$f")
-      got=$(rcurl -I "https://$D1/download/$b" | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2} /^HTTP/{c=$2} END{print c}' | tr '\n' ' ')
-      [[ "$got" == "$size 200 " ]] && ok "/download/$b (200, $size B)" || bad "/download/$b → '$got' (want $size 200)"
-      [[ "$b" =~ \.(dmg|zip|AppImage|deb|exe)$ ]] && n_inst=$((n_inst + 1))
-    done
-    ok "installers built: $n_inst (mac arm64+x64 dmg/zip, AppImage, deb, exe), feeds: $(ls "$OUT"/latest*.yml | wc -l | tr -d ' ')"
-  fi
-  sha=$(on_stand 'cd /opt/calaba/releases && python3 - <<PY
-import base64, hashlib, re, sys
-bad = 0; n = 0
-for yml in ("latest-mac.yml", "latest-linux.yml", "latest.yml"):
-    text = open(yml).read()
-    for url, digest in re.findall(r"- url: (\S+)\n\s+sha512: (\S+)", text):
-        n += 1
-        h = base64.b64encode(hashlib.sha512(open(url, "rb").read()).digest()).decode()
-        if h != digest: bad += 1; print("MISMATCH", url)
-print(f"{n} files checked, {bad} mismatches")
-sys.exit(1 if bad or n == 0 else 0)
-PY') && ok "sha512 in latest*.yml match the files on the stand ($sha)" || bad "sha512 check: $sha"
+  # 2. /download/ on the app and the landing: 302 to the release host, same path (electron-updater of
+  #    older builds follows it); the feed itself is checked in the desktop step
+  for d in "$D1" ${LAND:+"$LAND"}; do
+    r=$(rcurl -o /dev/null -w '%{http_code} %{redirect_url}' "https://$d/download/latest.yml" || echo 000)
+    [[ "$r" == "302 https://$REL/latest.yml" ]] && ok "$d/download/ → https://$REL/" || bad "$d/download/latest.yml → '$r' (want 302 https://$REL/latest.yml)"
+  done
 
   # credentials for the checks (over ssh, never printed)
   acc="$(on_stand 'cat /opt/calaba/infra/docker/.env.accounts')"
@@ -217,12 +231,58 @@ PY') && ok "sha512 in latest*.yml match the files on the stand ($sha)" || bad "s
   on_stand 'docker stats --no-stream --format "{{.Name}} {{.CPUPerc}} {{.MemUsage}}" | grep calaba' | sed 's/^/        /'
 fi
 
-# --- tag -------------------------------------------------------------------------------------------
-if step tag; then
+# --- desktop: tag → release.yml (GitHub Actions) → S3 → RELEASES_HOST -------------------------------
+if step desktop; then
+  log "desktop v$VERSION via GitHub Actions ($REPO)"
   if (( FAILS )); then
     log "NOT tagging: $FAILS check(s) failed"
   else
-    git tag -a "v$VERSION" "$COMMIT" -m "Calaba $VERSION" && log "tagged v$VERSION → $COMMIT (local only — push is a separate decision)"
+    git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null || git tag -a "v$VERSION" "$COMMIT" -m "Calab $VERSION"
+    [[ "$(git rev-parse --short "v$VERSION^{commit}")" == "$COMMIT" ]] || { bad "local tag v$VERSION does not point at $COMMIT"; exit 1; }
+    git push origin "refs/tags/v$VERSION" && ok "pushed tag v$VERSION → $COMMIT"
+    run=""
+    for _ in $(seq 1 30); do   # the tag-push run shows up within seconds; give it 5 min
+      run=$(gh run list --repo "$REPO" --workflow release.yml --event push --branch "v$VERSION" --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)
+      [[ -n "$run" ]] && break; sleep 10
+    done
+    if [[ -z "$run" ]]; then
+      bad "no release.yml run for tag v$VERSION"
+    elif gh run watch "$run" --repo "$REPO" --exit-status --interval 60 >"$WORK.actions.log" 2>&1; then
+      ok "release.yml run $run: all jobs green"
+    else
+      bad "release.yml run $run failed: $(gh run view "$run" --repo "$REPO" --json jobs --jq '[.jobs[]|select(.conclusion!="success" and .conclusion!="skipped")|.name]|join(", ")' 2>/dev/null)"
+    fi
+    # the feed on the release host (through the stand IP: Caddy → S3)
+    files=""
+    for y in latest-mac.yml latest-linux.yml latest.yml; do
+      if body=$(rcurl -f "https://$REL/$y"); then
+        grep -q "^version: $VERSION$" <<<"$body" && ok "$REL/$y: version $VERSION" || bad "$REL/$y: not version $VERSION"
+        files+=$(awk '/^ *- url: /{u=$3} /^ *size: /{if(u!=""){print u" "$2; u=""}}' <<<"$body")$'\n'
+      else bad "$REL/$y missing"; fi
+    done
+    n=0
+    while read -r u size; do
+      [[ -n "$u" ]] || continue; n=$((n + 1))
+      got=$(rcurl -I "https://$REL/$u" | tr -d '\r' | awk 'tolower($1)=="content-length:"{l=$2} /^HTTP/{c=$2} END{print c" "l}')
+      [[ "$got" == "200 $size" ]] && ok "$REL/$u (200, $size B)" || bad "$REL/$u → '$got' (want 200 $size)"
+    done <<<"$files"
+    (( n >= 5 )) && ok "feeds list $n files (mac arm64+x64 zip/dmg, AppImage, deb, exe)" || bad "feeds list only $n files"
+    sha=$(on_stand "python3 - https://$REL" <<'PY'
+import base64, hashlib, re, sys, urllib.request
+base = sys.argv[1]; bad = n = 0
+for yml in ("latest-mac.yml", "latest-linux.yml", "latest.yml"):
+    text = urllib.request.urlopen(f"{base}/{yml}", timeout=60).read().decode()
+    for url, digest in re.findall(r"- url: (\S+)\n\s+sha512: (\S+)", text):
+        n += 1; h = hashlib.sha512()
+        with urllib.request.urlopen(f"{base}/{url}", timeout=600) as r:
+            for chunk in iter(lambda: r.read(1 << 20), b""): h.update(chunk)
+        if base64.b64encode(h.digest()).decode() != digest: bad += 1; print("MISMATCH", url)
+print(f"{n} files checked, {bad} mismatches")
+sys.exit(1 if bad or n == 0 else 0)
+PY
+) && ok "sha512 in latest*.yml match the files served by $REL ($sha)" || bad "sha512 check: $sha"
+    rel=$(gh release view "v$VERSION" --repo "$REPO" --json isDraft,isPrerelease,assets --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease) assets=\(.assets|length)"' 2>/dev/null || echo "absent")
+    [[ "$rel" == draft=false* ]] && ok "GitHub Release v$VERSION: $rel" || bad "GitHub Release v$VERSION: $rel"
   fi
 fi
 

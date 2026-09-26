@@ -143,28 +143,29 @@ mkdir -p /opt/calaba
 | `STAND_SSH_KEY`, `STAND_HOST`, `STAND_KNOWN_HOSTS` | (необязательно) запасная публикация на стенд — отдельный deploy-пользователь |
 На стенд (`infra/docker/.env`): `RELEASES_HOST=releases.calab.ru`, `S3_PUBLIC_URL=…` → `sync.sh caddy`.
 
-**Секреты в GitHub:** `infra/ci/set-secrets.sh [--dry-run] [.env]` — читает `.env` без `source` (никакого выполнения), берёт только ключи из таблицы (прочее, напр. `CFTOKEN`, игнорирует), ставит через `gh secret set --repo itrcz/calab`; авторизация — `GITHUB_TOKEN` из `.env`/окружения (как `GH_TOKEN`) или `gh auth login`. Для base64-сертификатов сообщает `valid`/`INVALID (…)` (та же проверка, что в workflow), значения не печатает; `--dry-run` — только имена, длины и валидность. На 2026-09-26: S3-секреты (5) лид уже поставил; Apple/Win в `.env` — заглушки (`INVALID (not base64)`) → workflow соберёт без подписи.
+**Секреты в GitHub:** `infra/ci/set-secrets.sh [--dry-run] [.env]` — читает `.env` без `source` (никакого выполнения), берёт только ключи из таблицы (прочее, напр. `CFTOKEN`, игнорирует), ставит через `gh secret set --repo itrcz/calab`; авторизация — `GITHUB_TOKEN` из `.env`/окружения (как `GH_TOKEN`) или `gh auth login`. Для base64-сертификатов сообщает `valid`/`INVALID (…)` (та же проверка, что в workflow), значения не печатает; `--dry-run` — только имена, длины и валидность. Секреты передаются в `gh secret set` через stdin (флаг `--body -` сохранил бы буквальный «-» — так было до исправления, из-за чего rc.4/rc.5 собрались без подписи). На 2026-09-26 поставлены S3 (5) и Apple (6, включая `APPLE_TEAM_ID`); Windows — без сертификата, собирается неподписанным.
 
 ### Релиз: runbook (v0.1.0)
 
-Одна команда на один коммит (`infra/docker/release.sh`); запуск — по решению лида, с указанием коммита:
+Одна команда на один коммит (`infra/docker/release.sh`); запуск — по решению лида, с указанием коммита. Серверная часть (API, веб, лендинг) выкатывается с Mac на стенд; установщики десктопа собирает и публикует **только** GitHub Actions (`release.yml`, запускается push-ем тега) → S3 → `https://releases.calab.ru/`. С Mac ничего десктопного не публикуется.
 
 ```sh
-VERSION=0.1.0 infra/docker/release.sh <commit>          # всё: preflight → build → web → deploy → verify → tag
+VERSION=0.1.0 infra/docker/release.sh <commit>          # preflight → web → deploy → verify → desktop
 infra/docker/release.sh verify <commit>                  # только пост-проверки того, что задеплоено
 STEPS="deploy verify" VERSION=0.1.0 infra/docker/release.sh <commit>   # часть шагов
+STEPS="preflight build" VERSION=0.1.0 infra/docker/release.sh <commit> # локальная сборка всех ОС для проверки (не публикуется)
 ```
 
 | Шаг | Что делает | Стоп-условие |
 |---|---|---|
-| preflight | тег `v$VERSION` свободен; `pnpm install --frozen-lockfile --lockfile-only` на экспорте коммита; ≥ 15 GB свободно локально; стенд доступен; снимок чужой GPU-задачи (pid ComfyUI + чужие контейнеры); **бэкап до** | любое — выход |
-| build | `build-release.sh mac linux win` с `VERSION`, `SRC_REF=<commit>`, Linux/Windows на стенде (`BUILD_DOCKER_HOST`, лимиты) → `$WORK_DIR/dist-release` (7 установщиков: mac arm64/x64 dmg+zip, AppImage, deb, exe; `*.blockmap`; `latest-mac/linux.yml`, `latest.yml`) | ошибка сборки / нет `.node` в пакете |
-| web | `pnpm -F @calaba/desktop build:web` в том же чистом экспорте | нет `dist-web/index.html` |
-| deploy | `sync.sh` с `SYNC_REF=<commit>`, `VERSION`, `WEB_DIST`/`RELEASE_DIST` из этого релиза: весь стек (api пересобирается с build info; неизменённые сервисы не трогаются), веб-статика, релизы на `/download/` (без `--delete`) | ошибка деплоя |
-| verify | все HTTP-проверки и e2e — напрямую на IP стенда (`curl --resolve`, принудительный DNS в браузерах; локальный VPN/несвежий DNS не влияют); `/healthz` и `/api/version` = `$VERSION/<commit>` на `APP_HOST` (`app.calab.ru`) и алиасе (`app.calab.ru`); лендинг `LANDING_HOST` и его `/download/` — 200; `rtc.` — 200, `/readyz` изнутри; каждый файл релиза на `/download/` — 200 и точный размер; `sha512` из `latest*.yml` пересчитан **на стенде**; `e2e:web` на приложении и алиасе (конфиг `infra/docker/tools/playwright.stand.config.ts`, `CALABA_FORCE_IP`) — Chromium + Firefox с голосом, выделенные аккаунты `e2e-app@`/`e2e-alias@calaba.test` (создаются один раз по инвайту владельца, пароли — в `.env.accounts`; созданные спекой пространства удаляются — лимит 5 пространств и 3 создания в час на пользователя); relay-check tls/udp/any (`infra/docker/tools/relay-check.mjs`) с токеном join из API + публикатор `lk load-test` в той же комнате; нет ERROR в api и «failed to send webhook» в LiveKit; чужая GPU-задача та же, что до; **бэкап после** | считаются провалы |
-| tag | `git tag -a v$VERSION <commit>` — только если все проверки прошли; **только локально**, push — отдельное решение | — |
+| preflight | тег `v$VERSION` свободен локально и в `origin`; в коммите есть `release.yml`; `gh` видит `itrcz/calab` (`GITHUB_TOKEN` из `.env` как `GH_TOKEN`); `pnpm install --frozen-lockfile --lockfile-only` на экспорте коммита; ≥ 15 GB свободно локально; стенд доступен; снимок чужой GPU-задачи; **бэкап до** | любое — выход |
+| build | *(не по умолчанию)* `build-release.sh mac linux win` с `SIGN=1 NOTARIZE=1`, `SRC_REF=<commit>`, Linux/Windows на стенде → `$WORK_DIR/dist-release`; только для проверки, не публикуется | ошибка сборки |
+| web | чистый экспорт коммита (`git archive` + `pnpm install --frozen-lockfile`, переиспользуется от `build`) → `build:web` → `dist-web`; при `LANDING_HOST` — `pnpm -F @calaba/landing build` → `apps/landing/out` | нет `index.html` |
+| deploy | `sync.sh` с `SYNC_REF=<commit>`, `VERSION`, `WEB_DIST` и `LANDING_DIST` из этого экспорта (лендинг — всегда из релизного коммита, не из рабочей копии), `SKIP_RELEASES=1`: весь стек (api с build info; неизменённые сервисы не трогаются), веб, лендинг | ошибка деплоя |
+| verify | все HTTP-проверки и e2e — напрямую на IP стенда (`curl --resolve`, принудительный DNS в браузерах); `/healthz` и `/api/version` = `$VERSION/<commit>` на `app.calab.ru` и `meet.gptunnel.ru`; лендинг — 200; `/download/latest.yml` на приложении и лендинге — 302 на `https://releases.calab.ru/latest.yml`; `rtc.` — 200, `/readyz` изнутри; `e2e:web` на приложении и алиасе (Chromium + Firefox с голосом, аккаунты `e2e-app@`/`e2e-alias@calaba.test`, пространства спеки удаляются); relay-check tls/udp/any с токеном join из API + публикатор `lk load-test`; нет ERROR в api и «failed to send webhook» в LiveKit; чужая GPU-задача та же; **бэкап после** | считаются провалы |
+| desktop | только если провалов нет: `git tag -a v$VERSION <commit>` и `git push origin v$VERSION` → ждёт прогон `release.yml` этого тега (`gh run watch`, ~40–60 мин: нотаризация mac); затем фид на `releases.calab.ru` (через IP стенда): `latest-mac/linux.yml`, `latest.yml` с `version: $VERSION`, каждый файл из них — 200 и размер из yml (≥ 5 файлов), `sha512` пересчитан **на стенде** (скачивает с `releases.calab.ru`), GitHub Release опубликован (не draft) | считаются провалы |
 
-Логи e2e/relay/публикатора — рядом с `WORK_DIR` (`$TMPDIR/calaba-release-<ver>.*`). Секреты читаются по ssh в переменные и не печатаются. Нужны локально: Docker не обязателен (Linux/Windows — на стенде), `pnpm`, `lk` (livekit-cli), Playwright-браузеры (`pnpm -F @calaba/desktop exec playwright install chromium firefox`), Xcode CLT.
+Логи e2e/relay/публикатора/Actions — рядом с `WORK_DIR` (`$TMPDIR/calaba-release-<ver>.*`). Секреты читаются по ssh в переменные и не печатаются. Нужны локально: `pnpm`, `gh`, `lk` (livekit-cli), Playwright-браузеры (`pnpm -F @calaba/desktop exec playwright install chromium firefox`); для `build` — Xcode CLT и сертификаты из `cert/`.
 
 ### Смена / добавление домена
 
