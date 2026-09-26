@@ -23,6 +23,8 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 
 ### Parallel visual runs (git worktrees)
 
+On the owner's machine it is always 1 worker; never run two Electron instances at once (`CALABA_VISUAL_WORKERS` defaults to 1, see `playwright.visual.config.ts`).
+
 Every checkout on this machine shares one dev LiveKit. Two visual runs must not share the mock's port or its LiveKit room names, or their participants meet in one room. The main tree keeps the defaults: port 39170 and prefix `mock_`. The baseline for the auth shots is taken there, because the login screen prints the port. A **worktree** always runs with its own port and prefix:
 
 ```bash
@@ -41,7 +43,7 @@ npx playwright test --config playwright.visual.config.ts --list              # a
 
 Every test starts from a clean seeded state (`e2e-visual/app.ts`: mock reset, storage wiped, reload, sign-in), so any screen runs alone.
 
-**Why the baselines changed with the split.** In the old single sequential test, axe runs on earlier screens (`checkpoint` → `expectAccessible`) changed how Chromium lays out later text: 15 px system text came out ~10 % narrower, with identical computed styles and fonts. A fresh page — what users see — renders it wider. The per-screen tests reload before every screen and match the real rendering. Don't reintroduce shared state between screens. Workers run in parallel (`CALABA_VISUAL_WORKERS`, default 3), each with its own Electron app, mock port (base + 1 + worker) and LiveKit room prefix.
+**Why the baselines changed with the split.** In the old single sequential test, axe runs on earlier screens (`checkpoint` → `expectAccessible`) changed how Chromium lays out later text: 15 px system text came out ~10 % narrower, with identical computed styles and fonts. A fresh page — what users see — renders it wider. The per-screen tests reload before every screen and match the real rendering. Don't reintroduce shared state between screens. When `CALABA_VISUAL_WORKERS` is raised above the default (1), workers run in parallel, each with its own Electron app, mock port (base + 1 + worker) and LiveKit room prefix — but not on the owner's machine, where it stays at 1 (never two Electron instances at once).
 
 `auth-*` snapshots from a worktree show 39270; do not commit them (`git checkout -- 'e2e-visual/__screenshots__/darwin/auth-*'`).
 

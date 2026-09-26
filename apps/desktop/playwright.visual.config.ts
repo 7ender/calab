@@ -15,7 +15,8 @@ const OUT = process.env['CALABA_VISUAL_OUT'] ?? 'test-results/visual';
  *   -g "voice-camera-grid"                  every configuration
  *   -g "voice-camera-grid" --project dark-1440
  * Workers run screens in parallel, each with its own Electron app, mock port and LiveKit room
- * prefix (e2e-visual/app.ts). CALABA_VISUAL_WORKERS overrides the count (default 3).
+ * prefix (e2e-visual/app.ts). Default is 1 (never two Electron instances on the owner's machine);
+ * CALABA_VISUAL_WORKERS can only raise it explicitly.
  */
 const CONFIGS = [
   { name: 'dark-960', theme: 'dark', viewport: { width: 960, height: 600 } },
@@ -33,7 +34,9 @@ interface VisualOptions {
 export default defineConfig<VisualOptions>({
   testDir: './e2e-visual',
   timeout: 120_000,
-  workers: Number(process.env['CALABA_VISUAL_WORKERS'] ?? 3),
+  // Default 1 (owner's machine: never two Electron instances at once); CALABA_VISUAL_WORKERS
+  // can only raise it explicitly (a worktree run with its own port/prefix, see README).
+  workers: Number(process.env['CALABA_VISUAL_WORKERS'] ?? 1),
   projects: [
     ...CONFIGS.map((c) => ({ name: c.name, testMatch: /screens\.spec\.ts/, use: { theme: c.theme, size: c.viewport } })),
     // Focus walk and the web client's own screens (they start their own mock / app).
