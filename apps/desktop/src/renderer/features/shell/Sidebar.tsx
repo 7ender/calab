@@ -1,5 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Popover from '@radix-ui/react-popover';
 import {
   DndContext,
   DragOverlay,
@@ -54,6 +55,8 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { formatDuration, limitLabel, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
+import { NicknameDialog } from '../people/NicknameDialog';
+import { ProfileCard } from '../people/ProfileCard';
 import { moveMember } from '../people/actions';
 import { errorText } from '../../lib/api/errors';
 import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
@@ -775,6 +778,8 @@ function VoiceMember({
   const name = useWorkspaces(() => memberName(workspaceId, state.userId));
   // «(+5 UTC)» when their time zone differs from mine (User.timezone).
   const tz = useTimeZoneLabel(state.userId);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const talking = speaking && !state.muted;
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `member:${room.id}:${state.userId}`,
@@ -818,11 +823,34 @@ function VoiceMember({
       <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || (isMe && serverMuted)} />
     </li>
   );
-  // Shared member menu (PEOPLE): volume, server mute, «Переместить в…», rename, kick…
+  // Shared member menu (PEOPLE): profile, mention, volume, moderation, «Переместить в ›»… The
+  // «Профиль» item opens the same profile card as the members column, next to the row.
   return (
-    <MemberContextMenu workspaceId={workspaceId} userId={state.userId}>
-      {row}
-    </MemberContextMenu>
+    <Popover.Root open={profileOpen} onOpenChange={setProfileOpen}>
+      <MemberContextMenu workspaceId={workspaceId} userId={state.userId} onOpenProfile={() => setProfileOpen(true)}>
+        <Popover.Anchor asChild>{row}</Popover.Anchor>
+      </MemberContextMenu>
+      <Popover.Portal>
+        <Popover.Content
+          side="right"
+          align="start"
+          sideOffset={8}
+          collisionPadding={16}
+          className="mat-popover dense anim-in z-[var(--z-popover)] rounded-[var(--radius-panel)] text-fg focus:outline-none"
+          aria-label={name}
+        >
+          <ProfileCard
+            workspaceId={workspaceId}
+            userId={state.userId}
+            onRename={() => {
+              setProfileOpen(false);
+              setRenaming(true);
+            }}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+      {renaming ? <NicknameDialog workspaceId={workspaceId} userId={state.userId} onClose={() => setRenaming(false)} /> : null}
+    </Popover.Root>
   );
 }
 
