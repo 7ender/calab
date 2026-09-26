@@ -1,10 +1,393 @@
-# TESTING — инструкции для агента-тестировщика
+# TESTING — инструкции для тестировщика
 
-Каждый раздел самодостаточен. Выполняй команды по порядку из корня репозитория (`/Users/macbook/Documents/Projects/Calaba`, если не сказано иное). На каждом шаге сравнивай фактический результат с «Ожидается». Любое расхождение — в отчёт: команда, фактический вывод, ожидание. Код не исправляй.
+## Как пользоваться этим файлом
 
-## Server core (stage 2: proto-контракт + Go API)
+- Каждый раздел самодостаточен: предусловия указаны в нём или ссылкой на раздел выше. Команды — из корня репозитория (`/Users/macbook/Documents/Projects/Calaba`), если не сказано иное.
+- На каждом шаге сравнивай фактический результат с «Ожидается». Любое расхождение — в отчёт: раздел и шаг, команда или действие, фактический результат, ожидание. Код не исправляй, на стенде ничего не меняй (раздел 0.3).
+- Пароли, инвайты и ключи не копируй в отчёты: только «взял из `.env.accounts`».
+- Строки «Факт <дата>» — результат прошлого прогона для сравнения, не шаг. Раздел «История» в конце — устаревшее, не выполнять.
+- Порядок: сначала 0 (адреса и аккаунты), затем нужный раздел по оглавлению. Время — ориентировочное, без установки инструментов.
 
-### 0. Предусловия
+## Оглавление
+
+| Раздел | Что проверяет | Что нужно | ~Время |
+|---|---|---|---|
+| [0. Стенд, адреса, аккаунты](#0-стенд-адреса-аккаунты) | адреса стенда, где взять пароль и инвайт, правила | ssh-доступ к стенду (для пароля) | 5 мин |
+| [1.1–1.2 Веб: сборка и локально](#11-сборка-и-проверка-бандла) | бандл без Electron-кода, e2e:web локально | Mac/Linux, pnpm, Docker (dev API + LiveKit) | 15 мин |
+| [1.3 Веб: ручной сценарий W1–W12](#13-ручной-сценарий-w1w12-chrome-плюс-firefox-по-возможности) | вход, cookie, чат, голос, стрим, приглашения в браузере | Chrome + Firefox, микрофон, 2 аккаунта | 30 мин |
+| [1.4 Веб на стенде](#14-стенд-httpsappcalabru-и-httpsmeetgptunnelru) | статика, заголовки, CSP, e2e на app и meet | pnpm, Playwright; аккаунт из 0.2 | 20 мин |
+| [2.1 Десктоп: установка](#21-установка-с-releasescalabru) | установщики с releases, подпись macOS, первый запуск | macOS / Windows / Linux | 10 мин на ОС |
+| [2.2–2.5 Десктоп: автотесты](#22-предусловия-локальный-api) | e2e Electron, визуальная регрессия, a11y | Mac, pnpm, Docker (LiveKit dev) | 20 мин |
+| [2.6 Десктоп: два клиента (2.1–2.34)](#26-два-клиента-на-одной-машине-онбординг-чат-голос-стрим-21234) | онбординг, чат, файлы, голос, модерация, стрим, сессии, переподключение | Mac, локальный API или стенд | 60 мин |
+| [2.7–2.9 Сборка, безопасность, лицензии, клавиши](#27-сборка-из-исходников) | S.1–S.4, L.1–L.4, K.1–K.3 | Mac, pnpm | 20 мин |
+| [2.10 Автообновление U.1–U.6](#210-автообновление-u1u6) | фид, автоустановка, уведомления, сон/сеть | 2 версии в фиде (делает infra), Windows/Linux/macOS | 45 мин |
+| [2.11 Только люди: эхо, PTT, Caps Lock P.1–P.9](#211-только-люди-эхо-ptt-и-caps-lock-p1p9-системный-звук-трей) | эхо на колонках, Caps Lock как PTT, звук стрима, трей | живые люди, 2–3 машины, колонки; macOS для P.1–P.8 | 40 мин |
+| [3.1 Сервер: базовый прогон](#31-базовый-прогон-контракт-go-интеграционные-тесты-curl-образ) | proto, линт, unit/integration, curl: регистрация, права, refresh, rate limit | Docker, Go, buf, sqlc, jq | 20 мин |
+| [3.2 Сервер: gateway, сообщения, файлы, rtc](#32-gateway-сообщения-файлы-rtc) | READY/RESUME, история, файлы, join/webhook, cookie/CSRF | как 3.1 + Node ≥ 22, LiveKit dev | 20 мин |
+| [3.3 Сервер: сценарии против стенда](#33-сценарии-api-против-стенда-https) | 3.1 шаг 4 и 3.2 шаг 2 по HTTPS | jq, Node; инвайт из 0.2 | 20 мин |
+| [3.4 UI-бэклог (категории, поиск, unfurl, реакции, статус, закрепы, время звонка)](#34-ui-бэклог-категории-поиск-unfurl-реакции-статус-закрепы-время-звонка) | UI-бэклог (категории, поиск, unfurl, реакции, статус, закрепы, время звонка) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.5 P0.5 (лимит комнаты, перемещение, ники, гости, AFK)](#35-p05-лимит-комнаты-перемещение-ники-гости-afk) | P0.5 (лимит комнаты, перемещение, ники, гости, AFK) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.6 Исправления security-ревью (лимиты, brute force, заголовки)](#36-исправления-security-ревью-лимиты-brute-force-заголовки) | Исправления security-ревью (лимиты, brute force, заголовки) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.7 Исправления код-ревью (H1–H2, M1–M13, L1–L16)](#37-исправления-код-ревью-h1h2-m1m13-l1l16) | Исправления код-ревью (H1–H2, M1–M13, L1–L16) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.8 Второй проход ревью (R1–R9)](#38-второй-проход-ревью-r1r9) | Второй проход ревью (R1–R9) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.9 Третий проход ревью (B1–B4)](#39-третий-проход-ревью-b1b4) | Третий проход ревью (B1–B4) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.10 Voice_started_at в событиях, упоминания, уведомления комнаты](#310-voice_started_at-в-событиях-упоминания-уведомления-комнаты) | Voice_started_at в событиях, упоминания, уведомления комнаты | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.11 Серверный mute (`VoiceState.server_muted`)](#311-серверный-mute-voicestateserver_muted) | Серверный mute (`VoiceState.server_muted`) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.12 Счётчики непрочитанного в READY](#312-счётчики-непрочитанного-в-ready) | Счётчики непрочитанного в READY | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.13 Смена пароля и email (`PATCH /api/me/password`, `PATCH /api/me/email`)](#313-смена-пароля-и-email-patch-apimepassword-patch-apimeemail) | Смена пароля и email (`PATCH /api/me/password`, `PATCH /api/me/email`) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.14 Версия и лицензии (`GET /api/version`, образ)](#314-версия-и-лицензии-get-apiversion-образ) | Версия и лицензии (`GET /api/version`, образ) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.15 Valkey вместо Redis (ADR-0017)](#315-valkey-вместо-redis-adr-0017) | Valkey вместо Redis (ADR-0017) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.16 Ревью 4 (M1, M2, L1–L10)](#316-ревью-4-m1-m2-l1l10) | Ревью 4 (M1, M2, L1–L10) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.17 Статус звонка и скрытые превью (P0.6)](#317-статус-звонка-и-скрытые-превью-p06) | Статус звонка и скрытые превью (P0.6) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [4. Инфра и стенд](#4-инфра-и-стенд) | контейнеры, сертификаты, `/download/`→releases, LiveKit, relay, нагрузка, защита, бэкапы | ssh к стенду (только чтение), `lk`, openssl | 45 мин |
+| [История](#история-устаревшее--не-выполнять) | устаревшее: спайк, colaba/.ai, `/download/` до S3 | — | — |
+
+---
+
+## 0. Стенд, адреса, аккаунты
+
+### 0.1 Адреса
+
+| Адрес | Что |
+|---|---|
+| `https://app.calab.ru` | приложение (веб-клиент) и API: REST `/api/*`, gateway `wss://app.calab.ru/gateway?v=1&encoding=json`, файлы, `/healthz`, `/api/version`. `/metrics` и `/readyz` снаружи — 404. `/download/*` → 302 на `releases.calab.ru` |
+| `https://meet.gptunnel.ru` | алиас приложения: всё то же, что на `app.calab.ru` (LiveKit и TURN у алиаса общие — `rtc.`/`turn.calab.ru`) |
+| `https://calab.ru` | лендинг (статический сайт); кнопка «Скачать» → `https://app.calab.ru/download/` → `https://releases.calab.ru/` |
+| `https://releases.calab.ru` | установщики и фиды автообновления (`latest*.yml`), прокси в бакет S3; `/` — страница со списком файлов (до первого релиза — 404) |
+| `wss://rtc.calab.ru` | LiveKit signal (`https://rtc.calab.ru/` → `OK`) |
+| `turn.calab.ru:443` | TURN/TLS (TCP) — его раздают клиентам; TURN/UDP — `141.105.69.177:443/udp` |
+
+Хост: `root@141.105.69.177`, код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (не печатать). Как поднят — `docs/06-deployment.md`, домены — `docs/10-branding.md`.
+
+Лендинг:
+```sh
+for p in / /nope /download/; do curl -s -o /dev/null -w "$p %{http_code}\n" https://calab.ru$p; done   # 200, 404, 302
+curl -sI https://calab.ru/ | grep -iE 'strict-transport|content-security|cache-control'                        # HSTS, CSP лендинга, no-cache
+```
+
+DNS — Cloudflare, записи DNS-only (proxied=false). Если локальный VPN с fake-IP DNS «не видит» имена (NXDOMAIN-кэш до 30 мин) — `curl --resolve <имя>:443:141.105.69.177 …` или проверять с машины без VPN.
+
+> Проверки портов (`nc -zv`) делать с машины **без** VPN/TUN-прокси: TUN-режим VPN принимает любой TCP connect сам, и `nc` «успешен» даже для закрытого порта.
+
+### 0.2 Аккаунты и инвайт
+
+`REGISTRATION_MODE=invite` (с 2026-09-26): регистрация только с кодом приглашения. Бессрочный инвайт владельца в workspace `team` (10 использований) и пароль тестовых аккаунтов — на хосте в `/opt/calaba/infra/docker/.env.accounts` (`ssh $H 'cat /opt/calaba/infra/docker/.env.accounts'`). Тестовые аккаунты: `owner@calaba.test` (владелец `team`, комнаты `general`, `secret`, `voice`) и `bob@calaba.test` (member).
+
+Свой аккаунт:
+```sh
+CODE=<invite из .env.accounts>
+curl -s -XPOST $A/api/auth/register -d "{\"email\":\"me@example.com\",\"password\":\"<≥8 символов>\",\"displayName\":\"Me\",\"inviteCode\":\"$CODE\"}" | jq '.me.email'
+# без inviteCode → ERROR_CODE_REGISTRATION_CLOSED 403
+```
+В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://app.calab.ru` (или `https://meet.gptunnel.ru`).
+
+Сбросить данные стенда (все пользователи/сообщения/файлы!) — только по согласованию: `ssh $H "$DC exec -T postgres psql -U calaba -c 'drop schema public cascade; create schema public;' && $DC exec -T valkey sh -c 'VALKEYCLI_AUTH="$REDIS_PASSWORD" valkey-cli flushall' && $DC restart api"` (+ очистить volume `calaba_files_data`).
+
+Служебные аккаунты `e2e-app@calaba.test` и `e2e-alias@calaba.test` создаёт и использует `release.sh verify` (пароли в том же `.env.accounts`) — вручную ими не пользоваться. Пароли и инвайт в отчёты не копировать.
+
+### 0.3 Правила на стенде и обозначения
+
+**Нельзя трогать чужое на хосте:** `python` (pid 3695), `ffmpeg`, `chromium`, `Xvfb`, контейнеры `gromtv-broadcast`, `dcgm-exporter`. Не делать `docker system prune`, `docker compose down` вне `/opt/calaba/infra/docker`, `iptables -F`, рестарт Docker. Наш compose-проект называется `calaba`.
+
+Обозначения в командах разделов 3–4: `D=app.calab.ru` (для алиаса — `D=meet.gptunnel.ru`), `DOM=calab.ru` (LiveKit и TURN: `rtc.$DOM`, `turn.$DOM`), `H=root@141.105.69.177`, `DC='cd /opt/calaba/infra/docker && docker compose'`, `A=https://$D`.
+
+---
+
+## 1. Веб-клиент
+
+ADR-0015: `apps/desktop`, сборка `dist-web`.
+
+Тот же renderer, что у десктопа, со слоем `platform = web`. Отличия от десктопа:
+- refresh-токен лежит в HttpOnly-cookie `calaba_refresh` (Path=/api/auth, Secure, SameSite=Strict), access-токен — только в памяти;
+- API и gateway работают на том же origin, что и страница;
+- PTT работает только при активной вкладке;
+- экран выбирается в стандартном окне браузера;
+- файлы скачиваются через `a[download]`;
+- ссылка-приглашение: `https://<домен>/join/<код>`.
+
+### 1.1 Сборка и проверка бандла
+```bash
+pnpm -F @calaba/desktop build:web      # → apps/desktop/dist-web; в конце "web bundle OK: no Electron-only code"
+```
+
+### 1.2 Локально (API + LiveKit dev)
+```bash
+# API должен знать origin веб-клиента (CSRF / cookie / gateway):
+cd apps/server && PUBLIC_APP_URL=http://localhost:4173 … go run ./cmd/server        # остальные env — как в 2.2
+CALABA_WEB_PROXY=http://127.0.0.1:3000 pnpm -F @calaba/desktop preview:web          # dist-web на :4173, /api и /gateway проксируются
+CALABA_WEB_URL=http://localhost:4173 pnpm -F @calaba/desktop e2e:web                # ожидается: 2 passed (chromium + firefox)
+```
+Для dev-режима с HMR: `pnpm -F @calaba/desktop dev:web` (порт 5174; `PUBLIC_APP_URL=http://localhost:5174`).
+
+### 1.3 Ручной сценарий W1–W12 (Chrome, плюс Firefox по возможности)
+| # | Действие | Ожидается |
+|---|---|---|
+| W1 | Открыть `http://localhost:4173` (или стенд) | экран входа **без** поля «Сервер» |
+| W2 | Войти | главное окно. DevTools → Application → Cookies: `calaba_refresh`, HttpOnly ✓, Secure ✓, SameSite Strict. `document.cookie` в консоли её не показывает |
+| W3 | Перезагрузить страницу | вход сохраняется (`POST /api/auth/refresh` → 200, новая cookie) |
+| W4 | Вторая вкладка с тем же адресом | обе вкладки работают. Одновременные refresh не выбрасывают из сессии (Web Locks сериализуют ротацию) |
+| W5 | Чат, картинка, файл, скачивание | как в 2.6, пункты 2.6–2.11. Превью картинок — `blob:` URL. «Скачать» сохраняет файл средствами браузера |
+| W6 | Голос: клик по голосовой комнате | браузер спросит микрофон, затем «Голос подключён». Звук другого участника слышен |
+| W7 | Настройки → Голос → Push-to-talk → «Назначить» → клавиша | подсказка «только когда вкладка активна». Пока вкладка в фокусе — работает. Переключились в другую вкладку — передача прекращается |
+| W8 | «Показать экран» → «Начать стрим» | открывается окно выбора браузера (экран / окно / вкладка). После выбора — «В эфире». Зритель (десктоп или веб) видит плитку в углу чата |
+| W9 | Зритель: развернуть и открыть во всплывающем окне | работает как в десктопе (popup-окно браузера) |
+| W10 | Открыть `https://<домен>/join/<код>` без входа, затем войти | после входа открывается диалог «Присоединиться к пространству» с этим кодом |
+| W11 | «Выйти» | cookie удалена, повторная загрузка страницы показывает экран входа |
+| W12 | Firefox | W1–W6 и W8 (Firefox умеет AV1; если нет — стрим уходит в VP9 или VP8) |
+
+Известно: Firefox не проходит ICE до LiveKit в Docker на `127.0.0.1` (локальный dev-стенд). На стенде с публичным IP это ограничение не действует.
+
+### 1.4 Стенд: `https://app.calab.ru` и `https://meet.gptunnel.ru`
+После публикации `dist-web` (infra, `sync.sh`): сценарий W1–W12 и e2e ниже. Стенд в режиме приглашений: e2e входит существующим аккаунтом (`CALABA_WEB_LOGIN`/`CALABA_WEB_PASSWORD`) или регистрируется по коду (`CALABA_WEB_INVITE`) — подробно ниже.
+
+#### Статика, заголовки, e2e
+
+Публикация: `pnpm -F @calaba/desktop build:web` (→ `apps/desktop/dist-web`), затем (infra) `infra/docker/sync.sh caddy` (статика уезжает в `/opt/calaba/web` без `*.map`; `caddy` в аргументах — чтобы заодно применить правки Caddyfile, для одной статики перезапуск не нужен).
+
+```sh
+for d in app.calab.ru meet.gptunnel.ru; do A=https://$d
+  for p in / /rooms/x /assets/missing.js /metrics /readyz /healthz /api/me; do echo "$d$p $(curl -s -o /dev/null -w '%{http_code}' $A$p)"; done
+  W=$(curl -s $A/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js'); echo "$W: $(curl -sI $A/$W | grep -iE 'content-type|cache-control' | tr -d '\r' | tr '\n' ' ')"
+done
+curl -sI https://$D/ | grep -iE 'content-security|permissions-policy|x-content|referrer|x-frame|cache-control'
+```
+Ожидается: `/` и `/rooms/x` → 200 (`<title>Calab`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.calab.ru https://rtc.calab.ru wss://rtc.calab.ru https://rtc.calab.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
+
+E2E против стенда. С 2026-09-26 стенд в `invite`-режиме, поэтому спека умеет два пути:
+- **вход существующим аккаунтом** (предпочтительно, не тратит использования кода): `CALABA_WEB_LOGIN` + `CALABA_WEB_PASSWORD` (например `owner@calaba.test`; пароль в `/opt/calaba/infra/docker/.env.accounts` на стенде). Каждый прогон создаёт у аккаунта новое пространство `Web <browser>-<id>`;
+- **регистрация по коду**: `CALABA_WEB_INVITE=<код>` (код пространства `team` — в том же `.env.accounts`; 10 использований, каждый прогон тратит одно на браузер). Создаёт пользователя `web-<browser>-<id>@example.com`.
+```sh
+P=$(ssh root@141.105.69.177 "awk '\$1==\"owner@calaba.test\"{print \$2}' /opt/calaba/infra/docker/.env.accounts")   # строки файла: «email пароль»
+CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web   # 2 passed
+CALABA_WEB_FF_VOICE=1 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web   # 2 passed (голос и в Firefox)
+CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://meet.gptunnel.ru pnpm -F @calaba/desktop e2e:web   # 2 passed
+```
+Electron-E2E так же: `CALABA_LOGIN` + `CALABA_PASSWORD` или `CALABA_INVITE`, плюс `CALABA_E2E_SERVER_URL`.
+Сервер ограничивает частоту создания пространств: три прогона подряд одним аккаунтом за минуту дают «too many requests» на шаге «Создать». Поэтому между прогонами делайте паузу ≥ 1 мин или используйте для `.ru` другой аккаунт (`bob@calaba.test`). После прогонов удалите тестовые пространства `Web …` (Настройки пространства → «Удаление» или `DELETE /api/workspaces/<id>`), чтобы не засорять стенд.
+Если падает на `cookie?.httpOnly` (`undefined`) — на стенде старый api без cookie-режима: `infra/docker/sync.sh api`.
+Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve app.calab.ru:443:141.105.69.177 https://app.calab.ru/healthz` даёт 200 — это локальный VPN/прокси (fake-IP DNS), а не стенд. Обход — конфиг `infra/docker/tools/playwright.stand.config.ts` (все имена резолвятся в IP стенда, прокси выключен; пример запуска — в его шапке): `cd apps/desktop && CALABA_FORCE_IP=141.105.69.177 CALABA_WEB_URL=https://app.calab.ru CALABA_WEB_LOGIN=… CALABA_WEB_PASSWORD=… pnpm exec playwright test --config ../../infra/docker/tools/playwright.stand.config.ts`.
+
+CSP/RNNoise вручную: открыть `https://app.calab.ru`, войти, зайти в голосовую комнату, DevTools → Console. Не должно быть `Refused to …`/`Content Security Policy` и `RNNoise unavailable, falling back…` (это предупреждение пишется, если worklet с WASM не стартовал за 2 с). Допустимо: `Unrecognized feature: 'speaker-selection'` (Chrome), `401` на первый `/api/auth/refresh` до входа. В «Настройки → Голос и устройства» строка «Вероятность речи (RNNoise)» показывает проценты, а не «нет — RNNoise выключен».
+
+---
+
+## 2. Десктоп
+
+Полное приложение: вход, пространства, комнаты, чат, голос, стрим, управление. Контролы описаны в `apps/desktop/README.md`. Разделы 2.2–2.10 выполнимы агентом на одном Mac, 2.11 — только для людей.
+
+### 2.1 Установка с `releases.calab.ru`
+
+Установщики публикуются на `https://releases.calab.ru/` (страница со списком; с лендинга — кнопка «Скачать»; `https://app.calab.ru/download/` ведёт туда же). Файлы лежат в `releases/<версия>/`. Какой брать:
+
+| ОС | Файл | Установка |
+|---|---|---|
+| macOS Apple Silicon (M1–M4) / Intel | `Calab-<версия>-arm64.dmg` / `Calab-<версия>-x64.dmg` (не знаете какой —  → «Об этом Mac»: «Чип Apple M…» = arm64) | открыть dmg, перетащить Calab в «Программы», запустить. Сборка подписана (Developer ID) и нотаризована: macOS открывает её без предупреждений об неизвестном разработчике. Если предупреждение всё же есть — это ошибка, в отчёт (`spctl -a -vv /Applications/Calab.app` → ожидается `accepted`, `source=Notarized Developer ID`) |
+| Windows 10/11 x64 | `Calab-Setup-<версия>-x64.exe` | запустить; сборка **не подписана**: SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» |
+| Linux x64 (любой дистрибутив) | `Calab-<версия>-x86_64.AppImage` | `chmod +x Calab-*.AppImage && ./Calab-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calab-*.AppImage --appimage-extract-and-run`) |
+| Debian/Ubuntu x64 | `calab_<версия>_amd64.deb` | `sudo apt install ./calab_*_amd64.deb`, запуск — «Calab» в меню или `calab` |
+
+После запуска — онбординг; в поле «Сервер» по умолчанию `https://app.calab.ru` (можно `https://meet.gptunnel.ru`), вход — аккаунтом из 0.2 или регистрация по коду приглашения.
+
+Проверка целостности (если скачано с ошибками): `latest-mac.yml` / `latest-linux.yml` / `latest.yml` в корне `https://releases.calab.ru/` содержат `sha512` (base64) и `size` каждого файла: `shasum -a 512 -b <файл> | cut -d' ' -f1 | xxd -r -p | base64` (macOS/Linux) должно совпасть.
+
+Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3 → `https://releases.calab.ru/`; `/download/` на стенде — редирект туда (docs/06 «Релизы: GitHub Actions → S3», «Релиз: runbook»).
+
+### 2.2 Предусловия (локальный API)
+```bash
+pnpm install                                                     # в конце: "Rebuild Complete" (uiohook-napi)
+pnpm -F @calaba/desktop typecheck && pnpm -F @calaba/desktop lint && pnpm -F @calaba/desktop test   # 46 тестов
+docker compose -f infra/docker/compose.dev.yml up -d postgres valkey livekit
+# API (apps/server/README.md). Для локального теста:
+cd apps/server && DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba REDIS_URL=redis://localhost:56379/0 \
+  JWT_SECRET=$(openssl rand -base64 48) REGISTRATION_MODE=open \
+  LIVEKIT_URL=ws://127.0.0.1:7880 LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret \
+  go run ./cmd/server                                            # слушает 127.0.0.1:3000
+```
+Порты postgres и valkey смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://app.calab.ru` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://app.calab.ru`.
+
+### 2.3 Против стенда; статистика медиа
+Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.calab.ru`) клиент получает из `/join` сам.
+```bash
+pnpm -F @calaba/desktop build                 # → apps/desktop/dist/mac-arm64/Calab.app (+ dmg/zip)
+APP=apps/desktop/dist/mac-arm64/Calab.app/Contents/MacOS/Calab
+# клиент А (owner, настоящие микрофон и экран):
+CALABA_SERVER_URL=https://app.calab.ru CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
+# клиент Б (bob; fake-медиа, чтобы не было эха на одной машине):
+CALABA_SERVER_URL=https://app.calab.ru CALABA_USER_DATA=/tmp/cal-bob CALABA_MULTI_INSTANCE=1 CALABA_FAKE_MEDIA=1 "$APP" &
+```
+Dev-режим тоже работает: `CALABA_SERVER_URL=… pnpm -F @calaba/desktop dev`. Но тест с заморозкой процесса (пункт 2.29) в dev не показателен: Vite перезагружает страницу, когда его HMR-сокет переподключается.
+
+Включите статистику: Настройки → «Приложение» → «Статистика медиа для разработчиков». В голосовой комнате справа сверху появится панель со строками:
+- `ICE: <local>→<remote> <протокол>` — путь (`host`/`srflx` — напрямую, `relay` — через TURN);
+- `RTT`, `loss`;
+- `total ↑↓` — весь трафик ICE;
+- `mic` — битрейт микрофона;
+- `send h/q <разрешение>@<fps> <kbps>/<потолок>` у стримера — слои simulcast, `(off)` = dynacast выключил слой, потому что его никто не смотрит;
+- `recv …` у зрителя — принимаемый слой и декодер.
+
+Ожидаемые значения (замер 2026-09-25, этот Mac → стенд):
+
+| Что | Ожидается |
+|---|---|
+| Путь ICE | `srflx→host udp`, RTT ≈ 35 мс, потери 0 % |
+| Голос | `mic` ≈ 30–45 кбит/с при речи, ≈ 0,1 кбит/с в тишине (гейт) |
+| Стрим 1080p (реальный экран) | `send h 1658×1078@15`: 80–110 кбит/с на статике, до ~950 при смене картинки. `q 553×359` ≤ 250. У Б `recv 1658×1078@15`, декодер `VideoToolbox` |
+| Стрим «Оригинал» | доступен, только если в комнате разрешён максимум «Оригинал» (по умолчанию в «Team» — 1080p: пресет выше недоступен в списке, а сервер урежет запрошенный). `send h 2940×1912@20–26`: 230–1800 кбит/с, CPU renderer 40–65 % ядра |
+| Путь через TURN | запустить Б с `CALABA_FORCE_RELAY=1` → `ICE: relay→host udp/relay-udp`, RTT ≈ 35 мс |
+
+Важно: окно зрителя должно быть видимым. Если окно полностью перекрыто, macOS считает страницу скрытой, adaptive stream ставит видео на паузу (`recv 0 kbps`), а стример показывает оба слоя `(off)` — это ожидаемое поведение.
+
+### 2.4 Автоматический E2E
+```bash
+CALABA_E2E_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop e2e
+```
+Ожидается `1 passed`. Сценарий: регистрация → пространство → комната → сообщение с markdown → голосовая комната → «Голос подключён» → отключение. Используется продакшн-сборка из `out/` (`file://`).
+
+### 2.5 Дизайн: визуальная регрессия, layout-инварианты, a11y (docs/08, «Тесты UI»)
+Самодостаточно: поднимает детерминированный мок API (`apps/desktop/e2e-support`, фиксированные данные) и продакшн-renderer из `out/`. Нужен только dev LiveKit (`pnpm infra:dev`) — для кадров голоса и стрима (второй участник «Вера» публикует статичный canvas-трек из headless Chromium).
+```bash
+pnpm infra:dev                                  # LiveKit на :7880 (devkey/secret)
+pnpm -F @calaba/desktop e2e:visual              # сравнить с эталоном
+pnpm -F @calaba/desktop e2e:visual:update       # перезаписать эталон после намеренного изменения дизайна
+```
+Ожидается `9 passed` (~2 мин): 4 конфигурации (dark/light × 960×600/1440×800) × {основной сценарий, первый запуск без пространств} + обход фокуса по Tab.
+- Эталонные снимки: `apps/desktop/e2e-visual/__screenshots__/darwin/*.png` (в репо, 63 экрана × 4 конфигурации). Порог — 0,2 % отличающихся пикселей. Снимки платформенные: эталон снят на macOS; на Linux/Windows сначала `e2e:visual:update`.
+- Экраны: вход/регистрация, каждый шаг онбординга (микрофон до/после разрешения, режим VAD/PTT, запись экрана, уведомления, готово), главное окно с данными, участники, ⌘K, меню пространства, все вкладки настроек пространства/комнаты/голосовой комнаты/приложения, создание комнаты, подтверждение удаления, голос со стримом в PiP и развёрнутым, приветствие без пространств с диалогами «Создать пространство» и «Присоединиться». Видео и индикатор качества маскируются.
+- В каждой точке, кроме снимка: layout-инварианты (нет горизонтального скролла; текст не выходит за кнопки/заголовки/строки/вкладки, обрезка только с «…»; обрезанный текст не сжат до нуля; ничего не торчит за окно; модалки по центру; PiP не пересекает композер) и axe-core WCAG 2.1 A/AA — 0 нарушений serious/critical (контраст ≥ 4,5:1).
+- Детерминизм: `CALABA_VISUAL_TEST=1` — окно без нативного vibrancy (непрозрачные фоллбэки материалов), без анимаций и каретки, фиксированные статусы разрешений ОС; часы клиента зафиксированы на 2026-01-15 13:30 MSK, `TZ=Europe/Moscow`, порт мока фиксирован (39170).
+- При падении: `apps/desktop/test-results/visual-report/index.html` (ожидаемое/фактическое/diff по каждому снимку) и `test-results/visual/*/trace.zip`.
+
+### 2.6 Два клиента на одной машине: онбординг, чат, голос, стрим (2.1–2.34)
+```bash
+# клиент А (dev, HMR):
+CALABA_SERVER_URL=http://localhost:3000 CALABA_USER_DATA=/tmp/cal-a CALABA_FAKE_MEDIA=1 pnpm -F @calaba/desktop dev
+# клиент Б (второй экземпляр того же dev-сервера):
+cd apps/desktop && ELECTRON_RENDERER_URL=http://localhost:5173 CALABA_MULTI_INSTANCE=1 CALABA_SERVER_URL=http://localhost:3000 \
+  CALABA_USER_DATA=/tmp/cal-b CALABA_FAKE_MEDIA=1 ../../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron .
+```
+`CALABA_FAKE_MEDIA=1` включает синтетический микрофон (бип) и тестовую «картинку» экрана. Без флага используются настоящие устройства, и macOS спросит разрешения.
+
+| # | Действие | Ожидаемый результат |
+|---|---|---|
+| 2.1 | А: «Нет аккаунта? Зарегистрироваться» → email, имя, пароль (≥ 8 символов) | онбординг: «Микрофон» → «Разрешить микрофон» (индикатор уровня двигается) → «Как включать микрофон» → (macOS) «Показ экрана» → «Уведомления» → «Всё готово». Любой шаг можно пропустить («Пропустить настройку»). Затем экран «Добро пожаловать в Calaba» |
+| 2.2 | А: «Создать пространство» → название → «Создать» | в левой полосе иконка пространства, в колонке секции «Текстовые / Голосовые комнаты» |
+| 2.3 | А: «+» у текстовых → «общий» | комната открыта, «Добро пожаловать в #общий», справа панель участников (1 в сети) |
+| 2.4 | А: меню пространства (стрелка у названия) → «Пригласить людей» → «Создать приглашение» | тост «Ссылка-приглашение скопирована», в списке появилась строка `https://<сервер>/join/<код>` (без адреса сервера — `calab://join/<код>`) |
+| 2.5 | Б: регистрация с этим кодом в поле «Код приглашения» | Б сразу в пространстве. У А в панели участников «В сети — 2» |
+| 2.6 | Б: открыть «общий» | до открытия название комнаты у Б жирное (непрочитанное) |
+| 2.7 | Б: начать печатать | у А под полем ввода «Боб печатает…» |
+| 2.8 | Б: отправить `Привет, @<имя А>! **жирный** _курсив_ \`код\` https://example.com` | у А сообщение появилось сразу. Упоминание подсвечено жёлтым, markdown отрисован. Если окно А не в фокусе — системное уведомление и отскок иконки в Dock. Над сообщением у А маркер «НОВЫЕ» |
+| 2.9 | А: в пустом поле ↑ → изменить текст → Enter | у обоих текст обновился, пометка «(изменено)» |
+| 2.10 | А: навести на своё сообщение → корзина → «Удалить» | у обоих сообщение исчезло |
+| 2.11 | Б: скрепка → картинка + любой файл → Enter (или перетащить файлы в чат, или вставить картинку из буфера) | прогресс загрузки. У А превью картинки, по клику — полный размер. У файла карточка с размером; «Скачать» сохраняет в «Загрузки» и показывает файл в Finder |
+| 2.12 | А: «+» у голосовых → «Созвон», клик по комнате | внизу колонки «Голос подключён · Созвон», значок качества зелёный, звук входа |
+| 2.13 | Б: клик по «Созвон» | через ≤ 30 с (reconcile; сразу, если у LiveKit настроены webhooks) под комнатой оба участника. Говорящий (бип fake-микрофона) обведён зелёным |
+| 2.14 | Б: кнопка микрофона в панели «я» | у А рядом с Бобом иконка перечёркнутого микрофона. В логе сервера `PATCH /api/voice/self 204` |
+| 2.15 | А: правый клик по Бобу в голосовой комнате | ползунок громкости 0–100 %, «Выключить микрофон (модерация)», «Отключить от комнаты» |
+| 2.16 | А: «Выключить микрофон (модерация)» | у Б тост «Модератор выключил вам микрофон», кнопка микрофона красная |
+| 2.17 | А: «Отключить от комнаты» | Б выходит из голоса с тостом «Модератор отключил вас…» |
+| 2.18 | А (в голосе): значок монитора «Показать экран» → выбрать экран → «Начать стрим» | у А плашка «● В эфире · N смотрят» |
+| 2.19 | Б (в той же голосовой комнате) | в углу чата плитка PiP 320×180 со стримом. У А «1 смотрит» |
+| 2.20 | Б: клик по плитке (развернуть) → «В отдельное окно» → закрыть окно | стрим разворачивается над чатом в высоком качестве. Отдельное окно показывает стрим, основное — «Стрим открыт в отдельном окне». После закрытия окна стрим снова развёрнут |
+| 2.21 | Б: ✕ «Не смотреть» | плитка исчезла, у А «0 смотрят» |
+| 2.22 | А: «Остановить стрим» | у Б стрим пропал |
+| 2.23 | Настройки (шестерёнка) → «Внешний вид» → «Светлая» | тема мгновенно светлая |
+| 2.24 | Настройки → «Голос и устройства» → «Проверить» | индикатор уровня двигается, жёлтая риска — порог. С включённым RNNoise видна вероятность речи |
+| 2.25 | Настройки → «Соединение» → «Проверить соединение» в голосе | API «доступен, N мс», Gateway «подключено», путь голоса, например `host → prflx, UDP` |
+| 2.26 | Закрыть А и запустить снова | вход не требуется: сессия восстановлена из Keychain (`session.bin` в профиле зашифрован) |
+| 2.27 | Настройки → «Сеансы» → завершить сессию Б | Б выбрасывает на экран входа с сообщением «Сессия была завершена на другом устройстве» (gateway 4010) |
+| 2.28 | Остановить API на 10 с и запустить снова | жёлтая полоса «Нет соединения с сервером — переподключаемся…», затем она исчезает, пропущенные события досылаются (RESUME) |
+| 2.29 | Б (собранное приложение, в голосе и в #general): найти PID renderer — `pgrep -lf 'Calab Helper \(Renderer\)'` (при двух экземплярах — в Мониторинге системы по времени запуска). `kill -STOP <pid>`, А за это время пишет сообщение, через 20 с `kill -CONT <pid>` | сообщение появилось у Б сразу (сокет пережил 20 с: это меньше двух интервалов heartbeat), голос вернулся сам за ≤ 5 с (resume LiveKit) |
+| 2.30 | То же, но пауза 95 с | в логе Б (`<профиль>/logs/main.log`): `[gateway] closed 1006` → `invalid session (resumable=false)` → новый IDENTIFY. Жёлтая полоса ≤ 3 с, пропущенное сообщение на месте, голос снова «Голос подключён» через ≤ 5 с |
+| 2.31 | Выключить Wi-Fi на 10 с (только на отдельной машине: на общем Mac это рвёт связь другим агентам) | то же, что в 2.30: полоса, RESUME или IDENTIFY, голос возвращается сам (переподключение LiveKit, иначе повторный `/join` с паузами 1, 2, 4… с) |
+| 2.32 | ⌘K (Ctrl+K), набрать часть названия комнаты, ↓/↑, Enter | окно быстрого перехода вверху по центру, выбранная строка синяя, Enter открывает комнату, Esc закрывает |
+| 2.33 | ⌘⇧M / ⌘⇧D (Ctrl+Shift+M / D) в голосе | микрофон / звук выключаются и включаются, иконки в панели «я» красные; подсказки с сочетаниями — в tooltip кнопок |
+| 2.34 | Сузить окно до минимума (960×600) | окно не уже 960×600, ничего не наезжает; панель участников становится плавающей (открывается кнопкой «Участники», закрывается Esc), колонку комнат можно тянуть за правый край (200–320 px) |
+
+### 2.7 Сборка из исходников
+```bash
+pnpm -F @calaba/desktop build        # → apps/desktop/dist/Calab-<ver>-arm64.dmg и -mac.zip (без подписи)
+open apps/desktop/dist/mac-arm64/Calab.app   # при первом запуске ПКМ → «Открыть» (приложение не подписано)
+```
+Ожидается: окно входа. В поле «Сервер» надо ввести адрес (по умолчанию `https://app.calab.ru` из `.env.production`; переопределяется `MAIN_VITE_DEFAULT_SERVER_URL` при сборке). Логи пишутся в `~/Library/Application Support/Calaba/logs/main.log` (папка данных сохранила имя до переименования, docs/10). Ссылка `calab://join/<код>` (и старая `calaba://join/<код>`), открытая из браузера или через `open calab://join/<код>`, запускает Calab и показывает диалог входа в пространство.
+
+### 2.8 Безопасность десктопа S.1–S.4 (ревью 2026-09-26: M2, M3, L1–L3)
+| # | Проверка | Ожидается |
+|---|---|---|
+| S.1 | Скачать вложение из чата, затем `xattr -l ~/Downloads/<файл>` | `com.apple.quarantine: 0083;…;Calab;`. Windows: у файла есть `Zone.Identifier` (ZoneId=3) — «Свойства» → «Разблокировать» |
+| S.2 | Собранное приложение, сервер `https://…` | само скачивает и ставит обновления только из фида, зашитого при сборке (`MAIN_VITE_UPDATE_FEED`, в релизе `https://releases.calab.ru/`). Фид из адреса сервера (`app.X` → `https://releases.X/`, иначе `https://<сервер>/download/`) и `CALABA_UPDATE_URL` дают только уведомление «Доступна версия X — Скачать», без загрузки. Только https. Задать адрес из интерфейса нельзя. Поведение по платформам — 2.10 |
+| S.3 | DevTools renderer: `await fetch('https://example.com')` | ошибка CSP (`connect-src` ограничен сервером, его поддоменами (`rtc.`) и `calaba-api:`). Голос и gateway работают. LiveKit на другом домене → `CALABA_CSP_CONNECT="wss://… https://…"` |
+| S.4 | DevTools: `location.href = 'file:///etc/hosts'` или `<iframe src=…>` на внешний сайт | навигация заблокирована, `<webview>` не создаётся |
+
+### 2.9 Лицензии L.1–L.4 и горячие клавиши K.1–K.3
+| # | Проверка | Ожидается |
+|---|---|---|
+| L.1 | `pnpm -F @calaba/desktop build:app` / `build:web` | в выводе `third-party notices: N packages`. Сборка падает, если в бандле появилась GPL/AGPL/SSPL/EUPL. LGPL допустима только у перечисленных в скрипте: libuiohook внутри uiohook-napi, с текстами LGPL/GPL в THIRD-PARTY-NOTICES |
+| L.2 | Настройки → «О программе» | карточка «Лицензия»: «Business Source License 1.1» → текст лицензии + NOTICE; «Коммерческая лицензия» → COMMERCIAL-LICENSE.md; «Лицензии сторонних компонентов» → THIRD-PARTY-NOTICES. Ниже строка «© 2026 GPTunneL · Powered by GPTunneL» со ссылкой |
+| L.3 | Экран входа (веб и десктоп) | внизу та же строка, «Лицензия: Business Source License 1.1» и «Лицензии сторонних компонентов» — открывают тексты |
+| L.4 | Собранный dmg: `ls Calab.app/Contents/Resources` | есть `LICENSE`, `NOTICE`, `COMMERCIAL-LICENSE.md`, `THIRD-PARTY-NOTICES.txt`. Установщик DMG/NSIS показывает лицензию |
+| K.1 | Настройки → «Горячие клавиши» → «Изменить» у «Выключить микрофон» → ⌘⇧J | подпись в строке, в tooltip панели «я» и в «?» — «⌘⇧J». ⌘⇧J выключает микрофон, ⌘⇧M больше нет |
+| K.2 | «Изменить» → ⌘Q / ⌘⇧D (занято «Заглушить всех») / J без ⌘ | отказ с причиной под строкой, прежнее сочетание остаётся. Esc отменяет запись |
+| K.3 | «Сбросить» | вернулось сочетание по умолчанию |
+
+### 2.10 Автообновление U.1–U.6
+
+Логика — `apps/desktop/src/main/updateFlow.ts` (unit-тесты `updateFlow.test.ts`, `src/shared/updateFeed.test.ts` в `pnpm -F @calaba/desktop test`).
+
+Фиды:
+- **Зашитый при сборке** — `MAIN_VITE_UPDATE_FEED`. В релизе это `https://releases.calab.ru/`: `apps/desktop/.env.production`, а `build-release.sh` передаёт `UPDATE_FEED`. Только из него обновление скачивается и ставится само.
+- **Из адреса сервера** — `https://app.<домен>` → `https://releases.<домен>/`, любой другой адрес → `https://<сервер>/download/`. Используется, только если зашитого фида нет, и только для уведомления.
+- **`CALABA_UPDATE_URL`** при запуске заменяет фид, но тоже только для уведомления.
+
+Ссылка «Скачать» ведёт на `https://<сервер>/download/`, а без сервера — на зашитый фид.
+
+Автоустановка работает при трёх условиях: фид зашит при сборке, переключатель включён, и платформа — Windows, Linux AppImage или macOS, собранный с `MAIN_VITE_UPDATES_SIGNED=1` (подпись + нотаризация). В остальных случаях приходит только уведомление.
+
+Когда проверяется: через 10 с после запуска, затем каждые 6 ч, по кнопке «Проверить» (Настройки → «О программе»), через ~5 с после выхода из сна, а после неудачной проверки — когда сеть пропала и вернулась. Нужна собранная версия: в dev (`pnpm dev`) обновления выключены.
+
+Переключатель: Настройки → «Приложение» → карточка «Обновления» → «Автоматически обновлять» (по умолчанию включён). Выключен → ничего не скачивается, только уведомление «Доступна версия X — Скачать». Хранится в `settings.json` рядом с логами (`autoUpdate`).
+
+Лог (строки `[update]`, плюс вывод electron-updater): macOS `~/Library/Application Support/Calaba/logs/main.log`, Windows `%APPDATA%\Calaba\logs\main.log`, Linux `~/.config/Calaba/logs/main.log`. Ошибки обновления видны только там и строкой «Не удалось проверить обновления» в «О программе» — тостов нет.
+
+| # | Проверка | Ожидается |
+|---|---|---|
+| U.1 | Фид: `for f in latest.yml latest-mac.yml latest-linux.yml; do curl -s -o /dev/null -w "$f %{http_code}\n" https://releases.<домен>/$f; done`, затем `curl -s https://releases.<домен>/latest-mac.yml` (и два других) | все три — 200. В каждом `version:` — опубликованная версия, в `files:`/`path:` — имена `Calab-…` (`Calab-Setup-<в>-x64.exe`; `Calab-<в>-arm64.zip` / `Calab-<в>-x64.zip`; `Calab-<в>-x86_64.AppImage`), у каждого файла `sha512` и `size`. `curl -sI https://releases.<домен>/<файл>` → 200 |
+| U.2 | Windows / Linux AppImage: установить 0.1.0, войти на сервер `https://app.<домен>`; опубликовать 0.1.1 в фид; запустить (или перезапустить) Calab | в течение ~10 с в «О программе» строка «Загружается версия 0.1.1 — N %» растёт до 100, затем «Версия 0.1.1 загружена — установится при перезапуске» и кнопка «Перезапустить». Над панелью «я» слева внизу — строка «Обновление 0.1.1 готово» с кнопкой «Перезапустить». Нажать → приложение закрывается, ставится и запускается само; в «О программе» «Версия 0.1.1». Вариант: вернуть 0.1.0, дождаться баннера, **не нажимая** выйти (трей → «Выход» / закрыть окно на Windows) → при следующем запуске версия 0.1.1. В логе: `[update] downloaded 0.1.1`, `[update] quit and install` (для кнопки) |
+| U.2a | То же, но «Автоматически обновлять» выключен | ничего не скачивается: уведомление «Доступна версия 0.1.1 — Скачать» (по клику — страница загрузки), в «О программе» «Доступна версия 0.1.1» и кнопка «Скачать». Включить переключатель → сразу начинается загрузка (как в U.2) |
+| U.2b | Linux deb (`calab_0.1.0_amd64.deb`) | как U.2a независимо от переключателя: пакет обновляется вручную |
+| U.3 | macOS, неподписанная сборка (без `MAIN_VITE_UPDATES_SIGNED=1`; `build-release.sh` ставит его только при `SIGN=1 NOTARIZE=1`): установлена 0.1.0, в фиде 0.1.1 | через ~10 с системное уведомление «Доступна версия 0.1.1 — Скачать» (один раз на версию, повтор проверки его не дублирует); клик открывает страницу загрузки в браузере. В «О программе» «Доступна версия 0.1.1» + «Скачать». Ничего не скачивается и не ставится само, баннера над панелью «я» нет. Подписанная сборка (`MAIN_VITE_UPDATES_SIGNED=1`) ведёт себя как U.2 |
+| U.4 | Недоступный фид (например, `CALABA_UPDATE_URL=https://releases.invalid/` при запуске) | приложение работает как обычно, никаких тостов и уведомлений; в «О программе» «Не удалось проверить обновления», в логе `[update] failed` |
+| U.5 | Windows, сборка **без** зашитого фида (`MAIN_VITE_UPDATE_FEED=` пустой при `pnpm build:app`), вход на сервер `https://app.<домен>`, в `https://releases.<домен>/` лежит 0.1.1. Затем то же со сборкой с фидом, но запуском с `CALABA_UPDATE_URL=https://releases.<домен>/` | в обоих случаях только уведомление «Доступна версия 0.1.1 — Скачать», ничего не скачивается, баннера «Перезапустить» нет. Клик открывает `https://app.<домен>/download/`, а не корень фида |
+| U.6 | Собранная версия. Выключить сеть, запустить Calab, дождаться «Не удалось проверить обновления»; включить сеть. Отдельно: усыпить машину, разбудить | после возврата сети не позже чем через ~35 с новая проверка (в логе `checking for update`), статус больше не ошибка. После пробуждения проверка через ~5 с. Во время загрузки или при готовом «Перезапустить» повторных проверок нет |
+
+### 2.11 Только люди: эхо, PTT и Caps Lock (P.1–P.9), системный звук, трей
+- **Эхо на реальных устройствах.** 3 участника, двое на колонках, говорят одновременно. Затем смена устройства вывода посреди разговора (Настройки → «Устройство вывода»). Эха быть не должно.
+- **PTT.** Настройки → «Голос и устройства» → «Push-to-talk» → «Назначить» → клавиша. Удержание в любом приложении включает эфир, отпускание выключает через ~0,2 с. На macOS нужны «Универсальный доступ» и «Мониторинг ввода»: если их нет, биндер показывает красную строку и кнопку «Открыть настройки ОС». Рядом с клавишей есть точка: зелёная, пока эфир включён, — удобно проверять прямо в настройках. Для замера второй клиент в той же голосовой комнате включает dev-статистику: Настройки → «Приложение» → «Статистика медиа для разработчиков», строка `total ↓… kbps`.
+
+  | # | Действие (macOS) | Ожидается |
+  |---|---|---|
+  | P.1 | «Назначить» → нажать Caps Lock | через ~0,35 с «⇪ Caps Lock» и жёлтая плашка «работает в режиме переключения». В `logs/main.log`: `[ptt] captured { code: 3898, mode: 'toggle' }` |
+  | P.2 | В голосе: Caps Lock (индикатор загорелся) → говорить → Caps Lock ещё раз | после первого нажатия точка зелёная, у второго клиента `↓` ≈ 20–25 кбит/с. После второго — тишина, `↓` ≈ 2–3 кбит/с |
+  | P.3 | Включить «Caps Lock не меняет регистр» | `hidutil property --get UserKeyMapping` показывает `Src = 30064771129 → Dst = 30064771181` (Caps → F18). В логе `remap applied` |
+  | P.4 | Удерживать Caps Lock 3 с, отпустить | эфир ровно пока держим, отпускание — через 0,2 с. Регистр букв не переключается, индикатор Caps не горит |
+  | P.5 | Закрыть Calab (⌘Q) | `hidutil … --get` пустой: раскладка вернулась. Ваш собственный маппинг, если был, остался |
+  | P.6 | С включённой опцией: `kill -9` процесса Calab → Caps Lock снова печатает F18 → запустить Calab | в логе `restored the keyboard mapping left by a previous crash`, затем ремап снова применён. После ⌘Q раскладка обычная |
+  | P.7 | «Назначить» → боковая кнопка мыши | «Кнопка мыши 4 (назад)». Удержание — эфир, отпускание — тишина (раньше на macOS кнопка мыши «залипала») |
+  | P.8 | «Назначить» → F18 / правый ⌥ / Num 0 | «F18» / «Правый ⌥ Option» / «Num 0». Работают как удержание |
+  | P.9 | Windows / Linux X11: «Назначить» → Caps Lock | «⇪ Caps Lock» без плашки: режим удержания. Linux Wayland: подсказка, что глобальные клавиши недоступны |
+
+  Если на вашем Mac Caps Lock присылает и отпускание, в P.1 будет `code: 58, mode: 'hold'` без плашки. Это тоже корректно: работает как удержание.
+- **Системный звук стрима.** macOS: переключатель доступен с предупреждением; ожидаемо звук участников тоже попадает в стрим. Windows: проверить, что голоса участников не попадают в стрим.
+- **Уведомления и трей.** Меню трея: «Выключить микрофон», «Выключить звук», «Отключиться от голоса».
+
+---
+
+## 3. Сервер
+
+Локальные прогоны — на машине с Docker и Go (dev-compose), без стенда; 3.3 — те же curl-сценарии против стенда.
+
+### 3.1 Базовый прогон: контракт, Go, интеграционные тесты, curl, образ
+#### 0. Предусловия
 
 ```sh
 go version            # ожидается go1.26+ (локально go1.27.x)
@@ -25,7 +408,7 @@ docker exec calaba-dev-valkey-1 valkey-cli info server | grep valkey_version  # 
 
 Чужие контейнеры/сервисы на 5432/6379 **не трогать**.
 
-### 1. Контракт и генерация
+#### 1. Контракт и генерация
 
 ```sh
 buf lint                     # Ожидается: пустой вывод, exit 0
@@ -36,7 +419,7 @@ pnpm -F @calaba/protocol typecheck   # Ожидается: exit 0, без оши
 pnpm -F @calaba/protocol test        # Ожидается: 2 файла, все тесты passed
 ```
 
-### 2. Go: сборка, линт, unit-тесты
+#### 2. Go: сборка, линт, unit-тесты
 
 ```sh
 cd apps/server
@@ -47,7 +430,7 @@ go test -race ./...          # Ожидается: ok для auth, blob, files, 
 cd ../..
 ```
 
-### 3. Интеграционные тесты
+#### 3. Интеграционные тесты
 
 ```sh
 make test-integration
@@ -59,7 +442,7 @@ make test-integration
 docker exec calaba-dev-postgres-1 psql -U calaba -tAc "select count(*) from pg_database where datname like 'calaba_it_%'"   # Ожидается: 0
 ```
 
-### 4. Ручной прогон сервера через curl
+#### 4. Ручной прогон сервера через curl
 
 Нужен `jq`. Запуск (в отдельном терминале или в фоне; порт 3900, чтобы не пересечься с другими процессами):
 
@@ -169,27 +552,17 @@ curl -s -w ' %{http_code}\n' $A/api/me -H "Authorization: Bearer $OT2"          
 
 Остановить сервер: Ctrl+C (ожидается `"msg":"shutting down"` и выход с кодом 0).
 
-### 5. Docker-образ
+#### 5. Docker-образ
 
 ```sh
 docker build -f apps/server/Dockerfile -t calaba-api:test .
 docker images calaba-api:test --format '{{.Size}}'    # ~17MB
 ```
 
+### 3.2 Gateway, сообщения, файлы, rtc
+Предусловия — как в разделе 3.1, шаг 0 (compose.dev поднят целиком, включая `livekit`). Нужны `jq` и Node ≥ 22 (встроенный `WebSocket`).
 
----
-
-## Desktop media spike (stage 1) — заменён приложением
-
-Экран спайка удалён: медиа-пайплайн (AEC3 → RNNoise/VAD, PTT, AV1 simulcast, getStats) теперь работает внутри приложения. Результаты замеров спайка — в docs/02, раздел «Результаты спайка». Ручные медиа-проверки — в разделе «Desktop app» ниже, пункты 2.12–2.25 и 4.
-
----
-
-## Server stage 3 (gateway, messages, files, rtc)
-
-Предусловия — как в разделе «Server core», шаг 0 (compose.dev поднят целиком, включая `livekit`). Нужны `jq` и Node ≥ 22 (встроенный `WebSocket`).
-
-### 1. Автотесты
+#### 1. Автотесты
 
 ```sh
 cd apps/server
@@ -209,9 +582,9 @@ ok
 ```
 Если вместо `PASS: TestRTC` стоит `SKIP` — не поднят LiveKit (`docker compose -f infra/docker/compose.dev.yml up -d livekit`); это ошибка окружения, повтори.
 
-### 2. Ручной прогон
+#### 2. Ручной прогон
 
-Сервер (отдельный терминал, чистая БД — см. «Server core» 4.2):
+Сервер (отдельный терминал, чистая БД — см. 3.1, шаг 4.2):
 
 ```sh
 cd apps/server
@@ -336,7 +709,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'Origin: https://evil.example.com' -
 
 2.8 Остановка чужого стрима модератором и публичный профиль покрыты тестами `TestRTC` (stop-stream → `VOICE_STREAM_STOP{MODERATOR}`, повтор → 404, без MUTE_MEMBERS → 403) и `TestProfileBroadcast` (смена имени приходит участникам workspace как `userUpdate.user` без email/настроек; смена только настроек не рассылается).
 
-### 3. Docker-образ и healthcheck
+#### 3. Docker-образ и healthcheck
 ```sh
 docker build -f apps/server/Dockerfile -t calaba-api:test .   # собирается; образ ~21 MB
 docker run -d --rm --name calaba-hc -e HTTP_ADDR=0.0.0.0:3000 \
@@ -347,510 +720,18 @@ docker exec -e HTTP_ADDR=127.0.0.1:3999 calaba-hc /server healthcheck; echo "exi
 docker rm -f calaba-hc
 ```
 
----
+### 3.3 Сценарии API против стенда (HTTPS)
 
-## Стенд
-
-Стенд: `root@141.105.69.177`, `DOMAIN=app.calab.ru` (основной), `DOMAIN_ALT=meet.gptunnel.ru` (запасной алиас); код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (как поднят — `docs/06-deployment.md`).
-
-| Адрес | Что |
-|---|---|
-| `https://app.calab.ru` | API: REST `/api/*`, gateway `wss://…/gateway?v=1&encoding=json`, файлы, `/healthz` (`/metrics` и `/readyz` снаружи закрыты — 404) |
-| `wss://rtc.calab.ru` | LiveKit signal (`https://rtc.…/` → `OK`) |
-| `turn.calab.ru:443` | TURN/TLS (TCP) — именно он раздаётся клиентам; TURN/UDP — `141.105.69.177:443/udp` |
-| `meet.gptunnel.ru`, `rtc.` / `turn.calab.ru` | то же самое (алиас); TURN клиентам всё равно раздаётся по `.ai` |
-
-**Адреса (docs/10-branding.md, с 2026-09-26):** `https://app.calab.ru` (приложение, API, gateway, `/download/` → `releases.calab.ru`), `https://meet.gptunnel.ru` (алиас приложения), `https://calab.ru` (лендинг, `/download/` → `releases.calab.ru`), `https://releases.calab.ru` (фид релизов — прокси в бакет S3), `rtc.calab.ru`, `turn.calab.ru`. Имена `colaba.gptunnel.*` сняты. Проверять лендинг:
-```sh
-for p in / /about/ /nope /download/; do curl -s -o /dev/null -w "$p %{http_code}\n" https://calab.ru$p; done   # 200, 200, 404, 200
-curl -sI https://calab.ru/ | grep -iE 'strict-transport|content-security|cache-control'                        # HSTS, CSP лендинга, no-cache
-```
-
-DNS — Cloudflare, записи DNS-only (proxied=false). Если локальный VPN с fake-IP DNS «не видит» новые имена (NXDOMAIN-кэш до 30 мин) — `curl --resolve <имя>:443:141.105.69.177 …` или проверять с машины без VPN.
-
-**Нельзя трогать чужое на хосте:** `python` (pid 3695), `ffmpeg`, `chromium`, `Xvfb`, контейнеры `gromtv-broadcast`, `dcgm-exporter`. Не делать `docker system prune`, `docker compose down` вне `/opt/calaba/infra/docker`, `iptables -F`, рестарт Docker. Наш compose-проект называется `calaba`.
-
-Обозначения: `D=app.calab.ru` (для алиаса — `D=meet.gptunnel.ru`), `H=root@141.105.69.177`, `DC='cd /opt/calaba/infra/docker && docker compose'`, `A=https://$D`.
-
-> Проверки портов (`nc -zv`) делать с машины **без** VPN/TUN-прокси: TUN-режим VPN принимает любой TCP connect сам, и `nc` «успешен» даже для закрытого порта.
-
-### Аккаунты
-
-`REGISTRATION_MODE=invite` (с 2026-09-26): регистрация только с кодом приглашения. Бессрочный инвайт владельца в workspace `team` (10 использований) и пароль тестовых аккаунтов — на хосте в `/opt/calaba/infra/docker/.env.accounts` (`ssh $H 'cat /opt/calaba/infra/docker/.env.accounts'`). Тестовые аккаунты: `owner@calaba.test` (владелец `team`, комнаты `general`, `secret`, `voice`) и `bob@calaba.test` (member).
-
-Свой аккаунт:
-```sh
-CODE=<invite из .env.accounts>
-curl -s -XPOST $A/api/auth/register -d "{\"email\":\"me@example.com\",\"password\":\"<≥8 символов>\",\"displayName\":\"Me\",\"inviteCode\":\"$CODE\"}" | jq '.me.email'
-# без inviteCode → ERROR_CODE_REGISTRATION_CLOSED 403
-```
-В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://app.calab.ru` (или `https://meet.gptunnel.ru`).
-
-Сбросить данные стенда (все пользователи/сообщения/файлы!) — только по согласованию: `ssh $H "$DC exec -T postgres psql -U calaba -c 'drop schema public cascade; create schema public;' && $DC exec -T valkey sh -c 'VALKEYCLI_AUTH="$REDIS_PASSWORD" valkey-cli flushall' && $DC restart api"` (+ очистить volume `calaba_files_data`).
-
-### 0. Деплой
-
-```sh
-infra/docker/sync.sh            # весь стек (rsync в /opt/calaba + deploy.sh)
-infra/docker/sync.sh api        # только api (пересборка образа)
-```
-Ожидается: `Image calaba-api Built`, `Container calaba-… Started/Running`, без ошибок.
-
-### 1. Контейнеры и API
-
-```sh
-ssh $H "$DC ps --format '{{.Name}} {{.Status}}'"
-ssh $H "$DC logs api | grep -E 'migration applied|listening'"
-curl -s $A/healthz; ssh $H 'curl -s 127.0.0.1:3000/readyz'
-curl -s $A/api/version   # {"version":"0.0.1","commit":"<sha задеплоенного коммита>",…}; commit=unknown — деплой без sync.sh
-for p in /readyz /metrics; do curl -s -o /dev/null -w "$p %{http_code}\n" $A$p; done   # оба 404 снаружи
-ssh $H 'docker run --rm -v calaba_files_data:/d busybox:1.37 stat -c "%u:%g %a" /d'
-```
-Ожидается: `calaba-api-1 Up (healthy)`, `caddy-1 Up`, `livekit-1 Up`, `postgres-1 / valkey-1 Up (healthy)`; в логе api `migration applied` (только при первом старте на пустой БД) и `"msg":"listening","addr":"127.0.0.1:3000","registration":"open","storage":"fs","livekit":true`; `{"status":"ok"}`, `{"postgres":"ok","redis":"ok"}`, `404`; `65532:65532 750`.
-
-### 2. Сертификаты и HTTPS
-
-```sh
-curl -s  https://rtc.$D/                                 # OK
-curl -sI http://$D | head -3                             # HTTP/1.1 308 → https://$D/
-curl -sI https://rtc.$D | grep -i alt-svc               # пусто (HTTP/3 выключен, UDP 443 — TURN)
-openssl s_client -connect turn.$D:443 -servername turn.$D </dev/null 2>/dev/null \
-  | grep -E 'subject=|issuer=|Verify return'
-# subject=CN=turn.calab.ru / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
-# все имена разом (6 = 2 домена × <домен>/rtc/turn):
-for d in app.calab.ru meet.gptunnel.ru; do
-  echo "$d healthz=$(curl -s -o /dev/null -w %{http_code} https://$d/healthz) metrics=$(curl -s -o /dev/null -w %{http_code} https://$d/metrics) rtc=$(curl -s https://rtc.$d/) turn=$(openssl s_client -connect turn.$d:443 -servername turn.$d </dev/null 2>/dev/null | grep -c 'Verify return code: 0')"
-done
-# ожидается для каждого: healthz=200 metrics=404 rtc=OK turn=≥1 (/readyz снаружи 404 с 2026-09-26)
-ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[^\"]*' | sort -u"   # 6 имён (только при первом выпуске; позже — openssl s_client выше)
-```
-Факт 2026-09-25: все 6 имён — сертификаты LE (YE1), `readyz` 200, `/metrics` 404, `rtc` OK, TURN TLS `Verify return code: 0`.
-С 2026-09-26 приложение — на самом домене (`https://colaba.gptunnel.ai`, `https://colaba.gptunnel.ru`), имена `app.colaba.*` удалены из DNS и не обслуживаются. Факт 2026-09-26: сертификаты на `colaba.gptunnel.ai/.ru` (LE YE1), `readyz`/`healthz` 200, http → 308, SPA и ассеты как в 2a; внешняя проверка (check-host.net, узлы IR/RO/US) — 200.
-`curl https://turn.$D` **висит** — это нормально: SNI `turn.*` уходит в layer4 → TURN, HTTP там никто не отвечает.
-
-### 2a. Веб-клиент (статика на `<домен>`)
-
-Публикация: `pnpm -F @calaba/desktop build:web` (→ `apps/desktop/dist-web`), затем `infra/docker/sync.sh caddy` (статика уезжает в `/opt/calaba/web` без `*.map`; `caddy` в аргументах — чтобы заодно применить правки Caddyfile, для одной статики перезапуск не нужен).
-
-```sh
-for d in app.calab.ru meet.gptunnel.ru; do A=https://$d
-  for p in / /rooms/x /assets/missing.js /metrics /readyz /healthz /api/me; do echo "$d$p $(curl -s -o /dev/null -w '%{http_code}' $A$p)"; done
-  W=$(curl -s $A/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js'); echo "$W: $(curl -sI $A/$W | grep -iE 'content-type|cache-control' | tr -d '\r' | tr '\n' ' ')"
-done
-curl -sI https://$D/ | grep -iE 'content-security|permissions-policy|x-content|referrer|x-frame|cache-control'
-```
-Ожидается: `/` и `/rooms/x` → 200 (`<title>Calab`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.calab.ru https://rtc.calab.ru wss://rtc.calab.ru https://rtc.calab.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
-
-E2E против стенда. С 2026-09-26 стенд в `invite`-режиме, поэтому спека умеет два пути:
-- **вход существующим аккаунтом** (предпочтительно, не тратит использования кода): `CALABA_WEB_LOGIN` + `CALABA_WEB_PASSWORD` (например `owner@calaba.test`; пароль в `/opt/calaba/infra/docker/.env.accounts` на стенде). Каждый прогон создаёт у аккаунта новое пространство `Web <browser>-<id>`;
-- **регистрация по коду**: `CALABA_WEB_INVITE=<код>` (код пространства `team` — в том же `.env.accounts`; 10 использований, каждый прогон тратит одно на браузер). Создаёт пользователя `web-<browser>-<id>@example.com`.
-```sh
-P=$(ssh root@141.105.69.177 "awk '\$1==\"owner@calaba.test\"{print \$2}' /opt/calaba/infra/docker/.env.accounts")   # строки файла: «email пароль»
-CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web   # 2 passed
-CALABA_WEB_FF_VOICE=1 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web   # 2 passed (голос и в Firefox)
-CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://meet.gptunnel.ru pnpm -F @calaba/desktop e2e:web   # 2 passed
-```
-Electron-E2E так же: `CALABA_LOGIN` + `CALABA_PASSWORD` или `CALABA_INVITE`, плюс `CALABA_E2E_SERVER_URL`.
-Сервер ограничивает частоту создания пространств: три прогона подряд одним аккаунтом за минуту дают «too many requests» на шаге «Создать». Поэтому между прогонами делайте паузу ≥ 1 мин или используйте для `.ru` другой аккаунт (`bob@calaba.test`). После прогонов удалите тестовые пространства `Web …` (Настройки пространства → «Удаление» или `DELETE /api/workspaces/<id>`), чтобы не засорять стенд.
-Если падает на `cookie?.httpOnly` (`undefined`) — на стенде старый api без cookie-режима: `infra/docker/sync.sh api`.
-Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve app.calab.ru:443:141.105.69.177 https://colaba.gptunnel.ai/readyz` даёт 200 — это локальный VPN/прокси (fake-IP DNS, особые правила для `gptunnel.ai`), а не стенд. Обход для прогона: Chromium — `--host-resolver-rules=MAP colaba.gptunnel.ai 141.105.69.177 --proxy-server=direct://`, Firefox — prefs `network.proxy.type=0`, `network.dns.forceResolve=141.105.69.177` (через локальный playwright-конфиг, не в репо). Факт 2026-09-26: так `e2e:web` на `.ai` — 2 passed (Firefox с `CALABA_WEB_FF_VOICE=1`), на `.ru` — 2 passed без обхода.
-
-CSP/RNNoise вручную: открыть `https://app.calab.ru`, войти, зайти в голосовую комнату, DevTools → Console. Не должно быть `Refused to …`/`Content Security Policy` и `RNNoise unavailable, falling back…` (это предупреждение пишется, если worklet с WASM не стартовал за 2 с). Допустимо: `Unrecognized feature: 'speaker-selection'` (Chrome), `401` на первый `/api/auth/refresh` до входа. В «Настройки → Голос и устройства» строка «Вероятность речи (RNNoise)» показывает проценты, а не «нет — RNNoise выключен».
-
-Факт 2026-09-25: все коды/заголовки как выше на обоих доменах; e2e:web — 2 passed на `.ai` (в т.ч. с `CALABA_WEB_FF_VOICE=1`) и на `.ru`; Playwright-прогон «регистрация → голос» в Chromium и Firefox — «Голос подключён», нарушений CSP 0, предупреждения RNNoise нет (Firefox: worklet 200 `text/javascript`). Клиент на `.ru` подключается к `wss://rtc.colaba.gptunnel.ai` (основной `LIVEKIT_URL`).
-
-### 2b. Релизы: `/download/`
-
-```sh
-curl -s -o /dev/null -w '%{http_code} %{content_type}\n' https://$D/download/     # 200 text/html (листинг; пустой, пока релизов нет)
-curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://$D/download      # 308 https://$D/download/
-curl -sI https://$D/download/latest-mac.yml | grep -iE 'content-type|cache-control'  # text/yaml, no-cache (когда релиз опубликован)
-curl -sI https://$D/download/<установщик с версией> | grep -iE 'content-type|cache-control'   # application/octet-stream, immutable
-curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-99' https://$D/download/<установщик>   # 206
-curl -sI https://$D/manifest.webmanifest | grep -i content-type                    # application/manifest+json (когда он есть в веб-сборке)
-```
-Публикация: собрать релиз в `apps/desktop/dist-release/`, затем `infra/docker/sync.sh` (или `SKIP_WEB=1 infra/docker/sync.sh`, чтобы не трогать веб). Старые файлы на стенде не удаляются.
-
-Факт 2026-09-26 (на временных тестовых файлах, удалены): `/download/` 200 (пустой листинг), `/download` 308; `latest-mac.yml` — `text/yaml`, `no-cache`; `*.dmg` — `application/octet-stream`, `immutable`, Range → 206; `*.json` — `no-cache`; `*.webmanifest` — `application/manifest+json`; `*.svg` — `image/svg+xml`; отсутствующий файл — 404. На `.ai` и `.ru`.
-
-### 2c. Сборки десктопа для тестировщика
-
-Сборки публикуются на `https://app.calab.ru/download/` (листинг каталога; то же на `.ru`). Какой файл брать:
-
-| ОС | Файл | Установка |
-|---|---|---|
-| macOS Apple Silicon (M1–M4) / Intel | `Calab-<версия>-arm64.dmg` / `Calab-<версия>-x64.dmg` (не знаете какой —  → «Об этом Mac»: «Чип Apple M…» = arm64) | открыть dmg, перетащить Calab в «Программы». Сборка **не подписана**: первый запуск — ПКМ по приложению → «Открыть» → «Открыть» (или `xattr -dr com.apple.quarantine /Applications/Calab.app`). Автообновление на macOS без подписи не работает — приложение только сообщает о новой версии |
-| Windows 10/11 x64 | `Calab-Setup-<версия>-x64.exe` | запустить; SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» (сборка не подписана) |
-| Linux x64 (любой дистрибутив) | `Calab-<версия>-x86_64.AppImage` | `chmod +x Calab-*.AppImage && ./Calab-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calab-*.AppImage --appimage-extract-and-run`) |
-| Debian/Ubuntu x64 | `calab_<версия>_amd64.deb` | `sudo apt install ./calab_*_amd64.deb`, запуск — «Calab» в меню или `calab` |
-
-После запуска — в поле «Сервер» ввести `https://app.calab.ru` (или `.ru`), войти (регистрация — по коду приглашения, см. «Аккаунты»).
-
-Проверка целостности (если скачано с ошибками): `latest-mac.yml` / `latest-linux.yml` / `latest.yml` рядом содержат `sha512` (base64) и `size` каждого файла: `shasum -a 512 -b <файл> | cut -d' ' -f1 | xxd -r -p | base64` (macOS/Linux) должно совпасть.
-
-Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3 → `https://releases.calab.ru/`; `/download/` на стенде — редирект туда (docs/06 «Релизы: GitHub Actions → S3», «Релиз: runbook»).
-
-### 3. LiveKit
-
-```sh
-ssh $H "$DC logs livekit | grep -E 'using external IPs|Starting TURN|starting LiveKit' | tail -3"
-ssh $H "$DC logs --since 30m livekit | grep -c 'failed to send webhook'"      # 0 (api принимает webhook)
-ssh $H "ss -lntup | grep -E 'livekit|caddy'"
-```
-Ожидается:
-- `using external IPs … ["141.105.69.177/141.105.69.177"]` — только публичный IP (docker-мосты 172.16/12 исключены).
-- `Starting TURN server … "turn.portTLS":5349,"turn.externalTLS":true,…,"turn.portUDP":443`
-- `starting LiveKit server … "bindAddresses":["127.0.0.1"],"rtc.portTCP":7881,"rtc.portUDP":{"Start":7882,…},"portPrometheus":6789`
-- порты: udp `141.105.69.177:7882`, udp `*:443`, tcp `127.0.0.1:7880`, `127.0.0.1:6789`, `*:7881`, `*:5349` (5349 снаружи закрыт файрволом); caddy — tcp `*:80`, `*:443`.
-
-Файрвол (только чтение!): `ssh $H 'iptables -L INPUT -n --line-numbers'` — ACCEPT tcp 80/443/7881 и udp 443/7882 стоят **выше** `DROP all`.
-
-### 4. Сценарии API по HTTPS
-
-Разделы «Server core» → 4 и «Server stage 3» → 2 выполняются против стенда как есть, с заменами:
+Разделы 3.1 (шаг 4) и 3.2 (шаг 2) выполняются против стенда как есть, с заменами:
 - `A=https://app.calab.ru`; сервер запускать не нужно; `/readyz` (4.1) — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/readyz'`; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
 - БД стенда не пустая, регистрация по инвайтам: регистрировать новых пользователей с `inviteCode` (инвайт владельца — в `.env.accounts`, или создать свой в своём пространстве); шаг «второй пользователь без инвайта → 403» совпадает. Email-ы брать новые (`…@calaba.test` заняты), slug workspace — новый (`team` занят → ожидаемый `409` на первом же создании).
 - gateway: `A=$A node /tmp/gw.mjs $BT 4` (скрипт сам меняет `https` → `wss`).
 - 2.6: `url` в ответе join — `wss://rtc.calab.ru`, `media` — по настройкам комнаты.
 - 4.7 (rate limit) — последним: после него логин с этого IP ~1 мин отвечает 429. Подмена `X-Forwarded-For` не помогает (Caddy перезаписывает заголовок, api видит реальный IP).
 
-Факт 2026-09-25 (все шаги PASS): 4.1–4.8 — ответы и коды как в разделе «Server core»; 2.1 HELLO(41000) → READY seq 1 → presenceUpdate → один messageCreate, повтор nonce → 200; 2.2 RESUME → `while away` seq 4, `{"resumed":{"replayed":1}}`; 2.3 INVALID_SESSION `resumable:false`; 2.4 `{"n":2,"first":"m3","hasMore":true}`; 2.5 upload 201, Range `hello 206`, `304`, 60 MB → 413, 20 MB upload через VPN ~1.5 с; 2.6 join → токен, webhook без подписи 401, voice/self до подключения 409.
+Факт 2026-09-25 (все шаги PASS): 4.1–4.8 — ответы и коды как в 3.1; 2.1 HELLO(41000) → READY seq 1 → presenceUpdate → один messageCreate, повтор nonce → 200; 2.2 RESUME → `while away` seq 4, `{"resumed":{"replayed":1}}`; 2.3 INVALID_SESSION `resumable:false`; 2.4 `{"n":2,"first":"m3","hasMore":true}`; 2.5 upload 201, Range `hello 206`, `304`, 60 MB → 413, 20 MB upload через VPN ~1.5 с; 2.6 join → токен, webhook без подписи 401, voice/self до подключения 409.
 
-### 5. Voice end-to-end (токен от API → LiveKit → webhook → gateway)
-
-`lk room join` не умеет входить с готовым токеном, поэтому используем `infra/docker/tools/relay-check.html` с токеном из `POST /api/rooms/{id}/join`:
-```sh
-J=$(curl -s -XPOST $A/api/rooms/$VOI/join -H "Authorization: Bearer $BT")
-mkdir -p /tmp/rc && cp infra/docker/tools/relay-check.html /tmp/rc/ && echo $J | jq -r .token > /tmp/rc/token.txt
-(cd /tmp/rc && python3 -m http.server 8765 --bind 127.0.0.1) &
-A=$A node /tmp/gw.mjs $OT 60 > /tmp/owner.log &                     # наблюдатель — владелец
-open "http://127.0.0.1:8765/relay-check.html?run=1#url=wss://rtc.$D&tokenfile=token.txt&mode=any"
-# ~15 с спустя:
-jq -c 'select(.dispatch.voiceStateUpdate)|.dispatch.voiceStateUpdate.state|{roomId,muted}' /tmp/owner.log
-curl -s -XPATCH $A/api/voice/self -H "Authorization: Bearer $BT" -d '{"muted":true}' -w '%{http_code}\n'
-ssh $H "$DC logs --since 2m api | grep rtc/webhook | grep -o '\"status\":[0-9]*' | sort | uniq -c"
-# закрыть вкладку, ~5 с:
-jq -c 'select(.dispatch.voiceStateUpdate)|.dispatch.voiceStateUpdate.state|{roomId}' /tmp/owner.log | tail -1
-```
-Ожидается: `voiceStateUpdate` с `roomId` = `$VOI` (`muted:true` — страница ничего не публикует); `voice/self` → `204`; webhook-и от LiveKit → `"status":200` (с `127.0.0.1`); после закрытия вкладки — `voiceStateUpdate` с `roomId:""`; `voice/self` снова `409`.
-
-Факт 2026-09-25: всё так (join → webhook 200 → voiceStateUpdate, leave → `roomId:""`).
-
-### 6. Нагрузочный тест медиа (`lk`)
-
-```sh
-brew install livekit-cli
-eval "$(ssh $H 'grep ^LIVEKIT_API_ /opt/calaba/infra/docker/.env' | sed 's/^/export /')"   # ключи не светить
-export LIVEKIT_URL=wss://rtc.$D
-lk room create --empty-timeout 600 loadtest      # auto_create выключен — комнату создаём сами (обычно это делает API при join)
-lk load-test --room loadtest --audio-publishers 2 --video-publishers 1 --subscribers 3 --duration 30s
-lk room delete loadtest
-```
-Ожидается: `Total 9/9`, `Pkt. Loss 0 (0%)` (допустимо < 1%), аудио ~20 kbps на трек, видео (simulcast) ~1.2–1.3 Mbps на подписчика. Факт 2026-09-25 (с мака через VPN, `wss://rtc.colaba.gptunnel.ai`, 20 с): 9/9, потерь 0 (0%), 3.7 Mbps суммарно.
-
-### 7. Принудительный relay (TURN/UDP и TURN/TLS)
-
-Как в п. 5, но токен — `lk token create --join --room loadtest --identity relay-check --valid-for 1h | grep -oE 'eyJ[A-Za-z0-9._-]+'` (или из API join), источник медиа — `lk load-test --room loadtest --audio-publishers 1 --video-publishers 1 --subscribers 0 --duration 5m &`, и `mode=tls` / `mode=udp`.
-
-Ожидается через ~30 с:
-- `mode=tls`: `setConfiguration iceServers: [["turns:turn.<D>:443?transport=tcp"]]`, `PASS [{"local":"relay",…,"relayProtocol":"tls",…,"bytesIn":<растёт>}]`; на сервере `ss -tn '( dport = :5349 )'` — соединения `127.0.0.1:* → 127.0.0.1:5349` (Caddy layer4 → LiveKit TURN).
-- `mode=udp`: `turn:141.105.69.177:443?transport=udp`, `PASS [{"local":"relay",…,"relayProtocol":"udp",…}]`.
-- `mode=any`: `"local":"host"|"srflx"|"prflx","protocol":"udp"`, remote `141.105.69.177:7882/udp`.
-
-Факт 2026-09-25: TLS — PASS (relay/tls, RTT ~40 мс, ~5.9 MB за 30 с); UDP — PASS (relay/udp, ~5.8 MB); без ограничений — prflx/udp → :7882.
-
-ICE/TCP (7881) без блокировки UDP не проверить. Вручную (нужен админ на клиенте или сеть без UDP):
-1. Заблокировать исходящий UDP к 141.105.69.177 (macOS: `pf` `block out proto udp to 141.105.69.177`; Windows: правило брандмауэра; либо сеть/VPN «только TCP»).
-2. Войти в голосовую комнату в десктоп-приложении, открыть панель статистики соединения.
-3. Ожидается: протокол кандидата `tcp` (ICE/TCP 7881); если открыт только 443 — `relay` + `tls`. Звук идёт, в UI — пометка «через relay/TCP».
-4. Снять блокировку — после переподключения снова `udp`.
-
-### 8. Чужие процессы и ресурсы
-
-```sh
-ssh $H 'ps -p 3695 -o pid,etime; docker ps --format "{{.Names}} {{.Status}}" | grep -v ^calaba; echo ffmpeg $(pgrep -c ffmpeg) chromium $(pgrep -c chromium) xvfb $(pgrep -c Xvfb)'
-ssh $H 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" | grep -E "NAME|calaba"'
-```
-Ожидается: pid 3695 жив (etime не сбросился), `gromtv-broadcast Up …`, `dcgm-exporter Up …`, ffmpeg/chromium/Xvfb ≥ 1.
-Факт 2026-09-25 (простой после тестов): api ~79 MiB, livekit ~90 MiB, postgres ~39 MiB, caddy ~16 MiB, redis ~10 MiB; CPU < 2 %.
-
-### 9. Защита (security review 2026-09-26)
-
-```sh
-# контейнеры: read-only, без capabilities, no-new-privileges
-ssh $H 'for c in api caddy valkey postgres; do docker inspect -f "$c ro={{.HostConfig.ReadonlyRootfs}} drop={{.HostConfig.CapDrop}} add={{.HostConfig.CapAdd}} user={{.Config.User}}" calaba-$c-1; done'
-# valkey: пароль, noeviction, 512mb; пароль не виден в ps
-ssh $H 'docker exec calaba-valkey-1 valkey-cli ping; docker exec calaba-valkey-1 sh -c "VALKEYCLI_AUTH=\$REDIS_PASSWORD valkey-cli config get maxmemory-policy"; ps -eo args | grep -c "[r]equirepass"'
-# заголовки
-curl -sI $A/ | grep -i strict-transport; curl -sI $A/api/me | grep -iE 'cache-control|nosniff|referrer'; curl -sI https://rtc.$D/ | grep -i strict
-# регистрация закрыта
-curl -s -w ' %{http_code}\n' -XPOST $A/api/auth/register -d '{"email":"x@example.com","password":"password123","displayName":"X"}'
-# TURN relay ограничен (счётчики растут только при злоупотреблении); IPv6 INPUT DROP
-ssh $H 'iptables -L OUTPUT -n -v | grep calaba-turn; ip6tables -S INPUT | head -1'
-```
-Ожидается: все четыре `ro=true drop=[ALL]`, caddy `add=[CAP_NET_BIND_SERVICE]`, valkey `user=999:1000`, postgres `user=70:70`, api `user=65532`; `NOAUTH Authentication required.`, `noeviction`, `0`; `strict-transport-security: max-age=31536000; includeSubDomains` на `<домен>` и `rtc.`; на `/api/me` — `cache-control: no-store`, `x-content-type-options: nosniff`, `referrer-policy: same-origin`; регистрация → `ERROR_CODE_REGISTRATION_CLOSED … 403`; два правила `calaba-turn-relay`; `-P INPUT DROP`.
-Relay-check TLS/UDP (п. 7) после ограничения — PASS (факт 2026-09-26: relay/tls и relay/udp, ~5 MB за 30 с, счётчики правил не выросли).
-
-Проба relay (только для повторной проверки, делает infra): pion-клиент с кредами из JoinResponse → `CreatePermission` к `127.0.0.1`/`10.0.0.1` должен давать 403 (LiveKit), отправка на `141.105.69.177:<не 7882>` и на внешние адреса — дропаться правилами (слушатель на хосте ничего не получает). Никогда не целиться в порты соседа (9001/9002/54241/33621).
-
-### 10. Бэкапы
-
-```sh
-ssh $H 'systemctl list-timers calaba-backup.timer --no-pager | sed -n 2p; journalctl -u calaba-backup.service -n 5 --no-pager -o cat; ls -lt /opt/calaba/backups/*/ | head -20'
-ssh $H '/opt/calaba/infra/docker/backup/restore.sh test'       # восстановление в calaba_restore_test + сравнение + drop
-ssh $H 'systemctl start calaba-backup.service'                  # внеочередной бэкап (например, перед миграцией)
-```
-Ожидается: таймер на ближайшие 03:30; в журнале `pg ok`, `files ok`, `WARNING: no OFFSITE_RCLONE_REMOTE` (пока нет offsite), `done …`; в каталогах `pg/ files/ caddy/ config/` свежие файлы; `restore test`: `tables restored: N`, `row counts: identical to live DB` (или diff, если данные менялись после дампа), `restore test OK (calaba_restore_test dropped)`.
-Факт 2026-09-26: 12 таблиц, счётчики совпали; архив файлов распакован и сравнён `diff -r` с volume — идентично (7 файлов, владелец 65532).
-
-### Известные особенности
-
-- В логах Caddy `caddy.listeners.layer4 … matching connection … EOF` — сканеры/обрывы до ClientHello, не ошибка.
-- `room.auto_create: false`: комнату в LiveKit создаёт API при join (или `lk room create` в тестах); иначе `requested room does not exist`. После ухода всех участников комната удаляется (`departure_timeout` 20 с).
-- Webhook-и от LiveKit идут на `http://127.0.0.1:3000/api/rtc/webhook`; тот же путь снаружи доступен через Caddy, но без подписи LiveKit → 401.
-
----
-
-## Desktop app (этап 3: `apps/desktop`)
-
-Полное приложение: вход, пространства, комнаты, чат, голос, стрим, управление. Контролы описаны в `apps/desktop/README.md`. Разделы 1–3 выполнимы агентом на одном Mac. Раздел 4 — только для людей.
-
-### 0. Предусловия
-```bash
-pnpm install                                                     # в конце: "Rebuild Complete" (uiohook-napi)
-pnpm -F @calaba/desktop typecheck && pnpm -F @calaba/desktop lint && pnpm -F @calaba/desktop test   # 46 тестов
-docker compose -f infra/docker/compose.dev.yml up -d postgres valkey livekit
-# API (apps/server/README.md). Для локального теста:
-cd apps/server && DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba REDIS_URL=redis://localhost:56379/0 \
-  JWT_SECRET=$(openssl rand -base64 48) REGISTRATION_MODE=open \
-  LIVEKIT_URL=ws://127.0.0.1:7880 LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret \
-  go run ./cmd/server                                            # слушает 127.0.0.1:3000
-```
-Порты postgres и valkey смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://app.calab.ru` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://app.calab.ru`.
-
-### 0a. Против стенда (`https://app.calab.ru`, запасной адрес `https://meet.gptunnel.ru`)
-Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.calab.ru`) клиент получает из `/join` сам.
-```bash
-pnpm -F @calaba/desktop build                 # → apps/desktop/dist/mac-arm64/Calab.app (+ dmg/zip)
-APP=apps/desktop/dist/mac-arm64/Calab.app/Contents/MacOS/Calab
-# клиент А (owner, настоящие микрофон и экран):
-CALABA_SERVER_URL=https://app.calab.ru CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
-# клиент Б (bob; fake-медиа, чтобы не было эха на одной машине):
-CALABA_SERVER_URL=https://app.calab.ru CALABA_USER_DATA=/tmp/cal-bob CALABA_MULTI_INSTANCE=1 CALABA_FAKE_MEDIA=1 "$APP" &
-```
-Dev-режим тоже работает: `CALABA_SERVER_URL=… pnpm -F @calaba/desktop dev`. Но тест с заморозкой процесса (пункт 2.29) в dev не показателен: Vite перезагружает страницу, когда его HMR-сокет переподключается.
-
-Включите статистику: Настройки → «Приложение» → «Статистика медиа для разработчиков». В голосовой комнате справа сверху появится панель со строками:
-- `ICE: <local>→<remote> <протокол>` — путь (`host`/`srflx` — напрямую, `relay` — через TURN);
-- `RTT`, `loss`;
-- `total ↑↓` — весь трафик ICE;
-- `mic` — битрейт микрофона;
-- `send h/q <разрешение>@<fps> <kbps>/<потолок>` у стримера — слои simulcast, `(off)` = dynacast выключил слой, потому что его никто не смотрит;
-- `recv …` у зрителя — принимаемый слой и декодер.
-
-Ожидаемые значения (замер 2026-09-25, этот Mac → стенд):
-
-| Что | Ожидается |
-|---|---|
-| Путь ICE | `srflx→host udp`, RTT ≈ 35 мс, потери 0 % |
-| Голос | `mic` ≈ 30–45 кбит/с при речи, ≈ 0,1 кбит/с в тишине (гейт) |
-| Стрим 1080p (реальный экран) | `send h 1658×1078@15`: 80–110 кбит/с на статике, до ~950 при смене картинки. `q 553×359` ≤ 250. У Б `recv 1658×1078@15`, декодер `VideoToolbox` |
-| Стрим «Оригинал» | доступен, только если в комнате разрешён максимум «Оригинал» (по умолчанию в «Team» — 1080p: пресет выше недоступен в списке, а сервер урежет запрошенный). `send h 2940×1912@20–26`: 230–1800 кбит/с, CPU renderer 40–65 % ядра |
-| Путь через TURN | запустить Б с `CALABA_FORCE_RELAY=1` → `ICE: relay→host udp/relay-udp`, RTT ≈ 35 мс |
-
-Важно: окно зрителя должно быть видимым. Если окно полностью перекрыто, macOS считает страницу скрытой, adaptive stream ставит видео на паузу (`recv 0 kbps`), а стример показывает оба слоя `(off)` — это ожидаемое поведение.
-
-### 1. Автоматический E2E
-```bash
-CALABA_E2E_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop e2e
-```
-Ожидается `1 passed`. Сценарий: регистрация → пространство → комната → сообщение с markdown → голосовая комната → «Голос подключён» → отключение. Используется продакшн-сборка из `out/` (`file://`).
-
-### 1a. Дизайн: визуальная регрессия, layout-инварианты, a11y (docs/08, «Тесты UI»)
-Самодостаточно: поднимает детерминированный мок API (`apps/desktop/e2e-support`, фиксированные данные) и продакшн-renderer из `out/`. Нужен только dev LiveKit (`pnpm infra:dev`) — для кадров голоса и стрима (второй участник «Вера» публикует статичный canvas-трек из headless Chromium).
-```bash
-pnpm infra:dev                                  # LiveKit на :7880 (devkey/secret)
-pnpm -F @calaba/desktop e2e:visual              # сравнить с эталоном
-pnpm -F @calaba/desktop e2e:visual:update       # перезаписать эталон после намеренного изменения дизайна
-```
-Ожидается `9 passed` (~2 мин): 4 конфигурации (dark/light × 960×600/1440×800) × {основной сценарий, первый запуск без пространств} + обход фокуса по Tab.
-- Эталонные снимки: `apps/desktop/e2e-visual/__screenshots__/darwin/*.png` (в репо, 63 экрана × 4 конфигурации). Порог — 0,2 % отличающихся пикселей. Снимки платформенные: эталон снят на macOS; на Linux/Windows сначала `e2e:visual:update`.
-- Экраны: вход/регистрация, каждый шаг онбординга (микрофон до/после разрешения, режим VAD/PTT, запись экрана, уведомления, готово), главное окно с данными, участники, ⌘K, меню пространства, все вкладки настроек пространства/комнаты/голосовой комнаты/приложения, создание комнаты, подтверждение удаления, голос со стримом в PiP и развёрнутым, приветствие без пространств с диалогами «Создать пространство» и «Присоединиться». Видео и индикатор качества маскируются.
-- В каждой точке, кроме снимка: layout-инварианты (нет горизонтального скролла; текст не выходит за кнопки/заголовки/строки/вкладки, обрезка только с «…»; обрезанный текст не сжат до нуля; ничего не торчит за окно; модалки по центру; PiP не пересекает композер) и axe-core WCAG 2.1 A/AA — 0 нарушений serious/critical (контраст ≥ 4,5:1).
-- Детерминизм: `CALABA_VISUAL_TEST=1` — окно без нативного vibrancy (непрозрачные фоллбэки материалов), без анимаций и каретки, фиксированные статусы разрешений ОС; часы клиента зафиксированы на 2026-01-15 13:30 MSK, `TZ=Europe/Moscow`, порт мока фиксирован (39170).
-- При падении: `apps/desktop/test-results/visual-report/index.html` (ожидаемое/фактическое/diff по каждому снимку) и `test-results/visual/*/trace.zip`.
-
-### 2. Два клиента на одной машине
-```bash
-# клиент А (dev, HMR):
-CALABA_SERVER_URL=http://localhost:3000 CALABA_USER_DATA=/tmp/cal-a CALABA_FAKE_MEDIA=1 pnpm -F @calaba/desktop dev
-# клиент Б (второй экземпляр того же dev-сервера):
-cd apps/desktop && ELECTRON_RENDERER_URL=http://localhost:5173 CALABA_MULTI_INSTANCE=1 CALABA_SERVER_URL=http://localhost:3000 \
-  CALABA_USER_DATA=/tmp/cal-b CALABA_FAKE_MEDIA=1 ../../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron .
-```
-`CALABA_FAKE_MEDIA=1` включает синтетический микрофон (бип) и тестовую «картинку» экрана. Без флага используются настоящие устройства, и macOS спросит разрешения.
-
-| # | Действие | Ожидаемый результат |
-|---|---|---|
-| 2.1 | А: «Нет аккаунта? Зарегистрироваться» → email, имя, пароль (≥ 8 символов) | онбординг: «Микрофон» → «Разрешить микрофон» (индикатор уровня двигается) → «Как включать микрофон» → (macOS) «Показ экрана» → «Уведомления» → «Всё готово». Любой шаг можно пропустить («Пропустить настройку»). Затем экран «Добро пожаловать в Calaba» |
-| 2.2 | А: «Создать пространство» → название → «Создать» | в левой полосе иконка пространства, в колонке секции «Текстовые / Голосовые комнаты» |
-| 2.3 | А: «+» у текстовых → «общий» | комната открыта, «Добро пожаловать в #общий», справа панель участников (1 в сети) |
-| 2.4 | А: меню пространства (стрелка у названия) → «Пригласить людей» → «Создать приглашение» | тост «Ссылка-приглашение скопирована», в списке появилась строка `https://<сервер>/join/<код>` (без адреса сервера — `calab://join/<код>`) |
-| 2.5 | Б: регистрация с этим кодом в поле «Код приглашения» | Б сразу в пространстве. У А в панели участников «В сети — 2» |
-| 2.6 | Б: открыть «общий» | до открытия название комнаты у Б жирное (непрочитанное) |
-| 2.7 | Б: начать печатать | у А под полем ввода «Боб печатает…» |
-| 2.8 | Б: отправить `Привет, @<имя А>! **жирный** _курсив_ \`код\` https://example.com` | у А сообщение появилось сразу. Упоминание подсвечено жёлтым, markdown отрисован. Если окно А не в фокусе — системное уведомление и отскок иконки в Dock. Над сообщением у А маркер «НОВЫЕ» |
-| 2.9 | А: в пустом поле ↑ → изменить текст → Enter | у обоих текст обновился, пометка «(изменено)» |
-| 2.10 | А: навести на своё сообщение → корзина → «Удалить» | у обоих сообщение исчезло |
-| 2.11 | Б: скрепка → картинка + любой файл → Enter (или перетащить файлы в чат, или вставить картинку из буфера) | прогресс загрузки. У А превью картинки, по клику — полный размер. У файла карточка с размером; «Скачать» сохраняет в «Загрузки» и показывает файл в Finder |
-| 2.12 | А: «+» у голосовых → «Созвон», клик по комнате | внизу колонки «Голос подключён · Созвон», значок качества зелёный, звук входа |
-| 2.13 | Б: клик по «Созвон» | через ≤ 30 с (reconcile; сразу, если у LiveKit настроены webhooks) под комнатой оба участника. Говорящий (бип fake-микрофона) обведён зелёным |
-| 2.14 | Б: кнопка микрофона в панели «я» | у А рядом с Бобом иконка перечёркнутого микрофона. В логе сервера `PATCH /api/voice/self 204` |
-| 2.15 | А: правый клик по Бобу в голосовой комнате | ползунок громкости 0–100 %, «Выключить микрофон (модерация)», «Отключить от комнаты» |
-| 2.16 | А: «Выключить микрофон (модерация)» | у Б тост «Модератор выключил вам микрофон», кнопка микрофона красная |
-| 2.17 | А: «Отключить от комнаты» | Б выходит из голоса с тостом «Модератор отключил вас…» |
-| 2.18 | А (в голосе): значок монитора «Показать экран» → выбрать экран → «Начать стрим» | у А плашка «● В эфире · N смотрят» |
-| 2.19 | Б (в той же голосовой комнате) | в углу чата плитка PiP 320×180 со стримом. У А «1 смотрит» |
-| 2.20 | Б: клик по плитке (развернуть) → «В отдельное окно» → закрыть окно | стрим разворачивается над чатом в высоком качестве. Отдельное окно показывает стрим, основное — «Стрим открыт в отдельном окне». После закрытия окна стрим снова развёрнут |
-| 2.21 | Б: ✕ «Не смотреть» | плитка исчезла, у А «0 смотрят» |
-| 2.22 | А: «Остановить стрим» | у Б стрим пропал |
-| 2.23 | Настройки (шестерёнка) → «Внешний вид» → «Светлая» | тема мгновенно светлая |
-| 2.24 | Настройки → «Голос и устройства» → «Проверить» | индикатор уровня двигается, жёлтая риска — порог. С включённым RNNoise видна вероятность речи |
-| 2.25 | Настройки → «Соединение» → «Проверить соединение» в голосе | API «доступен, N мс», Gateway «подключено», путь голоса, например `host → prflx, UDP` |
-| 2.26 | Закрыть А и запустить снова | вход не требуется: сессия восстановлена из Keychain (`session.bin` в профиле зашифрован) |
-| 2.27 | Настройки → «Сеансы» → завершить сессию Б | Б выбрасывает на экран входа с сообщением «Сессия была завершена на другом устройстве» (gateway 4010) |
-| 2.28 | Остановить API на 10 с и запустить снова | жёлтая полоса «Нет соединения с сервером — переподключаемся…», затем она исчезает, пропущенные события досылаются (RESUME) |
-| 2.29 | Б (собранное приложение, в голосе и в #general): найти PID renderer — `pgrep -lf 'Calab Helper \(Renderer\)'` (при двух экземплярах — в Мониторинге системы по времени запуска). `kill -STOP <pid>`, А за это время пишет сообщение, через 20 с `kill -CONT <pid>` | сообщение появилось у Б сразу (сокет пережил 20 с: это меньше двух интервалов heartbeat), голос вернулся сам за ≤ 5 с (resume LiveKit) |
-| 2.30 | То же, но пауза 95 с | в логе Б (`<профиль>/logs/main.log`): `[gateway] closed 1006` → `invalid session (resumable=false)` → новый IDENTIFY. Жёлтая полоса ≤ 3 с, пропущенное сообщение на месте, голос снова «Голос подключён» через ≤ 5 с |
-| 2.31 | Выключить Wi-Fi на 10 с (только на отдельной машине: на общем Mac это рвёт связь другим агентам) | то же, что в 2.30: полоса, RESUME или IDENTIFY, голос возвращается сам (переподключение LiveKit, иначе повторный `/join` с паузами 1, 2, 4… с) |
-| 2.32 | ⌘K (Ctrl+K), набрать часть названия комнаты, ↓/↑, Enter | окно быстрого перехода вверху по центру, выбранная строка синяя, Enter открывает комнату, Esc закрывает |
-| 2.33 | ⌘⇧M / ⌘⇧D (Ctrl+Shift+M / D) в голосе | микрофон / звук выключаются и включаются, иконки в панели «я» красные; подсказки с сочетаниями — в tooltip кнопок |
-| 2.34 | Сузить окно до минимума (960×600) | окно не уже 960×600, ничего не наезжает; панель участников становится плавающей (открывается кнопкой «Участники», закрывается Esc), колонку комнат можно тянуть за правый край (200–320 px) |
-
-### 3. Сборка
-```bash
-pnpm -F @calaba/desktop build        # → apps/desktop/dist/Calab-<ver>-arm64.dmg и -mac.zip (без подписи)
-open apps/desktop/dist/mac-arm64/Calab.app   # при первом запуске ПКМ → «Открыть» (приложение не подписано)
-```
-Ожидается: окно входа. В поле «Сервер» надо ввести адрес (по умолчанию `https://app.calab.ru` из `.env.production`; переопределяется `MAIN_VITE_DEFAULT_SERVER_URL` при сборке). Логи пишутся в `~/Library/Application Support/Calaba/logs/main.log` (папка данных сохранила имя до переименования, docs/10). Ссылка `calab://join/<код>` (и старая `calaba://join/<код>`), открытая из браузера или через `open calab://join/<код>`, запускает Calab и показывает диалог входа в пространство.
-
-### 3a. Безопасность десктопа (ревью 2026-09-26: M2, M3, L1–L3)
-| # | Проверка | Ожидается |
-|---|---|---|
-| S.1 | Скачать вложение из чата, затем `xattr -l ~/Downloads/<файл>` | `com.apple.quarantine: 0083;…;Calab;`. Windows: у файла есть `Zone.Identifier` (ZoneId=3) — «Свойства» → «Разблокировать» |
-| S.2 | Собранное приложение, сервер `https://…` | само скачивает и ставит обновления только из фида, зашитого при сборке (`MAIN_VITE_UPDATE_FEED`, в релизе `https://releases.calab.ru/`). Фид из адреса сервера (`app.X` → `https://releases.X/`, иначе `https://<сервер>/download/`) и `CALABA_UPDATE_URL` дают только уведомление «Доступна версия X — Скачать», без загрузки. Только https. Задать адрес из интерфейса нельзя. Поведение по платформам — «3c. Автообновление» |
-| S.3 | DevTools renderer: `await fetch('https://example.com')` | ошибка CSP (`connect-src` ограничен сервером, его поддоменами (`rtc.`) и `calaba-api:`). Голос и gateway работают. LiveKit на другом домене → `CALABA_CSP_CONNECT="wss://… https://…"` |
-| S.4 | DevTools: `location.href = 'file:///etc/hosts'` или `<iframe src=…>` на внешний сайт | навигация заблокирована, `<webview>` не создаётся |
-
-### 3b. Лицензии и горячие клавиши
-| # | Проверка | Ожидается |
-|---|---|---|
-| L.1 | `pnpm -F @calaba/desktop build:app` / `build:web` | в выводе `third-party notices: N packages`. Сборка падает, если в бандле появилась GPL/AGPL/SSPL/EUPL. LGPL допустима только у перечисленных в скрипте: libuiohook внутри uiohook-napi, с текстами LGPL/GPL в THIRD-PARTY-NOTICES |
-| L.2 | Настройки → «О программе» | карточка «Лицензия»: «Business Source License 1.1» → текст лицензии + NOTICE; «Коммерческая лицензия» → COMMERCIAL-LICENSE.md; «Лицензии сторонних компонентов» → THIRD-PARTY-NOTICES. Ниже строка «© 2026 GPTunneL · Powered by GPTunneL» со ссылкой |
-| L.3 | Экран входа (веб и десктоп) | внизу та же строка, «Лицензия: Business Source License 1.1» и «Лицензии сторонних компонентов» — открывают тексты |
-| L.4 | Собранный dmg: `ls Calab.app/Contents/Resources` | есть `LICENSE`, `NOTICE`, `COMMERCIAL-LICENSE.md`, `THIRD-PARTY-NOTICES.txt`. Установщик DMG/NSIS показывает лицензию |
-| K.1 | Настройки → «Горячие клавиши» → «Изменить» у «Выключить микрофон» → ⌘⇧J | подпись в строке, в tooltip панели «я» и в «?» — «⌘⇧J». ⌘⇧J выключает микрофон, ⌘⇧M больше нет |
-| K.2 | «Изменить» → ⌘Q / ⌘⇧D (занято «Заглушить всех») / J без ⌘ | отказ с причиной под строкой, прежнее сочетание остаётся. Esc отменяет запись |
-| K.3 | «Сбросить» | вернулось сочетание по умолчанию |
-
-### 3c. Автообновление
-
-Логика — `apps/desktop/src/main/updateFlow.ts` (unit-тесты `updateFlow.test.ts`, `src/shared/updateFeed.test.ts` в `pnpm -F @calaba/desktop test`).
-
-Фиды:
-- **Зашитый при сборке** — `MAIN_VITE_UPDATE_FEED`. В релизе это `https://releases.calab.ru/`: `apps/desktop/.env.production`, а `build-release.sh` передаёт `UPDATE_FEED`. Только из него обновление скачивается и ставится само.
-- **Из адреса сервера** — `https://app.<домен>` → `https://releases.<домен>/`, любой другой адрес → `https://<сервер>/download/`. Используется, только если зашитого фида нет, и только для уведомления.
-- **`CALABA_UPDATE_URL`** при запуске заменяет фид, но тоже только для уведомления.
-
-Ссылка «Скачать» ведёт на `https://<сервер>/download/`, а без сервера — на зашитый фид.
-
-Автоустановка работает при трёх условиях: фид зашит при сборке, переключатель включён, и платформа — Windows, Linux AppImage или macOS, собранный с `MAIN_VITE_UPDATES_SIGNED=1` (подпись + нотаризация). В остальных случаях приходит только уведомление.
-
-Когда проверяется: через 10 с после запуска, затем каждые 6 ч, по кнопке «Проверить» (Настройки → «О программе»), через ~5 с после выхода из сна, а после неудачной проверки — когда сеть пропала и вернулась. Нужна собранная версия: в dev (`pnpm dev`) обновления выключены.
-
-Переключатель: Настройки → «Приложение» → карточка «Обновления» → «Автоматически обновлять» (по умолчанию включён). Выключен → ничего не скачивается, только уведомление «Доступна версия X — Скачать». Хранится в `settings.json` рядом с логами (`autoUpdate`).
-
-Лог (строки `[update]`, плюс вывод electron-updater): macOS `~/Library/Application Support/Calaba/logs/main.log`, Windows `%APPDATA%\Calaba\logs\main.log`, Linux `~/.config/Calaba/logs/main.log`. Ошибки обновления видны только там и строкой «Не удалось проверить обновления» в «О программе» — тостов нет.
-
-| # | Проверка | Ожидается |
-|---|---|---|
-| U.1 | Фид: `for f in latest.yml latest-mac.yml latest-linux.yml; do curl -s -o /dev/null -w "$f %{http_code}\n" https://releases.<домен>/$f; done`, затем `curl -s https://releases.<домен>/latest-mac.yml` (и два других) | все три — 200. В каждом `version:` — опубликованная версия, в `files:`/`path:` — имена `Calab-…` (`Calab-Setup-<в>-x64.exe`; `Calab-<в>-arm64.zip` / `Calab-<в>-x64.zip`; `Calab-<в>-x86_64.AppImage`), у каждого файла `sha512` и `size`. `curl -sI https://releases.<домен>/<файл>` → 200 |
-| U.2 | Windows / Linux AppImage: установить 0.1.0, войти на сервер `https://app.<домен>`; опубликовать 0.1.1 в фид; запустить (или перезапустить) Calab | в течение ~10 с в «О программе» строка «Загружается версия 0.1.1 — N %» растёт до 100, затем «Версия 0.1.1 загружена — установится при перезапуске» и кнопка «Перезапустить». Над панелью «я» слева внизу — строка «Обновление 0.1.1 готово» с кнопкой «Перезапустить». Нажать → приложение закрывается, ставится и запускается само; в «О программе» «Версия 0.1.1». Вариант: вернуть 0.1.0, дождаться баннера, **не нажимая** выйти (трей → «Выход» / закрыть окно на Windows) → при следующем запуске версия 0.1.1. В логе: `[update] downloaded 0.1.1`, `[update] quit and install` (для кнопки) |
-| U.2a | То же, но «Автоматически обновлять» выключен | ничего не скачивается: уведомление «Доступна версия 0.1.1 — Скачать» (по клику — страница загрузки), в «О программе» «Доступна версия 0.1.1» и кнопка «Скачать». Включить переключатель → сразу начинается загрузка (как в U.2) |
-| U.2b | Linux deb (`calab_0.1.0_amd64.deb`) | как U.2a независимо от переключателя: пакет обновляется вручную |
-| U.3 | macOS, неподписанная сборка (без `MAIN_VITE_UPDATES_SIGNED=1`; `build-release.sh` ставит его только при `SIGN=1 NOTARIZE=1`): установлена 0.1.0, в фиде 0.1.1 | через ~10 с системное уведомление «Доступна версия 0.1.1 — Скачать» (один раз на версию, повтор проверки его не дублирует); клик открывает страницу загрузки в браузере. В «О программе» «Доступна версия 0.1.1» + «Скачать». Ничего не скачивается и не ставится само, баннера над панелью «я» нет. Подписанная сборка (`MAIN_VITE_UPDATES_SIGNED=1`) ведёт себя как U.2 |
-| U.4 | Недоступный фид (например, `CALABA_UPDATE_URL=https://releases.invalid/` при запуске) | приложение работает как обычно, никаких тостов и уведомлений; в «О программе» «Не удалось проверить обновления», в логе `[update] failed` |
-| U.5 | Windows, сборка **без** зашитого фида (`MAIN_VITE_UPDATE_FEED=` пустой при `pnpm build:app`), вход на сервер `https://app.<домен>`, в `https://releases.<домен>/` лежит 0.1.1. Затем то же со сборкой с фидом, но запуском с `CALABA_UPDATE_URL=https://releases.<домен>/` | в обоих случаях только уведомление «Доступна версия 0.1.1 — Скачать», ничего не скачивается, баннера «Перезапустить» нет. Клик открывает `https://app.<домен>/download/`, а не корень фида |
-| U.6 | Собранная версия. Выключить сеть, запустить Calab, дождаться «Не удалось проверить обновления»; включить сеть. Отдельно: усыпить машину, разбудить | после возврата сети не позже чем через ~35 с новая проверка (в логе `checking for update`), статус больше не ошибка. После пробуждения проверка через ~5 с. Во время загрузки или при готовом «Перезапустить» повторных проверок нет |
-
-### 4. Только люди
-- **Эхо на реальных устройствах.** 3 участника, двое на колонках, говорят одновременно. Затем смена устройства вывода посреди разговора (Настройки → «Устройство вывода»). Эха быть не должно.
-- **PTT.** Настройки → «Голос и устройства» → «Push-to-talk» → «Назначить» → клавиша. Удержание в любом приложении включает эфир, отпускание выключает через ~0,2 с. На macOS нужны «Универсальный доступ» и «Мониторинг ввода»: если их нет, биндер показывает красную строку и кнопку «Открыть настройки ОС». Рядом с клавишей есть точка: зелёная, пока эфир включён, — удобно проверять прямо в настройках. Для замера второй клиент в той же голосовой комнате включает dev-статистику: Настройки → «Приложение» → «Статистика медиа для разработчиков», строка `total ↓… kbps`.
-
-  | # | Действие (macOS) | Ожидается |
-  |---|---|---|
-  | P.1 | «Назначить» → нажать Caps Lock | через ~0,35 с «⇪ Caps Lock» и жёлтая плашка «работает в режиме переключения». В `logs/main.log`: `[ptt] captured { code: 3898, mode: 'toggle' }` |
-  | P.2 | В голосе: Caps Lock (индикатор загорелся) → говорить → Caps Lock ещё раз | после первого нажатия точка зелёная, у второго клиента `↓` ≈ 20–25 кбит/с. После второго — тишина, `↓` ≈ 2–3 кбит/с |
-  | P.3 | Включить «Caps Lock не меняет регистр» | `hidutil property --get UserKeyMapping` показывает `Src = 30064771129 → Dst = 30064771181` (Caps → F18). В логе `remap applied` |
-  | P.4 | Удерживать Caps Lock 3 с, отпустить | эфир ровно пока держим, отпускание — через 0,2 с. Регистр букв не переключается, индикатор Caps не горит |
-  | P.5 | Закрыть Calab (⌘Q) | `hidutil … --get` пустой: раскладка вернулась. Ваш собственный маппинг, если был, остался |
-  | P.6 | С включённой опцией: `kill -9` процесса Calab → Caps Lock снова печатает F18 → запустить Calab | в логе `restored the keyboard mapping left by a previous crash`, затем ремап снова применён. После ⌘Q раскладка обычная |
-  | P.7 | «Назначить» → боковая кнопка мыши | «Кнопка мыши 4 (назад)». Удержание — эфир, отпускание — тишина (раньше на macOS кнопка мыши «залипала») |
-  | P.8 | «Назначить» → F18 / правый ⌥ / Num 0 | «F18» / «Правый ⌥ Option» / «Num 0». Работают как удержание |
-  | P.9 | Windows / Linux X11: «Назначить» → Caps Lock | «⇪ Caps Lock» без плашки: режим удержания. Linux Wayland: подсказка, что глобальные клавиши недоступны |
-
-  Если на вашем Mac Caps Lock присылает и отпускание, в P.1 будет `code: 58, mode: 'hold'` без плашки. Это тоже корректно: работает как удержание.
-- **Системный звук стрима.** macOS: переключатель доступен с предупреждением; ожидаемо звук участников тоже попадает в стрим. Windows: проверить, что голоса участников не попадают в стрим.
-- **Уведомления и трей.** Меню трея: «Выключить микрофон», «Выключить звук», «Отключиться от голоса».
-
----
-
-## Web client (ADR-0015: `apps/desktop`, сборка `dist-web`)
-
-Тот же renderer, что у десктопа, со слоем `platform = web`. Отличия от десктопа:
-- refresh-токен лежит в HttpOnly-cookie `calaba_refresh` (Path=/api/auth, Secure, SameSite=Strict), access-токен — только в памяти;
-- API и gateway работают на том же origin, что и страница;
-- PTT работает только при активной вкладке;
-- экран выбирается в стандартном окне браузера;
-- файлы скачиваются через `a[download]`;
-- ссылка-приглашение: `https://<домен>/join/<код>`.
-
-### 0. Сборка и проверка бандла
-```bash
-pnpm -F @calaba/desktop build:web      # → apps/desktop/dist-web; в конце "web bundle OK: no Electron-only code"
-```
-
-### 1. Локально (API + LiveKit dev)
-```bash
-# API должен знать origin веб-клиента (CSRF / cookie / gateway):
-cd apps/server && PUBLIC_APP_URL=http://localhost:4173 … go run ./cmd/server        # остальные env — как в «Desktop app», п. 0
-CALABA_WEB_PROXY=http://127.0.0.1:3000 pnpm -F @calaba/desktop preview:web          # dist-web на :4173, /api и /gateway проксируются
-CALABA_WEB_URL=http://localhost:4173 pnpm -F @calaba/desktop e2e:web                # ожидается: 2 passed (chromium + firefox)
-```
-Для dev-режима с HMR: `pnpm -F @calaba/desktop dev:web` (порт 5174; `PUBLIC_APP_URL=http://localhost:5174`).
-
-### 2. Ручной сценарий (Chrome, плюс Firefox по возможности)
-| # | Действие | Ожидается |
-|---|---|---|
-| W1 | Открыть `http://localhost:4173` (или стенд) | экран входа **без** поля «Сервер» |
-| W2 | Войти | главное окно. DevTools → Application → Cookies: `calaba_refresh`, HttpOnly ✓, Secure ✓, SameSite Strict. `document.cookie` в консоли её не показывает |
-| W3 | Перезагрузить страницу | вход сохраняется (`POST /api/auth/refresh` → 200, новая cookie) |
-| W4 | Вторая вкладка с тем же адресом | обе вкладки работают. Одновременные refresh не выбрасывают из сессии (Web Locks сериализуют ротацию) |
-| W5 | Чат, картинка, файл, скачивание | как в «Desktop app», 2.6–2.11. Превью картинок — `blob:` URL. «Скачать» сохраняет файл средствами браузера |
-| W6 | Голос: клик по голосовой комнате | браузер спросит микрофон, затем «Голос подключён». Звук другого участника слышен |
-| W7 | Настройки → Голос → Push-to-talk → «Назначить» → клавиша | подсказка «только когда вкладка активна». Пока вкладка в фокусе — работает. Переключились в другую вкладку — передача прекращается |
-| W8 | «Показать экран» → «Начать стрим» | открывается окно выбора браузера (экран / окно / вкладка). После выбора — «В эфире». Зритель (десктоп или веб) видит плитку в углу чата |
-| W9 | Зритель: развернуть и открыть во всплывающем окне | работает как в десктопе (popup-окно браузера) |
-| W10 | Открыть `https://<домен>/join/<код>` без входа, затем войти | после входа открывается диалог «Присоединиться к пространству» с этим кодом |
-| W11 | «Выйти» | cookie удалена, повторная загрузка страницы показывает экран входа |
-| W12 | Firefox | W1–W6 и W8 (Firefox умеет AV1; если нет — стрим уходит в VP9 или VP8) |
-
-Известно: Firefox не проходит ICE до LiveKit в Docker на `127.0.0.1` (локальный dev-стенд). На стенде с публичным IP это ограничение не действует.
-
-### 3. Стенд (`https://app.calab.ru`, запасной адрес `https://meet.gptunnel.ru`)
-После публикации `dist-web` (infra, `sync.sh`): сценарий W1–W12 и `CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web`. E2E регистрирует тестового пользователя и создаёт пространство — на стенде включена открытая регистрация.
-
-## Server: UI-бэклог (категории, поиск, unfurl, реакции, статус, закрепы, время звонка)
+### 3.4 UI-бэклог (категории, поиск, unfurl, реакции, статус, закрепы, время звонка)
 
 ```sh
 cd apps/server
@@ -868,7 +749,7 @@ go test -tags integration -count=1 -v -run 'TestCategories|TestSearch|TestUnfurl
 - **Статус**: `PRESENCE_UPDATE` со статусом, истёкший статус отдаётся пустым.
 - **Время звонка**: `joined_at` в `VOICE_STATE_UPDATE`, `voice_started_at` в READY: сохраняется, пока в комнате кто-то есть, и пропадает, когда комната пуста.
 
-Ручная проверка unfurl на реальном сайте (сервер запущен как в «Server stage 3», `$BT` — токен). **Если на машине VPN/прокси в режиме fake-IP** (проверка: `dig +short github.com` отдаёт `198.18.x.x`), без доп. настройки SSRF-фильтр справедливо блокирует все сайты — запусти сервер с `UNFURL_ALLOW_CIDRS=198.18.0.0/15` (только dev).
+Ручная проверка unfurl на реальном сайте (сервер запущен как в 3.2, `$BT` — токен). **Если на машине VPN/прокси в режиме fake-IP** (проверка: `dig +short github.com` отдаёт `198.18.x.x`), без доп. настройки SSRF-фильтр справедливо блокирует все сайты — запусти сервер с `UNFURL_ALLOW_CIDRS=198.18.0.0/15` (только dev).
 ```sh
 curl -s "$A/api/unfurl?url=https%3A%2F%2Fgithub.com" -H "Authorization: Bearer $BT" | jq -c '{title,siteName,img:(.imageUrl|length>0)}'
 curl -s -o /dev/null -w '%{http_code}\n' "$A/api/unfurl?url=http%3A%2F%2F127.0.0.1%3A3900%2Fhealthz" -H "Authorization: Bearer $BT"
@@ -879,7 +760,7 @@ curl -s -o /dev/null -w '%{http_code}\n' "$A/api/unfurl?url=http%3A%2F%2F169.254
 - `404` — свой loopback не запрашивается;
 - `404` — metadata-адрес облака заблокирован.
 
-## Server P0.5 (лимит комнаты, перемещение, ники, гости, AFK)
+### 3.5 P0.5 (лимит комнаты, перемещение, ники, гости, AFK)
 
 ```sh
 cd apps/server
@@ -908,7 +789,7 @@ go test -tags integration -count=1 -v -run 'TestUserLimit|TestMoveMember|TestNic
   - чистка: токен → 401, сообщение сохранено, имя «Гость (удалён)», членства нет.
 - **AFK**: `idle` на втором устройстве не перебивает `dnd` и `invisible`; после закрытия первого устройства — `idle`, heartbeat его не сбрасывает.
 
-Ручной сценарий гостя (сервер как в «Server stage 3», `$OT` — токен владельца, `$VOI` — voice-комната):
+Ручной сценарий гостя (сервер как в 3.2, `$OT` — токен владельца, `$VOI` — voice-комната):
 ```sh
 CODE=$(curl -s -XPOST $A/api/rooms/$VOI/invites -H "Authorization: Bearer $OT" -d '{}' | jq -r .invite.code)
 curl -s $A/api/room-invites/$CODE | jq -c '{roomName,workspaceName,allowGuests}'
@@ -918,7 +799,7 @@ curl -s -XPOST $A/api/room-invites/$CODE/join -H 'X-Forwarded-For: 10.9.0.1' -d 
 - `{"roomName":"voice","workspaceName":"Team","allowGuests":true}`;
 - `{"roomId":"<$VOI>","isGuest":true,"hasToken":true}`.
 
-## Server: исправления security-ревью (лимиты, brute force, заголовки)
+### 3.6 Исправления security-ревью (лимиты, brute force, заголовки)
 
 ```sh
 cd apps/server
@@ -939,7 +820,7 @@ go test -tags integration -count=1 -v -run 'TestAbuseLimits|TestLimiterFailsClos
   - `REDIS_URL` с паролем (`redis://:s3cr%40t@host:6379/0`, `redis://user:pw@…`) разбирается rueidis;
   - `OriginAllowed` с cookie и без.
 
-## Server: исправления код-ревью (H1–H2, M1–M13, L1–L16)
+### 3.7 Исправления код-ревью (H1–H2, M1–M13, L1–L16)
 
 ```sh
 cd apps/server
@@ -978,7 +859,7 @@ go test -race -tags integration -count=1 -v -run 'TestResumeAcrossInstances|Test
   - гостевая видимость в `wsState` (M7);
   - `events` round trip.
 
-## Server: второй проход ревью (R1–R9)
+### 3.8 Второй проход ревью (R1–R9)
 
 ```sh
 cd apps/server
@@ -1000,7 +881,7 @@ go test -race -tags integration -count=1 -v -run 'TestLocalResumeOrdering|TestLo
   - новый двухуровневый входной лимит (R7).
 - **R9**: миграция 00005 — `CREATE INDEX CONCURRENTLY` вне транзакции; применяется в каждом интеграционном прогоне на чистой БД.
 
-## Server: третий проход ревью (B1–B4)
+### 3.9 Третий проход ревью (B1–B4)
 
 ```sh
 cd apps/server
@@ -1020,7 +901,7 @@ go test -race -count=3 -v -run 'TestOverlappingPauses|TestHeldStashOverflowClose
   - смена категории или overrides, а также неизвестная комната — запускают.
 - Регрессия: `make test-integration` целиком (включая `TestSoftLimitAndGuestMemberAdd` и `TestLocalResumeOrdering`).
 
-## Server: voice_started_at в событиях, упоминания, уведомления комнаты
+### 3.10 Voice_started_at в событиях, упоминания, уведомления комнаты
 
 ```sh
 cd apps/server
@@ -1045,7 +926,7 @@ go test -race -tags integration -count=1 -v -run 'TestVoiceTimes|TestMentions|Te
   - `mutedUntil` > 1 года и неизвестный `level` → 422, невидимая комната → 404;
   - `ALL` без `mutedUntil` → сброс, READY пустой.
 
-## Server: серверный mute (`VoiceState.server_muted`)
+### 3.11 Серверный mute (`VoiceState.server_muted`)
 
 ```sh
 cd apps/server
@@ -1060,7 +941,7 @@ go test -race -tags integration -count=1 -v -run TestServerMute ./internal/app/ 
 - флаг сохраняется в READY и после выхода и повторного входа (`can_speak = false`);
 - `unmute` (MUTE_MEMBERS) → `server_muted = false`, microphone возвращается в grant, самостоятельный unmute снова разрешён.
 
-## Server: счётчики непрочитанного в READY
+### 3.12 Счётчики непрочитанного в READY
 
 ```sh
 cd apps/server
@@ -1074,7 +955,7 @@ go test -race -tags integration -count=1 -v -run TestReadStateCounts ./internal/
 - удаление сообщения с `@here` → 2 / 1;
 - `PUT …/read` до последнего → 0 / 0.
 
-## Server: смена пароля и email (`PATCH /api/me/password`, `PATCH /api/me/email`)
+### 3.13 Смена пароля и email (`PATCH /api/me/password`, `PATCH /api/me/email`)
 
 ```sh
 cd apps/server
@@ -1089,7 +970,7 @@ go test -race -tags integration -count=1 -v -run TestChangeCredentials ./interna
 - шестая проверка пароля за 15 минут → 429 (невалидные запросы не считаются);
 - гость → 403 на оба эндпоинта.
 
-## Server: версия и лицензии (`GET /api/version`, образ)
+### 3.14 Версия и лицензии (`GET /api/version`, образ)
 
 ```sh
 cd apps/server && go test ./internal/buildinfo/ -v 2>&1 | grep -E '^(--- |ok|FAIL)'
@@ -1103,7 +984,7 @@ id=$(docker create calaba-api:check); docker export $id | tar -t | grep -E '^(LI
 - в образе четыре файла;
 - на запущенном сервере `curl -s localhost:3000/api/version` → `{"version":"…","commit":"…","license":"BUSL-1.1","commercialLicense":"https://gptunnel.ai","attribution":"Powered by GPTunneL","url":"https://gptunnel.ai"}`, в логе `listening` есть `version` и `commit`.
 
-## Server: Valkey вместо Redis (ADR-0017)
+### 3.15 Valkey вместо Redis (ADR-0017)
 
 ```sh
 docker compose -f infra/docker/compose.dev.yml up -d --remove-orphans     # заменит redis на valkey (новый volume)
@@ -1117,7 +998,7 @@ cd ../.. && make test-integration 2>&1 | grep internal/app
 - `ok … internal/app` — весь интеграционный набор против Valkey (presence на `HEXPIRE`, Lua-лимитеры, pub/sub, client-side caching).
 - Сервер со старым Redis 7.2 или Valkey 8 не стартует: `need Valkey >= 9.0 or Redis >= 7.4`.
 
-## Server: ревью 4 (M1, M2, L1–L10)
+### 3.16 Ревью 4 (M1, M2, L1–L10)
 
 ```sh
 cd apps/server
@@ -1142,7 +1023,7 @@ go test -race -tags integration -count=1 -v -run 'TestReadStateCounts|TestMentio
 
   Регрессия — весь `make test-integration`.
 
-## Server: статус звонка и скрытые превью (P0.6)
+### 3.17 Статус звонка и скрытые превью (P0.6)
 
 ```sh
 cd apps/server
@@ -1160,3 +1041,249 @@ go test -race -tags integration -count=1 -v -run 'TestEmbedsHidden|TestVoiceStat
   - участник звонка ставит «  Планёрка  » → сохраняется обрезанным, `ROOM_UPDATE` с `voiceStatus` и `voiceStartedAt`;
   - последний вышел → один `ROOM_UPDATE` без `voiceStartedAt` и с пустым `voiceStatus`, READY тоже без статуса;
   - `MANAGE_ROOM` ставит статус не будучи в звонке, пустая строка очищает.
+
+---
+
+## 4. Инфра и стенд
+
+Чтение состояния стенда и внешние проверки. Всё, что меняет стенд (деплой, сброс данных, ручной бэкап), — только infra/лид. Обозначения — 0.3.
+
+### 4.1 Деплой (infra)
+
+```sh
+infra/docker/sync.sh            # весь стек (rsync в /opt/calaba + deploy.sh)
+infra/docker/sync.sh api        # только api (пересборка образа)
+```
+Ожидается: `Image calaba-api Built`, `Container calaba-… Started/Running`, без ошибок.
+
+Релиз целиком (сервер, веб, лендинг, десктоп через GitHub Actions) — `infra/docker/release.sh <commit>`; только пост-проверки задеплоенного — `infra/docker/release.sh verify <commit>` (docs/06 «Релиз: runbook»). Запускает infra/лид, не тестировщик.
+
+### 4.2 Контейнеры и API
+
+```sh
+ssh $H "$DC ps --format '{{.Name}} {{.Status}}'"
+ssh $H "$DC logs api | grep -E 'migration applied|listening'"
+curl -s $A/healthz; ssh $H 'curl -s 127.0.0.1:3000/readyz'
+curl -s $A/api/version   # {"version":"<версия>","commit":"<sha задеплоенного коммита>",…}; commit=unknown — деплой без sync.sh
+for p in /readyz /metrics; do curl -s -o /dev/null -w "$p %{http_code}\n" $A$p; done   # оба 404 снаружи
+ssh $H 'docker run --rm -v calaba_files_data:/d busybox:1.37 stat -c "%u:%g %a" /d'
+```
+Ожидается: `calaba-api-1 Up (healthy)`, `caddy-1 Up`, `livekit-1 Up`, `postgres-1 / valkey-1 Up (healthy)`; в логе api `migration applied` (только при первом старте на пустой БД) и `"msg":"listening","addr":"127.0.0.1:3000","registration":"invite","storage":"fs","livekit":true`; `{"status":"ok"}`, `{"postgres":"ok","redis":"ok"}`, `404`; `65532:65532 750`.
+
+### 4.3 Сертификаты и HTTPS
+
+```sh
+curl -s  https://rtc.$DOM/                                 # OK
+curl -sI http://$D | head -3                             # HTTP/1.1 308 → https://$D/
+curl -sI https://rtc.$DOM | grep -i alt-svc               # пусто (HTTP/3 выключен, UDP 443 — TURN)
+openssl s_client -connect turn.$DOM:443 -servername turn.$DOM </dev/null 2>/dev/null \
+  | grep -E 'subject=|issuer=|Verify return'
+# subject=CN=turn.calab.ru / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
+# все имена: приложение и алиас; LiveKit и TURN — только на calab.ru
+for d in app.calab.ru meet.gptunnel.ru; do
+  echo "$d healthz=$(curl -s -o /dev/null -w %{http_code} https://$d/healthz) metrics=$(curl -s -o /dev/null -w %{http_code} https://$d/metrics) readyz=$(curl -s -o /dev/null -w %{http_code} https://$d/readyz)"
+done
+echo "rtc=$(curl -s https://rtc.$DOM/) turn=$(openssl s_client -connect turn.$DOM:443 -servername turn.$DOM </dev/null 2>/dev/null | grep -c 'Verify return code: 0')"
+# ожидается: для каждого healthz=200 metrics=404 readyz=404; rtc=OK turn=1
+ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[^\"]*' | sort -u"   # calab.ru, app., rtc., turn., releases., meet.gptunnel.ru (только при первом выпуске; позже — openssl s_client выше)
+```
+`curl https://turn.$DOM` **висит** — это нормально: SNI `turn.*` уходит в layer4 → TURN, HTTP там никто не отвечает.
+
+### 4.4 `/download/` и `releases.calab.ru`
+
+```sh
+for h in app.calab.ru calab.ru meet.gptunnel.ru; do curl -s -o /dev/null -w "$h %{http_code} %{redirect_url}\n" https://$h/download/latest.yml; done
+                                                                                   # у всех: 302 https://releases.calab.ru/latest.yml
+curl -s -o /dev/null -w '%{http_code} %{content_type}\n' https://releases.calab.ru/  # 200 text/html (список файлов); до первой публикации — 404
+curl -sI https://releases.calab.ru/latest.yml | grep -iE '^HTTP|cache-control'      # 200, no-cache (после публикации релиза; до неё — 404)
+curl -s https://releases.calab.ru/latest-mac.yml | grep -E 'url:|path:' | head -3  # пути вида releases/<версия>/Calab-…
+curl -sI https://releases.calab.ru/releases/<версия>/<установщик> | grep -iE '^HTTP|cache-control'   # 200, immutable
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-99' https://releases.calab.ru/releases/<версия>/<установщик>   # 206
+curl -sI https://app.calab.ru/manifest.webmanifest | grep -i content-type          # application/manifest+json
+```
+Публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3; фиды и `index.html` загружаются последними. Стенд лишь перенаправляет `/download/` (docs/06 «Релизы: GitHub Actions → S3»).
+
+### 4.5 LiveKit
+
+```sh
+ssh $H "$DC logs livekit | grep -E 'using external IPs|Starting TURN|starting LiveKit' | tail -3"
+ssh $H "$DC logs --since 30m livekit | grep -c 'failed to send webhook'"      # 0 (api принимает webhook)
+ssh $H "ss -lntup | grep -E 'livekit|caddy'"
+```
+Ожидается:
+- `using external IPs … ["141.105.69.177/141.105.69.177"]` — только публичный IP (docker-мосты 172.16/12 исключены).
+- `Starting TURN server … "turn.portTLS":5349,"turn.externalTLS":true,…,"turn.portUDP":443`
+- `starting LiveKit server … "bindAddresses":["127.0.0.1"],"rtc.portTCP":7881,"rtc.portUDP":{"Start":7882,…},"portPrometheus":6789`
+- порты: udp `141.105.69.177:7882`, udp `*:443`, tcp `127.0.0.1:7880`, `127.0.0.1:6789`, `*:7881`, `*:5349` (5349 снаружи закрыт файрволом); caddy — tcp `*:80`, `*:443`.
+
+Файрвол (только чтение!): `ssh $H 'iptables -L INPUT -n --line-numbers'` — ACCEPT tcp 80/443/7881 и udp 443/7882 стоят **выше** `DROP all`.
+
+### 4.6 Voice end-to-end (токен от API → LiveKit → webhook → gateway)
+
+`lk room join` не умеет входить с готовым токеном, поэтому используем `infra/docker/tools/relay-check.html` с токеном из `POST /api/rooms/{id}/join`:
+```sh
+J=$(curl -s -XPOST $A/api/rooms/$VOI/join -H "Authorization: Bearer $BT")
+mkdir -p /tmp/rc && cp infra/docker/tools/relay-check.html /tmp/rc/ && echo $J | jq -r .token > /tmp/rc/token.txt
+(cd /tmp/rc && python3 -m http.server 8765 --bind 127.0.0.1) &
+A=$A node /tmp/gw.mjs $OT 60 > /tmp/owner.log &                     # наблюдатель — владелец
+open "http://127.0.0.1:8765/relay-check.html?run=1#url=wss://rtc.$DOM&tokenfile=token.txt&mode=any"
+# ~15 с спустя:
+jq -c 'select(.dispatch.voiceStateUpdate)|.dispatch.voiceStateUpdate.state|{roomId,muted}' /tmp/owner.log
+curl -s -XPATCH $A/api/voice/self -H "Authorization: Bearer $BT" -d '{"muted":true}' -w '%{http_code}\n'
+ssh $H "$DC logs --since 2m api | grep rtc/webhook | grep -o '\"status\":[0-9]*' | sort | uniq -c"
+# закрыть вкладку, ~5 с:
+jq -c 'select(.dispatch.voiceStateUpdate)|.dispatch.voiceStateUpdate.state|{roomId}' /tmp/owner.log | tail -1
+```
+Ожидается: `voiceStateUpdate` с `roomId` = `$VOI` (`muted:true` — страница ничего не публикует); `voice/self` → `204`; webhook-и от LiveKit → `"status":200` (с `127.0.0.1`); после закрытия вкладки — `voiceStateUpdate` с `roomId:""`; `voice/self` снова `409`.
+
+Факт 2026-09-25: всё так (join → webhook 200 → voiceStateUpdate, leave → `roomId:""`).
+
+### 4.7 Нагрузочный тест медиа (`lk`)
+
+```sh
+brew install livekit-cli
+eval "$(ssh $H 'grep ^LIVEKIT_API_ /opt/calaba/infra/docker/.env' | sed 's/^/export /')"   # ключи не светить
+export LIVEKIT_URL=wss://rtc.$DOM
+lk room create --empty-timeout 600 loadtest      # auto_create выключен — комнату создаём сами (обычно это делает API при join)
+lk load-test --room loadtest --audio-publishers 2 --video-publishers 1 --subscribers 3 --duration 30s
+lk room delete loadtest
+```
+Ожидается: `Total 9/9`, `Pkt. Loss 0 (0%)` (допустимо < 1%), аудио ~20 kbps на трек, видео (simulcast) ~1.2–1.3 Mbps на подписчика.
+
+### 4.8 Принудительный relay (TURN/UDP и TURN/TLS)
+
+Как в 4.6, но токен — `lk token create --join --room loadtest --identity relay-check --valid-for 1h | grep -oE 'eyJ[A-Za-z0-9._-]+'` (или из API join), источник медиа — `lk load-test --room loadtest --audio-publishers 1 --video-publishers 1 --subscribers 0 --duration 5m &`, и `mode=tls` / `mode=udp`.
+
+Ожидается через ~30 с:
+- `mode=tls`: `setConfiguration iceServers: [["turns:turn.calab.ru:443?transport=tcp"]]`, `PASS [{"local":"relay",…,"relayProtocol":"tls",…,"bytesIn":<растёт>}]`; на сервере `ss -tn '( dport = :5349 )'` — соединения `127.0.0.1:* → 127.0.0.1:5349` (Caddy layer4 → LiveKit TURN).
+- `mode=udp`: `turn:141.105.69.177:443?transport=udp`, `PASS [{"local":"relay",…,"relayProtocol":"udp",…}]`.
+- `mode=any`: `"local":"host"|"srflx"|"prflx","protocol":"udp"`, remote `141.105.69.177:7882/udp`.
+
+Факт 2026-09-25: TLS — PASS (relay/tls, RTT ~40 мс, ~5.9 MB за 30 с); UDP — PASS (relay/udp, ~5.8 MB); без ограничений — prflx/udp → :7882.
+
+ICE/TCP (7881) без блокировки UDP не проверить. Вручную (нужен админ на клиенте или сеть без UDP):
+1. Заблокировать исходящий UDP к 141.105.69.177 (macOS: `pf` `block out proto udp to 141.105.69.177`; Windows: правило брандмауэра; либо сеть/VPN «только TCP»).
+2. Войти в голосовую комнату в десктоп-приложении, открыть панель статистики соединения.
+3. Ожидается: протокол кандидата `tcp` (ICE/TCP 7881); если открыт только 443 — `relay` + `tls`. Звук идёт, в UI — пометка «через relay/TCP».
+4. Снять блокировку — после переподключения снова `udp`.
+
+### 4.9 Чужие процессы и ресурсы
+
+```sh
+ssh $H 'ps -p 3695 -o pid,etime; docker ps --format "{{.Names}} {{.Status}}" | grep -v ^calaba; echo ffmpeg $(pgrep -c ffmpeg) chromium $(pgrep -c chromium) xvfb $(pgrep -c Xvfb)'
+ssh $H 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" | grep -E "NAME|calaba"'
+```
+Ожидается: pid 3695 жив (etime не сбросился), `gromtv-broadcast Up …`, `dcgm-exporter Up …`, ffmpeg/chromium/Xvfb ≥ 1.
+Факт 2026-09-25 (простой после тестов): api ~79 MiB, livekit ~90 MiB, postgres ~39 MiB, caddy ~16 MiB, redis (сейчас valkey) ~10 MiB; CPU < 2 %.
+
+### 4.10 Защита (security review 2026-09-26)
+
+```sh
+# контейнеры: read-only, без capabilities, no-new-privileges
+ssh $H 'for c in api caddy valkey postgres; do docker inspect -f "$c ro={{.HostConfig.ReadonlyRootfs}} drop={{.HostConfig.CapDrop}} add={{.HostConfig.CapAdd}} user={{.Config.User}}" calaba-$c-1; done'
+# valkey: пароль, noeviction, 512mb; пароль не виден в ps
+ssh $H 'docker exec calaba-valkey-1 valkey-cli ping; docker exec calaba-valkey-1 sh -c "VALKEYCLI_AUTH=\$REDIS_PASSWORD valkey-cli config get maxmemory-policy"; ps -eo args | grep -c "[r]equirepass"'
+# заголовки
+curl -sI $A/ | grep -i strict-transport; curl -sI $A/api/me | grep -iE 'cache-control|nosniff|referrer'; curl -sI https://rtc.$DOM/ | grep -i strict
+# регистрация закрыта
+curl -s -w ' %{http_code}\n' -XPOST $A/api/auth/register -d '{"email":"x@example.com","password":"password123","displayName":"X"}'
+# TURN relay ограничен (счётчики растут только при злоупотреблении); IPv6 INPUT DROP
+ssh $H 'iptables -L OUTPUT -n -v | grep calaba-turn; ip6tables -S INPUT | head -1'
+```
+Ожидается: все четыре `ro=true drop=[ALL]`, caddy `add=[CAP_NET_BIND_SERVICE]`, valkey `user=999:1000`, postgres `user=70:70`, api `user=65532`; `NOAUTH Authentication required.`, `noeviction`, `0`; `strict-transport-security: max-age=31536000; includeSubDomains` на `$D` и `rtc.$DOM`; на `/api/me` — `cache-control: no-store`, `x-content-type-options: nosniff`, `referrer-policy: same-origin`; регистрация → `ERROR_CODE_REGISTRATION_CLOSED … 403`; два правила `calaba-turn-relay`; `-P INPUT DROP`.
+Relay-check TLS/UDP (4.8) после ограничения — PASS (факт 2026-09-26: relay/tls и relay/udp, ~5 MB за 30 с, счётчики правил не выросли).
+
+Проба relay (только для повторной проверки, делает infra): pion-клиент с кредами из JoinResponse → `CreatePermission` к `127.0.0.1`/`10.0.0.1` должен давать 403 (LiveKit), отправка на `141.105.69.177:<не 7882>` и на внешние адреса — дропаться правилами (слушатель на хосте ничего не получает). Никогда не целиться в порты соседа (9001/9002/54241/33621).
+
+### 4.11 Бэкапы
+
+```sh
+ssh $H 'systemctl list-timers calaba-backup.timer --no-pager | sed -n 2p; journalctl -u calaba-backup.service -n 5 --no-pager -o cat; ls -lt /opt/calaba/backups/*/ | head -20'
+ssh $H '/opt/calaba/infra/docker/backup/restore.sh test'       # восстановление в calaba_restore_test + сравнение + drop
+ssh $H 'systemctl start calaba-backup.service'                  # внеочередной бэкап (например, перед миграцией)
+```
+Ожидается: таймер на ближайшие 03:30; в журнале `pg ok`, `files ok`, `WARNING: no OFFSITE_RCLONE_REMOTE` (пока нет offsite), `done …`; в каталогах `pg/ files/ caddy/ config/` свежие файлы; `restore test`: `tables restored: N`, `row counts: identical to live DB` (или diff, если данные менялись после дампа), `restore test OK (calaba_restore_test dropped)`.
+Факт 2026-09-26: 12 таблиц, счётчики совпали; архив файлов распакован и сравнён `diff -r` с volume — идентично (7 файлов, владелец 65532).
+
+### 4.12 Известные особенности
+
+- В логах Caddy `caddy.listeners.layer4 … matching connection … EOF` — сканеры/обрывы до ClientHello, не ошибка.
+- `room.auto_create: false`: комнату в LiveKit создаёт API при join (или `lk room create` в тестах); иначе `requested room does not exist`. После ухода всех участников комната удаляется (`departure_timeout` 20 с).
+- Webhook-и от LiveKit идут на `http://127.0.0.1:3000/api/rtc/webhook`; тот же путь снаружи доступен через Caddy, но без подписи LiveKit → 401.
+
+---
+
+## История (устаревшее — не выполнять)
+
+Промежуточные состояния и факты прошлых доменов (`colaba.gptunnel.*`, `.ai`), оставлены для справки.
+
+<details><summary>Desktop media spike (этап 1) — заменён приложением</summary>
+
+Экран спайка удалён: медиа-пайплайн (AEC3 → RNNoise/VAD, PTT, AV1 simulcast, getStats) теперь работает внутри приложения. Результаты замеров спайка — в docs/02, раздел «Результаты спайка». Ручные медиа-проверки — в разделе «Desktop app» ниже, пункты 2.12–2.25 и 4.
+
+</details>
+
+<details><summary>Веб на стенде, 2026-09-26 (обход VPN для `.ai`)</summary>
+
+Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve app.calab.ru:443:141.105.69.177 https://colaba.gptunnel.ai/readyz` даёт 200 — это локальный VPN/прокси (fake-IP DNS, особые правила для `gptunnel.ai`), а не стенд. Обход для прогона: Chromium — `--host-resolver-rules=MAP colaba.gptunnel.ai 141.105.69.177 --proxy-server=direct://`, Firefox — prefs `network.proxy.type=0`, `network.dns.forceResolve=141.105.69.177` (через локальный playwright-конфиг, не в репо). Факт 2026-09-26: так `e2e:web` на `.ai` — 2 passed (Firefox с `CALABA_WEB_FF_VOICE=1`), на `.ru` — 2 passed без обхода.
+
+</details>
+
+<details><summary>Веб на стенде, факт 2026-09-25 (домены colaba.gptunnel.*)</summary>
+
+Факт 2026-09-25: все коды/заголовки как выше на обоих доменах; e2e:web — 2 passed на `.ai` (в т.ч. с `CALABA_WEB_FF_VOICE=1`) и на `.ru`; Playwright-прогон «регистрация → голос» в Chromium и Firefox — «Голос подключён», нарушений CSP 0, предупреждения RNNoise нет (Firefox: worklet 200 `text/javascript`). Клиент на `.ru` подключается к `wss://rtc.colaba.gptunnel.ai` (основной `LIVEKIT_URL`).
+
+</details>
+
+<details><summary>Установка до 2026-09-26 (`/download/` на стенде, mac без подписи)</summary>
+
+Сборки публикуются на `https://app.calab.ru/download/` (листинг каталога; то же на `.ru`). Какой файл брать:
+
+| ОС | Файл | Установка |
+|---|---|---|
+| macOS Apple Silicon (M1–M4) / Intel | `Calab-<версия>-arm64.dmg` / `Calab-<версия>-x64.dmg` (не знаете какой —  → «Об этом Mac»: «Чип Apple M…» = arm64) | открыть dmg, перетащить Calab в «Программы». Сборка **не подписана**: первый запуск — ПКМ по приложению → «Открыть» → «Открыть» (или `xattr -dr com.apple.quarantine /Applications/Calab.app`). Автообновление на macOS без подписи не работает — приложение только сообщает о новой версии |
+| Windows 10/11 x64 | `Calab-Setup-<версия>-x64.exe` | запустить; SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» (сборка не подписана) |
+| Linux x64 (любой дистрибутив) | `Calab-<версия>-x86_64.AppImage` | `chmod +x Calab-*.AppImage && ./Calab-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calab-*.AppImage --appimage-extract-and-run`) |
+| Debian/Ubuntu x64 | `calab_<версия>_amd64.deb` | `sudo apt install ./calab_*_amd64.deb`, запуск — «Calab» в меню или `calab` |
+
+После запуска — в поле «Сервер» ввести `https://app.calab.ru` (или `.ru`), войти (регистрация — по коду приглашения, см. 0.2).
+
+Проверка целостности (если скачано с ошибками): `latest-mac.yml` / `latest-linux.yml` / `latest.yml` рядом содержат `sha512` (base64) и `size` каждого файла: `shasum -a 512 -b <файл> | cut -d' ' -f1 | xxd -r -p | base64` (macOS/Linux) должно совпасть.
+
+Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3 → `https://releases.calab.ru/`; `/download/` на стенде — редирект туда (docs/06 «Релизы: GitHub Actions → S3», «Релиз: runbook»).
+
+</details>
+
+<details><summary>Сертификаты, Факт 2026-09-25: все 6 имён</summary>
+
+Факт 2026-09-25: все 6 имён — сертификаты LE (YE1), `readyz` 200, `/metrics` 404, `rtc` OK, TURN TLS `Verify return code: 0`.
+
+</details>
+
+<details><summary>Сертификаты, С 2026-09-26 приложение — на с</summary>
+
+С 2026-09-26 приложение — на самом домене (`https://colaba.gptunnel.ai`, `https://colaba.gptunnel.ru`), имена `app.colaba.*` удалены из DNS и не обслуживаются. Факт 2026-09-26: сертификаты на `colaba.gptunnel.ai/.ru` (LE YE1), `readyz`/`healthz` 200, http → 308, SPA и ассеты как в 2a; внешняя проверка (check-host.net, узлы IR/RO/US) — 200.
+
+</details>
+
+<details><summary>`/download/` на стенде до S3 (2026-09-26, статика в `/srv/releases`)</summary>
+
+```sh
+curl -s -o /dev/null -w '%{http_code} %{content_type}\n' https://$D/download/     # 200 text/html (листинг; пустой, пока релизов нет)
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://$D/download      # 308 https://$D/download/
+curl -sI https://$D/download/latest-mac.yml | grep -iE 'content-type|cache-control'  # text/yaml, no-cache (когда релиз опубликован)
+curl -sI https://$D/download/<установщик с версией> | grep -iE 'content-type|cache-control'   # application/octet-stream, immutable
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-99' https://$D/download/<установщик>   # 206
+curl -sI https://$D/manifest.webmanifest | grep -i content-type                    # application/manifest+json (когда он есть в веб-сборке)
+```
+Публикация: собрать релиз в `apps/desktop/dist-release/`, затем `infra/docker/sync.sh` (или `SKIP_WEB=1 infra/docker/sync.sh`, чтобы не трогать веб). Старые файлы на стенде не удаляются.
+
+Факт 2026-09-26 (на временных тестовых файлах, удалены): `/download/` 200 (пустой листинг), `/download` 308; `latest-mac.yml` — `text/yaml`, `no-cache`; `*.dmg` — `application/octet-stream`, `immutable`, Range → 206; `*.json` — `no-cache`; `*.webmanifest` — `application/manifest+json`; `*.svg` — `image/svg+xml`; отсутствующий файл — 404. На `.ai` и `.ru`.
+
+</details>
+
+<details><summary>Нагрузочный тест, факт</summary>
+
+Факт 2026-09-25 (с мака через VPN, `wss://rtc.colaba.gptunnel.ai`, 20 с): 9/9, потерь 0 (0%), 3.7 Mbps суммарно.
+
+</details>
