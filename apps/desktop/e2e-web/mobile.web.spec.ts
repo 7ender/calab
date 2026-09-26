@@ -245,6 +245,8 @@ test('phone: «Личные» — the DM list in the drawer, the DM full screen 
   // ☰ in the DM header brings the DM list back; no members drawer in a DM.
   await expect(header.getByRole('button', { name: 'Комнаты и пространства' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Написать @Борис Петров' })).toBeVisible();
+  // Wait for the fixture's message history to render (not just the welcome/composer) before the shot.
+  await expect(page.getByText('Анна, привет! Посмотришь PR с миграцией')).toBeVisible();
   await expectNoHorizontalScroll(page, 'dm chat');
   await shot(page, 'mobile-dm-chat');
   await header.getByRole('button', { name: 'Комнаты и пространства' }).tap();
