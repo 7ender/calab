@@ -311,6 +311,8 @@ declare global {
     __calabaVoicePhase?: (phase: VoicePhase) => void;
     /** Visual tests only: remote cameras in my room (wait for a publisher to leave). */
     __calabaCameras?: () => number;
+    /** Visual tests only: who speaks (user ids) — fixture members have no LiveKit audio. */
+    __calabaSpeaking?: (userIds: string[]) => void;
   }
 }
 
@@ -321,7 +323,9 @@ export function VoiceBar(): ReactNode {
     if (!visualTest) return;
     window.__calabaVoicePhase = (phase) => setVoice({ phase });
     window.__calabaCameras = () => useVoice.getState().cameras.length;
+    window.__calabaSpeaking = (ids) => setVoice({ speaking: Object.fromEntries(ids.map((id) => [id, true])) });
     return () => {
+      delete window.__calabaSpeaking;
       delete window.__calabaVoicePhase;
       delete window.__calabaCameras;
     };

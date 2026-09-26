@@ -32,7 +32,7 @@ import {
 import { RateTracker, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
-import { SpeakingDebouncer } from '../lib/speaking';
+import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
 import { canSpeakFrom, isDeviceGone, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { useMessages } from '../stores/messages';
@@ -144,8 +144,11 @@ class VoiceEngine {
   /** Set while we mute the mic ourselves, to tell a moderator mute apart. */
   private selfMuting = false;
   private micTesting = false;
-  /** Speaking rings: 100 ms to appear, 300 ms to disappear (docs/09 #30). */
+  /** Speaking rings: at once on, 300 ms hold off, batched store updates (lib/speaking.ts). */
   private readonly speakers = new SpeakingDebouncer((speaking) => this.onSpeaking(speaking));
+  /** Raw speaking sources: remote LiveKit active-speaker identities and my own transmit state. */
+  private remoteSpeakers: string[] = [];
+  private selfSpeaking = false;
   private readonly active = new ActiveSpeaker((id) => this.onActiveSpeaker(id));
   /** My webcam (services/camera.ts). */
   readonly camera: CameraController;
@@ -492,7 +495,7 @@ class VoiceEngine {
 
   private async doTeardown(sound: boolean, keepSeat: boolean): Promise<void> {
     this.joinSeq++;
-    this.speakers.reset();
+    this.resetSpeaking();
     this.active.reset();
     this.clearMoveTimer();
     this.stopStats();
@@ -616,15 +619,18 @@ class VoiceEngine {
         this.refreshCameras();
       })
       .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
-        this.speakers.update(speakers.map((s) => userIdOf(s.identity)));
+        // Remote only: my own ring follows the local VAD / PTT (setSelfSpeaking), not the server.
+        this.remoteSpeakers = speakers.map((s) => s.identity);
+        this.syncSpeaking();
       })
       .on(RoomEvent.Moved, () => {
         // A moderator moved us (LiveKit MoveParticipant): same connection, new room.
         if (this.room !== room) return;
         log.info('voice: moved by the server');
         this.clearMoveTimer();
-        this.speakers.reset();
-    this.active.reset();
+        this.resetSpeaking();
+        this.setSelfSpeaking(useVoice.getState().transmitting); // the mic stays on air across the move
+        this.active.reset();
         for (const set of this.viewers.values()) set.clear();
         for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
         this.refreshStreams();
@@ -802,6 +808,24 @@ class VoiceEngine {
   // ------------------------------------------------------------ cameras
 
   /** Speaking rings now; the active speaker for video only after 2 s of speech (lib/activeSpeaker.ts). */
+  private syncSpeaking(): void {
+    const local = this.room?.localParticipant.identity ?? null;
+    this.speakers.update(speakingUserIds(this.remoteSpeakers, local, { userId: this.myId() || null, on: this.selfSpeaking && this.room !== null }));
+  }
+
+  /** My ring: the mic is actually on air (VAD gate open / PTT held, not muted). */
+  private setSelfSpeaking(on: boolean): void {
+    if (on === this.selfSpeaking) return;
+    this.selfSpeaking = on;
+    this.syncSpeaking();
+  }
+
+  private resetSpeaking(): void {
+    this.remoteSpeakers = [];
+    this.selfSpeaking = false;
+    this.speakers.reset();
+  }
+
   private onSpeaking(speaking: Record<string, boolean>): void {
     setVoice({ speaking });
     this.active.update(speaking);
@@ -1102,6 +1126,7 @@ class VoiceEngine {
     this.mic = null;
     this.gate.reset();
     setVoice({ levelDb: -80, vad: null, gateOpen: false, transmitting: false });
+    this.setSelfSpeaking(false);
   }
 
   /** Device or RNNoise changed / device lost: rebuild capture, swap the published track in place. */
@@ -1219,6 +1244,7 @@ class VoiceEngine {
     const t = this.micTrack;
     const d = this.decision();
     setVoice({ transmitting: d.transmitting && t !== null });
+    this.setSelfSpeaking(d.transmitting && t !== null);
     if (!t) return;
     // `isMuted` flips only after LiveKit's async mute lock: while a mute/unmute is in flight,
     // wait for it and re-evaluate, so mute→unmute in quick succession ends in the state the
