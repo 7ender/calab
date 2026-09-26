@@ -57,4 +57,4 @@ cd apps/server && go run ./cmd/server
 
 ## Лицензия
 
-Apache License 2.0 — см. [LICENSE](LICENSE). Коммерческое использование разрешено; при распространении обязательны файл [NOTICE](NOTICE) и упоминание «Powered by GPTunneL» в разделе «О программе». Названия и логотипы Calaba и GPTunneL — товарные знаки, см. [TRADEMARKS.md](TRADEMARKS.md).
+**Business Source License 1.1** — см. [LICENSE](LICENSE). Некоммерческое использование (личное, НКО, образование, оценка до 30 дней) — бесплатно, с обязательным «Powered by GPTunneL» в интерфейсе и сохранением [NOTICE](NOTICE). Коммерческое использование — по коммерческой лицензии: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), license@gptunnel.ai. Каждая версия переходит под Apache-2.0 через 4 года после выпуска. Названия и логотипы — товарные знаки, см. [TRADEMARKS.md](TRADEMARKS.md).

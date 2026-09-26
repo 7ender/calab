@@ -25,6 +25,6 @@
       "uiohook-napi@1.5.5": "patches/uiohook-napi@1.5.5.patch"
     }
   },
-  "license": "Apache-2.0",
+  "license": "BUSL-1.1",
   "author": "GPTunneL (https://gptunnel.ai)"
 }

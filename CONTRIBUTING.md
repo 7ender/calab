@@ -1,6 +1,9 @@
 # Contributing to Calaba
 
-Thanks for helping. Calaba is Apache-2.0; by submitting a change you agree it is licensed under the same terms (Apache License §5).
+Thanks for helping. Calaba is licensed under the Business Source License 1.1 with a commercial license offered by GPTunneL.
+
+## Contributor License Agreement (CLA)
+By submitting a contribution you (a) certify that you have the right to submit it and (b) grant GPTunneL a perpetual, worldwide, irrevocable, royalty-free license to use, modify, sublicense and relicense your contribution under any license, including commercial licenses and the Change License (Apache-2.0). You retain copyright in your contribution. Add `Signed-off-by: Name <email>` to your commits (`git commit -s`) to confirm.
 
 ## Before you start
 - Read `docs/01-architecture.md`, `docs/02-media.md` (echo-cancellation rules are non-negotiable) and `docs/08-design.md` (UI standard).
