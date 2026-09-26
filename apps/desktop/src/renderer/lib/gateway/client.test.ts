@@ -23,6 +23,7 @@ import {
   HELLO_TIMEOUT_MS,
   OUT_BURST,
   TOKEN_TIMEOUT_MS,
+  WAKE_RESET_MIN_MS,
   backoffDelay,
   gatewayUrl,
   type GatewayFatal,
@@ -346,7 +347,7 @@ describe('GatewayClient', () => {
     const t = setup();
     t.client.start();
     await handshake(t);
-    t.last().serverClose(GatewayCloseCode.RATE_LIMITED);
+    t.last().serverClose(GatewayCloseCode.RATE_LIMITED, 'too many active devices');
     await vi.advanceTimersByTimeAsync(60_000);
     expect(t.fatals).toEqual(['too-many-sessions']);
     expect(t.sockets).toHaveLength(1);
@@ -573,6 +574,51 @@ describe('GatewayClient.wake (window visible / online / unlock)', () => {
     expect(t.client.state.status).toBe('ready');
   });
 
+  it('wake cuts a backoff short at most once per 30 s (alt-tabbing while the server is down)', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1, 'st'));
+    s.serverClose(1006);
+    t.client.wake(); // first: reconnect now, backoff restarts
+    expect(t.sockets).toHaveLength(2);
+    expect(t.client.state.attempts).toBe(0);
+    for (let i = 0; i < 5; i++) {
+      t.last().serverClose(1006); // server still down
+      t.client.wake(); // within 30 s: the pending backoff keeps running
+    }
+    expect(t.sockets).toHaveLength(2);
+    expect(t.client.state.attempts).toBe(1);
+    expect(t.client.state.status).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    expect(t.sockets).toHaveLength(3); // the backoff still fires
+    t.last().serverClose(1006);
+    expect(t.client.state.attempts).toBe(2);
+    sleepWallClock(WAKE_RESET_MIN_MS);
+    t.client.wake(); // 30 s later: allowed again
+    expect(t.sockets).toHaveLength(4);
+    expect(t.client.state.attempts).toBe(0);
+  });
+
+  it('within the 30 s window a dead socket is still replaced, without resetting the backoff', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1, 'dz'));
+    s.serverClose(1006);
+    t.client.wake(); // uses the reset
+    const s2 = t.last();
+    s2.serverClose(1006);
+    await vi.advanceTimersByTimeAsync(backoffDelay(1, 0.5));
+    const s3 = t.last();
+    expect(t.sockets).toHaveLength(3);
+    const attempts = t.client.state.attempts;
+    s3.readyState = 3; // closed, onclose never fired
+    t.client.wake();
+    expect(t.sockets).toHaveLength(4);
+    expect(t.client.state.attempts).toBe(attempts);
+  });
+
   it('a closed socket whose onclose never fired → reconnect now', async () => {
     const t = setup();
     t.client.start();
@@ -606,6 +652,20 @@ describe('GatewayClient robustness', () => {
     expect(t.sockets).toHaveLength(2);
     t.last().serverClose(GatewayCloseCode.RATE_LIMITED, 'too many active devices');
     expect(t.fatals).toEqual(['too-many-sessions']);
+  });
+
+  it('4008 before READY with «rate limited» or no reason is transient, not the device limit', async () => {
+    const t = setup();
+    t.client.start();
+    await handshake(t);
+    t.last().serverClose(GatewayCloseCode.RATE_LIMITED, 'rate limited');
+    await vi.advanceTimersByTimeAsync(backoffDelay(0, 0.5));
+    expect(t.sockets).toHaveLength(2);
+    await handshake(t);
+    t.last().serverClose(GatewayCloseCode.RATE_LIMITED);
+    await vi.advanceTimersByTimeAsync(backoffDelay(1, 0.5));
+    expect(t.sockets).toHaveLength(3);
+    expect(t.fatals).toEqual([]);
   });
 });
 

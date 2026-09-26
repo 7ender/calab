@@ -77,6 +77,16 @@ export const TOKEN_TIMEOUT_MS = 15_000;
 /** Delay before re-IDENTIFY after INVALID_SESSION (Discord-style 1–5 s, spreads a deploy herd). */
 export const INVALID_SESSION_MIN_MS = 1000;
 export const INVALID_SESSION_JITTER_MS = 4000;
+/**
+ * wake() may cut a pending backoff short (and restart it from 1 s) at most this often:
+ * alt-tabbing while the server is down must not turn into a reconnect storm.
+ */
+export const WAKE_RESET_MIN_MS = 30_000;
+/**
+ * Close 4008 before READY with this reason = the device limit (server: gateway/handler.go
+ * «too many active devices»); any other 4008 (rate limit, send queue overflow) is transient.
+ */
+export const TOO_MANY_DEVICES_REASON = /devices/i;
 
 /** Exponential backoff 1 s → 30 s with ±50 % jitter (full attempts counter). */
 export function backoffDelay(attempt: number, random: number): number {
@@ -152,13 +162,20 @@ export class GatewayClient {
 
   /** Immediate reconnect with RESUME (e.g. after the laptop wakes up). */
   forceReconnect(reason = 'force reconnect'): void {
+    this.reconnectNow(reason, true);
+  }
+
+  private reconnectNow(reason: string, resetAttempts: boolean): void {
     if (this.stopped) return;
     this.log(reason);
     this.clearTimers();
     this.dropSocket(4000);
-    this.attempts = 0;
+    if (resetAttempts) this.attempts = 0;
     this.connect();
   }
+
+  /** Last time wake() cut a backoff short / restarted it from the first step. */
+  private wakeResetAt = Number.NEGATIVE_INFINITY;
 
   /**
    * The window became visible / the network came back / the screen was unlocked: timers may
@@ -171,20 +188,27 @@ export class GatewayClient {
     if (this.stopped) return;
     const now = Date.now();
     const ws = this.ws;
+    // At most one backoff reset per WAKE_RESET_MIN_MS: within it, a pending backoff keeps
+    // running, and a dead socket is replaced without restarting the backoff from 1 s.
+    const mayReset = now - this.wakeResetAt >= WAKE_RESET_MIN_MS;
+    const reconnect = (why: string): void => {
+      if (mayReset) this.wakeResetAt = now;
+      this.reconnectNow(`wake: ${why}, reconnecting now`, mayReset);
+    };
     if (!ws) {
-      this.forceReconnect('wake: no socket, reconnecting now');
+      if (mayReset) reconnect('no socket');
       return;
     }
     if (ws.readyState > OPEN) {
-      this.forceReconnect('wake: socket closed, reconnecting now');
+      reconnect('socket closed');
       return;
     }
     if (!this.helloAt) {
-      if (now - this.connectAt > HELLO_TIMEOUT_MS) this.forceReconnect('wake: HELLO overdue, reconnecting now');
+      if (now - this.connectAt > HELLO_TIMEOUT_MS) reconnect('HELLO overdue');
       return;
     }
     if (this.awaitingAck) {
-      if (now - this.lastBeatAt > ACK_TIMEOUT_MS) this.forceReconnect('wake: heartbeat ACK overdue, reconnecting now');
+      if (now - this.lastBeatAt > ACK_TIMEOUT_MS) reconnect('heartbeat ACK overdue');
       return;
     }
     if (now - this.lastAckAt > this.heartbeatMs) this.probe(ws);
@@ -527,7 +551,9 @@ export class GatewayClient {
       case GatewayCloseCode.RATE_LIMITED:
         // 4008 also means «send queue overflow» / «rate limited» (a slow consumer, e.g. a big
         // READY after a deploy): only the IDENTIFY rejection «too many active devices» is fatal.
-        if (!wasEstablished && !this.sessionId && !/queue|rate/i.test(reason)) {
+        // Matched positively: an unknown or reworded reason retries with backoff rather than
+        // wrongly telling the user about the device limit.
+        if (!wasEstablished && !this.sessionId && TOO_MANY_DEVICES_REASON.test(reason)) {
           // Rejected before READY: too many sessions. Do not retry in a loop.
           this.stopped = true;
           this.setStatus('stopped');
