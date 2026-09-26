@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CAPS_PROBE_MS, CAPTURE_TIMEOUT_MS, PttCapture } from './pttCapture';
+import { CAPS_PROBE_MS, CAPTURE_TIMEOUT_MS, PttCapture, captureWithCapsRemap, type CaptureRemap } from './pttCapture';
 import { PttGate } from './pttGate';
 import { KEY } from './pttKeys';
 
@@ -133,5 +133,81 @@ describe('PttCapture (review H2)', () => {
     const p3 = t.cap.start({ id: 3 });
     t.cap.cancel(undefined, 'suspended');
     await expect(p3).rejects.toThrow('suspended');
+  });
+
+  it('Caps Lock with a real press/release (keycode 58) is accepted as a hold binding', async () => {
+    const t = setup();
+    const p = t.cap.start();
+    t.key(58, true);
+    t.key(58, false);
+    await vi.advanceTimersByTimeAsync(CAPS_PROBE_MS);
+    await expect(p).resolves.toMatchObject({ kind: 'key', code: KEY.CAPS_LOCK, mode: 'hold', label: '⇪ Caps Lock' });
+  });
+});
+
+describe('captureWithCapsRemap (Caps Lock used for layout switching, owner 0.2.0)', () => {
+  function setupRemap(opts: { supported?: boolean; active?: boolean; wanted?: boolean } = {}) {
+    let active = opts.active ?? false;
+    const calls: boolean[] = [];
+    const cap = new PttCapture({
+      os: 'darwin',
+      capsRemapActive: () => active,
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    });
+    const remap: CaptureRemap = {
+      supported: () => opts.supported ?? true,
+      active: () => active,
+      set: (on) => {
+        calls.push(on);
+        active = on;
+        return Promise.resolve();
+      },
+      wanted: () => opts.wanted ?? false,
+    };
+    return { cap, remap, calls };
+  }
+
+  it('remaps during the capture: Caps Lock (arriving as F18) binds as hold with the remap kept', async () => {
+    const t = setupRemap();
+    const p = captureWithCapsRemap(t.cap, { id: 1 }, t.remap);
+    expect(t.cap.active).toBe(true); // armed synchronously: a racing cancel still finds it
+    expect(t.calls).toEqual([true]);
+    t.cap.onKey(KEY.F18, true);
+    await expect(p).resolves.toMatchObject({ kind: 'key', code: KEY.F18, mode: 'hold', remap: 'caps-f18', label: '⇪ Caps Lock' });
+    expect(t.calls).toEqual([true]); // not restored: the new binding needs it
+  });
+
+  it('another key: the remap goes back to what the current binding needs', async () => {
+    const t = setupRemap();
+    const p = captureWithCapsRemap(t.cap, {}, t.remap);
+    t.cap.onKey(KEY_F13, true);
+    await expect(p).resolves.toMatchObject({ code: KEY_F13 });
+    expect(t.calls).toEqual([true, false]);
+  });
+
+  it('cancel / timeout / Esc restore the remap too', async () => {
+    const t = setupRemap();
+    const p = captureWithCapsRemap(t.cap, { id: 7 }, t.remap);
+    t.cap.cancel(7);
+    await expect(p).rejects.toThrow('cancelled');
+    expect(t.calls).toEqual([true, false]);
+
+    const t2 = setupRemap();
+    const p2 = captureWithCapsRemap(t2.cap, { timeoutMs: 1000 }, t2.remap);
+    const done = expect(p2).rejects.toThrow('timeout');
+    await vi.advanceTimersByTimeAsync(1000);
+    await done;
+    expect(t2.calls).toEqual([true, false]);
+  });
+
+  it('no remap calls when unsupported (Windows/Linux) or already active (bound to Caps Lock)', async () => {
+    for (const o of [{ supported: false }, { active: true, wanted: true }]) {
+      const t = setupRemap(o);
+      const p = captureWithCapsRemap(t.cap, {}, t.remap);
+      t.cap.onKey(KEY_A, true);
+      await expect(p).resolves.toMatchObject({ code: KEY_A });
+      expect(t.calls).toEqual([]);
+    }
   });
 });

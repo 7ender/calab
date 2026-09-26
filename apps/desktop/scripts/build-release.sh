@@ -159,6 +159,8 @@ build_mac() {
     echo "uiohook native in $(basename "$(dirname "$app")"): $arch"
     [[ "$arch" == "$want" ]] || { echo "wrong/missing uiohook_napi.node in $app (want $want)" >&2; exit 1; }
   done
+  # ...and it must be the patched build (marker from the patch), not an upstream prebuilt
+  node "$SRC/apps/desktop/scripts/check-native.mjs" "$SRC"/apps/desktop/dist-release-mac/mac*/Calab.app
   # update feed: latest-mac.yml, or <channel>-mac.yml for prerelease versions (e.g. rc-mac.yml)
   cp "$SRC/apps/desktop/dist-release-mac"/{*.dmg,*.zip,*.blockmap} "$SRC/apps/desktop/dist-release-mac"/*-mac.yml "$OUT"/
   TIMES+="mac=$((SECONDS - t0)) "
@@ -210,6 +212,8 @@ YML
       n=$(find /build/rel/*-unpacked -path "*uiohook*" -name "*.node" | head -1)
       if [[ -z "$n" ]]; then echo "ERROR: no uiohook .node in the $PLATFORM package — not publishing it" >&2; exit 3; fi
       echo "packaged native: ${n#/build/rel/} ($(od -An -tx1 -N5 "$n" | tr -d ' \n'))"
+      # patched build only (Linux: marker required; Windows: the upstream win32 prebuild is reported)
+      node scripts/check-native.mjs /build/rel/*-unpacked
       if [[ "$PLATFORM" == linux && "$SMOKE" != 0 ]]; then
         echo "--- smoke: AppImage under Xvfb"
         apt-get install -y -qq xvfb x11-utils squashfs-tools libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libxtst6 libnotify4 libsecret-1-0 >/dev/null
