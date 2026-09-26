@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
@@ -36,7 +37,14 @@ type Publisher interface {
 // Redis publishes to Redis pub/sub.
 type Redis struct{ C rueidis.Client }
 
+// publishTimeout bounds one PUBLISH. Events are published after the change is committed,
+// so they must not depend on the request that made it: a client that goes away right
+// after its POST (reload) must not make the other members miss the event.
+const publishTimeout = 3 * time.Second
+
 func (r Redis) publish(ctx context.Context, channel string, payload []byte) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
+	defer cancel()
 	if err := r.C.Do(ctx, r.C.B().Publish().Channel(channel).Message(rueidis.BinaryString(payload)).Build()).Error(); err != nil {
 		slog.WarnContext(ctx, "publish event failed", "channel", channel, "err", err)
 	}

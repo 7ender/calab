@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -58,9 +59,22 @@ func NoContent(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// WriteError writes err as ApiError JSON and logs server-side failures.
+// StatusClientClosed is the nginx-style status for a request the client abandoned
+// (connection closed / fetch aborted) before the server answered. It is not a server
+// failure: logged at debug level, and not a 5xx in logs or metrics.
+const StatusClientClosed = 499
+
+// WriteError writes err as ApiError JSON and logs server-side failures. A failure caused by
+// the client going away (request context canceled, e.g. a reload right after a POST) is
+// answered with 499 instead of 500 and is not logged as an error.
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	e := AsError(err)
+	if e.Status >= 500 && errors.Is(r.Context().Err(), context.Canceled) {
+		slog.DebugContext(r.Context(), "request canceled by the client", "err", err, "request_id", RequestID(r.Context()),
+			"method", r.Method, "path", r.URL.Path)
+		w.WriteHeader(StatusClientClosed) // nobody reads the body
+		return
+	}
 	if e.RetryAfter > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(e.RetryAfter.Seconds())))
 	}

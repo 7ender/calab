@@ -318,4 +318,6 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 
 Ошибки: `ApiError { code: "ERROR_CODE_FORBIDDEN" | "ERROR_CODE_RATE_LIMITED" | …, message, field }` + HTTP-статус (коды и статусы — enum `ErrorCode` в `common.proto`). Недоступный пользователю ресурс (чужой workspace, комната без `VIEW_ROOM`) — `404`, а не `403`, чтобы не раскрывать существование. Rate-limit на сообщения (5/5с на комнату), typing (1/3с), login и register (token bucket по IP в Redis: `AUTH_RATE_BURST`, `AUTH_RATE_PER_MINUTE`).
 
+Если клиент оборвал запрос (закрыл соединение, reload сразу после POST) и обработка из-за этого не завершилась, сервер отвечает `499` (Client Closed Request): это не ошибка сервера — в логе уровень debug, в метриках статус 499, а не 5xx. Изменение, которое успело закоммититься, всё равно рассылается: события публикуются независимо от контекста запроса.
+
 REST-мутации после коммита публикуют `DispatchEvent` в Redis (`ws:<workspace_id>`, `user:<user_id>`, `session:revoked:<session_id>`) — gateway (следующий этап) подписывается и рассылает с фильтрацией по правам.
