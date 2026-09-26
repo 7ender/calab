@@ -112,7 +112,12 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	if err := s.lk.CreateRoom(r.Context(), dstName, EmptyTimeout, s.cfg.MaxParticipants); err != nil {
 		return httpx.Unavailable(err)
 	}
-	streams, err := s.voice.Streams(r.Context(), srcID)
+	// From here on voice state is mutated device by device: a moderator who closes the tab
+	// mid-request must not leave devices recorded in the target without VOICE_MOVED, timers
+	// or a rollback. Finish the move on a context detached from the request.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 20*time.Second)
+	defer cancel()
+	streams, err := s.voice.Streams(ctx, srcID)
 	if err != nil {
 		return err
 	}
@@ -124,7 +129,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		// Record the device in the target first: LiveKit may deliver participant_joined for
 		// the target before we get here again, and the join revalidation must then see the
 		// user as already inside (an admin may move into a full room — review R3).
-		c, err := s.voice.Update(r.Context(), acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
+		c, err := s.voice.Update(ctx, acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
 			if cur == nil || cur.RoomID != srcID {
 				return cur
 			}
@@ -137,7 +142,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		}
 		rollback := func() {
 			// Call starts of both rooms are announced by the updates themselves (OnCalls).
-			_, _ = s.voice.Update(r.Context(), acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
+			_, _ = s.voice.Update(ctx, acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
 				if cur == nil || cur.RoomID != dstID {
 					return cur
 				}
@@ -146,11 +151,11 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 			})
 		}
 		if !s.noSFUMove.Load() {
-			err := s.lk.MoveParticipant(r.Context(), srcName, identity, dstName)
+			err := s.lk.MoveParticipant(ctx, srcName, identity, dstName)
 			switch {
 			case err == nil:
 			case IsNotImplemented(err):
-				slog.InfoContext(r.Context(), "LiveKit has no MoveParticipant: moving participants at app level (ADR-0019)")
+				slog.InfoContext(ctx, "LiveKit has no MoveParticipant: moving participants at app level (ADR-0019)")
 				s.noSFUMove.Store(true)
 			case IsNotFound(err):
 				rollback()
@@ -164,20 +169,20 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 			// App-level move: a token for the target room, the device reconnects itself.
 			// Its streams end with the old connection (the client requests them again).
 			tok, err := JoinToken(s.cfg.APIKey, s.cfg.Secret, dstName, identity,
-				s.displayName(r.Context(), acc.WorkspaceID, target), s.grant(r.Context(), acc.WorkspaceID, target, movedDst.Bits, false), moveTokenTTL)
+				s.displayName(ctx, acc.WorkspaceID, target), s.grant(ctx, acc.WorkspaceID, target, movedDst.Bits, false), moveTokenTTL)
 			if err != nil {
 				rollback()
 				return err
 			}
 			moved++
-			s.publishVoice(r.Context(), acc.WorkspaceID, c)
-			s.stopStreams(r.Context(), acc.WorkspaceID, srcID, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
+			s.publishVoice(ctx, acc.WorkspaceID, c)
+			s.stopStreams(ctx, acc.WorkspaceID, srcID, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
 			apps = append(apps, appMove{sessionID: st.SessionID, identity: identity, token: tok})
 			continue
 		}
 		moved++
-		s.publishVoice(r.Context(), acc.WorkspaceID, c)
-		if err := s.pushGrant(r.Context(), dstName, identity, acc.WorkspaceID, target, movedDst.Bits, st.Streaming); err != nil && !IsNotFound(err) {
+		s.publishVoice(ctx, acc.WorkspaceID, c)
+		if err := s.pushGrant(ctx, dstName, identity, acc.WorkspaceID, target, movedDst.Bits, st.Streaming); err != nil && !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}
 		// Tracks move with the participant: carry the stream records over.
@@ -185,11 +190,11 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 			if rec.Identity != identity {
 				continue
 			}
-			if ok, _ := s.voice.RemoveStream(r.Context(), srcID, sid); ok {
-				s.publishStreamStop(r.Context(), acc.WorkspaceID, srcID, target, sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
+			if ok, _ := s.voice.RemoveStream(ctx, srcID, sid); ok {
+				s.publishStreamStop(ctx, acc.WorkspaceID, srcID, target, sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
 			}
-			if ok, err := s.voice.AddStream(r.Context(), dstID, sid, rec, -1); err == nil && ok {
-				s.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStreamStart{VoiceStreamStart: &v1.VoiceStreamStart{
+			if ok, err := s.voice.AddStream(ctx, dstID, sid, rec, -1); err == nil && ok {
+				s.events.Workspace(ctx, acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStreamStart{VoiceStreamStart: &v1.VoiceStreamStart{
 					WorkspaceId: acc.WorkspaceID.String(), RoomId: dstID.String(), UserId: target.String(), TrackSid: sid, Preset: rec.Preset,
 				}}})
 			}
@@ -206,12 +211,12 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		return &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceMoved{VoiceMoved: ev}}
 	}
 	if len(apps) < moved { // some devices were moved inside the SFU
-		s.events.User(r.Context(), target, moveEv(nil))
+		s.events.User(ctx, target, moveEv(nil))
 	}
 	for i := range apps {
-		s.events.User(r.Context(), target, moveEv(&apps[i]))
+		s.events.User(ctx, target, moveEv(&apps[i]))
 		m := apps[i]
-		time.AfterFunc(moveDropOld, func() { s.dropFromOldRoom(srcName, m.identity) })
+		time.AfterFunc(moveDropOld, func() { s.dropFromOldRoom(srcID, m.sessionID, srcName, m.identity) })
 		time.AfterFunc(moveConfirm, func() { s.confirmMove(acc.WorkspaceID, dstID, target, m.sessionID, dstName, m.identity) })
 	}
 	httpx.NoContent(w)
@@ -219,10 +224,14 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 }
 
 // dropFromOldRoom removes an app-level-moved device from the old LiveKit room if it is
-// still connected there (the client did not disconnect itself).
-func (s *Service) dropFromOldRoom(lkRoom, identity string) {
+// still connected there (the client did not disconnect itself). A device that is back in
+// the old room by now (moved back, or rejoined it itself) is left alone.
+func (s *Service) dropFromOldRoom(srcID, sid uuid.UUID, lkRoom, identity string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if _, rid, ok, err := s.voice.Location(ctx, sid); err == nil && ok && rid == srcID {
+		return
+	}
 	if err := s.lk.RemoveParticipant(ctx, lkRoom, identity); err != nil && !IsNotFound(err) {
 		slog.WarnContext(ctx, "remove moved participant from the old room", "identity", identity, "err", err)
 	}

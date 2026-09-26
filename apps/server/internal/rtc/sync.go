@@ -187,9 +187,15 @@ func (s *Service) Reconcile(ctx context.Context) error {
 				if !hasState(states, sid, ref.rid) {
 					muted := micMuted(&p)
 					rid := ref.rid
+					fresh := start.Add(-joinGrace).UnixMilli()
 					_ = s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
 						if cur != nil && cur.RoomID == rid {
 							return cur // appeared meanwhile via webhook
+						}
+						if cur != nil && cur.JoinedAt > fresh {
+							// Recently recorded elsewhere (app-level move, ADR-0019: the device is
+							// still in the old room for a moment): do not flip it back.
+							return cur
 						}
 						return &voice.SessionState{RoomID: rid, Muted: muted}
 					})
