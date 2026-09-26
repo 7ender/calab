@@ -5,9 +5,11 @@
 #   LANDING_HOST   static landing (optional; empty = no landing site)
 #   DOMAIN_ALT, DOMAIN_LEGACY  extra app hosts (transitional aliases, optional); their rtc./turn. names
 #                  are served too so older clients keep working while they move over
-#   RELEASES_HOST  desktop release feed (optional; empty = none): reverse proxy to a public S3 bucket when
-#                  S3_PUBLIC_ENDPOINT + S3_BUCKET are set (path-style), else /srv/releases. With it set,
-#                  /download/* on the app and landing hosts redirects there (302, same path).
+#   RELEASES_HOST  desktop release feed (optional; empty = none): reverse proxy to a public-read S3 bucket
+#                  when S3_PUBLIC_URL is set (the bucket's public base URL, e.g. Yandex Object Storage
+#                  https://storage.yandexcloud.net/<bucket> — path-style — or a virtual-hosted URL without a
+#                  path), else /srv/releases. With it set, /download/* on the app and landing hosts redirects
+#                  there (302, same path).
 # Caddy substitutes {$VAR} before parsing, so a list expands into several site addresses / SNI values.
 # The landing site is generated into /tmp/landing.caddy (imported by the Caddyfile; empty when unset),
 # because a site block with an empty address would not parse.
@@ -39,30 +41,32 @@ fi
 # The release host itself.
 if [ -z "${RELEASES_HOST:-}" ]; then
 	: > /tmp/releases.caddy
-elif [ -n "${S3_PUBLIC_ENDPOINT:-}" ] && [ -n "${S3_BUCKET:-}" ]; then
-	# public-read bucket, path-style: https://<endpoint>/<bucket>/<key>; S3 sees its own Host header
+elif [ -n "${S3_PUBLIC_URL:-}" ]; then
+	# https://host[/prefix] → upstream https://host, keys under /prefix; S3 sees its own Host header
+	S3_UPSTREAM="$(printf '%s' "$S3_PUBLIC_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
+	S3_PREFIX="$(printf '%s' "$S3_PUBLIC_URL" | sed -E 's#^https?://[^/]+##; s#/+$##')"
 	cat > /tmp/releases.caddy <<EOF_S3
 $RELEASES_HOST {
 	import releases_host_headers
 	# (several rewrites in one block are mutually exclusive in Caddy — hence a separate handle for /)
 	handle / {
-		rewrite * /$S3_BUCKET/index.html
-		reverse_proxy $S3_PUBLIC_ENDPOINT {
+		rewrite * $S3_PREFIX/index.html
+		reverse_proxy $S3_UPSTREAM {
 			header_up Host {upstream_hostport}
 			header_down Cache-Control "no-cache"
 		}
 	}
 	@meta path /index.html *.yml *.yaml
 	handle @meta {
-		rewrite * /$S3_BUCKET{uri}
-		reverse_proxy $S3_PUBLIC_ENDPOINT {
+		rewrite * $S3_PREFIX{uri}
+		reverse_proxy $S3_UPSTREAM {
 			header_up Host {upstream_hostport}
 			header_down Cache-Control "no-cache"
 		}
 	}
 	handle {
-		rewrite * /$S3_BUCKET{uri}
-		reverse_proxy $S3_PUBLIC_ENDPOINT {
+		rewrite * $S3_PREFIX{uri}
+		reverse_proxy $S3_UPSTREAM {
 			header_up Host {upstream_hostport}
 			header_down Cache-Control "public, max-age=31536000, immutable"
 		}

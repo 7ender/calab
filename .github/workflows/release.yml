@@ -12,12 +12,12 @@
 # Every OS builds natively, so the patched uiohook-napi is compiled from source everywhere (MSVC on Windows).
 #
 # Secrets (set by infra/ci/set-secrets.sh from the owner's .env — never in the repo). All optional:
-#   S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY    publishing to S3
-#   STAND_SSH_KEY STAND_HOST STAND_KNOWN_HOSTS                               fallback publishing to the stand
-#   MAC_CSC_LINK MAC_CSC_KEY_PASSWORD                                        macOS Developer ID (.p12, base64)
-#   APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER                          notarization (App Store Connect key .p8)
-#   WIN_CSC_LINK WIN_CSC_KEY_PASSWORD                                        Windows code signing (.pfx, base64)
-# Without the signing secrets the builds are unsigned (docs/06).
+#   S3_ENDPOINT S3_REGION(=ru-central1) S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY   publishing to S3
+#   STAND_SSH_KEY STAND_HOST STAND_KNOWN_HOSTS                          fallback publishing to the stand
+#   APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD                           macOS Developer ID Application (.p12)
+#   APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER              notarization (App Store Connect .p8)
+#   WIN_CERT_P12_BASE64 WIN_CERT_PASSWORD                               Windows code signing (.pfx/.p12)
+# Certificate material is validated first (openssl); absent, stub or undecodable → unsigned build + notice.
 name: release
 
 on:
@@ -96,40 +96,57 @@ jobs:
         run: grep -q VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h
       - run: pnpm -F @calaba/desktop exec electron-vite build
 
-      # Signing only when the certificates are configured (secrets can't be used in `if:` directly).
+      # Signing only with VALID material: the base64 must decode into a PKCS#12 that opens with its password
+      # (and, for notarization, a private key .p8). Anything else — absent, stub, wrong password — is an
+      # unsigned build with a notice, never a failure. Secrets can't be used in `if:`, hence one bash step.
       - name: signing setup
         id: sign
         env:
-          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY }}
-        run: |
-          sign=0 args=""
-          if [[ "${{ matrix.target }}" == mac && -n "$MAC_CSC_LINK" ]]; then
-            # electron-builder.yml keeps local builds unsigned (identity: null); drop it for this CI build only
-            sed -i.bak '/^  identity: null/d' apps/desktop/electron-builder.yml
-            sign=1
-            if [[ -n "$APPLE_API_KEY_P8" ]]; then
-              printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple_api_key.p8"
-              echo "APPLE_API_KEY=$RUNNER_TEMP/apple_api_key.p8" >> "$GITHUB_ENV"
-              args="-c.mac.notarize=true"
-            else
-              echo "::warning::macOS build is signed but NOT notarized (APPLE_API_KEY* secrets absent)"
-            fi
-          elif [[ "${{ matrix.target }}" == win && -n "$WIN_CSC_LINK" ]]; then
-            sign=1
-          fi
-          [[ $sign == 1 ]] || echo "::notice::${{ matrix.target }}: no signing secrets — unsigned build"
-          echo "sign=$sign" >> "$GITHUB_OUTPUT"; echo "args=$args" >> "$GITHUB_OUTPUT"
-
-      - name: electron-builder
-        working-directory: apps/desktop
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.sign.outputs.sign == '1' && 'true' || 'false' }}
-          CSC_LINK: ${{ matrix.target == 'mac' && secrets.MAC_CSC_LINK || (matrix.target == 'win' && secrets.WIN_CSC_LINK || '') }}
-          CSC_KEY_PASSWORD: ${{ matrix.target == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || (matrix.target == 'win' && secrets.WIN_CSC_KEY_PASSWORD || '') }}
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          WIN_CERT_P12_BASE64: ${{ secrets.WIN_CERT_P12_BASE64 }}
+          WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+        run: |
+          t="${{ matrix.target }}"; sign=0 args=""
+          p12_ok() { # base64 password outfile
+            [[ -n "$1" ]] && printf '%s' "$1" | base64 -d > "$3" 2>/dev/null && [[ -s "$3" ]] || return 1
+            P12PW="$2" openssl pkcs12 -in "$3" -passin env:P12PW -noout 2>/dev/null \
+              || P12PW="$2" openssl pkcs12 -legacy -in "$3" -passin env:P12PW -noout 2>/dev/null
+          }
+          envset() { { echo "$1<<__EOV__"; printf '%s\n' "$2"; echo "__EOV__"; } >> "$GITHUB_ENV"; }
+          cert="$RUNNER_TEMP/cert.p12"
+          if [[ "$t" == mac ]] && p12_ok "$APPLE_CERT_P12_BASE64" "$APPLE_CERT_PASSWORD" "$cert"; then
+            sign=1
+            # electron-builder.yml keeps local builds unsigned (identity: null); drop it for this CI build only
+            sed -i.bak '/^  identity: null/d' apps/desktop/electron-builder.yml
+            envset CSC_LINK "$cert"; envset CSC_KEY_PASSWORD "$APPLE_CERT_PASSWORD"
+            key="$RUNNER_TEMP/apple_api_key.p8"
+            if [[ -n "$APPLE_API_KEY_BASE64" && -n "$APPLE_API_KEY_ID" && -n "$APPLE_API_ISSUER" ]] \
+               && printf '%s' "$APPLE_API_KEY_BASE64" | base64 -d > "$key" 2>/dev/null && openssl pkey -in "$key" -noout 2>/dev/null; then
+              envset APPLE_API_KEY "$key"; envset APPLE_API_KEY_ID "$APPLE_API_KEY_ID"; envset APPLE_API_ISSUER "$APPLE_API_ISSUER"
+              args="-c.mac.notarize=true"
+            else
+              echo "::warning::macOS: signed, but NOT notarized (APPLE_API_KEY_BASE64/ID/ISSUER absent or invalid)"
+            fi
+          elif [[ "$t" == win ]] && p12_ok "$WIN_CERT_P12_BASE64" "$WIN_CERT_PASSWORD" "$cert"; then
+            sign=1
+            envset CSC_LINK "$cert"; envset CSC_KEY_PASSWORD "$WIN_CERT_PASSWORD"
+          fi
+          if [[ $sign == 1 ]]; then
+            envset CSC_IDENTITY_AUTO_DISCOVERY true
+            echo "::notice::$t: signing enabled"
+          else
+            rm -f "$cert"
+            envset CSC_IDENTITY_AUTO_DISCOVERY false
+            [[ "$t" == linux ]] || echo "::notice::$t: no valid signing certificate (absent, stub or wrong password) — unsigned build"
+          fi
+          echo "sign=$sign" >> "$GITHUB_OUTPUT"; echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      - name: electron-builder   # CSC_* / APPLE_API_* come from the signing step via GITHUB_ENV
+        working-directory: apps/desktop
         run: |
           rm -rf ../../node_modules/uiohook-napi/bin   # postinstall copy for the runner arch only
           pnpm exec electron-builder ${{ matrix.eb }} --publish never ${{ steps.sign.outputs.args }} \
@@ -210,7 +227,7 @@ jobs:
             echo "::notice::S3_* secrets not configured — S3 publishing skipped (stand fallback runs instead)"
             echo "published=0" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          export AWS_DEFAULT_REGION="${S3_REGION:-us-east-1}"
+          export AWS_DEFAULT_REGION="${S3_REGION:-ru-central1}"   # Yandex Object Storage
           aws configure set default.s3.addressing_style path
           s3() { aws --endpoint-url "$S3_ENDPOINT" s3 "$@"; }
           cd dist-release
