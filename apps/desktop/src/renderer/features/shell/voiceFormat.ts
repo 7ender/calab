@@ -10,9 +10,18 @@ export function formatDuration(ms: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
-/** «N/M» user limit indicator (docs/09 #31); empty when the room has no limit. */
-export function limitLabel(n: number, max: number): string {
-  return max > 0 ? `${n}/${max}` : '';
+/** Zero-pads 0..99 for the two-segment room-limit pill (docs/09 #9): 0 → "00", 7 → "07", 42 → "42". */
+export function pad2(n: number): string {
+  return String(Math.max(0, Math.min(99, Math.trunc(n)))).padStart(2, '0');
+}
+
+/** The invite row is visible for 30 s after joining a voice room (docs/09 #10). */
+export const INVITE_ROW_MS = 30_000;
+
+/** Is the «Пригласить в комнату» row shown? Not while the room is full, only within the window,
+ * and only when `joinedAt` is set (I am actually in this room). */
+export function inviteRowVisible(joinedAt: number | null, now: number, full: boolean): boolean {
+  return !full && joinedAt != null && now - joinedAt < INVITE_ROW_MS;
 }
 
 /** Parses the «Максимум участников» field: integer 0..99, anything else → null. */

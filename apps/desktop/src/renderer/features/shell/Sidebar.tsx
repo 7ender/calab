@@ -53,7 +53,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
-import { formatDuration, limitLabel, useNow } from './voiceFormat';
+import { formatDuration, pad2, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { NicknameDialog } from '../people/NicknameDialog';
@@ -637,6 +637,9 @@ function VoiceRoomRow({
   const card = statusLine.shown;
   const limit = room.userLimit;
   const full = limit > 0 && people.length >= limit && !inRoom;
+  // Unlike `full` above (a click guard, so it never blocks re-entering my own room), the invite
+  // row (docs/09 #10) hides whenever the room is actually at its limit, me included.
+  const atCapacity = limit > 0 && people.length >= limit;
   const { setNodeRef, isOver, active: dragging } = useDroppable({ id: `room:${room.id}`, data: { roomId: room.id, canMove } satisfies DropRoom });
   const dragFrom = (dragging?.data.current as DragMember | undefined)?.fromRoomId;
   const dropOk = isOver && canMove && dragFrom !== room.id;
@@ -704,7 +707,6 @@ function VoiceRoomRow({
           {card ? <VoiceStatusLine roomId={room.id} canEdit={statusLine.canEdit} status={statusLine.status} /> : null}
         </div>
       </RoomMenu>
-      {inRoom && can(perms, 'MANAGE_ROOM') ? <VoiceInviteRow roomId={room.id} /> : null}
       {people.length > 0 ? (
         <ul className="flex flex-col gap-px pb-1 pt-0.5" aria-label={room.name}>
           {people.map((v) => (
@@ -719,26 +721,47 @@ function VoiceRoomRow({
           ))}
         </ul>
       ) : null}
+      {inRoom && can(perms, 'MANAGE_ROOM') ? <VoiceInviteRow roomId={room.id} full={atCapacity} /> : null}
     </div>
   );
 }
 
 /**
- * People in a voice room: one muted pill with the people icon — «2/4» with a limit (red when
- * full), «2» without one. The call timer stands apart from it (review: «02 | 04» read as noise).
+ * People in a voice room. Without a limit: one muted pill with the people icon — «2» (shown only
+ * while someone is inside). With a limit (docs/09 #9, Discord reference): a two-segment pill —
+ * «00 ⁄ 99», current on the left and the limit on the right, both zero-padded to two digits, a
+ * ~15° slanted divider (the right segment one step darker/lighter than the pill fill), red left
+ * segment when full. The call timer stands apart from it (review: «02 | 04» read as noise).
  */
 function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
-  const full = max > 0 && n >= max;
+  if (max <= 0) {
+    return (
+      <span
+        // Primary text on the fill: muted grey fell under 4.5:1 on the selected card (axe).
+        className="flex items-center gap-0.5 rounded-full bg-[var(--color-fill)] py-px pl-1 pr-1.5 text-micro font-medium tabular-nums leading-4 text-fg"
+        aria-label={t('shell.peopleIn', { n })}
+        role="img"
+        data-testid="room-limit"
+      >
+        <Users className="size-3" aria-hidden />
+        {n}
+      </span>
+    );
+  }
+  const full = n >= max;
   return (
     <span
-      // Primary text on the fill: muted grey fell under 4.5:1 on the selected card (axe).
-      className={cx('flex items-center gap-0.5 rounded-full bg-[var(--color-fill)] py-px pl-1 pr-1.5 text-micro font-medium tabular-nums leading-4', full ? 'text-danger-text' : 'text-fg')}
-      aria-label={max > 0 ? t('shell.userLimit', { n, max }) : t('shell.peopleIn', { n })}
+      className="flex h-5 items-stretch overflow-hidden rounded-full bg-[var(--color-fill)] text-caption font-medium tabular-nums leading-[20px]"
+      aria-label={t('shell.userLimit', { n, max })}
       role="img"
       data-testid="room-limit"
     >
-      <Users className="size-3" aria-hidden />
-      {max > 0 ? limitLabel(n, max) : n}
+      <span className={cx('pl-2 pr-1.5', full ? 'text-danger-text' : 'text-fg')}>{pad2(n)}</span>
+      {/* clip-path skews the segment's left edge ~15° (5 px over the 20 px pill height), rather
+          than a separate divider element, so the angled boundary always matches the pill height. */}
+      <span className="bg-[var(--color-fill-hover)] pl-2.5 pr-2 text-muted" style={{ clipPath: 'polygon(5px 0, 100% 0, 100% 100%, 0 100%)' }}>
+        {pad2(max)}
+      </span>
     </span>
   );
 }

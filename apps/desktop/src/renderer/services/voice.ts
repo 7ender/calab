@@ -310,6 +310,9 @@ class VoiceEngine {
     setVoice({
       roomId,
       workspaceId,
+      // A reconnect cycle (quiet) keeps my original joinedAt: only a fresh join or a move to
+      // another room restarts the invite row's 30 s window (docs/09 #10).
+      ...(quiet ? {} : { joinedAt: Date.now() }),
       // A reconnect cycle keeps one stable «Переподключение…» through all its attempts.
       phase: quiet ? 'reconnecting' : 'connecting',
       error: null,
@@ -520,7 +523,7 @@ class VoiceEngine {
     this.wanted.clear();
     this.announced = null;
     setVoice({
-      ...(keepSeat ? {} : { roomId: null, workspaceId: null, phase: 'idle' as const, serverMuted: false, link: { ...useVoice.getState().link, attempts: 0, blockedHost: null } }),
+      ...(keepSeat ? {} : { roomId: null, workspaceId: null, joinedAt: null, phase: 'idle' as const, serverMuted: false, link: { ...useVoice.getState().link, attempts: 0, blockedHost: null } }),
       transmitting: false,
       speaking: {},
       streams: [],

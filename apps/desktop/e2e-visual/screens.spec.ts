@@ -718,6 +718,8 @@ test('voice-room-status', async ({ open, win, mock, shot }) => {
   await open();
   await inVoice(win, mock);
   await editRoomStatus(win, true);
+  // Just joined (docs/09 #10): the invite row is in its 30 s window.
+  await expect(win.getByTestId('voice-invite-row')).toBeVisible();
   await checkpoint(shot, 'voice-room-status');
 });
 
@@ -733,6 +735,10 @@ test('voice-room-speaking', async ({ open, win, mock, shot }) => {
   const row = win.locator('aside').first().getByRole('listitem', { name: /Борис Петров/ });
   await expect(row).toHaveAttribute('data-speaking', 'true');
   await expect(win.locator('aside').first().getByRole('listitem', { name: /Вера/ })).not.toHaveAttribute('data-speaking', 'true');
+  // Joined 60 s ago (docs/09 #10): past the invite row's 30 s window, so both states land in the
+  // committed baselines — this screen with it gone, voice-room-status above with it visible.
+  await win.evaluate(() => (window as unknown as { __calabaJoinedAt?: (ms: number) => void }).__calabaJoinedAt?.(Date.now() - 60_000));
+  await expect(win.getByTestId('voice-invite-row')).toHaveCount(0);
   await checkpoint(shot, 'voice-room-speaking');
 });
 

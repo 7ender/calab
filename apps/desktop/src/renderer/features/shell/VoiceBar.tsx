@@ -313,6 +313,8 @@ declare global {
     __calabaCameras?: () => number;
     /** Visual tests only: who speaks (user ids) — fixture members have no LiveKit audio. */
     __calabaSpeaking?: (userIds: string[]) => void;
+    /** Visual tests only: back-date my room join (docs/09 #10 — the invite row's 30 s window). */
+    __calabaJoinedAt?: (ms: number) => void;
   }
 }
 
@@ -324,10 +326,12 @@ export function VoiceBar(): ReactNode {
     window.__calabaVoicePhase = (phase) => setVoice({ phase });
     window.__calabaCameras = () => useVoice.getState().cameras.length;
     window.__calabaSpeaking = (ids) => setVoice({ speaking: Object.fromEntries(ids.map((id) => [id, true])) });
+    window.__calabaJoinedAt = (ms) => setVoice({ joinedAt: ms });
     return () => {
       delete window.__calabaSpeaking;
       delete window.__calabaVoicePhase;
       delete window.__calabaCameras;
+      delete window.__calabaJoinedAt;
     };
   }, [visualTest]);
   const roomId = useVoice((s) => s.roomId);

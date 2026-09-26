@@ -63,6 +63,9 @@ export interface VoiceStats {
 export interface VoiceStore {
   roomId: string | null;
   workspaceId: string | null;
+  /** Date.now() of the current room join (docs/09 #10: the invite row is visible for 30 s after
+   * it). A reconnect keeps it; only a fresh join or a move to another room resets it. */
+  joinedAt: number | null;
   phase: VoicePhase;
   error: string | null;
   canSpeak: boolean;
@@ -122,6 +125,7 @@ export interface VoiceStore {
 export const useVoice = create<VoiceStore>()((set) => ({
   roomId: null,
   workspaceId: null,
+  joinedAt: null,
   phase: 'idle',
   error: null,
   canSpeak: false,

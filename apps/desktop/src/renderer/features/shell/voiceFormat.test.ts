@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, limitLabel, parseUserLimit } from './voiceFormat';
+import { formatDuration, inviteRowVisible, pad2, parseUserLimit } from './voiceFormat';
 
 describe('formatDuration', () => {
   it('formats minutes and hours', () => {
@@ -9,9 +9,27 @@ describe('formatDuration', () => {
     expect(formatDuration(3_723_000)).toBe('1:02:03');
     expect(formatDuration(-5000)).toBe('0:00');
   });
-  it('limit label only with a limit', () => {
-    expect(limitLabel(2, 4)).toBe('2/4');
-    expect(limitLabel(3, 0)).toBe('');
+});
+
+describe('pad2', () => {
+  it('zero-pads 0..99', () => {
+    expect(pad2(0)).toBe('00');
+    expect(pad2(2)).toBe('02');
+    expect(pad2(42)).toBe('42');
+    expect(pad2(99)).toBe('99');
+  });
+  it('clamps out-of-range input', () => {
+    expect(pad2(-1)).toBe('00');
+    expect(pad2(150)).toBe('99');
+  });
+});
+
+describe('inviteRowVisible', () => {
+  it('visible right after joining, gone after 30 s, hidden when the room is full', () => {
+    expect(inviteRowVisible(1000, 1000, false)).toBe(true); // 0 s
+    expect(inviteRowVisible(1000, 1000 + 31_000, false)).toBe(false); // 31 s
+    expect(inviteRowVisible(1000, 1000, true)).toBe(false); // room at its limit
+    expect(inviteRowVisible(null, 1000, false)).toBe(false); // not in this room
   });
 });
 

@@ -3,7 +3,12 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Input, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { VOICE_STATUS_MAX, setVoiceStatus, useVoiceStatus } from '../../services/roomStatus';
+import { useVoice } from '../../stores/voice';
 import { copyRoomInviteLink } from '../people/roomLink';
+import { inviteRowVisible, useNow } from './voiceFormat';
+
+/** How long the invite row's opacity fade runs before it unmounts (docs/09 #10). */
+const INVITE_FADE_MS = 300;
 
 /**
  * The call status inside the voice room card (docs/09 #48, Discord reference): a 20 px line under
@@ -70,17 +75,38 @@ export function VoiceStatusLine({ roomId, canEdit, status }: { roomId: string; c
 }
 
 /**
- * «Пригласить в комнату ›» under my voice room card (MANAGE_ROOM: room links are created and
- * listed with it, ADR-0016): a 32 px dashed circle with the add-person icon, like Discord's.
+ * «Пригласить в комнату ›» below my voice room's participant list (docs/09 #10, Discord
+ * reference; MANAGE_ROOM — room links are created and listed with it, ADR-0016): a 32 px dashed
+ * circle with the add-person icon. Visible only for 30 s after I join this room, and not at all
+ * once the room is at its user limit; fades out rather than disappearing abruptly
+ * (`prefers-reduced-motion: reduce` zeroes the transition globally, app/styles.css). The room
+ * card's own «пригласить» action on hover (CardActions) is the permanent path once this is gone.
  */
-export function VoiceInviteRow({ roomId }: { roomId: string }): ReactNode {
+export function VoiceInviteRow({ roomId, full }: { roomId: string; full: boolean }): ReactNode {
+  const joinedAt = useVoice((s) => (s.roomId === roomId ? s.joinedAt : null));
+  const now = useNow();
+  const show = inviteRowVisible(joinedAt, now, full);
+  // Kept mounted through the fade (opacity transition), then removed — never an abrupt cut.
+  // The rising edge is derived directly during render (React's "adjusting state" pattern, no
+  // extra effect round trip); only the falling edge needs a timer, scheduled from the effect.
+  const [mounted, setMounted] = useState(show);
+  if (show && !mounted) setMounted(true);
+  useEffect(() => {
+    if (show) return;
+    const timer = setTimeout(() => setMounted(false), INVITE_FADE_MS);
+    return () => clearTimeout(timer);
+  }, [show]);
+  if (!mounted) return null;
   return (
     <button
       type="button"
       data-testid="voice-invite-row"
       onClick={() => void copyRoomInviteLink(roomId)}
       title={t('shell.voiceInviteHint')}
-      className="group/inv flex h-10 w-full min-w-0 items-center gap-2 rounded-[var(--radius-row)] pl-[34px] pr-1.5 text-left text-[13px] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+      className={cx(
+        'group/inv flex h-10 w-full min-w-0 items-center gap-2 rounded-[var(--radius-row)] pl-[34px] pr-1.5 text-left text-[13px] text-muted transition duration-300 hover:bg-hover hover:text-fg',
+        show ? 'opacity-100' : 'pointer-events-none opacity-0',
+      )}
     >
       <span className="grid size-8 shrink-0 place-items-center rounded-full border border-dashed border-[var(--color-label-tertiary)]" aria-hidden>
         <UserPlus className="size-4" />
