@@ -4,8 +4,10 @@ package app_test
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,6 +163,10 @@ func TestCameras(t *testing.T) {
 	}
 	o.must(404, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-camera", nil, nil)
 
+	// The moderator's stop is sticky: a new request needs allow-camera first.
+	bob.must(403, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/allow-camera", nil, nil)
+
 	// Own stop releases the grant; cameras off (0) and a VIDEO deny refuse requests.
 	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
 	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/stop", nil, nil)
@@ -177,5 +183,218 @@ func TestCameras(t *testing.T) {
 	bob.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &bj)
 	if bj.GetCanVideo() {
 		t.Fatal("can_video without VIDEO")
+	}
+}
+
+// joinVoice joins a device to a voice room and delivers participant_joined; returns its identity.
+func joinCall(t *testing.T, u *user, g *gw, rid, roomName string) string {
+	t.Helper()
+	var j v1.JoinVoiceResponse
+	u.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &j)
+	webhook(t, whEvent("participant_joined", roomName, j.GetIdentity(), nil), "secret")
+	g.wait("in voice", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == u.id && s.GetRoomId() == rid
+	})
+	return j.GetIdentity()
+}
+
+func cameraPublished(t *testing.T, roomName, identity, sid string) {
+	t.Helper()
+	webhook(t, whEvent("track_published", roomName, identity, &livekit.TrackInfo{Sid: sid, Source: livekit.TrackSource_CAMERA, Type: livekit.TrackType_VIDEO}), "secret")
+}
+
+func reconcileNow(t *testing.T) {
+	t.Helper()
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key("rtc:reconcile").Build()).Error()
+	if err := testApp.RTC.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func cameraRecords(t *testing.T, rid string) map[string]string {
+	t.Helper()
+	m, err := testRedis.Do(context.Background(), testRedis.B().Hgetall().Key("voice:cameras:"+rid).Build()).AsStrMap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func newVoiceRoom(t *testing.T, o *user, wid, name string, cameraLimit uint32) string {
+	t.Helper()
+	var cr v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_VOICE, Name: name,
+		MediaOverride: &v1.RoomMediaOverride{CameraLimit: &cameraLimit}}, &cr)
+	return cr.GetRoom().GetId()
+}
+
+// Two cameras published at the same moment against camera_limit 1: the Lua check lets
+// exactly one through.
+func TestCamerasConcurrentLimit(t *testing.T) {
+	liveKitUp(t)
+	o, bob, ws, _ := setupTeam(t)
+	rid := newVoiceRoom(t, o, ws.GetId(), "one-cam", 1)
+	roomName := "ws_" + ws.GetId() + "_room_" + rid
+	g := dialGW(t)
+	g.identify(o.token)
+	bi := joinCall(t, bob, g, rid, roomName)
+	oi := joinCall(t, o, g, rid, roomName)
+	done := make(chan struct{}, 2)
+	for _, p := range [][2]string{{bi, "TR_cam_b"}, {oi, "TR_cam_o"}} {
+		go func() { cameraPublished(t, roomName, p[0], p[1]); done <- struct{}{} }()
+	}
+	<-done
+	<-done
+	g.wait("one LIMIT_REACHED", func(e *v1.DispatchEvent) bool {
+		return e.GetVoiceCameraStop().GetReason() == v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_LIMIT_REACHED
+	})
+	if recs := cameraRecords(t, rid); len(recs) != 1 {
+		t.Fatalf("recorded cameras %v, want exactly one", recs)
+	}
+}
+
+// Webhook path, reconcile, sticky moderator stop, reservation-only stop, grant kept across
+// resync / stream stop, cleanup on leave.
+func TestCameraLifecycle(t *testing.T) {
+	liveKitUp(t)
+	o, bob, ws, _ := setupTeam(t)
+	rid := newVoiceRoom(t, o, ws.GetId(), "cams", 6)
+	roomName := "ws_" + ws.GetId() + "_room_" + rid
+	g := dialGW(t)
+	g.identify(o.token)
+	bi := joinCall(t, bob, g, rid, roomName)
+	sid := publishDemoCamera(t, roomName, bi)
+	camOn := func(want bool) {
+		t.Helper()
+		g.wait("camera flag", func(e *v1.DispatchEvent) bool {
+			s := e.GetVoiceStateUpdate().GetState()
+			return s.GetUserId() == bob.id && s.GetCamera() == want && s.GetRoomId() == rid
+		})
+	}
+	granted := func() bool { p, _ := lkRec.lastPerm(bi); return hasSource(p, rtc.SourceCamera) }
+
+	// Reconcile records a live camera whose webhook was missed.
+	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	reconcileNow(t)
+	camOn(true)
+	if _, ok := cameraRecords(t, rid)[sid]; !ok {
+		t.Fatal("reconcile did not record the live camera")
+	}
+	// Reconcile spares a young record without a track, drops an old one.
+	uid := strings.SplitN(bi, ":", 2)[0]
+	put := func(track string, started int64) {
+		v := fmt.Sprintf(`{"i":%q,"u":%q,"s":%d}`, bi, uid, started)
+		if err := testRedis.Do(context.Background(), testRedis.B().Hset().Key("voice:cameras:"+rid).FieldValue().FieldValue(track, v).Build()).Error(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("TR_ghost_young", time.Now().UnixMilli())
+	put("TR_ghost_old", time.Now().Add(-time.Minute).UnixMilli())
+	reconcileNow(t)
+	recs := cameraRecords(t, rid)
+	if _, ok := recs["TR_ghost_young"]; !ok {
+		t.Fatal("young record dropped by reconcile")
+	}
+	if _, ok := recs["TR_ghost_old"]; ok {
+		t.Fatal("old record without a track kept")
+	}
+	_ = testRedis.Do(context.Background(), testRedis.B().Hdel().Key("voice:cameras:"+rid).Field("TR_ghost_young").Build()).Error()
+
+	// The camera grant survives a resync (permission change) and a stream stop.
+	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
+		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_ROLE, TargetId: "member", Allow: 1 << 1},
+	}}, nil)
+	time.Sleep(300 * time.Millisecond) // resync runs asynchronously
+	if !granted() {
+		t.Fatal("camera grant lost on resync")
+	}
+	bob.must(200, "POST", "/api/rooms/"+rid+"/stream/request", &v1.RequestStreamRequest{}, nil)
+	o.must(404, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-stream", nil, nil) // no stream: grant pushed anyway
+	if !granted() {
+		t.Fatal("camera grant lost on stream stop")
+	}
+
+	// Moderator stop is sticky until allow-camera.
+	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-camera", nil, nil)
+	camOn(false)
+	bob.must(403, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	if granted() {
+		t.Fatal("camera granted after stop-camera")
+	}
+	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/allow-camera", nil, nil)
+	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	// Only a reservation (no track yet): stop-camera still acts → 204 (L8).
+	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-camera", nil, nil)
+	o.must(404, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-camera", nil, nil)
+
+	// Leaving clears records, reservation and the sticky stop.
+	webhook(t, whEvent("participant_left", roomName, bi, nil), "secret")
+	g.wait("bob left", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && s.GetRoomId() == ""
+	})
+	if len(cameraRecords(t, rid)) != 0 {
+		t.Fatal("camera records left after participant_left")
+	}
+	for _, k := range []string{"voice:camreq:" + bi, "voice:camoff:" + bi} {
+		if n, _ := testRedis.Do(context.Background(), testRedis.B().Exists().Key(k).Build()).AsInt64(); n != 0 {
+			t.Fatalf("%s left after participant_left", k)
+		}
+	}
+}
+
+// Moves carry a camera into a room that allows it and stop it (ROOM_POLICY) otherwise.
+func TestCameraMove(t *testing.T) {
+	liveKitUp(t)
+	o, bob, ws, _ := setupTeam(t)
+	a := newVoiceRoom(t, o, ws.GetId(), "a", 6)
+	c := newVoiceRoom(t, o, ws.GetId(), "c", 6)
+	off := newVoiceRoom(t, o, ws.GetId(), "no-cams", 0)
+	name := func(rid string) string { return "ws_" + ws.GetId() + "_room_" + rid }
+	g := dialGW(t)
+	g.identify(o.token)
+	bi := joinCall(t, bob, g, a, name(a))
+	sid := publishDemoCamera(t, name(a), bi)
+	bob.must(204, "POST", "/api/rooms/"+a+"/camera/request", nil, nil)
+	cameraPublished(t, name(a), bi, sid)
+	g.wait("camera on in a", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && s.GetCamera() && s.GetRoomId() == a
+	})
+
+	// The open-source LiveKit answers MoveParticipant with "not implemented" (a LiveKit Cloud
+	// feature): the SFU side of the move is faked here, as in TestMoveMember; everything the
+	// server does around it (records, grants, events) is real.
+	lkRec.mu.Lock()
+	lkRec.fakeMove = true
+	lkRec.mu.Unlock()
+	t.Cleanup(func() { lkRec.mu.Lock(); lkRec.fakeMove = false; lkRec.mu.Unlock() })
+	o.must(204, "POST", "/api/rooms/"+a+"/voice/"+bob.id+"/move", &v1.MoveMemberRequest{TargetRoomId: c}, nil)
+	g.wait("moved to c with the camera", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && s.GetRoomId() == c && s.GetCamera()
+	})
+	if _, ok := cameraRecords(t, c)[sid]; !ok || len(cameraRecords(t, a)) != 0 {
+		t.Fatal("camera record not carried to the target room")
+	}
+	if p, _ := lkRec.lastPerm(bi); !hasSource(p, rtc.SourceCamera) {
+		t.Fatalf("camera grant lost on move: %+v", p)
+	}
+
+	o.must(204, "POST", "/api/rooms/"+c+"/voice/"+bob.id+"/move", &v1.MoveMemberRequest{TargetRoomId: off}, nil)
+	g.wait("VOICE_CAMERA_STOP room policy", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceCameraStop()
+		return s.GetTrackSid() == sid && s.GetRoomId() == off && s.GetReason() == v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ROOM_POLICY
+	})
+	g.wait("camera off after the move", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && s.GetRoomId() == off && !s.GetCamera()
+	})
+	if len(cameraRecords(t, off)) != 0 || len(cameraRecords(t, c)) != 0 {
+		t.Fatal("camera records left after a policy stop")
+	}
+	if p, _ := lkRec.lastPerm(bi); hasSource(p, rtc.SourceCamera) {
+		t.Fatalf("camera still granted in a room with cameras off: %+v", p)
 	}
 }

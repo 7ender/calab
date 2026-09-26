@@ -356,6 +356,7 @@ enum VoiceStreamStopReason {
   VOICE_STREAM_STOP_REASON_ENDED = 1;         // publisher stopped / left
   VOICE_STREAM_STOP_REASON_LIMIT_REACHED = 2; // room max_streams exceeded: track muted by the server
   VOICE_STREAM_STOP_REASON_MODERATOR = 3;     // stopped by a member with MUTE_MEMBERS
+  VOICE_STREAM_STOP_REASON_ROOM_POLICY = 4;   // moved into a room that does not allow it (cameras off / no VIDEO)
 }
 
 message VoiceStreamStop {

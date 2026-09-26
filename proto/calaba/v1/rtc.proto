@@ -23,8 +23,11 @@ message JoinVoiceResponse {
 // enforced atomically when the track is published: an extra camera is muted by the server
 // (VOICE_CAMERA_STOP{LIMIT_REACHED}).
 // POST /api/rooms/{id}/camera/stop → 204: withdraws the camera source from this device.
-// POST /api/rooms/{id}/voice/{userId}/stop-camera (MUTE_MEMBERS) → 204 | 404 (no camera):
-// mutes the member's webcams, withdraws the grant, VOICE_CAMERA_STOP{MODERATOR}.
+// POST /api/rooms/{id}/voice/{userId}/stop-camera (MUTE_MEMBERS) → 204 | 404 (no camera and
+// no reservation): mutes the member's webcams, withdraws the grant, VOICE_CAMERA_STOP{MODERATOR}.
+// The stop is sticky for the member's devices until they leave the call or a moderator calls
+// POST /api/rooms/{id}/voice/{userId}/allow-camera (MUTE_MEMBERS) → 204; meanwhile
+// /camera/request answers 403.
 
 // POST /api/rooms/{id}/stream/request (STREAM). Reserves a stream slot for this device and
 // grants screen share sources; 409 ERROR_CODE_CONFLICT when max_streams is reached.

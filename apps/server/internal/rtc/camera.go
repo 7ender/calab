@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -23,7 +24,15 @@ import (
 //     extra camera is muted, loses the grant and VOICE_CAMERA_STOP{LIMIT_REACHED} is sent;
 //   - the camera source stays in the grant while the device has a reservation or a
 //     recorded webcam (cameraHeld), so later grant pushes (resync, moves, stream changes)
-//     keep it; stopping a camera (own or by a moderator) releases both.
+//     keep it; stopping a camera (own or by a moderator) releases both;
+//   - a moderator's stop is sticky (voice:camoff:<identity>) until the device leaves the
+//     call or a moderator calls allow-camera: /camera/request answers 403 meanwhile;
+//   - a move into a room without VIDEO for the member or with camera_limit 0 stops the
+//     camera with VOICE_CAMERA_STOP{ROOM_POLICY}.
+
+// cameraGrace spares young camera records in reconcile: a camera published and recorded
+// between the participant listing and the reading of the records is not "gone" (L2).
+const cameraGrace = 15 * time.Second
 
 // cameraHeld reports whether the device keeps the camera source in its grant. Errors
 // count as "no" (fail closed: no camera rather than a camera over the limit).
@@ -102,6 +111,11 @@ func (s *Service) requestCamera(w http.ResponseWriter, r *http.Request) error {
 	id := auth.MustFromContext(r.Context())
 	identity := voice.Identity(id.UserID, id.SessionID)
 	name := voice.RoomName(room.WorkspaceID, room.ID)
+	if blocked, err := s.voice.CameraBlocked(r.Context(), identity); err != nil {
+		return err
+	} else if blocked {
+		return httpx.Forbidden("camera stopped by a moderator until you leave the call or a moderator allows it")
+	}
 	if _, err := s.lk.GetParticipant(r.Context(), name, identity); err != nil {
 		if IsNotFound(err) {
 			return httpx.Conflict("join the voice room first")
@@ -148,7 +162,8 @@ func (s *Service) stopOwnCamera(w http.ResponseWriter, r *http.Request) error {
 }
 
 // stopMemberCamera: POST /api/rooms/{id}/voice/{userId}/stop-camera (MUTE_MEMBERS in the
-// room, moderation hierarchy) → 204 | 404 when the member has no camera on.
+// room, moderation hierarchy) → 204 | 404 when the member has neither a camera on nor a
+// reservation. The stop is sticky for the member's devices in the room (BlockCamera).
 func (s *Service) stopMemberCamera(w http.ResponseWriter, r *http.Request) error {
 	room, target, sess, err := s.moderate(r)
 	if err != nil {
@@ -162,6 +177,9 @@ func (s *Service) stopMemberCamera(w http.ResponseWriter, r *http.Request) error
 	stopped := 0
 	for _, st := range sess {
 		identity := voice.Identity(st.UserID, st.SessionID)
+		if err := s.voice.BlockCamera(r.Context(), identity); err != nil {
+			return err
+		}
 		live := map[string]bool{}
 		if p, err := s.lk.GetParticipant(r.Context(), name, identity); err == nil {
 			for _, t := range p.Tracks {
@@ -185,13 +203,31 @@ func (s *Service) stopMemberCamera(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
+// allowCamera: POST /api/rooms/{id}/voice/{userId}/allow-camera (MUTE_MEMBERS in the room,
+// moderation hierarchy) → 204. Lifts a stop-camera for the member's devices in the room
+// (they may be absent already: leaving lifts it anyway).
+func (s *Service) allowCamera(w http.ResponseWriter, r *http.Request) error {
+	_, target, sess, err := s.moderateAny(r)
+	if err != nil {
+		return err
+	}
+	for _, st := range sess {
+		if err := s.voice.AllowCamera(r.Context(), voice.Identity(target, st.SessionID)); err != nil {
+			return err
+		}
+	}
+	httpx.NoContent(w)
+	return nil
+}
+
 // releaseCamera ends a device's camera: drops its reservation and webcam records (plus
 // the given live track sids), pushes a grant without the camera source and clears the
 // device's camera flag. With a reason, VOICE_CAMERA_STOP is published for every track.
-// Returns the number of tracks stopped.
+// Returns what was stopped: the tracks, plus one if only a reservation was dropped.
 func (s *Service) releaseCamera(ctx context.Context, wid, rid, uid, sid uuid.UUID, identity string, bits perm.Bits,
 	live map[string]bool, reason v1.VoiceStreamStopReason) int {
-	if err := s.voice.ReleaseCamera(ctx, identity); err != nil {
+	hadReservation, err := s.voice.ReleaseCamera(ctx, identity)
+	if err != nil {
 		slog.WarnContext(ctx, "release camera", "identity", identity, "err", err)
 	}
 	tracks := map[string]bool{}
@@ -218,6 +254,9 @@ func (s *Service) releaseCamera(ctx context.Context, wid, rid, uid, sid uuid.UUI
 		}
 	}
 	_ = s.setFlag(ctx, wid, rid, uid, sid, func(n *voice.SessionState) { n.Camera = false })
+	if len(tracks) == 0 && hadReservation {
+		return 1
+	}
 	return len(tracks)
 }
 
@@ -241,7 +280,7 @@ func (s *Service) cameraStarted(ctx context.Context, wid, rid, uid, sid uuid.UUI
 	if !hasState(states, sid, rid) {
 		return nil // late event for a device not (or no longer) in the room; reconcile catches up
 	}
-	added, err := s.voice.AddCamera(ctx, rid, t.Sid, voice.Camera{Identity: identity, UserID: uid}, int(media.GetCameraLimit()))
+	added, err := s.voice.AddCamera(ctx, rid, t.Sid, voice.Camera{Identity: identity, UserID: uid, Started: time.Now().UnixMilli()}, int(media.GetCameraLimit()))
 	if err != nil {
 		return err
 	}
@@ -294,7 +333,8 @@ func (s *Service) dropCameras(ctx context.Context, rid uuid.UUID, identity strin
 			_, _ = s.voice.RemoveCamera(ctx, rid, t)
 		}
 	}
-	_ = s.voice.ReleaseCamera(ctx, identity)
+	_, _ = s.voice.ReleaseCamera(ctx, identity)
+	_ = s.voice.AllowCamera(ctx, identity) // a moderator's stop lasts until the device leaves
 }
 
 // reconcileCameras drops recorded webcams whose tracks are gone or muted and records live
@@ -314,6 +354,9 @@ func (s *Service) reconcileCameras(ctx context.Context, wid, rid uuid.UUID, ps [
 	}
 	for t, c := range cams {
 		if _, ok := actual[t]; !ok {
+			if c.Started > 0 && time.Since(time.UnixMilli(c.Started)) < cameraGrace {
+				continue // recorded after the participants were listed (L2)
+			}
 			if ok, _ := s.voice.RemoveCamera(ctx, rid, t); ok {
 				if uid, sid, ok := voice.ParseIdentity(c.Identity); ok {
 					_ = s.refreshCamera(ctx, wid, rid, uid, sid, c.Identity)

@@ -10,6 +10,7 @@
 //	voice:streamreq:<identity>   string preset reserved by /stream/request (TTL 10 min)
 //	voice:cameras:<room_id>      hash  track_sid -> JSON Camera (webcams, limited by camera_limit)
 //	voice:camreq:<identity>      string camera grant reserved by /camera/request (TTL 10 min)
+//	voice:camoff:<identity>      string camera stopped by a moderator: no camera until leave / allow-camera
 //	voice:workspaces             set   workspaces with any voice state (for reconcile)
 //	voice:started:<room_id>      string unix ms when the current call began (first device in an empty room)
 //	voice:smuted:<workspace_id>  set   user ids server-muted by a moderator (kept until unmuted, across rejoins)
@@ -211,6 +212,7 @@ func streamsKey(rid uuid.UUID) string     { return "voice:streams:" + rid.String
 func streamReqKey(identity string) string { return "voice:streamreq:" + identity }
 func camerasKey(rid uuid.UUID) string     { return "voice:cameras:" + rid.String() }
 func cameraReqKey(identity string) string { return "voice:camreq:" + identity }
+func cameraOffKey(identity string) string { return "voice:camoff:" + identity }
 func startedKey(rid uuid.UUID) string     { return "voice:started:" + rid.String() }
 
 const workspacesKey = "voice:workspaces"
@@ -489,6 +491,7 @@ func (s Store) ClearRoom(ctx context.Context, rid uuid.UUID) error {
 type Camera struct {
 	Identity string    `json:"i"`
 	UserID   uuid.UUID `json:"u"`
+	Started  int64     `json:"s,omitempty"` // unix ms when recorded (reconcile spares young records)
 }
 
 // Cameras returns active webcams in a room keyed by track sid.
@@ -526,14 +529,35 @@ func (s Store) ReserveCamera(ctx context.Context, identity string) error {
 	return s.C.Do(ctx, s.C.B().Set().Key(cameraReqKey(identity)).Value("1").Ex(10*time.Minute).Build()).Error()
 }
 
-// ReleaseCamera drops a device's camera reservation.
-func (s Store) ReleaseCamera(ctx context.Context, identity string) error {
-	return s.C.Do(ctx, s.C.B().Del().Key(cameraReqKey(identity)).Build()).Error()
+// ReleaseCamera drops a device's camera reservation; had reports whether there was one.
+func (s Store) ReleaseCamera(ctx context.Context, identity string) (had bool, err error) {
+	n, err := s.C.Do(ctx, s.C.B().Del().Key(cameraReqKey(identity)).Build()).AsInt64()
+	return n > 0, err
 }
 
-// CameraHeld reports whether a device may keep the camera source in its grant: it has a
-// reservation or a recorded webcam in the room.
+// BlockCamera marks a device's camera as stopped by a moderator (sticky; 12 h safety TTL,
+// cleared when the device leaves the call or by AllowCamera).
+func (s Store) BlockCamera(ctx context.Context, identity string) error {
+	return s.C.Do(ctx, s.C.B().Set().Key(cameraOffKey(identity)).Value("1").Ex(12*time.Hour).Build()).Error()
+}
+
+// AllowCamera lifts a moderator's camera stop for a device.
+func (s Store) AllowCamera(ctx context.Context, identity string) error {
+	return s.C.Do(ctx, s.C.B().Del().Key(cameraOffKey(identity)).Build()).Error()
+}
+
+// CameraBlocked reports a moderator's camera stop for a device.
+func (s Store) CameraBlocked(ctx context.Context, identity string) (bool, error) {
+	n, err := s.C.Do(ctx, s.C.B().Exists().Key(cameraOffKey(identity)).Build()).AsInt64()
+	return n > 0, err
+}
+
+// CameraHeld reports whether a device may keep the camera source in its grant: it is not
+// blocked by a moderator and has a reservation or a recorded webcam in the room.
 func (s Store) CameraHeld(ctx context.Context, rid uuid.UUID, identity string) (bool, error) {
+	if blocked, err := s.CameraBlocked(ctx, identity); err != nil || blocked {
+		return false, err
+	}
 	n, err := s.C.Do(ctx, s.C.B().Exists().Key(cameraReqKey(identity)).Build()).AsInt64()
 	if err != nil || n > 0 {
 		return n > 0, err

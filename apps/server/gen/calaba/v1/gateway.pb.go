@@ -236,6 +236,7 @@ const (
 	VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED         VoiceStreamStopReason = 1 // publisher stopped / left
 	VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_LIMIT_REACHED VoiceStreamStopReason = 2 // room max_streams exceeded: track muted by the server
 	VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_MODERATOR     VoiceStreamStopReason = 3 // stopped by a member with MUTE_MEMBERS
+	VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ROOM_POLICY   VoiceStreamStopReason = 4 // moved into a room that does not allow it (cameras off / no VIDEO)
 )
 
 // Enum value maps for VoiceStreamStopReason.
@@ -245,12 +246,14 @@ var (
 		1: "VOICE_STREAM_STOP_REASON_ENDED",
 		2: "VOICE_STREAM_STOP_REASON_LIMIT_REACHED",
 		3: "VOICE_STREAM_STOP_REASON_MODERATOR",
+		4: "VOICE_STREAM_STOP_REASON_ROOM_POLICY",
 	}
 	VoiceStreamStopReason_value = map[string]int32{
 		"VOICE_STREAM_STOP_REASON_UNSPECIFIED":   0,
 		"VOICE_STREAM_STOP_REASON_ENDED":         1,
 		"VOICE_STREAM_STOP_REASON_LIMIT_REACHED": 2,
 		"VOICE_STREAM_STOP_REASON_MODERATOR":     3,
+		"VOICE_STREAM_STOP_REASON_ROOM_POLICY":   4,
 	}
 )
 
@@ -3903,12 +3906,13 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x14PRESENCE_STATUS_IDLE\x10\x02\x12\x17\n" +
 	"\x13PRESENCE_STATUS_DND\x10\x03\x12\x1d\n" +
 	"\x19PRESENCE_STATUS_INVISIBLE\x10\x04\x12\x1b\n" +
-	"\x17PRESENCE_STATUS_OFFLINE\x10\x05*\xb9\x01\n" +
+	"\x17PRESENCE_STATUS_OFFLINE\x10\x05*\xe3\x01\n" +
 	"\x15VoiceStreamStopReason\x12(\n" +
 	"$VOICE_STREAM_STOP_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eVOICE_STREAM_STOP_REASON_ENDED\x10\x01\x12*\n" +
 	"&VOICE_STREAM_STOP_REASON_LIMIT_REACHED\x10\x02\x12&\n" +
-	"\"VOICE_STREAM_STOP_REASON_MODERATOR\x10\x03B\x9a\x01\n" +
+	"\"VOICE_STREAM_STOP_REASON_MODERATOR\x10\x03\x12(\n" +
+	"$VOICE_STREAM_STOP_REASON_ROOM_POLICY\x10\x04B\x9a\x01\n" +
 	"\rcom.calaba.v1B\fGatewayProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

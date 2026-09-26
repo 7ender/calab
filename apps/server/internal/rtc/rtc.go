@@ -70,6 +70,7 @@ func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handle
 	mux.Handle("POST /api/rooms/{id}/camera/request", wrap(httpx.HandlerFunc(s.requestCamera)))
 	mux.Handle("POST /api/rooms/{id}/camera/stop", wrap(httpx.HandlerFunc(s.stopOwnCamera)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/stop-camera", wrap(httpx.HandlerFunc(s.stopMemberCamera)))
+	mux.Handle("POST /api/rooms/{id}/voice/{userId}/allow-camera", wrap(httpx.HandlerFunc(s.allowCamera)))
 	mux.Handle("PATCH /api/voice/self", wrap(httpx.HandlerFunc(s.voiceSelf)))
 	mux.Handle("PATCH /api/rooms/{id}/voice-status", wrap(httpx.HandlerFunc(s.setVoiceStatus)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/mute", wrap(httpx.HandlerFunc(s.muteMember)))
@@ -233,21 +234,25 @@ func (s *Service) serverMuted(ctx context.Context, wid, uid uuid.UUID) bool {
 // the push: if a mute / unmute landed meanwhile, the push may have carried a stale value,
 // so it is repeated with the current one (review 4 L1). Any push computed from an old flag
 // is thus followed by a corrective one from the same caller.
+//
+// The same applies to the camera source (webcam review L1): a push that read the camera
+// state before a /camera/request, or before a moderator's stop-camera, is corrected by
+// re-reading it after the push.
 func (s *Service) pushGrant(ctx context.Context, lkRoom, identity string, wid, uid uuid.UUID, bits perm.Bits, slot bool) error {
-	sm := s.serverMuted(ctx, wid, uid)
+	sm, cam := s.serverMuted(ctx, wid, uid), s.cameraHeld(ctx, lkRoom, identity)
 	for range 3 {
 		b := bits
 		if sm {
 			b &^= perm.Speak
 		}
-		if err := s.lk.UpdatePermission(ctx, lkRoom, identity, Grant(b, slot, s.cameraHeld(ctx, lkRoom, identity))); err != nil {
+		if err := s.lk.UpdatePermission(ctx, lkRoom, identity, Grant(b, slot, cam)); err != nil {
 			return err
 		}
-		now := s.serverMuted(ctx, wid, uid)
-		if now == sm {
+		sm2, cam2 := s.serverMuted(ctx, wid, uid), s.cameraHeld(ctx, lkRoom, identity)
+		if sm2 == sm && cam2 == cam {
 			return nil
 		}
-		sm = now
+		sm, cam = sm2, cam2
 	}
 	return nil
 }
@@ -666,7 +671,8 @@ func DisabledRoutes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 		return httpx.Unavailable(errors.New("rtc: LiveKit is not configured"))
 	})
 	for _, p := range []string{"POST /api/rooms/{id}/join", "POST /api/rooms/{id}/stream/request",
-		"POST /api/rooms/{id}/camera/request", "POST /api/rooms/{id}/camera/stop", "POST /api/rooms/{id}/voice/{userId}/stop-camera", "PATCH /api/voice/self",
+		"POST /api/rooms/{id}/camera/request", "POST /api/rooms/{id}/camera/stop", "POST /api/rooms/{id}/voice/{userId}/stop-camera",
+		"POST /api/rooms/{id}/voice/{userId}/allow-camera", "PATCH /api/voice/self",
 		"PATCH /api/rooms/{id}/voice-status", "POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/unmute", "POST /api/rooms/{id}/voice/{userId}/disconnect",
 		"POST /api/rooms/{id}/voice/{userId}/stop-stream", "POST /api/rooms/{id}/voice/{userId}/move"} {
 		mux.Handle(p, wrap(h))

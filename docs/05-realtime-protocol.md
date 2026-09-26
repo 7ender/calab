@@ -73,7 +73,7 @@ TYPING_START                  { room_id, user_id, timestamp } — только �
 PRESENCE_UPDATE               { user_id, status, last_seen }
 VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming, joined_at, server_muted, camera }
 VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- для PiP-плитки
-VOICE_CAMERA_STOP             { room_id, user_id, track_sid, reason: LIMIT_REACHED | MODERATOR }   -- камеру остановил сервер
+VOICE_CAMERA_STOP             { room_id, user_id, track_sid, reason: LIMIT_REACHED | MODERATOR | ROOM_POLICY }   -- камеру остановил сервер
 READ_STATE_UPDATE
 ROOM_NOTIFICATION_UPDATE      { settings: { room_id, level, muted_until } } — только своим устройствам
 USER_UPDATE                   { me } — своим устройствам (профиль, email, настройки);
@@ -204,7 +204,8 @@ PATCH  /api/voice/self                 UpdateVoiceSelfRequest → 204        (40
 POST   /api/rooms/{id}/voice/{userId}/mute         204   (MUTE_MEMBERS на уровне workspace: серверный mute → server_muted, до unmute)
 POST   /api/rooms/{id}/voice/{userId}/unmute       204   (MUTE_MEMBERS на уровне workspace: снять server_muted; участник может быть уже не в комнате)
 POST   /api/rooms/{id}/voice/{userId}/disconnect   204   (MUTE_MEMBERS: RemoveParticipant)
-POST   /api/rooms/{id}/voice/{userId}/stop-camera  204   (MUTE_MEMBERS: камеры заглушены, grant снят → VOICE_CAMERA_STOP{MODERATOR}; 404 — камер нет)
+POST   /api/rooms/{id}/voice/{userId}/stop-camera  204   (MUTE_MEMBERS: камеры заглушены, grant снят → VOICE_CAMERA_STOP{MODERATOR}; стоп «липкий»; 404 — нет ни камеры, ни резерва)
+POST   /api/rooms/{id}/voice/{userId}/allow-camera 204   (MUTE_MEMBERS: снять липкий стоп камеры)
 POST   /api/rooms/{id}/voice/{userId}/stop-stream  204   (MUTE_MEMBERS: screen-треки заглушены, grant на экран снят → VOICE_STREAM_STOP{MODERATOR}; 404 — стримов нет)
 POST   /api/rtc/webhook                LiveKit → сервер (подпись API key/secret + sha256 тела)
 ```
@@ -269,8 +270,11 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
   - Порядок как у стримов. В join-токене camera-источника нет. Перед публикацией клиент вызывает `POST …/camera/request`: сервер проверяет, что есть свободное место, резервирует его на 10 мин и добавляет `camera` в `canPublishSources`. Источник остаётся в grant, пока у устройства есть резерв или включённая камера.
   - Лимит проверяется атомарно на `track_published` (Lua). Лишняя камера глушится сервером, grant снимается, всем, кто видит комнату, приходит `VOICE_CAMERA_STOP{LIMIT_REACHED}`.
   - `VoiceState.camera` — камера устройства в эфире (`track_published` / `track_unpublished` source CAMERA; заглушённый трек reconcile считает выключенным). Приходит в READY и `VOICE_STATE_UPDATE`. Выключая камеру, клиент снимает публикацию трека (unpublish) и вызывает `…/camera/stop`. Отдельного события для собственного выключения нет — хватает `VoiceState.camera`.
-  - Модератор (`MUTE_MEMBERS` в комнате, иерархия как у mute) — `…/voice/{userId}/stop-camera`: трек глушится, grant снимается (dev-LiveKit при этом сам снимает публикацию), `VOICE_CAMERA_STOP{MODERATOR}`. Чтобы снова включить камеру, нужен новый `/camera/request`.
-  - При перемещении (move) камера переезжает вместе с участником; лимит целевой комнаты при этом не применяется, как и `user_limit`.
+  - Модератор (`MUTE_MEMBERS` в комнате, иерархия как у mute) — `…/voice/{userId}/stop-camera`:
+    - трек глушится, grant снимается (dev-LiveKit при этом сам снимает публикацию), приходит `VOICE_CAMERA_STOP{MODERATOR}`. Действует и на один только резерв (между request и публикацией) — ответ 204, 404 только если нечего останавливать.
+    - Стоп **липкий** для устройств участника (`voice:camoff:<identity>`): пока участник не выйдет из звонка или модератор не вызовет `…/allow-camera`, `/camera/request` отвечает 403. Надолго лишить камеры — это `deny VIDEO` override.
+  - При перемещении (move) камера переезжает вместе с участником; лимит целевой комнаты не применяется, как и `user_limit`. Если в целевой комнате камеры выключены (`camera_limit = 0`) или у участника там нет `VIDEO`, камера останавливается: `VOICE_CAMERA_STOP{ROOM_POLICY}`, трек глушится, grant снимается.
+  - Гонки grant: после каждой отправки прав сервер перечитывает и server mute, и состояние камеры. Поэтому устаревшая отправка не снимет свежий camera-grant и не вернёт камеру после stop-camera. Reconcile не трогает записи камер моложе 15 с.
 - **Серверный mute.** Ставит и снимает только `MUTE_MEMBERS` **на уровне workspace** (owner / admin по роли): mute действует во всех комнатах, поэтому модератору одной комнаты (override) он недоступен, у того остаются disconnect / stop-stream в своей комнате. `VoiceState.server_muted` (в READY и `VOICE_STATE_UPDATE`) хранится в Valkey на пользователя в workspace и держится, пока модератор не снимет его через `/unmute`: переживает переподключение и вход с другого устройства; исчезает, если участник покинул workspace. Пока флаг стоит:
   - из LiveKit-grant всех устройств убран источник microphone, поэтому SFU сам не даст опубликовать или включить микрофон;
   - опубликованные треки микрофона заглушены (`MutePublishedTrack`); трек, опубликованный токеном, выданным до mute, глушится на `track_published`;
