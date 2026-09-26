@@ -10,6 +10,7 @@
 //
 // Loudness: each clip is scaled to −14 LUFS (BS.1770 K-weighting, one block over the whole clip —
 // the clip is shorter than the 400 ms gating block) and then capped at a −3 dBFS sample peak.
+import { existsSync } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -151,6 +152,12 @@ function main(argv) {
   }
   const variant = arg('--variant') ?? 'a';
   const file = resolve(arg('--out') ?? join(here, '..', 'resources', 'sounds', 'message.wav'));
+  // resources/sounds/message.wav is the owner's own asset (2026-09-26); the generator only
+  // replaces it when asked explicitly, so a stray run cannot overwrite it.
+  if (!arg('--out') && !argv.includes('--force') && existsSync(file)) {
+    console.error(`${file} exists (owner asset); pass --force to overwrite or --all --out <dir> for candidates`);
+    process.exit(2);
+  }
   mkdirSync(dirname(file), { recursive: true });
   const { data, info } = build(variant);
   writeFileSync(file, data);
