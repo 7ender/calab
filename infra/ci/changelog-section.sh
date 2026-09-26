@@ -13,6 +13,7 @@ file="${2:-CHANGELOG.md}"
 
 body=$(awk -v ver="$version" '
   BEGIN { head = "## [" ver "]" }
+  { sub(/\r$/, "") }                         # CRLF checkouts: never leak \r into the release body
   /^## \[/ { if (in_sec) exit; if (index($0, head) == 1) { in_sec = 1; next } }
   in_sec && /^\[[^]]+\]: / { exit }          # link references at the end of the file
   in_sec { lines[++n] = $0 }
