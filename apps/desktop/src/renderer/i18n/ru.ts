@@ -215,6 +215,7 @@ export const ru = {
 
   // voice
   'voice.connecting': 'Подключение…',
+  'voice.pendingMember': 'Подключается…',
   'voice.reconnecting': 'Переподключение…',
   'voice.connected': 'Голос подключён',
   'voice.blocked': 'Голос недоступен',

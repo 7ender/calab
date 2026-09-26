@@ -152,8 +152,9 @@ vi.mock('livekit-client', () => ({
 // ---------------------------------------------------------------- app mocks
 
 const joinVoice = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }));
+const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean }) => Promise.resolve());
 vi.mock('../lib/api/endpoints', () => ({
-  api: { voice: { join: (id: string) => joinVoice(id), updateSelf: () => Promise.resolve() }, me: { update: () => Promise.resolve({}) } },
+  api: { voice: { join: (id: string) => joinVoice(id), updateSelf: (b: { muted?: boolean; deafened?: boolean }) => updateSelf(b) }, me: { update: () => Promise.resolve({}) } },
 }));
 
 interface FakePipeline {
@@ -184,9 +185,10 @@ vi.mock('../lib/sounds', () => ({ playSound: () => undefined }));
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
 const announce = vi.fn();
 vi.mock('./deviceToast', () => ({ announceDeviceSwitch: (...a: unknown[]) => void announce(...a) }));
+const reportMediaError = vi.fn(() => ({ text: 'err', action: null }));
 vi.mock('./mediaErrors', () => ({
   humanMediaError: () => ({ text: 'err', action: null }),
-  reportMediaError: () => ({ text: 'err', action: null }),
+  reportMediaError: () => reportMediaError(),
 }));
 vi.mock('../platform', () => ({
   platform: {
@@ -215,6 +217,8 @@ beforeEach(async () => {
   gate = null;
   gone.clear();
   joinVoice.mockClear();
+  updateSelf.mockClear();
+  reportMediaError.mockClear();
   deviceChange.length = 0;
   deviceList = [];
   announce.mockClear();
@@ -243,6 +247,56 @@ describe('VoiceEngine', () => {
     expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A', 'B']);
     expect(FakeRoom.all[0]?.disconnects).toHaveLength(1);
     expect(FakeRoom.all[1]?.published).toHaveLength(1);
+  });
+
+  it('optimistic join: the clicked room is my seat at once, also while the old call is torn down', async () => {
+    await voice.join('X', 'ws');
+    let release!: () => void;
+    FakeRoom.disconnectGate = new Promise<void>((r) => (release = r));
+    const toB = voice.join('B', 'ws');
+    expect(useVoice.getState().joining).toEqual({ roomId: 'B', workspaceId: 'ws' }); // synchronously, no /join yet
+    await settle();
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['X']);
+    FakeRoom.disconnectGate = null;
+    release();
+    await toB;
+    expect(useVoice.getState()).toMatchObject({ joining: null, roomId: 'B', phase: 'connected' });
+  });
+
+  it('optimistic join rolled back: a failed /join takes me out of the room with a toast', async () => {
+    joinVoice.mockRejectedValueOnce(new Error('503'));
+    const p = voice.join('A', 'ws');
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connecting' }); // not in a call: the seat at once
+    await p;
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ joining: null, roomId: null, phase: 'idle' });
+    expect(reportMediaError).toHaveBeenCalledTimes(1);
+  });
+
+  it('«Отключиться» before the connect drops the optimistic seat', async () => {
+    await voice.join('X', 'ws');
+    FakeRoom.disconnectGate = new Promise<void>(() => undefined); // the old call hangs
+    void voice.join('B', 'ws');
+    void voice.leave();
+    expect(useVoice.getState().joining).toBeNull();
+  });
+
+  it('a pending /join sends my mute / deafen before LiveKit connects', async () => {
+    const res = { url: 'wss://lk', token: 't', canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } };
+    useVoice.setState({ muted: true });
+    joinVoice.mockResolvedValueOnce({ ...res, pending: false } as never);
+    const a = voice.join('A', 'ws');
+    await vi.advanceTimersByTimeAsync(50); // the muted mic track's mute lock
+    await a;
+    expect(updateSelf).toHaveBeenCalledTimes(1); // after the connect only
+    await voice.leave();
+    updateSelf.mockClear();
+    joinVoice.mockResolvedValueOnce({ ...res, pending: true } as never);
+    const b = voice.join('B', 'ws');
+    await vi.advanceTimersByTimeAsync(50);
+    await b;
+    expect(updateSelf).toHaveBeenCalledTimes(2); // right after /join, and after the connect
+    expect(updateSelf).toHaveBeenNthCalledWith(1, { muted: true, deafened: false });
   });
 
   it('a newer join wins over one still waiting for /join', async () => {

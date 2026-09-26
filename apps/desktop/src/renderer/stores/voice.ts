@@ -64,6 +64,12 @@ export interface VoiceStore {
   roomId: string | null;
   workspaceId: string | null;
   phase: VoicePhase;
+  /**
+   * The room I clicked, from the click until connect() takes the seat (phase 'connecting'):
+   * switching rooms first tears the old call down, and the optimistic join (stores/voicePending)
+   * shows me in the new room during that too.
+   */
+  joining: { roomId: string; workspaceId: string } | null;
   error: string | null;
   canSpeak: boolean;
   canStream: boolean;
@@ -123,6 +129,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   roomId: null,
   workspaceId: null,
   phase: 'idle',
+  joining: null,
   error: null,
   canSpeak: false,
   canStream: false,
