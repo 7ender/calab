@@ -11,7 +11,7 @@ import { installRendererCsp } from './csp';
 import { applyDevDockIcon } from './icons';
 import { resetPttGate, shutdownPtt } from './ptt';
 import { createTray } from './tray';
-import { checkForUpdates } from './updater';
+import { startUpdates } from './updater';
 import { createMainWindow, getMainWindow, installWebContentsGuards, isOwnOrigin, isOwnPage, showMainWindow } from './windows';
 
 // The product is «Calab» (docs/10), but installed builds keep their data under the old name:
@@ -110,7 +110,7 @@ void app.whenReady().then(() => {
     else showMainWindow();
   });
 
-  void checkForUpdates();
+  startUpdates();
 });
 
 app.on('window-all-closed', () => {

@@ -52,6 +52,10 @@ export interface CalabaApi {
     onPower(cb: (ev: PowerEvent) => void): Unsubscribe;
     checkUpdates(): Promise<UpdateStatus>;
     onUpdateStatus(cb: (s: UpdateStatus) => void): Unsubscribe;
+    /** Current update status (after a renderer reload). */
+    updateStatus(): Promise<UpdateStatus>;
+    /** «Перезапустить»: quit and install the downloaded update; false when none is downloaded. */
+    installUpdate(): Promise<boolean>;
     log(level: 'info' | 'warn' | 'error', message: string): void;
     openExternal(url: string): Promise<void>;
     /** LICENSE, NOTICE and THIRD-PARTY-NOTICES.txt texts («О программе»). */

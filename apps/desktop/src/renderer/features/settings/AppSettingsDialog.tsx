@@ -13,6 +13,7 @@ import { t } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api, uploadAvatar } from '../../lib/api/endpoints';
 import { fmtStamp } from '../../lib/format';
+import { log } from '../../lib/log';
 import { METER_MIN_DB } from '../../lib/media/vad';
 import { platform } from '../../platform';
 import { shortcutHelp } from '../../services/hotkeys';
@@ -686,15 +687,27 @@ function AppTab(): ReactNode {
     useSession.getState().set({ settings: s });
   };
   return (
-    <Card title={t('card.startup')}>
-      <Row label={t('app.autostart')} hint={info?.packaged ? undefined : t('app.autostartDev')}>
-        <Toggle
-          label={t('app.autostart')}
-          checked={settings?.autostart ?? false}
-          onChange={(v) => void save({ autostart: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
-        />
-      </Row>
-    </Card>
+    <>
+      <Card title={t('card.startup')}>
+        <Row label={t('app.autostart')} hint={info?.packaged ? undefined : t('app.autostartDev')}>
+          <Toggle
+            label={t('app.autostart')}
+            checked={settings?.autostart ?? false}
+            onChange={(v) => void save({ autostart: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
+          />
+        </Row>
+      </Card>
+      {/* Main decides what «auto» means per platform (updateFlow.ts); the renderer only toggles. */}
+      <Card title={t('about.updates')}>
+        <Row label={t('app.autoUpdate')} hint={t('app.autoUpdateHint')}>
+          <Toggle
+            label={t('app.autoUpdate')}
+            checked={settings?.autoUpdate ?? true}
+            onChange={(v) => void save({ autoUpdate: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
+          />
+        </Row>
+      </Card>
+    </>
   );
 }
 
@@ -712,7 +725,9 @@ function AboutTab(): ReactNode {
     try {
       useSession.getState().set({ update: await platform.app.checkUpdates() });
     } catch (e) {
-      toast.fail(e, t('about.updateError'));
+      // Update failures are not toasted: main logs them, the line below says «не удалось».
+      log.warn('update check failed', e);
+      useSession.getState().set({ update: { state: 'error', message: 'update check failed' } });
     } finally {
       setChecking(false);
     }
@@ -731,9 +746,18 @@ function AboutTab(): ReactNode {
             {update.state === 'available' && update.downloadPage ? (
               <Button onClick={() => void platform.app.openExternal(update.downloadPage ?? '')}>{t('about.download')}</Button>
             ) : null}
-            <Button variant="secondary" busy={checking || update.state === 'checking'} onClick={() => void check()}>
-              {t('app.checkBtn')}
-            </Button>
+            {update.state === 'downloaded' ? (
+              <Button onClick={() => void platform.app.installUpdate()}>{t('about.restart')}</Button>
+            ) : (
+              <Button
+                variant="secondary"
+                busy={checking || update.state === 'checking'}
+                disabled={update.state === 'downloading'}
+                onClick={() => void check()}
+              >
+                {t('app.checkBtn')}
+              </Button>
+            )}
           </Row>
         </Card>
       ) : null}

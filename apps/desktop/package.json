@@ -22,7 +22,7 @@
     "preview:web": "vite preview --config vite.web.config.ts --mode web",
     "e2e:web": "playwright test --config playwright.web.config.ts",
     "e2e:visual": "pnpm build:app && playwright test --config playwright.visual.config.ts",
-    "e2e:visual:update": "pnpm build:app && playwright test --config playwright.visual.config.ts --update-snapshots"
+    "e2e:visual:update": "pnpm build:app && playwright test --config playwright.visual.config.ts --update-snapshots=all"
   },
   "dependencies": {
     "electron-log": "^5.4.4",

@@ -336,7 +336,9 @@ function Stage({ stream, streams, wsId, box }: { stream: RemoteStream; streams: 
     >
       <div
         ref={frame}
-        className="mat-popover group relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-panel)] bg-[var(--color-video-bg)]"
+        className="mat-popover group relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-panel)]"
+        // Inline, as in the PiP: the unlayered .mat-popover material overrides a bg utility.
+        style={{ background: 'var(--color-video-bg)' }}
       >
         <StreamVideo stream={stream} wsId={wsId} avatarSize={80} className="size-full" />
         <span className="absolute left-3 top-3 flex max-w-[calc(100%-120px)]">

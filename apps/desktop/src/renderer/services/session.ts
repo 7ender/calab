@@ -47,6 +47,11 @@ export async function bootstrap(): Promise<void> {
   });
   watchOffline();
   platform.app.onUpdateStatus((update) => useSession.getState().set({ update }));
+  // A reloaded renderer (server switch) must still show a downloaded update.
+  void platform.app.updateStatus().then(
+    (update) => useSession.getState().set({ update }),
+    () => undefined,
+  );
   platform.tray.onAction((a) => {
     if (a === 'toggle-mute') voice.toggleMute();
     else if (a === 'toggle-deafen') voice.toggleDeafen();

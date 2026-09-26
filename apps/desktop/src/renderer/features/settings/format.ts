@@ -52,6 +52,8 @@ export function updateLabel(u: UpdateStatus): string | null {
       return t('about.upToDate');
     case 'available':
       return t('about.updateAvailable', { v: u.version });
+    case 'downloading':
+      return t('about.updateDownloading', { v: u.version, p: u.percent });
     case 'downloaded':
       return t('about.updateDownloaded', { v: u.version });
     case 'error':

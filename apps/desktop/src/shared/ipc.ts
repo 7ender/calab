@@ -26,6 +26,10 @@ export const IPC = {
   /** main → renderer: power events (resume after sleep → force gateway reconnect). */
   appPower: 'app:power',
   appCheckUpdates: 'app:check-updates',
+  /** The current update status (a reloaded renderer does not miss a downloaded update). */
+  appGetUpdateStatus: 'app:get-update-status',
+  /** Restart now and install the downloaded update. */
+  appInstallUpdate: 'app:install-update',
   /** main → renderer */
   appUpdateStatus: 'app:update-status',
   appLog: 'app:log',
@@ -109,6 +113,11 @@ export interface AppSettings {
   /** electron-updater generic feed URL; empty = updates off. */
   updateUrl: string;
   autostart: boolean;
+  /**
+   * «Автоматически обновлять» (default on): download in the background and install on restart /
+   * quit where the platform can (Windows, Linux AppImage, signed macOS). Off → notify only.
+   */
+  autoUpdate: boolean;
 }
 
 /** Licence texts for «О программе» (BUSL-1.1 LICENSE, NOTICE, commercial terms, third-party notices). */
@@ -143,8 +152,14 @@ export type UpdateStatus =
   | { state: 'disabled' }
   | { state: 'checking' }
   | { state: 'none' }
-  /** `downloadPage`: unsigned builds don't auto-download; the user gets the server's /download/ page. */
+  /**
+   * Notify-only (unsigned macOS, Linux without AppImage, «Автоматически обновлять» off):
+   * `downloadPage` is the feed / download page the user opens.
+   */
   | { state: 'available'; version: string; downloadPage?: string }
+  /** Background download; `percent` is an integer 0–100. */
+  | { state: 'downloading'; version: string; percent: number }
+  /** Ready: installs on «Перезапустить» or on quit. */
   | { state: 'downloaded'; version: string }
   | { state: 'error'; message: string };
 

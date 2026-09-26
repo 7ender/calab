@@ -110,6 +110,13 @@ for (const theme of THEMES) {
         await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
         await checkpoint(s, 'main-chat');
 
+        // Auto-update: «Обновление X готово — Перезапустить» above the self panel (faked status).
+        await page.evaluate(() => (window as unknown as { __calabaUpdateStatus?: (s: object) => void }).__calabaUpdateStatus?.({ state: 'downloaded', version: '0.1.1' }));
+        await expect(page.getByTestId('update-banner')).toBeVisible();
+        await checkpoint(s, 'update-banner');
+        await page.evaluate(() => (window as unknown as { __calabaUpdateStatus?: (s: object) => void }).__calabaUpdateStatus?.({ state: 'disabled' }));
+        await expect(page.getByTestId('update-banner')).toHaveCount(0);
+
         // Members: a column from 1200 px (open by default), a floating panel below (closed by default).
         await page.getByRole('button', { name: 'Участники' }).click();
         await checkpoint(s, 'main-members-toggled');
@@ -309,9 +316,11 @@ for (const theme of THEMES) {
           // Default stage while chatting: PiP in the top-right corner, clear of the composer.
           await expect(page.getByTestId('stream-pip')).toBeVisible();
           await checkpoint(s, 'voice-pip');
-          // PiP hover controls (expand / close).
-          await page.getByTestId('stream-pip').hover();
-          await expect(page.getByTestId('stream-pip').getByRole('button', { name: 'Не смотреть' })).toBeVisible();
+          // PiP controls (expand / close): shown on hover or keyboard focus. checkpoint() parks the
+          // pointer, so the shot uses focus; toBeVisible() passes at opacity 0 — check the opacity.
+          const stopWatching = page.getByTestId('stream-pip').getByRole('button', { name: 'Не смотреть' });
+          await stopWatching.focus();
+          await expect(stopWatching.locator('..')).toHaveCSS('opacity', '1');
           await checkpoint(s, 'voice-pip-hover');
           await page.getByTestId('stream-pip').getByRole('button', { name: 'Развернуть' }).first().click();
           await expect(page.getByTestId('stream-pip')).toHaveCount(0);

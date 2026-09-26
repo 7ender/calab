@@ -26,7 +26,7 @@ import { downloadFile } from './downloads';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
 import { setTrayState } from './tray';
-import { checkForUpdates } from './updater';
+import { checkForUpdates, installUpdate, updateSettingsChanged, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { getMainWindow, isOwnPage } from './windows';
 
@@ -95,6 +95,7 @@ function parseSettings(v: unknown): Partial<AppSettings> {
   }
   // updateUrl is NOT settable from the renderer (security review M3): main derives the feed.
   if (r['autostart'] !== undefined) out.autostart = Boolean(r['autostart']);
+  if (r['autoUpdate'] !== undefined) out.autoUpdate = Boolean(r['autoUpdate']);
   return out;
 }
 
@@ -162,12 +163,16 @@ export function registerIpc(): void {
   }));
   handle(IPC.appGetSettings, () => getSettings());
   handle(IPC.appSetSettings, (_e, a) => {
-    const next = updateSettings(parseSettings(a));
+    const patch = parseSettings(a);
+    const next = updateSettings(patch);
+    if (patch.autoUpdate !== undefined) updateSettingsChanged();
     reloadIfServerChanged();
     return next;
   });
   handle(IPC.appTakeDeepLink, () => takePendingDeepLink());
   handle(IPC.appCheckUpdates, () => checkForUpdates());
+  handle(IPC.appGetUpdateStatus, () => updateStatus());
+  handle(IPC.appInstallUpdate, () => installUpdate());
   handle(IPC.appLog, (_e, a) => {
     const r = obj(a);
     const msg = str(r['message'], 8192, true);

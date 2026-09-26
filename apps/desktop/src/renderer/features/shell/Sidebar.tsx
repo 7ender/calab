@@ -54,6 +54,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { moveMember } from '../people/actions';
 import { SelfPanel } from './SelfPanel';
+import { UpdateBanner } from './UpdateBanner';
 import { errorText } from '../../lib/api/errors';
 import { VoiceBar } from './VoiceBar';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
@@ -147,6 +148,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
         </div>
       </VoiceDnd>
       <VoiceBar />
+      {/* «Обновление X готово — Перезапустить», right above the self panel. */}
+      <UpdateBanner />
       <SelfPanel />
       {catDialog ? <CategoryDialog workspaceId={workspaceId} category={catDialog.category} onClose={() => setCatDialog(null)} /> : null}
     </aside>

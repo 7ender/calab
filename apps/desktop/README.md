@@ -26,13 +26,24 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 |---|---|
 | `CALABA_SERVER_URL` | API address (overrides the value saved in settings). There are no hosts in the code: when the variable is unset, the user enters the address on the login screen |
 | `MAIN_VITE_DEFAULT_SERVER_URL`, `MAIN_VITE_UPDATE_URL` | Build-time defaults for installers (for example, the staging stand and the update feed) |
-| `CALABA_UPDATE_URL` | Generic feed for electron-updater (can also be set in Settings → Приложение). Empty = updates off |
+| `CALABA_UPDATE_URL` | Overrides the electron-updater generic feed (https only). Not settable from the UI |
+| `CALABA_UPDATES_SIGNED=1` / `MAIN_VITE_UPDATES_SIGNED=1` | The macOS build is signed: auto-download and install on macOS too (Squirrel.Mac refuses unsigned updates) |
 | `CALABA_USER_DATA` | Separate profile directory (tests, two instances on one machine) |
 | `CALABA_MULTI_INSTANCE=1` | Disable the single-instance lock (a second instance for local testing) |
 | `CALABA_FAKE_MEDIA=1` | Fake Chromium devices: the mic beeps, the screen is a test pattern, no OS permission prompts. Automation only |
 | `CALABA_MAC_SYSTEM_AUDIO=0` | Do not enable the Chromium features for macOS system audio |
 | `CALABA_FORCE_RELAY=1` | Test flag: ICE relay only (checks the TURN path) |
 | `REMOTE_DEBUGGING_PORT` | (electron-vite dev) CDP port for automation |
+
+### Updates
+
+electron-updater, generic provider; the logic is a pure state machine in `src/main/updateFlow.ts` (unit-tested with a fake updater), wired to Electron in `src/main/updater.ts`.
+
+- **Feed** (`src/shared/updateFeed.ts`): server `https://app.X` → `https://releases.X/` (`app.calab.ru` → `https://releases.calab.ru/`); any other host → `https://<host>/download/`. `CALABA_UPDATE_URL` / `MAIN_VITE_UPDATE_URL` override it; https only; the renderer cannot change it. Dev (unpackaged) builds never check.
+- **Checks:** 10 s after start, then every 6 h, plus «Проверить» in Settings → «О программе».
+- **Windows, Linux AppImage, signed macOS:** the update downloads in the background (progress in «О программе»), then a banner above the self panel says «Обновление X готово» with «Перезапустить»; quitting without it installs the update too.
+- **Notify only** — unsigned macOS, Linux deb/other, or Settings → «Приложение» → «Автоматически обновлять» off (default on): a system notification «Доступна версия X — Скачать» opens the download page.
+- **Errors** go to the log only (`logs/main.log`, `[update]`); «О программе» shows «Не удалось проверить обновления». No toasts.
 
 ## Web client (ADR-0015)
 
