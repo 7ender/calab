@@ -1,7 +1,10 @@
 import { prefs } from '../stores/prefs';
+// New-message cue (docs/09 P1 #13): pre-rendered by scripts/gen-sounds.mjs, bundled as an asset.
+import messageWavUrl from '../../../resources/sounds/message.wav?url';
 
 /**
- * UI event sounds (docs/09 #29). Short (≤ 300 ms) tones synthesised once into WAV blobs and
+ * UI event sounds (docs/09 #29). Short (≤ 300 ms) tones synthesised once into WAV blobs (the new
+ * message cue is a bundled WAV, FILE_SOUNDS) and
  * played through a plain <audio> element on the selected output device — never through
  * WebAudio, so AEC3 sees them as WebRTC-independent playback exactly like any other system
  * sound (docs/02, echo rule 1).
@@ -24,6 +27,12 @@ export const SOUND_EVENTS = [
 ] as const;
 
 export type SoundName = (typeof SOUND_EVENTS)[number];
+
+/**
+ * Events played from a bundled file rather than a synthesised tone (still a plain <audio>).
+ * Their SOUNDS entry is only the fallback when the file cannot be loaded.
+ */
+export const FILE_SOUNDS: Partial<Record<SoundName, string>> = { message: messageWavUrl };
 
 /** One partial of a sound: frequency (Hz), start and length (s), relative gain. */
 export interface Note {
@@ -154,40 +163,75 @@ export function soundEnabled(name: SoundName): boolean {
   return p.voiceSounds && p.sounds[name] !== false;
 }
 
-const cache = new Map<SoundName, string>();
-const lastPlayed = new Map<SoundName, number>();
 /** The same sound fired in a burst (e.g. several people moved in at once) plays once. */
 const MIN_GAP_MS = 150;
-/** Chat sounds in a busy room: at most one per interval. */
-const GAP_MS: Partial<Record<SoundName, number>> = { message: 2000, mention: 1000 };
+/** Chat sounds in a busy room: at most one per interval (docs/09 P1 #13: a message ≤ 1 per 2 s). */
+export const GAP_MS: Partial<Record<SoundName, number>> = { message: 2000, mention: 1000 };
+
+export interface SoundGate {
+  /** Whether `name` may play at `now` (ms); a «yes» is recorded as a play. */
+  allow: (name: SoundName, now: number) => boolean;
+  /** Records a play that bypassed the gate (the «прослушать» button). */
+  mark: (name: SoundName, now: number) => void;
+}
+
+/** Per-event rate limit. Pure (clock passed in): used by tests. */
+export function createGate(gaps: Partial<Record<SoundName, number>> = GAP_MS, minGap = MIN_GAP_MS): SoundGate {
+  const last = new Map<SoundName, number>();
+  return {
+    allow: (name, now) => {
+      if (now - (last.get(name) ?? -Infinity) < (gaps[name] ?? minGap)) return false;
+      last.set(name, now);
+      return true;
+    },
+    mark: (name, now) => void last.set(name, now),
+  };
+}
+
+const cache = new Map<SoundName, string>();
+const gate = createGate();
 /** After «moved», the new room's participants arrive as joins/leaves: not worth a sound each. */
 const SUPPRESS: Partial<Record<SoundName, { names: SoundName[]; ms: number }>> = {
   moved: { names: ['join', 'leave'], ms: 1500 },
 };
 const suppressedUntil = new Map<SoundName, number>();
 
-/**
- * Plays an event sound if enabled. `force` plays it regardless of the toggles (the «прослушать»
- * button in settings).
- */
-export function playSound(name: SoundName, force = false): void {
-  const now = performance.now();
-  if (!force) {
-    const sup = SUPPRESS[name];
-    if (sup) for (const n of sup.names) suppressedUntil.set(n, now + sup.ms);
-    if (!soundEnabled(name)) return;
-    if (now - (lastPlayed.get(name) ?? -Infinity) < (GAP_MS[name] ?? MIN_GAP_MS)) return;
-    if (now < (suppressedUntil.get(name) ?? 0)) return;
-  }
-  lastPlayed.set(name, now);
+function synthUrl(name: SoundName): string {
   let url = cache.get(name);
   if (!url) {
     url = URL.createObjectURL(wav(synth(SOUNDS[name])));
     cache.set(name, url);
   }
+  return url;
+}
+
+export interface PlayOptions {
+  /** Play regardless of the toggles and the rate limit (the «прослушать» button in settings). */
+  force?: boolean;
+  /** Multiplier on the user's sound volume (the quieter cue in the open chat). */
+  volume?: number;
+}
+
+/** Plays an event sound if enabled, through a plain <audio> element on the output device. */
+export function playSound(name: SoundName, opts: PlayOptions = {}): void {
+  const now = performance.now();
+  if (!opts.force) {
+    const sup = SUPPRESS[name];
+    if (sup) for (const n of sup.names) suppressedUntil.set(n, now + sup.ms);
+    if (!soundEnabled(name)) return;
+    if (now < (suppressedUntil.get(name) ?? 0)) return;
+    if (!gate.allow(name, now)) return;
+  } else gate.mark(name, now);
   const p = prefs();
-  const el = new Audio(url);
-  el.volume = Math.max(0, Math.min(1, p.soundVolume));
+  const file = FILE_SOUNDS[name];
+  const el = new Audio(file ?? synthUrl(name));
+  el.volume = Math.max(0, Math.min(1, p.soundVolume * (opts.volume ?? 1)));
+  // A bundled file that cannot be loaded falls back to its synthesised stand-in (once).
+  if (file) el.onerror = () => {
+    el.onerror = null;
+    el.src = synthUrl(name);
+    play();
+  };
   const sink = p.outputDeviceId;
   const play = (): void => void el.play().catch(() => undefined);
   if (sink) void el.setSinkId(sink).then(play, play);

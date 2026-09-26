@@ -11,7 +11,8 @@ vi.stubGlobal('localStorage', {
 vi.stubGlobal('document', { hasFocus: () => true });
 vi.stubGlobal('Notification', class { onclick: (() => void) | null = null; });
 
-vi.mock('../lib/sounds', () => ({ playSound: () => undefined }));
+const played = vi.hoisted((): Array<[string, unknown]> => []);
+vi.mock('../lib/sounds', () => ({ playSound: (name: string, opts: unknown) => void played.push([name, opts]) }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined } } }));
 
 const { onIncomingMessage } = await import('./notify');
@@ -52,5 +53,15 @@ describe('direct messages (ADR-0020)', () => {
     expect(useRooms.getState().unread['a']).toBe(1);
     expect(useRooms.getState().mentions['a']).toBe(1);
     expect(useInbox.getState().items).toHaveLength(0);
+  });
+});
+
+describe('new message sound (docs/09 P1 #13)', () => {
+  it('a message in another room sounds; the open chat in focus does not (default «выкл.»)', () => {
+    played.length = 0;
+    onIncomingMessage(msg(2), 'ws', false);
+    expect(played).toEqual([['message', { volume: 1 }]]);
+    onIncomingMessage(msg(3), 'ws', true);
+    expect(played).toHaveLength(1);
   });
 });

@@ -1,4 +1,5 @@
 import { NotificationLevel, PresenceStatus, type Message } from '@calaba/protocol';
+import { chatSound } from '../lib/chatSound';
 import { mentionsMe } from '../lib/mentions';
 import { playSound } from '../lib/sounds';
 import { useInbox } from '../stores/inbox';
@@ -27,19 +28,27 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   const authorRole = useWorkspaces.getState().byId[workspaceId]?.members[m.authorId]?.role;
   const mention = dm || mentionsMe(m, myId, mayMentionAll(authorRole, m.authorId, room));
   if (mention && !dm) useInbox.getState().addLive(m);
+  // Room settings (server-synced): NONE / muted → silence; MENTIONS → only mentions make noise.
+  const rn = roomNotify(useRooms.getState().notify[m.roomId]);
+  const p = prefs();
+  // Sounds (docs/09 #29, P1 #13): a mention or a message in any room / DM; the open chat is quiet or silent.
+  const sound = chatSound({
+    own: m.authorId === myId,
+    mention,
+    visible,
+    quiet: isQuiet(rn),
+    mentionsOnly: rn.level === NotificationLevel.MENTIONS,
+    // «Не беспокоить»: counters only, no sounds or notifications (mentions and DMs included).
+    dnd: p.presence === PresenceStatus.DND,
+    openChat: p.messageSoundOpenChat,
+  });
+  if (sound) playSound(sound.name, { volume: sound.volume });
   if (visible) return; // chat is on screen: the read marker moves when it is seen
   // Badges count regardless of the room's notification settings.
   useRooms.getState().addUnread(m.roomId, m.id, mention);
-  // Room settings (server-synced): NONE / muted → silence; MENTIONS → only mentions make noise.
-  const rn = roomNotify(useRooms.getState().notify[m.roomId]);
   if (isQuiet(rn)) return;
   if (rn.level === NotificationLevel.MENTIONS && !mention) return;
-  // «Не беспокоить»: counters only, no sounds or notifications (mentions and DMs included).
-  if (prefs().presence === PresenceStatus.DND) return;
-  // Sounds (docs/09 #29): a mention anywhere off-screen; any message while the window is in the background.
-  if (mention) playSound('mention');
-  else if (!document.hasFocus()) playSound('message');
-  const p = prefs();
+  if (p.presence === PresenceStatus.DND) return;
   if (!(mention && p.notifyMentions) && !p.notifyAll) return;
   const author = memberName(workspaceId || null, m.authorId);
   const body = previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? t('notify.attachment') : '');

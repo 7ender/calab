@@ -1,7 +1,8 @@
 import { Play } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Card, IconButton, Row, Slider, Toggle } from '../../components/ui';
+import { Card, IconButton, Row, Segmented, Slider, Toggle } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
+import type { OpenChatSound } from '../../lib/chatSound';
 import { playSound, type SoundName } from '../../lib/sounds';
 import { usePrefs } from '../../stores/prefs';
 
@@ -37,6 +38,7 @@ export function SoundSettings(): ReactNode {
   const on = usePrefs((s) => s.voiceSounds);
   const volume = usePrefs((s) => s.soundVolume);
   const sounds = usePrefs((s) => s.sounds);
+  const openChat = usePrefs((s) => s.messageSoundOpenChat);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const toggle = (name: SoundName, v: boolean): void => {
     const next = { ...sounds };
@@ -63,13 +65,26 @@ export function SoundSettings(): ReactNode {
             const label = t(LABEL[name]);
             return (
               <Row key={name} label={label}>
-                <IconButton size="sm" label={t('sounds.play', { name: label })} onClick={() => playSound(name, true)}>
+                <IconButton size="sm" label={t('sounds.play', { name: label })} onClick={() => playSound(name, { force: true })}>
                   <Play className="size-3.5" aria-hidden />
                 </IconButton>
                 <Toggle label={label} checked={on && sounds[name] !== false} disabled={!on} onChange={(v) => toggle(name, v)} />
               </Row>
             );
           })}
+          {g.names.includes('message') && (
+            <Row label={t('sounds.openChat')} hint={t('sounds.openChatHint')}>
+              <Segmented<OpenChatSound>
+                label={t('sounds.openChat')}
+                value={openChat}
+                onChange={(v) => setPrefs({ messageSoundOpenChat: v })}
+                options={[
+                  { value: 'quiet', label: t('sounds.openChatQuiet') },
+                  { value: 'off', label: t('sounds.openChatOff') },
+                ]}
+              />
+            </Row>
+          )}
         </Card>
       ))}
     </>
