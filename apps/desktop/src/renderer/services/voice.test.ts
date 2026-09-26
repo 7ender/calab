@@ -153,8 +153,12 @@ vi.mock('livekit-client', () => ({
 
 const joinVoice = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }));
 const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean }) => Promise.resolve());
+const leaveVoice = vi.fn((_roomId: string) => Promise.resolve());
 vi.mock('../lib/api/endpoints', () => ({
-  api: { voice: { join: (id: string) => joinVoice(id), updateSelf: (b: { muted?: boolean; deafened?: boolean }) => updateSelf(b) }, me: { update: () => Promise.resolve({}) } },
+  api: {
+    voice: { join: (id: string) => joinVoice(id), leave: (id: string) => leaveVoice(id), updateSelf: (b: { muted?: boolean; deafened?: boolean }) => updateSelf(b) },
+    me: { update: () => Promise.resolve({}) },
+  },
 }));
 
 interface FakePipeline {
@@ -232,6 +236,8 @@ beforeEach(async () => {
   gate = null;
   gone.clear();
   joinVoice.mockClear();
+  leaveVoice.mockReset();
+  leaveVoice.mockImplementation(() => Promise.resolve());
   updateSelf.mockClear();
   reportMediaError.mockClear();
   deviceChange.length = 0;
@@ -294,6 +300,57 @@ describe('VoiceEngine', () => {
     void voice.join('B', 'ws');
     void voice.leave();
     expect(useVoice.getState().joining).toBeNull();
+  });
+
+  it('«Отключиться» tells the server after room.disconnect() without waiting for it (/voice/leave)', async () => {
+    await voice.join('A', 'ws');
+    let answer!: () => void;
+    leaveVoice.mockImplementationOnce(() => new Promise<void>((r) => (answer = r)));
+    await voice.leave(); // done without the server's answer
+    expect(FakeRoom.all[0]?.disconnects).toHaveLength(1);
+    expect(leaveVoice.mock.calls).toEqual([['A']]);
+    expect(useVoice.getState()).toMatchObject({ roomId: null, phase: 'idle' });
+    answer();
+  });
+
+  it('join cancelled while /join is in flight: /voice/leave follows its answer, nothing connects', async () => {
+    let answer!: (v: unknown) => void;
+    joinVoice.mockImplementationOnce(() => new Promise((r) => (answer = r)) as never);
+    const p = voice.join('A', 'ws');
+    await settle();
+    expect(joinVoice).toHaveBeenCalledTimes(1);
+    await voice.leave();
+    await settle();
+    expect(leaveVoice).not.toHaveBeenCalled(); // would overtake the /join and leave its pending state
+    answer({ url: 'wss://lk', token: 't', canSpeak: true, canStream: true, pending: true, media: { audioBitrateKbps: 32 } });
+    await p;
+    await settle();
+    expect(leaveVoice.mock.calls).toEqual([['A']]);
+    expect(FakeRoom.all).toHaveLength(0);
+    expect(useVoice.getState()).toMatchObject({ roomId: null, phase: 'idle', joining: null });
+  });
+
+  it('a /join right after «Отключиться» waits for the /voice/leave (no overtaking)', async () => {
+    await voice.join('A', 'ws');
+    let answer!: () => void;
+    leaveVoice.mockImplementationOnce(() => new Promise<void>((r) => (answer = r)));
+    await voice.leave();
+    const back = voice.join('A', 'ws');
+    await settle();
+    expect(joinVoice).toHaveBeenCalledTimes(1);
+    answer();
+    await back;
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+  });
+
+  it('a failed /voice/leave only logs', async () => {
+    await voice.join('A', 'ws');
+    leaveVoice.mockRejectedValueOnce(new Error('offline'));
+    await voice.leave();
+    await settle();
+    await voice.join('B', 'ws');
+    expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected' });
   });
 
   it('a pending /join sends my mute / deafen before LiveKit connects', async () => {

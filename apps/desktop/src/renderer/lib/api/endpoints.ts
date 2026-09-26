@@ -192,6 +192,8 @@ export const api = {
   },
   voice: {
     join: (roomId: string) => call('POST', `/api/rooms/${roomId}/join`, JoinVoiceResponseSchema),
+    /** Takes this device out of the room at once, pending or connected (idempotent, 204). */
+    leave: (roomId: string) => callEmpty('POST', `/api/rooms/${roomId}/voice/leave`),
     requestStream: (roomId: string, preset: ScreenSharePreset) =>
       call('POST', `/api/rooms/${roomId}/stream/request`, RequestStreamResponseSchema, body(RequestStreamRequestSchema, { preset })),
     /** Grants this device the camera source (VIDEO; 409 CONFLICT = camera_limit reached / cameras off). */

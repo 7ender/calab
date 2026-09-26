@@ -71,6 +71,8 @@ const STATS_INTERVAL_MS = ECHO.statsMs;
 const LEVEL_FRESH_MS = 500;
 /** LiveKit data topic for "who watches my stream" (docs/05: data channels only for in-call ephemera). */
 const WATCH_TOPIC = 'calaba.watch';
+/** A /join waits at most this long for a /voice/leave still in flight. */
+const LEAVE_WAIT_MS = 3000;
 
 /** LiveKit identity is `<user_id>:<session_id>` (rtc.proto). */
 export const userIdOf = (identity: string): string => identity.split(':')[0] ?? identity;
@@ -167,6 +169,10 @@ class VoiceEngine {
   private moveTimer: number | null = null;
   /** The last /join result (Settings → Соединение → «Проверить» probes this LiveKit host). */
   private lastJoin: { url: string; token: string } | null = null;
+  /** The /join request in flight (settled either way): a /voice/leave waits for it. */
+  private joinReq: Promise<void> | null = null;
+  /** The /voice/leave request in flight (never rejects): the next /join waits for it. */
+  private leaveReq: Promise<void> | null = null;
   /** ICE servers LiveKit handed out at the last successful connect (TURN probe). */
   private iceServers: RTCIceServer[] = [];
   /** The seat of the last failed user join: a CSP report arriving after its teardown re-seats it as 'blocked'. */
@@ -347,8 +353,8 @@ class VoiceEngine {
     });
     try {
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
-      const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await api.voice.join(roomId);
-      if (seq !== this.joinSeq) return;
+      const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await this.requestJoin(roomId, seq);
+      if (seq !== this.joinSeq || !res) return;
       // The server recorded this device as pending with default flags: tell it my mute /
       // deafen now, so the others' pending row is right before LiveKit connects.
       if ('pending' in res && res.pending) {
@@ -504,8 +510,51 @@ class VoiceEngine {
     this.rejoinRoomId = null;
     this.moveIntent = null;
     this.intentSeq++;
+    // The room the server may hold this device in: the seat (also while connecting, when
+    // /join already recorded it as pending), or the old call while a switch tears it down.
+    const v = useVoice.getState();
+    const seat = v.roomId ?? this.roomId ?? v.joining?.roomId ?? null;
     setVoice({ joining: null });
     await this.teardown(sound);
+    // After room.disconnect(): tell the server at once (a pending /join would otherwise stay
+    // for everyone up to 15 s; for a connected device it is a safety net). Not awaited.
+    if (seat) this.sendLeave(seat);
+  }
+
+  /**
+   * /join, after a /voice/leave still in flight (an overtaking leave would undo this join on
+   * the server). Null when a newer intent took over meanwhile.
+   */
+  private async requestJoin(roomId: string, seq: number): Promise<Awaited<ReturnType<typeof api.voice.join>> | null> {
+    if (this.leaveReq) await Promise.race([this.leaveReq, new Promise((r) => setTimeout(r, LEAVE_WAIT_MS))]);
+    if (seq !== this.joinSeq) return null;
+    const req = api.voice.join(roomId);
+    const settled = req.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.joinReq = settled;
+    void settled.then(() => {
+      if (this.joinReq === settled) this.joinReq = null;
+    });
+    return req;
+  }
+
+  /** POST /voice/leave in the background, after a /join still in flight (never rejects). */
+  private sendLeave(roomId: string): void {
+    const joining = this.joinReq;
+    const run = (async (): Promise<void> => {
+      try {
+        if (joining) await joining;
+        await api.voice.leave(roomId);
+      } catch (err) {
+        log.warn('voice/leave failed', err);
+      }
+    })();
+    this.leaveReq = run;
+    void run.then(() => {
+      if (this.leaveReq === run) this.leaveReq = null;
+    });
   }
 
   /** The teardown in progress (connect() waits for it). */
