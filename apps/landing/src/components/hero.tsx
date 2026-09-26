@@ -1,7 +1,8 @@
+import type { Dict } from '@/i18n';
 import { APP_URL } from '@/lib/site';
 import { Button, Container, ThemedImage } from './ui';
 
-export function Hero() {
+export function Hero({ t }: { t: Dict['hero'] }) {
   return (
     <section id="top" aria-labelledby="hero-title" className="hero-bg overflow-hidden pt-16 pb-12 sm:pt-24 sm:pb-16">
       <Container className="text-center">
@@ -10,17 +11,17 @@ export function Hero() {
           Calab
         </h1>
         <p className="mx-auto mt-4 max-w-[640px] text-[20px] leading-7 text-pretty text-fg-2 sm:text-[24px] sm:leading-8">
-          Голосовые комнаты, чат и стрим экрана для команды — на&nbsp;вашем сервере
+          {t.tagline}
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Button href="#download" className="w-full max-w-[280px] sm:w-auto">
-            Скачать
+            {t.download}
           </Button>
           <Button href={APP_URL} variant="secondary" className="w-full max-w-[280px] sm:w-auto">
-            Открыть в браузере
+            {t.openWeb}
           </Button>
         </div>
-        <p className="mt-4 text-[14px] leading-5 text-fg-2">macOS, Windows, Linux и браузер</p>
+        <p className="mt-4 text-[14px] leading-5 text-fg-2">{t.platforms}</p>
       </Container>
       <Container className="mt-8 sm:mt-10">
         {/* Real macOS window capture with the system shadow (margins included in the image). */}
@@ -30,7 +31,7 @@ export function Hero() {
             width={1552}
             height={983}
             priority
-            alt="Окно Calab: пространство «Команда Calab», канал «общий» с сообщениями и участники в сети"
+            alt={t.shotAlt}
           />
         </div>
       </Container>

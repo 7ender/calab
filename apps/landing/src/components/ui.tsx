@@ -40,7 +40,8 @@ type ButtonProps = {
   href: string;
   children: ReactNode;
   variant?: 'primary' | 'secondary';
-  size?: 'md' | 'sm';
+  /** card: full height, tighter padding and 15 px text — two buttons side by side in a narrow card. */
+  size?: 'md' | 'sm' | 'card';
   className?: string;
   external?: boolean;
 };
@@ -53,7 +54,7 @@ export function Button({ href, children, variant = 'primary', size = 'md', class
       className={cx(
         'inline-flex items-center justify-center gap-2 rounded-full font-medium whitespace-nowrap',
         'motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out',
-        size === 'md' ? 'h-11 px-6 text-[17px]' : 'h-8 px-4 text-[14px]',
+        { md: 'h-11 px-6 text-[17px]', sm: 'h-8 px-4 text-[14px]', card: 'h-11 px-3 text-[15px]' }[size],
         variant === 'primary'
           ? 'bg-accent-strong text-white hover:bg-accent-strong-hover active:bg-accent-strong-hover'
           : 'bg-accent-tint text-accent-text hover:bg-[color-mix(in_srgb,var(--color-accent-tint),var(--color-accent)_8%)]',
