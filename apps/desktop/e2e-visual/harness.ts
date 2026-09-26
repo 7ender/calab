@@ -104,9 +104,12 @@ export async function login(page: Page, email = 'owner@calaba.test'): Promise<vo
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
 }
 
-/** Lets fonts, images and layout settle; parks the pointer so nothing is hovered. */
-export async function settle(page: Page): Promise<void> {
-  await page.mouse.move(0, 0);
+/**
+ * Lets fonts, images and layout settle; parks the pointer so nothing is hovered (`keepPointer`:
+ * leave it — a drag in progress follows the pointer).
+ */
+export async function settle(page: Page, keepPointer = false): Promise<void> {
+  if (!keepPointer) await page.mouse.move(0, 0);
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all(
@@ -300,8 +303,8 @@ export interface Shot {
 }
 
 /** Screenshot + layout invariants + axe for the current screen. */
-export async function checkpoint(s: Shot, name: string, opts: { mask?: Locator[]; axe?: boolean } = {}): Promise<void> {
-  await settle(s.page);
+export async function checkpoint(s: Shot, name: string, opts: { mask?: Locator[]; axe?: boolean; keepPointer?: boolean } = {}): Promise<void> {
+  await settle(s.page, opts.keepPointer);
   await expect.soft(s.page, `screenshot: ${name}`).toHaveScreenshot(`${name}-${s.theme}-${s.viewport.width}.png`, {
     mask: opts.mask ?? [],
     maskColor: '#808080',

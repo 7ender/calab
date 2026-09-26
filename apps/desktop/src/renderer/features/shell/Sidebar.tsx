@@ -41,6 +41,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
@@ -1284,7 +1285,9 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
   return (
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={onStart} onDragMove={onMove} onDragOver={onOver} onDragEnd={onEnd} onDragCancel={reset}>
       <DropLineCtx.Provider value={line}>{children}</DropLineCtx.Provider>
-      <DragOverlay dropAnimation={null}>{dragged ? <DragChip data={dragged} /> : null}</DragOverlay>
+      {/* In <body>: the sidebar island (backdrop-filter) is a containing block for position:fixed
+          and clips its overflow — the chip would land offset and cut off at the island's edge. */}
+      {createPortal(<DragOverlay dropAnimation={null}>{dragged ? <DragChip data={dragged} /> : null}</DragOverlay>, document.body)}
     </DndContext>
   );
 }

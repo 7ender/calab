@@ -132,79 +132,82 @@ export function ProfileDialog({
             'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-0 mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:pb-[var(--safe-bottom)]',
           )}
         >
-          <div className="relative h-[88px] shrink-0" style={{ background: banner }} data-testid="profile-banner">
-            <DialogP.Close
-              aria-label={t('common.close')}
-              className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-scrim text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              <X className="size-4" strokeWidth={1.75} />
-            </DialogP.Close>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-            {/* Avatar 80 over the banner edge, ringed with the sheet colour (presence dot too). */}
-            <div className="-mt-11 mb-2 inline-flex rounded-full bg-[var(--color-popover-solid)] p-1.5">
-              <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={80} presence className="[&>span:last-child]:border-[var(--color-popover-solid)]" />
-            </div>
-            <div className="flex min-w-0 items-center gap-2">
-              <DialogP.Title className="min-w-0 truncate text-title font-semibold leading-tight" title={name}>
-                {name}
-                {tz ? <span className="font-normal text-muted"> {tz}</span> : null}
-              </DialogP.Title>
-              {isGuest(m) ? <GuestBadge /> : null}
-            </div>
-            {m.nickname && m.nickname !== u.displayName ? (
-              <div className="truncate text-body text-muted" title={u.displayName}>
-                {u.displayName}
+          {/* Banner and body scroll together: the avatar overlaps the banner edge and must not be
+              clipped by the scroll box. The close box stays on top, outside the scroller. */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="h-[88px]" style={{ background: banner }} data-testid="profile-banner" />
+            <div className="px-5 pb-5">
+              {/* Avatar 80 over the banner edge, ringed with the sheet colour (presence dot too). */}
+              <div className="relative -mt-11 mb-2 inline-flex rounded-full bg-[var(--color-popover-solid)] p-1.5">
+                <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={80} presence className="[&>span:last-child]:border-[var(--color-popover-solid)]" />
               </div>
-            ) : null}
-            <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
-
-            <div className="mt-4 flex items-center gap-2">
-              {canDm ? (
-                <Button size="lg" onClick={() => leave(() => void startDm(userId))}>
-                  <MessageCircle className="size-4" aria-hidden />
-                  {t('dm.write')}
-                </Button>
-              ) : null}
-              <Button size="lg" variant="secondary" onClick={() => leave(() => requestMention(userId, name))}>
-                <AtSign className="size-4" aria-hidden />
-                {t('people.menu.mention')}
-              </Button>
-              <MoreButton workspaceId={workspaceId} userId={userId} />
-            </div>
-
-            {registered || joined ? (
-              <Section title={t('people.profile.memberSince')}>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-body">
-                  {registered ? (
-                    <span className="inline-flex items-center gap-1.5" title={t('people.profile.registered', { date: fmt.date(registered) })}>
-                      <Logo size={16} className="rounded-[4px]" />
-                      {fmt.shortDate(registered)}
-                    </span>
-                  ) : null}
-                  {registered && joined ? (
-                    <span className="text-faint" aria-hidden>
-                      •
-                    </span>
-                  ) : null}
-                  {joined && ws ? (
-                    <span className="inline-flex items-center gap-1.5" title={t('people.profile.joinedWs', { ws: ws.name, date: fmt.date(joined) })}>
-                      <span className="grid size-4 shrink-0 place-items-center overflow-hidden rounded-[4px] bg-hover text-[10px] font-semibold" aria-hidden>
-                        {ws.iconFileId ? <MediaImg path={thumbnailPath(ws.iconFileId)} alt="" className="size-full object-cover" /> : (ws.name.trim()[0] ?? '?').toUpperCase()}
-                      </span>
-                      {fmt.shortDate(joined)}
-                    </span>
-                  ) : null}
+              <div className="flex min-w-0 items-center gap-2">
+                <DialogP.Title className="min-w-0 truncate text-title font-semibold leading-tight" title={name}>
+                  {name}
+                  {tz ? <span className="font-normal text-muted"> {tz}</span> : null}
+                </DialogP.Title>
+                {isGuest(m) ? <GuestBadge /> : null}
+              </div>
+              {m.nickname && m.nickname !== u.displayName ? (
+                <div className="truncate text-body text-muted" title={u.displayName}>
+                  {u.displayName}
                 </div>
+              ) : null}
+              <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
+
+              <div className="mt-4 flex items-center gap-2">
+                {canDm ? (
+                  <Button size="lg" onClick={() => leave(() => void startDm(userId))}>
+                    <MessageCircle className="size-4" aria-hidden />
+                    {t('dm.write')}
+                  </Button>
+                ) : null}
+                <Button size="lg" variant="secondary" onClick={() => leave(() => requestMention(userId, name))}>
+                  <AtSign className="size-4" aria-hidden />
+                  {t('people.menu.mention')}
+                </Button>
+                <MoreButton workspaceId={workspaceId} userId={userId} />
+              </div>
+
+              {registered || joined ? (
+                <Section title={t('people.profile.memberSince')}>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-body">
+                    {registered ? (
+                      <span className="inline-flex items-center gap-1.5" title={t('people.profile.registered', { date: fmt.date(registered) })}>
+                        <Logo size={16} className="rounded-[4px]" />
+                        {fmt.shortDate(registered)}
+                      </span>
+                    ) : null}
+                    {registered && joined ? (
+                      <span className="text-faint" aria-hidden>
+                        •
+                      </span>
+                    ) : null}
+                    {joined && ws ? (
+                      <span className="inline-flex items-center gap-1.5" title={t('people.profile.joinedWs', { ws: ws.name, date: fmt.date(joined) })}>
+                        <span className="grid size-4 shrink-0 place-items-center overflow-hidden rounded-[4px] bg-hover text-[10px] font-semibold" aria-hidden>
+                          {ws.iconFileId ? <MediaImg path={thumbnailPath(ws.iconFileId)} alt="" className="size-full object-cover" /> : (ws.name.trim()[0] ?? '?').toUpperCase()}
+                        </span>
+                        {fmt.shortDate(joined)}
+                      </span>
+                    ) : null}
+                  </div>
+                </Section>
+              ) : null}
+
+              <Section title={t('people.profile.roles')}>
+                <RoleChips workspaceId={workspaceId} userId={userId} role={m.role} />
               </Section>
-            ) : null}
 
-            <Section title={t('people.profile.roles')}>
-              <RoleChips workspaceId={workspaceId} userId={userId} role={m.role} />
-            </Section>
-
-            <NoteEditor userId={userId} textareaRef={noteRef} />
+              <NoteEditor userId={userId} textareaRef={noteRef} />
+            </div>
           </div>
+          <DialogP.Close
+            aria-label={t('common.close')}
+            className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-scrim text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <X className="size-4" strokeWidth={1.75} />
+          </DialogP.Close>
         </DialogP.Content>
       </DialogP.Portal>
     </DialogP.Root>
@@ -364,7 +367,7 @@ function NoteEditor({ userId, textareaRef }: { userId: string; textareaRef: RefO
         aria-busy={text === null || undefined}
         value={text ?? ''}
         placeholder={t('people.profile.notePlaceholder')}
-        className="selectable -mx-1.5 block w-[calc(100%+12px)] resize-none rounded-[6px] bg-transparent px-1.5 py-1 text-body leading-5 text-fg outline-none transition-colors duration-[var(--motion-fast)] placeholder:italic placeholder:text-faint hover:bg-hover focus:bg-hover focus-visible:outline-2 focus-visible:outline-accent"
+        className="selectable -ml-1.5 block w-[calc(100%+6px)] resize-none rounded-[6px] bg-transparent px-1.5 py-1 text-body leading-5 text-fg outline-none transition-colors duration-[var(--motion-fast)] placeholder:italic placeholder:text-faint hover:bg-hover focus:bg-hover focus-visible:outline-2 focus-visible:outline-accent"
         onChange={(e) => {
           setText(e.target.value);
           saver.current?.change(e.target.value);

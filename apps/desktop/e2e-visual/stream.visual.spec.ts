@@ -82,7 +82,8 @@ test('voice-stream-self', async ({ open, win, shot }) => {
     await win.keyboard.press('Escape');
     await expect(win.getByTestId('stream-fullscreen')).toHaveCount(0);
   } finally {
-    await win.getByRole('button', { name: 'Остановить стрим' }).first().click().catch(() => undefined);
+    // The voice panel's share button (VoiceBar, «Остановить показ»).
+    await win.getByRole('button', { name: 'Остановить показ' }).first().click().catch(() => undefined);
   }
   await expect(win.getByTestId('stream-stage').or(win.getByTestId('stream-pip'))).toHaveCount(0, { timeout: 15_000 });
 });

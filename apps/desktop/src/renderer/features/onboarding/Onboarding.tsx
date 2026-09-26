@@ -125,13 +125,15 @@ function StepFrame({
           </div>
         ) : null}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2" data-onb-footer>
+      {/* Wraps on phones only: on desktop the longest step («Запросить доступ и открыть настройки»)
+          fits the 520 px card in one row and must keep the Back/Continue coordinates. */}
+      <div className="flex shrink-0 items-center gap-2 mobile:flex-wrap" data-onb-footer>
         {back ? (
           <Button variant="ghost" size="lg" onClick={back}>
             {t('onb.back')}
           </Button>
         ) : null}
-        <div className="ml-auto flex flex-wrap justify-end gap-2">{actions}</div>
+        <div className="ml-auto flex justify-end gap-2 mobile:flex-wrap">{actions}</div>
       </div>
     </section>
   );
