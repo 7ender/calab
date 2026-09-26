@@ -24,5 +24,7 @@
     "patchedDependencies": {
       "uiohook-napi@1.5.5": "patches/uiohook-napi@1.5.5.patch"
     }
-  }
+  },
+  "license": "Apache-2.0",
+  "author": "GPTunneL (https://gptunnel.ai)"
 }

@@ -54,3 +54,7 @@ make gen                                                # buf generate (Go + TS)
 cd apps/server && go run ./cmd/server
 # pnpm -F @calaba/desktop dev                         # клиент (появится на этапе 1)
 ```
+
+## Лицензия
+
+Apache License 2.0 — см. [LICENSE](LICENSE). Коммерческое использование разрешено; при распространении обязательны файл [NOTICE](NOTICE) и упоминание «Powered by GPTunneL» в разделе «О программе». Названия и логотипы Calaba и GPTunneL — товарные знаки, см. [TRADEMARKS.md](TRADEMARKS.md).
