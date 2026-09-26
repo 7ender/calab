@@ -1,4 +1,4 @@
-# Desktop releases on native runners (docs/06, "Релизы десктопа: сборка"). Not run yet — see notes below.
+# Desktop releases of Calab (github.com/itrcz/calab) on native runners (docs/06, "Релизы десктопа: сборка").
 #
 #   - tag push `v1.2.3`        → build all three OSes with version 1.2.3, create a GitHub Release,
 #                                 publish to <domain>/download/ if the stand secrets are configured
@@ -40,8 +40,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  UPDATE_URL: https://colaba.gptunnel.ai/download/
-  HOMEPAGE: https://colaba.gptunnel.ai
+  RELEASE_REPO: itrcz/calab                      # git@github.com:itrcz/calab.git
+  UPDATE_URL: https://app.calab.ru/download/     # docs/10-branding.md
+  HOMEPAGE: https://calab.ru
 
 jobs:
   build:
@@ -101,11 +102,11 @@ jobs:
           rm -rf ../../node_modules/uiohook-napi/bin   # postinstall copy for the runner arch only
           pnpm exec electron-builder ${{ matrix.eb }} --publish never \
             -c.publish.provider=generic "-c.publish.url=$UPDATE_URL" \
-            '-c.mac.artifactName=Calaba-${version}-${arch}.${ext}' \
-            '-c.nsis.artifactName=Calaba-Setup-${version}-${arch}.${ext}' \
-            '-c.appImage.artifactName=Calaba-${version}-${arch}.${ext}' \
-            '-c.deb.artifactName=calaba_${version}_${arch}.${ext}' \
-            -c.linux.executableName=calaba -c.deb.packageName=calaba \
+            '-c.mac.artifactName=Calab-${version}-${arch}.${ext}' \
+            '-c.nsis.artifactName=Calab-Setup-${version}-${arch}.${ext}' \
+            '-c.appImage.artifactName=Calab-${version}-${arch}.${ext}' \
+            '-c.deb.artifactName=calab_${version}_${arch}.${ext}' \
+            -c.linux.executableName=calab -c.deb.packageName=calab \
             "-c.extraMetadata.homepage=$HOMEPAGE" \
             -c.directories.output=dist-release
 
@@ -148,8 +149,8 @@ jobs:
           ver=$(sed -n 's/^version: //p' dist-release/latest-linux.yml)
           tag="${GITHUB_REF_NAME}"; draft=""
           if [[ "$GITHUB_REF" != refs/tags/v* ]]; then tag="v$ver"; draft="--draft"; fi
-          gh release create "$tag" $draft --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Calaba $ver" --notes "Unsigned test build. Installers and update feeds (latest*.yml)." \
+          gh release create "$tag" $draft --repo "$RELEASE_REPO" --target "$GITHUB_SHA" \
+            --title "Calab $ver" --notes "Unsigned test build. Installers and update feeds (latest*.yml)." \
             dist-release/*
 
   publish-stand:
