@@ -690,7 +690,7 @@ function VoiceRoomRow({
               {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
               {/* Card: the timer stays on the name line (green, Discord) and gives way to the actions on hover only. */}
               <span className={cx('flex items-center gap-1', card ? 'group-hover/row:hidden group-focus-within/row:hidden' : admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
-                {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom && 'text-ok') : undefined} /> : null}
+                {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom && 'text-[var(--color-green-text)]') : undefined} /> : null}
                 {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
               </span>
               {card ? (
@@ -730,7 +730,8 @@ function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
   const full = max > 0 && n >= max;
   return (
     <span
-      className={cx('flex items-center gap-0.5 rounded-full bg-[var(--color-fill)] py-px pl-1 pr-1.5 text-micro font-medium tabular-nums leading-4', full ? 'text-danger-text' : 'text-muted')}
+      // Primary text on the fill: muted grey fell under 4.5:1 on the selected card (axe).
+      className={cx('flex items-center gap-0.5 rounded-full bg-[var(--color-fill)] py-px pl-1 pr-1.5 text-micro font-medium tabular-nums leading-4', full ? 'text-danger-text' : 'text-fg')}
       aria-label={max > 0 ? t('shell.userLimit', { n, max }) : t('shell.peopleIn', { n })}
       role="img"
       data-testid="room-limit"

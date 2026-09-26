@@ -38,6 +38,8 @@
   --color-red-text: #ff7f75; /* red text on any dark surface (≥ 4.5:1) */
   --color-red-fill: #d70015;
   --color-green-fill: #1f7a34; /* filled green with white text (≥ 4.5:1) */
+  /* green text on raised / selected rows (≥ 4.5:1 on the hover and selected fills) */
+  --color-green-text: #30d158;
   /* role name colours in member lists (≥ 4.5:1 on the sidebar incl. hover) */
   --color-role-owner: #f2c94c;
   --color-role-admin: #6cb4ff;
@@ -166,6 +168,7 @@
   --color-accent-strong: #0071e3;
   --color-accent-text: #0066cc;
   --color-green: #1f7a34;
+  --color-green-text: #145a26;
   --color-yellow: #a05a00;
   --color-presence-idle: #ffcc00;
   --color-red: #d70015;

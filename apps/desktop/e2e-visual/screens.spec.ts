@@ -549,7 +549,19 @@ async function settingsSearch(page: Page): Promise<Locator> {
   // docs/09 #18: search over section titles and row labels; Enter jumps to the first row.
   const search = page.getByRole('dialog').getByRole('searchbox', { name: 'Поиск настроек' });
   await search.fill('клав');
-  await expect(page.getByRole('navigation', { name: 'Результаты поиска' })).toBeVisible();
+  const nav = page.getByRole('navigation', { name: 'Результаты поиска' });
+  await expect(nav).toBeVisible();
+  // Results are harvested from the (hidden) sections as they render: wait until the list stops
+  // growing, or Enter would jump to a partial list.
+  let last = -1;
+  await expect
+    .poll(async () => {
+      const n = await nav.getByRole('button').count();
+      const stable = n === last;
+      last = n;
+      return stable && n > 1;
+    }, { intervals: [300] })
+    .toBe(true);
   return search;
 }
 
