@@ -18,9 +18,9 @@ import (
 
 func leaveReq(t *testing.T, s *Service, uid, sid, rid uuid.UUID) {
 	t.Helper()
-	r := httptest.NewRequest(http.MethodPost, "/api/rooms/"+rid.String()+"/voice/leave", nil)
+	ctx := auth.WithIdentity(context.Background(), auth.Identity{UserID: uid, SessionID: sid})
+	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/rooms/"+rid.String()+"/voice/leave", nil)
 	r.SetPathValue("id", rid.String())
-	r = r.WithContext(auth.WithIdentity(r.Context(), auth.Identity{UserID: uid, SessionID: sid}))
 	w := httptest.NewRecorder()
 	httpx.HandlerFunc(s.leave).ServeHTTP(w, r)
 	if w.Code != http.StatusNoContent {
