@@ -466,28 +466,36 @@ function UnreadPill({ show }: { show: boolean }): ReactNode {
   return show ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg" /> : null;
 }
 
-function RoomActions({ room, admin, active }: { room: Room; admin: boolean; active: boolean }): ReactNode {
+/**
+ * Text room hover actions (invite, settings — no «chat»: the row itself opens it). Same 18 px
+ * icons / 10 px gap as the voice rooms' CardActions, so the two lists don't look inconsistent
+ * (owner, Discord reference); by permission, no reserved space when one is missing.
+ */
+function RoomActions({ room, canInvite, canSettings, active }: { room: Room; canInvite: boolean; canSettings: boolean; active: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
-  if (!admin) return null;
-  const btn =
-    'grid size-6 place-items-center rounded-[4px] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
+  if (!canInvite && !canSettings) return null;
+  const btn = 'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
   return (
-    <span className={cx('shrink-0 items-center gap-0.5', active ? 'flex' : 'hidden group-hover/row:flex group-focus-within/row:flex')}>
-      <Tip label={t('shell.invite')}>
-        <button
-          type="button"
-          className={btn}
-          aria-label={t('shell.inviteTo', { name: room.name })}
-          onClick={() => open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' })}
-        >
-          <UserPlus className="size-4" aria-hidden />
-        </button>
-      </Tip>
-      <Tip label={t('room.settings')}>
-        <button type="button" className={btn} aria-label={t('shell.roomSettingsOf', { name: room.name })} onClick={() => open({ kind: 'room-settings', roomId: room.id })}>
-          <Settings className="size-4" aria-hidden />
-        </button>
-      </Tip>
+    <span className={cx('shrink-0 items-center gap-2.5', active ? 'flex' : 'hidden group-hover/row:flex group-focus-within/row:flex')}>
+      {canInvite ? (
+        <Tip label={t('shell.invite')}>
+          <button
+            type="button"
+            className={btn}
+            aria-label={t('shell.inviteTo', { name: room.name })}
+            onClick={() => open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' })}
+          >
+            <UserPlus className="size-[18px]" aria-hidden />
+          </button>
+        </Tip>
+      ) : null}
+      {canSettings ? (
+        <Tip label={t('room.settings')}>
+          <button type="button" className={btn} aria-label={t('shell.roomSettingsOf', { name: room.name })} onClick={() => open({ kind: 'room-settings', roomId: room.id })}>
+            <Settings className="size-[18px]" aria-hidden />
+          </button>
+        </Tip>
+      ) : null}
     </span>
   );
 }
@@ -525,8 +533,10 @@ function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNo
 }
 
 /**
- * Actions on the voice room card (Discord): the room's chat, invite, settings — 18 px icons 10 px
- * apart, shown on hover / keyboard focus (the call timer stands there otherwise).
+ * Actions on a voice room row, active or not (Discord reference): exactly three — chat, invite,
+ * settings — by permission, with no reserved space for one that's missing; 18 px icons, 10 px
+ * apart, 10 px from the row's right edge (the card's own px-2.5, or pr-2.5 on the plain row),
+ * shown on hover / keyboard focus (the call timer stands there otherwise).
  */
 function CardActions({ room, workspaceId, canInvite, canSettings }: { room: Room; workspaceId: string; canInvite: boolean; canSettings: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
@@ -596,9 +606,9 @@ function TextRoomRow({ room, workspaceId, me, role, admin }: { room: Room; works
             {room.name}
           </span>
         </button>
-        <span className="flex shrink-0 items-center gap-1 pr-1.5">
+        <span className="flex shrink-0 items-center gap-1 pr-2.5">
           <MentionBadge n={mentions} />
-          <RoomActions room={room} admin={admin} active={active} />
+          <RoomActions room={room} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} active={active} />
         </span>
       </div>
     </RoomMenu>
@@ -682,17 +692,25 @@ function VoiceRoomRow({
                 unread && !active && 'font-semibold',
               )}
             >
-              {connecting ? (
-                <Loader2 className="size-[18px] shrink-0 animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
-              ) : (
-                <Volume2 className={cx('size-[18px] shrink-0', inRoom ? 'text-ok' : 'text-muted')} aria-hidden />
-              )}
+              <span className="relative inline-flex shrink-0">
+                {connecting ? (
+                  <Loader2 className="size-[18px] animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
+                ) : (
+                  <Volume2 className={cx('size-[18px]', inRoom ? 'text-ok' : 'text-muted')} aria-hidden />
+                )}
+                {/* Private (Discord): a small lock badge on the speaker icon, not a separate icon
+                    competing with the card actions for space on the right. */}
+                {!connecting && room.isPrivate ? (
+                  <span role="img" aria-label={t('room.private')} className="absolute -bottom-0.5 -right-0.5 grid size-2.5 place-items-center rounded-full bg-[var(--color-fill-hover)]">
+                    <Lock className="size-1.5 text-fg" aria-hidden />
+                  </span>
+                ) : null}
+              </span>
               <span className="min-w-0 flex-1 truncate" title={room.name}>
                 {room.name}
               </span>
-              {room.isPrivate ? <Lock className="size-3.5 shrink-0 text-muted" aria-label={t('room.private')} /> : null}
             </button>
-            <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-1.5')}>
+            <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-2.5')}>
               <MentionBadge n={mentions} />
               {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
               {/* Card: the timer stays on the name line (green, Discord) and gives way to the actions on hover only. */}
@@ -700,11 +718,9 @@ function VoiceRoomRow({
                 {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom && 'text-[var(--color-green-text)]') : undefined} /> : null}
                 {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
               </span>
-              {card ? (
-                <CardActions room={room} workspaceId={workspaceId} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} />
-              ) : (
-                <RoomActions room={room} admin={admin} active={active} />
-              )}
+              {/* Same three actions (chat · invite · settings) whether the room is active (card) or
+                  not, on hover (owner, Discord reference): no separate action set for either. */}
+              <CardActions room={room} workspaceId={workspaceId} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} />
             </span>
           </div>
           {card ? <VoiceStatusLine roomId={room.id} canEdit={statusLine.canEdit} status={statusLine.status} /> : null}
@@ -761,7 +777,10 @@ function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
       role="img"
       data-testid="room-limit"
     >
-      <span className={cx('flex h-full items-center px-1.5', full ? 'text-danger-text' : 'text-fg')}>{pad2(n)}</span>
+      {/* bg-danger-fill + text-white (the same solid pairing as the mention badge below), not
+          text-danger-text on the ambient fill: that read 3.64 on axe (< 4.5) — the accent-on-tint
+          color only works on the plain window background it was tuned for. */}
+      <span className={cx('flex h-full items-center px-1.5', full ? 'bg-danger-fill text-white' : 'text-fg')}>{pad2(n)}</span>
       {/* clip-path skews the segment's left edge ~15° (6 px over the 18 px pill height), rather
           than a separate divider element, so the angled boundary always matches the pill height.
           text-fg, not text-muted: muted grey on --color-fill-hover fails 4.5:1 (axe), same reason
