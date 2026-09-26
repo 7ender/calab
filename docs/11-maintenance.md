@@ -1,0 +1,54 @@
+# 11 — Сопровождение: зависимости, PR, обновления
+
+## Dependabot: что приходит и как группируется
+Конфиг в `.github/dependabot.yml`. Все экосистемы проверяются раз в неделю, у каждой не больше 5 открытых PR.
+
+| Экосистема | Группа | Замечания |
+|---|---|---|
+| GitHub Actions | `actions` | экшены закреплены по SHA, в комментарии указан тег |
+| Go (`apps/server`) | `gomod` | каждый PR обязан обновить `apps/server/THIRD-PARTY-NOTICES.txt`, иначе CI красный |
+| npm (pnpm workspace, корень) | `minor-and-patch`, `electron`, `uiohook` | мажоры `electron` и `next` игнорируются: их поднимаем руками |
+| Docker (`apps/server`, `infra/docker/caddy`) | `docker` | образы закреплены по digest |
+| docker-compose (`infra/docker`) | `docker-compose` | |
+
+## Автомерж (`.github/workflows/dependabot-auto-merge.yml`)
+На каждый PR от `dependabot[bot]` workflow читает метаданные (`dependabot/fetch-metadata`) и выбирает одно из двух:
+
+- **Автомерж** (`gh pr merge --auto --squash`) для `semver-patch`, `semver-minor` и обновлений только digest/SHA (update-type пустой). GitHub сольёт PR сам, когда пройдут обязательные проверки.
+- **`needs-review`** (метка и один комментарий, автомержа нет) в трёх случаях:
+  - любой `semver-major`, включая мажоры GitHub Actions: `release.yml` в CI не гоняется, поэтому ломающие изменения в upload/download-artifact сам CI не поймает;
+  - minor-бамп Docker-тега, например `golang:1.26` → `1.27`: это смена тулчейна или рантайма, а CI образы не собирает;
+  - любой бамп `uiohook-napi`, см. ниже.
+
+Для Go-PR workflow сам запускает `make third-party-notices` и пушит коммит в ветку PR. Для этого нужен Dependabot-секрет `DEPENDABOT_PUSH_TOKEN` (fine-grained PAT на этот репозиторий, `contents: write`). Пуш через `GITHUB_TOKEN` не запускает CI повторно, и обязательные проверки так и остались бы висеть. Если секрета нет, workflow выводит предупреждение, и notices обновляют руками: `make third-party-notices`, затем коммит в ветку PR.
+
+**Защита `main`.** Обязательны все джобы `ci.yml`: `buf lint / breaking`, `generated code is up to date`, `go vet / test / lint`, `govulncheck`, `go integration tests`, `pnpm typecheck / test`, `landing lint / typecheck / build`. Ревью не требуется, ветку перед мержем обновлять не обязательно (strict выключен), админы могут обойти защиту. Если переименовали джобу в `ci.yml`, обновите список required checks (`gh api repos/itrcz/calab/branches/main/protection`), иначе автомерж зависнет.
+
+## Ручной разбор PR
+1. `gh pr list --state open`. По каждому PR смотрим: что поднимается, откуда и куда, уровень semver, `gh pr checks <n>`.
+2. Patch/minor с зелёным CI мержим (`gh pr merge --squash --delete-branch`). Если несколько PR трогают один lockfile, мержим по одному, а остальным пишем `@dependabot rebase`.
+3. Для мажоров читаем release notes и changelog и ищем ломающие изменения, которые касаются нас. В PR оставляем комментарий: что ломается и что придётся поменять. Ставим метку `needs-review`.
+4. Если CI красный из-за старой базы (фикс уже в `main`), пишем `@dependabot rebase` и не мержим красное.
+
+## Что требует человека
+- **Electron, мажор.** Меняются Chromium, Node ABI и V8.
+  1. Поднять `electron` в `apps/desktop/package.json`. Версия закреплена точно, без `^`.
+  2. `pnpm install`: postinstall пересобирает `uiohook-napi` под новый ABI. На Linux нужны X11-заголовки, как в `ci.yml`.
+  3. Проверить, что патч применился: `grep VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h`.
+  4. Прочитать breaking changes Electron: `contextIsolation`/sandbox, `webPreferences`, `desktopCapturer`, разрешения медиа, `safeStorage`.
+  5. Проверить звонок вручную: эхоподавление (`docs/02-media.md`), push-to-talk, демонстрацию экрана.
+  6. Перезаписать визуальные снапшоты: `pnpm -F @calaba/desktop e2e:visual:update`. Затем просмотреть diff глазами: снапшоты коммитятся, изменение должно быть объяснимо.
+  7. Проверить подписанную сборку (`SIGN=1`) и релизный workflow.
+- **Electron, minor/patch в пределах 44.x.** Мержится автоматически. Если снапшоты разъехались, перезаписать и проверить.
+- **`uiohook-napi`, любой бамп.** Наш патч `patches/uiohook-napi@1.5.5.patch` (`patchedDependencies` в корневом `package.json`) привязан к версии.
+  1. `pnpm patch uiohook-napi@<new>`, перенести изменения, затем `pnpm patch-commit`.
+  2. Удалить старый патч.
+  3. Обновить проверку `uiohook patch applied` в `release.yml`, если изменился заголовок.
+  4. Пересобрать и проверить горячие клавиши на macOS, Windows и Linux.
+- **`livekit-client`.** Закреплён точно (`2.22.3`, без `^`) намеренно: медиа-стек проверяется вручную. Dependabot будет предлагать каждую новую версию. Patch с зелёным CI можно брать. На minor и major смотрим changelog (изменения в `Room`/`RoomOptions`, `adaptiveStream`/`dynacast`, публикации треков, E2EE) и проверяем звонок вручную: 2–3 участника, переподключение, демонстрация экрана. Версию сервера LiveKit (`livekit/livekit-server` в compose и CI) поднимаем отдельно, сверяясь с матрицей совместимости.
+- **Next.js, мажор.** `apps/landing`, static export. Поднимаем руками. Проверяем `pnpm -F @calaba/landing lint typecheck build` и наличие `apps/landing/out/index.html`, затем глазами сравниваем лендинг.
+- **Go-тулчейн** (Docker `golang:*`). Поднимаем разом в трёх местах: `apps/server/Dockerfile`, `go-version` во всех джобах `ci.yml` и, при необходимости, `go` в `go.mod`. Затем проверяем, что текущая версия `golangci-lint` поддерживает новый Go.
+- **Мажоры GitHub Actions.** Проверяем, что затронуто в `release.yml`: `upload-artifact`/`download-artifact` (`pattern` + `merge-multiple`, digest-проверки), `pnpm/action-setup` (версия pnpm берётся из `packageManager`).
+
+## Внешние PR
+Правила в `CONTRIBUTING.md`. Главное: вклад принимается только на условиях CLA. Коммиты должны содержать `Signed-off-by:` (`git commit -s`). Без подписи PR не мержим, а просим автора подписать коммиты (`git rebase --signoff`). Для внешних PR автомерж не работает: нужно ревью человека, на UI-изменения нужны скриншоты и обновлённые визуальные снапшоты.
