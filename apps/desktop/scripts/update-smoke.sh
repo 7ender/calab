@@ -30,7 +30,8 @@ case "${ARCH:-$(uname -m)}" in
 esac
 # electron-builder.yml, mac.artifactName: Calab-${version}-${arch}.${ext}
 DMG_NAME="Calab-${OLD}-${ARCH}.dmg"
-OLD_URL="${OLD_URL:-${FEED}${DMG_NAME}}"
+# The feed keeps every release under releases/<version>/ (infra/docker, release.yml).
+OLD_URL="${OLD_URL:-${FEED}releases/${OLD}/${DMG_NAME}}"
 
 [[ "$(uname -s)" == Darwin ]] || { echo "macOS only" >&2; exit 2; }
 
