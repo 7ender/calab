@@ -104,11 +104,11 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U calaba" --health-interval 2s --health-timeout 2s --health-retries 20
-      redis:
-        image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499   # >= 7.4 required (HEXPIRE)
+      valkey:   # same image/digest as infra/docker/compose.yml (ADR-0017); speaks the Redis protocol, has HEXPIRE
+        image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
         ports: ["6379:6379"]
         options: >-
-          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 2s --health-retries 20
+          --health-cmd "valkey-cli ping" --health-interval 2s --health-timeout 2s --health-retries 20
     defaults:
       run:
         working-directory: apps/server

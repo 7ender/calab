@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Push the working tree to the stand and deploy it there (no git on the host).
 #   infra/docker/sync.sh                               # sync + deploy whole stack
-#   infra/docker/sync.sh caddy livekit postgres redis         # sync + deploy only these
+#   infra/docker/sync.sh caddy livekit postgres valkey        # sync + deploy only these
 #   SYNC_ONLY=1 infra/docker/sync.sh                   # sync files, don't deploy
 # Env: STAND_HOST (default root@141.105.69.177), STAND_DIR (default /opt/calaba).
 # The host keeps its own infra/docker/.env (secrets) — it is never overwritten or deleted.

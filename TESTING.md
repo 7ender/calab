@@ -474,7 +474,7 @@ curl -sI https://$D/manifest.webmanifest | grep -i content-type                 
 | ОС | Файл | Установка |
 |---|---|---|
 | macOS Apple Silicon (M1–M4) / Intel | `Calaba-<версия>-arm64.dmg` / `Calaba-<версия>-x64.dmg` (не знаете какой —  → «Об этом Mac»: «Чип Apple M…» = arm64) | открыть dmg, перетащить Calaba в «Программы». Сборка **не подписана**: первый запуск — ПКМ по приложению → «Открыть» → «Открыть» (или `xattr -dr com.apple.quarantine /Applications/Calaba.app`). Автообновление на macOS без подписи не работает — приложение только сообщает о новой версии |
-| Windows 10/11 x64 | `Calaba-Setup-<версия>-x64.exe` (пока не публикуется — см. docs/06, блокер сборки Windows) | запустить; SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» (сборка не подписана) |
+| Windows 10/11 x64 | `Calaba-Setup-<версия>-x64.exe` | запустить; SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае» (сборка не подписана) |
 | Linux x64 (любой дистрибутив) | `Calaba-<версия>-x86_64.AppImage` | `chmod +x Calaba-*.AppImage && ./Calaba-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calaba-*.AppImage --appimage-extract-and-run`) |
 | Debian/Ubuntu x64 | `calaba_<версия>_amd64.deb` | `sudo apt install ./calaba_*_amd64.deb`, запуск — «Calaba» в меню или `calaba` |
 
@@ -735,6 +735,17 @@ open apps/desktop/dist/mac-arm64/Calaba.app   # при первом запуск
 | S.2 | Собранное приложение, сервер `https://…` | обновления проверяются только по `https://<сервер>/download/`. Задать адрес из интерфейса нельзя. Новая версия → системное уведомление «Доступна версия X — скачать» (открывает страницу), без автоустановки. Автоскачивание и установка при выходе — только в подписанных сборках с `MAIN_VITE_UPDATES_SIGNED=1` |
 | S.3 | DevTools renderer: `await fetch('https://example.com')` | ошибка CSP (`connect-src` ограничен сервером, его поддоменами (`rtc.`) и `calaba-api:`). Голос и gateway работают. LiveKit на другом домене → `CALABA_CSP_CONNECT="wss://… https://…"` |
 | S.4 | DevTools: `location.href = 'file:///etc/hosts'` или `<iframe src=…>` на внешний сайт | навигация заблокирована, `<webview>` не создаётся |
+
+### 3b. Лицензии и горячие клавиши
+| # | Проверка | Ожидается |
+|---|---|---|
+| L.1 | `pnpm -F @calaba/desktop build:app` / `build:web` | в выводе `third-party notices: N packages`. Сборка падает, если в бандле появилась GPL/AGPL/SSPL/EUPL. LGPL допустима только у перечисленных в скрипте: libuiohook внутри uiohook-napi, с текстами LGPL/GPL в THIRD-PARTY-NOTICES |
+| L.2 | Настройки → «О программе» | карточка «Лицензия»: «Business Source License 1.1» → текст лицензии + NOTICE; «Коммерческая лицензия» → COMMERCIAL-LICENSE.md; «Лицензии сторонних компонентов» → THIRD-PARTY-NOTICES. Ниже строка «© 2026 GPTunneL · Powered by GPTunneL» со ссылкой |
+| L.3 | Экран входа (веб и десктоп) | внизу та же строка, «Лицензия: Business Source License 1.1» и «Лицензии сторонних компонентов» — открывают тексты |
+| L.4 | Собранный dmg: `ls Calaba.app/Contents/Resources` | есть `LICENSE`, `NOTICE`, `COMMERCIAL-LICENSE.md`, `THIRD-PARTY-NOTICES.txt`. Установщик DMG/NSIS показывает лицензию |
+| K.1 | Настройки → «Горячие клавиши» → «Изменить» у «Выключить микрофон» → ⌘⇧J | подпись в строке, в tooltip панели «я» и в «?» — «⌘⇧J». ⌘⇧J выключает микрофон, ⌘⇧M больше нет |
+| K.2 | «Изменить» → ⌘Q / ⌘⇧D (занято «Заглушить всех») / J без ⌘ | отказ с причиной под строкой, прежнее сочетание остаётся. Esc отменяет запись |
+| K.3 | «Сбросить» | вернулось сочетание по умолчанию |
 
 ### 4. Только люди
 - **Эхо на реальных устройствах.** 3 участника, двое на колонках, говорят одновременно. Затем смена устройства вывода посреди разговора (Настройки → «Устройство вывода»). Эха быть не должно.
