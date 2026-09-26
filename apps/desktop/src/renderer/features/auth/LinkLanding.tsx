@@ -72,6 +72,12 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
   }, []);
 
   const notFound = state === 'not-found';
+  // Whether «всегда в приложении» was on when the app turned out missing: then the box stays so it
+  // can be turned off; otherwise it is hidden in that state (it would contradict «не найдено»).
+  const [alwaysAtNotFound, setAlwaysAtNotFound] = useState<boolean | null>(null);
+  if (notFound && alwaysAtNotFound === null) setAlwaysAtNotFound(always);
+  if (!notFound && alwaysAtNotFound !== null) setAlwaysAtNotFound(null);
+  const hideAlways = notFound && alwaysAtNotFound === false;
 
   return (
     <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10" data-testid="link-landing">
@@ -114,7 +120,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
                 >
                   {t('landing.download')}
                 </a>
-                <Button variant="ghost" className={btn} onClick={open}>
+                <Button variant="secondary" className={btn} onClick={open}>
                   {t('landing.retry')}
                 </Button>
               </>
@@ -133,7 +139,8 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
             )}
           </div>
 
-          <label className="flex cursor-default items-center justify-center gap-2 text-body text-muted">
+          {hideAlways ? null : (
+            <label className="flex cursor-default items-center justify-center gap-2 text-body text-muted">
             <input
               type="checkbox"
               checked={always}
@@ -144,7 +151,8 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
               className="size-3.5 accent-[var(--color-accent)]"
             />
             {t('landing.always')}
-          </label>
+            </label>
+          )}
         </div>
       </main>
       {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}

@@ -5,7 +5,7 @@
  * Contract: proto/calaba/v1 (protojson REST bodies, binary GatewayFrame over WebSocket),
  * docs/05-realtime-protocol.md. Fixtures: ./fixtures.ts.
  *
- * CLI: tsx e2e-support/mock-server.ts --port 3900 --scenario data --static dist-web
+ * CLI: tsx e2e-support/mock-server.ts --port 3900 --scenario data|empty|marketing --static dist-web
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -161,10 +161,13 @@ import {
   type Scenario,
   type UserRec,
   UNFURLS,
+  SCENARIOS,
 } from './fixtures';
+import { MARKETING_UNFURLS } from './fixtures-marketing';
 import { cardPicture, encodePng, pngSize } from './png';
 
 export { IDS, GENERAL_MESSAGE_COUNT, PASSWORD, mockId, type Scenario } from './fixtures';
+export { MARKETING_IDS, MARKETING_VOICE_STARTED_AT } from './fixtures-marketing';
 
 // ---------------------------------------------------------------- public API
 
@@ -1772,7 +1775,7 @@ class MockImpl {
     this.route('GET', '/api/unfurl', (c) => {
       this.uid(c);
       const url = c.url.searchParams.get('url') ?? '';
-      const card = UNFURLS[url];
+      const card = UNFURLS[url] ?? MARKETING_UNFURLS[url];
       if (!card) throw notFound('preview not found');
       sendMsg(c.res, 200, UnfurlResponseSchema, {
         url,
@@ -2059,7 +2062,7 @@ class MockImpl {
     this.route('GET', '/__mock/ids', (c) => send(c.res, 200, JSON.stringify(IDS), 'application/json'));
     this.route('POST', '/__mock/reset', (c) => {
       const scenario = str(ctl(c)['scenario']);
-      this.reset(scenario === 'empty' || scenario === 'data' ? scenario : s().scenario);
+      this.reset(SCENARIOS.find((x) => x === scenario) ?? s().scenario);
       noContent(c.res);
     });
     this.route('POST', '/__mock/message', (c) => {
@@ -2193,8 +2196,9 @@ function arg(argv: string[], name: string): string | undefined {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const env = process.env;
-  const scenario = arg(argv, 'scenario') ?? env['MOCK_SCENARIO'] ?? 'data';
-  if (scenario !== 'data' && scenario !== 'empty') throw new Error(`unknown scenario ${scenario}`);
+  const name = arg(argv, 'scenario') ?? env['MOCK_SCENARIO'] ?? 'data';
+  const scenario = SCENARIOS.find((x) => x === name);
+  if (!scenario) throw new Error(`unknown scenario ${name}`);
   const staticDir = arg(argv, 'static') ?? env['MOCK_STATIC_DIR'];
   const livekitUrl = arg(argv, 'livekit-url') ?? env['MOCK_LIVEKIT_URL'];
   const livekitKey = arg(argv, 'livekit-key') ?? env['MOCK_LIVEKIT_KEY'];

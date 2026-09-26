@@ -85,8 +85,16 @@ export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?
 }
 
 export async function login(page: Page, email = 'owner@calaba.test'): Promise<void> {
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Пароль').fill(PASSWORD);
+  // The test window takes the OS focus: a key typed on this machine meanwhile lands in the field
+  // (seen: «password123н»). Check the values right before submitting, re-fill if they drifted.
+  const emailField = page.getByLabel('Email');
+  const password = page.getByLabel('Пароль');
+  await expect(async () => {
+    await emailField.fill(email);
+    await password.fill(PASSWORD);
+    await expect(emailField).toHaveValue(email, { timeout: 200 });
+    await expect(password).toHaveValue(PASSWORD, { timeout: 200 });
+  }).toPass({ timeout: 5000 });
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
 }
 

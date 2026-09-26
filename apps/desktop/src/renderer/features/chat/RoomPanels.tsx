@@ -160,11 +160,11 @@ export function SearchPanel({ roomId }: { roomId: string }): ReactNode {
 const COMPACT_BELOW = 280;
 
 /**
- * Empty room (docs/09 #11): big icon, welcome line, «Пригласить» / «Настроить». It lives in a
- * scroll viewport and sits at the bottom, like the start of a Telegram chat, so a stream stage
- * above never clips it; when the chat is short it becomes a single row.
+ * Empty room (docs/09 #11, #56): big icon, welcome line, «Пригласить» / «Настроить», centred in
+ * the message area. Under an expanded stream stage (`underStage`), or when the area is short, it
+ * becomes a single row at the bottom, just above the composer.
  */
-export function EmptyRoom({ workspaceId, room, perms }: { workspaceId: string; room: Room; perms: PermissionBits }): ReactNode {
+export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { workspaceId: string; room: Room; perms: PermissionBits; underStage?: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const voice = room.type === RoomType.VOICE;
@@ -172,11 +172,12 @@ export function EmptyRoom({ workspaceId, room, perms }: { workspaceId: string; r
   const canInvite = isAdminRole(role);
   const canSetup = can(perms, 'MANAGE_ROOM');
   const ref = useRef<HTMLDivElement>(null);
-  const [compact, setCompact] = useState(false);
+  const [short, setShort] = useState(false);
+  const compact = underStage || short;
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const measure = (): void => setCompact(el.clientHeight < COMPACT_BELOW);
+    const measure = (): void => setShort(el.clientHeight < COMPACT_BELOW);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -211,7 +212,7 @@ export function EmptyRoom({ workspaceId, room, perms }: { workspaceId: string; r
           {actions}
         </div>
       ) : (
-        <div className="mx-auto mt-auto flex max-w-sm flex-col items-center pb-6 pt-6 text-center">
+        <div className="mx-auto my-auto flex max-w-sm flex-col items-center py-6 text-center" data-testid="empty-room-welcome">
           <span className="grid size-20 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text">
             <Icon className="size-10" strokeWidth={1.5} aria-hidden />
           </span>

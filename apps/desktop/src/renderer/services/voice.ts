@@ -34,6 +34,8 @@ import { playSound } from '../lib/sounds';
 import { SpeakingDebouncer } from '../lib/speaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
 import { canSpeakFrom, isDeviceGone, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { useMessages } from '../stores/messages';
+import { useRooms } from '../stores/rooms';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
@@ -81,6 +83,22 @@ export interface StreamOptions {
   preset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
   systemAudio: boolean;
+}
+
+/** Fewer messages than this in the voice room's chat → a new stream opens expanded (docs/09 #56). */
+const SHORT_CHAT = 3;
+
+/**
+ * Layout for a stream the user starts watching: the room's remembered choice, else the expanded
+ * stage when the room's chat is (nearly) empty — nothing to read beside a small PiP.
+ */
+export function defaultStage(roomId: string | null): 'pip' | 'expanded' {
+  if (!roomId) return 'pip';
+  const saved = usePrefs.getState().streamStage[roomId];
+  if (saved) return saved;
+  const m = useMessages.getState().rooms[roomId];
+  const count = m?.loaded ? m.items.length + (m.hasMoreBefore ? SHORT_CHAT : 0) : useRooms.getState().lastMessage[roomId] ? SHORT_CHAT : 0;
+  return count < SHORT_CHAT ? 'expanded' : 'pip';
 }
 
 class VoiceEngine {
@@ -468,7 +486,10 @@ class VoiceEngine {
     // A new stream appears: show it in the PiP tile unless the user already watches another one.
     const fresh = streams.find((s) => !st.streams.some((o) => o.trackSid === s.trackSid));
     if (!watching && fresh) watching = fresh.trackSid;
-    setVoice({ streams, ...(watching !== st.watching ? { watching, stage: watching ? st.stage : 'pip' } : {}) });
+    // Starting to watch (nothing watched before): the room's remembered layout, else expanded when
+    // the chat is (nearly) empty — a lone PiP over an empty room looks lost (docs/09 #56).
+    const stage = !watching ? 'pip' : st.watching ? st.stage : defaultStage(st.roomId);
+    setVoice({ streams, ...(watching !== st.watching ? { watching, stage } : {}) });
     this.applyWatching();
   }
 
@@ -499,6 +520,9 @@ class VoiceEngine {
 
   /** PiP ↔ expanded ↔ pop-out (the preview strip exists only while expanded). */
   setStage(stage: 'pip' | 'expanded' | 'popout'): void {
+    const roomId = useVoice.getState().roomId;
+    // The user's choice is remembered per room (the pop-out is a transient window, not a layout).
+    if (roomId && stage !== 'popout') usePrefs.getState().setPrefs({ streamStage: { ...usePrefs.getState().streamStage, [roomId]: stage } });
     setVoice({ stage });
     this.applyWatching();
   }

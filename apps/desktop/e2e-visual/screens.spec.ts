@@ -378,8 +378,16 @@ for (const theme of THEMES) {
           // Decoded frames differ run to run: hide the pixels, keep the stage chrome (name, LIVE,
           // controls) in the shots on the stage's black background.
           await page.addStyleTag({ content: 'video { visibility: hidden !important; }' });
-          // Default stage while chatting: PiP in the top-right corner, clear of the composer.
+          // Empty voice-room chat (docs/09 #56): the stream opens expanded, the welcome becomes one
+          // row under the stage (still visible above the composer).
+          await expect(page.getByTestId('stream-stage')).toBeVisible();
+          await expect(page.getByTestId('empty-room')).toHaveAttribute('data-compact', 'true');
+          await expect(page.getByTestId('empty-room').getByRole('heading')).toBeInViewport();
+          await checkpoint(s, 'voice-stream-empty-room');
+          // Collapsing to the PiP is remembered for this room; the welcome returns, centred.
+          await page.getByTestId('stream-stage').getByRole('button', { name: 'Свернуть в угол' }).click();
           await expect(page.getByTestId('stream-pip')).toBeVisible();
+          await expectWelcomeCentred(page);
           await checkpoint(s, 'voice-pip');
           // PiP controls (expand / close): shown on hover or keyboard focus. checkpoint() parks the
           // pointer, so the shot uses focus; toBeVisible() passes at opacity 0 — check the opacity.
@@ -506,5 +514,18 @@ async function expectFrames(page: Page, n: number): Promise<void> {
     })
     .toBeGreaterThanOrEqual(n);
   await settle(page);
+}
+
+/** docs/09 #56: in an empty room the welcome block sits in the vertical centre of the message area. */
+async function expectWelcomeCentred(page: Page): Promise<void> {
+  const off = await page.getByTestId('empty-room').evaluate((area) => {
+    const w = area.querySelector('[data-testid="empty-room-welcome"]');
+    if (!w) return null;
+    const a = area.getBoundingClientRect();
+    const b = w.getBoundingClientRect();
+    return Math.round(b.top + b.height / 2 - (a.top + a.height / 2));
+  });
+  expect(off, 'empty-room welcome present').not.toBeNull();
+  expect(Math.abs(off ?? 99), 'empty-room welcome centred').toBeLessThanOrEqual(4);
 }
 

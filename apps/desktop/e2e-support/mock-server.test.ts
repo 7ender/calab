@@ -2,7 +2,7 @@ import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { GatewayFrameSchema, GatewayOpcode, NotificationLevel, RoomType, type DispatchEvent, type GatewayFrame } from '@calaba/protocol';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { GENERAL_MESSAGE_COUNT, IDS, parseMentions, startMockServer, type MockServer } from './mock-server';
+import { GENERAL_MESSAGE_COUNT, IDS, MARKETING_IDS, parseMentions, startMockServer, type MockServer } from './mock-server';
 
 // Smoke test: pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts
 
@@ -377,5 +377,49 @@ describe('link previews (docs/09 #51)', () => {
     expect((await put('owner@calaba.test', false)).status).toBe(200);
     expect(msg?.embedsHidden).toBe(false);
     server.reset('data');
+  });
+});
+
+describe('marketing scenario (README / landing screenshots)', () => {
+  it('READY has the marketing rooms; «общий» has 5–7 messages and a calab.ru preview', async () => {
+    const mk = await startMockServer({ scenario: 'marketing' });
+    try {
+      const res = await fetch(`${mk.url}/api/auth/login`, {
+        method: 'POST',
+        body: JSON.stringify({ email: 'owner@calaba.test', password: 'password123' }),
+      });
+      const token = ((await res.json()) as { tokens: { accessToken: string } }).tokens.accessToken;
+      const ws = new WebSocket(`${mk.url.replace('http', 'ws')}/gateway?v=1`);
+      const ready = await new Promise<DispatchEvent>((resolve, reject) => {
+        ws.on('message', (data: Buffer) => {
+          const f = fromBinary(GatewayFrameSchema, new Uint8Array(data));
+          if (f.op === GatewayOpcode.HELLO) {
+            ws.send(toBinary(GatewayFrameSchema, create(GatewayFrameSchema, { op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } })));
+          } else if (f.payload.case === 'dispatch') resolve(f.payload.value);
+        });
+        ws.once('error', reject);
+      });
+      ws.close(1000);
+      if (ready.event.case !== 'ready') throw new Error('expected READY');
+      const [main, ...rest] = ready.event.value.workspaces;
+      expect(rest).toHaveLength(0);
+      expect(main?.workspace?.name).toBe('Команда Calab');
+      expect(main?.rooms.map((r) => r.name)).toEqual(['общий', 'дизайн', 'бэкенд', 'релизы', 'Стендап', 'Переговорка']);
+      expect(main?.voiceStates.map((v) => v.userId).sort()).toEqual([IDS.users.boris, IDS.users.vera]);
+
+      const page = (await (
+        await fetch(`${mk.url}/api/rooms/${MARKETING_IDS.rooms.general}/messages?limit=100`, { headers: { Authorization: `Bearer ${token}` } })
+      ).json()) as { messages: { content: string }[] };
+      expect(page.messages.length).toBeGreaterThanOrEqual(5);
+      expect(page.messages.length).toBeLessThanOrEqual(7);
+      expect(page.messages.some((m) => m.content.includes(`@${IDS.users.anna}`))).toBe(true);
+
+      const preview = await fetch(`${mk.url}/api/unfurl?url=${encodeURIComponent('https://calab.ru')}`, { headers: { Authorization: `Bearer ${token}` } });
+      expect(((await preview.json()) as { siteName: string }).siteName).toBe('Calab');
+      const file = await fetch(`${mk.url}/api/files/${MARKETING_IDS.files.screenshot}/thumbnail`, { headers: { Authorization: `Bearer ${token}` } });
+      expect(file.headers.get('content-type')).toBe('image/jpeg');
+    } finally {
+      await mk.close();
+    }
   });
 });

@@ -53,6 +53,8 @@ export interface Prefs {
   onboarded: boolean;
   /** AFK: minutes without input before presence becomes idle; 0 = off (docs/09 #34). */
   afkMinutes: number;
+  /** The viewer's last stream layout per voice room (docs/09 #56): PiP or expanded stage. */
+  streamStage: Record<string, 'pip' | 'expanded'>;
 }
 
 const DEFAULTS: Prefs = {
@@ -71,6 +73,7 @@ const DEFAULTS: Prefs = {
   voiceSounds: true,
   sounds: {},
   soundVolume: 0.5,
+  streamStage: {},
   userVolumes: {},
   mutedUsers: {},
   hotkeys: {},

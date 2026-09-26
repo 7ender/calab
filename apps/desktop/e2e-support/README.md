@@ -13,7 +13,7 @@ Contract: `proto/calaba/v1` (REST = protojson, gateway = binary `GatewayFrame` a
 # from apps/desktop
 npx tsx e2e-support/mock-server.ts --port 3900 --scenario data            # API + gateway
 npx tsx e2e-support/mock-server.ts --port 3900 --static dist-web           # + web client, same origin
-# flags: --host, --scenario data|empty, --static <dir>, --livekit-url/--livekit-key/--livekit-secret, --quiet
+# flags: --host, --scenario data|empty|marketing, --static <dir>, --livekit-url/--livekit-key/--livekit-secret, --quiet
 # env equivalents: MOCK_PORT, MOCK_HOST, MOCK_SCENARIO, MOCK_STATIC_DIR, MOCK_LIVEKIT_URL/KEY/SECRET
 
 CALABA_SERVER_URL=http://127.0.0.1:3900 pnpm start    # Electron client against the mock
@@ -91,6 +91,15 @@ Ids: `00000000-0000-7000-80KK-NNNNNNNNNNNN` (KK = kind: 01 user, 02 workspace, 0
 
 Scenario `empty`: users exist, no workspaces (welcome screen).
 
+Scenario `marketing` (`fixtures-marketing.ts`, used only by `e2e-marketing/shots.spec.ts` for the
+README / landing screenshots): «Команда Calab» with `общий`, `дизайн`, `бэкенд`, `релизы` and voice
+`Стендап`, `Переговорка` (Борис and Вера streaming, call started 12:40 before the visual-test
+clock); natural names and statuses; `общий` has a short dialogue with a 👍×2 reaction, a mention
+of Анна, a reply, a real screenshot (`assets/room-settings.jpg`, 1200×675) and a text preview
+of `https://calab.ru`; one unread message in `релизы`. Same user ids / logins as `data`, own
+room / file ids (`MARKETING_IDS`). `assets/stream-slide.png` is the slide Вера shares
+(`startPublisher({ image })`).
+
 Runtime mutations get ids after the fixtures and timestamps from a fixed clock
 (2026-01-15T12:00Z + 1 min per mutation), so a scripted flow is deterministic too.
 
@@ -105,7 +114,7 @@ content: `@${IDS.users.anna} …` })` or `POST /__mock/message` with the same JS
 | Endpoint | Body |
 |---|---|
 | `GET /__mock/ids` | — |
-| `POST /__mock/reset` | `{ "scenario"?: "data" \| "empty" }` — rebuilds state, drops gateway sessions (clients re-IDENTIFY) |
+| `POST /__mock/reset` | `{ "scenario"?: "data" \| "empty" \| "marketing" }` — rebuilds state, drops gateway sessions (clients re-IDENTIFY) |
 | `POST /__mock/message` | `{ roomId, authorId, content, replyToId? }` |
 | `POST /__mock/dispatch` | protojson `DispatchEvent`, sent to every session unfiltered |
 | `POST /__mock/voice` | `{ userId, roomId ("" = leave), muted?, deafened?, streaming? }` |

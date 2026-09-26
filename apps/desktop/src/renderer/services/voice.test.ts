@@ -435,3 +435,27 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState().pttDown).toBe(false);
   });
 });
+
+describe('defaultStage (docs/09 #56)', () => {
+  it('expands a new stream over a (nearly) empty chat, remembers the per-room choice', async () => {
+    const { defaultStage } = await import('./voice');
+    const { useMessages } = await import('../stores/messages');
+    const { usePrefs: prefs } = await import('../stores/prefs');
+    const { useRooms } = await import('../stores/rooms');
+    prefs.setState({ streamStage: {} });
+    expect(defaultStage(null)).toBe('pip');
+    // Not loaded yet: no last message → empty → expanded; a last message → treat as a chat.
+    useRooms.setState({ lastMessage: {} });
+    expect(defaultStage('r1')).toBe('expanded');
+    useRooms.setState({ lastMessage: { r1: 'm9' } });
+    expect(defaultStage('r1')).toBe('pip');
+    const msg = (id: string) => ({ id }) as never;
+    const base = { hasMoreAfter: false, loading: false, loaded: true, error: null };
+    useMessages.setState({ rooms: { r1: { ...base, items: [msg('a'), msg('b')], hasMoreBefore: false } } } as never);
+    expect(defaultStage('r1')).toBe('expanded');
+    useMessages.setState({ rooms: { r1: { ...base, items: [msg('a'), msg('b'), msg('c')], hasMoreBefore: false } } } as never);
+    expect(defaultStage('r1')).toBe('pip');
+    prefs.setState({ streamStage: { r1: 'expanded' } });
+    expect(defaultStage('r1')).toBe('expanded');
+  });
+});

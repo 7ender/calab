@@ -51,6 +51,9 @@ for (const theme of THEMES) {
         else await expect(search).toBeVisible();
 
         const s: Shot = { page, theme, viewport };
+        // The feed opens at the first unread; that anchor lands a few px apart between runs:
+        // pin the shot to the bottom of the feed (as the Electron main-chat shot does).
+        await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
         await checkpoint(s, 'web-main');
         await expect.soft(bar, 'screenshot: web-titlebar').toHaveScreenshot(`web-titlebar-${theme}-${viewport.width}.png`);
       } finally {
@@ -117,6 +120,8 @@ for (const theme of THEMES) {
         await expect(card.getByRole('button', { name: 'Продолжить в браузере' })).toBeFocused();
         await expect(card.getByRole('link', { name: 'Скачать приложение' })).toBeVisible();
         await expect(card.getByRole('button', { name: 'Открыть в Calab ещё раз' })).toBeVisible();
+        // «Всегда открывать в приложении» contradicts «не найдено»: hidden in this state.
+        await expect(card.getByRole('checkbox')).toHaveCount(0);
         await checkpoint(s, 'web-join-card-not-found');
 
         // «Продолжить в браузере» → the regular web flow: registration with the invite code.

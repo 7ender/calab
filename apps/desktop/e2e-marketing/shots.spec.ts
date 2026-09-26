@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
-import { IDS, startMockServer } from '../e2e-support/mock-server';
+import { IDS, MARKETING_IDS, startMockServer } from '../e2e-support/mock-server';
 import { NOW } from '../e2e-visual/harness';
 import { startPublisher } from '../e2e-visual/publisher';
 
@@ -12,6 +12,8 @@ import { startPublisher } from '../e2e-visual/publisher';
  * and shadow), mock data, captured by the window server with `screencapture -l` at the display's
  * native 2x. No resizing, no 1x copies. `<name>-<theme>@2x.png` has no shadow (exact window size);
  * `chat-<theme>-shadow@2x.png` keeps the system shadow for the hero.
+ * Data: the mock's `marketing` scenario (e2e-support/fixtures-marketing.ts); Вера shares a
+ * release checklist slide (e2e-support/assets/stream-slide.png).
  */
 const APP = process.env['CALABA_APP'] ?? resolve(import.meta.dirname, '../dist/mac-arm64/Calab.app/Contents/MacOS/Calab');
 const OUT = resolve(import.meta.dirname, '../../../docs/images');
@@ -30,25 +32,54 @@ function windowId(owner: string): string {
   return id;
 }
 
-async function shoot(app: ElectronApplication, page: Page, name: string, shadow = false): Promise<void> {
+const frontmostPid = (): string =>
+  execFileSync('osascript', ['-e', 'tell application "System Events" to get unix id of first process whose frontmost is true'], { encoding: 'utf8' }).trim();
+
+/** The app is frontmost and its main window is key. */
+async function isActive(app: ElectronApplication): Promise<boolean> {
+  return frontmostPid() === String(app.process().pid) && (await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFocused() ?? false));
+}
+
+/**
+ * Makes the main window key in the frontmost app: the window server draws an inactive window
+ * with grey traffic lights (Electron's isFocused() can be true while another app is active).
+ */
+async function activate(app: ElectronApplication): Promise<boolean> {
+  const pid = app.process().pid;
+  if (frontmostPid() !== String(pid)) {
+    execFileSync('osascript', ['-e', `tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true`]);
+  }
   await app.evaluate(({ app: a, BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0];
     w?.show();
-    w?.focus();
     a.focus({ steal: true });
+    w?.focus();
   });
+  return isActive(app);
+}
+
+async function shoot(app: ElectronApplication, page: Page, name: string, shadow = false): Promise<void> {
+  await expect.poll(() => activate(app)).toBe(true);
+  // No focus rings / hover-revealed controls (e.g. the stream toolbar shows on focus-within).
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.mouse.move(WINDOW.width - 2, WINDOW.height - 2);
   await page.waitForTimeout(1200); // vibrancy + fonts + animations settle
   const id = windowId('Calab');
   const file = join(OUT, `${name}@2x.png`);
-  execFileSync('screencapture', ['-x', ...(shadow ? [] : ['-o']), `-l${id}`, file]);
+  // Another app may take focus while we wait: re-activate and capture until the window stayed key.
+  for (let attempt = 0; ; attempt++) {
+    await expect.poll(() => activate(app)).toBe(true);
+    await page.waitForTimeout(400); // the frame redraws as active
+    execFileSync('screencapture', ['-x', ...(shadow ? [] : ['-o']), `-l${id}`, file]);
+    if ((await isActive(app)) || attempt >= 4) break;
+  }
   const size = execFileSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', file], { encoding: 'utf8' });
   console.log(name, size.replace(/\s+/g, ' ').trim(), `${(statSync(file).size / 1e6).toFixed(1)} MB`);
 }
 
 for (const theme of ['dark', 'light'] as const) {
   test(`marketing ${theme}`, async () => {
-    const mock = await startMockServer({ port: PORT, scenario: 'data' });
+    const mock = await startMockServer({ port: PORT, scenario: 'marketing' });
     const userData = mkdtempSync(join(tmpdir(), 'calab-shots-'));
     const app = await electron.launch({
       executablePath: APP,
@@ -96,6 +127,12 @@ for (const theme of ['dark', 'light'] as const) {
       // ---- room settings → «Ссылка для гостей»
       await page.getByRole('button', { name: 'Настройки комнаты' }).click();
       await page.getByRole('dialog').getByRole('tab', { name: 'Ссылка для гостей' }).click();
+      // Shared links are built from the server URL; show the product domain instead of the mock's.
+      await expect(page.getByRole('dialog').getByText(`${mock.url}/r/`)).toBeVisible();
+      await page.getByRole('dialog').evaluate((dialog, from) => {
+        const walker = document.createTreeWalker(dialog, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) n.nodeValue = n.nodeValue?.replaceAll(from, 'https://calab.ru') ?? null;
+      }, mock.url);
       await shoot(app, page, `settings-${theme}`);
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -109,7 +146,12 @@ for (const theme of ['dark', 'light'] as const) {
       await sidebar.getByTestId('voice-status-input').press('Enter');
       await expect(sidebar.getByTestId('voice-status-row')).toContainText('Планёрка по релизу 0.2');
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-      publisher = await startPublisher({ userId: IDS.users.vera, name: 'Вера Ким', roomId: IDS.rooms.meeting });
+      publisher = await startPublisher({
+        userId: IDS.users.vera,
+        name: 'Вера Ким',
+        roomId: MARKETING_IDS.rooms.meeting,
+        image: readFileSync(resolve(import.meta.dirname, '../e2e-support/assets/stream-slide.png')),
+      });
       const video = page.locator('video');
       const chip = page.getByRole('button', { name: 'Вера Ким', exact: true });
       await expect(video.or(chip).first()).toBeVisible({ timeout: 30_000 });

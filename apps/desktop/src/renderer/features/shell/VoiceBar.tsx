@@ -2,7 +2,7 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Activity, AudioLines, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, PhoneOff, Settings, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
-import { Button, Tip, cx } from '../../components/ui';
+import { Badge, Button, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
 import { voice } from '../../services/voice';
@@ -250,7 +250,7 @@ export function VoiceBar(): ReactNode {
         <div className="mt-2 flex items-center gap-2 rounded-[var(--radius-row)] bg-hover px-2 py-1.5 text-[12px]" data-testid="my-stream">
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
-              <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white">{t('shell.live')}</span>
+              <Badge tone="danger">{t('shell.live')}</Badge>
               <span className="flex items-center gap-1 text-fg" aria-label={viewersText(myStream.viewers)}>
                 <Eye className="size-3.5 text-muted" aria-hidden />
                 {viewersText(myStream.viewers)}

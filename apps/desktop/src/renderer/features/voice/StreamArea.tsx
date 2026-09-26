@@ -3,10 +3,11 @@ import { Check, ChevronDown, Maximize2, MessageSquare, Minimize, Minimize2, Moni
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
-import { IconButton, Slider, cx } from '../../components/ui';
+import { Badge, IconButton, Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
+import { useMessages } from '../../stores/messages';
 import { useVoice, type RemoteStream, type StreamQuality } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
@@ -141,8 +142,9 @@ function useMessageBox(anchor: RefObject<HTMLDivElement | null>): Box {
 
 const PIP_GAP = 12;
 
+/** The same pill LIVE badge as in the room list (one style for every badge). */
 function LiveBadge(): ReactNode {
-  return <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white">{t('shell.live')}</span>;
+  return <Badge tone="danger">{t('shell.live')}</Badge>;
 }
 
 /** Streamer chip over the video: avatar (speaking ring), name, LIVE. */
@@ -181,7 +183,14 @@ function Pip({ stream, others, wsId, box }: { stream: RemoteStream; others: numb
       // Top-right of the message area (docs/08 layout): clear of the composer, the latest
       // messages and the bottom-aligned empty state. The black video background is inline: the
       // (unlayered) .mat-popover material would override a bg utility → light letterbox bars.
-      style={{ top: box.top + PIP_GAP, width: w, height: h, background: 'var(--color-video-bg)' }}
+      // A visible edge + deeper shadow so the tile doesn't float unanchored over an empty feed (#56).
+      style={{
+        top: box.top + PIP_GAP,
+        width: w,
+        height: h,
+        background: 'var(--color-video-bg)',
+        boxShadow: '0 0 0 1px var(--color-line), 0 16px 40px rgb(0 0 0 / 40%), 0 2px 8px rgb(0 0 0 / 25%)',
+      }}
       aria-label={t('streamView.of', { name })}
       role="region"
     >
@@ -319,7 +328,10 @@ function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: st
   );
 }
 
-function Stage({ stream, streams, wsId, box }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box }): ReactNode {
+/** Height of the compact welcome row (EmptyRoom under the stage): 32 px icon + 2 × 12 px. */
+const WELCOME_ROW = 56;
+
+function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box; emptyFeed: boolean }): ReactNode {
   const stage = useVoice((s) => s.stage);
   const frame = useRef<HTMLDivElement>(null);
   const [fullscreen, toggleFullscreen] = useFullscreen(frame);
@@ -332,7 +344,8 @@ function Stage({ stream, streams, wsId, box }: { stream: RemoteStream; streams: 
       aria-label={t('streamView.of', { name })}
       className="absolute inset-x-0 z-[var(--z-sticky)] flex flex-col gap-2 bg-feed px-3 pb-3 pt-3"
       // Over the message area only: header and composer stay usable.
-      style={{ top: box.top, bottom: 'var(--composer-height)' }}
+      // An empty room keeps its one-row welcome visible under the stage (docs/09 #56).
+      style={{ top: box.top, bottom: emptyFeed ? `calc(var(--composer-height) + ${WELCOME_ROW}px)` : 'var(--composer-height)' }}
     >
       <div
         ref={frame}
@@ -432,6 +445,11 @@ export function StreamArea(): ReactNode {
   const box = useMessageBox(anchor);
   const current = streams.find((s) => s.trackSid === watching);
   const name = useMemberName(wsId, current?.userId ?? '');
+  const roomId = useVoice((s) => s.roomId);
+  const emptyFeed = useMessages((s) => {
+    const r = roomId ? s.rooms[roomId] : undefined;
+    return !!r && r.loaded && r.items.length === 0 && !r.hasMoreBefore && !r.hasMoreAfter;
+  });
 
   return (
     <>
@@ -441,7 +459,7 @@ export function StreamArea(): ReactNode {
       ) : stage === 'pip' ? (
         <Pip stream={current} others={streams.length - 1} wsId={wsId} box={box} />
       ) : (
-        <Stage stream={current} streams={streams} wsId={wsId} box={box} />
+        <Stage stream={current} streams={streams} wsId={wsId} box={box} emptyFeed={emptyFeed} />
       )}
       {current && stage === 'popout' ? <Popout trackSid={current.trackSid} title={`${name} — Calab`} onClose={() => voice.setStage('expanded')} /> : null}
     </>

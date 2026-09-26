@@ -44,6 +44,7 @@ import {
   type VoiceState,
   type Workspace,
 } from '@calaba/protocol';
+import { buildMarketingState } from './fixtures-marketing';
 import { avatarPicture, cardPicture, encodePng } from './png';
 
 /**
@@ -55,7 +56,9 @@ import { avatarPicture, cardPicture, encodePng } from './png';
  * KK = entity kind, N = sequence number (hex).
  */
 
-export type Scenario = 'data' | 'empty';
+/** `marketing`: README / landing screenshots only (fixtures-marketing.ts). */
+export type Scenario = 'data' | 'empty' | 'marketing';
+export const SCENARIOS: readonly Scenario[] = ['data', 'empty', 'marketing'];
 
 const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8 } as const;
 export type IdKind = keyof typeof KIND;
@@ -402,6 +405,7 @@ export function buildState(scenario: Scenario): MockState {
     next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100 },
     clock: 0,
   };
+  if (scenario === 'marketing') return buildMarketingState(s);
 
   const created = ts('2025-12-01T10:00:00Z');
   for (const u of USERS) {

@@ -10,6 +10,7 @@ import { ensureLoaded, loadNewer, loadOlder, loadPresent, markRead } from '../..
 import { EMPTY_ROOM_MESSAGES, useMessages, type ChatMessage } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
+import { useVoice } from '../../stores/voice';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { buildMetas, type RowMeta } from './grouping';
@@ -32,6 +33,8 @@ export function MessageList({
   perms: PermissionBits;
   newMarker: string;
 }): ReactNode {
+  // The expanded stream stage of my voice room covers the feed: the welcome shrinks to a row under it.
+  const underStage = useVoice((s) => s.roomId === room.id && s.stage === 'expanded' && s.streams.some((x) => x.trackSid === s.watching));
   const state = useMessages((s) => s.rooms[room.id] ?? EMPTY_ROOM_MESSAGES);
   if (!state.loaded) {
     return (
@@ -47,7 +50,7 @@ export function MessageList({
     );
   }
   if (state.items.length === 0 && !state.hasMoreBefore && !state.hasMoreAfter) {
-    return <EmptyRoom workspaceId={workspaceId} room={room} perms={perms} />;
+    return <EmptyRoom workspaceId={workspaceId} room={room} perms={perms} underStage={underStage} />;
   }
   return <Feed workspaceId={workspaceId} room={room} perms={perms} newMarker={newMarker} />;
 }
