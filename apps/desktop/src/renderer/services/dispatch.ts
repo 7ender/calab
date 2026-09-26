@@ -13,7 +13,7 @@ import { activeRoomId, useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
 import { useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms } from './chat';
-import { applyDm, refreshDms } from './dms';
+import { applyDm, refreshDmPreview, refreshDms } from './dms';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
@@ -141,6 +141,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       useMessages.getState().remove(roomId, messageId);
       useInbox.getState().remove(messageId);
       useDms.getState().onChanged(roomId, messageId, null);
+      if (useDms.getState().byRoom[roomId] && useDms.getState().preview[roomId] === undefined) void refreshDmPreview(roomId);
       return;
     }
     case 'messageReactionAdd':

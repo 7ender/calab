@@ -34,6 +34,8 @@ export const ruDm = {
   'dm.errNoCommon': 'Нет общего пространства с этим человеком',
   'dm.errSelf': 'Нельзя написать самому себе',
   'dm.errCreate': 'Не удалось начать переписку',
+  // a /dm/<id> link of someone else's (or a deleted) conversation
+  'dm.errLink': 'Переписка по ссылке недоступна: она не ваша или удалена',
   // quick switcher
   'search.dms': 'Личные сообщения',
 } as const;

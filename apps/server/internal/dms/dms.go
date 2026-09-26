@@ -71,6 +71,10 @@ func Summary(row sqlc.ListDMsRow) *v1.DmSummary {
 		room.LastMessageId = row.LastMessageID.String()
 		room.LastMessageAt = timestamppb.New(row.LastMessageAt)
 		out.LastMessageAt = room.GetLastMessageAt()
+		out.LastMessage = &v1.DmLastMessage{
+			Id: room.GetLastMessageId(), AuthorId: row.LastAuthorID.String(), Content: row.LastPreview,
+			AttachmentCount: uint32(max(row.LastAttachments, 0)), CreatedAt: room.GetLastMessageAt(), //nolint:gosec // 0..20
+		}
 	}
 	return out
 }

@@ -230,6 +230,18 @@ message DmSummary {
   // from its start); mention_count = unread_count — every DM message notifies like a mention.
   ReadState read_state = 3;
   google.protobuf.Timestamp last_message_at = 4; // unset = no messages yet
+  // The newest live message for the list preview (unset = no messages yet): the client shows
+  // it without fetching the history of every DM.
+  DmLastMessage last_message = 5;
+}
+
+// Preview of a DM's newest live message (DmSummary.last_message).
+message DmLastMessage {
+  string id = 1;
+  string author_id = 2;
+  string content = 3; // the first 200 characters of the text (Markdown as sent)
+  uint32 attachment_count = 4;
+  google.protobuf.Timestamp created_at = 5;
 }
 
 message CategoryCreate {

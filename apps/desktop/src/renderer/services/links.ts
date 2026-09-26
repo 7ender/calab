@@ -89,6 +89,9 @@ export function parseDmLink(input: string): string | null {
 /** Opens «Личные» on that DM (it shows once READY has the DM; before sign-in it waits for it). */
 function openDmLink(roomId: string): void {
   useUi.getState().openRoom(HOME, roomId);
+  // Not a DM of this user (someone else's link): a clear error once READY is in (services/dms.ts).
+  // Loaded lazily: links.ts stays free of the API / platform graph (link landing, tests).
+  void import('./dms').then((m) => m.checkDmLink(roomId)).catch(() => undefined);
   // Web: the address bar had /dm/<id>; the app does not route by URL (a reload would come back here).
   if (import.meta.env.VITE_PLATFORM === 'web' && typeof location !== 'undefined' && location.pathname.startsWith('/dm/')) {
     try {

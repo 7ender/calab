@@ -26,15 +26,19 @@ export interface DmPreview {
 
 interface DmsState {
   byRoom: Record<string, DmEntry>;
-  /** Newest message per DM (null = known to be empty); absent = not fetched yet. */
+  /**
+   * Newest message per DM (null = no messages): from DmSummary.last_message (READY, DM_CREATE,
+   * GET /api/dms), then kept by live events. Absent = unknown (its message was deleted and the
+   * next one is being fetched).
+   */
   preview: Record<string, DmPreview | null>;
   reset: () => void;
-  /** READY: the whole list (replaces it; previews of DMs still there are kept). */
+  /** READY: the whole list (replaces it, previews from the summaries). */
   setAll: (list: DmSummary[]) => void;
   upsert: (dm: DmSummary) => void;
   /** A message in a DM: newest preview + activity (older or equal ids are ignored). */
   onMessage: (m: Message) => void;
-  /** An edit / deletion of the previewed message: `null` = deleted (the preview is refetched). */
+  /** An edit / deletion of the previewed message: `null` = deleted (the caller refetches it). */
   onChanged: (roomId: string, messageId: string, m: Message | null) => void;
   setPreview: (roomId: string, m: Message | null) => void;
 }
@@ -55,23 +59,33 @@ export function previewOf(m: Message): DmPreview {
   return { messageId: m.id, authorId: m.authorId, content: m.content, attachments: m.attachments.length, at: ms(m.createdAt) };
 }
 
+/** The summary's preview (DmSummary.last_message; content ≤ 200 characters); null = no messages. */
+function summaryPreview(dm: DmSummary): DmPreview | null {
+  const m = dm.lastMessage;
+  if (!m?.id) return null;
+  return { messageId: m.id, authorId: m.authorId, content: m.content, attachments: m.attachmentCount, at: ms(m.createdAt) };
+}
+
+/** The newer of two previews (message ids are time-ordered uuidv7): a live event may be ahead of a summary. */
+function newer(a: DmPreview | null | undefined, b: DmPreview | null): DmPreview | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a.messageId > b.messageId ? a : b;
+}
+
 export const useDms = create<DmsState>()((set) => ({
   byRoom: {},
   preview: {},
   reset: () => set({ byRoom: {}, preview: {} }),
   setAll: (list) =>
-    set((s) => {
+    set(() => {
       const byRoom: Record<string, DmEntry> = {};
-      for (const dm of list) {
-        const e = entryOf(dm);
-        if (e) byRoom[e.roomId] = e;
-      }
-      // A preview older than the DM's newest message is stale (missed while disconnected).
       const preview: Record<string, DmPreview | null> = {};
       for (const dm of list) {
-        const id = dm.room?.id;
-        const p = id ? s.preview[id] : undefined;
-        if (id && p !== undefined && (p?.messageId ?? '') === (dm.room?.lastMessageId ?? '')) preview[id] = p;
+        const e = entryOf(dm);
+        if (!e) continue;
+        byRoom[e.roomId] = e;
+        preview[e.roomId] = summaryPreview(dm);
       }
       return { byRoom, preview };
     }),
@@ -80,7 +94,10 @@ export const useDms = create<DmsState>()((set) => ({
       const e = entryOf(dm);
       if (!e) return {};
       const prev = s.byRoom[e.roomId];
-      return { byRoom: { ...s.byRoom, [e.roomId]: prev ? { ...e, activity: Math.max(prev.activity, e.activity) } : e } };
+      return {
+        byRoom: { ...s.byRoom, [e.roomId]: prev ? { ...e, activity: Math.max(prev.activity, e.activity) } : e },
+        preview: { ...s.preview, [e.roomId]: newer(s.preview[e.roomId], summaryPreview(dm)) },
+      };
     }),
   onMessage: (m) =>
     set((s) => {

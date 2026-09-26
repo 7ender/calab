@@ -3,9 +3,10 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
-import { HOME, dmWith, useDms } from '../stores/dms';
+import { HOME, dmWith, isDm, useDms } from '../stores/dms';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
+import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
@@ -58,6 +59,31 @@ export async function startDm(userId: string): Promise<boolean> {
   }
 }
 
+/**
+ * A `/dm/<id>` link (links.ts) opened «Личные» on that id. Once signed in, a DM this user is not
+ * in (someone else's link, a deleted DM, a guest account) gets a clear error instead of an empty
+ * «Личные», and the id is forgotten. An unknown DM is re-read first (GET /api/dms).
+ */
+export function checkDmLink(roomId: string): void {
+  const verify = async (): Promise<void> => {
+    if (isDm(useRooms.getState().byId[roomId])) return;
+    await refreshDms();
+    if (isDm(useRooms.getState().byId[roomId])) return;
+    toast.error(t('dm.errLink'));
+    const ui = useUi.getState();
+    if (ui.lastRoom[HOME] === roomId) ui.selectDefaultRoom(HOME, '');
+  };
+  if (useSession.getState().ready) {
+    void verify();
+    return;
+  }
+  const stop = useSession.subscribe((s) => {
+    if (!s.ready) return;
+    stop();
+    void verify();
+  });
+}
+
 export function dmErrorText(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.status === 429) return t('dm.errRateLimited');
@@ -85,47 +111,30 @@ export function refreshDms(): Promise<void> {
 }
 
 const previewLoading = new Set<string>();
-/** Previews fetched at once when the list opens (the rest are known from live messages or wait). */
-const PREVIEW_BATCH = 40;
 
 /**
- * The last message of each listed DM (READY only has its id): taken from the loaded chat when
- * there is one, else fetched (GET /api/rooms/{id}/messages?limit=1) — the newest DMs first,
- * a few at a time.
+ * The previewed last message of a DM was deleted: the next newest one comes from the loaded
+ * chat when it has the end of the history, else from one GET …/messages?limit=1. Every other
+ * preview comes with DmSummary.last_message (no request per DM when the list opens).
  */
-export async function loadDmPreviews(roomIds: string[]): Promise<void> {
-  const st = useDms.getState();
-  const todo: string[] = [];
-  for (const id of roomIds.slice(0, PREVIEW_BATCH)) {
-    if (st.preview[id] !== undefined || previewLoading.has(id)) continue;
-    const loaded = useMessages.getState().rooms[id];
-    const newest = loaded?.loaded && !loaded.hasMoreAfter ? [...loaded.items].reverse().find((c) => c.status === 'sent')?.msg : undefined;
-    if (newest) {
-      useDms.getState().setPreview(id, newest);
-      continue;
-    }
-    if (!useRooms.getState().lastMessage[id]) {
-      useDms.getState().setPreview(id, null);
-      continue;
-    }
-    todo.push(id);
+export async function refreshDmPreview(roomId: string): Promise<void> {
+  if (useDms.getState().preview[roomId] !== undefined || previewLoading.has(roomId)) return;
+  const loaded = useMessages.getState().rooms[roomId];
+  if (loaded?.loaded && !loaded.hasMoreAfter) {
+    const newest = [...loaded.items].reverse().find((c) => c.status === 'sent')?.msg;
+    useDms.getState().setPreview(roomId, newest ?? null);
+    return;
   }
-  const worker = async (): Promise<void> => {
-    for (let id = todo.shift(); id; id = todo.shift()) {
-      previewLoading.add(id);
-      try {
-        const res = await api.messages.list(id, { limit: 1 });
-        // A live message may have landed meanwhile: onMessage keeps the newer one.
-        const m = res.messages[0];
-        if (useDms.getState().preview[id] === undefined) useDms.getState().setPreview(id, m ?? null);
-      } catch (e) {
-        log.warn('dm preview failed', id, e);
-      } finally {
-        previewLoading.delete(id);
-      }
-    }
-  };
-  await Promise.all([worker(), worker(), worker(), worker()]);
+  previewLoading.add(roomId);
+  try {
+    const res = await api.messages.list(roomId, { limit: 1 });
+    // A live message may have landed meanwhile: it is the newer preview then.
+    if (useDms.getState().preview[roomId] === undefined) useDms.getState().setPreview(roomId, res.messages[0] ?? null);
+  } catch (e) {
+    log.warn('dm preview failed', roomId, e);
+  } finally {
+    previewLoading.delete(roomId);
+  }
 }
 
 export function resetDmCaches(): void {

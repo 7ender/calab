@@ -4,9 +4,11 @@ import { useRef, type ReactNode, type TouchEvent } from 'react';
 import { IconButton } from '../../components/ui';
 import { t } from '../../i18n';
 import { useSession } from '../../stores/session';
+import { HOME } from '../../stores/dms';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
+import { DmSidebar } from '../dm/DmSidebar';
 import { BottomIsland } from './BottomIsland';
 import { MembersPanel } from './MembersPanel';
 import { MobileVoiceStrip } from './MobileVoiceStrip';
@@ -19,7 +21,8 @@ const SWIPE_PX = 56;
 const EDGE_PX = 28;
 
 /**
- * Phone layout of the web client (ADR-0021, stage A; ≤ 768 px, lib/mobile.ts):
+ * Phone layout of the web client (ADR-0021, stage A; ≤ 768 px, lib/mobile.ts). `workspaceId` may be
+ * HOME («Личные», ADR-0020): the drawer holds the DM list, a DM has no members drawer.
  *  - one column: the room (its header is the top bar, with ☰) full screen, above the keyboard
  *    (the shell is `--app-height` = the visual viewport tall, lib/mobile.ts);
  *  - the rail + room column + the desktop bottom island (full voice panel, self panel) are a
@@ -73,14 +76,14 @@ export function MobileShell({
       {strip ? <MobileVoiceStrip /> : null}
 
       {ready && workspaceId ? <NavDrawer workspaceId={workspaceId} open={drawer} onOpenChange={setDrawer} /> : null}
-      {chat && workspaceId ? <MembersDrawer workspaceId={workspaceId} open={members} onOpenChange={setMembers} /> : null}
+      {chat && workspaceId && workspaceId !== HOME ? <MembersDrawer workspaceId={workspaceId} open={members} onOpenChange={setMembers} /> : null}
     </div>
   );
 }
 
 /** Top bar without a room (connecting, welcome, empty workspace): ☰ + the workspace name. */
 function MobileTopBar({ workspaceId }: { workspaceId: string | null }): ReactNode {
-  const name = useWorkspaces((s) => (workspaceId ? s.byId[workspaceId]?.ws.name : undefined));
+  const name = useWorkspaces((s) => (workspaceId === HOME ? t('dm.home') : workspaceId ? s.byId[workspaceId]?.ws.name : undefined));
   return (
     <header className="mat-toolbar flex h-12 shrink-0 items-center gap-2 border-b border-line px-2">
       {workspaceId ? <NavButton /> : <span className="w-2" />}
@@ -127,7 +130,7 @@ function NavDrawer({ workspaceId, open, onOpenChange }: { workspaceId: string; o
           <div className="relative flex min-h-0 flex-1">
             <WorkspaceRail />
             <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line">
-              <Sidebar workspaceId={workspaceId} />
+              {workspaceId === HOME ? <DmSidebar /> : <Sidebar workspaceId={workspaceId} />}
             </div>
             <BottomIsland />
           </div>

@@ -5,6 +5,8 @@ vi.mock('../stores/session', () => ({ useSession: { getState: () => session } })
 const openRoom = vi.hoisted(() => vi.fn());
 vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => undefined, openRoom }) } }));
 vi.mock('../features/people/roomLink', () => ({ openRoomLink: () => undefined }));
+const checkDmLink = vi.hoisted(() => vi.fn());
+vi.mock('./dms', () => ({ checkDmLink }));
 
 const { INVITE_EXAMPLE_CODE, handleDeepLink, inviteUrl, joinPlaceholder, parseDmLink, parseInviteCode, parseRoomInviteCode, roomInviteUrl } = await import('./links');
 
@@ -17,9 +19,11 @@ describe('DM links (ADR-0020)', () => {
     expect(parseDmLink('calab://dm/abcd1234')).toBeNull();
     expect(parseDmLink(`https://app.calab.ru/r/${ID}`)).toBeNull();
   });
-  it('opens the DM in «Личные»', () => {
+  it('opens the DM in «Личные»', async () => {
     handleDeepLink(`calab://dm/${ID}`);
     expect(openRoom).toHaveBeenCalledWith('@me', ID);
+    // Someone else's id: a clear error once signed in (services/dms.ts checkDmLink).
+    await vi.waitFor(() => expect(checkDmLink).toHaveBeenCalledWith(ID));
   });
 });
 

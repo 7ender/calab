@@ -124,13 +124,21 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
   const presenceKey = status !== undefined ? PRESENCE_KEY[status] : undefined;
   const custom = [user?.statusEmoji, user?.statusText].filter(Boolean).join(' ');
   const sub = [t(presenceKey ?? 'members.offline'), custom].filter(Boolean).join(' · ');
+  // Phone layout (ADR-0021): the top bar — ☰ (DM list drawer) first, 40 px touch targets, pins
+  // in the pinned bar.
+  const mobile = useMobile();
+  const touch = mobile ? 'size-10 rounded-full' : undefined;
   return (
-    <header className="mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2" data-testid="dm-header">
+    <header
+      className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2', mobile && 'gap-1.5 pl-1 pr-1')}
+      data-testid="dm-header"
+    >
+      {mobile ? <NavButton /> : null}
       <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence className="[&>span:last-child]:border-[var(--color-bg)]" />
-      <h1 className="min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold" title={name}>
+      <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', mobile && 'max-w-none shrink')} title={name}>
         {name}
       </h1>
-      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-body" aria-live="polite">
+      <span className={cx('flex min-w-0 flex-1 items-center gap-1.5 text-body', mobile && 'hidden')} aria-live="polite">
         <span className="text-faint" aria-hidden>
           •
         </span>
@@ -145,12 +153,12 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
           </span>
         )}
       </span>
-      <div className="no-drag flex shrink-0 items-center gap-0.5">
-        <IconButton label={t('dm.searchIn')} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
+      <div className={cx('no-drag flex shrink-0 items-center gap-0.5', mobile && 'ml-auto')}>
+        <IconButton label={t('dm.searchIn')} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
           <Search className="size-[18px]" />
         </IconButton>
-        <PinsButton workspaceId="" roomId={room.id} canManage />
-        <NotifyButton roomId={room.id} />
+        {mobile ? null : <PinsButton workspaceId="" roomId={room.id} canManage />}
+        <NotifyButton roomId={room.id} className={touch} />
       </div>
     </header>
   );

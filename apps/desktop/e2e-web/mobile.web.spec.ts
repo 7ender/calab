@@ -225,6 +225,32 @@ test('phone: dialogs and menus are bottom sheets', async ({ page }) => {
   await shot(page, 'mobile-sheet');
 });
 
+test('phone: «Личные» — the DM list in the drawer, the DM full screen (ADR-0020)', async ({ page }) => {
+  await signIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('rail-home').getByRole('button').tap();
+  // The drawer stays open on the DM list (like switching a workspace), the previews come with READY.
+  const list = nav.getByTestId('dm-list');
+  await expect(list).toBeVisible();
+  const boris = list.getByRole('button', { name: /Борис Петров/ });
+  await expect(boris).toContainText('Закрепил, чтобы не потерялся');
+  await expectNoHorizontalScroll(page, 'dm drawer');
+  await expectAccessible(page, 'dm drawer');
+  await shot(page, 'mobile-dm-drawer');
+  await boris.tap();
+  await expect(nav).toHaveCount(0);
+  const header = page.getByTestId('dm-header');
+  await expect(header).toContainText('Борис Петров');
+  // ☰ in the DM header brings the DM list back; no members drawer in a DM.
+  await expect(header.getByRole('button', { name: 'Комнаты и пространства' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Написать @Борис Петров' })).toBeVisible();
+  await expectNoHorizontalScroll(page, 'dm chat');
+  await shot(page, 'mobile-dm-chat');
+  await header.getByRole('button', { name: 'Комнаты и пространства' }).tap();
+  await expect(page.getByTestId('mobile-nav').getByTestId('dm-list')).toBeVisible();
+});
+
 test('phone: onboarding and the join card fit the screen', async ({ page }) => {
   // Join card (docs/09 #53) signed out.
   await page.goto(`${BASE}/join/calaba-team-2026?visual-test`);

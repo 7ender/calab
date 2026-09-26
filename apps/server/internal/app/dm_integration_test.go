@@ -100,6 +100,9 @@ func TestDirectMessages(t *testing.T) {
 	carol.must(404, "PUT", "/api/messages/"+m.GetId()+"/reactions/👍", nil, nil)
 	carol.must(404, "PUT", "/api/rooms/"+rid+"/read", &v1.UpdateReadStateRequest{MessageId: m.GetId()}, nil)
 	carol.must(404, "GET", "/api/rooms/"+rid+"/pins", nil, nil)
+	carol.must(404, "GET", "/api/rooms/"+rid+"/messages?q=hi", nil, nil)
+	carol.must(404, "PUT", "/api/rooms/"+rid+"/notifications", &v1.UpdateRoomNotificationSettingsRequest{Level: v1.NotificationLevel_NOTIFICATION_LEVEL_NONE}, nil)
+	carol.must(404, "PUT", "/api/messages/"+m.GetId()+"/pin", nil, nil)
 
 	// Reactions and pins (both participants may pin; no moderation of the other's messages).
 	bob.must(204, "PUT", "/api/messages/"+m.GetId()+"/reactions/👍", nil, nil)
@@ -132,6 +135,10 @@ func TestDirectMessages(t *testing.T) {
 	if got == nil || got.GetPeer().GetId() != o.id || got.GetReadState().GetUnreadCount() != 1 ||
 		got.GetReadState().GetMentionCount() != 1 || got.GetLastMessageAt() == nil || got.GetRoom().GetLastMessageId() != m.GetId() {
 		t.Fatalf("READY dm: %v", got)
+	}
+	// The list preview comes with the summary (no history request per DM).
+	if lm := got.GetLastMessage(); lm.GetId() != m.GetId() || lm.GetAuthorId() != o.id || lm.GetContent() != "привет, Боб" || lm.GetCreatedAt() == nil {
+		t.Fatalf("READY dm last_message: %v", lm)
 	}
 	inRS := false
 	for _, rs := range ready.GetReadStates() {
@@ -178,6 +185,17 @@ func TestDirectMessages(t *testing.T) {
 	}
 	if r, _ := get(t, carol, "/api/files/"+f.GetId(), nil); r.StatusCode != 404 {
 		t.Fatalf("third user download: %d", r.StatusCode)
+	}
+	// Preview of an attachment-only message; a long text is cut to 200 characters.
+	var dl2 v1.ListDmsResponse
+	bob.must(200, "GET", "/api/dms", nil, &dl2)
+	if lm := dl2.GetDms()[0].GetLastMessage(); lm.GetId() != cm.GetMessage().GetId() || lm.GetContent() != "" || lm.GetAttachmentCount() != 1 {
+		t.Fatalf("attachment-only last_message: %v", lm)
+	}
+	long := send(t, bob, rid, strings.Repeat("я", 250), "dm-long")
+	bob.must(200, "GET", "/api/dms", nil, &dl2)
+	if lm := dl2.GetDms()[0].GetLastMessage(); lm.GetId() != long.GetId() || lm.GetContent() != strings.Repeat("я", 200) || lm.GetAuthorId() != bob.id {
+		t.Fatalf("long last_message: %v", lm)
 	}
 	// A workspace upload cannot be attached in a DM, a DM upload not in a workspace room.
 	_, wf, _ := upload(t, o, "/api/workspaces/"+wid+"/files", "w.png", pngBytes(4, 4))

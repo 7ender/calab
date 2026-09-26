@@ -57,9 +57,10 @@ export function AppShell(): ReactNode {
   if (mobile) {
     // Phone layout (ADR-0021): one column — the chat full screen, the rail + rooms and the members
     // list in drawers, the voice strip at the bottom.
-    const ws = hasWs && wsId ? wsId : null;
+    // «Личные» (ADR-0020): the DM list in the drawer, the open DM full screen.
+    const ws = home ? HOME : hasWs && wsId ? wsId : null;
     return (
-      <MobileShell workspaceId={ws} roomId={ws ? roomId : undefined} showReconnect={showReconnect}>
+      <MobileShell workspaceId={ws} roomId={home ? dmId : ws ? roomId : undefined} showReconnect={showReconnect}>
         {!ready ? (
           <div className="grid flex-1 place-items-center">
             <div className="flex flex-col items-center gap-3 text-body text-muted">
@@ -67,6 +68,12 @@ export function AppShell(): ReactNode {
               {t('gateway.connecting')}
             </div>
           </div>
+        ) : home ? (
+          dmId ? (
+            <ChatPane key={dmId} workspaceId="" roomId={dmId} />
+          ) : (
+            <DmPick />
+          )
         ) : ws ? (
           roomId ? (
             <ChatPane key={roomId} workspaceId={ws} roomId={roomId} />

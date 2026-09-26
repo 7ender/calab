@@ -36,12 +36,17 @@ func TestSummary(t *testing.T) {
 	if rs := s.GetReadState(); rs.GetUnreadCount() != 3 || rs.GetMentionCount() != 3 || rs.GetLastReadMessageId() != "" {
 		t.Fatalf("read state: %v", rs)
 	}
-	if s.GetLastMessageAt() != nil || s.GetRoom().GetLastMessageId() != "" {
+	if s.GetLastMessageAt() != nil || s.GetRoom().GetLastMessageId() != "" || s.GetLastMessage() != nil {
 		t.Fatalf("no messages yet, got last message %v", s)
 	}
 	s = Summary(sqlc.ListDMsRow{RoomID: room, User: sqlc.User{ID: peer}, HasMessages: true, LastMessageID: last,
-		LastMessageAt: now, LastReadMessageID: &last})
+		LastMessageAt: now, LastReadMessageID: &last, LastAuthorID: peer, LastPreview: "hi", LastAttachments: 2})
 	if s.GetRoom().GetLastMessageId() != last.String() || s.GetLastMessageAt() == nil || s.GetReadState().GetLastReadMessageId() != last.String() {
 		t.Fatalf("with messages: %v", s)
+	}
+	// The list preview comes with the summary (no history request per DM).
+	if lm := s.GetLastMessage(); lm.GetId() != last.String() || lm.GetAuthorId() != peer.String() || lm.GetContent() != "hi" ||
+		lm.GetAttachmentCount() != 2 || !lm.GetCreatedAt().AsTime().Equal(now) {
+		t.Fatalf("last message: %v", lm)
 	}
 }

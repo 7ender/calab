@@ -80,4 +80,9 @@ test('create a DM, write, the peer gets it live and answers', async ({ browser, 
   await vera.goto(`/dm/${roomId}`);
   await expect(vera.getByTestId('dm-header')).toContainText('Борис Петров', { timeout: 20_000 });
   await expect(vera).toHaveURL(/\/$/);
+
+  // Someone else's (or an unknown) DM link: a clear error, not an empty «Личные».
+  await vera.goto('/dm/00000000-0000-7000-8000-00000000dead');
+  await expect(vera.getByText('Переписка по ссылке недоступна')).toBeVisible({ timeout: 20_000 });
+  await expect(vera.getByTestId('dm-pick')).toBeVisible();
 });

@@ -524,11 +524,24 @@ class MockImpl {
     if (!room || !peer) return null;
     const out = this.roomOut(room);
     const lastRead = this.state.readStates.get(userId)?.get(roomId) ?? '';
+    const last = this.state.messages.get(roomId)?.at(-1);
     return create(DmSummarySchema, {
       room: out,
       peer,
       readState: { roomId, lastReadMessageId: lastRead, ...this.readCounts(roomId, userId, lastRead) },
       ...(out.lastMessageAt ? { lastMessageAt: out.lastMessageAt } : {}),
+      // The list preview (server: the first 200 characters of the newest live message).
+      ...(last
+        ? {
+            lastMessage: {
+              id: last.id,
+              authorId: last.authorId,
+              content: Array.from(last.content).slice(0, 200).join(''),
+              attachmentCount: last.attachments.length,
+              ...(last.createdAt ? { createdAt: last.createdAt } : {}),
+            },
+          }
+        : {}),
     });
   }
 

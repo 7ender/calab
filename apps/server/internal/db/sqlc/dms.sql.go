@@ -188,6 +188,9 @@ SELECT r.id AS room_id, r.created_at AS room_created_at,
        (lm.id IS NOT NULL)::boolean AS has_messages,
        coalesce(lm.id, r.id)::uuid AS last_message_id,
        coalesce(lm.created_at, r.created_at)::timestamptz AS last_message_at,
+       coalesce(lm.author_id, me.user_id)::uuid AS last_author_id,
+       coalesce(lm.preview, '')::text AS last_preview,
+       coalesce(lm.attachments, 0)::integer AS last_attachments,
        (SELECT count(*) FROM (
            SELECT 1 FROM messages m
            WHERE m.room_id = r.id AND m.deleted_at IS NULL AND m.author_id <> me.user_id
@@ -199,7 +202,9 @@ JOIN dm_members p ON p.room_id = me.room_id AND p.user_id <> me.user_id
 JOIN users u ON u.id = p.user_id
 LEFT JOIN read_states rs ON rs.user_id = me.user_id AND rs.room_id = r.id
 LEFT JOIN LATERAL (
-    SELECT m.id, m.created_at FROM messages m
+    SELECT m.id, m.created_at, m.author_id, left(m.content, 200) AS preview,
+           (SELECT count(*) FROM message_attachments ma WHERE ma.message_id = m.id) AS attachments
+    FROM messages m
     WHERE m.room_id = r.id AND m.deleted_at IS NULL
     ORDER BY m.id DESC
     LIMIT 1
@@ -224,6 +229,9 @@ type ListDMsRow struct {
 	HasMessages       bool
 	LastMessageID     uuid.UUID
 	LastMessageAt     time.Time
+	LastAuthorID      uuid.UUID
+	LastPreview       string
+	LastAttachments   int32
 	UnreadCount       int32
 }
 
@@ -231,7 +239,9 @@ type ListDMsRow struct {
 // message and the unread count (others' live messages after the marker, capped at 999; a
 // DM never read counts from its start). Every lookup is an index probe per DM
 // (dm_members_user_id_idx, messages_live_room_id_idx). room_id NULL = all DMs. Without
-// messages (has_messages false) last_message_* are the room's id and creation time.
+// messages (has_messages false) last_message_* are the room's id and creation time. The
+// newest message's author, first 200 characters and attachment count are the list preview
+// (DmSummary.last_message): the client needs no history request per DM.
 func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow, error) {
 	rows, err := q.db.Query(ctx, listDMs, arg.UserID, arg.RoomID, arg.Lim)
 	if err != nil {
@@ -262,6 +272,9 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 			&i.HasMessages,
 			&i.LastMessageID,
 			&i.LastMessageAt,
+			&i.LastAuthorID,
+			&i.LastPreview,
+			&i.LastAttachments,
 			&i.UnreadCount,
 		); err != nil {
 			return nil, err

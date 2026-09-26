@@ -1,12 +1,12 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { MessageCirclePlus, Search, Plus } from 'lucide-react';
-import { memo, useEffect, useMemo, type ReactNode } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmtTime } from '../../lib/format';
-import { loadDmPreviews, openDm } from '../../services/dms';
+import { openDm } from '../../services/dms';
 import { shareOrigin } from '../../services/links';
 import { HOME, sortedDms, useDms, type DmEntry } from '../../stores/dms';
 import { isUnread, useRooms } from '../../stores/rooms';
@@ -26,10 +26,6 @@ export function DmSidebar(): ReactNode {
   const byRoom = useDms((s) => s.byRoom);
   const list = useMemo(() => sortedDms(byRoom), [byRoom]);
   const open = useUi((s) => s.openDialog);
-  const ids = useMemo(() => list.map((e) => e.roomId), [list]);
-  useEffect(() => {
-    void loadDmPreviews(ids);
-  }, [ids]);
 
   return (
     <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>

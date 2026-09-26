@@ -542,6 +542,10 @@ describe('direct messages (ADR-0020)', () => {
     expect(boris?.room?.workspaceId).toBe('');
     expect(boris?.readState?.unreadCount).toBe(2);
     expect(boris?.readState?.mentionCount).toBe(2);
+    // The list preview comes with the summary (no history request per DM).
+    expect(boris?.lastMessage?.content).toBe('Закрепил, чтобы не потерялся 🙏');
+    expect(boris?.lastMessage?.authorId).toBe(IDS.users.boris);
+    expect(boris?.lastMessage?.id).toBe(boris?.room?.lastMessageId);
     expect(ready.readStates.some((r) => r.roomId === IDS.dms.boris)).toBe(true);
     const list = (await (await call(token, 'GET', '/api/dms')).json()) as { dms: { room: { id: string } }[] };
     expect(list.dms.map((d) => d.room.id)).toEqual([IDS.dms.boris, IDS.dms.vera, IDS.dms.grigory]);
