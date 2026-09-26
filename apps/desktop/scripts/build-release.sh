@@ -8,7 +8,7 @@
 #                       SRC_REF=WORKTREE builds the working tree as is (local checks only, never publish)
 #   VERSION=1.2.3       override apps/desktop/package.json version (applied to the export only)
 #   UPDATE_URL=…        electron-updater generic feed baked into app-update.yml / latest*.yml
-#                       (default https://app.calab.ru/download/ — docs/10-branding.md)
+#                       (default https://releases.calab.ru/ — docs/10-branding.md; same as release.yml)
 #   UPDATE_FEED=…       the pinned feed baked into the app bundle as MAIN_VITE_UPDATE_FEED — the only host the
 #                       app auto-installs updates from (default https://releases.calab.ru/, https only; see
 #                       src/shared/updateFeed.ts). MAIN_VITE_UPDATES_SIGNED=1 (macOS auto-install) is set only
@@ -43,7 +43,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 OUT="${OUT_DIR:-$ROOT/apps/desktop/dist-release}"
 SRC_REF="${SRC_REF:-HEAD}"
-UPDATE_URL="${UPDATE_URL:-https://app.calab.ru/download/}"
+UPDATE_URL="${UPDATE_URL:-https://releases.calab.ru/}"
 UPDATE_FEED="${UPDATE_FEED:-https://releases.calab.ru/}"
 HOMEPAGE="${HOMEPAGE:-https://calab.ru}"
 WORK="${WORK_DIR:-${TMPDIR:-/tmp}/calaba-release}"
@@ -146,7 +146,7 @@ build_mac() {
       # SIGN_TIMESTAMP=1 keeps the secure timestamp.
       [[ -n "${SIGN_TIMESTAMP:-}" ]] || mac_args+=(-c.mac.timestamp=none)
     fi
-    log "macOS: SIGNED with cert/developerID_full.p12 (no notarization)"
+    log "macOS: SIGNED with Developer ID$([[ -n "${NOTARIZE:-}" ]] && echo " + notarization" || echo " (no notarization)")"
   fi
   log "macOS: electron-builder ${mac_args[*]} (uiohook compiled from source per arch)"
   (cd "$SRC/apps/desktop" && env "${sign_env[@]}" pnpm exec electron-builder "${mac_args[@]}" \
