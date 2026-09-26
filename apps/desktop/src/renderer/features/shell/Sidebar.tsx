@@ -693,7 +693,7 @@ function VoiceRoomRow({
               <MentionBadge n={mentions} />
               {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
               {/* Card: the timer stays on the name line (green, Discord) and gives way to the actions on hover only. */}
-              <span className={cx('flex items-center gap-1', card ? 'group-hover/row:hidden group-focus-within/row:hidden' : admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
+              <span className={cx('flex items-center gap-2', card ? 'group-hover/row:hidden group-focus-within/row:hidden' : admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
                 {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom && 'text-[var(--color-green-text)]') : undefined} /> : null}
                 {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
               </span>
@@ -751,15 +751,19 @@ function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
   const full = n >= max;
   return (
     <span
-      className="flex h-5 items-stretch overflow-hidden rounded-full bg-[var(--color-fill)] text-caption font-medium tabular-nums leading-[20px]"
+      // Compact, like Discord's own (owner comparison): 18 px tall, 11 px tabular-nums, 6 px
+      // segment padding — «02 ⁄ 04» lands ~46–50 px wide at 1x.
+      className="flex h-[18px] items-center overflow-hidden rounded-full bg-[var(--color-fill)] text-micro font-medium tabular-nums"
       aria-label={t('shell.userLimit', { n, max })}
       role="img"
       data-testid="room-limit"
     >
-      <span className={cx('pl-2 pr-1.5', full ? 'text-danger-text' : 'text-fg')}>{pad2(n)}</span>
-      {/* clip-path skews the segment's left edge ~15° (5 px over the 20 px pill height), rather
-          than a separate divider element, so the angled boundary always matches the pill height. */}
-      <span className="bg-[var(--color-fill-hover)] pl-2.5 pr-2 text-muted" style={{ clipPath: 'polygon(5px 0, 100% 0, 100% 100%, 0 100%)' }}>
+      <span className={cx('flex h-full items-center px-1.5', full ? 'text-danger-text' : 'text-fg')}>{pad2(n)}</span>
+      {/* clip-path skews the segment's left edge ~15° (6 px over the 18 px pill height), rather
+          than a separate divider element, so the angled boundary always matches the pill height.
+          text-fg, not text-muted: muted grey on --color-fill-hover fails 4.5:1 (axe), same reason
+          the no-limit pill above uses text-fg on the plainer --color-fill. */}
+      <span className="flex h-full items-center bg-[var(--color-fill-hover)] px-1.5 text-fg" style={{ clipPath: 'polygon(6px 0, 100% 0, 100% 100%, 0 100%)' }}>
         {pad2(max)}
       </span>
     </span>
