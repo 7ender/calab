@@ -155,6 +155,9 @@ export const enShell: DictShape<typeof ruShell> = {
   'streamView.viewers': { one: '{n} watching', other: '{n} watching' },
   'streamView.stop': 'Stop sharing',
   'streamView.exitFullscreen': 'Exit full screen',
+  'streamView.self': 'You’re streaming',
+  'streamView.leaveFullscreen': 'Exit',
+  'streamView.leaveFullscreenHint': 'Exit full screen (Esc)',
   // voice states (#15)
   'voiceUi.serverMuted': 'Muted by a moderator',
   'voiceUi.serverUnmuted': 'A moderator allowed you to speak — unmute your mic',

@@ -547,6 +547,25 @@ export function createWebPlatform(): Platform {
         return Promise.resolve();
       },
     },
+    // The Fullscreen API on the whole page (the stream stage puts its own video container in full
+    // screen instead: features/voice/fullscreen.ts).
+    window: {
+      setFullScreen: async (on) => {
+        try {
+          if (on && !document.fullscreenElement) await document.documentElement.requestFullscreen();
+          if (!on && document.fullscreenElement) await document.exitFullscreen();
+        } catch {
+          // no user activation / not allowed: stays as it is
+        }
+        return document.fullscreenElement !== null;
+      },
+      isFullScreen: () => Promise.resolve(document.fullscreenElement !== null),
+      onFullScreenChange: (cb) => {
+        const listener = (): void => cb(document.fullscreenElement !== null);
+        document.addEventListener('fullscreenchange', listener);
+        return () => document.removeEventListener('fullscreenchange', listener);
+      },
+    },
   };
 }
 

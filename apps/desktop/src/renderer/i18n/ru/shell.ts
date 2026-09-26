@@ -153,6 +153,10 @@ export const ruShell = {
   'streamView.viewers': { one: '{n} смотрит', few: '{n} смотрят', many: '{n} смотрят', other: '{n} смотрят' },
   'streamView.stop': 'Остановить стрим',
   'streamView.exitFullscreen': 'Выйти из полноэкранного режима',
+  // own stream and real full screen (#18)
+  'streamView.self': 'Вы стримите',
+  'streamView.leaveFullscreen': 'Свернуть',
+  'streamView.leaveFullscreenHint': 'Выйти из полноэкранного режима (Esc)',
   // voice states (#15)
   'voiceUi.serverMuted': 'Микрофон выключен модератором',
   'voiceUi.serverUnmuted': 'Модератор разрешил вам говорить — включите микрофон',

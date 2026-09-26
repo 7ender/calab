@@ -155,6 +155,9 @@ export const esShell: DictShape<typeof enShell> = {
   'streamView.viewers': { one: '{n} viendo', many: '{n} viendo', other: '{n} viendo' },
   'streamView.stop': 'Dejar de compartir',
   'streamView.exitFullscreen': 'Salir de pantalla completa',
+  'streamView.self': 'Estás transmitiendo',
+  'streamView.leaveFullscreen': 'Salir',
+  'streamView.leaveFullscreenHint': 'Salir de pantalla completa (Esc)',
   // voice states (#15)
   'voiceUi.serverMuted': 'Silenciado por un moderador',
   'voiceUi.serverUnmuted': 'Un moderador te permitió hablar — activa tu micrófono',

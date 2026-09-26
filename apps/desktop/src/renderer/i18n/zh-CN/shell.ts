@@ -155,6 +155,9 @@ export const zhShell: DictShape<typeof enShell> = {
   'streamView.viewers': { other: '{n}人观看' },
   'streamView.stop': '停止共享',
   'streamView.exitFullscreen': '退出全屏',
+  'streamView.self': '你正在直播',
+  'streamView.leaveFullscreen': '退出全屏',
+  'streamView.leaveFullscreenHint': '退出全屏（Esc）',
   // voice states (#15)
   'voiceUi.serverMuted': '已被版主静音',
   'voiceUi.serverUnmuted': '版主已允许你发言——请取消麦克风静音',

@@ -66,6 +66,15 @@ export const IPC = {
   // ---- media ----
   captureListSources: 'capture:list-sources',
   captureSelectSource: 'capture:select-source',
+  /**
+   * The sender's own BrowserWindow in native full screen (docs/09 #18: the stream's «На весь
+   * экран»; macOS: its own Space on the window's display). Leaving restores the bounds saved on
+   * entry. The main window and a stream pop-out each call it for themselves.
+   */
+  windowSetFullScreen: 'window:setFullScreen',
+  windowIsFullScreen: 'window:isFullScreen',
+  /** main → renderer: the window entered / left full screen (also by the OS: ⌃⌘F, green button). */
+  windowFullScreenChanged: 'window:fullScreenChanged',
   pttSetBinding: 'ptt:set-binding',
   pttCaptureNext: 'ptt:capture-next',
   /** The binder closed: disarm a pending capture (review H2). */
@@ -235,7 +244,7 @@ export interface CaptureSource {
   id: string;
   name: string;
   kind: CaptureSourceKind;
-  /** PNG data URL, 320×180 max. Empty when the OS denied screen recording. */
+  /** PNG data URL at the requested thumbnail size (shared/captureThumb). Empty when the OS denied screen recording. */
   thumbnail: string;
   displayId: string;
   /** PNG data URL of the owning app's icon (windows only; empty when unknown). */

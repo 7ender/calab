@@ -1,10 +1,11 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronDown, Maximize2, MessageSquare, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX, X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { Badge, IconButton, Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { platform } from '../../platform';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
 import { useMessages } from '../../stores/messages';
@@ -12,10 +13,12 @@ import { useVoice, type RemoteStream, type StreamQuality } from '../../stores/vo
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
 import { CameraGrid, CameraPip, CameraStripTile, useAnyCamera, useStripCameras } from './CameraTiles';
-import { PIP_SHADOW, WELCOME_ROW, pipSize, qualityOptions } from './streamFormat';
+import { FullscreenState, domHost, isExitKey, mainFullscreen, useIdle, useStreamFullscreen, windowHost } from './fullscreen';
+import { PIP_SHADOW, WELCOME_ROW, layerLabel, pipSize, presetText, qualityOptions } from './streamFormat';
 
 /**
- * <video> bound to a remote stream track. Its on-screen size drives adaptive stream (layer choice).
+ * <video> bound to a stream track: a remote one (its on-screen size drives adaptive stream, the
+ * layer choice) or my own local one (docs/09 #18a: no subscription, the captured track itself).
  * Until the first frame arrives it shows the streamer's avatar on the video background instead
  * of a black box (review 2: black strip previews next to a grey stage).
  */
@@ -26,7 +29,7 @@ function StreamVideo({ stream, wsId, avatarSize, className }: { stream: RemoteSt
   const trackSid = stream.trackSid;
   useEffect(() => {
     const el = ref.current;
-    const track = voice.remoteVideo(trackSid);
+    const track = voice.streamVideo(trackSid);
     if (!el || !track) return;
     const onFrame = (): void => setHasFrame(el.videoWidth > 0);
     el.addEventListener('loadeddata', onFrame);
@@ -57,9 +60,15 @@ function StreamPlaceholder({ stream, wsId, size }: { stream: RemoteStream; wsId:
   );
 }
 
-/** Pop-out window: same-origin child window, React portal; video shows the same MediaStreamTrack. */
-function Popout({ trackSid, title, onClose }: { trackSid: string; title: string; onClose: () => void }): ReactNode {
+/**
+ * Pop-out window: same-origin child window, React portal; video shows the same MediaStreamTrack.
+ * It has the full-screen layout's overlay and its own «На весь экран» (docs/09 #18): the child
+ * window's preload bridge puts *that* window in full screen (main answers the sender's window).
+ */
+function Popout({ stream, wsId, title, onClose }: { stream: RemoteStream; wsId: string | null; title: string; onClose: () => void }): ReactNode {
+  const trackSid = stream.trackSid;
   const [container, setContainer] = useState<HTMLElement | null>(null);
+  const [child, setChild] = useState<Window | null>(null);
   const epoch = useVoice((s) => s.trackEpoch);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -82,6 +91,7 @@ function Popout({ trackSid, title, onClose }: { trackSid: string; title: string;
     // The portal target lives in a window created here, so state must be set from the effect.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setContainer(root);
+    setChild(w);
     const timer = window.setInterval(() => {
       if (w.closed) onClose();
     }, 500);
@@ -96,17 +106,143 @@ function Popout({ trackSid, title, onClose }: { trackSid: string; title: string;
   // the pop-out just renders the same track.
   useEffect(() => {
     const el = videoRef.current;
-    const track = voice.remoteVideo(trackSid);
+    const track = voice.streamVideo(trackSid);
     if (!el || !track) return;
     el.srcObject = new MediaStream([track.mediaStreamTrack]);
     void el.play().catch(() => undefined);
   }, [container, trackSid, epoch]);
 
-  if (!container) return null;
+  if (!container || !child) return null;
   return createPortal(
-    <video ref={videoRef} muted playsInline autoPlay style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }} />,
+    <PopoutView stream={stream} wsId={wsId} win={child}>
+      <video ref={videoRef} muted playsInline autoPlay className="size-full bg-[var(--color-video-bg)] object-contain" />
+    </PopoutView>,
     container,
   );
+}
+
+/** The pop-out's full-screen state, on the pop-out window's own bridge (or its Fullscreen API). */
+function PopoutView({ stream, wsId, win, children }: { stream: RemoteStream; wsId: string | null; win: Window; children: ReactNode }): ReactNode {
+  const [on, setOn] = useState(false);
+  const [fs] = useState(() => {
+    // The pop-out's own preload bridge (the child window gets it too); the DOM API otherwise.
+    const bridge = (win as Partial<Pick<Window, 'calaba'>>).calaba?.window;
+    return new FullscreenState(bridge ? windowHost(bridge) : domHost(win.document), setOn);
+  });
+  useEffect(() => () => fs.dispose(), [fs]);
+  const onToggle = useCallback(() => fs.toggle(), [fs]);
+  const containerRef = useCallback((el: HTMLDivElement | null) => fs.attach(el), [fs]);
+  return (
+    <FullscreenView stream={stream} wsId={wsId} win={win} fullscreen={on} onToggle={onToggle} containerRef={containerRef}>
+      {children}
+    </FullscreenView>
+  );
+}
+
+/**
+ * Video-only layout with a thin overlay (docs/09 #18b): streamer, quality / fps, sound and
+ * «Свернуть» on one bar at the top; the bar and the cursor hide after 2 s without movement. Esc
+ * and ⌃⌘F leave full screen. Used by the main window's full screen and by the pop-out.
+ */
+function FullscreenView({
+  stream,
+  wsId,
+  win,
+  fullscreen,
+  onToggle,
+  containerRef,
+  children,
+}: {
+  stream: RemoteStream;
+  wsId: string | null;
+  /** The window the view lives in (keys are listened to there: the pop-out is another window). */
+  win: Window;
+  fullscreen: boolean;
+  onToggle: () => void;
+  containerRef: (el: HTMLDivElement | null) => void;
+  children: ReactNode;
+}): ReactNode {
+  const { idle, poke } = useIdle(FULLSCREEN_IDLE_MS);
+  const name = useMemberName(wsId, stream.userId);
+  const quality = useStreamQualityText(stream);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      poke();
+      if (fullscreen && isExitKey(e)) {
+        e.preventDefault();
+        onToggle();
+      }
+    };
+    win.addEventListener('keydown', onKey);
+    return () => win.removeEventListener('keydown', onKey);
+  }, [win, fullscreen, poke, onToggle]);
+  const hidden = idle;
+  return (
+    <div
+      ref={containerRef}
+      data-testid="stream-fullscreen"
+      data-fullscreen={fullscreen ? 'true' : 'false'}
+      role="region"
+      aria-label={t('streamView.of', { name })}
+      onPointerMove={poke}
+      onPointerDown={poke}
+      // no-drag: over the title bar's drag region, clicks must reach the overlay (docs/09 #1).
+      className={cx('no-drag fixed inset-0 z-[var(--z-modal)] overflow-hidden bg-[var(--color-video-bg)]', hidden && 'cursor-none')}
+    >
+      {children}
+      <div
+        data-testid="stream-fullscreen-bar"
+        className={cx(
+          'absolute inset-x-0 top-0 flex h-11 items-center gap-2 bg-black/60 px-3 text-white transition-opacity duration-[var(--motion-fast)] focus-within:opacity-100',
+          hidden ? 'pointer-events-none opacity-0' : 'opacity-100',
+        )}
+      >
+        <span className="flex min-w-0 shrink">
+          <StreamerChip stream={stream} wsId={wsId} />
+        </span>
+        {quality ? <span className="shrink-0 text-[12px] font-medium text-white/80">{quality}</span> : null}
+        <span className="flex-1" />
+        {stream.local ? null : <VolumeControl stream={stream} />}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 text-[12px] font-medium text-white transition-colors duration-[var(--motion-fast)] hover:bg-white/25"
+          title={fullscreen ? t('streamView.leaveFullscreenHint') : undefined}
+        >
+          {fullscreen ? <Minimize className="size-3.5" aria-hidden /> : <Fullscreen className="size-3.5" aria-hidden />}
+          {fullscreen ? t('streamView.leaveFullscreen') : t('stream.fullscreen')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const FULLSCREEN_IDLE_MS = 2000;
+
+/** «1080p · 30 fps»: what is received (remote, from getStats) or what I send (my stream's preset). */
+function useStreamQualityText(stream: RemoteStream): string | null {
+  const watching = useVoice((s) => (stream.local ? null : s.stats?.watching));
+  const preset = useVoice((s) => (stream.local ? s.myStream?.preset : undefined));
+  if (stream.local) return preset === undefined ? null : presetText(preset);
+  if (!watching?.height) return null;
+  return watching.fps ? `${layerLabel(watching.height)} · ${Math.round(watching.fps)} fps` : layerLabel(watching.height);
+}
+
+/** The main window's full-screen stage: the window goes full screen (desktop) or the container (web). */
+function FullscreenStage({ stream, wsId }: { stream: RemoteStream; wsId: string | null }): ReactNode {
+  const fs = mainFs();
+  const onToggle = useCallback(() => fs.exit(), [fs]);
+  const containerRef = useCallback((el: HTMLDivElement | null) => fs.attach(el), [fs]);
+  return createPortal(
+    <FullscreenView stream={stream} wsId={wsId} win={window} fullscreen onToggle={onToggle} containerRef={containerRef}>
+      <StreamVideo stream={stream} wsId={wsId} avatarSize={96} className="size-full" />
+    </FullscreenView>,
+    document.body,
+  );
+}
+
+function mainFs(): FullscreenState {
+  return mainFullscreen(() => (platform.kind === 'web' ? domHost(document) : windowHost(platform.window)));
 }
 
 export interface Box {
@@ -164,7 +300,13 @@ function StreamerChip({ stream, wsId, size = 'md' }: { stream: RemoteStream; wsI
       <span className="min-w-0 truncate font-semibold" title={name}>
         {name}
       </span>
-      <LiveBadge />
+      {stream.local ? (
+        <span data-testid="stream-self-badge" className="flex">
+          <Badge tone="danger">{t('streamView.self')}</Badge>
+        </span>
+      ) : (
+        <LiveBadge />
+      )}
     </span>
   );
 }
@@ -260,6 +402,13 @@ function QualityMenu({ stream, onOpenChange }: { stream: RemoteStream; onOpenCha
   );
 }
 
+/** My stream's control bar: the preset I send («1080p · 15 fps»), as plain text. */
+function OwnQuality(): ReactNode {
+  const preset = useVoice((s) => s.myStream?.preset);
+  if (preset === undefined) return null;
+  return <span className="flex h-7 items-center px-2 text-[12px] font-medium text-white">{presetText(preset)}</span>;
+}
+
 /** Stream audio volume: the stream's own <audio> element (docs/02 echo rule 1 — no WebAudio). */
 function VolumeControl({ stream }: { stream: RemoteStream }): ReactNode {
   const volume = useVoice((s) => s.streamVolume[stream.userId] ?? 1);
@@ -293,20 +442,6 @@ function VolumeControl({ stream }: { stream: RemoteStream }): ReactNode {
   );
 }
 
-function useFullscreen(target: RefObject<HTMLElement | null>): [boolean, () => void] {
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    const sync = (): void => setOn(document.fullscreenElement !== null && document.fullscreenElement === target.current);
-    document.addEventListener('fullscreenchange', sync);
-    return () => document.removeEventListener('fullscreenchange', sync);
-  }, [target]);
-  const toggle = (): void => {
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
-    else void target.current?.requestFullscreen().catch(() => undefined);
-  };
-  return [on, toggle];
-}
-
 function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: string | null; current: boolean }): ReactNode {
   const name = useMemberName(wsId, stream.userId);
   return (
@@ -333,8 +468,6 @@ function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: st
 
 function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box; emptyFeed: boolean }): ReactNode {
   const stage = useVoice((s) => s.stage);
-  const frame = useRef<HTMLDivElement>(null);
-  const [fullscreen, toggleFullscreen] = useFullscreen(frame);
   const [menuOpen, setMenuOpen] = useState(false);
   const name = useMemberName(wsId, stream.userId);
   const cameras = useStripCameras(wsId);
@@ -349,7 +482,6 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
       style={{ top: box.top, bottom: emptyFeed ? `calc(var(--composer-height) + ${WELCOME_ROW}px)` : 'var(--composer-height)' }}
     >
       <div
-        ref={frame}
         className="mat-popover group relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-panel)]"
         // Inline, as in the PiP: the unlayered .mat-popover material overrides a bg utility.
         style={{ background: 'var(--color-video-bg)' }}
@@ -386,9 +518,16 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
             menuOpen ? 'opacity-100' : 'opacity-0',
           )}
         >
-          <QualityMenu stream={stream} onOpenChange={setMenuOpen} />
-          <span className="mx-0.5 h-4 w-px bg-white/25" aria-hidden />
-          <VolumeControl stream={stream} />
+          {/* My own stream: what I send (the preset), nothing to choose or to hear (docs/09 #18a). */}
+          {stream.local ? (
+            <OwnQuality />
+          ) : (
+            <>
+              <QualityMenu stream={stream} onOpenChange={setMenuOpen} />
+              <span className="mx-0.5 h-4 w-px bg-white/25" aria-hidden />
+              <VolumeControl stream={stream} />
+            </>
+          )}
           <span className="mx-0.5 h-4 w-px bg-white/25" aria-hidden />
           <IconButton size="sm" label={t('stream.collapse')} className={overlayBtn} onClick={() => voice.setStage('pip')}>
             <Minimize2 className="size-4" aria-hidden />
@@ -396,8 +535,8 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
           <IconButton size="sm" label={t('stream.popout')} className={overlayBtn} onClick={() => voice.setStage(stage === 'popout' ? 'expanded' : 'popout')}>
             <SquareArrowOutUpRight className="size-4" aria-hidden />
           </IconButton>
-          <IconButton size="sm" label={fullscreen ? t('streamView.exitFullscreen') : t('stream.fullscreen')} className={overlayBtn} onClick={toggleFullscreen}>
-            {fullscreen ? <Minimize className="size-4" aria-hidden /> : <Fullscreen className="size-4" aria-hidden />}
+          <IconButton size="sm" label={t('stream.fullscreen')} className={overlayBtn} onClick={() => mainFs().request()}>
+            <Fullscreen className="size-4" aria-hidden />
           </IconButton>
           <IconButton size="sm" label={t('stream.close')} className={overlayBtn} onClick={() => voice.watch(null)}>
             <X className="size-4" aria-hidden />
@@ -471,6 +610,11 @@ export function StreamArea(): ReactNode {
   });
   const anyCamera = useAnyCamera();
   const videoPip = useVoice((s) => s.videoPip);
+  const fullscreen = useStreamFullscreen((s) => s.on);
+  // The stream on full screen ended (or I stopped watching / left): leave full screen.
+  useEffect(() => {
+    if (fullscreen && !current) mainFs().exit();
+  }, [fullscreen, current]);
 
   let view: ReactNode = null;
   if (current)
@@ -488,7 +632,8 @@ export function StreamArea(): ReactNode {
     <>
       <div ref={anchor} aria-hidden className="h-0 shrink-0" />
       {view}
-      {current && stage === 'popout' ? <Popout trackSid={current.trackSid} title={`${name} — Calab`} onClose={() => voice.setStage('expanded')} /> : null}
+      {current && stage === 'popout' ? <Popout stream={current} wsId={wsId} title={`${name} — Calab`} onClose={() => voice.setStage('expanded')} /> : null}
+      {current && fullscreen ? <FullscreenStage stream={current} wsId={wsId} /> : null}
     </>
   );
 }
