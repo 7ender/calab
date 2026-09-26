@@ -61,7 +61,7 @@ export function Onboarding(): ReactNode {
     // Input Monitoring note), so the dots, the title and the Back/Continue buttons keep their
     // coordinates from step to step; shorter windows get the natural height (scrolls if needed).
     // m-auto (not place-items) keeps the top reachable when the content overflows.
-    <div className="mat-content drag flex h-full flex-col overflow-y-auto px-4 py-4">
+    <div className="mat-content drag flex h-full flex-col overflow-y-auto px-4 py-4 mobile:pb-[calc(var(--safe-bottom)+16px)] mobile:pt-[calc(var(--safe-top)+16px)]">
       <div className="no-drag m-auto flex w-full max-w-[520px] flex-col gap-5" data-testid={`onboarding-${step}`}>
         <ol className="flex h-2 items-center justify-center gap-2" aria-label={t('onb.progress', { n: i + 1, total: steps.length })}>
           {steps.map((s, n) => (
@@ -86,7 +86,7 @@ export function Onboarding(): ReactNode {
           onClick={finish}
           aria-hidden={step === 'done' || undefined}
           tabIndex={step === 'done' ? -1 : undefined}
-          className={cx('self-center rounded-[var(--radius-control)] px-2 py-1 text-caption text-muted hover:text-fg hover:underline', step === 'done' && 'invisible')}
+          className={cx('self-center rounded-[var(--radius-control)] px-2 py-1 text-caption mobile:min-h-10 mobile:px-3 text-muted hover:text-fg hover:underline', step === 'done' && 'invisible')}
         >
           {t('onb.skipAll')}
         </button>
@@ -125,13 +125,13 @@ function StepFrame({
           </div>
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center gap-2" data-onb-footer>
+      <div className="flex shrink-0 flex-wrap items-center gap-2" data-onb-footer>
         {back ? (
           <Button variant="ghost" size="lg" onClick={back}>
             {t('onb.back')}
           </Button>
         ) : null}
-        <div className="ml-auto flex gap-2">{actions}</div>
+        <div className="ml-auto flex flex-wrap justify-end gap-2">{actions}</div>
       </div>
     </section>
   );

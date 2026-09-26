@@ -1,0 +1,409 @@
+import { existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { expect, test, type Page } from '@playwright/test';
+import { startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
+
+/**
+ * Mobile web (ADR-0021) in Playwright's WebKit — the engine of iOS Safari — on iPhone
+ * descriptors (playwright.mobile.config.ts): the production web build (dist-web) served
+ * same-origin by the mock API, dark theme, the iPhone notch / home-indicator insets simulated
+ * (WebKit here has no real safe area: the --safe-* tokens are set to an iPhone 14's 47 / 34 px).
+ * One test per screen (named like its snapshot: -g "m-chat"). Every screen: layout invariants
+ * (no horizontal scroll, nothing outside the viewport, 40 px targets that don't overlap in the
+ * header and the voice strip, the shell exactly as tall as the viewport, no page scroll), axe;
+ * the main screens also: the composer visible, no empty band under the last element.
+ * Snapshots only on the baseline phone (iPhone 14, 390 px).
+ */
+
+const DIST = join(import.meta.dirname, '..', 'dist-web');
+const BASELINE = 'webkit-iphone-14';
+/** iPhone 14 portrait: status bar + notch, home indicator (Safari reports these as env(safe-area-inset-*)). */
+const INSETS = { top: 47, bottom: 34 };
+/** An empty band under the last element of the main screen above this is a defect. */
+const MAX_BOTTOM_GAP = 24;
+
+// A worktree run keeps its own LiveKit rooms (README «Parallel visual runs»).
+process.env['MOCK_LIVEKIT_ROOM_PREFIX'] ||= 'mobile_';
+
+let mock: MockServer;
+test.beforeAll(async () => {
+  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+  mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+});
+test.afterAll(async () => {
+  await mock.close();
+});
+test.beforeEach(() => {
+  mock.reset('data');
+});
+
+const baseline = (): boolean => test.info().project.name === BASELINE;
+
+/** Simulated notch / home-indicator insets (a style tag: re-added after every navigation). */
+async function insets(page: Page): Promise<void> {
+  await page.addStyleTag({
+    content: `@media (max-width: 768px) { :root.web:not(.kb-open) { --safe-top: ${INSETS.top}px; --safe-bottom: ${INSETS.bottom}px; } :root.web.kb-open { --safe-top: ${INSETS.top}px; } }`,
+  });
+}
+
+async function open(page: Page, path: string, prefs: Record<string, unknown> = {}): Promise<void> {
+  await page.clock.setFixedTime(NOW);
+  await page.goto(`${mock.url}/?visual-test`);
+  await page.evaluate((p) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru', ...p }, version: 1 })), prefs);
+  await page.goto(`${mock.url}${path}${path.includes('?') ? '&' : '?'}visual-test`);
+  await insets(page);
+}
+
+async function signIn(page: Page, prefs: Record<string, unknown> = {}): Promise<void> {
+  await open(page, '/', prefs);
+  await page.getByLabel('Email').fill('owner@calaba.test');
+  await page.getByLabel('Пароль').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Войти', exact: true }).tap();
+}
+
+async function signedIn(page: Page, prefs: Record<string, unknown> = {}): Promise<void> {
+  await signIn(page, prefs);
+  await expect(page.getByTestId('mobile-shell')).toBeVisible();
+}
+
+async function openRoom(page: Page, name: RegExp): Promise<void> {
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByRole('button', { name }).first().tap();
+  await expect(nav).toHaveCount(0);
+}
+
+/** Pins the feed to its bottom (the unread anchor lands a few px apart between runs). */
+async function feedToBottom(page: Page): Promise<void> {
+  await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+}
+
+/** Mobile-only invariants on top of harness.layoutProblems. */
+async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
+  return page.evaluate(
+    ({ main, maxGap }) => {
+      const out: string[] = [];
+      const W = innerWidth;
+      const H = innerHeight;
+      const visible = (el: Element): boolean => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0;
+      };
+      // No page scroll in either direction: the app is exactly one screen, the feed scrolls inside.
+      const se = document.scrollingElement ?? document.documentElement;
+      if (se.scrollHeight > se.clientHeight + 1) out.push(`page scrolls vertically: ${se.scrollHeight} > ${se.clientHeight}`);
+      if (scrollY !== 0) out.push(`page scrolled by ${scrollY}px`);
+      // Nothing interactive outside the screen, unless a scroller (either axis) holds it.
+      for (const el of document.querySelectorAll('button, input, select, textarea, a[href], [role="dialog"]')) {
+        if (!visible(el)) continue;
+        let scrolled = false;
+        for (let p = el.parentElement; p && !scrolled; p = p.parentElement) {
+          const cs = getComputedStyle(p);
+          const y = (cs.overflowY === 'auto' || cs.overflowY === 'scroll') && p.scrollHeight > p.clientHeight + 1;
+          const x = (cs.overflowX === 'auto' || cs.overflowX === 'scroll') && p.scrollWidth > p.clientWidth + 1;
+          scrolled = x || y;
+        }
+        if (scrolled) continue;
+        const r = el.getBoundingClientRect();
+        if (r.left < -1 || r.top < -1 || r.right > W + 1 || r.bottom > H + 1) {
+          const name = el.getAttribute('aria-label') ?? el.textContent.trim().slice(0, 30);
+          out.push(`outside the screen: <${el.tagName.toLowerCase()}> «${name}» ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}`);
+        }
+      }
+      const shell = document.querySelector('[data-testid="mobile-shell"]');
+      if (shell) {
+        const r = shell.getBoundingClientRect();
+        if (Math.abs(r.top) > 1 || Math.abs(r.bottom - H) > 1) out.push(`shell ${Math.round(r.top)}..${Math.round(r.bottom)} ≠ viewport 0..${H}`);
+      }
+      // Touch targets in the bars: ≥ 40×40 and no two overlapping.
+      const bars = [...document.querySelectorAll('[data-testid="mobile-shell"] header, [data-testid="mobile-voice-strip"], [data-testid="dm-header"]')];
+      for (const bar of bars) {
+        if (!visible(bar)) continue;
+        const buttons = [...bar.querySelectorAll('button, a[href]')].filter(visible);
+        const rects = buttons.map((b) => b.getBoundingClientRect());
+        buttons.forEach((b, i) => {
+          const r = rects[i];
+          if (!r) return;
+          const name = b.getAttribute('aria-label') ?? b.textContent.trim().slice(0, 24);
+          // A text button (the strip's room line) is as tall as its bar; icon buttons are ≥ 40×40.
+          if (r.height < 39.5 || r.width < 39.5) out.push(`small target in ${bar.tagName.toLowerCase()}: «${name}» ${Math.round(r.width)}×${Math.round(r.height)}`);
+          if (r.left < -0.5 || r.right > W + 0.5) out.push(`target outside the screen: «${name}» ${Math.round(r.left)}..${Math.round(r.right)}`);
+          for (let j = i + 1; j < rects.length; j++) {
+            const o = rects[j];
+            if (!o) continue;
+            const ix = Math.min(r.right, o.right) - Math.max(r.left, o.left);
+            const iy = Math.min(r.bottom, o.bottom) - Math.max(r.top, o.top);
+            if (ix > 0.5 && iy > 0.5) out.push(`overlapping targets: «${name}» and «${buttons[j]?.getAttribute('aria-label') ?? ''}»`);
+          }
+        });
+      }
+      if (main) {
+        const composer = document.querySelector('[data-testid="composer"]');
+        const field = composer?.querySelector('textarea');
+        if (!composer || !field || !visible(field)) out.push('composer not visible');
+        else {
+          const f = field.getBoundingClientRect();
+          if (f.top < 0 || f.bottom > H) out.push(`composer field outside the viewport: ${Math.round(f.top)}..${Math.round(f.bottom)}`);
+        }
+        // The last thing on screen (the voice strip or the composer) ends at the bottom edge: no
+        // empty band under it beyond the home-indicator inset.
+        const last = [document.querySelector('[data-testid="mobile-voice-strip"] [role="region"]'), composer?.querySelector('textarea')?.closest('div')]
+          .filter((e): e is Element => !!e && visible(e))
+          .map((e) => e.getBoundingClientRect().bottom);
+        const safe = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')) || 0;
+        const gap = H - safe - Math.max(0, ...last);
+        if (gap > maxGap) out.push(`empty band under the last element: ${Math.round(gap)}px`);
+      }
+      return out;
+    },
+    { main, maxGap: MAX_BOTTOM_GAP },
+  );
+}
+
+/** Screenshot (baseline phone) + layout invariants + axe for the current screen. */
+async function checkpoint(page: Page, name: string, opts: { main?: boolean; snapshot?: boolean } = {}): Promise<void> {
+  await settle(page);
+  const dir = process.env['CALABA_MOBILE_SHOTS'];
+  if (dir) {
+    mkdirSync(dir, { recursive: true });
+    await page.screenshot({ path: join(dir, `${name}-${test.info().project.name}.png`) });
+  }
+  if (baseline() && opts.snapshot !== false) await expect.soft(page, `screenshot: ${name}`).toHaveScreenshot(`${name}.png`);
+  // On a phone every modal is a bottom sheet or a side drawer (never centred), and «outside the
+  // window» is checked here with horizontal scrollers (the settings section pills) taken into account.
+  const generic = (await layoutProblems(page)).filter((p) => p.kind !== 'modal-off-centre' && p.kind !== 'offscreen').map((p) => `${p.kind}: ${p.detail}`);
+  expect.soft([...generic, ...(await mobileProblems(page, opts.main ?? false))], `layout invariants: ${name}`).toEqual([]);
+  await expectAccessible(page, name);
+}
+
+/** No programmatic focus on a phone: iOS scrolls / zooms to a focused field and raises the keyboard. */
+async function expectNoFieldFocus(page: Page, where: string): Promise<void> {
+  const active = await page.evaluate(() => {
+    const a = document.activeElement;
+    return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || (a as HTMLElement).isContentEditable) ? `${a.tagName} ${a.getAttribute('aria-label') ?? a.getAttribute('placeholder') ?? ''}` : null;
+  });
+  expect.soft(active, `no field focused programmatically: ${where}`).toBeNull();
+}
+
+// ---------------------------------------------------------------- signed out
+
+test('m-login', async ({ page }) => {
+  await open(page, '/');
+  await expect(page.getByRole('button', { name: 'Войти', exact: true })).toBeVisible();
+  await expectNoFieldFocus(page, 'login');
+  await checkpoint(page, 'm-login');
+});
+
+test('m-join', async ({ page }) => {
+  await open(page, '/join/calaba-team-2026');
+  await expect(page.getByTestId('link-landing').getByRole('button', { name: 'Открыть в Calab' })).toBeVisible();
+  await checkpoint(page, 'm-join');
+});
+
+// ---------------------------------------------------------------- onboarding
+
+test('m-onboarding', async ({ page }) => {
+  await signIn(page, { onboarded: false });
+  await expect(page.getByTestId('onboarding-mic')).toBeVisible();
+  await checkpoint(page, 'm-onboarding');
+  // The other steps: layout only (and shots for review with CALABA_MOBILE_SHOTS).
+  for (const step of ['mode', 'notifications', 'done']) {
+    // The first action of the step («Позже» where there is a permission to grant, else «Продолжить»).
+    await page.locator('[data-onb-footer] .ml-auto button').first().tap();
+    await expect(page.getByTestId(`onboarding-${step}`)).toBeVisible();
+    await checkpoint(page, `m-onboarding-${step}`, { snapshot: false });
+  }
+  // «Начать» → the app, with nothing focused (docs/09: the composer is focused only by a tap).
+  await page.getByRole('button', { name: 'Начать' }).tap();
+  await expect(page.getByTestId('mobile-shell')).toBeVisible();
+  await settle(page);
+  await expectNoFieldFocus(page, 'after onboarding');
+  expect(await page.evaluate(() => scrollY), 'page not scrolled after onboarding').toBe(0);
+  await checkpoint(page, 'm-after-onboarding', { snapshot: false, main: (await page.getByTestId('composer').count()) > 0 });
+});
+
+// ---------------------------------------------------------------- the app
+
+test('m-chat', async ({ page }) => {
+  await signedIn(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  await expectNoFieldFocus(page, 'first room');
+  await feedToBottom(page);
+  await checkpoint(page, 'm-chat', { main: true });
+  // Switching rooms from the drawer does not focus the composer either.
+  await openRoom(page, /^разработка/);
+  await expectNoFieldFocus(page, 'room switch');
+  // A long room name: the header's buttons keep their size and place.
+  await openRoom(page, /очень-длинное/);
+  await checkpoint(page, 'm-chat-long-name', { main: true, snapshot: false });
+  await openRoom(page, /^разработка/);
+  // The composer grows with its text and stays on screen.
+  const box = page.getByTestId('composer').locator('textarea');
+  await box.tap();
+  await box.fill('Длинное сообщение\nв несколько\nстрок\nс переносами\nи ещё одной');
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(page, 'm-chat-multiline', { main: true, snapshot: false });
+});
+
+test('m-chat-empty', async ({ page }) => {
+  mock.reset('empty');
+  await signIn(page);
+  await expect(page.getByTestId('mobile-shell')).toBeVisible();
+  await checkpoint(page, 'm-chat-empty', { snapshot: false });
+});
+
+test('m-drawer', async ({ page }) => {
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await expect(page.getByTestId('mobile-nav')).toBeVisible();
+  await checkpoint(page, 'm-drawer');
+});
+
+test('m-members', async ({ page }) => {
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Участники' }).tap();
+  await expect(page.getByTestId('mobile-members').getByRole('complementary', { name: 'Участники' })).toBeVisible();
+  await checkpoint(page, 'm-members');
+});
+
+test('m-sheet', async ({ page }) => {
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Прикрепить файл' }).tap();
+  await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Камера' })).toBeVisible();
+  await checkpoint(page, 'm-sheet', { snapshot: false });
+  await page.keyboard.press('Escape');
+  // A long-press menu on a message.
+  await feedToBottom(page);
+  await page.getByText('Готово, выдал.').dispatchEvent('contextmenu', { clientX: 120, clientY: 400 });
+  await expect(page.getByRole('menu')).toBeVisible();
+  await checkpoint(page, 'm-message-menu', { snapshot: false });
+});
+
+test('m-voice', async ({ page }) => {
+  await signedIn(page);
+  // Push-to-talk mode: the fullest strip (room line, mute, deafen, PTT hold, hang up).
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Настройки', exact: true }).tap();
+  const settings = page.getByRole('dialog', { name: 'Настройки' });
+  await settings.getByRole('tab', { name: 'Голос и устройства' }).tap();
+  await settings.getByRole('radio', { name: 'Push-to-talk' }).tap();
+  await settings.getByRole('button', { name: 'Закрыть', exact: true }).tap();
+  await expect(settings).toHaveCount(0);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await page.getByTestId('mobile-nav').locator('aside button', { hasText: 'Созвон' }).first().tap();
+  const strip = page.getByTestId('mobile-voice-strip');
+  await expect(strip.getByTestId('ptt-hold')).toBeVisible({ timeout: 30_000 });
+  // The voice room itself (the strip's room line): its chat, the composer, the strip under it.
+  await strip.getByRole('button', { name: /Созвон/ }).tap();
+  await expect(page.getByRole('heading', { name: 'Созвон' })).toBeVisible();
+  await expectNoFieldFocus(page, 'voice room');
+  await checkpoint(page, 'm-voice', { main: true });
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await checkpoint(page, 'm-voice-drawer', { snapshot: false });
+});
+
+test('m-dm-list', async ({ page }) => {
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('rail-home').getByRole('button').tap();
+  await expect(nav.getByTestId('dm-list').getByRole('button', { name: /Борис Петров/ })).toContainText('Закрепил, чтобы не потерялся');
+  await checkpoint(page, 'm-dm-list');
+});
+
+test('m-dm-chat', async ({ page }) => {
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('rail-home').getByRole('button').tap();
+  await nav.getByTestId('dm-list').getByRole('button', { name: /Борис Петров/ }).tap();
+  await expect(page.getByText('Анна, привет! Посмотришь PR с миграцией')).toBeVisible();
+  await expectNoFieldFocus(page, 'dm open');
+  await feedToBottom(page);
+  await checkpoint(page, 'm-dm-chat', { main: true });
+});
+
+test('m-settings', async ({ page }) => {
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Настройки', exact: true }).tap();
+  const settings = page.getByRole('dialog', { name: 'Настройки' });
+  await expect(settings).toBeVisible();
+  await expectNoFieldFocus(page, 'settings');
+  await checkpoint(page, 'm-settings');
+  await settings.getByRole('tab', { name: 'Голос и устройства' }).tap();
+  await checkpoint(page, 'm-settings-voice', { snapshot: false });
+  // The section scrolls inside the sheet (its last control can be reached).
+  const panel = settings.locator('[data-settings-panel="voice"]');
+  const fits = await panel.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+    return el.getBoundingClientRect().bottom <= innerHeight + 1 && el.scrollTop > 0;
+  });
+  expect(fits, 'settings section scrolls inside the sheet').toBe(true);
+});
+
+test('m-dialog', async ({ page }) => {
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Создать пространство' }).tap();
+  await expect(page.getByRole('dialog', { name: 'Новое пространство' })).toBeVisible();
+  await expectNoFieldFocus(page, 'dialog sheet');
+  await checkpoint(page, 'm-dialog', { snapshot: false });
+});
+
+type KeyboardStub = { __keyboard: (px: number | null) => void };
+
+/**
+ * The on-screen keyboard (lib/mobile.ts installVisualViewport). WebKit here has no software
+ * keyboard: visualViewport is replaced by a stand-in whose height the test shrinks, as iOS does
+ * while the keyboard is up — and keeps shrunk after the field loses focus, as iOS 26 sometimes
+ * does (the stale viewport that left an empty band at the bottom).
+ */
+test('m-keyboard', async ({ page }) => {
+  await page.addInitScript(() => {
+    let covered: number | null = null;
+    const vv = new EventTarget();
+    const props: Record<string, () => number> = {
+      height: () => innerHeight - (covered ?? 0),
+      width: () => innerWidth,
+      offsetTop: () => 0,
+      offsetLeft: () => 0,
+      scale: () => 1,
+    };
+    for (const [k, get] of Object.entries(props)) Object.defineProperty(vv, k, { get });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => vv });
+    (window as unknown as KeyboardStub).__keyboard = (px) => {
+      covered = px;
+      vv.dispatchEvent(new Event('resize'));
+    };
+  });
+  await signedIn(page);
+  const keyboard = (px: number | null): Promise<void> => page.evaluate((h) => (window as unknown as KeyboardStub).__keyboard(h), px);
+  const shellBottom = (): Promise<number> => page.getByTestId('mobile-shell').evaluate((el) => Math.round(el.getBoundingClientRect().bottom));
+  const vh = page.viewportSize()?.height ?? 0;
+  const KB = 300;
+  const field = page.getByTestId('composer').locator('textarea');
+
+  // Keyboard up over a focused composer: the shell ends at the keyboard, the composer right above it.
+  await field.tap();
+  await keyboard(KB);
+  await expect(page.locator('html')).toHaveClass(/kb-open/);
+  await expect.poll(shellBottom, 'shell ends at the keyboard').toBe(vh - KB);
+  const f = await field.boundingBox();
+  expect(f && f.y + f.height, 'composer above the keyboard').toBeLessThanOrEqual(vh - KB);
+  expect(await page.evaluate(() => scrollY), 'document not scrolled').toBe(0);
+
+  // Focus leaves the field, the viewport stays (stale): the app is full height again, no gap.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect(page.locator('html')).not.toHaveClass(/kb-open/);
+  await expect.poll(shellBottom, 'shell back to the full screen').toBe(vh);
+
+  // A shrunk viewport without a focused field (a toolbar, a zoom) is not a keyboard.
+  await keyboard(200);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await expect(page.locator('html')).not.toHaveClass(/kb-open/);
+  expect(await shellBottom()).toBe(vh);
+  await keyboard(null);
+});

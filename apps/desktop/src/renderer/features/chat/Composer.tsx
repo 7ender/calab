@@ -8,7 +8,7 @@ import { fmt } from '../../lib/format';
 import { MENTION_EVENT, type MentionRequest } from './mentionRequest';
 import { applyMention, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, toWire } from '../../lib/mentions';
 import { can } from '../../lib/permissions';
-import { useMobile } from '../../lib/mobile';
+import { autoFocusAllowed, useMobile } from '../../lib/mobile';
 import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, sendMessage, type OutgoingFile } from '../../services/chat';
 import { useMessages } from '../../stores/messages';
 import { useSession } from '../../stores/session';
@@ -153,9 +153,15 @@ export function Composer({
     el?.setSelectionRange(el.value.length, el.value.length);
   }, [editTrack]);
 
+  // Opening a room focuses the field on desktop (type right away); on phones only a tap does
+  // (iOS would scroll to it and raise the keyboard, lib/mobile.ts). «Ответить» is the user's own
+  // request to write: it focuses the field everywhere.
   useEffect(() => {
-    ref.current?.focus();
-  }, [room.id, replyTo]);
+    if (autoFocusAllowed()) ref.current?.focus();
+  }, [room.id]);
+  useEffect(() => {
+    if (replyTo || autoFocusAllowed()) ref.current?.focus();
+  }, [replyTo]);
 
   useLayoutEffect(() => {
     const el = ref.current;

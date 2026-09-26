@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
 import { forwardRef, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
+import { autoFocusAllowed } from '../lib/phone';
 
 /*
  * UI primitives (docs/08-design.md): macOS-like controls on design tokens only.
@@ -123,10 +124,12 @@ export function Tip({
   );
 }
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...rest }, ref) {
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, autoFocus, ...rest }, ref) {
   return (
     <input
       ref={ref}
+      // Phones: a field is focused only by a tap (iOS would scroll to it and raise the keyboard).
+      autoFocus={autoFocus && autoFocusAllowed()}
       className={cx(
         'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:h-10 mobile:px-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus-visible:outline-offset-0 disabled:opacity-50',
         className,
@@ -353,6 +356,12 @@ export function Modal({
         <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content aria-modal="true"
           onOpenAutoFocus={(e) => {
+            // Phones: the sheet itself takes the focus — no field focused (and no keyboard) until a tap.
+            if (!autoFocusAllowed()) {
+              e.preventDefault();
+              (e.currentTarget as HTMLElement | null)?.focus();
+              return;
+            }
             if (!initialFocus?.current) return;
             e.preventDefault();
             initialFocus.current.focus();
@@ -361,7 +370,7 @@ export function Modal({
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
             wide ? 'max-w-[880px]' : 'max-w-[440px]',
             // Phone layout (ADR-0021): a bottom sheet — full width, from the bottom edge, above the home indicator.
-            'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-0 mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
+            'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
           )}
         >
           <div className="flex items-start justify-between gap-4 px-5 pt-5">

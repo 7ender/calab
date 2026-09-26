@@ -23,6 +23,7 @@
     "playwright.web.config.ts",
     "playwright.visual.config.ts",
     "playwright.marketing.config.ts",
+    "playwright.mobile.config.ts",
     "e2e-web/**/*",
     "scripts/*.ts"
   ]

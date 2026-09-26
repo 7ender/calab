@@ -83,7 +83,7 @@ function LoginScreen(): ReactNode {
   const desktop = platform.kind === 'electron';
 
   return (
-    <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10">
+    <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+40px)]">
       <form onSubmit={(e) => void submit(e)} className="no-drag my-auto flex w-full max-w-[380px] flex-col items-stretch">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo size={72} className="mb-3" />
