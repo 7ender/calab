@@ -101,3 +101,11 @@ RETURNING *;
 UPDATE room_categories SET position = sqlc.arg('position')
 WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
 RETURNING *;
+
+-- name: SetVoiceStatus :one
+UPDATE rooms SET voice_status = sqlc.narg('status') WHERE id = sqlc.arg('id') AND archived_at IS NULL
+RETURNING *;
+
+-- name: ClearVoiceStatus :execrows
+-- The call ended: the status goes with it.
+UPDATE rooms SET voice_status = NULL WHERE id = $1 AND voice_status IS NOT NULL;

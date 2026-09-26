@@ -24,6 +24,13 @@ func tsp(t *time.Time) *timestamppb.Timestamp {
 	return timestamppb.New(*t)
 }
 
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func idp(id *uuid.UUID) string {
 	if id == nil {
 		return ""
@@ -329,6 +336,7 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		CreatedAt:           ts(r.CreatedAt),
 		CategoryId:          idp(r.CategoryID),
 		UserLimit:           uint32(max(r.UserLimit, 0)),
+		VoiceStatus:         deref(r.VoiceStatus),
 	}
 }
 
@@ -395,6 +403,7 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 		out.Nonce = *m.Nonce
 	}
 	out.PinnedAt, out.PinnedBy = tsp(m.PinnedAt), idp(m.PinnedBy)
+	out.EmbedsHidden = m.EmbedsHidden
 	for i, f := range files {
 		out.Attachments[i] = File(f)
 	}

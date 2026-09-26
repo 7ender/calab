@@ -20,6 +20,8 @@ message Message {
   repeated Reaction reactions = 10;
   google.protobuf.Timestamp pinned_at = 11; // unset = not pinned
   string pinned_by = 12;
+  // Link previews (unfurl) of this message are hidden: clients do not render them.
+  bool embeds_hidden = 13;
 }
 
 message Reaction {
@@ -63,6 +65,12 @@ message UpdateMessageRequest {
 
 message UpdateMessageResponse {
   Message message = 1;
+}
+
+// PUT /api/messages/{id}/embeds-hidden (author, or MANAGE_MESSAGES) → UpdateMessageResponse;
+// MESSAGE_UPDATE to the room. Does not mark the message edited.
+message SetEmbedsHiddenRequest {
+  bool hidden = 1;
 }
 
 // PUT /api/rooms/{id}/read (VIEW_ROOM). Moves the read marker forward only; 204.

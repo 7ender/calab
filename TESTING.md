@@ -488,7 +488,7 @@ curl -sI https://$D/manifest.webmanifest | grep -i content-type                 
 
 Проверка целостности (если скачано с ошибками): `latest-mac.yml` / `latest-linux.yml` / `latest.yml` рядом содержат `sha512` (base64) и `size` каждого файла: `shasum -a 512 -b <файл> | cut -d' ' -f1 | xxd -r -p | base64` (macOS/Linux) должно совпасть.
 
-Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — `SKIP_WEB=1 infra/docker/sync.sh`.
+Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3 → `https://releases.calab.ru/`; `/download/` на стенде — редирект туда (docs/06 «Релизы: GitHub Actions → S3», «Релиз: runbook»).
 
 ### 3. LiveKit
 
@@ -1141,3 +1141,22 @@ go test -race -tags integration -count=1 -v -run 'TestReadStateCounts|TestMentio
   - L9: fail closed.
 
   Регрессия — весь `make test-integration`.
+
+## Server: статус звонка и скрытые превью (P0.6)
+
+```sh
+cd apps/server
+go test -race -tags integration -count=1 -v -run 'TestEmbedsHidden|TestVoiceStatus' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: два `--- PASS` и `ok`. `TestVoiceStatus` пропускается (`SKIP`), если dev-LiveKit не запущен.
+
+Что проверяется:
+- **`TestEmbedsHidden`**:
+  - чужой без `MANAGE_MESSAGES` → 403;
+  - автор скрывает → `embedsHidden = true`, `editedAt` пуст, `MESSAGE_UPDATE` в комнату и поле в истории;
+  - повторный запрос возвращает превью.
+- **`TestVoiceStatus`**:
+  - не в звонке → 403, > 60 символов → 422, text-комната → 422;
+  - участник звонка ставит «  Планёрка  » → сохраняется обрезанным, `ROOM_UPDATE` с `voiceStatus` и `voiceStartedAt`;
+  - последний вышел → один `ROOM_UPDATE` без `voiceStartedAt` и с пустым `voiceStatus`, READY тоже без статуса;
+  - `MANAGE_ROOM` ставит статус не будучи в звонке, пустая строка очищает.

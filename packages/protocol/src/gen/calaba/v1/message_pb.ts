@@ -14,7 +14,7 @@ import type { Message as Message$1 } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/message.proto.
  */
 export const file_calaba_v1_message: GenFile = /*@__PURE__*/
-  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIuECCgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkiNAoIUmVhY3Rpb24SDQoFZW1vamkYASABKAkSDQoFY291bnQYAiABKA0SCgoCbWUYAyABKAgiTgoUTGlzdE1lc3NhZ2VzUmVzcG9uc2USJAoIbWVzc2FnZXMYASADKAsyEi5jYWxhYmEudjEuTWVzc2FnZRIQCghoYXNfbW9yZRgCIAEoCCJjChRDcmVhdGVNZXNzYWdlUmVxdWVzdBIPCgdjb250ZW50GAEgASgJEhYKDmF0dGFjaG1lbnRfaWRzGAIgAygJEhMKC3JlcGx5X3RvX2lkGAMgASgJEg0KBW5vbmNlGAQgASgJIjwKFUNyZWF0ZU1lc3NhZ2VSZXNwb25zZRIjCgdtZXNzYWdlGAEgASgLMhIuY2FsYWJhLnYxLk1lc3NhZ2UiJwoUVXBkYXRlTWVzc2FnZVJlcXVlc3QSDwoHY29udGVudBgBIAEoCSI8ChVVcGRhdGVNZXNzYWdlUmVzcG9uc2USIwoHbWVzc2FnZRgBIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIiwKFlVwZGF0ZVJlYWRTdGF0ZVJlcXVlc3QSEgoKbWVzc2FnZV9pZBgBIAEoCUKaAQoNY29tLmNhbGFiYS52MUIMTWVzc2FnZVByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_file]);
+  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIvgCCgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkSFQoNZW1iZWRzX2hpZGRlbhgNIAEoCCI0CghSZWFjdGlvbhINCgVlbW9qaRgBIAEoCRINCgVjb3VudBgCIAEoDRIKCgJtZRgDIAEoCCJOChRMaXN0TWVzc2FnZXNSZXNwb25zZRIkCghtZXNzYWdlcxgBIAMoCzISLmNhbGFiYS52MS5NZXNzYWdlEhAKCGhhc19tb3JlGAIgASgIImMKFENyZWF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkSFgoOYXR0YWNobWVudF9pZHMYAiADKAkSEwoLcmVwbHlfdG9faWQYAyABKAkSDQoFbm9uY2UYBCABKAkiPAoVQ3JlYXRlTWVzc2FnZVJlc3BvbnNlEiMKB21lc3NhZ2UYASABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSInChRVcGRhdGVNZXNzYWdlUmVxdWVzdBIPCgdjb250ZW50GAEgASgJIjwKFVVwZGF0ZU1lc3NhZ2VSZXNwb25zZRIjCgdtZXNzYWdlGAEgASgLMhIuY2FsYWJhLnYxLk1lc3NhZ2UiKAoWU2V0RW1iZWRzSGlkZGVuUmVxdWVzdBIOCgZoaWRkZW4YASABKAgiLAoWVXBkYXRlUmVhZFN0YXRlUmVxdWVzdBISCgptZXNzYWdlX2lkGAEgASgJQpoBCg1jb20uY2FsYWJhLnYxQgxNZXNzYWdlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_file]);
 
 /**
  * @generated from message calaba.v1.Message
@@ -93,6 +93,13 @@ export type Message = Message$1<"calaba.v1.Message"> & {
    * @generated from field: string pinned_by = 12;
    */
   pinnedBy: string;
+
+  /**
+   * Link previews (unfurl) of this message are hidden: clients do not render them.
+   *
+   * @generated from field: bool embeds_hidden = 13;
+   */
+  embedsHidden: boolean;
 };
 
 /**
@@ -248,6 +255,26 @@ export const UpdateMessageResponseSchema: GenMessage<UpdateMessageResponse> = /*
   messageDesc(file_calaba_v1_message, 6);
 
 /**
+ * PUT /api/messages/{id}/embeds-hidden (author, or MANAGE_MESSAGES) → UpdateMessageResponse;
+ * MESSAGE_UPDATE to the room. Does not mark the message edited.
+ *
+ * @generated from message calaba.v1.SetEmbedsHiddenRequest
+ */
+export type SetEmbedsHiddenRequest = Message$1<"calaba.v1.SetEmbedsHiddenRequest"> & {
+  /**
+   * @generated from field: bool hidden = 1;
+   */
+  hidden: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.SetEmbedsHiddenRequest.
+ * Use `create(SetEmbedsHiddenRequestSchema)` to create a new message.
+ */
+export const SetEmbedsHiddenRequestSchema: GenMessage<SetEmbedsHiddenRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 7);
+
+/**
  * PUT /api/rooms/{id}/read (VIEW_ROOM). Moves the read marker forward only; 204.
  *
  * @generated from message calaba.v1.UpdateReadStateRequest
@@ -264,5 +291,5 @@ export type UpdateReadStateRequest = Message$1<"calaba.v1.UpdateReadStateRequest
  * Use `create(UpdateReadStateRequestSchema)` to create a new message.
  */
 export const UpdateReadStateRequestSchema: GenMessage<UpdateReadStateRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 7);
+  messageDesc(file_calaba_v1_message, 8);
 

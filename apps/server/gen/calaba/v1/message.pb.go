@@ -36,9 +36,11 @@ type Message struct {
 	// Aggregated reactions in order of first use. `me` is relative to the requesting user and
 	// is filled only in REST responses; in events (MESSAGE_UPDATE) counts are current but `me`
 	// is always false — clients keep their own `me` and apply MESSAGE_REACTION_ADD/REMOVE.
-	Reactions     []*Reaction            `protobuf:"bytes,10,rep,name=reactions,proto3" json:"reactions,omitempty"`
-	PinnedAt      *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=pinned_at,json=pinnedAt,proto3" json:"pinned_at,omitempty"` // unset = not pinned
-	PinnedBy      string                 `protobuf:"bytes,12,opt,name=pinned_by,json=pinnedBy,proto3" json:"pinned_by,omitempty"`
+	Reactions []*Reaction            `protobuf:"bytes,10,rep,name=reactions,proto3" json:"reactions,omitempty"`
+	PinnedAt  *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=pinned_at,json=pinnedAt,proto3" json:"pinned_at,omitempty"` // unset = not pinned
+	PinnedBy  string                 `protobuf:"bytes,12,opt,name=pinned_by,json=pinnedBy,proto3" json:"pinned_by,omitempty"`
+	// Link previews (unfurl) of this message are hidden: clients do not render them.
+	EmbedsHidden  bool `protobuf:"varint,13,opt,name=embeds_hidden,json=embedsHidden,proto3" json:"embeds_hidden,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -155,6 +157,13 @@ func (x *Message) GetPinnedBy() string {
 		return x.PinnedBy
 	}
 	return ""
+}
+
+func (x *Message) GetEmbedsHidden() bool {
+	if x != nil {
+		return x.EmbedsHidden
+	}
+	return false
 }
 
 type Reaction struct {
@@ -475,6 +484,52 @@ func (x *UpdateMessageResponse) GetMessage() *Message {
 	return nil
 }
 
+// PUT /api/messages/{id}/embeds-hidden (author, or MANAGE_MESSAGES) → UpdateMessageResponse;
+// MESSAGE_UPDATE to the room. Does not mark the message edited.
+type SetEmbedsHiddenRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hidden        bool                   `protobuf:"varint,1,opt,name=hidden,proto3" json:"hidden,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetEmbedsHiddenRequest) Reset() {
+	*x = SetEmbedsHiddenRequest{}
+	mi := &file_calaba_v1_message_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetEmbedsHiddenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetEmbedsHiddenRequest) ProtoMessage() {}
+
+func (x *SetEmbedsHiddenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_message_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetEmbedsHiddenRequest.ProtoReflect.Descriptor instead.
+func (*SetEmbedsHiddenRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SetEmbedsHiddenRequest) GetHidden() bool {
+	if x != nil {
+		return x.Hidden
+	}
+	return false
+}
+
 // PUT /api/rooms/{id}/read (VIEW_ROOM). Moves the read marker forward only; 204.
 type UpdateReadStateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -485,7 +540,7 @@ type UpdateReadStateRequest struct {
 
 func (x *UpdateReadStateRequest) Reset() {
 	*x = UpdateReadStateRequest{}
-	mi := &file_calaba_v1_message_proto_msgTypes[7]
+	mi := &file_calaba_v1_message_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -497,7 +552,7 @@ func (x *UpdateReadStateRequest) String() string {
 func (*UpdateReadStateRequest) ProtoMessage() {}
 
 func (x *UpdateReadStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[7]
+	mi := &file_calaba_v1_message_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -510,7 +565,7 @@ func (x *UpdateReadStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateReadStateRequest.ProtoReflect.Descriptor instead.
 func (*UpdateReadStateRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{7}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *UpdateReadStateRequest) GetMessageId() string {
@@ -524,7 +579,7 @@ var File_calaba_v1_message_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_message_proto_rawDesc = "" +
 	"\n" +
-	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/file.proto\"\xd3\x03\n" +
+	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/file.proto\"\xf8\x03\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
@@ -539,7 +594,8 @@ const file_calaba_v1_message_proto_rawDesc = "" +
 	"\treactions\x18\n" +
 	" \x03(\v2\x13.calaba.v1.ReactionR\treactions\x127\n" +
 	"\tpinned_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\bpinnedAt\x12\x1b\n" +
-	"\tpinned_by\x18\f \x01(\tR\bpinnedBy\"F\n" +
+	"\tpinned_by\x18\f \x01(\tR\bpinnedBy\x12#\n" +
+	"\rembeds_hidden\x18\r \x01(\bR\fembedsHidden\"F\n" +
 	"\bReaction\x12\x14\n" +
 	"\x05emoji\x18\x01 \x01(\tR\x05emoji\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\rR\x05count\x12\x0e\n" +
@@ -557,7 +613,9 @@ const file_calaba_v1_message_proto_rawDesc = "" +
 	"\x14UpdateMessageRequest\x12\x18\n" +
 	"\acontent\x18\x01 \x01(\tR\acontent\"E\n" +
 	"\x15UpdateMessageResponse\x12,\n" +
-	"\amessage\x18\x01 \x01(\v2\x12.calaba.v1.MessageR\amessage\"7\n" +
+	"\amessage\x18\x01 \x01(\v2\x12.calaba.v1.MessageR\amessage\"0\n" +
+	"\x16SetEmbedsHiddenRequest\x12\x16\n" +
+	"\x06hidden\x18\x01 \x01(\bR\x06hidden\"7\n" +
 	"\x16UpdateReadStateRequest\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageIdB\x9a\x01\n" +
@@ -576,7 +634,7 @@ func file_calaba_v1_message_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_message_proto_rawDescData
 }
 
-var file_calaba_v1_message_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_calaba_v1_message_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_calaba_v1_message_proto_goTypes = []any{
 	(*Message)(nil),                // 0: calaba.v1.Message
 	(*Reaction)(nil),               // 1: calaba.v1.Reaction
@@ -585,24 +643,25 @@ var file_calaba_v1_message_proto_goTypes = []any{
 	(*CreateMessageResponse)(nil),  // 4: calaba.v1.CreateMessageResponse
 	(*UpdateMessageRequest)(nil),   // 5: calaba.v1.UpdateMessageRequest
 	(*UpdateMessageResponse)(nil),  // 6: calaba.v1.UpdateMessageResponse
-	(*UpdateReadStateRequest)(nil), // 7: calaba.v1.UpdateReadStateRequest
-	(*FileMeta)(nil),               // 8: calaba.v1.FileMeta
-	(*timestamppb.Timestamp)(nil),  // 9: google.protobuf.Timestamp
+	(*SetEmbedsHiddenRequest)(nil), // 7: calaba.v1.SetEmbedsHiddenRequest
+	(*UpdateReadStateRequest)(nil), // 8: calaba.v1.UpdateReadStateRequest
+	(*FileMeta)(nil),               // 9: calaba.v1.FileMeta
+	(*timestamppb.Timestamp)(nil),  // 10: google.protobuf.Timestamp
 }
 var file_calaba_v1_message_proto_depIdxs = []int32{
-	8, // 0: calaba.v1.Message.attachments:type_name -> calaba.v1.FileMeta
-	9, // 1: calaba.v1.Message.created_at:type_name -> google.protobuf.Timestamp
-	9, // 2: calaba.v1.Message.edited_at:type_name -> google.protobuf.Timestamp
-	1, // 3: calaba.v1.Message.reactions:type_name -> calaba.v1.Reaction
-	9, // 4: calaba.v1.Message.pinned_at:type_name -> google.protobuf.Timestamp
-	0, // 5: calaba.v1.ListMessagesResponse.messages:type_name -> calaba.v1.Message
-	0, // 6: calaba.v1.CreateMessageResponse.message:type_name -> calaba.v1.Message
-	0, // 7: calaba.v1.UpdateMessageResponse.message:type_name -> calaba.v1.Message
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	9,  // 0: calaba.v1.Message.attachments:type_name -> calaba.v1.FileMeta
+	10, // 1: calaba.v1.Message.created_at:type_name -> google.protobuf.Timestamp
+	10, // 2: calaba.v1.Message.edited_at:type_name -> google.protobuf.Timestamp
+	1,  // 3: calaba.v1.Message.reactions:type_name -> calaba.v1.Reaction
+	10, // 4: calaba.v1.Message.pinned_at:type_name -> google.protobuf.Timestamp
+	0,  // 5: calaba.v1.ListMessagesResponse.messages:type_name -> calaba.v1.Message
+	0,  // 6: calaba.v1.CreateMessageResponse.message:type_name -> calaba.v1.Message
+	0,  // 7: calaba.v1.UpdateMessageResponse.message:type_name -> calaba.v1.Message
+	8,  // [8:8] is the sub-list for method output_type
+	8,  // [8:8] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_message_proto_init() }
@@ -617,7 +676,7 @@ func file_calaba_v1_message_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_message_proto_rawDesc), len(file_calaba_v1_message_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

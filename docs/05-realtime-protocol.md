@@ -241,6 +241,8 @@ PUT    /api/messages/{id}/reactions/{emoji}            204, идемпотент
 DELETE /api/messages/{id}/reactions/{emoji}            204, своя реакция
 PUT    /api/messages/{id}/pin | DELETE …/pin           204   (MANAGE_MESSAGES; ≤ 50 на комнату) → MESSAGE_UPDATE
 GET    /api/rooms/{id}/pins                            ListMessagesResponse (закреплённые, свежие первыми)
+PUT    /api/messages/{id}/embeds-hidden                SetEmbedsHiddenRequest{hidden} → UpdateMessageResponse (автор или MANAGE_MESSAGES) → MESSAGE_UPDATE
+PATCH  /api/rooms/{id}/voice-status                    UpdateVoiceStatusRequest{status} → UpdateRoomResponse (voice-комната; CONNECT и участник звонка сейчас, или MANAGE_ROOM) → ROOM_UPDATE
 GET    /api/me/mentions?before=&limit=&workspace_id=   ListMessagesResponse — сообщения с упоминанием меня (по видимым сейчас комнатам)
 PUT    /api/rooms/{id}/notifications                   UpdateRoomNotificationSettingsRequest{level, mutedUntil} → …Response  (VIEW_ROOM)
 PATCH  /api/me/status                                  UpdateStatusRequest{text, emoji, expiresInSeconds} → UpdateMeResponse
@@ -285,6 +287,11 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 
   Если пользователь комнату ещё не открывал, `last_read_message_id` пустой, а счётчики идут от его вступления в workspace. Запрос — индексные сканы без чтения таблицы (миграция 00007): ~6 мс на 100 комнат при 1M сообщений. В `READ_STATE_UPDATE` счётчики не заполняются (0): дальше клиент ведёт их сам по `MESSAGE_CREATE`/`MESSAGE_DELETE`.
 - **Уведомления комнаты.** `level`: `ALL` (по умолчанию) | `MENTIONS` | `NONE`; `muted_until` — временное отключение (≤ 1 год вперёд). **`NONE` без `muted_until` — бессрочно**: уровень хранится, пока пользователь его не сменит; `muted_until` — отдельный временный mute поверх любого уровня. Когда он истёк, действует сохранённый `level`. `PUT` заменяет настройки целиком; `ALL` без `muted_until` — сброс к умолчанию (строка удаляется). READY `notification_settings` содержит только сохранённые настройки видимых сейчас комнат; комнаты не из списка — по умолчанию. Уведомления показывает клиент; сервер хранит и синхронизирует настройки между устройствами (`ROOM_NOTIFICATION_UPDATE`).
+- **Статус звонка** (`Room.voice_status`, ≤ 60 символов, пробелы по краям обрезаются) — строка вроде «Планёрка» у voice-комнаты.
+  - Ставит участник текущего звонка (`CONNECT` и сейчас в комнате) или `MANAGE_ROOM`; пустая строка — очистить.
+  - Сбрасывается сервером, когда комната пустеет, — в том же `ROOM_UPDATE`, что убирает `voice_started_at`. Проверка «в звонке» и запись идут под той же блокировкой voice-состояния, что и сброс, поэтому статус не переживает свой звонок.
+  - Приходит в READY / WORKSPACE_CREATE и во всех `ROOM_UPDATE`.
+- **Скрытые превью ссылок** (`Message.embeds_hidden`): автор (или `MANAGE_MESSAGES`) скрывает превью у своего сообщения, клиент их тогда не рендерит. Сообщение не помечается отредактированным. Все, кто видит комнату, получают `MESSAGE_UPDATE`.
 - **Категории.** `Room.category_id`, `WorkspaceSnapshot.categories`. События `CATEGORY_CREATE/UPDATE/DELETE` приходят всем участникам workspace; клиент скрывает категории без видимых ему комнат.
 
 Изменения относительно первоначального плана: `PUT /api/files` → `POST /api/workspaces/{id}/files` (файл принадлежит workspace, квота — его); `?thumb=1` → `/thumbnail`. Скачивание требует `Authorization`; клиент грузит через `fetch` и показывает через blob URL. Доступ к файлу: загрузивший; аватары — любой пользователь; иконка workspace — участники; вложение — `VIEW_ROOM` комнаты сообщения. Файл прикрепляется только к одному сообщению; при удалении сообщения вложения открепляются и удаляются чисткой сирот (не прикреплённые > 24 ч).

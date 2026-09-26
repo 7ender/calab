@@ -152,3 +152,7 @@ SELECT * FROM messages
 WHERE room_id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL
 ORDER BY pinned_at DESC
 LIMIT 50;
+
+-- name: SetEmbedsHidden :one
+UPDATE messages SET embeds_hidden = $2 WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;

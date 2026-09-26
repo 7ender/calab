@@ -57,6 +57,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	mux.Handle("DELETE /api/messages/{id}/pin", wrap(httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return h.setPin(w, r, false) })))
 	mux.Handle("GET /api/rooms/{id}/pins", wrap(httpx.HandlerFunc(h.listPins)))
 	mux.Handle("GET /api/me/mentions", wrap(httpx.HandlerFunc(h.listMentions)))
+	mux.Handle("PUT /api/messages/{id}/embeds-hidden", wrap(httpx.HandlerFunc(h.setEmbedsHidden)))
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -462,5 +463,37 @@ func (h *Handlers) read(w http.ResponseWriter, r *http.Request) error {
 		ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: roomID.String(), LastReadMessageId: rs.LastReadMessageID.String()}},
 	}})
 	httpx.NoContent(w)
+	return nil
+}
+
+// setEmbedsHidden hides or shows the link previews of a message (author, or
+// MANAGE_MESSAGES). The message is not marked edited; the room gets MESSAGE_UPDATE.
+func (h *Handlers) setEmbedsHidden(w http.ResponseWriter, r *http.Request) error {
+	m, acc, err := h.load(r)
+	if err != nil {
+		return err
+	}
+	if m.AuthorID != uid(r) && !acc.Bits.Has(perm.ManageMessages) {
+		return httpx.Forbidden("only the author or MANAGE_MESSAGES can hide link previews")
+	}
+	var req v1.SetEmbedsHiddenRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	upd, err := h.db.Q.SetEmbedsHidden(r.Context(), sqlc.SetEmbedsHiddenParams{ID: m.ID, EmbedsHidden: req.GetHidden()})
+	if db.IsNotFound(err) {
+		return httpx.NotFound("message")
+	}
+	if err != nil {
+		return err
+	}
+	out, err := h.details(r.Context(), []sqlc.Message{upd}, uid(r))
+	if err != nil {
+		return err
+	}
+	h.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
+		MessageUpdate: &v1.MessageUpdate{WorkspaceId: acc.WorkspaceID.String(), Message: forEvent(out[0])},
+	}})
+	httpx.Write(w, http.StatusOK, &v1.UpdateMessageResponse{Message: out[0]})
 	return nil
 }

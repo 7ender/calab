@@ -26,17 +26,18 @@ type File struct {
 }
 
 type Message struct {
-	ID        uuid.UUID
-	RoomID    uuid.UUID
-	AuthorID  uuid.UUID
-	Content   string
-	ReplyToID *uuid.UUID
-	Nonce     *string
-	CreatedAt time.Time
-	EditedAt  *time.Time
-	DeletedAt *time.Time
-	PinnedAt  *time.Time
-	PinnedBy  *uuid.UUID
+	ID           uuid.UUID
+	RoomID       uuid.UUID
+	AuthorID     uuid.UUID
+	Content      string
+	ReplyToID    *uuid.UUID
+	Nonce        *string
+	CreatedAt    time.Time
+	EditedAt     *time.Time
+	DeletedAt    *time.Time
+	PinnedAt     *time.Time
+	PinnedBy     *uuid.UUID
+	EmbedsHidden bool
 }
 
 type MessageAttachment struct {
@@ -84,6 +85,7 @@ type Room struct {
 	ArchivedAt       *time.Time
 	CategoryID       *uuid.UUID
 	UserLimit        int32
+	VoiceStatus      *string
 }
 
 type RoomCategory struct {

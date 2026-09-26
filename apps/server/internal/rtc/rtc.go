@@ -7,7 +7,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
@@ -62,6 +64,7 @@ func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handle
 	mux.Handle("POST /api/rooms/{id}/join", wrap(httpx.HandlerFunc(s.join)))
 	mux.Handle("POST /api/rooms/{id}/stream/request", wrap(httpx.HandlerFunc(s.requestStream)))
 	mux.Handle("PATCH /api/voice/self", wrap(httpx.HandlerFunc(s.voiceSelf)))
+	mux.Handle("PATCH /api/rooms/{id}/voice-status", wrap(httpx.HandlerFunc(s.setVoiceStatus)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/mute", wrap(httpx.HandlerFunc(s.muteMember)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/unmute", wrap(httpx.HandlerFunc(s.unmuteMember)))
 	mux.Handle("POST /api/rooms/{id}/voice/{userId}/disconnect", wrap(httpx.HandlerFunc(s.disconnectMember)))
@@ -287,6 +290,14 @@ func (s *Service) publishCall(ctx context.Context, wsID, rid uuid.UUID) {
 	if err := s.fillStarted(ctx, room); err != nil {
 		slog.WarnContext(ctx, "read call start", "room", rid, "err", err)
 		return
+	}
+	if room.GetVoiceStartedAt() == nil && room.GetVoiceStatus() != "" {
+		// The call ended: its status line goes with it (same ROOM_UPDATE).
+		if _, err := s.db.Q.ClearVoiceStatus(ctx, rid); err != nil {
+			slog.WarnContext(ctx, "clear voice status", "room", rid, "err", err)
+		} else {
+			room.VoiceStatus = ""
+		}
 	}
 	s.events.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: room}}})
 }
@@ -647,9 +658,81 @@ func DisabledRoutes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 		return httpx.Unavailable(errors.New("rtc: LiveKit is not configured"))
 	})
 	for _, p := range []string{"POST /api/rooms/{id}/join", "POST /api/rooms/{id}/stream/request", "PATCH /api/voice/self",
-		"POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/unmute", "POST /api/rooms/{id}/voice/{userId}/disconnect",
+		"PATCH /api/rooms/{id}/voice-status", "POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/unmute", "POST /api/rooms/{id}/voice/{userId}/disconnect",
 		"POST /api/rooms/{id}/voice/{userId}/stop-stream", "POST /api/rooms/{id}/voice/{userId}/move"} {
 		mux.Handle(p, wrap(h))
 	}
 	mux.Handle("POST /api/rtc/webhook", h)
+}
+
+// maxVoiceStatus bounds rooms.voice_status (runes; DB CHECK matches).
+const maxVoiceStatus = 60
+
+// setVoiceStatus sets the status line of a voice room's current call: by a participant
+// of the call (CONNECT and in the room now) or by MANAGE_ROOM. The membership check and the
+// write run under the workspace voice lock, like the clearing when the room empties, so a
+// status cannot outlive the call it was set for.
+func (s *Service) setVoiceStatus(w http.ResponseWriter, r *http.Request) error {
+	roomID, err := httpx.PathUUID(r, "id", "room")
+	if err != nil {
+		return err
+	}
+	acc, err := rooms.Access(r, roomID)
+	if err != nil {
+		return err
+	}
+	var req v1.UpdateVoiceStatusRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	status := strings.TrimSpace(req.GetStatus())
+	if utf8.RuneCountInString(status) > maxVoiceStatus {
+		return httpx.Validation("status", "status must be at most 60 characters")
+	}
+	room, err := s.db.Q.GetRoom(r.Context(), roomID)
+	if err != nil {
+		return err
+	}
+	if room.Type != "voice" {
+		return httpx.Validation("id", "only voice rooms have a call status")
+	}
+	me := auth.MustFromContext(r.Context()).UserID
+	var upd sqlc.Room
+	err = s.voice.WithLock(r.Context(), acc.WorkspaceID, func() error {
+		if !acc.Bits.Has(perm.ManageRoom) {
+			if !acc.Bits.Has(perm.Connect) {
+				return httpx.Forbidden("CONNECT required")
+			}
+			in, err := s.memberSessions(r.Context(), acc.WorkspaceID, roomID, me)
+			if err != nil {
+				return err
+			}
+			if len(in) == 0 {
+				return httpx.Forbidden("join the call to set its status (or MANAGE_ROOM)")
+			}
+		}
+		var val *string
+		if status != "" {
+			val = &status
+		}
+		var err error
+		upd, err = s.db.Q.SetVoiceStatus(r.Context(), sqlc.SetVoiceStatusParams{ID: roomID, Status: val})
+		return err
+	})
+	if db.IsNotFound(err) {
+		return httpx.NotFound("room")
+	}
+	if err != nil {
+		return err
+	}
+	pb, err := rooms.Load(r.Context(), s.db.Q, upd)
+	if err != nil {
+		return err
+	}
+	if err := s.fillStarted(r.Context(), pb); err != nil {
+		slog.WarnContext(r.Context(), "read call start", "room", roomID, "err", err)
+	}
+	s.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: pb}}})
+	httpx.Write(w, http.StatusOK, &v1.UpdateRoomResponse{Room: pb})
+	return nil
 }
