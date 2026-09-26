@@ -52,7 +52,9 @@ type Service struct {
 
 // NewService wires the rtc service. ev must be the plain publisher (not the Sync decorator).
 func NewService(cfg Config, d *db.DB, r rueidis.Client, lk LiveKit, ev events.Publisher) *Service {
-	return &Service{cfg: cfg, db: d, redis: r, lk: lk, voice: voice.Store{C: r}, events: ev}
+	s := &Service{cfg: cfg, db: d, redis: r, lk: lk, voice: voice.Store{C: r}, events: ev}
+	s.voice.OnCalls = s.publishCalls
+	return s
 }
 
 // Routes registers the rtc routes. The webhook is public (signature-checked).
@@ -198,20 +200,45 @@ func (s *Service) requestStream(w http.ResponseWriter, r *http.Request) error {
 	if err := s.voice.ReserveStream(r.Context(), identity, preset); err != nil {
 		return err
 	}
-	if err := s.lk.UpdatePermission(r.Context(), name, identity, s.grant(r.Context(), room.WorkspaceID, id.UserID, acc.Bits, true)); err != nil {
+	if err := s.pushGrant(r.Context(), name, identity, room.WorkspaceID, id.UserID, acc.Bits, true); err != nil {
 		return httpx.Unavailable(err)
 	}
 	httpx.Write(w, http.StatusOK, &v1.RequestStreamResponse{Preset: preset})
 	return nil
 }
 
-// serverMuted reports a moderator's mute; a Redis error counts as not muted (logged).
+// serverMuted reports a moderator's mute. It fails closed (review 4 L9): if the flag
+// cannot be read, the user is treated as muted and gets no microphone.
 func (s *Service) serverMuted(ctx context.Context, wid, uid uuid.UUID) bool {
 	sm, err := s.voice.ServerMuted(ctx, wid, uid)
 	if err != nil {
-		slog.WarnContext(ctx, "read server mute", "user", uid, "err", err)
+		slog.WarnContext(ctx, "read server mute, treating as muted", "user", uid, "err", err)
+		return true
 	}
 	return sm
+}
+
+// pushGrant sends a device's LiveKit permissions and re-reads the server-mute flag after
+// the push: if a mute / unmute landed meanwhile, the push may have carried a stale value,
+// so it is repeated with the current one (review 4 L1). Any push computed from an old flag
+// is thus followed by a corrective one from the same caller.
+func (s *Service) pushGrant(ctx context.Context, lkRoom, identity string, wid, uid uuid.UUID, bits perm.Bits, slot bool) error {
+	sm := s.serverMuted(ctx, wid, uid)
+	for range 3 {
+		b := bits
+		if sm {
+			b &^= perm.Speak
+		}
+		if err := s.lk.UpdatePermission(ctx, lkRoom, identity, Grant(b, slot)); err != nil {
+			return err
+		}
+		now := s.serverMuted(ctx, wid, uid)
+		if now == sm {
+			return nil
+		}
+		sm = now
+	}
+	return nil
 }
 
 // grant is Grant for a concrete user: a server-muted user loses the microphone source, so
@@ -233,14 +260,20 @@ func (s *Service) publishVoice(ctx context.Context, wsID uuid.UUID, c voice.Chan
 			VoiceStateUpdate: &v1.VoiceStateUpdate{State: c.After},
 		}})
 	}
-	for _, rid := range c.Calls {
+}
+
+// publishCalls runs under the workspace voice lock (voice.Store.OnCalls).
+func (s *Service) publishCalls(ctx context.Context, wsID uuid.UUID, rooms []uuid.UUID) {
+	for _, rid := range rooms {
 		s.publishCall(ctx, wsID, rid)
 	}
 }
 
 // publishCall announces a call start or end as ROOM_UPDATE carrying voice_started_at, so
-// every client counts the call timer from server time. The start is re-read from Redis at
-// publish time: if a start and an end race, the later event carries the current state.
+// every client counts the call timer from server time. It runs under the workspace voice
+// lock, so events of one room are published in the order of the state changes; the start
+// is read from Redis at that point. If Redis cannot be read nothing is published (a wrong
+// "no call" would reset every client's timer); the next change or READY corrects it.
 func (s *Service) publishCall(ctx context.Context, wsID, rid uuid.UUID) {
 	row, err := s.db.Q.GetRoom(ctx, rid)
 	if err != nil {
@@ -251,25 +284,32 @@ func (s *Service) publishCall(ctx context.Context, wsID, rid uuid.UUID) {
 		slog.WarnContext(ctx, "load room for call update", "room", rid, "err", err)
 		return
 	}
-	s.fillStarted(ctx, room)
+	if err := s.fillStarted(ctx, room); err != nil {
+		slog.WarnContext(ctx, "read call start", "room", rid, "err", err)
+		return
+	}
 	s.events.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: room}}})
 }
 
 // fillStarted sets room.voice_started_at from Redis (unset when nobody is in the call).
-func (s *Service) fillStarted(ctx context.Context, room *v1.Room) {
+// On a Redis error the room is left unchanged and the error returned.
+func (s *Service) fillStarted(ctx context.Context, room *v1.Room) error {
 	if room.GetType() != v1.RoomType_ROOM_TYPE_VOICE {
-		return
+		return nil
 	}
 	rid, err := uuid.Parse(room.GetId())
 	if err != nil {
-		return
+		return nil
+	}
+	started, err := s.voice.StartedAt(ctx, []uuid.UUID{rid})
+	if err != nil {
+		return err
 	}
 	room.VoiceStartedAt = nil
-	if started, err := s.voice.StartedAt(ctx, []uuid.UUID{rid}); err == nil {
-		if t, ok := started[rid]; ok {
-			room.VoiceStartedAt = timestamppb.New(t)
-		}
+	if t, ok := started[rid]; ok {
+		room.VoiceStartedAt = timestamppb.New(t)
 	}
+	return nil
 }
 
 func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
@@ -285,12 +325,16 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 	if !ok {
 		return httpx.Conflict("not connected to a voice room")
 	}
-	if req.Muted != nil && !req.GetMuted() && s.serverMuted(r.Context(), wsID, id.UserID) {
-		return httpx.Forbidden("muted by a moderator")
-	}
+	// The server-mute check runs inside the update, under the workspace voice lock that
+	// SetServerMuted also takes: a concurrent mute cannot slip between check and write (L2).
+	blocked := false
 	c, err := s.voice.Update(r.Context(), wsID, id.UserID, id.SessionID, func(cur *voice.SessionState) *voice.SessionState {
 		if cur == nil {
 			return nil
+		}
+		if req.Muted != nil && !req.GetMuted() && s.serverMuted(r.Context(), wsID, id.UserID) {
+			blocked = true
+			return cur
 		}
 		n := *cur
 		if req.Muted != nil {
@@ -303,6 +347,9 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 	})
 	if err != nil {
 		return err
+	}
+	if blocked {
+		return httpx.Forbidden("muted by a moderator")
 	}
 	s.publishVoice(r.Context(), wsID, c)
 	httpx.NoContent(w)
@@ -372,6 +419,9 @@ func (s *Service) muteMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := workspaceMute(r, room.WorkspaceID); err != nil {
+		return err
+	}
 	c, err := s.voice.SetServerMuted(r.Context(), room.WorkspaceID, target, true)
 	if err != nil {
 		return err
@@ -408,11 +458,28 @@ func (s *Service) muteMember(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// workspaceMute requires MUTE_MEMBERS at workspace level (owner / admin by role). A server
+// mute applies in every room of the workspace, so a moderator of one room (room override)
+// may not impose or lift it (review 4 L3); room moderators still disconnect / stop streams.
+func workspaceMute(r *http.Request, wid uuid.UUID) error {
+	bits, _, err := perm.FromContext(r.Context()).Workspace(r.Context(), wid, auth.MustFromContext(r.Context()).UserID)
+	if err != nil {
+		return err
+	}
+	if !bits.Has(perm.MuteMembers) {
+		return httpx.Forbidden("MUTE_MEMBERS at workspace level required: a server mute applies to every room")
+	}
+	return nil
+}
+
 // unmuteMember lifts a server mute (MUTE_MEMBERS; the member cannot lift it). The
 // microphone grant is restored; the member unmutes themselves.
 func (s *Service) unmuteMember(w http.ResponseWriter, r *http.Request) error {
 	room, target, _, err := s.moderateAny(r)
 	if err != nil {
+		return err
+	}
+	if err := workspaceMute(r, room.WorkspaceID); err != nil {
 		return err
 	}
 	c, err := s.voice.SetServerMuted(r.Context(), room.WorkspaceID, target, false)
@@ -458,7 +525,7 @@ func (s *Service) stopStream(w http.ResponseWriter, r *http.Request) error {
 		} else if !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}
-		if err := s.lk.UpdatePermission(r.Context(), name, identity, s.grant(r.Context(), room.WorkspaceID, st.UserID, acc.Bits, false)); err != nil && !IsNotFound(err) {
+		if err := s.pushGrant(r.Context(), name, identity, room.WorkspaceID, st.UserID, acc.Bits, false); err != nil && !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}
 		// Recorded streams of this device (also covers tracks LiveKit no longer reports).

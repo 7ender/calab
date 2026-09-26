@@ -39,6 +39,7 @@ const (
 	Permission_PERMISSION_ADMINISTRATOR    Permission = 1024 // 1 << 10
 	Permission_PERMISSION_MOVE_MEMBERS     Permission = 2048 // 1 << 11: move others between voice rooms, join over user_limit
 	Permission_PERMISSION_MANAGE_NICKNAMES Permission = 4096 // 1 << 12: workspace-level, change others' nicknames
+	Permission_PERMISSION_MENTION_EVERYONE Permission = 8192 // 1 << 13: @everyone / @here mention everyone who sees the room
 )
 
 // Enum value maps for Permission.
@@ -58,6 +59,7 @@ var (
 		1024: "PERMISSION_ADMINISTRATOR",
 		2048: "PERMISSION_MOVE_MEMBERS",
 		4096: "PERMISSION_MANAGE_NICKNAMES",
+		8192: "PERMISSION_MENTION_EVERYONE",
 	}
 	Permission_value = map[string]int32{
 		"PERMISSION_UNSPECIFIED":      0,
@@ -74,6 +76,7 @@ var (
 		"PERMISSION_ADMINISTRATOR":    1024,
 		"PERMISSION_MOVE_MEMBERS":     2048,
 		"PERMISSION_MANAGE_NICKNAMES": 4096,
+		"PERMISSION_MENTION_EVERYONE": 8192,
 	}
 )
 
@@ -218,7 +221,7 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\x1bcalaba/v1/permissions.proto\x12\tcalaba.v1\">\n" +
 	"\x12PermissionOverride\x12\x14\n" +
 	"\x05allow\x18\x01 \x01(\x04R\x05allow\x12\x12\n" +
-	"\x04deny\x18\x02 \x01(\x04R\x04deny*\x9e\x03\n" +
+	"\x04deny\x18\x02 \x01(\x04R\x04deny*\xc0\x03\n" +
 	"\n" +
 	"Permission\x12\x1a\n" +
 	"\x16PERMISSION_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -234,7 +237,8 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\x1bPERMISSION_MANAGE_WORKSPACE\x10\x80\x04\x12\x1d\n" +
 	"\x18PERMISSION_ADMINISTRATOR\x10\x80\b\x12\x1c\n" +
 	"\x17PERMISSION_MOVE_MEMBERS\x10\x80\x10\x12 \n" +
-	"\x1bPERMISSION_MANAGE_NICKNAMES\x10\x80 *\x98\x01\n" +
+	"\x1bPERMISSION_MANAGE_NICKNAMES\x10\x80 \x12 \n" +
+	"\x1bPERMISSION_MENTION_EVERYONE\x10\x80@*\x98\x01\n" +
 	"\rWorkspaceRole\x12\x1e\n" +
 	"\x1aWORKSPACE_ROLE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14WORKSPACE_ROLE_OWNER\x10\x01\x12\x18\n" +

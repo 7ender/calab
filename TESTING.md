@@ -1080,3 +1080,28 @@ cd ../.. && make test-integration 2>&1 | grep internal/app
 - `TestVersion` проходит: Valkey 9 и Redis 7.4 принимаются, Valkey 8 и Redis 7.2 — нет; пароль в ошибке скрыт;
 - `ok … internal/app` — весь интеграционный набор против Valkey (presence на `HEXPIRE`, Lua-лимитеры, pub/sub, client-side caching).
 - Сервер со старым Redis 7.2 или Valkey 8 не стартует: `need Valkey >= 9.0 or Redis >= 7.4`.
+
+## Server: ревью 4 (M1, M2, L1–L10)
+
+```sh
+cd apps/server
+go test ./internal/perm/ ./internal/redisx/ ./internal/messages/ && (cd ../.. && pnpm --filter ./packages/protocol test)
+go test -race -tags integration -count=1 -v -run 'TestReadStateCounts|TestMentions|TestRoomNotificationSettings|TestServerMute|TestVoiceTimes|TestChangeCredentials' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: всё `ok` / `--- PASS`.
+
+Что проверяется:
+- **M1** — `TestReadStateCounts`: комната, которую bob ни разу не открывал, есть в READY с пустым `last_read_message_id`, `unread_count = 2`, `mention_count = 1`.
+- **M2** — индексы миграции 00007. Замер на seeded-БД (1M сообщений / 100 комнат / 2 % удалённых / 350k упоминаний / 2k `@everyone`; маркеры 5 и 5000 сообщений назад, у 10 комнат маркера нет): READY-запрос **82 мс → 6 мс** (медиана из 7), буферы **65 269 → 6 603**, в плане только `Index Only Scan` с `Heap Fetches: 0`.
+- **L3** — `TestServerMute`: участник с `MUTE_MEMBERS` в комнате (override) получает 403 на mute: нужен уровень workspace.
+- **L6** — `TestRoomNotificationSettings`: после скрытия комнаты её настройки пропадают из READY.
+- **L8** — вектор `permissions.json` (`MENTION_EVERYONE` = 1<<13 у owner/admin, у member нет); `TestMentions`: `@everyone` от участника без права не попадает в упоминания.
+- **L10** — `TestConnectErrorsHidePassword`: ни одна ошибка `redisx.Connect` не содержит пароль.
+- **L1/L2/L4/L7/L9** — гонки. Детерминированно они не воспроизводятся, закрыты конструктивно:
+  - L1: `pushGrant` после отправки перечитывает флаг и повторяет отправку;
+  - L2: проверка self-unmute внутри `voice.Update` под блокировкой;
+  - L4: `SELECT password_hash … FOR SHARE` в транзакции создания сессии;
+  - L7: `voice.Store.OnCalls` публикует начало и конец звонка под блокировкой;
+  - L9: fail closed.
+
+  Регрессия — весь `make test-integration`.

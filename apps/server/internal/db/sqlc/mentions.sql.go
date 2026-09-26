@@ -156,14 +156,17 @@ func (q *Queries) ListMentions(ctx context.Context, arg ListMentionsParams) ([]M
 
 const listRoomNotificationSettings = `-- name: ListRoomNotificationSettings :many
 SELECT s.user_id, s.room_id, s.level, s.muted_until FROM room_notification_settings s
-JOIN rooms r ON r.id = s.room_id AND r.archived_at IS NULL
-JOIN workspace_members wm ON wm.workspace_id = r.workspace_id AND wm.user_id = s.user_id
-WHERE s.user_id = $1
+WHERE s.user_id = $1::uuid AND s.room_id = ANY($2::uuid[])
 `
 
-// Stored settings of live rooms in the user's workspaces.
-func (q *Queries) ListRoomNotificationSettings(ctx context.Context, userID uuid.UUID) ([]RoomNotificationSetting, error) {
-	rows, err := q.db.Query(ctx, listRoomNotificationSettings, userID)
+type ListRoomNotificationSettingsParams struct {
+	UserID  uuid.UUID
+	RoomIds []uuid.UUID
+}
+
+// Stored settings of the given rooms (the ones the user can view now).
+func (q *Queries) ListRoomNotificationSettings(ctx context.Context, arg ListRoomNotificationSettingsParams) ([]RoomNotificationSetting, error) {
+	rows, err := q.db.Query(ctx, listRoomNotificationSettings, arg.UserID, arg.RoomIds)
 	if err != nil {
 		return nil, err
 	}

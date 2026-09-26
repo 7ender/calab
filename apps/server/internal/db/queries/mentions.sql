@@ -48,8 +48,6 @@ RETURNING *;
 DELETE FROM room_notification_settings WHERE user_id = $1 AND room_id = $2;
 
 -- name: ListRoomNotificationSettings :many
--- Stored settings of live rooms in the user's workspaces.
+-- Stored settings of the given rooms (the ones the user can view now).
 SELECT s.* FROM room_notification_settings s
-JOIN rooms r ON r.id = s.room_id AND r.archived_at IS NULL
-JOIN workspace_members wm ON wm.workspace_id = r.workspace_id AND wm.user_id = s.user_id
-WHERE s.user_id = $1;
+WHERE s.user_id = sqlc.arg('user_id')::uuid AND s.room_id = ANY(sqlc.arg('room_ids')::uuid[]);

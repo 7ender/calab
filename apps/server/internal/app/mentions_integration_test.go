@@ -23,6 +23,7 @@ func TestMentions(t *testing.T) {
 	everyone := send(t, o, rid, "@everyone lunch", "")
 	send(t, bob, rid, "code: `@"+o.id+"` and mail@"+o.id, "") // not mentions
 	send(t, bob, rid, "@"+bob.id+" note to self", "")         // own mention: not stored
+	send(t, bob, rid, "@everyone from a member", "")          // no MENTION_EVERYONE: plain text
 
 	// A private room bob cannot see: its mentions stay hidden from him.
 	var pr v1.CreateRoomResponse
@@ -86,6 +87,15 @@ func TestRoomNotificationSettings(t *testing.T) {
 	if n := len(dialGW(t).identify(o.token).GetNotificationSettings()); n != 0 {
 		t.Fatal("settings leaked to another user")
 	}
+	// Settings of a room the user can no longer view are not sent (they would reveal its id).
+	hide := &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
+		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_ROLE, TargetId: "member", Deny: 1},
+	}}
+	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", hide, nil)
+	if n := len(dialGW(t).identify(bob.token).GetNotificationSettings()); n != 0 {
+		t.Fatal("settings of a hidden room in READY")
+	}
+	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{}, nil)
 	// Validation and access.
 	bob.must(422, "PUT", "/api/rooms/"+rid+"/notifications", &v1.UpdateRoomNotificationSettingsRequest{
 		MutedUntil: timestamppb.New(time.Now().Add(2 * 365 * 24 * time.Hour)),
@@ -105,7 +115,7 @@ func TestRoomNotificationSettings(t *testing.T) {
 }
 
 func TestReadStateCounts(t *testing.T) {
-	o, bob, _, room := setupTeam(t)
+	o, bob, ws, room := setupTeam(t)
 	rid := room.GetId()
 	counts := func(u *user) (unread, mentions uint32, ok bool) {
 		for _, rs := range dialGW(t).identify(u.token).GetReadStates() {
@@ -132,5 +142,24 @@ func TestReadStateCounts(t *testing.T) {
 	bob.must(204, "PUT", "/api/rooms/"+rid+"/read", &v1.UpdateReadStateRequest{MessageId: last.GetId()}, nil)
 	if u, m, _ := counts(bob); u != 0 || m != 0 {
 		t.Fatalf("after read: %d / %d", u, m)
+	}
+
+	// A room bob never opened (no read marker) is counted from his joining (review 4 M1).
+	var cr v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+ws.GetId()+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "news"}, &cr)
+	news := cr.GetRoom().GetId()
+	send(t, o, news, "hello", "")
+	send(t, o, news, "ping @"+bob.id, "")
+	found := false
+	for _, rs := range dialGW(t).identify(bob.token).GetReadStates() {
+		if rs.GetRoomId() == news {
+			found = true
+			if rs.GetLastReadMessageId() != "" || rs.GetUnreadCount() != 2 || rs.GetMentionCount() != 1 {
+				t.Fatalf("never-opened room: %v", rs)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("never-opened room missing from READY read_states")
 	}
 }

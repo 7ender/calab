@@ -19,6 +19,7 @@ export const PERMISSION_BITS = {
   ADMINISTRATOR: BigInt(Permission.ADMINISTRATOR),
   MOVE_MEMBERS: BigInt(Permission.MOVE_MEMBERS),
   MANAGE_NICKNAMES: BigInt(Permission.MANAGE_NICKNAMES),
+  MENTION_EVERYONE: BigInt(Permission.MENTION_EVERYONE),
 } as const;
 
 export type PermissionName = keyof typeof PERMISSION_BITS;

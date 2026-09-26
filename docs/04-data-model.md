@@ -108,6 +108,7 @@ export const Permission = {
   ADMINISTRATOR:    1n << 10n,  // всё, игнорирует deny
   MOVE_MEMBERS:     1n << 11n,  // перемещать других между voice-комнатами, входить сверх user_limit
   MANAGE_NICKNAMES: 1n << 12n,  // менять ники других (только уровень workspace)
+  MENTION_EVERYONE: 1n << 13n,  // @everyone / @here (у member по умолчанию нет)
 } as const;
 ```
 

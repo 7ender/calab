@@ -17,6 +17,7 @@ enum Permission {
   PERMISSION_ADMINISTRATOR = 1024;  // 1 << 10
   PERMISSION_MOVE_MEMBERS = 2048;   // 1 << 11: move others between voice rooms, join over user_limit
   PERMISSION_MANAGE_NICKNAMES = 4096; // 1 << 12: workspace-level, change others' nicknames
+  PERMISSION_MENTION_EVERYONE = 8192; // 1 << 13: @everyone / @here mention everyone who sees the room
 }
 
 enum WorkspaceRole {

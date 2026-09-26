@@ -282,16 +282,21 @@ func TestVoiceTimes(t *testing.T) {
 	g := dialGW(t)
 	g.identify(o.token)
 	webhook(t, whEvent("participant_joined", roomName, bj.GetIdentity(), nil), "secret")
-	ev := g.wait("VOICE_STATE_UPDATE bob", func(e *v1.DispatchEvent) bool { return e.GetVoiceStateUpdate().GetState().GetUserId() == bob.id })
-	joined := ev.GetVoiceStateUpdate().GetState().GetJoinedAt().AsTime()
-	if time.Since(joined) > time.Minute || time.Since(joined) < 0 {
-		t.Fatalf("joined_at: %v", joined)
-	}
-	// The call start is broadcast as ROOM_UPDATE (server time for every client's timer).
-	g.wait("ROOM_UPDATE call started", func(e *v1.DispatchEvent) bool {
-		r := e.GetRoomUpdate().GetRoom()
-		return r.GetId() == rid && r.GetVoiceStartedAt() != nil && r.GetVoiceStartedAt().AsTime().Equal(joined)
+	// Bob's voice state and the call start (ROOM_UPDATE, server time for every client's
+	// timer; published under the voice lock, so it may come first) — in any order.
+	var joined, callStart time.Time
+	g.wait("VOICE_STATE_UPDATE bob + ROOM_UPDATE call started", func(e *v1.DispatchEvent) bool {
+		if vs := e.GetVoiceStateUpdate().GetState(); vs.GetUserId() == bob.id {
+			joined = vs.GetJoinedAt().AsTime()
+		}
+		if r := e.GetRoomUpdate().GetRoom(); r.GetId() == rid && r.GetVoiceStartedAt() != nil {
+			callStart = r.GetVoiceStartedAt().AsTime()
+		}
+		return !joined.IsZero() && !callStart.IsZero()
 	})
+	if time.Since(joined) > time.Minute || time.Since(joined) < 0 || !callStart.Equal(joined) {
+		t.Fatalf("joined_at %v, call start %v", joined, callStart)
+	}
 	time.Sleep(20 * time.Millisecond)
 	webhook(t, whEvent("participant_joined", roomName, oj.GetIdentity(), nil), "secret")
 	g.wait("VOICE_STATE_UPDATE owner", func(e *v1.DispatchEvent) bool { return e.GetVoiceStateUpdate().GetState().GetUserId() == o.id })

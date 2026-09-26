@@ -36,7 +36,9 @@ func (p SyncPublisher) Workspace(ctx context.Context, wid uuid.UUID, ev *v1.Disp
 	// e.g. a rename does not reset the call timer.
 	if r := ev.GetRoomUpdate().GetRoom(); r.GetType() == v1.RoomType_ROOM_TYPE_VOICE {
 		r = proto.Clone(r).(*v1.Room)
-		p.S.fillStarted(ctx, r)
+		if err := p.S.fillStarted(ctx, r); err != nil {
+			slog.WarnContext(ctx, "read call start for ROOM_UPDATE", "room", r.GetId(), "err", err)
+		}
 		ev = &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: r}}}
 	}
 	p.Publisher.Workspace(ctx, wid, ev)
@@ -102,7 +104,7 @@ func (s *Service) resync(ctx context.Context, wid uuid.UUID, match func(voice.Se
 			s.removeIdentities(ctx, room, []string{identity})
 			continue
 		}
-		if err := s.lk.UpdatePermission(ctx, room, identity, s.grant(ctx, wid, st.UserID, acc.Bits, st.Streaming)); err != nil && !IsNotFound(err) {
+		if err := s.pushGrant(ctx, room, identity, wid, st.UserID, acc.Bits, st.Streaming); err != nil && !IsNotFound(err) {
 			slog.WarnContext(ctx, "livekit update permission", "identity", identity, "err", err)
 		}
 	}

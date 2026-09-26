@@ -292,7 +292,20 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 	if err != nil || !ok || user.PasswordHash == nil || user.DisabledAt != nil {
 		return nil, errInvalidCredentials
 	}
-	tokens, err := s.newSession(ctx, s.db.Q, user.ID, c)
+	// The hash was verified outside any transaction (argon2 takes a while): make sure it is
+	// still the current one when the session is created (review 4 L4).
+	var tokens *v1.AuthTokens
+	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		cur, err := q.LockPasswordHash(ctx, user.ID)
+		if err != nil {
+			return err
+		}
+		if cur == nil || *cur != *user.PasswordHash {
+			return errInvalidCredentials
+		}
+		tokens, err = s.newSession(ctx, q, user.ID, c)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

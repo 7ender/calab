@@ -140,7 +140,13 @@ func Equal(a, b *v1.VoiceState) bool {
 }
 
 // Store is the Redis-backed voice state.
-type Store struct{ C rueidis.Client }
+type Store struct {
+	C rueidis.Client
+	// OnCalls, if set, is called by UpdateLocked — still holding the workspace lock — with
+	// the rooms whose call started or ended. Announcing them under the lock keeps start/end
+	// events of a room in order across goroutines and instances (review 4 L7).
+	OnCalls func(ctx context.Context, wid uuid.UUID, rooms []uuid.UUID)
+}
 
 func wsKey(wid uuid.UUID) string     { return "voice:ws:" + wid.String() }
 func sessKey(sid uuid.UUID) string   { return "voice:sess:" + sid.String() }
@@ -355,6 +361,9 @@ func (s Store) UpdateLocked(ctx context.Context, wid, userID, sessionID uuid.UUI
 		return Change{}, err
 	}
 	before.ServerMuted, after.ServerMuted = sm, sm
+	if len(calls) > 0 && s.OnCalls != nil {
+		s.OnCalls(ctx, wid, calls)
+	}
 	return Change{Before: before, After: after, Calls: calls}, nil
 }
 

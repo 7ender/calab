@@ -38,6 +38,12 @@ func TestServerMute(t *testing.T) {
 
 	// Only MUTE_MEMBERS can mute and unmute; the member cannot lift it.
 	bob.must(403, "POST", "/api/rooms/"+rid+"/voice/"+o.id+"/mute", nil, nil)
+	// MUTE_MEMBERS in one room (override) is not enough: the mute covers the workspace (L3).
+	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
+		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: bob.id, Allow: 128},
+	}}, nil)
+	bob.must(403, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/mute", nil, nil)
+	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{}, nil)
 	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/mute", nil, nil)
 	serverMuted(true)
 	if hasMic() {

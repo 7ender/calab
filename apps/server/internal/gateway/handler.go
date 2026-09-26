@@ -376,7 +376,8 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		h.fillLive(ctx, w.ID, snap)
 		ready.Workspaces = append(ready.Workspaces, snap)
 	}
-	// Read markers (with unread / mention counts) only for rooms the user can see now.
+	// Read state with unread / mention counts for every room the user can see now (also
+	// rooms never opened: review 4 M1).
 	var visible []uuid.UUID
 	for _, snap := range ready.Workspaces {
 		for _, r := range snap.GetRooms() {
@@ -388,12 +389,16 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		return nil, err
 	}
 	for _, r := range rs {
+		marker := "" // never read: counts start at the user's joining of the workspace
+		if r.LastReadMessageID != nil {
+			marker = r.LastReadMessageID.String()
+		}
 		ready.ReadStates = append(ready.ReadStates, &v1.ReadState{
-			RoomId: r.RoomID.String(), LastReadMessageId: r.LastReadMessageID.String(),
+			RoomId: r.RoomID.String(), LastReadMessageId: marker,
 			UnreadCount: uint32(max(r.UnreadCount, 0)), MentionCount: uint32(max(r.MentionCount, 0)), //nolint:gosec // 0..999
 		})
 	}
-	ns, err := h.db.Q.ListRoomNotificationSettings(ctx, uid)
+	ns, err := h.db.Q.ListRoomNotificationSettings(ctx, sqlc.ListRoomNotificationSettingsParams{UserID: uid, RoomIds: visible})
 	if err != nil {
 		return nil, err
 	}

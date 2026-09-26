@@ -425,22 +425,32 @@ func (q *Queries) ListReactions(ctx context.Context, arg ListReactionsParams) ([
 }
 
 const listReadStates = `-- name: ListReadStates :many
-SELECT rs.room_id, rs.last_read_message_id,
+SELECT b.room_id::uuid AS room_id,
+    b.marker AS last_read_message_id,
     (SELECT count(*) FROM (
         SELECT 1 FROM messages m
-        WHERE m.room_id = rs.room_id AND m.id > rs.last_read_message_id
-          AND m.deleted_at IS NULL AND m.author_id <> rs.user_id
+        WHERE m.room_id = b.room_id AND m.id > b.after
+          AND m.deleted_at IS NULL AND m.author_id <> $1::uuid
         LIMIT 999) u)::integer AS unread_count,
     (SELECT count(*) FROM (
         SELECT mm.message_id FROM message_mentions mm
-        WHERE mm.user_id = rs.user_id AND mm.room_id = rs.room_id AND mm.message_id > rs.last_read_message_id
+        WHERE mm.user_id = $1::uuid AND mm.room_id = b.room_id AND mm.message_id > b.after
         UNION
         SELECT e.message_id FROM message_everyone_mentions e
-        JOIN messages em ON em.id = e.message_id AND em.author_id <> rs.user_id
-        WHERE e.room_id = rs.room_id AND e.message_id > rs.last_read_message_id
+        JOIN messages em ON em.id = e.message_id AND em.author_id <> $1::uuid
+        WHERE e.room_id = b.room_id AND e.message_id > b.after
         LIMIT 999) x)::integer AS mention_count
-FROM read_states rs
-WHERE rs.user_id = $1::uuid AND rs.room_id = ANY($2::uuid[])
+FROM (
+    SELECT v.room_id, rs.last_read_message_id AS marker,
+        coalesce(rs.last_read_message_id, (
+            substr(lpad(to_hex((extract(epoch FROM wm.joined_at) * 1000)::bigint), 12, '0'), 1, 8) || '-' ||
+            substr(lpad(to_hex((extract(epoch FROM wm.joined_at) * 1000)::bigint), 12, '0'), 9, 4) ||
+            '-0000-0000-000000000000')::uuid) AS after
+    FROM unnest($2::uuid[]) AS v (room_id)
+    JOIN rooms r ON r.id = v.room_id
+    JOIN workspace_members wm ON wm.workspace_id = r.workspace_id AND wm.user_id = $1::uuid
+    LEFT JOIN read_states rs ON rs.user_id = $1::uuid AND rs.room_id = v.room_id
+) b
 `
 
 type ListReadStatesParams struct {
@@ -450,13 +460,17 @@ type ListReadStatesParams struct {
 
 type ListReadStatesRow struct {
 	RoomID            uuid.UUID
-	LastReadMessageID uuid.UUID
+	LastReadMessageID *uuid.UUID
 	UnreadCount       int32
 	MentionCount      int32
 }
 
-// Read markers of the given (visible) rooms with unread and mention counts after the
-// marker, both capped at 999: every count is a bounded index range scan per room.
+// One row per given (visible) room: the read marker (NULL if the user never read the
+// room) and the unread / mention counts after it, both capped at 999. Without a marker
+// the counts start at the user's joining of the workspace (a uuidv7 lower bound from
+// joined_at). Every count is a bounded index-only range scan: messages_live_room_id_idx
+// (room_id, id) INCLUDE (author_id) WHERE deleted_at IS NULL and
+// message_mentions_user_room_idx (user_id, room_id, message_id) — migration 00007.
 func (q *Queries) ListReadStates(ctx context.Context, arg ListReadStatesParams) ([]ListReadStatesRow, error) {
 	rows, err := q.db.Query(ctx, listReadStates, arg.UserID, arg.RoomIds)
 	if err != nil {

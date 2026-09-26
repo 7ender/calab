@@ -222,7 +222,7 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 	if acc.Bits.Has(perm.Stream) {
 		slot, _ = s.streamSlotFree(ctx, rid, identity, media.GetMaxStreams())
 	}
-	if err := s.lk.UpdatePermission(ctx, lkRoom, identity, s.grant(ctx, wid, uid, acc.Bits, slot)); err != nil && !IsNotFound(err) {
+	if err := s.pushGrant(ctx, lkRoom, identity, wid, uid, acc.Bits, slot); err != nil && !IsNotFound(err) {
 		slog.WarnContext(ctx, "livekit update permission on join", "identity", identity, "err", err)
 	}
 	return nil
@@ -272,7 +272,7 @@ func (s *Service) streamStarted(ctx context.Context, wid, rid, uid, sid uuid.UUI
 			slog.WarnContext(ctx, "mute over-limit stream", "err", err)
 		}
 		if acc, err := perm.NewResolver(s.db.Q).Room(ctx, rid, uid); err == nil {
-			_ = s.lk.UpdatePermission(ctx, room, identity, s.grant(ctx, wid, uid, acc.Bits, false))
+			_ = s.pushGrant(ctx, room, identity, wid, uid, acc.Bits, false)
 		}
 		s.publishStreamStop(ctx, wid, rid, uid, t.Sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_LIMIT_REACHED)
 		return nil

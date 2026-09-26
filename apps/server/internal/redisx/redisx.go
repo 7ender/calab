@@ -15,7 +15,8 @@ import (
 func Connect(ctx context.Context, url string) (rueidis.Client, error) {
 	opt, err := rueidis.ParseURL(url)
 	if err != nil {
-		return nil, fmt.Errorf("redis: parse url: %w", err)
+		// The parser's message may echo the URL (with the password): report it redacted only.
+		return nil, fmt.Errorf("redis: invalid url %s", redactURL(url))
 	}
 	c, err := rueidis.NewClient(opt)
 	if err != nil {

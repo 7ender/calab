@@ -1,6 +1,7 @@
 package redisx
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/redis/rueidis"
@@ -44,6 +45,15 @@ func TestParseURLWithPassword(t *testing.T) {
 		}
 		if opt.Username != want[0] || opt.Password != want[1] || len(opt.InitAddress) != 1 || opt.InitAddress[0] != want[2] {
 			t.Errorf("%s: user=%q pass=%q addr=%v", raw, opt.Username, opt.Password, opt.InitAddress)
+		}
+	}
+}
+
+func TestConnectErrorsHidePassword(t *testing.T) {
+	for _, raw := range []string{"redis://:sup3rsecret@host:notaport/0", "http://:sup3rsecret@host/0"} {
+		_, err := Connect(t.Context(), raw)
+		if err == nil || strings.Contains(err.Error(), "sup3rsecret") {
+			t.Fatalf("%s: %v", raw, err)
 		}
 	}
 }

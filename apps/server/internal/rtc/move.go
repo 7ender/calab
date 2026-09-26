@@ -114,17 +114,14 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		}
 		if err := s.lk.MoveParticipant(r.Context(), srcName, identity, dstName); err != nil {
 			// Roll back to the source room.
-			back, _ := s.voice.Update(r.Context(), acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
+			// Call starts of both rooms are announced by the updates themselves (OnCalls).
+			_, _ = s.voice.Update(r.Context(), acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
 				if cur == nil || cur.RoomID != dstID {
 					return cur
 				}
 				n := prev
 				return &n
 			})
-			// The forward change was never published, but call starts may have moved.
-			for _, rid := range append(c.Calls, back.Calls...) {
-				s.publishCall(r.Context(), acc.WorkspaceID, rid)
-			}
 			if IsNotFound(err) {
 				continue // device already left; webhook / reconcile clean up
 			}
@@ -132,7 +129,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		}
 		moved++
 		s.publishVoice(r.Context(), acc.WorkspaceID, c)
-		if err := s.lk.UpdatePermission(r.Context(), dstName, identity, s.grant(r.Context(), acc.WorkspaceID, target, movedDst.Bits, st.Streaming)); err != nil && !IsNotFound(err) {
+		if err := s.pushGrant(r.Context(), dstName, identity, acc.WorkspaceID, target, movedDst.Bits, st.Streaming); err != nil && !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}
 		// Tracks move with the participant: carry the stream records over.

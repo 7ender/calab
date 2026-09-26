@@ -47,7 +47,8 @@ func ParseMentions(content string) (users []uuid.UUID, everyone bool) {
 }
 
 // saveMentions (re)writes a message's mention rows inside the create/edit transaction.
-// Guests cannot mention everyone (ADR-0016: guests are outsiders of the team).
+// @everyone / @here count only with MENTION_EVERYONE in the room (owner/admin by default,
+// others via overrides); without it they stay plain text.
 func saveMentions(ctx context.Context, q *sqlc.Queries, msg sqlc.Message, acc perm.RoomAccess, replace bool) error {
 	if replace {
 		if err := clearMentions(ctx, q, msg.ID); err != nil {
@@ -62,7 +63,7 @@ func saveMentions(ctx context.Context, q *sqlc.Queries, msg sqlc.Message, acc pe
 			return err
 		}
 	}
-	if everyone && acc.Role != perm.RoleGuest {
+	if everyone && acc.Bits.Has(perm.MentionEveryone) {
 		return q.InsertEveryoneMention(ctx, sqlc.InsertEveryoneMentionParams{MessageID: msg.ID, RoomID: msg.RoomID})
 	}
 	return nil

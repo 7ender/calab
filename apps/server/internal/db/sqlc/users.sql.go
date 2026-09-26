@@ -112,6 +112,20 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, erro
 	return i, err
 }
 
+const lockPasswordHash = `-- name: LockPasswordHash :one
+SELECT password_hash FROM users WHERE id = $1 FOR SHARE
+`
+
+// Login re-reads the hash under a share lock in the session transaction: a concurrent
+// password change either waits for the new session (and then revokes it) or has already
+// replaced the hash (and the login fails).
+func (q *Queries) LockPasswordHash(ctx context.Context, id uuid.UUID) (*string, error) {
+	row := q.db.QueryRow(ctx, lockPasswordHash, id)
+	var password_hash *string
+	err := row.Scan(&password_hash)
+	return password_hash, err
+}
+
 const lockRegistration = `-- name: LockRegistration :exec
 SELECT pg_advisory_xact_lock(hashtext('calaba.registration'))
 `

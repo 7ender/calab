@@ -36,3 +36,9 @@ UPDATE users SET password_hash = $2 WHERE id = $1;
 -- name: SetEmail :one
 UPDATE users SET email = $2 WHERE id = $1
 RETURNING *;
+
+-- name: LockPasswordHash :one
+-- Login re-reads the hash under a share lock in the session transaction: a concurrent
+-- password change either waits for the new session (and then revokes it) or has already
+-- replaced the hash (and the login fails).
+SELECT password_hash FROM users WHERE id = $1 FOR SHARE;
