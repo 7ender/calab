@@ -35,7 +35,7 @@ export default defineConfig({
       },
     },
     // Phone layout (ADR-0021): mobile.web.spec.ts only — self-contained (mock API + dist-web), in
-    // Chromium with the phone's viewport, touch, DPR and UA (WebKit has no fake media devices).
+    // Chromium with the phone's viewport, touch, DPR and UA (fake media: the voice path end to end)…
     ...(['iPhone 14', 'Pixel 7'] as const).map((device) => ({
       name: device.toLowerCase().replace(' ', '-'),
       testMatch: /mobile\.web\.spec\.ts/,
@@ -45,6 +45,12 @@ export default defineConfig({
         channel: 'chromium',
         launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio'] },
       },
+    })),
+    // …and in WebKit, the engine of iOS Safari (no fake microphone there: voice joins listen-only).
+    ...(['iPhone 14', 'iPhone SE (3rd gen)'] as const).map((device) => ({
+      name: `webkit-${device.toLowerCase().replace(/[()]/g, '').replace(/ /g, '-')}`,
+      testMatch: /mobile\.web\.spec\.ts/,
+      use: { ...devices[device], browserName: 'webkit' as const },
     })),
   ],
 });

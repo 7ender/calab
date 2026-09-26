@@ -107,7 +107,7 @@ async function touchHold(page: Page, selector: string): Promise<{ move(x: number
   };
 }
 
-test('phone: sign in → rooms drawer → message → voice → PTT hold', async ({ page }) => {
+test('phone: sign in → rooms drawer → message → voice → PTT hold', async ({ page, browserName }) => {
   test.setTimeout(120_000);
   await signIn(page);
 
@@ -179,19 +179,29 @@ test('phone: sign in → rooms drawer → message → voice → PTT hold', async
   // PTT: held = on air; sliding the finger off keeps it (pointer capture); lifting ends it.
   const ptt = '[data-testid="ptt-hold"]';
   await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'false');
-  const finger = await touchHold(page, ptt);
-  await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'true');
-  await expect(strip.getByText('В эфире'), 'status line while on air').toBeVisible();
-  await shot(page, 'mobile-voice-ptt');
-  await finger.move(20, 200);
-  await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'true');
-  await finger.up();
-  await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'false');
-  // The system taking the gesture (touchcancel) releases it too — never stuck on.
-  const again = await touchHold(page, ptt);
-  await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'true');
-  await again.cancel();
-  await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'false');
+  if (browserName === 'chromium') {
+    const finger = await touchHold(page, ptt);
+    await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'true');
+    await expect(strip.getByText('В эфире'), 'status line while on air').toBeVisible();
+    await shot(page, 'mobile-voice-ptt');
+    await finger.move(20, 200);
+    await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'true');
+    await finger.up();
+    await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'false');
+    // The system taking the gesture (touchcancel) releases it too — never stuck on.
+    const again = await touchHold(page, ptt);
+    await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'true');
+    await again.cancel();
+    await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'false');
+  } else {
+    // WebKit: no CDP touch input — the same press / release path from the keyboard (Space held).
+    // No fake microphone there, so no «В эфире» (nothing is transmitted).
+    await page.locator(ptt).focus();
+    await page.keyboard.down(' ');
+    await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.up(' ');
+    await expect(page.locator(ptt)).toHaveAttribute('aria-pressed', 'false');
+  }
 
   // Mute from the strip, then hang up.
   await strip.getByRole('button', { name: 'Выключить микрофон' }).tap();
