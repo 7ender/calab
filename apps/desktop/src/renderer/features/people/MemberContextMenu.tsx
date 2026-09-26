@@ -59,8 +59,6 @@ export function MemberContextMenu({
 }: {
   workspaceId: string;
   userId: string;
-  /** Ignored: «Профиль» always opens the profile dialog (kept until the room list stops passing it). */
-  onOpenProfile?: (() => void) | undefined;
   inProfile?: boolean;
   children: ReactElement;
 }): ReactNode {
