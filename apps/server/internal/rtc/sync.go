@@ -149,6 +149,7 @@ func (s *Service) resync(ctx context.Context, wid uuid.UUID, match func(voice.Se
 		acc, err := res.Room(ctx, st.RoomID, st.UserID)
 		if err != nil || !acc.Bits.Has(perm.ViewRoom|perm.Connect) {
 			s.removeIdentities(ctx, room, []string{identity})
+			s.dropPending(ctx, wid, st)
 			continue
 		}
 		if err := s.pushGrant(ctx, room, identity, wid, st.UserID, acc.Bits, st.Streaming); err != nil && !IsNotFound(err) {
@@ -165,6 +166,7 @@ func (s *Service) disconnect(ctx context.Context, wid uuid.UUID, match func(voic
 	for _, st := range states {
 		if match(st) {
 			s.removeIdentities(ctx, voice.RoomName(wid, st.RoomID), []string{voice.Identity(st.UserID, st.SessionID)})
+			s.dropPending(ctx, wid, st)
 		}
 	}
 }
@@ -254,10 +256,13 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		cutoff := start.Add(-joinGrace).UnixMilli()
 		for _, st := range states {
 			if rid, ok := present[voice.Identity(st.UserID, st.SessionID)]; ok && rid == st.RoomID {
+				if st.Pending { // connected, but participant_joined was lost
+					_ = s.setFlag(ctx, wid, st.RoomID, st.UserID, st.SessionID, func(n *voice.SessionState) { n.Pending = false })
+				}
 				continue
 			}
 			if st.JoinedAt > cutoff {
-				continue // too fresh to judge: may have joined after the listing
+				continue // too fresh to judge: may have joined after the listing (a pending /join too)
 			}
 			s.stopStreams(ctx, wid, st.RoomID, voice.Identity(st.UserID, st.SessionID), v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
 			joined := st.JoinedAt

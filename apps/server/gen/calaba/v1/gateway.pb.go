@@ -1605,8 +1605,12 @@ type VoiceState struct {
 	JoinedAt    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"` // earliest join of the user's devices in this room
 	// Muted by a moderator (POST …/voice/{userId}/mute) until a moderator unmutes: the
 	// microphone is muted server-side on all devices and cannot be unmuted by the user.
-	ServerMuted   bool `protobuf:"varint,8,opt,name=server_muted,json=serverMuted,proto3" json:"server_muted,omitempty"`
-	Camera        bool `protobuf:"varint,9,opt,name=camera,proto3" json:"camera,omitempty"` // any of the user's devices in the room publishes a webcam
+	ServerMuted bool `protobuf:"varint,8,opt,name=server_muted,json=serverMuted,proto3" json:"server_muted,omitempty"`
+	Camera      bool `protobuf:"varint,9,opt,name=camera,proto3" json:"camera,omitempty"` // any of the user's devices in the room publishes a webcam
+	// Recorded by POST /api/rooms/{id}/join (or an app-level move) but not connected to LiveKit
+	// yet: every device of the user in the room is still connecting. participant_joined clears
+	// it; without a connection within 15 s the state is removed (VOICE_STATE_UPDATE, empty room).
+	Pending       bool `protobuf:"varint,10,opt,name=pending,proto3" json:"pending,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1700,6 +1704,13 @@ func (x *VoiceState) GetServerMuted() bool {
 func (x *VoiceState) GetCamera() bool {
 	if x != nil {
 		return x.Camera
+	}
+	return false
+}
+
+func (x *VoiceState) GetPending() bool {
+	if x != nil {
+		return x.Pending
 	}
 	return false
 }
@@ -3950,7 +3961,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x18room_notification_update\x18\x1d \x01(\v2!.calaba.v1.RoomNotificationUpdateH\x00R\x16roomNotificationUpdate\x12H\n" +
 	"\x11voice_camera_stop\x18\x1e \x01(\v2\x1a.calaba.v1.VoiceCameraStopH\x00R\x0fvoiceCameraStop\x122\n" +
 	"\tdm_create\x18\x1f \x01(\v2\x13.calaba.v1.DmCreateH\x00R\bdmCreateB\a\n" +
-	"\x05event\"\xa5\x02\n" +
+	"\x05event\"\xbf\x02\n" +
 	"\n" +
 	"VoiceState\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
@@ -3961,7 +3972,9 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\tstreaming\x18\x06 \x01(\bR\tstreaming\x127\n" +
 	"\tjoined_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12!\n" +
 	"\fserver_muted\x18\b \x01(\bR\vserverMuted\x12\x16\n" +
-	"\x06camera\x18\t \x01(\bR\x06camera\"\x9b\x02\n" +
+	"\x06camera\x18\t \x01(\bR\x06camera\x12\x18\n" +
+	"\apending\x18\n" +
+	" \x01(\bR\apending\"\x9b\x02\n" +
 	"\bPresence\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x121\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x19.calaba.v1.PresenceStatusR\x06status\x127\n" +

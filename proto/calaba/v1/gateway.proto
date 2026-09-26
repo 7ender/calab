@@ -171,6 +171,10 @@ message VoiceState {
   // microphone is muted server-side on all devices and cannot be unmuted by the user.
   bool server_muted = 8;
   bool camera = 9; // any of the user's devices in the room publishes a webcam
+  // Recorded by POST /api/rooms/{id}/join (or an app-level move) but not connected to LiveKit
+  // yet: every device of the user in the room is still connecting. participant_joined clears
+  // it; without a connection within 15 s the state is removed (VOICE_STATE_UPDATE, empty room).
+  bool pending = 10;
 }
 
 message Presence {

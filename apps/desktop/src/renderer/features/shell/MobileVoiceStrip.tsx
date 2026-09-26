@@ -9,6 +9,7 @@ import { usePrefs } from '../../stores/prefs';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
+import { useConnectingRing, useVoiceStateOf } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
@@ -36,6 +37,9 @@ export function MobileVoiceStrip(): ReactNode {
   // My speaking ring (local VAD / PTT, docs/08 «Индикация речи»).
   const speaking = useVoice((s) => (me ? (s.speaking[me.id] ?? false) : false));
   const openRoom = useUi((s) => s.openRoom);
+  // Still pending (optimistic join, docs/05) after 3 s: the «connecting» ring on my avatar.
+  const mine = useVoiceStateOf(wsId ?? '', me?.id ?? '');
+  const connectingRing = useConnectingRing(wsId, me?.id, mine?.pending ?? false);
   if (!roomId) return null;
   const connected = phase === 'connected';
   // While the PTT button is held the status line says so (the button itself is a 40 px circle).
@@ -44,8 +48,14 @@ export function MobileVoiceStrip(): ReactNode {
     <div className="shrink-0 px-2 pb-[calc(var(--safe-bottom,0px)+8px)] pt-1 [.kb-open_&]:hidden" data-testid="mobile-voice-strip">
       <div role="region" aria-label={t('mobile.voiceStrip')} className="mat-toolbar flex h-14 items-center gap-1.5 rounded-[var(--radius-panel)] pl-3 pr-2 shadow-[var(--shadow-island)]">
         {me ? (
-          <span className="mr-1 flex shrink-0" data-speaking={(speaking && !muted) || undefined} data-testid="mobile-voice-avatar">
-            <Avatar userId={me.id} name={me.displayName} fileId={me.avatarFileId || undefined} size={32} speaking={speaking && !muted} />
+          <span
+            className="mr-1 flex shrink-0"
+            data-speaking={(speaking && !muted && !connectingRing) || undefined}
+            data-pending={connectingRing || undefined}
+            title={connectingRing ? t('voice.pendingMember') : undefined}
+            data-testid="mobile-voice-avatar"
+          >
+            <Avatar userId={me.id} name={me.displayName} fileId={me.avatarFileId || undefined} size={32} speaking={speaking && !muted} connecting={connectingRing} />
           </span>
         ) : null}
         <button

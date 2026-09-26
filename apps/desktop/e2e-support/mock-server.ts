@@ -209,7 +209,7 @@ export interface MockServer {
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string }): Message;
   /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
-  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean }): void;
+  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
   setPresence(userId: string, status: PresenceStatus): void;
   /**
@@ -251,6 +251,8 @@ const JSON_READ = { ignoreUnknownFields: true } as const;
 export function livekitRoomPrefix(): string {
   return process.env['MOCK_LIVEKIT_ROOM_PREFIX'] || 'mock_';
 }
+/** Simulated LiveKit connect after /join: the pending voice state is cleared this much later. */
+const JOIN_CONNECT_MS = 250;
 const FAR_FUTURE = ts('2099-01-01T00:00:00Z');
 const REFRESH_COOKIE = 'calaba_refresh';
 const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES, CONNECT, SPEAK, STREAM, VIDEO, MUTE_MEMBERS, MANAGE_ROOM, MOVE_MEMBERS } =
@@ -934,7 +936,7 @@ class MockImpl {
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
 
-  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean }): void {
+  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
     const workspaceId = room?.workspaceId ?? prev?.workspaceId ?? '';
@@ -949,6 +951,7 @@ class MockImpl {
       streaming: patch.streaming ?? (sameRoom ? prev.streaming : false),
       serverMuted: patch.serverMuted ?? (sameRoom ? prev.serverMuted : false),
       camera: patch.camera ?? (sameRoom ? prev.camera : false),
+      pending: patch.pending ?? (sameRoom ? prev.pending : false),
     });
     // Moving to another workspace's room: tell the old workspace the user left.
     if (prev?.roomId && prev.workspaceId !== workspaceId) {
@@ -2031,8 +2034,20 @@ class MockImpl {
       }
       const identity = `${me}:${sessionId}`;
       const token = await this.voiceToken(room, identity, user.user.displayName);
-      this.setVoice(me, room.id, { muted: false, deafened: false, streaming: false, camera: false });
-      this.voiceSessions.set(me, sessionId);
+      // Optimistic join (docs/05): the device is recorded as pending at once; a repeated /join
+      // of the same device changes nothing. The mock has no LiveKit webhooks: participant_joined
+      // is simulated JOIN_CONNECT_MS later.
+      const cur = s().voiceStates.get(me);
+      const again = cur?.roomId === room.id && this.voiceSessions.get(me) === sessionId;
+      const pending = again ? cur.pending : true;
+      if (!again) {
+        this.setVoice(me, room.id, { muted: false, deafened: false, streaming: false, camera: false, pending: true });
+        this.voiceSessions.set(me, sessionId);
+        setTimeout(() => {
+          const v = s().voiceStates.get(me);
+          if (v?.roomId === room.id && v.pending && this.voiceSessions.get(me) === sessionId) this.setVoice(me, room.id, { pending: false });
+        }, JOIN_CONNECT_MS).unref();
+      }
       sendMsg(c.res, 200, JoinVoiceResponseSchema, {
         url: this.lk.url,
         token,
@@ -2041,6 +2056,7 @@ class MockImpl {
         canSpeak: has(perms, SPEAK),
         canStream: has(perms, STREAM),
         canVideo: has(perms, VIDEO) && (room.media ?? DEFAULT_MEDIA).cameraLimit > 0,
+        pending,
       });
     });
 
@@ -2303,7 +2319,9 @@ class MockImpl {
       const muted = bool(b['muted']);
       const deafened = bool(b['deafened']);
       const streaming = bool(b['streaming']);
+      const pending = bool(b['pending']);
       this.setVoice(str(b['userId']), str(b['roomId']), {
+        ...(pending !== undefined ? { pending } : {}),
         ...(muted !== undefined ? { muted } : {}),
         ...(deafened !== undefined ? { deafened } : {}),
         ...(streaming !== undefined ? { streaming } : {}),

@@ -276,14 +276,15 @@ func TestVoiceTimes(t *testing.T) {
 	o, bob, ws, room := setupTeam(t)
 	rid := room.GetId()
 	roomName := "ws_" + ws.GetId() + "_room_" + rid
+	g := dialGW(t)
+	g.identify(o.token)
 	var bj, oj v1.JoinVoiceResponse
 	bob.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &bj)
 	o.must(200, "POST", "/api/rooms/"+rid+"/join", nil, &oj)
-	g := dialGW(t)
-	g.identify(o.token)
 	webhook(t, whEvent("participant_joined", roomName, bj.GetIdentity(), nil), "secret")
-	// Bob's voice state and the call start (ROOM_UPDATE, server time for every client's
-	// timer; published under the voice lock, so it may come first) — in any order.
+	// Bob's voice state (pending from his /join: the optimistic join starts the call) and the
+	// call start (ROOM_UPDATE, server time for every client's timer; published under the voice
+	// lock, so it may come first) — in any order.
 	var joined, callStart time.Time
 	g.wait("VOICE_STATE_UPDATE bob + ROOM_UPDATE call started", func(e *v1.DispatchEvent) bool {
 		if vs := e.GetVoiceStateUpdate().GetState(); vs.GetUserId() == bob.id {

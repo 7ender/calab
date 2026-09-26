@@ -26,6 +26,10 @@ const PRESENCE_COLOR: Partial<Record<PresenceStatus, string>> = {
  * ring. The ring (docs/09 #15/#30): 2 px green outline with a 2 px gap, fades in over 100 ms
  * (`.speak-ring` in styles.css; no motion with prefers-reduced-motion). Pass `speaking` from
  * useVoice().speaking — it is already debounced (on at once, 300 ms hold off).
+ *
+ * `connecting`: the «подключается» ring of a voice participant pending for more than 3 s
+ * (stores/voicePending): a thin muted→accent arc turning around the avatar (`.connect-ring`;
+ * static with prefers-reduced-motion). It replaces the speaking ring while shown.
  */
 export function Avatar({
   userId,
@@ -34,6 +38,7 @@ export function Avatar({
   size = 32,
   presence,
   speaking,
+  connecting,
   className,
 }: {
   userId: string;
@@ -42,8 +47,10 @@ export function Avatar({
   size?: number;
   presence?: boolean;
   speaking?: boolean;
+  connecting?: boolean;
   className?: string;
 }): ReactNode {
+  if (connecting) speaking = false;
   const status = useWorkspaces((s) => (presence ? s.presences[userId]?.status : undefined));
   const dot = status !== undefined ? PRESENCE_COLOR[status] : undefined;
   return (
@@ -74,6 +81,7 @@ export function Avatar({
           style={{ width: Math.max(10, size * 0.38), height: Math.max(10, size * 0.38) }}
         />
       ) : null}
+      {connecting ? <span className="connect-ring" data-testid="connect-ring" aria-hidden /> : null}
     </span>
   );
 }

@@ -42,7 +42,10 @@ type SessionState struct {
 	Deafened  bool      `json:"d,omitempty"`
 	Streaming bool      `json:"st,omitempty"`
 	Camera    bool      `json:"c,omitempty"`
-	JoinedAt  int64     `json:"j"` // unix ms
+	// Pending: recorded by /join (or an app-level move) and not connected to LiveKit yet;
+	// participant_joined clears it, a device that never connects is removed after 15 s.
+	Pending  bool  `json:"p,omitempty"`
+	JoinedAt int64 `json:"j"` // unix ms
 }
 
 // Stream is an active screen share track.
@@ -89,7 +92,8 @@ func ParseRoomName(name string) (workspaceID, roomID uuid.UUID, ok bool) {
 
 // Aggregate computes the per-user voice state from all of the user's device sessions in a
 // workspace: the user is in the room of their most recently joined session; muted/deafened
-// = all sessions in that room are; streaming = any session in that room is.
+// = all sessions in that room are; streaming = any session in that room is; pending = all
+// sessions in that room are still connecting (one connected device makes the user connected).
 // Returns a state with empty RoomId when the user has no sessions.
 func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.VoiceState {
 	out := &v1.VoiceState{WorkspaceId: workspaceID.String(), UserId: userID.String()}
@@ -107,7 +111,7 @@ func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.Voice
 		return out
 	}
 	out.RoomId = latest.RoomID.String()
-	out.Muted, out.Deafened = true, true
+	out.Muted, out.Deafened, out.Pending = true, true, true
 	joined := latest.JoinedAt
 	for _, s := range sessions {
 		if s.UserID != userID || s.RoomID != latest.RoomID {
@@ -117,6 +121,7 @@ func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.Voice
 		out.Deafened = out.Deafened && s.Deafened
 		out.Streaming = out.Streaming || s.Streaming
 		out.Camera = out.Camera || s.Camera
+		out.Pending = out.Pending && s.Pending
 		joined = min(joined, s.JoinedAt)
 	}
 	out.JoinedAt = timestamppb.New(time.UnixMilli(joined))
@@ -141,7 +146,8 @@ func AggregateAll(workspaceID uuid.UUID, sessions []SessionState) []*v1.VoiceSta
 func Equal(a, b *v1.VoiceState) bool {
 	return a.GetRoomId() == b.GetRoomId() && a.GetMuted() == b.GetMuted() &&
 		a.GetDeafened() == b.GetDeafened() && a.GetStreaming() == b.GetStreaming() && a.GetCamera() == b.GetCamera() &&
-		a.GetJoinedAt().AsTime().Equal(b.GetJoinedAt().AsTime()) && a.GetServerMuted() == b.GetServerMuted()
+		a.GetJoinedAt().AsTime().Equal(b.GetJoinedAt().AsTime()) && a.GetServerMuted() == b.GetServerMuted() &&
+		a.GetPending() == b.GetPending()
 }
 
 // Store is the Redis-backed voice state.

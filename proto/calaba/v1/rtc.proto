@@ -15,6 +15,9 @@ message JoinVoiceResponse {
   // VIDEO granted and the room allows cameras (camera_limit > 0). The camera source is not in
   // the join token: call POST /api/rooms/{id}/camera/request before publishing a webcam.
   bool can_video = 7;
+  // The device is recorded in the room as pending (VoiceState.pending) until it connects to
+  // LiveKit; false when it was already connected there (a repeated /join).
+  bool pending = 8;
 }
 
 // POST /api/rooms/{id}/camera/request (VIDEO + CONNECT, device in the call) → 204: grants the

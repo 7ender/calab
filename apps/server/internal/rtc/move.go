@@ -20,12 +20,12 @@ import (
 )
 
 // App-level move timing (ADR-0019): the moved device gets a target-room token valid for
-// moveTokenTTL; after moveDropOld it is removed from the old room if still there; if it has
-// not connected to the target within moveConfirm, its voice state is rolled back.
+// moveTokenTTL; after moveDropOld it is removed from the old room if still there; it is
+// pending in the target, and if it has not connected within connectConfirm (the same
+// confirmation as an optimistic /join, pending.go) its voice state is rolled back.
 const (
 	moveTokenTTL = 2 * time.Minute
 	moveDropOld  = 5 * time.Second
-	moveConfirm  = 15 * time.Second
 )
 
 // appMove is a device moved at app level, waiting to reconnect to the target room.
@@ -33,6 +33,7 @@ type appMove struct {
 	sessionID uuid.UUID
 	identity  string
 	token     string
+	joinedAt  int64 // its pending state in the target (expectConnect)
 }
 
 // moveMember: POST /api/rooms/{id}/voice/{userId}/move {targetRoomId}. The actor needs
@@ -134,12 +135,14 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 		// Record the device in the target first: LiveKit may deliver participant_joined for
 		// the target before we get here again, and the join revalidation must then see the
 		// user as already inside (an admin may move into a full room — review R3).
+		var joinedAt int64
 		c, err := s.voice.Update(ctx, acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
 			if cur == nil || cur.RoomID != srcID {
 				return cur
 			}
 			n := *cur
 			n.RoomID, n.JoinedAt = dstID, time.Now().UnixMilli()
+			joinedAt = n.JoinedAt
 			return &n
 		})
 		if err != nil {
@@ -180,17 +183,31 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			moved++
-			// The device comes back on a new connection: no camera, no stream. Its webcam is
-			// not "stopped" (no VOICE_CAMERA_STOP); the client requests it again in the target.
-			if s.resetCameraForReconnect(ctx, srcID, identity, cameras) {
-				// This update publishes the final state (target room, camera off); the
-				// intermediate one (target room, camera on) is never announced.
-				_ = s.setFlag(ctx, acc.WorkspaceID, dstID, target, st.SessionID, func(n *voice.SessionState) { n.Camera = false })
+			// The device comes back on a new connection: pending in the target (like an
+			// optimistic /join), no camera, no stream. Its webcam is not "stopped" (no
+			// VOICE_CAMERA_STOP); the client requests it again in the target.
+			camReset := s.resetCameraForReconnect(ctx, srcID, identity, cameras)
+			c2, err := s.voice.Update(ctx, acc.WorkspaceID, target, st.SessionID, func(cur *voice.SessionState) *voice.SessionState {
+				if cur == nil || cur.RoomID != dstID || cur.JoinedAt != joinedAt {
+					return cur
+				}
+				n := *cur
+				n.Pending = true
+				if camReset {
+					n.Camera = false
+				}
+				return &n
+			})
+			if err != nil {
+				c2 = c
 			} else {
-				s.publishVoice(ctx, acc.WorkspaceID, c)
+				// One announcement of the final state (target room, pending, camera off); the
+				// intermediate one is never published.
+				c2.Before = c.Before
 			}
+			s.publishVoice(ctx, acc.WorkspaceID, c2)
 			s.stopStreams(ctx, acc.WorkspaceID, srcID, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
-			apps = append(apps, appMove{sessionID: st.SessionID, identity: identity, token: tok})
+			apps = append(apps, appMove{sessionID: st.SessionID, identity: identity, token: tok, joinedAt: joinedAt})
 			continue
 		}
 		moved++
@@ -267,7 +284,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	for i := range apps {
 		m := apps[i]
 		time.AfterFunc(moveDropOld, func() { s.dropFromOldRoom(srcID, m.sessionID, srcName, m.identity) })
-		time.AfterFunc(moveConfirm, func() { s.confirmMove(acc.WorkspaceID, dstID, target, m.sessionID, dstName, m.identity) })
+		s.expectConnect(acc.WorkspaceID, dstID, target, m.sessionID, m.joinedAt)
 	}
 	httpx.NoContent(w)
 	return nil
@@ -298,24 +315,5 @@ func (s *Service) dropFromOldRoom(srcID, sid uuid.UUID, lkRoom, identity string)
 	}
 	if err := s.lk.RemoveParticipant(ctx, lkRoom, identity); err != nil && !IsNotFound(err) {
 		slog.WarnContext(ctx, "remove moved participant from the old room", "identity", identity, "err", err)
-	}
-}
-
-// confirmMove rolls back an app-level move whose device did not connect to the target room
-// in time: it is then in no call (it was removed from the old room), which VOICE_STATE_UPDATE
-// tells everyone. A late connect is admitted normally by participant_joined.
-func (s *Service) confirmMove(wid, dstID, uid, sid uuid.UUID, dstName, identity string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if _, err := s.lk.GetParticipant(ctx, dstName, identity); err == nil || !IsNotFound(err) {
-		return // connected (or LiveKit unreachable: reconcile decides later)
-	}
-	if err := s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
-		if cur == nil || cur.RoomID != dstID {
-			return cur
-		}
-		return nil
-	}); err != nil {
-		slog.WarnContext(ctx, "roll back a move", "identity", identity, "err", err)
 	}
 }
