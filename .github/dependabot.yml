@@ -1,24 +1,52 @@
 # Security review L5: keep pinned SHAs/digests fresh via reviewed PRs.
+# Triage and auto-merge rules: .github/workflows/dependabot-auto-merge.yml, docs/11-maintenance.md.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
-    groups: { actions: { patterns: ["*"] } }
+    open-pull-requests-limit: 5
+    groups:
+      actions: { patterns: ["*"] }
+
   - package-ecosystem: gomod
     directory: /apps/server
     schedule: { interval: weekly }
-    groups: { go-minor: { update-types: [minor, patch] } }
+    open-pull-requests-limit: 5
+    groups:
+      gomod: { patterns: ["*"] }
+
   - package-ecosystem: npm
-    directory: /
+    directory: /   # pnpm workspace: covers apps/*, packages/*
     schedule: { interval: weekly }
-    groups: { npm-minor: { update-types: [minor, patch] } }
+    open-pull-requests-limit: 5
+    ignore:
+      # bumped by hand: new Chromium/Node ABI (uiohook rebuild, visual snapshots) / new Next major
+      - dependency-name: electron
+        update-types: ["version-update:semver-major"]
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+    groups:
+      electron:
+        patterns: ["electron"]
+      # always its own PR: patches/uiohook-napi@*.patch must be re-applied by hand (never auto-merged)
+      uiohook:
+        patterns: ["uiohook-napi"]
+      minor-and-patch:
+        patterns: ["*"]
+        exclude-patterns: ["electron", "uiohook-napi"]
+        update-types: [minor, patch]
+
   - package-ecosystem: docker
-    directory: /apps/server
+    directories: [/apps/server, /infra/docker/caddy]
     schedule: { interval: weekly }
-  - package-ecosystem: docker
-    directory: /infra/docker/caddy
-    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      docker: { patterns: ["*"] }
+
   - package-ecosystem: docker-compose
     directory: /infra/docker
     schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      docker-compose: { patterns: ["*"] }

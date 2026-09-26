@@ -351,16 +351,16 @@ docker rm -f calaba-hc
 
 ## Стенд
 
-Стенд: `root@141.105.69.177`, `DOMAIN=colaba.gptunnel.ai` (основной), `DOMAIN_ALT=colaba.gptunnel.ru` (запасной алиас); код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (как поднят — `docs/06-deployment.md`).
+Стенд: `root@141.105.69.177`, `DOMAIN=app.calab.ru` (основной), `DOMAIN_ALT=meet.gptunnel.ru` (запасной алиас); код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (как поднят — `docs/06-deployment.md`).
 
 | Адрес | Что |
 |---|---|
-| `https://colaba.gptunnel.ai` | API: REST `/api/*`, gateway `wss://…/gateway?v=1&encoding=json`, файлы, `/healthz` (`/metrics` и `/readyz` снаружи закрыты — 404) |
-| `wss://rtc.colaba.gptunnel.ai` | LiveKit signal (`https://rtc.…/` → `OK`) |
-| `turn.colaba.gptunnel.ai:443` | TURN/TLS (TCP) — именно он раздаётся клиентам; TURN/UDP — `141.105.69.177:443/udp` |
-| `colaba.gptunnel.ru`, `rtc.` / `turn.colaba.gptunnel.ru` | то же самое (алиас); TURN клиентам всё равно раздаётся по `.ai` |
+| `https://app.calab.ru` | API: REST `/api/*`, gateway `wss://…/gateway?v=1&encoding=json`, файлы, `/healthz` (`/metrics` и `/readyz` снаружи закрыты — 404) |
+| `wss://rtc.calab.ru` | LiveKit signal (`https://rtc.…/` → `OK`) |
+| `turn.calab.ru:443` | TURN/TLS (TCP) — именно он раздаётся клиентам; TURN/UDP — `141.105.69.177:443/udp` |
+| `meet.gptunnel.ru`, `rtc.` / `turn.calab.ru` | то же самое (алиас); TURN клиентам всё равно раздаётся по `.ai` |
 
-**Переименование (docs/10-branding.md):** целевые адреса — `https://app.calab.ru` (приложение, API, gateway, `/download/`), `https://calab.ru` (лендинг, там же `/download/`), `rtc.calab.ru`, `turn.calab.ru`; `colaba.gptunnel.ai/.ru` остаются алиасами приложения. Стенд переключён 2026-09-26: основные адреса — `app.calab.ru` / `calab.ru` / `rtc.calab.ru` / `turn.calab.ru` / `releases.calab.ru` (фид релизов; `/download/` → 302 туда); `colaba.gptunnel.*` из таблицы ниже работают как алиасы. Проверять лендинг:
+**Адреса (docs/10-branding.md, с 2026-09-26):** `https://app.calab.ru` (приложение, API, gateway, `/download/` → `releases.calab.ru`), `https://meet.gptunnel.ru` (алиас приложения), `https://calab.ru` (лендинг, `/download/` → `releases.calab.ru`), `https://releases.calab.ru` (фид релизов — прокси в бакет S3), `rtc.calab.ru`, `turn.calab.ru`. Имена `colaba.gptunnel.*` сняты. Проверять лендинг:
 ```sh
 for p in / /about/ /nope /download/; do curl -s -o /dev/null -w "$p %{http_code}\n" https://calab.ru$p; done   # 200, 200, 404, 200
 curl -sI https://calab.ru/ | grep -iE 'strict-transport|content-security|cache-control'                        # HSTS, CSP лендинга, no-cache
@@ -370,7 +370,7 @@ DNS — Cloudflare, записи DNS-only (proxied=false). Если локаль
 
 **Нельзя трогать чужое на хосте:** `python` (pid 3695), `ffmpeg`, `chromium`, `Xvfb`, контейнеры `gromtv-broadcast`, `dcgm-exporter`. Не делать `docker system prune`, `docker compose down` вне `/opt/calaba/infra/docker`, `iptables -F`, рестарт Docker. Наш compose-проект называется `calaba`.
 
-Обозначения: `D=colaba.gptunnel.ai` (для алиаса — `D=colaba.gptunnel.ru`), `H=root@141.105.69.177`, `DC='cd /opt/calaba/infra/docker && docker compose'`, `A=https://$D`.
+Обозначения: `D=app.calab.ru` (для алиаса — `D=meet.gptunnel.ru`), `H=root@141.105.69.177`, `DC='cd /opt/calaba/infra/docker && docker compose'`, `A=https://$D`.
 
 > Проверки портов (`nc -zv`) делать с машины **без** VPN/TUN-прокси: TUN-режим VPN принимает любой TCP connect сам, и `nc` «успешен» даже для закрытого порта.
 
@@ -384,7 +384,7 @@ CODE=<invite из .env.accounts>
 curl -s -XPOST $A/api/auth/register -d "{\"email\":\"me@example.com\",\"password\":\"<≥8 символов>\",\"displayName\":\"Me\",\"inviteCode\":\"$CODE\"}" | jq '.me.email'
 # без inviteCode → ERROR_CODE_REGISTRATION_CLOSED 403
 ```
-В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://colaba.gptunnel.ai` (или `https://colaba.gptunnel.ru`).
+В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://app.calab.ru` (или `https://meet.gptunnel.ru`).
 
 Сбросить данные стенда (все пользователи/сообщения/файлы!) — только по согласованию: `ssh $H "$DC exec -T postgres psql -U calaba -c 'drop schema public cascade; create schema public;' && $DC exec -T valkey sh -c 'VALKEYCLI_AUTH="$REDIS_PASSWORD" valkey-cli flushall' && $DC restart api"` (+ очистить volume `calaba_files_data`).
 
@@ -416,9 +416,9 @@ curl -sI http://$D | head -3                             # HTTP/1.1 308 → http
 curl -sI https://rtc.$D | grep -i alt-svc               # пусто (HTTP/3 выключен, UDP 443 — TURN)
 openssl s_client -connect turn.$D:443 -servername turn.$D </dev/null 2>/dev/null \
   | grep -E 'subject=|issuer=|Verify return'
-# subject=CN=turn.colaba.gptunnel.ai / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
+# subject=CN=turn.calab.ru / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
 # все имена разом (6 = 2 домена × <домен>/rtc/turn):
-for d in colaba.gptunnel.ai colaba.gptunnel.ru; do
+for d in app.calab.ru meet.gptunnel.ru; do
   echo "$d healthz=$(curl -s -o /dev/null -w %{http_code} https://$d/healthz) metrics=$(curl -s -o /dev/null -w %{http_code} https://$d/metrics) rtc=$(curl -s https://rtc.$d/) turn=$(openssl s_client -connect turn.$d:443 -servername turn.$d </dev/null 2>/dev/null | grep -c 'Verify return code: 0')"
 done
 # ожидается для каждого: healthz=200 metrics=404 rtc=OK turn=≥1 (/readyz снаружи 404 с 2026-09-26)
@@ -433,29 +433,29 @@ ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[
 Публикация: `pnpm -F @calaba/desktop build:web` (→ `apps/desktop/dist-web`), затем `infra/docker/sync.sh caddy` (статика уезжает в `/opt/calaba/web` без `*.map`; `caddy` в аргументах — чтобы заодно применить правки Caddyfile, для одной статики перезапуск не нужен).
 
 ```sh
-for d in colaba.gptunnel.ai colaba.gptunnel.ru; do A=https://$d
+for d in app.calab.ru meet.gptunnel.ru; do A=https://$d
   for p in / /rooms/x /assets/missing.js /metrics /readyz /healthz /api/me; do echo "$d$p $(curl -s -o /dev/null -w '%{http_code}' $A$p)"; done
   W=$(curl -s $A/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js'); echo "$W: $(curl -sI $A/$W | grep -iE 'content-type|cache-control' | tr -d '\r' | tr '\n' ' ')"
 done
 curl -sI https://$D/ | grep -iE 'content-security|permissions-policy|x-content|referrer|x-frame|cache-control'
 ```
-Ожидается: `/` и `/rooms/x` → 200 (`<title>Calab`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.colaba.gptunnel.ai https://rtc.colaba.gptunnel.ai wss://rtc.colaba.gptunnel.ru https://rtc.colaba.gptunnel.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
+Ожидается: `/` и `/rooms/x` → 200 (`<title>Calab`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.calab.ru https://rtc.calab.ru wss://rtc.calab.ru https://rtc.calab.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
 
 E2E против стенда. С 2026-09-26 стенд в `invite`-режиме, поэтому спека умеет два пути:
 - **вход существующим аккаунтом** (предпочтительно, не тратит использования кода): `CALABA_WEB_LOGIN` + `CALABA_WEB_PASSWORD` (например `owner@calaba.test`; пароль в `/opt/calaba/infra/docker/.env.accounts` на стенде). Каждый прогон создаёт у аккаунта новое пространство `Web <browser>-<id>`;
 - **регистрация по коду**: `CALABA_WEB_INVITE=<код>` (код пространства `team` — в том же `.env.accounts`; 10 использований, каждый прогон тратит одно на браузер). Создаёт пользователя `web-<browser>-<id>@example.com`.
 ```sh
 P=$(ssh root@141.105.69.177 "awk '\$1==\"owner@calaba.test\"{print \$2}' /opt/calaba/infra/docker/.env.accounts")   # строки файла: «email пароль»
-CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web   # 2 passed
-CALABA_WEB_FF_VOICE=1 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web   # 2 passed (голос и в Firefox)
-CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://colaba.gptunnel.ru pnpm -F @calaba/desktop e2e:web   # 2 passed
+CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web   # 2 passed
+CALABA_WEB_FF_VOICE=1 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web   # 2 passed (голос и в Firefox)
+CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://meet.gptunnel.ru pnpm -F @calaba/desktop e2e:web   # 2 passed
 ```
 Electron-E2E так же: `CALABA_LOGIN` + `CALABA_PASSWORD` или `CALABA_INVITE`, плюс `CALABA_E2E_SERVER_URL`.
 Сервер ограничивает частоту создания пространств: три прогона подряд одним аккаунтом за минуту дают «too many requests» на шаге «Создать». Поэтому между прогонами делайте паузу ≥ 1 мин или используйте для `.ru` другой аккаунт (`bob@calaba.test`). После прогонов удалите тестовые пространства `Web …` (Настройки пространства → «Удаление» или `DELETE /api/workspaces/<id>`), чтобы не засорять стенд.
 Если падает на `cookie?.httpOnly` (`undefined`) — на стенде старый api без cookie-режима: `infra/docker/sync.sh api`.
-Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve colaba.gptunnel.ai:443:141.105.69.177 https://colaba.gptunnel.ai/readyz` даёт 200 — это локальный VPN/прокси (fake-IP DNS, особые правила для `gptunnel.ai`), а не стенд. Обход для прогона: Chromium — `--host-resolver-rules=MAP colaba.gptunnel.ai 141.105.69.177 --proxy-server=direct://`, Firefox — prefs `network.proxy.type=0`, `network.dns.forceResolve=141.105.69.177` (через локальный playwright-конфиг, не в репо). Факт 2026-09-26: так `e2e:web` на `.ai` — 2 passed (Firefox с `CALABA_WEB_FF_VOICE=1`), на `.ru` — 2 passed без обхода.
+Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve app.calab.ru:443:141.105.69.177 https://colaba.gptunnel.ai/readyz` даёт 200 — это локальный VPN/прокси (fake-IP DNS, особые правила для `gptunnel.ai`), а не стенд. Обход для прогона: Chromium — `--host-resolver-rules=MAP colaba.gptunnel.ai 141.105.69.177 --proxy-server=direct://`, Firefox — prefs `network.proxy.type=0`, `network.dns.forceResolve=141.105.69.177` (через локальный playwright-конфиг, не в репо). Факт 2026-09-26: так `e2e:web` на `.ai` — 2 passed (Firefox с `CALABA_WEB_FF_VOICE=1`), на `.ru` — 2 passed без обхода.
 
-CSP/RNNoise вручную: открыть `https://colaba.gptunnel.ai`, войти, зайти в голосовую комнату, DevTools → Console. Не должно быть `Refused to …`/`Content Security Policy` и `RNNoise unavailable, falling back…` (это предупреждение пишется, если worklet с WASM не стартовал за 2 с). Допустимо: `Unrecognized feature: 'speaker-selection'` (Chrome), `401` на первый `/api/auth/refresh` до входа. В «Настройки → Голос и устройства» строка «Вероятность речи (RNNoise)» показывает проценты, а не «нет — RNNoise выключен».
+CSP/RNNoise вручную: открыть `https://app.calab.ru`, войти, зайти в голосовую комнату, DevTools → Console. Не должно быть `Refused to …`/`Content Security Policy` и `RNNoise unavailable, falling back…` (это предупреждение пишется, если worklet с WASM не стартовал за 2 с). Допустимо: `Unrecognized feature: 'speaker-selection'` (Chrome), `401` на первый `/api/auth/refresh` до входа. В «Настройки → Голос и устройства» строка «Вероятность речи (RNNoise)» показывает проценты, а не «нет — RNNoise выключен».
 
 Факт 2026-09-25: все коды/заголовки как выше на обоих доменах; e2e:web — 2 passed на `.ai` (в т.ч. с `CALABA_WEB_FF_VOICE=1`) и на `.ru`; Playwright-прогон «регистрация → голос» в Chromium и Firefox — «Голос подключён», нарушений CSP 0, предупреждения RNNoise нет (Firefox: worklet 200 `text/javascript`). Клиент на `.ru` подключается к `wss://rtc.colaba.gptunnel.ai` (основной `LIVEKIT_URL`).
 
@@ -475,7 +475,7 @@ curl -sI https://$D/manifest.webmanifest | grep -i content-type                 
 
 ### 2c. Сборки десктопа для тестировщика
 
-Сборки публикуются на `https://colaba.gptunnel.ai/download/` (листинг каталога; то же на `.ru`). Какой файл брать:
+Сборки публикуются на `https://app.calab.ru/download/` (листинг каталога; то же на `.ru`). Какой файл брать:
 
 | ОС | Файл | Установка |
 |---|---|---|
@@ -484,7 +484,7 @@ curl -sI https://$D/manifest.webmanifest | grep -i content-type                 
 | Linux x64 (любой дистрибутив) | `Calab-<версия>-x86_64.AppImage` | `chmod +x Calab-*.AppImage && ./Calab-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calab-*.AppImage --appimage-extract-and-run`) |
 | Debian/Ubuntu x64 | `calab_<версия>_amd64.deb` | `sudo apt install ./calab_*_amd64.deb`, запуск — «Calab» в меню или `calab` |
 
-После запуска — в поле «Сервер» ввести `https://colaba.gptunnel.ai` (или `.ru`), войти (регистрация — по коду приглашения, см. «Аккаунты»).
+После запуска — в поле «Сервер» ввести `https://app.calab.ru` (или `.ru`), войти (регистрация — по коду приглашения, см. «Аккаунты»).
 
 Проверка целостности (если скачано с ошибками): `latest-mac.yml` / `latest-linux.yml` / `latest.yml` рядом содержат `sha512` (base64) и `size` каждого файла: `shasum -a 512 -b <файл> | cut -d' ' -f1 | xxd -r -p | base64` (macOS/Linux) должно совпасть.
 
@@ -508,10 +508,10 @@ ssh $H "ss -lntup | grep -E 'livekit|caddy'"
 ### 4. Сценарии API по HTTPS
 
 Разделы «Server core» → 4 и «Server stage 3» → 2 выполняются против стенда как есть, с заменами:
-- `A=https://colaba.gptunnel.ai`; сервер запускать не нужно; `/readyz` (4.1) — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/readyz'`; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
+- `A=https://app.calab.ru`; сервер запускать не нужно; `/readyz` (4.1) — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/readyz'`; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
 - БД стенда не пустая, регистрация по инвайтам: регистрировать новых пользователей с `inviteCode` (инвайт владельца — в `.env.accounts`, или создать свой в своём пространстве); шаг «второй пользователь без инвайта → 403» совпадает. Email-ы брать новые (`…@calaba.test` заняты), slug workspace — новый (`team` занят → ожидаемый `409` на первом же создании).
 - gateway: `A=$A node /tmp/gw.mjs $BT 4` (скрипт сам меняет `https` → `wss`).
-- 2.6: `url` в ответе join — `wss://rtc.colaba.gptunnel.ai`, `media` — по настройкам комнаты.
+- 2.6: `url` в ответе join — `wss://rtc.calab.ru`, `media` — по настройкам комнаты.
 - 4.7 (rate limit) — последним: после него логин с этого IP ~1 мин отвечает 429. Подмена `X-Forwarded-For` не помогает (Caddy перезаписывает заголовок, api видит реальный IP).
 
 Факт 2026-09-25 (все шаги PASS): 4.1–4.8 — ответы и коды как в разделе «Server core»; 2.1 HELLO(41000) → READY seq 1 → presenceUpdate → один messageCreate, повтор nonce → 200; 2.2 RESUME → `while away` seq 4, `{"resumed":{"replayed":1}}`; 2.3 INVALID_SESSION `resumable:false`; 2.4 `{"n":2,"first":"m3","hasMore":true}`; 2.5 upload 201, Range `hello 206`, `304`, 60 MB → 413, 20 MB upload через VPN ~1.5 с; 2.6 join → токен, webhook без подписи 401, voice/self до подключения 409.
@@ -626,17 +626,17 @@ cd apps/server && DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba R
   LIVEKIT_URL=ws://127.0.0.1:7880 LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret \
   go run ./cmd/server                                            # слушает 127.0.0.1:3000
 ```
-Порты postgres и valkey смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://colaba.gptunnel.ai` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://colaba.gptunnel.ai`.
+Порты postgres и valkey смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://app.calab.ru` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://app.calab.ru`.
 
-### 0a. Против стенда (`https://colaba.gptunnel.ai`, запасной адрес `https://colaba.gptunnel.ru`)
-Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.colaba.gptunnel.ai`) клиент получает из `/join` сам.
+### 0a. Против стенда (`https://app.calab.ru`, запасной адрес `https://meet.gptunnel.ru`)
+Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.calab.ru`) клиент получает из `/join` сам.
 ```bash
 pnpm -F @calaba/desktop build                 # → apps/desktop/dist/mac-arm64/Calab.app (+ dmg/zip)
 APP=apps/desktop/dist/mac-arm64/Calab.app/Contents/MacOS/Calab
 # клиент А (owner, настоящие микрофон и экран):
-CALABA_SERVER_URL=https://colaba.gptunnel.ai CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
+CALABA_SERVER_URL=https://app.calab.ru CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
 # клиент Б (bob; fake-медиа, чтобы не было эха на одной машине):
-CALABA_SERVER_URL=https://colaba.gptunnel.ai CALABA_USER_DATA=/tmp/cal-bob CALABA_MULTI_INSTANCE=1 CALABA_FAKE_MEDIA=1 "$APP" &
+CALABA_SERVER_URL=https://app.calab.ru CALABA_USER_DATA=/tmp/cal-bob CALABA_MULTI_INSTANCE=1 CALABA_FAKE_MEDIA=1 "$APP" &
 ```
 Dev-режим тоже работает: `CALABA_SERVER_URL=… pnpm -F @calaba/desktop dev`. Но тест с заморозкой процесса (пункт 2.29) в dev не показателен: Vite перезагружает страницу, когда его HMR-сокет переподключается.
 
@@ -834,8 +834,8 @@ CALABA_WEB_URL=http://localhost:4173 pnpm -F @calaba/desktop e2e:web            
 
 Известно: Firefox не проходит ICE до LiveKit в Docker на `127.0.0.1` (локальный dev-стенд). На стенде с публичным IP это ограничение не действует.
 
-### 3. Стенд (`https://colaba.gptunnel.ai`, запасной адрес `https://colaba.gptunnel.ru`)
-После публикации `dist-web` (infra, `sync.sh`): сценарий W1–W12 и `CALABA_WEB_URL=https://colaba.gptunnel.ai pnpm -F @calaba/desktop e2e:web`. E2E регистрирует тестового пользователя и создаёт пространство — на стенде включена открытая регистрация.
+### 3. Стенд (`https://app.calab.ru`, запасной адрес `https://meet.gptunnel.ru`)
+После публикации `dist-web` (infra, `sync.sh`): сценарий W1–W12 и `CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web`. E2E регистрирует тестового пользователя и создаёт пространство — на стенде включена открытая регистрация.
 
 ## Server: UI-бэклог (категории, поиск, unfurl, реакции, статус, закрепы, время звонка)
 

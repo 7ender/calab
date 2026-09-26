@@ -15,6 +15,8 @@
 #   SIGN=1              macOS: sign with the owner's Developer ID from cert/developerID_full.p12 (password:
 #                       APPLE_CERT_PASSWORD in the root .env; never printed). No notarization here — that is CI;
 #                       no secure timestamp either unless SIGN_TIMESTAMP=1 (see build_mac).
+#   NOTARIZE=1          with SIGN=1: notarize + staple (App Store Connect API key cert/AuthKey_<id>.p8, APPLE_API_KEY_ID /
+#                       APPLE_API_ISSUER / APPLE_TEAM_ID from the root .env)
 #   MAC_ARCH=arm64|x64  macOS: build only this arch (default: arm64 + x64 from electron-builder.yml)
 #   SMOKE=0             skip the Linux smoke start (AppImage under Xvfb, inside the build container)
 #   BUILD_DOCKER_HOST=ssh://user@host  x86_64 Linux Docker host for the Linux/Windows builds (recommended on
@@ -23,6 +25,7 @@
 #                       REMOTE_CPUS/REMOTE_MEMORY (default 4 / 6g) cap the container on a shared host.
 #
 # Output: apps/desktop/dist-release/ — versioned installers + latest-mac.yml / latest-linux.yml / latest.yml
+# (prerelease versions like 0.1.0-rc.1 get channel feeds instead: rc-mac.yml / rc-linux.yml / rc.yml)
 # (+ .blockmap). Publish with infra/docker/sync.sh (copies them to <domain>/download/, never deletes).
 #
 # Native module: uiohook-napi. Our patch (patches/uiohook-napi@1.5.5.patch) changes only the macOS hook,
@@ -88,7 +91,8 @@ build_mac() {
   local t0=$SECONDS
   log "macOS: pnpm install (compiles patched uiohook-napi for the host arch)"
   (cd "$SRC" && pnpm install --frozen-lockfile)
-  (cd "$SRC/apps/desktop" && pnpm build:app)
+  (cd "$SRC/apps/desktop" && pnpm build:app)   # + build/.gen/THIRD-PARTY-NOTICES.txt (extraResources)
+  [[ -s "$SRC/apps/desktop/build/.gen/THIRD-PARTY-NOTICES.txt" ]] || { echo "THIRD-PARTY-NOTICES.txt not generated" >&2; exit 1; }
   # The patched module is compiled per arch into build/Release by electron-builder (node-gyp-build loads
   # that first). Drop the postinstall copy in bin/ (host arch only — it would land in the x64 app too)
   # and the unpatched upstream prebuilds.
@@ -96,7 +100,9 @@ build_mac() {
     || { echo "uiohook-napi patch is NOT applied" >&2; exit 1; }
   rm -rf "$SRC/node_modules/uiohook-napi/bin" "$SRC/node_modules/uiohook-napi/prebuilds"
   local sign_env=(CSC_IDENTITY_AUTO_DISCOVERY=false) mac_args=(--mac)
-  [[ -n "${MAC_ARCH:-}" ]] && mac_args+=("--$MAC_ARCH")
+  env_value() { grep -E "^[[:space:]]*$1=" "$ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"'\r'; }
+  # targets named on the CLI replace the yml ones (whose arch lists would otherwise win over --<arch>)
+  [[ -n "${MAC_ARCH:-}" ]] && mac_args=(--mac dmg zip "--$MAC_ARCH")
   if [[ -n "${SIGN:-}" ]]; then
     local p12="$ROOT/cert/developerID_full.p12" pw
     pw="$(grep -E '^[[:space:]]*APPLE_CERT_PASSWORD=' "$ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"'\r')"
@@ -113,11 +119,24 @@ build_mac() {
     else
       sign_env=(CSC_IDENTITY_AUTO_DISCOVERY=true "CSC_LINK=$p12" "CSC_KEY_PASSWORD=$pw")
     fi
-    mac_args+=(-c.mac.notarize=false)
-    # Apple's timestamp server fails intermittently under hundreds of requests from behind local VPNs,
-    # and one miss aborts codesign. A local verification build doesn't need it (notarization does — CI):
-    # SIGN_TIMESTAMP=1 keeps the secure timestamp.
-    [[ -n "${SIGN_TIMESTAMP:-}" ]] || mac_args+=(-c.mac.timestamp=none)
+    if [[ -n "${NOTARIZE:-}" ]]; then
+      # notarytool via the App Store Connect API key (cert/AuthKey_<id>.p8 + ids from the root .env);
+      # electron-builder staples the ticket. Notarization requires the secure timestamp.
+      local kid iss team key
+      kid="$(env_value APPLE_API_KEY_ID)"; iss="$(env_value APPLE_API_ISSUER)"; team="$(env_value APPLE_TEAM_ID)"
+      key="$ROOT/cert/AuthKey_$kid.p8"
+      [[ -n "$kid" && -n "$iss" && -f "$key" ]] || { echo "NOTARIZE=1: need APPLE_API_KEY_ID, APPLE_API_ISSUER in .env and cert/AuthKey_<id>.p8" >&2; exit 1; }
+      sign_env+=("APPLE_API_KEY=$key" "APPLE_API_KEY_ID=$kid" "APPLE_API_ISSUER=$iss")
+      [[ -n "$team" ]] && sign_env+=("APPLE_TEAM_ID=$team")
+      mac_args+=(-c.mac.notarize=true)
+      log "macOS: + NOTARIZATION (App Store Connect API key $kid)"
+    else
+      mac_args+=(-c.mac.notarize=false)
+      # Apple's timestamp server fails intermittently under hundreds of requests from behind local VPNs,
+      # and one miss aborts codesign. A local verification build doesn't need it (notarization does):
+      # SIGN_TIMESTAMP=1 keeps the secure timestamp.
+      [[ -n "${SIGN_TIMESTAMP:-}" ]] || mac_args+=(-c.mac.timestamp=none)
+    fi
     log "macOS: SIGNED with cert/developerID_full.p12 (no notarization)"
   fi
   log "macOS: electron-builder ${mac_args[*]} (uiohook compiled from source per arch)"
@@ -131,7 +150,8 @@ build_mac() {
     echo "uiohook native in $(basename "$(dirname "$app")"): $arch"
     [[ "$arch" == "$want" ]] || { echo "wrong/missing uiohook_napi.node in $app (want $want)" >&2; exit 1; }
   done
-  cp "$SRC/apps/desktop/dist-release-mac"/{*.dmg,*.zip,*.blockmap,latest-mac.yml} "$OUT"/
+  # update feed: latest-mac.yml, or <channel>-mac.yml for prerelease versions (e.g. rc-mac.yml)
+  cp "$SRC/apps/desktop/dist-release-mac"/{*.dmg,*.zip,*.blockmap} "$SRC/apps/desktop/dist-release-mac"/*-mac.yml "$OUT"/
   TIMES+="mac=$((SECONDS - t0)) "
 }
 
@@ -151,7 +171,7 @@ write_container_script() {
       # itself); esbuild uses its optional platform package; uiohook is compiled by electron-builder.
       pnpm install --frozen-lockfile --ignore-scripts
       grep -q VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h || { echo "uiohook patch NOT applied"; exit 1; }
-      cd apps/desktop && pnpm build:app
+      cd apps/desktop && pnpm build:app && test -s build/.gen/THIRD-PARTY-NOTICES.txt
       # electron-builder.yml ships only our patched uiohook build (upstream prebuilds excluded,
       # buildDependenciesFromSource). Linux: compile it here (X11 headers). Windows: node-gyp cannot
       # cross-compile for win32, so there is no module — the check below fails the build.
@@ -198,8 +218,9 @@ YML
         kill $pid 2>/dev/null || true; [[ "$w" -ge 1 ]] || exit 4
       fi
       cd /build/rel
-      cp -v *.AppImage *.deb latest-linux.yml /out/ 2>/dev/null || true
-      cp -v *.exe *.exe.blockmap latest.yml /out/ 2>/dev/null || true
+      cp -v *.AppImage *.deb ./*-linux.yml /out/ 2>/dev/null || true   # latest-linux.yml or <channel>-linux.yml
+      cp -v *.exe *.exe.blockmap /out/ 2>/dev/null || true
+      for y in latest.yml alpha.yml beta.yml rc.yml; do if [[ -f "$y" ]]; then cp -v "$y" /out/; fi; done
 CONTAINER
 }
 

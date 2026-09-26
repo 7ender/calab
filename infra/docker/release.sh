@@ -6,7 +6,7 @@
 #   STEPS="deploy verify" infra/docker/release.sh <commit>   # a subset (order is always the canonical one)
 #
 # Env: VERSION (default 0.1.0) · STAND_HOST (root@141.105.69.177) · STAND_IP (141.105.69.177)
-#      APP_HOST (app.calab.ru) · ALIAS_HOST (colaba.gptunnel.ai) · LANDING_HOST (calab.ru, empty = none)
+#      APP_HOST (app.calab.ru) · ALIAS_HOST (meet.gptunnel.ru) · LANDING_HOST (calab.ru, empty = none)
 #      RTC_HOST (rtc.calab.ru) · WORK_DIR ($TMPDIR/calaba-release-$VERSION)
 # Every HTTP check and the e2e go to STAND_IP directly (curl --resolve / forced browser DNS): local VPNs and
 # not-yet-propagated names cannot fake a result.
@@ -38,7 +38,7 @@ STEPS="${STEPS:-preflight build web deploy verify tag}"
 HOST="${STAND_HOST:-root@141.105.69.177}"
 IP="${STAND_IP:-141.105.69.177}"
 D1="${APP_HOST:-app.calab.ru}"          # the app
-D2="${ALIAS_HOST:-colaba.gptunnel.ai}"  # an alias of the app (must behave the same)
+D2="${ALIAS_HOST:-meet.gptunnel.ru}"  # an alias of the app (must behave the same)
 LAND="${LANDING_HOST-calab.ru}"
 RTC="${RTC_HOST:-rtc.calab.ru}"
 rcurl() { # curl pinned to the stand IP for the host of the first https:// argument

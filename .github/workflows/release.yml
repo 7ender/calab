@@ -94,7 +94,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: uiohook patch applied
         run: grep -q VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h
-      - run: pnpm -F @calaba/desktop exec electron-vite build
+      # build:app = electron-vite build + build/.gen/THIRD-PARTY-NOTICES.txt (packaged as extraResources)
+      - run: pnpm -F @calaba/desktop run build:app
+      - name: third-party notices generated
+        run: test -s apps/desktop/build/.gen/THIRD-PARTY-NOTICES.txt
 
       # Signing only with VALID material: the base64 must decode into a PKCS#12 that opens with its password
       # (and, for notarization, a private key .p8). Anything else — absent, stub, wrong password — is an
@@ -114,8 +117,16 @@ jobs:
           t="${{ matrix.target }}"; sign=0 args=""
           p12_ok() { # base64 password outfile
             [[ -n "$1" ]] && printf '%s' "$1" | base64 -d > "$3" 2>/dev/null && [[ -s "$3" ]] || return 1
-            P12PW="$2" openssl pkcs12 -in "$3" -passin env:P12PW -noout 2>/dev/null \
-              || P12PW="$2" openssl pkcs12 -legacy -in "$3" -passin env:P12PW -noout 2>/dev/null
+            # Apple/Windows exports use legacy RC2-40 encryption: OpenSSL 3 needs -legacy (and its legacy
+            # provider), macOS's LibreSSL reads it as is but has no -legacy flag — try each validator.
+            local o
+            for o in /usr/bin/openssl openssl; do
+              command -v "$o" >/dev/null || continue
+              P12PW="$2" "$o" pkcs12 -in "$3" -passin env:P12PW -noout >/dev/null 2>&1 && return 0
+              P12PW="$2" "$o" pkcs12 -legacy -in "$3" -passin env:P12PW -noout >/dev/null 2>&1 && return 0
+            done
+            echo "p12 check failed with: $(for o in /usr/bin/openssl openssl; do command -v "$o" >/dev/null && "$o" version; done | tr '\n' ';')"
+            return 1
           }
           envset() { { echo "$1<<__EOV__"; printf '%s\n' "$2"; echo "__EOV__"; } >> "$GITHUB_ENV"; }
           cert="$RUNNER_TEMP/cert.p12"
@@ -181,7 +192,8 @@ jobs:
             apps/desktop/dist-release/*.deb
             apps/desktop/dist-release/*.exe
             apps/desktop/dist-release/*.blockmap
-            apps/desktop/dist-release/latest*.yml
+            apps/desktop/dist-release/*.yml
+            !apps/desktop/dist-release/builder-debug.yml
 
   github-release:
     needs: build
@@ -199,7 +211,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -l dist-release
-          ver=$(sed -n 's/^version: //p' dist-release/latest-linux.yml)
+          # update feeds are per channel: latest*.yml, or rc*/beta*/alpha* for prerelease versions
+          ver=$(sed -n 's/^version: //p' dist-release/*-linux.yml | head -1); [[ -n "$ver" ]]
           tag="${GITHUB_REF_NAME}"; draft=""
           if [[ "$GITHUB_REF" != refs/tags/v* ]]; then tag="v$ver"; draft="--draft"; fi
           gh release create "$tag" $draft --repo "$RELEASE_REPO" --target "$GITHUB_SHA" \
@@ -235,23 +248,24 @@ jobs:
           aws configure set default.s3.addressing_style path
           s3() { aws --endpoint-url "$S3_ENDPOINT" s3 "$@"; }
           cd dist-release
-          ver=$(sed -n 's/^version: //p' latest-linux.yml); [[ -n "$ver" ]]
+          ver=$(sed -n 's/^version: //p' ./*-linux.yml | head -1); [[ -n "$ver" ]]
+          feeds=(*.yml)   # latest-mac.yml latest-linux.yml latest.yml — or rc-*.yml / rc.yml for prereleases
           # 1. installers + blockmaps under releases/<version>/ — immutable (versioned names, never overwritten)
           s3 cp . "s3://$S3_BUCKET/releases/$ver/" --recursive --exclude '*' \
             --include '*.dmg' --include '*.zip' --include '*.AppImage' --include '*.deb' --include '*.exe' --include '*.blockmap' \
             --cache-control 'public, max-age=31536000, immutable' --only-show-errors
           # 2. feeds: point url:/path: into releases/<version>/ (sha512/size unchanged — same bytes)
-          for y in latest-mac.yml latest-linux.yml latest.yml; do
+          for y in "${feeds[@]}"; do
             sed -E -i "s#^(\s*- url: |path: )#\1releases/$ver/#" "$y"
           done
           # 3. a small index for humans (https://releases.calab.ru/)
           {
             echo "<!doctype html><meta charset=utf-8><title>Calab $ver</title><h1>Calab $ver</h1><ul>"
             for f in *.dmg *.exe *.AppImage *.deb; do [[ -f "$f" ]] && echo "<li><a href=\"releases/$ver/$f\">$f</a></li>"; done
-            echo "</ul><p>Update feeds: latest-mac.yml, latest-linux.yml, latest.yml</p>"
+            echo "</ul><p>Update feeds: ${feeds[*]}</p>"
           } > index.html
           # 4. feeds + index LAST, no-cache: clients never see a feed pointing at a file that is not there yet
-          for y in latest-mac.yml latest-linux.yml latest.yml; do
+          for y in "${feeds[@]}"; do
             s3 cp "$y" "s3://$S3_BUCKET/$y" --cache-control 'no-cache' --content-type 'text/yaml; charset=utf-8' --only-show-errors
           done
           s3 cp index.html "s3://$S3_BUCKET/index.html" --cache-control 'no-cache' --content-type 'text/html; charset=utf-8' --only-show-errors

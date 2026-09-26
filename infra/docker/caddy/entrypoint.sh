@@ -3,8 +3,8 @@
 #   DOMAIN         primary domain: rtc.<DOMAIN>, turn.<DOMAIN> (LiveKit announces turn.<DOMAIN>)
 #   APP_HOST       the app (web client, API, gateway, /download/); default: DOMAIN
 #   LANDING_HOST   static landing (optional; empty = no landing site)
-#   DOMAIN_ALT, DOMAIN_LEGACY  extra app hosts (transitional aliases, optional); their rtc./turn. names
-#                  are served too so older clients keep working while they move over
+#   DOMAIN_ALT, DOMAIN_LEGACY  extra app hosts (aliases, optional; e.g. meet.gptunnel.ru). Only the app is
+#                  served there: clients get the rtc./turn. URLs of DOMAIN from the API
 #   RELEASES_HOST  desktop release feed (optional; empty = none): reverse proxy to a public-read S3 bucket
 #                  when S3_PUBLIC_URL is set (the bucket's public base URL, e.g. Yandex Object Storage
 #                  https://storage.yandexcloud.net/<bucket> — path-style — or a virtual-hosted URL without a
@@ -19,8 +19,6 @@ APP_HOSTS="${APP_HOST:-$DOMAIN}" RTC_HOSTS="rtc.$DOMAIN" TURN_HOSTS="turn.$DOMAI
 for h in "${DOMAIN_ALT:-}" "${DOMAIN_LEGACY:-}"; do
 	[ -n "$h" ] || continue
 	APP_HOSTS="$APP_HOSTS $h"
-	RTC_HOSTS="$RTC_HOSTS rtc.$h"
-	TURN_HOSTS="$TURN_HOSTS turn.$h"
 done
 # LiveKit signal origins for the web client CSP connect-src (wss signal + https /rtc/validate)
 RTC_ORIGINS=""

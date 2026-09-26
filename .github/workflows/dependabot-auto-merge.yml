@@ -1,0 +1,96 @@
+# Dependabot triage (docs/11-maintenance.md):
+#   patch / minor / digest-only  → `gh pr merge --auto --squash` (merges once the required ci.yml checks pass)
+#   major, or a dependency that needs a human (uiohook-napi: our patch; docker minor = toolchain/runtime bump)
+#                                → label `needs-review` + comment, never auto-merged
+#   gomod                        → THIRD-PARTY-NOTICES.txt must be regenerated; pushed with DEPENDABOT_PUSH_TOKEN
+#                                  if that Dependabot secret exists (a GITHUB_TOKEN push would not re-trigger CI)
+name: dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  triage:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'itrcz/calab'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          skip-commit-verification: true   # the PR may carry our notices commit on top of Dependabot's
+
+      - id: decide
+        env:
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
+          DEPS: ${{ steps.meta.outputs.dependency-names }}
+        run: |
+          reason=""
+          case "$UPDATE_TYPE" in
+            version-update:semver-major) reason="major version bump" ;;
+            version-update:semver-minor)
+              # a minor docker tag bump is a toolchain/runtime upgrade (e.g. golang 1.26 → 1.27); CI does not build images
+              if [ "$ECOSYSTEM" = "docker" ] || [ "$ECOSYSTEM" = "docker_compose" ]; then
+                reason="docker image minor bump (toolchain/runtime)"
+              fi ;;
+            version-update:semver-patch|"") ;;   # "" = digest-only / SHA-only refresh
+            *) reason="unknown update type '$UPDATE_TYPE'" ;;
+          esac
+          # uiohook-napi carries patches/uiohook-napi@1.5.5.patch — every bump needs the patch re-applied by hand
+          case ",$DEPS," in *uiohook-napi*) reason="uiohook-napi: patches/uiohook-napi@*.patch must be re-applied" ;; esac
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+          echo "decision: ${reason:-auto-merge} ($ECOSYSTEM, $UPDATE_TYPE, $DEPS)"
+
+      # go.mod changes must come with a regenerated THIRD-PARTY-NOTICES.txt (ci.yml checks it)
+      - if: steps.decide.outputs.reason == '' && steps.meta.outputs.package-ecosystem == 'go_modules'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.DEPENDABOT_PUSH_TOKEN || github.token }}
+      - if: steps.decide.outputs.reason == '' && steps.meta.outputs.package-ecosystem == 'go_modules'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - name: regenerate Go third-party notices
+        if: steps.decide.outputs.reason == '' && steps.meta.outputs.package-ecosystem == 'go_modules'
+        env:
+          HAS_PUSH_TOKEN: ${{ secrets.DEPENDABOT_PUSH_TOKEN != '' }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          make third-party-notices
+          if git diff --quiet; then echo "notices already up to date"; exit 0; fi
+          if [ "$HAS_PUSH_TOKEN" != "true" ]; then
+            # a GITHUB_TOKEN push would not re-trigger ci.yml, so the required checks would never report
+            echo "::warning::DEPENDABOT_PUSH_TOKEN (Dependabot secret) is not set: run 'make third-party-notices' and push to this PR by hand"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -qam "build(deps): regenerate THIRD-PARTY-NOTICES.txt"
+          git push -q origin "HEAD:$HEAD_REF"
+
+      - name: enable auto-merge
+        if: steps.decide.outputs.reason == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR"
+
+      - name: needs a human
+        if: steps.decide.outputs.reason != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.html_url }}
+          REASON: ${{ steps.decide.outputs.reason }}
+        run: |
+          gh pr edit "$PR" --add-label needs-review
+          # comment once per PR, not on every rebase
+          if ! gh pr view "$PR" --json comments -q '.comments[].body' | grep -q '<!-- dependabot-triage -->'; then
+            gh pr comment "$PR" --body "<!-- dependabot-triage -->
+          **Not auto-merged: ${REASON}.** Read the changelog for breaking changes, apply the needed changes and merge by hand. See docs/11-maintenance.md."
+          fi
