@@ -270,6 +270,9 @@ GET    /api/dms                                        ListDmsResponse{dms[]} (�
 GET    /api/dms/candidates?q=                          ListDmCandidatesResponse{users[]} (≤ 20)
 POST   /api/dms/{id}/files                             multipart, поле "file" → 201 UploadFileResponse (участник DM; вложение для DM)
 PATCH  /api/me/status                                  UpdateStatusRequest{text, emoji, expiresInSeconds} → UpdateMeResponse
+GET    /api/users/{id}/note                            UserNoteResponse{note} — моя заметка о человеке (пустой text = нет)
+PUT    /api/users/{id}/note                            PutUserNoteRequest{text ≤ 1000} → UserNoteResponse (пустой text удаляет)
+DELETE /api/users/{id}/note                            204
 GET    /api/unfurl?url=                                UnfurlResponse (превью ссылки) | 404 — превью нет
 GET    /api/unfurl/image?url=&sig=                     прокси картинки превью (подписанная ссылка из UnfurlResponse)
 ```
@@ -309,6 +312,7 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 - **Модерация** (mute / unmute / disconnect / stop-stream / move) идёт по иерархии: владельца не трогает никто, админа — только владелец; модераторы-участники (через override) действуют на участников и гостей.
 - **Вход в голос перепроверяется** на `participant_joined`: отозванная сессия, пропавшие `VIEW_ROOM`/`CONNECT` (например, кик за время жизни 10-минутного токена) или превышенный `user_limit` → участник удаляется из LiveKit. Проверка лимита атомарна вместе с записью voice-state (блокировка workspace). Grant участника выравнивается под текущие права.
 - **Загрузка файлов** требует `ATTACH_FILES` хотя бы в одной комнате, ограничена 30 подряд / 120 в час на пользователя и 1 GiB неприкреплённых файлов на пользователя в workspace.
+- **Заметки о людях** (docs/09 #20). `…/users/{id}/note` — только своя заметка: другой автор её не видит ни через API, ни в событиях (событий нет — клиент читает при открытии профиля). Субъект — я сам или человек с общим пространством / DM, иначе `404` (как для несуществующего id). Текст обрезается по краям, > 1000 символов — `422`.
 - **Статус.** Кастомный статус (`User.status_text/status_emoji/status_expires_at`) после `expires_at` отдаётся пустым. `PATCH /api/me/status` рассылает `PRESENCE_UPDATE` (поля `status_*` в `Presence`) и `USER_UPDATE` во все workspace пользователя.
 - **Unfurl.** Защита от SSRF:
   - только http(s) без userinfo;
