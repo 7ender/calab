@@ -1,5 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { ArrowRightLeft, Check, ChevronRight, LogOut, Mic, MicOff, Pencil, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
+import { WorkspaceRole } from '@calaba/protocol';
+import { ArrowRightLeft, AtSign, Check, ChevronRight, IdCard, LogOut, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -10,7 +11,8 @@ import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { disconnectFromVoice, moveMember, promoteGuest, removeMember, serverMute, serverUnmute, stopMemberCamera } from './actions';
+import { copyUserId, disconnectFromVoice, moveMember, promoteGuest, removeMember, serverMute, serverUnmute, setMemberRole, stopMemberCamera } from './actions';
+import { requestMention } from '../chat/mentionRequest';
 import { hasAnyAction, memberActions, type MenuActions } from './members';
 import { NicknameDialog } from './NicknameDialog';
 
@@ -72,6 +74,52 @@ export function MemberContextMenu({
   );
 }
 
+/** 40 px rows (Discord member menu), 15 px text. */
+const row = cx(menuItem, 'h-10 text-[15px]');
+const danger = 'text-danger-text data-[highlighted]:text-accent-fg';
+
+/** Right-aligned 20 px rounded checkbox (Discord); the item's checked state fills it. */
+function MenuCheck({
+  label,
+  checked,
+  onChange,
+  disabled,
+  tone,
+  title,
+  testId,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  tone?: 'danger';
+  title?: string;
+  testId?: string;
+}): ReactNode {
+  return (
+    <ContextMenu.CheckboxItem
+      className={cx(row, 'group/check justify-between', tone === 'danger' && danger)}
+      checked={checked}
+      disabled={disabled}
+      title={title}
+      data-testid={testId}
+      onCheckedChange={onChange}
+      // A checkbox toggles in place (Discord): the menu stays open.
+      onSelect={(e) => e.preventDefault()}
+    >
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span
+        aria-hidden
+        className="grid size-5 shrink-0 place-items-center rounded-[5px] border-[1.5px] border-[var(--color-label-tertiary)] group-data-[state=checked]/check:border-accent-strong group-data-[state=checked]/check:bg-accent-strong group-data-[highlighted]/check:border-current"
+      >
+        <ContextMenu.ItemIndicator>
+          <Check className="size-3.5 text-white" strokeWidth={3} />
+        </ContextMenu.ItemIndicator>
+      </span>
+    </ContextMenu.CheckboxItem>
+  );
+}
+
 function MemberMenuContent({
   workspaceId,
   userId,
@@ -88,81 +136,82 @@ function MemberMenuContent({
   const name = useMemberName(workspaceId, userId);
   const self = useSession((s) => s.me?.user?.id) === userId;
   const roomId = useWorkspaces((s) => s.byId[workspaceId]?.voice[userId]?.roomId ?? '');
+  const role = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]?.role);
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
+  const localDeaf = usePrefs((s) => !!s.deafUsers[userId]);
   const videoHidden = usePrefs((s) => !!s.hiddenVideo[userId]);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const hiddenVideo = usePrefs((s) => s.hiddenVideo);
-  const local = a.volume || a.hideVideo;
-  const moderation = (a.serverMute && !a.alreadyMuted) || a.serverUnmute || a.stopCamera || a.disconnect || a.moveTargets.length > 0;
+  const personal = a.volume || a.hideVideo || a.rename || a.roles !== null || a.moveTargets.length > 0;
+  const moderation = a.serverMute || a.serverUnmute || a.stopCamera || a.disconnect;
+  const admin = a.promote || a.removeGuest || a.kick;
   const setHidden = (on: boolean): void => {
     const next = { ...hiddenVideo };
     if (on) next[userId] = true;
     else delete next[userId];
     setPrefs({ hiddenVideo: next });
   };
-  const adminBlock = a.promote || a.removeGuest || a.kick;
   return (
-    <ContextMenu.Content className={cx(menuBox, 'w-72')} collisionPadding={8}>
+    // Discord layout: sections split by hairlines — profile | for me | moderation (red) | admin | ID.
+    <ContextMenu.Content className={cx(menuBox, 'w-[300px]')} collisionPadding={8}>
       <div className={cx(menuLabel, 'truncate')} title={name}>
         {name}
       </div>
       {onOpenProfile ? (
-        <ContextMenu.Item className={menuItem} onSelect={onOpenProfile}>
+        <ContextMenu.Item className={row} onSelect={onOpenProfile}>
           <UserRound className="size-4" aria-hidden /> {t('people.menu.profile')}
         </ContextMenu.Item>
       ) : null}
-      {a.rename ? (
-        <ContextMenu.Item className={menuItem} onSelect={onRename}>
-          <Pencil className="size-4" aria-hidden /> {self ? t('people.menu.renameSelf') : t('people.menu.rename')}
-        </ContextMenu.Item>
-      ) : null}
-      {local ? <ContextMenu.Separator className={menuSeparator} /> : null}
+      <ContextMenu.Item className={row} onSelect={() => requestMention(userId, name)}>
+        <AtSign className="size-4" aria-hidden /> {t('people.menu.mention')}
+      </ContextMenu.Item>
+
+      {personal ? <ContextMenu.Separator className={menuSeparator} /> : null}
       {a.volume ? (
         <>
           <VolumeRow userId={userId} menu />
-          <ContextMenu.CheckboxItem className={menuItem} checked={localMuted} onCheckedChange={(v) => voice.setUserMuted(userId, v)}>
-            <VolumeX className="size-4" aria-hidden />
-            <span className="min-w-0 flex-1 truncate">{t('people.menu.localMute')}</span>
-            <ContextMenu.ItemIndicator>
-              <Check className="size-4" aria-hidden />
-            </ContextMenu.ItemIndicator>
-          </ContextMenu.CheckboxItem>
+          <MenuCheck label={t('people.menu.localMute')} checked={localMuted} onChange={(v) => voice.setUserMuted(userId, v)} />
+          <MenuCheck label={t('people.menu.deafen')} title={t('people.menu.deafenHint')} checked={localDeaf} onChange={(v) => voice.setUserDeaf(userId, v)} />
         </>
       ) : null}
       {/* Local: stop receiving their camera (unsubscribe), an avatar tile instead (docs/09 #42). */}
-      {a.hideVideo ? (
-        <ContextMenu.CheckboxItem className={menuItem} checked={videoHidden} onCheckedChange={setHidden}>
-          <VideoOff className="size-4" aria-hidden />
-          <span className="min-w-0 flex-1 truncate">{t('video.hide')}</span>
-          <ContextMenu.ItemIndicator>
-            <Check className="size-4" aria-hidden />
-          </ContextMenu.ItemIndicator>
-        </ContextMenu.CheckboxItem>
-      ) : null}
-      {/* Local actions and moderation are separate groups (docs/09 v0.2 «Меню участника»). */}
-      {moderation ? <ContextMenu.Separator className={menuSeparator} /> : null}
-      {/* Moderation items appear only with the right; «already muted» is shown on the row itself. */}
-      {a.serverMute && !a.alreadyMuted ? (
-        <ContextMenu.Item className={menuItem} onSelect={() => serverMute(roomId, userId)}>
-          <MicOff className="size-4" aria-hidden />
-          <span className="min-w-0 flex-1 truncate">{t('people.menu.serverMute')}</span>
+      {a.hideVideo ? <MenuCheck label={t('video.hide')} checked={videoHidden} onChange={setHidden} /> : null}
+      {a.rename ? (
+        <ContextMenu.Item className={row} onSelect={onRename}>
+          <Pencil className="size-4" aria-hidden /> {self ? t('people.menu.renameSelf') : t('people.menu.rename')}
         </ContextMenu.Item>
       ) : null}
-      {a.serverUnmute ? (
-        <ContextMenu.Item className={menuItem} onSelect={() => serverUnmute(roomId, userId)}>
-          <Mic className="size-4" aria-hidden />
-          <span className="min-w-0 flex-1 truncate">{t('people.menu.serverUnmute')}</span>
-        </ContextMenu.Item>
-      ) : null}
-      {a.stopCamera ? (
-        <ContextMenu.Item className={menuItem} onSelect={() => stopMemberCamera(workspaceId, roomId, userId)}>
-          <VideoOff className="size-4" aria-hidden />
-          <span className="min-w-0 flex-1 truncate">{t('video.stopMember')}</span>
-        </ContextMenu.Item>
+      {a.roles ? (
+        <ContextMenu.Sub>
+          <ContextMenu.SubTrigger className={cx(row, 'data-[state=open]:bg-hover')}>
+            <Shield className="size-4" aria-hidden />
+            <span className="flex-1">{t('people.menu.roles')}</span>
+            <ChevronRight className="size-4" aria-hidden />
+          </ContextMenu.SubTrigger>
+          <ContextMenu.Portal>
+            <ContextMenu.SubContent className={cx(menuBox, 'w-56')} sideOffset={4} collisionPadding={8}>
+              <ContextMenu.RadioGroup value={String(role ?? '')} onValueChange={(v) => setMemberRole(workspaceId, userId, Number(v))}>
+                {[
+                  { r: WorkspaceRole.ADMIN, key: 'role.admin' as const, ok: a.roles.admin },
+                  { r: WorkspaceRole.MEMBER, key: 'role.member' as const, ok: a.roles.member },
+                ].map((o) => (
+                  <ContextMenu.RadioItem key={o.r} value={String(o.r)} disabled={!o.ok} className={row}>
+                    <span className="grid w-4 place-items-center">
+                      <ContextMenu.ItemIndicator>
+                        <Check className="size-4" aria-hidden />
+                      </ContextMenu.ItemIndicator>
+                    </span>
+                    {t(o.key)}
+                  </ContextMenu.RadioItem>
+                ))}
+              </ContextMenu.RadioGroup>
+            </ContextMenu.SubContent>
+          </ContextMenu.Portal>
+        </ContextMenu.Sub>
       ) : null}
       {a.moveTargets.length > 0 ? (
         <ContextMenu.Sub>
-          <ContextMenu.SubTrigger className={cx(menuItem, 'data-[state=open]:bg-hover')}>
+          <ContextMenu.SubTrigger className={cx(row, 'data-[state=open]:bg-hover')}>
             <ArrowRightLeft className="size-4" aria-hidden />
             <span className="flex-1">{t('people.menu.move')}</span>
             <ChevronRight className="size-4" aria-hidden />
@@ -170,7 +219,7 @@ function MemberMenuContent({
           <ContextMenu.Portal>
             <ContextMenu.SubContent className={cx(menuBox, 'max-h-80 w-56 overflow-y-auto')} sideOffset={4} collisionPadding={8}>
               {a.moveTargets.map((r) => (
-                <ContextMenu.Item key={r.id} className={menuItem} onSelect={() => moveMember(workspaceId, roomId, userId, r.id)}>
+                <ContextMenu.Item key={r.id} className={row} onSelect={() => moveMember(workspaceId, roomId, userId, r.id)}>
                   <Volume2 className="size-4 shrink-0" aria-hidden />
                   <span className="truncate" title={r.name}>
                     {r.name}
@@ -181,27 +230,52 @@ function MemberMenuContent({
           </ContextMenu.Portal>
         </ContextMenu.Sub>
       ) : null}
+
+      {/* Moderation (by rights, red like Discord's «Server Mute»). */}
+      {moderation ? <ContextMenu.Separator className={menuSeparator} /> : null}
+      {a.serverMute || a.serverUnmute ? (
+        <MenuCheck
+          label={t('people.menu.serverMuteToggle')}
+          tone="danger"
+          checked={a.alreadyMuted}
+          disabled={a.alreadyMuted ? !a.serverUnmute : !a.serverMute}
+          onChange={(v) => (v ? serverMute(roomId, userId) : serverUnmute(roomId, userId))}
+          testId="menu-server-mute"
+        />
+      ) : null}
+      {a.stopCamera ? (
+        <ContextMenu.Item className={cx(row, danger)} onSelect={() => stopMemberCamera(workspaceId, roomId, userId)}>
+          <VideoOff className="size-4" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{t('video.stopMember')}</span>
+        </ContextMenu.Item>
+      ) : null}
       {a.disconnect ? (
-        <ContextMenu.Item className={menuItem} onSelect={() => disconnectFromVoice(roomId, userId)}>
+        <ContextMenu.Item className={cx(row, danger)} onSelect={() => disconnectFromVoice(roomId, userId)}>
           <LogOut className="size-4" aria-hidden /> {t('people.menu.disconnect')}
         </ContextMenu.Item>
       ) : null}
-      {adminBlock ? <ContextMenu.Separator className={menuSeparator} /> : null}
+
+      {admin ? <ContextMenu.Separator className={menuSeparator} /> : null}
       {a.promote ? (
-        <ContextMenu.Item className={menuItem} onSelect={() => promoteGuest(workspaceId, userId)}>
+        <ContextMenu.Item className={row} onSelect={() => promoteGuest(workspaceId, userId)}>
           <UserCheck className="size-4" aria-hidden /> {t('people.menu.promote')}
         </ContextMenu.Item>
       ) : null}
       {a.removeGuest ? (
-        <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void removeMember(workspaceId, userId, true)}>
+        <ContextMenu.Item className={cx(row, danger)} onSelect={() => void removeMember(workspaceId, userId, true)}>
           <UserMinus className="size-4" aria-hidden /> {t('people.menu.removeGuest')}
         </ContextMenu.Item>
       ) : null}
       {a.kick ? (
-        <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void removeMember(workspaceId, userId, false)}>
+        <ContextMenu.Item className={cx(row, danger)} onSelect={() => void removeMember(workspaceId, userId, false)}>
           <UserX className="size-4" aria-hidden /> {t('people.menu.kick')}
         </ContextMenu.Item>
       ) : null}
+
+      <ContextMenu.Separator className={menuSeparator} />
+      <ContextMenu.Item className={row} onSelect={() => copyUserId(userId)}>
+        <IdCard className="size-4" aria-hidden /> {t('people.menu.copyId')}
+      </ContextMenu.Item>
     </ContextMenu.Content>
   );
 }

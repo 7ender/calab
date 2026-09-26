@@ -86,6 +86,8 @@ export interface MenuActions {
   /** Voice rooms the target can be moved to (empty = no «Переместить в…»). */
   moveTargets: Room[];
   rename: boolean;
+  /** «Роли ›»: which roles I may give (null = no submenu). Only the owner grants / revokes admin. */
+  roles: { admin: boolean; member: boolean } | null;
   promote: boolean;
   removeGuest: boolean;
   kick: boolean;
@@ -122,6 +124,10 @@ export function memberActions(c: MenuContext): MenuActions {
     stopCamera: moderate && !!c.targetVoice?.camera,
     moveTargets,
     rename: self ? c.allowSelfNickname || can(ws, 'MANAGE_NICKNAMES') : can(ws, 'MANAGE_NICKNAMES'),
+    roles:
+      !self && manage && (c.target.role === WorkspaceRole.MEMBER || (c.target.role === WorkspaceRole.ADMIN && c.myRole === WorkspaceRole.OWNER))
+        ? { admin: c.myRole === WorkspaceRole.OWNER, member: true }
+        : null,
     promote: manage && guest && !self,
     removeGuest: removable && guest,
     kick: removable && !guest,
@@ -129,5 +135,5 @@ export function memberActions(c: MenuContext): MenuActions {
 }
 
 export function hasAnyAction(a: MenuActions): boolean {
-  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick;
+  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.roles !== null || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick;
 }

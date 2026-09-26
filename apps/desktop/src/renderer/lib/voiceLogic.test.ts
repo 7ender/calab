@@ -66,6 +66,11 @@ describe('remote audio (per-user volume, «Заглушить для меня»)
     expect(remoteAudio({ ...base, userVolumes: { u1: 0.5 }, outputVolume: 0.5 }).volume).toBe(0.25);
     expect(remoteAudio({ ...base, stream: true, streamVolume: { u1: 0.8 }, outputVolume: 0.5 }).volume).toBe(0.8);
   });
+  it('«Не слышать» silences their voice and their stream audio', () => {
+    expect(remoteAudio({ ...base, deafUsers: { u1: true } }).muted).toBe(true);
+    expect(remoteAudio({ ...base, stream: true, deafUsers: { u1: true } }).muted).toBe(true);
+    expect(remoteAudio({ ...base, userId: 'u2', deafUsers: { u1: true } }).muted).toBe(false);
+  });
   it('deafen silences everything', () => {
     expect(remoteAudio({ ...base, deafened: true }).muted).toBe(true);
     expect(remoteAudio({ ...base, deafened: true, stream: true }).muted).toBe(true);

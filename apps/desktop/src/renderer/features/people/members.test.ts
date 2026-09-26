@@ -101,6 +101,15 @@ describe('memberActions', () => {
     expect(memberActions(base({ target: member('me', 'Me', WorkspaceRole.MEMBER), targetVoice: { ...cam, userId: 'me' }, myVoiceRoomId: 'call' }))).toMatchObject({ hideVideo: false, stopCamera: false });
   });
 
+  it('roles: an admin changes members (not to admin); only the owner grants / revokes admin', () => {
+    expect(memberActions(base({})).roles).toEqual({ admin: false, member: true });
+    expect(memberActions(base({ myRole: WorkspaceRole.OWNER })).roles).toEqual({ admin: true, member: true });
+    expect(memberActions(base({ target: member('t', 'A', WorkspaceRole.ADMIN) })).roles).toBeNull();
+    expect(memberActions(base({ myRole: WorkspaceRole.OWNER, target: member('t', 'A', WorkspaceRole.ADMIN) })).roles).toEqual({ admin: true, member: true });
+    expect(memberActions(base({ myRole: WorkspaceRole.MEMBER })).roles).toBeNull();
+    expect(memberActions(base({ target: member('t', 'G', WorkspaceRole.GUEST, '', true) })).roles).toBeNull();
+  });
+
   it('volume only for someone in my voice room', () => {
     expect(memberActions(base({ targetVoice: voice('t', 'meeting'), myVoiceRoomId: 'call' })).volume).toBe(false);
   });

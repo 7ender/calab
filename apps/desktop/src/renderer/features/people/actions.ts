@@ -1,3 +1,4 @@
+import type { WorkspaceRole } from '@calaba/protocol';
 import { confirmAction } from '../../components/Confirm';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
@@ -43,6 +44,23 @@ export function moveMember(workspaceId: string, fromRoomId: string, userId: stri
       const room = useRooms.getState().byId[toRoomId]?.name ?? '';
       toast.info(t('people.moved', { name: memberName(workspaceId, userId), room }));
     }),
+  );
+}
+
+/** «Роли ›»: PATCH …/members/{userId} {role} (only the owner grants / revokes admin). */
+export function setMemberRole(workspaceId: string, userId: string, role: WorkspaceRole): void {
+  run(
+    api.workspaces.updateMember(workspaceId, userId, { role }).then((r) => {
+      if (r.member) useWorkspaces.getState().upsertMember(r.member);
+    }),
+  );
+}
+
+/** «Копировать ID» (support, bug reports). */
+export function copyUserId(userId: string): void {
+  void navigator.clipboard.writeText(userId).then(
+    () => toast.info(t('people.menu.idCopied')),
+    () => toast.error(t('people.menu.idCopyFailed')),
   );
 }
 

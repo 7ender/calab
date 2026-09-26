@@ -53,6 +53,8 @@ export interface Prefs {
   userVolumes: Record<string, number>;
   /** userId → muted for me only («Заглушить для меня»); their <audio> stays attached, muted. */
   mutedUsers: Record<string, true>;
+  /** userId → «Не слышать» for me only: their voice and their stream's sound (element.muted). */
+  deafUsers: Record<string, true>;
   /** Rebound in-window shortcuts (lib/shortcuts.ts); missing actions use the defaults. */
   hotkeys: Partial<Record<HotkeyAction, Combo>>;
   devStats: boolean;
@@ -93,6 +95,7 @@ const DEFAULTS: Prefs = {
   streamStage: {},
   userVolumes: {},
   mutedUsers: {},
+  deafUsers: {},
   hotkeys: {},
   devStats: false,
   presence: PresenceStatus.ONLINE,

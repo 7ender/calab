@@ -195,7 +195,7 @@ class VoiceEngine {
     if (s.outputDeviceId !== p.outputDeviceId) void this.applyOutputDevice();
     if ((s.rnnoise !== p.rnnoise || s.micDeviceId !== p.micDeviceId) && this.mic) void this.restartMic();
     if ((s.red !== p.red || s.personalBitrateKbps !== p.personalBitrateKbps) && this.micTrack && this.room) void this.republishMic();
-    if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers || s.outputVolume !== p.outputVolume) this.applyVolumes();
+    if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers || s.deafUsers !== p.deafUsers || s.outputVolume !== p.outputVolume) this.applyVolumes();
     if (s.hiddenVideo !== p.hiddenVideo || s.saveTraffic !== p.saveTraffic) this.applyCameras();
     if (s.cameraDeviceId !== p.cameraDeviceId) void this.camera.setDevice(s.cameraDeviceId);
   }
@@ -856,7 +856,7 @@ class VoiceEngine {
     // caps at 1.0 — boosting would need WebAudio, which breaks AEC (lib/voiceLogic remoteAudio).
     const v = useVoice.getState();
     const p = prefs();
-    const a = remoteAudio({ deafened: v.deafened, stream, userId, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume });
+    const a = remoteAudio({ deafened: v.deafened, stream, userId, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume });
     el.muted = a.muted;
     el.volume = a.volume;
   }
@@ -874,6 +874,11 @@ class VoiceEngine {
   /** Mute someone for me only (CHAT-SHELL, member menu); persisted per device like volumes. */
   setUserMuted(userId: string, muted: boolean): void {
     usePrefs.getState().setPrefs({ mutedUsers: withUserMuted(prefs().mutedUsers, userId, muted) });
+  }
+
+  /** «Не слышать» for me only: their voice and stream audio muted (persisted per device). */
+  setUserDeaf(userId: string, deaf: boolean): void {
+    usePrefs.getState().setPrefs({ deafUsers: withUserMuted(prefs().deafUsers, userId, deaf) });
   }
 
   setUserVolume(userId: string, volume: number): void {
