@@ -25,6 +25,8 @@ import { MessageActions, hasMessageActions } from './MessageActions';
 import { HOVER_DELAY_MS, createHoverIntent } from './hoverIntent';
 import { previewText, useMentionLabel } from './mentionText';
 import { MessageMenu } from './MessageMenu';
+import { MemberContextMenu } from '../people/MemberContextMenu';
+import { openProfile } from '../people/actions';
 
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
@@ -76,7 +78,11 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
       >
         {!own ? (
           <div className="w-9 shrink-0 self-end">
-            {meta.last ? <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} /> : null}
+            {meta.last ? (
+              <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="rounded-full">
+                <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} />
+              </AuthorTarget>
+            ) : null}
           </div>
         ) : null}
         <Bubble c={c} meta={meta} own={own} name={name} workspaceId={workspaceId} roomId={roomId} perms={perms} />
@@ -85,6 +91,32 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
     </div>
   );
 });
+
+/**
+ * The author's avatar / name in the feed (docs/09 #20): click → the profile, right click → the
+ * member menu (not the message menu around it). In a workspace only (a DM peer has no member
+ * menu); out of the Tab order — the feed's keyboard path is the message itself.
+ */
+function AuthorTarget({ workspaceId, userId, name, className, children }: { workspaceId: string; userId: string; name: string; className?: string; children: ReactNode }): ReactNode {
+  if (!workspaceId) return children;
+  return (
+    <MemberContextMenu workspaceId={workspaceId} userId={userId}>
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={t('people.openProfile', { name })}
+        className={cx('inline-block cursor-pointer align-bottom', className)}
+        onClick={(e) => {
+          e.stopPropagation();
+          openProfile(workspaceId, userId);
+        }}
+        onContextMenu={(e) => e.stopPropagation()}
+      >
+        {children}
+      </button>
+    </MemberContextMenu>
+  );
+}
 
 /** Date / «new» pills: 24 px, 12/500, dense popover glass with a 0.5 px hairline (UX review). */
 const pill = 'mat-glass inline-flex h-6 items-center rounded-full px-2.5 text-caption font-medium';
@@ -180,7 +212,9 @@ function Bubble({
       <div className="overflow-hidden" style={radius}>
         {showName ? (
           <div className="truncate px-3 pt-1.5 text-body font-semibold leading-[18px]" style={{ color: `var(--name-${userColorIndex(m.authorId) + 1})` }} title={name}>
-            {name}
+            <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="max-w-full truncate hover:underline">
+              {name}
+            </AuthorTarget>
           </div>
         ) : null}
         {m.replyToId ? <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop={!showName} /> : null}

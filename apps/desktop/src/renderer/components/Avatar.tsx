@@ -8,7 +8,8 @@ import { cx } from './ui';
 // Identity colours (tokens --avatar-1…8): white initials ≥ 4.5:1 on each.
 const PALETTE = Array.from({ length: 8 }, (_, i) => `var(--avatar-${i + 1})`);
 
-function colorOf(id: string): string {
+/** The identity colour of a user (the initial's background; the profile banner, docs/09 #20). */
+export function avatarColor(id: string): string {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
   return PALETTE[Math.abs(h) % PALETTE.length] ?? 'var(--avatar-1)';
@@ -75,7 +76,7 @@ export function Avatar({
         <span
           data-speaking={outsetSpeaking}
           className={cx(!ringInside && 'speak-ring', 'grid size-full place-items-center rounded-full font-semibold text-white')}
-          style={{ background: colorOf(userId), fontSize: Math.round(size * 0.42) }}
+          style={{ background: avatarColor(userId), fontSize: Math.round(size * 0.42) }}
         >
           {(name.trim()[0] ?? '?').toUpperCase()}
         </span>

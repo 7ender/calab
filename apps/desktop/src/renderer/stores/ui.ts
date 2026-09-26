@@ -18,7 +18,9 @@ export type Dialog =
   /** ⌘K search; `query` pre-fills it (typed into the room header's search field). */
   | { kind: 'quick-switcher'; query?: string }
   /** «Новое сообщение»: pick a person to write to (ADR-0020). */
-  | { kind: 'new-dm' };
+  | { kind: 'new-dm' }
+  /** Member profile (docs/09 #20); `note` focuses «Заметка» («Добавить заметку» in the member menu). */
+  | { kind: 'profile'; workspaceId: string; userId: string; note?: boolean };
 
 interface UiState {
   /** The open workspace, or HOME (stores/dms.ts) for «Личные» — the DM list (ADR-0020). */

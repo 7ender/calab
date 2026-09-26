@@ -11,6 +11,7 @@ import { useVoice } from '../../stores/voice';
 import { isGuest, useWorkspaces } from '../../stores/workspaces';
 import { GuestBadge, roleTextClass } from '../people/MemberBits';
 import { MemberContextMenu } from '../people/MemberContextMenu';
+import { MutedByMe } from '../../components/SpeakerIdentity';
 import { groupMembers, nameOf } from '../people/members';
 import { NicknameDialog } from '../people/NicknameDialog';
 import { ProfileCard } from '../people/ProfileCard';
@@ -126,7 +127,7 @@ const MemberRow = memo(function MemberRow({
 
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
-      <MemberContextMenu workspaceId={workspaceId} userId={userId} onOpenProfile={() => onOpenChange(true)}>
+      <MemberContextMenu workspaceId={workspaceId} userId={userId}>
         <Popover.Trigger asChild>
           <button
             type="button"
@@ -148,6 +149,7 @@ const MemberRow = memo(function MemberRow({
                   <Crown className={cx('size-3.5 shrink-0', offline ? 'text-muted' : 'text-role-owner')} aria-label={t('people.owner')} role="img" />
                 ) : null}
                 {isGuest(m) ? <GuestBadge /> : null}
+                <MutedByMe userId={userId} className="size-3.5" />
               </span>
               {second ? <span className="flex min-w-0 items-center gap-1 text-caption leading-4 text-muted">{second}</span> : null}
             </span>

@@ -49,6 +49,7 @@ const KEY = new Set([
   'voice-noise-popover',
   'main-members-toggled',
   'members-menu',
+  'profile-dialog',
   'workspace-menu',
   'quick-switcher',
   'settings-2',
@@ -459,6 +460,23 @@ test('members-menu', async ({ open, win, mock, shot }) => {
   await members.getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
   await expect(win.getByRole('menu')).toBeVisible();
   await checkpoint(shot, 'members-menu');
+});
+
+test('profile-dialog', async ({ open, win, mock, shot }) => {
+  // docs/09 #20: «Профиль» from the member menu — banner, member since, role chips, the note saved.
+  await open();
+  await mainWindow(win, mock);
+  const members = await membersList(win);
+  await members.getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
+  await win.getByRole('menuitem', { name: 'Профиль' }).click();
+  const dialog = win.getByTestId('profile-dialog');
+  await expect(dialog).toBeVisible();
+  const note = dialog.getByTestId('profile-note');
+  await expect(note).toBeEditable();
+  await note.fill('Ведёт релизы, спросить про стенд');
+  await note.blur();
+  await expect(dialog.getByTestId('note-status')).toHaveText('Сохранено');
+  await checkpoint(shot, 'profile-dialog');
 });
 
 test('quick-switcher', async ({ open, win, mock, shot }) => {

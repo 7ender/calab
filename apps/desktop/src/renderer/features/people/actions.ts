@@ -6,6 +6,7 @@ import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
+import { useUi } from '../../stores/ui';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 
 /** Human error text for member actions (docs/09 #16: no raw strings where we know better). */
@@ -54,6 +55,11 @@ export function setMemberRole(workspaceId: string, userId: string, role: Workspa
       if (r.member) useWorkspaces.getState().upsertMember(r.member);
     }),
   );
+}
+
+/** The profile dialog (docs/09 #20); `note` = «Добавить заметку»: the note field focused. */
+export function openProfile(workspaceId: string, userId: string, note = false): void {
+  useUi.getState().openDialog({ kind: 'profile', workspaceId, userId, note });
 }
 
 /** «Копировать ID» (support, bug reports). */

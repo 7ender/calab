@@ -7,6 +7,7 @@ import { CameraPreview } from '../voice/CameraPreview';
 import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
+import { ProfileDialog } from '../people/ProfileDialog';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
 import { WorkspaceSettingsDialog } from '../workspace/WorkspaceSettings';
@@ -46,6 +47,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'new-dm':
         node = <NewDmDialog onClose={close} />;
+        break;
+      case 'profile':
+        node = <ProfileDialog key={d.userId} workspaceId={d.workspaceId} userId={d.userId} focusNote={d.note ?? false} onClose={close} />;
         break;
       case 'image':
         node = <Lightbox fileId={d.fileId} name={d.name} onClose={close} />;
