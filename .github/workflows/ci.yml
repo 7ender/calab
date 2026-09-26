@@ -41,6 +41,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # apps/desktop postinstall compiles uiohook-napi (electron-rebuild): needs the X11 headers on Linux
+      - name: X11 headers for uiohook
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libx11-dev libxtst-dev libxt-dev libxext-dev libxinerama-dev libx11-xcb-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxkbfile-dev libxrandr-dev
       - run: pnpm install --frozen-lockfile   # provides protoc-gen-es (local buf plugin)
       - uses: sqlc-dev/setup-sqlc@c0209b9199cd1cce6a14fc27cabcec491b651761 # v4.0.0
         with:
@@ -138,6 +144,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # apps/desktop postinstall compiles uiohook-napi (electron-rebuild): needs the X11 headers on Linux
+      - name: X11 headers for uiohook
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libx11-dev libxtst-dev libxt-dev libxext-dev libxinerama-dev libx11-xcb-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxkbfile-dev libxrandr-dev
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
       - run: pnpm -r test
@@ -152,6 +164,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # apps/desktop postinstall compiles uiohook-napi (electron-rebuild): needs the X11 headers on Linux
+      - name: X11 headers for uiohook
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libx11-dev libxtst-dev libxt-dev libxext-dev libxinerama-dev libx11-xcb-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxkbfile-dev libxrandr-dev
       - run: pnpm install --frozen-lockfile
       # pnpm runs one script per invocation, hence three steps
       - run: pnpm -F @calaba/landing lint
