@@ -12,18 +12,25 @@ const OUT = process.env['CALABA_VISUAL_OUT'] ?? 'test-results/visual';
 
 /**
  * screens.spec.ts: one project per configuration, one test per screen (named like its snapshot).
- *   -g "voice-camera-grid"                  every configuration
+ *   -g "voice-camera-grid"                  every configuration that's active locally (dark-1440)
  *   -g "voice-camera-grid" --project dark-1440
  * Workers run screens in parallel, each with its own Electron app, mock port and LiveKit room
  * prefix (e2e-visual/app.ts). Default is 1 (never two Electron instances on the owner's machine);
  * CALABA_VISUAL_WORKERS can only raise it explicitly.
+ *
+ * Local default is dark-1440 only, and only the screens named with -g (owner, 26.09: no full runs
+ * on this machine). The other three configurations (dark-960, light-960, light-1440) and the misc
+ * project run only when CALABA_VISUAL_ALL=1 — nightly CI on Linux sets it to cover the full matrix.
  */
-const CONFIGS = [
-  { name: 'dark-960', theme: 'dark', viewport: { width: 960, height: 600 } },
-  { name: 'dark-1440', theme: 'dark', viewport: { width: 1440, height: 800 } },
-  { name: 'light-960', theme: 'light', viewport: { width: 960, height: 600 } },
-  { name: 'light-1440', theme: 'light', viewport: { width: 1440, height: 800 } },
-] as const;
+const ALL_CONFIGS = process.env['CALABA_VISUAL_ALL'] === '1';
+const CONFIGS = (
+  [
+    { name: 'dark-960', theme: 'dark', viewport: { width: 960, height: 600 } },
+    { name: 'dark-1440', theme: 'dark', viewport: { width: 1440, height: 800 } },
+    { name: 'light-960', theme: 'light', viewport: { width: 960, height: 600 } },
+    { name: 'light-1440', theme: 'light', viewport: { width: 1440, height: 800 } },
+  ] as const
+).filter((c) => ALL_CONFIGS || c.name === 'dark-1440');
 
 /** The per-project options of e2e-visual/app.ts (kept here: the node tsconfig doesn't include e2e files). */
 interface VisualOptions {
@@ -39,8 +46,8 @@ export default defineConfig<VisualOptions>({
   workers: Number(process.env['CALABA_VISUAL_WORKERS'] ?? 1),
   projects: [
     ...CONFIGS.map((c) => ({ name: c.name, testMatch: /screens\.spec\.ts/, use: { theme: c.theme, size: c.viewport } })),
-    // Focus walk and the web client's own screens (they start their own mock / app).
-    { name: 'misc', testMatch: /(focus|web)\.spec\.ts/ },
+    // Focus walk and the web client's own screens (they start their own mock / app); nightly-only, see above.
+    ...(ALL_CONFIGS ? [{ name: 'misc', testMatch: /(focus|web)\.spec\.ts/ }] : []),
   ],
   // Electron + LiveKit on one machine: one retry; a retried test is reported as «flaky».
   retries: 1,

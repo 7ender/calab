@@ -18,12 +18,14 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 | `pnpm -F @calaba/desktop build:app` | build to `out/` only, no installers |
 | `pnpm -F @calaba/desktop typecheck` / `lint` / `test` | TS strict (main, renderer, worklet), eslint, vitest (46 unit tests) |
 | `CALABA_E2E_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop e2e` | Playwright for Electron: register → workspace → room → message → voice |
-| `pnpm -F @calaba/desktop e2e:visual` (`:update` — перезаписать эталон) | Дизайн (docs/08): снимки dark/light × 960/1440 против мок-API, layout-инварианты, axe-core, обход фокуса по Tab. Нужен dev LiveKit. См. TESTING.md «1a» и «Parallel visual runs» ниже |
+| `pnpm -F @calaba/desktop e2e:visual` (`:update` — перезаписать эталон) | Дизайн (docs/08): снимки против мок-API, layout-инварианты, axe-core, обход фокуса по Tab. Нужен dev LiveKit. Локально — только `dark-1440` и только выбранные экраны (`-g`); полная матрица (`light`, `960`) — nightly CI, `CALABA_VISUAL_ALL=1`. См. TESTING.md «1a» и «Parallel visual runs» ниже |
 
 
 ### Parallel visual runs (git worktrees)
 
-On the owner's machine it is always 1 worker; never run two Electron instances at once (`CALABA_VISUAL_WORKERS` defaults to 1, see `playwright.visual.config.ts`).
+**Locally always `dark-1440` and always `-g "<screens>"`** — never a full run on the owner's machine, not even before a release (`CALABA_VISUAL_ALL` unset). The other three configurations (`dark-960`, `light-960`, `light-1440`) and the `misc` project (focus walk, web screens) exist only for `CALABA_VISUAL_ALL=1`, which the nightly CI workflow sets to cover the full matrix on Linux (`.github/workflows/visual-nightly.yml`); their darwin baselines are not committed.
+
+On the owner's machine it is always 1 worker; never run two Electron instances at once (`CALABA_VISUAL_WORKERS` defaults to 1, see `playwright.visual.config.ts`). Electron and the web chromium projects launch with `--mute-audio` — no room join/leave sounds during a run.
 
 Every checkout on this machine shares one dev LiveKit. Two visual runs must not share the mock's port or its LiveKit room names, or their participants meet in one room. The main tree keeps the defaults: port 39170 and prefix `mock_`. The baseline for the auth shots is taken there, because the login screen prints the port. A **worktree** always runs with its own port and prefix:
 
@@ -32,18 +34,18 @@ CALABA_VISUAL_MOCK_PORT=39270 MOCK_LIVEKIT_ROOM_PREFIX=wt_ CALABA_VISUAL_OUT=tes
   pnpm -F @calaba/desktop e2e:visual -g "<screens>"
 ```
 
-Each screen is its own test named like its snapshot (`e2e-visual/screens.spec.ts`); the four configurations are Playwright projects (`dark-960`, `dark-1440`, `light-960`, `light-1440`); focus walk and web screens are the `misc` project.
+Each screen is its own test named like its snapshot (`e2e-visual/screens.spec.ts`); the four configurations are Playwright projects (`dark-960`, `dark-1440`, `light-960`, `light-1440`, the first three gated by `CALABA_VISUAL_ALL=1` above); focus walk and web screens are the `misc` project (same gate).
 
 ```bash
-pnpm -F @calaba/desktop e2e:visual -g "voice-pip$"                           # one screen, 4 configs
-pnpm -F @calaba/desktop e2e:visual -g "voice-pip$" --project dark-1440       # one snapshot
-pnpm -F @calaba/desktop e2e:visual:update -g "voice-camera-(grid|focus)$"    # re-record two screens
-npx playwright test --config playwright.visual.config.ts --list              # all names
+pnpm -F @calaba/desktop e2e:visual -g "voice-pip$"                                    # one screen, dark-1440
+CALABA_VISUAL_ALL=1 pnpm -F @calaba/desktop e2e:visual -g "voice-pip$"                # one screen, all 4 configs
+pnpm -F @calaba/desktop e2e:visual:update -g "voice-camera-(grid|focus)$"             # re-record two screens (dark-1440)
+CALABA_VISUAL_ALL=1 npx playwright test --config playwright.visual.config.ts --list   # all names, all projects
 ```
 
 Every test starts from a clean seeded state (`e2e-visual/app.ts`: mock reset, storage wiped, reload, sign-in), so any screen runs alone.
 
-**Why the baselines changed with the split.** In the old single sequential test, axe runs on earlier screens (`checkpoint` → `expectAccessible`) changed how Chromium lays out later text: 15 px system text came out ~10 % narrower, with identical computed styles and fonts. A fresh page — what users see — renders it wider. The per-screen tests reload before every screen and match the real rendering. Don't reintroduce shared state between screens. When `CALABA_VISUAL_WORKERS` is raised above the default (1), workers run in parallel, each with its own Electron app, mock port (base + 1 + worker) and LiveKit room prefix — but not on the owner's machine, where it stays at 1 (never two Electron instances at once).
+**Why the baselines changed with the split.** In the old single sequential test, axe runs on earlier screens (`checkpoint` → `expectAccessible`) changed how Chromium lays out later text: 15 px system text came out ~10 % narrower, with identical computed styles and fonts. A fresh page — what users see — renders it wider. The per-screen tests reload before every screen and match the real rendering. Don't reintroduce shared state between screens. When `CALABA_VISUAL_WORKERS` is raised above the default (1) — only with `CALABA_VISUAL_ALL=1`, off the owner's machine — workers run in parallel, each with its own Electron app, mock port (base + 1 + worker) and LiveKit room prefix.
 
 `auth-*` snapshots from a worktree show 39270; do not commit them (`git checkout -- 'e2e-visual/__screenshots__/darwin/auth-*'`).
 
