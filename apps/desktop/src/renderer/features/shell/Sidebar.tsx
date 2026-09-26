@@ -58,6 +58,7 @@ import { moveMember } from '../people/actions';
 import { errorText } from '../../lib/api/errors';
 import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
+import { useTimeZoneLabel } from '../../services/timezone';
 
 export { menuBox, menuItem };
 
@@ -771,6 +772,8 @@ function VoiceMember({
   const stream = useVoice((s) => s.streams.find((x) => x.userId === state.userId));
   const user = useWorkspaces((s) => s.users[state.userId]);
   const name = useWorkspaces(() => memberName(workspaceId, state.userId));
+  // «(+5 UTC)» when their time zone differs from mine (User.timezone).
+  const tz = useTimeZoneLabel(state.userId);
   const talking = speaking && !state.muted;
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `member:${room.id}:${state.userId}`,
@@ -801,7 +804,10 @@ function VoiceMember({
       title={name}
     >
       <Avatar userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={32} speaking={talking} />
-      <span className={cx('min-w-0 flex-1 truncate', talking || isMe ? 'text-fg' : 'text-muted group-hover/member:text-fg')}>{name}</span>
+      <span className={cx('min-w-0 flex-1 truncate', talking || isMe ? 'text-fg' : 'text-muted group-hover/member:text-fg')}>
+        {name}
+        {tz ? <span className="text-muted"> {tz}</span> : null}
+      </span>
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}

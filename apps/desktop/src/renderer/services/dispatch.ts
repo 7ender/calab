@@ -1,4 +1,5 @@
 import { VoiceStreamStopReason, type DispatchEvent, type Message, type WorkspaceSnapshot } from '@calaba/protocol';
+import { syncTimeZone } from './timezone';
 import { log } from '../lib/log';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
@@ -62,6 +63,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       void resyncLoadedRooms();
       useSession.getState().set({ me: r.me ?? null, ready: true });
       if (r.me?.settings) applyUserSettings(r.me.settings);
+      syncTimeZone(r.me);
       ensureActiveWorkspace();
       return;
     }

@@ -1142,6 +1142,7 @@ class MockImpl {
         u.user.displayName = b.displayName.trim();
       }
       if (b.statusText !== undefined) u.user.statusText = b.statusText;
+      if (b.timezone !== undefined) u.user.timezone = b.timezone;
       if (b.avatarFileId !== undefined) {
         if (b.avatarFileId && !s().files.has(b.avatarFileId)) throw invalid('avatarFileId', 'unknown file');
         u.user.avatarFileId = b.avatarFileId;

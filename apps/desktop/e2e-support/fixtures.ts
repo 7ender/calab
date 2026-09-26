@@ -255,11 +255,13 @@ interface UserSpec {
   email: string;
   status: string;
   avatar?: string;
+  /** IANA zone (User.timezone); the visual tests run in Europe/Moscow. */
+  timezone?: string;
 }
 
 const USERS: UserSpec[] = [
   { key: 'anna', n: 1, name: 'Анна Смирнова', email: 'owner@calaba.test', status: 'В фокусе до 18:00' },
-  { key: 'boris', n: 2, name: 'Борис Петров', email: 'boris@calaba.test', status: 'На созвоне' },
+  { key: 'boris', n: 2, name: 'Борис Петров', email: 'boris@calaba.test', status: 'На созвоне', timezone: 'Asia/Yekaterinburg' },
   { key: 'vera', n: 3, name: 'Вера Ким', email: 'vera@calaba.test', status: '', avatar: IDS.files.veraAvatar },
   {
     key: 'grigory',
@@ -419,6 +421,7 @@ export function buildState(scenario: Scenario): MockState {
         displayName: u.name,
         avatarFileId: scenario === 'data' ? (u.avatar ?? '') : '',
         statusText: scenario === 'data' ? u.status : '',
+        timezone: u.timezone ?? '',
         createdAt: created,
         isGuest: u.key === 'dina', // guest account from a room link (ADR-0016)
       }),

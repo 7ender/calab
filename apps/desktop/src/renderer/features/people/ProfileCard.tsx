@@ -1,4 +1,5 @@
 import { PresenceStatus, WorkspaceRole } from '@calaba/protocol';
+import { useTimeZoneLabel } from '../../services/timezone';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { MonitorUp, Pencil, Volume2 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -40,6 +41,7 @@ export function ProfileCard({ workspaceId, userId, onRename }: { workspaceId: st
   const roomName = useRooms((s) => (v?.roomId ? s.byId[v.roomId]?.name : undefined));
   const self = useSession((s) => s.me?.user?.id) === userId;
   const name = useMemberName(workspaceId, userId);
+  const tz = useTimeZoneLabel(userId);
   const actions = useMemberActions(workspaceId, userId);
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
   const u = m?.user;
@@ -54,6 +56,7 @@ export function ProfileCard({ workspaceId, userId, onRename }: { workspaceId: st
           <div className="flex min-w-0 items-center gap-1.5">
             <h3 className={`truncate text-headline font-semibold ${roleTextClass(m.role)}`} title={name}>
               {name}
+              {tz ? <span className="font-normal text-muted"> {tz}</span> : null}
             </h3>
             {isGuest(m) ? <GuestBadge /> : null}
           </div>
