@@ -5,7 +5,7 @@
  * Contract: proto/calaba/v1 (protojson REST bodies, binary GatewayFrame over WebSocket),
  * docs/05-realtime-protocol.md. Fixtures: ./fixtures.ts.
  *
- * CLI: tsx e2e-support/mock-server.ts --port 3900 --scenario data|empty|marketing --static dist-web
+ * CLI: tsx e2e-support/mock-server.ts --port 3900 --scenario data --static dist-web
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -161,13 +161,10 @@ import {
   type Scenario,
   type UserRec,
   UNFURLS,
-  SCENARIOS,
 } from './fixtures';
-import { MARKETING_UNFURLS } from './fixtures-marketing';
 import { cardPicture, encodePng, pngSize } from './png';
 
 export { IDS, GENERAL_MESSAGE_COUNT, PASSWORD, mockId, type Scenario } from './fixtures';
-export { MARKETING_IDS, MARKETING_VOICE_STARTED_AT } from './fixtures-marketing';
 
 // ---------------------------------------------------------------- public API
 
@@ -202,7 +199,7 @@ export interface MockServer {
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string }): Message;
   /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
-  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean }): void;
+  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
   setPresence(userId: string, status: PresenceStatus): void;
 }
@@ -229,9 +226,17 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
 
 const JSON_WRITE = { alwaysEmitImplicit: true } as const;
 const JSON_READ = { ignoreUnknownFields: true } as const;
+
+/**
+ * LiveKit room name prefix (`mock_<roomId>`). MOCK_LIVEKIT_ROOM_PREFIX separates parallel local
+ * runs that share one dev LiveKit (their participants would otherwise meet in the same room).
+ */
+export function livekitRoomPrefix(): string {
+  return process.env['MOCK_LIVEKIT_ROOM_PREFIX'] || 'mock_';
+}
 const FAR_FUTURE = ts('2099-01-01T00:00:00Z');
 const REFRESH_COOKIE = 'calaba_refresh';
-const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES, CONNECT, SPEAK, STREAM, MUTE_MEMBERS, MANAGE_ROOM, MOVE_MEMBERS } =
+const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES, CONNECT, SPEAK, STREAM, VIDEO, MUTE_MEMBERS, MANAGE_ROOM, MOVE_MEMBERS } =
   PERMISSION_BITS;
 
 class HttpError extends Error {
@@ -375,8 +380,6 @@ class MockImpl {
   private readonly http = createServer((req, res) => void this.handle(req, res));
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
   private readonly lk: { url: string; key: string; secret: string };
-  /** userId → auth session (device) that joined voice through /join; fixture voice states have none. */
-  private readonly voiceSessions = new Map<string, string>();
   private readonly staticDir: string | null;
   private readonly log: (line: string) => void;
 
@@ -426,23 +429,7 @@ class MockImpl {
 
   reset(scenario: Scenario): void {
     this.state = buildState(scenario);
-    this.voiceSessions.clear();
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
-  }
-
-  /**
-   * A LiveKit join token for a voice room (identity `<user_id>:<session_id>`). LiveKit runs with
-   * room.auto_create=false (as in production): like the real API, the room is created first
-   * (idempotent).
-   */
-  private async voiceToken(room: Room, identity: string, name: string): Promise<string> {
-    const lkRoom = `mock_${room.id}`;
-    await new RoomServiceClient(this.lk.url.replace(/^ws/, 'http'), this.lk.key, this.lk.secret)
-      .createRoom({ name: lkRoom, emptyTimeout: 60 })
-      .catch((e: unknown) => this.log(`livekit createRoom ${lkRoom}: ${String(e)}`));
-    const at = new AccessToken(this.lk.key, this.lk.secret, { identity, name, ttl: '10m' });
-    at.addGrant({ roomJoin: true, room: lkRoom, canPublish: true, canSubscribe: true, canPublishData: true });
-    return at.toJwt();
   }
 
   // ------------------------------------------------ lookups
@@ -840,7 +827,7 @@ class MockImpl {
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
 
-  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean }): void {
+  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
     const workspaceId = room?.workspaceId ?? prev?.workspaceId ?? '';
@@ -854,6 +841,7 @@ class MockImpl {
       deafened: patch.deafened ?? (sameRoom ? prev.deafened : false),
       streaming: patch.streaming ?? (sameRoom ? prev.streaming : false),
       serverMuted: patch.serverMuted ?? (sameRoom ? prev.serverMuted : false),
+      camera: patch.camera ?? (sameRoom ? prev.camera : false),
     });
     // Moving to another workspace's room: tell the old workspace the user left.
     if (prev?.roomId && prev.workspaceId !== workspaceId) {
@@ -861,10 +849,7 @@ class MockImpl {
       this.toWorkspace(prev.workspaceId, { event: { case: 'voiceStateUpdate', value: { state: left } } });
     }
     if (room) this.state.voiceStates.set(userId, v);
-    else {
-      this.state.voiceStates.delete(userId);
-      this.voiceSessions.delete(userId);
-    }
+    else this.state.voiceStates.delete(userId);
     // Room.voice_started_at: set when a room gets its first participant, cleared when it
     // empties; the change goes out as ROOM_UPDATE (call timers).
     const timers: Room[] = [];
@@ -1266,7 +1251,9 @@ class MockImpl {
       if (b.defaultAudioBitrateKbps !== undefined) media.audioBitrateKbps = b.defaultAudioBitrateKbps;
       if (b.defaultMaxStreamPreset !== undefined) media.maxStreamPreset = b.defaultMaxStreamPreset;
       if (b.defaultMaxStreams !== undefined) media.maxStreams = b.defaultMaxStreams;
-      const mediaChanged = media.audioBitrateKbps !== undefined || media.maxStreamPreset !== undefined || media.maxStreams !== undefined;
+      if (b.defaultCameraLimit !== undefined) media.cameraLimit = b.defaultCameraLimit;
+      const mediaChanged =
+        media.audioBitrateKbps !== undefined || media.maxStreamPreset !== undefined || media.maxStreams !== undefined || media.cameraLimit !== undefined;
       if (mediaChanged) ws.mediaDefaults = effectiveMedia(ws, media);
       this.toWorkspace(ws.id, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
       if (mediaChanged) {
@@ -1796,7 +1783,7 @@ class MockImpl {
     this.route('GET', '/api/unfurl', (c) => {
       this.uid(c);
       const url = c.url.searchParams.get('url') ?? '';
-      const card = UNFURLS[url] ?? MARKETING_UNFURLS[url];
+      const card = UNFURLS[url];
       if (!card) throw notFound('preview not found');
       sendMsg(c.res, 200, UnfurlResponseSchema, {
         url,
@@ -1870,9 +1857,22 @@ class MockImpl {
         if (inRoom >= room.userLimit) throw new HttpError(409, ErrorCode.ROOM_FULL, 'the room is full');
       }
       const identity = `${me}:${sessionId}`;
-      const token = await this.voiceToken(room, identity, user.user.displayName);
-      this.setVoice(me, room.id, { muted: false, deafened: false, streaming: false });
-      this.voiceSessions.set(me, sessionId);
+      // LiveKit runs with room.auto_create=false (as in production): like the real API,
+      // create the room before handing out a token (idempotent).
+      const lkRoom = `${livekitRoomPrefix()}${room.id}`;
+      await new RoomServiceClient(this.lk.url.replace(/^ws/, 'http'), this.lk.key, this.lk.secret)
+        .createRoom({ name: lkRoom, emptyTimeout: 60 })
+        .catch((e: unknown) => this.log(`livekit createRoom ${lkRoom}: ${String(e)}`));
+      const at = new AccessToken(this.lk.key, this.lk.secret, { identity, name: user.user.displayName, ttl: '10m' });
+      at.addGrant({
+        roomJoin: true,
+        room: lkRoom,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+      });
+      const token = await at.toJwt();
+      this.setVoice(me, room.id, { muted: false, deafened: false, streaming: false, camera: false });
       sendMsg(c.res, 200, JoinVoiceResponseSchema, {
         url: this.lk.url,
         token,
@@ -1880,7 +1880,28 @@ class MockImpl {
         media: room.media ?? DEFAULT_MEDIA,
         canSpeak: has(perms, SPEAK),
         canStream: has(perms, STREAM),
+        canVideo: has(perms, VIDEO) && (room.media ?? DEFAULT_MEDIA).cameraLimit > 0,
       });
+    });
+
+    // Webcams (docs/05 «Камеры»). No LiveKit webhooks here: the request itself marks the camera
+    // on (VoiceState.camera), /camera/stop marks it off.
+    this.route('POST', '/api/rooms/:id/camera/request', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireRoomPerm(room, me, VIDEO);
+      if (s().voiceStates.get(me)?.roomId !== room.id) throw conflict('not in this voice room');
+      const limit = (room.media ?? DEFAULT_MEDIA).cameraLimit;
+      const on = [...s().voiceStates.values()].filter((v) => v.roomId === room.id && v.camera && v.userId !== me).length;
+      if (limit === 0 || on >= limit) throw conflict('camera limit reached');
+      this.setVoice(me, room.id, { camera: true });
+      noContent(c.res);
+    });
+    this.route('POST', '/api/rooms/:id/camera/stop', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      if (s().voiceStates.get(me)?.roomId === room.id) this.setVoice(me, room.id, { camera: false });
+      noContent(c.res);
     });
 
     this.route('POST', '/api/rooms/:id/stream/request', (c) => {
@@ -1912,9 +1933,7 @@ class MockImpl {
       return { room, target };
     };
     // MOVE_MEMBERS in both rooms; the target's user_limit applies unless the actor is an admin.
-    // App-level move (ADR-0019, open-source LiveKit): the moved device gets a join token for the
-    // target room in VOICE_MOVED and reconnects itself; everyone sees VOICE_STATE_UPDATE.
-    this.route('POST', '/api/rooms/:id/voice/:userId/move', async (c) => {
+    this.route('POST', '/api/rooms/:id/voice/:userId/move', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
       this.requireRoomPerm(room, me, MOVE_MEMBERS);
@@ -1931,19 +1950,9 @@ class MockImpl {
         const inDst = [...s().voiceStates.values()].filter((v) => v.roomId === dst.id).length;
         if (inDst >= dst.userLimit) throw new HttpError(409, ErrorCode.ROOM_FULL, 'the room is full');
       }
-      const base = { workspaceId: room.workspaceId, fromRoomId: room.id, toRoomId: dst.id, byUserId: me };
-      // The device that joined through /join. Fixture voice states have none (no client is
-      // connected): they get the token-less event, as after an SFU move.
-      const sessionId = this.voiceSessions.get(target);
-      const identity = sessionId ? `${target}:${sessionId}` : '';
-      const token = sessionId ? await this.voiceToken(dst, identity, s().users.get(target)?.user.displayName ?? '') : '';
       const prev = s().voiceStates.get(target);
-      if (prev?.roomId !== room.id) throw notFound('member in this voice room'); // left while minting
-      // The stream ends with the old connection (the client requests it again).
-      this.setVoice(target, dst.id, { muted: prev.muted, deafened: prev.deafened, streaming: sessionId ? false : prev.streaming });
-      // To every device of the user, as the server does; only the one with this session_id acts on it.
-      const value = sessionId ? { ...base, url: this.lk.url, token, sessionId, identity } : base;
-      this.toUser(target, { event: { case: 'voiceMoved', value } });
+      this.setVoice(target, dst.id, { muted: prev?.muted ?? false, deafened: prev?.deafened ?? false, streaming: prev?.streaming ?? false, camera: prev?.camera ?? false });
+      this.toUser(target, { event: { case: 'voiceMoved', value: { workspaceId: room.workspaceId, fromRoomId: room.id, toRoomId: dst.id, byUserId: me } } });
       noContent(c.res);
     });
 
@@ -1961,6 +1970,22 @@ class MockImpl {
     this.route('POST', '/api/rooms/:id/voice/:userId/disconnect', (c) => {
       const { target } = moderate(c);
       this.setVoice(target, '', {});
+      noContent(c.res);
+    });
+    this.route('POST', '/api/rooms/:id/voice/:userId/stop-camera', (c) => {
+      const { room, target } = moderate(c);
+      if (!s().voiceStates.get(target)?.camera) throw notFound('no camera');
+      this.setVoice(target, room.id, { camera: false });
+      this.toWorkspace(
+        room.workspaceId,
+        {
+          event: {
+            case: 'voiceCameraStop',
+            value: { workspaceId: room.workspaceId, roomId: room.id, userId: target, trackSid: '', reason: VoiceStreamStopReason.MODERATOR },
+          },
+        },
+        room.id,
+      );
       noContent(c.res);
     });
     this.route('POST', '/api/rooms/:id/voice/:userId/stop-stream', (c) => {
@@ -2082,7 +2107,7 @@ class MockImpl {
     this.route('GET', '/__mock/ids', (c) => send(c.res, 200, JSON.stringify(IDS), 'application/json'));
     this.route('POST', '/__mock/reset', (c) => {
       const scenario = str(ctl(c)['scenario']);
-      this.reset(SCENARIOS.find((x) => x === scenario) ?? s().scenario);
+      this.reset(scenario === 'empty' || scenario === 'data' ? scenario : s().scenario);
       noContent(c.res);
     });
     this.route('POST', '/__mock/message', (c) => {
@@ -2216,9 +2241,8 @@ function arg(argv: string[], name: string): string | undefined {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const env = process.env;
-  const name = arg(argv, 'scenario') ?? env['MOCK_SCENARIO'] ?? 'data';
-  const scenario = SCENARIOS.find((x) => x === name);
-  if (!scenario) throw new Error(`unknown scenario ${name}`);
+  const scenario = arg(argv, 'scenario') ?? env['MOCK_SCENARIO'] ?? 'data';
+  if (scenario !== 'data' && scenario !== 'empty') throw new Error(`unknown scenario ${scenario}`);
   const staticDir = arg(argv, 'static') ?? env['MOCK_STATIC_DIR'];
   const livekitUrl = arg(argv, 'livekit-url') ?? env['MOCK_LIVEKIT_URL'];
   const livekitKey = arg(argv, 'livekit-key') ?? env['MOCK_LIVEKIT_KEY'];

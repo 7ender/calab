@@ -60,6 +60,7 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSMicrophoneUsageDescription: Calab использует микрофон для голосовых комнат.
+    NSCameraUsageDescription: Calab использует камеру для видео в голосовых комнатах.
     NSAudioCaptureUsageDescription: Calab захватывает системный звук при показе экрана.
     NSAppleEventsUsageDescription: Calab открывает системные настройки разрешений.
 win:

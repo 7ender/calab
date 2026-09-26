@@ -90,6 +90,17 @@ describe('memberActions', () => {
     expect(hasAnyAction(memberActions(base({ myRole: WorkspaceRole.MEMBER })))).toBe(false);
   });
 
+  it('camera: «Не показывать видео» for a camera in my room; «Выключить камеру» for a moderator', () => {
+    const cam = { ...voice('t', 'call'), camera: true };
+    expect(memberActions(base({ targetVoice: cam, myVoiceRoomId: 'call' }))).toMatchObject({ hideVideo: true, stopCamera: true });
+    const plain = memberActions(base({ myRole: WorkspaceRole.MEMBER, targetVoice: cam, myVoiceRoomId: 'call' }));
+    expect(plain).toMatchObject({ hideVideo: true, stopCamera: false });
+    // Another room: nothing to hide (not subscribed anyway); the moderator can still stop it.
+    expect(memberActions(base({ targetVoice: cam, myVoiceRoomId: 'meeting' }))).toMatchObject({ hideVideo: false, stopCamera: true });
+    expect(memberActions(base({ targetVoice: voice('t', 'call'), myVoiceRoomId: 'call' }))).toMatchObject({ hideVideo: false, stopCamera: false });
+    expect(memberActions(base({ target: member('me', 'Me', WorkspaceRole.MEMBER), targetVoice: { ...cam, userId: 'me' }, myVoiceRoomId: 'call' }))).toMatchObject({ hideVideo: false, stopCamera: false });
+  });
+
   it('volume only for someone in my voice room', () => {
     expect(memberActions(base({ targetVoice: voice('t', 'meeting'), myVoiceRoomId: 'call' })).volume).toBe(false);
   });

@@ -1,16 +1,16 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Maximize2, MessageSquare, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Volume2, VolumeX, X } from 'lucide-react';
+import { Check, ChevronDown, Maximize2, MessageSquare, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
-import { Badge, IconButton, Slider, cx } from '../../components/ui';
+import { IconButton, Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
-import { useMessages } from '../../stores/messages';
 import { useVoice, type RemoteStream, type StreamQuality } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
+import { CameraGrid, CameraPip, CameraStripTile, useAnyCamera, useStripCameras } from './CameraTiles';
 import { pipSize, qualityOptions } from './streamFormat';
 
 /**
@@ -108,7 +108,7 @@ function Popout({ trackSid, title, onClose }: { trackSid: string; title: string;
   );
 }
 
-interface Box {
+export interface Box {
   /** Offset of the message area's top inside the chat column (below header / pinned bar). */
   top: number;
   /** Height between that top and the composer. */
@@ -142,9 +142,8 @@ function useMessageBox(anchor: RefObject<HTMLDivElement | null>): Box {
 
 const PIP_GAP = 12;
 
-/** The same pill LIVE badge as in the room list (one style for every badge). */
 function LiveBadge(): ReactNode {
-  return <Badge tone="danger">{t('shell.live')}</Badge>;
+  return <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white">{t('shell.live')}</span>;
 }
 
 /** Streamer chip over the video: avatar (speaking ring), name, LIVE. */
@@ -183,14 +182,7 @@ function Pip({ stream, others, wsId, box }: { stream: RemoteStream; others: numb
       // Top-right of the message area (docs/08 layout): clear of the composer, the latest
       // messages and the bottom-aligned empty state. The black video background is inline: the
       // (unlayered) .mat-popover material would override a bg utility → light letterbox bars.
-      // A visible edge + deeper shadow so the tile doesn't float unanchored over an empty feed (#56).
-      style={{
-        top: box.top + PIP_GAP,
-        width: w,
-        height: h,
-        background: 'var(--color-video-bg)',
-        boxShadow: '0 0 0 1px var(--color-line), 0 16px 40px rgb(0 0 0 / 40%), 0 2px 8px rgb(0 0 0 / 25%)',
-      }}
+      style={{ top: box.top + PIP_GAP, width: w, height: h, background: 'var(--color-video-bg)' }}
       aria-label={t('streamView.of', { name })}
       role="region"
     >
@@ -328,15 +320,13 @@ function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: st
   );
 }
 
-/** Height of the compact welcome row (EmptyRoom under the stage): 32 px icon + 2 × 12 px. */
-const WELCOME_ROW = 56;
-
-function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box; emptyFeed: boolean }): ReactNode {
+function Stage({ stream, streams, wsId, box }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box }): ReactNode {
   const stage = useVoice((s) => s.stage);
   const frame = useRef<HTMLDivElement>(null);
   const [fullscreen, toggleFullscreen] = useFullscreen(frame);
   const [menuOpen, setMenuOpen] = useState(false);
   const name = useMemberName(wsId, stream.userId);
+  const cameras = useStripCameras(wsId);
   return (
     <div
       data-testid="stream-stage"
@@ -344,8 +334,7 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
       aria-label={t('streamView.of', { name })}
       className="absolute inset-x-0 z-[var(--z-sticky)] flex flex-col gap-2 bg-feed px-3 pb-3 pt-3"
       // Over the message area only: header and composer stay usable.
-      // An empty room keeps its one-row welcome visible under the stage (docs/09 #56).
-      style={{ top: box.top, bottom: emptyFeed ? `calc(var(--composer-height) + ${WELCOME_ROW}px)` : 'var(--composer-height)' }}
+      style={{ top: box.top, bottom: 'var(--composer-height)' }}
     >
       <div
         ref={frame}
@@ -403,10 +392,12 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
           </IconButton>
         </div>
       </div>
-      {streams.length > 1 ? (
+      {/* The stream is the main picture; other streams and the cameras line up underneath (docs/09 #42). */}
+      {streams.length > 1 || cameras.length > 0 ? (
         <div className="flex shrink-0 gap-2 overflow-x-auto p-0.5" role="group" aria-label={t('streamView.others')} data-testid="stream-strip">
-          {streams.map((s) => (
-            <PreviewTile key={s.trackSid} stream={s} wsId={wsId} current={s.trackSid === stream.trackSid} />
+          {streams.length > 1 ? streams.map((s) => <PreviewTile key={s.trackSid} stream={s} wsId={wsId} current={s.trackSid === stream.trackSid} />) : null}
+          {cameras.map((id) => (
+            <CameraStripTile key={`cam:${id}`} userId={id} wsId={wsId} />
           ))}
         </div>
       ) : null}
@@ -414,15 +405,31 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
   );
 }
 
-/** Nobody watched: a slim bar with who is live (click = watch). */
-function LiveBar({ streams, wsId }: { streams: RemoteStream[]; wsId: string | null }): ReactNode {
+/** Live streams as chips (click = watch). */
+function LiveChips({ streams, wsId }: { streams: RemoteStream[]; wsId: string | null }): ReactNode {
+  if (!streams.length) return null;
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-4 py-1.5 text-[12px]" data-testid="stream-live-bar">
+    <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-[12px]">
       <MonitorPlay className="size-4 text-danger" aria-hidden />
       <span className="text-muted">{t('stream.live')}:</span>
       {streams.map((s) => (
         <LiveChip key={s.trackSid} stream={s} wsId={wsId} />
       ))}
+    </span>
+  );
+}
+
+/** Nothing on the stage: a slim bar with who is live and, with the camera PiP closed, «Камеры». */
+function LiveBar({ streams, wsId, cameras }: { streams: RemoteStream[]; wsId: string | null; cameras: boolean }): ReactNode {
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-4 py-1.5 text-[12px]" data-testid="stream-live-bar">
+      <LiveChips streams={streams} wsId={wsId} />
+      {cameras ? (
+        <button type="button" onClick={() => voice.showVideo()} className="flex items-center gap-1.5 rounded-full bg-active px-2 py-0.5 text-fg hover:bg-hover">
+          <Video className="size-3.5" aria-hidden />
+          {t('video.grid')}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -445,22 +452,24 @@ export function StreamArea(): ReactNode {
   const box = useMessageBox(anchor);
   const current = streams.find((s) => s.trackSid === watching);
   const name = useMemberName(wsId, current?.userId ?? '');
-  const roomId = useVoice((s) => s.roomId);
-  const emptyFeed = useMessages((s) => {
-    const r = roomId ? s.rooms[roomId] : undefined;
-    return !!r && r.loaded && r.items.length === 0 && !r.hasMoreBefore && !r.hasMoreAfter;
-  });
+  const anyCamera = useAnyCamera();
+  const videoPip = useVoice((s) => s.videoPip);
+
+  let view: ReactNode = null;
+  if (current) view = stage === 'pip' ? <Pip stream={current} others={streams.length - 1} wsId={wsId} box={box} /> : <Stage stream={current} streams={streams} wsId={wsId} box={box} />;
+  else if (anyCamera && stage !== 'pip') view = <CameraGrid box={box} wsId={wsId} top={<LiveChips streams={streams} wsId={wsId} />} />;
+  else if (streams.length || anyCamera)
+    view = (
+      <>
+        {streams.length || !videoPip ? <LiveBar streams={streams} wsId={wsId} cameras={anyCamera && !videoPip} /> : null}
+        {anyCamera && videoPip ? <CameraPip box={box} wsId={wsId} /> : null}
+      </>
+    );
 
   return (
     <>
       <div ref={anchor} aria-hidden className="h-0 shrink-0" />
-      {streams.length === 0 ? null : !current ? (
-        <LiveBar streams={streams} wsId={wsId} />
-      ) : stage === 'pip' ? (
-        <Pip stream={current} others={streams.length - 1} wsId={wsId} box={box} />
-      ) : (
-        <Stage stream={current} streams={streams} wsId={wsId} box={box} emptyFeed={emptyFeed} />
-      )}
+      {view}
       {current && stage === 'popout' ? <Popout trackSid={current.trackSid} title={`${name} — Calab`} onClose={() => voice.setStage('expanded')} /> : null}
     </>
   );

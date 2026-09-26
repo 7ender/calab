@@ -106,6 +106,11 @@ Business logic lives in `services/` and `stores/`; components only render and ca
   - AV1 + simulcast, L1T3 per layer, a 640×360 layer for the PiP;
   - `POST /api/rooms/{id}/stream/request` before publishing (a 409 means the limit is reached);
   - `autoSubscribe: false`: audio is subscribed automatically; the screen and its sound only when the stream is watched (PiP / expanded).
+- **Camera** (ADR-0018, `services/camera.ts`, `lib/media/cameraLogic.ts`, `features/voice/CameraTiles.tsx`):
+  - VP9 + simulcast 180/360/720p (L1T3 per layer), `contentHint: motion`, ceilings 0.15 / 0.5 / 1.5 Mbps;
+  - capture → `POST /api/rooms/{id}/camera/request` (409 = camera limit) → publish; off = unpublish + `…/camera/stop`; `VOICE_CAMERA_STOP` stops it locally with a toast;
+  - all cameras subscribed except «Не показывать видео»; «Экономить трафик» keeps only the featured / PiP camera at ≤ 360p; CPU-limited encoder → 360p capture;
+  - chat open: PiP of the active speaker's camera; call view: up to 6 tiles (`tileLayout.ts`), a watched stream stays primary with cameras in the strip.
 - **Pop-out stream window.** A same-origin child window (`window.open` + React portal) shows the same MediaStreamTrack. The large element in the main window stays attached, so adaptive stream keeps the top layer.
 - **«N смотрят»** is computed through the LiveKit data topic `calaba.watch` (an ephemeral in-call signal; docs/05 allows data channels for this).
 - **Unread messages** — `Room.last_message_id` from READY vs `ReadState`, then MESSAGE_CREATE.

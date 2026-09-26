@@ -1,8 +1,9 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Activity, AudioLines, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, PhoneOff, Settings, Wifi, WifiOff } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
-import { Badge, Button, Tip, cx } from '../../components/ui';
+import { AudioLines, Check, ChevronDown, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
+import { Button, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
 import { voice } from '../../services/voice';
@@ -12,7 +13,7 @@ import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
-import { menuBox, menuItem, popoverBox } from './menu';
+import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
 import { viewersText } from '../voice/streamFormat';
 import { CallTimer } from './Sidebar';
 
@@ -68,7 +69,7 @@ function QualityButton(): ReactNode {
         </button>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content side="top" align="start" sideOffset={6} collisionPadding={8} aria-label={t('quality.title')} className={cx(popoverBox, 'w-64 p-3')}>
+        <Popover.Content side="top" align="end" sideOffset={6} collisionPadding={8} aria-label={t('quality.title')} className={cx(popoverBox, 'w-64 p-3')}>
           <div className="mb-2 font-semibold">{t('quality.title')}</div>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
             <dt className="text-muted">{t('quality.state')}</dt>
@@ -91,32 +92,42 @@ function QualityButton(): ReactNode {
   );
 }
 
-/** Big toolbar button of the voice panel (docs/09 #5): ~56×40, toolbar material. */
+/**
+ * Big button of the voice panel (docs/09 v0.2, Discord reference): ~56×40, fill on hover,
+ * accent fill when on. `children` is the 20 px icon.
+ */
+const panelBtn = (active: boolean): string =>
+  cx(
+    'grid h-10 min-w-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
+    active ? 'bg-accent-strong text-white hover:bg-[color-mix(in_srgb,var(--color-accent-strong)_88%,white)]' : 'bg-[var(--color-fill)] text-fg hover:bg-[var(--color-fill-hover)] disabled:hover:bg-[var(--color-fill)]',
+  );
+
 function PanelButton({
   label,
-  active,
+  active = false,
   disabled,
   onClick,
+  testId,
   children,
 }: {
   label: string;
   active?: boolean;
   disabled?: boolean;
   onClick?: () => void;
+  testId?: string;
   children: ReactNode;
 }): ReactNode {
   return (
     <Tip label={label}>
+      {/* aria-disabled keeps the tooltip (why it is off) reachable; the click is ignored. */}
       <button
         type="button"
         aria-label={label}
         aria-pressed={active}
-        disabled={disabled}
-        onClick={onClick}
-        className={cx(
-          'mat-toolbar grid h-10 min-w-0 place-items-center rounded-[var(--radius-card)] shadow-[var(--shadow-card)] transition-colors duration-[var(--motion-fast)] disabled:opacity-40',
-          active ? 'text-accent' : 'text-fg hover:bg-[var(--color-fill-hover)]',
-        )}
+        aria-disabled={disabled || undefined}
+        data-testid={testId}
+        onClick={disabled ? undefined : onClick}
+        className={cx(panelBtn(active), disabled && 'cursor-default opacity-40 hover:bg-[var(--color-fill)]')}
       >
         {children}
       </button>
@@ -124,10 +135,141 @@ function PanelButton({
   );
 }
 
+/** Tooltip / label of the camera button (why it is unavailable, or what a click does). */
+function useCameraLabel(roomId: string): { label: string; disabled: boolean } {
+  const phase = useVoice((s) => s.camera);
+  const connected = useVoice((s) => s.phase === 'connected');
+  const canVideo = useVoice((s) => s.canVideo);
+  const limit = useRooms((s) => s.byId[roomId]?.media?.cameraLimit ?? 0);
+  const wsId = useVoice((s) => s.workspaceId);
+  const on = useWorkspaces((s) => Object.values((wsId ? s.byId[wsId]?.voice : undefined) ?? {}).filter((v) => v.roomId === roomId && v.camera).length);
+  const block = cameraBlock({ connected, canVideo, limit, phase });
+  if (phase === 'on') return { label: t('video.off'), disabled: false };
+  if (phase === 'starting' || phase === 'stopping') return { label: t('video.starting'), disabled: false };
+  if (block === 'not-connected') return { label: t('video.on'), disabled: true };
+  if (block === 'room-off') return { label: t('video.roomOff'), disabled: true };
+  if (block === 'no-permission') return { label: t('video.noPermission'), disabled: true };
+  if (camerasFull(on, limit, false)) return { label: t('video.full', { n: on, max: limit }), disabled: false };
+  return { label: t('video.on'), disabled: false };
+}
+
+/** «Камера» with its ▾ device menu: one 56×40 button, the ▾ a narrow part at the right edge. */
+function CameraButton({ roomId }: { roomId: string }): ReactNode {
+  const phase = useVoice((s) => s.camera);
+  const checked = usePrefs((s) => s.cameraChecked);
+  const open = useUi((s) => s.openDialog);
+  const { label, disabled } = useCameraLabel(roomId);
+  const on = phase === 'on';
+  const busy = phase === 'starting' || phase === 'stopping';
+  const click = (): void => {
+    if (on || phase === 'starting') void voice.camera.stop();
+    else if (phase !== 'off') return;
+    else if (!checked) open({ kind: 'camera-preview' });
+    else void voice.camera.start();
+  };
+  return (
+    <div className={cx(panelBtn(on), 'relative grid-cols-1 overflow-hidden', disabled && 'hover:bg-[var(--color-fill)]')}>
+      <Tip label={label}>
+        <button
+          type="button"
+          aria-label={label}
+          aria-pressed={on}
+          aria-disabled={disabled || undefined}
+          data-testid="camera-button"
+          onClick={disabled ? undefined : click}
+          className={cx('grid size-full place-items-center pr-2.5', disabled && 'cursor-default opacity-40')}
+        >
+          {busy ? <Loader2 className="size-5 animate-spin" aria-hidden /> : on ? <Video className="size-5" aria-hidden /> : <VideoOff className="size-5" aria-hidden />}
+        </button>
+      </Tip>
+      <Dropdown.Root modal={false}>
+        <Tip label={t('video.options')}>
+          <Dropdown.Trigger asChild>
+            <button
+              type="button"
+              aria-label={t('video.options')}
+              className={cx(
+                'absolute inset-y-0 right-0 grid w-3.5 place-items-center rounded-r-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)]',
+                on ? 'text-white/85 hover:bg-white/15 hover:text-white' : 'text-muted hover:bg-[var(--color-fill-hover)] hover:text-fg data-[state=open]:text-fg',
+              )}
+            >
+              <ChevronDown className="size-3" strokeWidth={2.25} aria-hidden />
+            </button>
+          </Dropdown.Trigger>
+        </Tip>
+        <Dropdown.Portal>
+          <CameraMenu />
+        </Dropdown.Portal>
+      </Dropdown.Root>
+    </div>
+  );
+}
+
+const DEFAULT_CAMERA = '__default__';
+
+/** Camera ▾: devices, «Проверить камеру», voice settings. */
+export function CameraMenu(): ReactNode {
+  const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
+  const current = usePrefs((s) => s.cameraDeviceId) ?? DEFAULT_CAMERA;
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const phase = useVoice((s) => s.camera);
+  const open = useUi((s) => s.openDialog);
+  useEffect(() => {
+    let alive = true;
+    // mediaDevices is missing on insecure origins (web over plain http).
+    const md = navigator.mediaDevices as MediaDevices | undefined;
+    if (!md) {
+      queueMicrotask(() => alive && setDevices([]));
+      return;
+    }
+    void md.enumerateDevices().then(
+      (d) => alive && setDevices(d),
+      () => alive && setDevices([]),
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const list = (devices ?? []).filter((d) => d.kind === 'videoinput');
+  return (
+    <Dropdown.Content className={cx(menuBox, 'w-72')} side="top" align="start" sideOffset={6} collisionPadding={16}>
+      <Dropdown.Label className={menuLabel}>{t('video.device')}</Dropdown.Label>
+      <Dropdown.RadioGroup value={current} onValueChange={(v) => setPrefs({ cameraDeviceId: v === DEFAULT_CAMERA ? null : v })}>
+        <Dropdown.RadioItem value={DEFAULT_CAMERA} className={cx(menuItem, 'relative pl-7')}>
+          <Dropdown.ItemIndicator className="absolute left-2">
+            <Check className="size-3.5" />
+          </Dropdown.ItemIndicator>
+          <span className="truncate">{t('shell.systemDefault')}</span>
+        </Dropdown.RadioItem>
+        {list.map((d) => (
+          <Dropdown.RadioItem key={d.deviceId} value={d.deviceId} className={cx(menuItem, 'relative pl-7')} title={d.label}>
+            <Dropdown.ItemIndicator className="absolute left-2">
+              <Check className="size-3.5" />
+            </Dropdown.ItemIndicator>
+            <span className="truncate">{d.label || d.deviceId.slice(0, 8)}</span>
+          </Dropdown.RadioItem>
+        ))}
+      </Dropdown.RadioGroup>
+      {devices !== null && list.length === 0 ? <div className="px-2 py-1 text-caption text-muted">{t('video.noDevices')}</div> : null}
+      <Dropdown.Separator className={menuSeparator} />
+      {phase === 'off' ? (
+        <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'camera-preview' })}>
+          <Video className="size-4" /> {t('video.check')}
+        </Dropdown.Item>
+      ) : null}
+      <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'settings', tab: 'voice' })}>
+        <Settings className="size-4" /> {t('shell.voiceSettings')}
+      </Dropdown.Item>
+    </Dropdown.Content>
+  );
+}
+
 declare global {
   interface Window {
     /** Visual tests only (CALABA_VISUAL_TEST): show a voice phase (e.g. «Переподключение…») without breaking the network. */
     __calabaVoicePhase?: (phase: VoicePhase) => void;
+    /** Visual tests only: remote cameras in my room (wait for a publisher to leave). */
+    __calabaCameras?: () => number;
   }
 }
 
@@ -137,8 +279,10 @@ export function VoiceBar(): ReactNode {
   useEffect(() => {
     if (!visualTest) return;
     window.__calabaVoicePhase = (phase) => setVoice({ phase });
+    window.__calabaCameras = () => useVoice.getState().cameras.length;
     return () => {
       delete window.__calabaVoicePhase;
+      delete window.__calabaCameras;
     };
   }, [visualTest]);
   const roomId = useVoice((s) => s.roomId);
@@ -155,6 +299,10 @@ export function VoiceBar(): ReactNode {
   const wsName = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.name : undefined));
   const rnnoise = usePrefs((s) => s.rnnoise);
   const devStats = usePrefs((s) => s.devStats);
+  const saveTraffic = usePrefs((s) => s.saveTraffic);
+  const anyVideo = useVoice((s) => s.cameras.length > 0 || s.camera === 'on');
+  const stage = useVoice((s) => s.stage);
+  const videoPip = useVoice((s) => s.videoPip);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const openRoom = useUi((s) => s.openRoom);
   const open = useUi((s) => s.openDialog);
@@ -171,8 +319,7 @@ export function VoiceBar(): ReactNode {
   return (
     <div className="shrink-0 border-t border-line px-2 pb-2 pt-1.5" role="region" aria-label={t('voice.panel')}>
       <div className="flex items-center gap-1">
-        <QualityButton />
-        <div className="min-w-0 flex-1" aria-live="polite">
+        <div className="min-w-0 flex-1 pl-1" aria-live="polite">
           <div className={cx('truncate text-[13px] font-semibold leading-4', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
           <div className="flex min-w-0 items-baseline gap-1.5">
             <button type="button" className="block min-w-0 truncate text-left text-[12px] leading-4 text-muted hover:text-fg hover:underline" onClick={goRoom} title={full}>
@@ -182,6 +329,8 @@ export function VoiceBar(): ReactNode {
             <CallTimer roomId={roomId} className="shrink-0 text-muted" />
           </div>
         </div>
+        {/* Signal (4 bars) and the red hang-up at the top right (Discord reference). */}
+        <QualityButton />
         <Tip label={t('voice.leave')}>
           <button
             type="button"
@@ -189,7 +338,8 @@ export function VoiceBar(): ReactNode {
             onClick={() => void voice.leave()}
             className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-danger transition-colors duration-[var(--motion-fast)] hover:bg-[color-mix(in_srgb,var(--color-danger)_14%,transparent)]"
           >
-            <PhoneOff className="size-[18px]" aria-hidden />
+            {/* A handset tilted down (Discord's hang-up), not a crossed phone. */}
+            <Phone className="size-5 rotate-[135deg]" aria-hidden />
           </button>
         </Tip>
       </div>
@@ -202,7 +352,8 @@ export function VoiceBar(): ReactNode {
         </div>
       ) : null}
 
-      <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+      <div className="mt-2 grid grid-cols-4 gap-1.5">
+        <CameraButton roomId={roomId} />
         {myStream ? (
           <PanelButton label={t('shell.stopShare')} active onClick={() => void voice.stopStream()}>
             <MonitorX className="size-5" aria-hidden />
@@ -215,23 +366,34 @@ export function VoiceBar(): ReactNode {
         <PanelButton label={rnnoise ? t('shell.noiseOn') : t('shell.noiseOff')} active={rnnoise} onClick={() => setPrefs({ rnnoise: !rnnoise })}>
           <AudioLines className="size-5" aria-hidden />
         </PanelButton>
-        <PanelButton label={t('shell.stats')} active={devStats} onClick={() => setPrefs({ devStats: !devStats })}>
-          <Activity className="size-5" aria-hidden />
-        </PanelButton>
         <Dropdown.Root modal={false}>
           <Tip label={t('shell.more')}>
             <Dropdown.Trigger asChild>
-              <button
-                type="button"
-                aria-label={t('shell.more')}
-                className="mat-toolbar grid h-10 min-w-0 place-items-center rounded-[var(--radius-card)] text-fg shadow-[var(--shadow-card)] transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] data-[state=open]:bg-active"
-              >
+              <button type="button" aria-label={t('shell.more')} className={cx(panelBtn(false), 'data-[state=open]:bg-[var(--color-fill-hover)]')}>
                 <Ellipsis className="size-5" aria-hidden />
               </button>
             </Dropdown.Trigger>
           </Tip>
           <Dropdown.Portal>
-            <Dropdown.Content className={menuBox} side="top" align="end" sideOffset={6}>
+            <Dropdown.Content className={cx(menuBox, 'w-64')} side="top" align="end" sideOffset={6} collisionPadding={16}>
+              {anyVideo && (stage === 'pip' || !videoPip) ? (
+                <Dropdown.Item className={menuItem} onSelect={() => voice.showVideo()}>
+                  <Video className="size-4" /> {t('video.grid')}
+                </Dropdown.Item>
+              ) : null}
+              <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={saveTraffic} onCheckedChange={(v) => setPrefs({ saveTraffic: v })}>
+                <Dropdown.ItemIndicator className="absolute left-2">
+                  <Check className="size-3.5" />
+                </Dropdown.ItemIndicator>
+                {t('video.saveTraffic')}
+              </Dropdown.CheckboxItem>
+              <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={devStats} onCheckedChange={(v) => setPrefs({ devStats: v })}>
+                <Dropdown.ItemIndicator className="absolute left-2">
+                  <Check className="size-3.5" />
+                </Dropdown.ItemIndicator>
+                {t('shell.stats')}
+              </Dropdown.CheckboxItem>
+              <Dropdown.Separator className={menuSeparator} />
               <Dropdown.Item className={menuItem} onSelect={goRoom}>
                 <MessageSquare className="size-4" /> {t('shell.openRoom')}
               </Dropdown.Item>
@@ -250,7 +412,7 @@ export function VoiceBar(): ReactNode {
         <div className="mt-2 flex items-center gap-2 rounded-[var(--radius-row)] bg-hover px-2 py-1.5 text-[12px]" data-testid="my-stream">
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
-              <Badge tone="danger">{t('shell.live')}</Badge>
+              <span className="shrink-0 rounded-[4px] bg-danger-fill px-1 text-[10px] font-bold leading-4 tracking-[0.02em] text-white">{t('shell.live')}</span>
               <span className="flex items-center gap-1 text-fg" aria-label={viewersText(myStream.viewers)}>
                 <Eye className="size-3.5 text-muted" aria-hidden />
                 {viewersText(myStream.viewers)}

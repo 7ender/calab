@@ -3,6 +3,7 @@ import { ConfirmHost } from '../../components/Confirm';
 import { Lightbox } from '../chat/Lightbox';
 import { useUi } from '../../stores/ui';
 import { AppSettingsDialog } from '../settings/AppSettingsDialog';
+import { CameraPreview } from '../voice/CameraPreview';
 import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
@@ -35,6 +36,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'stream-picker':
         node = <StreamPicker onClose={close} />;
+        break;
+      case 'camera-preview':
+        node = <CameraPreview onClose={close} />;
         break;
       case 'quick-switcher':
         node = <QuickSwitcher onClose={close} initialQuery={d.query ?? ''} />;

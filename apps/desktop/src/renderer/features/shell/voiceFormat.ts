@@ -15,6 +15,13 @@ export function limitLabel(n: number, max: number): string {
   return max > 0 ? `${n}/${max}` : '';
 }
 
+/** The two segments of the Discord-like `00 | 02` pill: people now, the limit; two digits each. */
+export function limitSegments(n: number, max: number): [string, string] | null {
+  if (max <= 0) return null;
+  const pad = (v: number): string => String(Math.max(0, Math.min(99, Math.floor(v)))).padStart(2, '0');
+  return [pad(n), pad(max)];
+}
+
 /** Parses the «Максимум участников» field: integer 0..99, anything else → null. */
 export function parseUserLimit(v: string): number | null {
   const s = v.trim();

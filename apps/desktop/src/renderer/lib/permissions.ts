@@ -87,6 +87,7 @@ export const ROOM_EDITABLE: PermissionName[] = [
   'CONNECT',
   'SPEAK',
   'STREAM',
+  'VIDEO',
   'MUTE_MEMBERS',
   'MOVE_MEMBERS',
   'MENTION_EVERYONE',

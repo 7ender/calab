@@ -182,6 +182,12 @@ export const api = {
     join: (roomId: string) => call('POST', `/api/rooms/${roomId}/join`, JoinVoiceResponseSchema),
     requestStream: (roomId: string, preset: ScreenSharePreset) =>
       call('POST', `/api/rooms/${roomId}/stream/request`, RequestStreamResponseSchema, body(RequestStreamRequestSchema, { preset })),
+    /** Grants this device the camera source (VIDEO; 409 CONFLICT = camera_limit reached / cameras off). */
+    requestCamera: (roomId: string) => callEmpty('POST', `/api/rooms/${roomId}/camera/request`),
+    /** Withdraws this device's camera grant (after unpublishing). */
+    stopCamera: (roomId: string) => callEmpty('POST', `/api/rooms/${roomId}/camera/stop`),
+    /** Moderator (MUTE_MEMBERS): turns a member's webcam off → VOICE_CAMERA_STOP{MODERATOR}; 404 = no camera. */
+    stopMemberCamera: (roomId: string, userId: string) => callEmpty('POST', `/api/rooms/${roomId}/voice/${userId}/stop-camera`),
     updateSelf: (init: MessageInitShape<typeof UpdateVoiceSelfRequestSchema>) =>
       callEmpty('PATCH', '/api/voice/self', body(UpdateVoiceSelfRequestSchema, init)),
     muteMember: (roomId: string, userId: string) => callEmpty('POST', `/api/rooms/${roomId}/voice/${userId}/mute`),

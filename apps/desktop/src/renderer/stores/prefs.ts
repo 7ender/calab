@@ -23,6 +23,15 @@ export interface Prefs {
   theme: Theme;
   micDeviceId: string | null;
   outputDeviceId: string | null;
+  cameraDeviceId: string | null;
+  /** The «Проверьте камеру» preview was confirmed once: later the button turns the camera on directly. */
+  cameraChecked: boolean;
+  /** «Экономить трафик»: only the featured / PiP camera is received, at most 360p. */
+  saveTraffic: boolean;
+  /** userId → «Не показывать видео»: their camera is not subscribed (an avatar tile instead). */
+  hiddenVideo: Record<string, true>;
+  /** Volume of everyone in voice, 0..1 (headphones ▾); multiplies the per-user volume, element.volume only. */
+  outputVolume: number;
   micMode: MicMode;
   thresholdDb: number;
   pttBinding: PttBinding | null;
@@ -61,6 +70,11 @@ const DEFAULTS: Prefs = {
   theme: 'dark',
   micDeviceId: null,
   outputDeviceId: null,
+  cameraDeviceId: null,
+  cameraChecked: false,
+  saveTraffic: false,
+  hiddenVideo: {},
+  outputVolume: 1,
   micMode: 'voice',
   thresholdDb: -50,
   pttBinding: null,

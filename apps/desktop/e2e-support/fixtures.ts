@@ -186,6 +186,7 @@ export const DEFAULT_MEDIA: RoomMediaSettings = create(RoomMediaSettingsSchema, 
   audioBitrateKbps: 32,
   maxStreamPreset: ScreenSharePreset.H1080,
   maxStreams: 3,
+  cameraLimit: 6,
 });
 
 export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride | undefined): RoomMediaSettings {
@@ -194,6 +195,7 @@ export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride |
     audioBitrateKbps: o?.audioBitrateKbps ?? d.audioBitrateKbps,
     maxStreamPreset: o?.maxStreamPreset ?? d.maxStreamPreset,
     maxStreams: o?.maxStreams ?? d.maxStreams,
+    cameraLimit: o?.cameraLimit ?? d.cameraLimit,
   });
 }
 
@@ -646,8 +648,8 @@ export function buildState(scenario: Scenario): MockState {
     ]),
   );
 
-  // ---- voice: Boris (muted) and Vera (streaming) in «Переговорка».
-  s.voiceStates.set(U.boris, create(VoiceStateSchema, { workspaceId: W.main, userId: U.boris, roomId: R.meeting, muted: true }));
+  // ---- voice: Boris (muted, camera on) and Vera (streaming) in «Переговорка».
+  s.voiceStates.set(U.boris, create(VoiceStateSchema, { workspaceId: W.main, userId: U.boris, roomId: R.meeting, muted: true, camera: true }));
   s.voiceStates.set(U.vera, create(VoiceStateSchema, { workspaceId: W.main, userId: U.vera, roomId: R.meeting, streaming: true }));
 
   // ---- invites

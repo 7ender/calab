@@ -85,8 +85,11 @@ export function remoteAudio(i: {
   userVolumes: Readonly<Record<string, number>>;
   mutedUsers: Readonly<Record<string, true>>;
   streamVolume: Readonly<Record<string, number>>;
+  /** Everyone's voice (headphones ▾ «Громкость участников»), multiplies the per-user volume. */
+  outputVolume?: number;
 }): { muted: boolean; volume: number } {
-  const v = i.stream ? (i.streamVolume[i.userId] ?? 1) : (i.userVolumes[i.userId] ?? 1);
+  const master = i.stream ? 1 : Math.max(0, Math.min(1, i.outputVolume ?? 1));
+  const v = (i.stream ? (i.streamVolume[i.userId] ?? 1) : (i.userVolumes[i.userId] ?? 1)) * master;
   return {
     muted: i.deafened || (!i.stream && i.mutedUsers[i.userId] === true),
     volume: Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1,

@@ -177,6 +177,13 @@ export function applyDispatch(ev: DispatchEvent): void {
         if (e.value.reason !== VoiceStreamStopReason.ENDED) void voice.stopStream();
       }
       return;
+    case 'voiceCameraStop':
+      // The server muted my camera (over camera_limit) or a moderator turned it off.
+      if (e.value.userId === myUserId()) {
+        const r = e.value.reason;
+        voice.camera.onServerStop(r === VoiceStreamStopReason.LIMIT_REACHED ? 'limit' : r === VoiceStreamStopReason.MODERATOR ? 'moderator' : 'other', e.value.trackSid);
+      }
+      return;
     case 'roomNotificationUpdate':
       if (e.value.settings) useRooms.getState().setNotify(e.value.settings);
       return;

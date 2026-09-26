@@ -39,6 +39,9 @@ export function runMediaAction(a: MediaErrorAction): void {
     case 'screen-privacy':
       void platform.system.openPrivacySettings('screen');
       break;
+    case 'camera-privacy':
+      void platform.system.openPrivacySettings('camera');
+      break;
     case 'voice-settings':
       useUi.getState().openDialog({ kind: 'settings', tab: 'voice' });
       break;

@@ -183,6 +183,15 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
           ))}
         </Select>
       </Row>
+      <Row label={t('media.cameraLimit')} hint={t('media.cameraLimitHint')}>
+        <Select aria-label={t('media.cameraLimit')} className="w-20" value={md?.cameraLimit ?? 6} onChange={(e) => apply({ defaultCameraLimit: Number(e.target.value) })}>
+          {Array.from({ length: 26 }, (_, i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
+        </Select>
+      </Row>
     </Card>
   );
 }

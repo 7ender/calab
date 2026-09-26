@@ -519,6 +519,7 @@ export function createWebPlatform(): Platform {
         };
         return {
           microphone: await q('microphone'),
+          camera: await q('camera'),
           screen: 'n/a',
           accessibility: true,
           notifications: typeof Notification === 'undefined' ? 'n/a' : Notification.permission,

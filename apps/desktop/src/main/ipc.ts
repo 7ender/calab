@@ -104,9 +104,10 @@ const PRIVACY_URLS: Record<PrivacyPane, string> = {
   'input-monitoring': 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
   screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
   microphone: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+  camera: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Camera',
 };
 
-function mediaAccess(kind: 'microphone' | 'screen'): string {
+function mediaAccess(kind: 'microphone' | 'screen' | 'camera'): string {
   if (process.platform !== 'darwin' && process.platform !== 'win32') return 'n/a';
   return systemPreferences.getMediaAccessStatus(kind);
 }
@@ -217,9 +218,10 @@ export function registerIpc(): void {
   handle(IPC.systemPermissions, (): PermissionStatus =>
     // Visual tests: fixed statuses so screenshots don't depend on the machine's TCC state.
     VISUAL_TEST
-      ? { microphone: 'granted', screen: 'denied', accessibility: false, notifications: 'n/a' }
+      ? { microphone: 'granted', camera: 'granted', screen: 'denied', accessibility: false, notifications: 'n/a' }
       : {
           microphone: mediaAccess('microphone'),
+          camera: mediaAccess('camera'),
           screen: mediaAccess('screen'),
           accessibility: process.platform === 'darwin' ? systemPreferences.isTrustedAccessibilityClient(false) : true,
           notifications: 'n/a', // the renderer knows Notification.permission
@@ -279,7 +281,7 @@ export function registerIpc(): void {
   });
   handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
     if (process.platform === 'win32') {
-      const win: Partial<Record<PrivacyPane, string>> = { microphone: 'ms-settings:privacy-microphone' };
+      const win: Partial<Record<PrivacyPane, string>> = { microphone: 'ms-settings:privacy-microphone', camera: 'ms-settings:privacy-webcam' };
       const url = win[pane as PrivacyPane];
       if (url) void shell.openExternal(url);
       return;

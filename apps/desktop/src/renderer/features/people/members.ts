@@ -79,6 +79,10 @@ export interface MenuActions {
   /** «Включить микрофон»: the member is muted by a moderator (VoiceState.server_muted). */
   serverUnmute: boolean;
   disconnect: boolean;
+  /** «Не показывать видео»: the target's camera is on in my voice room. */
+  hideVideo: boolean;
+  /** Moderator «Выключить камеру» (MUTE_MEMBERS in the room; VoiceState.camera). */
+  stopCamera: boolean;
   /** Voice rooms the target can be moved to (empty = no «Переместить в…»). */
   moveTargets: Room[];
   rename: boolean;
@@ -114,6 +118,8 @@ export function memberActions(c: MenuContext): MenuActions {
     alreadyMuted: !!c.targetVoice?.serverMuted,
     serverUnmute: muteAll && !!c.targetVoice?.serverMuted,
     disconnect: moderate,
+    hideVideo: !self && !!c.myVoiceRoomId && c.targetVoice?.roomId === c.myVoiceRoomId && c.targetVoice.camera,
+    stopCamera: moderate && !!c.targetVoice?.camera,
     moveTargets,
     rename: self ? c.allowSelfNickname || can(ws, 'MANAGE_NICKNAMES') : can(ws, 'MANAGE_NICKNAMES'),
     promote: manage && guest && !self,
@@ -123,5 +129,5 @@ export function memberActions(c: MenuContext): MenuActions {
 }
 
 export function hasAnyAction(a: MenuActions): boolean {
-  return a.volume || a.serverMute || a.disconnect || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick;
+  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick;
 }

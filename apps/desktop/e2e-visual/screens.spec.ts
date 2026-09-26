@@ -369,6 +369,54 @@ for (const theme of THEMES) {
         await page.keyboard.press('Escape');
         await expect(page.getByRole('menu')).toHaveCount(0);
 
+        // ---- webcam (docs/09 #41–43): the client's camera is Chromium's fake device
+        // (CALABA_FAKE_MEDIA → --use-fake-device-for-media-stream); its frames change every run,
+        // so the pixels are hidden and the tile chrome stays in the shots.
+        await page.addStyleTag({ content: '[data-testid="camera-video"], [data-testid="camera-preview"] video { visibility: hidden !important; }' });
+        await page.getByRole('button', { name: 'Выбор камеры' }).click();
+        await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Проверить камеру' })).toBeVisible();
+        await checkpoint(s, 'voice-camera-menu');
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('menu')).toHaveCount(0);
+        // First start: the «Проверьте камеру» sheet with the mirrored preview.
+        await page.getByTestId('camera-button').click();
+        await expect(page.getByTestId('camera-preview-enable')).toBeEnabled({ timeout: 15_000 });
+        await checkpoint(s, 'camera-preview');
+        await page.getByTestId('camera-preview-enable').click();
+        await expect(page.getByTestId('camera-button')).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
+        // Chat open: the camera PiP (my self-view while nobody else has a camera).
+        await expect(page.getByTestId('camera-pip')).toBeVisible();
+        await expectFrames(page, 1);
+        await checkpoint(s, 'voice-camera-pip');
+        const cameraPub = await startPublisher({ userId: IDS.users.boris, name: 'Борис Петров', roomId: IDS.rooms.meeting, source: 'camera' });
+        try {
+          const borisTile = page.getByRole('button', { name: 'Камера: Борис Петров' });
+          await page.getByTestId('camera-pip').getByRole('button', { name: 'Развернуть видео' }).first().click();
+          await expect(page.getByTestId('video-grid')).toBeVisible();
+          await expect(borisTile).toBeVisible({ timeout: 30_000 });
+          await expectFrames(page, 2);
+          // Grid: two cameras + Вера's avatar tile; with 3 tiles the latest speaker / first camera is large.
+          await expect(page.getByTestId('video-tile')).toHaveCount(3);
+          await checkpoint(s, 'voice-camera-grid');
+          await borisTile.click();
+          await expect(borisTile).toHaveAttribute('aria-pressed', 'true');
+          await expect(page.locator('[data-testid="video-tile"][data-featured]')).toHaveAccessibleName('Камера: Борис Петров');
+          await checkpoint(s, 'voice-camera-focus');
+          // Member menu on a tile: local «Не показывать видео», moderator «Выключить камеру».
+          await borisTile.click({ button: 'right' });
+          await expect(page.getByRole('menu').getByRole('menuitem', { name: 'Выключить камеру' })).toBeVisible();
+          await expect(page.getByRole('menu').getByRole('menuitemcheckbox', { name: 'Не показывать видео' })).toBeVisible();
+          await checkpoint(s, 'voice-camera-member-menu');
+          await page.keyboard.press('Escape');
+          await expect(page.getByRole('menu')).toHaveCount(0);
+          await page.getByRole('button', { name: 'Показать чат' }).click();
+          await expect(page.getByTestId('video-grid')).toHaveCount(0);
+        } finally {
+          await cameraPub.stop();
+        }
+        // Борис's camera left the room: only my camera remains (for the stream strip below).
+        await expect.poll(() => page.evaluate(() => (window as unknown as { __calabaCameras?: () => number }).__calabaCameras?.() ?? -1), { timeout: 30_000 }).toBe(0);
+
         // LiveKit creates the room on the first join, so the publisher comes second.
         const publisher = await startPublisher({ userId: IDS.users.vera, name: 'Вера Ким', roomId: IDS.rooms.meeting });
         let second: Awaited<ReturnType<typeof startPublisher>> | null = null;
@@ -407,7 +455,9 @@ for (const theme of THEMES) {
           await checkpoint(s, 'voice-stream-controls');
           // Several streams: a strip of previews under the stage.
           second = await startPublisher({ userId: IDS.users.boris, name: 'Борис Петров', roomId: IDS.rooms.meeting });
-          await expect(page.getByTestId('stream-strip').getByRole('button')).toHaveCount(2, { timeout: 30_000 });
+          // Stream previews + my camera tile (the stream stays the main picture, cameras in the strip).
+          await expect(page.getByTestId('stream-strip').getByRole('button', { name: /^Стрим: / })).toHaveCount(2, { timeout: 30_000 });
+          await expect(page.getByTestId('stream-strip').getByRole('button', { name: /^Камера: / })).toHaveCount(1);
           await expectFrames(page, 2);
           await checkpoint(s, 'voice-streams-strip');
           await page.getByRole('button', { name: 'Настройки комнаты' }).click();

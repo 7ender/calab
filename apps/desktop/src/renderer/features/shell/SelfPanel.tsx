@@ -1,7 +1,7 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { PresenceStatus } from '@calaba/protocol';
-import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, X } from 'lucide-react';
+import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, Volume2, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { IconButton, Input, Slider, Tip, cx } from '../../components/ui';
@@ -52,6 +52,8 @@ export function SelfPanel(): ReactNode {
   if (!user) return null;
   const cur = STATUSES.find((x) => x.s === status) ?? STATUSES[0];
   const custom = [user.statusEmoji, user.statusText].filter(Boolean).join(' ');
+  // In a call the second line says so, with the speaker icon (Discord «In voice»); a custom status wins.
+  const voiceLine = !custom && inVoice;
   const second = custom || (inVoice ? t('shell.inVoiceStatus') : cur ? t(cur.key) : '');
 
   return (
@@ -72,8 +74,9 @@ export function SelfPanel(): ReactNode {
               <span className="block truncate text-control font-semibold leading-4" title={user.displayName}>
                 {user.displayName}
               </span>
-              <span className="block truncate text-caption leading-4 text-muted" title={second}>
-                {second}
+              <span className="flex min-w-0 items-center gap-1 text-caption leading-4 text-muted" title={second}>
+                {voiceLine ? <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden /> : null}
+                <span className="truncate">{second}</span>
               </span>
             </span>
           </button>
@@ -147,9 +150,9 @@ function SplitButton({
   children: ReactNode;
 }): ReactNode {
   return (
-    // The ▾ appears on hover / keyboard focus (Discord-like), so the name keeps its width at rest.
+    // The ▾ is always visible (Discord): the device menu is one click away, not hidden behind hover.
     <div className="group/split flex shrink-0 items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
-      <IconButton size="sm" label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="hover:bg-transparent group-hover/split:rounded-r-none">
+      <IconButton size="sm" label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="rounded-r-none hover:bg-transparent">
         {children}
       </IconButton>
       <Dropdown.Root modal={false}>
@@ -158,7 +161,7 @@ function SplitButton({
           <button
             type="button"
             aria-label={menuName}
-            className="grid h-7 w-0 place-items-center overflow-hidden rounded-r-[var(--radius-icon)] text-muted opacity-0 transition-[width,opacity] duration-[var(--motion-fast)] hover:text-fg focus-visible:w-3.5 focus-visible:opacity-100 group-hover/split:w-3.5 group-hover/split:opacity-100 group-focus-within/split:w-3.5 group-focus-within/split:opacity-100 data-[state=open]:w-3.5 data-[state=open]:text-fg data-[state=open]:opacity-100"
+            className="-ml-1 grid h-7 w-3.5 place-items-center rounded-r-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
           >
             <ChevronDown className="size-3" strokeWidth={2.25} aria-hidden />
           </button>
@@ -179,6 +182,7 @@ function DeviceMenu({ kind }: { kind: 'audioinput' | 'audiooutput' }): ReactNode
   const outId = usePrefs((s) => s.outputDeviceId);
   const micMode = usePrefs((s) => s.micMode);
   const threshold = usePrefs((s) => s.thresholdDb);
+  const outputVolume = usePrefs((s) => s.outputVolume);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const open = useUi((s) => s.openDialog);
   const current = (kind === 'audioinput' ? micId : outId) ?? DEFAULT_ID;
@@ -237,6 +241,19 @@ function DeviceMenu({ kind }: { kind: 'audioinput' | 'audiooutput' }): ReactNode
               <span className="tabular-nums">{threshold} дБ</span>
             </div>
             <Slider label={t('shell.inputVolume')} value={threshold} min={-80} max={-10} step={1} onChange={(v) => setPrefs({ thresholdDb: v })} />
+          </div>
+        </>
+      ) : null}
+      {kind === 'audiooutput' ? (
+        <>
+          <Dropdown.Separator className={menuSeparator} />
+          <div className="px-2 pb-2 pt-1">
+            <div className="mb-1 flex justify-between text-caption text-muted">
+              <span>{t('shell.outputVolume')}</span>
+              <span className="tabular-nums">{Math.round(outputVolume * 100)}%</span>
+            </div>
+            {/* element.volume only (no WebAudio, docs/02 echo rule 1): 100 % is the maximum. */}
+            <Slider label={t('shell.outputVolume')} value={Math.round(outputVolume * 100)} min={0} max={100} step={1} onChange={(v) => setPrefs({ outputVolume: v / 100 })} />
           </div>
         </>
       ) : null}

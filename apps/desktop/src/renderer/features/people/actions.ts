@@ -27,6 +27,11 @@ export function serverUnmute(roomId: string, userId: string): void {
   run(api.voice.unmuteMember(roomId, userId));
 }
 
+/** Moderator: turn the member's camera off (POST …/stop-camera → VOICE_CAMERA_STOP{MODERATOR}). */
+export function stopMemberCamera(workspaceId: string, roomId: string, userId: string): void {
+  run(api.voice.stopMemberCamera(roomId, userId).then(() => toast.info(t('video.stoppedMember', { name: memberName(workspaceId, userId) }))));
+}
+
 export function disconnectFromVoice(roomId: string, userId: string): void {
   run(api.voice.disconnectMember(roomId, userId));
 }

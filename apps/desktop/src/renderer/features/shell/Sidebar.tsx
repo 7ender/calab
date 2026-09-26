@@ -32,6 +32,7 @@ import {
   Trash2,
   UserPlus,
   Users,
+  Video,
   Volume2,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -49,7 +50,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
-import { formatDuration, limitLabel, useNow } from './voiceFormat';
+import { formatDuration, limitSegments, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { moveMember } from '../people/actions';
@@ -646,17 +647,7 @@ function VoiceRoomRow({
             {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
             <span className={cx('flex items-center gap-1', admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
               {people.length ? <CallTimer roomId={room.id} /> : null}
-              {limit > 0 ? (
-                <span
-                  className={cx(
-                    'rounded-full bg-hover px-1.5 text-micro font-medium tabular-nums leading-4',
-                    people.length >= limit ? 'text-danger-text' : 'text-fg',
-                  )}
-                  aria-label={t('shell.userLimit', { n: people.length, max: limit })}
-                >
-                  {limitLabel(people.length, limit)}
-                </span>
-              ) : null}
+              {limit > 0 ? <LimitPill n={people.length} max={limit} /> : null}
             </span>
             <RoomActions room={room} admin={admin} active={active} />
           </span>
@@ -678,6 +669,26 @@ function VoiceRoomRow({
         </ul>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * `00 | 02` (Discord): people in the room | the limit, two segments of one pill — the count on
+ * a darker fill, the limit on a lighter one; red count when the room is full.
+ */
+function LimitPill({ n, max }: { n: number; max: number }): ReactNode {
+  const seg = limitSegments(n, max);
+  if (!seg) return null;
+  return (
+    <span
+      className="flex overflow-hidden rounded-full text-micro font-medium tabular-nums leading-4 ring-1 ring-inset ring-[var(--color-fill-hover)]"
+      aria-label={t('shell.userLimit', { n, max })}
+      role="img"
+      data-testid="room-limit"
+    >
+      <span className={cx('bg-[var(--color-fill)] py-px pl-1.5 pr-1', n >= max ? 'text-danger-text' : 'text-fg')}>{seg[0]}</span>
+      <span className="border-l border-[var(--color-fill-hover)] bg-[var(--color-fill-hover)] py-px pl-1 pr-1.5 text-fg">{seg[1]}</span>
+    </span>
   );
 }
 
@@ -751,6 +762,7 @@ function VoiceMember({
           {t('shell.live')}
         </Badge>
       ) : null}
+      {state.camera ? <Video className="size-4 shrink-0 text-muted" aria-label={t('video.stateOn')} role="img" /> : null}
       <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || (isMe && serverMuted)} />
     </li>
   );

@@ -1,5 +1,5 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { ArrowRightLeft, Check, ChevronRight, LogOut, Mic, MicOff, Pencil, UserCheck, UserMinus, UserRound, UserX, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRightLeft, Check, ChevronRight, LogOut, Mic, MicOff, Pencil, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -10,7 +10,7 @@ import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { disconnectFromVoice, moveMember, promoteGuest, removeMember, serverMute, serverUnmute } from './actions';
+import { disconnectFromVoice, moveMember, promoteGuest, removeMember, serverMute, serverUnmute, stopMemberCamera } from './actions';
 import { hasAnyAction, memberActions, type MenuActions } from './members';
 import { NicknameDialog } from './NicknameDialog';
 
@@ -89,7 +89,17 @@ function MemberMenuContent({
   const self = useSession((s) => s.me?.user?.id) === userId;
   const roomId = useWorkspaces((s) => s.byId[workspaceId]?.voice[userId]?.roomId ?? '');
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
-  const voiceBlock = a.volume || (a.serverMute && !a.alreadyMuted) || a.serverUnmute || a.disconnect || a.moveTargets.length > 0;
+  const videoHidden = usePrefs((s) => !!s.hiddenVideo[userId]);
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const hiddenVideo = usePrefs((s) => s.hiddenVideo);
+  const local = a.volume || a.hideVideo;
+  const moderation = (a.serverMute && !a.alreadyMuted) || a.serverUnmute || a.stopCamera || a.disconnect || a.moveTargets.length > 0;
+  const setHidden = (on: boolean): void => {
+    const next = { ...hiddenVideo };
+    if (on) next[userId] = true;
+    else delete next[userId];
+    setPrefs({ hiddenVideo: next });
+  };
   const adminBlock = a.promote || a.removeGuest || a.kick;
   return (
     <ContextMenu.Content className={cx(menuBox, 'w-72')} collisionPadding={8}>
@@ -106,7 +116,7 @@ function MemberMenuContent({
           <Pencil className="size-4" aria-hidden /> {self ? t('people.menu.renameSelf') : t('people.menu.rename')}
         </ContextMenu.Item>
       ) : null}
-      {voiceBlock ? <ContextMenu.Separator className={menuSeparator} /> : null}
+      {local ? <ContextMenu.Separator className={menuSeparator} /> : null}
       {a.volume ? (
         <>
           <VolumeRow userId={userId} menu />
@@ -120,6 +130,19 @@ function MemberMenuContent({
           </ContextMenu.CheckboxItem>
         </>
       ) : null}
+      {/* Local: stop receiving their camera (unsubscribe), an avatar tile instead (docs/09 #42). */}
+      {a.hideVideo ? (
+        <ContextMenu.CheckboxItem className={menuItem} checked={videoHidden} onCheckedChange={setHidden}>
+          <span className="grid w-4 place-items-center">
+            <ContextMenu.ItemIndicator>
+              <Check className="size-4" aria-hidden />
+            </ContextMenu.ItemIndicator>
+          </span>
+          {t('video.hide')}
+        </ContextMenu.CheckboxItem>
+      ) : null}
+      {/* Local actions and moderation are separate groups (docs/09 v0.2 «Меню участника»). */}
+      {moderation ? <ContextMenu.Separator className={menuSeparator} /> : null}
       {/* Moderation items appear only with the right; «already muted» is shown on the row itself. */}
       {a.serverMute && !a.alreadyMuted ? (
         <ContextMenu.Item className={menuItem} onSelect={() => serverMute(roomId, userId)}>
@@ -131,6 +154,12 @@ function MemberMenuContent({
         <ContextMenu.Item className={menuItem} onSelect={() => serverUnmute(roomId, userId)}>
           <Mic className="size-4" aria-hidden />
           <span className="min-w-0 flex-1 truncate">{t('people.menu.serverUnmute')}</span>
+        </ContextMenu.Item>
+      ) : null}
+      {a.stopCamera ? (
+        <ContextMenu.Item className={menuItem} onSelect={() => stopMemberCamera(workspaceId, roomId, userId)}>
+          <VideoOff className="size-4" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{t('video.stopMember')}</span>
         </ContextMenu.Item>
       ) : null}
       {a.moveTargets.length > 0 ? (

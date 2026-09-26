@@ -257,6 +257,26 @@ describe('mentions and room notifications (docs/05)', () => {
     server.reset('data');
   });
 
+  it('cameras: /camera/request marks VoiceState.camera (409 over camera_limit), a moderator stops one', async () => {
+    const token = await login();
+    const post = (path: string): Promise<Response> => fetch(`${server.url}${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const me = IDS.users.anna;
+    server.setVoiceState({ userId: me, roomId: IDS.rooms.meeting });
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/camera/request`)).status).toBe(204);
+    expect(server.state.voiceStates.get(me)?.camera).toBe(true);
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/camera/stop`)).status).toBe(204);
+    expect(server.state.voiceStates.get(me)?.camera).toBe(false);
+    // Борис has his camera on in the fixtures; the owner (MUTE_MEMBERS) turns it off, twice = 404.
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/voice/${IDS.users.boris}/stop-camera`)).status).toBe(204);
+    expect(server.state.voiceStates.get(IDS.users.boris)?.camera).toBe(false);
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/voice/${IDS.users.boris}/stop-camera`)).status).toBe(404);
+    // camera_limit 0 = cameras off → 409.
+    const room = server.state.rooms.get(IDS.rooms.meeting);
+    if (room?.media) room.media.cameraLimit = 0;
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/camera/request`)).status).toBe(409);
+    server.reset('data');
+  });
+
   it('voice status: a participant or MANAGE_ROOM sets it (≤ 60), ROOM_UPDATE fans out, cleared when the call empties', async () => {
     const put = async (email: string, status: string): Promise<Response> =>
       fetch(`${server.url}/api/rooms/${IDS.rooms.call}/voice-status`, {

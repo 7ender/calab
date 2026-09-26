@@ -11,6 +11,7 @@ export type Dialog =
   | { kind: 'room-settings'; roomId: string; tab?: string }
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }
+  | { kind: 'camera-preview' }
   | { kind: 'image'; fileId: string; name: string }
   /** ⌘K search; `query` pre-fills it (typed into the room header's search field). */
   | { kind: 'quick-switcher'; query?: string };
