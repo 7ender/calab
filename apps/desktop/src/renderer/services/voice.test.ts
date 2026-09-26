@@ -9,10 +9,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // ---------------------------------------------------------------- DOM stubs (node env)
 
 const el = (): Record<string, unknown> => ({ hidden: false, id: '', appendChild: () => undefined, remove: () => undefined });
+/** document listeners by event (the CSP violation handler is fired from tests). */
+const docListeners = new Map<string, ((ev: unknown) => void)[]>();
 vi.stubGlobal('document', {
   createElement: el,
   body: { appendChild: () => undefined },
-  addEventListener: () => undefined,
+  addEventListener: (ev: string, fn: (e: unknown) => void) => void docListeners.set(ev, [...(docListeners.get(ev) ?? []), fn]),
   visibilityState: 'visible',
   hasFocus: () => true,
 });
@@ -216,6 +218,7 @@ beforeEach(async () => {
   deviceChange.length = 0;
   deviceList = [];
   announce.mockClear();
+  docListeners.clear();
   ({ voice } = await import('./voice'));
   ({ useVoice } = await import('../stores/voice'));
   ({ usePrefs } = await import('../stores/prefs'));
@@ -386,6 +389,56 @@ describe('VoiceEngine', () => {
     expect(joinVoice).toHaveBeenCalledTimes(1);
     expect(useVoice.getState().phase).toBe('idle');
     expect(useVoice.getState().roomId).toBeNull();
+  });
+
+  it('a failing reconnect cycle keeps the seat: no unmount of the voice panel, one stable phase (0.2.1)', async () => {
+    await voice.join('A', 'ws');
+    const seen: { roomId: string | null; phase: string }[] = [];
+    const unsub = useVoice.subscribe((s) => seen.push({ roomId: s.roomId, phase: s.phase }));
+    FakeRoom.onConnect = () => Promise.reject(Object.assign(new Error('could not establish signal connection'), { name: 'ConnectionError', reasonName: 'ServerUnreachable' }));
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    // Three failed attempts (1 s + 2 s + 4 s).
+    await vi.advanceTimersByTimeAsync(7_500);
+    unsub();
+    expect(joinVoice).toHaveBeenCalledTimes(4);
+    // VoiceBar renders only with a roomId: it (and its Radix menus) must never see null mid-cycle.
+    expect(seen.every((s) => s.roomId === 'A')).toBe(true);
+    const phases = [...new Set(seen.map((s) => s.phase))];
+    expect(phases).toEqual(['connected', 'reconnecting']);
+    expect(useVoice.getState().link.attempts).toBe(3);
+    expect(useVoice.getState().link.lastError).toBe('ConnectionError / ServerUnreachable: could not establish signal connection');
+    // A successful attempt resets the count.
+    FakeRoom.onConnect = null;
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(useVoice.getState().phase).toBe('connected');
+    expect(useVoice.getState().link.attempts).toBe(0);
+  });
+
+  it('the CSP blocking the LiveKit host: phase «blocked», the cycle stops, «Повторить» joins again', async () => {
+    await voice.join('A', 'ws');
+    FakeRoom.onConnect = () => Promise.reject(new Error('signal failed'));
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await vi.advanceTimersByTimeAsync(1_000);
+    for (const fn of docListeners.get('securitypolicyviolation') ?? []) fn({ effectiveDirective: 'connect-src', blockedURI: 'wss://lk/rtc?access_token=x' });
+    await settle();
+    expect(useVoice.getState().phase).toBe('blocked');
+    expect(useVoice.getState().roomId).toBe('A');
+    expect(useVoice.getState().link.blockedHost).toBe('lk');
+    const calls = joinVoice.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice.mock.calls.length).toBe(calls);
+    expect(useVoice.getState().phase).toBe('blocked');
+    FakeRoom.onConnect = null;
+    voice.retry();
+    await settle();
+    expect(useVoice.getState().phase).toBe('connected');
+    expect(useVoice.getState().link.blockedHost).toBeNull();
+  });
+
+  it('a CSP report for another host is ignored', async () => {
+    await voice.join('A', 'ws');
+    for (const fn of docListeners.get('securitypolicyviolation') ?? []) fn({ effectiveDirective: 'connect-src', blockedURI: 'wss://elsewhere.example' });
+    expect(useVoice.getState().phase).toBe('connected');
   });
 
   it('a rejoin keeps the moderator mute through its teardown until the server says otherwise', async () => {

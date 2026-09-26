@@ -157,6 +157,9 @@ export const ruShell = {
   'voiceUi.serverMuted': 'Микрофон выключен модератором',
   'voiceUi.serverUnmuted': 'Модератор разрешил вам говорить — включите микрофон',
   'voiceUi.reconnectHint': 'Голос вернётся сам, как только появится связь',
+  'voiceUi.blocked': 'Соединение с {host} заблокировано политикой приложения — обновите приложение',
+  'voiceUi.cantReach': 'Не удаётся подключиться к {host}',
+  'voiceUi.retry': 'Повторить',
   'voiceUi.connectingTo': 'Подключение к «{room}»',
   // human errors (#16)
   'mediaErr.act.openSettings': 'Открыть настройки',

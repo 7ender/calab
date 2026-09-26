@@ -1,7 +1,8 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { AudioLines, Check, ChevronDown, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { DisplayedPhase, offerRetry } from '../../lib/voiceLink';
 import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
 import { Badge, Button, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -40,9 +41,33 @@ const Q_LABEL: Record<LinkQuality, 'quality.good' | 'quality.fair' | 'quality.po
   unknown: 'quality.unknown',
 };
 
-/** Connection quality: always visible while in voice; click → details (docs/08, «UX-правила»). */
-function QualityButton(): ReactNode {
+/**
+ * The phase the panel shows (lib/voiceLink.DisplayedPhase): a LiveKit reconnect shorter than
+ * 1.5 s never reaches the title; one reconnect cycle is one «Переподключение…». Visual tests
+ * see the store phase at once.
+ */
+function useDisplayedPhase(): VoicePhase {
   const phase = useVoice((s) => s.phase);
+  const visualTest = useSession((s) => s.appInfo?.visualTest === true);
+  const [shown, setShown] = useState(phase);
+  const ref = useRef<DisplayedPhase | null>(null);
+  useEffect(() => {
+    // Starts from the phase already shown; the next store change goes through the debounce.
+    const d = new DisplayedPhase(useVoice.getState().phase, setShown, undefined, visualTest ? 0 : undefined);
+    ref.current = d;
+    return () => {
+      d.dispose();
+      ref.current = null;
+    };
+  }, [visualTest]);
+  useEffect(() => {
+    ref.current?.update(phase);
+  }, [phase]);
+  return shown;
+}
+
+/** Connection quality: always visible while in voice; click → details (docs/08, «UX-правила»). */
+function QualityButton({ phase }: { phase: VoicePhase }): ReactNode {
   const quality = useVoice((s) => s.quality);
   const rtt = useVoice((s) => s.rttMs);
   const loss = useVoice((s) => s.lossPct);
@@ -303,7 +328,8 @@ export function VoiceBar(): ReactNode {
   }, [visualTest]);
   const roomId = useVoice((s) => s.roomId);
   const wsId = useVoice((s) => s.workspaceId);
-  const phase = useVoice((s) => s.phase);
+  const phase = useDisplayedPhase();
+  const link = useVoice((s) => s.link);
   const myStream = useVoice((s) => s.myStream);
   const streamBusy = useVoice((s) => s.streamBusy);
   const canStream = useVoice((s) => s.canStream);
@@ -323,7 +349,10 @@ export function VoiceBar(): ReactNode {
   const openRoom = useUi((s) => s.openRoom);
   const open = useUi((s) => s.openDialog);
   if (!roomId) return null;
-  const phaseText = phase === 'connected' ? t('voice.connected') : phase === 'reconnecting' ? t('voice.reconnecting') : t('voice.connecting');
+  const phaseText =
+    phase === 'connected' ? t('voice.connected') : phase === 'reconnecting' ? t('voice.reconnecting') : phase === 'blocked' ? t('voice.blocked') : t('voice.connecting');
+  const retry = offerRetry(phase, link.attempts);
+  const host = link.blockedHost ?? link.rtcHost ?? '';
   const full = t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
   // Always «room / workspace» (Discord's «Room / Server»); truncated in the panel, the full path
   // is in the tooltip.
@@ -336,7 +365,7 @@ export function VoiceBar(): ReactNode {
       {/* Header (Discord): signal in a 40 px square (click = connection details), «Голос
           подключён» 15 px + «Комната / Пространство» 13 px, then collapse and the red hang-up. */}
       <div className="flex items-center gap-2">
-        <QualityButton />
+        <QualityButton phase={phase} />
         <div className="min-w-0 flex-1" aria-live="polite">
           <div className={cx('truncate text-[15px] font-semibold leading-5', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
           <button type="button" className="block max-w-full truncate text-left text-[13px] leading-[18px] text-muted hover:text-fg hover:underline" onClick={goRoom} title={full}>
@@ -367,11 +396,28 @@ export function VoiceBar(): ReactNode {
         </Tip>
       </div>
 
-      {phase === 'reconnecting' ? (
-        // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it back.
+      {phase === 'reconnecting' || phase === 'blocked' ? (
+        // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it
+        // back. A sibling of the buttons (no key / wrapper change): showing it never remounts
+        // the panel or closes its menus. After 3 failed attempts — the reason and «Повторить»;
+        // blocked by our CSP — say so at once (retrying cannot help).
         <div className="mt-1.5 flex items-start gap-2 rounded-[var(--radius-row)] bg-mention px-2 py-1.5 text-[12px]" role="status" data-testid="voice-reconnecting">
           <WifiOff className="mt-px size-4 shrink-0 text-warn" aria-hidden />
-          <span className="min-w-0 text-fg">{t('voiceUi.reconnectHint')}</span>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-fg">
+              {phase === 'blocked' ? t('voiceUi.blocked', { host }) : retry && host ? t('voiceUi.cantReach', { host }) : t('voiceUi.reconnectHint')}
+            </span>
+            {retry && phase !== 'blocked' && link.lastError ? (
+              <span className="break-words text-muted" title={link.lastError}>
+                {link.lastError}
+              </span>
+            ) : null}
+          </span>
+          {retry ? (
+            <button type="button" className="shrink-0 rounded-[var(--radius-control)] font-medium text-accent-text hover:underline" onClick={() => voice.retry()}>
+              {t('voiceUi.retry')}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

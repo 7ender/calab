@@ -4,7 +4,20 @@ import type { MediaErrorAction } from '../lib/media/errors';
 import type { CameraPhase } from '../lib/media/cameraLogic';
 import type { CandidatePairInfo, InboundVideoStats, OutboundVideoLayer } from '../lib/media/stats';
 
-export type VoicePhase = 'idle' | 'connecting' | 'connected' | 'reconnecting';
+/** `blocked`: the app's CSP refused the LiveKit host — retrying cannot help, an update can. */
+export type VoicePhase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'blocked';
+
+/** Voice connection diagnostics (the reconnect notice, Settings → Соединение). */
+export interface VoiceLink {
+  /** LiveKit host from the last /join (`rtc.calab.ru`). */
+  rtcHost: string | null;
+  /** Failed connect attempts in a row (reset when connected, on join and leave). */
+  attempts: number;
+  /** The last connect / disconnect error, human-readable (lib/voiceLink.describeConnectError). */
+  lastError: string | null;
+  /** Host the CSP blocked (phase 'blocked'). */
+  blockedHost: string | null;
+}
 export type { LinkQuality } from '../lib/voiceLogic';
 import type { LinkQuality } from '../lib/voiceLogic';
 export type StageMode = 'pip' | 'expanded' | 'popout';
@@ -98,6 +111,7 @@ export interface VoiceStore {
   stats: VoiceStats | null;
   /** Bumped when a video track (stream or camera, remote or mine) changes, so video elements re-attach. */
   trackEpoch: number;
+  link: VoiceLink;
   set: (p: Partial<VoiceStore>) => void;
 }
 
@@ -139,6 +153,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   streamBusy: false,
   stats: null,
   trackEpoch: 0,
+  link: { rtcHost: null, attempts: 0, lastError: null, blockedHost: null },
   set: (p) => set(p),
 }));
 
