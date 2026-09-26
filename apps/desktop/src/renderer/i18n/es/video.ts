@@ -82,4 +82,15 @@ export const esVideo: DictShape<typeof enVideo> = {
   'mediaErr.camera.unsupported': 'La cámara no es compatible con este dispositivo',
   'mediaErr.camera.generic': 'No se pudo activar la cámara',
   'mediaErr.camera.publish': 'No se pudo compartir tu video — inténtalo de nuevo',
+
+  // noise suppression popover (docs/09 #12), voice room chat without voice (docs/09 #14)
+  'noise.about': 'Activa la supresión de ruido: aplaude mientras hablas — los demás solo oirán tu voz',
+  'noise.checkHint': '3 segundos de grabación y luego te escucharás',
+  'noise.recording': 'Habla — grabando…',
+  'noise.playing': 'Así te oyen los demás',
+  'noise.poweredBy': 'Con tecnología RNNoise',
+  'noise.learnMore': 'Más información',
+  'voicePreview.notInVoice': 'No estás en voz',
+  'voicePreview.join': 'Unirse a la voz',
+  'voicePreview.openChat': 'Abrir chat',
 } as const;

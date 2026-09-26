@@ -35,8 +35,6 @@ export interface Prefs {
   saveTraffic: boolean;
   /** userId → «Не показывать видео»: their camera is not subscribed (an avatar tile instead). */
   hiddenVideo: Record<string, true>;
-  /** «Голос подключён» collapsed to its header (the button row hidden). */
-  voicePanelCollapsed: boolean;
   /** Volume of everyone in voice, 0..1 (headphones ▾); multiplies the per-user volume, element.volume only. */
   outputVolume: number;
   micMode: MicMode;
@@ -89,7 +87,6 @@ const DEFAULTS: Prefs = {
   saveTraffic: false,
   hiddenVideo: {},
   outputVolume: 1,
-  voicePanelCollapsed: false,
   micMode: 'voice',
   thresholdDb: -50,
   pttBinding: null,

@@ -1,10 +1,10 @@
 import { NotificationLevel, PresenceStatus, RoomType, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, BellDot, BellOff, Check, Hash, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
+import { Bell, BellDot, BellOff, Check, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { IconButton, MOD, Tip, cx } from '../../components/ui';
+import { Badge, Button, IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { can, mayPin } from '../../lib/permissions';
@@ -17,6 +17,11 @@ import { NavButton } from '../shell/MobileShell';
 import { isQuiet, roomNotify, useRooms } from '../../stores/rooms';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
+import { useVoice } from '../../stores/voice';
+import { useVoiceStates } from '../../stores/voicePending';
+import { toast } from '../../stores/toasts';
+import { voice } from '../../services/voice';
+import { isVoicePreview, joinOutcome } from '../../lib/voiceEntry';
 import { useDms } from '../../stores/dms';
 import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
@@ -68,6 +73,7 @@ export function RoomHeader({
       <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', mobile && 'max-w-none flex-1 shrink')} title={room.name}>
         {room.name}
       </h1>
+      {voiceRoom ? <VoicePreviewBar workspaceId={workspaceId} room={room} perms={perms} /> : null}
       {mobile ? null : typing ? (
         <span className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-accent-text" aria-live="polite">
           <span className="text-faint" aria-hidden>
@@ -98,6 +104,40 @@ export function RoomHeader({
         </IconButton>
       </div>
     </header>
+  );
+}
+
+/**
+ * A voice room's chat read without being in its voice (docs/09 #14): «Вы не в голосе» and
+ * «Войти в голос» next to the name (same join rules as a click on the room). A call in another
+ * room is not touched until the button is pressed. Phone: the button only, icon-sized.
+ */
+function VoicePreviewBar({ workspaceId, room, perms }: { workspaceId: string; room: Room; perms: PermissionBits }): ReactNode {
+  const preview = useVoice((s) => isVoicePreview(room, s.roomId));
+  const states = useVoiceStates(workspaceId);
+  const mobile = useMobile();
+  if (!preview) return null;
+  const people = Object.values(states).filter((v) => v.roomId === room.id).length;
+  const canConnect = can(perms, 'CONNECT');
+  const join = (): void => {
+    const next = joinOutcome({ inRoom: false, canConnect, canMove: can(perms, 'MOVE_MEMBERS'), people, limit: room.userLimit });
+    if (next === 'full') toast.info(t('shell.roomFull'));
+    else if (next === 'join') void voice.join(room.id, workspaceId);
+  };
+  return (
+    <div className="no-drag flex shrink-0 items-center gap-2" data-testid="voice-preview">
+      {mobile ? null : <Badge className="text-muted">{t('voicePreview.notInVoice')}</Badge>}
+      {!canConnect ? null : mobile ? (
+        <IconButton label={t('voicePreview.join')} onClick={join} className="size-10 rounded-full text-ok">
+          <Phone className="size-5" />
+        </IconButton>
+      ) : (
+        <Button size="sm" onClick={join}>
+          <Phone className="size-3.5" aria-hidden />
+          {t('voicePreview.join')}
+        </Button>
+      )}
+    </div>
   );
 }
 

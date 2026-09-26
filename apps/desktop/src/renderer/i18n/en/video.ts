@@ -82,4 +82,15 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'mediaErr.camera.unsupported': 'Camera isn’t supported on this device',
   'mediaErr.camera.generic': 'Couldn’t turn on the camera',
   'mediaErr.camera.publish': 'Couldn’t share your video — try again',
+
+  // noise suppression popover (docs/09 #12), voice room chat without voice (docs/09 #14)
+  'noise.about': 'Turn on noise suppression: clap your hands while you talk — others will hear only your voice',
+  'noise.checkHint': '3 seconds of recording, then you’ll hear yourself',
+  'noise.recording': 'Speak — recording…',
+  'noise.playing': 'This is how others hear you',
+  'noise.poweredBy': 'Powered by RNNoise',
+  'noise.learnMore': 'Learn more',
+  'voicePreview.notInVoice': 'You’re not in voice',
+  'voicePreview.join': 'Join voice',
+  'voicePreview.openChat': 'Open chat',
 };
