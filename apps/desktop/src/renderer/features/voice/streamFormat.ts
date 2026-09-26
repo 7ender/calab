@@ -76,7 +76,7 @@ export function qualityOptions(layers: ReadonlyArray<{ quality: Exclude<StreamQu
 
 /** «3 смотрят», «1 смотрит». */
 export function viewersText(n: number): string {
-  return t('streamView.viewers', { n, word: plural(n, ['смотрит', 'смотрят', 'смотрят']) });
+  return plural('streamView.viewers', n);
 }
 
 const SMALLEST_PIP = { w: 192, h: 108 };

@@ -42,7 +42,7 @@ import { Avatar } from '../../components/Avatar';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { plural, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, isAdminRole, roomPerms, workspacePerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
@@ -557,7 +557,7 @@ function CardActions({ room, workspaceId, canInvite, canSettings }: { room: Room
 function MentionBadge({ n }: { n: number }): ReactNode {
   if (n <= 0) return null;
   return (
-    <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white group-hover/row:hidden" aria-label={t('shell.unreadMentions', { n })}>
+    <span className="shrink-0 rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white group-hover/row:hidden" aria-label={plural('shell.unreadMentions', n)}>
       {n > 99 ? '99+' : n}
     </span>
   );

@@ -286,9 +286,8 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
       {showBanner && firstUnreadMsg ? (
         <div className="absolute inset-x-0 top-0 z-[var(--z-sticky)] flex h-8 items-center gap-2 bg-accent-strong pl-4 pr-2 text-body text-accent-fg shadow-[var(--shadow-card)]" data-testid="unread-banner">
           <button type="button" className="min-w-0 flex-1 truncate text-left font-medium hover:underline" onClick={toFirstUnread}>
-            {t('chat.unreadBanner', {
+            {plural('chat.unreadBanner', unread, {
               n: `${unread}${moreUnread ? '+' : ''}`,
-              messages: plural(unread, ['новое сообщение', 'новых сообщения', 'новых сообщений']),
               time: fmtTime(toDate(firstUnreadMsg.msg.createdAt)),
             })}
           </button>

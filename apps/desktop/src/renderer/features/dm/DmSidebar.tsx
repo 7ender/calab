@@ -3,7 +3,7 @@ import { MessageCirclePlus, Search, Plus } from 'lucide-react';
 import { memo, useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, Tip, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { plural, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmtTime } from '../../lib/format';
 import { openDm } from '../../services/dms';
@@ -107,7 +107,7 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
           type="button"
           onClick={() => openDm(roomId)}
           aria-current={active ? 'page' : undefined}
-          aria-label={[name, count > 0 ? t('shell.unreadMentions', { n: count }) : unread ? t('ws.unread') : ''].filter(Boolean).join(', ')}
+          aria-label={[name, count > 0 ? plural('shell.unreadMentions', count) : unread ? t('ws.unread') : ''].filter(Boolean).join(', ')}
           className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-[var(--radius-row)] pl-2 pr-2 text-left"
         >
           <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={32} presence />

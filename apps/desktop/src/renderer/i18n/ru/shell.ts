@@ -12,7 +12,7 @@ export const ruShell = {
   'shell.inbox': 'Упоминания',
   'shell.inboxEmpty': 'Новых упоминаний нет',
   'shell.inboxHint': 'Здесь появятся сообщения, где вас упомянули.',
-  'shell.inboxCount': '{n} с упоминанием',
+  'shell.inboxCount': { one: '{n} с упоминанием', few: '{n} с упоминанием', many: '{n} с упоминанием', other: '{n} с упоминанием' },
   'shell.inboxMarkRead': 'Отметить прочитанными',
   'shell.help': 'Горячие клавиши',
   'shell.kbd.search': 'Быстрый переход и поиск',
@@ -29,7 +29,7 @@ export const ruShell = {
   'shell.home': 'Пространства',
   'shell.explore': 'Обзор',
   'shell.inVoice': 'Вы в голосе',
-  'shell.unreadMentions': '{n} упоминаний',
+  'shell.unreadMentions': { one: '{n} упоминание', few: '{n} упоминания', many: '{n} упоминаний', other: '{n} упоминания' },
 
   // room column
   'shell.wsMenu': 'Меню пространства',
@@ -150,7 +150,7 @@ export const ruShell = {
   'streamView.noAudio': 'Стрим без звука',
   'streamView.others': 'Другие стримы',
   'streamView.watching': 'Смотрите сейчас',
-  'streamView.viewers': '{n} {word}',
+  'streamView.viewers': { one: '{n} смотрит', few: '{n} смотрят', many: '{n} смотрят', other: '{n} смотрят' },
   'streamView.stop': 'Остановить стрим',
   'streamView.exitFullscreen': 'Выйти из полноэкранного режима',
   // voice states (#15)
