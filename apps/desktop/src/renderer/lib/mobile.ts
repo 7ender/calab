@@ -1,13 +1,13 @@
 import { isWeb } from '../platform';
+import { MOBILE_QUERY } from './phone';
 import { useMediaQuery } from './useMediaQuery';
 
 /**
- * Mobile web layout (ADR-0021, stage A): the web client at ≤ 768 px. Electron never gets it
- * (its minimum window is 960 px, and the check is web-only anyway). CSS uses the same condition
- * through the `mobile:` variant (app/styles.css: `:root.web` + the media query).
+ * Mobile web layout (ADR-0021, stage A): the web client at ≤ 768 px (lib/phone.ts). Electron never
+ * gets it (its minimum window is 960 px, and the check is web-only anyway). CSS uses the same
+ * condition through the `mobile:` variant (app/styles.css: `:root.web` + the media query).
  */
-export const MOBILE_MAX = 768;
-export const MOBILE_QUERY = `(max-width: ${MOBILE_MAX}px)`;
+export { MOBILE_MAX, MOBILE_QUERY, autoFocusAllowed } from './phone';
 
 /** True on the web client in the one-column phone layout. */
 export function useMobile(): boolean {
@@ -22,43 +22,86 @@ export function isMobileNow(): boolean {
 
 /** The on-screen keyboard is taken as open when the visual viewport is this much shorter than the layout one. */
 const KEYBOARD_MIN_PX = 120;
+/** iOS animates the keyboard away and may report the final viewport late (or not at all): re-check then. */
+const KEYBOARD_SETTLE_MS = [120, 400];
+const NON_TEXT_INPUTS = new Set(['button', 'checkbox', 'radio', 'range', 'submit', 'reset', 'file', 'color', 'image']);
+
+/** A text field — the only thing that raises the on-screen keyboard — has the focus. */
+function editableFocused(): boolean {
+  const a = document.activeElement;
+  if (!(a instanceof HTMLElement)) return false;
+  if (a.isContentEditable || a instanceof HTMLTextAreaElement) return true;
+  return a instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(a.type);
+}
 
 /**
- * Keeps the app inside the *visual* viewport on phones (web only), so the composer sits right
- * above the on-screen keyboard:
- *  - `--app-height` on <html> = visualViewport.height (the shell is that tall, not 100dvh);
- *  - `kb-open` class on <html> while the keyboard covers part of the layout viewport (the
- *    voice strip hides, the bottom safe-area inset drops to 0 — the keyboard covers it);
- *  - iOS Safari scrolls the whole page up to reveal a focused field even when nothing overflows:
- *    the document is scrolled back to the top, the shell already fits above the keyboard.
- * Chrome on Android resizes the layout viewport itself (`interactive-widget=resizes-content`),
- * where this is a no-op. Returns the uninstall function.
+ * Keeps the app inside the visible screen on phones (web only), iOS Safari included:
+ *  - without the keyboard the shell is `100dvh` tall (app/styles.css): the browser's dynamic
+ *    viewport, which follows Safari's toolbars. visualViewport is not used then — on iOS it can
+ *    stay stale after the keyboard closes and leave an empty band at the bottom of the screen;
+ *  - while the keyboard is up (a text field focused *and* the visual viewport shorter than the
+ *    layout one) <html> gets `kb-open` and `--app-height` = visualViewport.height, so the
+ *    composer sits right above the keyboard, and `--kb-inset` = the part of the layout viewport
+ *    the keyboard covers, which lifts the bottom sheets (position: fixed) above it; the voice
+ *    strip hides and the bottom safe-area inset drops to 0 (the keyboard covers the home bar);
+ *  - iOS scrolls the whole document to reveal a focused field even when nothing overflows, and
+ *    leaves it scrolled after the keyboard closes (content shifted up, a gap under it): the
+ *    document is always scrolled back to the top — the shell fits the screen, only the feed scrolls.
+ * Chrome on Android resizes the layout viewport itself (`interactive-widget=resizes-content`), so
+ * the keyboard branch never triggers there. Returns the uninstall function.
  */
 export function installVisualViewport(): () => void {
   const vv = window.visualViewport;
   const root = document.documentElement;
   if (!vv) return () => undefined;
   let frame = 0;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
   const apply = (): void => {
     frame = 0;
-    root.style.setProperty('--app-height', `${Math.round(vv.height)}px`);
-    const kb = window.innerHeight - vv.height > KEYBOARD_MIN_PX && isMobileNow();
+    const mobile = isMobileNow();
+    const kb = mobile && editableFocused() && window.innerHeight - vv.height > KEYBOARD_MIN_PX;
     root.classList.toggle('kb-open', kb);
-    if (kb && (window.scrollY !== 0 || vv.offsetTop !== 0)) window.scrollTo(0, 0);
+    if (kb) {
+      root.style.setProperty('--app-height', `${Math.round(vv.height)}px`);
+      root.style.setProperty('--kb-inset', `${Math.round(Math.max(0, window.innerHeight - vv.height - vv.offsetTop))}px`);
+    } else {
+      root.style.removeProperty('--app-height');
+      root.style.removeProperty('--kb-inset');
+    }
+    if (mobile && (window.scrollY !== 0 || window.scrollX !== 0)) window.scrollTo(0, 0);
   };
   const schedule = (): void => {
     if (!frame) frame = requestAnimationFrame(apply);
   };
+  /** A focus move raises / drops the keyboard: re-check now and once it has finished animating. */
+  const settle = (): void => {
+    schedule();
+    for (const ms of KEYBOARD_SETTLE_MS) {
+      const id = setTimeout(() => {
+        timers.delete(id);
+        schedule();
+      }, ms);
+      timers.add(id);
+    }
+  };
   apply();
   vv.addEventListener('resize', schedule);
   vv.addEventListener('scroll', schedule);
-  window.addEventListener('orientationchange', schedule);
+  window.addEventListener('scroll', schedule, { passive: true });
+  window.addEventListener('orientationchange', settle);
+  document.addEventListener('focusin', settle);
+  document.addEventListener('focusout', settle);
   return () => {
     if (frame) cancelAnimationFrame(frame);
+    for (const id of timers) clearTimeout(id);
     vv.removeEventListener('resize', schedule);
     vv.removeEventListener('scroll', schedule);
-    window.removeEventListener('orientationchange', schedule);
+    window.removeEventListener('scroll', schedule);
+    window.removeEventListener('orientationchange', settle);
+    document.removeEventListener('focusin', settle);
+    document.removeEventListener('focusout', settle);
     root.style.removeProperty('--app-height');
+    root.style.removeProperty('--kb-inset');
     root.classList.remove('kb-open');
   };
 }

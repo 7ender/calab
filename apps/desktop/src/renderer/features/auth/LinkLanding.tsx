@@ -80,7 +80,7 @@ export function LinkLandingScreen({ link }: { link: LinkLanding }): ReactNode {
   const hideAlways = notFound && alwaysAtNotFound === false;
 
   return (
-    <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10" data-testid="link-landing">
+    <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+40px)]" data-testid="link-landing">
       <main className="no-drag my-auto flex w-full max-w-[400px] flex-col items-stretch">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo size={56} alt="Calab" />

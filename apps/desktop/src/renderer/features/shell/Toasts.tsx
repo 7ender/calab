@@ -52,7 +52,9 @@ export function Toasts(): ReactNode {
   return (
     <section
       aria-label={t('toast.region')}
-      className="pointer-events-none fixed bottom-[calc(var(--composer-height)+72px)] right-4 z-[var(--z-toast)] flex w-[min(360px,calc(100vw-32px))] flex-col items-stretch gap-2"
+      // Phones: under the top bar (at the bottom it would cover the composer and the voice strip),
+      // and under the drawers and sheets, which the user is working in.
+      className="pointer-events-none fixed bottom-[calc(var(--composer-height)+72px)] right-4 z-[var(--z-toast)] flex w-[min(360px,calc(100vw-32px))] flex-col items-stretch gap-2 mobile:bottom-auto mobile:left-4 mobile:top-[calc(var(--safe-top)+56px)] mobile:z-[var(--z-popover)] mobile:w-auto"
       onPointerEnter={() => setHover(true)}
       onPointerLeave={() => setHover(false)}
       onFocus={() => setFocus(true)}

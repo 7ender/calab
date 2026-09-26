@@ -3,6 +3,7 @@ import { Car, Clock3, Hand, Heart, Leaf, Lightbulb, Pizza, Search, Smile, Trophy
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { autoFocusAllowed } from '../../lib/mobile';
 import { useChatView } from './chatView';
 import { EMOJI_GROUPS, searchEmoji } from './emoji';
 
@@ -109,7 +110,8 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
       <div className="flex items-center gap-2 border-b border-line px-3">
         <Search className="size-4 shrink-0 text-faint" aria-hidden />
         <input
-          autoFocus
+          // Phones: the grid first; the search field (and the keyboard) only on a tap.
+          autoFocus={autoFocusAllowed()}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {

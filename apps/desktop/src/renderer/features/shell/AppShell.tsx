@@ -100,7 +100,7 @@ export function AppShell(): ReactNode {
       <div className="mat-rail relative flex min-h-0 flex-1">
         <WorkspaceRail />
         {!ready ? (
-          <div className="mat-content grid flex-1 place-items-center">
+          <div className="mat-content grid flex-1 place-items-center mobile:px-6">
             <div className="flex flex-col items-center gap-3 text-body text-muted">
               <Spinner className="size-6" />
               {t('gateway.connecting')}
@@ -213,11 +213,12 @@ function Welcome(): ReactNode {
   // peeks out beside the (narrower) dialog.
   const covered = useUi((s) => s.dialog !== null);
   return (
-    <div className="mat-content grid flex-1 place-items-center">
+    <div className="mat-content grid flex-1 place-items-center mobile:px-6">
       <div className={cx('flex max-w-sm flex-col items-center gap-2 text-center', covered && 'invisible')}>
         <h1 className="text-title font-semibold">{t('shell.welcome')}</h1>
         <p className="text-body text-muted">{t('shell.welcomeText')}</p>
-        <div className="mt-4 flex gap-2">
+        {/* Phones: the two actions stacked full width, the primary one on top. */}
+        <div className="mt-4 flex gap-2 mobile:w-full mobile:flex-col-reverse">
           <Button variant="secondary" onClick={() => open({ kind: 'join-workspace' })}>
             <Compass className="size-4" strokeWidth={1.75} />
             {t('ws.join')}

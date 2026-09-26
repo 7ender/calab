@@ -715,8 +715,11 @@ svg.lucide {
 }
 @media (max-width: 768px) {
   :root.web {
-    /* the visual viewport height (lib/mobile.ts installVisualViewport); 100dvh until measured */
+    /* The app's height: the dynamic viewport (follows Safari's toolbars); while the on-screen
+       keyboard is up, lib/mobile.ts sets it to the visual viewport's height (inline on <html>). */
     --app-height: 100dvh;
+    /* how much of the layout viewport the keyboard covers (lib/mobile.ts), 0 without it */
+    --kb-inset: 0px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --safe-left: env(safe-area-inset-left, 0px);
@@ -730,13 +733,33 @@ svg.lucide {
   :root.web.kb-open {
     --safe-bottom: 0px;
   }
+  /* One screen, never a page: no rubber-band scroll of the document, no pull-to-refresh over the
+     app; only the feed / lists scroll inside. */
+  :root.web,
   :root.web body {
-    /* No rubber-band scroll of the whole page, no pull-to-refresh over the app. */
+    overflow: hidden;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
   }
+  /* The shell is exactly the visible screen (not 100vh: on iOS that is the height with the
+     toolbars collapsed, so the bottom of the app runs under Safari's toolbar). */
+  :root.web,
+  :root.web body,
   :root.web #root {
     height: var(--app-height);
+  }
+  /* Safari < 15.4 has no dvh units: -webkit-fill-available is its visible height. */
+  @supports not (height: 100dvh) {
+    :root.web {
+      --app-height: -webkit-fill-available;
+    }
+  }
+  /* Taps are taps: no double-tap-to-zoom delay on controls. In the base layer, so a control's own
+     touch-action utility (the PTT hold button's touch-none) still wins. */
+  @layer base {
+    :root.web :is(button, a, label, summary, select, [role='button'], [role='tab'], [role='menuitem'], [role='option'], [role='switch'], [role='radio'], [role='checkbox']) {
+      touch-action: manipulation;
+    }
   }
   /* iOS zooms into any field with text under 16 px: every field is 16 px on phones. */
   :root.web input:not([type='checkbox'], [type='radio'], [type='range']),
@@ -757,10 +780,11 @@ svg.lucide {
   }
   /* Menus and popovers become bottom sheets: full width, anchored to the bottom edge above the
      home indicator, a scrim behind (the 100vmax spread shadow; a tap on it dismisses through
-     Radix's outside-press). Positioning is Radix's inline style, hence !important. */
+     Radix's outside-press). Positioning is Radix's inline style, hence !important. With the
+     on-screen keyboard up the sheet sits on top of it (--kb-inset), never under it. */
   :root.web [data-radix-popper-content-wrapper]:has(> .mat-popover:not(.tip, .no-sheet)) {
     position: fixed !important;
-    inset: auto 0 0 0 !important;
+    inset: auto 0 var(--kb-inset) 0 !important;
     transform: none !important;
     min-width: 0 !important;
     z-index: var(--z-modal-popover) !important;

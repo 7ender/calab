@@ -60,7 +60,7 @@ export function MobileVoiceStrip(): ReactNode {
         ) : null}
         <button
           type="button"
-          className="flex min-w-0 flex-1 flex-col items-start text-left"
+          className="flex min-w-0 flex-1 flex-col items-start justify-center self-stretch text-left"
           onClick={() => wsId && openRoom(wsId, roomId)}
           aria-live="polite"
         >

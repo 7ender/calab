@@ -114,7 +114,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
   }
 
   return (
-    <div className="mat-content drag flex h-full items-center justify-center overflow-y-auto px-4 py-8">
+    <div className="mat-content drag flex h-full items-center justify-center overflow-y-auto px-4 py-8 mobile:pb-[calc(var(--safe-bottom)+32px)] mobile:pt-[calc(var(--safe-top)+32px)]">
       <div className="mat-popover no-drag w-full max-w-[400px] rounded-[var(--radius-panel)] p-8">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo size={64} alt="Calab" className="mb-4" />
