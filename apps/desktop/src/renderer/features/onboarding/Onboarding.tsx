@@ -13,6 +13,7 @@ import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 import { MicMeter } from '../settings/AppSettingsDialog';
 import { PttBinder, bindingLabel } from '../settings/PttBinder';
+import { notifyStepView, readNotifyState, requestNotify, type NotifyState } from '../../lib/notifyPermission';
 
 /**
  * First run (docs/08 «Онбординг», docs/09 #20, #55): one card per step — an icon illustration, a
@@ -311,25 +312,33 @@ function ScreenStep({ nav }: { nav: Nav }): ReactNode {
 }
 
 function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
-  const supported = typeof Notification !== 'undefined';
-  const [perm, setPerm] = useState<NotificationPermission>(supported ? Notification.permission : 'denied');
+  // `default` = not asked yet: offer «Включить уведомления» — never the «denied» note (docs/09 #20).
+  // Desktop: Electron always reports «granted» and knows nothing of the OS setting, so the step
+  // starts as «not asked»; enabling turns mentions on and shows a first notification — on macOS
+  // that is when the system asks for permission.
+  const desktop = platform.kind === 'electron';
+  const [state, setState] = useState<NotifyState>(() => (desktop ? 'default' : readNotifyState()));
   const [asking, setAsking] = useState(false);
-  // The primary action always turns mention notifications on (and asks the OS/browser when it
-  // has not been asked yet); only a system-level «denied» leaves «Продолжить» with a note.
-  const enable = async (): Promise<void> => {
-    let p = perm;
-    if (supported && p === 'default') {
-      setAsking(true);
-      p = await Notification.requestPermission().catch(() => 'denied' as const);
-      setAsking(false);
-      setPerm(p);
-    }
-    if (p === 'granted') {
+  const view = notifyStepView(state);
+  const enable = (): void => {
+    if (desktop) {
       usePrefs.getState().setPrefs({ notifyMentions: true });
-      nav.next();
+      try {
+        new Notification('Calab', { body: t('onb.notifOn') });
+      } catch {
+        // No notification support: the in-app badges still work.
+      }
+      setState('granted');
+      return;
     }
+    // Straight from the click (user gesture): requestNotify calls Notification.requestPermission now.
+    setAsking(true);
+    void requestNotify().then((next) => {
+      setAsking(false);
+      setState(next);
+      if (next === 'granted') usePrefs.getState().setPrefs({ notifyMentions: true });
+    });
   };
-  const denied = supported && perm === 'denied';
   return (
     <StepFrame
       illustration={<Illustration icon={Bell} />}
@@ -338,26 +347,35 @@ function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
       back={nav.back}
       actions={
         <>
-          {/* Nothing to decide when the system already said no: just «Продолжить». */}
-          {denied || !supported ? null : (
+          {view.later ? (
             <Button variant="secondary" size="lg" onClick={nav.next}>
               {t('onb.later')}
             </Button>
-          )}
-          {denied || !supported ? (
-            <Button size="lg" onClick={nav.next}>
-              {t('onb.next')}
+          ) : null}
+          {view.primary === 'enable' ? (
+            <Button size="lg" busy={asking} onClick={enable}>
+              {t('onb.notifAllow')}
             </Button>
           ) : (
-            <Button size="lg" busy={asking} onClick={() => void enable()}>
-              {t('onb.notifAllow')}
+            <Button size="lg" onClick={nav.next}>
+              {view.primary === 'continue-without' ? t('onb.notifWithout') : t('onb.next')}
             </Button>
           )}
         </>
       }
     >
       <NotificationSample />
-      {denied ? <WarnNote>{platform.kind === 'web' ? t('onb.notifDeniedWeb') : t('onb.notifDenied')}</WarnNote> : null}
+      {view.note === 'granted' ? (
+        <p className="rounded-[var(--radius-card)] bg-[var(--color-card)] p-3 text-center text-body text-ok" role="status">
+          {t('onb.notifOn')}
+        </p>
+      ) : view.note === 'denied' ? (
+        <WarnNote>{platform.kind === 'web' ? t('onb.notifDeniedWeb') : t('onb.notifDenied')}</WarnNote>
+      ) : view.note === 'unsupported' ? (
+        <p className="text-center text-body text-muted" role="status">
+          {t('onb.notifUnsupported')}
+        </p>
+      ) : null}
     </StepFrame>
   );
 }
@@ -443,7 +461,7 @@ function useSetupSummary(micChecked: boolean): SummaryRow[] {
   useEffect(() => {
     if (mac) void platform.system.permissions().then((p) => setScreen(p.screen));
   }, [mac]);
-  const notifOn = notifyMentions && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  const notifOn = notifyMentions && (platform.kind === 'electron' || readNotifyState() === 'granted');
   const rows: SummaryRow[] = [
     {
       label: t('onb.sumMic'),
