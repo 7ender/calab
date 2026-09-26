@@ -1,6 +1,7 @@
 import { VoiceStreamStopReason, type DispatchEvent, type Message, type WorkspaceSnapshot } from '@calaba/protocol';
 import { syncTimeZone } from './timezone';
 import { log } from '../lib/log';
+import { HOME, isDm, useDms } from '../stores/dms';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
 import { toast } from '../stores/toasts';
@@ -12,6 +13,7 @@ import { activeRoomId, useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
 import { useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms } from './chat';
+import { applyDm, refreshDms } from './dms';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
@@ -43,6 +45,9 @@ export function applyDispatch(ev: DispatchEvent): void {
         for (const room of snap.rooms) if (room.lastMessageId) rooms.setLastMessage(room.id, room.lastMessageId);
         applySnapshotExtras(snap);
       }
+      // DMs (ADR-0020): rooms without a workspace; their read states are in read_states below.
+      for (const dm of r.dms) applyDm(dm, false);
+      useDms.getState().setAll(r.dms);
       // Unread / mention counters come with the read states (server-counted, so missed
       // messages and mentions are included — review M12/N7); the client keeps them from here.
       for (const rs of r.readStates) {
@@ -80,6 +85,9 @@ export function applyDispatch(ev: DispatchEvent): void {
       ensureActiveWorkspace();
       return;
     }
+    case 'dmCreate':
+      if (e.value.dm) applyDm(e.value.dm, true);
+      return;
     case 'workspaceUpdate':
       if (e.value.workspace) useWorkspaces.getState().updateWorkspace(e.value.workspace);
       return;
@@ -119,6 +127,7 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'messageUpdate':
       if (e.value.message) {
         useMessages.getState().upsert(e.value.message);
+        useDms.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
         onMessageEdited(e.value.message, e.value.workspaceId);
       }
       return;
@@ -126,10 +135,12 @@ export function applyDispatch(ev: DispatchEvent): void {
       const { roomId, messageId } = e.value;
       // Only messages of others count: my own move the read marker past them, so an unread one
       // is someone else's. The inbox holds the mentions of me.
-      const mention = useInbox.getState().items.some((m) => m.id === messageId);
+      // Every DM message counts as a mention (docs/05, «Личные сообщения»).
+      const mention = isDm(useRooms.getState().byId[roomId]) || useInbox.getState().items.some((m) => m.id === messageId);
       useRooms.getState().removeUnread(roomId, messageId, mention);
       useMessages.getState().remove(roomId, messageId);
       useInbox.getState().remove(messageId);
+      useDms.getState().onChanged(roomId, messageId, null);
       return;
     }
     case 'messageReactionAdd':
@@ -220,6 +231,9 @@ export function firstSeen(id: string): boolean {
 
 function onMessage(m: Message, workspaceId: string): void {
   useMessages.getState().upsert(m);
+  // A message of a DM we have not heard of (its DM_CREATE got lost): fetch the list.
+  if (!workspaceId && !useRooms.getState().byId[m.roomId]) void refreshDms();
+  useDms.getState().onMessage(m);
   if (!firstSeen(m.id)) return; // duplicate: no second badge / sound / notification
   const rooms = useRooms.getState();
   rooms.setLastMessage(m.roomId, m.id);
@@ -232,6 +246,7 @@ function onMessage(m: Message, workspaceId: string): void {
 
 /** An edit can add or remove a mention of me: keep the inbox in step (badges stay as they are). */
 function onMessageEdited(m: Message, workspaceId: string): void {
+  if (!workspaceId) return; // a DM: never in the mentions inbox
   const author = useWorkspaces.getState().byId[workspaceId]?.members[m.authorId];
   useInbox.getState().update(m, mentionsMe(m, myUserId(), mayMentionAll(author?.role, m.authorId, useRooms.getState().byId[m.roomId])));
 }
@@ -245,6 +260,6 @@ function applySnapshotExtras(snap: WorkspaceSnapshot): void {
 export function ensureActiveWorkspace(): void {
   const ui = useUi.getState();
   const { byId, order } = useWorkspaces.getState();
-  if (ui.activeWorkspaceId && byId[ui.activeWorkspaceId]) return;
+  if (ui.activeWorkspaceId === HOME || (ui.activeWorkspaceId && byId[ui.activeWorkspaceId])) return;
   ui.setWorkspace(order[0] ?? null);
 }

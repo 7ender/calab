@@ -5,9 +5,10 @@ import type { ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { can } from '../../lib/permissions';
+import { can, mayPin } from '../../lib/permissions';
 import { firstLink, parseMarkdown } from '../../lib/markdown/parse';
 import { deleteMessage, setEmbedsHidden, setPinned, toggleReaction } from '../../services/chat';
+import { useRooms } from '../../stores/rooms';
 import type { ChatMessage } from '../../stores/messages';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -43,6 +44,8 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
   const m = c.msg;
   const canSend = can(perms, 'SEND_MESSAGES');
   const canManage = can(perms, 'MANAGE_MESSAGES');
+  // Pinning: MANAGE_MESSAGES, or either participant of a DM (docs/04).
+  const canPin = mayPin(perms, useRooms.getState().byId[roomId]);
   const canDelete = own || canManage;
   const pinned = !!m.pinnedAt;
   // A hidden link preview can be brought back by whoever may hide it (the menu renders only open).
@@ -93,7 +96,7 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
             <Copy className="size-4" aria-hidden /> {t('chat.copy')}
           </ContextMenu.Item>
         ) : null}
-        {canManage ? (
+        {canPin ? (
           <ContextMenu.Item className={menuItem} onSelect={() => void setPinned(m, !pinned)}>
             {pinned ? <PinOff className="size-4" aria-hidden /> : <Pin className="size-4" aria-hidden />}
             {pinned ? t('chat.unpin') : t('chat.pin')}

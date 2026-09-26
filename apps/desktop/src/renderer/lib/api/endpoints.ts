@@ -11,6 +11,10 @@ import {
   JoinRoomInviteResponseSchema,
   ListRoomInvitesResponseSchema,
   CreateInviteResponseSchema,
+  CreateDmRequestSchema,
+  CreateDmResponseSchema,
+  ListDmCandidatesResponseSchema,
+  ListDmsResponseSchema,
   CreateMessageRequestSchema,
   CreateMessageResponseSchema,
   CreateRoomRequestSchema,
@@ -174,6 +178,14 @@ export const api = {
       call('PUT', `/api/messages/${id}/embeds-hidden`, UpdateMessageResponseSchema, body(SetEmbedsHiddenRequestSchema, { hidden })),
     pins: (roomId: string) => call('GET', `/api/rooms/${roomId}/pins`, ListMessagesResponseSchema),
   },
+  /** Direct messages (ADR-0020); their messages use the room endpoints above. */
+  dms: {
+    list: () => call('GET', '/api/dms', ListDmsResponseSchema),
+    /** Get-or-create: 201 created (DM_CREATE to both), 200 existed; 422 self, 404 no common workspace, 403 guest, 429 limit. */
+    create: (userId: string) => call('POST', '/api/dms', CreateDmResponseSchema, body(CreateDmRequestSchema, { userId })),
+    /** Who I may write to (≤ 20, by name); q = substring of the name or a nickname. */
+    candidates: (q: string, signal?: AbortSignal) => call('GET', `/api/dms/candidates${qs({ q })}`, ListDmCandidatesResponseSchema, undefined, signal),
+  },
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
   unfurl: {
     get: (url: string, signal?: AbortSignal) => call('GET', `/api/unfurl${qs({ url })}`, UnfurlResponseSchema, undefined, signal),
@@ -206,14 +218,19 @@ export interface UploadHandle {
   abort(): void;
 }
 
+/** Where a room's attachments are uploaded: the workspace, or the DM itself (`/api/dms/{id}/files`, ADR-0020). */
+export function uploadPath(workspaceId: string, roomId: string): string {
+  return workspaceId ? `/api/workspaces/${workspaceId}/files` : `/api/dms/${roomId}/files`;
+}
+
 /**
- * Multipart upload with progress (XHR — fetch has no upload progress).
- * `POST /api/workspaces/{id}/files`, or `/api/me/avatar` (returns UpdateMeResponse).
+ * Multipart upload with progress (XHR — fetch has no upload progress) to `path`
+ * (`uploadPath()`: `POST /api/workspaces/{id}/files` or `/api/dms/{id}/files`).
  */
-export function uploadFile(workspaceId: string, file: Blob, name: string, onProgress: (fraction: number) => void): UploadHandle {
+export function uploadFile(path: string, file: Blob, name: string, onProgress: (fraction: number) => void): UploadHandle {
   const xhr = new XMLHttpRequest();
   const promise = new Promise<FileMeta>((resolve, reject) => {
-    xhr.open('POST', apiUrl(`/api/workspaces/${workspaceId}/files`));
+    xhr.open('POST', apiUrl(path));
     xhr.responseType = 'text';
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded / e.total);

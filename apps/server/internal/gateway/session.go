@@ -73,6 +73,7 @@ type Session struct {
 	dead       bool
 	workspaces map[uuid.UUID]bool
 	subscribed map[uuid.UUID]bool
+	dmPeers    map[uuid.UUID]uuid.UUID // DM room -> peer; uuid.Nil = not a DM of this user (see Hub.dmPeer)
 	status     v1.PresenceStatus
 	recent     [128]uuid.UUID
 	recentN    int
@@ -88,7 +89,7 @@ type Session struct {
 func newSession(h *Hub, id, user, asess uuid.UUID) *Session {
 	s := &Session{
 		id: id, user: user, asess: asess, hub: h,
-		workspaces: map[uuid.UUID]bool{}, subscribed: map[uuid.UUID]bool{},
+		workspaces: map[uuid.UUID]bool{}, subscribed: map[uuid.UUID]bool{}, dmPeers: map[uuid.UUID]uuid.UUID{},
 		status: v1.PresenceStatus_PRESENCE_STATUS_ONLINE,
 		wq:     make(chan entry, bufferQueue),
 	}

@@ -58,6 +58,11 @@ import {
   JoinVoiceResponseSchema,
   JoinWorkspaceResponseSchema,
   ListCategoriesResponseSchema,
+  ListDmCandidatesResponseSchema,
+  ListDmsResponseSchema,
+  CreateDmRequestSchema,
+  CreateDmResponseSchema,
+  DmSummarySchema,
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
   ListMessagesResponseSchema,
@@ -127,9 +132,11 @@ import {
   WorkspaceSchema,
   WorkspaceSnapshotSchema,
   WorkspaceVisibility,
+  computePermissions,
   computeRoomPermissions,
   has,
   type DispatchEvent,
+  type DmSummary,
   type GatewayFrame,
   type Me,
   type Message,
@@ -486,8 +493,52 @@ class MockImpl {
   }
 
   private perms(room: Room, userId: string): bigint {
+    // DM (ADR-0020): the fixed set for the two participants, nothing for anyone else.
+    if (room.type === RoomType.DM) {
+      return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.dmPeer(room.id, userId) !== null } });
+    }
     const m = this.member(room.workspaceId, userId);
     return m ? computeRoomPermissions(m.role, userId, room.permissionOverrides) : 0n;
+  }
+
+  /** The other participant of a DM room, or null when `userId` is not in it (or it is no DM). */
+  private dmPeer(roomId: string, userId: string): string | null {
+    const pair = this.state.dmMembers.get(roomId);
+    if (!pair?.includes(userId)) return null;
+    return pair[0] === userId ? pair[1] : pair[0];
+  }
+
+  /** Both are full members (not the guest role) of some workspace (who may start a DM). */
+  private shareAsMembers(a: string, b: string): boolean {
+    const full = (u: string): Set<string> =>
+      new Set(this.state.members.filter((m) => m.userId === u && m.role !== WorkspaceRole.GUEST).map((m) => m.workspaceId));
+    const mine = full(a);
+    return [...full(b)].some((w) => mine.has(w));
+  }
+
+  /** A DM as `userId` sees it (docs/05 «Личные сообщения»): own peer and read state. */
+  private dmOut(roomId: string, userId: string): DmSummary | null {
+    const room = this.state.rooms.get(roomId);
+    const peerId = this.dmPeer(roomId, userId);
+    const peer = peerId ? this.state.users.get(peerId)?.user : undefined;
+    if (!room || !peer) return null;
+    const out = this.roomOut(room);
+    const lastRead = this.state.readStates.get(userId)?.get(roomId) ?? '';
+    return create(DmSummarySchema, {
+      room: out,
+      peer,
+      readState: { roomId, lastReadMessageId: lastRead, ...this.readCounts(roomId, userId, lastRead) },
+      ...(out.lastMessageAt ? { lastMessageAt: out.lastMessageAt } : {}),
+    });
+  }
+
+  /** The user's DMs, most recent activity first. */
+  private dmsOf(userId: string): DmSummary[] {
+    const at = (d: DmSummary): number => { const t = d.lastMessageAt ?? d.room?.createdAt; return t ? timestampMs(t) : 0; };
+    return [...this.state.dmMembers.keys()]
+      .map((id) => this.dmOut(id, userId))
+      .filter((d): d is DmSummary => d !== null)
+      .sort((a, b) => at(b) - at(a));
   }
 
   /** @everyone / @here count as mentions only from authors with MENTION_EVERYONE in the room. */
@@ -591,6 +642,8 @@ class MockImpl {
   private readCounts(roomId: string, me: string, lastRead: string): { unreadCount: number; mentionCount: number } {
     const room = this.state.rooms.get(roomId);
     const after = (this.state.messages.get(roomId) ?? []).filter((m) => m.id > lastRead && m.authorId !== me);
+    // A DM: every message of the peer counts as a mention (docs/05).
+    if (room?.type === RoomType.DM) return { unreadCount: Math.min(after.length, 999), mentionCount: Math.min(after.length, 999) };
     const mentions = after.filter((m) => {
       const { users, everyone } = parseMentions(m.content);
       return users.includes(me) || (everyone && !!room && this.mayMentionAll(room, m.authorId));
@@ -610,7 +663,7 @@ class MockImpl {
           workspaces: wsIds.map((w) => this.snapshot(w, u.user.id)),
           // Every visible room (server contract): never read → empty marker.
           readStates: [...this.state.rooms.values()]
-            .filter((r) => wsIds.includes(r.workspaceId) && this.canView(r, u.user.id))
+            .filter((r) => (wsIds.includes(r.workspaceId) || r.type === RoomType.DM) && this.canView(r, u.user.id))
             .map((r): [string, string] => [r.id, reads.get(r.id) ?? ''])
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([roomId, lastReadMessageId]) => create(ReadStateSchema, { roomId, lastReadMessageId, ...this.readCounts(roomId, u.user.id, lastReadMessageId) })),
@@ -620,6 +673,8 @@ class MockImpl {
               return r && this.canView(r, u.user.id);
             })
             .sort((a, b) => a.roomId.localeCompare(b.roomId)),
+          // Guest accounts have no DMs (ADR-0020).
+          dms: u.user.isGuest ? [] : this.dmsOf(u.user.id),
         }),
       },
     });
@@ -729,10 +784,13 @@ class MockImpl {
 
   private toWorkspace(wsId: string, ev: EventInit | ((userId: string) => EventInit | null), roomId?: string): void {
     this.fanout((u) => {
-      if (!this.member(wsId, u)) return null;
-      if (roomId) {
-        const r = this.state.rooms.get(roomId);
-        if (!r || !this.canView(r, u)) return null;
+      const r = roomId ? this.state.rooms.get(roomId) : undefined;
+      // DM rooms (no workspace): the participants' user channels (docs/05).
+      if (r?.type === RoomType.DM) {
+        if (!this.canView(r, u)) return null;
+      } else {
+        if (!this.member(wsId, u)) return null;
+        if (roomId && (!r || !this.canView(r, u))) return null;
       }
       return typeof ev === 'function' ? ev(u) : ev;
     });
@@ -1792,7 +1850,8 @@ class MockImpl {
       const me = this.uid(c);
       const { room, list, index } = this.findMessage(c.params[0] ?? '');
       if (!this.canView(room, me)) throw notFound('message not found');
-      this.requireRoomPerm(room, me, MANAGE_MESSAGES);
+      // Both DM participants may pin (docs/04); rooms need MANAGE_MESSAGES.
+      if (room.type !== RoomType.DM) this.requireRoomPerm(room, me, MANAGE_MESSAGES);
       const msg = list[index];
       if (!msg) throw notFound('message not found');
       if (on === !!msg.pinnedAt) {
@@ -1846,6 +1905,67 @@ class MockImpl {
       if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
       const id = this.storeFile(ws.id, me, f);
       ws.storageUsedBytes += BigInt(f.bytes.length);
+      sendMsg(c.res, 201, UploadFileResponseSchema, { file: s().files.get(id)?.meta });
+    });
+
+    // ---------------- direct messages (ADR-0020, docs/05 «Личные сообщения»)
+    const noGuest = (u: UserRec): void => {
+      if (u.user.isGuest) throw forbidden('guests have no direct messages');
+    };
+    this.route('GET', '/api/dms', (c) => {
+      const { user } = this.auth(c);
+      noGuest(user);
+      sendMsg(c.res, 200, ListDmsResponseSchema, { dms: this.dmsOf(user.user.id) });
+    });
+    this.route('GET', '/api/dms/candidates', (c) => {
+      const { user } = this.auth(c);
+      noGuest(user);
+      const me = user.user.id;
+      const q = (c.url.searchParams.get('q') ?? '').trim().toLowerCase();
+      if (q.length > 64) throw invalid('q', 'at most 64 characters');
+      const names = (id: string): string[] => [
+        s().users.get(id)?.user.displayName ?? '',
+        ...s().members.filter((m) => m.userId === id && m.nickname).map((m) => m.nickname),
+      ];
+      const users = [...s().users.values()]
+        .filter((u) => u.user.id !== me && !u.user.isGuest && this.shareAsMembers(me, u.user.id))
+        .filter((u) => !q || names(u.user.id).some((n) => n.toLowerCase().includes(q)))
+        .map((u) => u.user)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName, 'ru') || a.id.localeCompare(b.id))
+        .slice(0, 20);
+      sendMsg(c.res, 200, ListDmCandidatesResponseSchema, { users });
+    });
+    this.route('POST', '/api/dms', (c) => {
+      const { user } = this.auth(c);
+      const me = user.user.id;
+      const b = parseBody(c, CreateDmRequestSchema);
+      if (b.userId === me) throw invalid('userId', 'cannot message yourself');
+      const peer = s().users.get(b.userId);
+      if (!peer) throw notFound('user not found');
+      if (user.user.isGuest || peer.user.isGuest) throw forbidden('guests have no direct messages');
+      const existing = [...s().dmMembers.entries()].find(([, pair]) => pair.includes(me) && pair.includes(b.userId))?.[0];
+      if (existing) {
+        sendMsg(c.res, 200, CreateDmResponseSchema, { dm: this.dmOut(existing, me) ?? undefined });
+        return;
+      }
+      if (!this.shareAsMembers(me, b.userId)) throw notFound('no common workspace');
+      const id = nextId(s(), 'room');
+      s().rooms.set(id, create(RoomSchema, { id, workspaceId: '', type: RoomType.DM, name: '', createdAt: tick(s()) }));
+      s().dmMembers.set(id, [me, b.userId]);
+      // DM_CREATE to both participants, each with their own peer.
+      for (const u of [me, b.userId]) {
+        const dm = this.dmOut(id, u);
+        if (dm) this.toUser(u, { event: { case: 'dmCreate', value: { dm } } });
+      }
+      sendMsg(c.res, 201, CreateDmResponseSchema, { dm: this.dmOut(id, me) ?? undefined });
+    });
+    this.route('POST', '/api/dms/:id/files', async (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      if (room.type !== RoomType.DM) throw notFound('dm not found');
+      const f = await parseMultipartFile(c);
+      if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+      const id = this.storeFile('', me, f);
       sendMsg(c.res, 201, UploadFileResponseSchema, { file: s().files.get(id)?.meta });
     });
 

@@ -66,13 +66,13 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 const createRoom = `-- name: CreateRoom :one
 INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
                    audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit, camera_limit)
-VALUES ($1, $2, $3, $4,
+VALUES ($1::uuid, $2, $3, $4,
         coalesce($5::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
-                  WHERE workspace_id = $1 AND archived_at IS NULL)),
+                  WHERE workspace_id = $1::uuid AND archived_at IS NULL)),
         $6, $7, $8,
         $9, $10, $11, $12)
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key
 `
 
 type CreateRoomParams struct {
@@ -123,6 +123,7 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 		&i.UserLimit,
 		&i.VoiceStatus,
 		&i.CameraLimit,
+		&i.DmKey,
 	)
 	return i, err
 }
@@ -186,7 +187,7 @@ func (q *Queries) GetCategory(ctx context.Context, id uuid.UUID) (RoomCategory, 
 }
 
 const getRoom = `-- name: GetRoom :one
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit FROM rooms WHERE id = $1 AND archived_at IS NULL
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key FROM rooms WHERE id = $1 AND archived_at IS NULL
 `
 
 func (q *Queries) GetRoom(ctx context.Context, id uuid.UUID) (Room, error) {
@@ -209,17 +210,21 @@ func (q *Queries) GetRoom(ctx context.Context, id uuid.UUID) (Room, error) {
 		&i.UserLimit,
 		&i.VoiceStatus,
 		&i.CameraLimit,
+		&i.DmKey,
 	)
 	return i, err
 }
 
 const getRoomAccess = `-- name: GetRoomAccess :one
 SELECT r.workspace_id,
+       r.type,
        m.role,
        ro.allow AS role_allow, ro.deny AS role_deny,
-       uo.allow AS user_allow, uo.deny AS user_deny
+       uo.allow AS user_allow, uo.deny AS user_deny,
+       (CASE WHEN r.type = 'dm' THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
+             ELSE '{}'::uuid[] END)::uuid[] AS dm_members
 FROM rooms r
-JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = $1
+LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = $1
 LEFT JOIN room_permissions ro ON ro.room_id = r.id AND ro.target_type = 'role' AND ro.target_id = m.role
 LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = $1::text
 WHERE r.id = $2 AND r.archived_at IS NULL
@@ -231,25 +236,31 @@ type GetRoomAccessParams struct {
 }
 
 type GetRoomAccessRow struct {
-	WorkspaceID uuid.UUID
-	Role        string
+	WorkspaceID *uuid.UUID
+	Type        string
+	Role        *string
 	RoleAllow   *int64
 	RoleDeny    *int64
 	UserAllow   *int64
 	UserDeny    *int64
+	DmMembers   []uuid.UUID
 }
 
-// Everything needed to compute a user's permissions in a room, in one round trip.
+// Everything needed to compute a user's permissions in a room, in one round trip. Workspace
+// rooms: the membership (role NULL = not a member) and the overrides. DMs (workspace_id
+// NULL): the two participants.
 func (q *Queries) GetRoomAccess(ctx context.Context, arg GetRoomAccessParams) (GetRoomAccessRow, error) {
 	row := q.db.QueryRow(ctx, getRoomAccess, arg.UserID, arg.RoomID)
 	var i GetRoomAccessRow
 	err := row.Scan(
 		&i.WorkspaceID,
+		&i.Type,
 		&i.Role,
 		&i.RoleAllow,
 		&i.RoleDeny,
 		&i.UserAllow,
 		&i.UserDeny,
+		&i.DmMembers,
 	)
 	return i, err
 }
@@ -339,8 +350,8 @@ func (q *Queries) ListRoomOverrides(ctx context.Context, roomID uuid.UUID) ([]Ro
 }
 
 const listRooms = `-- name: ListRooms :many
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit FROM rooms
-WHERE workspace_id = $1 AND archived_at IS NULL
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key FROM rooms
+WHERE workspace_id = $1::uuid AND archived_at IS NULL
 ORDER BY position, id
 `
 
@@ -370,6 +381,7 @@ func (q *Queries) ListRooms(ctx context.Context, workspaceID uuid.UUID) ([]Room,
 			&i.UserLimit,
 			&i.VoiceStatus,
 			&i.CameraLimit,
+			&i.DmKey,
 		); err != nil {
 			return nil, err
 		}
@@ -384,7 +396,7 @@ func (q *Queries) ListRooms(ctx context.Context, workspaceID uuid.UUID) ([]Room,
 const listWorkspaceRoomOverrides = `-- name: ListWorkspaceRoomOverrides :many
 SELECT rp.room_id, rp.target_type, rp.target_id, rp.allow, rp.deny FROM room_permissions rp
 JOIN rooms r ON r.id = rp.room_id
-WHERE r.workspace_id = $1 AND r.archived_at IS NULL
+WHERE r.workspace_id = $1::uuid AND r.archived_at IS NULL
 ORDER BY rp.room_id, rp.target_type, rp.target_id
 `
 
@@ -441,8 +453,8 @@ func (q *Queries) SetCategoryPosition(ctx context.Context, arg SetCategoryPositi
 
 const setRoomPlacement = `-- name: SetRoomPlacement :one
 UPDATE rooms SET position = $1, category_id = $2
-WHERE id = $3 AND workspace_id = $4 AND archived_at IS NULL
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit
+WHERE id = $3 AND workspace_id = $4::uuid AND archived_at IS NULL
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key
 `
 
 type SetRoomPlacementParams struct {
@@ -477,13 +489,14 @@ func (q *Queries) SetRoomPlacement(ctx context.Context, arg SetRoomPlacementPara
 		&i.UserLimit,
 		&i.VoiceStatus,
 		&i.CameraLimit,
+		&i.DmKey,
 	)
 	return i, err
 }
 
 const setVoiceStatus = `-- name: SetVoiceStatus :one
 UPDATE rooms SET voice_status = $1 WHERE id = $2 AND archived_at IS NULL
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key
 `
 
 type SetVoiceStatusParams struct {
@@ -511,6 +524,7 @@ func (q *Queries) SetVoiceStatus(ctx context.Context, arg SetVoiceStatusParams) 
 		&i.UserLimit,
 		&i.VoiceStatus,
 		&i.CameraLimit,
+		&i.DmKey,
 	)
 	return i, err
 }
@@ -554,7 +568,7 @@ UPDATE rooms SET
     camera_limit       = CASE WHEN $5::boolean THEN $9::integer ELSE camera_limit END,
     category_id        = CASE WHEN $10::boolean THEN $11::uuid ELSE category_id END
 WHERE id = $12 AND archived_at IS NULL
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key
 `
 
 type UpdateRoomParams struct {
@@ -605,6 +619,7 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (Room, e
 		&i.UserLimit,
 		&i.VoiceStatus,
 		&i.CameraLimit,
+		&i.DmKey,
 	)
 	return i, err
 }

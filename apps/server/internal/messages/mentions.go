@@ -55,6 +55,9 @@ func saveMentions(ctx context.Context, q *sqlc.Queries, msg sqlc.Message, acc pe
 			return err
 		}
 	}
+	if acc.DM {
+		return nil // every DM message notifies its recipient like a mention (ADR-0020): no rows
+	}
 	users, everyone := ParseMentions(msg.Content)
 	if len(users) > 0 {
 		if err := q.InsertMentions(ctx, sqlc.InsertMentionsParams{

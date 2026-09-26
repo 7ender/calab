@@ -1,4 +1,4 @@
-import type { PermissionBits, Room } from '@calaba/protocol';
+import { RoomType, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
@@ -265,7 +265,7 @@ export function Composer({
   }
 
   const hasContent = !!text.trim() || (!editMsg && files.length > 0);
-  const placeholder = t('chat.placeholderIn', { room: roomLabel(room) });
+  const placeholder = room.type === RoomType.DM ? t('dm.placeholder', { name: roomLabel(room) }) : t('chat.placeholderIn', { room: roomLabel(room) });
   const bar = editMsg ? (
     <ContextBar
       icon={<Pencil className="size-4" aria-hidden />}

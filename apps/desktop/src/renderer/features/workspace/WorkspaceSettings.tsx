@@ -15,7 +15,7 @@ import { SettingsWindow, type SettingsSection } from '../../components/SettingsW
 import { Button, Card, Empty, IconButton, Input, Row, Select, Spinner, Toggle } from '../../components/ui';
 import { t } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
-import { api, thumbnailPath, uploadFile } from '../../lib/api/endpoints';
+import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { fmtStamp } from '../../lib/format';
 import { workspaceInitials } from '../../lib/initials';
 import { isAdminRole } from '../../lib/permissions';
@@ -85,7 +85,7 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const setIcon = async (f: File): Promise<void> => {
     setUploading(true);
     try {
-      const meta = await uploadFile(workspaceId, f, f.name, () => undefined).promise;
+      const meta = await uploadFile(uploadPath(workspaceId, ''), f, f.name, () => undefined).promise;
       await patchWorkspace(workspaceId, { iconFileId: meta.id });
     } catch (e) {
       toast.error(err(e));

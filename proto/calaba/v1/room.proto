@@ -8,6 +8,7 @@ enum RoomType {
   ROOM_TYPE_UNSPECIFIED = 0;
   ROOM_TYPE_VOICE = 1; // voice room with its own text chat
   ROOM_TYPE_TEXT = 2;
+  ROOM_TYPE_DM = 3;    // direct message (ADR-0020): no workspace, two participants
 }
 
 enum PermissionTargetType {

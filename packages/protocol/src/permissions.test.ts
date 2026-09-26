@@ -14,7 +14,9 @@ import {
 
 interface Vector {
   name: string;
-  role: 'owner' | 'admin' | 'member' | 'guest';
+  role?: 'owner' | 'admin' | 'member' | 'guest';
+  roomType?: 'dm';
+  participant?: boolean;
   roleOverride?: { allow: number; deny: number };
   userOverride?: { allow: number; deny: number };
   expected: number;
@@ -39,7 +41,12 @@ describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
       expect(
-        computePermissions({ role: roles[v.role], roleOverride: toOv(v.roleOverride), userOverride: toOv(v.userOverride) }),
+        computePermissions({
+          role: v.role ? roles[v.role] : WorkspaceRole.UNSPECIFIED,
+          roleOverride: toOv(v.roleOverride),
+          userOverride: toOv(v.userOverride),
+          dm: v.roomType === 'dm' ? { participant: v.participant ?? false } : undefined,
+        }),
       ).toBe(BigInt(v.expected));
     });
   }

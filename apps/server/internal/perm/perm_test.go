@@ -11,7 +11,10 @@ type vector struct {
 	Role         Role      `json:"role"`
 	RoleOverride *Override `json:"roleOverride"`
 	UserOverride *Override `json:"userOverride"`
-	Expected     Bits      `json:"expected"`
+	// DM vectors (ADR-0020): roomType "dm" ignores role and overrides.
+	RoomType    string `json:"roomType"`
+	Participant bool   `json:"participant"`
+	Expected    Bits   `json:"expected"`
 }
 
 func TestComputeVectors(t *testing.T) {
@@ -24,6 +27,12 @@ func TestComputeVectors(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, v := range vs {
+		if v.RoomType == "dm" {
+			if got := ComputeDM(v.Participant); got != v.Expected {
+				t.Errorf("%s: got %d want %d", v.Name, got, v.Expected)
+			}
+			continue
+		}
 		if got := Compute(v.Role, v.RoleOverride, v.UserOverride); got != v.Expected {
 			t.Errorf("%s: got %d want %d", v.Name, got, v.Expected)
 		}

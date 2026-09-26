@@ -39,6 +39,14 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
   [WorkspaceRole.GUEST]: CONNECT | SPEAK,
 };
 
+/**
+ * Fixed permissions of both participants of a direct message (ADR-0020). Roles and
+ * overrides do not apply. Reading history = VIEW_ROOM, reactions need SEND_MESSAGES,
+ * editing/deleting own messages is the author's right; pinning is allowed to both
+ * participants by room type (no MANAGE_MESSAGES: no moderation in DMs).
+ */
+export const DM_PERMISSIONS: PermissionBits = VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES;
+
 /** Structural allow/deny pair; the generated PermissionOverride / RoomPermissionOverride fit it. */
 export interface OverrideBits {
   allow: PermissionBits;
@@ -51,6 +59,8 @@ export interface ComputePermissionsInput {
   roleOverride?: OverrideBits | undefined;
   /** Override for this specific user in this room (takes precedence over the role override). */
   userOverride?: OverrideBits | undefined;
+  /** Set for a DM room (Room.type DM): the fixed DM set for a participant, role/overrides ignored. */
+  dm?: { participant: boolean } | undefined;
 }
 
 /**
@@ -58,6 +68,7 @@ export interface ComputePermissionsInput {
  * Used by the client for UI; mirrored in Go (apps/server/internal/perm). Pure.
  */
 export function computePermissions(input: ComputePermissionsInput): PermissionBits {
+  if (input.dm) return input.dm.participant ? DM_PERMISSIONS : 0n;
   let perms = ROLE_DEFAULTS[input.role];
   if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
 

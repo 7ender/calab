@@ -22,7 +22,7 @@ workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest
 workspace_invites   id, workspace_id, code (unique), created_by, max_uses, uses,
                     expires_at, created_at
 
-rooms               id, workspace_id, type ('voice'|'text'), name, topic,
+rooms               id, workspace_id? (NULL только у DM), type ('voice'|'text'|'dm'), name, topic,
                     position, category_id?, is_private,
                     -- медиа-настройки комнаты (для voice), NULL = дефолт workspace:
                     audio_bitrate_kbps?  (16|24|32|48|64),
@@ -52,6 +52,9 @@ room_invites        id, room_id, code (unique, 12 символов), created_by,
 message_reactions   message_id, emoji, user_id, created_at      PK (message_id, emoji, user_id)
                     messages += pinned_at?, pinned_by?;  users += status_emoji, status_expires_at?
                     поиск: GIN по выражению to_tsvector('russian', content) || to_tsvector('simple', content)
+dm_members          room_id, user_id, created_at                PK (room_id, user_id) — ровно два участника DM (ADR-0020)
+                    rooms += dm_key? (unique: least(a,b) || ':' || greatest(a,b));
+                    CHECK (type = 'dm') = (workspace_id IS NULL), (type = 'dm') = (dm_key IS NOT NULL)
 
 voice_states        (не в Postgres — в Redis, источник LiveKit webhooks)
                     ключ — сессия (LiveKit identity = <user_id>:<session_id>):
@@ -75,6 +78,13 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 - Для изображений сервер делает превью (≤ 512 px по большей стороне, WebP q80, чистый Go — libwebp, транслированный из WASM, без cgo) вторым объектом → `thumbnail_key`; в payload сообщения — `thumbnail_url`. Изображения > 24 Мпикс превью не получают (бюджет памяти), размеры (`width`/`height`) пишутся всегда.
 - Лимиты: файл ≤ 50 MB (`MAX_FILE_SIZE_MB`), аватар ≤ 5 MB, ≤ 20 вложений на сообщение, квота workspace `storage_quota_bytes` (по умолчанию 10 GB); `storage_used_bytes` увеличивается в той же транзакции, что и вставка в `files` (атомарно с проверкой квоты), уменьшается при удалении. Аватары (`workspace_id IS NULL`) в квоту не входят.
 - Файл прикрепляется максимум к одному сообщению (права на файл = права на комнату этого сообщения). Удаление сообщения открепляет вложения; не прикреплённые более 24 ч файлы (кроме аватаров/иконок) удаляет фоновая чистка раз в час.
+
+### Личные сообщения (ADR-0020)
+
+- DM — комната без пространства: `type = 'dm'`, `workspace_id IS NULL`, два участника в `dm_members`, одна на пару (`dm_key`). Сообщения, реакции, закрепы, read-state, настройки уведомлений — те же таблицы и эндпоинты комнат; доступ — по участию (`GetRoomAccess` отдаёт `dm_members`).
+- Запросы по комнатам пространства фильтруют по `workspace_id` и DM не видят (списки, overrides, категории, позиции, поиск по пространству, `/api/me/mentions`). Голоса в DM нет: `rtc` считает комнату без пространства несуществующей.
+- Файлы DM — пользовательские (`workspace_id IS NULL`, ключ `users/<user_id>/<file_id>`), грузятся через `POST /api/dms/{id}/files`, в квоту пространства не входят (действуют общий потолок `STORAGE_MAX_TOTAL_BYTES` и лимит 1 GiB неприкреплённых на пользователя). Публичны только аватары; остальные пользовательские файлы после прикрепления читаются по праву на комнату сообщения, т.е. только участниками DM.
+- Прямые упоминания и `@everyone` в DM не сохраняются: каждое сообщение DM уведомляет получателя как упоминание.
 
 ## Роли workspace
 
@@ -130,6 +140,8 @@ if !(perms & VIEW_ROOM) → 0
 ```
 
 Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
+
+**DM (ADR-0020).** Роли и overrides не применяются: `computePermissions({dm: {participant}})` (Go: `perm.ComputeDM`) даёт участнику фиксированный набор `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES` (= 7), остальным — 0 (тест-векторы `roomType: "dm"` в `proto/testdata/permissions.json`). Остальные пункты ADR ложатся на правила, а не на биты: чтение истории — `VIEW_ROOM`, реакции — `SEND_MESSAGES`, правка/удаление своих сообщений — право автора везде, закреп в DM разрешён обоим участникам по типу комнаты. `MANAGE_MESSAGES`, `MENTION_EVERYONE`, модерации и голоса в DM нет.
 
 ## Маппинг прав → LiveKit grant
 

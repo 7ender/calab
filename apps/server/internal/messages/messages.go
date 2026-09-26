@@ -181,6 +181,15 @@ func parseAttachments(ids []string) ([]uuid.UUID, error) {
 	return out, nil
 }
 
+// sameScope reports whether a file may be attached in the room: a workspace room takes
+// uploads to its workspace, a DM takes user-scoped uploads (POST /api/dms/{id}/files).
+func sameScope(fileWS *uuid.UUID, acc perm.RoomAccess) bool {
+	if acc.DM {
+		return fileWS == nil
+	}
+	return fileWS != nil && *fileWS == acc.WorkspaceID
+}
+
 func (h *Handlers) existing(ctx context.Context, roomID, author uuid.UUID, nonce string) (*v1.Message, error) {
 	m, err := h.db.Q.GetMessageByNonce(ctx, sqlc.GetMessageByNonceParams{AuthorID: author, Nonce: &nonce})
 	if db.IsNotFound(err) {
@@ -275,7 +284,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			}
 			for _, id := range fileIDs {
 				f, ok := byID[id]
-				if !ok || f.UploaderID != uid(r) || f.WorkspaceID == nil || *f.WorkspaceID != acc.WorkspaceID || f.Attached {
+				if !ok || f.UploaderID != uid(r) || !sameScope(f.WorkspaceID, acc) || f.Attached {
 					return httpx.Validation("attachmentIds", "file "+id.String()+" is not an unattached upload of yours in this workspace")
 				}
 				files = append(files, sqlc.File{
@@ -321,8 +330,8 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	pb := pbconv.Message(msg, files)
-	h.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
-		MessageCreate: &v1.MessageCreate{WorkspaceId: acc.WorkspaceID.String(), Message: pb},
+	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
+		MessageCreate: &v1.MessageCreate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: pb},
 	}})
 	h.events.User(r.Context(), uid(r), &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{
 		ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: roomID.String(), LastReadMessageId: msg.ID.String()}},
@@ -393,8 +402,8 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out[0].Reactions = full[0].GetReactions()
-	h.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
-		MessageUpdate: &v1.MessageUpdate{WorkspaceId: acc.WorkspaceID.String(), Message: forEvent(out[0])},
+	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
+		MessageUpdate: &v1.MessageUpdate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: forEvent(out[0])},
 	}})
 	httpx.Write(w, http.StatusOK, &v1.UpdateMessageResponse{Message: out[0]})
 	return nil
@@ -425,8 +434,8 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	h.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageDelete{
-		MessageDelete: &v1.MessageDelete{WorkspaceId: acc.WorkspaceID.String(), RoomId: m.RoomID.String(), MessageId: m.ID.String()},
+	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageDelete{
+		MessageDelete: &v1.MessageDelete{WorkspaceId: rooms.WorkspaceIDString(acc), RoomId: m.RoomID.String(), MessageId: m.ID.String()},
 	}})
 	httpx.NoContent(w)
 	return nil
@@ -491,8 +500,8 @@ func (h *Handlers) setEmbedsHidden(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	h.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
-		MessageUpdate: &v1.MessageUpdate{WorkspaceId: acc.WorkspaceID.String(), Message: forEvent(out[0])},
+	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
+		MessageUpdate: &v1.MessageUpdate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: forEvent(out[0])},
 	}})
 	httpx.Write(w, http.StatusOK, &v1.UpdateMessageResponse{Message: out[0]})
 	return nil

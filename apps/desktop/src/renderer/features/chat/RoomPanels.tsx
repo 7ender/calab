@@ -8,7 +8,9 @@ import { can, isAdminRole } from '../../lib/permissions';
 import { loadPins } from '../../services/chat';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { isDm, useDms } from '../../stores/dms';
+import { Avatar } from '../../components/Avatar';
 import { useChatView } from './chatView';
 import { previewText } from './mentionText';
 import { searchWords } from '../../lib/markdown/highlight';
@@ -169,7 +171,12 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
   const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const voice = room.type === RoomType.VOICE;
   const Icon = voice ? Volume2 : Hash;
-  const canInvite = isAdminRole(role);
+  // A DM starts with the peer (ADR-0020): their avatar and name, no invite / settings.
+  const dm = isDm(room);
+  const peerId = useDms((s) => s.byRoom[room.id]?.peerId ?? '');
+  const peerName = useMemberName(null, peerId);
+  const peerAvatar = useWorkspaces((s) => s.users[peerId]?.avatarFileId ?? '');
+  const canInvite = !dm && isAdminRole(role);
   const canSetup = can(perms, 'MANAGE_ROOM');
   const ref = useRef<HTMLDivElement>(null);
   const [short, setShort] = useState(false);
@@ -183,7 +190,15 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const title = voice ? t('chat.welcomeVoiceTitle', { name: room.name }) : t('chat.welcomeTitle', { name: room.name });
+  const title = dm ? peerName : voice ? t('chat.welcomeVoiceTitle', { name: room.name }) : t('chat.welcomeTitle', { name: room.name });
+  const badge = (size: number, icon: string): ReactNode =>
+    dm ? (
+      <Avatar userId={peerId} name={peerName} fileId={peerAvatar || undefined} size={size} />
+    ) : (
+      <span className="grid shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text" style={{ width: size, height: size }}>
+        <Icon className={icon} strokeWidth={size > 40 ? 1.5 : 1.75} aria-hidden />
+      </span>
+    );
   const actions =
     canInvite || canSetup ? (
       <div className={cx('flex shrink-0 gap-2', !compact && 'mt-5')}>
@@ -203,9 +218,7 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
     <div ref={ref} className={cx('flex min-h-0 flex-1 flex-col overflow-y-auto bg-feed', compact ? 'px-4' : 'px-6')} data-testid="empty-room" data-compact={compact || undefined}>
       {compact ? (
         <div className="mt-auto flex min-w-0 items-center gap-3 py-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text">
-            <Icon className="size-4" strokeWidth={1.75} aria-hidden />
-          </span>
+          {badge(32, 'size-4')}
           <h2 className="min-w-0 flex-1 truncate text-body font-semibold" title={title}>
             {title}
           </h2>
@@ -213,11 +226,9 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
         </div>
       ) : (
         <div className="mx-auto my-auto flex max-w-sm flex-col items-center py-6 text-center" data-testid="empty-room-welcome">
-          <span className="grid size-20 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text">
-            <Icon className="size-10" strokeWidth={1.5} aria-hidden />
-          </span>
+          {badge(80, 'size-10')}
           <h2 className="mt-4 text-title font-semibold">{title}</h2>
-          <p className="mt-1 text-body text-muted">{voice ? t('chat.welcomeVoice') : t('chat.welcomeText')}</p>
+          <p className="mt-1 text-body text-muted">{dm ? t('dm.welcomeText', { name: peerName }) : voice ? t('chat.welcomeVoice') : t('chat.welcomeText')}</p>
           {actions}
         </div>
       )}

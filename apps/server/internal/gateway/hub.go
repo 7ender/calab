@@ -539,6 +539,23 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 				h.leaveWorkspace(s, wid)
 			}
 		}()
+	case *v1.DispatchEvent_DmCreate:
+		// The typing check knows the new DM without asking Postgres.
+		rid, peer := parseID(e.DmCreate.GetDm().GetRoom().GetId()), parseID(e.DmCreate.GetDm().GetPeer().GetId())
+		for _, s := range sessions {
+			s.rememberDM(rid, peer)
+		}
+	case *v1.DispatchEvent_TypingStart:
+		// DM typing (ADR-0020) comes on the recipient's user channel: only the sessions that
+		// subscribed to the room get it, as in workspace rooms.
+		rid := parseID(e.TypingStart.GetRoomId())
+		enc := newEnc(ev)
+		for _, s := range sessions {
+			if s.user != parseID(e.TypingStart.GetUserId()) && s.isSubscribed(rid) {
+				s.dispatchEnc(id, enc)
+			}
+		}
+		return
 	}
 	enc := newEnc(ev)
 	for _, s := range sessions {

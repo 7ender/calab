@@ -84,7 +84,7 @@ func (h *Handlers) reaction(r *http.Request) (sqlc.Message, perm.RoomAccess, str
 }
 
 func reactionEvent(add bool, acc perm.RoomAccess, m sqlc.Message, user uuid.UUID, emoji string) *v1.DispatchEvent {
-	w, room, msg, u := acc.WorkspaceID.String(), m.RoomID.String(), m.ID.String(), user.String()
+	w, room, msg, u := rooms.WorkspaceIDString(acc), m.RoomID.String(), m.ID.String(), user.String()
 	if add {
 		return &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageReactionAdd{MessageReactionAdd: &v1.MessageReactionAdd{
 			WorkspaceId: w, RoomId: room, MessageId: msg, UserId: u, Emoji: emoji}}}
@@ -117,7 +117,7 @@ func (h *Handlers) addReaction(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if n > 0 {
-		h.events.Workspace(r.Context(), acc.WorkspaceID, reactionEvent(true, acc, m, uid(r), emoji))
+		rooms.Publish(r.Context(), h.events, acc, reactionEvent(true, acc, m, uid(r), emoji))
 	}
 	httpx.NoContent(w)
 	return nil
@@ -134,7 +134,7 @@ func (h *Handlers) removeReaction(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if n > 0 {
-		h.events.Workspace(r.Context(), acc.WorkspaceID, reactionEvent(false, acc, m, uid(r), emoji))
+		rooms.Publish(r.Context(), h.events, acc, reactionEvent(false, acc, m, uid(r), emoji))
 	}
 	httpx.NoContent(w)
 	return nil
@@ -147,7 +147,7 @@ func (h *Handlers) setPin(w http.ResponseWriter, r *http.Request, pin bool) erro
 	if err != nil {
 		return err
 	}
-	if !acc.Bits.Has(perm.ManageMessages) {
+	if !canPin(acc) {
 		return httpx.Forbidden("MANAGE_MESSAGES required")
 	}
 	var upd sqlc.Message
@@ -178,11 +178,16 @@ func (h *Handlers) setPin(w http.ResponseWriter, r *http.Request, pin bool) erro
 	if err != nil {
 		return err
 	}
-	h.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
-		MessageUpdate: &v1.MessageUpdate{WorkspaceId: acc.WorkspaceID.String(), Message: out[0]},
+	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
+		MessageUpdate: &v1.MessageUpdate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: out[0]},
 	}})
 	httpx.NoContent(w)
 	return nil
+}
+
+// canPin: MANAGE_MESSAGES in a workspace room; in a DM both participants (ADR-0020).
+func canPin(acc perm.RoomAccess) bool {
+	return acc.Bits.Has(perm.ManageMessages) || (acc.DM && acc.Bits.Has(perm.ViewRoom))
 }
 
 func ptr[T any](v T) *T { return &v }

@@ -17,7 +17,9 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/dms"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/workspaces"
@@ -384,6 +386,17 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 			visible = append(visible, parseID(r.GetId()))
 		}
 	}
+	// Direct messages (ADR-0020): their read states come with the DM list.
+	if ready.Dms, err = dms.List(ctx, h.db.Q, uid); err != nil {
+		return nil, err
+	}
+	dmRooms := make([]uuid.UUID, 0, len(ready.Dms))
+	for _, d := range ready.Dms {
+		rid := parseID(d.GetRoom().GetId())
+		dmRooms = append(dmRooms, rid)
+		s.rememberDM(rid, parseID(d.GetPeer().GetId()))
+		ready.ReadStates = append(ready.ReadStates, d.GetReadState())
+	}
 	rs, err := h.db.Q.ListReadStates(ctx, sqlc.ListReadStatesParams{UserID: uid, RoomIds: visible})
 	if err != nil {
 		return nil, err
@@ -398,7 +411,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 			UnreadCount: uint32(max(r.UnreadCount, 0)), MentionCount: uint32(max(r.MentionCount, 0)), //nolint:gosec // 0..999
 		})
 	}
-	ns, err := h.db.Q.ListRoomNotificationSettings(ctx, sqlc.ListRoomNotificationSettingsParams{UserID: uid, RoomIds: visible})
+	ns, err := h.db.Q.ListRoomNotificationSettings(ctx, sqlc.ListRoomNotificationSettingsParams{UserID: uid, RoomIds: append(visible, dmRooms...)})
 	if err != nil {
 		return nil, err
 	}
@@ -674,17 +687,57 @@ func (h *Hub) typing(s *Session, roomIDStr string) {
 			break
 		}
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	peer := uuid.Nil
+	if wid == uuid.Nil { // not a workspace room: a DM of the user? (both participants may type)
+		peer = h.dmPeer(ctx, s, rid)
+		allowed = peer != uuid.Nil
+	}
 	if !allowed {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
 	if isNil(h.redis.Do(ctx, h.redis.B().Set().Key(typingKey(rid, s.user)).Value("1").Nx().Ex(typingInterval).Build()).Error()) {
 		return // rate limited
 	}
-	h.pub.Workspace(ctx, wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_TypingStart{TypingStart: &v1.TypingStart{
+	ev := &v1.DispatchEvent{Event: &v1.DispatchEvent_TypingStart{TypingStart: &v1.TypingStart{
 		RoomId: rid.String(), UserId: s.user.String(), Timestamp: nowTS(),
-	}}})
+	}}}
+	if peer != uuid.Nil {
+		h.pub.User(ctx, peer, ev) // routeUser delivers it to the peer's sessions subscribed to the DM
+		return
+	}
+	h.pub.Workspace(ctx, wid, ev)
+}
+
+// maxDMPeers bounds the per-session DM cache (a client may send typing for arbitrary ids).
+const maxDMPeers = 1024
+
+// dmPeer returns the other participant of DM room rid if s's user is in it, else uuid.Nil.
+// Answers are cached per session (READY and DM_CREATE fill the cache; a miss asks Postgres
+// once): participation never changes (ADR-0020).
+func (h *Hub) dmPeer(ctx context.Context, s *Session, rid uuid.UUID) uuid.UUID {
+	s.mu.Lock()
+	peer, ok := s.dmPeers[rid]
+	s.mu.Unlock()
+	if ok {
+		return peer
+	}
+	peer, err := h.db.Q.GetDMPeer(ctx, sqlc.GetDMPeerParams{RoomID: rid, UserID: s.user})
+	if err != nil && !db.IsNotFound(err) {
+		return uuid.Nil // transient: do not cache
+	}
+	s.rememberDM(rid, peer)
+	return peer
+}
+
+// rememberDM caches a DM room's peer (uuid.Nil = not a DM of the user).
+func (s *Session) rememberDM(rid, peer uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.dmPeers) < maxDMPeers || peer != uuid.Nil {
+		s.dmPeers[rid] = peer
+	}
 }
 
 func (s *Session) setSubscribed(ids []string) {

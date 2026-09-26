@@ -93,7 +93,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 const deleteUserOverridesInWorkspace = `-- name: DeleteUserOverridesInWorkspace :exec
 DELETE FROM room_permissions rp
 USING rooms r
-WHERE rp.room_id = r.id AND r.workspace_id = $1
+WHERE rp.room_id = r.id AND r.workspace_id = $1::uuid
   AND rp.target_type = 'user' AND rp.target_id = $2::text
 `
 

@@ -109,6 +109,7 @@ func (s *Service) RunStorageMetrics(ctx context.Context, interval time.Duration)
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
 func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/workspaces/{id}/files", wrap(httpx.HandlerFunc(s.upload)))
+	mux.Handle("POST /api/dms/{id}/files", wrap(httpx.HandlerFunc(s.uploadDM)))
 	mux.Handle("POST /api/me/avatar", wrap(httpx.HandlerFunc(s.avatar)))
 	mux.Handle("GET /api/files/{id}", wrap(httpx.HandlerFunc(s.download)))
 	mux.Handle("GET /api/files/{id}/thumbnail", wrap(httpx.HandlerFunc(s.thumbnail)))
@@ -345,6 +346,59 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// uploadDM: POST /api/dms/{id}/files — an attachment for a direct message (ADR-0020). DM
+// files belong to no workspace: they are user-scoped (like avatars, but readable only
+// through the DM once attached), count against the server-wide cap and the per-user limit of
+// unattached bytes, not against any workspace quota.
+func (s *Service) uploadDM(w http.ResponseWriter, r *http.Request) error {
+	roomID, err := httpx.PathUUID(r, "id", "room")
+	if err != nil {
+		return err
+	}
+	uid := auth.MustFromContext(r.Context()).UserID
+	acc, err := perm.FromContext(r.Context()).Room(r.Context(), roomID, uid)
+	if errors.Is(err, perm.ErrNoRoom) || (err == nil && !acc.DM) {
+		return httpx.NotFound("room")
+	}
+	if err != nil {
+		return err
+	}
+	if !acc.Bits.Has(perm.AttachFiles) {
+		return httpx.Forbidden("ATTACH_FILES required")
+	}
+	if s.limiter != nil {
+		if err := s.limiter.Take(r.Context(), uid.String()); err != nil {
+			return err
+		}
+	}
+	pending, err := s.db.Q.UnattachedUserBytes(r.Context(), uid)
+	if err != nil {
+		return err
+	}
+	if pending+max(r.ContentLength, 0) > MaxUnattachedBytes {
+		return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED,
+			"too many uploaded files are not attached to messages yet")
+	}
+	st, err := s.receive(w, r, s.maxBytes, func(id uuid.UUID) string { return "users/" + uid.String() + "/" + id.String() }, false)
+	if err != nil {
+		return err
+	}
+	var f sqlc.File
+	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		if err := s.checkTotal(r.Context(), q, st.size); err != nil {
+			return err
+		}
+		f, err = q.InsertFile(r.Context(), s.row(st, nil, uid))
+		return err
+	})
+	if err != nil {
+		s.discard(st)
+		return err
+	}
+	httpx.Write(w, http.StatusCreated, &v1.UploadFileResponse{File: pbconv.File(f)})
+	return nil
+}
+
 // canAttachSomewhere reports whether the user has ATTACH_FILES in any room of the workspace.
 func (s *Service) canAttachSomewhere(ctx context.Context, wsID, uid uuid.UUID) (bool, error) {
 	role, err := perm.FromContext(ctx).Role(ctx, wsID, uid)
@@ -416,26 +470,35 @@ func (s *Service) avatar(w http.ResponseWriter, r *http.Request) error {
 
 // CanRead implements the download rule:
 //   - the uploader;
-//   - user-scoped files (avatars): any authenticated user;
+//   - an avatar (user-scoped): any authenticated user;
 //   - a workspace icon: members of the workspace;
 //   - a file attached to a live message: VIEW_ROOM in that room.
 func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 	ctx := r.Context()
 	uid := auth.MustFromContext(ctx).UserID
-	if f.UploaderID == uid || f.WorkspaceID == nil {
+	if f.UploaderID == uid {
 		return true, nil
 	}
 	res := perm.FromContext(ctx)
-	icon, err := s.db.Q.IsWorkspaceIcon(ctx, &f.ID)
-	if err != nil {
-		return false, err
-	}
-	if icon {
-		_, err := res.Role(ctx, *f.WorkspaceID, uid)
-		if errors.Is(err, perm.ErrNotMember) {
-			return false, nil
+	if f.WorkspaceID == nil {
+		// User-scoped: an avatar is public; any other (a DM attachment, ADR-0020) follows the
+		// room of its message like a workspace file.
+		avatar, err := s.db.Q.IsAvatar(ctx, &f.ID)
+		if err != nil || avatar {
+			return avatar, err
 		}
-		return err == nil, err
+	} else {
+		icon, err := s.db.Q.IsWorkspaceIcon(ctx, &f.ID)
+		if err != nil {
+			return false, err
+		}
+		if icon {
+			_, err := res.Role(ctx, *f.WorkspaceID, uid)
+			if errors.Is(err, perm.ErrNotMember) {
+				return false, nil
+			}
+			return err == nil, err
+		}
 	}
 	roomIDs, err := s.db.Q.FileRooms(ctx, f.ID)
 	if err != nil {

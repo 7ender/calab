@@ -49,7 +49,7 @@
 ## Жизненный цикл
 
 1. Открыли сокет → `HELLO { heartbeat_interval_ms }`.
-2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль, видимые комнаты, участники, voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states (с `unread_count` / `mention_count`), notification_settings }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
+2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль, видимые комнаты, участники, voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states (с `unread_count` / `mention_count`), notification_settings, dms[] (DmSummary, см. «Личные сообщения») }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
 3. Клиент шлёт `HEARTBEAT` каждые `heartbeat_interval` (~41 с) с jitter; нет `ACK` за 2 интервала → закрыть и переподключиться.
 4. Обрыв → переподключение с экспоненциальным backoff (1s → 30s, jitter) → `RESUME { token, session_id, seq }` (token — свежий access JWT):
    - сервер держит буфер событий сессии в Redis (последние ~5 мин / 1000 событий) → досылает пропущенное по порядку, затем событие `RESUMED { replayed }`;
@@ -81,6 +81,7 @@ USER_UPDATE                   { me } — своим устройствам (пр
 RESUMED                       { replayed }  — после успешного RESUME
 CATEGORY_CREATE / UPDATE / DELETE
 MESSAGE_REACTION_ADD / REMOVE { workspace_id, room_id, message_id, user_id, emoji }
+DM_CREATE                     { dm: DmSummary } — обоим участникам нового DM, каждому со своим peer
 ```
 
 Фильтрация по получателю (выполняет gateway, без запросов в БД — у инстанса кэш комнат и ролей каждого workspace, обновляемый самими событиями):
@@ -89,6 +90,7 @@ MESSAGE_REACTION_ADD / REMOVE { workspace_id, room_id, message_id, user_id, emoj
 - `VOICE_STATE_UPDATE` для невидимой получателю комнаты приходит с пустым `room_id` (пользователь выглядит не в голосе).
 - Вступление в workspace → `WORKSPACE_CREATE { snapshot }` на все устройства пользователя; выход/исключение/удаление → `WORKSPACE_DELETE`.
 - `VOICE_STREAM_STOP.reason`: `ENDED` | `LIMIT_REACHED` (превышен `max_streams`, трек заглушён сервером) | `MODERATOR`.
+- События DM-комнат (`MESSAGE_*`, `MESSAGE_REACTION_*`, `TYPING_START`) идут не в `ws:<id>`, а в `user:<id>` обоим участникам, с пустым `workspace_id`; `TYPING_START` DM — только сессиям получателя с `SUBSCRIBE` на комнату.
 
 Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; Go и TS типы генерируются из них.
 
@@ -258,6 +260,10 @@ PUT    /api/messages/{id}/embeds-hidden                SetEmbedsHiddenRequest{hi
 PATCH  /api/rooms/{id}/voice-status                    UpdateVoiceStatusRequest{status} → UpdateRoomResponse (voice-комната; CONNECT и участник звонка сейчас, или MANAGE_ROOM) → ROOM_UPDATE
 GET    /api/me/mentions?before=&limit=&workspace_id=   ListMessagesResponse — сообщения с упоминанием меня (по видимым сейчас комнатам)
 PUT    /api/rooms/{id}/notifications                   UpdateRoomNotificationSettingsRequest{level, mutedUntil} → …Response  (VIEW_ROOM)
+POST   /api/dms                                        CreateDmRequest{userId} → 201 | 200 CreateDmResponse{dm}  (get-or-create; см. «Личные сообщения»)
+GET    /api/dms                                        ListDmsResponse{dms[]} (свежие первыми, ≤ 500)
+GET    /api/dms/candidates?q=                          ListDmCandidatesResponse{users[]} (≤ 20)
+POST   /api/dms/{id}/files                             multipart, поле "file" → 201 UploadFileResponse (участник DM; вложение для DM)
 PATCH  /api/me/status                                  UpdateStatusRequest{text, emoji, expiresInSeconds} → UpdateMeResponse
 GET    /api/unfurl?url=                                UnfurlResponse (превью ссылки) | 404 — превью нет
 GET    /api/unfurl/image?url=&sig=                     прокси картинки превью (подписанная ссылка из UnfurlResponse)
@@ -265,6 +271,13 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 
 - **Поиск.** Postgres FTS: `to_tsvector('russian') || to_tsvector('simple')`, так что работают и стемминг («кошка» → «Кошки»), и точные слова и идентификаторы (`deploy`). Индекс — GIN по выражению, а не по сохранённой колонке. Синтаксис запроса — `websearch_to_tsquery`: `"фраза"`, `OR`, `-исключить`. Результаты идут от новых к старым, курсор `before`, `limit` ≤ 50 (по умолчанию 25), ответ — `ListMessagesResponse`.
 - **Реакции.** В REST-ответах `Message.reactions` — `[{emoji, count, me}]` в порядке первого использования. В `MESSAGE_UPDATE` `count` актуальны, `me` всегда `false`: клиент хранит свой `me` и применяет `MESSAGE_REACTION_ADD/REMOVE { workspace_id, room_id, message_id, user_id, emoji }` (приходят только тем, у кого `VIEW_ROOM`).
+- **Личные сообщения** (ADR-0020). DM — комната `type = DM` без `workspace_id` с двумя участниками; сообщения, реакции, закрепы, read-state и уведомления — через обычные `/api/rooms/{id}/…` и `/api/messages/{id}/…`, доступ по участию (третьему — `404`). Права — фиксированный набор (docs/04); закреплять могут оба; `PATCH/DELETE /api/rooms/{id}`, права, ссылки-приглашения, голос — `403`.
+  - `POST /api/dms {userId}` — get-or-create: `201` и `DM_CREATE` обоим, если создан; `200`, если уже был (с любой стороны). Писать можно тому, с кем есть общее пространство, где оба — не `guest`, или с кем DM уже есть. Себе — `422`; нет такого пользователя / нет общего пространства — `404`; гостевой аккаунт с любой стороны — `403` (гости DM не видят: `GET /api/dms*` → `403`, в READY `dms` пусто). Не больше 10 новых DM подряд и 30 в час на пользователя (`429`).
+  - `DmSummary { room, peer, read_state, last_message_at }`: `room` — без имени и медиа (клиент подписывает его именем peer), `last_message_id/at` как в READY. `read_state.unread_count` — сообщения peer после маркера (≤ 999; до первого прочтения — с начала DM), `mention_count = unread_count`. Тот же `read_state` есть и в `READY.read_states`, сохранённые настройки уведомлений DM — в `READY.notification_settings`.
+  - Уведомления: каждое сообщение DM клиент показывает как упоминание — уровни `ALL` и `MENTIONS` уведомляют, `NONE` и `muted_until` глушат DM, «не беспокоить» действует как для упоминаний. `@everyone` и прямые упоминания в DM не хранятся (`/api/me/mentions` DM не содержит).
+  - `GET /api/dms/candidates?q=` — кому можно написать: участники (не `guest`) общих пространств, без гостевых аккаунтов и себя; `q` — подстрока имени или ника в пространстве без учёта регистра (≤ 64 символов, иначе `422`), сортировка по имени, до 20.
+  - Вложения DM грузятся через `POST /api/dms/{id}/files` (файл без пространства, в квоту workspace не входит); файл пространства к DM не прикрепить и наоборот (`422`). Скачивание — участникам DM.
+  - Presence и профиль peer приходят через общие пространства; если общего пространства больше нет, DM остаётся, но `PRESENCE_UPDATE` / `USER_UPDATE` peer не приходят (профиль — из `DmSummary.peer` при следующем READY).
 - **Гости** (`role = guest`) видят участников, presence, voice-state и события о людях только из тех комнат, которые видят сами (READY, `GET …/members`, gateway). Когда общая комната появляется или пропадает, гость получает синтетические `WORKSPACE_MEMBER_ADD` (+ `PRESENCE_UPDATE`) / `WORKSPACE_MEMBER_REMOVE`.
 - **Камеры** (v0.2).
   - Право `VIDEO` (1<<14; у member по умолчанию есть, у guest — нет). Лимит — `RoomMediaSettings.camera_limit`: 0..25, 0 — камеры в комнате выключены. Default workspace — 6 (`UpdateWorkspaceRequest.default_camera_limit`), override комнаты — `RoomMediaOverride.camera_limit`. `JoinVoiceResponse.can_video` = VIDEO и лимит > 0.

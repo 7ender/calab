@@ -15,6 +15,9 @@ import { MobileShell } from './MobileShell';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
 import { ChatPane } from '../chat/ChatPane';
+import { DmPick, useActiveDm } from '../dm/DmHome';
+import { DmSidebar } from '../dm/DmSidebar';
+import { HOME } from '../../stores/dms';
 import { Onboarding } from '../onboarding/Onboarding';
 import { MembersPanel } from './MembersPanel';
 import { BottomIsland } from './BottomIsland';
@@ -31,8 +34,10 @@ export function AppShell(): ReactNode {
   const ready = useSession((s) => s.ready);
   const onboarded = usePrefs((s) => s.onboarded);
   const wsId = useUi((s) => s.activeWorkspaceId);
-  const hasWs = useWorkspaces((s) => (wsId ? !!s.byId[wsId] : false));
-  const roomId = useActiveRoom(wsId);
+  const home = wsId === HOME;
+  const hasWs = useWorkspaces((s) => (wsId && !home ? !!s.byId[wsId] : false));
+  const roomId = useActiveRoom(home ? null : wsId);
+  const dmId = useActiveDm();
   // ≥ 1200 px: a column next to the chat; narrower: a floating panel over it (docs/08, Layout).
   const wide = useMediaQuery(`(min-width: ${MEMBERS_COLUMN_MIN}px)`);
   const columnOpen = useUi((s) => s.membersPanel);
@@ -94,6 +99,15 @@ export function AppShell(): ReactNode {
               {t('gateway.connecting')}
             </div>
           </div>
+        ) : home ? (
+          // «Личные» (ADR-0020): the DM list in the room column, the DM chat without members/voice.
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
+            <DmSidebar />
+            <ResizeHandle />
+            <div className="mat-content relative flex min-w-0 flex-1">
+              {dmId ? <ChatPane key={dmId} workspaceId="" roomId={dmId} /> : <DmPick />}
+            </div>
+          </div>
         ) : hasWs && wsId ? (
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
             <Sidebar workspaceId={wsId} />
@@ -107,7 +121,7 @@ export function AppShell(): ReactNode {
         ) : (
           <Welcome />
         )}
-        {ready && hasWs && wsId ? <BottomIsland /> : null}
+        {ready && (home || (hasWs && wsId)) ? <BottomIsland /> : null}
       </div>
     </div>
   );

@@ -2,10 +2,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const session = vi.hoisted(() => ({ status: 'anon', settings: null as { serverUrl: string } | null }));
 vi.mock('../stores/session', () => ({ useSession: { getState: () => session } }));
-vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => undefined }) } }));
+const openRoom = vi.hoisted(() => vi.fn());
+vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => undefined, openRoom }) } }));
 vi.mock('../features/people/roomLink', () => ({ openRoomLink: () => undefined }));
 
-const { INVITE_EXAMPLE_CODE, inviteUrl, joinPlaceholder, parseInviteCode, parseRoomInviteCode, roomInviteUrl } = await import('./links');
+const { INVITE_EXAMPLE_CODE, handleDeepLink, inviteUrl, joinPlaceholder, parseDmLink, parseInviteCode, parseRoomInviteCode, roomInviteUrl } = await import('./links');
+
+describe('DM links (ADR-0020)', () => {
+  const ID = '00000000-0000-7000-8003-000000000021';
+  it('parses calab://dm/<id> and https://<server>/dm/<id>, nothing else', () => {
+    expect(parseDmLink(`calab://dm/${ID}`)).toBe(ID);
+    expect(parseDmLink(`calaba://dm/${ID}/`)).toBe(ID);
+    expect(parseDmLink(`https://app.calab.ru/dm/${ID.toUpperCase()}?x=1`)).toBe(ID);
+    expect(parseDmLink('calab://dm/abcd1234')).toBeNull();
+    expect(parseDmLink(`https://app.calab.ru/r/${ID}`)).toBeNull();
+  });
+  it('opens the DM in «Личные»', () => {
+    handleDeepLink(`calab://dm/${ID}`);
+    expect(openRoom).toHaveBeenCalledWith('@me', ID);
+  });
+});
 
 describe('invite links', () => {
   it('parses https links, deep links and bare codes', () => {

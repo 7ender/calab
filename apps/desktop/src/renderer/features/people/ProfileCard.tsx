@@ -1,7 +1,7 @@
 import { PresenceStatus, WorkspaceRole } from '@calaba/protocol';
 import { useTimeZoneLabel } from '../../services/timezone';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { MonitorUp, Pencil, Volume2 } from 'lucide-react';
+import { MessageCircle, MonitorUp, Pencil, Volume2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, Toggle } from '../../components/ui';
@@ -13,6 +13,8 @@ import { GuestBadge, RoleIcon, roleTextClass } from './MemberBits';
 import { VolumeRow, useMemberActions } from './MemberContextMenu';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
+import { useCanDm } from '../dm/canDm';
+import { startDm } from '../../services/dms';
 
 const ROLE_KEY: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -34,7 +36,18 @@ const dateFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long'
  * Member profile (docs/09 #12): avatar, name (nickname) + profile name, presence, custom
  * status, role, voice, «В пространстве с», and «Сменить ник» when allowed.
  */
-export function ProfileCard({ workspaceId, userId, onRename }: { workspaceId: string; userId: string; onRename: () => void }): ReactNode {
+export function ProfileCard({
+  workspaceId,
+  userId,
+  onRename,
+  onClose,
+}: {
+  workspaceId: string;
+  userId: string;
+  onRename: () => void;
+  /** Closes the card (after «Написать» opened the DM). */
+  onClose?: () => void;
+}): ReactNode {
   const m = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]);
   const status = useWorkspaces((s) => s.presences[userId]?.status);
   const v = useWorkspaces((s) => s.byId[workspaceId]?.voice[userId]);
@@ -44,6 +57,7 @@ export function ProfileCard({ workspaceId, userId, onRename }: { workspaceId: st
   const tz = useTimeZoneLabel(userId);
   const actions = useMemberActions(workspaceId, userId);
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
+  const canDm = useCanDm(workspaceId, userId);
   const u = m?.user;
   if (!m || !u) return null;
   const presence = status !== undefined ? PRESENCE_KEY[status] : undefined;
@@ -69,6 +83,19 @@ export function ProfileCard({ workspaceId, userId, onRename }: { workspaceId: st
         </div>
       </div>
       {statusLine ? <p className="selectable break-words text-body">{statusLine}</p> : null}
+      {canDm ? (
+        // ADR-0020: the most direct next step from a profile.
+        <Button
+          className="w-full"
+          onClick={() => {
+            onClose?.();
+            void startDm(userId);
+          }}
+        >
+          <MessageCircle className="size-3.5" aria-hidden />
+          {t('dm.write')}
+        </Button>
+      ) : null}
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-t border-line pt-3 text-caption">
         <dt className="text-muted">{t('people.profile.role')}</dt>
         <dd className="flex min-w-0 items-center gap-1.5">

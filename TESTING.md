@@ -44,6 +44,7 @@
 | [Хотфикс 0.1.1: сервер (move без SFU, 499)](#server-перемещение-без-sfu-move-хотфикс-011-adr-0019) | app-level move против реального LiveKit, 499 для оборванных запросов | Go, Docker, dev-LiveKit, `lk` | 10 мин |
 | [Приёмка 0.1.1: клиент H.1–H.6](#приёмка-011-хотфикс-десктопа-и-веба) | плашка соединения, диалог «Присоединиться», обводка сообщения, уведомления, 4008, перемещение | Chrome, десктоп, локальный API или стенд | 40 мин |
 | [M.1 Перемещение участника (два клиента)](#client-перемещение-участника-хотфикс-011-adr-0019) | VOICE_MOVED с токеном, автотест `move.web.spec.ts` | 2 аккаунта, стенд или мок | 15 мин |
+| [Личные сообщения: клиент](#client-личные-сообщения-adr-0020-ветка-featdm-client) | «Личные» в рейле, список DM, новый DM, «Написать», ⌘K, ссылки; `dm-*` снимки, `dm.web.spec.ts` | мок или 2 аккаунта на стенде | 15 мин |
 | [История](#история-устаревшее--не-выполнять) | устаревшее: спайк, colaba/.ai, `/download/` до S3 | — | — |
 
 ---
@@ -1609,3 +1610,32 @@ go test -race -tags integration -count=1 -v -run TestProfileTimezone ./internal/
 - **Валидация.** IANA-имена принимаются, в том числе `America/Argentina/Buenos_Aires` и `UTC`. `Local`, несуществующие зоны, пути и имена не в том регистре → 422, одинаково на macOS и Linux.
 - **Round-trip.** `PATCH /api/me {timezone}` → ответ и `GET /api/me`; другим участникам приходит `USER_UPDATE`, поле видно в READY-списке участников. `""` сбрасывает.
 - **Образ.** База зон встроена в бинарник (`time/tzdata`): в distroless zoneinfo нет.
+
+## Server: личные сообщения (ADR-0020, ветка `feat/dm-server`)
+
+```sh
+cd apps/server
+go test -race -count=1 ./internal/perm/ ./internal/dms/ && pnpm -F @calaba/protocol test
+TEST_PG_URL=postgres://calaba:calaba@localhost:55432/calaba_test_dm TEST_REDIS_URL=redis://localhost:56379/5 TEST_RTC_REDIS_DB=4 \
+  go test -race -tags integration -count=1 -v -run 'TestDirectMessage' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: `ok` у юнитов (DM-векторы в `proto/testdata/permissions.json` — Go и TS) и `--- PASS` у `TestDirectMessages`, `TestDirectMessageGuests`, `TestDirectMessageRateLimit`. Проверяется:
+- **Создание.** `POST /api/dms` → 201 + `DM_CREATE` обоим; повтор с любой стороны → 200, та же комната; себе → 422; без общего пространства → 404; 11-й новый DM подряд → 429.
+- **Доступ.** Третий пользователь получает 404 на комнату, историю, отправку, реакции, read, закрепы, файлы DM; участник не может удалить/править чужое, менять комнату, звать в голос.
+- **События и READY.** `MESSAGE_CREATE`/реакции/закреп приходят обоим с пустым `workspace_id`; typing — только подписанной сессии peer; в READY `dms[]` с peer и `unread_count = mention_count`, read-state и настройки уведомлений DM.
+- **Гости.** Гостевой аккаунт: 403 на все `/api/dms*`, не кандидат, READY без DM.
+
+## Client: личные сообщения (ADR-0020, ветка `feat/dm-client`)
+
+```sh
+cd apps/desktop && pnpm -s typecheck && pnpm -s lint && pnpm test && npx vitest run --config e2e-support/vitest.config.ts
+CALABA_VISUAL_MOCK_PORT=39570 MOCK_LIVEKIT_ROOM_PREFIX=dm_ pnpm e2e:visual -g "dm-"     # dm-list / dm-chat / dm-new × 4
+npx tsx e2e-support/mock-server.ts --port 39571 --static dist-web &                     # после build:web
+CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.web.config.ts --project=chromium dm.web
+```
+Ожидается: всё зелёное (12 снимков, `dm.web` 1 passed). Руками (два аккаунта, стенд или мок `boris@`/`vera@calaba.test`):
+- Рейл: сверху «Личные» (иконка Calab) со счётчиком непрочитанных DM; клик — слева список DM (аватар с присутствием, имя, последнее сообщение и время, счётчик), справа «Выберите переписку».
+- «Новое сообщение» / «Найти или начать беседу» → поиск по имени/нику → выбор → открывается чат DM; у второго аккаунта DM появляется сразу, с непрочитанным и звуком/уведомлением (кроме «Не беспокоить» и выключенных уведомлений DM).
+- «Написать» в профиле участника и в его контекстном меню открывает (или создаёт) DM; у гостя этих пунктов и «Личных» нет.
+- В DM работают вложения, реакции, ответ, правка, закреп обоими; заголовок — собеседник с присутствием и «печатает…»; нет участников и голоса.
+- ⌘K находит DM по имени; ссылка `https://<сервер>/dm/<id>` (контекстное меню DM → «Копировать ссылку») открывает DM в вебе, `calab://dm/<id>` — в десктопе.

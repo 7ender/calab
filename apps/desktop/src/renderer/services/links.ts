@@ -1,4 +1,5 @@
 import { openRoomLink } from '../features/people/roomLink';
+import { HOME } from '../stores/dms';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
 
@@ -74,7 +75,36 @@ export function roomInviteUrl(serverUrl: string, code: string): string | null {
   return origin ? `${origin}/r/${code}` : null;
 }
 
+/**
+ * DM links (ADR-0020): `calab://dm/<room id>` and `https://<server>/dm/<room id>` (web). Only
+ * the participants can open one; for anyone else it is just an unknown room.
+ */
+export function parseDmLink(input: string): string | null {
+  const s = input.trim();
+  const ID = '([0-9a-fA-F-]{36})';
+  const m = new RegExp(`^${SCHEME}://dm/${ID}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/dm/${ID}/?(?:[?#].*)?$`).exec(s);
+  return m?.[1]?.toLowerCase() ?? null;
+}
+
+/** Opens «Личные» on that DM (it shows once READY has the DM; before sign-in it waits for it). */
+function openDmLink(roomId: string): void {
+  useUi.getState().openRoom(HOME, roomId);
+  // Web: the address bar had /dm/<id>; the app does not route by URL (a reload would come back here).
+  if (import.meta.env.VITE_PLATFORM === 'web' && typeof location !== 'undefined' && location.pathname.startsWith('/dm/')) {
+    try {
+      history.replaceState(null, '', '/');
+    } catch {
+      // not fatal
+    }
+  }
+}
+
 export function handleDeepLink(url: string): void {
+  const dm = parseDmLink(url);
+  if (dm) {
+    openDmLink(dm);
+    return;
+  }
   const room = parseRoomInviteCode(url);
   if (room) {
     openRoomLink(room);

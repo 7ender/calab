@@ -21,6 +21,8 @@ export interface Seed {
   scenario?: 'data' | 'empty';
   /** Extra prefs (stores/prefs.ts) merged into the seed. */
   prefs?: Record<string, unknown>;
+  /** Persisted UI state (stores/ui.ts), e.g. { activeWorkspaceId: '@me' } to start in «Личные». */
+  ui?: Record<string, unknown>;
 }
 
 interface WorkerFx {
@@ -92,12 +94,13 @@ async function reset(env: Env, theme: Theme, seed: Seed): Promise<void> {
   // Storage wiped and seeded in one step right before the reload: nothing of the previous test
   // (remembered rooms, stage layouts, chat views, camera checks…) survives.
   await page.evaluate(
-    ({ theme, onboarded, prefs }) => {
+    ({ theme, onboarded, prefs, ui }) => {
       localStorage.clear();
       sessionStorage.clear();
       localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme, onboarded, ...prefs }, version: 1 }));
+      if (ui) localStorage.setItem('calaba-ui', JSON.stringify({ state: ui, version: 1 }));
     },
-    { theme, onboarded: seed.onboarded ?? true, prefs: seed.prefs ?? {} },
+    { theme, onboarded: seed.onboarded ?? true, prefs: seed.prefs ?? {}, ui: seed.ui ?? null },
   );
   await page.reload();
   const signIn = page.getByRole('button', { name: 'Войти', exact: true });

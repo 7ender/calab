@@ -6,6 +6,7 @@ import { AppSettingsDialog } from '../settings/AppSettingsDialog';
 import { CameraPreview } from '../voice/CameraPreview';
 import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
+import { NewDmDialog } from '../dm/NewDmDialog';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
 import { WorkspaceSettingsDialog } from '../workspace/WorkspaceSettings';
@@ -42,6 +43,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'quick-switcher':
         node = <QuickSwitcher onClose={close} initialQuery={d.query ?? ''} />;
+        break;
+      case 'new-dm':
+        node = <NewDmDialog onClose={close} />;
         break;
       case 'image':
         node = <Lightbox fileId={d.fileId} name={d.name} onClose={close} />;

@@ -98,6 +98,12 @@ export const IDS = {
     designReview: mockId('room', 7),
     communityWelcome: mockId('room', 8),
   },
+  /** Anna's direct messages (ADR-0020), by peer. */
+  dms: {
+    boris: mockId('room', 0x21),
+    vera: mockId('room', 0x22),
+    grigory: mockId('room', 0x23),
+  },
   categories: {
     dev: mockId('category', 1),
     voice: mockId('category', 2),
@@ -156,6 +162,8 @@ export interface MockState {
   invites: Map<string, Invite>;
   /** Room links (ADR-0016), by id. */
   roomInvites: Map<string, RoomInvite>;
+  /** DM rooms (type DM, no workspace): roomId → the two participants (ADR-0020). */
+  dmMembers: Map<string, [string, string]>;
   /** userId → roomId → stored notification settings (READY notification_settings; absent = default). */
   notifySettings: Map<string, Map<string, RoomNotificationSettings>>;
   /** Chat reactions: messageId → emoji → users (Message.reactions keeps the counts). */
@@ -394,6 +402,7 @@ export function buildState(scenario: Scenario): MockState {
     workspaces: new Map(),
     members: [],
     rooms: new Map(),
+    dmMembers: new Map(),
     messages: new Map(),
     readStates: new Map(),
     notifySettings: new Map(),
@@ -625,6 +634,47 @@ export function buildState(scenario: Scenario): MockState {
     s.messages.set(m.room, list);
   }
 
+  // ---- direct messages (ADR-0020): Anna ↔ Boris (2 unread, one pinned), Vera (yesterday, read),
+  // Grigory (a week ago, read). Message ids come from their own range (0x800+): after every room
+  // message, so the fixture room messages keep their ids.
+  const dm = (roomId: string, peer: string, created: string): void => {
+    s.rooms.set(roomId, create(RoomSchema, { id: roomId, workspaceId: '', type: RoomType.DM, name: '', createdAt: ts(created) }));
+    s.dmMembers.set(roomId, [U.anna, peer]);
+  };
+  dm(IDS.dms.boris, U.boris, '2026-01-05T09:00:00Z');
+  dm(IDS.dms.vera, U.vera, '2026-01-06T09:00:00Z');
+  dm(IDS.dms.grigory, U.grigory, '2026-01-07T09:00:00Z');
+  const DM_MESSAGES: { room: string; author: string; at: string; content: string; key?: string; pinned?: boolean; reactions?: Record<string, string[]> }[] = [
+    { room: IDS.dms.grigory, author: U.anna, at: '2026-01-08T15:20:00Z', content: 'Григорий, отчёт по нагрузке — огонь 🔥 Покажешь на планёрке?' },
+    { room: IDS.dms.grigory, author: U.grigory, at: '2026-01-08T15:31:00Z', content: 'Да, подготовлю пару слайдов.' },
+    { room: IDS.dms.vera, author: U.vera, at: '2026-01-14T15:02:00Z', content: 'Макеты рейла готовы: «Личные» сверху, как в Discord. Ссылка в #макеты', reactions: { '👍': [U.anna] } },
+    { room: IDS.dms.vera, author: U.anna, at: '2026-01-14T15:07:00Z', content: 'Супер, спасибо! Посмотрю вечером.' },
+    { room: IDS.dms.boris, author: U.boris, at: '2026-01-15T08:40:00Z', content: 'Анна, привет! Посмотришь PR с миграцией **00011**?' },
+    { room: IDS.dms.boris, author: U.anna, at: '2026-01-15T08:42:00Z', content: 'Да, после обеда.', key: 'dmBorisRead' },
+    { room: IDS.dms.boris, author: U.boris, at: '2026-01-15T10:15:00Z', content: 'Чек-лист релиза:\n1. миграции\n2. `make gen`\n3. визуальные тесты', pinned: true },
+    { room: IDS.dms.boris, author: U.boris, at: '2026-01-15T10:16:00Z', content: 'Закрепил, чтобы не потерялся 🙏' },
+  ];
+  let dn = 0x800;
+  const dmRead = new Map<string, string>();
+  for (const m of DM_MESSAGES) {
+    const id = mockId('message', dn++);
+    if (m.key) dmRead.set(m.room, id);
+    const msg = create(MessageSchema, {
+      id,
+      roomId: m.room,
+      authorId: m.author,
+      content: m.content,
+      nonce: '',
+      createdAt: ts(m.at),
+      ...(m.pinned ? { pinnedAt: timestampFromMs(Date.parse(m.at) + 60_000), pinnedBy: m.author } : {}),
+      reactions: Object.entries(m.reactions ?? {}).map(([emoji, users]) => ({ emoji, count: users.length, me: false })),
+    });
+    if (m.reactions) s.reactions.set(id, new Map(Object.entries(m.reactions).map(([e, users]) => [e, new Set(users)])));
+    const list = s.messages.get(m.room) ?? [];
+    list.push(msg);
+    s.messages.set(m.room, list);
+  }
+
   // ---- read states: Anna is behind in `общий` and `разработка`, up to date elsewhere.
   const last = (roomId: string): string => s.messages.get(roomId)?.at(-1)?.id ?? '';
   const annaRead = new Map<string, string>([
@@ -633,6 +683,9 @@ export function buildState(scenario: Scenario): MockState {
     [R.longPrivate, last(R.longPrivate)],
     [R.call, last(R.call)],
     [R.designMockups, last(R.designMockups)],
+    [IDS.dms.boris, dmRead.get(IDS.dms.boris) ?? ''],
+    [IDS.dms.vera, last(IDS.dms.vera)],
+    [IDS.dms.grigory, last(IDS.dms.grigory)],
   ]);
   s.readStates.set(U.anna, annaRead);
   for (const u of [U.boris, U.vera, U.grigory, U.dina]) {

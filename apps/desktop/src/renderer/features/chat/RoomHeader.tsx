@@ -1,12 +1,13 @@
-import { NotificationLevel, RoomType, type PermissionBits, type Room } from '@calaba/protocol';
+import { NotificationLevel, PresenceStatus, RoomType, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Bell, BellDot, BellOff, Check, Hash, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Avatar } from '../../components/Avatar';
 import { IconButton, MOD, Tip, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { t, type MessageKey } from '../../i18n';
 import { fmtTime, toDate } from '../../lib/format';
-import { can } from '../../lib/permissions';
+import { can, mayPin } from '../../lib/permissions';
 import { setPinned } from '../../services/chat';
 import { useHotkeyLabel } from '../../services/hotkeys';
 import { setRoomNotifications } from '../../services/mentions';
@@ -16,7 +17,8 @@ import { NavButton } from '../shell/MobileShell';
 import { isQuiet, roomNotify, useRooms } from '../../stores/rooms';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { useDms } from '../../stores/dms';
+import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
 import { fmtDayLabel } from './MessageBubble';
@@ -85,7 +87,7 @@ export function RoomHeader({
         <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
           <Search className="size-[18px]" />
         </IconButton>
-        {mobile ? null : <PinsButton workspaceId={workspaceId} roomId={room.id} canManage={can(perms, 'MANAGE_MESSAGES')} />}
+        {mobile ? null : <PinsButton workspaceId={workspaceId} roomId={room.id} canManage={mayPin(perms, room)} />}
         <NotifyButton roomId={room.id} className={touch} />
         {can(perms, 'MANAGE_ROOM') && !mobile ? (
           <IconButton label={t('room.settings')} onClick={() => openDialog({ kind: 'room-settings', roomId: room.id })}>
@@ -95,6 +97,60 @@ export function RoomHeader({
         <IconButton label={t('shell.members')} active={membersOpen} onClick={toggleMembers} className={touch}>
           <Users className="size-[18px]" />
         </IconButton>
+      </div>
+    </header>
+  );
+}
+
+const PRESENCE_KEY: Partial<Record<PresenceStatus, MessageKey>> = {
+  [PresenceStatus.ONLINE]: 'presence.online',
+  [PresenceStatus.IDLE]: 'presence.idle',
+  [PresenceStatus.DND]: 'presence.dnd',
+};
+
+/**
+ * DM header (ADR-0020): the peer's avatar with presence, name, • presence and custom status
+ * (or «… печатает»); on the right search in the chat, pinned, notifications. No members,
+ * settings or workspace search: a DM has none of them. Both participants pin (docs/04).
+ */
+export function DmHeader({ room }: { room: Room }): ReactNode {
+  const peerId = useDms((s) => s.byRoom[room.id]?.peerId ?? '');
+  const name = useMemberName(null, peerId);
+  const user = useWorkspaces((s) => s.users[peerId]);
+  const status = useWorkspaces((s) => s.presences[peerId]?.status);
+  const typing = useTypingText('', room.id);
+  const searchOpen = useChatView((s) => s.searchRoom === room.id);
+  const setSearch = useChatView((s) => s.setSearch);
+  const presenceKey = status !== undefined ? PRESENCE_KEY[status] : undefined;
+  const custom = [user?.statusEmoji, user?.statusText].filter(Boolean).join(' ');
+  const sub = [t(presenceKey ?? 'members.offline'), custom].filter(Boolean).join(' · ');
+  return (
+    <header className="mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2" data-testid="dm-header">
+      <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence className="[&>span:last-child]:border-[var(--color-bg)]" />
+      <h1 className="min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold" title={name}>
+        {name}
+      </h1>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-body" aria-live="polite">
+        <span className="text-faint" aria-hidden>
+          •
+        </span>
+        {typing ? (
+          <>
+            <span className="truncate text-accent-text">{typing}</span>
+            <TypingDots />
+          </>
+        ) : (
+          <span className="truncate text-muted" title={sub}>
+            {sub}
+          </span>
+        )}
+      </span>
+      <div className="no-drag flex shrink-0 items-center gap-0.5">
+        <IconButton label={t('dm.searchIn')} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)}>
+          <Search className="size-[18px]" />
+        </IconButton>
+        <PinsButton workspaceId="" roomId={room.id} canManage />
+        <NotifyButton roomId={room.id} />
       </div>
     </header>
   );

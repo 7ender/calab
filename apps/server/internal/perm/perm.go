@@ -72,5 +72,23 @@ func Compute(role Role, roleOv, userOv *Override) Bits {
 	return p
 }
 
+// DM is the fixed permission set of both participants of a direct message (ADR-0020):
+// read and write, attach files, react. Roles, overrides, @everyone and moderation do not
+// apply. The rest of the ADR's list maps onto rules rather than bits: reading history is
+// VIEW_ROOM, reactions need SEND_MESSAGES, editing / deleting own messages is the author's
+// right everywhere, and pinning in a DM is allowed to both participants by room type
+// (messages.canPin) — not via MANAGE_MESSAGES, which would let a participant delete the
+// other's messages.
+const DM = ViewRoom | SendMessages | AttachFiles
+
+// ComputeDM returns effective permissions in a direct message: DM for its two
+// participants, nothing for anyone else.
+func ComputeDM(participant bool) Bits {
+	if !participant {
+		return 0
+	}
+	return DM
+}
+
 // Has reports whether all bits of p are set.
 func (b Bits) Has(p Bits) bool { return b&p == p }

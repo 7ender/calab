@@ -85,9 +85,27 @@ func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handle
 	mux.Handle("POST /api/rtc/webhook", httpx.HandlerFunc(s.webhook))
 }
 
-// roomInfo loads a live room with its effective media settings.
-func (s *Service) roomInfo(ctx context.Context, roomID uuid.UUID) (sqlc.Room, *v1.RoomMediaSettings, error) {
+// wsRoom is a room of a workspace as the voice code needs it: DMs (no workspace) have no
+// voice (ADR-0020), getRoom reports them as not found.
+type wsRoom struct {
+	sqlc.Room
+	WorkspaceID uuid.UUID // shadows the nullable Room.WorkspaceID
+}
+
+func (s *Service) getRoom(ctx context.Context, roomID uuid.UUID) (wsRoom, error) {
 	room, err := s.db.Q.GetRoom(ctx, roomID)
+	if err != nil {
+		return wsRoom{}, err
+	}
+	if room.WorkspaceID == nil {
+		return wsRoom{}, httpx.NotFound("room")
+	}
+	return wsRoom{Room: room, WorkspaceID: *room.WorkspaceID}, nil
+}
+
+// roomInfo loads a live room with its effective media settings.
+func (s *Service) roomInfo(ctx context.Context, roomID uuid.UUID) (wsRoom, *v1.RoomMediaSettings, error) {
+	room, err := s.getRoom(ctx, roomID)
 	if err != nil {
 		return room, nil, err
 	}
@@ -95,7 +113,7 @@ func (s *Service) roomInfo(ctx context.Context, roomID uuid.UUID) (sqlc.Room, *v
 	if err != nil {
 		return room, nil, err
 	}
-	return room, pbconv.EffectiveMedia(room, pbconv.WorkspaceDefaults(ws)), nil
+	return room, pbconv.EffectiveMedia(room.Room, pbconv.WorkspaceDefaults(ws)), nil
 }
 
 // streamSlotFree reports whether identity may start a stream: fewer than max streams by
@@ -399,7 +417,7 @@ func (s *Service) memberSessions(ctx context.Context, wsID, roomID, userID uuid.
 	return out, nil
 }
 
-func (s *Service) moderate(r *http.Request) (sqlc.Room, uuid.UUID, []voice.SessionState, error) {
+func (s *Service) moderate(r *http.Request) (wsRoom, uuid.UUID, []voice.SessionState, error) {
 	room, target, sess, err := s.moderateAny(r)
 	if err == nil && len(sess) == 0 {
 		err = httpx.NotFound("member in this voice room")
@@ -409,26 +427,26 @@ func (s *Service) moderate(r *http.Request) (sqlc.Room, uuid.UUID, []voice.Sessi
 
 // moderateAny checks MUTE_MEMBERS in the path room and the moderation hierarchy; the
 // target's devices in that room may be none (e.g. unmute after they left).
-func (s *Service) moderateAny(r *http.Request) (sqlc.Room, uuid.UUID, []voice.SessionState, error) {
+func (s *Service) moderateAny(r *http.Request) (wsRoom, uuid.UUID, []voice.SessionState, error) {
 	roomID, err := httpx.PathUUID(r, "id", "room")
 	if err != nil {
-		return sqlc.Room{}, uuid.Nil, nil, err
+		return wsRoom{}, uuid.Nil, nil, err
 	}
 	acc, err := rooms.Access(r, roomID)
 	if err != nil {
-		return sqlc.Room{}, uuid.Nil, nil, err
+		return wsRoom{}, uuid.Nil, nil, err
 	}
 	if !acc.Bits.Has(perm.MuteMembers) {
-		return sqlc.Room{}, uuid.Nil, nil, httpx.Forbidden("MUTE_MEMBERS required")
+		return wsRoom{}, uuid.Nil, nil, httpx.Forbidden("MUTE_MEMBERS required")
 	}
 	target, err := httpx.PathUUID(r, "userId", "member")
 	if err != nil {
-		return sqlc.Room{}, uuid.Nil, nil, err
+		return wsRoom{}, uuid.Nil, nil, err
 	}
 	if err := outranks(r, acc.WorkspaceID, target); err != nil {
-		return sqlc.Room{}, uuid.Nil, nil, err
+		return wsRoom{}, uuid.Nil, nil, err
 	}
-	room, err := s.db.Q.GetRoom(r.Context(), roomID)
+	room, err := s.getRoom(r.Context(), roomID)
 	if err != nil {
 		return room, target, nil, err
 	}
@@ -708,7 +726,7 @@ func (s *Service) setVoiceStatus(w http.ResponseWriter, r *http.Request) error {
 	if utf8.RuneCountInString(status) > maxVoiceStatus {
 		return httpx.Validation("status", "status must be at most 60 characters")
 	}
-	room, err := s.db.Q.GetRoom(r.Context(), roomID)
+	room, err := s.getRoom(r.Context(), roomID)
 	if err != nil {
 		return err
 	}

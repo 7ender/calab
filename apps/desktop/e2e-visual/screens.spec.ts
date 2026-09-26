@@ -314,6 +314,56 @@ test('main-chat', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'main-chat');
 });
 
+// ---------------------------------------------------------------- direct messages (ADR-0020)
+
+/**
+ * «Личные» (started there: no workspace room is opened and read first, so the rail badges are
+ * the READY ones): the DM list — Борис 2 unread, Вера yesterday, Григорий a week ago.
+ */
+const DM_SEED = { ui: { activeWorkspaceId: '@me' } };
+async function dmHome(page: Page): Promise<Locator> {
+  await expect(page.getByTestId('rail-home').getByRole('button')).toHaveAttribute('aria-current', 'page');
+  const list = page.getByTestId('dm-list');
+  await expect(list.getByRole('button')).toHaveCount(3);
+  // Previews are fetched when the list opens: wait for all three.
+  await expect(list).toContainText('Закрепил, чтобы не потерялся');
+  await expect(list).toContainText('Супер, спасибо');
+  await expect(list).toContainText('Да, подготовлю пару слайдов');
+  return list;
+}
+
+test('dm-list', async ({ open, win, shot }) => {
+  await open(DM_SEED);
+  await dmHome(win);
+  await expect(win.getByTestId('dm-pick')).toBeVisible();
+  await settle(win);
+  await checkpoint(shot, 'dm-list');
+});
+
+test('dm-chat', async ({ open, win, shot }) => {
+  await open(DM_SEED);
+  const list = await dmHome(win);
+  await list.getByRole('button', { name: /Борис Петров/ }).click();
+  await expect(win.getByTestId('dm-header')).toContainText('Борис Петров');
+  await expect(win.locator('[data-message-id]').first()).toBeVisible();
+  // The pinned strip (Борис's checklist) and the whole history (4 messages) are in.
+  await expect(win.locator('[data-message-id]')).toHaveCount(4);
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await settle(win);
+  await checkpoint(shot, 'dm-chat');
+});
+
+test('dm-new', async ({ open, win, shot }) => {
+  await open(DM_SEED);
+  await dmHome(win);
+  await win.getByRole('button', { name: 'Новое сообщение' }).first().click();
+  const dialog = win.getByRole('dialog', { name: 'Новое сообщение' });
+  await expect(dialog.getByRole('option')).toHaveCount(3);
+  await settle(win);
+  await checkpoint(shot, 'dm-new');
+});
+
 test('update-banner', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);

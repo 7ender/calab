@@ -15,7 +15,8 @@ import { StreamArea } from '../voice/StreamArea';
 import { useChatView } from './chatView';
 import { Composer, toOutgoing } from './Composer';
 import { MessageList } from './MessageList';
-import { RoomHeader } from './RoomHeader';
+import { DmHeader, RoomHeader } from './RoomHeader';
+import { isDm } from '../../stores/dms';
 import { PinnedBar, SearchPanel } from './RoomPanels';
 import { roomLabel } from './roomLabel';
 
@@ -91,7 +92,7 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
     <section
       ref={sectionRef}
       className="mat-content relative flex min-w-0 flex-1 flex-col"
-      aria-label={room.name}
+      aria-label={isDm(room) ? roomLabel(room) : room.name}
       onDragOver={(e) => {
         if (canAttach && e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -103,7 +104,11 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       }}
       onDrop={onDrop}
     >
-      <RoomHeader workspaceId={workspaceId} room={room} perms={perms} membersOpen={membersOpen} toggleMembers={toggleMembers} />
+      {isDm(room) ? (
+        <DmHeader room={room} />
+      ) : (
+        <RoomHeader workspaceId={workspaceId} room={room} perms={perms} membersOpen={membersOpen} toggleMembers={toggleMembers} />
+      )}
       {searchOpen ? <SearchPanel roomId={roomId} /> : <PinnedBar workspaceId={workspaceId} roomId={roomId} />}
 
       {inThisVoice ? <StreamArea /> : null}

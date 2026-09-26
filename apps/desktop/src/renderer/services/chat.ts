@@ -4,7 +4,7 @@ import { MessageSchema, type FileMeta, type Message, type UnfurlResponse } from 
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
-import { api, uploadFile, type UploadHandle } from '../lib/api/endpoints';
+import { api, uploadFile, uploadPath, type UploadHandle } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
 import { idAfter, useRooms } from '../stores/rooms';
@@ -277,7 +277,7 @@ export async function sendMessage(
     const metas: FileMeta[] = [];
     const handles: UploadHandle[] = [];
     for (const [i, f] of files.entries()) {
-      const h = uploadFile(workspaceId, f.file, f.name, (p) => {
+      const h = uploadFile(uploadPath(workspaceId, roomId), f.file, f.name, (p) => {
         const cur = useMessages.getState().rooms[roomId]?.items.find((c) => c.key === key);
         if (!cur?.uploads) return;
         useMessages.getState().patchPending(roomId, key, {

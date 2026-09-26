@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ArrowRightLeft, AtSign, Check, ChevronRight, IdCard, LogOut, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRightLeft, AtSign, MessageCircle, Check, ChevronRight, IdCard, LogOut, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -15,6 +15,8 @@ import { copyUserId, disconnectFromVoice, moveMember, promoteGuest, removeMember
 import { requestMention } from '../chat/mentionRequest';
 import { hasAnyAction, memberActions, type MenuActions } from './members';
 import { NicknameDialog } from './NicknameDialog';
+import { useCanDm } from '../dm/canDm';
+import { startDm } from '../../services/dms';
 
 /** What I may do with a member right now (reactive; the server re-checks every action). */
 export function useMemberActions(workspaceId: string, userId: string): MenuActions | null {
@@ -58,15 +60,16 @@ export function MemberContextMenu({
   children: ReactElement;
 }): ReactNode {
   const actions = useMemberActions(workspaceId, userId);
+  const canDm = useCanDm(workspaceId, userId);
   const [renaming, setRenaming] = useState(false);
   const dialog = renaming ? <NicknameDialog workspaceId={workspaceId} userId={userId} onClose={() => setRenaming(false)} /> : null;
-  if (!actions || (!hasAnyAction(actions) && !onOpenProfile)) return children;
+  if (!actions || (!hasAnyAction(actions) && !onOpenProfile && !canDm)) return children;
   return (
     <>
       <ContextMenu.Root modal={false}>
         <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
         <ContextMenu.Portal>
-          <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} onRename={() => setRenaming(true)} onOpenProfile={onOpenProfile} />
+          <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} canDm={canDm} onRename={() => setRenaming(true)} onOpenProfile={onOpenProfile} />
         </ContextMenu.Portal>
       </ContextMenu.Root>
       {dialog}
@@ -124,12 +127,14 @@ function MemberMenuContent({
   workspaceId,
   userId,
   actions: a,
+  canDm,
   onRename,
   onOpenProfile,
 }: {
   workspaceId: string;
   userId: string;
   actions: MenuActions;
+  canDm: boolean;
   onRename: () => void;
   onOpenProfile: (() => void) | undefined;
 }): ReactNode {
@@ -160,6 +165,11 @@ function MemberMenuContent({
       {onOpenProfile ? (
         <ContextMenu.Item className={row} onSelect={onOpenProfile}>
           <UserRound className="size-4" aria-hidden /> {t('people.menu.profile')}
+        </ContextMenu.Item>
+      ) : null}
+      {canDm ? (
+        <ContextMenu.Item className={row} onSelect={() => void startDm(userId)}>
+          <MessageCircle className="size-4" aria-hidden /> {t('dm.write')}
         </ContextMenu.Item>
       ) : null}
       <ContextMenu.Item className={row} onSelect={() => requestMention(userId, name)}>

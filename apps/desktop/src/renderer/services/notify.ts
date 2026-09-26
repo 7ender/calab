@@ -1,9 +1,10 @@
-import { NotificationLevel, type Message } from '@calaba/protocol';
+import { NotificationLevel, PresenceStatus, type Message } from '@calaba/protocol';
 import { mentionsMe } from '../lib/mentions';
 import { playSound } from '../lib/sounds';
 import { useInbox } from '../stores/inbox';
 import { prefs } from '../stores/prefs';
 import { mayMentionAll } from '../lib/permissions';
+import { HOME, isDm } from '../stores/dms';
 import { isQuiet, roomNotify, useRooms } from '../stores/rooms';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
@@ -14,12 +15,17 @@ import { roomLabel } from '../features/chat/roomLabel';
 
 export { mentionsMe };
 
-/** Unread counters, mention badges, system notifications for a message from someone else. */
+/**
+ * Unread counters, mention badges, system notifications for a message from someone else.
+ * A DM message (ADR-0020) notifies like a mention but never goes to the mentions inbox.
+ */
 export function onIncomingMessage(m: Message, workspaceId: string, visible: boolean): void {
   const myId = useSession.getState().me?.user?.id ?? '';
+  const room = useRooms.getState().byId[m.roomId];
+  const dm = isDm(room) || (!workspaceId && !room);
   const authorRole = useWorkspaces.getState().byId[workspaceId]?.members[m.authorId]?.role;
-  const mention = mentionsMe(m, myId, mayMentionAll(authorRole, m.authorId, useRooms.getState().byId[m.roomId]));
-  if (mention) useInbox.getState().addLive(m);
+  const mention = dm || mentionsMe(m, myId, mayMentionAll(authorRole, m.authorId, room));
+  if (mention && !dm) useInbox.getState().addLive(m);
   if (visible) return; // chat is on screen: the read marker moves when it is seen
   // Badges count regardless of the room's notification settings.
   useRooms.getState().addUnread(m.roomId, m.id, mention);
@@ -27,19 +33,21 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   const rn = roomNotify(useRooms.getState().notify[m.roomId]);
   if (isQuiet(rn)) return;
   if (rn.level === NotificationLevel.MENTIONS && !mention) return;
+  // «Не беспокоить»: counters only, no sounds or notifications (mentions and DMs included).
+  if (prefs().presence === PresenceStatus.DND) return;
   // Sounds (docs/09 #29): a mention anywhere off-screen; any message while the window is in the background.
   if (mention) playSound('mention');
   else if (!document.hasFocus()) playSound('message');
   const p = prefs();
   if (!(mention && p.notifyMentions) && !p.notifyAll) return;
-  const room = useRooms.getState().byId[m.roomId];
-  const author = memberName(workspaceId, m.authorId);
-  const body = previewText(workspaceId, m.content).slice(0, 180) || (m.attachments.length ? '📎 вложение' : '');
+  const author = memberName(workspaceId || null, m.authorId);
+  const body = previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? '📎 вложение' : '');
   try {
-    const n = new Notification(`${author}${room ? ` · ${roomLabel(room)}` : ''}`, { body, silent: true, tag: m.roomId });
+    // A DM is titled with its author alone (the chat is them).
+    const n = new Notification(`${author}${room && !dm ? ` · ${roomLabel(room)}` : ''}`, { body, silent: true, tag: m.roomId });
     n.onclick = () => {
       window.focus();
-      useUi.getState().openRoom(workspaceId, m.roomId);
+      useUi.getState().openRoom(dm ? HOME : workspaceId, m.roomId);
     };
   } catch {
     // notifications unavailable

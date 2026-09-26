@@ -13,6 +13,7 @@ import { loadMentions } from '../../services/mentions';
 import { NAV_SHORTCUTS, shortcutHelp, useHotkeyLabel } from '../../services/hotkeys';
 import { platform } from '../../platform';
 import { usePrefs } from '../../stores/prefs';
+import { HOME, isDm } from '../../stores/dms';
 import { useInbox } from '../../stores/inbox';
 import { idAfter, isVoice, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
@@ -45,7 +46,10 @@ export function TitleBar(): ReactNode {
   // With a room open, the room header has the search field from 1200 px (docs/09 #50): one entry
   // point, not two. Without a room (welcome, empty workspace) this pill is the only one.
   const lastRoomId = useUi((s) => (s.activeWorkspaceId ? s.lastRoom[s.activeWorkspaceId] : undefined));
-  const roomOpen = useRooms((s) => !!lastRoomId && !!s.byId[lastRoomId]);
+  // A DM header has no search field: the pill stays.
+  const roomOpen = useRooms((s) => !!lastRoomId && !!s.byId[lastRoomId] && !isDm(s.byId[lastRoomId]));
+  const home = wsId === HOME;
+  const title = home ? t('dm.home') : (ws?.name ?? 'Calab');
   const back = useUi(canGoBack);
   const fwd = useUi(canGoForward);
   const goBack = useUi((s) => s.goBack);
@@ -76,13 +80,13 @@ export function TitleBar(): ReactNode {
         </IconButton>
       </div>
 
-      <div className="flex min-w-0 max-w-[40vw] items-center justify-center gap-2 text-body font-semibold text-fg" title={ws?.name ?? 'Calab'}>
+      <div className="flex min-w-0 max-w-[40vw] items-center justify-center gap-2 text-body font-semibold text-fg" title={title}>
         {ws ? (
           <span className="grid size-4 shrink-0 place-items-center overflow-hidden rounded-[4px] bg-hover text-[8px] font-bold text-muted" aria-hidden>
             {ws.iconFileId ? <MediaImg path={thumbnailPath(ws.iconFileId)} alt="" className="size-full object-cover" /> : workspaceInitials(ws.name)}
           </span>
         ) : null}
-        <span className="truncate">{ws?.name ?? 'Calab'}</span>
+        <span className="truncate">{title}</span>
       </div>
 
       <div className="flex min-w-0 items-center justify-end gap-1 pr-2">
@@ -122,7 +126,8 @@ function InboxButton(): ReactNode {
   // The room badges summed: server-counted in READY (mention_count), then kept live — the same
   // numbers the sidebar and rail show.
   const total = useMemo(
-    () => Object.entries(mentions).reduce((a, [id, n]) => (roomsById[id] ? a + n : a), 0),
+    // DMs have their own badge on «Личные» and are never in the inbox (ADR-0020).
+    () => Object.entries(mentions).reduce((a, [id, n]) => (roomsById[id] && !isDm(roomsById[id]) ? a + n : a), 0),
     [mentions, roomsById],
   );
   // History mentions (from before this session) belong in the badge from the start.
@@ -170,7 +175,7 @@ function InboxList(): ReactNode {
   const hasMore = useInbox((s) => s.hasMore);
   // Only rooms (and workspaces) this client still knows: access may have changed.
   const items = useMemo(() => all.filter((m) => !!roomsById[m.roomId] && !!workspaces[roomsById[m.roomId]?.workspaceId ?? '']), [all, roomsById, workspaces]);
-  const unreadRooms = Object.entries(mentions).filter(([id, n]) => n > 0 && roomsById[id]);
+  const unreadRooms = Object.entries(mentions).filter(([id, n]) => n > 0 && roomsById[id] && !isDm(roomsById[id]));
   const markAll = (): void => {
     const rooms = useRooms.getState();
     for (const [roomId] of unreadRooms) {

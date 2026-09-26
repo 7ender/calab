@@ -2,6 +2,7 @@ import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 import { MeSchema } from '@calaba/protocol';
 import type { AuthSession, LogoutReason } from '../../shared/ipc';
 import { log } from '../lib/log';
+import { useDms } from '../stores/dms';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
 import { useTyping } from '../stores/typing';
@@ -13,6 +14,7 @@ import { useWorkspaces } from '../stores/workspaces';
 import { useRoomLink } from '../features/people/roomLink';
 import { queryClient } from '../lib/queryClient';
 import { resetChatCaches } from './chat';
+import { resetDmCaches } from './dms';
 import { startMessageRetention } from './retention';
 import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway, wakeGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
@@ -168,7 +170,9 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useMessages.getState().reset();
   useTyping.getState().reset();
   useInbox.getState().reset();
+  useDms.getState().reset();
   resetChatCaches();
+  resetDmCaches();
   resetTimeZoneSync();
   // Nothing of the previous account may show in the next one (review L9).
   queryClient.clear();

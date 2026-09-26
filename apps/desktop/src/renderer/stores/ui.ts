@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { emptyHistory, pushLoc, step, type History, type Loc } from '../lib/roomHistory';
+import { HOME } from './dms';
+import { RoomType } from '@calaba/protocol';
 import { useRooms } from './rooms';
 
 export type Dialog =
@@ -14,11 +16,14 @@ export type Dialog =
   | { kind: 'camera-preview' }
   | { kind: 'image'; fileId: string; name: string }
   /** ⌘K search; `query` pre-fills it (typed into the room header's search field). */
-  | { kind: 'quick-switcher'; query?: string };
+  | { kind: 'quick-switcher'; query?: string }
+  /** «Новое сообщение»: pick a person to write to (ADR-0020). */
+  | { kind: 'new-dm' };
 
 interface UiState {
+  /** The open workspace, or HOME (stores/dms.ts) for «Личные» — the DM list (ADR-0020). */
   activeWorkspaceId: string | null;
-  /** Last opened room per workspace. */
+  /** Last opened room per workspace (HOME: the last opened DM). */
   lastRoom: Record<string, string>;
   dialog: Dialog | null;
   membersPanel: boolean;
@@ -130,6 +135,7 @@ function here(s: Pick<UiState, 'activeWorkspaceId' | 'lastRoom'>): Loc | null {
 /** A history entry is still reachable: the room exists (or the entry is workspace-only). */
 function reachable(l: Loc): boolean {
   const rooms = useRooms.getState().byId;
+  if (l.ws === HOME) return !l.room || rooms[l.room]?.type === RoomType.DM;
   if (l.room) return rooms[l.room]?.workspaceId === l.ws;
   return Object.values(rooms).some((r) => r.workspaceId === l.ws);
 }

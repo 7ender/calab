@@ -166,6 +166,7 @@ const MemberRow = memo(function MemberRow({
               onOpenChange(false);
               setRenaming(true);
             }}
+            onClose={() => onOpenChange(false)}
           />
         </Popover.Content>
       </Popover.Portal>

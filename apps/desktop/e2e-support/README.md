@@ -90,6 +90,12 @@ Ids: `00000000-0000-7000-80KK-NNNNNNNNNNNN` (KK = kind: 01 user, 02 workspace, 0
   caller; READY `notification_settings` has the stored rows. Fixture: Анна has the long private
   room at `MENTIONS`, muted until 2026-01-15T11:30Z (muted at the visual-test clock 13:30 MSK).
 
+- **Direct messages** (ADR-0020, `IDS.dms`): Анна ↔ Борис (4 messages, 2 unread, a pinned
+  checklist), Вера (yesterday, 👍 by Анна, read), Григорий (2026-01-08, read). `POST /api/dms`
+  (get-or-create: 422 self, 403 guest, 404 no common non-guest workspace; `DM_CREATE` to both),
+  `GET /api/dms`, `GET /api/dms/candidates?q=`, `POST /api/dms/{id}/files`; DM events go to the
+  two participants with an empty `workspace_id`, READY `mention_count` = `unread_count`, both may pin.
+
 Scenario `empty`: users exist, no workspaces (welcome screen).
 
 Scenario `marketing` (`fixtures-marketing.ts`, used only by `e2e-marketing/shots.spec.ts` for the

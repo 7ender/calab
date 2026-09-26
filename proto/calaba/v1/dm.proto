@@ -1,0 +1,33 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "calaba/v1/gateway.proto";
+import "calaba/v1/user.proto";
+
+// Direct messages (ADR-0020, docs/05 «Личные сообщения»). Messages, reactions, pins, read
+// state and notification settings of a DM use the room endpoints (/api/rooms/{id}/…,
+// /api/messages/{id}/…); attachments are uploaded with POST /api/dms/{id}/files.
+
+// POST /api/dms — get-or-create the DM with user_id: 201 when created (both participants get
+// DM_CREATE), 200 when it already existed. Allowed when both are full members (not the
+// guest role) of a common workspace, or the DM already exists. Guest accounts (either side):
+// 403; self: 422; unknown user or no common workspace: 404. At most 30 new DMs per hour (429).
+message CreateDmRequest {
+  string user_id = 1;
+}
+
+message CreateDmResponse {
+  DmSummary dm = 1;
+}
+
+// GET /api/dms — the caller's DMs, most recent activity first (at most 500).
+message ListDmsResponse {
+  repeated DmSummary dms = 1;
+}
+
+// GET /api/dms/candidates?q= — users the caller may start a DM with: full members of the
+// caller's workspaces, no guest accounts; q matches the display name or a workspace nickname
+// (case-insensitive substring, ≤ 64 chars; empty = anyone); by name, at most 20.
+message ListDmCandidatesResponse {
+  repeated User users = 1;
+}

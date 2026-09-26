@@ -8,6 +8,7 @@ import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmtTime, toDate } from '../../lib/format';
 import { voice } from '../../services/voice';
+import { HOME, sortedDms, useDms } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
@@ -19,28 +20,46 @@ import { searchWords, splitHits } from '../../lib/markdown/highlight';
 import { roomLabel } from '../chat/roomLabel';
 
 type Item =
+  | { kind: 'dm'; id: string; roomId: string; peerId: string; name: string }
   | { kind: 'room'; id: string; room: Room }
   | { kind: 'member'; id: string; member: WorkspaceMember }
   | { kind: 'message'; id: string; msg: Message };
 
 const MAX_ROOMS_QUERY = 6;
+const MAX_DMS = 5;
 const MAX_MEMBERS = 5;
 
 /**
- * ⌘/Ctrl+K — global search (docs/09 #3): rooms of every workspace, members and messages of the
- * active one (server FTS). Choosing a member filters messages by that author.
+ * ⌘/Ctrl+K — global search (docs/09 #3): DMs by the peer's name (ADR-0020), rooms of every
+ * workspace, members and messages of the active one (server FTS). Choosing a member filters
+ * messages by that author.
  */
 export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => void; initialQuery?: string }): ReactNode {
   const rooms = useRooms((s) => s.byId);
   const workspaces = useWorkspaces((s) => s.byId);
-  const activeWs = useUi((s) => s.activeWorkspaceId);
+  // «Личные» is not a workspace: no members / message search there.
+  const activeWs = useUi((s) => (s.activeWorkspaceId && s.activeWorkspaceId !== HOME ? s.activeWorkspaceId : null));
   const openRoom = useUi((s) => s.openRoom);
+  const dms = useDms((s) => s.byRoom);
+  const users = useWorkspaces((s) => s.users);
   const [q, setQ] = useState(initialQuery);
   const [author, setAuthor] = useState<WorkspaceMember | null>(null);
   const [sel, setSel] = useState(0);
   // Server results tagged with the request they answer (no state reset inside effects).
   const [found, setFound] = useState<{ key: string; list: Message[] } | null>(null);
   const needle = q.trim().toLowerCase();
+
+  const home = useUi((s) => s.activeWorkspaceId === HOME);
+  const dmItems = useMemo(() => {
+    // Without a query: recent DMs only in «Личные» (a workspace lists its rooms first).
+    if (author || (!needle && !home)) return [];
+    return sortedDms(dms)
+      .map((e) => ({ ...e, name: memberName(null, e.peerId) }))
+      .filter((e) => !needle || e.name.toLowerCase().includes(needle))
+      .slice(0, MAX_DMS);
+    // users: a peer's renamed profile re-filters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needle, dms, users, author, home]);
 
   const roomItems = useMemo(() => {
     if (author) return [];
@@ -86,18 +105,22 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
 
   const items: Item[] = useMemo(
     () => [
+      ...dmItems.map((e): Item => ({ kind: 'dm', id: `d-${e.roomId}`, roomId: e.roomId, peerId: e.peerId, name: e.name })),
       ...roomItems.map((room): Item => ({ kind: 'room', id: `r-${room.id}`, room })),
       ...memberItems.map((member): Item => ({ kind: 'member', id: `u-${member.user?.id ?? ''}`, member })),
       ...(messages ?? []).map((msg): Item => ({ kind: 'message', id: `m-${msg.id}`, msg })),
     ],
-    [roomItems, memberItems, messages],
+    [dmItems, roomItems, memberItems, messages],
   );
   const cur = Math.min(sel, Math.max(0, items.length - 1));
 
   const go = (i: number): void => {
     const it = items[i];
     if (!it) return;
-    if (it.kind === 'room') {
+    if (it.kind === 'dm') {
+      openRoom(HOME, it.roomId);
+      onClose();
+    } else if (it.kind === 'room') {
       const r = it.room;
       openRoom(r.workspaceId, r.id);
       if (r.type === RoomType.VOICE && useVoice.getState().roomId !== r.id) void voice.join(r.id, r.workspaceId);
@@ -130,7 +153,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   };
 
   const section = (kind: Item['kind']): string =>
-    kind === 'room' ? t('search.rooms') : kind === 'member' ? t('search.members') : t('search.messages');
+    kind === 'dm' ? t('search.dms') : kind === 'room' ? t('search.rooms') : kind === 'member' ? t('search.members') : t('search.messages');
 
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
@@ -225,6 +248,18 @@ function Row({
   rooms: Record<string, Room>;
 }): ReactNode {
   const sub = cx('shrink-0 truncate text-caption', selected ? 'text-accent-fg' : 'text-muted');
+  if (it.kind === 'dm') {
+    const u = useWorkspaces.getState().users[it.peerId];
+    return (
+      <>
+        <Avatar userId={it.peerId} name={it.name} fileId={u?.avatarFileId || undefined} size={20} />
+        <span className="min-w-0 flex-1 truncate">
+          <Highlight text={it.name} q={q} selected={selected} />
+        </span>
+        <span className={sub}>{t('search.dms')}</span>
+      </>
+    );
+  }
   if (it.kind === 'room') {
     const r = it.room;
     const Icon = r.type === RoomType.VOICE ? Volume2 : Hash;

@@ -154,6 +154,7 @@ message DispatchEvent {
     VoiceMoved voice_moved = 28;
     RoomNotificationUpdate room_notification_update = 29;
     VoiceCameraStop voice_camera_stop = 30;
+    DmCreate dm_create = 31;
   }
 }
 
@@ -213,6 +214,22 @@ message Ready {
   repeated ReadState read_states = 4;
   // The user's stored per-room notification settings (rooms not listed use the default).
   repeated RoomNotificationSettings notification_settings = 5;
+  // The user's direct messages (ADR-0020), most recent activity first. Their read states
+  // are also in read_states, their stored notification settings in notification_settings.
+  repeated DmSummary dms = 6;
+}
+
+// A direct message as seen by one participant (ADR-0020). In READY, GET /api/dms,
+// POST /api/dms and DM_CREATE.
+message DmSummary {
+  // type DM, empty workspace_id / name (clients title it with the peer); last_message_id
+  // and last_message_at filled as in READY.
+  Room room = 1;
+  User peer = 2; // the other participant
+  // unread_count: the peer's live messages after the marker (≤ 999; a DM never read counts
+  // from its start); mention_count = unread_count — every DM message notifies like a mention.
+  ReadState read_state = 3;
+  google.protobuf.Timestamp last_message_at = 4; // unset = no messages yet
 }
 
 message CategoryCreate {
@@ -383,6 +400,13 @@ message ReadStateUpdate {
 }
 
 // The user's notification settings of a room changed (sent to the user's own devices only).
+// A DM was created (POST /api/dms): sent to both participants' user channels, each with
+// their own peer. Events of DM rooms (MESSAGE_*, MESSAGE_REACTION_*, TYPING_START) come on
+// the participants' user channels, with an empty workspace_id.
+message DmCreate {
+  DmSummary dm = 1;
+}
+
 message RoomNotificationUpdate {
   RoomNotificationSettings settings = 1;
 }

@@ -76,7 +76,7 @@ DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2;
 -- name: DeleteUserOverridesInWorkspace :exec
 DELETE FROM room_permissions rp
 USING rooms r
-WHERE rp.room_id = r.id AND r.workspace_id = $1
+WHERE rp.room_id = r.id AND r.workspace_id = sqlc.arg('workspace_id')::uuid
   AND rp.target_type = 'user' AND rp.target_id = sqlc.arg('user_id')::text;
 
 -- name: ListUserWorkspaceIDs :many

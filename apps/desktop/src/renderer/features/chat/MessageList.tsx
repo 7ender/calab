@@ -16,6 +16,9 @@ import { useChatView } from './chatView';
 import { buildMetas, type RowMeta } from './grouping';
 import { DatePill, MessageRow } from './MessageBubble';
 import { EmptyRoom } from './RoomPanels';
+import { Avatar } from '../../components/Avatar';
+import { useDms } from '../../stores/dms';
+import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 
 const START_INDEX = 1_000_000;
 const HIGHLIGHT_MS = 1800;
@@ -335,8 +338,9 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
 
 const FALLBACK_META: RowMeta = { day: false, isNew: false, first: true, last: true };
 
-/** Top of the history: what this room is. */
+/** Top of the history: what this room is (a DM: who it is with, ADR-0020). */
 function HistoryStart({ room }: { room: Room }): ReactNode {
+  if (room.type === RoomType.DM) return <DmHistoryStart roomId={room.id} />;
   const voice = room.type === RoomType.VOICE;
   const Icon = voice ? Volume2 : Hash;
   return (
@@ -346,6 +350,19 @@ function HistoryStart({ room }: { room: Room }): ReactNode {
       </span>
       <div className="mt-2 text-headline font-semibold">{voice ? t('chat.welcomeVoiceTitle', { name: room.name }) : t('chat.welcomeTitle', { name: room.name })}</div>
       <div className="text-body text-muted">{t('chat.historyStart')}</div>
+    </div>
+  );
+}
+
+function DmHistoryStart({ roomId }: { roomId: string }): ReactNode {
+  const peerId = useDms((s) => s.byRoom[roomId]?.peerId ?? '');
+  const name = useMemberName(null, peerId);
+  const avatar = useWorkspaces((s) => s.users[peerId]?.avatarFileId ?? '');
+  return (
+    <div className="flex flex-col items-center px-4 pb-2 pt-8 text-center">
+      <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={56} />
+      <div className="mt-2 text-headline font-semibold">{name}</div>
+      <div className="text-body text-muted">{t('dm.welcomeText', { name })}</div>
     </div>
   );
 }

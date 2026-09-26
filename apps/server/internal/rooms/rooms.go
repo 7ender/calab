@@ -120,6 +120,27 @@ func workspaceAccess(r *http.Request, wsID uuid.UUID) (perm.Bits, perm.Role, err
 // are reported as 404 so that their existence does not leak.
 func Access(r *http.Request, roomID uuid.UUID) (perm.RoomAccess, error) { return roomAccess(r, roomID) }
 
+// Publish sends an event of a room to everyone who may see it: a workspace room's event goes
+// to the workspace channel (the gateway filters by VIEW_ROOM), a DM's to the user channels
+// of its two participants (ADR-0020).
+func Publish(ctx context.Context, pub events.Publisher, acc perm.RoomAccess, ev *v1.DispatchEvent) {
+	if acc.DM {
+		for _, u := range acc.Members {
+			pub.User(ctx, u, ev)
+		}
+		return
+	}
+	pub.Workspace(ctx, acc.WorkspaceID, ev)
+}
+
+// WorkspaceIDString is the workspace_id of a room's events: empty for a DM.
+func WorkspaceIDString(acc perm.RoomAccess) string {
+	if acc.DM {
+		return ""
+	}
+	return acc.WorkspaceID.String()
+}
+
 // WorkspaceRole returns the caller's role in a workspace (404 for non-members).
 func WorkspaceRole(r *http.Request, wsID uuid.UUID) (perm.Role, error) {
 	_, role, err := workspaceAccess(r, wsID)
@@ -332,7 +353,10 @@ func (h *Handlers) load(ctx context.Context, q *sqlc.Queries, room sqlc.Room) (*
 
 // Load returns the wire room (effective media + overrides), as sent in ROOM_UPDATE.
 func Load(ctx context.Context, q *sqlc.Queries, room sqlc.Room) (*v1.Room, error) {
-	ws, err := q.GetWorkspace(ctx, room.WorkspaceID)
+	if room.WorkspaceID == nil {
+		return pbconv.DMRoom(room), nil
+	}
+	ws, err := q.GetWorkspace(ctx, *room.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}

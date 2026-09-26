@@ -150,7 +150,7 @@ func (s *Service) stopOwnCamera(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	room, err := s.db.Q.GetRoom(r.Context(), roomID)
+	room, err := s.getRoom(r.Context(), roomID)
 	if err != nil {
 		return err
 	}

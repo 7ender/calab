@@ -515,3 +515,70 @@ describe('marketing scenario (README / landing screenshots)', () => {
     }
   });
 });
+
+describe('direct messages (ADR-0020)', () => {
+  async function identify(email: string): Promise<{ gw: Awaited<ReturnType<typeof openGateway>>; token: string; ready: Extract<DispatchEvent['event'], { case: 'ready' }>['value'] }> {
+    const token = await login(email);
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } });
+    const ev = dispatchOf(await gw.next((f) => f.op === GatewayOpcode.DISPATCH))?.event;
+    if (ev?.case !== 'ready') throw new Error('expected READY');
+    return { gw, token, ready: ev.value };
+  }
+  const call = async (token: string, method: string, path: string, body?: unknown): Promise<Response> =>
+    fetch(`${server.url}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  it('READY and GET /api/dms list the DMs (newest first) with read state; candidates skip guests and me', async () => {
+    server.reset('data');
+    const { gw, token, ready } = await identify('owner@calaba.test');
+    expect(ready.dms.map((d) => d.peer?.displayName)).toEqual(['Борис Петров', 'Вера Ким', 'Григорий Олегович Длинноимённый-Константинопольский']);
+    const boris = ready.dms[0];
+    expect(boris?.room?.type).toBe(RoomType.DM);
+    expect(boris?.room?.workspaceId).toBe('');
+    expect(boris?.readState?.unreadCount).toBe(2);
+    expect(boris?.readState?.mentionCount).toBe(2);
+    expect(ready.readStates.some((r) => r.roomId === IDS.dms.boris)).toBe(true);
+    const list = (await (await call(token, 'GET', '/api/dms')).json()) as { dms: { room: { id: string } }[] };
+    expect(list.dms.map((d) => d.room.id)).toEqual([IDS.dms.boris, IDS.dms.vera, IDS.dms.grigory]);
+    const cands = (await (await call(token, 'GET', '/api/dms/candidates')).json()) as { users: { id: string }[] };
+    expect(cands.users.map((u) => u.id).sort()).toEqual([IDS.users.boris, IDS.users.vera, IDS.users.grigory].sort());
+    const vera = (await (await call(token, 'GET', `/api/dms/candidates?q=${encodeURIComponent('вер')}`)).json()) as { users: { id: string }[] };
+    expect(vera.users.map((u) => u.id)).toEqual([IDS.users.vera]);
+    gw.ws.close(1000);
+  });
+
+  it('POST /api/dms: 422 self, 403 guest, 200 existing, 201 new + DM_CREATE to both; messages go to the participants only', async () => {
+    server.reset('data');
+    const anna = await login('owner@calaba.test');
+    expect((await call(anna, 'POST', '/api/dms', { userId: IDS.users.anna })).status).toBe(422);
+    expect((await call(anna, 'POST', '/api/dms', { userId: IDS.users.dina })).status).toBe(403);
+    expect((await call(anna, 'POST', '/api/dms', { userId: IDS.users.boris })).status).toBe(200);
+
+    const boris = await identify('boris@calaba.test');
+    const vera = await identify('vera@calaba.test');
+    const created = await call(boris.token, 'POST', '/api/dms', { userId: IDS.users.vera });
+    expect(created.status).toBe(201);
+    const dmId = ((await created.json()) as { dm: { room: { id: string } } }).dm.room.id;
+    for (const [c, peer] of [
+      [boris, IDS.users.vera],
+      [vera, IDS.users.boris],
+    ] as const) {
+      const ev = dispatchOf(await c.gw.next((f) => dispatchOf(f)?.event.case === 'dmCreate'))?.event;
+      expect(ev?.case === 'dmCreate' && ev.value.dm?.peer?.id).toBe(peer);
+    }
+    expect((await call(vera.token, 'POST', `/api/rooms/${dmId}/messages`, { content: 'привет', nonce: 'n1' })).status).toBe(201);
+    const msg = dispatchOf(await boris.gw.next((f) => dispatchOf(f)?.event.case === 'messageCreate'))?.event;
+    expect(msg?.case === 'messageCreate' && msg.value.workspaceId).toBe('');
+    // A third person sees nothing; both participants may pin.
+    expect((await call(anna, 'GET', `/api/rooms/${dmId}/messages`)).status).toBe(404);
+    const id = msg?.case === 'messageCreate' ? (msg.value.message?.id ?? '') : '';
+    expect((await call(boris.token, 'PUT', `/api/messages/${id}/pin`)).status).toBe(204);
+    boris.gw.ws.close(1000);
+    vera.gw.ws.close(1000);
+  });
+});

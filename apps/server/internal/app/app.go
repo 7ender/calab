@@ -16,6 +16,7 @@ import (
 	"github.com/calaba/calaba/server/internal/buildinfo"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/dms"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/gateway"
@@ -143,6 +144,7 @@ func New(d Deps) *App {
 	roomHandlers.Routes(mux, private)
 	roomHandlers.CategoryRoutes(mux, private)
 	messages.NewHandlers(d.DB, pub, msgLimiter).Routes(mux, private)
+	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
 	filesSvc.Routes(mux, private)
 	guestSvc := guests.NewService(d.DB, authSvc, pub, d.Blob,
 		redisx.NewRateLimiter(d.Redis, "rl:guest:", 5, 5.0/60), d.Config.AllowedOrigins()) // 5 guests/h per IP

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
@@ -15,7 +16,8 @@ import (
 // ErrNotMember means the user is not a member of the workspace.
 var ErrNotMember = errors.New("perm: not a workspace member")
 
-// ErrNoRoom means the room does not exist (or is archived) or the user is not a member of its workspace.
+// ErrNoRoom means the room does not exist (or is archived) or the user is not a member of its
+// workspace (of a DM: not one of its two participants).
 var ErrNoRoom = errors.New("perm: room not accessible")
 
 // Store is the subset of sqlc queries the resolver needs.
@@ -26,10 +28,17 @@ type Store interface {
 
 // RoomAccess is a user's resolved access to a room.
 type RoomAccess struct {
-	WorkspaceID uuid.UUID
-	Role        Role
+	WorkspaceID uuid.UUID // uuid.Nil for a DM
+	Role        Role      // "" for a DM
 	Bits        Bits
+	// DM rooms (ADR-0020): the two participants. They get the room's events on their user
+	// channels instead of a workspace channel.
+	DM      bool
+	Members []uuid.UUID
 }
+
+// ok reports a resolved access (the zero value = no access).
+func (a RoomAccess) ok() bool { return a.WorkspaceID != uuid.Nil || a.DM }
 
 type key struct{ a, b uuid.UUID }
 
@@ -39,7 +48,7 @@ type Resolver struct {
 	store Store
 	mu    sync.Mutex
 	roles map[key]Role       // (workspace, user) -> role; "" = not a member
-	rooms map[key]RoomAccess // (room, user) -> access; zero WorkspaceID = no access
+	rooms map[key]RoomAccess // (room, user) -> access; zero value = no access
 }
 
 // NewResolver returns an empty resolver.
@@ -95,10 +104,14 @@ func (r *Resolver) Room(ctx context.Context, roomID, userID uuid.UUID) (RoomAcce
 			acc = RoomAccess{}
 		case err != nil:
 			return RoomAccess{}, fmt.Errorf("perm: load room access: %w", err)
-		default:
-			role := Role(row.Role)
+		case row.Type == "dm":
+			if slices.Contains(row.DmMembers, userID) {
+				acc = RoomAccess{Bits: ComputeDM(true), DM: true, Members: row.DmMembers}
+			}
+		case row.WorkspaceID != nil && row.Role != nil:
+			role := Role(*row.Role)
 			acc = RoomAccess{
-				WorkspaceID: row.WorkspaceID,
+				WorkspaceID: *row.WorkspaceID,
 				Role:        role,
 				Bits:        Compute(role, override(row.RoleAllow, row.RoleDeny), override(row.UserAllow, row.UserDeny)),
 			}
@@ -110,7 +123,7 @@ func (r *Resolver) Room(ctx context.Context, roomID, userID uuid.UUID) (RoomAcce
 		}
 		r.mu.Unlock()
 	}
-	if acc.WorkspaceID == uuid.Nil {
+	if !acc.ok() {
 		return RoomAccess{}, ErrNoRoom
 	}
 	return acc, nil

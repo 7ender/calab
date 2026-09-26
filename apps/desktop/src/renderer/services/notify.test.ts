@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf';
-import { MessageSchema } from '@calaba/protocol';
+import { MessageSchema, RoomType } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mem = new Map<string, string>();
@@ -17,6 +17,7 @@ vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undef
 const { onIncomingMessage } = await import('./notify');
 const { useRooms } = await import('../stores/rooms');
 const { useSession } = await import('../stores/session');
+const { useInbox } = await import('../stores/inbox');
 
 const ME = '0190a0b0-0000-7000-8000-00000000000a';
 const id = (n: number): string => `0190a0b0-0000-7000-8000-${String(n).padStart(12, '0')}`;
@@ -40,5 +41,16 @@ describe('live unread / mention counters', () => {
     onIncomingMessage(msg(2, `hi @${ME}`), 'ws', true);
     expect(useRooms.getState().unread['a']).toBe(0);
     expect(useRooms.getState().mentions['a']).toBeUndefined();
+  });
+});
+
+describe('direct messages (ADR-0020)', () => {
+  it('every DM message counts as a mention and stays out of the mentions inbox', () => {
+    useInbox.getState().reset();
+    useRooms.getState().upsert({ id: 'a', type: RoomType.DM, workspaceId: '' } as never);
+    onIncomingMessage(msg(2, 'без упоминания'), '', false);
+    expect(useRooms.getState().unread['a']).toBe(1);
+    expect(useRooms.getState().mentions['a']).toBe(1);
+    expect(useInbox.getState().items).toHaveLength(0);
   });
 });

@@ -1,11 +1,14 @@
 import { Compass, Plus, Volume2 } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
+import { Logo } from '../../components/Logo';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { workspaceInitials } from '../../lib/initials';
+import { HOME, isDm } from '../../stores/dms';
 import { isUnread, useRooms } from '../../stores/rooms';
+import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { RailContextMenu } from './RailContextMenu';
@@ -18,7 +21,8 @@ const tile =
 /**
  * Workspace rail (docs/09 #2): 72 px, rail material. Left pill = state (8 px unread, 20 px
  * hover, 40 px active), red mention badge, green speaker where I am in voice; tooltips on the
- * right; «+» (create) and «Обзор» (join / discover) at the bottom of the list.
+ * right; «+» (create) and «Обзор» (join / discover) at the bottom of the list. On top —
+ * «Личные» (ADR-0020, Discord Home): the DM list, with the unread DM messages as its badge.
  */
 export function WorkspaceRail(): ReactNode {
   const order = useWorkspaces((s) => s.order);
@@ -31,6 +35,8 @@ export function WorkspaceRail(): ReactNode {
       style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
       aria-label={t('ws.list')}
     >
+      <HomeItem />
+      <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden />
       {order.map((id) => (
         <RailItem key={id} id={id} />
       ))}
@@ -115,6 +121,58 @@ function RailItem({ id }: { id: string }): ReactNode {
           ) : null}
         </button>
       </RailContextMenu>
+    </div>
+  );
+}
+
+/** «Личные»: the app icon; guest accounts have no DMs (ADR-0016/0020) and don't see it. */
+function HomeItem(): ReactNode {
+  const guest = useSession((s) => !!s.me?.user?.isGuest);
+  const isActive = useUi((s) => s.activeWorkspaceId === HOME);
+  const setWs = useUi((s) => s.setWorkspace);
+  const byId = useRooms((s) => s.byId);
+  const readState = useRooms((s) => s.readState);
+  const lastMessage = useRooms((s) => s.lastMessage);
+  const unreadMap = useRooms((s) => s.unread);
+  const mentionMap = useRooms((s) => s.mentions);
+  const { unread, count } = useMemo(() => {
+    const list = Object.values(byId).filter(isDm);
+    return {
+      unread: list.some((r) => isUnread(r.id, { readState, lastMessage, unread: unreadMap })),
+      // Every DM message counts as a mention (docs/05): the badge = unread DM messages.
+      count: list.reduce((n, r) => n + (mentionMap[r.id] ?? 0), 0),
+    };
+  }, [byId, readState, lastMessage, unreadMap, mentionMap]);
+  if (guest) return null;
+  const label = count > 0 ? t('dm.homeUnread', { n: count }) : t('dm.home');
+  return (
+    <div className="group relative flex w-full shrink-0 justify-center" data-testid="rail-home">
+      <span
+        aria-hidden
+        className={cx(
+          'absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-fg transition-[height,opacity] duration-[var(--motion)] ease-out',
+          isActive ? 'h-10' : unread ? 'h-2 group-hover:h-5' : 'h-0 opacity-0 group-hover:h-5 group-hover:opacity-100',
+        )}
+      />
+      <Tip label={t('dm.home')} side="right">
+        <button
+          type="button"
+          onClick={() => setWs(HOME)}
+          aria-current={isActive ? 'page' : undefined}
+          aria-label={label}
+          className={cx(tile, 'bg-transparent', isActive && 'rounded-[12px]')}
+        >
+          <Logo size={48} className="size-full rounded-[inherit] object-cover" />
+          {count > 0 ? (
+            <span
+              className="absolute -bottom-1 -right-1 min-w-5 rounded-full border-[3px] border-[var(--color-rail)] bg-danger-fill px-1 text-center text-micro font-bold leading-[14px] text-white"
+              aria-hidden
+            >
+              {count > 99 ? '99+' : count}
+            </span>
+          ) : null}
+        </button>
+      </Tip>
     </div>
   );
 }

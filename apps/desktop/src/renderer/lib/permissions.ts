@@ -2,6 +2,8 @@ import {
   PERMISSION_BITS,
   PermissionTargetType,
   ROLE_DEFAULTS,
+  RoomType,
+  computePermissions,
   WorkspaceRole,
   computeRoomPermissions,
   has,
@@ -17,6 +19,8 @@ import {
  */
 
 export function roomPerms(role: WorkspaceRole | undefined, userId: string, room: Room | undefined): PermissionBits {
+  // A DM (ADR-0020): the fixed set; the client only knows DMs it takes part in.
+  if (room?.type === RoomType.DM) return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: true } });
   if (!room || role === undefined) return 0n;
   return computeRoomPermissions(role, userId, room.permissionOverrides);
 }
@@ -30,6 +34,11 @@ export function workspacePerms(role: WorkspaceRole | undefined): PermissionBits 
 
 export function can(perms: PermissionBits, name: PermissionName): boolean {
   return has(perms, PERMISSION_BITS[name]);
+}
+
+/** Pin / unpin: MANAGE_MESSAGES, or either participant of a DM (by room type, docs/04). */
+export function mayPin(perms: PermissionBits, room: Pick<Room, 'type'> | undefined): boolean {
+  return can(perms, 'MANAGE_MESSAGES') || room?.type === RoomType.DM;
 }
 
 /** May this author's @everyone / @here in the room notify people (MENTION_EVERYONE)? */

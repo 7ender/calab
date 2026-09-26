@@ -10,6 +10,12 @@ import (
 	"github.com/google/uuid"
 )
 
+type DmMember struct {
+	RoomID    uuid.UUID
+	UserID    uuid.UUID
+	CreatedAt time.Time
+}
+
 type File struct {
 	ID           uuid.UUID
 	WorkspaceID  *uuid.UUID
@@ -72,7 +78,7 @@ type ReadState struct {
 
 type Room struct {
 	ID               uuid.UUID
-	WorkspaceID      uuid.UUID
+	WorkspaceID      *uuid.UUID
 	Type             string
 	Name             string
 	Topic            string
@@ -87,6 +93,7 @@ type Room struct {
 	UserLimit        int32
 	VoiceStatus      *string
 	CameraLimit      *int32
+	DmKey            *string
 }
 
 type RoomCategory struct {

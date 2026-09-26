@@ -847,6 +847,7 @@ function VoiceMember({
               setProfileOpen(false);
               setRenaming(true);
             }}
+            onClose={() => setProfileOpen(false)}
           />
         </Popover.Content>
       </Popover.Portal>
