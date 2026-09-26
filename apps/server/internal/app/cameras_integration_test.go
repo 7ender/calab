@@ -452,3 +452,65 @@ func TestCameraAppLevelMove(t *testing.T) {
 	webhook(t, whEvent("participant_left", name(a), bi, nil), "secret")
 	bob.must(403, "POST", "/api/rooms/"+b+"/camera/request", nil, nil)
 }
+
+// A full reconnect into the same room: LiveKit may deliver the old connection's
+// participant_left after the new connection joined. It must not lift a moderator's sticky
+// stop-camera, drop the device's voice state or the new connection's camera record.
+func TestCameraStopSurvivesReconnect(t *testing.T) {
+	liveKitUp(t)
+	o, bob, ws, _ := setupTeam(t)
+	rid := newVoiceRoom(t, o, ws.GetId(), "cams", 6)
+	roomName := "ws_" + ws.GetId() + "_room_" + rid
+	g := dialGW(t)
+	g.identify(o.token)
+	bi := joinCall(t, bob, g, rid, roomName)
+	sid := publishDemoCamera(t, roomName, bi) // the "new" connection, live in LiveKit
+	cur, err := lkRec.GetParticipant(context.Background(), roomName, bi)
+	if err != nil || cur.Sid == "" {
+		t.Fatalf("live participant: %v %v", cur, err)
+	}
+	left := func(psid string) {
+		t.Helper()
+		ev := whEvent("participant_left", roomName, bi, nil)
+		ev.Participant.Sid = psid
+		webhook(t, ev, "secret")
+	}
+	blocked := func() bool {
+		n, _ := testRedis.Do(context.Background(), testRedis.B().Exists().Key("voice:camoff:"+bi).Build()).AsInt64()
+		return n == 1
+	}
+
+	// Camera on, a record for the live track and an old ghost track of the replaced connection.
+	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	cameraPublished(t, roomName, bi, sid)
+	g.wait("camera on", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && s.GetCamera()
+	})
+	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-camera", nil, nil)
+	if !blocked() {
+		t.Fatal("stop-camera is not sticky")
+	}
+
+	// The old connection's participant_left arrives late (a different participant SID).
+	left("PA_old_connection")
+	bob.must(403, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	if !blocked() {
+		t.Fatal("a reconnect lifted the moderator's camera stop")
+	}
+	inRoom := false
+	for _, w := range dialGW(t).identify(bob.token).GetWorkspaces() {
+		for _, vs := range w.GetVoiceStates() {
+			inRoom = inRoom || (vs.GetUserId() == bob.id && vs.GetRoomId() == rid)
+		}
+	}
+	if !inRoom {
+		t.Fatal("late participant_left dropped the reconnected device's voice state")
+	}
+
+	// The current connection leaving (same SID as live) is a real leave: the stop is lifted.
+	left(cur.Sid)
+	if blocked() {
+		t.Fatal("sticky stop kept after the device left the call")
+	}
+}

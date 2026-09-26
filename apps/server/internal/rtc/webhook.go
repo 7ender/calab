@@ -93,8 +93,19 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 	case EventParticipantJoined:
 		return s.participantJoined(ctx, wid, rid, uid, sid, ev.Room.Name, p)
 	case EventParticipantLeft, EventParticipantAborted:
-		s.stopStreams(ctx, wid, rid, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
-		s.dropCameras(ctx, rid, sid, identity)
+		// A full reconnect into the same room may deliver the old connection's
+		// participant_left after the new one joined: then only the old connection's tracks
+		// go; the device's state, reservation and a moderator's sticky stop stay.
+		live, superseded, err := s.newerConnection(ctx, ev.Room.Name, p)
+		if err != nil {
+			slog.WarnContext(ctx, "participant_left: look up the identity's current connection", "identity", identity, "err", err)
+		}
+		s.stopStreamsExcept(ctx, wid, rid, identity, live, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
+		// Unknown (LiveKit error): keep the sticky stop — fail closed on moderation.
+		s.dropCameras(ctx, rid, sid, identity, live, superseded || err != nil)
+		if superseded {
+			return nil
+		}
 		return s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
 			if cur == nil || cur.RoomID != rid {
 				return cur // the device already moved to another room
@@ -292,12 +303,17 @@ func (s *Service) streamStarted(ctx context.Context, wid, rid, uid, sid uuid.UUI
 }
 
 func (s *Service) stopStreams(ctx context.Context, wid, rid uuid.UUID, identity string, reason v1.VoiceStreamStopReason) {
+	s.stopStreamsExcept(ctx, wid, rid, identity, nil, reason)
+}
+
+// stopStreamsExcept is stopStreams sparing the track sids in keep (a newer connection's).
+func (s *Service) stopStreamsExcept(ctx context.Context, wid, rid uuid.UUID, identity string, keep map[string]bool, reason v1.VoiceStreamStopReason) {
 	streams, err := s.voice.Streams(ctx, rid)
 	if err != nil {
 		return
 	}
 	for sidTrack, st := range streams {
-		if st.Identity != identity {
+		if st.Identity != identity || keep[sidTrack] {
 			continue
 		}
 		if ok, _ := s.voice.RemoveStream(ctx, rid, sidTrack); ok {
@@ -319,4 +335,28 @@ func (s *Service) roomFinished(ctx context.Context, wid, rid uuid.UUID) error {
 		}
 	}
 	return s.voice.ClearRoom(ctx, rid)
+}
+
+// newerConnection reports whether the connection that left (participant SID) was already
+// replaced by a newer one of the same identity in the room, and that one's track sids. A
+// leaving participant without a SID (synthetic events) is taken as the last connection.
+func (s *Service) newerConnection(ctx context.Context, lkRoom string, left *Participant) (map[string]bool, bool, error) {
+	if left.Sid == "" {
+		return nil, false, nil
+	}
+	cur, err := s.lk.GetParticipant(ctx, lkRoom, left.Identity)
+	if IsNotFound(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if cur.Sid == "" || cur.Sid == left.Sid {
+		return nil, false, nil
+	}
+	live := make(map[string]bool, len(cur.Tracks))
+	for _, t := range cur.Tracks {
+		live[t.Sid] = true
+	}
+	return live, true, nil
 }

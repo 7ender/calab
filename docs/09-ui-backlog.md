@@ -114,7 +114,7 @@
 43. **Права и модерация**: бит `VIDEO` (1<<14; member по умолчанию да), серверный «выключить камеру» (MUTE_MEMBERS), индикатор камеры в списке комнат и колонке участников, `VoiceState.camera`.
 44. **Фон и эффекты** (после базовой камеры): размытие фона (MediaPipe Selfie Segmentation в worker, только на десктопе), зеркалирование превью, «Камера при входе» — по умолчанию выключена.
 45. **Сервер**: `canPublishSources` + `camera`, лимит камер в `/join` и по webhook `track_published`, `stream/request`-подобный `camera/request`, события `VOICE_STATE_UPDATE.camera`.
-- Ревью v0.2 (minor): `services/timezone.ts` — флаг `synced` не сбрасывается при logout, второй аккаунт в той же сессии не отправит timezone; `services/camera.ts start()` — `finally` при быстром stop→start может вызвать лишний `camera/stop` и снять резерв нового старта (окно = один запрос); после SFU-move `active.reset()` не обнуляет `activeSpeaker` в store; тост app-level move не упоминает камеру, если move пришёл во время rejoin.
+- Ревью v0.2 (minor): `services/camera.ts start()` — `finally` при быстром stop→start может вызвать лишний `camera/stop` и снять резерв нового старта (окно = один запрос); после SFU-move `active.reset()` не обнуляет `activeSpeaker` в store; тост app-level move не упоминает камеру, если move пришёл во время rejoin.
 
 ## Серверный бэклог, который это тянет
 - **P0.5**: `rooms.user_limit` + `ROOM_FULL`; `MOVE_MEMBERS` и `MANAGE_NICKNAMES` биты (proto + perm в Go/TS + тест-векторы); `POST …/voice/{userId}/move` через LiveKit `MoveParticipant`; `PATCH members/{userId}` nickname; гостевые пользователи и `room_invites` (ADR-0016) + `POST /api/rooms/invites/{code}/join` (с телом `{nickname}` для гостя) + страница-превью `GET /api/rooms/invites/{code}`; чистка гостей.

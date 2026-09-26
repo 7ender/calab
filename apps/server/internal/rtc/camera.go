@@ -321,17 +321,22 @@ func (s *Service) refreshCamera(ctx context.Context, wid, rid, uid, sid uuid.UUI
 	return s.setFlag(ctx, wid, rid, uid, sid, func(n *voice.SessionState) { n.Camera = on })
 }
 
-// dropCameras forgets the webcams of a device whose connection left room rid (no event:
-// the device's voice state goes away with it). A device that is in another room by now
-// (app-level move, ADR-0019: only its old connection left) keeps its reservation and the
-// moderator's sticky stop.
-func (s *Service) dropCameras(ctx context.Context, rid, sid uuid.UUID, identity string) {
+// dropCameras forgets the webcams of a device connection that left room rid (no event:
+// the device's voice state goes away with it), sparing the track sids in keep (a newer
+// connection's). With keepHold — the identity reconnected meanwhile (a late participant_left
+// of the old connection), or that is unknown — the reservation and a moderator's sticky stop
+// stay: a reconnect must not lift the stop. A device that is in another room by now
+// (app-level move, ADR-0019: only its old connection left) keeps them too.
+func (s *Service) dropCameras(ctx context.Context, rid, sid uuid.UUID, identity string, keep map[string]bool, keepHold bool) {
 	if cams, err := s.voice.Cameras(ctx, rid); err == nil {
 		for t, c := range cams {
-			if c.Identity == identity {
+			if c.Identity == identity && !keep[t] {
 				_, _ = s.voice.RemoveCamera(ctx, rid, t)
 			}
 		}
+	}
+	if keepHold {
+		return
 	}
 	if _, cur, ok, err := s.voice.Location(ctx, sid); err == nil && ok && cur != rid {
 		return

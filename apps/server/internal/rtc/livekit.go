@@ -51,6 +51,7 @@ type Track struct {
 
 // Participant is livekit.ParticipantInfo (subset).
 type Participant struct {
+	Sid      string  `json:"sid"` // one LiveKit connection; a reconnect with the same identity gets a new one
 	Identity string  `json:"identity"`
 	Tracks   []Track `json:"tracks"`
 }
