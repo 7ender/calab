@@ -8,7 +8,7 @@ import { t, type MessageKey } from '../../i18n';
  */
 
 /** Where the error happened: the same DOMException means different things for mic and screen. */
-export type MediaContext = 'mic' | 'screen' | 'stream' | 'voice' | 'streamAudio';
+export type MediaContext = 'mic' | 'screen' | 'stream' | 'voice' | 'streamAudio' | 'camera' | 'cameraPublish';
 
 export type MediaErrorCode =
   | 'cancelled'
@@ -32,7 +32,7 @@ export type MediaErrorCode =
   | 'unknown';
 
 /** What the action button does (the UI layer knows how). */
-export type MediaErrorAction = 'mic-privacy' | 'screen-privacy' | 'voice-settings' | 'connection';
+export type MediaErrorAction = 'mic-privacy' | 'screen-privacy' | 'camera-privacy' | 'voice-settings' | 'connection';
 
 export interface HumanError {
   code: MediaErrorCode;
@@ -50,6 +50,7 @@ export interface ErrorEnv {
 export const ACTION_LABEL: Record<MediaErrorAction, MessageKey> = {
   'mic-privacy': 'mediaErr.act.openSettings',
   'screen-privacy': 'mediaErr.act.openSettings',
+  'camera-privacy': 'mediaErr.act.openSettings',
   'voice-settings': 'mediaErr.act.voiceSettings',
   connection: 'mediaErr.act.connection',
 };
@@ -223,6 +224,36 @@ function text(code: MediaErrorCode, ctx: MediaContext, env: ErrorEnv): { key: Me
           return { key: 'mediaErr.rateLimited', action: null };
         default:
           return { key: 'mediaErr.stream.generic', action: null };
+      }
+    case 'camera':
+      switch (code) {
+        case 'permission':
+        case 'os-permission':
+          return env.web ? { key: 'mediaErr.camera.permissionWeb', action: null } : { key: 'mediaErr.camera.permission', action: 'camera-privacy' };
+        case 'not-found':
+          return { key: 'mediaErr.camera.notFound', action: 'voice-settings' };
+        case 'busy':
+          return { key: 'mediaErr.camera.busy', action: null };
+        case 'overconstrained':
+          return { key: 'mediaErr.camera.notFound', action: 'voice-settings' };
+        case 'insecure':
+          return { key: 'mediaErr.insecure', action: null };
+        case 'unsupported':
+          return { key: 'mediaErr.camera.unsupported', action: null };
+        default:
+          return { key: 'mediaErr.camera.generic', action: 'voice-settings' };
+      }
+    case 'cameraPublish':
+      switch (code) {
+        case 'forbidden':
+          return { key: 'video.forbidden', action: null };
+        case 'network':
+        case 'timeout':
+          return { key: 'mediaErr.network', action: 'connection' };
+        case 'rate-limited':
+          return { key: 'mediaErr.rateLimited', action: null };
+        default:
+          return { key: 'mediaErr.camera.publish', action: null };
       }
     case 'streamAudio':
       return code === 'no-loopback' ? { key: 'mediaErr.streamAudio.none', action: null } : { key: 'mediaErr.streamAudio.failed', action: null };

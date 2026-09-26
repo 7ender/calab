@@ -5,6 +5,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEven
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmtSize } from '../../lib/format';
+import { MENTION_EVENT, type MentionRequest } from './mentionRequest';
 import { applyMention, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, toWire } from '../../lib/mentions';
 import { can } from '../../lib/permissions';
 import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, sendMessage, type OutgoingFile } from '../../services/chat';
@@ -122,6 +123,22 @@ export function Composer({
     // Placed right after the re-render (not in a frame callback: fast typing would land before it).
     pendingCaret.current = next.caret;
   };
+
+  // «Упомянуть» from a member menu (mentionRequest.ts): append `@name ` and focus the field.
+  useEffect(() => {
+    const onMention = (e: Event): void => {
+      const d = (e as CustomEvent<MentionRequest>).detail;
+      setText((cur) => {
+        const next = `${cur && !/\s$/.test(cur) ? `${cur} ` : cur}@${d.name} `;
+        pendingCaret.current = next.length;
+        return next;
+      });
+      setMentions((m) => new Map(m).set(d.name, d.userId));
+      ref.current?.focus();
+    };
+    window.addEventListener(MENTION_EVENT, onMention);
+    return () => window.removeEventListener(MENTION_EVENT, onMention);
+  }, []);
 
   /** Field text → wire format: picked names and exact member names become `@<id>`. */
   const wire = (content: string): string => toWire(content, new Map([...exactNames(mentionables.all), ...mentions]));

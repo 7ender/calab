@@ -52,6 +52,8 @@ Voice-first десктоп-мессенджер для команды (Electron 
 
 ## Визуальные тесты — экономно
 - Во время работы над фичей: **только затронутые экраны** — `pnpm -F @calaba/desktop e2e:visual -g "<screen|screen2>"`, перезапись только их эталонов (`e2e:visual:update -g …`). Полный набор (300+ снимков) и два контрольных прогона — **не запускать** на каждую правку.
+- Каждый экран — отдельный независимый тест с именем снимка (`screens.spec.ts`, конфигурации — projects `dark-960`, `dark-1440`, `light-960`, `light-1440`). Точное имя: `-g "voice-pip$"` (без `$` попадёт и `voice-pip-hover`); одна конфигурация: `--project dark-1440`. Список: `npx playwright test --config playwright.visual.config.ts --list`.
+- В git worktree — свой порт мока и префикс комнат LiveKit (`CALABA_VISUAL_MOCK_PORT=39270 MOCK_LIVEKIT_ROOM_PREFIX=wt_`, apps/desktop/README «Parallel visual runs»).
 - Полный набор + один контрольный прогон — один раз перед релизом/тегом и в CI по расписанию (nightly), не на push.
 - Два контрольных прогона — только при полной перезаписи эталона (rename, смена токенов дизайна).
 

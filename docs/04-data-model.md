@@ -7,7 +7,7 @@ PostgreSQL 18, `pgx` + `sqlc` + `goose` (миграции). Все id — `uuid 
 ```
 users               id, email (unique, citext), password_hash (argon2id), display_name,
                     avatar_file_id, status_text, settings (jsonb, UserSettings),
-                    created_at, disabled_at
+                    created_at, disabled_at, timezone? (IANA, «+3 UTC» у участников)
 sessions            id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at,
                     device_name, ip, user_agent,
                     created_at, last_seen_at, expires_at, revoked_at
@@ -109,12 +109,13 @@ export const Permission = {
   MOVE_MEMBERS:     1n << 11n,  // перемещать других между voice-комнатами, входить сверх user_limit
   MANAGE_NICKNAMES: 1n << 12n,  // менять ники других (только уровень workspace)
   MENTION_EVERYONE: 1n << 13n,  // @everyone / @here (у member по умолчанию нет)
+  VIDEO:            1n << 14n,  // веб-камера в voice (у member по умолчанию есть)
 } as const;
 ```
 
 Дефолты по ролям:
 - `owner`, `admin` → `ADMINISTRATOR`
-- `member` → `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM`
+- `member` → `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM | VIDEO`
 - `guest` → `CONNECT | SPEAK` — без `VIEW_ROOM`, поэтому по умолчанию гость не видит ни одной комнаты; видит только комнаты с явным override `allow VIEW_ROOM` (для роли `guest` или для конкретного пользователя)
 
 Вычисление эффективных прав в комнате (единственная функция, живёт в `packages/protocol`, используется и сервером, и клиентом для UI):

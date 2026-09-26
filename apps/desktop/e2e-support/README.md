@@ -15,6 +15,7 @@ npx tsx e2e-support/mock-server.ts --port 3900 --scenario data            # API 
 npx tsx e2e-support/mock-server.ts --port 3900 --static dist-web           # + web client, same origin
 # flags: --host, --scenario data|empty|marketing, --static <dir>, --livekit-url/--livekit-key/--livekit-secret, --quiet
 # env equivalents: MOCK_PORT, MOCK_HOST, MOCK_SCENARIO, MOCK_STATIC_DIR, MOCK_LIVEKIT_URL/KEY/SECRET
+# MOCK_LIVEKIT_ROOM_PREFIX (default mock_): LiveKit room names; set a different one for parallel runs on one dev LiveKit
 
 CALABA_SERVER_URL=http://127.0.0.1:3900 pnpm start    # Electron client against the mock
 ```

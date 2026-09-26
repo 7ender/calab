@@ -84,6 +84,7 @@ type RoomMediaSettings struct {
 	AudioBitrateKbps uint32                 `protobuf:"varint,1,opt,name=audio_bitrate_kbps,json=audioBitrateKbps,proto3" json:"audio_bitrate_kbps,omitempty"` // 16 | 24 | 32 | 48 | 64; default 32 (per-room, workspace default)
 	MaxStreamPreset  ScreenSharePreset      `protobuf:"varint,2,opt,name=max_stream_preset,json=maxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"max_stream_preset,omitempty"`
 	MaxStreams       uint32                 `protobuf:"varint,3,opt,name=max_streams,json=maxStreams,proto3" json:"max_streams,omitempty"`
+	CameraLimit      uint32                 `protobuf:"varint,4,opt,name=camera_limit,json=cameraLimit,proto3" json:"camera_limit,omitempty"` // webcams at once in the room, 0..25; 0 = cameras off; default 6
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -139,16 +140,24 @@ func (x *RoomMediaSettings) GetMaxStreams() uint32 {
 	return 0
 }
 
+func (x *RoomMediaSettings) GetCameraLimit() uint32 {
+	if x != nil {
+		return x.CameraLimit
+	}
+	return 0
+}
+
 var File_calaba_v1_media_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_media_proto_rawDesc = "" +
 	"\n" +
-	"\x15calaba/v1/media.proto\x12\tcalaba.v1\"\xac\x01\n" +
+	"\x15calaba/v1/media.proto\x12\tcalaba.v1\"\xcf\x01\n" +
 	"\x11RoomMediaSettings\x12,\n" +
 	"\x12audio_bitrate_kbps\x18\x01 \x01(\rR\x10audioBitrateKbps\x12H\n" +
 	"\x11max_stream_preset\x18\x02 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x0fmaxStreamPreset\x12\x1f\n" +
 	"\vmax_streams\x18\x03 \x01(\rR\n" +
-	"maxStreams*\xb8\x01\n" +
+	"maxStreams\x12!\n" +
+	"\fcamera_limit\x18\x04 \x01(\rR\vcameraLimit*\xb8\x01\n" +
 	"\x11ScreenSharePreset\x12#\n" +
 	"\x1fSCREEN_SHARE_PRESET_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bSCREEN_SHARE_PRESET_ECONOMY\x10\x01\x12\x1c\n" +

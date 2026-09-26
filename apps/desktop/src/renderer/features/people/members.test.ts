@@ -90,6 +90,26 @@ describe('memberActions', () => {
     expect(hasAnyAction(memberActions(base({ myRole: WorkspaceRole.MEMBER })))).toBe(false);
   });
 
+  it('camera: «Не показывать видео» for a camera in my room; «Выключить камеру» for a moderator', () => {
+    const cam = { ...voice('t', 'call'), camera: true };
+    expect(memberActions(base({ targetVoice: cam, myVoiceRoomId: 'call' }))).toMatchObject({ hideVideo: true, stopCamera: true });
+    const plain = memberActions(base({ myRole: WorkspaceRole.MEMBER, targetVoice: cam, myVoiceRoomId: 'call' }));
+    expect(plain).toMatchObject({ hideVideo: true, stopCamera: false });
+    // Another room: nothing to hide (not subscribed anyway); the moderator can still stop it.
+    expect(memberActions(base({ targetVoice: cam, myVoiceRoomId: 'meeting' }))).toMatchObject({ hideVideo: false, stopCamera: true });
+    expect(memberActions(base({ targetVoice: voice('t', 'call'), myVoiceRoomId: 'call' }))).toMatchObject({ hideVideo: false, stopCamera: false });
+    expect(memberActions(base({ target: member('me', 'Me', WorkspaceRole.MEMBER), targetVoice: { ...cam, userId: 'me' }, myVoiceRoomId: 'call' }))).toMatchObject({ hideVideo: false, stopCamera: false });
+  });
+
+  it('roles: an admin changes members (not to admin); only the owner grants / revokes admin', () => {
+    expect(memberActions(base({})).roles).toEqual({ admin: false, member: true });
+    expect(memberActions(base({ myRole: WorkspaceRole.OWNER })).roles).toEqual({ admin: true, member: true });
+    expect(memberActions(base({ target: member('t', 'A', WorkspaceRole.ADMIN) })).roles).toBeNull();
+    expect(memberActions(base({ myRole: WorkspaceRole.OWNER, target: member('t', 'A', WorkspaceRole.ADMIN) })).roles).toEqual({ admin: true, member: true });
+    expect(memberActions(base({ myRole: WorkspaceRole.MEMBER })).roles).toBeNull();
+    expect(memberActions(base({ target: member('t', 'G', WorkspaceRole.GUEST, '', true) })).roles).toBeNull();
+  });
+
   it('volume only for someone in my voice room', () => {
     expect(memberActions(base({ targetVoice: voice('t', 'meeting'), myVoiceRoomId: 'call' })).volume).toBe(false);
   });

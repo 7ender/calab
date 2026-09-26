@@ -186,6 +186,7 @@ export const DEFAULT_MEDIA: RoomMediaSettings = create(RoomMediaSettingsSchema, 
   audioBitrateKbps: 32,
   maxStreamPreset: ScreenSharePreset.H1080,
   maxStreams: 3,
+  cameraLimit: 6,
 });
 
 export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride | undefined): RoomMediaSettings {
@@ -194,6 +195,7 @@ export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride |
     audioBitrateKbps: o?.audioBitrateKbps ?? d.audioBitrateKbps,
     maxStreamPreset: o?.maxStreamPreset ?? d.maxStreamPreset,
     maxStreams: o?.maxStreams ?? d.maxStreams,
+    cameraLimit: o?.cameraLimit ?? d.cameraLimit,
   });
 }
 
@@ -253,11 +255,13 @@ interface UserSpec {
   email: string;
   status: string;
   avatar?: string;
+  /** IANA zone (User.timezone); the visual tests run in Europe/Moscow. */
+  timezone?: string;
 }
 
 const USERS: UserSpec[] = [
   { key: 'anna', n: 1, name: 'Анна Смирнова', email: 'owner@calaba.test', status: 'В фокусе до 18:00' },
-  { key: 'boris', n: 2, name: 'Борис Петров', email: 'boris@calaba.test', status: 'На созвоне' },
+  { key: 'boris', n: 2, name: 'Борис Петров', email: 'boris@calaba.test', status: 'На созвоне', timezone: 'Asia/Yekaterinburg' },
   { key: 'vera', n: 3, name: 'Вера Ким', email: 'vera@calaba.test', status: '', avatar: IDS.files.veraAvatar },
   {
     key: 'grigory',
@@ -417,6 +421,7 @@ export function buildState(scenario: Scenario): MockState {
         displayName: u.name,
         avatarFileId: scenario === 'data' ? (u.avatar ?? '') : '',
         statusText: scenario === 'data' ? u.status : '',
+        timezone: u.timezone ?? '',
         createdAt: created,
         isGuest: u.key === 'dina', // guest account from a room link (ADR-0016)
       }),
@@ -646,7 +651,8 @@ export function buildState(scenario: Scenario): MockState {
     ]),
   );
 
-  // ---- voice: Boris (muted) and Vera (streaming) in «Переговорка».
+  // ---- voice: Boris (muted) and Vera (streaming) in «Переговорка». Cameras: none (the visual
+  // test turns Boris's on together with a real LiveKit camera track, so tiles and icons agree).
   s.voiceStates.set(U.boris, create(VoiceStateSchema, { workspaceId: W.main, userId: U.boris, roomId: R.meeting, muted: true }));
   s.voiceStates.set(U.vera, create(VoiceStateSchema, { workspaceId: W.main, userId: U.vera, roomId: R.meeting, streaming: true }));
 

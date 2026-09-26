@@ -1,7 +1,7 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { PresenceStatus } from '@calaba/protocol';
-import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, X } from 'lucide-react';
+import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, Volume2, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { IconButton, Input, Slider, Tip, cx } from '../../components/ui';
@@ -52,28 +52,36 @@ export function SelfPanel(): ReactNode {
   if (!user) return null;
   const cur = STATUSES.find((x) => x.s === status) ?? STATUSES[0];
   const custom = [user.statusEmoji, user.statusText].filter(Boolean).join(' ');
-  const second = custom || (inVoice ? t('shell.inVoiceStatus') : cur ? t(cur.key) : '');
+  // In a call the second line says so, with the speaker icon (Discord «In voice»); otherwise the
+  // custom status, else the presence. (The custom status is in the profile popover and the members column.)
+  const voiceLine = inVoice;
+  const second = inVoice ? t('shell.inVoiceStatus') : custom || (cur ? t(cur.key) : '');
 
   return (
-    // Buttons 28 × 28 with no gaps: the name keeps ≥ 104 px in the 256 px column (UX review).
-    <div className="mat-toolbar flex h-[52px] shrink-0 items-center gap-0.5 border-t border-line px-1.5">
+    // Bottom island across the rail + room column (Discord): 56 px, 40 px avatar, 15 / 13 px text
+    // that fades out when long; controls ≤ 134 px (mic ▾ 40, headphones ▾ 40, gear 32, 6 px
+    // apart, 10 px from the edge), so the name keeps ≥ 110 px.
+    <div className="flex h-14 shrink-0 items-center gap-1 pl-2 pr-2.5">
       <Popover.Root>
         <Popover.Trigger asChild>
           <button
             type="button"
             aria-label={`${t('shell.profile')}: ${user.displayName}, ${cur ? t(cur.key) : ''}`}
-            className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-row)] pl-1 pr-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+            className="-my-1 flex h-12 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-1 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
           >
             <span className="relative shrink-0">
-              <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} />
-              <span className={cx('absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-[3px] border-[var(--color-bg)]', cur?.dot)} aria-hidden />
+              <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={40} speaking={speaking && !muted} />
+              <span className={cx('absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-[var(--color-bg)]', cur?.dot)} aria-hidden />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-control font-semibold leading-4" title={user.displayName}>
+              <span className="fade-end block overflow-hidden whitespace-nowrap text-[15px] font-semibold leading-5 text-fg" title={user.displayName}>
                 {user.displayName}
               </span>
-              <span className="block truncate text-caption leading-4 text-muted" title={second}>
-                {second}
+              {/* Secondary line: a long status fades out at the right edge (Discord) instead of «…»
+                  in the middle of its meaning; the row is full width, so short text is untouched. */}
+              <span className="fade-end flex min-w-0 items-center gap-1 text-[13px] leading-[18px] text-muted" title={second}>
+                {voiceLine ? <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden /> : null}
+                <span className="min-w-0 overflow-hidden whitespace-nowrap">{second}</span>
               </span>
             </span>
           </button>
@@ -101,29 +109,32 @@ export function SelfPanel(): ReactNode {
         </Popover.Portal>
       </Popover.Root>
 
-      <SplitButton
-        label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
-        shortcut={muteKeys}
-        danger={muted}
-        onClick={() => voice.toggleMute()}
-        menuLabel={t('shell.micOptions')}
-        menu={<DeviceMenu kind="audioinput" />}
-      >
-        {muted ? <MicOff className="size-[18px]" /> : <Mic className="size-[18px]" />}
-      </SplitButton>
-      <SplitButton
-        label={deafened ? t('voice.undeafen') : t('voice.deafen')}
-        shortcut={deafenKeys}
-        danger={deafened}
-        onClick={() => voice.toggleDeafen()}
-        menuLabel={t('shell.outputOptions')}
-        menu={<DeviceMenu kind="audiooutput" />}
-      >
-        {deafened ? <HeadphoneOff className="size-[18px]" /> : <Headphones className="size-[18px]" />}
-      </SplitButton>
-      <IconButton size="sm" label={t('settings.title')} onClick={() => open({ kind: 'settings' })}>
-        <Settings className="size-[18px]" />
-      </IconButton>
+      {/* The three controls, 6 px apart. */}
+      <span className="flex shrink-0 items-center gap-1.5">
+        <SplitButton
+          label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
+          shortcut={muteKeys}
+          danger={muted}
+          onClick={() => voice.toggleMute()}
+          menuLabel={t('shell.micOptions')}
+          menu={<DeviceMenu kind="audioinput" />}
+        >
+          {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+        </SplitButton>
+        <SplitButton
+          label={deafened ? t('voice.undeafen') : t('voice.deafen')}
+          shortcut={deafenKeys}
+          danger={deafened}
+          onClick={() => voice.toggleDeafen()}
+          menuLabel={t('shell.outputOptions')}
+          menu={<DeviceMenu kind="audiooutput" />}
+        >
+          {deafened ? <HeadphoneOff className="size-5" /> : <Headphones className="size-5" />}
+        </SplitButton>
+        <IconButton className="size-8" label={t('settings.title')} onClick={() => open({ kind: 'settings' })}>
+          <Settings className="size-5" />
+        </IconButton>
+      </span>
     </div>
   );
 }
@@ -147,9 +158,10 @@ function SplitButton({
   children: ReactNode;
 }): ReactNode {
   return (
-    // The ▾ appears on hover / keyboard focus (Discord-like), so the name keeps its width at rest.
-    <div className="group/split flex shrink-0 items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
-      <IconButton size="sm" label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="hover:bg-transparent group-hover/split:rounded-r-none">
+    // One 40 px split control (Discord): the 20 px icon and the ▾ next to it share one hover background;
+    // the ▾ is always visible — the device menu is one click away.
+    <div className="group/split flex h-8 shrink-0 items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
+      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="h-8 w-[26px] rounded-r-none hover:bg-transparent">
         {children}
       </IconButton>
       <Dropdown.Root modal={false}>
@@ -158,9 +170,9 @@ function SplitButton({
           <button
             type="button"
             aria-label={menuName}
-            className="grid h-7 w-0 place-items-center overflow-hidden rounded-r-[var(--radius-icon)] text-muted opacity-0 transition-[width,opacity] duration-[var(--motion-fast)] hover:text-fg focus-visible:w-3.5 focus-visible:opacity-100 group-hover/split:w-3.5 group-hover/split:opacity-100 group-focus-within/split:w-3.5 group-focus-within/split:opacity-100 data-[state=open]:w-3.5 data-[state=open]:text-fg data-[state=open]:opacity-100"
+            className="grid h-8 w-[14px] place-items-center rounded-r-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
           >
-            <ChevronDown className="size-3" strokeWidth={2.25} aria-hidden />
+            <ChevronDown className="size-2.5 shrink-0" strokeWidth={2.75} aria-hidden />
           </button>
         </Dropdown.Trigger>
         </Tip>
@@ -179,6 +191,7 @@ function DeviceMenu({ kind }: { kind: 'audioinput' | 'audiooutput' }): ReactNode
   const outId = usePrefs((s) => s.outputDeviceId);
   const micMode = usePrefs((s) => s.micMode);
   const threshold = usePrefs((s) => s.thresholdDb);
+  const outputVolume = usePrefs((s) => s.outputVolume);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const open = useUi((s) => s.openDialog);
   const current = (kind === 'audioinput' ? micId : outId) ?? DEFAULT_ID;
@@ -237,6 +250,19 @@ function DeviceMenu({ kind }: { kind: 'audioinput' | 'audiooutput' }): ReactNode
               <span className="tabular-nums">{threshold} дБ</span>
             </div>
             <Slider label={t('shell.inputVolume')} value={threshold} min={-80} max={-10} step={1} onChange={(v) => setPrefs({ thresholdDb: v })} />
+          </div>
+        </>
+      ) : null}
+      {kind === 'audiooutput' ? (
+        <>
+          <Dropdown.Separator className={menuSeparator} />
+          <div className="px-2 pb-2 pt-1">
+            <div className="mb-1 flex justify-between text-caption text-muted">
+              <span>{t('shell.outputVolume')}</span>
+              <span className="tabular-nums">{Math.round(outputVolume * 100)}%</span>
+            </div>
+            {/* element.volume only (no WebAudio, docs/02 echo rule 1): 100 % is the maximum. */}
+            <Slider label={t('shell.outputVolume')} value={Math.round(outputVolume * 100)} min={0} max={100} step={1} onChange={(v) => setPrefs({ outputVolume: v / 100 })} />
           </div>
         </>
       ) : null}

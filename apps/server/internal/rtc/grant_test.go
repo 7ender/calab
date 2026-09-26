@@ -17,21 +17,32 @@ import (
 
 func TestGrant(t *testing.T) {
 	member := perm.ViewRoom | perm.SendMessages | perm.AttachFiles | perm.Connect | perm.Speak | perm.Stream
-	g := Grant(member, true)
+	g := Grant(member, true, false)
 	if !g.CanSubscribe || !g.CanPublish || len(g.CanPublishSources) != 3 {
 		t.Fatalf("member with slot: %+v", g)
 	}
-	if g := Grant(member, false); len(g.CanPublishSources) != 1 || g.CanPublishSources[0] != SourceMicrophone {
+	if g := Grant(member, false, false); len(g.CanPublishSources) != 1 || g.CanPublishSources[0] != SourceMicrophone {
 		t.Fatalf("no stream slot: %+v", g)
 	}
-	if g := Grant(member&^perm.Speak, true); len(g.CanPublishSources) != 2 || g.CanPublishSources[0] != SourceScreenShare {
+	if g := Grant(member&^perm.Speak, true, false); len(g.CanPublishSources) != 2 || g.CanPublishSources[0] != SourceScreenShare {
 		t.Fatalf("listen + stream: %+v", g)
 	}
-	if g := Grant(perm.ViewRoom|perm.Connect, true); g.CanPublish || !g.CanSubscribe || g.CanPublishSources == nil {
+	if g := Grant(perm.ViewRoom|perm.Connect, true, false); g.CanPublish || !g.CanSubscribe || g.CanPublishSources == nil {
 		t.Fatalf("listener: %+v", g)
 	}
-	if g := Grant(perm.Connect|perm.Speak|perm.Stream, true); g.CanSubscribe || g.CanPublish {
+	if g := Grant(perm.Connect|perm.Speak|perm.Stream, true, false); g.CanSubscribe || g.CanPublish {
 		t.Fatalf("without VIEW_ROOM nothing is granted: %+v", g)
+	}
+	// Camera: VIDEO and a held camera (reservation / webcam on).
+	video := member | perm.Video
+	if g := Grant(video, false, true); len(g.CanPublishSources) != 2 || g.CanPublishSources[1] != SourceCamera {
+		t.Fatalf("camera held: %+v", g)
+	}
+	if g := Grant(video, false, false); len(g.CanPublishSources) != 1 {
+		t.Fatalf("camera not requested: %+v", g)
+	}
+	if g := Grant(member, false, true); len(g.CanPublishSources) != 1 {
+		t.Fatalf("camera without VIDEO: %+v", g)
 	}
 }
 
@@ -46,7 +57,7 @@ func TestClampPreset(t *testing.T) {
 }
 
 func TestJoinToken(t *testing.T) {
-	tok, err := JoinToken("key", "secret", "room1", "u:s", "Ann", Grant(perm.ViewRoom|perm.Connect|perm.Speak, false), time.Minute)
+	tok, err := JoinToken("key", "secret", "room1", "u:s", "Ann", Grant(perm.ViewRoom|perm.Connect|perm.Speak, false, false), time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +114,7 @@ func TestTwirpBodiesMatchLiveKit(t *testing.T) {
 		t.Fatalf("MoveParticipant body: %v %v", &mv, err)
 	}
 	var up livekit.UpdateParticipantRequest
-	b, _ = json.Marshal(map[string]any{"room": "a", "identity": "u:s", "permission": Grant(perm.ViewRoom|perm.Connect|perm.Speak|perm.Stream, true)})
+	b, _ = json.Marshal(map[string]any{"room": "a", "identity": "u:s", "permission": Grant(perm.ViewRoom|perm.Connect|perm.Speak|perm.Stream, true, false)})
 	if err := protojson.Unmarshal(b, &up); err != nil {
 		t.Fatal(err)
 	}

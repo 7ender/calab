@@ -8,10 +8,11 @@ import (
 // Grant maps room permissions to LiveKit participant permissions (docs/04):
 //
 //	canSubscribe      = VIEW_ROOM & CONNECT
-//	canPublishSources = SPEAK → microphone; STREAM (and a free stream slot) → screen_share(+audio)
+//	canPublishSources = SPEAK → microphone; STREAM (and a free stream slot) → screen_share(+audio);
+//	                    VIDEO (and a camera held: /camera/request or a webcam on) → camera
 //
 // roomAdmin is never given to clients: moderation goes through the API.
-func Grant(bits perm.Bits, streamSlot bool) Permission {
+func Grant(bits perm.Bits, streamSlot, camera bool) Permission {
 	join := bits.Has(perm.ViewRoom | perm.Connect)
 	src := []TrackSource{}
 	if join && bits.Has(perm.Speak) {
@@ -19,6 +20,9 @@ func Grant(bits perm.Bits, streamSlot bool) Permission {
 	}
 	if join && streamSlot && bits.Has(perm.Stream) {
 		src = append(src, SourceScreenShare, SourceScreenShareAudio)
+	}
+	if join && camera && bits.Has(perm.Video) {
+		src = append(src, SourceCamera)
 	}
 	return Permission{
 		CanSubscribe:      join,

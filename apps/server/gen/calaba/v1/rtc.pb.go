@@ -24,13 +24,16 @@ const (
 // POST /api/rooms/{id}/join (CONNECT). Returns a LiveKit token for this device
 // (identity "<user_id>:<session_id>", TTL 10 min, use it to connect right away).
 type JoinVoiceResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`     // LiveKit signal URL (LIVEKIT_URL)
-	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"` // LiveKit access JWT
-	Identity      string                 `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
-	Media         *RoomMediaSettings     `protobuf:"bytes,4,opt,name=media,proto3" json:"media,omitempty"` // effective settings to apply when publishing
-	CanSpeak      bool                   `protobuf:"varint,5,opt,name=can_speak,json=canSpeak,proto3" json:"can_speak,omitempty"`
-	CanStream     bool                   `protobuf:"varint,6,opt,name=can_stream,json=canStream,proto3" json:"can_stream,omitempty"` // STREAM granted and a stream slot was free at join time
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Url       string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`     // LiveKit signal URL (LIVEKIT_URL)
+	Token     string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"` // LiveKit access JWT
+	Identity  string                 `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
+	Media     *RoomMediaSettings     `protobuf:"bytes,4,opt,name=media,proto3" json:"media,omitempty"` // effective settings to apply when publishing
+	CanSpeak  bool                   `protobuf:"varint,5,opt,name=can_speak,json=canSpeak,proto3" json:"can_speak,omitempty"`
+	CanStream bool                   `protobuf:"varint,6,opt,name=can_stream,json=canStream,proto3" json:"can_stream,omitempty"` // STREAM granted and a stream slot was free at join time
+	// VIDEO granted and the room allows cameras (camera_limit > 0). The camera source is not in
+	// the join token: call POST /api/rooms/{id}/camera/request before publishing a webcam.
+	CanVideo      bool `protobuf:"varint,7,opt,name=can_video,json=canVideo,proto3" json:"can_video,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -103,6 +106,13 @@ func (x *JoinVoiceResponse) GetCanSpeak() bool {
 func (x *JoinVoiceResponse) GetCanStream() bool {
 	if x != nil {
 		return x.CanStream
+	}
+	return false
+}
+
+func (x *JoinVoiceResponse) GetCanVideo() bool {
+	if x != nil {
+		return x.CanVideo
 	}
 	return false
 }
@@ -301,7 +311,7 @@ var File_calaba_v1_rtc_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\n" +
-	"\x13calaba/v1/rtc.proto\x12\tcalaba.v1\x1a\x15calaba/v1/media.proto\"\xc7\x01\n" +
+	"\x13calaba/v1/rtc.proto\x12\tcalaba.v1\x1a\x15calaba/v1/media.proto\"\xe4\x01\n" +
 	"\x11JoinVoiceResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1a\n" +
@@ -309,7 +319,8 @@ const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\x05media\x18\x04 \x01(\v2\x1c.calaba.v1.RoomMediaSettingsR\x05media\x12\x1b\n" +
 	"\tcan_speak\x18\x05 \x01(\bR\bcanSpeak\x12\x1d\n" +
 	"\n" +
-	"can_stream\x18\x06 \x01(\bR\tcanStream\"L\n" +
+	"can_stream\x18\x06 \x01(\bR\tcanStream\x12\x1b\n" +
+	"\tcan_video\x18\a \x01(\bR\bcanVideo\"L\n" +
 	"\x14RequestStreamRequest\x124\n" +
 	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\"M\n" +
 	"\x15RequestStreamResponse\x124\n" +

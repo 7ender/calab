@@ -411,7 +411,7 @@ func TestPermissionsFlow(t *testing.T) {
 		}
 	}
 
-	member := perm.ViewRoom | perm.SendMessages | perm.AttachFiles | perm.Connect | perm.Speak | perm.Stream
+	member := perm.ViewRoom | perm.SendMessages | perm.AttachFiles | perm.Connect | perm.Speak | perm.Stream | perm.Video
 	cases := []struct {
 		who    string
 		u      *user

@@ -70,7 +70,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil || dstID == srcID {
 		return httpx.Validation("targetRoomId", "target must be another voice room")
 	}
-	dst, _, err := s.roomInfo(r.Context(), dstID)
+	dst, dstMedia, err := s.roomInfo(r.Context(), dstID)
 	if db.IsNotFound(err) || (err == nil && (dst.WorkspaceID != acc.WorkspaceID || dst.Type != "voice")) {
 		return httpx.Validation("targetRoomId", "target must be a voice room of the same workspace")
 	}
@@ -119,6 +119,10 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 20*time.Second)
 	defer cancel()
 	streams, err := s.voice.Streams(ctx, srcID)
+	if err != nil {
+		return err
+	}
+	cameras, err := s.voice.Cameras(ctx, srcID)
 	if err != nil {
 		return err
 	}
@@ -176,13 +180,54 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			moved++
-			s.publishVoice(ctx, acc.WorkspaceID, c)
+			// The device comes back on a new connection: no camera, no stream. Its webcam is
+			// not "stopped" (no VOICE_CAMERA_STOP); the client requests it again in the target.
+			if s.resetCameraForReconnect(ctx, srcID, identity, cameras) {
+				// This update publishes the final state (target room, camera off); the
+				// intermediate one (target room, camera on) is never announced.
+				_ = s.setFlag(ctx, acc.WorkspaceID, dstID, target, st.SessionID, func(n *voice.SessionState) { n.Camera = false })
+			} else {
+				s.publishVoice(ctx, acc.WorkspaceID, c)
+			}
 			s.stopStreams(ctx, acc.WorkspaceID, srcID, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
 			apps = append(apps, appMove{sessionID: st.SessionID, identity: identity, token: tok})
 			continue
 		}
 		moved++
 		s.publishVoice(ctx, acc.WorkspaceID, c)
+		// Webcams move with the participant too (moderator action: the target's camera_limit
+		// is not applied, like user_limit); carried before the grant so it keeps the camera.
+		// A target that does not allow cameras for the member (no VIDEO, camera_limit 0)
+		// stops them with VOICE_CAMERA_STOP{ROOM_POLICY} instead (webcam review L6).
+		camsAllowed := movedDst.Bits.Has(perm.Video) && dstMedia.GetCameraLimit() > 0
+		var stoppedCams []string
+		for sid, rec := range cameras {
+			if rec.Identity != identity {
+				continue
+			}
+			if ok, _ := s.voice.RemoveCamera(ctx, srcID, sid); !ok {
+				continue
+			}
+			if camsAllowed {
+				_, _ = s.voice.AddCamera(ctx, dstID, sid, rec, -1)
+			} else {
+				stoppedCams = append(stoppedCams, sid)
+			}
+		}
+		if !camsAllowed {
+			if _, err := s.voice.ReleaseCamera(ctx, identity); err != nil {
+				slog.WarnContext(ctx, "release camera on move", "identity", identity, "err", err)
+			}
+			for _, sid := range stoppedCams {
+				if err := s.lk.MuteTrack(ctx, dstName, identity, sid, true); err != nil && !IsNotFound(err) {
+					slog.WarnContext(ctx, "mute camera on move", "identity", identity, "err", err)
+				}
+				s.publishCameraStop(ctx, acc.WorkspaceID, dstID, target, sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ROOM_POLICY)
+			}
+			if len(stoppedCams) > 0 {
+				_ = s.setFlag(ctx, acc.WorkspaceID, dstID, target, st.SessionID, func(n *voice.SessionState) { n.Camera = false })
+			}
+		}
 		if err := s.pushGrant(ctx, dstName, identity, acc.WorkspaceID, target, movedDst.Bits, st.Streaming); err != nil && !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}

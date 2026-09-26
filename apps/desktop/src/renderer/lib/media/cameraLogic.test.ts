@@ -1,0 +1,113 @@
+import { describe, expect, it } from 'vitest';
+import { CAMERA_LAYERS, CPU_LIMIT_SAMPLES, isChromium, cameraBlock, cameraWanted, cameraNext, camerasFull, cpuLimitStep, pickCameraCodec, type CameraEvent, type CameraPhase } from './cameraLogic';
+
+describe('camera layers (docs/09 #41)', () => {
+  it('180p / 360p / 720p with 0.15 / 0.5 / 1.5 Mbps ceilings at 24–30 fps', () => {
+    expect(CAMERA_LAYERS.map((l) => `${l.width}x${l.height}`)).toEqual(['320x180', '640x360', '1280x720']);
+    expect(CAMERA_LAYERS.map((l) => l.maxBitrate)).toEqual([150_000, 500_000, 1_500_000]);
+    for (const l of CAMERA_LAYERS) {
+      expect(l.fps).toBeGreaterThanOrEqual(24);
+      expect(l.fps).toBeLessThanOrEqual(30);
+    }
+  });
+});
+
+describe('pickCameraCodec', () => {
+  it('VP9, then AV1, then VP8', () => {
+    expect(pickCameraCodec(new Set(['vp8', 'vp9', 'av1', 'h264']))).toBe('vp9');
+    expect(pickCameraCodec(new Set(['vp8', 'av1']))).toBe('av1');
+    expect(pickCameraCodec(new Set(['vp8', 'h264']))).toBe('vp8');
+    expect(pickCameraCodec(new Set(['h264']))).toBe('h264');
+    expect(pickCameraCodec(new Set())).toBe('vp8');
+  });
+  it('outside Chromium (Firefox / Safari web): plain VP8 simulcast', () => {
+    expect(pickCameraCodec(new Set(['vp8', 'vp9', 'av1']), false)).toBe('vp8');
+    expect(pickCameraCodec(new Set(['h264']), false)).toBe('h264');
+    expect(isChromium('Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/140.0 Electron/44.4.5 Safari/537.36')).toBe(true);
+    expect(isChromium('Mozilla/5.0 (Macintosh; rv:143.0) Gecko/20100101 Firefox/143.0')).toBe(false);
+    expect(isChromium('Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15')).toBe(false);
+  });
+});
+
+describe('cameraNext', () => {
+  const run = (from: CameraPhase, ...evs: CameraEvent[]): CameraPhase => evs.reduce(cameraNext, from);
+
+  it('happy path: off → starting → on → stopping → off', () => {
+    expect(run('off', 'request')).toBe('starting');
+    expect(run('off', 'request', 'published')).toBe('on');
+    expect(run('off', 'request', 'published', 'stop')).toBe('stopping');
+    expect(run('off', 'request', 'published', 'stop', 'stopped')).toBe('off');
+  });
+
+  it('409 / publish failure returns to off', () => {
+    expect(run('off', 'request', 'failed')).toBe('off');
+  });
+
+  it('turning it off while it is starting waits for the stop', () => {
+    expect(run('off', 'request', 'stop')).toBe('stopping');
+    // A late «published» must not bring it back on.
+    expect(run('off', 'request', 'stop', 'published')).toBe('stopping');
+    expect(run('off', 'request', 'stop', 'published', 'stopped')).toBe('off');
+  });
+
+  it('server stop and leaving the call win from any phase', () => {
+    for (const p of ['off', 'starting', 'on', 'stopping'] as const) {
+      expect(cameraNext(p, 'server-stop')).toBe('off');
+      expect(cameraNext(p, 'left')).toBe('off');
+    }
+  });
+
+  it('ignores events that do not apply', () => {
+    expect(cameraNext('off', 'published')).toBe('off');
+    expect(cameraNext('off', 'stop')).toBe('off');
+    expect(cameraNext('on', 'request')).toBe('on');
+  });
+});
+
+describe('cameraBlock / camerasFull (limits)', () => {
+  const base = { connected: true, canVideo: true, limit: 6, phase: 'off' as const };
+  it('enabled in a call with VIDEO and a non-zero limit', () => {
+    expect(cameraBlock(base)).toBeNull();
+  });
+  it('reasons: not connected, cameras off in the room, no VIDEO', () => {
+    expect(cameraBlock({ ...base, connected: false })).toBe('not-connected');
+    expect(cameraBlock({ ...base, limit: 0, canVideo: false })).toBe('room-off');
+    expect(cameraBlock({ ...base, canVideo: false })).toBe('no-permission');
+  });
+  it('a live camera can always be turned off', () => {
+    expect(cameraBlock({ ...base, canVideo: false, limit: 0, phase: 'on' })).toBeNull();
+  });
+  it('full when the others already use every slot', () => {
+    expect(camerasFull(6, 6, false)).toBe(true);
+    expect(camerasFull(5, 6, false)).toBe(false);
+    expect(camerasFull(6, 6, true)).toBe(false);
+    expect(camerasFull(3, 0, false)).toBe(false);
+  });
+});
+
+describe('cameraWanted (subscriptions)', () => {
+  it('all cameras but the hidden ones', () => {
+    expect([...cameraWanted(['a', 'b', 'c'], { hidden: { b: true }, saveTraffic: false, primary: null })]).toEqual(['a', 'c']);
+  });
+  it('save traffic: only the primary, never a hidden one', () => {
+    expect([...cameraWanted(['a', 'b'], { hidden: {}, saveTraffic: true, primary: 'b' })]).toEqual(['b']);
+    expect([...cameraWanted(['a', 'b'], { hidden: { b: true }, saveTraffic: true, primary: 'b' })]).toEqual([]);
+    expect([...cameraWanted(['a'], { hidden: {}, saveTraffic: true, primary: null })]).toEqual([]);
+  });
+  it('never my own camera from another device (review L9)', () => {
+    expect([...cameraWanted(['me', 'a'], { hidden: {}, saveTraffic: false, primary: null, me: 'me' })]).toEqual(['a']);
+  });
+});
+
+describe('cpuLimitStep', () => {
+  it(`drops to 360p after ${CPU_LIMIT_SAMPLES} CPU-limited samples in a row, once`, () => {
+    let c = 0;
+    const out: boolean[] = [];
+    for (const cpu of [true, true, false, true, true, true, true]) {
+      const r = cpuLimitStep(c, cpu);
+      c = r.count;
+      out.push(r.limit);
+    }
+    expect(out).toEqual([false, false, false, false, false, true, false]);
+  });
+});

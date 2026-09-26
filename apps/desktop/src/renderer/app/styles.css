@@ -38,6 +38,8 @@
   --color-red-text: #ff7f75; /* red text on any dark surface (≥ 4.5:1) */
   --color-red-fill: #d70015;
   --color-green-fill: #1f7a34; /* filled green with white text (≥ 4.5:1) */
+  /* green text on raised / selected rows (≥ 4.5:1 on the hover and selected fills) */
+  --color-green-text: #30d158;
   /* role name colours in member lists (≥ 4.5:1 on the sidebar incl. hover) */
   --color-role-owner: #f2c94c;
   --color-role-admin: #6cb4ff;
@@ -49,6 +51,8 @@
   --color-code: rgb(118 118 128 / 18%);
   --color-scrim: rgb(0 0 0 / 45%);
   --color-video-bg: #000000;
+  /* video tile without a picture (avatar placeholder in the call grid) */
+  --color-tile-bg: #2a2a2d;
   /* settings sheets (System Settings): pane behind the cards, the cards, their separators */
   --color-sheet-pane: var(--color-bg);
   --color-card: var(--color-fill);
@@ -108,6 +112,8 @@
   /* ---- shadow / blur (materials) ---- */
   --shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 35%), 0 2px 6px rgb(0 0 0 / 25%);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 25%);
+  /* the bottom island of the room column: hairline edge + soft lift */
+  --shadow-island: 0 0 0 1px var(--color-separator), 0 4px 14px rgb(0 0 0 / 28%);
   --blur-sidebar: blur(20px) saturate(180%);
   --blur-toolbar: blur(12px) saturate(160%);
   --blur-popover: blur(20px) saturate(180%);
@@ -162,6 +168,7 @@
   --color-accent-strong: #0071e3;
   --color-accent-text: #0066cc;
   --color-green: #1f7a34;
+  --color-green-text: #145a26;
   --color-yellow: #a05a00;
   --color-presence-idle: #ffcc00;
   --color-red: #d70015;
@@ -174,6 +181,8 @@
   --color-search-current: #ffcc00;
   --color-code: rgb(118 118 128 / 12%);
   --color-scrim: rgb(0 0 0 / 25%);
+  /* tiles stay dark in light theme too (video letterboxing, like the stream stage) */
+  --color-tile-bg: #2c2c2e;
   --color-sheet-pane: #f5f5f7;
   --color-card: #ffffff;
   --color-card-line: rgb(0 0 0 / 8%);
@@ -198,6 +207,7 @@
   --name-8: #5c5c61;
   --shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 12px 32px rgb(0 0 0 / 14%), 0 2px 6px rgb(0 0 0 / 8%);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 8%);
+  --shadow-island: 0 0 0 1px var(--color-separator), 0 4px 14px rgb(0 0 0 / 10%);
   color-scheme: light;
 }
 
@@ -395,6 +405,13 @@ body {
   background: var(--color-bg);
 }
 
+/* Secondary text that may not fit: fade the last 16 px out instead of an ellipsis (Discord's
+   status line). Put it on a full-width row, so text that fits never reaches the fade. */
+.fade-end {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+}
+
 /* Text the user may want to copy. */
 .selectable,
 .selectable * {
@@ -528,6 +545,11 @@ body {
   animation: none !important;
   transition: none !important;
   caret-color: transparent !important;
+}
+/* Visual tests: no scrollbars — overlay scrollbars appear on every scroll and fade on their own
+   timer, so a shot right after a scroll caught them half-faded (per-screen tests scroll first). */
+:root.test-stable * {
+  scrollbar-width: none !important;
 }
 
 /* SF-Symbols-like icons: one set (Lucide), thinner strokes (docs/08, «Иконки»). */

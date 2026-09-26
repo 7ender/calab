@@ -236,6 +236,7 @@ const (
 	VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED         VoiceStreamStopReason = 1 // publisher stopped / left
 	VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_LIMIT_REACHED VoiceStreamStopReason = 2 // room max_streams exceeded: track muted by the server
 	VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_MODERATOR     VoiceStreamStopReason = 3 // stopped by a member with MUTE_MEMBERS
+	VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ROOM_POLICY   VoiceStreamStopReason = 4 // moved into a room that does not allow it (cameras off / no VIDEO)
 )
 
 // Enum value maps for VoiceStreamStopReason.
@@ -245,12 +246,14 @@ var (
 		1: "VOICE_STREAM_STOP_REASON_ENDED",
 		2: "VOICE_STREAM_STOP_REASON_LIMIT_REACHED",
 		3: "VOICE_STREAM_STOP_REASON_MODERATOR",
+		4: "VOICE_STREAM_STOP_REASON_ROOM_POLICY",
 	}
 	VoiceStreamStopReason_value = map[string]int32{
 		"VOICE_STREAM_STOP_REASON_UNSPECIFIED":   0,
 		"VOICE_STREAM_STOP_REASON_ENDED":         1,
 		"VOICE_STREAM_STOP_REASON_LIMIT_REACHED": 2,
 		"VOICE_STREAM_STOP_REASON_MODERATOR":     3,
+		"VOICE_STREAM_STOP_REASON_ROOM_POLICY":   4,
 	}
 )
 
@@ -1077,6 +1080,7 @@ type DispatchEvent struct {
 	//	*DispatchEvent_MessageReactionRemove
 	//	*DispatchEvent_VoiceMoved
 	//	*DispatchEvent_RoomNotificationUpdate
+	//	*DispatchEvent_VoiceCameraStop
 	Event         isDispatchEvent_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1380,6 +1384,15 @@ func (x *DispatchEvent) GetRoomNotificationUpdate() *RoomNotificationUpdate {
 	return nil
 }
 
+func (x *DispatchEvent) GetVoiceCameraStop() *VoiceCameraStop {
+	if x != nil {
+		if x, ok := x.Event.(*DispatchEvent_VoiceCameraStop); ok {
+			return x.VoiceCameraStop
+		}
+	}
+	return nil
+}
+
 type isDispatchEvent_Event interface {
 	isDispatchEvent_Event()
 }
@@ -1500,6 +1513,10 @@ type DispatchEvent_RoomNotificationUpdate struct {
 	RoomNotificationUpdate *RoomNotificationUpdate `protobuf:"bytes,29,opt,name=room_notification_update,json=roomNotificationUpdate,proto3,oneof"`
 }
 
+type DispatchEvent_VoiceCameraStop struct {
+	VoiceCameraStop *VoiceCameraStop `protobuf:"bytes,30,opt,name=voice_camera_stop,json=voiceCameraStop,proto3,oneof"`
+}
+
 func (*DispatchEvent_Ready) isDispatchEvent_Event() {}
 
 func (*DispatchEvent_WorkspaceCreate) isDispatchEvent_Event() {}
@@ -1558,6 +1575,8 @@ func (*DispatchEvent_VoiceMoved) isDispatchEvent_Event() {}
 
 func (*DispatchEvent_RoomNotificationUpdate) isDispatchEvent_Event() {}
 
+func (*DispatchEvent_VoiceCameraStop) isDispatchEvent_Event() {}
+
 // Aggregated per user (docs/05, "multiple devices").
 type VoiceState struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
@@ -1571,6 +1590,7 @@ type VoiceState struct {
 	// Muted by a moderator (POST …/voice/{userId}/mute) until a moderator unmutes: the
 	// microphone is muted server-side on all devices and cannot be unmuted by the user.
 	ServerMuted   bool `protobuf:"varint,8,opt,name=server_muted,json=serverMuted,proto3" json:"server_muted,omitempty"`
+	Camera        bool `protobuf:"varint,9,opt,name=camera,proto3" json:"camera,omitempty"` // any of the user's devices in the room publishes a webcam
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1657,6 +1677,13 @@ func (x *VoiceState) GetJoinedAt() *timestamppb.Timestamp {
 func (x *VoiceState) GetServerMuted() bool {
 	if x != nil {
 		return x.ServerMuted
+	}
+	return false
+}
+
+func (x *VoiceState) GetCamera() bool {
+	if x != nil {
+		return x.Camera
 	}
 	return false
 }
@@ -3379,6 +3406,85 @@ func (x *VoiceStreamStop) GetReason() VoiceStreamStopReason {
 	return VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_UNSPECIFIED
 }
 
+// A webcam was stopped by the server: over the room's camera_limit (LIMIT_REACHED, the track
+// is muted and the camera grant withdrawn) or by a moderator (MODERATOR). A camera the user
+// turns off himself only clears VoiceState.camera (reason ENDED is not sent separately).
+type VoiceCameraStop struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	RoomId        string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	TrackSid      string                 `protobuf:"bytes,4,opt,name=track_sid,json=trackSid,proto3" json:"track_sid,omitempty"`
+	Reason        VoiceStreamStopReason  `protobuf:"varint,5,opt,name=reason,proto3,enum=calaba.v1.VoiceStreamStopReason" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VoiceCameraStop) Reset() {
+	*x = VoiceCameraStop{}
+	mi := &file_calaba_v1_gateway_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VoiceCameraStop) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VoiceCameraStop) ProtoMessage() {}
+
+func (x *VoiceCameraStop) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_gateway_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VoiceCameraStop.ProtoReflect.Descriptor instead.
+func (*VoiceCameraStop) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *VoiceCameraStop) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *VoiceCameraStop) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *VoiceCameraStop) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *VoiceCameraStop) GetTrackSid() string {
+	if x != nil {
+		return x.TrackSid
+	}
+	return ""
+}
+
+func (x *VoiceCameraStop) GetReason() VoiceStreamStopReason {
+	if x != nil {
+		return x.Reason
+	}
+	return VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_UNSPECIFIED
+}
+
 type ReadStateUpdate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ReadState     *ReadState             `protobuf:"bytes,1,opt,name=read_state,json=readState,proto3" json:"read_state,omitempty"`
@@ -3388,7 +3494,7 @@ type ReadStateUpdate struct {
 
 func (x *ReadStateUpdate) Reset() {
 	*x = ReadStateUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[43]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3400,7 +3506,7 @@ func (x *ReadStateUpdate) String() string {
 func (*ReadStateUpdate) ProtoMessage() {}
 
 func (x *ReadStateUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[43]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3413,7 +3519,7 @@ func (x *ReadStateUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadStateUpdate.ProtoReflect.Descriptor instead.
 func (*ReadStateUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{43}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ReadStateUpdate) GetReadState() *ReadState {
@@ -3433,7 +3539,7 @@ type RoomNotificationUpdate struct {
 
 func (x *RoomNotificationUpdate) Reset() {
 	*x = RoomNotificationUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[44]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3445,7 +3551,7 @@ func (x *RoomNotificationUpdate) String() string {
 func (*RoomNotificationUpdate) ProtoMessage() {}
 
 func (x *RoomNotificationUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[44]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3458,7 +3564,7 @@ func (x *RoomNotificationUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomNotificationUpdate.ProtoReflect.Descriptor instead.
 func (*RoomNotificationUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{44}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *RoomNotificationUpdate) GetSettings() *RoomNotificationSettings {
@@ -3480,7 +3586,7 @@ type UserUpdate struct {
 
 func (x *UserUpdate) Reset() {
 	*x = UserUpdate{}
-	mi := &file_calaba_v1_gateway_proto_msgTypes[45]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3492,7 +3598,7 @@ func (x *UserUpdate) String() string {
 func (*UserUpdate) ProtoMessage() {}
 
 func (x *UserUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_gateway_proto_msgTypes[45]
+	mi := &file_calaba_v1_gateway_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3505,7 +3611,7 @@ func (x *UserUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserUpdate.ProtoReflect.Descriptor instead.
 func (*UserUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{45}
+	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *UserUpdate) GetMe() *Me {
@@ -3571,7 +3677,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\fHeartbeatAck\"\v\n" +
 	"\tReconnect\".\n" +
 	"\x0eInvalidSession\x12\x1c\n" +
-	"\tresumable\x18\x01 \x01(\bR\tresumable\"\xb0\x10\n" +
+	"\tresumable\x18\x01 \x01(\bR\tresumable\"\xfa\x10\n" +
 	"\rDispatchEvent\x12(\n" +
 	"\x05ready\x18\x01 \x01(\v2\x10.calaba.v1.ReadyH\x00R\x05ready\x12G\n" +
 	"\x10workspace_create\x18\x02 \x01(\v2\x1a.calaba.v1.WorkspaceCreateH\x00R\x0fworkspaceCreate\x12G\n" +
@@ -3607,8 +3713,9 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x17message_reaction_remove\x18\x1b \x01(\v2 .calaba.v1.MessageReactionRemoveH\x00R\x15messageReactionRemove\x128\n" +
 	"\vvoice_moved\x18\x1c \x01(\v2\x15.calaba.v1.VoiceMovedH\x00R\n" +
 	"voiceMoved\x12]\n" +
-	"\x18room_notification_update\x18\x1d \x01(\v2!.calaba.v1.RoomNotificationUpdateH\x00R\x16roomNotificationUpdateB\a\n" +
-	"\x05event\"\x8d\x02\n" +
+	"\x18room_notification_update\x18\x1d \x01(\v2!.calaba.v1.RoomNotificationUpdateH\x00R\x16roomNotificationUpdate\x12H\n" +
+	"\x11voice_camera_stop\x18\x1e \x01(\v2\x1a.calaba.v1.VoiceCameraStopH\x00R\x0fvoiceCameraStopB\a\n" +
+	"\x05event\"\xa5\x02\n" +
 	"\n" +
 	"VoiceState\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
@@ -3618,7 +3725,8 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\bdeafened\x18\x05 \x01(\bR\bdeafened\x12\x1c\n" +
 	"\tstreaming\x18\x06 \x01(\bR\tstreaming\x127\n" +
 	"\tjoined_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12!\n" +
-	"\fserver_muted\x18\b \x01(\bR\vserverMuted\"\x9b\x02\n" +
+	"\fserver_muted\x18\b \x01(\bR\vserverMuted\x12\x16\n" +
+	"\x06camera\x18\t \x01(\bR\x06camera\"\x9b\x02\n" +
 	"\bPresence\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x121\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x19.calaba.v1.PresenceStatusR\x06status\x127\n" +
@@ -3751,6 +3859,12 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x17\n" +
 	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x1b\n" +
 	"\ttrack_sid\x18\x04 \x01(\tR\btrackSid\x128\n" +
+	"\x06reason\x18\x05 \x01(\x0e2 .calaba.v1.VoiceStreamStopReasonR\x06reason\"\xbd\x01\n" +
+	"\x0fVoiceCameraStop\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
+	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x1b\n" +
+	"\ttrack_sid\x18\x04 \x01(\tR\btrackSid\x128\n" +
 	"\x06reason\x18\x05 \x01(\x0e2 .calaba.v1.VoiceStreamStopReasonR\x06reason\"F\n" +
 	"\x0fReadStateUpdate\x123\n" +
 	"\n" +
@@ -3792,12 +3906,13 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x14PRESENCE_STATUS_IDLE\x10\x02\x12\x17\n" +
 	"\x13PRESENCE_STATUS_DND\x10\x03\x12\x1d\n" +
 	"\x19PRESENCE_STATUS_INVISIBLE\x10\x04\x12\x1b\n" +
-	"\x17PRESENCE_STATUS_OFFLINE\x10\x05*\xb9\x01\n" +
+	"\x17PRESENCE_STATUS_OFFLINE\x10\x05*\xe3\x01\n" +
 	"\x15VoiceStreamStopReason\x12(\n" +
 	"$VOICE_STREAM_STOP_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eVOICE_STREAM_STOP_REASON_ENDED\x10\x01\x12*\n" +
 	"&VOICE_STREAM_STOP_REASON_LIMIT_REACHED\x10\x02\x12&\n" +
-	"\"VOICE_STREAM_STOP_REASON_MODERATOR\x10\x03B\x9a\x01\n" +
+	"\"VOICE_STREAM_STOP_REASON_MODERATOR\x10\x03\x12(\n" +
+	"$VOICE_STREAM_STOP_REASON_ROOM_POLICY\x10\x04B\x9a\x01\n" +
 	"\rcom.calaba.v1B\fGatewayProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -3814,7 +3929,7 @@ func file_calaba_v1_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_calaba_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
+var file_calaba_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_calaba_v1_gateway_proto_goTypes = []any{
 	(GatewayOpcode)(0),               // 0: calaba.v1.GatewayOpcode
 	(GatewayCloseCode)(0),            // 1: calaba.v1.GatewayCloseCode
@@ -3863,22 +3978,23 @@ var file_calaba_v1_gateway_proto_goTypes = []any{
 	(*VoiceStateUpdate)(nil),         // 44: calaba.v1.VoiceStateUpdate
 	(*VoiceStreamStart)(nil),         // 45: calaba.v1.VoiceStreamStart
 	(*VoiceStreamStop)(nil),          // 46: calaba.v1.VoiceStreamStop
-	(*ReadStateUpdate)(nil),          // 47: calaba.v1.ReadStateUpdate
-	(*RoomNotificationUpdate)(nil),   // 48: calaba.v1.RoomNotificationUpdate
-	(*UserUpdate)(nil),               // 49: calaba.v1.UserUpdate
-	nil,                              // 50: calaba.v1.WorkspaceSnapshot.PermissionsEntry
-	(*timestamppb.Timestamp)(nil),    // 51: google.protobuf.Timestamp
-	(*Workspace)(nil),                // 52: calaba.v1.Workspace
-	(WorkspaceRole)(0),               // 53: calaba.v1.WorkspaceRole
-	(*Room)(nil),                     // 54: calaba.v1.Room
-	(*WorkspaceMember)(nil),          // 55: calaba.v1.WorkspaceMember
-	(*RoomCategory)(nil),             // 56: calaba.v1.RoomCategory
-	(*Me)(nil),                       // 57: calaba.v1.Me
-	(*RoomNotificationSettings)(nil), // 58: calaba.v1.RoomNotificationSettings
-	(*RoomPermissionOverride)(nil),   // 59: calaba.v1.RoomPermissionOverride
-	(*Message)(nil),                  // 60: calaba.v1.Message
-	(ScreenSharePreset)(0),           // 61: calaba.v1.ScreenSharePreset
-	(*User)(nil),                     // 62: calaba.v1.User
+	(*VoiceCameraStop)(nil),          // 47: calaba.v1.VoiceCameraStop
+	(*ReadStateUpdate)(nil),          // 48: calaba.v1.ReadStateUpdate
+	(*RoomNotificationUpdate)(nil),   // 49: calaba.v1.RoomNotificationUpdate
+	(*UserUpdate)(nil),               // 50: calaba.v1.UserUpdate
+	nil,                              // 51: calaba.v1.WorkspaceSnapshot.PermissionsEntry
+	(*timestamppb.Timestamp)(nil),    // 52: google.protobuf.Timestamp
+	(*Workspace)(nil),                // 53: calaba.v1.Workspace
+	(WorkspaceRole)(0),               // 54: calaba.v1.WorkspaceRole
+	(*Room)(nil),                     // 55: calaba.v1.Room
+	(*WorkspaceMember)(nil),          // 56: calaba.v1.WorkspaceMember
+	(*RoomCategory)(nil),             // 57: calaba.v1.RoomCategory
+	(*Me)(nil),                       // 58: calaba.v1.Me
+	(*RoomNotificationSettings)(nil), // 59: calaba.v1.RoomNotificationSettings
+	(*RoomPermissionOverride)(nil),   // 60: calaba.v1.RoomPermissionOverride
+	(*Message)(nil),                  // 61: calaba.v1.Message
+	(ScreenSharePreset)(0),           // 62: calaba.v1.ScreenSharePreset
+	(*User)(nil),                     // 63: calaba.v1.User
 }
 var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.GatewayFrame.op:type_name -> calaba.v1.GatewayOpcode
@@ -3914,8 +4030,8 @@ var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	44, // 30: calaba.v1.DispatchEvent.voice_state_update:type_name -> calaba.v1.VoiceStateUpdate
 	45, // 31: calaba.v1.DispatchEvent.voice_stream_start:type_name -> calaba.v1.VoiceStreamStart
 	46, // 32: calaba.v1.DispatchEvent.voice_stream_stop:type_name -> calaba.v1.VoiceStreamStop
-	47, // 33: calaba.v1.DispatchEvent.read_state_update:type_name -> calaba.v1.ReadStateUpdate
-	49, // 34: calaba.v1.DispatchEvent.user_update:type_name -> calaba.v1.UserUpdate
+	48, // 33: calaba.v1.DispatchEvent.read_state_update:type_name -> calaba.v1.ReadStateUpdate
+	50, // 34: calaba.v1.DispatchEvent.user_update:type_name -> calaba.v1.UserUpdate
 	28, // 35: calaba.v1.DispatchEvent.resumed:type_name -> calaba.v1.Resumed
 	22, // 36: calaba.v1.DispatchEvent.category_create:type_name -> calaba.v1.CategoryCreate
 	23, // 37: calaba.v1.DispatchEvent.category_update:type_name -> calaba.v1.CategoryUpdate
@@ -3923,48 +4039,50 @@ var file_calaba_v1_gateway_proto_depIdxs = []int32{
 	25, // 39: calaba.v1.DispatchEvent.message_reaction_add:type_name -> calaba.v1.MessageReactionAdd
 	26, // 40: calaba.v1.DispatchEvent.message_reaction_remove:type_name -> calaba.v1.MessageReactionRemove
 	27, // 41: calaba.v1.DispatchEvent.voice_moved:type_name -> calaba.v1.VoiceMoved
-	48, // 42: calaba.v1.DispatchEvent.room_notification_update:type_name -> calaba.v1.RoomNotificationUpdate
-	51, // 43: calaba.v1.VoiceState.joined_at:type_name -> google.protobuf.Timestamp
-	2,  // 44: calaba.v1.Presence.status:type_name -> calaba.v1.PresenceStatus
-	51, // 45: calaba.v1.Presence.last_seen:type_name -> google.protobuf.Timestamp
-	51, // 46: calaba.v1.Presence.status_expires_at:type_name -> google.protobuf.Timestamp
-	52, // 47: calaba.v1.WorkspaceSnapshot.workspace:type_name -> calaba.v1.Workspace
-	53, // 48: calaba.v1.WorkspaceSnapshot.role:type_name -> calaba.v1.WorkspaceRole
-	54, // 49: calaba.v1.WorkspaceSnapshot.rooms:type_name -> calaba.v1.Room
-	55, // 50: calaba.v1.WorkspaceSnapshot.members:type_name -> calaba.v1.WorkspaceMember
-	17, // 51: calaba.v1.WorkspaceSnapshot.voice_states:type_name -> calaba.v1.VoiceState
-	18, // 52: calaba.v1.WorkspaceSnapshot.presences:type_name -> calaba.v1.Presence
-	50, // 53: calaba.v1.WorkspaceSnapshot.permissions:type_name -> calaba.v1.WorkspaceSnapshot.PermissionsEntry
-	56, // 54: calaba.v1.WorkspaceSnapshot.categories:type_name -> calaba.v1.RoomCategory
-	57, // 55: calaba.v1.Ready.me:type_name -> calaba.v1.Me
-	20, // 56: calaba.v1.Ready.workspaces:type_name -> calaba.v1.WorkspaceSnapshot
-	19, // 57: calaba.v1.Ready.read_states:type_name -> calaba.v1.ReadState
-	58, // 58: calaba.v1.Ready.notification_settings:type_name -> calaba.v1.RoomNotificationSettings
-	56, // 59: calaba.v1.CategoryCreate.category:type_name -> calaba.v1.RoomCategory
-	56, // 60: calaba.v1.CategoryUpdate.category:type_name -> calaba.v1.RoomCategory
-	20, // 61: calaba.v1.WorkspaceCreate.snapshot:type_name -> calaba.v1.WorkspaceSnapshot
-	52, // 62: calaba.v1.WorkspaceUpdate.workspace:type_name -> calaba.v1.Workspace
-	55, // 63: calaba.v1.WorkspaceMemberAdd.member:type_name -> calaba.v1.WorkspaceMember
-	55, // 64: calaba.v1.WorkspaceMemberUpdate.member:type_name -> calaba.v1.WorkspaceMember
-	54, // 65: calaba.v1.RoomCreate.room:type_name -> calaba.v1.Room
-	54, // 66: calaba.v1.RoomUpdate.room:type_name -> calaba.v1.Room
-	59, // 67: calaba.v1.RoomPermissionsUpdate.permissions:type_name -> calaba.v1.RoomPermissionOverride
-	60, // 68: calaba.v1.MessageCreate.message:type_name -> calaba.v1.Message
-	60, // 69: calaba.v1.MessageUpdate.message:type_name -> calaba.v1.Message
-	51, // 70: calaba.v1.TypingStart.timestamp:type_name -> google.protobuf.Timestamp
-	18, // 71: calaba.v1.PresenceUpdate.presence:type_name -> calaba.v1.Presence
-	17, // 72: calaba.v1.VoiceStateUpdate.state:type_name -> calaba.v1.VoiceState
-	61, // 73: calaba.v1.VoiceStreamStart.preset:type_name -> calaba.v1.ScreenSharePreset
-	3,  // 74: calaba.v1.VoiceStreamStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
-	19, // 75: calaba.v1.ReadStateUpdate.read_state:type_name -> calaba.v1.ReadState
-	58, // 76: calaba.v1.RoomNotificationUpdate.settings:type_name -> calaba.v1.RoomNotificationSettings
-	57, // 77: calaba.v1.UserUpdate.me:type_name -> calaba.v1.Me
-	62, // 78: calaba.v1.UserUpdate.user:type_name -> calaba.v1.User
-	79, // [79:79] is the sub-list for method output_type
-	79, // [79:79] is the sub-list for method input_type
-	79, // [79:79] is the sub-list for extension type_name
-	79, // [79:79] is the sub-list for extension extendee
-	0,  // [0:79] is the sub-list for field type_name
+	49, // 42: calaba.v1.DispatchEvent.room_notification_update:type_name -> calaba.v1.RoomNotificationUpdate
+	47, // 43: calaba.v1.DispatchEvent.voice_camera_stop:type_name -> calaba.v1.VoiceCameraStop
+	52, // 44: calaba.v1.VoiceState.joined_at:type_name -> google.protobuf.Timestamp
+	2,  // 45: calaba.v1.Presence.status:type_name -> calaba.v1.PresenceStatus
+	52, // 46: calaba.v1.Presence.last_seen:type_name -> google.protobuf.Timestamp
+	52, // 47: calaba.v1.Presence.status_expires_at:type_name -> google.protobuf.Timestamp
+	53, // 48: calaba.v1.WorkspaceSnapshot.workspace:type_name -> calaba.v1.Workspace
+	54, // 49: calaba.v1.WorkspaceSnapshot.role:type_name -> calaba.v1.WorkspaceRole
+	55, // 50: calaba.v1.WorkspaceSnapshot.rooms:type_name -> calaba.v1.Room
+	56, // 51: calaba.v1.WorkspaceSnapshot.members:type_name -> calaba.v1.WorkspaceMember
+	17, // 52: calaba.v1.WorkspaceSnapshot.voice_states:type_name -> calaba.v1.VoiceState
+	18, // 53: calaba.v1.WorkspaceSnapshot.presences:type_name -> calaba.v1.Presence
+	51, // 54: calaba.v1.WorkspaceSnapshot.permissions:type_name -> calaba.v1.WorkspaceSnapshot.PermissionsEntry
+	57, // 55: calaba.v1.WorkspaceSnapshot.categories:type_name -> calaba.v1.RoomCategory
+	58, // 56: calaba.v1.Ready.me:type_name -> calaba.v1.Me
+	20, // 57: calaba.v1.Ready.workspaces:type_name -> calaba.v1.WorkspaceSnapshot
+	19, // 58: calaba.v1.Ready.read_states:type_name -> calaba.v1.ReadState
+	59, // 59: calaba.v1.Ready.notification_settings:type_name -> calaba.v1.RoomNotificationSettings
+	57, // 60: calaba.v1.CategoryCreate.category:type_name -> calaba.v1.RoomCategory
+	57, // 61: calaba.v1.CategoryUpdate.category:type_name -> calaba.v1.RoomCategory
+	20, // 62: calaba.v1.WorkspaceCreate.snapshot:type_name -> calaba.v1.WorkspaceSnapshot
+	53, // 63: calaba.v1.WorkspaceUpdate.workspace:type_name -> calaba.v1.Workspace
+	56, // 64: calaba.v1.WorkspaceMemberAdd.member:type_name -> calaba.v1.WorkspaceMember
+	56, // 65: calaba.v1.WorkspaceMemberUpdate.member:type_name -> calaba.v1.WorkspaceMember
+	55, // 66: calaba.v1.RoomCreate.room:type_name -> calaba.v1.Room
+	55, // 67: calaba.v1.RoomUpdate.room:type_name -> calaba.v1.Room
+	60, // 68: calaba.v1.RoomPermissionsUpdate.permissions:type_name -> calaba.v1.RoomPermissionOverride
+	61, // 69: calaba.v1.MessageCreate.message:type_name -> calaba.v1.Message
+	61, // 70: calaba.v1.MessageUpdate.message:type_name -> calaba.v1.Message
+	52, // 71: calaba.v1.TypingStart.timestamp:type_name -> google.protobuf.Timestamp
+	18, // 72: calaba.v1.PresenceUpdate.presence:type_name -> calaba.v1.Presence
+	17, // 73: calaba.v1.VoiceStateUpdate.state:type_name -> calaba.v1.VoiceState
+	62, // 74: calaba.v1.VoiceStreamStart.preset:type_name -> calaba.v1.ScreenSharePreset
+	3,  // 75: calaba.v1.VoiceStreamStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
+	3,  // 76: calaba.v1.VoiceCameraStop.reason:type_name -> calaba.v1.VoiceStreamStopReason
+	19, // 77: calaba.v1.ReadStateUpdate.read_state:type_name -> calaba.v1.ReadState
+	59, // 78: calaba.v1.RoomNotificationUpdate.settings:type_name -> calaba.v1.RoomNotificationSettings
+	58, // 79: calaba.v1.UserUpdate.me:type_name -> calaba.v1.Me
+	63, // 80: calaba.v1.UserUpdate.user:type_name -> calaba.v1.User
+	81, // [81:81] is the sub-list for method output_type
+	81, // [81:81] is the sub-list for method input_type
+	81, // [81:81] is the sub-list for extension type_name
+	81, // [81:81] is the sub-list for extension extendee
+	0,  // [0:81] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_gateway_proto_init() }
@@ -4021,6 +4139,7 @@ func file_calaba_v1_gateway_proto_init() {
 		(*DispatchEvent_MessageReactionRemove)(nil),
 		(*DispatchEvent_VoiceMoved)(nil),
 		(*DispatchEvent_RoomNotificationUpdate)(nil),
+		(*DispatchEvent_VoiceCameraStop)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -4028,7 +4147,7 @@ func file_calaba_v1_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_gateway_proto_rawDesc), len(file_calaba_v1_gateway_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   47,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

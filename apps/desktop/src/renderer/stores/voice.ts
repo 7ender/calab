@@ -1,6 +1,7 @@
 import type { ConcreteScreenSharePreset } from '@calaba/protocol';
 import { create } from 'zustand';
 import type { MediaErrorAction } from '../lib/media/errors';
+import type { CameraPhase } from '../lib/media/cameraLogic';
 import type { CandidatePairInfo, InboundVideoStats, OutboundVideoLayer } from '../lib/media/stats';
 
 export type VoicePhase = 'idle' | 'connecting' | 'connected' | 'reconnecting';
@@ -20,6 +21,13 @@ export interface RemoteStream {
   hasAudio: boolean;
 }
 
+/** A remote webcam in my room (LiveKit camera publication). */
+export interface RemoteCamera {
+  trackSid: string;
+  userId: string;
+  identity: string;
+}
+
 export interface MyStream {
   sourceName: string;
   preset: ConcreteScreenSharePreset;
@@ -34,6 +42,7 @@ export interface VoiceStats {
   pair: CandidatePairInfo | null;
   micKbps: number | null;
   screenOut: OutboundVideoLayer[];
+  cameraOut: OutboundVideoLayer[];
   watching: InboundVideoStats | null;
   rendererCpu: number | null;
 }
@@ -45,6 +54,20 @@ export interface VoiceStore {
   error: string | null;
   canSpeak: boolean;
   canStream: boolean;
+  /** JoinVoiceResponse.can_video: VIDEO and the room allows cameras. */
+  canVideo: boolean;
+  /** My webcam (lib/media/cameraLogic.ts state machine). */
+  camera: CameraPhase;
+  /** The camera encoder was CPU-bound: capture dropped to 360p for this session. */
+  cameraCpuLimited: boolean;
+  /** Remote webcams of my room, in publication order. */
+  cameras: RemoteCamera[];
+  /** Active speaker for video: spoke ≥ 2 s continuously, stays until someone else does (lib/activeSpeaker.ts). */
+  activeSpeaker: string | null;
+  /** Tile the viewer clicked in the video grid (large until clicked again). */
+  focusedTile: string | null;
+  /** The camera PiP over the chat (closed with ×, back from «Ещё → Показать видео»). */
+  videoPip: boolean;
   muted: boolean;
   deafened: boolean;
   transmitting: boolean;
@@ -73,7 +96,7 @@ export interface VoiceStore {
   myStream: MyStream | null;
   streamBusy: boolean;
   stats: VoiceStats | null;
-  /** Bumped when a remote video track gets (un)subscribed, so video elements re-attach. */
+  /** Bumped when a video track (stream or camera, remote or mine) changes, so video elements re-attach. */
   trackEpoch: number;
   set: (p: Partial<VoiceStore>) => void;
 }
@@ -85,6 +108,13 @@ export const useVoice = create<VoiceStore>()((set) => ({
   error: null,
   canSpeak: false,
   canStream: false,
+  canVideo: false,
+  camera: 'off',
+  cameraCpuLimited: false,
+  cameras: [],
+  activeSpeaker: null,
+  focusedTile: null,
+  videoPip: true,
   muted: false,
   deafened: false,
   transmitting: false,

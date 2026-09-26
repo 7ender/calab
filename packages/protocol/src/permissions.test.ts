@@ -6,6 +6,7 @@ import { PermissionTargetType, RoomPermissionOverrideSchema } from './gen/calaba
 import {
   ALL_PERMISSIONS,
   PERMISSION_BITS,
+  ROLE_DEFAULTS,
   computePermissions,
   computeRoomPermissions,
   type OverrideBits,
@@ -59,7 +60,7 @@ describe('computeRoomPermissions', () => {
       }),
     ];
     expect(computeRoomPermissions(WorkspaceRole.MEMBER, 'u2', overrides)).toBe(0n);
-    expect(computeRoomPermissions(WorkspaceRole.MEMBER, 'u1', overrides)).toBe(119n);
+    expect(computeRoomPermissions(WorkspaceRole.MEMBER, 'u1', overrides)).toBe(ROLE_DEFAULTS[WorkspaceRole.MEMBER]);
     expect(computeRoomPermissions(WorkspaceRole.ADMIN, 'u3', overrides)).toBe(ALL_PERMISSIONS);
   });
 });

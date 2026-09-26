@@ -30,6 +30,7 @@ import { PttBinder } from './PttBinder';
 import { deviceLabel, osLabel, updateLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
 import { SoundSettings } from '../people/SoundSettings';
+import { CameraPreview, useCameras } from '../voice/CameraPreview';
 
 /** Text field that applies on blur / Enter (System Settings: no «Save» button). 240 px by default. */
 export function CommitInput({
@@ -275,8 +276,8 @@ export function PermissionsCard(): ReactNode {
   }, []);
   if (!p) return null;
   const notif = typeof Notification === 'undefined' ? 'n/a' : Notification.permission;
-  const osButton = (pane: 'microphone' | 'screen' | 'accessibility'): ReactNode =>
-    mac || (pane === 'microphone' && os === 'win32' && platform.kind === 'electron') ? (
+  const osButton = (pane: 'microphone' | 'camera' | 'screen' | 'accessibility'): ReactNode =>
+    mac || ((pane === 'microphone' || pane === 'camera') && os === 'win32' && platform.kind === 'electron') ? (
       <Button size="sm" variant="secondary" onClick={() => void platform.system.openPrivacySettings(pane)}>
         {t('perm.openOs')}
       </Button>
@@ -286,6 +287,10 @@ export function PermissionsCard(): ReactNode {
       <Row label={t('perm.mic')}>
         <span className="text-body text-muted">{STATUS_LABEL[p.microphone] ?? p.microphone}</span>
         {osButton('microphone')}
+      </Row>
+      <Row label={t('video.device')}>
+        <span className="text-body text-muted">{STATUS_LABEL[p.camera] ?? p.camera}</span>
+        {osButton('camera')}
       </Row>
       {mac ? (
         <>
@@ -314,6 +319,8 @@ export function PermissionsCard(): ReactNode {
 function VoiceTab(): ReactNode {
   const p = usePrefs();
   const { inputs, outputs } = useDevices();
+  const cameras = useCameras();
+  const [preview, setPreview] = useState(false);
   const [testing, setTesting] = useState(false);
   const vad = useVoice((s) => s.vad);
   const micError = useVoice((s) => s.micError);
@@ -381,6 +388,29 @@ function VoiceTab(): ReactNode {
             </span>
           ) : null}
         </div>
+      </Card>
+
+      <Card title={t('video.card')}>
+        <Row label={t('video.device')} hint={t('video.deviceHint')}>
+          <Select aria-label={t('video.device')} className="w-60" value={p.cameraDeviceId ?? ''} onChange={(e) => p.setPrefs({ cameraDeviceId: e.target.value || null })}>
+            <option value="">{t('voice.defaultDevice')}</option>
+            {cameras.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || d.deviceId.slice(0, 8)}
+              </option>
+            ))}
+          </Select>
+        </Row>
+        <Row label={t('video.previewRow')}>
+          <Button variant="secondary" onClick={() => setPreview(true)}>
+            {t('video.checkShort')}
+          </Button>
+          {/* Nested sheet: the settings stay open underneath. */}
+          {preview ? <CameraPreview onClose={() => setPreview(false)} /> : null}
+        </Row>
+        <Row label={t('video.saveTraffic')} hint={t('video.saveTrafficHint')}>
+          <Toggle label={t('video.saveTraffic')} checked={p.saveTraffic} onChange={(v) => p.setPrefs({ saveTraffic: v })} />
+        </Row>
       </Card>
 
       <Card title={t('voice.mode')}>

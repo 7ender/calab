@@ -239,11 +239,12 @@ export interface PttEvent {
   down: boolean;
 }
 
-export type PrivacyPane = 'accessibility' | 'input-monitoring' | 'screen' | 'microphone';
+export type PrivacyPane = 'accessibility' | 'input-monitoring' | 'screen' | 'microphone' | 'camera';
 
 export interface PermissionStatus {
   /** 'granted' | 'denied' | 'not-determined' | 'restricted' | 'n/a' */
   microphone: string;
+  camera: string;
   screen: string;
   /** Accessibility trust (global PTT on macOS); true elsewhere. */
   accessibility: boolean;

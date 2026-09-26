@@ -152,33 +152,50 @@ var audioBitrates = map[uint32]bool{16: true, 24: true, 32: true, 48: true, 64: 
 // ValidAudioBitrate reports whether kbps is an allowed voice bitrate.
 func ValidAudioBitrate(kbps uint32) bool { return audioBitrates[kbps] }
 
+// MaxCameraLimit caps camera_limit (webcams at once in a voice room; 0 = cameras off).
+const MaxCameraLimit = 25
+
+// mediaDB is a validated media override in its DB form (nil = workspace default).
+type mediaDB struct {
+	audio, streams, cameras *int32
+	preset                  *string
+}
+
 // mediaParams validates a media override and returns its DB form (nil = default).
-func mediaParams(o *v1.RoomMediaOverride, field string) (audio *int32, preset *string, streams *int32, err error) {
+func mediaParams(o *v1.RoomMediaOverride, field string) (mediaDB, error) {
+	var m mediaDB
 	if o == nil {
-		return nil, nil, nil, nil
+		return m, nil
 	}
 	if o.AudioBitrateKbps != nil {
 		if !ValidAudioBitrate(o.GetAudioBitrateKbps()) {
-			return nil, nil, nil, httpx.Validation(field+".audioBitrateKbps", "audio bitrate must be one of 16, 24, 32, 48, 64")
+			return m, httpx.Validation(field+".audioBitrateKbps", "audio bitrate must be one of 16, 24, 32, 48, 64")
 		}
 		v := int32(o.GetAudioBitrateKbps()) //nolint:gosec // validated above
-		audio = &v
+		m.audio = &v
 	}
 	if o.MaxStreamPreset != nil {
 		s, ok := pbconv.PresetToDB(o.GetMaxStreamPreset())
 		if !ok {
-			return nil, nil, nil, httpx.Validation(field+".maxStreamPreset", "invalid stream preset")
+			return m, httpx.Validation(field+".maxStreamPreset", "invalid stream preset")
 		}
-		preset = &s
+		m.preset = &s
 	}
 	if o.MaxStreams != nil {
 		if o.GetMaxStreams() > 10 {
-			return nil, nil, nil, httpx.Validation(field+".maxStreams", "max streams must be 0..10")
+			return m, httpx.Validation(field+".maxStreams", "max streams must be 0..10")
 		}
 		v := int32(o.GetMaxStreams()) //nolint:gosec // validated above
-		streams = &v
+		m.streams = &v
 	}
-	return audio, preset, streams, nil
+	if o.CameraLimit != nil {
+		if o.GetCameraLimit() > MaxCameraLimit {
+			return m, httpx.Validation(field+".cameraLimit", "camera limit must be 0..25")
+		}
+		v := int32(o.GetCameraLimit()) //nolint:gosec // validated above
+		m.cameras = &v
+	}
+	return m, nil
 }
 
 func validName(s string) (string, error) {
@@ -225,11 +242,11 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	audio, preset, streams, err := mediaParams(req.GetMediaOverride(), "mediaOverride")
+	media, err := mediaParams(req.GetMediaOverride(), "mediaOverride")
 	if err != nil {
 		return err
 	}
-	if typ != "voice" && (audio != nil || preset != nil || streams != nil) {
+	if typ != "voice" && (media.audio != nil || media.preset != nil || media.streams != nil || media.cameras != nil) {
 		return httpx.Validation("mediaOverride", "media settings apply to voice rooms only")
 	}
 	category, err := parseCategory(r.Context(), h.db.Q, wsID, req.GetCategoryId())
@@ -257,9 +274,10 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			Topic:            topic,
 			Position:         req.Position,
 			IsPrivate:        req.GetIsPrivate(),
-			AudioBitrateKbps: audio,
-			MaxStreamPreset:  preset,
-			MaxStreams:       streams,
+			AudioBitrateKbps: media.audio,
+			MaxStreamPreset:  media.preset,
+			MaxStreams:       media.streams,
+			CameraLimit:      media.cameras,
 			CategoryID:       category,
 			UserLimit:        int32(req.GetUserLimit()), //nolint:gosec // ≤ 99
 		})
@@ -403,9 +421,11 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if req.MediaOverride != nil {
 		p.SetMedia = true
-		if p.AudioBitrateKbps, p.MaxStreamPreset, p.MaxStreams, err = mediaParams(req.GetMediaOverride(), "mediaOverride"); err != nil {
+		m, err := mediaParams(req.GetMediaOverride(), "mediaOverride")
+		if err != nil {
 			return err
 		}
+		p.AudioBitrateKbps, p.MaxStreamPreset, p.MaxStreams, p.CameraLimit = m.audio, m.preset, m.streams, m.cameras
 	}
 	var pb *v1.Room
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
@@ -419,7 +439,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		if room.Type != "voice" && room.UserLimit > 0 {
 			return httpx.Validation("userLimit", "user limit applies to voice rooms only")
 		}
-		if room.Type != "voice" && (room.AudioBitrateKbps != nil || room.MaxStreamPreset != nil || room.MaxStreams != nil) {
+		if room.Type != "voice" && (room.AudioBitrateKbps != nil || room.MaxStreamPreset != nil || room.MaxStreams != nil || room.CameraLimit != nil) {
 			return httpx.Validation("mediaOverride", "media settings apply to voice rooms only")
 		}
 		pb, err = h.load(r.Context(), q, room)

@@ -248,7 +248,8 @@ type RoomMediaOverride struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	AudioBitrateKbps *uint32                `protobuf:"varint,1,opt,name=audio_bitrate_kbps,json=audioBitrateKbps,proto3,oneof" json:"audio_bitrate_kbps,omitempty"` // 16|24|32|48|64
 	MaxStreamPreset  *ScreenSharePreset     `protobuf:"varint,2,opt,name=max_stream_preset,json=maxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset,oneof" json:"max_stream_preset,omitempty"`
-	MaxStreams       *uint32                `protobuf:"varint,3,opt,name=max_streams,json=maxStreams,proto3,oneof" json:"max_streams,omitempty"` // 0..10
+	MaxStreams       *uint32                `protobuf:"varint,3,opt,name=max_streams,json=maxStreams,proto3,oneof" json:"max_streams,omitempty"`    // 0..10
+	CameraLimit      *uint32                `protobuf:"varint,4,opt,name=camera_limit,json=cameraLimit,proto3,oneof" json:"camera_limit,omitempty"` // 0..25 (0 = cameras off)
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -300,6 +301,13 @@ func (x *RoomMediaOverride) GetMaxStreamPreset() ScreenSharePreset {
 func (x *RoomMediaOverride) GetMaxStreams() uint32 {
 	if x != nil && x.MaxStreams != nil {
 		return *x.MaxStreams
+	}
+	return 0
+}
+
+func (x *RoomMediaOverride) GetCameraLimit() uint32 {
+	if x != nil && x.CameraLimit != nil {
+		return *x.CameraLimit
 	}
 	return 0
 }
@@ -1693,15 +1701,17 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"targetType\x12\x1b\n" +
 	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x12\x14\n" +
 	"\x05allow\x18\x03 \x01(\x04R\x05allow\x12\x12\n" +
-	"\x04deny\x18\x04 \x01(\x04R\x04deny\"\xf8\x01\n" +
+	"\x04deny\x18\x04 \x01(\x04R\x04deny\"\xb1\x02\n" +
 	"\x11RoomMediaOverride\x121\n" +
 	"\x12audio_bitrate_kbps\x18\x01 \x01(\rH\x00R\x10audioBitrateKbps\x88\x01\x01\x12M\n" +
 	"\x11max_stream_preset\x18\x02 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetH\x01R\x0fmaxStreamPreset\x88\x01\x01\x12$\n" +
 	"\vmax_streams\x18\x03 \x01(\rH\x02R\n" +
-	"maxStreams\x88\x01\x01B\x15\n" +
+	"maxStreams\x88\x01\x01\x12&\n" +
+	"\fcamera_limit\x18\x04 \x01(\rH\x03R\vcameraLimit\x88\x01\x01B\x15\n" +
 	"\x13_audio_bitrate_kbpsB\x14\n" +
 	"\x12_max_stream_presetB\x0e\n" +
-	"\f_max_streams\"\xe6\x05\n" +
+	"\f_max_streamsB\x0f\n" +
+	"\r_camera_limit\"\xe6\x05\n" +
 	"\x04Room\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12'\n" +

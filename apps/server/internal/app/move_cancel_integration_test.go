@@ -26,6 +26,7 @@ func TestMoveSurvivesCanceledRequest(t *testing.T) {
 	lkRec.mu.Lock()
 	lkRec.fakeMove = true
 	lkRec.mu.Unlock()
+	testApp.RTC.SetSFUMove(true) // fakeMove stands for a LiveKit with MoveParticipant
 	defer func() { lkRec.mu.Lock(); lkRec.fakeMove, lkRec.afterCreateRoom = false, nil; lkRec.mu.Unlock() }()
 	joinVoice(t, bob, wid, roomA.GetId())
 

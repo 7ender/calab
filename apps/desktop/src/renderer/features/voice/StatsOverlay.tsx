@@ -27,9 +27,9 @@ export function StatsOverlay(): ReactNode {
         total ↑{n(st.totalOutKbps)} ↓{n(st.totalInKbps)} kbps · mic {n(st.micKbps, 1)} kbps
       </div>
       {st.rendererCpu !== null ? <div>renderer CPU {n(st.rendererCpu, 1)} % core</div> : null}
-      {st.screenOut.map((l, i) => (
-        <div key={`${l.rid ?? 'x'}-${i}`}>
-          send {l.rid ?? 'svc'} {n(l.width)}×{n(l.height)}@{n(l.fps)} {n(l.kbps)}/{n(l.targetKbps)} kbps {l.encoder}
+      {[...st.screenOut.map((l) => ['screen', l] as const), ...st.cameraOut.map((l) => ['cam', l] as const)].map(([kind, l], i) => (
+        <div key={`${kind}-${l.rid ?? 'x'}-${i}`}>
+          {kind} {l.rid ?? 'svc'} {l.codec} {n(l.width)}×{n(l.height)}@{n(l.fps)} {n(l.kbps)}/{n(l.targetKbps)} kbps {l.encoder}
           {l.active === false ? ' (off)' : ''} {l.qualityLimitation !== 'none' ? `lim:${l.qualityLimitation}` : ''}
         </div>
       ))}

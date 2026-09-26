@@ -39,8 +39,8 @@ export interface Env {
   close(): Promise<void>;
 }
 
-export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?: 'data' | 'empty'; onboarded?: boolean }): Promise<Env> {
-  const mock = await startMockServer({ port: MOCK_PORT, scenario: opts.scenario ?? 'data' });
+export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?: 'data' | 'empty'; onboarded?: boolean; port?: number }): Promise<Env> {
+  const mock = await startMockServer({ port: opts.port ?? MOCK_PORT, scenario: opts.scenario ?? 'data' });
   const userData = mkdtempSync(join(tmpdir(), 'calaba-visual-'));
   const app = await electron.launch({
     args: ['.'],
@@ -62,6 +62,10 @@ export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?
     const w = BrowserWindow.getAllWindows()[0];
     w?.setContentSize(v.width, v.height);
     w?.center();
+    // The real (OS) cursor may sit over the window: Chromium then hovers whatever lands under it
+    // (a list row after a popover opens, a menu item mid-transition). Only Playwright's
+    // (CDP-dispatched) input reaches the page.
+    w?.setIgnoreMouseEvents(true);
   }, opts.viewport);
   await page.clock.setFixedTime(NOW);
   await page.evaluate(
@@ -188,7 +192,14 @@ export async function layoutProblems(page: Page): Promise<LayoutProblem[]> {
         if (abs) continue;
         if (clipper) {
           const cs = getComputedStyle(clipper);
-          if (clipper.scrollWidth > clipper.clientWidth + 1 && cs.textOverflow !== 'ellipsis' && cs.overflowX !== 'auto') {
+          // An intentional fade-out (mask) instead of an ellipsis counts as proper truncation.
+          let faded = false;
+          for (let a: HTMLElement | null = clipper; a && a !== el.parentElement; a = a.parentElement) {
+            const m = getComputedStyle(a);
+            const mask = m.maskImage || m.getPropertyValue('-webkit-mask-image');
+            if (mask && mask !== 'none') faded = true;
+          }
+          if (!faded && clipper.scrollWidth > clipper.clientWidth + 1 && cs.textOverflow !== 'ellipsis' && cs.overflowX !== 'auto') {
             out.push({ kind: 'text-clipped', detail: `${describe(el)}: clipped without ellipsis` });
           }
           continue;

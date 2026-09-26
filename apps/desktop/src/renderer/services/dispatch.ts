@@ -1,4 +1,5 @@
 import { VoiceStreamStopReason, type DispatchEvent, type Message, type WorkspaceSnapshot } from '@calaba/protocol';
+import { syncTimeZone } from './timezone';
 import { log } from '../lib/log';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
@@ -62,6 +63,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       void resyncLoadedRooms();
       useSession.getState().set({ me: r.me ?? null, ready: true });
       if (r.me?.settings) applyUserSettings(r.me.settings);
+      syncTimeZone(r.me);
       ensureActiveWorkspace();
       return;
     }
@@ -175,6 +177,13 @@ export function applyDispatch(ev: DispatchEvent): void {
         if (e.value.reason === VoiceStreamStopReason.LIMIT_REACHED) toast.info('Стрим остановлен: в комнате превышен лимит стримов');
         if (e.value.reason === VoiceStreamStopReason.MODERATOR) toast.info('Модератор остановил ваш стрим');
         if (e.value.reason !== VoiceStreamStopReason.ENDED) void voice.stopStream();
+      }
+      return;
+    case 'voiceCameraStop':
+      // The server muted my camera (over camera_limit) or a moderator turned it off.
+      if (e.value.userId === myUserId()) {
+        const r = e.value.reason;
+        voice.camera.onServerStop(r === VoiceStreamStopReason.LIMIT_REACHED ? 'limit' : r === VoiceStreamStopReason.MODERATOR ? 'moderator' : 'other', e.value.trackSid);
       }
       return;
     case 'roomNotificationUpdate':

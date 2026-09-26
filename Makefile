@@ -1,7 +1,11 @@
 .PHONY: gen dev-server test test-integration lint third-party-notices
 
 TEST_DATABASE_URL ?= postgres://calaba:calaba@localhost:55432/calaba
-TEST_REDIS_URL    ?= redis://localhost:56379/15
+# Valkey DB of internal/app integration tests (flushed); give each worktree its own number
+TEST_REDIS_DB     ?= 15
+TEST_REDIS_URL    ?= redis://localhost:56379/$(TEST_REDIS_DB)
+# internal/rtc integration tests use their own Valkey DB (flushed); see TESTING «Параллельные прогоны»
+TEST_RTC_REDIS_DB ?= 14
 
 gen:            ## generate Go + TS from proto/ and Go from SQL (run `pnpm install` once first)
 	buf generate
@@ -23,7 +27,7 @@ test:           ## unit tests (no external services)
 	pnpm -r test
 
 test-integration: ## Go integration tests against dev Postgres 18 + Redis 7.4 + LiveKit (pnpm infra:dev)
-	cd apps/server && TEST_DATABASE_URL=$(TEST_DATABASE_URL) TEST_REDIS_URL=$(TEST_REDIS_URL) \
+	cd apps/server && TEST_DATABASE_URL=$(TEST_DATABASE_URL) TEST_REDIS_URL=$(TEST_REDIS_URL) TEST_RTC_REDIS_DB=$(TEST_RTC_REDIS_DB) \
 		go test -tags integration -count=1 ./...
 
 lint:

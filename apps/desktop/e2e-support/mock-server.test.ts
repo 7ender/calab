@@ -1,5 +1,5 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { GatewayFrameSchema, GatewayOpcode, NotificationLevel, RoomType, type DispatchEvent, type GatewayFrame } from '@calaba/protocol';
+import { GatewayFrameSchema, GatewayOpcode, NotificationLevel, RoomType, VoiceStreamStopReason, type DispatchEvent, type GatewayFrame } from '@calaba/protocol';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { GENERAL_MESSAGE_COUNT, IDS, MARKETING_IDS, parseMentions, startMockServer, type MockServer } from './mock-server';
@@ -254,6 +254,38 @@ describe('mentions and room notifications (docs/05)', () => {
     expect(ended?.case === 'roomUpdate' && ended.value.room?.id).toBe(IDS.rooms.call);
     expect(ended?.case === 'roomUpdate' && ended.value.room?.voiceStartedAt).toBeUndefined();
     gw.ws.close(1000);
+    server.reset('data');
+  });
+
+  it('cameras: /camera/request marks VoiceState.camera (409 over camera_limit), a moderator stops one', async () => {
+    const token = await login();
+    const post = (path: string): Promise<Response> => fetch(`${server.url}${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const me = IDS.users.anna;
+    server.setVoiceState({ userId: me, roomId: IDS.rooms.meeting });
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/camera/request`)).status).toBe(204);
+    expect(server.state.voiceStates.get(me)?.camera).toBe(true);
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/camera/stop`)).status).toBe(204);
+    expect(server.state.voiceStates.get(me)?.camera).toBe(false);
+    // Борис turns his camera on; the owner (MUTE_MEMBERS) turns it off, twice = 404.
+    server.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.meeting, muted: true, camera: true });
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/voice/${IDS.users.boris}/stop-camera`)).status).toBe(204);
+    expect(server.state.voiceStates.get(IDS.users.boris)?.camera).toBe(false);
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/voice/${IDS.users.boris}/stop-camera`)).status).toBe(404);
+    // Over the limit on track_published: camera off + VOICE_CAMERA_STOP{LIMIT_REACHED} to the room.
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } });
+    await gw.next((f) => dispatchOf(f)?.event.case === 'ready');
+    server.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.meeting, camera: true });
+    server.stopCamera(IDS.users.vera, VoiceStreamStopReason.LIMIT_REACHED);
+    const stop = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'voiceCameraStop'))?.event;
+    expect(stop?.case === 'voiceCameraStop' && stop.value.reason).toBe(VoiceStreamStopReason.LIMIT_REACHED);
+    expect(server.state.voiceStates.get(IDS.users.vera)?.camera).toBe(false);
+    gw.ws.close(1000);
+    // camera_limit 0 = cameras off → 409.
+    const room = server.state.rooms.get(IDS.rooms.meeting);
+    if (room?.media) room.media.cameraLimit = 0;
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/camera/request`)).status).toBe(409);
     server.reset('data');
   });
 

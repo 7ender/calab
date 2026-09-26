@@ -41,8 +41,12 @@ import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { memberName, useWorkspaces } from '../stores/workspaces';
-import { setVoice, useVoice, type RemoteStream, type StreamQuality } from '../stores/voice';
+import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQuality } from '../stores/voice';
 import { platform } from '../platform';
+import { cameraWanted } from '../lib/media/cameraLogic';
+import { pipCamera } from '../features/voice/tileLayout';
+import { ActiveSpeaker } from '../lib/activeSpeaker';
+import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
 import { humanMediaError, reportMediaError } from './mediaErrors';
 import { sameBinding } from './profile';
@@ -138,16 +142,33 @@ class VoiceEngine {
   private selfMuting = false;
   private micTesting = false;
   /** Speaking rings: 100 ms to appear, 300 ms to disappear (docs/09 #30). */
-  private readonly speakers = new SpeakingDebouncer((speaking) => setVoice({ speaking }));
+  private readonly speakers = new SpeakingDebouncer((speaking) => this.onSpeaking(speaking));
+  private readonly active = new ActiveSpeaker((id) => this.onActiveSpeaker(id));
+  /** My webcam (services/camera.ts). */
+  readonly camera: CameraController;
   /** Gateway VOICE_MOVED seen, waiting for LiveKit RoomEvent.Moved (else: rejoin). */
   private moveTimer: number | null = null;
 
   constructor() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the controller reads the live room
+    const self = this;
+    this.camera = new CameraController({
+      get room() {
+        return self.room;
+      },
+      get roomId() {
+        return self.roomId;
+      },
+    });
     this.audioSink = document.createElement('div');
     this.audioSink.id = 'remote-audio-sink';
     this.audioSink.hidden = true;
     document.body.appendChild(this.audioSink);
     document.addEventListener('visibilitychange', () => this.applyWatching());
+    // My camera was the last video on the call view: back to the chat.
+    useVoice.subscribe((s, p) => {
+      if (s.camera === 'off' && p.camera !== 'off' && s.stage === 'expanded' && !s.watching && s.cameras.length === 0) setVoice({ stage: 'pip' });
+    });
   }
 
   init(): void {
@@ -174,7 +195,9 @@ class VoiceEngine {
     if (s.outputDeviceId !== p.outputDeviceId) void this.applyOutputDevice();
     if ((s.rnnoise !== p.rnnoise || s.micDeviceId !== p.micDeviceId) && this.mic) void this.restartMic();
     if ((s.red !== p.red || s.personalBitrateKbps !== p.personalBitrateKbps) && this.micTrack && this.room) void this.republishMic();
-    if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers) this.applyVolumes();
+    if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers || s.deafUsers !== p.deafUsers || s.outputVolume !== p.outputVolume) this.applyVolumes();
+    if (s.hiddenVideo !== p.hiddenVideo || s.saveTraffic !== p.saveTraffic) this.applyCameras();
+    if (s.cameraDeviceId !== p.cameraDeviceId) void this.camera.setDevice(s.cameraDeviceId);
   }
 
   private async syncPttBinding(): Promise<void> {
@@ -230,6 +253,10 @@ class VoiceEngine {
       watching: null,
       speaking: {},
       myStream: null,
+      cameras: [],
+      activeSpeaker: null,
+      focusedTile: null,
+      videoPip: true,
       ...(carried !== undefined ? { serverMuted: carried } : {}),
     });
     try {
@@ -258,7 +285,7 @@ class VoiceEngine {
       // Moved: SPEAK comes from the token's grant (it repeats the server's rights in the target).
       const perm = room.localParticipant.permissions;
       const canSpeak = moved ? (perm ? canSpeakFrom(perm) : true) : res.canSpeak;
-      setVoice({ canSpeak, canStream: res.canStream, phase: 'connected' });
+      setVoice({ canSpeak, canStream: res.canStream, canVideo: res.canVideo, phase: 'connected' });
       // Subscribe to audio of everyone already here; video only when watched.
       for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
       if (canSpeak) {
@@ -268,6 +295,7 @@ class VoiceEngine {
       this.startStats();
       this.pushSelfState();
       this.refreshStreams();
+      this.refreshCameras();
       playSound('join');
       this.syncTray();
     } catch (err) {
@@ -300,7 +328,11 @@ class VoiceEngine {
    * settings from the room store; STREAM from the client-side permissions (UI only — the stream
    * slot is still checked by /stream/request).
    */
-  private movedJoin(roomId: string, workspaceId: string, moved: MoveCreds): { url: string; token: string; canSpeak: boolean; canStream: boolean; media: { audioBitrateKbps: number } } {
+  private movedJoin(
+    roomId: string,
+    workspaceId: string,
+    moved: MoveCreds,
+  ): { url: string; token: string; canSpeak: boolean; canStream: boolean; canVideo: boolean; media: { audioBitrateKbps: number } } {
     const room = useRooms.getState().byId[roomId];
     const me = useSession.getState().me?.user?.id ?? '';
     const role = useWorkspaces.getState().byId[workspaceId]?.members[me]?.role;
@@ -309,6 +341,8 @@ class VoiceEngine {
       token: moved.token,
       canSpeak: true,
       canStream: can(roomPerms(role, me, room), 'STREAM'),
+      // The camera needs /camera/request in the target anyway (the server re-checks VIDEO + limit).
+      canVideo: can(roomPerms(role, me, room), 'VIDEO') && (room?.media?.cameraLimit ?? 0) > 0,
       media: { audioBitrateKbps: room?.media?.audioBitrateKbps || this.audioBitrateKbps },
     };
   }
@@ -329,6 +363,7 @@ class VoiceEngine {
     // The moderator mute outlives the reconnect: the server grants no SPEAK again, and until
     // that grant arrives the UI must not show «not muted». Reset only by a grant or a leave.
     const serverMuted = useVoice.getState().serverMuted;
+    const camera = useVoice.getState().camera === 'on';
     this.rejoinRoomId = roomId;
     try {
       await this.teardown(false);
@@ -341,6 +376,8 @@ class VoiceEngine {
         if (gen !== this.rejoinGen) return;
         if (this.room) {
           if (stream) toast.info(t('mediaErr.stream.restart'));
+          // The camera comes back by itself (a new capture, no preview); start() explains a failure.
+          if (camera) void this.camera.start();
           return;
         }
       }
@@ -381,6 +418,7 @@ class VoiceEngine {
   private async doTeardown(sound: boolean): Promise<void> {
     this.joinSeq++;
     this.speakers.reset();
+    this.active.reset();
     this.clearMoveTimer();
     this.stopStats();
     await this.stopStream();
@@ -393,6 +431,7 @@ class VoiceEngine {
     // publish track, and a running mic test keeps that pipeline for the next call → a dead
     // mic there (review M1). The pipeline is stopped below when nobody needs it.
     if (room) await room.disconnect(false).catch(() => undefined);
+    this.camera.onLeave();
     if (!this.micTesting) {
       micTrack?.stop();
       this.stopMicPipeline();
@@ -414,6 +453,10 @@ class VoiceEngine {
       streamQuality: {},
       serverMuted: false,
       myStream: null,
+      canVideo: false,
+      cameras: [],
+      activeSpeaker: null,
+      focusedTile: null,
       quality: 'unknown',
       rttMs: null,
       lossPct: null,
@@ -454,8 +497,23 @@ class VoiceEngine {
         if (pub.source === Track.Source.ScreenShare) playSound('streamStart');
         this.onPublished(pub);
         this.refreshStreams();
+        this.refreshCameras();
       })
-      .on(RoomEvent.TrackUnpublished, () => this.refreshStreams())
+      .on(RoomEvent.TrackUnpublished, () => {
+        this.refreshStreams();
+        this.refreshCameras();
+      })
+      // Full reconnect (a new LiveKit session): bring the camera back (services/camera.ts restore).
+      .on(RoomEvent.Reconnected, () => {
+        if (this.room === room) void this.camera.restore();
+      })
+      .on(RoomEvent.TrackUnmuted, (pub, p) => {
+        if (p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
+      })
+      .on(RoomEvent.LocalTrackUnpublished, (pub) => {
+        // Unpublished by the server (camera grant withdrawn) rather than by us.
+        if (pub.source === Track.Source.Camera && pub.track === this.camera.localTrack) this.camera.onGrantLost();
+      })
       .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
         if (track.kind === Track.Kind.Audio) this.attachAudio(track, p, pub.source === Track.Source.ScreenShareAudio);
         if (pub.source === Track.Source.ScreenShare) {
@@ -463,20 +521,25 @@ class VoiceEngine {
           this.syncAnnounce();
           setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
         }
-      })
-      .on(RoomEvent.TrackUnsubscribed, (track, pub) => {
-        if (track.kind === Track.Kind.Audio) this.detachAudio(track);
-        if (pub.source === Track.Source.ScreenShare) {
-          this.syncAnnounce();
+        if (pub.source === Track.Source.Camera) {
+          this.applyCameras();
           setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
         }
       })
+      .on(RoomEvent.TrackUnsubscribed, (track, pub) => {
+        if (track.kind === Track.Kind.Audio) this.detachAudio(track);
+        if (pub.source === Track.Source.ScreenShare) this.syncAnnounce();
+        if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.Camera) setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
+      })
       .on(RoomEvent.ParticipantConnected, () => playSound('join'))
       .on(RoomEvent.ParticipantDisconnected, (p) => {
+        const gone = userIdOf(p.identity);
+        if (![...room.remoteParticipants.values()].some((o) => userIdOf(o.identity) === gone)) this.active.drop(gone);
         playSound('leave');
         for (const set of this.viewers.values()) set.delete(p.identity);
         this.publishViewers();
         this.refreshStreams();
+        this.refreshCameras();
       })
       .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
         this.speakers.update(speakers.map((s) => userIdOf(s.identity)));
@@ -487,11 +550,15 @@ class VoiceEngine {
         log.info('voice: moved by the server');
         this.clearMoveTimer();
         this.speakers.reset();
+    this.active.reset();
         for (const set of this.viewers.values()) set.clear();
         for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
         this.refreshStreams();
+        this.refreshCameras();
       })
       .on(RoomEvent.TrackMuted, (pub, p) => {
+        // A camera muted by the server (over the limit) is off for everyone.
+        if (p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
         // A moderator mute arrives as a mute of our mic that we did not initiate.
         if (p === room.localParticipant && pub.source === Track.Source.Microphone && !this.selfMuting && !useVoice.getState().muted) {
           setVoice({ muted: true, serverMuted: true });
@@ -504,6 +571,7 @@ class VoiceEngine {
         if (p !== room.localParticipant || this.room !== room) return;
         const perm = p.permissions;
         if (perm) this.onSpeakPermission(canSpeakFrom(perm));
+        if (useVoice.getState().camera === 'on' && cameraGrantMissing(perm)) this.camera.onGrantLost();
       })
       .on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
         if (topic !== WATCH_TOPIC || !participant) return;
@@ -540,6 +608,7 @@ class VoiceEngine {
   private onPublished(pub: RemoteTrackPublication): void {
     if (pub.source === Track.Source.Microphone) pub.setSubscribed(true);
     else if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio) this.applyWatching();
+    else if (pub.source === Track.Source.Camera) this.applyCameras();
   }
 
   private subscribe(pub: RemoteTrackPublication, on: boolean): void {
@@ -567,8 +636,9 @@ class VoiceEngine {
     const fresh = streams.find((s) => !st.streams.some((o) => o.trackSid === s.trackSid));
     if (!watching && fresh) watching = fresh.trackSid;
     // Starting to watch (nothing watched before): the room's remembered layout, else expanded when
-    // the chat is (nearly) empty — a lone PiP over an empty room looks lost (docs/09 #56).
-    const stage = !watching ? 'pip' : st.watching ? st.stage : defaultStage(st.roomId);
+    // the chat is (nearly) empty — a lone PiP over an empty room looks lost (docs/09 #56). The
+    // watched stream ended: back to the chat, unless cameras keep the video stage busy.
+    const stage = !watching ? (st.stage !== 'pip' && this.anyCamera() ? 'expanded' : 'pip') : st.watching ? st.stage : defaultStage(st.roomId);
     setVoice({ streams, ...(watching !== st.watching ? { watching, stage } : {}) });
     this.applyWatching();
   }
@@ -655,6 +725,113 @@ class VoiceEngine {
     return null;
   }
 
+  // ------------------------------------------------------------ cameras
+
+  /** Speaking rings now; the active speaker for video only after 2 s of speech (lib/activeSpeaker.ts). */
+  private onSpeaking(speaking: Record<string, boolean>): void {
+    setVoice({ speaking });
+    this.active.update(speaking);
+  }
+
+  /** The held active speaker changed: the large tile / PiP follow; «Экономить трафик» resubscribes. */
+  private onActiveSpeaker(activeSpeaker: string | null): void {
+    setVoice({ activeSpeaker });
+    this.applyCameras();
+  }
+
+  private anyCamera(): boolean {
+    return useVoice.getState().cameras.length > 0 || useVoice.getState().camera === 'on';
+  }
+
+  /** Remote webcams of the room (a camera muted by the server counts as off). */
+  private refreshCameras(): void {
+    const room = this.room;
+    if (!room) return;
+    const cameras: RemoteCamera[] = [];
+    for (const p of room.remoteParticipants.values()) {
+      const pub = p.getTrackPublication(Track.Source.Camera);
+      const userId = userIdOf(p.identity);
+      // My own camera from another device (web + desktop) is not a tile here (review L9).
+      if (userId === this.myId()) continue;
+      if (pub?.trackSid && !pub.isMuted && !cameras.some((c) => c.userId === userId)) cameras.push({ trackSid: pub.trackSid, identity: p.identity, userId });
+    }
+    const st = useVoice.getState();
+    const same = cameras.length === st.cameras.length && cameras.every((c, i) => c.trackSid === st.cameras[i]?.trackSid);
+    const focusGone = st.focusedTile !== null && !this.inRoom(st.focusedTile);
+    if (!same || focusGone) setVoice({ ...(same ? {} : { cameras }), ...(focusGone ? { focusedTile: null } : {}) });
+    // Last camera gone and no stream on the stage: back to the chat.
+    if (!this.anyCamera() && st.stage === 'expanded' && !st.watching) setVoice({ stage: 'pip' });
+    this.applyCameras();
+  }
+
+  private inRoom(userId: string): boolean {
+    if (userId === useSession.getState().me?.user?.id) return true;
+    for (const p of this.room?.remoteParticipants.values() ?? []) if (userIdOf(p.identity) === userId) return true;
+    return false;
+  }
+
+  private myId(): string {
+    return useSession.getState().me?.user?.id ?? '';
+  }
+
+  /**
+   * The camera shown large / in the PiP: the clicked tile, else the active speaker's, else the
+   * first remote one. Hidden cameras («Не показывать видео») never qualify, so the PiP, the grid
+   * and the «Экономить трафик» subscription agree (review M1).
+   */
+  primaryCamera(): string | null {
+    const st = useVoice.getState();
+    const hidden = prefs().hiddenVideo;
+    const ids = st.cameras.map((c) => c.userId).filter((id) => !hidden[id]);
+    if (st.focusedTile && ids.includes(st.focusedTile)) return st.focusedTile;
+    return pipCamera(ids, this.myId(), st.activeSpeaker);
+  }
+
+  /**
+   * Camera subscriptions (docs/02 «Камера»): everyone's camera except «Не показывать видео»; with
+   * «Экономить трафик» only the primary camera, capped at 360p. Adaptive stream matches the layer
+   * to the tile size and pauses cameras that are not on screen.
+   */
+  private applyCameras(): void {
+    const room = this.room;
+    if (!room) return;
+    const p = prefs();
+    const wanted = cameraWanted(useVoice.getState().cameras.map((c) => c.userId), { hidden: p.hiddenVideo, saveTraffic: p.saveTraffic, primary: this.primaryCamera(), me: this.myId() });
+    for (const rp of room.remoteParticipants.values()) {
+      const pub = rp.getTrackPublication(Track.Source.Camera);
+      if (!pub) continue;
+      const on = wanted.has(userIdOf(rp.identity)) && !pub.isMuted;
+      this.subscribe(pub, on);
+      if (on) pub.setVideoQuality(p.saveTraffic ? VideoQuality.MEDIUM : VideoQuality.HIGH);
+    }
+  }
+
+  /** Remote camera track of a user in my room (subscribed), for a tile. */
+  cameraTrack(userId: string): RemoteVideoTrack | null {
+    const sid = useVoice.getState().cameras.find((c) => c.userId === userId)?.trackSid;
+    return sid ? this.remoteVideo(sid) : null;
+  }
+
+  /** Click on a tile: show it large (again: back to the grid). Opens the video stage. */
+  focusTile(userId: string | null): void {
+    const st = useVoice.getState();
+    const focusedTile = userId !== null && st.focusedTile === userId ? null : userId;
+    setVoice({ focusedTile, watching: null, stage: 'expanded' });
+    this.applyWatching();
+    this.applyCameras();
+  }
+
+  /** Opens the camera grid (the stream, if one is watched, stays the main picture). */
+  showVideo(): void {
+    setVoice({ stage: 'expanded', videoPip: true });
+    this.applyWatching();
+  }
+
+  /** Moderator: turn a member's camera off (MUTE_MEMBERS; the server sends VOICE_CAMERA_STOP). */
+  async stopMemberCamera(roomId: string, userId: string): Promise<void> {
+    await api.voice.stopMemberCamera(roomId, userId);
+  }
+
   // ------------------------------------------------------------ audio out
 
   private attachAudio(track: RemoteTrack, p: Participant, stream: boolean): void {
@@ -679,7 +856,7 @@ class VoiceEngine {
     // caps at 1.0 — boosting would need WebAudio, which breaks AEC (lib/voiceLogic remoteAudio).
     const v = useVoice.getState();
     const p = prefs();
-    const a = remoteAudio({ deafened: v.deafened, stream, userId, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, streamVolume: v.streamVolume });
+    const a = remoteAudio({ deafened: v.deafened, stream, userId, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume });
     el.muted = a.muted;
     el.volume = a.volume;
   }
@@ -697,6 +874,11 @@ class VoiceEngine {
   /** Mute someone for me only (CHAT-SHELL, member menu); persisted per device like volumes. */
   setUserMuted(userId: string, muted: boolean): void {
     usePrefs.getState().setPrefs({ mutedUsers: withUserMuted(prefs().mutedUsers, userId, muted) });
+  }
+
+  /** «Не слышать» for me only: their voice and stream audio muted (persisted per device). */
+  setUserDeaf(userId: string, deaf: boolean): void {
+    usePrefs.getState().setPrefs({ deafUsers: withUserMuted(prefs().deafUsers, userId, deaf) });
   }
 
   setUserVolume(userId: string, volume: number): void {
@@ -1054,10 +1236,13 @@ class VoiceEngine {
     if (this.teardownRun && !rejoining && !chained) return false;
     this.lastMoveToken = ev.token;
     const wasStreaming = useVoice.getState().myStream !== null;
+    // App-level move: the camera ends with the old connection and is not turned on again by
+    // itself in the target room (its camera_limit / VIDEO apply; review L6) — the toast says so.
+    const wasCamera = useVoice.getState().camera === 'on';
     const serverMuted = useVoice.getState().serverMuted;
     log.info('voice: moved by a moderator, reconnecting to the target room');
     playSound('moved');
-    this.announceMove(ev, wasStreaming);
+    this.announceMove(ev, wasStreaming, wasCamera);
     // Like a join: the latest intent, stops a pending rejoin. mute / deafen / PTT stay in the
     // voice store (teardown keeps them) and are applied to the new mic; the stream is not
     // restored (docs/05: requested again by the user).
@@ -1077,14 +1262,15 @@ class VoiceEngine {
   /** Token of the last app-level move acted upon (duplicate events are ignored). */
   private lastMoveToken = '';
 
-  private announceMove(ev: Pick<VoiceMoved, 'workspaceId' | 'toRoomId' | 'byUserId'>, wasStreaming: boolean): void {
+  private announceMove(ev: Pick<VoiceMoved, 'workspaceId' | 'toRoomId' | 'byUserId'>, wasStreaming: boolean, wasCamera = false): void {
     const room = useRooms.getState().byId[ev.toRoomId]?.name ?? '';
     const me = useSession.getState().me?.user?.id ?? '';
     const ws = useWorkspaces.getState();
     const known = ev.byUserId !== '' && ev.byUserId !== me && (ws.byId[ev.workspaceId]?.members[ev.byUserId] !== undefined || ws.users[ev.byUserId] !== undefined);
     const by = known ? memberName(ev.workspaceId, ev.byUserId) : '';
     const text = by ? t('mediaErr.voice.movedBy', { name: by, room }) : t('mediaErr.voice.moved', { room });
-    toast.info(wasStreaming ? t('mediaErr.voice.movedStream', { text }) : text);
+    const withStream = wasStreaming ? t('mediaErr.voice.movedStream', { text }) : text;
+    toast.info(wasCamera ? t('video.movedOff', { text: withStream }) : withStream);
   }
 
   /**
@@ -1375,6 +1561,13 @@ class VoiceEngine {
       pair = candidatePair(micReport);
       if (o?.fractionLost !== null && o?.fractionLost !== undefined) losses.push(o.fractionLost * 100);
     }
+    const cameraReport = await this.camera.localTrack?.getRTCStatsReport();
+    const cameraOut = cameraReport ? outboundVideo(cameraReport, this.rates, 'camera') : [];
+    if (cameraReport) {
+      note(cameraReport);
+      pair ??= candidatePair(cameraReport);
+    }
+    this.camera.onStats(cameraOut);
     const screenReport = await this.screen?.video.getRTCStatsReport();
     const screenOut = screenReport ? outboundVideo(screenReport, this.rates, 'screen') : [];
     if (screenReport) {
@@ -1422,7 +1615,7 @@ class VoiceEngine {
       rttMs: rtt,
       lossPct: loss,
       quality: qualityOf(rtt, loss),
-      stats: { totalOutKbps: out, totalInKbps: inn, pair, micKbps, screenOut, watching, rendererCpu },
+      stats: { totalOutKbps: out, totalInKbps: inn, pair, micKbps, screenOut, cameraOut, watching, rendererCpu },
     });
   }
 

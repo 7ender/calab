@@ -4,8 +4,10 @@ package users
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata" // IANA zones for ValidateTimezone: the distroless image has no zoneinfo
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -99,6 +101,15 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			p.AvatarFileID = &fid
 		}
 	}
+	if req.Timezone != nil {
+		p.SetTimezone = true
+		if tz := strings.TrimSpace(req.GetTimezone()); tz != "" {
+			if err := ValidateTimezone(tz); err != nil {
+				return err
+			}
+			p.Timezone = &tz
+		}
+	}
 	if req.Settings != nil {
 		st := req.GetSettings()
 		if st.AudioBitrateKbps != nil && !rooms.ValidAudioBitrate(st.GetAudioBitrateKbps()) {
@@ -117,7 +128,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	public := req.DisplayName != nil || req.StatusText != nil || req.AvatarFileId != nil
+	public := req.DisplayName != nil || req.StatusText != nil || req.AvatarFileId != nil || req.Timezone != nil
 	profile.Publish(r.Context(), h.db.Q, h.events, u, public)
 	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
 	return nil
@@ -167,5 +178,25 @@ func (h *Handlers) updateStatus(w http.ResponseWriter, r *http.Request) error {
 		h.status.StatusChanged(r.Context(), id.UserID)
 	}
 	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
+	return nil
+}
+
+// ValidateTimezone accepts IANA zone names ("Europe/Moscow", "UTC"); the zone database is
+// embedded (time/tzdata, imported here), so this works in the distroless image too. "Local"
+// and paths are rejected: the name must mean the same on every machine.
+func ValidateTimezone(tz string) error {
+	bad := len(tz) > 64 || tz == "Local"
+	// IANA names are capitalized per segment ("America/Argentina/Buenos_Aires", "Etc/GMT+3");
+	// checking that keeps validation independent of a case-insensitive file system (macOS)
+	// and rules out paths.
+	for _, seg := range strings.Split(tz, "/") {
+		bad = bad || seg == "" || seg[0] < 'A' || seg[0] > 'Z'
+	}
+	if bad {
+		return httpx.Validation("timezone", "timezone must be an IANA time zone name, e.g. Europe/Moscow")
+	}
+	if _, err := time.LoadLocation(tz); err != nil {
+		return httpx.Validation("timezone", "unknown time zone "+strconv.Quote(tz))
+	}
 	return nil
 }

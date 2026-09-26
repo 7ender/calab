@@ -205,16 +205,18 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
   const ov = room?.mediaOverride;
   const wsDefaults = useWorkspaces((s) => (room ? s.byId[room.workspaceId]?.ws.mediaDefaults : undefined));
-  // media_override replaces the whole override: always send all three fields.
-  const apply = (patch: { bitrate?: number | ''; preset?: number | ''; streams?: number | '' }): void => {
+  // media_override replaces the whole override: always send every field.
+  const apply = (patch: { bitrate?: number | ''; preset?: number | ''; streams?: number | ''; cameras?: number | '' }): void => {
     const bitrate = patch.bitrate !== undefined ? patch.bitrate : (ov?.audioBitrateKbps ?? '');
     const preset = patch.preset !== undefined ? patch.preset : (ov?.maxStreamPreset ?? '');
     const streams = patch.streams !== undefined ? patch.streams : (ov?.maxStreams ?? '');
+    const cameras = patch.cameras !== undefined ? patch.cameras : (ov?.cameraLimit ?? '');
     void patchRoom(roomId, {
       mediaOverride: create(RoomMediaOverrideSchema, {
         ...(bitrate !== '' ? { audioBitrateKbps: bitrate } : {}),
         ...(preset !== '' ? { maxStreamPreset: preset } : {}),
         ...(streams !== '' ? { maxStreams: streams } : {}),
+        ...(cameras !== '' ? { cameraLimit: cameras } : {}),
       }),
     }).catch((e: unknown) => toast.error(err(e)));
   };
@@ -265,6 +267,16 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
           ))}
         </Select>
       </Row>
+      <Row label={t('media.cameraLimit')} hint={t('media.cameraLimitHint')}>
+        <Select aria-label={t('media.cameraLimit')} className="w-60" value={ov?.cameraLimit ?? ''} onChange={(e) => apply({ cameras: num(e.target.value) })}>
+          <option value="">{def(String(wsDefaults?.cameraLimit ?? 6))}</option>
+          {Array.from({ length: 26 }, (_, i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
+        </Select>
+      </Row>
     </Card>
     </>
   );
@@ -285,6 +297,7 @@ const PERM_LABEL: Record<PermissionName, MessageKey> = {
   MOVE_MEMBERS: 'perm.MOVE_MEMBERS',
   MANAGE_NICKNAMES: 'perm.MANAGE_NICKNAMES',
   MENTION_EVERYONE: 'perm.MENTION_EVERYONE',
+  VIDEO: 'perm.VIDEO',
 };
 
 const ROLE_TARGETS: Array<{ id: string; key: MessageKey }> = [
@@ -331,7 +344,7 @@ function TriToggle({ value, onChange, label }: { value: Tri; onChange: (v: Tri) 
 }
 
 /** Voice-only permissions: a text room doesn't list them (UX review). */
-const VOICE_ONLY: ReadonlySet<PermissionName> = new Set(['CONNECT', 'SPEAK', 'STREAM', 'MUTE_MEMBERS', 'MOVE_MEMBERS']);
+const VOICE_ONLY: ReadonlySet<PermissionName> = new Set(['CONNECT', 'SPEAK', 'STREAM', 'VIDEO', 'MUTE_MEMBERS', 'MOVE_MEMBERS']);
 
 function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);

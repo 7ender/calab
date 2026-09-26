@@ -84,6 +84,7 @@ func TestMoveMember(t *testing.T) {
 	lkRec.mu.Lock()
 	lkRec.fakeMove = true
 	lkRec.mu.Unlock()
+	testApp.RTC.SetSFUMove(true) // fakeMove stands for a LiveKit with MoveParticipant
 	defer func() { lkRec.mu.Lock(); lkRec.fakeMove = false; lkRec.mu.Unlock() }()
 
 	bg := dialGW(t)

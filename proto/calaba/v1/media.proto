@@ -16,4 +16,5 @@ message RoomMediaSettings {
   uint32 audio_bitrate_kbps = 1;          // 16 | 24 | 32 | 48 | 64; default 32 (per-room, workspace default)
   ScreenSharePreset max_stream_preset = 2;
   uint32 max_streams = 3;
+  uint32 camera_limit = 4; // webcams at once in the room, 0..25; 0 = cameras off; default 6
 }

@@ -18,7 +18,32 @@ CALABA_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop dev
 | `pnpm -F @calaba/desktop build:app` | build to `out/` only, no installers |
 | `pnpm -F @calaba/desktop typecheck` / `lint` / `test` | TS strict (main, renderer, worklet), eslint, vitest (46 unit tests) |
 | `CALABA_E2E_SERVER_URL=http://localhost:3000 pnpm -F @calaba/desktop e2e` | Playwright for Electron: register → workspace → room → message → voice |
-| `pnpm -F @calaba/desktop e2e:visual` (`:update` — перезаписать эталон) | Дизайн (docs/08): снимки dark/light × 960/1440 против мок-API, layout-инварианты, axe-core, обход фокуса по Tab. Нужен dev LiveKit. См. TESTING.md «1a» |
+| `pnpm -F @calaba/desktop e2e:visual` (`:update` — перезаписать эталон) | Дизайн (docs/08): снимки dark/light × 960/1440 против мок-API, layout-инварианты, axe-core, обход фокуса по Tab. Нужен dev LiveKit. См. TESTING.md «1a» и «Parallel visual runs» ниже |
+
+
+### Parallel visual runs (git worktrees)
+
+Every checkout on this machine shares one dev LiveKit. Two visual runs must not share the mock's port or its LiveKit room names, or their participants meet in one room. The main tree keeps the defaults: port 39170 and prefix `mock_`. The baseline for the auth shots is taken there, because the login screen prints the port. A **worktree** always runs with its own port and prefix:
+
+```bash
+CALABA_VISUAL_MOCK_PORT=39270 MOCK_LIVEKIT_ROOM_PREFIX=wt_ CALABA_VISUAL_OUT=test-results/wt \
+  pnpm -F @calaba/desktop e2e:visual -g "<screens>"
+```
+
+Each screen is its own test named like its snapshot (`e2e-visual/screens.spec.ts`); the four configurations are Playwright projects (`dark-960`, `dark-1440`, `light-960`, `light-1440`); focus walk and web screens are the `misc` project.
+
+```bash
+pnpm -F @calaba/desktop e2e:visual -g "voice-pip$"                           # one screen, 4 configs
+pnpm -F @calaba/desktop e2e:visual -g "voice-pip$" --project dark-1440       # one snapshot
+pnpm -F @calaba/desktop e2e:visual:update -g "voice-camera-(grid|focus)$"    # re-record two screens
+npx playwright test --config playwright.visual.config.ts --list              # all names
+```
+
+Every test starts from a clean seeded state (`e2e-visual/app.ts`: mock reset, storage wiped, reload, sign-in), so any screen runs alone.
+
+**Why the baselines changed with the split.** In the old single sequential test, axe runs on earlier screens (`checkpoint` → `expectAccessible`) changed how Chromium lays out later text: 15 px system text came out ~10 % narrower, with identical computed styles and fonts. A fresh page — what users see — renders it wider. The per-screen tests reload before every screen and match the real rendering. Don't reintroduce shared state between screens. Workers run in parallel (`CALABA_VISUAL_WORKERS`, default 3), each with its own Electron app, mock port (base + 1 + worker) and LiveKit room prefix.
+
+`auth-*` snapshots from a worktree show 39270; do not commit them (`git checkout -- 'e2e-visual/__screenshots__/darwin/auth-*'`).
 
 ### Environment variables
 
@@ -106,6 +131,11 @@ Business logic lives in `services/` and `stores/`; components only render and ca
   - AV1 + simulcast, L1T3 per layer, a 640×360 layer for the PiP;
   - `POST /api/rooms/{id}/stream/request` before publishing (a 409 means the limit is reached);
   - `autoSubscribe: false`: audio is subscribed automatically; the screen and its sound only when the stream is watched (PiP / expanded).
+- **Camera** (ADR-0018, `services/camera.ts`, `lib/media/cameraLogic.ts`, `features/voice/CameraTiles.tsx`):
+  - VP9 + simulcast 180/360/720p (L1T3 per layer), `contentHint: motion`, ceilings 0.15 / 0.5 / 1.5 Mbps;
+  - capture → `POST /api/rooms/{id}/camera/request` (409 = camera limit) → publish; off = unpublish + `…/camera/stop`; `VOICE_CAMERA_STOP` stops it locally with a toast;
+  - all cameras subscribed except «Не показывать видео»; «Экономить трафик» keeps only the featured / PiP camera at ≤ 360p; CPU-limited encoder → 360p capture;
+  - chat open: PiP of the active speaker's camera; call view: up to 6 tiles (`tileLayout.ts`), a watched stream stays primary with cameras in the strip.
 - **Pop-out stream window.** A same-origin child window (`window.open` + React portal) shows the same MediaStreamTrack. The large element in the main window stays attached, so adaptive stream keeps the top layer.
 - **«N смотрят»** is computed through the LiveKit data topic `calaba.watch` (an ephemeral in-call signal; docs/05 allows data channels for this).
 - **Unread messages** — `Room.last_message_id` from READY vs `ReadState`, then MESSAGE_CREATE.

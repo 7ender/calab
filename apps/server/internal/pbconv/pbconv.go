@@ -127,6 +127,7 @@ func User(u sqlc.User) *v1.User {
 		AvatarFileId: idp(u.AvatarFileID),
 		CreatedAt:    ts(u.CreatedAt),
 		IsGuest:      u.IsGuest,
+		Timezone:     deref(u.Timezone),
 	}
 	out.StatusText, out.StatusEmoji, out.StatusExpiresAt = Status(u)
 	return out
@@ -207,7 +208,8 @@ func WorkspaceDefaults(w sqlc.Workspace) *v1.RoomMediaSettings {
 	return &v1.RoomMediaSettings{
 		AudioBitrateKbps: uint32(w.DefaultAudioBitrateKbps), //nolint:gosec // DB CHECK bounds it
 		MaxStreamPreset:  PresetFromDB(w.DefaultMaxStreamPreset),
-		MaxStreams:       uint32(w.DefaultMaxStreams), //nolint:gosec // DB CHECK bounds it
+		MaxStreams:       uint32(w.DefaultMaxStreams),  //nolint:gosec // DB CHECK bounds it
+		CameraLimit:      uint32(w.DefaultCameraLimit), //nolint:gosec // DB CHECK bounds it
 	}
 }
 
@@ -270,6 +272,10 @@ func MediaOverride(r sqlc.Room) *v1.RoomMediaOverride {
 		v := uint32(*r.MaxStreams) //nolint:gosec // DB CHECK bounds it
 		o.MaxStreams = &v
 	}
+	if r.CameraLimit != nil {
+		v := uint32(*r.CameraLimit) //nolint:gosec // DB CHECK bounds it
+		o.CameraLimit = &v
+	}
 	return o
 }
 
@@ -279,6 +285,7 @@ func EffectiveMedia(r sqlc.Room, defaults *v1.RoomMediaSettings) *v1.RoomMediaSe
 		AudioBitrateKbps: defaults.GetAudioBitrateKbps(),
 		MaxStreamPreset:  defaults.GetMaxStreamPreset(),
 		MaxStreams:       defaults.GetMaxStreams(),
+		CameraLimit:      defaults.GetCameraLimit(),
 	}
 	o := MediaOverride(r)
 	if o.AudioBitrateKbps != nil {
@@ -289,6 +296,9 @@ func EffectiveMedia(r sqlc.Room, defaults *v1.RoomMediaSettings) *v1.RoomMediaSe
 	}
 	if o.MaxStreams != nil {
 		m.MaxStreams = *o.MaxStreams
+	}
+	if o.CameraLimit != nil {
+		m.CameraLimit = *o.CameraLimit
 	}
 	return m
 }

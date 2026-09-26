@@ -20,6 +20,7 @@ export const PERMISSION_BITS = {
   MOVE_MEMBERS: BigInt(Permission.MOVE_MEMBERS),
   MANAGE_NICKNAMES: BigInt(Permission.MANAGE_NICKNAMES),
   MENTION_EVERYONE: BigInt(Permission.MENTION_EVERYONE),
+  VIDEO: BigInt(Permission.VIDEO),
 } as const;
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -27,13 +28,13 @@ export type PermissionBits = bigint;
 
 export const ALL_PERMISSIONS: PermissionBits = Object.values(PERMISSION_BITS).reduce((a, b) => a | b, 0n);
 
-const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, ADMINISTRATOR } = PERMISSION_BITS;
+const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, ADMINISTRATOR } = PERMISSION_BITS;
 
 export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
   [WorkspaceRole.UNSPECIFIED]: 0n,
   [WorkspaceRole.OWNER]: ADMINISTRATOR,
   [WorkspaceRole.ADMIN]: ADMINISTRATOR,
-  [WorkspaceRole.MEMBER]: VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM,
+  [WorkspaceRole.MEMBER]: VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM | VIDEO,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.
   [WorkspaceRole.GUEST]: CONNECT | SPEAK,
 };

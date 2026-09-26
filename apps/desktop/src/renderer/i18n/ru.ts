@@ -2,6 +2,7 @@ import { ruApp } from './ru.app';
 import { ruChat } from './ru.chat';
 import { ruPeople } from './ru.people';
 import { ruShell } from './ru.shell';
+import { ruVideo } from './ru.video';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
@@ -9,6 +10,7 @@ export const ru = {
   ...ruChat,
   ...ruPeople,
   ...ruApp,
+  ...ruVideo,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',

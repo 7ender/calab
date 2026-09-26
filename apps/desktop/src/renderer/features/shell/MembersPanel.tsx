@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { WorkspaceRole, type WorkspaceMember } from '@calaba/protocol';
-import { Crown, MonitorUp, Volume2 } from 'lucide-react';
+import { Crown, MonitorUp, Video, Volume2 } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
@@ -112,6 +112,7 @@ const MemberRow = memo(function MemberRow({
       <>
         <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden />
         <span className="truncate">{roomName ?? t('people.inVoice')}</span>
+        {v.camera ? <Video className="size-3.5 shrink-0" aria-label={t('video.stateOn')} role="img" /> : null}
       </>
     );
   else if (statusLine) second = <span className="truncate">{statusLine}</span>;

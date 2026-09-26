@@ -63,7 +63,7 @@ func (q *Queries) ConsumeRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvi
 const createGuestUser = `-- name: CreateGuestUser :one
 INSERT INTO users (email, password_hash, display_name, settings, is_guest, guest_expires_at)
 VALUES (NULL, NULL, $1, $2, true, $3)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone
 `
 
 type CreateGuestUserParams struct {
@@ -89,6 +89,7 @@ func (q *Queries) CreateGuestUser(ctx context.Context, arg CreateGuestUserParams
 		&i.StatusExpiresAt,
 		&i.IsGuest,
 		&i.GuestExpiresAt,
+		&i.Timezone,
 	)
 	return i, err
 }
@@ -155,7 +156,7 @@ func (q *Queries) DeleteUserRoomOverrides(ctx context.Context, userID string) er
 }
 
 const getRoomInviteByCode = `-- name: GetRoomInviteByCode :one
-SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname
+SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit
 FROM room_invites i
 JOIN rooms r ON r.id = i.room_id AND r.archived_at IS NULL
 JOIN workspaces w ON w.id = r.workspace_id
@@ -200,6 +201,7 @@ func (q *Queries) GetRoomInviteByCode(ctx context.Context, code string) (GetRoom
 		&i.Room.CategoryID,
 		&i.Room.UserLimit,
 		&i.Room.VoiceStatus,
+		&i.Room.CameraLimit,
 		&i.Workspace.ID,
 		&i.Workspace.Slug,
 		&i.Workspace.Name,
@@ -213,6 +215,7 @@ func (q *Queries) GetRoomInviteByCode(ctx context.Context, code string) (GetRoom
 		&i.Workspace.StorageQuotaBytes,
 		&i.Workspace.StorageUsedBytes,
 		&i.Workspace.AllowSelfNickname,
+		&i.Workspace.DefaultCameraLimit,
 	)
 	return i, err
 }

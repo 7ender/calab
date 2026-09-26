@@ -17,7 +17,8 @@ UPDATE users SET
     display_name   = coalesce(sqlc.narg('display_name'), display_name),
     status_text    = coalesce(sqlc.narg('status_text'), status_text),
     avatar_file_id = CASE WHEN sqlc.arg('set_avatar')::boolean THEN sqlc.narg('avatar_file_id')::uuid ELSE avatar_file_id END,
-    settings       = coalesce(sqlc.narg('settings'), settings)
+    settings       = coalesce(sqlc.narg('settings'), settings),
+    timezone       = CASE WHEN sqlc.arg('set_timezone')::boolean THEN sqlc.narg('timezone')::text ELSE timezone END
 WHERE id = sqlc.arg('id')
 RETURNING *;
 

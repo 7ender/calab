@@ -1,0 +1,46 @@
+import { describe, expect, it } from 'vitest';
+import { formatUtcOffset, timeZoneLabel, utcOffsetMinutes } from './timezone';
+
+const JAN = new Date('2026-01-15T12:00:00Z');
+const JUL = new Date('2026-07-15T12:00:00Z');
+
+describe('utcOffsetMinutes', () => {
+  it('reads IANA offsets, DST included', () => {
+    expect(utcOffsetMinutes('Europe/Moscow', JAN)).toBe(180);
+    expect(utcOffsetMinutes('Asia/Kolkata', JAN)).toBe(330);
+    expect(utcOffsetMinutes('America/St_Johns', JAN)).toBe(-210);
+    expect(utcOffsetMinutes('Europe/Berlin', JAN)).toBe(60);
+    expect(utcOffsetMinutes('Europe/Berlin', JUL)).toBe(120);
+    expect(utcOffsetMinutes('UTC', JAN)).toBe(0);
+  });
+  it('unknown or empty zone → null', () => {
+    expect(utcOffsetMinutes('', JAN)).toBeNull();
+    expect(utcOffsetMinutes('Mars/Olympus', JAN)).toBeNull();
+  });
+});
+
+describe('formatUtcOffset', () => {
+  it('(+H UTC), (−H:MM UTC), (UTC)', () => {
+    expect(formatUtcOffset(180)).toBe('(+3 UTC)');
+    expect(formatUtcOffset(330)).toBe('(+5:30 UTC)');
+    expect(formatUtcOffset(-210)).toBe('(−3:30 UTC)');
+    expect(formatUtcOffset(-300)).toBe('(−5 UTC)');
+    expect(formatUtcOffset(0)).toBe('(UTC)');
+  });
+});
+
+describe('timeZoneLabel', () => {
+  it('only when their offset differs from mine right now', () => {
+    expect(timeZoneLabel('Asia/Yekaterinburg', 'Europe/Moscow', JAN)).toBe('(+5 UTC)');
+    expect(timeZoneLabel('Europe/Moscow', 'Europe/Moscow', JAN)).toBeNull();
+    // Different names, same offset at that moment → nothing to say.
+    expect(timeZoneLabel('Europe/Istanbul', 'Europe/Moscow', JAN)).toBeNull();
+    // Berlin vs London: +1 vs 0 in winter and +2 vs +1 in summer — always shown.
+    expect(timeZoneLabel('Europe/Berlin', 'Europe/London', JUL)).toBe('(+2 UTC)');
+  });
+  it('unset / unknown zone → nothing; my zone unknown → still shown', () => {
+    expect(timeZoneLabel('', 'Europe/Moscow', JAN)).toBeNull();
+    expect(timeZoneLabel('Mars/Olympus', 'Europe/Moscow', JAN)).toBeNull();
+    expect(timeZoneLabel('Asia/Tokyo', '', JAN)).toBe('(+9 UTC)');
+  });
+});

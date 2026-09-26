@@ -86,6 +86,7 @@ type Room struct {
 	CategoryID       *uuid.UUID
 	UserLimit        int32
 	VoiceStatus      *string
+	CameraLimit      *int32
 }
 
 type RoomCategory struct {
@@ -154,6 +155,7 @@ type User struct {
 	StatusExpiresAt *time.Time
 	IsGuest         bool
 	GuestExpiresAt  *time.Time
+	Timezone        *string
 }
 
 type Workspace struct {
@@ -170,6 +172,7 @@ type Workspace struct {
 	StorageQuotaBytes       int64
 	StorageUsedBytes        int64
 	AllowSelfNickname       bool
+	DefaultCameraLimit      int32
 }
 
 type WorkspaceInvite struct {

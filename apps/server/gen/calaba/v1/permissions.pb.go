@@ -26,40 +26,42 @@ type Permission int32
 
 const (
 	Permission_PERMISSION_UNSPECIFIED      Permission = 0
-	Permission_PERMISSION_VIEW_ROOM        Permission = 1    // 1 << 0
-	Permission_PERMISSION_SEND_MESSAGES    Permission = 2    // 1 << 1
-	Permission_PERMISSION_ATTACH_FILES     Permission = 4    // 1 << 2
-	Permission_PERMISSION_MANAGE_MESSAGES  Permission = 8    // 1 << 3
-	Permission_PERMISSION_CONNECT          Permission = 16   // 1 << 4
-	Permission_PERMISSION_SPEAK            Permission = 32   // 1 << 5
-	Permission_PERMISSION_STREAM           Permission = 64   // 1 << 6
-	Permission_PERMISSION_MUTE_MEMBERS     Permission = 128  // 1 << 7
-	Permission_PERMISSION_MANAGE_ROOM      Permission = 256  // 1 << 8
-	Permission_PERMISSION_MANAGE_WORKSPACE Permission = 512  // 1 << 9
-	Permission_PERMISSION_ADMINISTRATOR    Permission = 1024 // 1 << 10
-	Permission_PERMISSION_MOVE_MEMBERS     Permission = 2048 // 1 << 11: move others between voice rooms, join over user_limit
-	Permission_PERMISSION_MANAGE_NICKNAMES Permission = 4096 // 1 << 12: workspace-level, change others' nicknames
-	Permission_PERMISSION_MENTION_EVERYONE Permission = 8192 // 1 << 13: @everyone / @here mention everyone who sees the room
+	Permission_PERMISSION_VIEW_ROOM        Permission = 1     // 1 << 0
+	Permission_PERMISSION_SEND_MESSAGES    Permission = 2     // 1 << 1
+	Permission_PERMISSION_ATTACH_FILES     Permission = 4     // 1 << 2
+	Permission_PERMISSION_MANAGE_MESSAGES  Permission = 8     // 1 << 3
+	Permission_PERMISSION_CONNECT          Permission = 16    // 1 << 4
+	Permission_PERMISSION_SPEAK            Permission = 32    // 1 << 5
+	Permission_PERMISSION_STREAM           Permission = 64    // 1 << 6
+	Permission_PERMISSION_MUTE_MEMBERS     Permission = 128   // 1 << 7
+	Permission_PERMISSION_MANAGE_ROOM      Permission = 256   // 1 << 8
+	Permission_PERMISSION_MANAGE_WORKSPACE Permission = 512   // 1 << 9
+	Permission_PERMISSION_ADMINISTRATOR    Permission = 1024  // 1 << 10
+	Permission_PERMISSION_MOVE_MEMBERS     Permission = 2048  // 1 << 11: move others between voice rooms, join over user_limit
+	Permission_PERMISSION_MANAGE_NICKNAMES Permission = 4096  // 1 << 12: workspace-level, change others' nicknames
+	Permission_PERMISSION_MENTION_EVERYONE Permission = 8192  // 1 << 13: @everyone / @here mention everyone who sees the room
+	Permission_PERMISSION_VIDEO            Permission = 16384 // 1 << 14: publish a webcam in voice rooms (member: yes by default)
 )
 
 // Enum value maps for Permission.
 var (
 	Permission_name = map[int32]string{
-		0:    "PERMISSION_UNSPECIFIED",
-		1:    "PERMISSION_VIEW_ROOM",
-		2:    "PERMISSION_SEND_MESSAGES",
-		4:    "PERMISSION_ATTACH_FILES",
-		8:    "PERMISSION_MANAGE_MESSAGES",
-		16:   "PERMISSION_CONNECT",
-		32:   "PERMISSION_SPEAK",
-		64:   "PERMISSION_STREAM",
-		128:  "PERMISSION_MUTE_MEMBERS",
-		256:  "PERMISSION_MANAGE_ROOM",
-		512:  "PERMISSION_MANAGE_WORKSPACE",
-		1024: "PERMISSION_ADMINISTRATOR",
-		2048: "PERMISSION_MOVE_MEMBERS",
-		4096: "PERMISSION_MANAGE_NICKNAMES",
-		8192: "PERMISSION_MENTION_EVERYONE",
+		0:     "PERMISSION_UNSPECIFIED",
+		1:     "PERMISSION_VIEW_ROOM",
+		2:     "PERMISSION_SEND_MESSAGES",
+		4:     "PERMISSION_ATTACH_FILES",
+		8:     "PERMISSION_MANAGE_MESSAGES",
+		16:    "PERMISSION_CONNECT",
+		32:    "PERMISSION_SPEAK",
+		64:    "PERMISSION_STREAM",
+		128:   "PERMISSION_MUTE_MEMBERS",
+		256:   "PERMISSION_MANAGE_ROOM",
+		512:   "PERMISSION_MANAGE_WORKSPACE",
+		1024:  "PERMISSION_ADMINISTRATOR",
+		2048:  "PERMISSION_MOVE_MEMBERS",
+		4096:  "PERMISSION_MANAGE_NICKNAMES",
+		8192:  "PERMISSION_MENTION_EVERYONE",
+		16384: "PERMISSION_VIDEO",
 	}
 	Permission_value = map[string]int32{
 		"PERMISSION_UNSPECIFIED":      0,
@@ -77,6 +79,7 @@ var (
 		"PERMISSION_MOVE_MEMBERS":     2048,
 		"PERMISSION_MANAGE_NICKNAMES": 4096,
 		"PERMISSION_MENTION_EVERYONE": 8192,
+		"PERMISSION_VIDEO":            16384,
 	}
 )
 
@@ -221,7 +224,7 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\x1bcalaba/v1/permissions.proto\x12\tcalaba.v1\">\n" +
 	"\x12PermissionOverride\x12\x14\n" +
 	"\x05allow\x18\x01 \x01(\x04R\x05allow\x12\x12\n" +
-	"\x04deny\x18\x02 \x01(\x04R\x04deny*\xc0\x03\n" +
+	"\x04deny\x18\x02 \x01(\x04R\x04deny*\xd8\x03\n" +
 	"\n" +
 	"Permission\x12\x1a\n" +
 	"\x16PERMISSION_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -238,7 +241,8 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\x18PERMISSION_ADMINISTRATOR\x10\x80\b\x12\x1c\n" +
 	"\x17PERMISSION_MOVE_MEMBERS\x10\x80\x10\x12 \n" +
 	"\x1bPERMISSION_MANAGE_NICKNAMES\x10\x80 \x12 \n" +
-	"\x1bPERMISSION_MENTION_EVERYONE\x10\x80@*\x98\x01\n" +
+	"\x1bPERMISSION_MENTION_EVERYONE\x10\x80@\x12\x16\n" +
+	"\x10PERMISSION_VIDEO\x10\x80\x80\x01*\x98\x01\n" +
 	"\rWorkspaceRole\x12\x1e\n" +
 	"\x1aWORKSPACE_ROLE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14WORKSPACE_ROLE_OWNER\x10\x01\x12\x18\n" +

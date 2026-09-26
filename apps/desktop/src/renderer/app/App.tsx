@@ -12,9 +12,17 @@ import { usePrefs } from '../stores/prefs';
 import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
 import { useLinkLanding } from '../services/linkLanding';
+import { logout } from '../services/session';
 import { useSession } from '../stores/session';
 
 export { queryClient };
+
+declare global {
+  interface Window {
+    /** Visual tests only (CALABA_VISUAL_TEST): sign out, back to the login screen. */
+    __calabaLogout?: () => Promise<void>;
+  }
+}
 
 function useTheme(): void {
   const theme = usePrefs((s) => s.theme);
@@ -26,6 +34,12 @@ function useTheme(): void {
     root.classList.toggle('mac', os === 'darwin' || /Mac OS X|Macintosh/.test(navigator.userAgent));
     root.classList.toggle('vibrancy', platform.kind === 'electron' && os === 'darwin' && !visualTest);
     root.classList.toggle('test-stable', visualTest);
+    // Visual tests only: sign out without relaunching the app (per-screen tests reset to the login).
+    if (!visualTest) return;
+    window.__calabaLogout = () => logout();
+    return () => {
+      delete window.__calabaLogout;
+    };
   }, [os, visualTest]);
   useEffect(() => {
     platform.app.setTheme(theme); // the native material follows the app theme

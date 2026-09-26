@@ -202,9 +202,15 @@ export interface MockServer {
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string }): Message;
   /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
-  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean }): void;
+  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
   setPresence(userId: string, status: PresenceStatus): void;
+  /**
+   * The server stops a user's camera like the real one (docs/05 «Камеры»): `camera = false` and
+   * VOICE_CAMERA_STOP{reason} to the room's viewers — LIMIT_REACHED is what an over-limit
+   * `track_published` produces (the mock has no LiveKit webhooks to detect it by itself).
+   */
+  stopCamera(userId: string, reason: VoiceStreamStopReason): void;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -222,6 +228,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     injectMessage: (a) => impl.injectMessage(a),
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
+    stopCamera: (u, r) => impl.stopCamera(u, r),
   };
 }
 
@@ -229,9 +236,17 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
 
 const JSON_WRITE = { alwaysEmitImplicit: true } as const;
 const JSON_READ = { ignoreUnknownFields: true } as const;
+
+/**
+ * LiveKit room name prefix (`mock_<roomId>`). MOCK_LIVEKIT_ROOM_PREFIX separates parallel local
+ * runs that share one dev LiveKit (their participants would otherwise meet in the same room).
+ */
+export function livekitRoomPrefix(): string {
+  return process.env['MOCK_LIVEKIT_ROOM_PREFIX'] || 'mock_';
+}
 const FAR_FUTURE = ts('2099-01-01T00:00:00Z');
 const REFRESH_COOKIE = 'calaba_refresh';
-const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES, CONNECT, SPEAK, STREAM, MUTE_MEMBERS, MANAGE_ROOM, MOVE_MEMBERS } =
+const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES, CONNECT, SPEAK, STREAM, VIDEO, MUTE_MEMBERS, MANAGE_ROOM, MOVE_MEMBERS } =
   PERMISSION_BITS;
 
 class HttpError extends Error {
@@ -436,7 +451,7 @@ class MockImpl {
    * (idempotent).
    */
   private async voiceToken(room: Room, identity: string, name: string): Promise<string> {
-    const lkRoom = `mock_${room.id}`;
+    const lkRoom = `${livekitRoomPrefix()}${room.id}`;
     await new RoomServiceClient(this.lk.url.replace(/^ws/, 'http'), this.lk.key, this.lk.secret)
       .createRoom({ name: lkRoom, emptyTimeout: 60 })
       .catch((e: unknown) => this.log(`livekit createRoom ${lkRoom}: ${String(e)}`));
@@ -833,6 +848,14 @@ class MockImpl {
     }
   }
 
+  stopCamera(userId: string, reason: VoiceStreamStopReason): void {
+    const v = this.state.voiceStates.get(userId);
+    const room = v?.roomId ? this.state.rooms.get(v.roomId) : undefined;
+    if (!room) return;
+    this.setVoice(userId, room.id, { camera: false });
+    this.toWorkspace(room.workspaceId, { event: { case: 'voiceCameraStop', value: { workspaceId: room.workspaceId, roomId: room.id, userId, trackSid: '', reason } } }, room.id);
+  }
+
   setPresence(userId: string, status: PresenceStatus): void {
     const prev = this.state.presences.get(userId);
     this.state.presences.set(userId, create(PresenceSchema, { userId, status, ...(prev?.lastSeen ? { lastSeen: prev.lastSeen } : {}) }));
@@ -840,7 +863,7 @@ class MockImpl {
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
 
-  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean }): void {
+  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
     const workspaceId = room?.workspaceId ?? prev?.workspaceId ?? '';
@@ -854,6 +877,7 @@ class MockImpl {
       deafened: patch.deafened ?? (sameRoom ? prev.deafened : false),
       streaming: patch.streaming ?? (sameRoom ? prev.streaming : false),
       serverMuted: patch.serverMuted ?? (sameRoom ? prev.serverMuted : false),
+      camera: patch.camera ?? (sameRoom ? prev.camera : false),
     });
     // Moving to another workspace's room: tell the old workspace the user left.
     if (prev?.roomId && prev.workspaceId !== workspaceId) {
@@ -1118,6 +1142,7 @@ class MockImpl {
         u.user.displayName = b.displayName.trim();
       }
       if (b.statusText !== undefined) u.user.statusText = b.statusText;
+      if (b.timezone !== undefined) u.user.timezone = b.timezone;
       if (b.avatarFileId !== undefined) {
         if (b.avatarFileId && !s().files.has(b.avatarFileId)) throw invalid('avatarFileId', 'unknown file');
         u.user.avatarFileId = b.avatarFileId;
@@ -1266,7 +1291,9 @@ class MockImpl {
       if (b.defaultAudioBitrateKbps !== undefined) media.audioBitrateKbps = b.defaultAudioBitrateKbps;
       if (b.defaultMaxStreamPreset !== undefined) media.maxStreamPreset = b.defaultMaxStreamPreset;
       if (b.defaultMaxStreams !== undefined) media.maxStreams = b.defaultMaxStreams;
-      const mediaChanged = media.audioBitrateKbps !== undefined || media.maxStreamPreset !== undefined || media.maxStreams !== undefined;
+      if (b.defaultCameraLimit !== undefined) media.cameraLimit = b.defaultCameraLimit;
+      const mediaChanged =
+        media.audioBitrateKbps !== undefined || media.maxStreamPreset !== undefined || media.maxStreams !== undefined || media.cameraLimit !== undefined;
       if (mediaChanged) ws.mediaDefaults = effectiveMedia(ws, media);
       this.toWorkspace(ws.id, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
       if (mediaChanged) {
@@ -1871,7 +1898,7 @@ class MockImpl {
       }
       const identity = `${me}:${sessionId}`;
       const token = await this.voiceToken(room, identity, user.user.displayName);
-      this.setVoice(me, room.id, { muted: false, deafened: false, streaming: false });
+      this.setVoice(me, room.id, { muted: false, deafened: false, streaming: false, camera: false });
       this.voiceSessions.set(me, sessionId);
       sendMsg(c.res, 200, JoinVoiceResponseSchema, {
         url: this.lk.url,
@@ -1880,7 +1907,28 @@ class MockImpl {
         media: room.media ?? DEFAULT_MEDIA,
         canSpeak: has(perms, SPEAK),
         canStream: has(perms, STREAM),
+        canVideo: has(perms, VIDEO) && (room.media ?? DEFAULT_MEDIA).cameraLimit > 0,
       });
+    });
+
+    // Webcams (docs/05 «Камеры»). No LiveKit webhooks here: the request itself marks the camera
+    // on (VoiceState.camera), /camera/stop marks it off.
+    this.route('POST', '/api/rooms/:id/camera/request', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireRoomPerm(room, me, VIDEO);
+      if (s().voiceStates.get(me)?.roomId !== room.id) throw conflict('not in this voice room');
+      const limit = (room.media ?? DEFAULT_MEDIA).cameraLimit;
+      const on = [...s().voiceStates.values()].filter((v) => v.roomId === room.id && v.camera && v.userId !== me).length;
+      if (limit === 0 || on >= limit) throw conflict('camera limit reached');
+      this.setVoice(me, room.id, { camera: true });
+      noContent(c.res);
+    });
+    this.route('POST', '/api/rooms/:id/camera/stop', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      if (s().voiceStates.get(me)?.roomId === room.id) this.setVoice(me, room.id, { camera: false });
+      noContent(c.res);
     });
 
     this.route('POST', '/api/rooms/:id/stream/request', (c) => {
@@ -1939,8 +1987,14 @@ class MockImpl {
       const token = sessionId ? await this.voiceToken(dst, identity, s().users.get(target)?.user.displayName ?? '') : '';
       const prev = s().voiceStates.get(target);
       if (prev?.roomId !== room.id) throw notFound('member in this voice room'); // left while minting
-      // The stream ends with the old connection (the client requests it again).
-      this.setVoice(target, dst.id, { muted: prev.muted, deafened: prev.deafened, streaming: sessionId ? false : prev.streaming });
+      // The stream and the camera end with the old connection (the client requests them again;
+      // an SFU move without a session keeps them — ADR-0019, review L6).
+      this.setVoice(target, dst.id, {
+        muted: prev.muted,
+        deafened: prev.deafened,
+        streaming: sessionId ? false : prev.streaming,
+        camera: sessionId ? false : prev.camera,
+      });
       // To every device of the user, as the server does; only the one with this session_id acts on it.
       const value = sessionId ? { ...base, url: this.lk.url, token, sessionId, identity } : base;
       this.toUser(target, { event: { case: 'voiceMoved', value } });
@@ -1961,6 +2015,22 @@ class MockImpl {
     this.route('POST', '/api/rooms/:id/voice/:userId/disconnect', (c) => {
       const { target } = moderate(c);
       this.setVoice(target, '', {});
+      noContent(c.res);
+    });
+    this.route('POST', '/api/rooms/:id/voice/:userId/stop-camera', (c) => {
+      const { room, target } = moderate(c);
+      if (!s().voiceStates.get(target)?.camera) throw notFound('no camera');
+      this.setVoice(target, room.id, { camera: false });
+      this.toWorkspace(
+        room.workspaceId,
+        {
+          event: {
+            case: 'voiceCameraStop',
+            value: { workspaceId: room.workspaceId, roomId: room.id, userId: target, trackSid: '', reason: VoiceStreamStopReason.MODERATOR },
+          },
+        },
+        room.id,
+      );
       noContent(c.res);
     });
     this.route('POST', '/api/rooms/:id/voice/:userId/stop-stream', (c) => {

@@ -1,5 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import * as Popover from '@radix-ui/react-popover';
 import {
   DndContext,
   DragOverlay,
@@ -32,6 +33,8 @@ import {
   Trash2,
   UserPlus,
   Users,
+  MessageSquare,
+  Video,
   Volume2,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -52,13 +55,13 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { formatDuration, limitLabel, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
+import { NicknameDialog } from '../people/NicknameDialog';
+import { ProfileCard } from '../people/ProfileCard';
 import { moveMember } from '../people/actions';
-import { SelfPanel } from './SelfPanel';
-import { UpdateBanner } from './UpdateBanner';
 import { errorText } from '../../lib/api/errors';
-import { VoiceBar } from './VoiceBar';
-import { VoiceRoomRows } from './VoiceRoomRows';
+import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
+import { useTimeZoneLabel } from '../../services/timezone';
 
 export { menuBox, menuItem };
 
@@ -114,7 +117,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
     <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog({})} />
       <VoiceDnd workspaceId={workspaceId}>
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3 pt-2">
+        {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
           {empty ? (
             <Empty
               action={
@@ -148,10 +152,6 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
           ))}
         </div>
       </VoiceDnd>
-      <VoiceBar />
-      {/* «Обновление X готово — Перезапустить», right above the self panel. */}
-      <UpdateBanner />
-      <SelfPanel />
       {catDialog ? <CategoryDialog workspaceId={workspaceId} category={catDialog.category} onClose={() => setCatDialog(null)} /> : null}
     </aside>
   );
@@ -274,7 +274,7 @@ function WorkspaceNotifyMenu({ workspaceId }: { workspaceId: string }): ReactNod
   };
   return (
     <Dropdown.Sub>
-      <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:bg-hover')}>
+      <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
         <Bell className="size-4" aria-hidden />
         <span className="flex-1">{t('shell.wsNotify')}</span>
         <ChevronRight className="size-4" aria-hidden />
@@ -520,6 +520,39 @@ function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNo
   );
 }
 
+/**
+ * Actions on the voice room card (Discord): the room's chat, invite, settings — 18 px icons 10 px
+ * apart, shown on hover / keyboard focus (the call timer stands there otherwise).
+ */
+function CardActions({ room, workspaceId, canInvite, canSettings }: { room: Room; workspaceId: string; canInvite: boolean; canSettings: boolean }): ReactNode {
+  const open = useUi((s) => s.openDialog);
+  const openRoom = useUi((s) => s.openRoom);
+  const btn = 'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
+  return (
+    <span className="hidden shrink-0 items-center gap-2.5 group-hover/row:flex group-focus-within/row:flex">
+      <Tip label={t('shell.roomChat')}>
+        <button type="button" className={btn} aria-label={t('shell.roomChatOf', { name: room.name })} onClick={() => openRoom(workspaceId, room.id)}>
+          <MessageSquare className="size-[18px]" aria-hidden />
+        </button>
+      </Tip>
+      {canInvite ? (
+        <Tip label={t('shell.invite')}>
+          <button type="button" className={btn} aria-label={t('shell.inviteTo', { name: room.name })} onClick={() => open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' })}>
+            <UserPlus className="size-[18px]" aria-hidden />
+          </button>
+        </Tip>
+      ) : null}
+      {canSettings ? (
+        <Tip label={t('room.settings')}>
+          <button type="button" className={btn} aria-label={t('shell.roomSettingsOf', { name: room.name })} onClick={() => open({ kind: 'room-settings', roomId: room.id })}>
+            <Settings className="size-[18px]" aria-hidden />
+          </button>
+        </Tip>
+      ) : null}
+    </span>
+  );
+}
+
 function MentionBadge({ n }: { n: number }): ReactNode {
   if (n <= 0) return null;
   return (
@@ -599,6 +632,8 @@ function VoiceRoomRow({
   );
   const canConnect = can(perms, 'CONNECT');
   const canMove = can(perms, 'MOVE_MEMBERS');
+  const statusLine = useStatusLine(room.id, inRoom, canConnect, can(perms, 'MANAGE_ROOM'));
+  const card = statusLine.shown;
   const limit = room.userLimit;
   const full = limit > 0 && people.length >= limit && !inRoom;
   const { setNodeRef, isOver, active: dragging } = useDroppable({ id: `room:${room.id}`, data: { roomId: room.id, canMove } satisfies DropRoom });
@@ -618,51 +653,57 @@ function VoiceRoomRow({
   return (
     <div ref={setNodeRef} className={cx('rounded-[var(--radius-card)] transition-colors duration-[var(--motion-fast)]', dropOk && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] outline outline-1 outline-accent')}>
       <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')}>
-        <div className={cx(rowBox, active ? 'bg-active' : 'hover:bg-hover')}>
+        {/* With a status line the room is one raised two-line card (Discord): name + status. */}
+        <div
+          className={cx(
+            card ? 'group/row relative flex flex-col gap-0.5 rounded-[var(--radius-card)] px-2.5 py-2' : rowBox,
+            card ? (active ? 'bg-active' : 'bg-hover') : active ? 'bg-active' : 'hover:bg-hover',
+          )}
+          data-testid={card ? 'voice-room-card' : undefined}
+        >
           <UnreadPill show={unread && !active} />
-          <button
-            type="button"
-            onClick={click}
-            aria-current={active ? 'page' : undefined}
-            title={canConnect ? undefined : t('voice.noConnect')}
-            className={cx(
-              'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pl-2 pr-1 text-left text-list leading-5',
-              active || unread || inRoom ? 'text-fg' : 'text-muted group-hover/row:text-fg',
-              unread && !active && 'font-semibold',
-            )}
-          >
-            {connecting ? (
-              <Loader2 className="size-[18px] shrink-0 animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
-            ) : (
-              <Volume2 className={cx('size-[18px] shrink-0', inRoom ? 'text-ok' : 'text-muted')} aria-hidden />
-            )}
-            <span className="min-w-0 flex-1 truncate" title={room.name}>
-              {room.name}
+          <div className={card ? 'flex h-5 min-w-0 items-center' : 'contents'}>
+            <button
+              type="button"
+              onClick={click}
+              aria-current={active ? 'page' : undefined}
+              title={canConnect ? undefined : t('voice.noConnect')}
+              className={cx(
+                'flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] pr-1 text-left text-list leading-5',
+                card ? 'pl-0' : 'pl-2',
+                active || unread || inRoom ? 'text-fg' : 'text-muted group-hover/row:text-fg',
+                unread && !active && 'font-semibold',
+              )}
+            >
+              {connecting ? (
+                <Loader2 className="size-[18px] shrink-0 animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
+              ) : (
+                <Volume2 className={cx('size-[18px] shrink-0', inRoom ? 'text-ok' : 'text-muted')} aria-hidden />
+              )}
+              <span className="min-w-0 flex-1 truncate" title={room.name}>
+                {room.name}
+              </span>
+              {room.isPrivate ? <Lock className="size-3.5 shrink-0 text-muted" aria-label={t('room.private')} /> : null}
+            </button>
+            <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-1.5')}>
+              <MentionBadge n={mentions} />
+              {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
+              {/* Card: the timer stays on the name line (green, Discord) and gives way to the actions on hover only. */}
+              <span className={cx('flex items-center gap-1', card ? 'group-hover/row:hidden group-focus-within/row:hidden' : admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
+                {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom && 'text-[var(--color-green-text)]') : undefined} /> : null}
+                {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
+              </span>
+              {card ? (
+                <CardActions room={room} workspaceId={workspaceId} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} />
+              ) : (
+                <RoomActions room={room} admin={admin} active={active} />
+              )}
             </span>
-            {room.isPrivate ? <Lock className="size-3.5 shrink-0 text-muted" aria-label={t('room.private')} /> : null}
-          </button>
-          <span className="flex shrink-0 items-center gap-1 pr-1.5">
-            <MentionBadge n={mentions} />
-            {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
-            <span className={cx('flex items-center gap-1', admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
-              {people.length ? <CallTimer roomId={room.id} /> : null}
-              {limit > 0 ? (
-                <span
-                  className={cx(
-                    'rounded-full bg-hover px-1.5 text-micro font-medium tabular-nums leading-4',
-                    people.length >= limit ? 'text-danger-text' : 'text-fg',
-                  )}
-                  aria-label={t('shell.userLimit', { n: people.length, max: limit })}
-                >
-                  {limitLabel(people.length, limit)}
-                </span>
-              ) : null}
-            </span>
-            <RoomActions room={room} admin={admin} active={active} />
-          </span>
+          </div>
+          {card ? <VoiceStatusLine roomId={room.id} canEdit={statusLine.canEdit} status={statusLine.status} /> : null}
         </div>
       </RoomMenu>
-      <VoiceRoomRows roomId={room.id} inRoom={inRoom} canConnect={canConnect} canManage={can(perms, 'MANAGE_ROOM')} />
+      {inRoom && can(perms, 'MANAGE_ROOM') ? <VoiceInviteRow roomId={room.id} /> : null}
       {people.length > 0 ? (
         <ul className="flex flex-col gap-px pb-1 pt-0.5" aria-label={room.name}>
           {people.map((v) => (
@@ -678,6 +719,26 @@ function VoiceRoomRow({
         </ul>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * People in a voice room: one muted pill with the people icon — «2/4» with a limit (red when
+ * full), «2» without one. The call timer stands apart from it (review: «02 | 04» read as noise).
+ */
+function PeoplePill({ n, max }: { n: number; max: number }): ReactNode {
+  const full = max > 0 && n >= max;
+  return (
+    <span
+      // Primary text on the fill: muted grey fell under 4.5:1 on the selected card (axe).
+      className={cx('flex items-center gap-0.5 rounded-full bg-[var(--color-fill)] py-px pl-1 pr-1.5 text-micro font-medium tabular-nums leading-4', full ? 'text-danger-text' : 'text-fg')}
+      aria-label={max > 0 ? t('shell.userLimit', { n, max }) : t('shell.peopleIn', { n })}
+      role="img"
+      data-testid="room-limit"
+    >
+      <Users className="size-3" aria-hidden />
+      {max > 0 ? limitLabel(n, max) : n}
+    </span>
   );
 }
 
@@ -716,6 +777,10 @@ function VoiceMember({
   const stream = useVoice((s) => s.streams.find((x) => x.userId === state.userId));
   const user = useWorkspaces((s) => s.users[state.userId]);
   const name = useWorkspaces(() => memberName(workspaceId, state.userId));
+  // «(+5 UTC)» when their time zone differs from mine (User.timezone).
+  const tz = useTimeZoneLabel(state.userId);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const talking = speaking && !state.muted;
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `member:${room.id}:${state.userId}`,
@@ -738,27 +803,55 @@ function VoiceMember({
         if (stream && inSameRoom) voice.watch(stream.trackSid);
       }}
       className={cx(
-        'group/member flex h-8 items-center gap-2 rounded-[var(--radius-row)] pl-7 pr-1.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+        // Discord: 36 px rows, 32 px avatars aligned with the room name, 15 px names.
+        'group/member flex h-9 items-center gap-2 rounded-[var(--radius-row)] pl-[34px] pr-1.5 text-list transition-colors duration-[var(--motion-fast)] hover:bg-hover',
         canMove ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}
       title={name}
     >
-      <Avatar userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} speaking={talking} />
-      <span className={cx('min-w-0 flex-1 truncate', talking || isMe ? 'text-fg' : 'text-muted group-hover/member:text-fg')}>{name}</span>
+      <Avatar userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={32} speaking={talking} />
+      <span className={cx('min-w-0 flex-1 truncate', talking || isMe ? 'text-fg' : 'text-muted group-hover/member:text-fg')}>
+        {name}
+        {tz ? <span className="text-muted"> {tz}</span> : null}
+      </span>
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}
         </Badge>
       ) : null}
+      {state.camera ? <Video className="size-4 shrink-0 text-muted" aria-label={t('video.stateOn')} role="img" /> : null}
       <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || (isMe && serverMuted)} />
     </li>
   );
-  // Shared member menu (PEOPLE): volume, server mute, «Переместить в…», rename, kick…
+  // Shared member menu (PEOPLE): profile, mention, volume, moderation, «Переместить в ›»… The
+  // «Профиль» item opens the same profile card as the members column, next to the row.
   return (
-    <MemberContextMenu workspaceId={workspaceId} userId={state.userId}>
-      {row}
-    </MemberContextMenu>
+    <Popover.Root open={profileOpen} onOpenChange={setProfileOpen}>
+      <MemberContextMenu workspaceId={workspaceId} userId={state.userId} onOpenProfile={() => setProfileOpen(true)}>
+        <Popover.Anchor asChild>{row}</Popover.Anchor>
+      </MemberContextMenu>
+      <Popover.Portal>
+        <Popover.Content
+          side="right"
+          align="start"
+          sideOffset={8}
+          collisionPadding={16}
+          className="mat-popover dense anim-in z-[var(--z-popover)] rounded-[var(--radius-panel)] text-fg focus:outline-none"
+          aria-label={name}
+        >
+          <ProfileCard
+            workspaceId={workspaceId}
+            userId={state.userId}
+            onRename={() => {
+              setProfileOpen(false);
+              setRenaming(true);
+            }}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+      {renaming ? <NicknameDialog workspaceId={workspaceId} userId={state.userId} onClose={() => setRenaming(false)} /> : null}
+    </Popover.Root>
   );
 }
 

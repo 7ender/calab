@@ -88,3 +88,9 @@ export function pipSize(wide: boolean, availableHeight: number, gap: number): { 
   const candidates = wide ? PIP_SIZES : PIP_SIZES.slice(1);
   return candidates.find((s) => s.h + 2 * gap <= availableHeight) ?? SMALLEST_PIP;
 }
+
+/** Height of the compact welcome row (EmptyRoom under the stage / video grid): 32 px icon + 2 × 12 px (#56). */
+export const WELCOME_ROW = 56;
+
+/** The PiP's edge + shadow, so a tile doesn't float unanchored over an empty feed (#56). */
+export const PIP_SHADOW = '0 0 0 1px var(--color-line), 0 16px 40px rgb(0 0 0 / 40%), 0 2px 8px rgb(0 0 0 / 25%)';

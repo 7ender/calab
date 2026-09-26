@@ -31,6 +31,7 @@ const (
 	SourceMicrophone       TrackSource = "MICROPHONE"
 	SourceScreenShare      TrackSource = "SCREEN_SHARE"
 	SourceScreenShareAudio TrackSource = "SCREEN_SHARE_AUDIO"
+	SourceCamera           TrackSource = "CAMERA"
 )
 
 // Permission is livekit.ParticipantPermission (only the fields we set).
@@ -50,6 +51,7 @@ type Track struct {
 
 // Participant is livekit.ParticipantInfo (subset).
 type Participant struct {
+	Sid      string  `json:"sid"` // one LiveKit connection; a reconnect with the same identity gets a new one
 	Identity string  `json:"identity"`
 	Tracks   []Track `json:"tracks"`
 }

@@ -79,9 +79,15 @@ export interface MenuActions {
   /** «Включить микрофон»: the member is muted by a moderator (VoiceState.server_muted). */
   serverUnmute: boolean;
   disconnect: boolean;
+  /** «Не показывать видео»: the target's camera is on in my voice room. */
+  hideVideo: boolean;
+  /** Moderator «Выключить камеру» (MUTE_MEMBERS in the room; VoiceState.camera). */
+  stopCamera: boolean;
   /** Voice rooms the target can be moved to (empty = no «Переместить в…»). */
   moveTargets: Room[];
   rename: boolean;
+  /** «Роли ›»: which roles I may give (null = no submenu). Only the owner grants / revokes admin. */
+  roles: { admin: boolean; member: boolean } | null;
   promote: boolean;
   removeGuest: boolean;
   kick: boolean;
@@ -114,8 +120,14 @@ export function memberActions(c: MenuContext): MenuActions {
     alreadyMuted: !!c.targetVoice?.serverMuted,
     serverUnmute: muteAll && !!c.targetVoice?.serverMuted,
     disconnect: moderate,
+    hideVideo: !self && !!c.myVoiceRoomId && c.targetVoice?.roomId === c.myVoiceRoomId && c.targetVoice.camera,
+    stopCamera: moderate && !!c.targetVoice?.camera,
     moveTargets,
     rename: self ? c.allowSelfNickname || can(ws, 'MANAGE_NICKNAMES') : can(ws, 'MANAGE_NICKNAMES'),
+    roles:
+      !self && manage && (c.target.role === WorkspaceRole.MEMBER || (c.target.role === WorkspaceRole.ADMIN && c.myRole === WorkspaceRole.OWNER))
+        ? { admin: c.myRole === WorkspaceRole.OWNER, member: true }
+        : null,
     promote: manage && guest && !self,
     removeGuest: removable && guest,
     kick: removable && !guest,
@@ -123,5 +135,5 @@ export function memberActions(c: MenuContext): MenuActions {
 }
 
 export function hasAnyAction(a: MenuActions): boolean {
-  return a.volume || a.serverMute || a.disconnect || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick;
+  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.roles !== null || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick;
 }
