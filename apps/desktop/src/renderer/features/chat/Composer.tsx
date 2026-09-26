@@ -11,7 +11,7 @@ import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, s
 import { useMessages } from '../../stores/messages';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { isGuest, memberName, useWorkspaces } from '../../stores/workspaces';
+import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from './EmojiPicker';
 import { MentionPopover, optionKey, useMentionables, type MentionOption } from './MentionPopover';
 import { previewText } from './mentionText';
@@ -89,7 +89,6 @@ export function Composer({
 
   // ---- mention autocomplete (docs/05, «Упоминания»)
   const listId = useId();
-  const myRole = useWorkspaces((s) => s.byId[workspaceId]?.members[me]);
   const mentionables = useMentionables(workspaceId, room, me);
   const [caret, setCaret] = useState(0);
   const [dismissed, setDismissed] = useState<number | null>(null);
@@ -99,8 +98,8 @@ export function Composer({
     mq && mq.start !== dismissed
       ? [
           ...filterCandidates(mq.query, mentionables.candidates).map((c): MentionOption => ({ kind: 'member', c, guest: mentionables.guests.has(c.id) })),
-          // Guests cannot mention everyone (ADR-0016).
-          ...(isGuest(myRole) ? [] : filterSpecial(mq.query).map((v): MentionOption => ({ kind: 'special', v }))),
+          // @everyone / @here only with MENTION_EVERYONE in this room (guests never have it, ADR-0016).
+          ...(!can(perms, 'MENTION_EVERYONE') ? [] : filterSpecial(mq.query).map((v): MentionOption => ({ kind: 'special', v }))),
         ]
       : [];
   const popover = options.length > 0;

@@ -1,5 +1,5 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { ArrowRightLeft, Check, ChevronRight, LogOut, MicOff, Pencil, UserCheck, UserMinus, UserRound, UserX, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRightLeft, Check, ChevronRight, LogOut, Mic, MicOff, Pencil, UserCheck, UserMinus, UserRound, UserX, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -10,7 +10,7 @@ import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { disconnectFromVoice, moveMember, promoteGuest, removeMember, serverMute } from './actions';
+import { disconnectFromVoice, moveMember, promoteGuest, removeMember, serverMute, serverUnmute } from './actions';
 import { hasAnyAction, memberActions, type MenuActions } from './members';
 import { NicknameDialog } from './NicknameDialog';
 
@@ -89,7 +89,7 @@ function MemberMenuContent({
   const self = useSession((s) => s.me?.user?.id) === userId;
   const roomId = useWorkspaces((s) => s.byId[workspaceId]?.voice[userId]?.roomId ?? '');
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
-  const voiceBlock = a.volume || (a.serverMute && !a.alreadyMuted) || a.disconnect || a.moveTargets.length > 0;
+  const voiceBlock = a.volume || (a.serverMute && !a.alreadyMuted) || a.serverUnmute || a.disconnect || a.moveTargets.length > 0;
   const adminBlock = a.promote || a.removeGuest || a.kick;
   return (
     <ContextMenu.Content className={cx(menuBox, 'w-72')} collisionPadding={8}>
@@ -109,7 +109,7 @@ function MemberMenuContent({
       {voiceBlock ? <ContextMenu.Separator className={menuSeparator} /> : null}
       {a.volume ? (
         <>
-          <VolumeRow userId={userId} />
+          <VolumeRow userId={userId} menu />
           <ContextMenu.CheckboxItem className={menuItem} checked={localMuted} onCheckedChange={(v) => voice.setUserMuted(userId, v)}>
             <span className="grid w-4 place-items-center">
               <ContextMenu.ItemIndicator>
@@ -125,6 +125,12 @@ function MemberMenuContent({
         <ContextMenu.Item className={menuItem} onSelect={() => serverMute(roomId, userId)}>
           <MicOff className="size-4" aria-hidden />
           <span className="min-w-0 flex-1 truncate">{t('people.menu.serverMute')}</span>
+        </ContextMenu.Item>
+      ) : null}
+      {a.serverUnmute ? (
+        <ContextMenu.Item className={menuItem} onSelect={() => serverUnmute(roomId, userId)}>
+          <Mic className="size-4" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{t('people.menu.serverUnmute')}</span>
         </ContextMenu.Item>
       ) : null}
       {a.moveTargets.length > 0 ? (
@@ -177,19 +183,38 @@ function MemberMenuContent({
  * Per-user playback volume («Громкость», 0–100 %; element.volume caps at 1 — no WebAudio boost,
  * docs/02 echo rules). Shared by the member menu and the profile card.
  */
-export function VolumeRow({ userId, className }: { userId: string; className?: string }): ReactNode {
+export function VolumeRow({ userId, className, menu = false }: { userId: string; className?: string; menu?: boolean }): ReactNode {
   const volume = usePrefs((s) => s.userVolumes[userId] ?? 1);
   const muted = usePrefs((s) => !!s.mutedUsers[userId]);
-  return (
-    // Not a menu item: a slider row (arrow keys adjust it once focused with Tab).
-    <div className={cx('px-2 pb-2 pt-1', className)}>
+  const value = muted ? t('people.menu.localMuted') : `${Math.round(volume * 100)}%`;
+  const body = (
+    <>
       <div className="mb-1 flex items-center justify-between text-caption text-muted">
         <span className="flex items-center gap-1.5">
           {muted ? <VolumeX className="size-3.5" aria-hidden /> : <Volume2 className="size-3.5" aria-hidden />} {t('people.menu.volume')}
         </span>
-        <span className="tabular-nums">{muted ? t('people.menu.localMuted') : `${Math.round(volume * 100)}%`}</span>
+        <span className="tabular-nums">{value}</span>
       </div>
-      <Slider label={t('people.menu.volume')} value={volume} min={0} max={1} step={0.01} onChange={(v) => voice.setUserVolume(userId, v)} />
-    </div>
+      <Slider label={t('people.menu.volume')} value={volume} min={0} max={1} step={0.01} pointerOnly={menu} onChange={(v) => voice.setUserVolume(userId, v)} />
+    </>
+  );
+  if (!menu) return <div className={cx('px-2 pb-2 pt-1', className)}>{body}</div>;
+  // In a menu only menu items are allowed (axe aria-required-children), so the row is one: ↑/↓
+  // reach it like any item, ←/→ change the volume by 5 %, the mouse drags the slider; selecting
+  // it keeps the menu open.
+  return (
+    <ContextMenu.Item
+      className={cx('rounded-[5px] px-2 pb-2 pt-1 outline-none data-[highlighted]:bg-hover', className)}
+      aria-label={`${t('people.menu.volume')}: ${value}`}
+      onSelect={(e) => e.preventDefault()}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const next = Math.min(1, Math.max(0, Math.round((volume + (e.key === 'ArrowRight' ? 0.05 : -0.05)) * 100) / 100));
+        voice.setUserVolume(userId, next);
+      }}
+    >
+      {body}
+    </ContextMenu.Item>
   );
 }

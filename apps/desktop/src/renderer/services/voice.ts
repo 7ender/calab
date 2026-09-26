@@ -32,7 +32,7 @@ import { RateTracker, candidatePair, inboundAudio, inboundVideo, outboundAudio, 
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
 import { SpeakingDebouncer } from '../lib/speaking';
-import { canSpeakFrom, isDeviceGone, qualityOf, toggleDeafen, toggleMute, transmitDecision } from '../lib/voiceLogic';
+import { canSpeakFrom, isDeviceGone, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
@@ -164,9 +164,19 @@ class VoiceEngine {
 
   private async connect(roomId: string, workspaceId: string, quiet: boolean): Promise<void> {
     if (this.roomId === roomId && this.room) return;
-    // Tear down first, *then* take the sequence number: teardown bumps it too, so taking it
-    // before made every room switch abort itself after /join (review H1).
+    // The intent token is taken *before* the teardown (which awaits a network disconnect):
+    // a leave() or a newer join during that window bumps it, and this call bails out, so the
+    // last click wins (review N1). The join sequence is taken after the teardown, because
+    // teardown bumps it too (review H1).
+    const intent = ++this.intentSeq;
+    // A teardown still finishing (a leave or another switch) goes first: its tail resets the
+    // voice store and would wipe this connect's state.
+    while (this.teardownRun) {
+      await this.teardownRun;
+      if (intent !== this.intentSeq) return;
+    }
     if (this.room) await this.teardown(false);
+    if (intent !== this.intentSeq) return;
     const seq = ++this.joinSeq;
     this.roomId = roomId;
     setVoice({ roomId, workspaceId, phase: 'connecting', error: null, streams: [], watching: null, speaking: {}, myStream: null });
@@ -217,6 +227,9 @@ class VoiceEngine {
   /** Bumped by every user join/leave: a running rejoin loop stops when it changes. */
   private rejoinGen = 0;
 
+  /** Bumped by every connect() and leave(): a connect still tearing down the old room bails out. */
+  private intentSeq = 0;
+
   /** Rejoin after an unexpected disconnect: 1 s, 2 s, 4 s … up to 5 attempts. */
   private async rejoin(): Promise<void> {
     const roomId = this.roomId;
@@ -244,10 +257,24 @@ class VoiceEngine {
   /** User intent: leave voice (also stops a pending rejoin). */
   async leave(sound = true): Promise<void> {
     this.rejoinGen++;
+    this.intentSeq++;
     await this.teardown(sound);
   }
 
-  private async teardown(sound: boolean): Promise<void> {
+  /** The teardown in progress (connect() waits for it). */
+  private teardownRun: Promise<void> | null = null;
+
+  private teardown(sound: boolean): Promise<void> {
+    const run = this.doTeardown(sound);
+    this.teardownRun = run;
+    const done = (): void => {
+      if (this.teardownRun === run) this.teardownRun = null;
+    };
+    run.then(done, done);
+    return run;
+  }
+
+  private async doTeardown(sound: boolean): Promise<void> {
     this.joinSeq++;
     this.speakers.reset();
     this.clearMoveTimer();
@@ -538,11 +565,13 @@ class VoiceEngine {
   }
 
   private applyElement(el: HTMLMediaElement, userId: string, stream: boolean): void {
-    // Local mute («Заглушить для меня») silences the voice, not their stream audio.
-    el.muted = useVoice.getState().deafened || (!stream && !!prefs().mutedUsers[userId]);
-    // element.volume caps at 1.0 — boosting would need WebAudio, which breaks AEC.
-    const v = stream ? (useVoice.getState().streamVolume[userId] ?? 1) : (prefs().userVolumes[userId] ?? 1);
-    el.volume = Math.max(0, Math.min(1, v));
+    // Local mute («Заглушить для меня») silences the voice, not their stream audio; element.volume
+    // caps at 1.0 — boosting would need WebAudio, which breaks AEC (lib/voiceLogic remoteAudio).
+    const v = useVoice.getState();
+    const p = prefs();
+    const a = remoteAudio({ deafened: v.deafened, stream, userId, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, streamVolume: v.streamVolume });
+    el.muted = a.muted;
+    el.volume = a.volume;
   }
 
   private applyVolumes(): void {
@@ -557,16 +586,11 @@ class VoiceEngine {
 
   /** Mute someone for me only (CHAT-SHELL, member menu); persisted per device like volumes. */
   setUserMuted(userId: string, muted: boolean): void {
-    const m = { ...prefs().mutedUsers };
-    if (muted) m[userId] = true;
-    else delete m[userId];
-    usePrefs.getState().setPrefs({ mutedUsers: m });
+    usePrefs.getState().setPrefs({ mutedUsers: withUserMuted(prefs().mutedUsers, userId, muted) });
   }
 
   setUserVolume(userId: string, volume: number): void {
-    const v = { ...prefs().userVolumes, [userId]: volume };
-    if (volume === 1) delete v[userId];
-    usePrefs.getState().setPrefs({ userVolumes: v });
+    usePrefs.getState().setPrefs({ userVolumes: withUserVolume(prefs().userVolumes, userId, volume) });
   }
 
   // ------------------------------------------------------------ mic
@@ -680,20 +704,28 @@ class VoiceEngine {
     return this.queueMic(async () => {
       const old = this.mic;
       if (!old) return;
+      let next: MicPipeline | null = null;
       try {
-        const next = await this.buildMic();
+        next = await this.buildMic();
         // Stopped (left the call / test) or replaced meanwhile: never keep an orphan capture.
         if (this.mic !== old || !this.micWanted()) {
           next.stop();
           return;
         }
-        this.mic = next;
         if (this.micTrack) {
           next.track.enabled = !this.micTrack.isMuted && this.gateWantsAudio();
           await this.micTrack.replaceTrack(next.track, { userProvidedTrack: true });
+          if (this.mic !== old || !this.micWanted()) {
+            next.stop(); // torn down while the track was being swapped
+            return;
+          }
         }
+        // Only now is `next` the live capture: a failed swap keeps `old` (still published)
+        // and drops `next`, so neither capture leaks (review N4).
+        this.mic = next;
         old.stop();
       } catch (err) {
+        if (next && this.mic !== next) next.stop();
         const h = humanMediaError(err, 'mic');
         setVoice({ micError: h.text, micErrorAction: h.action });
       }
@@ -870,8 +902,14 @@ class VoiceEngine {
   }
 
   toggleMute(): void {
-    setVoice(toggleMute(useVoice.getState()));
-    if (!useVoice.getState().muted) setVoice({ serverMuted: false });
+    const v = useVoice.getState();
+    // A moderator mute (VoiceState.server_muted) can't be lifted by the user: the server removed
+    // the microphone from our grant and PATCH /api/voice/self {muted:false} would be 403.
+    if (v.serverMuted && v.muted) {
+      toast.info(t('voiceUi.serverMuted'));
+      return;
+    }
+    setVoice(toggleMute(v));
     playSound(useVoice.getState().muted ? 'mute' : 'unmute');
     this.afterSelfChange();
   }
@@ -897,9 +935,22 @@ class VoiceEngine {
   }
 
   /** Server view of our voice state differs from local (e.g. PATCH raced the join) → push again. */
-  reconcileSelfState(s: { roomId: string; muted: boolean; deafened: boolean }): void {
+  reconcileSelfState(s: { roomId: string; muted: boolean; deafened: boolean; serverMuted?: boolean }): void {
     const v = useVoice.getState();
     if (!this.room || s.roomId !== this.roomId) return;
+    // The server's moderator-mute flag is the source of truth (VoiceState.server_muted).
+    if (s.serverMuted !== undefined && s.serverMuted !== v.serverMuted) {
+      if (s.serverMuted) {
+        setVoice({ serverMuted: true, muted: true });
+        toast.info(t('mediaErr.voice.modMuted'));
+      } else {
+        setVoice({ serverMuted: false }); // stays muted until the user turns the mic on
+        toast.info(t('voiceUi.serverUnmuted'));
+      }
+      this.applyTransmit();
+      this.syncTray();
+      return;
+    }
     if (s.muted !== v.muted || s.deafened !== v.deafened) this.pushSelfState();
   }
 
@@ -929,16 +980,23 @@ class VoiceEngine {
     let captured: CapturedScreen | null = null;
     let step: 'screen' | 'stream' = 'screen';
     const codec = useVoice.getState().streamCodec;
+    // Left / switched rooms during one of the awaits below: stop; `finally` releases the capture
+    // (review N9).
+    const stale = (): boolean => this.room !== room;
     try {
       await this.stopStream();
+      if (stale()) return;
       // 1) capture first (browsers need the click's transient activation for the picker);
       captured = await captureScreen(opts);
+      if (stale()) return;
       step = 'stream';
       // 2) reserve a slot + get the screen_share grant (409 when max_streams is reached);
       const granted = await api.voice.requestStream(roomId, opts.preset);
+      if (stale()) return;
       const preset = granted.preset || opts.preset;
       if (preset !== opts.preset) await applyPreset(captured, preset);
       await this.waitForScreenGrant(room);
+      if (stale()) return;
       // 3) publish.
       const share = await startScreenShare(
         room.localParticipant,
@@ -952,6 +1010,10 @@ class VoiceEngine {
         captured,
       );
       captured = null;
+      if (stale()) {
+        await share.stop();
+        return;
+      }
       this.screen = share;
       this.viewers.set(share.video.sid ?? '', new Set());
       const audio = share.audioProblem
@@ -1108,6 +1170,9 @@ class VoiceEngine {
     const watchedSid = useVoice.getState().watching;
     // One getStats() on the subscriber connection for every remote track instead of one per
     // track (30 mics = 30 calls every 2 s, review L8); split by inbound-rtp entry.
+    // NOTE: `engine.pcManager` is livekit-client internals (the version is pinned exactly in
+    // package.json for this reason). If it disappears (e.g. single-PC mode), inbound stats are
+    // just skipped; re-check this on every livekit-client upgrade (review N9).
     const inbound = await room.engine.pcManager?.subscriber?.getStats();
     if (inbound) {
       note(inbound);

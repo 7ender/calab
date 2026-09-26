@@ -8,7 +8,13 @@ interface RoomsState {
   readState: Record<string, string>;
   /** Newest known message id per room (Room.last_message_id in READY, then MESSAGE_CREATE). */
   lastMessage: Record<string, string>;
-  /** Mentions of me since the read marker. */
+  /**
+   * Unread messages of others since the read marker: READY read_states.unread_count, then kept
+   * locally (MESSAGE_CREATE +1, MESSAGE_DELETE −1, read → 0). Absent = unknown (a room never
+   * read has no read state): `isUnread` falls back to comparing ids.
+   */
+  unread: Record<string, number>;
+  /** Mentions of me since the read marker (READY read_states.mention_count, then kept locally). */
   mentions: Record<string, number>;
   reset: () => void;
   upsert: (r: Room) => void;
@@ -18,9 +24,12 @@ interface RoomsState {
   setOverrides: (roomId: string, o: RoomPermissionOverride[]) => void;
   setRead: (roomId: string, messageId: string) => void;
   setLastMessage: (roomId: string, messageId: string) => void;
-  addMention: (roomId: string) => void;
-  /** Unread mentions found in the inbox history (not counted live): raises a room's counter to at least `n`. */
-  seedMentions: (counts: Record<string, number>) => void;
+  /** Counters from READY read_states (authoritative for the rooms listed). */
+  setCounts: (roomId: string, unread: number, mentions: number) => void;
+  /** A new message of someone else, not seen on screen: +1 unread (and +1 mention). */
+  addUnread: (roomId: string, messageId: string, mention: boolean) => void;
+  /** A deleted message: −1 if it was unread (and −1 mention if it mentioned me). */
+  removeUnread: (roomId: string, messageId: string, mention: boolean) => void;
   /** Room categories of every workspace (READY snapshots + CATEGORY_* events). */
   categories: Record<string, RoomCategory>;
   setCategories: (workspaceId: string, list: RoomCategory[]) => void;
@@ -39,10 +48,11 @@ export const useRooms = create<RoomsState>()((set) => ({
   byId: {},
   readState: {},
   lastMessage: {},
+  unread: {},
   mentions: {},
   categories: {},
   notify: {},
-  reset: () => set({ byId: {}, readState: {}, lastMessage: {}, mentions: {}, categories: {}, notify: {} }),
+  reset: () => set({ byId: {}, readState: {}, lastMessage: {}, unread: {}, mentions: {}, categories: {}, notify: {} }),
   upsert: (r) => set((s) => ({ byId: { ...s.byId, [r.id]: r } })),
   upsertMany: (rs) =>
     set((s) => {
@@ -69,17 +79,44 @@ export const useRooms = create<RoomsState>()((set) => ({
   setRead: (roomId, messageId) =>
     set((s) => {
       if (!idAfter(messageId, s.readState[roomId]) && s.readState[roomId]) return {};
+      const readState = { ...s.readState, [roomId]: messageId };
+      // Read up to the newest known message → nothing unread (READ_STATE_UPDATE carries 0/0).
+      // Read only partly (newer messages arrived meanwhile): the counters stay as they are.
+      if (idAfter(s.lastMessage[roomId], messageId)) return { readState };
       const mentions = { ...s.mentions };
-      if (!idAfter(s.lastMessage[roomId], messageId)) delete mentions[roomId];
-      return { readState: { ...s.readState, [roomId]: messageId }, mentions };
+      delete mentions[roomId];
+      return { readState, unread: { ...s.unread, [roomId]: 0 }, mentions };
     }),
   setLastMessage: (roomId, messageId) =>
     set((s) => (idAfter(messageId, s.lastMessage[roomId]) ? { lastMessage: { ...s.lastMessage, [roomId]: messageId } } : {})),
-  addMention: (roomId) => set((s) => ({ mentions: { ...s.mentions, [roomId]: (s.mentions[roomId] ?? 0) + 1 } })),
-  seedMentions: (counts) =>
+  setCounts: (roomId, unread, mentions) =>
     set((s) => {
-      const raise = Object.entries(counts).filter(([id, n]) => n > (s.mentions[id] ?? 0));
-      return raise.length ? { mentions: { ...s.mentions, ...Object.fromEntries(raise) } } : {};
+      const m = { ...s.mentions };
+      if (mentions > 0) m[roomId] = mentions;
+      else delete m[roomId];
+      return { unread: { ...s.unread, [roomId]: unread }, mentions: m };
+    }),
+  addUnread: (roomId, messageId, mention) =>
+    set((s) => {
+      if (!idAfter(messageId, s.readState[roomId])) return {}; // already read (another device)
+      return {
+        unread: { ...s.unread, [roomId]: (s.unread[roomId] ?? 0) + 1 },
+        ...(mention ? { mentions: { ...s.mentions, [roomId]: (s.mentions[roomId] ?? 0) + 1 } } : {}),
+      };
+    }),
+  removeUnread: (roomId, messageId, mention) =>
+    set((s) => {
+      if (!idAfter(messageId, s.readState[roomId])) return {};
+      const patch: Partial<RoomsState> = {};
+      const u = s.unread[roomId];
+      if (u !== undefined && u > 0) patch.unread = { ...s.unread, [roomId]: u - 1 };
+      const m = s.mentions[roomId] ?? 0;
+      if (mention && m > 0) {
+        const mentions = { ...s.mentions, [roomId]: m - 1 };
+        if (m === 1) delete mentions[roomId];
+        patch.mentions = mentions;
+      }
+      return patch;
     }),
   setCategories: (wsId, list) =>
     set((s) => {
@@ -171,8 +208,13 @@ export function unreadMentionCounts(items: ReadonlyArray<{ id: string; roomId: s
   return out;
 }
 
-export function isUnread(roomId: string, s: Pick<RoomsState, 'readState' | 'lastMessage'>): boolean {
-  return idAfter(s.lastMessage[roomId], s.readState[roomId]);
+/**
+ * Something unread in the room: the counter when known (it skips my own messages and deleted
+ * ones); otherwise (no read state yet) the newest message is after the read marker.
+ */
+export function isUnread(roomId: string, s: Pick<RoomsState, 'readState' | 'lastMessage' | 'unread'>): boolean {
+  const n = s.unread[roomId];
+  return n !== undefined ? n > 0 : idAfter(s.lastMessage[roomId], s.readState[roomId]);
 }
 
 export const isVoice = (r: Room | undefined): boolean => r?.type === RoomType.VOICE;

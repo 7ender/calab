@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { app, BrowserWindow, powerMonitor, session } from 'electron';
 import { IPC, type PowerEvent } from '../shared/ipc';
 import { handleApiScheme, registerApiScheme } from './apiProtocol';
@@ -13,6 +14,14 @@ import { createTray } from './tray';
 import { checkForUpdates } from './updater';
 import { createMainWindow, getMainWindow, installWebContentsGuards, isOwnOrigin, isOwnPage, showMainWindow } from './windows';
 
+// The product is «Calab» (docs/10), but installed builds keep their data under the old name:
+// userData (session, settings, logs) and the macOS Keychain item «Calaba Safe Storage» that
+// safeStorage derives from app.name when Chromium starts. So main starts as «Calaba» and switches
+// the visible name (menus, About) to productName once `ready`; both are fixed by then.
+const PRODUCT_NAME = app.name;
+app.setName('Calaba');
+app.setPath('userData', join(app.getPath('appData'), 'Calaba'));
+app.once('ready', () => app.setName(PRODUCT_NAME));
 // Tests/automation may run several isolated instances side by side.
 if (process.env['CALABA_USER_DATA']) app.setPath('userData', process.env['CALABA_USER_DATA']);
 

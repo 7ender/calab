@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
+import { bundledPackages } from './scripts/bundledPackages';
 
 const require = createRequire(import.meta.url);
 
@@ -12,6 +13,9 @@ const require = createRequire(import.meta.url);
 // so our own worklet imports the package internals (sync WASM glue + atob
 // polyfill) through this alias, bypassing the package "exports" map.
 const rnnoiseDist = dirname(require.resolve('@timephy/rnnoise-wasm'));
+
+// Third-party notices: packages that end up in any bundle (scripts/third-party-notices.mjs).
+const BUNDLED = resolve(__dirname, 'build/.gen/bundled-desktop.json');
 
 /**
  * The renderer owns live media objects (Room, AudioContext, tracks) in module
@@ -31,11 +35,13 @@ function fullReloadOnly(): Plugin {
 
 export default defineConfig({
   main: {
+    plugins: [bundledPackages(BUNDLED)],
     build: {
       rollupOptions: { input: { index: resolve(__dirname, 'src/main/index.ts') } },
     },
   },
   preload: {
+    plugins: [bundledPackages(BUNDLED)],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload/index.ts') },
@@ -59,7 +65,7 @@ export default defineConfig({
     optimizeDeps: {
       include: ['@rnnoise-dist/polyfills.js', '@rnnoise-dist/generated/rnnoise-sync.js', 'livekit-client'],
     },
-    worker: { format: 'es' },
-    plugins: [react(), tailwindcss(), fullReloadOnly()],
+    worker: { format: 'es', plugins: () => [bundledPackages(BUNDLED)] },
+    plugins: [react(), tailwindcss(), fullReloadOnly(), bundledPackages(BUNDLED)],
   },
 });

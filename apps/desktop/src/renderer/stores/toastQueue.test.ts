@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TOAST_MAX, isSticky, pushToast, type Toast } from './toastQueue';
+import { TOAST_MAX, asSentence, isSticky, pushToast, type Toast } from './toastQueue';
 
 const info = (id: number, text = `t${id}`): Toast => ({ id, kind: 'info', text });
 const sticky = (id: number): Toast => ({ id, kind: 'error', text: `e${id}`, action: { label: 'Повторить', run: () => undefined } });
@@ -36,5 +36,19 @@ describe('pushToast', () => {
   it('knows sticky toasts', () => {
     expect(isSticky(sticky(1))).toBe(true);
     expect(isSticky({ id: 1, kind: 'error', text: 'x' })).toBe(false);
+  });
+});
+
+describe('asSentence', () => {
+  it('ends error texts with a period', () => {
+    expect(asSentence('Проверьте интернет')).toBe('Проверьте интернет.');
+    expect(asSentence('Нет доступа к «Переговорке»')).toBe('Нет доступа к «Переговорке».');
+    expect(asSentence('Уже с точкой.')).toBe('Уже с точкой.');
+    expect(asSentence('Что случилось?')).toBe('Что случилось?');
+    expect(asSentence('')).toBe('');
+  });
+  it('is applied to error toasts only', () => {
+    expect(pushToast([], { id: 1, kind: 'error', text: 'Сбой' })[0]?.text).toBe('Сбой.');
+    expect(pushToast([], { id: 1, kind: 'info', text: 'Скопировано' })[0]?.text).toBe('Скопировано');
   });
 });

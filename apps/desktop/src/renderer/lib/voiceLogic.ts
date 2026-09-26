@@ -68,3 +68,39 @@ export function isDeviceGone(err: unknown): boolean {
   const name = typeof err === 'object' && err !== null && 'name' in err ? err.name : null;
   return name === 'OverconstrainedError' || name === 'NotFoundError' || name === 'NotReadableError';
 }
+
+/**
+ * Playback of one remote <audio> element (docs/02 echo rule 1: element.volume / .muted only,
+ * never WebAudio — so no boost above 100 %). Voice: per-user volume and «Заглушить для меня»
+ * (prefs userVolumes / mutedUsers); a stream's own audio: its stream volume. Deafen silences all.
+ */
+export function remoteAudio(i: {
+  deafened: boolean;
+  stream: boolean;
+  userId: string;
+  userVolumes: Readonly<Record<string, number>>;
+  mutedUsers: Readonly<Record<string, true>>;
+  streamVolume: Readonly<Record<string, number>>;
+}): { muted: boolean; volume: number } {
+  const v = i.stream ? (i.streamVolume[i.userId] ?? 1) : (i.userVolumes[i.userId] ?? 1);
+  return {
+    muted: i.deafened || (!i.stream && i.mutedUsers[i.userId] === true),
+    volume: Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1,
+  };
+}
+
+/** Next userVolumes map: clamped to 0..1; 100 % is the default and is not stored. */
+export function withUserVolume(map: Readonly<Record<string, number>>, userId: string, volume: number): Record<string, number> {
+  const v = Math.max(0, Math.min(1, volume));
+  const next = { ...map, [userId]: v };
+  if (v === 1) delete next[userId];
+  return next;
+}
+
+/** Next mutedUsers map («Заглушить для меня» on / off). */
+export function withUserMuted(map: Readonly<Record<string, true>>, userId: string, muted: boolean): Record<string, true> {
+  const next = { ...map };
+  if (muted) next[userId] = true;
+  else delete next[userId];
+  return next;
+}

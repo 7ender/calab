@@ -107,10 +107,11 @@ export function beginSession(s: AuthSession): void {
 function connectGateway(): void {
   startGateway((kind) => {
     if (kind === 'too-many-sessions') useSession.getState().set({ tooManySessions: true });
-    else if (kind === 'revoked') {
+    else {
+      // 'revoked'. An expired session is ended by platform.auth.onLoggedOut, not by the gateway.
       void platform.auth.revoked();
       void endSession('revoked');
-    } else void endSession('expired');
+    }
   });
 }
 

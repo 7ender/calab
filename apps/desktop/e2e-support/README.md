@@ -1,6 +1,6 @@
 # e2e-support — deterministic mock API
 
-A mock of the Calaba API + WS gateway for **UI screenshot tests** (Playwright visual regression of
+A mock of the Calab API + WS gateway for **UI screenshot tests** (Playwright visual regression of
 the Electron and web clients; used by `e2e-visual/`, see TESTING.md «1a»). It replaces `apps/server` for UI tests only. Every run returns
 byte-identical data: fixed ids, timestamps, names, tokens and images.
 
@@ -48,9 +48,9 @@ Ids: `00000000-0000-7000-80KK-NNNNNNNNNNNN` (KK = kind: 01 user, 02 workspace, 0
 - **Users**: Анна Смирнова (owner), Борис Петров (admin, DND, in voice muted), Вера Ким (member,
   has an avatar, streaming in voice), Григорий Олегович Длинноимённый-Константинопольский (member,
   idle, long status), Дина (guest, offline).
-- **Workspaces** for Анна: «Команда Calaba» (`calaba`, owner) and «Дизайн» (`design`, member).
+- **Workspaces** for Анна: «Команда Calab» (`calaba`, owner) and «Дизайн» (`design`, member).
   «Сообщество» (`community`, open) shows up in discover.
-- **Rooms** in «Команда Calaba»: `общий` (25 messages over 2026-01-14/15, 4 unread), `разработка`
+- **Rooms** in «Команда Calab»: `общий` (25 messages over 2026-01-14/15, 4 unread), `разработка`
   (unread), `очень-длинное-название-комнаты-для-проверки-обрезки` (private: member deny
   VIEW_ROOM, user Вера allow), voice `Созвон` (with chat), voice `Переговорка` (Борис muted,
   Вера streaming).
@@ -69,7 +69,7 @@ Ids: `00000000-0000-7000-80KK-NNNNNNNNNNNN` (KK = kind: 01 user, 02 workspace, 0
   (web: `calaba_refresh` cookie). Дина is a guest account; every workspace has
   `allow_self_nickname`. Promote a guest: `POST /api/workspaces/{id}/members/{userId}/promote`.
 
-- **Categories** in «Команда Calaba»: «Разработка» (`разработка`, the long private room) and
+- **Categories** in «Команда Calab»: «Разработка» (`разработка`, the long private room) and
   «Голосовые» (`Созвон`, `Переговорка`); `общий` has no category (top of the list). `Переговорка`
   has `user_limit` 4 and `voice_started_at` 2026-01-15T10:05Z («25:00» at the visual-test clock).
 - Voice extras: `POST /api/rooms/{id}/join` answers 409 `ROOM_FULL` when the room is at its limit

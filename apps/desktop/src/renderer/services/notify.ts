@@ -3,10 +3,11 @@ import { mentionsMe } from '../lib/mentions';
 import { playSound } from '../lib/sounds';
 import { useInbox } from '../stores/inbox';
 import { prefs } from '../stores/prefs';
+import { mayMentionAll } from '../lib/permissions';
 import { isQuiet, roomNotify, useRooms } from '../stores/rooms';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
-import { isGuest, memberName, useWorkspaces } from '../stores/workspaces';
+import { memberName, useWorkspaces } from '../stores/workspaces';
 import { platform } from '../platform';
 import { previewText } from '../features/chat/mentionText';
 import { roomLabel } from '../features/chat/roomLabel';
@@ -16,11 +17,12 @@ export { mentionsMe };
 /** Unread counters, mention badges, system notifications for a message from someone else. */
 export function onIncomingMessage(m: Message, workspaceId: string, visible: boolean): void {
   const myId = useSession.getState().me?.user?.id ?? '';
-  const mention = mentionsMe(m, myId, isGuest(useWorkspaces.getState().byId[workspaceId]?.members[m.authorId]));
+  const authorRole = useWorkspaces.getState().byId[workspaceId]?.members[m.authorId]?.role;
+  const mention = mentionsMe(m, myId, mayMentionAll(authorRole, m.authorId, useRooms.getState().byId[m.roomId]));
   if (mention) useInbox.getState().addLive(m);
   if (visible) return; // chat is on screen: the read marker moves when it is seen
   // Badges count regardless of the room's notification settings.
-  if (mention) useRooms.getState().addMention(m.roomId);
+  useRooms.getState().addUnread(m.roomId, m.id, mention);
   // Room settings (server-synced): NONE / muted → silence; MENTIONS → only mentions make noise.
   const rn = roomNotify(useRooms.getState().notify[m.roomId]);
   if (isQuiet(rn)) return;

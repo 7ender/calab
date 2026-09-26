@@ -4,14 +4,18 @@ import {
   MessageCreateSchema,
   MessageSchema,
   ReadySchema,
+  MessageDeleteSchema,
   ReadStateSchema,
+  ReadStateUpdateSchema,
   RoomSchema,
+  TypingStartSchema,
   RoomType,
   WorkspaceSchema,
   WorkspaceSnapshotSchema,
   type DispatchEvent,
 } from '@calaba/protocol';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mem = new Map<string, string>();
 vi.stubGlobal('localStorage', {
@@ -20,6 +24,7 @@ vi.stubGlobal('localStorage', {
   removeItem: (k: string) => void mem.delete(k),
 });
 vi.stubGlobal('document', { hasFocus: () => false });
+vi.stubGlobal('window', globalThis);
 
 const onIncomingMessage = vi.fn<(...a: unknown[]) => void>();
 const loadMentions = vi.fn(() => Promise.resolve());
@@ -36,19 +41,23 @@ vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undef
 const { applyDispatch } = await import('./dispatch');
 const { useMessages } = await import('../stores/messages');
 const { useRooms } = await import('../stores/rooms');
+const { useTyping } = await import('../stores/typing');
+const { useInbox } = await import('../stores/inbox');
 
 const WS = 'ws-1';
 const id = (n: number): string => `0190a0b0-0000-7000-8000-${String(n).padStart(12, '0')}`;
 const room = (rid: string, lastMessageId = '') => create(RoomSchema, { id: rid, workspaceId: WS, type: RoomType.TEXT, name: rid, lastMessageId });
 
-function ready(rooms: ReturnType<typeof room>[], reads: Array<[string, string]> = []): DispatchEvent {
+function ready(rooms: ReturnType<typeof room>[], reads: Array<[string, string, number?, number?]> = []): DispatchEvent {
   return create(DispatchEventSchema, {
     event: {
       case: 'ready',
       value: create(ReadySchema, {
         sessionId: 'gs',
         workspaces: [create(WorkspaceSnapshotSchema, { workspace: create(WorkspaceSchema, { id: WS, name: 'W' }), rooms })],
-        readStates: reads.map(([roomId, lastReadMessageId]) => create(ReadStateSchema, { roomId, lastReadMessageId })),
+        readStates: reads.map(([roomId, lastReadMessageId, unreadCount = 0, mentionCount = 0]) =>
+          create(ReadStateSchema, { roomId, lastReadMessageId, unreadCount, mentionCount }),
+        ),
       }),
     },
   });
@@ -67,24 +76,55 @@ beforeEach(() => {
 });
 
 describe('dispatch READY (re-IDENTIFY while the UI is up)', () => {
-  it('keeps loaded windows and live mention badges; drops vanished rooms', () => {
-    applyDispatch(ready([room('a', id(5)), room('b', id(9))], [['a', id(1)], ['b', id(1)]]));
+  it('keeps loaded windows; counters come from the READY read states; drops vanished rooms', () => {
+    applyDispatch(ready([room('a', id(5)), room('b', id(9))], [['a', id(1), 4, 1], ['b', id(1), 8, 2]]));
+    expect(useRooms.getState().unread).toEqual({ a: 4, b: 8 });
+    expect(useRooms.getState().mentions).toEqual({ a: 1, b: 2 });
     useMessages.getState().setWindow('a', [create(MessageSchema, { id: id(5), roomId: 'a' })], false, false);
     useMessages.getState().setWindow('b', [create(MessageSchema, { id: id(9), roomId: 'b' })], false, false);
-    useRooms.getState().addMention('a');
-    useRooms.getState().addMention('b');
+    useRooms.getState().addUnread('a', id(6), true);
 
-    applyDispatch(ready([room('a', id(5))], [['a', id(1)]])); // room b is gone
+    // Re-IDENTIFY: room b is gone; a's counters are the server's (they include what was missed).
+    applyDispatch(ready([room('a', id(7))], [['a', id(1), 6, 3]]));
     expect(useMessages.getState().rooms['a']?.items).toHaveLength(1);
     expect(useMessages.getState().rooms['b']).toBeUndefined();
+    expect(useRooms.getState().unread).toEqual({ a: 6 });
+    expect(useRooms.getState().mentions).toEqual({ a: 3 });
+    expect(loadMentions).toHaveBeenCalled(); // the inbox list is refreshed
+  });
+
+  it('a room without a read state keeps its live counters across READY', () => {
+    applyDispatch(ready([room('a', id(5))]));
+    useRooms.getState().addUnread('a', id(6), true);
+    applyDispatch(ready([room('a', id(6))]));
+    expect(useRooms.getState().unread).toEqual({ a: 1 });
     expect(useRooms.getState().mentions).toEqual({ a: 1 });
-    expect(loadMentions).toHaveBeenCalled(); // badges re-derived from the history (review M12)
   });
 
   it('drops the badge of a room read on another device meanwhile', () => {
-    applyDispatch(ready([room('a', id(5))], [['a', id(1)]]));
-    useRooms.getState().addMention('a');
+    applyDispatch(ready([room('a', id(5))], [['a', id(1), 2, 1]]));
     applyDispatch(ready([room('a', id(5))], [['a', id(5)]]));
+    expect(useRooms.getState().mentions['a']).toBeUndefined();
+    expect(useRooms.getState().unread['a']).toBe(0);
+  });
+
+  it('READ_STATE_UPDATE clears the counters; a deleted unread message counts −1', () => {
+    applyDispatch(ready([room('a', id(9))], [['a', id(1), 5, 2]]));
+    // A deleted unread mention (the inbox has it) and a deleted unread plain message.
+    useInbox.getState().addLive(create(MessageSchema, { id: id(8), roomId: 'a', authorId: 'other' }));
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'messageDelete', value: create(MessageDeleteSchema, { roomId: 'a', messageId: id(8) }) } }));
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'messageDelete', value: create(MessageDeleteSchema, { roomId: 'a', messageId: id(7) }) } }));
+    expect(useRooms.getState().unread['a']).toBe(3);
+    expect(useRooms.getState().mentions['a']).toBe(1);
+    // An already read message deleted: nothing changes.
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'messageDelete', value: create(MessageDeleteSchema, { roomId: 'a', messageId: id(1) }) } }));
+    expect(useRooms.getState().unread['a']).toBe(3);
+    applyDispatch(
+      create(DispatchEventSchema, {
+        event: { case: 'readStateUpdate', value: create(ReadStateUpdateSchema, { readState: create(ReadStateSchema, { roomId: 'a', lastReadMessageId: id(9) }) }) },
+      }),
+    );
+    expect(useRooms.getState().unread['a']).toBe(0);
     expect(useRooms.getState().mentions['a']).toBeUndefined();
   });
 
@@ -95,5 +135,27 @@ describe('dispatch READY (re-IDENTIFY while the UI is up)', () => {
     expect(onIncomingMessage).toHaveBeenCalledTimes(1);
     applyDispatch(messageCreate('a', 101));
     expect(onIncomingMessage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('dispatch TYPING_START', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('expires on local time even when the server clock is far ahead (review N8)', async () => {
+    vi.useFakeTimers();
+    useTyping.getState().reset();
+    const serverAhead = Date.now() + 10 * 60_000;
+    applyDispatch(
+      create(DispatchEventSchema, {
+        event: { case: 'typingStart', value: create(TypingStartSchema, { roomId: 'a', userId: 'other', timestamp: timestampFromMs(serverAhead) }) },
+      }),
+    );
+    const until = useTyping.getState().rooms['a']?.['other'];
+    expect(until).toBeDefined();
+    expect(until).toBeLessThanOrEqual(Date.now() + 8000);
+    await vi.advanceTimersByTimeAsync(8100);
+    expect(useTyping.getState().rooms['a']?.['other']).toBeUndefined();
   });
 });

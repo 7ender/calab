@@ -5,8 +5,10 @@ import { KEY, MIN_MOUSE_BUTTON, keyName, mouseName, type OsKind } from './pttKey
  * PTT key capture state machine (pure: no Electron, no uiohook — unit-tested).
  *
  * `start()` arms a capture; the next key / mouse button (seen by the global hook) resolves it.
- * While armed, every key is consumed (the gate never sees it). The capture ends with a binding,
- * Esc, an explicit `cancel()` (the binder UI closed — review H2), a newer `start()`, or the
+ * While armed, every key press is consumed (the gate never sees it); key-ups pass through, so a
+ * PTT key held when the capture started still releases the gate (review N5). The capture ends
+ * with a binding, Esc, an explicit `cancel()` (the binder UI closed — review H2; by capture id,
+ * so a stale binder cannot cancel another one's capture — review N6), a newer `start()`, or the
  * timeout: an abandoned capture must never turn the next key typed in another app into PTT.
  *
  * macOS Caps Lock: a hardware Caps Lock only reports lock-state flips (KEY.CAPS_LOCK_STATE →
@@ -27,6 +29,8 @@ export interface CaptureDeps {
 }
 
 interface Pending {
+  /** Caller-chosen id (the binder instance); `cancel(id)` only ends a capture with this id. */
+  id: number | undefined;
   resolve: (b: PttBinding) => void;
   reject: (e: Error) => void;
   timeout: unknown;
@@ -43,10 +47,12 @@ export class PttCapture {
     return this.pending !== null;
   }
 
-  start(timeoutMs = CAPTURE_TIMEOUT_MS): Promise<PttBinding> {
-    this.cancel('superseded');
+  start(opts: { id?: number; timeoutMs?: number } = {}): Promise<PttBinding> {
+    const p0 = this.pending;
+    if (p0) this.end(p0, new Error('superseded'));
+    const timeoutMs = opts.timeoutMs ?? CAPTURE_TIMEOUT_MS;
     return new Promise<PttBinding>((resolve, reject) => {
-      const p: Pending = { resolve, reject, timeout: null };
+      const p: Pending = { id: opts.id, resolve, reject, timeout: null };
       p.timeout = this.deps.setTimer(() => {
         if (this.pending === p) this.end(p, new Error('timeout'));
       }, timeoutMs);
@@ -54,10 +60,14 @@ export class PttCapture {
     });
   }
 
-  /** Ends an armed capture (binder closed, superseded, …). No-op when idle. */
-  cancel(reason = 'cancelled'): void {
+  /**
+   * Ends an armed capture (binder closed, suspend, …). With an `id`, only the capture started
+   * with that id — a stale cancel from another binder is ignored (review N6). No-op when idle.
+   */
+  cancel(id?: number, reason = 'cancelled'): void {
     const p = this.pending;
-    if (p) this.end(p, new Error(reason));
+    if (!p || (id !== undefined && p.id !== id)) return;
+    this.end(p, new Error(reason));
   }
 
   /** A key event from the hook. Returns true when the capture consumed it. */
@@ -65,7 +75,9 @@ export class PttCapture {
     const p = this.pending;
     if (!p) return false;
     // The macOS lock-state code arrives as «up» when Caps Lock turns off — still a press.
-    if (!down && code !== KEY.CAPS_LOCK_STATE) return true;
+    // Other key-ups are not consumed: the PTT key held while the capture was armed must still
+    // release the gate (review N5); a key-up of an unbound key is ignored by the hook anyway.
+    if (!down && code !== KEY.CAPS_LOCK_STATE) return false;
     if (code === KEY.ESCAPE) {
       this.end(p, new Error('cancelled'));
       return true;

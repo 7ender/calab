@@ -32,7 +32,7 @@ async function markFromInternet(path: string, origin: string): Promise<void> {
   try {
     if (process.platform === 'darwin') {
       // flags 0x0083 = quarantined + downloaded by a user agent; time in hex seconds.
-      const value = `0083;${Math.floor(Date.now() / 1000).toString(16)};Calaba;`;
+      const value = `0083;${Math.floor(Date.now() / 1000).toString(16)};Calab;`;
       await run('/usr/bin/xattr', ['-w', 'com.apple.quarantine', value, path], { timeout: 5000 });
     } else if (process.platform === 'win32') {
       writeFileSync(`${path}:Zone.Identifier`, `[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=${origin}\r\n`);

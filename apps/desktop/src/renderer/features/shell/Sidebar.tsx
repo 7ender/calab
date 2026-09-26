@@ -746,7 +746,7 @@ function VoiceMember({
           {t('shell.live')}
         </Badge>
       ) : null}
-      <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={isMe && serverMuted} />
+      <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || (isMe && serverMuted)} />
     </li>
   );
   // Shared member menu (PEOPLE): volume, server mute, «Переместить в…», rename, kick…

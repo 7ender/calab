@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# Build Calaba desktop releases for macOS (arm64 + x64), Linux and Windows from this Mac (docs/06, "Релизы десктопа: сборка").
+# Build Calab desktop releases for macOS (arm64 + x64), Linux and Windows from this Mac (docs/06, "Релизы десктопа: сборка").
 #
 #   apps/desktop/scripts/build-release.sh [mac] [linux] [win]    # default: all three
 #
 # Env:
-#   SRC_REF=HEAD        git ref to build (a clean `git archive` export — uncommitted changes are NOT built)
+#   SRC_REF=HEAD        git ref to build (a clean `git archive` export — uncommitted changes are NOT built);
+#                       SRC_REF=WORKTREE builds the working tree as is (local checks only, never publish)
 #   VERSION=1.2.3       override apps/desktop/package.json version (applied to the export only)
 #   UPDATE_URL=…        electron-updater generic feed baked into app-update.yml / latest*.yml
-#                       (default https://colaba.gptunnel.ai/download/)
-#   HOMEPAGE=…          package homepage (deb metadata; default: UPDATE_URL without /download/)
+#                       (default https://app.calab.ru/download/ — docs/10-branding.md)
+#   HOMEPAGE=…          package homepage (deb metadata; default https://calab.ru, the landing)
 #   OUT_DIR=…           artifacts dir (default apps/desktop/dist-release)
 #   WORK_DIR=…          scratch dir (default $TMPDIR/calaba-release; removed on exit unless KEEP_WORK=1)
+#   SIGN=1              macOS: sign with the owner's Developer ID from cert/developerID_full.p12 (password:
+#                       APPLE_CERT_PASSWORD in the root .env; never printed). No notarization here — that is CI.
+#   MAC_ARCH=arm64|x64  macOS: build only this arch (default: arm64 + x64 from electron-builder.yml)
 #   SMOKE=0             skip the Linux smoke start (AppImage under Xvfb, inside the build container)
 #   BUILD_DOCKER_HOST=ssh://user@host  x86_64 Linux Docker host for the Linux/Windows builds (recommended on
 #                       Apple Silicon: no amd64 emulation; required for Windows — NSIS needs 32-bit wine,
@@ -31,8 +35,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 OUT="${OUT_DIR:-$ROOT/apps/desktop/dist-release}"
 SRC_REF="${SRC_REF:-HEAD}"
-UPDATE_URL="${UPDATE_URL:-https://colaba.gptunnel.ai/download/}"
-HOMEPAGE="${HOMEPAGE:-${UPDATE_URL%/download/}}"
+UPDATE_URL="${UPDATE_URL:-https://app.calab.ru/download/}"
+HOMEPAGE="${HOMEPAGE:-https://calab.ru}"
 WORK="${WORK_DIR:-${TMPDIR:-/tmp}/calaba-release}"
 SRC="$WORK/src"
 # The scratch dir (source export, node_modules, per-OS build dirs) is removed on exit; only
@@ -52,20 +56,26 @@ TIMES=""   # "platform=seconds" pairs (macOS ships bash 3.2: no associative arra
 EB_COMMON=(
   --publish never
   -c.publish.provider=generic "-c.publish.url=$UPDATE_URL"
-  "-c.mac.artifactName=Calaba-\${version}-\${arch}.\${ext}"
-  "-c.nsis.artifactName=Calaba-Setup-\${version}-\${arch}.\${ext}"
-  "-c.appImage.artifactName=Calaba-\${version}-\${arch}.\${ext}"
-  "-c.deb.artifactName=calaba_\${version}_\${arch}.\${ext}"
+  "-c.mac.artifactName=Calab-\${version}-\${arch}.\${ext}"
+  "-c.nsis.artifactName=Calab-Setup-\${version}-\${arch}.\${ext}"
+  "-c.appImage.artifactName=Calab-\${version}-\${arch}.\${ext}"
+  "-c.deb.artifactName=calab_\${version}_\${arch}.\${ext}"
   # The npm name "@calaba/desktop" is not a valid Linux binary / dpkg package name.
-  -c.linux.executableName=calaba -c.deb.packageName=calaba
+  -c.linux.executableName=calab -c.deb.packageName=calab
   "-c.extraMetadata.homepage=$HOMEPAGE"   # required by the deb target
 )
 
 # --- 1. clean source export -----------------------------------------------------------------------
 log "export $SRC_REF → $SRC"
 rm -rf "$SRC"; mkdir -p "$SRC" "$OUT"
-git -C "$ROOT" archive "$SRC_REF" | tar -x -C "$SRC"
-COMMIT="$(git -C "$ROOT" rev-parse --short "$SRC_REF")"
+if [[ "$SRC_REF" == WORKTREE ]]; then
+  # local checks only (e.g. SIGN=1 verification): tracked + untracked files, .gitignore respected; never publish
+  (cd "$ROOT" && git ls-files -z -co --exclude-standard | xargs -0 tar -cf - 2>/dev/null) | tar -x -C "$SRC"
+  COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)-worktree"
+else
+  git -C "$ROOT" archive "$SRC_REF" | tar -x -C "$SRC"
+  COMMIT="$(git -C "$ROOT" rev-parse --short "$SRC_REF")"
+fi
 if [[ -n "${VERSION:-}" ]]; then
   (cd "$SRC/apps/desktop" && npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null)
 fi
@@ -84,12 +94,33 @@ build_mac() {
   grep -q VC_CAPS_LOCK_STATE "$SRC/node_modules/uiohook-napi/libuiohook/include/uiohook.h" \
     || { echo "uiohook-napi patch is NOT applied" >&2; exit 1; }
   rm -rf "$SRC/node_modules/uiohook-napi/bin" "$SRC/node_modules/uiohook-napi/prebuilds"
-  log "macOS: electron-builder --mac (arm64 + x64 per electron-builder.yml; uiohook compiled from source per arch)"
-  (cd "$SRC/apps/desktop" && CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac \
+  local sign_env=(CSC_IDENTITY_AUTO_DISCOVERY=false) mac_args=(--mac)
+  [[ -n "${MAC_ARCH:-}" ]] && mac_args+=("--$MAC_ARCH")
+  if [[ -n "${SIGN:-}" ]]; then
+    local p12="$ROOT/cert/developerID_full.p12" pw
+    pw="$(grep -E '^[[:space:]]*APPLE_CERT_PASSWORD=' "$ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"'\r')"
+    [[ -f "$p12" && -n "$pw" ]] || { echo "SIGN=1: need cert/developerID_full.p12 and APPLE_CERT_PASSWORD in .env" >&2; exit 1; }
+    # electron-builder.yml keeps builds unsigned (identity: null) — drop it in this build copy only
+    sed -i '' '/^  identity: null/d' "$SRC/apps/desktop/electron-builder.yml"
+    # Prefer the identity already in the login keychain (electron-builder's temporary keychain for
+    # CSC_LINK fails on recent macOS: `security set-key-partition-list` cannot unlock it); CI imports the .p12.
+    local ident
+    ident="$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+    if [[ -n "$ident" ]]; then
+      sign_env=(CSC_IDENTITY_AUTO_DISCOVERY=true "CSC_NAME=${ident#Developer ID Application: }")
+      echo "signing identity from the login keychain: $ident"
+    else
+      sign_env=(CSC_IDENTITY_AUTO_DISCOVERY=true "CSC_LINK=$p12" "CSC_KEY_PASSWORD=$pw")
+    fi
+    mac_args+=(-c.mac.notarize=false)
+    log "macOS: SIGNED with cert/developerID_full.p12 (no notarization)"
+  fi
+  log "macOS: electron-builder ${mac_args[*]} (uiohook compiled from source per arch)"
+  (cd "$SRC/apps/desktop" && env "${sign_env[@]}" pnpm exec electron-builder "${mac_args[@]}" \
     "${EB_COMMON[@]}" -c.directories.output=dist-release-mac)
   # each app must carry the patched module compiled for its own arch
   local app arch want
-  for app in "$SRC"/apps/desktop/dist-release-mac/mac*/Calaba.app; do
+  for app in "$SRC"/apps/desktop/dist-release-mac/mac*/Calab.app; do
     case "$app" in *mac-arm64*) want=arm64 ;; *) want=x86_64 ;; esac
     arch="$(lipo -archs "$(find "$app" -name uiohook_napi.node | head -1)" 2>/dev/null || echo missing)"
     echo "uiohook native in $(basename "$(dirname "$app")"): $arch"
@@ -154,10 +185,10 @@ YML
         off=$(python3 -c "import struct;h=open('$app','rb').read(64);o,=struct.unpack_from('<Q',h,40);e,c=struct.unpack_from('<HH',h,58);print(o+e*c)")
         unsquashfs -q -o "$off" -d sq "$app" >/dev/null
         export DISPLAY=:99; Xvfb :99 -screen 0 1440x900x24 >/dev/null 2>&1 & sleep 2
-        ./sq/calaba --no-sandbox --disable-gpu > run.log 2>&1 & pid=$!
+        ./sq/calab --no-sandbox --disable-gpu > run.log 2>&1 & pid=$!
         sleep 20
         kill -0 $pid 2>/dev/null && echo "smoke: process alive after 20 s" || { echo "smoke: process EXITED"; tail -20 run.log; exit 4; }
-        w=$(xwininfo -root -tree | grep -c '"Calaba"' || true); echo "smoke: X windows titled Calaba: $w"
+        w=$(xwininfo -root -tree | grep -c '"Calab"' || true); echo "smoke: X windows titled Calab: $w"
         grep -iE "uiohook|error" ~/.config/Calaba/logs/main.log 2>/dev/null | head -5 || true
         kill $pid 2>/dev/null || true; [[ "$w" -ge 1 ]] || exit 4
       fi

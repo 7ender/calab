@@ -14,7 +14,8 @@ declare global {
 }
 
 /**
- * Toast stack (docs/09 #16): glass (mat-popover), bottom-right above the composer, newest at
+ * Toast stack (docs/09 #16): glass (mat-popover), bottom-right above the composer and the chat’s
+ * «↓» jump button (16 + 40 + 16 px), newest at
  * the bottom. Each toast hides after TOAST_MS; the countdown pauses while the pointer or
  * keyboard focus is in the stack and while the window is hidden (a toast raised in the
  * background waits to be seen). Errors are announced assertively (role="alert"), the rest
@@ -45,7 +46,7 @@ export function Toasts(): ReactNode {
   return (
     <section
       aria-label={t('toast.region')}
-      className="pointer-events-none fixed bottom-[calc(var(--composer-height)+var(--space-4))] right-4 z-[var(--z-toast)] flex w-[min(360px,calc(100vw-32px))] flex-col items-stretch gap-2"
+      className="pointer-events-none fixed bottom-[calc(var(--composer-height)+72px)] right-4 z-[var(--z-toast)] flex w-[min(360px,calc(100vw-32px))] flex-col items-stretch gap-2"
       onPointerEnter={() => setHover(true)}
       onPointerLeave={() => setHover(false)}
       onFocus={() => setFocus(true)}

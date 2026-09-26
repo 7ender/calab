@@ -30,6 +30,7 @@ export const IPC = {
   appUpdateStatus: 'app:update-status',
   appLog: 'app:log',
   appOpenExternal: 'app:open-external',
+  appLegal: 'app:legal',
   appAttention: 'app:attention',
   /** Renderer theme → nativeTheme.themeSource (vibrancy follows the app theme). */
   appSetTheme: 'app:set-theme',
@@ -108,6 +109,14 @@ export interface AppSettings {
   /** electron-updater generic feed URL; empty = updates off. */
   updateUrl: string;
   autostart: boolean;
+}
+
+/** Licence texts for «О программе» (BUSL-1.1 LICENSE, NOTICE, commercial terms, third-party notices). */
+export interface LegalTexts {
+  license: string;
+  notice: string;
+  commercial: string;
+  thirdParty: string;
 }
 
 export interface AppInfo {

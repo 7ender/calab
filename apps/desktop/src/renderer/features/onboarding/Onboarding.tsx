@@ -37,6 +37,8 @@ export function Onboarding(): ReactNode {
   const mac = useIsMacDesktop();
   const steps: Step[] = ['mic', 'mode', ...(mac ? (['screen'] as Step[]) : []), 'notifications', 'done'];
   const [i, setI] = useState(0);
+  // What the user actually set up, so «Всё готово» does not claim a mic check that was skipped.
+  const [micChecked, setMicChecked] = useState(false);
   const step = steps[i] ?? 'done';
   const nav: Nav = {
     next: () => setI((v) => Math.min(steps.length - 1, v + 1)),
@@ -48,8 +50,13 @@ export function Onboarding(): ReactNode {
   };
 
   return (
-    <div className="mat-content drag flex h-full flex-col items-center overflow-y-auto px-4 pb-8 pt-[max(40px,10vh)]">
-      <div className="no-drag flex w-full max-w-[520px] flex-col gap-5" data-testid={`onboarding-${step}`}>
+    // The composition (progress dots, card, «Пропустить настройку») is centred in the window. On
+    // windows ≥ 700 px tall the card has one height for every step (the tallest, PTT with the
+    // Input Monitoring note), so the dots, the title and the Back/Continue buttons keep their
+    // coordinates from step to step; shorter windows get the natural height (scrolls if needed).
+    // m-auto (not place-items) keeps the top reachable when the content overflows.
+    <div className="mat-content drag flex h-full flex-col overflow-y-auto px-4 py-4">
+      <div className="no-drag m-auto flex w-full max-w-[520px] flex-col gap-5" data-testid={`onboarding-${step}`}>
         <ol className="flex h-2 items-center justify-center gap-2" aria-label={t('onb.progress', { n: i + 1, total: steps.length })}>
           {steps.map((s, n) => (
             <li
@@ -59,16 +66,23 @@ export function Onboarding(): ReactNode {
             />
           ))}
         </ol>
-        {step === 'mic' ? <MicStep nav={nav} /> : null}
-        {step === 'mode' ? <ModeStep nav={nav} /> : null}
-        {step === 'screen' ? <ScreenStep nav={nav} /> : null}
-        {step === 'notifications' ? <NotificationsStep nav={nav} /> : null}
-        {step === 'done' ? <DoneStep nav={nav} onFinish={finish} /> : null}
-        {step !== 'done' ? (
-          <button type="button" onClick={finish} className="self-center rounded-[var(--radius-control)] px-2 py-1 text-caption text-muted hover:text-fg hover:underline">
-            {t('onb.skipAll')}
-          </button>
-        ) : null}
+        <div className="flex flex-col [@media(min-height:700px)]:min-h-[500px]" data-onb-card>
+          {step === 'mic' ? <MicStep nav={nav} onResult={setMicChecked} /> : null}
+          {step === 'mode' ? <ModeStep nav={nav} /> : null}
+          {step === 'screen' ? <ScreenStep nav={nav} /> : null}
+          {step === 'notifications' ? <NotificationsStep nav={nav} /> : null}
+          {step === 'done' ? <DoneStep nav={nav} onFinish={finish} micChecked={micChecked} /> : null}
+        </div>
+        {/* Kept (invisible) on the last step too, so the composition does not shift. */}
+        <button
+          type="button"
+          onClick={finish}
+          aria-hidden={step === 'done' || undefined}
+          tabIndex={step === 'done' ? -1 : undefined}
+          className={cx('self-center rounded-[var(--radius-control)] px-2 py-1 text-caption text-muted hover:text-fg hover:underline', step === 'done' && 'invisible')}
+        >
+          {t('onb.skipAll')}
+        </button>
       </div>
     </div>
   );
@@ -90,7 +104,7 @@ function StepFrame({
   back: (() => void) | null;
 }): ReactNode {
   return (
-    <section className="mat-popover flex min-h-[360px] flex-col gap-5 rounded-[var(--radius-panel)] p-6">
+    <section className="mat-popover flex min-h-[300px] flex-1 flex-col gap-5 rounded-[var(--radius-panel)] p-6">
       <div className="flex flex-col items-center gap-3 text-center">
         {illustration}
         <h1 className="text-large font-semibold">{title}</h1>
@@ -128,7 +142,7 @@ function WarnNote({ children }: { children: ReactNode }): ReactNode {
   );
 }
 
-function MicStep({ nav }: { nav: Nav }): ReactNode {
+function MicStep({ nav, onResult }: { nav: Nav; onResult: (checked: boolean) => void }): ReactNode {
   const [state, setState] = useState<'idle' | 'asking' | 'ok' | 'denied'>('idle');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const micId = usePrefs((s) => s.micDeviceId);
@@ -157,11 +171,24 @@ function MicStep({ nav }: { nav: Nav }): ReactNode {
       back={nav.back}
       actions={
         <>
-          <Button variant="secondary" size="lg" onClick={nav.next}>
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => {
+              onResult(false);
+              nav.next();
+            }}
+          >
             {t('onb.later')}
           </Button>
           {ok ? (
-            <Button size="lg" onClick={nav.next}>
+            <Button
+              size="lg"
+              onClick={() => {
+                onResult(true);
+                nav.next();
+              }}
+            >
               {t('onb.micGood')}
             </Button>
           ) : (
@@ -275,7 +302,25 @@ function ScreenStep({ nav }: { nav: Nav }): ReactNode {
 }
 
 function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
-  const [perm, setPerm] = useState(typeof Notification === 'undefined' ? 'denied' : Notification.permission);
+  const supported = typeof Notification !== 'undefined';
+  const [perm, setPerm] = useState<NotificationPermission>(supported ? Notification.permission : 'denied');
+  const [asking, setAsking] = useState(false);
+  // The primary action always turns mention notifications on (and asks the OS/browser when it
+  // has not been asked yet); only a system-level «denied» leaves «Продолжить» with a note.
+  const enable = async (): Promise<void> => {
+    let p = perm;
+    if (supported && p === 'default') {
+      setAsking(true);
+      p = await Notification.requestPermission().catch(() => 'denied' as const);
+      setAsking(false);
+      setPerm(p);
+    }
+    if (p === 'granted') {
+      usePrefs.getState().setPrefs({ notifyMentions: true });
+      nav.next();
+    }
+  };
+  const denied = supported && perm === 'denied';
   return (
     <StepFrame
       illustration={<Illustration icon={Bell} />}
@@ -284,40 +329,37 @@ function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
       back={nav.back}
       actions={
         <>
-          <Button variant="secondary" size="lg" onClick={nav.next}>
-            {t('onb.later')}
-          </Button>
-          {perm === 'default' ? (
-            <Button
-              size="lg"
-              onClick={() =>
-                void Notification.requestPermission().then((p) => {
-                  setPerm(p);
-                  nav.next();
-                })
-              }
-            >
-              {t('onb.notifAllow')}
+          {/* Nothing to decide when the system already said no: just «Продолжить». */}
+          {denied || !supported ? null : (
+            <Button variant="secondary" size="lg" onClick={nav.next}>
+              {t('onb.later')}
             </Button>
-          ) : (
+          )}
+          {denied || !supported ? (
             <Button size="lg" onClick={nav.next}>
               {t('onb.next')}
+            </Button>
+          ) : (
+            <Button size="lg" busy={asking} onClick={() => void enable()}>
+              {t('onb.notifAllow')}
             </Button>
           )}
         </>
       }
-    />
+    >
+      {denied ? <WarnNote>{platform.kind === 'web' ? t('onb.notifDeniedWeb') : t('onb.notifDenied')}</WarnNote> : null}
+    </StepFrame>
   );
 }
 
-function DoneStep({ nav, onFinish }: { nav: Nav; onFinish: () => void }): ReactNode {
+function DoneStep({ nav, onFinish, micChecked }: { nav: Nav; onFinish: () => void; micChecked: boolean }): ReactNode {
   const hasWs = useWorkspaces((s) => s.order.length > 0);
   const open = useUi((s) => s.openDialog);
   return (
     <StepFrame
       illustration={<Logo size={64} />}
       title={t('onb.doneTitle')}
-      text={hasWs ? t('onb.doneText') : t('onb.doneNoWs')}
+      text={hasWs ? (micChecked ? t('onb.doneText') : t('onb.doneTextNoMic')) : micChecked ? t('onb.doneNoWs') : t('onb.doneNoWsNoMic')}
       back={nav.back}
       actions={
         hasWs ? (

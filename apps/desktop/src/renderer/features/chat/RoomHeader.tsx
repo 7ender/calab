@@ -90,24 +90,16 @@ const LEVELS = [
   { level: NotificationLevel.NONE, label: 'chat.notifyNone' },
 ] as const;
 
-/**
- * «Пока не включу»: the API has no open-ended mute (muted_until ≤ 1 year ahead), so it is the
- * longest allowed one; anything past FOREVER_FROM reads as «выключены» without a date.
- */
-const FOREVER_MS = 364 * 24 * 60 * 60_000;
-const FOREVER_FROM = 180 * 24 * 60 * 60_000;
-
 const MUTES = [
   { ms: 15 * 60_000, label: 'chat.notifyMute15m' },
   { ms: 60 * 60_000, label: 'chat.notifyMute1h' },
   { ms: 8 * 60 * 60_000, label: 'chat.notifyMute8h' },
   { ms: 24 * 60 * 60_000, label: 'chat.notifyMute24h' },
-  { ms: FOREVER_MS, label: 'chat.notifyMuteForever' },
 ] as const;
 
-/** «Выключены до 14:30» / «Выключены» (open-ended). */
-function mutedText(until: number, now: number): string {
-  return until - now > FOREVER_FROM ? t('chat.notifyMutedForever') : t('chat.notifyMutedUntil', { time: fmtUntil(until) });
+/** «Выключены до 14:30». Open-ended «Пока не включу» is level NONE without muted_until (docs/05). */
+function mutedText(until: number): string {
+  return t('chat.notifyMutedUntil', { time: fmtUntil(until) });
 }
 
 const untilFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -136,7 +128,7 @@ function NotifyButton({ roomId }: { roomId: string }): ReactNode {
   const quiet = isQuiet(n);
   const Icon = quiet ? BellOff : n.level === NotificationLevel.MENTIONS ? BellDot : Bell;
   const levelText = t(LEVELS.find((l) => l.level === n.level)?.label ?? 'chat.notifyAll');
-  const state = n.mutedUntil ? mutedText(n.mutedUntil, now) : levelText;
+  const state = n.mutedUntil ? mutedText(n.mutedUntil) : levelText;
   return (
     <Dropdown.Root modal={false} open={open} onOpenChange={(v) => {
         setOpen(v);
@@ -169,7 +161,7 @@ function NotifyButton({ roomId }: { roomId: string }): ReactNode {
           </Dropdown.RadioGroup>
           <Dropdown.Separator className={menuSeparator} />
           <Dropdown.Label className={menuLabel}>
-            {n.mutedUntil ? mutedText(n.mutedUntil, now) : t('chat.notifyMute')}
+            {n.mutedUntil ? mutedText(n.mutedUntil) : t('chat.notifyMute')}
           </Dropdown.Label>
           {MUTES.map((m) => (
             <Dropdown.Item key={m.ms} className={menuItem} onSelect={() => void setRoomNotifications(roomId, n.level, Date.now() + m.ms)}>
@@ -177,10 +169,20 @@ function NotifyButton({ roomId }: { roomId: string }): ReactNode {
               {t(m.label)}
             </Dropdown.Item>
           ))}
-          {n.mutedUntil ? (
+          {/* Open-ended: level NONE without muted_until (the server's permanent mute). */}
+          <Dropdown.Item className={menuItem} onSelect={() => void setRoomNotifications(roomId, NotificationLevel.NONE, null)}>
+            <span className="w-4" aria-hidden />
+            {t('chat.notifyMuteForever')}
+          </Dropdown.Item>
+          {n.mutedUntil || n.level === NotificationLevel.NONE ? (
             <>
               <Dropdown.Separator className={menuSeparator} />
-              <Dropdown.Item className={menuItem} onSelect={() => void setRoomNotifications(roomId, n.level, null)}>
+              <Dropdown.Item
+                className={menuItem}
+                onSelect={() =>
+                  void setRoomNotifications(roomId, n.level === NotificationLevel.NONE ? NotificationLevel.ALL : n.level, null)
+                }
+              >
                 <Bell className="size-4" aria-hidden /> {t('chat.notifyUnmute')}
               </Dropdown.Item>
             </>
@@ -236,7 +238,7 @@ function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; r
           sideOffset={8}
           collisionPadding={16}
           aria-label={t('chat.pinned')}
-          className="mat-popover anim-in z-[var(--z-popover)] flex max-h-[min(480px,70vh)] w-[360px] flex-col overflow-hidden rounded-[var(--radius-panel)]"
+          className="mat-popover dense anim-in z-[var(--z-popover)] flex max-h-[min(480px,70vh)] w-[360px] flex-col overflow-hidden rounded-[var(--radius-panel)]"
         >
           <div className="border-b border-line px-4 py-2.5 text-body font-semibold">{t('chat.pinned')}</div>
           {pins.length === 0 ? (

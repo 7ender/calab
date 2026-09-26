@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { NotificationLevel, RoomCategorySchema, RoomNotificationSettingsSchema, RoomSchema, RoomType } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { defaultRoom, groupRooms, isQuiet, roomNotify, unreadMentionCounts, useRooms } from './rooms';
+import { defaultRoom, groupRooms, isQuiet, isUnread, roomNotify, unreadMentionCounts, useRooms } from './rooms';
 
 const room = (id: string, type: RoomType, position: number, categoryId = ''): ReturnType<typeof create<typeof RoomSchema>> =>
   create(RoomSchema, { id, workspaceId: 'w', type, name: id, position, categoryId });
@@ -72,11 +72,48 @@ describe('mention counters', () => {
     expect(unreadMentionCounts(items, { a: '02', b: '01' })).toEqual({ a: 1, c: 1 });
   });
 
-  it('seedMentions only raises counters', () => {
-    useRooms.getState().reset();
-    useRooms.getState().addMention('a');
-    useRooms.getState().addMention('a');
-    useRooms.getState().seedMentions({ a: 1, b: 2 });
-    expect(useRooms.getState().mentions).toEqual({ a: 2, b: 2 });
+  it('READY counters, live +1, read → 0, deleted unread −1', () => {
+    const r = useRooms.getState;
+    r().reset();
+    r().setLastMessage('a', '05');
+    r().setRead('a', '02');
+    r().setCounts('a', 3, 1);
+    expect(r().unread['a']).toBe(3);
+    expect(r().mentions).toEqual({ a: 1 });
+    expect(isUnread('a', r())).toBe(true);
+    // A new message of someone else (+ a mention).
+    r().setLastMessage('a', '06');
+    r().addUnread('a', '06', true);
+    expect(r().unread['a']).toBe(4);
+    expect(r().mentions['a']).toBe(2);
+    // Deleted: the unread mention −1; an already read message changes nothing.
+    r().removeUnread('a', '06', true);
+    r().removeUnread('a', '01', true);
+    expect(r().unread['a']).toBe(3);
+    expect(r().mentions['a']).toBe(1);
+    // A message at or before the read marker (read elsewhere first) is not counted.
+    r().addUnread('a', '02', true);
+    expect(r().unread['a']).toBe(3);
+    // Read up to the newest message (READ_STATE_UPDATE carries 0/0): nothing unread.
+    r().setRead('a', '06');
+    expect(r().unread['a']).toBe(0);
+    expect(r().mentions['a']).toBeUndefined();
+    expect(isUnread('a', r())).toBe(false);
+  });
+
+  it('a partial read keeps the counters; unknown counters fall back to ids', () => {
+    const r = useRooms.getState;
+    r().reset();
+    r().setLastMessage('a', '05');
+    r().setCounts('a', 2, 1);
+    r().setRead('a', '03'); // newer messages still unread
+    expect(r().unread['a']).toBe(2);
+    expect(r().mentions['a']).toBe(1);
+    // A room never read (no READY read state): the dot comes from the ids.
+    r().setLastMessage('b', '04');
+    expect(isUnread('b', r())).toBe(true);
+    // Counters of 0 win over the ids (only my own messages after the marker).
+    r().setCounts('b', 0, 0);
+    expect(isUnread('b', r())).toBe(false);
   });
 });

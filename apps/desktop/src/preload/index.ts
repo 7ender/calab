@@ -35,6 +35,7 @@ const api: CalabaApi = {
     onUpdateStatus: (cb) => on(IPC.appUpdateStatus, cb),
     log: (level, message) => void ipcRenderer.invoke(IPC.appLog, { level, message }),
     openExternal: (url) => ipcRenderer.invoke(IPC.appOpenExternal, url),
+    legal: () => ipcRenderer.invoke(IPC.appLegal),
     attention: () => void ipcRenderer.invoke(IPC.appAttention),
     setTheme: (theme) => void ipcRenderer.invoke(IPC.appSetTheme, theme),
   },
@@ -53,8 +54,8 @@ const api: CalabaApi = {
   },
   ptt: {
     setBinding: (b) => ipcRenderer.invoke(IPC.pttSetBinding, b),
-    captureNext: () => ipcRenderer.invoke(IPC.pttCaptureNext),
-    cancelCapture: () => void ipcRenderer.invoke(IPC.pttCancelCapture),
+    captureNext: (id: number) => ipcRenderer.invoke(IPC.pttCaptureNext, id),
+    cancelCapture: (id: number) => void ipcRenderer.invoke(IPC.pttCancelCapture, id),
     status: () => ipcRenderer.invoke(IPC.pttStatus),
     onEvent: (cb) => on(IPC.pttEvent, cb),
   },

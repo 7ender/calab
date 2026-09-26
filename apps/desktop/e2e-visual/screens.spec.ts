@@ -20,7 +20,7 @@ async function everyTab(s: Shot, prefix: string): Promise<void> {
     const tab = tabs.nth(i);
     await tab.click();
     await expect(tab).toHaveAttribute('data-state', 'active');
-    await checkpoint(s, `${prefix}-${i + 1}`, { mask: [s.page.getByTestId('mic-meter')] });
+    await checkpoint(s, `${prefix}-${i + 1}`);
   }
 }
 
@@ -62,28 +62,37 @@ for (const theme of THEMES) {
         await login(page);
 
         // ---- onboarding (the fixed OS statuses come from CALABA_VISUAL_TEST)
+        const onb: OnbGeometry[] = [];
         await expect(page.getByTestId('onboarding-mic')).toBeVisible();
         await checkpoint(s, 'onboarding-mic');
+        onb.push(await onboardingGeometry(page, 'onboarding-mic'));
         await page.getByRole('button', { name: 'Разрешить микрофон' }).click();
         await expect(page.getByTestId('mic-meter')).toBeVisible();
-        await checkpoint(s, 'onboarding-mic-ok', { mask: [page.getByTestId('mic-meter')] });
+        await checkpoint(s, 'onboarding-mic-ok');
+        onb.push(await onboardingGeometry(page, 'onboarding-mic-ok'));
         await page.getByRole('button', { name: 'Слышно хорошо' }).click();
         await expect(page.getByTestId('onboarding-mode')).toBeVisible();
         await checkpoint(s, 'onboarding-mode');
+        onb.push(await onboardingGeometry(page, 'onboarding-mode'));
         await page.getByRole('radio', { name: 'Push-to-talk' }).click();
         await checkpoint(s, 'onboarding-mode-ptt');
+        onb.push(await onboardingGeometry(page, 'onboarding-mode-ptt'));
         await page.getByRole('radio', { name: 'Активация голосом' }).click();
         await page.getByRole('button', { name: 'Продолжить' }).click();
         if (process.platform === 'darwin') {
           await expect(page.getByTestId('onboarding-screen')).toBeVisible();
           await checkpoint(s, 'onboarding-screen');
+          onb.push(await onboardingGeometry(page, 'onboarding-screen'));
           await page.getByRole('button', { name: 'Позже' }).click();
         }
         await expect(page.getByTestId('onboarding-notifications')).toBeVisible();
         await checkpoint(s, 'onboarding-notifications');
+        onb.push(await onboardingGeometry(page, 'onboarding-notifications'));
         await page.getByRole('button', { name: 'Позже' }).click();
         await expect(page.getByTestId('onboarding-done')).toBeVisible();
         await checkpoint(s, 'onboarding-done');
+        onb.push(await onboardingGeometry(page, 'onboarding-done'));
+        expectStableOnboarding(onb, viewport.height);
         await page.getByRole('button', { name: 'Начать' }).click();
 
         // ---- main window with data
@@ -177,7 +186,7 @@ for (const theme of THEMES) {
         await page.keyboard.press('Escape');
 
         // ---- workspace menu + settings
-        await page.locator('aside').getByRole('button', { name: /Команда Calaba/ }).click();
+        await page.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
         await expect(page.getByRole('menu')).toBeVisible();
         await checkpoint(s, 'workspace-menu');
         await page.getByRole('menuitem', { name: 'Настройки пространства' }).click();
@@ -209,12 +218,20 @@ for (const theme of THEMES) {
         const search = page.getByRole('dialog').getByRole('searchbox', { name: 'Поиск настроек' });
         await search.fill('клав');
         await expect(page.getByRole('navigation', { name: 'Результаты поиска' })).toBeVisible();
-        await checkpoint(s, 'settings-search', { mask: [page.getByTestId('mic-meter')] });
+        await checkpoint(s, 'settings-search');
         await search.press('Enter');
         await expect(page.locator('[data-settings-hit="true"]')).toBeVisible();
-        await checkpoint(s, 'settings-search-jump', { mask: [page.getByTestId('mic-meter')] });
+        await checkpoint(s, 'settings-search-jump');
         await page.keyboard.press('Escape'); // clears the search, the window stays
         await expect(search).toHaveValue('');
+        // Profile → «Изменить пароль…»: the sheet over the settings window (current password required).
+        await page.getByRole('dialog').getByRole('tab', { name: 'Профиль' }).click();
+        await page.getByRole('button', { name: 'Изменить пароль…' }).click();
+        const passwordSheet = page.getByRole('dialog', { name: 'Смена пароля' });
+        await expect(passwordSheet).toBeVisible();
+        await checkpoint(s, 'settings-profile-password');
+        await page.keyboard.press('Escape');
+        await expect(passwordSheet).toHaveCount(0);
         // The pop-up button itself (owner bug: chevron flush right): a long value must end with
         // «…» before the ↕ chevron (8 px inset); hover is a step lighter.
         await page.getByRole('dialog').getByRole('tab', { name: 'Голос и устройства' }).click();
@@ -269,6 +286,13 @@ for (const theme of THEMES) {
         await page.evaluate(() => (window as unknown as { __calabaVoicePhase?: (p: string) => void }).__calabaVoicePhase?.('connected'));
         await expect(page.getByTestId('voice-reconnecting')).toHaveCount(0);
 
+        // Member menu of someone in MY voice room (docs/09 #12): per-user volume + «Заглушить для меня».
+        await page.locator('aside').getByRole('listitem', { name: /^Борис Петров/ }).click({ button: 'right' });
+        await expect(page.getByRole('menu').getByRole('menuitem', { name: /^Громкость: / })).toBeVisible();
+        await checkpoint(s, 'voice-member-menu');
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('menu')).toHaveCount(0);
+
         // LiveKit creates the room on the first join, so the publisher comes second.
         const publisher = await startPublisher({ userId: IDS.users.vera, name: 'Вера Ким', roomId: IDS.rooms.meeting });
         let second: Awaited<ReturnType<typeof startPublisher>> | null = null;
@@ -278,12 +302,17 @@ for (const theme of THEMES) {
           await expect(video.or(chip).first()).toBeVisible({ timeout: 30_000 });
           if ((await video.count()) === 0) await chip.first().click();
           await expect(video.first()).toBeVisible();
+          await expectFrames(page, 1);
           // Decoded frames differ run to run: hide the pixels, keep the stage chrome (name, LIVE,
           // controls) in the shots on the stage's black background.
           await page.addStyleTag({ content: 'video { visibility: hidden !important; }' });
           // Default stage while chatting: PiP in the top-right corner, clear of the composer.
           await expect(page.getByTestId('stream-pip')).toBeVisible();
           await checkpoint(s, 'voice-pip');
+          // PiP hover controls (expand / close).
+          await page.getByTestId('stream-pip').hover();
+          await expect(page.getByTestId('stream-pip').getByRole('button', { name: 'Не смотреть' })).toBeVisible();
+          await checkpoint(s, 'voice-pip-hover');
           await page.getByTestId('stream-pip').getByRole('button', { name: 'Развернуть' }).first().click();
           await expect(page.getByTestId('stream-pip')).toHaveCount(0);
           await checkpoint(s, 'voice-stream');
@@ -293,6 +322,7 @@ for (const theme of THEMES) {
           // Several streams: a strip of previews under the stage.
           second = await startPublisher({ userId: IDS.users.boris, name: 'Борис Петров', roomId: IDS.rooms.meeting });
           await expect(page.getByTestId('stream-strip').getByRole('button')).toHaveCount(2, { timeout: 30_000 });
+          await expectFrames(page, 2);
           await checkpoint(s, 'voice-streams-strip');
           await page.getByRole('button', { name: 'Настройки комнаты' }).click();
           await expect(page.getByRole('dialog')).toBeVisible();
@@ -323,3 +353,62 @@ for (const theme of THEMES) {
     });
   }
 }
+
+interface OnbGeometry {
+  step: string;
+  dots: number;
+  title: number;
+  card: { top: number; bottom: number; height: number };
+  /** Gap above / below the whole composition inside the content area. */
+  above: number;
+  below: number;
+}
+
+async function onboardingGeometry(page: Page, step: string): Promise<OnbGeometry> {
+  return page.evaluate((stepName) => {
+    const col = document.querySelector('[data-testid^="onboarding-"]');
+    const scroller = col?.parentElement;
+    const card = col?.querySelector('[data-onb-card]');
+    const dots = col?.querySelector('ol');
+    const title = col?.querySelector('h1');
+    if (!col || !scroller || !card || !dots || !title) throw new Error(`onboarding layout not found (${stepName})`);
+    const r = (e: Element): DOMRect => e.getBoundingClientRect();
+    const box = r(col);
+    const area = r(scroller);
+    return {
+      step: stepName,
+      dots: Math.round(r(dots).top),
+      title: Math.round(r(title).top),
+      card: { top: Math.round(r(card).top), bottom: Math.round(r(card).bottom), height: Math.round(r(card).height) },
+      above: Math.round(box.top - area.top),
+      below: Math.round(area.bottom - box.bottom),
+    };
+  }, step);
+}
+
+/**
+ * Owner's rule for onboarding: the composition is centred in the window, and on windows ≥ 700 px
+ * tall the dots, the title and the card edges (Back/Continue sit on its bottom) stay put between
+ * steps — the card is as tall as the tallest step (500 px) and no step outgrows it.
+ */
+function expectStableOnboarding(steps: OnbGeometry[], windowHeight: number): void {
+  for (const g of steps) expect(Math.abs(g.above - g.below), `onboarding centred: ${g.step}`).toBeLessThanOrEqual(2);
+  if (windowHeight < 700) return;
+  const [first] = steps;
+  if (!first) return;
+  for (const g of steps) {
+    expect(g.card.height, `onboarding card height: ${g.step}`).toBe(500);
+    expect({ dots: g.dots, title: g.title, card: g.card }, `onboarding geometry: ${g.step}`).toEqual({ dots: first.dots, title: first.title, card: first.card });
+  }
+}
+
+/** Waits until `n` <video> elements show decoded frames (before that a tile shows its placeholder). */
+async function expectFrames(page: Page, n: number): Promise<void> {
+  await expect
+    .poll(() => page.locator('video').evaluateAll((vs) => vs.filter((v) => (v as HTMLVideoElement).readyState >= 2 && (v as HTMLVideoElement).videoWidth > 0).length), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThanOrEqual(n);
+  await settle(page);
+}
+

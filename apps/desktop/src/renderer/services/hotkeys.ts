@@ -1,33 +1,39 @@
 import type { MessageKey } from '../i18n';
+import { comboLabel, effectiveHotkeys, matchesCombo, type HotkeyAction } from '../lib/shortcuts';
+import { usePrefs } from '../stores/prefs';
 import { useUi } from '../stores/ui';
 import { voice } from './voice';
 
 /**
- * Global in-window shortcuts (docs/08, «UX-правила»):
- * ⌘/Ctrl+K — quick switcher, ⌘/Ctrl+Shift+M — mute, ⌘/Ctrl+Shift+D — deafen.
+ * In-window shortcuts (docs/08, «UX-правила»; docs/09 #18): quick switcher (⌘/Ctrl+K), mute
+ * (⌘/Ctrl+Shift+M) and deafen (⌘/Ctrl+Shift+D) are rebindable in Настройки → Горячие клавиши
+ * (prefs.hotkeys, lib/shortcuts.ts). Room history (⌘[ ⌘] / Alt+← →) and Esc follow the OS.
  * Esc closes the top layer (Radix dialogs/menus handle it themselves).
  */
-export const SHORTCUTS = {
-  quickSwitch: 'K',
-  mute: 'Shift+M',
-  deafen: 'Shift+D',
-} as const;
+export const IS_MAC = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent);
 
-const IS_MAC = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent);
+/** Current label of a rebindable shortcut («⌘⇧M» / «Ctrl+Shift+M»). */
+export function hotkeyLabel(action: HotkeyAction): string {
+  return comboLabel(effectiveHotkeys(usePrefs.getState().hotkeys)[action], IS_MAC);
+}
+
+/** Reactive variant for tooltips / kbd hints. */
+export function useHotkeyLabel(action: HotkeyAction): string {
+  const custom = usePrefs((s) => s.hotkeys);
+  return comboLabel(effectiveHotkeys(custom)[action], IS_MAC);
+}
 
 /** Room history: ⌘[ / ⌘] on macOS (Finder, Safari), Alt+← / Alt+→ on Windows/Linux. */
 export const NAV_SHORTCUTS = IS_MAC ? { back: '⌘[', forward: '⌘]' } : { back: 'Alt+←', forward: 'Alt+→' };
 
 /** Everything listed in the «?» help popover of the title bar. */
-export function shortcutHelp(): Array<{ keys: string; label: MessageKey }> {
-  const mod = IS_MAC ? '⌘' : 'Ctrl+';
-  const shift = IS_MAC ? '⇧' : 'Shift+';
+export function shortcutHelp(): Array<{ keys: string; label: MessageKey; action?: HotkeyAction }> {
   return [
-    { keys: `${mod}K`, label: 'shell.kbd.search' },
+    { keys: hotkeyLabel('search'), label: 'shell.kbd.search', action: 'search' },
     { keys: NAV_SHORTCUTS.back, label: 'shell.kbd.back' },
     { keys: NAV_SHORTCUTS.forward, label: 'shell.kbd.forward' },
-    { keys: `${mod}${shift}M`, label: 'shell.kbd.mute' },
-    { keys: `${mod}${shift}D`, label: 'shell.kbd.deafen' },
+    { keys: hotkeyLabel('mute'), label: 'shell.kbd.mute', action: 'mute' },
+    { keys: hotkeyLabel('deafen'), label: 'shell.kbd.deafen', action: 'deafen' },
     { keys: 'Esc', label: 'shell.kbd.esc' },
   ];
 }
@@ -46,6 +52,12 @@ const isNavForward = (e: KeyboardEvent): boolean =>
 export function shortcutLetter(e: Pick<KeyboardEvent, 'key' | 'code'>): string {
   if (/^[a-z]$/i.test(e.key)) return e.key.toLowerCase();
   return /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : '';
+}
+
+/** While the settings page records a new combo, shortcuts must not fire. */
+let capturing = false;
+export function setHotkeyCapture(on: boolean): void {
+  capturing = on;
 }
 
 export function installHotkeys(): () => void {
@@ -67,16 +79,16 @@ export function installHotkeys(): () => void {
       useUi.getState().goForward();
       return;
     }
-    if (!mod) return;
-    const k = shortcutLetter(e);
-    if (k === 'k' && !e.shiftKey) {
+    if (!mod || capturing) return;
+    const keys = effectiveHotkeys(usePrefs.getState().hotkeys);
+    if (matchesCombo(e, keys.search, IS_MAC)) {
       e.preventDefault();
       const ui = useUi.getState();
       ui.openDialog(ui.dialog?.kind === 'quick-switcher' ? null : { kind: 'quick-switcher' });
-    } else if (k === 'm' && e.shiftKey) {
+    } else if (matchesCombo(e, keys.mute, IS_MAC)) {
       e.preventDefault();
       voice.toggleMute();
-    } else if (k === 'd' && e.shiftKey) {
+    } else if (matchesCombo(e, keys.deafen, IS_MAC)) {
       e.preventDefault();
       voice.toggleDeafen();
     }

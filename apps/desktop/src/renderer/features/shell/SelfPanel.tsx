@@ -4,12 +4,12 @@ import { PresenceStatus } from '@calaba/protocol';
 import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { IconButton, Input, MOD, Slider, Tip, cx } from '../../components/ui';
+import { IconButton, Input, Slider, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { api } from '../../lib/api/endpoints';
 import { setPresence } from '../../services/gateway';
-import { SHORTCUTS } from '../../services/hotkeys';
+import { useHotkeyLabel } from '../../services/hotkeys';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
@@ -21,7 +21,8 @@ import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu'
 
 const STATUSES: Array<{ s: PresenceStatus; key: MessageKey; dot: string }> = [
   { s: PresenceStatus.ONLINE, key: 'presence.online', dot: 'bg-ok' },
-  { s: PresenceStatus.IDLE, key: 'presence.idle', dot: 'bg-warn' },
+  // Dots are non-text: the system yellow in both themes, as in the members column (Avatar.tsx).
+  { s: PresenceStatus.IDLE, key: 'presence.idle', dot: 'bg-[var(--color-presence-idle)]' },
   { s: PresenceStatus.DND, key: 'presence.dnd', dot: 'bg-danger' },
   { s: PresenceStatus.INVISIBLE, key: 'presence.invisible', dot: 'bg-faint' },
 ];
@@ -39,6 +40,9 @@ function useMyStatus(): PresenceStatus {
 export function SelfPanel(): ReactNode {
   const me = useSession((s) => s.me);
   const muted = useVoice((s) => s.muted);
+  const serverMuted = useVoice((s) => s.serverMuted);
+  const muteKeys = useHotkeyLabel('mute');
+  const deafenKeys = useHotkeyLabel('deafen');
   const deafened = useVoice((s) => s.deafened);
   const inVoice = useVoice((s) => s.roomId !== null);
   const speaking = useVoice((s) => (me?.user ? (s.speaking[me.user.id] ?? false) : false));
@@ -98,8 +102,8 @@ export function SelfPanel(): ReactNode {
       </Popover.Root>
 
       <SplitButton
-        label={muted ? t('voice.unmute') : t('voice.mute')}
-        shortcut={`${MOD}${SHORTCUTS.mute}`}
+        label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
+        shortcut={muteKeys}
         danger={muted}
         onClick={() => voice.toggleMute()}
         menuLabel={t('shell.micOptions')}
@@ -109,7 +113,7 @@ export function SelfPanel(): ReactNode {
       </SplitButton>
       <SplitButton
         label={deafened ? t('voice.undeafen') : t('voice.deafen')}
-        shortcut={`${MOD}${SHORTCUTS.deafen}`}
+        shortcut={deafenKeys}
         danger={deafened}
         onClick={() => voice.toggleDeafen()}
         menuLabel={t('shell.outputOptions')}
@@ -339,6 +343,10 @@ function ProfilePopover(): ReactNode {
           >
             <span className={cx('size-2.5 shrink-0 rounded-full', x.dot)} aria-hidden />
             <span className="flex-1">{t(x.key)}</span>
+            {/* «В сети» chosen, but the server made me idle (AFK): say why the dot is yellow. */}
+            {x.s === PresenceStatus.ONLINE && chosen === x.s && status === PresenceStatus.IDLE ? (
+              <span className="truncate text-caption text-muted">{t('presence.autoIdle')}</span>
+            ) : null}
             {chosen === x.s ? <Check className="size-4 text-accent" aria-hidden /> : null}
           </button>
         ))}

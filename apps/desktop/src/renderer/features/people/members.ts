@@ -76,6 +76,8 @@ export interface MenuActions {
   serverMute: boolean;
   /** Already server/self-muted: the item is shown disabled. */
   alreadyMuted: boolean;
+  /** «Включить микрофон»: the member is muted by a moderator (VoiceState.server_muted). */
+  serverUnmute: boolean;
   disconnect: boolean;
   /** Voice rooms the target can be moved to (empty = no «Переместить в…»). */
   moveTargets: Room[];
@@ -91,7 +93,10 @@ export function memberActions(c: MenuContext): MenuActions {
   const ws = workspacePerms(c.myRole);
   const inRoom = c.targetVoice?.roomId ? c.rooms.find((r) => r.id === c.targetVoice?.roomId) : undefined;
   const permsIn = (r: Room): bigint => roomPerms(c.myRole, c.meId, r);
+  // Disconnect / stop-stream honour the room override; server mute needs MUTE_MEMBERS at the
+  // workspace level (owner/admin) — a room grant cannot silence someone everywhere.
   const moderate = !self && !!inRoom && can(permsIn(inRoom), 'MUTE_MEMBERS');
+  const muteAll = moderate && can(ws, 'MUTE_MEMBERS');
   const canMoveFrom = !self && !!inRoom && can(permsIn(inRoom), 'MOVE_MEMBERS');
   const moveTargets = canMoveFrom
     ? c.rooms.filter((r) => r.type === RoomType.VOICE && r.id !== inRoom.id && can(permsIn(r), 'MOVE_MEMBERS'))
@@ -105,8 +110,9 @@ export function memberActions(c: MenuContext): MenuActions {
     (c.target.role !== WorkspaceRole.ADMIN || c.myRole === WorkspaceRole.OWNER);
   return {
     volume: !self && !!c.myVoiceRoomId && c.targetVoice?.roomId === c.myVoiceRoomId,
-    serverMute: moderate,
-    alreadyMuted: !!c.targetVoice?.muted,
+    serverMute: muteAll,
+    alreadyMuted: !!c.targetVoice?.serverMuted,
+    serverUnmute: muteAll && !!c.targetVoice?.serverMuted,
     disconnect: moderate,
     moveTargets,
     rename: self ? c.allowSelfNickname || can(ws, 'MANAGE_NICKNAMES') : can(ws, 'MANAGE_NICKNAMES'),

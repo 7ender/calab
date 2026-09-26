@@ -25,6 +25,8 @@ import {
 } from '@bufbuild/protobuf';
 import { timestampFromMs, timestampMs } from '@bufbuild/protobuf/wkt';
 import {
+  ChangeEmailRequestSchema,
+  ChangePasswordRequestSchema,
   ApiErrorSchema,
   AuthTokensSchema,
   CreateCategoryRequestSchema,
@@ -450,6 +452,11 @@ class MockImpl {
     return m ? computeRoomPermissions(m.role, userId, room.permissionOverrides) : 0n;
   }
 
+  /** @everyone / @here count as mentions only from authors with MENTION_EVERYONE in the room. */
+  private mayMentionAll(room: Room, userId: string): boolean {
+    return has(this.perms(room, userId), PERMISSION_BITS.MENTION_EVERYONE);
+  }
+
   private canView(room: Room, userId: string): boolean {
     return has(this.perms(room, userId), VIEW_ROOM);
   }
@@ -542,6 +549,17 @@ class MockImpl {
     });
   }
 
+  /** READY read_states counters, as the server counts them (messages.sql ListReadStates). */
+  private readCounts(roomId: string, me: string, lastRead: string): { unreadCount: number; mentionCount: number } {
+    const room = this.state.rooms.get(roomId);
+    const after = (this.state.messages.get(roomId) ?? []).filter((m) => m.id > lastRead && m.authorId !== me);
+    const mentions = after.filter((m) => {
+      const { users, everyone } = parseMentions(m.content);
+      return users.includes(me) || (everyone && !!room && this.mayMentionAll(room, m.authorId));
+    });
+    return { unreadCount: Math.min(after.length, 999), mentionCount: Math.min(mentions.length, 99) };
+  }
+
   private ready(conn: Conn, u: UserRec): DispatchEvent {
     const wsIds = this.workspacesOf(u.user.id).sort();
     const reads = this.state.readStates.get(u.user.id) ?? new Map<string, string>();
@@ -552,13 +570,12 @@ class MockImpl {
           sessionId: conn.gatewaySessionId,
           me: this.me(u),
           workspaces: wsIds.map((w) => this.snapshot(w, u.user.id)),
-          readStates: [...reads.entries()]
-            .filter(([roomId, id]) => {
-              const r = this.state.rooms.get(roomId);
-              return id && r && this.canView(r, u.user.id);
-            })
+          // Every visible room (server contract): never read → empty marker.
+          readStates: [...this.state.rooms.values()]
+            .filter((r) => wsIds.includes(r.workspaceId) && this.canView(r, u.user.id))
+            .map((r): [string, string] => [r.id, reads.get(r.id) ?? ''])
             .sort(([a], [b]) => a.localeCompare(b))
-            .map(([roomId, lastReadMessageId]) => create(ReadStateSchema, { roomId, lastReadMessageId })),
+            .map(([roomId, lastReadMessageId]) => create(ReadStateSchema, { roomId, lastReadMessageId, ...this.readCounts(roomId, u.user.id, lastReadMessageId) })),
           notificationSettings: [...(this.state.notifySettings.get(u.user.id)?.values() ?? [])]
             .filter((n) => {
               const r = this.state.rooms.get(n.roomId);
@@ -800,7 +817,7 @@ class MockImpl {
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
 
-  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean }): void {
+  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
     const workspaceId = room?.workspaceId ?? prev?.workspaceId ?? '';
@@ -813,6 +830,7 @@ class MockImpl {
       muted: patch.muted ?? (sameRoom ? prev.muted : false),
       deafened: patch.deafened ?? (sameRoom ? prev.deafened : false),
       streaming: patch.streaming ?? (sameRoom ? prev.streaming : false),
+      serverMuted: patch.serverMuted ?? (sameRoom ? prev.serverMuted : false),
     });
     // Moving to another workspace's room: tell the old workspace the user left.
     if (prev?.roomId && prev.workspaceId !== workspaceId) {
@@ -1121,6 +1139,32 @@ class MockImpl {
       if (!(s().sessions.get(user.user.id) ?? []).some((x) => x.id === id) || s().revokedSessions.has(id)) throw notFound('session not found');
       this.revoke(id);
       noContent(c.res);
+    });
+
+    // Password / email change (proto user.proto): the current password is required; a wrong one
+    // is 403 INVALID_CREDENTIALS (not an auth failure — the session stays).
+    this.route('PATCH', '/api/me/password', (c) => {
+      const { user: u, sessionId } = this.auth(c);
+      const b = parseBody(c, ChangePasswordRequestSchema);
+      if (b.newPassword.length < 8 || b.newPassword.length > 256) throw invalid('newPassword', 'password must be 8..256 characters');
+      if (u.user.isGuest) throw forbidden('guest account');
+      if (b.currentPassword !== u.password) throw new HttpError(403, ErrorCode.INVALID_CREDENTIALS, 'invalid password');
+      u.password = b.newPassword;
+      for (const x of s().sessions.get(u.user.id) ?? []) if (x.id !== sessionId && !s().revokedSessions.has(x.id)) this.revoke(x.id);
+      noContent(c.res);
+    });
+
+    this.route('PATCH', '/api/me/email', (c) => {
+      const u = this.auth(c).user;
+      const b = parseBody(c, ChangeEmailRequestSchema);
+      const email = b.newEmail.trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw invalid('newEmail', 'invalid email address');
+      if (u.user.isGuest) throw forbidden('guest account');
+      if (b.currentPassword !== u.password) throw new HttpError(403, ErrorCode.INVALID_CREDENTIALS, 'invalid password');
+      if ([...s().users.values()].some((x) => x !== u && x.email === email)) throw conflict('email is already registered');
+      u.email = email;
+      this.emitUserUpdate(u);
+      sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
     });
 
     // ---------------- workspaces
@@ -1596,7 +1640,7 @@ class MockImpl {
       if (b.messageId > cur) {
         reads.set(room.id, b.messageId);
         s().readStates.set(me, reads);
-        this.toUser(me, { event: { case: 'readStateUpdate', value: { readState: { roomId: room.id, lastReadMessageId: b.messageId } } } });
+        this.toUser(me, { event: { case: 'readStateUpdate', value: { readState: { roomId: room.id, lastReadMessageId: b.messageId, unreadCount: 0, mentionCount: 0 } } } });
       }
       noContent(c.res);
     });
@@ -1615,8 +1659,7 @@ class MockImpl {
           (s().messages.get(r.id) ?? []).filter((m) => {
             if (m.authorId === me || (before && m.id >= before)) return false;
             const { users, everyone } = parseMentions(m.content);
-            const guest = this.member(r.workspaceId, m.authorId)?.role === WorkspaceRole.GUEST;
-            return users.includes(me) || (everyone && !guest);
+            return users.includes(me) || (everyone && this.mayMentionAll(r, m.authorId));
           }),
         )
         .sort((a, b) => (a.id < b.id ? 1 : -1));
@@ -1848,7 +1891,13 @@ class MockImpl {
 
     this.route('POST', '/api/rooms/:id/voice/:userId/mute', (c) => {
       const { room, target } = moderate(c);
-      this.setVoice(target, room.id, { muted: true });
+      this.setVoice(target, room.id, { muted: true, serverMuted: true });
+      noContent(c.res);
+    });
+    // The moderator lifts the server mute; the user's own mute stays until they unmute.
+    this.route('POST', '/api/rooms/:id/voice/:userId/unmute', (c) => {
+      const { room, target } = moderate(c);
+      this.setVoice(target, room.id, { serverMuted: false });
       noContent(c.res);
     });
     this.route('POST', '/api/rooms/:id/voice/:userId/disconnect', (c) => {

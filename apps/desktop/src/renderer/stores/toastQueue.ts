@@ -17,6 +17,15 @@ export interface Toast {
 /** At most this many toasts on screen; the oldest go first. */
 export const TOAST_MAX = 4;
 
+/**
+ * An error toast is a sentence: it ends with a period unless it already ends with punctuation
+ * («Не удалось загрузить сообщения. Проверьте интернет» → «… интернет.»).
+ */
+export function asSentence(text: string): string {
+  const s = text.trimEnd();
+  return s && /[\p{L}\p{N})»"]$/u.test(s) ? `${s}.` : s;
+}
+
 /** Sticky toasts are closed by the user only (an error with an action). */
 export const isSticky = (x: Toast): boolean => x.kind === 'error' && x.action !== undefined;
 
@@ -26,6 +35,7 @@ export const isSticky = (x: Toast): boolean => x.kind === 'error' && x.action !=
  * oldest non-sticky toast is dropped first.
  */
 export function pushToast(items: Toast[], next: Toast): Toast[] {
+  if (next.kind === 'error') next = { ...next, text: asSentence(next.text) };
   const last = items[items.length - 1];
   let out = items;
   if (last && last.kind === next.kind && last.text === next.text) {

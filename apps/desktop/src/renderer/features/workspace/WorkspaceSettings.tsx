@@ -27,7 +27,7 @@ import { CommitInput } from '../settings/AppSettingsDialog';
 import { fmtShortDate } from '../settings/format';
 import { MAX_USES } from '../people/RoomLinkTab';
 import { ROLE_LABEL } from '../shell/MembersPanel';
-import { PRESETS, presetText } from '../voice/StreamPicker';
+import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -120,7 +120,7 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
         <Row label={t('ws.slug')} hint={t('ws.slugHint')}>
           <CommitInput label={t('ws.slug')} value={ws.slug} maxLength={32} onCommit={(v) => patchWorkspace(workspaceId, { slug: v.toLowerCase() })} />
         </Row>
-        <Row label={t('ws.visibility')}>
+        <Row label={t('ws.visibility')} hint={ws.visibility === WorkspaceVisibility.OPEN ? t('ws.openHint') : t('ws.privateHint')}>
           <Select
             aria-label={t('ws.visibility')}
             className="w-60"
@@ -160,7 +160,7 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
           ))}
         </Select>
       </Row>
-      <Row label={t('media.maxPreset')}>
+      <Row label={t('media.maxPreset')} hint={presetDetail(md?.maxStreamPreset || 3)}>
         <Select
           aria-label={t('media.maxPreset')}
           className="w-60"
@@ -168,7 +168,7 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
           onChange={(e) => apply({ defaultMaxStreamPreset: Number(e.target.value) })}
         >
           {PRESETS.map((p) => (
-            <option key={p} value={p}>
+            <option key={p} value={p} title={presetDetail(p)}>
               {presetText(p)}
             </option>
           ))}

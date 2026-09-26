@@ -4,7 +4,7 @@ import { NotificationLevel, RoomNotificationSettingsSchema } from '@calaba/proto
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { useInbox } from '../stores/inbox';
-import { unreadMentionCounts, useRooms } from '../stores/rooms';
+import { useRooms } from '../stores/rooms';
 import { toast } from '../stores/toasts';
 import { t } from '../i18n';
 
@@ -22,11 +22,9 @@ export async function loadMentions(older = false): Promise<void> {
   inbox.setLoading(true);
   try {
     const res = await api.me.mentions({ limit: PAGE, ...(before ? { before } : {}) });
+    // The list only: badges come from the server-counted read states (READY mention_count), not
+    // from this history — seeding them from it badged the open room (review N7).
     useInbox.getState().addPage(res.messages, res.hasMore, older);
-    // History mentions (from before this session) count in the badges too: the room and title
-    // bar counters agree with the inbox's unread dots.
-    const rooms = useRooms.getState();
-    rooms.seedMentions(unreadMentionCounts(useInbox.getState().items, rooms.readState));
   } catch (e) {
     log.warn('load mentions failed', e);
     if (!useInbox.getState().loaded) useInbox.getState().addPage([], false, false);

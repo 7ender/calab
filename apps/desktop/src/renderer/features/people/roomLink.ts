@@ -13,7 +13,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 
 /**
- * Room links (ADR-0016): `https://<server>/r/<code>` and `calaba://r/<code>`.
+ * Room links (ADR-0016): `https://<server>/r/<code>` and `calab://r/<code>`.
  * - signed in → POST /api/room-invites/{code}/join, then open the room (voice: connect);
  * - signed out → the code waits here; the auth screen shows the guest screen for it, and
  *   signing in (as a guest or with an account) completes the join.
@@ -44,7 +44,7 @@ export function openRoomLink(code: string): void {
 }
 
 /**
- * Links from outside the app (any web page can fire `calaba://r/<code>`, a web /r/<code>, the
+ * Links from outside the app (any web page can fire `calab://r/<code>`, a web /r/<code>, the
  * code kept across a login) never join silently: joining may create a guest membership and
  * connects voice (review M9). Shows «Войти в комнату X пространства Y?» from the public preview.
  */

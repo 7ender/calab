@@ -127,7 +127,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
     <div className="mat-content drag flex h-full items-center justify-center overflow-y-auto px-4 py-8">
       <div className="mat-popover no-drag w-full max-w-[400px] rounded-[var(--radius-panel)] p-8">
         <div className="mb-6 flex flex-col items-center text-center">
-          <Logo size={64} alt="Calaba" className="mb-4" />
+          <Logo size={64} alt="Calab" className="mb-4" />
           {p ? (
             <>
               <p className="text-body text-muted">{t('guest.title')}</p>

@@ -4,24 +4,21 @@ import * as TooltipP from '@radix-ui/react-tooltip';
 import { AppWindow, Monitor, MonitorUp, Settings2, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { CaptureSource } from '../../../shared/ipc';
-import { Button, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
+import { Button, Segmented, Spinner, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { encodableCodecs, pickScreenCodec, type ScreenCodec } from '../../lib/media/screenShare';
+import { encodableCodecs } from '../../lib/media/screenShare';
 import { platform } from '../../platform';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
-import { useVoice, type StreamCodecChoice } from '../../stores/voice';
+import { useVoice } from '../../stores/voice';
 import { presetOptions, presetSummary, splitSources } from './streamFormat';
 
 // Room / workspace settings import these from here.
-export { PRESETS, PRESET_LABEL, presetText } from './streamFormat';
+export { PRESETS, PRESET_LABEL, presetDetail, presetText } from './streamFormat';
 
 type Tab = 'apps' | 'screens';
-
-const CODEC_NAME: Record<ScreenCodec, string> = { av1: 'AV1', vp9: 'VP9', h264: 'H.264', vp8: 'VP8' };
-const CODECS: ScreenCodec[] = ['av1', 'vp9', 'h264', 'vp8'];
 
 /**
  * Tooltip rendered inside the dialog (no portal): the shared Tip portals to <body> at the popover
@@ -188,7 +185,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   const noThumbs = sources !== null && sources.length > 0 && sources.every((s) => !s.thumbnail);
   // Visual tests: synthetic sources, and the machine's real TCC state must not leak into shots.
   const denied = noThumbs || (!info?.visualTest && info?.screenAccess === 'denied');
-  const autoCodec = CODEC_NAME[pickScreenCodec('auto', available)];
+  const hasH264 = available.has('h264');
 
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
@@ -198,10 +195,17 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
           aria-modal="true"
           aria-describedby={undefined}
           data-testid="stream-picker"
-          className="mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] text-[13px] focus:outline-none"
-          // 900×600, but always inside the window with 16 px margins (960×600 minimum window).
-          // The web has no source grid (the browser picks), so the sheet only needs its content height.
-          style={{ width: web ? 'min(720px, calc(100vw - 32px))' : 'min(900px, calc(100vw - 32px))', height: web ? undefined : 'min(600px, calc(100vh - 32px))' }}
+          // Desktop: 900×600 like a macOS sheet — never above y = 46 (the 38 px title bar and the
+          // traffic lights stay visible), shrinking to 100vh − 62 px (16 px bottom margin); the grid
+          // scrolls inside. Centred when the window is tall enough, top-anchored otherwise, hence
+          // data-layout-anchor (same as SettingsWindow). The web has no source grid (the browser
+          // picks), so its sheet only needs its content height and stays centred.
+          data-layout-anchor={web ? undefined : ''}
+          className={cx(
+            'mat-sheet anim-in fixed left-1/2 z-[var(--z-modal)] flex -translate-x-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] text-[13px] focus:outline-none',
+            web ? 'top-1/2 max-h-[calc(100vh-62px)] -translate-y-1/2' : 'top-[max(46px,calc(50vh-300px))] h-[min(600px,calc(100vh-62px))]',
+          )}
+          style={{ width: web ? 'min(720px, calc(100vw - 32px))' : 'min(900px, calc(100vw - 32px))' }}
         >
           <TooltipP.Provider>
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-5 pb-3 pt-4">
@@ -237,7 +241,8 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
               </div>
             ) : null}
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+            {/* The last 16 px (the bottom padding) fade out, so a row cut by the footer reads as «more below». */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 [mask-image:linear-gradient(to_bottom,black_calc(100%-16px),transparent)]">
               {web ? (
                 <div className="flex flex-col items-center justify-center gap-2 px-8 py-6 text-center">
                   <MonitorUp className="size-10 text-faint" aria-hidden />
@@ -307,27 +312,20 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
                 </button>
               </div>
               {advanced ? (
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-[var(--radius-card)] bg-hover px-3 py-2" data-testid="stream-advanced">
-                  <label className="flex items-center gap-2">
-                    <span>{t('streamPick.codec')}</span>
-                    <Select
-                      className="w-40"
-                      value={codec}
-                      onChange={(e) => useVoice.getState().set({ streamCodec: e.target.value as StreamCodecChoice })}
-                    >
-                      <option value="auto">{t('streamPick.codecAuto', { codec: autoCodec })}</option>
-                      {CODECS.map((c) => (
-                        <option key={c} value={c} disabled={!available.has(c)}>
-                          {available.has(c) ? CODEC_NAME[c] : t('streamPick.codecNo', { codec: CODEC_NAME[c] })}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
-                  <span className="flex items-center gap-2">
-                    <span>{t('streamPick.stats')}</span>
-                    <Toggle checked={prefs.devStats} onChange={(v) => prefs.setPrefs({ devStats: v })} label={t('streamPick.stats')} />
-                  </span>
-                  <span className="basis-full text-[12px] text-muted">{t('streamPick.codecHint')}</span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[var(--radius-card)] bg-hover px-3 py-2" data-testid="stream-advanced">
+                  <span>{t('streamPick.compat')}</span>
+                  {/* Plain-language codec preference (review §3): «best» = auto (ADR-0012: AV1 → VP9 → VP8),
+                      «weak computers» = H.264, which the GPU can encode. Explicit codecs set earlier read as «best». */}
+                  <Segmented
+                    label={t('streamPick.compat')}
+                    value={codec === 'h264' ? 'light' : 'best'}
+                    onChange={(v) => useVoice.getState().set({ streamCodec: v === 'light' && hasH264 ? 'h264' : 'auto' })}
+                    options={[
+                      { value: 'best', label: t('streamPick.compatBest') },
+                      ...(hasH264 ? [{ value: 'light' as const, label: t('streamPick.compatLight') }] : []),
+                    ]}
+                  />
+                  <span className="basis-full text-[12px] text-muted">{codec === 'h264' && hasH264 ? t('streamPick.compatLightHint') : t('streamPick.compatBestHint')}</span>
                 </div>
               ) : null}
               <div className="flex items-center gap-2">

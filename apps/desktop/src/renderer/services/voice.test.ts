@@ -57,7 +57,13 @@ class FakeLocalAudioTrack {
     this.stopped = true;
     this.mediaStreamTrack.stop();
   }
+  /** When set, the next replaceTrack rejects (RTCRtpSender.replaceTrack failure). */
+  static failReplace = false;
   replaceTrack(t: FakeTrack): Promise<void> {
+    if (FakeLocalAudioTrack.failReplace) {
+      FakeLocalAudioTrack.failReplace = false;
+      return Promise.reject(new Error('replaceTrack failed'));
+    }
     this.replaced.push(t);
     this.mediaStreamTrack = t;
     return Promise.resolve();
@@ -104,11 +110,13 @@ class FakeRoom {
   connect(): Promise<void> {
     return Promise.resolve();
   }
-  disconnect(stopTracks = true): Promise<void> {
+  /** When set, disconnect() waits for it (a slow network disconnect). */
+  static disconnectGate: Promise<void> | null = null;
+  async disconnect(stopTracks = true): Promise<void> {
     this.disconnects.push(stopTracks);
+    if (FakeRoom.disconnectGate) await FakeRoom.disconnectGate;
     if (stopTracks) for (const t of this.published) t.stop();
     this.published = [];
-    return Promise.resolve();
   }
 }
 
@@ -179,6 +187,8 @@ beforeEach(async () => {
   vi.resetModules();
   FakeRoom.all = [];
   FakeLocalAudioTrack.lockMs = 0;
+  FakeLocalAudioTrack.failReplace = false;
+  FakeRoom.disconnectGate = null;
   pipelines.length = 0;
   gate = null;
   gone.clear();
@@ -215,6 +225,55 @@ describe('VoiceEngine', () => {
     await Promise.all([first, second]);
     expect(voice.currentRoomId).toBe('B');
     expect(useVoice.getState().phase).toBe('connected');
+  });
+
+  it('leave() while the old room is still disconnecting wins over the pending switch (review N1)', async () => {
+    await voice.join('A', 'ws');
+    let release!: () => void;
+    FakeRoom.disconnectGate = new Promise<void>((r) => (release = r));
+    const switching = voice.join('B', 'ws');
+    await settle();
+    const leaving = voice.leave();
+    FakeRoom.disconnectGate = null;
+    release();
+    await Promise.all([switching, leaving]);
+    await settle();
+    expect(useVoice.getState().phase).toBe('idle');
+    expect(voice.currentRoomId).toBeNull();
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A']); // never connected to B
+    expect(FakeRoom.all).toHaveLength(1);
+  });
+
+  it('a fast B → A switch ends in A, the last click (review N1)', async () => {
+    await voice.join('X', 'ws');
+    let release!: () => void;
+    FakeRoom.disconnectGate = new Promise<void>((r) => (release = r));
+    const toB = voice.join('B', 'ws');
+    await settle();
+    const toA = voice.join('A', 'ws');
+    FakeRoom.disconnectGate = null;
+    release();
+    await Promise.all([toB, toA]);
+    await settle();
+    expect(voice.currentRoomId).toBe('A');
+    expect(useVoice.getState().roomId).toBe('A');
+    expect(useVoice.getState().phase).toBe('connected');
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['X', 'A']);
+  });
+
+  it('a failed replaceTrack keeps the published capture and stops the new one (review N4)', async () => {
+    await voice.join('A', 'ws');
+    const old = pipelines[0];
+    FakeLocalAudioTrack.failReplace = true;
+    usePrefs.getState().setPrefs({ micDeviceId: 'd1' });
+    await settle();
+    await settle();
+    expect(pipelines).toHaveLength(2);
+    expect(pipelines[1]?.track.readyState).toBe('ended'); // the new capture does not leak
+    expect(old?.track.readyState).toBe('live'); // still the published one
+    expect(FakeRoom.all[0]?.published[0]?.mediaStreamTrack).toBe(old?.track);
+    await voice.leave();
+    expect(pipelines.every((p) => p.track.readyState === 'ended')).toBe(true);
   });
 
   it('leaving during the mic test keeps a live mic for the next call (review M1)', async () => {

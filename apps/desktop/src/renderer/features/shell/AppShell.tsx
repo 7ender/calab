@@ -1,7 +1,7 @@
 import { Compass, Plus } from 'lucide-react';
 import { MessagesSquare } from 'lucide-react';
 import { useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Button, Spinner } from '../../components/ui';
+import { Button, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { isAdminRole } from '../../lib/permissions';
 import { installAfk } from '../../services/afk';
@@ -156,9 +156,12 @@ function NoRoom({ workspaceId }: { workspaceId: string }): ReactNode {
 
 function Welcome(): ReactNode {
   const open = useUi((s) => s.openDialog);
+  // The create / join dialogs cover this block; hide it meanwhile so its accent button never
+  // peeks out beside the (narrower) dialog.
+  const covered = useUi((s) => s.dialog !== null);
   return (
     <div className="mat-content grid flex-1 place-items-center">
-      <div className="flex max-w-sm flex-col items-center gap-2 text-center">
+      <div className={cx('flex max-w-sm flex-col items-center gap-2 text-center', covered && 'invisible')}>
         <h1 className="text-title font-semibold">{t('shell.welcome')}</h1>
         <p className="text-body text-muted">{t('shell.welcomeText')}</p>
         <div className="mt-4 flex gap-2">

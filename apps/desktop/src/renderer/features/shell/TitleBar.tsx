@@ -3,18 +3,18 @@ import { AtSign, ChevronLeft, ChevronRight, CircleHelp, Hash, Inbox, Search, Vol
 import type { Message } from '@calaba/protocol';
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Empty, IconButton, MOD, Spinner, Tip, cx } from '../../components/ui';
+import { Empty, IconButton, Spinner, Tip, cx } from '../../components/ui';
 import { MediaImg } from '../../components/MediaImg';
 import { t } from '../../i18n';
 import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { workspaceInitials } from '../../lib/initials';
 import { fmtTime, toDate } from '../../lib/format';
 import { loadMentions } from '../../services/mentions';
-import { NAV_SHORTCUTS, SHORTCUTS, shortcutHelp } from '../../services/hotkeys';
+import { NAV_SHORTCUTS, shortcutHelp, useHotkeyLabel } from '../../services/hotkeys';
 import { platform } from '../../platform';
 import { usePrefs } from '../../stores/prefs';
 import { useInbox } from '../../stores/inbox';
-import { idAfter, isVoice, unreadMentionCounts, useRooms } from '../../stores/rooms';
+import { idAfter, isVoice, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { canGoBack, canGoForward, useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
@@ -37,6 +37,7 @@ export function TitleBar(): ReactNode {
   const mac = electron && os === 'darwin';
   const wsId = useUi((s) => s.activeWorkspaceId);
   const ws = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws : undefined));
+  const searchKeys = useHotkeyLabel('search');
   const back = useUi(canGoBack);
   const fwd = useUi(canGoForward);
   const goBack = useUi((s) => s.goBack);
@@ -64,13 +65,13 @@ export function TitleBar(): ReactNode {
         </IconButton>
       </div>
 
-      <div className="flex min-w-0 max-w-[40vw] items-center justify-center gap-2 text-body font-semibold text-fg" title={ws?.name ?? 'Calaba'}>
+      <div className="flex min-w-0 max-w-[40vw] items-center justify-center gap-2 text-body font-semibold text-fg" title={ws?.name ?? 'Calab'}>
         {ws ? (
           <span className="grid size-4 shrink-0 place-items-center overflow-hidden rounded-[4px] bg-hover text-[8px] font-bold text-muted" aria-hidden>
             {ws.iconFileId ? <MediaImg path={thumbnailPath(ws.iconFileId)} alt="" className="size-full object-cover" /> : workspaceInitials(ws.name)}
           </span>
         ) : null}
-        <span className="truncate">{ws?.name ?? 'Calaba'}</span>
+        <span className="truncate">{ws?.name ?? 'Calab'}</span>
       </div>
 
       <div className="flex min-w-0 items-center justify-end gap-1 pr-2">
@@ -78,14 +79,12 @@ export function TitleBar(): ReactNode {
           type="button"
           onClick={() => open({ kind: 'quick-switcher' })}
           aria-label={t('shell.search')}
-          aria-keyshortcuts={MOD === '⌘' ? 'Meta+K' : 'Control+K'}
           className="flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">{t('shell.search')}</span>
           <kbd className="shrink-0 font-sans text-micro text-muted">
-            {MOD}
-            {SHORTCUTS.quickSwitch}
+            {searchKeys}
           </kbd>
         </button>
         <InboxButton />
@@ -104,15 +103,13 @@ export function TitleBar(): ReactNode {
  */
 function InboxButton(): ReactNode {
   const mentions = useRooms((s) => s.mentions);
-  const readState = useRooms((s) => s.readState);
-  const items = useInbox((s) => s.items);
-  const loaded = useInbox((s) => s.loaded);
+  const roomsById = useRooms((s) => s.byId);
   const ready = useSession((s) => s.ready);
-  // The badge counts what the list marks unread (one dot = one), so both always agree; before
-  // the history arrives, the live counters.
+  // The room badges summed: server-counted in READY (mention_count), then kept live — the same
+  // numbers the sidebar and rail show.
   const total = useMemo(
-    () => Object.values(loaded ? unreadMentionCounts(items, readState) : mentions).reduce((a, b) => a + b, 0),
-    [loaded, items, readState, mentions],
+    () => Object.entries(mentions).reduce((a, [id, n]) => (roomsById[id] ? a + n : a), 0),
+    [mentions, roomsById],
   );
   // History mentions (from before this session) belong in the badge from the start.
   useEffect(() => {
@@ -299,7 +296,7 @@ function HelpButton(): ReactNode {
             ))}
           </dl>
           <Popover.Close asChild>
-            <button type="button" onClick={() => open({ kind: 'settings', tab: 'voice' })} className="mt-3 text-caption text-accent-text hover:underline">
+            <button type="button" onClick={() => open({ kind: 'settings', tab: 'hotkeys' })} className="mt-3 text-caption text-accent-text hover:underline">
               {t('shell.kbd.settings')}
             </button>
           </Popover.Close>

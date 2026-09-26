@@ -1,7 +1,7 @@
 /**
  * Workspace initials — ONE function for every place a workspace has no icon (rail, title bar,
  * settings, menus): 2 uppercase letters from the first letters of the first two words
- * («Команда Calaba» → «КC»); a single word → its first two letters («Дизайн» → «ДИ»).
+ * («Команда Calab» → «КC»); a single word → its first two letters («Дизайн» → «ДИ»).
  */
 export function workspaceInitials(name: string): string {
   const words = name

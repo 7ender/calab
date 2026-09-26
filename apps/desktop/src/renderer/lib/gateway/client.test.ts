@@ -202,7 +202,7 @@ describe('GatewayClient', () => {
     expect(t.client.state.status).toBe('reconnecting');
   });
 
-  it('4004 → refresh token and reconnect; refresh failure → fatal auth', async () => {
+  it('4004 → refresh token and reconnect; refresh failure → backoff, never fatal', async () => {
     const ok = setup();
     ok.client.start();
     await handshake(ok);

@@ -3,7 +3,7 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
-import { forwardRef, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { forwardRef, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type RefObject, type SelectHTMLAttributes } from 'react';
 import { extendTailwindMerge } from 'tailwind-merge';
 
 /*
@@ -228,7 +228,27 @@ export function Segmented<T extends string>({
   );
 }
 
-export function Slider({ value, min, max, step = 1, onChange, label }: { value: number; min: number; max: number; step?: number; onChange: (v: number) => void; label: string }): ReactNode {
+/**
+ * `pointerOnly`: the slider is a mouse affordance inside a control that owns the keyboard and the
+ * accessible name (e.g. a menu item adjusted with ←/→): hidden from AT and not focusable.
+ */
+export function Slider({
+  value,
+  min,
+  max,
+  step = 1,
+  onChange,
+  label,
+  pointerOnly = false,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  onChange: (v: number) => void;
+  label: string;
+  pointerOnly?: boolean;
+}): ReactNode {
   return (
     <SliderP.Root
       className="relative flex h-5 w-full touch-none select-none items-center"
@@ -237,12 +257,15 @@ export function Slider({ value, min, max, step = 1, onChange, label }: { value: 
       max={max}
       step={step}
       onValueChange={(v) => onChange(v[0] ?? value)}
-      aria-label={label}
+      aria-label={pointerOnly ? undefined : label}
+      aria-hidden={pointerOnly || undefined}
+      // Radix renders aria-disabled="false" on the root span; drop it (a stray ARIA node).
+      aria-disabled={undefined}
     >
       <SliderP.Track className="relative h-1 grow rounded-full bg-[var(--color-fill-hover)]">
         <SliderP.Range className="absolute h-full rounded-full bg-accent" />
       </SliderP.Track>
-      <SliderP.Thumb aria-label={label} className="block size-4 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/35%)] focus-visible:outline-2 focus-visible:outline-accent" />
+      <SliderP.Thumb aria-label={pointerOnly ? undefined : label} tabIndex={pointerOnly ? -1 : undefined} className="block size-4 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/35%)] focus-visible:outline-2 focus-visible:outline-accent" />
     </SliderP.Root>
   );
 }
@@ -301,6 +324,7 @@ export function Modal({
   wide,
   footer,
   closeButton = true,
+  initialFocus,
 }: {
   open: boolean;
   onClose: () => void;
@@ -311,12 +335,19 @@ export function Modal({
   footer?: ReactNode;
   /** macOS alerts have no close box (confirmations): only «Отмена» and the action. */
   closeButton?: boolean;
+  /** Field focused on open (Radix would focus the close box first — and show its tooltip). */
+  initialFocus?: RefObject<HTMLElement | null>;
 }): ReactNode {
   return (
     <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
         <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content aria-modal="true"
+          onOpenAutoFocus={(e) => {
+            if (!initialFocus?.current) return;
+            e.preventDefault();
+            initialFocus.current.focus();
+          }}
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
             wide ? 'max-w-[880px]' : 'max-w-[440px]',

@@ -106,6 +106,8 @@ export function pttStatus(): PttStatus {
  */
 export function resetPttGate(): void {
   gate?.reset();
+  // An armed capture must not grab the first key typed after wake / unlock (review N6).
+  capture.cancel(undefined, 'suspended');
 }
 
 export async function setBinding(owner: WebContents, next: PttBinding | null): Promise<PttStatus> {
@@ -131,15 +133,21 @@ export async function setBinding(owner: WebContents, next: PttBinding | null): P
   return pttStatus();
 }
 
-export function captureNext(): Promise<PttBinding> {
+export function captureNext(id: number): Promise<PttBinding> {
   ensureHook();
   if (!hookRunning) return Promise.reject(new Error(hookError ?? 'uiohook is not running'));
-  return capture.start();
+  // The PTT key may be held right now (the user clicked «Assign» mid-talk): stop talking, so a
+  // key-up lost to the capture can never leave the gate open (review N5).
+  gate?.reset();
+  return capture.start({ id });
 }
 
-/** The binder closed (unmount): an armed capture must not grab the next key (review H2). */
-export function cancelCapture(): void {
-  capture.cancel();
+/**
+ * The binder closed (unmount): an armed capture must not grab the next key (review H2). Only the
+ * capture that binder started (`id`) is cancelled, not another binder's (review N6).
+ */
+export function cancelCapture(id: number): void {
+  capture.cancel(id);
 }
 
 export function shutdownPtt(): void {

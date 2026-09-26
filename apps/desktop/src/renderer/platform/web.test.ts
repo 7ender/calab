@@ -25,6 +25,8 @@ vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
 });
 vi.spyOn(URL, 'revokeObjectURL').mockImplementation((u: string) => void revoked.push(u));
 
+const { REFRESH_COOLDOWN_MS } = await import('../../shared/refreshGate');
+
 const tokens = (i: number) => ({ tokens: { accessToken: `a${i}`, accessExpiresAt: new Date(Date.now() + 3_600_000).toISOString(), sessionId: 's' } });
 const json = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -43,15 +45,42 @@ afterEach(() => {
 
 describe('web auth', () => {
   it('a transient refresh failure is not a logout (review H3)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     const out: string[] = [];
     platform.auth.onLoggedOut((r) => out.push(r));
     handler = (url) => (url.endsWith('/login') ? Promise.resolve(json(200, { ...tokens(1), me: {} })) : Promise.resolve(json(503, {})));
     await platform.auth.login({ serverUrl: '', email: 'e', password: 'p' });
     expect(await platform.auth.forceRefresh()).toBeNull();
     expect(out).toEqual([]);
+    vi.setSystemTime(Date.now() + REFRESH_COOLDOWN_MS);
     handler = () => Promise.reject(new TypeError('Failed to fetch'));
     expect(await platform.auth.forceRefresh()).toBeNull();
     expect(out).toEqual([]);
+  });
+
+  it('refresh is bounded by a timeout, and a transient failure is not retried for a few seconds (review N3)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const out: string[] = [];
+    platform.auth.onLoggedOut((r) => out.push(r));
+    const signals: Array<AbortSignal | null | undefined> = [];
+    handler = (url, init) => {
+      if (url.endsWith('/login')) return Promise.resolve(json(200, { ...tokens(1), me: {} }));
+      signals.push(init.signal);
+      // What an aborted (timed-out) fetch does.
+      return Promise.reject(new DOMException('The operation timed out.', 'TimeoutError'));
+    };
+    await platform.auth.login({ serverUrl: '', email: 'e', password: 'p' });
+    expect(await platform.auth.forceRefresh()).toBeNull();
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+    expect(out).toEqual([]);
+    // An outage: more callers within the cooldown do not POST again.
+    expect(await platform.auth.forceRefresh()).toBeNull();
+    expect(await platform.auth.forceRefresh()).toBeNull();
+    expect(signals).toHaveLength(1);
+    vi.setSystemTime(Date.now() + REFRESH_COOLDOWN_MS);
+    handler = () => Promise.resolve(json(200, tokens(2)));
+    expect(await platform.auth.forceRefresh()).toBe('a2');
   });
 
   it('401 on refresh signs out once', async () => {
@@ -122,5 +151,30 @@ describe('web media cache (review M10)', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(revoked).toHaveLength(5);
     expect(revoked).toContain(created[0]);
+  });
+
+  it('an entry evicted while still loading is revoked after it resolves and never counted', async () => {
+    vi.useFakeTimers();
+    let release!: (r: Response) => void;
+    handler = (url) =>
+      url === '/api/files/slow'
+        ? new Promise<Response>((r) => (release = r))
+        : Promise.resolve(new Response(new Blob(['x']), { status: 200 }));
+    const slow = platform.mediaUrl('/api/files/slow');
+    // 300 newer entries push the loading one out of the LRU.
+    for (let i = 0; i < 300; i++) await platform.mediaUrl(`/api/files/${i}`);
+    expect(revoked).toEqual([]);
+    release(new Response(new Blob(['y']), { status: 200 }));
+    const u = await slow;
+    expect(u).toMatch(/^blob:/);
+    expect(revoked).not.toContain(u); // the caller still gets a usable URL for a moment
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(revoked).toContain(u);
+    // Not cached any more: asking again fetches it anew.
+    fetchSpy.mockClear();
+    handler = () => Promise.resolve(new Response(new Blob(['z']), { status: 200 }));
+    const again = await platform.mediaUrl('/api/files/slow');
+    expect(again).not.toBe(u);
+    expect(fetchSpy.mock.calls.filter((c) => c[0] === '/api/files/slow')).toHaveLength(1);
   });
 });

@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Maximize2, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Volume2, VolumeX, X } from 'lucide-react';
+import { Check, ChevronDown, Maximize2, MessageSquare, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Volume2, VolumeX, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
@@ -12,20 +12,47 @@ import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
 import { pipSize, qualityOptions } from './streamFormat';
 
-/** <video> bound to a remote stream track. Its on-screen size drives adaptive stream (layer choice). */
-function StreamVideo({ trackSid, className }: { trackSid: string; className?: string }): ReactNode {
+/**
+ * <video> bound to a remote stream track. Its on-screen size drives adaptive stream (layer choice).
+ * Until the first frame arrives it shows the streamer's avatar on the video background instead
+ * of a black box (review 2: black strip previews next to a grey stage).
+ */
+function StreamVideo({ stream, wsId, avatarSize, className }: { stream: RemoteStream; wsId: string | null; avatarSize: number; className?: string }): ReactNode {
   const ref = useRef<HTMLVideoElement>(null);
   const epoch = useVoice((s) => s.trackEpoch);
+  const [hasFrame, setHasFrame] = useState(false);
+  const trackSid = stream.trackSid;
   useEffect(() => {
     const el = ref.current;
     const track = voice.remoteVideo(trackSid);
     if (!el || !track) return;
+    const onFrame = (): void => setHasFrame(el.videoWidth > 0);
+    el.addEventListener('loadeddata', onFrame);
+    el.addEventListener('resize', onFrame);
     track.attach(el);
+    onFrame();
     return () => {
+      el.removeEventListener('loadeddata', onFrame);
+      el.removeEventListener('resize', onFrame);
       track.detach(el);
     };
   }, [trackSid, epoch]);
-  return <video ref={ref} muted playsInline autoPlay className={cx('bg-[var(--color-video-bg)] object-contain', className)} />;
+  return (
+    <>
+      <video ref={ref} muted playsInline autoPlay className={cx('bg-[var(--color-video-bg)] object-contain', className)} />
+      {hasFrame ? null : <StreamPlaceholder stream={stream} wsId={wsId} size={avatarSize} />}
+    </>
+  );
+}
+
+function StreamPlaceholder({ stream, wsId, size }: { stream: RemoteStream; wsId: string | null; size: number }): ReactNode {
+  const name = useMemberName(wsId, stream.userId);
+  const avatar = useWorkspaces((s) => s.users[stream.userId]?.avatarFileId);
+  return (
+    <span className="pointer-events-none absolute inset-0 grid place-items-center bg-[var(--color-video-bg)]" aria-hidden data-testid="stream-placeholder">
+      <Avatar userId={stream.userId} name={name} fileId={avatar || undefined} size={size} />
+    </span>
+  );
 }
 
 /** Pop-out window: same-origin child window, React portal; video shows the same MediaStreamTrack. */
@@ -150,14 +177,15 @@ function Pip({ stream, others, wsId, box }: { stream: RemoteStream; others: numb
   return (
     <div
       data-testid="stream-pip"
-      className="mat-popover group absolute right-4 z-[var(--z-pip)] overflow-hidden rounded-[var(--radius-panel)] bg-[var(--color-video-bg)]"
+      className="mat-popover group absolute right-4 z-[var(--z-pip)] overflow-hidden rounded-[var(--radius-panel)]"
       // Top-right of the message area (docs/08 layout): clear of the composer, the latest
-      // messages and the bottom-aligned empty state.
-      style={{ top: box.top + PIP_GAP, width: w, height: h }}
+      // messages and the bottom-aligned empty state. The black video background is inline: the
+      // (unlayered) .mat-popover material would override a bg utility → light letterbox bars.
+      style={{ top: box.top + PIP_GAP, width: w, height: h, background: 'var(--color-video-bg)' }}
       aria-label={t('streamView.of', { name })}
       role="region"
     >
-      <StreamVideo trackSid={stream.trackSid} className="size-full" />
+      <StreamVideo stream={stream} wsId={wsId} avatarSize={w < 240 ? 32 : 48} className="size-full" />
       <button type="button" className="absolute inset-0 rounded-[var(--radius-panel)]" onClick={() => voice.setStage('expanded')} aria-label={t('stream.expand')} />
       <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-16px)]">
         <StreamerChip stream={stream} wsId={wsId} size={w < 240 ? 'sm' : 'md'} />
@@ -235,7 +263,8 @@ function VolumeControl({ stream }: { stream: RemoteStream }): ReactNode {
   }
   const muted = volume === 0;
   return (
-    <span className="flex items-center gap-1">
+    // The slider slides out on hover / keyboard focus of the volume group (YouTube, Discord).
+    <span className="group/vol flex items-center">
       <IconButton
         size="sm"
         label={muted ? t('streamView.unmute') : t('streamView.mute')}
@@ -247,7 +276,7 @@ function VolumeControl({ stream }: { stream: RemoteStream }): ReactNode {
       >
         {muted ? <VolumeX className="size-4" aria-hidden /> : <Volume2 className="size-4" aria-hidden />}
       </IconButton>
-      <span className="w-20">
+      <span className="w-0 overflow-hidden opacity-0 transition-opacity duration-[var(--motion-fast)] group-focus-within/vol:ml-1 group-focus-within/vol:w-20 group-focus-within/vol:opacity-100 group-hover/vol:ml-1 group-hover/vol:w-20 group-hover/vol:opacity-100">
         <Slider label={t('streamView.volume')} value={Math.round(volume * 100)} min={0} max={100} onChange={(v) => voice.setStreamVolume(stream.userId, v / 100)} />
       </span>
     </span>
@@ -282,7 +311,7 @@ function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: st
         current ? 'ring-2 ring-accent' : 'ring-1 ring-[var(--color-border-popover)] hover:ring-2 hover:ring-[var(--color-fill-hover)]',
       )}
     >
-      <StreamVideo trackSid={stream.trackSid} className="size-full" />
+      <StreamVideo stream={stream} wsId={wsId} avatarSize={32} className="size-full" />
       <span className="absolute bottom-1 left-1 flex max-w-[calc(100%-8px)]">
         <StreamerChip stream={stream} wsId={wsId} size="sm" />
       </span>
@@ -309,10 +338,20 @@ function Stage({ stream, streams, wsId, box }: { stream: RemoteStream; streams: 
         ref={frame}
         className="mat-popover group relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-panel)] bg-[var(--color-video-bg)]"
       >
-        <StreamVideo trackSid={stream.trackSid} className="size-full" />
-        <span className="absolute left-3 top-3 flex max-w-[calc(100%-24px)]">
+        <StreamVideo stream={stream} wsId={wsId} avatarSize={80} className="size-full" />
+        <span className="absolute left-3 top-3 flex max-w-[calc(100%-120px)]">
           <StreamerChip stream={stream} wsId={wsId} />
         </span>
+        {/* Focus mode hides the chat: an always-visible way back (the stream goes to the PiP). */}
+        <button
+          type="button"
+          onClick={() => voice.setStage('pip')}
+          className="absolute right-3 top-3 flex h-7 items-center gap-1.5 rounded-full bg-black/60 px-2.5 text-[12px] font-medium text-white transition-colors duration-[var(--motion-fast)] hover:bg-black/75"
+          title={t('stream.showChatHint')}
+        >
+          <MessageSquare className="size-3.5" aria-hidden />
+          {t('stream.showChat')}
+        </button>
         {stage === 'popout' ? (
           <div className="absolute inset-0 grid place-items-center bg-black/80 text-white">
             <div className="text-center">
@@ -402,7 +441,7 @@ export function StreamArea(): ReactNode {
       ) : (
         <Stage stream={current} streams={streams} wsId={wsId} box={box} />
       )}
-      {current && stage === 'popout' ? <Popout trackSid={current.trackSid} title={`${name} — Calaba`} onClose={() => voice.setStage('expanded')} /> : null}
+      {current && stage === 'popout' ? <Popout trackSid={current.trackSid} title={`${name} — Calab`} onClose={() => voice.setStage('expanded')} /> : null}
     </>
   );
 }

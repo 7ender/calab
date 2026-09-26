@@ -14,6 +14,7 @@ import type {
 } from '../../shared/ipc';
 import { PttGate } from '../../shared/pttGate';
 import { mouseName } from '../../shared/pttKeys';
+import { AUTH_TIMEOUT_MS, refreshGate } from '../../shared/refreshGate';
 import type { GuestJoin, Platform } from './types';
 
 /**
@@ -38,12 +39,14 @@ interface TokensJson {
 
 let access: { token: string; exp: number; sessionId: string } | null = null;
 let bodyRefresh: string | null = null;
-let refreshing: Promise<string | null> | null = null;
+/** Single-flight refresh; a transient failure is reused for a few seconds (review N3). */
+const refreshes = refreshGate(() => doRefresh());
 const loggedOutListeners = new Set<(r: LogoutReason) => void>();
 
 function applyTokens(t: TokensJson): void {
   access = { token: t.accessToken, exp: Date.parse(t.accessExpiresAt), sessionId: t.sessionId };
   if (t.refreshToken) bodyRefresh = t.refreshToken; // server without cookie mode
+  refreshes.reset();
 }
 
 /** Bumped on every sign-out: a refresh answer that arrives later must not resurrect it. */
@@ -53,6 +56,7 @@ function clear(reason: LogoutReason | null): void {
   epoch++;
   access = null;
   bodyRefresh = null;
+  refreshes.reset();
   clearMediaCache(); // images of the previous account (review M10)
   if (reason) for (const cb of loggedOutListeners) cb(reason);
 }
@@ -70,6 +74,8 @@ function postAuth(path: string, body: unknown, bearer?: string): Promise<Respons
   return fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
+    // Bounded: a black-holed refresh runs inside the cross-tab Web Lock and would block every tab (review N3).
+    signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
     headers: { 'Content-Type': 'application/json', ...WEB_HEADER, ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) },
     body: JSON.stringify(body),
   });
@@ -115,10 +121,7 @@ async function doRefresh(): Promise<string | null> {
 }
 
 function refreshOnce(): Promise<string | null> {
-  refreshing ??= doRefresh().finally(() => {
-    refreshing = null;
-  });
-  return refreshing;
+  return refreshes.run();
 }
 
 async function accessToken(): Promise<string | null> {
@@ -262,7 +265,7 @@ function mediaUrl(path: string): Promise<string> {
 let binding: PttBinding | null = null;
 let gate: PttGate | null = null;
 const pttListeners = new Set<(e: PttEvent) => void>();
-let capture: { resolve: (b: PttBinding) => void; reject: (e: Error) => void } | null = null;
+let capture: { id: number; resolve: (b: PttBinding) => void; reject: (e: Error) => void } | null = null;
 const MAC = /Mac OS X|Macintosh/.test(navigator.userAgent);
 
 function pttEmit(talking: boolean): void {
@@ -376,7 +379,7 @@ function takeDeepLink(): Promise<string | null> {
   const m = /^\/(join|r)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
   if (!m?.[1] || !m[2]) return Promise.resolve(null);
   history.replaceState(null, '', '/');
-  return Promise.resolve(`calaba://${m[1]}/${m[2]}`);
+  return Promise.resolve(`calab://${m[1]}/${m[2]}`);
 }
 
 const noop = (): (() => void) => () => undefined;
@@ -431,6 +434,24 @@ export function createWebPlatform(): Platform {
     },
     app: {
       info: () => Promise.resolve(info()),
+      // Served next to the web client (copied by `pnpm build:web`).
+      legal: async () => {
+        const get = async (path: string): Promise<string> => {
+          try {
+            const r = await fetch(path);
+            return r.ok ? await r.text() : '';
+          } catch {
+            return '';
+          }
+        };
+        const [license, notice, commercial, thirdParty] = await Promise.all([
+          get('/LICENSE.txt'),
+          get('/NOTICE.txt'),
+          get('/COMMERCIAL-LICENSE.txt'),
+          get('/THIRD-PARTY-NOTICES.txt'),
+        ]);
+        return { license, notice, commercial, thirdParty };
+      },
       getSettings: () => Promise.resolve(settings()),
       setSettings: () => Promise.resolve(settings()),
       takeDeepLink,
@@ -464,15 +485,17 @@ export function createWebPlatform(): Platform {
         setWebBinding(b);
         return Promise.resolve(pttStatus());
       },
-      captureNext: () =>
+      captureNext: (id) =>
         new Promise<PttBinding>((resolve, reject) => {
           capture?.reject(new Error('superseded'));
-          capture = { resolve, reject };
+          capture = { id, resolve, reject };
         }),
-      cancelCapture: () => {
+      cancelCapture: (id) => {
+        // Only the binder that started the capture may cancel it (review N6).
         const c = capture;
+        if (!c || c.id !== id) return;
         capture = null;
-        c?.reject(new Error('cancelled'));
+        c.reject(new Error('cancelled'));
       },
       status: () => Promise.resolve(pttStatus()),
       onEvent: (cb) => {

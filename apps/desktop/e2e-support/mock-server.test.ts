@@ -115,7 +115,7 @@ describe('mock server', () => {
 
     expect(ready.me?.user?.id).toBe(IDS.users.anna);
     expect(ready.me?.settings?.noiseSuppression).toBe(true);
-    expect(ready.workspaces.map((w) => w.workspace?.name)).toEqual(['Команда Calaba', 'Дизайн']);
+    expect(ready.workspaces.map((w) => w.workspace?.name)).toEqual(['Команда Calab', 'Дизайн']);
     const main = ready.workspaces[0];
     expect(main?.rooms.map((r) => r.name)).toEqual([
       'общий',
@@ -137,6 +137,11 @@ describe('mock server', () => {
     expect(dev?.lastMessageId && dev.lastMessageId > (read.get(IDS.rooms.dev) ?? '')).toBe(true);
     const call = main?.rooms.find((r) => r.id === IDS.rooms.call);
     expect(call?.lastMessageId).toBe(read.get(IDS.rooms.call));
+    // Counters as the server sends them in READY read_states.
+    const counts = new Map(ready.readStates.map((r) => [r.roomId, r.unreadCount]));
+    expect(counts.get(IDS.rooms.general)).toBeGreaterThan(0);
+    expect(counts.get(IDS.rooms.dev)).toBeGreaterThan(0);
+    expect(counts.get(IDS.rooms.call)).toBe(0);
 
     // Heartbeat.
     gw.send({ op: GatewayOpcode.HEARTBEAT, payload: { case: 'heartbeat', value: { lastSeq: 1n } } });
@@ -257,7 +262,7 @@ describe('room links and people (ADR-0016)', () => {
   it('previews a link publicly, signs a guest in (web cookie) and lets an admin promote them', async () => {
     const preview = await fetch(`${server.url}/api/room-invites/call-guest-link`);
     expect(preview.status).toBe(200);
-    expect(await preview.json()).toMatchObject({ roomName: 'Созвон', workspaceName: 'Команда Calaba', allowGuests: true });
+    expect(await preview.json()).toMatchObject({ roomName: 'Созвон', workspaceName: 'Команда Calab', allowGuests: true });
 
     const join = await fetch(`${server.url}/api/room-invites/call-guest-link/join`, {
       method: 'POST',
@@ -293,6 +298,28 @@ describe('room links and people (ADR-0016)', () => {
       body: JSON.stringify({ nickname: 'Боря' }),
     });
     expect(other.status).toBe(403);
+    server.reset('data');
+  });
+});
+
+describe('password and email change (user.proto)', () => {
+  it('needs the current password; a wrong one is 403 INVALID_CREDENTIALS, not 401', async () => {
+    const token = await login('boris@calaba.test');
+    const patch = (path: string, body: object): Promise<Response> =>
+      fetch(`${server.url}${path}`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const wrong = await patch('/api/me/password', { currentPassword: 'nope', newPassword: 'newpassword1' });
+    expect(wrong.status).toBe(403);
+    expect(((await wrong.json()) as { code: string }).code).toBe('ERROR_CODE_INVALID_CREDENTIALS');
+    expect((await patch('/api/me/password', { currentPassword: 'password123', newPassword: 'short' })).status).toBe(422);
+    expect((await patch('/api/me/password', { currentPassword: 'password123', newPassword: 'newpassword1' })).status).toBe(204);
+    // The session that changed the password stays.
+    expect((await fetch(`${server.url}/api/me`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(200);
+
+    expect((await patch('/api/me/email', { newEmail: 'owner@calaba.test', currentPassword: 'newpassword1' })).status).toBe(409);
+    expect((await patch('/api/me/email', { newEmail: 'not-an-email', currentPassword: 'newpassword1' })).status).toBe(422);
+    const ok = await patch('/api/me/email', { newEmail: 'Boris.New@calaba.test', currentPassword: 'newpassword1' });
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { me: { email: string } }).me.email).toBe('boris.new@calaba.test');
     server.reset('data');
   });
 });

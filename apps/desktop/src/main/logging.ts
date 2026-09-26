@@ -11,7 +11,7 @@ export function initLogging(): void {
   log.errorHandler.startCatching({ showDialog: false });
   app.setPath('crashDumps', join(dir, 'crashes'));
   crashReporter.start({ uploadToServer: false });
-  log.info(`Calaba ${app.getVersion()} starting (${process.platform} ${process.arch}, Electron ${process.versions.electron})`);
+  log.info(`Calab ${app.getVersion()} starting (${process.platform} ${process.arch}, Electron ${process.versions.electron})`);
 }
 
 export { log };

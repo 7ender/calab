@@ -241,7 +241,7 @@ export function fileMeta(
 
 // ---------------------------------------------------------------- builder
 
-const { VIEW_ROOM, SEND_MESSAGES } = PERMISSION_BITS;
+const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES } = PERMISSION_BITS;
 
 interface UserSpec {
   key: keyof typeof IDS.users;
@@ -425,7 +425,7 @@ export function buildState(scenario: Scenario): MockState {
         id: sessionId,
         deviceName: u.key === 'anna' ? 'MacBook Pro (darwin)' : 'Desktop (win32)',
         ip: '192.0.2.10',
-        userAgent: 'Calaba/0.0.1',
+        userAgent: 'Calab/0.0.1',
         createdAt: ts('2026-01-10T08:00:00Z'),
         lastSeenAt: ts('2026-01-15T11:05:00Z'),
         expiresAt: ts('2099-01-01T00:00:00Z'),
@@ -468,7 +468,7 @@ export function buildState(scenario: Scenario): MockState {
     thumbnail: { bytes: imageThumb, mime: 'image/png' },
   });
   const pdf = Buffer.alloc(245_760, 0x20);
-  pdf.write('%PDF-1.4\n% Calaba mock report\n', 0, 'latin1');
+  pdf.write('%PDF-1.4\n% Calab mock report\n', 0, 'latin1');
   s.files.set(IDS.files.pdf, {
     meta: fileMeta(IDS.files.pdf, IDS.workspaces.main, U.grigory, 'load-test-report.pdf', 'application/pdf', pdf, ts('2026-01-14T16:29:00Z')),
     bytes: pdf,
@@ -500,7 +500,7 @@ export function buildState(scenario: Scenario): MockState {
     );
   };
   const W = IDS.workspaces;
-  ws(W.main, 'calaba', 'Команда Calaba', U.anna, WorkspaceVisibility.PRIVATE, '2025-12-01T10:05:00Z', 1_234_567n);
+  ws(W.main, 'calaba', 'Команда Calab', U.anna, WorkspaceVisibility.PRIVATE, '2025-12-01T10:05:00Z', 1_234_567n);
   ws(W.design, 'design', 'Дизайн', U.vera, WorkspaceVisibility.PRIVATE, '2025-12-03T12:00:00Z', 0n);
   ws(W.community, 'community', 'Сообщество', U.boris, WorkspaceVisibility.OPEN, '2025-12-05T12:00:00Z', 0n);
 
@@ -562,7 +562,9 @@ export function buildState(scenario: Scenario): MockState {
   const ROLE = PermissionTargetType.ROLE;
   const USER = PermissionTargetType.USER;
   room(R.general, W.main, RoomType.TEXT, 'общий', 'Общие вопросы команды', 0, {
-    overrides: [override(ROLE, 'guest', VIEW_ROOM | SEND_MESSAGES, 0n)],
+    // @member: one allow (pin / delete others' messages) and one deny (files), so the room
+    // settings «Права» shot shows all three tri-state values (review 2, §5).
+    overrides: [override(ROLE, 'guest', VIEW_ROOM | SEND_MESSAGES, 0n), override(ROLE, 'member', MANAGE_MESSAGES, ATTACH_FILES)],
   });
   room(R.dev, W.main, RoomType.TEXT, 'разработка', 'Код, ревью, CI', 1, { categoryId: C.dev });
   room(R.longPrivate, W.main, RoomType.TEXT, 'очень-длинное-название-комнаты-для-проверки-обрезки', 'Закрытая комната', 2, {
@@ -698,7 +700,7 @@ export function buildState(scenario: Scenario): MockState {
 /** Link previews served by GET /api/unfurl (the image is a local PNG behind /api/unfurl/image). */
 export const UNFURLS: Record<string, { title: string; description: string; siteName: string; image: boolean }> = {
   'https://calaba.test/docs/08-design': {
-    siteName: 'Calaba Docs',
+    siteName: 'Calab Docs',
     title: 'Дизайн и UX',
     description: 'Визуальный язык macOS: сдержанные цвета, много воздуха, чёткая иерархия, материал «стекло» на панелях.',
     image: true,

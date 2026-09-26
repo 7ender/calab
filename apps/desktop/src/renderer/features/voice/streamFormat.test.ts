@@ -1,7 +1,7 @@
 import { ScreenSharePreset } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import type { CaptureSource } from '../../../shared/ipc';
-import { layerLabel, pipSize, presetOptions, presetSummary, qualityOptions, splitSources, viewersText } from './streamFormat';
+import { layerLabel, pipSize, presetDetail, presetOptions, presetSummary, presetText, qualityOptions, splitSources, viewersText } from './streamFormat';
 
 describe('presetSummary', () => {
   it('says the preset in words', () => {
@@ -11,12 +11,27 @@ describe('presetSummary', () => {
   });
 });
 
+describe('presetText / presetDetail', () => {
+  it('keeps select labels short and never repeats the resolution', () => {
+    expect(presetText(ScreenSharePreset.H1080)).toBe('1080p · 15 fps');
+    expect(presetText(ScreenSharePreset.ECONOMY)).toBe('Экономия · 5 fps');
+    expect(presetText(ScreenSharePreset.ORIGINAL)).toBe('Максимум · 30 fps');
+    for (const p of [ScreenSharePreset.ECONOMY, ScreenSharePreset.H720, ScreenSharePreset.H1080, ScreenSharePreset.ORIGINAL] as const) {
+      expect(presetText(p).length).toBeLessThanOrEqual(18);
+    }
+  });
+  it('puts the parameters in the detail line', () => {
+    expect(presetDetail(ScreenSharePreset.H1080)).toBe('1080p, 15 fps, до 2,0 Мбит/с');
+    expect(presetDetail(ScreenSharePreset.ORIGINAL)).toBe('исходное разрешение, 30 fps, до 4,0 Мбит/с');
+  });
+});
+
 describe('presetOptions', () => {
   it('disables presets above the room limit with the reason', () => {
     const o = presetOptions(ScreenSharePreset.H1080);
-    expect(o.map((x) => x.label)).toEqual(['Экономия', '720p', '1080p', 'Оригинал']);
+    expect(o.map((x) => x.label)).toEqual(['Экономия', '720p', '1080p', 'Макс.']);
     expect(o.map((x) => x.disabledReason !== null)).toEqual([false, false, false, true]);
-    expect(o[3]?.disabledReason).toBe('В этой комнате не выше «1080p»');
+    expect(o[3]?.disabledReason).toBe('Недоступно: в этой комнате качество не выше «1080p»');
     expect(presetOptions(ScreenSharePreset.ORIGINAL).every((x) => x.disabledReason === null)).toBe(true);
   });
 });

@@ -62,7 +62,7 @@ export function MembersPanel({ workspaceId, floating = false }: { workspaceId: s
     <aside
       className={
         floating
-          ? 'mat-popover anim-in absolute bottom-[calc(var(--composer-height,64px)+8px)] right-3 top-[60px] z-[var(--z-popover)] w-60 overflow-y-auto rounded-[var(--radius-panel)] px-2 py-3'
+          ? 'mat-popover dense anim-in absolute bottom-[calc(var(--composer-height,64px)+8px)] right-3 top-[60px] z-[var(--z-popover)] w-60 overflow-y-auto rounded-[var(--radius-panel)] px-2 py-3'
           : 'mat-sidebar w-60 shrink-0 overflow-y-auto border-l border-line px-2 pb-4 pt-4'
       }
       aria-label={t('shell.members')}
@@ -152,7 +152,7 @@ const MemberRow = memo(function MemberRow({
           align="start"
           sideOffset={8}
           collisionPadding={16}
-          className="mat-popover anim-in z-[var(--z-popover)] rounded-[var(--radius-panel)] text-fg focus:outline-none"
+          className="mat-popover dense anim-in z-[var(--z-popover)] rounded-[var(--radius-panel)] text-fg focus:outline-none"
           aria-label={name}
         >
           <ProfileCard

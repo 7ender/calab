@@ -68,7 +68,6 @@ export const ruChat = {
   'chat.notifyMute24h': '24 ч',
   'chat.notifyMuteForever': 'Пока не включу',
   'chat.notifyMutedUntil': 'Выключены до {time}',
-  'chat.notifyMutedForever': 'Выключены',
   'chat.notifyUnmute': 'Включить уведомления',
   'chat.notifyFailed': 'Не удалось сохранить настройки уведомлений',
   // mentions

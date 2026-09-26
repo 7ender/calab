@@ -27,10 +27,10 @@ export function RailContextMenu({ workspaceId, tip, children }: { workspaceId: s
   const owner = entry.role === WorkspaceRole.OWNER;
 
   const markAllRead = (): void => {
-    const { byId, readState, lastMessage } = useRooms.getState();
+    const { byId, readState, lastMessage, unread } = useRooms.getState();
     for (const r of Object.values(byId)) {
       const last = lastMessage[r.id];
-      if (r.workspaceId === workspaceId && last && isUnread(r.id, { readState, lastMessage })) markRead(r.id, last);
+      if (r.workspaceId === workspaceId && last && isUnread(r.id, { readState, lastMessage, unread })) markRead(r.id, last);
     }
   };
   const leave = async (): Promise<void> => {

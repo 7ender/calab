@@ -8,13 +8,13 @@ import { mentionTargets, parseMarkdown } from './markdown/parse';
 
 /**
  * True when a message mentions me (docs/05, «Упоминания»): `@<my id>`, or `@everyone` /
- * `@here` from a non-guest (guests cannot mention everyone). Never for my own messages;
- * code spans / blocks don't count (the renderer's parser).
+ * `@here` from an author holding MENTION_EVERYONE in that room (the server ignores them
+ * otherwise). Never for my own messages; code spans / blocks don't count (the renderer's parser).
  */
-export function mentionsMe(m: { content: string; authorId: string }, myId: string, authorIsGuest = false): boolean {
+export function mentionsMe(m: { content: string; authorId: string }, myId: string, authorMayMentionAll = true): boolean {
   if (!myId || m.authorId === myId || !m.content.includes('@')) return false;
   const { users, everyone } = mentionTargets(parseMarkdown(m.content));
-  return users.includes(myId.toLowerCase()) || (everyone && !authorIsGuest);
+  return users.includes(myId.toLowerCase()) || (everyone && authorMayMentionAll);
 }
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';

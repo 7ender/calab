@@ -112,7 +112,7 @@ function fakeSources(): CaptureSource[] {
     },
     {
       id: `${FAKE_PREFIX}window:2`,
-      name: 'Calaba',
+      name: 'Calab',
       kind: 'window',
       displayId: '',
       appIcon: icon([31, 122, 52]),

@@ -1,15 +1,15 @@
 import { VoiceStreamStopReason, type DispatchEvent, type Message, type WorkspaceSnapshot } from '@calaba/protocol';
-import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { log } from '../lib/log';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
 import { toast } from '../stores/toasts';
-import { isUnread, useRooms } from '../stores/rooms';
+import { mayMentionAll } from '../lib/permissions';
+import { useRooms } from '../stores/rooms';
 import { useTyping } from '../stores/typing';
 import { myUserId, useSession } from '../stores/session';
 import { activeRoomId, useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
-import { isGuest, useWorkspaces } from '../stores/workspaces';
+import { useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms } from './chat';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
@@ -28,9 +28,11 @@ export function applyDispatch(ev: DispatchEvent): void {
       const rooms = useRooms.getState();
       // A READY can follow a fresh IDENTIFY while the UI is up (server deploy →
       // INVALID_SESSION{resumable:false}). Rebuild workspaces/rooms synchronously (React batches
-      // it: no empty frame), keep what READY doesn't carry (live mention badges) and keep the
-      // loaded message windows, resyncing them from the API instead of clearing the chat.
-      const mentions = rooms.mentions;
+      // it: no empty frame), keep what READY doesn't carry (live counters of rooms without a
+      // read state) and keep the loaded message windows, resyncing them from the API instead of
+      // clearing the chat.
+      const prevUnread = rooms.unread;
+      const prevMentions = rooms.mentions;
       ws.reset();
       rooms.reset();
       rooms.setNotifyAll(r.notificationSettings);
@@ -40,14 +42,21 @@ export function applyDispatch(ev: DispatchEvent): void {
         for (const room of snap.rooms) if (room.lastMessageId) rooms.setLastMessage(room.id, room.lastMessageId);
         applySnapshotExtras(snap);
       }
-      for (const rs of r.readStates) rooms.setRead(rs.roomId, rs.lastReadMessageId);
+      // Unread / mention counters come with the read states (server-counted, so missed
+      // messages and mentions are included — review M12/N7); the client keeps them from here.
+      for (const rs of r.readStates) {
+        rooms.setRead(rs.roomId, rs.lastReadMessageId);
+        rooms.setCounts(rs.roomId, rs.unreadCount, rs.mentionCount);
+      }
       const alive = useRooms.getState().byId;
       useInbox.getState().removeRooms((id) => id in alive);
-      // Live badges survive, except for rooms gone or read elsewhere meanwhile; then the badges
-      // are derived again from the mentions history (missed mentions aren't replayed, review M12).
-      const now = useRooms.getState();
-      useRooms.setState({ mentions: Object.fromEntries(Object.entries(mentions).filter(([id]) => id in alive && isUnread(id, now))) });
-      void loadMentions();
+      // READY lists every visible room (never read: empty marker, counters since joining); an
+      // older server may skip unread rooms — their live counters stay.
+      const listed = new Set(r.readStates.map((rs) => rs.roomId));
+      const carry = (m: Record<string, number>): Record<string, number> =>
+        Object.fromEntries(Object.entries(m).filter(([id]) => id in alive && !listed.has(id)));
+      useRooms.setState((st) => ({ unread: { ...carry(prevUnread), ...st.unread }, mentions: { ...carry(prevMentions), ...st.mentions } }));
+      void loadMentions(); // the inbox list: mentions missed while disconnected
       const msgs = useMessages.getState();
       for (const id of Object.keys(msgs.rooms)) if (!(id in alive)) msgs.unload(id);
       void resyncLoadedRooms();
@@ -111,10 +120,16 @@ export function applyDispatch(ev: DispatchEvent): void {
         onMessageEdited(e.value.message, e.value.workspaceId);
       }
       return;
-    case 'messageDelete':
-      useMessages.getState().remove(e.value.roomId, e.value.messageId);
-      useInbox.getState().remove(e.value.messageId);
+    case 'messageDelete': {
+      const { roomId, messageId } = e.value;
+      // Only messages of others count: my own move the read marker past them, so an unread one
+      // is someone else's. The inbox holds the mentions of me.
+      const mention = useInbox.getState().items.some((m) => m.id === messageId);
+      useRooms.getState().removeUnread(roomId, messageId, mention);
+      useMessages.getState().remove(roomId, messageId);
+      useInbox.getState().remove(messageId);
       return;
+    }
     case 'messageReactionAdd':
     case 'messageReactionRemove': {
       const r = e.value;
@@ -124,10 +139,11 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'typingStart': {
       const { roomId, userId } = e.value;
       if (userId === myUserId()) return;
-      const at = e.value.timestamp ? timestampMs(e.value.timestamp) : Date.now();
-      const until = Math.max(Date.now(), at) + TYPING_MS;
+      // Local receive time, not the server timestamp: with the server clock ahead, `until` was
+      // later than the local timer and the entry was never dropped (review N8).
+      const until = Date.now() + TYPING_MS;
       useTyping.getState().set(roomId, userId, until);
-      window.setTimeout(() => useTyping.getState().expire(roomId, userId), TYPING_MS + 50);
+      window.setTimeout(() => useTyping.getState().expire(roomId, userId), until - Date.now() + 50);
       return;
     }
     case 'presenceUpdate':
@@ -206,7 +222,7 @@ function onMessage(m: Message, workspaceId: string): void {
 /** An edit can add or remove a mention of me: keep the inbox in step (badges stay as they are). */
 function onMessageEdited(m: Message, workspaceId: string): void {
   const author = useWorkspaces.getState().byId[workspaceId]?.members[m.authorId];
-  useInbox.getState().update(m, mentionsMe(m, myUserId(), isGuest(author)));
+  useInbox.getState().update(m, mentionsMe(m, myUserId(), mayMentionAll(author?.role, m.authorId, useRooms.getState().byId[m.roomId])));
 }
 
 /** Snapshot data beyond rooms/members: categories. */

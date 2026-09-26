@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPS_PROBE_MS, CAPTURE_TIMEOUT_MS, PttCapture } from './pttCapture';
+import { PttGate } from './pttGate';
 import { KEY } from './pttKeys';
 
 const KEY_A = 0x001e;
@@ -97,5 +98,40 @@ describe('PttCapture (review H2)', () => {
     const t = setup();
     expect(() => t.cap.cancel()).not.toThrow();
     expect(t.cap.active).toBe(false);
+  });
+
+  it('the PTT key held when the capture starts still releases the gate (review N5)', async () => {
+    const t = setup();
+    const talking: boolean[] = [];
+    const gate = new PttGate('hold', false, (v) => talking.push(v));
+    // The hook as in main/ptt.ts: keys the capture does not consume go to the bound key's gate.
+    const key = (code: number, down: boolean): void => {
+      if (!t.cap.onKey(code, down) && code === KEY_F13) gate.input(down);
+    };
+    key(KEY_F13, true); // talking
+    const p = t.cap.start();
+    key(KEY_F13, false); // released while «Assign» is armed
+    expect(gate.isTalking).toBe(false);
+    expect(talking).toEqual([true, false]);
+    expect(t.cap.active).toBe(true); // a key-up never binds
+    key(KEY_A, true);
+    await expect(p).resolves.toMatchObject({ kind: 'key', code: KEY_A });
+  });
+
+  it('cancel by id ignores a stale binder; a newer capture is not cancelled by the old id (review N6)', async () => {
+    const t = setup();
+    const p1 = t.cap.start({ id: 1 });
+    t.cap.cancel(2); // another binder unmounting
+    expect(t.cap.active).toBe(true);
+    const p2 = t.cap.start({ id: 2 });
+    await expect(p1).rejects.toThrow('superseded');
+    t.cap.cancel(1); // the first binder unmounts later
+    expect(t.cap.active).toBe(true);
+    t.cap.cancel(2);
+    await expect(p2).rejects.toThrow('cancelled');
+    // Without an id (suspend) any capture is cancelled.
+    const p3 = t.cap.start({ id: 3 });
+    t.cap.cancel(undefined, 'suspended');
+    await expect(p3).rejects.toThrow('suspended');
   });
 });

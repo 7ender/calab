@@ -17,7 +17,7 @@ function send(action: TrayAction): void {
 function rebuild(): void {
   if (!tray) return;
   const menu = Menu.buildFromTemplate([
-    { label: 'Открыть Calaba', click: () => send('show') },
+    { label: 'Открыть Calab', click: () => send('show') },
     { type: 'separator' },
     { label: 'Выключить микрофон', type: 'checkbox', checked: state.muted, enabled: state.inVoice, click: () => send('toggle-mute') },
     { label: 'Выключить звук', type: 'checkbox', checked: state.deafened, enabled: state.inVoice, click: () => send('toggle-deafen') },
@@ -26,7 +26,7 @@ function rebuild(): void {
     { label: 'Выход', click: () => app.quit() },
   ]);
   tray.setContextMenu(menu);
-  tray.setToolTip(state.inVoice ? `Calaba — в голосе${state.muted ? ' (микрофон выкл.)' : ''}` : 'Calaba');
+  tray.setToolTip(state.inVoice ? `Calab — в голосе${state.muted ? ' (микрофон выкл.)' : ''}` : 'Calab');
 }
 
 export function createTray(): void {

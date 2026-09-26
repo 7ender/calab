@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Search, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { t } from '../i18n';
-import { searchSettings, type SettingsEntry } from './settingsSearch';
+import { highlight, hintExcerpt, labelMatches, queryWords, searchSettings, type SettingsEntry } from './settingsSearch';
 import { IconButton, cx } from './ui';
 
 export interface SettingsSection {
@@ -32,6 +32,22 @@ function harvest(root: HTMLElement, sections: SettingsSection[]): SettingsEntry[
   }
   return out;
 }
+
+/** Text with the matching parts in semibold: shows why a search result matched. */
+function Marked({ text, words }: { text: string; words: string[] }): ReactNode {
+  return highlight(text, words).map((p, i) =>
+    p.hit ? (
+      <strong key={i} className="font-semibold text-fg">
+        {p.text}
+      </strong>
+    ) : (
+      p.text
+    ),
+  );
+}
+
+/** Below this many sections a search field is more than the window needs (room settings). */
+const SEARCH_MIN_SECTIONS = 5;
 
 const sameEntries = (a: SettingsEntry[], b: SettingsEntry[]): boolean => JSON.stringify(a) === JSON.stringify(b);
 
@@ -78,6 +94,8 @@ export function SettingsWindow({
   const panels = useRef<HTMLDivElement>(null);
   const results = useRef<HTMLElement>(null);
   const searching = query.trim() !== '';
+  const words = useMemo(() => queryWords(query), [query]);
+  const searchable = sections.length >= SEARCH_MIN_SECTIONS;
 
   // Harvest labels while searching; sections render asynchronously (queries), so watch the DOM.
   useLayoutEffect(() => {
@@ -174,6 +192,7 @@ export function SettingsWindow({
                   {title}
                 </span>
               </DialogP.Title>
+              {searchable ? (
               <label className="relative flex items-center">
                 <Search className="pointer-events-none absolute left-2 size-3.5 text-muted" aria-hidden />
                 <input
@@ -198,6 +217,7 @@ export function SettingsWindow({
                   className="selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-7 pr-2 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted focus-visible:outline-offset-0 [&::-webkit-search-cancel-button]:hidden"
                 />
               </label>
+              ) : null}
               {searching ? (
                 <nav ref={results} aria-label={t('settings.searchResults')} className="flex min-h-0 flex-col gap-px overflow-y-auto" onKeyDown={arrowNav}>
                   {groups.length === 0 ? <p className="px-2 py-2 text-body text-muted">{t('settings.searchNone')}</p> : null}
@@ -225,13 +245,21 @@ export function SettingsWindow({
                             type="button"
                             onClick={() => jump(r)}
                             aria-current={hit === r.key ? 'true' : undefined}
-                            title={r.label}
+                            title={r.hint ? `${r.label}\n${r.hint}` : r.label}
                             className={cx(
-                              'flex min-h-7 items-center rounded-[var(--radius-control)] py-1 pl-[34px] pr-2 text-left text-body text-muted hover:bg-hover hover:text-fg',
+                              'flex min-h-7 flex-col justify-center rounded-[var(--radius-control)] py-1 pl-[34px] pr-2 text-left text-body text-muted hover:bg-hover hover:text-fg',
                               hit === r.key ? 'bg-active text-fg' : '',
                             )}
                           >
-                            <span className="min-w-0 truncate">{r.label}</span>
+                            <span className="min-w-0 truncate">
+                              <Marked text={r.label} words={words} />
+                            </span>
+                            {/* Found by its description: show the matching words from it. */}
+                            {r.hint && !labelMatches(r.label, words) ? (
+                              <span className="min-w-0 truncate text-caption text-muted">
+                                <Marked text={hintExcerpt(r.hint, words)} words={words} />
+                              </span>
+                            ) : null}
                           </button>
                         ))}
                       </div>

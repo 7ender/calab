@@ -166,10 +166,11 @@ export function mergeLatest(r: RoomMessages, latestDesc: Message[], hasMore: boo
 /**
  * A background room's window cut to its newest `keep` sent messages (+ pending ones). A window
  * that browses old history (hasMoreAfter) returns null: drop it, the room reloads at the present
- * when opened again. Returns `r` itself when nothing needs to go.
+ * when opened again — unless it holds pending / failed messages (the user's unsent text): then it
+ * is kept as is (review N2). Returns `r` itself when nothing needs to go.
  */
 export function trimWindow(r: RoomMessages, keep: number): RoomMessages | null {
-  if (r.hasMoreAfter) return null;
+  if (r.hasMoreAfter) return r.items.some((c) => c.status !== 'sent') ? r : null;
   const sentItems = r.items.filter((c) => c.status === 'sent');
   if (sentItems.length <= keep) return r;
   const pending = r.items.filter((c) => c.status !== 'sent');

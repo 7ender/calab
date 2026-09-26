@@ -36,7 +36,7 @@ function publish(s: UpdateStatus): void {
 function notifyAvailable(version: string, page: string): void {
   if (notifiedVersion === version || !Notification.isSupported()) return;
   notifiedVersion = version;
-  const n = new Notification({ title: 'Calaba', body: `Доступна версия ${version} — скачать` });
+  const n = new Notification({ title: 'Calab', body: `Доступна версия ${version} — скачать` });
   n.on('click', () => {
     void shell.openExternal(page);
     notification = null;

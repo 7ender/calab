@@ -155,7 +155,7 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
         ) : preview.isFetching ? (
           <Spinner />
         ) : null}
-        <h3 className="mt-3 text-caption font-semibold uppercase tracking-wide text-muted">{t('ws.discover')}</h3>
+        <h3 className="mt-3 text-caption font-semibold text-muted">{t('ws.discover')}</h3>
         {discover.isLoading ? <Spinner /> : null}
         {discover.data && discover.data.workspaces.length === 0 ? <Empty>{t('ws.discoverEmpty')}</Empty> : null}
         {discover.data?.workspaces.map((w) => (

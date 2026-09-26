@@ -40,7 +40,9 @@ export type GatewayStatus =
   | 'reconnecting' // waiting for the backoff timer
   | 'stopped';
 
-export type GatewayFatal = 'auth' | 'revoked' | 'too-many-sessions';
+/** Unrecoverable gateway states. An auth failure is not one: it backs off and retries, and a real
+ *  logout arrives through platform.auth.onLoggedOut (review H3/N9). */
+export type GatewayFatal = 'revoked' | 'too-many-sessions';
 
 export interface GatewayDeps {
   /** ws(s)://host/gateway?v=1 */

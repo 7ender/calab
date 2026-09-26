@@ -28,6 +28,7 @@ export const ruPeople = {
   'people.menu.localMute': 'Заглушить для меня',
   'people.menu.localMuted': 'выкл.',
   'people.menu.serverMute': 'Выключить микрофон',
+  'people.menu.serverUnmute': 'Включить микрофон',
   'people.menu.disconnect': 'Отключить от комнаты',
   'people.menu.move': 'Переместить в…',
   'people.menu.rename': 'Изменить ник',

@@ -22,6 +22,11 @@ export function serverMute(roomId: string, userId: string): void {
   run(api.voice.muteMember(roomId, userId));
 }
 
+/** Lifts a moderator mute; the member turns the mic on themself. */
+export function serverUnmute(roomId: string, userId: string): void {
+  run(api.voice.unmuteMember(roomId, userId));
+}
+
 export function disconnectFromVoice(roomId: string, userId: string): void {
   run(api.voice.disconnectMember(roomId, userId));
 }

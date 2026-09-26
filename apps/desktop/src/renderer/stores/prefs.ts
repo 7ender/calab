@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { PttBinding } from '../../shared/ipc';
 import type { SoundName } from '../lib/sounds';
+import type { Combo, HotkeyAction } from '../lib/shortcuts';
 
 /**
  * Device-local preferences (localStorage — nothing secret here). Settings that
@@ -41,6 +42,8 @@ export interface Prefs {
   userVolumes: Record<string, number>;
   /** userId → muted for me only («Заглушить для меня»); their <audio> stays attached, muted. */
   mutedUsers: Record<string, true>;
+  /** Rebound in-window shortcuts (lib/shortcuts.ts); missing actions use the defaults. */
+  hotkeys: Partial<Record<HotkeyAction, Combo>>;
   devStats: boolean;
   /** Chosen presence (PresenceStatus value), re-sent after every gateway (re)connect. */
   presence: PresenceStatus;
@@ -70,6 +73,7 @@ const DEFAULTS: Prefs = {
   soundVolume: 0.5,
   userVolumes: {},
   mutedUsers: {},
+  hotkeys: {},
   devStats: false,
   presence: PresenceStatus.ONLINE,
   personalBitrateKbps: null,

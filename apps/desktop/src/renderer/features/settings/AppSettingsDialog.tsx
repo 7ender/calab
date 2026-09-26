@@ -2,7 +2,7 @@ import { AUDIO_BITRATE_OPTIONS_KBPS } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppWindow, Bell, CircleUser, Info, Keyboard, LogOut, Mic, MonitorSmartphone, Palette, Trash2, Upload, Wifi } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -22,6 +22,9 @@ import { usePrefs, type Theme } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useVoice } from '../../stores/voice';
+import { ChangeEmailDialog, ChangePasswordDialog } from './CredentialDialogs';
+import { LicenseCard } from '../legal/Legal';
+import { HotkeyRow } from './HotkeyRow';
 import { PttBinder } from './PttBinder';
 import { deviceLabel, osLabel, updateLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
@@ -108,6 +111,7 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
 function ProfileTab(): ReactNode {
   const me = useSession((s) => s.me);
   const [busyAvatar, setBusyAvatar] = useState(false);
+  const [credDialog, setCredDialog] = useState<'password' | 'email' | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const update = async (init: Parameters<typeof api.me.update>[0]): Promise<void> => {
     const r = await api.me.update(init);
@@ -163,12 +167,29 @@ function ProfileTab(): ReactNode {
         <Row label={t('profile.status')}>
           <CommitInput label={t('profile.status')} value={u.statusText} maxLength={128} placeholder={t('profile.statusPh')} onCommit={(v) => update({ statusText: v })} />
         </Row>
+        {/* Guests have no password of their own (server: 403 FORBIDDEN): no rows to change it. */}
         <Row label={t('profile.email')}>
-          <span className="selectable w-60 truncate text-right text-body text-muted" title={me.email}>
-            {me.email}
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="selectable min-w-0 max-w-60 truncate text-body text-muted" title={me.email}>
+              {me.email}
+            </span>
+            {u.isGuest ? null : (
+              <Button variant="secondary" aria-label={t('cred.changeEmail')} onClick={() => setCredDialog('email')}>
+                {t('cred.change')}
+              </Button>
+            )}
           </span>
         </Row>
+        {u.isGuest ? null : (
+          <Row label={t('cred.password')}>
+            <Button variant="secondary" aria-label={t('cred.changePassword')} onClick={() => setCredDialog('password')}>
+              {t('cred.change')}
+            </Button>
+          </Row>
+        )}
       </Card>
+      {credDialog === 'password' ? <ChangePasswordDialog onClose={() => setCredDialog(null)} /> : null}
+      {credDialog === 'email' ? <ChangeEmailDialog onClose={() => setCredDialog(null)} /> : null}
       <AfkCard />
     </>
   );
@@ -195,10 +216,23 @@ function useDevices(): { inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[] }
  * Mic level meter (UX review #8): 6 px track, radius 3, green level; in voice-activation mode a
  * tick marks the threshold and the level dims while the gate is closed.
  */
+declare global {
+  interface Window {
+    /** Visual tests only (appInfo.visualTest): the level the mic meter shows, dB (default −30). */
+    __calabaMeterLevel?: number;
+  }
+}
+
+/** A fixed, deterministic level in visual tests (the fake mic beeps), instead of masking the meter. */
+const VISUAL_TEST_LEVEL_DB = -30;
+
 export function MicMeter(): ReactNode {
-  const level = useVoice((s) => s.levelDb);
-  const open = useVoice((s) => s.gateOpen);
+  const visualTest = useSession((s) => s.appInfo?.visualTest === true);
+  const liveLevel = useVoice((s) => s.levelDb);
+  const liveOpen = useVoice((s) => s.gateOpen);
   const threshold = usePrefs((s) => s.thresholdDb);
+  const level = visualTest ? (window.__calabaMeterLevel ?? VISUAL_TEST_LEVEL_DB) : liveLevel;
+  const open = visualTest ? level >= threshold : liveOpen;
   const mode = usePrefs((s) => s.micMode);
   const pct = (db: number): number => Math.max(0, Math.min(100, ((db - METER_MIN_DB) / -METER_MIN_DB) * 100));
   return (
@@ -212,7 +246,7 @@ export function MicMeter(): ReactNode {
       className="relative h-3 w-full"
     >
       <div className="absolute inset-x-0 top-[3px] h-1.5 overflow-hidden rounded-[3px] bg-[var(--color-fill-hover)]">
-        <div className={cx('h-full rounded-[3px] bg-ok transition-[width] duration-75', mode === 'voice' && !open ? 'opacity-45' : '')} style={{ width: `${pct(level)}%` }} />
+        <div className={cx('h-full rounded-[3px] bg-ok', !visualTest && 'transition-[width] duration-75', mode === 'voice' && !open ? 'opacity-45' : '')} style={{ width: `${pct(level)}%` }} />
       </div>
       {mode === 'voice' ? <div className="absolute inset-y-0 w-0.5 -translate-x-1/2 rounded-full bg-fg" style={{ left: `${pct(threshold)}%` }} aria-hidden /> : null}
     </div>
@@ -423,11 +457,15 @@ function HotkeysTab(): ReactNode {
         <PttBinder />
       </Card>
       <Card title={t('hotkeys.app')} footer={t('hotkeys.appFooter')}>
-        {shortcutHelp().map((s) => (
-          <Row key={s.label} label={t(s.label)}>
-            <Kbd>{s.keys}</Kbd>
-          </Row>
-        ))}
+        {shortcutHelp().map((s) =>
+          s.action ? (
+            <HotkeyRow key={s.label} action={s.action} kbd={(k) => <Kbd>{k}</Kbd>} />
+          ) : (
+            <Row key={s.label} label={t(s.label)}>
+              <Kbd>{s.keys}</Kbd>
+            </Row>
+          ),
+        )}
       </Card>
     </>
   );
@@ -460,7 +498,7 @@ function NotificationsTab(): ReactNode {
   const p = usePrefs();
   const show = (): void => {
     try {
-      new Notification('Calaba', { body: t('notify.testBody') });
+      new Notification('Calab', { body: t('notify.testBody') });
     } catch (e) {
       toast.fail(e, t('err.ctx.notify'));
     }
@@ -510,8 +548,8 @@ function ConnectionTab(): ReactNode {
   const [ping, setPing] = useState<{ ms: number | null; error: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const check = async (): Promise<void> => {
-    setBusy(true);
+  // Round trip of the lightest authenticated API call (/healthz is not proxied publicly).
+  const measure = useCallback(async (): Promise<void> => {
     const t0 = performance.now();
     try {
       const r = await platform.apiFetch('/api/me');
@@ -520,10 +558,24 @@ function ConnectionTab(): ReactNode {
     } catch (e) {
       setPing({ ms: null, error: errorText(e, t('conn.checkFailed')) });
     }
+  }, []);
+  const check = async (): Promise<void> => {
+    setBusy(true);
+    await measure();
     setBusy(false);
   };
-
   const ready = gateway === 'ready';
+  // «Сервер: Подключено · 23 мс» — measured when the page opens and every 15 s while it is open.
+  useEffect(() => {
+    if (!ready) return;
+    const first = window.setTimeout(() => void measure(), 0);
+    const id = window.setInterval(() => void measure(), 15_000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(id);
+    };
+  }, [ready, measure]);
+
   const path = voicePathLabel(pair);
   const host = serverUrl ? hostOf(serverUrl) : '';
   return (
@@ -531,7 +583,7 @@ function ConnectionTab(): ReactNode {
       <Row label={t('conn.gateway')} hint={host || undefined}>
         <span className={cx('text-body', ready ? 'text-ok' : 'text-warn')}>
           {ready ? t('conn.ok') : t('conn.connecting')}
-          {ready && ping?.ms !== null && ping?.ms !== undefined ? <span className="text-muted"> · {t('conn.apiOk', { ms: ping.ms })}</span> : null}
+          {ready && ping?.ms !== null && ping?.ms !== undefined ? <span className="tabular-nums text-muted" title={t('conn.apiOkHint')}> · {t('conn.apiOk', { ms: ping.ms })}</span> : null}
         </span>
       </Row>
       {ping?.error ? (
@@ -669,7 +721,7 @@ function AboutTab(): ReactNode {
     <>
       <div className="flex flex-col items-center gap-2 py-2 text-center">
         <Logo size={80} />
-        <h3 className="text-title font-semibold">Calaba</h3>
+        <h3 className="text-title font-semibold">Calab</h3>
         <p className="text-body text-muted">{t('about.tagline')}</p>
         <p className="selectable text-caption text-faint">{t('about.version', { v: info?.version ?? '—' })}</p>
       </div>
@@ -685,6 +737,7 @@ function AboutTab(): ReactNode {
           </Row>
         </Card>
       ) : null}
+      <LicenseCard />
       <Card title={t('about.dev')}>
         <Row label={t('app.devStats')} hint={t('app.devStatsHint')}>
           <Toggle label={t('app.devStats')} checked={devStats} onChange={(v) => setPrefs({ devStats: v })} />

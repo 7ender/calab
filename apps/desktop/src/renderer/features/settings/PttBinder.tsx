@@ -17,6 +17,10 @@ export function bindingLabel(b: PttBinding | null, os: string): string {
   return b.label;
 }
 
+/** Capture ids (per click of «Assign»): main / web cancel only the capture with a matching id. */
+let lastCaptureId = 0;
+const nextCaptureId = (): number => ++lastCaptureId;
+
 function isCaps(b: PttBinding | null): boolean {
   if (!b) return false;
   if (b.kind === 'key') return b.code === KEY.CAPS_LOCK || b.code === KEY.CAPS_LOCK_STATE || b.remap === 'caps-f18';
@@ -47,20 +51,24 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
 
   // Closing the binder (Settings / onboarding) with a capture armed must disarm it: otherwise the
   // next key typed anywhere in the OS became the PTT key (review H2).
+  // Cancels by this binder's capture id: another binder on screen (settings search shows the
+  // Voice and Hotkeys tabs together) must not cancel ours on its unmount (review N6).
   const mounted = useRef(true);
   const alive = (): boolean => mounted.current;
+  const captureId = useRef(0);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      platform.ptt.cancelCapture();
+      if (captureId.current) platform.ptt.cancelCapture(captureId.current);
     };
   }, []);
 
   const bind = async (): Promise<void> => {
     setCapturing(true);
     try {
-      const next = await platform.ptt.captureNext();
+      captureId.current = nextCaptureId();
+      const next = await platform.ptt.captureNext(captureId.current);
       if (alive()) setPrefs({ pttBinding: next });
     } catch {
       // cancelled (Esc / closed), superseded or timed out

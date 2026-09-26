@@ -32,6 +32,11 @@ export function can(perms: PermissionBits, name: PermissionName): boolean {
   return has(perms, PERMISSION_BITS[name]);
 }
 
+/** May this author's @everyone / @here in the room notify people (MENTION_EVERYONE)? */
+export function mayMentionAll(role: WorkspaceRole | undefined, userId: string, room: Room | undefined): boolean {
+  return can(roomPerms(role, userId, room), 'MENTION_EVERYONE');
+}
+
 export const isAdminRole = (role: WorkspaceRole | undefined): boolean =>
   role === WorkspaceRole.OWNER || role === WorkspaceRole.ADMIN;
 
@@ -84,5 +89,6 @@ export const ROOM_EDITABLE: PermissionName[] = [
   'STREAM',
   'MUTE_MEMBERS',
   'MOVE_MEMBERS',
+  'MENTION_EVERYONE',
   'MANAGE_ROOM',
 ];

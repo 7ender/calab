@@ -3,7 +3,7 @@ import { workspaceInitials } from './initials';
 
 describe('workspaceInitials', () => {
   it('two words → first letters, uppercase', () => {
-    expect(workspaceInitials('Команда Calaba')).toBe('КC');
+    expect(workspaceInitials('Команда Calab')).toBe('КC');
     expect(workspaceInitials('design team')).toBe('DT');
   });
   it('one word → first two letters, uppercase', () => {

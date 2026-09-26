@@ -35,6 +35,16 @@ describe('message retention (review M10)', () => {
   it('drops a window that browses old history', () => {
     expect(trimWindow(win(10, { hasMoreAfter: true }), 200)).toBeNull();
   });
+  it('never drops pending / failed messages in a history window (review N2)', () => {
+    for (const status of ['pending', 'failed'] as const) {
+      const unsent: ChatMessage = { key: 'local:1', msg: msg(''), status };
+      const r = win(10, { hasMoreAfter: true });
+      const withUnsent = { ...r, items: [...r.items, unsent] };
+      const t = trimWindow(withUnsent, 200);
+      expect(t).not.toBeNull();
+      expect(t?.items).toContain(unsent);
+    }
+  });
   it('decides per room: open → keep; idle → unload unless something is unsent', () => {
     expect(retentionAction({ open: true, hasPending: false, idleMs: IDLE_MS * 10 })).toBe('keep');
     expect(retentionAction({ open: false, hasPending: false, idleMs: 1000 })).toBe('trim');

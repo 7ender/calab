@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { REFRESH_COOLDOWN_MS } from '../shared/refreshGate';
 import { REFRESH_MARGIN_MS, TokenBroker, type RefreshResponse, type Tokens } from './tokenBroker';
 
 const NOW = Date.parse('2026-09-26T12:00:00Z');
@@ -103,5 +104,30 @@ describe('TokenBroker', () => {
     expect(await p).toBe('new');
     expect(t.broker.current?.sessionId).toBe('s2');
     expect(t.loggedOut).toEqual([]);
+  });
+
+  it('a transient failure is reused for a few seconds, not retried by every caller (review N3)', async () => {
+    let now = NOW;
+    const spy = vi.fn(() => Promise.resolve<RefreshResponse>({ status: 503 }));
+    const broker = new TokenBroker({ refresh: spy, persist: () => undefined, onLoggedOut: () => undefined, now: () => now });
+    broker.set('https://x', { accessToken: 'old', accessExpiresAt: NOW - 1, refreshToken: 'r0', sessionId: 's1' });
+    expect(await broker.getAccessToken()).toBeNull();
+    expect(await broker.forceRefresh()).toBeNull();
+    expect(await broker.getAccessToken()).toBeNull();
+    expect(spy).toHaveBeenCalledTimes(1);
+    now += REFRESH_COOLDOWN_MS;
+    spy.mockImplementation(() => Promise.resolve({ status: 200, tokens: tokensJson(1) }));
+    expect(await broker.forceRefresh()).toBe('a1');
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('a new login drops the cached failure at once', async () => {
+    const spy = vi.fn(() => Promise.resolve<RefreshResponse>({ status: 503 }));
+    const broker = new TokenBroker({ refresh: spy, persist: () => undefined, onLoggedOut: () => undefined, now: () => NOW });
+    broker.set('https://x', { accessToken: 'old', accessExpiresAt: NOW - 1, refreshToken: 'r0', sessionId: 's1' });
+    await broker.forceRefresh();
+    broker.set('https://x', { accessToken: 'x', accessExpiresAt: NOW - 1, refreshToken: 'r1', sessionId: 's2' });
+    await broker.forceRefresh();
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });

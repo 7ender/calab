@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { bundledPackages } from './scripts/bundledPackages';
 
 /**
  * Web client build (ADR-0015): the same renderer, VITE_PLATFORM=web (.env.web), no
@@ -30,8 +31,8 @@ function stripMetaCsp(): Plugin {
 const WEB_THEME = '#1c1c1e'; // --color-bg (dark), the app opens dark by default
 function webIcons(): Plugin {
   const manifest = {
-    name: 'Calaba',
-    short_name: 'Calaba',
+    name: 'Calab',
+    short_name: 'Calab',
     start_url: '/',
     display: 'standalone',
     background_color: WEB_THEME,
@@ -77,8 +78,8 @@ export default defineConfig(({ mode }) => {
     envDir: __dirname,
     define: { 'import.meta.env.VITE_APP_VERSION': JSON.stringify(version) },
     resolve: { alias: { '@rnnoise-dist': rnnoiseDist } },
-    worker: { format: 'es' },
-    plugins: [react(), tailwindcss(), stripMetaCsp(), webIcons()],
+    worker: { format: 'es', plugins: () => [bundledPackages(resolve(__dirname, 'build/.gen/bundled-web.json'))] },
+    plugins: [react(), tailwindcss(), stripMetaCsp(), webIcons(), bundledPackages(resolve(__dirname, 'build/.gen/bundled-web.json'))],
     publicDir: resolve(__dirname, 'build/icons/web'),
     build: {
       outDir: resolve(__dirname, 'dist-web'),

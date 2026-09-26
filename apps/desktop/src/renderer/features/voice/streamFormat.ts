@@ -14,11 +14,24 @@ export const PRESET_LABEL: Record<ConcreteScreenSharePreset, MessageKey> = {
 
 export const PRESETS = [ScreenSharePreset.ECONOMY, ScreenSharePreset.H720, ScreenSharePreset.H1080, ScreenSharePreset.ORIGINAL] as ConcreteScreenSharePreset[];
 
-/** Full line for selects in room / workspace settings: «1080p — 1080p 15 fps, ≤ 2.0 Мбит/с». */
-export function presetText(p: ConcreteScreenSharePreset): string {
+/** Resolution in words: «1080p» or «исходное разрешение». */
+function presetRes(p: ConcreteScreenSharePreset): string {
   const v = SCREEN_SHARE_PRESETS[p];
-  const res = v.width ? `${v.height}p` : t('preset.native');
-  return `${t(PRESET_LABEL[p])} — ${res} ${v.fps} fps, ≤ ${(v.maxBitrate / 1e6).toFixed(1)} Мбит/с`;
+  return v.height ? `${v.height}p` : t('preset.native');
+}
+
+/**
+ * Short option label for the 240 px selects in room / workspace settings: «1080p · 15 fps»,
+ * «Экономия · 5 fps» — never repeats the resolution. The rest goes to presetDetail (hint / title).
+ */
+export function presetText(p: ConcreteScreenSharePreset): string {
+  return `${t(PRESET_LABEL[p])} · ${SCREEN_SHARE_PRESETS[p].fps} fps`;
+}
+
+/** The full parameters for a row hint or an option title: «1080p, 15 fps, до 2,0 Мбит/с». */
+export function presetDetail(p: ConcreteScreenSharePreset): string {
+  const v = SCREEN_SHARE_PRESETS[p];
+  return t('preset.detail', { res: presetRes(p), fps: v.fps, mbps: (v.maxBitrate / 1e6).toFixed(1).replace('.', ',') });
 }
 
 /** The picker's summary in words: «Текст • 1080p • 15 fps». */
@@ -33,7 +46,7 @@ export function presetSummary(p: ConcreteScreenSharePreset, hint: ScreenShareCon
 export function presetOptions(max: ConcreteScreenSharePreset): Array<{ preset: ConcreteScreenSharePreset; label: string; disabledReason: string | null }> {
   return PRESETS.map((p) => ({
     preset: p,
-    label: t(PRESET_LABEL[p]),
+    label: p === ScreenSharePreset.ORIGINAL ? t('preset.originalShort') : t(PRESET_LABEL[p]),
     disabledReason: p > max ? t('streamPick.qualityLimited', { max: t(PRESET_LABEL[max]) }) : null,
   }));
 }

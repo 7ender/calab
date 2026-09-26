@@ -12,6 +12,7 @@ import {
   type RegisterArgs,
 } from '../shared/ipc';
 import { INSECURE_SERVER_CODE, serverUrlProblem } from '../shared/serverUrl';
+import { AUTH_TIMEOUT_MS } from '../shared/refreshGate';
 import { getSettings, normalizeServerUrl, updateSettings } from './settings';
 import { TokenBroker, toTokens, type Tokens, type TokensJson } from './tokenBroker';
 
@@ -98,6 +99,8 @@ function networkError(err: unknown): ApiErrorJson {
 async function postJson(base: string, path: string, body: unknown, access?: string): Promise<Response> {
   return net.fetch(`${base}${path}`, {
     method: 'POST',
+    // Bounded: a black-holed refresh would otherwise hang every API call behind the broker (review N3).
+    signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/json',
       ...(access ? { Authorization: `Bearer ${access}` } : {}),
@@ -109,7 +112,10 @@ async function postJson(base: string, path: string, body: unknown, access?: stri
 async function fetchMe(): Promise<unknown> {
   const t = await getAccessToken();
   if (!t) throw new Error('not authenticated');
-  const res = await net.fetch(`${broker.serverUrl}/api/me`, { headers: { Authorization: `Bearer ${t}` } });
+  const res = await net.fetch(`${broker.serverUrl}/api/me`, {
+    headers: { Authorization: `Bearer ${t}` },
+    signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
+  });
   if (!res.ok) throw new Error(`GET /api/me: ${res.status}`);
   const body = (await res.json()) as { me: unknown };
   return body.me;

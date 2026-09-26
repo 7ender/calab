@@ -101,7 +101,7 @@ export function createMainWindow(): BrowserWindow {
     ...(state ? { x: state.bounds.x, y: state.bounds.y } : {}),
     minWidth: 960,
     minHeight: 600,
-    title: 'Calaba',
+    title: 'Calab',
     // macOS: native sidebar material (docs/08) — the renderer keeps content surfaces opaque.
     // CALABA_VISUAL_TEST=1: opaque window so screenshots don't depend on the desktop behind it.
     ...(process.platform === 'darwin' && process.env['CALABA_VISUAL_TEST'] !== '1'
@@ -141,7 +141,7 @@ export function createMainWindow(): BrowserWindow {
           minWidth: 320,
           minHeight: 200,
           backgroundColor: '#000000',
-          title: 'Calaba — стрим',
+          title: 'Calab — стрим',
           autoHideMenuBar: true,
           webPreferences: { ...webPreferences },
         },

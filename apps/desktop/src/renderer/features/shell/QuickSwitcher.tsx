@@ -139,7 +139,7 @@ export function QuickSwitcher({ onClose }: { onClose: () => void }): ReactNode {
         <DialogP.Content aria-modal="true"
           aria-label={t('search.title')}
           data-layout-anchor="top" // Spotlight-like: anchored near the top, not centred
-          className="mat-popover dense anim-in fixed left-1/2 top-[14vh] z-[var(--z-modal)] flex max-h-[70vh] w-[min(600px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] focus:outline-none"
+          className="mat-sheet anim-in fixed left-1/2 top-[14vh] z-[var(--z-modal)] flex max-h-[70vh] w-[min(600px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-[var(--radius-panel)] focus:outline-none"
         >
           <DialogP.Title className="sr-only">{t('search.title')}</DialogP.Title>
           <DialogP.Description className="sr-only">{t('search.hint')}</DialogP.Description>

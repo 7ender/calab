@@ -1,4 +1,5 @@
 import type { LogoutReason } from '../shared/ipc';
+import { refreshGate } from '../shared/refreshGate';
 
 /**
  * Token state machine of the desktop token broker (auth.ts), free of Electron so it is
@@ -12,7 +13,9 @@ import type { LogoutReason } from '../shared/ipc';
  *   retry can never succeed — and a retry after the 30 s grace window counts as token reuse.
  *   Treated like 401 (review L1; the web client's 409 retry is correct there: cookie mode);
  * - network error / 5xx / 429 → transient: the session is kept, `null` is returned and the
- *   caller retries later. Never a logout (review H3).
+ *   caller retries later. Never a logout (review H3). A transient failure is reused for a few
+ *   seconds (shared/refreshGate.ts) so an outage does not turn every API call into a refresh POST
+ *   (review N3); the request itself is bounded by AUTH_TIMEOUT_MS in auth.ts.
  *
  * A refresh racing a logout / login / revoke never resurrects or overwrites the newer state.
  */
@@ -62,7 +65,11 @@ export function toTokens(t: TokensJson): Tokens {
 export class TokenBroker {
   private tokens: Tokens | null = null;
   private server = '';
-  private refreshing: Promise<Tokens | null> | null = null;
+  private readonly gate = refreshGate(() => this.doRefresh(), {
+    now: () => this.now(),
+    // null with the session still there = transient (offline / 5xx); a cleared session is not cached.
+    isTransient: () => this.tokens !== null,
+  });
 
   constructor(private readonly deps: BrokerDeps) {}
 
@@ -86,11 +93,13 @@ export class TokenBroker {
   set(serverUrl: string, tokens: Tokens, persist = true): void {
     this.server = serverUrl;
     this.tokens = tokens;
+    this.gate.reset();
     if (persist) this.deps.persist(this.server, tokens);
   }
 
   clear(reason: LogoutReason, notify: boolean): void {
     this.tokens = null;
+    this.gate.reset();
     this.deps.persist(this.server, null);
     if (notify) this.deps.onLoggedOut(reason);
   }
@@ -115,10 +124,7 @@ export class TokenBroker {
   }
 
   refreshOnce(): Promise<Tokens | null> {
-    this.refreshing ??= this.doRefresh().finally(() => {
-      this.refreshing = null;
-    });
-    return this.refreshing;
+    return this.gate.run();
   }
 
   private async doRefresh(): Promise<Tokens | null> {

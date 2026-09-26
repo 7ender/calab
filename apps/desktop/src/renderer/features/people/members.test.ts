@@ -73,6 +73,16 @@ describe('memberActions', () => {
     expect(a.moveTargets.map((r) => r.id)).toEqual(['meeting']);
   });
 
+  it('server mute: a moderator can lift it; the user\'s own mute is not a moderator mute', () => {
+    const muted = { ...voice('t', 'call'), serverMuted: true };
+    const a = memberActions(base({ targetVoice: muted, myVoiceRoomId: 'call' }));
+    expect(a).toMatchObject({ alreadyMuted: true, serverUnmute: true });
+    const self = memberActions(base({ targetVoice: { ...voice('t', 'call'), muted: true }, myVoiceRoomId: 'call' }));
+    expect(self).toMatchObject({ alreadyMuted: false, serverUnmute: false, serverMute: true });
+    const member = memberActions(base({ myRole: WorkspaceRole.MEMBER, targetVoice: muted, myVoiceRoomId: 'call' }));
+    expect(member.serverUnmute).toBe(false);
+  });
+
   it('member: only volume in the same room; nothing when not in voice', () => {
     const a = memberActions(base({ myRole: WorkspaceRole.MEMBER, targetVoice: voice('t', 'call'), myVoiceRoomId: 'call' }));
     expect(a).toMatchObject({ volume: true, serverMute: false, disconnect: false, rename: false, kick: false });
@@ -113,5 +123,15 @@ describe('memberActions', () => {
     );
     expect(a.moveTargets.map((r) => r.id)).toEqual(['meeting']);
     expect(a.serverMute).toBe(false);
+  });
+
+  it('room MUTE_MEMBERS grant: disconnect only; server mute/unmute need it workspace-wide', () => {
+    const grant = [
+      create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: 'me', allow: PERMISSION_BITS.MUTE_MEMBERS, deny: 0n }),
+    ];
+    const a = memberActions(base({ myRole: WorkspaceRole.MEMBER, rooms: [room('call', RoomType.VOICE, grant)], targetVoice: { ...voice('t', 'call'), serverMuted: true } }));
+    expect(a.disconnect).toBe(true);
+    expect(a.serverMute).toBe(false);
+    expect(a.serverUnmute).toBe(false);
   });
 });

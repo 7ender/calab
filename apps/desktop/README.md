@@ -1,4 +1,4 @@
-# @calaba/desktop — Calaba desktop client (Electron)
+# @calaba/desktop — Calab desktop client (Electron)
 
 Voice-first team messenger: workspaces → text/voice rooms → chat, voice (LiveKit) and screen sharing. Architecture and rules: `docs/01-architecture.md`, `docs/02-media.md` (the echo rules are mandatory), `docs/04-data-model.md`, `docs/05-realtime-protocol.md`, ADR-0001/0004/0005/0012.
 
@@ -100,4 +100,4 @@ Business logic lives in `services/` and `stores/`; components only render and ca
 
 ## Packaging and signing
 
-`electron-builder.yml`: `mac.identity: null` (unsigned until the Developer ID arrives), hardened runtime and entitlements (`build/entitlements.mac.plist`) are ready. `protocols: calaba://` is registered in Info.plist. The icon is the default Electron one (artwork TBD).
+`electron-builder.yml`: `mac.identity: null` (unsigned until the Developer ID arrives), hardened runtime and entitlements (`build/entitlements.mac.plist`) are ready. `protocols: calab://` (+ the pre-rename alias `calaba://`) is registered in Info.plist. The icon is the default Electron one (artwork TBD).

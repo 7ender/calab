@@ -126,8 +126,8 @@ describe('mentionsMe', () => {
 
   it('never for my own messages, guests cannot mention everyone, code does not count', () => {
     expect(mentionsMe({ content: `@${ME} @here`, authorId: ME }, ME)).toBe(false);
-    expect(mentionsMe({ content: '@here', authorId: OTHER }, ME, true)).toBe(false);
-    expect(mentionsMe({ content: `@${ME}`, authorId: OTHER }, ME, true)).toBe(true);
+    expect(mentionsMe({ content: '@here', authorId: OTHER }, ME, false)).toBe(false); // no MENTION_EVERYONE
+    expect(mentionsMe({ content: `@${ME}`, authorId: OTHER }, ME, false)).toBe(true);
     expect(mentionsMe({ content: `\`@${ME}\` \`\`\`\n@here\n\`\`\``, authorId: OTHER }, ME)).toBe(false);
     expect(mentionsMe({ content: `mail@${ME}`, authorId: OTHER }, ME)).toBe(false);
   });

@@ -13,13 +13,15 @@ const split = (s: string): string[] => s.trim().split(/\s+/u);
 
 export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🔥', '🎉', '😮', '😢', '🙏'];
 
+// 🫡 (U+1FAE1) is left out: Chromium on macOS draws its Apple Color Emoji glyph cut off at the
+// right edge (review 2 «emoji picker right column clipped»), whatever box it sits in.
 export const EMOJI_GROUPS: EmojiGroup[] = [
   {
     id: 'smileys',
     label: 'Смайлы',
     icon: '😀',
     list: split(`😀 😃 😄 😁 😆 😅 😂 🤣 🥲 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🥸 🤩 🥳 😏 😒
-      😞 😔 😟 😕 🙁 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦
+      😞 😔 😟 😕 🙁 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦
       😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🥴 🤢 🤮 🤧 😷 🤒 🤕 🤑 🤠 😈 👿 👻 💀 ☠️ 👽 🤖 💩 😺 😸 😹 😻 😼 😽 🙀 😿 😾`),
   },
   {
@@ -115,7 +117,6 @@ const KEYWORDS: Record<string, string> = {
   '👋': 'привет пока hello bye',
   '🙌': 'ура hooray',
   '👀': 'глаза смотрю look',
-  '🫡': 'есть так точно салют',
   '🤷': 'не знаю пожимаю',
   '🤦': 'фейспалм facepalm',
   '❤️': 'сердце любовь love heart',

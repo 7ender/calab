@@ -48,14 +48,15 @@ function RailItem({ id }: { id: string }): ReactNode {
   const byId = useRooms((s) => s.byId);
   const readState = useRooms((s) => s.readState);
   const lastMessage = useRooms((s) => s.lastMessage);
+  const unreadMap = useRooms((s) => s.unread);
   const mentionMap = useRooms((s) => s.mentions);
   const { unread, mentions } = useMemo(() => {
     const list = Object.values(byId).filter((r) => r.workspaceId === id);
     return {
-      unread: list.some((r) => isUnread(r.id, { readState, lastMessage })),
+      unread: list.some((r) => isUnread(r.id, { readState, lastMessage, unread: unreadMap })),
       mentions: list.reduce((n, r) => n + (mentionMap[r.id] ?? 0), 0),
     };
-  }, [byId, readState, lastMessage, mentionMap, id]);
+  }, [byId, readState, lastMessage, unreadMap, mentionMap, id]);
   if (!w) return null;
 
   const label = [w.name, mentions > 0 ? t('shell.unreadMentions', { n: mentions }) : unread ? t('ws.unread') : '', inVoice ? t('shell.inVoice') : '']

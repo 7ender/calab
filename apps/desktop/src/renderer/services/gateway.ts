@@ -1,5 +1,5 @@
 import { PresenceStatus } from '@calaba/protocol';
-import { GatewayClient, gatewayUrl } from '../lib/gateway/client';
+import { GatewayClient, gatewayUrl, type GatewayFatal } from '../lib/gateway/client';
 import { log } from '../lib/log';
 import { useSession } from '../stores/session';
 import { effectivePresence } from './afk';
@@ -10,7 +10,7 @@ let client: GatewayClient | null = null;
 /** Rooms we want typing/read-state for (SUBSCRIBE replaces the set; resent after READY/RESUMED). */
 let subscribed: string[] = [];
 
-export function startGateway(onFatal: (kind: 'auth' | 'revoked' | 'too-many-sessions') => void): void {
+export function startGateway(onFatal: (kind: GatewayFatal) => void): void {
   stopGateway();
   const s = useSession.getState();
   const info = s.appInfo;

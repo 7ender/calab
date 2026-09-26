@@ -5,6 +5,7 @@ import type {
   CaptureSelection,
   CaptureSource,
   DownloadArgs,
+  LegalTexts,
   DownloadProgress,
   IpcResult,
   LoginArgs,
@@ -53,6 +54,8 @@ export interface CalabaApi {
     onUpdateStatus(cb: (s: UpdateStatus) => void): Unsubscribe;
     log(level: 'info' | 'warn' | 'error', message: string): void;
     openExternal(url: string): Promise<void>;
+    /** LICENSE, NOTICE and THIRD-PARTY-NOTICES.txt texts («О программе»). */
+    legal(): Promise<LegalTexts>;
     /** Bounce the dock / flash the taskbar when the window is not focused. */
     attention(): void;
     setTheme(theme: 'dark' | 'light' | 'system'): void;
@@ -78,11 +81,11 @@ export interface CalabaApi {
     setBinding(binding: PttBinding | null): Promise<PttStatus>;
     /**
      * Resolves with the next key/mouse button pressed anywhere (global). Rejects on Esc,
-     * `cancelCapture()`, a newer capture or after ~15 s.
+     * `cancelCapture(id)`, a newer capture or after ~15 s. `id` identifies the caller (binder).
      */
-    captureNext(): Promise<PttBinding>;
-    /** Disarms a pending `captureNext` (the binder UI closed). */
-    cancelCapture(): void;
+    captureNext(id: number): Promise<PttBinding>;
+    /** Disarms a pending `captureNext` started with the same `id` (the binder UI closed). */
+    cancelCapture(id: number): void;
     status(): Promise<PttStatus>;
     onEvent(cb: (ev: PttEvent) => void): Unsubscribe;
   };

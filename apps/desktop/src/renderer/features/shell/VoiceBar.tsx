@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Activity, AudioLines, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, PhoneOff, Settings, Signal, SignalMedium, SignalLow, Wifi, WifiOff } from 'lucide-react';
+import { Activity, AudioLines, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, PhoneOff, Settings, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import { Button, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -17,7 +17,22 @@ import { viewersText } from '../voice/streamFormat';
 import { CallTimer } from './Sidebar';
 
 const Q_COLOR: Record<LinkQuality, string> = { good: 'text-ok', fair: 'text-warn', poor: 'text-danger', unknown: 'text-muted' };
-const Q_ICON: Record<LinkQuality, typeof Signal> = { good: Signal, fair: SignalMedium, poor: SignalLow, unknown: Signal };
+/** Lit bars out of 4 per quality (reconnecting reads as «poor»: 1 bar). */
+const Q_BARS: Record<LinkQuality, number> = { good: 4, fair: 2, poor: 1, unknown: 4 };
+
+/**
+ * Signal bars (18 px): always all four, the lit ones in the text colour, the rest in the neutral
+ * fill — one lit bar alone read like a stray pixel (review 2, «Reconnecting»).
+ */
+function SignalBars({ lit, className }: { lit: number; className?: string }): ReactNode {
+  return (
+    <svg viewBox="0 0 18 18" className={cx('size-[18px]', className)} aria-hidden>
+      {[5, 8, 11, 14].map((h, i) => (
+        <rect key={h} x={2 + i * 4} y={16 - h} width={2.5} height={h} rx={1} fill={i < lit ? 'currentColor' : 'var(--color-fill-hover)'} />
+      ))}
+    </svg>
+  );
+}
 const Q_LABEL: Record<LinkQuality, 'quality.good' | 'quality.fair' | 'quality.poor' | 'quality.unknown'> = {
   good: 'quality.good',
   fair: 'quality.fair',
@@ -32,7 +47,6 @@ function QualityButton(): ReactNode {
   const rtt = useVoice((s) => s.rttMs);
   const loss = useVoice((s) => s.lossPct);
   const q: LinkQuality = phase === 'connected' ? quality : 'poor';
-  const Icon = Q_ICON[q];
   const open = useUi((s) => s.openDialog);
   if (phase === 'connecting') {
     // «подключение…» (docs/09 #15): a spinner where the signal bars will be.
@@ -50,7 +64,7 @@ function QualityButton(): ReactNode {
           aria-label={`${t('quality.title')}: ${t(Q_LABEL[q])}`}
           className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] transition-colors duration-[var(--motion-fast)] hover:bg-hover"
         >
-          <Icon className={cx('size-[18px]', phase === 'connected' ? Q_COLOR[q] : 'text-warn')} strokeWidth={2} aria-hidden />
+          <SignalBars lit={Q_BARS[q]} className={phase === 'connected' ? Q_COLOR[q] : 'text-warn'} />
         </button>
       </Popover.Trigger>
       <Popover.Portal>

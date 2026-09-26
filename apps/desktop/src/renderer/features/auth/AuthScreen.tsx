@@ -13,6 +13,7 @@ import { platform } from '../../platform';
 import { useRoomLink } from '../people/roomLink';
 import { INSECURE_SERVER_CODE } from '../../../shared/serverUrl';
 import { GuestScreen } from './GuestScreen';
+import { AuthLegalFooter } from '../legal/Legal';
 
 function authError(e: ApiErrorJson): { text: string; field?: string } {
   switch (e.code) {
@@ -86,7 +87,7 @@ function LoginScreen(): ReactNode {
       <form onSubmit={(e) => void submit(e)} className="no-drag my-auto flex w-full max-w-[380px] flex-col items-stretch">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo size={72} className="mb-3" />
-          <h1 className="text-large font-semibold">Calaba</h1>
+          <h1 className="text-large font-semibold">Calab</h1>
           <p className="mt-1 text-body text-muted">{mode === 'login' ? t('auth.welcomeSub') : t('auth.createSub')}</p>
         </div>
         <div className="mat-popover flex flex-col gap-4 rounded-[var(--radius-panel)] p-6">
@@ -164,6 +165,8 @@ function LoginScreen(): ReactNode {
           ) : null}
         </div>
       </form>
+      {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}
+      <AuthLegalFooter />
     </div>
   );
 }

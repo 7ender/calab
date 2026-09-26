@@ -1,4 +1,6 @@
 import {
+  ChangeEmailRequestSchema,
+  ChangePasswordRequestSchema,
   CreateCategoryRequestSchema,
   CreateCategoryResponseSchema,
   CreateInviteRequestSchema,
@@ -66,6 +68,11 @@ export const api = {
       call('PATCH', '/api/me', UpdateMeResponseSchema, body(UpdateMeRequestSchema, init)),
     sessions: () => call('GET', '/api/me/sessions', ListSessionsResponseSchema),
     revokeSession: (id: string) => callEmpty('DELETE', `/api/me/sessions/${id}`),
+    /** 204; every other session is revoked, this one stays. 403 INVALID_CREDENTIALS = wrong current password. */
+    changePassword: (init: MessageInitShape<typeof ChangePasswordRequestSchema>) =>
+      callEmpty('PATCH', '/api/me/password', body(ChangePasswordRequestSchema, init)),
+    changeEmail: (init: MessageInitShape<typeof ChangeEmailRequestSchema>) =>
+      call('PATCH', '/api/me/email', UpdateMeResponseSchema, body(ChangeEmailRequestSchema, init)),
     /** Custom status (text + emoji, optional expiry); empty text and emoji clear it. */
     setStatus: (init: MessageInitShape<typeof UpdateStatusRequestSchema>) =>
       call('PATCH', '/api/me/status', UpdateMeResponseSchema, body(UpdateStatusRequestSchema, init)),
@@ -170,6 +177,8 @@ export const api = {
     updateSelf: (init: MessageInitShape<typeof UpdateVoiceSelfRequestSchema>) =>
       callEmpty('PATCH', '/api/voice/self', body(UpdateVoiceSelfRequestSchema, init)),
     muteMember: (roomId: string, userId: string) => callEmpty('POST', `/api/rooms/${roomId}/voice/${userId}/mute`),
+    /** Lifts a moderator mute (MUTE_MEMBERS); the user unmutes themself afterwards. */
+    unmuteMember: (roomId: string, userId: string) => callEmpty('POST', `/api/rooms/${roomId}/voice/${userId}/unmute`),
     disconnectMember: (roomId: string, userId: string) =>
       callEmpty('POST', `/api/rooms/${roomId}/voice/${userId}/disconnect`),
     /** MOVE_MEMBERS in both rooms; 409 ROOM_FULL when the target is full (admins bypass). */

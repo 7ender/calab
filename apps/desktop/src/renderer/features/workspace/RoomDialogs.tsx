@@ -23,7 +23,7 @@ import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
-import { PRESETS, presetText } from '../voice/StreamPicker';
+import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { CommitInput } from '../settings/AppSettingsDialog';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { UserLimitCard } from '../shell/UserLimitCard';
@@ -235,11 +235,21 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
           ))}
         </Select>
       </Row>
-      <Row label={t('media.maxPreset')}>
+      {/* Short options (240 px); the parameters and the inherited value go to the hint and titles. */}
+      <Row
+        label={t('media.maxPreset')}
+        hint={
+          ov?.maxStreamPreset
+            ? presetDetail(ov.maxStreamPreset)
+            : t('media.inheritHint', { v: presetDetail(wsDefaults?.maxStreamPreset || 3) })
+        }
+      >
         <Select aria-label={t('media.maxPreset')} className="w-60" value={ov?.maxStreamPreset ?? ''} onChange={(e) => apply({ preset: num(e.target.value) })}>
-          <option value="">{def(presetText(wsDefaults?.maxStreamPreset || 3))}</option>
+          <option value="" title={presetDetail(wsDefaults?.maxStreamPreset || 3)}>
+            {t('media.inherit')}
+          </option>
           {PRESETS.map((p) => (
-            <option key={p} value={p}>
+            <option key={p} value={p} title={presetDetail(p)}>
               {presetText(p)}
             </option>
           ))}
@@ -274,6 +284,7 @@ const PERM_LABEL: Record<PermissionName, MessageKey> = {
   ADMINISTRATOR: 'perm.ADMINISTRATOR',
   MOVE_MEMBERS: 'perm.MOVE_MEMBERS',
   MANAGE_NICKNAMES: 'perm.MANAGE_NICKNAMES',
+  MENTION_EVERYONE: 'perm.MENTION_EVERYONE',
 };
 
 const ROLE_TARGETS: Array<{ id: string; key: MessageKey }> = [

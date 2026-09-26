@@ -4,3 +4,5 @@ dist/
 test-results/
 playwright-report/
 dist-web/
+build/.gen/
+build/license_en.txt
