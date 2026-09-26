@@ -91,8 +91,9 @@ jobs:
       - name: e2e:visual (${{ steps.mode.outputs.mode }})
         env:
           SCRIPT: ${{ steps.mode.outputs.mode == 'baseline' && 'e2e:visual:update' || 'e2e:visual' }}
-          # The owner's machine runs dark-1440 + -g only (README «Parallel visual runs»); nightly
-          # CI is the one place that still covers the full matrix (dark/light × 960/1440 + misc).
+          # The owner's machine runs only the ~25 key screens in dark-960 (README «Parallel visual
+          # runs»); nightly CI is the one place that covers the full matrix: every screen, dark/light
+          # × 960/1440, the focus walk and all web screens. Without this the run would be the local set.
           CALABA_VISUAL_ALL: '1'
         run: xvfb-run -a --server-args="-screen 0 1920x1080x24" pnpm -F @calaba/desktop run "$SCRIPT"
 

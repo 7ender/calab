@@ -5,17 +5,64 @@ import { checkpoint, settle } from './harness';
 import { startPublisher } from './publisher';
 
 /**
- * Visual regression of every main screen (docs/08, «Тесты дизайна»): dark + light, 960 and
- * 1440 px wide — one Playwright project per configuration (playwright.visual.config.ts). Every
- * test is one screen, named like its snapshot, and starts from a clean seeded state (app.ts):
+ * Visual regression of the main screens (docs/08, «Тесты дизайна»): one Playwright project per
+ * configuration (playwright.visual.config.ts). Every test is one screen, named like its snapshot,
+ * and starts from a clean seeded state (app.ts):
  *
- *   pnpm -F @calaba/desktop e2e:visual -g "voice-camera-grid"                 # all 4 configs
- *   pnpm -F @calaba/desktop e2e:visual -g "voice-camera-grid" --project dark-1440
+ *   pnpm -F @calaba/desktop e2e:visual -g "voice-camera-grid"                 # dark-960 (local)
+ *   CALABA_VISUAL_ALL=1 pnpm -F @calaba/desktop e2e:visual -g "voice-camera-grid" --project light-1440
+ *
+ * Locally (owner, 26.09) only the KEY screens below run, in dark-960 only; every other screen
+ * (each settings tab, every menu variant, toasts…) and the other configurations run only with
+ * CALABA_VISUAL_ALL=1 — the nightly CI on Linux. Their code stays here, skipped locally.
  *
  * Each checkpoint = screenshot (≤ 0.2 % differing pixels) + layout invariants + axe (0
- * serious/critical). A few tests take more than one snapshot of the same screen (numbered
- * settings tabs are separate tests). Update: `pnpm e2e:visual:update -g "<screen>"`.
+ * serious/critical). Update: `pnpm e2e:visual:update -g "<screen>"`.
  */
+
+/** The full matrix: every screen, every configuration (nightly CI). */
+const ALL = process.env['CALABA_VISUAL_ALL'] === '1';
+
+/**
+ * The local set (~25): one shot per screen family, no per-menu-item or per-tab shots. Settings:
+ * 2 = «Голос и устройства», 3 = «Горячие клавиши», 8 = «Приложение» (language).
+ */
+const KEY = new Set([
+  'auth-login',
+  'onboarding-mic',
+  'onboarding-screen',
+  'onboarding-done',
+  'onboarding-layout',
+  'welcome',
+  'main-chat',
+  'chat-hover-actions',
+  'chat-context-menu',
+  'dm-list',
+  'dm-chat',
+  'voice-room-status',
+  'voice-room-speaking',
+  'voice-room-pending',
+  'voice-stream',
+  'voice-pip',
+  'voice-camera-grid',
+  'voice-camera-pip',
+  'voice-noise-popover',
+  'main-members-toggled',
+  'members-menu',
+  'workspace-menu',
+  'quick-switcher',
+  'settings-2',
+  'settings-3',
+  'settings-8',
+  'room-settings-1',
+  'i18n-en-main-chat',
+]);
+
+// Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
+// eslint-disable-next-line no-empty-pattern
+test.beforeEach(({}, info) => {
+  test.skip(!ALL && !KEY.has(info.title), 'full matrix only (CALABA_VISUAL_ALL=1, nightly CI)');
+});
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -317,11 +364,12 @@ test('main-chat', async ({ open, win, mock, shot }) => {
 // ---------------------------------------------------------------- localization (ADR-0022)
 
 /**
- * The baselines are Russian; English gets one shot per main screen (`-g "i18n-en"`), dark 1440
- * only — overflow in other locales is caught by the string-length unit test.
+ * The baselines are Russian; English gets one shot per main screen (`-g "i18n-en"`), dark 960
+ * only (the narrowest window, where longer strings would break first) — overflow in other
+ * locales is caught by the string-length unit test.
  */
 test('i18n-en-main-chat', async ({ open, win, mock, shot, theme, size: viewport }) => {
-  test.skip(theme !== 'dark' || viewport.width !== 1440, 'English is checked in dark 1440 only');
+  test.skip(theme !== 'dark' || viewport.width !== 960, 'English is checked in dark 960 only');
   await open({ prefs: { locale: 'en' } });
   await expect(win.locator('html')).toHaveAttribute('lang', 'en');
   await mainWindow(win, mock);
