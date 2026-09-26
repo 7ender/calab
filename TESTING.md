@@ -396,6 +396,7 @@ infra/docker/sync.sh api        # только api (пересборка обр�
 ssh $H "$DC ps --format '{{.Name}} {{.Status}}'"
 ssh $H "$DC logs api | grep -E 'migration applied|listening'"
 curl -s $A/healthz; ssh $H 'curl -s 127.0.0.1:3000/readyz'
+curl -s $A/api/version   # {"version":"0.0.1","commit":"<sha задеплоенного коммита>",…}; commit=unknown — деплой без sync.sh
 for p in /readyz /metrics; do curl -s -o /dev/null -w "$p %{http_code}\n" $A$p; done   # оба 404 снаружи
 ssh $H 'docker run --rm -v calaba_files_data:/d busybox:1.37 stat -c "%u:%g %a" /d'
 ```

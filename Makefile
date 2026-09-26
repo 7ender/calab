@@ -1,4 +1,4 @@
-.PHONY: gen dev-server test test-integration lint
+.PHONY: gen dev-server test test-integration lint third-party-notices
 
 TEST_DATABASE_URL ?= postgres://calaba:calaba@localhost:55432/calaba
 TEST_REDIS_URL    ?= redis://localhost:56379/15
@@ -30,3 +30,9 @@ lint:
 	cd apps/server && go vet ./... && go vet -tags integration ./... && \
 		golangci-lint run --config ../../.golangci.yml --build-tags integration ./...
 	pnpm -r lint
+
+# License texts of the Go modules linked into the server (copied into the image). Fails on
+# GPL / LGPL / AGPL or unrecognised licenses. Re-run after dependency changes and commit.
+third-party-notices:
+	cd apps/server && go run ./tools/notices > THIRD-PARTY-NOTICES.txt.tmp && \
+		mv THIRD-PARTY-NOTICES.txt.tmp THIRD-PARTY-NOTICES.txt

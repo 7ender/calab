@@ -10,6 +10,12 @@
 # Releases: if apps/desktop/dist-release exists locally, it is pushed to $DIR/releases
 # (/download/* and the electron-updater feed) WITHOUT --delete: old versions stay downloadable.
 # SKIP_WEB=1 / SKIP_RELEASES=1 skip those steps.
+# SYNC_REF=<git ref>: deploy that commit (clean `git archive` export) instead of the working tree —
+# use it whenever others have uncommitted work in the tree. Web/release artifacts (not in git) still
+# come from the working tree.
+# Build info for GET /api/version: CALABA_COMMIT (short sha of SYNC_REF, or HEAD[-dirty] for the working
+# tree) and CALABA_VERSION (VERSION env, else apps/desktop/package.json) are passed to deploy.sh → compose
+# build args.
 set -euo pipefail
 
 HOST="${STAND_HOST:-root@141.105.69.177}"
@@ -18,6 +24,21 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SSH=(ssh -o BatchMode=yes)
 
 "${SSH[@]}" "$HOST" "mkdir -p '$DIR'"
+
+# Source tree to deploy: the working tree, or a clean export of SYNC_REF.
+SRC_TREE="$ROOT"
+if [[ -n "${SYNC_REF:-}" ]]; then
+  SRC_TREE="$(mktemp -d "${TMPDIR:-/tmp}/calaba-sync.XXXXXX")"
+  trap 'rm -rf "$SRC_TREE"' EXIT
+  git -C "$ROOT" archive "$SYNC_REF" | tar -x -C "$SRC_TREE"
+  CALABA_COMMIT="$(git -C "$ROOT" rev-parse --short "$SYNC_REF")"
+  echo "sync: $SYNC_REF ($CALABA_COMMIT), clean export"
+else
+  CALABA_COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)"
+  [[ -n "$(git -C "$ROOT" status --porcelain -- apps/server infra proto packages 2>/dev/null)" ]] && CALABA_COMMIT+="-dirty"
+  echo "sync: working tree ($CALABA_COMMIT)"
+fi
+CALABA_VERSION="${VERSION:-$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$SRC_TREE/apps/desktop/package.json" | head -1)}"
 
 # --delete keeps the host tree identical to ours; excluded paths (secrets, rendered
 # config, build outputs) are protected from deletion. First matching rule wins.
@@ -30,7 +51,7 @@ rsync -az --no-owner --no-group --delete -e "ssh -o BatchMode=yes" \
   --include '.env.example' --exclude '.env' --exclude '.env.*' \
   --exclude 'infra/docker/livekit/livekit.gen.yaml' \
   --exclude 'infra/docker/data/' \
-  "$ROOT/" "$HOST:$DIR/"
+  "$SRC_TREE/" "$HOST:$DIR/"
 
 # Web static: new hashed assets land first, index.html and deletions last (--delay-updates,
 # --delete-after), so a browser never gets an index.html pointing at missing assets.
@@ -64,4 +85,4 @@ fi
 
 # Service names are passed through to deploy.sh -> docker compose up (shell-quoted for ssh).
 args=""; (( $# )) && args="$(printf '%q ' "$@")"
-"${SSH[@]}" "$HOST" "$DIR/infra/docker/deploy.sh $args"
+"${SSH[@]}" "$HOST" "CALABA_COMMIT=$(printf %q "$CALABA_COMMIT") CALABA_VERSION=$(printf %q "$CALABA_VERSION") $DIR/infra/docker/deploy.sh $args"

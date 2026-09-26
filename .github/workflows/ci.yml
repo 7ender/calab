@@ -72,6 +72,10 @@ jobs:
           version: v2.14.0
           working-directory: apps/server
           args: --config ../../.golangci.yml --build-tags integration
+      # THIRD-PARTY-NOTICES.txt ships in the image; it must match go.mod (fails on GPL/LGPL/AGPL too)
+      - name: third-party notices are up to date
+        working-directory: .
+        run: make third-party-notices && git diff --exit-code
 
   govulncheck:
     name: govulncheck
