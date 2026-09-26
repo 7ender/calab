@@ -77,7 +77,7 @@ function QualityButton({ phase }: { phase: VoicePhase }): ReactNode {
   if (phase === 'connecting') {
     // «подключение…» (docs/09 #15): a spinner where the signal bars will be.
     return (
-      <span className="grid size-10 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-fill)]" role="status" aria-label={t('voice.connecting')}>
+      <span className="grid size-9 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-fill)]" role="status" aria-label={t('voice.connecting')}>
         <Loader2 className="size-5 animate-spin text-muted" aria-hidden />
       </span>
     );
@@ -88,9 +88,9 @@ function QualityButton({ phase }: { phase: VoicePhase }): ReactNode {
         <button
           type="button"
           aria-label={`${t('quality.title')}: ${t(Q_LABEL[q])}`}
-          className="grid size-10 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-fill)] transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)]"
+          className="grid size-9 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-fill)] transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)]"
         >
-          <SignalBars lit={Q_BARS[q]} className={cx('size-[22px]', phase === 'connected' ? Q_COLOR[q] : 'text-warn')} />
+          <SignalBars lit={Q_BARS[q]} className={cx('size-5', phase === 'connected' ? Q_COLOR[q] : 'text-warn')} />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
@@ -362,13 +362,13 @@ export function VoiceBar(): ReactNode {
 
   return (
     <div className="shrink-0 px-2 pb-2 pt-1.5" role="region" aria-label={t('voice.panel')}>
-      {/* Header (Discord): signal in a 40 px square (click = connection details), «Голос
-          подключён» 15 px + «Комната / Пространство» 13 px, then noise suppression (popover, docs/09
+      {/* Header (Discord): signal in a 36 px square (click = connection details), «Голос
+          подключён» 14 px semibold green + «Комната / Пространство» 13 px muted, then noise suppression (popover, docs/09
           #12) and the red hang-up. */}
       <div className="flex items-center gap-2">
         <QualityButton phase={phase} />
         <div className="min-w-0 flex-1" aria-live="polite">
-          <div className={cx('truncate text-[15px] font-semibold leading-5', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
+          <div className={cx('truncate text-[14px] font-semibold leading-[18px]', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
           <button type="button" className="block max-w-full truncate text-left text-[13px] leading-[18px] text-muted hover:text-fg hover:underline" onClick={goRoom} title={full}>
             {full}
           </button>

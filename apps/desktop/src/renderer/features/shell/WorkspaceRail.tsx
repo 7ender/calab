@@ -101,14 +101,14 @@ function RailItem({ id }: { id: string }): ReactNode {
             <span aria-hidden>{workspaceInitials(w.name)}</span>
           )}
           {/* Discord: the «in voice» badge sits top-right (green, speaker), the mention count
-              bottom-right — they never cover each other. */}
+              bottom-right — they never cover each other. 16 px disc + a 2 px ring in the rail colour. */}
           {inVoice ? (
             <span
-              className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full border-[3px] border-[var(--color-rail)] bg-ok-fill text-white"
+              className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full border-2 border-[var(--color-rail)] bg-ok-fill text-white"
               data-testid="rail-voice-badge"
               aria-hidden
             >
-              <Volume2 className="size-3" strokeWidth={2.5} />
+              <Volume2 className="size-2.5" strokeWidth={2.75} />
             </span>
           ) : null}
           {mentions > 0 ? (

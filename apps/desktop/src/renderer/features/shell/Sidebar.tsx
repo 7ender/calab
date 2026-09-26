@@ -676,7 +676,8 @@ function VoiceRoomRow({
         {/* With a status line the room is one raised two-line card (Discord): name + status. */}
         <div
           className={cx(
-            card ? 'group/row relative flex flex-col gap-0.5 rounded-[var(--radius-card)] px-2.5 py-2' : rowBox,
+            // pl-2 = the plain row's: the name starts at 32 px in both, where the participants' avatars start.
+            card ? 'group/row relative flex flex-col gap-0.5 rounded-[var(--radius-card)] py-2 pl-2 pr-2.5' : rowBox,
             card ? (active ? 'bg-active' : 'bg-hover') : active ? 'bg-active' : 'hover:bg-hover',
           )}
           data-testid={card ? 'voice-room-card' : undefined}
@@ -718,7 +719,7 @@ function VoiceRoomRow({
               {/* Hover / focus swaps the timer and N/M for the actions (Discord; «чат» is always there,
                   docs/09 #14), so the name keeps ≥ 120 px. On the card the timer stays green on the name line. */}
               <span className={cx('flex items-center gap-2', 'group-hover/row:hidden group-focus-within/row:hidden')}>
-                {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom && 'text-[var(--color-green-text)]') : undefined} /> : null}
+                {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom ? 'text-[var(--color-green-text)]' : 'text-fg') : undefined} /> : null}
                 {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
               </span>
               {/* Same three actions (chat · invite · settings) whether the room is active (card) or
@@ -802,7 +803,8 @@ export function CallTimer({ roomId, className }: { roomId: string; className?: s
   if (!startedAt) return null;
   const text = formatDuration(Math.max(0, now - timestampMs(startedAt)));
   return (
-    <span className={cx('text-micro tabular-nums text-fg', className)} aria-label={t('shell.callTime', { time: text })}>
+    // One 20 px line box, centred like the name and the 18 px people pill next to it (no baseline drift).
+    <span className={cx('inline-flex h-5 items-center tabular-nums leading-none', className ?? 'text-micro text-fg')} aria-label={t('shell.callTime', { time: text })}>
       {text}
     </span>
   );
@@ -858,8 +860,9 @@ function VoiceMember({
         if (stream && inSameRoom) voice.watch(stream.trackSid);
       }}
       className={cx(
-        // Discord: 36 px rows, 32 px avatars aligned with the room name, 15 px names.
-        'group/member flex h-9 items-center gap-2 rounded-[var(--radius-row)] pl-[34px] pr-1.5 text-list transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+        // Discord (2x reference): 28 px rows, 24 px avatars (speaking ring inside) starting where
+        // the room name starts (8 + 18 + 6 = 32 px), 8 px to the 14 px name.
+        'group/member flex h-7 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
         canMove ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}
@@ -867,7 +870,7 @@ function VoiceMember({
       data-speaking={talking || undefined}
       data-pending={state.pending || undefined}
     >
-      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={32} talking={talking} pending={connectingRing} suffix={tz} />
+      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={talking} pending={connectingRing} suffix={tz} />
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}

@@ -16,7 +16,7 @@ const INVITE_FADE_MS = 300;
  * статус комнаты ✎» for who may set it (a participant with CONNECT, or MANAGE_ROOM — the server
  * checks the same). ✎ → inline field, Enter or leaving the field saves, Esc cancels.
  */
-const lineBox = 'flex h-5 w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-row)] pl-6 pr-1 text-left text-caption';
+const lineBox = 'flex h-5 w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-row)] pl-6 pr-1 text-left text-[13px] leading-5';
 
 /** Does the room show a status line (and therefore the two-line card)? */
 export function useStatusLine(roomId: string, inRoom: boolean, canConnect: boolean, canManage: boolean): { shown: boolean; canEdit: boolean; status: string } {
@@ -51,7 +51,7 @@ export function VoiceStatusLine({ roomId, canEdit, status }: { roomId: string; c
     );
   if (!canEdit)
     return (
-      <div data-testid="voice-status-row" className={cx(lineBox, 'text-fg')} aria-label={`${t('shell.voiceStatus.label')}: ${status}`} role="note">
+      <div data-testid="voice-status-row" className={cx(lineBox, 'text-muted')} aria-label={`${t('shell.voiceStatus.label')}: ${status}`} role="note">
         <span className="min-w-0 truncate" title={status}>
           {status}
         </span>
@@ -64,7 +64,7 @@ export function VoiceStatusLine({ roomId, canEdit, status }: { roomId: string; c
       data-testid="voice-status-row"
       onClick={() => setEditing(true)}
       aria-label={status ? `${t('shell.voiceStatus.label')}: ${status}. ${t('shell.voiceStatus.edit')}` : t('shell.voiceStatus.placeholder')}
-      className={cx(lineBox, 'transition-colors duration-[var(--motion-fast)] hover:text-fg', status ? 'text-fg' : 'text-muted')}
+      className={cx(lineBox, 'transition-colors duration-[var(--motion-fast)] hover:text-fg', 'text-muted')}
     >
       <span className="min-w-0 truncate" title={status || undefined}>
         {status || t('shell.voiceStatus.placeholder')}
@@ -76,7 +76,7 @@ export function VoiceStatusLine({ roomId, canEdit, status }: { roomId: string; c
 
 /**
  * «Пригласить в комнату ›» below my voice room's participant list (docs/09 #10, Discord
- * reference; MANAGE_ROOM — room links are created and listed with it, ADR-0016): a 32 px dashed
+ * reference; MANAGE_ROOM — room links are created and listed with it, ADR-0016): a 24 px dashed
  * circle with the add-person icon. Visible only for 30 s after I join this room, and not at all
  * once the room is at its user limit; fades out rather than disappearing abruptly
  * (`prefers-reduced-motion: reduce` zeroes the transition globally, app/styles.css). The room
@@ -104,12 +104,12 @@ export function VoiceInviteRow({ roomId, full }: { roomId: string; full: boolean
       onClick={() => void copyRoomInviteLink(roomId)}
       title={t('shell.voiceInviteHint')}
       className={cx(
-        'group/inv flex h-10 w-full min-w-0 items-center gap-2 rounded-[var(--radius-row)] pl-[34px] pr-1.5 text-left text-[13px] text-muted transition duration-300 hover:bg-hover hover:text-fg',
+        'group/inv flex h-7 w-full min-w-0 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-left text-[13px] text-muted transition duration-300 hover:bg-hover hover:text-fg',
         show ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
     >
-      <span className="grid size-8 shrink-0 place-items-center rounded-full border border-dashed border-[var(--color-label-tertiary)]" aria-hidden>
-        <UserPlus className="size-4" />
+      <span className="grid size-6 shrink-0 place-items-center rounded-full border border-dashed border-[var(--color-label-tertiary)]" aria-hidden>
+        <UserPlus className="size-3.5" />
       </span>
       <span className="min-w-0 flex-1 truncate">{t('shell.voiceInvite')}</span>
       <ChevronRight className="size-3.5 shrink-0" aria-hidden />

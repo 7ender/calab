@@ -39,10 +39,10 @@ export function SpeakerIdentity({
     <>
       {pending ? (
         <span className="flex shrink-0" title={t('voice.pendingMember')} data-pending="true">
-          <Avatar userId={userId} name={name} fileId={fileId} size={size} connecting />
+          <Avatar userId={userId} name={name} fileId={fileId} size={size} connecting ringInside />
         </span>
       ) : (
-        <Avatar userId={userId} name={name} fileId={fileId} size={size} speaking={talking} />
+        <Avatar userId={userId} name={name} fileId={fileId} size={size} speaking={talking} ringInside />
       )}
       <span data-testid="speaker-name" className={cx('min-w-0 flex-1 truncate transition-colors duration-100', speakerNameClass(talking && !pending))}>
         {name}
