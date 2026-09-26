@@ -455,6 +455,36 @@ describe('room links and people (ADR-0016)', () => {
   });
 });
 
+describe('member profile (docs/09 #20)', () => {
+  it('private notes: the author only, empty text deletes, 404 for unknown users', async () => {
+    const anna = await login();
+    const boris = await login('boris@calaba.test');
+    const url = `${server.url}/api/users/${IDS.users.vera}/note`;
+    const req = (token: string, method: string, body?: unknown): Promise<Response> =>
+      fetch(url, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    expect(await (await req(anna, 'GET')).json()).toMatchObject({ note: { subjectId: IDS.users.vera } });
+    const put = await req(anna, 'PUT', { text: '  дизайн-ревью по четвергам ' });
+    expect(put.status).toBe(200);
+    expect(await put.json()).toMatchObject({ note: { text: 'дизайн-ревью по четвергам' } });
+    expect(((await (await req(boris, 'GET')).json()) as { note: { text?: string } }).note.text ?? '').toBe('');
+    expect((await req(anna, 'PUT', { text: 'я'.repeat(1001) })).status).toBe(422);
+    expect(((await (await req(anna, 'PUT', { text: ' ' })).json()) as { note: { text?: string } }).note.text ?? '').toBe('');
+    expect((await req(anna, 'DELETE')).status).toBe(204);
+    const unknown = await fetch(`${server.url}/api/users/nobody/note`, { headers: { Authorization: `Bearer ${anna}` } });
+    expect(unknown.status).toBe(404);
+    server.reset('data');
+  });
+
+  it('members carry member since: registration and joining the workspace', async () => {
+    const anna = await login();
+    const res = await fetch(`${server.url}/api/workspaces/${IDS.workspaces.main}/members`, { headers: { Authorization: `Bearer ${anna}` } });
+    const body = (await res.json()) as { members: { user: { id: string; createdAt?: string }; joinedAt?: string }[] };
+    const vera = body.members.find((m) => m.user.id === IDS.users.vera);
+    expect(vera?.user.createdAt).toBeTruthy();
+    expect(vera?.joinedAt).toBeTruthy();
+  });
+});
+
 describe('password and email change (user.proto)', () => {
   it('needs the current password; a wrong one is 403 INVALID_CREDENTIALS, not 401', async () => {
     const token = await login('boris@calaba.test');

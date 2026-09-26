@@ -59,7 +59,7 @@ export interface Prefs {
   soundVolume: number;
   /** «В открытом чате» (docs/09 P1 #13): a message in the chat on screen — a quieter cue or none. */
   messageSoundOpenChat: OpenChatSound;
-  /** userId → playback volume 0..1: `element.volume` caps at 1, a boost would need WebAudio (breaks AEC). */
+  /** userId → playback volume 0..2 (docs/09 #20); `element.volume` caps at 1, above 100 % only offsets the headphones ▾ volume (no WebAudio: AEC). */
   userVolumes: Record<string, number>;
   /** userId → muted for me only («Заглушить для меня»); their <audio> stays attached, muted. */
   mutedUsers: Record<string, true>;

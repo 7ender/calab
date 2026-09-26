@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from './voiceLogic';
+import { qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, userVolumeCapped, withUserMuted, withUserVolume } from './voiceLogic';
 
 describe('mute / deafen', () => {
   it('mute toggles; unmute while deafened also undeafens', () => {
@@ -54,13 +54,15 @@ describe('qualityOf', () => {
 describe('remote audio (per-user volume, «Заглушить для меня»)', () => {
   const base = { deafened: false, stream: false, userId: 'u1', userVolumes: {}, mutedUsers: {}, streamVolume: {} };
   it('plays at 100 % by default', () => {
-    expect(remoteAudio(base)).toEqual({ muted: false, volume: 1 });
+    expect(remoteAudio(base)).toEqual({ muted: false, volume: 1, capped: false });
   });
   it('applies the per-user volume and local mute to the voice only', () => {
-    expect(remoteAudio({ ...base, userVolumes: { u1: 0.4 } })).toEqual({ muted: false, volume: 0.4 });
+    expect(remoteAudio({ ...base, userVolumes: { u1: 0.4 } })).toEqual({ muted: false, volume: 0.4, capped: false });
     expect(remoteAudio({ ...base, mutedUsers: { u1: true } }).muted).toBe(true);
-    // Their stream audio is not muted by «Заглушить для меня»; it has its own volume.
-    expect(remoteAudio({ ...base, stream: true, mutedUsers: { u1: true }, userVolumes: { u1: 0.4 }, streamVolume: { u1: 0.7 } })).toEqual({ muted: false, volume: 0.7 });
+    // Their stream audio is not muted by «Заглушить для меня»; its own volume × theirs (docs/09 #20).
+    const s = remoteAudio({ ...base, stream: true, mutedUsers: { u1: true }, userVolumes: { u1: 0.5 }, streamVolume: { u1: 0.7 } });
+    expect(s.muted).toBe(false);
+    expect(s.volume).toBeCloseTo(0.35);
   });
   it('the headphones ▾ volume scales every voice, not stream audio', () => {
     expect(remoteAudio({ ...base, userVolumes: { u1: 0.5 }, outputVolume: 0.5 }).volume).toBe(0.25);
@@ -75,14 +77,21 @@ describe('remote audio (per-user volume, «Заглушить для меня»)
     expect(remoteAudio({ ...base, deafened: true }).muted).toBe(true);
     expect(remoteAudio({ ...base, deafened: true, stream: true }).muted).toBe(true);
   });
-  it('never boosts above 100 % (no WebAudio)', () => {
-    expect(remoteAudio({ ...base, userVolumes: { u1: 1.8 } }).volume).toBe(1);
+  it('never boosts above 100 % (no WebAudio): 200 % only compensates a lower headphones volume', () => {
+    expect(remoteAudio({ ...base, userVolumes: { u1: 1.8 } })).toEqual({ muted: false, volume: 1, capped: true });
     expect(remoteAudio({ ...base, userVolumes: { u1: -1 } }).volume).toBe(0);
+    expect(remoteAudio({ ...base, userVolumes: { u1: 2 }, outputVolume: 0.5 })).toEqual({ muted: false, volume: 1, capped: false });
+    expect(remoteAudio({ ...base, userVolumes: { u1: 1.5 }, outputVolume: 0.5 }).volume).toBe(0.75);
+    expect(remoteAudio({ ...base, userVolumes: { u1: 9 }, outputVolume: 0.25 }).volume).toBe(0.5); // clamped to 200 %
+    expect(userVolumeCapped(1.5, 1)).toBe(true);
+    expect(userVolumeCapped(1.5, 0.5)).toBe(false);
+    expect(userVolumeCapped(0.8, 1)).toBe(false);
   });
   it('stores only non-default volumes and toggles local mute', () => {
     expect(withUserVolume({ u1: 0.5 }, 'u1', 1)).toEqual({});
     expect(withUserVolume({}, 'u2', 0.25)).toEqual({ u2: 0.25 });
-    expect(withUserVolume({}, 'u2', 3)).toEqual({});
+    expect(withUserVolume({}, 'u2', 3)).toEqual({ u2: 2 });
+    expect(withUserVolume({}, 'u2', 1.5)).toEqual({ u2: 1.5 });
     expect(withUserMuted({}, 'u1', true)).toEqual({ u1: true });
     expect(withUserMuted({ u1: true }, 'u1', false)).toEqual({});
   });

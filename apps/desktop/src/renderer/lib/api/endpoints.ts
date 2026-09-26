@@ -1,4 +1,6 @@
 import {
+  PutUserNoteRequestSchema,
+  UserNoteResponseSchema,
   ChangeEmailRequestSchema,
   ChangePasswordRequestSchema,
   CreateCategoryRequestSchema,
@@ -85,6 +87,13 @@ export const api = {
     /** Messages mentioning me in rooms I can view, newest first (cursor `before`, limit ≤ 100). */
     mentions: (p: { limit?: number; before?: string; workspace_id?: string }, signal?: AbortSignal) =>
       call('GET', `/api/me/mentions${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
+  },
+  users: {
+    /** My private note about a user (docs/09 #20); empty text = none. 404 = no shared workspace / DM. */
+    note: (userId: string, signal?: AbortSignal) => call('GET', `/api/users/${userId}/note`, UserNoteResponseSchema, undefined, signal),
+    /** Upsert; empty text deletes it. */
+    setNote: (userId: string, text: string) =>
+      call('PUT', `/api/users/${userId}/note`, UserNoteResponseSchema, body(PutUserNoteRequestSchema, { text })),
   },
   workspaces: {
     create: (init: MessageInitShape<typeof CreateWorkspaceRequestSchema>) =>

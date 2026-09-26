@@ -766,6 +766,59 @@ describe('VoiceEngine', () => {
   });
 });
 
+describe('per-user volume and local mute (docs/09 #20)', () => {
+  interface FakeAudioEl {
+    volume: number;
+    muted: boolean;
+    setSinkId: () => Promise<void>;
+    remove: () => void;
+  }
+  /** A remote audio track of `identity`; attach() returns a fake <audio>, recorded in `els`. */
+  const subscribe = (room: FakeRoom | undefined, identity: string, sid: string, source = 'microphone'): FakeAudioEl => {
+    const el: FakeAudioEl = { volume: 1, muted: false, setSinkId: () => Promise.resolve(), remove: () => undefined };
+    const track = { kind: 'audio', sid, attach: () => el, detach: () => [el] };
+    room?.emit('TrackSubscribed', track, { source }, { identity });
+    return el;
+  };
+
+  it('applies to every audio element of the person: on subscribe, on change, after a reconnect', async () => {
+    usePrefs.getState().setPrefs({ userVolumes: { u2: 0.5 }, outputVolume: 1 });
+    await voice.join('A', 'ws');
+    const mic = subscribe(FakeRoom.all.at(-1), 'u2:phone', 'TR_mic');
+    const other = subscribe(FakeRoom.all.at(-1), 'u3:desk', 'TR_other');
+    expect(mic.volume).toBe(0.5);
+    expect(other.volume).toBe(1);
+
+    // 200 %: element.volume stops at 1 — it only offsets the headphones ▾ volume (no WebAudio).
+    voice.setUserVolume('u2', 2);
+    expect(mic.volume).toBe(1);
+    usePrefs.getState().setPrefs({ outputVolume: 0.25 });
+    expect(mic.volume).toBe(0.5);
+    expect(other.volume).toBe(0.25);
+
+    // Their stream's sound follows their volume too, not the headphones ▾ one.
+    voice.setUserVolume('u2', 0.5);
+    voice.setStreamVolume('u2', 0.8);
+    const screen = subscribe(FakeRoom.all.at(-1), 'u2:phone', 'TR_screen', 'screen_share_audio');
+    expect(screen.volume).toBeCloseTo(0.4);
+
+    // «Заглушить»: their voice only, applied at once; «Не слышать» silences the stream too.
+    voice.setUserMuted('u2', true);
+    expect(mic.muted).toBe(true);
+    expect(screen.muted).toBe(false);
+    expect(other.muted).toBe(false);
+
+    // A new call (or a rejoin) attaches new elements: the stored choice applies to them.
+    await voice.join('B', 'ws');
+    const again = subscribe(FakeRoom.all.at(-1), 'u2:phone', 'TR_mic2');
+    expect(again.muted).toBe(true);
+    expect(again.volume).toBeCloseTo(0.125);
+    voice.setUserMuted('u2', false);
+    expect(again.muted).toBe(false);
+    expect(usePrefs.getState().mutedUsers).toEqual({});
+  });
+});
+
 describe('VOICE_MOVED (ADR-0019)', () => {
   const move = (over: Partial<Parameters<Engine['onMoved']>[0]> = {}): Parameters<Engine['onMoved']>[0] => ({
     workspaceId: 'ws',
