@@ -9,7 +9,7 @@ Calab распространяется по Business Source License 1.1 (см. `
   коммерческой лицензии от GPTunneL.
 
 Чтобы получить коммерческую лицензию (self-hosted или managed), напишите:
-**license@calab.ru** · https://gptunnel.ai
+**it@gptunnel.ai** · https://gptunnel.ai
 
 Каждая версия автоматически переходит под Apache License 2.0 через четыре
 года после публикации (Change Date).
@@ -18,5 +18,5 @@ Calab распространяется по Business Source License 1.1 (см. `
 
 Calab is licensed under the Business Source License 1.1. Non-commercial use
 is free (with the "Powered by GPTunneL" attribution); commercial use requires
-a commercial license — contact license@calab.ru. Each version converts to
+a commercial license — contact it@gptunnel.ai. Each version converts to
 Apache-2.0 four years after its release.

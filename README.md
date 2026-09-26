@@ -1,61 +1,162 @@
-# Calab
+<p align="center">
+  <img src="apps/desktop/build/icons/web/icon-192.png" width="96" alt="Calab">
+</p>
 
-Calab (ранее рабочее имя Calaba; внутренние идентификаторы `calaba` сохранены) — desktop-приложение для общения сотрудников: голосовые комнаты (voice-first), текстовые чаты, стрим экрана. Self-hosted. macOS / Windows / Linux.
+<h1 align="center">Calab</h1>
 
-Ощущение: «Discord, но проще и свой». Workspace → комнаты (voice/text) → участники.
+<p align="center">
+  Голосовые комнаты, чат и стрим экрана для команды — на вашем сервере.<br>
+  <sub>Self-hosted voice-first team messenger: voice rooms, Telegram-style chat, screen sharing. macOS · Windows · Linux · Web.</sub>
+</p>
 
-## Стек (кратко)
+<p align="center">
+  <a href="LICENSE"><img alt="License: BUSL-1.1" src="https://img.shields.io/badge/license-BUSL--1.1-blue"></a>
+  <a href="https://github.com/itrcz/calab/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/itrcz/calab/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Electron" src="https://img.shields.io/badge/desktop-Electron-47848F">
+  <img alt="Go" src="https://img.shields.io/badge/server-Go-00ADD8">
+  <img alt="LiveKit" src="https://img.shields.io/badge/media-LiveKit-ff6b35">
+  <a href="https://calab.ru"><img alt="calab.ru" src="https://img.shields.io/badge/site-calab.ru-0A84FF"></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/hero-dark.png" width="880" alt="Calab — чат и голосовая комната">
+</p>
+
+---
+
+## Что это
+
+Calab — корпоративный мессенджер, в котором главное — **голос**. Зашёл в комнату — сразу слышишь коллег; рядом чат с файлами и реакциями; в любой момент можно показать экран. Всё работает на вашем сервере: один `docker compose up`, PostgreSQL и LiveKit внутри, никаких внешних сервисов и подписок.
+
+Рассчитан на команды до 20–30 человек одновременно в голосе и до 3 стримов в комнате (MVP); масштабируется через Kubernetes.
+
+## Чем вдохновлялись
+
+| | Откуда | Что взяли |
+|---|---|---|
+| 🎙 | **Discord** | структуру корпоративного войс-мессенджера: пространства → комнаты → участники, push-to-talk и активация голосом, роли и права на каждую комнату, перетаскивание участников, гостевые ссылки |
+| 💬 | **Telegram** | удобный чат: пузыри сообщений, ответы, реакции, упоминания, превью ссылок, файлы и изображения, контекстное меню, поиск |
+| 📶 | **Zoom** | стабильный коннект и экономию трафика: адаптивная подписка на видео, simulcast, Opus DTX, автоматический откат UDP → TCP → TURN/TLS на 443, чтобы работало за VPN и корпоративными файрволами |
+
+## Возможности
+
+### 🎙 Голос
+- **Комнаты** — вход одним кликом, участники и говорящие видны прямо в списке комнат (кольцо у аватара), таймер разговора, лимит участников `N/M`.
+- **Микрофон** — активация голосом с настраиваемым порогом и гистерезисом или **push-to-talk** на любую клавишу: Caps Lock (с опцией «не менять регистр»), F13–F19, модификаторы, боковые кнопки мыши; глобальные хоткеи mute / deafen.
+- **Чистый звук** — эхоподавление AEC3, шумоподавление RNNoise (без внешних сервисов), Opus с DTX: в тишине ~0,1 кбит/с, на речи 30–45 кбит/с; личный потолок битрейта для роуминга.
+- **Устройства** — быстрый выбор микрофона и вывода из панели, переключение на лету, автоматический откат при отключении гарнитуры, громкость каждого участника отдельно.
+- **Модерация** — серверный mute, отключение, перемещение между комнатами drag&drop, остановка чужого стрима.
+- **Статусы** — онлайн / отошёл (авто-AFK по бездействию) / не беспокоить / невидимка, кастомный статус с эмодзи и сроком.
+
+### 🖥 Стрим экрана
+- Пикер как в Discord: приложения и экраны с превью, пресеты **Экономия · 720p · 1080p · Оригинал**, режим «Текст / Видео», системный звук (где ОС позволяет исключить голоса участников).
+- **AV1 + simulcast**: статичный код или документ — ~20–300 кбит/с; зритель получает только тот слой, который реально видит (превью — 640×360, развёрнутый — полный); слой, который никто не смотрит, не кодируется.
+- Просмотр: плитка в углу чата, развёрнутый режим, отдельное окно для второго монитора, полный экран, выбор качества, до 3 стримов в комнате, счётчик «N смотрят».
+
+### 💬 Чат
+- Пузыри как в Telegram: группировка по автору, ответы с цитатой, **реакции**, редактирование и удаление, закреплённые сообщения, галочки отправлено / доставлено.
+- **Упоминания** `@user`, `@everyone` / `@here` (по праву), инбокс упоминаний, бейджи непрочитанных и упоминаний с сервера, липкий баннер «N новых», переход к первому непрочитанному.
+- **Файлы** — drag&drop, вставка из буфера, превью изображений (WebP-миниатюры на сервере), лайтбокс, квоты на пространство, скачивание с карантинной пометкой ОС.
+- **Превью ссылок** (OpenGraph через сервер с защитой от SSRF), markdown-lite (жирный, курсив, код), эмодзи-пикер.
+- **Поиск** — по комнате и по всему пространству с морфологией (PostgreSQL FTS), быстрый переход `⌘K` по комнатам, участникам и сообщениям.
+- Уведомления на комнату: все / только упоминания / выключить (на время или навсегда), системные уведомления, звуки событий — каждый отключается отдельно.
+
+### 🏢 Пространства и права
+- Пространства с категориями комнат, текстовые и голосовые комнаты, приватные комнаты.
+- Роли **owner / admin / member / guest** и 14 битов прав с переопределением на каждую комнату (просмотр, писать, файлы, подключаться, говорить, стримить, упоминать всех, модерация, управление…); открытые и закрытые пространства, инвайт-ссылки с лимитом и сроком.
+- **Гостевые ссылки на комнату** — человек вводит имя и оказывается в разговоре без регистрации, видит только эту комнату; админ может сделать гостя участником.
+- Никнеймы в пространстве, переименование участников, история сеансов с завершением на других устройствах, смена пароля и email.
+
+### 🔒 Надёжность и безопасность
+- **Работает везде**: UDP → ICE/TCP → TURN/UDP 443 → TURN/TLS 443 автоматически; один публичный IP; проверено из-за VPN и через relay.
+- **Переподключение без потерь**: gateway с последовательностью событий и `RESUME`, восстановление после сна ноутбука и обрыва сети, оптимистичная отправка с идемпотентностью.
+- Медиа — DTLS-SRTP; API — HTTPS/WSS, HSTS, строгая CSP, cookie `HttpOnly/SameSite=Strict` для веба, CSRF по Origin; argon2id, ротация refresh-токенов с детекцией повторного использования; rate-limit на вход, регистрацию, загрузки и создание пространств.
+- Electron: `contextIsolation` + `sandbox`, узкий IPC с проверкой отправителя, quarantine на скачиваниях, обновления только с вашего сервера по HTTPS.
+
+### 🚀 Эксплуатация
+- **Docker Compose** с харднингом контейнеров (read-only, без capabilities), автоматические сертификаты Let's Encrypt, ежедневные бэкапы с проверенным восстановлением, Prometheus-метрики.
+- Единый образ API ~20 MB, ~40 MB RAM в простое; READY-снапшот для 100 комнат — 6 мс.
+- **Desktop + Web** из одного кода: Electron для macOS (Apple Silicon / Intel), Windows, Linux (AppImage / deb) и браузерная версия на `app.<домен>`; автообновление с `/download/`.
+
+<p align="center">
+  <img src="docs/images/stream-dark.png" width="880" alt="Стрим экрана в голосовой комнате">
+</p>
+
+## Архитектура
+
+```
+Desktop (Electron) / Web ──HTTPS/WSS──▶ Caddy :443 ──▶ Go API + WS gateway ──▶ PostgreSQL, Valkey
+            │                              │  SNI turn.* ──▶ LiveKit TURN/TLS
+            └──────── WebRTC (UDP 7882 · TCP 7881 · TURN 443) ──▶ LiveKit SFU
+```
 
 | Слой | Технология |
 |---|---|
-| Desktop | Electron 44 + React + TypeScript + Vite (`electron-vite`) |
-| Медиа (SFU) | LiveKit (self-hosted, OSS), кодеки Opus / AV1 / VP8 |
-| API + realtime | **Go** — `net/http` + `coder/websocket`, protobuf-контракт (`buf`) |
-| БД | PostgreSQL 18 (`pgx` + `sqlc` + `goose`), Valkey 9 — совместим с Redis (`rueidis`, ADR-0017) |
-| Файлы | MinIO (S3-совместимо, позже — любой S3), только через API |
-| Edge | Caddy + caddy-l4 (своя сборка; SNI-роутинг 443: HTTPS/WSS и TURN/TLS на одном IP) |
-| Деплой | docker compose (MVP) → Kubernetes (k3s + Helm) |
+| Клиент | Electron 44, React 19, TypeScript, `livekit-client`, AudioWorklet (RNNoise) |
+| Медиа | LiveKit (SFU, встроенный TURN), Opus DTX, AV1 simulcast |
+| Сервер | Go, `net/http`, `coder/websocket`, `pgx` + `sqlc`, protobuf-контракт (`buf`) |
+| Данные | PostgreSQL 18, Valkey 9, локальное файловое хранилище (S3-драйвер в планах) |
+| Edge | Caddy + layer4 (HTTPS и TURN/TLS на одном 443) |
 
-## Документация
+Подробно: [архитектура](docs/01-architecture.md) · [медиа](docs/02-media.md) · [сеть](docs/03-network.md) · [модель данных и права](docs/04-data-model.md) · [realtime-протокол](docs/05-realtime-protocol.md) · [деплой](docs/06-deployment.md) · [дизайн-система](docs/08-design.md) · [бренд и домены](docs/10-branding.md) · [ADR](docs/adr/).
 
-- [docs/01-architecture.md](docs/01-architecture.md) — общая архитектура, компоненты, потоки данных
-- [docs/02-media.md](docs/02-media.md) — аудио/видео: кодеки, эхоподавление, VAD/PTT, стрим
-- [docs/03-network.md](docs/03-network.md) — порты, фолбэки, TURN, доступность из-за VPN/файрволов
-- [docs/04-data-model.md](docs/04-data-model.md) — схема БД, роли и права
-- [docs/05-realtime-protocol.md](docs/05-realtime-protocol.md) — протокол WS-gateway
-- [docs/06-deployment.md](docs/06-deployment.md) — docker compose сейчас, k8s потом, тестовый стенд
-- [docs/07-roadmap.md](docs/07-roadmap.md) — этапы
-- [docs/08-design.md](docs/08-design.md) — дизайн-система, UX-правила, онбординг, визуальные тесты
-- [docs/10-branding.md](docs/10-branding.md) — имя Calab, домены calab.ru / app.calab.ru, лендинг
-- [docs/09-ui-backlog.md](docs/09-ui-backlog.md) — UI/UX бэклог по сравнению с Discord (P0–P2)
-- [docs/adr/](docs/adr/) — записи архитектурных решений (почему так)
+## Быстрый старт
+
+### Свой сервер
+
+Нужны: Linux-хост с публичным IP, Docker + Compose, домен с A-записями `app`, `rtc`, `turn` (и `@` для лендинга).
+
+```bash
+git clone https://github.com/itrcz/calab.git && cd calab
+cp infra/docker/.env.example infra/docker/.env   # DOMAIN, секреты — см. комментарии
+infra/docker/deploy.sh                            # Caddy, LiveKit, API, Postgres, Valkey
+```
+
+Порты: `80/443` TCP, `443/UDP`, `7881/TCP`, `7882/UDP`. Первый зарегистрированный пользователь становится владельцем сервера; дальше — по инвайтам. Полная инструкция, бэкапы и харднинг — в [docs/06-deployment.md](docs/06-deployment.md).
+
+### Приложение
+
+Сборки для macOS, Windows и Linux — на `https://app.<домен>/download/` (для публичного сервера — [app.calab.ru/download](https://app.calab.ru/download/)). Веб-версия — по тому же адресу без `/download`.
+
+### Разработка
+
+```bash
+corepack enable && pnpm install && make gen       # protobuf → Go + TS
+pnpm infra:dev                                    # Postgres, Valkey, LiveKit --dev
+cd apps/server && go run ./cmd/server serve       # API на :3000
+pnpm -F @calaba/desktop dev                       # Electron
+```
+
+Проверки: `make test` (Go + TS), `make test-integration`, `pnpm -F @calaba/desktop e2e:visual` (252 эталонных снимка, axe, инварианты раскладки). Сценарии ручного тестирования — в [TESTING.md](TESTING.md).
 
 ## Структура репозитория
 
 ```
-apps/
-  desktop/     Electron-клиент (main / preload / renderer), TypeScript
-  server/      API + WS gateway, Go
-proto/         protobuf-контракт (buf) → генерация в Go и TS
-packages/
-  protocol/    TS: сгенерированные типы, computePermissions, константы
-infra/
-  docker/      compose, конфиги LiveKit, Caddy
-  k8s/         Helm values / манифесты (позже)
-docs/          архитектура, ADR
+apps/desktop      Electron-клиент и веб-сборка (общий renderer, слой platform)
+apps/server       Go API + WebSocket gateway, миграции, sqlc
+apps/landing      сайт calab.ru (Next.js static export)
+packages/protocol TS-контракт из protobuf, права, пресеты
+proto/            protobuf — единственный источник контракта
+infra/docker      compose, Caddy, LiveKit, бэкапы, релизный runbook
+docs/             архитектура, дизайн, ADR
 ```
 
-## Быстрый старт (dev)
+## Статус
 
-```bash
-corepack enable && corepack prepare pnpm@latest --activate
-pnpm install
-docker compose -f infra/docker/compose.dev.yml up -d   # postgres, valkey, livekit
-make gen                                                # buf generate (Go + TS)
-cd apps/server && go run ./cmd/server
-# pnpm -F @calaba/desktop dev                         # клиент (появится на этапе 1)
-```
+v0.1 — MVP: голос, чат, стрим, права, гости, desktop + web. Дальше: S3-хранилище, Helm-чарт, SSO/OIDC, треды, запись комнат, подписанные сборки. Бэклог — [docs/09-ui-backlog.md](docs/09-ui-backlog.md), план — [docs/07-roadmap.md](docs/07-roadmap.md).
 
 ## Лицензия
 
-**Business Source License 1.1** — см. [LICENSE](LICENSE). Некоммерческое использование (личное, НКО, образование, оценка до 30 дней) — бесплатно, с обязательным «Powered by GPTunneL» в интерфейсе и сохранением [NOTICE](NOTICE). Коммерческое использование — по коммерческой лицензии: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), license@gptunnel.ai. Каждая версия переходит под Apache-2.0 через 4 года после выпуска. Названия и логотипы — товарные знаки, см. [TRADEMARKS.md](TRADEMARKS.md).
+**Business Source License 1.1** — [LICENSE](LICENSE).
+
+- Некоммерческое использование (личное, НКО, образование, оценка до 30 дней) — **бесплатно**, с упоминанием «Powered by GPTunneL» в интерфейсе и сохранением [NOTICE](NOTICE).
+- Коммерческое использование — по лицензии GPTunneL: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), **it@gptunnel.ai**.
+- Каждая версия становится Apache-2.0 через четыре года после выпуска.
+
+Названия и логотипы Calab и GPTunneL — товарные знаки, см. [TRADEMARKS.md](TRADEMARKS.md).
+
+## Участие и безопасность
+
+Правки принимаются через pull request с CLA — [CONTRIBUTING.md](CONTRIBUTING.md). Уязвимости — приватно на **it@gptunnel.ai**, см. [SECURITY.md](SECURITY.md).
+
+<p align="center"><sub>© 2026 GPTunneL · Powered by <a href="https://gptunnel.ai">GPTunneL</a></sub></p>
