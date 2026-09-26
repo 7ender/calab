@@ -1,7 +1,8 @@
 import { ScreenSharePreset } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import type { CaptureSource } from '../../../shared/ipc';
-import { layerLabel, pipSize, presetDetail, presetOptions, presetSummary, presetText, qualityOptions, splitSources, viewersText } from './streamFormat';
+import { thumbSizeFor } from '../../../shared/captureThumb';
+import { layerLabel, pickerLayout, pipSize, presetDetail, presetOptions, presetSummary, presetText, qualityOptions, splitSources, viewersText } from './streamFormat';
 
 describe('presetSummary', () => {
   it('says the preset in words', () => {
@@ -86,5 +87,28 @@ describe('pipSize', () => {
     expect(pipSize(true, 190, 12)).toEqual({ w: 240, h: 135 });
     expect(pipSize(true, 150, 12)).toEqual({ w: 192, h: 108 });
     expect(pipSize(false, 40, 12)).toEqual({ w: 192, h: 108 });
+  });
+});
+
+describe('pickerLayout + thumbSizeFor (docs/09 #17)', () => {
+  it('one source: one centred card, ≤ 60 % of the area wide', () => {
+    // 900 px dialog − 2 × 20 px padding; plenty of height.
+    expect(pickerLayout(860, 600, 1)).toEqual({ single: true, card: 516, preview: 504 });
+    // …and its thumbnail on a Retina display: the preview box in device pixels.
+    expect(thumbSizeFor(504, 2)).toEqual({ width: 1008, height: 567 });
+  });
+  it('one source in a short area: the card shrinks to fit the height', () => {
+    const l = pickerLayout(860, 300, 1);
+    expect(l.single).toBe(true);
+    expect((l.preview * 9) / 16 + 12 + 28).toBeLessThanOrEqual(300);
+  });
+  it('several sources: two columns with a 12 px gap', () => {
+    expect(pickerLayout(860, 400, 2)).toEqual({ single: false, card: 424, preview: 412 });
+    expect(pickerLayout(860, 400, 7).card).toBe(424);
+  });
+  it('the thumbnail follows the card on resize', () => {
+    const small = thumbSizeFor(pickerLayout(600, 400, 3).preview, 2);
+    const big = thumbSizeFor(pickerLayout(860, 400, 3).preview, 2);
+    expect(big.width).toBeGreaterThan(small.width);
   });
 });

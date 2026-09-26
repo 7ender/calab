@@ -21,7 +21,9 @@ import {
 import { serverUrlProblem } from '../shared/serverUrl';
 import { forceRefresh, getAccessToken, guestJoin, login, logout, register, restore, revoked } from './auth';
 import { armSelection, listSources, requestScreenAccess, screenAccess, systemAudioSupport } from './capture';
+import { parseThumbRequest } from '../shared/captureThumb';
 import { takePendingDeepLink } from './deeplink';
+import { fullscreenFor } from './fullscreen';
 import { downloadFile } from './downloads';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
@@ -276,7 +278,17 @@ export function registerIpc(): void {
   });
 
   // ---- media ----
-  handle(IPC.captureListSources, () => listSources());
+  handle(IPC.captureListSources, (_e, req) => listSources(parseThumbRequest(req)));
+  // The caller's own window (main window or a stream pop-out), never another one.
+  handle(IPC.windowSetFullScreen, (e, on) => {
+    if (typeof on !== 'boolean') throw new Error('invalid argument');
+    const win = BrowserWindow.fromWebContents(e.sender);
+    return win ? fullscreenFor(win).set(on) : false;
+  });
+  handle(IPC.windowIsFullScreen, (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    return win ? fullscreenFor(win).isFullScreen() : false;
+  });
   handle(IPC.captureSelectSource, (e, sel) => {
     armSelection(e.sender, parseSelection(sel));
   });

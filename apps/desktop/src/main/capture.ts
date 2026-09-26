@@ -1,5 +1,6 @@
 import { desktopCapturer, nativeImage, shell, systemPreferences, webContents, type Session, type WebContents } from 'electron';
 import log from 'electron-log/main';
+import { sameThumb, THUMB_DEFAULT, type ThumbRequest, type ThumbSize } from '../shared/captureThumb';
 import type { CaptureSelection, CaptureSource, ScreenAccess } from '../shared/ipc';
 
 /**
@@ -38,13 +39,17 @@ export function systemAudioSupport(): 'supported' | 'experimental' | 'unsupporte
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
 const FAKE_PREFIX = 'fake:';
 
-export async function listSources(): Promise<CaptureSource[]> {
-  if (VISUAL_TEST) return fakeSources();
-  const sources = await desktopCapturer.getSources({
-    types: ['screen', 'window'],
-    thumbnailSize: { width: 480, height: 270 },
-    fetchWindowIcons: true,
-  });
+/**
+ * Sources with thumbnails at the size the picker's cards need (docs/09 #17, shared/captureThumb).
+ * Screens and windows may differ (one big screen card vs a grid): then they are fetched apart.
+ */
+export async function listSources(req: ThumbRequest = { screen: THUMB_DEFAULT, window: THUMB_DEFAULT }): Promise<CaptureSource[]> {
+  if (VISUAL_TEST) return fakeSources(req);
+  const get = (types: Array<'screen' | 'window'>, thumbnailSize: ThumbSize): Promise<Electron.DesktopCapturerSource[]> =>
+    desktopCapturer.getSources({ types, thumbnailSize, fetchWindowIcons: types.includes('window') });
+  const sources = sameThumb(req.screen, req.window)
+    ? await get(['screen', 'window'], req.screen)
+    : (await Promise.all([get(['screen'], req.screen), get(['window'], req.window)])).flat();
   return sources.map((s) => {
     // Typed as always present, but null for screens and windows without an icon.
     const ic = s.appIcon as Electron.NativeImage | null;
@@ -62,6 +67,19 @@ export async function listSources(): Promise<CaptureSource[]> {
 // ---------------------------------------------------------------- visual-test sources
 
 type Rgb = [number, number, number];
+
+const BASE_W = 480;
+const BASE_H = 270;
+
+/**
+ * A synthetic thumbnail at the requested size, as a real capture would be: the 480×270 frame's
+ * blocks scaled to `size.width` (16:9).
+ */
+function fakeThumb(size: ThumbSize, bg: Rgb, frame: Array<[number, number, number, number, Rgb]>): string {
+  const k = size.width / BASE_W;
+  const s = (v: number): number => Math.round(v * k);
+  return fakeImage(size.width, s(BASE_H), bg, frame.map(([x, y, w, h, c]): [number, number, number, number, Rgb] => [s(x), s(y), s(w), s(h), c]));
+}
 
 /** Flat-colour "screenshot": background, a title strip and a few blocks (BGRA bitmap → PNG). */
 function fakeImage(width: number, height: number, bg: Rgb, blocks: Array<[number, number, number, number, Rgb]>): string {
@@ -82,7 +100,7 @@ function fakeImage(width: number, height: number, bg: Rgb, blocks: Array<[number
   return nativeImage.createFromBitmap(buf, { width, height }).toDataURL();
 }
 
-function fakeSources(): CaptureSource[] {
+function fakeSources(req: ThumbRequest): CaptureSource[] {
   const W = 480;
   const H = 270;
   const bar: Rgb = [58, 58, 62];
@@ -94,14 +112,14 @@ function fakeSources(): CaptureSource[] {
       name: 'Экран 1',
       kind: 'screen',
       displayId: '1',
-      thumbnail: fakeImage(W, H, [28, 60, 110], [[0, 0, W, 10, bar], [40, 40, 180, 120, [44, 44, 48]], [250, 60, 190, 150, [236, 236, 240]], [0, 250, W, 20, bar]]),
+      thumbnail: fakeThumb(req.screen, [28, 60, 110], [[0, 0, W, 10, bar], [40, 40, 180, 120, [44, 44, 48]], [250, 60, 190, 150, [236, 236, 240]], [0, 250, W, 20, bar]]),
     },
     {
       id: `${FAKE_PREFIX}screen:2`,
       name: 'Экран 2',
       kind: 'screen',
       displayId: '2',
-      thumbnail: fakeImage(W, H, [40, 90, 60], [[0, 0, W, 10, bar], [60, 50, 360, 170, [30, 30, 32]], [80, 80, 200, 12, text], [80, 110, 260, 12, text]]),
+      thumbnail: fakeThumb(req.screen, [40, 90, 60], [[0, 0, W, 10, bar], [60, 50, 360, 170, [30, 30, 32]], [80, 80, 200, 12, text], [80, 110, 260, 12, text]]),
     },
     {
       id: `${FAKE_PREFIX}window:1`,
@@ -109,7 +127,7 @@ function fakeSources(): CaptureSource[] {
       kind: 'window',
       displayId: '',
       appIcon: icon([0, 99, 204]),
-      thumbnail: fakeImage(W, H, [30, 30, 32], [[0, 0, W, 22, bar], [0, 22, 60, H - 22, [37, 37, 40]], [80, 44, 220, 10, [94, 173, 255]], [80, 66, 300, 10, text], [100, 88, 240, 10, text], [100, 110, 180, 10, [95, 212, 122]], [80, 132, 260, 10, text]]),
+      thumbnail: fakeThumb(req.window, [30, 30, 32], [[0, 0, W, 22, bar], [0, 22, 60, H - 22, [37, 37, 40]], [80, 44, 220, 10, [94, 173, 255]], [80, 66, 300, 10, text], [100, 88, 240, 10, text], [100, 110, 180, 10, [95, 212, 122]], [80, 132, 260, 10, text]]),
     },
     {
       id: `${FAKE_PREFIX}window:2`,
@@ -117,7 +135,7 @@ function fakeSources(): CaptureSource[] {
       kind: 'window',
       displayId: '',
       appIcon: icon([31, 122, 52]),
-      thumbnail: fakeImage(W, H, [22, 22, 24], [[0, 0, 36, H, [28, 28, 31]], [36, 0, 110, H, [38, 38, 42]], [160, 30, 200, 36, [42, 42, 45]], [240, 90, 220, 36, [43, 82, 120]], [160, 150, 180, 36, [42, 42, 45]], [146, 236, W - 146, 34, [44, 44, 48]]]),
+      thumbnail: fakeThumb(req.window, [22, 22, 24], [[0, 0, 36, H, [28, 28, 31]], [36, 0, 110, H, [38, 38, 42]], [160, 30, 200, 36, [42, 42, 45]], [240, 90, 220, 36, [43, 82, 120]], [160, 150, 180, 36, [42, 42, 45]], [146, 236, W - 146, 34, [44, 44, 48]]]),
     },
     {
       id: `${FAKE_PREFIX}window:3`,
@@ -125,7 +143,7 @@ function fakeSources(): CaptureSource[] {
       kind: 'window',
       displayId: '',
       appIcon: icon([179, 64, 11]),
-      thumbnail: fakeImage(W, H, [250, 250, 252], [[0, 0, W, 30, [226, 226, 231]], [60, 60, 300, 16, [29, 29, 31]], [60, 96, 360, 10, [87, 87, 92]], [60, 116, 340, 10, [87, 87, 92]], [60, 136, 200, 10, [0, 102, 204]]]),
+      thumbnail: fakeThumb(req.window, [250, 250, 252], [[0, 0, W, 30, [226, 226, 231]], [60, 60, 300, 16, [29, 29, 31]], [60, 96, 360, 10, [87, 87, 92]], [60, 116, 340, 10, [87, 87, 92]], [60, 136, 200, 10, [0, 102, 204]]]),
     },
   ];
 }

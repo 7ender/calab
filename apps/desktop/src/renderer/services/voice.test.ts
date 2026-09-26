@@ -990,3 +990,27 @@ describe('defaultStage (docs/09 #56)', () => {
     expect(defaultStage('r1')).toBe('expanded');
   });
 });
+
+describe('own stream (docs/09 #18a)', () => {
+  it('is listed from the local track (no subscription), watched like the others, gone after stop', async () => {
+    await voice.join('A', 'ws');
+    await settle();
+    usePrefs.setState({ streamStage: { A: 'pip' } });
+    const video = { sid: 'TR_mine', mediaStreamTrack: {} };
+    const stop = vi.fn(() => Promise.resolve());
+    const engine = voice as unknown as { screen: unknown; refreshStreams(): void };
+    engine.screen = { video, audio: null, stop };
+    engine.refreshStreams();
+    let v = useVoice.getState();
+    expect(v.streams).toEqual([{ trackSid: 'TR_mine', identity: 'u1:mine', userId: 'u1', hasAudio: false, local: true }]);
+    expect(v.watching).toBe('TR_mine');
+    expect(v.stage).toBe('pip');
+    expect(voice.streamVideo('TR_mine')).toBe(video);
+    await voice.stopStream();
+    v = useVoice.getState();
+    expect(stop).toHaveBeenCalled();
+    expect(v.streams).toEqual([]);
+    expect(v.watching).toBeNull();
+    expect(voice.streamVideo('TR_mine')).toBeNull();
+  });
+});

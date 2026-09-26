@@ -299,7 +299,7 @@ export const ru = {
   'stream.expand': 'Развернуть',
   'stream.collapse': 'Свернуть в угол',
   'stream.popout': 'В отдельное окно',
-  'stream.fullscreen': 'Во весь экран',
+  'stream.fullscreen': 'На весь экран',
   'stream.close': 'Не смотреть',
   'stream.showChat': 'Чат',
   'stream.showChatHint': 'Показать чат, стрим — в углу',

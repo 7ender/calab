@@ -797,6 +797,12 @@ class VoiceEngine {
         streams.push({ trackSid: pub.trackSid, identity: p.identity, userId: userIdOf(p.identity), hasAudio });
       }
     }
+    // My own stream, like the others' (docs/09 #18a): shown from the local track, first in the list.
+    const mine = this.screen?.video.sid;
+    if (mine) {
+      const me = room.localParticipant.identity;
+      streams.unshift({ trackSid: mine, identity: me, userId: userIdOf(me), hasAudio: false, local: true });
+    }
     const st = useVoice.getState();
     let watching = st.watching;
     if (watching && !streams.some((s) => s.trackSid === watching)) watching = null;
@@ -883,6 +889,13 @@ class VoiceEngine {
       if (pub) return pub;
     }
     return undefined;
+  }
+
+  /** The video of a stream in my room: my own local track (docs/09 #18a, no subscription) or a remote one. */
+  streamVideo(trackSid: string): RemoteVideoTrack | ActiveScreenShare['video'] | null {
+    const mine = this.screen?.video;
+    if (mine && mine.sid === trackSid) return mine;
+    return this.remoteVideo(trackSid);
   }
 
   remoteVideo(trackSid: string): RemoteVideoTrack | null {
@@ -1628,6 +1641,7 @@ class VoiceEngine {
           if (this.screen === share) {
             this.screen = null;
             setVoice({ myStream: null });
+            this.refreshStreams();
           }
         },
         captured,
@@ -1645,6 +1659,7 @@ class VoiceEngine {
       setVoice({
         myStream: { sourceName: share.sourceName, preset, hasAudio: share.audio !== null, audioError: audio?.text ?? null, viewers: 0 },
       });
+      this.refreshStreams();
       if (preset !== opts.preset) toast.info(t('mediaErr.stream.limited'));
     } catch (err) {
       log.error('stream start failed', err);
@@ -1682,6 +1697,7 @@ class VoiceEngine {
     this.screen = null;
     if (s) this.viewers.delete(s.video.sid ?? '');
     setVoice({ myStream: null });
+    if (s) this.refreshStreams();
     if (s) await s.stop();
   }
 

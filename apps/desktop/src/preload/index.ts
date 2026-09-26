@@ -53,7 +53,7 @@ const api: CalabaApi = {
     pathOf: (f) => webUtils.getPathForFile(f),
   },
   capture: {
-    listSources: () => ipcRenderer.invoke(IPC.captureListSources),
+    listSources: (thumbs) => ipcRenderer.invoke(IPC.captureListSources, thumbs),
     selectSource: (sel) => ipcRenderer.invoke(IPC.captureSelectSource, sel),
   },
   ptt: {
@@ -73,6 +73,11 @@ const api: CalabaApi = {
     requestScreenAccess: () => ipcRenderer.invoke(IPC.screenRequestAccess),
     relaunch: () => ipcRenderer.invoke(IPC.appRelaunch),
     idleSeconds: () => ipcRenderer.invoke(IPC.systemIdleSeconds),
+  },
+  window: {
+    setFullScreen: (on) => ipcRenderer.invoke(IPC.windowSetFullScreen, on),
+    isFullScreen: () => ipcRenderer.invoke(IPC.windowIsFullScreen),
+    onFullScreenChange: (cb) => on(IPC.windowFullScreenChanged, cb),
   },
 };
 

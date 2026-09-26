@@ -26,12 +26,18 @@ export type StreamQuality = 'auto' | 'high' | 'medium' | 'low';
 /** Screen-share codec override from the picker's advanced settings ('auto' = ADR-0012 choice). */
 export type StreamCodecChoice = 'auto' | 'av1' | 'vp9' | 'h264' | 'vp8';
 
+/** A stream in my room: a remote one, or my own (`local`, docs/09 #18a). */
 export interface RemoteStream {
   trackSid: string;
   userId: string;
   identity: string;
-  /** The streamer also publishes system audio. */
+  /** The streamer also publishes system audio (never true for mine: I don't play my own sound). */
   hasAudio: boolean;
+  /**
+   * My own stream: shown from the local LocalTrackPublication (no subscription), badge «Вы
+   * стримите», no quality / volume controls.
+   */
+  local?: boolean;
 }
 
 /** A remote webcam in my room (LiveKit camera publication). */

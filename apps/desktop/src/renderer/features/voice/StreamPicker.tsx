@@ -2,7 +2,8 @@ import { ScreenSharePreset, clampStreamPreset, type ConcreteScreenSharePreset } 
 import * as DialogP from '@radix-ui/react-dialog';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { AppWindow, Monitor, MonitorUp, Settings2, TriangleAlert, X } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { thumbSizeFor, type ThumbRequest } from '../../../shared/captureThumb';
 import type { CaptureSource } from '../../../shared/ipc';
 import { Button, Segmented, Spinner, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -13,12 +14,36 @@ import { usePrefs } from '../../stores/prefs';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
-import { presetOptions, presetSummary, splitSources } from './streamFormat';
+import { pickerLayout, presetOptions, presetSummary, splitSources } from './streamFormat';
 
 // Room / workspace settings import these from here.
 export { PRESETS, PRESET_LABEL, presetDetail, presetText } from './streamFormat';
 
 type Tab = 'apps' | 'screens';
+
+/** Resizing the window resizes the cards: refetch the thumbnails once the size settles. */
+const THUMB_REFETCH_MS = 250;
+
+/** Content box (without padding) of the sources area, kept up to date by a ResizeObserver. */
+function useAreaSize(): [(el: HTMLDivElement | null) => void, { w: number; h: number } | null] {
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const ro = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    ro.current?.disconnect();
+    ro.current = null;
+    if (!el) return;
+    const measure = (): void => {
+      const cs = getComputedStyle(el);
+      const w = Math.floor(el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+      const h = Math.floor(el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom));
+      if (w > 0) setSize((s) => (s && s.w === w && s.h === h ? s : { w, h }));
+    };
+    ro.current = new ResizeObserver(measure);
+    ro.current.observe(el);
+    measure();
+  }, []);
+  return [ref, size];
+}
 
 /**
  * Tooltip rendered inside the dialog (no portal): the shared Tip portals to <body> at the popover
@@ -89,9 +114,10 @@ function SourceCard({ source, selected, onSelect, onStart }: { source: CaptureSo
   return (
     <div
       data-testid="stream-source"
+      // The selection ring is inset: it never sticks out of the card (nor gets clipped by the grid).
       className={cx(
         'group relative rounded-[var(--radius-card)] p-1.5 transition-colors duration-[var(--motion-fast)]',
-        selected ? 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] ring-2 ring-accent' : 'hover:bg-hover',
+        selected ? 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] ring-2 ring-inset ring-accent' : 'hover:bg-hover',
       )}
     >
       <button
@@ -104,7 +130,8 @@ function SourceCard({ source, selected, onSelect, onStart }: { source: CaptureSo
       >
         <span className="grid aspect-video w-full place-items-center overflow-hidden rounded-[var(--radius-row)] bg-[var(--color-video-bg)]">
           {source.thumbnail ? (
-            <img src={source.thumbnail} alt="" draggable={false} className="size-full object-contain" />
+            // Fetched at this box's size in device pixels (shared/captureThumb): drawn 1:1, no upscaling.
+            <img src={source.thumbnail} alt="" draggable={false} className="size-full object-contain [image-rendering:auto]" />
           ) : (
             <Fallback className="size-10 text-faint" aria-hidden />
           )}
@@ -140,8 +167,9 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   const prefs = usePrefs();
   const web = platform.kind === 'web';
   const [sources, setSources] = useState<CaptureSource[] | null>(web ? [] : null);
-  const [tab, setTab] = useState<Tab>('apps');
+  const [tab, setTab] = useState<Tab>('screens');
   const [pickedId, setPickedId] = useState<string | null>(null);
+  const [areaRef, area] = useAreaSize();
   const [systemAudio, setSystemAudio] = useState(info?.systemAudioLoopback === 'supported');
   const [advanced, setAdvanced] = useState(false);
   const max = room?.media?.maxStreamPreset || ScreenSharePreset.H1080;
@@ -149,24 +177,58 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   const loopback = info?.systemAudioLoopback ?? 'unsupported';
   const available = useMemo(() => encodableCodecs(), []);
 
-  useEffect(() => {
-    if (web) return; // the browser shows its own picker on getDisplayMedia()
-    let alive = true;
-    void platform.capture.listSources().then((list) => {
-      if (!alive) return;
-      const { apps, screens } = splitSources(list);
-      const first: Tab = apps.length > 0 ? 'apps' : 'screens';
-      setSources(list);
-      setTab(first);
-      setPickedId((first === 'apps' ? apps[0] : screens[0])?.id ?? null);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [web]);
-
   const groups = splitSources(sources ?? []);
   const shown = tab === 'apps' ? groups.apps : groups.screens;
+
+  // Thumbnails at the cards' size (docs/09 #17): one screen = one big card, several = a grid.
+  // Before the first list: one screen (the usual case), a grid of windows.
+  const dpr = window.devicePixelRatio || 1;
+  const nScreens = sources ? groups.screens.length : 1;
+  const nApps = sources ? groups.apps.length : 2;
+  const wanted: ThumbRequest | null = area
+    ? { screen: thumbSizeFor(pickerLayout(area.w, area.h, nScreens).preview, dpr), window: thumbSizeFor(pickerLayout(area.w, area.h, nApps).preview, dpr) }
+    : null;
+  const wantedKey = wanted ? `${wanted.screen.width}x${wanted.screen.height}/${wanted.window.width}x${wanted.window.height}` : '';
+  const fetched = useRef<string | null>(null);
+  const initialized = useRef(false);
+  const oneScreen = !!info?.visualTest && (window as Window & { __calabaVisualOneScreen?: boolean }).__calabaVisualOneScreen === true;
+
+  const listed = sources !== null;
+  useEffect(() => {
+    if (web || !wanted || fetched.current === wantedKey) return; // web: the browser shows its own picker
+    let alive = true;
+    let done = false;
+    const load = (): void => {
+      fetched.current = wantedKey;
+      void platform.capture.listSources(wanted).then((all) => {
+        if (!alive) return;
+        done = true;
+        // Visual tests: the single-screen layout from the two synthetic screens.
+        const list = oneScreen ? all.filter((s) => s.kind !== 'screen' || s === all.find((o) => o.kind === 'screen')) : all;
+        setSources(list);
+        if (initialized.current) return;
+        // The first list: «Весь экран» first and by default (docs/09 #17), its first screen picked.
+        initialized.current = true;
+        const { apps, screens } = splitSources(list);
+        const firstTab: Tab = screens.length > 0 || apps.length === 0 ? 'screens' : 'apps';
+        setTab(firstTab);
+        setPickedId((firstTab === 'screens' ? screens[0] : apps[0])?.id ?? null);
+      });
+    };
+    // The first list at once; after a resize, once the size settles.
+    const timer = window.setTimeout(load, listed ? THUMB_REFETCH_MS : 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      // Superseded before its answer: this size was not shown after all.
+      if (!done && fetched.current === wantedKey) fetched.current = null;
+    };
+    // `wanted` is described by `wantedKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [web, wantedKey, oneScreen]);
+
+  const layout = area ? pickerLayout(area.w, area.h, shown.length) : null;
+  const only = shown.length === 1 ? shown[0] : undefined;
   const picked = sources?.find((s) => s.id === pickedId) ?? null;
 
   const switchTab = (next: Tab): void => {
@@ -218,8 +280,8 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
                   value={tab}
                   onChange={switchTab}
                   options={[
-                    { value: 'apps', label: t('streamPick.apps') },
                     { value: 'screens', label: t('streamPick.screens') },
+                    { value: 'apps', label: t('streamPick.apps') },
                   ]}
                 />
               )}
@@ -242,7 +304,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
             ) : null}
 
             {/* The last 16 px (the bottom padding) fade out, so a row cut by the footer reads as «more below». */}
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 [mask-image:linear-gradient(to_bottom,black_calc(100%-16px),transparent)]">
+            <div ref={areaRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 [mask-image:linear-gradient(to_bottom,black_calc(100%-16px),transparent)]">
               {web ? (
                 <div className="flex flex-col items-center justify-center gap-2 px-8 py-6 text-center">
                   <MonitorUp className="size-10 text-faint" aria-hidden />
@@ -255,8 +317,20 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
                 </div>
               ) : shown.length === 0 ? (
                 <div className="grid h-full place-items-center text-muted">{tab === 'apps' ? t('streamPick.noApps') : t('streamPick.noScreens')}</div>
+              ) : layout?.single && only ? (
+                // One source: one large card in the middle of the area (docs/09 #17).
+                <div className="grid h-full place-items-center" data-layout="single">
+                  <div style={{ width: layout.card }}>
+                    <SourceCard source={only} selected={only.id === pickedId} onSelect={() => setPickedId(only.id)} onStart={() => start(only)} />
+                  </div>
+                </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 p-0.5">
+                // Fixed column width = the width the thumbnails were fetched for (drawn 1:1).
+                <div
+                  className="grid justify-center gap-3"
+                  data-layout="grid"
+                  style={{ gridTemplateColumns: layout ? `repeat(2, ${layout.card}px)` : 'repeat(2, minmax(0, 1fr))' }}
+                >
                   {shown.map((s) => (
                     <SourceCard key={s.id} source={s} selected={s.id === pickedId} onSelect={() => setPickedId(s.id)} onStart={() => start(s)} />
                   ))}

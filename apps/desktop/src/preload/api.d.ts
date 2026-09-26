@@ -25,6 +25,7 @@ import type {
   TrayState,
   UpdateStatus,
 } from '../shared/ipc';
+import type { ThumbRequest } from '../shared/captureThumb';
 
 type Unsubscribe = () => void;
 
@@ -84,7 +85,8 @@ export interface CalabaApi {
     pathOf(file: File): string;
   };
   capture: {
-    listSources(): Promise<CaptureSource[]>;
+    /** Thumbnails at `thumbs` (device px per kind, shared/captureThumb); main clamps them. */
+    listSources(thumbs?: ThumbRequest): Promise<CaptureSource[]>;
     /** Arms the next getDisplayMedia() call of this window with the chosen source. */
     selectSource(sel: CaptureSelection): Promise<void>;
   };
@@ -123,6 +125,14 @@ export interface CalabaApi {
      * needed); web: input inside this tab only.
      */
     idleSeconds(): Promise<number>;
+  };
+  /** This window (the caller's own BrowserWindow: the main window or a stream pop-out). */
+  window: {
+    /** Native full screen on / off; off restores the size saved on entry (docs/09 #18). */
+    setFullScreen(on: boolean): Promise<boolean>;
+    isFullScreen(): Promise<boolean>;
+    /** Entered / left full screen, whoever caused it (our button, ⌃⌘F, the green button, Esc). */
+    onFullScreenChange(cb: (on: boolean) => void): Unsubscribe;
   };
 }
 
