@@ -13,6 +13,7 @@ import { t } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api, uploadAvatar } from '../../lib/api/endpoints';
 import { fmtStamp } from '../../lib/format';
+import { CHECK_IDS, runConnectionCheck, type CheckId, type CheckRow } from '../../lib/connCheck';
 import { log } from '../../lib/log';
 import { METER_MIN_DB } from '../../lib/media/vad';
 import { platform } from '../../platform';
@@ -575,9 +576,12 @@ function ConnectionTab(): ReactNode {
   const gateway = useSession((s) => s.gateway);
   const pair = useVoice((s) => s.stats?.pair ?? null);
   const inVoice = useVoice((s) => s.roomId !== null);
+  const phase = useVoice((s) => s.phase);
+  const link = useVoice((s) => s.link);
   const stats = useVoice((s) => s.stats);
   const [ping, setPing] = useState<{ ms: number | null; error: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rows, setRows] = useState<CheckRow[] | null>(null);
 
   // Round trip of the lightest authenticated API call (/healthz is not proxied publicly).
   const measure = useCallback(async (): Promise<void> => {
@@ -590,10 +594,19 @@ function ConnectionTab(): ReactNode {
       setPing({ ms: null, error: errorText(e, t('conn.checkFailed')) });
     }
   }, []);
+  // «Проверить»: every path voice needs (lib/connCheck), rows appear as they finish.
   const check = async (): Promise<void> => {
     setBusy(true);
+    setRows([]);
     await measure();
-    setBusy(false);
+    const { url, token, iceServers } = voice.linkInfo();
+    try {
+      await runConnectionCheck({ apiFetch: (path) => platform.apiFetch(path), rtcUrl: url, token, iceServers }, (r) => setRows((prev) => [...(prev ?? []), r]));
+    } catch (e) {
+      log.warn('connection check failed', e);
+    } finally {
+      setBusy(false);
+    }
   };
   const ready = gateway === 'ready';
   // «Сервер: Подключено · 23 мс» — measured when the page opens and every 15 s while it is open.
@@ -622,9 +635,26 @@ function ConnectionTab(): ReactNode {
           {ping.error}
         </p>
       ) : null}
-      <Row label={t('conn.voicePath')}>
-        <span className="text-body text-muted">{inVoice ? (path ?? t('conn.connecting')) : t('conn.notInVoice')}</span>
+      {/* «Голос»: the phase, failed attempts in a row, the LiveKit host and the last error. */}
+      <Row label={t('conn.voicePath')} hint={link.rtcHost ?? undefined}>
+        <span className={cx('text-body', phase === 'blocked' ? 'text-danger-text' : phase === 'reconnecting' || phase === 'connecting' ? 'text-warn' : 'text-muted')}>
+          {phase === 'blocked'
+            ? t('conn.voiceBlocked')
+            : phase === 'reconnecting'
+              ? t('voice.reconnecting')
+              : inVoice
+                ? phase === 'connected'
+                  ? (path ?? t('conn.ok'))
+                  : t('conn.connecting')
+                : t('conn.notInVoice')}
+          {link.attempts > 0 && phase !== 'connected' ? <span className="tabular-nums text-muted"> · {t('conn.voiceAttempts', { n: link.attempts })}</span> : null}
+        </span>
       </Row>
+      {link.lastError && phase !== 'connected' ? (
+        <p className="break-words px-3 py-2 text-caption text-danger-text" role="alert">
+          {t('conn.lastError', { error: link.lastError })}
+        </p>
+      ) : null}
       {stats ? (
         <Row label={t('conn.traffic')}>
           <span className="text-body tabular-nums text-muted">
@@ -637,7 +667,38 @@ function ConnectionTab(): ReactNode {
           {t('conn.checkBtn')}
         </Button>
       </Row>
+      {rows ? (
+        <div data-testid="conn-check">
+          {CHECK_IDS.map((id) => (
+            <CheckResultRow key={id} id={id} row={rows.find((r) => r.id === id)} />
+          ))}
+        </div>
+      ) : null}
     </Card>
+  );
+}
+
+const CHECK_LABEL: Record<CheckId, 'conn.row.api' | 'conn.row.rtcHttps' | 'conn.row.rtcWss' | 'conn.row.turnUdp' | 'conn.row.turnTls'> = {
+  api: 'conn.row.api',
+  rtcHttps: 'conn.row.rtcHttps',
+  rtcWss: 'conn.row.rtcWss',
+  turnUdp: 'conn.row.turnUdp',
+  turnTls: 'conn.row.turnTls',
+};
+
+/** One line of the check table: the path, PASS/FAIL (+ ms) and the error text as the hint. */
+function CheckResultRow({ id, row }: { id: CheckId; row: CheckRow | undefined }): ReactNode {
+  return (
+    <Row label={t(CHECK_LABEL[id])} hint={row?.detail ?? undefined}>
+      {row ? (
+        <span className={cx('shrink-0 text-body', row.status === 'pass' ? 'text-ok' : row.status === 'fail' ? 'text-danger-text' : 'text-muted')}>
+          {row.status === 'pass' ? t('conn.pass') : row.status === 'fail' ? t('conn.fail') : t('conn.skip')}
+          {row.ms !== null ? <span className="tabular-nums text-muted"> · {row.ms} мс</span> : null}
+        </span>
+      ) : (
+        <Spinner />
+      )}
+    </Row>
   );
 }
 

@@ -41,6 +41,15 @@ export const IPC = {
   /** macOS permission statuses + requesting microphone access (onboarding). */
   systemPermissions: 'system:permissions',
   systemRequestMic: 'system:request-mic',
+  /** Screen Recording status + whether capture actually works now (onboarding). */
+  screenAccess: 'screen:access',
+  /**
+   * macOS: register the app in the Screen Recording list (a capture attempt — TCC lists an app
+   * only after its first try) and open that Privacy pane (docs/09 P0 #3).
+   */
+  screenRequestAccess: 'screen:requestAccess',
+  /** Quit and start again (macOS applies a new Screen Recording grant only after a relaunch). */
+  appRelaunch: 'app:relaunch',
 
   // ---- tray ----
   trayState: 'tray:state',
@@ -249,6 +258,16 @@ export interface PermissionStatus {
   /** Accessibility trust (global PTT on macOS); true elsewhere. */
   accessibility: boolean;
   notifications: 'granted' | 'denied' | 'default' | 'n/a';
+}
+
+export interface ScreenAccess {
+  /** systemPreferences.getMediaAccessStatus('screen'): 'granted' | 'denied' | 'not-determined' | 'restricted' | 'unknown' | 'n/a' */
+  status: string;
+  /**
+   * A probe capture returned real pixels. Only probed when `status` is 'granted': macOS may
+   * report the grant while this process still cannot capture until it is relaunched.
+   */
+  canCapture: boolean;
 }
 
 export interface ProcessMetrics {

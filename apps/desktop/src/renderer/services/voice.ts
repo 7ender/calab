@@ -41,11 +41,12 @@ import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { memberName, useWorkspaces } from '../stores/workspaces';
-import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQuality } from '../stores/voice';
+import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQuality, type VoiceLink } from '../stores/voice';
 import { platform } from '../platform';
 import { cameraWanted } from '../lib/media/cameraLogic';
 import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
+import { cspBlockedHost, describeConnectError, describeDisconnect, hostOfUrl } from '../lib/voiceLink';
 import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
 import { humanMediaError, reportMediaError } from './mediaErrors';
@@ -117,6 +118,8 @@ export function defaultStage(roomId: string | null): 'pip' | 'expanded' {
   return count < SHORT_CHAT ? 'expanded' : 'pip';
 }
 
+const setLink = (p: Partial<VoiceLink>): void => setVoice({ link: { ...useVoice.getState().link, ...p } });
+
 class VoiceEngine {
   private room: Room | null = null;
   private roomId: string | null = null;
@@ -148,6 +151,12 @@ class VoiceEngine {
   readonly camera: CameraController;
   /** Gateway VOICE_MOVED seen, waiting for LiveKit RoomEvent.Moved (else: rejoin). */
   private moveTimer: number | null = null;
+  /** The last /join result (Settings → Соединение → «Проверить» probes this LiveKit host). */
+  private lastJoin: { url: string; token: string } | null = null;
+  /** ICE servers LiveKit handed out at the last successful connect (TURN probe). */
+  private iceServers: RTCIceServer[] = [];
+  /** The seat of the last failed user join: a CSP report arriving after its teardown re-seats it as 'blocked'. */
+  private failedSeat: { roomId: string; workspaceId: string; at: number } | null = null;
 
   constructor() {
     // eslint-disable-next-line @typescript-eslint/no-this-alias -- the controller reads the live room
@@ -179,6 +188,8 @@ class VoiceEngine {
       void this.onDevicesChanged();
     });
     this.snapshotDevices(false);
+    // Our CSP refusing the LiveKit host (docs/09 P0 #1): retries cannot help — say so.
+    document.addEventListener('securitypolicyviolation', (ev) => this.onCspViolation(ev));
     this.gate.configure({ thresholdDb: prefs().thresholdDb });
     usePrefs.subscribe((s, p) => this.onPrefs(s, p));
     void this.syncPttBinding();
@@ -219,7 +230,56 @@ class VoiceEngine {
   async join(roomId: string, workspaceId: string): Promise<void> {
     this.rejoinGen++;
     this.rejoinRoomId = null;
+    this.failedSeat = null;
+    setLink({ attempts: 0, lastError: null, blockedHost: null });
     await this.connect(roomId, workspaceId, false);
+  }
+
+  /**
+   * «Повторить» on the reconnect notice: a blocked seat joins again; a running reconnect cycle
+   * restarts now (the failed-attempt count goes on until a connect succeeds).
+   */
+  retry(): void {
+    const { roomId, workspaceId, phase } = useVoice.getState();
+    if (!roomId || !workspaceId) return;
+    if (phase === 'blocked') {
+      void this.join(roomId, workspaceId);
+      return;
+    }
+    if (phase === 'reconnecting') void this.rejoin(roomId, workspaceId);
+  }
+
+  /** LiveKit endpoint of the last join and the ICE servers it gave (connection check). */
+  linkInfo(): { url: string | null; token: string | null; iceServers: RTCIceServer[] } {
+    return { url: this.lastJoin?.url ?? null, token: this.lastJoin?.token ?? null, iceServers: this.iceServers };
+  }
+
+  private onCspViolation(ev: SecurityPolicyViolationEvent): void {
+    const host = cspBlockedHost(ev);
+    if (!host) return;
+    platform.app.log('error', `[csp] blocked ${ev.effectiveDirective || ev.violatedDirective}: ${ev.blockedURI}`);
+    const rtcHost = hostOfUrl(this.lastJoin?.url);
+    if (!rtcHost || rtcHost !== host) return;
+    const v = useVoice.getState();
+    const seat =
+      v.roomId && v.workspaceId
+        ? { roomId: v.roomId, workspaceId: v.workspaceId }
+        : this.failedSeat && Date.now() - this.failedSeat.at < 10_000
+          ? this.failedSeat
+          : null;
+    if (!seat) return;
+    log.error('voice: LiveKit host blocked by the app CSP', host);
+    // Stop the reconnect cycle: it would only fail the same way.
+    this.rejoinGen++;
+    this.rejoinRoomId = null;
+    this.failedSeat = null;
+    if (this.room || this.roomId) void this.teardown(false, true);
+    setVoice({
+      roomId: seat.roomId,
+      workspaceId: seat.workspaceId,
+      phase: 'blocked',
+      link: { ...useVoice.getState().link, blockedHost: host, lastError: `CSP connect-src: ${ev.blockedURI}` },
+    });
   }
 
   /**
@@ -239,7 +299,7 @@ class VoiceEngine {
       await this.teardownRun;
       if (intent !== this.intentSeq) return;
     }
-    if (this.room) await this.teardown(false);
+    if (this.room) await this.teardown(false, quiet);
     if (intent !== this.intentSeq) return;
     const seq = ++this.joinSeq;
     this.roomId = roomId;
@@ -247,7 +307,8 @@ class VoiceEngine {
     setVoice({
       roomId,
       workspaceId,
-      phase: 'connecting',
+      // A reconnect cycle keeps one stable «Переподключение…» through all its attempts.
+      phase: quiet ? 'reconnecting' : 'connecting',
       error: null,
       streams: [],
       watching: null,
@@ -263,6 +324,8 @@ class VoiceEngine {
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
       const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await api.voice.join(roomId);
       if (seq !== this.joinSeq) return;
+      this.lastJoin = { url: res.url, token: res.token };
+      setLink({ rtcHost: hostOfUrl(res.url) });
       this.audioBitrateKbps = res.media?.audioBitrateKbps || 32;
       const room = new Room({
         adaptiveStream: true,
@@ -286,6 +349,9 @@ class VoiceEngine {
       const perm = room.localParticipant.permissions;
       const canSpeak = moved ? (perm ? canSpeakFrom(perm) : true) : res.canSpeak;
       setVoice({ canSpeak, canStream: res.canStream, canVideo: res.canVideo, phase: 'connected' });
+      setLink({ attempts: 0, lastError: null, blockedHost: null });
+      // After the join LiveKit's rtcConfig carries the TURN servers of the join response.
+      this.iceServers = (room.engine as { rtcConfig?: RTCConfiguration } | undefined)?.rtcConfig?.iceServers ?? [];
       // Subscribe to audio of everyone already here; video only when watched.
       for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
       if (canSpeak) {
@@ -316,9 +382,13 @@ class VoiceEngine {
         return;
       }
       log.error('voice join failed', err);
-      // Rejoin attempts (quiet) only log: the reconnect banner already tells the user.
+      const line = describeConnectError(err);
+      setLink({ attempts: useVoice.getState().link.attempts + 1, lastError: line });
+      // Rejoin attempts (quiet) only log: the reconnect notice already tells the user, and the
+      // seat stays (the voice panel and its menus are not unmounted between attempts).
       const h = quiet ? humanMediaError(err, 'voice') : reportMediaError(err, 'voice');
-      await this.teardown(false);
+      if (!quiet) this.failedSeat = { roomId, workspaceId, at: Date.now() };
+      await this.teardown(false, quiet);
       setVoice({ error: h.text });
     }
   }
@@ -353,10 +423,14 @@ class VoiceEngine {
   /** Bumped by every connect() and leave(): a connect still tearing down the old room bails out. */
   private intentSeq = 0;
 
-  /** Rejoin after an unexpected disconnect: 1 s, 2 s, 4 s … up to 5 attempts. */
-  private async rejoin(): Promise<void> {
-    const roomId = this.roomId;
-    const wsId = useVoice.getState().workspaceId;
+  /**
+   * Rejoin after an unexpected disconnect: 1 s, 2 s, 4 s … up to 5 attempts. The seat (room id,
+   * phase 'reconnecting') stays in the store for the whole cycle: the voice panel keeps its
+   * state and open menus instead of remounting on every attempt.
+   */
+  private async rejoin(seatRoom?: string, seatWs?: string): Promise<void> {
+    const roomId = seatRoom ?? this.roomId;
+    const wsId = seatWs ?? useVoice.getState().workspaceId;
     if (!roomId || !wsId) return;
     const gen = ++this.rejoinGen;
     const stream = useVoice.getState().myStream;
@@ -366,7 +440,7 @@ class VoiceEngine {
     const camera = useVoice.getState().camera === 'on';
     this.rejoinRoomId = roomId;
     try {
-      await this.teardown(false);
+      await this.teardown(false, true);
       for (let attempt = 0; attempt < 5; attempt++) {
         if (gen !== this.rejoinGen) return; // the user left or switched meanwhile
         setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting', serverMuted });
@@ -405,8 +479,9 @@ class VoiceEngine {
   /** The teardown in progress (connect() waits for it). */
   private teardownRun: Promise<void> | null = null;
 
-  private teardown(sound: boolean): Promise<void> {
-    const run = this.doTeardown(sound);
+  /** `keepSeat`: a reconnect — the store keeps room, workspace, phase and the moderator mute. */
+  private teardown(sound: boolean, keepSeat = false): Promise<void> {
+    const run = this.doTeardown(sound, keepSeat);
     this.teardownRun = run;
     const done = (): void => {
       if (this.teardownRun === run) this.teardownRun = null;
@@ -415,7 +490,7 @@ class VoiceEngine {
     return run;
   }
 
-  private async doTeardown(sound: boolean): Promise<void> {
+  private async doTeardown(sound: boolean, keepSeat: boolean): Promise<void> {
     this.joinSeq++;
     this.speakers.reset();
     this.active.reset();
@@ -442,16 +517,13 @@ class VoiceEngine {
     this.wanted.clear();
     this.announced = null;
     setVoice({
-      roomId: null,
-      workspaceId: null,
-      phase: 'idle',
+      ...(keepSeat ? {} : { roomId: null, workspaceId: null, phase: 'idle' as const, serverMuted: false, link: { ...useVoice.getState().link, attempts: 0, blockedHost: null } }),
       transmitting: false,
       speaking: {},
       streams: [],
       watching: null,
       stage: 'pip',
       streamQuality: {},
-      serverMuted: false,
       myStream: null,
       canVideo: false,
       cameras: [],
@@ -477,6 +549,7 @@ class VoiceEngine {
         } else if (st === ConnectionState.Connected) {
           if (was === 'reconnecting') playSound('reconnect');
           setVoice({ phase: 'connected' });
+          setLink({ attempts: 0, blockedHost: null });
         }
       })
       .on(RoomEvent.Disconnected, (reason) => {
@@ -486,6 +559,7 @@ class VoiceEngine {
         else if (reason === DisconnectReason.DUPLICATE_IDENTITY) toast.info(t('mediaErr.voice.duplicate'));
         else if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) toast.info(t('mediaErr.voice.closed'));
         else if (reason !== DisconnectReason.CLIENT_INITIATED) {
+          setLink({ lastError: describeDisconnect(reason === undefined ? undefined : DisconnectReason[reason]) });
           // Network-type loss that LiveKit could not resume itself (sleep, long freeze,
           // server restart): rejoin with a fresh token instead of dropping the user.
           void this.rejoin();
