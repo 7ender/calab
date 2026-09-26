@@ -86,9 +86,14 @@
 
 # Static landing (Next.js static export in /srv/landing, pushed by sync.sh from apps/landing/out).
 # Not a SPA: /foo → foo.html or foo/index.html (trailingSlash export); unknown paths → 404.html.
+# Localized (ADR-0022 §3): / is index.html — a content-less language router (saved choice → browser
+# languages → /en/, keeps #hash, so old /#download links still work); pages live in /ru/ /en/ /es/ /zh/.
 (landing_site) {
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	import releases
+	# canonical locale URLs end with a slash (trailingSlash export)
+	@locale_noslash path /ru /en /es /zh
+	redir @locale_noslash {path}/ 308
 	handle {
 		root * /srv/landing
 		encode zstd gzip
@@ -114,6 +119,12 @@
 		file_server
 	}
 	handle_errors 404 {
+		# A locale we don't have (/de/, /fr/…, /pt-BR/…) → the default locale instead of a 404.
+		@unknown_locale {
+			path_regexp ^/[A-Za-z]{2}([-_][A-Za-z0-9]{2,8})?(/.*)?$
+			not path /ru/* /en/* /es/* /zh/*
+		}
+		redir @unknown_locale /en/ 302
 		root * /srv/landing
 		rewrite * /404.html
 		file_server
