@@ -25,6 +25,17 @@ describe('SpeakingDebouncer', () => {
     expect(last()).toEqual({});
   });
 
+  it('instantOff (my ring in PTT) hides at once, without the hold and the batch; others keep the hold', () => {
+    const { d, last } = make();
+    d.update(['me', 'a']);
+    vi.advanceTimersByTime(SPEAKING_BATCH_MS);
+    expect(last()).toEqual({ me: true, a: true });
+    d.update([], new Set(['me']));
+    expect(last()).toEqual({ a: true });
+    vi.advanceTimersByTime(300 + SPEAKING_BATCH_MS);
+    expect(last()).toEqual({});
+  });
+
   it('keeps the ring through pauses shorter than the hold (no flicker)', () => {
     const { d, last, calls } = make();
     d.update(['a']);

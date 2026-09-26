@@ -260,6 +260,9 @@ export const zhCN: Dict = {
   'voice.pttCapsToggle':
     '大写锁定键为切换模式：按一次开启麦克风，再按一次关闭。若要改为按住模式，请允许"输入监控"权限，或开启"大写锁定键不改变大小写"。',
   'voice.pttToggleNote': '切换模式：按一次开启麦克风，再按一次关闭。',
+  'voice.pttRelease': '松开延迟',
+  'voice.pttReleaseHint': '松开按键后麦克风继续保持开启的时长。',
+  'voice.pttReleaseToggle': '切换模式下不使用：再次按键时麦克风立即关闭。',
   'voice.pttLastKey': '最近按键：{key} {dir}（{source}；代码 {code}，原始 {raw}）',
   'voice.pttLastKeyDup': '——重复，已忽略',
   'voice.pttSourceTap': '钩子',

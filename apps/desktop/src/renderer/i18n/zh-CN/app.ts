@@ -87,6 +87,8 @@ export const zhApp: DictShape<typeof enApp> = {
   'settings.hotkeys': '快捷键',
   'hotkeys.ptt': '按键说话',
   'hotkeys.pttFooter': '仅当"语音与设备"中选择"按键说话"模式时，该按键才生效。',
+  'hotkeys.pttReleaseWhere': '在"语音与设备"中设置。',
+  'hotkeys.pttReleaseOpen': '更改',
   'hotkeys.app': '应用窗口内',
   'hotkeys.appFooter': '仅当 Calab 窗口处于活动状态时快捷键才生效。',
 

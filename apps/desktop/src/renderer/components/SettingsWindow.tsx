@@ -2,7 +2,7 @@ import * as DialogP from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { LucideIcon } from 'lucide-react';
 import { Search, X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { t } from '../i18n';
 import { highlight, hintExcerpt, labelMatches, queryWords, searchSettings, type SettingsEntry } from './settingsSearch';
 import { IconButton, cx } from './ui';
@@ -14,6 +14,14 @@ export interface SettingsSection {
   content: ReactNode;
   /** Red label (e.g. «Удалить пространство»). */
   destructive?: boolean;
+}
+
+/** Opens another section of the enclosing settings window (a cross-link between sections). */
+const SettingsNav = createContext<((section: string) => void) | null>(null);
+
+/** Null outside a SettingsWindow (e.g. onboarding): render no cross-link then. */
+export function useSettingsNav(): ((section: string) => void) | null {
+  return useContext(SettingsNav);
 }
 
 /**
@@ -144,6 +152,10 @@ export function SettingsWindow({
   const openSection = (id: string): void => {
     setValue(id);
     setHit(null);
+  };
+  const goTo = (id: string): void => {
+    setQuery('');
+    openSection(id);
   };
   const jump = (e: SettingsEntry): void => {
     setValue(e.section);
@@ -303,7 +315,9 @@ export function SettingsWindow({
                     forceMount={searching ? true : undefined}
                     className="min-h-0 flex-1 overflow-y-auto px-6 py-5 focus-visible:-outline-offset-2 data-[state=inactive]:hidden mobile:px-4 mobile:pb-[calc(var(--safe-bottom)+20px)]"
                   >
-                    <div className="mx-auto flex max-w-[640px] flex-col gap-6">{s.content}</div>
+                    <div className="mx-auto flex max-w-[640px] flex-col gap-6">
+                      <SettingsNav.Provider value={goTo}>{s.content}</SettingsNav.Provider>
+                    </div>
                   </Tabs.Content>
                 ))}
               </div>

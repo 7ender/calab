@@ -33,6 +33,7 @@ import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '..
 import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
+import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
 import { canSpeakFrom, isDeviceGone, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
@@ -64,7 +65,6 @@ import { sameBinding } from './profile';
  *     false` only — the sender emits silence (Opus DTX), no signalling (ADR-0014, lib/voiceLogic.ts).
  */
 
-const PTT_RELEASE_MS = 200;
 const METER_UI_INTERVAL_MS = 50;
 const STATS_INTERVAL_MS = ECHO.statsMs;
 /** Remote SSRC levels are fresh when played out within this window (DTX sends ~every 400 ms). */
@@ -132,7 +132,10 @@ class VoiceEngine {
   private mic: MicPipeline | null = null;
   private micTrack: LocalAudioTrack | null = null;
   private readonly gate = new VoiceGate();
-  private releaseTimer: number | null = null;
+  /** PTT on air incl. the release tail (lib/pttRelease.ts); mirrors into the store's `pttDown`. */
+  private readonly ptt = new PttRelease((on) => this.onPttTalking(on));
+  /** performance.now() of the last PTT key-up and main's timestamp of it (debug latency log). */
+  private pttUp: { t: number; at: number | undefined } | null = null;
   private lastMeterPush = 0;
   private audioBitrateKbps = 32;
   private screen: ActiveScreenShare | null = null;
@@ -220,6 +223,8 @@ class VoiceEngine {
   private onPrefs(s: Prefs, p: Prefs): void {
     if (s.thresholdDb !== p.thresholdDb) this.gate.configure({ thresholdDb: s.thresholdDb });
     if (s.micMode !== p.micMode || !sameBinding(s.pttBinding, p.pttBinding)) {
+      // A pending release tail belongs to the old binding / mode: off now.
+      if (this.ptt.pending) this.ptt.stop();
       void this.syncPttBinding();
       this.applyTransmit();
     }
@@ -576,6 +581,7 @@ class VoiceEngine {
 
   private async doTeardown(sound: boolean, keepSeat: boolean): Promise<void> {
     this.joinSeq++;
+    this.endPttTail();
     this.resetSpeaking();
     this.active.reset();
     this.clearMoveTimer();
@@ -892,7 +898,11 @@ class VoiceEngine {
   /** Speaking rings now; the active speaker for video only after 2 s of speech (lib/activeSpeaker.ts). */
   private syncSpeaking(): void {
     const local = this.room?.localParticipant.identity ?? null;
-    this.speakers.update(speakingUserIds(this.remoteSpeakers, local, { userId: this.myId() || null, on: this.selfSpeaking && this.room !== null }));
+    const me = this.myId() || null;
+    // PTT: my ring is the gate itself (the release tail already applied) — off at once, without
+    // the 300 ms speaking hold. VAD keeps the hold: the gate flaps between words.
+    const instantOff = me && prefs().micMode === 'ptt' && !this.selfSpeaking ? new Set([me]) : undefined;
+    this.speakers.update(speakingUserIds(this.remoteSpeakers, local, { userId: me, on: this.selfSpeaking && this.room !== null }), instantOff);
   }
 
   /** My ring: the mic is actually on air (VAD gate open / PTT held, not muted). */
@@ -1325,9 +1335,13 @@ class VoiceEngine {
    *    The track stays published, so opening is instant.
    */
   private applyTransmit(): void {
-    this.applyDuck(); // PTT pressed / deafen: the duck follows at once, not at the next level tick
     const t = this.micTrack;
     const d = this.decision();
+    // Closing is the latency-critical edge (PTT key-up): silence the sender first, synchronously —
+    // before the store / ring / duck updates and regardless of an in-flight LiveKit mute op
+    // (a finishing unmute() re-enables the track, then `finally` re-applies this decision).
+    if (t && !d.audioEnabled) t.mediaStreamTrack.enabled = false;
+    this.applyDuck(); // PTT pressed / deafen: the duck follows at once, not at the next level tick
     setVoice({ transmitting: d.transmitting && t !== null });
     this.setSelfSpeaking(d.transmitting && t !== null);
     if (!t) return;
@@ -1357,10 +1371,7 @@ class VoiceEngine {
 
   /** Power events (sleep / lock): a key-up lost meanwhile must not leave PTT on (review M6). */
   resetPtt(): void {
-    if (this.releaseTimer !== null) {
-      window.clearTimeout(this.releaseTimer);
-      this.releaseTimer = null;
-    }
+    this.ptt.stop();
     if (!useVoice.getState().pttDown) return;
     setVoice({ pttDown: false });
     this.applyTransmit();
@@ -1368,30 +1379,46 @@ class VoiceEngine {
 
   /**
    * On-screen push-to-talk (phone layout, ADR-0021): the button held (down) / released. The same
-   * path as a key: the 200 ms release tail, the PTT sounds; only matters in the PTT mic mode.
+   * path as a key: the release tail (prefs.pttReleaseMs), the PTT sounds; only matters in the PTT mic mode.
    */
   pttHold(down: boolean): void {
     this.onPtt({ down });
   }
 
   private onPtt(ev: PttEvent): void {
-    if (this.releaseTimer !== null) {
-      window.clearTimeout(this.releaseTimer);
-      this.releaseTimer = null;
-    }
-    const inCall = this.room !== null && useVoice.getState().phase === 'connected';
     if (ev.down) {
-      if (inCall && !useVoice.getState().pttDown) playSound('pttOn');
-      setVoice({ pttDown: true });
-      this.applyTransmit();
+      this.pttUp = null;
+      this.ptt.press();
+    } else if (ev.immediate) {
+      // Toggle-off / gate reset: no release tail.
+      this.pttUp = { t: performance.now(), at: ev.at };
+      this.ptt.stop();
     } else {
-      this.releaseTimer = window.setTimeout(() => {
-        this.releaseTimer = null;
-        if (inCall && useVoice.getState().pttDown) playSound('pttOff');
-        setVoice({ pttDown: false });
-        this.applyTransmit();
-      }, PTT_RELEASE_MS);
+      this.pttUp = { t: performance.now(), at: ev.at };
+      this.ptt.release(prefs().pttReleaseMs);
     }
+  }
+
+  /** The PTT gate really opened / closed (after the release tail). */
+  private onPttTalking(on: boolean): void {
+    const inCall = this.room !== null && useVoice.getState().phase === 'connected';
+    setVoice({ pttDown: on });
+    this.applyTransmit();
+    if (inCall) playSound(on ? 'pttOn' : 'pttOff');
+    const up = this.pttUp;
+    if (!on && up) {
+      this.pttUp = null;
+      log.debug('[ptt] key-up → gate closed', {
+        ipcMs: up.at !== undefined ? Date.now() - up.at : null,
+        gateMs: Math.round(performance.now() - up.t),
+        releaseMs: prefs().pttReleaseMs,
+      });
+    }
+  }
+
+  /** Mute / deafen / leave end a pending release tail at once (the key is already up). */
+  private endPttTail(): void {
+    if (this.ptt.pending) this.ptt.stop();
   }
 
   // ------------------------------------------------------------ mute / deafen
@@ -1515,6 +1542,8 @@ class VoiceEngine {
   }
 
   private afterSelfChange(): void {
+    const v = useVoice.getState();
+    if (v.muted || v.deafened) this.endPttTail();
     this.applyVolumes();
     this.applyTransmit();
     this.pushSelfState();

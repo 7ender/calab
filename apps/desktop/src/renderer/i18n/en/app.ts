@@ -87,6 +87,8 @@ export const enApp: DictShape<typeof ruApp> = {
   'settings.hotkeys': 'Keyboard shortcuts',
   'hotkeys.ptt': 'Push-to-talk',
   'hotkeys.pttFooter': 'The key works only when “Push-to-talk” mode is selected in “Voice & devices”.',
+  'hotkeys.pttReleaseWhere': 'Set in “Voice & devices”.',
+  'hotkeys.pttReleaseOpen': 'Change',
   'hotkeys.app': 'In the app window',
   'hotkeys.appFooter': 'Shortcuts work while the Calab window is active.',
 

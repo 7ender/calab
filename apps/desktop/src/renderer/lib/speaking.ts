@@ -15,6 +15,8 @@ export interface Timers {
   clear(id: number): void;
 }
 
+const NONE: ReadonlySet<string> = new Set();
+
 const windowTimers: Timers = {
   set: (fn, ms) => window.setTimeout(fn, ms),
   clear: (id) => window.clearTimeout(id),
@@ -51,11 +53,15 @@ export class SpeakingDebouncer {
     private readonly batchMs = SPEAKING_BATCH_MS,
   ) {}
 
-  /** The current raw set of active speakers (user ids). */
-  update(active: Iterable<string>): void {
+  /**
+   * The current raw set of active speakers (user ids). `instantOff`: ids whose «off» is exact and
+   * must not linger (my own ring in push-to-talk: it follows the gate, the release tail is already
+   * applied) — hidden and emitted at once, without the hide delay and the batch.
+   */
+  update(active: Iterable<string>, instantOff: ReadonlySet<string> = NONE): void {
     const now = new Set(active);
     for (const id of now) this.want(id, true);
-    for (const id of this.shown) if (!now.has(id)) this.want(id, false);
+    for (const id of this.shown) if (!now.has(id)) this.want(id, false, instantOff.has(id));
     // Pending "show" for someone who stopped before the delay elapsed: cancel.
     for (const [id, p] of this.pending) if (p.to && !now.has(id)) this.cancel(id);
   }
@@ -69,12 +75,20 @@ export class SpeakingDebouncer {
     this.flush();
   }
 
-  private want(id: string, on: boolean): void {
+  private want(id: string, on: boolean, instant = false): void {
     const isShown = this.shown.has(id);
     const p = this.pending.get(id);
     if (isShown === on) {
       // Already in the wanted state: a pending opposite transition is obsolete.
       if (p) this.cancel(id);
+      return;
+    }
+    if (instant) {
+      if (p) this.cancel(id);
+      this.shown.delete(id);
+      if (this.flushTimer !== null) this.timers.clear(this.flushTimer);
+      this.flushTimer = null;
+      this.flush();
       return;
     }
     if (p?.to === on) return; // already scheduled

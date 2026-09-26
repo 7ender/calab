@@ -123,8 +123,8 @@ function watchHid(): void {
 
 // ---- events ----
 
-function send(talking: boolean): void {
-  const ev: PttEvent = { down: talking };
+function send(talking: boolean, immediate: boolean): void {
+  const ev: PttEvent = { down: talking, immediate, at: Date.now() };
   for (const wc of subscribers) {
     if (wc.isDestroyed()) subscribers.delete(wc);
     else wc.send(IPC.pttEvent, ev);

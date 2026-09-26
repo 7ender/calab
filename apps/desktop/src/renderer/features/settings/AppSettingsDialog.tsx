@@ -29,6 +29,7 @@ import { LicenseCard } from '../legal/Legal';
 import { HotkeyRow } from './HotkeyRow';
 import { EchoCard } from './EchoCard';
 import { PttBinder } from './PttBinder';
+import { PttReleaseDelay, PttReleaseLink } from './PttReleaseDelay';
 import { deviceLabel, osLabel, updateLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
 import { SoundSettings } from '../people/SoundSettings';
@@ -444,7 +445,10 @@ function VoiceTab(): ReactNode {
             <span className="text-caption text-faint">{t('voice.thresholdHint')}</span>
           </div>
         ) : (
-          <PttBinder />
+          <>
+            <PttBinder />
+            <PttReleaseDelay />
+          </>
         )}
       </Card>
 
@@ -495,6 +499,7 @@ function HotkeysTab(): ReactNode {
     <>
       <Card title={t('hotkeys.ptt')} footer={t('hotkeys.pttFooter')}>
         <PttBinder />
+        <PttReleaseLink />
       </Card>
       <Card title={t('hotkeys.app')} footer={t('hotkeys.appFooter')}>
         {shortcutHelp().map((s) =>

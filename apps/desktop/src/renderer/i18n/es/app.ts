@@ -87,6 +87,8 @@ export const esApp: DictShape<typeof enApp> = {
   'settings.hotkeys': 'Atajos de teclado',
   'hotkeys.ptt': 'Pulsar para hablar',
   'hotkeys.pttFooter': 'La tecla funciona solo cuando el modo «Pulsar para hablar» está elegido en «Voz y dispositivos».',
+  'hotkeys.pttReleaseWhere': 'Se ajusta en «Voz y dispositivos».',
+  'hotkeys.pttReleaseOpen': 'Cambiar',
   'hotkeys.app': 'En la ventana de la app',
   'hotkeys.appFooter': 'Los atajos funcionan mientras la ventana de Calab está activa.',
 

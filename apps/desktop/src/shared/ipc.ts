@@ -287,6 +287,10 @@ export type PttHidState = 'unsupported' | 'off' | 'starting' | 'running' | 'deni
 
 export interface PttEvent {
   down: boolean;
+  /** Off without the release tail (toggle-off, gate reset); a hold key-up leaves it unset. */
+  immediate?: boolean;
+  /** Date.now() when main saw the key (debug: IPC + release latency). */
+  at?: number;
 }
 
 /** main → renderer while a PTT capture is armed: the last raw key event (diagnostics line). */

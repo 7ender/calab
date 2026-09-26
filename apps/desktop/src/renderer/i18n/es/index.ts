@@ -260,6 +260,9 @@ export const es: Dict = {
   'voice.pttCapsToggle':
     'Bloq Mayús funciona como interruptor: púlsalo una vez para activar el micrófono, otra vez para desactivarlo. Para mantenerlo pulsado, permite «Monitoreo de entrada» o activa «Bloq Mayús no cambia mayúsculas».',
   'voice.pttToggleNote': 'Modo interruptor: púlsalo una vez para activar el micrófono, otra vez para desactivarlo.',
+  'voice.pttRelease': 'Retardo al soltar',
+  'voice.pttReleaseHint': 'Cuánto tiempo sigue activo el micrófono después de soltar la tecla.',
+  'voice.pttReleaseToggle': 'No se usa en modo interruptor: el micrófono se apaga en cuanto vuelves a pulsar la tecla.',
   'voice.pttLastKey': 'Última tecla: {key} {dir} ({source}; código {code}, raw {raw})',
   'voice.pttLastKeyDup': '— duplicado, omitido',
   'voice.pttSourceTap': 'hook',

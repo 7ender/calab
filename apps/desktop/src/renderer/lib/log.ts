@@ -5,6 +5,8 @@ export const log = {
   info: (...a: unknown[]): void => send('info', a),
   warn: (...a: unknown[]): void => send('warn', a),
   error: (...a: unknown[]): void => send('error', a),
+  /** Console only (DevTools): hot-path diagnostics that must not flood the log file. */
+  debug: (...a: unknown[]): void => console.debug(...a),
 };
 
 function send(level: 'info' | 'warn' | 'error', a: unknown[]): void {

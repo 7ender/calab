@@ -21,6 +21,11 @@ export function bindingLabel(b: PttBinding | null, os: string): string {
 let lastCaptureId = 0;
 const nextCaptureId = (): number => ++lastCaptureId;
 
+/** Toggle bindings (incl. the legacy Caps Lock lock-state one): press on, press off. */
+export function isToggleBinding(b: PttBinding | null): boolean {
+  return b?.mode === 'toggle' || (b?.kind === 'key' && b.code === KEY.CAPS_LOCK_STATE);
+}
+
 function isCaps(b: PttBinding | null): boolean {
   if (!b) return false;
   if (b.kind === 'key') return b.code === KEY.CAPS_LOCK || b.code === KEY.CAPS_LOCK_STATE || b.remap === 'caps-f18';
@@ -86,7 +91,7 @@ export function PttBinder({ compact = false }: { compact?: boolean }): ReactNode
   };
 
   const caps = isCaps(b);
-  const toggle = b?.mode === 'toggle' || (b?.kind === 'key' && b.code === KEY.CAPS_LOCK_STATE);
+  const toggle = isToggleBinding(b);
   const remapped = b?.kind === 'key' && b.remap === 'caps-f18';
   // macOS HID listener: the physical Caps Lock is a real hold key, the hidutil remap is not needed.
   const hid = status?.hid === 'running';
