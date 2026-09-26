@@ -30,18 +30,44 @@ func (p SyncPublisher) async(fn func(ctx context.Context)) {
 	}()
 }
 
+// withCallStart: a ROOM_UPDATE replaces the room on clients, so it carries the running
+// call's start (e.g. a rename must not reset the call timer). The Redis read is post-commit
+// work and shares the request's budget with publishing (events.Detached).
+func (p SyncPublisher) withCallStart(ctx context.Context, ev *v1.DispatchEvent) *v1.DispatchEvent {
+	r := ev.GetRoomUpdate().GetRoom()
+	if r.GetType() != v1.RoomType_ROOM_TYPE_VOICE {
+		return ev
+	}
+	r = proto.Clone(r).(*v1.Room)
+	dctx, done := events.Detached(ctx, 3*time.Second)
+	defer done()
+	if err := p.S.fillStarted(dctx, r); err != nil {
+		slog.WarnContext(ctx, "read call start for ROOM_UPDATE", "room", r.GetId(), "err", err)
+	}
+	return &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: r}}}
+}
+
 // Workspace implements events.Publisher.
 func (p SyncPublisher) Workspace(ctx context.Context, wid uuid.UUID, ev *v1.DispatchEvent) {
-	// A ROOM_UPDATE replaces the room on clients: carry the running call's start so that
-	// e.g. a rename does not reset the call timer.
-	if r := ev.GetRoomUpdate().GetRoom(); r.GetType() == v1.RoomType_ROOM_TYPE_VOICE {
-		r = proto.Clone(r).(*v1.Room)
-		if err := p.S.fillStarted(ctx, r); err != nil {
-			slog.WarnContext(ctx, "read call start for ROOM_UPDATE", "room", r.GetId(), "err", err)
-		}
-		ev = &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: r}}}
-	}
+	ev = p.withCallStart(ctx, ev)
 	p.Publisher.Workspace(ctx, wid, ev)
+	p.sync(wid, ev)
+}
+
+// WorkspaceEvents implements events.Publisher.
+func (p SyncPublisher) WorkspaceEvents(ctx context.Context, wid uuid.UUID, evs []*v1.DispatchEvent) {
+	out := make([]*v1.DispatchEvent, len(evs))
+	for i, ev := range evs {
+		out[i] = p.withCallStart(ctx, ev)
+	}
+	p.Publisher.WorkspaceEvents(ctx, wid, out)
+	for _, ev := range out {
+		p.sync(wid, ev)
+	}
+}
+
+// sync brings LiveKit in line with a published workspace event (asynchronously).
+func (p SyncPublisher) sync(wid uuid.UUID, ev *v1.DispatchEvent) {
 	switch e := ev.GetEvent().(type) {
 	case *v1.DispatchEvent_RoomPermissionsUpdate:
 		if rid, err := uuid.Parse(e.RoomPermissionsUpdate.GetRoomId()); err == nil {

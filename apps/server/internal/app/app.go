@@ -164,6 +164,7 @@ func New(d Deps) *App {
 		httpx.APIHeaders,
 		httpx.Observe,
 		httpx.Recover,
+		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc}
 }

@@ -396,14 +396,16 @@ func (h *Handlers) publishRoomMedia(ctx context.Context, ws sqlc.Workspace) {
 		byRoom[o.RoomID] = append(byRoom[o.RoomID], o)
 	}
 	defaults := pbconv.WorkspaceDefaults(ws)
+	var evs []*v1.DispatchEvent
 	for _, room := range rs {
 		if room.Type != "voice" {
 			continue
 		}
-		h.events.Workspace(ctx, ws.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{
+		evs = append(evs, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{
 			RoomUpdate: &v1.RoomUpdate{Room: pbconv.Room(room, defaults, byRoom[room.ID])},
 		}})
 	}
+	h.events.WorkspaceEvents(ctx, ws.ID, evs)
 }
 
 func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {

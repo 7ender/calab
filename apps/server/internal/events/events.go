@@ -14,6 +14,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,20 +33,75 @@ type Publisher interface {
 	User(ctx context.Context, userID uuid.UUID, ev *v1.DispatchEvent)
 	// Workspaces publishes one event (same id) to several workspaces, e.g. presence.
 	Workspaces(ctx context.Context, workspaceIDs []uuid.UUID, ev *v1.DispatchEvent)
+	// WorkspaceEvents publishes several events to one workspace in order, in one pipeline
+	// (e.g. hundreds of ROOM_UPDATEs after a drag & drop reorder).
+	WorkspaceEvents(ctx context.Context, workspaceID uuid.UUID, evs []*v1.DispatchEvent)
 	SessionRevoked(ctx context.Context, sessionID uuid.UUID)
 }
 
 // Redis publishes to Redis pub/sub.
 type Redis struct{ C rueidis.Client }
 
-// publishTimeout bounds one PUBLISH. Events are published after the change is committed,
-// so they must not depend on the request that made it: a client that goes away right
-// after its POST (reload) must not make the other members miss the event.
+// publishTimeout bounds one PUBLISH made outside a request (background jobs, gateway).
+// Events are published after the change is committed, so they must not depend on the
+// request that made it: a client that goes away right after its POST (reload) must not make
+// the other members miss the event.
 const publishTimeout = 3 * time.Second
 
+// RequestBudget is the total time one HTTP request may spend publishing events (and on
+// other post-commit Redis work, see Detached). With a hung Redis every publish would
+// otherwise wait its own timeout: a reorder of 500 rooms would hold the handler for 25 min.
+const RequestBudget = 5 * time.Second
+
+type budgetKey struct{}
+
+// budget is the remaining post-commit time of one request. It is charged with the time
+// actually spent waiting, so DB work between two publishes does not eat into it.
+type budget struct {
+	mu   sync.Mutex
+	left time.Duration
+}
+
+// WithBudget attaches a post-commit budget of d to ctx.
+func WithBudget(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, budgetKey{}, &budget{left: d})
+}
+
+// Middleware gives every request a RequestBudget for its post-commit work.
+func Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(WithBudget(r.Context(), RequestBudget)))
+	})
+}
+
+// Detached returns a context for work after the commit (publishing events, reading data
+// for them): not canceled with the request, and bounded by what is left of the request's
+// budget — or by fallback outside a request. done charges the elapsed time to the budget.
+// Once the budget is used up, the returned context is already expired: later publishes of
+// the same request fail at once instead of waiting again.
+func Detached(ctx context.Context, fallback time.Duration) (context.Context, func()) {
+	b, _ := ctx.Value(budgetKey{}).(*budget)
+	d := fallback
+	if b != nil {
+		b.mu.Lock()
+		d = b.left
+		b.mu.Unlock()
+	}
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), max(d, 0))
+	start := time.Now()
+	return dctx, func() {
+		cancel()
+		if b != nil {
+			b.mu.Lock()
+			b.left -= time.Since(start)
+			b.mu.Unlock()
+		}
+	}
+}
+
 func (r Redis) publish(ctx context.Context, channel string, payload []byte) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
-	defer cancel()
+	ctx, done := Detached(ctx, publishTimeout)
+	defer done()
 	if err := r.C.Do(ctx, r.C.B().Publish().Channel(channel).Message(rueidis.BinaryString(payload)).Build()).Error(); err != nil {
 		slog.WarnContext(ctx, "publish event failed", "channel", channel, "err", err)
 	}
@@ -98,6 +155,31 @@ func (r Redis) Workspaces(ctx context.Context, ids []uuid.UUID, ev *v1.DispatchE
 	r.event(context.WithoutCancel(ctx), chs, ev)
 }
 
+// WorkspaceEvents publishes evs to all members of a workspace, in order, in one pipeline.
+func (r Redis) WorkspaceEvents(ctx context.Context, id uuid.UUID, evs []*v1.DispatchEvent) {
+	if len(evs) == 0 {
+		return
+	}
+	ch := WorkspaceChannel(id)
+	cmds := make(rueidis.Commands, 0, len(evs))
+	for _, ev := range evs {
+		b, err := Encode(ev)
+		if err != nil {
+			slog.ErrorContext(ctx, "marshal event", "err", err)
+			continue
+		}
+		cmds = append(cmds, r.C.B().Publish().Channel(ch).Message(rueidis.BinaryString(b)).Build())
+	}
+	dctx, done := Detached(ctx, publishTimeout)
+	defer done()
+	for _, res := range r.C.DoMulti(dctx, cmds...) {
+		if err := res.Error(); err != nil {
+			slog.WarnContext(dctx, "publish events failed", "channel", ch, "count", len(cmds), "err", err)
+			return
+		}
+	}
+}
+
 // User publishes ev to all sessions of a user.
 func (r Redis) User(ctx context.Context, id uuid.UUID, ev *v1.DispatchEvent) {
 	r.event(context.WithoutCancel(ctx), []string{UserChannel(id)}, ev)
@@ -135,6 +217,9 @@ func (Nop) User(context.Context, uuid.UUID, *v1.DispatchEvent) {}
 
 // Workspaces implements Publisher.
 func (Nop) Workspaces(context.Context, []uuid.UUID, *v1.DispatchEvent) {}
+
+// WorkspaceEvents implements Publisher.
+func (Nop) WorkspaceEvents(context.Context, uuid.UUID, []*v1.DispatchEvent) {}
 
 // SessionRevoked implements Publisher.
 func (Nop) SessionRevoked(context.Context, uuid.UUID) {}

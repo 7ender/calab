@@ -156,15 +156,17 @@ func (h *Handlers) deleteCategory(w http.ResponseWriter, r *http.Request) error 
 	h.events.Workspace(r.Context(), c.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_CategoryDelete{
 		CategoryDelete: &v1.CategoryDelete{WorkspaceId: c.WorkspaceID.String(), CategoryId: c.ID.String()},
 	}})
+	var evs []*v1.DispatchEvent
 	for _, rid := range moved {
 		room, err := h.db.Q.GetRoom(r.Context(), rid)
 		if err != nil {
 			continue
 		}
 		if pb, err := h.load(r.Context(), h.db.Q, room); err == nil {
-			h.events.Workspace(r.Context(), c.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: pb}}})
+			evs = append(evs, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: pb}}})
 		}
 	}
+	h.events.WorkspaceEvents(r.Context(), c.WorkspaceID, evs)
 	httpx.NoContent(w)
 	return nil
 }
@@ -246,12 +248,14 @@ func (h *Handlers) setOrder(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	evs := make([]*v1.DispatchEvent, 0, len(resp.GetCategories())+len(resp.GetRooms()))
 	for _, c := range resp.GetCategories() {
-		h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_CategoryUpdate{CategoryUpdate: &v1.CategoryUpdate{Category: c}}})
+		evs = append(evs, &v1.DispatchEvent{Event: &v1.DispatchEvent_CategoryUpdate{CategoryUpdate: &v1.CategoryUpdate{Category: c}}})
 	}
 	for _, room := range resp.GetRooms() {
-		h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: room}}})
+		evs = append(evs, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: room}}})
 	}
+	h.events.WorkspaceEvents(r.Context(), wsID, evs) // one pipeline, not one PUBLISH per room
 	httpx.Write(w, http.StatusOK, resp)
 	return nil
 }
