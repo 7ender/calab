@@ -756,6 +756,60 @@ test('voice-room-speaking', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'voice-room-speaking');
 });
 
+// Noise suppression popover (docs/09 #12): the wave button in the «Голос подключён» header opens
+// it to the right of the island (over the chat, growing upward); the toggle is the same pref as
+// Settings → «Голос и устройства». The mic check stays idle in the shot (24 dark segments).
+test('voice-noise-popover', async ({ open, win, mock, shot }) => {
+  await open();
+  await inVoiceWithStatus(win, mock);
+  const button = win.getByTestId('noise-button');
+  await expect(button).toHaveAccessibleName('Шумодав включён');
+  await button.click();
+  const popover = win.getByTestId('noise-popover');
+  await expect(popover).toBeVisible();
+  const toggle = popover.getByRole('switch', { name: 'Шумоподавление' });
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expect(button).toHaveAccessibleName('Шумодав выключен');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect(popover.getByTestId('noise-meter')).toHaveAttribute('aria-valuenow', '0');
+  // Never over the island: the popover starts right of it.
+  const island = await win.getByRole('region', { name: 'Голосовое подключение' }).boundingBox();
+  const box = await popover.boundingBox();
+  expect(island && box && box.x >= island.x + island.width).toBe(true);
+  await checkpoint(shot, 'voice-noise-popover');
+});
+
+// A voice room's chat without joining it (docs/09 #14): in a call in «Созвон», the «чат» hover
+// action on «Переговорка» (Борис, Вера inside) opens its feed with «Вы не в голосе» + «Войти в
+// голос»; the call in «Созвон» stays. (Not the other way round: «Созвон»'s history has an inline
+// link, and inline links fail axe link-in-text-block — docs/09.)
+test('voice-room-chat-preview', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.injectMessage({ roomId: IDS.rooms.meeting, authorId: IDS.users.boris, content: 'Заходите, обсуждаем план релиза' });
+  mock.injectMessage({ roomId: IDS.rooms.meeting, authorId: IDS.users.vera, content: 'Показываю экран с макетами' });
+  const sidebar = win.locator('aside').first();
+  await sidebar.getByRole('button', { name: /^Созвон/ }).first().click();
+  await expect(win.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
+  await win.keyboard.press(`${MOD}+Shift+m`);
+  await expect(win.getByRole('button', { name: 'Включить микрофон' }).first()).toBeVisible();
+  await expect(win.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 15_000 });
+  await sidebar.getByRole('button', { name: /^Переговорка/ }).first().hover();
+  await sidebar.getByRole('button', { name: 'Чат комнаты «Переговорка»' }).click();
+  await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
+  const preview = win.getByTestId('voice-preview');
+  await expect(preview).toContainText('Вы не в голосе');
+  await expect(preview.getByRole('button', { name: 'Войти в голос' })).toBeVisible();
+  await expect(win.getByRole('region', { name: 'Голосовое подключение' })).toContainText('Созвон');
+  await expect(win.getByText('Показываю экран с макетами')).toBeVisible();
+  await win.mouse.move(0, 0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'voice-room-chat-preview');
+});
+
 // Optimistic join (docs/05, docs/08): Григорий is in the room list at once but still connecting
 // (VoiceState.pending) for more than 3 s — the «Подключается…» ring around his avatar (static
 // under test-stable) in the sidebar row and the members column.
