@@ -73,11 +73,12 @@ func (MicMode) EnumDescriptor() ([]byte, []int) {
 
 // Public profile, visible to members of shared workspaces.
 type User struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	DisplayName     string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	AvatarFileId    string                 `protobuf:"bytes,3,opt,name=avatar_file_id,json=avatarFileId,proto3" json:"avatar_file_id,omitempty"` // empty = no avatar
-	StatusText      string                 `protobuf:"bytes,4,opt,name=status_text,json=statusText,proto3" json:"status_text,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Id           string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	DisplayName  string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	AvatarFileId string                 `protobuf:"bytes,3,opt,name=avatar_file_id,json=avatarFileId,proto3" json:"avatar_file_id,omitempty"` // empty = no avatar
+	StatusText   string                 `protobuf:"bytes,4,opt,name=status_text,json=statusText,proto3" json:"status_text,omitempty"`
+	// Registration time: the "Member since" line of the profile (with WorkspaceMember.joined_at).
 	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	StatusEmoji     string                 `protobuf:"bytes,6,opt,name=status_emoji,json=statusEmoji,proto3" json:"status_emoji,omitempty"`
 	StatusExpiresAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=status_expires_at,json=statusExpiresAt,proto3" json:"status_expires_at,omitempty"` // unset = no expiry; expired status is returned empty
@@ -671,6 +672,161 @@ func (x *UpdateStatusRequest) GetExpiresInSeconds() uint32 {
 	return 0
 }
 
+// Private note about another user ("Note (only visible to you)", docs/09 item 20). Only the
+// author reads and writes it; the subject must be the author, share a workspace or a DM with
+// them, otherwise 404.
+//
+//	GET    /api/users/{id}/note → UserNoteResponse (text empty, updated_at unset = no note)
+//	PUT    /api/users/{id}/note  PutUserNoteRequest → UserNoteResponse; empty text deletes
+//	DELETE /api/users/{id}/note → 204
+type UserNote struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SubjectId     string                 `protobuf:"bytes,1,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
+	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"` // ≤ 1000 characters
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UserNote) Reset() {
+	*x = UserNote{}
+	mi := &file_calaba_v1_user_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserNote) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserNote) ProtoMessage() {}
+
+func (x *UserNote) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserNote.ProtoReflect.Descriptor instead.
+func (*UserNote) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *UserNote) GetSubjectId() string {
+	if x != nil {
+		return x.SubjectId
+	}
+	return ""
+}
+
+func (x *UserNote) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *UserNote) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type PutUserNoteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"` // trimmed; ≤ 1000 characters; empty = delete
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutUserNoteRequest) Reset() {
+	*x = PutUserNoteRequest{}
+	mi := &file_calaba_v1_user_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutUserNoteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutUserNoteRequest) ProtoMessage() {}
+
+func (x *PutUserNoteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutUserNoteRequest.ProtoReflect.Descriptor instead.
+func (*PutUserNoteRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *PutUserNoteRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type UserNoteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Note          *UserNote              `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UserNoteResponse) Reset() {
+	*x = UserNoteResponse{}
+	mi := &file_calaba_v1_user_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserNoteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserNoteResponse) ProtoMessage() {}
+
+func (x *UserNoteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserNoteResponse.ProtoReflect.Descriptor instead.
+func (*UserNoteResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UserNoteResponse) GetNote() *UserNote {
+	if x != nil {
+		return x.Note
+	}
+	return nil
+}
+
 var File_calaba_v1_user_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_user_proto_rawDesc = "" +
@@ -726,7 +882,17 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x13UpdateStatusRequest\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x14\n" +
 	"\x05emoji\x18\x02 \x01(\tR\x05emoji\x12,\n" +
-	"\x12expires_in_seconds\x18\x03 \x01(\rR\x10expiresInSeconds*P\n" +
+	"\x12expires_in_seconds\x18\x03 \x01(\rR\x10expiresInSeconds\"x\n" +
+	"\bUserNote\x12\x1d\n" +
+	"\n" +
+	"subject_id\x18\x01 \x01(\tR\tsubjectId\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x129\n" +
+	"\n" +
+	"updated_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"(\n" +
+	"\x12PutUserNoteRequest\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\";\n" +
+	"\x10UserNoteResponse\x12'\n" +
+	"\x04note\x18\x01 \x01(\v2\x13.calaba.v1.UserNoteR\x04note*P\n" +
 	"\aMicMode\x12\x18\n" +
 	"\x14MIC_MODE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fMIC_MODE_VAD\x10\x01\x12\x19\n" +
@@ -747,7 +913,7 @@ func file_calaba_v1_user_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_user_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_calaba_v1_user_proto_goTypes = []any{
 	(MicMode)(0),                  // 0: calaba.v1.MicMode
 	(*User)(nil),                  // 1: calaba.v1.User
@@ -759,22 +925,27 @@ var file_calaba_v1_user_proto_goTypes = []any{
 	(*ChangePasswordRequest)(nil), // 7: calaba.v1.ChangePasswordRequest
 	(*ChangeEmailRequest)(nil),    // 8: calaba.v1.ChangeEmailRequest
 	(*UpdateStatusRequest)(nil),   // 9: calaba.v1.UpdateStatusRequest
-	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
+	(*UserNote)(nil),              // 10: calaba.v1.UserNote
+	(*PutUserNoteRequest)(nil),    // 11: calaba.v1.PutUserNoteRequest
+	(*UserNoteResponse)(nil),      // 12: calaba.v1.UserNoteResponse
+	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
 }
 var file_calaba_v1_user_proto_depIdxs = []int32{
-	10, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	10, // 1: calaba.v1.User.status_expires_at:type_name -> google.protobuf.Timestamp
+	13, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	13, // 1: calaba.v1.User.status_expires_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: calaba.v1.UserSettings.mic_mode:type_name -> calaba.v1.MicMode
 	1,  // 3: calaba.v1.Me.user:type_name -> calaba.v1.User
 	2,  // 4: calaba.v1.Me.settings:type_name -> calaba.v1.UserSettings
 	3,  // 5: calaba.v1.GetMeResponse.me:type_name -> calaba.v1.Me
 	2,  // 6: calaba.v1.UpdateMeRequest.settings:type_name -> calaba.v1.UserSettings
 	3,  // 7: calaba.v1.UpdateMeResponse.me:type_name -> calaba.v1.Me
-	8,  // [8:8] is the sub-list for method output_type
-	8,  // [8:8] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	13, // 8: calaba.v1.UserNote.updated_at:type_name -> google.protobuf.Timestamp
+	10, // 9: calaba.v1.UserNoteResponse.note:type_name -> calaba.v1.UserNote
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_user_proto_init() }
@@ -790,7 +961,7 @@ func file_calaba_v1_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_user_proto_rawDesc), len(file_calaba_v1_user_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/user.proto.
  */
 export const file_calaba_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIvYBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyJdCgJNZRIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISDQoFZW1haWwYAiABKAkSKQoIc2V0dGluZ3MYAyABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzIioKDUdldE1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUi+AEKD1VwZGF0ZU1lUmVxdWVzdBIZCgxkaXNwbGF5X25hbWUYASABKAlIAIgBARIYCgtzdGF0dXNfdGV4dBgCIAEoCUgBiAEBEhsKDmF2YXRhcl9maWxlX2lkGAMgASgJSAKIAQESLgoIc2V0dGluZ3MYBCABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzSAOIAQESFQoIdGltZXpvbmUYBSABKAlIBIgBAUIPCg1fZGlzcGxheV9uYW1lQg4KDF9zdGF0dXNfdGV4dEIRCg9fYXZhdGFyX2ZpbGVfaWRCCwoJX3NldHRpbmdzQgsKCV90aW1lem9uZSItChBVcGRhdGVNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIkcKFUNoYW5nZVBhc3N3b3JkUmVxdWVzdBIYChBjdXJyZW50X3Bhc3N3b3JkGAEgASgJEhQKDG5ld19wYXNzd29yZBgCIAEoCSJBChJDaGFuZ2VFbWFpbFJlcXVlc3QSEQoJbmV3X2VtYWlsGAEgASgJEhgKEGN1cnJlbnRfcGFzc3dvcmQYAiABKAkiTgoTVXBkYXRlU3RhdHVzUmVxdWVzdBIMCgR0ZXh0GAEgASgJEg0KBWVtb2ppGAIgASgJEhoKEmV4cGlyZXNfaW5fc2Vjb25kcxgDIAEoDSpQCgdNaWNNb2RlEhgKFE1JQ19NT0RFX1VOU1BFQ0lGSUVEEAASEAoMTUlDX01PREVfVkFEEAESGQoVTUlDX01PREVfUFVTSF9UT19UQUxLEAJClwEKDWNvbS5jYWxhYmEudjFCCVVzZXJQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIvYBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyJdCgJNZRIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISDQoFZW1haWwYAiABKAkSKQoIc2V0dGluZ3MYAyABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzIioKDUdldE1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUi+AEKD1VwZGF0ZU1lUmVxdWVzdBIZCgxkaXNwbGF5X25hbWUYASABKAlIAIgBARIYCgtzdGF0dXNfdGV4dBgCIAEoCUgBiAEBEhsKDmF2YXRhcl9maWxlX2lkGAMgASgJSAKIAQESLgoIc2V0dGluZ3MYBCABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzSAOIAQESFQoIdGltZXpvbmUYBSABKAlIBIgBAUIPCg1fZGlzcGxheV9uYW1lQg4KDF9zdGF0dXNfdGV4dEIRCg9fYXZhdGFyX2ZpbGVfaWRCCwoJX3NldHRpbmdzQgsKCV90aW1lem9uZSItChBVcGRhdGVNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIkcKFUNoYW5nZVBhc3N3b3JkUmVxdWVzdBIYChBjdXJyZW50X3Bhc3N3b3JkGAEgASgJEhQKDG5ld19wYXNzd29yZBgCIAEoCSJBChJDaGFuZ2VFbWFpbFJlcXVlc3QSEQoJbmV3X2VtYWlsGAEgASgJEhgKEGN1cnJlbnRfcGFzc3dvcmQYAiABKAkiTgoTVXBkYXRlU3RhdHVzUmVxdWVzdBIMCgR0ZXh0GAEgASgJEg0KBWVtb2ppGAIgASgJEhoKEmV4cGlyZXNfaW5fc2Vjb25kcxgDIAEoDSJcCghVc2VyTm90ZRISCgpzdWJqZWN0X2lkGAEgASgJEgwKBHRleHQYAiABKAkSLgoKdXBkYXRlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiIgoSUHV0VXNlck5vdGVSZXF1ZXN0EgwKBHRleHQYASABKAkiNQoQVXNlck5vdGVSZXNwb25zZRIhCgRub3RlGAEgASgLMhMuY2FsYWJhLnYxLlVzZXJOb3RlKlAKB01pY01vZGUSGAoUTUlDX01PREVfVU5TUEVDSUZJRUQQABIQCgxNSUNfTU9ERV9WQUQQARIZChVNSUNfTU9ERV9QVVNIX1RPX1RBTEsQAkKXAQoNY29tLmNhbGFiYS52MUIJVXNlclByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * Public profile, visible to members of shared workspaces.
@@ -43,6 +43,8 @@ export type User = Message<"calaba.v1.User"> & {
   statusText: string;
 
   /**
+   * Registration time: the "Member since" line of the profile (with WorkspaceMember.joined_at).
+   *
    * @generated from field: google.protobuf.Timestamp created_at = 5;
    */
   createdAt?: Timestamp | undefined;
@@ -339,6 +341,78 @@ export type UpdateStatusRequest = Message<"calaba.v1.UpdateStatusRequest"> & {
  */
 export const UpdateStatusRequestSchema: GenMessage<UpdateStatusRequest> = /*@__PURE__*/
   messageDesc(file_calaba_v1_user, 8);
+
+/**
+ * Private note about another user ("Note (only visible to you)", docs/09 item 20). Only the
+ * author reads and writes it; the subject must be the author, share a workspace or a DM with
+ * them, otherwise 404.
+ *   GET    /api/users/{id}/note → UserNoteResponse (text empty, updated_at unset = no note)
+ *   PUT    /api/users/{id}/note  PutUserNoteRequest → UserNoteResponse; empty text deletes
+ *   DELETE /api/users/{id}/note → 204
+ *
+ * @generated from message calaba.v1.UserNote
+ */
+export type UserNote = Message<"calaba.v1.UserNote"> & {
+  /**
+   * @generated from field: string subject_id = 1;
+   */
+  subjectId: string;
+
+  /**
+   * ≤ 1000 characters
+   *
+   * @generated from field: string text = 2;
+   */
+  text: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 3;
+   */
+  updatedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UserNote.
+ * Use `create(UserNoteSchema)` to create a new message.
+ */
+export const UserNoteSchema: GenMessage<UserNote> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 9);
+
+/**
+ * @generated from message calaba.v1.PutUserNoteRequest
+ */
+export type PutUserNoteRequest = Message<"calaba.v1.PutUserNoteRequest"> & {
+  /**
+   * trimmed; ≤ 1000 characters; empty = delete
+   *
+   * @generated from field: string text = 1;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message calaba.v1.PutUserNoteRequest.
+ * Use `create(PutUserNoteRequestSchema)` to create a new message.
+ */
+export const PutUserNoteRequestSchema: GenMessage<PutUserNoteRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 10);
+
+/**
+ * @generated from message calaba.v1.UserNoteResponse
+ */
+export type UserNoteResponse = Message<"calaba.v1.UserNoteResponse"> & {
+  /**
+   * @generated from field: calaba.v1.UserNote note = 1;
+   */
+  note?: UserNote | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UserNoteResponse.
+ * Use `create(UserNoteResponseSchema)` to create a new message.
+ */
+export const UserNoteResponseSchema: GenMessage<UserNoteResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 11);
 
 /**
  * @generated from enum calaba.v1.MicMode

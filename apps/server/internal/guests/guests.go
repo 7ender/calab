@@ -449,6 +449,9 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 		if err := q.DeleteUserMemberships(ctx, uid); err != nil {
 			return err
 		}
+		if err := q.DeleteNotesAbout(ctx, uid); err != nil { // by and about the guest
+			return err
+		}
 		if sessions, err = q.RevokeAllUserSessions(ctx, uid); err != nil {
 			return err
 		}

@@ -165,6 +165,13 @@ type User struct {
 	Timezone        *string
 }
 
+type UserNote struct {
+	AuthorID  uuid.UUID
+	SubjectID uuid.UUID
+	Text      string
+	UpdatedAt time.Time
+}
+
 type Workspace struct {
 	ID                      uuid.UUID
 	Slug                    string

@@ -118,6 +118,8 @@ export type WorkspaceMember = Message<"calaba.v1.WorkspaceMember"> & {
   nickname: string;
 
   /**
+   * Joined this workspace: "Member since" in the profile, next to user.created_at (registration).
+   *
    * @generated from field: google.protobuf.Timestamp joined_at = 5;
    */
   joinedAt?: Timestamp | undefined;

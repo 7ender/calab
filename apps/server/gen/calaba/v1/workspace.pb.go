@@ -197,11 +197,12 @@ func (x *Workspace) GetAllowSelfNickname() bool {
 }
 
 type WorkspaceMember struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	User          *User                  `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
-	Role          WorkspaceRole          `protobuf:"varint,3,opt,name=role,proto3,enum=calaba.v1.WorkspaceRole" json:"role,omitempty"`
-	Nickname      string                 `protobuf:"bytes,4,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	User        *User                  `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
+	Role        WorkspaceRole          `protobuf:"varint,3,opt,name=role,proto3,enum=calaba.v1.WorkspaceRole" json:"role,omitempty"`
+	Nickname    string                 `protobuf:"bytes,4,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	// Joined this workspace: "Member since" in the profile, next to user.created_at (registration).
 	JoinedAt      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -32,6 +32,7 @@ message WorkspaceMember {
   User user = 2;
   WorkspaceRole role = 3;
   string nickname = 4;
+  // Joined this workspace: "Member since" in the profile, next to user.created_at (registration).
   google.protobuf.Timestamp joined_at = 5;
 }
 
