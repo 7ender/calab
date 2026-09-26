@@ -58,9 +58,10 @@ export function SelfPanel(): ReactNode {
   const second = inVoice ? t('shell.inVoiceStatus') : custom || (cur ? t(cur.key) : '');
 
   return (
-    // Bottom island across the rail + room column (Discord): 56 px, 40 px avatar, 15 / 13 px
-    // text that fades out when long; three 32 × 32 controls 12 px apart, 12 px from the edge.
-    <div className="flex h-14 shrink-0 items-center gap-1 pl-2 pr-3">
+    // Bottom island across the rail + room column (Discord): 56 px, 40 px avatar, 15 / 13 px text
+    // that fades out when long; controls ≤ 134 px (mic ▾ 40, headphones ▾ 40, gear 32, 6 px
+    // apart, 10 px from the edge), so the name keeps ≥ 110 px.
+    <div className="flex h-14 shrink-0 items-center gap-1 pl-2 pr-2.5">
       <Popover.Root>
         <Popover.Trigger asChild>
           <button
@@ -108,8 +109,8 @@ export function SelfPanel(): ReactNode {
         </Popover.Portal>
       </Popover.Root>
 
-      {/* The three controls, 12 px apart. */}
-      <span className="flex shrink-0 items-center gap-3">
+      {/* The three controls, 6 px apart. */}
+      <span className="flex shrink-0 items-center gap-1.5">
         <SplitButton
           label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
           shortcut={muteKeys}
@@ -157,10 +158,10 @@ function SplitButton({
   children: ReactNode;
 }): ReactNode {
   return (
-    // One split control (Discord): a 32 × 32 icon and the ▾ next to it share one hover background;
+    // One 40 px split control (Discord): the 20 px icon and the ▾ next to it share one hover background;
     // the ▾ is always visible — the device menu is one click away.
     <div className="group/split flex h-8 shrink-0 items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
-      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="size-8 rounded-r-none hover:bg-transparent">
+      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="h-8 w-[26px] rounded-r-none hover:bg-transparent">
         {children}
       </IconButton>
       <Dropdown.Root modal={false}>
@@ -169,9 +170,9 @@ function SplitButton({
           <button
             type="button"
             aria-label={menuName}
-            className="-ml-1 grid h-8 w-4 place-items-center rounded-r-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
+            className="grid h-8 w-[14px] place-items-center rounded-r-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
           >
-            <ChevronDown className="size-3 shrink-0" strokeWidth={2.5} aria-hidden />
+            <ChevronDown className="size-2.5 shrink-0" strokeWidth={2.75} aria-hidden />
           </button>
         </Dropdown.Trigger>
         </Tip>
