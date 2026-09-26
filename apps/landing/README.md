@@ -1,13 +1,13 @@
 # @calaba/landing — calab.ru
 
-Marketing landing for **Calab**. Next.js 15 (`output: 'export'`) + Tailwind v4, Russian UI, no server:
-the build is plain static files in `out/`.
+Marketing landing for **Calab**. Next.js 15 (`output: 'export'`) + Tailwind v4, no server: the build is plain static
+files in `out/`. Localized (ADR-0022 §3): `ru` (source), `en`, `es`, `zh-CN`.
 
 ## Commands
 
 ```sh
 pnpm -F @calaba/landing dev        # http://localhost:3000
-pnpm -F @calaba/landing build      # → apps/landing/out (index.html, 404.html, robots.txt, sitemap.xml, manifest)
+pnpm -F @calaba/landing build      # → apps/landing/out (index.html, ru/ en/ es/ zh/, 404.html, robots.txt, sitemap.xml, manifest)
 pnpm -F @calaba/landing lint
 pnpm -F @calaba/landing typecheck
 pnpm -F @calaba/landing assets     # regenerate public/screens/*.webp and public/og.png
@@ -15,10 +15,30 @@ pnpm -F @calaba/landing assets     # regenerate public/screens/*.webp and public
 
 Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server -d apps/landing/out`).
 
+## Localization
+
+- Routes: `/ru/`, `/en/`, `/es/`, `/zh/` — one page per locale (`src/app/[locale]/`, `generateStaticParams`,
+  `dynamicParams = false`), `<html lang>`, title/description/OG, canonical and `hreflang` (+ `x-default → /en/`) per locale.
+- `/` is `out/index.html` from `src/app/index.html/route.ts`: a content-less redirect page (no React runtime). Order:
+  the switcher's saved choice (`localStorage['calab.locale']`) → `navigator.languages` (first supported: ru/uk/be/kk →
+  `ru`, zh* → `zh`, es* → `es`, en* → `en`) → `/en/`. Query and `#hash` are kept, so old `calab.ru/#download` links
+  (release notes, `/download/` fallback in Caddy) land on `/<locale>/#download`. Without JS: `<noscript>` meta refresh
+  to `/en/`. In `next dev` it is served at `/index.html`, not `/`.
+- Texts: `src/i18n/<locale>.ts`, typed by `ru.ts` (`Dict`): a missing or extra key fails `typecheck`. `{name}`
+  placeholders become links/`<code>` via `rich()` (`src/lib/rich.tsx`) — keep them in every locale. Terms follow
+  `docs/i18n-glossary.md` (workspace/espacio/工作区, room/sala/房间, screen share/pantalla compartida/屏幕共享 …);
+  «Powered by GPTunneL» and product/tech names are never translated. es/zh are agent translations, native review pending.
+- Language switcher: header pill (`locale-switcher.tsx`, native `<details>` + links, works without JS); names in their own
+  language (Русский · English · Español · 中文); with JS it saves the choice and keeps the current `#section`.
+- `404.html` is shared by all locales (English + links to each language). Caddy redirects unknown locale prefixes
+  (`/de/`, `/pt-BR/…`) to `/en/` and `/ru` → `/ru/`.
+- **Known limitation:** screenshots in the hero and feature cards (and `og.png`) are Russian in every locale; alt texts
+  are translated. English captures — later (`docs/images/` + `pnpm assets`, per-locale names).
+
 ## Where it is served
 
 `https://calab.ru` — Caddy `file_server` from `/srv/landing` (see `docs/10-branding.md`, `LANDING_HOST`).
-Copy the contents of `out/` there. `trailingSlash: true`, so any future page `/x/` is exported as `x/index.html`.
+Copy the contents of `out/` there. `trailingSlash: true`, so every page `/x/` is exported as `x/index.html`.
 Links: «Открыть в браузере» → `https://app.calab.ru`, downloads → direct links to the stable names
 `https://releases.calab.ru/latest/<file>` (`DOWNLOADS` in `src/lib/site.ts`; the main button picks the visitor's OS
 in the browser, the version comes from `latest/VERSION`, never versioned file names), licence and support → `it@gptunnel.ai` (`CONTACT_EMAIL`), source → `https://github.com/itrcz/calab` (`REPO_URL` in `src/lib/site.ts`; LICENSE/SECURITY/TRADEMARKS links point to `blob/main/…`).

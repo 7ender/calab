@@ -29,7 +29,8 @@ import {
   type CapturedScreen,
   type DesktopSource,
 } from '../lib/media/screenShare';
-import { RateTracker, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
+import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '../lib/media/echo';
+import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
@@ -39,7 +40,7 @@ import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
-import { toast } from '../stores/toasts';
+import { toast, useToasts } from '../stores/toasts';
 import { memberName, useWorkspaces } from '../stores/workspaces';
 import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQuality, type VoiceLink } from '../stores/voice';
 import { platform } from '../platform';
@@ -57,7 +58,7 @@ import { sameBinding } from './profile';
  * broken here (docs/02-media.md, ADR-0004):
  *  1. remote audio only through <audio> elements (`webAudioMix: false`), no WebAudio on output;
  *  2. output device switched with setSinkId on the same elements;
- *  3. RNNoise after AEC3, built-in NS off while RNNoise is on;
+ *  3. RNNoise (and the speakerphone duck) after AEC3, built-in NS off while RNNoise is on;
  *  4. never unpublish to go quiet. Explicit mute (self-mute, deafen, moderator, no SPEAK) =
  *     LiveKit `track.mute()`; closed VAD gate / released PTT = `mediaStreamTrack.enabled =
  *     false` only — the sender emits silence (Opus DTX), no signalling (ADR-0014, lib/voiceLogic.ts).
@@ -65,9 +66,13 @@ import { sameBinding } from './profile';
 
 const PTT_RELEASE_MS = 200;
 const METER_UI_INTERVAL_MS = 50;
-const STATS_INTERVAL_MS = 2000;
+const STATS_INTERVAL_MS = ECHO.statsMs;
+/** Remote SSRC levels are fresh when played out within this window (DTX sends ~every 400 ms). */
+const LEVEL_FRESH_MS = 500;
 /** LiveKit data topic for "who watches my stream" (docs/05: data channels only for in-call ephemera). */
 const WATCH_TOPIC = 'calaba.watch';
+/** A /join waits at most this long for a /voice/leave still in flight. */
+const LEAVE_WAIT_MS = 3000;
 
 /** LiveKit identity is `<user_id>:<session_id>` (rtc.proto). */
 export const userIdOf = (identity: string): string => identity.split(':')[0] ?? identity;
@@ -141,6 +146,14 @@ class VoiceEngine {
   private readonly viewers = new Map<string, Set<string>>(); // my trackSid → viewer identities
   private readonly rates = new RateTracker();
   private statsTimer: number | null = null;
+  /** 50 ms level sampling: remote voices (SSRC audio levels) + my mic → echo detector and duck. */
+  private levelTimer: number | null = null;
+  private readonly echo = new EchoRiskDetector();
+  private readonly remoteTalk = new RemoteActivity();
+  /** Post-AEC mic level of the last worklet report (dBFS). */
+  private lastMicDb = -80;
+  /** The «собеседник слышит себя» toast was shown in this call (once per call). */
+  private echoToasted = false;
   /** Set while we mute the mic ourselves, to tell a moderator mute apart. */
   private selfMuting = false;
   private micTesting = false;
@@ -156,6 +169,10 @@ class VoiceEngine {
   private moveTimer: number | null = null;
   /** The last /join result (Settings → Соединение → «Проверить» probes this LiveKit host). */
   private lastJoin: { url: string; token: string } | null = null;
+  /** The /join request in flight (settled either way): a /voice/leave waits for it. */
+  private joinReq: Promise<void> | null = null;
+  /** The /voice/leave request in flight (never rejects): the next /join waits for it. */
+  private leaveReq: Promise<void> | null = null;
   /** ICE servers LiveKit handed out at the last successful connect (TURN probe). */
   private iceServers: RTCIceServer[] = [];
   /** The seat of the last failed user join: a CSP report arriving after its teardown re-seats it as 'blocked'. */
@@ -207,7 +224,12 @@ class VoiceEngine {
       this.applyTransmit();
     }
     if (s.outputDeviceId !== p.outputDeviceId) void this.applyOutputDevice();
-    if ((s.rnnoise !== p.rnnoise || s.micDeviceId !== p.micDeviceId) && this.mic) void this.restartMic();
+    // Another speaker or mic: the acoustic path changed, judge the echo afresh.
+    if (s.outputDeviceId !== p.outputDeviceId || s.micDeviceId !== p.micDeviceId) this.resetEcho();
+    // Without RNNoise the pipeline has a gain stage only in the speakerphone modes: rebuild when that flips.
+    const gainFlips = s.echoMode !== p.echoMode && this.mic !== null && this.mic.duckable !== (this.mic.rnnoise || duckable(s.echoMode));
+    if ((s.rnnoise !== p.rnnoise || s.micDeviceId !== p.micDeviceId || gainFlips) && this.mic) void this.restartMic();
+    if (s.echoMode !== p.echoMode) this.applyDuck();
     if ((s.red !== p.red || s.personalBitrateKbps !== p.personalBitrateKbps) && this.micTrack && this.room) void this.republishMic();
     if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers || s.deafUsers !== p.deafUsers || s.outputVolume !== p.outputVolume) this.applyVolumes();
     if (s.hiddenVideo !== p.hiddenVideo || s.saveTraffic !== p.saveTraffic) this.applyCameras();
@@ -309,6 +331,8 @@ class VoiceEngine {
     if (intent !== this.intentSeq) return;
     const seq = ++this.joinSeq;
     this.roomId = roomId;
+    // A new call (not a reconnect of this one) may warn about echo again.
+    if (!quiet) this.echoToasted = false;
     const carried = moved?.serverMuted ?? keepServerMuted;
     setVoice({
       roomId,
@@ -332,8 +356,8 @@ class VoiceEngine {
     });
     try {
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
-      const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await api.voice.join(roomId);
-      if (seq !== this.joinSeq) return;
+      const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await this.requestJoin(roomId, seq);
+      if (seq !== this.joinSeq || !res) return;
       // The server recorded this device as pending with default flags: tell it my mute /
       // deafen now, so the others' pending row is right before LiveKit connects.
       if ('pending' in res && res.pending) {
@@ -489,8 +513,51 @@ class VoiceEngine {
     this.rejoinRoomId = null;
     this.moveIntent = null;
     this.intentSeq++;
+    // The room the server may hold this device in: the seat (also while connecting, when
+    // /join already recorded it as pending), or the old call while a switch tears it down.
+    const v = useVoice.getState();
+    const seat = v.roomId ?? this.roomId ?? v.joining?.roomId ?? null;
     setVoice({ joining: null });
     await this.teardown(sound);
+    // After room.disconnect(): tell the server at once (a pending /join would otherwise stay
+    // for everyone up to 15 s; for a connected device it is a safety net). Not awaited.
+    if (seat) this.sendLeave(seat);
+  }
+
+  /**
+   * /join, after a /voice/leave still in flight (an overtaking leave would undo this join on
+   * the server). Null when a newer intent took over meanwhile.
+   */
+  private async requestJoin(roomId: string, seq: number): Promise<Awaited<ReturnType<typeof api.voice.join>> | null> {
+    if (this.leaveReq) await Promise.race([this.leaveReq, new Promise((r) => setTimeout(r, LEAVE_WAIT_MS))]);
+    if (seq !== this.joinSeq) return null;
+    const req = api.voice.join(roomId);
+    const settled = req.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.joinReq = settled;
+    void settled.then(() => {
+      if (this.joinReq === settled) this.joinReq = null;
+    });
+    return req;
+  }
+
+  /** POST /voice/leave in the background, after a /join still in flight (never rejects). */
+  private sendLeave(roomId: string): void {
+    const joining = this.joinReq;
+    const run = (async (): Promise<void> => {
+      try {
+        if (joining) await joining;
+        await api.voice.leave(roomId);
+      } catch (err) {
+        log.warn('voice/leave failed', err);
+      }
+    })();
+    this.leaveReq = run;
+    void run.then(() => {
+      if (this.leaveReq === run) this.leaveReq = null;
+    });
   }
 
   /** The teardown in progress (connect() waits for it). */
@@ -513,6 +580,7 @@ class VoiceEngine {
     this.active.reset();
     this.clearMoveTimer();
     this.stopStats();
+    this.resetEcho();
     await this.stopStream();
     const room = this.room;
     const micTrack = this.micTrack;
@@ -1082,6 +1150,7 @@ class VoiceEngine {
     let built: MicPipeline | null = null;
     const opts = {
       rnnoise: p.rnnoise,
+      duckable: duckable(p.echoMode),
       onReport: (r: MicReport) => this.onMicReport(r),
       // Capture ended by the OS (device unplugged): rebuild, falling back to the default device.
       onEnded: () => {
@@ -1215,6 +1284,7 @@ class VoiceEngine {
 
   private onMicReport(r: MicReport): void {
     const db = rmsToDb(r.rms);
+    this.lastMicDb = db;
     const vad = r.vad < 0 ? null : r.vad;
     const wasOpen = this.gate.open;
     const open = this.gate.push({ db, vad });
@@ -1255,6 +1325,7 @@ class VoiceEngine {
    *    The track stays published, so opening is instant.
    */
   private applyTransmit(): void {
+    this.applyDuck(); // PTT pressed / deafen: the duck follows at once, not at the next level tick
     const t = this.micTrack;
     const d = this.decision();
     setVoice({ transmitting: d.transmitting && t !== null });
@@ -1646,6 +1717,7 @@ class VoiceEngine {
 
   private startStats(): void {
     this.stopStats();
+    this.levelTimer = window.setInterval(() => this.sampleLevels(), ECHO.frameMs);
     this.statsTimer = window.setInterval(() => {
       // getStats can take longer than the interval on a loaded machine: never overlap (review L8).
       if (this.statsBusy) return;
@@ -1661,6 +1733,73 @@ class VoiceEngine {
   private stopStats(): void {
     if (this.statsTimer !== null) window.clearInterval(this.statsTimer);
     this.statsTimer = null;
+    if (this.levelTimer !== null) window.clearInterval(this.levelTimer);
+    this.levelTimer = null;
+  }
+
+  // ------------------------------------------------------------ echo (docs/02 «Эхо: колонки»)
+
+  /**
+   * Every 50 ms: the loudest remote voice as it is played (RFC 6464 level from the receiver's
+   * synchronization sources × the element volume — no WebAudio on remote audio, echo rule 1)
+   * and my mic level as sent → the echo detector; then the speakerphone duck.
+   */
+  private sampleLevels(): void {
+    const room = this.room;
+    if (!room) return;
+    // Spec time base: performance.timeOrigin + performance.now(); tolerate a page-relative one too.
+    const mono = performance.now();
+    const epoch = performance.timeOrigin + mono;
+    let remote = 0;
+    for (const rp of room.remoteParticipants.values()) {
+      const track = rp.getTrackPublication(Track.Source.Microphone)?.track;
+      const rx = track?.receiver;
+      const el = track?.sid ? this.audioEls.get(track.sid)?.el : undefined;
+      if (!rx || !el || el.muted || el.volume === 0) continue;
+      for (const src of rx.getSynchronizationSources()) {
+        if (Math.min(Math.abs(epoch - src.timestamp), Math.abs(mono - src.timestamp)) > LEVEL_FRESH_MS) continue;
+        remote = Math.max(remote, (src.audioLevel ?? 0) * el.volume);
+      }
+    }
+    const t = mono;
+    const remoteActive = this.remoteTalk.push(remote, t);
+    const ducked = this.mic?.isDucked ?? false;
+    this.echo.pushFrame({ t, remote, remoteActive, micDb: this.lastMicDb + (ducked ? ECHO.duckDb : 0), sending: useVoice.getState().transmitting });
+    this.applyDuck();
+  }
+
+  /** Speakerphone duck on the capture path (lib/media/echo.ts duckWanted). */
+  private applyDuck(): void {
+    const v = useVoice.getState();
+    const p = prefs();
+    const on =
+      this.room !== null &&
+      this.mic !== null &&
+      duckWanted({ mode: p.echoMode, echoRisk: this.echo.risk, remoteActive: this.remoteTalk.active, micMode: p.micMode, pttDown: v.pttDown, deafened: v.deafened });
+    this.mic?.setDuck(on);
+    if (on !== v.ducking) setVoice({ ducking: on });
+  }
+
+  private onEchoRisk(): void {
+    log.warn('voice: echo reaches the others', { reason: this.echo.reason, corr: this.echo.lastCorr });
+    setVoice({ echoRisk: true });
+    this.applyDuck();
+    if (this.echoToasted) return;
+    this.echoToasted = true;
+    const mode = prefs().echoMode;
+    if (mode === 'headphones') {
+      useToasts.getState().push('info', t('echo.risk'), { label: t('echo.riskAction'), run: () => usePrefs.getState().setPrefs({ echoMode: 'speakers' }) }, 12_000);
+    } else {
+      toast.info(t(mode === 'auto' ? 'echo.riskAuto' : 'echo.riskSpeakers'));
+    }
+  }
+
+  private resetEcho(): void {
+    this.echo.reset();
+    this.remoteTalk.reset();
+    this.mic?.setDuck(false);
+    const v = useVoice.getState();
+    if (v.echoRisk || v.ducking) setVoice({ echoRisk: false, ducking: false });
   }
 
   private async collectStats(): Promise<void> {
@@ -1673,6 +1812,7 @@ class VoiceEngine {
     };
     let pair = null;
     let micKbps: number | null = null;
+    let aec: { erl: number | null; erle: number | null } = { erl: null, erle: null };
     const losses: number[] = [];
 
     const micReport = await this.micTrack?.getRTCStatsReport();
@@ -1681,6 +1821,7 @@ class VoiceEngine {
       const o = outboundAudio(micReport, this.rates, 'mic');
       micKbps = o?.kbps ?? null;
       pair = candidatePair(micReport);
+      aec = audioSourceEcho(micReport);
       if (o?.fractionLost !== null && o?.fractionLost !== undefined) losses.push(o.fractionLost * 100);
     }
     const cameraReport = await this.camera.localTrack?.getRTCStatsReport();
@@ -1733,11 +1874,12 @@ class VoiceEngine {
       }
     }
     if (this.room !== room) return;
+    if (this.echo.evaluate(performance.now(), aec)) this.onEchoRisk();
     setVoice({
       rttMs: rtt,
       lossPct: loss,
       quality: qualityOf(rtt, loss),
-      stats: { totalOutKbps: out, totalInKbps: inn, pair, micKbps, screenOut, cameraOut, watching, rendererCpu },
+      stats: { totalOutKbps: out, totalInKbps: inn, pair, micKbps, screenOut, cameraOut, watching, rendererCpu, echo: { ...aec, corr: this.echo.lastCorr } },
     });
   }
 
@@ -1745,7 +1887,7 @@ class VoiceEngine {
   connectionPath(): string | null {
     const p = useVoice.getState().stats?.pair;
     if (!p) return null;
-    const relay = p.localType === 'relay' ? ` через TURN (${p.relayProtocol ?? '?'})` : '';
+    const relay = p.localType === 'relay' ? ` ${t('conn.viaTurn', { proto: p.relayProtocol ?? '?' })}` : '';
     return `${p.localType} → ${p.remoteType}, ${p.protocol.toUpperCase()}${relay}`;
   }
 }

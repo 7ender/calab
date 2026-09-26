@@ -2,24 +2,29 @@
 
 import { Download } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import type { Dict } from '@/i18n';
 import { DOWNLOADS, LATEST_URL, REPO_URL } from '@/lib/site';
 import { Button } from './ui';
 
 type Os = 'mac' | 'win' | 'linux';
 
-const primary: Record<Os, { label: string; href: string; alt?: { text: string; label: string; href: string } }> = {
+type Labels = Dict['downloads']['primary'];
+
+const primary = (
+  t: Labels,
+): Record<Os, { label: string; href: string; alt?: { text: string; label: string; href: string } }> => ({
   mac: {
-    label: 'Скачать для macOS',
+    label: t.mac,
     href: DOWNLOADS.macArm64,
-    alt: { text: 'Intel', label: 'Скачать для Mac с процессором Intel', href: DOWNLOADS.macX64 },
+    alt: { text: t.macIntel, label: t.macIntelLabel, href: DOWNLOADS.macX64 },
   },
-  win: { label: 'Скачать для Windows', href: DOWNLOADS.win },
+  win: { label: t.win, href: DOWNLOADS.win },
   linux: {
-    label: 'Скачать для Linux',
+    label: t.linux,
     href: DOWNLOADS.appImage,
-    alt: { text: '.deb', label: 'Скачать пакет .deb для Linux', href: DOWNLOADS.deb },
+    alt: { text: '.deb', label: t.linuxDebLabel, href: DOWNLOADS.deb },
   },
-};
+});
 
 type NavigatorUAData = Navigator & { userAgentData?: { platform?: string } };
 
@@ -43,7 +48,7 @@ const noSubscribe = () => () => undefined;
  * in the static HTML), a direct link to the stable latest/ name, plus the release number from
  * latest/VERSION (omitted if it cannot be read).
  */
-export function DownloadPrimary() {
+export function DownloadPrimary({ t }: { t: Labels }) {
   const os = useSyncExternalStore(noSubscribe, detectOs, () => null) ?? 'mac';
   const [version, setVersion] = useState<string | null>(null);
 
@@ -51,8 +56,8 @@ export function DownloadPrimary() {
     const ctrl = new AbortController();
     fetch(`${LATEST_URL}/VERSION`, { cache: 'no-cache', signal: ctrl.signal })
       .then((r) => (r.ok ? r.text() : ''))
-      .then((t) => {
-        const v = t.trim();
+      .then((text) => {
+        const v = text.trim();
         if (/^\d+\.\d+\.\d+$/.test(v)) setVersion(v);
       })
       .catch(() => undefined);
@@ -61,7 +66,7 @@ export function DownloadPrimary() {
     };
   }, []);
 
-  const p = primary[os];
+  const p = primary(t)[os];
   return (
     <div className="mt-12 flex flex-col items-center gap-3 sm:mt-16">
       <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
@@ -76,9 +81,13 @@ export function DownloadPrimary() {
         )}
       </div>
       <p className="text-[14px] leading-5 text-fg-2">
-        {version && <>Версия {version} · </>}
+        {version && (
+          <>
+            {t.version} {version} ·{' '}
+          </>
+        )}
         <a href={`${REPO_URL}/releases`} className="link">
-          Все версии
+          {t.allVersions}
         </a>
       </p>
     </div>

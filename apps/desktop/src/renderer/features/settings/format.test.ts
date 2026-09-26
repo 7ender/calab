@@ -29,10 +29,10 @@ describe('settings format', () => {
   });
 });
 
-describe('fmtShortDate', () => {
+describe('fmt.shortDate', () => {
   it('prints day, short genitive month and year', async () => {
-    const { fmtShortDate } = await import('./format');
-    expect(fmtShortDate(new Date(2025, 11, 1))).toBe('1 дек 2025');
-    expect(fmtShortDate(new Date(2026, 4, 9))).toBe('9 мая 2026');
+    const { fmt } = await import('../../lib/format');
+    expect(fmt.shortDate(new Date(2025, 11, 1))).toBe('1 дек 2025');
+    expect(fmt.shortDate(new Date(2026, 4, 9))).toBe('9 мая 2026');
   });
 });

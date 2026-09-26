@@ -10,6 +10,7 @@ import type {
   IpcResult,
   LoginArgs,
   LogoutReason,
+  MainStrings,
   PowerEvent,
   PermissionStatus,
   PrivacyPane,
@@ -65,6 +66,8 @@ export interface CalabaApi {
     /** Bounce the dock / flash the taskbar when the window is not focused. */
     attention(): void;
     setTheme(theme: 'dark' | 'light' | 'system'): void;
+    /** Translated strings for the tray / notifications / window titles main shows (ADR-0022). */
+    setStrings(strings: MainStrings): void;
   };
   tray: {
     setState(s: TrayState): void;

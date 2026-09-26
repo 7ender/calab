@@ -156,6 +156,16 @@ function remoteInboundFor(report: RTCStatsReport, outboundId: string): AnyStats 
   return all(report).find((s) => s.type === 'remote-inbound-rtp' && s['localId'] === outboundId);
 }
 
+/**
+ * AEC metrics of the sent mic: `media-source` (kind audio) `echoReturnLoss` /
+ * `echoReturnLossEnhancement`, dB. Chromium fills them only when the published track is the
+ * getUserMedia track itself (RNNoise off, headphones mode); a WebAudio output track has none.
+ */
+export function audioSourceEcho(report: RTCStatsReport): { erl: number | null; erle: number | null } {
+  const s = all(report).find((x) => x.type === 'media-source' && x['kind'] === 'audio');
+  return { erl: num(s?.['echoReturnLoss']), erle: num(s?.['echoReturnLossEnhancement']) };
+}
+
 export function outboundAudio(report: RTCStatsReport, rates: RateTracker, key: string): OutboundAudioStats | null {
   const o = all(report).find((s) => s.type === 'outbound-rtp' && s['kind'] === 'audio');
   if (!o) return null;

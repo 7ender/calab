@@ -10,7 +10,8 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   workers: 1,
   reporter: [['list']],
-  use: { baseURL: process.env['CALABA_WEB_URL'] ?? 'http://localhost:4173', trace: 'retain-on-failure' },
+  // locale: the Russian UI on any host (ADR-0022: «as in the system» reads navigator.languages).
+  use: { baseURL: process.env['CALABA_WEB_URL'] ?? 'http://localhost:4173', locale: 'ru-RU', trace: 'retain-on-failure' },
   projects: [
     {
       name: 'chromium',

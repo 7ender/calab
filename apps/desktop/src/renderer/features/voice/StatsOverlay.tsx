@@ -10,6 +10,8 @@ export function StatsOverlay(): ReactNode {
   const st = useVoice((s) => s.stats);
   const rtt = useVoice((s) => s.rttMs);
   const loss = useVoice((s) => s.lossPct);
+  const echoRisk = useVoice((s) => s.echoRisk);
+  const ducking = useVoice((s) => s.ducking);
   if (!on || !st) return null;
   const p = st.pair;
   return (
@@ -26,7 +28,14 @@ export function StatsOverlay(): ReactNode {
       <div>
         total ↑{n(st.totalOutKbps)} ↓{n(st.totalInKbps)} kbps · mic {n(st.micKbps, 1)} kbps
       </div>
-      {st.rendererCpu !== null ? <div>renderer CPU {n(st.rendererCpu, 1)} % core</div> : null}
+      {st.echo ? (
+        <div>
+          aec erl {n(st.echo.erl, 1)} erle {n(st.echo.erle, 1)} dB · echo r {n(st.echo.corr, 2)}
+          {echoRisk ? ' RISK' : ''}
+          {ducking ? ' · duck' : ''}
+        </div>
+      ) : null}
+      {st.rendererCpu !== null ?<div>renderer CPU {n(st.rendererCpu, 1)} % core</div> : null}
       {[...st.screenOut.map((l) => ['screen', l] as const), ...st.cameraOut.map((l) => ['cam', l] as const)].map(([kind, l], i) => (
         <div key={`${kind}-${l.rid ?? 'x'}-${i}`}>
           {kind} {l.rid ?? 'svc'} {l.codec} {n(l.width)}×{n(l.height)}@{n(l.fps)} {n(l.kbps)}/{n(l.targetKbps)} kbps {l.encoder}

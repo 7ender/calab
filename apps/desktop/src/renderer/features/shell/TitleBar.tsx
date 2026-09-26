@@ -8,7 +8,7 @@ import { MediaImg } from '../../components/MediaImg';
 import { t } from '../../i18n';
 import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { workspaceInitials } from '../../lib/initials';
-import { fmtTime, toDate } from '../../lib/format';
+import { fmt, toDate } from '../../lib/format';
 import { loadMentions } from '../../services/mentions';
 import { NAV_SHORTCUTS, shortcutHelp, useHotkeyLabel } from '../../services/hotkeys';
 import { platform } from '../../platform';
@@ -20,7 +20,6 @@ import { useSession } from '../../stores/session';
 import { canGoBack, canGoForward, useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from '../chat/chatView';
-import { fmtDayLabel } from '../chat/MessageBubble';
 import { usePreviewText } from '../chat/mentionText';
 import { bindingLabel } from '../settings/PttBinder';
 import { popoverBox } from './menu';
@@ -263,7 +262,7 @@ function InboxItem({ m }: { m: Message }): ReactNode {
                 {author}
               </span>
               <span className="ml-auto shrink-0 text-micro text-muted">
-                {fmtDayLabel(d)}, {fmtTime(d)}
+                {fmt.dayLabel(d)}, {fmt.time(d)}
               </span>
             </span>
             <span className="flex min-w-0 items-center gap-1 text-caption text-muted">

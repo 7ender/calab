@@ -2060,6 +2060,15 @@ class MockImpl {
       });
     });
 
+    // Leave (docs/05): this device's state in the room goes at once, pending or connected.
+    this.route('POST', '/api/rooms/:id/voice/leave', (c) => {
+      const { user, sessionId } = this.auth(c);
+      const me = user.user.id;
+      const roomId = c.params[0] ?? '';
+      if (s().voiceStates.get(me)?.roomId === roomId && this.voiceSessions.get(me) === sessionId) this.setVoice(me, '', {});
+      noContent(c.res);
+    });
+
     // Webcams (docs/05 «Камеры»). No LiveKit webhooks here: the request itself marks the camera
     // on (VoiceState.camera), /camera/stop marks it off.
     this.route('POST', '/api/rooms/:id/camera/request', (c) => {

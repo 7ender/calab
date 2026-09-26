@@ -43,7 +43,9 @@ export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?
   const mock = await startMockServer({ port: opts.port ?? MOCK_PORT, scenario: opts.scenario ?? 'data' });
   const userData = mkdtempSync(join(tmpdir(), 'calaba-visual-'));
   const app = await electron.launch({
-    args: ['.', '--mute-audio'], // no join/leave sounds through the machine's speakers during the run
+    // --lang=ru: app.getLocale() → ru, so «as in the system» is Russian on any host (ADR-0022).
+    // --mute-audio: no join/leave sounds through the machine's speakers during the run.
+    args: ['.', '--lang=ru', '--mute-audio'],
     cwd: join(import.meta.dirname, '..'),
     env: {
       ...process.env,
@@ -70,7 +72,7 @@ export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?
   await page.clock.setFixedTime(NOW);
   await page.evaluate(
     ({ theme, onboarded }) => {
-      localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme, onboarded }, version: 1 }));
+      localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme, onboarded, locale: 'ru' }, version: 1 }));
     },
     { theme: opts.theme, onboarded: opts.onboarded ?? false },
   );

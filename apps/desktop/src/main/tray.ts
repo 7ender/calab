@@ -1,6 +1,7 @@
 import { app, Menu, Tray } from 'electron';
 import { IPC, type TrayAction, type TrayState } from '../shared/ipc';
 import { trayImage } from './icons';
+import { mainStrings, onMainStrings } from './strings';
 import { getMainWindow, showMainWindow } from './windows';
 
 let tray: Tray | null = null;
@@ -16,17 +17,18 @@ function send(action: TrayAction): void {
 
 function rebuild(): void {
   if (!tray) return;
+  const s = mainStrings();
   const menu = Menu.buildFromTemplate([
-    { label: 'Открыть Calab', click: () => send('show') },
+    { label: s.trayOpen, click: () => send('show') },
     { type: 'separator' },
-    { label: 'Выключить микрофон', type: 'checkbox', checked: state.muted, enabled: state.inVoice, click: () => send('toggle-mute') },
-    { label: 'Выключить звук', type: 'checkbox', checked: state.deafened, enabled: state.inVoice, click: () => send('toggle-deafen') },
-    { label: 'Отключиться от голоса', enabled: state.inVoice, click: () => send('disconnect') },
+    { label: s.trayMute, type: 'checkbox', checked: state.muted, enabled: state.inVoice, click: () => send('toggle-mute') },
+    { label: s.trayDeafen, type: 'checkbox', checked: state.deafened, enabled: state.inVoice, click: () => send('toggle-deafen') },
+    { label: s.trayDisconnect, enabled: state.inVoice, click: () => send('disconnect') },
     { type: 'separator' },
-    { label: 'Выход', click: () => app.quit() },
+    { label: s.trayQuit, click: () => app.quit() },
   ]);
   tray.setContextMenu(menu);
-  tray.setToolTip(state.inVoice ? `Calab — в голосе${state.muted ? ' (микрофон выкл.)' : ''}` : 'Calab');
+  tray.setToolTip(state.inVoice ? (state.muted ? s.trayInVoiceMuted : s.trayInVoice) : 'Calab');
 }
 
 export function createTray(): void {
@@ -36,6 +38,7 @@ export function createTray(): void {
     if (process.platform !== 'darwin') showMainWindow();
   });
   rebuild();
+  onMainStrings(rebuild);
 }
 
 export function setTrayState(next: TrayState): void {

@@ -229,10 +229,10 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
     <Card title={t('card.voiceStream')} footer={t('room.mediaText')}>
       <Row label={t('media.bitrate')} hint={t('media.bitrateHint')}>
         <Select aria-label={t('media.bitrate')} className="w-60" value={ov?.audioBitrateKbps ?? ''} onChange={(e) => apply({ bitrate: num(e.target.value) })}>
-          <option value="">{def(`${wsDefaults?.audioBitrateKbps ?? 32} кбит/с`)}</option>
+          <option value="">{def(t('unit.kbps', { n: wsDefaults?.audioBitrateKbps ?? 32 }))}</option>
           {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
             <option key={b} value={b}>
-              {b} кбит/с
+              {t('unit.kbps', { n: b })}
             </option>
           ))}
         </Select>

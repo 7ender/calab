@@ -18,7 +18,8 @@ export const ruChat = {
   'chat.replyOpen': 'Показать исходное сообщение',
   'chat.messageGone': 'Сообщение удалено или недоступно',
   'chat.historyStart': 'Начало истории комнаты',
-  'chat.unreadBanner': '{n} {messages} с {time}',
+  // plural keys: one object of Intl.PluralRules forms (one/few/many/other), picked by plural()
+  'chat.unreadBanner': { one: '{n} новое сообщение с {time}', few: '{n} новых сообщения с {time}', many: '{n} новых сообщений с {time}', other: '{n} новых сообщения с {time}' },
   'chat.markRead': 'Отметить прочитанными',
   'chat.toBottomUnread': 'Вниз, непрочитанных: {n}',
   // empty room
@@ -60,7 +61,7 @@ export const ruChat = {
   'chat.topic': 'Показать описание комнаты',
   'chat.typing1': '{name} печатает',
   'chat.typing2': '{a} и {b} печатают',
-  'chat.typingN': '{n} {people} печатают',
+  'chat.typingN': { one: '{n} человек печатает', few: '{n} человека печатают', many: '{n} человек печатают', other: '{n} человека печатают' },
   'chat.pinned': 'Закреплённые',
   'chat.pinnedOne': 'Закреплённое сообщение',
   'chat.pinnedN': 'Закреплённое сообщение {n} из {total}',

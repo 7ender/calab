@@ -5,6 +5,7 @@ import { IPC, type UpdateStatus } from '../shared/ipc';
 import { downloadPage, feedUrl, httpsFeed } from '../shared/updateFeed';
 import { currentServerUrl } from './auth';
 import { getSettings } from './settings';
+import { mainStrings } from './strings';
 import { createUpdateFlow, type UpdateFlow } from './updateFlow';
 
 /**
@@ -41,7 +42,7 @@ function broadcast(s: UpdateStatus): void {
 
 function notifyAvailable(version: string, page: string): void {
   if (!Notification.isSupported()) return;
-  const n = new Notification({ title: 'Calab', body: `Доступна версия ${version} — Скачать` });
+  const n = new Notification({ title: 'Calab', body: mainStrings().updateAvailable.replaceAll('{version}', version) });
   n.on('click', () => {
     void shell.openExternal(page);
     notification = null;

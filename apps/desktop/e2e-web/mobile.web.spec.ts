@@ -75,7 +75,7 @@ async function signIn(page: Page, prefs: Record<string, unknown> = {}): Promise<
   // The fixtures are dated 2026-01-15 (voice timers, day labels): «now» is fixed there.
   await page.clock.setFixedTime(NOW);
   await page.goto(`${BASE}/?visual-test`);
-  await page.evaluate(`localStorage.setItem('calaba-prefs', ${JSON.stringify(JSON.stringify({ state: { theme: 'dark', onboarded: true, ...prefs }, version: 1 }))})`);
+  await page.evaluate(`localStorage.setItem('calaba-prefs', ${JSON.stringify(JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru', ...prefs }, version: 1 }))})`);
   await page.reload();
   await page.getByLabel('Email').fill('owner@calaba.test');
   await page.getByLabel('Пароль').fill(PASSWORD);
@@ -264,7 +264,7 @@ test('phone: onboarding and the join card fit the screen', async ({ page }) => {
 
   // First run: onboarding.
   await page.goto(`${BASE}/?visual-test`);
-  await page.evaluate(`localStorage.setItem('calaba-prefs', ${JSON.stringify(JSON.stringify({ state: { theme: 'dark', onboarded: false }, version: 1 }))})`);
+  await page.evaluate(`localStorage.setItem('calaba-prefs', ${JSON.stringify(JSON.stringify({ state: { theme: 'dark', onboarded: false, locale: 'ru' }, version: 1 }))})`);
   await page.reload();
   await page.getByLabel('Email').fill('owner@calaba.test');
   await page.getByLabel('Пароль').fill(PASSWORD);

@@ -89,7 +89,7 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
   }, []);
   const sections = useMemo(() => {
     if (q.trim()) return [{ id: 'search', label: t('chat.emojiFound'), list: searchEmoji(q) }];
-    return [...(recent.length ? [{ id: 'recent', label: t('chat.emojiRecent'), list: recent }] : []), ...EMOJI_GROUPS];
+    return [...(recent.length ? [{ id: 'recent', label: t('chat.emojiRecent'), list: recent }] : []), ...EMOJI_GROUPS.map((g) => ({ ...g, label: t(g.label) }))];
   }, [q, recent]);
 
   const onGridKey = (e: KeyboardEvent<HTMLDivElement>): void => {
@@ -160,7 +160,7 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
             const Icon = GROUP_ICONS[g.id] ?? Smile;
             const on = active ? active === g.id : !recent.length && i === 0;
             return (
-              <GroupTab key={g.id} label={g.label} active={on} onClick={() => jumpTo(scroller.current, g.id)}>
+              <GroupTab key={g.id} label={t(g.label)} active={on} onClick={() => jumpTo(scroller.current, g.id)}>
                 <Icon className="size-5" aria-hidden />
               </GroupTab>
             );

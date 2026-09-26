@@ -2,6 +2,7 @@ import { Fragment, memo, type ReactNode } from 'react';
 import { splitHits } from './highlight';
 import { isSafeHref, parseMarkdown, type MdNode } from './parse';
 import { platform } from '../../platform';
+import { useLocale } from '../../i18n';
 
 function open(href: string): void {
   if (isSafeHref(href)) void platform.app.openExternal(href);
@@ -81,5 +82,7 @@ function render(nodes: MdNode[], mention: MentionRenderer, key = '', hl?: MdHigh
 export type MentionRenderer = (v: string, key: string) => ReactNode;
 
 export const Markdown = memo(function Markdown({ text, mention, highlight }: { text: string; mention: MentionRenderer; highlight?: MdHighlight | undefined }): ReactNode {
+  // Memo row: re-render on a language switch too (ADR-0022).
+  useLocale();
   return <>{render(parseMarkdown(text), mention, '', highlight)}</>;
 });

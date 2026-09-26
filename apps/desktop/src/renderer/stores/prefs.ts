@@ -8,6 +8,9 @@ import {
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { PttBinding } from '../../shared/ipc';
+import type { EchoMode } from '../lib/media/echo';
+import type { LocalePref } from '../i18n/types';
+import type { OpenChatSound } from '../lib/chatSound';
 import type { SoundName } from '../lib/sounds';
 import type { Combo, HotkeyAction } from '../lib/shortcuts';
 
@@ -21,6 +24,8 @@ export type MicMode = 'voice' | 'ptt';
 
 export interface Prefs {
   theme: Theme;
+  /** UI language (ADR-0022): 'auto' follows the OS until the user picks one. */
+  locale: LocalePref;
   micDeviceId: string | null;
   outputDeviceId: string | null;
   cameraDeviceId: string | null;
@@ -39,6 +44,8 @@ export interface Prefs {
   pttBinding: PttBinding | null;
   rnnoise: boolean;
   red: boolean;
+  /** «Как вы слушаете» (docs/02 «Эхо: колонки»): per device — a laptop on speakers, a desk with headphones. */
+  echoMode: EchoMode;
   streamPreset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
   notifyMentions: boolean;
@@ -49,6 +56,8 @@ export interface Prefs {
   sounds: Partial<Record<SoundName, boolean>>;
   /** Event sound volume 0..1. */
   soundVolume: number;
+  /** «В открытом чате» (docs/09 P1 #13): a message in the chat on screen — a quieter cue or none. */
+  messageSoundOpenChat: OpenChatSound;
   /** userId → playback volume 0..1: `element.volume` caps at 1, a boost would need WebAudio (breaks AEC). */
   userVolumes: Record<string, number>;
   /** userId → muted for me only («Заглушить для меня»); their <audio> stays attached, muted. */
@@ -72,6 +81,7 @@ export interface Prefs {
 
 const DEFAULTS: Prefs = {
   theme: 'dark',
+  locale: 'auto',
   micDeviceId: null,
   outputDeviceId: null,
   cameraDeviceId: null,
@@ -85,6 +95,7 @@ const DEFAULTS: Prefs = {
   pttBinding: null,
   rnnoise: true,
   red: false,
+  echoMode: 'headphones',
   streamPreset: ScreenSharePreset.H1080,
   contentHint: 'detail',
   notifyMentions: true,
@@ -92,6 +103,7 @@ const DEFAULTS: Prefs = {
   voiceSounds: true,
   sounds: {},
   soundVolume: 0.5,
+  messageSoundOpenChat: 'off',
   streamStage: {},
   userVolumes: {},
   mutedUsers: {},

@@ -16,7 +16,7 @@ let page: Page;
 
 test.beforeAll(async () => {
   app = await electron.launch({
-    args: ['.'],
+    args: ['.', '--lang=ru'], // Russian UI on any host (ADR-0022)
     cwd: join(import.meta.dirname, '..'),
     env: {
       ...process.env,

@@ -58,6 +58,15 @@ export interface VoiceStats {
   cameraOut: OutboundVideoLayer[];
   watching: InboundVideoStats | null;
   rendererCpu: number | null;
+  /** AEC metrics of the sent mic + the echo detector (lib/media/echo.ts); absent in old fixtures. */
+  echo?: EchoDiag;
+}
+
+export interface EchoDiag {
+  erl: number | null;
+  erle: number | null;
+  /** Best far-end → sent correlation of the last 5 s window. */
+  corr: number | null;
 }
 
 export interface VoiceStore {
@@ -97,6 +106,10 @@ export interface VoiceStore {
   vad: number | null;
   gateOpen: boolean;
   pttDown: boolean;
+  /** Residual echo reaches the others (lib/media/echo.ts): sticky for the call, reset by a device change. */
+  echoRisk: boolean;
+  /** The speakerphone duck is lowering my mic right now. */
+  ducking: boolean;
   /** Human text (lib/media/errors.ts), never a raw error. */
   micError: string | null;
   micErrorAction: MediaErrorAction | null;
@@ -151,6 +164,8 @@ export const useVoice = create<VoiceStore>()((set) => ({
   vad: null,
   gateOpen: false,
   pttDown: false,
+  echoRisk: false,
+  ducking: false,
   micError: null,
   micErrorAction: null,
   serverMuted: false,

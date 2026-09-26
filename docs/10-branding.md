@@ -6,7 +6,7 @@
 ## Домены
 | Хост | Что | Обслуживает |
 |---|---|---|
-| `calab.ru` | лендинг (Next.js static export, `apps/landing`) | Caddy `file_server` из `/srv/landing`; `/download/*` → те же релизы, что на app |
+| `calab.ru` | лендинг (Next.js static export, `apps/landing`; `/ru/` `/en/` `/es/` `/zh/`, `/` — выбор языка, ADR-0022) | Caddy `file_server` из `/srv/landing`; неизвестная локаль → `/en/`; `/download/*` → те же релизы, что на app |
 | `app.calab.ru` | приложение (веб-клиент, API, gateway, `/download/`) | Caddy → api :3000 + `/srv/web` |
 | `rtc.calab.ru` | LiveKit signal | Caddy → :7880 |
 | `turn.calab.ru` | TURN/TLS | Caddy layer4 → :5349 |

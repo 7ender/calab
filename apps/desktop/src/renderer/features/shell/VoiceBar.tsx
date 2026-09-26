@@ -99,7 +99,7 @@ function QualityButton({ phase }: { phase: VoicePhase }): ReactNode {
             <dt className="text-muted">{t('quality.state')}</dt>
             <dd className={q === 'poor' ? 'text-danger-text' : 'text-fg'}>{t(Q_LABEL[q])}</dd>
             <dt className="text-muted">{t('quality.rtt')}</dt>
-            <dd>{rtt === null ? '—' : `${Math.round(rtt)} мс`}</dd>
+            <dd>{rtt === null ? '—' : t('unit.ms', { n: Math.round(rtt) })}</dd>
             <dt className="text-muted">{t('quality.loss')}</dt>
             <dd>{loss === null ? '—' : `${loss.toFixed(1)} %`}</dd>
             <dt className="text-muted">{t('quality.path')}</dt>

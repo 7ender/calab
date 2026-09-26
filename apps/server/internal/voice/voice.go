@@ -12,7 +12,7 @@
 //	voice:camreq:<identity>      string camera grant reserved by /camera/request (TTL 10 min)
 //	voice:camoff:<identity>      string camera stopped by a moderator: no camera until leave / allow-camera
 //	voice:workspaces             set   workspaces with any voice state (for reconcile)
-//	voice:started:<room_id>      string unix ms when the current call began (first device in an empty room)
+//	voice:started:<room_id>      string unix ms when the current call began (first connected device; pending ones do not count)
 //	voice:smuted:<workspace_id>  set   user ids server-muted by a moderator (kept until unmuted, across rejoins)
 package voice
 
@@ -257,8 +257,8 @@ func (s Store) Workspaces(ctx context.Context) ([]uuid.UUID, error) {
 // Change is the result of a mutation: the user's aggregate before and after.
 type Change struct {
 	Before, After *v1.VoiceState
-	// Calls lists rooms whose call started (first device in an empty room) or ended (last
-	// device left) with this change; ROOM_UPDATE with voice_started_at is due for them.
+	// Calls lists rooms whose call started (first connected device) or ended (last connected
+	// device gone) with this change; ROOM_UPDATE with voice_started_at is due for them.
 	Calls []uuid.UUID
 }
 
@@ -342,16 +342,18 @@ func (s Store) UpdateLocked(ctx context.Context, wid, userID, sessionID uuid.UUI
 			s.C.B().Sadd().Key(workspacesKey).Member(wid.String()).Build())
 		rest = append(rest, *next)
 	}
-	// Call start per room: set when a room gains its first device, cleared when it empties.
+	// Call start per room: set when a room gains its first connected device, cleared when the
+	// last one goes. Pending devices (optimistic /join, app-level move) do not make a call: a
+	// join rolled back before LiveKit connected leaves no phantom call behind.
 	var calls []uuid.UUID
 	now := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	for _, rid := range touchedRooms(cur, next) {
 		was, is := occupied(all, rid), occupied(rest, rid)
 		switch {
 		case !was && is:
-			start := now
-			if next != nil && next.RoomID == rid {
-				start = strconv.FormatInt(next.JoinedAt, 10) // the call starts with this join
+			start := now // connected just now (pending cleared by participant_joined / reconcile)
+			if next != nil && next.RoomID == rid && (cur == nil || cur.RoomID != rid) {
+				start = strconv.FormatInt(next.JoinedAt, 10) // recorded connected: the call starts with this join
 			}
 			cmds = append(cmds, s.C.B().Set().Key(startedKey(rid)).Value(start).Build())
 			calls = append(calls, rid)
@@ -392,9 +394,10 @@ func touchedRooms(cur, next *SessionState) []uuid.UUID {
 	return out
 }
 
+// occupied reports a call in rid: a device connected to it (pending ones do not count).
 func occupied(sessions []SessionState, rid uuid.UUID) bool {
 	for _, s := range sessions {
-		if s.RoomID == rid {
+		if s.RoomID == rid && !s.Pending {
 			return true
 		}
 	}
