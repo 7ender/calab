@@ -1,0 +1,85 @@
+import type { ruVideo } from '../ru/video';
+import type { DictShape } from '../types';
+
+/**
+ * English UI strings — webcam in voice rooms (docs/09 #41–43, ADR-0022). Same rules as ru: flat
+ * dotted keys, `{param}` placeholders, short, verb-first, no exclamation marks (docs/08).
+ */
+export const enVideo: DictShape<typeof ruVideo> = {
+  // voice panel / self panel
+  'video.camera': 'Camera',
+  'video.on': 'Turn on camera',
+  'video.off': 'Turn off camera',
+  'video.starting': 'Starting camera…',
+  'video.options': 'Camera options',
+  'video.device': 'Camera',
+  'video.check': 'Test camera',
+  'video.previewRow': 'Camera preview',
+  'video.checkShort': 'Test',
+  'video.noPermission': 'You don’t have permission to use the camera in this room',
+  'video.roomOff': 'Cameras are off in this room',
+  'video.full': 'Camera — {n} of {max} already on in this room',
+  'video.noDevices': 'No cameras found',
+  'shell.streamBtn': 'Share',
+  'shell.noiseBtn': 'Noise',
+
+  // preview sheet
+  'video.preview.title': 'Check your camera',
+  'video.preview.text': 'This is how others will see you. The preview is mirrored.',
+  'video.preview.loading': 'Starting camera…',
+  'video.preview.enable': 'Turn on camera',
+  'video.preview.done': 'Done',
+
+  // toasts
+  'video.limit': 'Camera limit reached',
+  'video.forbidden': 'You don’t have permission to use the camera in this room',
+  'video.fallback': 'The selected camera is unavailable — using the default camera',
+  'video.lost': 'Camera disconnected',
+  'video.cpu': 'Camera switched to 360p: CPU overloaded',
+  'video.stop.limit': 'Camera turned off: the room’s camera limit was reached',
+  'video.stop.moderator': 'A moderator turned off your camera',
+  'video.stop.other': 'Camera turned off by the server',
+  'video.rejoin': 'Connection restored — turn your camera back on',
+  'video.movedOff': '{text}; camera turned off — turn it back on',
+
+  // tiles
+  'video.of': 'Camera: {name}',
+  'video.you': '{name} (you)',
+  'video.hidden': 'Video hidden',
+  'video.saved': 'Video paused — data saver is on',
+  'video.more': '{n} more',
+  'video.expand': 'Expand video',
+  'video.focus': 'Focus',
+  'video.unfocus': 'Back to grid',
+  'video.unfocusHint': 'Or press Esc, or click the tile again',
+  'video.pinned': 'Pinned in focus',
+  'video.showChat': 'Show chat',
+  'video.close': 'Hide video',
+  'video.grid': 'Member videos',
+  'video.stateOn': 'Camera on',
+
+  // member menu / settings
+  'video.hide': 'Hide video',
+  'video.stopMember': 'Turn off camera',
+  'video.stoppedMember': 'Turned off {name}’s camera',
+  'video.saveTraffic': 'Data saver',
+  'video.saveTrafficHint': 'Receive only the speaker’s video, up to 360p',
+  'video.card': 'Camera',
+  'voiceUi.collapsePanel': 'Collapse panel',
+  'voiceUi.expandPanel': 'Expand panel',
+  'video.deviceHint': 'Applies immediately, even during a call',
+
+  // room / workspace settings, permissions
+  'perm.VIDEO': 'Use camera',
+  'media.cameraLimit': 'Cameras at once',
+  'media.cameraLimitHint': '0 — cameras are off in the room',
+
+  // errors (lib/media/errors.ts)
+  'mediaErr.camera.permission': 'Camera unavailable — check the permission',
+  'mediaErr.camera.permissionWeb': 'Your browser blocked the camera — allow it with the icon in the address bar',
+  'mediaErr.camera.notFound': 'No camera found — connect one or choose another',
+  'mediaErr.camera.busy': 'The camera is in use by another app',
+  'mediaErr.camera.unsupported': 'Camera isn’t supported on this device',
+  'mediaErr.camera.generic': 'Couldn’t turn on the camera',
+  'mediaErr.camera.publish': 'Couldn’t share your video — try again',
+};
