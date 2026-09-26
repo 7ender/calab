@@ -52,7 +52,12 @@ export const Button = forwardRef<
       aria-busy={busy || undefined}
       className={cx(
         'inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-control)] font-medium transition-[filter,background-color] duration-[var(--motion-fast)] disabled:cursor-default disabled:opacity-40',
-        size === 'sm' ? 'h-6 px-2 text-caption' : size === 'lg' ? 'h-8 px-4 text-body' : 'h-7 px-3 text-body',
+        // Phone layout (ADR-0021): 40 px touch targets, same pill shape.
+        size === 'sm'
+          ? 'h-6 px-2 text-caption mobile:h-8 mobile:px-3'
+          : size === 'lg'
+            ? 'h-8 px-4 text-body mobile:h-11 mobile:px-5 mobile:text-[15px]'
+            : 'h-7 px-3 text-body mobile:h-10 mobile:px-4 mobile:text-[15px]',
         VARIANTS[variant],
         className,
       )}
@@ -107,7 +112,7 @@ export function Tip({
           side={side}
           sideOffset={6}
           collisionPadding={8}
-          className="mat-popover anim-in z-[var(--z-tooltip)] flex max-w-72 items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-caption text-fg"
+          className="tip mat-popover anim-in z-[var(--z-tooltip)] flex max-w-72 items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-caption text-fg"
         >
           {label}
           {shortcut ? <kbd className="font-sans text-micro text-faint">{shortcut}</kbd> : null}
@@ -122,7 +127,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cx(
-        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus-visible:outline-offset-0 disabled:opacity-50',
+        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:h-10 mobile:px-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus-visible:outline-offset-0 disabled:opacity-50',
         className,
       )}
       {...rest}
@@ -297,7 +302,8 @@ export function Row({ label, hint, children, htmlFor }: { label: string; hint?: 
   const id = useId();
   const searchHint = typeof hint === 'string' ? hint : undefined;
   return (
-    <div className="flex min-h-10 items-center justify-between gap-4 px-3 py-2" data-settings-row>
+    // Phone layout: the control wraps under a long label instead of squeezing it (ADR-0021).
+    <div className="flex min-h-10 items-center justify-between gap-4 px-3 py-2 mobile:flex-wrap mobile:gap-x-3 mobile:gap-y-2" data-settings-row>
       <div className="flex min-w-0 flex-col" id={id}>
         {htmlFor ? (
           <label htmlFor={htmlFor} className="text-body" data-settings-label data-settings-hint={searchHint}>
@@ -310,7 +316,7 @@ export function Row({ label, hint, children, htmlFor }: { label: string; hint?: 
         )}
         {hint ? <span className="text-caption text-faint">{hint}</span> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
+      <div className="flex shrink-0 items-center gap-2 mobile:max-w-full mobile:shrink">{children}</div>
     </div>
   );
 }
@@ -353,6 +359,8 @@ export function Modal({
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
             wide ? 'max-w-[880px]' : 'max-w-[440px]',
+            // Phone layout (ADR-0021): a bottom sheet — full width, from the bottom edge, above the home indicator.
+            'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-0 mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
           )}
         >
           <div className="flex items-start justify-between gap-4 px-5 pt-5">

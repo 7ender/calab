@@ -32,7 +32,7 @@ function InlineTip({ label, children }: { label: string; children: ReactNode }):
         side="top"
         sideOffset={6}
         collisionPadding={8}
-        className="mat-popover anim-in z-[var(--z-popover)] max-w-72 rounded-[var(--radius-row)] px-2 py-1 text-[12px] text-fg"
+        className="tip mat-popover anim-in z-[var(--z-popover)] max-w-72 rounded-[var(--radius-row)] px-2 py-1 text-[12px] text-fg"
       >
         {label}
       </TooltipP.Content>

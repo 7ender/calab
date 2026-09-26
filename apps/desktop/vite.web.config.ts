@@ -27,13 +27,29 @@ function stripMetaCsp(): Plugin {
  * Web app icons (owner artwork, build/icons/web — see scripts/gen-icons.sh): the files are the
  * `publicDir`, this adds the <link>s and the PWA manifest. Only for the web build: the Electron
  * window/Dock/tray icons come from electron-builder and main.
+ * Phone / PWA (ADR-0021): the viewport meta (edge to edge under the iOS notch — the app pads with
+ * env(safe-area-inset-*); Android resizes the layout for the keyboard), the iOS home-screen metas
+ * and an install-only service worker (sw.js: no fetch handler, no cache — always the deployed app).
  */
+/**
+ * PWA service worker: install-only. No fetch handler and no cache, so every request goes to the
+ * network and the app is always the deployed version (Caddy serves non-hashed files no-cache).
+ * A new sw.js replaces the old one at once.
+ */
+const SERVICE_WORKER = `// Calab — install-only service worker (ADR-0021): no fetch handler, no cache.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+`;
 const WEB_THEME = '#1c1c1e'; // --color-bg (dark), the app opens dark by default
 function webIcons(): Plugin {
   const manifest = {
+    id: '/',
     name: 'Calab',
     short_name: 'Calab',
+    description: 'Голосовой мессенджер для команды',
+    lang: 'ru',
     start_url: '/',
+    scope: '/',
     display: 'standalone',
     background_color: WEB_THEME,
     theme_color: WEB_THEME,
@@ -46,6 +62,15 @@ function webIcons(): Plugin {
   return {
     name: 'calaba:web-icons',
     transformIndexHtml: () => [
+      {
+        tag: 'meta',
+        attrs: { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content' },
+        injectTo: 'head',
+      },
+      { tag: 'meta', attrs: { name: 'mobile-web-app-capable', content: 'yes' }, injectTo: 'head' },
+      { tag: 'meta', attrs: { name: 'apple-mobile-web-app-capable', content: 'yes' }, injectTo: 'head' },
+      { tag: 'meta', attrs: { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' }, injectTo: 'head' },
+      { tag: 'meta', attrs: { name: 'apple-mobile-web-app-title', content: 'Calab' }, injectTo: 'head' },
       { tag: 'link', attrs: { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }, injectTo: 'head' },
       { tag: 'link', attrs: { rel: 'icon', href: '/favicon-32.png', sizes: '32x32', type: 'image/png' }, injectTo: 'head' },
       { tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }, injectTo: 'head' },
@@ -58,9 +83,14 @@ function webIcons(): Plugin {
         res.setHeader('Content-Type', 'application/manifest+json');
         res.end(JSON.stringify(manifest));
       });
+      server.middlewares.use('/sw.js', (_req, res) => {
+        res.setHeader('Content-Type', 'text/javascript');
+        res.end(SERVICE_WORKER);
+      });
     },
     generateBundle() {
       this.emitFile({ type: 'asset', fileName: 'manifest.webmanifest', source: JSON.stringify(manifest, null, 2) });
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: SERVICE_WORKER });
     },
   };
 }
