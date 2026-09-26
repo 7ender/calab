@@ -17,7 +17,7 @@ Voice-first десктоп-мессенджер для команды (Electron 
 - `infra/docker` — compose (prod-like и dev), `Caddyfile` + Dockerfile Caddy (caddy-l4), шаблон LiveKit `livekit.yaml.tpl`, `deploy.sh` (рендер шаблона через envsubst + `compose up`).
 
 ## Правила
-- TS strict на клиенте; Go — `gofmt`, `go vet`, `golangci-lint`. Типы контракта только из сгенерированного кода, руками не писать.
+- TS strict на клиенте; Go — `gofmt`, `go vet`, `golangci-lint` **только через `make lint` в `apps/server`** (конфиг `.golangci.yml` в корне, `--build-tags integration`, версия как в CI v2.14.0) — прямой `golangci-lint run ./pkg/...` без конфига пропускает правила (noctx и др.) и даёт ложный «0 issues». Типы контракта только из сгенерированного кода, руками не писать.
 - Все права проверяются на сервере; LiveKit-grant повторяет права. Клиент лишь скрывает UI.
 - Конфигурация — только через env. Никаких хостов/секретов в коде.
 - Приоритет — качество и продуманность, не скорость. Перед нетривиальным решением — короткое обоснование, при смене архитектуры — ADR.
