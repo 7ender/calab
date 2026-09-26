@@ -43,6 +43,21 @@ type recordingLiveKit struct {
 	removed  []string
 	fakeMove bool                      // pretend MoveParticipant succeeded (no real WebRTC participant in tests)
 	perms    map[string]rtc.Permission // last permission sent per identity
+	// afterCreateRoom, if set, runs once after a successful CreateRoom (e.g. to cancel the
+	// request that caused it at a precise point).
+	afterCreateRoom func()
+}
+
+func (r *recordingLiveKit) CreateRoom(ctx context.Context, name string, emptyTimeout, maxParticipants uint32) error {
+	err := r.LiveKit.CreateRoom(ctx, name, emptyTimeout, maxParticipants)
+	r.mu.Lock()
+	hook := r.afterCreateRoom
+	r.afterCreateRoom = nil
+	r.mu.Unlock()
+	if err == nil && hook != nil {
+		hook()
+	}
+	return err
 }
 
 func (r *recordingLiveKit) lastPerm(identity string) (rtc.Permission, bool) {
