@@ -30,6 +30,19 @@ CALABA_VISUAL_MOCK_PORT=39270 MOCK_LIVEKIT_ROOM_PREFIX=wt_ CALABA_VISUAL_OUT=tes
   pnpm -F @calaba/desktop e2e:visual -g "<screens>"
 ```
 
+Each screen is its own test named like its snapshot (`e2e-visual/screens.spec.ts`); the four configurations are Playwright projects (`dark-960`, `dark-1440`, `light-960`, `light-1440`); focus walk and web screens are the `misc` project.
+
+```bash
+pnpm -F @calaba/desktop e2e:visual -g "voice-pip$"                           # one screen, 4 configs
+pnpm -F @calaba/desktop e2e:visual -g "voice-pip$" --project dark-1440       # one snapshot
+pnpm -F @calaba/desktop e2e:visual:update -g "voice-camera-(grid|focus)$"    # re-record two screens
+npx playwright test --config playwright.visual.config.ts --list              # all names
+```
+
+Every test starts from a clean seeded state (`e2e-visual/app.ts`: mock reset, storage wiped, reload, sign-in), so any screen runs alone.
+
+**Why the baselines changed with the split.** In the old single sequential test, axe runs on earlier screens (`checkpoint` → `expectAccessible`) changed how Chromium lays out later text: 15 px system text came out ~10 % narrower, with identical computed styles and fonts. A fresh page — what users see — renders it wider. The per-screen tests reload before every screen and match the real rendering. Don't reintroduce shared state between screens. Workers run in parallel (`CALABA_VISUAL_WORKERS`, default 3), each with its own Electron app, mock port (base + 1 + worker) and LiveKit room prefix.
+
 `auth-*` snapshots from a worktree show 39270; do not commit them (`git checkout -- 'e2e-visual/__screenshots__/darwin/auth-*'`).
 
 ### Environment variables

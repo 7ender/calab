@@ -39,8 +39,8 @@ export interface Env {
   close(): Promise<void>;
 }
 
-export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?: 'data' | 'empty'; onboarded?: boolean }): Promise<Env> {
-  const mock = await startMockServer({ port: MOCK_PORT, scenario: opts.scenario ?? 'data' });
+export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?: 'data' | 'empty'; onboarded?: boolean; port?: number }): Promise<Env> {
+  const mock = await startMockServer({ port: opts.port ?? MOCK_PORT, scenario: opts.scenario ?? 'data' });
   const userData = mkdtempSync(join(tmpdir(), 'calaba-visual-'));
   const app = await electron.launch({
     args: ['.'],

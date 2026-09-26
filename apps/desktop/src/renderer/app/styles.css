@@ -543,6 +543,11 @@ body {
   transition: none !important;
   caret-color: transparent !important;
 }
+/* Visual tests: no scrollbars — overlay scrollbars appear on every scroll and fade on their own
+   timer, so a shot right after a scroll caught them half-faded (per-screen tests scroll first). */
+:root.test-stable * {
+  scrollbar-width: none !important;
+}
 
 /* SF-Symbols-like icons: one set (Lucide), thinner strokes (docs/08, «Иконки»). */
 svg.lucide {
