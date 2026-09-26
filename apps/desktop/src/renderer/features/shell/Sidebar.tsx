@@ -519,14 +519,14 @@ function RoomMenu({ room, children, canManage }: { room: Room; children: ReactNo
 
 /**
  * Actions on the voice room card (Discord): the room's chat, invite, settings — 18 px icons 10 px
- * apart, shown on hover / keyboard focus and on the selected room.
+ * apart, shown on hover / keyboard focus (the call timer stands there otherwise).
  */
-function CardActions({ room, workspaceId, canInvite, canSettings, active }: { room: Room; workspaceId: string; canInvite: boolean; canSettings: boolean; active: boolean }): ReactNode {
+function CardActions({ room, workspaceId, canInvite, canSettings }: { room: Room; workspaceId: string; canInvite: boolean; canSettings: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const openRoom = useUi((s) => s.openRoom);
   const btn = 'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
   return (
-    <span className={cx('shrink-0 items-center gap-2.5', active ? 'flex' : 'hidden group-hover/row:flex group-focus-within/row:flex')}>
+    <span className="hidden shrink-0 items-center gap-2.5 group-hover/row:flex group-focus-within/row:flex">
       <Tip label={t('shell.roomChat')}>
         <button type="button" className={btn} aria-label={t('shell.roomChatOf', { name: room.name })} onClick={() => openRoom(workspaceId, room.id)}>
           <MessageSquare className="size-[18px]" aria-hidden />
@@ -685,12 +685,13 @@ function VoiceRoomRow({
             <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-1.5')}>
               <MentionBadge n={mentions} />
               {/* Hover or selection swaps the timer and N/M for the actions (Discord), so the name keeps ≥ 120 px. */}
-              <span className={cx('flex items-center gap-1', (admin || card) && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
-                {people.length ? <CallTimer roomId={room.id} /> : null}
+              {/* Card: the timer stays on the name line (green, Discord) and gives way to the actions on hover only. */}
+              <span className={cx('flex items-center gap-1', card ? 'group-hover/row:hidden group-focus-within/row:hidden' : admin && (active ? 'hidden' : 'group-hover/row:hidden group-focus-within/row:hidden'))}>
+                {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom && 'text-ok') : undefined} /> : null}
                 {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
               </span>
               {card ? (
-                <CardActions room={room} workspaceId={workspaceId} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} active={active} />
+                <CardActions room={room} workspaceId={workspaceId} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} />
               ) : (
                 <RoomActions room={room} admin={admin} active={active} />
               )}
