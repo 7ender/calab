@@ -38,22 +38,34 @@ test('register → workspace → room → message → reload → voice', async (
 
   // Idempotent on a shared account (the stand limits workspace creation, 3/hour): reuse the
   // «E2E web» workspace and its rooms when they exist, create them only when missing.
+  // The rail's actions render before its workspace items (an item waits for its workspace data),
+  // so give an existing «E2E web» a bounded moment to appear before deciding to create one —
+  // creating needlessly hits the rate limit on the stand.
   const rail = page.getByRole('navigation', { name: 'Пространства' });
   const existing = rail.getByRole('button', { name: /^E2E web\b/ });
-  if ((await existing.count()) > 0) {
+  const found = await existing
+    .first()
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true, () => false);
+  if (found) {
     await existing.first().click();
   } else {
     await page.getByRole('button', { name: 'Создать пространство' }).first().click();
     await page.getByLabel('Название').fill('E2E web');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
   }
+  // The sidebar follows the selected workspace: wait for its header before looking at the rooms.
   const rooms = page.locator('aside').first();
-  await expect(rooms.getByRole('button', { name: 'Создать комнату' }).first()).toBeVisible();
+  await expect(rooms.getByRole('button', { name: /^E2E web\b/ }).first()).toBeVisible();
   const general = rooms.getByRole('button', { name: /^общий(,|$)/ });
-  if ((await general.count()) > 0) {
+  const hasGeneral = await general
+    .first()
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true, () => false);
+  if (hasGeneral) {
     await general.first().click();
   } else {
-    await page.getByRole('button', { name: 'Создать комнату' }).first().click();
+    await rooms.getByRole('button', { name: 'Создать комнату' }).first().click();
     await page.getByLabel('Название').fill('общий');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
   }
