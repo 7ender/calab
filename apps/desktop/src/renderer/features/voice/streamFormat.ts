@@ -51,7 +51,28 @@ export function presetOptions(max: ConcreteScreenSharePreset): Array<{ preset: C
   }));
 }
 
-/** Picker tabs: «Приложения» = windows, «Весь экран» = screens. */
+/** Picker card chrome around the 16:9 preview: p-1.5 on each side, and the name row below it. */
+export const CARD_PAD = 6;
+export const CARD_LABEL = 28;
+export const CARD_GAP = 12;
+
+/**
+ * Stream picker layout (docs/09 #17) for a source area `areaW` × `areaH` CSS px: one source → one
+ * large card centred (≤ 60 % of the width, and short enough to fit the height), several → a
+ * two-column grid. `preview` is the 16:9 box the thumbnail is fetched for (thumbSizeFor).
+ */
+export function pickerLayout(areaW: number, areaH: number, count: number): { single: boolean; card: number; preview: number } {
+  const w = Math.max(0, areaW);
+  if (count <= 1) {
+    const byHeight = areaH > 0 ? ((areaH - CARD_LABEL - 2 * CARD_PAD) * 16) / 9 + 2 * CARD_PAD : Infinity;
+    const card = Math.floor(Math.max(160, Math.min(w * 0.6, byHeight)));
+    return { single: true, card, preview: card - 2 * CARD_PAD };
+  }
+  const card = Math.floor((w - CARD_GAP) / 2);
+  return { single: false, card, preview: Math.max(0, card - 2 * CARD_PAD) };
+}
+
+/** Picker tabs: «Весь экран» = screens (first, the default), «Приложения» = windows. */
 export function splitSources(sources: readonly CaptureSource[]): { apps: CaptureSource[]; screens: CaptureSource[] } {
   return { apps: sources.filter((s) => s.kind === 'window'), screens: sources.filter((s) => s.kind === 'screen') };
 }
