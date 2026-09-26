@@ -26,10 +26,12 @@
 #              → dist-web, and (LANDING_HOST set) `pnpm -F @calaba/landing build` → apps/landing/out
 #   deploy     infra/docker/sync.sh with SYNC_REF=<commit>, VERSION: whole stack (api rebuilt with the build
 #              info, unchanged services untouched), web static, landing (from the same export); SKIP_RELEASES
-#   verify     /healthz + /api/version on both app hosts, landing, /download/ → 302 to RELEASES_HOST, /readyz
-#              inside, e2e:web on both hosts (via IP) with dedicated e2e accounts (their workspaces are deleted
-#              afterwards), relay-check tls/udp/any with an API join token + a publisher, api/LiveKit logs
-#              clean, foreign job intact, backup AFTER
+#   verify     smoke on both app hosts (/healthz, /api/version, TLS chain), landing, /download/ → 302 to
+#              RELEASES_HOST (app, alias, landing), /readyz inside; e2e:web on APP_HOST only, Chromium only
+#              (Firefox and the alias are covered by nightly — CLAUDE.md) with a dedicated e2e account (its
+#              «Web …» workspaces are deleted afterwards) and the move scenario M.1 (a second e2e account;
+#              when the commit has the spec); relay-check tls/udp/any with an API join token + a publisher,
+#              api/LiveKit logs clean, foreign job intact, backup AFTER
 #   desktop    only when nothing failed: git tag -a v$VERSION <commit>, push the tag to origin, wait for the
 #              release.yml run of that tag (all jobs green), then the feed: latest*.yml on RELEASES_HOST,
 #              every file in them 200 with the size from the yml, sha512 recomputed ON the stand, the GitHub
@@ -161,6 +163,10 @@ if step verify; then
     [[ "$code" == 200 ]] && ok "$d/healthz 200" || bad "$d/healthz $code"
     ver=$(rcurl "https://$d/api/version" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.version+"/"+j.commit)})' 2>/dev/null || echo "?")
     [[ "$ver" == "$VERSION/$COMMIT" ]] && ok "$d/api/version = $ver" || bad "$d/api/version = $ver (want $VERSION/$COMMIT)"
+    # TLS: curl verifies chain + hostname (ssl_verify_result 0); openssl only reads the expiry (LibreSSL-safe)
+    v=$(rcurl -o /dev/null -w '%{ssl_verify_result}' "https://$d/healthz" 2>/dev/null || echo fail)
+    exp=$(openssl s_client -connect "$IP:443" -servername "$d" </dev/null 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+    [[ "$v" == 0 && -n "$exp" ]] && ok "$d TLS: valid for the name, expires $exp" || bad "$d TLS: verify=$v expiry=${exp:-?}"
   done
   if [[ -n "$LAND" ]]; then
     code=$(rcurl -o /dev/null -w '%{http_code}' "https://$LAND/"); [[ "$code" == 200 ]] && ok "landing https://$LAND/ 200" || bad "landing $LAND → $code"
@@ -170,7 +176,7 @@ if step verify; then
 
   # 2. /download/ on the app and the landing: 302 to the release host, same path (electron-updater of
   #    older builds follows it); the feed itself is checked in the desktop step
-  for d in "$D1" ${LAND:+"$LAND"}; do
+  for d in "$D1" "$D2" ${LAND:+"$LAND"}; do
     r=$(rcurl -o /dev/null -w '%{http_code} %{redirect_url}' "https://$d/download/latest.yml" || echo 000)
     [[ "$r" == "302 https://$REL/latest.yml" ]] && ok "$d/download/ → https://$REL/" || bad "$d/download/latest.yml → '$r' (want 302 https://$REL/latest.yml)"
   done
@@ -181,28 +187,53 @@ if step verify; then
   api() { rcurl "$@"; }
   login() { api -X POST "https://$D1/api/auth/login" -d "{\"email\":\"$1\",\"password\":\"$2\"}" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).tokens.accessToken||"")}catch{console.log("")}})'; }
 
-  # 3. e2e:web — dedicated accounts per domain (workspace creation is rate-limited per user), created once
-  #    with the owner's invite; the workspaces the spec creates are deleted afterwards.
-  for pair in "app:$D1" "alias:$D2"; do
-    tag="${pair%%:*}"; d="${pair#*:}"; email="e2e-$tag@calaba.test"
+  # e2e account: password from .env.accounts, or registered once with the owner's invite (password goes
+  # only to .env.accounts on the stand); prints the password, empty on failure (runs in $(…): the caller
+  # records the FAIL, a `bad` in here would be lost with the subshell)
+  ensure_account() { # email display-name
+    local email="$1" name="$2" pw code
     pw="$(awk -v e="$email" '$1==e{print $2}' <<<"$acc")"
     if [[ -z "$pw" ]]; then
       pw="$(openssl rand -hex 12)"
       code=$(api -o /dev/null -w '%{http_code}' -X POST "https://$D1/api/auth/register" \
-        -d "{\"email\":\"$email\",\"password\":\"$pw\",\"displayName\":\"E2E $tag\",\"inviteCode\":\"$INVITE\"}")
-      [[ "$code" == 20? ]] || { bad "create $email ($code)"; continue; }
+        -d "{\"email\":\"$email\",\"password\":\"$pw\",\"displayName\":\"$name\",\"inviteCode\":\"$INVITE\"}")
+      [[ "$code" == 20? ]] || { echo "        registration of $email → HTTP $code" >&2; return 0; }
       printf '%s %s\n' "$email" "$pw" | on_stand 'umask 077; cat >> /opt/calaba/infra/docker/.env.accounts'
-      ok "created e2e account $email (password stored in .env.accounts on the stand)"
+      ok "created e2e account $email (password stored in .env.accounts on the stand)" >&2
     fi
-    # both through the IP-forcing config: no dependency on local DNS/VPN
-    # specs + config from the release commit's export (web step), never from the working tree: other
-    # work in progress there may test features this commit does not have
-    cfg=../../infra/docker/tools/playwright.stand.config.ts; force_ip="$IP"
-    if (cd "$SRC_DIR/apps/desktop" && CALABA_FORCE_IP="$force_ip" CALABA_WEB_URL="https://$d" CALABA_WEB_LOGIN="$email" \
-          CALABA_WEB_PASSWORD="$pw" CALABA_WEB_FF_VOICE=1 pnpm exec playwright test --config "$cfg" >"$WORK.e2e-$tag.log" 2>&1); then
-      ok "e2e:web $d (chromium + firefox, voice) — $(grep -oE '[0-9]+ passed' "$WORK.e2e-$tag.log" | tail -1)"
+    printf '%s' "$pw"
+  }
+
+  # 3. e2e:web on APP_HOST, Chromium only (release gate; Firefox and the alias run nightly). Dedicated account
+  #    (workspace creation is rate-limited per user), created once with the owner's invite; the «Web …»
+  #    workspaces the spec creates are deleted afterwards. Specs + config come from the release commit's
+  #    export (web step), never from the working tree, through the IP-forcing config (no local DNS/VPN).
+  #    M.1 (move a participant between voice rooms, ADR-0019): A = the e2e account (admin of its «E2E web»),
+  #    B = e2e-app2@; the spec is idempotent (reuses the workspace, rooms and invite) — no creation limit.
+  d="$D1"; email="e2e-app@calaba.test"; cfg=../../infra/docker/tools/playwright.stand.config.ts
+  pw="$(ensure_account "$email" "E2E app")"
+  if [[ -z "$pw" ]]; then
+    bad "e2e:web $d — no account $email"
+  else
+    if (cd "$SRC_DIR/apps/desktop" && CALABA_FORCE_IP="$IP" CALABA_WEB_URL="https://$d" CALABA_WEB_LOGIN="$email" \
+          CALABA_WEB_PASSWORD="$pw" pnpm exec playwright test --config "$cfg" --project chromium >"$WORK.e2e-app.log" 2>&1); then
+      ok "e2e:web $d (chromium, voice) — $(grep -oE '[0-9]+ passed' "$WORK.e2e-app.log" | tail -1)"
     else
-      bad "e2e:web $d — see $WORK.e2e-$tag.log"
+      bad "e2e:web $d — see $WORK.e2e-app.log"
+    fi
+    if [[ -f "$SRC_DIR/apps/desktop/e2e-web/move.web.spec.ts" ]]; then
+      email2="e2e-app2@calaba.test"; pw2="$(ensure_account "$email2" "E2E app 2")"
+      if [[ -z "$pw2" ]]; then
+        bad "e2e:web move (M.1) $d — no account $email2"
+      elif (cd "$SRC_DIR/apps/desktop" && CALABA_FORCE_IP="$IP" CALABA_WEB_URL="https://$d" \
+            CALABA_WEB_LOGIN="$email" CALABA_WEB_PASSWORD="$pw" CALABA_WEB_LOGIN2="$email2" CALABA_WEB_PASSWORD2="$pw2" \
+            pnpm exec playwright test --config "$cfg" move --project chromium >"$WORK.e2e-move.log" 2>&1); then
+        ok "e2e:web move (M.1) $d, chromium — $(grep -oE '[0-9]+ passed' "$WORK.e2e-move.log" | tail -1)"
+      else
+        bad "e2e:web move (M.1) $d — see $WORK.e2e-move.log"
+      fi
+    else
+      printf '  SKIP  %s\n' "e2e:web move (M.1): no e2e-web/move.web.spec.ts in $COMMIT"
     fi
     # cleanup: delete the workspaces the spec created (named "Web <browser>-<id>")
     t="$(login "$email" "$pw")"
@@ -211,7 +242,7 @@ if step verify; then
       for id in $ids; do api -o /dev/null -X DELETE "https://$D1/api/workspaces/$id" -H "Authorization: Bearer $t"; done
       ok "cleanup: deleted $(echo $ids | wc -w | tr -d ' ') e2e workspace(s) of $email"
     fi
-  done
+  fi
 
   # 4. voice: API join token (owner, room "voice" in workspace "team") + a publisher in that LiveKit room
   OT="$(login owner@calaba.test "$OWNER_PW")"
@@ -297,6 +328,33 @@ print(f"{n} files checked, {bad} mismatches")
 sys.exit(1 if bad or n == 0 else 0)
 PY
 ) && ok "sha512 in latest*.yml match the files served by $REL ($sha)" || bad "sha512 check: $sha"
+    # release.yml leaves the GitHub Release as a draft (the Actions token may not publish it — see the
+    # github-release job): publish it with the owner's token once the feed checks above passed; with no
+    # draft at all (the job failed), create it from the run's artifacts. Body = CHANGELOG section.
+    if (( FAILS == 0 )); then
+      st=$(gh release view "v$VERSION" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null || echo absent)
+      notes="$WORK.release-notes.md"
+      git show "$COMMIT:CHANGELOG.md" > "$WORK.CHANGELOG.md" 2>/dev/null || : > "$WORK.CHANGELOG.md"
+      body=(--generate-notes)
+      if section=$(bash infra/ci/changelog-section.sh "$VERSION" "$WORK.CHANGELOG.md" 2>/dev/null) && [[ -n "$section" ]]; then
+        printf '%s\n\n---\n%s\n' "$section" "**Скачать:** [calab.ru](https://calab.ru/#download) · файлы и обновления: [releases.calab.ru](https://releases.calab.ru/) · [все изменения](https://github.com/$REPO/blob/main/CHANGELOG.md)" > "$notes"
+        body=(--notes-file "$notes")
+      fi
+      pre=(); [[ "$VERSION" == *-* ]] && pre=(--prerelease) || pre=(--latest)
+      if [[ "$st" == true ]]; then
+        edit_body=(); [[ "${body[0]}" == --notes-file ]] && edit_body=("${body[@]}")   # edit cannot regenerate notes
+        gh release edit "v$VERSION" --repo "$REPO" --draft=false "${pre[@]}" "${edit_body[@]}" >/dev/null \
+          && ok "GitHub Release v$VERSION published (was a draft)" || bad "publishing the draft v$VERSION failed"
+      elif [[ "$st" == absent && -n "$run" ]]; then
+        rm -rf "$WORK.assets"; mkdir -p "$WORK.assets"
+        if gh run download "$run" --repo "$REPO" --pattern 'release-*' --dir "$WORK.assets" >/dev/null 2>&1; then
+          assets=(); while IFS= read -r f; do assets+=("$f"); done < <(find "$WORK.assets" -type f)
+          gh release create "v$VERSION" --repo "$REPO" --verify-tag "${pre[@]}" --title "Calab $VERSION" \
+            "${body[@]}" "${assets[@]}" >/dev/null \
+            && ok "GitHub Release v$VERSION created from the run's artifacts" || bad "creating GitHub Release v$VERSION failed"
+        else bad "cannot download the artifacts of run $run"; fi
+      fi
+    fi
     rel=$(gh release view "v$VERSION" --repo "$REPO" --json isDraft,isPrerelease,assets --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease) assets=\(.assets|length)"' 2>/dev/null || echo "absent")
     [[ "$rel" == draft=false* ]] && ok "GitHub Release v$VERSION: $rel" || bad "GitHub Release v$VERSION: $rel"
   fi

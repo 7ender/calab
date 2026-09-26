@@ -1,6 +1,7 @@
 # Desktop releases of Calab (github.com/itrcz/calab) on native runners (docs/06, "Релизы: GitHub Actions → S3").
 #
-#   git tag v0.1.0 && git push origin v0.1.0   → build all three OSes as 0.1.0, GitHub Release, publish
+#   git tag v0.1.0 && git push origin v0.1.0   → build all three OSes as 0.1.0, GitHub Release (a draft — published
+#                                                by infra/docker/release.sh, see the github-release job), publish
 #   workflow_dispatch (version, publish)        → same; the GitHub Release is a draft, publishing is opt-in
 #
 # Publishing (the update feed https://releases.calab.ru/ proxies this bucket, infra/docker/caddy):
@@ -271,8 +272,12 @@ jobs:
           ls -l dist-release
           # update feeds are per channel: latest*.yml, or rc*/beta*/alpha* for prerelease versions
           ver=$(sed -n 's/^version: //p' dist-release/*-linux.yml | head -1); [[ -n "$ver" ]]
-          tag="${GITHUB_REF_NAME}"; draft=""
-          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then tag="v$ver"; draft="--draft"; fi
+          # Always a DRAFT: publishing a release for a tag push with the Actions token fails with
+          # 403 «Resource not accessible by integration» (v0.1.0, 2026-09-26: the token may not publish a
+          # ref of a commit that changes .github/workflows; drafts do not touch the ref). The draft is
+          # published with the owner's token by infra/docker/release.sh (desktop step) after the feed checks.
+          tag="${GITHUB_REF_NAME}"; draft="--draft"; target=()
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then tag="v$ver"; target=(--target "$GITHUB_SHA"); fi
           # body = this version's CHANGELOG.md section + download links; no section → GitHub's auto-generated notes
           links="**Скачать:** [calab.ru](https://calab.ru/#download) · файлы и обновления: [releases.calab.ru](https://releases.calab.ru/) · [все изменения](https://github.com/$RELEASE_REPO/blob/main/CHANGELOG.md)"
           edit_notes=()
@@ -296,7 +301,7 @@ jobs:
             gh release edit "$tag" --repo "$RELEASE_REPO" --title "Calab $ver" "${edit_notes[@]}"
             gh release upload "$tag" --repo "$RELEASE_REPO" --clobber dist-release/*
           else
-            gh release create "$tag" $draft --repo "$RELEASE_REPO" --target "$GITHUB_SHA" \
+            gh release create "$tag" $draft --repo "$RELEASE_REPO" "${target[@]}" \
               --title "Calab $ver" "${notes[@]}" \
               dist-release/*
           fi
