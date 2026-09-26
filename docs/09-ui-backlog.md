@@ -131,3 +131,11 @@
 - Реакции, кастомный статус, закреплённые сообщения — proto + таблицы + события.
 - Категории комнат (`categories`, `rooms.category_id`) — сейчас нет в схеме.
 - `voice_states.joined_at` для таймера комнаты (есть) — отдавать в READY.
+
+## P0 — баги владельца (26.09, после 0.2.0)
+1. **Голос в десктопе не подключается** («Переподключение…»): `connect-src` в `apps/desktop/src/shared/csp.ts` разрешает только `*.<app host>` (`*.app.calab.ru`), а LiveKit живёт на `rtc.calab.ru` — соседний домен. Разрешать `*.<родительский домен>` (при ≥ 3 меток) + `MAIN_VITE_CSP_CONNECT` в `.env.production` для rtc/turn; тест `csp.test.ts` с `app.calab.ru` → `wss://rtc.calab.ru` разрешён. Хотфикс 0.2.1.
+2. **Caps Lock не назначается на PTT** в релизной сборке: проверить, попадает ли патч `uiohook-napi` (C-код) в упакованный нативный модуль (prebuilt vs сборка из исходников в `release.yml`/electron-builder); recorder клавиш должен принимать Caps Lock; проверка в CI, что бинарь собран из патченных исходников.
+3. **«Запись экрана»: Calab нет в списке** — macOS добавляет приложение в список TCC только после первой попытки захвата: перед «Открыть настройки» вызывать `desktopCapturer.getSources`/`CGRequestScreenCaptureAccess`, затем открывать `x-apple.systempreferences:…Privacy_ScreenCapture`; после возврата в приложение — перепроверять статус.
+4. **Личные сообщения** — ADR-0020.
+5. **Скачивание с сайта**: кнопка «Скачать» ведёт на белую страницу со ссылками (`/download/` → корень releases). Нужно: на лендинге кнопки по ОС с прямыми ссылками на файлы (Apple Silicon / Intel / Windows / Linux AppImage+deb), автоопределение ОС; стабильные пути `releases.calab.ru/latest/<file>` (копии при публикации в `release.yml`) и `/download/` с редиректом по User-Agent на нужный файл; корень `releases.calab.ru` → редирект на `calab.ru/#download`.
+6. **Мобильные клиенты** — ADR-0021 (этап A — мобильный веб/PWA; этап B — Expo/RN).
