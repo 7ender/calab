@@ -126,6 +126,7 @@ func TestAdminMoveIntoFullRoom(t *testing.T) {
 	lkRec.mu.Lock()
 	lkRec.fakeMove = true
 	lkRec.mu.Unlock()
+	testApp.RTC.SetSFUMove(true) // fakeMove stands for a LiveKit with MoveParticipant
 	defer func() { lkRec.mu.Lock(); lkRec.fakeMove = false; lkRec.mu.Unlock() }()
 	joinVoice(t, alice, wid, full)
 	bi := joinVoice(t, bob, wid, roomA.GetId())

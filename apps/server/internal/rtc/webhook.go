@@ -94,7 +94,7 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 		return s.participantJoined(ctx, wid, rid, uid, sid, ev.Room.Name, p)
 	case EventParticipantLeft, EventParticipantAborted:
 		s.stopStreams(ctx, wid, rid, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
-		s.dropCameras(ctx, rid, identity)
+		s.dropCameras(ctx, rid, sid, identity)
 		return s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
 			if cur == nil || cur.RoomID != rid {
 				return cur // the device already moved to another room

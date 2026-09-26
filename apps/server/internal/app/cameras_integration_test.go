@@ -369,6 +369,7 @@ func TestCameraMove(t *testing.T) {
 	lkRec.mu.Lock()
 	lkRec.fakeMove = true
 	lkRec.mu.Unlock()
+	testApp.RTC.SetSFUMove(true) // fakeMove stands for a LiveKit with MoveParticipant
 	t.Cleanup(func() { lkRec.mu.Lock(); lkRec.fakeMove = false; lkRec.mu.Unlock() })
 	o.must(204, "POST", "/api/rooms/"+a+"/voice/"+bob.id+"/move", &v1.MoveMemberRequest{TargetRoomId: c}, nil)
 	g.wait("moved to c with the camera", func(e *v1.DispatchEvent) bool {
@@ -397,4 +398,57 @@ func TestCameraMove(t *testing.T) {
 	if p, _ := lkRec.lastPerm(bi); hasSource(p, rtc.SourceCamera) {
 		t.Fatalf("camera still granted in a room with cameras off: %+v", p)
 	}
+}
+
+// App-level move (open-source LiveKit, ADR-0019) with a webcam on: the device comes back on
+// a new connection without a camera — records and reservation gone, camera=false, no
+// VOICE_CAMERA_STOP — and a moderator's sticky stop survives its old connection leaving.
+func TestCameraAppLevelMove(t *testing.T) {
+	liveKitUp(t)
+	testApp.RTC.SetSFUMove(false)
+	t.Cleanup(func() { testApp.RTC.SetSFUMove(true) })
+	o, bob, ws, _ := setupTeam(t)
+	a := newVoiceRoom(t, o, ws.GetId(), "a", 6)
+	b := newVoiceRoom(t, o, ws.GetId(), "b", 6)
+	name := func(rid string) string { return "ws_" + ws.GetId() + "_room_" + rid }
+	g := dialGW(t)
+	g.identify(o.token)
+	bg := dialGW(t)
+	bg.identify(bob.token)
+	bi := joinCall(t, bob, g, a, name(a))
+	sid := publishDemoCamera(t, name(a), bi)
+	bob.must(204, "POST", "/api/rooms/"+a+"/camera/request", nil, nil)
+	cameraPublished(t, name(a), bi, sid)
+	g.wait("camera on in a", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && s.GetCamera() && s.GetRoomId() == a
+	})
+
+	o.must(204, "POST", "/api/rooms/"+a+"/voice/"+bob.id+"/move", &v1.MoveMemberRequest{TargetRoomId: b}, nil)
+	mv := bg.wait("VOICE_MOVED with a token", func(e *v1.DispatchEvent) bool { return e.GetVoiceMoved().GetToken() != "" }).GetVoiceMoved()
+	// One state update: target room, camera off; no camera stop on the way.
+	g.wait("in b without a camera", func(e *v1.DispatchEvent) bool {
+		if c := e.GetVoiceCameraStop(); c != nil {
+			t.Fatalf("VOICE_CAMERA_STOP on an app-level move: %v", c)
+		}
+		s := e.GetVoiceStateUpdate().GetState()
+		if s.GetUserId() == bob.id && s.GetRoomId() == b && s.GetCamera() {
+			t.Fatal("camera announced on in the target room")
+		}
+		return s.GetUserId() == bob.id && s.GetRoomId() == b && !s.GetCamera()
+	})
+	if len(cameraRecords(t, a)) != 0 || len(cameraRecords(t, b)) != 0 {
+		t.Fatal("camera records left after an app-level move")
+	}
+	if n, _ := testRedis.Do(context.Background(), testRedis.B().Exists().Key("voice:camreq:"+bi).Build()).AsInt64(); n != 0 {
+		t.Fatal("camera reservation left after an app-level move")
+	}
+
+	// A moderator's stop in the target survives the old connection leaving room a.
+	signalJoin(t, mv.GetToken()) // the device reconnects to b with the move token
+	webhook(t, whEvent("participant_joined", name(b), bi, nil), "secret")
+	bob.must(204, "POST", "/api/rooms/"+b+"/camera/request", nil, nil)
+	o.must(204, "POST", "/api/rooms/"+b+"/voice/"+bob.id+"/stop-camera", nil, nil)
+	webhook(t, whEvent("participant_left", name(a), bi, nil), "secret")
+	bob.must(403, "POST", "/api/rooms/"+b+"/camera/request", nil, nil)
 }

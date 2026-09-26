@@ -56,6 +56,10 @@ type Service struct {
 	noSFUMove atomic.Bool
 }
 
+// SetSFUMove overrides the detected move mode — tests, or ops after a LiveKit upgrade that
+// adds or removes MoveParticipant: false = app-level moves (ADR-0019).
+func (s *Service) SetSFUMove(supported bool) { s.noSFUMove.Store(!supported) }
+
 // NewService wires the rtc service. ev must be the plain publisher (not the Sync decorator).
 func NewService(cfg Config, d *db.DB, r rueidis.Client, lk LiveKit, ev events.Publisher) *Service {
 	s := &Service{cfg: cfg, db: d, redis: r, lk: lk, voice: voice.Store{C: r}, events: ev}

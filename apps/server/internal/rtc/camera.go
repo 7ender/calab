@@ -321,20 +321,41 @@ func (s *Service) refreshCamera(ctx context.Context, wid, rid, uid, sid uuid.UUI
 	return s.setFlag(ctx, wid, rid, uid, sid, func(n *voice.SessionState) { n.Camera = on })
 }
 
-// dropCameras forgets the webcams of a device that left (no event: the device's voice
-// state goes away with it).
-func (s *Service) dropCameras(ctx context.Context, rid uuid.UUID, identity string) {
-	cams, err := s.voice.Cameras(ctx, rid)
-	if err != nil {
-		return
-	}
-	for t, c := range cams {
-		if c.Identity == identity {
-			_, _ = s.voice.RemoveCamera(ctx, rid, t)
+// dropCameras forgets the webcams of a device whose connection left room rid (no event:
+// the device's voice state goes away with it). A device that is in another room by now
+// (app-level move, ADR-0019: only its old connection left) keeps its reservation and the
+// moderator's sticky stop.
+func (s *Service) dropCameras(ctx context.Context, rid, sid uuid.UUID, identity string) {
+	if cams, err := s.voice.Cameras(ctx, rid); err == nil {
+		for t, c := range cams {
+			if c.Identity == identity {
+				_, _ = s.voice.RemoveCamera(ctx, rid, t)
+			}
 		}
+	}
+	if _, cur, ok, err := s.voice.Location(ctx, sid); err == nil && ok && cur != rid {
+		return
 	}
 	_, _ = s.voice.ReleaseCamera(ctx, identity)
 	_ = s.voice.AllowCamera(ctx, identity) // a moderator's stop lasts until the device leaves
+}
+
+// resetCameraForReconnect forgets the webcam of a device moved at app level (ADR-0019):
+// its records in the source room and its reservation go away; the moderator's sticky stop
+// stays (same call). Reports whether the device had a camera on.
+func (s *Service) resetCameraForReconnect(ctx context.Context, srcID uuid.UUID, identity string, cams map[string]voice.Camera) bool {
+	had := false
+	for t, c := range cams {
+		if c.Identity == identity {
+			if ok, _ := s.voice.RemoveCamera(ctx, srcID, t); ok {
+				had = true
+			}
+		}
+	}
+	if _, err := s.voice.ReleaseCamera(ctx, identity); err != nil {
+		slog.WarnContext(ctx, "release camera on app-level move", "identity", identity, "err", err)
+	}
+	return had
 }
 
 // reconcileCameras drops recorded webcams whose tracks are gone or muted and records live

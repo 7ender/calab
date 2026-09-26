@@ -259,11 +259,11 @@ pnpm infra:dev                                  # LiveKit на :7880 (devkey/sec
 pnpm -F @calaba/desktop e2e:visual              # сравнить с эталоном
 pnpm -F @calaba/desktop e2e:visual:update       # перезаписать эталон после намеренного изменения дизайна
 ```
-Ожидается `9 passed` (~2 мин): 4 конфигурации (dark/light × 960×600/1440×800) × {основной сценарий, первый запуск без пространств} + обход фокуса по Tab.
+Ожидается `~330 passed` (несколько `skipped`: поле поиска в заголовке только на 1440): каждый экран — отдельный тест с именем снимка, 4 конфигурации — projects `dark-960`, `dark-1440`, `light-960`, `light-1440`, плюс `misc` (обход фокуса по Tab, экраны веб-клиента). Тесты независимы, идут в 3 воркера. Один экран: `-g "voice-pip$"`, одна конфигурация: `--project dark-1440`.
 - Эталонные снимки: `apps/desktop/e2e-visual/__screenshots__/darwin/*.png` (в репо, 83 экрана × 4 конфигурации). Порог — 0,2 % отличающихся пикселей. Снимки платформенные: эталон снят на macOS; на Linux/Windows сначала `e2e:visual:update`.
 - Экраны: вход/регистрация, каждый шаг онбординга (микрофон до/после разрешения, режим VAD/PTT, запись экрана, уведомления, готово), главное окно с данными, участники, ⌘K, меню пространства, все вкладки настроек пространства/комнаты/голосовой комнаты/приложения, создание комнаты, подтверждение удаления, голос со стримом в PiP и развёрнутым (с полосой камер), камера: меню ▾, «Проверьте камеру», PiP, сетка плиток, крупная плитка, меню участника на плитке (своя камера — fake-устройство Chromium, второй участник публикует canvas как camera-трек), приветствие без пространств с диалогами «Создать пространство» и «Присоединиться». Видео и индикатор качества маскируются.
 - В каждой точке, кроме снимка: layout-инварианты (нет горизонтального скролла; текст не выходит за кнопки/заголовки/строки/вкладки, обрезка только с «…»; обрезанный текст не сжат до нуля; ничего не торчит за окно; модалки по центру; PiP не пересекает композер) и axe-core WCAG 2.1 A/AA — 0 нарушений serious/critical (контраст ≥ 4,5:1).
-- Детерминизм: `CALABA_VISUAL_TEST=1` — окно без нативного vibrancy (непрозрачные фоллбэки материалов), без анимаций и каретки, фиксированные статусы разрешений ОС; часы клиента зафиксированы на 2026-01-15 13:30 MSK, `TZ=Europe/Moscow`, порт мока фиксирован (39170).
+- Детерминизм: `CALABA_VISUAL_TEST=1` — окно без нативного vibrancy (непрозрачные фоллбэки материалов), без анимаций и каретки, фиксированные статусы разрешений ОС; часы клиента зафиксированы на 2026-01-15 13:30 MSK, `TZ=Europe/Moscow`, без полос прокрутки; порт мока — 39170 для обхода фокуса, 39171+ для воркеров экранов (в worktree база 39270, см. apps/desktop/README «Parallel visual runs»).
 - При падении: `apps/desktop/test-results/visual-report/index.html` (ожидаемое/фактическое/diff по каждому снимку) и `test-results/visual/*/trace.zip`.
 
 ### 2.6 Два клиента на одной машине: онбординг, чат, голос, стрим (2.1–2.34)
@@ -1566,3 +1566,33 @@ go test -race -tags integration -count=1 -v -run 'TestCamera' ./internal/app/ 2>
   - move в комнату с камерами переносит запись и grant;
   - move в комнату с `camera_limit = 0` → `VOICE_CAMERA_STOP{ROOM_POLICY}`, `camera = false`, grant без `CAMERA` (L6).
   - MoveParticipant в OSS LiveKit не реализован (`twirp … not implemented`), поэтому сторона SFU в тесте подменена (`fakeMove`), как в `TestMoveMember`.
+
+### Веб-камеры: камера при app-level move (L6 после rebase на 0.1.1)
+
+```sh
+cd apps/server
+go test -race -tags integration -count=1 -v -run 'TestCameraAppLevelMove|TestCameraMove|TestMoveAppLevel' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: три `--- PASS` и `ok`. Нужны dev-LiveKit и `lk`, иначе `SKIP`.
+
+Что проверяется в **`TestCameraAppLevelMove`** (режим app-level задан явно, `SetSFUMove(false)`):
+- **Move с включённой камерой.** Настоящий участник с demo-камерой в комнате A → move в B → `VOICE_MOVED` с токеном; в B приходит одно состояние `camera = false`, ни одного `VOICE_CAMERA_STOP`; записей камер в A и B нет, резерва нет.
+- **Липкий стоп.** Устройство подключается к B по токену из `VOICE_MOVED`, запрашивает камеру (204), модератор делает stop-camera (204). Затем приходит `participant_left` старого соединения из A, а `/camera/request` всё равно отвечает 403.
+- **Регрессия.** Без проверки комнаты в `dropCameras` последний запрос вернул бы 204.
+
+Тесты с `fakeMove` (`TestCameraMove`, p05, review2, move_cancel) явно ставят `SetSFUMove(true)`, поэтому от порядка запуска не зависят.
+
+## Параллельные интеграционные прогоны (несколько worktree / агентов)
+
+Dev-инфраструктура (`compose.dev`) общая. Что делят параллельные прогоны `go test -tags integration`:
+- **Valkey.** `internal/app` использует DB из `TEST_REDIS_URL` (по умолчанию 15), `internal/rtc` — DB `TEST_RTC_REDIS_DB` (по умолчанию 14). Каждый прогон делает FLUSHDB своей базы, а ключи лимитов (синтетические IP тестов) одинаковые. Если два прогона пишут в одну DB, один очищает данные другого, а лимиты общие — отсюда 429 в TestGuests / TestChangeCredentials / TestWebCookieAuth и пропавшее voice-state.
+- **Postgres** не мешает: каждый прогон создаёт свою временную базу `calaba_it_<random>`. Отдельная admin-база нужна только для порядка.
+- **LiveKit** не мешает: комнаты тестов называются по UUID workspace/room.
+
+Правило: у каждого дерева свои номера DB. Основное дерево — 15/14 (по умолчанию). Worktree — свои, например:
+```sh
+docker exec calaba-dev-postgres-1 createdb -U calaba calaba_test_webcam   # один раз
+make test-integration TEST_REDIS_URL=redis://localhost:56379/12 TEST_RTC_REDIS_DB=11 \
+     TEST_DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba_test_webcam
+```
+Занятые номера: main — 15/14; `calab-webcam-server` — 12/11.

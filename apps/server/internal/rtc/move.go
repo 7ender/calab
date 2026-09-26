@@ -121,7 +121,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	cameras, err := s.voice.Cameras(r.Context(), srcID)
+	cameras, err := s.voice.Cameras(ctx, srcID)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,15 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			moved++
-			s.publishVoice(ctx, acc.WorkspaceID, c)
+			// The device comes back on a new connection: no camera, no stream. Its webcam is
+			// not "stopped" (no VOICE_CAMERA_STOP); the client requests it again in the target.
+			if s.resetCameraForReconnect(ctx, srcID, identity, cameras) {
+				// This update publishes the final state (target room, camera off); the
+				// intermediate one (target room, camera on) is never announced.
+				_ = s.setFlag(ctx, acc.WorkspaceID, dstID, target, st.SessionID, func(n *voice.SessionState) { n.Camera = false })
+			} else {
+				s.publishVoice(ctx, acc.WorkspaceID, c)
+			}
 			s.stopStreams(ctx, acc.WorkspaceID, srcID, identity, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
 			apps = append(apps, appMove{sessionID: st.SessionID, identity: identity, token: tok})
 			continue
