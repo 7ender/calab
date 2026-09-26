@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { log } from './lib/log';
+import { installSheetGuard, installVisualViewport, registerServiceWorker } from './lib/mobile';
+import { isWeb } from './platform';
 import { bootstrap } from './services/session';
 import './app/styles.css';
 
@@ -9,6 +11,15 @@ window.addEventListener('error', (e) => log.error('uncaught', e.error ?? e.messa
 window.addEventListener('unhandledrejection', (e) => log.error('unhandled rejection', e.reason));
 
 void bootstrap();
+
+// Web client (ADR-0015/0021): `:root.web` scopes the phone layout (the `mobile:` CSS variant), the
+// shell follows the visual viewport (keyboard), and the PWA service worker makes it installable.
+if (isWeb) {
+  document.documentElement.classList.add('web');
+  installVisualViewport();
+  installSheetGuard();
+  registerServiceWorker();
+}
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing');

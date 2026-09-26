@@ -1,6 +1,6 @@
 import type { PermissionBits, Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { ArrowUp, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
+import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -8,6 +8,7 @@ import { fmtSize } from '../../lib/format';
 import { MENTION_EVENT, type MentionRequest } from './mentionRequest';
 import { applyMention, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, toWire } from '../../lib/mentions';
 import { can } from '../../lib/permissions';
+import { useMobile } from '../../lib/mobile';
 import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, sendMessage, type OutgoingFile } from '../../services/chat';
 import { useMessages } from '../../stores/messages';
 import { useSession } from '../../stores/session';
@@ -51,6 +52,8 @@ export function Composer({
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
+  const mobile = useMobile();
   const pendingCaret = useRef<number | null>(null);
   const replyTo = useUi((s) => s.replyTo[room.id]);
   const setReply = useUi((s) => s.setReply);
@@ -280,7 +283,7 @@ export function Composer({
   ) : null;
 
   return (
-    <div className="px-4 pb-3 pt-2">
+    <div className="px-4 pb-3 pt-2 mobile:px-2 mobile:pb-2">
       {bar}
       {files.length > 0 && !editMsg ? <AttachmentGrid files={files} setFiles={setFiles} /> : null}
       <div className="relative flex items-end gap-2">
@@ -306,6 +309,12 @@ export function Composer({
                   <Dropdown.Item className={menuItem} onSelect={() => fileInput.current?.click()}>
                     <FileText className="size-4" aria-hidden /> {t('chat.attachFile')}
                   </Dropdown.Item>
+                  {mobile ? (
+                    // Phone layout (ADR-0021): straight to the camera (`capture`), next to the gallery and files.
+                    <Dropdown.Item className={menuItem} onSelect={() => cameraInput.current?.click()}>
+                      <Camera className="size-4" aria-hidden /> {t('mobile.takePhoto')}
+                    </Dropdown.Item>
+                  ) : null}
                 </Dropdown.Content>
               </Dropdown.Portal>
             </Dropdown.Root>
@@ -322,6 +331,20 @@ export function Composer({
               e.target.value = '';
             }}
           />
+          {mobile ? (
+            <input
+              ref={cameraInput}
+              type="file"
+              accept="image/*,video/*"
+              capture="environment"
+              hidden
+              data-testid="composer-camera-input"
+              onChange={(e) => {
+                addFiles(Array.from(e.target.files ?? []));
+                e.target.value = '';
+              }}
+            />
+          ) : null}
           <input
             ref={imageInput}
             type="file"

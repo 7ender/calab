@@ -1255,6 +1255,14 @@ class VoiceEngine {
     this.applyTransmit();
   }
 
+  /**
+   * On-screen push-to-talk (phone layout, ADR-0021): the button held (down) / released. The same
+   * path as a key: the 200 ms release tail, the PTT sounds; only matters in the PTT mic mode.
+   */
+  pttHold(down: boolean): void {
+    this.onPtt({ down });
+  }
+
   private onPtt(ev: PttEvent): void {
     if (this.releaseTimer !== null) {
       window.clearTimeout(this.releaseTimer);

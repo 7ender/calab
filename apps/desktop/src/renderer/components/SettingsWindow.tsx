@@ -182,10 +182,11 @@ export function SettingsWindow({
           // 46 px from the top — below the 38 px title bar, like a macOS sheet — and shrinks to
           // 100vh − 62 px (16 px bottom margin). Not centred then, hence data-layout-anchor.
           data-layout-anchor=""
-          className="mat-sheet anim-in fixed left-1/2 top-[max(46px,calc(50vh-320px))] z-[var(--z-modal)] flex h-[min(640px,calc(100vh-62px))] w-[min(920px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-[var(--radius-panel)] focus:outline-none"
+          className="mat-sheet anim-in fixed left-1/2 top-[max(46px,calc(50vh-320px))] z-[var(--z-modal)] flex h-[min(640px,calc(100vh-62px))] w-[min(920px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-[var(--radius-panel)] focus:outline-none mobile:anim-sheet mobile:inset-x-0 mobile:bottom-0 mobile:top-[calc(var(--safe-top)+8px)] mobile:h-auto mobile:w-full mobile:translate-x-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0"
+          // Phone layout (ADR-0021): a full-height sheet; the section list becomes a row of pills on top.
         >
-          <Tabs.Root value={tab} onValueChange={openSection} orientation="vertical" className="flex min-w-0 flex-1">
-            <div className="mat-sidebar flex w-[220px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[200px]">
+          <Tabs.Root value={tab} onValueChange={openSection} orientation="vertical" className="flex min-w-0 flex-1 mobile:flex-col">
+            <div className="mat-sidebar flex w-[220px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[200px] mobile:max-h-[45%] mobile:w-full mobile:border-b mobile:border-r-0">
               <DialogP.Title className="flex min-w-0 items-center gap-2 px-2 pt-2 text-body font-semibold text-fg">
                 {titleIcon}
                 <span className="min-w-0 truncate" title={title}>
@@ -267,13 +268,13 @@ export function SettingsWindow({
                   })}
                 </nav>
               ) : (
-                <Tabs.List aria-label={title} className="flex min-h-0 flex-col gap-px overflow-y-auto">
+                <Tabs.List aria-label={title} className="flex min-h-0 flex-col gap-px overflow-y-auto mobile:flex-row mobile:gap-1.5 mobile:overflow-x-auto mobile:overflow-y-hidden">
                   {sections.map((s) => (
                     <Tabs.Trigger
                       key={s.id}
                       value={s.id}
                       className={cx(
-                        'flex h-8 shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body',
+                        'flex h-8 shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body mobile:h-9 mobile:gap-1.5 mobile:rounded-full mobile:px-3',
                         'hover:bg-hover data-[state=active]:bg-accent-strong data-[state=active]:text-accent-fg data-[state=active]:hover:bg-accent-strong',
                         s.destructive ? 'text-danger-text' : 'text-fg',
                       )}
@@ -284,10 +285,10 @@ export function SettingsWindow({
                   ))}
                 </Tabs.List>
               )}
-              {footer ? <div className="mt-auto flex flex-col gap-px border-t border-line pt-2">{footer}</div> : null}
+              {footer ? <div className="mt-auto flex flex-col gap-px border-t border-line pt-2 mobile:mt-0 mobile:flex-row mobile:flex-wrap mobile:gap-1.5">{footer}</div> : null}
             </div>
             <div className="flex min-w-0 flex-1 flex-col bg-[var(--color-sheet-pane)]">
-              <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line pl-6 pr-3">
+              <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line pl-6 pr-3 mobile:pl-4">
                 <h2 className="truncate text-headline font-semibold">{current?.label}</h2>
                 <IconButton label={t('settings.close')} shortcut="Esc" size="sm" onClick={onClose}>
                   <X className="size-4" aria-hidden />
@@ -300,7 +301,7 @@ export function SettingsWindow({
                     value={s.id}
                     data-settings-panel={s.id}
                     forceMount={searching ? true : undefined}
-                    className="min-h-0 flex-1 overflow-y-auto px-6 py-5 focus-visible:-outline-offset-2 data-[state=inactive]:hidden"
+                    className="min-h-0 flex-1 overflow-y-auto px-6 py-5 focus-visible:-outline-offset-2 data-[state=inactive]:hidden mobile:px-4 mobile:pb-[calc(var(--safe-bottom)+20px)]"
                   >
                     <div className="mx-auto flex max-w-[640px] flex-col gap-6">{s.content}</div>
                   </Tabs.Content>

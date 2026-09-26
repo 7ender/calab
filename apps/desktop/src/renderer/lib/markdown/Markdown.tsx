@@ -64,7 +64,7 @@ function render(nodes: MdNode[], mention: MentionRenderer, key = '', hl?: MdHigh
               e.preventDefault();
               open(n.href);
             }}
-            className="text-accent-text hover:underline"
+            className="text-accent-text hover:underline mobile:underline"
           >
             {render(n.c, mention, `${k}.`, hl)}
           </a>
