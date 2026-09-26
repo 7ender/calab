@@ -1,0 +1,138 @@
+# Nightly visual regression of the desktop renderer (docs/08, «Тесты UI»): screenshots + layout invariants +
+# axe, the same suite as `pnpm -F @calaba/desktop e2e:visual`, on Linux under Xvfb.
+#
+# Why Linux: the suite needs the dev LiveKit in Docker (voice/stream shots), and macOS runners have no Docker.
+# The API is the suite's own deterministic mock (e2e-support/), so no Postgres/Valkey.
+#
+# Baselines are per OS (snapshotPathTemplate …/__screenshots__/{platform}/): the committed darwin set is the
+# design reference, Linux gets its own set in e2e-visual/__screenshots__/linux/. While that directory does not
+# exist (first run), or when dispatched with update_baseline, the run RECORDS it (layout/axe still enforced) and
+# opens a PR with it — review the images before merging. After that every run COMPARES against it.
+#
+# On a failed comparison: diffs/traces as an artifact + one open issue labelled `visual-regression`
+# (a new failure while it is open adds a comment instead of a second issue).
+#
+# Repo setting needed for the baseline PR: Settings → Actions → General → «Allow GitHub Actions to create and
+# approve pull requests». Without it the PR step fails; the recorded baseline is still uploaded as an artifact.
+name: visual-nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: 'Re-record the Linux baseline and open a PR with it'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: visual-nightly
+  cancel-in-progress: false
+
+jobs:
+  visual:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: write        # baseline PR branch
+      pull-requests: write   # baseline PR
+      issues: write          # failure issue
+    env:
+      BASELINE_DIR: apps/desktop/e2e-visual/__screenshots__/linux
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # uiohook-napi (postinstall) needs the X11 headers; Electron runs under Xvfb
+      - name: system packages (X11 headers, Xvfb)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libx11-dev libxtst-dev libxt-dev libxext-dev libxinerama-dev libx11-xcb-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxkbfile-dev libxrandr-dev xvfb xauth
+
+      - run: pnpm install --frozen-lockfile
+      # the second participant («Вера») publishes a canvas track from headless Chromium (e2e-visual/publisher.ts)
+      - name: Playwright Chromium
+        run: pnpm -F @calaba/desktop exec playwright install --with-deps chromium
+
+      - name: dev LiveKit (same image as ci.yml go-integration)
+        run: |
+          docker run -d --name livekit -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
+            livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3 --dev --bind 0.0.0.0
+          for _ in $(seq 1 30); do curl -sf http://127.0.0.1:7880/ >/dev/null && exit 0; sleep 1; done
+          docker logs livekit; exit 1
+
+      - name: mode
+        id: mode
+        env:
+          UPDATE: ${{ inputs.update_baseline }}
+        run: |
+          if [[ "$UPDATE" == true || ! -d "$BASELINE_DIR" ]]; then
+            echo "mode=baseline" >> "$GITHUB_OUTPUT"
+            echo "::notice::recording the Linux baseline ($BASELINE_DIR) — a PR will be opened"
+          else
+            echo "mode=compare" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: e2e:visual (${{ steps.mode.outputs.mode }})
+        env:
+          SCRIPT: ${{ steps.mode.outputs.mode == 'baseline' && 'e2e:visual:update' || 'e2e:visual' }}
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" pnpm -F @calaba/desktop run "$SCRIPT"
+
+      - name: upload diffs and traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: visual-diffs-${{ github.run_id }}
+          path: apps/desktop/test-results/
+          retention-days: 14
+
+      - name: upload recorded baseline
+        if: success() && steps.mode.outputs.mode == 'baseline'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: visual-linux-baseline-${{ github.run_id }}
+          path: ${{ env.BASELINE_DIR }}
+          retention-days: 30
+
+      - name: baseline PR
+        if: success() && steps.mode.outputs.mode == 'baseline'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          add-paths: ${{ env.BASELINE_DIR }}/**
+          branch: ci/visual-linux-baseline
+          delete-branch: true
+          commit-message: 'desktop: Linux baseline for the visual regression suite (visual-nightly)'
+          title: 'desktop: Linux visual baseline (visual-nightly)'
+          body: |
+            Recorded by the `visual-nightly` workflow ([run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})) on ubuntu-22.04 under Xvfb.
+            Layout invariants and axe passed in this run; review the images against the darwin reference before merging.
+            After the merge, nightly runs compare against this set.
+
+      - name: report failure (one open issue)
+        if: failure() && steps.mode.outputs.mode == 'compare'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          label=visual-regression
+          gh label create "$label" --repo "$GITHUB_REPOSITORY" --color d93f0b \
+            --description 'visual-nightly: screenshot/layout/axe failure' 2>/dev/null || true
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [[ -n "$open" ]]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "Still failing on $(date -u +%F) (${GITHUB_SHA::7}): $RUN_URL"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label "$label" \
+              --title "Visual regression: nightly $(date -u +%F)" \
+              --body "The nightly visual suite failed on ${GITHUB_SHA::7}: $RUN_URL
+          Artifact \`visual-diffs-${GITHUB_RUN_ID}\`: \`visual-report/index.html\` (expected / actual / diff per shot) and traces.
+          If the change is intended: dispatch visual-nightly with update_baseline (Linux), and \`pnpm -F @calaba/desktop e2e:visual:update\` on macOS (darwin)."
+          fi
