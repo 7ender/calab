@@ -13,7 +13,8 @@
 #   OUT_DIR=…           artifacts dir (default apps/desktop/dist-release)
 #   WORK_DIR=…          scratch dir (default $TMPDIR/calaba-release; removed on exit unless KEEP_WORK=1)
 #   SIGN=1              macOS: sign with the owner's Developer ID from cert/developerID_full.p12 (password:
-#                       APPLE_CERT_PASSWORD in the root .env; never printed). No notarization here — that is CI.
+#                       APPLE_CERT_PASSWORD in the root .env; never printed). No notarization here — that is CI;
+#                       no secure timestamp either unless SIGN_TIMESTAMP=1 (see build_mac).
 #   MAC_ARCH=arm64|x64  macOS: build only this arch (default: arm64 + x64 from electron-builder.yml)
 #   SMOKE=0             skip the Linux smoke start (AppImage under Xvfb, inside the build container)
 #   BUILD_DOCKER_HOST=ssh://user@host  x86_64 Linux Docker host for the Linux/Windows builds (recommended on
@@ -113,6 +114,10 @@ build_mac() {
       sign_env=(CSC_IDENTITY_AUTO_DISCOVERY=true "CSC_LINK=$p12" "CSC_KEY_PASSWORD=$pw")
     fi
     mac_args+=(-c.mac.notarize=false)
+    # Apple's timestamp server fails intermittently under hundreds of requests from behind local VPNs,
+    # and one miss aborts codesign. A local verification build doesn't need it (notarization does — CI):
+    # SIGN_TIMESTAMP=1 keeps the secure timestamp.
+    [[ -n "${SIGN_TIMESTAMP:-}" ]] || mac_args+=(-c.mac.timestamp=none)
     log "macOS: SIGNED with cert/developerID_full.p12 (no notarization)"
   fi
   log "macOS: electron-builder ${mac_args[*]} (uiohook compiled from source per arch)"
