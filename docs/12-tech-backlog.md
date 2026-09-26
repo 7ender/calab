@@ -10,3 +10,4 @@
 - `users.ValidateTimezone`: на case-insensitive ФС (macOS dev) `Europe/MOSCOW` проходит; в distroless (tzdata) — нет. Сравнивать с `loc.String()`.
 - `rtc/camera.go stopOwnCamera` требует `rooms.Access`: при потере VIEW_ROOM во время звонка свою камеру через API не остановить (резерв живёт до выхода / TTL 10 мин).
 - 2026-09-26 · `apps/desktop/src/main/ptt.ts` · если закрыть настройки во время захвата Caps Lock, ремап caps→F18 остаётся до смены биндинга/выхода; снимать ремап при закрытии окна настроек/отмене захвата (unmount). Не блокер.
+- 2026-09-26 · `apps/desktop/e2e-web` · `move.web.spec` проходит против мока только на свежем состоянии: `app.web.spec` создаёт то же пространство «E2E web», и slug занят — сделать переиспользование по slug в `move.web.spec` (как в app.web) или уникальные имена на прогон.
