@@ -8,6 +8,7 @@ import {
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { PttBinding } from '../../shared/ipc';
+import type { EchoMode } from '../lib/media/echo';
 import type { SoundName } from '../lib/sounds';
 import type { Combo, HotkeyAction } from '../lib/shortcuts';
 
@@ -39,6 +40,8 @@ export interface Prefs {
   pttBinding: PttBinding | null;
   rnnoise: boolean;
   red: boolean;
+  /** «Как вы слушаете» (docs/02 «Эхо: колонки»): per device — a laptop on speakers, a desk with headphones. */
+  echoMode: EchoMode;
   streamPreset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
   notifyMentions: boolean;
@@ -85,6 +88,7 @@ const DEFAULTS: Prefs = {
   pttBinding: null,
   rnnoise: true,
   red: false,
+  echoMode: 'headphones',
   streamPreset: ScreenSharePreset.H1080,
   contentHint: 'detail',
   notifyMentions: true,

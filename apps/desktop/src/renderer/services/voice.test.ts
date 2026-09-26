@@ -162,6 +162,11 @@ interface FakePipeline {
   stop: ReturnType<typeof vi.fn>;
   deviceId: string | null;
   deviceLabel: string;
+  rnnoise: boolean;
+  /** MicPipeline.duckable: a gain stage exists (RNNoise on or a speakerphone mode). */
+  duckable: boolean;
+  isDucked: boolean;
+  setDuck: ReturnType<typeof vi.fn>;
   onEnded?: () => void;
 }
 /** Device ids that are unplugged (getUserMedia with {exact} fails). */
@@ -170,11 +175,21 @@ const pipelines: FakePipeline[] = [];
 let gate: Promise<void> | null = null; // when set, MicPipeline.start waits for it
 vi.mock('../lib/media/micPipeline', () => ({
   MicPipeline: {
-    start: vi.fn(async (opts: { deviceId: string | null; onEnded?: () => void }) => {
+    start: vi.fn(async (opts: { deviceId: string | null; rnnoise: boolean; duckable?: boolean; onEnded?: () => void }) => {
       if (gate) await gate;
       if (opts.deviceId && gone.has(opts.deviceId)) throw Object.assign(new Error('gone'), { name: 'OverconstrainedError' });
       const track = new FakeTrack();
-      const p: FakePipeline = { track, deviceId: opts.deviceId, deviceLabel: opts.deviceId ?? 'Default - Built-in Mic', stop: vi.fn(() => track.stop()), ...(opts.onEnded ? { onEnded: opts.onEnded } : {}) };
+      const p: FakePipeline = {
+        track,
+        deviceId: opts.deviceId,
+        deviceLabel: opts.deviceId ?? 'Default - Built-in Mic',
+        rnnoise: opts.rnnoise,
+        duckable: opts.rnnoise || opts.duckable === true,
+        isDucked: false,
+        setDuck: vi.fn(),
+        stop: vi.fn(() => track.stop()),
+        ...(opts.onEnded ? { onEnded: opts.onEnded } : {}),
+      };
       pipelines.push(p);
       return p;
     }),
@@ -396,6 +411,38 @@ describe('VoiceEngine', () => {
     expect(live[0]?.deviceId).toBe('d2');
     const track = FakeRoom.all[0]?.published[0];
     expect(track?.mediaStreamTrack).toBe(live[0]?.track);
+  });
+
+  it('echo mode without RNNoise: a speakerphone mode rebuilds the capture with a gain stage, in place', async () => {
+    usePrefs.getState().setPrefs({ rnnoise: false, echoMode: 'headphones' });
+    await voice.join('A', 'ws');
+    expect(pipelines).toHaveLength(1);
+    expect(pipelines[0]?.duckable).toBe(false);
+    usePrefs.getState().setPrefs({ echoMode: 'speakers' });
+    await settle();
+    expect(pipelines).toHaveLength(2);
+    expect(pipelines[1]?.duckable).toBe(true);
+    expect(pipelines[0]?.track.readyState).toBe('ended');
+    // Swapped with replaceTrack, not republished.
+    const room = FakeRoom.all[0];
+    expect(room?.published).toHaveLength(1);
+    expect(room?.published[0]?.mediaStreamTrack).toBe(pipelines[1]?.track);
+    // speakers → auto: the gain stage is already there.
+    usePrefs.getState().setPrefs({ echoMode: 'auto' });
+    await settle();
+    expect(pipelines).toHaveLength(2);
+  });
+
+  it('echo mode with RNNoise: the graph already has the gain stage, no rebuild', async () => {
+    usePrefs.getState().setPrefs({ rnnoise: true, echoMode: 'headphones' });
+    await voice.join('A', 'ws');
+    usePrefs.getState().setPrefs({ echoMode: 'speakers' });
+    await settle();
+    expect(pipelines).toHaveLength(1);
+    // Nobody else talks: no duck.
+    vi.advanceTimersByTime(500);
+    expect(pipelines[0]?.setDuck).not.toHaveBeenCalledWith(true);
+    expect(useVoice.getState().ducking).toBe(false);
   });
 
   it('leaving while a restart is building stops the new capture too', async () => {
