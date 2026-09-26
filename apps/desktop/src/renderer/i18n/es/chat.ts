@@ -1,0 +1,120 @@
+import type { enChat } from '../en/chat';
+import type { DictShape } from '../types';
+
+/**
+ * Spanish UI strings — chat area (ADR-0022). Same keys as en/chat.ts; `{param}` placeholders,
+ * short, verb-first, sentence case, no exclamation marks (docs/08, docs/i18n-glossary.md).
+ */
+export const esChat: DictShape<typeof enChat> = {
+  // feed
+  'chat.today': 'Hoy',
+  'chat.yesterday': 'Ayer',
+  'chat.newPill': 'Mensajes nuevos',
+  'chat.editedShort': 'editado',
+  'chat.statusPending': 'Enviando',
+  'chat.statusSent': 'Enviado',
+  'chat.statusDelivered': 'Entregado',
+  'chat.attachment': 'Adjunto',
+  'chat.openImage': 'Abrir imagen «{name}»',
+  'chat.reactionLabel': 'Reacción {emoji}: {count}',
+  'chat.replyOpen': 'Mostrar mensaje original',
+  'chat.messageGone': 'Mensaje eliminado o no disponible',
+  'chat.historyStart': 'Inicio del historial de la sala',
+  // plural keys: one object of Intl.PluralRules forms (one/other for Spanish), picked by plural()
+  'chat.unreadBanner': { one: '{n} mensaje nuevo desde las {time}', many: '{n} mensajes nuevos desde las {time}', other: '{n} mensajes nuevos desde las {time}' },
+  'chat.markRead': 'Marcar como leído',
+  'chat.toBottomUnread': 'Ir a lo último, sin leer: {n}',
+  // empty room
+  'chat.welcomeTitle': 'Bienvenido a #{name}',
+  'chat.welcomeVoiceTitle': 'Este es el inicio de «{name}»',
+  'chat.welcomeText': 'Este es el inicio de la sala. Invita a tu equipo o configura la sala a tu manera.',
+  'chat.welcomeVoice': 'Puedes chatear aquí durante la llamada.',
+  'chat.invite': 'Invitar',
+  'chat.setup': 'Configurar',
+  // context menu
+  'chat.menu': 'Acciones del mensaje',
+  'chat.react': 'Reacciones',
+  'chat.pin': 'Fijar',
+  'chat.unpin': 'Dejar de fijar',
+  // hover action bar (docs/09 #47)
+  'chat.actions': 'Acciones',
+  'chat.reactWith': 'Reaccionar con {emoji}',
+  'chat.addReaction': 'Añadir reacción',
+  'chat.more': 'Más…',
+  // link previews (docs/09 #51)
+  'chat.embedHide': 'Ocultar vista previa',
+  'chat.embedShow': 'Mostrar vista previa',
+  'chat.embedHideFailed': 'No se pudo ocultar la vista previa',
+  'chat.embedShowFailed': 'No se pudo mostrar la vista previa',
+  // composer
+  'chat.placeholderIn': 'Mensaje a {room}',
+  'chat.attachImage': 'Imagen',
+  'chat.attachFile': 'Archivo',
+  'chat.removeAttachment': 'Quitar «{name}»',
+  'chat.editing': 'Editando',
+  'chat.replyTo': 'Respondiendo a {name}',
+  'chat.emoji': 'Emoji',
+  'chat.emojiSearch': 'Buscar emoji',
+  'chat.emojiRecent': 'Recientes',
+  'chat.emojiFound': 'Resultados',
+  'chat.emojiNone': 'No se encontró nada',
+  'chat.emojiGroups': 'Categorías de emoji',
+  // header
+  'chat.topic': 'Mostrar descripción de la sala',
+  'chat.typing1': '{name} está escribiendo',
+  'chat.typing2': '{a} y {b} están escribiendo',
+  'chat.typingN': { one: '{n} persona está escribiendo', many: '{n} personas están escribiendo', other: '{n} personas están escribiendo' },
+  'chat.pinned': 'Fijados',
+  'chat.pinnedOne': 'Mensaje fijado',
+  'chat.pinnedN': 'Mensaje fijado {n} de {total}',
+  'chat.noPins': 'No hay mensajes fijados',
+  // room notifications (bell menu)
+  'chat.notify': 'Notificaciones',
+  'chat.notifyState': 'Notificaciones: {state}',
+  'chat.notifyAll': 'Todos los mensajes',
+  'chat.notifyMentions': 'Solo menciones',
+  'chat.notifyNone': 'Nada',
+  'chat.notifyMute': 'Silenciar por…',
+  'chat.notifyMute15m': '15 min',
+  'chat.notifyMute1h': '1 hora',
+  'chat.notifyMute8h': '8 horas',
+  'chat.notifyMute24h': '24 horas',
+  'chat.notifyMuteForever': 'Hasta que lo active',
+  'chat.notifyMutedUntil': 'Silenciado hasta las {time}',
+  'chat.notifyUnmute': 'Activar notificaciones',
+  'chat.notifyFailed': 'No se pudo guardar la configuración de notificaciones',
+  // mentions
+  'chat.mentionUnknown': 'desconocido',
+  'chat.mentionEveryone': 'Notificar a todos en la sala',
+  'chat.mentionHere': 'Notificar a todos los conectados',
+  'chat.mentionGuest': 'Invitado',
+  'chat.mentionList': 'Mencionar',
+  // mentions inbox (title bar)
+  'chat.inboxLoadMore': 'Mostrar más',
+  'chat.inboxUnread': 'Sin leer',
+  // search in room
+  'chat.searchInRoom': 'Buscar en {room}',
+  'chat.searchPlaceholder': 'Buscar en esta sala',
+  'chat.searchCount': '{n} de {total}',
+  'chat.searchNone': 'Sin resultados',
+  'chat.searchOlder': 'Coincidencia anterior',
+  'chat.searchNewer': 'Coincidencia siguiente',
+  'chat.searchClose': 'Cerrar búsqueda',
+  // header search field (docs/09 #50): the entry to the ⌘K search
+  'chat.searchWorkspace': 'Buscar en {name}',
+  // global search (⌘K)
+  'search.title': 'Buscar',
+  'search.hint': 'Salas, miembros y mensajes; flechas para elegir, Intro para abrir',
+  'search.placeholder': 'Buscar una sala, persona o mensaje',
+  'search.rooms': 'Salas',
+  'search.members': 'Miembros',
+  'search.messages': 'Mensajes',
+  'search.from': 'de: {name}',
+  'search.clearFrom': 'Quitar filtro de autor',
+  'search.searching': 'Buscando…',
+  'search.empty': 'No se encontró nada',
+  'search.memberHint': 'mensajes de este miembro',
+  // lightbox
+  'lightbox.close': 'Cerrar',
+  'lightbox.download': 'Descargar',
+} as const;
