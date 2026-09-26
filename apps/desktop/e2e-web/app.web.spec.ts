@@ -32,6 +32,9 @@ test('register → workspace → room → message → reload → voice', async (
   const skip = page.getByRole('button', { name: 'Пропустить настройку' });
   await expect(skip.or(page.getByRole('button', { name: 'Создать пространство' }).first())).toBeVisible({ timeout: 20_000 });
   if (await skip.isVisible()) await skip.click();
+  // The shell (rail + its workspaces, rendered together after READY) must be up before the
+  // non-waiting count() below, or a skipped onboarding would look like «no E2E workspace yet».
+  await expect(page.getByRole('button', { name: 'Создать пространство' }).first()).toBeVisible();
 
   // Idempotent on a shared account (the stand limits workspace creation, 3/hour): reuse the
   // «E2E web» workspace and its rooms when they exist, create them only when missing.

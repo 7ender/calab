@@ -539,6 +539,37 @@ describe('VOICE_MOVED (ADR-0019)', () => {
     expect(FakeRoom.all).toHaveLength(1); // never connected to the target
   });
 
+  it('«Отключиться» during a rejoin: a later move does not bring the user back into voice', async () => {
+    await voice.join('A', 'ws');
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await settle();
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    await voice.leave();
+    expect(voice.onMoved(move())).toBe(false);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await settle();
+    expect(FakeRoom.all).toHaveLength(1);
+    expect(voice.currentRoomId).toBeNull();
+    expect(useVoice.getState().phase).toBe('idle');
+  });
+
+  it('a second move while the first one is still leaving the source room follows the second', async () => {
+    await voice.join('A', 'ws');
+    let release!: () => void;
+    FakeRoom.disconnectGate = new Promise<void>((r) => (release = r));
+    expect(voice.onMoved(move())).toBe(true);
+    await settle();
+    expect(voice.onMoved(move({ fromRoomId: 'B', toRoomId: 'C', token: 'tok-C' }))).toBe(true);
+    FakeRoom.disconnectGate = null;
+    release();
+    await settle();
+    await settle();
+    expect(voice.currentRoomId).toBe('C');
+    expect(FakeRoom.all).toHaveLength(2); // never connected to B
+    expect(FakeRoom.all[1]?.connectedWith).toEqual(['wss://lk-move', 'tok-C']);
+    expect(useVoice.getState().phase).toBe('connected');
+  });
+
   it('duplicates, other devices and moves to the current room are ignored', async () => {
     const { useSession } = await import('../stores/session');
     useSession.setState({ sessionId: 'mine' });

@@ -195,6 +195,7 @@ class VoiceEngine {
   /** User intent: connect to a voice room (switches rooms; cancels a pending rejoin). */
   async join(roomId: string, workspaceId: string): Promise<void> {
     this.rejoinGen++;
+    this.rejoinRoomId = null;
     await this.connect(roomId, workspaceId, false);
   }
 
@@ -333,6 +334,10 @@ class VoiceEngine {
   /** User intent: leave voice (also stops a pending rejoin). */
   async leave(sound = true): Promise<void> {
     this.rejoinGen++;
+    // A stopped rejoin loop only clears this when it is still the current one: a user intent
+    // must forget it at once, or a later VOICE_MOVED would pull the user back into voice.
+    this.rejoinRoomId = null;
+    this.moveIntent = null;
     this.intentSeq++;
     await this.teardown(sound);
   }
@@ -1012,13 +1017,18 @@ class VoiceEngine {
     if (ev.fromRoomId === ev.toRoomId || ev.token === this.lastMoveToken) return false; // duplicate
     // Already connected to the target (a duplicate after the reconnect, or an SFU move): nothing to do.
     if (this.room?.name && this.room.name.endsWith(ev.toRoomId) && this.roomId === ev.toRoomId) return false;
-    const rejoining = this.rejoinRoomId === ev.fromRoomId && this.roomId === null;
+    // A live rejoin loop for the source room (user intents clear rejoinRoomId), possibly still
+    // tearing the dropped room down.
+    const rejoining = this.rejoinRoomId === ev.fromRoomId && (this.roomId === null || this.roomId === ev.fromRoomId);
+    // A previous move to our source room is still under way (its teardown of the old room may
+    // take a network round trip) and no user intent came after it: the newer move wins.
+    const chained = this.moveIntent !== null && this.moveIntent.seq === this.intentSeq && this.moveIntent.to === ev.fromRoomId;
     // In the source room (connected or still connecting), or the SFU-path event came first and
     // optimistically switched our room id to the target.
     const inSource = this.roomId === ev.fromRoomId || (this.moveTimer !== null && this.roomId === ev.toRoomId);
-    if (!inSource && !rejoining) return false;
+    if (!inSource && !rejoining && !chained) return false;
     // A teardown in flight is a user's leave or switch (newer intent than the move): it wins.
-    if (this.teardownRun && !rejoining) return false;
+    if (this.teardownRun && !rejoining && !chained) return false;
     this.lastMoveToken = ev.token;
     const wasStreaming = useVoice.getState().myStream !== null;
     const serverMuted = useVoice.getState().serverMuted;
@@ -1033,8 +1043,13 @@ class VoiceEngine {
     this.clearMoveTimer();
     if (this.roomId === ev.toRoomId) this.roomId = ev.fromRoomId; // let connect() see a change
     void this.connect(ev.toRoomId, ev.workspaceId, false, { url: ev.url, token: ev.token, serverMuted });
+    // connect() took its intent token synchronously: a later join/leave bumps it.
+    this.moveIntent = { seq: this.intentSeq, to: ev.toRoomId };
     return true;
   }
+
+  /** The app-level move in progress (its connect's intent token and target room). */
+  private moveIntent: { seq: number; to: string } | null = null;
 
   /** Token of the last app-level move acted upon (duplicate events are ignored). */
   private lastMoveToken = '';
