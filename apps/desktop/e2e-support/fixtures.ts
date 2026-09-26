@@ -173,6 +173,8 @@ export interface MockState {
   sessions: Map<string, Session[]>;
   /** Revoked (logged out) sessions: their tokens are rejected until the next login. */
   revokedSessions: Set<string>;
+  /** Private notes (docs/09 #20): authorId → subjectId → note; only the author reads them. */
+  notes: Map<string, Map<string, { text: string; updatedAt: Timestamp }>>;
   /** Next sequence number per id kind (runtime-created entities). */
   next: Record<IdKind, number>;
   /** Runtime clock ticks (see RUNTIME_CLOCK_START_MS). */
@@ -415,6 +417,7 @@ export function buildState(scenario: Scenario): MockState {
     files: new Map(),
     sessions: new Map(),
     revokedSessions: new Set(),
+    notes: new Map(),
     next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100 },
     clock: 0,
   };

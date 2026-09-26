@@ -73,7 +73,10 @@ export interface MenuContext {
 }
 
 export interface MenuActions {
+  /** Per-user volume: they are in my voice room. */
   volume: boolean;
+  /** «Заглушить» for me only: anyone but me (stored; applies whenever we share a call, docs/09 #20). */
+  localMute: boolean;
   serverMute: boolean;
   /** Already server/self-muted: the item is shown disabled. */
   alreadyMuted: boolean;
@@ -117,6 +120,7 @@ export function memberActions(c: MenuContext): MenuActions {
     (c.target.role !== WorkspaceRole.ADMIN || c.myRole === WorkspaceRole.OWNER);
   return {
     volume: !self && !!c.myVoiceRoomId && c.targetVoice?.roomId === c.myVoiceRoomId,
+    localMute: !self,
     serverMute: muteAll,
     alreadyMuted: !!c.targetVoice?.serverMuted,
     serverUnmute: muteAll && !!c.targetVoice?.serverMuted,

@@ -110,8 +110,10 @@ describe('memberActions', () => {
     expect(memberActions(base({ target: member('t', 'G', WorkspaceRole.GUEST, '', true) })).roles).toBeNull();
   });
 
-  it('volume only for someone in my voice room', () => {
+  it('volume only for someone in my voice room; «Заглушить» for anyone but me', () => {
     expect(memberActions(base({ targetVoice: voice('t', 'meeting'), myVoiceRoomId: 'call' })).volume).toBe(false);
+    expect(memberActions(base({ myRole: WorkspaceRole.MEMBER })).localMute).toBe(true);
+    expect(memberActions(base({ target: member('me', 'Me', WorkspaceRole.MEMBER) })).localMute).toBe(false);
   });
 
   it('own nickname follows allow_self_nickname; admins always', () => {

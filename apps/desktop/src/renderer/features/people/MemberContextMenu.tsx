@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ArrowRightLeft, AtSign, MessageCircle, Check, ChevronRight, IdCard, LogOut, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRightLeft, AtSign, MessageCircle, Check, ChevronRight, IdCard, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -11,9 +11,10 @@ import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { copyUserId, disconnectFromVoice, moveMember, promoteGuest, removeMember, serverMute, serverUnmute, setMemberRole, stopMemberCamera } from './actions';
+import { copyUserId, disconnectFromVoice, moveMember, openProfile, promoteGuest, removeMember, serverMute, serverUnmute, setMemberRole, stopMemberCamera } from './actions';
+import { USER_VOLUME_MAX, userVolumeCapped } from '../../lib/voiceLogic';
 import { requestMention } from '../chat/mentionRequest';
-import { hasAnyAction, memberActions, type MenuActions } from './members';
+import { memberActions, type MenuActions } from './members';
 import { NicknameDialog } from './NicknameDialog';
 import { useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
@@ -40,36 +41,40 @@ export function useMemberActions(workspaceId: string, userId: string): MenuActio
 }
 
 /**
- * Right-click menu of a workspace member (docs/09 #12, #32, #33, #35). Used by the members
- * column and the voice participants in the room list: wrap the row —
+ * The one member menu (docs/09 #12, #20, #32, #33, #35): the voice participants in the room
+ * list, the members column, the author's avatar and name in the chat, «…» in the profile. Wrap
+ * the element —
  *
  *   <MemberContextMenu workspaceId={ws} userId={id}><div>…row…</div></MemberContextMenu>
  *
- * The child must accept a ref and props (Radix `asChild`). Without any available action the
- * child is rendered as is. `onOpenProfile` adds a «Профиль» item.
+ * The child must accept a ref and props (Radix `asChild`). Outside a workspace (DM) or for an
+ * unknown member the child is rendered as is. «Профиль» opens the profile dialog; `inProfile`
+ * leaves it out (the menu of the profile's own «…»).
  */
 export function MemberContextMenu({
   workspaceId,
   userId,
-  onOpenProfile,
+  inProfile = false,
   children,
 }: {
   workspaceId: string;
   userId: string;
+  /** Ignored: «Профиль» always opens the profile dialog (kept until the room list stops passing it). */
   onOpenProfile?: (() => void) | undefined;
+  inProfile?: boolean;
   children: ReactElement;
 }): ReactNode {
   const actions = useMemberActions(workspaceId, userId);
   const canDm = useCanDm(workspaceId, userId);
   const [renaming, setRenaming] = useState(false);
   const dialog = renaming ? <NicknameDialog workspaceId={workspaceId} userId={userId} onClose={() => setRenaming(false)} /> : null;
-  if (!actions || (!hasAnyAction(actions) && !onOpenProfile && !canDm)) return children;
+  if (!actions) return children;
   return (
     <>
       <ContextMenu.Root modal={false}>
         <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
         <ContextMenu.Portal>
-          <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} canDm={canDm} onRename={() => setRenaming(true)} onOpenProfile={onOpenProfile} />
+          <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} canDm={canDm} onRename={() => setRenaming(true)} inProfile={inProfile} />
         </ContextMenu.Portal>
       </ContextMenu.Root>
       {dialog}
@@ -129,14 +134,14 @@ function MemberMenuContent({
   actions: a,
   canDm,
   onRename,
-  onOpenProfile,
+  inProfile,
 }: {
   workspaceId: string;
   userId: string;
   actions: MenuActions;
   canDm: boolean;
   onRename: () => void;
-  onOpenProfile: (() => void) | undefined;
+  inProfile: boolean;
 }): ReactNode {
   const name = useMemberName(workspaceId, userId);
   const self = useSession((s) => s.me?.user?.id) === userId;
@@ -147,7 +152,8 @@ function MemberMenuContent({
   const videoHidden = usePrefs((s) => !!s.hiddenVideo[userId]);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const hiddenVideo = usePrefs((s) => s.hiddenVideo);
-  const personal = a.volume || a.hideVideo || a.rename || a.roles !== null || a.moveTargets.length > 0;
+  const forMe = a.volume || a.localMute || a.hideVideo;
+  const manageItems = a.rename || a.roles !== null || a.moveTargets.length > 0;
   const moderation = a.serverMute || a.serverUnmute || a.stopCamera || a.disconnect;
   const admin = a.promote || a.removeGuest || a.kick;
   const setHidden = (on: boolean): void => {
@@ -157,35 +163,42 @@ function MemberMenuContent({
     setPrefs({ hiddenVideo: next });
   };
   return (
-    // Discord layout: sections split by hairlines — profile | for me | moderation (red) | admin | ID.
+    // Discord layout (docs/09 #20): sections split by hairlines — profile | for me (local) |
+    // manage | moderation (red) | admin | ID.
     <ContextMenu.Content className={cx(menuBox, 'w-[300px]')} collisionPadding={8}>
       <div className={cx(menuLabel, 'truncate')} title={name}>
         {name}
       </div>
-      {onOpenProfile ? (
-        <ContextMenu.Item className={row} onSelect={onOpenProfile}>
+      {!inProfile ? (
+        <ContextMenu.Item className={row} onSelect={() => openProfile(workspaceId, userId)}>
           <UserRound className="size-4" aria-hidden /> {t('people.menu.profile')}
-        </ContextMenu.Item>
-      ) : null}
-      {canDm ? (
-        <ContextMenu.Item className={row} onSelect={() => void startDm(userId)}>
-          <MessageCircle className="size-4" aria-hidden /> {t('dm.write')}
         </ContextMenu.Item>
       ) : null}
       <ContextMenu.Item className={row} onSelect={() => requestMention(userId, name)}>
         <AtSign className="size-4" aria-hidden /> {t('people.menu.mention')}
       </ContextMenu.Item>
-
-      {personal ? <ContextMenu.Separator className={menuSeparator} /> : null}
-      {a.volume ? (
-        <>
-          <VolumeRow userId={userId} menu />
-          <MenuCheck label={t('people.menu.localMute')} checked={localMuted} onChange={(v) => voice.setUserMuted(userId, v)} />
-          <MenuCheck label={t('people.menu.deafen')} title={t('people.menu.deafenHint')} checked={localDeaf} onChange={(v) => voice.setUserDeaf(userId, v)} />
-        </>
+      {canDm ? (
+        <ContextMenu.Item className={row} onSelect={() => void startDm(userId)}>
+          <MessageCircle className="size-4" aria-hidden /> {t('dm.write')}
+        </ContextMenu.Item>
       ) : null}
+      <ContextMenu.Item className={row} onSelect={() => openProfile(workspaceId, userId, true)}>
+        <NotebookPen className="size-4" aria-hidden />
+        <span className="flex min-w-0 flex-col leading-[18px]">
+          <span className="truncate">{t('people.menu.addNote')}</span>
+          <span className="truncate text-micro leading-[13px] opacity-75">{t('people.menu.addNoteHint')}</span>
+        </span>
+      </ContextMenu.Item>
+
+      {/* For me only (local, prefs): volume, «Заглушить», «Не слышать», «Не показывать видео». */}
+      {forMe ? <ContextMenu.Separator className={menuSeparator} /> : null}
+      {a.volume ? <VolumeRow userId={userId} menu /> : null}
+      {a.localMute ? <MenuCheck label={t('people.menu.localMute')} checked={localMuted} onChange={(v) => voice.setUserMuted(userId, v)} testId="menu-local-mute" /> : null}
+      {a.volume ? <MenuCheck label={t('people.menu.deafen')} title={t('people.menu.deafenHint')} checked={localDeaf} onChange={(v) => voice.setUserDeaf(userId, v)} /> : null}
       {/* Local: stop receiving their camera (unsubscribe), an avatar tile instead (docs/09 #42). */}
       {a.hideVideo ? <MenuCheck label={t('video.hide')} checked={videoHidden} onChange={setHidden} /> : null}
+
+      {manageItems ? <ContextMenu.Separator className={menuSeparator} /> : null}
       {a.rename ? (
         <ContextMenu.Item className={row} onSelect={onRename}>
           <Pencil className="size-4" aria-hidden /> {self ? t('people.menu.renameSelf') : t('people.menu.rename')}
@@ -291,12 +304,14 @@ function MemberMenuContent({
 }
 
 /**
- * Per-user playback volume («Громкость», 0–100 %; element.volume caps at 1 — no WebAudio boost,
- * docs/02 echo rules). Shared by the member menu and the profile card.
+ * Per-user playback volume («Громкость», 0–200 %, docs/09 #20). element.volume caps at 1 — no
+ * WebAudio boost (docs/02 echo rules): above 100 % only offsets a lower headphones ▾ volume, and
+ * the row says so when it cannot. Shared by the member menu and the profile card.
  */
 export function VolumeRow({ userId, className, menu = false }: { userId: string; className?: string; menu?: boolean }): ReactNode {
   const volume = usePrefs((s) => s.userVolumes[userId] ?? 1);
   const muted = usePrefs((s) => !!s.mutedUsers[userId]);
+  const capped = usePrefs((s) => userVolumeCapped(s.userVolumes[userId] ?? 1, s.outputVolume));
   const value = muted ? t('people.menu.localMuted') : `${Math.round(volume * 100)}%`;
   const body = (
     <>
@@ -306,7 +321,12 @@ export function VolumeRow({ userId, className, menu = false }: { userId: string;
         </span>
         <span className="tabular-nums">{value}</span>
       </div>
-      <Slider label={t('people.menu.volume')} value={volume} min={0} max={1} step={0.01} pointerOnly={menu} onChange={(v) => voice.setUserVolume(userId, v)} />
+      <Slider label={t('people.menu.volume')} value={volume} min={0} max={USER_VOLUME_MAX} step={0.01} pointerOnly={menu} onChange={(v) => voice.setUserVolume(userId, v)} />
+      {capped && !muted ? (
+        <p className="mt-1 text-caption leading-4 text-muted" data-testid="volume-capped">
+          {t('people.menu.volumeCapped')}
+        </p>
+      ) : null}
     </>
   );
   if (!menu) return <div className={cx('px-2 pb-2 pt-1', className)}>{body}</div>;
@@ -321,7 +341,7 @@ export function VolumeRow({ userId, className, menu = false }: { userId: string;
       onKeyDown={(e) => {
         if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
         e.preventDefault();
-        const next = Math.min(1, Math.max(0, Math.round((volume + (e.key === 'ArrowRight' ? 0.05 : -0.05)) * 100) / 100));
+        const next = Math.min(USER_VOLUME_MAX, Math.max(0, Math.round((volume + (e.key === 'ArrowRight' ? 0.05 : -0.05)) * 100) / 100));
         voice.setUserVolume(userId, next);
       }}
     >

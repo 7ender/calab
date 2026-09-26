@@ -52,6 +52,7 @@ room_invites        id, room_id, code (unique, 12 символов), created_by,
 message_reactions   message_id, emoji, user_id, created_at      PK (message_id, emoji, user_id)
                     messages += pinned_at?, pinned_by?;  users += status_emoji, status_expires_at?
                     поиск: GIN по выражению to_tsvector('russian', content) || to_tsvector('simple', content)
+user_notes          author_id, subject_id, text (1..1000), updated_at   PK (author_id, subject_id) — личная заметка о человеке
 dm_members          room_id, user_id, created_at                PK (room_id, user_id) — ровно два участника DM (ADR-0020)
                     rooms += dm_key? (unique: least(a,b) || ':' || greatest(a,b));
                     CHECK (type = 'dm') = (workspace_id IS NULL), (type = 'dm') = (dm_key IS NOT NULL)
@@ -88,6 +89,11 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 - Запросы по комнатам пространства фильтруют по `workspace_id` и DM не видят (списки, overrides, категории, позиции, поиск по пространству, `/api/me/mentions`). Голоса в DM нет: `rtc` считает комнату без пространства несуществующей.
 - Файлы DM — пользовательские (`workspace_id IS NULL`, ключ `users/<user_id>/<file_id>`), грузятся через `POST /api/dms/{id}/files`, в квоту пространства не входят (действуют общий потолок `STORAGE_MAX_TOTAL_BYTES` и лимит 1 GiB неприкреплённых на пользователя). Публичны только аватары; остальные пользовательские файлы после прикрепления читаются по праву на комнату сообщения, т.е. только участниками DM.
 - Прямые упоминания и `@everyone` в DM не сохраняются: каждое сообщение DM уведомляет получателя как упоминание.
+
+### Профиль участника (docs/09 #20)
+
+- «Участник с» — без новых полей: регистрация `users.created_at` (`User.created_at`) и вступление в пространство `workspace_members.joined_at` (`WorkspaceMember.joined_at`).
+- Личные заметки `user_notes`: одна на пару (автор, о ком), видит и меняет только автор (`GET/PUT/DELETE /api/users/{id}/note`, docs/05). Писать можно о себе и о тех, с кем есть общее пространство (любая роль) или DM, иначе `404`. Пустой текст удаляет заметку. При анонимизации гостя удаляются его заметки и заметки о нём. Роли меняются существующим `PATCH …/members/{userId} {role}` (права — «Роли workspace» ниже).
 
 ## Роли workspace
 

@@ -73,10 +73,18 @@ export function isDeviceGone(err: unknown): boolean {
   return name === 'OverconstrainedError' || name === 'NotFoundError' || name === 'NotReadableError';
 }
 
+/** Highest per-user volume in the member menu (docs/09 #20: 0–200 %). */
+export const USER_VOLUME_MAX = 2;
+
 /**
  * Playback of one remote <audio> element (docs/02 echo rule 1: element.volume / .muted only,
- * never WebAudio — so no boost above 100 %). Voice: per-user volume and «Заглушить для меня»
- * (prefs userVolumes / mutedUsers); a stream's own audio: its stream volume. Deafen silences all.
+ * never WebAudio). Voice: per-user volume × the headphones ▾ volume, «Заглушить для меня»
+ * (prefs userVolumes / mutedUsers); a stream's own audio: its stream volume × the per-user
+ * volume (the person is as loud for me everywhere). Deafen silences all.
+ *
+ * The per-user volume goes up to 200 %, but `element.volume` stops at 1.0: above 100 % it only
+ * compensates a lower headphones ▾ volume (50 % × 200 % = 100 %). `capped` = the wanted level
+ * is above what the element can play (the menu says so).
  */
 export function remoteAudio(i: {
   deafened: boolean;
@@ -89,18 +97,26 @@ export function remoteAudio(i: {
   streamVolume: Readonly<Record<string, number>>;
   /** Everyone's voice (headphones ▾ «Громкость участников»), multiplies the per-user volume. */
   outputVolume?: number;
-}): { muted: boolean; volume: number } {
+}): { muted: boolean; volume: number; capped: boolean } {
   const master = i.stream ? 1 : Math.max(0, Math.min(1, i.outputVolume ?? 1));
-  const v = (i.stream ? (i.streamVolume[i.userId] ?? 1) : (i.userVolumes[i.userId] ?? 1)) * master;
+  const user = Math.max(0, Math.min(USER_VOLUME_MAX, i.userVolumes[i.userId] ?? 1));
+  const v = (i.stream ? Math.max(0, Math.min(1, i.streamVolume[i.userId] ?? 1)) : 1) * user * master;
+  const ok = Number.isFinite(v);
   return {
     muted: i.deafened || i.deafUsers?.[i.userId] === true || (!i.stream && i.mutedUsers[i.userId] === true),
-    volume: Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1,
+    volume: ok ? Math.max(0, Math.min(1, v)) : 1,
+    capped: ok && v > 1,
   };
 }
 
-/** Next userVolumes map: clamped to 0..1; 100 % is the default and is not stored. */
+/** The member menu's «выше 100 % недоступно» hint: their voice would need more than element.volume = 1. */
+export function userVolumeCapped(volume: number, outputVolume: number): boolean {
+  return volume > 1 && volume * Math.max(0, Math.min(1, outputVolume)) > 1;
+}
+
+/** Next userVolumes map: clamped to 0..USER_VOLUME_MAX; 100 % is the default and is not stored. */
 export function withUserVolume(map: Readonly<Record<string, number>>, userId: string, volume: number): Record<string, number> {
-  const v = Math.max(0, Math.min(1, volume));
+  const v = Number.isFinite(volume) ? Math.max(0, Math.min(USER_VOLUME_MAX, volume)) : 1;
   const next = { ...map, [userId]: v };
   if (v === 1) delete next[userId];
   return next;

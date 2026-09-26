@@ -9,6 +9,7 @@ message User {
   string display_name = 2;
   string avatar_file_id = 3; // empty = no avatar
   string status_text = 4;
+  // Registration time: the "Member since" line of the profile (with WorkspaceMember.joined_at).
   google.protobuf.Timestamp created_at = 5;
   string status_emoji = 6;
   google.protobuf.Timestamp status_expires_at = 7; // unset = no expiry; expired status is returned empty
@@ -84,4 +85,24 @@ message UpdateStatusRequest {
   string text = 1;  // ≤ 128 chars
   string emoji = 2; // one emoji sequence, ≤ 32 bytes
   uint32 expires_in_seconds = 3; // 0 = never, ≤ 30 days
+}
+
+// Private note about another user ("Note (only visible to you)", docs/09 item 20). Only the
+// author reads and writes it; the subject must be the author, share a workspace or a DM with
+// them, otherwise 404.
+//   GET    /api/users/{id}/note → UserNoteResponse (text empty, updated_at unset = no note)
+//   PUT    /api/users/{id}/note  PutUserNoteRequest → UserNoteResponse; empty text deletes
+//   DELETE /api/users/{id}/note → 204
+message UserNote {
+  string subject_id = 1;
+  string text = 2; // ≤ 1000 characters
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message PutUserNoteRequest {
+  string text = 1; // trimmed; ≤ 1000 characters; empty = delete
+}
+
+message UserNoteResponse {
+  UserNote note = 1;
 }

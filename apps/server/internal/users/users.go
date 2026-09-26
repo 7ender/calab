@@ -1,4 +1,5 @@
-// Package users serves the caller's own profile and settings (/api/me).
+// Package users serves the caller's own profile and settings (/api/me) and the caller's
+// private notes about other users (/api/users/{id}/note).
 package users
 
 import (
@@ -47,6 +48,9 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	mux.Handle("GET /api/me", wrap(httpx.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/me", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("PATCH /api/me/status", wrap(httpx.HandlerFunc(h.updateStatus)))
+	mux.Handle("GET /api/users/{id}/note", wrap(httpx.HandlerFunc(h.getNote)))
+	mux.Handle("PUT /api/users/{id}/note", wrap(httpx.HandlerFunc(h.putNote)))
+	mux.Handle("DELETE /api/users/{id}/note", wrap(httpx.HandlerFunc(h.deleteNote)))
 }
 
 func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {

@@ -23,7 +23,7 @@ import {
   type MessageInitShape,
   type MessageShape,
 } from '@bufbuild/protobuf';
-import { timestampFromMs, timestampMs } from '@bufbuild/protobuf/wkt';
+import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   ChangeEmailRequestSchema,
   ChangePasswordRequestSchema,
@@ -121,6 +121,8 @@ import {
   UpdateRoomResponseSchema,
   UpdateVoiceStatusRequestSchema,
   UpdateStatusRequestSchema,
+  PutUserNoteRequestSchema,
+  UserNoteResponseSchema,
   UpdateVoiceSelfRequestSchema,
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
@@ -1243,6 +1245,43 @@ class MockImpl {
       u.user.statusEmoji = b.emoji;
       this.emitUserUpdate(u);
       sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
+    });
+
+    // ---------------- private notes (docs/09 #20): the author only; 404 without a shared workspace / DM
+    const noteSubject = (c: Ctx): { me: string; subject: string } => {
+      const me = this.uid(c);
+      const subject = c.params[0] ?? '';
+      const wsOf = (u: string): Set<string> => new Set(s().members.filter((m) => m.userId === u).map((m) => m.workspaceId));
+      const mine = wsOf(me);
+      const shared =
+        subject === me ||
+        [...wsOf(subject)].some((w) => mine.has(w)) ||
+        [...s().dmMembers.values()].some(([a, b]) => (a === me && b === subject) || (a === subject && b === me));
+      if (!shared || !s().users.has(subject)) throw notFound('user not found');
+      return { me, subject };
+    };
+    const noteOut = (me: string, subject: string): MessageInitShape<typeof UserNoteResponseSchema> => {
+      const n = s().notes.get(me)?.get(subject);
+      return { note: { subjectId: subject, text: n?.text ?? '', ...(n ? { updatedAt: n.updatedAt } : {}) } };
+    };
+    this.route('GET', '/api/users/:id/note', (c) => {
+      const { me, subject } = noteSubject(c);
+      sendMsg(c.res, 200, UserNoteResponseSchema, noteOut(me, subject));
+    });
+    this.route('PUT', '/api/users/:id/note', (c) => {
+      const { me, subject } = noteSubject(c);
+      const text = parseBody(c, PutUserNoteRequestSchema).text.trim();
+      if (Array.from(text).length > 1000) throw invalid('text', 'note must be at most 1000 characters');
+      const mine = s().notes.get(me) ?? new Map<string, { text: string; updatedAt: Timestamp }>();
+      s().notes.set(me, mine);
+      if (text) mine.set(subject, { text, updatedAt: tick(s()) });
+      else mine.delete(subject);
+      sendMsg(c.res, 200, UserNoteResponseSchema, noteOut(me, subject));
+    });
+    this.route('DELETE', '/api/users/:id/note', (c) => {
+      const { me, subject } = noteSubject(c);
+      s().notes.get(me)?.delete(subject);
+      noContent(c.res);
     });
 
     this.route('POST', '/api/me/avatar', async (c) => {

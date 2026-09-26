@@ -1,7 +1,7 @@
 import { PresenceStatus, WorkspaceRole } from '@calaba/protocol';
 import { useTimeZoneLabel } from '../../services/timezone';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { MessageCircle, MonitorUp, Pencil, Volume2 } from 'lucide-react';
+import { MessageCircle, MonitorUp, Pencil, UserRound, Volume2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, Toggle } from '../../components/ui';
@@ -17,6 +17,7 @@ import { usePrefs } from '../../stores/prefs';
 import { useVoice } from '../../stores/voice';
 import { useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
+import { openProfile } from './actions';
 
 const ROLE_KEY: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -139,6 +140,18 @@ export function ProfileCard({
           {self ? t('people.menu.renameSelf') : t('people.menu.rename')}
         </Button>
       ) : null}
+      {/* The full profile (docs/09 #20): member since, roles, the private note. */}
+      <Button
+        variant="ghost"
+        className="w-full"
+        onClick={() => {
+          onClose?.();
+          openProfile(workspaceId, userId);
+        }}
+      >
+        <UserRound className="size-3.5" aria-hidden />
+        {t('people.profile.full')}
+      </Button>
     </div>
   );
 }

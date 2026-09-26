@@ -1,4 +1,6 @@
+import { VolumeX } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { usePrefs } from '../stores/prefs';
 import { Avatar } from './Avatar';
 import { cx } from './ui';
 import { t } from '../i18n';
@@ -48,6 +50,14 @@ export function SpeakerIdentity({
         {name}
         {suffix ? <span className="text-muted"> {suffix}</span> : null}
       </span>
+      <MutedByMe userId={userId} />
     </>
   );
+}
+
+/** «Вы заглушили» (docs/09 #20): I muted them for myself (prefs.mutedUsers) — a muted VolumeX. */
+export function MutedByMe({ userId, className }: { userId: string; className?: string }): ReactNode {
+  const muted = usePrefs((s) => s.mutedUsers[userId] === true);
+  if (!muted) return null;
+  return <VolumeX className={cx('size-4 shrink-0 text-muted', className)} aria-label={t('people.mutedByYou')} role="img" data-testid="muted-by-me" />;
 }
