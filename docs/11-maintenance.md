@@ -52,5 +52,8 @@
 - **Go-тулчейн** (Docker `golang:*`). Dependabot предлагает только patch/digest образа `golang`: minor и major игнорируются в `dependabot.yml`. Смена версии Go — отдельный запланированный PR (ближайший — после 0.2). Поднимаем разом в трёх местах: `apps/server/Dockerfile`, `go-version` во всех джобах `ci.yml` и, при необходимости, `go` в `go.mod`. Затем проверяем, что текущая версия `golangci-lint` поддерживает новый Go.
 - **Мажоры GitHub Actions.** Проверяем, что затронуто в `release.yml`: `upload-artifact`/`download-artifact` (`pattern` + `merge-multiple`, digest-проверки), `pnpm/action-setup` (версия pnpm берётся из `packageManager`).
 
+- **GitHub Release публикует `release.sh`, а не workflow.** `release.yml` всегда создаёт черновик: при публикации релиза запушенного тега токен Actions получает 403 «Resource not accessible by integration», хотя у job `contents: write`. Похоже, токен Actions не может публиковать релиз тега, коммит которого меняет `.github/workflows`; черновик ref не трогает. Так случилось в v0.1.0.
+- Черновик публикует шаг `desktop` в `infra/docker/release.sh` токеном владельца (`GITHUB_TOKEN` из `.env` как `GH_TOKEN`; в секреты репозитория не кладётся) после проверок фида: тело — секция версии из `CHANGELOG.md`. Если черновика нет, релиз создаётся из артефактов прогона. Руками: `gh release edit v<версия> --draft=false --latest`.
+
 ## Внешние PR
 Правила в `CONTRIBUTING.md`. Главное: вклад принимается только на условиях CLA. Коммиты должны содержать `Signed-off-by:` (`git commit -s`). Без подписи PR не мержим, а просим автора подписать коммиты (`git rebase --signoff`). Для внешних PR автомерж не работает: нужно ревью человека, на UI-изменения нужны скриншоты и обновлённые визуальные снапшоты.
