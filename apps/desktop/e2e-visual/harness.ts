@@ -62,6 +62,10 @@ export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?
     const w = BrowserWindow.getAllWindows()[0];
     w?.setContentSize(v.width, v.height);
     w?.center();
+    // The real (OS) cursor may sit over the window: Chromium then hovers whatever lands under it
+    // (a list row after a popover opens, a menu item mid-transition). Only Playwright's
+    // (CDP-dispatched) input reaches the page.
+    w?.setIgnoreMouseEvents(true);
   }, opts.viewport);
   await page.clock.setFixedTime(NOW);
   await page.evaluate(

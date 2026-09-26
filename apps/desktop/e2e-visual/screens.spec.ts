@@ -47,6 +47,12 @@ async function mainWindow(page: Page, mock: MockServer): Promise<void> {
   await expect(page.locator('[data-message-id]').first()).toBeVisible();
   await settle(page);
   await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  // Rows below the fold (link preview images) are measured after the scroll: let the feed settle
+  // before any focus step scrolls it again (960 px shots came out at different offsets).
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-virtuoso-scroller] img')].every((i) => (i as HTMLImageElement).complete));
+  await settle(page);
+  await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await settle(page);
 }
 
 /** Members list visible (a column from 1200 px, a floating panel below). */
@@ -432,6 +438,19 @@ test('chat-link-preview', async ({ open, win, mock, shot }) => {
   const hidePreview = win.getByTestId('link-preview-hide').first();
   await keyboardFocus(hidePreview);
   await expect(hidePreview).toHaveCSS('opacity', '1');
+  // Focus scrolls the feed only «enough», by an amount that varies with row measuring: pin the
+  // button 160 px above the feed's bottom edge, re-aligning until the feed stops moving.
+  await expect(async () => {
+    const off = await hidePreview.evaluate((el) => {
+      const feed = el.closest('[data-virtuoso-scroller]') as HTMLElement;
+      const d = el.getBoundingClientRect().bottom - (feed.getBoundingClientRect().bottom - 160);
+      feed.scrollTop += d;
+      return d;
+    });
+    await settle(win);
+    expect(Math.abs(off)).toBeLessThan(1);
+  }).toPass({ timeout: 10_000 });
+  await expect(hidePreview).toBeFocused();
   await checkpoint(shot, 'chat-link-preview');
 });
 
@@ -441,7 +460,9 @@ test('chat-mention-popover', async ({ open, win, mock, shot }) => {
   const composer = win.getByPlaceholder('Сообщение в #общий');
   await composer.click();
   await composer.pressSequentially('@');
-  await expect(win.getByRole('listbox', { name: 'Упомянуть' })).toBeVisible();
+  const list = win.getByRole('listbox', { name: 'Упомянуть' });
+  await expect(list).toBeVisible();
+  await expect(list.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
   await checkpoint(shot, 'chat-mention-popover');
 });
 
