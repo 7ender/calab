@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -54,6 +55,8 @@ type Service struct {
 	// noSFUMove is set once LiveKit answered MoveParticipant with "not implemented"
 	// (open-source LiveKit): moves then go the app-level way right away (ADR-0019).
 	noSFUMove atomic.Bool
+	// waits: the armed expectConnect timers of this instance, session id -> *connectWait.
+	waits sync.Map
 }
 
 // SetSFUMove overrides the detected move mode — tests, or ops after a LiveKit upgrade that
@@ -70,6 +73,7 @@ func NewService(cfg Config, d *db.DB, r rueidis.Client, lk LiveKit, ev events.Pu
 // Routes registers the rtc routes. The webhook is public (signature-checked).
 func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/rooms/{id}/join", wrap(httpx.HandlerFunc(s.join)))
+	mux.Handle("POST /api/rooms/{id}/voice/leave", wrap(httpx.HandlerFunc(s.leave)))
 	mux.Handle("POST /api/rooms/{id}/stream/request", wrap(httpx.HandlerFunc(s.requestStream)))
 	mux.Handle("POST /api/rooms/{id}/camera/request", wrap(httpx.HandlerFunc(s.requestCamera)))
 	mux.Handle("POST /api/rooms/{id}/camera/stop", wrap(httpx.HandlerFunc(s.stopOwnCamera)))
@@ -749,7 +753,7 @@ func DisabledRoutes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 	h := httpx.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return httpx.Unavailable(errors.New("rtc: LiveKit is not configured"))
 	})
-	for _, p := range []string{"POST /api/rooms/{id}/join", "POST /api/rooms/{id}/stream/request",
+	for _, p := range []string{"POST /api/rooms/{id}/join", "POST /api/rooms/{id}/voice/leave", "POST /api/rooms/{id}/stream/request",
 		"POST /api/rooms/{id}/camera/request", "POST /api/rooms/{id}/camera/stop", "POST /api/rooms/{id}/voice/{userId}/stop-camera",
 		"POST /api/rooms/{id}/voice/{userId}/allow-camera", "PATCH /api/voice/self",
 		"PATCH /api/rooms/{id}/voice-status", "POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/unmute", "POST /api/rooms/{id}/voice/{userId}/disconnect",
