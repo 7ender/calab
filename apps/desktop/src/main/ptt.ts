@@ -3,7 +3,7 @@ import log from 'electron-log/main';
 import uiohookModule from 'uiohook-napi';
 import { IPC, type PttBinding, type PttEvent, type PttStatus } from '../shared/ipc';
 import { PttGate } from '../shared/pttGate';
-import { PttCapture } from '../shared/pttCapture';
+import { PttCapture, captureWithCapsRemap } from '../shared/pttCapture';
 import { isToggleOnly } from '../shared/pttKeys';
 import { capsRemapActive, capsRemapSupported, restoreCapsRemapSync, setCapsRemap } from './capsRemap';
 
@@ -139,7 +139,19 @@ export function captureNext(id: number): Promise<PttBinding> {
   // The PTT key may be held right now (the user clicked «Assign» mid-talk): stop talking, so a
   // key-up lost to the capture can never leave the gate open (review N5).
   gate?.reset();
-  return capture.start({ id });
+  // macOS: Caps Lock → F18 while the capture is armed, or Caps Lock used for layout switching is
+  // invisible to the hook (shared/pttCapture.ts, captureWithCapsRemap).
+  return captureWithCapsRemap(
+    capture,
+    { id },
+    {
+      supported: capsRemapSupported,
+      active: capsRemapActive,
+      set: setCapsRemap,
+      wanted: () => binding?.kind === 'key' && binding.remap === 'caps-f18',
+      log: (msg, err) => log.warn(msg, err),
+    },
+  );
 }
 
 /**

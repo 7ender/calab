@@ -107,7 +107,9 @@ jobs:
       # compiles it again per target arch (buildDependenciesFromSource).
       - run: pnpm install --frozen-lockfile
       - name: uiohook patch applied
-        run: grep -q VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h
+        run: |
+          grep -q VC_CAPS_LOCK_STATE node_modules/uiohook-napi/libuiohook/include/uiohook.h
+          grep -q CALABA_UIOHOOK_PATCH_V1 node_modules/uiohook-napi/src/lib/addon.c
       # Signing only with VALID material: the base64 must decode into a PKCS#12 that opens with its password
       # (and, for notarization, a private key .p8). Anything else — absent, stub, wrong password — is an
       # unsigned build with a notice, never a failure. Secrets can't be used in `if:`, hence one bash step.
@@ -228,12 +230,10 @@ jobs:
             "-c.extraMetadata.homepage=$HOMEPAGE" \
             -c.directories.output=dist-release
 
-      - name: native module is packaged (a missing one crashes main at startup)
-        working-directory: apps/desktop/dist-release
-        run: |
-          found=$(find . -path '*uiohook*' -name '*.node' | grep -v prebuilds || true)
-          echo "$found"
-          test -n "$found"
+      # Every packaged uiohook .node must be our patched build (marker compiled in by the patch), never
+      # the upstream prebuilt; a missing one crashes main at startup. Runs before anything is uploaded.
+      - name: native module is packaged and patched (check-native)
+        run: node apps/desktop/scripts/check-native.mjs apps/desktop/dist-release
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

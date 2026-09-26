@@ -136,3 +136,48 @@ export class PttCapture {
     }
   }
 }
+
+/** The Caps→F18 remap as seen by a capture (main/capsRemap.ts in the app, fakes in tests). */
+export interface CaptureRemap {
+  supported(): boolean;
+  active(): boolean;
+  /** Apply (true) / restore (false); the implementation runs the calls one after another in call order. */
+  set(on: boolean): Promise<void>;
+  /** Whether the current binding (not the capture) needs the remap. */
+  wanted(): boolean;
+  log?(msg: string, err?: unknown): void;
+}
+
+/**
+ * Starts a capture; on macOS it also remaps Caps Lock → F18 for the time of the capture.
+ *
+ * Why: with «Use Caps Lock to switch input source» (the macOS default once a second layout such as
+ * Russian is added) a short Caps Lock press only switches the layout: the lock state never flips,
+ * so no kCGEventFlagsChanged — and no CAPS_LOCK_STATE from our libuiohook patch — reaches the hook.
+ * The capture saw nothing and Caps Lock could not be assigned (owner, 0.2.0). Remapped at the HID
+ * level (hidutil, ahead of the layout switch), Caps Lock arrives as a real F18 press, which the
+ * capture binds as «Caps Lock, hold, remap caps-f18» — what Discord does on macOS.
+ *
+ * The capture is armed synchronously (a cancel racing the remap still finds it — review H2). When
+ * it ends with anything but that binding, the remap goes back to what the current binding needs.
+ */
+export function captureWithCapsRemap(capture: PttCapture, opts: { id?: number; timeoutMs?: number }, remap: CaptureRemap): Promise<PttBinding> {
+  const pending = capture.start(opts);
+  if (!remap.supported() || remap.active()) return pending;
+  const warn =
+    (msg: string) =>
+    (e: unknown): void =>
+      remap.log?.(msg, e);
+  void remap.set(true).catch(warn('[ptt] Caps Lock remap for the capture failed'));
+  const settle = (): Promise<void> => remap.set(remap.wanted()).catch(warn('[ptt] Caps Lock remap restore after the capture failed'));
+  return pending.then(
+    async (b) => {
+      if (!(b.kind === 'key' && b.remap === 'caps-f18')) await settle();
+      return b;
+    },
+    async (e: unknown) => {
+      await settle();
+      throw e;
+    },
+  );
+}

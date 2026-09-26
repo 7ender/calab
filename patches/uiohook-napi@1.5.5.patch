@@ -57,3 +57,22 @@ index e6cd6cec9c3c5a26cda5eccc5fe9eb087752eef9..0197b99122f75b56842dfbaa36c4a422
              }
              break;
  
+diff --git a/src/lib/addon.c b/src/lib/addon.c
+index d4dffe9e74cb2da2dbb99b65dd92173702f8beb7..fa848fdfd755cdd115ad85c18e12be39cd65b1a3 100644
+--- a/src/lib/addon.c
++++ b/src/lib/addon.c
+@@ -330,6 +330,14 @@ NAPI_MODULE_INIT() {
+   status = napi_set_named_property(env, exports, "keyTap", export_fn);
+   NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
+ 
++  // Calaba patch marker: proves the packaged binary was compiled from the patched sources
++  // (apps/desktop/scripts/check-native.mjs greps the .node for it). Bump with the patch.
++  napi_value calaba_marker;
++  status = napi_create_string_utf8(env, "CALABA_UIOHOOK_PATCH_V1", NAPI_AUTO_LENGTH, &calaba_marker);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_string_utf8");
++  status = napi_set_named_property(env, exports, "calabaPatch", calaba_marker);
++  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
++
+   status = napi_add_env_cleanup_hook(env, AddonCleanUp, NULL);
+   NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_add_env_cleanup_hook");
+ 
