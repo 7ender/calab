@@ -327,6 +327,92 @@ func (*Empty) Descriptor() ([]byte, []int) {
 	return file_calaba_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
+// GET /api/version (public, no auth): build and license information. Clients show the
+// attribution required by the license (NOTICE) in their "About" screen.
+type GetVersionResponse struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Version           string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`                                              // release version ("dev" for local builds)
+	Commit            string                 `protobuf:"bytes,2,opt,name=commit,proto3" json:"commit,omitempty"`                                                // short git commit ("unknown" if not stamped)
+	License           string                 `protobuf:"bytes,3,opt,name=license,proto3" json:"license,omitempty"`                                              // SPDX id: "BUSL-1.1"
+	CommercialLicense string                 `protobuf:"bytes,4,opt,name=commercial_license,json=commercialLicense,proto3" json:"commercial_license,omitempty"` // where to obtain a commercial license
+	Attribution       string                 `protobuf:"bytes,5,opt,name=attribution,proto3" json:"attribution,omitempty"`                                      // "Powered by GPTunneL"
+	Url               string                 `protobuf:"bytes,6,opt,name=url,proto3" json:"url,omitempty"`                                                      // attribution link
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *GetVersionResponse) Reset() {
+	*x = GetVersionResponse{}
+	mi := &file_calaba_v1_common_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetVersionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetVersionResponse) ProtoMessage() {}
+
+func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_common_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetVersionResponse.ProtoReflect.Descriptor instead.
+func (*GetVersionResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_common_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetVersionResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *GetVersionResponse) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+func (x *GetVersionResponse) GetLicense() string {
+	if x != nil {
+		return x.License
+	}
+	return ""
+}
+
+func (x *GetVersionResponse) GetCommercialLicense() string {
+	if x != nil {
+		return x.CommercialLicense
+	}
+	return ""
+}
+
+func (x *GetVersionResponse) GetAttribution() string {
+	if x != nil {
+		return x.Attribution
+	}
+	return ""
+}
+
+func (x *GetVersionResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
 var File_calaba_v1_common_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_common_proto_rawDesc = "" +
@@ -342,7 +428,14 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x05limit\x18\x03 \x01(\rR\x05limit\"%\n" +
 	"\bPageInfo\x12\x19\n" +
 	"\bhas_more\x18\x01 \x01(\bR\ahasMore\"\a\n" +
-	"\x05Empty*\xe6\x04\n" +
+	"\x05Empty\"\xc3\x01\n" +
+	"\x12GetVersionResponse\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
+	"\x06commit\x18\x02 \x01(\tR\x06commit\x12\x18\n" +
+	"\alicense\x18\x03 \x01(\tR\alicense\x12-\n" +
+	"\x12commercial_license\x18\x04 \x01(\tR\x11commercialLicense\x12 \n" +
+	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
+	"\x03url\x18\x06 \x01(\tR\x03url*\xe6\x04\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -381,13 +474,14 @@ func file_calaba_v1_common_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_calaba_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_calaba_v1_common_proto_goTypes = []any{
-	(ErrorCode)(0),      // 0: calaba.v1.ErrorCode
-	(*ApiError)(nil),    // 1: calaba.v1.ApiError
-	(*PageRequest)(nil), // 2: calaba.v1.PageRequest
-	(*PageInfo)(nil),    // 3: calaba.v1.PageInfo
-	(*Empty)(nil),       // 4: calaba.v1.Empty
+	(ErrorCode)(0),             // 0: calaba.v1.ErrorCode
+	(*ApiError)(nil),           // 1: calaba.v1.ApiError
+	(*PageRequest)(nil),        // 2: calaba.v1.PageRequest
+	(*PageInfo)(nil),           // 3: calaba.v1.PageInfo
+	(*Empty)(nil),              // 4: calaba.v1.Empty
+	(*GetVersionResponse)(nil), // 5: calaba.v1.GetVersionResponse
 }
 var file_calaba_v1_common_proto_depIdxs = []int32{
 	0, // 0: calaba.v1.ApiError.code:type_name -> calaba.v1.ErrorCode
@@ -409,7 +503,7 @@ func file_calaba_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_common_proto_rawDesc), len(file_calaba_v1_common_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

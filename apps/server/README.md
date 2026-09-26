@@ -86,6 +86,13 @@ LiveKit в compose.dev работает с `infra/docker/livekit/livekit.dev.yam
 
 При SIGTERM gateway рассылает `RECONNECT` с разбросом до 5 с и отдаёт сессии (их можно `RESUME` на любом инстансе), затем останавливается HTTP.
 
+## Сборка, версия, лицензии
+
+- Проект — Business Source License 1.1 (`LICENSE`, `NOTICE`, `COMMERCIAL-LICENSE.md` в корне). Образ кладёт их в `/`, туда же — `/THIRD-PARTY-NOTICES.txt` (лицензии Go-зависимостей).
+- `GET /api/version` (без авторизации) → `{version, commit, license, commercialLicense, attribution, url}`. Клиенты показывают `attribution` в «О программе» — этого требует NOTICE.
+- Версия и коммит зашиваются при сборке: `ARG VERSION` / `ARG COMMIT` в Dockerfile → `-ldflags -X …/internal/buildinfo.{Version,Commit}`. compose передаёт `CALABA_VERSION` / `CALABA_COMMIT` из окружения (на хосте нет `.git`, поэтому значение задаёт вызывающий: `CALABA_COMMIT=$(git rev-parse --short HEAD)`). Локальный `go build` из git-checkout берёт коммит из VCS-информации Go.
+- `make third-party-notices` пересобирает `THIRD-PARTY-NOTICES.txt` из модулей, реально слинкованных в бинарник (`go list -deps ./cmd/server`). Это делает `tools/notices`: файлы LICENSE/NOTICE модуля и его подкаталогов первого уровня (так попадает и `lib/LICENSE.libwebp`, встроенный в `gen2brain/webp`). На GPL/LGPL/AGPL или нераспознанной лицензии команда падает. Запускать после изменения зависимостей и коммитить результат.
+
 ## Миграции
 
 - goose, SQL в `internal/db/migrations`, встраиваются в бинарник. `serve` применяет их при старте под `pg_advisory_lock`; для k8s-job — `server migrate`, статус — `server migrate status`.

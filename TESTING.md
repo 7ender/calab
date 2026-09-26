@@ -1040,3 +1040,17 @@ go test -race -tags integration -count=1 -v -run TestChangeCredentials ./interna
 - email: занятый (в любом регистре) → 409, невалидный → 422, успех → новый email в ответе и `USER_UPDATE {me}` на устройство, вход по новому email;
 - шестая проверка пароля за 15 минут → 429 (невалидные запросы не считаются);
 - гость → 403 на оба эндпоинта.
+
+## Server: версия и лицензии (`GET /api/version`, образ)
+
+```sh
+cd apps/server && go test ./internal/buildinfo/ -v 2>&1 | grep -E '^(--- |ok|FAIL)'
+cd ../.. && make third-party-notices && git diff --exit-code apps/server/THIRD-PARTY-NOTICES.txt
+docker build -f apps/server/Dockerfile --build-arg VERSION=0.9.0-test --build-arg COMMIT=$(git rev-parse --short HEAD) -t calaba-api:check .
+id=$(docker create calaba-api:check); docker export $id | tar -t | grep -E '^(LICENSE|NOTICE|COMMERCIAL-LICENSE.md|THIRD-PARTY-NOTICES.txt)$'; docker rm $id
+```
+Ожидается:
+- unit-тест проходит;
+- `make third-party-notices` завершается с кодом 0 (нет GPL/LGPL/AGPL/UNKNOWN), без дрейфа файла;
+- в образе четыре файла;
+- на запущенном сервере `curl -s localhost:3000/api/version` → `{"version":"…","commit":"…","license":"BUSL-1.1","commercialLicense":"https://gptunnel.ai","attribution":"Powered by GPTunneL","url":"https://gptunnel.ai"}`, в логе `listening` есть `version` и `commit`.

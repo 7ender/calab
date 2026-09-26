@@ -62,6 +62,11 @@ services:
     build:
       context: ../..
       dockerfile: apps/server/Dockerfile
+      args:
+        # Stamped into GET /api/version. The host tree has no .git (sync.sh excludes it),
+        # so the caller passes them: CALABA_COMMIT=$(git rev-parse --short HEAD).
+        VERSION: ${CALABA_VERSION:-dev}
+        COMMIT: ${CALABA_COMMIT:-unknown}
     network_mode: host
     restart: unless-stopped
     environment:

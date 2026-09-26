@@ -47,3 +47,14 @@ message PageInfo {
 
 // Empty response body (e.g. logout, delete).
 message Empty {}
+
+// GET /api/version (public, no auth): build and license information. Clients show the
+// attribution required by the license (NOTICE) in their "About" screen.
+message GetVersionResponse {
+  string version = 1;            // release version ("dev" for local builds)
+  string commit = 2;             // short git commit ("unknown" if not stamped)
+  string license = 3;            // SPDX id: "BUSL-1.1"
+  string commercial_license = 4; // where to obtain a commercial license
+  string attribution = 5;        // "Powered by GPTunneL"
+  string url = 6;                // attribution link
+}

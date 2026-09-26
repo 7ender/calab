@@ -13,6 +13,7 @@ import (
 
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/buildinfo"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/events"
@@ -125,6 +126,7 @@ func New(d Deps) *App {
 
 	mux := http.NewServeMux()
 	health.Routes(mux, d.DB.Pool, d.Redis)
+	buildinfo.Routes(mux)
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.Handle("GET /gateway", hub)
 

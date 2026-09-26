@@ -21,6 +21,7 @@ import (
 
 	"github.com/calaba/calaba/server/internal/app"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/buildinfo"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/redisx"
@@ -123,7 +124,8 @@ func serve(ctx context.Context, cfg *config.Config) error {
 	}
 	errc := make(chan error, 1)
 	go func() {
-		slog.Info("listening", "addr", cfg.HTTPAddr, "registration", cfg.RegistrationMode,
+		slog.Info("listening", "addr", cfg.HTTPAddr, "version", buildinfo.Version, "commit", buildinfo.Info().GetCommit(),
+			"registration", cfg.RegistrationMode,
 			"storage", cfg.StorageDriver, "livekit", cfg.LiveKitEnabled())
 		errc <- srv.ListenAndServe()
 	}()

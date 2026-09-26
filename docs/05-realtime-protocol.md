@@ -151,6 +151,7 @@ POST   /api/auth/register              RegisterRequest → 201 RegisterResponse
 POST   /api/auth/login                 LoginRequest → LoginResponse          (rate-limit по IP)
 POST   /api/auth/refresh               RefreshRequest → RefreshResponse      (ротация; повтор старого токена = отзыв сессии)
 POST   /api/auth/logout                LogoutRequest{allSessions, refreshToken?} → 204   (сессия — по access-токену, иначе по refresh из тела или cookie)
+GET    /api/version                    GetVersionResponse {version, commit, license "BUSL-1.1", commercialLicense, attribution "Powered by GPTunneL", url} — публичный
 GET    /api/me                         GetMeResponse
 PATCH  /api/me                         UpdateMeRequest → UpdateMeResponse
 GET    /api/me/sessions                ListSessionsResponse

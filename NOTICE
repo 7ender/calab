@@ -11,3 +11,10 @@ Calaba and GPTunneL are trademarks of GPTunneL. See TRADEMARKS.md.
 
 Each version of this software becomes available under the Apache License 2.0
 four years after its first public release (Change Date).
+
+Third-party components are listed with their licences in THIRD-PARTY-NOTICES.txt
+(shipped with the app). The desktop app includes libuiohook (Copyright (C) 2006-2023
+Alexander Barker), licensed under the GNU Lesser General Public License v3.0 or later.
+libuiohook (LGPL-3.0) собран в нативный модуль uiohook-napi; исходный код Calaba и патч
+(patches/uiohook-napi@1.5.5.patch в репозитории) доступны, что позволяет
+пересборку и перелинковку (LGPL §4).

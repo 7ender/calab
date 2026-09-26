@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/common.proto.
  */
 export const file_calaba_v1_common: GenFile = /*@__PURE__*/
-  fileDesc("ChZjYWxhYmEvdjEvY29tbW9uLnByb3RvEgljYWxhYmEudjEiTgoIQXBpRXJyb3ISIgoEY29kZRgBIAEoDjIULmNhbGFiYS52MS5FcnJvckNvZGUSDwoHbWVzc2FnZRgCIAEoCRINCgVmaWVsZBgDIAEoCSI7CgtQYWdlUmVxdWVzdBIOCgZiZWZvcmUYASABKAkSDQoFYWZ0ZXIYAiABKAkSDQoFbGltaXQYAyABKA0iHAoIUGFnZUluZm8SEAoIaGFzX21vcmUYASABKAgiBwoFRW1wdHkq5gQKCUVycm9yQ29kZRIaChZFUlJPUl9DT0RFX1VOU1BFQ0lGSUVEEAASFwoTRVJST1JfQ09ERV9JTlRFUk5BTBABEhoKFkVSUk9SX0NPREVfQkFEX1JFUVVFU1QQAhIZChVFUlJPUl9DT0RFX1ZBTElEQVRJT04QAxIeChpFUlJPUl9DT0RFX1VOQVVUSEVOVElDQVRFRBAEEhgKFEVSUk9SX0NPREVfRk9SQklEREVOEAUSGAoURVJST1JfQ09ERV9OT1RfRk9VTkQQBhIXChNFUlJPUl9DT0RFX0NPTkZMSUNUEAcSGwoXRVJST1JfQ09ERV9SQVRFX0xJTUlURUQQCBIiCh5FUlJPUl9DT0RFX0lOVkFMSURfQ1JFREVOVElBTFMQCRIkCiBFUlJPUl9DT0RFX0lOVkFMSURfUkVGUkVTSF9UT0tFThAKEiIKHkVSUk9SX0NPREVfUkVHSVNUUkFUSU9OX0NMT1NFRBALEh0KGUVSUk9SX0NPREVfSU5WSVRFX0lOVkFMSUQQDBIdChlFUlJPUl9DT0RFX0ZJTEVfVE9PX0xBUkdFEA0SIgoeRVJST1JfQ09ERV9GSUxFX1FVT1RBX0VYQ0VFREVEEA4SIAocRVJST1JfQ09ERV9QQVlMT0FEX1RPT19MQVJHRRAPEhoKFkVSUk9SX0NPREVfVU5BVkFJTEFCTEUQEBIYChRFUlJPUl9DT0RFX1JPT01fRlVMTBAREh4KGkVSUk9SX0NPREVfV09SS1NQQUNFX0xJTUlUEBISGwoXRVJST1JfQ09ERV9TVE9SQUdFX0ZVTEwQE0KZAQoNY29tLmNhbGFiYS52MUILQ29tbW9uUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z");
+  fileDesc("ChZjYWxhYmEvdjEvY29tbW9uLnByb3RvEgljYWxhYmEudjEiTgoIQXBpRXJyb3ISIgoEY29kZRgBIAEoDjIULmNhbGFiYS52MS5FcnJvckNvZGUSDwoHbWVzc2FnZRgCIAEoCRINCgVmaWVsZBgDIAEoCSI7CgtQYWdlUmVxdWVzdBIOCgZiZWZvcmUYASABKAkSDQoFYWZ0ZXIYAiABKAkSDQoFbGltaXQYAyABKA0iHAoIUGFnZUluZm8SEAoIaGFzX21vcmUYASABKAgiBwoFRW1wdHkihAEKEkdldFZlcnNpb25SZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEg4KBmNvbW1pdBgCIAEoCRIPCgdsaWNlbnNlGAMgASgJEhoKEmNvbW1lcmNpYWxfbGljZW5zZRgEIAEoCRITCgthdHRyaWJ1dGlvbhgFIAEoCRILCgN1cmwYBiABKAkq5gQKCUVycm9yQ29kZRIaChZFUlJPUl9DT0RFX1VOU1BFQ0lGSUVEEAASFwoTRVJST1JfQ09ERV9JTlRFUk5BTBABEhoKFkVSUk9SX0NPREVfQkFEX1JFUVVFU1QQAhIZChVFUlJPUl9DT0RFX1ZBTElEQVRJT04QAxIeChpFUlJPUl9DT0RFX1VOQVVUSEVOVElDQVRFRBAEEhgKFEVSUk9SX0NPREVfRk9SQklEREVOEAUSGAoURVJST1JfQ09ERV9OT1RfRk9VTkQQBhIXChNFUlJPUl9DT0RFX0NPTkZMSUNUEAcSGwoXRVJST1JfQ09ERV9SQVRFX0xJTUlURUQQCBIiCh5FUlJPUl9DT0RFX0lOVkFMSURfQ1JFREVOVElBTFMQCRIkCiBFUlJPUl9DT0RFX0lOVkFMSURfUkVGUkVTSF9UT0tFThAKEiIKHkVSUk9SX0NPREVfUkVHSVNUUkFUSU9OX0NMT1NFRBALEh0KGUVSUk9SX0NPREVfSU5WSVRFX0lOVkFMSUQQDBIdChlFUlJPUl9DT0RFX0ZJTEVfVE9PX0xBUkdFEA0SIgoeRVJST1JfQ09ERV9GSUxFX1FVT1RBX0VYQ0VFREVEEA4SIAocRVJST1JfQ09ERV9QQVlMT0FEX1RPT19MQVJHRRAPEhoKFkVSUk9SX0NPREVfVU5BVkFJTEFCTEUQEBIYChRFUlJPUl9DT0RFX1JPT01fRlVMTBAREh4KGkVSUk9SX0NPREVfV09SS1NQQUNFX0xJTUlUEBISGwoXRVJST1JfQ09ERV9TVE9SQUdFX0ZVTEwQE0KZAQoNY29tLmNhbGFiYS52MUILQ29tbW9uUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z");
 
 /**
  * Error body of every non-2xx REST response.
@@ -109,6 +109,63 @@ export type Empty = Message<"calaba.v1.Empty"> & {
  */
 export const EmptySchema: GenMessage<Empty> = /*@__PURE__*/
   messageDesc(file_calaba_v1_common, 3);
+
+/**
+ * GET /api/version (public, no auth): build and license information. Clients show the
+ * attribution required by the license (NOTICE) in their "About" screen.
+ *
+ * @generated from message calaba.v1.GetVersionResponse
+ */
+export type GetVersionResponse = Message<"calaba.v1.GetVersionResponse"> & {
+  /**
+   * release version ("dev" for local builds)
+   *
+   * @generated from field: string version = 1;
+   */
+  version: string;
+
+  /**
+   * short git commit ("unknown" if not stamped)
+   *
+   * @generated from field: string commit = 2;
+   */
+  commit: string;
+
+  /**
+   * SPDX id: "BUSL-1.1"
+   *
+   * @generated from field: string license = 3;
+   */
+  license: string;
+
+  /**
+   * where to obtain a commercial license
+   *
+   * @generated from field: string commercial_license = 4;
+   */
+  commercialLicense: string;
+
+  /**
+   * "Powered by GPTunneL"
+   *
+   * @generated from field: string attribution = 5;
+   */
+  attribution: string;
+
+  /**
+   * attribution link
+   *
+   * @generated from field: string url = 6;
+   */
+  url: string;
+};
+
+/**
+ * Describes the message calaba.v1.GetVersionResponse.
+ * Use `create(GetVersionResponseSchema)` to create a new message.
+ */
+export const GetVersionResponseSchema: GenMessage<GetVersionResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_common, 4);
 
 /**
  * Machine-readable error code. REST errors are returned as `ApiError` with a matching
