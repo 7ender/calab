@@ -120,9 +120,11 @@ class FakeRoom {
     for (const h of this.handlers.get(ev) ?? []) h(...a);
   }
   connectedWith: [string, string] | null = null;
+  /** When set, decides the outcome of connect() (a rejected promise = LiveKit refused it). */
+  static onConnect: ((token: string) => Promise<void>) | null = null;
   connect(url: string, token: string): Promise<void> {
     this.connectedWith = [url, token];
-    return Promise.resolve();
+    return FakeRoom.onConnect ? FakeRoom.onConnect(token) : Promise.resolve();
   }
   /** When set, disconnect() waits for it (a slow network disconnect). */
   static disconnectGate: Promise<void> | null = null;
@@ -206,6 +208,7 @@ beforeEach(async () => {
   FakeLocalAudioTrack.lockMs = 0;
   FakeLocalAudioTrack.failReplace = false;
   FakeRoom.disconnectGate = null;
+  FakeRoom.onConnect = null;
   pipelines.length = 0;
   gate = null;
   gone.clear();
@@ -385,6 +388,23 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState().roomId).toBeNull();
   });
 
+  it('a rejoin keeps the moderator mute through its teardown until the server says otherwise', async () => {
+    await voice.join('A', 'ws');
+    useVoice.setState({ muted: true, serverMuted: true });
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await settle();
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    expect(useVoice.getState().serverMuted).toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    await settle();
+    expect(FakeRoom.all).toHaveLength(2);
+    expect(useVoice.getState().phase).toBe('connected');
+    expect(useVoice.getState().serverMuted).toBe(true);
+    expect(useVoice.getState().muted).toBe(true);
+    await voice.leave();
+    expect(useVoice.getState().serverMuted).toBe(false);
+  });
+
   it('mute → unmute in quick succession ends unmuted, as the UI shows (review L2)', async () => {
     await voice.join('A', 'ws');
     FakeLocalAudioTrack.lockMs = 50;
@@ -537,6 +557,59 @@ describe('VOICE_MOVED (ADR-0019)', () => {
     expect(useVoice.getState().phase).toBe('idle');
     expect(voice.currentRoomId).toBeNull();
     expect(FakeRoom.all).toHaveLength(1); // never connected to the target
+  });
+
+  it('the move token is refused: one /join fallback into the target, mute / deafen / server mute kept', async () => {
+    await voice.join('A', 'ws');
+    voice.toggleDeafen();
+    useVoice.setState({ muted: true, serverMuted: true });
+    await settle();
+    FakeRoom.onConnect = (token) => (token === 'tok-B' ? Promise.reject(new Error('token expired')) : Promise.resolve());
+    expect(voice.onMoved(move())).toBe(true);
+    await settle();
+    await settle();
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A', 'B']);
+    expect(FakeRoom.all.map((r) => r.connectedWith?.[1])).toEqual(['t-A', 'tok-B', 't-B']);
+    const v = useVoice.getState();
+    expect(voice.currentRoomId).toBe('B');
+    expect(v.phase).toBe('connected');
+    expect(v.error).toBeNull();
+    expect(v.muted).toBe(true);
+    expect(v.deafened).toBe(true);
+    expect(v.serverMuted).toBe(true);
+  });
+
+  it('the move token and the /join fallback both fail: exactly one fallback, then out of voice', async () => {
+    await voice.join('A', 'ws');
+    FakeRoom.onConnect = (token) => (token === 't-A' ? Promise.resolve() : Promise.reject(new Error('lk down')));
+    expect(voice.onMoved(move())).toBe(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A', 'B']);
+    expect(FakeRoom.all).toHaveLength(3);
+    expect(voice.currentRoomId).toBeNull();
+    expect(useVoice.getState().phase).toBe('idle');
+    expect(useVoice.getState().error).toBe('err');
+  });
+
+  it('«Отключиться» while the refused move is being cleaned up: no /join fallback', async () => {
+    await voice.join('A', 'ws');
+    let release!: () => void;
+    FakeRoom.onConnect = (token) => {
+      if (token !== 'tok-B') return Promise.resolve();
+      FakeRoom.disconnectGate = new Promise<void>((r) => (release = r)); // slow teardown of the failed room
+      return Promise.reject(new Error('token expired'));
+    };
+    expect(voice.onMoved(move())).toBe(true);
+    await settle();
+    const leaving = voice.leave();
+    FakeRoom.disconnectGate = null;
+    release();
+    await leaving;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A']);
+    expect(FakeRoom.all).toHaveLength(2);
+    expect(voice.currentRoomId).toBeNull();
+    expect(useVoice.getState().phase).toBe('idle');
   });
 
   it('«Отключиться» during a rejoin: a later move does not bring the user back into voice', async () => {

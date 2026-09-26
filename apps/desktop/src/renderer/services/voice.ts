@@ -199,7 +199,11 @@ class VoiceEngine {
     await this.connect(roomId, workspaceId, false);
   }
 
-  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds): Promise<void> {
+  /**
+   * `keepServerMuted`: the moderator mute to carry over the teardown (a rejoin or a move's /join
+   * fallback); teardown resets it, and until the new grant arrives the UI would show «not muted».
+   */
+  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds, keepServerMuted?: boolean): Promise<void> {
     if (this.roomId === roomId && this.room) return;
     // The intent token is taken *before* the teardown (which awaits a network disconnect):
     // a leave() or a newer join during that window bumps it, and this call bails out, so the
@@ -216,6 +220,7 @@ class VoiceEngine {
     if (intent !== this.intentSeq) return;
     const seq = ++this.joinSeq;
     this.roomId = roomId;
+    const carried = moved?.serverMuted ?? keepServerMuted;
     setVoice({
       roomId,
       workspaceId,
@@ -225,7 +230,7 @@ class VoiceEngine {
       watching: null,
       speaking: {},
       myStream: null,
-      ...(moved ? { serverMuted: moved.serverMuted } : {}),
+      ...(carried !== undefined ? { serverMuted: carried } : {}),
     });
     try {
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
@@ -267,6 +272,21 @@ class VoiceEngine {
       this.syncTray();
     } catch (err) {
       if (seq !== this.joinSeq) return;
+      if (moved) {
+        // The move's token did not get us in (expired, LiveKit hiccup): one ordinary /join into
+        // the target (mute / deafen / PTT live in the store; the moderator mute is carried).
+        // Only if that fails too: the usual error and out of voice (the server rolls the move
+        // back after 15 s). Exactly one fallback per VOICE_MOVED: the /join path has no `moved`.
+        log.warn('voice: connect with the move token failed, falling back to /join', err);
+        await this.teardown(false);
+        // A leave / join / newer move meanwhile bumped the intent token: it wins, no fallback.
+        if (intent !== this.intentSeq) return;
+        const fallback = this.connect(roomId, workspaceId, quiet, undefined, moved.serverMuted);
+        // connect() took its intent token synchronously: keep a chained move recognisable.
+        if (this.moveIntent?.seq === intent) this.moveIntent = { seq: this.intentSeq, to: roomId };
+        await fallback;
+        return;
+      }
       log.error('voice join failed', err);
       // Rejoin attempts (quiet) only log: the reconnect banner already tells the user.
       const h = quiet ? humanMediaError(err, 'voice') : reportMediaError(err, 'voice');
@@ -306,15 +326,18 @@ class VoiceEngine {
     if (!roomId || !wsId) return;
     const gen = ++this.rejoinGen;
     const stream = useVoice.getState().myStream;
+    // The moderator mute outlives the reconnect: the server grants no SPEAK again, and until
+    // that grant arrives the UI must not show «not muted». Reset only by a grant or a leave.
+    const serverMuted = useVoice.getState().serverMuted;
     this.rejoinRoomId = roomId;
     try {
       await this.teardown(false);
       for (let attempt = 0; attempt < 5; attempt++) {
         if (gen !== this.rejoinGen) return; // the user left or switched meanwhile
-        setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting' });
+        setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting', serverMuted });
         await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
         if (gen !== this.rejoinGen) return;
-        await this.connect(roomId, wsId, true);
+        await this.connect(roomId, wsId, true, undefined, serverMuted);
         if (gen !== this.rejoinGen) return;
         if (this.room) {
           if (stream) toast.info(t('mediaErr.stream.restart'));
