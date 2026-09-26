@@ -1,4 +1,4 @@
-import { AUDIO_PUBLISH_DEFAULTS, type ConcreteScreenSharePreset, type ScreenShareContentHint } from '@calaba/protocol';
+import { AUDIO_PUBLISH_DEFAULTS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceMoved } from '@calaba/protocol';
 import {
   ConnectionState,
   DisconnectReason,
@@ -18,6 +18,7 @@ import type { PttEvent } from '../../shared/ipc';
 import { t } from '../i18n';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
+import { can, roomPerms } from '../lib/permissions';
 import { MicPipeline } from '../lib/media/micPipeline';
 import type { MicReport } from '../lib/media/micReport';
 import {
@@ -34,9 +35,12 @@ import { playSound } from '../lib/sounds';
 import { SpeakingDebouncer } from '../lib/speaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
 import { canSpeakFrom, isDeviceGone, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { useMessages } from '../stores/messages';
+import { useRooms } from '../stores/rooms';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
+import { memberName, useWorkspaces } from '../stores/workspaces';
 import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQuality } from '../stores/voice';
 import { platform } from '../platform';
 import { cameraWanted } from '../lib/media/cameraLogic';
@@ -80,11 +84,37 @@ export interface StreamLayer {
   height: number;
 }
 
+/**
+ * Join credentials handed over by the server for an app-level move (ADR-0019): connect with them
+ * instead of calling /join; `serverMuted` carries the moderator mute over the teardown.
+ */
+interface MoveCreds {
+  url: string;
+  token: string;
+  serverMuted: boolean;
+}
+
 export interface StreamOptions {
   source: DesktopSource;
   preset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
   systemAudio: boolean;
+}
+
+/** Fewer messages than this in the voice room's chat → a new stream opens expanded (docs/09 #56). */
+const SHORT_CHAT = 3;
+
+/**
+ * Layout for a stream the user starts watching: the room's remembered choice, else the expanded
+ * stage when the room's chat is (nearly) empty — nothing to read beside a small PiP.
+ */
+export function defaultStage(roomId: string | null): 'pip' | 'expanded' {
+  if (!roomId) return 'pip';
+  const saved = usePrefs.getState().streamStage[roomId];
+  if (saved) return saved;
+  const m = useMessages.getState().rooms[roomId];
+  const count = m?.loaded ? m.items.length + (m.hasMoreBefore ? SHORT_CHAT : 0) : useRooms.getState().lastMessage[roomId] ? SHORT_CHAT : 0;
+  return count < SHORT_CHAT ? 'expanded' : 'pip';
 }
 
 class VoiceEngine {
@@ -188,10 +218,15 @@ class VoiceEngine {
   /** User intent: connect to a voice room (switches rooms; cancels a pending rejoin). */
   async join(roomId: string, workspaceId: string): Promise<void> {
     this.rejoinGen++;
+    this.rejoinRoomId = null;
     await this.connect(roomId, workspaceId, false);
   }
 
-  private async connect(roomId: string, workspaceId: string, quiet: boolean): Promise<void> {
+  /**
+   * `keepServerMuted`: the moderator mute to carry over the teardown (a rejoin or a move's /join
+   * fallback); teardown resets it, and until the new grant arrives the UI would show «not muted».
+   */
+  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds, keepServerMuted?: boolean): Promise<void> {
     if (this.roomId === roomId && this.room) return;
     // The intent token is taken *before* the teardown (which awaits a network disconnect):
     // a leave() or a newer join during that window bumps it, and this call bails out, so the
@@ -208,9 +243,25 @@ class VoiceEngine {
     if (intent !== this.intentSeq) return;
     const seq = ++this.joinSeq;
     this.roomId = roomId;
-    setVoice({ roomId, workspaceId, phase: 'connecting', error: null, streams: [], watching: null, speaking: {}, myStream: null, cameras: [], activeSpeaker: null, focusedTile: null, videoPip: true });
+    const carried = moved?.serverMuted ?? keepServerMuted;
+    setVoice({
+      roomId,
+      workspaceId,
+      phase: 'connecting',
+      error: null,
+      streams: [],
+      watching: null,
+      speaking: {},
+      myStream: null,
+      cameras: [],
+      activeSpeaker: null,
+      focusedTile: null,
+      videoPip: true,
+      ...(carried !== undefined ? { serverMuted: carried } : {}),
+    });
     try {
-      const res = await api.voice.join(roomId);
+      // A move (ADR-0019) comes with a token for the target room: no /join round trip.
+      const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await api.voice.join(roomId);
       if (seq !== this.joinSeq) return;
       this.audioBitrateKbps = res.media?.audioBitrateKbps || 32;
       const room = new Room({
@@ -231,10 +282,13 @@ class VoiceEngine {
         await room.disconnect(false);
         return;
       }
-      setVoice({ canSpeak: res.canSpeak, canStream: res.canStream, canVideo: res.canVideo, phase: 'connected' });
+      // Moved: SPEAK comes from the token's grant (it repeats the server's rights in the target).
+      const perm = room.localParticipant.permissions;
+      const canSpeak = moved ? (perm ? canSpeakFrom(perm) : true) : res.canSpeak;
+      setVoice({ canSpeak, canStream: res.canStream, canVideo: res.canVideo, phase: 'connected' });
       // Subscribe to audio of everyone already here; video only when watched.
       for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
-      if (res.canSpeak) {
+      if (canSpeak) {
         await this.ensureMic();
         await this.publishMic();
       }
@@ -246,12 +300,51 @@ class VoiceEngine {
       this.syncTray();
     } catch (err) {
       if (seq !== this.joinSeq) return;
+      if (moved) {
+        // The move's token did not get us in (expired, LiveKit hiccup): one ordinary /join into
+        // the target (mute / deafen / PTT live in the store; the moderator mute is carried).
+        // Only if that fails too: the usual error and out of voice (the server rolls the move
+        // back after 15 s). Exactly one fallback per VOICE_MOVED: the /join path has no `moved`.
+        log.warn('voice: connect with the move token failed, falling back to /join', err);
+        await this.teardown(false);
+        // A leave / join / newer move meanwhile bumped the intent token: it wins, no fallback.
+        if (intent !== this.intentSeq) return;
+        const fallback = this.connect(roomId, workspaceId, quiet, undefined, moved.serverMuted);
+        // connect() took its intent token synchronously: keep a chained move recognisable.
+        if (this.moveIntent?.seq === intent) this.moveIntent = { seq: this.intentSeq, to: roomId };
+        await fallback;
+        return;
+      }
       log.error('voice join failed', err);
       // Rejoin attempts (quiet) only log: the reconnect banner already tells the user.
       const h = quiet ? humanMediaError(err, 'voice') : reportMediaError(err, 'voice');
       await this.teardown(false);
       setVoice({ error: h.text });
     }
+  }
+
+  /**
+   * What /join would have said, for a move with server-issued credentials: the target's media
+   * settings from the room store; STREAM from the client-side permissions (UI only — the stream
+   * slot is still checked by /stream/request).
+   */
+  private movedJoin(
+    roomId: string,
+    workspaceId: string,
+    moved: MoveCreds,
+  ): { url: string; token: string; canSpeak: boolean; canStream: boolean; canVideo: boolean; media: { audioBitrateKbps: number } } {
+    const room = useRooms.getState().byId[roomId];
+    const me = useSession.getState().me?.user?.id ?? '';
+    const role = useWorkspaces.getState().byId[workspaceId]?.members[me]?.role;
+    return {
+      url: moved.url,
+      token: moved.token,
+      canSpeak: true,
+      canStream: can(roomPerms(role, me, room), 'STREAM'),
+      // The camera needs /camera/request in the target anyway (the server re-checks VIDEO + limit).
+      canVideo: can(roomPerms(role, me, room), 'VIDEO') && (room?.media?.cameraLimit ?? 0) > 0,
+      media: { audioBitrateKbps: room?.media?.audioBitrateKbps || this.audioBitrateKbps },
+    };
   }
 
   /** Bumped by every user join/leave: a running rejoin loop stops when it changes. */
@@ -267,29 +360,44 @@ class VoiceEngine {
     if (!roomId || !wsId) return;
     const gen = ++this.rejoinGen;
     const stream = useVoice.getState().myStream;
+    // The moderator mute outlives the reconnect: the server grants no SPEAK again, and until
+    // that grant arrives the UI must not show «not muted». Reset only by a grant or a leave.
+    const serverMuted = useVoice.getState().serverMuted;
     const camera = useVoice.getState().camera === 'on';
-    await this.teardown(false);
-    for (let attempt = 0; attempt < 5; attempt++) {
-      if (gen !== this.rejoinGen) return; // the user left or switched meanwhile
-      setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting' });
-      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
-      if (gen !== this.rejoinGen) return;
-      await this.connect(roomId, wsId, true);
-      if (gen !== this.rejoinGen) return;
-      if (this.room) {
-        if (stream) toast.info(t('mediaErr.stream.restart'));
-        // The camera comes back by itself (a new capture, no preview); start() explains a failure.
-        if (camera) void this.camera.start();
-        return;
+    this.rejoinRoomId = roomId;
+    try {
+      await this.teardown(false);
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (gen !== this.rejoinGen) return; // the user left or switched meanwhile
+        setVoice({ roomId, workspaceId: wsId, phase: 'reconnecting', serverMuted });
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+        if (gen !== this.rejoinGen) return;
+        await this.connect(roomId, wsId, true, undefined, serverMuted);
+        if (gen !== this.rejoinGen) return;
+        if (this.room) {
+          if (stream) toast.info(t('mediaErr.stream.restart'));
+          // The camera comes back by itself (a new capture, no preview); start() explains a failure.
+          if (camera) void this.camera.start();
+          return;
+        }
       }
+      toast.error(t('mediaErr.voice.lost'));
+      await this.teardown(false);
+    } finally {
+      if (this.rejoinGen === gen) this.rejoinRoomId = null;
     }
-    toast.error(t('mediaErr.voice.lost'));
-    await this.teardown(false);
   }
+
+  /** The room a running rejoin loop is trying to get back into (a move may redirect it). */
+  private rejoinRoomId: string | null = null;
 
   /** User intent: leave voice (also stops a pending rejoin). */
   async leave(sound = true): Promise<void> {
     this.rejoinGen++;
+    // A stopped rejoin loop only clears this when it is still the current one: a user intent
+    // must forget it at once, or a later VOICE_MOVED would pull the user back into voice.
+    this.rejoinRoomId = null;
+    this.moveIntent = null;
     this.intentSeq++;
     await this.teardown(sound);
   }
@@ -527,9 +635,11 @@ class VoiceEngine {
     // A new stream appears: show it in the PiP tile unless the user already watches another one.
     const fresh = streams.find((s) => !st.streams.some((o) => o.trackSid === s.trackSid));
     if (!watching && fresh) watching = fresh.trackSid;
-    // The watched stream ended: back to the chat — unless cameras keep the video stage busy.
-    const keep = watching || (st.stage !== 'pip' && this.anyCamera());
-    setVoice({ streams, ...(watching !== st.watching ? { watching, stage: keep ? (st.stage === 'popout' && !watching ? 'expanded' : st.stage) : 'pip' } : {}) });
+    // Starting to watch (nothing watched before): the room's remembered layout, else expanded when
+    // the chat is (nearly) empty — a lone PiP over an empty room looks lost (docs/09 #56). The
+    // watched stream ended: back to the chat, unless cameras keep the video stage busy.
+    const stage = !watching ? (st.stage !== 'pip' && this.anyCamera() ? 'expanded' : 'pip') : st.watching ? st.stage : defaultStage(st.roomId);
+    setVoice({ streams, ...(watching !== st.watching ? { watching, stage } : {}) });
     this.applyWatching();
   }
 
@@ -560,6 +670,9 @@ class VoiceEngine {
 
   /** PiP ↔ expanded ↔ pop-out (the preview strip exists only while expanded). */
   setStage(stage: 'pip' | 'expanded' | 'popout'): void {
+    const roomId = useVoice.getState().roomId;
+    // The user's choice is remembered per room (the pop-out is a transient window, not a layout).
+    if (roomId && stage !== 'popout') usePrefs.getState().setPrefs({ streamStage: { ...usePrefs.getState().streamStage, [roomId]: stage } });
     setVoice({ stage });
     this.applyWatching();
   }
@@ -1086,11 +1199,81 @@ class VoiceEngine {
   // ------------------------------------------------------------ mute / deafen
 
   /**
-   * Gateway VOICE_MOVED for this user. LiveKit keeps the connection (RoomEvent.Moved); we only
-   * switch our room id. If this device is not the one LiveKit moved (or Moved never comes),
+   * Gateway VOICE_MOVED for this user (ADR-0019). With a token (open-source LiveKit, app-level
+   * move) this device reconnects to the target room with it; returns true when it does (the UI
+   * then follows to the target). Without a token the SFU moved us (see onSfuMoved).
+   */
+  onMoved(ev: Pick<VoiceMoved, 'workspaceId' | 'fromRoomId' | 'toRoomId' | 'byUserId' | 'url' | 'token' | 'sessionId' | 'identity'>): boolean {
+    if (!ev.token || !ev.url) {
+      this.onSfuMoved(ev.fromRoomId, ev.toRoomId, ev.workspaceId);
+      return false;
+    }
+    // One event per moved device: the others of this user ignore it. session_id is the auth
+    // session (the LiveKit identity is `<user_id>:<session_id>`); the identity double-checks it.
+    const mySession = useSession.getState().sessionId;
+    if (ev.sessionId && mySession && ev.sessionId !== mySession) return false;
+    const myIdentity = this.room?.localParticipant.identity;
+    if (ev.identity && myIdentity && ev.identity !== myIdentity) return false;
+    if (ev.fromRoomId === ev.toRoomId || ev.token === this.lastMoveToken) return false; // duplicate
+    // Already connected to the target (a duplicate after the reconnect, or an SFU move): nothing to do.
+    if (this.room?.name && this.room.name.endsWith(ev.toRoomId) && this.roomId === ev.toRoomId) return false;
+    // A live rejoin loop for the source room (user intents clear rejoinRoomId), possibly still
+    // tearing the dropped room down.
+    const rejoining = this.rejoinRoomId === ev.fromRoomId && (this.roomId === null || this.roomId === ev.fromRoomId);
+    // A previous move to our source room is still under way (its teardown of the old room may
+    // take a network round trip) and no user intent came after it: the newer move wins.
+    const chained = this.moveIntent !== null && this.moveIntent.seq === this.intentSeq && this.moveIntent.to === ev.fromRoomId;
+    // In the source room (connected or still connecting), or the SFU-path event came first and
+    // optimistically switched our room id to the target.
+    const inSource = this.roomId === ev.fromRoomId || (this.moveTimer !== null && this.roomId === ev.toRoomId);
+    if (!inSource && !rejoining && !chained) return false;
+    // A teardown in flight is a user's leave or switch (newer intent than the move): it wins.
+    if (this.teardownRun && !rejoining && !chained) return false;
+    this.lastMoveToken = ev.token;
+    const wasStreaming = useVoice.getState().myStream !== null;
+    // App-level move: the camera ends with the old connection and is not turned on again by
+    // itself in the target room (its camera_limit / VIDEO apply; review L6) — the toast says so.
+    const wasCamera = useVoice.getState().camera === 'on';
+    const serverMuted = useVoice.getState().serverMuted;
+    log.info('voice: moved by a moderator, reconnecting to the target room');
+    playSound('moved');
+    this.announceMove(ev, wasStreaming, wasCamera);
+    // Like a join: the latest intent, stops a pending rejoin. mute / deafen / PTT stay in the
+    // voice store (teardown keeps them) and are applied to the new mic; the stream is not
+    // restored (docs/05: requested again by the user).
+    this.rejoinGen++;
+    this.rejoinRoomId = null;
+    this.clearMoveTimer();
+    if (this.roomId === ev.toRoomId) this.roomId = ev.fromRoomId; // let connect() see a change
+    void this.connect(ev.toRoomId, ev.workspaceId, false, { url: ev.url, token: ev.token, serverMuted });
+    // connect() took its intent token synchronously: a later join/leave bumps it.
+    this.moveIntent = { seq: this.intentSeq, to: ev.toRoomId };
+    return true;
+  }
+
+  /** The app-level move in progress (its connect's intent token and target room). */
+  private moveIntent: { seq: number; to: string } | null = null;
+
+  /** Token of the last app-level move acted upon (duplicate events are ignored). */
+  private lastMoveToken = '';
+
+  private announceMove(ev: Pick<VoiceMoved, 'workspaceId' | 'toRoomId' | 'byUserId'>, wasStreaming: boolean, wasCamera = false): void {
+    const room = useRooms.getState().byId[ev.toRoomId]?.name ?? '';
+    const me = useSession.getState().me?.user?.id ?? '';
+    const ws = useWorkspaces.getState();
+    const known = ev.byUserId !== '' && ev.byUserId !== me && (ws.byId[ev.workspaceId]?.members[ev.byUserId] !== undefined || ws.users[ev.byUserId] !== undefined);
+    const by = known ? memberName(ev.workspaceId, ev.byUserId) : '';
+    const text = by ? t('mediaErr.voice.movedBy', { name: by, room }) : t('mediaErr.voice.moved', { room });
+    const withStream = wasStreaming ? t('mediaErr.voice.movedStream', { text }) : text;
+    toast.info(wasCamera ? t('video.movedOff', { text: withStream }) : withStream);
+  }
+
+  /**
+   * SFU move (LiveKit Cloud MoveParticipant): LiveKit keeps the connection (RoomEvent.Moved); we
+   * only switch our room id. If this device is not the one LiveKit moved (or Moved never comes),
    * rejoin the target room cleanly after a grace period.
    */
-  onMoved(fromRoomId: string, toRoomId: string, workspaceId: string): void {
+  private onSfuMoved(fromRoomId: string, toRoomId: string, workspaceId: string): void {
     if (!this.room || this.roomId !== fromRoomId || fromRoomId === toRoomId) return;
     this.roomId = toRoomId;
     setVoice({ roomId: toRoomId, workspaceId });

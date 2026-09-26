@@ -7,11 +7,12 @@ import { Badge, IconButton, Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
+import { useMessages } from '../../stores/messages';
 import { useVoice, type RemoteStream, type StreamQuality } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
 import { CameraGrid, CameraPip, CameraStripTile, useAnyCamera, useStripCameras } from './CameraTiles';
-import { pipSize, qualityOptions } from './streamFormat';
+import { PIP_SHADOW, WELCOME_ROW, pipSize, qualityOptions } from './streamFormat';
 
 /**
  * <video> bound to a remote stream track. Its on-screen size drives adaptive stream (layer choice).
@@ -183,7 +184,14 @@ function Pip({ stream, others, wsId, box }: { stream: RemoteStream; others: numb
       // Top-right of the message area (docs/08 layout): clear of the composer, the latest
       // messages and the bottom-aligned empty state. The black video background is inline: the
       // (unlayered) .mat-popover material would override a bg utility → light letterbox bars.
-      style={{ top: box.top + PIP_GAP, width: w, height: h, background: 'var(--color-video-bg)' }}
+      // A visible edge + deeper shadow so the tile doesn't float unanchored over an empty feed (#56).
+      style={{
+        top: box.top + PIP_GAP,
+        width: w,
+        height: h,
+        background: 'var(--color-video-bg)',
+        boxShadow: PIP_SHADOW,
+      }}
       aria-label={t('streamView.of', { name })}
       role="region"
     >
@@ -321,7 +329,9 @@ function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: st
   );
 }
 
-function Stage({ stream, streams, wsId, box }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box }): ReactNode {
+
+
+function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box; emptyFeed: boolean }): ReactNode {
   const stage = useVoice((s) => s.stage);
   const frame = useRef<HTMLDivElement>(null);
   const [fullscreen, toggleFullscreen] = useFullscreen(frame);
@@ -335,7 +345,8 @@ function Stage({ stream, streams, wsId, box }: { stream: RemoteStream; streams: 
       aria-label={t('streamView.of', { name })}
       className="absolute inset-x-0 z-[var(--z-sticky)] flex flex-col gap-2 bg-feed px-3 pb-3 pt-3"
       // Over the message area only: header and composer stay usable.
-      style={{ top: box.top, bottom: 'var(--composer-height)' }}
+      // An empty room keeps its one-row welcome visible under the stage (docs/09 #56).
+      style={{ top: box.top, bottom: emptyFeed ? `calc(var(--composer-height) + ${WELCOME_ROW}px)` : 'var(--composer-height)' }}
     >
       <div
         ref={frame}
@@ -453,12 +464,18 @@ export function StreamArea(): ReactNode {
   const box = useMessageBox(anchor);
   const current = streams.find((s) => s.trackSid === watching);
   const name = useMemberName(wsId, current?.userId ?? '');
+  const roomId = useVoice((s) => s.roomId);
+  const emptyFeed = useMessages((s) => {
+    const r = roomId ? s.rooms[roomId] : undefined;
+    return !!r && r.loaded && r.items.length === 0 && !r.hasMoreBefore && !r.hasMoreAfter;
+  });
   const anyCamera = useAnyCamera();
   const videoPip = useVoice((s) => s.videoPip);
 
   let view: ReactNode = null;
-  if (current) view = stage === 'pip' ? <Pip stream={current} others={streams.length - 1} wsId={wsId} box={box} /> : <Stage stream={current} streams={streams} wsId={wsId} box={box} />;
-  else if (anyCamera && stage !== 'pip') view = <CameraGrid box={box} wsId={wsId} top={<LiveChips streams={streams} wsId={wsId} />} />;
+  if (current)
+    view = stage === 'pip' ? <Pip stream={current} others={streams.length - 1} wsId={wsId} box={box} /> : <Stage stream={current} streams={streams} wsId={wsId} box={box} emptyFeed={emptyFeed} />;
+  else if (anyCamera && stage !== 'pip') view = <CameraGrid box={box} wsId={wsId} emptyFeed={emptyFeed} top={<LiveChips streams={streams} wsId={wsId} />} />;
   else if (streams.length || anyCamera)
     view = (
       <>

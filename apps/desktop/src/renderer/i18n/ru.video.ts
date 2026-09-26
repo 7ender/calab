@@ -37,6 +37,7 @@ export const ruVideo = {
   'video.stop.moderator': 'Модератор выключил вашу камеру',
   'video.stop.other': 'Камера выключена сервером',
   'video.rejoin': 'Связь восстановлена — включите камеру снова',
+  'video.movedOff': '{text}; камера выключена — включите её снова',
 
   // tiles
   'video.of': 'Камера: {name}',

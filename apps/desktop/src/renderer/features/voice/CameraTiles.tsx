@@ -11,7 +11,7 @@ import { setVoice, useVoice } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import type { Box } from './StreamArea';
-import { pipSize } from './streamFormat';
+import { PIP_SHADOW, WELCOME_ROW, pipSize } from './streamFormat';
 import { layoutTiles, selectTiles, type TilePerson } from './tileLayout';
 
 /*
@@ -215,7 +215,7 @@ const avatarFor = (w: number, h: number): number => Math.round(Math.max(32, Math
  * The call view (stage «expanded» without a watched stream): up to 6 tiles, the active speaker
  * (or the clicked tile) large, avatars for people without a camera, «Ещё N» for the rest.
  */
-export function CameraGrid({ box, wsId, top }: { box: Box; wsId: string | null; top?: ReactNode }): ReactNode {
+export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; wsId: string | null; top?: ReactNode; emptyFeed?: boolean }): ReactNode {
   const people = useRoomPeople(wsId);
   const focused = useVoice((s) => s.focusedTile);
   const active = useVoice((s) => s.activeSpeaker);
@@ -241,7 +241,8 @@ export function CameraGrid({ box, wsId, top }: { box: Box; wsId: string | null; 
       role="region"
       aria-label={t('video.grid')}
       className="absolute inset-x-0 z-[var(--z-sticky)] flex flex-col gap-2 bg-feed px-3 pb-3 pt-3"
-      style={{ top: box.top, bottom: 'var(--composer-height)' }}
+      // Like the stream stage: an empty room keeps its one-row welcome visible underneath (#56).
+      style={{ top: box.top, bottom: emptyFeed ? `calc(var(--composer-height) + ${WELCOME_ROW}px)` : 'var(--composer-height)' }}
     >
       <div className="flex min-h-7 shrink-0 items-center gap-2">
         <div className="min-w-0 flex-1">{top}</div>
@@ -330,7 +331,7 @@ export function CameraPip({ box, wsId }: { box: Box; wsId: string | null }): Rea
       role="region"
       aria-label={t('video.of', { name })}
       className="mat-popover group absolute z-[var(--z-pip)] overflow-hidden rounded-[var(--radius-panel)]"
-      style={{ top: box.top + PIP_GAP, right: PIP_GAP, width: w, height: h, background: 'var(--color-video-bg)' }}
+      style={{ top: box.top + PIP_GAP, right: PIP_GAP, width: w, height: h, background: 'var(--color-video-bg)', boxShadow: PIP_SHADOW }}
     >
       <CameraVideo userId={userId} wsId={wsId} avatarSize={w < 240 ? 32 : 48} />
       <button type="button" className="absolute inset-0 rounded-[var(--radius-panel)]" onClick={() => voice.showVideo()} aria-label={t('video.expand')} />
