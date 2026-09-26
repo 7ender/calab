@@ -15,7 +15,6 @@ import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../sto
 import { useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
 import { viewersText } from '../voice/streamFormat';
-import { CallTimer } from './Sidebar';
 
 const Q_COLOR: Record<LinkQuality, string> = { good: 'text-ok', fair: 'text-warn', poor: 'text-danger', unknown: 'text-muted' };
 /** Lit bars out of 4 per quality (reconnecting reads as «poor»: 1 bar). */
@@ -52,8 +51,8 @@ function QualityButton(): ReactNode {
   if (phase === 'connecting') {
     // «подключение…» (docs/09 #15): a spinner where the signal bars will be.
     return (
-      <span className="grid size-8 shrink-0 place-items-center" role="status" aria-label={t('voice.connecting')}>
-        <Loader2 className="size-[18px] animate-spin text-muted" aria-hidden />
+      <span className="grid size-10 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-fill)]" role="status" aria-label={t('voice.connecting')}>
+        <Loader2 className="size-5 animate-spin text-muted" aria-hidden />
       </span>
     );
   }
@@ -63,13 +62,13 @@ function QualityButton(): ReactNode {
         <button
           type="button"
           aria-label={`${t('quality.title')}: ${t(Q_LABEL[q])}`}
-          className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover"
+          className="grid size-10 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-fill)] transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)]"
         >
-          <SignalBars lit={Q_BARS[q]} className={phase === 'connected' ? Q_COLOR[q] : 'text-warn'} />
+          <SignalBars lit={Q_BARS[q]} className={cx('size-[22px]', phase === 'connected' ? Q_COLOR[q] : 'text-warn')} />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content side="top" align="end" sideOffset={6} collisionPadding={8} aria-label={t('quality.title')} className={cx(popoverBox, 'w-64 p-3')}>
+        <Popover.Content side="top" align="start" sideOffset={6} collisionPadding={8} aria-label={t('quality.title')} className={cx(popoverBox, 'w-64 p-3')}>
           <div className="mb-2 font-semibold">{t('quality.title')}</div>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
             <dt className="text-muted">{t('quality.state')}</dt>
@@ -311,12 +310,12 @@ export function VoiceBar(): ReactNode {
   const micError = useVoice((s) => s.micError);
   const micAction = useVoice((s) => s.micErrorAction);
   const serverMuted = useVoice((s) => s.serverMuted);
-  const activeWs = useUi((s) => s.activeWorkspaceId);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
   const wsName = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.name : undefined));
   const rnnoise = usePrefs((s) => s.rnnoise);
   const devStats = usePrefs((s) => s.devStats);
   const saveTraffic = usePrefs((s) => s.saveTraffic);
+  const collapsed = usePrefs((s) => s.voicePanelCollapsed);
   const anyVideo = useVoice((s) => s.cameras.length > 0 || s.camera === 'on');
   const stage = useVoice((s) => s.stage);
   const videoPip = useVoice((s) => s.videoPip);
@@ -328,26 +327,33 @@ export function VoiceBar(): ReactNode {
   const full = t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
   // The workspace name only when the call is in another workspace than the one on screen (it
   // otherwise just truncated the room name); the full path is always in the tooltip.
-  const where = wsName && wsId !== activeWs ? full : (room?.name ?? '');
   const goRoom = (): void => {
     if (wsId) openRoom(wsId, roomId);
   };
 
   return (
     <div className="shrink-0 px-2 pb-2 pt-1.5" role="region" aria-label={t('voice.panel')}>
-      <div className="flex items-center gap-1">
-        <div className="min-w-0 flex-1 pl-1" aria-live="polite">
-          <div className={cx('truncate text-[13px] font-semibold leading-4', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            <button type="button" className="block min-w-0 truncate text-left text-[12px] leading-4 text-muted hover:text-fg hover:underline" onClick={goRoom} title={full}>
-              {where}
-            </button>
-            {/* The call timer lives here too: in the room list it gives way to the row actions. */}
-            <CallTimer roomId={roomId} className="shrink-0 text-muted" />
-          </div>
-        </div>
-        {/* Signal (4 bars) and the red hang-up at the top right (Discord reference). */}
+      {/* Header (Discord): signal in a 40 px square (click = connection details), «Голос
+          подключён» 15 px + «Комната / Пространство» 13 px, then collapse and the red hang-up. */}
+      <div className="flex items-center gap-2">
         <QualityButton />
+        <div className="min-w-0 flex-1" aria-live="polite">
+          <div className={cx('truncate text-[15px] font-semibold leading-5', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
+          <button type="button" className="block max-w-full truncate text-left text-[13px] leading-[18px] text-muted hover:text-fg hover:underline" onClick={goRoom} title={full}>
+            {full}
+          </button>
+        </div>
+        <Tip label={collapsed ? t('voiceUi.expandPanel') : t('voiceUi.collapsePanel')}>
+          <button
+            type="button"
+            aria-label={collapsed ? t('voiceUi.expandPanel') : t('voiceUi.collapsePanel')}
+            aria-expanded={!collapsed}
+            onClick={() => setPrefs({ voicePanelCollapsed: !collapsed })}
+            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+          >
+            <ChevronDown className={cx('size-5 transition-transform duration-[var(--motion-fast)]', collapsed && 'rotate-180')} aria-hidden />
+          </button>
+        </Tip>
         <Tip label={t('voice.leave')}>
           <button
             type="button"
@@ -369,8 +375,8 @@ export function VoiceBar(): ReactNode {
         </div>
       ) : null}
 
-      {/* Discord: four 36 px buttons 10 px apart across the island. */}
-      <div className="mt-2 grid grid-cols-4 gap-2.5">
+      {/* Discord: four 36 px buttons 10 px apart across the island (hidden while collapsed). */}
+      <div className={cx('mt-2 grid-cols-4 gap-2.5', collapsed ? 'hidden' : 'grid')}>
         <CameraButton roomId={roomId} />
         {myStream ? (
           <PanelButton label={t('shell.stopShare')} active onClick={() => void voice.stopStream()}>

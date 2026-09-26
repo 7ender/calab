@@ -62,6 +62,8 @@ export const ruVideo = {
   'video.saveTraffic': 'Экономить трафик',
   'video.saveTrafficHint': 'Принимать только видео говорящего, не выше 360p',
   'video.card': 'Камера',
+  'voiceUi.collapsePanel': 'Свернуть панель',
+  'voiceUi.expandPanel': 'Развернуть панель',
   'video.deviceHint': 'Меняется сразу, даже во время звонка',
 
   // room / workspace settings, permissions
