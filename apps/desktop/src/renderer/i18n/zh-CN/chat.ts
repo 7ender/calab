@@ -1,0 +1,120 @@
+import type { enChat } from '../en/chat';
+import type { DictShape } from '../types';
+
+/**
+ * Simplified Chinese UI strings — chat area (ADR-0022). Same keys as en/chat.ts; short product
+ * wording (Discord/飞书 style), full-width punctuation, no space between characters and digits.
+ */
+export const zhChat: DictShape<typeof enChat> = {
+  // feed
+  'chat.today': '今天',
+  'chat.yesterday': '昨天',
+  'chat.newPill': '新消息',
+  'chat.editedShort': '已编辑',
+  'chat.statusPending': '发送中',
+  'chat.statusSent': '已发送',
+  'chat.statusDelivered': '已送达',
+  'chat.attachment': '附件',
+  'chat.openImage': '打开图片"{name}"',
+  'chat.reactionLabel': '表情回应 {emoji}：{count}',
+  'chat.replyOpen': '显示原消息',
+  'chat.messageGone': '消息已删除或不可用',
+  'chat.historyStart': '房间历史记录开始',
+  // plural keys: zh only uses the "other" category
+  'chat.unreadBanner': { other: '{time}以来有{n}条新消息' },
+  'chat.markRead': '标为已读',
+  'chat.toBottomUnread': '跳至最新，未读{n}条',
+  // empty room
+  'chat.welcomeTitle': '欢迎来到 #{name}',
+  'chat.welcomeVoiceTitle': '这是"{name}"的开始',
+  'chat.welcomeText': '这是房间的开始。邀请你的团队，或按需设置房间。',
+  'chat.welcomeVoice': '通话期间也可以在这里聊天。',
+  'chat.invite': '邀请',
+  'chat.setup': '设置',
+  // context menu
+  'chat.menu': '消息操作',
+  'chat.react': '表情回应',
+  'chat.pin': '置顶',
+  'chat.unpin': '取消置顶',
+  // hover action bar (docs/09 #47)
+  'chat.actions': '操作',
+  'chat.reactWith': '回应{emoji}',
+  'chat.addReaction': '添加表情回应',
+  'chat.more': '更多…',
+  // link previews (docs/09 #51)
+  'chat.embedHide': '隐藏预览',
+  'chat.embedShow': '显示预览',
+  'chat.embedHideFailed': '预览隐藏失败',
+  'chat.embedShowFailed': '预览显示失败',
+  // composer
+  'chat.placeholderIn': '发消息到{room}',
+  'chat.attachImage': '图片',
+  'chat.attachFile': '文件',
+  'chat.removeAttachment': '移除"{name}"',
+  'chat.editing': '编辑中',
+  'chat.replyTo': '回复{name}',
+  'chat.emoji': '表情',
+  'chat.emojiSearch': '搜索表情',
+  'chat.emojiRecent': '最近使用',
+  'chat.emojiFound': '搜索结果',
+  'chat.emojiNone': '未找到相关内容',
+  'chat.emojiGroups': '表情分类',
+  // header
+  'chat.topic': '显示房间简介',
+  'chat.typing1': '{name}正在输入',
+  'chat.typing2': '{a}和{b}正在输入',
+  'chat.typingN': { other: '{n}人正在输入' },
+  'chat.pinned': '置顶消息',
+  'chat.pinnedOne': '置顶消息',
+  'chat.pinnedN': '置顶消息 {n}/{total}',
+  'chat.noPins': '暂无置顶消息',
+  // room notifications (bell menu)
+  'chat.notify': '通知',
+  'chat.notifyState': '通知：{state}',
+  'chat.notifyAll': '所有消息',
+  'chat.notifyMentions': '仅提及',
+  'chat.notifyNone': '不通知',
+  'chat.notifyMute': '静音…',
+  'chat.notifyMute15m': '15分钟',
+  'chat.notifyMute1h': '1小时',
+  'chat.notifyMute8h': '8小时',
+  'chat.notifyMute24h': '24小时',
+  'chat.notifyMuteForever': '直到我重新开启',
+  'chat.notifyMutedUntil': '已静音至{time}',
+  'chat.notifyUnmute': '取消静音通知',
+  'chat.notifyFailed': '通知设置保存失败',
+  // mentions
+  'chat.mentionUnknown': '未知用户',
+  'chat.mentionEveryone': '通知房间内所有人',
+  'chat.mentionHere': '通知所有在线成员',
+  'chat.mentionGuest': '访客',
+  'chat.mentionList': '提及',
+  // mentions inbox (title bar)
+  'chat.inboxLoadMore': '显示更多',
+  'chat.inboxUnread': '未读',
+  // search in room
+  'chat.searchInRoom': '在{room}中搜索',
+  'chat.searchPlaceholder': '在此房间中搜索',
+  'chat.searchCount': '{n}/{total}',
+  'chat.searchNone': '无结果',
+  'chat.searchOlder': '上一个匹配项',
+  'chat.searchNewer': '下一个匹配项',
+  'chat.searchClose': '关闭搜索',
+  // header search field (docs/09 #50): the entry to the ⌘K search
+  'chat.searchWorkspace': '搜索{name}',
+  // global search (⌘K)
+  'search.title': '搜索',
+  'search.hint': '房间、成员和消息；方向键选择，回车打开',
+  'search.placeholder': '查找房间、用户或消息',
+  'search.rooms': '房间',
+  'search.members': '成员',
+  'search.messages': '消息',
+  'search.from': '来自：{name}',
+  'search.clearFrom': '清除作者筛选',
+  'search.searching': '搜索中…',
+  'search.empty': '未找到相关内容',
+  'search.memberHint': '该成员发送的消息',
+  // lightbox
+  'lightbox.close': '关闭',
+  'lightbox.download': '下载',
+} as const;
