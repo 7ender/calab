@@ -3,8 +3,10 @@
 package rtc
 
 import (
+	"cmp"
 	"context"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -71,7 +73,12 @@ func testService(t *testing.T, lk LiveKit) (*Service, rueidis.Client) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opt.SelectDB = 14
+	// Own logical DB (default 14; internal/app's runs never lease it, see TEST_RTC_REDIS_DB there).
+	db, err := strconv.Atoi(cmp.Or(os.Getenv("TEST_RTC_REDIS_DB"), "14"))
+	if err != nil {
+		t.Fatalf("TEST_RTC_REDIS_DB: %v", err)
+	}
+	opt.SelectDB = db
 	rc, err := rueidis.NewClient(opt)
 	if err != nil {
 		t.Fatal(err)

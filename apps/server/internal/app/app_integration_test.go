@@ -72,7 +72,8 @@ func run(m *testing.M) int {
 	if !testing.Verbose() {
 		slog.SetDefault(slog.New(slog.DiscardHandler))
 	}
-	adminURL := env("TEST_DATABASE_URL", "postgres://calaba:calaba@localhost:55432/calaba")
+	// Admin connection only: every run creates and drops its own database calaba_it_<random>.
+	adminURL := env("TEST_PG_URL", env("TEST_DATABASE_URL", "postgres://calaba:calaba@localhost:55432/calaba"))
 	admin, err := pgx.Connect(ctx, adminURL)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "integration: postgres unavailable:", err)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,16 +36,35 @@ const (
 	leaseWait  = 10 * time.Minute // a whole run of the package takes ~1.5 min
 )
 
-// leaseCandidates: the DB of TEST_REDIS_URL first (15 by default, as before), then 13..1.
-// 0 is the dev server's DB, 14 belongs to internal/rtc's tests.
-func leaseCandidates(preferred int) []int {
+// leaseCandidates: the DB of TEST_REDIS_URL first (15 by default, as before), then 15..1
+// except 0 (the dev server's DB) and TEST_RTC_REDIS_DB (internal/rtc's tests, default 14).
+func leaseCandidates(preferred, rtcDB int) []int {
 	out := []int{preferred}
-	for n := 13; n >= 1; n-- {
-		if n != preferred {
+	for n := 15; n >= 1; n-- {
+		if n != preferred && n != rtcDB {
 			out = append(out, n)
 		}
 	}
 	return out
+}
+
+// dbInUse reports whether a client other than lc (DB 0) is connected to logical DB n: a run
+// that does not lease (a binary built before leasing, another checkout with its own harness)
+// must not be flushed under its feet.
+func dbInUse(ctx context.Context, lc rueidis.Client, n int) (bool, error) {
+	list, err := lc.Do(ctx, lc.B().ClientList().Build()).ToString()
+	if err != nil {
+		return false, err
+	}
+	want := "db=" + strconv.Itoa(n)
+	for _, line := range strings.Split(list, "\n") {
+		for _, f := range strings.Fields(line) {
+			if f == want {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // leaseRedisDB returns TEST_REDIS_URL rewritten to a logical DB leased for this process and a
@@ -53,6 +73,10 @@ func leaseRedisDB(ctx context.Context, base string) (string, func(), error) {
 	u, err := url.Parse(base)
 	if err != nil {
 		return "", nil, fmt.Errorf("TEST_REDIS_URL: %w", err)
+	}
+	rtcDB, err := strconv.Atoi(env("TEST_RTC_REDIS_DB", "14"))
+	if err != nil {
+		return "", nil, fmt.Errorf("TEST_RTC_REDIS_DB: %w", err)
 	}
 	preferred := 15
 	if p := strings.Trim(u.Path, "/"); p != "" {
@@ -75,7 +99,7 @@ func leaseRedisDB(ctx context.Context, base string) (string, func(), error) {
 
 	deadline := time.Now().Add(leaseWait)
 	for {
-		for _, n := range leaseCandidates(preferred) {
+		for _, n := range leaseCandidates(preferred, rtcDB) {
 			ok, err := lc.Do(ctx, lc.B().Set().Key(key(n)).Value(token).Nx().Ex(leaseTTL).Build()).AsBool()
 			if rueidis.IsRedisNil(err) {
 				continue // held by another run
@@ -85,6 +109,13 @@ func leaseRedisDB(ctx context.Context, base string) (string, func(), error) {
 				return "", nil, fmt.Errorf("lease redis db: %w", err)
 			}
 			if !ok {
+				continue
+			}
+			if busy, err := dbInUse(ctx, lc, n); err != nil || busy {
+				_ = lc.Do(ctx, lc.B().Del().Key(key(n)).Build()).Error()
+				if busy {
+					fmt.Fprintf(os.Stderr, "integration: redis db %d is used by a client that holds no lease — skipping it\n", n)
+				}
 				continue
 			}
 			// heartbeat: keep the lease while the run lasts (not tied to ctx's cancellation)
