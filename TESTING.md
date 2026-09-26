@@ -1589,7 +1589,7 @@ Dev-инфраструктура (`compose.dev`) общая. Что делят �
 - **Postgres** не мешает: каждый прогон создаёт свою временную базу `calaba_it_<random>`. Отдельная admin-база нужна только для порядка.
 - **LiveKit** не мешает: комнаты тестов называются по UUID workspace/room.
 
-Правило: у каждого дерева свои номера DB. Основное дерево — 15/14 (по умолчанию). Worktree — свои, например:
+Правило: у каждого дерева свои номера DB. Основное дерево — 15/14 (по умолчанию). Worktree — свои: `make test-integration TEST_REDIS_DB=12 TEST_RTC_REDIS_DB=11`, или полностью, например:
 ```sh
 docker exec calaba-dev-postgres-1 createdb -U calaba calaba_test_webcam   # один раз
 make test-integration TEST_REDIS_URL=redis://localhost:56379/12 TEST_RTC_REDIS_DB=11 \
