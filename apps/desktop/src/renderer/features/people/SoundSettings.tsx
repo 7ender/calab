@@ -5,6 +5,7 @@ import { t, type MessageKey } from '../../i18n';
 import type { OpenChatSound } from '../../lib/chatSound';
 import { playSound, type SoundName } from '../../lib/sounds';
 import { usePrefs } from '../../stores/prefs';
+import { useUi } from '../../stores/ui';
 
 const LABEL: Record<SoundName, MessageKey> = {
   join: 'sounds.join',
@@ -29,6 +30,22 @@ export const GROUPS: Array<{ title: MessageKey; names: SoundName[] }> = [
   { title: 'sounds.groupMic', names: ['mute', 'unmute', 'deafen', 'undeafen', 'pttOn', 'pttOff'] },
   { title: 'sounds.groupChat', names: ['mention', 'message'] },
 ];
+
+/**
+ * «Новое сообщение» plays only where it is wanted (docs/09 item 22); the link opens the open
+ * room's notification menu.
+ */
+function MessageSoundHint(): ReactNode {
+  const request = useUi((s) => s.requestNotifyMenu);
+  return (
+    <>
+      {t('sounds.messageHint')}{' '}
+      <button type="button" className="text-accent hover:underline" onClick={request}>
+        {t('sounds.messageHintLink')}
+      </button>
+    </>
+  );
+}
 
 /**
  * Settings → Уведомления → Звуки (docs/09 #29): master switch («отключить все»), volume, and
@@ -64,7 +81,7 @@ export function SoundSettings(): ReactNode {
           {g.names.map((name) => {
             const label = t(LABEL[name]);
             return (
-              <Row key={name} label={label}>
+              <Row key={name} label={label} hint={name === 'message' ? <MessageSoundHint /> : undefined}>
                 <IconButton size="sm" label={t('sounds.play', { name: label })} onClick={() => playSound(name, { force: true })}>
                   <Play className="size-3.5" aria-hidden />
                 </IconButton>

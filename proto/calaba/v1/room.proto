@@ -65,16 +65,19 @@ message Room {
   string voice_status = 17;
 }
 
-// Per-user notification level of a room. UNSPECIFIED means the default, ALL.
+// Per-user notification level of a room or a workspace (docs/05 «Уведомления»). UNSPECIFIED
+// means the default: INHERIT for a room, MENTIONS for a workspace. The effective level of a
+// room is its own level unless INHERIT, else its workspace's; a DM notifies like a mention.
 enum NotificationLevel {
   NOTIFICATION_LEVEL_UNSPECIFIED = 0;
   NOTIFICATION_LEVEL_ALL = 1;      // every message
   NOTIFICATION_LEVEL_MENTIONS = 2; // only messages mentioning the user (@<user_id>, @everyone, @here)
   NOTIFICATION_LEVEL_NONE = 3;     // nothing
+  NOTIFICATION_LEVEL_INHERIT = 4;  // rooms only: follow the workspace level (the room default)
 }
 
 // The caller's notification settings for one room. Rooms without a stored row use the
-// default (ALL, not muted). Sent in READY (notification_settings) and ROOM_NOTIFICATION_UPDATE.
+// default (INHERIT, not muted). Sent in READY (notification_settings) and ROOM_NOTIFICATION_UPDATE.
 message RoomNotificationSettings {
   string room_id = 1;
   NotificationLevel level = 2;
@@ -82,7 +85,7 @@ message RoomNotificationSettings {
 }
 
 // PUT /api/rooms/{id}/notifications (VIEW_ROOM). Replaces the caller's settings for the
-// room; level ALL (or UNSPECIFIED) without muted_until resets to the default.
+// room; level INHERIT (or UNSPECIFIED) without muted_until resets to the default.
 message UpdateRoomNotificationSettingsRequest {
   NotificationLevel level = 1;
   google.protobuf.Timestamp muted_until = 2; // at most 1 year ahead
@@ -90,6 +93,28 @@ message UpdateRoomNotificationSettingsRequest {
 
 message UpdateRoomNotificationSettingsResponse {
   RoomNotificationSettings settings = 1;
+}
+
+// The caller's notification settings for one workspace: the level of its rooms left at
+// INHERIT, and a mute of the whole workspace (its rooms stay silent whatever their level).
+// Workspaces without a stored row use the default (MENTIONS, not muted). Sent in READY
+// (workspace_notification_settings) and WORKSPACE_NOTIFICATION_UPDATE.
+message WorkspaceNotificationSettings {
+  string workspace_id = 1;
+  NotificationLevel level = 2; // ALL | MENTIONS | NONE
+  google.protobuf.Timestamp muted_until = 3; // unset = not muted; in the past = no longer muted
+}
+
+// PUT /api/workspaces/{id}/notifications (member). Replaces the caller's settings for the
+// workspace; level MENTIONS (or UNSPECIFIED) without muted_until resets to the default.
+// INHERIT is rejected (422).
+message UpdateWorkspaceNotificationSettingsRequest {
+  NotificationLevel level = 1;
+  google.protobuf.Timestamp muted_until = 2; // at most 1 year ahead
+}
+
+message UpdateWorkspaceNotificationSettingsResponse {
+  WorkspaceNotificationSettings settings = 1;
 }
 
 // Room category (a collapsible group in the room list). Visible to all members; clients

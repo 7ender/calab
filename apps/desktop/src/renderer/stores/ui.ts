@@ -59,6 +59,12 @@ interface UiState {
   /** «Скрыть заглушённые» (docs/09 P1 #19): muted rooms leave the sidebar (open/voice room stays), persisted. */
   hideMuted: boolean;
   setHideMuted: (v: boolean) => void;
+  /**
+   * «Где настроить» (Settings → Звуки, docs/09 item 22): closes the dialog and asks the open
+   * room's bell to open its notification menu (a counter the bell watches); not persisted.
+   */
+  notifyMenuReq: number;
+  requestNotifyMenu: () => void;
 }
 
 /** Window width from which the members list is a column instead of a floating panel (docs/08: chat keeps ≥ ~600 px). */
@@ -84,6 +90,8 @@ export const useUi = create<UiState>()(
       collapsed: {},
       hideMuted: false,
       setHideMuted: (hideMuted) => set({ hideMuted }),
+      notifyMenuReq: 0,
+      requestNotifyMenu: () => set((s) => ({ dialog: null, notifyMenuReq: s.notifyMenuReq + 1 })),
       setWorkspace: (id) =>
         set((s) => ({
           activeWorkspaceId: id,

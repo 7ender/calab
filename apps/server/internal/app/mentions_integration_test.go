@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -104,13 +105,78 @@ func TestRoomNotificationSettings(t *testing.T) {
 	var pr v1.CreateRoomResponse
 	o.must(201, "POST", "/api/workspaces/"+ws.GetId()+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "private", IsPrivate: true}, &pr)
 	bob.must(404, "PUT", "/api/rooms/"+pr.GetRoom().GetId()+"/notifications", &v1.UpdateRoomNotificationSettingsRequest{}, nil)
-	// Back to the default: the row is gone.
+	// An explicit ALL is stored (the default is INHERIT now, docs/09 item 22).
 	bob.must(200, "PUT", "/api/rooms/"+rid+"/notifications", &v1.UpdateRoomNotificationSettingsRequest{Level: v1.NotificationLevel_NOTIFICATION_LEVEL_ALL}, &resp)
 	if resp.GetSettings().GetLevel() != v1.NotificationLevel_NOTIFICATION_LEVEL_ALL || resp.GetSettings().GetMutedUntil() != nil {
+		t.Fatalf("ALL response: %v", resp.GetSettings())
+	}
+	if ns := dialGW(t).identify(bob.token).GetNotificationSettings(); len(ns) != 1 || ns[0].GetLevel() != v1.NotificationLevel_NOTIFICATION_LEVEL_ALL {
+		t.Fatalf("explicit ALL not stored: %v", ns)
+	}
+	// Back to the default (UNSPECIFIED = INHERIT): the row is gone.
+	bob.must(200, "PUT", "/api/rooms/"+rid+"/notifications", &v1.UpdateRoomNotificationSettingsRequest{}, &resp)
+	if resp.GetSettings().GetLevel() != v1.NotificationLevel_NOTIFICATION_LEVEL_INHERIT || resp.GetSettings().GetMutedUntil() != nil {
 		t.Fatalf("reset response: %v", resp.GetSettings())
 	}
 	if n := len(dialGW(t).identify(bob.token).GetNotificationSettings()); n != 0 {
 		t.Fatal("default settings still stored")
+	}
+}
+
+// Workspace level (docs/09 item 22): default MENTIONS as no row, stored levels and mutes,
+// WORKSPACE_NOTIFICATION_UPDATE to the user's own devices only, READY, validation, access.
+func TestWorkspaceNotificationSettings(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	g := dialGW(t)
+	if n := len(g.identify(bob.token).GetWorkspaceNotificationSettings()); n != 0 {
+		t.Fatalf("READY has %d workspace settings by default", n)
+	}
+	og := dialGW(t)
+	og.identify(o.token)
+	until := time.Now().Add(8 * time.Hour).Truncate(time.Second)
+	var resp v1.UpdateWorkspaceNotificationSettingsResponse
+	bob.must(200, "PUT", "/api/workspaces/"+wid+"/notifications", &v1.UpdateWorkspaceNotificationSettingsRequest{
+		Level: v1.NotificationLevel_NOTIFICATION_LEVEL_ALL, MutedUntil: timestamppb.New(until),
+	}, &resp)
+	s := resp.GetSettings()
+	if s.GetWorkspaceId() != wid || s.GetLevel() != v1.NotificationLevel_NOTIFICATION_LEVEL_ALL || !s.GetMutedUntil().AsTime().Equal(until) {
+		t.Fatalf("response: %v", s)
+	}
+	g.wait("WORKSPACE_NOTIFICATION_UPDATE", func(e *v1.DispatchEvent) bool {
+		s := e.GetWorkspaceNotificationUpdate().GetSettings()
+		return s.GetWorkspaceId() == wid && s.GetLevel() == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL
+	})
+	// The owner's devices hear only about the owner's own change.
+	o.must(200, "PUT", "/api/workspaces/"+wid+"/notifications", &v1.UpdateWorkspaceNotificationSettingsRequest{Level: v1.NotificationLevel_NOTIFICATION_LEVEL_NONE}, nil)
+	og.wait("WORKSPACE_NOTIFICATION_UPDATE (owner)", func(e *v1.DispatchEvent) bool {
+		u := e.GetWorkspaceNotificationUpdate()
+		if u != nil && u.GetSettings().GetLevel() != v1.NotificationLevel_NOTIFICATION_LEVEL_NONE {
+			t.Fatalf("bob's settings leaked to the owner: %v", u)
+		}
+		return u != nil
+	})
+	wns := dialGW(t).identify(bob.token).GetWorkspaceNotificationSettings()
+	if len(wns) != 1 || wns[0].GetWorkspaceId() != wid || !wns[0].GetMutedUntil().AsTime().Equal(until) {
+		t.Fatalf("READY workspace settings: %v", wns)
+	}
+	// Validation: INHERIT has nothing to inherit from; unknown levels; mutes over a year.
+	put := func(status int, req *v1.UpdateWorkspaceNotificationSettingsRequest) {
+		t.Helper()
+		bob.must(status, "PUT", "/api/workspaces/"+wid+"/notifications", req, nil)
+	}
+	put(422, &v1.UpdateWorkspaceNotificationSettingsRequest{Level: v1.NotificationLevel_NOTIFICATION_LEVEL_INHERIT})
+	put(422, &v1.UpdateWorkspaceNotificationSettingsRequest{Level: 42})
+	put(422, &v1.UpdateWorkspaceNotificationSettingsRequest{MutedUntil: timestamppb.New(time.Now().Add(2 * 365 * 24 * time.Hour))})
+	// Not a member: 404.
+	bob.must(404, "PUT", "/api/workspaces/"+uuid.NewString()+"/notifications", &v1.UpdateWorkspaceNotificationSettingsRequest{}, nil)
+	// Back to the default (MENTIONS, not muted): the row is gone.
+	bob.must(200, "PUT", "/api/workspaces/"+wid+"/notifications", &v1.UpdateWorkspaceNotificationSettingsRequest{Level: v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS}, &resp)
+	if resp.GetSettings().GetLevel() != v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS || resp.GetSettings().GetMutedUntil() != nil {
+		t.Fatalf("reset response: %v", resp.GetSettings())
+	}
+	if n := len(dialGW(t).identify(bob.token).GetWorkspaceNotificationSettings()); n != 0 {
+		t.Fatal("default workspace settings still stored")
 	}
 }
 

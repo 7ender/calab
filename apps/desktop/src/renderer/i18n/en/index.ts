@@ -341,6 +341,7 @@ export const en: Dict = {
   'notify.mentions': 'Notify me about mentions',
   'notify.mentionsHint': 'When someone @mentions you and the window isn’t focused',
   'notify.all': 'Notify me about all messages',
+  'notify.allHint': 'In rooms and workspaces set to “All messages”',
   'notify.voiceSounds': 'Join, leave and mic sounds',
   'notify.test': 'Test notification',
   'notify.testBody': 'Notifications are working',

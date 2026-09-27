@@ -475,6 +475,11 @@ export function createWebPlatform(): Platform {
         return Promise.resolve();
       },
       attention: () => undefined,
+      // Installed PWA: the app icon badge (Badging API, where supported).
+      setBadge: (n) => {
+        if (!('setAppBadge' in navigator)) return;
+        void (n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => undefined);
+      },
       setTheme: () => undefined,
       setStrings: () => undefined,
     },

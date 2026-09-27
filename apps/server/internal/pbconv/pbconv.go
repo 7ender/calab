@@ -12,6 +12,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/notifications"
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
@@ -443,28 +444,18 @@ func ProtoOverrideTargets(ovs []*v1.RoomPermissionOverride) []perm.OverrideTarge
 	return out
 }
 
-var levelToDB = map[v1.NotificationLevel]string{
-	v1.NotificationLevel_NOTIFICATION_LEVEL_ALL:      "all",
-	v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS: "mentions",
-	v1.NotificationLevel_NOTIFICATION_LEVEL_NONE:     "none",
-}
-
-// NotificationLevelToDB maps a level to its DB text; UNSPECIFIED is the default "all".
-func NotificationLevelToDB(l v1.NotificationLevel) (string, bool) {
-	if l == v1.NotificationLevel_NOTIFICATION_LEVEL_UNSPECIFIED {
-		return "all", true
-	}
-	s, ok := levelToDB[l]
-	return s, ok
-}
-
 // RoomNotificationSettings converts a stored row.
 func RoomNotificationSettings(s sqlc.RoomNotificationSetting) *v1.RoomNotificationSettings {
-	out := &v1.RoomNotificationSettings{RoomId: s.RoomID.String(), Level: v1.NotificationLevel_NOTIFICATION_LEVEL_ALL, MutedUntil: tsp(s.MutedUntil)}
-	for l, v := range levelToDB {
-		if v == s.Level {
-			out.Level = l
-		}
+	return &v1.RoomNotificationSettings{
+		RoomId: s.RoomID.String(), MutedUntil: tsp(s.MutedUntil),
+		Level: notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_INHERIT),
 	}
-	return out
+}
+
+// WorkspaceNotificationSettings converts a stored row.
+func WorkspaceNotificationSettings(s sqlc.WorkspaceNotificationSetting) *v1.WorkspaceNotificationSettings {
+	return &v1.WorkspaceNotificationSettings{
+		WorkspaceId: s.WorkspaceID.String(), MutedUntil: tsp(s.MutedUntil),
+		Level: notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
+	}
 }

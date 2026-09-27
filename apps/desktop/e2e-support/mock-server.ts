@@ -115,6 +115,9 @@ import {
   UpdateReadStateRequestSchema,
   UpdateRoomNotificationSettingsRequestSchema,
   UpdateRoomNotificationSettingsResponseSchema,
+  UpdateWorkspaceNotificationSettingsRequestSchema,
+  UpdateWorkspaceNotificationSettingsResponseSchema,
+  WorkspaceNotificationSettingsSchema,
   RoomNotificationSettingsSchema,
   NotificationLevel,
   UpdateRoomRequestSchema,
@@ -146,6 +149,7 @@ import {
   type Message,
   type Room,
   type RoomNotificationSettings,
+  type WorkspaceNotificationSettings,
   type RoomCategory,
   type RoomInvite,
   type Session,
@@ -692,6 +696,9 @@ class MockImpl {
               return r && this.canView(r, u.user.id);
             })
             .sort((a, b) => a.roomId.localeCompare(b.roomId)),
+          workspaceNotificationSettings: [...(this.state.wsNotifySettings.get(u.user.id)?.values() ?? [])]
+            .filter((n) => wsIds.includes(n.workspaceId))
+            .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId)),
           // Guest accounts have no DMs (ADR-0020).
           dms: u.user.isGuest ? [] : this.dmsOf(u.user.id),
         }),
@@ -1889,14 +1896,32 @@ class MockImpl {
       const room = this.roomFor(c.params[0] ?? '', me);
       const b = parseBody(c, UpdateRoomNotificationSettingsRequestSchema);
       if (b.mutedUntil && timestampMs(b.mutedUntil) > Date.now() + 366 * 86_400_000) throw invalid('mutedUntil', 'at most 1 year ahead');
-      const level = b.level === NotificationLevel.UNSPECIFIED ? NotificationLevel.ALL : b.level;
+      // The room default is INHERIT: follow the workspace level (docs/09 item 22).
+      const level = b.level === NotificationLevel.UNSPECIFIED ? NotificationLevel.INHERIT : b.level;
       const settings = create(RoomNotificationSettingsSchema, { roomId: room.id, level, ...(b.mutedUntil ? { mutedUntil: b.mutedUntil } : {}) });
       const mine = s().notifySettings.get(me) ?? new Map<string, RoomNotificationSettings>();
-      if (level === NotificationLevel.ALL && !b.mutedUntil) mine.delete(room.id);
+      if (level === NotificationLevel.INHERIT && !b.mutedUntil) mine.delete(room.id);
       else mine.set(room.id, settings);
       s().notifySettings.set(me, mine);
       this.toUser(me, { event: { case: 'roomNotificationUpdate', value: { settings } } });
       sendMsg(c.res, 200, UpdateRoomNotificationSettingsResponseSchema, { settings });
+    });
+
+    // Workspace level (docs/09 item 22): members only; default MENTIONS = no row; INHERIT → 422.
+    this.route('PUT', '/api/workspaces/:id/notifications', (c) => {
+      const me = this.uid(c);
+      const { ws } = this.workspaceFor(c.params[0] ?? '', me);
+      const b = parseBody(c, UpdateWorkspaceNotificationSettingsRequestSchema);
+      if (b.level === NotificationLevel.INHERIT) throw invalid('level', 'unknown notification level');
+      if (b.mutedUntil && timestampMs(b.mutedUntil) > Date.now() + 366 * 86_400_000) throw invalid('mutedUntil', 'at most 1 year ahead');
+      const level = b.level === NotificationLevel.UNSPECIFIED ? NotificationLevel.MENTIONS : b.level;
+      const settings = create(WorkspaceNotificationSettingsSchema, { workspaceId: ws.id, level, ...(b.mutedUntil ? { mutedUntil: b.mutedUntil } : {}) });
+      const mine = s().wsNotifySettings.get(me) ?? new Map<string, WorkspaceNotificationSettings>();
+      if (level === NotificationLevel.MENTIONS && !b.mutedUntil) mine.delete(ws.id);
+      else mine.set(ws.id, settings);
+      s().wsNotifySettings.set(me, mine);
+      this.toUser(me, { event: { case: 'workspaceNotificationUpdate', value: { settings } } });
+      sendMsg(c.res, 200, UpdateWorkspaceNotificationSettingsResponseSchema, { settings });
     });
 
     // ---------------- chat: search, reactions, pins, link previews

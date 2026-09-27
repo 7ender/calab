@@ -49,7 +49,7 @@
 ## Жизненный цикл
 
 1. Открыли сокет → `HELLO { heartbeat_interval_ms }`.
-2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль, видимые комнаты, участники, voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states (с `unread_count` / `mention_count`), notification_settings, dms[] (DmSummary, см. «Личные сообщения») }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
+2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль, видимые комнаты, участники, voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states (с `unread_count` / `mention_count`), notification_settings, workspace_notification_settings, dms[] (DmSummary, см. «Личные сообщения») }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
 3. Клиент шлёт `HEARTBEAT` каждые `heartbeat_interval` (~41 с) с jitter; нет `ACK` за 2 интервала → закрыть и переподключиться.
 4. Обрыв → переподключение с экспоненциальным backoff (1s → 30s, jitter) → `RESUME { token, session_id, seq }` (token — свежий access JWT):
    - сервер держит буфер событий сессии в Redis (последние ~5 мин / 1000 событий) → досылает пропущенное по порядку, затем событие `RESUMED { replayed }`;
@@ -76,6 +76,7 @@ VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- дл�
 VOICE_CAMERA_STOP             { room_id, user_id, track_sid, reason: LIMIT_REACHED | MODERATOR | ROOM_POLICY }   -- камеру остановил сервер
 READ_STATE_UPDATE
 ROOM_NOTIFICATION_UPDATE      { settings: { room_id, level, muted_until } } — только своим устройствам
+WORKSPACE_NOTIFICATION_UPDATE { settings: { workspace_id, level, muted_until } } — только своим устройствам
 USER_UPDATE                   { me } — своим устройствам (профиль, email, настройки);
                               { user } — участникам всех workspace пользователя (публичный профиль: имя, статус, аватар)
 RESUMED                       { replayed }  — после успешного RESUME
@@ -265,6 +266,7 @@ PUT    /api/messages/{id}/embeds-hidden                SetEmbedsHiddenRequest{hi
 PATCH  /api/rooms/{id}/voice-status                    UpdateVoiceStatusRequest{status} → UpdateRoomResponse (voice-комната; CONNECT и участник звонка сейчас, или MANAGE_ROOM) → ROOM_UPDATE
 GET    /api/me/mentions?before=&limit=&workspace_id=   ListMessagesResponse — сообщения с упоминанием меня (по видимым сейчас комнатам)
 PUT    /api/rooms/{id}/notifications                   UpdateRoomNotificationSettingsRequest{level, mutedUntil} → …Response  (VIEW_ROOM)
+PUT    /api/workspaces/{id}/notifications              UpdateWorkspaceNotificationSettingsRequest{level, mutedUntil} → …Response  (участник; INHERIT → 422)
 POST   /api/dms                                        CreateDmRequest{userId} → 201 | 200 CreateDmResponse{dm}  (get-or-create; см. «Личные сообщения»)
 GET    /api/dms                                        ListDmsResponse{dms[]} (свежие первыми, ≤ 500)
 GET    /api/dms/candidates?q=                          ListDmCandidatesResponse{users[]} (≤ 20)
@@ -335,7 +337,8 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
   - `mention_count` — сколько из них упоминают пользователя (`@<user_id>`, `@everyone`, `@here`); своё `@everyone` не считается.
 
   Если пользователь комнату ещё не открывал, `last_read_message_id` пустой, а счётчики идут от его вступления в workspace. Запрос — индексные сканы без чтения таблицы (миграция 00007): ~6 мс на 100 комнат при 1M сообщений. В `READ_STATE_UPDATE` счётчики не заполняются (0): дальше клиент ведёт их сам по `MESSAGE_CREATE`/`MESSAGE_DELETE`.
-- **Уведомления комнаты.** `level`: `ALL` (по умолчанию) | `MENTIONS` | `NONE`; `muted_until` — временное отключение (≤ 1 год вперёд). **`NONE` без `muted_until` — бессрочно**: уровень хранится, пока пользователь его не сменит; `muted_until` — отдельный временный mute поверх любого уровня. Когда он истёк, действует сохранённый `level`. `PUT` заменяет настройки целиком; `ALL` без `muted_until` — сброс к умолчанию (строка удаляется). READY `notification_settings` содержит только сохранённые настройки видимых сейчас комнат; комнаты не из списка — по умолчанию. Уведомления показывает клиент; сервер хранит и синхронизирует настройки между устройствами (`ROOM_NOTIFICATION_UPDATE`).
+- **Уведомления комнаты.** `level`: `INHERIT` (по умолчанию, «Как в пространстве») | `ALL` | `MENTIONS` | `NONE`; `muted_until` — временное отключение (≤ 1 год вперёд). **`NONE` без `muted_until` — бессрочно**: уровень хранится, пока пользователь его не сменит; `muted_until` — отдельный временный mute поверх любого уровня. Когда он истёк, действует сохранённый `level`. `PUT` заменяет настройки целиком; `INHERIT` (или `UNSPECIFIED`) без `muted_until` — сброс к умолчанию (строка удаляется). READY `notification_settings` содержит только сохранённые настройки видимых сейчас комнат; комнаты не из списка — по умолчанию. Уведомления показывает клиент; сервер хранит и синхронизирует настройки между устройствами (`ROOM_NOTIFICATION_UPDATE`).
+- **Уведомления пространства** (docs/09 п. 22). `WorkspaceNotificationSettings{workspace_id, level, muted_until}`: `level` `ALL` | `MENTIONS` (по умолчанию) | `NONE`, `INHERIT` → 422; `MENTIONS` без `muted_until` — нет строки. Эффективный уровень комнаты = её `level`, если не `INHERIT`, иначе уровень пространства; DM — всегда как упоминание (глушат только свой `NONE`/`muted_until`); `muted_until` пространства глушит все его комнаты, упоминания тоже. Звук «Новое сообщение» и системные уведомления клиент даёт только для DM, упоминаний и комнат с эффективным `ALL`; счётчики непрочитанного и упоминаний от уровней не зависят. Сервер пушей не шлёт — фильтрует клиент (`shouldNotify`). READY `workspace_notification_settings` — сохранённые настройки пространств, где пользователь состоит.
 - **Статус звонка** (`Room.voice_status`, ≤ 60 символов, пробелы по краям обрезаются) — строка вроде «Планёрка» у voice-комнаты.
   - Ставит участник текущего звонка (`CONNECT` и сейчас в комнате) или `MANAGE_ROOM`; пустая строка — очистить.
   - Сбрасывается сервером, когда комната пустеет, — в том же `ROOM_UPDATE`, что убирает `voice_started_at`. Проверка «в звонке» и запись идут под той же блокировкой voice-состояния, что и сброс, поэтому статус не переживает свой звонок.

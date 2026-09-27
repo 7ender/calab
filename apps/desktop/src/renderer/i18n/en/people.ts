@@ -97,6 +97,8 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'sounds.pttOff': 'Push-to-talk: released',
   'sounds.mention': 'Mention',
   'sounds.message': 'New message',
+  'sounds.messageHint': 'Plays only where notifications are set to “All messages”, and in direct messages.',
+  'sounds.messageHintLink': 'Where to set it',
   'sounds.openChat': 'In the open chat',
   'sounds.openChatHint': 'A message in the chat that is open right now, while the window is focused',
   'sounds.openChatQuiet': 'Quiet',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { OPEN_CHAT_QUIET_VOLUME, chatSound, type ChatSoundFacts } from './chatSound';
 
-const base: ChatSoundFacts = { own: false, mention: false, visible: false, quiet: false, mentionsOnly: false, dnd: false, openChat: 'off' };
+const base: ChatSoundFacts = { own: false, mention: false, visible: false, notify: true, dnd: false, openChat: 'off' };
 const at = (f: Partial<ChatSoundFacts>) => chatSound({ ...base, ...f });
 
 describe('chat message sound (docs/09 P1 #13)', () => {
@@ -18,16 +18,13 @@ describe('chat message sound (docs/09 P1 #13)', () => {
     expect(at({ own: true, mention: true })).toBeNull();
   });
 
-  it('a muted / NONE room and «Не беспокоить» are silent, mentions included', () => {
-    expect(at({ quiet: true, mention: true })).toBeNull();
+  it('what the level does not let notify and «Не беспокоить» are silent, mentions included', () => {
+    expect(at({ notify: false })).toBeNull();
+    expect(at({ notify: false, mention: true })).toBeNull();
     expect(at({ dnd: true, mention: true })).toBeNull();
     expect(at({ dnd: true, visible: true, openChat: 'quiet' })).toBeNull();
   });
 
-  it('a MENTIONS room sounds only for mentions', () => {
-    expect(at({ mentionsOnly: true })).toBeNull();
-    expect(at({ mentionsOnly: true, mention: true })).toEqual({ name: 'mention', volume: 1 });
-  });
 
   it('the open chat in a focused window: silent by default, a quieter cue when set', () => {
     expect(at({ visible: true })).toBeNull();

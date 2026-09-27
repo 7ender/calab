@@ -40,6 +40,7 @@ const api: CalabaApi = {
     openExternal: (url) => ipcRenderer.invoke(IPC.appOpenExternal, url),
     legal: () => ipcRenderer.invoke(IPC.appLegal),
     attention: () => void ipcRenderer.invoke(IPC.appAttention),
+    setBadge: (n) => void ipcRenderer.invoke(IPC.appSetBadge, n),
     setTheme: (theme) => void ipcRenderer.invoke(IPC.appSetTheme, theme),
     setStrings: (s) => void ipcRenderer.invoke(IPC.appSetStrings, s),
   },

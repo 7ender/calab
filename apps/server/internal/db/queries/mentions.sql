@@ -51,3 +51,18 @@ DELETE FROM room_notification_settings WHERE user_id = $1 AND room_id = $2;
 -- Stored settings of the given rooms (the ones the user can view now).
 SELECT s.* FROM room_notification_settings s
 WHERE s.user_id = sqlc.arg('user_id')::uuid AND s.room_id = ANY(sqlc.arg('room_ids')::uuid[]);
+
+-- name: UpsertWorkspaceNotificationSettings :one
+INSERT INTO workspace_notification_settings (user_id, workspace_id, level, muted_until)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (user_id, workspace_id) DO UPDATE SET level = EXCLUDED.level, muted_until = EXCLUDED.muted_until
+RETURNING *;
+
+-- name: DeleteWorkspaceNotificationSettings :exec
+DELETE FROM workspace_notification_settings WHERE user_id = $1 AND workspace_id = $2;
+
+-- name: ListWorkspaceNotificationSettings :many
+-- Stored settings of the workspaces the user is a member of now.
+SELECT s.* FROM workspace_notification_settings s
+JOIN workspace_members m ON m.workspace_id = s.workspace_id AND m.user_id = s.user_id
+WHERE s.user_id = $1;

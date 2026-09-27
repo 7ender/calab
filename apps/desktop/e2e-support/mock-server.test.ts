@@ -239,6 +239,33 @@ describe('mentions and room notifications (docs/05)', () => {
     server.reset('data');
   });
 
+  it('workspace level (docs/09 item 22): stored, echoed as WORKSPACE_NOTIFICATION_UPDATE, in READY; INHERIT refused', async () => {
+    const token = await login();
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } });
+    const ready = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'ready'))?.event;
+    expect(ready?.case === 'ready' && ready.value.workspaceNotificationSettings).toEqual([]);
+    const put = (level: string) =>
+      fetch(`${server.url}/api/workspaces/${IDS.workspaces.main}/notifications`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level }),
+      });
+    expect((await put('NOTIFICATION_LEVEL_INHERIT')).status).toBe(422);
+    expect((await put('NOTIFICATION_LEVEL_ALL')).status).toBe(200);
+    const ev = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'workspaceNotificationUpdate'))?.event;
+    expect(ev?.case === 'workspaceNotificationUpdate' && ev.value.settings?.level).toBe(NotificationLevel.ALL);
+    gw.ws.close(1000);
+    const gw2 = await openGateway();
+    await gw2.next((f) => f.op === GatewayOpcode.HELLO);
+    gw2.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } });
+    const again = dispatchOf(await gw2.next((f) => dispatchOf(f)?.event.case === 'ready'))?.event;
+    expect(again?.case === 'ready' && again.value.workspaceNotificationSettings.map((n) => n.level)).toEqual([NotificationLevel.ALL]);
+    gw2.ws.close(1000);
+    server.reset('data');
+  });
+
   it('ROOM_UPDATE carries voice_started_at when a call starts and ends', async () => {
     const token = await login();
     const gw = await openGateway();

@@ -28,7 +28,7 @@ import { downloadFile } from './downloads';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
 import { parseMainStrings, setMainStrings } from './strings';
-import { setTrayState } from './tray';
+import { setTrayBadge, setTrayState } from './tray';
 import { checkForUpdates, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { getMainWindow, isOwnPage } from './windows';
@@ -259,6 +259,14 @@ export function registerIpc(): void {
       if (process.platform === 'darwin') app.dock?.bounce('informational');
       else win.flashFrame(true);
     }
+  });
+
+  handle(IPC.appSetBadge, (_e, a) => {
+    const n = Math.max(0, Math.min(9999, Math.trunc(Number(a)) || 0));
+    setTrayBadge(n);
+    if (VISUAL_TEST) return; // never touch the owner's Dock from a test instance
+    if (process.platform === 'darwin') app.dock?.setBadge(n > 0 ? (n > 99 ? '99+' : String(n)) : '');
+    else app.setBadgeCount(n); // Linux (Unity launchers); a no-op elsewhere
   });
 
   // ---- tray ----

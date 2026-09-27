@@ -37,6 +37,7 @@ import {
   type RoomMediaOverride,
   type RoomMediaSettings,
   type RoomNotificationSettings,
+  type WorkspaceNotificationSettings,
   type RoomPermissionOverride,
   type Session,
   type User,
@@ -166,6 +167,8 @@ export interface MockState {
   dmMembers: Map<string, [string, string]>;
   /** userId → roomId → stored notification settings (READY notification_settings; absent = default). */
   notifySettings: Map<string, Map<string, RoomNotificationSettings>>;
+  /** userId → workspaceId → stored workspace notification settings (absent = MENTIONS, docs/09 item 22). */
+  wsNotifySettings: Map<string, Map<string, WorkspaceNotificationSettings>>;
   /** Chat reactions: messageId → emoji → users (Message.reactions keeps the counts). */
   reactions: Map<string, Map<string, Set<string>>>;
   files: Map<string, FileRec>;
@@ -408,6 +411,7 @@ export function buildState(scenario: Scenario): MockState {
     messages: new Map(),
     readStates: new Map(),
     notifySettings: new Map(),
+    wsNotifySettings: new Map(),
     voiceStates: new Map(),
     categories: new Map(),
     presences: new Map(),

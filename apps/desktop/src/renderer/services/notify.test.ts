@@ -1,5 +1,13 @@
 import { create } from '@bufbuild/protobuf';
-import { MessageSchema, RoomType } from '@calaba/protocol';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
+import {
+  MessageSchema,
+  NotificationLevel,
+  RoomNotificationSettingsSchema,
+  RoomSchema,
+  RoomType,
+  WorkspaceNotificationSettingsSchema,
+} from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mem = new Map<string, string>();
@@ -15,7 +23,7 @@ const played = vi.hoisted((): Array<[string, unknown]> => []);
 vi.mock('../lib/sounds', () => ({ playSound: (name: string, opts: unknown) => void played.push([name, opts]) }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined } } }));
 
-const { onIncomingMessage } = await import('./notify');
+const { onIncomingMessage, shouldNotify } = await import('./notify');
 const { useRooms } = await import('../stores/rooms');
 const { useSession } = await import('../stores/session');
 const { useInbox } = await import('../stores/inbox');
@@ -56,12 +64,67 @@ describe('direct messages (ADR-0020)', () => {
   });
 });
 
-describe('new message sound (docs/09 P1 #13)', () => {
-  it('a message in another room sounds; the open chat in focus does not (default «выкл.»)', () => {
+describe('new message sound (docs/09 P1 #13, item 22)', () => {
+  const level = (room?: NotificationLevel, ws?: NotificationLevel, opts: { roomMuted?: boolean; wsMuted?: boolean } = {}): void => {
+    const s = useRooms.getState();
+    s.upsert(create(RoomSchema, { id: 'a', workspaceId: 'ws', type: RoomType.TEXT }));
+    const until = { mutedUntil: timestampFromMs(Date.now() + 60_000) };
+    s.setNotifyAll(room || opts.roomMuted ? [create(RoomNotificationSettingsSchema, { roomId: 'a', level: room ?? NotificationLevel.INHERIT, ...(opts.roomMuted ? until : {}) })] : []);
+    s.setWsNotifyAll(ws || opts.wsMuted ? [create(WorkspaceNotificationSettingsSchema, { workspaceId: 'ws', level: ws ?? NotificationLevel.MENTIONS, ...(opts.wsMuted ? until : {}) })] : []);
+  };
+  const sound = (content = ''): string | null => {
     played.length = 0;
-    onIncomingMessage(msg(2), 'ws', false);
-    expect(played).toEqual([['message', { volume: 1 }]]);
+    onIncomingMessage(msg(Math.floor(Math.random() * 1e9) + 10, content), 'ws', false);
+    return played[0]?.[0] ?? null;
+  };
+  const MENTION = `hi @${ME}`;
+
+  it('by default (workspace «Только упоминания») a plain message is silent, a mention sounds', () => {
+    level();
+    expect(sound()).toBeNull();
+    expect(sound(MENTION)).toBe('mention');
+    expect(shouldNotify(msg(2), 'ws')).toEqual({ dm: false, mention: false, notify: false });
+  });
+
+  it('«Все сообщения» on the room, or on the workspace through «Как в пространстве», plays «Новое сообщение»', () => {
+    level(NotificationLevel.ALL);
+    expect(sound()).toBe('message');
+    level(NotificationLevel.INHERIT, NotificationLevel.ALL);
+    expect(sound()).toBe('message');
+    level(NotificationLevel.MENTIONS, NotificationLevel.ALL);
+    expect(sound()).toBeNull();
+    expect(sound(MENTION)).toBe('mention');
+  });
+
+  it('NONE and mutes silence everything, mentions included; the counters still count', () => {
+    level(NotificationLevel.NONE, NotificationLevel.ALL);
+    expect(sound(MENTION)).toBeNull();
+    level(NotificationLevel.ALL, undefined, { roomMuted: true });
+    expect(sound(MENTION)).toBeNull();
+    level(NotificationLevel.ALL, NotificationLevel.ALL, { wsMuted: true });
+    expect(sound(MENTION)).toBeNull();
+    level(undefined, NotificationLevel.NONE);
+    expect(sound(MENTION)).toBeNull();
+    expect(useRooms.getState().mentions['a']).toBeGreaterThan(0);
+  });
+
+  it('a DM notifies every message as a mention, whatever the workspaces say', () => {
+    const s = useRooms.getState();
+    s.upsert(create(RoomSchema, { id: 'a', workspaceId: '', type: RoomType.DM }));
+    s.setWsNotifyAll([create(WorkspaceNotificationSettingsSchema, { workspaceId: 'ws', level: NotificationLevel.NONE })]);
+    played.length = 0;
+    onIncomingMessage(msg(5), '', false);
+    expect(played).toEqual([['mention', { volume: 1 }]]);
+    s.setNotify(create(RoomNotificationSettingsSchema, { roomId: 'a', level: NotificationLevel.NONE }));
+    played.length = 0;
+    onIncomingMessage(msg(6), '', false);
+    expect(played).toHaveLength(0);
+  });
+
+  it('the open chat in focus does not sound (default «выкл.»)', () => {
+    level(NotificationLevel.ALL);
+    played.length = 0;
     onIncomingMessage(msg(3), 'ws', true);
-    expect(played).toHaveLength(1);
+    expect(played).toHaveLength(0);
   });
 });

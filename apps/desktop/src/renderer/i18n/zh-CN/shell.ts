@@ -36,7 +36,7 @@ export const zhShell: DictShape<typeof enShell> = {
   // room column
   'shell.wsMenu': '工作区菜单',
   'shell.wsNotify': '通知…',
-  'shell.wsNotifyAll': '所有房间',
+  'shell.wsNotifyAll': '房间默认',
   'shell.ownerCannotLeave': '所有者不能离开工作区',
   'shell.invite': '邀请',
   'shell.inviteTo': '邀请加入"{name}"',

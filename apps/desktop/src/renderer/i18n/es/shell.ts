@@ -36,7 +36,7 @@ export const esShell: DictShape<typeof enShell> = {
   // room column
   'shell.wsMenu': 'Menú del espacio',
   'shell.wsNotify': 'Notificaciones…',
-  'shell.wsNotifyAll': 'Para todas las salas',
+  'shell.wsNotifyAll': 'Predeterminado para las salas',
   'shell.ownerCannotLeave': 'El propietario no puede abandonar el espacio',
   'shell.invite': 'Invitar',
   'shell.inviteTo': 'Invitar a «{name}»',

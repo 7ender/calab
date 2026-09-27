@@ -38,6 +38,7 @@ const KEY = new Set([
   'sidebar-drag',
   'chat-hover-actions',
   'chat-context-menu',
+  'room-notify-menu',
   'dm-list',
   'dm-chat',
   'voice-room-status',
@@ -625,12 +626,15 @@ test('chat-mention-popover', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'chat-mention-popover');
 });
 
-test('chat-notify-menu', async ({ open, win, mock, shot }) => {
+// The room bell (docs/09 item 22): «Как в пространстве (Только упоминания)» by default, the
+// explicit levels, and «Заглушить: 1 ч · 8 ч · до утра · навсегда».
+test('room-notify-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await win.getByRole('button', { name: /^Уведомления:/ }).click();
-  await expect(win.getByRole('menuitemradio', { name: 'Только упоминания' })).toBeVisible();
-  await checkpoint(shot, 'chat-notify-menu');
+  await expect(win.getByRole('menuitemradio', { name: 'Как в пространстве (Только упоминания)' })).toHaveAttribute('aria-checked', 'true');
+  await expect(win.getByRole('menuitem', { name: 'До утра' })).toBeVisible();
+  await checkpoint(shot, 'room-notify-menu');
 });
 
 test('shell-shortcuts', async ({ open, win, mock, shot }) => {

@@ -97,6 +97,8 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'sounds.pttOff': '按键说话：已松开',
   'sounds.mention': '提及',
   'sounds.message': '窗口在后台时收到新消息',
+  'sounds.messageHint': '仅在通知设为“所有消息”的地方以及私信中播放。',
+  'sounds.messageHintLink': '在哪里设置',
   'sounds.openChat': '当前聊天中',
   'sounds.openChatHint': '窗口处于活动状态时，当前打开的聊天中的新消息',
   'sounds.openChatQuiet': '轻声',

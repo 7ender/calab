@@ -7,7 +7,7 @@ import { plural, t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { workspaceInitials } from '../../lib/initials';
 import { HOME, isDm } from '../../stores/dms';
-import { isUnread, useRooms } from '../../stores/rooms';
+import { showsUnread, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
@@ -61,13 +61,16 @@ function RailItem({ id }: { id: string }): ReactNode {
   const lastMessage = useRooms((s) => s.lastMessage);
   const unreadMap = useRooms((s) => s.unread);
   const mentionMap = useRooms((s) => s.mentions);
+  // A muted room / workspace shows no unread dot, only its mentions (docs/09 item 22).
+  const notify = useRooms((s) => s.notify);
+  const wsNotify = useRooms((s) => s.wsNotify);
   const { unread, mentions } = useMemo(() => {
     const list = Object.values(byId).filter((r) => r.workspaceId === id);
     return {
-      unread: list.some((r) => isUnread(r.id, { readState, lastMessage, unread: unreadMap })),
+      unread: list.some((r) => showsUnread(r.id, { readState, lastMessage, unread: unreadMap, byId, notify, wsNotify })),
       mentions: list.reduce((n, r) => n + (mentionMap[r.id] ?? 0), 0),
     };
-  }, [byId, readState, lastMessage, unreadMap, mentionMap, id]);
+  }, [byId, readState, lastMessage, unreadMap, mentionMap, notify, wsNotify, id]);
   if (!w) return null;
 
   const label = [w.name, mentions > 0 ? plural('shell.unreadMentions', mentions) : unread ? t('ws.unread') : '', inVoice ? t('shell.inVoice') : '']
@@ -135,14 +138,17 @@ function HomeItem(): ReactNode {
   const lastMessage = useRooms((s) => s.lastMessage);
   const unreadMap = useRooms((s) => s.unread);
   const mentionMap = useRooms((s) => s.mentions);
+  // A muted room / workspace shows no unread dot, only its mentions (docs/09 item 22).
+  const notify = useRooms((s) => s.notify);
+  const wsNotify = useRooms((s) => s.wsNotify);
   const { unread, count } = useMemo(() => {
     const list = Object.values(byId).filter(isDm);
     return {
-      unread: list.some((r) => isUnread(r.id, { readState, lastMessage, unread: unreadMap })),
+      unread: list.some((r) => showsUnread(r.id, { readState, lastMessage, unread: unreadMap, byId, notify, wsNotify })),
       // Every DM message counts as a mention (docs/05): the badge = unread DM messages.
       count: list.reduce((n, r) => n + (mentionMap[r.id] ?? 0), 0),
     };
-  }, [byId, readState, lastMessage, unreadMap, mentionMap]);
+  }, [byId, readState, lastMessage, unreadMap, mentionMap, notify, wsNotify]);
   if (guest) return null;
   const label = count > 0 ? t('dm.homeUnread', { n: count }) : t('dm.home');
   return (

@@ -56,6 +56,8 @@ import {
   UpdateRoomResponseSchema,
   UpdateRoomNotificationSettingsRequestSchema,
   UpdateRoomNotificationSettingsResponseSchema,
+  UpdateWorkspaceNotificationSettingsRequestSchema,
+  UpdateWorkspaceNotificationSettingsResponseSchema,
   UpdateVoiceSelfRequestSchema,
   UpdateVoiceStatusRequestSchema,
   UpdateWorkspaceRequestSchema,
@@ -105,6 +107,14 @@ export const api = {
       call('PATCH', `/api/workspaces/${id}`, UpdateWorkspaceResponseSchema, body(UpdateWorkspaceRequestSchema, init)),
     remove: (id: string) => callEmpty('DELETE', `/api/workspaces/${id}`),
     joinOpen: (id: string) => call('POST', `/api/workspaces/${id}/join`, JoinWorkspaceResponseSchema),
+    /** My notification settings of the workspace; replaces them (MENTIONS without mutedUntil = default). */
+    setNotifications: (id: string, init: MessageInitShape<typeof UpdateWorkspaceNotificationSettingsRequestSchema>) =>
+      call(
+        'PUT',
+        `/api/workspaces/${id}/notifications`,
+        UpdateWorkspaceNotificationSettingsResponseSchema,
+        body(UpdateWorkspaceNotificationSettingsRequestSchema, init),
+      ),
     members: (id: string) => call('GET', `/api/workspaces/${id}/members`, ListMembersResponseSchema),
     updateMember: (id: string, userId: string, init: MessageInitShape<typeof UpdateMemberRequestSchema>) =>
       call('PATCH', `/api/workspaces/${id}/members/${userId}`, UpdateMemberResponseSchema, body(UpdateMemberRequestSchema, init)),
@@ -155,7 +165,7 @@ export const api = {
       call('PATCH', `/api/rooms/${id}/voice-status`, UpdateRoomResponseSchema, body(UpdateVoiceStatusRequestSchema, { status })),
     setPermissions: (id: string, init: MessageInitShape<typeof SetRoomPermissionsRequestSchema>) =>
       call('PUT', `/api/rooms/${id}/permissions`, SetRoomPermissionsResponseSchema, body(SetRoomPermissionsRequestSchema, init)),
-    /** My notification settings of the room; replaces them (ALL without mutedUntil = default). */
+    /** My notification settings of the room; replaces them (INHERIT without mutedUntil = default). */
     setNotifications: (id: string, init: MessageInitShape<typeof UpdateRoomNotificationSettingsRequestSchema>) =>
       call(
         'PUT',
