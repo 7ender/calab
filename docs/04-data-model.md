@@ -68,6 +68,7 @@ message_reactions   message_id, emoji, user_id, created_at      PK (message_id, 
                     поиск: GIN по выражению to_tsvector('russian', content) || to_tsvector('simple', content)
 user_notes          author_id, subject_id, text (1..1000), updated_at   PK (author_id, subject_id) — личная заметка о человеке
 dm_members          room_id, user_id, created_at                PK (room_id, user_id) — ровно два участника DM (ADR-0020)
+dm_state            user_id, room_id, archived_at, cleared_before  PK (user_id, room_id), FK → dm_members — своё состояние DM: архив, «Удалить чат» до id (docs/09 #51)
                     rooms += dm_key? (unique: least(a,b) || ':' || greatest(a,b));
                     CHECK (type = 'dm') = (workspace_id IS NULL), (type = 'dm') = (dm_key IS NOT NULL)
 
