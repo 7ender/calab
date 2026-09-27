@@ -1,0 +1,12 @@
+{
+  "name": "calab-bot-tts",
+  "private": true,
+  "type": "module",
+  "description": "Calab bot that speaks /say <text> in a voice room (external TTS, or a tone without a key)",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node index.mjs" },
+  "dependencies": {
+    "@calaba/bot-sdk": "file:../../../packages/bot-sdk",
+    "@livekit/rtc-node": "^1.1.0"
+  }
+}
