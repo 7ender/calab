@@ -128,7 +128,7 @@ describe('mock server', () => {
     const ready = ev.value;
 
     expect(ready.me?.user?.id).toBe(IDS.users.anna);
-    expect(ready.me?.settings?.noiseSuppression).toBe(true);
+    expect(ready.me?.settings?.noiseSuppression).toBe(false);
     expect(ready.workspaces.map((w) => w.workspace?.name)).toEqual(['Команда Calab', 'Дизайн']);
     const main = ready.workspaces[0];
     expect(main?.rooms.map((r) => r.name)).toEqual([

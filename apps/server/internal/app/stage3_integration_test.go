@@ -880,7 +880,7 @@ func TestSettingsDefaults(t *testing.T) {
 	var me v1.GetMeResponse
 	u.must(200, "GET", "/api/me", nil, &me)
 	st := me.GetMe().GetSettings()
-	if !st.GetNoiseSuppression() || st.GetMicMode() != v1.MicMode_MIC_MODE_VAD || st.AudioBitrateKbps != nil {
+	if st.GetNoiseSuppression() || st.GetMicMode() != v1.MicMode_MIC_MODE_VAD || st.AudioBitrateKbps != nil { // RNNoise off by default (migration 00025)
 		t.Fatalf("new user defaults: %v", st)
 	}
 	// protojson omits false: the server must still store "off" as off.
