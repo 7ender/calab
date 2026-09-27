@@ -1,0 +1,36 @@
+syntax = "proto3";
+package calaba.v1;
+
+// Screen-share annotations (ADR-0028): LiveKit data channel, reliable, topic "annot",
+// broadcast in the call. Never goes through the API server. Receivers drop a message unless
+// its sender's LiveKit grant includes the microphone source (SPEAK in the room), the stream is
+// published right now and its presenter allows annotations. Encoded size ≤ 1 KiB.
+
+enum AnnotKind {
+  ANNOT_KIND_UNSPECIFIED = 0;
+  // Laser pointer: the latest position (one point); fades 1 s after the last message.
+  ANNOT_KIND_POINTER = 1;
+  // A batch of one pen stroke's points (stroke_id); the stroke fades 5 s after its last point.
+  ANNOT_KIND_STROKE = 2;
+  // Erase: the presenter's clears everything on the stream, anyone else's only their strokes.
+  ANNOT_KIND_CLEAR = 3;
+  // Presenter only: whether viewers may annotate this stream (`allow`).
+  ANNOT_KIND_POLICY = 4;
+}
+
+message AnnotMessage {
+  // LiveKit track sid of the screen share being annotated.
+  string stream_sid = 1;
+  AnnotKind kind = 2;
+  // 0xRRGGBB.
+  uint32 color = 3;
+  // x0, y0, x1, y1, … normalized to the video frame (0..1, origin top-left); ≤ 60 points.
+  repeated float points = 4;
+  // Grows by one per message of this sender in this call (duplicates / reordering are dropped).
+  uint32 seq = 5;
+  // STROKE: the sender's id of the stroke (batches of one stroke share it); `stroke_end` on the last.
+  uint32 stroke_id = 6;
+  bool stroke_end = 7;
+  // POLICY: annotations allowed.
+  bool allow = 8;
+}
