@@ -1,6 +1,6 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { NotificationLevel, RoomNotificationSettingsSchema } from '@calaba/protocol';
+import { NotificationLevel, RoomNotificationSettingsSchema, WorkspaceNotificationSettingsSchema } from '@calaba/protocol';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { useInbox } from '../stores/inbox';
@@ -34,8 +34,8 @@ export async function loadMentions(older = false): Promise<void> {
 }
 
 /**
- * Room notification settings (docs/05, «Уведомления комнаты»): optimistic, rolled back when
- * the server refuses. `mutedUntil` null = not muted; level ALL without a mute = the default.
+ * Room notification settings (docs/05, «Уведомления»): optimistic, rolled back when the server
+ * refuses. `mutedUntil` null = not muted; level INHERIT without a mute = the default.
  */
 export async function setRoomNotifications(roomId: string, level: NotificationLevel, mutedUntil: number | null): Promise<void> {
   const rooms = useRooms.getState();
@@ -54,7 +54,27 @@ export async function setRoomNotifications(roomId: string, level: NotificationLe
     if (res.settings) useRooms.getState().setNotify(res.settings);
   } catch (e) {
     log.warn('room notifications failed', e);
-    useRooms.getState().setNotify(prev ?? create(RoomNotificationSettingsSchema, { roomId, level: NotificationLevel.ALL }));
+    useRooms.getState().setNotify(prev ?? create(RoomNotificationSettingsSchema, { roomId, level: NotificationLevel.INHERIT }));
+    toast.error(t('chat.notifyFailed'));
+  }
+}
+
+/**
+ * Workspace notification settings (docs/09 item 22): the level of its rooms left at «Как в
+ * пространстве», and a mute of the whole workspace. Optimistic like the room ones; level
+ * MENTIONS without a mute = the default.
+ */
+export async function setWorkspaceNotifications(workspaceId: string, level: NotificationLevel, mutedUntil: number | null): Promise<void> {
+  const rooms = useRooms.getState();
+  const prev = rooms.wsNotify[workspaceId];
+  const muted = mutedUntil ? { mutedUntil: timestampFromMs(mutedUntil) } : {};
+  rooms.setWsNotify(create(WorkspaceNotificationSettingsSchema, { workspaceId, level, ...muted }));
+  try {
+    const res = await api.workspaces.setNotifications(workspaceId, { level, ...muted });
+    if (res.settings) useRooms.getState().setWsNotify(res.settings);
+  } catch (e) {
+    log.warn('workspace notifications failed', e);
+    useRooms.getState().setWsNotify(prev ?? create(WorkspaceNotificationSettingsSchema, { workspaceId, level: NotificationLevel.MENTIONS }));
     toast.error(t('chat.notifyFailed'));
   }
 }

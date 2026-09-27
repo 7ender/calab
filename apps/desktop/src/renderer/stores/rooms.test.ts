@@ -1,8 +1,26 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { NotificationLevel, RoomCategorySchema, RoomNotificationSettingsSchema, RoomSchema, RoomType } from '@calaba/protocol';
+import {
+  NotificationLevel,
+  RoomCategorySchema,
+  RoomNotificationSettingsSchema,
+  RoomSchema,
+  RoomType,
+  WorkspaceNotificationSettingsSchema,
+} from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { defaultRoom, groupRooms, isQuiet, isUnread, roomNotify, unreadMentionCounts, useRooms } from './rooms';
+import {
+  badgeCount,
+  defaultRoom,
+  effectiveNotify,
+  groupRooms,
+  isUnread,
+  roomNotify,
+  showsUnread,
+  unreadMentionCounts,
+  useRooms,
+  workspaceNotify,
+} from './rooms';
 
 const room = (id: string, type: RoomType, position: number, categoryId = ''): ReturnType<typeof create<typeof RoomSchema>> =>
   create(RoomSchema, { id, workspaceId: 'w', type, name: id, position, categoryId });
@@ -40,24 +58,79 @@ describe('room notifications', () => {
   const n = (level: NotificationLevel, until?: number): ReturnType<typeof create<typeof RoomNotificationSettingsSchema>> =>
     create(RoomNotificationSettingsSchema, { roomId: 'r', level, ...(until ? { mutedUntil: timestampFromMs(until) } : {}) });
 
-  it('roomNotify: default ALL, expired mute ignored', () => {
-    expect(roomNotify(undefined)).toEqual({ level: NotificationLevel.ALL, mutedUntil: null });
-    expect(roomNotify(n(NotificationLevel.UNSPECIFIED))).toEqual({ level: NotificationLevel.ALL, mutedUntil: null });
+  const w = (level: NotificationLevel, until?: number) =>
+    create(WorkspaceNotificationSettingsSchema, { workspaceId: 'w', level, ...(until ? { mutedUntil: timestampFromMs(until) } : {}) });
+  const room = (id: string, type = RoomType.TEXT) => create(RoomSchema, { id, workspaceId: type === RoomType.DM ? '' : 'w', type });
+
+  it('roomNotify: default INHERIT, expired mute ignored; workspaceNotify: default MENTIONS', () => {
+    expect(roomNotify(undefined)).toEqual({ level: NotificationLevel.INHERIT, mutedUntil: null });
+    expect(roomNotify(n(NotificationLevel.UNSPECIFIED))).toEqual({ level: NotificationLevel.INHERIT, mutedUntil: null });
     expect(roomNotify(n(NotificationLevel.MENTIONS, 5_000), 1_000)).toEqual({ level: NotificationLevel.MENTIONS, mutedUntil: 5_000 });
     expect(roomNotify(n(NotificationLevel.ALL, 5_000), 9_000).mutedUntil).toBeNull();
+    expect(workspaceNotify(undefined)).toEqual({ level: NotificationLevel.MENTIONS, mutedUntil: null });
   });
 
-  it('isQuiet: NONE or muted', () => {
-    expect(isQuiet(roomNotify(n(NotificationLevel.NONE)))).toBe(true);
-    expect(isQuiet(roomNotify(n(NotificationLevel.ALL, 5_000), 1_000))).toBe(true);
-    expect(isQuiet(roomNotify(n(NotificationLevel.MENTIONS)))).toBe(false);
+  it('effectiveNotify: room unless INHERIT, else workspace; quiet = NONE or a mute of either', () => {
+    useRooms.getState().reset();
+    useRooms.getState().upsertMany([room('r'), room('d', RoomType.DM)]);
+    const eff = (id = 'r', now = 1_000) => effectiveNotify(id, useRooms.getState(), now);
+    expect(eff()).toMatchObject({ level: NotificationLevel.MENTIONS, quiet: false });
+    useRooms.getState().setWsNotify(w(NotificationLevel.ALL));
+    expect(eff().level).toBe(NotificationLevel.ALL);
+    useRooms.getState().setNotify(n(NotificationLevel.NONE));
+    expect(eff()).toMatchObject({ level: NotificationLevel.NONE, quiet: true });
+    useRooms.getState().setNotify(n(NotificationLevel.INHERIT));
+    useRooms.getState().setWsNotify(w(NotificationLevel.ALL, 5_000));
+    expect(eff()).toMatchObject({ level: NotificationLevel.ALL, quiet: true });
+    expect(eff('r', 9_000).quiet).toBe(false);
+    // A DM ignores the workspace: every message, unless NONE.
+    expect(eff('d')).toMatchObject({ dm: true, level: NotificationLevel.ALL, quiet: false });
   });
 
-  it('setNotify: the default removes the stored row', () => {
+  it('setNotify / setWsNotify: the default removes the stored row', () => {
     useRooms.getState().setNotifyAll([n(NotificationLevel.NONE)]);
     expect(useRooms.getState().notify.r?.level).toBe(NotificationLevel.NONE);
     useRooms.getState().setNotify(n(NotificationLevel.ALL));
+    expect(useRooms.getState().notify.r?.level).toBe(NotificationLevel.ALL);
+    useRooms.getState().setNotify(n(NotificationLevel.INHERIT));
     expect(useRooms.getState().notify.r).toBeUndefined();
+    useRooms.getState().setWsNotifyAll([w(NotificationLevel.NONE)]);
+    expect(useRooms.getState().wsNotify.w?.level).toBe(NotificationLevel.NONE);
+    useRooms.getState().setWsNotify(w(NotificationLevel.MENTIONS));
+    expect(useRooms.getState().wsNotify.w).toBeUndefined();
+  });
+});
+
+describe('unread indicators and the app badge (docs/09 item 22)', () => {
+  const room = (id: string, type = RoomType.TEXT) => create(RoomSchema, { id, workspaceId: type === RoomType.DM ? '' : 'w', type });
+
+  it('a muted room or workspace shows no unread dot; its mentions still count', () => {
+    const s = useRooms.getState();
+    s.reset();
+    s.upsertMany([room('a'), room('b')]);
+    s.setCounts('a', 3, 1);
+    s.setCounts('b', 2, 0);
+    expect(showsUnread('a', useRooms.getState())).toBe(true);
+    s.setNotify(create(RoomNotificationSettingsSchema, { roomId: 'a', level: NotificationLevel.NONE }));
+    expect(showsUnread('a', useRooms.getState())).toBe(false);
+    expect(isUnread('a', useRooms.getState())).toBe(true);
+    expect(useRooms.getState().mentions['a']).toBe(1);
+    s.setWsNotify(create(WorkspaceNotificationSettingsSchema, { workspaceId: 'w', level: NotificationLevel.MENTIONS, mutedUntil: timestampFromMs(Date.now() + 60_000) }));
+    expect(showsUnread('b', useRooms.getState())).toBe(false);
+  });
+
+  it('badge = mentions + unread DM messages, not every unread message; reading clears it', () => {
+    const s = useRooms.getState();
+    s.reset();
+    s.upsertMany([room('a'), room('b'), room('d', RoomType.DM)]);
+    s.setCounts('a', 5, 2); // 5 unread, 2 of them mention me
+    s.setCounts('b', 7, 0); // plain chatter: no badge
+    s.setCounts('d', 3, 3); // every DM message counts as a mention
+    expect(badgeCount(useRooms.getState())).toBe(5);
+    s.setRead('a', 'z');
+    expect(badgeCount(useRooms.getState())).toBe(3);
+    s.remove('d');
+    expect(badgeCount(useRooms.getState())).toBe(0);
   });
 });
 

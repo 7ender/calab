@@ -16,10 +16,11 @@ export interface ChatSoundFacts {
   mention: boolean;
   /** Its chat is open and the window has focus. */
   visible: boolean;
-  /** The room is muted or its level is NONE. */
-  quiet: boolean;
-  /** The room's level is MENTIONS. */
-  mentionsOnly: boolean;
+  /**
+   * The room's effective level lets this message notify (services/notify.ts shouldNotify):
+   * a DM, a mention, or a room at «Все сообщения»; never a muted room or workspace.
+   */
+  notify: boolean;
   /** Presence «Не беспокоить». */
   dnd: boolean;
   openChat: OpenChatSound;
@@ -32,8 +33,7 @@ export interface ChatSound {
 }
 
 export function chatSound(f: ChatSoundFacts): ChatSound | null {
-  if (f.own || f.quiet || f.dnd) return null;
-  if (f.mentionsOnly && !f.mention) return null;
+  if (f.own || !f.notify || f.dnd) return null;
   const name = f.mention ? 'mention' : 'message';
   if (f.visible) return f.openChat === 'quiet' ? { name, volume: OPEN_CHAT_QUIET_VOLUME } : null;
   return { name, volume: 1 };

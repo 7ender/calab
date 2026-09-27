@@ -97,6 +97,8 @@ export const esPeople: DictShape<typeof enPeople> = {
   'sounds.pttOff': 'Pulsar para hablar: soltado',
   'sounds.mention': 'Mención',
   'sounds.message': 'Mensaje nuevo con la ventana en segundo plano',
+  'sounds.messageHint': 'Suena solo donde las notificaciones están en «Todos los mensajes» y en los mensajes directos.',
+  'sounds.messageHintLink': 'Dónde configurarlo',
   'sounds.openChat': 'En el chat abierto',
   'sounds.openChatHint': 'Un mensaje en el chat que está abierto ahora, mientras la ventana está activa',
   'sounds.openChatQuiet': 'Bajo',

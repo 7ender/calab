@@ -40,6 +40,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       ws.reset();
       rooms.reset();
       rooms.setNotifyAll(r.notificationSettings);
+      rooms.setWsNotifyAll(r.workspaceNotificationSettings);
       for (const snap of r.workspaces) {
         ws.applySnapshot(snap);
         rooms.upsertMany(snap.rooms);
@@ -201,6 +202,9 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'roomNotificationUpdate':
       if (e.value.settings) useRooms.getState().setNotify(e.value.settings);
+      return;
+    case 'workspaceNotificationUpdate':
+      if (e.value.settings) useRooms.getState().setWsNotify(e.value.settings);
       return;
     case 'readStateUpdate':
       if (e.value.readState) useRooms.getState().setRead(e.value.readState.roomId, e.value.readState.lastReadMessageId);

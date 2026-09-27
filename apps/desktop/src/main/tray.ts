@@ -6,6 +6,8 @@ import { getMainWindow, showMainWindow } from './windows';
 
 let tray: Tray | null = null;
 let state: TrayState = { inVoice: false, muted: false, deafened: false };
+/** Mentions + unread DM messages (docs/09 item 22), shown in the tooltip. */
+let badge = 0;
 /** Version of the downloaded update («Перезапустить для обновления X»), null = none. */
 let updateReady: string | null = null;
 let installUpdate: () => void = () => undefined;
@@ -34,7 +36,8 @@ function rebuild(): void {
     { label: s.trayQuit, click: () => app.quit() },
   ]);
   tray.setContextMenu(menu);
-  tray.setToolTip(state.inVoice ? (state.muted ? s.trayInVoiceMuted : s.trayInVoice) : 'Calab');
+  const base = state.inVoice ? (state.muted ? s.trayInVoiceMuted : s.trayInVoice) : 'Calab';
+  tray.setToolTip(badge > 0 ? `${base} (${badge > 99 ? '99+' : badge})` : base);
 }
 
 export function createTray(): void {
@@ -52,6 +55,12 @@ export function setTrayUpdate(version: string | null, install: () => void): void
   installUpdate = install;
   if (updateReady === version) return;
   updateReady = version;
+  rebuild();
+}
+
+export function setTrayBadge(n: number): void {
+  if (badge === n) return;
+  badge = n;
   rebuild();
 }
 

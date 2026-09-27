@@ -36,7 +36,7 @@ export const enShell: DictShape<typeof ruShell> = {
   // room column
   'shell.wsMenu': 'Workspace menu',
   'shell.wsNotify': 'Notifications…',
-  'shell.wsNotifyAll': 'For all rooms',
+  'shell.wsNotifyAll': 'Default for rooms',
   'shell.ownerCannotLeave': 'The owner can’t leave the workspace',
   'shell.invite': 'Invite',
   'shell.inviteTo': 'Invite to “{name}”',

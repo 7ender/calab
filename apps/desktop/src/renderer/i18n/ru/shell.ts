@@ -34,7 +34,7 @@ export const ruShell = {
   // room column
   'shell.wsMenu': 'Меню пространства',
   'shell.wsNotify': 'Уведомления…',
-  'shell.wsNotifyAll': 'Для всех комнат',
+  'shell.wsNotifyAll': 'По умолчанию для комнат',
   'shell.ownerCannotLeave': 'Владелец не может покинуть пространство',
   'shell.invite': 'Пригласить',
   'shell.inviteTo': 'Пригласить в «{name}»',

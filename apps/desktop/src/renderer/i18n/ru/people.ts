@@ -95,6 +95,8 @@ export const ruPeople = {
   'sounds.pttOff': 'Push-to-talk: отпущено',
   'sounds.mention': 'Упоминание',
   'sounds.message': 'Новое сообщение',
+  'sounds.messageHint': 'Звук играет только там, где включены уведомления «Все сообщения», и в личных сообщениях.',
+  'sounds.messageHintLink': 'Где настроить',
   'sounds.openChat': 'В открытом чате',
   'sounds.openChatHint': 'Сообщение в чате, который сейчас открыт, пока окно в фокусе',
   'sounds.openChatQuiet': 'Тихо',

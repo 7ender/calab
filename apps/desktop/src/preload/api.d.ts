@@ -68,6 +68,8 @@ export interface CalabaApi {
     legal(): Promise<LegalTexts>;
     /** Bounce the dock / flash the taskbar when the window is not focused. */
     attention(): void;
+    /** The app badge: mentions + unread DM messages (0 clears it). */
+    setBadge(n: number): void;
     setTheme(theme: 'dark' | 'light' | 'system'): void;
     /** Translated strings for the tray / notifications / window titles main shows (ADR-0022). */
     setStrings(strings: MainStrings): void;

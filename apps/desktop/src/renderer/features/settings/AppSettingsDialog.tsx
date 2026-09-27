@@ -554,7 +554,7 @@ function NotificationsTab(): ReactNode {
         <Row label={t('notify.mentions')} hint={t('notify.mentionsHint')}>
           <Toggle label={t('notify.mentions')} checked={p.notifyMentions} onChange={(v) => p.setPrefs({ notifyMentions: v })} />
         </Row>
-        <Row label={t('notify.all')}>
+        <Row label={t('notify.all')} hint={t('notify.allHint')}>
           <Toggle label={t('notify.all')} checked={p.notifyAll} onChange={(v) => p.setPrefs({ notifyAll: v })} />
         </Row>
         <Row label={t('notify.test')}>

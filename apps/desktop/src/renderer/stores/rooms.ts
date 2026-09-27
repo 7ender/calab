@@ -1,4 +1,13 @@
-import { NotificationLevel, RoomType, type Room, type RoomCategory, type RoomNotificationSettings, type RoomPermissionOverride } from '@calaba/protocol';
+import {
+  NotificationLevel,
+  RoomType,
+  effectiveNotificationLevel,
+  type Room,
+  type RoomCategory,
+  type RoomNotificationSettings,
+  type RoomPermissionOverride,
+  type WorkspaceNotificationSettings,
+} from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { create } from 'zustand';
 
@@ -47,6 +56,10 @@ interface RoomsState {
   notify: Record<string, RoomNotificationSettings>;
   setNotify: (s: RoomNotificationSettings) => void;
   setNotifyAll: (list: RoomNotificationSettings[]) => void;
+  /** My stored per-workspace notification settings (READY + WORKSPACE_NOTIFICATION_UPDATE); absent = default. */
+  wsNotify: Record<string, WorkspaceNotificationSettings>;
+  setWsNotify: (s: WorkspaceNotificationSettings) => void;
+  setWsNotifyAll: (list: WorkspaceNotificationSettings[]) => void;
 }
 
 /** uuidv7 ids are time-ordered and fixed-length: string comparison = order. */
@@ -62,8 +75,9 @@ export const useRooms = create<RoomsState>()((set) => ({
   liveCounted: {},
   categories: {},
   notify: {},
+  wsNotify: {},
   reset: () =>
-    set({ byId: {}, readState: {}, lastMessage: {}, unread: {}, mentions: {}, countedUpTo: {}, liveCounted: {}, categories: {}, notify: {} }),
+    set({ byId: {}, readState: {}, lastMessage: {}, unread: {}, mentions: {}, countedUpTo: {}, liveCounted: {}, categories: {}, notify: {}, wsNotify: {} }),
   upsert: (r) => set((s) => ({ byId: { ...s.byId, [r.id]: r } })),
   upsertMany: (rs) =>
     set((s) => {
@@ -173,27 +187,76 @@ export const useRooms = create<RoomsState>()((set) => ({
       return { notify };
     }),
   setNotifyAll: (list) => set({ notify: Object.fromEntries(list.filter((n) => !isDefaultNotify(n)).map((n) => [n.roomId, n])) }),
+  setWsNotify: (n) =>
+    set((s) => {
+      const wsNotify = { ...s.wsNotify };
+      if (isDefaultWsNotify(n)) delete wsNotify[n.workspaceId];
+      else wsNotify[n.workspaceId] = n;
+      return { wsNotify };
+    }),
+  setWsNotifyAll: (list) =>
+    set({ wsNotify: Object.fromEntries(list.filter((n) => !isDefaultWsNotify(n)).map((n) => [n.workspaceId, n])) }),
 }));
 
 const isDefaultNotify = (n: RoomNotificationSettings): boolean =>
-  (n.level === NotificationLevel.ALL || n.level === NotificationLevel.UNSPECIFIED) && !n.mutedUntil;
+  (n.level === NotificationLevel.INHERIT || n.level === NotificationLevel.UNSPECIFIED) && !n.mutedUntil;
+
+const isDefaultWsNotify = (n: WorkspaceNotificationSettings): boolean =>
+  (n.level === NotificationLevel.MENTIONS || n.level === NotificationLevel.UNSPECIFIED) && !n.mutedUntil;
 
 export interface RoomNotify {
-  /** ALL, MENTIONS or NONE (UNSPECIFIED is read as ALL). */
+  /** The stored level: a room's INHERIT / ALL / MENTIONS / NONE, a workspace's ALL / MENTIONS / NONE. */
   level: NotificationLevel;
   /** Temporary mute end (unix ms) while it is in the future, else null. */
   mutedUntil: number | null;
 }
 
-/** Effective notification settings of a room (docs/05, «Уведомления комнаты»). */
+const muteEnd = (t: RoomNotificationSettings['mutedUntil'], now: number): number | null => {
+  const until = t ? timestampMs(t) : 0;
+  return until > now ? until : null;
+};
+
+/** Stored notification settings of a room (docs/05 «Уведомления»); the default is INHERIT. */
 export function roomNotify(n: RoomNotificationSettings | undefined, now = Date.now()): RoomNotify {
-  const level = !n || n.level === NotificationLevel.UNSPECIFIED ? NotificationLevel.ALL : n.level;
-  const until = n?.mutedUntil ? timestampMs(n.mutedUntil) : 0;
-  return { level, mutedUntil: until > now ? until : null };
+  const level = !n || n.level === NotificationLevel.UNSPECIFIED ? NotificationLevel.INHERIT : n.level;
+  return { level, mutedUntil: muteEnd(n?.mutedUntil, now) };
 }
 
-/** Quiet room: no system notifications and no sounds (NONE or muted for now). */
-export const isQuiet = (r: RoomNotify): boolean => r.level === NotificationLevel.NONE || r.mutedUntil !== null;
+/** Stored notification settings of a workspace; the default is MENTIONS. */
+export function workspaceNotify(n: WorkspaceNotificationSettings | undefined, now = Date.now()): RoomNotify {
+  const level = !n || n.level === NotificationLevel.UNSPECIFIED ? NotificationLevel.MENTIONS : n.level;
+  return { level, mutedUntil: muteEnd(n?.mutedUntil, now) };
+}
+
+export interface EffectiveNotify {
+  dm: boolean;
+  room: RoomNotify;
+  /** The room's workspace (a DM has none: the default, never muted). */
+  workspace: RoomNotify;
+  /** ALL / MENTIONS / NONE: the room's level unless INHERIT, else the workspace's (DM: ALL unless NONE). */
+  level: NotificationLevel;
+  /**
+   * No sounds, no system notifications, no unread dots: level NONE or muted (the room, or its
+   * workspace). Mention badges still count.
+   */
+  quiet: boolean;
+}
+
+type NotifyState = Pick<RoomsState, 'byId' | 'notify' | 'wsNotify'>;
+
+/** The settings that decide for a room now (docs/05 «Уведомления», docs/09 item 22). */
+export function effectiveNotify(roomId: string, s: NotifyState, now = Date.now()): EffectiveNotify {
+  const r = s.byId[roomId];
+  const dm = r?.type === RoomType.DM;
+  const room = roomNotify(s.notify[roomId], now);
+  const workspace = dm || !r ? workspaceNotify(undefined) : workspaceNotify(s.wsNotify[r.workspaceId], now);
+  const level = effectiveNotificationLevel(room.level, workspace.level, dm);
+  const muted = room.mutedUntil !== null || (!dm && workspace.mutedUntil !== null);
+  return { dm, room, workspace, level, quiet: muted || level === NotificationLevel.NONE };
+}
+
+/** A quiet room (see EffectiveNotify.quiet), as a boolean for store selectors. */
+export const isQuietRoom = (roomId: string, s: NotifyState, now = Date.now()): boolean => effectiveNotify(roomId, s, now).quiet;
 
 export interface RoomGroup {
   /** null = rooms without a category (top of the list, no header). */
@@ -250,6 +313,24 @@ export function unreadMentionCounts(items: ReadonlyArray<{ id: string; roomId: s
 export function isUnread(roomId: string, s: Pick<RoomsState, 'readState' | 'lastMessage' | 'unread'>): boolean {
   const n = s.unread[roomId];
   return n !== undefined ? n > 0 : idAfter(s.lastMessage[roomId], s.readState[roomId]);
+}
+
+/**
+ * The unread dot / bold name of a room row and the rail dot (docs/09 item 22): unread and not
+ * quiet. A muted room or workspace keeps only its mention badge.
+ */
+export const showsUnread = (roomId: string, s: Pick<RoomsState, 'readState' | 'lastMessage' | 'unread'> & NotifyState): boolean =>
+  isUnread(roomId, s) && !isQuietRoom(roomId, s);
+
+/**
+ * The app badge (Dock, taskbar, tray, window title): mentions of me + unread DM messages (every
+ * DM message counts as a mention), not every unread message. Muted rooms still count their
+ * mentions, as their own badges do.
+ */
+export function badgeCount(s: Pick<RoomsState, 'byId' | 'mentions'>): number {
+  let n = 0;
+  for (const [id, c] of Object.entries(s.mentions)) if (s.byId[id] && c > 0) n += c;
+  return n;
 }
 
 export const isVoice = (r: Room | undefined): boolean => r?.type === RoomType.VOICE;

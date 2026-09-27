@@ -39,6 +39,8 @@ export const IPC = {
   appOpenExternal: 'app:open-external',
   appLegal: 'app:legal',
   appAttention: 'app:attention',
+  /** Mentions + unread DM messages → Dock badge / badge count / tray tooltip (docs/09 item 22). */
+  appSetBadge: 'app:set-badge',
   /** Renderer theme → nativeTheme.themeSource (vibrancy follows the app theme). */
   appSetTheme: 'app:set-theme',
   /** Renderer locale → the few strings main shows itself (tray, notifications, window titles; ADR-0022). */

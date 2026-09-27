@@ -17,3 +17,4 @@ export * from './gen/calaba/v1/workspace_pb.js';
 // Hand-written helpers on top of the contract.
 export * from './permissions.js';
 export * from './media.js';
+export * from './notifications.js';

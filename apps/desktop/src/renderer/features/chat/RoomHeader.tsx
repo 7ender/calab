@@ -1,8 +1,8 @@
 import { NotificationLevel, PresenceStatus, RoomType, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, BellDot, BellOff, Check, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Badge, Button, IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
@@ -14,7 +14,7 @@ import { setRoomNotifications } from '../../services/mentions';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMobile } from '../../lib/mobile';
 import { NavButton } from '../shell/MobileShell';
-import { isQuiet, roomNotify, useRooms } from '../../stores/rooms';
+import { effectiveNotify, useRooms } from '../../stores/rooms';
 import { useMessages } from '../../stores/messages';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
@@ -26,7 +26,8 @@ import { useDms } from '../../stores/dms';
 import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
-import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
+import { menuBox } from '../shell/menu';
+import { LEVEL_LABEL, NotifyMenuItems, mutedText, type LevelOption } from './NotifyMenu';
 import { previewText } from './mentionText';
 import { TypingDots, useTypingText } from './TypingIndicator';
 
@@ -241,102 +242,91 @@ function HeaderSearch({ workspaceId }: { workspaceId: string }): ReactNode {
   );
 }
 
-const LEVELS = [
-  { level: NotificationLevel.ALL, label: 'chat.notifyAll' },
-  { level: NotificationLevel.MENTIONS, label: 'chat.notifyMentions' },
-  { level: NotificationLevel.NONE, label: 'chat.notifyNone' },
-] as const;
-
-const MUTES = [
-  { ms: 15 * 60_000, label: 'chat.notifyMute15m' },
-  { ms: 60 * 60_000, label: 'chat.notifyMute1h' },
-  { ms: 8 * 60 * 60_000, label: 'chat.notifyMute8h' },
-  { ms: 24 * 60 * 60_000, label: 'chat.notifyMute24h' },
-] as const;
-
-/** «Выключены до 14:30». Open-ended «Пока не включу» is level NONE without muted_until (docs/05). */
-function mutedText(until: number): string {
-  return t('chat.notifyMutedUntil', { time: fmt.until(new Date(until)) });
-}
-
-
 /**
- * Room notifications (docs/05, «Уведомления комнаты»): level (all / mentions / nothing) and a
- * temporary «do not disturb». Server-synced across devices; the bell shows the state.
+ * Room notifications (docs/05 «Уведомления», docs/09 item 22): «Как в пространстве» (the
+ * default) / all / mentions / nothing, and «Заглушить» for a while or for good. Server-synced
+ * across devices; the bell shows the effective state (crossed out while silent).
  */
 function NotifyButton({ roomId, className }: { roomId: string; className?: string | undefined }): ReactNode {
   const stored = useRooms((s) => s.notify[roomId]);
+  const room = useRooms((s) => s.byId[roomId]);
+  const wsId = room?.workspaceId ?? '';
+  const wsStored = useRooms((s) => (wsId ? s.wsNotify[wsId] : undefined));
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const n = roomNotify(stored, now);
-  // Re-evaluate when a temporary mute runs out (the icon flips back by itself).
+  // «Где настроить» in Settings → Звуки opens this menu (after the settings dialog closes).
+  const req = useUi((s) => s.notifyMenuReq);
+  const seenReq = useRef(req);
   useEffect(() => {
-    if (!n.mutedUntil) return;
-    const id = window.setTimeout(() => setNow(Date.now()), Math.min(n.mutedUntil - Date.now() + 50, 2 ** 31 - 1));
+    if (req === seenReq.current) return;
+    seenReq.current = req;
+    const id = window.setTimeout(() => {
+      setNow(Date.now());
+      setOpen(true);
+    }, 150);
     return () => window.clearTimeout(id);
-  }, [n.mutedUntil]);
-  const quiet = isQuiet(n);
-  const Icon = quiet ? BellOff : n.level === NotificationLevel.MENTIONS ? BellDot : Bell;
-  const levelText = t(LEVELS.find((l) => l.level === n.level)?.label ?? 'chat.notifyAll');
-  const state = n.mutedUntil ? mutedText(n.mutedUntil) : levelText;
+  }, [req]);
+  const eff = effectiveNotify(
+    roomId,
+    {
+      byId: room ? { [roomId]: room } : {},
+      notify: stored ? { [roomId]: stored } : {},
+      wsNotify: wsStored ? { [wsId]: wsStored } : {},
+    },
+    now,
+  );
+  // Re-evaluate when a temporary mute (of the room or its workspace) runs out: the icon flips back.
+  const nextEnd = Math.min(eff.room.mutedUntil ?? Infinity, eff.dm ? Infinity : (eff.workspace.mutedUntil ?? Infinity));
+  useEffect(() => {
+    if (nextEnd === Infinity) return;
+    const id = window.setTimeout(() => setNow(Date.now()), Math.min(nextEnd - Date.now() + 50, 2 ** 31 - 1));
+    return () => window.clearTimeout(id);
+  }, [nextEnd]);
+  const wsLevel = t(LEVEL_LABEL[eff.workspace.level] ?? 'chat.notifyMentions');
+  // A DM notifies every message: «Все сообщения» (the default) or «Ничего».
+  const options: LevelOption[] = eff.dm
+    ? [
+        { level: NotificationLevel.INHERIT, label: t('chat.notifyAll') },
+        { level: NotificationLevel.NONE, label: t('chat.notifyNone') },
+      ]
+    : [
+        { level: NotificationLevel.INHERIT, label: t('chat.notifyInherit', { level: wsLevel }) },
+        { level: NotificationLevel.ALL, label: t('chat.notifyAll') },
+        { level: NotificationLevel.MENTIONS, label: t('chat.notifyMentions') },
+        { level: NotificationLevel.NONE, label: t('chat.notifyNone') },
+      ];
+  const value = eff.dm && eff.room.level !== NotificationLevel.NONE ? NotificationLevel.INHERIT : eff.room.level;
+  const Icon = eff.quiet ? BellOff : !eff.dm && eff.level === NotificationLevel.ALL ? BellRing : Bell;
+  const wsMuted = !eff.dm && eff.workspace.mutedUntil ? eff.workspace.mutedUntil : null;
+  const state = eff.room.mutedUntil
+    ? mutedText(eff.room.mutedUntil)
+    : wsMuted
+      ? t('chat.notifyWsMutedUntil', { time: fmt.until(new Date(wsMuted)) })
+      : (options.find((o) => o.level === value)?.label ?? '');
+  const tip = t('chat.notifyState', { state: state.toLowerCase() });
   return (
     <Dropdown.Root modal={false} open={open} onOpenChange={(v) => {
         setOpen(v);
         if (v) setNow(Date.now());
       }}>
-      <Tip label={t('chat.notifyState', { state: state.toLowerCase() })}>
+      <Tip label={tip}>
         <Dropdown.Trigger asChild>
-          <IconButton tip={false} label={t('chat.notifyState', { state: state.toLowerCase() })} active={open} className={cx(quiet && !open && 'text-faint', className)}>
+          <IconButton tip={false} label={tip} active={open} className={cx(eff.quiet && !open && 'text-faint', className)}>
             <Icon className="size-[18px]" />
           </IconButton>
         </Dropdown.Trigger>
       </Tip>
       <Dropdown.Portal>
-        <Dropdown.Content align="end" sideOffset={8} collisionPadding={16} className={menuBox} aria-label={t('chat.notify')}>
-          <Dropdown.Label className={menuLabel}>{t('chat.notify')}</Dropdown.Label>
-          <Dropdown.RadioGroup
-            value={String(n.level)}
-            onValueChange={(v) => void setRoomNotifications(roomId, Number(v), n.mutedUntil)}
-          >
-            {LEVELS.map((l) => (
-              <Dropdown.RadioItem key={l.level} value={String(l.level)} className={menuItem}>
-                <span className="grid w-4 place-items-center">
-                  <Dropdown.ItemIndicator>
-                    <Check className="size-4" aria-hidden />
-                  </Dropdown.ItemIndicator>
-                </span>
-                {t(l.label)}
-              </Dropdown.RadioItem>
-            ))}
-          </Dropdown.RadioGroup>
-          <Dropdown.Separator className={menuSeparator} />
-          <Dropdown.Label className={menuLabel}>
-            {n.mutedUntil ? mutedText(n.mutedUntil) : t('chat.notifyMute')}
-          </Dropdown.Label>
-          {MUTES.map((m) => (
-            <Dropdown.Item key={m.ms} className={menuItem} onSelect={() => void setRoomNotifications(roomId, n.level, Date.now() + m.ms)}>
-              <span className="w-4" aria-hidden />
-              {t(m.label)}
-            </Dropdown.Item>
-          ))}
-          {/* Open-ended: level NONE without muted_until (the server's permanent mute). */}
-          <Dropdown.Item className={menuItem} onSelect={() => void setRoomNotifications(roomId, NotificationLevel.NONE, null)}>
-            <span className="w-4" aria-hidden />
-            {t('chat.notifyMuteForever')}
-          </Dropdown.Item>
-          {n.mutedUntil || n.level === NotificationLevel.NONE ? (
-            <>
-              <Dropdown.Separator className={menuSeparator} />
-              <Dropdown.Item
-                className={menuItem}
-                onSelect={() =>
-                  void setRoomNotifications(roomId, n.level === NotificationLevel.NONE ? NotificationLevel.ALL : n.level, null)
-                }
-              >
-                <Bell className="size-4" aria-hidden /> {t('chat.notifyUnmute')}
-              </Dropdown.Item>
-            </>
-          ) : null}
+        <Dropdown.Content align="end" sideOffset={8} collisionPadding={16} className={cx(menuBox, 'max-w-80')} aria-label={t('chat.notify')}>
+          <NotifyMenuItems
+            title={t('chat.notify')}
+            options={options}
+            value={value}
+            mutedUntil={eff.room.mutedUntil}
+            defaultLevel={NotificationLevel.INHERIT}
+            note={wsMuted && !eff.room.mutedUntil ? t('chat.notifyWsMutedUntil', { time: fmt.until(new Date(wsMuted)) }) : undefined}
+            onChange={(level, until) => void setRoomNotifications(roomId, level, until)}
+          />
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>

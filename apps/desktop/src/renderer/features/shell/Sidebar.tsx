@@ -21,6 +21,7 @@ import {
   ArrowDown,
   ArrowUp,
   Bell,
+  BellOff,
   Check,
   ChevronDown,
   ChevronRight,
@@ -50,8 +51,9 @@ import { plural, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, isAdminRole, roomPerms, workspacePerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
-import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, useRooms } from '../../stores/rooms';
-import { setRoomNotifications } from '../../services/mentions';
+import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
+import { setWorkspaceNotifications } from '../../services/mentions';
+import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -60,7 +62,7 @@ import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
 import { joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
-import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
+import { menuBox, menuItem, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { moveMember } from '../people/actions';
 import { errorText } from '../../lib/api/errors';
@@ -352,53 +354,36 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
   );
 }
 
-const WS_LEVELS = [
-  { level: NotificationLevel.ALL, label: 'chat.notifyAll' },
-  { level: NotificationLevel.MENTIONS, label: 'chat.notifyMentions' },
-  { level: NotificationLevel.NONE, label: 'chat.notifyNone' },
-] as const;
-
 /**
- * «Уведомления…» in the workspace menu: one level for every room of the workspace (the server
- * stores settings per room, so this sets each; temporary mutes are kept). The mark shows the
- * level only when all rooms agree.
+ * «Уведомления» in the workspace menu (docs/09 item 22): my level for the workspace — what its
+ * rooms left at «Как в пространстве» follow (default «Только упоминания») — and «Заглушить» for
+ * the whole workspace. One server-synced setting, not a write per room.
  */
 function WorkspaceNotifyMenu({ workspaceId }: { workspaceId: string }): ReactNode {
-  const roomsById = useRooms((s) => s.byId);
-  const notify = useRooms((s) => s.notify);
-  const rooms = useMemo(() => roomsOfWorkspace(roomsById, workspaceId), [roomsById, workspaceId]);
-  if (!rooms.length) return null;
-  const levels = new Set(rooms.map((r) => roomNotify(notify[r.id]).level));
-  const common = levels.size === 1 ? String([...levels][0]) : '';
-  const apply = (v: string): void => {
-    const level: NotificationLevel = Number(v);
-    for (const r of rooms) {
-      const n = roomNotify(useRooms.getState().notify[r.id]);
-      if (n.level !== level) void setRoomNotifications(r.id, level, n.mutedUntil);
-    }
-  };
+  const stored = useRooms((s) => s.wsNotify[workspaceId]);
+  const n = workspaceNotify(stored);
+  const quiet = n.mutedUntil !== null || n.level === NotificationLevel.NONE;
+  const options: LevelOption[] = [NotificationLevel.ALL, NotificationLevel.MENTIONS, NotificationLevel.NONE].map((level) => ({
+    level,
+    label: t(LEVEL_LABEL[level] ?? 'chat.notifyAll'),
+  }));
   return (
     <Dropdown.Sub>
       <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
-        <Bell className="size-4" aria-hidden />
+        {quiet ? <BellOff className="size-4" aria-hidden /> : <Bell className="size-4" aria-hidden />}
         <span className="flex-1">{t('shell.wsNotify')}</span>
         <ChevronRight className="size-4" aria-hidden />
       </Dropdown.SubTrigger>
       <Dropdown.Portal>
-        <Dropdown.SubContent className={cx(menuBox, 'w-56')} sideOffset={4} collisionPadding={16}>
-          <Dropdown.Label className={menuLabel}>{t('shell.wsNotifyAll')}</Dropdown.Label>
-          <Dropdown.RadioGroup value={common} onValueChange={apply}>
-            {WS_LEVELS.map((l) => (
-              <Dropdown.RadioItem key={l.level} value={String(l.level)} className={menuItem}>
-                <span className="grid w-4 place-items-center">
-                  <Dropdown.ItemIndicator>
-                    <Check className="size-4" aria-hidden />
-                  </Dropdown.ItemIndicator>
-                </span>
-                {t(l.label)}
-              </Dropdown.RadioItem>
-            ))}
-          </Dropdown.RadioGroup>
+        <Dropdown.SubContent className={cx(menuBox, 'w-60')} sideOffset={4} collisionPadding={16}>
+          <NotifyMenuItems
+            title={t('shell.wsNotifyAll')}
+            options={options}
+            value={n.level}
+            mutedUntil={n.mutedUntil}
+            defaultLevel={NotificationLevel.MENTIONS}
+            onChange={(level, until) => void setWorkspaceNotifications(workspaceId, level, until)}
+          />
         </Dropdown.SubContent>
       </Dropdown.Portal>
     </Dropdown.Sub>
@@ -832,7 +817,7 @@ function TextRoomRow({
 }: { room: Room; workspaceId: string; me: string; role: WorkspaceRole; admin: boolean } & RowOrder): ReactNode {
   const active = useUi((s) => s.lastRoom[workspaceId] === room.id && s.activeWorkspaceId === workspaceId);
   const openRoom = useUi((s) => s.openRoom);
-  const unread = useRooms((s) => isUnread(room.id, s));
+  const unread = useRooms((s) => showsUnread(room.id, s));
   const mentions = useRooms((s) => s.mentions[room.id] ?? 0);
   const perms = roomPerms(role, me, room);
   const bright = active || unread;
@@ -893,7 +878,7 @@ function VoiceRoomRow({
   const openRoom = useUi((s) => s.openRoom);
   const inRoom = useVoice((s) => s.roomId === room.id);
   const connecting = useVoice((s) => s.roomId === room.id && s.phase === 'connecting');
-  const unread = useRooms((s) => isUnread(room.id, s));
+  const unread = useRooms((s) => showsUnread(room.id, s));
   const mentions = useRooms((s) => s.mentions[room.id] ?? 0);
   const perms = roomPerms(role, me, room);
   const people = useMemo(

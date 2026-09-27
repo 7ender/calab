@@ -341,6 +341,7 @@ export const zhCN: Dict = {
   'notify.mentions': '有人提及我时通知',
   'notify.mentionsHint': '当有人 @提及你且窗口未激活时',
   'notify.all': '所有消息都通知',
+  'notify.allHint': '在设为“所有消息”的房间和工作区中',
   'notify.voiceSounds': '加入、离开与麦克风提示音',
   'notify.test': '测试通知',
   'notify.testBody': '通知功能正常',
