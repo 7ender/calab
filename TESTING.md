@@ -1846,3 +1846,11 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 3. Вручную: правый клик по диалогу → «В архив» — диалог уходит в свёрнутый «Архив — 1» внизу; собеседник пишет — диалог вернулся с непрочитанным.
 4. «⋯» в заголовке DM → «Удалить чат» → «Удалить»: переписка закрылась, диалога нет в списке; «Написать» ему же — лента пуста. У собеседника история на месте.
 5. Собеседник пишет снова — диалог появился «чистым» с одним новым сообщением.
+
+## Боты и Bot API, сервер (ADR-0031, docs/09 #59, фаза 1)
+1. `cd apps/server && TEST_DATABASE_URL=… TEST_REDIS_URL=redis://localhost:56379/14 go test -race -tags integration -run 'Bot|Matrix|Auth' ./internal/app` — ok (`TestBotRouteTable` обходит все маршруты: без решения/`deny` → 403 `BOT_NOT_ALLOWED`; жизненный цикл токена, 4010 на сокете, лимит тарифа, права через роли и ограниченные комнаты, команды, webhook с подписью и отключением, блокировка, лимиты, `/join` + удаление из LiveKit при отзыве).
+2. Unit: `go test ./internal/auth ./internal/messages ./internal/bots` (формат токена, парсер `/cmd@bot`, SSRF-политика webhook, подпись).
+3. Руками (владелец, `make dev-server`): `POST /api/workspaces/{id}/bots {"displayName":"Echo","username":"echo_bot"}` → 201 с `token`; `curl -H "Authorization: Bearer <token>" …/api/me` → `isBot: true`; `…/api/me/sessions` → 403 `BOT_NOT_ALLOWED`.
+4. Бот: `PUT /api/bots/me/commands {"commands":[{"name":"roll"}]}`; человек пишет `/roll 2d6` → в gateway бота `MESSAGE_CREATE.message.command {name:"roll", args:"2d6"}`, у людей поля нет.
+5. Webhook: `PUT /api/bots/me/webhook {"url":"https://<публичный хост>/hook","secret":"<16+ символов>"}` → на хост приходит POST с `X-Calab-Signature: sha256=…` (проверить HMAC тела); `http://` и приватные адреса → 422.
+6. `POST …/bots/{botId}/token` → старый токен 401 сразу, сокет бота закрыт 4010; `DELETE …/bots/{botId}` → бот пропал из участников и звонка.

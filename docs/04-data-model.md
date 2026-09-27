@@ -82,6 +82,16 @@ room_recordings     id (uuidv7 приложения), workspace_id, room_id, sta
                     UNIQUE (room_id) WHERE status IN (pending, recording) — одна запись на комнату (ADR-0025)
                     rooms += allow_recording (true);  messages += kind ('user'|'system'), payload? (jsonb SystemMessage)
 
+                    users += is_bot (ADR-0031; email NULL допустим у гостя или бота, бот не гость)
+bots                user_id PK → users, owner_user_id, workspace_id («домашнее»; ON DELETE CASCADE), username (unique citext,
+                    [a-z0-9_]{3,32}), description (≤ 512), token_id?, token_hash? (sha256 секрета; NULL = отозван), token_prefix,
+                    webhook_url?, webhook_secret_enc? (AES-GCM, ключ из JWT_SECRET), webhook_disabled_at?, webhook_failing_since?,
+                    webhook_last_ok_at?, webhook_last_error, created_at, revoked_at?
+bot_commands        bot_user_id, name ([a-z0-9_]{1,32}), description (≤ 256), position   PK (bot_user_id, name)
+bot_webhook_deliveries id (uuidv7 приложения = id в теле), bot_user_id, payload? (JSON; NULL после завершения), attempts,
+                    next_at, created_at, delivered_at?, failed_at?, error          — outbox webhook-ов ботов
+bot_blocks          user_id, bot_user_id, created_at   PK (user_id, bot_user_id) — человек заблокировал бота
+
 voice_states        (не в Postgres — в Redis, источник LiveKit webhooks)
                     ключ — сессия (LiveKit identity = <user_id>:<session_id>):
                     workspace_id → { session_id → { user_id, room_id, muted, deafened,
@@ -215,7 +225,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 ## Тарифы и лимиты пространств (ADR-0024)
 
 - `workspace_plans(workspace_id PK, plan free|team|custom, limits jsonb, valid_until, note, updated_by, updated_at)`; нет записи → `free`. `limits` хранится только у `custom` (как записано, 0 = без лимита); `free` / `team` берут лимиты из env `PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` (JSON поверх встроенных дефолтов, ключи ниже). Истёкший `valid_until` → лимиты `free`, запись остаётся (`Workspace.plan.expired = true`). Каждое изменение через admin API пишется в `workspace_plan_log` (кто, план, лимиты в силе на момент изменения, срок, заметка).
-- Ключи: `room_members` (5), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (1024), `members` (0 = ∞; пока информационный). Team по умолчанию: 50 в комнате, остальное без лимита.
+- Ключи: `room_members` (5), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (1024), `members` (0 = ∞; пока информационный), `bots` (2: ботов-участников пространства, ADR-0031; `409 CONFLICT`, `reason PLAN_LIMIT` при создании и добавлении). Team по умолчанию: 50 в комнате, 20 ботов, остальное без лимита.
 - Сервер (`internal/plans`, кэш 30 с, сброс при изменении на всех инстансах через Redis `plans:changed`) применяет лимиты **для всех, включая владельца** (это не биты прав):
   - вход в голосовую комнату (`/join`, webhook `participant_joined`, перемещение): мест `min(user_limit, room_members)`, pending-устройства и гости считаются; упор в лимит плана → `409 ROOM_FULL`, `reason = PLAN_LIMIT`, `used`/`limit`. `user_limit` комнаты по-прежнему не действует на `MOVE_MEMBERS`, лимит плана — действует;
   - стрим: пресет ≤ `min(max_stream_preset комнаты, stream_max_preset)`, стримов ≤ `min(max_streams, streams_per_room)` (и при выдаче слота, и в webhook), fps ≤ `stream_max_fps`; камера: пресет/fps ≤ `camera_max_*` (ответ `/camera/request`);
@@ -247,6 +257,12 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - **Сброс пароля.** `forgot` всегда 204 (работа в фоне, тайминг одинаковый); `reset` с неверным/просроченным кодом или неизвестным адресом — одинаково `422 CODE_INVALID`; успех: новый хэш, адрес подтверждён, **все** сессии отозваны.
 - **Приглашения по email.** Право — `MANAGE_WORKSPACE` (право на приглашения) + подтверждённый адрес. `lookup` — точное совпадение среди подтверждённых активных не-гостей, 20/мин на пользователя, в лог — id действующего и sha256-префикс адреса. `members {user_id}` добавляет сразу (`member`) + письмо `workspace_added`. `invites/email` создаёт одноразовую ссылку, привязанную к адресу (регистрация/вход по ней с другим адресом → `INVITE_INVALID`; с этим — адрес сразу подтверждён), повтор тому же адресу — не чаще раза в 24 ч (новая ссылка, старая удаляется); 20 подряд / 30 в час на пользователя. Подтверждение адреса (код, сброс пароля, ссылка) принимает **все** живые email-приглашения этого адреса.
 - Позже: OIDC (Google Workspace / Keycloak) — таблица `users` уже без привязки к паролю как единственному способу (`password_hash` nullable).
+
+## Боты (ADR-0031)
+
+- Бот — пользователь `is_bot` (без email/пароля, `email_verified_at` ставится при создании), участник пространств со встроенной ролью `member`; права — свои роли и переопределения комнат, `computePermissions` не меняется. `admin`/`guest` боту не выдаются (`422`), `owner` — никогда. Ограниченные комнаты (ADR-0029) действуют как на людей.
+- Создаёт владелец или `MANAGE_WORKSPACE` (подтверждённый email) — «домашнее» пространство; добавить в другое — `MANAGE_WORKSPACE` там (`…/bots/add`). Токен, удаление — дома (владелец бота или `MANAGE_WORKSPACE`). Удаление: `bots` удаляется, членства и личные переопределения — тоже, аккаунт `disabled_at`, сообщения остаются. Удаление домашнего пространства удаляет строку `bots` (токен перестаёт работать).
+- Аутентификация и маршруты для ботов — docs/05 «Боты».
 
 ## Гости (ADR-0016)
 

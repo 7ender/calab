@@ -30,6 +30,12 @@
 | Запись встречи | не гость, `VIEW_ROOM` + `CONNECT`, `allow_recording` | `recording.participant` | `roomMenuGroups` (`record`) |
 | Саммари, аудио, транскрипт записи (docs/09 #47) | `VIEW_ROOM` room (карточка — сообщение комнаты; аудио — вложение; ограниченная — только допущенные) | `files.CanRead`, `recording.transcript` | — |
 | Удалить запись встречи (docs/09 #50) | запустивший, владелец (`owner_id`) или `MANAGE_MESSAGES` room (+ `VIEW_ROOM`) | `recording.remove` | `mayDeleteRecording` |
+| Создать бота, список ботов (ADR-0031) | `MANAGE_WORKSPACE` ws (владелец — всегда), подтверждённый email; тариф `bots` | `bots.create`, `bots.list` (`manager`) | — (клиент, фаза 1b) |
+| Перевыпустить / отозвать токен, удалить бота | в «домашнем» пространстве: владелец бота или `MANAGE_WORKSPACE` ws | `bots.homeBot`, `bots.remove` | — |
+| Добавить / убрать бота в другом пространстве | `MANAGE_WORKSPACE` ws этого пространства | `bots.add`, `bots.remove` | — |
+| Бот: любое действие | те же биты, что у человека (роли + переопределения; встроенная роль всегда `member`) + маршрут `allow` в `internal/app/botroutes.go`, иначе `403 BOT_NOT_ALLOWED` | `botGate` (`auth.NoBots`) + обработчик | — |
+| Бот: писать в DM | общее пространство (не гость) и не заблокирован собеседником (`403 BOT_BLOCKED`) | `dms.create`, `messages.create` (`CheckBotBlocked`) | — |
+| Команды бота в комнате (подсказки) | `VIEW_ROOM` room у запрашивающего и у бота | `bots.roomCommands`, `messages.resolveCommand` | — |
 | Отключить из голоса, стоп стрима / камеры | `MUTE_MEMBERS` room + иерархия голоса | `rtc.moderate` (`outranks`) | `memberActions` (`mayModerateVoice`) |
 | Серверный мьют / снятие | `MUTE_MEMBERS` room и ws + иерархия | `workspaceMute` | `memberActions.serverMute` |
 | Переместить (меню, drag) | `MOVE_MEMBERS` в обеих комнатах + иерархия перемещения: админ/владелец — любого, включая админов и владельца; своя роль с `MOVE_MEMBERS` — только ниже админов; цели — `VIEW_ROOM` + `CONNECT` (п. 54) | `rtc.moveMember` (`mayMove`) | `memberActions.moveTargets`, `mayMoveMembersIn` + `mayMoveVoice`, проверка в `onEnd` |
