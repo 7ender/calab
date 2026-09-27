@@ -71,14 +71,6 @@ interface UiState {
    */
   notifyMenuReq: number;
   requestNotifyMenu: () => void;
-  /**
-   * The open room's header (its instance id) shows the workspace search field (docs/09 #50: only
-   * when it fits the chat column); the title bar hides its search pill meanwhile — one entry
-   * point. Not persisted.
-   */
-  headerSearch: string | null;
-  /** `owner` (a header instance) shows the field or not; only the owner clears it (mount order). */
-  setHeaderSearch: (owner: string, v: boolean) => void;
 }
 
 /** Window width from which the members list is a column instead of a floating panel (docs/08: chat keeps ≥ ~600 px). */
@@ -106,8 +98,6 @@ export const useUi = create<UiState>()(
       setHideMuted: (hideMuted) => set({ hideMuted }),
       notifyMenuReq: 0,
       requestNotifyMenu: () => set((s) => ({ dialog: null, notifyMenuReq: s.notifyMenuReq + 1 })),
-      headerSearch: null,
-      setHeaderSearch: (owner, v) => set((s) => (v ? { headerSearch: owner } : s.headerSearch === owner ? { headerSearch: null } : s)),
       setWorkspace: (id) =>
         set((s) => ({
           activeWorkspaceId: id,

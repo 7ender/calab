@@ -103,7 +103,6 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.searchNewer': 'Coincidencia siguiente',
   'chat.searchClose': 'Cerrar búsqueda',
   // header search field (docs/09 #50): the entry to the ⌘K search
-  'chat.searchWorkspace': 'Buscar en {name}',
   // global search (⌘K)
   'search.title': 'Buscar',
   'search.hint': 'Salas, miembros y mensajes; flechas para elegir, Intro para abrir',

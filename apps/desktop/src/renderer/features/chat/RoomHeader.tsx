@@ -2,16 +2,14 @@ import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Messag
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Badge, Button, IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { can, mayPin } from '../../lib/permissions';
 import { setPinned } from '../../services/chat';
-import { useHotkeyLabel } from '../../services/hotkeys';
 import { setRoomNotifications } from '../../services/mentions';
-import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMobile } from '../../lib/mobile';
 import { NavButton } from '../shell/MobileShell';
 import { effectiveNotify, useRooms } from '../../stores/rooms';
@@ -38,17 +36,10 @@ import { headerFit, measureHeader, type HeaderFit } from './headerFit';
 const NO_PINS: never[] = [];
 
 /**
- * From this window width the header may have a search field (when it also fits the chat column,
- * see headerFit.ts); otherwise the ⌘K entry stays in the title bar.
- */
-export const HEADER_SEARCH_MIN = 1200;
-
-/**
  * Room header (docs/09 #7): icon, name, • topic (or «… печатает» while someone types), and on
- * the right: workspace search field (≥ 1200 px and room for it in the chat column, docs/09 #50),
- * search in room, pinned, notifications, settings, members. It never spills out of the chat
- * column (it used to paint over the members column): the search field goes first, then the
- * spacing tightens, then the name truncates.
+ * the right: search in room, pinned, notifications, settings, members. Workspace search lives in the
+ * title bar only (docs/09 #53). It never spills out of the chat column (it used to paint over the
+ * members column): the spacing tightens first, then the name truncates.
  */
 export function RoomHeader({
   workspaceId,
@@ -69,7 +60,6 @@ export function RoomHeader({
   const setSearch = useChatView((s) => s.setSearch);
   const voiceRoom = room.type === RoomType.VOICE;
   const Icon = voiceRoom ? Volume2 : Hash;
-  const wide = useMediaQuery(`(min-width: ${HEADER_SEARCH_MIN}px)`);
   // Phone layout (ADR-0021): this header is the top bar — ☰ (rooms drawer) first, the name takes
   // the room; search, notifications and members stay (pins show in the pinned bar, room settings in
   // the drawer's room menu), 40 px touch targets.
@@ -78,14 +68,6 @@ export function RoomHeader({
   // Re-render (and re-measure) when «Войти в голос» appears or goes.
   const preview = useVoice((s) => voiceRoom && isVoicePreview(room, s.roomId));
   const [fit, headerEl] = useHeaderFit(!mobile);
-  const search = wide && !mobile && fit.search;
-  const setHeaderSearch = useUi((s) => s.setHeaderSearch);
-  const owner = useId();
-  // Keyed by this instance: an old header unmounting after a new one mounted can't clear its flag.
-  useLayoutEffect(() => {
-    setHeaderSearch(owner, search);
-    return () => setHeaderSearch(owner, false);
-  }, [owner, search, setHeaderSearch]);
 
   return (
     <header
@@ -116,7 +98,6 @@ export function RoomHeader({
         <div data-header-fill className="flex-1" />
       )}
       <div className="no-drag flex shrink-0 items-center gap-0.5">
-        {search ? <HeaderSearch workspaceId={workspaceId} /> : null}
         <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
           <Search className="size-[18px]" />
         </IconButton>
@@ -142,12 +123,12 @@ export function RoomHeader({
  */
 function useHeaderFit(enabled: boolean): [HeaderFit, (el: HTMLElement | null) => void] {
   const [el, setEl] = useState<HTMLElement | null>(null);
-  const [fit, setFit] = useState<HeaderFit>({ search: false, tight: false });
+  const [fit, setFit] = useState<HeaderFit>({ tight: false });
   const measure = useCallback(() => {
     if (!el || !enabled) return;
     const { width, used } = measureHeader(el);
     const next = headerFit(width, used);
-    setFit((f) => (f.search === next.search && f.tight === next.tight ? f : next));
+    setFit((f) => (f.tight === next.tight ? f : next));
   }, [el, enabled]);
   // Every render: cheap (a handful of rects), and the header re-renders rarely. DOM measurement
   // before paint has to set state here; the setter bails out when nothing changed.
@@ -207,8 +188,8 @@ const PRESENCE_KEY: Partial<Record<PresenceStatus, MessageKey>> = {
 
 /**
  * DM header (ADR-0020): the peer's avatar with presence, name, • presence and custom status
- * (or «… печатает»); on the right search in the chat, pinned, notifications. No members,
- * settings or workspace search: a DM has none of them. Both participants pin (docs/04).
+ * (or «… печатает»); on the right search in the chat, pinned, notifications. No members
+ * or settings: a DM has none of them. Both participants pin (docs/04).
  */
 export function DmHeader({ room }: { room: Room }): ReactNode {
   const peerId = useDms((s) => s.byRoom[room.id]?.peerId ?? '');
@@ -261,44 +242,6 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
         <NotifyButton roomId={room.id} className={touch} />
       </div>
     </header>
-  );
-}
-
-/**
- * «Поиск в <пространство>» (docs/09 #50): a bigger entry point to the one workspace search —
- * the ⌘K quick switcher (rooms, members, messages). Clicking or Enter opens it; typing opens it
- * with the typed text. The shortcut hint follows the rebindable hotkey.
- */
-function HeaderSearch({ workspaceId }: { workspaceId: string }): ReactNode {
-  const name = useWorkspaces((s) => s.byId[workspaceId]?.ws.name ?? '');
-  const keys = useHotkeyLabel('search');
-  const label = t('chat.searchWorkspace', { name });
-  const open = (query = ''): void => useUi.getState().openDialog({ kind: 'quick-switcher', query });
-  const onKey = (e: KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      open();
-    }
-  };
-  return (
-    <div className="relative mr-1 w-[240px] shrink-0" data-testid="header-search" data-header-search>
-      <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted" aria-hidden />
-      <input
-        type="search"
-        value=""
-        onChange={(e) => open(e.target.value)}
-        onKeyDown={onKey}
-        onMouseDown={(e) => {
-          e.preventDefault();
-          open();
-        }}
-        placeholder={label}
-        aria-label={label}
-        aria-haspopup="dialog"
-        className="h-7 w-full min-w-0 cursor-default text-ellipsis rounded-[var(--radius-control)] bg-hover pl-7 pr-11 text-body text-fg transition-colors duration-[var(--motion-fast)] placeholder:text-muted hover:bg-[var(--color-fill-hover)] focus-visible:outline-offset-0 [&::-webkit-search-cancel-button]:hidden"
-      />
-      <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-sans text-micro text-muted">{keys}</kbd>
-    </div>
   );
 }
 
