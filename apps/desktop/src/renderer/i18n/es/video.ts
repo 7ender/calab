@@ -98,7 +98,6 @@ export const esVideo: DictShape<typeof enVideo> = {
   'roomMenu.moreOf': 'Acciones de «{name}»',
   'roomMenu.invite': 'Invitar a la sala',
   'roomMenu.record': 'Grabar reunión',
-  'roomMenu.soon': 'Próximamente',
   'rec.badge': 'REC',
   'rec.label': 'Grabando',
   'rec.on': 'Grabación en curso',

@@ -39,6 +39,9 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_EMAIL_NOT_VERIFIED: { key: 'mail.err.notVerified' },
   ERROR_CODE_CODE_INVALID: { key: 'mail.err.codeInvalid' },
   ERROR_CODE_CODE_EXPIRED: { key: 'mail.err.codeExpired' },
+  ERROR_CODE_NOT_PAIRED: { key: 'rec.start.notPaired' },
+  ERROR_CODE_ALREADY_RECORDING: { key: 'rec.start.already' },
+  ERROR_CODE_RECORDING_LIMIT: { key: 'rec.start.busy', retry: true },
 };
 
 /** ERROR_CODE_VALIDATION `field` (protojson name, see apps/server Validation(...)) → text. */

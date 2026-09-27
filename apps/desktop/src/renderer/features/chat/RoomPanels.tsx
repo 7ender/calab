@@ -14,6 +14,7 @@ import { Avatar } from '../../components/Avatar';
 import { useChatView } from './chatView';
 import { previewText } from './mentionText';
 import { searchWords } from '../../lib/markdown/highlight';
+import { systemPreview } from '../../lib/recording';
 
 const NO_PINS: Message[] = [];
 
@@ -29,7 +30,7 @@ export function PinnedBar({ workspaceId, roomId }: { workspaceId: string; roomId
   const idx = i % pins.length;
   const m = pins[idx];
   if (!m) return null;
-  const text = previewText(workspaceId, m.content) || (m.attachments.length ? t('chat.attachment') : '');
+  const text = systemPreview(m) || previewText(workspaceId, m.content) || (m.attachments.length ? t('chat.attachment') : '');
   return (
     <button
       type="button"

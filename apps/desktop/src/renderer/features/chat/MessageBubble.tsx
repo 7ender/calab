@@ -27,6 +27,8 @@ import { previewText, useMentionLabel } from './mentionText';
 import { MessageMenu } from './MessageMenu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
+import { recordingCardOf, systemPreview } from '../../lib/recording';
+import { RecordingCardView } from './RecordingCard';
 
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
@@ -88,6 +90,28 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
         <Bubble c={c} meta={meta} own={own} name={name} workspaceId={workspaceId} roomId={roomId} perms={perms} />
       </div>
       {c.status === 'failed' ? <FailedLine c={c} workspaceId={workspaceId} roomId={roomId} /> : null}
+    </div>
+  );
+});
+
+/**
+ * A system message (Message.kind SYSTEM, ADR-0025): no bubble or avatar — the date / «new» pills
+ * and the event's card centred in the feed. A payload this client does not know shows nothing.
+ */
+export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, highlighted }: Pick<RowProps, 'c' | 'meta' | 'workspaceId' | 'highlighted'>): ReactNode {
+  useLocale();
+  const card = recordingCardOf(c.msg);
+  return (
+    <div className={cx('px-4', meta.day || meta.isNew || card ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+      {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
+      {meta.isNew ? <NewMessagesPill /> : null}
+      {card ? (
+        <div className={cx('flex justify-center rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <RecordingCardView c={c} card={card} workspaceId={workspaceId} />
+        </div>
+      ) : (
+        <div className="h-px" aria-hidden />
+      )}
     </div>
   );
 });
@@ -439,7 +463,9 @@ function ReactionChip({ roomId, m, emoji, count, me, canReact }: { roomId: strin
 function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string; workspaceId: string; replyToId: string; padTop: boolean }): ReactNode {
   const target = useMessages((s) => s.rooms[roomId]?.items.find((c) => c.key === replyToId)?.msg);
   const jump = useChatView((s) => s.requestJump);
-  const snippet = target ? previewText(workspaceId, target.content).slice(0, 140) || (target.attachments.length ? t('chat.attachment') : '') : '';
+  const snippet = target
+    ? systemPreview(target) || previewText(workspaceId, target.content).slice(0, 140) || (target.attachments.length ? t('chat.attachment') : '')
+    : '';
   const who = target ? memberName(workspaceId, target.authorId) : t('chat.reply');
   return (
     <div className={cx('px-2 pb-0.5', padTop ? 'pt-2' : 'pt-1')}>

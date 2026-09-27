@@ -76,8 +76,8 @@ export interface EchoDiag {
 }
 
 /**
- * A meeting recording in my voice room (docs/09 #30): who switched it on and when (ms). Local
- * state for now — the server's `room.recording {by, since}` fills it once the contract lands.
+ * A meeting recording in my voice room (docs/09 #30, ADR-0025): who switched it on and when (ms).
+ * Mirrors the server's state for my room (stores/recordings via services/recording.ts).
  */
 export interface VoiceRecording {
   byUserId: string;

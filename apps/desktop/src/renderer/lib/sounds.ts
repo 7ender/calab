@@ -24,6 +24,8 @@ export const SOUND_EVENTS = [
   'moved',
   'disconnect',
   'reconnect',
+  'recStart',
+  'recStop',
 ] as const;
 
 export type SoundName = (typeof SOUND_EVENTS)[number];
@@ -95,6 +97,18 @@ export const SOUNDS: Record<SoundName, Note[]> = {
     { f: 293.66, at: 0, dur: 0.1 },
     { f: 392, at: 0.07, dur: 0.1 },
     { f: 587.33, at: 0.14, dur: 0.16 },
+  ],
+  // Meeting recording (ADR-0025): a double tick then a high note on start, the reverse on stop —
+  // unlike join / leave, so «the room is being recorded» is not mistaken for someone arriving.
+  recStart: [
+    { f: 1046.5, at: 0, dur: 0.06, gain: 0.7 },
+    { f: 1046.5, at: 0.09, dur: 0.06, gain: 0.7 },
+    { f: 1567.98, at: 0.17, dur: 0.13 },
+  ],
+  recStop: [
+    { f: 1567.98, at: 0, dur: 0.07, gain: 0.8 },
+    { f: 1046.5, at: 0.09, dur: 0.06, gain: 0.7 },
+    { f: 783.99, at: 0.16, dur: 0.14, gain: 0.7 },
   ],
 };
 

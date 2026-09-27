@@ -26,6 +26,7 @@ import {
   CheckCheck,
   ChevronDown,
   CircleDot,
+  CircleStop,
   Ellipsis,
   ChevronRight,
   FolderInput,
@@ -78,6 +79,8 @@ import { useTimeZoneLabel } from '../../services/timezone';
 import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
 import { copyRoomInviteLink } from '../people/roomLink';
 import { RoomRecBadge } from '../voice/Recording';
+import { useRecordings } from '../../stores/recordings';
+import { startRecording, stopRecording } from '../../services/recording';
 
 export { menuBox, menuItem };
 
@@ -686,6 +689,7 @@ function RoomMenu({
   const unread = useRooms((s) => isUnread(room.id, s));
   const mobile = useMobile();
   const voiceRoom = isVoice(room);
+  const recording = useRecordings((s) => !!s.byRoom[room.id]);
   // Categories are read when the menu renders (it mounts on open), like RoomOrderItems.
   const groups = roomMenuGroups({
     voice: voiceRoom,
@@ -717,11 +721,24 @@ function RoomMenu({
           </ContextMenu.Item>
         );
       case 'record':
-        // Listed, not yet available: it turns on with the server side of the recording («Скоро»).
+        // Meeting recording (ADR-0025): start, or stop the running one (any participant but a
+        // guest); a room that forbids it keeps the item, disabled, so the option is discoverable.
+        if (recording)
+          return (
+            <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-record" onSelect={() => void stopRecording(room.id)}>
+              <CircleStop className="size-4 text-danger-text" /> {t('roomMenu.recordStop')}
+            </ContextMenu.Item>
+          );
         return (
-          <ContextMenu.Item key={id} className={menuItem} disabled data-testid="room-menu-record">
+          <ContextMenu.Item
+            key={id}
+            className={menuItem}
+            disabled={!room.allowRecording}
+            data-testid="room-menu-record"
+            onSelect={() => void startRecording(room.id, room.workspaceId)}
+          >
             <CircleDot className="size-4" /> <span className="flex-1">{t('roomMenu.record')}</span>
-            <span className="text-micro text-muted">{t('roomMenu.soon')}</span>
+            {room.allowRecording ? null : <span className="text-micro text-muted">{t('roomMenu.recordOff')}</span>}
           </ContextMenu.Item>
         );
       case 'settings':

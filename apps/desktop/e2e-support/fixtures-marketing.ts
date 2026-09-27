@@ -210,6 +210,7 @@ export function buildMarketingState(s: MockState): MockState {
         createdAt: ts('2025-12-01T10:10:00Z'),
         categoryId: voice ? C.voice : '',
         userLimit: 0,
+        allowRecording: true,
         ...(voice?.startedAt ? { voiceStartedAt: ts(voice.startedAt) } : {}),
       }),
     );

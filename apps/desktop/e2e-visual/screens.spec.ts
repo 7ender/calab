@@ -1,8 +1,8 @@
 import { create } from '@bufbuild/protobuf';
-import { Plan, UserSchema, WorkspacePlanSchema } from '@calaba/protocol';
+import { Plan, RecordingStatus, UserSchema, WorkspacePlanSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, defaultSettings } from '../e2e-support/fixtures';
-import { IDS, PASSWORD, RECORDING_FIXTURE, type MockServer } from '../e2e-support/mock-server';
+import { IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, type MockServer } from '../e2e-support/mock-server';
 import { expect, test } from './app';
 import { checkpoint, settle } from './harness';
 import { startPublisher } from './publisher';
@@ -49,6 +49,7 @@ const KEY = new Set([
   'dm-chat',
   'voice-room-status',
   'voice-room-recording',
+  'chat-recording-card',
   'voice-room-speaking',
   'voice-room-pending',
   'voice-stream',
@@ -69,6 +70,7 @@ const KEY = new Set([
   'room-settings-1',
   'i18n-en-main-chat',
   'settings-plan',
+  'settings-gptunnel',
   'settings-members',
   'admin-workspaces',
   'admin-plan',
@@ -819,6 +821,32 @@ test('settings-plan', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'settings-plan');
 });
 
+/**
+ * Workspace settings → «GPTunneL» (ADR-0025) for the owner, not connected: the code typed through
+ * the ABCD-EFGH mask, a wrong code's inline error, the hint with the GPTunneL link. Then the
+ * right code connects (device, account, «Открыть в GPTunneL», «Отключить»).
+ */
+test('settings-gptunnel', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'GPTunneL' }).click();
+  await expect(dialog.getByTestId('gptunnel-status')).toHaveText('Не подключено');
+  const code = dialog.getByTestId('gptunnel-code');
+  await code.pressSequentially('wxyz1234');
+  await expect(code).toHaveValue('WXYZ-1234');
+  await dialog.getByRole('button', { name: 'Подключить' }).click();
+  await expect(dialog.getByTestId('gptunnel-error')).toHaveText('Неверный или устаревший код — получите новый в GPTunneL');
+  await checkpoint(shot, 'settings-gptunnel');
+  await code.fill(MOCK_GPTUNNEL_CODE);
+  await dialog.getByRole('button', { name: 'Подключить' }).click();
+  await expect(dialog.getByTestId('gptunnel-status')).toHaveText('Подключено');
+  await expect(dialog.getByText('Calab · Команда Calab')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Отключить' })).toBeVisible();
+});
+
 /** «Администрирование» (superadmin, ADR-0024): the search and the workspace cards. */
 async function openAdmin(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: /^Мой статус/ }).click();
@@ -995,14 +1023,14 @@ test('voice-room-status', async ({ open, win, mock, shot }) => {
   // Just joined (docs/09 #10): the invite row is in its 30 s window.
   await expect(win.getByTestId('voice-invite-row')).toBeVisible();
   // Card actions (docs/09 #30): only «чат» and «…»; «…» opens the room menu with «Запись встречи»
-  // listed but disabled («Скоро») until the server side of the recording lands.
+  // (ADR-0025: enabled — the room allows recording).
   const card = win.getByTestId('voice-room-card');
   await card.hover();
   await expect(card.getByRole('button', { name: /^Чат комнаты/ })).toBeVisible();
   await card.getByTestId('room-more').click();
   const record = win.getByTestId('room-menu-record');
   await expect(record).toBeVisible();
-  await expect(record).toHaveAttribute('aria-disabled', 'true');
+  await expect(record).not.toHaveAttribute('aria-disabled', 'true');
   await expect(win.getByRole('menuitem', { name: 'Настройки комнаты' })).toBeVisible();
   await win.keyboard.press('Escape');
   await expect(record).toHaveCount(0);
@@ -1016,24 +1044,31 @@ test('voice-room-status', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'voice-room-status', { keepPointer: true });
 });
 
-// Meeting recording (docs/09 #30): Борис started it 12:34 ago — «● REC 12:34» on the room card
-// next to the call timer, the red «● Запись · 12:34» pill in «Голос подключён» (who started it:
-// tooltip / accessible name). The pointer rests away from the card, so the timer side shows.
+// Meeting recording (docs/09 #30, ADR-0025): Борис started it 12:34 ago — the server's
+// ROOM_RECORDING — «● REC 12:34» on the room card next to the call timer, the red «● Запись ·
+// 12:34» pill in «Голос подключён» (who started it: tooltip / accessible name), the toast «Началась
+// запись встречи». The pointer rests away from the card, so the timer side shows.
 test('voice-room-recording', async ({ open, win, mock, shot }) => {
   await open();
   await inVoiceWithStatus(win, mock);
-  await win.evaluate(
-    ({ byUserId, agoMs }) =>
-      (window as unknown as { __calabaRecording?: (r: { byUserId: string; since: number }) => void }).__calabaRecording?.({ byUserId, since: Date.now() - agoMs }),
-    RECORDING_FIXTURE,
-  );
+  // The page clock is fixed under test: «since» is counted from it.
+  const nowMs = await win.evaluate(() => Date.now());
+  mock.setRecording(RECORDING_FIXTURE.roomId, { byUserId: RECORDING_FIXTURE.byUserId, agoMs: RECORDING_FIXTURE.agoMs, nowMs });
+  await expect(win.getByTestId('toast')).toContainText('Началась запись встречи (начал: Борис Петров)');
+  const card = win.getByTestId('voice-room-card');
   await win.evaluate(() => (window as unknown as { __calabaJoinedAt?: (ms: number) => void }).__calabaJoinedAt?.(Date.now() - 60_000));
   await expect(win.getByTestId('voice-invite-row')).toHaveCount(0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await win.mouse.move(0, 0);
-  const card = win.getByTestId('voice-room-card');
   await expect(card.getByTestId('room-rec')).toHaveAccessibleName('Идёт запись, 12:34');
   await expect(win.getByTestId('voice-rec-pill')).toHaveAccessibleName(/Запись включена: Борис Петров/);
   await checkpoint(shot, 'voice-room-recording');
+  // «…» now offers to stop it (after the shot: the timer must read 12:34 there).
+  await card.hover();
+  await card.getByTestId('room-more').click();
+  await expect(win.getByTestId('room-menu-record')).toHaveText('Остановить запись');
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('room-menu-record')).toHaveCount(0);
 });
 
 // Speaking indication (docs/08): Борис talks — green ring + bright name in the sidebar row
@@ -1107,6 +1142,34 @@ test('voice-room-chat-preview', async ({ open, win, mock, shot }) => {
   await win.mouse.move(0, 0);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'voice-room-chat-preview');
+});
+
+// Meeting recording cards (ADR-0025) in «Переговорка»'s chat: done (42 мин, «Открыть в GPTunneL»),
+// still processing, failed for lack of balance — system messages, centred, no bubble.
+test('chat-recording-card', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.injectMessage({ roomId: IDS.rooms.meeting, authorId: IDS.users.boris, content: 'Спасибо всем, запись будет в чате' });
+  const web = `${MOCK_GPTUNNEL_WEB}/meetings/1`;
+  mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.boris, durationSec: 42 * 60 + 10, status: RecordingStatus.DONE, webUrl: web });
+  mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.vera, durationSec: 65 * 60, status: RecordingStatus.PROCESSING, webUrl: web });
+  mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.anna, durationSec: 18 * 60, status: RecordingStatus.FAILED, error: 'insufficient_balance' });
+  const sidebar = win.locator('aside').first();
+  await sidebar.getByRole('button', { name: /^Переговорка/ }).first().hover();
+  await sidebar.getByRole('button', { name: 'Чат комнаты «Переговорка»' }).click();
+  await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
+  const cards = win.getByTestId('recording-card');
+  await expect(cards).toHaveCount(3);
+  await expect(cards.nth(0)).toContainText('Встреча записана · 42 мин');
+  await expect(cards.nth(0)).toContainText('Готово — расшифровка и саммари в GPTunneL');
+  await expect(cards.nth(1)).toContainText('Обработка: расшифровка и саммари…');
+  await expect(cards.nth(2)).toContainText('Ошибка: на балансе GPTunneL не хватает средств');
+  await expect(cards.nth(0).getByRole('button', { name: 'Открыть в GPTunneL' })).toBeVisible();
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await win.mouse.move(0, 0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'chat-recording-card');
 });
 
 // Optimistic join (docs/05, docs/08): Григорий is in the room list at once but still connecting

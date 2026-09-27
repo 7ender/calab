@@ -10,6 +10,7 @@ export * from './gen/calaba/v1/media_pb.js';
 export * from './gen/calaba/v1/message_pb.js';
 export * from './gen/calaba/v1/permissions_pb.js';
 export * from './gen/calaba/v1/plan_pb.js';
+export * from './gen/calaba/v1/recording_pb.js';
 export * from './gen/calaba/v1/room_pb.js';
 export * from './gen/calaba/v1/rtc_pb.js';
 export * from './gen/calaba/v1/unfurl_pb.js';

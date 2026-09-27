@@ -95,7 +95,6 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'roomMenu.moreOf': '“{name}”的操作',
   'roomMenu.invite': '邀请加入房间',
   'roomMenu.record': '录制会议',
-  'roomMenu.soon': '即将推出',
   'rec.badge': 'REC',
   'rec.label': '录制中',
   'rec.on': '正在录制',

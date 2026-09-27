@@ -31,6 +31,7 @@ import { RoleMark, roleTextClass, useSharedRole } from '../people/MemberBits';
 import { LEVEL_LABEL, NotifyMenuItems, mutedText, type LevelOption } from './NotifyMenu';
 import { previewText } from './mentionText';
 import { TypingDots, useTypingText } from './TypingIndicator';
+import { systemPreview } from '../../lib/recording';
 
 const NO_PINS: never[] = [];
 
@@ -408,7 +409,7 @@ function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; r
                         </span>
                       </span>
                       <span className="line-clamp-2 text-body text-muted">
-                        {previewText(workspaceId, m.content) || (m.attachments.length ? t('chat.attachment') : '')}
+                        {systemPreview(m) || previewText(workspaceId, m.content) || (m.attachments.length ? t('chat.attachment') : '')}
                       </span>
                     </button>
                     {canManage ? (

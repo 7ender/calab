@@ -1,21 +1,28 @@
 import type { ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { useRecordings } from '../../stores/recordings';
 import { useVoice, type VoiceRecording } from '../../stores/voice';
 import { memberName } from '../../stores/workspaces';
 import { recordingTime, useNow } from '../shell/voiceFormat';
 
 /**
- * Meeting recording indication (docs/09 #30, docs/08 «Карточка комнаты»): a red dot with a soft
- * pulse (`.rec-dot`, still with prefers-reduced-motion) wherever my call is shown — the room
- * card / row (dot + «REC» + timer next to the call timer), the «Голос подключён» header (a red
- * pill «● Запись · 12:34», who started it in the tooltip) and the phone strip (the dot only).
- * Source: `voice.recording` (local for now; the server's `room.recording` fills it later).
+ * Meeting recording indication (docs/09 #30, docs/08 «Запись встреч», ADR-0025): a red dot with a
+ * soft pulse (`.rec-dot`, still with prefers-reduced-motion) — on the card / row of every room
+ * being recorded (dot + «REC» + timer next to the call timer: whoever joins knows before), in the
+ * «Голос подключён» header of my call (a red pill «● Запись · 12:34», who started it in the
+ * tooltip) and on the phone strip (the dot only). Source: the server's state (stores/recordings,
+ * READY + ROOM_RECORDING; `voice.recording` mirrors my room — services/recording.ts).
  */
 
 /** The recording of `roomId`, if it is my room and it is being recorded. */
 export function useRecording(roomId: string | null | undefined): VoiceRecording | null {
   return useVoice((s) => (roomId && s.roomId === roomId ? s.recording : null));
+}
+
+/** Whether any room (mine or not) is being recorded: the room list's REC. */
+function useRoomRecording(roomId: string): VoiceRecording | null {
+  return useRecordings((s) => s.byRoom[roomId] ?? null);
 }
 
 export function RecDot({ className }: { className?: string }): ReactNode {
@@ -24,7 +31,7 @@ export function RecDot({ className }: { className?: string }): ReactNode {
 
 /** «● REC 12:34» on the room card (its status line, under the call timer); `compact`: the dot only (a plain row). */
 export function RoomRecBadge({ roomId, className, compact = false }: { roomId: string; className?: string; compact?: boolean }): ReactNode {
-  const rec = useRecording(roomId);
+  const rec = useRoomRecording(roomId);
   if (!rec) return null;
   return <RoomRecBadgeOn since={rec.since} className={className} compact={compact} />;
 }

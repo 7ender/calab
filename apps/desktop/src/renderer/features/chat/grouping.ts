@@ -1,3 +1,4 @@
+import { MessageKind } from '@calaba/protocol';
 import type { ChatMessage } from '../../stores/messages';
 import { toDate } from '../../lib/format';
 
@@ -31,6 +32,8 @@ export function startsNew(c: ChatMessage, prev: ChatMessage | undefined, newMark
 /** Whether `c` continues the group of `prev`. */
 export function continues(c: ChatMessage, prev: ChatMessage | undefined, newMarker: string, me: string): boolean {
   if (!prev || prev.msg.authorId !== c.msg.authorId) return false;
+  // A system card (ADR-0025) stands alone: it neither joins nor continues a group of bubbles.
+  if (prev.msg.kind === MessageKind.SYSTEM || c.msg.kind === MessageKind.SYSTEM) return false;
   if (dayKey(prev) !== dayKey(c) || startsNew(c, prev, newMarker, me)) return false;
   const dt = ms(c) - ms(prev);
   return dt >= 0 && dt < GROUP_MS;

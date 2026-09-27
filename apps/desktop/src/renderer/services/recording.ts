@@ -1,0 +1,152 @@
+import type { RoomRecording, WorkspaceSnapshot } from '@calaba/protocol';
+import { t, type MessageKey } from '../i18n';
+import { ApiError } from '../lib/api/client';
+import { api } from '../lib/api/endpoints';
+import { isAdminRole } from '../lib/permissions';
+import { stopReasonKey, withEvent, withSnapshot, withoutRooms, type ActiveRecording, type RecordingMap } from '../lib/recording';
+import { playSound } from '../lib/sounds';
+import { useRecordings } from '../stores/recordings';
+import { myUserId } from '../stores/session';
+import { toast, useToasts } from '../stores/toasts';
+import { useUi } from '../stores/ui';
+import { setVoice, useVoice } from '../stores/voice';
+import { memberName, useWorkspaces } from '../stores/workspaces';
+
+/**
+ * Meeting recording on the client (ADR-0025): the server's state of which rooms are recorded
+ * (READY / WORKSPACE_CREATE `recordings[]`, ROOM_RECORDING) → stores/recordings, mirrored into
+ * `voice.recording` for my room; start / stop from the room menu with human errors; in my call,
+ * a sound and a toast when the recording starts or stops (with the reason), and a toast when I
+ * join a room that is being recorded.
+ */
+
+/** READY: the recordings of every workspace (anything else known before is dropped). */
+export function resetRecordings(snaps: readonly WorkspaceSnapshot[]): void {
+  let map: RecordingMap = {};
+  for (const s of snaps) if (s.workspace) map = withSnapshot(map, s.workspace.id, s.recordings);
+  // A READY after a reconnect replays nothing: announce only what changed in my room.
+  commit(map, null);
+}
+
+/** WORKSPACE_CREATE (joined a workspace): its recordings. */
+export function applySnapshotRecordings(snap: WorkspaceSnapshot): void {
+  if (!snap.workspace) return;
+  commit(withSnapshot(useRecordings.getState().byRoom, snap.workspace.id, snap.recordings), null);
+}
+
+/** ROOM_RECORDING. */
+export function onRoomRecording(ev: RoomRecording): void {
+  commit(withEvent(useRecordings.getState().byRoom, ev), ev);
+}
+
+/** A deleted room / a workspace I left. */
+export function dropRecordings(drop: (roomId: string, r: ActiveRecording) => boolean): void {
+  commit(withoutRooms(useRecordings.getState().byRoom, drop), null);
+}
+
+/**
+ * Stores the new map and, when the recording of my room changed, plays the start / stop cue and
+ * says why (`ev` carries the stop reason; a READY that silently dropped it says nothing more).
+ */
+function commit(next: RecordingMap, ev: RoomRecording | null): void {
+  const prev = useRecordings.getState().byRoom;
+  if (next === prev) return;
+  useRecordings.getState().set(next);
+  const room = useVoice.getState().roomId;
+  if (!room) return;
+  const before = prev[room];
+  const after = next[room];
+  if (before?.recordingId === after?.recordingId) return;
+  if (after) {
+    playSound('recStart');
+    if (after.byUserId !== myUserId()) toast.info(t('rec.notice.started', { name: memberName(after.workspaceId, after.byUserId) }));
+  } else if (before) {
+    playSound('recStop');
+    const reason = ev?.roomId === room ? ev.stopReason : '';
+    if (reason === 'user' && ev?.stoppedBy === myUserId()) toast.info(t('rec.stop.self'));
+    else toast.info(t(stopReasonKey(reason), { name: memberName(before.workspaceId, ev?.stoppedBy ?? '') }));
+  }
+}
+
+/**
+ * `voice.recording` follows my room: the recordings store for the room I am in (the REC pill in
+ * «Голос подключён», the phone strip). Joining a room that is being recorded says so once.
+ */
+function syncVoice(): void {
+  const { roomId, recording } = useVoice.getState();
+  const r = roomId ? useRecordings.getState().byRoom[roomId] : undefined;
+  const next = r ? { byUserId: r.byUserId, since: r.since } : null;
+  if (next?.byUserId === recording?.byUserId && next?.since === recording?.since) return;
+  setVoice({ recording: next });
+}
+
+let started = false;
+
+/** Subscribes the mirror (app start; idempotent). */
+export function startRecordingSync(): void {
+  if (started) return;
+  started = true;
+  useRecordings.subscribe(syncVoice);
+  // Only a room change matters here (the voice store changes many times a second: levels).
+  useVoice.subscribe((s, p) => {
+    if (s.roomId === p.roomId) return;
+    syncVoice();
+    const r = s.roomId ? useRecordings.getState().byRoom[s.roomId] : undefined;
+    if (r) toast.info(t('rec.notice.join', { name: memberName(r.workspaceId, r.byUserId) }));
+  });
+}
+
+// ---------------------------------------------------------------- actions
+
+function canManage(workspaceId: string): boolean {
+  return isAdminRole(useWorkspaces.getState().byId[workspaceId]?.role);
+}
+
+/** «Запись встречи» in the room menu: POST …/recording/start; the errors say what to do. */
+export async function startRecording(roomId: string, workspaceId: string): Promise<void> {
+  try {
+    const r = await api.recording.start(roomId);
+    if (r.recording) onRoomRecording(r.recording);
+  } catch (e) {
+    startFailed(e, workspaceId);
+  }
+}
+
+function startFailed(e: unknown, workspaceId: string): void {
+  const code = e instanceof ApiError ? e.code : '';
+  if (code === 'ERROR_CODE_NOT_PAIRED') {
+    // The one who can connect it gets the way there; the others know whom to ask.
+    if (canManage(workspaceId)) {
+      useToasts.getState().push('info', t('rec.start.notPairedAdmin'), {
+        label: t('rec.start.connect'),
+        run: () => useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId, tab: 'gptunnel' }),
+      });
+    } else toast.info(t('rec.start.notPaired'));
+    return;
+  }
+  const info: Record<string, MessageKey> = {
+    ERROR_CODE_ALREADY_RECORDING: 'rec.start.already',
+    ERROR_CODE_RECORDING_LIMIT: 'rec.start.busy',
+    ERROR_CODE_CONFLICT: 'rec.start.empty',
+  };
+  const key = info[code];
+  if (key) toast.info(t(key));
+  else if (code === 'ERROR_CODE_FORBIDDEN') toast.error(t('rec.start.forbidden'));
+  else if (code === 'ERROR_CODE_UNAVAILABLE' && e instanceof ApiError && e.status !== 0) toast.error(t('rec.start.unavailable'));
+  else toast.fail(e, t('rec.start.failed'));
+}
+
+/** «Остановить запись»: any participant (not a guest) may stop it (ADR-0025). */
+export async function stopRecording(roomId: string): Promise<void> {
+  try {
+    const r = await api.recording.stop(roomId);
+    if (r.recording) onRoomRecording(r.recording);
+  } catch (e) {
+    // 404: it has already stopped (the event is on its way or was missed) — just drop it here.
+    if (e instanceof ApiError && e.status === 404) {
+      dropRecordings((id) => id === roomId);
+      return;
+    }
+    toast.fail(e, t('rec.stop.failed'));
+  }
+}

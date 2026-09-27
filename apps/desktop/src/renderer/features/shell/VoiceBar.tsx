@@ -12,7 +12,7 @@ import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
-import { setVoice, useVoice, type LinkQuality, type VoicePhase, type VoiceRecording } from '../../stores/voice';
+import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
 import { RecordingPill } from '../voice/Recording';
 import { useWorkspaces } from '../../stores/workspaces';
 import { NoiseButton } from './NoisePopover';
@@ -366,8 +366,6 @@ declare global {
     __calabaSpeaking?: (userIds: string[]) => void;
     /** Visual tests only: back-date my room join (docs/09 #10 — the invite row's 30 s window). */
     __calabaJoinedAt?: (ms: number) => void;
-    /** Visual tests only: a meeting recording of my room (docs/09 #30), until the server sends it. */
-    __calabaRecording?: (rec: VoiceRecording | null) => void;
   }
 }
 
@@ -380,9 +378,7 @@ export function VoiceBar(): ReactNode {
     window.__calabaCameras = () => useVoice.getState().cameras.length;
     window.__calabaSpeaking = (ids) => setVoice({ speaking: Object.fromEntries(ids.map((id) => [id, true])) });
     window.__calabaJoinedAt = (ms) => setVoice({ joinedAt: ms });
-    window.__calabaRecording = (recording) => setVoice({ recording });
     return () => {
-      delete window.__calabaRecording;
       delete window.__calabaSpeaking;
       delete window.__calabaVoicePhase;
       delete window.__calabaCameras;

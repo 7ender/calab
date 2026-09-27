@@ -95,7 +95,6 @@ export const ruVideo = {
   'roomMenu.moreOf': 'Действия с «{name}»',
   'roomMenu.invite': 'Пригласить в комнату',
   'roomMenu.record': 'Запись встречи',
-  'roomMenu.soon': 'Скоро',
   'rec.badge': 'REC',
   'rec.label': 'Запись',
   'rec.on': 'Идёт запись',

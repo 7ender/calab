@@ -18,6 +18,7 @@ import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
 import { voice } from './voice';
+import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
 
 const TYPING_MS = 8000;
@@ -85,6 +86,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       const msgs = useMessages.getState();
       for (const id of Object.keys(msgs.rooms)) if (!(id in alive)) msgs.unload(id);
       void resyncLoadedRooms();
+      // Recordings (ADR-0025): the server's state replaces ours (REC, «Остановить запись»).
+      resetRecordings(r.workspaces);
       useSession.getState().set({ me: r.me ?? null, planContact: r.planContact, ready: true });
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
@@ -102,6 +105,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       useRooms.getState().upsertMany(snap.rooms);
       for (const room of snap.rooms) if (room.lastMessageId) useRooms.getState().setLastMessage(room.id, room.lastMessageId);
       applySnapshotExtras(snap);
+      applySnapshotRecordings(snap);
       ensureActiveWorkspace();
       return;
     }
@@ -115,6 +119,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       const id = e.value.workspaceId;
       useWorkspaces.getState().remove(id);
       useRooms.getState().removeWorkspace(id);
+      dropRecordings((_room, rec) => rec.workspaceId === id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();
@@ -134,6 +139,7 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'roomDelete': {
       useRooms.getState().remove(e.value.roomId);
       useMessages.getState().unload(e.value.roomId);
+      dropRecordings((room) => room === e.value.roomId);
       useInbox.getState().removeRooms((id) => id !== e.value.roomId);
       if (voice.currentRoomId === e.value.roomId) void voice.leave();
       return;
@@ -217,6 +223,9 @@ export function applyDispatch(ev: DispatchEvent): void {
         const r = e.value.reason;
         voice.camera.onServerStop(r === VoiceStreamStopReason.LIMIT_REACHED ? 'limit' : r === VoiceStreamStopReason.MODERATOR ? 'moderator' : 'other', e.value.trackSid);
       }
+      return;
+    case 'roomRecording':
+      onRoomRecording(e.value);
       return;
     case 'roomNotificationUpdate':
       if (e.value.settings) useRooms.getState().setNotify(e.value.settings);
