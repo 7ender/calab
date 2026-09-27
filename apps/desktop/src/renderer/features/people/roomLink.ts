@@ -91,21 +91,30 @@ export async function joinRoomLink(code: string): Promise<boolean> {
  */
 export async function copyRoomInviteLink(roomId: string): Promise<void> {
   try {
-    const list = await api.roomInvites.list(roomId);
-    let invite = reusableInvite(list.invites, Date.now());
-    if (!invite) {
-      invite = (await api.roomInvites.create(roomId, {})).invite ?? null;
-      void queryClient.invalidateQueries({ queryKey: ['roomInvites', roomId] });
-    }
-    if (!invite) throw new Error('no invite in the answer');
-    const link = roomInviteUrl(useSession.getState().serverUrl, invite.code); // https only (docs/09 #53)
-    if (!link) throw new Error('no server URL for the room link');
+    const link = await roomInviteLink(roomId);
     await navigator.clipboard.writeText(link);
     toast.success(t('people.link.copied'));
   } catch (e) {
     log.warn('room invite copy failed', e);
     toast.error(roomLinkError(e));
   }
+}
+
+/**
+ * The room's shareable link (https only, docs/09 #53): an existing usable link, else a new one with
+ * the server defaults (ADR-0016). Throws when the server refuses (no MANAGE_ROOM) or there is no URL.
+ */
+export async function roomInviteLink(roomId: string): Promise<string> {
+  const list = await api.roomInvites.list(roomId);
+  let invite = reusableInvite(list.invites, Date.now());
+  if (!invite) {
+    invite = (await api.roomInvites.create(roomId, {})).invite ?? null;
+    void queryClient.invalidateQueries({ queryKey: ['roomInvites', roomId] });
+  }
+  if (!invite) throw new Error('no invite in the answer');
+  const link = roomInviteUrl(useSession.getState().serverUrl, invite.code);
+  if (!link) throw new Error('no server URL for the room link');
+  return link;
 }
 
 let waiting: (() => void) | null = null;

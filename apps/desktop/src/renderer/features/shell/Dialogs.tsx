@@ -7,6 +7,7 @@ import { CameraPreview } from '../voice/CameraPreview';
 import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
+import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
 import { ProfileDialog } from '../people/ProfileDialog';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
@@ -50,6 +51,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'new-dm':
         node = <NewDmDialog onClose={close} />;
+        break;
+      case 'room-invite':
+        node = <InviteToRoomDialog roomId={d.roomId} onClose={close} />;
         break;
       case 'profile':
         node = <ProfileDialog key={d.userId} workspaceId={d.workspaceId} userId={d.userId} focusNote={d.note ?? false} onClose={close} />;

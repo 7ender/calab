@@ -6,6 +6,7 @@ import { ruMail } from './mail';
 import { ruRecording } from './recording';
 import { ruPeople } from './people';
 import { ruModeration } from './moderation';
+import { ruPicker } from './picker';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
@@ -23,6 +24,7 @@ export const ru = {
   ...ruModeration,
   ...ruMail,
   ...ruRecording,
+  ...ruPicker,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',

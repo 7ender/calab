@@ -60,6 +60,22 @@ export async function startDm(userId: string): Promise<boolean> {
 }
 
 /**
+ * Sends a text to the user's DM without opening it (the room invite, docs/09 #33): the DM is
+ * created first when needed (POST /api/dms is get-or-create). Throws on failure — the caller
+ * shows the error on its own row.
+ */
+export async function sendDmText(userId: string, content: string): Promise<void> {
+  let roomId = dmWith(userId)?.roomId;
+  if (!roomId) {
+    const res = await api.dms.create(userId);
+    if (!res.dm?.room) throw new Error('no dm in the answer');
+    applyDm(res.dm, true);
+    roomId = res.dm.room.id;
+  }
+  await api.messages.create(roomId, { content, nonce: crypto.randomUUID() });
+}
+
+/**
  * A `/dm/<id>` link (links.ts) opened «Личные» on that id. Once signed in, a DM this user is not
  * in (someone else's link, a deleted DM, a guest account) gets a clear error instead of an empty
  * «Личные», and the id is forgotten. An unknown DM is re-read first (GET /api/dms).

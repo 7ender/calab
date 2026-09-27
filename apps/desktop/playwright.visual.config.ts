@@ -49,6 +49,8 @@ export default defineConfig<VisualOptions>({
     ...CONFIGS.map((c) => ({ name: c.name, testMatch: /screens\.spec\.ts/, use: { theme: c.theme, size: c.viewport } })),
     // Stream UX (docs/09 #17, #18): the minimal desktop size only (dark 960×600).
     { name: 'stream-dark-960', testMatch: /stream\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    // Member picker (docs/09 #33): the minimal desktop size only.
+    { name: 'picker-dark-960', testMatch: /picker\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only
     // web.spec.ts, where everything but the dark-960 join card is skipped (see above).
     { name: 'misc', testMatch: ALL_CONFIGS ? /(focus|web)\.spec\.ts/ : /web\.spec\.ts/ },
