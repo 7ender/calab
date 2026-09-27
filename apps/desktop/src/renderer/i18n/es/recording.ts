@@ -50,6 +50,14 @@ export const esRecording: DictShape<typeof ruRecording> = {
   'rec.err.recorder': 'Error: falló el grabador en el servidor',
   'rec.err.timeout': 'Error: GPTunneL tarda demasiado — revisa la página de la grabación',
   'rec.err.generic': 'Error al procesar la grabación',
+  'rec.err.internal': 'Error: fallo en GPTunneL',
+  // retry of a failed recording
+  'rec.card.recheck': 'Comprobar de nuevo',
+  'rec.card.reupload': 'Enviar de nuevo',
+  'rec.retry.failed': 'No se pudo reintentar — inténtalo otra vez',
+  'rec.retry.fileGone': 'El archivo de la grabación ya se eliminó del servidor — no se puede volver a enviar',
+  'rec.retry.alreadyUploaded': 'La grabación ya está en GPTunneL — usa «Comprobar de nuevo»',
+  'rec.retry.changed': 'El estado de la grabación ya ha cambiado',
   'gpt.tab': 'GPTunneL',
   'gpt.card': 'Grabación y transcripción de reuniones',
   'gpt.intro':

@@ -55,6 +55,8 @@ var blocked = map[string]scope{
 	"POST /api/rooms/{id}/camera/request":              scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/allow-camera": scopeRoom,
 	"POST /api/rooms/{id}/recording/start":             scopeRoom,
+	"POST /api/rooms/{id}/recordings/{rid}/recheck":    scopeRoom,
+	"POST /api/rooms/{id}/recordings/{rid}/reupload":   scopeRoom,
 	// invitations and joining
 	"POST /api/rooms/{id}/invites":            scopeRoom,
 	"POST /api/workspaces/{id}/invites":       scopeWorkspace,

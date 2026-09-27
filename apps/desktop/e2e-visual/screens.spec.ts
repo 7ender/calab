@@ -1298,7 +1298,8 @@ test('voice-room-chat-preview', async ({ open, win, mock, shot }) => {
 });
 
 // Meeting recording cards (ADR-0025) in «Переговорка»'s chat: done (42 мин, «Открыть в GPTunneL»),
-// still processing, failed for lack of balance — system messages, centred, no bubble.
+// still processing, failed for lack of balance before the upload («Отправить снова»), failed on
+// GPTunneL's side after it («Проверить снова», docs/09 #40) — system messages, centred, no bubble.
 test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
@@ -1306,18 +1307,24 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   const web = `${MOCK_GPTUNNEL_WEB}/meetings/1`;
   mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.boris, durationSec: 42 * 60 + 10, status: RecordingStatus.DONE, webUrl: web });
   mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.vera, durationSec: 65 * 60, status: RecordingStatus.PROCESSING, webUrl: web });
-  mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.anna, durationSec: 18 * 60, status: RecordingStatus.FAILED, error: 'insufficient_balance' });
+  mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.anna, durationSec: 18 * 60, status: RecordingStatus.FAILED, error: 'insufficient_balance', notUploaded: true });
+  mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.boris, durationSec: 27 * 60, status: RecordingStatus.FAILED, error: 'internal', webUrl: web });
   const sidebar = win.locator('aside').first();
   await sidebar.getByRole('button', { name: /^Переговорка/ }).first().hover();
   await sidebar.getByRole('button', { name: 'Чат комнаты «Переговорка»' }).click();
   await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
   const cards = win.getByTestId('recording-card');
-  await expect(cards).toHaveCount(3);
+  await expect(cards).toHaveCount(4);
   await expect(cards.nth(0)).toContainText('Встреча записана · 42 мин');
   await expect(cards.nth(0)).toContainText('Готово — расшифровка и саммари в GPTunneL');
   await expect(cards.nth(1)).toContainText('Обработка: расшифровка и саммари…');
   await expect(cards.nth(2)).toContainText('Ошибка: на балансе GPTunneL не хватает средств');
   await expect(cards.nth(0).getByRole('button', { name: 'Открыть в GPTunneL' })).toBeVisible();
+  await expect(cards.nth(2).getByRole('button', { name: 'Отправить снова' })).toBeVisible();
+  await expect(cards.nth(2).getByRole('button', { name: 'Проверить снова' })).toHaveCount(0);
+  await expect(cards.nth(3)).toContainText('Ошибка: сбой на стороне GPTunneL');
+  await expect(cards.nth(3).getByRole('button', { name: 'Проверить снова' })).toBeVisible();
+  await expect(cards.nth(3).getByRole('button', { name: 'Отправить снова' })).toHaveCount(0);
   await settle(win);
   await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
   await win.mouse.move(0, 0);

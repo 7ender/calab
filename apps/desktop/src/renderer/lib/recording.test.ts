@@ -11,6 +11,8 @@ import {
   pairCodeComplete,
   pairErrorKey,
   recordingCardOf,
+  retryActions,
+  retryRefusalKey,
   stopReasonKey,
   systemPreview,
   withEvent,
@@ -125,8 +127,27 @@ describe('chat card', () => {
   });
 
   it('knows every documented error code', () => {
-    const codes = ['insufficient_balance', 'account_unavailable', 'transcription_failed', 'summary_failed', 'empty_audio', 'storage_failed', 'device_revoked', 'not_paired', 'upload_failed', 'too_large', 'no_audio', 'recorder_failed', 'timeout'];
+    const codes = ['insufficient_balance', 'account_unavailable', 'transcription_failed', 'summary_failed', 'empty_audio', 'storage_failed', 'device_revoked', 'not_paired', 'upload_failed', 'too_large', 'no_audio', 'recorder_failed', 'timeout', 'internal'];
     for (const c of codes) expect(cardErrorKey(c), c).not.toBe('rec.err.generic');
+  });
+
+  it('retry buttons of a failed card (docs/09 #40)', () => {
+    const r = (status: RecordingStatus, notUploaded: boolean, fileGone: boolean) => retryActions({ status, notUploaded, fileGone });
+    // Delivered to GPTunneL: only recheck, whether or not the file is still here.
+    expect(r(RecordingStatus.FAILED, false, false)).toEqual(['recheck']);
+    expect(r(RecordingStatus.FAILED, false, true)).toEqual(['recheck']);
+    // Upload did not complete: send again while the file is kept.
+    expect(r(RecordingStatus.FAILED, true, false)).toEqual(['reupload']);
+    expect(r(RecordingStatus.FAILED, true, true)).toEqual([]);
+    // Only failed cards retry.
+    for (const s of [RecordingStatus.UPLOADING, RecordingStatus.PROCESSING, RecordingStatus.DONE]) expect(r(s, true, false)).toEqual([]);
+  });
+
+  it('refused retries say why', () => {
+    expect(retryRefusalKey('ERROR_CODE_FILE_GONE')).toBe('rec.retry.fileGone');
+    expect(retryRefusalKey('ERROR_CODE_ALREADY_UPLOADED')).toBe('rec.retry.alreadyUploaded');
+    expect(retryRefusalKey('ERROR_CODE_CONFLICT')).toBe('rec.retry.changed');
+    expect(retryRefusalKey('ERROR_CODE_INTERNAL')).toBeNull();
   });
 
   it('a user message is not a card', () => {

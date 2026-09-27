@@ -75,6 +75,7 @@ import {
   RoomRecordingState,
   StartRecordingResponseSchema,
   StopRecordingResponseSchema,
+  RetryRecordingResponseSchema,
   type GptunnelIntegration,
   type RecordingCard,
   type RoomRecording,
@@ -329,7 +330,17 @@ export interface MockServer {
    * A recording card in the room chat (SYSTEM message, MESSAGE_CREATE) in the given state; the
    * status never advances by itself (unlike a stop through the API).
    */
-  injectRecordingCard(a: { roomId: string; byUserId: string; durationSec: number; status: RecordingStatus; error?: string; webUrl?: string }): Message;
+  injectRecordingCard(a: {
+    roomId: string;
+    byUserId: string;
+    durationSec: number;
+    status: RecordingStatus;
+    error?: string;
+    webUrl?: string;
+    /** FAILED (docs/09 #40): the upload did not complete («Отправить снова»); the file is gone. */
+    notUploaded?: boolean;
+    fileGone?: boolean;
+  }): Message;
   /** Moves a card on (MESSAGE_UPDATE), like the server's upload worker. */
   updateRecordingCard(messageId: string, patch: { status: RecordingStatus; error?: string; webUrl?: string }): void;
 }
@@ -3314,6 +3325,8 @@ class MockImpl {
     error?: string;
     webUrl?: string;
     recordingId?: string;
+    notUploaded?: boolean;
+    fileGone?: boolean;
   }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
@@ -3327,6 +3340,8 @@ class MockImpl {
       status: a.status,
       webUrl: a.webUrl ?? '',
       error: a.error ?? '',
+      notUploaded: a.notUploaded ?? false,
+      fileGone: a.fileGone ?? false,
     };
     // The server posts it as the one who started the recording, content empty (docs/05).
     const msg = create(MessageSchema, {
@@ -3418,6 +3433,24 @@ class MockImpl {
       this.setRecording(room.id, { byUserId: me });
       sendMsg(c.res, 200, StartRecordingResponseSchema, { recording: s().recordings.get(room.id) });
     });
+
+    // Retry of a failed card (docs/09 #40): recheck → PROCESSING, reupload → UPLOADING; the card
+    // moves on by MESSAGE_UPDATE.
+    for (const action of ['recheck', 'reupload'] as const) {
+      this.route('POST', `/api/rooms/:id/recordings/:rid/${action}`, (c) => {
+        const { room } = this.recordingRoom(c);
+        const msg = (s().messages.get(room.id) ?? []).find((m) => m.system?.payload.case === 'recording' && m.system.payload.value.recordingId === c.params[1]);
+        const p = msg?.system?.payload;
+        if (!msg || p?.case !== 'recording') throw notFound('recording not found');
+        const card = p.value;
+        if (card.status !== RecordingStatus.FAILED) throw conflict('the recording has not failed');
+        if (action === 'recheck' && card.notUploaded) throw conflict('the recording never reached GPTunneL: send it again');
+        if (action === 'reupload' && !card.notUploaded) throw new HttpError(409, ErrorCode.ALREADY_UPLOADED, 'the recording was delivered to GPTunneL');
+        if (action === 'reupload' && card.fileGone) throw new HttpError(409, ErrorCode.FILE_GONE, 'the recording file is no longer kept');
+        this.updateRecordingCard(msg.id, { status: action === 'recheck' ? RecordingStatus.PROCESSING : RecordingStatus.UPLOADING, error: '' });
+        sendMsg(c.res, 200, RetryRecordingResponseSchema, { recording: card });
+      });
+    }
 
     this.route('POST', '/api/rooms/:id/recording/stop', (c) => {
       const { room, me } = this.recordingRoom(c);
