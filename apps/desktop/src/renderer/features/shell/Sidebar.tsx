@@ -41,7 +41,7 @@ import {
   Trash2,
   UserPlus,
   Users,
-  MessageSquare,
+  MessageCircle,
   Video,
   Volume2,
 } from 'lucide-react';
@@ -710,7 +710,7 @@ function RoomMenu({
         // A voice room's chat without joining (docs/09 #14): the phone has no hover actions.
         return (
           <ContextMenu.Item key={id} className={menuItem} onSelect={() => openRoom(room.workspaceId, room.id)}>
-            <MessageSquare className="size-4" /> {t('voicePreview.openChat')}
+            <MessageCircle className="size-4" /> {t('voicePreview.openChat')}
           </ContextMenu.Item>
         );
       case 'invite':
@@ -906,7 +906,7 @@ function CardActions({ room, workspaceId }: { room: Room; workspaceId: string })
     <span className="hidden shrink-0 items-center gap-2.5 group-focus-within/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
       <Tip label={t('shell.roomChat')}>
         <button type="button" className={btn} aria-label={t('shell.roomChatOf', { name: room.name })} onClick={() => openRoom(workspaceId, room.id)}>
-          <MessageSquare className="size-[18px]" aria-hidden />
+          <MessageCircle className="size-[18px]" aria-hidden />
         </button>
       </Tip>
       <Tip label={t('roomMenu.more')}>

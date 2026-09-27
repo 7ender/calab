@@ -1,4 +1,4 @@
-import { LayoutGrid, Maximize2, MessageSquare, MicOff, Pin, VideoOff, X } from 'lucide-react';
+import { LayoutGrid, Maximize2, MessageCircle, MicOff, Pin, VideoOff, X } from 'lucide-react';
 import { forwardRef, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Badge, IconButton, cx } from '../../components/ui';
@@ -264,7 +264,7 @@ export function CameraGrid({ box, wsId, top, emptyFeed = false }: { box: Box; ws
           onClick={() => voice.setStage('pip')}
           className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-hover px-2.5 text-[12px] font-medium text-fg transition-colors duration-[var(--motion-fast)] hover:bg-active"
         >
-          <MessageSquare className="size-3.5" aria-hidden />
+          <MessageCircle className="size-3.5" aria-hidden />
           {t('video.showChat')}
         </button>
       </div>
