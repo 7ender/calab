@@ -53,7 +53,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, isAdminRole, mayArrangeRooms, mayMoveMembersIn, roomPerms } from '../../lib/permissions';
+import { can, mayArrangeRooms, mayManageWorkspace, mayModerateVoice, mayMoveMembersIn, roomPerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
 import { setRoomNotifications, setWorkspaceNotifications } from '../../services/mentions';
@@ -62,7 +62,7 @@ import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { memberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
+import { memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
 import { joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
@@ -132,7 +132,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const listRef = useRef<HTMLDivElement>(null);
   const [catDialog, setCatDialog] = useState(false);
   const myRoles = useMemberRoles(workspaceId, me);
-  const admin = isAdminRole(entry?.role);
+  // Workspace invites (rows' «Пригласить»): MANAGE_WORKSPACE, a custom role's included.
+  const admin = mayManageWorkspace(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
   // Pointer reordering on the desktop layout only: on a phone a drag would fight the scroll
   // (the room menu's «Переместить вверх/вниз» works everywhere).
@@ -222,13 +223,13 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
  * have their own menus (Radix stops at the innermost trigger).
  */
 function SidebarMenu({ workspaceId, onCreateCategory, children }: { workspaceId: string; onCreateCategory: () => void; children: ReactNode }): ReactNode {
-  const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const open = useUi((s) => s.openDialog);
   const hideMuted = useUi((s) => s.hideMuted);
   const setHideMuted = useUi((s) => s.setHideMuted);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const admin = isAdminRole(entry?.role);
-  const manageRooms = mayArrangeRooms(useMemberRoles(workspaceId, me));
+  const myRoles = useMemberRoles(workspaceId, me);
+  const admin = mayManageWorkspace(myRoles);
+  const manageRooms = mayArrangeRooms(myRoles);
   return (
     <ContextMenu.Root modal={false}>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
@@ -275,7 +276,8 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
   if (!entry) return null;
-  const admin = isAdminRole(entry.role);
+  // Invites and settings: MANAGE_WORKSPACE (the server's check), a custom role's included.
+  const admin = mayManageWorkspace(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
 
   const leave = async (): Promise<void> => {
@@ -1227,6 +1229,9 @@ function VoiceMember({
   const user = useWorkspaces((s) => s.users[state.userId]);
   const name = useWorkspaces(() => memberName(workspaceId, state.userId));
   const role = useWorkspaces((s) => s.byId[workspaceId]?.members[state.userId]?.role);
+  // MOVE_MEMBERS in the room, and the server's hierarchy: not the owner, admins only by the owner.
+  const myRole = useWorkspaces((s) => s.byId[workspaceId]?.role);
+  const draggable = canMove && mayModerateVoice(myRole, role, isMe);
   // «(+5 UTC)» when their time zone differs from mine (User.timezone).
   const tz = useTimeZoneLabel(state.userId);
   // Pending (optimistic join, docs/05) for more than 3 s: the «connecting» ring.
@@ -1235,7 +1240,7 @@ function VoiceMember({
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `member:${room.id}:${state.userId}`,
     data: { type: 'member', userId: state.userId, fromRoomId: room.id, name } satisfies DragMember,
-    disabled: !canMove,
+    disabled: !draggable,
   });
 
   const row = (
@@ -1248,7 +1253,7 @@ function VoiceMember({
       role="listitem"
       aria-roledescription={undefined}
       tabIndex={0}
-      aria-label={canMove ? `${name}. ${t('shell.dragHint')}` : name}
+      aria-label={draggable ? `${name}. ${t('shell.dragHint')}` : name}
       onClick={() => {
         if (stream && inSameRoom) voice.watch(stream.trackSid);
       }}
@@ -1256,7 +1261,7 @@ function VoiceMember({
         // Discord (2x reference): 28 px rows, 24 px avatars (speaking ring inside) starting where
         // the room name starts (8 + 18 + 6 = 32 px), 8 px to the 14 px name.
         'group/member flex h-7 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
-        canMove ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
+        draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}
       title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
@@ -1400,6 +1405,12 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
     if (!d || !over || over.roomId === d.fromRoomId) return;
     if (!over.canMove) {
       toast.info(t('shell.moveNotAllowed'));
+      return;
+    }
+    // The moved member needs VIEW_ROOM + CONNECT in the target (server moveMember).
+    const dest = useRooms.getState().byId[over.roomId];
+    if (!can(roomPerms(rolesOf(useWorkspaces.getState().byId[workspaceId], d.userId), d.userId, dest), 'CONNECT')) {
+      toast.info(t('shell.moveNoAccess', { name: d.name }));
       return;
     }
     moveMember(workspaceId, d.fromRoomId, d.userId, over.roomId);

@@ -16,8 +16,8 @@ import {
   type WorkspaceMember,
 } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { legacyRoles } from '../../lib/roles';
-import { groupMembers, hasAnyAction, memberActions, type MenuContext } from './members';
+import { legacyRoles, rolesOfMember } from '../../lib/roles';
+import { canRemoveMember, groupMembers, hasAnyAction, memberActions, type MenuContext } from './members';
 
 const member = (id: string, name: string, role: WorkspaceRole, nickname = '', isGuest = false): WorkspaceMember =>
   create(WorkspaceMemberSchema, { workspaceId: 'w', role, nickname, user: create(UserSchema, { id, displayName: name, isGuest }) });
@@ -180,6 +180,74 @@ describe('memberActions', () => {
     );
     expect(a.moveTargets.map((r) => r.id)).toEqual(['meeting']);
     expect(a.serverMute).toBe(false);
+  });
+
+  it('voice moderation hierarchy (rtc.outranks): admins only by the owner, the owner by nobody', () => {
+    const inCall = (t: WorkspaceMember) => ({ target: t, targetVoice: voice(t.user?.id ?? '', 'call'), myVoiceRoomId: 'call' });
+    const adminT = member('t', 'A', WorkspaceRole.ADMIN);
+    // An admin on another admin: no mute / disconnect / move / stop camera (the server answers 403).
+    const a = memberActions(base({ ...inCall(adminT), targetVoice: { ...voice('t', 'call'), camera: true } }));
+    expect(a).toMatchObject({ serverMute: false, disconnect: false, stopCamera: false, volume: true });
+    expect(a.moveTargets).toEqual([]);
+    // The owner may.
+    const o = memberActions(base({ myRole: WorkspaceRole.OWNER, ...inCall(adminT) }));
+    expect(o).toMatchObject({ serverMute: true, disconnect: true });
+    expect(o.moveTargets.map((r) => r.id)).toEqual(['meeting']);
+    // Nobody on the owner.
+    const own = memberActions(base({ ...inCall(member('t', 'O', WorkspaceRole.OWNER)) }));
+    expect(own).toMatchObject({ serverMute: false, disconnect: false });
+    expect(own.moveTargets).toEqual([]);
+    // A room moderator among members acts on members, not on admins.
+    const grant = [
+      create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: 'me', allow: PERMISSION_BITS.MUTE_MEMBERS | PERMISSION_BITS.MOVE_MEMBERS, deny: 0n }),
+    ];
+    const rooms = [room('call', RoomType.VOICE, grant), room('meeting', RoomType.VOICE, grant)];
+    expect(memberActions(base({ myRole: WorkspaceRole.MEMBER, rooms, ...inCall(member('t', 'M', WorkspaceRole.MEMBER)) }))).toMatchObject({ disconnect: true });
+    const onAdmin = memberActions(base({ myRole: WorkspaceRole.MEMBER, rooms, ...inCall(adminT) }));
+    expect(onAdmin).toMatchObject({ disconnect: false });
+    expect(onAdmin.moveTargets).toEqual([]);
+  });
+
+  it('move targets: only rooms the moved member may connect to (server moveMember)', () => {
+    const priv = room('secret', RoomType.VOICE, [
+      create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.ROLE, targetId: 'member', allow: 0n, deny: PERMISSION_BITS.VIEW_ROOM }),
+    ]);
+    const noConnect = room('stage', RoomType.VOICE, [
+      create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: 't', allow: 0n, deny: PERMISSION_BITS.CONNECT }),
+    ]);
+    const a = memberActions(base({ rooms: [call, meeting, priv, noConnect], targetVoice: voice('t', 'call') }));
+    // I (admin) see and may move into all of them; the member cannot enter «secret» or «stage».
+    expect(a.moveTargets.map((r) => r.id)).toEqual(['meeting']);
+  });
+
+  it('kick / ban / role select follow the ADR-0026 hierarchy (workspaces.outranks)', () => {
+    const mgr = create(RoleSchema, { id: 'r-mgr', name: 'Managers', position: 3, permissions: PERMISSION_BITS.MANAGE_WORKSPACE });
+    const senior = create(RoleSchema, { id: 'r-senior', name: 'Senior', position: 4, permissions: 0n });
+    const junior = create(RoleSchema, { id: 'r-junior', name: 'Junior', position: 2, permissions: 0n });
+    const roles = [...legacyRoles('w'), senior, mgr, junior];
+    const asMgr = { roles, myRole: WorkspaceRole.MEMBER, myRoleIds: ['member', 'r-mgr'] };
+    const withRoles = (ids: string[]) => create(WorkspaceMemberSchema, { ...member('t', 'T', WorkspaceRole.MEMBER), roleIds: ['member', ...ids] });
+    // A custom role with MANAGE_WORKSPACE (a custom role's included — not only admins).
+    expect(memberActions(base({ ...asMgr, target: withRoles([]) }))).toMatchObject({ kick: true, ban: true });
+    expect(memberActions(base({ ...asMgr, target: withRoles(['r-junior']) }))).toMatchObject({ kick: true, ban: true });
+    // Target at or above my top role: no.
+    expect(memberActions(base({ ...asMgr, target: withRoles(['r-mgr']) }))).toMatchObject({ kick: false, ban: false });
+    expect(memberActions(base({ ...asMgr, target: withRoles(['r-senior']) }))).toMatchObject({ kick: false, ban: false });
+    // Guests below: remove / promote.
+    expect(memberActions(base({ ...asMgr, target: member('t', 'G', WorkspaceRole.GUEST, '', true) }))).toMatchObject({ removeGuest: true, promote: true });
+    // An admin is above any custom role: the admin removes the senior member, the manager does not remove the admin.
+    expect(memberActions(base({ roles, target: withRoles(['r-senior']) })).kick).toBe(true);
+    expect(memberActions(base({ ...asMgr, target: member('t', 'A', WorkspaceRole.ADMIN) })).kick).toBe(false);
+  });
+
+  it('canRemoveMember: never oneself, the owner, or without MANAGE_WORKSPACE', () => {
+    const all = legacyRoles('w');
+    const r = (role: WorkspaceRole) => rolesOfMember(all, { role, roleIds: [] });
+    expect(canRemoveMember(r(WorkspaceRole.OWNER), r(WorkspaceRole.ADMIN), { role: WorkspaceRole.ADMIN }, false)).toBe(true);
+    expect(canRemoveMember(r(WorkspaceRole.OWNER), r(WorkspaceRole.OWNER), { role: WorkspaceRole.OWNER }, true)).toBe(false);
+    expect(canRemoveMember(r(WorkspaceRole.ADMIN), r(WorkspaceRole.OWNER), { role: WorkspaceRole.OWNER }, false)).toBe(false);
+    expect(canRemoveMember(r(WorkspaceRole.ADMIN), r(WorkspaceRole.MEMBER), { role: WorkspaceRole.MEMBER }, false)).toBe(true);
+    expect(canRemoveMember(r(WorkspaceRole.MEMBER), r(WorkspaceRole.GUEST), { role: WorkspaceRole.GUEST }, false)).toBe(false);
   });
 
   it('room MUTE_MEMBERS grant: disconnect only; server mute/unmute need it workspace-wide', () => {

@@ -2,7 +2,7 @@ import type { RoomRecording, WorkspaceSnapshot } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
-import { isAdminRole } from '../lib/permissions';
+import { mayManageWorkspace } from '../lib/permissions';
 import { retryRefusalKey, stopReasonKey, withEvent, withSnapshot, withoutRooms, type ActiveRecording, type RecordingMap, type RetryAction } from '../lib/recording';
 import { playSound } from '../lib/sounds';
 import { useRecordings } from '../stores/recordings';
@@ -10,7 +10,7 @@ import { myUserId } from '../stores/session';
 import { toast, useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { setVoice, useVoice } from '../stores/voice';
-import { memberName, useWorkspaces } from '../stores/workspaces';
+import { memberName, rolesOf, useWorkspaces } from '../stores/workspaces';
 
 /**
  * Meeting recording on the client (ADR-0025): the server's state of which rooms are recorded
@@ -98,8 +98,9 @@ export function startRecordingSync(): void {
 
 // ---------------------------------------------------------------- actions
 
+/** Pairing GPTunneL: MANAGE_WORKSPACE of my roles (a custom role's included), as the server checks. */
 function canManage(workspaceId: string): boolean {
-  return isAdminRole(useWorkspaces.getState().byId[workspaceId]?.role);
+  return mayManageWorkspace(rolesOf(useWorkspaces.getState().byId[workspaceId], myUserId()));
 }
 
 /** «Запись встречи» in the room menu: POST …/recording/start; the errors say what to do. */

@@ -74,6 +74,7 @@ export const enShell: DictShape<typeof ruShell> = {
   'shell.live': 'LIVE',
   'shell.moveTo': 'Move to…',
   'shell.moveNotAllowed': 'You don’t have permission to move members',
+  'shell.moveNoAccess': '{name} can’t join this room',
   'shell.moved': 'Member moved',
   'shell.dragHint': 'Drag to another voice room',
   'shell.serverMuted': 'Muted by a moderator',

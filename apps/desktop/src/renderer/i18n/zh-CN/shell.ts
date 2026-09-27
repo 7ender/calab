@@ -74,6 +74,7 @@ export const zhShell: DictShape<typeof enShell> = {
   'shell.live': '直播中',
   'shell.moveTo': '移动到…',
   'shell.moveNotAllowed': '你没有权限移动成员',
+  'shell.moveNoAccess': '{name} 无法进入此房间',
   'shell.moved': '成员已移动',
   'shell.dragHint': '拖动到另一个语音房间',
   'shell.serverMuted': '已被版主静音',

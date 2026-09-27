@@ -48,6 +48,8 @@ interface WorkspacesState {
   removeMember: (workspaceId: string, userId: string) => void;
   setPresence: (p: Presence) => void;
   setVoiceState: (v: VoiceState) => void;
+  /** ROOM_DELETE (deleted or no longer visible): nobody is shown in that room any more. */
+  clearRoomVoice: (workspaceId: string, roomId: string) => void;
   upsertUser: (u: User) => void;
 }
 
@@ -132,6 +134,15 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
         const voice = { ...e.voice };
         if (v.roomId) voice[v.userId] = v;
         else delete voice[v.userId];
+        return { ...e, voice };
+      }),
+    ),
+  clearRoomVoice: (wsId, roomId) =>
+    set((s) =>
+      withEntry(s, wsId, (e) => {
+        if (!Object.values(e.voice).some((v) => v.roomId === roomId)) return e;
+        const voice: Record<string, VoiceState> = {};
+        for (const [id, v] of Object.entries(e.voice)) if (v.roomId !== roomId) voice[id] = v;
         return { ...e, voice };
       }),
     ),

@@ -4,11 +4,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { Button, IconButton, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, isAdminRole } from '../../lib/permissions';
+import { can, mayManageWorkspace } from '../../lib/permissions';
 import { loadPins } from '../../services/chat';
 import { useMessages } from '../../stores/messages';
+import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { memberName, useMemberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { isDm, useDms } from '../../stores/dms';
 import { Avatar } from '../../components/Avatar';
 import { useChatView } from './chatView';
@@ -169,7 +170,8 @@ const COMPACT_BELOW = 280;
  */
 export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { workspaceId: string; room: Room; perms: PermissionBits; underStage?: boolean }): ReactNode {
   const open = useUi((s) => s.openDialog);
-  const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const myRoles = useMemberRoles(workspaceId, me);
   const voice = room.type === RoomType.VOICE;
   const Icon = voice ? Volume2 : Hash;
   // A DM starts with the peer (ADR-0020): their avatar and name, no invite / settings.
@@ -177,7 +179,8 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
   const peerId = useDms((s) => s.byRoom[room.id]?.peerId ?? '');
   const peerName = useMemberName(null, peerId);
   const peerAvatar = useWorkspaces((s) => s.users[peerId]?.avatarFileId ?? '');
-  const canInvite = !dm && isAdminRole(role);
+  // The workspace invite: MANAGE_WORKSPACE (a custom role's included), as the server checks.
+  const canInvite = !dm && mayManageWorkspace(myRoles);
   const canSetup = can(perms, 'MANAGE_ROOM');
   const ref = useRef<HTMLDivElement>(null);
   const [short, setShort] = useState(false);

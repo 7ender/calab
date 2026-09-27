@@ -1,8 +1,18 @@
 import { create } from '@bufbuild/protobuf';
-import { PERMISSION_BITS, RoleSchema, UserSchema, WorkspaceMemberSchema, WorkspaceRole, WorkspaceSchema, WorkspaceSnapshotSchema } from '@calaba/protocol';
+import {
+  PERMISSION_BITS,
+  RoleSchema,
+  RoomSchema,
+  UserSchema,
+  VoiceStateSchema,
+  WorkspaceMemberSchema,
+  WorkspaceRole,
+  WorkspaceSchema,
+  WorkspaceSnapshotSchema,
+} from '@calaba/protocol';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { legacyRoles } from '../lib/roles';
-import { mayArrangeRooms } from '../lib/permissions';
+import { mayArrangeRooms, mayManageWorkspace, roomPerms, voiceCaps } from '../lib/permissions';
 import { rolesOf, useWorkspaces } from './workspaces';
 
 const W = 'w1';
@@ -46,5 +56,35 @@ describe('workspace roles in the store (ADR-0026)', () => {
     const e = useWorkspaces.getState().byId[W];
     expect(e?.members['me']?.roleIds).toEqual(['member']);
     expect(mayArrangeRooms(rolesOf(e, 'me'))).toBe(false);
+  });
+
+  it('live, without a reconnect: a role edit or a custom role grant changes my rights at once', () => {
+    const st = useWorkspaces.getState();
+    const r = create(RoomSchema, { id: 'v', workspaceId: W, media: { cameraLimit: 2 } });
+    st.applySnapshot(snapshot(member('me', WorkspaceRole.MEMBER, ['member'])));
+    const caps = () => voiceCaps(roomPerms(rolesOf(useWorkspaces.getState().byId[W], 'me'), 'me', r), r);
+    expect(caps()).toEqual({ canStream: true, canVideo: true });
+    // ROLE_UPDATE of «member» without STREAM (voice.refreshRights reads the store).
+    const memberRole = legacyRoles(W).find((x) => x.id === 'member');
+    if (!memberRole) throw new Error('no member role');
+    st.upsertRole({ ...memberRole, permissions: memberRole.permissions & ~PERMISSION_BITS.STREAM });
+    expect(caps()).toEqual({ canStream: false, canVideo: true });
+    // A custom role with MANAGE_WORKSPACE given while online: the settings / invites appear.
+    expect(mayManageWorkspace(rolesOf(useWorkspaces.getState().byId[W], 'me'))).toBe(false);
+    st.upsertRole(create(RoleSchema, { id: 'r-ws', workspaceId: W, name: 'Managers', position: 3, permissions: PERMISSION_BITS.MANAGE_WORKSPACE }));
+    st.upsertMember(member('me', WorkspaceRole.MEMBER, ['member', 'r-ws']));
+    expect(mayManageWorkspace(rolesOf(useWorkspaces.getState().byId[W], 'me'))).toBe(true);
+  });
+
+  it('ROOM_DELETE (deleted or hidden): the room\'s participants are no longer in voice', () => {
+    const st = useWorkspaces.getState();
+    st.applySnapshot(snapshot(member('me', WorkspaceRole.MEMBER, ['member'])));
+    st.setVoiceState(create(VoiceStateSchema, { workspaceId: W, userId: 'a', roomId: 'r1' }));
+    st.setVoiceState(create(VoiceStateSchema, { workspaceId: W, userId: 'b', roomId: 'r2' }));
+    st.clearRoomVoice(W, 'r1');
+    expect(Object.keys(useWorkspaces.getState().byId[W]?.voice ?? {})).toEqual(['b']);
+    const before = useWorkspaces.getState().byId[W];
+    st.clearRoomVoice(W, 'nothing-here');
+    expect(useWorkspaces.getState().byId[W]).toBe(before);
   });
 });

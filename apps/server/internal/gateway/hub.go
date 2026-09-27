@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -277,6 +278,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		}
 	}
 	roomChange := func(rid uuid.UUID, apply func(), changed func() *v1.DispatchEvent) {
+		existed := st.rooms[rid] != nil
 		before := make(map[*Session]bool, len(sessions))
 		for _, s := range sessions {
 			before[s] = view(rid, s.user)
@@ -285,10 +287,13 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		room := st.rooms[rid]
 		for _, s := range sessions {
 			after := room != nil && view(rid, s.user)
-			switch out := transition(before[s], after, changed(), room, wid, rid); out {
-			case nil:
-			case ev:
+			switch out := transition(before[s], after, changed(), room, wid, rid); {
+			case out == nil:
+			case out == ev:
 				s.dispatchEnc(id, shared)
+			case existed && out.GetRoomCreate() != nil:
+				// An existing room became visible (its overrides changed): it may have a call.
+				h.dispatchGained(s, wid, id, out)
 			default:
 				s.dispatch(id, out)
 			}
@@ -550,11 +555,53 @@ func (h *Hub) reviewRooms(st *wsState, wid uuid.UUID, sessions []*Session, who f
 			after[s.user] = now
 		}
 		for rid, room := range st.rooms {
-			if out := transition(was[rid], now[rid], nil, room, wid, rid); out != nil {
+			switch out := transition(was[rid], now[rid], nil, room, wid, rid); {
+			case out == nil:
+			case out.GetRoomCreate() != nil:
+				h.dispatchGained(s, wid, uuid.New(), out)
+			default:
 				s.dispatch(uuid.New(), out)
 			}
 		}
 	}
+}
+
+// dispatchGained delivers the ROOM_CREATE of an existing room that became visible to s with a
+// role or override change (st.mu held). A voice room may have a call going that s knew nothing
+// about (its voice states were sanitized away): the call start and the participants' voice
+// states are read from Redis off the fan-out path while s is paused (order kept, like
+// syncGuestMembers) and follow the ROOM_CREATE. On a Redis error the room still arrives.
+func (h *Hub) dispatchGained(s *Session, wid, id uuid.UUID, out *v1.DispatchEvent) {
+	room := out.GetRoomCreate().GetRoom()
+	if room.GetType() != v1.RoomType_ROOM_TYPE_VOICE {
+		s.dispatch(id, out)
+		return
+	}
+	marker := s.pause()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		rid := parseID(room.GetId())
+		r := proto.Clone(room).(*v1.Room)
+		if started, err := h.voice.StartedAt(ctx, []uuid.UUID{rid}); err == nil {
+			r.VoiceStartedAt = nil
+			if t, ok := started[rid]; ok {
+				r.VoiceStartedAt = timestamppb.New(t)
+			}
+		}
+		evs := []pendingEvent{{id: id, enc: newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_RoomCreate{RoomCreate: &v1.RoomCreate{Room: r}}})}}
+		states, err := h.voice.States(ctx, wid)
+		if err != nil {
+			slog.WarnContext(ctx, "gateway: voice states of a gained room", "room", rid, "err", err)
+		}
+		for _, vs := range states {
+			if vs.GetRoomId() == room.GetId() {
+				evs = append(evs, pendingEvent{id: uuid.New(), enc: newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStateUpdate{
+					VoiceStateUpdate: &v1.VoiceStateUpdate{State: vs}}})})
+			}
+		}
+		s.resumeMany(marker, evs)
+	}()
 }
 
 func (h *Hub) toAll(sessions []*Session, id uuid.UUID, enc *encEvent) {

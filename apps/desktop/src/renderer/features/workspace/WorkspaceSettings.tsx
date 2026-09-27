@@ -18,7 +18,7 @@ import { errorText } from '../../lib/api/errors';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { workspaceInitials } from '../../lib/initials';
-import { can, isAdminRole, workspacePerms } from '../../lib/permissions';
+import { can, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
 import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -26,7 +26,7 @@ import { rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces'
 import { CommitInput } from '../settings/AppSettingsDialog';
 import { MAX_USES } from '../people/RoomLinkTab';
 import { ROLE_LABEL } from '../shell/MembersPanel';
-import { canRenameMember } from '../people/members';
+import { canRemoveMember, canRenameMember } from '../people/members';
 import { NickInline } from '../people/NickInline';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { PlanTab } from './PlanTab';
@@ -48,7 +48,9 @@ export function WorkspaceSettingsDialog({ workspaceId, tab, onClose }: { workspa
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
   if (!entry) return null;
-  const admin = isAdminRole(entry.role);
+  // Settings, media defaults, invites, bans, GPTunneL: MANAGE_WORKSPACE (the server's check) —
+  // admins, or a custom role with it. Deleting the workspace: the owner only.
+  const admin = mayManageWorkspace(myRoles);
   const owner = entry.role === WorkspaceRole.OWNER;
   // «Роли» (ADR-0026): whoever may manage roles — admins, or a custom role with MANAGE_ROLES.
   const manageRoles = can(workspacePerms(myRoles), 'MANAGE_ROLES');
@@ -244,7 +246,7 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<RoleFilter>('all');
   if (!entry) return null;
-  const admin = isAdminRole(entry.role);
+  const myRoles = rolesOf(entry, me);
   const owner = entry.role === WorkspaceRole.OWNER;
   const nameOf = (m: (typeof entry.members)[string]): string => m.nickname || m.user?.displayName || '';
   const needle = q.trim().toLowerCase();
@@ -255,7 +257,9 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
 
   const setRole = async (userId: string, role: WorkspaceRole): Promise<void> => {
     try {
-      const r = await api.workspaces.updateMember(workspaceId, userId, { role });
+      // Guest → member is only POST …/promote (the PATCH answers 422).
+      const guest = entry.members[userId]?.role === WorkspaceRole.GUEST;
+      const r = guest && role === WorkspaceRole.MEMBER ? await api.workspaces.promoteGuest(workspaceId, userId) : await api.workspaces.updateMember(workspaceId, userId, { role });
       if (r.member) useWorkspaces.getState().upsertMember(r.member);
     } catch (e) {
       toast.error(err(e));
@@ -289,7 +293,8 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
             if (!u) return null;
             const name = nameOf(m);
             // Only the owner grants/revokes ADMIN; OWNER is never granted here.
-            const editable = admin && u.id !== me && m.role !== WorkspaceRole.OWNER && (owner || m.role !== WorkspaceRole.ADMIN);
+            // MANAGE_WORKSPACE, not the owner, admins only by the owner, below my top role (the server's outranks).
+            const editable = canRemoveMember(myRoles, rolesOf(entry, u.id), m, u.id === me);
             const canNick = canRenameMember(rolesOf(entry, me), u.id === me, entry.ws.allowSelfNickname);
             return (
               <div key={u.id} className="flex min-h-12 items-center gap-3 px-3 py-2" data-testid="ws-member-row">

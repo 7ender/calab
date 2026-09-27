@@ -10,7 +10,7 @@ import {
   type WorkspaceMember,
 } from '@calaba/protocol';
 import { getLocale } from '../../i18n';
-import { can, roomPerms, workspacePerms } from '../../lib/permissions';
+import { can, mayModerateVoice, roomPerms, workspacePerms } from '../../lib/permissions';
 import { canAssignRole, legacyRoles, roleActor, rolesOfMember, topRole } from '../../lib/roles';
 
 /*
@@ -147,6 +147,18 @@ export function canRenameMember(myRoles: readonly RoleBits[] | undefined, self: 
   return self ? allowSelfNickname || can(ws, 'MANAGE_NICKNAMES') : can(ws, 'MANAGE_NICKNAMES');
 }
 
+/**
+ * Kick / ban / change the built-in role of a member (server workspaces.outranks + removeMember):
+ * MANAGE_WORKSPACE, never the owner, an admin only by the owner, and — ADR-0026 hierarchy — only
+ * members whose most senior role is below mine (the owner: anyone). Not oneself.
+ */
+export function canRemoveMember(myRoles: readonly Role[], targetRoles: readonly Role[], target: Pick<WorkspaceMember, 'role'>, self: boolean): boolean {
+  const actor = roleActor(myRoles);
+  if (self || !can(actor.perms, 'MANAGE_WORKSPACE') || target.role === WorkspaceRole.OWNER) return false;
+  if (target.role === WorkspaceRole.ADMIN && !actor.owner) return false;
+  return actor.owner || (topRole(targetRoles)?.position ?? -1) < actor.top;
+}
+
 export function memberActions(c: MenuContext): MenuActions {
   const userId = c.target.user?.id ?? '';
   const self = userId === c.meId;
@@ -156,21 +168,26 @@ export function memberActions(c: MenuContext): MenuActions {
   const ws = workspacePerms(myRoles);
   const inRoom = c.targetVoice?.roomId ? c.rooms.find((r) => r.id === c.targetVoice?.roomId) : undefined;
   const permsIn = (r: Room): bigint => roomPerms(myRoles, c.meId, r);
+  // Voice moderation hierarchy (server rtc.outranks): not the owner, admins only by the owner.
+  const outranks = mayModerateVoice(c.myRole, c.target.role, self);
   // Disconnect / stop-stream honour the room override; server mute needs MUTE_MEMBERS at the
   // workspace level (owner/admin) — a room grant cannot silence someone everywhere.
-  const moderate = !self && !!inRoom && can(permsIn(inRoom), 'MUTE_MEMBERS');
+  const moderate = !self && !!inRoom && outranks && can(permsIn(inRoom), 'MUTE_MEMBERS');
   const muteAll = moderate && can(ws, 'MUTE_MEMBERS');
-  const canMoveFrom = !self && !!inRoom && can(permsIn(inRoom), 'MOVE_MEMBERS');
+  const canMoveFrom = !self && !!inRoom && outranks && can(permsIn(inRoom), 'MOVE_MEMBERS');
+  // Targets: MOVE_MEMBERS there for me, VIEW_ROOM + CONNECT there for them (server moveMember).
   const moveTargets = canMoveFrom
-    ? c.rooms.filter((r) => r.type === RoomType.VOICE && r.id !== inRoom.id && can(permsIn(r), 'MOVE_MEMBERS'))
+    ? c.rooms.filter(
+        (r) =>
+          r.type === RoomType.VOICE &&
+          r.id !== inRoom.id &&
+          can(permsIn(r), 'MOVE_MEMBERS') &&
+          can(roomPerms(targetRoles, userId, r), 'CONNECT'),
+      )
     : [];
   const manage = can(ws, 'MANAGE_WORKSPACE');
   const guest = c.target.role === WorkspaceRole.GUEST;
-  const removable =
-    !self &&
-    manage &&
-    c.target.role !== WorkspaceRole.OWNER &&
-    (c.target.role !== WorkspaceRole.ADMIN || c.myRole === WorkspaceRole.OWNER);
+  const removable = canRemoveMember(myRoles, targetRoles, c.target, self);
   return {
     volume: !self && !!c.myVoiceRoomId && c.targetVoice?.roomId === c.myVoiceRoomId,
     localMute: !self,

@@ -1,7 +1,21 @@
 import { create } from '@bufbuild/protobuf';
 import { PERMISSION_BITS, PermissionTargetType, RoleSchema, RoomPermissionOverrideSchema, RoomSchema, WorkspaceRole, type Role } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { can, compactDrafts, cycleTri, isAdminRole, mayArrangeRooms, mayMoveMembersIn, roomPerms, triOf, withTri, workspacePerms } from './permissions';
+import {
+  can,
+  compactDrafts,
+  cycleTri,
+  isAdminRole,
+  mayArrangeRooms,
+  mayManageWorkspace,
+  mayModerateVoice,
+  mayMoveMembersIn,
+  roomPerms,
+  triOf,
+  voiceCaps,
+  withTri,
+  workspacePerms,
+} from './permissions';
 import { legacyRoles, rolesOfMember } from './roles';
 
 const { VIEW_ROOM, SEND_MESSAGES, STREAM, MANAGE_ROOM, MUTE_MEMBERS, CONNECT, SPEAK } = PERMISSION_BITS;
@@ -137,5 +151,57 @@ describe('tri-state editor', () => {
       { targetType: PermissionTargetType.USER, targetId: 'u', allow: VIEW_ROOM, deny: 0n },
     ];
     expect(compactDrafts(drafts)).toHaveLength(1);
+  });
+});
+
+describe('permissions matrix: the client gates what the server checks (docs/16)', () => {
+  const wsMgr = create(RoleSchema, { id: 'r-ws', name: 'Managers', position: 4, permissions: PERMISSION_BITS.MANAGE_WORKSPACE });
+
+  it('workspace management follows MANAGE_WORKSPACE, a custom role included', () => {
+    expect(mayManageWorkspace(as(WorkspaceRole.OWNER))).toBe(true);
+    expect(mayManageWorkspace(as(WorkspaceRole.ADMIN))).toBe(true);
+    expect(mayManageWorkspace(as(WorkspaceRole.MEMBER))).toBe(false);
+    expect(mayManageWorkspace(as(WorkspaceRole.GUEST))).toBe(false);
+    expect(mayManageWorkspace(as(WorkspaceRole.MEMBER, wsMgr))).toBe(true);
+    // Moderator has MUTE_MEMBERS | MANAGE_ROOM, not MANAGE_WORKSPACE.
+    expect(mayManageWorkspace(as(WorkspaceRole.MEMBER, mod))).toBe(false);
+    expect(mayManageWorkspace(undefined)).toBe(false);
+  });
+
+  it('voice moderation hierarchy mirrors rtc.outranks', () => {
+    const { OWNER, ADMIN, MEMBER, GUEST } = WorkspaceRole;
+    // [me, target, allowed]
+    const cases: Array<[WorkspaceRole, WorkspaceRole, boolean]> = [
+      [OWNER, ADMIN, true],
+      [OWNER, MEMBER, true],
+      [ADMIN, ADMIN, false],
+      [ADMIN, OWNER, false],
+      [ADMIN, MEMBER, true],
+      [ADMIN, GUEST, true],
+      [MEMBER, MEMBER, true],
+      [MEMBER, ADMIN, false],
+      [GUEST, MEMBER, true],
+    ];
+    for (const [me, target, ok] of cases) expect(mayModerateVoice(me, target, false), `${me} → ${target}`).toBe(ok);
+    // Oneself: always (the server skips the hierarchy).
+    expect(mayModerateVoice(ADMIN, ADMIN, true)).toBe(true);
+  });
+
+  it('call buttons: STREAM, VIDEO and a room that allows cameras', () => {
+    const cams = create(RoomSchema, { id: 'v', media: { cameraLimit: 4 } });
+    const noCams = create(RoomSchema, { id: 'v', media: { cameraLimit: 0 } });
+    expect(voiceCaps(roomPerms(as(WorkspaceRole.MEMBER), 'u', cams), cams)).toEqual({ canStream: true, canVideo: true });
+    expect(voiceCaps(roomPerms(as(WorkspaceRole.MEMBER), 'u', noCams), noCams)).toEqual({ canStream: true, canVideo: false });
+    // A room override taking STREAM + VIDEO from the member role (applied live by voice.refreshRights).
+    const denied = create(RoomSchema, {
+      id: 'v',
+      media: { cameraLimit: 4 },
+      permissionOverrides: [
+        create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.ROLE, targetId: 'member', deny: STREAM | PERMISSION_BITS.VIDEO }),
+      ],
+    });
+    expect(voiceCaps(roomPerms(as(WorkspaceRole.MEMBER), 'u', denied), denied)).toEqual({ canStream: false, canVideo: false });
+    expect(voiceCaps(roomPerms(as(WorkspaceRole.ADMIN), 'u', denied), denied)).toEqual({ canStream: true, canVideo: true });
+    expect(voiceCaps(0n, undefined)).toEqual({ canStream: false, canVideo: false });
   });
 });

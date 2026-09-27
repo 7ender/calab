@@ -170,6 +170,8 @@ export const Permission = {
 
 Дефолты встроенных ролей — в таблице «Роли workspace» выше (права `member`/`guest` редактируются).
 
+Где какой бит проверяется (сервер, клиент, LiveKit grant) — `docs/16-permissions-matrix.md`.
+
 Вычисление эффективных прав в комнате (единственная функция `computePermissions` в `packages/protocol`, зеркало — Go `internal/perm`, общие тест-векторы `proto/testdata/permissions.json`; сервер проверяет, клиент — для UI):
 
 ```
