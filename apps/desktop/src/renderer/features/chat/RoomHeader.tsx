@@ -317,7 +317,7 @@ function NotifyButton({ roomId, className }: { roomId: string; className?: strin
         </Dropdown.Trigger>
       </Tip>
       <Dropdown.Portal>
-        <Dropdown.Content align="end" sideOffset={8} collisionPadding={16} className={cx(menuBox, 'max-w-80')} aria-label={t('chat.notify')}>
+        <Dropdown.Content align="end" sideOffset={8} collisionPadding={16} className={menuBox} aria-label={t('chat.notify')}>
           <NotifyMenuItems
             title={t('chat.notify')}
             options={options}
