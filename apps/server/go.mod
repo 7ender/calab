@@ -15,6 +15,7 @@ require (
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/redis/rueidis v1.0.78
+	github.com/twitchtv/twirp v8.1.3+incompatible
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.46.0
 	golang.org/x/net v0.59.0
@@ -72,7 +73,6 @@ require (
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/sethvargo/go-retry v0.4.0 // indirect
-	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect

@@ -125,6 +125,13 @@ func run(m *testing.M) int {
 	defer rc.Close()
 	_ = rc.Do(ctx, rc.B().Flushdb().Build()).Error()
 
+	egressURL, stopFakes, err := startRecordingFakes()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer stopFakes()
+
 	cfg := &config.Config{
 		DatabaseURL:      u.String(),
 		JWTSecret:        "integration-secret-integration-secret",
@@ -159,6 +166,11 @@ func run(m *testing.M) int {
 		SuperadminEmails:      []string{superadminEmail, superadminEmail2},
 		MailPerAddressPerHour: 3,
 		MailPerHour:           1 << 20, // every test user gets a verification code
+		// Recording (ADR-0025): fakes of GPTunneL and the egress, see recording_integration_test.
+		GPTunnelAPIURL:         gptFake.URL,
+		RecordingMaxConcurrent: 2,
+		RecordingsPath:         recordDir,
+		RecordingEgressDir:     "/out",
 	}
 	cfg.TrustedProxies = mustPrefixes("127.0.0.1/32", "::1/128")
 	if err := cfg.Validate(); err != nil {
@@ -173,7 +185,9 @@ func run(m *testing.M) int {
 	lkRec = &recordingLiveKit{LiveKit: rtc.NewLiveKit(cfg.LiveKitInternalURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)}
 	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Events: events.Redis{C: rc}, Blob: store, LiveKit: lkRec,
 		UnfurlAllowAddr: func(netip.Addr) bool { return true }, // test pages are served on loopback
-		Mail:            testMail})
+		Mail:            testMail,
+		Egress:          rtc.NewEgress(egressURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)})
+	a.Recording.Tick, a.Recording.PollMin = 100*time.Millisecond, 50*time.Millisecond
 	a.Mail.Poll = 200 * time.Millisecond
 	testApp, testDB, testRedis, testCfg, testStore = a, d, rc, cfg, store
 	bg, stop := context.WithCancel(ctx)

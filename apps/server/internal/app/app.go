@@ -21,6 +21,7 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/gateway"
+	"github.com/calaba/calaba/server/internal/gptunnel"
 	"github.com/calaba/calaba/server/internal/guests"
 	"github.com/calaba/calaba/server/internal/health"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -28,6 +29,7 @@ import (
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
+	"github.com/calaba/calaba/server/internal/recording"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/rtc"
@@ -52,6 +54,8 @@ type Deps struct {
 	// Mail overrides the mail transport (tests: mail.Fake); nil = SMTP from config, or no
 	// mail when SMTP_HOST is empty.
 	Mail mail.Sender
+	// Egress overrides the LiveKit Egress client (tests); nil = real client from config.
+	Egress rtc.Egress
 }
 
 // App is the assembled server.
@@ -64,6 +68,8 @@ type App struct {
 	RTC     *rtc.Service // nil when LiveKit is not configured
 	Plans   *plans.Service
 	Mail    *mail.Service
+	// Recording: meeting recording and GPTunneL (ADR-0025).
+	Recording *recording.Service
 }
 
 // Run starts background work (gateway fan-out, presence sweeper, orphan file cleanup,
@@ -78,6 +84,7 @@ func (a *App) Run(ctx context.Context) {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)
 	}
 	go a.Mail.Run(ctx) // returns at once without mail
+	go a.Recording.Run(ctx)
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -147,6 +154,19 @@ func New(d Deps) *App {
 	if rtcSvc != nil {
 		rtcSvc.Revoked = authSvc.IsRevoked
 	}
+	var egress rtc.Egress
+	if rtcSvc != nil {
+		if egress = d.Egress; egress == nil {
+			egress = rtc.NewEgress(d.Config.LiveKitInternalURL, d.Config.LiveKitAPIKey, d.Config.LiveKitAPISecret)
+		}
+	}
+	recSvc := recording.New(recording.Config{
+		Dir: d.Config.RecordingsPath, EgressDir: d.Config.RecordingEgressDir,
+		MaxConcurrent: d.Config.RecordingMaxConcurrent, Secret: []byte(d.Config.JWTSecret),
+	}, d.DB, d.Redis, egress, gptunnel.New(d.Config.GPTunnelAPIURL), pub)
+	if rtcSvc != nil {
+		rtcSvc.OnEgress = recSvc.HandleEgress
+	}
 	authLimiter := redisx.NewRateLimiter(d.Redis, "rl:auth:", d.Config.AuthRateBurst, d.Config.AuthRatePerMinute)
 	accountLimiter := redisx.NewRateLimiter(d.Redis, "rl:login-acct:", d.Config.LoginAccountBurst, float64(d.Config.LoginAccountBurst)/15) // N per 15 min
 	msgLimiter := redisx.NewRateLimiter(d.Redis, "rl:msg:", 5, 60)                                                                         // 5 per 5 s per room and user
@@ -203,6 +223,7 @@ func New(d Deps) *App {
 	plans.NewAdmin(d.DB, planSvc, pub, redisx.NewRateLimiter(d.Redis, "rl:admin:", 60, 60)).Routes(mux, private) // 60 per minute
 	unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
 		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
+	recSvc.Routes(mux, private)
 	if rtcSvc != nil {
 		rtcSvc.Routes(mux, private)
 	} else {
@@ -220,5 +241,5 @@ func New(d Deps) *App {
 		httpx.Recover,
 		events.Middleware, // one post-commit publish budget per request
 	)
-	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc}
+	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc, Recording: recSvc}
 }

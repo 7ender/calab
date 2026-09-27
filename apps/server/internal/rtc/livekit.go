@@ -68,6 +68,18 @@ type WebhookEvent struct {
 	Room        *Room        `json:"room"`
 	Participant *Participant `json:"participant"`
 	Track       *Track       `json:"track"`
+	// Egress events (egress_started / _updated / _ended). LiveKit serializes webhooks with
+	// lowerCamelCase names; the proto name is accepted too.
+	EgressInfo      *EgressInfo `json:"egressInfo"`
+	EgressInfoProto *EgressInfo `json:"egress_info"`
+}
+
+// Egress returns the event's egress info, if any.
+func (e *WebhookEvent) Egress() *EgressInfo {
+	if e.EgressInfo != nil {
+		return e.EgressInfo
+	}
+	return e.EgressInfoProto
 }
 
 // Webhook event names.
@@ -129,6 +141,7 @@ type videoGrant struct {
 	CanPublishData    *bool    `json:"canPublishData,omitempty"`
 	CanPublishSources []string `json:"canPublishSources,omitempty"`
 	DestinationRoom   string   `json:"destinationRoom,omitempty"` // MoveParticipant target
+	RoomRecord        bool     `json:"roomRecord,omitempty"`      // Egress service
 }
 
 type lkClaims struct {
@@ -205,6 +218,10 @@ func (c *client) call(ctx context.Context, method, room string, in, out any) err
 }
 
 func (c *client) callGrant(ctx context.Context, method string, g *videoGrant, in, out any) error {
+	return c.callService(ctx, "livekit.RoomService", method, g, in, out)
+}
+
+func (c *client) callService(ctx context.Context, service, method string, g *videoGrant, in, out any) error {
 	tok, err := sign(c.key, c.secret, lkClaims{Video: g}, time.Minute)
 	if err != nil {
 		return err
@@ -213,8 +230,8 @@ func (c *client) callGrant(ctx context.Context, method string, g *videoGrant, in
 	if err != nil {
 		return err
 	}
-	// URL = LIVEKIT_INTERNAL_URL from config + a constant method name: not user-controlled.
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/twirp/livekit.RoomService/"+method, bytes.NewReader(body)) //nolint:gosec // G704, see above
+	// URL = LIVEKIT_INTERNAL_URL from config + constant service / method names: not user-controlled.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/twirp/"+service+"/"+method, bytes.NewReader(body)) //nolint:gosec // G704, see above
 	if err != nil {
 		return err
 	}

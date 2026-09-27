@@ -437,6 +437,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		v := int32(req.GetUserLimit()) //nolint:gosec // ≤ 99
 		p.UserLimit = &v
 	}
+	if req.AllowRecording != nil {
+		// Recording consent is the workspace's call (ADR-0025): owner / admins only.
+		if !perm.Workspace(acc.Role).Has(perm.ManageWorkspace) {
+			return httpx.Forbidden("MANAGE_WORKSPACE required to change allow_recording")
+		}
+		p.AllowRecording = req.AllowRecording
+	}
 	if req.CategoryId != nil {
 		p.SetCategory = true
 		if p.CategoryID, err = parseCategory(r.Context(), h.db.Q, acc.WorkspaceID, req.GetCategoryId()); err != nil {

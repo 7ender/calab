@@ -87,6 +87,9 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `SMTP_USER` / `SMTP_PASSWORD` | — | AUTH PLAIN (только по TLS); пусто = без AUTH |
 | `SMTP_FROM` | — | обязателен при `SMTP_HOST`: `Calab <noreply@calab.ru>` |
 | `MAIL_PER_ADDRESS_PER_HOUR` / `MAIL_PER_HOUR` | `3` / `200` | писем на адрес и на сервер в час (Valkey) |
+| `GPTUNNEL_API_URL` | `https://gptunnel.ai` | запись встреч (ADR-0025): API устройств GPTunneL (pairing, загрузка, статус) |
+| `RECORDING_MAX_CONCURRENT` | `3` | одновременных записей на сервер (egress ≈ 0.5 CPU на запись) |
+| `RECORDINGS_PATH` / `RECORDING_EGRESS_DIR` | `./data/recordings` / `/out` | том записей глазами API и контейнера egress (один volume) |
 | `GATEWAY_HEARTBEAT_INTERVAL` | `41s` | интервал heartbeat (presence TTL = 2×) |
 | `GATEWAY_MAX_SESSIONS_PER_USER` | `5` | лимит устройств с активным gateway |
 

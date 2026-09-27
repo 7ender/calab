@@ -11,10 +11,6 @@ package mail
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +29,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/redisx"
+	"github.com/calaba/calaba/server/internal/sealbox"
 )
 
 // Message is one rendered email. Template and Params are kept for tests and logs.
@@ -88,7 +85,7 @@ type Service struct {
 	db      *db.DB
 	redis   rueidis.Client
 	sender  Sender
-	aead    cipher.AEAD
+	box     *sealbox.Box
 	perAddr *redisx.RateLimiter
 	global  *redisx.RateLimiter
 	wake    chan struct{}
@@ -106,18 +103,9 @@ var ErrDisabled = httpx.Coded(http.StatusServiceUnavailable, v1.ErrorCode_ERROR_
 
 // New creates the service. sender nil = mail disabled (Enabled() false, Enqueue fails).
 func New(cfg Config, d *db.DB, r rueidis.Client, sender Sender) *Service {
-	sum := sha256.Sum256(append([]byte("calaba/mail-outbox/v1\x00"), cfg.Secret...))
-	block, err := aes.NewCipher(sum[:])
-	if err != nil {
-		panic(err) // 32-byte key: cannot fail
-	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		panic(err)
-	}
 	perAddr, perHour := max(cfg.PerAddressPerHour, 1), max(cfg.PerHour, 1)
 	return &Service{
-		db: d, redis: r, sender: sender, aead: aead,
+		db: d, redis: r, sender: sender, box: sealbox.New("calaba/mail-outbox/v1", cfg.Secret),
 		perAddr: redisx.NewRateLimiter(r, "rl:mail-addr:", perAddr, float64(perAddr)/60),
 		global:  redisx.NewRateLimiter(r, "rl:mail-server:", perHour, float64(perHour)/60),
 		wake:    make(chan struct{}, 1),
@@ -176,21 +164,13 @@ func (s *Service) seal(p Params) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	nonce := make([]byte, s.aead.NonceSize(), s.aead.NonceSize()+len(plain)+s.aead.Overhead())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, err
-	}
-	return s.aead.Seal(nonce, nonce, plain, nil), nil
+	return s.box.Seal(plain)
 }
 
 func (s *Service) open(b []byte) (Params, error) {
-	n := s.aead.NonceSize()
-	if len(b) < n {
-		return nil, errors.New("mail: sealed params too short")
-	}
-	plain, err := s.aead.Open(nil, b[:n], b[n:], nil)
+	plain, err := s.box.Open(b)
 	if err != nil {
-		return nil, fmt.Errorf("mail: open params (JWT_SECRET changed?): %w", err)
+		return nil, fmt.Errorf("mail: params: %w", err)
 	}
 	var p Params
 	return p, json.Unmarshal(plain, &p)

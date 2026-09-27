@@ -159,8 +159,18 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	if err := pl.Fill(ctx, pw); err != nil {
 		return nil, err
 	}
+	recs, err := q.ListActiveRecordings(ctx, &ws.ID)
+	if err != nil {
+		return nil, err
+	}
+	var recordings []*v1.RoomRecording
+	for _, rec := range recs {
+		if _, ok := bits[rec.RoomID.String()]; ok && pbconv.RecordingActive(rec) {
+			recordings = append(recordings, pbconv.RoomRecording(rec))
+		}
+	}
 	return &v1.WorkspaceSnapshot{Workspace: pw, Role: role.Proto(), Rooms: rs, Members: members,
-		Permissions: bits, Categories: pbconv.Categories(cats)}, nil
+		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings}, nil
 }
 
 // joined publishes membership events after a user joined a workspace.

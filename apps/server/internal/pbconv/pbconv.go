@@ -361,6 +361,7 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		CategoryId:          idp(r.CategoryID),
 		UserLimit:           uint32(max(r.UserLimit, 0)),
 		VoiceStatus:         deref(r.VoiceStatus),
+		AllowRecording:      r.AllowRecording,
 	}
 }
 
@@ -434,11 +435,21 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 	}
 	out.PinnedAt, out.PinnedBy = tsp(m.PinnedAt), idp(m.PinnedBy)
 	out.EmbedsHidden = m.EmbedsHidden
+	if m.Kind == MessageKindSystem {
+		out.Kind = v1.MessageKind_MESSAGE_KIND_SYSTEM
+		out.System = &v1.SystemMessage{}
+		if len(m.Payload) > 0 {
+			_ = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(m.Payload, out.System)
+		}
+	}
 	for i, f := range files {
 		out.Attachments[i] = File(f)
 	}
 	return out
 }
+
+// MessageKindSystem is messages.kind of a system message (ADR-0025).
+const MessageKindSystem = "system"
 
 // ProtoOverrideTargets converts wire overrides for perm.ComputeIn.
 func ProtoOverrideTargets(ovs []*v1.RoomPermissionOverride) []perm.OverrideTarget {
