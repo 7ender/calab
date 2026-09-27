@@ -66,6 +66,7 @@ const KEY = new Set([
   'room-settings-1',
   'i18n-en-main-chat',
   'settings-plan',
+  'settings-members',
   'admin-workspaces',
   'admin-plan',
 ]);
@@ -756,6 +757,27 @@ for (let i = 1; i <= TABS['workspace-settings']; i++) {
     await checkpoint(shot, `workspace-settings-${i}`);
   });
 }
+
+/**
+ * Workspace settings → «Участники» (docs/09 #26): search + role filter, names in role colours
+ * with the crown / shield, Бориса's nickname open for inline editing (the owner may rename).
+ */
+test('settings-members', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Участники' }).click();
+  await expect(dialog.getByRole('radiogroup', { name: 'Роль' })).toBeVisible();
+  await dialog.getByRole('button', { name: /^Изменить ник: Борис/ }).click();
+  await expect(dialog.getByTestId('nick-input')).toBeFocused();
+  await checkpoint(shot, 'settings-members');
+  // Esc closes only the field (restoring the name), not the settings window.
+  await win.keyboard.press('Escape');
+  await expect(dialog.getByTestId('nick-input')).toHaveCount(0);
+  await expect(dialog.getByRole('tab', { name: 'Участники' })).toBeVisible();
+});
 
 /** Workspace settings → «Тариф» (ADR-0024) on the Free plan: limits against the usage, the contact. */
 test('settings-plan', async ({ open, win, mock, shot }) => {

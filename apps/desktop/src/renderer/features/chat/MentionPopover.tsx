@@ -1,4 +1,4 @@
-import type { Room } from '@calaba/protocol';
+import type { Room, WorkspaceRole } from '@calaba/protocol';
 import { AtSign } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
@@ -7,8 +7,9 @@ import { t } from '../../i18n';
 import { SPECIAL, type MentionCandidate } from '../../lib/mentions';
 import { can, roomPerms } from '../../lib/permissions';
 import { isGuest, useWorkspaces } from '../../stores/workspaces';
+import { RoleMark, roleTextClass } from '../people/MemberBits';
 
-export type MentionOption = { kind: 'member'; c: MentionCandidate; guest: boolean } | { kind: 'special'; v: (typeof SPECIAL)[number] };
+export type MentionOption = { kind: 'member'; c: MentionCandidate; guest: boolean; role?: WorkspaceRole | undefined } | { kind: 'special'; v: (typeof SPECIAL)[number] };
 
 export const optionKey = (o: MentionOption): string => (o.kind === 'member' ? o.c.id : o.v);
 
@@ -16,6 +17,8 @@ export interface Mentionables {
   /** Members who can see the room, except me (popover candidates). */
   candidates: MentionCandidate[];
   guests: Set<string>;
+  /** Workspace role per candidate (name colour + RoleMark, docs/09 #26). */
+  roles: Map<string, WorkspaceRole>;
   /** Every member of the workspace with the name shown in the field (typed-name conversion). */
   all: Array<{ id: string; name: string }>;
 }
@@ -24,7 +27,7 @@ export interface Mentionables {
 export function useMentionables(workspaceId: string, room: Room, me: string): Mentionables {
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   return useMemo(() => {
-    const out: Mentionables = { candidates: [], guests: new Set(), all: [] };
+    const out: Mentionables = { candidates: [], guests: new Set(), roles: new Map(), all: [] };
     for (const m of Object.values(members ?? {})) {
       const u = m.user;
       if (!u) continue;
@@ -32,6 +35,7 @@ export function useMentionables(workspaceId: string, room: Room, me: string): Me
       out.all.push({ id: u.id, name });
       if (u.id === me || !can(roomPerms(m.role, u.id, room), 'VIEW_ROOM')) continue;
       if (isGuest(m)) out.guests.add(u.id);
+      out.roles.set(u.id, m.role);
       out.candidates.push({ id: u.id, name, alt: m.nickname && m.nickname !== u.displayName ? [u.displayName] : [] });
     }
     return out;
@@ -86,9 +90,10 @@ export function MentionPopover({
               {o.kind === 'member' ? (
                 <>
                   <Avatar userId={o.c.id} name={o.c.name} fileId={users[o.c.id]?.avatarFileId || undefined} size={24} />
-                  <span className="min-w-0 truncate font-medium" title={o.c.name}>
+                  <span className={cx('min-w-0 truncate font-medium', roleTextClass(o.role, active ? 'inherit' : 'role'))} title={o.c.name}>
                     {o.c.name}
                   </span>
+                  <RoleMark role={o.role} tone={active ? 'inherit' : 'role'} />
                   {o.c.alt[0] ? <span className={cx('min-w-0 truncate', active ? 'text-accent-fg' : 'text-muted')}>{o.c.alt[0]}</span> : null}
                   {o.guest ? (
                     <span className={cx('ml-auto shrink-0 text-micro', active ? 'text-accent-fg' : 'text-muted')}>{t('chat.mentionGuest')}</span>

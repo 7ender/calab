@@ -1,15 +1,20 @@
+import type { WorkspaceRole } from '@calaba/protocol';
 import { VolumeX } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { usePrefs } from '../stores/prefs';
 import { Avatar } from './Avatar';
 import { cx } from './ui';
 import { t } from '../i18n';
+import { RoleMark, hasRoleMark, roleTextClass } from '../features/people/MemberBits';
 
 /**
  * Name colour of a voice participant (docs/08 «Индикация речи», Discord): primary while they
  * speak, muted otherwise (hover brightens the row). Colour only — no weight change, no jump.
+ * Owner / admins keep their role colour either way (docs/09 #26): the ring on the avatar says
+ * who is talking, the colour on the name says who they are.
  */
-export function speakerNameClass(talking: boolean): string {
+export function speakerNameClass(talking: boolean, role?: WorkspaceRole): string {
+  if (hasRoleMark(role)) return roleTextClass(role);
   return talking ? 'text-fg' : 'text-muted group-hover/member:text-fg';
 }
 
@@ -27,6 +32,7 @@ export function SpeakerIdentity({
   talking,
   pending = false,
   suffix,
+  role,
 }: {
   userId: string;
   name: string;
@@ -36,6 +42,8 @@ export function SpeakerIdentity({
   pending?: boolean;
   /** Muted tail after the name (the time-zone label). */
   suffix?: string | null;
+  /** Workspace role: owner / admin names in the role colour + RoleMark (docs/09 #26). */
+  role?: WorkspaceRole | undefined;
 }): ReactNode {
   return (
     <>
@@ -46,9 +54,12 @@ export function SpeakerIdentity({
       ) : (
         <Avatar userId={userId} name={name} fileId={fileId} size={size} speaking={talking} ringInside />
       )}
-      <span data-testid="speaker-name" className={cx('min-w-0 flex-1 truncate transition-colors duration-100', speakerNameClass(talking && !pending))}>
-        {name}
-        {suffix ? <span className="text-muted"> {suffix}</span> : null}
+      <span className="flex min-w-0 flex-1 items-center gap-1">
+        <span data-testid="speaker-name" className={cx('min-w-0 truncate transition-colors duration-100', speakerNameClass(talking && !pending, role))}>
+          {name}
+          {suffix ? <span className="text-muted"> {suffix}</span> : null}
+        </span>
+        <RoleMark role={role} />
       </span>
       <MutedByMe userId={userId} />
     </>

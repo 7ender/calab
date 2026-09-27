@@ -168,6 +168,13 @@ export const zhApp: DictShape<typeof enApp> = {
   'room.typeTextHint': '消息、文件和链接',
   'room.typeVoiceHint': '语音、屏幕共享与聊天',
   'ws.joinedSince': '自{date}起',
+  'ws.filter.label': '角色',
+  'ws.filter.all': '全部',
+  'ws.filter.owner': '所有者',
+  'ws.filter.admins': '管理员',
+  'ws.filter.members': '成员',
+  'ws.filter.guests': '访客',
+  'ws.filter.none': '未找到任何人',
 
   // onboarding (docs/09 #20)
   'onb.back': '返回',

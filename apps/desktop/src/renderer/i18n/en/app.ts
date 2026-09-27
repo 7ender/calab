@@ -168,6 +168,13 @@ export const enApp: DictShape<typeof ruApp> = {
   'room.typeTextHint': 'Messages, files and links',
   'room.typeVoiceHint': 'Voice, screen share and chat',
   'ws.joinedSince': 'since {date}',
+  'ws.filter.label': 'Role',
+  'ws.filter.all': 'All',
+  'ws.filter.owner': 'Owner',
+  'ws.filter.admins': 'Admins',
+  'ws.filter.members': 'Members',
+  'ws.filter.guests': 'Guests',
+  'ws.filter.none': 'No one found',
 
   // onboarding (docs/09 #20)
   'onb.back': 'Back',

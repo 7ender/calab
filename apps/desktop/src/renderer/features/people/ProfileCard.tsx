@@ -10,7 +10,7 @@ import { t, type MessageKey } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { isGuest, useMemberName, useWorkspaces } from '../../stores/workspaces';
-import { GuestBadge, RoleIcon, roleTextClass } from './MemberBits';
+import { GuestBadge, RoleMark, roleTextClass } from './MemberBits';
 import { VolumeRow, useMemberActions } from './MemberContextMenu';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -75,6 +75,7 @@ export function ProfileCard({
               {name}
               {tz ? <span className="font-normal text-muted"> {tz}</span> : null}
             </h3>
+            <RoleMark role={m.role} />
             {isGuest(m) ? <GuestBadge /> : null}
           </div>
           {m.nickname && m.nickname !== u.displayName ? (
@@ -102,7 +103,6 @@ export function ProfileCard({
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-t border-line pt-3 text-caption">
         <dt className="text-muted">{t('people.profile.role')}</dt>
         <dd className="flex min-w-0 items-center gap-1.5">
-          <RoleIcon role={m.role} />
           {t(ROLE_KEY[m.role])}
         </dd>
         {v?.roomId ? (

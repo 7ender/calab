@@ -97,6 +97,15 @@ export interface MenuActions {
   kick: boolean;
 }
 
+/**
+ * May I change this member's workspace nickname (docs/09 #33, #26)? Others' — MANAGE_NICKNAMES;
+ * my own — also when the workspace allows self nicknames. The server re-checks.
+ */
+export function canRenameMember(myRole: WorkspaceRole | undefined, self: boolean, allowSelfNickname: boolean): boolean {
+  const ws = workspacePerms(myRole);
+  return self ? allowSelfNickname || can(ws, 'MANAGE_NICKNAMES') : can(ws, 'MANAGE_NICKNAMES');
+}
+
 export function memberActions(c: MenuContext): MenuActions {
   const userId = c.target.user?.id ?? '';
   const self = userId === c.meId;
@@ -128,7 +137,7 @@ export function memberActions(c: MenuContext): MenuActions {
     hideVideo: !self && !!c.myVoiceRoomId && c.targetVoice?.roomId === c.myVoiceRoomId && c.targetVoice.camera,
     stopCamera: moderate && !!c.targetVoice?.camera,
     moveTargets,
-    rename: self ? c.allowSelfNickname || can(ws, 'MANAGE_NICKNAMES') : can(ws, 'MANAGE_NICKNAMES'),
+    rename: canRenameMember(c.myRole, self, c.allowSelfNickname),
     roles:
       !self && manage && (c.target.role === WorkspaceRole.MEMBER || (c.target.role === WorkspaceRole.ADMIN && c.myRole === WorkspaceRole.OWNER))
         ? { admin: c.myRole === WorkspaceRole.OWNER, member: true }

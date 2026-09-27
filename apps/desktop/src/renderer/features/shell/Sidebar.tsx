@@ -1089,6 +1089,7 @@ function VoiceMember({
   const stream = useVoice((s) => s.streams.find((x) => x.userId === state.userId));
   const user = useWorkspaces((s) => s.users[state.userId]);
   const name = useWorkspaces(() => memberName(workspaceId, state.userId));
+  const role = useWorkspaces((s) => s.byId[workspaceId]?.members[state.userId]?.role);
   // «(+5 UTC)» when their time zone differs from mine (User.timezone).
   const tz = useTimeZoneLabel(state.userId);
   // Pending (optimistic join, docs/05) for more than 3 s: the «connecting» ring.
@@ -1125,7 +1126,7 @@ function VoiceMember({
       data-speaking={talking || undefined}
       data-pending={state.pending || undefined}
     >
-      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={talking} pending={connectingRing} suffix={tz} />
+      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={talking} pending={connectingRing} suffix={tz} role={role} />
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}

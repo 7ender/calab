@@ -77,6 +77,8 @@ export const esPeople: DictShape<typeof enPeople> = {
   'people.nick.reset': 'Restablecer',
   'people.nick.allowSelf': 'Los miembros pueden cambiar su propio apodo',
   'people.nick.allowSelfHint': 'Los administradores siempre pueden cambiar apodos',
+  'people.nick.editOf': 'Cambiar apodo: {name}',
+  'people.nick.inlineHint': 'Enter para guardar, Esc para cancelar',
 
   // sounds (settings → notifications)
   'sounds.title': 'Sonidos',

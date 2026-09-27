@@ -183,6 +183,12 @@ export function SettingsWindow({
             if (e.currentTarget instanceof HTMLElement) e.currentTarget.focus();
           }}
           onEscapeKeyDown={(e) => {
+            // A field that owns Esc (inline editors, data-own-escape) handles it itself: Radix
+            // listens in the capture phase, before the field could stop the event.
+            if (e.target instanceof Element && e.target.closest('[data-own-escape]')) {
+              e.preventDefault();
+              return;
+            }
             // Esc clears the search first (macOS search fields), then closes the window.
             if (query) {
               e.preventDefault();

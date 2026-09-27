@@ -19,7 +19,7 @@ import { requestMention } from '../chat/mentionRequest';
 import { useCanDm } from '../dm/canDm';
 import { menuBox, menuItem } from '../shell/menu';
 import { promoteGuest, setMemberRole } from './actions';
-import { GuestBadge } from './MemberBits';
+import { GuestBadge, RoleMark, roleTextClass } from './MemberBits';
 import { MemberContextMenu, useMemberActions } from './MemberContextMenu';
 import { NOTE_MAX, createNoteSaver, type NoteSaveState, type NoteSaver } from './noteSaver';
 
@@ -142,10 +142,11 @@ export function ProfileDialog({
                 <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={80} presence className="[&>span:last-child]:border-[var(--color-popover-solid)]" />
               </div>
               <div className="flex min-w-0 items-center gap-2">
-                <DialogP.Title className="min-w-0 truncate text-title font-semibold leading-tight" title={name}>
+                <DialogP.Title className={cx('min-w-0 truncate text-title font-semibold leading-tight', roleTextClass(m.role))} title={name}>
                   {name}
                   {tz ? <span className="font-normal text-muted"> {tz}</span> : null}
                 </DialogP.Title>
+                <RoleMark role={m.role} />
                 {isGuest(m) ? <GuestBadge /> : null}
               </div>
               {m.nickname && m.nickname !== u.displayName ? (

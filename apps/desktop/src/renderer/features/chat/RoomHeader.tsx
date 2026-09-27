@@ -1,4 +1,4 @@
-import { NotificationLevel, PresenceStatus, RoomType, type PermissionBits, type Room } from '@calaba/protocol';
+import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
@@ -27,6 +27,7 @@ import { memberName, useMemberName, useWorkspaces } from '../../stores/workspace
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
 import { menuBox } from '../shell/menu';
+import { RoleMark, roleTextClass, useSharedRole } from '../people/MemberBits';
 import { LEVEL_LABEL, NotifyMenuItems, mutedText, type LevelOption } from './NotifyMenu';
 import { previewText } from './mentionText';
 import { TypingDots, useTypingText } from './TypingIndicator';
@@ -158,6 +159,8 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
   const name = useMemberName(null, peerId);
   const user = useWorkspaces((s) => s.users[peerId]);
   const status = useWorkspaces((s) => s.presences[peerId]?.status);
+  // A DM has no workspace: the peer's most senior role among the shared ones (docs/09 #26).
+  const shared = useSharedRole(peerId);
   const typing = useTypingText('', room.id);
   const searchOpen = useChatView((s) => s.searchRoom === room.id);
   const setSearch = useChatView((s) => s.setSearch);
@@ -175,9 +178,10 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
     >
       {mobile ? <NavButton /> : null}
       <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence className="[&>span:last-child]:border-[var(--color-bg)]" />
-      <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', mobile && 'max-w-none shrink')} title={name}>
+      <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', roleTextClass(shared?.role), mobile && 'max-w-none shrink')} title={name}>
         {name}
       </h1>
+      {shared ? <RoleMark role={shared.role} label={`${t(shared.role === WorkspaceRole.OWNER ? 'role.owner' : 'role.admin')} · ${shared.workspace}`} /> : null}
       <span className={cx('flex min-w-0 flex-1 items-center gap-1.5 text-body', mobile && 'hidden')} aria-live="polite">
         <span className="text-faint" aria-hidden>
           •

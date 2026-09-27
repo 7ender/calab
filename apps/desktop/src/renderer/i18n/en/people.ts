@@ -77,6 +77,8 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'people.nick.reset': 'Reset',
   'people.nick.allowSelf': 'Members can change their own nickname',
   'people.nick.allowSelfHint': 'Admins can always change nicknames',
+  'people.nick.editOf': 'Change nickname: {name}',
+  'people.nick.inlineHint': 'Enter to save, Esc to cancel',
 
   // sounds (settings → notifications)
   'sounds.title': 'Sounds',
