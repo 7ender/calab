@@ -81,6 +81,12 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `PLAN_CONTACT_URL` / `PLAN_CONTACT_EMAIL` | — / `it@gptunnel.ai` | куда писать за подпиской (`plan_contact` в READY и `/api/version`): URL, иначе `mailto:` |
 | `SUPERADMIN_EMAILS` | — | email суперадминов через запятую: `/api/admin/*`, `me.is_superadmin` |
 | `UNFURL_ALLOW_CIDRS` | — | только dev: диапазоны, которые превью ссылок может запрашивать, хотя они не публичные (VPN с fake-IP, напр. `198.18.0.0/15`); loopback/link-local всё равно запрещены |
+| `SMTP_HOST` | — | почта (ADR-0023); пусто = без почты: адреса считаются подтверждёнными, почтовые эндпоинты → 503. Можно `host:port` |
+| `SMTP_PORT` | по `SMTP_TLS` | 465 `tls` / 587 `starttls` / 25 `none` |
+| `SMTP_TLS` | `starttls` | `tls` (implicit, 465) \| `starttls` \| `none` (только Mailpit / локальный релей) |
+| `SMTP_USER` / `SMTP_PASSWORD` | — | AUTH PLAIN (только по TLS); пусто = без AUTH |
+| `SMTP_FROM` | — | обязателен при `SMTP_HOST`: `Calab <noreply@calab.ru>` |
+| `MAIL_PER_ADDRESS_PER_HOUR` / `MAIL_PER_HOUR` | `3` / `200` | писем на адрес и на сервер в час (Valkey) |
 | `GATEWAY_HEARTBEAT_INTERVAL` | `41s` | интервал heartbeat (presence TTL = 2×) |
 | `GATEWAY_MAX_SESSIONS_PER_USER` | `5` | лимит устройств с активным gateway |
 

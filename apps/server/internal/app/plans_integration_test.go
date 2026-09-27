@@ -48,7 +48,14 @@ func registerEmail(t *testing.T, inviteCode, email string) *user {
 		Email: email, Password: "password123", DisplayName: "Admin", InviteCode: inviteCode, DeviceName: "test",
 	}, &resp)
 	c.token = resp.GetTokens().GetAccessToken()
-	return &user{client: c, id: resp.GetMe().GetUser().GetId(), refresh: resp.GetTokens().GetRefreshToken(), session: resp.GetTokens().GetSessionId()}
+	// A superadmin address counts only once verified (ADR-0023).
+	if resp.GetMe().GetIsSuperadmin() {
+		t.Fatal("unverified address is superadmin")
+	}
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE users SET email_verified_at = now() WHERE id = $1", resp.GetMe().GetUser().GetId()); err != nil {
+		t.Fatal(err)
+	}
+	return &user{client: c, id: resp.GetMe().GetUser().GetId(), refresh: resp.GetTokens().GetRefreshToken(), session: resp.GetTokens().GetSessionId(), email: email}
 }
 
 var superUser *user

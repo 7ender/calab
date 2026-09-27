@@ -20,6 +20,7 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/profile"
@@ -112,6 +113,16 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			p.Timezone = &tz
+		}
+	}
+	if req.Locale != nil { // language of emails (ADR-0023); private, like settings
+		p.SetLocale = true
+		if tag := strings.TrimSpace(req.GetLocale()); tag != "" {
+			l := mail.Supported(tag)
+			if l == "" {
+				return httpx.Validation("locale", "supported languages: en, ru, es, zh-CN")
+			}
+			p.Locale = &l
 		}
 	}
 	if req.Settings != nil {

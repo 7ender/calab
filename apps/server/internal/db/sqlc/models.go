@@ -16,6 +16,28 @@ type DmMember struct {
 	CreatedAt time.Time
 }
 
+type EmailCode struct {
+	UserID    uuid.UUID
+	Purpose   string
+	CodeHash  string
+	ExpiresAt time.Time
+	Attempts  int32
+	CreatedAt time.Time
+}
+
+type EmailInvite struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Email       string
+	Role        string
+	InvitedBy   uuid.UUID
+	InviteID    uuid.UUID
+	ExpiresAt   time.Time
+	LastSentAt  time.Time
+	AcceptedAt  *time.Time
+	CreatedAt   time.Time
+}
+
 type File struct {
 	ID           uuid.UUID
 	WorkspaceID  *uuid.UUID
@@ -29,6 +51,22 @@ type File struct {
 	Height       *int32
 	Sha256       string
 	CreatedAt    time.Time
+}
+
+type MailOutbox struct {
+	ID        uuid.UUID
+	ToAddr    string
+	Template  string
+	Locale    string
+	Params    []byte
+	Priority  int16
+	Attempts  int32
+	NextAt    time.Time
+	ExpiresAt time.Time
+	CreatedAt time.Time
+	SentAt    *time.Time
+	FailedAt  *time.Time
+	Error     string
 }
 
 type Message struct {
@@ -163,6 +201,9 @@ type User struct {
 	IsGuest         bool
 	GuestExpiresAt  *time.Time
 	Timezone        *string
+	EmailVerifiedAt *time.Time
+	PendingEmail    *string
+	Locale          *string
 }
 
 type UserNote struct {

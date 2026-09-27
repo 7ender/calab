@@ -56,7 +56,8 @@ func (a *Admin) guard(next httpx.HandlerFunc) httpx.HandlerFunc {
 		if err != nil && !db.IsNotFound(err) {
 			return err
 		}
-		if err != nil || !superadmin.IsPtr(u.Email) {
+		// Only a verified address counts (ADR-0023): anyone can register an unverified one.
+		if err != nil || u.EmailVerifiedAt == nil || !superadmin.IsPtr(u.Email) {
 			return httpx.NotFound("route")
 		}
 		if a.limiter != nil {

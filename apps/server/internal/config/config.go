@@ -4,8 +4,11 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/mail"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -88,6 +91,18 @@ type Config struct {
 	PlanContactEmail string `env:"PLAN_CONTACT_EMAIL" envDefault:"it@gptunnel.ai"`
 	// Product superadmins (comma-separated emails): /api/admin/*, Me.is_superadmin.
 	SuperadminEmails []string `env:"SUPERADMIN_EMAILS" envSeparator:","`
+
+	// Mail (ADR-0023). SMTP_HOST empty = no mail: registration marks addresses verified and
+	// the mail endpoints answer 503. SMTP_HOST may carry the port ("localhost:1025").
+	SMTPHost     string `env:"SMTP_HOST"`
+	SMTPPort     int    `env:"SMTP_PORT"`                      // 0 = 587 starttls / 465 tls / 25 none
+	SMTPTLS      string `env:"SMTP_TLS" envDefault:"starttls"` // starttls | tls | none
+	SMTPUser     string `env:"SMTP_USER"`                      // empty = no AUTH
+	SMTPPassword string `env:"SMTP_PASSWORD"`                  //
+	SMTPFrom     string `env:"SMTP_FROM"`                      // "Calab <noreply@calab.ru>"
+	// Mail limits: per recipient address and for the whole server, per hour.
+	MailPerAddressPerHour int `env:"MAIL_PER_ADDRESS_PER_HOUR" envDefault:"3"`
+	MailPerHour           int `env:"MAIL_PER_HOUR" envDefault:"200"`
 }
 
 // PlanContact is the "contact us to buy" link shown to users (ADR-0024).
@@ -161,6 +176,27 @@ func (c *Config) Validate() error {
 	if c.MaxFileSizeMB < 1 {
 		errs = append(errs, errors.New("MAX_FILE_SIZE_MB must be >= 1"))
 	}
+	if c.SMTPHost != "" {
+		switch c.SMTPTLS {
+		case "starttls", "tls", "none":
+		default:
+			errs = append(errs, fmt.Errorf("SMTP_TLS must be starttls, tls or none, got %q", c.SMTPTLS))
+		}
+		if a, err := mail.ParseAddress(c.SMTPFrom); err != nil || a.Address == "" {
+			errs = append(errs, fmt.Errorf("SMTP_FROM must be an email address (\"Calab <noreply@example.com>\") when SMTP_HOST is set, got %q", c.SMTPFrom))
+		}
+		if c.SMTPPort < 0 || c.SMTPPort > 65535 {
+			errs = append(errs, errors.New("SMTP_PORT must be 0..65535"))
+		}
+		if _, p, err := net.SplitHostPort(c.SMTPHost); err == nil {
+			if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+				errs = append(errs, fmt.Errorf("SMTP_HOST: bad port %q", p))
+			}
+		}
+		if c.MailPerAddressPerHour < 1 || c.MailPerHour < 1 {
+			errs = append(errs, errors.New("MAIL_PER_ADDRESS_PER_HOUR and MAIL_PER_HOUR must be >= 1"))
+		}
+	}
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
@@ -190,6 +226,9 @@ func Origin(raw string) string {
 	}
 	return strings.ToLower(u.Scheme + "://" + u.Host)
 }
+
+// MailEnabled reports whether SMTP is configured.
+func (c *Config) MailEnabled() bool { return c.SMTPHost != "" }
 
 // LiveKitEnabled reports whether voice is configured.
 func (c *Config) LiveKitEnabled() bool { return c.LiveKitAPIKey != "" }

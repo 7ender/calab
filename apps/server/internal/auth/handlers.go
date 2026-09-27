@@ -8,6 +8,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/redisx"
 )
 
@@ -53,7 +54,8 @@ func NewHandlers(svc *Service, limiter, account *redisx.RateLimiter, origins []s
 }
 
 func client(r *http.Request, device string) Client {
-	return Client{DeviceName: device, IP: httpx.ClientIP(r.Context()), UserAgent: r.UserAgent()}
+	return Client{DeviceName: device, IP: httpx.ClientIP(r.Context()), UserAgent: r.UserAgent(),
+		Locale: mail.FromAcceptLanguage(r.Header.Get("Accept-Language"))}
 }
 
 var errBadOrigin = httpx.Forbidden("cross-origin request rejected")
@@ -103,6 +105,8 @@ func (h *Handlers) Public(mux *http.ServeMux) {
 	mux.Handle("POST /api/auth/refresh", httpx.HandlerFunc(h.refresh))
 	// Logout authenticates itself: access token, or the refresh token (body / cookie).
 	mux.Handle("POST /api/auth/logout", httpx.HandlerFunc(h.logout))
+	mux.Handle("POST /api/auth/password/forgot", httpx.HandlerFunc(h.forgotPassword))
+	mux.Handle("POST /api/auth/password/reset", httpx.HandlerFunc(h.resetPassword))
 }
 
 // Private routes; wrap(...) must apply Require.
@@ -111,6 +115,8 @@ func (h *Handlers) Private(mux *http.ServeMux, wrap func(http.Handler) http.Hand
 	mux.Handle("DELETE /api/me/sessions/{id}", wrap(httpx.HandlerFunc(h.revokeSession)))
 	mux.Handle("PATCH /api/me/password", wrap(httpx.HandlerFunc(h.changePassword)))
 	mux.Handle("PATCH /api/me/email", wrap(httpx.HandlerFunc(h.changeEmail)))
+	mux.Handle("POST /api/auth/verify/send", wrap(httpx.HandlerFunc(h.sendVerification)))
+	mux.Handle("POST /api/auth/verify", wrap(httpx.HandlerFunc(h.verifyEmail)))
 }
 
 func (h *Handlers) register(w http.ResponseWriter, r *http.Request) error {

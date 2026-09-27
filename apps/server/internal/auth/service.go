@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/mail"
+	netmail "net/mail"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,6 +23,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,6 +43,13 @@ type Service struct {
 	refresh  time.Duration
 	accessTL time.Duration
 	now      func() time.Time
+
+	// Mail sends verification / reset codes (ADR-0023); disabled = no SMTP (addresses are
+	// then verified at registration). Set before serving.
+	Mail *mail.Service
+	// OnEmailVerified runs after an account's address became verified (auto-join of pending
+	// email invitations, see workspaces.AcceptEmailInvites). Optional.
+	OnEmailVerified func(ctx context.Context, u sqlc.User)
 }
 
 // NewService wires the auth service.
@@ -66,6 +74,7 @@ type Client struct {
 	DeviceName string
 	IP         string
 	UserAgent  string
+	Locale     string // supported mail locale from Accept-Language ("" = none)
 }
 
 func clip(s string, n int) string {
@@ -86,7 +95,7 @@ func NormalizeEmail(s string) (string, error) {
 	if len(s) > 254 {
 		return "", httpx.Validation("email", "email is too long")
 	}
-	a, err := mail.ParseAddress(s)
+	a, err := netmail.ParseAddress(s)
 	if err != nil || a.Address != s || !strings.Contains(s[strings.LastIndexByte(s, '@'):], ".") {
 		return "", httpx.Validation("email", "invalid email address")
 	}
@@ -217,6 +226,20 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		return nil, err
 	}
 
+	loc := mail.Supported(req.GetLocale())
+	if loc == "" {
+		loc = c.Locale
+	}
+	var locPtr *string
+	if loc != "" {
+		locPtr = &loc
+	}
+	// Without SMTP there is nothing to verify with: the address counts as verified.
+	var verifiedAt *time.Time
+	if !s.mailOn() {
+		verifiedAt = ptrTime(s.now())
+	}
+
 	var (
 		user   sqlc.User
 		tokens *v1.AuthTokens
@@ -236,6 +259,7 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			}
 		}
 		var inv *sqlc.WorkspaceInvite
+		role := perm.RoleMember
 		if code != "" {
 			i, err := q.ConsumeInvite(ctx, code)
 			if db.IsNotFound(err) {
@@ -245,8 +269,24 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 				return err
 			}
 			inv = &i
+			// An invitation sent by email works only for that address; the link came
+			// through the mailbox, so the address counts as verified (ADR-0023).
+			ei, err := q.GetEmailInviteByInvite(ctx, i.ID)
+			switch {
+			case err == nil:
+				if ei.AcceptedAt != nil || !strings.EqualFold(ei.Email, email) {
+					return errInviteInvalid
+				}
+				if err := q.AcceptEmailInvite(ctx, ei.ID); err != nil {
+					return err
+				}
+				role, verifiedAt = perm.Role(ei.Role), ptrTime(s.now())
+			case !db.IsNotFound(err):
+				return err
+			}
 		}
-		user, err = q.CreateUser(ctx, sqlc.CreateUserParams{Email: &email, PasswordHash: &hash, DisplayName: name, Settings: settings})
+		user, err = q.CreateUser(ctx, sqlc.CreateUserParams{Email: &email, PasswordHash: &hash, DisplayName: name, Settings: settings,
+			Locale: locPtr, EmailVerifiedAt: verifiedAt})
 		if db.UniqueViolation(err) != "" {
 			return httpx.Conflict("email is already registered")
 		}
@@ -254,7 +294,7 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			return err
 		}
 		if inv != nil {
-			m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: inv.WorkspaceID, UserID: user.ID, Role: string(perm.RoleMember)})
+			m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: inv.WorkspaceID, UserID: user.ID, Role: string(role)})
 			if err != nil {
 				return err
 			}
@@ -270,6 +310,11 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		s.events.Workspace(ctx, joined.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
 			WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(*joined, user)},
 		}})
+	}
+	if user.EmailVerifiedAt == nil {
+		s.sendVerificationQuietly(ctx, user)
+	} else if s.mailOn() && s.OnEmailVerified != nil {
+		s.OnEmailVerified(ctx, user) // other workspaces that invited this address
 	}
 	return &v1.RegisterResponse{Tokens: tokens, Me: pbconv.Me(user)}, nil
 }
@@ -309,6 +354,9 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 	if err != nil {
 		return nil, err
 	}
+	// Unverified (e.g. accounts from before ADR-0023): a fresh code with every sign-in,
+	// unless one was sent less than 60 s ago.
+	s.sendVerificationQuietly(ctx, user)
 	return &v1.LoginResponse{Tokens: tokens, Me: pbconv.Me(user)}, nil
 }
 

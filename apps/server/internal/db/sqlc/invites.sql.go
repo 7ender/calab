@@ -111,9 +111,12 @@ func (q *Queries) GetInviteByCode(ctx context.Context, code string) (WorkspaceIn
 }
 
 const listInvites = `-- name: ListInvites :many
-SELECT id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at FROM workspace_invites WHERE workspace_id = $1 ORDER BY created_at DESC
+SELECT id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at FROM workspace_invites i
+WHERE i.workspace_id = $1 AND NOT EXISTS (SELECT 1 FROM email_invites e WHERE e.invite_id = i.id)
+ORDER BY i.created_at DESC
 `
 
+// Links only: invitations sent by email are listed by ListEmailInvites.
 func (q *Queries) ListInvites(ctx context.Context, workspaceID uuid.UUID) ([]WorkspaceInvite, error) {
 	rows, err := q.db.Query(ctx, listInvites, workspaceID)
 	if err != nil {

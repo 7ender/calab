@@ -56,6 +56,7 @@ type Handlers struct {
 	events events.Publisher
 	store  blob.Store
 	limits Limits
+	email  EmailInvites
 }
 
 // Limits against abuse of the shared disk (security review H2).
@@ -91,6 +92,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	handle("POST /api/workspaces/{id}/members/{userId}/promote", h.promote)
 	handle("GET /api/invites/{code}", h.getInvite)
 	handle("POST /api/invites/{code}/join", h.joinInvite)
+	h.emailRoutes(handle)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -202,7 +204,7 @@ func slugConflict(err error) error {
 }
 
 func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
-	if err := h.notGuestAccount(r); err != nil {
+	if _, err := h.verifiedAccount(r); err != nil {
 		return err
 	}
 	var req v1.CreateWorkspaceRequest
@@ -547,6 +549,11 @@ func (h *Handlers) getInvite(w http.ResponseWriter, r *http.Request) error {
 	if inv.ExpiresAt != nil {
 		resp.ExpiresAt = timestamppb.New(*inv.ExpiresAt)
 	}
+	if ei, err := h.db.Q.GetEmailInviteByInvite(r.Context(), inv.ID); err == nil {
+		resp.Email = ei.Email
+	} else if !db.IsNotFound(err) {
+		return err
+	}
 	httpx.Write(w, http.StatusOK, resp)
 	return nil
 }
@@ -556,12 +563,17 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	code := r.PathValue("code")
+	caller, err := h.db.Q.GetUser(r.Context(), uid(r))
+	if err != nil {
+		return err
+	}
 	var (
-		ws    sqlc.Workspace
-		m     sqlc.WorkspaceMember
-		added bool
+		ws       sqlc.Workspace
+		m        sqlc.WorkspaceMember
+		added    bool
+		verified bool
 	)
-	err := h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		inv, err := q.GetInviteByCode(r.Context(), code)
 		if db.IsNotFound(err) {
 			return auth.ErrInviteInvalid()
@@ -585,7 +597,17 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 			}
 			return err
 		}
-		m, added, err = join(r.Context(), q, ws.ID, uid(r))
+		role, v, err := boundInvite(r.Context(), q, inv, caller)
+		if err != nil {
+			return err
+		}
+		verified = v
+		m, err = q.AddMember(r.Context(), sqlc.AddMemberParams{WorkspaceID: ws.ID, UserID: uid(r), Role: string(role)})
+		if db.IsNotFound(err) { // joined concurrently (ON CONFLICT DO NOTHING)
+			m, err = q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: ws.ID, UserID: uid(r)})
+			return err
+		}
+		added = err == nil
 		return err
 	})
 	if err != nil {
@@ -593,6 +615,12 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 	}
 	if added {
 		h.joined(r.Context(), ws, m)
+	}
+	if verified { // the email link verified the address: announce it, join other invitations
+		if u, err := h.db.Q.GetUser(r.Context(), uid(r)); err == nil {
+			h.events.User(r.Context(), u.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: pbconv.Me(u)}}})
+			AcceptEmailInvites(r.Context(), h.db, h.limits.Plans, h.events, u)
+		}
 	}
 	resp, err := h.memberResponse(r.Context(), ws, m)
 	if err != nil {
@@ -603,7 +631,7 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) createInvite(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	_, wsID, _, err := h.inviter(r)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/mail"
 )
 
 func TestChangeCredentials(t *testing.T) {
@@ -34,6 +35,13 @@ func TestChangeCredentials(t *testing.T) {
 	newEmail := uniq("moved") + "@Example.com"
 	var me v1.UpdateMeResponse
 	bob.must(200, "PATCH", "/api/me/email", &v1.ChangeEmailRequest{NewEmail: newEmail, CurrentPassword: "newpassword1"}, &me)
+	// ADR-0023: the new address is pending until its code is confirmed.
+	if me.GetMe().GetEmail() != email || me.GetMe().GetPendingEmail() != newEmail {
+		t.Fatalf("email: %q pending %q", me.GetMe().GetEmail(), me.GetMe().GetPendingEmail())
+	}
+	bg.wait("USER_UPDATE me (pending)", func(e *v1.DispatchEvent) bool { return e.GetUserUpdate().GetMe().GetPendingEmail() == newEmail })
+	code := nthMail(t, 1, mail.TemplateVerifyCode, newEmail).Params["code"]
+	bob.must(200, "POST", "/api/auth/verify", &v1.VerifyEmailRequest{Code: code}, &me)
 	if me.GetMe().GetEmail() != newEmail {
 		t.Fatalf("email: %q", me.GetMe().GetEmail())
 	}

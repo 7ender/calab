@@ -4,7 +4,10 @@ VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: ListInvites :many
-SELECT * FROM workspace_invites WHERE workspace_id = $1 ORDER BY created_at DESC;
+-- Links only: invitations sent by email are listed by ListEmailInvites.
+SELECT * FROM workspace_invites i
+WHERE i.workspace_id = $1 AND NOT EXISTS (SELECT 1 FROM email_invites e WHERE e.invite_id = i.id)
+ORDER BY i.created_at DESC;
 
 -- name: GetInviteByCode :one
 SELECT * FROM workspace_invites WHERE code = $1;

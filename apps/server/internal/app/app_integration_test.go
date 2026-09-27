@@ -37,6 +37,7 @@ import (
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rtc"
@@ -53,6 +54,8 @@ var (
 	testStore *blob.FS
 	// testRedisURL is TEST_REDIS_URL with the logical DB leased for this run (leaseRedisDB).
 	testRedisURL string
+	// testMail records the mail the server sends (ADR-0023).
+	testMail = mail.NewFake()
 )
 
 func env(k, def string) string {
@@ -151,9 +154,11 @@ func run(m *testing.M) int {
 		LiveKitMaxParticipants:     50,
 		// Plans (ADR-0024): no plan limits by default, so other tests see room settings only;
 		// plans_integration_test sets the free limits it needs.
-		PlanFreeLimits:   unlimitedPlan,
-		PlanContactEmail: "it@gptunnel.ai",
-		SuperadminEmails: []string{superadminEmail},
+		PlanFreeLimits:        unlimitedPlan,
+		PlanContactEmail:      "it@gptunnel.ai",
+		SuperadminEmails:      []string{superadminEmail},
+		MailPerAddressPerHour: 3,
+		MailPerHour:           1 << 20, // every test user gets a verification code
 	}
 	cfg.TrustedProxies = mustPrefixes("127.0.0.1/32", "::1/128")
 	if err := cfg.Validate(); err != nil {
@@ -167,7 +172,9 @@ func run(m *testing.M) int {
 	}
 	lkRec = &recordingLiveKit{LiveKit: rtc.NewLiveKit(cfg.LiveKitInternalURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)}
 	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Events: events.Redis{C: rc}, Blob: store, LiveKit: lkRec,
-		UnfurlAllowAddr: func(netip.Addr) bool { return true }}) // test pages are served on loopback
+		UnfurlAllowAddr: func(netip.Addr) bool { return true }, // test pages are served on loopback
+		Mail:            testMail})
+	a.Mail.Poll = 200 * time.Millisecond
 	testApp, testDB, testRedis, testCfg, testStore = a, d, rc, cfg, store
 	bg, stop := context.WithCancel(ctx)
 	defer stop()
@@ -185,6 +192,9 @@ type client struct {
 	t     *testing.T
 	token string
 	ip    string // sent as X-Forwarded-For (the test server trusts loopback)
+	lang  string // Accept-Language, if set
+	// lastBody is the raw body of the last response (error bodies: see apiErr).
+	lastBody []byte
 }
 
 func (c *client) do(method, path string, in, out proto.Message) int {
@@ -204,12 +214,16 @@ func (c *client) do(method, path string, in, out proto.Message) int {
 	if c.ip != "" {
 		req.Header.Set("X-Forwarded-For", c.ip)
 	}
+	if c.lang != "" {
+		req.Header.Set("Accept-Language", c.lang)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		c.t.Fatal(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
+	c.lastBody = raw
 	if out != nil && resp.StatusCode < 300 && len(raw) > 0 {
 		if err := protojson.Unmarshal(raw, out); err != nil {
 			c.t.Fatalf("%s %s: decode %s: %v", method, path, raw, err)
@@ -256,6 +270,7 @@ type user struct {
 	id      string
 	refresh string
 	session string
+	email   string
 }
 
 // register creates a user. The first call of the test binary bootstraps the server
@@ -270,7 +285,11 @@ func register(t *testing.T, invite string) *user {
 		Email: email, Password: "password123", DisplayName: email[:8], InviteCode: invite, DeviceName: "test",
 	}, &resp)
 	c.token = resp.GetTokens().GetAccessToken()
-	return &user{client: c, id: resp.GetMe().GetUser().GetId(), refresh: resp.GetTokens().GetRefreshToken(), session: resp.GetTokens().GetSessionId()}
+	// Most tests are not about email verification (ADR-0023): their users are verified.
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE users SET email_verified_at = now() WHERE id = $1", resp.GetMe().GetUser().GetId()); err != nil {
+		t.Fatal(err)
+	}
+	return &user{client: c, id: resp.GetMe().GetUser().GetId(), refresh: resp.GetTokens().GetRefreshToken(), session: resp.GetTokens().GetSessionId(), email: email}
 }
 
 var bootstrapUser *user

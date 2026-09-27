@@ -16,6 +16,7 @@ import (
 	"github.com/calaba/calaba/server/internal/buildinfo"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/dms"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/files"
@@ -23,6 +24,7 @@ import (
 	"github.com/calaba/calaba/server/internal/guests"
 	"github.com/calaba/calaba/server/internal/health"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -47,6 +49,9 @@ type Deps struct {
 	// UnfurlAllowAddr overrides the link-preview address policy (tests only, to reach a
 	// loopback test server); nil = public addresses only. Deliberately not an env var.
 	UnfurlAllowAddr func(netip.Addr) bool
+	// Mail overrides the mail transport (tests: mail.Fake); nil = SMTP from config, or no
+	// mail when SMTP_HOST is empty.
+	Mail mail.Sender
 }
 
 // App is the assembled server.
@@ -58,6 +63,7 @@ type App struct {
 	Guests  *guests.Service
 	RTC     *rtc.Service // nil when LiveKit is not configured
 	Plans   *plans.Service
+	Mail    *mail.Service
 }
 
 // Run starts background work (gateway fan-out, presence sweeper, orphan file cleanup,
@@ -71,6 +77,19 @@ func (a *App) Run(ctx context.Context) {
 	if a.RTC != nil {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)
 	}
+	go a.Mail.Run(ctx) // returns at once without mail
+}
+
+// mailSender: the test override, else SMTP from config, else nil (mail disabled).
+func mailSender(d Deps) (mail.Sender, error) {
+	if d.Mail != nil {
+		return d.Mail, nil
+	}
+	c := d.Config
+	if !c.MailEnabled() {
+		return nil, nil
+	}
+	return mail.NewSMTP(c.SMTPHost, c.SMTPPort, c.SMTPUser, c.SMTPPassword, c.SMTPTLS, c.SMTPFrom)
 }
 
 func unfurlPolicy(d Deps) func(netip.Addr) bool {
@@ -114,7 +133,17 @@ func New(d Deps) *App {
 		pub = rtc.SyncPublisher{Publisher: base, S: rtcSvc}
 	}
 
+	sender, err := mailSender(d)
+	if err != nil {
+		panic(err) // config.Validate checks the SMTP settings first
+	}
+	mailSvc := mail.New(mail.Config{
+		PerAddressPerHour: d.Config.MailPerAddressPerHour, PerHour: d.Config.MailPerHour, Secret: []byte(d.Config.JWTSecret),
+	}, d.DB, d.Redis, sender)
+
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)
+	authSvc.Mail = mailSvc
+	authSvc.OnEmailVerified = func(ctx context.Context, u sqlc.User) { workspaces.AcceptEmailInvites(ctx, d.DB, planSvc, pub, u) }
 	if rtcSvc != nil {
 		rtcSvc.Revoked = authSvc.IsRevoked
 	}
@@ -155,6 +184,10 @@ func New(d Deps) *App {
 		Quota:         d.Config.DefaultWorkspaceQuotaBytes,
 		CreateLimiter: redisx.NewRateLimiter(d.Redis, "rl:ws-create:", d.Config.WorkspaceCreatesPerHour, float64(d.Config.WorkspaceCreatesPerHour)/60),
 		Plans:         planSvc,
+	}).WithEmailInvites(workspaces.EmailInvites{
+		Mail: mailSvc, PublicURL: d.Config.PublicAppURL,
+		Lookup: redisx.NewRateLimiter(d.Redis, "rl:invite-lookup:", 20, 20), // 20 per minute
+		Send:   redisx.NewRateLimiter(d.Redis, "rl:invite-send:", 20, 0.5),  // 20 at once, 30 per hour
 	}).Routes(mux, private)
 	roomHandlers := rooms.NewHandlers(d.DB, pub)
 	roomHandlers.Routes(mux, private)
@@ -186,5 +219,5 @@ func New(d Deps) *App {
 		httpx.Recover,
 		events.Middleware, // one post-commit publish budget per request
 	)
-	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc}
+	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc}
 }

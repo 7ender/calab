@@ -189,7 +189,16 @@ func Me(u sqlc.User) *v1.Me {
 	if u.Email != nil {
 		email = *u.Email
 	}
-	return &v1.Me{User: User(u), Email: email, Settings: Settings(u.Settings), IsSuperadmin: superadmin.IsPtr(u.Email)}
+	me := &v1.Me{User: User(u), Email: email, Settings: Settings(u.Settings),
+		EmailVerified: u.IsGuest || u.EmailVerifiedAt != nil,                 // guests have no email to verify
+		IsSuperadmin:  u.EmailVerifiedAt != nil && superadmin.IsPtr(u.Email)} // an unverified address proves nothing
+	if u.PendingEmail != nil {
+		me.PendingEmail = *u.PendingEmail
+	}
+	if u.Locale != nil {
+		me.Locale = *u.Locale
+	}
+	return me
 }
 
 // Session converts a session; current marks the caller's own session.

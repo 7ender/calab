@@ -160,6 +160,10 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if !shared {
 		return httpx.NotFound("user") // do not reveal users outside the caller's workspaces
 	}
+	// Starting a new DM needs a verified email (ADR-0023); existing DMs stay reachable.
+	if _, err := auth.VerifiedUser(r.Context(), h.db.Q, me); err != nil {
+		return err
+	}
 	if err := h.limiter.Take(r.Context(), me.String()); err != nil {
 		return err
 	}

@@ -138,6 +138,10 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// Invitations need a verified email (ADR-0023).
+	if _, err := auth.VerifiedUser(r.Context(), s.db.Q, auth.MustFromContext(r.Context()).UserID); err != nil {
+		return err
+	}
 	var req v1.CreateRoomInviteRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err

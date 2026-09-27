@@ -130,7 +130,7 @@ func serve(ctx context.Context, cfg *config.Config) error {
 	go func() {
 		slog.Info("listening", "addr", cfg.HTTPAddr, "version", buildinfo.Version, "commit", buildinfo.Info().GetCommit(),
 			"registration", cfg.RegistrationMode,
-			"storage", cfg.StorageDriver, "livekit", cfg.LiveKitEnabled())
+			"storage", cfg.StorageDriver, "livekit", cfg.LiveKitEnabled(), "mail", cfg.MailEnabled())
 		errc <- srv.ListenAndServe()
 	}()
 	select {

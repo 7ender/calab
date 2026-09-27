@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -80,19 +81,49 @@ func (s *Service) ChangePassword(ctx context.Context, id Identity, current, next
 	return nil
 }
 
-// ChangeEmail changes the login email (unique, case-insensitive). The user's devices get
-// USER_UPDATE {me}; the email is private, so nothing goes to other members.
+// ChangeEmail requests a new login email (unique, case-insensitive). With mail, the new
+// address becomes users.pending_email and gets a code; POST /api/auth/verify switches the
+// login email (ADR-0023). Asking for the current address cancels a pending change. Without
+// SMTP the email changes at once. The user's devices get USER_UPDATE {me}; the email is
+// private, so nothing goes to other members.
 func (s *Service) ChangeEmail(ctx context.Context, id Identity, email, current string) (*v1.Me, error) {
 	email, err := normalizeNewEmail(email)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.checkCurrent(ctx, id.UserID, current); err != nil {
+	u, err := s.checkCurrent(ctx, id.UserID, current)
+	if err != nil {
 		return nil, err
 	}
-	u, err := s.db.Q.SetEmail(ctx, sqlc.SetEmailParams{ID: id.UserID, Email: &email})
-	if db.UniqueViolation(err) != "" {
-		return nil, httpx.Conflict("email is already registered")
+	switch {
+	case !s.mailOn():
+		u, err = s.db.Q.SetEmailAndVerified(ctx, sqlc.SetEmailAndVerifiedParams{ID: id.UserID, Email: &email})
+		if db.UniqueViolation(err) != "" {
+			return nil, httpx.Conflict("email is already registered")
+		}
+	case u.Email != nil && strings.EqualFold(*u.Email, email): // cancel a pending change
+		err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+			if err := q.DeleteEmailCode(ctx, sqlc.DeleteEmailCodeParams{UserID: u.ID, Purpose: purposeChange}); err != nil {
+				return err
+			}
+			u, err = q.SetPendingEmail(ctx, sqlc.SetPendingEmailParams{ID: u.ID, PendingEmail: nil})
+			return err
+		})
+	default:
+		if _, err := s.db.Q.GetUserByEmail(ctx, &email); err == nil {
+			return nil, httpx.Conflict("email is already registered")
+		} else if !db.IsNotFound(err) {
+			return nil, err
+		}
+		err = s.sendCode(ctx, u, purposeChange, email, func(q *sqlc.Queries) error {
+			// The old address's own verification code is moot once a change is pending.
+			if err := q.DeleteEmailCode(ctx, sqlc.DeleteEmailCodeParams{UserID: u.ID, Purpose: purposeVerify}); err != nil {
+				return err
+			}
+			var err error
+			u, err = q.SetPendingEmail(ctx, sqlc.SetPendingEmailParams{ID: u.ID, PendingEmail: &email})
+			return err
+		})
 	}
 	if err != nil {
 		return nil, err
