@@ -81,21 +81,16 @@ export function RoomCreateDialog({
       <div className="flex flex-col gap-4">
         <RoomTypePicker value={type} onChange={setType} />
         <Field label={t('room.name')} error={m.error ? err(m.error) : null}>
-          <span className="relative flex items-center">
-            <span className="pointer-events-none absolute left-2 grid w-4 place-items-center text-muted" aria-hidden>
-              {type === RoomType.VOICE ? <Volume2 className="size-4" /> : <Hash className="size-4" />}
-            </span>
-            <Input
-              autoFocus
-              value={name}
-              maxLength={100}
-              className="pl-7"
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && name.trim() && !m.isPending) m.mutate();
-              }}
-            />
-          </span>
+          <Input
+            autoFocus
+            value={name}
+            maxLength={100}
+            icon={type === RoomType.VOICE ? <Volume2 className="size-4" /> : <Hash className="size-4" />}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && name.trim() && !m.isPending) m.mutate();
+            }}
+          />
         </Field>
         <Field label={t('room.topic')}>
           <Input value={topic} maxLength={1024} onChange={(e) => setTopic(e.target.value)} />

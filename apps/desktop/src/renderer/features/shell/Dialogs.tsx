@@ -63,7 +63,7 @@ export function Dialogs(): ReactNode {
         node = superadmin ? <AdminWindow onClose={close} workspaceId={d.workspaceId} /> : null;
         break;
       case 'image':
-        node = <Lightbox fileId={d.fileId} name={d.name} onClose={close} />;
+        node = <Lightbox images={d.images} index={d.index} onClose={close} />;
         break;
     }
   }
