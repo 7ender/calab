@@ -1,6 +1,10 @@
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+import { AnnotKind, AnnotMessageSchema, type AnnotMessage } from '@calaba/protocol';
 import type { Page } from '@playwright/test';
+import { IDS } from '../e2e-support/mock-server';
 import { expect, test } from './app';
 import { checkpoint, settle } from './harness';
+import { startPublisher, type Publisher } from './publisher';
 
 /**
  * Stream UX (docs/09 #17, #18): the source picker with one screen and my own stream on the stage.
@@ -8,6 +12,10 @@ import { checkpoint, settle } from './harness';
  *
  *   CALABA_VISUAL_MOCK_PORT=40070 MOCK_LIVEKIT_ROOM_PREFIX=str_ \
  *     pnpm -F @calaba/desktop e2e:visual -g "stream-picker-screen|voice-stream-self"
+ *
+ * Annotations (ADR-0028): -g "stream-annotate" — the viewer's pen and «Очистить» reach the
+ * presenter, the presenter's pointer and stroke show on the stage (the shot); the presenter's
+ * side (-g "stream-annotate-presenter") — viewers' pointers on my own stream and the switch.
  */
 
 test.describe.configure({ mode: 'parallel' });
@@ -86,4 +94,151 @@ test('voice-stream-self', async ({ open, win, shot }) => {
     await win.getByRole('button', { name: 'Остановить показ' }).first().click().catch(() => undefined);
   }
   await expect(win.getByTestId('stream-stage').or(win.getByTestId('stream-pip'))).toHaveCount(0, { timeout: 15_000 });
+});
+
+// ---------------------------------------------------------------- annotations (ADR-0028)
+
+/** Annotation packets a LiveKit participant received, decoded. */
+async function annotsOf(p: Publisher): Promise<AnnotMessage[]> {
+  return (await p.received()).filter((d) => d.topic === 'annot').map((d) => fromBinary(AnnotMessageSchema, new Uint8Array(d.data)));
+}
+
+/**
+ * Anything drawn on the annotation canvas of `view` at frame point (fx, fy)? Reads the canvas
+ * pixel (the frame box is letterbox-aware, like the layer itself).
+ */
+async function inkAt(page: Page, view: string, fx: number, fy: number): Promise<boolean> {
+  return page.locator(`[data-testid="${view}"] [data-testid="annot-layer"]`).evaluate(
+    (c: HTMLCanvasElement, [fx, fy]) => {
+      const v = c.parentElement?.querySelector('video');
+      const vw = v?.videoWidth || c.clientWidth;
+      const vh = v?.videoHeight || c.clientHeight;
+      const k = Math.min(c.clientWidth / vw, c.clientHeight / vh);
+      const x = (c.clientWidth - vw * k) / 2 + fx * vw * k;
+      const y = (c.clientHeight - vh * k) / 2 + fy * vh * k;
+      const dpr = c.width / Math.max(1, c.clientWidth);
+      const px = c.getContext('2d')?.getImageData(Math.round(x * dpr), Math.round(y * dpr), 1, 1).data;
+      return (px?.[3] ?? 0) > 0;
+    },
+    [fx, fy] as const,
+  );
+}
+
+/** Sends annotations as a LiveKit participant would, with a growing seq. */
+interface AnnotInit {
+  streamSid: string;
+  kind: AnnotKind;
+  points?: number[];
+  color?: number;
+  strokeId?: number;
+}
+
+function annotSender(p: Publisher): (m: AnnotInit) => Promise<void> {
+  let seq = 0;
+  return (m) => p.send(toBinary(AnnotMessageSchema, create(AnnotMessageSchema, { color: 0x30d158, ...m, seq: ++seq })), 'annot');
+}
+
+test('stream-annotate', async ({ open, win, shot }) => {
+  await open();
+  await inVoice(win);
+  // Вера streams (and, as the presenter, points and draws); I watch on the stage.
+  const vera = await startPublisher({ userId: IDS.users.vera, name: 'Вера Ким', roomId: IDS.rooms.meeting, data: true });
+  let ping: NodeJS.Timeout | null = null;
+  try {
+    const stage = win.getByTestId('stream-stage');
+    const pip = win.getByTestId('stream-pip');
+    await expect(stage.or(pip).first()).toBeVisible({ timeout: 30_000 });
+    if ((await stage.count()) === 0) await pip.getByRole('button', { name: 'Развернуть' }).first().click();
+    await expect(stage).toBeVisible();
+    await expect.poll(() => stage.locator('video').evaluate((v: HTMLVideoElement) => v.videoWidth), { timeout: 30_000 }).toBeGreaterThan(0);
+    await win.addStyleTag({ content: 'video { visibility: hidden !important; }' });
+    const sid = await vera.trackSid();
+    expect(sid).not.toBe('');
+
+    // Pen: a stroke across the frame is drawn here and reaches the presenter.
+    await stage.hover();
+    await stage.getByTestId('annot-tools').getByRole('button', { name: 'Карандаш' }).click();
+    const layer = stage.getByTestId('annot-layer');
+    await expect(layer).toHaveAttribute('data-tool', 'pen');
+    const box = await layer.boundingBox();
+    if (!box) throw new Error('no annotation layer');
+    await win.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.6);
+    await win.mouse.down();
+    for (let i = 1; i <= 12; i++) await win.mouse.move(box.x + box.width * (0.3 + i * 0.03), box.y + box.height * 0.6, { steps: 2 });
+    await win.mouse.up();
+    await expect.poll(async () => (await annotsOf(vera)).some((m) => m.kind === AnnotKind.STROKE && m.strokeEnd && m.streamSid === sid), { timeout: 10_000 }).toBe(true);
+    const strokes = (await annotsOf(vera)).filter((m) => m.kind === AnnotKind.STROKE);
+    expect(strokes.flatMap((m) => m.points).every((v) => v >= 0 && v <= 1)).toBe(true);
+    expect(new Set(strokes.map((m) => m.strokeId)).size).toBe(1);
+    // Drawn here too, where the presenter got it (frame coordinates, letterbox-aware).
+    const pts = strokes.flatMap((m) => m.points);
+    const mid = Math.floor(pts.length / 4) * 2;
+    const [mx, my] = [pts[mid] ?? -1, pts[mid + 1] ?? -1];
+    expect(await inkAt(win, 'stream-stage', mx, my)).toBe(true);
+
+    // «Очистить»: my strokes go here and for everyone.
+    await stage.getByTestId('annot-tools').getByRole('button', { name: 'Очистить' }).click();
+    await expect.poll(async () => (await annotsOf(vera)).some((m) => m.kind === AnnotKind.CLEAR && m.streamSid === sid)).toBe(true);
+    await expect.poll(() => inkAt(win, 'stream-stage', mx, my)).toBe(false);
+
+    // The presenter points and draws; kept alive (pointer 1 s, stroke 5 s) for a steady shot:
+    // the pointer repeats its position, the stroke its last point.
+    const send = annotSender(vera);
+    const path = [0.18, 0.3, 0.3, 0.22, 0.42, 0.3, 0.54, 0.22];
+    await send({ streamSid: sid, kind: AnnotKind.STROKE, points: path, strokeId: 7 });
+    const tick = (): void => {
+      void send({ streamSid: sid, kind: AnnotKind.POINTER, points: [0.7, 0.45], color: 0xff453a }).catch(() => undefined);
+      void send({ streamSid: sid, kind: AnnotKind.STROKE, points: path.slice(-2), strokeId: 7 }).catch(() => undefined);
+    };
+    tick();
+    ping = setInterval(tick, 150);
+    await expect.poll(() => inkAt(win, 'stream-stage', 0.7, 0.45)).toBe(true);
+    await expect.poll(() => inkAt(win, 'stream-stage', 0.3, 0.22)).toBe(true);
+    await checkpoint(shot, 'stream-annotate');
+  } finally {
+    if (ping) clearInterval(ping);
+    await vera.stop();
+  }
+});
+
+test('stream-annotate-presenter', async ({ open, win }) => {
+  await open();
+  await inVoice(win);
+  await openPicker(win, true);
+  await win.getByRole('button', { name: 'Начать стрим' }).click();
+  const video = win.getByTestId('stream-stage').or(win.getByTestId('stream-pip'));
+  await expect(video.first()).toBeVisible({ timeout: 30_000 });
+  if ((await win.getByTestId('stream-stage').count()) === 0) await win.getByTestId('stream-pip').getByRole('button', { name: 'Развернуть' }).first().click();
+  // Борис watches my stream and points at it (a member with SPEAK).
+  const boris = await startPublisher({ userId: IDS.users.boris, name: 'Борис Петров', roomId: IDS.rooms.meeting, source: 'none', data: true });
+  try {
+    await expect.poll(() => boris.remoteScreenSid(), { timeout: 30_000 }).not.toBe('');
+    const sid = await boris.remoteScreenSid();
+    const send = annotSender(boris);
+    // No tools on my own stream; the viewers' pointer shows on my self-preview (the overlay over
+    // the real screen is off in visual tests: synthetic source).
+    await expect(win.getByTestId('stream-stage').getByTestId('annot-tools')).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        await send({ streamSid: sid, kind: AnnotKind.POINTER, points: [0.5, 0.5] });
+        return inkAt(win, 'stream-stage', 0.5, 0.5);
+      }, { timeout: 10_000 })
+      .toBe(true);
+    // Not a live stream / malformed: ignored.
+    await send({ streamSid: 'TR_gone', kind: AnnotKind.POINTER, points: [0.2, 0.2] });
+    // The switch in my stream's panel: off → Борис is told, his pointer is ignored.
+    const toggle = win.getByTestId('my-stream-annot').getByRole('switch', { name: 'Зрители могут рисовать' });
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await toggle.click();
+    await expect.poll(async () => (await annotsOf(boris)).some((m) => m.kind === AnnotKind.POLICY && !m.allow && m.streamSid === sid)).toBe(true);
+    await expect.poll(() => inkAt(win, 'stream-stage', 0.5, 0.5), { timeout: 5_000 }).toBe(false);
+    for (let i = 0; i < 5; i++) await send({ streamSid: sid, kind: AnnotKind.POINTER, points: [0.25, 0.25] });
+    await win.waitForTimeout(500);
+    expect(await inkAt(win, 'stream-stage', 0.25, 0.25)).toBe(false);
+    await toggle.click();
+    await expect.poll(async () => (await annotsOf(boris)).some((m) => m.kind === AnnotKind.POLICY && m.allow)).toBe(true);
+  } finally {
+    await boris.stop();
+    await win.getByRole('button', { name: 'Остановить показ' }).first().click().catch(() => undefined);
+  }
 });

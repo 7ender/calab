@@ -14,6 +14,7 @@ import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
 import { RecordingPill } from '../voice/Recording';
+import { MyStreamAnnot } from '../voice/Annotations';
 import { useWorkspaces } from '../../stores/workspaces';
 import { NoiseButton } from './NoisePopover';
 import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
@@ -542,6 +543,7 @@ export function VoiceBar(): ReactNode {
               {myStream.sourceName}
             </span>
             {myStream.audioError ? <span className="mt-0.5 block text-muted">{myStream.audioError}</span> : null}
+            <MyStreamAnnot />
           </span>
         </div>
       ) : null}

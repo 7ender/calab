@@ -5,6 +5,7 @@ import { zhDm } from './dm';
 import { zhEcho } from './echo';
 import { zhMail } from './mail';
 import { zhRecording } from './recording';
+import { zhAnnot } from './annot';
 import { zhPeople } from './people';
 import { zhModeration } from './moderation';
 import { zhPicker } from './picker';
@@ -26,6 +27,7 @@ export const zhCN: Dict = {
   ...zhModeration,
   ...zhMail,
   ...zhRecording,
+  ...zhAnnot,
   ...zhPicker,
   ...zhRoles,
   'voice.pendingMember': '连接中…',

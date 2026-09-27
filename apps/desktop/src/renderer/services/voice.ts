@@ -50,6 +50,8 @@ import { cameraWanted } from '../lib/media/cameraLogic';
 import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
 import { cspBlockedHost, describeConnectError, describeDisconnect, hostOfUrl } from '../lib/voiceLink';
+import { annot } from './annot';
+import { ANNOT_TOPIC } from '../lib/annot/codec';
 import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
 import { humanMediaError, reportMediaError } from './mediaErrors';
@@ -393,6 +395,7 @@ class VoiceEngine {
         disconnectOnPageLeave: true,
       });
       this.room = room;
+      annot.attach(room);
       this.wire(room);
       const relayOnly = useSession.getState().appInfo?.forceRelay === true;
       await room.connect(res.url, res.token, {
@@ -623,6 +626,7 @@ class VoiceEngine {
     this.viewers.clear();
     this.wanted.clear();
     this.announced = null;
+    annot.detach();
     setVoice({
       ...(keepSeat ? {} : { roomId: null, workspaceId: null, joinedAt: null, phase: 'idle' as const, serverMuted: false, recording: null, link: { ...useVoice.getState().link, attempts: 0, blockedHost: null } }),
       transmitting: false,
@@ -722,6 +726,7 @@ class VoiceEngine {
         if (![...room.remoteParticipants.values()].some((o) => userIdOf(o.identity) === gone)) this.active.drop(gone);
         playSound('leave');
         for (const set of this.viewers.values()) set.delete(p.identity);
+        annot.participantLeft(p.identity);
         this.publishViewers();
         this.refreshStreams();
         this.refreshCameras();
@@ -763,8 +768,9 @@ class VoiceEngine {
         if (useVoice.getState().camera === 'on' && cameraGrantMissing(perm)) this.camera.onGrantLost();
       })
       .on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
-        if (topic !== WATCH_TOPIC || !participant) return;
-        this.onWatchMessage(payload, participant);
+        if (!participant || this.room !== room) return;
+        if (topic === WATCH_TOPIC) this.onWatchMessage(payload, participant);
+        else if (topic === ANNOT_TOPIC) annot.onData(payload, participant);
       })
       // Device changes are watched globally (navigator devicechange, init) — mic tests too.
       .on(RoomEvent.MediaDevicesChanged, () => undefined);
@@ -835,6 +841,7 @@ class VoiceEngine {
     // watched stream ended: back to the chat, unless cameras keep the video stage busy.
     const stage = !watching ? (st.stage !== 'pip' && this.anyCamera() ? 'expanded' : 'pip') : st.watching ? st.stage : defaultStage(st.roomId);
     setVoice({ streams, ...(watching !== st.watching ? { watching, stage } : {}) });
+    annot.syncStreams(streams);
     this.applyWatching();
   }
 
@@ -1698,6 +1705,7 @@ class VoiceEngine {
         () => {
           if (this.screen === share) {
             this.screen = null;
+            annot.presenting(null);
             setVoice({ myStream: null });
             this.refreshStreams();
           }
@@ -1711,6 +1719,9 @@ class VoiceEngine {
       }
       this.screen = share;
       this.viewers.set(share.video.sid ?? '', new Set());
+      // Whole screen: the annotation overlay may cover it (ADR-0028); a window: preview only.
+      const src = opts.source;
+      annot.presenting(share.video.sid ?? null, src.id.startsWith('screen:') && src.displayId ? { sourceId: src.id, displayId: src.displayId } : null);
       const audio = share.audioProblem
         ? reportMediaError(share.audioProblem.raw, 'streamAudio', share.audioProblem.code === 'no-loopback' ? 'no-loopback' : undefined)
         : null;
@@ -1754,6 +1765,7 @@ class VoiceEngine {
     const s = this.screen;
     this.screen = null;
     if (s) this.viewers.delete(s.video.sid ?? '');
+    if (s) annot.presenting(null);
     setVoice({ myStream: null });
     if (s) this.refreshStreams();
     if (s) await s.stop();
@@ -1801,6 +1813,7 @@ class VoiceEngine {
       if (!set) return;
       if (m.on) set.add(from.identity);
       else set.delete(from.identity);
+      if (m.on && m.sid) annot.viewerJoined(from.identity, m.sid);
       this.publishViewers();
     } catch {
       // ignore malformed

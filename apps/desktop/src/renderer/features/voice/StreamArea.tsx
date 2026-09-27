@@ -12,6 +12,7 @@ import { useMessages } from '../../stores/messages';
 import { useVoice, type RemoteStream, type StreamQuality } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
+import { AnnotLayer, AnnotTools } from './Annotations';
 import { CameraGrid, CameraPip, CameraStripTile, useAnyCamera, useStripCameras } from './CameraTiles';
 import { FullscreenState, domHost, isExitKey, mainFullscreen, useIdle, useStreamFullscreen, windowHost } from './fullscreen';
 import { PIP_SHADOW, WELCOME_ROW, layerLabel, pipSize, presetText, qualityOptions } from './streamFormat';
@@ -22,7 +23,20 @@ import { PIP_SHADOW, WELCOME_ROW, layerLabel, pipSize, presetText, qualityOption
  * Until the first frame arrives it shows the streamer's avatar on the video background instead
  * of a black box (review 2: black strip previews next to a grey stage).
  */
-function StreamVideo({ stream, wsId, avatarSize, className }: { stream: RemoteStream; wsId: string | null; avatarSize: number; className?: string }): ReactNode {
+function StreamVideo({
+  stream,
+  wsId,
+  avatarSize,
+  className,
+  annotate,
+}: {
+  stream: RemoteStream;
+  wsId: string | null;
+  avatarSize: number;
+  className?: string;
+  /** Annotations over the video (ADR-0028): shown only, or shown and drawn on. */
+  annotate?: 'view' | 'edit';
+}): ReactNode {
   const ref = useRef<HTMLVideoElement>(null);
   const epoch = useVoice((s) => s.trackEpoch);
   const [hasFrame, setHasFrame] = useState(false);
@@ -46,6 +60,7 @@ function StreamVideo({ stream, wsId, avatarSize, className }: { stream: RemoteSt
     <>
       <video ref={ref} muted playsInline autoPlay className={cx('bg-[var(--color-video-bg)] object-contain', className)} />
       {hasFrame ? null : <StreamPlaceholder stream={stream} wsId={wsId} size={avatarSize} />}
+      {annotate ? <AnnotLayer stream={stream} video={ref} interactive={annotate === 'edit'} /> : null}
     </>
   );
 }
@@ -116,6 +131,7 @@ function Popout({ stream, wsId, title, onClose }: { stream: RemoteStream; wsId: 
   return createPortal(
     <PopoutView stream={stream} wsId={wsId} win={child}>
       <video ref={videoRef} muted playsInline autoPlay className="size-full bg-[var(--color-video-bg)] object-contain" />
+      <AnnotLayer stream={stream} video={videoRef} win={child} interactive />
     </PopoutView>,
     container,
   );
@@ -190,6 +206,7 @@ function FullscreenView({
       className={cx('no-drag fixed inset-0 z-[var(--z-modal)] overflow-hidden bg-[var(--color-video-bg)]', hidden && 'cursor-none')}
     >
       {children}
+      <AnnotTools stream={stream} win={win} visible={!hidden} />
       <div
         data-testid="stream-fullscreen-bar"
         className={cx(
@@ -235,7 +252,7 @@ function FullscreenStage({ stream, wsId }: { stream: RemoteStream; wsId: string 
   const containerRef = useCallback((el: HTMLDivElement | null) => fs.attach(el), [fs]);
   return createPortal(
     <FullscreenView stream={stream} wsId={wsId} win={window} fullscreen onToggle={onToggle} containerRef={containerRef}>
-      <StreamVideo stream={stream} wsId={wsId} avatarSize={96} className="size-full" />
+      <StreamVideo stream={stream} wsId={wsId} avatarSize={96} className="size-full" annotate="edit" />
     </FullscreenView>,
     document.body,
   );
@@ -337,7 +354,7 @@ function Pip({ stream, others, wsId, box }: { stream: RemoteStream; others: numb
       aria-label={t('streamView.of', { name })}
       role="region"
     >
-      <StreamVideo stream={stream} wsId={wsId} avatarSize={w < 240 ? 32 : 48} className="size-full" />
+      <StreamVideo stream={stream} wsId={wsId} avatarSize={w < 240 ? 32 : 48} className="size-full" annotate="view" />
       <button type="button" className="absolute inset-0 rounded-[var(--radius-panel)]" onClick={() => voice.setStage('expanded')} aria-label={t('stream.expand')} />
       <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-16px)]">
         <StreamerChip stream={stream} wsId={wsId} size={w < 240 ? 'sm' : 'md'} />
@@ -486,7 +503,8 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
         // Inline, as in the PiP: the unlayered .mat-popover material overrides a bg utility.
         style={{ background: 'var(--color-video-bg)' }}
       >
-        <StreamVideo stream={stream} wsId={wsId} avatarSize={80} className="size-full" />
+        <StreamVideo stream={stream} wsId={wsId} avatarSize={80} className="size-full" annotate="edit" />
+        <AnnotTools stream={stream} />
         <span className="absolute left-3 top-3 flex max-w-[calc(100%-120px)]">
           <StreamerChip stream={stream} wsId={wsId} />
         </span>

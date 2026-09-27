@@ -52,6 +52,8 @@ export function pickScreenCodec(preferred: ScreenCodec | 'auto' = 'auto', availa
 export interface DesktopSource {
   id: string;
   name: string;
+  /** A whole screen's display id (desktop): the presenter's annotation overlay covers it (ADR-0028). */
+  displayId?: string;
 }
 
 export interface ScreenShareOptions {

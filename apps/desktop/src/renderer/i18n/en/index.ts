@@ -5,6 +5,7 @@ import { enDm } from './dm';
 import { enEcho } from './echo';
 import { enMail } from './mail';
 import { enRecording } from './recording';
+import { enAnnot } from './annot';
 import { enPeople } from './people';
 import { enModeration } from './moderation';
 import { enPicker } from './picker';
@@ -26,6 +27,7 @@ export const en: Dict = {
   ...enModeration,
   ...enMail,
   ...enRecording,
+  ...enAnnot,
   ...enPicker,
   ...enRoles,
   'voice.pendingMember': 'Connecting…',

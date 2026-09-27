@@ -79,6 +79,16 @@ export const IPC = {
   windowIsFullScreen: 'window:isFullScreen',
   /** main → renderer: the window entered / left full screen (also by the OS: ⌃⌘F, green button). */
   windowFullScreenChanged: 'window:fullScreenChanged',
+  /**
+   * Presenter's annotation overlay (ADR-0028): open the click-through window over the shared
+   * screen (false: not a whole screen / no content protection here), forward one validated
+   * annotation of my stream, close it.
+   */
+  annotOverlayOpen: 'annot:overlay-open',
+  annotOverlaySend: 'annot:overlay-send',
+  annotOverlayClose: 'annot:overlay-close',
+  // main → overlay page: ANNOT_OVERLAY_CHANNEL in shared/annot.ts (the overlay preload must not
+  // share a module with this one: a shared chunk cannot be required by a sandboxed preload).
   pttSetBinding: 'ptt:set-binding',
   pttCaptureNext: 'ptt:capture-next',
   /** The binder closed: disarm a pending capture (review H2). */
