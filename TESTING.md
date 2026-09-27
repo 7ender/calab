@@ -1800,3 +1800,12 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - Векторы: `go test ./internal/perm` и `pnpm -F @calaba/protocol test` (общий `proto/testdata/permissions.json`).
 - Руками (curl, владелец): `POST /api/workspaces/{id}/roles {"name":"DJ","permissions":"64"}` → 201, `position` 2; `PUT …/members/{uid}/roles {"roleIds":["<DJ>"]}` → у участника в ответе `roleIds` = DJ + member; приватная комната с `allow VIEW_ROOM` для DJ → участник видит её (`ROOM_CREATE` в gateway), `DELETE …/roles/<DJ>` → `ROLE_DELETE`, `ROOM_DELETE`.
 - Стенд после деплоя: старые приватные комнаты остались приватными (цель `member` переведена в id роли), гость по-прежнему видит только разрешённые комнаты.
+
+## Client: свои роли (ADR-0026, ветка `feat/roles-client`)
+- Авто: `pnpm -F @calaba/desktop exec vitest run src/renderer/lib/roles.test.ts src/renderer/lib/permissions.test.ts src/renderer/features/people` (права с несколькими ролями, старшая роль для цвета, форма роли, «Роли ›»); мок: `pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts e2e-support/mock-roles.test.ts`.
+- Визуальные: `CALABA_VISUAL_MOCK_PORT=41870 MOCK_LIVEKIT_ROOM_PREFIX=role_ pnpm -F @calaba/desktop e2e:visual -g "settings-roles|settings-role-edit|members-menu"`.
+- Руками (владелец): Настройки пространства → «Роли» → «Создать роль» → имя «DJ», цвет, право «Показывать экран» → вкладка «Участники с ролью» → «Добавить участника» → у участника имя стало цвета DJ, рядом точка (tooltip «DJ»).
+- Перетащить DJ выше «Модератор» → порядок сохранился после перезапуска. Удалить DJ → у участника цвет пропал.
+- Правый клик по участнику → «Роли ›» → чекбоксы; админ не видит «Администратор» включаемым (только владелец). Профиль → чипы, × снимает роль, «+» выдаёт.
+- Права комнаты: цели — роли по имени (своя роль с точкой); allow «Видеть» для DJ в приватной комнате → держатель DJ видит комнату сразу.
+- Участник со своей ролью с `MANAGE_ROLES`: видит вкладку «Роли», редактирует только роли ниже своей; попытка выдать право, которого нет у него, — строка ошибки сервера.
