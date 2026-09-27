@@ -141,7 +141,12 @@ ORDER BY p.workspace_id, p.id
 LIMIT 200;
 
 -- name: CountUserStickerPacks :one
-SELECT count(*)::integer FROM user_sticker_packs WHERE user_id = $1;
+-- Counts what ListUserStickerPacks shows: installs of packs the user can no longer use (left
+-- the workspace, became a guest there) neither count nor block the limit.
+SELECT count(*)::integer FROM user_sticker_packs u
+JOIN sticker_packs p ON p.id = u.pack_id AND p.deleted_at IS NULL
+JOIN workspace_members m ON m.workspace_id = p.workspace_id AND m.user_id = u.user_id AND m.role <> 'guest'
+WHERE u.user_id = $1;
 
 -- name: InstallStickerPack :execrows
 -- First in the user's order; 0 rows = already installed.
@@ -154,7 +159,11 @@ ON CONFLICT (user_id, pack_id) DO NOTHING;
 DELETE FROM user_sticker_packs WHERE user_id = $1 AND pack_id = $2;
 
 -- name: ListUserStickerPackIDs :many
-SELECT pack_id FROM user_sticker_packs WHERE user_id = $1;
+-- The ids of ListUserStickerPacks (the set a reorder must list).
+SELECT u.pack_id FROM user_sticker_packs u
+JOIN sticker_packs p ON p.id = u.pack_id AND p.deleted_at IS NULL
+JOIN workspace_members m ON m.workspace_id = p.workspace_id AND m.user_id = u.user_id AND m.role <> 'guest'
+WHERE u.user_id = $1;
 
 -- name: SetUserStickerPackOrder :exec
 UPDATE user_sticker_packs u SET position = o.ord::integer - 1

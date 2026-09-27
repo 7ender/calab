@@ -397,3 +397,35 @@ func TestStickerInstallAndEvents(t *testing.T) {
 		t.Fatalf("after uninstall: %v", &mine)
 	}
 }
+
+// TestStickerInstalledHiddenPacks: a pack installed in a workspace where the user became a
+// guest leaves «Мои стикеры»; it no longer counts towards the limit, and reordering the
+// visible packs works (it used to demand the hidden pack too: 422).
+func TestStickerInstalledHiddenPacks(t *testing.T) {
+	ws, _, a := stickerTeam(t)
+	o, mem := a["owner"], a["member"]
+	p1 := createPack(t, o, ws.GetId(), "Visible")
+	p2 := createPack(t, o, ws.GetId(), "Also visible")
+
+	ob := owner(t)
+	wsB := createWorkspace(t, ob, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	mem.must(200, "POST", "/api/invites/"+invite(t, ob, wsB.GetId())+"/join", nil, nil)
+	q := createPack(t, ob, wsB.GetId(), "Hidden later")
+	for _, id := range []string{p1.GetId(), p2.GetId(), q.GetId()} {
+		mem.must(200, "PUT", "/api/me/sticker-packs/"+id, nil, nil)
+	}
+	guestRole := v1.WorkspaceRole_WORKSPACE_ROLE_GUEST
+	ob.must(200, "PATCH", "/api/workspaces/"+wsB.GetId()+"/members/"+mem.id, &v1.UpdateMemberRequest{Role: &guestRole}, nil)
+
+	var mine v1.MyStickerPacksResponse
+	mem.must(200, "GET", "/api/me/sticker-packs", nil, &mine)
+	if len(mine.GetInstalled()) != 2 {
+		t.Fatalf("installed after becoming a guest: %v", &mine)
+	}
+	mem.must(200, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p1.GetId(), p2.GetId()}}, &mine)
+	if ids := []string{mine.GetInstalled()[0].GetId(), mine.GetInstalled()[1].GetId()}; ids[0] != p1.GetId() || ids[1] != p2.GetId() {
+		t.Fatalf("order: %v", ids)
+	}
+	// The hidden pack cannot be named in the order either.
+	mem.must(422, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p1.GetId(), p2.GetId(), q.GetId()}}, nil)
+}

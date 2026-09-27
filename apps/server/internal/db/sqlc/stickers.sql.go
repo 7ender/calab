@@ -41,9 +41,14 @@ func (q *Queries) CountPackStickers(ctx context.Context, packID uuid.UUID) (int3
 }
 
 const countUserStickerPacks = `-- name: CountUserStickerPacks :one
-SELECT count(*)::integer FROM user_sticker_packs WHERE user_id = $1
+SELECT count(*)::integer FROM user_sticker_packs u
+JOIN sticker_packs p ON p.id = u.pack_id AND p.deleted_at IS NULL
+JOIN workspace_members m ON m.workspace_id = p.workspace_id AND m.user_id = u.user_id AND m.role <> 'guest'
+WHERE u.user_id = $1
 `
 
+// Counts what ListUserStickerPacks shows: installs of packs the user can no longer use (left
+// the workspace, became a guest there) neither count nor block the limit.
 func (q *Queries) CountUserStickerPacks(ctx context.Context, userID uuid.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, countUserStickerPacks, userID)
 	var column_1 int32
@@ -410,9 +415,13 @@ func (q *Queries) ListStickersByID(ctx context.Context, ids []uuid.UUID) ([]List
 }
 
 const listUserStickerPackIDs = `-- name: ListUserStickerPackIDs :many
-SELECT pack_id FROM user_sticker_packs WHERE user_id = $1
+SELECT u.pack_id FROM user_sticker_packs u
+JOIN sticker_packs p ON p.id = u.pack_id AND p.deleted_at IS NULL
+JOIN workspace_members m ON m.workspace_id = p.workspace_id AND m.user_id = u.user_id AND m.role <> 'guest'
+WHERE u.user_id = $1
 `
 
+// The ids of ListUserStickerPacks (the set a reorder must list).
 func (q *Queries) ListUserStickerPackIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, listUserStickerPackIDs, userID)
 	if err != nil {
