@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -240,7 +241,16 @@ func (h *Handlers) setOrder(w http.ResponseWriter, r *http.Request) error {
 			byRoom[o.RoomID] = append(byRoom[o.RoomID], o)
 		}
 		defaults := pbconv.WorkspaceDefaults(ws)
+		me, err := perm.FromContext(r.Context()).Member(r.Context(), wsID, auth.MustFromContext(r.Context()).UserID)
+		if err != nil {
+			return err
+		}
 		for _, row := range updated {
+			// A room the caller cannot see (a restricted room, ADR-0029) is not theirs to
+			// place, and the answer must not reveal it.
+			if !perm.ComputeIn(me, row.Restricted, pbconv.OverrideTargets(byRoom[row.ID])).Has(perm.ViewRoom) {
+				return httpx.Validation("rooms", "room "+row.ID.String()+" not found in this workspace")
+			}
 			resp.Rooms = append(resp.Rooms, pbconv.Room(row, defaults, byRoom[row.ID]))
 		}
 		return nil

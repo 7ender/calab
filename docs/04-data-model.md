@@ -34,7 +34,7 @@ email_invites       id, workspace_id, email (citext), role ('member'|'admin'), i
                     expires_at, last_sent_at, accepted_at?   UNIQUE (workspace_id, email) среди непринятых
 
 rooms               id, workspace_id? (NULL только у DM), type ('voice'|'text'|'dm'), name, topic,
-                    position, category_id?, is_private,
+                    position, category_id?, is_private, restricted (только при is_private, ADR-0029),
                     -- медиа-настройки комнаты (для voice), NULL = дефолт workspace:
                     audio_bitrate_kbps?  (16|24|32|48|64),
                     max_stream_preset?   ('economy'|'h720'|'h1080'|'original'),
@@ -176,7 +176,9 @@ export const Permission = {
 
 ```
 base   = OR(roles[].permissions)                     (права пространства; без переопределений)
-if base & ADMINISTRATOR → all                        (owner/admin: переопределения, в т.ч. deny, не действуют)
+if room.restricted:                                   (изменено ADR-0029)
+    if owner → all;  base &= ~ADMINISTRATOR           (админы — как обычные участники)
+elif base & ADMINISTRATOR → all                      (owner/admin: переопределения, в т.ч. deny, не действуют)
 perms  = base
 for role in roles sorted by position ASC:            (младшие первыми, старшая последней — её слово решает)
     perms &= ~roleOverride[role].deny;  perms |= roleOverride[role].allow
@@ -187,6 +189,8 @@ if !(perms & VIEW_ROOM) → 0
 `ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES` — только уровень пространства, в переопределениях комнаты запрещены (API отвечает `422`), а `computePermissions` их в переопределениях игнорирует (`allow`/`deny` маскируются `RoomOnly` / `ROOM_ONLY_PERMISSIONS`). Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
 
 Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для своих ролей или конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
+
+**Только по списку (изменено ADR-0029).** Приватная комната с `rooms.restricted = true` (ставит и снимает только владелец — `workspaces.owner_id`, `PATCH /api/rooms/{id} {restricted}`, иначе `403 reason OWNER_ONLY`): `ADMINISTRATOR` в ней обхода не даёт — админы и роли с этим битом видят комнату только через `allow VIEW_ROOM` по роли или лично и получают права участника из переопределений; владелец (встроенная роль `owner`, её держит только `owner_id`) — всё всегда; суперадмин продукта — без обхода. `computePermissions({..., restricted, owner})`, векторы `restricted`/`owner` в `proto/testdata/permissions.json`.
 
 **DM (ADR-0020).** Роли и overrides не применяются: `computePermissions({dm: {participant}})` (Go: `perm.ComputeDM`) даёт участнику фиксированный набор `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES` (= 7), остальным — 0 (тест-векторы `roomType: "dm"` в `proto/testdata/permissions.json`). Остальные пункты ADR ложатся на правила, а не на биты: чтение истории — `VIEW_ROOM`, реакции — `SEND_MESSAGES`, правка/удаление своих сообщений — право автора везде, закреп в DM разрешён обоим участникам по типу комнаты. `MANAGE_MESSAGES`, `MENTION_EVERYONE`, модерации и голоса в DM нет.
 

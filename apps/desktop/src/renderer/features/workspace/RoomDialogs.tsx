@@ -8,10 +8,11 @@ import {
   RoomType,
   WorkspaceRole,
   type PermissionName,
+  type Role,
 } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
 import { AudioLines, Check, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Volume2, X } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
@@ -34,6 +35,7 @@ import { CommitInput } from '../settings/AppSettingsDialog';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { UserLimitCard } from '../shell/UserLimitCard';
 import { RoomLinkTab } from '../people/RoomLinkTab';
+import { RoomAccessCard } from './RoomAccessCard';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -173,6 +175,8 @@ async function patchRoom(roomId: string, init: Parameters<typeof api.rooms.updat
 
 function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => void }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const ownerId = useWorkspaces((s) => (room ? s.byId[room.workspaceId]?.ws.ownerId : undefined));
   const del = useMutation({
     mutationFn: () => api.rooms.remove(roomId),
     onSuccess: () => {
@@ -191,6 +195,8 @@ function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => vo
           <CommitInput label={t('room.topic')} value={room.topic} maxLength={1024} onCommit={(v) => patchRoom(roomId, { topic: v })} />
         </Row>
       </Card>
+      {/* ADR-0029: the owner manages «Только по списку»; others see it only once it is on. */}
+      {room.isPrivate && (room.restricted || (ownerId !== undefined && ownerId === me)) ? <RoomAccessCard room={room} /> : null}
       <Card title={t('card.danger')} footer={del.error ? err(del.error) : undefined}>
         <Row label={t('room.delete')}>
           <Button
@@ -380,7 +386,10 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   const members = entry?.members;
   // Targets are the workspace roles by id (ADR-0026); owner / admin are fixed rows (full access).
   const wsRoles = useMemo(() => entry?.roles ?? [], [entry?.roles]);
-  const fixedRoles = wsRoles.filter(isFullRole);
+  // A restricted room (ADR-0029): admins count as members here — only the owner stays fixed.
+  const restricted = room?.restricted ?? false;
+  const isFixed = useCallback((r: Pick<Role, 'builtin'>): boolean => (restricted ? r.builtin === WorkspaceRole.OWNER : isFullRole(r)), [restricted]);
+  const fixedRoles = wsRoles.filter(isFixed);
   const memberRoleId = wsRoles.find((r) => r.builtin === WorkspaceRole.MEMBER)?.id ?? 'member';
   const [drafts, setDrafts] = useState<OverrideDraft[]>(() => toDrafts(room?.permissionOverrides ?? []));
   const [selected, setSelected] = useState(`${PermissionTargetType.ROLE}:${memberRoleId}`);
@@ -388,13 +397,13 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
 
   const targets = useMemo(() => {
     const roles = wsRoles
-      .filter((r) => !isFullRole(r))
+      .filter((r) => !isFixed(r))
       .map((r) => ({ key: `${PermissionTargetType.ROLE}:${r.id}`, type: PermissionTargetType.ROLE, id: r.id, label: roleName(r), role: r }));
     const users = drafts
       .filter((d) => d.targetType === PermissionTargetType.USER)
       .map((d) => ({ key: targetKey(d), type: d.targetType, id: d.targetId, label: memberName(room?.workspaceId ?? null, d.targetId), role: undefined }));
     return [...roles, ...users];
-  }, [drafts, room?.workspaceId, wsRoles]);
+  }, [drafts, isFixed, room?.workspaceId, wsRoles]);
 
   const current = targets.find((x) => x.key === selected) ?? targets[0];
   const draft = drafts.find((d) => current && targetKey(d) === current.key);
@@ -443,19 +452,19 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
       role: r.builtin,
       color: r.color,
       label: roleName(r),
-      note: isFullRole(r) ? full : '',
+      note: isFixed(r) ? full : '',
       search: [roleName(r), r.name],
-      ...(isFullRole(r) ? { disabled: true } : {}),
+      ...(isFixed(r) ? { disabled: true } : {}),
     }));
     const people = memberItems(Object.values(members ?? {}), {
       roles: wsRoles,
-      decorate: (m) => (isAdminRole(m.role) ? { note: full, disabled: true } : listed.has(m.user?.id ?? '') ? { note: t('picker.listed') } : undefined),
+      decorate: (m) => ((restricted ? m.role === WorkspaceRole.OWNER : isAdminRole(m.role)) ? { note: full, disabled: true } : listed.has(m.user?.id ?? '') ? { note: t('picker.listed') } : undefined),
     });
     return [
       { id: 'roles', label: t('picker.roles'), items: roles },
       { id: 'members', label: t('picker.members'), items: people },
     ];
-  }, [drafts, members, wsRoles]);
+  }, [drafts, isFixed, members, restricted, wsRoles]);
   const pick = (item: PeoplePickItem): void => {
     if (item.kind === 'role') setSelected(`${PermissionTargetType.ROLE}:${item.roleId}`);
     else addUser(item.userId);

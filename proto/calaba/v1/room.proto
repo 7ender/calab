@@ -67,6 +67,10 @@ message Room {
   // Voice rooms: members may record the meeting (ADR-0025). Default true; changed with
   // PATCH /api/rooms/{id} allow_recording, which needs MANAGE_WORKSPACE.
   bool allow_recording = 18;
+  // Private rooms only (ADR-0029): «Только по списку». ADMINISTRATOR gives no bypass here:
+  // admins see the room only through an allow VIEW_ROOM override (by role or personally),
+  // the workspace owner always does. Changed with PATCH /api/rooms/{id} restricted.
+  bool restricted = 19;
 }
 
 // Per-user notification level of a room or a workspace (docs/05 «Уведомления»). UNSPECIFIED
@@ -216,6 +220,9 @@ message UpdateRoomRequest {
   // Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_WORKSPACE besides
   // MANAGE_ROOM; switching it off stops a running recording.
   optional bool allow_recording = 7;
+  // Private rooms only (ADR-0029). Only the workspace owner (Workspace.owner_id) may change
+  // it: anyone else gets 403 FORBIDDEN with reason OWNER_ONLY.
+  optional bool restricted = 8;
 }
 
 // PATCH /api/rooms/{id}/voice-status (voice rooms): CONNECT and being in the call now, or

@@ -74,6 +74,8 @@ export interface RoleBits {
   id: string;
   position: number;
   permissions: PermissionBits;
+  /** Built-in role key (generated Role.builtin); the holder of OWNER is the workspace owner. */
+  builtin?: WorkspaceRole | undefined;
 }
 
 /** Structural allow/deny pair; the generated PermissionOverride / RoomPermissionOverride fit it. */
@@ -100,13 +102,31 @@ export interface ComputePermissionsInput {
   userOverride?: OverrideBits | undefined;
   /** Set for a DM room (Room.type DM): the fixed DM set for a participant, role/overrides ignored. */
   dm?: { participant: boolean } | undefined;
+  /**
+   * Room.restricted (ADR-0029): ADMINISTRATOR gives no bypass — admins count as plain members
+   * of the room (overrides decide), the workspace owner (`owner`) has everything.
+   */
+  restricted?: boolean | undefined;
+  /** The user is the workspace owner (Workspace.owner_id; holder of the built-in owner role). */
+  owner?: boolean | undefined;
+}
+
+/** The plain OR of the roles' permissions (ADMINISTRATOR not expanded). */
+function rawPermissions(roles: readonly Pick<RoleBits, 'permissions'>[]): PermissionBits {
+  let perms = 0n;
+  for (const r of roles) perms |= r.permissions;
+  return perms;
 }
 
 /** Workspace-level permissions of a set of roles: their OR; ADMINISTRATOR means everything. */
 export function workspacePermissions(roles: readonly Pick<RoleBits, 'permissions'>[]): PermissionBits {
-  let perms = 0n;
-  for (const r of roles) perms |= r.permissions;
+  const perms = rawPermissions(roles);
   return perms & ADMINISTRATOR ? ALL_PERMISSIONS : perms;
+}
+
+/** Whether the roles include the built-in owner role: only the workspace owner holds it (ADR-0029). */
+export function holdsOwnerRole(roles: readonly Pick<RoleBits, 'builtin'>[]): boolean {
+  return roles.some((r) => r.builtin === WorkspaceRole.OWNER);
 }
 
 function overrideOf(
@@ -119,8 +139,9 @@ function overrideOf(
 }
 
 /**
- * The single function computing effective room permissions (docs/04, ADR-0026): workspace
- * bits (OR of the roles; ADMINISTRATOR → everything, overrides ignored), then each role's
+ * The single function computing effective room permissions (docs/04, ADR-0026, ADR-0029):
+ * workspace bits (OR of the roles; ADMINISTRATOR → everything, overrides ignored — except in a
+ * restricted room, where the owner gets everything and ADMINISTRATOR is dropped), then each role's
  * room override lowest position first (deny, then allow: the most senior role wins), then the
  * user's own override; without VIEW_ROOM nothing. Overrides only touch ROOM_ONLY_PERMISSIONS.
  * Used by the client for UI; mirrored in Go (apps/server/internal/perm). Pure.
@@ -138,8 +159,13 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
     roles = [{ id, position: BUILTIN_ROLE_POSITION[role], permissions: ROLE_DEFAULTS[role] }];
     roleOverrides = input.roleOverride ? { [id]: input.roleOverride } : undefined;
   }
-  let perms = workspacePermissions(roles);
-  if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
+  let perms = rawPermissions(roles);
+  if (input.restricted) {
+    if (input.owner) return ALL_PERMISSIONS;
+    perms &= ~ADMINISTRATOR;
+  } else if (perms & ADMINISTRATOR) {
+    return ALL_PERMISSIONS;
+  }
 
   const ordered = [...roles].sort((a, b) => a.position - b.position);
   for (const r of ordered) {
@@ -163,11 +189,17 @@ export function memberRoles<R extends RoleBits>(all: readonly R[], roleIds: read
   return all.filter((r) => ids.has(r.id));
 }
 
-/** Effective permissions of a member with `roles` in a room, given Room.permissionOverrides. */
+/**
+ * Effective permissions of a member with `roles` in a room, given Room.permissionOverrides and
+ * Room.restricted (ADR-0029). The owner is recognized by the built-in owner role among `roles`
+ * unless `owner` is given.
+ */
 export function computeMemberRoomPermissions(
   roles: readonly RoleBits[],
   userId: string,
   overrides: readonly RoomPermissionOverride[],
+  restricted = false,
+  owner: boolean = holdsOwnerRole(roles),
 ): PermissionBits {
   const roleOverrides = new Map<string, OverrideBits>();
   // First match per target, like Go perm.ComputeIn (the server never stores duplicates).
@@ -178,6 +210,8 @@ export function computeMemberRoomPermissions(
     roles,
     roleOverrides,
     userOverride: overrides.find((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId),
+    restricted,
+    owner,
   });
 }
 

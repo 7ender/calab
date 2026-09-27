@@ -26,6 +26,9 @@ interface Vector {
   roles?: { id: string; position: number; permissions: number }[];
   roleOverrides?: Record<string, { allow: number; deny: number }>;
   expectedWorkspace?: number;
+  // ADR-0029: a restricted room and whether the member is the workspace owner.
+  restricted?: boolean;
+  owner?: boolean;
   expected: number;
 }
 
@@ -55,7 +58,9 @@ describe('computePermissions (shared vectors)', () => {
         const roleOverrides = Object.fromEntries(
           Object.entries(v.roleOverrides ?? {}).map(([id, o]) => [id, toOv(o) as OverrideBits]),
         );
-        expect(computePermissions({ roles, roleOverrides, userOverride: toOv(v.userOverride) })).toBe(BigInt(v.expected));
+        expect(
+          computePermissions({ roles, roleOverrides, userOverride: toOv(v.userOverride), restricted: v.restricted, owner: v.owner }),
+        ).toBe(BigInt(v.expected));
         // The same through Room.permissionOverrides.
         const overrides = [
           ...Object.entries(v.roleOverrides ?? {}).map(([id, o]) =>
@@ -77,7 +82,10 @@ describe('computePermissions (shared vectors)', () => {
               ]
             : []),
         ];
-        expect(computeMemberRoomPermissions(roles, 'u1', overrides)).toBe(BigInt(v.expected));
+        expect(computeMemberRoomPermissions(roles, 'u1', overrides, v.restricted, v.owner ?? false)).toBe(BigInt(v.expected));
+        // The owner is recognized by the built-in owner role as well.
+        const withBuiltin = roles.map((r) => (r.id === 'owner' && v.owner ? { ...r, builtin: WorkspaceRole.OWNER } : r));
+        expect(computeMemberRoomPermissions(withBuiltin, 'u1', overrides, v.restricted)).toBe(BigInt(v.expected));
         if (v.expectedWorkspace !== undefined) expect(workspacePermissions(roles)).toBe(BigInt(v.expectedWorkspace));
         return;
       }

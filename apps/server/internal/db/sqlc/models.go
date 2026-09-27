@@ -143,6 +143,7 @@ type Room struct {
 	CameraLimit      *int32
 	DmKey            *string
 	AllowRecording   bool
+	Restricted       bool
 }
 
 type RoomCategory struct {

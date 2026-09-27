@@ -38,8 +38,9 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
   /**
    * Why, when a code has several causes: "PLAN_LIMIT" = a limit of the workspace plan
    * (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED); "REACTION_LIMIT" = CONFLICT on adding a
-   * reaction when the caller already has `limit` different emojis on the message. Absent
-   * otherwise.
+   * reaction when the caller already has `limit` different emojis on the message;
+   * "OWNER_ONLY" = FORBIDDEN, only the workspace owner may do this (ADR-0029: a room's
+   * restricted flag). Absent otherwise.
    *
    * @generated from field: optional string reason = 4;
    */

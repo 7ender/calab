@@ -717,7 +717,9 @@ class MockImpl {
       return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.dmPeer(room.id, userId) !== null } });
     }
     const m = this.member(room.workspaceId, userId);
-    return m ? computeMemberRoomPermissions(this.memberRoles(m), userId, room.permissionOverrides) : 0n;
+    // ADR-0029: in a restricted room admins count as members; the owner (owner_id) has everything.
+    const owner = this.state.workspaces.get(room.workspaceId)?.ownerId === userId;
+    return m ? computeMemberRoomPermissions(this.memberRoles(m), userId, room.permissionOverrides, room.restricted, owner) : 0n;
   }
 
   /** The other participant of a DM room, or null when `userId` is not in it (or it is no DM). */
@@ -2304,6 +2306,12 @@ class MockImpl {
       if (b.allowRecording !== undefined) {
         this.requireAdmin(this.workspaceFor(room.workspaceId, me).m);
         room.allowRecording = b.allowRecording;
+      }
+      // ADR-0029: the workspace owner only (owner_id, not a bit); private rooms only.
+      if (b.restricted !== undefined) {
+        if (s().workspaces.get(room.workspaceId)?.ownerId !== me) throw forbidden('only the workspace owner may change restricted');
+        if (b.restricted && !room.isPrivate) throw invalid('restricted', 'only private rooms can be restricted');
+        room.restricted = b.restricted;
       }
       this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
       if (b.allowRecording === false && s().recordings.has(room.id)) this.stopRecording(room, 'disabled', '');

@@ -18,6 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/rooms"
 )
 
 // Custom workspace roles (ADR-0026, docs/04 «Роли»).
@@ -312,6 +313,10 @@ func (h *Handlers) deleteRole(w http.ResponseWriter, r *http.Request) error {
 		if err := q.LockWorkspaceRoles(r.Context(), wsID.String()); err != nil {
 			return err
 		}
+		guard, err := newRestrictedGuard(r.Context(), q, wsID, actor, uid(r))
+		if err != nil {
+			return err
+		}
 		cur, err := loadRole(r, q, wsID)
 		if err != nil {
 			return err
@@ -327,8 +332,10 @@ func (h *Handlers) deleteRole(w http.ResponseWriter, r *http.Request) error {
 		if _, err := q.DeleteRole(r.Context(), sqlc.DeleteRoleParams{ID: cur.ID, WorkspaceID: wsID}); err != nil {
 			return err
 		}
-		rooms, err = q.DeleteRoleOverrides(r.Context(), cur.ID.String())
-		return err
+		if rooms, err = q.DeleteRoleOverrides(r.Context(), cur.ID.String()); err != nil {
+			return err
+		}
+		return guard.check(r.Context(), q, wsID)
 	})
 	if err != nil {
 		return err
@@ -373,6 +380,10 @@ func (h *Handlers) orderRoles(w http.ResponseWriter, r *http.Request) error {
 		if err := q.LockWorkspaceRoles(r.Context(), wsID.String()); err != nil {
 			return err
 		}
+		guard, err := newRestrictedGuard(r.Context(), q, wsID, actor, uid(r))
+		if err != nil {
+			return err
+		}
 		rows, err := q.ListWorkspaceRoles(r.Context(), wsID)
 		if err != nil {
 			return err
@@ -411,8 +422,10 @@ func (h *Handlers) orderRoles(w http.ResponseWriter, r *http.Request) error {
 			}
 			moved = append(moved, nr)
 		}
-		all, err = q.ListWorkspaceRoles(r.Context(), wsID)
-		return err
+		if all, err = q.ListWorkspaceRoles(r.Context(), wsID); err != nil {
+			return err
+		}
+		return guard.check(r.Context(), q, wsID)
 	})
 	if err != nil {
 		return err
@@ -467,7 +480,10 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 		if err := q.LockWorkspaceRoles(r.Context(), wsID.String()); err != nil {
 			return err
 		}
-		var err error
+		guard, err := newRestrictedGuard(r.Context(), q, wsID, actor, uid(r))
+		if err != nil {
+			return err
+		}
 		m, err = q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: target})
 		if db.IsNotFound(err) {
 			return httpx.NotFound("member")
@@ -576,7 +592,7 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 				}
 			}
 		}
-		return nil
+		return guard.check(r.Context(), q, wsID)
 	})
 	if err != nil {
 		return err
@@ -592,6 +608,88 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 		}})
 	}
 	httpx.Write(w, http.StatusOK, &v1.SetMemberRolesResponse{Member: pb})
+	return nil
+}
+
+// restrictedViews is who sees each restricted room of the workspace (ADR-0029), read through q
+// (inside a transaction: including its own writes).
+func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[uuid.UUID]map[uuid.UUID]bool, error) {
+	rs, err := q.ListRooms(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[uuid.UUID]map[uuid.UUID]bool{}
+	var (
+		ovRows  []sqlc.RoomPermission
+		members map[uuid.UUID]perm.Member
+	)
+	for _, room := range rs {
+		if !room.Restricted {
+			continue
+		}
+		if members == nil {
+			if ovRows, err = q.ListWorkspaceRoomOverrides(ctx, wsID); err != nil {
+				return nil, err
+			}
+			if members, err = perm.LoadMembers(ctx, q, wsID); err != nil {
+				return nil, err
+			}
+		}
+		var ovs []perm.OverrideTarget
+		for _, o := range ovRows {
+			if o.RoomID == room.ID {
+				ovs = append(ovs, pbconv.OverrideTargets([]sqlc.RoomPermission{o})...)
+			}
+		}
+		seen := map[uuid.UUID]bool{}
+		for id, m := range members {
+			if perm.ComputeIn(m, true, ovs).Has(perm.ViewRoom) {
+				seen[id] = true
+			}
+		}
+		out[room.ID] = seen
+	}
+	return out, nil
+}
+
+// restrictedGuard stops a role change by a non-owner (member roles, role order, role
+// deletion) that would let someone see a restricted room the actor cannot see themselves
+// (ADR-0029): access to such a room is the owner's list, and an admin must not reach it by
+// handing out a role with an allow, taking away or deleting a role with a deny, or reordering
+// roles so that an allow wins. Take it before the change and check it after, in the same
+// transaction.
+type restrictedGuard struct {
+	actor  uuid.UUID
+	before map[uuid.UUID]map[uuid.UUID]bool // nil: the owner acts, nothing to check
+}
+
+func newRestrictedGuard(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, actor perm.Member, actorID uuid.UUID) (restrictedGuard, error) {
+	if actor.Role == perm.RoleOwner {
+		return restrictedGuard{}, nil
+	}
+	before, err := restrictedViews(ctx, q, wsID)
+	return restrictedGuard{actor: actorID, before: before}, err
+}
+
+func (g restrictedGuard) check(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error {
+	if len(g.before) == 0 {
+		return nil
+	}
+	after, err := restrictedViews(ctx, q, wsID)
+	if err != nil {
+		return err
+	}
+	for rid, seen := range after {
+		was := g.before[rid]
+		if was[g.actor] {
+			continue
+		}
+		for id := range seen {
+			if !was[id] {
+				return httpx.Forbidden("the change would open a restricted room you cannot see").WithDetails(rooms.ReasonOwnerOnly, 0, 0)
+			}
+		}
+	}
 	return nil
 }
 

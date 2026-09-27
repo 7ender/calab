@@ -417,6 +417,7 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		Topic:               r.Topic,
 		Position:            r.Position,
 		IsPrivate:           r.IsPrivate,
+		Restricted:          r.Restricted,
 		Media:               EffectiveMedia(r, defaults),
 		MediaOverride:       MediaOverride(r),
 		PermissionOverrides: ovs,

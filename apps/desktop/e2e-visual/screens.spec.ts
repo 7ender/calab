@@ -75,6 +75,7 @@ const KEY = new Set([
   'settings-3',
   'settings-8',
   'room-settings-1',
+  'room-settings-restricted',
   'i18n-en-main-chat',
   'settings-plan',
   'settings-gptunnel',
@@ -1055,6 +1056,21 @@ for (let i = 1; i <= TABS['room-settings']; i++) {
     await checkpoint(shot, `room-settings-${i}`);
   });
 }
+
+// ADR-0029: the owner (Anna) turns on «Только по списку» in a private room; «Кто видит» lists Vera.
+test('room-settings-restricted', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.locator('aside').getByRole('button', { name: /очень-длинное-название/ }).first().click();
+  await openSettingsTab(win, () => win.getByRole('button', { name: 'Настройки комнаты' }).click(), 1);
+  const toggle = win.getByRole('dialog').getByRole('switch', { name: 'Только по списку' });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  expect(mock.state.rooms.get(IDS.rooms.longPrivate)?.restricted).toBe(true);
+  await expect(win.getByTestId('room-who-sees-row')).toHaveCount(1);
+  await win.getByTestId('room-who-sees').scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'room-settings-restricted');
+});
 
 test('confirm-delete-room', async ({ open, win, mock, shot }) => {
   await open();

@@ -58,7 +58,7 @@ func TestResolverRoomAndCache(t *testing.T) {
 	ctx := context.Background()
 	want := ComputeRoles([]RoleBits{
 		{ID: "m", Position: 1, Permissions: RoleDefaults[RoleMember]}, {ID: "x", Position: 2, Permissions: MuteMembers},
-	}, map[string]Override{"m": {Deny: Stream}, "x": {Allow: MoveMembers}}, nil)
+	}, Scope{}, map[string]Override{"m": {Deny: Stream}, "x": {Allow: MoveMembers}}, nil)
 	for range 3 {
 		acc, err := r.Room(ctx, room, u)
 		if err != nil {
@@ -155,15 +155,42 @@ func TestComputeInPrivateRoom(t *testing.T) {
 		{TargetType: "role", TargetID: memberID, Override: Override{Deny: ViewRoom}},
 		{TargetType: "user", TargetID: u, Override: Override{Allow: ViewRoom}},
 	}
-	if ComputeIn(roles.Member(uuid.NewString(), RoleMember, []string{memberID}), ovs) != 0 {
+	if ComputeIn(roles.Member(uuid.NewString(), RoleMember, []string{memberID}), false, ovs) != 0 {
 		t.Fatal("private room visible to other members")
 	}
-	if !ComputeIn(roles.Member(u, RoleMember, []string{memberID}), ovs).Has(ViewRoom) {
+	if !ComputeIn(roles.Member(u, RoleMember, []string{memberID}), false, ovs).Has(ViewRoom) {
 		t.Fatal("private room hidden from allowed user")
 	}
-	if got := ComputeIn(roles.Member(u, RoleGuest, []string{guestID, "unknown"}), ovs); got != ViewRoom|Connect|Speak {
+	if got := ComputeIn(roles.Member(u, RoleGuest, []string{guestID, "unknown"}), false, ovs); got != ViewRoom|Connect|Speak {
 		t.Fatalf("guest with user allow: %d", got)
 	}
 }
 
 func i64(b Bits) int64 { return int64(b) } //nolint:gosec // small bit masks in tests
+
+// ADR-0029: in a restricted room an admin counts as a plain member, the owner has everything.
+func TestResolverRestricted(t *testing.T) {
+	ws, room := uuid.New(), uuid.New()
+	adminU, ownerU := uuid.New(), uuid.New()
+	adminR, ownerR, memberR := uuid.New(), uuid.New(), uuid.New()
+	row := func(role string, top uuid.UUID, pos int32) sqlc.GetRoomAccessRow {
+		return sqlc.GetRoomAccessRow{
+			WorkspaceID: &ws, Type: "text", Role: ptr(role), Restricted: true,
+			RoleIds: []uuid.UUID{memberR, top}, RolePositions: []int32{PosMember, pos},
+			RolePermissions: []int64{i64(RoleDefaults[RoleMember]), i64(Administrator)},
+			RoleAllows:      []int64{0, 0}, RoleDenies: []int64{int64(ViewRoom), 0},
+		}
+	}
+	s := &fakeStore{access: map[key]sqlc.GetRoomAccessRow{
+		{room, adminU}: row("admin", adminR, PosAdmin),
+		{room, ownerU}: row("owner", ownerR, PosOwner),
+	}}
+	r := NewResolver(s)
+	ctx := context.Background()
+	if acc, err := r.Room(ctx, room, adminU); err != nil || acc.Bits != 0 || !acc.Restricted {
+		t.Fatalf("admin: %+v %v", acc, err)
+	}
+	if acc, err := r.Room(ctx, room, ownerU); err != nil || acc.Bits != All {
+		t.Fatalf("owner: %+v %v", acc, err)
+	}
+}

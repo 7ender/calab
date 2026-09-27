@@ -39,6 +39,8 @@ type RoomAccess struct {
 	Members []uuid.UUID
 	// Suspended: the workspace is suspended by a superadmin (read-only; item 32).
 	Suspended bool
+	// Restricted: the room is restricted (ADR-0029): ADMINISTRATOR gives no bypass in it.
+	Restricted bool
 }
 
 // ok reports a resolved access (the zero value = no access).
@@ -141,8 +143,9 @@ func (r *Resolver) Room(ctx context.Context, roomID, userID uuid.UUID) (RoomAcce
 				WorkspaceID: *row.WorkspaceID,
 				Role:        m.Role,
 				Member:      m,
-				Bits:        ComputeOrdered(m.Workspace(), ovs, override(row.UserAllow, row.UserDeny)),
+				Bits:        ComputeOrdered(m.Raw(), ScopeOf(m, row.Restricted), ovs, override(row.UserAllow, row.UserDeny)),
 				Suspended:   row.Suspended,
+				Restricted:  row.Restricted,
 			}
 		}
 		r.mu.Lock()
