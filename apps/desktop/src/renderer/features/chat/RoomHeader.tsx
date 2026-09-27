@@ -4,7 +4,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Badge, Button, IconButton, MOD, Tip, cx } from '../../components/ui';
+import { Button, IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { can, mayPin } from '../../lib/permissions';
@@ -166,7 +166,10 @@ function VoicePreviewBar({ workspaceId, room, perms }: { workspaceId: string; ro
   };
   return (
     <div className="no-drag flex shrink-0 items-center gap-2" data-testid="voice-preview">
-      {mobile ? null : <Badge className="text-muted">{t('voicePreview.notInVoice')}</Badge>}
+      {mobile ? null : (
+        // Same height as the «Join voice» button next to it (Button size="sm", h-6).
+        <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-hover px-2.5 text-caption font-medium text-muted">{t('voicePreview.notInVoice')}</span>
+      )}
       {!canConnect ? null : mobile ? (
         <IconButton label={suspended ? t('suspended.voice') : t('voicePreview.join')} disabled={suspended} onClick={join} className="size-10 rounded-full text-ok">
           <Phone className="size-5" />
