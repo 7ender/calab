@@ -4,6 +4,7 @@ import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
 import { cloneElement, forwardRef, isValidElement, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
 import { autoFocusAllowed } from '../lib/phone';
@@ -145,7 +146,12 @@ export function Tip(props: TipProps): ReactNode {
     onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
       own.onPointerMove?.(e);
       if (e.pointerType === 'touch' || e.buttons !== 0) return;
-      setWake({ focused: document.activeElement === e.currentTarget, move: { x: e.clientX, y: e.clientY, pointerId: e.pointerId, pointerType: e.pointerType } });
+      const w: TipWake = { focused: document.activeElement === e.currentTarget, move: { x: e.clientX, y: e.clientY, pointerId: e.pointerId, pointerType: e.pointerType } };
+      // Waking remounts the element, so it must be committed before the next input event: a
+      // pointermove render is scheduled (not synchronous), and a press that follows at once (fast
+      // pointer, a busy main thread in a call, Playwright's move→down) would go down on the old
+      // node and up on the new one — no click (0.7.0: camera / «Отключиться» in the voice panel).
+      flushSync(() => setWake(w));
     },
     onFocus: (e: ReactFocusEvent<HTMLElement>) => {
       own.onFocus?.(e);
