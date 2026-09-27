@@ -74,9 +74,18 @@ async function openRoom(page: Page, name: RegExp): Promise<void> {
   await expect(nav).toHaveCount(0);
 }
 
-/** Pins the feed to its bottom (the unread anchor lands a few px apart between runs). */
+/**
+ * Pins the feed to its bottom (the room can open at the first unread — docs/09 #39 — and a single
+ * scrollTo can be overridden by Virtuoso settling right after; matches `feedAtBottom` in
+ * screens.spec.ts).
+ */
 async function feedToBottom(page: Page): Promise<void> {
-  await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  for (let i = 0; i < 2; i++) {
+    await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await settle(page);
+  }
+  await expect(page.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
+  await settle(page);
 }
 
 /** Mobile-only invariants on top of harness.layoutProblems. */
