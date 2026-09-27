@@ -27,6 +27,17 @@ import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf
 import {
   ChangeEmailRequestSchema,
   ChangePasswordRequestSchema,
+  AddMemberRequestSchema,
+  AddMemberResponseSchema,
+  CreateEmailInviteRequestSchema,
+  CreateEmailInviteResponseSchema,
+  EmailInviteSchema,
+  ForgotPasswordRequestSchema,
+  InviteLookupRequestSchema,
+  InviteLookupResponseSchema,
+  ListEmailInvitesResponseSchema,
+  ResetPasswordRequestSchema,
+  VerifyEmailRequestSchema,
   ApiErrorSchema,
   AuthTokensSchema,
   CreateCategoryRequestSchema,
@@ -162,6 +173,7 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
   DEFAULT_MEDIA,
   IDS,
+  MOCK_EMAIL_CODE,
   PASSWORD,
   buildState,
   defaultSettings,
@@ -171,6 +183,7 @@ import {
   tick,
   tokensFor,
   ts,
+  type EmailInviteRec,
   type MemberRec,
   type MockState,
   type Scenario,
@@ -181,7 +194,7 @@ import {
 import { MARKETING_UNFURLS } from './fixtures-marketing';
 import { cardPicture, encodePng, pngSize } from './png';
 
-export { IDS, GENERAL_MESSAGE_COUNT, PASSWORD, mockId, type Scenario } from './fixtures';
+export { IDS, GENERAL_MESSAGE_COUNT, MOCK_EMAIL_CODE, PASSWORD, mockId, type Scenario } from './fixtures';
 export { MARKETING_IDS, MARKETING_VOICE_STARTED_AT } from './fixtures-marketing';
 
 // ---------------------------------------------------------------- public API
@@ -226,6 +239,11 @@ export interface MockServer {
    * `track_published` produces (the mock has no LiveKit webhooks to detect it by itself).
    */
   stopCamera(userId: string, reason: VoiceStreamStopReason): void;
+  /**
+   * ADR-0023: a user's email state (fixture users start verified). An unverified user gets a live
+   * code (MOCK_EMAIL_CODE, «sent» now) and USER_UPDATE {me} like after a sign-up.
+   */
+  setEmailState(userId: string, st: { verified: boolean; pendingEmail?: string }): void;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -244,6 +262,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
     stopCamera: (u, r) => impl.stopCamera(u, r),
+    setEmailState: (u, st) => impl.setEmailState(u, st),
   };
 }
 
@@ -261,6 +280,10 @@ export function livekitRoomPrefix(): string {
 }
 /** Simulated LiveKit connect after /join: the pending voice state is cleared this much later. */
 const JOIN_CONNECT_MS = 250;
+/** ADR-0023: a new email code at most every 60 s; 5 attempts; a re-invite at most once a day. */
+const RESEND_MS = 60_000;
+const CODE_ATTEMPTS = 5;
+const REINVITE_MS = 24 * 3600_000;
 const FAR_FUTURE = ts('2099-01-01T00:00:00Z');
 const REFRESH_COOKIE = 'calaba_refresh';
 const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES, CONNECT, SPEAK, STREAM, VIDEO, MUTE_MEMBERS, MANAGE_ROOM, MOVE_MEMBERS } =
@@ -272,9 +295,26 @@ class HttpError extends Error {
     readonly code: ErrorCode,
     message: string,
     readonly field = '',
+    readonly headers: Record<string, string> = {},
   ) {
     super(message);
   }
+}
+
+/** 429 with Retry-After (seconds), like the server's limits. */
+const tooMany = (what: string, seconds: number): HttpError =>
+  new HttpError(429, ErrorCode.RATE_LIMITED, what, '', { 'Retry-After': String(Math.max(1, Math.ceil(seconds))) });
+const notVerified = (): HttpError => new HttpError(403, ErrorCode.EMAIL_NOT_VERIFIED, 'email address not verified');
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+/** Server locales of emails (ADR-0023): BCP 47 → en | ru | es | zh-CN; null = unsupported. */
+function mailLocale(tag: string): string | null {
+  const l = tag.trim().toLowerCase();
+  if (!l) return '';
+  if (/^(ru|uk|be|kk)\b/.test(l)) return 'ru';
+  if (/^zh\b/.test(l)) return 'zh-CN';
+  if (/^es\b/.test(l)) return 'es';
+  if (/^en\b/.test(l)) return 'en';
+  return null;
 }
 
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
@@ -599,7 +639,15 @@ class MockImpl {
   // ------------------------------------------------ serialisation
 
   private me(u: UserRec): Me {
-    return create(MeSchema, { user: u.user, email: u.email, settings: u.settings });
+    return create(MeSchema, {
+      user: u.user,
+      email: u.email,
+      settings: u.settings,
+      // Guests have no email: always «verified» (user.proto).
+      emailVerified: u.user.isGuest || u.emailVerified,
+      pendingEmail: u.pendingEmail,
+      locale: u.locale,
+    });
   }
 
   private memberOut(m: MemberRec): WorkspaceMember {
@@ -1117,7 +1165,8 @@ class MockImpl {
       const err = e instanceof HttpError ? e : new HttpError(500, ErrorCode.INTERNAL, e instanceof Error ? e.message : String(e));
       this.log(`${method} ${url.pathname} → ${err.status} ${err.message}`);
       if (res.headersSent) return void res.end();
-      sendMsg(res, err.status, ApiErrorSchema, { code: err.code, message: err.message, field: err.field });
+      const json = toJson(ApiErrorSchema, create(ApiErrorSchema, { code: err.code, message: err.message, field: err.field }), JSON_WRITE);
+      send(res, err.status, JSON.stringify(json), 'application/json', err.headers);
     }
   }
 
@@ -1144,6 +1193,11 @@ class MockImpl {
       if (!u || (b.password !== PASSWORD && b.password !== u.password)) {
         throw new HttpError(401, ErrorCode.INVALID_CREDENTIALS, 'invalid email or password');
       }
+      if (!u.emailVerified && !u.user.isGuest) {
+        const key = `verify:${u.user.id}`;
+        const last = s().emailCodes.get(key);
+        if (!last || Date.now() - last.sentAtMs >= RESEND_MS) s().emailCodes.set(key, { attempts: 0, sentAtMs: Date.now() });
+      }
       const sessionId = this.loginSession(u.user.id, c.web);
       sendMsg(c.res, 200, LoginResponseSchema, { tokens: this.tokensJson(c, sessionId), me: this.me(u) });
     });
@@ -1155,8 +1209,12 @@ class MockImpl {
       if (b.password.length < 8) throw invalid('password', 'password must be at least 8 characters');
       if (!b.displayName.trim()) throw invalid('displayName', 'display name required');
       if ([...s().users.values()].some((u) => u.email === email)) throw conflict('email already registered', 'email');
-      const invite = b.inviteCode ? [...s().invites.values()].find((i) => i.code === b.inviteCode) : undefined;
-      if (b.inviteCode && !invite) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+      const emailInvite = b.inviteCode ? this.emailInviteByCode(b.inviteCode) : undefined;
+      // An emailed invitation works only with its address (and verifies it, ADR-0023).
+      if (emailInvite && emailInvite.email !== email) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+      const invite = b.inviteCode && !emailInvite ? [...s().invites.values()].find((i) => i.code === b.inviteCode) : undefined;
+      if (b.inviteCode && !invite && !emailInvite) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+      const locale = mailLocale(b.locale) ?? '';
       const id = nextId(s(), 'user');
       const at = tick(s());
       const rec: UserRec = {
@@ -1164,6 +1222,9 @@ class MockImpl {
         email,
         password: b.password,
         settings: defaultSettings(),
+        emailVerified: !!emailInvite,
+        pendingEmail: '',
+        locale,
       };
       s().users.set(id, rec);
       s().presences.set(id, create(PresenceSchema, { userId: id, status: PresenceStatus.ONLINE, lastSeen: at }));
@@ -1180,6 +1241,8 @@ class MockImpl {
         }),
       ]);
       if (invite) this.joinWorkspace(invite.workspaceId, id, invite.id);
+      if (emailInvite) this.acceptEmailInvites(rec);
+      else s().emailCodes.set(`verify:${id}`, { attempts: 0, sentAtMs: Date.now() }); // the code «mail»
       sendMsg(c.res, 201, RegisterResponseSchema, { tokens: this.tokensJson(c, sessionId), me: this.me(rec) });
     });
 
@@ -1214,6 +1277,8 @@ class MockImpl {
       noContent(c.res);
     });
 
+    this.emailRoutes();
+
     // ---------------- me
     this.route('GET', '/api/me', (c) => {
       sendMsg(c.res, 200, GetMeResponseSchema, { me: this.me(this.auth(c).user) });
@@ -1228,6 +1293,11 @@ class MockImpl {
       }
       if (b.statusText !== undefined) u.user.statusText = b.statusText;
       if (b.timezone !== undefined) u.user.timezone = b.timezone;
+      if (b.locale !== undefined) {
+        const l = mailLocale(b.locale);
+        if (l === null) throw invalid('locale', 'unsupported locale');
+        u.locale = l;
+      }
       if (b.avatarFileId !== undefined) {
         if (b.avatarFileId && !s().files.has(b.avatarFileId)) throw invalid('avatarFileId', 'unknown file');
         u.user.avatarFileId = b.avatarFileId;
@@ -1338,7 +1408,18 @@ class MockImpl {
       if (u.user.isGuest) throw forbidden('guest account');
       if (b.currentPassword !== u.password) throw new HttpError(403, ErrorCode.INVALID_CREDENTIALS, 'invalid password');
       if ([...s().users.values()].some((x) => x !== u && x.email === email)) throw conflict('email is already registered');
-      u.email = email;
+      if (email === u.email) {
+        u.pendingEmail = ''; // a change to the current address cancels the pending one
+        s().emailCodes.delete(`verify:${u.user.id}`);
+      } else {
+        const key = `verify:${u.user.id}`;
+        const last = s().emailCodes.get(key);
+        if (u.pendingEmail === email && last && Date.now() - last.sentAtMs < RESEND_MS) {
+          throw tooMany('a code was sent less than 60 s ago', (RESEND_MS - (Date.now() - last.sentAtMs)) / 1000);
+        }
+        u.pendingEmail = email; // ADR-0023: a code to the new address; login stays on the old one
+        s().emailCodes.set(key, { attempts: 0, sentAtMs: Date.now() });
+      }
       this.emitUserUpdate(u);
       sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
     });
@@ -1355,6 +1436,7 @@ class MockImpl {
 
     this.route('POST', '/api/workspaces', (c) => {
       const me = this.uid(c);
+      this.requireVerified(c);
       const b = parseBody(c, CreateWorkspaceRequestSchema);
       const name = b.name.trim();
       if (!name || name.length > 100) throw invalid('name', 'name must be 1..100 characters');
@@ -1461,6 +1543,7 @@ class MockImpl {
       const me = this.uid(c);
       const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
       this.requireAdmin(m);
+      this.requireVerified(c);
       const b = parseBody(c, CreateInviteRequestSchema);
       const id = nextId(s(), 'invite');
       const at = tick(s());
@@ -1561,6 +1644,13 @@ class MockImpl {
     });
 
     this.route('GET', '/api/invites/:code', (c) => {
+      // Invitation by email: public preview with the address (the sign-up form locks it).
+      const ei = this.emailInviteByCode(c.params[0] ?? '');
+      const eiWs = ei ? s().workspaces.get(ei.workspaceId) : undefined;
+      if (ei && eiWs) {
+        sendMsg(c.res, 200, GetInviteResponseSchema, { workspace: eiWs, expiresAt: ei.expiresAt, email: ei.email });
+        return;
+      }
       this.uid(c);
       const inv = [...s().invites.values()].find((i) => i.code === c.params[0]);
       const ws = inv ? s().workspaces.get(inv.workspaceId) : undefined;
@@ -1570,6 +1660,20 @@ class MockImpl {
 
     this.route('POST', '/api/invites/:code/join', (c) => {
       const me = this.uid(c);
+      const ei = this.emailInviteByCode(c.params[0] ?? '');
+      if (ei) {
+        const u = s().users.get(me);
+        const ws = s().workspaces.get(ei.workspaceId);
+        if (!u || !ws || u.email !== ei.email) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+        if (this.member(ws.id, me)) throw conflict('already a member');
+        u.emailVerified = true;
+        const m = this.joinWorkspace(ws.id, me);
+        m.role = ei.role;
+        s().emailInvites.delete(ei.id);
+        this.emitUserUpdate(u);
+        sendMsg(c.res, 200, JoinWorkspaceResponseSchema, { workspace: ws, member: this.memberOut(m) });
+        return;
+      }
       const inv = [...s().invites.values()].find((i) => i.code === c.params[0]);
       const ws = inv ? s().workspaces.get(inv.workspaceId) : undefined;
       if (!inv || !ws) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
@@ -2062,6 +2166,7 @@ class MockImpl {
         return;
       }
       if (!this.shareAsMembers(me, b.userId)) throw notFound('no common workspace');
+      this.requireVerified(c); // a NEW DM needs a verified address (ADR-0023)
       const id = nextId(s(), 'room');
       s().rooms.set(id, create(RoomSchema, { id, workspaceId: '', type: RoomType.DM, name: '', createdAt: tick(s()) }));
       s().dmMembers.set(id, [me, b.userId]);
@@ -2324,6 +2429,7 @@ class MockImpl {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
       this.requireRoomPerm(room, me, MANAGE_ROOM);
+      this.requireVerified(c);
       const b = parseBody(c, CreateRoomInviteRequestSchema);
       const expiresIn = b.expiresInSeconds ?? 7 * 86400;
       if (expiresIn > 365 * 86400) throw invalid('expiresInSeconds', 'at most 365 days');
@@ -2388,6 +2494,9 @@ class MockImpl {
         email: '',
         password: '',
         settings: defaultSettings(),
+        emailVerified: true,
+        pendingEmail: '',
+        locale: '',
       };
       s().users.set(id, rec);
       s().presences.set(id, create(PresenceSchema, { userId: id, status: PresenceStatus.ONLINE, lastSeen: at }));
@@ -2405,6 +2514,11 @@ class MockImpl {
     const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
 
     this.route('GET', '/__mock/ids', (c) => send(c.res, 200, JSON.stringify(IDS), 'application/json'));
+    this.route('POST', '/__mock/email', (c) => {
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { userId?: string; verified?: boolean; pendingEmail?: string };
+      this.setEmailState(b.userId ?? IDS.users.anna, { verified: b.verified ?? false, ...(b.pendingEmail ? { pendingEmail: b.pendingEmail } : {}) });
+      noContent(c.res);
+    });
     this.route('POST', '/__mock/reset', (c) => {
       const scenario = str(ctl(c)['scenario']);
       this.reset(SCENARIOS.find((x) => x === scenario) ?? s().scenario);
@@ -2453,6 +2567,204 @@ class MockImpl {
   }
 
   // ------------------------------------------------ shared mutations
+
+  // ------------------------------------------------ email (ADR-0023)
+
+  /** 403 EMAIL_NOT_VERIFIED for an unverified (non-guest) caller. */
+  private requireVerified(c: Ctx): void {
+    const u = this.auth(c).user;
+    if (!u.user.isGuest && !u.emailVerified) throw notVerified();
+  }
+
+  private emailInviteByCode(code: string): EmailInviteRec | undefined {
+    return [...this.state.emailInvites.values()].find((i) => i.code === code);
+  }
+
+  /** A confirmed address accepts every pending invitation to it (WORKSPACE_CREATE per workspace). */
+  private acceptEmailInvites(u: UserRec): void {
+    for (const inv of [...this.state.emailInvites.values()]) {
+      if (inv.email !== u.email) continue;
+      this.state.emailInvites.delete(inv.id);
+      if (this.member(inv.workspaceId, u.user.id) || !this.state.workspaces.has(inv.workspaceId)) continue;
+      const m = this.joinWorkspace(inv.workspaceId, u.user.id);
+      m.role = inv.role;
+    }
+  }
+
+  setEmailState(userId: string, st: { verified: boolean; pendingEmail?: string }): void {
+    const u = this.state.users.get(userId);
+    if (!u) throw notFound('user not found');
+    u.emailVerified = st.verified;
+    u.pendingEmail = st.pendingEmail ?? '';
+    if (!st.verified || u.pendingEmail) this.state.emailCodes.set(`verify:${userId}`, { attempts: 0, sentAtMs: Date.now() });
+    else this.state.emailCodes.delete(`verify:${userId}`);
+    this.emitUserUpdate(u);
+  }
+
+  /**
+   * Checks a code like the server: the attempt is spent first; wrong → CODE_INVALID with the
+   * attempts left, none left / no code → CODE_EXPIRED. `reset` answers CODE_INVALID for both.
+   */
+  private checkCode(key: string, code: string, reset = false): void {
+    const rec = this.state.emailCodes.get(key);
+    if (!rec) throw new HttpError(422, reset ? ErrorCode.CODE_INVALID : ErrorCode.CODE_EXPIRED, reset ? 'wrong or expired code' : 'no active code');
+    rec.attempts += 1;
+    if (code.trim() === MOCK_EMAIL_CODE) {
+      this.state.emailCodes.delete(key);
+      return;
+    }
+    const left = CODE_ATTEMPTS - rec.attempts;
+    if (left <= 0) this.state.emailCodes.delete(key);
+    if (reset) throw new HttpError(422, ErrorCode.CODE_INVALID, 'wrong or expired code');
+    if (left <= 0) throw new HttpError(422, ErrorCode.CODE_EXPIRED, 'no active code');
+    throw new HttpError(422, ErrorCode.CODE_INVALID, `wrong code, ${left} attempt(s) left`);
+  }
+
+  private emailInviteOut(i: EmailInviteRec): MessageInitShape<typeof EmailInviteSchema> {
+    return {
+      id: i.id,
+      workspaceId: i.workspaceId,
+      email: i.email,
+      role: i.role,
+      invitedBy: i.invitedBy,
+      createdAt: i.createdAt,
+      expiresAt: i.expiresAt,
+      lastSentAt: i.lastSentAt,
+    };
+  }
+
+  /** MANAGE_WORKSPACE (admins) + a verified caller, in the path workspace. */
+  private inviter(c: Ctx): { wsId: string; m: MemberRec; me: UserRec } {
+    const me = this.auth(c).user;
+    const { ws, m } = this.workspaceFor(c.params[0] ?? '', me.user.id);
+    this.requireAdmin(m);
+    this.requireVerified(c);
+    return { wsId: ws.id, m, me };
+  }
+
+  private emailRoutes(): void {
+    const s = (): MockState => this.state;
+
+    this.route('POST', '/api/auth/verify/send', (c) => {
+      const u = this.auth(c).user;
+      if (u.user.isGuest) throw forbidden('guest account');
+      if (u.emailVerified && !u.pendingEmail) throw conflict('email already verified');
+      const key = `verify:${u.user.id}`;
+      const last = s().emailCodes.get(key);
+      const since = last ? Date.now() - last.sentAtMs : Infinity;
+      if (since < RESEND_MS) throw tooMany('a code was sent less than 60 s ago', (RESEND_MS - since) / 1000);
+      s().emailCodes.set(key, { attempts: 0, sentAtMs: Date.now() });
+      noContent(c.res);
+    });
+
+    this.route('POST', '/api/auth/verify', (c) => {
+      const u = this.auth(c).user;
+      const b = parseBody(c, VerifyEmailRequestSchema);
+      this.checkCode(`verify:${u.user.id}`, b.code);
+      if (u.pendingEmail) {
+        u.email = u.pendingEmail;
+        u.pendingEmail = '';
+      }
+      u.emailVerified = true;
+      this.emitUserUpdate(u);
+      this.acceptEmailInvites(u);
+      sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
+    });
+
+    this.route('POST', '/api/auth/password/forgot', (c) => {
+      const email = parseBody(c, ForgotPasswordRequestSchema).email.trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) throw invalid('email', 'invalid email address');
+      const u = [...s().users.values()].find((x) => x.email === email && !x.user.isGuest);
+      if (u) s().emailCodes.set(`reset:${email}`, { attempts: 0, sentAtMs: Date.now() });
+      noContent(c.res); // always 204: no account enumeration
+    });
+
+    this.route('POST', '/api/auth/password/reset', (c) => {
+      const b = parseBody(c, ResetPasswordRequestSchema);
+      const email = b.email.trim().toLowerCase();
+      if (b.password.length < 8 || b.password.length > 256) throw invalid('password', 'password must be 8..256 characters');
+      const u = [...s().users.values()].find((x) => x.email === email && !x.user.isGuest);
+      if (!u) throw new HttpError(422, ErrorCode.CODE_INVALID, 'wrong or expired code');
+      this.checkCode(`reset:${email}`, b.code, true);
+      u.password = b.password;
+      u.emailVerified = true;
+      for (const x of s().sessions.get(u.user.id) ?? []) if (!s().revokedSessions.has(x.id)) this.revoke(x.id);
+      this.acceptEmailInvites(u);
+      noContent(c.res);
+    });
+
+    this.route('POST', '/api/workspaces/:id/invites/lookup', (c) => {
+      const { wsId } = this.inviter(c);
+      const email = parseBody(c, InviteLookupRequestSchema).email.trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) throw invalid('email', 'invalid email address');
+      const u = [...s().users.values()].find((x) => x.email === email && x.emailVerified && !x.user.isGuest);
+      if (!u) {
+        sendMsg(c.res, 200, InviteLookupResponseSchema, {});
+        return;
+      }
+      sendMsg(c.res, 200, InviteLookupResponseSchema, { user: u.user, member: !!this.member(wsId, u.user.id) });
+    });
+
+    this.route('POST', '/api/workspaces/:id/members', (c) => {
+      const { wsId } = this.inviter(c);
+      const userId = parseBody(c, AddMemberRequestSchema).userId;
+      const u = s().users.get(userId);
+      if (!u || !u.emailVerified || u.user.isGuest) throw notFound('user not found');
+      if (this.member(wsId, userId)) throw conflict('already a member');
+      const m = this.joinWorkspace(wsId, userId);
+      sendMsg(c.res, 201, AddMemberResponseSchema, { member: this.memberOut(m) });
+    });
+
+    this.route('POST', '/api/workspaces/:id/invites/email', (c) => {
+      const { wsId, m, me } = this.inviter(c);
+      const b = parseBody(c, CreateEmailInviteRequestSchema);
+      const email = b.email.trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) throw invalid('email', 'invalid email address');
+      const role = b.role ?? WorkspaceRole.MEMBER;
+      if (role !== WorkspaceRole.MEMBER && role !== WorkspaceRole.ADMIN) throw invalid('role', 'member or admin');
+      if (role === WorkspaceRole.ADMIN && m.role !== WorkspaceRole.OWNER) throw forbidden('only the owner invites admins');
+      const existing = [...s().users.values()].find((x) => x.email === email);
+      if (existing && this.member(wsId, existing.user.id)) throw conflict('already a member');
+      const prev = [...s().emailInvites.values()].find((i) => i.workspaceId === wsId && i.email === email);
+      if (prev && Date.now() - prev.lastSentMs < REINVITE_MS) {
+        throw tooMany('invited less than 24 h ago', (REINVITE_MS - (Date.now() - prev.lastSentMs)) / 1000);
+      }
+      if (prev) s().emailInvites.delete(prev.id);
+      const id = nextId(s(), 'invite');
+      const at = tick(s());
+      const rec: EmailInviteRec = {
+        id,
+        workspaceId: wsId,
+        email,
+        role,
+        invitedBy: me.user.id,
+        code: `mock-mail-${id.slice(-4)}`,
+        createdAt: at,
+        expiresAt: timestampFromMs(timestampMs(at) + 7 * 86400_000),
+        lastSentAt: at,
+        lastSentMs: Date.now(),
+      };
+      s().emailInvites.set(id, rec);
+      sendMsg(c.res, 201, CreateEmailInviteResponseSchema, { invite: this.emailInviteOut(rec) });
+    });
+
+    this.route('GET', '/api/workspaces/:id/invites/email', (c) => {
+      const { wsId } = this.inviter(c);
+      const invites = [...s().emailInvites.values()]
+        .filter((i) => i.workspaceId === wsId)
+        .sort((a, b) => b.id.localeCompare(a.id))
+        .map((i) => this.emailInviteOut(i));
+      sendMsg(c.res, 200, ListEmailInvitesResponseSchema, { invites });
+    });
+
+    this.route('DELETE', '/api/workspaces/:id/invites/email/:inviteId', (c) => {
+      const { wsId } = this.inviter(c);
+      const inv = s().emailInvites.get(c.params[1] ?? '');
+      if (!inv || inv.workspaceId !== wsId) throw notFound('invite not found');
+      s().emailInvites.delete(inv.id);
+      noContent(c.res);
+    });
+  }
 
   private joinWorkspace(wsId: string, userId: string, inviteId?: string): MemberRec {
     const m: MemberRec = { workspaceId: wsId, userId, role: WorkspaceRole.MEMBER, nickname: '', joinedAt: tick(this.state) };

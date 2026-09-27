@@ -122,6 +122,9 @@ export function buildMarketingState(s: MockState): MockState {
       email: u.email,
       password: PASSWORD,
       settings: defaultSettings(),
+      emailVerified: true,
+      pendingEmail: '',
+      locale: '',
     });
     s.sessions.set(u.id, [
       create(SessionSchema, {
