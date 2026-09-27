@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Maximize2, MessageSquare, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX, X } from 'lucide-react';
+import { Check, ChevronDown, Maximize2, MessageCircle, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
@@ -515,7 +515,7 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
           className="absolute right-3 top-3 flex h-7 items-center gap-1.5 rounded-full bg-black/60 px-2.5 text-[12px] font-medium text-white transition-colors duration-[var(--motion-fast)] hover:bg-black/75"
           title={t('stream.showChatHint')}
         >
-          <MessageSquare className="size-3.5" aria-hidden />
+          <MessageCircle className="size-3.5" aria-hidden />
           {t('stream.showChat')}
         </button>
         {stage === 'popout' ? (

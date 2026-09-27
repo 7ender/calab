@@ -113,12 +113,15 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
         <RoomHeader workspaceId={workspaceId} room={room} perms={perms} membersOpen={membersOpen} toggleMembers={toggleMembers} />
       )}
       {searchOpen ? <SearchPanel roomId={roomId} /> : <PinnedBar workspaceId={workspaceId} roomId={roomId} />}
-      <MiniPlayer roomId={roomId} />
 
       {inThisVoice ? <StreamArea /> : null}
       {inThisVoice ? <StatsOverlay /> : null}
 
-      <MessageList workspaceId={workspaceId} room={room} perms={perms} newMarker={newMarker} />
+      {/* The mini-player lies over the top of the feed, outside its scroller (docs/09 #57). */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <MessageList workspaceId={workspaceId} room={room} perms={perms} newMarker={newMarker} />
+        <MiniPlayer roomId={roomId} />
+      </div>
       {/* Phone layout: the bottom safe-area inset when nothing is below the composer (MobileShell). */}
       <div ref={composerRef} data-testid="composer" className="shrink-0 bg-feed mobile:pb-[var(--composer-safe,0px)]">
         <Composer workspaceId={workspaceId} room={room} perms={perms} files={files} setFiles={setFiles} addFiles={addFiles} />

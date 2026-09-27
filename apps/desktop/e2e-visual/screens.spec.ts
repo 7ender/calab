@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
 import { Plan, RecordingStatus, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
@@ -56,9 +57,11 @@ const KEY = new Set([
   'voice-room-recording',
   'chat-recording-card',
   'chat-recording-done',
+  'chat-recording-play',
   'recording-transcript',
   'chat-recording-delete',
   'chat-audio',
+  'chat-audio-mini',
   'chat-video',
   'chat-code',
   'chat-voice-recording',
@@ -1520,6 +1523,28 @@ test('chat-recording-done', async ({ open, win, mock, shot }) => {
   await expect(card.getByTestId('recording-card-more')).toHaveText('Свернуть');
 });
 
+// docs/09 #57: «Послушать запись» really plays — the chat's player is installed at startup, not by
+// the first audio attachment on screen (the card's player mounts only once the track is active,
+// so the click used to go nowhere: «playing», no sound, the time stuck at 0:00). The audio is a
+// 64 s AAC with `moov` after `mdat`, like LiveKit Egress writes: Range requests for the tail first.
+test('chat-recording-play', async ({ open, win, mock }) => {
+  await open();
+  const f = mock.state.files.get(IDS.files.meeting);
+  if (!f) throw new Error('fixture: no meeting file');
+  // Its own file id: the app's HTTP cache keeps the 6 s fixture under the usual one (immutable).
+  const bytes = readFileSync(new URL('../e2e-support/fixtures/egress-recording.m4a', import.meta.url));
+  const meta = { ...f.meta, id: '00000000-0000-7000-8005-0000000000e1', size: BigInt(bytes.length) };
+  mock.state.files.set(IDS.files.meeting, { meta, bytes });
+  mock.state.files.set(meta.id, { meta, bytes });
+  const card = await doneCard(win, mock);
+  await card.getByRole('button', { name: 'Послушать запись' }).click();
+  const player = card.getByTestId('audio-player');
+  await expect(player).toHaveAttribute('data-playing', 'true');
+  await expect(player).toContainText('1:04');
+  const seek = player.getByRole('slider', { name: 'Перемотка' });
+  await expect.poll(async () => Number(await seek.getAttribute('aria-valuenow')), { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+});
+
 // «Полный транскрипт» (docs/09 #47): speakers, times, search that keeps the matching remarks, a
 // click plays the recording from that remark (the chat's player), «Копировать», «Скачать .txt».
 test('recording-transcript', async ({ open, win, mock, shot }) => {
@@ -1620,6 +1645,41 @@ test('chat-audio', async ({ open, win, mock, shot }) => {
   await expect(mini).toContainText('Джингл релиза');
   await expect(mini.getByRole('button', { name: 'Пауза' })).toBeVisible();
   await mini.getByRole('button', { name: 'Закрыть плеер' }).click();
+  await expect(mini).toHaveCount(0);
+});
+
+// docs/09 #57: the mini-player shows whenever the playing message is off screen — above (newer
+// messages pushed it up) or below (scrolled back into history) — over the top of the feed, and
+// hides once the message is back in view.
+test('chat-audio-mini', async ({ open, win, mock, shot }) => {
+  await open();
+  const player = await postMedia(win, mock, 'audio');
+  await player.getByRole('button', { name: 'Воспроизвести' }).click();
+  await expect(player).toHaveAttribute('data-playing', 'true');
+  await player.getByRole('button', { name: 'Пауза' }).click();
+  const seek = player.getByRole('slider', { name: 'Перемотка' });
+  await seek.focus();
+  await win.keyboard.press('Home');
+  await win.keyboard.press('ArrowRight');
+  await expect(seek).toHaveAttribute('aria-valuetext', '0:05 из 0:06');
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const mini = win.getByTestId('mini-player');
+  await expect(mini).toHaveCount(0);
+  // Newer messages push the message above the viewport.
+  for (let i = 1; i <= 16; i++) mock.injectMessage({ roomId: IDS.rooms.general, authorId: i % 2 ? IDS.users.anna : IDS.users.grigory, content: `Сообщение после джингла №${i}` });
+  await expect(win.getByText('Сообщение после джингла №16')).toBeVisible();
+  await feedAtBottom(win);
+  await expect(mini).toBeVisible();
+  await expect(mini).toContainText('Джингл релиза');
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'chat-audio-mini');
+  // Scrolled back past it into history: the message is below the viewport — still shown.
+  await feedTo(win, 'top');
+  await expect(win.getByTestId('audio-player')).toHaveCount(0);
+  await expect(mini).toBeVisible();
+  // «Показать сообщение»: the message comes into view and the strip goes.
+  await mini.getByRole('button', { name: /Джингл релиза/ }).click();
+  await expect(player).toBeInViewport();
   await expect(mini).toHaveCount(0);
 });
 

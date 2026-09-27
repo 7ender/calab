@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Check, ChevronDown, Ellipsis, Eye, Loader2, Lock, MessageSquare, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
+import { Check, ChevronDown, Ellipsis, Eye, Loader2, Lock, MessageCircle, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DisplayedPhase, offerRetry } from '../../lib/voiceLink';
 import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
@@ -516,7 +516,7 @@ export function VoiceBar(): ReactNode {
               </Dropdown.CheckboxItem>
               <Dropdown.Separator className={menuSeparator} />
               <Dropdown.Item className={menuItem} onSelect={goRoom}>
-                <MessageSquare className="size-4" /> {t('shell.openRoom')}
+                <MessageCircle className="size-4" /> {t('shell.openRoom')}
               </Dropdown.Item>
               <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'settings', tab: 'voice' })}>
                 <Settings className="size-4" /> {t('shell.voiceSettings')}

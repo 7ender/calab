@@ -52,7 +52,10 @@ interface PlayerState {
   rate: PlaybackRate;
   /** The playing file could not be loaded / decoded. */
   error: boolean;
-  /** The active track's own player (in its message) is on screen: no mini-player then. */
+  /**
+   * The active track's own player (in its message) is on screen: no mini-player then. True while
+   * at least one mounted player of the track reports itself visible (setInView per instance).
+   */
   inView: boolean;
   /** Known durations by file id (from probes and playback), for idle players in the feed. */
   durations: Record<string, number>;
@@ -66,7 +69,11 @@ interface PlayerState {
   cycleRate: () => void;
   /** Stop and forget the track (mini-player «close», end of the track). */
   close: () => void;
-  setInView: (v: boolean) => void;
+  /**
+   * One on-screen player of the active track (`who`: a per-instance token) is / is not visible.
+   * A player that unmounts (its feed row scrolled away) reports false.
+   */
+  setInView: (who: object, v: boolean) => void;
   noteDuration: (fileId: string, sec: number) => void;
 }
 
@@ -111,12 +118,16 @@ function pauseVideo(): void {
 
 // ---------------------------------------------------------------- store
 
+/** The active track's players that are on screen (a row can be mounted twice around a remount). */
+const visible = new Set<object>();
+
 const same = (a: Track | null, b: Track): boolean => !!a && a.fileId === b.fileId && a.messageId === b.messageId;
 
 export const usePlayer = create<PlayerState>()((set, get) => {
   const start = (track: Track, at: number): void => {
     const d = getDriver();
     pauseVideo();
+    visible.clear();
     set({ track, playing: true, position: at, duration: get().durations[track.fileId] ?? 0, error: false, inView: false });
     d?.load(track.fileId, at, get().rate);
     void d?.play().catch(() => {
@@ -171,9 +182,13 @@ export const usePlayer = create<PlayerState>()((set, get) => {
     },
     close: () => {
       getDriver()?.stop();
+      visible.clear();
       set({ track: null, playing: false, position: 0, duration: 0, error: false, inView: false });
     },
-    setInView: (inView) => {
+    setInView: (who, v) => {
+      if (v) visible.add(who);
+      else visible.delete(who);
+      const inView = visible.size > 0;
       if (get().inView !== inView) set({ inView });
     },
     noteDuration: (fileId, sec) => {
