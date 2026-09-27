@@ -1124,14 +1124,18 @@ func (x *UpdateMemberResponse) GetMember() *WorkspaceMember {
 	return nil
 }
 
-// GET /api/invites/{code} — preview before joining (any authenticated user with the code).
+// GET /api/invites/{code} — preview before joining. Public (no token: the /join/<code> page
+// of a signed-out visitor, e.g. from an invitation email), 30 per minute per IP; an unknown,
+// expired or used-up code is 404 INVITE_INVALID.
 type GetInviteResponse struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Public subset only: id, slug, name, icon_file_id (the rest is unset).
 	Workspace *Workspace             `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // unset = never
 	// Email invitation (ADR-0023): the code works only for this address (register with it /
 	// be signed in with it verified), else 404 INVITE_INVALID. Prefill it on the sign-up form.
 	Email         string `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
+	MemberCount   uint32 `protobuf:"varint,4,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"` // members without guests
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1185,6 +1189,13 @@ func (x *GetInviteResponse) GetEmail() string {
 		return x.Email
 	}
 	return ""
+}
+
+func (x *GetInviteResponse) GetMemberCount() uint32 {
+	if x != nil {
+		return x.MemberCount
+	}
+	return 0
 }
 
 // POST /api/workspaces/{id}/invites/lookup → InviteLookupResponse. Exact (case-insensitive)
@@ -1728,12 +1739,13 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x05_roleB\v\n" +
 	"\t_nickname\"J\n" +
 	"\x14UpdateMemberResponse\x122\n" +
-	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\"\x98\x01\n" +
+	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\"\xbb\x01\n" +
 	"\x11GetInviteResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x129\n" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x14\n" +
-	"\x05email\x18\x03 \x01(\tR\x05email\"+\n" +
+	"\x05email\x18\x03 \x01(\tR\x05email\x12!\n" +
+	"\fmember_count\x18\x04 \x01(\rR\vmemberCount\"+\n" +
 	"\x13InviteLookupRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\"S\n" +
 	"\x14InviteLookupResponse\x12#\n" +

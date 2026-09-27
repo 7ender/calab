@@ -24,6 +24,8 @@ import (
 const (
 	unlimitedPlan   = `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0}`
 	superadminEmail = "it-admin@example.com"
+	// superadminEmail2 belongs to TestAdminGuardAndLimit only (it exhausts its rate limit).
+	superadminEmail2 = "it-admin2@example.com"
 )
 
 // withFreeLimits applies the built-in free limits (5 in a room, 720p / 15 fps, 1 stream,

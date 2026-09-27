@@ -180,10 +180,11 @@ func New(d Deps) *App {
 	ah.Private(mux, private)
 	users.NewHandlers(d.DB, pub, hub).Routes(mux, private)
 	workspaces.NewHandlers(d.DB, pub, d.Blob, workspaces.Limits{
-		MaxOwned:      d.Config.MaxWorkspacesPerUser,
-		Quota:         d.Config.DefaultWorkspaceQuotaBytes,
-		CreateLimiter: redisx.NewRateLimiter(d.Redis, "rl:ws-create:", d.Config.WorkspaceCreatesPerHour, float64(d.Config.WorkspaceCreatesPerHour)/60),
-		Plans:         planSvc,
+		MaxOwned:       d.Config.MaxWorkspacesPerUser,
+		Quota:          d.Config.DefaultWorkspaceQuotaBytes,
+		CreateLimiter:  redisx.NewRateLimiter(d.Redis, "rl:ws-create:", d.Config.WorkspaceCreatesPerHour, float64(d.Config.WorkspaceCreatesPerHour)/60),
+		Plans:          planSvc,
+		PreviewLimiter: redisx.NewRateLimiter(d.Redis, "rl:invite-preview:", 30, 30), // 30 per minute per IP
 	}).WithEmailInvites(workspaces.EmailInvites{
 		Mail: mailSvc, PublicURL: d.Config.PublicAppURL,
 		Lookup: redisx.NewRateLimiter(d.Redis, "rl:invite-lookup:", 20, 20), // 20 per minute

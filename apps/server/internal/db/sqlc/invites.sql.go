@@ -37,6 +37,18 @@ func (q *Queries) ConsumeInvite(ctx context.Context, code string) (WorkspaceInvi
 	return i, err
 }
 
+const countWorkspaceMembers = `-- name: CountWorkspaceMembers :one
+SELECT count(*)::integer FROM workspace_members WHERE workspace_id = $1 AND role <> 'guest'
+`
+
+// Members without guests (public invite preview).
+func (q *Queries) CountWorkspaceMembers(ctx context.Context, workspaceID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countWorkspaceMembers, workspaceID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createInvite = `-- name: CreateInvite :one
 INSERT INTO workspace_invites (workspace_id, code, created_by, max_uses, expires_at)
 VALUES ($1, $2, $3, $4, $5)

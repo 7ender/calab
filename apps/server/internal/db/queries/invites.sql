@@ -22,3 +22,7 @@ RETURNING *;
 
 -- name: DeleteInvite :execrows
 DELETE FROM workspace_invites WHERE id = $1 AND workspace_id = $2;
+
+-- name: CountWorkspaceMembers :one
+-- Members without guests (public invite preview).
+SELECT count(*)::integer FROM workspace_members WHERE workspace_id = $1 AND role <> 'guest';

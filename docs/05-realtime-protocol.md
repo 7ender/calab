@@ -189,7 +189,7 @@ POST   /api/workspaces/{id}/members    AddMemberRequest{userId} → 201 AddMembe
 POST   /api/workspaces/{id}/invites/email    CreateEmailInviteRequest{email, role?} → 201 (ссылка PUBLIC_APP_URL/join/<code>, 7 дней; 429 < 24 ч)
 GET    /api/workspaces/{id}/invites/email    ListEmailInvitesResponse (ожидающие)
 DELETE /api/workspaces/{id}/invites/email/{inviteId}   204 (ссылка отзывается)
-GET    /api/invites/{code}             GetInviteResponse                     (превью перед входом; email — для приглашения по почте)
+GET    /api/invites/{code}             GetInviteResponse                     (превью перед входом, **без auth**, 30/мин на IP: имя/slug/иконка, число участников; email — для приглашения по почте)
 POST   /api/invites/{code}/join        JoinWorkspaceResponse                 (вместо /api/workspaces/join/:code — конфликт шаблонов роутера)
 POST   /api/workspaces/{id}/rooms      CreateRoomRequest → 201               (MANAGE_ROOM на уровне workspace = admin/owner)
 GET    /api/workspaces/{id}/rooms      ListRoomsResponse                     (только комнаты с VIEW_ROOM)
