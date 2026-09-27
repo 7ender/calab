@@ -8,8 +8,8 @@ import { NOW, PASSWORD, THEMES, VIEWPORTS, checkpoint, type Shot } from './harne
  * Web client chrome (docs/09 #46, ADR-0015): the production web build (dist-web, `pnpm build:web`)
  * served same-origin by the mock API, in Playwright's Chromium with `?visual-test`. Covers the
  * compact 30 px top bar: no reserved traffic-light inset, ← → at the left edge, the workspace
- * centred, «Упоминания» and «?» on the right; the search pill only below 1200 px (from 1200 the
- * room header has its own field). Screenshot of the whole window + of the bar, layout + axe.
+ * centred, «Упоминания» and «?» on the right; the search pill at every width (docs/09 #53: the only
+ * workspace search entry point). Screenshot of the whole window + of the bar, layout + axe.
  */
 
 const DIST = join(import.meta.dirname, '..', 'dist-web');
@@ -52,10 +52,8 @@ for (const theme of THEMES) {
         expect(Math.abs((title ? title.x + title.width / 2 : 0) - viewport.width / 2), 'workspace name centred').toBeLessThanOrEqual(4);
         await expect(bar.getByRole('button', { name: /^Упоминания/ })).toBeVisible();
         await expect(bar.getByRole('button', { name: 'Горячие клавиши' })).toBeVisible();
-        // The search pill: below 1200 px only (the room header has the field from 1200).
-        const search = bar.getByRole('button', { name: 'Поиск' });
-        if (viewport.width >= 1200) await expect(search).toBeHidden();
-        else await expect(search).toBeVisible();
+        // The search pill: at every width (docs/09 #53, no field in the room header).
+        await expect(bar.getByRole('button', { name: 'Поиск' })).toBeVisible();
 
         const s: Shot = { page, theme, viewport };
         // The feed opens at the first unread; that anchor lands a few px apart between runs:
@@ -210,8 +208,7 @@ test('web room header stays inside the chat at 1200–1320 with a 320 px room co
     await page.getByLabel('Email').fill('owner@calaba.test');
     await page.getByLabel('Пароль').fill(PASSWORD);
     await page.getByRole('button', { name: 'Войти', exact: true }).click();
-    // A short text room (the search field fits from 1200 px), the longest name (it doesn't: the
-    // field goes, ⌘K stays in the title bar), voice rooms.
+    // A short text room, the longest name (it truncates), voice rooms.
     for (const [room, width] of ['общий', 'очень-длинное-название-комнаты-для-проверки-обрезки', 'Созвон', 'Переговорка'].flatMap((r) => [1200, 1220, 1260, 1320, 1440].map((w) => [r, w] as const))) {
       await page.setViewportSize({ width: 1440, height: 800 });
       await page.locator('aside').getByRole('button', { name: room }).first().click();
@@ -219,18 +216,8 @@ test('web room header stays inside the chat at 1200–1320 with a 320 px room co
       await page.setViewportSize({ width, height: 800 });
       await page.waitForFunction((w) => innerWidth === w, width);
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-      // Settled (the header re-measures on resize): exactly one ⌘K entry point — the header's
-      // field or the title bar's pill.
-      await expect
-        .poll(() =>
-          page.evaluate(() => {
-            const field = !!document.querySelector('[data-testid="header-search"]');
-            const pill = document.querySelector('[data-testid="titlebar"] button[aria-label="Поиск"]');
-            return !!pill && field === (getComputedStyle(pill).display === 'none');
-          }),
-          `${room} ${width}: one search entry point`,
-        )
-        .toBe(true);
+      // docs/09 #53: one ⌘K entry point — the title bar's pill, never a field in the header.
+      await expect(page.getByTestId('titlebar').getByRole('button', { name: 'Поиск' }), `${room} ${width}: title bar search`).toBeVisible();
       const m = await page.evaluate(() => {
         const section = document.querySelector('section[data-toast-anchor]');
         const header = section?.querySelector(':scope > header');
@@ -241,15 +228,14 @@ test('web room header stays inside the chat at 1200–1320 with a 320 px room co
           const r = el.getBoundingClientRect();
           return { what: el.getAttribute('aria-label') ?? el.textContent.trim().slice(0, 20), left: r.left, right: r.right };
         });
-        return { section: { left: s.left, right: s.right }, header: { left: h.left, right: h.right, scrollW: header.scrollWidth, clientW: header.clientWidth }, items, search: !!header.querySelector('[data-testid="header-search"]') };
+        return { section: { left: s.left, right: s.right }, header: { left: h.left, right: h.right, scrollW: header.scrollWidth, clientW: header.clientWidth }, items, search: !!header.querySelector('input[type="search"]') };
       });
       expect(m, 'chat section with a header').not.toBeNull();
       if (!m) continue;
       expect.soft(m.header.right, `${width}: header inside the chat`).toBeLessThanOrEqual(m.section.right + 0.5);
       for (const it of m.items) expect.soft(it.right, `${width}: «${it.what}» inside the chat`).toBeLessThanOrEqual(m.section.right + 0.5);
       expect.soft(m.header.scrollW, `${width}: header content fits`).toBeLessThanOrEqual(m.header.clientW);
-      if (room === 'общий') expect.soft(m.search, `${width}: the field fits next to a short name`).toBe(true);
-      if (room.startsWith('очень-длинное') && width === 1200) expect.soft(m.search, 'no room for the field next to the longest name').toBe(false);
+      expect.soft(m.search, `${width}: no search field in the room header`).toBe(false);
     }
   } finally {
     await mock?.close();

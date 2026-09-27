@@ -101,7 +101,6 @@ export const ruChat = {
   'chat.searchNewer': 'Следующее совпадение',
   'chat.searchClose': 'Закрыть поиск',
   // header search field (docs/09 #50): the entry to the ⌘K search
-  'chat.searchWorkspace': 'Поиск: {name}',
   // global search (⌘K)
   'search.title': 'Поиск',
   'search.hint': 'Комнаты, участники и сообщения; стрелки — выбор, Enter — открыть',

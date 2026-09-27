@@ -43,10 +43,6 @@ export function TitleBar(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
   const ws = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws : undefined));
   const searchKeys = useHotkeyLabel('search');
-  // While the open room's header shows its search field (from 1200 px when it fits the chat
-  // column, docs/09 #50): one entry point, not two. Otherwise (no room, a DM, a narrow chat) this
-  // pill is the only one.
-  const headerSearch = useUi((s) => s.headerSearch !== null);
   const home = wsId === HOME;
   const title = home ? t('dm.home') : (ws?.name ?? 'Calab');
   const back = useUi(canGoBack);
@@ -89,14 +85,12 @@ export function TitleBar(): ReactNode {
       </div>
 
       <div className="flex min-w-0 items-center justify-end gap-1 pr-2">
+        {/* The one workspace search entry point (docs/09 #53): always shown. */}
         <button
           type="button"
           onClick={() => open({ kind: 'quick-switcher' })}
           aria-label={t('shell.search')}
-          className={cx(
-            'flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg',
-            headerSearch && 'hidden',
-          )}
+          className="flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg"
         >
           <Search className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">{t('shell.search')}</span>

@@ -656,21 +656,6 @@ test('quick-switcher-filtered', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'quick-switcher-filtered');
 });
 
-test('chat-header-search', async ({ open, win, mock, shot, size: viewport }) => {
-  // docs/09 #50: ≥ 1200 px only (960 keeps the icon); typing opens the ⌘K switcher with the text.
-  test.skip(viewport.width < 1200, 'the field shows from 1200 px');
-  await open();
-  await mainWindow(win, mock);
-  const field = win.getByRole('searchbox', { name: 'Поиск: Команда Calab' });
-  await expect(field).toBeVisible();
-  await field.focus();
-  await checkpoint(shot, 'chat-header-search');
-  await win.keyboard.type('р');
-  await expect(win.getByRole('dialog')).toBeVisible();
-  await win.keyboard.type('аз');
-  await expect(win.getByRole('dialog').getByRole('combobox')).toHaveValue('раз');
-});
-
 test('chat-context-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
