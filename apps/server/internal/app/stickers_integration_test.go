@@ -375,6 +375,12 @@ func TestStickerInstallAndEvents(t *testing.T) {
 		t.Fatalf("order: %v", &mine)
 	}
 	mem.must(422, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p1.GetId()}}, nil)
+	var one v1.StickerPackResponse
+	a["guest"].must(200, "GET", "/api/sticker-packs/"+p1.GetId(), nil, &one)
+	if len(one.GetPack().GetStickers()) != 1 {
+		t.Fatalf("GET pack: %v", one.GetPack())
+	}
+	outsider(t).must(404, "GET", "/api/sticker-packs/"+p1.GetId(), nil, nil)
 	a["guest"].must(404, "PUT", "/api/me/sticker-packs/"+p1.GetId(), nil, nil)
 	outsider(t).must(404, "PUT", "/api/me/sticker-packs/"+p1.GetId(), nil, nil)
 

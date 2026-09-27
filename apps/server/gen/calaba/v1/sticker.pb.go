@@ -342,6 +342,7 @@ func (x *CreateStickerPackRequest) GetShortName() string {
 	return ""
 }
 
+// Also GET /api/sticker-packs/{id}: a live pack, for any member of its workspace (guests too).
 type StickerPackResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Pack          *StickerPack           `protobuf:"bytes,1,opt,name=pack,proto3" json:"pack,omitempty"`

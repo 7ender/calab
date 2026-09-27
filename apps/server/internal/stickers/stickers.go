@@ -68,6 +68,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	handle := func(p string, f httpx.HandlerFunc) { mux.Handle(p, wrap(f)) }
 	handle("GET /api/workspaces/{id}/sticker-packs", h.list)
 	handle("POST /api/workspaces/{id}/sticker-packs", h.create)
+	handle("GET /api/sticker-packs/{id}", h.get)
 	handle("PATCH /api/sticker-packs/{id}", h.update)
 	handle("DELETE /api/sticker-packs/{id}", h.delete)
 	handle("POST /api/sticker-packs/{id}/stickers", h.upload)
@@ -230,6 +231,31 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	httpx.Write(w, http.StatusOK, &v1.ListStickerPacksResponse{Packs: out})
+	return nil
+}
+
+// get: GET /api/sticker-packs/{id} — a live pack for any member of its workspace (the
+// «Добавить пак» card of a sticker in the feed); 404 otherwise.
+func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathUUID(r, "id", "sticker pack")
+	if err != nil {
+		return err
+	}
+	p, err := h.db.Q.GetStickerPack(r.Context(), id)
+	if db.IsNotFound(err) {
+		return httpx.NotFound("sticker pack")
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := member(r, p.WorkspaceID); err != nil {
+		return httpx.NotFound("sticker pack")
+	}
+	pb, err := h.packProto(r.Context(), p)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.StickerPackResponse{Pack: pb})
 	return nil
 }
 

@@ -50,6 +50,7 @@ message CreateStickerPackRequest {
   string short_name = 2;
 }
 
+// Also GET /api/sticker-packs/{id}: a live pack, for any member of its workspace (guests too).
 message StickerPackResponse {
   StickerPack pack = 1;
 }

@@ -192,6 +192,8 @@ export const CreateStickerPackRequestSchema: GenMessage<CreateStickerPackRequest
   messageDesc(file_calaba_v1_sticker, 3);
 
 /**
+ * Also GET /api/sticker-packs/{id}: a live pack, for any member of its workspace (guests too).
+ *
  * @generated from message calaba.v1.StickerPackResponse
  */
 export type StickerPackResponse = Message<"calaba.v1.StickerPackResponse"> & {
