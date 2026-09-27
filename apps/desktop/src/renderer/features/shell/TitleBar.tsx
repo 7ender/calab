@@ -32,8 +32,8 @@ import { systemPreview } from '../../lib/recording';
  * shortcuts help; on Windows the native caption buttons (Window Controls Overlay) take the
  * space given by env(titlebar-area-*).
  * Web (docs/09 #46): a compact 30 px toolbar — no window chrome, so no reserved inset and no
- * drag region; from 1200 px the room header has its own search field, so the pill hides there
- * (below it stays: ⌘K must remain discoverable).
+ * drag region; while the room header shows its own search field the pill hides (otherwise it
+ * stays: ⌘K must remain discoverable).
  */
 export function TitleBar(): ReactNode {
   const os = useSession((s) => s.appInfo?.platform);
@@ -43,11 +43,10 @@ export function TitleBar(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
   const ws = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws : undefined));
   const searchKeys = useHotkeyLabel('search');
-  // With a room open, the room header has the search field from 1200 px (docs/09 #50): one entry
-  // point, not two. Without a room (welcome, empty workspace) this pill is the only one.
-  const lastRoomId = useUi((s) => (s.activeWorkspaceId ? s.lastRoom[s.activeWorkspaceId] : undefined));
-  // A DM header has no search field: the pill stays.
-  const roomOpen = useRooms((s) => !!lastRoomId && !!s.byId[lastRoomId] && !isDm(s.byId[lastRoomId]));
+  // While the open room's header shows its search field (from 1200 px when it fits the chat
+  // column, docs/09 #50): one entry point, not two. Otherwise (no room, a DM, a narrow chat) this
+  // pill is the only one.
+  const headerSearch = useUi((s) => s.headerSearch !== null);
   const home = wsId === HOME;
   const title = home ? t('dm.home') : (ws?.name ?? 'Calab');
   const back = useUi(canGoBack);
@@ -96,7 +95,7 @@ export function TitleBar(): ReactNode {
           aria-label={t('shell.search')}
           className={cx(
             'flex h-6 w-[clamp(120px,14vw,200px)] min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-hover px-2 text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg',
-            roomOpen && 'min-[1200px]:hidden',
+            headerSearch && 'hidden',
           )}
         >
           <Search className="size-3.5 shrink-0" aria-hidden />

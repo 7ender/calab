@@ -2,7 +2,7 @@ import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Permis
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Badge, Button, IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
@@ -32,16 +32,22 @@ import { LEVEL_LABEL, NotifyMenuItems, mutedText, type LevelOption } from './Not
 import { previewText } from './mentionText';
 import { TypingDots, useTypingText } from './TypingIndicator';
 import { systemPreview } from '../../lib/recording';
+import { headerFit, measureHeader, type HeaderFit } from './headerFit';
 
 const NO_PINS: never[] = [];
 
-/** From this window width the header has a search field; narrower windows keep the ⌘K entry in the title bar. */
+/**
+ * From this window width the header may have a search field (when it also fits the chat column,
+ * see headerFit.ts); otherwise the ⌘K entry stays in the title bar.
+ */
 export const HEADER_SEARCH_MIN = 1200;
 
 /**
  * Room header (docs/09 #7): icon, name, • topic (or «… печатает» while someone types), and on
- * the right: workspace search field (≥ 1200 px, docs/09 #50), search in room, pinned,
- * notifications, settings, members.
+ * the right: workspace search field (≥ 1200 px and room for it in the chat column, docs/09 #50),
+ * search in room, pinned, notifications, settings, members. It never spills out of the chat
+ * column (it used to paint over the members column): the search field goes first, then the
+ * spacing tightens, then the name truncates.
  */
 export function RoomHeader({
   workspaceId,
@@ -68,17 +74,35 @@ export function RoomHeader({
   // the drawer's room menu), 40 px touch targets.
   const mobile = useMobile();
   const touch = mobile ? 'size-10 rounded-full' : undefined;
+  // Re-render (and re-measure) when «Войти в голос» appears or goes.
+  const preview = useVoice((s) => voiceRoom && isVoicePreview(room, s.roomId));
+  const fit = useHeaderFit(!mobile);
+  const search = wide && !mobile && fit.search;
+  const setHeaderSearch = useUi((s) => s.setHeaderSearch);
+  const owner = useId();
+  // Keyed by this instance: an old header unmounting after a new one mounted can't clear its flag.
+  useLayoutEffect(() => {
+    setHeaderSearch(owner, search);
+    return () => setHeaderSearch(owner, false);
+  }, [owner, search, setHeaderSearch]);
 
   return (
-    <header className={cx('mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2', mobile && 'gap-1 pl-1 pr-1')}>
+    <header
+      ref={fit.ref}
+      className={cx(
+        'mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-line pl-4 pr-2',
+        fit.tight && !mobile && 'gap-1 pl-3 pr-1',
+        mobile && 'gap-1 pl-1 pr-1',
+      )}
+    >
       {mobile ? <NavButton /> : null}
       <Icon className="size-5 shrink-0 text-faint" aria-hidden />
-      <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', mobile && 'max-w-none flex-1 shrink')} title={room.name}>
+      <h1 data-header-name className={cx('min-w-0 max-w-[40%] truncate text-list font-semibold', mobile && 'max-w-none flex-1')} title={room.name}>
         {room.name}
       </h1>
-      {voiceRoom ? <VoicePreviewBar workspaceId={workspaceId} room={room} perms={perms} /> : null}
+      {preview ? <VoicePreviewBar workspaceId={workspaceId} room={room} perms={perms} /> : null}
       {mobile ? null : typing ? (
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-accent-text" aria-live="polite">
+        <span data-header-fill className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-accent-text" aria-live="polite">
           <span className="text-faint" aria-hidden>
             •
           </span>
@@ -88,10 +112,10 @@ export function RoomHeader({
       ) : room.topic ? (
         <Topic topic={room.topic} />
       ) : (
-        <div className="flex-1" />
+        <div data-header-fill className="flex-1" />
       )}
       <div className="no-drag flex shrink-0 items-center gap-0.5">
-        {wide ? <HeaderSearch workspaceId={workspaceId} /> : null}
+        {search ? <HeaderSearch workspaceId={workspaceId} /> : null}
         <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
           <Search className="size-[18px]" />
         </IconButton>
@@ -108,6 +132,34 @@ export function RoomHeader({
       </div>
     </header>
   );
+}
+
+/**
+ * Measures the header (headerFit.ts) before paint and whenever it or the room name resizes; the
+ * items that change without a resize (name, «Войти в голос», typing) re-render the header, which
+ * re-measures too.
+ */
+function useHeaderFit(enabled: boolean): HeaderFit & { ref: (el: HTMLElement | null) => void } {
+  const [el, ref] = useState<HTMLElement | null>(null);
+  const [fit, setFit] = useState<HeaderFit>({ search: false, tight: false });
+  const apply = useRef<() => void>(() => undefined);
+  apply.current = () => {
+    if (!el || !enabled) return;
+    const { width, used } = measureHeader(el);
+    const next = headerFit(width, used);
+    setFit((f) => (f.search === next.search && f.tight === next.tight ? f : next));
+  };
+  // Every render: cheap (a handful of rects), and the header re-renders rarely.
+  useLayoutEffect(() => apply.current());
+  useEffect(() => {
+    if (!el || !enabled) return;
+    const ro = new ResizeObserver(() => apply.current());
+    ro.observe(el);
+    const name = el.querySelector('[data-header-name]');
+    if (name) ro.observe(name);
+    return () => ro.disconnect();
+  }, [el, enabled]);
+  return { ...fit, ref };
 }
 
 /**
@@ -227,7 +279,7 @@ function HeaderSearch({ workspaceId }: { workspaceId: string }): ReactNode {
     }
   };
   return (
-    <div className="relative mr-1 w-[240px] shrink-0" data-testid="header-search">
+    <div className="relative mr-1 w-[240px] shrink-0" data-testid="header-search" data-header-search>
       <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted" aria-hidden />
       <input
         type="search"
@@ -347,7 +399,7 @@ function Topic({ topic }: { topic: string }): ReactNode {
         •
       </span>
       <Popover.Trigger asChild>
-        <button type="button" className="no-drag min-w-0 flex-1 truncate text-left text-body text-muted hover:text-fg" title={topic} aria-label={t('chat.topic')}>
+        <button data-header-fill type="button" className="no-drag min-w-0 flex-1 truncate text-left text-body text-muted hover:text-fg" title={topic} aria-label={t('chat.topic')}>
           {topic}
         </button>
       </Popover.Trigger>
