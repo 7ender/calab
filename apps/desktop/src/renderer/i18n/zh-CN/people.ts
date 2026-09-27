@@ -147,6 +147,11 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.link.invalid': '链接无效或已过期',
   'people.link.needAccount': '此链接需要账号才能使用',
   'people.link.unreachable': '服务器不可用——请稍后再试',
+  'guestInvite.title': '邀请无需注册的访客',
+  'guestInvite.hint': '通过链接，对方只需输入名字即可进入，且只能看到 {room}。',
+  'guestInvite.configure': '设置有效期和权限…',
+  'guestInvite.link': '访客链接',
+  'guestInvite.none': '有效期 7 天，不限使用次数',
 
   // guest screen (/r/<code>)
   'guest.title': '你收到了一个房间邀请',

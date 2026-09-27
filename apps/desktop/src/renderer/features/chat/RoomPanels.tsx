@@ -210,7 +210,7 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
     canInvite || canSetup ? (
       <div className={cx('flex shrink-0 gap-2', !compact && 'mt-5')}>
         {canInvite ? (
-          <Button onClick={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}>
+          <Button onClick={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites', roomId: room.id })}>
             <UserPlus className="size-4" aria-hidden /> {t('chat.invite')}
           </Button>
         ) : null}

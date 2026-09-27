@@ -147,6 +147,11 @@ export const esPeople: DictShape<typeof enPeople> = {
   'people.link.invalid': 'El enlace no es válido o ha caducado',
   'people.link.needAccount': 'Este enlace requiere una cuenta',
   'people.link.unreachable': 'El servidor no está disponible — inténtalo más tarde',
+  'guestInvite.title': 'Invitar a un invitado sin cuenta',
+  'guestInvite.hint': 'Con el enlace, la persona entra con su nombre y solo ve {room}.',
+  'guestInvite.configure': 'Configurar plazo y permisos…',
+  'guestInvite.link': 'Enlace para invitados',
+  'guestInvite.none': 'Válido 7 días, sin límite de usos',
 
   // guest screen (/r/<code>)
   'guest.title': 'Te invitaron a una sala',

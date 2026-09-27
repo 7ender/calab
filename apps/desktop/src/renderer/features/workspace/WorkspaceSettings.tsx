@@ -32,6 +32,7 @@ import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { PlanTab } from './PlanTab';
 import { GptunnelTab } from './GptunnelTab';
 import { reportPlanError } from '../../services/plan';
+import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
 import { RolesTab } from './RolesTab';
@@ -43,7 +44,18 @@ async function patchWorkspace(id: string, init: Parameters<typeof api.workspaces
   if (r.workspace) useWorkspaces.getState().updateWorkspace(r.workspace);
 }
 
-export function WorkspaceSettingsDialog({ workspaceId, tab, onClose }: { workspaceId: string; tab: string | undefined; onClose: () => void }): ReactNode {
+export function WorkspaceSettingsDialog({
+  workspaceId,
+  tab,
+  roomId,
+  onClose,
+}: {
+  workspaceId: string;
+  tab: string | undefined;
+  /** Opened by «Пригласить» in a room (docs/09 #55): the invites tab starts with its guest link. */
+  roomId?: string | undefined;
+  onClose: () => void;
+}): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
@@ -69,7 +81,7 @@ export function WorkspaceSettingsDialog({ workspaceId, tab, onClose }: { workspa
     ...(entry.role !== WorkspaceRole.GUEST
       ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: CircleDot, content: <GptunnelTab workspaceId={workspaceId} canManage={admin} /> }]
       : []),
-    ...(admin ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} /> }] : []),
+    ...(admin ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
     // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_WORKSPACE).
     ...(admin ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
     ...(owner
@@ -340,7 +352,7 @@ function inviteLink(i: Invite): string {
   return inviteUrl(useSession.getState().serverUrl, i.code) ?? i.code;
 }
 
-function InvitesTab({ workspaceId }: { workspaceId: string }): ReactNode {
+function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: string | undefined }): ReactNode {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['invites', workspaceId], queryFn: () => api.workspaces.invites(workspaceId) });
   const [maxUses, setMaxUses] = useState(0);
@@ -358,6 +370,8 @@ function InvitesTab({ workspaceId }: { workspaceId: string }): ReactNode {
   });
   return (
     <>
+      {/* docs/09 #55: from a room, a guest without an account first (the card hides itself without MANAGE_ROOM). */}
+      {roomId ? <RoomGuestInviteCard roomId={roomId} /> : null}
       {/* ADR-0023: by an exact address first; the links below stay for everyone else. */}
       <EmailInviteCard workspaceId={workspaceId} />
       <EmailInvitesList workspaceId={workspaceId} />

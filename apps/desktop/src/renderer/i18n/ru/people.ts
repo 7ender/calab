@@ -145,6 +145,11 @@ export const ruPeople = {
   'people.link.invalid': 'Ссылка недействительна или истекла',
   'people.link.needAccount': 'По этой ссылке можно войти только с аккаунтом',
   'people.link.unreachable': 'Сервер недоступен — попробуйте позже',
+  'guestInvite.title': 'Пригласить гостя без регистрации',
+  'guestInvite.hint': 'По ссылке человек входит по имени и видит только {room}.',
+  'guestInvite.configure': 'Настроить срок и права…',
+  'guestInvite.link': 'Ссылка для гостей',
+  'guestInvite.none': 'Действует 7 дней, без лимита переходов',
 
   // guest screen (/r/<code>)
   'guest.title': 'Вас пригласили в комнату',
