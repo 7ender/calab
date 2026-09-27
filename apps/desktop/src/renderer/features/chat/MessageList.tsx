@@ -270,7 +270,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         itemContent={(index, c: ChatMessage) => {
           const meta = metas[index - firstIndex] ?? FALLBACK_META;
           if (c.msg.kind === MessageKind.SYSTEM)
-            return <SystemRow c={c} meta={meta} workspaceId={workspaceId} highlighted={highlight === c.key} />;
+            return <SystemRow c={c} meta={meta} workspaceId={workspaceId} perms={perms} highlighted={highlight === c.key} />;
           return (
             <MessageRow
               c={c}

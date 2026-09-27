@@ -103,9 +103,9 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
 
 /**
  * A system message (Message.kind SYSTEM, ADR-0025): no bubble or avatar — the date / «new» pills
- * and the event's card centred in the feed. A payload this client does not know shows nothing.
+ * and the event's card across the feed (docs/09 #47). A payload this client does not know shows nothing.
  */
-export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, highlighted }: Pick<RowProps, 'c' | 'meta' | 'workspaceId' | 'highlighted'>): ReactNode {
+export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, highlighted }: Pick<RowProps, 'c' | 'meta' | 'workspaceId' | 'perms' | 'highlighted'>): ReactNode {
   useLocale();
   const card = recordingCardOf(c.msg);
   return (
@@ -113,8 +113,8 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, highlig
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
-        <div className={cx('flex justify-center rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
-          <RecordingCardView c={c} card={card} workspaceId={workspaceId} />
+        <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <RecordingCardView c={c} card={card} workspaceId={workspaceId} perms={perms} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />

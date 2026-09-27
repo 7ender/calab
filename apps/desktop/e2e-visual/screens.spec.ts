@@ -51,6 +51,9 @@ const KEY = new Set([
   'voice-room-status',
   'voice-room-recording',
   'chat-recording-card',
+  'chat-recording-done',
+  'recording-transcript',
+  'chat-recording-delete',
   'chat-audio',
   'chat-video',
   'chat-code',
@@ -1351,7 +1354,8 @@ test('voice-room-chat-preview', async ({ open, win, mock, shot }) => {
 
 // Meeting recording cards (ADR-0025) in «Переговорка»'s chat: done (42 мин, «Открыть в GPTunneL»),
 // still processing, failed for lack of balance before the upload («Отправить снова»), failed on
-// GPTunneL's side after it («Проверить снова», docs/09 #40) — system messages, centred, no bubble.
+// GPTunneL's side after it («Проверить снова», docs/09 #40) — system messages across the whole
+// feed (docs/09 #47), no bubble; «…» (the owner may delete, #50).
 test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
@@ -1368,7 +1372,11 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   const cards = win.getByTestId('recording-card');
   await expect(cards).toHaveCount(4);
   await expect(cards.nth(0)).toContainText('Встреча записана · 42 мин');
-  await expect(cards.nth(0)).toContainText('Готово — расшифровка и саммари в GPTunneL');
+  await expect(cards.nth(0)).toContainText('Готово');
+  // Across the feed (docs/09 #47): as wide as the message column, not a centred 440 px card.
+  const feed = await win.locator('[data-virtuoso-scroller]').first().boundingBox();
+  const box = await cards.nth(0).boundingBox();
+  expect(feed && box && box.width).toBeGreaterThan((feed?.width ?? 0) - 48);
   await expect(cards.nth(1)).toContainText('Обработка: расшифровка и саммари…');
   await expect(cards.nth(2)).toContainText('Ошибка: на балансе GPTunneL не хватает средств');
   await expect(cards.nth(0).getByRole('button', { name: 'Открыть в GPTunneL' })).toBeVisible();
@@ -1382,6 +1390,104 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await win.mouse.move(0, 0);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'chat-recording-card');
+});
+
+/** «Переговорка»'s chat with a done recording card carrying its result (docs/09 #47). */
+async function doneCard(win: Page, mock: MockServer): Promise<Locator> {
+  await mainWindow(win, mock);
+  mock.injectMessage({ roomId: IDS.rooms.meeting, authorId: IDS.users.boris, content: 'Спасибо всем, запись будет в чате' });
+  mock.injectRecordingCard({
+    roomId: IDS.rooms.meeting,
+    byUserId: IDS.users.boris,
+    durationSec: 42 * 60 + 10,
+    status: RecordingStatus.DONE,
+    webUrl: `${MOCK_GPTUNNEL_WEB}/meetings/1`,
+    result: true,
+  });
+  const sidebar = win.locator('aside').first();
+  await sidebar.getByRole('button', { name: /^Переговорка/ }).first().hover();
+  await sidebar.getByRole('button', { name: 'Чат комнаты «Переговорка»' }).click();
+  await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
+  const card = win.getByTestId('recording-card');
+  await expect(card).toHaveCount(1);
+  return card;
+}
+
+// A done recording (docs/09 #47): GPTunneL's summary folded to 6 lines («Показать всё»), «Послушать
+// запись» (our AAC-in-MP4 copy, the chat's player: it plays and seeks), «Полный транскрипт».
+test('chat-recording-done', async ({ open, win, mock, shot }) => {
+  await open();
+  const card = await doneCard(win, mock);
+  const summary = card.getByTestId('recording-card-summary');
+  await expect(summary).toContainText('Релиз 0.7');
+  await expect(summary.locator('strong, b').first()).toHaveText('0.7');
+  await expect(card.getByTestId('recording-card-more')).toHaveText('Показать всё');
+  await expect(card.getByRole('button', { name: 'Полный транскрипт' })).toBeVisible();
+  await card.getByRole('button', { name: 'Послушать запись' }).click();
+  const player = card.getByTestId('audio-player');
+  await expect(player).toHaveAttribute('data-playing', 'true');
+  await expect(player).toContainText('Запись встречи');
+  // AAC in MP4 decodes: the element reports the file's 6 s.
+  await expect(player).toContainText('0:06');
+  await player.getByRole('button', { name: 'Пауза' }).click();
+  await expect(player).not.toHaveAttribute('data-playing');
+  const seek = player.getByRole('slider', { name: 'Перемотка' });
+  await seek.focus();
+  await win.keyboard.press('Home');
+  await win.keyboard.press('ArrowRight');
+  await expect(seek).toHaveAttribute('aria-valuetext', '0:05 из 0:06');
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await feedAtBottom(win);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'chat-recording-done');
+  await card.getByTestId('recording-card-more').click();
+  await expect(summary).toContainText('Сколько дней хранить аудио');
+  await expect(card.getByTestId('recording-card-more')).toHaveText('Свернуть');
+});
+
+// «Полный транскрипт» (docs/09 #47): speakers, times, search that keeps the matching remarks, a
+// click plays the recording from that remark (the chat's player), «Копировать», «Скачать .txt».
+test('recording-transcript', async ({ open, win, mock, shot }) => {
+  await open();
+  const card = await doneCard(win, mock);
+  await card.getByRole('button', { name: 'Полный транскрипт' }).click();
+  const dialog = win.getByRole('dialog', { name: 'Транскрипт встречи' });
+  await expect(dialog).toBeVisible();
+  const rows = dialog.getByTestId('recording-transcript-row');
+  await expect(rows.first()).toContainText('Спикер 1');
+  await expect(rows.first()).toContainText('Коллеги, начнём');
+  await dialog.getByRole('textbox', { name: 'Поиск по транскрипту' }).fill('эталоны');
+  await expect(rows).toHaveCount(2);
+  await expect(dialog).toContainText('Найдено: 2');
+  await expect(dialog.getByRole('button', { name: 'Скачать .txt' })).toBeEnabled();
+  await settle(win);
+  await checkpoint(shot, 'recording-transcript');
+  // A click plays the recording from that remark and marks it (the fixture audio is 6 s: the
+  // first remark, 0:01–0:06).
+  await dialog.getByRole('textbox', { name: 'Поиск по транскрипту' }).fill('');
+  await rows.nth(0).click();
+  await expect(rows.nth(0)).toHaveAttribute('aria-current', 'true');
+  await expect(card.getByTestId('audio-player')).toBeVisible();
+  await win.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+});
+
+// «Удалить запись» (docs/09 #50): «…» → confirmation «Запись, транскрипт и саммари будут удалены у
+// всех» → the card becomes «Запись встречи удалена · Удалил: …».
+test('chat-recording-delete', async ({ open, win, mock, shot }) => {
+  await open();
+  const card = await doneCard(win, mock);
+  await card.getByTestId('recording-card-menu').click();
+  await win.getByRole('menuitem', { name: 'Удалить запись' }).click();
+  const dialog = win.getByRole('dialog', { name: 'Удалить запись встречи?' });
+  await expect(dialog).toContainText('Запись, транскрипт и саммари будут удалены у всех.');
+  await settle(win);
+  await checkpoint(shot, 'chat-recording-delete');
+  await dialog.getByRole('button', { name: 'Удалить' }).click();
+  await expect(card).toHaveAttribute('data-status', 'deleted');
+  await expect(card).toContainText('Запись встречи удалена');
+  await expect(card).toContainText('Удалил: Анна');
+  await expect(card.getByRole('button')).toHaveCount(0);
 });
 
 // Chat media (docs/09 #41, docs/08 «Медиа в чате»): Вера posts an audio / a video in «общий».

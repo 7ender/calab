@@ -19,7 +19,7 @@ import { useMemberName } from '../../stores/workspaces';
  * The product site when the server has not told us the account's web address yet (not paired):
  * where the pairing code is. The server's GPTUNNEL_API_URL decides the real one after pairing.
  */
-const GPTUNNEL_SITE = 'https://gptunnel.ai';
+const GPTUNNEL_SITE = 'https://gptunnel.ru';
 
 const queryKey = (workspaceId: string): readonly unknown[] => ['gptunnel', workspaceId];
 

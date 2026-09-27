@@ -38,7 +38,20 @@ export function isSpace(e: KeyboardEvent): boolean {
 
 // ---------------------------------------------------------------- audio
 
-export function AudioAttachment({ f, messageId, roomId }: { f: FileMeta; messageId: string; roomId: string }): ReactNode {
+export function AudioAttachment({
+  f,
+  messageId,
+  roomId,
+  label,
+  subtitle,
+}: {
+  f: FileMeta;
+  messageId: string;
+  roomId: string;
+  /** Shown (and in the mini-player) instead of the file name's title / performer (a meeting recording). */
+  label?: string;
+  subtitle?: string;
+}): ReactNode {
   useEffect(installPlayer, []);
   const active = usePlayer((s) => s.track?.fileId === f.id && s.track.messageId === messageId);
   const playing = usePlayer((s) => active && s.playing);
@@ -46,8 +59,8 @@ export function AudioAttachment({ f, messageId, roomId }: { f: FileMeta; message
   const known = usePlayer((s) => (active && s.duration > 0 ? s.duration : (s.durations[f.id] ?? 0)));
   const rate = usePlayer((s) => s.rate);
   const failed = usePlayer((s) => active && s.error);
-  const { title, performer } = trackInfo(f.name);
-  const track: Track = { fileId: f.id, messageId, roomId, name: f.name };
+  const { title, performer } = label ? { title: label, performer: subtitle ?? '' } : trackInfo(f.name);
+  const track: Track = { fileId: f.id, messageId, roomId, name: f.name, ...(label ? { title: label, subtitle: subtitle ?? '' } : {}) };
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => probeDuration(f.id), [f.id]);
