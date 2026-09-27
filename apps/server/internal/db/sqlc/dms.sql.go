@@ -244,6 +244,7 @@ SELECT r.id AS room_id, r.created_at AS room_created_at,
        coalesce(lm.author_id, me.user_id)::uuid AS last_author_id,
        coalesce(lm.preview, '')::text AS last_preview,
        coalesce(lm.attachments, 0)::integer AS last_attachments,
+       coalesce(lm.sticker_emoji, '')::text AS last_sticker_emoji,
        (SELECT count(*) FROM (
            SELECT 1 FROM messages m
            WHERE m.room_id = r.id AND m.deleted_at IS NULL AND m.author_id <> me.user_id
@@ -259,7 +260,8 @@ LEFT JOIN read_states rs ON rs.user_id = me.user_id AND rs.room_id = r.id
 LEFT JOIN dm_state ds ON ds.user_id = me.user_id AND ds.room_id = r.id
 LEFT JOIN LATERAL (
     SELECT m.id, m.created_at, m.author_id, left(m.content, 200) AS preview,
-           (SELECT count(*) FROM message_attachments ma WHERE ma.message_id = m.id) AS attachments
+           (SELECT count(*) FROM message_attachments ma WHERE ma.message_id = m.id) AS attachments,
+           (SELECT st.emoji FROM stickers st WHERE st.id = m.sticker_id) AS sticker_emoji
     FROM messages m
     WHERE m.room_id = r.id AND m.deleted_at IS NULL
       AND m.id > coalesce(ds.cleared_before, '00000000-0000-0000-0000-000000000000'::uuid)
@@ -289,6 +291,7 @@ type ListDMsRow struct {
 	LastAuthorID      uuid.UUID
 	LastPreview       string
 	LastAttachments   int32
+	LastStickerEmoji  string
 	UnreadCount       int32
 	ArchivedAt        *time.Time
 	ClearedBefore     *uuid.UUID
@@ -341,6 +344,7 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 			&i.LastAuthorID,
 			&i.LastPreview,
 			&i.LastAttachments,
+			&i.LastStickerEmoji,
 			&i.UnreadCount,
 			&i.ArchivedAt,
 			&i.ClearedBefore,

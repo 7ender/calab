@@ -48,6 +48,8 @@ var blocked = map[string]scope{
 	"PUT /api/messages/{id}/reactions/{emoji}":    scopeMessage,
 	"DELETE /api/messages/{id}/reactions/{emoji}": scopeMessage,
 	"POST /api/workspaces/{id}/files":             scopeWorkspace,
+	// sticker packs (ADR-0030); the pack / sticker routes check the suspension themselves
+	"POST /api/workspaces/{id}/sticker-packs": scopeWorkspace,
 	// voice, streams, cameras, recording
 	"POST /api/rooms/{id}/join":                        scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/move":         scopeRoom,

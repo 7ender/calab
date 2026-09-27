@@ -99,6 +99,7 @@ type Message struct {
 	EmbedsHidden bool
 	Kind         string
 	Payload      []byte
+	StickerID    *uuid.UUID
 }
 
 type MessageAttachment struct {
@@ -243,6 +244,31 @@ type Session struct {
 	RevokedAt            *time.Time
 }
 
+type Sticker struct {
+	ID        uuid.UUID
+	PackID    uuid.UUID
+	FileID    uuid.UUID
+	Emoji     string
+	Position  int32
+	Width     int32
+	Height    int32
+	Animated  bool
+	CreatedAt time.Time
+	DeletedAt *time.Time
+}
+
+type StickerPack struct {
+	ID             uuid.UUID
+	WorkspaceID    uuid.UUID
+	Name           string
+	ShortName      string
+	CoverStickerID *uuid.UUID
+	CreatedBy      *uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	DeletedAt      *time.Time
+}
+
 type User struct {
 	ID              uuid.UUID
 	Email           *string
@@ -270,6 +296,13 @@ type UserNote struct {
 	SubjectID uuid.UUID
 	Text      string
 	UpdatedAt time.Time
+}
+
+type UserStickerPack struct {
+	UserID   uuid.UUID
+	PackID   uuid.UUID
+	Position int32
+	AddedAt  time.Time
 }
 
 type Workspace struct {

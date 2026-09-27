@@ -210,13 +210,14 @@ const listOrphanFiles = `-- name: ListOrphanFiles :many
 SELECT id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at, voice_duration_ms, voice_waveform FROM files f
 WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500
 `
 
-// Not attached, not an avatar or icon, older than the cutoff.
+// Not attached, not an avatar, icon or sticker (ADR-0030), older than the cutoff.
 func (q *Queries) ListOrphanFiles(ctx context.Context, createdAt time.Time) ([]File, error) {
 	rows, err := q.db.Query(ctx, listOrphanFiles, createdAt)
 	if err != nil {
@@ -356,6 +357,7 @@ const unattachedBytesByUploader = `-- name: UnattachedBytesByUploader :one
 SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id)
 `
 
 type UnattachedBytesByUploaderParams struct {
@@ -363,7 +365,8 @@ type UnattachedBytesByUploaderParams struct {
 	WorkspaceID *uuid.UUID
 }
 
-// Bytes a user uploaded to a workspace that are not attached to any message yet.
+// Bytes a user uploaded to a workspace that are not attached to any message yet (stickers
+// are not uploads waiting for a message).
 func (q *Queries) UnattachedBytesByUploader(ctx context.Context, arg UnattachedBytesByUploaderParams) (int64, error) {
 	row := q.db.QueryRow(ctx, unattachedBytesByUploader, arg.UploaderID, arg.WorkspaceID)
 	var column_1 int64

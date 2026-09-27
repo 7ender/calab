@@ -35,6 +35,7 @@ import (
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/rtc"
+	"github.com/calaba/calaba/server/internal/stickers"
 	"github.com/calaba/calaba/server/internal/superadmin"
 	"github.com/calaba/calaba/server/internal/unfurl"
 	"github.com/calaba/calaba/server/internal/users"
@@ -225,6 +226,8 @@ func New(d Deps) *App {
 	messages.NewHandlers(d.DB, pub, msgLimiter).Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
 	filesSvc.Routes(mux, private)
+	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,
+		redisx.NewRateLimiter(d.Redis, "rl:sticker-upload:", 10, 1)).Routes(mux, private) // 10 batches at once, 60 per hour
 	guestSvc := guests.NewService(d.DB, authSvc, pub, d.Blob,
 		redisx.NewRateLimiter(d.Redis, "rl:guest:", 5, 5.0/60), d.Config.AllowedOrigins()) // 5 guests/h per IP
 	guestSvc.Plans = planSvc
