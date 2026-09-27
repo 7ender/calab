@@ -6,6 +6,8 @@ import { t } from '../../i18n';
 import { isAdminRole } from '../../lib/permissions';
 import { installAfk } from '../../services/afk';
 import { installHotkeys } from '../../services/hotkeys';
+import { installEmail } from '../../services/email';
+import { VerifyBanner } from '../auth/VerifyEmail';
 import { defaultRoom, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
@@ -52,6 +54,7 @@ export function AppShell(): ReactNode {
 
   useEffect(() => installHotkeys(), []);
   useEffect(() => installAfk(), []);
+  useEffect(() => installEmail(), []);
 
   if (!onboarded) return <Onboarding />;
   if (mobile) {
@@ -90,6 +93,8 @@ export function AppShell(): ReactNode {
   return (
     <div className="flex h-full flex-col" style={{ ['--sidebar-width' as string]: `${width}px` }}>
       <TitleBar />
+      {/* ADR-0023: «Подтвердите почту» over the main content until the code is entered. */}
+      <VerifyBanner />
       {showReconnect ? (
         <div role="status" className="z-[var(--z-sticky)] bg-warn px-3 py-1 text-center text-caption font-medium text-black">
           {t('gateway.reconnecting')}

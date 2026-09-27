@@ -1,9 +1,11 @@
-import { useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Button, Field, Input, Modal } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
+import { resendVerification, verifyEmail } from '../../services/email';
+import { CodeInput, CodeNote, ResendButton, useCodeFlow } from '../auth/VerifyEmail';
 import { credentialError, hasErrors, validateEmailChange, validatePasswordChange, type CredentialErrors } from './credentials';
 
 /**
@@ -109,24 +111,47 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }): Reac
   );
 }
 
-export function ChangeEmailDialog({ onClose }: { onClose: () => void }): ReactNode {
+/**
+ * «Смена email» (ADR-0023): the new address gets a code and waits in `me.pendingEmail`; login
+ * stays on the old one until the code is entered (step «code», also opened from the profile row
+ * by «Ввести код»). `cancel` drops the pending change: the server cancels it on a change to the
+ * current address, which needs the password like any change.
+ */
+export function ChangeEmailDialog({ onClose, mode = 'change' }: { onClose: () => void; mode?: 'change' | 'confirm' | 'cancel' }): ReactNode {
   const currentEmail = useSession((s) => s.me?.email ?? '');
+  const pending = useSession((s) => s.me?.pendingEmail ?? '');
+  const [step, setStep] = useState<'form' | 'code'>(mode === 'confirm' ? 'code' : 'form');
   const [email, setEmail] = useState('');
   const [current, setCurrent] = useState('');
   const [errors, setErrors] = useState<CredentialErrors>({});
   const [busy, setBusy] = useState(false);
   const first = useRef<HTMLInputElement>(null);
+  const noteId = useId();
+  const flow = useCodeFlow(verifyEmail, resendVerification, () => {
+    toast.success(t('cred.emailDone'));
+    onClose();
+  });
+  const cancel = mode === 'cancel';
 
   const submit = async (): Promise<void> => {
-    const local = validateEmailChange({ email, current, currentEmail });
+    const local = cancel ? (current ? {} : { current: t('cred.err.currentRequired') }) : validateEmailChange({ email, current, currentEmail });
     setErrors(local);
     if (hasErrors(local)) return;
     setBusy(true);
     try {
-      const r = await api.me.changeEmail({ newEmail: email.trim(), currentPassword: current });
+      const r = await api.me.changeEmail({ newEmail: cancel ? currentEmail : email.trim(), currentPassword: current });
       if (r.me) useSession.getState().set({ me: r.me });
-      toast.success(t('cred.emailDone'));
-      onClose();
+      if (cancel) {
+        toast.success(t('mail.change.cancelled'));
+        onClose();
+      } else if (r.me?.pendingEmail) {
+        // A code went to the new address: the second step of the same sheet.
+        flow.markSent();
+        setStep('code');
+      } else {
+        toast.success(t('cred.emailDone')); // a server without mail changes it at once
+        onClose();
+      }
     } catch (e) {
       setErrors(credentialError(e, 'email'));
     } finally {
@@ -134,21 +159,59 @@ export function ChangeEmailDialog({ onClose }: { onClose: () => void }): ReactNo
     }
   };
 
+  if (step === 'code')
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        title={t('mail.change.codeTitle')}
+        description={t('mail.change.codeText', { email: pending || email.trim() })}
+        footer={
+          <>
+            <Button variant="secondary" onClick={onClose}>
+              {t('mail.change.later')}
+            </Button>
+            <Button busy={flow.state.busy === 'verify'} onClick={flow.submit}>
+              {t('mail.confirm')}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-2">
+          <span className="flex items-center justify-between gap-2 text-caption font-medium text-muted">
+            {t('mail.code')}
+            <ResendButton flow={flow} />
+          </span>
+          <CodeInput flow={flow} autoFocus label={t('mail.code')} describedBy={noteId} />
+          <CodeNote flow={flow} id={noteId} />
+        </div>
+      </Modal>
+    );
+
   return (
     <CredentialSheet
       first={first}
-      title={t('cred.emailTitle')}
-      description={t('cred.emailText', { email: currentEmail })}
+      title={cancel ? t('mail.change.cancelTitle') : t('cred.emailTitle')}
+      description={cancel ? t('mail.change.cancelText', { email: pending }) : t('cred.emailText', { email: currentEmail })}
       busy={busy}
       error={errors.form}
       onClose={onClose}
       onSubmit={() => void submit()}
     >
-      <Field label={t('cred.newEmail')} error={errors.next}>
-        <Input ref={first} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={errors.next ? true : undefined} spellCheck={false} />
-      </Field>
+      {cancel ? null : (
+        <Field label={t('cred.newEmail')} error={errors.next}>
+          <Input ref={first} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={errors.next ? true : undefined} spellCheck={false} />
+        </Field>
+      )}
       <Field label={t('cred.current')} error={errors.current}>
-        <Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} aria-invalid={errors.current ? true : undefined} />
+        <Input
+          ref={cancel ? first : undefined}
+          type="password"
+          autoComplete="current-password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+          aria-invalid={errors.current ? true : undefined}
+        />
       </Field>
     </CredentialSheet>
   );

@@ -128,6 +128,8 @@ export interface LoginArgs {
 export interface RegisterArgs extends LoginArgs {
   displayName: string;
   inviteCode: string;
+  /** UI language (BCP 47) → the language of emails (ADR-0023); '' = the server decides. */
+  locale?: string;
 }
 
 export type LogoutReason = 'logout' | 'expired' | 'revoked';

@@ -3,6 +3,7 @@ import { zhApp } from './app';
 import { zhChat } from './chat';
 import { zhDm } from './dm';
 import { zhEcho } from './echo';
+import { zhMail } from './mail';
 import { zhPeople } from './people';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
@@ -16,6 +17,7 @@ export const zhCN: Dict = {
   ...zhVideo,
   ...zhDm,
   ...zhEcho,
+  ...zhMail,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',

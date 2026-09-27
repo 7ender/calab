@@ -3,6 +3,7 @@ import { esApp } from './app';
 import { esChat } from './chat';
 import { esDm } from './dm';
 import { esEcho } from './echo';
+import { esMail } from './mail';
 import { esPeople } from './people';
 import { esShell } from './shell';
 import { esVideo } from './video';
@@ -16,6 +17,7 @@ export const es: Dict = {
   ...esVideo,
   ...esDm,
   ...esEcho,
+  ...esMail,
   'voice.pendingMember': 'Conectando…',
   // common
   'common.cancel': 'Cancelar',

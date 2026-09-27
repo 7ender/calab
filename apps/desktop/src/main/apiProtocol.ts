@@ -43,7 +43,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
     Vary: 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With',
-    'Access-Control-Expose-Headers': 'Content-Length, Content-Type, Content-Disposition',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Type, Content-Disposition, Retry-After',
     'Access-Control-Max-Age': '600',
   };
 }

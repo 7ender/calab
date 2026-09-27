@@ -27,6 +27,7 @@ import { CommitInput } from '../settings/AppSettingsDialog';
 import { MAX_USES } from '../people/RoomLinkTab';
 import { ROLE_LABEL } from '../shell/MembersPanel';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
+import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -302,6 +303,9 @@ function InvitesTab({ workspaceId }: { workspaceId: string }): ReactNode {
   });
   return (
     <>
+      {/* ADR-0023: by an exact address first; the links below stay for everyone else. */}
+      <EmailInviteCard workspaceId={workspaceId} />
+      <EmailInvitesList workspaceId={workspaceId} />
       <Card title={t('invite.new')} footer={`${t('invite.createHint')} ${t('invite.hint')}`}>
         <Row label={t('invite.maxUses')}>
           {/* The same control as the room guest links: one concept, one control. */}
