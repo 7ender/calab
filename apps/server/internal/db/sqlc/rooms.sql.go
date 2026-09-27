@@ -233,8 +233,10 @@ SELECT r.workspace_id,
        ro.allow AS role_allow, ro.deny AS role_deny,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (CASE WHEN r.type = 'dm' THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
-             ELSE '{}'::uuid[] END)::uuid[] AS dm_members
+             ELSE '{}'::uuid[] END)::uuid[] AS dm_members,
+       (w.suspended_at IS NOT NULL)::boolean AS suspended
 FROM rooms r
+LEFT JOIN workspaces w ON w.id = r.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = $1
 LEFT JOIN room_permissions ro ON ro.room_id = r.id AND ro.target_type = 'role' AND ro.target_id = m.role
 LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = $1::text
@@ -255,11 +257,12 @@ type GetRoomAccessRow struct {
 	UserAllow   *int64
 	UserDeny    *int64
 	DmMembers   []uuid.UUID
+	Suspended   bool
 }
 
 // Everything needed to compute a user's permissions in a room, in one round trip. Workspace
 // rooms: the membership (role NULL = not a member) and the overrides. DMs (workspace_id
-// NULL): the two participants.
+// NULL): the two participants. suspended: the workspace is suspended (item 32).
 func (q *Queries) GetRoomAccess(ctx context.Context, arg GetRoomAccessParams) (GetRoomAccessRow, error) {
 	row := q.db.QueryRow(ctx, getRoomAccess, arg.UserID, arg.RoomID)
 	var i GetRoomAccessRow
@@ -272,6 +275,7 @@ func (q *Queries) GetRoomAccess(ctx context.Context, arg GetRoomAccessParams) (G
 		&i.UserAllow,
 		&i.UserDeny,
 		&i.DmMembers,
+		&i.Suspended,
 	)
 	return i, err
 }

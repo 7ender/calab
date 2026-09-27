@@ -1,5 +1,6 @@
 import type { WorkspaceRole } from '@calaba/protocol';
-import { confirmAction } from '../../components/Confirm';
+import { confirmAction, promptAction } from '../../components/Confirm';
+import { REASON_MAX } from '../../lib/moderation';
 import { t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { errorText } from '../../lib/api/errors';
@@ -87,4 +88,24 @@ export async function removeMember(workspaceId: string, userId: string, guest: b
     : await confirmAction(t('ws.kick'), t('ws.kickConfirm', { name }), t('ws.kick'));
   if (!ok) return;
   run(api.workspaces.removeMember(workspaceId, userId).then(() => useWorkspaces.getState().removeMember(workspaceId, userId)));
+}
+
+/**
+ * «Забанить…» (docs/09 #32): a reason (optional) → POST …/bans. Unlike «Исключить» the user
+ * cannot come back until unbanned (settings → «Забаненные»).
+ */
+export async function banMember(workspaceId: string, userId: string): Promise<void> {
+  const name = memberName(workspaceId, userId);
+  const reason = await promptAction(t('ban.title', { name }), t('ban.text'), t('ban.action'), {
+    label: t('ban.reason'),
+    placeholder: t('ban.reasonPh'),
+    maxLength: REASON_MAX,
+  });
+  if (reason === null) return;
+  run(
+    api.workspaces.ban(workspaceId, userId, reason).then(() => {
+      useWorkspaces.getState().removeMember(workspaceId, userId);
+      toast.info(t('ban.done', { name }));
+    }),
+  );
 }

@@ -29,6 +29,13 @@ import {
   AdminPlanLogResponseSchema,
   AdminSearchWorkspacesResponseSchema,
   AdminSetPlanRequestSchema,
+  AdminSetSuspensionRequestSchema,
+  AdminSetSuspensionResponseSchema,
+  CreateBanRequestSchema,
+  CreateBanResponseSchema,
+  ListBansResponseSchema,
+  WorkspaceBanSchema,
+  WorkspaceSuspensionSchema,
   AdminSetPlanResponseSchema,
   AdminWorkspaceSchema,
   Plan,
@@ -1724,6 +1731,52 @@ class MockImpl {
       noContent(c.res);
     });
 
+    // ---------------- bans (docs/09 #32): MANAGE_WORKSPACE, the rules of a kick
+    this.route('GET', '/api/workspaces/:id/bans', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireAdmin(caller);
+      sendMsg(c.res, 200, ListBansResponseSchema, { bans: s().bans.get(ws.id) ?? [] });
+    });
+    this.route('POST', '/api/workspaces/:id/bans', (c) => {
+      const me = this.uid(c);
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', me);
+      this.requireAdmin(caller);
+      const b = parseBody(c, CreateBanRequestSchema);
+      const u = s().users.get(b.userId);
+      if (!u) throw notFound('user not found');
+      if (b.userId === me) throw forbidden('cannot ban yourself');
+      const target = this.member(ws.id, b.userId);
+      if (target?.role === WorkspaceRole.OWNER) throw forbidden('the owner cannot be banned');
+      if (target?.role === WorkspaceRole.ADMIN && caller.role !== WorkspaceRole.OWNER) throw forbidden('only the owner can ban an admin');
+      if (target) {
+        if (s().voiceStates.get(b.userId)?.workspaceId === ws.id) this.setVoice(b.userId, '', {});
+        this.toUser(b.userId, { event: { case: 'workspaceDelete', value: { workspaceId: ws.id } } });
+        s().members = s().members.filter((x) => x !== target);
+        this.toWorkspace(ws.id, { event: { case: 'workspaceMemberRemove', value: { workspaceId: ws.id, userId: b.userId } } });
+      }
+      const ban = create(WorkspaceBanSchema, {
+        workspaceId: ws.id,
+        user: u.user,
+        email: u.email,
+        reason: b.reason.trim().slice(0, 500),
+        bannedBy: me,
+        createdAt: tick(s()),
+      });
+      s().bans.set(ws.id, [ban, ...(s().bans.get(ws.id) ?? []).filter((x) => x.user?.id !== b.userId)]);
+      this.toWorkspace(ws.id, { event: { case: 'workspaceBanAdd', value: { ban } } });
+      sendMsg(c.res, 201, CreateBanResponseSchema, { ban });
+    });
+    this.route('DELETE', '/api/workspaces/:id/bans/:userId', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireAdmin(caller);
+      const list = s().bans.get(ws.id) ?? [];
+      const userId = c.params[1] ?? '';
+      if (!list.some((x) => x.user?.id === userId)) throw notFound('ban not found');
+      s().bans.set(ws.id, list.filter((x) => x.user?.id !== userId));
+      this.toWorkspace(ws.id, { event: { case: 'workspaceBanRemove', value: { workspaceId: ws.id, userId } } });
+      noContent(c.res);
+    });
+
     this.route('POST', '/api/workspaces/:id/members/:userId/promote', (c) => {
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
       this.requireAdmin(caller);
@@ -1996,6 +2049,7 @@ class MockImpl {
     this.route('POST', '/api/rooms/:id/messages', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireActive(room.workspaceId);
       this.requireRoomPerm(room, me, SEND_MESSAGES);
       const b = parseBody(c, CreateMessageRequestSchema);
       if (b.attachmentIds.length) this.requireRoomPerm(room, me, ATTACH_FILES);
@@ -2348,6 +2402,7 @@ class MockImpl {
       const me = user.user.id;
       const room = this.roomFor(c.params[0] ?? '', me);
       if (room.type !== RoomType.VOICE) throw conflict('not a voice room');
+      this.requireActive(room.workspaceId);
       this.requireRoomPerm(room, me, CONNECT);
       const perms = this.perms(room, me);
       if (s().voiceStates.get(me)?.roomId !== room.id) {
@@ -2696,6 +2751,26 @@ class MockImpl {
       s().planLog.set(ws.id, log.slice(0, 100));
       this.toWorkspace(ws.id, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
       sendMsg(c.res, 200, AdminSetPlanResponseSchema, { workspace: this.adminOut(ws) });
+    });
+    this.route('PUT', '/api/admin/workspaces/:id/suspension', (c) => {
+      const me = this.requireSuperadmin(c);
+      const ws = s().workspaces.get(c.params[0] ?? '');
+      if (!ws) throw notFound('workspace not found');
+      const b = parseBody(c, AdminSetSuspensionRequestSchema);
+      const reason = b.reason.trim();
+      if (b.suspended) {
+        if (!reason) throw invalid('reason', 'a reason is required to suspend a workspace');
+        if (reason.length > 500) throw invalid('reason', 'reason must be at most 500 characters');
+        ws.suspension = create(WorkspaceSuspensionSchema, { at: ws.suspension?.at ?? tick(s()), reason });
+        s().suspendedBy.set(ws.id, me);
+        // Calls end (the server removes every LiveKit participant).
+        for (const [uid, v] of s().voiceStates) if (v.workspaceId === ws.id && v.roomId) this.setVoice(uid, '', {});
+      } else {
+        delete ws.suspension;
+        s().suspendedBy.delete(ws.id);
+      }
+      this.toWorkspace(ws.id, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
+      sendMsg(c.res, 200, AdminSetSuspensionResponseSchema, { workspace: this.adminOut(ws) });
     });
     this.route('GET', '/api/admin/workspaces/:id/plan/log', (c) => {
       this.requireSuperadmin(c);
@@ -3259,6 +3334,11 @@ class MockImpl {
     return me;
   }
 
+  /** 403 WORKSPACE_SUSPENDED on writes to a suspended workspace (docs/09 #32). */
+  private requireActive(wsId: string): void {
+    if (this.state.workspaces.get(wsId)?.suspension) throw new HttpError(403, ErrorCode.WORKSPACE_SUSPENDED, 'the workspace is suspended');
+  }
+
   private adminOut(ws: Workspace): AdminWorkspace {
     const owner = this.state.users.get(ws.ownerId);
     const meta = this.state.planMeta.get(ws.id);
@@ -3279,6 +3359,8 @@ class MockImpl {
       planNote: meta?.note ?? '',
       planUpdatedBy: meta?.updatedBy ?? '',
       ...(meta?.updatedAt ? { planUpdatedAt: meta.updatedAt } : {}),
+      suspendedBy: this.state.suspendedBy.get(ws.id) ?? '',
+      suspendedByEmail: this.state.users.get(this.state.suspendedBy.get(ws.id) ?? '')?.email ?? '',
     });
   }
 

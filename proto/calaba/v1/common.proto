@@ -33,6 +33,13 @@ enum ErrorCode {
   ERROR_CODE_NOT_PAIRED = 23;          // 409: the workspace is not connected to GPTunneL (ask an owner / admin)
   ERROR_CODE_ALREADY_RECORDING = 24;   // 409: the room is already being recorded
   ERROR_CODE_RECORDING_LIMIT = 25;     // 409: RECORDING_MAX_CONCURRENT recordings run on the server (used / limit)
+  // 403: the workspace is suspended by a superadmin (Workspace.suspension): sending / editing
+  // messages, reactions, files, voice, streams / cameras, invitations and recording are refused;
+  // reading keeps working.
+  ERROR_CODE_WORKSPACE_SUSPENDED = 26;
+  // 403: the caller (or their email address) is banned from the workspace: joining by
+  // invitation, open join, email invitation or room link is refused.
+  ERROR_CODE_BANNED = 27;
 }
 
 // Error body of every non-2xx REST response.

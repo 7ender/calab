@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/rueidis"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/messages"
+	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/recording"
@@ -182,10 +184,13 @@ func New(d Deps) *App {
 		PlanContact:        d.Config.PlanContact(),
 	}, d.DB, d.Redis, authSvc, pub)
 
-	// Authenticated API routes: identity + fresh per-request permission resolver.
+	// Authenticated API routes: identity + fresh per-request permission resolver + the
+	// suspension guard (write routes of suspended workspaces, item 32).
+	guard := moderation.Guard(d.DB.Q, func(ctx context.Context) uuid.UUID { return auth.MustFromContext(ctx).UserID })
 	private := func(h http.Handler) http.Handler {
+		g := guard(h)
 		return authSvc.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h.ServeHTTP(w, r.WithContext(perm.WithResolver(r.Context(), d.DB.Q)))
+			g.ServeHTTP(w, r.WithContext(perm.WithResolver(r.Context(), d.DB.Q)))
 		}))
 	}
 

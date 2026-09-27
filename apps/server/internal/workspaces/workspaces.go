@@ -22,6 +22,7 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -96,6 +97,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	mux.Handle("GET /api/invites/{code}", httpx.HandlerFunc(h.getInvite))
 	handle("POST /api/invites/{code}/join", h.joinInvite)
 	h.emailRoutes(handle)
+	h.banRoutes(handle)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -169,7 +171,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 			recordings = append(recordings, pbconv.RoomRecording(rec))
 		}
 	}
-	return &v1.WorkspaceSnapshot{Workspace: pw, Role: role.Proto(), Rooms: rs, Members: members,
+	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings}, nil
 }
 
@@ -296,6 +298,17 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err := h.limits.Plans.FillAll(r.Context(), list); err != nil {
 		return err
 	}
+	for i, ws := range list { // the suspension reason is for the owner / admins only
+		if ws.GetSuspension() == nil {
+			continue
+		}
+		id, _ := uuid.Parse(ws.GetId())
+		_, role, err := perm.FromContext(r.Context()).Workspace(r.Context(), id, uid(r))
+		if err != nil && !errors.Is(err, perm.ErrNotMember) {
+			return err
+		}
+		list[i] = pbconv.ForViewer(ws, role)
+	}
 	httpx.Write(w, http.StatusOK, &v1.ListWorkspacesResponse{Workspaces: list})
 	return nil
 }
@@ -308,7 +321,11 @@ func (h *Handlers) discover(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.DiscoverWorkspacesResponse{Workspaces: workspaceList(rows)})
+	list := workspaceList(rows)
+	for i, ws := range list {
+		list[i] = pbconv.ForViewer(ws, "")
+	}
+	httpx.Write(w, http.StatusOK, &v1.DiscoverWorkspacesResponse{Workspaces: list})
 	return nil
 }
 
@@ -325,7 +342,7 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 	if err := h.limits.Plans.Fill(r.Context(), pw); err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.GetWorkspaceResponse{Workspace: pw, Role: role.Proto()})
+	httpx.Write(w, http.StatusOK, &v1.GetWorkspaceResponse{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto()})
 	return nil
 }
 
@@ -503,7 +520,7 @@ func (h *Handlers) memberResponse(ctx context.Context, ws sqlc.Workspace, m sqlc
 	if err := h.limits.Plans.Fill(ctx, pw); err != nil {
 		return nil, err
 	}
-	return &v1.JoinWorkspaceResponse{Workspace: pw, Member: pbconv.Member(m, u)}, nil
+	return &v1.JoinWorkspaceResponse{Workspace: pbconv.ForViewer(pw, perm.Role(m.Role)), Member: pbconv.Member(m, u)}, nil
 }
 
 func (h *Handlers) joinOpen(w http.ResponseWriter, r *http.Request) error {
@@ -526,6 +543,17 @@ func (h *Handlers) joinOpen(w http.ResponseWriter, r *http.Request) error {
 		if _, err := h.db.Q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: uid(r)}); err != nil {
 			return httpx.NotFound("workspace")
 		}
+	}
+	if _, err := h.db.Q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: uid(r)}); db.IsNotFound(err) {
+		u, err := h.db.Q.GetUser(r.Context(), uid(r))
+		if err != nil {
+			return err
+		}
+		if err := moderation.CheckBan(r.Context(), h.db.Q, wsID, u.ID, u.Email); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
 	}
 	m, added, err := join(r.Context(), h.db.Q, wsID, uid(r))
 	if err != nil {
@@ -618,6 +646,9 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 			m = existing
 			return nil
 		} else if !db.IsNotFound(err) {
+			return err
+		}
+		if err := moderation.CheckBan(r.Context(), q, ws.ID, caller.ID, caller.Email); err != nil {
 			return err
 		}
 		if _, err := q.ConsumeInvite(r.Context(), code); err != nil {

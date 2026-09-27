@@ -1131,6 +1131,15 @@ CALABA_VISUAL_MOCK_PORT=40570 pnpm e2e:visual -g "settings-plan|admin-" --projec
 ```
 Ожидается: всё зелёное, 3 снимка совпадают. Вручную (мок/стенд, free): 1080p в пикере стрима и камере ▾ — с замком, клик → тост «Связаться»; 6-й в комнате → тост «В бесплатном тарифе до 5 человек»; суперадмин: профиль → «Администрирование», смена плана → у участников сразу меняется вкладка «Тариф».
 
+Приостановка и баны (docs/09 #32, ветка `feat/suspend-ban`):
+```sh
+cd apps/server && TEST_REDIS_URL=redis://localhost:56379/10 go test -tags integration -count=1 -v -run 'TestWorkspaceSuspension|TestWorkspaceBans' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+cd ../desktop && pnpm exec vitest run src/renderer/lib/moderation.test.ts src/renderer/features/people/members.test.ts
+pnpm exec vitest run --config e2e-support/vitest.config.ts -t 'suspension|bans'
+CALABA_VISUAL_MOCK_PORT=41370 pnpm e2e:visual -g "admin-suspend|settings-bans|workspace-suspended" --project dark-960
+```
+Ожидается: 2 `--- PASS`, всё зелёное, 3 снимка совпадают. Вручную: суперадмин приостанавливает пространство → у всех плашка (у владельца — причина и «Связаться»), звонок завершается, отправка/голос/инвайты — отказ; «Забанить…» в меню участника → он пропадает, вход по инвайту — «Вход в это пространство для вас закрыт»; «Разбанить» во вкладке «Забаненные».
+
 ### 3.19 Запись встреч и GPTunneL (ADR-0025)
 
 ```sh

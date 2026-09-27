@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -227,9 +228,15 @@ func WorkspaceDefaults(w sqlc.Workspace) *v1.RoomMediaSettings {
 	}
 }
 
-// Workspace converts a workspace row.
+// Workspace converts a workspace row. A suspension carries its reason: views for other than
+// the owner / admins go through ForViewer.
 func Workspace(w sqlc.Workspace) *v1.Workspace {
+	var susp *v1.WorkspaceSuspension
+	if w.SuspendedAt != nil {
+		susp = &v1.WorkspaceSuspension{At: ts(*w.SuspendedAt), Reason: w.SuspendedReason}
+	}
 	return &v1.Workspace{
+		Suspension:        susp,
 		Id:                w.ID.String(),
 		Slug:              w.Slug,
 		Name:              w.Name,
@@ -242,6 +249,34 @@ func Workspace(w sqlc.Workspace) *v1.Workspace {
 		StorageUsedBytes:  uint64(max(w.StorageUsedBytes, 0)),
 		AllowSelfNickname: w.AllowSelfNickname,
 	}
+}
+
+// SeesSuspensionReason reports whether a role sees why the workspace is suspended (owner, admins).
+func SeesSuspensionReason(role perm.Role) bool {
+	return role == perm.RoleOwner || role == perm.RoleAdmin
+}
+
+// ForViewer returns ws as a viewer with role sees it: without the suspension reason unless
+// SeesSuspensionReason. ws is not modified (a copy is returned when something is hidden).
+func ForViewer(ws *v1.Workspace, role perm.Role) *v1.Workspace {
+	if ws.GetSuspension().GetReason() == "" || SeesSuspensionReason(role) {
+		return ws
+	}
+	c := proto.Clone(ws).(*v1.Workspace)
+	c.Suspension.Reason = ""
+	return c
+}
+
+// Ban converts a ban row with the banned user.
+func Ban(b sqlc.WorkspaceBan, u sqlc.User) *v1.WorkspaceBan {
+	out := &v1.WorkspaceBan{
+		WorkspaceId: b.WorkspaceID.String(), User: User(u), Reason: b.Reason, BannedBy: idp(b.BannedBy),
+		CreatedAt: ts(b.CreatedAt),
+	}
+	if b.Email != nil {
+		out.Email = *b.Email
+	}
+	return out
 }
 
 // Member converts a membership row with its user.

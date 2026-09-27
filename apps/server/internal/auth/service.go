@@ -24,6 +24,7 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -294,6 +295,13 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			return err
 		}
 		if inv != nil {
+			// A suspended workspace takes nobody in; a banned address stays out (item 32).
+			if err := moderation.CheckSuspended(ctx, q, inv.WorkspaceID); err != nil {
+				return err
+			}
+			if err := moderation.CheckBan(ctx, q, inv.WorkspaceID, user.ID, &email); err != nil {
+				return err
+			}
 			m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: inv.WorkspaceID, UserID: user.ID, Role: string(role)})
 			if err != nil {
 				return err

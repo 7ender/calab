@@ -24,6 +24,7 @@ import {
 import { platform } from '../../platform';
 import { toast } from '../../stores/toasts';
 import { ExpiredBadge, PlanPill } from '../workspace/PlanTab';
+import { SuspendedBadge, SuspendedMark, SuspensionCard } from './SuspensionCard';
 
 /** The search waits this long after the last keystroke (admin API: 60 requests / min). */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -67,6 +68,7 @@ function WorkspaceCard({ a, selected, onSelect }: { a: AdminWorkspace; selected:
         <span className="min-w-0 flex-1 truncate text-body font-semibold" title={ws.name}>
           {ws.name}
         </span>
+        {ws.suspension ? <SuspendedMark selected={selected} /> : null}
         {ws.plan?.expired ? <ExpiredBadge /> : null}
         <PlanPill plan={planKind(ws.plan)} className={selected ? 'ring-1 ring-white/60' : undefined} />
       </span>
@@ -312,6 +314,7 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
   return (
     <>
       <PaneHeader title={w.name} onClose={onClose}>
+        {w.suspension ? <SuspendedBadge /> : null}
         {w.plan?.expired ? <ExpiredBadge /> : null}
         <PlanPill plan={planKind(w.plan)} />
       </PaneHeader>
@@ -406,6 +409,8 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
           </div>
 
           <PlanLog entries={entries} loading={log.isLoading} />
+
+          <SuspensionCard a={a} onSaved={(next) => qc.setQueryData(KEY.ws(id), { workspace: next })} />
         </div>
       </div>
     </>

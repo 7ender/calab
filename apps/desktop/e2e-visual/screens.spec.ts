@@ -1,7 +1,7 @@
 import { create } from '@bufbuild/protobuf';
-import { Plan, RecordingStatus, UserSchema, WorkspacePlanSchema } from '@calaba/protocol';
+import { Plan, RecordingStatus, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
-import { FREE_PLAN_LIMITS, defaultSettings } from '../e2e-support/fixtures';
+import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
 import { IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, type MockServer } from '../e2e-support/mock-server';
 import { expect, test } from './app';
 import { checkpoint, settle } from './harness';
@@ -74,6 +74,9 @@ const KEY = new Set([
   'settings-members',
   'admin-workspaces',
   'admin-plan',
+  'admin-suspend',
+  'settings-bans',
+  'workspace-suspended',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -876,6 +879,63 @@ test('admin-plan', async ({ open, win, mock, shot }) => {
   await expect(admin.getByTestId('admin-log')).toBeAttached();
   await admin.getByRole('heading', { name: 'Тариф', exact: true }).evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await checkpoint(shot, 'admin-plan');
+});
+
+/** Suspends a workspace in the mock and tells the clients (docs/09 #32). */
+function suspendInMock(mock: MockServer, wsId: string, reason: string): void {
+  const ws = mock.state.workspaces.get(wsId);
+  if (!ws) throw new Error('no workspace');
+  ws.suspension = create(WorkspaceSuspensionSchema, { at: ts('2026-01-14T09:30:00Z'), reason });
+  mock.state.suspendedBy.set(wsId, IDS.users.anna);
+  // Calls end with the suspension (the server removes every participant).
+  for (const [userId, v] of mock.state.voiceStates) if (v.workspaceId === wsId && v.roomId) mock.setVoiceState({ userId, roomId: '' });
+  mock.dispatch({ event: { case: 'workspaceUpdate', value: { workspace: ws } } });
+}
+
+/** «Приостановка» in the admin card of a suspended workspace: the switch, the reason, who / when. */
+test('admin-suspend', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  suspendInMock(mock, IDS.workspaces.community, 'Неоплата счёта за январь');
+  const admin = await openAdmin(win);
+  await admin.getByTestId('admin-workspace').filter({ hasText: 'Сообщество' }).click();
+  await expect(admin.getByTestId('admin-suspend-reason')).toHaveValue('Неоплата счёта за январь');
+  await admin.getByRole('heading', { name: 'Приостановка', exact: true }).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await checkpoint(shot, 'admin-suspend');
+});
+
+/** Workspace settings → «Забаненные» (docs/09 #32): who, why, when, by whom, «Разбанить». */
+test('settings-bans', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const vera = mock.state.users.get(IDS.users.vera);
+  if (!vera) throw new Error('no user');
+  mock.state.bans.set(IDS.workspaces.main, [
+    create(WorkspaceBanSchema, {
+      workspaceId: IDS.workspaces.main,
+      user: vera.user,
+      email: vera.email,
+      reason: 'Спам в общем канале',
+      bannedBy: IDS.users.anna,
+      createdAt: ts('2026-01-12T16:05:00Z'),
+    }),
+  ]);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  await win.getByRole('dialog').getByRole('tab', { name: 'Забаненные' }).click();
+  await expect(win.getByTestId('ws-ban-row')).toHaveCount(1);
+  await checkpoint(shot, 'settings-bans');
+});
+
+/** A suspended workspace as its owner sees it: the bar with the reason and «Связаться», the read-only composer. */
+test('workspace-suspended', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  suspendInMock(mock, IDS.workspaces.main, 'Неоплата счёта за январь');
+  await expect(win.getByTestId('suspended-banner')).toBeVisible();
+  await expect(win.getByTestId('suspended-reason')).toBeVisible();
+  await expect(win.getByTestId('composer-suspended')).toBeVisible();
+  await checkpoint(shot, 'workspace-suspended');
 });
 
 test('room-create', async ({ open, win, mock, shot }) => {

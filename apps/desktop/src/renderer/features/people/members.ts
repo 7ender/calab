@@ -95,6 +95,8 @@ export interface MenuActions {
   promote: boolean;
   removeGuest: boolean;
   kick: boolean;
+  /** «Забанить…» (docs/09 #32): who may be kicked may be banned, guests included. */
+  ban: boolean;
 }
 
 /**
@@ -145,9 +147,10 @@ export function memberActions(c: MenuContext): MenuActions {
     promote: manage && guest && !self,
     removeGuest: removable && guest,
     kick: removable && !guest,
+    ban: removable,
   };
 }
 
 export function hasAnyAction(a: MenuActions): boolean {
-  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.roles !== null || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick;
+  return a.volume || a.serverMute || a.disconnect || a.hideVideo || a.stopCamera || a.roles !== null || a.moveTargets.length > 0 || a.rename || a.promote || a.removeGuest || a.kick || a.ban;
 }
