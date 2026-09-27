@@ -155,7 +155,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
           {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}
           <div
             ref={listRef}
-            className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2"
+            className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2"
             style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
             data-testid="room-list"
           >
