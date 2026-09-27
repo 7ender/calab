@@ -1,4 +1,4 @@
-import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type PermissionBits, type Room } from '@calaba/protocol';
+import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Message, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
@@ -29,7 +29,8 @@ import { roomLabel } from './roomLabel';
 import { menuBox } from '../shell/menu';
 import { RoleMark, roleTextClass, useSharedRole } from '../people/MemberBits';
 import { LEVEL_LABEL, NotifyMenuItems, mutedText, type LevelOption } from './NotifyMenu';
-import { previewText } from './mentionText';
+import { previewPartsOf } from './mentionText';
+import { PreviewRuns } from './PreviewRuns';
 import { TypingDots, useTypingText } from './TypingIndicator';
 import { systemPreview } from '../../lib/recording';
 import { headerFit, measureHeader, type HeaderFit } from './headerFit';
@@ -463,7 +464,7 @@ function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; r
                         </span>
                       </span>
                       <span className="line-clamp-2 text-body text-muted">
-                        {systemPreview(m) || previewText(workspaceId, m.content) || (m.attachments.length ? t('chat.attachment') : '')}
+                        <PinPreview workspaceId={workspaceId} m={m} />
                       </span>
                     </button>
                     {canManage ? (
@@ -485,4 +486,12 @@ function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; r
       </Popover.Portal>
     </Popover.Root>
   );
+}
+
+/** A pinned message in the pins list: system text, the message (code monospace) or «Вложение». */
+function PinPreview({ workspaceId, m }: { workspaceId: string; m: Message }): ReactNode {
+  const sys = systemPreview(m);
+  if (sys) return sys;
+  const parts = previewPartsOf(workspaceId, m.content, 400);
+  return parts.length ? <PreviewRuns parts={parts} /> : m.attachments.length ? t('chat.attachment') : '';
 }

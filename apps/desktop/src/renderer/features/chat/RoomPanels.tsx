@@ -13,7 +13,8 @@ import { memberName, useMemberName, useMemberRoles, useWorkspaces } from '../../
 import { isDm, useDms } from '../../stores/dms';
 import { Avatar } from '../../components/Avatar';
 import { useChatView } from './chatView';
-import { previewText } from './mentionText';
+import { previewPartsOf } from './mentionText';
+import { PreviewRuns } from './PreviewRuns';
 import { searchWords } from '../../lib/markdown/highlight';
 import { systemPreview } from '../../lib/recording';
 
@@ -31,7 +32,9 @@ export function PinnedBar({ workspaceId, roomId }: { workspaceId: string; roomId
   const idx = i % pins.length;
   const m = pins[idx];
   if (!m) return null;
-  const text = systemPreview(m) || previewText(workspaceId, m.content) || (m.attachments.length ? t('chat.attachment') : '');
+  const sys = systemPreview(m);
+  const parts = sys ? [] : previewPartsOf(workspaceId, m.content, 200);
+  const text = sys || (parts.length ? <PreviewRuns parts={parts} /> : m.attachments.length ? t('chat.attachment') : '');
   return (
     <button
       type="button"

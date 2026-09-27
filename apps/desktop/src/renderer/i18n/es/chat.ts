@@ -119,4 +119,9 @@ export const esChat: DictShape<typeof enChat> = {
   // lightbox
   'lightbox.close': 'Cerrar',
   'lightbox.download': 'Descargar',
+  // code blocks (docs/08, «Код в сообщениях»)
+  'chat.code.copy': 'Copiar código',
+  'chat.code.label': 'Código',
+  'chat.code.labelLang': 'Código, {lang}',
+  'chat.code.showAll': { one: 'Mostrar todo — {n} línea', many: 'Mostrar todo — {n} líneas', other: 'Mostrar todo — {n} líneas' },
 } as const;

@@ -1,4 +1,5 @@
 import { Fragment, memo, type ReactNode } from 'react';
+import { CodeBlock } from './CodeBlock';
 import { splitHits } from './highlight';
 import { isSafeHref, parseMarkdown, type MdNode } from './parse';
 import { platform } from '../../platform';
@@ -44,11 +45,7 @@ function render(nodes: MdNode[], mention: MentionRenderer, key = '', hl?: MdHigh
           </code>
         );
       case 'codeblock':
-        return (
-          <pre key={k} className="my-1 max-w-full overflow-x-auto rounded-md border border-line bg-code p-2.5 font-mono text-[12.5px] leading-snug">
-            <code>{n.v}</code>
-          </pre>
-        );
+        return <CodeBlock key={k} code={n.v} lang={n.lang} />;
       case 'b':
         return <strong key={k}>{render(n.c, mention, `${k}.`, hl)}</strong>;
       case 'i':

@@ -59,6 +59,15 @@
   --color-search-current: #ffd60a;
   --color-on-search-current: #1d1d1f;
   --color-code: rgb(118 118 128 / 18%);
+  /* code blocks (docs/08 «Код в сообщениях»): a darker well; syntax colours ≥ 4.5:1 on it in both bubbles */
+  --color-code-block: rgb(0 0 0 / 22%);
+  --color-syn-comment: #a8b3bf;
+  --color-syn-keyword: #ff8ac0;
+  --color-syn-string: #ff9985;
+  --color-syn-number: #d9c97c;
+  --color-syn-fn: #7cc9b6;
+  --color-syn-type: #5dd8ff;
+  --color-syn-tag: #8ec7ff;
   --color-scrim: rgb(0 0 0 / 45%);
   --color-video-bg: #000000;
   /* video tile without a picture (avatar placeholder in the call grid) */
@@ -190,6 +199,14 @@
   --color-search-hit: rgb(255 204 0 / 38%);
   --color-search-current: #ffcc00;
   --color-code: rgb(118 118 128 / 12%);
+  --color-code-block: rgb(118 118 128 / 12%);
+  --color-syn-comment: #4d5a66;
+  --color-syn-keyword: #8a1f83;
+  --color-syn-string: #a8130f;
+  --color-syn-number: #1c00cf;
+  --color-syn-fn: #285a60;
+  --color-syn-type: #0b4f79;
+  --color-syn-tag: #643820;
   --color-scrim: rgb(0 0 0 / 25%);
   /* tiles stay dark in light theme too (video letterboxing, like the stream stage) */
   --color-tile-bg: #2c2c2e;
@@ -276,6 +293,7 @@
   --color-role-admin: var(--color-role-admin);
   --color-mention: var(--color-mention);
   --color-code: var(--color-code);
+  --color-code-block: var(--color-code-block);
   --color-scrim: var(--color-scrim);
   --color-feed: var(--color-feed);
   --color-bubble-in: var(--color-bubble-in);
@@ -675,6 +693,29 @@ svg.lucide {
 .bubble-out:focus-visible > [data-focus-shape] {
   filter: drop-shadow(2px 0 0 var(--color-accent)) drop-shadow(-2px 0 0 var(--color-accent))
     drop-shadow(0 2px 0 var(--color-accent)) drop-shadow(0 -2px 0 var(--color-accent));
+}
+/* Syntax runs in code blocks (lib/markdown/syntax.ts): colours only from theme tokens. */
+.syn-comment {
+  color: var(--color-syn-comment);
+  font-style: italic;
+}
+.syn-keyword {
+  color: var(--color-syn-keyword);
+}
+.syn-string {
+  color: var(--color-syn-string);
+}
+.syn-number {
+  color: var(--color-syn-number);
+}
+.syn-fn {
+  color: var(--color-syn-fn);
+}
+.syn-type {
+  color: var(--color-syn-type);
+}
+.syn-tag {
+  color: var(--color-syn-tag);
 }
 .search-hit {
   background: var(--color-search-hit);

@@ -119,4 +119,9 @@ export const enChat: DictShape<typeof ruChat> = {
   // lightbox
   'lightbox.close': 'Close',
   'lightbox.download': 'Download',
+  // code blocks (docs/08, «Код в сообщениях»)
+  'chat.code.copy': 'Copy code',
+  'chat.code.label': 'Code',
+  'chat.code.labelLang': 'Code, {lang}',
+  'chat.code.showAll': { one: 'Show all — {n} line', other: 'Show all — {n} lines' },
 };
