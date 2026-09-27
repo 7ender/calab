@@ -222,9 +222,10 @@ func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
 	defer st.mu.Unlock()
 	if err != nil {
 		slog.Error("gateway: load workspace state", "workspace", wid, "err", err)
-		loaded = &wsState{rooms: map[uuid.UUID]*v1.Room{}, roles: map[uuid.UUID]perm.Role{}}
+		loaded = &wsState{rooms: map[uuid.UUID]*v1.Room{}}
 	}
-	st.ws, st.rooms, st.targets, st.roles = loaded.ws, loaded.rooms, loaded.targets, loaded.roles
+	st.ws, st.rooms, st.targets = loaded.ws, loaded.rooms, loaded.targets
+	st.roleDefs, st.roleIDs, st.members = loaded.roleDefs, loaded.roleIDs, loaded.members
 	for len(st.backlog) > 0 {
 		p := st.backlog[0]
 		st.backlog = st.backlog[1:]
@@ -307,7 +308,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	}
 	if changesVisibility(st, ev) {
 		for _, s := range sessions {
-			if st.roles[s.user] == perm.RoleGuest {
+			if st.role(s.user) == perm.RoleGuest {
 				if guestBefore == nil {
 					guestBefore = map[*Session]map[uuid.UUID]bool{}
 				}
@@ -389,31 +390,34 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		m := e.WorkspaceMemberAdd.GetMember()
 		uid := parseID(m.GetUser().GetId())
 		if r, ok := perm.RoleFromProto(m.GetRole()); ok {
-			st.setRole(uid, r)
+			st.setMember(uid, r, m.GetRoleIds())
 		}
 		about(uid)
 	case *v1.DispatchEvent_WorkspaceMemberUpdate:
 		m := e.WorkspaceMemberUpdate.GetMember()
 		uid := parseID(m.GetUser().GetId())
-		before := map[uuid.UUID]bool{}
-		for rid := range st.rooms {
-			before[rid] = view(rid, uid)
-		}
-		if r, ok := perm.RoleFromProto(m.GetRole()); ok {
-			st.setRole(uid, r)
-		}
-		about(uid)
 		// The member's own sessions see rooms appear / disappear with the role change.
-		for _, s := range sessions {
-			if s.user != uid {
-				continue
+		h.reviewRooms(st, wid, sessions, func(u uuid.UUID) bool { return u == uid }, func() {
+			if r, ok := perm.RoleFromProto(m.GetRole()); ok {
+				st.setMember(uid, r, m.GetRoleIds())
 			}
-			for rid, room := range st.rooms {
-				if out := transition(before[rid], view(rid, uid), nil, room, wid, rid); out != nil {
-					s.dispatch(uuid.New(), out)
-				}
-			}
+			about(uid)
+		})
+	case *v1.DispatchEvent_RoleCreate, *v1.DispatchEvent_RoleUpdate:
+		r := ev.GetRoleCreate().GetRole()
+		if r == nil {
+			r = ev.GetRoleUpdate().GetRole()
 		}
+		// A role's permissions / position change what its holders see.
+		h.reviewRooms(st, wid, sessions, func(uuid.UUID) bool { return true }, func() {
+			st.setRoleDef(r)
+			h.toAll(sessions, id, shared)
+		})
+	case *v1.DispatchEvent_RoleDelete:
+		h.reviewRooms(st, wid, sessions, func(uuid.UUID) bool { return true }, func() {
+			st.delRoleDef(e.RoleDelete.GetRoleId())
+			h.toAll(sessions, id, shared)
+		})
 	case *v1.DispatchEvent_WorkspaceMemberRemove:
 		uid := parseID(e.WorkspaceMemberRemove.GetUserId())
 		for _, s := range sessions {
@@ -421,13 +425,13 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 				s.dispatchEnc(id, shared)
 			}
 		}
-		st.delRole(uid)
+		st.delMember(uid)
 	case *v1.DispatchEvent_WorkspaceUpdate:
 		st.ws = e.WorkspaceUpdate.GetWorkspace()
 		// The suspension reason is for the owner / admins only (item 32).
 		var hidden *encEvent
 		for _, s := range sessions {
-			if pbconv.SeesSuspensionReason(st.roles[s.user]) || st.ws.GetSuspension().GetReason() == "" {
+			if pbconv.SeesSuspensionReason(st.role(s.user)) || st.ws.GetSuspension().GetReason() == "" {
 				s.dispatchEnc(id, shared)
 				continue
 			}
@@ -440,7 +444,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	case *v1.DispatchEvent_WorkspaceBanAdd, *v1.DispatchEvent_WorkspaceBanRemove:
 		// Bans are shown to those who manage members (item 32).
 		for _, s := range sessions {
-			if perm.Workspace(st.roles[s.user]).Has(perm.ManageWorkspace) {
+			if st.members[s.user].Workspace().Has(perm.ManageWorkspace) {
 				s.dispatchEnc(id, shared)
 			}
 		}
@@ -464,7 +468,7 @@ func changesVisibility(st *wsState, ev *v1.DispatchEvent) bool {
 		return !st.sameVisibility(parseID(r.GetId()), r)
 	case *v1.DispatchEvent_RoomCreate, *v1.DispatchEvent_RoomPermissionsUpdate,
 		*v1.DispatchEvent_RoomDelete, *v1.DispatchEvent_WorkspaceMemberAdd, *v1.DispatchEvent_WorkspaceMemberUpdate,
-		*v1.DispatchEvent_WorkspaceMemberRemove:
+		*v1.DispatchEvent_WorkspaceMemberRemove, *v1.DispatchEvent_RoleUpdate, *v1.DispatchEvent_RoleDelete:
 		return true
 	}
 	return false
@@ -504,7 +508,7 @@ func (h *Hub) syncGuestMembers(st *wsState, wid uuid.UUID, before map[*Session]m
 					continue
 				}
 				evs = append(evs, pendingEvent{id: uuid.New(), enc: newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
-					WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(row.WorkspaceMember, row.User)}}})})
+					WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(row.WorkspaceMember, row.User, row.RoleIds)}}})})
 				if p := pres[u]; p != nil {
 					evs = append(evs, pendingEvent{id: uuid.New(), enc: newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{
 						PresenceUpdate: &v1.PresenceUpdate{Presence: p}}})})
@@ -512,6 +516,44 @@ func (h *Hub) syncGuestMembers(st *wsState, wid uuid.UUID, before map[*Session]m
 			}
 			s.resumeMany(marker, evs)
 		}(s, added, marker)
+	}
+}
+
+// reviewRooms runs apply (which delivers the event) and then sends the sessions of users
+// matching who ROOM_CREATE / ROOM_DELETE for rooms they gained / lost with it (st.mu held):
+// member role changes and role permission / order / deletion (ADR-0026).
+func (h *Hub) reviewRooms(st *wsState, wid uuid.UUID, sessions []*Session, who func(uuid.UUID) bool, apply func()) {
+	before := map[uuid.UUID]map[uuid.UUID]bool{}
+	for _, s := range sessions {
+		if !who(s.user) || before[s.user] != nil {
+			continue
+		}
+		v := make(map[uuid.UUID]bool, len(st.rooms))
+		for rid := range st.rooms {
+			v[rid] = st.bits(rid, s.user).Has(perm.ViewRoom)
+		}
+		before[s.user] = v
+	}
+	apply()
+	after := map[uuid.UUID]map[uuid.UUID]bool{}
+	for _, s := range sessions {
+		was := before[s.user]
+		if was == nil {
+			continue
+		}
+		now := after[s.user]
+		if now == nil {
+			now = make(map[uuid.UUID]bool, len(st.rooms))
+			for rid := range st.rooms {
+				now[rid] = st.bits(rid, s.user).Has(perm.ViewRoom)
+			}
+			after[s.user] = now
+		}
+		for rid, room := range st.rooms {
+			if out := transition(was[rid], now[rid], nil, room, wid, rid); out != nil {
+				s.dispatch(uuid.New(), out)
+			}
+		}
 	}
 }
 

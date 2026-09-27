@@ -69,6 +69,12 @@ type MailOutbox struct {
 	Error     string
 }
 
+type MemberRole struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	RoleID      uuid.UUID
+}
+
 type Message struct {
 	ID           uuid.UUID
 	RoomID       uuid.UUID
@@ -339,5 +345,17 @@ type WorkspacePlanLog struct {
 	Limits      []byte
 	ValidUntil  *time.Time
 	Note        string
+	CreatedAt   time.Time
+}
+
+type WorkspaceRole struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Name        string
+	Color       int32
+	Position    int32
+	Permissions int64
+	Builtin     *string
+	Mentionable bool
 	CreatedAt   time.Time
 }

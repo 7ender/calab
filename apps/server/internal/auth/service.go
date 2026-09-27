@@ -315,9 +315,13 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		return nil, err
 	}
 	if joined != nil {
-		s.events.Workspace(ctx, joined.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
-			WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(*joined, user)},
-		}})
+		// Role ids come from the member trigger (migration 00021): the built-in role(s).
+		ids, err := s.db.Q.ListMemberRoleIDs(ctx, sqlc.ListMemberRoleIDsParams{WorkspaceID: joined.WorkspaceID, UserID: joined.UserID})
+		if err == nil {
+			s.events.Workspace(ctx, joined.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
+				WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(*joined, user, ids)},
+			}})
+		}
 	}
 	if user.EmailVerifiedAt == nil {
 		s.sendVerificationQuietly(ctx, user)

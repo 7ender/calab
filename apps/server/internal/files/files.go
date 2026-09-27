@@ -450,11 +450,11 @@ func (s *Service) uploadDM(w http.ResponseWriter, r *http.Request) error {
 
 // canAttachSomewhere reports whether the user has ATTACH_FILES in any room of the workspace.
 func (s *Service) canAttachSomewhere(ctx context.Context, wsID, uid uuid.UUID) (bool, error) {
-	role, err := perm.FromContext(ctx).Role(ctx, wsID, uid)
+	m, err := perm.FromContext(ctx).Member(ctx, wsID, uid)
 	if err != nil {
 		return false, err
 	}
-	if perm.Workspace(role).Has(perm.AttachFiles) {
+	if m.Workspace().Has(perm.AttachFiles) {
 		return true, nil
 	}
 	rooms, err := s.db.Q.ListRooms(ctx, wsID)
@@ -470,7 +470,7 @@ func (s *Service) canAttachSomewhere(ctx context.Context, wsID, uid uuid.UUID) (
 		byRoom[o.RoomID] = append(byRoom[o.RoomID], o)
 	}
 	for _, room := range rooms {
-		if perm.ComputeIn(role, uid.String(), pbconv.OverrideTargets(byRoom[room.ID])).Has(perm.ViewRoom | perm.AttachFiles) {
+		if perm.ComputeIn(m, pbconv.OverrideTargets(byRoom[room.ID])).Has(perm.ViewRoom | perm.AttachFiles) {
 			return true, nil
 		}
 	}

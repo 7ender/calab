@@ -82,9 +82,20 @@ func (p SyncPublisher) Workspace(ctx context.Context, wid uuid.UUID, ev *v1.Disp
 func (p SyncPublisher) WorkspaceEvents(ctx context.Context, wid uuid.UUID, evs []*v1.DispatchEvent) {
 	out := p.withCallStarts(ctx, evs)
 	p.Publisher.WorkspaceEvents(ctx, wid, out)
+	roles := false
 	for _, ev := range out {
+		if roleChange(ev) { // one resync of the workspace covers a whole batch (role order)
+			if roles {
+				continue
+			}
+			roles = true
+		}
 		p.sync(wid, ev)
 	}
+}
+
+func roleChange(ev *v1.DispatchEvent) bool {
+	return ev.GetRoleUpdate() != nil || ev.GetRoleDelete() != nil
 }
 
 // sync brings LiveKit in line with a published workspace event (asynchronously).
@@ -102,6 +113,12 @@ func (p SyncPublisher) sync(wid uuid.UUID, ev *v1.DispatchEvent) {
 				p.S.resync(ctx, wid, func(st voice.SessionState) bool { return st.UserID == uid })
 			})
 		}
+	case *v1.DispatchEvent_RoleUpdate, *v1.DispatchEvent_RoleDelete:
+		// A role's permissions / position changed or it is gone (ADR-0026): every device in
+		// the workspace may hold it.
+		p.async(func(ctx context.Context) {
+			p.S.resync(ctx, wid, func(voice.SessionState) bool { return true })
+		})
 	case *v1.DispatchEvent_WorkspaceMemberRemove:
 		if uid, err := uuid.Parse(e.WorkspaceMemberRemove.GetUserId()); err == nil {
 			p.async(func(ctx context.Context) {

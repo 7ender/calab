@@ -107,11 +107,11 @@ func (h *Handlers) listMentions(w http.ResponseWriter, r *http.Request) error {
 		if only != nil && ws.ID != *only {
 			continue
 		}
-		role, err := perm.FromContext(r.Context()).Role(r.Context(), ws.ID, me)
+		m, err := perm.FromContext(r.Context()).Member(r.Context(), ws.ID, me)
 		if err != nil {
 			return err
 		}
-		ids, err := rooms.VisibleIDs(r.Context(), h.db.Q, ws, me, role)
+		ids, err := rooms.VisibleIDs(r.Context(), h.db.Q, ws, m)
 		if err != nil {
 			return err
 		}

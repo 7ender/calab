@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
@@ -13,36 +14,75 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
-// wsState is this instance's view of one workspace: all live rooms (with overrides) and
-// member roles. It is loaded from Postgres once and then kept current by applying the
-// workspace's events in order, so per-recipient VIEW_ROOM filtering needs no DB queries.
+// wsState is this instance's view of one workspace: all live rooms (with overrides), the
+// roles (ADR-0026) and every member's roles. It is loaded from Postgres once and then kept
+// current by applying the workspace's events in order, so per-recipient VIEW_ROOM filtering
+// needs no DB queries.
 type wsState struct {
-	mu      sync.RWMutex
-	loading bool
-	backlog []pendingEvent // events received while loading
-	ws      *v1.Workspace
-	rooms   map[uuid.UUID]*v1.Room
-	targets map[uuid.UUID][]perm.OverrideTarget // parsed overrides per room (M13: once per change, not per check)
-	roles   map[uuid.UUID]perm.Role
+	mu       sync.RWMutex
+	loading  bool
+	backlog  []pendingEvent // events received while loading
+	ws       *v1.Workspace
+	rooms    map[uuid.UUID]*v1.Room
+	targets  map[uuid.UUID][]perm.OverrideTarget // parsed overrides per room (M13: once per change, not per check)
+	roleDefs perm.Roles                          // role id -> position / permissions
+	roleIDs  map[uuid.UUID][]string              // member -> role ids
+	members  map[uuid.UUID]perm.Member           // derived from roleIDs + roleDefs
 	// viewers caches who can view each room, for guest visibility (review B2). Filled lazily
 	// and only under the write lock (the fan-out path); dropped per room by setRoom/delRoom
-	// and entirely by setRole/delRole.
+	// and entirely by member and role changes.
 	viewers map[uuid.UUID]map[uuid.UUID]bool
 }
 
-// setRole changes a member's role and invalidates the viewers cache (mu held).
-func (s *wsState) setRole(uid uuid.UUID, r perm.Role) {
-	if s.roles[uid] != r {
-		s.roles[uid] = r
+// setMember stores a member's built-in role and role ids (mu held).
+func (s *wsState) setMember(uid uuid.UUID, role perm.Role, ids []string) {
+	if s.roleIDs == nil {
+		s.roleIDs = map[uuid.UUID][]string{}
+	}
+	if s.members == nil {
+		s.members = map[uuid.UUID]perm.Member{}
+	}
+	s.roleIDs[uid] = ids
+	s.members[uid] = s.roleDefs.Member(uid.String(), role, ids)
+	s.viewers = nil
+}
+
+func (s *wsState) delMember(uid uuid.UUID) {
+	if _, ok := s.members[uid]; ok {
+		delete(s.members, uid)
+		delete(s.roleIDs, uid)
 		s.viewers = nil
 	}
 }
 
-func (s *wsState) delRole(uid uuid.UUID) {
-	if _, ok := s.roles[uid]; ok {
-		delete(s.roles, uid)
-		s.viewers = nil
+// role returns a member's highest built-in role ("" = not a member).
+func (s *wsState) role(uid uuid.UUID) perm.Role { return s.members[uid].Role }
+
+// setRoleDef stores a created / updated role and rebuilds its holders (mu held).
+func (s *wsState) setRoleDef(r *v1.Role) {
+	if s.roleDefs == nil {
+		s.roleDefs = perm.Roles{}
 	}
+	s.roleDefs[r.GetId()] = perm.RoleBits{ID: r.GetId(), Position: r.GetPosition(), Permissions: perm.Bits(r.GetPermissions())}
+	s.rebuild()
+}
+
+// delRoleDef forgets a deleted role, also in every member's role ids (mu held).
+func (s *wsState) delRoleDef(id string) {
+	delete(s.roleDefs, id)
+	for u, ids := range s.roleIDs {
+		if slices.Contains(ids, id) {
+			s.roleIDs[u] = slices.DeleteFunc(slices.Clone(ids), func(x string) bool { return x == id })
+		}
+	}
+	s.rebuild()
+}
+
+func (s *wsState) rebuild() {
+	for u, m := range s.members {
+		s.members[u] = s.roleDefs.Member(m.UserID, m.Role, s.roleIDs[u])
+	}
+	s.viewers = nil
 }
 
 // roomViewers returns the members who can view room id (mu held for write).
@@ -51,7 +91,7 @@ func (s *wsState) roomViewers(id uuid.UUID) map[uuid.UUID]bool {
 		return v
 	}
 	v := map[uuid.UUID]bool{}
-	for u := range s.roles {
+	for u := range s.members {
 		if s.bits(id, u).Has(perm.ViewRoom) {
 			v[u] = true
 		}
@@ -121,7 +161,7 @@ func (s *wsState) sameVisibility(id uuid.UUID, r *v1.Room) bool {
 // hiddenFrom reports whether events about subject must not reach viewer: only guests are
 // restricted, to members who share a room with them (mu held for write).
 func (s *wsState) hiddenFrom(viewer, subject uuid.UUID) bool {
-	if viewer == subject || s.roles[viewer] != perm.RoleGuest {
+	if viewer == subject || s.role(viewer) != perm.RoleGuest {
 		return false
 	}
 	return !s.coRoom(viewer, subject)
@@ -140,7 +180,11 @@ func loadState(ctx context.Context, q *sqlc.Queries, wid uuid.UUID) (*wsState, e
 	if err != nil {
 		return nil, err
 	}
-	roles, err := q.ListMemberRoles(ctx, wid)
+	roles, err := q.ListWorkspaceRoles(ctx, wid)
+	if err != nil {
+		return nil, err
+	}
+	members, err := q.ListWorkspaceMemberRoles(ctx, wid)
 	if err != nil {
 		return nil, err
 	}
@@ -148,35 +192,28 @@ func loadState(ctx context.Context, q *sqlc.Queries, wid uuid.UUID) (*wsState, e
 	for _, o := range ovs {
 		byRoom[o.RoomID] = append(byRoom[o.RoomID], o)
 	}
-	st := &wsState{ws: pbconv.Workspace(ws), rooms: map[uuid.UUID]*v1.Room{}, roles: map[uuid.UUID]perm.Role{}}
+	st := &wsState{ws: pbconv.Workspace(ws), rooms: map[uuid.UUID]*v1.Room{}, roleDefs: perm.RolesOf(roles)}
 	defaults := pbconv.WorkspaceDefaults(ws)
 	for _, r := range rs {
 		st.setRoom(r.ID, pbconv.Room(r, defaults, byRoom[r.ID]))
 	}
-	for _, m := range roles {
-		st.roles[m.UserID] = perm.Role(m.Role)
+	for _, m := range members {
+		st.setMember(m.UserID, perm.Role(m.Role), perm.IDStrings(m.RoleIds))
 	}
 	return st, nil
 }
 
-// roomBits returns userID's permissions in room (0 if not a member).
-func roomBits(room *v1.Room, role perm.Role, userID uuid.UUID) perm.Bits {
-	if room == nil || role == "" {
-		return 0
-	}
-	return perm.ComputeIn(role, userID.String(), pbconv.ProtoOverrideTargets(room.GetPermissionOverrides()))
-}
-
 // bits must be called with mu held (read).
 func (s *wsState) bits(roomID, userID uuid.UUID) perm.Bits {
-	role := s.roles[userID]
-	if role == "" || s.rooms[roomID] == nil {
+	m, ok := s.members[userID]
+	if !ok || s.rooms[roomID] == nil {
 		return 0
 	}
-	if t, ok := s.targets[roomID]; ok {
-		return perm.ComputeIn(role, userID.String(), t)
+	t, ok := s.targets[roomID]
+	if !ok {
+		t = pbconv.ProtoOverrideTargets(s.rooms[roomID].GetPermissionOverrides())
 	}
-	return roomBits(s.rooms[roomID], role, userID)
+	return perm.ComputeIn(m, t)
 }
 
 func (s *wsState) canView(roomID, userID uuid.UUID) bool {

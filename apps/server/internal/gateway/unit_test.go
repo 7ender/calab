@@ -126,7 +126,12 @@ func TestCodec(t *testing.T) {
 func TestVisibilityTransitions(t *testing.T) {
 	wid, rid, alice, bob := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	room := &v1.Room{Id: rid.String()}
-	st := &wsState{rooms: map[uuid.UUID]*v1.Room{}, roles: map[uuid.UUID]perm.Role{alice: perm.RoleMember, bob: perm.RoleGuest}}
+	st := &wsState{rooms: map[uuid.UUID]*v1.Room{}, roleDefs: perm.Roles{
+		"member": {ID: "member", Position: perm.PosMember, Permissions: perm.RoleDefaults[perm.RoleMember]},
+		"guest":  {ID: "guest", Position: perm.PosGuest, Permissions: perm.RoleDefaults[perm.RoleGuest]},
+	}}
+	st.setMember(alice, perm.RoleMember, []string{"member"})
+	st.setMember(bob, perm.RoleGuest, []string{"guest"})
 	st.setRoom(rid, room)
 	if !st.canView(rid, alice) || st.canView(rid, bob) {
 		t.Fatal("defaults: member sees, guest does not")
@@ -141,7 +146,7 @@ func TestVisibilityTransitions(t *testing.T) {
 	}
 	// Guests see only members sharing a room with them (M7).
 	carol := uuid.New()
-	st.setRole(carol, perm.RoleMember)
+	st.setMember(carol, perm.RoleMember, []string{"member"})
 	if st.hiddenFrom(alice, bob) || !st.hiddenFrom(bob, alice) || !st.hiddenFrom(bob, carol) || st.hiddenFrom(bob, bob) {
 		t.Fatal("guest visibility")
 	}
@@ -153,15 +158,38 @@ func TestVisibilityTransitions(t *testing.T) {
 		t.Fatal("guest must see a member of a shared room")
 	}
 	// B2: cached viewers are invalidated by role and override changes.
-	st.setRole(carol, perm.RoleGuest)
+	st.setMember(carol, perm.RoleGuest, []string{"guest"})
 	if !st.hiddenFrom(bob, carol) {
 		t.Fatal("stale viewers cache after a role change")
 	}
-	st.setRole(carol, perm.RoleMember)
+	st.setMember(carol, perm.RoleMember, []string{"member"})
 	st.setRoom(other, &v1.Room{Id: other.String()})
 	if !st.hiddenFrom(bob, carol) {
 		t.Fatal("stale viewers cache after an override change")
 	}
+	// ADR-0026: a custom role allowed into the private room; its permissions / deletion
+	// change what its holders see.
+	st.setRoleDef(&v1.Role{Id: "mod", Position: 2})
+	st.setRoom(rid, withPermissions(room, append(private, &v1.RoomPermissionOverride{
+		TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_ROLE, TargetId: "mod", Allow: uint64(perm.ViewRoom),
+	})))
+	if st.canView(rid, alice) {
+		t.Fatal("alice without the role")
+	}
+	st.setMember(alice, perm.RoleMember, []string{"member", "mod"})
+	if !st.canView(rid, alice) {
+		t.Fatal("alice with the allowed role")
+	}
+	st.delRoleDef("mod")
+	if st.canView(rid, alice) || len(st.roleIDs[alice]) != 1 {
+		t.Fatal("deleted role still counts")
+	}
+	st.setRoleDef(&v1.Role{Id: "member", Position: perm.PosMember, Permissions: uint64(perm.RoleDefaults[perm.RoleMember] &^ perm.ViewRoom)})
+	if st.canView(other, carol) {
+		t.Fatal("member role without VIEW_ROOM: rebuilt holders must lose the room")
+	}
+	st.setRoleDef(&v1.Role{Id: "member", Position: perm.PosMember, Permissions: uint64(perm.RoleDefaults[perm.RoleMember])})
+	st.setRoom(rid, withPermissions(room, private))
 	renamed := proto.Clone(st.rooms[rid]).(*v1.Room)
 	renamed.Name = "renamed"
 	if !st.sameVisibility(rid, renamed) {

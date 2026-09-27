@@ -193,7 +193,11 @@ func (h *Handlers) addMember(w http.ResponseWriter, r *http.Request) error {
 			h.email.Mail.Wake()
 		}
 	}
-	httpx.Write(w, http.StatusCreated, &v1.AddMemberResponse{Member: pbconv.Member(m, u)})
+	pb, err := MemberPB(r.Context(), h.db.Q, m, u)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusCreated, &v1.AddMemberResponse{Member: pb})
 	return nil
 }
 

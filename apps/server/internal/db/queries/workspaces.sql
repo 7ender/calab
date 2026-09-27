@@ -53,12 +53,18 @@ RETURNING *;
 SELECT * FROM workspace_members WHERE workspace_id = $1 AND user_id = $2;
 
 -- name: GetMemberWithUser :one
-SELECT sqlc.embed(m), sqlc.embed(u)
+SELECT sqlc.embed(m), sqlc.embed(u),
+       coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
+                 FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
+                 WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
 FROM workspace_members m JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1 AND m.user_id = $2;
 
 -- name: ListMembers :many
-SELECT sqlc.embed(m), sqlc.embed(u)
+SELECT sqlc.embed(m), sqlc.embed(u),
+       coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
+                 FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
+                 WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
 FROM workspace_members m JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1
 ORDER BY m.joined_at;
@@ -81,9 +87,6 @@ WHERE rp.room_id = r.id AND r.workspace_id = sqlc.arg('workspace_id')::uuid
 
 -- name: ListUserWorkspaceIDs :many
 SELECT workspace_id FROM workspace_members WHERE user_id = $1;
-
--- name: ListMemberRoles :many
-SELECT user_id, role FROM workspace_members WHERE workspace_id = $1;
 
 -- name: ListMemberNames :many
 -- Voice display names: nickname if set, else the user's display name.

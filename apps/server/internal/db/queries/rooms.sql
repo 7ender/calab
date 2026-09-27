@@ -53,12 +53,17 @@ VALUES ($1, $2, $3, $4, $5);
 
 -- name: GetRoomAccess :one
 -- Everything needed to compute a user's permissions in a room, in one round trip. Workspace
--- rooms: the membership (role NULL = not a member) and the overrides. DMs (workspace_id
--- NULL): the two participants. suspended: the workspace is suspended (item 32).
+-- rooms: the membership (role NULL = not a member), the member's roles lowest position first
+-- (ADR-0026) with each role's override in this room (0/0 = none) and the user override. DMs
+-- (workspace_id NULL): the two participants. suspended: the workspace is suspended (item 32).
 SELECT r.workspace_id,
        r.type,
        m.role,
-       ro.allow AS role_allow, ro.deny AS role_deny,
+       coalesce(mr.ids, '{}')::uuid[] AS role_ids,
+       coalesce(mr.positions, '{}')::integer[] AS role_positions,
+       coalesce(mr.perms, '{}')::bigint[] AS role_permissions,
+       coalesce(mr.allows, '{}')::bigint[] AS role_allows,
+       coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (CASE WHEN r.type = 'dm' THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
              ELSE '{}'::uuid[] END)::uuid[] AS dm_members,
@@ -66,7 +71,17 @@ SELECT r.workspace_id,
 FROM rooms r
 LEFT JOIN workspaces w ON w.id = r.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = sqlc.arg('user_id')
-LEFT JOIN room_permissions ro ON ro.room_id = r.id AND ro.target_type = 'role' AND ro.target_id = m.role
+LEFT JOIN LATERAL (
+    SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
+           array_agg(wr.position ORDER BY wr.position) AS positions,
+           array_agg(wr.permissions ORDER BY wr.position) AS perms,
+           array_agg(coalesce(ro.allow, 0) ORDER BY wr.position) AS allows,
+           array_agg(coalesce(ro.deny, 0) ORDER BY wr.position) AS denies
+    FROM member_roles x
+    JOIN workspace_roles wr ON wr.id = x.role_id
+    LEFT JOIN room_permissions ro ON ro.room_id = r.id AND ro.target_type = 'role' AND ro.target_id = wr.id::text
+    WHERE x.workspace_id = m.workspace_id AND x.user_id = m.user_id
+) mr ON true
 LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = sqlc.arg('user_id')::text
 WHERE r.id = sqlc.arg('room_id') AND r.archived_at IS NULL;
 

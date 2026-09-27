@@ -12,23 +12,23 @@ import (
 )
 
 type fakeStore struct {
-	members     map[key]string
+	members     map[key]sqlc.GetMemberAccessRow
 	access      map[key]sqlc.GetRoomAccessRow
 	memberCalls int
 	accessCalls int
 	err         error
 }
 
-func (f *fakeStore) GetMember(_ context.Context, a sqlc.GetMemberParams) (sqlc.WorkspaceMember, error) {
+func (f *fakeStore) GetMemberAccess(_ context.Context, a sqlc.GetMemberAccessParams) (sqlc.GetMemberAccessRow, error) {
 	f.memberCalls++
 	if f.err != nil {
-		return sqlc.WorkspaceMember{}, f.err
+		return sqlc.GetMemberAccessRow{}, f.err
 	}
-	role, ok := f.members[key{a.WorkspaceID, a.UserID}]
+	row, ok := f.members[key{a.WorkspaceID, a.UserID}]
 	if !ok {
-		return sqlc.WorkspaceMember{}, pgx.ErrNoRows
+		return sqlc.GetMemberAccessRow{}, pgx.ErrNoRows
 	}
-	return sqlc.WorkspaceMember{WorkspaceID: a.WorkspaceID, UserID: a.UserID, Role: role}, nil
+	return row, nil
 }
 
 func (f *fakeStore) GetRoomAccess(_ context.Context, a sqlc.GetRoomAccessParams) (sqlc.GetRoomAccessRow, error) {
@@ -40,36 +40,59 @@ func (f *fakeStore) GetRoomAccess(_ context.Context, a sqlc.GetRoomAccessParams)
 	return row, nil
 }
 
-func i64(v int64) *int64 { return &v }
-
 func ptr[T any](v T) *T { return &v }
 
 func TestResolverRoomAndCache(t *testing.T) {
 	ws, room, u := uuid.New(), uuid.New(), uuid.New()
+	member, mod := uuid.New(), uuid.New()
+	// member (deny STREAM here) and a custom role at position 2 (allow MOVE_MEMBERS here).
 	s := &fakeStore{access: map[key]sqlc.GetRoomAccessRow{
-		{room, u}: {WorkspaceID: &ws, Type: "voice", Role: ptr("member"), RoleAllow: i64(0), RoleDeny: i64(int64(Stream))},
+		{room, u}: {
+			WorkspaceID: &ws, Type: "voice", Role: ptr("member"),
+			RoleIds: []uuid.UUID{member, mod}, RolePositions: []int32{1, 2},
+			RolePermissions: []int64{i64(RoleDefaults[RoleMember]), i64(MuteMembers)},
+			RoleAllows:      []int64{0, int64(MoveMembers)}, RoleDenies: []int64{int64(Stream), 0},
+		},
 	}}
 	r := NewResolver(s)
 	ctx := context.Background()
+	want := ComputeRoles([]RoleBits{
+		{ID: "m", Position: 1, Permissions: RoleDefaults[RoleMember]}, {ID: "x", Position: 2, Permissions: MuteMembers},
+	}, map[string]Override{"m": {Deny: Stream}, "x": {Allow: MoveMembers}}, nil)
 	for range 3 {
 		acc, err := r.Room(ctx, room, u)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := Compute(RoleMember, &Override{Deny: Stream}, nil); acc.Bits != want || acc.WorkspaceID != ws {
+		if acc.Bits != want || acc.WorkspaceID != ws || acc.Bits.Has(Stream) || !acc.Bits.Has(MoveMembers|MuteMembers) {
 			t.Fatalf("got %+v, want bits %d", acc, want)
 		}
 	}
 	if s.accessCalls != 1 {
 		t.Fatalf("room access loaded %d times, want 1 (cached)", s.accessCalls)
 	}
-	// Room lookup also primes the workspace role cache.
-	if role, err := r.Role(ctx, ws, u); err != nil || role != RoleMember || s.memberCalls != 0 {
-		t.Fatalf("role=%q err=%v memberCalls=%d", role, err, s.memberCalls)
+	// Room lookup also primes the workspace member cache.
+	bits, role, err := r.Workspace(ctx, ws, u)
+	if err != nil || role != RoleMember || s.memberCalls != 0 || bits != RoleDefaults[RoleMember]|MuteMembers {
+		t.Fatalf("role=%q bits=%d err=%v memberCalls=%d", role, bits, err, s.memberCalls)
 	}
 	r.Invalidate()
 	if _, err := r.Room(ctx, room, u); err != nil || s.accessCalls != 2 {
 		t.Fatalf("after invalidate: err=%v calls=%d", err, s.accessCalls)
+	}
+}
+
+func TestResolverMember(t *testing.T) {
+	ws, u := uuid.New(), uuid.New()
+	admin, member := uuid.New(), uuid.New()
+	s := &fakeStore{members: map[key]sqlc.GetMemberAccessRow{
+		{ws, u}: {Role: "admin", RoleIds: []uuid.UUID{member, admin}, RolePositions: []int32{PosMember, PosAdmin},
+			RolePermissions: []int64{i64(RoleDefaults[RoleMember]), i64(Administrator)}},
+	}}
+	r := NewResolver(s)
+	m, err := r.Member(context.Background(), ws, u)
+	if err != nil || m.Workspace() != All || m.Top() != PosAdmin || m.Role != RoleAdmin || !m.Has(admin.String()) {
+		t.Fatalf("member %+v err %v", m, err)
 	}
 }
 
@@ -97,7 +120,7 @@ func TestResolverDM(t *testing.T) {
 }
 
 func TestResolverNoAccess(t *testing.T) {
-	s := &fakeStore{members: map[key]string{}, access: map[key]sqlc.GetRoomAccessRow{}}
+	s := &fakeStore{members: map[key]sqlc.GetMemberAccessRow{}, access: map[key]sqlc.GetRoomAccessRow{}}
 	r := NewResolver(s)
 	ctx := context.Background()
 	if _, err := r.Room(ctx, uuid.New(), uuid.New()); !errors.Is(err, ErrNoRoom) {
@@ -121,22 +144,26 @@ func TestResolverStoreError(t *testing.T) {
 	}
 }
 
-func TestWorkspaceBitsAndComputeIn(t *testing.T) {
-	if Workspace(RoleAdmin) != All || Workspace(RoleMember).Has(ManageWorkspace) || Workspace(RoleGuest) != 0 {
-		t.Fatal("unexpected workspace-level bits")
+func TestComputeInPrivateRoom(t *testing.T) {
+	memberID, guestID := uuid.NewString(), uuid.NewString()
+	roles := Roles{
+		memberID: {ID: memberID, Position: PosMember, Permissions: RoleDefaults[RoleMember]},
+		guestID:  {ID: guestID, Position: PosGuest, Permissions: RoleDefaults[RoleGuest]},
 	}
 	u := uuid.NewString()
 	ovs := []OverrideTarget{
-		{TargetType: "role", TargetID: "member", Override: Override{Deny: ViewRoom}},
+		{TargetType: "role", TargetID: memberID, Override: Override{Deny: ViewRoom}},
 		{TargetType: "user", TargetID: u, Override: Override{Allow: ViewRoom}},
 	}
-	if ComputeIn(RoleMember, uuid.NewString(), ovs) != 0 {
+	if ComputeIn(roles.Member(uuid.NewString(), RoleMember, []string{memberID}), ovs) != 0 {
 		t.Fatal("private room visible to other members")
 	}
-	if !ComputeIn(RoleMember, u, ovs).Has(ViewRoom) {
+	if !ComputeIn(roles.Member(u, RoleMember, []string{memberID}), ovs).Has(ViewRoom) {
 		t.Fatal("private room hidden from allowed user")
 	}
-	if ComputeIn(RoleGuest, u, ovs) != ViewRoom|Connect|Speak {
-		t.Fatalf("guest with user allow: %d", ComputeIn(RoleGuest, u, ovs))
+	if got := ComputeIn(roles.Member(u, RoleGuest, []string{guestID, "unknown"}), ovs); got != ViewRoom|Connect|Speak {
+		t.Fatalf("guest with user allow: %d", got)
 	}
 }
+
+func i64(b Bits) int64 { return int64(b) } //nolint:gosec // small bit masks in tests

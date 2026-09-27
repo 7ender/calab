@@ -375,11 +375,11 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		ready.Presence = m.self(uid)
 	}
 	for _, w := range wss {
-		role, err := res.Role(ctx, w.ID, uid)
+		me, err := res.Member(ctx, w.ID, uid)
 		if err != nil {
 			continue
 		}
-		snap, err := workspaces.Snapshot(ctx, h.db.Q, h.cfg.Plans, w, uid, role)
+		snap, err := workspaces.Snapshot(ctx, h.db.Q, h.cfg.Plans, w, uid, me)
 		if err != nil {
 			return nil, err
 		}

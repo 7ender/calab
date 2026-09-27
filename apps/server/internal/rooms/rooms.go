@@ -46,13 +46,13 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 }
 
 // Visible returns the workspace's rooms that userID can see (VIEW_ROOM), in display order.
-func Visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uuid.UUID, role perm.Role) ([]*v1.Room, error) {
-	return visible(ctx, q, ws, userID, role, true)
+func Visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member) ([]*v1.Room, error) {
+	return visible(ctx, q, ws, m, true)
 }
 
 // VisibleIDs returns the ids of rooms userID can see (no last-message lookup).
-func VisibleIDs(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uuid.UUID, role perm.Role) ([]uuid.UUID, error) {
-	rs, err := visible(ctx, q, ws, userID, role, false)
+func VisibleIDs(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member) ([]uuid.UUID, error) {
+	rs, err := visible(ctx, q, ws, m, false)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func VisibleIDs(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID 
 	return out, nil
 }
 
-func visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uuid.UUID, role perm.Role, withLast bool) ([]*v1.Room, error) {
+func visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member, withLast bool) ([]*v1.Room, error) {
 	rows, err := q.ListRooms(ctx, ws.ID)
 	if err != nil {
 		return nil, err
@@ -77,12 +77,11 @@ func visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uui
 		byRoom[o.RoomID] = append(byRoom[o.RoomID], o)
 	}
 	defaults := pbconv.WorkspaceDefaults(ws)
-	uid := userID.String()
 	out := make([]*v1.Room, 0, len(rows))
 	ids := make([]uuid.UUID, 0, len(rows))
 	for _, r := range rows {
 		ovs := byRoom[r.ID]
-		if !perm.ComputeIn(role, uid, pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
+		if !perm.ComputeIn(m, pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
 			continue
 		}
 		out = append(out, pbconv.Room(r, defaults, ovs))
@@ -141,10 +140,13 @@ func WorkspaceIDString(acc perm.RoomAccess) string {
 	return acc.WorkspaceID.String()
 }
 
-// WorkspaceRole returns the caller's role in a workspace (404 for non-members).
-func WorkspaceRole(r *http.Request, wsID uuid.UUID) (perm.Role, error) {
-	_, role, err := workspaceAccess(r, wsID)
-	return role, err
+// WorkspaceMember returns the caller's roles in a workspace (404 for non-members).
+func WorkspaceMember(r *http.Request, wsID uuid.UUID) (perm.Member, error) {
+	m, err := perm.FromContext(r.Context()).Member(r.Context(), wsID, auth.MustFromContext(r.Context()).UserID)
+	if errors.Is(err, perm.ErrNotMember) {
+		return perm.Member{}, httpx.NotFound("workspace")
+	}
+	return m, err
 }
 
 func roomAccess(r *http.Request, roomID uuid.UUID) (perm.RoomAccess, error) {
@@ -307,8 +309,12 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		}
 		if room.IsPrivate {
 			// Private room = members lose VIEW_ROOM; guests never had it (docs/04).
+			member, err := q.GetBuiltinRole(r.Context(), sqlc.GetBuiltinRoleParams{WorkspaceID: wsID, Builtin: ptr(string(perm.RoleMember))})
+			if err != nil {
+				return err
+			}
 			if err := q.InsertRoomOverride(r.Context(), sqlc.InsertRoomOverrideParams{
-				RoomID: room.ID, TargetType: "role", TargetID: string(perm.RoleMember), Deny: int64(perm.ViewRoom),
+				RoomID: room.ID, TargetType: "role", TargetID: member.ID.String(), Deny: int64(perm.ViewRoom),
 			}); err != nil {
 				return err
 			}
@@ -330,7 +336,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	_, role, err := workspaceAccess(r, wsID)
+	m, err := WorkspaceMember(r, wsID)
 	if err != nil {
 		return err
 	}
@@ -338,7 +344,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rooms, err := Visible(r.Context(), h.db.Q, ws, auth.MustFromContext(r.Context()).UserID, role)
+	rooms, err := Visible(r.Context(), h.db.Q, ws, m)
 	if err != nil {
 		return err
 	}
@@ -439,7 +445,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if req.AllowRecording != nil {
 		// Recording consent is the workspace's call (ADR-0025): owner / admins only.
-		if !perm.Workspace(acc.Role).Has(perm.ManageWorkspace) {
+		if !acc.Member.Workspace().Has(perm.ManageWorkspace) {
 			return httpx.Forbidden("MANAGE_WORKSPACE required to change allow_recording")
 		}
 		p.AllowRecording = req.AllowRecording
@@ -517,6 +523,19 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 		prev[e.TargetType+":"+e.TargetID] = perm.Bits(uint64(e.Allow)) //nolint:gosec // bit mask
 	}
 	admin := actor.Bits.Has(perm.Administrator)
+	// Role targets: a role id of this workspace, or (clients before ADR-0026) the name of a
+	// built-in role, stored as its id.
+	roleRows, err := q.ListWorkspaceRoles(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	roleIDs := make(map[string]string, len(roleRows)+4)
+	for _, rr := range roleRows {
+		roleIDs[rr.ID.String()] = rr.ID.String()
+		if rr.Builtin != nil {
+			roleIDs[*rr.Builtin] = rr.ID.String()
+		}
+	}
 	seen := map[string]bool{}
 	out := make([]sqlc.InsertRoomOverrideParams, 0, len(in))
 	for i, o := range in {
@@ -528,9 +547,11 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 		target := o.GetTargetId()
 		switch tt {
 		case "role":
-			if !perm.Role(target).Valid() {
+			id, ok := roleIDs[strings.ToLower(target)]
+			if !ok {
 				return nil, httpx.Validation(field+".targetId", "unknown role")
 			}
+			target = id
 		case "user":
 			uid, err := uuid.Parse(target)
 			if err != nil {
@@ -550,7 +571,7 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 		seen[tt+":"+target] = true
 		allow, deny := perm.Bits(o.GetAllow()), perm.Bits(o.GetDeny())
 		if (allow|deny)&^perm.RoomOnly != 0 {
-			return nil, httpx.Validation(field, "ADMINISTRATOR and MANAGE_WORKSPACE cannot be set per room")
+			return nil, httpx.Validation(field, "ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES and MANAGE_ROLES cannot be set per room")
 		}
 		if allow&deny != 0 {
 			return nil, httpx.Validation(field, "a bit cannot be both allowed and denied")
@@ -630,3 +651,5 @@ func (h *Handlers) setPermissions(w http.ResponseWriter, r *http.Request) error 
 	httpx.Write(w, http.StatusOK, &v1.SetRoomPermissionsResponse{Room: pb})
 	return nil
 }
+
+func ptr[T any](v T) *T { return &v }

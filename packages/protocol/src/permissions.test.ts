@@ -7,8 +7,11 @@ import {
   ALL_PERMISSIONS,
   PERMISSION_BITS,
   ROLE_DEFAULTS,
+  computeMemberRoomPermissions,
   computePermissions,
   computeRoomPermissions,
+  memberRoles,
+  workspacePermissions,
   type OverrideBits,
 } from './permissions.js';
 
@@ -19,6 +22,10 @@ interface Vector {
   participant?: boolean;
   roleOverride?: { allow: number; deny: number };
   userOverride?: { allow: number; deny: number };
+  // ADR-0026: the member's roles and the room's overrides by role id.
+  roles?: { id: string; position: number; permissions: number }[];
+  roleOverrides?: Record<string, { allow: number; deny: number }>;
+  expectedWorkspace?: number;
   expected: number;
 }
 
@@ -37,9 +44,43 @@ const vectors = JSON.parse(
   readFileSync(new URL('../../../proto/testdata/permissions.json', import.meta.url), 'utf8'),
 ) as Vector[];
 
+const toRoles = (rs: NonNullable<Vector['roles']>) =>
+  rs.map((r) => ({ id: r.id, position: r.position, permissions: BigInt(r.permissions) }));
+
 describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
+      if (v.roles) {
+        const roles = toRoles(v.roles);
+        const roleOverrides = Object.fromEntries(
+          Object.entries(v.roleOverrides ?? {}).map(([id, o]) => [id, toOv(o) as OverrideBits]),
+        );
+        expect(computePermissions({ roles, roleOverrides, userOverride: toOv(v.userOverride) })).toBe(BigInt(v.expected));
+        // The same through Room.permissionOverrides.
+        const overrides = [
+          ...Object.entries(v.roleOverrides ?? {}).map(([id, o]) =>
+            create(RoomPermissionOverrideSchema, {
+              targetType: PermissionTargetType.ROLE,
+              targetId: id,
+              allow: BigInt(o.allow),
+              deny: BigInt(o.deny),
+            }),
+          ),
+          ...(v.userOverride
+            ? [
+                create(RoomPermissionOverrideSchema, {
+                  targetType: PermissionTargetType.USER,
+                  targetId: 'u1',
+                  allow: BigInt(v.userOverride.allow),
+                  deny: BigInt(v.userOverride.deny),
+                }),
+              ]
+            : []),
+        ];
+        expect(computeMemberRoomPermissions(roles, 'u1', overrides)).toBe(BigInt(v.expected));
+        if (v.expectedWorkspace !== undefined) expect(workspacePermissions(roles)).toBe(BigInt(v.expectedWorkspace));
+        return;
+      }
       expect(
         computePermissions({
           role: v.role ? roles[v.role] : WorkspaceRole.UNSPECIFIED,
@@ -69,5 +110,18 @@ describe('computeRoomPermissions', () => {
     expect(computeRoomPermissions(WorkspaceRole.MEMBER, 'u2', overrides)).toBe(0n);
     expect(computeRoomPermissions(WorkspaceRole.MEMBER, 'u1', overrides)).toBe(ROLE_DEFAULTS[WorkspaceRole.MEMBER]);
     expect(computeRoomPermissions(WorkspaceRole.ADMIN, 'u3', overrides)).toBe(ALL_PERMISSIONS);
+  });
+});
+
+describe('roles (ADR-0026)', () => {
+  it('memberRoles picks the member roles; MANAGE_ROLES is part of ALL_PERMISSIONS', () => {
+    const all = [
+      { id: 'a', position: 1000, permissions: PERMISSION_BITS.ADMINISTRATOR },
+      { id: 'm', position: 1, permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER] },
+    ];
+    expect(memberRoles(all, ['m']).map((r) => r.id)).toEqual(['m']);
+    expect(workspacePermissions(memberRoles(all, ['m', 'a']))).toBe(ALL_PERMISSIONS);
+    expect(ALL_PERMISSIONS & PERMISSION_BITS.MANAGE_ROLES).toBe(PERMISSION_BITS.MANAGE_ROLES);
+    expect(ALL_PERMISSIONS).toBe(65535n);
   });
 });

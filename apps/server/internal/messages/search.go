@@ -78,7 +78,7 @@ func (h *Handlers) searchWorkspace(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	role, err := rooms.WorkspaceRole(r, wsID) // 404 for non-members
+	m, err := rooms.WorkspaceMember(r, wsID) // 404 for non-members
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func (h *Handlers) searchWorkspace(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	ids, err := rooms.VisibleIDs(r.Context(), h.db.Q, ws, uid(r), role)
+	ids, err := rooms.VisibleIDs(r.Context(), h.db.Q, ws, m)
 	if err != nil {
 		return err
 	}

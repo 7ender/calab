@@ -2,9 +2,9 @@ package perm
 
 import v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 
-// Valid reports whether r is one of the four workspace roles.
+// Valid reports whether r is one of the four built-in workspace roles.
 func (r Role) Valid() bool {
-	_, ok := roleDefaults[r]
+	_, ok := RoleDefaults[r]
 	return ok
 }
 
@@ -38,34 +38,39 @@ func RoleFromProto(r v1.WorkspaceRole) (Role, bool) {
 	return "", false
 }
 
-// Workspace returns workspace-level permissions of a role: role defaults without room
-// overrides (used for MANAGE_WORKSPACE and for creating rooms, which needs MANAGE_ROOM).
-func Workspace(role Role) Bits {
-	return Compute(role, nil, nil)
-}
-
-// RoomOnly are the bits that may appear in room overrides. ADMINISTRATOR,
-// MANAGE_WORKSPACE and MANAGE_NICKNAMES are workspace-level and cannot be granted per room.
-const RoomOnly = All &^ (Administrator | ManageWorkspace | ManageNicknames)
+// RoomOnly are the bits that may appear in room overrides. ADMINISTRATOR, MANAGE_WORKSPACE,
+// MANAGE_NICKNAMES and MANAGE_ROLES are workspace-level and cannot be granted per room.
+const RoomOnly = All &^ (Administrator | ManageWorkspace | ManageNicknames | ManageRoles)
 
 // OverrideTarget is one row of room_permissions.
 type OverrideTarget struct {
 	TargetType string // "role" | "user"
-	TargetID   string // role name or user uuid
+	TargetID   string // role id or user uuid
 	Override
 }
 
-// ComputeIn computes a user's permissions in a room from the room's full override list.
-func ComputeIn(role Role, userID string, overrides []OverrideTarget) Bits {
-	var roleOv, userOv *Override
-	for i := range overrides {
-		o := &overrides[i]
-		switch {
-		case o.TargetType == "role" && o.TargetID == string(role):
-			roleOv = &o.Override
-		case o.TargetType == "user" && o.TargetID == userID:
-			userOv = &o.Override
+// ComputeIn computes a member's permissions in a room from the room's full override list.
+func ComputeIn(m Member, overrides []OverrideTarget) Bits {
+	ws := m.Workspace()
+	if ws&Administrator != 0 {
+		return All
+	}
+	var userOv *Override
+	var buf [8]Override
+	roleOvs := buf[:0]
+	for _, r := range m.Roles { // lowest position first
+		for i := range overrides {
+			if o := &overrides[i]; o.TargetType == "role" && o.TargetID == r.ID {
+				roleOvs = append(roleOvs, o.Override)
+				break
+			}
 		}
 	}
-	return Compute(role, roleOv, userOv)
+	for i := range overrides {
+		if o := &overrides[i]; o.TargetType == "user" && o.TargetID == m.UserID {
+			userOv = &o.Override
+			break
+		}
+	}
+	return ComputeOrdered(ws, roleOvs, userOv)
 }

@@ -97,6 +97,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	mux.Handle("GET /api/invites/{code}", httpx.HandlerFunc(h.getInvite))
 	handle("POST /api/invites/{code}/join", h.joinInvite)
 	h.emailRoutes(handle)
+	h.roleRoutes(handle)
 	h.banRoutes(handle)
 }
 
@@ -128,12 +129,17 @@ func requireManage(r *http.Request) (uuid.UUID, perm.Role, error) {
 
 // Snapshot builds the workspace state as seen by userID (rooms filtered by VIEW_ROOM), with
 // the plan from pl (nil = unset). Voice states and presences are filled in by the gateway.
-func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.Workspace, userID uuid.UUID, role perm.Role) (*v1.WorkspaceSnapshot, error) {
-	rs, err := rooms.Visible(ctx, q, ws, userID, role)
+func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.Workspace, userID uuid.UUID, me perm.Member) (*v1.WorkspaceSnapshot, error) {
+	role := me.Role
+	rs, err := rooms.Visible(ctx, q, ws, me)
 	if err != nil {
 		return nil, err
 	}
 	ms, err := q.ListMembers(ctx, ws.ID)
+	if err != nil {
+		return nil, err
+	}
+	roles, err := q.ListWorkspaceRoles(ctx, ws.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -146,12 +152,12 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	members := make([]*v1.WorkspaceMember, 0, len(ms))
 	for _, m := range ms {
 		if allowed == nil || allowed[m.User.ID] {
-			members = append(members, pbconv.Member(m.WorkspaceMember, m.User))
+			members = append(members, pbconv.Member(m.WorkspaceMember, m.User, m.RoleIds))
 		}
 	}
 	bits := make(map[string]uint64, len(rs))
 	for _, r := range rs {
-		bits[r.GetId()] = uint64(perm.ComputeIn(role, userID.String(), pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())))
+		bits[r.GetId()] = uint64(perm.ComputeIn(me, pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())))
 	}
 	cats, err := q.ListCategories(ctx, ws.ID)
 	if err != nil {
@@ -172,7 +178,16 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 		}
 	}
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
-		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings}, nil
+		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles)}, nil
+}
+
+// MemberPB loads a member's role ids and converts the membership row.
+func MemberPB(ctx context.Context, q *sqlc.Queries, m sqlc.WorkspaceMember, u sqlc.User) (*v1.WorkspaceMember, error) {
+	ids, err := q.ListMemberRoleIDs(ctx, sqlc.ListMemberRoleIDsParams{WorkspaceID: m.WorkspaceID, UserID: m.UserID})
+	if err != nil {
+		return nil, err
+	}
+	return pbconv.Member(m, u, ids), nil
 }
 
 // joined publishes membership events after a user joined a workspace.
@@ -185,11 +200,17 @@ func (h *Handlers) joined(ctx context.Context, ws sqlc.Workspace, m sqlc.Workspa
 func AnnounceJoin(ctx context.Context, q *sqlc.Queries, pl *plans.Service, pub events.Publisher, ws sqlc.Workspace, m sqlc.WorkspaceMember) {
 	u, err := q.GetUser(ctx, m.UserID)
 	if err == nil {
-		pub.Workspace(ctx, ws.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
-			WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(m, u)},
-		}})
+		if pb, err := MemberPB(ctx, q, m, u); err == nil {
+			pub.Workspace(ctx, ws.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
+				WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pb},
+			}})
+		}
 	}
-	if snap, err := Snapshot(ctx, q, pl, ws, m.UserID, perm.Role(m.Role)); err == nil {
+	me, err := perm.NewResolver(q).Member(ctx, ws.ID, m.UserID)
+	if err != nil {
+		return
+	}
+	if snap, err := Snapshot(ctx, q, pl, ws, m.UserID, me); err == nil {
 		pub.User(ctx, m.UserID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceCreate{
 			WorkspaceCreate: &v1.WorkspaceCreate{Snapshot: snap},
 		}})
@@ -520,7 +541,11 @@ func (h *Handlers) memberResponse(ctx context.Context, ws sqlc.Workspace, m sqlc
 	if err := h.limits.Plans.Fill(ctx, pw); err != nil {
 		return nil, err
 	}
-	return &v1.JoinWorkspaceResponse{Workspace: pbconv.ForViewer(pw, perm.Role(m.Role)), Member: pbconv.Member(m, u)}, nil
+	pb, err := MemberPB(ctx, h.db.Q, m, u)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.JoinWorkspaceResponse{Workspace: pbconv.ForViewer(pw, perm.Role(m.Role)), Member: pb}, nil
 }
 
 func (h *Handlers) joinOpen(w http.ResponseWriter, r *http.Request) error {
@@ -787,7 +812,7 @@ func (h *Handlers) listMembers(w http.ResponseWriter, r *http.Request) error {
 	out := &v1.ListMembersResponse{Members: make([]*v1.WorkspaceMember, 0, len(rows))}
 	for _, m := range rows {
 		if allowed == nil || allowed[m.User.ID] {
-			out.Members = append(out.Members, pbconv.Member(m.WorkspaceMember, m.User))
+			out.Members = append(out.Members, pbconv.Member(m.WorkspaceMember, m.User, m.RoleIds))
 		}
 	}
 	httpx.Write(w, http.StatusOK, out)
@@ -797,9 +822,13 @@ func (h *Handlers) listMembers(w http.ResponseWriter, r *http.Request) error {
 // guestVisibleUsers is what a guest may see of a workspace (ADR-0016): the members who can
 // view at least one of the rooms the guest can view (the guest included).
 func guestVisibleUsers(ctx context.Context, q *sqlc.Queries, wsID, guest uuid.UUID) (map[uuid.UUID]bool, error) {
-	roles, err := q.ListMemberRoles(ctx, wsID)
+	members, err := perm.LoadMembers(ctx, q, wsID)
 	if err != nil {
 		return nil, err
+	}
+	me, ok := members[guest]
+	if !ok {
+		return map[uuid.UUID]bool{guest: true}, nil
 	}
 	ovRows, err := q.ListWorkspaceRoomOverrides(ctx, wsID)
 	if err != nil {
@@ -816,12 +845,12 @@ func guestVisibleUsers(ctx context.Context, q *sqlc.Queries, wsID, guest uuid.UU
 	out := map[uuid.UUID]bool{guest: true}
 	for _, room := range rs {
 		ovs := byRoom[room.ID]
-		if !perm.ComputeIn(perm.RoleGuest, guest.String(), ovs).Has(perm.ViewRoom) {
+		if !perm.ComputeIn(me, ovs).Has(perm.ViewRoom) {
 			continue
 		}
-		for _, m := range roles {
-			if perm.ComputeIn(perm.Role(m.Role), m.UserID.String(), ovs).Has(perm.ViewRoom) {
-				out[m.UserID] = true
+		for id, m := range members {
+			if perm.ComputeIn(m, ovs).Has(perm.ViewRoom) {
+				out[id] = true
 			}
 		}
 	}
@@ -906,7 +935,10 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	pb := pbconv.Member(m, u)
+	pb, err := MemberPB(r.Context(), h.db.Q, m, u)
+	if err != nil {
+		return err
+	}
 	h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberUpdate{
 		WorkspaceMemberUpdate: &v1.WorkspaceMemberUpdate{Member: pb},
 	}})
@@ -997,7 +1029,10 @@ func (h *Handlers) promote(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	pb := pbconv.Member(m, u)
+	pb, err := MemberPB(r.Context(), h.db.Q, m, u)
+	if err != nil {
+		return err
+	}
 	h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberUpdate{
 		WorkspaceMemberUpdate: &v1.WorkspaceMemberUpdate{Member: pb},
 	}})

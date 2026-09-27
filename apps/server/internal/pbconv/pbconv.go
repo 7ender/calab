@@ -279,15 +279,43 @@ func Ban(b sqlc.WorkspaceBan, u sqlc.User) *v1.WorkspaceBan {
 	return out
 }
 
-// Member converts a membership row with its user.
-func Member(m sqlc.WorkspaceMember, u sqlc.User) *v1.WorkspaceMember {
+// Member converts a membership row with its user and role ids (ADR-0026, highest first).
+func Member(m sqlc.WorkspaceMember, u sqlc.User, roleIDs []uuid.UUID) *v1.WorkspaceMember {
 	return &v1.WorkspaceMember{
 		WorkspaceId: m.WorkspaceID.String(),
 		User:        User(u),
 		Role:        perm.Role(m.Role).Proto(),
 		Nickname:    m.Nickname,
 		JoinedAt:    ts(m.JoinedAt),
+		RoleIds:     perm.IDStrings(roleIDs),
 	}
+}
+
+// Role converts a workspace role row.
+func Role(r sqlc.WorkspaceRole) *v1.Role {
+	out := &v1.Role{
+		Id:          r.ID.String(),
+		WorkspaceId: r.WorkspaceID.String(),
+		Name:        r.Name,
+		Color:       uint32(max(r.Color, 0)), //nolint:gosec // 0..0xFFFFFF
+		Position:    r.Position,
+		Permissions: uint64(r.Permissions), //nolint:gosec // bit mask round-trip
+		Mentionable: r.Mentionable,
+		CreatedAt:   ts(r.CreatedAt),
+	}
+	if r.Builtin != nil {
+		out.Builtin = perm.Role(*r.Builtin).Proto()
+	}
+	return out
+}
+
+// Roles converts role rows (order kept).
+func Roles(rows []sqlc.WorkspaceRole) []*v1.Role {
+	out := make([]*v1.Role, len(rows))
+	for i, r := range rows {
+		out[i] = Role(r)
+	}
+	return out
 }
 
 // Invite converts an invite row.

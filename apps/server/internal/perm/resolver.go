@@ -22,15 +22,17 @@ var ErrNoRoom = errors.New("perm: room not accessible")
 
 // Store is the subset of sqlc queries the resolver needs.
 type Store interface {
-	GetMember(ctx context.Context, arg sqlc.GetMemberParams) (sqlc.WorkspaceMember, error)
+	GetMemberAccess(ctx context.Context, arg sqlc.GetMemberAccessParams) (sqlc.GetMemberAccessRow, error)
 	GetRoomAccess(ctx context.Context, arg sqlc.GetRoomAccessParams) (sqlc.GetRoomAccessRow, error)
 }
 
 // RoomAccess is a user's resolved access to a room.
 type RoomAccess struct {
 	WorkspaceID uuid.UUID // uuid.Nil for a DM
-	Role        Role      // "" for a DM
+	Role        Role      // highest built-in role; "" for a DM
 	Bits        Bits
+	// Member: the member's roles (zero for a DM); Member.Workspace() = workspace-level bits.
+	Member Member
 	// DM rooms (ADR-0020): the two participants. They get the room's events on their user
 	// channels instead of a workspace channel.
 	DM      bool
@@ -44,53 +46,69 @@ func (a RoomAccess) ok() bool { return a.WorkspaceID != uuid.Nil || a.DM }
 
 type key struct{ a, b uuid.UUID }
 
-// Resolver loads role + overrides from the DB and computes effective permissions.
+// Resolver loads roles + overrides from the DB and computes effective permissions.
 // It caches results for its lifetime; create one per request (see WithResolver).
 type Resolver struct {
-	store Store
-	mu    sync.Mutex
-	roles map[key]Role       // (workspace, user) -> role; "" = not a member
-	rooms map[key]RoomAccess // (room, user) -> access; zero value = no access
+	store   Store
+	mu      sync.Mutex
+	members map[key]Member     // (workspace, user) -> member; Role "" = not a member
+	rooms   map[key]RoomAccess // (room, user) -> access; zero value = no access
 }
 
 // NewResolver returns an empty resolver.
 func NewResolver(s Store) *Resolver {
-	return &Resolver{store: s, roles: map[key]Role{}, rooms: map[key]RoomAccess{}}
+	return &Resolver{store: s, members: map[key]Member{}, rooms: map[key]RoomAccess{}}
 }
 
-// Role returns the user's role in the workspace, or ErrNotMember.
-func (r *Resolver) Role(ctx context.Context, workspaceID, userID uuid.UUID) (Role, error) {
+// RoleList zips the parallel role arrays of a query row.
+func RoleList(ids []uuid.UUID, positions []int32, perms []int64) []RoleBits {
+	n := min(len(ids), len(positions), len(perms))
+	out := make([]RoleBits, n)
+	for i := range n {
+		out[i] = RoleBits{ID: ids[i].String(), Position: positions[i], Permissions: Bits(uint64(perms[i]))} //nolint:gosec // bit mask round-trip
+	}
+	return out
+}
+
+// Member returns the user's roles in the workspace, or ErrNotMember.
+func (r *Resolver) Member(ctx context.Context, workspaceID, userID uuid.UUID) (Member, error) {
 	k := key{workspaceID, userID}
 	r.mu.Lock()
-	role, ok := r.roles[k]
+	m, ok := r.members[k]
 	r.mu.Unlock()
 	if !ok {
-		m, err := r.store.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: workspaceID, UserID: userID})
+		row, err := r.store.GetMemberAccess(ctx, sqlc.GetMemberAccessParams{WorkspaceID: workspaceID, UserID: userID})
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
-			role = ""
+			m = Member{}
 		case err != nil:
-			return "", fmt.Errorf("perm: load member: %w", err)
+			return Member{}, fmt.Errorf("perm: load member: %w", err)
 		default:
-			role = Role(m.Role)
+			m = NewMember(userID.String(), Role(row.Role), RoleList(row.RoleIds, row.RolePositions, row.RolePermissions))
 		}
 		r.mu.Lock()
-		r.roles[k] = role
+		r.members[k] = m
 		r.mu.Unlock()
 	}
-	if role == "" {
-		return "", ErrNotMember
+	if m.Role == "" {
+		return Member{}, ErrNotMember
 	}
-	return role, nil
+	return m, nil
 }
 
-// Workspace returns the user's workspace-level permissions and role.
+// Role returns the user's highest built-in role in the workspace, or ErrNotMember.
+func (r *Resolver) Role(ctx context.Context, workspaceID, userID uuid.UUID) (Role, error) {
+	m, err := r.Member(ctx, workspaceID, userID)
+	return m.Role, err
+}
+
+// Workspace returns the user's workspace-level permissions and highest built-in role.
 func (r *Resolver) Workspace(ctx context.Context, workspaceID, userID uuid.UUID) (Bits, Role, error) {
-	role, err := r.Role(ctx, workspaceID, userID)
+	m, err := r.Member(ctx, workspaceID, userID)
 	if err != nil {
 		return 0, "", err
 	}
-	return Workspace(role), role, nil
+	return m.Workspace(), m.Role, nil
 }
 
 // Room returns the user's effective permissions in a room, or ErrNoRoom.
@@ -111,18 +129,26 @@ func (r *Resolver) Room(ctx context.Context, roomID, userID uuid.UUID) (RoomAcce
 				acc = RoomAccess{Bits: ComputeDM(true), DM: true, Members: row.DmMembers}
 			}
 		case row.WorkspaceID != nil && row.Role != nil:
-			role := Role(*row.Role)
+			// The query returns the roles lowest position first, each with its override
+			// in this room (0/0 = none, which changes nothing).
+			m := Member{UserID: userID.String(), Role: Role(*row.Role), Roles: RoleList(row.RoleIds, row.RolePositions, row.RolePermissions)}
+			n := min(len(row.RoleAllows), len(row.RoleDenies))
+			ovs := make([]Override, n)
+			for i := range n {
+				ovs[i] = Override{Allow: Bits(uint64(row.RoleAllows[i])), Deny: Bits(uint64(row.RoleDenies[i]))} //nolint:gosec // bit mask round-trip
+			}
 			acc = RoomAccess{
 				WorkspaceID: *row.WorkspaceID,
-				Role:        role,
-				Bits:        Compute(role, override(row.RoleAllow, row.RoleDeny), override(row.UserAllow, row.UserDeny)),
+				Role:        m.Role,
+				Member:      m,
+				Bits:        ComputeOrdered(m.Workspace(), ovs, override(row.UserAllow, row.UserDeny)),
 				Suspended:   row.Suspended,
 			}
 		}
 		r.mu.Lock()
 		r.rooms[k] = acc
 		if acc.WorkspaceID != uuid.Nil {
-			r.roles[key{acc.WorkspaceID, userID}] = acc.Role
+			r.members[key{acc.WorkspaceID, userID}] = acc.Member
 		}
 		r.mu.Unlock()
 	}
@@ -135,7 +161,7 @@ func (r *Resolver) Room(ctx context.Context, roomID, userID uuid.UUID) (RoomAcce
 // Invalidate drops cached results (call after mutating roles or overrides in the same request).
 func (r *Resolver) Invalidate() {
 	r.mu.Lock()
-	clear(r.roles)
+	clear(r.members)
 	clear(r.rooms)
 	r.mu.Unlock()
 }
