@@ -16,4 +16,11 @@ export const esMedia: DictShape<typeof ruMedia> = {
   'media.jump': 'Mostrar mensaje',
   'media.close': 'Cerrar reproductor',
   'media.error': 'No se puede reproducir',
+  'media.voice': 'Mensaje de voz',
+  'media.voiceDownload': 'Descargar el mensaje de voz: este navegador no reproduce Ogg/Opus',
+  'media.voiceRecord': 'Mensaje de voz: mantén pulsado para grabar',
+  'media.voiceHoldHint': 'Mantén pulsado el botón del micrófono para grabar un mensaje de voz',
+  'media.voiceRecording': 'Grabando un mensaje de voz',
+  'media.voiceSlideCancel': 'Desliza a la izquierda para cancelar',
+  'media.voiceSlideCancelEsc': 'Desliza a la izquierda o Esc para cancelar',
 };

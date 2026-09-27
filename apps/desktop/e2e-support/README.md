@@ -63,6 +63,10 @@ Ids: `00000000-0000-7000-80KK-NNNNNNNNNNNN` (KK = kind: 01 user, 02 workspace, 0
   attachments: [IDS.files.audio] })` posts them elsewhere (author = Вера). Files in `fixtures/`, made with:
   `ffmpeg -f lavfi -i sine=frequency=440:duration=6:sample_rate=22050 -f lavfi -i sine=frequency=660:duration=6:sample_rate=22050 -filter_complex "[0][1]amix=inputs=2,volume=0.5,afade=t=out:st=5:d=1" -ac 1 -c:a libmp3lame -b:a 32k -map_metadata -1 release-jingle.mp3`;
   `ffmpeg -f lavfi -i testsrc2=size=320x180:rate=15:duration=3 -f lavfi -i sine=frequency=330:duration=3:sample_rate=22050 -c:v libx264 -preset veryslow -crf 26 -pix_fmt yuv420p -profile:v baseline -c:a aac -b:a 24k -ac 1 -shortest -movflags +faststart -map_metadata -1 demo-clip.mp4`.
+- Voice message (docs/09 #43): `IDS.files.voice` (Вера, 5 s, `FileMeta.voice` with `VOICE_WAVEFORM` —
+  the same envelope), in no message: `injectMessage({ attachments: [IDS.files.voice] })`. Uploads with
+  `?voice_duration_ms=&voice_waveform=` are checked like the server (audio/ogg, `OggS`+`OpusHead`). Made with:
+  `ffmpeg -f lavfi -i "sine=frequency=180:duration=5:sample_rate=48000" -f lavfi -i "sine=frequency=360:duration=5:sample_rate=48000" -filter_complex "[0][1]amix=inputs=2,volume='0.05+0.9*pow(abs(sin(2*PI*t*0.7)*sin(2*PI*t*2.3)),0.7)':eval=frame,afade=t=out:st=4.5:d=0.5" -ac 1 -c:a libopus -b:a 24k -vbr on -application voip -frame_duration 20 -map_metadata -1 -fflags +bitexact -flags:a +bitexact voice-note.ogg`.
 - Chat extras: reactions (👍×3 incl. Анна, 🎉 on «Доброе утро! Релиз…»; 🔥 by Анна on Борис's reply),
   two pinned messages in `общий`, link previews for `https://calaba.test/docs/08-design` (with a
   local 382×200 PNG behind `/api/unfurl/image`) and `https://calaba.test/board`. Search

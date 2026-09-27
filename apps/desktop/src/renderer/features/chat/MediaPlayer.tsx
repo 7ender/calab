@@ -24,7 +24,7 @@ const VIDEO_MAX_H = 460;
 /** macOS full-screen (Space) animation of the window: an exit during it is dropped. */
 const FULLSCREEN_SETTLE_MS = 1000;
 
-function download(f: FileMeta): void {
+export function download(f: FileMeta): void {
   void platform.files.download({ fileId: f.id, name: f.name }).then(
     () => toast.success(t('chat.downloaded', { name: f.name })),
     (e: unknown) => toast.fail(e, t('err.ctx.download')),
@@ -32,7 +32,7 @@ function download(f: FileMeta): void {
 }
 
 /** Space toggles playback when the player itself (or its progress bar) has keyboard focus. */
-function isSpace(e: KeyboardEvent): boolean {
+export function isSpace(e: KeyboardEvent): boolean {
   return e.key === ' ' || e.key === 'Spacebar';
 }
 
@@ -143,8 +143,25 @@ export function AudioAttachment({ f, messageId, roomId }: { f: FileMeta; message
   );
 }
 
-/** Progress bar with seeking: pointer drag (applied on release) and ←/→ ±5 s, Home / End. */
-function SeekBar({ label, position, duration, onSeek }: { label: string; position: number; duration: number; onSeek: (sec: number) => void }): ReactNode {
+/**
+ * Progress bar with seeking: pointer drag (applied on release) and ←/→ ±5 s, Home / End.
+ * `render` draws something else than the 3 px line (the voice message waveform).
+ */
+export function SeekBar({
+  label,
+  position,
+  duration,
+  onSeek,
+  render,
+  className,
+}: {
+  label: string;
+  position: number;
+  duration: number;
+  onSeek: (sec: number) => void;
+  render?: (pct: number) => ReactNode;
+  className?: string;
+}): ReactNode {
   const [drag, setDrag] = useState<number | null>(null);
   const shown = drag ?? position;
   const pct = duration > 0 ? Math.min(100, (shown / duration) * 100) : 0;
@@ -162,7 +179,7 @@ function SeekBar({ label, position, duration, onSeek }: { label: string; positio
       aria-valuenow={Math.round(shown)}
       aria-valuetext={t('media.position', { pos: formatTime(shown), total: formatTime(duration || Number.NaN) })}
       aria-disabled={duration > 0 ? undefined : true}
-      className={cx('group/seek relative flex h-4 touch-none items-center mobile:h-8', duration > 0 && 'cursor-pointer')}
+      className={cx('group/seek relative flex touch-none items-center', className ?? 'h-4 mobile:h-8', duration > 0 && 'cursor-pointer')}
       onPointerDown={(e) => {
         if (!(duration > 0) || e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -187,16 +204,20 @@ function SeekBar({ label, position, duration, onSeek }: { label: string; positio
         e.preventDefault();
       }}
     >
-      <div className="relative h-[3px] w-full rounded-full bg-[color-mix(in_srgb,var(--bubble-accent)_22%,transparent)]">
-        <div className="absolute inset-y-0 left-0 rounded-full bg-[color:var(--bubble-accent)]" style={{ width: `${pct}%` }} />
-        {duration > 0 && (shown > 0 || drag !== null) ? (
-          <div
-            aria-hidden
-            className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color:var(--bubble-accent)]"
-            style={{ left: `${pct}%` }}
-          />
-        ) : null}
-      </div>
+      {render ? (
+        render(pct)
+      ) : (
+        <div className="relative h-[3px] w-full rounded-full bg-[color-mix(in_srgb,var(--bubble-accent)_22%,transparent)]">
+          <div className="absolute inset-y-0 left-0 rounded-full bg-[color:var(--bubble-accent)]" style={{ width: `${pct}%` }} />
+          {duration > 0 && (shown > 0 || drag !== null) ? (
+            <div
+              aria-hidden
+              className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color:var(--bubble-accent)]"
+              style={{ left: `${pct}%` }}
+            />
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -214,7 +235,7 @@ export function MiniPlayer({ roomId }: { roomId: string }): ReactNode {
   const pct = usePlayer((s) => (s.duration > 0 ? Math.min(100, (s.position / s.duration) * 100) : 0));
   const jump = useChatView((s) => s.requestJump);
   if (!track || inView) return null;
-  const { title, performer } = trackInfo(track.name);
+  const { title, performer } = track.title ? { title: track.title, performer: track.subtitle ?? '' } : trackInfo(track.name);
   const here = track.roomId === roomId;
   const text = (
     <>

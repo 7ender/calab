@@ -53,6 +53,8 @@ const KEY = new Set([
   'chat-recording-card',
   'chat-audio',
   'chat-video',
+  'chat-voice-recording',
+  'chat-voice-bubble',
   'voice-room-speaking',
   'voice-room-pending',
   'voice-stream',
@@ -1408,6 +1410,91 @@ test('chat-video', async ({ open, win, mock, shot }) => {
   await expect.poll(() => win.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await win.keyboard.press('Escape');
   await expect.poll(() => win.evaluate(() => !!document.fullscreenElement)).toBe(false);
+});
+
+// Voice messages (docs/09 #43, docs/08 «Голосовые сообщения»): recording with the fake mic
+// (CALABA_FAKE_MEDIA) through the real Opus encoder and the mock's Ogg/Opus check.
+async function holdMic(win: Page): Promise<Locator> {
+  const mic = win.getByTestId('voice-button');
+  const box = await mic.boundingBox();
+  if (!box) throw new Error('no mic button');
+  await win.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await win.mouse.down();
+  await expect(win.getByTestId('voice-recording')).toBeVisible();
+  return mic;
+}
+
+// Hold → lock (slide up) → the locked strip (timer, live bars, «Отмена», send); send it; hold +
+// release sends; hold + Esc and hold + slide left cancel.
+test('chat-voice-recording', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const composer = win.getByTestId('composer');
+  await expect(composer.getByRole('button', { name: 'Голосовое сообщение: удерживайте, чтобы записать' })).toBeVisible();
+  const voices = win.locator('[data-own] [data-testid="voice-player"]');
+  await expect(voices).toHaveCount(0);
+
+  await holdMic(win);
+  await expect(win.getByTestId('voice-lock')).toBeVisible();
+  const box = await win.getByTestId('voice-button').boundingBox();
+  if (!box) throw new Error('no mic button');
+  await win.mouse.move(box.x + box.width / 2, box.y - 80, { steps: 4 });
+  await win.mouse.up();
+  await expect(win.getByTestId('voice-lock')).toHaveCount(0);
+  await expect(composer.getByRole('button', { name: 'Отмена' })).toBeVisible();
+  await win.evaluate(() => ((window as unknown as { __calabaVoiceElapsedMs?: number }).__calabaVoiceElapsedMs = 7400));
+  await expect(win.getByTestId('voice-timer')).toHaveText('0:07,4');
+  await checkpoint(shot, 'chat-voice-recording');
+  await win.waitForTimeout(1200); // ≥ VOICE_MIN_MS of real audio
+  await composer.getByRole('button', { name: 'Отправить' }).click();
+  await expect(win.getByTestId('voice-recording')).toHaveCount(0);
+  await expect(voices).toHaveCount(1);
+  await expect(voices.first()).toContainText(/0:0[12]/);
+
+  // Hold and release: sent at once.
+  await holdMic(win);
+  await win.waitForTimeout(1200);
+  await win.mouse.up();
+  await expect(voices).toHaveCount(2);
+  // Hold + Esc, hold + slide left: dropped.
+  await holdMic(win);
+  await win.waitForTimeout(800);
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('voice-recording')).toHaveCount(0);
+  await win.mouse.up();
+  const mic = await holdMic(win);
+  const b2 = await mic.boundingBox();
+  if (!b2) throw new Error('no mic button');
+  await win.mouse.move(b2.x - 150, b2.y + b2.height / 2, { steps: 6 });
+  await expect(win.getByTestId('voice-recording')).toHaveCount(0);
+  await win.mouse.up();
+  await win.waitForTimeout(500);
+  await expect(voices).toHaveCount(2);
+});
+
+// The bubble: waveform, duration, play / pause through the chat player, seek on the waveform
+// (played part in the accent), time left, speed chip.
+test('chat-voice-bubble', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', attachments: [IDS.files.voice] });
+  const player = win.getByTestId('voice-player');
+  await expect(player).toBeVisible();
+  await expect(player).toContainText('0:05');
+  await player.getByRole('button', { name: 'Воспроизвести' }).click();
+  await expect(player).toHaveAttribute('data-playing', 'true');
+  await player.getByRole('button', { name: 'Пауза' }).click();
+  await expect(player).not.toHaveAttribute('data-playing');
+  const wave = player.getByRole('slider', { name: 'Перемотка' });
+  const wb = await wave.boundingBox();
+  if (!wb) throw new Error('no waveform');
+  await win.mouse.click(wb.x + wb.width * 0.4, wb.y + wb.height / 2);
+  await expect(wave).toHaveAttribute('aria-valuetext', '0:02 из 0:05');
+  await expect(player).toContainText('0:03');
+  await expect(player.getByRole('button', { name: 'Скорость: 1×' })).toBeVisible();
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await feedAtBottom(win);
+  await checkpoint(shot, 'chat-voice-bubble');
 });
 
 // Optimistic join (docs/05, docs/08): Григорий is in the room list at once but still connecting

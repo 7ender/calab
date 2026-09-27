@@ -61,7 +61,7 @@ func TestSanitizeName(t *testing.T) {
 func TestIsOggOpus(t *testing.T) {
 	page := func(segs int, packet string) []byte {
 		b := append([]byte("OggS"), make([]byte, 22)...)
-		b = append(b, byte(segs))
+		b = append(b, byte(segs)) //nolint:gosec // test pages have < 256 segments
 		b = append(b, make([]byte, segs)...)
 		return append(b, packet...)
 	}

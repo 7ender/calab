@@ -4,6 +4,7 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   FileMetaSchema,
+  VoiceInfoSchema,
   InviteSchema,
   MessageSchema,
   NotificationLevel,
@@ -148,6 +149,8 @@ export const IDS = {
     /** Chat media player (docs/09 #41): fixtures/release-jingle.mp3 (6 s), fixtures/demo-clip.mp4 (3 s, 320×180). */
     audio: mockId('file', 4),
     video: mockId('file', 5),
+    /** Voice message (docs/09 #43): fixtures/voice-note.ogg (5 s Ogg/Opus 24 kbit/s), waveform VOICE_WAVEFORM. */
+    voice: mockId('file', 6),
   },
   sessions: {
     annaDesktop: mockId('session', 1),
@@ -528,6 +531,16 @@ const MESSAGES: MsgSpec[] = [
   { room: R.designMockups, at: '2026-01-15T11:31:00Z', author: U.vera, content: 'И ролик с анимацией', attachments: [IDS.files.video] },
 ];
 
+/**
+ * The fixture voice message's waveform (100 bars): the envelope voice-note.ogg was made with
+ * (e2e-support/README.md), so the bubble looks like the sound.
+ */
+export const VOICE_WAVEFORM = Uint8Array.from({ length: 100 }, (_, i) => {
+  const t = (i + 0.5) * 0.05;
+  const v = 0.05 + 0.9 * Math.abs(Math.sin(2 * Math.PI * t * 0.7) * Math.sin(2 * Math.PI * t * 2.3)) ** 0.7;
+  return Math.round(Math.min(1, v * (t > 4.5 ? (5 - t) / 0.5 : 1)) * 255);
+});
+
 /** Small media files for the players (≤ 100 KB, made with ffmpeg: e2e-support/README.md «Fixtures»). */
 const media = (name: string): Buffer => readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
 
@@ -655,6 +668,11 @@ export function buildState(scenario: Scenario): MockState {
     meta: fileMeta(IDS.files.video, IDS.workspaces.design, U.vera, 'demo-clip.mp4', 'video/mp4', clip, ts('2026-01-15T11:30:30Z')),
     bytes: clip,
   });
+  // Not in any message: injectMessage({ attachments: [IDS.files.voice] }) posts it (voice tests).
+  const note = media('voice-note.ogg');
+  const noteMeta = fileMeta(IDS.files.voice, IDS.workspaces.design, U.vera, 'voice-2026-01-15-11-32-00.ogg', 'audio/ogg', note, ts('2026-01-15T11:32:00Z'));
+  noteMeta.voice = create(VoiceInfoSchema, { durationMs: 5010, waveform: VOICE_WAVEFORM });
+  s.files.set(IDS.files.voice, { meta: noteMeta, bytes: note });
   const avatar = encodePng(128, 128, avatarPicture([255, 150, 120], [96, 72, 190]));
   s.files.set(IDS.files.veraAvatar, {
     meta: fileMeta(IDS.files.veraAvatar, '', U.vera, 'avatar.png', 'image/png', avatar, ts('2025-12-02T10:00:00Z'), { width: 128, height: 128 }),

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
 /**
@@ -10,14 +10,19 @@ import type { Plugin } from 'vite';
  * the builds of one run). Consumed by scripts/third-party-notices.mjs.
  */
 export function bundledPackages(outFile: string): Plugin {
+  let base = process.cwd();
   return {
     name: 'calaba:bundled-packages',
     apply: 'build',
+    configResolved(config) {
+      base = config.root;
+    },
     generateBundle(_opts, bundle) {
       const roots = new Set<string>(existsSync(outFile) ? (JSON.parse(readFileSync(outFile, 'utf8')) as string[]) : []);
       for (const chunk of Object.values(bundle)) {
-        if (chunk.type !== 'chunk') continue;
-        for (const id of Object.keys(chunk.modules)) {
+        // Package files shipped as assets (`?url`, e.g. the Opus encoder worklet of opus-recorder).
+        const ids = chunk.type === 'chunk' ? Object.keys(chunk.modules) : chunk.originalFileNames.map((f) => resolve(base, f));
+        for (const id of ids) {
           const root = packageRoot(id);
           if (root) roots.add(root);
         }

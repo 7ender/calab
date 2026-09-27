@@ -5,6 +5,7 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
 import { api, uploadFile, uploadPath, type UploadHandle } from '../lib/api/endpoints';
+import { voiceQuery, type VoiceMeta } from '../lib/voiceNote';
 import { canToggleReaction } from '../features/chat/reactionLimit';
 import { reportPlanError } from './plan';
 import { log } from '../lib/log';
@@ -247,6 +248,8 @@ export interface OutgoingFile {
   file: Blob;
   name: string;
   previewUrl?: string;
+  /** A voice message (docs/09 #43): uploaded with its duration and waveform. */
+  voice?: VoiceMeta;
 }
 
 function newNonce(): string {
@@ -291,7 +294,8 @@ export async function sendMessage(
     const metas: FileMeta[] = [];
     const handles: UploadHandle[] = [];
     for (const [i, f] of files.entries()) {
-      const h = uploadFile(uploadPath(workspaceId, roomId), f.file, f.name, (p) => {
+      const path = uploadPath(workspaceId, roomId) + (f.voice ? voiceQuery(f.voice) : '');
+      const h = uploadFile(path, f.file, f.name, (p) => {
         const cur = useMessages.getState().rooms[roomId]?.items.find((c) => c.key === key);
         if (!cur?.uploads) return;
         useMessages.getState().patchPending(roomId, key, {

@@ -31,6 +31,8 @@ import { recordingCardOf, systemPreview } from '../../lib/recording';
 import { RecordingCardView } from './RecordingCard';
 import { mediaKind } from '../../lib/chatMedia';
 import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
+import { VoiceAttachment } from './VoiceBubble';
+import { isVoice } from '../../lib/voiceNote';
 
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
@@ -205,13 +207,15 @@ function Bubble({
   const images = m.attachments.filter(isImage);
   const files = m.attachments.filter((f) => !isImage(f));
   // Videos are full-bleed boxes like images; audio players and other files are rows (docs/08 «Медиа в чате»).
-  const videos = files.filter((f) => mediaKind(f) === 'video');
-  const rows = files.filter((f) => mediaKind(f) !== 'video');
+  const videos = files.filter((f) => !isVoice(f) && mediaKind(f) === 'video');
+  const rows = files.filter((f) => isVoice(f) || mediaKind(f) !== 'video');
   const uploads = c.uploads && c.status !== 'sent' ? c.uploads : [];
   const hasText = !!m.content.trim();
   const sticker = hasText && !images.length && !files.length && !uploads.length && !m.replyToId && !m.reactions.length && isEmojiOnly(m.content);
   const showName = !own && meta.first && !sticker;
   const imageOnly = images.length > 0 && !hasText && !files.length && !m.replyToId && !showName && !m.reactions.length;
+  // A lone voice message carries the time in its own last line (Telegram).
+  const voiceOnly = rows.length === 1 && !!rows[0] && isVoice(rows[0]) && c.status === 'sent' && !hasText && !images.length && !videos.length && !m.reactions.length;
   const width = images.length ? imageBoxWidth(images) : videos.length ? VIDEO_WIDTH : undefined;
 
   const metaNode = <MetaInfo c={c} own={own} />;
@@ -277,7 +281,9 @@ function Bubble({
         {rows.length ? (
           <div className={cx('flex flex-col gap-1 px-3 pb-1', hasText || showName || m.replyToId ? 'pt-0.5' : 'pt-2')}>
             {rows.map((f) =>
-              mediaKind(f) === 'audio' && c.status === 'sent' ? (
+              isVoice(f) && c.status === 'sent' ? (
+                <VoiceAttachment key={f.id} f={f} messageId={m.id} roomId={roomId} author={name} meta={voiceOnly ? metaNode : undefined} />
+              ) : mediaKind(f) === 'audio' && c.status === 'sent' ? (
                 <AudioAttachment key={f.id} f={f} messageId={m.id} roomId={roomId} />
               ) : (
                 <FileRow key={f.id} f={f} />
@@ -292,7 +298,7 @@ function Bubble({
             ))}
             <span className="ml-auto pl-2">{metaNode}</span>
           </div>
-        ) : imageOnly ? null : hasText && !link && !files.length ? (
+        ) : imageOnly || voiceOnly ? null : hasText && !link && !files.length ? (
           <span className="absolute bottom-1 right-3">{metaNode}</span>
         ) : (
           <div className="flex justify-end px-3 pb-1.5">{metaNode}</div>
