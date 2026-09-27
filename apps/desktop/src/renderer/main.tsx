@@ -3,13 +3,17 @@ import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { log } from './lib/log';
 import { installSheetGuard, installVisualViewport, registerServiceWorker } from './lib/mobile';
-import { isWeb } from './platform';
+import { isWeb, platform } from './platform';
+import { installWindowVisibility } from './lib/windowVisibility';
 import { startLocale } from './services/locale';
 import { bootstrap } from './services/session';
 import './app/styles.css';
 
 window.addEventListener('error', (e) => log.error('uncaught', e.error ?? e.message));
 window.addEventListener('unhandledrejection', (e) => log.error('unhandled rejection', e.reason));
+
+// Desktop: document.visibilityState follows the window (hidden / minimized) — docs/14-energy.md.
+if (!isWeb) installWindowVisibility(document, platform.window);
 
 void bootstrap();
 

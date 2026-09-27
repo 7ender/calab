@@ -146,6 +146,12 @@ export interface CalabaApi {
     isFullScreen(): Promise<boolean>;
     /** Entered / left full screen, whoever caused it (our button, ⌃⌘F, the green button, Esc). */
     onFullScreenChange(cb: (on: boolean) => void): Unsubscribe;
+    /**
+     * On screen: shown and not minimized (the close button only hides the window). The page's own
+     * visibility can't tell — `backgroundThrottling: false` keeps it «visible» (docs/14-energy.md).
+     */
+    isShown(): Promise<boolean>;
+    onShownChange(cb: (shown: boolean) => void): Unsubscribe;
   };
 }
 

@@ -33,7 +33,7 @@ import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayBadge, setTrayState } from './tray';
 import { checkForUpdates, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
-import { getMainWindow, isOwnPage } from './windows';
+import { getMainWindow, isOwnPage, isShown } from './windows';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
 
@@ -297,6 +297,10 @@ export function registerIpc(): void {
     if (typeof on !== 'boolean') throw new Error('invalid argument');
     const win = BrowserWindow.fromWebContents(e.sender);
     return win ? fullscreenFor(win).set(on) : false;
+  });
+  handle(IPC.windowIsShown, (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    return win ? isShown(win) : true;
   });
   handle(IPC.windowIsFullScreen, (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);

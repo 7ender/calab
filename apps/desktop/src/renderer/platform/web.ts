@@ -596,6 +596,9 @@ export function createWebPlatform(): Platform {
         document.addEventListener('fullscreenchange', listener);
         return () => document.removeEventListener('fullscreenchange', listener);
       },
+      // A browser's Page Visibility API is truthful: nothing to add.
+      isShown: () => Promise.resolve(true),
+      onShownChange: () => () => undefined,
     },
   };
 }
