@@ -143,11 +143,32 @@ describe('player store', () => {
     expect(v1.paused).toBe(1);
   });
 
+  it('inView: the track is on screen while any of its players reports itself visible', () => {
+    const p1 = {};
+    const p2 = {};
+    usePlayer.getState().toggle(a);
+    const s = usePlayer.getState();
+    s.setInView(p1, true);
+    s.setInView(p2, true);
+    s.setInView(p1, false);
+    expect(usePlayer.getState().inView).toBe(true);
+    s.setInView(p2, false);
+    expect(usePlayer.getState().inView).toBe(false);
+    // Closing forgets the visible players: the next track starts off screen.
+    s.setInView(p1, true);
+    usePlayer.getState().close();
+    expect(usePlayer.getState().inView).toBe(false);
+    usePlayer.getState().toggle(a);
+    s.setInView(p2, true);
+    s.setInView(p2, false);
+    expect(usePlayer.getState().inView).toBe(false);
+  });
+
   it('inView and durations are no-ops when unchanged', () => {
     const s = usePlayer.getState();
     let n = 0;
     const off = usePlayer.subscribe(() => n++);
-    s.setInView(false);
+    s.setInView({}, false);
     s.noteDuration('f1', Number.NaN);
     s.noteDuration('f1', 42);
     s.noteDuration('f1', 42);
