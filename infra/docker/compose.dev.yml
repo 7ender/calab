@@ -33,7 +33,8 @@ services:
 
   livekit:
     image: livekit/livekit-server:v1.13
-    # livekit.dev.yaml: ключи devkey / secret, UDP mux 7882, webhook → API на хосте (:3000)
+    # livekit.dev.yaml: ключи devkey / secret, UDP mux 7882, webhook → API на хосте (:3000),
+    # Valkey (DB 1) — через него LiveKit говорит с egress
     command: --config /etc/livekit.yaml
     volumes:
       - ./livekit/livekit.dev.yaml:/etc/livekit.yaml:ro
@@ -43,6 +44,28 @@ services:
       - "7880:7880"
       - "7881:7881"
       - "7882:7882/udp"
+    depends_on: [valkey]
+
+  # Запись встреч (ADR-0025). В сетевом пространстве LiveKit: node_ip 127.0.0.1 из livekit.dev.yaml
+  # для egress — это сам LiveKit. Файлы — в apps/server/data/recordings (RECORDINGS_PATH API
+  # на хосте по умолчанию), внутри контейнера /out.
+  egress:
+    image: livekit/egress:v1.14.1@sha256:bf2b648b947349c3e9ff7aa8c718f00378d5c06af7624652a3653318e00333ce
+    network_mode: "service:livekit"
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: devkey
+        api_secret: secret
+        ws_url: ws://127.0.0.1:7880
+        insecure: true
+        redis:
+          address: valkey:6379
+          db: 1
+        session_limits:
+          file_output_max_duration: 4h10m
+    volumes:
+      - ../../apps/server/data/recordings:/out
+    depends_on: [livekit, valkey]
 
 volumes:
   pg_dev:

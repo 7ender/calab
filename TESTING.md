@@ -42,6 +42,7 @@
 | [3.16 Ревью 4 (M1, M2, L1–L10)](#316-ревью-4-m1-m2-l1l10) | Ревью 4 (M1, M2, L1–L10) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
 | [3.17 Статус звонка и скрытые превью (P0.6)](#317-статус-звонка-и-скрытые-превью-p06) | Статус звонка и скрытые превью (P0.6) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
 | [3.18 Тарифы и лимиты, суперадмин (ADR-0024)](#318-тарифы-и-лимиты-суперадмин-adr-0024) | Тарифы и лимиты, суперадмин | Go, Docker; часть тестов — dev-LiveKit, `lk` | 3 мин |
+| [3.19 Запись встреч и GPTunneL (ADR-0025)](#319-запись-встреч-и-gptunnel-adr-0025) | Запись, pairing, загрузка, карточка | Go, Docker, dev-LiveKit | 2 мин |
 | [4. Инфра и стенд](#4-инфра-и-стенд) | контейнеры, сертификаты, `/download/`→releases, LiveKit, relay, нагрузка, защита, бэкапы | ssh к стенду (только чтение), `lk`, openssl | 45 мин |
 | [Хотфикс 0.1.1: сервер (move без SFU, 499)](#server-перемещение-без-sfu-move-хотфикс-011-adr-0019) | app-level move против реального LiveKit, 499 для оборванных запросов | Go, Docker, dev-LiveKit, `lk` | 10 мин |
 | [Приёмка 0.1.1: клиент H.1–H.6](#приёмка-011-хотфикс-десктопа-и-веба) | плашка соединения, диалог «Присоединиться», обводка сообщения, уведомления, 4008, перемещение | Chrome, десктоп, локальный API или стенд | 40 мин |
@@ -1121,6 +1122,15 @@ CALABA_VISUAL_MOCK_PORT=40570 pnpm e2e:visual -g "settings-plan|admin-" --projec
 ```
 Ожидается: всё зелёное, 3 снимка совпадают. Вручную (мок/стенд, free): 1080p в пикере стрима и камере ▾ — с замком, клик → тост «Связаться»; 6-й в комнате → тост «В бесплатном тарифе до 5 человек»; суперадмин: профиль → «Администрирование», смена плана → у участников сразу меняется вкладка «Тариф».
 
+### 3.19 Запись встреч и GPTunneL (ADR-0025)
+
+```sh
+cd apps/server
+go test -race -count=1 ./internal/gptunnel/... ./internal/rtc/ ./internal/sealbox/
+TEST_REDIS_URL=redis://localhost:56379/6 TEST_RTC_REDIS_DB=5 go test -race -tags integration -count=1 -v -run 'TestRecording' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: 4 `--- PASS` (без dev-LiveKit — `SKIP`). Фейки: GPTunneL (`gptunneltest`: чанки, `Content-Range`, 409/докачка) и Egress (twirp-сервер из `livekit/protocol`). Проверяется: не спарено → `409 NOT_PAIRED`; гость / `allowRecording=false` → 403; дубль → `409 ALREADY_RECORDING`; лимит → `409 RECORDING_LIMIT`; start → `ROOM_RECORDING` ACTIVE и `recordings` в READY → stop → STOPPED → `egress_ended` → карточка UPLOADING → PROCESSING → DONE (`webUrl`), файл удалён; reconcile без webhook; `insufficient_balance`, `device_revoked`, авто-стоп 4 ч / пустой звонок, janitor 7 дней.
+
 ---
 
 ## 4. Инфра и стенд
@@ -1196,6 +1206,8 @@ ssh $H "ss -lntup | grep -E 'livekit|caddy'"
 - порты: udp `141.105.69.177:7882`, udp `*:443`, tcp `127.0.0.1:7880`, `127.0.0.1:6789`, `*:7881`, `*:5349` (5349 снаружи закрыт файрволом); caddy — tcp `*:80`, `*:443`.
 
 Файрвол (только чтение!): `ssh $H 'iptables -L INPUT -n --line-numbers'` — ACCEPT tcp 80/443/7881 и udp 443/7882 стоят **выше** `DROP all`.
+
+**Запись встреч — smoke (ADR-0025):** `ssh $H "$DC ps egress recordings-init"` — egress `Up`, init `Exited (0)`; `ssh $H "$DC logs --since 10m egress | grep -iE 'error|redis' | tail"` — без ошибок подключения к Redis; `ssh $H "$DC logs livekit | grep -i redis | tail -2"` — LiveKit с Redis. В приложении: пространство → GPTunneL → код → «Подключено»; двое в комнате → «Запись встречи» → у обоих REC; через 1–2 мин «Остановить» → в чате карточка «Загружается» → «Обрабатывается» → «Открыть в GPTunneL»; `ssh $H "docker exec calaba-api-1 ls /data/recordings/*/"` — после DONE файла нет.
 
 ### 4.6 Voice end-to-end (токен от API → LiveKit → webhook → gateway)
 

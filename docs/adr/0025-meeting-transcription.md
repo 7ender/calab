@@ -13,6 +13,6 @@
 
 ## Последствия
 - Инфра: сервис `egress` в compose (стенд: CPU есть), volume, env `GPTUNNEL_API_URL`, `RECORDING_MAX_CONCURRENT`, лимит диска; бэкапы не включают записи (временные).
-- Миграция 00018 (`workspace_integrations`, `room_recordings`); proto: `RoomRecording`, событие `ROOM_RECORDING`, поля в READY (текущие записи).
+- Миграция 00019 (`workspace_integrations`, `room_recordings`); proto: `RoomRecording`, событие `ROOM_RECORDING`, поля в READY (текущие записи).
 - Клиент: вкладка «GPTunneL» в настройках пространства (код, статус, отключить), пункт «Запись встречи / Остановить запись» в меню «…» комнаты, индикация, системная карточка в чате.
 - Просьба к GPTunneL (владелец): эндпоинт результата для device token, приём `audio/ogg`, подсказка имён спикеров.

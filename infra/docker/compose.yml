@@ -3,6 +3,8 @@
 # caddy, livekit and api use host network: WebRTC/TURN need direct ports, and the API
 # talks to everything over 127.0.0.1. postgres/valkey publish only on 127.0.0.1.
 # Files: local volume files_data via the API's fs driver (ADR-0011), no S3 service.
+# Meeting recording (ADR-0025): egress writes MP4s to recordings_data, the API uploads them to
+# GPTunneL and deletes them; LiveKit and egress talk over Valkey (DB 1).
 
 # Baseline for every service we run (security review L6): no new privileges, no capabilities
 # unless listed, read-only root filesystem with tmpfs for scratch space.
@@ -60,9 +62,68 @@ services:
       - ./livekit/livekit.gen.yaml:/etc/livekit.yaml:ro   # rendered by deploy.sh
     environment:
       - "LIVEKIT_KEYS=${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+      # Valkey password for the redis: section of the config (livekit-server reads REDIS_PASSWORD),
+      # so it is not rendered into livekit.gen.yaml. Redis is what connects LiveKit to egress.
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     deploy:
       resources:
         limits: { memory: 4g }
+    depends_on:
+      valkey: { condition: service_healthy }
+    logging: *logging
+
+  # LiveKit Egress (ADR-0025): records meetings — audio-only room composites, which run without
+  # Chrome (SDK source, ~0.5 CPU each) — into MP4 files on recordings_data. Talks to LiveKit
+  # over Valkey (psrpc, same DB as LiveKit) and joins rooms over the loopback websocket.
+  # The API limits concurrent recordings (RECORDING_MAX_CONCURRENT); the egress stops a file
+  # after 4 h 10 min by itself as a safety net. Not read-only: PulseAudio and the handler
+  # write under /home/egress; no capabilities (the Chrome sandbox is not used).
+  egress:
+    image: livekit/egress:v1.14.1@sha256:bf2b648b947349c3e9ff7aa8c718f00378d5c06af7624652a3653318e00333ce   # works with livekit-server 1.13
+    network_mode: host
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: "${LIVEKIT_API_KEY}"
+        api_secret: "${LIVEKIT_API_SECRET}"
+        ws_url: ws://127.0.0.1:7880
+        insecure: true
+        redis:
+          address: 127.0.0.1:6379
+          password: "${REDIS_PASSWORD}"
+          db: 1
+        template_port: 7980
+        session_limits:
+          file_output_max_duration: 4h10m
+        logging:
+          level: info
+          json: true
+    volumes:
+      - recordings_data:/out
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 4g }
+    depends_on:
+      valkey: { condition: service_healthy }
+      recordings-init: { condition: service_completed_successfully }
+    logging: *logging
+
+  # One-shot: recordings_data belongs to the API user (distroless nonroot 65532), which creates
+  # a world-writable directory per workspace for the egress user (1000) and deletes the files.
+  # Reuses the Valkey image (already pulled) for its shell.
+  recordings-init:
+    image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    network_mode: none
+    restart: "no"
+    user: "0:0"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    entrypoint: ["sh", "-c", "chmod 0755 /out && chown 65532:65532 /out"]
+    volumes:
+      - recordings_data:/out
     logging: *logging
 
   api:
@@ -106,10 +167,16 @@ services:
       - PLAN_CONTACT_URL=${PLAN_CONTACT_URL:-}
       - PLAN_CONTACT_EMAIL=${PLAN_CONTACT_EMAIL:-it@gptunnel.ai}
       - SUPERADMIN_EMAILS=${SUPERADMIN_EMAILS:-}
-    <<: *hardening                 # distroless nonroot (65532); writes only to /data/files
+      # meeting recording (ADR-0025)
+      - GPTUNNEL_API_URL=${GPTUNNEL_API_URL:-https://gptunnel.ai}
+      - RECORDING_MAX_CONCURRENT=${RECORDING_MAX_CONCURRENT:-3}
+      - RECORDINGS_PATH=/data/recordings
+      - RECORDING_EGRESS_DIR=/out
+    <<: *hardening                 # distroless nonroot (65532); writes only to /data/files, /data/recordings
     tmpfs: [/tmp]
     volumes:
       - files_data:/data/files
+      - recordings_data:/data/recordings
     deploy:
       resources:
         limits: { memory: 1g }
@@ -122,6 +189,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       valkey: { condition: service_healthy }
+      recordings-init: { condition: service_completed_successfully }
     logging: *logging
 
   postgres:
@@ -193,3 +261,4 @@ volumes:
   pg_data:
   valkey_data:
   files_data:   # uploaded files (API fs driver); back up offsite, see docs/06
+  recordings_data:   # meeting recordings until GPTunneL has them (≤ 7 days); not backed up
