@@ -20,7 +20,9 @@ export type Dialog =
   /** «Новое сообщение»: pick a person to write to (ADR-0020). */
   | { kind: 'new-dm' }
   /** Member profile (docs/09 #20); `note` focuses «Заметка» («Добавить заметку» in the member menu). */
-  | { kind: 'profile'; workspaceId: string; userId: string; note?: boolean };
+  | { kind: 'profile'; workspaceId: string; userId: string; note?: boolean }
+  /** «Администрирование» (superadmins, ADR-0024); the web shows it at /admin. */
+  | { kind: 'admin'; workspaceId?: string };
 
 interface UiState {
   /** The open workspace, or HOME (stores/dms.ts) for «Личные» — the DM list (ADR-0020). */

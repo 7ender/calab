@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Check, ChevronDown, Ellipsis, Eye, Loader2, MessageSquare, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
+import { Check, ChevronDown, Ellipsis, Eye, Loader2, Lock, MessageSquare, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DisplayedPhase, offerRetry } from '../../lib/voiceLink';
 import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
@@ -16,7 +16,10 @@ import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../sto
 import { useWorkspaces } from '../../stores/workspaces';
 import { NoiseButton } from './NoisePopover';
 import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
-import { viewersText } from '../voice/streamFormat';
+import { PRESET_LABEL, viewersText } from '../voice/streamFormat';
+import { CAMERA_PRESETS, allowedCameraPreset, cameraPresetLock, type CameraPreset } from '../../lib/plan';
+import { planToast } from '../../services/plan';
+import { toast } from '../../stores/toasts';
 
 const Q_COLOR: Record<LinkQuality, string> = { good: 'text-ok', fair: 'text-warn', poor: 'text-danger', unknown: 'text-muted' };
 /** Lit bars out of 4 per quality (reconnecting reads as «poor»: 1 bar). */
@@ -287,6 +290,8 @@ export function CameraMenu(): ReactNode {
       </Dropdown.RadioGroup>
       {devices !== null && list.length === 0 ? <div className="px-2 py-1 text-caption text-muted">{t('video.noDevices')}</div> : null}
       <Dropdown.Separator className={menuSeparator} />
+      <CameraQualityItems />
+      <Dropdown.Separator className={menuSeparator} />
       {phase === 'off' ? (
         <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'camera-preview' })}>
           <Video className="size-4" /> {t('video.check')}
@@ -296,6 +301,57 @@ export function CameraMenu(): ReactNode {
         <Settings className="size-4" /> {t('shell.voiceSettings')}
       </Dropdown.Item>
     </Dropdown.Content>
+  );
+}
+
+/**
+ * Camera ▾ «Качество» (ADR-0024): 720p / 1080p. A quality above the plan's camera_max_preset has a
+ * lock and a tooltip; choosing it explains how to get it (toast with «Связаться») instead.
+ * Changing the quality of a live camera restarts it.
+ */
+function CameraQualityItems(): ReactNode {
+  const chosen = usePrefs((s) => s.cameraPreset);
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const phase = useVoice((s) => s.camera);
+  const wsId = useVoice((s) => s.workspaceId);
+  const planMax = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.plan?.limits?.cameraMaxPreset : undefined));
+  const current = allowedCameraPreset(chosen, planMax);
+  const choose = (p: CameraPreset): void => {
+    if (p === current) return;
+    setPrefs({ cameraPreset: p });
+    if (phase === 'on') {
+      toast.info(t('camera.qualityNext'));
+      void voice.camera.restart();
+    }
+  };
+  return (
+    <>
+      <Dropdown.Label className={menuLabel}>{t('camera.quality')}</Dropdown.Label>
+      {CAMERA_PRESETS.map((p) => {
+        const locked = cameraPresetLock(p, planMax) === 'plan';
+        const label = t(PRESET_LABEL[p]);
+        const item = (
+          <Dropdown.Item
+            key={p}
+            role="menuitemradio"
+            aria-checked={current === p}
+            className={cx(menuItem, 'relative pl-7')}
+            onSelect={() => (locked ? planToast(t('plan.toast.preset', { preset: label })) : choose(p))}
+          >
+            {current === p ? <Check className="absolute left-2 size-3.5" aria-hidden /> : null}
+            <span className="flex-1">{label}</span>
+            {locked ? <Lock className="size-3.5 opacity-70" aria-label={t('plan.lockTip')} /> : null}
+          </Dropdown.Item>
+        );
+        return locked ? (
+          <Tip key={p} label={t('plan.lockTip')} side="right">
+            {item}
+          </Tip>
+        ) : (
+          item
+        );
+      })}
+    </>
   );
 }
 

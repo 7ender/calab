@@ -10,6 +10,8 @@ export interface SessionState {
   serverUrl: string;
   sessionId: string;
   me: Me | null;
+  /** Where to ask for a paid plan (READY.plan_contact, ADR-0024): mailto: or https:; '' = unknown. */
+  planContact: string;
   gateway: GatewayStatus;
   /** «Нет соединения с сервером» banner (lib/gateway/banner.ts decides). */
   reconnectBanner: boolean;
@@ -31,6 +33,7 @@ export const useSession = create<SessionState>()((set) => ({
   serverUrl: '',
   sessionId: '',
   me: null,
+  planContact: '',
   gateway: 'idle',
   reconnectBanner: false,
   ready: false,

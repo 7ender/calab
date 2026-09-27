@@ -1,7 +1,7 @@
 import { ScreenSharePreset, clampStreamPreset, type ConcreteScreenSharePreset } from '@calaba/protocol';
 import * as DialogP from '@radix-ui/react-dialog';
 import * as TooltipP from '@radix-ui/react-tooltip';
-import { AppWindow, Monitor, MonitorUp, Settings2, TriangleAlert, X } from 'lucide-react';
+import { AppWindow, Lock, Monitor, MonitorUp, Settings2, TriangleAlert, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { thumbSizeFor, type ThumbRequest } from '../../../shared/captureThumb';
 import type { CaptureSource } from '../../../shared/ipc';
@@ -9,11 +9,14 @@ import { Button, Segmented, Spinner, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { encodableCodecs } from '../../lib/media/screenShare';
 import { platform } from '../../platform';
+import { allowedStreamPreset } from '../../lib/plan';
+import { planToast } from '../../services/plan';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
+import { useWorkspaces } from '../../stores/workspaces';
 import { pickerLayout, presetOptions, presetSummary, splitSources } from './streamFormat';
 
 // Room / workspace settings import these from here.
@@ -65,19 +68,24 @@ function InlineTip({ label, children }: { label: string; children: ReactNode }):
   );
 }
 
-/** Quality segment: presets above the room limit stay visible but disabled, with the reason on hover. */
+/**
+ * Quality segment: presets above the room limit stay visible but disabled, with the reason on
+ * hover; above the plan's limit (ADR-0024) — with a lock, and a click explains how to get them.
+ */
 function QualitySegment({
   max,
+  planMax,
   value,
   onChange,
 }: {
   max: ConcreteScreenSharePreset;
+  planMax: ScreenSharePreset | undefined;
   value: ConcreteScreenSharePreset;
   onChange: (p: ConcreteScreenSharePreset) => void;
 }): ReactNode {
   return (
     <div role="radiogroup" aria-label={t('streamPick.quality')} className="inline-flex rounded-[var(--radius-control)] bg-hover p-0.5">
-      {presetOptions(max).map((o) => {
+      {presetOptions(max, planMax).map((o) => {
         const btn = (
           <button
             key={o.preset}
@@ -86,13 +94,15 @@ function QualitySegment({
             aria-checked={value === o.preset}
             aria-disabled={o.disabledReason ? true : undefined}
             onClick={() => {
-              if (!o.disabledReason) onChange(o.preset);
+              if (o.lock === 'plan') planToast(t('plan.toast.preset', { preset: o.label }));
+              else if (!o.disabledReason) onChange(o.preset);
             }}
             className={cx(
-              'h-6 rounded-full px-2.5 text-[12px] font-medium transition-colors duration-[var(--motion-fast)]',
+              'inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium transition-colors duration-[var(--motion-fast)]',
               value === o.preset ? 'bg-elev text-fg shadow-[var(--shadow-card)]' : o.disabledReason ? 'cursor-default text-faint' : 'text-fg hover:bg-[var(--color-fill)]',
             )}
           >
+            {o.lock === 'plan' ? <Lock className="size-3" aria-hidden /> : null}
             {o.label}
           </button>
         );
@@ -173,7 +183,10 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   const [systemAudio, setSystemAudio] = useState(info?.systemAudioLoopback === 'supported');
   const [advanced, setAdvanced] = useState(false);
   const max = room?.media?.maxStreamPreset || ScreenSharePreset.H1080;
-  const preset = clampStreamPreset(prefs.streamPreset, max);
+  const wsId = useVoice((s) => s.workspaceId);
+  const planMax = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.plan?.limits?.streamMaxPreset : undefined));
+  // The saved choice, lowered to what the room and the plan allow (never a locked preset).
+  const preset = allowedStreamPreset(clampStreamPreset(prefs.streamPreset, max), max, planMax);
   const loopback = info?.systemAudioLoopback ?? 'unsupported';
   const available = useMemo(() => encodableCodecs(), []);
 
@@ -346,7 +359,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
                 </p>
               ) : null}
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-                <QualitySegment max={max} value={preset} onChange={(p) => prefs.setPrefs({ streamPreset: p })} />
+                <QualitySegment max={max} planMax={planMax} value={preset} onChange={(p) => prefs.setPrefs({ streamPreset: p })} />
                 <InlineTip label={prefs.contentHint === 'motion' ? t('streamPick.videoHint') : t('streamPick.textHint')}>
                   <span>
                     <Segmented

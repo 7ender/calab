@@ -1,6 +1,7 @@
 import { SCREEN_SHARE_PRESETS, ScreenSharePreset, type ConcreteScreenSharePreset, type ScreenShareContentHint } from '@calaba/protocol';
 import type { CaptureSource } from '../../../shared/ipc';
 import { plural, t, type MessageKey } from '../../i18n';
+import { streamPresetLock, type PresetLock } from '../../lib/plan';
 import type { StreamQuality } from '../../stores/voice';
 
 /** Pure formatting / grouping for the stream picker and the stream stage (unit-tested). */
@@ -42,13 +43,23 @@ export function presetSummary(p: ConcreteScreenSharePreset, hint: ScreenShareCon
   return [kind, res, t('streamPick.fps', { fps: v.fps })].join(' • ');
 }
 
-/** Picker quality segment: presets above the room's limit are disabled with the reason. */
-export function presetOptions(max: ConcreteScreenSharePreset): Array<{ preset: ConcreteScreenSharePreset; label: string; disabledReason: string | null }> {
-  return PRESETS.map((p) => ({
-    preset: p,
-    label: p === ScreenSharePreset.ORIGINAL ? t('preset.originalShort') : t(PRESET_LABEL[p]),
-    disabledReason: p > max ? t('streamPick.qualityLimited', { max: t(PRESET_LABEL[max]) }) : null,
-  }));
+/**
+ * Picker quality segment: presets above the room's limit are disabled with the reason; above the
+ * plan's (`stream_max_preset`, ADR-0024) — locked, with «Доступно на тарифе Team» (`lock: 'plan'`).
+ */
+export function presetOptions(
+  max: ConcreteScreenSharePreset,
+  planMax?: ScreenSharePreset,
+): Array<{ preset: ConcreteScreenSharePreset; label: string; lock: PresetLock; disabledReason: string | null }> {
+  return PRESETS.map((p) => {
+    const lock = streamPresetLock(p, max, planMax);
+    return {
+      preset: p,
+      label: p === ScreenSharePreset.ORIGINAL ? t('preset.originalShort') : t(PRESET_LABEL[p]),
+      lock,
+      disabledReason: lock === 'room' ? t('streamPick.qualityLimited', { max: t(PRESET_LABEL[max]) }) : lock === 'plan' ? t('plan.lockTip') : null,
+    };
+  });
 }
 
 /** Picker card chrome around the 16:9 preview: p-1.5 on each side, and the name row below it. */

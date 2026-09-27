@@ -1,4 +1,11 @@
 import {
+  AdminGetWorkspaceResponseSchema,
+  AdminPlanLogResponseSchema,
+  AdminSearchWorkspacesResponseSchema,
+  AdminSetPlanRequestSchema,
+  AdminSetPlanResponseSchema,
+  RequestCameraRequestSchema,
+  RequestCameraResponseSchema,
   PutUserNoteRequestSchema,
   UserNoteResponseSchema,
   ChangeEmailRequestSchema,
@@ -218,10 +225,15 @@ export const api = {
     join: (roomId: string) => call('POST', `/api/rooms/${roomId}/join`, JoinVoiceResponseSchema),
     /** Takes this device out of the room at once, pending or connected (idempotent, 204). */
     leave: (roomId: string) => callEmpty('POST', `/api/rooms/${roomId}/voice/leave`),
+    /** → the granted preset and fps: ≤ the room's and the plan's limits (ADR-0024). */
     requestStream: (roomId: string, preset: ScreenSharePreset) =>
       call('POST', `/api/rooms/${roomId}/stream/request`, RequestStreamResponseSchema, body(RequestStreamRequestSchema, { preset })),
-    /** Grants this device the camera source (VIDEO; 409 CONFLICT = camera_limit reached / cameras off). */
-    requestCamera: (roomId: string) => callEmpty('POST', `/api/rooms/${roomId}/camera/request`),
+    /**
+     * Grants this device the camera source (VIDEO; 409 CONFLICT = camera_limit reached / cameras
+     * off) → the granted quality, capped by the plan (ADR-0024; UNSPECIFIED / 0 = no cap).
+     */
+    requestCamera: (roomId: string, want: { preset: ScreenSharePreset; fps?: number }) =>
+      call('POST', `/api/rooms/${roomId}/camera/request`, RequestCameraResponseSchema, body(RequestCameraRequestSchema, { preset: want.preset, fps: want.fps ?? 0 })),
     /** Withdraws this device's camera grant (after unpublishing). */
     stopCamera: (roomId: string) => callEmpty('POST', `/api/rooms/${roomId}/camera/stop`),
     /** Moderator (MUTE_MEMBERS): turns a member's webcam off → VOICE_CAMERA_STOP{MODERATOR}; 404 = no camera. */
@@ -237,6 +249,21 @@ export const api = {
     moveMember: (roomId: string, userId: string, targetRoomId: string) =>
       callEmpty('POST', `/api/rooms/${roomId}/voice/${userId}/move`, body(MoveMemberRequestSchema, { targetRoomId })),
   },
+};
+
+/**
+ * Superadmin API (ADR-0024): `/api/admin/*`, only for `me.isSuperadmin` (everyone else gets 404).
+ * Its own rate limit (60/min): the search is debounced by the caller.
+ */
+export const adminApi = {
+  /** q: name, slug or the owner's email (substring); empty = newest; ≤ 50. */
+  search: (q: string, signal?: AbortSignal) => call('GET', `/api/admin/workspaces${qs({ q })}`, AdminSearchWorkspacesResponseSchema, undefined, signal),
+  get: (id: string, signal?: AbortSignal) => call('GET', `/api/admin/workspaces/${id}`, AdminGetWorkspaceResponseSchema, undefined, signal),
+  /** limits only with PLAN_CUSTOM; 422 on an invalid plan; members get WORKSPACE_UPDATE. */
+  setPlan: (id: string, init: MessageInitShape<typeof AdminSetPlanRequestSchema>) =>
+    call('PUT', `/api/admin/workspaces/${id}/plan`, AdminSetPlanResponseSchema, body(AdminSetPlanRequestSchema, init)),
+  /** Newest first, ≤ 100. */
+  log: (id: string, signal?: AbortSignal) => call('GET', `/api/admin/workspaces/${id}/plan/log`, AdminPlanLogResponseSchema, undefined, signal),
 };
 
 export interface UploadHandle {

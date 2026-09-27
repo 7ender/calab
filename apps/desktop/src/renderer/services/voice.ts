@@ -1,4 +1,4 @@
-import { AUDIO_PUBLISH_DEFAULTS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceMoved } from '@calaba/protocol';
+import { AUDIO_PUBLISH_DEFAULTS, SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceMoved } from '@calaba/protocol';
 import {
   ConnectionState,
   DisconnectReason,
@@ -53,6 +53,8 @@ import { cspBlockedHost, describeConnectError, describeDisconnect, hostOfUrl } f
 import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
 import { humanMediaError, reportMediaError } from './mediaErrors';
+import { reportPlanError } from './plan';
+import { capFps } from '../lib/plan';
 import { sameBinding } from './profile';
 
 /**
@@ -438,7 +440,9 @@ class VoiceEngine {
       setLink({ attempts: useVoice.getState().link.attempts + 1, lastError: line });
       // Rejoin attempts (quiet) only log: the reconnect notice already tells the user, and the
       // seat stays (the voice panel and its menus are not unmounted between attempts).
-      const h = quiet ? humanMediaError(err, 'voice') : reportMediaError(err, 'voice');
+      // A plan limit (409 ROOM_FULL reason PLAN_LIMIT, ADR-0024): its own toast with «Связаться».
+      const planHit = !quiet && reportPlanError(err, workspaceId);
+      const h = quiet || planHit ? humanMediaError(err, 'voice') : reportMediaError(err, 'voice');
       if (!quiet) this.failedSeat = { roomId, workspaceId, at: Date.now() };
       await this.teardown(false, quiet);
       setVoice({ error: h.text });
@@ -1673,14 +1677,16 @@ class VoiceEngine {
       // 2) reserve a slot + get the screen_share grant (409 when max_streams is reached);
       const granted = await api.voice.requestStream(roomId, opts.preset);
       if (stale()) return;
-      const preset = granted.preset || opts.preset;
-      if (preset !== opts.preset) await applyPreset(captured, preset);
+      // The server may lower both (room / plan limits, ADR-0024): publish exactly what it granted.
+      const preset = (granted.preset || opts.preset);
+      const fps = granted.fps || undefined;
+      if (preset !== opts.preset || capFps(SCREEN_SHARE_PRESETS[preset].fps, fps) < SCREEN_SHARE_PRESETS[opts.preset].fps) await applyPreset(captured, preset, fps);
       await this.waitForScreenGrant(room);
       if (stale()) return;
       // 3) publish.
       const share = await startScreenShare(
         room.localParticipant,
-        { ...opts, preset, codec },
+        { ...opts, preset, codec, ...(fps ? { fps } : {}) },
         () => {
           if (this.screen === share) {
             this.screen = null;

@@ -10,6 +10,7 @@ import { persist } from 'zustand/middleware';
 import type { PttBinding } from '../../shared/ipc';
 import { PTT_RELEASE_DEFAULT_MS } from '../lib/pttRelease';
 import type { EchoMode } from '../lib/media/echo';
+import type { CameraPreset } from '../lib/plan';
 import type { LocalePref } from '../i18n/types';
 import type { OpenChatSound } from '../lib/chatSound';
 import type { SoundName } from '../lib/sounds';
@@ -32,6 +33,8 @@ export interface Prefs {
   cameraDeviceId: string | null;
   /** The «Проверьте камеру» preview was confirmed once: later the button turns the camera on directly. */
   cameraChecked: boolean;
+  /** Camera ▾ «Качество»: 720p (default) or 1080p; the plan may lower it (ADR-0024). */
+  cameraPreset: CameraPreset;
   /** «Экономить трафик»: only the featured / PiP camera is received, at most 360p. */
   saveTraffic: boolean;
   /** userId → «Не показывать видео»: their camera is not subscribed (an avatar tile instead). */
@@ -87,6 +90,7 @@ const DEFAULTS: Prefs = {
   outputDeviceId: null,
   cameraDeviceId: null,
   cameraChecked: false,
+  cameraPreset: ScreenSharePreset.H720,
   saveTraffic: false,
   hiddenVideo: {},
   outputVolume: 1,

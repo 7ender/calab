@@ -6,7 +6,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Copy, Search, Settings2, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Copy, Gem, Search, Settings2, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -27,6 +27,8 @@ import { CommitInput } from '../settings/AppSettingsDialog';
 import { MAX_USES } from '../people/RoomLinkTab';
 import { ROLE_LABEL } from '../shell/MembersPanel';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
+import { PlanTab } from './PlanTab';
+import { reportPlanError } from '../../services/plan';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -48,6 +50,8 @@ export function WorkspaceSettingsDialog({ workspaceId, tab, onClose }: { workspa
         ]
       : []),
     { id: 'members', label: t('ws.members'), icon: Users, content: <MembersTab workspaceId={workspaceId} /> },
+    // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
+    ...(entry.ws.plan ? [{ id: 'plan', label: t('plan.tab'), icon: Gem, content: <PlanTab workspaceId={workspaceId} /> }] : []),
     ...(admin ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} /> }] : []),
     ...(owner
       ? [{ id: 'danger', label: t('ws.tabDanger'), icon: TriangleAlert, destructive: true, content: <DangerTab workspaceId={workspaceId} onDone={onClose} /> }]
@@ -87,7 +91,7 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
       const meta = await uploadFile(uploadPath(workspaceId, ''), f, f.name, () => undefined).promise;
       await patchWorkspace(workspaceId, { iconFileId: meta.id });
     } catch (e) {
-      toast.error(err(e));
+      if (!reportPlanError(e, workspaceId)) toast.error(err(e));
     } finally {
       setUploading(false);
     }

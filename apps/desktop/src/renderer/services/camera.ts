@@ -1,10 +1,21 @@
+import { ScreenSharePreset } from '@calaba/protocol';
 import { RoomEvent, Track, type LocalVideoTrack, type Room } from 'livekit-client';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
-import { cameraPublishOptions, captureCamera, limitCameraForCpu, switchCameraDevice } from '../lib/media/camera';
-import { cameraNext, cameraStopText, cpuLimitStep, type CameraEvent } from '../lib/media/cameraLogic';
+import { applyCameraQuality, cameraPublishOptions, captureCamera, limitCameraForCpu, switchCameraDevice } from '../lib/media/camera';
+import {
+  CAMERA_DEFAULT_QUALITY,
+  cameraNext,
+  cameraStopText,
+  cpuLimitStep,
+  grantedCameraQuality,
+  type CameraEvent,
+  type CameraQuality,
+} from '../lib/media/cameraLogic';
+import { allowedCameraPreset } from '../lib/plan';
+import { workspacePlan } from './plan';
 import type { OutboundVideoLayer } from '../lib/media/stats';
 import { isDeviceGone } from '../lib/voiceLogic';
 import { prefs } from '../stores/prefs';
@@ -35,6 +46,8 @@ export class CameraController {
   private cpuSamples = 0;
   /** When the grant withdrawal stopped the camera (quietly): the VOICE_CAMERA_STOP after it still explains why. */
   private quietStopAt = 0;
+  /** Quality of the live camera: what /camera/request granted (ADR-0024). */
+  private quality: CameraQuality = CAMERA_DEFAULT_QUALITY;
 
   constructor(private readonly host: CameraHost) {}
 
@@ -57,14 +70,32 @@ export class CameraController {
    */
   async capture(): Promise<LocalVideoTrack> {
     const want = prefs().cameraDeviceId;
+    const q = this.wanted().quality;
     try {
-      return await captureCamera(want);
+      return await captureCamera(want, q);
     } catch (err) {
       if (!want || !isDeviceGone(err)) throw err;
       log.warn('chosen camera unavailable, using the default one', err);
       toast.info(t('video.fallback'));
-      return captureCamera(null);
+      return captureCamera(null, q);
     }
+  }
+
+  /**
+   * The quality to ask for: camera ▾ «Качество», lowered to the plan of the call's workspace
+   * (camera_max_preset / camera_max_fps) — no capture above what the server would grant.
+   */
+  private wanted(): { preset: ScreenSharePreset; quality: CameraQuality } {
+    const limits = workspacePlan(useVoice.getState().workspaceId)?.limits;
+    const preset = allowedCameraPreset(prefs().cameraPreset, limits?.cameraMaxPreset);
+    return { preset, quality: grantedCameraQuality(preset, { preset, fps: limits?.cameraMaxFps ?? 0 }) };
+  }
+
+  /** Camera ▾ changed the quality while the camera is on: restart it with the new one. */
+  async restart(): Promise<void> {
+    if (useVoice.getState().camera !== 'on') return;
+    await this.stop();
+    await this.start();
   }
 
   /** Turns the camera on; `captured` is the preview's track (released here on any failure). */
@@ -86,16 +117,23 @@ export class CameraController {
       // 1) Capture first: a denied OS permission must not cost a camera slot.
       track ??= await this.capture();
       if (stale()) return;
-      // 2) Reserve a slot + the camera grant (409 = limit reached / cameras off in the room).
+      // 2) Reserve a slot + the camera grant (409 = limit reached / cameras off in the room);
+      //    the answer is the quality the plan allows — capture and encode no more than that.
       step = 'request';
-      await api.voice.requestCamera(roomId);
+      const want = this.wanted();
+      const granted = await api.voice.requestCamera(roomId, { preset: want.preset });
       reserved = true;
       if (stale()) return;
+      const q = grantedCameraQuality(want.preset, granted);
+      if (q.height < want.quality.height || (q.fps > 0 && (want.quality.fps === 0 || q.fps < want.quality.fps))) {
+        await applyCameraQuality(track, q).catch((e: unknown) => log.warn('camera: granted quality constraint failed', e));
+      }
+      this.quality = q;
       await waitForGrant(room, LK_SOURCE_CAMERA);
       if (stale()) return;
       // 3) Publish.
       step = 'publish';
-      await room.localParticipant.publishTrack(track, cameraPublishOptions());
+      await room.localParticipant.publishTrack(track, cameraPublishOptions(this.quality));
       if (stale()) {
         await room.localParticipant.unpublishTrack(track, true).catch(() => undefined);
         return;
@@ -192,11 +230,11 @@ export class CameraController {
     if (live?.track === track && !cameraGrantMissing(room.localParticipant.permissions)) return;
     const gen = this.gen;
     try {
-      await api.voice.requestCamera(roomId);
+      await api.voice.requestCamera(roomId, { preset: this.quality.height === 1080 ? ScreenSharePreset.H1080 : ScreenSharePreset.H720, fps: this.quality.fps });
       await waitForGrant(room, LK_SOURCE_CAMERA);
       if (gen !== this.gen || this.track !== track) return;
       const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-      if (!pub || pub.track !== track) await room.localParticipant.publishTrack(track, cameraPublishOptions());
+      if (!pub || pub.track !== track) await room.localParticipant.publishTrack(track, cameraPublishOptions(this.quality));
       this.bump();
     } catch (err) {
       log.warn('camera restore after reconnect failed', err);
@@ -213,9 +251,9 @@ export class CameraController {
     const track = this.track;
     if (!track) return;
     try {
-      await switchCameraDevice(track, deviceId);
-      // The restart captures at 720p again: keep the CPU limit of this session (review L3).
-      if (useVoice.getState().cameraCpuLimited) await limitCameraForCpu(track);
+      await switchCameraDevice(track, deviceId, this.quality);
+      // The restart captures at the full quality again: keep the CPU limit of this session (review L3).
+      if (useVoice.getState().cameraCpuLimited) await limitCameraForCpu(track, this.quality);
       this.bump();
     } catch (err) {
       reportMediaError(err, 'camera');
@@ -231,7 +269,7 @@ export class CameraController {
     if (!step.limit) return;
     setVoice({ cameraCpuLimited: true });
     log.info('camera: encoder is CPU-bound, capturing at 360p');
-    void limitCameraForCpu(track)
+    void limitCameraForCpu(track, this.quality)
       .then(() => toast.info(t('video.cpu')))
       .catch((e: unknown) => log.warn('camera 360p constraint failed', e));
   }

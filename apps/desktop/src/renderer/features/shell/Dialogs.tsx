@@ -11,9 +11,12 @@ import { ProfileDialog } from '../people/ProfileDialog';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
 import { WorkspaceSettingsDialog } from '../workspace/WorkspaceSettings';
+import { AdminWindow } from '../admin/AdminWindow';
+import { useSession } from '../../stores/session';
 
 export function Dialogs(): ReactNode {
   const d = useUi((s) => s.dialog);
+  const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   const close = (): void => useUi.getState().openDialog(null);
   let node: ReactNode = null;
   if (d) {
@@ -50,6 +53,10 @@ export function Dialogs(): ReactNode {
         break;
       case 'profile':
         node = <ProfileDialog key={d.userId} workspaceId={d.workspaceId} userId={d.userId} focusNote={d.note ?? false} onClose={close} />;
+        break;
+      case 'admin':
+        // Only for superadmins (the server answers 404 to anyone else anyway).
+        node = superadmin ? <AdminWindow onClose={close} workspaceId={d.workspaceId} /> : null;
         break;
       case 'image':
         node = <Lightbox fileId={d.fileId} name={d.name} onClose={close} />;

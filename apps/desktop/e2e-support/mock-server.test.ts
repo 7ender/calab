@@ -1,5 +1,5 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { GatewayFrameSchema, GatewayOpcode, NotificationLevel, RoomType, VoiceStreamStopReason, type DispatchEvent, type GatewayFrame } from '@calaba/protocol';
+import { GatewayFrameSchema, GatewayOpcode, NotificationLevel, Plan, PlanLimitsSchema, RoomType, ScreenSharePreset, VoiceStreamStopReason, type DispatchEvent, type GatewayFrame } from '@calaba/protocol';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { GENERAL_MESSAGE_COUNT, IDS, MARKETING_IDS, parseMentions, startMockServer, type MockServer } from './mock-server';
@@ -289,7 +289,8 @@ describe('mentions and room notifications (docs/05)', () => {
     const post = (path: string): Promise<Response> => fetch(`${server.url}${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
     const me = IDS.users.anna;
     server.setVoiceState({ userId: me, roomId: IDS.rooms.meeting });
-    expect((await post(`/api/rooms/${IDS.rooms.meeting}/camera/request`)).status).toBe(204);
+    // 200 {preset, fps} since ADR-0024; the main workspace is Team (no camera cap).
+    expect((await post(`/api/rooms/${IDS.rooms.meeting}/camera/request`)).status).toBe(200);
     expect(server.state.voiceStates.get(me)?.camera).toBe(true);
     expect((await post(`/api/rooms/${IDS.rooms.meeting}/camera/stop`)).status).toBe(204);
     expect(server.state.voiceStates.get(me)?.camera).toBe(false);
@@ -715,5 +716,83 @@ describe('room order (docs/09 P1 #19)', () => {
       ],
     });
     expect(back.status).toBe(200);
+  });
+});
+
+describe('plans and the superadmin API (ADR-0024)', () => {
+  const api = (token: string, path: string, init: { method?: string; body?: string } = {}): Promise<Response> =>
+    fetch(`${server.url}${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+
+  it('READY: plan per workspace, planContact, me.isSuperadmin', async () => {
+    const token = await login();
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } });
+    const ready = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'ready'))?.event;
+    gw.ws.close(1000);
+    if (ready?.case !== 'ready') throw new Error('no READY');
+    expect(ready.value.me?.isSuperadmin).toBe(true);
+    expect(ready.value.planContact).toBe('mailto:it@gptunnel.ai');
+    const plans: Record<string, string> = {};
+    for (const w of ready.value.workspaces) plans[w.workspace?.slug ?? ''] = Plan[w.workspace?.plan?.plan ?? Plan.UNSPECIFIED];
+    expect(plans).toEqual({ calaba: 'TEAM', design: 'FREE' });
+  });
+
+  it('search / get / log for the superadmin; 404 for anyone else', async () => {
+    const anna = await login();
+    const boris = await login('boris@calaba.test');
+    expect((await api(boris, '/api/admin/workspaces')).status).toBe(404);
+    const all = (await (await api(anna, '/api/admin/workspaces')).json()) as { workspaces: { workspace: { slug: string }; ownerEmail: string; usage: { members: number } }[] };
+    expect(all.workspaces.map((w) => w.workspace.slug)).toEqual(['community', 'design', 'calaba']);
+    expect(all.workspaces[2]?.usage.members).toBe(4); // guests do not count
+    const byEmail = (await (await api(anna, '/api/admin/workspaces?q=VERA@')).json()) as { workspaces: { workspace: { slug: string } }[] };
+    expect(byEmail.workspaces.map((w) => w.workspace.slug)).toEqual(['design']);
+    const one = await api(anna, `/api/admin/workspaces/${IDS.workspaces.community}`);
+    expect(((await one.json()) as { workspace: { planNote: string } }).workspace.planNote).toMatch(/Пилот/);
+    const log = (await (await api(anna, `/api/admin/workspaces/${IDS.workspaces.main}/plan/log`)).json()) as { entries: { plan: string }[] };
+    expect(log.entries.map((e) => e.plan)).toEqual(['PLAN_TEAM']);
+  });
+
+  it('PUT plan: 422 on limits without CUSTOM; CUSTOM stored, logged and sent as WORKSPACE_UPDATE', async () => {
+    const anna = await login();
+    const path = `/api/admin/workspaces/${IDS.workspaces.design}/plan`;
+    expect((await api(anna, path, { method: 'PUT', body: JSON.stringify({ plan: 'PLAN_TEAM', limits: { roomMembers: 3 }, note: '' }) })).status).toBe(422);
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token: anna } } });
+    await gw.next((f) => dispatchOf(f)?.event.case === 'ready');
+    const res = await api(anna, path, { method: 'PUT', body: JSON.stringify({ plan: 'PLAN_CUSTOM', limits: { roomMembers: 8, storageMb: '2048' }, note: 'тест' }) });
+    expect(res.status).toBe(200);
+    const upd = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'workspaceUpdate'))?.event;
+    gw.ws.close(1000);
+    expect(upd?.case === 'workspaceUpdate' && upd.value.workspace?.plan?.limits?.roomMembers).toBe(8);
+    const log = (await (await api(anna, `${path}/log`)).json()) as { entries: { plan: string; note: string }[] };
+    expect(log.entries[0]).toMatchObject({ plan: 'PLAN_CUSTOM', note: 'тест' });
+    server.reset('data');
+  });
+
+  it('limits: 409 ROOM_FULL PLAN_LIMIT with used / limit; stream and camera capped; 413 quota with reason', async () => {
+    const anna = await login();
+    const ws = server.state.workspaces.get(IDS.workspaces.main);
+    if (!ws?.plan?.limits) throw new Error('no plan');
+    ws.plan.limits = create(PlanLimitsSchema, { roomMembers: 1, streamMaxPreset: ScreenSharePreset.H720, streamMaxFps: 10, cameraMaxPreset: ScreenSharePreset.H720, cameraMaxFps: 15, storageMb: 1n });
+    server.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.meeting });
+    const full = await api(anna, `/api/rooms/${IDS.rooms.meeting}/join`, { method: 'POST' });
+    expect(full.status).toBe(409);
+    const body = (await full.json()) as { used?: string };
+    expect(body).toMatchObject({ code: 'ERROR_CODE_ROOM_FULL', reason: 'PLAN_LIMIT', limit: '1' });
+    expect(Number(body.used)).toBeGreaterThanOrEqual(1);
+    server.setVoiceState({ userId: IDS.users.boris, roomId: '' });
+    server.setVoiceState({ userId: IDS.users.anna, roomId: IDS.rooms.meeting });
+    const stream = await api(anna, `/api/rooms/${IDS.rooms.meeting}/stream/request`, { method: 'POST', body: JSON.stringify({ preset: 'SCREEN_SHARE_PRESET_H1080' }) });
+    expect(await stream.json()).toEqual({ preset: 'SCREEN_SHARE_PRESET_H720', fps: 10 });
+    const cam = await api(anna, `/api/rooms/${IDS.rooms.meeting}/camera/request`, { method: 'POST', body: JSON.stringify({ preset: 'SCREEN_SHARE_PRESET_H1080' }) });
+    expect(await cam.json()).toEqual({ preset: 'SCREEN_SHARE_PRESET_H720', fps: 15 });
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(1024)], { type: 'application/octet-stream' }), 'a.bin');
+    const up = await fetch(`${server.url}/api/workspaces/${IDS.workspaces.main}/files`, { method: 'POST', headers: { Authorization: `Bearer ${anna}` }, body: form });
+    expect(up.status).toBe(413);
+    expect(await up.json()).toMatchObject({ code: 'ERROR_CODE_FILE_QUOTA_EXCEEDED', reason: 'PLAN_LIMIT', limit: String(1024 * 1024) });
+    server.reset('data');
   });
 });

@@ -197,7 +197,8 @@ export function registerIpc(): void {
   });
   handle(IPC.appOpenExternal, (_e, a) => {
     const url = str(a, 2048);
-    if (!/^https?:\/\//.test(url)) throw new Error('only http(s) links');
+    // http(s) pages and mailto: (the plan contact, ADR-0024); never file:, custom schemes, etc.
+    if (!/^(https?:\/\/|mailto:[^\s/]+@)/i.test(url)) throw new Error('only http(s) and mailto: links');
     return shell.openExternal(url);
   });
   handle(IPC.appLegal, (): LegalTexts => {

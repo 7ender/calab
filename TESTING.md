@@ -1112,6 +1112,15 @@ TEST_REDIS_URL=redis://localhost:56379/1 TEST_RTC_REDIS_DB=13 go test -race -tag
 Ожидается: 4 `--- PASS` и `ok` (`TestPlanRoomMembersLimit`, `TestPlanMediaCaps` — `SKIP` без dev-LiveKit / `lk`). Проверяется: 6-й в комнате (и владелец) → `409 ROOM_FULL` `reason PLAN_LIMIT`; 1080p → `H720`/15 в `/stream/request`, `/camera/request`, `/join` (`media`, `planLimits`) и `Workspace.plan` в READY; `storage_mb` → `413` c `used`/`limit`; admin: не-суперадмин → 404, поиск (slug/имя/email), 422 на неверный план, `WORKSPACE_UPDATE` с лимитами, журнал; `me.isSuperadmin`, `planContact`.
 Вручную: `curl -s localhost:3000/api/version | jq .planContact` → `"mailto:it@gptunnel.ai"`.
 
+Клиент (`feat/plans-client`):
+```sh
+cd apps/desktop
+pnpm exec vitest run src/renderer/lib/plan.test.ts src/renderer/services/plan.test.ts   # замки, тосты, форма CUSTOM
+pnpm exec vitest run --config e2e-support/vitest.config.ts -t 'superadmin'             # мок: admin API, лимиты
+CALABA_VISUAL_MOCK_PORT=40570 pnpm e2e:visual -g "settings-plan|admin-" --project dark-960
+```
+Ожидается: всё зелёное, 3 снимка совпадают. Вручную (мок/стенд, free): 1080p в пикере стрима и камере ▾ — с замком, клик → тост «Связаться»; 6-й в комнате → тост «В бесплатном тарифе до 5 человек»; суперадмин: профиль → «Администрирование», смена плана → у участников сразу меняется вкладка «Тариф».
+
 ---
 
 ## 4. Инфра и стенд

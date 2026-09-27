@@ -472,6 +472,8 @@ export function createWebPlatform(): Platform {
       },
       openExternal: (url) => {
         if (/^https?:\/\//.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+        // mailto: (the plan contact, ADR-0024) hands over to the mail client, the page stays.
+        else if (/^mailto:[^\s/]+@/i.test(url)) location.href = url;
         return Promise.resolve();
       },
       attention: () => undefined,
