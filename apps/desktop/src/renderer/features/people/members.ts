@@ -10,7 +10,7 @@ import {
   type WorkspaceMember,
 } from '@calaba/protocol';
 import { getLocale } from '../../i18n';
-import { can, mayModerateVoice, roomPerms, workspacePerms } from '../../lib/permissions';
+import { can, mayModerateVoice, mayMoveVoice, roomPerms, workspacePerms } from '../../lib/permissions';
 import { canAssignRole, legacyRoles, roleActor, rolesOfMember, topRole } from '../../lib/roles';
 
 /*
@@ -174,7 +174,8 @@ export function memberActions(c: MenuContext): MenuActions {
   // workspace level (owner/admin) — a room grant cannot silence someone everywhere.
   const moderate = !self && !!inRoom && outranks && can(permsIn(inRoom), 'MUTE_MEMBERS');
   const muteAll = moderate && can(ws, 'MUTE_MEMBERS');
-  const canMoveFrom = !self && !!inRoom && outranks && can(permsIn(inRoom), 'MOVE_MEMBERS');
+  // Moving is not a sanction: an admin moves admins and the owner too (server rtc.mayMove).
+  const canMoveFrom = !self && !!inRoom && mayMoveVoice(c.myRole, c.target.role, self) && can(permsIn(inRoom), 'MOVE_MEMBERS');
   // Targets: MOVE_MEMBERS there for me, VIEW_ROOM + CONNECT there for them (server moveMember).
   const moveTargets = canMoveFrom
     ? c.rooms.filter(

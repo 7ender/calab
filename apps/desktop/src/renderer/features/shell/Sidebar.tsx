@@ -53,7 +53,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, mayArrangeRooms, mayManageWorkspace, mayModerateVoice, mayMoveMembersIn, roomPerms } from '../../lib/permissions';
+import { can, mayArrangeRooms, mayManageWorkspace, mayMoveMembersIn, mayMoveVoice, roomPerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
 import { setRoomNotifications, setWorkspaceNotifications } from '../../services/mentions';
@@ -1229,9 +1229,10 @@ function VoiceMember({
   const user = useWorkspaces((s) => s.users[state.userId]);
   const name = useWorkspaces(() => memberName(workspaceId, state.userId));
   const role = useWorkspaces((s) => s.byId[workspaceId]?.members[state.userId]?.role);
-  // MOVE_MEMBERS in the room, and the server's hierarchy: not the owner, admins only by the owner.
+  // MOVE_MEMBERS in the room, and the server's move hierarchy (rtc.mayMove): an admin drags
+  // anyone, admins and the owner included; others only members below admins.
   const myRole = useWorkspaces((s) => s.byId[workspaceId]?.role);
-  const draggable = canMove && mayModerateVoice(myRole, role, isMe);
+  const draggable = canMove && mayMoveVoice(myRole, role, isMe);
   // «(+5 UTC)» when their time zone differs from mine (User.timezone).
   const tz = useTimeZoneLabel(state.userId);
   // Pending (optimistic join, docs/05) for more than 3 s: the «connecting» ring.

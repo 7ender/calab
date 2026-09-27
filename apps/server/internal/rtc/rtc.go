@@ -754,7 +754,7 @@ func rank(r perm.Role) int {
 	return 1
 }
 
-// outranks enforces the moderation hierarchy for mute/disconnect/stop-stream/move: the
+// outranks enforces the moderation hierarchy for mute/disconnect/stop-stream (move: mayMove): the
 // owner is untouchable, an admin can be moderated only by the owner; moderators among
 // members (via room overrides) act on members and guests only. Acting on oneself is fine.
 func outranks(r *http.Request, wsID, target uuid.UUID) error {
@@ -776,6 +776,27 @@ func outranks(r *http.Request, wsID, target uuid.UUID) error {
 	}
 	if rank(tr) >= 2 && rank(ar) <= rank(tr) {
 		return httpx.Forbidden("cannot moderate a member of equal or higher rank")
+	}
+	return nil
+}
+
+// mayMove is the hierarchy check of a move (docs/09 п. 54, ADR-0026 clarified 27.09): an
+// administrator (built-in admin or owner) may move anyone, other admins and the owner
+// included — a move is not a sanction. Anyone else with MOVE_MEMBERS is bound by outranks.
+// Mute/deafen/disconnect/stop-stream keep outranks.
+func mayMove(r *http.Request, wsID, target uuid.UUID) error {
+	res := perm.FromContext(r.Context())
+	ar, err := res.Role(r.Context(), wsID, auth.MustFromContext(r.Context()).UserID)
+	if err != nil {
+		return err
+	}
+	if rank(ar) < 2 {
+		return outranks(r, wsID, target)
+	}
+	if _, err := res.Role(r.Context(), wsID, target); errors.Is(err, perm.ErrNotMember) {
+		return httpx.NotFound("member")
+	} else if err != nil {
+		return err
 	}
 	return nil
 }

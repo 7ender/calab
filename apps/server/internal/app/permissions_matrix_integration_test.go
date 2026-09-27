@@ -231,6 +231,15 @@ func TestPermissionMatrixHierarchy(t *testing.T) {
 	}
 }
 
+// pastChecks maps a status that got past the permission checks to 0: a successful move
+// needs a real LiveKit participant, which this matrix does not have.
+func pastChecks(st int) int {
+	if st == 403 {
+		return st
+	}
+	return 0
+}
+
 func TestPermissionMatrixVoice(t *testing.T) {
 	liveKitUp(t)
 	o := owner(t)
@@ -253,6 +262,7 @@ func TestPermissionMatrixVoice(t *testing.T) {
 	o.must(200, "PUT", "/api/rooms/"+locked+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{userOv(tm.id, 0, perm.Connect)}}, nil)
 	joinVoice(t, tm, wid, a)
 	joinVoice(t, admin2, wid, a)
+	joinVoice(t, o, wid, a)
 	time.Sleep(50 * time.Millisecond)
 
 	path := func(room, target, act string) string { return "/api/rooms/" + room + "/voice/" + target + "/" + act }
@@ -266,8 +276,9 @@ func TestPermissionMatrixVoice(t *testing.T) {
 	}{
 		{"member moves a member", move(mem, tm.id, b), 403},
 		{"MUTE_MEMBERS role moves a member", move(muter, tm.id, b), 403},
-		{"admin moves an admin", move(admin, admin2.id, b), 403},
 		{"MOVE_MEMBERS role moves an admin", move(mover, admin2.id, b), 403},
+		{"MOVE_MEMBERS role moves the owner", move(mover, o.id, b), 403},
+		{"member moves an admin", move(mem, admin2.id, b), 403},
 		{"move into a room the member cannot connect to", move(admin, tm.id, locked), 403},
 		{"member disconnects a member", mem.do("POST", path(a, tm.id, "disconnect"), nil, nil), 403},
 		{"MOVE_MEMBERS role disconnects a member", mover.do("POST", path(a, tm.id, "disconnect"), nil, nil), 403},
@@ -280,12 +291,11 @@ func TestPermissionMatrixVoice(t *testing.T) {
 		{"owner lifts it", o.do("POST", path(a, admin2.id, "unmute"), nil, nil), 204},
 		// Past the checks: a MOVE_MEMBERS role reaches LiveKit (a successful move needs a real
 		// participant — move_integration_test.go covers it with the lk CLI).
-		{"MOVE_MEMBERS role moves a member", func() int {
-			if st := move(mover, tm.id, b); st == 403 {
-				return st
-			}
-			return 0
-		}(), 0},
+		{"MOVE_MEMBERS role moves a member", pastChecks(move(mover, tm.id, b)), 0},
+		// An admin may move other admins and the owner (docs/09 п. 54); muting them stays
+		// owner-only (rows above).
+		{"admin moves an admin", pastChecks(move(admin, admin2.id, b)), 0},
+		{"admin moves the owner", pastChecks(move(admin, o.id, b)), 0},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s: %d, want %d", c.what, c.got, c.want)

@@ -37,7 +37,8 @@ type appMove struct {
 }
 
 // moveMember: POST /api/rooms/{id}/voice/{userId}/move {targetRoomId}. The actor needs
-// MOVE_MEMBERS in both rooms; the moved user needs VIEW_ROOM + CONNECT in the target; the
+// MOVE_MEMBERS in both rooms and passes mayMove (an admin may move admins and the owner);
+// the moved user needs VIEW_ROOM + CONNECT in the target; the
 // target's user_limit applies unless the actor is an administrator.
 //
 // Every device of the user in the source room is moved. LiveKit MoveParticipant (Cloud)
@@ -60,7 +61,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := outranks(r, acc.WorkspaceID, target); err != nil {
+	if err := mayMove(r, acc.WorkspaceID, target); err != nil {
 		return err
 	}
 	var req v1.MoveMemberRequest

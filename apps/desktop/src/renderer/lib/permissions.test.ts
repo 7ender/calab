@@ -10,6 +10,7 @@ import {
   mayManageWorkspace,
   mayModerateVoice,
   mayMoveMembersIn,
+  mayMoveVoice,
   roomPerms,
   triOf,
   voiceCaps,
@@ -201,6 +202,21 @@ describe('permissions matrix: the client gates what the server checks (docs/16)'
     for (const [me, target, ok] of cases) expect(mayModerateVoice(me, target, false), `${me} → ${target}`).toBe(ok);
     // Oneself: always (the server skips the hierarchy).
     expect(mayModerateVoice(ADMIN, ADMIN, true)).toBe(true);
+  });
+
+  it('move hierarchy (rtc.mayMove, docs/09 #54): admins move admins and the owner', () => {
+    const { OWNER, ADMIN, MEMBER, GUEST } = WorkspaceRole;
+    const cases: Array<[WorkspaceRole, WorkspaceRole, boolean]> = [
+      [OWNER, ADMIN, true],
+      [ADMIN, ADMIN, true],
+      [ADMIN, OWNER, true],
+      [ADMIN, MEMBER, true],
+      [MEMBER, MEMBER, true],
+      [MEMBER, ADMIN, false],
+      [MEMBER, OWNER, false],
+      [GUEST, MEMBER, true],
+    ];
+    for (const [me, target, ok] of cases) expect(mayMoveVoice(me, target, false), `${me} → ${target}`).toBe(ok);
   });
 
   it('call buttons: STREAM, VIDEO and a room that allows cameras', () => {

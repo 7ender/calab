@@ -30,9 +30,9 @@
 | Запись встречи | не гость, `VIEW_ROOM` + `CONNECT`, `allow_recording` | `recording.participant` | `roomMenuGroups` (`record`) |
 | Отключить из голоса, стоп стрима / камеры | `MUTE_MEMBERS` room + иерархия голоса | `rtc.moderate` (`outranks`) | `memberActions` (`mayModerateVoice`) |
 | Серверный мьют / снятие | `MUTE_MEMBERS` room и ws + иерархия | `workspaceMute` | `memberActions.serverMute` |
-| Переместить (меню, drag) | `MOVE_MEMBERS` в обеих комнатах + иерархия; цели — `VIEW_ROOM` + `CONNECT` | `rtc.moveMember` | `memberActions.moveTargets`, `mayMoveMembersIn` + `mayModerateVoice`, проверка в `onEnd` |
+| Переместить (меню, drag) | `MOVE_MEMBERS` в обеих комнатах + иерархия перемещения: админ/владелец — любого, включая админов и владельца; своя роль с `MOVE_MEMBERS` — только ниже админов; цели — `VIEW_ROOM` + `CONNECT` (п. 54) | `rtc.moveMember` (`mayMove`) | `memberActions.moveTargets`, `mayMoveMembersIn` + `mayMoveVoice`, проверка в `onEnd` |
 
-Иерархия голоса (`rtc.outranks`) — по встроенной роли: владельца не трогает никто, админа — только владелец, участников и гостей — любой с битом; себя — можно. Иерархия пространства (`workspaces.outranks`) — по старшей роли (ADR-0026).
+Иерархия голоса (`rtc.outranks`) — по встроенной роли: владельца не трогает никто, админа — только владелец, участников и гостей — любой с битом; себя — можно. Исключение — перемещение (`rtc.mayMove`, docs/09 п. 54): админ/владелец перемещает и админов, и владельца. Иерархия пространства (`workspaces.outranks`) — по старшей роли (ADR-0026).
 
 ## LiveKit grant
 

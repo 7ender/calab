@@ -185,18 +185,19 @@ describe('memberActions', () => {
   it('voice moderation hierarchy (rtc.outranks): admins only by the owner, the owner by nobody', () => {
     const inCall = (t: WorkspaceMember) => ({ target: t, targetVoice: voice(t.user?.id ?? '', 'call'), myVoiceRoomId: 'call' });
     const adminT = member('t', 'A', WorkspaceRole.ADMIN);
-    // An admin on another admin: no mute / disconnect / move / stop camera (the server answers 403).
+    // An admin on another admin: no mute / disconnect / stop camera (the server answers 403), but
+    // a move (docs/09 #54).
     const a = memberActions(base({ ...inCall(adminT), targetVoice: { ...voice('t', 'call'), camera: true } }));
     expect(a).toMatchObject({ serverMute: false, disconnect: false, stopCamera: false, volume: true });
-    expect(a.moveTargets).toEqual([]);
+    expect(a.moveTargets.map((r) => r.id)).toEqual(['meeting']);
     // The owner may.
     const o = memberActions(base({ myRole: WorkspaceRole.OWNER, ...inCall(adminT) }));
     expect(o).toMatchObject({ serverMute: true, disconnect: true });
     expect(o.moveTargets.map((r) => r.id)).toEqual(['meeting']);
-    // Nobody on the owner.
+    // Nobody mutes / disconnects the owner; an admin moves them.
     const own = memberActions(base({ ...inCall(member('t', 'O', WorkspaceRole.OWNER)) }));
     expect(own).toMatchObject({ serverMute: false, disconnect: false });
-    expect(own.moveTargets).toEqual([]);
+    expect(own.moveTargets.map((r) => r.id)).toEqual(['meeting']);
     // A room moderator among members acts on members, not on admins.
     const grant = [
       create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: 'me', allow: PERMISSION_BITS.MUTE_MEMBERS | PERMISSION_BITS.MOVE_MEMBERS, deny: 0n }),
@@ -206,6 +207,8 @@ describe('memberActions', () => {
     const onAdmin = memberActions(base({ myRole: WorkspaceRole.MEMBER, rooms, ...inCall(adminT) }));
     expect(onAdmin).toMatchObject({ disconnect: false });
     expect(onAdmin.moveTargets).toEqual([]);
+    const onOwner = memberActions(base({ myRole: WorkspaceRole.MEMBER, rooms, ...inCall(member('t', 'O', WorkspaceRole.OWNER)) }));
+    expect(onOwner.moveTargets).toEqual([]);
   });
 
   it('move targets: only rooms the moved member may connect to (server moveMember)', () => {

@@ -57,14 +57,22 @@ export function mayManageWorkspace(roles: readonly RoleBits[] | undefined): bool
 const voiceRank = (r: WorkspaceRole | undefined): number => (r === WorkspaceRole.OWNER ? 3 : r === WorkspaceRole.ADMIN ? 2 : 1);
 
 /**
- * Voice moderation hierarchy (server rtc.outranks): mute, disconnect, stop a stream / camera and
- * move another member only below the owner / admins by built-in role — the owner is untouchable,
+ * Voice moderation hierarchy (server rtc.outranks): mute, disconnect, stop a stream / camera of
+ * another member only below the owner / admins by built-in role — the owner is untouchable,
  * an admin is moderated by the owner only; members and guests by anyone with the bit. Oneself: yes.
  */
 export function mayModerateVoice(myRole: WorkspaceRole | undefined, targetRole: WorkspaceRole | undefined, self: boolean): boolean {
   if (self) return true;
   const t = voiceRank(targetRole);
   return t < 2 || voiceRank(myRole) > t;
+}
+
+/**
+ * Move hierarchy (server rtc.mayMove, docs/09 #54): an admin / the owner moves anyone, other
+ * admins and the owner included; anyone else with MOVE_MEMBERS as mayModerateVoice.
+ */
+export function mayMoveVoice(myRole: WorkspaceRole | undefined, targetRole: WorkspaceRole | undefined, self: boolean): boolean {
+  return voiceRank(myRole) >= 2 || mayModerateVoice(myRole, targetRole, self);
 }
 
 /** Drag a voice participant out of / into `room` (docs/09 #32): MOVE_MEMBERS in that room. */
