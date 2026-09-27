@@ -92,13 +92,13 @@ export function EmailInviteCard({ workspaceId }: { workspaceId: string }): React
             </div>
           ) : null}
           {state.kind === 'found' ? (
-            <div className="flex min-h-12 items-center gap-3 rounded-[var(--radius-card)] bg-[var(--color-fill-hover)] px-3 py-2" data-testid="invite-email-found">
+            <div className="flex min-h-12 items-center gap-3 rounded-[var(--radius-card)] border border-line px-3 py-2" data-testid="invite-email-found">
               <Avatar userId={state.user.id} name={state.user.displayName} fileId={state.user.avatarFileId || undefined} size={32} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-body font-medium" title={state.user.displayName}>
                   {state.user.displayName}
                 </div>
-                <div className="truncate text-caption text-faint">{state.email}</div>
+                <div className="truncate text-caption text-muted">{state.email}</div>
               </div>
               {state.member ? (
                 <Badge>{t('mail.invite.member')}</Badge>
