@@ -17,11 +17,18 @@ import (
 	"github.com/calaba/calaba/server/internal/rooms"
 )
 
-// Limits for reactions and pins.
+// Limits for reactions and pins. MaxReactionsPerUser: different emojis one user may put on
+// one message (docs/09 item 27); a product rule, not configuration.
 const (
 	MaxEmojisPerMessage = 20
+	MaxReactionsPerUser = 3
 	MaxPinsPerRoom      = 50
 )
+
+// ReasonReactionLimit is ApiError.reason of the 409 returned when MaxReactionsPerUser is hit.
+const ReasonReactionLimit = "REACTION_LIMIT"
+
+var errReactionLimit = httpx.Conflict("at most 3 different reactions per message")
 
 // ValidEmoji accepts one emoji sequence: 1..64 bytes, ≤ 16 code points, at least one
 // non-ASCII code point, no spaces or control characters. (Emoji segmentation is left to
@@ -93,7 +100,9 @@ func reactionEvent(add bool, acc perm.RoomAccess, m sqlc.Message, user uuid.UUID
 		WorkspaceId: w, RoomId: room, MessageId: msg, UserId: u, Emoji: emoji}}}
 }
 
-// addReaction: PUT /api/messages/{id}/reactions/{emoji} (SEND_MESSAGES). Idempotent, 204.
+// addReaction: PUT /api/messages/{id}/reactions/{emoji} (SEND_MESSAGES). Idempotent, 204;
+// 409 CONFLICT reason REACTION_LIMIT (used/limit) when the caller already has
+// MaxReactionsPerUser different emojis on the message.
 func (h *Handlers) addReaction(w http.ResponseWriter, r *http.Request) error {
 	m, acc, emoji, err := h.reaction(r)
 	if err != nil {
@@ -102,14 +111,28 @@ func (h *Handlers) addReaction(w http.ResponseWriter, r *http.Request) error {
 	if !acc.Bits.Has(perm.SendMessages) {
 		return httpx.Forbidden("SEND_MESSAGES required")
 	}
-	st, err := h.db.Q.ReactionEmojiStats(r.Context(), sqlc.ReactionEmojiStatsParams{MessageID: m.ID, Emoji: emoji})
-	if err != nil {
+	var n int64
+	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		// The message row lock serializes concurrent adds, so the caps below hold.
+		if err := q.LockMessageReactions(r.Context(), m.ID); err != nil {
+			return err
+		}
+		st, err := q.ReactionEmojiStats(r.Context(), sqlc.ReactionEmojiStatsParams{MessageID: m.ID, UserID: uid(r), Emoji: emoji})
+		if err != nil {
+			return err
+		}
+		if st.UserHasEmoji { // idempotent repeat
+			return nil
+		}
+		if st.UserEmojis >= MaxReactionsPerUser {
+			return errReactionLimit.WithDetails(ReasonReactionLimit, uint64(st.UserEmojis), MaxReactionsPerUser)
+		}
+		if !st.HasEmoji && st.DistinctEmojis >= MaxEmojisPerMessage {
+			return httpx.Validation("emoji", "too many different reactions on this message")
+		}
+		n, err = q.AddReaction(r.Context(), sqlc.AddReactionParams{MessageID: m.ID, UserID: uid(r), Emoji: emoji})
 		return err
-	}
-	if !st.HasEmoji && st.DistinctEmojis >= MaxEmojisPerMessage {
-		return httpx.Validation("emoji", "too many different reactions on this message")
-	}
-	n, err := h.db.Q.AddReaction(r.Context(), sqlc.AddReactionParams{MessageID: m.ID, UserID: uid(r), Emoji: emoji})
+	})
 	if db.IsForeignKeyViolation(err) {
 		return httpx.NotFound("message")
 	}

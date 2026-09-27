@@ -892,4 +892,24 @@ describe('email (ADR-0023)', () => {
     expect(add.status).toBe(409);
     server.reset('data');
   });
+
+  it('reactions: at most 3 different emojis per user per message (docs/09 #27)', async () => {
+    const auth = { Authorization: `Bearer ${await login()}` };
+    const page = (await (await fetch(`${server.url}/api/rooms/${IDS.rooms.general}/messages?limit=1`, { headers: auth })).json()) as {
+      messages: { id: string }[];
+    };
+    const mid = page.messages[0]?.id ?? '';
+    const put = (e: string, method = 'PUT'): Promise<Response> =>
+      fetch(`${server.url}/api/messages/${mid}/reactions/${encodeURIComponent(e)}`, { method, headers: auth });
+    // Start from none of anna's own reactions on the message.
+    for (const e of ['🧪', '🧫', '🧬', '🔬']) await put(e, 'DELETE');
+    for (const e of ['🧪', '🧫', '🧬']) expect((await put(e)).status).toBe(204);
+    expect((await put('🧪')).status).toBe(204); // repeat: idempotent
+    const over = await put('🔬');
+    expect(over.status).toBe(409);
+    expect(await over.json()).toMatchObject({ code: 'ERROR_CODE_CONFLICT', reason: 'REACTION_LIMIT', limit: '3' });
+    expect((await put('🧫', 'DELETE')).status).toBe(204);
+    expect((await put('🔬')).status).toBe(204);
+    server.reset('data');
+  });
 });

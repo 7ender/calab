@@ -59,6 +59,8 @@ room_invites        id, room_id, code (unique, 12 символов), created_by,
                     rooms += user_limit (0..99);  workspaces += allow_self_nickname (true)
                     users += is_guest, guest_expires_at?;  users.email nullable (только у гостей)
 message_reactions   message_id, emoji, user_id, created_at      PK (message_id, emoji, user_id)
+                    ≤ 20 разных эмодзи на сообщение; ≤ 3 разных эмодзи одного пользователя на сообщение
+                    (MaxReactionsPerUser; 409 CONFLICT reason REACTION_LIMIT, проверка под FOR NO KEY UPDATE сообщения)
                     messages += pinned_at?, pinned_by?;  users += status_emoji, status_expires_at?
                     поиск: GIN по выражению to_tsvector('russian', content) || to_tsvector('simple', content)
 user_notes          author_id, subject_id, text (1..1000), updated_at   PK (author_id, subject_id) — личная заметка о человеке

@@ -10,6 +10,7 @@ import { useUi } from '../../stores/ui';
 import { useChatView } from './chatView';
 import { EmojiPicker } from './EmojiPicker';
 import { quickReactions } from './hoverIntent';
+import { canToggleReaction, reactionLimitReached } from './reactionLimit';
 
 /** Whether the bar has anything to offer (the same rules as the context menu, MessageMenu.tsx). */
 export function hasMessageActions(c: ChatMessage, own: boolean, perms: PermissionBits): boolean {
@@ -40,6 +41,9 @@ export function MessageActions({
   const canSend = can(perms, 'SEND_MESSAGES');
   const recent = useChatView((s) => s.recentEmoji);
   const quick = useMemo(() => quickReactions(recent), [recent]);
+  // At the per-user limit (docs/09 #27) new emojis are dimmed with a hint; own ones stay removable.
+  const limited = reactionLimitReached(m.reactions);
+  const limitHint = limited ? t('chat.reactionLimit') : undefined;
 
   const react = (emoji: string): void => {
     useChatView.getState().pushRecent(emoji);
@@ -64,20 +68,41 @@ export function MessageActions({
         <>
           {quick.map((e) => {
             const mine = m.reactions.some((r) => r.emoji === e && r.me);
-            return (
+            const blocked = !canToggleReaction(m.reactions, e);
+            const button = (
               <button
                 key={e}
                 type="button"
                 aria-label={t('chat.reactWith', { emoji: e })}
                 aria-pressed={mine}
-                onClick={() => react(e)}
-                className={cx(btn, 'text-headline leading-none', mine && 'bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]')}
+                aria-disabled={blocked || undefined}
+                onClick={() => (blocked ? void toggleReaction(roomId, m, e) : react(e))}
+                className={cx(
+                  btn,
+                  'text-headline leading-none',
+                  mine && 'bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]',
+                  blocked && 'opacity-40 hover:bg-transparent',
+                )}
               >
                 {e}
               </button>
             );
+            return blocked && limitHint ? (
+              <Tip key={e} label={limitHint}>
+                {button}
+              </Tip>
+            ) : (
+              button
+            );
           })}
-          <EmojiPicker onPick={(e) => void toggleReaction(roomId, m, e)} label={t('chat.addReaction')} onOpenChange={onPickerOpenChange} closeOnPick>
+          <EmojiPicker
+            onPick={(e) => void toggleReaction(roomId, m, e)}
+            label={limitHint ?? t('chat.addReaction')}
+            onOpenChange={onPickerOpenChange}
+            closeOnPick
+            canPick={(e) => canToggleReaction(m.reactions, e)}
+            hint={limitHint}
+          >
             <button type="button" aria-label={t('chat.addReaction')} className={btn}>
               <SmilePlus className="size-4" aria-hidden />
             </button>

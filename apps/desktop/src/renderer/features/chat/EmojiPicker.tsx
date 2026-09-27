@@ -31,6 +31,8 @@ export function EmojiPicker({
   children,
   onOpenChange,
   closeOnPick = false,
+  canPick,
+  hint,
 }: {
   onPick: (emoji: string) => void;
   label: string;
@@ -39,6 +41,10 @@ export function EmojiPicker({
   onOpenChange?: (open: boolean) => void;
   /** Reactions pick one emoji; the composer keeps the picker open for several. */
   closeOnPick?: boolean;
+  /** Emojis that cannot be picked right now (reaction limit) are dimmed and ignored. */
+  canPick?: (emoji: string) => boolean;
+  /** A note above the grid, e.g. «Не больше 3 реакций на сообщение». */
+  hint?: string | undefined;
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const change = (v: boolean): void => {
@@ -61,7 +67,10 @@ export function EmojiPicker({
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <PickerBody
+            {...(canPick ? { canPick } : {})}
+            {...(hint ? { hint } : {})}
             onPick={(e) => {
+              if (canPick && !canPick(e)) return;
               useChatView.getState().pushRecent(e);
               onPick(e);
               if (closeOnPick) change(false);
@@ -73,7 +82,7 @@ export function EmojiPicker({
   );
 }
 
-function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode {
+function PickerBody({ onPick, canPick, hint }: { onPick: (emoji: string) => void; canPick?: (emoji: string) => boolean; hint?: string }): ReactNode {
   const [q, setQ] = useState('');
   const recent = useChatView((s) => s.recentEmoji);
   const scroller = useRef<HTMLDivElement>(null);
@@ -125,6 +134,11 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
           className="h-10 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
         />
       </div>
+      {hint ? (
+        <p role="status" data-testid="emoji-picker-hint" className="shrink-0 border-b border-line px-3 py-2 text-caption text-muted">
+          {hint}
+        </p>
+      ) : null}
       {/* 12 px inset on both sides: 9 × 36 px cells fill the 348 px popover (narrower if a classic scrollbar takes room). */}
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-3 pb-2" onKeyDown={onGridKey} onScroll={onScroll}>
         {sections.map((s) => (
@@ -134,19 +148,26 @@ function PickerBody({ onPick }: { onPick: (emoji: string) => void }): ReactNode 
             <h3 className="sticky top-0 z-[1] -mx-3 bg-[var(--color-popover-solid)] px-3 pb-1 pt-2 text-caption font-semibold text-muted">{s.label}</h3>
             {s.list.length === 0 ? <p className="px-1 py-4 text-center text-body text-muted">{t('chat.emojiNone')}</p> : null}
             <div className="grid grid-cols-9">
-              {s.list.map((e, i) => (
-                <button
-                  key={`${s.id}-${e}-${i}`}
-                  type="button"
-                  data-emoji
-                  tabIndex={s === sections[0] && i === 0 ? 0 : -1}
-                  onClick={() => onPick(e)}
-                  aria-label={e}
-                  className="grid h-9 w-full min-w-0 place-items-center rounded-[var(--radius-row)] text-[22px] leading-none hover:bg-hover focus-visible:bg-hover focus-visible:outline-offset-[-2px]"
-                >
-                  {e}
-                </button>
-              ))}
+              {s.list.map((e, i) => {
+                const blocked = canPick ? !canPick(e) : false;
+                return (
+                  <button
+                    key={`${s.id}-${e}-${i}`}
+                    type="button"
+                    data-emoji
+                    tabIndex={s === sections[0] && i === 0 ? 0 : -1}
+                    onClick={() => onPick(e)}
+                    aria-label={e}
+                    aria-disabled={blocked || undefined}
+                    className={cx(
+                      'grid h-9 w-full min-w-0 place-items-center rounded-[var(--radius-row)] text-[22px] leading-none focus-visible:bg-hover focus-visible:outline-offset-[-2px]',
+                      blocked ? 'opacity-40' : 'hover:bg-hover',
+                    )}
+                  >
+                    {e}
+                  </button>
+                );
+              })}
             </div>
           </section>
         ))}

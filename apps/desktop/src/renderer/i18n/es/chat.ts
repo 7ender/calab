@@ -40,6 +40,7 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.actions': 'Acciones',
   'chat.reactWith': 'Reaccionar con {emoji}',
   'chat.addReaction': 'Añadir reacción',
+  'chat.reactionLimit': 'Máximo 3 reacciones por mensaje',
   'chat.more': 'Más…',
   // link previews (docs/09 #51)
   'chat.embedHide': 'Ocultar vista previa',

@@ -14,6 +14,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useChatView } from './chatView';
 import { QUICK_REACTIONS } from './emoji';
+import { canToggleReaction } from './reactionLimit';
 
 /** macOS menu look (popover glass, 28 px rows, accent highlight). */
 export const menuBox = 'mat-popover anim-in z-[var(--z-popover)] min-w-56 rounded-[var(--radius-card)] p-1';
@@ -67,17 +68,21 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
             <div className="flex items-center gap-0.5 px-0.5 pb-1 pt-0.5" role="group" aria-label={t('chat.react')}>
               {QUICK_REACTIONS.map((e) => {
                 const mine = m.reactions.some((r) => r.emoji === e && r.me);
+                // Past the per-user limit (docs/09 #27): dimmed; a pick shows the hint instead.
+                const blocked = !canToggleReaction(m.reactions, e);
                 return (
                   <ContextMenu.Item
                     key={e}
                     aria-label={e}
+                    aria-disabled={blocked || undefined}
                     onSelect={() => {
-                      useChatView.getState().pushRecent(e);
+                      if (!blocked) useChatView.getState().pushRecent(e);
                       void toggleReaction(roomId, m, e);
                     }}
                     className={cx(
                       'grid size-8 cursor-default place-items-center rounded-full text-title outline-none transition-transform duration-[var(--motion-fast)] data-[highlighted]:scale-110 data-[highlighted]:bg-hover',
                       mine && 'bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]',
+                      blocked && 'opacity-40',
                     )}
                   >
                     {e}
