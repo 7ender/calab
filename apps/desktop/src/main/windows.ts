@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
-import { API_SCHEME } from '../shared/ipc';
+import { API_SCHEME, IPC } from '../shared/ipc';
 import { windowIconPath } from './icons';
 import { mainStrings } from './strings';
 
@@ -133,6 +133,20 @@ export function createMainWindow(): BrowserWindow {
     win.on('closed', () => nativeTheme.off('updated', recolor));
   }
   win.once('ready-to-show', () => win.show());
+  // The page can't see it (backgroundThrottling: false pins document.visibilityState): tell it,
+  // so it can stop decoding video nobody sees (lib/windowVisibility.ts, docs/14-energy.md).
+  let lastShown: boolean | null = null;
+  const sendShown = (): void => {
+    if (win.isDestroyed()) return;
+    const shown = isShown(win);
+    if (shown === lastShown) return;
+    lastShown = shown;
+    win.webContents.send(IPC.windowShownChanged, shown);
+  };
+  win.on('show', sendShown);
+  win.on('hide', sendShown);
+  win.on('minimize', sendShown);
+  win.on('restore', sendShown);
 
   let saveTimer: NodeJS.Timeout | null = null;
   const scheduleSave = (): void => {
@@ -145,6 +159,10 @@ export function createMainWindow(): BrowserWindow {
     saveState(win);
     // Hides instead of closing unless the app is really quitting (docs/09 #31).
     hooks?.close(e, win);
+    // Electron 44 on macOS emits no 'hide' for win.hide(): report the result of the close ourselves
+    // (a full-screen window hides only after leaving full screen).
+    if (!win.isDestroyed() && win.isFullScreen()) win.once('leave-full-screen', () => setImmediate(sendShown));
+    else setImmediate(sendShown);
   });
   win.on('query-session-end', () => hooks?.sessionEnd());
   win.on('session-end', () => hooks?.sessionEnd());
@@ -207,6 +225,11 @@ export function guardWebContents(wc: WebContents): void {
 
 export function installWebContentsGuards(): void {
   app.on('web-contents-created', (_e, wc) => guardWebContents(wc));
+}
+
+/** On screen: shown and not minimized (macOS occlusion by other windows is not reported). */
+export function isShown(win: BrowserWindow): boolean {
+  return win.isVisible() && !win.isMinimized();
 }
 
 export function getMainWindow(): BrowserWindow | null {

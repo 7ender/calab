@@ -263,6 +263,11 @@ export function MicMeter(): ReactNode {
   const visualTest = useSession((s) => s.appInfo?.visualTest === true);
   const liveLevel = useVoice((s) => s.levelDb);
   const liveOpen = useVoice((s) => s.gateOpen);
+  // The meter wants the denoised level at full rate: keeps RNNoise awake while shown (docs/14).
+  useEffect(() => {
+    voice.meterVisible(true);
+    return () => voice.meterVisible(false);
+  }, []);
   const threshold = usePrefs((s) => s.thresholdDb);
   const level = visualTest ? (window.__calabaMeterLevel ?? VISUAL_TEST_LEVEL_DB) : liveLevel;
   const open = visualTest ? level >= threshold : liveOpen;

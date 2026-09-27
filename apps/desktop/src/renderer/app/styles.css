@@ -605,6 +605,14 @@ body {
   }
 }
 
+/* Window hidden / minimized (lib/windowVisibility.ts): endless animations (connect ring, typing
+   dots, REC) stop compositing frames nobody sees — docs/14-energy.md. */
+:root.window-hidden *,
+:root.window-hidden *::before,
+:root.window-hidden *::after {
+  animation-play-state: paused !important;
+}
+
 /* Screenshot tests (Playwright): no caret blink, no transitions. */
 :root.test-stable *,
 :root.test-stable *::before,

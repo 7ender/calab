@@ -171,6 +171,7 @@ interface FakePipeline {
   duckable: boolean;
   isDucked: boolean;
   setDuck: ReturnType<typeof vi.fn>;
+  setDenoise: ReturnType<typeof vi.fn>;
   onEnded?: () => void;
 }
 /** Device ids that are unplugged (getUserMedia with {exact} fails). */
@@ -191,6 +192,7 @@ vi.mock('../lib/media/micPipeline', () => ({
         duckable: opts.rnnoise || opts.duckable === true,
         isDucked: false,
         setDuck: vi.fn(),
+        setDenoise: vi.fn(),
         stop: vi.fn(() => track.stop()),
         ...(opts.onEnded ? { onEnded: opts.onEnded } : {}),
       };
@@ -717,6 +719,18 @@ describe('VoiceEngine', () => {
       hold(false, true);
       expect(track()?.enabled).toBe(false);
       expect(useVoice.getState().pttDown).toBe(false);
+    });
+
+    it('RNNoise follows the air: on from key-down through the tail, off after (docs/14)', async () => {
+      await inPtt(200);
+      const denoise = () => pipelines.at(-1)?.setDenoise.mock.calls.at(-1)?.[0] as string | undefined;
+      expect(denoise()).toBe('off');
+      hold(true);
+      expect(denoise()).toBe('on'); // synchronously with the key, before the first word
+      hold(false);
+      expect(denoise()).toBe('on'); // the release tail is still on air
+      await vi.advanceTimersByTimeAsync(200);
+      expect(denoise()).toBe('off');
     });
 
     it('mute during the tail ends it at once', async () => {

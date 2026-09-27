@@ -3,6 +3,7 @@ import workletUrl from './worklets/mic-processor.worklet.ts?worker&url';
 import { log } from '../log';
 import { DUCK_GAIN, ECHO } from './echo';
 import type { MicReport } from './micReport';
+import type { DenoiseControl, DenoiseMode } from './denoiseSleep';
 
 /**
  * Capture pipeline (docs/02-media.md, ADR-0004):
@@ -17,7 +18,8 @@ import type { MicReport } from './micReport';
  * on the *input* path: it only lowers what we send, remote playback stays plain <audio>.
  * Without RNNoise and ducking the raw capture track is published as is (no WebAudio at all).
  *
- * The worklet always reports level + VAD every 20 ms for the voice gate.
+ * The worklet reports level + VAD every 20 ms for the voice gate (every 100 ms while RNNoise
+ * sleeps — the mic is off air then, lib/media/denoiseSleep.ts).
  * WebAudio is used strictly on the capture side; remote audio never goes
  * through an AudioContext (echo rule 1).
  */
@@ -53,6 +55,19 @@ export class MicPipeline {
   }
 
   private ducked = false;
+  private denoise = '';
+
+  /**
+   * RNNoise on demand (lib/media/denoiseSleep.ts). Deduplicated: the worklet restarts its quiet
+   * timer only on a mode change, so repeating the same control is harmless but pointless.
+   */
+  setDenoise(mode: DenoiseMode, wakeDb: number): void {
+    const key = `${mode}:${wakeDb}`;
+    if (key === this.denoise) return;
+    this.denoise = key;
+    const msg: DenoiseControl = { type: 'denoise', mode, wakeDb };
+    this.node.port.postMessage(msg);
+  }
 
   /** Speakerphone duck: −18 dB with a 20 ms attack, back to 0 dB with a 300 ms release. */
   setDuck(on: boolean): void {

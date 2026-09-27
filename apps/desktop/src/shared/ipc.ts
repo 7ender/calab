@@ -89,6 +89,13 @@ export const IPC = {
   annotOverlayClose: 'annot:overlay-close',
   // main → overlay page: ANNOT_OVERLAY_CHANNEL in shared/annot.ts (the overlay preload must not
   // share a module with this one: a shared chunk cannot be required by a sandboxed preload).
+  /**
+   * The window is on screen (shown and not minimized). Needed because `backgroundThrottling: false`
+   * also pins the Page Visibility API to «visible» (lib/windowVisibility.ts, docs/14-energy.md).
+   */
+  windowIsShown: 'window:isShown',
+  /** main → renderer: shown / hidden / minimized / restored. */
+  windowShownChanged: 'window:shownChanged',
   pttSetBinding: 'ptt:set-binding',
   pttCaptureNext: 'ptt:capture-next',
   /** The binder closed: disarm a pending capture (review H2). */

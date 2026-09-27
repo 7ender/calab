@@ -84,6 +84,8 @@ const api: CalabaApi = {
     setFullScreen: (on) => ipcRenderer.invoke(IPC.windowSetFullScreen, on),
     isFullScreen: () => ipcRenderer.invoke(IPC.windowIsFullScreen),
     onFullScreenChange: (cb) => on(IPC.windowFullScreenChanged, cb),
+    isShown: () => ipcRenderer.invoke(IPC.windowIsShown),
+    onShownChange: (cb) => on(IPC.windowShownChanged, cb),
   },
 };
 

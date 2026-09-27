@@ -17,6 +17,8 @@ function fakeIpc() {
       return Promise.resolve(on);
     },
     isFullScreen: () => Promise.resolve(full),
+    isShown: () => Promise.resolve(true),
+    onShownChange: () => () => undefined,
     onFullScreenChange: (cb) => {
       listener = cb;
       return () => {
