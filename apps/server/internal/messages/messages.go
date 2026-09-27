@@ -281,10 +281,10 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	isBot := auth.MustFromContext(r.Context()).IsBot
 	if isBot {
-		if acc.DM { // ADR-0031: a person may block a bot
+		if acc.DM { // ADR-0031: a person may block a bot; only people of shared workspaces
 			for _, u := range acc.Members {
 				if u != uid(r) {
-					if err := dms.CheckBotBlocked(r.Context(), h.db.Q, uid(r), u); err != nil {
+					if err := dms.CheckBotDM(r.Context(), h.db.Q, uid(r), u); err != nil {
 						return err
 					}
 				}

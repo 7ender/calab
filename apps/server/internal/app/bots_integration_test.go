@@ -589,3 +589,39 @@ func TestBotVoiceJoin(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// A blocked bot does not mention its blocker; a bot writes in DMs only to people of the
+// workspaces it shares with them now (security review of ADR-0031).
+func TestBotBlockMentionsAndSharedWorkspace(t *testing.T) {
+	o := owner(t)
+	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	bob := register(t, invite(t, o, ws.GetId()))
+	b := createBot(t, o, ws.GetId(), "pinger")
+	room := textRoom(t, o, ws.GetId(), "ping", false)
+	mentions := func() int {
+		var out v1.ListMessagesResponse
+		bob.must(200, "GET", "/api/me/mentions", nil, &out)
+		return len(out.GetMessages())
+	}
+
+	bob.must(204, "POST", "/api/me/blocked-bots/"+b.id, nil, nil)
+	b.must(201, "POST", "/api/rooms/"+room+"/messages", &v1.CreateMessageRequest{Content: "hi @" + bob.id}, nil)
+	if n := mentions(); n != 0 {
+		t.Fatalf("mentions from a blocked bot: %d, want 0", n)
+	}
+	bob.must(204, "DELETE", "/api/me/blocked-bots/"+b.id, nil, nil)
+	b.must(201, "POST", "/api/rooms/"+room+"/messages", &v1.CreateMessageRequest{Content: "hi again @" + bob.id}, nil)
+	if n := mentions(); n != 1 {
+		t.Fatalf("mentions after unblocking: %d, want 1", n)
+	}
+
+	var dm v1.CreateDmResponse
+	b.must(201, "POST", "/api/dms", &v1.CreateDmRequest{UserId: bob.id}, &dm)
+	rid := dm.GetDm().GetRoom().GetId()
+	b.must(201, "POST", "/api/rooms/"+rid+"/messages", &v1.CreateMessageRequest{Content: "hello"}, nil)
+	o.must(204, "DELETE", "/api/workspaces/"+ws.GetId()+"/members/"+bob.id, nil, nil)
+	b.must(403, "POST", "/api/rooms/"+rid+"/messages", &v1.CreateMessageRequest{Content: "still here?"}, nil)
+	b.must(404, "POST", "/api/dms", &v1.CreateDmRequest{UserId: bob.id}, nil)
+	// The person may still write to the bot in the existing DM.
+	bob.must(201, "POST", "/api/rooms/"+rid+"/messages", &v1.CreateMessageRequest{Content: "bye"}, nil)
+}

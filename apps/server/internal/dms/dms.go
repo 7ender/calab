@@ -6,6 +6,7 @@ package dms
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -152,8 +153,10 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if peer.IsGuest {
 		return httpx.Forbidden("guest accounts cannot receive direct messages")
 	}
-	if auth.MustFromContext(r.Context()).IsBot { // ADR-0031: the person may have blocked the bot
-		if err := CheckBotBlocked(r.Context(), h.db.Q, me, peerID); err != nil {
+	if auth.MustFromContext(r.Context()).IsBot { // ADR-0031: blocked, or no shared workspace any more
+		if err := CheckBotDM(r.Context(), h.db.Q, me, peerID); errors.Is(err, ErrBotNoSharedWorkspace) {
+			return httpx.NotFound("user") // as for people: users outside the caller's workspaces are not revealed
+		} else if err != nil {
 			return err
 		}
 	}
@@ -319,14 +322,26 @@ func (h *Handlers) candidates(w http.ResponseWriter, r *http.Request) error {
 // ErrBotBlocked means the person blocked this bot (ADR-0031, POST /api/me/blocked-bots/{id}).
 var ErrBotBlocked = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_BOT_BLOCKED, "this person blocked the bot")
 
-// CheckBotBlocked refuses a bot writing to a person who blocked it.
-func CheckBotBlocked(ctx context.Context, q *sqlc.Queries, bot, person uuid.UUID) error {
+// ErrBotNoSharedWorkspace means a bot writes in DMs only to members of workspaces it is in now
+// (ADR-0031); a bot removed from them cannot keep writing into an existing DM.
+var ErrBotNoSharedWorkspace = httpx.Forbidden("the bot shares no workspace with this person")
+
+// CheckBotDM refuses a bot writing to a person who blocked it or with whom it no longer
+// shares a workspace.
+func CheckBotDM(ctx context.Context, q *sqlc.Queries, bot, person uuid.UUID) error {
 	blocked, err := q.IsBotBlocked(ctx, sqlc.IsBotBlockedParams{UserID: person, BotUserID: bot})
 	if err != nil {
 		return err
 	}
 	if blocked {
 		return ErrBotBlocked
+	}
+	shared, err := q.ShareWorkspace(ctx, sqlc.ShareWorkspaceParams{UserID: bot, OtherID: person})
+	if err != nil {
+		return err
+	}
+	if !shared {
+		return ErrBotNoSharedWorkspace
 	}
 	return nil
 }
