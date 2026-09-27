@@ -22,6 +22,23 @@ import { t } from '../i18n';
 
 const TYPING_MS = 8000;
 
+/**
+ * Web `/admin` (ADR-0024): a superadmin gets «Администрирование» open once READY is in; anyone
+ * else lands on the app at `/` (the page does not exist for them).
+ */
+function openAdminRoute(superadmin: boolean): void {
+  if (import.meta.env.VITE_PLATFORM !== 'web' || typeof location === 'undefined' || location.pathname !== '/admin') return;
+  if (superadmin) {
+    if (useUi.getState().dialog?.kind !== 'admin') useUi.getState().openDialog({ kind: 'admin' });
+    return;
+  }
+  try {
+    history.replaceState(null, '', '/');
+  } catch {
+    // not fatal
+  }
+}
+
 /** Applies one gateway DISPATCH event to the stores. */
 export function applyDispatch(ev: DispatchEvent): void {
   const e = ev.event;
@@ -68,10 +85,11 @@ export function applyDispatch(ev: DispatchEvent): void {
       const msgs = useMessages.getState();
       for (const id of Object.keys(msgs.rooms)) if (!(id in alive)) msgs.unload(id);
       void resyncLoadedRooms();
-      useSession.getState().set({ me: r.me ?? null, ready: true });
+      useSession.getState().set({ me: r.me ?? null, planContact: r.planContact, ready: true });
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
       ensureActiveWorkspace();
+      openAdminRoute(r.me?.isSuperadmin === true);
       return;
     }
     case 'resumed':

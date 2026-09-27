@@ -1,3 +1,5 @@
+import { ScreenSharePreset } from '@calaba/protocol';
+
 /**
  * Pure webcam rules (unit-tested; docs/02 «Камера», docs/05 «Камеры», ADR-0018). No LiveKit,
  * no stores: the engine (services/camera.ts) and the UI call these.
@@ -28,6 +30,45 @@ export const CAMERA_LAYERS: readonly [CameraLayer, CameraLayer, CameraLayer] = [
   { width: 640, height: 360, maxBitrate: 500_000, fps: 30 },
   { width: 1280, height: 720, maxBitrate: 1_500_000, fps: 30 },
 ];
+
+/**
+ * Webcam quality (camera ▾ «Качество», ADR-0024): the capture height and the frame-rate cap the
+ * server granted in /camera/request (0 = none). 720p is the default and the free plan's maximum.
+ */
+export interface CameraQuality {
+  height: 720 | 1080;
+  fps: number;
+}
+
+export const CAMERA_DEFAULT_QUALITY: CameraQuality = { height: 720, fps: 0 };
+
+/** 1080p30 capture: the same two lower layers, the top one 1080p at 2.5 Mbps. */
+const CAMERA_1080_TOP: CameraLayer = { width: 1920, height: 1080, maxBitrate: 2_500_000, fps: 30 };
+
+const capped = (fps: number, cap: number): number => (cap > 0 ? Math.min(fps, cap) : fps);
+
+/** Capture constraints for a quality: 1280×720 or 1920×1080, ≤ 30 fps and ≤ the granted fps. */
+export function cameraCapture(q: CameraQuality): { width: number; height: number; fps: number } {
+  const base = q.height === 1080 ? CAMERA_1080_TOP : CAMERA_CAPTURE;
+  return { width: base.width, height: base.height, fps: capped(CAMERA_CAPTURE.fps, q.fps) };
+}
+
+/** Simulcast ladder for a quality: 180p / 360p / top (720p or 1080p), every layer ≤ the granted fps. */
+export function cameraLayers(q: CameraQuality): readonly [CameraLayer, CameraLayer, CameraLayer] {
+  const [low, mid, top720] = CAMERA_LAYERS;
+  const top = q.height === 1080 ? CAMERA_1080_TOP : top720;
+  const cap = (l: CameraLayer): CameraLayer => ({ ...l, fps: capped(l.fps, q.fps) });
+  return [cap(low), cap(mid), cap(top)];
+}
+
+/**
+ * What /camera/request granted → the quality to capture and publish: its preset (≥ H1080 =
+ * 1080p) and fps; UNSPECIFIED / 0 keep what was asked (no cap).
+ */
+export function grantedCameraQuality(wanted: ScreenSharePreset, granted: { preset: ScreenSharePreset; fps: number } | undefined): CameraQuality {
+  const p = granted?.preset || wanted;
+  return { height: p >= ScreenSharePreset.H1080 ? 1080 : 720, fps: granted?.fps ?? 0 };
+}
 
 export type CameraCodec = 'vp9' | 'av1' | 'vp8' | 'h264';
 

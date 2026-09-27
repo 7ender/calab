@@ -11,6 +11,7 @@ import {
 import { platform } from '../../platform';
 import { publishOptionalAudio, type StreamAudioProblem } from './streamAudio';
 import { t } from '../../i18n';
+import { capFps } from '../plan';
 
 export type { StreamAudioProblem } from './streamAudio';
 
@@ -60,6 +61,11 @@ export interface ScreenShareOptions {
   systemAudio: boolean;
   /** Codec override (default 'auto' = ADR-0012). */
   codec?: ScreenCodec | 'auto';
+  /**
+   * Frame rate granted by /stream/request (the plan's stream_max_fps, ADR-0024): capture and
+   * encoding never go above it. Unset / 0 = the preset's own.
+   */
+  fps?: number;
 }
 
 export interface ActiveScreenShare {
@@ -76,9 +82,10 @@ interface DisplayAudioConstraints extends MediaTrackConstraints {
   suppressLocalAudioPlayback?: boolean;
 }
 
-function videoConstraints(preset: ConcreteScreenSharePreset): MediaTrackConstraints {
+function videoConstraints(preset: ConcreteScreenSharePreset, grantedFps?: number): MediaTrackConstraints {
   const p = SCREEN_SHARE_PRESETS[preset];
-  const c: MediaTrackConstraints = { frameRate: { ideal: p.fps, max: p.fps } };
+  const fps = capFps(p.fps, grantedFps);
+  const c: MediaTrackConstraints = { frameRate: { ideal: fps, max: fps } };
   // width/height 0 = "original": native resolution.
   if (p.width > 0) c.width = { max: p.width };
   if (p.height > 0) c.height = { max: p.height };
@@ -131,10 +138,10 @@ export function captureScreen(opts: ScreenShareOptions): Promise<CapturedScreen>
   return captureDesktop(opts.source, opts.preset, opts.systemAudio);
 }
 
-/** Re-applies the (possibly lower, server-granted) preset to an already captured track. */
-export async function applyPreset(cap: CapturedScreen, preset: ConcreteScreenSharePreset): Promise<void> {
+/** Re-applies the (possibly lower, server-granted) preset and frame rate to an already captured track. */
+export async function applyPreset(cap: CapturedScreen, preset: ConcreteScreenSharePreset, fps?: number): Promise<void> {
   const t = cap.stream.getVideoTracks()[0];
-  if (t) await t.applyConstraints(videoConstraints(preset)).catch(() => undefined);
+  if (t) await t.applyConstraints(videoConstraints(preset, fps)).catch(() => undefined);
 }
 
 /** Step 2: publish (after the stream slot is reserved). */
@@ -145,6 +152,8 @@ export async function startScreenShare(
   captured?: CapturedScreen,
 ): Promise<ActiveScreenShare> {
   const preset = SCREEN_SHARE_PRESETS[opts.preset];
+  // Never encode above the frame rate the server granted (the plan's cap, ADR-0024).
+  const fps = capFps(preset.fps, opts.fps);
   const cap = captured ?? (await captureDesktop(opts.source, opts.preset, opts.systemAudio));
   const videoTrack = cap.stream.getVideoTracks()[0];
   if (!videoTrack) throw new Error('getDisplayMedia returned no video track');
@@ -161,9 +170,9 @@ export async function startScreenShare(
     simulcast: true,
     // VP8/H.264: plain simulcast (no scalabilityMode in libwebrtc); AV1/VP9 use L1T3 per simulcast layer.
     ...(codec === 'vp8' || codec === 'h264' ? {} : { scalabilityMode: 'L1T3' as const }),
-    screenShareEncoding: { maxBitrate: preset.maxBitrate, maxFramerate: preset.fps },
+    screenShareEncoding: { maxBitrate: preset.maxBitrate, maxFramerate: fps },
     screenShareSimulcastLayers: [
-      new VideoPreset(THUMB_LAYER.width, THUMB_LAYER.height, THUMB_LAYER.maxBitrate, preset.fps),
+      new VideoPreset(THUMB_LAYER.width, THUMB_LAYER.height, THUMB_LAYER.maxBitrate, fps),
     ],
     degradationPreference: opts.contentHint === 'detail' ? 'maintain-resolution' : 'balanced',
   };

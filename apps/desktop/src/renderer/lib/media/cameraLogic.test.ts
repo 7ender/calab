@@ -1,4 +1,6 @@
+import { ScreenSharePreset } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
+import { cameraCapture, cameraLayers, grantedCameraQuality } from './cameraLogic';
 import { CAMERA_LAYERS, CPU_LIMIT_SAMPLES, isChromium, cameraBlock, cameraWanted, cameraNext, camerasFull, cpuLimitStep, pickCameraCodec, type CameraEvent, type CameraPhase } from './cameraLogic';
 
 describe('camera layers (docs/09 #41)', () => {
@@ -9,6 +11,22 @@ describe('camera layers (docs/09 #41)', () => {
       expect(l.fps).toBeGreaterThanOrEqual(24);
       expect(l.fps).toBeLessThanOrEqual(30);
     }
+  });
+});
+
+describe('camera quality (ADR-0024)', () => {
+  it('1080p: 1920×1080 capture, the top layer 1080p; the granted fps caps every layer', () => {
+    expect(cameraCapture({ height: 1080, fps: 0 })).toEqual({ width: 1920, height: 1080, fps: 30 });
+    expect(cameraCapture({ height: 720, fps: 15 })).toEqual({ width: 1280, height: 720, fps: 15 });
+    expect(cameraLayers({ height: 1080, fps: 0 }).map((l) => l.height)).toEqual([180, 360, 1080]);
+    expect(cameraLayers({ height: 720, fps: 15 }).map((l) => l.fps)).toEqual([15, 15, 15]);
+  });
+
+  it('the server grant wins; UNSPECIFIED / 0 keeps what was asked', () => {
+    const { H720, H1080, UNSPECIFIED } = ScreenSharePreset;
+    expect(grantedCameraQuality(H1080, { preset: H720, fps: 15 })).toEqual({ height: 720, fps: 15 });
+    expect(grantedCameraQuality(H1080, { preset: UNSPECIFIED, fps: 0 })).toEqual({ height: 1080, fps: 0 });
+    expect(grantedCameraQuality(H720, undefined)).toEqual({ height: 720, fps: 0 });
   });
 });
 

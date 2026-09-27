@@ -4,6 +4,7 @@ import { zhChat } from './chat';
 import { zhDm } from './dm';
 import { zhEcho } from './echo';
 import { zhPeople } from './people';
+import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
 
@@ -16,6 +17,7 @@ export const zhCN: Dict = {
   ...zhVideo,
   ...zhDm,
   ...zhEcho,
+  ...zhPlan,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',

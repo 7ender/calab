@@ -5,6 +5,7 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
 import { api, uploadFile, uploadPath, type UploadHandle } from '../lib/api/endpoints';
+import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
 import { idAfter, useRooms } from '../stores/rooms';
@@ -301,6 +302,8 @@ export async function sendMessage(
   } catch (e) {
     log.warn('send failed', e);
     useMessages.getState().patchPending(roomId, key, { status: 'failed', error: errText(e) });
+    // 413 FILE_QUOTA_EXCEEDED: how full the storage is, and «Связаться» when the plan is the cause (ADR-0024).
+    reportPlanError(e, workspaceId);
   }
 }
 

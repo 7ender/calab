@@ -34,6 +34,10 @@ describe('presetOptions', () => {
     expect(o.map((x) => x.disabledReason !== null)).toEqual([false, false, false, true]);
     expect(o[3]?.disabledReason).toBe('Недоступно: в этой комнате качество не выше «1080p»');
     expect(presetOptions(ScreenSharePreset.ORIGINAL).every((x) => x.disabledReason === null)).toBe(true);
+    // The plan's cap (ADR-0024): a lock with «Доступно на тарифе Team»; the room's reason wins above both.
+    const free = presetOptions(ScreenSharePreset.H1080, ScreenSharePreset.H720);
+    expect(free.map((x) => x.lock)).toEqual([null, null, 'plan', 'room']);
+    expect(free[2]?.disabledReason).toBe('Доступно на тарифе Team — связаться');
   });
 });
 

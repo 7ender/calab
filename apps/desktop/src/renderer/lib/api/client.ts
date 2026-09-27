@@ -23,9 +23,19 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly field?: string,
+    /**
+     * Why, when a code has several causes (ApiError.reason): "PLAN_LIMIT" = a limit of the
+     * workspace plan (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED). `used` / `limit`: the counter
+     * that was hit (ROOM_FULL — users; FILE_QUOTA_EXCEEDED — bytes).
+     */
+    readonly extra: { reason?: string; used?: number; limit?: number } = {},
   ) {
     super(message);
     this.name = 'ApiError';
+  }
+
+  get reason(): string | undefined {
+    return this.extra.reason;
   }
 
   is(code: string): boolean {
@@ -35,8 +45,13 @@ export class ApiError extends Error {
 
 export async function toApiError(res: Response): Promise<ApiError> {
   try {
-    const b = (await res.json()) as { code?: string; message?: string; field?: string };
-    return new ApiError(b.code ?? 'ERROR_CODE_UNSPECIFIED', b.message ?? res.statusText, res.status, b.field || undefined);
+    const b = (await res.json()) as { code?: string; message?: string; field?: string; reason?: string; used?: unknown; limit?: unknown };
+    // protojson: uint64 as a string.
+    const num = (v: unknown): number | undefined => (typeof v === 'string' || typeof v === 'number') && Number.isFinite(Number(v)) ? Number(v) : undefined;
+    const used = num(b.used);
+    const limit = num(b.limit);
+    const extra = { ...(b.reason ? { reason: b.reason } : {}), ...(used !== undefined ? { used } : {}), ...(limit !== undefined ? { limit } : {}) };
+    return new ApiError(b.code ?? 'ERROR_CODE_UNSPECIFIED', b.message ?? res.statusText, res.status, b.field || undefined, extra);
   } catch {
     return new ApiError('ERROR_CODE_UNSPECIFIED', res.statusText || `HTTP ${res.status}`, res.status);
   }
