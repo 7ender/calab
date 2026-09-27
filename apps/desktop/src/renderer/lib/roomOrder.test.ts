@@ -114,6 +114,36 @@ describe('roomDropAt (pointer → line)', () => {
   it('skips the dragged room itself', () => {
     expect(roomDropAt(layout, slots, 50, 'b')).toEqual({ categoryId: null, index: 1, lineY: 72 });
   });
+
+  // The sidebar-drag screen: «общий» on top, «разработка» in DEV, voice rooms in VOICE where the
+  // last slot is tall (the voice room's participants render inside its slot). Dragging
+  // «разработка» to 6 px below the top of «общий» lands before it, not at the end of the list.
+  describe('sidebar with voice participants inside the room slots', () => {
+    const sidebar: Layout = [
+      { categoryId: null, rooms: ['general'] },
+      { categoryId: 'DEV', rooms: ['dev', 'long'] },
+      { categoryId: 'VOICE', rooms: ['call', 'meet'] },
+    ];
+    const measured: Slot[] = [
+      { kind: 'room', id: 'general', categoryId: null, top: 8, bottom: 40 },
+      { kind: 'header', id: 'DEV', top: 44, bottom: 72 },
+      { kind: 'room', id: 'dev', categoryId: 'DEV', top: 74, bottom: 106 },
+      { kind: 'room', id: 'long', categoryId: 'DEV', top: 108, bottom: 140 },
+      { kind: 'header', id: 'VOICE', top: 146, bottom: 174 },
+      { kind: 'room', id: 'call', categoryId: 'VOICE', top: 176, bottom: 208 },
+      // «Переговорка» (row 32 px) + two participant rows (30 px each).
+      { kind: 'room', id: 'meet', categoryId: 'VOICE', top: 210, bottom: 302 },
+    ];
+
+    it('near the top of the first room = before it', () => {
+      expect(roomDropAt(sidebar, measured, 14, 'dev')).toEqual({ categoryId: null, index: 0, lineY: 8 });
+    });
+
+    it('over the upper participants of a voice room = before that room; lower = end of the list', () => {
+      expect(roomDropAt(sidebar, measured, 250, 'dev')).toEqual({ categoryId: 'VOICE', index: 1, lineY: 210 });
+      expect(roomDropAt(sidebar, measured, 290, 'dev')).toEqual({ categoryId: 'VOICE', index: 2, lineY: 302 });
+    });
+  });
 });
 
 describe('categoryDropAt', () => {

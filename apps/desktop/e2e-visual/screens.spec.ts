@@ -477,6 +477,9 @@ test('sidebar-drag', async ({ open, win, mock, shot }) => {
   await win.mouse.move(from.x + 60, from.y + from.height / 2 - 10, { steps: 4 });
   await win.mouse.move(to.x + 60, to.y + 6, { steps: 8 });
   await expect(win.getByTestId('drop-line')).toBeVisible();
+  // The line marks the place before «общий» (not the end of the list under the voice participants).
+  const line = await win.getByTestId('drop-line').boundingBox();
+  expect(Math.abs((line?.y ?? -100) - to.y)).toBeLessThanOrEqual(3);
   await settle(win, true);
   // The pointer stays put (the drag chip follows it). axe off: the dragged row is dimmed on purpose
   // (Discord's drag source); main-chat covers the list.
