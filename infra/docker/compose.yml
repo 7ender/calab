@@ -94,6 +94,13 @@ services:
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
       - STORAGE_MAX_TOTAL_BYTES=${STORAGE_MAX_TOTAL_BYTES:-53687091200}   # 50 GiB for all uploads (shared host disk)
       - REGISTRATION_MODE=${REGISTRATION_MODE:-invite}
+      # mail (ADR-0023): values only in the stand's .env (never in the repo); empty = mail disabled
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_TLS=${SMTP_TLS:-tls}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
     <<: *hardening                 # distroless nonroot (65532); writes only to /data/files
     tmpfs: [/tmp]
     volumes:
