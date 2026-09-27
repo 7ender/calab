@@ -10,6 +10,50 @@ import (
 	"github.com/google/uuid"
 )
 
+type Bot struct {
+	UserID              uuid.UUID
+	OwnerUserID         uuid.UUID
+	WorkspaceID         uuid.UUID
+	Username            string
+	Description         string
+	TokenID             *uuid.UUID
+	TokenHash           []byte
+	TokenPrefix         string
+	WebhookUrl          *string
+	WebhookSecretEnc    []byte
+	WebhookDisabledAt   *time.Time
+	WebhookFailingSince *time.Time
+	WebhookLastOkAt     *time.Time
+	WebhookLastError    string
+	CreatedAt           time.Time
+	RevokedAt           *time.Time
+}
+
+type BotBlock struct {
+	UserID    uuid.UUID
+	BotUserID uuid.UUID
+	CreatedAt time.Time
+}
+
+type BotCommand struct {
+	BotUserID   uuid.UUID
+	Name        string
+	Description string
+	Position    int16
+}
+
+type BotWebhookDelivery struct {
+	ID          uuid.UUID
+	BotUserID   uuid.UUID
+	Payload     []byte
+	Attempts    int32
+	NextAt      time.Time
+	CreatedAt   time.Time
+	DeliveredAt *time.Time
+	FailedAt    *time.Time
+	Error       string
+}
+
 type DmMember struct {
 	RoomID    uuid.UUID
 	UserID    uuid.UUID
@@ -263,6 +307,7 @@ type User struct {
 	Locale          *string
 	PresenceStatus  *int16
 	PresenceUntil   *time.Time
+	IsBot           bool
 }
 
 type UserNote struct {

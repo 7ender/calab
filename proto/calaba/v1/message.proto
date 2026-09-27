@@ -28,6 +28,17 @@ message Message {
   // edited; it can be deleted (MANAGE_MESSAGES or the author), reacted to and pinned.
   MessageKind kind = 14;
   SystemMessage system = 15; // set for kind SYSTEM
+  // A bot command (ADR-0031): the message starts with /name or /name@username of a bot of the
+  // room. Set only in MESSAGE_CREATE (gateway and webhook) delivered to that bot; everyone
+  // else, REST responses included, gets the plain message.
+  MessageCommand command = 30;
+}
+
+// A command addressed to a bot: "/name args" or "/name@username args".
+message MessageCommand {
+  string bot_user_id = 1;
+  string name = 2; // without the slash and @username, lower case
+  string args = 3; // the rest of the message after the command, trimmed
 }
 
 enum MessageKind {

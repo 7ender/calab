@@ -24,6 +24,7 @@ message PlanLimits {
   uint32 streams_per_room = 6;             // screen shares at once in one room
   uint64 storage_mb = 7;                   // file storage of the workspace, MiB
   uint32 members = 8;                      // workspace members (informational; guests do not count)
+  uint32 bots = 20;                        // bots that are members of the workspace (ADR-0031)
 }
 
 // The plan of a workspace as members see it (Workspace.plan).

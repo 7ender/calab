@@ -71,6 +71,8 @@ const (
 	// 409: POST …/recordings/{rid}/reupload — the file was already delivered to GPTunneL (only
 	// …/recheck applies).
 	ErrorCode_ERROR_CODE_ALREADY_UPLOADED ErrorCode = 30
+	// 403: a bot writes to a person who blocked it (POST /api/me/blocked-bots/{id}, ADR-0031).
+	ErrorCode_ERROR_CODE_BOT_BLOCKED ErrorCode = 40
 )
 
 // Enum value maps for ErrorCode.
@@ -107,6 +109,7 @@ var (
 		28: "ERROR_CODE_INVITE_EMAIL_MISMATCH",
 		29: "ERROR_CODE_FILE_GONE",
 		30: "ERROR_CODE_ALREADY_UPLOADED",
+		40: "ERROR_CODE_BOT_BLOCKED",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":           0,
@@ -140,6 +143,7 @@ var (
 		"ERROR_CODE_INVITE_EMAIL_MISMATCH": 28,
 		"ERROR_CODE_FILE_GONE":             29,
 		"ERROR_CODE_ALREADY_UPLOADED":      30,
+		"ERROR_CODE_BOT_BLOCKED":           40,
 	}
 )
 
@@ -540,7 +544,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xbc\a\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xd8\a\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -573,7 +577,8 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x11ERROR_CODE_BANNED\x10\x1b\x12$\n" +
 	" ERROR_CODE_INVITE_EMAIL_MISMATCH\x10\x1c\x12\x18\n" +
 	"\x14ERROR_CODE_FILE_GONE\x10\x1d\x12\x1f\n" +
-	"\x1bERROR_CODE_ALREADY_UPLOADED\x10\x1eB\x99\x01\n" +
+	"\x1bERROR_CODE_ALREADY_UPLOADED\x10\x1e\x12\x1a\n" +
+	"\x16ERROR_CODE_BOT_BLOCKED\x10(B\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

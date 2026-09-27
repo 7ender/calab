@@ -1,0 +1,150 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/user.proto";
+
+// Bots and the Bot API (ADR-0031, docs/05 «Боты»). A bot is a user (User.is_bot) that
+// authenticates with a token "calab_bot_<user_id>_<secret>" in `Authorization: Bearer …` and
+// uses the same REST API and gateway as the clients, within the rights its roles give it.
+// Endpoints for people only (password, email, sessions, creating workspaces, invitations,
+// billing, superadmin, …) answer a bot 403 FORBIDDEN with reason "BOT_NOT_ALLOWED".
+
+// A command a bot understands, shown by the composer when "/" is typed.
+message BotCommand {
+  string name = 1;        // 1..32 characters of [a-z0-9_], without the slash
+  string description = 2; // ≤ 256 characters
+}
+
+// Webhook of a bot (PUT /api/bots/me/webhook). Deliveries are retried with backoff 1 min → 1 h;
+// after a day of failures the webhook is disabled (disabled_at) until it is set again.
+message BotWebhook {
+  string url = 1;   // https URL; empty = no webhook
+  bool enabled = 2; // url set and not disabled
+  google.protobuf.Timestamp disabled_at = 3;
+  google.protobuf.Timestamp failing_since = 4; // unset = the last delivery succeeded
+  google.protobuf.Timestamp last_ok_at = 5;
+  string last_error = 6;
+  uint32 pending = 7; // deliveries waiting; filled by GET /api/bots/me/webhook only
+}
+
+message Bot {
+  User user = 1;          // the bot's account (is_bot = true)
+  string username = 2;    // unique [a-z0-9_]{3,32}: "/cmd@username", link /bots/<username>
+  string owner_user_id = 3;
+  string workspace_id = 4; // home workspace (where it was created and is managed)
+  string description = 5;  // ≤ 512 characters
+  repeated BotCommand commands = 6;
+  // The first characters of the current token's secret, to tell tokens apart; empty = the
+  // token was revoked (the bot cannot sign in until a new one is issued).
+  string token_prefix = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp revoked_at = 9;
+  // Set for the bot itself, its owner and MANAGE_WORKSPACE members of its home workspace.
+  BotWebhook webhook = 10;
+}
+
+// POST /api/workspaces/{id}/bots (the owner or MANAGE_WORKSPACE; plan limit `bots`, 409
+// CONFLICT reason PLAN_LIMIT) → 201. The bot joins the workspace with the member role. The
+// token is returned only here and by POST …/bots/{botId}/token.
+message CreateBotRequest {
+  string display_name = 1; // 1..64
+  string username = 2;     // [a-z0-9_]{3,32}, unique (409 CONFLICT)
+  string description = 3;  // ≤ 512
+}
+
+message CreateBotResponse {
+  Bot bot = 1;
+  string token = 2;
+}
+
+// GET /api/workspaces/{id}/bots (MANAGE_WORKSPACE): bots that are members of the workspace.
+message ListBotsResponse {
+  repeated Bot bots = 1;
+}
+
+// POST /api/workspaces/{id}/bots/{botId}/token — a new token (home workspace: the bot's
+// owner or MANAGE_WORKSPACE); the previous one stops working at once. DELETE of the same
+// path revokes the token without a new one (204).
+message ReissueBotTokenResponse {
+  Bot bot = 1;
+  string token = 2;
+}
+
+// POST /api/workspaces/{id}/bots/add (MANAGE_WORKSPACE of that workspace): adds an existing
+// bot by id or username (member role). 409 CONFLICT: already a member or plan limit.
+message AddBotRequest {
+  string bot_user_id = 1;
+  string username = 2; // used when bot_user_id is empty
+}
+
+message AddBotResponse {
+  Bot bot = 1;
+}
+
+// GET /api/bots/me and PATCH /api/bots/me (bots only).
+message GetBotMeResponse {
+  Bot bot = 1;
+}
+
+// PATCH /api/bots/me: unset fields stay. → GetBotMeResponse.
+message UpdateBotMeRequest {
+  optional string display_name = 1; // 1..64
+  optional string description = 2;  // ≤ 512
+}
+
+// PUT /api/bots/me/commands: replaces all commands (≤ 100, unique names).
+message SetBotCommandsRequest {
+  repeated BotCommand commands = 1;
+}
+
+message SetBotCommandsResponse {
+  repeated BotCommand commands = 1;
+}
+
+// PUT /api/bots/me/webhook: https only, public addresses only; secret 16..256 characters signs
+// every delivery (X-Calab-Signature: sha256=hex(HMAC-SHA256(secret, body))). DELETE → 204.
+message SetBotWebhookRequest {
+  string url = 1;
+  string secret = 2;
+}
+
+// PUT and GET /api/bots/me/webhook.
+message BotWebhookResponse {
+  BotWebhook webhook = 1;
+}
+
+// Commands of the bots in a room (GET /api/rooms/{id}/bot-commands, VIEW_ROOM): composer hints.
+message RoomBotCommands {
+  string bot_user_id = 1;
+  string username = 2;
+  repeated BotCommand commands = 3;
+}
+
+message ListRoomBotCommandsResponse {
+  repeated RoomBotCommands bots = 1;
+}
+
+// GET /api/me/blocked-bots; POST / DELETE /api/me/blocked-bots/{id} → 204 (people only). A
+// blocked bot gets 403 BOT_BLOCKED when it writes to the person (new DM or a DM message).
+message ListBlockedBotsResponse {
+  repeated string bot_user_ids = 1;
+}
+
+// BOT_CREATE / BOT_UPDATE: a bot joined the workspace / changed (profile, commands, token,
+// webhook state). To MANAGE_WORKSPACE members and the bot's owner.
+message BotCreate {
+  string workspace_id = 1;
+  Bot bot = 2;
+}
+
+message BotUpdate {
+  string workspace_id = 1;
+  Bot bot = 2;
+}
+
+// BOT_DELETE: the bot was deleted or removed from the workspace.
+message BotDelete {
+  string workspace_id = 1;
+  string bot_user_id = 2;
+}

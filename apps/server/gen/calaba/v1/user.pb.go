@@ -84,7 +84,10 @@ type User struct {
 	StatusExpiresAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=status_expires_at,json=statusExpiresAt,proto3" json:"status_expires_at,omitempty"` // unset = no expiry; expired status is returned empty
 	IsGuest         bool                   `protobuf:"varint,8,opt,name=is_guest,json=isGuest,proto3" json:"is_guest,omitempty"`                          // guest account from a room link (ADR-0016): show a "Guest" badge
 	// IANA time zone ("Europe/Moscow"); empty = not set. Clients show the offset ("+3 UTC").
-	Timezone      string `protobuf:"bytes,9,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	Timezone string `protobuf:"bytes,9,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	// A bot account (ADR-0031): show a "BOT" badge; clients list bots in their own section, not
+	// among people online / offline.
+	IsBot         bool `protobuf:"varint,10,opt,name=is_bot,json=isBot,proto3" json:"is_bot,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -180,6 +183,13 @@ func (x *User) GetTimezone() string {
 		return x.Timezone
 	}
 	return ""
+}
+
+func (x *User) GetIsBot() bool {
+	if x != nil {
+		return x.IsBot
+	}
+	return false
 }
 
 // Per-user settings synced across the user's devices (USER_UPDATE on change).
@@ -885,7 +895,7 @@ var File_calaba_v1_user_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_user_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/user.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdd\x02\n" +
+	"\x14calaba/v1/user.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf4\x02\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12$\n" +
@@ -897,7 +907,9 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\fstatus_emoji\x18\x06 \x01(\tR\vstatusEmoji\x12F\n" +
 	"\x11status_expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusExpiresAt\x12\x19\n" +
 	"\bis_guest\x18\b \x01(\bR\aisGuest\x12\x1a\n" +
-	"\btimezone\x18\t \x01(\tR\btimezone\"\xb5\x02\n" +
+	"\btimezone\x18\t \x01(\tR\btimezone\x12\x15\n" +
+	"\x06is_bot\x18\n" +
+	" \x01(\bR\x05isBot\"\xb5\x02\n" +
 	"\fUserSettings\x12+\n" +
 	"\x11noise_suppression\x18\x01 \x01(\bR\x10noiseSuppression\x120\n" +
 	"\x14unstable_network_red\x18\x02 \x01(\bR\x12unstableNetworkRed\x12$\n" +

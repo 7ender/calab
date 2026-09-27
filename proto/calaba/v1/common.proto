@@ -49,6 +49,8 @@ enum ErrorCode {
   // 409: POST …/recordings/{rid}/reupload — the file was already delivered to GPTunneL (only
   // …/recheck applies).
   ERROR_CODE_ALREADY_UPLOADED = 30;
+  // 403: a bot writes to a person who blocked it (POST /api/me/blocked-bots/{id}, ADR-0031).
+  ERROR_CODE_BOT_BLOCKED = 40;
 }
 
 // Error body of every non-2xx REST response.

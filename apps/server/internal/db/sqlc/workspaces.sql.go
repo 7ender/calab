@@ -145,7 +145,7 @@ func (q *Queries) GetMember(ctx context.Context, arg GetMemberParams) (Workspace
 }
 
 const getMemberWithUser = `-- name: GetMemberWithUser :one
-SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until,
+SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
                  WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
@@ -192,6 +192,7 @@ func (q *Queries) GetMemberWithUser(ctx context.Context, arg GetMemberWithUserPa
 		&i.User.Locale,
 		&i.User.PresenceStatus,
 		&i.User.PresenceUntil,
+		&i.User.IsBot,
 		&i.RoleIds,
 	)
 	return i, err
@@ -264,7 +265,7 @@ func (q *Queries) ListMemberNames(ctx context.Context, arg ListMemberNamesParams
 }
 
 const listMembers = `-- name: ListMembers :many
-SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until,
+SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
                  WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids
@@ -313,6 +314,7 @@ func (q *Queries) ListMembers(ctx context.Context, workspaceID uuid.UUID) ([]Lis
 			&i.User.Locale,
 			&i.User.PresenceStatus,
 			&i.User.PresenceUntil,
+			&i.User.IsBot,
 			&i.RoleIds,
 		); err != nil {
 			return nil, err
