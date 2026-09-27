@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/admin.proto.
  */
 export const file_calaba_v1_admin: GenFile = /*@__PURE__*/
-  fileDesc("ChVjYWxhYmEvdjEvYWRtaW4ucHJvdG8SCWNhbGFiYS52MSKOAQoOV29ya3NwYWNlVXNhZ2USDwoHbWVtYmVycxgBIAEoDRINCgVyb29tcxgCIAEoDRISCgpzdG9yYWdlX21iGAMgASgEEhUKDXN0b3JhZ2VfYnl0ZXMYBCABKAQSMQoNbGFzdF9hY3Rpdml0eRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi+QEKDkFkbWluV29ya3NwYWNlEicKCXdvcmtzcGFjZRgBIAEoCzIULmNhbGFiYS52MS5Xb3Jrc3BhY2USHgoFb3duZXIYAiABKAsyDy5jYWxhYmEudjEuVXNlchITCgtvd25lcl9lbWFpbBgDIAEoCRIoCgV1c2FnZRgEIAEoCzIZLmNhbGFiYS52MS5Xb3Jrc3BhY2VVc2FnZRIRCglwbGFuX25vdGUYBSABKAkSFwoPcGxhbl91cGRhdGVkX2J5GAYgASgJEjMKD3BsYW5fdXBkYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiTgodQWRtaW5TZWFyY2hXb3Jrc3BhY2VzUmVzcG9uc2USLQoKd29ya3NwYWNlcxgBIAMoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZSJJChlBZG1pbkdldFdvcmtzcGFjZVJlc3BvbnNlEiwKCXdvcmtzcGFjZRgBIAEoCzIZLmNhbGFiYS52MS5BZG1pbldvcmtzcGFjZSKaAQoTQWRtaW5TZXRQbGFuUmVxdWVzdBIdCgRwbGFuGAEgASgOMg8uY2FsYWJhLnYxLlBsYW4SJQoGbGltaXRzGAIgASgLMhUuY2FsYWJhLnYxLlBsYW5MaW1pdHMSLwoLdmFsaWRfdW50aWwYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBG5vdGUYBCABKAkiRAoUQWRtaW5TZXRQbGFuUmVzcG9uc2USLAoJd29ya3NwYWNlGAEgASgLMhkuY2FsYWJhLnYxLkFkbWluV29ya3NwYWNlIowCCgxQbGFuTG9nRW50cnkSCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhMKC2FjdG9yX2VtYWlsGAQgASgJEh0KBHBsYW4YBSABKA4yDy5jYWxhYmEudjEuUGxhbhIlCgZsaW1pdHMYBiABKAsyFS5jYWxhYmEudjEuUGxhbkxpbWl0cxIvCgt2YWxpZF91bnRpbBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEbm90ZRgIIAEoCRIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJAChRBZG1pblBsYW5Mb2dSZXNwb25zZRIoCgdlbnRyaWVzGAEgAygLMhcuY2FsYWJhLnYxLlBsYW5Mb2dFbnRyeUKYAQoNY29tLmNhbGFiYS52MUIKQWRtaW5Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_plan, file_calaba_v1_user, file_calaba_v1_workspace]);
+  fileDesc("ChVjYWxhYmEvdjEvYWRtaW4ucHJvdG8SCWNhbGFiYS52MSKOAQoOV29ya3NwYWNlVXNhZ2USDwoHbWVtYmVycxgBIAEoDRINCgVyb29tcxgCIAEoDRISCgpzdG9yYWdlX21iGAMgASgEEhUKDXN0b3JhZ2VfYnl0ZXMYBCABKAQSMQoNbGFzdF9hY3Rpdml0eRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiqwIKDkFkbWluV29ya3NwYWNlEicKCXdvcmtzcGFjZRgBIAEoCzIULmNhbGFiYS52MS5Xb3Jrc3BhY2USHgoFb3duZXIYAiABKAsyDy5jYWxhYmEudjEuVXNlchITCgtvd25lcl9lbWFpbBgDIAEoCRIoCgV1c2FnZRgEIAEoCzIZLmNhbGFiYS52MS5Xb3Jrc3BhY2VVc2FnZRIRCglwbGFuX25vdGUYBSABKAkSFwoPcGxhbl91cGRhdGVkX2J5GAYgASgJEjMKD3BsYW5fdXBkYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMc3VzcGVuZGVkX2J5GAggASgJEhoKEnN1c3BlbmRlZF9ieV9lbWFpbBgJIAEoCSJOCh1BZG1pblNlYXJjaFdvcmtzcGFjZXNSZXNwb25zZRItCgp3b3Jrc3BhY2VzGAEgAygLMhkuY2FsYWJhLnYxLkFkbWluV29ya3NwYWNlIkkKGUFkbWluR2V0V29ya3NwYWNlUmVzcG9uc2USLAoJd29ya3NwYWNlGAEgASgLMhkuY2FsYWJhLnYxLkFkbWluV29ya3NwYWNlIpoBChNBZG1pblNldFBsYW5SZXF1ZXN0Eh0KBHBsYW4YASABKA4yDy5jYWxhYmEudjEuUGxhbhIlCgZsaW1pdHMYAiABKAsyFS5jYWxhYmEudjEuUGxhbkxpbWl0cxIvCgt2YWxpZF91bnRpbBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEbm90ZRgEIAEoCSJEChRBZG1pblNldFBsYW5SZXNwb25zZRIsCgl3b3Jrc3BhY2UYASABKAsyGS5jYWxhYmEudjEuQWRtaW5Xb3Jrc3BhY2UijAIKDFBsYW5Mb2dFbnRyeRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSEwoLYWN0b3JfZW1haWwYBCABKAkSHQoEcGxhbhgFIAEoDjIPLmNhbGFiYS52MS5QbGFuEiUKBmxpbWl0cxgGIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzEi8KC3ZhbGlkX3VudGlsGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIMCgRub3RlGAggASgJEi4KCmNyZWF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkAKFEFkbWluUGxhbkxvZ1Jlc3BvbnNlEigKB2VudHJpZXMYASADKAsyFy5jYWxhYmEudjEuUGxhbkxvZ0VudHJ5Ij4KGUFkbWluU2V0U3VzcGVuc2lvblJlcXVlc3QSEQoJc3VzcGVuZGVkGAEgASgIEg4KBnJlYXNvbhgCIAEoCSJKChpBZG1pblNldFN1c3BlbnNpb25SZXNwb25zZRIsCgl3b3Jrc3BhY2UYASABKAsyGS5jYWxhYmEudjEuQWRtaW5Xb3Jrc3BhY2VCmAEKDWNvbS5jYWxhYmEudjFCCkFkbWluUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_plan, file_calaba_v1_user, file_calaba_v1_workspace]);
 
 /**
  * Usage of a workspace (admin API).
@@ -111,6 +111,20 @@ export type AdminWorkspace = Message<"calaba.v1.AdminWorkspace"> & {
    * @generated from field: google.protobuf.Timestamp plan_updated_at = 7;
    */
   planUpdatedAt?: Timestamp | undefined;
+
+  /**
+   * Suspension (workspace.suspension has when / why): who suspended it.
+   *
+   * user id
+   *
+   * @generated from field: string suspended_by = 8;
+   */
+  suspendedBy: string;
+
+  /**
+   * @generated from field: string suspended_by_email = 9;
+   */
+  suspendedByEmail: string;
 };
 
 /**
@@ -291,4 +305,48 @@ export type AdminPlanLogResponse = Message<"calaba.v1.AdminPlanLogResponse"> & {
  */
 export const AdminPlanLogResponseSchema: GenMessage<AdminPlanLogResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_admin, 7);
+
+/**
+ * PUT /api/admin/workspaces/{id}/suspension. suspended=true needs a reason (1..500 characters;
+ * shown to the owner / admins); false resumes (the reason is ignored). Idempotent. Every change
+ * is logged; WORKSPACE_UPDATE follows (Workspace.suspension). Suspending disconnects everyone
+ * from the workspace's voice rooms.
+ *
+ * @generated from message calaba.v1.AdminSetSuspensionRequest
+ */
+export type AdminSetSuspensionRequest = Message<"calaba.v1.AdminSetSuspensionRequest"> & {
+  /**
+   * @generated from field: bool suspended = 1;
+   */
+  suspended: boolean;
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message calaba.v1.AdminSetSuspensionRequest.
+ * Use `create(AdminSetSuspensionRequestSchema)` to create a new message.
+ */
+export const AdminSetSuspensionRequestSchema: GenMessage<AdminSetSuspensionRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_admin, 8);
+
+/**
+ * @generated from message calaba.v1.AdminSetSuspensionResponse
+ */
+export type AdminSetSuspensionResponse = Message<"calaba.v1.AdminSetSuspensionResponse"> & {
+  /**
+   * @generated from field: calaba.v1.AdminWorkspace workspace = 1;
+   */
+  workspace?: AdminWorkspace | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.AdminSetSuspensionResponse.
+ * Use `create(AdminSetSuspensionResponseSchema)` to create a new message.
+ */
+export const AdminSetSuspensionResponseSchema: GenMessage<AdminSetSuspensionResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_admin, 9);
 

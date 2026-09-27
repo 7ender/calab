@@ -259,6 +259,27 @@ type Workspace struct {
 	StorageUsedBytes        int64
 	AllowSelfNickname       bool
 	DefaultCameraLimit      int32
+	SuspendedAt             *time.Time
+	SuspendedReason         string
+	SuspendedBy             *uuid.UUID
+}
+
+type WorkspaceAdminLog struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ActorID     *uuid.UUID
+	Action      string
+	Reason      string
+	CreatedAt   time.Time
+}
+
+type WorkspaceBan struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	Email       *string
+	Reason      string
+	BannedBy    *uuid.UUID
+	CreatedAt   time.Time
 }
 
 type WorkspaceIntegration struct {

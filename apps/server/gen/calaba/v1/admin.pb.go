@@ -109,8 +109,11 @@ type AdminWorkspace struct {
 	PlanNote      string                 `protobuf:"bytes,5,opt,name=plan_note,json=planNote,proto3" json:"plan_note,omitempty"`
 	PlanUpdatedBy string                 `protobuf:"bytes,6,opt,name=plan_updated_by,json=planUpdatedBy,proto3" json:"plan_updated_by,omitempty"` // user id; empty = never set
 	PlanUpdatedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=plan_updated_at,json=planUpdatedAt,proto3" json:"plan_updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Suspension (workspace.suspension has when / why): who suspended it.
+	SuspendedBy      string `protobuf:"bytes,8,opt,name=suspended_by,json=suspendedBy,proto3" json:"suspended_by,omitempty"` // user id
+	SuspendedByEmail string `protobuf:"bytes,9,opt,name=suspended_by_email,json=suspendedByEmail,proto3" json:"suspended_by_email,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *AdminWorkspace) Reset() {
@@ -190,6 +193,20 @@ func (x *AdminWorkspace) GetPlanUpdatedAt() *timestamppb.Timestamp {
 		return x.PlanUpdatedAt
 	}
 	return nil
+}
+
+func (x *AdminWorkspace) GetSuspendedBy() string {
+	if x != nil {
+		return x.SuspendedBy
+	}
+	return ""
+}
+
+func (x *AdminWorkspace) GetSuspendedByEmail() string {
+	if x != nil {
+		return x.SuspendedByEmail
+	}
+	return ""
 }
 
 // GET /api/admin/workspaces?q= (superadmin; others get 404). q matches name, slug or the
@@ -551,6 +568,106 @@ func (x *AdminPlanLogResponse) GetEntries() []*PlanLogEntry {
 	return nil
 }
 
+// PUT /api/admin/workspaces/{id}/suspension. suspended=true needs a reason (1..500 characters;
+// shown to the owner / admins); false resumes (the reason is ignored). Idempotent. Every change
+// is logged; WORKSPACE_UPDATE follows (Workspace.suspension). Suspending disconnects everyone
+// from the workspace's voice rooms.
+type AdminSetSuspensionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Suspended     bool                   `protobuf:"varint,1,opt,name=suspended,proto3" json:"suspended,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminSetSuspensionRequest) Reset() {
+	*x = AdminSetSuspensionRequest{}
+	mi := &file_calaba_v1_admin_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminSetSuspensionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminSetSuspensionRequest) ProtoMessage() {}
+
+func (x *AdminSetSuspensionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_admin_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminSetSuspensionRequest.ProtoReflect.Descriptor instead.
+func (*AdminSetSuspensionRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AdminSetSuspensionRequest) GetSuspended() bool {
+	if x != nil {
+		return x.Suspended
+	}
+	return false
+}
+
+func (x *AdminSetSuspensionRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type AdminSetSuspensionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Workspace     *AdminWorkspace        `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminSetSuspensionResponse) Reset() {
+	*x = AdminSetSuspensionResponse{}
+	mi := &file_calaba_v1_admin_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminSetSuspensionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminSetSuspensionResponse) ProtoMessage() {}
+
+func (x *AdminSetSuspensionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_admin_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminSetSuspensionResponse.ProtoReflect.Descriptor instead.
+func (*AdminSetSuspensionResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_admin_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AdminSetSuspensionResponse) GetWorkspace() *AdminWorkspace {
+	if x != nil {
+		return x.Workspace
+	}
+	return nil
+}
+
 var File_calaba_v1_admin_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_admin_proto_rawDesc = "" +
@@ -562,7 +679,7 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"storage_mb\x18\x03 \x01(\x04R\tstorageMb\x12#\n" +
 	"\rstorage_bytes\x18\x04 \x01(\x04R\fstorageBytes\x12?\n" +
-	"\rlast_activity\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\flastActivity\"\xc6\x02\n" +
+	"\rlast_activity\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\flastActivity\"\x97\x03\n" +
 	"\x0eAdminWorkspace\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12%\n" +
 	"\x05owner\x18\x02 \x01(\v2\x0f.calaba.v1.UserR\x05owner\x12\x1f\n" +
@@ -571,7 +688,9 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"\x05usage\x18\x04 \x01(\v2\x19.calaba.v1.WorkspaceUsageR\x05usage\x12\x1b\n" +
 	"\tplan_note\x18\x05 \x01(\tR\bplanNote\x12&\n" +
 	"\x0fplan_updated_by\x18\x06 \x01(\tR\rplanUpdatedBy\x12B\n" +
-	"\x0fplan_updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\rplanUpdatedAt\"Z\n" +
+	"\x0fplan_updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\rplanUpdatedAt\x12!\n" +
+	"\fsuspended_by\x18\b \x01(\tR\vsuspendedBy\x12,\n" +
+	"\x12suspended_by_email\x18\t \x01(\tR\x10suspendedByEmail\"Z\n" +
 	"\x1dAdminSearchWorkspacesResponse\x129\n" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x19.calaba.v1.AdminWorkspaceR\n" +
@@ -600,7 +719,12 @@ const file_calaba_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"I\n" +
 	"\x14AdminPlanLogResponse\x121\n" +
-	"\aentries\x18\x01 \x03(\v2\x17.calaba.v1.PlanLogEntryR\aentriesB\x98\x01\n" +
+	"\aentries\x18\x01 \x03(\v2\x17.calaba.v1.PlanLogEntryR\aentries\"Q\n" +
+	"\x19AdminSetSuspensionRequest\x12\x1c\n" +
+	"\tsuspended\x18\x01 \x01(\bR\tsuspended\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"U\n" +
+	"\x1aAdminSetSuspensionResponse\x127\n" +
+	"\tworkspace\x18\x01 \x01(\v2\x19.calaba.v1.AdminWorkspaceR\tworkspaceB\x98\x01\n" +
 	"\rcom.calaba.v1B\n" +
 	"AdminProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
@@ -617,7 +741,7 @@ func file_calaba_v1_admin_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_admin_proto_rawDescData
 }
 
-var file_calaba_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_calaba_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_calaba_v1_admin_proto_goTypes = []any{
 	(*WorkspaceUsage)(nil),                // 0: calaba.v1.WorkspaceUsage
 	(*AdminWorkspace)(nil),                // 1: calaba.v1.AdminWorkspace
@@ -627,34 +751,37 @@ var file_calaba_v1_admin_proto_goTypes = []any{
 	(*AdminSetPlanResponse)(nil),          // 5: calaba.v1.AdminSetPlanResponse
 	(*PlanLogEntry)(nil),                  // 6: calaba.v1.PlanLogEntry
 	(*AdminPlanLogResponse)(nil),          // 7: calaba.v1.AdminPlanLogResponse
-	(*timestamppb.Timestamp)(nil),         // 8: google.protobuf.Timestamp
-	(*Workspace)(nil),                     // 9: calaba.v1.Workspace
-	(*User)(nil),                          // 10: calaba.v1.User
-	(Plan)(0),                             // 11: calaba.v1.Plan
-	(*PlanLimits)(nil),                    // 12: calaba.v1.PlanLimits
+	(*AdminSetSuspensionRequest)(nil),     // 8: calaba.v1.AdminSetSuspensionRequest
+	(*AdminSetSuspensionResponse)(nil),    // 9: calaba.v1.AdminSetSuspensionResponse
+	(*timestamppb.Timestamp)(nil),         // 10: google.protobuf.Timestamp
+	(*Workspace)(nil),                     // 11: calaba.v1.Workspace
+	(*User)(nil),                          // 12: calaba.v1.User
+	(Plan)(0),                             // 13: calaba.v1.Plan
+	(*PlanLimits)(nil),                    // 14: calaba.v1.PlanLimits
 }
 var file_calaba_v1_admin_proto_depIdxs = []int32{
-	8,  // 0: calaba.v1.WorkspaceUsage.last_activity:type_name -> google.protobuf.Timestamp
-	9,  // 1: calaba.v1.AdminWorkspace.workspace:type_name -> calaba.v1.Workspace
-	10, // 2: calaba.v1.AdminWorkspace.owner:type_name -> calaba.v1.User
+	10, // 0: calaba.v1.WorkspaceUsage.last_activity:type_name -> google.protobuf.Timestamp
+	11, // 1: calaba.v1.AdminWorkspace.workspace:type_name -> calaba.v1.Workspace
+	12, // 2: calaba.v1.AdminWorkspace.owner:type_name -> calaba.v1.User
 	0,  // 3: calaba.v1.AdminWorkspace.usage:type_name -> calaba.v1.WorkspaceUsage
-	8,  // 4: calaba.v1.AdminWorkspace.plan_updated_at:type_name -> google.protobuf.Timestamp
+	10, // 4: calaba.v1.AdminWorkspace.plan_updated_at:type_name -> google.protobuf.Timestamp
 	1,  // 5: calaba.v1.AdminSearchWorkspacesResponse.workspaces:type_name -> calaba.v1.AdminWorkspace
 	1,  // 6: calaba.v1.AdminGetWorkspaceResponse.workspace:type_name -> calaba.v1.AdminWorkspace
-	11, // 7: calaba.v1.AdminSetPlanRequest.plan:type_name -> calaba.v1.Plan
-	12, // 8: calaba.v1.AdminSetPlanRequest.limits:type_name -> calaba.v1.PlanLimits
-	8,  // 9: calaba.v1.AdminSetPlanRequest.valid_until:type_name -> google.protobuf.Timestamp
+	13, // 7: calaba.v1.AdminSetPlanRequest.plan:type_name -> calaba.v1.Plan
+	14, // 8: calaba.v1.AdminSetPlanRequest.limits:type_name -> calaba.v1.PlanLimits
+	10, // 9: calaba.v1.AdminSetPlanRequest.valid_until:type_name -> google.protobuf.Timestamp
 	1,  // 10: calaba.v1.AdminSetPlanResponse.workspace:type_name -> calaba.v1.AdminWorkspace
-	11, // 11: calaba.v1.PlanLogEntry.plan:type_name -> calaba.v1.Plan
-	12, // 12: calaba.v1.PlanLogEntry.limits:type_name -> calaba.v1.PlanLimits
-	8,  // 13: calaba.v1.PlanLogEntry.valid_until:type_name -> google.protobuf.Timestamp
-	8,  // 14: calaba.v1.PlanLogEntry.created_at:type_name -> google.protobuf.Timestamp
+	13, // 11: calaba.v1.PlanLogEntry.plan:type_name -> calaba.v1.Plan
+	14, // 12: calaba.v1.PlanLogEntry.limits:type_name -> calaba.v1.PlanLimits
+	10, // 13: calaba.v1.PlanLogEntry.valid_until:type_name -> google.protobuf.Timestamp
+	10, // 14: calaba.v1.PlanLogEntry.created_at:type_name -> google.protobuf.Timestamp
 	6,  // 15: calaba.v1.AdminPlanLogResponse.entries:type_name -> calaba.v1.PlanLogEntry
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	1,  // 16: calaba.v1.AdminSetSuspensionResponse.workspace:type_name -> calaba.v1.AdminWorkspace
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_admin_proto_init() }
@@ -671,7 +798,7 @@ func file_calaba_v1_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_admin_proto_rawDesc), len(file_calaba_v1_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

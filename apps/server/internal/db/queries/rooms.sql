@@ -54,15 +54,17 @@ VALUES ($1, $2, $3, $4, $5);
 -- name: GetRoomAccess :one
 -- Everything needed to compute a user's permissions in a room, in one round trip. Workspace
 -- rooms: the membership (role NULL = not a member) and the overrides. DMs (workspace_id
--- NULL): the two participants.
+-- NULL): the two participants. suspended: the workspace is suspended (item 32).
 SELECT r.workspace_id,
        r.type,
        m.role,
        ro.allow AS role_allow, ro.deny AS role_deny,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (CASE WHEN r.type = 'dm' THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
-             ELSE '{}'::uuid[] END)::uuid[] AS dm_members
+             ELSE '{}'::uuid[] END)::uuid[] AS dm_members,
+       (w.suspended_at IS NOT NULL)::boolean AS suspended
 FROM rooms r
+LEFT JOIN workspaces w ON w.id = r.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = sqlc.arg('user_id')
 LEFT JOIN room_permissions ro ON ro.room_id = r.id AND ro.target_type = 'role' AND ro.target_id = m.role
 LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = sqlc.arg('user_id')::text

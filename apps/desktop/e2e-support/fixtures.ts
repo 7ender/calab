@@ -37,6 +37,7 @@ import {
   type Message,
   type PlanLimits,
   type PlanLogEntry,
+  type WorkspaceBan,
   type Presence,
   type Room,
   type RoomCategory,
@@ -239,6 +240,10 @@ export interface MockState {
   planMeta: Map<string, { note: string; updatedBy: string; updatedAt?: Timestamp }>;
   /** workspaceId → plan changes, newest first (GET /api/admin/workspaces/{id}/plan/log). */
   planLog: Map<string, PlanLogEntry[]>;
+  /** Who suspended a workspace (docs/09 #32; Workspace.suspension has when / why). */
+  suspendedBy: Map<string, string>;
+  /** workspaceId → bans, newest first (docs/09 #32). */
+  bans: Map<string, WorkspaceBan[]>;
   /** Email codes (ADR-0023): `verify:<userId>` (also the email change) and `reset:<email>`. */
   emailCodes: Map<string, EmailCodeRec>;
   /** Pending invitations by email, by id. */
@@ -507,6 +512,8 @@ export function buildState(scenario: Scenario): MockState {
     superadmins: new Set(),
     planMeta: new Map(),
     planLog: new Map(),
+    suspendedBy: new Map(),
+    bans: new Map(),
     emailCodes: new Map(),
     emailInvites: new Map(),
     gptunnel: new Map(),

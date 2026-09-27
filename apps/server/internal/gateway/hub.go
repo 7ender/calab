@@ -424,7 +424,26 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		st.delRole(uid)
 	case *v1.DispatchEvent_WorkspaceUpdate:
 		st.ws = e.WorkspaceUpdate.GetWorkspace()
-		h.toAll(sessions, id, shared)
+		// The suspension reason is for the owner / admins only (item 32).
+		var hidden *encEvent
+		for _, s := range sessions {
+			if pbconv.SeesSuspensionReason(st.roles[s.user]) || st.ws.GetSuspension().GetReason() == "" {
+				s.dispatchEnc(id, shared)
+				continue
+			}
+			if hidden == nil {
+				hidden = newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceUpdate{
+					WorkspaceUpdate: &v1.WorkspaceUpdate{Workspace: pbconv.ForViewer(st.ws, "")}}})
+			}
+			s.dispatchEnc(id, hidden)
+		}
+	case *v1.DispatchEvent_WorkspaceBanAdd, *v1.DispatchEvent_WorkspaceBanRemove:
+		// Bans are shown to those who manage members (item 32).
+		for _, s := range sessions {
+			if perm.Workspace(st.roles[s.user]).Has(perm.ManageWorkspace) {
+				s.dispatchEnc(id, shared)
+			}
+		}
 	case *v1.DispatchEvent_WorkspaceDelete:
 		h.toAll(sessions, id, shared)
 		for _, s := range sessions {

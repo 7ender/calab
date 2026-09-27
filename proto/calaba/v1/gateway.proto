@@ -165,6 +165,9 @@ message DispatchEvent {
     WorkspaceNotificationUpdate workspace_notification_update = 32;
     // A room's recording started or stopped (ADR-0025); to everyone who sees the room.
     RoomRecording room_recording = 33;
+    // A member was banned / unbanned (backlog item 32); to the owner and admins only.
+    WorkspaceBanAdd workspace_ban_add = 34;
+    WorkspaceBanRemove workspace_ban_remove = 35;
   }
 }
 
@@ -347,6 +350,15 @@ message WorkspaceMemberUpdate {
 }
 
 message WorkspaceMemberRemove {
+  string workspace_id = 1;
+  string user_id = 2;
+}
+
+message WorkspaceBanAdd {
+  WorkspaceBan ban = 1;
+}
+
+message WorkspaceBanRemove {
   string workspace_id = 1;
   string user_id = 2;
 }

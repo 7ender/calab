@@ -6,7 +6,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, CircleDot, Copy, Gem, Search, Settings2, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, CircleDot, Copy, Gem, Search, Settings2, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -33,6 +33,7 @@ import { PlanTab } from './PlanTab';
 import { GptunnelTab } from './GptunnelTab';
 import { reportPlanError } from '../../services/plan';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
+import { BansTab } from './BansTab';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -61,6 +62,8 @@ export function WorkspaceSettingsDialog({ workspaceId, tab, onClose }: { workspa
       ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: CircleDot, content: <GptunnelTab workspaceId={workspaceId} canManage={admin} /> }]
       : []),
     ...(admin ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} /> }] : []),
+    // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_WORKSPACE).
+    ...(admin ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
     ...(owner
       ? [{ id: 'danger', label: t('ws.tabDanger'), icon: TriangleAlert, destructive: true, content: <DangerTab workspaceId={workspaceId} onDone={onClose} /> }]
       : []),

@@ -44,6 +44,7 @@ func (a *Admin) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler)
 	handle("GET /api/admin/workspaces/{id}", a.get)
 	handle("PUT /api/admin/workspaces/{id}/plan", a.setPlan)
 	handle("GET /api/admin/workspaces/{id}/plan/log", a.log)
+	handle("PUT /api/admin/workspaces/{id}/suspension", a.setSuspension)
 }
 
 const maxNote = 500
@@ -149,6 +150,12 @@ func (a *Admin) adminWorkspace(ctx context.Context, row sqlc.AdminWorkspaceDetai
 	}
 	if row.PlanUpdatedAt != nil {
 		aw.PlanUpdatedAt = timestamppb.New(*row.PlanUpdatedAt)
+	}
+	if row.Workspace.SuspendedBy != nil {
+		aw.SuspendedBy = row.Workspace.SuspendedBy.String()
+	}
+	if row.SuspendedByEmail != nil {
+		aw.SuspendedByEmail = *row.SuspendedByEmail
 	}
 	return aw, nil
 }
@@ -310,5 +317,72 @@ func (a *Admin) log(w http.ResponseWriter, r *http.Request) error {
 		out = append(out, e)
 	}
 	httpx.Write(w, http.StatusOK, &v1.AdminPlanLogResponse{Entries: out})
+	return nil
+}
+
+// setSuspension: PUT /api/admin/workspaces/{id}/suspension {suspended, reason} (item 32).
+// Suspending an already suspended workspace updates the reason (and keeps the original time).
+// WORKSPACE_UPDATE carries the new state; rtc.SyncPublisher disconnects the workspace's voice
+// rooms when it shows a suspension.
+func (a *Admin) setSuspension(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathUUID(r, "id", "workspace")
+	if err != nil {
+		return err
+	}
+	var req v1.AdminSetSuspensionRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	reason := strings.TrimSpace(req.GetReason())
+	if req.GetSuspended() {
+		if reason == "" {
+			return httpx.Validation("reason", "a reason is required to suspend a workspace")
+		}
+		if utf8.RuneCountInString(reason) > maxNote {
+			return httpx.Validation("reason", "reason must be at most 500 characters")
+		}
+	} else {
+		reason = ""
+	}
+	actor := auth.MustFromContext(r.Context()).UserID
+	var ws sqlc.Workspace
+	err = a.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		cur, err := q.GetWorkspace(r.Context(), id)
+		if err != nil {
+			if db.IsNotFound(err) {
+				return httpx.NotFound("workspace")
+			}
+			return err
+		}
+		p := sqlc.SetWorkspaceSuspensionParams{ID: id, Reason: reason}
+		action := "resume"
+		if req.GetSuspended() {
+			action = "suspend"
+			at := time.Now()
+			if cur.SuspendedAt != nil {
+				at = *cur.SuspendedAt
+			}
+			p.SuspendedAt, p.SuspendedBy = &at, &actor
+		}
+		if ws, err = q.SetWorkspaceSuspension(r.Context(), p); err != nil {
+			return err
+		}
+		return q.InsertAdminLog(r.Context(), sqlc.InsertAdminLogParams{WorkspaceID: id, ActorID: &actor, Action: action, Reason: reason})
+	})
+	if err != nil {
+		return err
+	}
+	slog.InfoContext(r.Context(), "workspace suspension changed", "workspace", id, "by", actor,
+		"suspended", req.GetSuspended(), "reason", reason)
+	pw := pbconv.Workspace(ws)
+	if err := a.plans.Fill(r.Context(), pw); err != nil {
+		return err
+	}
+	a.events.Workspace(r.Context(), id, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceUpdate{WorkspaceUpdate: &v1.WorkspaceUpdate{Workspace: pw}}})
+	aw, err := a.one(r.Context(), id)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.AdminSetSuspensionResponse{Workspace: aw})
 	return nil
 }

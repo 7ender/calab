@@ -47,8 +47,9 @@ func (q *Queries) AdminSearchWorkspaces(ctx context.Context, pattern string) ([]
 }
 
 const adminWorkspaceDetails = `-- name: AdminWorkspaceDetails :many
-SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until,
+SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until,
     p.note AS plan_note, p.updated_by AS plan_updated_by, p.updated_at AS plan_updated_at,
+    sb.email AS suspended_by_email,
     (SELECT count(*) FROM workspace_members m WHERE m.workspace_id = w.id AND m.role <> 'guest')::integer AS members,
     (SELECT count(*) FROM rooms r WHERE r.workspace_id = w.id AND r.archived_at IS NULL)::integer AS rooms,
     coalesce((SELECT max(lm.created_at) FROM rooms r
@@ -57,18 +58,20 @@ SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created
 FROM workspaces w
 JOIN users u ON u.id = w.owner_id
 LEFT JOIN workspace_plans p ON p.workspace_id = w.id
+LEFT JOIN users sb ON sb.id = w.suspended_by
 WHERE w.id = ANY($1::uuid[])
 `
 
 type AdminWorkspaceDetailsRow struct {
-	Workspace     Workspace
-	User          User
-	PlanNote      *string
-	PlanUpdatedBy *uuid.UUID
-	PlanUpdatedAt *time.Time
-	Members       int32
-	Rooms         int32
-	LastActivity  time.Time
+	Workspace        Workspace
+	User             User
+	PlanNote         *string
+	PlanUpdatedBy    *uuid.UUID
+	PlanUpdatedAt    *time.Time
+	SuspendedByEmail *string
+	Members          int32
+	Rooms            int32
+	LastActivity     time.Time
 }
 
 // Workspaces with their owner, plan row and usage (members without guests, live rooms,
@@ -97,6 +100,9 @@ func (q *Queries) AdminWorkspaceDetails(ctx context.Context, ids []uuid.UUID) ([
 			&i.Workspace.StorageUsedBytes,
 			&i.Workspace.AllowSelfNickname,
 			&i.Workspace.DefaultCameraLimit,
+			&i.Workspace.SuspendedAt,
+			&i.Workspace.SuspendedReason,
+			&i.Workspace.SuspendedBy,
 			&i.User.ID,
 			&i.User.Email,
 			&i.User.PasswordHash,
@@ -119,6 +125,7 @@ func (q *Queries) AdminWorkspaceDetails(ctx context.Context, ids []uuid.UUID) ([
 			&i.PlanNote,
 			&i.PlanUpdatedBy,
 			&i.PlanUpdatedAt,
+			&i.SuspendedByEmail,
 			&i.Members,
 			&i.Rooms,
 			&i.LastActivity,

@@ -20,7 +20,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/workspace.proto.
  */
 export const file_calaba_v1_workspace: GenFile = /*@__PURE__*/
-  fileDesc("ChljYWxhYmEvdjEvd29ya3NwYWNlLnByb3RvEgljYWxhYmEudjEi8wIKCVdvcmtzcGFjZRIKCgJpZBgBIAEoCRIMCgRzbHVnGAIgASgJEgwKBG5hbWUYAyABKAkSFAoMaWNvbl9maWxlX2lkGAQgASgJEjIKCnZpc2liaWxpdHkYBSABKA4yHi5jYWxhYmEudjEuV29ya3NwYWNlVmlzaWJpbGl0eRIQCghvd25lcl9pZBgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0Cg5tZWRpYV9kZWZhdWx0cxgIIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIbChNzdG9yYWdlX3F1b3RhX2J5dGVzGAkgASgEEhoKEnN0b3JhZ2VfdXNlZF9ieXRlcxgKIAEoBBIbChNhbGxvd19zZWxmX25pY2tuYW1lGAsgASgIEiYKBHBsYW4YDCABKAsyGC5jYWxhYmEudjEuV29ya3NwYWNlUGxhbiKvAQoPV29ya3NwYWNlTWVtYmVyEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIdCgR1c2VyGAIgASgLMg8uY2FsYWJhLnYxLlVzZXISJgoEcm9sZRgDIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlEhAKCG5pY2tuYW1lGAQgASgJEi0KCWpvaW5lZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAizAEKBkludml0ZRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDAoEY29kZRgDIAEoCRISCgpjcmVhdGVkX2J5GAQgASgJEhAKCG1heF91c2VzGAUgASgNEgwKBHVzZXMYBiABKA0SLgoKZXhwaXJlc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiaAoWQ3JlYXRlV29ya3NwYWNlUmVxdWVzdBIMCgRzbHVnGAEgASgJEgwKBG5hbWUYAiABKAkSMgoKdmlzaWJpbGl0eRgDIAEoDjIeLmNhbGFiYS52MS5Xb3Jrc3BhY2VWaXNpYmlsaXR5IkIKF0NyZWF0ZVdvcmtzcGFjZVJlc3BvbnNlEicKCXdvcmtzcGFjZRgBIAEoCzIULmNhbGFiYS52MS5Xb3Jrc3BhY2UiQgoWTGlzdFdvcmtzcGFjZXNSZXNwb25zZRIoCgp3b3Jrc3BhY2VzGAEgAygLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJGChpEaXNjb3ZlcldvcmtzcGFjZXNSZXNwb25zZRIoCgp3b3Jrc3BhY2VzGAEgAygLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJnChRHZXRXb3Jrc3BhY2VSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEiYKBHJvbGUYAiABKA4yGC5jYWxhYmEudjEuV29ya3NwYWNlUm9sZSKgBAoWVXBkYXRlV29ya3NwYWNlUmVxdWVzdBIRCgRzbHVnGAEgASgJSACIAQESEQoEbmFtZRgCIAEoCUgBiAEBEjcKCnZpc2liaWxpdHkYAyABKA4yHi5jYWxhYmEudjEuV29ya3NwYWNlVmlzaWJpbGl0eUgCiAEBEhkKDGljb25fZmlsZV9pZBgEIAEoCUgDiAEBEicKGmRlZmF1bHRfYXVkaW9fYml0cmF0ZV9rYnBzGAUgASgNSASIAQESRAoZZGVmYXVsdF9tYXhfc3RyZWFtX3ByZXNldBgGIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldEgFiAEBEiAKE2RlZmF1bHRfbWF4X3N0cmVhbXMYByABKA1IBogBARIgChNhbGxvd19zZWxmX25pY2tuYW1lGAggASgISAeIAQESIQoUZGVmYXVsdF9jYW1lcmFfbGltaXQYCSABKA1ICIgBAUIHCgVfc2x1Z0IHCgVfbmFtZUINCgtfdmlzaWJpbGl0eUIPCg1faWNvbl9maWxlX2lkQh0KG19kZWZhdWx0X2F1ZGlvX2JpdHJhdGVfa2Jwc0IcChpfZGVmYXVsdF9tYXhfc3RyZWFtX3ByZXNldEIWChRfZGVmYXVsdF9tYXhfc3RyZWFtc0IWChRfYWxsb3dfc2VsZl9uaWNrbmFtZUIXChVfZGVmYXVsdF9jYW1lcmFfbGltaXQiQgoXVXBkYXRlV29ya3NwYWNlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJsChVKb2luV29ya3NwYWNlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZRIqCgZtZW1iZXIYAiABKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIkMKE0NyZWF0ZUludml0ZVJlcXVlc3QSEAoIbWF4X3VzZXMYASABKA0SGgoSZXhwaXJlc19pbl9zZWNvbmRzGAIgASgNIjkKFENyZWF0ZUludml0ZVJlc3BvbnNlEiEKBmludml0ZRgBIAEoCzIRLmNhbGFiYS52MS5JbnZpdGUiOQoTTGlzdEludml0ZXNSZXNwb25zZRIiCgdpbnZpdGVzGAEgAygLMhEuY2FsYWJhLnYxLkludml0ZSJCChNMaXN0TWVtYmVyc1Jlc3BvbnNlEisKB21lbWJlcnMYASADKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIm8KE1VwZGF0ZU1lbWJlclJlcXVlc3QSKwoEcm9sZRgBIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlSACIAQESFQoIbmlja25hbWUYAiABKAlIAYgBAUIHCgVfcm9sZUILCglfbmlja25hbWUiQgoUVXBkYXRlTWVtYmVyUmVzcG9uc2USKgoGbWVtYmVyGAEgASgLMhouY2FsYWJhLnYxLldvcmtzcGFjZU1lbWJlciKRAQoRR2V0SW52aXRlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZRIuCgpleHBpcmVzX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBINCgVlbWFpbBgDIAEoCRIUCgxtZW1iZXJfY291bnQYBCABKA0iJAoTSW52aXRlTG9va3VwUmVxdWVzdBINCgVlbWFpbBgBIAEoCSJFChRJbnZpdGVMb29rdXBSZXNwb25zZRIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISDgoGbWVtYmVyGAIgASgIIiMKEEFkZE1lbWJlclJlcXVlc3QSDwoHdXNlcl9pZBgBIAEoCSI/ChFBZGRNZW1iZXJSZXNwb25zZRIqCgZtZW1iZXIYASABKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIowCCgtFbWFpbEludml0ZRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDQoFZW1haWwYAyABKAkSJgoEcm9sZRgEIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlEhIKCmludml0ZWRfYnkYBSABKAkSLgoKY3JlYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZW50X2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJfChhDcmVhdGVFbWFpbEludml0ZVJlcXVlc3QSDQoFZW1haWwYASABKAkSKwoEcm9sZRgCIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlSACIAQFCBwoFX3JvbGUiQwoZQ3JlYXRlRW1haWxJbnZpdGVSZXNwb25zZRImCgZpbnZpdGUYASABKAsyFi5jYWxhYmEudjEuRW1haWxJbnZpdGUiQwoYTGlzdEVtYWlsSW52aXRlc1Jlc3BvbnNlEicKB2ludml0ZXMYASADKAsyFi5jYWxhYmEudjEuRW1haWxJbnZpdGUqfAoTV29ya3NwYWNlVmlzaWJpbGl0eRIkCiBXT1JLU1BBQ0VfVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEiAKHFdPUktTUEFDRV9WSVNJQklMSVRZX1BSSVZBVEUQARIdChlXT1JLU1BBQ0VfVklTSUJJTElUWV9PUEVOEAJCnAEKDWNvbS5jYWxhYmEudjFCDldvcmtzcGFjZVByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_permissions, file_calaba_v1_plan, file_calaba_v1_user]);
+  fileDesc("ChljYWxhYmEvdjEvd29ya3NwYWNlLnByb3RvEgljYWxhYmEudjEipwMKCVdvcmtzcGFjZRIKCgJpZBgBIAEoCRIMCgRzbHVnGAIgASgJEgwKBG5hbWUYAyABKAkSFAoMaWNvbl9maWxlX2lkGAQgASgJEjIKCnZpc2liaWxpdHkYBSABKA4yHi5jYWxhYmEudjEuV29ya3NwYWNlVmlzaWJpbGl0eRIQCghvd25lcl9pZBgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0Cg5tZWRpYV9kZWZhdWx0cxgIIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIbChNzdG9yYWdlX3F1b3RhX2J5dGVzGAkgASgEEhoKEnN0b3JhZ2VfdXNlZF9ieXRlcxgKIAEoBBIbChNhbGxvd19zZWxmX25pY2tuYW1lGAsgASgIEiYKBHBsYW4YDCABKAsyGC5jYWxhYmEudjEuV29ya3NwYWNlUGxhbhIyCgpzdXNwZW5zaW9uGA0gASgLMh4uY2FsYWJhLnYxLldvcmtzcGFjZVN1c3BlbnNpb24iTQoTV29ya3NwYWNlU3VzcGVuc2lvbhImCgJhdBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGcmVhc29uGAIgASgJIqUBCgxXb3Jrc3BhY2VCYW4SFAoMd29ya3NwYWNlX2lkGAEgASgJEh0KBHVzZXIYAiABKAsyDy5jYWxhYmEudjEuVXNlchINCgVlbWFpbBgDIAEoCRIOCgZyZWFzb24YBCABKAkSEQoJYmFubmVkX2J5GAUgASgJEi4KCmNyZWF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIq8BCg9Xb3Jrc3BhY2VNZW1iZXISFAoMd29ya3NwYWNlX2lkGAEgASgJEh0KBHVzZXIYAiABKAsyDy5jYWxhYmEudjEuVXNlchImCgRyb2xlGAMgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGUSEAoIbmlja25hbWUYBCABKAkSLQoJam9pbmVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLMAQoGSW52aXRlEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIMCgRjb2RlGAMgASgJEhIKCmNyZWF0ZWRfYnkYBCABKAkSEAoIbWF4X3VzZXMYBSABKA0SDAoEdXNlcxgGIAEoDRIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJoChZDcmVhdGVXb3Jrc3BhY2VSZXF1ZXN0EgwKBHNsdWcYASABKAkSDAoEbmFtZRgCIAEoCRIyCgp2aXNpYmlsaXR5GAMgASgOMh4uY2FsYWJhLnYxLldvcmtzcGFjZVZpc2liaWxpdHkiQgoXQ3JlYXRlV29ya3NwYWNlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJCChZMaXN0V29ya3NwYWNlc1Jlc3BvbnNlEigKCndvcmtzcGFjZXMYASADKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlIkYKGkRpc2NvdmVyV29ya3NwYWNlc1Jlc3BvbnNlEigKCndvcmtzcGFjZXMYASADKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlImcKFEdldFdvcmtzcGFjZVJlc3BvbnNlEicKCXdvcmtzcGFjZRgBIAEoCzIULmNhbGFiYS52MS5Xb3Jrc3BhY2USJgoEcm9sZRgCIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlIqAEChZVcGRhdGVXb3Jrc3BhY2VSZXF1ZXN0EhEKBHNsdWcYASABKAlIAIgBARIRCgRuYW1lGAIgASgJSAGIAQESNwoKdmlzaWJpbGl0eRgDIAEoDjIeLmNhbGFiYS52MS5Xb3Jrc3BhY2VWaXNpYmlsaXR5SAKIAQESGQoMaWNvbl9maWxlX2lkGAQgASgJSAOIAQESJwoaZGVmYXVsdF9hdWRpb19iaXRyYXRlX2ticHMYBSABKA1IBIgBARJEChlkZWZhdWx0X21heF9zdHJlYW1fcHJlc2V0GAYgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0SAWIAQESIAoTZGVmYXVsdF9tYXhfc3RyZWFtcxgHIAEoDUgGiAEBEiAKE2FsbG93X3NlbGZfbmlja25hbWUYCCABKAhIB4gBARIhChRkZWZhdWx0X2NhbWVyYV9saW1pdBgJIAEoDUgIiAEBQgcKBV9zbHVnQgcKBV9uYW1lQg0KC192aXNpYmlsaXR5Qg8KDV9pY29uX2ZpbGVfaWRCHQobX2RlZmF1bHRfYXVkaW9fYml0cmF0ZV9rYnBzQhwKGl9kZWZhdWx0X21heF9zdHJlYW1fcHJlc2V0QhYKFF9kZWZhdWx0X21heF9zdHJlYW1zQhYKFF9hbGxvd19zZWxmX25pY2tuYW1lQhcKFV9kZWZhdWx0X2NhbWVyYV9saW1pdCJCChdVcGRhdGVXb3Jrc3BhY2VSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlImwKFUpvaW5Xb3Jrc3BhY2VSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEioKBm1lbWJlchgCIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIiQwoTQ3JlYXRlSW52aXRlUmVxdWVzdBIQCghtYXhfdXNlcxgBIAEoDRIaChJleHBpcmVzX2luX3NlY29uZHMYAiABKA0iOQoUQ3JlYXRlSW52aXRlUmVzcG9uc2USIQoGaW52aXRlGAEgASgLMhEuY2FsYWJhLnYxLkludml0ZSI5ChNMaXN0SW52aXRlc1Jlc3BvbnNlEiIKB2ludml0ZXMYASADKAsyES5jYWxhYmEudjEuSW52aXRlIkIKE0xpc3RNZW1iZXJzUmVzcG9uc2USKwoHbWVtYmVycxgBIAMoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIibwoTVXBkYXRlTWVtYmVyUmVxdWVzdBIrCgRyb2xlGAEgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGVIAIgBARIVCghuaWNrbmFtZRgCIAEoCUgBiAEBQgcKBV9yb2xlQgsKCV9uaWNrbmFtZSJCChRVcGRhdGVNZW1iZXJSZXNwb25zZRIqCgZtZW1iZXIYASABKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIpEBChFHZXRJbnZpdGVSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBWVtYWlsGAMgASgJEhQKDG1lbWJlcl9jb3VudBgEIAEoDSIkChNJbnZpdGVMb29rdXBSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJIkUKFEludml0ZUxvb2t1cFJlc3BvbnNlEh0KBHVzZXIYASABKAsyDy5jYWxhYmEudjEuVXNlchIOCgZtZW1iZXIYAiABKAgiIwoQQWRkTWVtYmVyUmVxdWVzdBIPCgd1c2VyX2lkGAEgASgJIj8KEUFkZE1lbWJlclJlc3BvbnNlEioKBm1lbWJlchgBIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIijAIKC0VtYWlsSW52aXRlEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRINCgVlbWFpbBgDIAEoCRImCgRyb2xlGAQgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGUSEgoKaW52aXRlZF9ieRgFIAEoCRIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxsYXN0X3NlbnRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KGENyZWF0ZUVtYWlsSW52aXRlUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIrCgRyb2xlGAIgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGVIAIgBAUIHCgVfcm9sZSJDChlDcmVhdGVFbWFpbEludml0ZVJlc3BvbnNlEiYKBmludml0ZRgBIAEoCzIWLmNhbGFiYS52MS5FbWFpbEludml0ZSJDChhMaXN0RW1haWxJbnZpdGVzUmVzcG9uc2USJwoHaW52aXRlcxgBIAMoCzIWLmNhbGFiYS52MS5FbWFpbEludml0ZSIzChBDcmVhdGVCYW5SZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSDgoGcmVhc29uGAIgASgJIjkKEUNyZWF0ZUJhblJlc3BvbnNlEiQKA2JhbhgBIAEoCzIXLmNhbGFiYS52MS5Xb3Jrc3BhY2VCYW4iOQoQTGlzdEJhbnNSZXNwb25zZRIlCgRiYW5zGAEgAygLMhcuY2FsYWJhLnYxLldvcmtzcGFjZUJhbip8ChNXb3Jrc3BhY2VWaXNpYmlsaXR5EiQKIFdPUktTUEFDRV9WSVNJQklMSVRZX1VOU1BFQ0lGSUVEEAASIAocV09SS1NQQUNFX1ZJU0lCSUxJVFlfUFJJVkFURRABEh0KGVdPUktTUEFDRV9WSVNJQklMSVRZX09QRU4QAkKcAQoNY29tLmNhbGFiYS52MUIOV29ya3NwYWNlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_permissions, file_calaba_v1_plan, file_calaba_v1_user]);
 
 /**
  * @generated from message calaba.v1.Workspace
@@ -95,6 +95,14 @@ export type Workspace = Message<"calaba.v1.Workspace"> & {
    * @generated from field: calaba.v1.WorkspacePlan plan = 12;
    */
   plan?: WorkspacePlan | undefined;
+
+  /**
+   * Set while a superadmin has suspended the workspace (read-only: writes get 403
+   * WORKSPACE_SUSPENDED). Unset = active.
+   *
+   * @generated from field: calaba.v1.WorkspaceSuspension suspension = 13;
+   */
+  suspension?: WorkspaceSuspension | undefined;
 };
 
 /**
@@ -103,6 +111,80 @@ export type Workspace = Message<"calaba.v1.Workspace"> & {
  */
 export const WorkspaceSchema: GenMessage<Workspace> = /*@__PURE__*/
   messageDesc(file_calaba_v1_workspace, 0);
+
+/**
+ * @generated from message calaba.v1.WorkspaceSuspension
+ */
+export type WorkspaceSuspension = Message<"calaba.v1.WorkspaceSuspension"> & {
+  /**
+   * @generated from field: google.protobuf.Timestamp at = 1;
+   */
+  at?: Timestamp | undefined;
+
+  /**
+   * Why: only for the owner and admins (and the admin API); empty for everyone else.
+   *
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message calaba.v1.WorkspaceSuspension.
+ * Use `create(WorkspaceSuspensionSchema)` to create a new message.
+ */
+export const WorkspaceSuspensionSchema: GenMessage<WorkspaceSuspension> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 1);
+
+/**
+ * A banned user (settings → «Banned»; MANAGE_WORKSPACE).
+ *
+ * @generated from message calaba.v1.WorkspaceBan
+ */
+export type WorkspaceBan = Message<"calaba.v1.WorkspaceBan"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+
+  /**
+   * the banned account (guest accounts too)
+   *
+   * @generated from field: calaba.v1.User user = 2;
+   */
+  user?: User | undefined;
+
+  /**
+   * the account's address at ban time, if any: it is banned as well
+   *
+   * @generated from field: string email = 3;
+   */
+  email: string;
+
+  /**
+   * @generated from field: string reason = 4;
+   */
+  reason: string;
+
+  /**
+   * user id; empty = account deleted
+   *
+   * @generated from field: string banned_by = 5;
+   */
+  bannedBy: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 6;
+   */
+  createdAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.WorkspaceBan.
+ * Use `create(WorkspaceBanSchema)` to create a new message.
+ */
+export const WorkspaceBanSchema: GenMessage<WorkspaceBan> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 2);
 
 /**
  * @generated from message calaba.v1.WorkspaceMember
@@ -141,7 +223,7 @@ export type WorkspaceMember = Message<"calaba.v1.WorkspaceMember"> & {
  * Use `create(WorkspaceMemberSchema)` to create a new message.
  */
 export const WorkspaceMemberSchema: GenMessage<WorkspaceMember> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 1);
+  messageDesc(file_calaba_v1_workspace, 3);
 
 /**
  * @generated from message calaba.v1.Invite
@@ -199,7 +281,7 @@ export type Invite = Message<"calaba.v1.Invite"> & {
  * Use `create(InviteSchema)` to create a new message.
  */
 export const InviteSchema: GenMessage<Invite> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 2);
+  messageDesc(file_calaba_v1_workspace, 4);
 
 /**
  * POST /api/workspaces
@@ -230,7 +312,7 @@ export type CreateWorkspaceRequest = Message<"calaba.v1.CreateWorkspaceRequest">
  * Use `create(CreateWorkspaceRequestSchema)` to create a new message.
  */
 export const CreateWorkspaceRequestSchema: GenMessage<CreateWorkspaceRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 3);
+  messageDesc(file_calaba_v1_workspace, 5);
 
 /**
  * @generated from message calaba.v1.CreateWorkspaceResponse
@@ -247,7 +329,7 @@ export type CreateWorkspaceResponse = Message<"calaba.v1.CreateWorkspaceResponse
  * Use `create(CreateWorkspaceResponseSchema)` to create a new message.
  */
 export const CreateWorkspaceResponseSchema: GenMessage<CreateWorkspaceResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 4);
+  messageDesc(file_calaba_v1_workspace, 6);
 
 /**
  * GET /api/workspaces — workspaces the caller is a member of.
@@ -266,7 +348,7 @@ export type ListWorkspacesResponse = Message<"calaba.v1.ListWorkspacesResponse">
  * Use `create(ListWorkspacesResponseSchema)` to create a new message.
  */
 export const ListWorkspacesResponseSchema: GenMessage<ListWorkspacesResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 5);
+  messageDesc(file_calaba_v1_workspace, 7);
 
 /**
  * GET /api/workspaces/discover — open workspaces the caller is not a member of.
@@ -285,7 +367,7 @@ export type DiscoverWorkspacesResponse = Message<"calaba.v1.DiscoverWorkspacesRe
  * Use `create(DiscoverWorkspacesResponseSchema)` to create a new message.
  */
 export const DiscoverWorkspacesResponseSchema: GenMessage<DiscoverWorkspacesResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 6);
+  messageDesc(file_calaba_v1_workspace, 8);
 
 /**
  * GET /api/workspaces/{id}
@@ -311,7 +393,7 @@ export type GetWorkspaceResponse = Message<"calaba.v1.GetWorkspaceResponse"> & {
  * Use `create(GetWorkspaceResponseSchema)` to create a new message.
  */
 export const GetWorkspaceResponseSchema: GenMessage<GetWorkspaceResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 7);
+  messageDesc(file_calaba_v1_workspace, 9);
 
 /**
  * PATCH /api/workspaces/{id} (MANAGE_WORKSPACE). Unset fields are left unchanged.
@@ -378,7 +460,7 @@ export type UpdateWorkspaceRequest = Message<"calaba.v1.UpdateWorkspaceRequest">
  * Use `create(UpdateWorkspaceRequestSchema)` to create a new message.
  */
 export const UpdateWorkspaceRequestSchema: GenMessage<UpdateWorkspaceRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 8);
+  messageDesc(file_calaba_v1_workspace, 10);
 
 /**
  * @generated from message calaba.v1.UpdateWorkspaceResponse
@@ -395,7 +477,7 @@ export type UpdateWorkspaceResponse = Message<"calaba.v1.UpdateWorkspaceResponse
  * Use `create(UpdateWorkspaceResponseSchema)` to create a new message.
  */
 export const UpdateWorkspaceResponseSchema: GenMessage<UpdateWorkspaceResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 9);
+  messageDesc(file_calaba_v1_workspace, 11);
 
 /**
  * POST /api/workspaces/{id}/join (open workspaces) and POST /api/workspaces/join/{code} (invites).
@@ -419,7 +501,7 @@ export type JoinWorkspaceResponse = Message<"calaba.v1.JoinWorkspaceResponse"> &
  * Use `create(JoinWorkspaceResponseSchema)` to create a new message.
  */
 export const JoinWorkspaceResponseSchema: GenMessage<JoinWorkspaceResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 10);
+  messageDesc(file_calaba_v1_workspace, 12);
 
 /**
  * POST /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
@@ -447,7 +529,7 @@ export type CreateInviteRequest = Message<"calaba.v1.CreateInviteRequest"> & {
  * Use `create(CreateInviteRequestSchema)` to create a new message.
  */
 export const CreateInviteRequestSchema: GenMessage<CreateInviteRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 11);
+  messageDesc(file_calaba_v1_workspace, 13);
 
 /**
  * @generated from message calaba.v1.CreateInviteResponse
@@ -464,7 +546,7 @@ export type CreateInviteResponse = Message<"calaba.v1.CreateInviteResponse"> & {
  * Use `create(CreateInviteResponseSchema)` to create a new message.
  */
 export const CreateInviteResponseSchema: GenMessage<CreateInviteResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 12);
+  messageDesc(file_calaba_v1_workspace, 14);
 
 /**
  * GET /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
@@ -483,7 +565,7 @@ export type ListInvitesResponse = Message<"calaba.v1.ListInvitesResponse"> & {
  * Use `create(ListInvitesResponseSchema)` to create a new message.
  */
 export const ListInvitesResponseSchema: GenMessage<ListInvitesResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 13);
+  messageDesc(file_calaba_v1_workspace, 15);
 
 /**
  * GET /api/workspaces/{id}/members
@@ -502,7 +584,7 @@ export type ListMembersResponse = Message<"calaba.v1.ListMembersResponse"> & {
  * Use `create(ListMembersResponseSchema)` to create a new message.
  */
 export const ListMembersResponseSchema: GenMessage<ListMembersResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 14);
+  messageDesc(file_calaba_v1_workspace, 16);
 
 /**
  * PATCH /api/workspaces/{id}/members/{user_id}.
@@ -528,7 +610,7 @@ export type UpdateMemberRequest = Message<"calaba.v1.UpdateMemberRequest"> & {
  * Use `create(UpdateMemberRequestSchema)` to create a new message.
  */
 export const UpdateMemberRequestSchema: GenMessage<UpdateMemberRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 15);
+  messageDesc(file_calaba_v1_workspace, 17);
 
 /**
  * @generated from message calaba.v1.UpdateMemberResponse
@@ -545,7 +627,7 @@ export type UpdateMemberResponse = Message<"calaba.v1.UpdateMemberResponse"> & {
  * Use `create(UpdateMemberResponseSchema)` to create a new message.
  */
 export const UpdateMemberResponseSchema: GenMessage<UpdateMemberResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 16);
+  messageDesc(file_calaba_v1_workspace, 18);
 
 /**
  * GET /api/invites/{code} — preview before joining. Public (no token: the /join/<code> page
@@ -590,7 +672,7 @@ export type GetInviteResponse = Message<"calaba.v1.GetInviteResponse"> & {
  * Use `create(GetInviteResponseSchema)` to create a new message.
  */
 export const GetInviteResponseSchema: GenMessage<GetInviteResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 17);
+  messageDesc(file_calaba_v1_workspace, 19);
 
 /**
  * POST /api/workspaces/{id}/invites/lookup → InviteLookupResponse. Exact (case-insensitive)
@@ -610,7 +692,7 @@ export type InviteLookupRequest = Message<"calaba.v1.InviteLookupRequest"> & {
  * Use `create(InviteLookupRequestSchema)` to create a new message.
  */
 export const InviteLookupRequestSchema: GenMessage<InviteLookupRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 18);
+  messageDesc(file_calaba_v1_workspace, 20);
 
 /**
  * Empty object (user unset) = no such account: invite by email instead.
@@ -636,7 +718,7 @@ export type InviteLookupResponse = Message<"calaba.v1.InviteLookupResponse"> & {
  * Use `create(InviteLookupResponseSchema)` to create a new message.
  */
 export const InviteLookupResponseSchema: GenMessage<InviteLookupResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 19);
+  messageDesc(file_calaba_v1_workspace, 21);
 
 /**
  * POST /api/workspaces/{id}/members → 201 AddMemberResponse: adds a verified account found
@@ -658,7 +740,7 @@ export type AddMemberRequest = Message<"calaba.v1.AddMemberRequest"> & {
  * Use `create(AddMemberRequestSchema)` to create a new message.
  */
 export const AddMemberRequestSchema: GenMessage<AddMemberRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 20);
+  messageDesc(file_calaba_v1_workspace, 22);
 
 /**
  * @generated from message calaba.v1.AddMemberResponse
@@ -675,7 +757,7 @@ export type AddMemberResponse = Message<"calaba.v1.AddMemberResponse"> & {
  * Use `create(AddMemberResponseSchema)` to create a new message.
  */
 export const AddMemberResponseSchema: GenMessage<AddMemberResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 21);
+  messageDesc(file_calaba_v1_workspace, 23);
 
 /**
  * A pending invitation sent to an address (settings → invitations).
@@ -735,7 +817,7 @@ export type EmailInvite = Message<"calaba.v1.EmailInvite"> & {
  * Use `create(EmailInviteSchema)` to create a new message.
  */
 export const EmailInviteSchema: GenMessage<EmailInvite> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 22);
+  messageDesc(file_calaba_v1_workspace, 24);
 
 /**
  * POST /api/workspaces/{id}/invites/email → 201 CreateEmailInviteResponse. Mails a link
@@ -763,7 +845,7 @@ export type CreateEmailInviteRequest = Message<"calaba.v1.CreateEmailInviteReque
  * Use `create(CreateEmailInviteRequestSchema)` to create a new message.
  */
 export const CreateEmailInviteRequestSchema: GenMessage<CreateEmailInviteRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 23);
+  messageDesc(file_calaba_v1_workspace, 25);
 
 /**
  * @generated from message calaba.v1.CreateEmailInviteResponse
@@ -780,7 +862,7 @@ export type CreateEmailInviteResponse = Message<"calaba.v1.CreateEmailInviteResp
  * Use `create(CreateEmailInviteResponseSchema)` to create a new message.
  */
 export const CreateEmailInviteResponseSchema: GenMessage<CreateEmailInviteResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 24);
+  messageDesc(file_calaba_v1_workspace, 26);
 
 /**
  * GET /api/workspaces/{id}/invites/email → pending (not accepted) invitations, newest first.
@@ -800,7 +882,72 @@ export type ListEmailInvitesResponse = Message<"calaba.v1.ListEmailInvitesRespon
  * Use `create(ListEmailInvitesResponseSchema)` to create a new message.
  */
 export const ListEmailInvitesResponseSchema: GenMessage<ListEmailInvitesResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_workspace, 25);
+  messageDesc(file_calaba_v1_workspace, 27);
+
+/**
+ * POST /api/workspaces/{id}/bans → 201 CreateBanResponse. Removes the member (like
+ * DELETE …/members/{user_id}: WORKSPACE_MEMBER_REMOVE, voice disconnect) and refuses every way
+ * back (403 BANNED): invitations, open join, email invitations (pending ones to the address are
+ * revoked), room links. Banning a user who is no longer a member works too. WORKSPACE_BAN_ADD
+ * goes to the owner / admins. reason ≤ 500 characters.
+ *
+ * @generated from message calaba.v1.CreateBanRequest
+ */
+export type CreateBanRequest = Message<"calaba.v1.CreateBanRequest"> & {
+  /**
+   * @generated from field: string user_id = 1;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message calaba.v1.CreateBanRequest.
+ * Use `create(CreateBanRequestSchema)` to create a new message.
+ */
+export const CreateBanRequestSchema: GenMessage<CreateBanRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 28);
+
+/**
+ * @generated from message calaba.v1.CreateBanResponse
+ */
+export type CreateBanResponse = Message<"calaba.v1.CreateBanResponse"> & {
+  /**
+   * @generated from field: calaba.v1.WorkspaceBan ban = 1;
+   */
+  ban?: WorkspaceBan | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CreateBanResponse.
+ * Use `create(CreateBanResponseSchema)` to create a new message.
+ */
+export const CreateBanResponseSchema: GenMessage<CreateBanResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 29);
+
+/**
+ * GET /api/workspaces/{id}/bans → newest first. DELETE /api/workspaces/{id}/bans/{user_id} →
+ * 204 (WORKSPACE_BAN_REMOVE to the owner / admins); the user may be invited again.
+ *
+ * @generated from message calaba.v1.ListBansResponse
+ */
+export type ListBansResponse = Message<"calaba.v1.ListBansResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.WorkspaceBan bans = 1;
+   */
+  bans: WorkspaceBan[];
+};
+
+/**
+ * Describes the message calaba.v1.ListBansResponse.
+ * Use `create(ListBansResponseSchema)` to create a new message.
+ */
+export const ListBansResponseSchema: GenMessage<ListBansResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 30);
 
 /**
  * @generated from enum calaba.v1.WorkspaceVisibility

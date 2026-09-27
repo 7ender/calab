@@ -42,6 +42,8 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_NOT_PAIRED: { key: 'rec.start.notPaired' },
   ERROR_CODE_ALREADY_RECORDING: { key: 'rec.start.already' },
   ERROR_CODE_RECORDING_LIMIT: { key: 'rec.start.busy', retry: true },
+  ERROR_CODE_WORKSPACE_SUSPENDED: { key: 'err.suspended' },
+  ERROR_CODE_BANNED: { key: 'err.banned' },
 };
 
 /** ERROR_CODE_VALIDATION `field` (protojson name, see apps/server Validation(...)) → text. */

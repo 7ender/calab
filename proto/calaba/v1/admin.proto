@@ -27,6 +27,9 @@ message AdminWorkspace {
   string plan_note = 5;
   string plan_updated_by = 6; // user id; empty = never set
   google.protobuf.Timestamp plan_updated_at = 7;
+  // Suspension (workspace.suspension has when / why): who suspended it.
+  string suspended_by = 8;       // user id
+  string suspended_by_email = 9;
 }
 
 // GET /api/admin/workspaces?q= (superadmin; others get 404). q matches name, slug or the
@@ -69,4 +72,17 @@ message PlanLogEntry {
 
 message AdminPlanLogResponse {
   repeated PlanLogEntry entries = 1;
+}
+
+// PUT /api/admin/workspaces/{id}/suspension. suspended=true needs a reason (1..500 characters;
+// shown to the owner / admins); false resumes (the reason is ignored). Idempotent. Every change
+// is logged; WORKSPACE_UPDATE follows (Workspace.suspension). Suspending disconnects everyone
+// from the workspace's voice rooms.
+message AdminSetSuspensionRequest {
+  bool suspended = 1;
+  string reason = 2;
+}
+
+message AdminSetSuspensionResponse {
+  AdminWorkspace workspace = 1;
 }

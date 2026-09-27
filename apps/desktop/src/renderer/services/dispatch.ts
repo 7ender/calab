@@ -13,6 +13,8 @@ import { activeRoomId, useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
 import { useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms } from './chat';
+import { queryClient } from '../lib/queryClient';
+import { bansKey } from '../lib/moderation';
 import { applyDm, refreshDmPreview, refreshDms } from './dms';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
@@ -132,6 +134,13 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'workspaceMemberRemove':
       useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId);
       return;
+    case 'workspaceBanAdd':
+    case 'workspaceBanRemove': {
+      // Owner / admins only (docs/09 #32): «Забаненные» refetches if it is open or cached.
+      const wsId = e.case === 'workspaceBanAdd' ? (e.value.ban?.workspaceId ?? '') : e.value.workspaceId;
+      void queryClient.invalidateQueries({ queryKey: bansKey(wsId) });
+      return;
+    }
     case 'roomCreate':
     case 'roomUpdate':
       if (e.value.room) useRooms.getState().upsert(e.value.room);

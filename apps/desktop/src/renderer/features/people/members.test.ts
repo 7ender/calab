@@ -136,6 +136,17 @@ describe('memberActions', () => {
     expect(memberActions(base({ target: member('me', 'Me', WorkspaceRole.ADMIN) })).kick).toBe(false);
   });
 
+  it('ban (docs/09 #32): the same rule as kick, guests included', () => {
+    const adminT = member('t', 'A', WorkspaceRole.ADMIN);
+    expect(memberActions(base({ target: member('t', 'M', WorkspaceRole.MEMBER) })).ban).toBe(true);
+    expect(memberActions(base({ target: member('t', 'G', WorkspaceRole.GUEST, '', true) })).ban).toBe(true);
+    expect(memberActions(base({ target: adminT })).ban).toBe(false);
+    expect(memberActions(base({ myRole: WorkspaceRole.OWNER, target: adminT })).ban).toBe(true);
+    expect(memberActions(base({ myRole: WorkspaceRole.OWNER, target: member('t', 'O', WorkspaceRole.OWNER) })).ban).toBe(false);
+    expect(memberActions(base({ target: member('me', 'Me', WorkspaceRole.ADMIN) })).ban).toBe(false);
+    expect(memberActions(base({ myRole: WorkspaceRole.MEMBER, target: member('t', 'M', WorkspaceRole.MEMBER) })).ban).toBe(false);
+  });
+
   it('room overrides: MOVE_MEMBERS granted per room limits the submenu to those rooms', () => {
     const grant = [
       create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: 'me', allow: PERMISSION_BITS.MOVE_MEMBERS, deny: 0n }),

@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ArrowRightLeft, AtSign, MessageCircle, Check, ChevronRight, IdCard, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRightLeft, AtSign, Ban, MessageCircle, Check, ChevronRight, IdCard, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -11,7 +11,7 @@ import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { copyUserId, disconnectFromVoice, moveMember, openProfile, promoteGuest, removeMember, serverMute, serverUnmute, setMemberRole, stopMemberCamera } from './actions';
+import { banMember, copyUserId, disconnectFromVoice, moveMember, openProfile, promoteGuest, removeMember, serverMute, serverUnmute, setMemberRole, stopMemberCamera } from './actions';
 import { USER_VOLUME_MAX, userVolumeCapped } from '../../lib/voiceLogic';
 import { requestMention } from '../chat/mentionRequest';
 import { memberActions, type MenuActions } from './members';
@@ -153,7 +153,7 @@ function MemberMenuContent({
   const forMe = a.volume || a.localMute || a.hideVideo;
   const manageItems = a.rename || a.roles !== null || a.moveTargets.length > 0;
   const moderation = a.serverMute || a.serverUnmute || a.stopCamera || a.disconnect;
-  const admin = a.promote || a.removeGuest || a.kick;
+  const admin = a.promote || a.removeGuest || a.kick || a.ban;
   const setHidden = (on: boolean): void => {
     const next = { ...hiddenVideo };
     if (on) next[userId] = true;
@@ -290,6 +290,11 @@ function MemberMenuContent({
       {a.kick ? (
         <ContextMenu.Item className={cx(row, danger)} onSelect={() => void removeMember(workspaceId, userId, false)}>
           <UserX className="size-4" aria-hidden /> {t('people.menu.kick')}
+        </ContextMenu.Item>
+      ) : null}
+      {a.ban ? (
+        <ContextMenu.Item className={cx(row, danger)} onSelect={() => void banMember(workspaceId, userId)} data-testid="member-ban">
+          <Ban className="size-4" aria-hidden /> {t('ban.menu')}
         </ContextMenu.Item>
       ) : null}
 

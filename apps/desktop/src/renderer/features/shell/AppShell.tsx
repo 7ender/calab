@@ -9,6 +9,7 @@ import { installPresenceTimer } from '../../services/presenceTimer';
 import { installHotkeys } from '../../services/hotkeys';
 import { installEmail } from '../../services/email';
 import { VerifyBanner } from '../auth/VerifyEmail';
+import { SuspendedBanner } from '../workspace/SuspendedBanner';
 import { defaultRoom, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
@@ -97,6 +98,7 @@ export function AppShell(): ReactNode {
       <TitleBar />
       {/* ADR-0023: «Подтвердите почту» over the main content until the code is entered. */}
       <VerifyBanner />
+      <SuspendedBanner />
       {showReconnect ? (
         <div role="status" className="z-[var(--z-sticky)] bg-warn px-3 py-1 text-center text-caption font-medium text-black">
           {t('gateway.reconnecting')}

@@ -35,6 +35,8 @@ type RoomAccess struct {
 	// channels instead of a workspace channel.
 	DM      bool
 	Members []uuid.UUID
+	// Suspended: the workspace is suspended by a superadmin (read-only; item 32).
+	Suspended bool
 }
 
 // ok reports a resolved access (the zero value = no access).
@@ -114,6 +116,7 @@ func (r *Resolver) Room(ctx context.Context, roomID, userID uuid.UUID) (RoomAcce
 				WorkspaceID: *row.WorkspaceID,
 				Role:        role,
 				Bits:        Compute(role, override(row.RoleAllow, row.RoleDeny), override(row.UserAllow, row.UserDeny)),
+				Suspended:   row.Suspended,
 			}
 		}
 		r.mu.Lock()

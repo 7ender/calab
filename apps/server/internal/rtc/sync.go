@@ -118,6 +118,12 @@ func (p SyncPublisher) sync(wid uuid.UUID, ev *v1.DispatchEvent) {
 		}
 	case *v1.DispatchEvent_WorkspaceDelete:
 		p.async(func(ctx context.Context) { p.S.disconnect(ctx, wid, func(voice.SessionState) bool { return true }) })
+	case *v1.DispatchEvent_WorkspaceUpdate:
+		// A suspended workspace has no calls (item 32): everyone is disconnected; joining again
+		// is refused (403 WORKSPACE_SUSPENDED).
+		if e.WorkspaceUpdate.GetWorkspace().GetSuspension() != nil {
+			p.async(func(ctx context.Context) { p.S.disconnect(ctx, wid, func(voice.SessionState) bool { return true }) })
+		}
 	}
 }
 
