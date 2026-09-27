@@ -84,6 +84,11 @@ Calab — корпоративный мессенджер, в котором г�
 - **Гостевые ссылки на комнату** — человек вводит имя и оказывается в разговоре без регистрации, видит только эту комнату; админ может сделать гостя участником.
 - Никнеймы в пространстве, переименование участников, история сеансов с завершением на других устройствах, смена пароля и email.
 
+### 🤖 Боты
+- **Бот — это пользователь** с токеном: тот же REST и gateway, права — через роли, как у людей. Пишет и читает чат, отвечает на `/команды`, реагирует, работает в DM; события — по WebSocket или webhook с HMAC-подписью.
+- **Голос**: бот входит в голосовую комнату через LiveKit — слышит участников и говорит сам (Node, Python, Go).
+- SDK на TypeScript (`packages/bot-sdk`), примеры (`examples/bots`: echo, голосовое эхо, TTS, Python) и документация — [docs/19-bot-api.md](docs/19-bot-api.md) · [English](docs/19-bot-api.en.md).
+
 ### 🔒 Надёжность и безопасность
 - **Работает везде**: UDP → ICE/TCP → TURN/UDP 443 → TURN/TLS 443 автоматически; один публичный IP; проверено из-за VPN и через relay.
 - **Переподключение без потерь**: gateway с последовательностью событий и `RESUME`, восстановление после сна ноутбука и обрыва сети, оптимистичная отправка с идемпотентностью.
@@ -118,7 +123,7 @@ Desktop (Electron) / Web ──HTTPS/WSS──▶ Caddy :443 ──▶ Go API + 
 | Данные | PostgreSQL 18, Valkey 9, локальное файловое хранилище (S3-драйвер в планах) |
 | Edge | Caddy + layer4 (HTTPS и TURN/TLS на одном 443) |
 
-Подробно: [архитектура](docs/01-architecture.md) · [медиа](docs/02-media.md) · [сеть](docs/03-network.md) · [модель данных и права](docs/04-data-model.md) · [realtime-протокол](docs/05-realtime-protocol.md) · [деплой](docs/06-deployment.md) · [дизайн-система](docs/08-design.md) · [бренд и домены](docs/10-branding.md) · [ADR](docs/adr/).
+Подробно: [архитектура](docs/01-architecture.md) · [медиа](docs/02-media.md) · [сеть](docs/03-network.md) · [модель данных и права](docs/04-data-model.md) · [realtime-протокол](docs/05-realtime-protocol.md) · [Bot API](docs/19-bot-api.md) · [деплой](docs/06-deployment.md) · [дизайн-система](docs/08-design.md) · [бренд и домены](docs/10-branding.md) · [ADR](docs/adr/).
 
 ## Быстрый старт
 
@@ -158,6 +163,8 @@ apps/desktop      Electron-клиент и веб-сборка (общий rende
 apps/server       Go API + WebSocket gateway, миграции, sqlc
 apps/landing      сайт calab.ru (Next.js static export)
 packages/protocol TS-контракт из protobuf, права, пресеты
+packages/bot-sdk  SDK для ботов (TypeScript)
+examples/bots     примеры ботов: echo, voice-echo, tts, Python
 proto/            protobuf — единственный источник контракта
 infra/docker      compose, Caddy, LiveKit, бэкапы, релизный runbook
 docs/             архитектура, дизайн, ADR
