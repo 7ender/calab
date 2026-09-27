@@ -731,9 +731,11 @@ test('self-status-menu', async ({ open, win, mock, shot }) => {
   await win.getByRole('button', { name: /^Мой статус/ }).click();
   const menu = win.getByTestId('status-menu');
   await expect(menu).toBeVisible();
-  await menu.getByRole('menuitem', { name: /^Не беспокоить/ }).hover();
-  await expect(win.getByRole('menuitem', { name: '3 дня' })).toBeVisible();
-  await checkpoint(shot, 'self-status-menu', { keepPointer: true });
+  // Keyboard: the submenu stays open (a parked pointer would close it).
+  await menu.getByRole('menuitem', { name: /^Не беспокоить/ }).focus();
+  await win.keyboard.press('ArrowRight');
+  await expect(win.getByRole('menuitem', { name: '15 минут' })).toBeFocused();
+  await checkpoint(shot, 'self-status-menu');
 });
 
 /** Mic ▾ (docs/09 #28): «Режим» switched to push-to-talk in the menu — key pill, «Изменить…», release delay. */

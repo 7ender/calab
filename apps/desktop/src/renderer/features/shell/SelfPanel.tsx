@@ -2,7 +2,7 @@ import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { IconButton, Slider, Tip, cx } from '../../components/ui';
+import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useHotkeyLabel } from '../../services/hotkeys';
 import { voice } from '../../services/voice';
@@ -13,6 +13,7 @@ import { useVoice } from '../../stores/voice';
 import { PttLastKey, bindingLabel, usePttCapture, type PttCapture } from '../settings/PttBinder';
 import { PttReleaseDelay } from '../settings/PttReleaseDelay';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
+import { MenuSliderItem } from './MenuSliderItem';
 import { selectMicMode, swallowMenuKey } from './micMenu';
 import { STATUS_KEY, StatusMenu, useMyStatus } from './StatusMenu';
 
@@ -208,13 +209,14 @@ function MicModeSection({ cap }: { cap: PttCapture }): ReactNode {
         </Dropdown.RadioItem>
       </Dropdown.RadioGroup>
       {micMode === 'voice' ? (
-        <div className="px-2 pb-2 pt-1">
-          <div className="mb-1 flex justify-between text-caption text-muted">
-            <span>{t('shell.inputVolume')}</span>
-            <span className="tabular-nums">{t('unit.db', { n: threshold })}</span>
-          </div>
-          <Slider label={t('shell.inputVolume')} value={threshold} min={-80} max={-10} step={1} onChange={(v) => setPrefs({ thresholdDb: v })} />
-        </div>
+        <MenuSliderItem
+          label={t('shell.inputVolume')}
+          valueText={t('unit.db', { n: threshold })}
+          value={threshold}
+          min={-80}
+          max={-10}
+          onChange={(v) => setPrefs({ thresholdDb: v })}
+        />
       ) : (
         <>
           {/* The key as a pill; the row (or Enter on it) arms the capture in place. */}
@@ -326,14 +328,15 @@ function DeviceMenu({
       {kind === 'audiooutput' ? (
         <>
           <Dropdown.Separator className={menuSeparator} />
-          <div className="px-2 pb-2 pt-1">
-            <div className="mb-1 flex justify-between text-caption text-muted">
-              <span>{t('shell.outputVolume')}</span>
-              <span className="tabular-nums">{Math.round(outputVolume * 100)}%</span>
-            </div>
-            {/* element.volume only (no WebAudio, docs/02 echo rule 1): 100 % is the maximum. */}
-            <Slider label={t('shell.outputVolume')} value={Math.round(outputVolume * 100)} min={0} max={100} step={1} onChange={(v) => setPrefs({ outputVolume: v / 100 })} />
-          </div>
+          {/* element.volume only (no WebAudio, docs/02 echo rule 1): 100 % is the maximum. */}
+          <MenuSliderItem
+            label={t('shell.outputVolume')}
+            valueText={`${Math.round(outputVolume * 100)}%`}
+            value={Math.round(outputVolume * 100)}
+            min={0}
+            max={100}
+            onChange={(v) => setPrefs({ outputVolume: v / 100 })}
+          />
         </>
       ) : null}
       <Dropdown.Separator className={menuSeparator} />
