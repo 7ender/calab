@@ -59,6 +59,8 @@ const KEY = new Set([
   'members-menu',
   'profile-dialog',
   'workspace-menu',
+  'self-mic-menu',
+  'self-status-menu',
   'quick-switcher',
   'settings-2',
   'settings-3',
@@ -723,12 +725,32 @@ test('shell-mentions', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'shell-mentions');
 });
 
-test('shell-profile', async ({ open, win, mock, shot }) => {
+/** Status menu (docs/09 #29): «Не беспокоить» hovered — its duration submenu open to the right. */
+test('self-status-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await win.getByRole('button', { name: /^Мой статус/ }).click();
-  await expect(win.getByRole('radiogroup', { name: 'Статус и профиль' })).toBeVisible();
-  await checkpoint(shot, 'shell-profile');
+  const menu = win.getByTestId('status-menu');
+  await expect(menu).toBeVisible();
+  // Keyboard: the submenu stays open (a parked pointer would close it).
+  await menu.getByRole('menuitem', { name: /^Не беспокоить/ }).focus();
+  await win.keyboard.press('ArrowRight');
+  await expect(win.getByRole('menuitem', { name: '15 минут' })).toBeFocused();
+  await checkpoint(shot, 'self-status-menu');
+});
+
+/** Mic ▾ (docs/09 #28): «Режим» switched to push-to-talk in the menu — key pill, «Изменить…», release delay. */
+test('self-mic-menu', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByRole('button', { name: 'Выбор микрофона' }).click();
+  const menu = win.getByTestId('mic-menu');
+  await expect(menu).toBeVisible();
+  await menu.getByRole('menuitemradio', { name: 'Push-to-talk' }).click();
+  // The menu stays open and shows the PTT controls in place.
+  await expect(menu.getByTestId('mic-ptt-key')).toBeVisible();
+  await expect(menu.getByTestId('ptt-release-compact')).toBeVisible();
+  await checkpoint(shot, 'self-mic-menu');
 });
 
 test('workspace-menu', async ({ open, win, mock, shot }) => {
@@ -799,7 +821,7 @@ test('settings-plan', async ({ open, win, mock, shot }) => {
 /** «Администрирование» (superadmin, ADR-0024): the search and the workspace cards. */
 async function openAdmin(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: /^Мой статус/ }).click();
-  await page.getByRole('button', { name: 'Администрирование' }).click();
+  await page.getByRole('menuitem', { name: 'Администрирование' }).click();
   const admin = page.getByTestId('admin-window');
   await expect(admin.getByTestId('admin-workspace')).toHaveCount(3);
   return admin;

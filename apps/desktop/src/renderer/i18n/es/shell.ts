@@ -95,6 +95,10 @@ export const esShell: DictShape<typeof enShell> = {
   // self panel
   'shell.inVoiceStatus': 'En voz',
   'shell.micOptions': 'Elegir micrófono',
+  'shell.micMode': 'Modo',
+  'shell.micModeVoice': 'Por voz',
+  'shell.pttChange': 'Cambiar…',
+  'shell.pttEscCancel': 'Esc para cancelar',
   'shell.outputOptions': 'Elegir dispositivo de salida',
   'shell.inputDevice': 'Dispositivo de entrada',
   'shell.outputDevice': 'Dispositivo de salida',

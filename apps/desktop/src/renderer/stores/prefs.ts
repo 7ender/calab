@@ -73,6 +73,8 @@ export interface Prefs {
   devStats: boolean;
   /** Chosen presence (PresenceStatus value), re-sent after every gateway (re)connect. */
   presence: PresenceStatus;
+  /** When the chosen status ends (epoch ms; status menu «1 час»…, docs/09 #29) → back to «В сети». null = until changed. */
+  presenceUntil: number | null;
   /** Personal voice bitrate cap (UserSettings.audio_bitrate_kbps); null = room setting. */
   personalBitrateKbps: number | null;
   /** First-run onboarding finished on this device (docs/08, «Онбординг»). */
@@ -116,6 +118,7 @@ const DEFAULTS: Prefs = {
   hotkeys: {},
   devStats: false,
   presence: PresenceStatus.ONLINE,
+  presenceUntil: null,
   personalBitrateKbps: null,
   onboarded: false,
   afkMinutes: 10,

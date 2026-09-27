@@ -5,6 +5,7 @@ import { useSettingsNav } from '../../components/SettingsWindow';
 import { t } from '../../i18n';
 import { PTT_RELEASE_STEPS_MS, releaseMs, releaseStep } from '../../lib/pttRelease';
 import { usePrefs } from '../../stores/prefs';
+import { MenuSliderItem } from '../shell/MenuSliderItem';
 import { isToggleBinding } from './PttBinder';
 
 /**
@@ -12,11 +13,18 @@ import { isToggleBinding } from './PttBinder';
  * hold key-up. Fixed stops 0…2000 ms (lib/pttRelease.ts), the value beside the label like the
  * VAD threshold row. A toggle binding does not use it — said in the caption instead of hiding the row.
  */
-export function PttReleaseDelay(): ReactNode {
+export function PttReleaseDelay({ compact = false }: { compact?: boolean }): ReactNode {
   const ms = releaseMs(usePrefs((s) => s.pttReleaseMs));
   const toggle = usePrefs((s) => isToggleBinding(s.pttBinding));
   const setPrefs = usePrefs((s) => s.setPrefs);
   const last = PTT_RELEASE_STEPS_MS.length - 1;
+  const set = (i: number): void => setPrefs({ pttReleaseMs: PTT_RELEASE_STEPS_MS[Math.max(0, Math.min(last, i))] ?? ms });
+  if (compact) {
+    // Mic ▾ menu (docs/09 #28): a slider menu item (caption label + value); no hint (Settings has it).
+    return (
+      <MenuSliderItem label={t('voice.pttRelease')} valueText={t('unit.ms', { n: ms })} value={releaseStep(ms)} min={0} max={last} onChange={set} testId="ptt-release-compact" />
+    );
+  }
   return (
     <div className="flex flex-col gap-2 px-3 py-3" data-settings-row data-testid="ptt-release">
       <div className="flex justify-between text-body">
@@ -30,7 +38,7 @@ export function PttReleaseDelay(): ReactNode {
         value={releaseStep(ms)}
         min={0}
         max={last}
-        onChange={(i) => setPrefs({ pttReleaseMs: PTT_RELEASE_STEPS_MS[Math.max(0, Math.min(last, i))] ?? ms })}
+        onChange={set}
       />
       <span className="text-caption text-faint">{toggle ? t('voice.pttReleaseToggle') : t('voice.pttReleaseHint')}</span>
     </div>

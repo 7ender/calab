@@ -1,7 +1,8 @@
 import { PresenceStatus } from '@calaba/protocol';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { thumbnailPath } from '../lib/api/endpoints';
 import { MediaImg } from './MediaImg';
+import { GLYPH_FILL, presenceDotGeometry, presenceGlyph, type PresenceGlyph } from './presenceDot';
 import { useWorkspaces } from '../stores/workspaces';
 import { cx } from './ui';
 
@@ -15,12 +16,53 @@ export function avatarColor(id: string): string {
   return PALETTE[Math.abs(h) % PALETTE.length] ?? 'var(--avatar-1)';
 }
 
-const PRESENCE_COLOR: Partial<Record<PresenceStatus, string>> = {
-  [PresenceStatus.ONLINE]: 'bg-ok',
-  // Dots are non-text: the system yellow in both themes (the light --color-yellow is a text tone).
-  [PresenceStatus.IDLE]: 'bg-[var(--color-presence-idle)]',
-  [PresenceStatus.DND]: 'bg-danger',
-};
+/**
+ * The presence dot (docs/08 «Присутствие», docs/09 #29): overlaps the avatar at the bottom right
+ * (centre on the circle at 45°) inside a cutout ring of the surface colour; the glyph — green dot,
+ * yellow moon, red dot with a bar, grey ring — is cut with the same colour (`--dot-ring`).
+ */
+function PresenceDot({ status, size, ring }: { status: PresenceStatus | undefined; size: number; ring: string | undefined }): ReactNode {
+  const g = presenceGlyph(status);
+  const { dot, ring: border, offset } = presenceDotGeometry(size);
+  const style = {
+    width: dot,
+    height: dot,
+    right: offset,
+    bottom: offset,
+    borderWidth: border,
+    '--dot-ring': ring ?? 'var(--color-side)',
+  } as CSSProperties;
+  return (
+    <span data-presence={g} aria-hidden className={cx('absolute box-content overflow-hidden rounded-full border-solid border-[var(--dot-ring)]', GLYPH_FILL[g])} style={style}>
+      <GlyphCut g={g} dot={dot} />
+    </span>
+  );
+}
+
+/** The glyph's cutout in the surface colour: the moon's bite, the DND bar, the offline hole. */
+function GlyphCut({ g, dot }: { g: PresenceGlyph; dot: number }): ReactNode {
+  const cut = 'absolute rounded-full bg-[var(--dot-ring)]';
+  const centred = cx(cut, 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2');
+  if (g === 'idle') return <span className={cut} style={{ width: dot * 0.75, height: dot * 0.75, left: -dot * 0.125, top: -dot * 0.125 }} />;
+  if (g === 'dnd') return <span className={centred} style={{ width: Math.round(dot * 0.625), height: Math.max(2, Math.round(dot * 0.25)) }} />;
+  if (g === 'offline') return <span className={centred} style={{ width: dot / 2, height: dot / 2 }} />;
+  return null;
+}
+
+/** The same glyph inline (status menu rows): `ring` is the surface it sits on. */
+export function StatusGlyph({ status, size = 10, ring }: { status: PresenceStatus; size?: number; ring: string }): ReactNode {
+  const g = presenceGlyph(status);
+  return (
+    <span
+      data-presence={g}
+      aria-hidden
+      className={cx('relative inline-block shrink-0 overflow-hidden rounded-full', GLYPH_FILL[g])}
+      style={{ width: size, height: size, '--dot-ring': ring } as CSSProperties}
+    >
+      <GlyphCut g={g} dot={size} />
+    </span>
+  );
+}
 
 /**
  * Round avatar (image or initial on an identity colour), optional presence dot and speaking
@@ -41,6 +83,8 @@ export function Avatar({
   fileId,
   size = 32,
   presence,
+  status,
+  ring,
   speaking,
   connecting,
   ringInside = false,
@@ -50,7 +94,12 @@ export function Avatar({
   name: string;
   fileId?: string;
   size?: number;
+  /** Show the presence dot from the store (the user's aggregate status). */
   presence?: boolean;
+  /** Show the dot with this status instead (the self panel: my chosen status). */
+  status?: PresenceStatus;
+  /** Surface colour around the dot (the cutout), e.g. `var(--color-popover-solid)`; default the sidebar. */
+  ring?: string;
   speaking?: boolean;
   connecting?: boolean;
   ringInside?: boolean;
@@ -60,8 +109,7 @@ export function Avatar({
   // Outset ring: on the picture itself (outline). Inset ring: an overlay above it (an inset
   // box-shadow on an <img> would be painted under the picture).
   const outsetSpeaking = !ringInside && speaking ? 'true' : undefined;
-  const status = useWorkspaces((s) => (presence ? s.presences[userId]?.status : undefined));
-  const dot = status !== undefined ? PRESENCE_COLOR[status] : undefined;
+  const stored = useWorkspaces((s) => (presence && status === undefined ? s.presences[userId]?.status : undefined));
   return (
     <span className={cx('relative inline-block shrink-0', className)} style={{ width: size, height: size }}>
       {fileId ? (
@@ -81,15 +129,7 @@ export function Avatar({
           {(name.trim()[0] ?? '?').toUpperCase()}
         </span>
       )}
-      {presence ? (
-        <span
-          className={cx(
-            'absolute -bottom-0.5 -right-0.5 rounded-full border-[3px] border-side',
-            dot ?? 'bg-faint',
-          )}
-          style={{ width: Math.max(10, size * 0.38), height: Math.max(10, size * 0.38) }}
-        />
-      ) : null}
+      {presence || status !== undefined ? <PresenceDot status={status ?? stored} size={size} ring={ring} /> : null}
       {ringInside && !connecting ? <span data-speaking={speaking ? 'true' : undefined} className="speak-ring-inset" aria-hidden /> : null}
       {connecting ? <span className={cx('connect-ring', ringInside && 'connect-ring-inset')} data-testid="connect-ring" aria-hidden /> : null}
     </span>
