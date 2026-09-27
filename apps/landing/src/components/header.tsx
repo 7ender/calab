@@ -1,15 +1,19 @@
 import type { Dict, Locale } from '@/i18n';
+import { localePath } from '@/i18n/locales';
 import { APP_URL, REPO_URL } from '@/lib/site';
 import { LocaleSwitcher } from './locale-switcher';
 import { Button, Container } from './ui';
 
-export function Header({ t, locale }: { t: Dict['header']; locale: Locale }) {
+/** `page`: '' on the home page, 'bots/' on /<locale>/bots/ — section links then lead back to the home page. */
+export function Header({ t, locale, page = '' }: { t: Dict['header']; locale: Locale; page?: string }) {
+  const home = page === '' ? '' : localePath(locale);
   const nav = [
-    { href: '#features', label: t.nav.features },
-    { href: '#how', label: t.nav.how },
-    { href: '#download', label: t.nav.download },
-    { href: '#pricing', label: t.nav.pricing },
-    { href: '#faq', label: t.nav.faq },
+    { href: `${home}#features`, label: t.nav.features },
+    { href: `${home}#how`, label: t.nav.how },
+    { href: `${home}#download`, label: t.nav.download },
+    { href: `${home}#pricing`, label: t.nav.pricing },
+    { href: `${home}#faq`, label: t.nav.faq },
+    { href: localePath(locale, 'bots/'), label: t.nav.bots, current: page === 'bots/' },
     { href: REPO_URL, label: 'GitHub' },
   ];
   return (
@@ -21,7 +25,7 @@ export function Header({ t, locale }: { t: Dict['header']; locale: Locale }) {
         {t.skip}
       </a>
       <Container className="flex h-13 items-center justify-between gap-3">
-        <a href="#top" className="flex shrink-0 items-center gap-2 rounded-md" aria-label={t.home}>
+        <a href={home === '' ? '#top' : home} className="flex shrink-0 items-center gap-2 rounded-md" aria-label={t.home}>
           <img src="/icon-192.png" alt="" width={28} height={28} className="size-7" />
           <span className="text-[17px] font-semibold tracking-tight">Calab</span>
         </a>
@@ -29,7 +33,13 @@ export function Header({ t, locale }: { t: Dict['header']; locale: Locale }) {
           <ul className="flex items-center gap-6 text-[14px] text-fg-2">
             {nav.map((n) => (
               <li key={n.href}>
-                <a href={n.href} className="rounded-md whitespace-nowrap hover:text-fg motion-safe:transition-colors">
+                <a
+                  href={n.href}
+                  aria-current={n.current ? 'page' : undefined}
+                  className={
+                    'rounded-md whitespace-nowrap hover:text-fg motion-safe:transition-colors' + (n.current ? ' font-medium text-fg' : '')
+                  }
+                >
                   {n.label}
                 </a>
               </li>
@@ -37,7 +47,7 @@ export function Header({ t, locale }: { t: Dict['header']; locale: Locale }) {
           </ul>
         </nav>
         <div className="flex min-w-0 items-center gap-2">
-          <LocaleSwitcher locale={locale} label={t.language} />
+          <LocaleSwitcher locale={locale} label={t.language} page={page} />
           {/* Phones: a short label, so logo + language + button fit 360 px in every locale. */}
           <Button href={APP_URL} size="sm" variant="secondary">
             <span className="sm:hidden">{t.openWebShort}</span>

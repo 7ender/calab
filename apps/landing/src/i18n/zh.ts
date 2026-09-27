@@ -18,6 +18,7 @@ const zh: Dict = {
       download: '下载',
       pricing: '价格',
       faq: '常见问题',
+      bots: '机器人',
     },
     openWeb: '在浏览器中打开',
     openWebShort: '网页版',
@@ -217,6 +218,43 @@ const zh: Dict = {
     commercial: '商业许可',
     security: '安全',
     trademarks: '商标',
+    bots: 'Bot API',
+  },
+  bots: {
+    meta: {
+      title: 'Calab 机器人 — 通过 API 实现聊天、语音和命令',
+      description:
+        'Calab 机器人是持有令牌的成员：读写聊天、响应 /命令、通过 WebSocket 或 webhook 接收事件，并通过 LiveKit 在语音房间中说话。',
+    },
+    eyebrow: '机器人',
+    title: '机器人和其他成员一样',
+    lead: '在工作区设置中创建机器人并为其分配角色——它使用与应用相同的 API：聊天、命令、语音。',
+    cards: {
+      chat: {
+        title: '聊天',
+        text: '读写消息、回复、添加表情回应、发送文件和贴纸、发送私信。事件通过 WebSocket 实时到达。',
+      },
+      voice: {
+        title: '语音',
+        text: '通过 LiveKit 加入语音房间：听到参与者并自己说话——文字转语音、回声、音乐。支持 Node、Python 和 Go。',
+      },
+      commands: {
+        title: '命令',
+        text: '注册 /命令——输入“/”时输入框会提示。/cmd 消息会连同解析好的参数送达机器人。',
+      },
+      webhook: {
+        title: 'Webhook',
+        text: '无需保持连接：事件以带 HMAC 签名的 POST 请求送达，失败时自动重试。',
+      },
+    },
+    rights: '权限来自角色，与普通成员相同：机器人只能看到允许它进入的房间。',
+    codeTitle: 'TypeScript 回声机器人',
+    codeCaption: '此示例及另外三个示例（语音回声、文字转语音、Python 监听器）位于 {examples}。',
+    ctaTitle: '5 分钟创建第一个机器人',
+    ctaText: '令牌、REST、事件、webhook、语音、限制和错误码——详见文档。',
+    docs: 'Bot API 文档',
+    docsLang: '（英文）',
+    sdk: 'GitHub 上的 SDK',
   },
 };
 

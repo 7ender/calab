@@ -17,6 +17,7 @@ const es: Dict = {
       download: 'Descargar',
       pricing: 'Precios',
       faq: 'Preguntas',
+      bots: 'Bots',
     },
     openWeb: 'Abrir en el navegador',
     openWebShort: 'Versión web',
@@ -226,6 +227,43 @@ const es: Dict = {
     commercial: 'Licencia comercial',
     security: 'Seguridad',
     trademarks: 'Marcas registradas',
+    bots: 'Bot API',
+  },
+  bots: {
+    meta: {
+      title: 'Bots de Calab — chat, voz y comandos por API',
+      description:
+        'Los bots de Calab son miembros con un token: leen y escriben en el chat, responden a /comandos, reciben eventos por WebSocket o webhook y hablan en salas de voz a través de LiveKit.',
+    },
+    eyebrow: 'Bots',
+    title: 'Un bot es un miembro más',
+    lead: 'Crea un bot en los ajustes del espacio de trabajo y dale un rol: funciona con la misma API que la app — chat, comandos y voz.',
+    cards: {
+      chat: {
+        title: 'Chat',
+        text: 'Lee y escribe mensajes, responde, reacciona, envía archivos y stickers y escribe mensajes directos. Eventos en tiempo real por WebSocket.',
+      },
+      voice: {
+        title: 'Voz',
+        text: 'Entra en una sala de voz a través de LiveKit: oye a los participantes y habla — texto a voz, eco, música. En Node, Python o Go.',
+      },
+      commands: {
+        title: 'Comandos',
+        text: 'Registra /comandos: el editor los sugiere al escribir «/». Un mensaje /cmd llega al bot con sus argumentos.',
+      },
+      webhook: {
+        title: 'Webhook',
+        text: 'Sin conexión abierta: los eventos llegan como POST firmados con HMAC y se reintentan si fallan.',
+      },
+    },
+    rights: 'Los permisos vienen de los roles, como para las personas: un bot solo ve las salas a las que tiene acceso.',
+    codeTitle: 'Un bot de eco en TypeScript',
+    codeCaption: 'Este y tres ejemplos más — eco de voz, texto a voz y un oyente en Python — están en {examples}.',
+    ctaTitle: 'Tu primer bot en 5 minutos',
+    ctaText: 'Token, REST, eventos, webhook, voz, límites y códigos de error — en la documentación.',
+    docs: 'Documentación de la Bot API',
+    docsLang: '(en inglés)',
+    sdk: 'SDK en GitHub',
   },
 };
 

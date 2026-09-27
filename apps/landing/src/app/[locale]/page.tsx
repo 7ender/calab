@@ -24,7 +24,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
         <Pricing t={t.pricing} />
         <Faq t={t.faq} />
       </main>
-      <Footer t={t.footer} />
+      <Footer t={t.footer} locale={locale} />
     </>
   );
 }

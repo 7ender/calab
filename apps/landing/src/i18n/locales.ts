@@ -15,10 +15,11 @@ export const LOCALE_INFO: Record<Locale, { lang: string; ogLocale: string; name:
 
 export const isLocale = (v: string): v is Locale => (LOCALES as readonly string[]).includes(v);
 
-export const localePath = (l: Locale): string => `/${l}/`;
+/** `/ru/`, or a page under it: localePath('ru', 'bots/') → `/ru/bots/` (trailingSlash export). */
+export const localePath = (l: Locale, page = ''): string => `/${l}/${page}`;
 
 /** hreflang → path map for <link rel="alternate">, including x-default → the default locale. */
-export const hreflangAlternates = (): Record<string, string> => ({
-  ...Object.fromEntries(LOCALES.map((l) => [LOCALE_INFO[l].lang, localePath(l)])),
-  'x-default': localePath(DEFAULT_LOCALE),
+export const hreflangAlternates = (page = ''): Record<string, string> => ({
+  ...Object.fromEntries(LOCALES.map((l) => [LOCALE_INFO[l].lang, localePath(l, page)])),
+  'x-default': localePath(DEFAULT_LOCALE, page),
 });

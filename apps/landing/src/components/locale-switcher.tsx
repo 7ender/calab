@@ -6,10 +6,10 @@ import { LOCALE_INFO, LOCALE_STORAGE_KEY, LOCALES, localePath, type Locale } fro
 
 /**
  * Language pill in the header (ADR-0022 §3): a native <details> menu of plain links, so it works without JS.
- * With JS: remembers the explicit choice (read by the root redirect page), keeps the current #section,
+ * With JS: remembers the explicit choice (read by the root redirect page), keeps the current page and #section,
  * closes on outside click / Escape.
  */
-export function LocaleSwitcher({ locale, label }: { locale: Locale; label: string }) {
+export function LocaleSwitcher({ locale, label, page = '' }: { locale: Locale; label: string; page?: string }) {
   const ref = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ export function LocaleSwitcher({ locale, label }: { locale: Locale; label: strin
     }
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
     e.preventDefault();
-    window.location.assign(localePath(l) + window.location.hash);
+    window.location.assign(localePath(l, page) + window.location.hash);
   };
 
   const current = LOCALE_INFO[locale];
@@ -59,7 +59,7 @@ export function LocaleSwitcher({ locale, label }: { locale: Locale; label: strin
         {LOCALES.map((l) => (
           <li key={l}>
             <a
-              href={localePath(l)}
+              href={localePath(l, page)}
               hrefLang={LOCALE_INFO[l].lang}
               lang={LOCALE_INFO[l].lang}
               aria-current={l === locale ? 'page' : undefined}

@@ -17,7 +17,7 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
 
 ## Localization
 
-- Routes: `/ru/`, `/en/`, `/es/`, `/zh/` — one page per locale (`src/app/[locale]/`, `generateStaticParams`,
+- Routes: `/ru/`, `/en/`, `/es/`, `/zh/` and `/<locale>/bots/` (Bot API page, ADR-0031; docs link: ru → `docs/19-bot-api.md`, others → `.en.md`) — pages per locale (`src/app/[locale]/`, `generateStaticParams`,
   `dynamicParams = false`), `<html lang>`, title/description/OG, canonical and `hreflang` (+ `x-default → /en/`) per locale.
 - `/` is `out/index.html` from `src/app/index.html/route.ts`: a content-less redirect page (no React runtime). Order:
   the switcher's saved choice (`localStorage['calab.locale']`) → `navigator.languages` (first supported: ru/uk/be/kk →
