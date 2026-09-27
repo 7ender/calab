@@ -97,8 +97,15 @@ Authorization: Bearer gtd_…
 - `limit` — 1…2000, по умолчанию 500. Страница ≤ ~150 КБ JSON.
 - `total` — всего реплик. Транскрипт может замениться целиком при повторе обработки в вебе: если `total` изменился между страницами, клиент начинает заново.
 - Ошибки: 400 `bad_request` (`limit` вне 1…2000, `cursor` не число ≥ 0), 404 `not_found`, **409 `not_ready`** — транскрипта ещё нет (новый код в `MeetingDeviceApiErrorCode`). `cursor` ≥ `total` — 200 с пустыми `segments` и `next_cursor: null`.
+- Пустые `?cursor=` / `?limit=` — как отсутствующие; параметры проверяются до поиска записи (400 раньше 404). Пустой транскрипт (`[]`) — 200 с `total: 0`.
 
-### 3.3 Лимиты
+### 3.3 Реализация в GPTunneL
+
+Сделано по этой спецификации: репозиторий GPTunneL, ветка `feat/meetings-device-api-transcript` (worktree `gptunnel/.claude/worktrees/calab-device-api`, коммит `76dd787a41`): `routes/meetings/index.ts`, `services/meetings/{recordings,dto}.ts`, типы `MeetingDeviceRecordingResult`, `MeetingDeviceTranscriptPage`, код `not_ready` в `packages/shared/types/meetings.d.ts`, тесты `__tests__/{recordings,dto}.test.ts`. До выкатки на gptunnel.ru Calab получает 404 и работает по §5.
+
+**Проверено на проде 27.09** (gptunnel.ru и gptunnel.ai — один бэкенд): device token пространства стенда, запись 5 мин — `GET …/result` → 200, `Cache-Control: no-store`, поля ровно как в §3.1 (`summary` 1951 символ, `transcript_segments: 39`, `speakers: 2`, `language: "ru"`, `media_url`, `mime: "video/mp4"`); `GET …/transcript?limit=3` → `{id, language, total: 39, segments[{speaker, start, end, text}], next_cursor: "3"}`; клиент Calab (`gptunnel.Client.Result/Transcript`) читает всё без правок. `web_url` у прода — `https://app.gptunnel.ai/meetings/<id>` и на хосте gptunnel.ru: нормализация §4 нужна.
+
+### 3.4 Лимиты
 
 Отдельного лимита частоты нет (как у остальных методов устройства); клиенты читают результат один раз после `done` и при повторе. Calab: после `done` — `result`, затем все страницы `transcript` по 2000, кэширует у себя и больше не спрашивает; если ответ 404 на новый путь (старый GPTunneL) или 5xx — повторяет с backoff ≈ 3,5 суток (1 мин … 24 ч), затем прекращает.
 
