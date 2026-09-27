@@ -278,6 +278,52 @@ func TestRestrictedRoleGrant(t *testing.T) {
 	}
 }
 
+// Role order and deletion are no way in either (ADR-0029): an admin holding an allowing and a
+// (senior) denying role may not reorder them so the allow wins, nor delete the denying role.
+func TestRestrictedRoleOrderDelete(t *testing.T) {
+	f := setupRestricted(t)
+	adminID := builtinRole(t, f.o, f.wid, v1.WorkspaceRole_WORKSPACE_ROLE_ADMIN).GetId()
+	blocked := newRole(t, f.o, f.wid, "blocked", 0).GetId()
+	var g v1.GetRoomResponse
+	f.o.must(200, "GET", "/api/rooms/"+f.rid, nil, &g)
+	ovs := append(slices.Clone(g.GetRoom().GetPermissionOverrides()), roleOv(blocked, 0, perm.ViewRoom))
+	f.o.must(200, "PUT", "/api/rooms/"+f.rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: ovs}, nil)
+	order := func(u *user, ids ...string) int {
+		return u.do("PUT", "/api/workspaces/"+f.wid+"/roles/order", &v1.SetRoleOrderRequest{RoleIds: ids}, nil)
+	}
+	if st := order(f.o, blocked, f.insiders); st != 200 {
+		t.Fatalf("owner orders roles: %d", st)
+	}
+	if st, _ := setMemberRoles(f.o, f.wid, f.admin.id, adminID, f.insiders, blocked); st != 200 {
+		t.Fatalf("owner assigns insiders + blocked: %d", st)
+	}
+	if _, st := roomPerms(t, f.admin, f.rid); st != 404 {
+		t.Fatalf("blocked admin sees the room: %d", st)
+	}
+	ownerOnly := func(what string, st int) {
+		t.Helper()
+		var e v1.ApiError
+		if st != 403 || protojson.Unmarshal(f.admin.lastBody, &e) != nil || e.GetReason() != "OWNER_ONLY" {
+			t.Fatalf("%s: %d %s, want 403 OWNER_ONLY", what, st, f.admin.lastBody)
+		}
+	}
+	ownerOnly("admin puts insiders above blocked", order(f.admin, f.insiders, blocked))
+	ownerOnly("admin deletes blocked", f.admin.do("DELETE", "/api/workspaces/"+f.wid+"/roles/"+blocked, nil, nil))
+	if _, st := roomPerms(t, f.admin, f.rid); st != 404 {
+		t.Fatalf("admin sees the room after refused changes: %d", st)
+	}
+	// An admin who sees the room may reorder; the owner may delete.
+	if st := order(f.adminUser, f.insiders, blocked); st != 200 {
+		t.Fatalf("admin who sees the room reorders: %d, want 200", st)
+	}
+	if st := f.o.do("DELETE", "/api/workspaces/"+f.wid+"/roles/"+blocked, nil, nil); st != 204 {
+		t.Fatalf("owner deletes blocked: %d, want 204", st)
+	}
+	if _, st := roomPerms(t, f.admin, f.rid); st != 200 {
+		t.Fatalf("admin after the owner deleted blocked: %d, want 200", st)
+	}
+}
+
 // Live: setting the flag hides the room from an admin's gateway (ROOM_DELETE), clearing it
 // brings it back (ROOM_CREATE); the admin's READY never carries it or its call.
 func TestRestrictedRoomGateway(t *testing.T) {
