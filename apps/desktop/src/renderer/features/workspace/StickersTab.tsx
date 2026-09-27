@@ -10,7 +10,7 @@ import { STICKER_BATCH, STICKER_MAX_ANIMATED, coverOf, looksLikeWebp } from '../
 import { loadWorkspaceStickers } from '../../services/stickers';
 import { reportPlanError } from '../../services/plan';
 import { useStickers } from '../../stores/stickers';
-import { CommitInput } from '../settings/AppSettingsDialog';
+import { CommitInput } from '../settings/CommitInput';
 import { StickerImage } from '../chat/stickers/StickerImage';
 
 /*
