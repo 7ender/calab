@@ -24,7 +24,8 @@ export function roomPerms(roles: readonly RoleBits[] | undefined, userId: string
   // A DM (ADR-0020): the fixed set; the client only knows DMs it takes part in.
   if (room?.type === RoomType.DM) return computePermissions({ dm: { participant: true } });
   if (!room || !roles || roles.length === 0) return 0n;
-  return computeMemberRoomPermissions(roles, userId, room.permissionOverrides);
+  // ADR-0029: in a restricted room admins count as members; the owner (built-in owner role) has all.
+  return computeMemberRoomPermissions(roles, userId, room.permissionOverrides, room.restricted);
 }
 
 /** Workspace-level permissions (no room overrides): the OR of the member's roles. */
