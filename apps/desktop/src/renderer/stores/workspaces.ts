@@ -53,6 +53,22 @@ interface WorkspacesState {
   upsertUser: (u: User) => void;
 }
 
+/**
+ * A user object lives in `users` and, per workspace, inside `members[id].user` (READY snapshots);
+ * the member list renders the latter, so a profile / custom status change has to reach both.
+ */
+const withUser = (s: WorkspacesState, u: User): Partial<WorkspacesState> => {
+  const byId = { ...s.byId };
+  let touched = false;
+  for (const [wsId, e] of Object.entries(byId)) {
+    const m = e.members[u.id];
+    if (!m || m.user === u) continue;
+    byId[wsId] = { ...e, members: { ...e.members, [u.id]: { ...m, user: u } } };
+    touched = true;
+  }
+  return { users: { ...s.users, [u.id]: u }, ...(touched ? { byId } : {}) };
+};
+
 const withEntry = (
   s: WorkspacesState,
   id: string,
@@ -136,7 +152,7 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
         u && (u.statusText !== p.statusText || u.statusEmoji !== p.statusEmoji || (u.statusExpiresAt?.seconds ?? 0n) !== (p.statusExpiresAt?.seconds ?? 0n));
       return {
         presences: { ...s.presences, [p.userId]: p },
-        ...(stale ? { users: { ...s.users, [p.userId]: { ...u, statusText: p.statusText, statusEmoji: p.statusEmoji, statusExpiresAt: p.statusExpiresAt } } } : {}),
+        ...(stale ? withUser(s, { ...u, statusText: p.statusText, statusEmoji: p.statusEmoji, statusExpiresAt: p.statusExpiresAt }) : {}),
       };
     }),
   setVoiceState: (v) =>
@@ -157,7 +173,7 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
         return { ...e, voice };
       }),
     ),
-  upsertUser: (u) => set((s) => ({ users: { ...s.users, [u.id]: u } })),
+  upsertUser: (u) => set((s) => withUser(s, u)),
 }));
 
 /** Display name in a workspace: nickname > profile name. */
