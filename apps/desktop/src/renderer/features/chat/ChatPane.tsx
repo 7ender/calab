@@ -18,6 +18,7 @@ import { MessageList } from './MessageList';
 import { DmHeader, RoomHeader } from './RoomHeader';
 import { isDm } from '../../stores/dms';
 import { PinnedBar, SearchPanel } from './RoomPanels';
+import { MiniPlayer } from './MediaPlayer';
 import { roomLabel } from './roomLabel';
 
 export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId: string }): ReactNode {
@@ -112,6 +113,7 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
         <RoomHeader workspaceId={workspaceId} room={room} perms={perms} membersOpen={membersOpen} toggleMembers={toggleMembers} />
       )}
       {searchOpen ? <SearchPanel roomId={roomId} /> : <PinnedBar workspaceId={workspaceId} roomId={roomId} />}
+      <MiniPlayer roomId={roomId} />
 
       {inThisVoice ? <StreamArea /> : null}
       {inThisVoice ? <StatsOverlay /> : null}

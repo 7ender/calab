@@ -58,6 +58,11 @@ Ids: `00000000-0000-7000-80KK-NNNNNNNNNNNN` (KK = kind: 01 user, 02 workspace, 0
 - `общий` covers grouping, **bold** / *italic* / ~~strike~~ / `code`, a Go code block, links,
   mentions, a reply, an edited message, an image (640×400 PNG + 512×320 thumbnail) and a PDF.
 - Invites (2) and sessions (2 for Анна; the one matching the token is `current`).
+- «макеты» (Дизайн) ends with Вера's audio (`IDS.files.audio`, «Команда Calab - Джингл релиза.mp3», 6 s)
+  and video (`IDS.files.video`, `demo-clip.mp4`, 3 s 320×180) for the chat players; `injectMessage({ …,
+  attachments: [IDS.files.audio] })` posts them elsewhere (author = Вера). Files in `fixtures/`, made with:
+  `ffmpeg -f lavfi -i sine=frequency=440:duration=6:sample_rate=22050 -f lavfi -i sine=frequency=660:duration=6:sample_rate=22050 -filter_complex "[0][1]amix=inputs=2,volume=0.5,afade=t=out:st=5:d=1" -ac 1 -c:a libmp3lame -b:a 32k -map_metadata -1 release-jingle.mp3`;
+  `ffmpeg -f lavfi -i testsrc2=size=320x180:rate=15:duration=3 -f lavfi -i sine=frequency=330:duration=3:sample_rate=22050 -c:v libx264 -preset veryslow -crf 26 -pix_fmt yuv420p -profile:v baseline -c:a aac -b:a 24k -ac 1 -shortest -movflags +faststart -map_metadata -1 demo-clip.mp4`.
 - Chat extras: reactions (👍×3 incl. Анна, 🎉 on «Доброе утро! Релиз…»; 🔥 by Анна on Борис's reply),
   two pinned messages in `общий`, link previews for `https://calaba.test/docs/08-design` (with a
   local 382×200 PNG behind `/api/unfurl/image`) and `https://calaba.test/board`. Search

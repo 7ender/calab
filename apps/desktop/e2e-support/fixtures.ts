@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
@@ -144,6 +145,9 @@ export const IDS = {
     image: mockId('file', 1),
     pdf: mockId('file', 2),
     veraAvatar: mockId('file', 3),
+    /** Chat media player (docs/09 #41): fixtures/release-jingle.mp3 (6 s), fixtures/demo-clip.mp4 (3 s, 320×180). */
+    audio: mockId('file', 4),
+    video: mockId('file', 5),
   },
   sessions: {
     annaDesktop: mockId('session', 1),
@@ -519,7 +523,13 @@ const MESSAGES: MsgSpec[] = [
   { room: R.general, at: '2026-01-15T11:00:00Z', author: U.boris, content: '@here кто сегодня дежурит по стенду?' },
   { room: R.general, at: '2026-01-15T11:02:00Z', author: U.dina, content: 'Могу я, если дадите доступ.' },
   { room: R.general, at: '2026-01-15T11:05:00Z', author: U.boris, content: 'Готово, выдал.' },
+  // ---- «макеты» (Дизайн): the chat audio / video players (docs/09 #41); last, so earlier ids stay.
+  { room: R.designMockups, at: '2026-01-15T11:30:00Z', author: U.vera, content: 'Джингл для релиза', attachments: [IDS.files.audio] },
+  { room: R.designMockups, at: '2026-01-15T11:31:00Z', author: U.vera, content: 'И ролик с анимацией', attachments: [IDS.files.video] },
 ];
+
+/** Small media files for the players (≤ 100 KB, made with ffmpeg: e2e-support/README.md «Fixtures»). */
+const media = (name: string): Buffer => readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
 
 /** Number of messages in `общий` in the `data` scenario. */
 export const GENERAL_MESSAGE_COUNT = MESSAGES.filter((m) => m.room === R.general).length;
@@ -634,6 +644,16 @@ export function buildState(scenario: Scenario): MockState {
   s.files.set(IDS.files.pdf, {
     meta: fileMeta(IDS.files.pdf, IDS.workspaces.main, U.grigory, 'load-test-report.pdf', 'application/pdf', pdf, ts('2026-01-14T16:29:00Z')),
     bytes: pdf,
+  });
+  const jingle = media('release-jingle.mp3');
+  s.files.set(IDS.files.audio, {
+    meta: fileMeta(IDS.files.audio, IDS.workspaces.design, U.vera, 'Команда Calab - Джингл релиза.mp3', 'audio/mpeg', jingle, ts('2026-01-15T11:29:00Z')),
+    bytes: jingle,
+  });
+  const clip = media('demo-clip.mp4');
+  s.files.set(IDS.files.video, {
+    meta: fileMeta(IDS.files.video, IDS.workspaces.design, U.vera, 'demo-clip.mp4', 'video/mp4', clip, ts('2026-01-15T11:30:30Z')),
+    bytes: clip,
   });
   const avatar = encodePng(128, 128, avatarPicture([255, 150, 120], [96, 72, 190]));
   s.files.set(IDS.files.veraAvatar, {

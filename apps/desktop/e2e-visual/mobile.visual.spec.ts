@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
 
 /**
@@ -246,6 +246,24 @@ test('m-chat', async ({ page }) => {
   await box.fill('Длинное сообщение\nв несколько\nстрок\nс переносами\nи ещё одной');
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(page, 'm-chat-multiline', { main: true, snapshot: false });
+});
+
+// Chat audio player on a phone (docs/08 «Медиа в чате»): the same player, 44 px targets; the web
+// client shows the size until the file is played (no download just for the duration).
+test('m-chat-audio', async ({ page }) => {
+  await signedIn(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: 'Джингл для релиза', attachments: [IDS.files.audio] });
+  const player = page.getByTestId('audio-player');
+  await expect(player).toContainText('Джингл релиза');
+  for (const b of await player.getByRole('button').all()) {
+    const box = await b.boundingBox();
+    expect(box && Math.min(box.width, box.height), `${await b.getAttribute('aria-label')}: 44 px target`).toBeGreaterThanOrEqual(44);
+  }
+  await feedToBottom(page);
+  // At rest: the floating date pill fades out 1 s after scrolling.
+  await expect(page.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
+  await checkpoint(page, 'm-chat-audio', { main: true });
 });
 
 type Size = { width: number; height: number };
