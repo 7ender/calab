@@ -117,7 +117,7 @@ func New(cfg Config, d *db.DB, r rueidis.Client, eg rtc.Egress, gpt *gptunnel.Cl
 }
 
 // Routes registers the endpoints; wrap applies auth + the permission resolver.
-func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/workspaces/{id}/integrations/gptunnel", wrap(httpx.HandlerFunc(s.getIntegration)))
 	mux.Handle("POST /api/workspaces/{id}/integrations/gptunnel", wrap(httpx.HandlerFunc(s.pairIntegration)))
 	mux.Handle("DELETE /api/workspaces/{id}/integrations/gptunnel", wrap(httpx.HandlerFunc(s.unpairIntegration)))

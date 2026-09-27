@@ -59,7 +59,7 @@ func NewService(r rueidis.Client, secret []byte, limiter *redisx.RateLimiter, o 
 }
 
 // Routes registers authenticated routes.
-func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/unfurl", wrap(httpx.HandlerFunc(s.unfurl)))
 	mux.Handle("GET /api/unfurl/image", wrap(httpx.HandlerFunc(s.image)))
 }

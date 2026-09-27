@@ -35,7 +35,7 @@ type Handlers struct {
 func NewHandlers(d *db.DB, ev events.Publisher) *Handlers { return &Handlers{db: d, events: ev} }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
-func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/workspaces/{id}/rooms", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("GET /api/workspaces/{id}/rooms", wrap(httpx.HandlerFunc(h.list)))
 	mux.Handle("GET /api/rooms/{id}", wrap(httpx.HandlerFunc(h.get)))

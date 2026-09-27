@@ -114,6 +114,23 @@ type Config struct {
 	// Mail limits: per recipient address and for the whole server, per hour.
 	MailPerAddressPerHour int `env:"MAIL_PER_ADDRESS_PER_HOUR" envDefault:"3"`
 	MailPerHour           int `env:"MAIL_PER_HOUR" envDefault:"200"`
+
+	// Bot API limits per bot (ADR-0031): requests per second (burst = one second's worth) and
+	// messages per minute. 0 = the default.
+	BotRatePerSec     int `env:"BOT_RATE_PER_SEC" envDefault:"30"`
+	BotMessagesPerMin int `env:"BOT_MESSAGES_PER_MIN" envDefault:"20"`
+}
+
+// BotLimits returns the effective bot limits (defaults for 0).
+func (c *Config) BotLimits() (perSec, msgsPerMin int) {
+	perSec, msgsPerMin = c.BotRatePerSec, c.BotMessagesPerMin
+	if perSec <= 0 {
+		perSec = 30
+	}
+	if msgsPerMin <= 0 {
+		msgsPerMin = 20
+	}
+	return perSec, msgsPerMin
 }
 
 // PlanContact is the "contact us to buy" link shown to users (ADR-0024).
@@ -219,6 +236,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RecordingMaxConcurrent < 1 || c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/") {
 		errs = append(errs, errors.New("RECORDING_MAX_CONCURRENT must be >= 1, RECORDINGS_PATH set and RECORDING_EGRESS_DIR an absolute path"))
+	}
+	if c.BotRatePerSec < 0 || c.BotRatePerSec > 10000 || c.BotMessagesPerMin < 0 || c.BotMessagesPerMin > 100000 {
+		errs = append(errs, errors.New("BOT_RATE_PER_SEC must be 0..10000 and BOT_MESSAGES_PER_MIN 0..100000 (0 = default)"))
 	}
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("config: %w", err)

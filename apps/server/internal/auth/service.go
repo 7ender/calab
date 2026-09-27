@@ -27,6 +27,7 @@ import (
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -52,6 +53,11 @@ type Service struct {
 	// email invitations, see workspaces.AcceptEmailInvites) and returns the joined workspaces.
 	// Optional.
 	OnEmailVerified func(ctx context.Context, u sqlc.User) []uuid.UUID
+	// BotLimiter bounds the requests of one bot (ADR-0031, BOT_RATE_PER_SEC); nil = none.
+	BotLimiter *redisx.RateLimiter
+	// OnBotRequest runs for every authenticated bot request (presence of webhook-only bots).
+	// Optional; must not block.
+	OnBotRequest func(ctx context.Context, id Identity)
 }
 
 // NewService wires the auth service.

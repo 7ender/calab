@@ -59,7 +59,7 @@ func NewService(d *db.DB, a *auth.Service, ev events.Publisher, store blob.Store
 
 // Routes registers the routes: link management needs auth (wrap); preview and join are public (join
 // authenticates optionally).
-func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/rooms/{id}/invites", wrap(httpx.HandlerFunc(s.create)))
 	mux.Handle("GET /api/rooms/{id}/invites", wrap(httpx.HandlerFunc(s.list)))
 	mux.Handle("DELETE /api/rooms/{id}/invites/{inviteId}", wrap(httpx.HandlerFunc(s.revoke)))
@@ -326,6 +326,9 @@ func (s *Service) announce(ctx context.Context, row sqlc.GetRoomInviteByCodeRow,
 // join: POST /api/room-invites/{code}/join — scenarios (a)(b) with an access token,
 // (c) without one (guest account from `nickname`).
 func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
+	if auth.IsBotRequest(r) { // ADR-0031: room links are never for bots
+		return auth.ErrBotNotAllowed
+	}
 	row, err := s.load(r.Context(), r.PathValue("code"))
 	if err != nil {
 		return err

@@ -51,8 +51,13 @@ func (t *Tokens) Issue(userID, sessionID uuid.UUID) (string, time.Time, error) {
 
 // Identity is the authenticated principal of a request.
 type Identity struct {
-	UserID    uuid.UUID
+	UserID uuid.UUID
+	// SessionID is the auth session (device). For a bot it is the id of its current token
+	// (bots.token_id, ADR-0031): one "device", revoked together with the token.
 	SessionID uuid.UUID
+	// IsBot: authenticated with a bot token (ADR-0031); routes decide whether bots may call
+	// them (app route table, NoBots).
+	IsBot bool
 }
 
 // ErrInvalidToken covers every access-token failure (bad signature, expired, malformed).

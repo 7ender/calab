@@ -206,25 +206,23 @@ func (h *Hub) loop(c *conn, s *Session) {
 	}
 }
 
-// authenticate validates the access token; it closes the socket on failure.
+// authenticate validates the access token or bot token (ADR-0031); it closes the socket on
+// failure.
 func (h *Hub) authenticate(c *conn, token string) (auth.Identity, bool) {
-	id, err := h.auth.Tokens().Parse(token)
-	if err != nil {
-		c.closeGraceful(4004, "authentication failed")
-		return id, false
-	}
 	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
 	defer cancel()
-	revoked, err := h.auth.IsRevoked(ctx, id.SessionID)
-	if err != nil {
-		c.closeGraceful(4000, "try again")
-		return id, false
-	}
-	if revoked {
+	id, err := h.auth.AuthenticateToken(ctx, token)
+	switch {
+	case err == nil:
+		return id, true
+	case errors.Is(err, auth.ErrInvalidToken):
+		c.closeGraceful(4004, "authentication failed")
+	case errors.Is(err, auth.ErrSessionRevoked):
 		c.closeGraceful(4010, "session revoked")
-		return id, false
+	default:
+		c.closeGraceful(4000, "try again")
 	}
-	return id, true
+	return id, false
 }
 
 func deviceKey(user uuid.UUID) string     { return "gw:user:" + user.String() }

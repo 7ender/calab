@@ -38,7 +38,7 @@ func NewAdmin(d *db.DB, p *Service, ev events.Publisher, limiter *redisx.RateLim
 }
 
 // Routes registers the admin routes; wrap must apply auth.
-func (a *Admin) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (a *Admin) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	handle := func(pattern string, f httpx.HandlerFunc) { mux.Handle(pattern, wrap(a.guard(f))) }
 	handle("GET /api/admin/workspaces", a.search)
 	handle("GET /api/admin/workspaces/{id}", a.get)

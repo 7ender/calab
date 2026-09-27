@@ -99,7 +99,7 @@ func (h *Handlers) rateLimit(r *http.Request, action string) error {
 }
 
 // Public routes (no access token).
-func (h *Handlers) Public(mux *http.ServeMux) {
+func (h *Handlers) Public(mux httpx.Router) {
 	mux.Handle("POST /api/auth/register", httpx.HandlerFunc(h.register))
 	mux.Handle("POST /api/auth/login", httpx.HandlerFunc(h.login))
 	mux.Handle("POST /api/auth/refresh", httpx.HandlerFunc(h.refresh))
@@ -110,7 +110,7 @@ func (h *Handlers) Public(mux *http.ServeMux) {
 }
 
 // Private routes; wrap(...) must apply Require.
-func (h *Handlers) Private(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (h *Handlers) Private(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/me/sessions", wrap(httpx.HandlerFunc(h.listSessions)))
 	mux.Handle("DELETE /api/me/sessions/{id}", wrap(httpx.HandlerFunc(h.revokeSession)))
 	mux.Handle("PATCH /api/me/password", wrap(httpx.HandlerFunc(h.changePassword)))

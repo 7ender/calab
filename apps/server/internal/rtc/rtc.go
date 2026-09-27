@@ -77,7 +77,7 @@ func NewService(cfg Config, d *db.DB, r rueidis.Client, lk LiveKit, ev events.Pu
 }
 
 // Routes registers the rtc routes. The webhook is public (signature-checked).
-func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/rooms/{id}/join", wrap(httpx.HandlerFunc(s.join)))
 	mux.Handle("POST /api/rooms/{id}/voice/leave", wrap(httpx.HandlerFunc(s.leave)))
 	mux.Handle("POST /api/rooms/{id}/stream/request", wrap(httpx.HandlerFunc(s.requestStream)))
@@ -802,7 +802,7 @@ func mayMove(r *http.Request, wsID, target uuid.UUID) error {
 }
 
 // DisabledRoutes answers rtc endpoints with 503 when LiveKit is not configured.
-func DisabledRoutes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func DisabledRoutes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	h := httpx.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return httpx.Unavailable(errors.New("rtc: LiveKit is not configured"))
 	})
