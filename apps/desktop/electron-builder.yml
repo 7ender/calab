@@ -15,6 +15,9 @@ files:
   # uiohook-napi must be our patched build (Caps Lock, mouse 3–5 release; patches/uiohook-napi@*.patch),
   # compiled per arch below — never the upstream prebuilt binaries it ships.
   - '!**/node_modules/uiohook-napi/prebuilds/**'
+  # Source maps never ship (docs/18 step 10): the renderer's hidden maps stay in out/ for decoding
+  # production stacks; node_modules' maps (updater deps) are dead weight.
+  - '!**/*.map'
 # Chromium UI packs only for our languages (ADR-0022; docs/18 step 2): −46 MB unpacked, ≈ −11 MB
 # per dmg/zip/exe. electron-builder matches file names literally per platform — mac `en.lproj`,
 # `zh_CN.lproj`, win/linux `en-US.pak`, `zh-CN.pak` — so both spellings are listed (without en-US
