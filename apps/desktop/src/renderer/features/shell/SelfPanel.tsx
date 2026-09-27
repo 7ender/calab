@@ -384,6 +384,18 @@ function ProfilePopover(): ReactNode {
             {t('shell.editProfile')}
           </button>
         </Popover.Close>
+        {/* Product superadmin (SUPERADMIN_EMAILS, ADR-0024): plans of every workspace. */}
+        {me.isSuperadmin ? (
+          <Popover.Close asChild>
+            <button
+              type="button"
+              onClick={() => open({ kind: 'admin' })}
+              className="flex h-8 w-full items-center rounded-[5px] px-2 text-left text-body hover:bg-hover"
+            >
+              {t('admin.title')}
+            </button>
+          </Popover.Close>
+        ) : null}
       </div>
     </div>
   );
