@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
@@ -188,7 +189,11 @@ func (h *Hub) loop(c *conn, s *Session) {
 			c.sendFrame(&v1.GatewayFrame{Payload: &v1.GatewayFrame_HeartbeatAck{HeartbeatAck: &v1.HeartbeatAck{}}})
 			h.touch(s)
 		case *v1.GatewayFrame_SetPresence:
-			h.setPresence(s, p.SetPresence.GetStatus())
+			if p.SetPresence.GetUntil() != nil {
+				h.setManualPresence(s.user, p.SetPresence.GetStatus(), p.SetPresence.GetUntil())
+			} else {
+				h.setPresence(s, p.SetPresence.GetStatus())
+			}
 		case *v1.GatewayFrame_Typing:
 			h.typing(s, p.Typing.GetRoomId())
 		case *v1.GatewayFrame_Subscribe:
@@ -366,6 +371,9 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		return nil, err
 	}
 	ready := &v1.Ready{SessionId: s.id.String(), Me: pbconv.Me(u), PlanContact: h.cfg.PlanContact}
+	if m := manualFromDB(u.PresenceStatus, u.PresenceUntil, time.Now()); m.status != v1.PresenceStatus_PRESENCE_STATUS_UNSPECIFIED {
+		ready.Presence = m.self(uid)
+	}
 	for _, w := range wss {
 		role, err := res.Role(ctx, w.ID, uid)
 		if err != nil {
@@ -637,6 +645,9 @@ func softExempt(s *Session, f *v1.GatewayFrame) bool {
 	case *v1.GatewayFrame_Heartbeat:
 		return true
 	case *v1.GatewayFrame_SetPresence:
+		if p.SetPresence.GetUntil() != nil {
+			return true // a manual choice from the status menu (rare, user-initiated)
+		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		return s.status != p.SetPresence.GetStatus()
@@ -663,6 +674,54 @@ func (h *Hub) setPresence(s *Session, st v1.PresenceStatus) {
 	if err := h.pres.set(ctx, s.user, s.id, st); err == nil {
 		h.publishPresence(ctx, s.user)
 	}
+}
+
+// maxManualPresence bounds SetPresence.until (the status menu offers up to 3 days).
+const maxManualPresence = 30 * 24 * time.Hour
+
+// setManualPresence stores the user's manual status for all their devices (docs/05
+// «Presence»): Postgres first (durable, read by the sweeper), then Valkey, then announces it.
+// ONLINE, an unknown status or an end already past clears it.
+func (h *Hub) setManualPresence(user uuid.UUID, st v1.PresenceStatus, until *timestamppb.Timestamp) {
+	now := time.Now()
+	var m manualStatus
+	if manualAllowed(st) {
+		m.status = st
+		if until.GetSeconds() != 0 || until.GetNanos() != 0 {
+			m.until = until.AsTime()
+			if lim := now.Add(maxManualPresence); m.until.After(lim) {
+				m.until = lim
+			}
+		}
+		if !m.active(now) {
+			m = manualStatus{}
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	arg := sqlc.SetManualPresenceParams{ID: user}
+	if m.status != v1.PresenceStatus_PRESENCE_STATUS_UNSPECIFIED {
+		n := int16(m.status) //nolint:gosec // small enum
+		arg.Status = &n
+		if !m.until.IsZero() {
+			arg.Until = &m.until
+		}
+	}
+	if err := h.db.Q.SetManualPresence(ctx, arg); err != nil {
+		slog.Warn("gateway: set manual presence", "err", err)
+		return
+	}
+	if err := h.pres.setManual(ctx, user, m); err != nil {
+		slog.Warn("gateway: set manual presence", "err", err)
+	}
+	h.manualChanged(ctx, user, m)
+}
+
+// manualChanged tells the user's devices their manual status (USER_UPDATE.presence) and
+// everyone else the new aggregate (PRESENCE_UPDATE, if it changed).
+func (h *Hub) manualChanged(ctx context.Context, user uuid.UUID, m manualStatus) {
+	h.pub.User(ctx, user, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Presence: m.self(user)}}})
+	h.publishPresence(ctx, user)
 }
 
 // typing publishes TYPING_START (VIEW_ROOM + SEND_MESSAGES; at most once per 3 s per user

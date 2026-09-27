@@ -24,9 +24,9 @@ export function afkDecision(a: { idleSec: number; thresholdMin: number; manual: 
 let away = false;
 let timer: number | null = null;
 
-/** Status this session should report (used after a gateway (re)connect). */
-export function effectivePresence(): PresenceStatus {
-  return away ? PresenceStatus.IDLE : prefs().presence;
+/** This session reports AFK idle (re-sent after a gateway (re)connect: a new session starts online). */
+export function isAway(): boolean {
+  return away;
 }
 
 async function check(): Promise<void> {

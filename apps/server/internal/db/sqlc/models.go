@@ -204,6 +204,8 @@ type User struct {
 	EmailVerifiedAt *time.Time
 	PendingEmail    *string
 	Locale          *string
+	PresenceStatus  *int16
+	PresenceUntil   *time.Time
 }
 
 type UserNote struct {
