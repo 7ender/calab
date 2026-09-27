@@ -103,7 +103,6 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.searchNewer': '下一个匹配项',
   'chat.searchClose': '关闭搜索',
   // header search field (docs/09 #50): the entry to the ⌘K search
-  'chat.searchWorkspace': '搜索{name}',
   // global search (⌘K)
   'search.title': '搜索',
   'search.hint': '房间、成员和消息；方向键选择，回车打开',

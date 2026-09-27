@@ -103,7 +103,6 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.searchNewer': 'Next match',
   'chat.searchClose': 'Close search',
   // header search field (docs/09 #50): the entry to the ⌘K search
-  'chat.searchWorkspace': 'Search {name}',
   // global search (⌘K)
   'search.title': 'Search',
   'search.hint': 'Rooms, members and messages; arrows to select, Enter to open',
