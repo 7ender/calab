@@ -323,14 +323,10 @@ test('invite-email', async ({ open, win, mock, shot }) => {
     locale: '',
   });
   await mainWindow(win, mock);
-  await openSettingsTab(
-    win,
-    async () => {
-      await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
-      await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
-    },
-    4,
-  );
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  // By name: the tab's position depends on the plan («Тариф» comes before it, ADR-0024).
+  await win.getByRole('dialog').getByRole('tab', { name: 'Приглашения' }).click();
   const field = win.getByRole('textbox', { name: 'Email для приглашения' });
   await field.fill('new.colleague@example.com');
   await win.getByRole('button', { name: 'Отправить приглашение на почту' }).click();
