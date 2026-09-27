@@ -494,6 +494,33 @@ func TestRecordingFailuresAndReconcile(t *testing.T) {
 	if _, err := os.Stat(local); !os.IsNotExist(err) {
 		t.Fatalf("old file kept: %v", err)
 	}
+
+	// Over GPTunneL's 4 h: failed with too_large before anything is sent.
+	pairWorkspace(t, o, ws.GetId())
+	bob.must(200, "POST", "/api/rooms/"+rid+"/recording/start", nil, &start)
+	recID = start.GetRecording().GetRecordingId()
+	egressID = lastEgress(t, rid)
+	egFake.mu.Lock()
+	req = egFake.starts[len(egFake.starts)-1]
+	egFake.mu.Unlock()
+	local = filepath.Join(recordDir, strings.TrimPrefix(req.GetFileOutputs()[0].GetFilepath(), "/out/"))
+	if err := os.WriteFile(local, []byte("mp4 bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ended = egFake.end(egressID, 9)
+	egFake.mu.Lock()
+	ended.FileResults[0].Duration = int64(4*time.Hour + time.Minute)
+	egFake.mu.Unlock()
+	if st := webhook(t, &livekit.WebhookEvent{Event: "egress_ended", Id: uniq("EV_eg"), CreatedAt: time.Now().Unix(), EgressInfo: ended}, "secret"); st != 200 {
+		t.Fatalf("egress_ended: %d", st)
+	}
+	g.wait("too_large card", func(e *v1.DispatchEvent) bool {
+		c := card(e)
+		return c.GetRecordingId() == recID && c.GetStatus() == v1.RecordingStatus_RECORDING_STATUS_FAILED && c.GetError() == "too_large"
+	})
+	if _, ok := gptFake.ByClientID(recID); ok {
+		t.Fatal("a recording over 4 h was sent to GPTunneL")
+	}
 }
 
 // lastEgress returns the id of the newest egress of room rid.
