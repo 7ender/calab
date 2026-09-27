@@ -23,9 +23,12 @@ type vector struct {
 	RoleOverrides     map[string]Override `json:"roleOverrides"`
 	ExpectedWorkspace *Bits               `json:"expectedWorkspace"`
 	// DM vectors (ADR-0020): roomType "dm" ignores role and overrides.
-	RoomType    string `json:"roomType"`
-	Participant bool   `json:"participant"`
-	Expected    Bits   `json:"expected"`
+	RoomType string `json:"roomType"`
+	// ADR-0029: a restricted room and whether the member is the workspace owner.
+	Restricted  bool `json:"restricted"`
+	Owner       bool `json:"owner"`
+	Participant bool `json:"participant"`
+	Expected    Bits `json:"expected"`
 }
 
 func loadVectors(t *testing.T) []vector {
@@ -55,7 +58,7 @@ func TestComputeVectors(t *testing.T) {
 			for i, r := range v.Roles {
 				roles[i] = RoleBits(r)
 			}
-			if got := ComputeRoles(roles, v.RoleOverrides, v.UserOverride); got != v.Expected {
+			if got := ComputeRoles(roles, Scope{Restricted: v.Restricted, Owner: v.Owner}, v.RoleOverrides, v.UserOverride); got != v.Expected {
 				t.Errorf("%s: ComputeRoles got %d want %d", v.Name, got, v.Expected)
 			}
 			// The same rule through a member and the room's override list (gateway, snapshots).
@@ -67,8 +70,12 @@ func TestComputeVectors(t *testing.T) {
 			if v.UserOverride != nil {
 				ovs = append(ovs, OverrideTarget{TargetType: "user", TargetID: uid, Override: *v.UserOverride})
 			}
-			m := NewMember(uid, RoleMember, roles)
-			if got := ComputeIn(m, ovs); got != v.Expected {
+			role := RoleMember
+			if v.Owner {
+				role = RoleOwner
+			}
+			m := NewMember(uid, role, roles)
+			if got := ComputeIn(m, v.Restricted, ovs); got != v.Expected {
 				t.Errorf("%s: ComputeIn got %d want %d", v.Name, got, v.Expected)
 			}
 			if v.ExpectedWorkspace != nil && m.Workspace() != *v.ExpectedWorkspace {
@@ -119,7 +126,7 @@ func BenchmarkComputeIn50Roles100Rooms(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		for _, ovs := range rooms {
-			_ = ComputeIn(m, ovs)
+			_ = ComputeIn(m, false, ovs)
 		}
 	}
 }

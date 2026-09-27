@@ -157,7 +157,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	}
 	bits := make(map[string]uint64, len(rs))
 	for _, r := range rs {
-		bits[r.GetId()] = uint64(perm.ComputeIn(me, pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())))
+		bits[r.GetId()] = uint64(perm.ComputeIn(me, r.GetRestricted(), pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())))
 	}
 	cats, err := q.ListCategories(ctx, ws.ID)
 	if err != nil {
@@ -850,11 +850,11 @@ func guestVisibleUsers(ctx context.Context, q *sqlc.Queries, wsID, guest uuid.UU
 	out := map[uuid.UUID]bool{guest: true}
 	for _, room := range rs {
 		ovs := byRoom[room.ID]
-		if !perm.ComputeIn(me, ovs).Has(perm.ViewRoom) {
+		if !perm.ComputeIn(me, room.Restricted, ovs).Has(perm.ViewRoom) {
 			continue
 		}
 		for id, m := range members {
-			if perm.ComputeIn(m, ovs).Has(perm.ViewRoom) {
+			if perm.ComputeIn(m, room.Restricted, ovs).Has(perm.ViewRoom) {
 				out[id] = true
 			}
 		}

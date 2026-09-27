@@ -81,7 +81,7 @@ func visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Mem
 	ids := make([]uuid.UUID, 0, len(rows))
 	for _, r := range rows {
 		ovs := byRoom[r.ID]
-		if !perm.ComputeIn(m, pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
+		if !perm.ComputeIn(m, r.Restricted, pbconv.OverrideTargets(ovs)).Has(perm.ViewRoom) {
 			continue
 		}
 		out = append(out, pbconv.Room(r, defaults, ovs))

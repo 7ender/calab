@@ -97,20 +97,28 @@ func NewMember(userID string, role Role, roles []RoleBits) Member {
 	return Member{UserID: userID, Role: role, Roles: rs}
 }
 
-// WorkspaceBits is the OR over role permissions; ADMINISTRATOR means everything.
-func WorkspaceBits(roles []RoleBits) Bits {
+// RawBits is the plain OR over role permissions (ADMINISTRATOR not expanded).
+func RawBits(roles []RoleBits) Bits {
 	var p Bits
 	for _, r := range roles {
 		p |= r.Permissions
 	}
-	if p&Administrator != 0 {
-		return All
-	}
 	return p
+}
+
+// WorkspaceBits is the OR over role permissions; ADMINISTRATOR means everything.
+func WorkspaceBits(roles []RoleBits) Bits {
+	if p := RawBits(roles); p&Administrator == 0 {
+		return p
+	}
+	return All
 }
 
 // Workspace returns the member's workspace-level permissions (no room overrides).
 func (m Member) Workspace() Bits { return WorkspaceBits(m.Roles) }
+
+// Raw returns the OR of the member's role permissions, ADMINISTRATOR not expanded.
+func (m Member) Raw() Bits { return RawBits(m.Roles) }
 
 // Top returns the position of the member's highest role (-1 without roles).
 func (m Member) Top() int32 {
@@ -130,18 +138,39 @@ func (m Member) Has(id string) bool {
 	return false
 }
 
-// ComputeOrdered is the one room-permission rule (ADR-0026): workspace bits (OR of the
-// member's roles; ADMINISTRATOR → everything, no overrides), then each role's override in
-// the room lowest position first (deny, then allow; the most senior role wins), then the
-// user's own override; without VIEW_ROOM nothing. Overrides only touch RoomOnly bits: the
-// workspace-level ones (ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES) are
-// neither granted nor taken away per room, whatever is stored. roleOvs are in the order of
-// the roles; a zero Override is "none".
-func ComputeOrdered(workspace Bits, roleOvs []Override, userOv *Override) Bits {
-	if workspace&Administrator != 0 {
+// Scope carries the room-level inputs of the rule besides the overrides (ADR-0029).
+type Scope struct {
+	// Restricted: rooms.restricted — ADMINISTRATOR gives no bypass in the room.
+	Restricted bool
+	// Owner: the user is the workspace owner (workspaces.owner_id, the holder of the built-in
+	// owner role): everything, always, restricted or not.
+	Owner bool
+}
+
+// ScopeOf returns the scope of member m in a room with the given restricted flag.
+func ScopeOf(m Member, restricted bool) Scope {
+	return Scope{Restricted: restricted, Owner: m.Role == RoleOwner}
+}
+
+// ComputeOrdered is the one room-permission rule (ADR-0026, ADR-0029): raw = OR of the
+// member's roles' permissions (not expanded). In a restricted room the owner gets everything
+// and ADMINISTRATOR is dropped (admins count as plain members); elsewhere ADMINISTRATOR means
+// everything, overrides ignored. Then each role's override in the room lowest position first
+// (deny, then allow; the most senior role wins), then the user's own override; without
+// VIEW_ROOM nothing. Overrides only touch RoomOnly bits: the workspace-level ones
+// (ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES) are neither granted nor
+// taken away per room, whatever is stored. roleOvs are in the order of the roles; a zero
+// Override is "none".
+func ComputeOrdered(raw Bits, sc Scope, roleOvs []Override, userOv *Override) Bits {
+	switch {
+	case sc.Restricted && sc.Owner:
+		return All
+	case sc.Restricted:
+		raw &^= Administrator
+	case raw&Administrator != 0:
 		return All
 	}
-	p := workspace
+	p := raw
 	for _, o := range roleOvs {
 		p &^= o.Deny & RoomOnly
 		p |= o.Allow & RoomOnly
@@ -158,7 +187,7 @@ func ComputeOrdered(workspace Bits, roleOvs []Override, userOv *Override) Bits {
 
 // ComputeRoles computes room permissions from the member's roles (any order), the room's
 // role overrides by role id and the user override (may be nil).
-func ComputeRoles(roles []RoleBits, roleOvs map[string]Override, userOv *Override) Bits {
+func ComputeRoles(roles []RoleBits, sc Scope, roleOvs map[string]Override, userOv *Override) Bits {
 	m := NewMember("", "", roles)
 	ovs := make([]Override, 0, len(m.Roles))
 	for _, r := range m.Roles {
@@ -166,7 +195,7 @@ func ComputeRoles(roles []RoleBits, roleOvs map[string]Override, userOv *Overrid
 			ovs = append(ovs, o)
 		}
 	}
-	return ComputeOrdered(m.Workspace(), ovs, userOv)
+	return ComputeOrdered(m.Raw(), sc, ovs, userOv)
 }
 
 // Compute is the pre-ADR-0026 form: one built-in role with its default permissions and its
@@ -180,7 +209,7 @@ func Compute(role Role, roleOv, userOv *Override) Bits {
 	if roleOv != nil {
 		ovs[string(role)] = *roleOv
 	}
-	return ComputeRoles([]RoleBits{{ID: string(role), Position: role.Position(), Permissions: rb}}, ovs, userOv)
+	return ComputeRoles([]RoleBits{{ID: string(role), Position: role.Position(), Permissions: rb}}, Scope{}, ovs, userOv)
 }
 
 // DM is the fixed permission set of both participants of a direct message (ADR-0020):

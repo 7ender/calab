@@ -213,7 +213,7 @@ func (s *wsState) bits(roomID, userID uuid.UUID) perm.Bits {
 	if !ok {
 		t = pbconv.ProtoOverrideTargets(s.rooms[roomID].GetPermissionOverrides())
 	}
-	return perm.ComputeIn(m, t)
+	return perm.ComputeIn(m, s.rooms[roomID].GetRestricted(), t)
 }
 
 func (s *wsState) canView(roomID, userID uuid.UUID) bool {

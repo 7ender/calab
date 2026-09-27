@@ -49,10 +49,12 @@ type OverrideTarget struct {
 	Override
 }
 
-// ComputeIn computes a member's permissions in a room from the room's full override list.
-func ComputeIn(m Member, overrides []OverrideTarget) Bits {
-	ws := m.Workspace()
-	if ws&Administrator != 0 {
+// ComputeIn computes a member's permissions in a room from the room's full override list;
+// restricted is the room's rooms.restricted flag (ADR-0029).
+func ComputeIn(m Member, restricted bool, overrides []OverrideTarget) Bits {
+	sc := ScopeOf(m, restricted)
+	raw := m.Raw()
+	if !restricted && raw&Administrator != 0 {
 		return All
 	}
 	var userOv *Override
@@ -72,5 +74,5 @@ func ComputeIn(m Member, overrides []OverrideTarget) Bits {
 			break
 		}
 	}
-	return ComputeOrdered(ws, roleOvs, userOv)
+	return ComputeOrdered(raw, sc, roleOvs, userOv)
 }
