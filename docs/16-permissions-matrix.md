@@ -1,11 +1,12 @@
 # Матрица прав: действие → бит → где проверяется
 
-Правило одно (docs/04, ADR-0026): `computePermissions` (TS) = `perm.ComputeOrdered` (Go), общие векторы `proto/testdata/permissions.json`. «ws» — права пространства (OR ролей, без переопределений), «room» — в комнате (с переопределениями ролей и пользователя). Сервер проверяет всё; клиент только скрывает UI (`lib/permissions`, `features/people/members.ts`) и пересчитывает его из стора на каждое событие (`READY`, `WORKSPACE_MEMBER_UPDATE`, `ROLE_*`, `ROOM_PERMISSIONS_UPDATE`, `ROOM_UPDATE`) — без реконнекта. Тесты: `internal/app/permissions_matrix_integration_test.go` (таблица действие × кто), unit — `lib/permissions.test.ts`, `features/people/members.test.ts`, `stores/workspaces.test.ts`.
+Правило одно (docs/04, ADR-0026): `computePermissions` (TS) = `perm.ComputeOrdered` (Go), общие векторы `proto/testdata/permissions.json`. «ws» — права пространства (OR ролей, без переопределений), «room» — в комнате (с переопределениями ролей и пользователя). Сервер проверяет всё; клиент только скрывает UI (`lib/permissions`, `features/people/members.ts`) и пересчитывает его из стора на каждое событие (`READY`, `WORKSPACE_MEMBER_UPDATE`, `ROLE_*`, `ROOM_PERMISSIONS_UPDATE`, `ROOM_UPDATE`) — без реконнекта. **Комната `restricted` (изменено ADR-0029):** `ADMINISTRATOR` в ней не даёт обхода — каждая строка ниже считается для админа как для участника (без `allow VIEW_ROOM` по роли/лично — 0), владелец — всё. Тесты: `internal/app/permissions_matrix_integration_test.go` (таблица действие × кто), unit — `lib/permissions.test.ts`, `features/people/members.test.ts`, `stores/workspaces.test.ts`.
 
 | Действие | Бит | Сервер | Клиент |
 |---|---|---|---|
 | Создать комнату / категорию, порядок (drag) | `MANAGE_ROOM` ws | `rooms.create`, `categories` | `mayArrangeRooms` |
 | Переименовать, настройки, удалить комнату | `MANAGE_ROOM` room | `rooms.manage` | `can(room,'MANAGE_ROOM')` |
+| «Только по списку» (`restricted`) приватной комнаты (изменено ADR-0029) | владелец (`workspaces.owner_id`), иначе `403 OWNER_ONLY` | `rooms.update` | `RoomSettings` (owner) |
 | Переопределения комнаты | `MANAGE_ROOM` room; не-админ — только свои биты | `rooms.validateOverrides` | вкладка «Права» |
 | `allow_recording` комнаты | `MANAGE_ROOM` room + `MANAGE_WORKSPACE` ws | `rooms.update` | `mayManageWorkspace` |
 | Ссылка-приглашение в комнату (гости) | `MANAGE_ROOM` room; не-админ — не шире своих | `guests.manage` | `roomMenuGroups` (voice + canManage) |
