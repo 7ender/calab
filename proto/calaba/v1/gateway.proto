@@ -168,6 +168,10 @@ message DispatchEvent {
     // A member was banned / unbanned (backlog item 32); to the owner and admins only.
     WorkspaceBanAdd workspace_ban_add = 34;
     WorkspaceBanRemove workspace_ban_remove = 35;
+    // Workspace roles (ADR-0026); to every member of the workspace.
+    RoleCreate role_create = 36;
+    RoleUpdate role_update = 37;
+    RoleDelete role_delete = 38;
   }
 }
 
@@ -227,6 +231,9 @@ message WorkspaceSnapshot {
   repeated RoomCategory categories = 8;
   // Rooms being recorded now (state ACTIVE; ADR-0025), among the visible rooms.
   repeated RoomRecording recordings = 9;
+  // All roles of the workspace (ADR-0026), highest position first; members[].role_ids
+  // refer to them.
+  repeated Role roles = 10;
 }
 
 message Ready {
@@ -347,6 +354,22 @@ message WorkspaceMemberAdd {
 
 message WorkspaceMemberUpdate {
   WorkspaceMember member = 1;
+}
+
+message RoleCreate {
+  Role role = 1;
+}
+
+// Also sent for every role whose position changed (create, order).
+message RoleUpdate {
+  Role role = 1;
+}
+
+// Clients drop role_id from every member's role_ids; the role's room overrides are gone
+// (ROOM_PERMISSIONS_UPDATE follows for each room that had one).
+message RoleDelete {
+  string workspace_id = 1;
+  string role_id = 2;
 }
 
 message WorkspaceMemberRemove {

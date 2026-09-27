@@ -209,6 +209,7 @@ export const ru = {
   'perm.MANAGE_NICKNAMES': 'Менять ники другим',
   'perm.MENTION_EVERYONE': 'Упоминать всех (@everyone, @here)',
   'perm.MANAGE_WORKSPACE': 'Управлять пространством',
+  'perm.MANAGE_ROLES': 'Управлять ролями',
   'perm.ADMINISTRATOR': 'Администратор',
   'perm.allow': 'разрешено',
   'perm.deny': 'запрещено',

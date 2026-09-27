@@ -1,6 +1,8 @@
 syntax = "proto3";
 package calaba.v1;
 
+import "google/protobuf/timestamp.proto";
+
 // Permission bits. See docs/04-data-model.md and ADR-0008. Never reuse a freed bit.
 enum Permission {
   PERMISSION_UNSPECIFIED = 0;
@@ -19,8 +21,13 @@ enum Permission {
   PERMISSION_MANAGE_NICKNAMES = 4096; // 1 << 12: workspace-level, change others' nicknames
   PERMISSION_MENTION_EVERYONE = 8192; // 1 << 13: @everyone / @here mention everyone who sees the room
   PERMISSION_VIDEO = 16384;           // 1 << 14: publish a webcam in voice rooms (member: yes by default)
+  // 1 << 15: workspace-level, create / edit / delete / order roles below one's highest role
+  // and assign them (ADR-0026). Not settable per room; only admins may grant it to a role.
+  PERMISSION_MANAGE_ROLES = 32768;
 }
 
+// Built-in workspace roles. Since ADR-0026 a member holds several roles (WorkspaceMember.
+// role_ids); WorkspaceMember.role stays as the highest built-in role for older clients.
 enum WorkspaceRole {
   WORKSPACE_ROLE_UNSPECIFIED = 0;
   WORKSPACE_ROLE_OWNER = 1;
@@ -32,4 +39,24 @@ enum WorkspaceRole {
 message PermissionOverride {
   uint64 allow = 1;
   uint64 deny = 2;
+}
+
+// A workspace role (ADR-0026). Four built-in roles exist in every workspace: OWNER and ADMIN
+// (full access; permissions fixed), MEMBER (every non-guest; default permissions editable)
+// and GUEST (editable within the guest set). Every non-guest member holds MEMBER, every guest
+// GUEST; custom roles are added on top.
+message Role {
+  string id = 1;
+  string workspace_id = 2;
+  // 1..32 characters. Built-in roles carry their key ("owner" | "admin" | "member" |
+  // "guest", fixed): clients show a localized name for them.
+  string name = 3;
+  uint32 color = 4; // 0xRRGGBB; 0 = no color
+  // Higher = more senior. Built-ins: guest 0, member 1, admin 1000, owner 1001; custom roles
+  // in between (2..). Room overrides of a member's roles apply lowest position first.
+  int32 position = 5;
+  uint64 permissions = 6; // workspace-level bits (OR over the member's roles)
+  WorkspaceRole builtin = 7; // UNSPECIFIED = custom role
+  bool mentionable = 8;
+  google.protobuf.Timestamp created_at = 9;
 }

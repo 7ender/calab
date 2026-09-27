@@ -8,7 +8,7 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { RoomMediaSettings, ScreenSharePreset } from "./media_pb.js";
 import { file_calaba_v1_media } from "./media_pb.js";
-import type { WorkspaceRole } from "./permissions_pb.js";
+import type { Role, WorkspaceRole } from "./permissions_pb.js";
 import { file_calaba_v1_permissions } from "./permissions_pb.js";
 import type { WorkspacePlan } from "./plan_pb.js";
 import { file_calaba_v1_plan } from "./plan_pb.js";
@@ -20,7 +20,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/workspace.proto.
  */
 export const file_calaba_v1_workspace: GenFile = /*@__PURE__*/
-  fileDesc("ChljYWxhYmEvdjEvd29ya3NwYWNlLnByb3RvEgljYWxhYmEudjEipwMKCVdvcmtzcGFjZRIKCgJpZBgBIAEoCRIMCgRzbHVnGAIgASgJEgwKBG5hbWUYAyABKAkSFAoMaWNvbl9maWxlX2lkGAQgASgJEjIKCnZpc2liaWxpdHkYBSABKA4yHi5jYWxhYmEudjEuV29ya3NwYWNlVmlzaWJpbGl0eRIQCghvd25lcl9pZBgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0Cg5tZWRpYV9kZWZhdWx0cxgIIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIbChNzdG9yYWdlX3F1b3RhX2J5dGVzGAkgASgEEhoKEnN0b3JhZ2VfdXNlZF9ieXRlcxgKIAEoBBIbChNhbGxvd19zZWxmX25pY2tuYW1lGAsgASgIEiYKBHBsYW4YDCABKAsyGC5jYWxhYmEudjEuV29ya3NwYWNlUGxhbhIyCgpzdXNwZW5zaW9uGA0gASgLMh4uY2FsYWJhLnYxLldvcmtzcGFjZVN1c3BlbnNpb24iTQoTV29ya3NwYWNlU3VzcGVuc2lvbhImCgJhdBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGcmVhc29uGAIgASgJIqUBCgxXb3Jrc3BhY2VCYW4SFAoMd29ya3NwYWNlX2lkGAEgASgJEh0KBHVzZXIYAiABKAsyDy5jYWxhYmEudjEuVXNlchINCgVlbWFpbBgDIAEoCRIOCgZyZWFzb24YBCABKAkSEQoJYmFubmVkX2J5GAUgASgJEi4KCmNyZWF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIq8BCg9Xb3Jrc3BhY2VNZW1iZXISFAoMd29ya3NwYWNlX2lkGAEgASgJEh0KBHVzZXIYAiABKAsyDy5jYWxhYmEudjEuVXNlchImCgRyb2xlGAMgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGUSEAoIbmlja25hbWUYBCABKAkSLQoJam9pbmVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLMAQoGSW52aXRlEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIMCgRjb2RlGAMgASgJEhIKCmNyZWF0ZWRfYnkYBCABKAkSEAoIbWF4X3VzZXMYBSABKA0SDAoEdXNlcxgGIAEoDRIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJoChZDcmVhdGVXb3Jrc3BhY2VSZXF1ZXN0EgwKBHNsdWcYASABKAkSDAoEbmFtZRgCIAEoCRIyCgp2aXNpYmlsaXR5GAMgASgOMh4uY2FsYWJhLnYxLldvcmtzcGFjZVZpc2liaWxpdHkiQgoXQ3JlYXRlV29ya3NwYWNlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJCChZMaXN0V29ya3NwYWNlc1Jlc3BvbnNlEigKCndvcmtzcGFjZXMYASADKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlIkYKGkRpc2NvdmVyV29ya3NwYWNlc1Jlc3BvbnNlEigKCndvcmtzcGFjZXMYASADKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlImcKFEdldFdvcmtzcGFjZVJlc3BvbnNlEicKCXdvcmtzcGFjZRgBIAEoCzIULmNhbGFiYS52MS5Xb3Jrc3BhY2USJgoEcm9sZRgCIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlIqAEChZVcGRhdGVXb3Jrc3BhY2VSZXF1ZXN0EhEKBHNsdWcYASABKAlIAIgBARIRCgRuYW1lGAIgASgJSAGIAQESNwoKdmlzaWJpbGl0eRgDIAEoDjIeLmNhbGFiYS52MS5Xb3Jrc3BhY2VWaXNpYmlsaXR5SAKIAQESGQoMaWNvbl9maWxlX2lkGAQgASgJSAOIAQESJwoaZGVmYXVsdF9hdWRpb19iaXRyYXRlX2ticHMYBSABKA1IBIgBARJEChlkZWZhdWx0X21heF9zdHJlYW1fcHJlc2V0GAYgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0SAWIAQESIAoTZGVmYXVsdF9tYXhfc3RyZWFtcxgHIAEoDUgGiAEBEiAKE2FsbG93X3NlbGZfbmlja25hbWUYCCABKAhIB4gBARIhChRkZWZhdWx0X2NhbWVyYV9saW1pdBgJIAEoDUgIiAEBQgcKBV9zbHVnQgcKBV9uYW1lQg0KC192aXNpYmlsaXR5Qg8KDV9pY29uX2ZpbGVfaWRCHQobX2RlZmF1bHRfYXVkaW9fYml0cmF0ZV9rYnBzQhwKGl9kZWZhdWx0X21heF9zdHJlYW1fcHJlc2V0QhYKFF9kZWZhdWx0X21heF9zdHJlYW1zQhYKFF9hbGxvd19zZWxmX25pY2tuYW1lQhcKFV9kZWZhdWx0X2NhbWVyYV9saW1pdCJCChdVcGRhdGVXb3Jrc3BhY2VSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlImwKFUpvaW5Xb3Jrc3BhY2VSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEioKBm1lbWJlchgCIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIiQwoTQ3JlYXRlSW52aXRlUmVxdWVzdBIQCghtYXhfdXNlcxgBIAEoDRIaChJleHBpcmVzX2luX3NlY29uZHMYAiABKA0iOQoUQ3JlYXRlSW52aXRlUmVzcG9uc2USIQoGaW52aXRlGAEgASgLMhEuY2FsYWJhLnYxLkludml0ZSI5ChNMaXN0SW52aXRlc1Jlc3BvbnNlEiIKB2ludml0ZXMYASADKAsyES5jYWxhYmEudjEuSW52aXRlIkIKE0xpc3RNZW1iZXJzUmVzcG9uc2USKwoHbWVtYmVycxgBIAMoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIibwoTVXBkYXRlTWVtYmVyUmVxdWVzdBIrCgRyb2xlGAEgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGVIAIgBARIVCghuaWNrbmFtZRgCIAEoCUgBiAEBQgcKBV9yb2xlQgsKCV9uaWNrbmFtZSJCChRVcGRhdGVNZW1iZXJSZXNwb25zZRIqCgZtZW1iZXIYASABKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIpEBChFHZXRJbnZpdGVSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBWVtYWlsGAMgASgJEhQKDG1lbWJlcl9jb3VudBgEIAEoDSIkChNJbnZpdGVMb29rdXBSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJIkUKFEludml0ZUxvb2t1cFJlc3BvbnNlEh0KBHVzZXIYASABKAsyDy5jYWxhYmEudjEuVXNlchIOCgZtZW1iZXIYAiABKAgiIwoQQWRkTWVtYmVyUmVxdWVzdBIPCgd1c2VyX2lkGAEgASgJIj8KEUFkZE1lbWJlclJlc3BvbnNlEioKBm1lbWJlchgBIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIijAIKC0VtYWlsSW52aXRlEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRINCgVlbWFpbBgDIAEoCRImCgRyb2xlGAQgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGUSEgoKaW52aXRlZF9ieRgFIAEoCRIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxsYXN0X3NlbnRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KGENyZWF0ZUVtYWlsSW52aXRlUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIrCgRyb2xlGAIgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGVIAIgBAUIHCgVfcm9sZSJDChlDcmVhdGVFbWFpbEludml0ZVJlc3BvbnNlEiYKBmludml0ZRgBIAEoCzIWLmNhbGFiYS52MS5FbWFpbEludml0ZSJDChhMaXN0RW1haWxJbnZpdGVzUmVzcG9uc2USJwoHaW52aXRlcxgBIAMoCzIWLmNhbGFiYS52MS5FbWFpbEludml0ZSIzChBDcmVhdGVCYW5SZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSDgoGcmVhc29uGAIgASgJIjkKEUNyZWF0ZUJhblJlc3BvbnNlEiQKA2JhbhgBIAEoCzIXLmNhbGFiYS52MS5Xb3Jrc3BhY2VCYW4iOQoQTGlzdEJhbnNSZXNwb25zZRIlCgRiYW5zGAEgAygLMhcuY2FsYWJhLnYxLldvcmtzcGFjZUJhbip8ChNXb3Jrc3BhY2VWaXNpYmlsaXR5EiQKIFdPUktTUEFDRV9WSVNJQklMSVRZX1VOU1BFQ0lGSUVEEAASIAocV09SS1NQQUNFX1ZJU0lCSUxJVFlfUFJJVkFURRABEh0KGVdPUktTUEFDRV9WSVNJQklMSVRZX09QRU4QAkKcAQoNY29tLmNhbGFiYS52MUIOV29ya3NwYWNlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_permissions, file_calaba_v1_plan, file_calaba_v1_user]);
+  fileDesc("ChljYWxhYmEvdjEvd29ya3NwYWNlLnByb3RvEgljYWxhYmEudjEipwMKCVdvcmtzcGFjZRIKCgJpZBgBIAEoCRIMCgRzbHVnGAIgASgJEgwKBG5hbWUYAyABKAkSFAoMaWNvbl9maWxlX2lkGAQgASgJEjIKCnZpc2liaWxpdHkYBSABKA4yHi5jYWxhYmEudjEuV29ya3NwYWNlVmlzaWJpbGl0eRIQCghvd25lcl9pZBgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0Cg5tZWRpYV9kZWZhdWx0cxgIIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIbChNzdG9yYWdlX3F1b3RhX2J5dGVzGAkgASgEEhoKEnN0b3JhZ2VfdXNlZF9ieXRlcxgKIAEoBBIbChNhbGxvd19zZWxmX25pY2tuYW1lGAsgASgIEiYKBHBsYW4YDCABKAsyGC5jYWxhYmEudjEuV29ya3NwYWNlUGxhbhIyCgpzdXNwZW5zaW9uGA0gASgLMh4uY2FsYWJhLnYxLldvcmtzcGFjZVN1c3BlbnNpb24iTQoTV29ya3NwYWNlU3VzcGVuc2lvbhImCgJhdBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGcmVhc29uGAIgASgJIqUBCgxXb3Jrc3BhY2VCYW4SFAoMd29ya3NwYWNlX2lkGAEgASgJEh0KBHVzZXIYAiABKAsyDy5jYWxhYmEudjEuVXNlchINCgVlbWFpbBgDIAEoCRIOCgZyZWFzb24YBCABKAkSEQoJYmFubmVkX2J5GAUgASgJEi4KCmNyZWF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIsEBCg9Xb3Jrc3BhY2VNZW1iZXISFAoMd29ya3NwYWNlX2lkGAEgASgJEh0KBHVzZXIYAiABKAsyDy5jYWxhYmEudjEuVXNlchImCgRyb2xlGAMgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGUSEAoIbmlja25hbWUYBCABKAkSLQoJam9pbmVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghyb2xlX2lkcxgGIAMoCSLMAQoGSW52aXRlEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIMCgRjb2RlGAMgASgJEhIKCmNyZWF0ZWRfYnkYBCABKAkSEAoIbWF4X3VzZXMYBSABKA0SDAoEdXNlcxgGIAEoDRIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJoChZDcmVhdGVXb3Jrc3BhY2VSZXF1ZXN0EgwKBHNsdWcYASABKAkSDAoEbmFtZRgCIAEoCRIyCgp2aXNpYmlsaXR5GAMgASgOMh4uY2FsYWJhLnYxLldvcmtzcGFjZVZpc2liaWxpdHkiQgoXQ3JlYXRlV29ya3NwYWNlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJCChZMaXN0V29ya3NwYWNlc1Jlc3BvbnNlEigKCndvcmtzcGFjZXMYASADKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlIkYKGkRpc2NvdmVyV29ya3NwYWNlc1Jlc3BvbnNlEigKCndvcmtzcGFjZXMYASADKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlImcKFEdldFdvcmtzcGFjZVJlc3BvbnNlEicKCXdvcmtzcGFjZRgBIAEoCzIULmNhbGFiYS52MS5Xb3Jrc3BhY2USJgoEcm9sZRgCIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlIqAEChZVcGRhdGVXb3Jrc3BhY2VSZXF1ZXN0EhEKBHNsdWcYASABKAlIAIgBARIRCgRuYW1lGAIgASgJSAGIAQESNwoKdmlzaWJpbGl0eRgDIAEoDjIeLmNhbGFiYS52MS5Xb3Jrc3BhY2VWaXNpYmlsaXR5SAKIAQESGQoMaWNvbl9maWxlX2lkGAQgASgJSAOIAQESJwoaZGVmYXVsdF9hdWRpb19iaXRyYXRlX2ticHMYBSABKA1IBIgBARJEChlkZWZhdWx0X21heF9zdHJlYW1fcHJlc2V0GAYgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0SAWIAQESIAoTZGVmYXVsdF9tYXhfc3RyZWFtcxgHIAEoDUgGiAEBEiAKE2FsbG93X3NlbGZfbmlja25hbWUYCCABKAhIB4gBARIhChRkZWZhdWx0X2NhbWVyYV9saW1pdBgJIAEoDUgIiAEBQgcKBV9zbHVnQgcKBV9uYW1lQg0KC192aXNpYmlsaXR5Qg8KDV9pY29uX2ZpbGVfaWRCHQobX2RlZmF1bHRfYXVkaW9fYml0cmF0ZV9rYnBzQhwKGl9kZWZhdWx0X21heF9zdHJlYW1fcHJlc2V0QhYKFF9kZWZhdWx0X21heF9zdHJlYW1zQhYKFF9hbGxvd19zZWxmX25pY2tuYW1lQhcKFV9kZWZhdWx0X2NhbWVyYV9saW1pdCJCChdVcGRhdGVXb3Jrc3BhY2VSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlImwKFUpvaW5Xb3Jrc3BhY2VSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEioKBm1lbWJlchgCIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIiQwoTQ3JlYXRlSW52aXRlUmVxdWVzdBIQCghtYXhfdXNlcxgBIAEoDRIaChJleHBpcmVzX2luX3NlY29uZHMYAiABKA0iOQoUQ3JlYXRlSW52aXRlUmVzcG9uc2USIQoGaW52aXRlGAEgASgLMhEuY2FsYWJhLnYxLkludml0ZSI5ChNMaXN0SW52aXRlc1Jlc3BvbnNlEiIKB2ludml0ZXMYASADKAsyES5jYWxhYmEudjEuSW52aXRlIkIKE0xpc3RNZW1iZXJzUmVzcG9uc2USKwoHbWVtYmVycxgBIAMoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIibwoTVXBkYXRlTWVtYmVyUmVxdWVzdBIrCgRyb2xlGAEgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGVIAIgBARIVCghuaWNrbmFtZRgCIAEoCUgBiAEBQgcKBV9yb2xlQgsKCV9uaWNrbmFtZSJCChRVcGRhdGVNZW1iZXJSZXNwb25zZRIqCgZtZW1iZXIYASABKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIpEBChFHZXRJbnZpdGVSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBWVtYWlsGAMgASgJEhQKDG1lbWJlcl9jb3VudBgEIAEoDSIkChNJbnZpdGVMb29rdXBSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJIkUKFEludml0ZUxvb2t1cFJlc3BvbnNlEh0KBHVzZXIYASABKAsyDy5jYWxhYmEudjEuVXNlchIOCgZtZW1iZXIYAiABKAgiIwoQQWRkTWVtYmVyUmVxdWVzdBIPCgd1c2VyX2lkGAEgASgJIj8KEUFkZE1lbWJlclJlc3BvbnNlEioKBm1lbWJlchgBIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIijAIKC0VtYWlsSW52aXRlEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRINCgVlbWFpbBgDIAEoCRImCgRyb2xlGAQgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGUSEgoKaW52aXRlZF9ieRgFIAEoCRIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxsYXN0X3NlbnRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KGENyZWF0ZUVtYWlsSW52aXRlUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIrCgRyb2xlGAIgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGVIAIgBAUIHCgVfcm9sZSJDChlDcmVhdGVFbWFpbEludml0ZVJlc3BvbnNlEiYKBmludml0ZRgBIAEoCzIWLmNhbGFiYS52MS5FbWFpbEludml0ZSJDChhMaXN0RW1haWxJbnZpdGVzUmVzcG9uc2USJwoHaW52aXRlcxgBIAMoCzIWLmNhbGFiYS52MS5FbWFpbEludml0ZSIzChBDcmVhdGVCYW5SZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSDgoGcmVhc29uGAIgASgJIjkKEUNyZWF0ZUJhblJlc3BvbnNlEiQKA2JhbhgBIAEoCzIXLmNhbGFiYS52MS5Xb3Jrc3BhY2VCYW4iOQoQTGlzdEJhbnNSZXNwb25zZRIlCgRiYW5zGAEgAygLMhcuY2FsYWJhLnYxLldvcmtzcGFjZUJhbiIzChFMaXN0Um9sZXNSZXNwb25zZRIeCgVyb2xlcxgBIAMoCzIPLmNhbGFiYS52MS5Sb2xlIloKEUNyZWF0ZVJvbGVSZXF1ZXN0EgwKBG5hbWUYASABKAkSDQoFY29sb3IYAiABKA0SEwoLcGVybWlzc2lvbnMYAyABKAQSEwoLbWVudGlvbmFibGUYBCABKAgiMwoSQ3JlYXRlUm9sZVJlc3BvbnNlEh0KBHJvbGUYASABKAsyDy5jYWxhYmEudjEuUm9sZSKhAQoRVXBkYXRlUm9sZVJlcXVlc3QSEQoEbmFtZRgBIAEoCUgAiAEBEhIKBWNvbG9yGAIgASgNSAGIAQESGAoLcGVybWlzc2lvbnMYAyABKARIAogBARIYCgttZW50aW9uYWJsZRgEIAEoCEgDiAEBQgcKBV9uYW1lQggKBl9jb2xvckIOCgxfcGVybWlzc2lvbnNCDgoMX21lbnRpb25hYmxlIjMKElVwZGF0ZVJvbGVSZXNwb25zZRIdCgRyb2xlGAEgASgLMg8uY2FsYWJhLnYxLlJvbGUiJwoTU2V0Um9sZU9yZGVyUmVxdWVzdBIQCghyb2xlX2lkcxgBIAMoCSI2ChRTZXRSb2xlT3JkZXJSZXNwb25zZRIeCgVyb2xlcxgBIAMoCzIPLmNhbGFiYS52MS5Sb2xlIikKFVNldE1lbWJlclJvbGVzUmVxdWVzdBIQCghyb2xlX2lkcxgBIAMoCSJEChZTZXRNZW1iZXJSb2xlc1Jlc3BvbnNlEioKBm1lbWJlchgBIAEoCzIaLmNhbGFiYS52MS5Xb3Jrc3BhY2VNZW1iZXIqfAoTV29ya3NwYWNlVmlzaWJpbGl0eRIkCiBXT1JLU1BBQ0VfVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEiAKHFdPUktTUEFDRV9WSVNJQklMSVRZX1BSSVZBVEUQARIdChlXT1JLU1BBQ0VfVklTSUJJTElUWV9PUEVOEAJCnAEKDWNvbS5jYWxhYmEudjFCDldvcmtzcGFjZVByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_permissions, file_calaba_v1_plan, file_calaba_v1_user]);
 
 /**
  * @generated from message calaba.v1.Workspace
@@ -216,6 +216,14 @@ export type WorkspaceMember = Message<"calaba.v1.WorkspaceMember"> & {
    * @generated from field: google.protobuf.Timestamp joined_at = 5;
    */
   joinedAt?: Timestamp | undefined;
+
+  /**
+   * All roles of the member (ADR-0026), built-in ones included: MEMBER (or GUEST) always,
+   * ADMIN / OWNER for them, custom roles. `role` above is the highest built-in one.
+   *
+   * @generated from field: repeated string role_ids = 6;
+   */
+  roleIds: string[];
 };
 
 /**
@@ -588,7 +596,8 @@ export const ListMembersResponseSchema: GenMessage<ListMembersResponse> = /*@__P
 
 /**
  * PATCH /api/workspaces/{id}/members/{user_id}.
- * role: MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
+ * role (legacy, kept for clients before ADR-0026; prefer PUT …/members/{user_id}/roles):
+ * changes the built-in role only, custom roles are kept. MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
  * nickname: the member themself or MANAGE_WORKSPACE.
  *
  * @generated from message calaba.v1.UpdateMemberRequest
@@ -948,6 +957,215 @@ export type ListBansResponse = Message<"calaba.v1.ListBansResponse"> & {
  */
 export const ListBansResponseSchema: GenMessage<ListBansResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_workspace, 30);
+
+/**
+ * GET /api/workspaces/{id}/roles (any member) → all roles, highest position first.
+ *
+ * @generated from message calaba.v1.ListRolesResponse
+ */
+export type ListRolesResponse = Message<"calaba.v1.ListRolesResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.Role roles = 1;
+   */
+  roles: Role[];
+};
+
+/**
+ * Describes the message calaba.v1.ListRolesResponse.
+ * Use `create(ListRolesResponseSchema)` to create a new message.
+ */
+export const ListRolesResponseSchema: GenMessage<ListRolesResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 31);
+
+/**
+ * POST /api/workspaces/{id}/roles → 201. The new role goes to the bottom of the custom
+ * roles (position 2; the others move up: ROLE_UPDATE). At most 50 roles per workspace
+ * (built-ins included): 409 CONFLICT.
+ *
+ * @generated from message calaba.v1.CreateRoleRequest
+ */
+export type CreateRoleRequest = Message<"calaba.v1.CreateRoleRequest"> & {
+  /**
+   * 1..32 characters after trimming
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * 0..0xFFFFFF
+   *
+   * @generated from field: uint32 color = 2;
+   */
+  color: number;
+
+  /**
+   * @generated from field: uint64 permissions = 3;
+   */
+  permissions: bigint;
+
+  /**
+   * @generated from field: bool mentionable = 4;
+   */
+  mentionable: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.CreateRoleRequest.
+ * Use `create(CreateRoleRequestSchema)` to create a new message.
+ */
+export const CreateRoleRequestSchema: GenMessage<CreateRoleRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 32);
+
+/**
+ * @generated from message calaba.v1.CreateRoleResponse
+ */
+export type CreateRoleResponse = Message<"calaba.v1.CreateRoleResponse"> & {
+  /**
+   * @generated from field: calaba.v1.Role role = 1;
+   */
+  role?: Role | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CreateRoleResponse.
+ * Use `create(CreateRoleResponseSchema)` to create a new message.
+ */
+export const CreateRoleResponseSchema: GenMessage<CreateRoleResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 33);
+
+/**
+ * PATCH /api/workspaces/{id}/roles/{role_id}. Unset fields are left unchanged. Built-in
+ * roles: the name is fixed; OWNER / ADMIN permissions are fixed; GUEST permissions stay
+ * within VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM | VIDEO.
+ *
+ * @generated from message calaba.v1.UpdateRoleRequest
+ */
+export type UpdateRoleRequest = Message<"calaba.v1.UpdateRoleRequest"> & {
+  /**
+   * @generated from field: optional string name = 1;
+   */
+  name?: string | undefined;
+
+  /**
+   * @generated from field: optional uint32 color = 2;
+   */
+  color?: number | undefined;
+
+  /**
+   * @generated from field: optional uint64 permissions = 3;
+   */
+  permissions?: bigint | undefined;
+
+  /**
+   * @generated from field: optional bool mentionable = 4;
+   */
+  mentionable?: boolean | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateRoleRequest.
+ * Use `create(UpdateRoleRequestSchema)` to create a new message.
+ */
+export const UpdateRoleRequestSchema: GenMessage<UpdateRoleRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 34);
+
+/**
+ * @generated from message calaba.v1.UpdateRoleResponse
+ */
+export type UpdateRoleResponse = Message<"calaba.v1.UpdateRoleResponse"> & {
+  /**
+   * @generated from field: calaba.v1.Role role = 1;
+   */
+  role?: Role | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateRoleResponse.
+ * Use `create(UpdateRoleResponseSchema)` to create a new message.
+ */
+export const UpdateRoleResponseSchema: GenMessage<UpdateRoleResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 35);
+
+/**
+ * PUT /api/workspaces/{id}/roles/order: all custom roles, highest first; they get
+ * positions n+1 … 2. Roles at or above the caller's highest role must keep their place.
+ *
+ * @generated from message calaba.v1.SetRoleOrderRequest
+ */
+export type SetRoleOrderRequest = Message<"calaba.v1.SetRoleOrderRequest"> & {
+  /**
+   * @generated from field: repeated string role_ids = 1;
+   */
+  roleIds: string[];
+};
+
+/**
+ * Describes the message calaba.v1.SetRoleOrderRequest.
+ * Use `create(SetRoleOrderRequestSchema)` to create a new message.
+ */
+export const SetRoleOrderRequestSchema: GenMessage<SetRoleOrderRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 36);
+
+/**
+ * @generated from message calaba.v1.SetRoleOrderResponse
+ */
+export type SetRoleOrderResponse = Message<"calaba.v1.SetRoleOrderResponse"> & {
+  /**
+   * all roles, highest first
+   *
+   * @generated from field: repeated calaba.v1.Role roles = 1;
+   */
+  roles: Role[];
+};
+
+/**
+ * Describes the message calaba.v1.SetRoleOrderResponse.
+ * Use `create(SetRoleOrderResponseSchema)` to create a new message.
+ */
+export const SetRoleOrderResponseSchema: GenMessage<SetRoleOrderResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 37);
+
+/**
+ * PUT /api/workspaces/{id}/members/{user_id}/roles (MANAGE_ROLES): the member's complete
+ * role set. MEMBER / GUEST may be listed or omitted but not swapped (guest → member is
+ * POST …/promote); OWNER cannot be granted or revoked; ADMIN only by the owner. Every added
+ * or removed role must be below the caller's highest role and, for a non-admin, carry no
+ * permission the caller lacks; the target's highest role must be below the caller's (or
+ * the target is the caller). → WORKSPACE_MEMBER_UPDATE.
+ *
+ * @generated from message calaba.v1.SetMemberRolesRequest
+ */
+export type SetMemberRolesRequest = Message<"calaba.v1.SetMemberRolesRequest"> & {
+  /**
+   * @generated from field: repeated string role_ids = 1;
+   */
+  roleIds: string[];
+};
+
+/**
+ * Describes the message calaba.v1.SetMemberRolesRequest.
+ * Use `create(SetMemberRolesRequestSchema)` to create a new message.
+ */
+export const SetMemberRolesRequestSchema: GenMessage<SetMemberRolesRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 38);
+
+/**
+ * @generated from message calaba.v1.SetMemberRolesResponse
+ */
+export type SetMemberRolesResponse = Message<"calaba.v1.SetMemberRolesResponse"> & {
+  /**
+   * @generated from field: calaba.v1.WorkspaceMember member = 1;
+   */
+  member?: WorkspaceMember | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SetMemberRolesResponse.
+ * Use `create(SetMemberRolesResponseSchema)` to create a new message.
+ */
+export const SetMemberRolesResponseSchema: GenMessage<SetMemberRolesResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 39);
 
 /**
  * @generated from enum calaba.v1.WorkspaceVisibility

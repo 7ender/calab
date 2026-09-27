@@ -362,7 +362,10 @@ type WorkspaceMember struct {
 	Role        WorkspaceRole          `protobuf:"varint,3,opt,name=role,proto3,enum=calaba.v1.WorkspaceRole" json:"role,omitempty"`
 	Nickname    string                 `protobuf:"bytes,4,opt,name=nickname,proto3" json:"nickname,omitempty"`
 	// Joined this workspace: "Member since" in the profile, next to user.created_at (registration).
-	JoinedAt      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
+	JoinedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
+	// All roles of the member (ADR-0026), built-in ones included: MEMBER (or GUEST) always,
+	// ADMIN / OWNER for them, custom roles. `role` above is the highest built-in one.
+	RoleIds       []string `protobuf:"bytes,6,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -428,6 +431,13 @@ func (x *WorkspaceMember) GetNickname() string {
 func (x *WorkspaceMember) GetJoinedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.JoinedAt
+	}
+	return nil
+}
+
+func (x *WorkspaceMember) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
 	}
 	return nil
 }
@@ -1174,7 +1184,8 @@ func (x *ListMembersResponse) GetMembers() []*WorkspaceMember {
 }
 
 // PATCH /api/workspaces/{id}/members/{user_id}.
-// role: MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
+// role (legacy, kept for clients before ADR-0026; prefer PUT …/members/{user_id}/roles):
+// changes the built-in role only, custom roles are kept. MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
 // nickname: the member themself or MANAGE_WORKSPACE.
 type UpdateMemberRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1932,6 +1943,465 @@ func (x *ListBansResponse) GetBans() []*WorkspaceBan {
 	return nil
 }
 
+// GET /api/workspaces/{id}/roles (any member) → all roles, highest position first.
+type ListRolesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Roles         []*Role                `protobuf:"bytes,1,rep,name=roles,proto3" json:"roles,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRolesResponse) Reset() {
+	*x = ListRolesResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRolesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRolesResponse) ProtoMessage() {}
+
+func (x *ListRolesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRolesResponse.ProtoReflect.Descriptor instead.
+func (*ListRolesResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ListRolesResponse) GetRoles() []*Role {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+// POST /api/workspaces/{id}/roles → 201. The new role goes to the bottom of the custom
+// roles (position 2; the others move up: ROLE_UPDATE). At most 50 roles per workspace
+// (built-ins included): 409 CONFLICT.
+type CreateRoleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`    // 1..32 characters after trimming
+	Color         uint32                 `protobuf:"varint,2,opt,name=color,proto3" json:"color,omitempty"` // 0..0xFFFFFF
+	Permissions   uint64                 `protobuf:"varint,3,opt,name=permissions,proto3" json:"permissions,omitempty"`
+	Mentionable   bool                   `protobuf:"varint,4,opt,name=mentionable,proto3" json:"mentionable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateRoleRequest) Reset() {
+	*x = CreateRoleRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateRoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateRoleRequest) ProtoMessage() {}
+
+func (x *CreateRoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateRoleRequest.ProtoReflect.Descriptor instead.
+func (*CreateRoleRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *CreateRoleRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateRoleRequest) GetColor() uint32 {
+	if x != nil {
+		return x.Color
+	}
+	return 0
+}
+
+func (x *CreateRoleRequest) GetPermissions() uint64 {
+	if x != nil {
+		return x.Permissions
+	}
+	return 0
+}
+
+func (x *CreateRoleRequest) GetMentionable() bool {
+	if x != nil {
+		return x.Mentionable
+	}
+	return false
+}
+
+type CreateRoleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Role          *Role                  `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateRoleResponse) Reset() {
+	*x = CreateRoleResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateRoleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateRoleResponse) ProtoMessage() {}
+
+func (x *CreateRoleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateRoleResponse.ProtoReflect.Descriptor instead.
+func (*CreateRoleResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *CreateRoleResponse) GetRole() *Role {
+	if x != nil {
+		return x.Role
+	}
+	return nil
+}
+
+// PATCH /api/workspaces/{id}/roles/{role_id}. Unset fields are left unchanged. Built-in
+// roles: the name is fixed; OWNER / ADMIN permissions are fixed; GUEST permissions stay
+// within VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM | VIDEO.
+type UpdateRoleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Color         *uint32                `protobuf:"varint,2,opt,name=color,proto3,oneof" json:"color,omitempty"`
+	Permissions   *uint64                `protobuf:"varint,3,opt,name=permissions,proto3,oneof" json:"permissions,omitempty"`
+	Mentionable   *bool                  `protobuf:"varint,4,opt,name=mentionable,proto3,oneof" json:"mentionable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateRoleRequest) Reset() {
+	*x = UpdateRoleRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateRoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateRoleRequest) ProtoMessage() {}
+
+func (x *UpdateRoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateRoleRequest.ProtoReflect.Descriptor instead.
+func (*UpdateRoleRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *UpdateRoleRequest) GetName() string {
+	if x != nil && x.Name != nil {
+		return *x.Name
+	}
+	return ""
+}
+
+func (x *UpdateRoleRequest) GetColor() uint32 {
+	if x != nil && x.Color != nil {
+		return *x.Color
+	}
+	return 0
+}
+
+func (x *UpdateRoleRequest) GetPermissions() uint64 {
+	if x != nil && x.Permissions != nil {
+		return *x.Permissions
+	}
+	return 0
+}
+
+func (x *UpdateRoleRequest) GetMentionable() bool {
+	if x != nil && x.Mentionable != nil {
+		return *x.Mentionable
+	}
+	return false
+}
+
+type UpdateRoleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Role          *Role                  `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateRoleResponse) Reset() {
+	*x = UpdateRoleResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateRoleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateRoleResponse) ProtoMessage() {}
+
+func (x *UpdateRoleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateRoleResponse.ProtoReflect.Descriptor instead.
+func (*UpdateRoleResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *UpdateRoleResponse) GetRole() *Role {
+	if x != nil {
+		return x.Role
+	}
+	return nil
+}
+
+// PUT /api/workspaces/{id}/roles/order: all custom roles, highest first; they get
+// positions n+1 … 2. Roles at or above the caller's highest role must keep their place.
+type SetRoleOrderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoleIds       []string               `protobuf:"bytes,1,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetRoleOrderRequest) Reset() {
+	*x = SetRoleOrderRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRoleOrderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRoleOrderRequest) ProtoMessage() {}
+
+func (x *SetRoleOrderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRoleOrderRequest.ProtoReflect.Descriptor instead.
+func (*SetRoleOrderRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *SetRoleOrderRequest) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
+}
+
+type SetRoleOrderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Roles         []*Role                `protobuf:"bytes,1,rep,name=roles,proto3" json:"roles,omitempty"` // all roles, highest first
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetRoleOrderResponse) Reset() {
+	*x = SetRoleOrderResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRoleOrderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRoleOrderResponse) ProtoMessage() {}
+
+func (x *SetRoleOrderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRoleOrderResponse.ProtoReflect.Descriptor instead.
+func (*SetRoleOrderResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *SetRoleOrderResponse) GetRoles() []*Role {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+// PUT /api/workspaces/{id}/members/{user_id}/roles (MANAGE_ROLES): the member's complete
+// role set. MEMBER / GUEST may be listed or omitted but not swapped (guest → member is
+// POST …/promote); OWNER cannot be granted or revoked; ADMIN only by the owner. Every added
+// or removed role must be below the caller's highest role and, for a non-admin, carry no
+// permission the caller lacks; the target's highest role must be below the caller's (or
+// the target is the caller). → WORKSPACE_MEMBER_UPDATE.
+type SetMemberRolesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoleIds       []string               `protobuf:"bytes,1,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetMemberRolesRequest) Reset() {
+	*x = SetMemberRolesRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetMemberRolesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetMemberRolesRequest) ProtoMessage() {}
+
+func (x *SetMemberRolesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetMemberRolesRequest.ProtoReflect.Descriptor instead.
+func (*SetMemberRolesRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SetMemberRolesRequest) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
+}
+
+type SetMemberRolesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Member        *WorkspaceMember       `protobuf:"bytes,1,opt,name=member,proto3" json:"member,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetMemberRolesResponse) Reset() {
+	*x = SetMemberRolesResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetMemberRolesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetMemberRolesResponse) ProtoMessage() {}
+
+func (x *SetMemberRolesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetMemberRolesResponse.ProtoReflect.Descriptor instead.
+func (*SetMemberRolesResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *SetMemberRolesResponse) GetMember() *WorkspaceMember {
+	if x != nil {
+		return x.Member
+	}
+	return nil
+}
+
 var File_calaba_v1_workspace_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_workspace_proto_rawDesc = "" +
@@ -1968,13 +2438,14 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x1b\n" +
 	"\tbanned_by\x18\x05 \x01(\tR\bbannedBy\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xdc\x01\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xf7\x01\n" +
 	"\x0fWorkspaceMember\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12#\n" +
 	"\x04user\x18\x02 \x01(\v2\x0f.calaba.v1.UserR\x04user\x12,\n" +
 	"\x04role\x18\x03 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\x12\x1a\n" +
 	"\bnickname\x18\x04 \x01(\tR\bnickname\x127\n" +
-	"\tjoined_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\"\x93\x02\n" +
+	"\tjoined_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12\x19\n" +
+	"\brole_ids\x18\x06 \x03(\tR\aroleIds\"\x93\x02\n" +
 	"\x06Invite\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -2091,7 +2562,35 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x11CreateBanResponse\x12)\n" +
 	"\x03ban\x18\x01 \x01(\v2\x17.calaba.v1.WorkspaceBanR\x03ban\"?\n" +
 	"\x10ListBansResponse\x12+\n" +
-	"\x04bans\x18\x01 \x03(\v2\x17.calaba.v1.WorkspaceBanR\x04bans*|\n" +
+	"\x04bans\x18\x01 \x03(\v2\x17.calaba.v1.WorkspaceBanR\x04bans\":\n" +
+	"\x11ListRolesResponse\x12%\n" +
+	"\x05roles\x18\x01 \x03(\v2\x0f.calaba.v1.RoleR\x05roles\"\x81\x01\n" +
+	"\x11CreateRoleRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05color\x18\x02 \x01(\rR\x05color\x12 \n" +
+	"\vpermissions\x18\x03 \x01(\x04R\vpermissions\x12 \n" +
+	"\vmentionable\x18\x04 \x01(\bR\vmentionable\"9\n" +
+	"\x12CreateRoleResponse\x12#\n" +
+	"\x04role\x18\x01 \x01(\v2\x0f.calaba.v1.RoleR\x04role\"\xc8\x01\n" +
+	"\x11UpdateRoleRequest\x12\x17\n" +
+	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x19\n" +
+	"\x05color\x18\x02 \x01(\rH\x01R\x05color\x88\x01\x01\x12%\n" +
+	"\vpermissions\x18\x03 \x01(\x04H\x02R\vpermissions\x88\x01\x01\x12%\n" +
+	"\vmentionable\x18\x04 \x01(\bH\x03R\vmentionable\x88\x01\x01B\a\n" +
+	"\x05_nameB\b\n" +
+	"\x06_colorB\x0e\n" +
+	"\f_permissionsB\x0e\n" +
+	"\f_mentionable\"9\n" +
+	"\x12UpdateRoleResponse\x12#\n" +
+	"\x04role\x18\x01 \x01(\v2\x0f.calaba.v1.RoleR\x04role\"0\n" +
+	"\x13SetRoleOrderRequest\x12\x19\n" +
+	"\brole_ids\x18\x01 \x03(\tR\aroleIds\"=\n" +
+	"\x14SetRoleOrderResponse\x12%\n" +
+	"\x05roles\x18\x01 \x03(\v2\x0f.calaba.v1.RoleR\x05roles\"2\n" +
+	"\x15SetMemberRolesRequest\x12\x19\n" +
+	"\brole_ids\x18\x01 \x03(\tR\aroleIds\"L\n" +
+	"\x16SetMemberRolesResponse\x122\n" +
+	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member*|\n" +
 	"\x13WorkspaceVisibility\x12$\n" +
 	" WORKSPACE_VISIBILITY_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cWORKSPACE_VISIBILITY_PRIVATE\x10\x01\x12\x1d\n" +
@@ -2112,7 +2611,7 @@ func file_calaba_v1_workspace_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_workspace_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_calaba_v1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_calaba_v1_workspace_proto_goTypes = []any{
 	(WorkspaceVisibility)(0),           // 0: calaba.v1.WorkspaceVisibility
 	(*Workspace)(nil),                  // 1: calaba.v1.Workspace
@@ -2146,61 +2645,76 @@ var file_calaba_v1_workspace_proto_goTypes = []any{
 	(*CreateBanRequest)(nil),           // 29: calaba.v1.CreateBanRequest
 	(*CreateBanResponse)(nil),          // 30: calaba.v1.CreateBanResponse
 	(*ListBansResponse)(nil),           // 31: calaba.v1.ListBansResponse
-	(*timestamppb.Timestamp)(nil),      // 32: google.protobuf.Timestamp
-	(*RoomMediaSettings)(nil),          // 33: calaba.v1.RoomMediaSettings
-	(*WorkspacePlan)(nil),              // 34: calaba.v1.WorkspacePlan
-	(*User)(nil),                       // 35: calaba.v1.User
-	(WorkspaceRole)(0),                 // 36: calaba.v1.WorkspaceRole
-	(ScreenSharePreset)(0),             // 37: calaba.v1.ScreenSharePreset
+	(*ListRolesResponse)(nil),          // 32: calaba.v1.ListRolesResponse
+	(*CreateRoleRequest)(nil),          // 33: calaba.v1.CreateRoleRequest
+	(*CreateRoleResponse)(nil),         // 34: calaba.v1.CreateRoleResponse
+	(*UpdateRoleRequest)(nil),          // 35: calaba.v1.UpdateRoleRequest
+	(*UpdateRoleResponse)(nil),         // 36: calaba.v1.UpdateRoleResponse
+	(*SetRoleOrderRequest)(nil),        // 37: calaba.v1.SetRoleOrderRequest
+	(*SetRoleOrderResponse)(nil),       // 38: calaba.v1.SetRoleOrderResponse
+	(*SetMemberRolesRequest)(nil),      // 39: calaba.v1.SetMemberRolesRequest
+	(*SetMemberRolesResponse)(nil),     // 40: calaba.v1.SetMemberRolesResponse
+	(*timestamppb.Timestamp)(nil),      // 41: google.protobuf.Timestamp
+	(*RoomMediaSettings)(nil),          // 42: calaba.v1.RoomMediaSettings
+	(*WorkspacePlan)(nil),              // 43: calaba.v1.WorkspacePlan
+	(*User)(nil),                       // 44: calaba.v1.User
+	(WorkspaceRole)(0),                 // 45: calaba.v1.WorkspaceRole
+	(ScreenSharePreset)(0),             // 46: calaba.v1.ScreenSharePreset
+	(*Role)(nil),                       // 47: calaba.v1.Role
 }
 var file_calaba_v1_workspace_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.Workspace.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	32, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
-	33, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
-	34, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
+	41, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
+	42, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
+	43, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
 	2,  // 4: calaba.v1.Workspace.suspension:type_name -> calaba.v1.WorkspaceSuspension
-	32, // 5: calaba.v1.WorkspaceSuspension.at:type_name -> google.protobuf.Timestamp
-	35, // 6: calaba.v1.WorkspaceBan.user:type_name -> calaba.v1.User
-	32, // 7: calaba.v1.WorkspaceBan.created_at:type_name -> google.protobuf.Timestamp
-	35, // 8: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
-	36, // 9: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
-	32, // 10: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
-	32, // 11: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
-	32, // 12: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
+	41, // 5: calaba.v1.WorkspaceSuspension.at:type_name -> google.protobuf.Timestamp
+	44, // 6: calaba.v1.WorkspaceBan.user:type_name -> calaba.v1.User
+	41, // 7: calaba.v1.WorkspaceBan.created_at:type_name -> google.protobuf.Timestamp
+	44, // 8: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
+	45, // 9: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
+	41, // 10: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
+	41, // 11: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
+	41, // 12: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 13: calaba.v1.CreateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
 	1,  // 14: calaba.v1.CreateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	1,  // 15: calaba.v1.ListWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
 	1,  // 16: calaba.v1.DiscoverWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
 	1,  // 17: calaba.v1.GetWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
-	36, // 18: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
+	45, // 18: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
 	0,  // 19: calaba.v1.UpdateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	37, // 20: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
+	46, // 20: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
 	1,  // 21: calaba.v1.UpdateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	1,  // 22: calaba.v1.JoinWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	4,  // 23: calaba.v1.JoinWorkspaceResponse.member:type_name -> calaba.v1.WorkspaceMember
 	5,  // 24: calaba.v1.CreateInviteResponse.invite:type_name -> calaba.v1.Invite
 	5,  // 25: calaba.v1.ListInvitesResponse.invites:type_name -> calaba.v1.Invite
 	4,  // 26: calaba.v1.ListMembersResponse.members:type_name -> calaba.v1.WorkspaceMember
-	36, // 27: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
+	45, // 27: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
 	4,  // 28: calaba.v1.UpdateMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
 	1,  // 29: calaba.v1.GetInviteResponse.workspace:type_name -> calaba.v1.Workspace
-	32, // 30: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	35, // 31: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
+	41, // 30: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	44, // 31: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
 	4,  // 32: calaba.v1.AddMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
-	36, // 33: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
-	32, // 34: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
-	32, // 35: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
-	32, // 36: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
-	36, // 37: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
+	45, // 33: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
+	41, // 34: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
+	41, // 35: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
+	41, // 36: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
+	45, // 37: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
 	25, // 38: calaba.v1.CreateEmailInviteResponse.invite:type_name -> calaba.v1.EmailInvite
 	25, // 39: calaba.v1.ListEmailInvitesResponse.invites:type_name -> calaba.v1.EmailInvite
 	3,  // 40: calaba.v1.CreateBanResponse.ban:type_name -> calaba.v1.WorkspaceBan
 	3,  // 41: calaba.v1.ListBansResponse.bans:type_name -> calaba.v1.WorkspaceBan
-	42, // [42:42] is the sub-list for method output_type
-	42, // [42:42] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	47, // 42: calaba.v1.ListRolesResponse.roles:type_name -> calaba.v1.Role
+	47, // 43: calaba.v1.CreateRoleResponse.role:type_name -> calaba.v1.Role
+	47, // 44: calaba.v1.UpdateRoleResponse.role:type_name -> calaba.v1.Role
+	47, // 45: calaba.v1.SetRoleOrderResponse.roles:type_name -> calaba.v1.Role
+	4,  // 46: calaba.v1.SetMemberRolesResponse.member:type_name -> calaba.v1.WorkspaceMember
+	47, // [47:47] is the sub-list for method output_type
+	47, // [47:47] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_workspace_proto_init() }
@@ -2215,13 +2729,14 @@ func file_calaba_v1_workspace_proto_init() {
 	file_calaba_v1_workspace_proto_msgTypes[10].OneofWrappers = []any{}
 	file_calaba_v1_workspace_proto_msgTypes[17].OneofWrappers = []any{}
 	file_calaba_v1_workspace_proto_msgTypes[25].OneofWrappers = []any{}
+	file_calaba_v1_workspace_proto_msgTypes[34].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_workspace_proto_rawDesc), len(file_calaba_v1_workspace_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   31,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

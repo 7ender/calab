@@ -58,6 +58,9 @@ message WorkspaceMember {
   string nickname = 4;
   // Joined this workspace: "Member since" in the profile, next to user.created_at (registration).
   google.protobuf.Timestamp joined_at = 5;
+  // All roles of the member (ADR-0026), built-in ones included: MEMBER (or GUEST) always,
+  // ADMIN / OWNER for them, custom roles. `role` above is the highest built-in one.
+  repeated string role_ids = 6;
 }
 
 message Invite {
@@ -142,7 +145,8 @@ message ListMembersResponse {
 }
 
 // PATCH /api/workspaces/{id}/members/{user_id}.
-// role: MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
+// role (legacy, kept for clients before ADR-0026; prefer PUT …/members/{user_id}/roles):
+// changes the built-in role only, custom roles are kept. MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
 // nickname: the member themself or MANAGE_WORKSPACE.
 message UpdateMemberRequest {
   optional WorkspaceRole role = 1;
@@ -246,4 +250,69 @@ message CreateBanResponse {
 // 204 (WORKSPACE_BAN_REMOVE to the owner / admins); the user may be invited again.
 message ListBansResponse {
   repeated WorkspaceBan bans = 1;
+}
+
+// ---- Roles (ADR-0026). Mutations need MANAGE_ROLES (admins have it) and act only on roles
+// below the caller's highest role (the owner: any); a non-admin cannot grant permissions
+// they lack, nor MANAGE_ROLES / MANAGE_WORKSPACE; ADMINISTRATOR is never grantable. ----
+
+// GET /api/workspaces/{id}/roles (any member) → all roles, highest position first.
+message ListRolesResponse {
+  repeated Role roles = 1;
+}
+
+// POST /api/workspaces/{id}/roles → 201. The new role goes to the bottom of the custom
+// roles (position 2; the others move up: ROLE_UPDATE). At most 50 roles per workspace
+// (built-ins included): 409 CONFLICT.
+message CreateRoleRequest {
+  string name = 1; // 1..32 characters after trimming
+  uint32 color = 2; // 0..0xFFFFFF
+  uint64 permissions = 3;
+  bool mentionable = 4;
+}
+
+message CreateRoleResponse {
+  Role role = 1;
+}
+
+// PATCH /api/workspaces/{id}/roles/{role_id}. Unset fields are left unchanged. Built-in
+// roles: the name is fixed; OWNER / ADMIN permissions are fixed; GUEST permissions stay
+// within VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM | VIDEO.
+message UpdateRoleRequest {
+  optional string name = 1;
+  optional uint32 color = 2;
+  optional uint64 permissions = 3;
+  optional bool mentionable = 4;
+}
+
+message UpdateRoleResponse {
+  Role role = 1;
+}
+
+// DELETE /api/workspaces/{id}/roles/{role_id} → 204 (custom roles only). Its holders keep
+// their other roles (every member keeps MEMBER / GUEST); its room overrides are removed
+// (ROLE_DELETE, then ROOM_PERMISSIONS_UPDATE for each room that had one).
+
+// PUT /api/workspaces/{id}/roles/order: all custom roles, highest first; they get
+// positions n+1 … 2. Roles at or above the caller's highest role must keep their place.
+message SetRoleOrderRequest {
+  repeated string role_ids = 1;
+}
+
+message SetRoleOrderResponse {
+  repeated Role roles = 1; // all roles, highest first
+}
+
+// PUT /api/workspaces/{id}/members/{user_id}/roles (MANAGE_ROLES): the member's complete
+// role set. MEMBER / GUEST may be listed or omitted but not swapped (guest → member is
+// POST …/promote); OWNER cannot be granted or revoked; ADMIN only by the owner. Every added
+// or removed role must be below the caller's highest role and, for a non-admin, carry no
+// permission the caller lacks; the target's highest role must be below the caller's (or
+// the target is the caller). → WORKSPACE_MEMBER_UPDATE.
+message SetMemberRolesRequest {
+  repeated string role_ids = 1;
+}
+
+message SetMemberRolesResponse {
+  WorkspaceMember member = 1;
 }

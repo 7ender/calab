@@ -211,6 +211,7 @@ export const zhCN: Dict = {
   'perm.MANAGE_NICKNAMES': '修改他人昵称',
   'perm.MENTION_EVERYONE': '提及所有人（@everyone、@here）',
   'perm.MANAGE_WORKSPACE': '管理工作区',
+  'perm.MANAGE_ROLES': '管理角色',
   'perm.ADMINISTRATOR': '管理员',
   'perm.allow': '允许',
   'perm.deny': '禁止',

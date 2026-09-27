@@ -20,7 +20,8 @@ enum PermissionTargetType {
 // Room-level override (ADR-0008). allow/deny are Permission bit masks.
 message RoomPermissionOverride {
   PermissionTargetType target_type = 1;
-  // ROLE: "owner" | "admin" | "member" | "guest"; USER: user id.
+  // ROLE: role id (ADR-0026; requests may still name a built-in role "owner" | "admin" |
+  // "member" | "guest", stored and returned as its id); USER: user id.
   string target_id = 2;
   uint64 allow = 3;
   uint64 deny = 4;

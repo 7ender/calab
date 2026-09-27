@@ -4,13 +4,15 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file calaba/v1/permissions.proto.
  */
 export const file_calaba_v1_permissions: GenFile = /*@__PURE__*/
-  fileDesc("ChtjYWxhYmEvdjEvcGVybWlzc2lvbnMucHJvdG8SCWNhbGFiYS52MSIxChJQZXJtaXNzaW9uT3ZlcnJpZGUSDQoFYWxsb3cYASABKAQSDAoEZGVueRgCIAEoBCrYAwoKUGVybWlzc2lvbhIaChZQRVJNSVNTSU9OX1VOU1BFQ0lGSUVEEAASGAoUUEVSTUlTU0lPTl9WSUVXX1JPT00QARIcChhQRVJNSVNTSU9OX1NFTkRfTUVTU0FHRVMQAhIbChdQRVJNSVNTSU9OX0FUVEFDSF9GSUxFUxAEEh4KGlBFUk1JU1NJT05fTUFOQUdFX01FU1NBR0VTEAgSFgoSUEVSTUlTU0lPTl9DT05ORUNUEBASFAoQUEVSTUlTU0lPTl9TUEVBSxAgEhUKEVBFUk1JU1NJT05fU1RSRUFNEEASHAoXUEVSTUlTU0lPTl9NVVRFX01FTUJFUlMQgAESGwoWUEVSTUlTU0lPTl9NQU5BR0VfUk9PTRCAAhIgChtQRVJNSVNTSU9OX01BTkFHRV9XT1JLU1BBQ0UQgAQSHQoYUEVSTUlTU0lPTl9BRE1JTklTVFJBVE9SEIAIEhwKF1BFUk1JU1NJT05fTU9WRV9NRU1CRVJTEIAQEiAKG1BFUk1JU1NJT05fTUFOQUdFX05JQ0tOQU1FUxCAIBIgChtQRVJNSVNTSU9OX01FTlRJT05fRVZFUllPTkUQgEASFgoQUEVSTUlTU0lPTl9WSURFTxCAgAEqmAEKDVdvcmtzcGFjZVJvbGUSHgoaV09SS1NQQUNFX1JPTEVfVU5TUEVDSUZJRUQQABIYChRXT1JLU1BBQ0VfUk9MRV9PV05FUhABEhgKFFdPUktTUEFDRV9ST0xFX0FETUlOEAISGQoVV09SS1NQQUNFX1JPTEVfTUVNQkVSEAMSGAoUV09SS1NQQUNFX1JPTEVfR1VFU1QQBEKeAQoNY29tLmNhbGFiYS52MUIQUGVybWlzc2lvbnNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM");
+  fileDesc("ChtjYWxhYmEvdjEvcGVybWlzc2lvbnMucHJvdG8SCWNhbGFiYS52MSIxChJQZXJtaXNzaW9uT3ZlcnJpZGUSDQoFYWxsb3cYASABKAQSDAoEZGVueRgCIAEoBCLcAQoEUm9sZRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDAoEbmFtZRgDIAEoCRINCgVjb2xvchgEIAEoDRIQCghwb3NpdGlvbhgFIAEoBRITCgtwZXJtaXNzaW9ucxgGIAEoBBIpCgdidWlsdGluGAcgASgOMhguY2FsYWJhLnYxLldvcmtzcGFjZVJvbGUSEwoLbWVudGlvbmFibGUYCCABKAgSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAq9wMKClBlcm1pc3Npb24SGgoWUEVSTUlTU0lPTl9VTlNQRUNJRklFRBAAEhgKFFBFUk1JU1NJT05fVklFV19ST09NEAESHAoYUEVSTUlTU0lPTl9TRU5EX01FU1NBR0VTEAISGwoXUEVSTUlTU0lPTl9BVFRBQ0hfRklMRVMQBBIeChpQRVJNSVNTSU9OX01BTkFHRV9NRVNTQUdFUxAIEhYKElBFUk1JU1NJT05fQ09OTkVDVBAQEhQKEFBFUk1JU1NJT05fU1BFQUsQIBIVChFQRVJNSVNTSU9OX1NUUkVBTRBAEhwKF1BFUk1JU1NJT05fTVVURV9NRU1CRVJTEIABEhsKFlBFUk1JU1NJT05fTUFOQUdFX1JPT00QgAISIAobUEVSTUlTU0lPTl9NQU5BR0VfV09SS1NQQUNFEIAEEh0KGFBFUk1JU1NJT05fQURNSU5JU1RSQVRPUhCACBIcChdQRVJNSVNTSU9OX01PVkVfTUVNQkVSUxCAEBIgChtQRVJNSVNTSU9OX01BTkFHRV9OSUNLTkFNRVMQgCASIAobUEVSTUlTU0lPTl9NRU5USU9OX0VWRVJZT05FEIBAEhYKEFBFUk1JU1NJT05fVklERU8QgIABEh0KF1BFUk1JU1NJT05fTUFOQUdFX1JPTEVTEICAAiqYAQoNV29ya3NwYWNlUm9sZRIeChpXT1JLU1BBQ0VfUk9MRV9VTlNQRUNJRklFRBAAEhgKFFdPUktTUEFDRV9ST0xFX09XTkVSEAESGAoUV09SS1NQQUNFX1JPTEVfQURNSU4QAhIZChVXT1JLU1BBQ0VfUk9MRV9NRU1CRVIQAxIYChRXT1JLU1BBQ0VfUk9MRV9HVUVTVBAEQp4BCg1jb20uY2FsYWJhLnYxQhBQZXJtaXNzaW9uc1Byb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message calaba.v1.PermissionOverride
@@ -33,6 +35,80 @@ export type PermissionOverride = Message<"calaba.v1.PermissionOverride"> & {
  */
 export const PermissionOverrideSchema: GenMessage<PermissionOverride> = /*@__PURE__*/
   messageDesc(file_calaba_v1_permissions, 0);
+
+/**
+ * A workspace role (ADR-0026). Four built-in roles exist in every workspace: OWNER and ADMIN
+ * (full access; permissions fixed), MEMBER (every non-guest; default permissions editable)
+ * and GUEST (editable within the guest set). Every non-guest member holds MEMBER, every guest
+ * GUEST; custom roles are added on top.
+ *
+ * @generated from message calaba.v1.Role
+ */
+export type Role = Message<"calaba.v1.Role"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string workspace_id = 2;
+   */
+  workspaceId: string;
+
+  /**
+   * 1..32 characters. Built-in roles carry their key ("owner" | "admin" | "member" |
+   * "guest", fixed): clients show a localized name for them.
+   *
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * 0xRRGGBB; 0 = no color
+   *
+   * @generated from field: uint32 color = 4;
+   */
+  color: number;
+
+  /**
+   * Higher = more senior. Built-ins: guest 0, member 1, admin 1000, owner 1001; custom roles
+   * in between (2..). Room overrides of a member's roles apply lowest position first.
+   *
+   * @generated from field: int32 position = 5;
+   */
+  position: number;
+
+  /**
+   * workspace-level bits (OR over the member's roles)
+   *
+   * @generated from field: uint64 permissions = 6;
+   */
+  permissions: bigint;
+
+  /**
+   * UNSPECIFIED = custom role
+   *
+   * @generated from field: calaba.v1.WorkspaceRole builtin = 7;
+   */
+  builtin: WorkspaceRole;
+
+  /**
+   * @generated from field: bool mentionable = 8;
+   */
+  mentionable: boolean;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 9;
+   */
+  createdAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.Role.
+ * Use `create(RoleSchema)` to create a new message.
+ */
+export const RoleSchema: GenMessage<Role> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_permissions, 1);
 
 /**
  * Permission bits. See docs/04-data-model.md and ADR-0008. Never reuse a freed bit.
@@ -149,6 +225,14 @@ export enum Permission {
    * @generated from enum value: PERMISSION_VIDEO = 16384;
    */
   VIDEO = 16384,
+
+  /**
+   * 1 << 15: workspace-level, create / edit / delete / order roles below one's highest role
+   * and assign them (ADR-0026). Not settable per room; only admins may grant it to a role.
+   *
+   * @generated from enum value: PERMISSION_MANAGE_ROLES = 32768;
+   */
+  MANAGE_ROLES = 32768,
 }
 
 /**
@@ -158,6 +242,9 @@ export const PermissionSchema: GenEnum<Permission> = /*@__PURE__*/
   enumDesc(file_calaba_v1_permissions, 0);
 
 /**
+ * Built-in workspace roles. Since ADR-0026 a member holds several roles (WorkspaceMember.
+ * role_ids); WorkspaceMember.role stays as the highest built-in role for older clients.
+ *
  * @generated from enum calaba.v1.WorkspaceRole
  */
 export enum WorkspaceRole {

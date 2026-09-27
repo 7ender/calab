@@ -28,7 +28,8 @@ export type RoomPermissionOverride = Message<"calaba.v1.RoomPermissionOverride">
   targetType: PermissionTargetType;
 
   /**
-   * ROLE: "owner" | "admin" | "member" | "guest"; USER: user id.
+   * ROLE: role id (ADR-0026; requests may still name a built-in role "owner" | "admin" |
+   * "member" | "guest", stored and returned as its id); USER: user id.
    *
    * @generated from field: string target_id = 2;
    */

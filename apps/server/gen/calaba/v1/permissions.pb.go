@@ -9,6 +9,7 @@ package calabav1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -41,6 +42,9 @@ const (
 	Permission_PERMISSION_MANAGE_NICKNAMES Permission = 4096  // 1 << 12: workspace-level, change others' nicknames
 	Permission_PERMISSION_MENTION_EVERYONE Permission = 8192  // 1 << 13: @everyone / @here mention everyone who sees the room
 	Permission_PERMISSION_VIDEO            Permission = 16384 // 1 << 14: publish a webcam in voice rooms (member: yes by default)
+	// 1 << 15: workspace-level, create / edit / delete / order roles below one's highest role
+	// and assign them (ADR-0026). Not settable per room; only admins may grant it to a role.
+	Permission_PERMISSION_MANAGE_ROLES Permission = 32768
 )
 
 // Enum value maps for Permission.
@@ -62,6 +66,7 @@ var (
 		4096:  "PERMISSION_MANAGE_NICKNAMES",
 		8192:  "PERMISSION_MENTION_EVERYONE",
 		16384: "PERMISSION_VIDEO",
+		32768: "PERMISSION_MANAGE_ROLES",
 	}
 	Permission_value = map[string]int32{
 		"PERMISSION_UNSPECIFIED":      0,
@@ -80,6 +85,7 @@ var (
 		"PERMISSION_MANAGE_NICKNAMES": 4096,
 		"PERMISSION_MENTION_EVERYONE": 8192,
 		"PERMISSION_VIDEO":            16384,
+		"PERMISSION_MANAGE_ROLES":     32768,
 	}
 )
 
@@ -110,6 +116,8 @@ func (Permission) EnumDescriptor() ([]byte, []int) {
 	return file_calaba_v1_permissions_proto_rawDescGZIP(), []int{0}
 }
 
+// Built-in workspace roles. Since ADR-0026 a member holds several roles (WorkspaceMember.
+// role_ids); WorkspaceMember.role stays as the highest built-in role for older clients.
 type WorkspaceRole int32
 
 const (
@@ -217,14 +225,141 @@ func (x *PermissionOverride) GetDeny() uint64 {
 	return 0
 }
 
+// A workspace role (ADR-0026). Four built-in roles exist in every workspace: OWNER and ADMIN
+// (full access; permissions fixed), MEMBER (every non-guest; default permissions editable)
+// and GUEST (editable within the guest set). Every non-guest member holds MEMBER, every guest
+// GUEST; custom roles are added on top.
+type Role struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	// 1..32 characters. Built-in roles carry their key ("owner" | "admin" | "member" |
+	// "guest", fixed): clients show a localized name for them.
+	Name  string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Color uint32 `protobuf:"varint,4,opt,name=color,proto3" json:"color,omitempty"` // 0xRRGGBB; 0 = no color
+	// Higher = more senior. Built-ins: guest 0, member 1, admin 1000, owner 1001; custom roles
+	// in between (2..). Room overrides of a member's roles apply lowest position first.
+	Position      int32                  `protobuf:"varint,5,opt,name=position,proto3" json:"position,omitempty"`
+	Permissions   uint64                 `protobuf:"varint,6,opt,name=permissions,proto3" json:"permissions,omitempty"`                      // workspace-level bits (OR over the member's roles)
+	Builtin       WorkspaceRole          `protobuf:"varint,7,opt,name=builtin,proto3,enum=calaba.v1.WorkspaceRole" json:"builtin,omitempty"` // UNSPECIFIED = custom role
+	Mentionable   bool                   `protobuf:"varint,8,opt,name=mentionable,proto3" json:"mentionable,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Role) Reset() {
+	*x = Role{}
+	mi := &file_calaba_v1_permissions_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Role) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Role) ProtoMessage() {}
+
+func (x *Role) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_permissions_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Role.ProtoReflect.Descriptor instead.
+func (*Role) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_permissions_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Role) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Role) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *Role) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Role) GetColor() uint32 {
+	if x != nil {
+		return x.Color
+	}
+	return 0
+}
+
+func (x *Role) GetPosition() int32 {
+	if x != nil {
+		return x.Position
+	}
+	return 0
+}
+
+func (x *Role) GetPermissions() uint64 {
+	if x != nil {
+		return x.Permissions
+	}
+	return 0
+}
+
+func (x *Role) GetBuiltin() WorkspaceRole {
+	if x != nil {
+		return x.Builtin
+	}
+	return WorkspaceRole_WORKSPACE_ROLE_UNSPECIFIED
+}
+
+func (x *Role) GetMentionable() bool {
+	if x != nil {
+		return x.Mentionable
+	}
+	return false
+}
+
+func (x *Role) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
 var File_calaba_v1_permissions_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcalaba/v1/permissions.proto\x12\tcalaba.v1\">\n" +
+	"\x1bcalaba/v1/permissions.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\">\n" +
 	"\x12PermissionOverride\x12\x14\n" +
 	"\x05allow\x18\x01 \x01(\x04R\x05allow\x12\x12\n" +
-	"\x04deny\x18\x02 \x01(\x04R\x04deny*\xd8\x03\n" +
+	"\x04deny\x18\x02 \x01(\x04R\x04deny\"\xb2\x02\n" +
+	"\x04Role\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x14\n" +
+	"\x05color\x18\x04 \x01(\rR\x05color\x12\x1a\n" +
+	"\bposition\x18\x05 \x01(\x05R\bposition\x12 \n" +
+	"\vpermissions\x18\x06 \x01(\x04R\vpermissions\x122\n" +
+	"\abuiltin\x18\a \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\abuiltin\x12 \n" +
+	"\vmentionable\x18\b \x01(\bR\vmentionable\x129\n" +
+	"\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\xf7\x03\n" +
 	"\n" +
 	"Permission\x12\x1a\n" +
 	"\x16PERMISSION_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -242,7 +377,8 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\x17PERMISSION_MOVE_MEMBERS\x10\x80\x10\x12 \n" +
 	"\x1bPERMISSION_MANAGE_NICKNAMES\x10\x80 \x12 \n" +
 	"\x1bPERMISSION_MENTION_EVERYONE\x10\x80@\x12\x16\n" +
-	"\x10PERMISSION_VIDEO\x10\x80\x80\x01*\x98\x01\n" +
+	"\x10PERMISSION_VIDEO\x10\x80\x80\x01\x12\x1d\n" +
+	"\x17PERMISSION_MANAGE_ROLES\x10\x80\x80\x02*\x98\x01\n" +
 	"\rWorkspaceRole\x12\x1e\n" +
 	"\x1aWORKSPACE_ROLE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14WORKSPACE_ROLE_OWNER\x10\x01\x12\x18\n" +
@@ -265,18 +401,22 @@ func file_calaba_v1_permissions_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_permissions_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_permissions_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_calaba_v1_permissions_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_calaba_v1_permissions_proto_goTypes = []any{
-	(Permission)(0),            // 0: calaba.v1.Permission
-	(WorkspaceRole)(0),         // 1: calaba.v1.WorkspaceRole
-	(*PermissionOverride)(nil), // 2: calaba.v1.PermissionOverride
+	(Permission)(0),               // 0: calaba.v1.Permission
+	(WorkspaceRole)(0),            // 1: calaba.v1.WorkspaceRole
+	(*PermissionOverride)(nil),    // 2: calaba.v1.PermissionOverride
+	(*Role)(nil),                  // 3: calaba.v1.Role
+	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
 }
 var file_calaba_v1_permissions_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: calaba.v1.Role.builtin:type_name -> calaba.v1.WorkspaceRole
+	4, // 1: calaba.v1.Role.created_at:type_name -> google.protobuf.Timestamp
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_permissions_proto_init() }
@@ -290,7 +430,7 @@ func file_calaba_v1_permissions_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_permissions_proto_rawDesc), len(file_calaba_v1_permissions_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -211,6 +211,7 @@ export const en: Dict = {
   'perm.MANAGE_NICKNAMES': 'Change others’ nicknames',
   'perm.MENTION_EVERYONE': 'Mention everyone (@everyone, @here)',
   'perm.MANAGE_WORKSPACE': 'Manage workspace',
+  'perm.MANAGE_ROLES': 'Manage roles',
   'perm.ADMINISTRATOR': 'Administrator',
   'perm.allow': 'allowed',
   'perm.deny': 'denied',

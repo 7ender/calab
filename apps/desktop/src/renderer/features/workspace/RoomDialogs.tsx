@@ -323,6 +323,7 @@ const PERM_LABEL: Record<PermissionName, MessageKey> = {
   MANAGE_NICKNAMES: 'perm.MANAGE_NICKNAMES',
   MENTION_EVERYONE: 'perm.MENTION_EVERYONE',
   VIDEO: 'perm.VIDEO',
+  MANAGE_ROLES: 'perm.MANAGE_ROLES',
 };
 
 const ROLE_TARGETS: Array<{ id: string; key: MessageKey }> = [

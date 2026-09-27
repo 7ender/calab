@@ -185,7 +185,8 @@ func (NotificationLevel) EnumDescriptor() ([]byte, []int) {
 type RoomPermissionOverride struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	TargetType PermissionTargetType   `protobuf:"varint,1,opt,name=target_type,json=targetType,proto3,enum=calaba.v1.PermissionTargetType" json:"target_type,omitempty"`
-	// ROLE: "owner" | "admin" | "member" | "guest"; USER: user id.
+	// ROLE: role id (ADR-0026; requests may still name a built-in role "owner" | "admin" |
+	// "member" | "guest", stored and returned as its id); USER: user id.
 	TargetId      string `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
 	Allow         uint64 `protobuf:"varint,3,opt,name=allow,proto3" json:"allow,omitempty"`
 	Deny          uint64 `protobuf:"varint,4,opt,name=deny,proto3" json:"deny,omitempty"`
