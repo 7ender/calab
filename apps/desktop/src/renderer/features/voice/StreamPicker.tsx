@@ -253,7 +253,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   const start = (src: CaptureSource | null = picked): void => {
     if (!src && !web) return;
     onClose();
-    const source = src ? { id: src.id, name: src.name } : { id: '', name: '' };
+    const source = src ? { id: src.id, name: src.name, displayId: src.displayId } : { id: '', name: '' };
     void voice.startStream({ source, preset, contentHint: prefs.contentHint, systemAudio });
   };
 

@@ -1,5 +1,6 @@
 // Generated contract (proto/calaba/v1 via buf; do not edit src/gen by hand).
 export * from './gen/calaba/v1/admin_pb.js';
+export * from './gen/calaba/v1/annot_pb.js';
 export * from './gen/calaba/v1/auth_pb.js';
 export * from './gen/calaba/v1/common_pb.js';
 export * from './gen/calaba/v1/dm_pb.js';

@@ -572,6 +572,12 @@ export function createWebPlatform(): Platform {
         return Promise.resolve();
       },
     },
+    // No overlay over the screen in a browser (ADR-0028): annotations stay on the stream tile.
+    annotOverlay: {
+      open: () => Promise.resolve(false),
+      send: () => undefined,
+      close: () => undefined,
+    },
     // The Fullscreen API on the whole page (the stream stage puts its own video container in full
     // screen instead: features/voice/fullscreen.ts).
     window: {

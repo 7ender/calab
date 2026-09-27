@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { cpus, hostname } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, nativeTheme, powerMonitor, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, powerMonitor, screen, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron';
 import log from 'electron-log/main';
 import {
   IPC,
@@ -20,6 +20,8 @@ import {
 } from '../shared/ipc';
 import { serverUrlProblem } from '../shared/serverUrl';
 import { forceRefresh, getAccessToken, guestJoin, login, logout, register, restore, revoked } from './auth';
+import { parseOverlayEvent, parseOverlayTarget } from '../shared/annot';
+import { closeOverlay, closeOverlayWith, openOverlay, refitOverlay, sendOverlay } from './annotOverlay';
 import { armSelection, listSources, requestScreenAccess, screenAccess, systemAudioSupport } from './capture';
 import { parseThumbRequest } from '../shared/captureThumb';
 import { takePendingDeepLink } from './deeplink';
@@ -300,6 +302,14 @@ export function registerIpc(): void {
     const win = BrowserWindow.fromWebContents(e.sender);
     return win ? fullscreenFor(win).isFullScreen() : false;
   });
+  handle(IPC.annotOverlayOpen, (e, target) => {
+    closeOverlayWith(e.sender);
+    return openOverlay(parseOverlayTarget(target));
+  });
+  handle(IPC.annotOverlaySend, (_e, ev) => sendOverlay(parseOverlayEvent(ev)));
+  handle(IPC.annotOverlayClose, () => closeOverlay());
+  screen.on('display-metrics-changed', refitOverlay);
+  screen.on('display-removed', refitOverlay);
   handle(IPC.captureSelectSource, (e, sel) => {
     armSelection(e.sender, parseSelection(sel));
   });

@@ -6,6 +6,7 @@ import { esEcho } from './echo';
 import { esMedia } from './media';
 import { esMail } from './mail';
 import { esRecording } from './recording';
+import { esAnnot } from './annot';
 import { esPeople } from './people';
 import { esModeration } from './moderation';
 import { esPicker } from './picker';
@@ -28,6 +29,7 @@ export const es: Dict = {
   ...esModeration,
   ...esMail,
   ...esRecording,
+  ...esAnnot,
   ...esPicker,
   ...esRoles,
   'voice.pendingMember': 'Conectando…',

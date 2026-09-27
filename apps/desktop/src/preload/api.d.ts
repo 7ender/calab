@@ -26,6 +26,7 @@ import type {
   UpdateStatus,
 } from '../shared/ipc';
 import type { ThumbRequest } from '../shared/captureThumb';
+import type { AnnotOverlayEvent, AnnotOverlayTarget } from '../shared/annot';
 
 type Unsubscribe = () => void;
 
@@ -127,6 +128,16 @@ export interface CalabaApi {
      * needed); web: input inside this tab only.
      */
     idleSeconds(): Promise<number>;
+  };
+  /**
+   * Presenter's annotation overlay over the shared screen (ADR-0028). Web: no overlay (open →
+   * false, the rest no-ops).
+   */
+  annotOverlay: {
+    /** Opens (or re-targets) the overlay; false when this source / OS gets none. */
+    open(target: AnnotOverlayTarget): Promise<boolean>;
+    send(ev: AnnotOverlayEvent): void;
+    close(): void;
   };
   /** This window (the caller's own BrowserWindow: the main window or a stream pop-out). */
   window: {

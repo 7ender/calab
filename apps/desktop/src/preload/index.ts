@@ -75,6 +75,11 @@ const api: CalabaApi = {
     relaunch: () => ipcRenderer.invoke(IPC.appRelaunch),
     idleSeconds: () => ipcRenderer.invoke(IPC.systemIdleSeconds),
   },
+  annotOverlay: {
+    open: (target) => ipcRenderer.invoke(IPC.annotOverlayOpen, target),
+    send: (ev) => void ipcRenderer.invoke(IPC.annotOverlaySend, ev),
+    close: () => void ipcRenderer.invoke(IPC.annotOverlayClose),
+  },
   window: {
     setFullScreen: (on) => ipcRenderer.invoke(IPC.windowSetFullScreen, on),
     isFullScreen: () => ipcRenderer.invoke(IPC.windowIsFullScreen),

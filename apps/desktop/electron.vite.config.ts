@@ -44,7 +44,8 @@ export default defineConfig({
     plugins: [bundledPackages(BUNDLED)],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        // overlay: the annotation overlay window's receive-only preload (ADR-0028).
+        input: { index: resolve(__dirname, 'src/preload/index.ts'), overlay: resolve(__dirname, 'src/preload/overlay.ts') },
         // Sandboxed preloads must be CommonJS.
         output: { format: 'cjs', entryFileNames: '[name].cjs' },
       },
@@ -58,7 +59,8 @@ export default defineConfig({
       },
     },
     build: {
-      rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html') } },
+      // overlay.html: the presenter's annotation overlay window (ADR-0028).
+      rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html'), overlay: resolve(__dirname, 'src/renderer/overlay.html') } },
     },
     // Pre-bundle the worklet's deps at startup: otherwise Vite discovers them on
     // the first mic start and force-reloads the page in the middle of connect().

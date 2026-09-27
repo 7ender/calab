@@ -5,6 +5,7 @@ import { ruEcho } from './echo';
 import { ruMedia } from './media';
 import { ruMail } from './mail';
 import { ruRecording } from './recording';
+import { ruAnnot } from './annot';
 import { ruPeople } from './people';
 import { ruModeration } from './moderation';
 import { ruPicker } from './picker';
@@ -27,6 +28,7 @@ export const ru = {
   ...ruModeration,
   ...ruMail,
   ...ruRecording,
+  ...ruAnnot,
   ...ruPicker,
   ...ruRoles,
   // common
