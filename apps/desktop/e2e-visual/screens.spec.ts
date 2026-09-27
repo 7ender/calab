@@ -46,6 +46,7 @@ const KEY = new Set([
   'main-chat',
   'sidebar-drag',
   'chat-hover-actions',
+  'tooltip-lazy',
   'chat-context-menu',
   'room-notify-menu',
   'dm-list',
@@ -793,6 +794,37 @@ test('chat-hover-actions', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await focusDoneBubble(win);
   await checkpoint(shot, 'chat-hover-actions');
+});
+
+/**
+ * Lazy Tip (components/ui.tsx, docs/18 step 6): Radix mounts on the first hover / keyboard focus and
+ * the tooltip behaves as an always-mounted one — opens after one mouse move, the first click still
+ * lands, keyboard focus stays put and gets the tooltip with aria-describedby. No screenshot.
+ */
+test('tooltip-lazy', async ({ open, win, mock }) => {
+  await open();
+  await mainWindow(win, mock);
+  const tooltip = win.getByRole('tooltip');
+  // Hover: one move over an untouched Tip (a Dropdown trigger inside) opens it after the delay.
+  const attach = win.getByRole('button', { name: 'Прикрепить файл' });
+  await attach.hover();
+  await expect(tooltip).toHaveText('Прикрепить файл');
+  const id = await tooltip.getAttribute('id');
+  await expect(attach).toHaveAttribute('aria-describedby', id ?? '');
+  // The first click after the wake reaches the (remounted) trigger: the menu opens.
+  await attach.click();
+  await expect(win.getByRole('menu')).toBeVisible();
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('menu')).toHaveCount(0);
+  await win.mouse.move(0, 0);
+  // Keyboard: focus lands on an untouched Tip, stays there after the remount, tooltip at once.
+  const help = win.getByRole('button', { name: 'Горячие клавиши' });
+  await keyboardFocus(help);
+  await expect(tooltip).toHaveText('Горячие клавиши');
+  await expect(help).toHaveAttribute('aria-describedby', (await tooltip.getAttribute('id')) ?? '');
+  await expect(help).toBeFocused();
+  await win.keyboard.press('Enter');
+  await expect(win.getByRole('dialog', { name: 'Горячие клавиши' })).toBeVisible();
 });
 
 test('chat-link-preview', async ({ open, win, mock, shot }) => {
