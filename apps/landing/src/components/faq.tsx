@@ -4,7 +4,17 @@ import { rich } from '@/lib/rich';
 import { CONTACT_EMAIL } from '@/lib/site';
 import { Section, SectionHeading } from './ui';
 
-const ORDER = ['server', 'traffic', 'updates', 'security', 'firewall', 'limits', 'license'] as const;
+const ORDER = [
+  'server',
+  'traffic',
+  'updates',
+  'security',
+  'firewall',
+  'limits',
+  'roomLimit',
+  'license',
+  'buyTeam',
+] as const;
 
 export function Faq({ t }: { t: Dict['faq'] }) {
   const email = (
