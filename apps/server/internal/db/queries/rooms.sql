@@ -23,6 +23,7 @@ UPDATE rooms SET
     topic    = coalesce(sqlc.narg('topic'), topic),
     position = coalesce(sqlc.narg('position'), position),
     user_limit = coalesce(sqlc.narg('user_limit'), user_limit),
+    allow_recording = coalesce(sqlc.narg('allow_recording'), allow_recording),
     audio_bitrate_kbps = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('audio_bitrate_kbps')::integer ELSE audio_bitrate_kbps END,
     max_stream_preset  = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_stream_preset')::text ELSE max_stream_preset END,
     max_streams        = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_streams')::integer ELSE max_streams END,

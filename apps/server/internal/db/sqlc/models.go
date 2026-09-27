@@ -82,6 +82,8 @@ type Message struct {
 	PinnedAt     *time.Time
 	PinnedBy     *uuid.UUID
 	EmbedsHidden bool
+	Kind         string
+	Payload      []byte
 }
 
 type MessageAttachment struct {
@@ -132,6 +134,7 @@ type Room struct {
 	VoiceStatus      *string
 	CameraLimit      *int32
 	DmKey            *string
+	AllowRecording   bool
 }
 
 type RoomCategory struct {
@@ -169,6 +172,32 @@ type RoomPermission struct {
 	TargetID   string
 	Allow      int64
 	Deny       int64
+}
+
+type RoomRecording struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	RoomID          uuid.UUID
+	StartedBy       *uuid.UUID
+	StoppedBy       *uuid.UUID
+	Status          string
+	StopReason      string
+	EgressID        *string
+	File            string
+	SizeBytes       int64
+	DurationSec     int32
+	StartedAt       time.Time
+	StoppedAt       *time.Time
+	EmptySince      *time.Time
+	GptunnelID      string
+	WebUrl          string
+	Error           string
+	MessageID       *uuid.UUID
+	Attempts        int32
+	NextAt          *time.Time
+	ProcessingSince *time.Time
+	FileDeletedAt   *time.Time
+	UpdatedAt       time.Time
 }
 
 type Session struct {
@@ -228,6 +257,19 @@ type Workspace struct {
 	StorageUsedBytes        int64
 	AllowSelfNickname       bool
 	DefaultCameraLimit      int32
+}
+
+type WorkspaceIntegration struct {
+	WorkspaceID uuid.UUID
+	Kind        string
+	TokenEnc    []byte
+	DeviceID    string
+	DeviceName  string
+	Account     string
+	WebUrl      string
+	PairedBy    *uuid.UUID
+	PairedAt    time.Time
+	RevokedAt   *time.Time
 }
 
 type WorkspaceInvite struct {

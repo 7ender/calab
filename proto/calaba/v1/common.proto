@@ -29,6 +29,10 @@ enum ErrorCode {
   ERROR_CODE_EMAIL_NOT_VERIFIED = 20;
   ERROR_CODE_CODE_INVALID = 21;        // 422: wrong email code (password reset: also unknown / expired)
   ERROR_CODE_CODE_EXPIRED = 22;        // 422: no active email code (expired, used up after 5 attempts) — request a new one
+  // Meeting recording (ADR-0025).
+  ERROR_CODE_NOT_PAIRED = 23;          // 409: the workspace is not connected to GPTunneL (ask an owner / admin)
+  ERROR_CODE_ALREADY_RECORDING = 24;   // 409: the room is already being recorded
+  ERROR_CODE_RECORDING_LIMIT = 25;     // 409: RECORDING_MAX_CONCURRENT recordings run on the server (used / limit)
 }
 
 // Error body of every non-2xx REST response.
