@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatUtcOffset, timeZoneLabel, utcOffsetMinutes } from './timezone';
+import { formatUtcOffset, formatUtcZone, localClock, timeZoneLabel, utcOffsetMinutes, zoneDiffHint, zoneDiffMinutes } from './timezone';
 
 const JAN = new Date('2026-01-15T12:00:00Z');
 const JUL = new Date('2026-07-15T12:00:00Z');
@@ -42,5 +42,42 @@ describe('timeZoneLabel', () => {
     expect(timeZoneLabel('', 'Europe/Moscow', JAN)).toBeNull();
     expect(timeZoneLabel('Mars/Olympus', 'Europe/Moscow', JAN)).toBeNull();
     expect(timeZoneLabel('Asia/Tokyo', '', JAN)).toBe('(+9 UTC)');
+  });
+});
+
+describe('formatUtcZone (local time line, docs/09 #48)', () => {
+  it('UTC+3, UTC−5:30, UTC for zero', () => {
+    expect(formatUtcZone(180)).toBe('UTC+3');
+    expect(formatUtcZone(-330)).toBe('UTC−5:30');
+    expect(formatUtcZone(345)).toBe('UTC+5:45');
+    expect(formatUtcZone(-300)).toBe('UTC−5');
+    expect(formatUtcZone(0)).toBe('UTC');
+  });
+});
+
+describe('zone difference', () => {
+  it('their offset minus mine, DST on the day', () => {
+    expect(zoneDiffMinutes('Asia/Yekaterinburg', 'Europe/Moscow', JAN)).toBe(120);
+    expect(zoneDiffMinutes('Europe/London', 'Europe/Moscow', JAN)).toBe(-180);
+    expect(zoneDiffMinutes('Europe/London', 'Europe/Moscow', JUL)).toBe(-120);
+    expect(zoneDiffMinutes('Asia/Kolkata', 'Europe/Moscow', JAN)).toBe(150);
+    expect(zoneDiffMinutes('Europe/Istanbul', 'Europe/Moscow', JAN)).toBe(0);
+    expect(zoneDiffMinutes('Asia/Tokyo', '', JAN)).toBeNull();
+  });
+  it('hint: ahead / behind, hours and minutes, nothing when equal', () => {
+    expect(zoneDiffHint(120)).toBe('на 2 ч впереди');
+    expect(zoneDiffHint(-180)).toBe('на 3 ч позади');
+    expect(zoneDiffHint(150)).toBe('на 2 ч 30 мин впереди');
+    expect(zoneDiffHint(-30)).toBe('на 30 мин позади');
+    expect(zoneDiffHint(0)).toBeNull();
+    expect(zoneDiffHint(null)).toBeNull();
+  });
+  it('localClock: zone, their wall time, diff; unknown zone → null', () => {
+    const at = new Date('2026-01-15T11:05:00Z');
+    const time = (d: Date, tz: string): string => new Intl.DateTimeFormat('ru', { hour: '2-digit', minute: '2-digit', timeZone: tz }).format(d);
+    expect(localClock('Europe/Moscow', 'Asia/Yekaterinburg', at, time)).toEqual({ zone: 'UTC+3', time: '14:05', diff: -120 });
+    expect(localClock('UTC', '', at, time)).toEqual({ zone: 'UTC', time: '11:05', diff: null });
+    expect(localClock('', 'Europe/Moscow', at, time)).toBeNull();
+    expect(localClock('Mars/Olympus', 'Europe/Moscow', at, time)).toBeNull();
   });
 });

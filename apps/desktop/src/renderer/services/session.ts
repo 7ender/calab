@@ -23,7 +23,7 @@ import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway,
 import { handleDeepLink, takePendingInvite } from './links';
 import { showLinkLanding } from './linkLanding';
 import { watchSyncedPrefs } from './profile';
-import { resetTimeZoneSync } from './timezone';
+import { recheckTimeZone, resetTimeZoneSync } from './timezone';
 import { voice } from './voice';
 import { platform } from '../platform';
 import { t } from '../i18n';
@@ -50,6 +50,7 @@ export async function bootstrap(): Promise<void> {
       if (ev === 'resume') reconnectGateway();
       else wakeGateway();
       if (useSession.getState().status === 'offline') void retryConnect();
+      recheckTimeZone(); // a laptop may wake up in another zone (docs/09 #48)
     }
   });
   window.addEventListener('online', () => {

@@ -66,8 +66,8 @@ export function NewDmDialog({ onClose }: { onClose: () => void }): ReactNode {
   };
 
   return (
-    <Modal open onClose={onClose} title={t('dm.newTitle')} description={t('dm.newHint')} initialFocus={input}>
-      <div className="-mx-2 flex flex-col pb-1" data-testid="new-dm">
+    <Modal open onClose={onClose} title={t('dm.newTitle')} description={t('dm.newHint')} initialFocus={input} fill>
+      <div className="-mx-2 flex min-h-0 flex-1 flex-col" data-testid="new-dm">
         <PickerPanel<MemberPickItem>
           groups={groups}
           onQuery={onQuery}
@@ -78,6 +78,7 @@ export function NewDmDialog({ onClose }: { onClose: () => void }): ReactNode {
           placeholder={t('dm.newSearch')}
           label={t('dm.newTitle')}
           height={264}
+          fill
           inputRef={input}
           autoFocus={false}
           renderItem={(item, active) => (

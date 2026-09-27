@@ -23,6 +23,13 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.profile.name': '资料名称',
   'people.profile.status': '状态',
   'people.profile.lastSeen': '最后在线：{when}',
+  // local time line (docs/09 #48)
+  'people.tz.title': '当地时间',
+  'people.tz.hours': '{h} 小时',
+  'people.tz.hoursMinutes': '{h} 小时 {m} 分钟',
+  'people.tz.minutes': '{m} 分钟',
+  'people.tz.ahead': '比你早 {diff}',
+  'people.tz.behind': '比你晚 {diff}',
 
   // member context menu
   'people.menu.profile': '资料',

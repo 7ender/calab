@@ -12,7 +12,7 @@ import { t, type MessageKey } from '../../i18n';
 import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { startDm } from '../../services/dms';
-import { useTimeZoneLabel } from '../../services/timezone';
+import { LocalTime } from './LocalTime';
 import { isGuest, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { requestMention } from '../chat/mentionRequest';
 import { useCanDm } from '../dm/canDm';
@@ -67,7 +67,7 @@ function useBannerColor(userId: string, fileId: string | undefined): string {
 
 /**
  * Member profile (docs/09 #20, reference docs/images/reference/discord-profile-full.png): banner in
- * the avatar's colour, avatar 80 with presence, name + profile name + «(+N UTC)», «Написать»
+ * the avatar's colour, avatar 80 with presence, name + profile name, local time «UTC+3 · 14:05», «Написать»
  * (accent) · «Упомянуть» · «…» (the member menu), «Участник с» (registration · this workspace),
  * «Роли» chips with × and + (by rights; the server re-checks), and «Заметка (видна только вам)»
  * saved as you type (800 ms debounce, GET/PUT /api/users/{id}/note).
@@ -87,7 +87,6 @@ export function ProfileDialog({
   const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
   const name = useMemberName(workspaceId, userId);
   const look = useRoleLook(workspaceId, userId);
-  const tz = useTimeZoneLabel(userId);
   const canDm = useCanDm(workspaceId, userId);
   const u = m?.user;
   const banner = useBannerColor(userId, u?.avatarFileId || undefined);
@@ -138,7 +137,6 @@ export function ProfileDialog({
               <div className="flex min-w-0 items-center gap-2">
                 <DialogP.Title className={cx('min-w-0 truncate text-title font-semibold leading-tight', roleTextClass(m.role, 'role', look))} style={roleTextStyle(m.role, 'role', look)} title={name}>
                   {name}
-                  {tz ? <span className="font-normal text-muted"> {tz}</span> : null}
                 </DialogP.Title>
                 <RoleMark role={m.role} custom={look} />
                 {isGuest(m) ? <GuestBadge /> : null}
@@ -149,6 +147,7 @@ export function ProfileDialog({
                 </div>
               ) : null}
               <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
+              <LocalTime userId={userId} variant="line" />
 
               <div className="mt-4 flex items-center gap-2">
                 {canDm ? (

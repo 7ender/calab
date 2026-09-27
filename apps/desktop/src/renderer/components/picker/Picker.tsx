@@ -45,8 +45,14 @@ export interface PickerPanelProps<T extends PickerItem> {
   error?: string | null;
   /** Show group headers even when only one group has rows. */
   alwaysHeaders?: boolean;
-  /** List height (px) on the desktop; the list never grows past it. */
+  /** List height (px) on the desktop; the list never grows past it (see `fill`). */
   height?: number;
+  /**
+   * In a `Modal fill` (docs/09 #52): the list takes the height left in the dialog, down to its
+   * bottom padding (`flex-1 min-h-0`), instead of stopping at `height` with room to spare;
+   * a virtualized list starts from `height` and shrinks with a short window.
+   */
+  fill?: boolean;
   /** Focus the field on mount (never on a phone: no keyboard until a tap). */
   autoFocus?: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
@@ -72,6 +78,7 @@ export function PickerPanel<T extends PickerItem>({
   error = null,
   alwaysHeaders = false,
   height = 288,
+  fill = false,
   autoFocus = true,
   inputRef,
   testId,
@@ -206,8 +213,8 @@ export function PickerPanel<T extends PickerItem>({
         role="listbox"
         aria-label={label}
         aria-busy={loading || undefined}
-        className={cx('min-h-0', !virtual && 'overflow-y-auto overscroll-contain')}
-        style={virtual ? { height } : { maxHeight: height }}
+        className={cx('min-h-0', fill && 'flex-1', !virtual && 'overflow-y-auto overscroll-contain')}
+        style={fill ? (virtual ? { flexBasis: height } : undefined) : virtual ? { height } : { maxHeight: height }}
       >
         {status !== null ? (
           <div role="presentation" className="grid place-items-center px-3 py-6 text-center text-body text-muted" data-testid="picker-empty">

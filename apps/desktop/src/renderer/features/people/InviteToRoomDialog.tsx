@@ -69,15 +69,16 @@ export function InviteToRoomDialog({ roomId, onClose }: { roomId: string; onClos
   };
 
   return (
-    <Modal open onClose={onClose} title={t('roomInvite.title', { room: name })} description={t('roomInvite.hint')} initialFocus={input}>
-      <div className="flex flex-col gap-4" data-testid="room-invite">
-        <div className="-mx-2">
+    <Modal open onClose={onClose} title={t('roomInvite.title', { room: name })} description={t('roomInvite.hint')} initialFocus={input} fill>
+      <div className="flex min-h-0 flex-1 flex-col gap-4" data-testid="room-invite">
+        <div className="-mx-2 flex min-h-0 flex-1 flex-col">
           <PickerPanel<MemberPickItem>
             groups={groups}
             onSelect={(item) => void invite(item)}
             placeholder={t('picker.searchPeople')}
             label={t('roomInvite.title', { room: name })}
             height={256}
+            fill
             inputRef={input}
             autoFocus={false}
             renderItem={(item, active) => (
@@ -107,7 +108,7 @@ export function InviteToRoomDialog({ roomId, onClose }: { roomId: string; onClos
             )}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex shrink-0 flex-col gap-1.5">
           <span className="text-caption font-medium text-muted">{t('roomInvite.link')}</span>
           <div className="flex items-center gap-2">
             <Input readOnly value={link.data ?? ''} placeholder={link.isError ? roomLinkError(link.error) : '…'} aria-label={t('roomInvite.link')} className="min-w-0 flex-1" onFocus={(e) => e.currentTarget.select()} />

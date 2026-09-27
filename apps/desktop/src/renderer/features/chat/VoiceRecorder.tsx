@@ -1,5 +1,6 @@
 import { ArrowUp, ChevronLeft, ChevronUp, Lock, Mic } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useMobile } from '../../lib/mobile';
@@ -28,6 +29,53 @@ const LIVE_BARS = 40;
 /** Visual tests: a fixed «speech» pattern instead of the fake mic's beeps. */
 const TEST_LEVELS = Array.from({ length: LIVE_BARS }, (_, i) => 0.15 + 0.8 * Math.abs(Math.sin(i * 0.55) * Math.sin(i * 0.23 + 0.4)));
 
+/** Gap between the mic button and the lock above it. */
+const LOCK_GAP = 16;
+/** The lock's height (h-16): kept inside the visible viewport. */
+const LOCK_H = 64;
+
+type Box = { left: number; top: number; width: number; height: number };
+
+/**
+ * The viewport box of `ref` while `on`, re-measured when the window or the visual viewport
+ * (phone keyboard, pinch) changes or the anchor itself resizes — the recording overlay (strip,
+ * lock) is portalled to <body> and follows its anchors in the composer (docs/09 #49).
+ */
+function useAnchorBox(ref: RefObject<HTMLElement | null>, on: boolean): Box | null {
+  const [box, setBox] = useState<Box | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!on || !el) {
+      setBox(null);
+      return;
+    }
+    let frame = 0;
+    const measure = (): void => {
+      frame = 0;
+      const r = el.getBoundingClientRect();
+      setBox((b) => (b && b.left === r.left && b.top === r.top && b.width === r.width && b.height === r.height ? b : { left: r.left, top: r.top, width: r.width, height: r.height }));
+    };
+    const schedule = (): void => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    const ro = new ResizeObserver(schedule);
+    ro.observe(el);
+    const vv = window.visualViewport;
+    window.addEventListener('resize', schedule);
+    vv?.addEventListener('resize', schedule);
+    vv?.addEventListener('scroll', schedule);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      ro.disconnect();
+      window.removeEventListener('resize', schedule);
+      vv?.removeEventListener('resize', schedule);
+      vv?.removeEventListener('scroll', schedule);
+    };
+  }, [ref, on]);
+  return box;
+}
+
 export interface VoiceControl {
   /** Recording (or opening the mic): the composer shows `strip` instead of the field. */
   active: boolean;
@@ -46,6 +94,8 @@ export function useVoiceRecorder({ onSend, disabled }: { onSend: (r: VoiceResult
   const [drag, setDrag] = useState({ dx: 0, dy: 0 });
   const hold = useRef<HoldState | null>(null);
   const origin = useRef({ x: 0, y: 0 });
+  const slotRef = useRef<HTMLDivElement>(null);
+  const micRef = useRef<HTMLButtonElement>(null);
   const sendRef = useRef(onSend);
   useLayoutEffect(() => {
     sendRef.current = onSend;
@@ -128,60 +178,84 @@ export function useVoiceRecorder({ onSend, disabled }: { onSend: (r: VoiceResult
   const live = visualTest ? TEST_LEVELS : recent.slice(-LIVE_BARS);
   const shownLevel = visualTest ? 0.55 : level;
   const progress = cancelProgress(drag.dx);
-
-  const strip = active ? (
-    <div
-      data-testid="voice-recording"
-      role="status"
-      aria-label={t('media.voiceRecording')}
-      className="flex h-10 min-w-0 flex-1 items-center gap-3 overflow-hidden rounded-[20px] border border-line bg-elev pl-3.5 pr-1.5 shadow-[var(--shadow-card)]"
-    >
-      <span className="rec-dot size-2.5 shrink-0 rounded-full bg-danger" aria-hidden />
-      <span className="w-14 shrink-0 text-list tabular-nums" data-testid="voice-timer">
-        {formatRecording(elapsed)}
-      </span>
-      {locked ? (
-        <>
-          <div aria-hidden className="flex h-6 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden">
-            {live.map((v, i) => (
-              <span key={i} className="w-[2px] shrink-0 rounded-full bg-accent" style={{ height: Math.max(2, Math.round(v * 24)) }} />
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => finish(false)}
-            className="h-8 shrink-0 rounded-full px-3 text-body font-semibold text-accent-text hover:bg-hover mobile:h-11"
-          >
-            {t('common.cancel')}
-          </button>
-        </>
-      ) : (
-        <span
-          className="flex min-w-0 flex-1 items-center justify-center gap-1 truncate text-body text-muted"
-          style={{ transform: `translateX(${Math.round(drag.dx * 0.6)}px)`, opacity: 1 - progress * 0.8 }}
-        >
-          <ChevronLeft className="size-4 shrink-0" aria-hidden />
-          <span className="truncate">{mobile ? t('media.voiceSlideCancel') : t('media.voiceSlideCancelEsc')}</span>
-        </span>
-      )}
-    </div>
-  ) : null;
-
   const recording = active && !locked;
-  const button = (
-    <div className="relative mb-0.5 shrink-0">
-      {recording ? (
-        // The lock: slide up to it to record hands-free.
+  const slotBox = useAnchorBox(slotRef, active);
+  const micBox = useAnchorBox(micRef, recording);
+
+  // The strip and the lock live on the popover layer, portalled to <body> (docs/09 #49): the
+  // feed's «вниз» button (--z-sticky) and the floating members panel must not cover them. The
+  // composer keeps an empty slot of the strip's size; the lock is centred on the mic button.
+  const overlay = (
+    <>
+      {slotBox ? (
+        <div
+          data-testid="voice-recording"
+          role="status"
+          aria-label={t('media.voiceRecording')}
+          className="fixed z-[var(--z-popover)] flex items-center gap-3 overflow-hidden rounded-[20px] border border-line bg-elev pl-3.5 pr-1.5 shadow-[var(--shadow-card)]"
+          style={{ left: slotBox.left, top: slotBox.top, width: slotBox.width, height: slotBox.height }}
+        >
+          <span className="rec-dot size-2.5 shrink-0 rounded-full bg-danger" aria-hidden />
+          <span className="w-14 shrink-0 text-list tabular-nums" data-testid="voice-timer">
+            {formatRecording(elapsed)}
+          </span>
+          {locked ? (
+            <>
+              <div aria-hidden className="flex h-6 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden">
+                {live.map((v, i) => (
+                  <span key={i} className="w-[2px] shrink-0 rounded-full bg-accent" style={{ height: Math.max(2, Math.round(v * 24)) }} />
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => finish(false)}
+                className="h-8 shrink-0 rounded-full px-3 text-body font-semibold text-accent-text hover:bg-hover mobile:h-11"
+              >
+                {t('common.cancel')}
+              </button>
+            </>
+          ) : (
+            <span
+              className="flex min-w-0 flex-1 items-center justify-center gap-1 truncate text-body text-muted"
+              style={{ transform: `translateX(${Math.round(drag.dx * 0.6)}px)`, opacity: 1 - progress * 0.8 }}
+            >
+              <ChevronLeft className="size-4 shrink-0" aria-hidden />
+              <span className="truncate">{mobile ? t('media.voiceSlideCancel') : t('media.voiceSlideCancelEsc')}</span>
+            </span>
+          )}
+        </div>
+      ) : null}
+      {recording && micBox ? (
+        // The lock: slide up to it to record hands-free. Centred on the mic button's own box (one
+        // inline transform — a translate class next to it used to shift it a second time), kept
+        // below the top of the visible viewport (phone keyboard / safe area).
         <div
           aria-hidden
-          className="absolute bottom-full left-1/2 mb-4 flex h-16 w-9 -translate-x-1/2 flex-col items-center justify-start gap-0.5 rounded-full border border-line bg-elev pt-2 text-muted shadow-[var(--shadow-card)]"
-          style={{ transform: `translate(-50%, ${Math.round(drag.dy * 0.4)}px)` }}
+          className="fixed z-[var(--z-popover)] flex h-16 w-9 flex-col items-center justify-start gap-0.5 rounded-full border border-line bg-elev pt-2 text-muted shadow-[var(--shadow-card)]"
+          style={{
+            left: micBox.left + micBox.width / 2,
+            top: Math.max(micBox.top - LOCK_GAP - LOCK_H, (window.visualViewport?.offsetTop ?? 0) + 8),
+            transform: `translate(-50%, ${Math.round(drag.dy * 0.4)}px)`,
+          }}
           data-testid="voice-lock"
         >
           <Lock className="size-4" />
           <ChevronUp className="size-4" />
         </div>
       ) : null}
+    </>
+  );
+
+  const strip = active ? (
+    <>
+      {/* The strip's place in the composer; the strip itself is drawn over it on the popover layer. */}
+      <div ref={slotRef} aria-hidden className="h-10 min-w-0 flex-1" data-testid="voice-slot" />
+      {createPortal(overlay, document.body)}
+    </>
+  ) : null;
+
+  const button = (
+    <div className="relative mb-0.5 shrink-0">
       {active ? (
         // Level halo behind the button.
         <span
@@ -192,6 +266,7 @@ export function useVoiceRecorder({ onSend, disabled }: { onSend: (r: VoiceResult
       ) : null}
       <Tip label={active ? t('chat.send') : t('media.voiceRecord')}>
         <button
+          ref={micRef}
           type="button"
           data-testid="voice-button"
           aria-label={active ? t('chat.send') : t('media.voiceRecord')}

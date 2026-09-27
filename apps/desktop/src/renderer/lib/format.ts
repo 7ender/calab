@@ -56,6 +56,8 @@ const RELATIVE_STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
 export const fmt = {
   /** «14:05» / “2:05 PM”. */
   time: (d: Date): string => dtf({ hour: '2-digit', minute: '2-digit' }).format(d),
+  /** «14:05» on the wall clock of IANA zone `tz` (a member's local time, docs/09 #48). */
+  timeIn: (d: Date, tz: string): string => dtf({ hour: '2-digit', minute: '2-digit', timeZone: tz }).format(d),
   /** Tooltip over a message time: weekday, full date, time. */
   full: (d: Date): string => dtf({ dateStyle: 'full', timeStyle: 'short' }).format(d),
   /** «14 января 2025 г.» / “January 14, 2025”. */
