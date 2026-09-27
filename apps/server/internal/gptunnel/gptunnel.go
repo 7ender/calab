@@ -50,6 +50,12 @@ const (
 // DefaultChunkSize is the upload chunk (as gptunnel-recorder).
 const DefaultChunkSize = 8 << 20
 
+// Limits of one recording in GPTunneL (ADR-0025): larger or longer ones are rejected.
+const (
+	MaxBytes    = 4 << 30
+	MaxDuration = 4 * time.Hour
+)
+
 // Error is a failed call. Status 0 = no HTTP answer (network).
 type Error struct {
 	Status     int

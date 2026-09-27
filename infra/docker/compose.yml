@@ -75,8 +75,8 @@ services:
   # LiveKit Egress (ADR-0025): records meetings — audio-only room composites, which run without
   # Chrome (SDK source, ~0.5 CPU each) — into MP4 files on recordings_data. Talks to LiveKit
   # over Valkey (psrpc, same DB as LiveKit) and joins rooms over the loopback websocket.
-  # The API limits concurrent recordings (RECORDING_MAX_CONCURRENT); the egress stops a file
-  # after 4 h 10 min by itself as a safety net. Not read-only: PulseAudio and the handler
+  # The API limits concurrent recordings (RECORDING_MAX_CONCURRENT) and stops them at 3 h 58 min
+  # (GPTunneL takes ≤ 4 h); the egress ends a file at 3 h 59 min by itself as a safety net. Not read-only: PulseAudio and the handler
   # write under /home/egress; no capabilities (the Chrome sandbox is not used).
   egress:
     image: livekit/egress:v1.14.1@sha256:bf2b648b947349c3e9ff7aa8c718f00378d5c06af7624652a3653318e00333ce   # works with livekit-server 1.13
@@ -96,7 +96,7 @@ services:
           db: 1
         template_port: 7980
         session_limits:
-          file_output_max_duration: 4h10m
+          file_output_max_duration: 3h59m
         logging:
           level: info
           json: true
@@ -111,8 +111,9 @@ services:
     logging: *logging
 
   # One-shot: recordings_data belongs to the API user (distroless nonroot 65532), which creates
-  # a world-writable directory per workspace for the egress user (1000) and deletes the files.
-  # Reuses the Valkey image (already pulled) for its shell.
+  # a world-writable directory per workspace for the egress user (1001) and deletes the files.
+  # Reuses the Valkey image (already pulled) for its shell. FOWNER: from the second deploy on,
+  # /out belongs to 65532 and root may chmod it only with this capability.
   recordings-init:
     image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
     network_mode: none
@@ -120,7 +121,7 @@ services:
     user: "0:0"
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
-    cap_add: [CHOWN]
+    cap_add: [CHOWN, FOWNER]
     entrypoint: ["sh", "-c", "chmod 0755 /out && chown 65532:65532 /out"]
     volumes:
       - recordings_data:/out

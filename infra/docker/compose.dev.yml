@@ -62,7 +62,7 @@ services:
           address: valkey:6379
           db: 1
         session_limits:
-          file_output_max_duration: 4h10m
+          file_output_max_duration: 3h59m
     volumes:
       - ../../apps/server/data/recordings:/out
     depends_on: [livekit, valkey]

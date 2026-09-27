@@ -139,14 +139,19 @@ func (s *Service) lock(ctx context.Context) bool {
 
 // Run is the worker loop until ctx is done. Only the holder of the Valkey lock works:
 // uploads and status polls, auto-stop and reconcile (every 15 s), the file janitor (hourly).
+// Uploads run in their own goroutine: a large file or a slow GPTunneL must not hold up the
+// auto-stop (the 4 h limit), the reconcile or the renewal of the lock.
 func (s *Service) Run(ctx context.Context) {
 	t := time.NewTicker(s.Tick)
 	defer t.Stop()
+	jobs := make(chan struct{}, 1)
+	go s.runJobs(ctx, jobs)
 	var lastMaintain, lastJanitor time.Time
 	for {
 		if s.lock(ctx) {
-			if _, err := s.ProcessOnce(ctx); err != nil && ctx.Err() == nil {
-				slog.WarnContext(ctx, "recording: process queue", "err", err)
+			select {
+			case jobs <- struct{}{}:
+			default: // a run is in progress or already queued
 			}
 			if time.Since(lastMaintain) >= min(15*time.Second, s.Tick*3) {
 				lastMaintain = time.Now()
@@ -162,6 +167,20 @@ func (s *Service) Run(ctx context.Context) {
 			return
 		case <-t.C:
 		case <-s.wake:
+		}
+	}
+}
+
+// runJobs processes the queue each time Run signals it (while holding the lock).
+func (s *Service) runJobs(ctx context.Context, jobs <-chan struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-jobs:
+		}
+		if _, err := s.ProcessOnce(ctx); err != nil && ctx.Err() == nil {
+			slog.WarnContext(ctx, "recording: process queue", "err", err)
 		}
 	}
 }
@@ -277,6 +296,12 @@ func (s *Service) upload(ctx context.Context, rec sqlc.RoomRecording) {
 	st, err := f.Stat()
 	if err != nil || st.Size() == 0 {
 		s.fail(ctx, rec, "no_audio")
+		return
+	}
+	if st.Size() > gptunnel.MaxBytes || time.Duration(rec.DurationSec)*time.Second > gptunnel.MaxDuration {
+		// GPTunneL rejects it anyway: do not send gigabytes first.
+		slog.WarnContext(ctx, "recording: over GPTunneL's limits", "recording", rec.ID, "bytes", st.Size(), "duration_sec", rec.DurationSec)
+		s.fail(ctx, rec, gptunnel.CodeTooLarge)
 		return
 	}
 	title := "Calab"

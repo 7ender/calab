@@ -79,7 +79,7 @@ type Service struct {
 	Tick         time.Duration // worker loop period
 	LockTTL      time.Duration
 	Lease        time.Duration // a claimed job is not picked again for this long
-	MaxDuration  time.Duration // auto-stop (4 h, GPTunneL's limit)
+	MaxDuration  time.Duration // auto-stop: 2 min under GPTunneL's 4 h, the stop takes a few seconds
 	EmptyTimeout time.Duration // auto-stop when nobody is in the call (2 min)
 	UploadFor    time.Duration // give up retrying an upload after this (24 h)
 	PollFor      time.Duration // give up polling GPTunneL after this (2 h)
@@ -102,7 +102,7 @@ func New(cfg Config, d *db.DB, r rueidis.Client, eg rtc.Egress, gpt *gptunnel.Cl
 		wake:   make(chan struct{}, 1),
 		token:  uuid.NewString(),
 		Tick:   5 * time.Second, LockTTL: 30 * time.Second, Lease: 15 * time.Minute,
-		MaxDuration: 4 * time.Hour, EmptyTimeout: 2 * time.Minute,
+		MaxDuration: gptunnel.MaxDuration - 2*time.Minute, EmptyTimeout: 2 * time.Minute,
 		UploadFor: 24 * time.Hour, PollFor: 2 * time.Hour, PollMin: 20 * time.Second, KeepFiles: 7 * 24 * time.Hour,
 		Now: time.Now,
 	}
@@ -441,6 +441,12 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) error {
 			slog.WarnContext(ctx, "recording: stop egress after a failed start", "egress", info.EgressID, "err", serr)
 		}
 		return err
+	}
+	if upd.StoppedAt != nil {
+		// Stopped while the egress was starting (the stop had no egress id to send yet).
+		if _, err := s.eg.StopEgress(context.WithoutCancel(ctx), info.EgressID); err != nil && !rtc.IsEgressGone(err) {
+			slog.WarnContext(ctx, "recording: stop egress (retried by the worker)", "egress", info.EgressID, "err", err)
+		}
 	}
 	slog.InfoContext(ctx, "recording started", "recording", upd.ID, "room", room.ID, "egress", info.EgressID, "by", me)
 	pb := pbconv.RoomRecording(upd)
