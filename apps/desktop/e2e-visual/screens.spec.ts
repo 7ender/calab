@@ -1,4 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
+import { create } from '@bufbuild/protobuf';
+import { Plan, WorkspacePlanSchema } from '@calaba/protocol';
+import { FREE_PLAN_LIMITS } from '../e2e-support/fixtures';
 import { IDS, type MockServer } from '../e2e-support/mock-server';
 import { expect, test } from './app';
 import { checkpoint, settle } from './harness';
@@ -59,6 +62,9 @@ const KEY = new Set([
   'settings-8',
   'room-settings-1',
   'i18n-en-main-chat',
+  'settings-plan',
+  'admin-workspaces',
+  'admin-plan',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -671,7 +677,7 @@ test('workspace-menu', async ({ open, win, mock, shot }) => {
 });
 
 /** Settings windows: one test per section (left list = role «tab»), numbered like the snapshots. */
-const TABS = { 'workspace-settings': 5, 'room-settings': 3, settings: 9, 'voice-room-settings': 4 } as const;
+const TABS = { 'workspace-settings': 6, 'room-settings': 3, settings: 9, 'voice-room-settings': 4 } as const;
 
 for (let i = 1; i <= TABS['workspace-settings']; i++) {
   test(`workspace-settings-${i}`, async ({ open, win, mock, shot }) => {
@@ -688,6 +694,54 @@ for (let i = 1; i <= TABS['workspace-settings']; i++) {
     await checkpoint(shot, `workspace-settings-${i}`);
   });
 }
+
+/** Workspace settings → «Тариф» (ADR-0024) on the Free plan: limits against the usage, the contact. */
+test('settings-plan', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  // The fixture's main workspace is Team (no video caps for the voice shots): Free here.
+  const ws = mock.state.workspaces.get(IDS.workspaces.main);
+  if (!ws) throw new Error('no main workspace');
+  ws.plan = create(WorkspacePlanSchema, { plan: Plan.FREE, limits: FREE_PLAN_LIMITS, expired: false });
+  mock.dispatch({ event: { case: 'workspaceUpdate', value: { workspace: ws } } });
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  await win.getByRole('dialog').getByRole('tab', { name: 'Тариф' }).click();
+  await expect(win.getByTestId('plan-limits')).toBeVisible();
+  await expect(win.getByRole('dialog').getByText('Free', { exact: true })).toBeVisible();
+  await checkpoint(shot, 'settings-plan');
+});
+
+/** «Администрирование» (superadmin, ADR-0024): the search and the workspace cards. */
+async function openAdmin(page: Page): Promise<Locator> {
+  await page.getByRole('button', { name: /^Мой статус/ }).click();
+  await page.getByRole('button', { name: 'Администрирование' }).click();
+  const admin = page.getByTestId('admin-window');
+  await expect(admin.getByTestId('admin-workspace')).toHaveCount(3);
+  return admin;
+}
+
+test('admin-workspaces', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const admin = await openAdmin(win);
+  await admin.getByTestId('admin-workspace').filter({ hasText: 'Команда Calab' }).click();
+  await expect(admin.getByTestId('admin-detail')).toBeVisible();
+  await expect(admin.getByTestId('admin-log')).toBeAttached();
+  await checkpoint(shot, 'admin-workspaces');
+});
+
+/** The plan form on «Индивидуальный» (Custom): the limits, the term, the note. */
+test('admin-plan', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const admin = await openAdmin(win);
+  await admin.getByTestId('admin-workspace').filter({ hasText: 'Сообщество' }).click();
+  await expect(admin.getByRole('textbox', { name: 'Человек в голосовой комнате' })).toHaveValue('12');
+  await expect(admin.getByTestId('admin-log')).toBeAttached();
+  await admin.getByRole('heading', { name: 'Тариф', exact: true }).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(shot, 'admin-plan');
+});
 
 test('room-create', async ({ open, win, mock, shot }) => {
   await open();

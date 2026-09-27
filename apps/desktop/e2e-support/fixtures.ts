@@ -7,6 +7,10 @@ import {
   MessageSchema,
   NotificationLevel,
   MicMode,
+  Plan,
+  PlanLimitsSchema,
+  PlanLogEntrySchema,
+  WorkspacePlanSchema,
   PERMISSION_BITS,
   PermissionTargetType,
   PresenceSchema,
@@ -30,6 +34,8 @@ import {
   type FileMeta,
   type Invite,
   type Message,
+  type PlanLimits,
+  type PlanLogEntry,
   type Presence,
   type Room,
   type RoomCategory,
@@ -178,6 +184,12 @@ export interface MockState {
   revokedSessions: Set<string>;
   /** Private notes (docs/09 #20): authorId → subjectId → note; only the author reads them. */
   notes: Map<string, Map<string, { text: string; updatedAt: Timestamp }>>;
+  /** Product superadmins (SUPERADMIN_EMAILS, ADR-0024): user ids; `me.isSuperadmin`, /api/admin/*. */
+  superadmins: Set<string>;
+  /** Admin view of a workspace plan (ADR-0024): note and who / when last changed it. */
+  planMeta: Map<string, { note: string; updatedBy: string; updatedAt?: Timestamp }>;
+  /** workspaceId → plan changes, newest first (GET /api/admin/workspaces/{id}/plan/log). */
+  planLog: Map<string, PlanLogEntry[]>;
   /** Next sequence number per id kind (runtime-created entities). */
   next: Record<IdKind, number>;
   /** Runtime clock ticks (see RUNTIME_CLOCK_START_MS). */
@@ -201,6 +213,19 @@ export const DEFAULT_MEDIA: RoomMediaSettings = create(RoomMediaSettingsSchema, 
   maxStreams: 3,
   cameraLimit: 6,
 });
+
+/** Plan limits of the mock (ADR-0024, docs/04 «Тарифы»): the server's built-in defaults. */
+export const FREE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
+  roomMembers: 5,
+  streamMaxPreset: ScreenSharePreset.H720,
+  streamMaxFps: 15,
+  cameraMaxPreset: ScreenSharePreset.H720,
+  cameraMaxFps: 15,
+  streamsPerRoom: 1,
+  storageMb: 1024n,
+  members: 0,
+});
+export const TEAM_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, { roomMembers: 50 });
 
 export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride | undefined): RoomMediaSettings {
   const d = ws?.mediaDefaults ?? DEFAULT_MEDIA;
@@ -422,6 +447,9 @@ export function buildState(scenario: Scenario): MockState {
     sessions: new Map(),
     revokedSessions: new Set(),
     notes: new Map(),
+    superadmins: new Set(),
+    planMeta: new Map(),
+    planLog: new Map(),
     next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100 },
     clock: 0,
   };
@@ -532,6 +560,49 @@ export function buildState(scenario: Scenario): MockState {
   const member = (workspaceId: string, userId: string, role: WorkspaceRole, joined: string, nickname = ''): void => {
     s.members.push({ workspaceId, userId, role, nickname, joinedAt: ts(joined) });
   };
+  // ---- plans (ADR-0024): Team for the main workspace (no video caps: the voice shots stay as
+  // they are), Free for «Дизайн», Custom for «Сообщество»; Anna is the superadmin.
+  s.superadmins.add(U.anna);
+  const setPlan = (id: string, plan: Plan, limits: PlanLimits, note: string, at: string, validUntil?: string): void => {
+    const w = s.workspaces.get(id);
+    if (!w) return;
+    w.plan = create(WorkspacePlanSchema, { plan, limits, ...(validUntil ? { validUntil: ts(validUntil) } : {}), expired: false });
+    s.planMeta.set(id, { note, updatedBy: U.anna, updatedAt: ts(at) });
+    s.planLog.set(id, [
+      create(PlanLogEntrySchema, {
+        id: `${id}-log-1`,
+        workspaceId: id,
+        actorId: U.anna,
+        actorEmail: 'owner@calaba.test',
+        plan,
+        limits,
+        ...(validUntil ? { validUntil: ts(validUntil) } : {}),
+        note,
+        createdAt: ts(at),
+      }),
+    ]);
+  };
+  setPlan(W.main, Plan.TEAM, TEAM_PLAN_LIMITS, 'Счёт № 42, оплачен', '2026-01-10T09:00:00Z', '2026-12-31T23:59:59Z');
+  const design = s.workspaces.get(W.design);
+  if (design) design.plan = create(WorkspacePlanSchema, { plan: Plan.FREE, limits: FREE_PLAN_LIMITS, expired: false });
+  setPlan(
+    W.community,
+    Plan.CUSTOM,
+    create(PlanLimitsSchema, {
+      roomMembers: 12,
+      streamMaxPreset: ScreenSharePreset.H1080,
+      streamMaxFps: 30,
+      cameraMaxPreset: ScreenSharePreset.H720,
+      cameraMaxFps: 30,
+      streamsPerRoom: 2,
+      storageMb: 5120n,
+      members: 0,
+    }),
+    'Пилот для сообщества до весны',
+    '2026-01-12T15:30:00Z',
+    '2026-04-30T23:59:59Z',
+  );
+
   member(W.main, U.anna, WorkspaceRole.OWNER, '2025-12-01T10:05:00Z');
   member(W.main, U.boris, WorkspaceRole.ADMIN, '2025-12-01T11:00:00Z');
   member(W.main, U.vera, WorkspaceRole.MEMBER, '2025-12-02T09:00:00Z');

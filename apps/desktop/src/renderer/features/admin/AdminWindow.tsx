@@ -70,11 +70,15 @@ function WorkspaceCard({ a, selected, onSelect }: { a: AdminWorkspace; selected:
         {ws.plan?.expired ? <ExpiredBadge /> : null}
         <PlanPill plan={planKind(ws.plan)} className={selected ? 'ring-1 ring-white/60' : undefined} />
       </span>
-      <span className={cx('truncate text-caption', selected ? 'text-accent-fg/85' : 'text-muted')} title={a.ownerEmail}>
+      <span className={cx('truncate text-caption', selected ? 'text-accent-fg' : 'text-muted')} title={a.ownerEmail}>
         {a.owner?.displayName ? `${a.owner.displayName} · ${a.ownerEmail}` : a.ownerEmail}
       </span>
-      <span className={cx('truncate text-caption', selected ? 'text-accent-fg/75' : 'text-faint')}>
-        {usageLine(a)} · {activityLine(a)}
+      <span className={cx('flex min-w-0 items-center gap-2 text-caption', selected ? 'text-accent-fg' : 'text-faint')}>
+        <span className="min-w-0 flex-1 truncate">{usageLine(a)}</span>
+        {/* Last activity, compact («14:05», «вчера», «14 янв.»); the full text on hover. */}
+        <span className="shrink-0 tabular-nums" title={activityLine(a)}>
+          {a.usage?.lastActivity ? fmt.listTime(timestampDate(a.usage.lastActivity)) : '—'}
+        </span>
       </span>
     </button>
   );

@@ -25,6 +25,24 @@ import {
 } from '@bufbuild/protobuf';
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
+  AdminGetWorkspaceResponseSchema,
+  AdminPlanLogResponseSchema,
+  AdminSearchWorkspacesResponseSchema,
+  AdminSetPlanRequestSchema,
+  AdminSetPlanResponseSchema,
+  AdminWorkspaceSchema,
+  Plan,
+  PlanLimitsSchema,
+  PlanLogEntrySchema,
+  RequestCameraRequestSchema,
+  RequestCameraResponseSchema,
+  RoomMediaSettingsSchema,
+  SCREEN_SHARE_PRESETS,
+  WorkspacePlanSchema,
+  type AdminWorkspace,
+  type PlanLimits,
+  type RoomMediaSettings,
+  type Workspace,
   ChangeEmailRequestSchema,
   ChangePasswordRequestSchema,
   ApiErrorSchema,
@@ -161,7 +179,9 @@ import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
   DEFAULT_MEDIA,
+  FREE_PLAN_LIMITS,
   IDS,
+  TEAM_PLAN_LIMITS,
   PASSWORD,
   buildState,
   defaultSettings,
@@ -272,10 +292,15 @@ class HttpError extends Error {
     readonly code: ErrorCode,
     message: string,
     readonly field = '',
+    /** ApiError reason / used / limit (plan limits, ADR-0024). */
+    readonly extra: { reason?: string; used?: bigint; limit?: bigint } = {},
   ) {
     super(message);
   }
 }
+
+/** Plan contact of the mock (READY.plan_contact; the server's default). */
+export const MOCK_PLAN_CONTACT = 'mailto:it@gptunnel.ai';
 
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
@@ -599,7 +624,7 @@ class MockImpl {
   // ------------------------------------------------ serialisation
 
   private me(u: UserRec): Me {
-    return create(MeSchema, { user: u.user, email: u.email, settings: u.settings });
+    return create(MeSchema, { user: u.user, email: u.email, settings: u.settings, isSuperadmin: this.state.superadmins.has(u.user.id) });
   }
 
   private memberOut(m: MemberRec): WorkspaceMember {
@@ -683,6 +708,7 @@ class MockImpl {
         value: create(ReadySchema, {
           sessionId: conn.gatewaySessionId,
           me: this.me(u),
+          planContact: MOCK_PLAN_CONTACT,
           workspaces: wsIds.map((w) => this.snapshot(w, u.user.id)),
           // Every visible room (server contract): never read → empty marker.
           readStates: [...this.state.rooms.values()]
@@ -1117,7 +1143,7 @@ class MockImpl {
       const err = e instanceof HttpError ? e : new HttpError(500, ErrorCode.INTERNAL, e instanceof Error ? e.message : String(e));
       this.log(`${method} ${url.pathname} → ${err.status} ${err.message}`);
       if (res.headersSent) return void res.end();
-      sendMsg(res, err.status, ApiErrorSchema, { code: err.code, message: err.message, field: err.field });
+      sendMsg(res, err.status, ApiErrorSchema, { code: err.code, message: err.message, field: err.field, ...err.extra });
     }
   }
 
@@ -2016,6 +2042,13 @@ class MockImpl {
       const { ws } = this.workspaceFor(c.params[0] ?? '', me);
       const f = await parseMultipartFile(c);
       if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+      // Quota = min(workspace quota, plan storage_mb) (ADR-0024).
+      const planBytes = this.planLimits(ws.id).storageMb * 1024n * 1024n;
+      const byPlan = planBytes > 0n && planBytes < ws.storageQuotaBytes;
+      const quota = byPlan ? planBytes : ws.storageQuotaBytes;
+      if (ws.storageUsedBytes + BigInt(f.bytes.length) > quota) {
+        throw new HttpError(413, ErrorCode.FILE_QUOTA_EXCEEDED, 'storage quota exceeded', '', { ...(byPlan ? { reason: 'PLAN_LIMIT' } : {}), used: ws.storageUsedBytes, limit: quota });
+      }
       const id = this.storeFile(ws.id, me, f);
       ws.storageUsedBytes += BigInt(f.bytes.length);
       sendMsg(c.res, 201, UploadFileResponseSchema, { file: s().files.get(id)?.meta });
@@ -2125,9 +2158,14 @@ class MockImpl {
       if (room.type !== RoomType.VOICE) throw conflict('not a voice room');
       this.requireRoomPerm(room, me, CONNECT);
       const perms = this.perms(room, me);
-      if (room.userLimit > 0 && !has(perms, MOVE_MEMBERS) && s().voiceStates.get(me)?.roomId !== room.id) {
+      if (s().voiceStates.get(me)?.roomId !== room.id) {
         const inRoom = [...s().voiceStates.values()].filter((v) => v.roomId === room.id).length;
-        if (inRoom >= room.userLimit) throw new HttpError(409, ErrorCode.ROOM_FULL, 'the room is full');
+        // The plan's room_members applies to everyone, admins and the owner too (ADR-0024).
+        const planMax = this.planLimits(room.workspaceId).roomMembers;
+        if (planMax > 0 && inRoom >= planMax) {
+          throw new HttpError(409, ErrorCode.ROOM_FULL, 'the room is full (plan limit)', '', { reason: 'PLAN_LIMIT', used: BigInt(inRoom), limit: BigInt(planMax) });
+        }
+        if (room.userLimit > 0 && !has(perms, MOVE_MEMBERS) && inRoom >= room.userLimit) throw new HttpError(409, ErrorCode.ROOM_FULL, 'the room is full');
       }
       const identity = `${me}:${sessionId}`;
       const token = await this.voiceToken(room, identity, user.user.displayName);
@@ -2149,7 +2187,8 @@ class MockImpl {
         url: this.lk.url,
         token,
         identity,
-        media: room.media ?? DEFAULT_MEDIA,
+        media: this.cappedMedia(room),
+        planLimits: this.planLimits(room.workspaceId),
         canSpeak: has(perms, SPEAK),
         canStream: has(perms, STREAM),
         canVideo: has(perms, VIDEO) && (room.media ?? DEFAULT_MEDIA).cameraLimit > 0,
@@ -2177,7 +2216,11 @@ class MockImpl {
       const on = [...s().voiceStates.values()].filter((v) => v.roomId === room.id && v.camera && v.userId !== me).length;
       if (limit === 0 || on >= limit) throw conflict('camera limit reached');
       this.setVoice(me, room.id, { camera: true });
-      noContent(c.res);
+      // The granted quality: min(asked, plan camera_max_*) (ADR-0024); UNSPECIFIED / 0 = no cap.
+      const b = parseBody(c, RequestCameraRequestSchema);
+      const pl = this.planLimits(room.workspaceId);
+      const minNz = (x: number, y: number): number => (x && y ? Math.min(x, y) : x || y);
+      sendMsg(c.res, 200, RequestCameraResponseSchema, { preset: minNz(b.preset, pl.cameraMaxPreset), fps: minNz(b.fps, pl.cameraMaxFps) });
     });
     this.route('POST', '/api/rooms/:id/camera/stop', (c) => {
       const me = this.uid(c);
@@ -2192,9 +2235,13 @@ class MockImpl {
       this.requireRoomPerm(room, me, STREAM);
       if (s().voiceStates.get(me)?.roomId !== room.id) throw conflict('not in this voice room');
       const b = parseBody(c, RequestStreamRequestSchema);
-      const max = room.media?.maxStreamPreset ?? ScreenSharePreset.H1080;
+      const max = this.cappedMedia(room).maxStreamPreset || ScreenSharePreset.H1080;
       const preset = b.preset === ScreenSharePreset.UNSPECIFIED ? max : Math.min(b.preset, max);
-      sendMsg(c.res, 200, RequestStreamResponseSchema, { preset });
+      // fps: min(wanted, the preset's own, the plan's stream_max_fps) (docs/05, ADR-0024).
+      const own = Object.entries(SCREEN_SHARE_PRESETS).find(([k]) => Number(k) === preset)?.[1].fps ?? 0;
+      const planFps = this.planLimits(room.workspaceId).streamMaxFps;
+      const fps = [b.fps, planFps].filter((x) => x > 0).reduce((a, x) => Math.min(a, x), own);
+      sendMsg(c.res, 200, RequestStreamResponseSchema, { preset, fps });
     });
 
     this.route('PATCH', '/api/voice/self', (c) => {
@@ -2404,6 +2451,63 @@ class MockImpl {
     const str = (v: unknown): string => (typeof v === 'string' ? v : '');
     const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
 
+    // ---------------- superadmin (ADR-0024, docs/05 «Тарифы»): 404 for everyone else
+    this.route('GET', '/api/admin/workspaces', (c) => {
+      this.requireSuperadmin(c);
+      const q = (c.url.searchParams.get('q') ?? '').trim().toLowerCase();
+      const all = [...s().workspaces.values()].filter((w) => {
+        if (!q) return true;
+        const email = s().users.get(w.ownerId)?.email ?? '';
+        return [w.name, w.slug, email].some((x) => x.toLowerCase().includes(q));
+      });
+      // Newest first, at most 50 (like the server).
+      all.sort((a, b) => (b.createdAt ? timestampMs(b.createdAt) : 0) - (a.createdAt ? timestampMs(a.createdAt) : 0));
+      sendMsg(c.res, 200, AdminSearchWorkspacesResponseSchema, { workspaces: all.slice(0, 50).map((w) => this.adminOut(w)) });
+    });
+    this.route('GET', '/api/admin/workspaces/:id', (c) => {
+      this.requireSuperadmin(c);
+      const ws = s().workspaces.get(c.params[0] ?? '');
+      if (!ws) throw notFound('workspace not found');
+      sendMsg(c.res, 200, AdminGetWorkspaceResponseSchema, { workspace: this.adminOut(ws) });
+    });
+    this.route('PUT', '/api/admin/workspaces/:id/plan', (c) => {
+      const me = this.requireSuperadmin(c);
+      const ws = s().workspaces.get(c.params[0] ?? '');
+      if (!ws) throw notFound('workspace not found');
+      const b = parseBody(c, AdminSetPlanRequestSchema);
+      if (b.plan !== Plan.FREE && b.plan !== Plan.TEAM && b.plan !== Plan.CUSTOM) throw invalid('plan', 'plan must be FREE, TEAM or CUSTOM');
+      if (b.plan !== Plan.CUSTOM && b.limits) throw invalid('limits', 'limits only with CUSTOM');
+      if (b.note.length > 500) throw invalid('note', 'note at most 500 characters');
+      const now = tick(s());
+      if (b.validUntil && timestampMs(b.validUntil) <= timestampMs(now)) throw invalid('validUntil', 'valid_until must be in the future');
+      const limits = b.plan === Plan.CUSTOM ? create(PlanLimitsSchema, b.limits ?? {}) : b.plan === Plan.TEAM ? TEAM_PLAN_LIMITS : FREE_PLAN_LIMITS;
+      ws.plan = create(WorkspacePlanSchema, { plan: b.plan, limits, ...(b.validUntil ? { validUntil: b.validUntil } : {}), expired: false });
+      s().planMeta.set(ws.id, { note: b.note, updatedBy: me, updatedAt: now });
+      const log = s().planLog.get(ws.id) ?? [];
+      log.unshift(
+        create(PlanLogEntrySchema, {
+          id: `${ws.id}-log-${log.length + 1}`,
+          workspaceId: ws.id,
+          actorId: me,
+          actorEmail: s().users.get(me)?.email ?? '',
+          plan: b.plan,
+          limits,
+          ...(b.validUntil ? { validUntil: b.validUntil } : {}),
+          note: b.note,
+          createdAt: now,
+        }),
+      );
+      s().planLog.set(ws.id, log.slice(0, 100));
+      this.toWorkspace(ws.id, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
+      sendMsg(c.res, 200, AdminSetPlanResponseSchema, { workspace: this.adminOut(ws) });
+    });
+    this.route('GET', '/api/admin/workspaces/:id/plan/log', (c) => {
+      this.requireSuperadmin(c);
+      const ws = s().workspaces.get(c.params[0] ?? '');
+      if (!ws) throw notFound('workspace not found');
+      sendMsg(c.res, 200, AdminPlanLogResponseSchema, { entries: s().planLog.get(ws.id) ?? [] });
+    });
+
     this.route('GET', '/__mock/ids', (c) => send(c.res, 200, JSON.stringify(IDS), 'application/json'));
     this.route('POST', '/__mock/reset', (c) => {
       const scenario = str(ctl(c)['scenario']);
@@ -2520,6 +2624,52 @@ class MockImpl {
           ? { event: { case: 'userUpdate', value: { user: u.user } } }
           : null,
     );
+  }
+
+  // ------------------------------------------------ plans (ADR-0024)
+
+  /** Effective limits of a workspace (no plan recorded = FREE, like the server). */
+  private planLimits(wsId: string): PlanLimits {
+    return this.state.workspaces.get(wsId)?.plan?.limits ?? FREE_PLAN_LIMITS;
+  }
+
+  /** Room media capped by the plan: what /join and /stream/request apply. */
+  private cappedMedia(room: Room): RoomMediaSettings {
+    const media = create(RoomMediaSettingsSchema, room.media ?? DEFAULT_MEDIA);
+    const pl = this.planLimits(room.workspaceId);
+    if (pl.streamMaxPreset && (!media.maxStreamPreset || media.maxStreamPreset > pl.streamMaxPreset)) media.maxStreamPreset = pl.streamMaxPreset;
+    if (pl.streamsPerRoom && media.maxStreams > pl.streamsPerRoom) media.maxStreams = pl.streamsPerRoom;
+    return media;
+  }
+
+  private requireSuperadmin(c: Ctx): string {
+    const me = this.uid(c);
+    // Like the server: the admin API does not exist for anyone else.
+    if (!this.state.superadmins.has(me)) throw notFound('no such endpoint');
+    return me;
+  }
+
+  private adminOut(ws: Workspace): AdminWorkspace {
+    const owner = this.state.users.get(ws.ownerId);
+    const meta = this.state.planMeta.get(ws.id);
+    const members = this.membersOf(ws.id).filter((m) => m.role !== WorkspaceRole.GUEST).length;
+    const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === ws.id).length;
+    let last: Timestamp | undefined;
+    for (const r of this.state.rooms.values()) {
+      if (r.workspaceId !== ws.id) continue;
+      const at = this.state.messages.get(r.id)?.at(-1)?.createdAt;
+      if (at && (!last || timestampMs(at) > timestampMs(last))) last = at;
+    }
+    const mb = (ws.storageUsedBytes + 1024n * 1024n - 1n) / (1024n * 1024n);
+    return create(AdminWorkspaceSchema, {
+      workspace: ws,
+      ...(owner ? { owner: owner.user } : {}),
+      ownerEmail: owner?.email ?? '',
+      usage: { members, rooms, storageMb: mb, storageBytes: ws.storageUsedBytes, ...(last ? { lastActivity: last } : {}) },
+      planNote: meta?.note ?? '',
+      planUpdatedBy: meta?.updatedBy ?? '',
+      ...(meta?.updatedAt ? { planUpdatedAt: meta.updatedAt } : {}),
+    });
   }
 
   private storeFile(wsId: string, uploaderId: string, f: { name: string; mime: string; bytes: Buffer }): string {
