@@ -95,6 +95,10 @@ export const enShell: DictShape<typeof ruShell> = {
   // self panel
   'shell.inVoiceStatus': 'In voice',
   'shell.micOptions': 'Choose microphone',
+  'shell.micMode': 'Mode',
+  'shell.micModeVoice': 'Voice activity',
+  'shell.pttChange': 'Change…',
+  'shell.pttEscCancel': 'Esc to cancel',
   'shell.outputOptions': 'Choose output device',
   'shell.inputDevice': 'Input device',
   'shell.outputDevice': 'Output device',

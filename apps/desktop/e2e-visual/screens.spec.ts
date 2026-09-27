@@ -59,6 +59,7 @@ const KEY = new Set([
   'members-menu',
   'profile-dialog',
   'workspace-menu',
+  'self-mic-menu',
   'quick-switcher',
   'settings-2',
   'settings-3',
@@ -728,6 +729,20 @@ test('shell-profile', async ({ open, win, mock, shot }) => {
   await win.getByRole('button', { name: /^Мой статус/ }).click();
   await expect(win.getByRole('radiogroup', { name: 'Статус и профиль' })).toBeVisible();
   await checkpoint(shot, 'shell-profile');
+});
+
+/** Mic ▾ (docs/09 #28): «Режим» switched to push-to-talk in the menu — key pill, «Изменить…», release delay. */
+test('self-mic-menu', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByRole('button', { name: 'Выбор микрофона' }).click();
+  const menu = win.getByTestId('mic-menu');
+  await expect(menu).toBeVisible();
+  await menu.getByRole('menuitemradio', { name: 'Push-to-talk' }).click();
+  // The menu stays open and shows the PTT controls in place.
+  await expect(menu.getByTestId('mic-ptt-key')).toBeVisible();
+  await expect(menu.getByTestId('ptt-release-compact')).toBeVisible();
+  await checkpoint(shot, 'self-mic-menu');
 });
 
 test('workspace-menu', async ({ open, win, mock, shot }) => {

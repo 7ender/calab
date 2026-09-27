@@ -1,4 +1,5 @@
-import { Headphones, HeadphoneOff, Mic, MicOff, Phone, Radio } from 'lucide-react';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import { Check, Ellipsis, Headphones, HeadphoneOff, Mic, MicOff, Phone, Radio, Settings } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
@@ -11,6 +12,8 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useConnectingRing, useVoiceStateOf } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
+import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
+import { selectMicMode } from './micMenu';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
 const round = 'grid size-10 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
@@ -20,7 +23,7 @@ const off = 'bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-da
 /**
  * Phone voice strip (ADR-0021, Discord mobile): one 56 px glass bar at the bottom of the screen
  * while in voice — «Голос подключён · Комната» (tap = open the voice room), mute, deafen, the
- * push-to-talk hold button (PTT mic mode) and hang up. The full panel (camera, stream, devices)
+ * push-to-talk hold button (PTT mic mode), «Ещё» (mic mode switch) and hang up. The full panel (camera, stream, devices)
  * stays in the navigation drawer's bottom island.
  */
 export function MobileVoiceStrip(): ReactNode {
@@ -86,11 +89,51 @@ export function MobileVoiceStrip(): ReactNode {
           {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
         </button>
         {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : null}
+        <MoreMenu />
         <button type="button" aria-label={t('voice.leave')} onClick={() => void voice.leave()} className={cx(round, 'bg-danger-fill text-white active:brightness-90')}>
           <Phone className="size-5 rotate-[135deg]" aria-hidden />
         </button>
       </div>
     </div>
+  );
+}
+
+/** «Ещё»: the mic mode (docs/09 #28 — voice activation / push-to-talk) and «Настройки голоса». */
+function MoreMenu(): ReactNode {
+  const micMode = usePrefs((s) => s.micMode);
+  const openDialog = useUi((s) => s.openDialog);
+  const radio = cx(menuItem, 'relative h-10 pl-8');
+  return (
+    <Dropdown.Root modal={false}>
+      <Dropdown.Trigger asChild>
+        <button type="button" aria-label={t('shell.more')} data-testid="mobile-voice-more" className={cx(round, idle, 'data-[state=open]:bg-[var(--color-fill-hover)]')}>
+          <Ellipsis className="size-5" aria-hidden />
+        </button>
+      </Dropdown.Trigger>
+      <Dropdown.Portal>
+        <Dropdown.Content className={cx(menuBox, 'w-64')} side="top" align="end" sideOffset={10} collisionPadding={12}>
+          <Dropdown.Label className={menuLabel}>{t('voice.mode')}</Dropdown.Label>
+          <Dropdown.RadioGroup value={micMode} onValueChange={selectMicMode}>
+            <Dropdown.RadioItem value="voice" className={radio} data-testid="mobile-mic-mode-voice">
+              <Dropdown.ItemIndicator className="absolute left-2.5">
+                <Check className="size-4" />
+              </Dropdown.ItemIndicator>
+              {t('shell.micModeVoice')}
+            </Dropdown.RadioItem>
+            <Dropdown.RadioItem value="ptt" className={radio} data-testid="mobile-mic-mode-ptt">
+              <Dropdown.ItemIndicator className="absolute left-2.5">
+                <Check className="size-4" />
+              </Dropdown.ItemIndicator>
+              {t('voice.modePtt')}
+            </Dropdown.RadioItem>
+          </Dropdown.RadioGroup>
+          <Dropdown.Separator className={menuSeparator} />
+          <Dropdown.Item className={cx(menuItem, 'h-10')} onSelect={() => openDialog({ kind: 'settings', tab: 'voice' })}>
+            <Settings className="size-4" aria-hidden /> {t('shell.voiceSettings')}
+          </Dropdown.Item>
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
   );
 }
 

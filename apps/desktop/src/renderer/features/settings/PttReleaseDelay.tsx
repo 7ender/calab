@@ -12,11 +12,24 @@ import { isToggleBinding } from './PttBinder';
  * hold key-up. Fixed stops 0…2000 ms (lib/pttRelease.ts), the value beside the label like the
  * VAD threshold row. A toggle binding does not use it — said in the caption instead of hiding the row.
  */
-export function PttReleaseDelay(): ReactNode {
+export function PttReleaseDelay({ compact = false }: { compact?: boolean }): ReactNode {
   const ms = releaseMs(usePrefs((s) => s.pttReleaseMs));
   const toggle = usePrefs((s) => isToggleBinding(s.pttBinding));
   const setPrefs = usePrefs((s) => s.setPrefs);
   const last = PTT_RELEASE_STEPS_MS.length - 1;
+  const set = (i: number): void => setPrefs({ pttReleaseMs: PTT_RELEASE_STEPS_MS[Math.max(0, Math.min(last, i))] ?? ms });
+  if (compact) {
+    // Mic ▾ menu (docs/09 #28): caption-size label + value, the slider; no hint (Settings has it).
+    return (
+      <div className="px-2 pb-2 pt-1" data-testid="ptt-release-compact">
+        <div className="mb-1 flex justify-between text-caption text-muted">
+          <span>{t('voice.pttRelease')}</span>
+          <span className="tabular-nums">{t('unit.ms', { n: ms })}</span>
+        </div>
+        <Slider label={t('voice.pttRelease')} value={releaseStep(ms)} min={0} max={last} onChange={set} />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-2 px-3 py-3" data-settings-row data-testid="ptt-release">
       <div className="flex justify-between text-body">
@@ -30,7 +43,7 @@ export function PttReleaseDelay(): ReactNode {
         value={releaseStep(ms)}
         min={0}
         max={last}
-        onChange={(i) => setPrefs({ pttReleaseMs: PTT_RELEASE_STEPS_MS[Math.max(0, Math.min(last, i))] ?? ms })}
+        onChange={set}
       />
       <span className="text-caption text-faint">{toggle ? t('voice.pttReleaseToggle') : t('voice.pttReleaseHint')}</span>
     </div>
