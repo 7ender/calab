@@ -77,6 +77,8 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.nick.reset': '重置',
   'people.nick.allowSelf': '成员可修改自己的昵称',
   'people.nick.allowSelfHint': '管理员始终可以修改昵称',
+  'people.nick.editOf': '修改昵称：{name}',
+  'people.nick.inlineHint': '按 Enter 保存，Esc 取消',
 
   // sounds (settings → notifications)
   'sounds.title': '提示音',

@@ -1,3 +1,4 @@
+import { WorkspaceRole } from '@calaba/protocol';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -33,6 +34,15 @@ describe('SpeakerIdentity (voice participant row)', () => {
     expect(html).not.toContain('data-speaking');
     expect(html).toMatch(/data-testid="speaker-name" class="[^"]*\btext-muted\b/);
     expect(render(true)).not.toContain('connect-ring');
+  });
+
+  it('owner / admin: role colour on the name + RoleMark, the ring stays on the avatar (docs/09 #26)', () => {
+    const html = renderToStaticMarkup(createElement(SpeakerIdentity, { userId: 'u-a', name: 'Анна', size: 24, talking: true, role: WorkspaceRole.ADMIN }));
+    expect(html).toMatch(/data-speaking="true"[^>]*class="speak-ring/);
+    expect(html).toMatch(/data-testid="speaker-name" class="[^"]*\btext-role-admin\b/);
+    expect(html).toContain('data-role-mark="admin"');
+    expect(speakerNameClass(false, WorkspaceRole.OWNER)).toBe('text-role-owner');
+    expect(speakerNameClass(false, WorkspaceRole.MEMBER)).toContain('text-muted');
   });
 
   it('name class: primary while talking, muted (hover-bright) otherwise', () => {

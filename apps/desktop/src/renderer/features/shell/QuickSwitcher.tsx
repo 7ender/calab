@@ -13,6 +13,7 @@ import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { RoleMark, roleTextClass } from '../people/MemberBits';
 import { useChatView } from '../chat/chatView';
 import { previewText } from '../chat/mentionText';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
@@ -278,8 +279,11 @@ function Row({
     return (
       <>
         <Avatar userId={u?.id ?? ''} name={name} fileId={u?.avatarFileId || undefined} size={20} />
-        <span className="min-w-0 flex-1 truncate">
-          <Highlight text={name} q={q} selected={selected} />
+        <span className="flex min-w-0 flex-1 items-center gap-1">
+          <span className={cx('min-w-0 truncate', roleTextClass(it.member.role, selected ? 'inherit' : 'role'))}>
+            <Highlight text={name} q={q} selected={selected} />
+          </span>
+          <RoleMark role={it.member.role} tone={selected ? 'inherit' : 'role'} />
         </span>
         <span className={sub}>{t('search.memberHint')}</span>
       </>

@@ -168,6 +168,13 @@ export const esApp: DictShape<typeof enApp> = {
   'room.typeTextHint': 'Mensajes, archivos y enlaces',
   'room.typeVoiceHint': 'Voz, pantalla compartida y chat',
   'ws.joinedSince': 'desde {date}',
+  'ws.filter.label': 'Rol',
+  'ws.filter.all': 'Todos',
+  'ws.filter.owner': 'Propietario',
+  'ws.filter.admins': 'Admins',
+  'ws.filter.members': 'Miembros',
+  'ws.filter.guests': 'Invitados',
+  'ws.filter.none': 'No se encontró a nadie',
 
   // onboarding (docs/09 #20)
   'onb.back': 'Atrás',

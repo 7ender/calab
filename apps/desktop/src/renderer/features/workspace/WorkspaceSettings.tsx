@@ -12,8 +12,8 @@ import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { MediaImg } from '../../components/MediaImg';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
-import { Button, Card, Empty, IconButton, Input, Row, Select, Spinner, Toggle } from '../../components/ui';
-import { getLocale, t } from '../../i18n';
+import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner, Toggle } from '../../components/ui';
+import { getLocale, t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
@@ -26,6 +26,8 @@ import { useWorkspaces } from '../../stores/workspaces';
 import { CommitInput } from '../settings/AppSettingsDialog';
 import { MAX_USES } from '../people/RoomLinkTab';
 import { ROLE_LABEL } from '../shell/MembersPanel';
+import { canRenameMember } from '../people/members';
+import { NickInline } from '../people/NickInline';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { PlanTab } from './PlanTab';
 import { reportPlanError } from '../../services/plan';
@@ -200,16 +202,41 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
   );
 }
 
+type RoleFilter = 'all' | 'owner' | 'admin' | 'member' | 'guest';
+
+const ROLE_FILTERS: Array<{ value: RoleFilter; key: MessageKey }> = [
+  { value: 'all', key: 'ws.filter.all' },
+  { value: 'owner', key: 'ws.filter.owner' },
+  { value: 'admin', key: 'ws.filter.admins' },
+  { value: 'member', key: 'ws.filter.members' },
+  { value: 'guest', key: 'ws.filter.guests' },
+];
+
+const FILTER_ROLE: Record<Exclude<RoleFilter, 'all'>, WorkspaceRole> = {
+  owner: WorkspaceRole.OWNER,
+  admin: WorkspaceRole.ADMIN,
+  member: WorkspaceRole.MEMBER,
+  guest: WorkspaceRole.GUEST,
+};
+
+/**
+ * «Участники» (docs/09 #26): search (nickname or profile name) + role filter on top; each row —
+ * the name in its role colour + RoleMark, editable in place for who may rename (NickInline; the
+ * same right and API as «Изменить ник» in the member menu), the role select and «Исключить».
+ */
 function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const [q, setQ] = useState('');
+  const [filter, setFilter] = useState<RoleFilter>('all');
   if (!entry) return null;
   const admin = isAdminRole(entry.role);
   const owner = entry.role === WorkspaceRole.OWNER;
   const nameOf = (m: (typeof entry.members)[string]): string => m.nickname || m.user?.displayName || '';
+  const needle = q.trim().toLowerCase();
   const members = Object.values(entry.members)
-    .filter((m) => nameOf(m).toLowerCase().includes(q.toLowerCase()))
+    .filter((m) => filter === 'all' || m.role === FILTER_ROLE[filter])
+    .filter((m) => !needle || nameOf(m).toLowerCase().includes(needle) || (m.user?.displayName ?? '').toLowerCase().includes(needle))
     .sort((a, b) => a.role - b.role || nameOf(a).localeCompare(nameOf(b), getLocale()));
 
   const setRole = async (userId: string, role: WorkspaceRole): Promise<void> => {
@@ -232,47 +259,53 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
 
   return (
     <>
-      <label className="relative flex items-center">
-        <Search className="pointer-events-none absolute left-2 size-3.5 text-muted" aria-hidden />
-        <Input aria-label={t('common.search')} placeholder={t('common.search')} value={q} onChange={(e) => setQ(e.target.value)} className="pl-7" />
-      </label>
-      <Card title={t('card.members', { n: members.length })}>
-        {members.map((m) => {
-          const u = m.user;
-          if (!u) return null;
-          const name = nameOf(m);
-          // Only the owner grants/revokes ADMIN; OWNER is never granted here.
-          const editable = admin && u.id !== me && m.role !== WorkspaceRole.OWNER && (owner || m.role !== WorkspaceRole.ADMIN);
-          return (
-            <div key={u.id} className="flex min-h-12 items-center gap-3 px-3 py-2">
-              <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={32} presence />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-body font-medium" title={name}>
-                  {name}
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="relative flex min-w-48 flex-1 items-center">
+          <Search className="pointer-events-none absolute left-2 size-3.5 text-muted" aria-hidden />
+          <Input aria-label={t('common.search')} placeholder={t('common.search')} value={q} onChange={(e) => setQ(e.target.value)} className="pl-7" />
+        </label>
+        <Segmented label={t('ws.filter.label')} value={filter} onChange={setFilter} options={ROLE_FILTERS.map((f) => ({ value: f.value, label: t(f.key) }))} />
+      </div>
+      {members.length === 0 ? (
+        <Empty>{t('ws.filter.none')}</Empty>
+      ) : (
+        <Card title={t('card.members', { n: members.length })}>
+          {members.map((m) => {
+            const u = m.user;
+            if (!u) return null;
+            const name = nameOf(m);
+            // Only the owner grants/revokes ADMIN; OWNER is never granted here.
+            const editable = admin && u.id !== me && m.role !== WorkspaceRole.OWNER && (owner || m.role !== WorkspaceRole.ADMIN);
+            const canNick = canRenameMember(entry.role, u.id === me, entry.ws.allowSelfNickname);
+            return (
+              <div key={u.id} className="flex min-h-12 items-center gap-3 px-3 py-2" data-testid="ws-member-row">
+                <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={32} presence />
+                <div className="min-w-0 flex-1">
+                  <NickInline workspaceId={workspaceId} member={m} canEdit={canNick} />
+                  <div className="truncate text-caption text-faint">{t('ws.joinedSince', { date: m.joinedAt ? fmt.shortDate(timestampDate(m.joinedAt)) : '—' })}</div>
                 </div>
-                <div className="truncate text-caption text-faint">{t('ws.joinedSince', { date: m.joinedAt ? fmt.shortDate(timestampDate(m.joinedAt)) : '—' })}</div>
+                {/* Role column: a fixed 176 px, so plain labels and pop-ups share one left edge. */}
+                {editable ? (
+                  <Select aria-label={t('ws.role', { name })} className="w-44" value={m.role} onChange={(e) => void setRole(u.id, Number(e.target.value))}>
+                    {owner ? <option value={WorkspaceRole.ADMIN}>{t('role.admin')}</option> : null}
+                    <option value={WorkspaceRole.MEMBER}>{t('role.member')}</option>
+                    <option value={WorkspaceRole.GUEST}>{t('role.guest')}</option>
+                  </Select>
+                ) : (
+                  <span className="w-44 shrink-0 pl-2 text-body text-muted">{t(ROLE_LABEL[m.role])}</span>
+                )}
+                {editable ? (
+                  <IconButton label={`${t('ws.kick')}: ${name}`} className="text-muted hover:text-danger" onClick={() => void kick(u.id, name)}>
+                    <Trash2 className="size-4" />
+                  </IconButton>
+                ) : (
+                  <span className="w-8 shrink-0" aria-hidden />
+                )}
               </div>
-              {/* Role column: a fixed 176 px, so plain labels and pop-ups share one left edge. */}
-              {editable ? (
-                <Select aria-label={t('ws.role', { name })} className="w-44" value={m.role} onChange={(e) => void setRole(u.id, Number(e.target.value))}>
-                  {owner ? <option value={WorkspaceRole.ADMIN}>{t('role.admin')}</option> : null}
-                  <option value={WorkspaceRole.MEMBER}>{t('role.member')}</option>
-                  <option value={WorkspaceRole.GUEST}>{t('role.guest')}</option>
-                </Select>
-              ) : (
-                <span className="w-44 shrink-0 pl-2 text-body text-muted">{t(ROLE_LABEL[m.role])}</span>
-              )}
-              {editable ? (
-                <IconButton label={`${t('ws.kick')}: ${name}`} className="text-muted hover:text-danger" onClick={() => void kick(u.id, name)}>
-                  <Trash2 className="size-4" />
-                </IconButton>
-              ) : (
-                <span className="w-8 shrink-0" aria-hidden />
-              )}
-            </div>
-          );
-        })}
-      </Card>
+            );
+          })}
+        </Card>
+      )}
     </>
   );
 }

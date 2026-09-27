@@ -75,6 +75,8 @@ export const ruPeople = {
   'people.nick.reset': 'Сбросить',
   'people.nick.allowSelf': 'Участники могут менять свой ник',
   'people.nick.allowSelfHint': 'Администраторы меняют ники всегда',
+  'people.nick.editOf': 'Изменить ник: {name}',
+  'people.nick.inlineHint': 'Enter — сохранить, Esc — отменить',
 
   // sounds (settings → notifications)
   'sounds.title': 'Звуки',

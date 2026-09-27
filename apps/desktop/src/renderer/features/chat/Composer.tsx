@@ -101,7 +101,7 @@ export function Composer({
   const options: MentionOption[] =
     mq && mq.start !== dismissed
       ? [
-          ...filterCandidates(mq.query, mentionables.candidates).map((c): MentionOption => ({ kind: 'member', c, guest: mentionables.guests.has(c.id) })),
+          ...filterCandidates(mq.query, mentionables.candidates).map((c): MentionOption => ({ kind: 'member', c, guest: mentionables.guests.has(c.id), role: mentionables.roles.get(c.id) })),
           // @everyone / @here only with MENTION_EVERYONE in this room (guests never have it, ADR-0016).
           ...(!can(perms, 'MENTION_EVERYONE') ? [] : filterSpecial(mq.query).map((v): MentionOption => ({ kind: 'special', v }))),
         ]

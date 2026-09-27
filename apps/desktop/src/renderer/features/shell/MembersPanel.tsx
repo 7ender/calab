@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { WorkspaceRole, type WorkspaceMember } from '@calaba/protocol';
-import { Crown, MonitorUp, Video, Volume2 } from 'lucide-react';
+import { MonitorUp, Video, Volume2 } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
@@ -9,9 +9,10 @@ import { useRooms } from '../../stores/rooms';
 import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 import { isGuest, useWorkspaces } from '../../stores/workspaces';
-import { GuestBadge, roleTextClass } from '../people/MemberBits';
+import { GuestBadge, RoleMark, roleTextClass } from '../people/MemberBits';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { MutedByMe } from '../../components/SpeakerIdentity';
+import { VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { groupMembers, nameOf } from '../people/members';
 import { NicknameDialog } from '../people/NicknameDialog';
 import { ProfileCard } from '../people/ProfileCard';
@@ -28,7 +29,7 @@ export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
  * Members column (docs/09 #12): 240 px next to the chat from MEMBERS_COLUMN_MIN, a floating
  * panel below it (Esc closes it: services/hotkeys.ts). Groups «В сети» / «Не в сети», each ordered owner → admins →
  * members → guests: with a handful of built-in roles, role headers would mostly be groups of
- * one, so the role shows as the name colour (+ crown) instead — the Discord look without
+ * one, so the role shows as the name colour (+ RoleMark: crown / shield) instead — the Discord look without
  * the noise. Click → profile, right click → member menu.
  */
 export function MembersPanel({ workspaceId, floating = false, drawer = false }: { workspaceId: string; floating?: boolean; drawer?: boolean }): ReactNode {
@@ -121,6 +122,7 @@ const MemberRow = memo(function MemberRow({
         <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden />
         <span className="truncate">{roomName ?? t('people.inVoice')}</span>
         {v.camera ? <Video className="size-3.5 shrink-0" aria-label={t('video.stateOn')} role="img" /> : null}
+        <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} />
       </>
     );
   else if (statusLine) second = <span className="truncate">{statusLine}</span>;
@@ -144,10 +146,8 @@ const MemberRow = memo(function MemberRow({
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex min-w-0 items-center gap-1">
-                <span className={cx('truncate text-body font-medium leading-[18px]', offline ? 'text-muted' : roleTextClass(m.role))}>{name}</span>
-                {m.role === WorkspaceRole.OWNER ? (
-                  <Crown className={cx('size-3.5 shrink-0', offline ? 'text-muted' : 'text-role-owner')} aria-label={t('people.owner')} role="img" />
-                ) : null}
+                <span className={cx('truncate text-body font-medium leading-[18px]', roleTextClass(m.role, offline ? 'muted' : 'role'))}>{name}</span>
+                <RoleMark role={m.role} tone={offline ? 'muted' : 'role'} />
                 {isGuest(m) ? <GuestBadge /> : null}
                 <MutedByMe userId={userId} className="size-3.5" />
               </span>

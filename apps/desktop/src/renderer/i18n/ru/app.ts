@@ -165,6 +165,13 @@ export const ruApp = {
   'room.typeTextHint': 'Сообщения, файлы и ссылки',
   'room.typeVoiceHint': 'Голос, показ экрана и чат',
   'ws.joinedSince': 'с {date}',
+  'ws.filter.label': 'Роль',
+  'ws.filter.all': 'Все',
+  'ws.filter.owner': 'Владелец',
+  'ws.filter.admins': 'Админы',
+  'ws.filter.members': 'Участники',
+  'ws.filter.guests': 'Гости',
+  'ws.filter.none': 'Никого не найдено',
 
   // onboarding (docs/09 #20)
   'onb.back': 'Назад',
