@@ -15,6 +15,7 @@ import { useWorkspaces } from '../../stores/workspaces';
 import { roomLabel } from '../chat/roomLabel';
 import { MemberPickRow } from './MemberPicker';
 import { memberItems, type MemberPickItem } from './memberPickItems';
+import { RoomGuestInviteCard, useGuestInviteShown } from './RoomGuestInviteCard';
 import { roomInviteLink, roomLinkError } from './roomLink';
 
 /**
@@ -32,7 +33,10 @@ export function InviteToRoomDialog({ roomId, onClose }: { roomId: string; onClos
   const [sent, setSent] = useState<ReadonlySet<string>>(new Set());
   const [sending, setSending] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const link = useQuery({ queryKey: ['roomInviteLink', roomId], queryFn: () => roomInviteLink(roomId), retry: false, staleTime: 60_000 });
+  // docs/09 #55: with the right to create room links the guest-link card leads the dialog and is
+  // the link to copy — no second field below, and no link minted just by opening the dialog.
+  const guestCard = useGuestInviteShown(roomId);
+  const link = useQuery({ queryKey: ['roomInviteLink', roomId], queryFn: () => roomInviteLink(roomId), retry: false, staleTime: 60_000, enabled: !guestCard });
 
   const groups = useMemo((): Array<PickerGroup<MemberPickItem>> => {
     const list = Object.values(members ?? {}).filter((m) => m.user && m.user.id !== meId && m.role !== WorkspaceRole.GUEST && !m.user.isGuest);
@@ -71,6 +75,11 @@ export function InviteToRoomDialog({ roomId, onClose }: { roomId: string; onClos
   return (
     <Modal open onClose={onClose} title={t('roomInvite.title', { room: name })} description={t('roomInvite.hint')} initialFocus={input} fill>
       <div className="flex min-h-0 flex-1 flex-col gap-4" data-testid="room-invite">
+        {guestCard ? (
+          <div className="shrink-0">
+            <RoomGuestInviteCard roomId={roomId} />
+          </div>
+        ) : null}
         <div className="-mx-2 flex min-h-0 flex-1 flex-col">
           <PickerPanel<MemberPickItem>
             groups={groups}
@@ -97,7 +106,7 @@ export function InviteToRoomDialog({ roomId, onClose }: { roomId: string; onClos
                       aria-hidden
                       className={cx(
                         'shrink-0 rounded-[var(--radius-control)] px-2 py-0.5 text-caption font-medium',
-                        active ? 'bg-[color-mix(in_srgb,white_20%,transparent)]' : 'border border-line text-fg',
+                        active ? 'bg-[color-mix(in_srgb,black_20%,transparent)]' : 'border border-line text-fg',
                       )}
                     >
                       {t('roomInvite.send')}
@@ -108,15 +117,17 @@ export function InviteToRoomDialog({ roomId, onClose }: { roomId: string; onClos
             )}
           />
         </div>
-        <div className="flex shrink-0 flex-col gap-1.5">
-          <span className="text-caption font-medium text-muted">{t('roomInvite.link')}</span>
-          <div className="flex items-center gap-2">
-            <Input readOnly value={link.data ?? ''} placeholder={link.isError ? roomLinkError(link.error) : '…'} aria-label={t('roomInvite.link')} className="min-w-0 flex-1" onFocus={(e) => e.currentTarget.select()} />
-            <Button variant="secondary" disabled={!link.data} onClick={copy}>
-              {t('roomInvite.copy')}
-            </Button>
+        {guestCard ? null : (
+          <div className="flex shrink-0 flex-col gap-1.5">
+            <span className="text-caption font-medium text-muted">{t('roomInvite.link')}</span>
+            <div className="flex items-center gap-2">
+              <Input readOnly value={link.data ?? ''} placeholder={link.isError ? roomLinkError(link.error) : '…'} aria-label={t('roomInvite.link')} className="min-w-0 flex-1" onFocus={(e) => e.currentTarget.select()} />
+              <Button variant="secondary" disabled={!link.data} onClick={copy}>
+                {t('roomInvite.copy')}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </Modal>
   );

@@ -22,11 +22,17 @@ import { guestInviteMode, guestLink, guestLinkDefaults } from './roomGuestInvite
  * (7 days, speak + write, no use limit); «Настроить срок и права…» opens the room settings'
  * «Ссылка для гостей». Only with MANAGE_ROOM (as the room settings tab; the server checks it).
  */
-export function RoomGuestInviteCard({ roomId }: { roomId: string }): ReactNode {
+/** Whether the card shows for this room: not a DM, and MANAGE_ROOM (the server's check for room links). */
+export function useGuestInviteShown(roomId: string): boolean {
   const room = useRooms((s) => s.byId[roomId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const roles = useMemberRoles(room?.workspaceId, me);
-  const canCreate = can(roomPerms(roles, me, room), 'MANAGE_ROOM');
+  return !!room && room.type !== RoomType.DM && can(roomPerms(roles, me, room), 'MANAGE_ROOM');
+}
+
+export function RoomGuestInviteCard({ roomId }: { roomId: string }): ReactNode {
+  const room = useRooms((s) => s.byId[roomId]);
+  const canCreate = useGuestInviteShown(roomId);
   const qc = useQueryClient();
   const key = ['roomInvites', roomId];
   const q = useQuery({ queryKey: key, queryFn: () => api.roomInvites.list(roomId), enabled: canCreate && !!room });
