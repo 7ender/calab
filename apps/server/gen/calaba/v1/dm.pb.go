@@ -158,6 +158,107 @@ func (x *ListDmsResponse) GetDms() []*DmSummary {
 	return nil
 }
 
+// PATCH /api/dms/{id}/state — the caller's own state of the DM (docs/09 item 51); the peer's
+// history, counts and list do not change. archived set: move the DM to / out of the archive.
+// cleared true: «Удалить чат» for the caller only — messages up to now are no longer shown to
+// them, the DM leaves the archive and the list until a new message arrives. Not a participant:
+// 404. The caller's devices get DM_STATE_UPDATE; the answer is the DM as the caller sees it now.
+type UpdateDmStateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Archived      *bool                  `protobuf:"varint,1,opt,name=archived,proto3,oneof" json:"archived,omitempty"`
+	Cleared       bool                   `protobuf:"varint,2,opt,name=cleared,proto3" json:"cleared,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDmStateRequest) Reset() {
+	*x = UpdateDmStateRequest{}
+	mi := &file_calaba_v1_dm_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDmStateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDmStateRequest) ProtoMessage() {}
+
+func (x *UpdateDmStateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_dm_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDmStateRequest.ProtoReflect.Descriptor instead.
+func (*UpdateDmStateRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_dm_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *UpdateDmStateRequest) GetArchived() bool {
+	if x != nil && x.Archived != nil {
+		return *x.Archived
+	}
+	return false
+}
+
+func (x *UpdateDmStateRequest) GetCleared() bool {
+	if x != nil {
+		return x.Cleared
+	}
+	return false
+}
+
+type UpdateDmStateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Dm            *DmSummary             `protobuf:"bytes,1,opt,name=dm,proto3" json:"dm,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDmStateResponse) Reset() {
+	*x = UpdateDmStateResponse{}
+	mi := &file_calaba_v1_dm_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDmStateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDmStateResponse) ProtoMessage() {}
+
+func (x *UpdateDmStateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_dm_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDmStateResponse.ProtoReflect.Descriptor instead.
+func (*UpdateDmStateResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_dm_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UpdateDmStateResponse) GetDm() *DmSummary {
+	if x != nil {
+		return x.Dm
+	}
+	return nil
+}
+
 // GET /api/dms/candidates?q= — users the caller may start a DM with: full members of the
 // caller's workspaces, no guest accounts; q matches the display name or a workspace nickname
 // (case-insensitive substring, ≤ 64 chars; empty = anyone); by name, at most 20.
@@ -170,7 +271,7 @@ type ListDmCandidatesResponse struct {
 
 func (x *ListDmCandidatesResponse) Reset() {
 	*x = ListDmCandidatesResponse{}
-	mi := &file_calaba_v1_dm_proto_msgTypes[3]
+	mi := &file_calaba_v1_dm_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -182,7 +283,7 @@ func (x *ListDmCandidatesResponse) String() string {
 func (*ListDmCandidatesResponse) ProtoMessage() {}
 
 func (x *ListDmCandidatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_dm_proto_msgTypes[3]
+	mi := &file_calaba_v1_dm_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -195,7 +296,7 @@ func (x *ListDmCandidatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDmCandidatesResponse.ProtoReflect.Descriptor instead.
 func (*ListDmCandidatesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_dm_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_dm_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListDmCandidatesResponse) GetUsers() []*User {
@@ -215,7 +316,13 @@ const file_calaba_v1_dm_proto_rawDesc = "" +
 	"\x10CreateDmResponse\x12$\n" +
 	"\x02dm\x18\x01 \x01(\v2\x14.calaba.v1.DmSummaryR\x02dm\"9\n" +
 	"\x0fListDmsResponse\x12&\n" +
-	"\x03dms\x18\x01 \x03(\v2\x14.calaba.v1.DmSummaryR\x03dms\"A\n" +
+	"\x03dms\x18\x01 \x03(\v2\x14.calaba.v1.DmSummaryR\x03dms\"^\n" +
+	"\x14UpdateDmStateRequest\x12\x1f\n" +
+	"\barchived\x18\x01 \x01(\bH\x00R\barchived\x88\x01\x01\x12\x18\n" +
+	"\acleared\x18\x02 \x01(\bR\aclearedB\v\n" +
+	"\t_archived\"=\n" +
+	"\x15UpdateDmStateResponse\x12$\n" +
+	"\x02dm\x18\x01 \x01(\v2\x14.calaba.v1.DmSummaryR\x02dm\"A\n" +
 	"\x18ListDmCandidatesResponse\x12%\n" +
 	"\x05users\x18\x01 \x03(\v2\x0f.calaba.v1.UserR\x05usersB\x95\x01\n" +
 	"\rcom.calaba.v1B\aDmProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
@@ -233,24 +340,27 @@ func file_calaba_v1_dm_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_dm_proto_rawDescData
 }
 
-var file_calaba_v1_dm_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_calaba_v1_dm_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_calaba_v1_dm_proto_goTypes = []any{
 	(*CreateDmRequest)(nil),          // 0: calaba.v1.CreateDmRequest
 	(*CreateDmResponse)(nil),         // 1: calaba.v1.CreateDmResponse
 	(*ListDmsResponse)(nil),          // 2: calaba.v1.ListDmsResponse
-	(*ListDmCandidatesResponse)(nil), // 3: calaba.v1.ListDmCandidatesResponse
-	(*DmSummary)(nil),                // 4: calaba.v1.DmSummary
-	(*User)(nil),                     // 5: calaba.v1.User
+	(*UpdateDmStateRequest)(nil),     // 3: calaba.v1.UpdateDmStateRequest
+	(*UpdateDmStateResponse)(nil),    // 4: calaba.v1.UpdateDmStateResponse
+	(*ListDmCandidatesResponse)(nil), // 5: calaba.v1.ListDmCandidatesResponse
+	(*DmSummary)(nil),                // 6: calaba.v1.DmSummary
+	(*User)(nil),                     // 7: calaba.v1.User
 }
 var file_calaba_v1_dm_proto_depIdxs = []int32{
-	4, // 0: calaba.v1.CreateDmResponse.dm:type_name -> calaba.v1.DmSummary
-	4, // 1: calaba.v1.ListDmsResponse.dms:type_name -> calaba.v1.DmSummary
-	5, // 2: calaba.v1.ListDmCandidatesResponse.users:type_name -> calaba.v1.User
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6, // 0: calaba.v1.CreateDmResponse.dm:type_name -> calaba.v1.DmSummary
+	6, // 1: calaba.v1.ListDmsResponse.dms:type_name -> calaba.v1.DmSummary
+	6, // 2: calaba.v1.UpdateDmStateResponse.dm:type_name -> calaba.v1.DmSummary
+	7, // 3: calaba.v1.ListDmCandidatesResponse.users:type_name -> calaba.v1.User
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_dm_proto_init() }
@@ -260,13 +370,14 @@ func file_calaba_v1_dm_proto_init() {
 	}
 	file_calaba_v1_gateway_proto_init()
 	file_calaba_v1_user_proto_init()
+	file_calaba_v1_dm_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_dm_proto_rawDesc), len(file_calaba_v1_dm_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
