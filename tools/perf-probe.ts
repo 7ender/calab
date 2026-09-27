@@ -4,7 +4,8 @@
  * userData, prints JSON with startup timings, React re-render counts per component, observer /
  * timer inventory, heap after room switching and duplicate REST requests. No side effects.
  *
- *   pnpm -F @calaba/desktop build:app      # out/ must be fresh
+ *   CALABA_RENDERER_MINIFY=0 pnpm -F @calaba/desktop build:app   # out/ must be fresh; unminified
+ *                                          # keeps our component names in the render counts
  *   npx tsx tools/perf-probe.ts [--port 39377] [--launches 3]
  *
  * One test Electron at a time (CLAUDE.md «Визуальные тесты»): don't run in parallel with e2e.

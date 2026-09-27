@@ -211,8 +211,13 @@ export async function setEmbedsHidden(m: Message, hidden: boolean): Promise<void
 
 const pinsLoading = new Set<string>();
 
-export async function loadPins(roomId: string): Promise<void> {
-  if (pinsLoading.has(roomId)) return;
+/**
+ * Pins of a room, fetched once: afterwards MESSAGE_UPDATE / MESSAGE_DELETE keep them current
+ * (stores/messages updatePins), including while the room is closed. Refetched only after a fresh
+ * IDENTIFY (resyncPins: missed events are not replayed) or once the store dropped them (unload).
+ */
+export async function loadPins(roomId: string, force = false): Promise<void> {
+  if (pinsLoading.has(roomId) || (!force && useMessages.getState().pins[roomId] !== undefined)) return;
   pinsLoading.add(roomId);
   try {
     const res = await api.messages.pins(roomId);
@@ -222,6 +227,12 @@ export async function loadPins(roomId: string): Promise<void> {
   } finally {
     pinsLoading.delete(roomId);
   }
+}
+
+/** After a fresh IDENTIFY: refetch every room's pins we hold (see loadPins). */
+export async function resyncPins(): Promise<void> {
+  const held = Object.entries(useMessages.getState().pins).filter(([, p]) => p !== undefined);
+  await Promise.all(held.map(([roomId]) => loadPins(roomId, true)));
 }
 
 // ---- link previews: one request per URL per session (the server caches for everyone)

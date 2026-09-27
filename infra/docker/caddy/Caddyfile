@@ -149,6 +149,15 @@
 		# The API sets Cache-Control (no-store on JSON, its own on files/unfurl) and nosniff itself;
 		# only Referrer-Policy is added here (the API never sets it, so no duplicate values).
 		header /api/* Referrer-Policy "same-origin"
+		# JSON only (lists, READY-sized pages, search: 4–6× smaller; docs/18 step 3). Never touched:
+		# the gateway WebSocket, files/thumbnails (http.ServeContent with Range/ETag — encoding would
+		# break ranged and resumable downloads) and proxied unfurl images.
+		@api_json not path /gateway /api/files/* /api/unfurl/image
+		encode @api_json {
+			zstd
+			gzip
+			match header Content-Type application/json*
+		}
 		reverse_proxy 127.0.0.1:3000
 	}
 

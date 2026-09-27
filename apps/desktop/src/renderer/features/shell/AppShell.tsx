@@ -22,7 +22,8 @@ import { ChatPane } from '../chat/ChatPane';
 import { DmPick, useActiveDm } from '../dm/DmHome';
 import { DmSidebar } from '../dm/DmSidebar';
 import { HOME } from '../../stores/dms';
-import { Onboarding } from '../onboarding/Onboarding';
+import { OnboardingLazy, preloadWindows } from './lazyWindows';
+import { whenIdle } from '../../lib/lazyPreload';
 import { MembersPanel } from './MembersPanel';
 import { BottomIsland } from './BottomIsland';
 import { Sidebar } from './Sidebar';
@@ -58,8 +59,10 @@ export function AppShell(): ReactNode {
   useEffect(() => installAfk(), []);
   useEffect(() => installPresenceTimer(), []);
   useEffect(() => installEmail(), []);
+  const superadmin = useSession((s) => s.me?.isSuperadmin === true);
+  useEffect(() => (ready ? whenIdle(() => preloadWindows(superadmin)) : undefined), [ready, superadmin]);
 
-  if (!onboarded) return <Onboarding />;
+  if (!onboarded) return <OnboardingLazy.Component />;
   if (mobile) {
     // Phone layout (ADR-0021): one column — the chat full screen, the rail + rooms and the members
     // list in drawers, the voice strip at the bottom.

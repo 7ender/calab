@@ -59,6 +59,14 @@ export default defineConfig({
       },
     },
     build: {
+      // electron-vite leaves the renderer unminified: minifying the ~4.3 MB main chunk halves it
+      // and cuts V8 compile time on every start (docs/18 step 1). CALABA_RENDERER_MINIFY=0 keeps
+      // component names readable for tools/perf-probe.ts render counts.
+      minify: process.env['CALABA_RENDERER_MINIFY'] === '0' ? false : 'esbuild',
+      // 'hidden': .map files next to the bundle without a sourceMappingURL comment, so DevTools
+      // never fetches them and they are not shipped (electron-builder.yml excludes **/*.map);
+      // a stack from a production log is decoded against the maps of the same commit's build.
+      sourcemap: 'hidden',
       // overlay.html: the presenter's annotation overlay window (ADR-0028).
       rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html'), overlay: resolve(__dirname, 'src/renderer/overlay.html') } },
     },

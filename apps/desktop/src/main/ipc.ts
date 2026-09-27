@@ -26,6 +26,7 @@ import { armSelection, listSources, requestScreenAccess, screenAccess, systemAud
 import { parseThumbRequest } from '../shared/captureThumb';
 import { takePendingDeepLink } from './deeplink';
 import { fullscreenFor } from './fullscreen';
+import { systemLocales } from './systemLocales';
 import { downloadFile } from './downloads';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
@@ -172,8 +173,8 @@ export function registerIpc(): void {
     micAccess: mediaAccess('microphone'),
     screenAccess: mediaAccess('screen'),
     // app.getLocale() follows --lang (tests pin it to ru); the system list covers languages
-    // Chromium has no UI pack for (ADR-0022: kk, be → ru).
-    locales: [app.getLocale(), ...app.getPreferredSystemLanguages()],
+    // Chromium has no UI pack for (ADR-0022: kk, be → ru; the app ships only our packs).
+    locales: systemLocales(app.getLocale(), app.getPreferredSystemLanguages(), app.commandLine.hasSwitch('lang')),
   }));
   handle(IPC.appSetStrings, (_e, a) => {
     const s = parseMainStrings(a);

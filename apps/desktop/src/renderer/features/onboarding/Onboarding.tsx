@@ -12,7 +12,7 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
 import { useInvite } from '../../stores/invite';
-import { MicMeter } from '../settings/AppSettingsDialog';
+import { MicMeter } from '../settings/MicMeter';
 import { PttBinder, bindingLabel } from '../settings/PttBinder';
 import { notifyStepView, readNotifyState, requestNotify, type NotifyState } from '../../lib/notifyPermission';
 import { screenStepState, screenStepView } from '../../lib/screenPermission';

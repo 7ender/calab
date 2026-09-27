@@ -18,8 +18,8 @@ func testSession() *Session {
 		subscribed: map[uuid.UUID]bool{}, wq: make(chan entry, 64)}
 }
 
-func typingEv(n int) *v1.DispatchEvent {
-	return &v1.DispatchEvent{Event: &v1.DispatchEvent_TypingStart{TypingStart: &v1.TypingStart{RoomId: "r" + strconv.Itoa(n)}}}
+func roomEv(n int) *v1.DispatchEvent {
+	return &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageDelete{MessageDelete: &v1.MessageDelete{RoomId: "r" + strconv.Itoa(n)}}}
 }
 
 func drain(s *Session) []entry {
@@ -47,9 +47,9 @@ func TestSessionSeqPendingDedup(t *testing.T) {
 	s := testSession()
 	ids := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 	// Before READY events are queued, not numbered.
-	s.dispatch(ids[0], typingEv(0))
-	s.dispatch(ids[1], typingEv(1))
-	s.dispatch(ids[1], typingEv(1)) // same event via a second channel: dropped
+	s.dispatch(ids[0], roomEv(0))
+	s.dispatch(ids[1], roomEv(1))
+	s.dispatch(ids[1], roomEv(1)) // same event via a second channel: dropped
 	if len(s.pending) != 2 || len(drain(s)) != 0 {
 		t.Fatalf("pending=%d", len(s.pending))
 	}
@@ -59,7 +59,7 @@ func TestSessionSeqPendingDedup(t *testing.T) {
 	s.emit(uuid.New(), newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_Ready{Ready: &v1.Ready{}}}))
 	s.flushPending(map[uuid.UUID]bool{ids[0]: true})
 	s.mu.Unlock()
-	s.dispatch(ids[2], typingEv(2))
+	s.dispatch(ids[2], roomEv(2))
 	got := drain(s)
 	if len(got) != 3 {
 		t.Fatalf("emitted %d frames, want 3", len(got))
@@ -70,18 +70,18 @@ func TestSessionSeqPendingDedup(t *testing.T) {
 			t.Fatalf("frame %d: seq %d, %v", i, e.seq, f)
 		}
 	}
-	if got[1].id != ids[1] || got[2].id != ids[2] || decode(t, got[2]).GetDispatch().GetTypingStart().GetRoomId() != "r2" {
+	if got[1].id != ids[1] || got[2].id != ids[2] || decode(t, got[2]).GetDispatch().GetMessageDelete().GetRoomId() != "r2" {
 		t.Fatal("wrong order / skip")
 	}
 	s.dead = true
-	s.dispatch(uuid.New(), typingEv(3))
+	s.dispatch(uuid.New(), roomEv(3))
 	if len(drain(s)) != 0 {
 		t.Fatal("dead session emitted")
 	}
 }
 
 func TestFrameBytesMatchesProto(t *testing.T) {
-	ev := typingEv(7)
+	ev := roomEv(7)
 	enc := newEnc(ev)
 	payload, _ := enc.bytes()
 	got := frameBytes(42, payload)
@@ -100,16 +100,16 @@ func TestFrameBytesMatchesProto(t *testing.T) {
 func TestPauseKeepsOrder(t *testing.T) {
 	s := testSession()
 	s.ready = true
-	s.dispatch(uuid.New(), typingEv(0)) // seq 1, live
+	s.dispatch(uuid.New(), roomEv(0)) // seq 1, live
 	marker := s.pause()
-	s.dispatch(uuid.New(), typingEv(1)) // after the pause: waits
+	s.dispatch(uuid.New(), roomEv(1)) // after the pause: waits
 	if len(drain(s)) != 1 {
 		t.Fatal("event emitted while paused")
 	}
-	s.resume(marker, uuid.New(), newEnc(typingEv(9))) // the prepared snapshot goes first
+	s.resume(marker, uuid.New(), newEnc(roomEv(9))) // the prepared snapshot goes first
 	got := drain(s)
-	if len(got) != 2 || decode(t, got[0]).GetDispatch().GetTypingStart().GetRoomId() != "r9" ||
-		decode(t, got[1]).GetDispatch().GetTypingStart().GetRoomId() != "r1" {
+	if len(got) != 2 || decode(t, got[0]).GetDispatch().GetMessageDelete().GetRoomId() != "r9" ||
+		decode(t, got[1]).GetDispatch().GetMessageDelete().GetRoomId() != "r1" {
 		t.Fatalf("order after resume: %d frames", len(got))
 	}
 }
@@ -120,10 +120,10 @@ func TestOverlappingPauses(t *testing.T) {
 		s := testSession()
 		s.ready = true
 		a := s.pause()
-		s.dispatch(uuid.New(), typingEv(1))
+		s.dispatch(uuid.New(), roomEv(1))
 		b := s.pause()
-		s.dispatch(uuid.New(), typingEv(2))
-		first, second := func() { s.resume(a, uuid.New(), newEnc(typingEv(7))) }, func() { s.resume(b, uuid.New(), newEnc(typingEv(8))) }
+		s.dispatch(uuid.New(), roomEv(2))
+		first, second := func() { s.resume(a, uuid.New(), newEnc(roomEv(7))) }, func() { s.resume(b, uuid.New(), newEnc(roomEv(8))) }
 		if !aFirst {
 			first, second = second, first
 		}
@@ -134,7 +134,7 @@ func TestOverlappingPauses(t *testing.T) {
 		second()
 		var rooms []string
 		for _, e := range drain(s) {
-			rooms = append(rooms, decode(t, e).GetDispatch().GetTypingStart().GetRoomId())
+			rooms = append(rooms, decode(t, e).GetDispatch().GetMessageDelete().GetRoomId())
 		}
 		if strings.Join(rooms, ",") != "r7,r1,r8,r2" {
 			t.Fatalf("aFirst=%v: order %v", aFirst, rooms)
@@ -187,8 +187,8 @@ func TestSubscribeCap(t *testing.T) {
 func TestSkipSurvivesPause(t *testing.T) {
 	s := testSession()
 	x, y := uuid.New(), uuid.New()
-	s.dispatch(x, typingEv(1))
-	s.dispatch(y, typingEv(2))
+	s.dispatch(x, roomEv(1))
+	s.dispatch(y, roomEv(2))
 	marker := s.pause()
 	s.mu.Lock()
 	s.ready = true
@@ -197,13 +197,31 @@ func TestSkipSurvivesPause(t *testing.T) {
 	if len(drain(s)) != 0 {
 		t.Fatal("emitted while paused")
 	}
-	s.resume(marker, uuid.New(), newEnc(typingEv(9)))
+	s.resume(marker, uuid.New(), newEnc(roomEv(9)))
 	got := drain(s)
 	var rooms []string
 	for _, e := range got {
-		rooms = append(rooms, decode(t, e).GetDispatch().GetTypingStart().GetRoomId())
+		rooms = append(rooms, decode(t, e).GetDispatch().GetMessageDelete().GetRoomId())
 	}
 	if len(got) != 2 || rooms[0] != "r2" || rooms[1] != "r9" {
 		t.Fatalf("after resume: %v (x must stay skipped)", rooms)
+	}
+}
+
+// docs/18 step 7: TYPING_START is ephemeral — no seq, nothing for the resume buffer; the seq
+// of the next real event stays contiguous.
+func TestTypingNotBuffered(t *testing.T) {
+	s := testSession()
+	s.ready = true
+	s.dispatch(uuid.New(), roomEv(1))
+	s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_TypingStart{TypingStart: &v1.TypingStart{RoomId: "r"}}})
+	s.dispatch(uuid.New(), roomEv(2))
+	got := drain(s)
+	if len(got) != 2 || got[0].seq != 1 || got[1].seq != 2 || s.seq != 2 {
+		t.Fatalf("buffered %d entries, seq %d", len(got), s.seq)
+	}
+	f := &v1.GatewayFrame{}
+	if err := proto.Unmarshal(frameBytes(0, nil), f); err != nil || f.GetSeq() != 0 || f.GetOp() != v1.GatewayOpcode_GATEWAY_OPCODE_DISPATCH {
+		t.Fatalf("ephemeral frame: %v %v", f, err)
 	}
 }

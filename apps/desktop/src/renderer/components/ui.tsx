@@ -3,7 +3,7 @@ import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
-import { forwardRef, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { cloneElement, forwardRef, isValidElement, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { extendTailwindMerge } from 'tailwind-merge';
 import { t } from '../i18n';
 import { autoFocusAllowed } from '../lib/phone';
@@ -95,20 +95,86 @@ export const IconButton = forwardRef<
   return tip ? <Tip label={label} shortcut={shortcut}>{btn}</Tip> : btn;
 });
 
-export function Tip({
-  label,
-  shortcut,
-  children,
-  side = 'top',
-}: {
+type TipProps = {
   label: ReactNode;
   shortcut?: string | undefined;
   children: ReactNode;
   side?: 'top' | 'right' | 'bottom' | 'left';
-}): ReactNode {
+};
+
+/** How a lazy Tip woke up: what to replay on the freshly mounted Radix trigger. */
+type TipWake = { focused: boolean; move: { x: number; y: number; pointerId: number; pointerType: string } | null };
+
+// A pointer is pressed somewhere: a focus that comes with a press (a click) must not wake a Tip —
+// waking remounts the element mid-press, the press would end on another node and the click be
+// lost (Radix doesn't open a tooltip on a pointer-initiated focus either).
+let pressed = false;
+let pressTracked = false;
+function trackPress(): void {
+  if (pressTracked || typeof document === 'undefined') return;
+  pressTracked = true;
+  const up = (): void => {
+    pressed = false;
+  };
+  document.addEventListener('pointerdown', () => (pressed = true), true);
+  document.addEventListener('pointerup', up, true);
+  document.addEventListener('pointercancel', up, true);
+  window.addEventListener('blur', up);
+}
+
+type TipTriggerProps = {
+  onPointerMove?: (e: ReactPointerEvent<HTMLElement>) => void;
+  onFocus?: (e: ReactFocusEvent<HTMLElement>) => void;
+};
+
+/**
+ * Tooltip. Lazy (docs/18 step 6): until the first mouse move over the element or a keyboard /
+ * programmatic focus the child renders bare — a mounted Radix Tooltip costs ~9 component renders
+ * on every parent render, ≈ 40 % of all renders in the feed. On wake the Radix tooltip mounts once
+ * (the child is remounted under its trigger) and the waking event is replayed to it, so it opens
+ * as an always-mounted one would: after the delay on hover, at once on keyboard focus (with
+ * aria-describedby). Touch never wakes it (Radix ignores touch hover too).
+ */
+export function Tip(props: TipProps): ReactNode {
+  const [wake, setWake] = useState<TipWake | null>(null);
+  const child = props.children;
+  if (wake || !isValidElement<TipTriggerProps>(child)) return <LiveTip {...props} wake={wake} />;
+  trackPress();
+  const own = child.props;
+  return cloneElement(child, {
+    onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
+      own.onPointerMove?.(e);
+      if (e.pointerType === 'touch' || e.buttons !== 0) return;
+      setWake({ focused: document.activeElement === e.currentTarget, move: { x: e.clientX, y: e.clientY, pointerId: e.pointerId, pointerType: e.pointerType } });
+    },
+    onFocus: (e: ReactFocusEvent<HTMLElement>) => {
+      own.onFocus?.(e);
+      if (!pressed && e.target === e.currentTarget) setWake({ focused: true, move: null });
+    },
+  });
+}
+
+function LiveTip({ label, shortcut, children, side = 'top', wake }: TipProps & { wake: TipWake | null }): ReactNode {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const woke = useRef(wake);
+  useLayoutEffect(() => {
+    const el = trigger.current;
+    const w = woke.current;
+    if (!w || !el) return;
+    // The focused element was replaced: focus its successor (Radix opens on focus, as before).
+    if (w.focused && document.activeElement !== el) el.focus({ preventScroll: true });
+    const m = w.move;
+    if (!m) return;
+    const r = el.getBoundingClientRect();
+    if (m.x < r.left || m.x > r.right || m.y < r.top || m.y > r.bottom) return;
+    // Radix starts its open delay on pointermove: hand it the move that woke us.
+    el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, composed: true, clientX: m.x, clientY: m.y, pointerId: m.pointerId, pointerType: m.pointerType, isPrimary: true }));
+  }, []);
   return (
     <TooltipP.Root delayDuration={400}>
-      <TooltipP.Trigger asChild>{children}</TooltipP.Trigger>
+      <TooltipP.Trigger asChild ref={trigger}>
+        {children}
+      </TooltipP.Trigger>
       <TooltipP.Portal>
         <TooltipP.Content
           side={side}

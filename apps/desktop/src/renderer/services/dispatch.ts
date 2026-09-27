@@ -13,7 +13,7 @@ import { myUserId, useSession } from '../stores/session';
 import { activeRoomId, useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
-import { resyncLoadedRooms } from './chat';
+import { resyncLoadedRooms, resyncPins } from './chat';
 import { queryClient } from '../lib/queryClient';
 import { bansKey } from '../lib/moderation';
 import { applyDm, applyDmState, refreshDmPreview, refreshDms } from './dms';
@@ -89,6 +89,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       const msgs = useMessages.getState();
       for (const id of Object.keys(msgs.rooms)) if (!(id in alive)) msgs.unload(id);
       void resyncLoadedRooms();
+      void resyncPins();
       // Recordings (ADR-0025): the server's state replaces ours (REC, «Остановить запись»).
       resetRecordings(r.workspaces);
       useSession.getState().set({ me: r.me ?? null, planContact: r.planContact, ready: true });
