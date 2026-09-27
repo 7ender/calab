@@ -239,6 +239,7 @@ export const ru = {
   'perm.MENTION_EVERYONE': 'Упоминать всех (@everyone, @here)',
   'perm.MANAGE_WORKSPACE': 'Управлять пространством',
   'perm.MANAGE_ROLES': 'Управлять ролями',
+  'perm.MANAGE_STICKERS': 'Управлять стикерами',
   'perm.ADMINISTRATOR': 'Администратор',
   'perm.allow': 'разрешено',
   'perm.deny': 'запрещено',

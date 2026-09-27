@@ -39,8 +39,8 @@ func RoleFromProto(r v1.WorkspaceRole) (Role, bool) {
 }
 
 // RoomOnly are the bits that may appear in room overrides. ADMINISTRATOR, MANAGE_WORKSPACE,
-// MANAGE_NICKNAMES and MANAGE_ROLES are workspace-level and cannot be granted per room.
-const RoomOnly = All &^ (Administrator | ManageWorkspace | ManageNicknames | ManageRoles)
+// MANAGE_NICKNAMES, MANAGE_ROLES and MANAGE_STICKERS are workspace-level and cannot be granted per room.
+const RoomOnly = All &^ (Administrator | ManageWorkspace | ManageNicknames | ManageRoles | ManageStickers)
 
 // OverrideTarget is one row of room_permissions.
 type OverrideTarget struct {

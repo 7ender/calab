@@ -332,6 +332,7 @@ export const PERM_LABEL: Record<PermissionName, MessageKey> = {
   MENTION_EVERYONE: 'perm.MENTION_EVERYONE',
   VIDEO: 'perm.VIDEO',
   MANAGE_ROLES: 'perm.MANAGE_ROLES',
+  MANAGE_STICKERS: 'perm.MANAGE_STICKERS',
 };
 
 function targetKey(o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string {

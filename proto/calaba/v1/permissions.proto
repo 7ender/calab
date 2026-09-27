@@ -24,6 +24,9 @@ enum Permission {
   // 1 << 15: workspace-level, create / edit / delete / order roles below one's highest role
   // and assign them (ADR-0026). Not settable per room; only admins may grant it to a role.
   PERMISSION_MANAGE_ROLES = 32768;
+  // 1 << 16: workspace-level, create / edit / delete the workspace's sticker packs (ADR-0030).
+  // Not settable per room.
+  PERMISSION_MANAGE_STICKERS = 65536;
 }
 
 // Built-in workspace roles. Since ADR-0026 a member holds several roles (WorkspaceMember.

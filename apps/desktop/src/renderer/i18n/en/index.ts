@@ -241,6 +241,7 @@ export const en: Dict = {
   'perm.MENTION_EVERYONE': 'Mention everyone (@everyone, @here)',
   'perm.MANAGE_WORKSPACE': 'Manage workspace',
   'perm.MANAGE_ROLES': 'Manage roles',
+  'perm.MANAGE_STICKERS': 'Manage stickers',
   'perm.ADMINISTRATOR': 'Administrator',
   'perm.allow': 'allowed',
   'perm.deny': 'denied',

@@ -1,0 +1,97 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Sticker packs of a workspace (ADR-0030). A sticker is a WebP file (static or animated,
+// sides 1..512, ≤ 512 KB static / ≤ 1 MB animated) stored as a workspace file with an
+// emoji for search. Packs are managed with MANAGE_STICKERS; every member sees them; members
+// who are not guests install packs and send stickers (in the workspace's rooms, and in DMs
+// when both participants are non-guest members of the workspace).
+
+message Sticker {
+  string id = 1;
+  string pack_id = 2;
+  string emoji = 3; // one emoji sequence, used for search
+  string url = 4;   // /api/files/{file_id} (Authorization header required), image/webp
+  uint32 width = 5;
+  uint32 height = 6;
+  bool animated = 7;
+  uint32 size = 8; // bytes
+  // Removed from its pack (only in messages that still show it: a deleted sticker stays
+  // visible in the history).
+  bool deleted = 9;
+}
+
+message StickerPack {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3;       // 1..64 characters
+  string short_name = 4; // [a-z0-9_]{1,32}, unique among the workspace's packs
+  // The sticker shown for the pack in pickers; empty = the first sticker.
+  string cover_sticker_id = 5;
+  repeated Sticker stickers = 6; // in pack order, live ones only (≤ 120)
+  string created_by = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+// GET /api/workspaces/{id}/sticker-packs (any member, guests included): live packs, oldest
+// first.
+message ListStickerPacksResponse {
+  repeated StickerPack packs = 1;
+}
+
+// POST /api/workspaces/{id}/sticker-packs (MANAGE_STICKERS) → 201 StickerPackResponse;
+// STICKER_PACK_CREATE. The pack is installed for its creator. Over the plan's sticker_packs
+// → 409 CONFLICT, reason PLAN_LIMIT, used / limit.
+message CreateStickerPackRequest {
+  string name = 1;
+  string short_name = 2;
+}
+
+message StickerPackResponse {
+  StickerPack pack = 1;
+}
+
+// PATCH /api/sticker-packs/{id} (MANAGE_STICKERS in its workspace) → StickerPackResponse;
+// STICKER_PACK_UPDATE. DELETE /api/sticker-packs/{id} → 204; STICKER_PACK_DELETE, the pack
+// is uninstalled for everyone.
+message UpdateStickerPackRequest {
+  optional string name = 1;
+  optional string short_name = 2;
+  optional string cover_sticker_id = 3; // "" = the first sticker
+  // The complete new order of the pack's live stickers.
+  repeated string sticker_ids = 4;
+}
+
+// POST /api/sticker-packs/{id}/stickers (MANAGE_STICKERS): multipart, up to 50 stickers per
+// request; each "file" part (a WebP) is preceded by an "emoji" field. All or nothing: an
+// invalid file is 422 with field "file[<index>]". Appended to the end of the pack;
+// STICKER_PACK_UPDATE. Limits: 120 per pack (422), the plan's stickers (409 PLAN_LIMIT).
+message UploadStickersResponse {
+  StickerPack pack = 1;
+  repeated Sticker added = 2;
+}
+
+// PATCH /api/stickers/{id} (MANAGE_STICKERS) → StickerPackResponse; DELETE
+// /api/stickers/{id} → StickerPackResponse. Both send STICKER_PACK_UPDATE.
+message UpdateStickerRequest {
+  string emoji = 1;
+}
+
+// GET /api/me/sticker-packs: the caller's installed packs in their order and the live packs
+// of their workspaces (where they are not a guest) they have not installed. Installed packs
+// of workspaces the caller left (or is a guest in) are not listed.
+message MyStickerPacksResponse {
+  repeated StickerPack installed = 1;
+  repeated StickerPack available = 2;
+}
+
+// PUT /api/me/sticker-packs/{id}: install a pack of a workspace where the caller is a
+// non-guest member (first in the order; ≤ 50 installed, 422). DELETE …/{id}: uninstall.
+// PUT /api/me/sticker-packs/order: the complete new order of the installed packs. All
+// respond with MyStickerPacksResponse.
+message SetStickerPackOrderRequest {
+  repeated string pack_ids = 1;
+}
