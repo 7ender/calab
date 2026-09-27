@@ -3,7 +3,7 @@ import { MessagesSquare } from 'lucide-react';
 import { useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Button, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { isAdminRole } from '../../lib/permissions';
+import { mayArrangeRooms } from '../../lib/permissions';
 import { installAfk } from '../../services/afk';
 import { installPresenceTimer } from '../../services/presenceTimer';
 import { installHotkeys } from '../../services/hotkeys';
@@ -17,7 +17,7 @@ import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMobile } from '../../lib/mobile';
 import { MobileShell } from './MobileShell';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
-import { useWorkspaces } from '../../stores/workspaces';
+import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { ChatPane } from '../chat/ChatPane';
 import { DmPick, useActiveDm } from '../dm/DmHome';
 import { DmSidebar } from '../dm/DmSidebar';
@@ -204,12 +204,13 @@ function ResizeHandle(): ReactNode {
 /** Only for a workspace without any rooms (otherwise a room is always open, docs/09 #11). */
 function NoRoom({ workspaceId }: { workspaceId: string }): ReactNode {
   const open = useUi((s) => s.openDialog);
-  const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const manage = mayArrangeRooms(useMemberRoles(workspaceId, me));
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 text-body text-muted">
       <MessagesSquare className="size-10 text-muted" strokeWidth={1.25} aria-hidden />
-      <p>{isAdminRole(role) ? t('shell.noRooms') : t('shell.noRoomsMember')}</p>
-      {isAdminRole(role) ? (
+      <p>{manage ? t('shell.noRooms') : t('shell.noRoomsMember')}</p>
+      {manage ? (
         <Button onClick={() => open({ kind: 'room-create', workspaceId, voice: false })}>{t('shell.createFirstRoom')}</Button>
       ) : null}
     </div>

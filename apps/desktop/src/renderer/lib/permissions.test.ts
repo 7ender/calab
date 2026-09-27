@@ -1,7 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { PERMISSION_BITS, PermissionTargetType, RoleSchema, RoomPermissionOverrideSchema, RoomSchema, WorkspaceRole, type Role } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { can, compactDrafts, cycleTri, isAdminRole, roomPerms, triOf, withTri, workspacePerms } from './permissions';
+import { can, compactDrafts, cycleTri, isAdminRole, mayArrangeRooms, mayMoveMembersIn, roomPerms, triOf, withTri, workspacePerms } from './permissions';
 import { legacyRoles, rolesOfMember } from './roles';
 
 const { VIEW_ROOM, SEND_MESSAGES, STREAM, MANAGE_ROOM, MUTE_MEMBERS, CONNECT, SPEAK } = PERMISSION_BITS;
@@ -92,6 +92,29 @@ describe('workspace level', () => {
     expect(workspacePerms(undefined)).toBe(0n);
     expect(isAdminRole(WorkspaceRole.ADMIN)).toBe(true);
     expect(isAdminRole(WorkspaceRole.MEMBER)).toBe(false);
+  });
+});
+
+describe('drag & drop gates (rooms, categories, voice participants)', () => {
+  const MOVE = PERMISSION_BITS.MOVE_MEMBERS;
+  it('admin and owner arrange rooms and move members; a member without the bits does not', () => {
+    for (const r of [WorkspaceRole.OWNER, WorkspaceRole.ADMIN]) {
+      expect(mayArrangeRooms(as(r))).toBe(true);
+      // ADMINISTRATOR = everything: a room deny does not stop an admin.
+      expect(mayMoveMembersIn(as(r), 'a', room([{ t: PermissionTargetType.ROLE, id: 'admin', deny: MOVE }]))).toBe(true);
+    }
+    expect(mayArrangeRooms(as(WorkspaceRole.MEMBER))).toBe(false);
+    expect(mayMoveMembersIn(as(WorkspaceRole.MEMBER), 'u', room([]))).toBe(false);
+    expect(mayArrangeRooms(as(WorkspaceRole.GUEST))).toBe(false);
+    expect(mayArrangeRooms(undefined)).toBe(false);
+  });
+
+  it('a custom role or a room grant gives the bit', () => {
+    // «Moderator» carries MANAGE_ROOM at the workspace level.
+    expect(mayArrangeRooms(as(WorkspaceRole.MEMBER, mod))).toBe(true);
+    const grant = room([{ t: PermissionTargetType.ROLE, id: design.id, allow: MOVE }]);
+    expect(mayMoveMembersIn(as(WorkspaceRole.MEMBER), 'u', grant)).toBe(false);
+    expect(mayMoveMembersIn(as(WorkspaceRole.MEMBER, design), 'u', grant)).toBe(true);
   });
 });
 

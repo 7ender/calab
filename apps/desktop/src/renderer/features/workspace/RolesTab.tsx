@@ -215,7 +215,7 @@ function RoleRow({ role, count, draggable, onOpen }: { role: Role; count: number
       )}
       <button type="button" onClick={onOpen} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[6px] pr-1 text-left focus-visible:outline-2 focus-visible:outline-accent" aria-label={name}>
         <RoleIcon role={role} />
-        <span className="min-w-0 truncate text-body font-medium" style={isCustomRole(role) && role.color ? { color: roleColorCss(role.color) } : undefined}>
+        <span className="min-w-0 truncate text-body font-medium">
           {name}
         </span>
         {!isCustomRole(role) ? <Badge>{t('roles.builtin')}</Badge> : null}
@@ -266,7 +266,7 @@ function RoleCard({ workspaceId, role, onBack }: { workspaceId: string; role: Ro
           <ChevronLeft className="size-4" aria-hidden /> {t('roles.tab')}
         </Button>
         <RoleIcon role={role} size="lg" />
-        <h3 className="min-w-0 truncate text-headline font-semibold" style={isCustomRole(role) && role.color ? { color: roleColorCss(role.color) } : undefined} data-testid="role-title">
+        <h3 className="min-w-0 truncate text-headline font-semibold" data-testid="role-title">
           {name}
         </h3>
         {!isCustomRole(role) ? <Badge>{t('roles.builtin')}</Badge> : null}

@@ -53,7 +53,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, isAdminRole, roomPerms, workspacePerms } from '../../lib/permissions';
+import { can, isAdminRole, mayArrangeRooms, mayMoveMembersIn, roomPerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
 import { setRoomNotifications, setWorkspaceNotifications } from '../../services/mentions';
@@ -133,7 +133,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const [catDialog, setCatDialog] = useState(false);
   const myRoles = useMemberRoles(workspaceId, me);
   const admin = isAdminRole(entry?.role);
-  const manageRooms = can(workspacePerms(myRoles), 'MANAGE_ROOM');
+  const manageRooms = mayArrangeRooms(myRoles);
   // Pointer reordering on the desktop layout only: on a phone a drag would fight the scroll
   // (the room menu's «Переместить вверх/вниз» works everywhere).
   const canDrag = manageRooms && !mobile;
@@ -228,7 +228,7 @@ function SidebarMenu({ workspaceId, onCreateCategory, children }: { workspaceId:
   const setHideMuted = useUi((s) => s.setHideMuted);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const admin = isAdminRole(entry?.role);
-  const manageRooms = can(workspacePerms(useMemberRoles(workspaceId, me)), 'MANAGE_ROOM');
+  const manageRooms = mayArrangeRooms(useMemberRoles(workspaceId, me));
   return (
     <ContextMenu.Root modal={false}>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
@@ -276,7 +276,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
   const myRoles = useMemberRoles(workspaceId, me);
   if (!entry) return null;
   const admin = isAdminRole(entry.role);
-  const manageRooms = can(workspacePerms(myRoles), 'MANAGE_ROOM');
+  const manageRooms = mayArrangeRooms(myRoles);
 
   const leave = async (): Promise<void> => {
     if (!(await confirmAction(t('ws.leave'), t('ws.leaveConfirm', { name: entry.ws.name }), t('ws.leave')))) return;
@@ -1018,7 +1018,7 @@ function VoiceRoomRow({
     [voiceStates, room.id],
   );
   const canConnect = can(perms, 'CONNECT');
-  const canMove = can(perms, 'MOVE_MEMBERS');
+  const canMove = mayMoveMembersIn(role, me, room);
   const statusLine = useStatusLine(room.id, inRoom, canConnect, can(perms, 'MANAGE_ROOM'));
   const card = statusLine.shown;
   const limit = room.userLimit;

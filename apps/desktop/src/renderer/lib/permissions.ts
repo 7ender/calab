@@ -36,6 +36,19 @@ export function can(perms: PermissionBits, name: PermissionName): boolean {
   return has(perms, PERMISSION_BITS[name]);
 }
 
+/**
+ * Rooms and categories: create, rename, reorder (drag & drop, «Переместить вверх / вниз») —
+ * workspace-level MANAGE_ROOM of my roles (owner / admins: ADMINISTRATOR = everything).
+ */
+export function mayArrangeRooms(roles: readonly RoleBits[] | undefined): boolean {
+  return can(workspacePerms(roles), 'MANAGE_ROOM');
+}
+
+/** Drag a voice participant out of / into `room` (docs/09 #32): MOVE_MEMBERS in that room. */
+export function mayMoveMembersIn(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  return can(roomPerms(roles, userId, room), 'MOVE_MEMBERS');
+}
+
 /** Pin / unpin: MANAGE_MESSAGES, or either participant of a DM (by room type, docs/04). */
 export function mayPin(perms: PermissionBits, room: Pick<Room, 'type'> | undefined): boolean {
   return can(perms, 'MANAGE_MESSAGES') || room?.type === RoomType.DM;
