@@ -5,7 +5,6 @@ import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { formatTime, rateLabel } from '../../lib/chatMedia';
 import { drawBars } from '../../lib/voiceNote';
-import { installPlayer } from '../../services/player';
 import { usePlayer, type Track } from '../../stores/player';
 import { SeekBar, download, isSpace } from './MediaPlayer';
 
@@ -36,7 +35,6 @@ export function canPlayVoice(): boolean {
 }
 
 export function VoiceAttachment({ f, messageId, roomId, author, meta }: { f: FileMeta; messageId: string; roomId: string; author: string; meta?: ReactNode }): ReactNode {
-  useEffect(installPlayer, []);
   const total = (f.voice?.durationMs ?? 0) / 1000;
   const active = usePlayer((s) => s.track?.fileId === f.id && s.track.messageId === messageId);
   const playing = usePlayer((s) => active && s.playing);

@@ -7,7 +7,7 @@ import { filePath } from '../../lib/api/endpoints';
 import { SEEK_STEP, formatTime, rateLabel, seekPosition, trackInfo } from '../../lib/chatMedia';
 import { fmt } from '../../lib/format';
 import { platform } from '../../platform';
-import { installPlayer, probeDuration } from '../../services/player';
+import { probeDuration } from '../../services/player';
 import { claimVideo, releaseVideo, usePlayer, type Track } from '../../stores/player';
 import { prefs } from '../../stores/prefs';
 import { toast } from '../../stores/toasts';
@@ -52,7 +52,6 @@ export function AudioAttachment({
   label?: string;
   subtitle?: string;
 }): ReactNode {
-  useEffect(installPlayer, []);
   const active = usePlayer((s) => s.track?.fileId === f.id && s.track.messageId === messageId);
   const playing = usePlayer((s) => active && s.playing);
   const position = usePlayer((s) => (active ? s.position : 0));

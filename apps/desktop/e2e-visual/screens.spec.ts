@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
 import { Plan, RecordingStatus, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
@@ -56,6 +57,7 @@ const KEY = new Set([
   'voice-room-recording',
   'chat-recording-card',
   'chat-recording-done',
+  'chat-recording-play',
   'recording-transcript',
   'chat-recording-delete',
   'chat-audio',
@@ -1517,6 +1519,28 @@ test('chat-recording-done', async ({ open, win, mock, shot }) => {
   await expect(card.getByTestId('recording-card-more')).toHaveText('Свернуть');
 });
 
+// docs/09 #57: «Послушать запись» really plays — the chat's player is installed at startup, not by
+// the first audio attachment on screen (the card's player mounts only once the track is active,
+// so the click used to go nowhere: «playing», no sound, the time stuck at 0:00). The audio is a
+// 64 s AAC with `moov` after `mdat`, like LiveKit Egress writes: Range requests for the tail first.
+test('chat-recording-play', async ({ open, win, mock }) => {
+  await open();
+  const f = mock.state.files.get(IDS.files.meeting);
+  if (!f) throw new Error('fixture: no meeting file');
+  // Its own file id: the app's HTTP cache keeps the 6 s fixture under the usual one (immutable).
+  const bytes = readFileSync(new URL('../e2e-support/fixtures/egress-recording.m4a', import.meta.url));
+  const meta = { ...f.meta, id: '00000000-0000-7000-8005-0000000000e1', size: BigInt(bytes.length) };
+  mock.state.files.set(IDS.files.meeting, { meta, bytes });
+  mock.state.files.set(meta.id, { meta, bytes });
+  const card = await doneCard(win, mock);
+  await card.getByRole('button', { name: 'Послушать запись' }).click();
+  const player = card.getByTestId('audio-player');
+  await expect(player).toHaveAttribute('data-playing', 'true');
+  await expect(player).toContainText('1:04');
+  const seek = player.getByRole('slider', { name: 'Перемотка' });
+  await expect.poll(async () => Number(await seek.getAttribute('aria-valuenow')), { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+});
+
 // «Полный транскрипт» (docs/09 #47): speakers, times, search that keeps the matching remarks, a
 // click plays the recording from that remark (the chat's player), «Копировать», «Скачать .txt».
 test('recording-transcript', async ({ open, win, mock, shot }) => {
@@ -2181,3 +2205,4 @@ async function expectWelcomeCentred(page: Page): Promise<void> {
   expect(off, 'empty-room welcome present').not.toBeNull();
   expect(Math.abs(off ?? 99), 'empty-room welcome centred').toBeLessThanOrEqual(4);
 }
+

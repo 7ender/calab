@@ -6,6 +6,7 @@ import { installSheetGuard, installVisualViewport, registerServiceWorker } from 
 import { isWeb, platform } from './platform';
 import { installWindowVisibility } from './lib/windowVisibility';
 import { startLocale } from './services/locale';
+import { installPlayer } from './services/player';
 import { bootstrap } from './services/session';
 import './app/styles.css';
 
@@ -16,6 +17,11 @@ window.addEventListener('unhandledrejection', (e) => log.error('unhandled reject
 if (!isWeb) installWindowVisibility(document, platform.window);
 
 void bootstrap();
+
+// The chat's audio player before any UI can start a track: «Послушать запись» on a recording card
+// or a transcript remark plays with no audio attachment mounted yet (docs/09 #57). The element
+// itself is created on the first play.
+installPlayer();
 
 // Web client (ADR-0015/0021): `:root.web` scopes the phone layout (the `mobile:` CSS variant), the
 // shell follows the visual viewport (keyboard), and the PWA service worker makes it installable.
