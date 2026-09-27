@@ -1255,17 +1255,20 @@ test('voice-noise-popover', async ({ open, win, mock, shot }) => {
   await open();
   await inVoiceWithStatus(win, mock);
   const button = win.getByTestId('noise-button');
-  await expect(button).toHaveAccessibleName('Шумодав включён');
+  // RNNoise is off by default (migration 00025 + prefs v3, owner 27.09): Chromium's own
+  // noiseSuppression stays on, RNNoise costs CPU. The toggle is the same pref as
+  // Settings → «Голос и устройства».
+  await expect(button).toHaveAccessibleName('Шумодав выключен');
   await button.click();
   const popover = win.getByTestId('noise-popover');
   await expect(popover).toBeVisible();
   const toggle = popover.getByRole('switch', { name: 'Шумоподавление' });
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect(button).toHaveAccessibleName('Шумодав включён');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  await expect(button).toHaveAccessibleName('Шумодав выключен');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
   await expect(popover.getByTestId('noise-meter')).toHaveAttribute('aria-valuenow', '0');
   // Never over the island: the popover starts right of it.
   const island = await win.getByRole('region', { name: 'Голосовое подключение' }).boundingBox();
