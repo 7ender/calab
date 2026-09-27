@@ -297,8 +297,9 @@ export interface MockServer {
   /**
    * ADR-0025: a room is being recorded (`byUserId` started it `agoMs` ago) — ROOM_RECORDING ACTIVE
    * to the room's viewers, READY `recordings[]` from now on; `null` stops it (reason `user`, no card).
+   * `nowMs`: the client's clock (a visual test's page clock is fixed), default Date.now().
    */
-  setRecording(roomId: string, rec: { byUserId: string; agoMs?: number } | null): void;
+  setRecording(roomId: string, rec: { byUserId: string; agoMs?: number; nowMs?: number } | null): void;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
   /**
@@ -2838,7 +2839,7 @@ class MockImpl {
     this.toWorkspace(rec.workspaceId, { event: { case: 'roomRecording', value: rec } }, rec.roomId);
   }
 
-  setRecording(roomId: string, rec: { byUserId: string; agoMs?: number } | null): void {
+  setRecording(roomId: string, rec: { byUserId: string; agoMs?: number; nowMs?: number } | null): void {
     const room = this.state.rooms.get(roomId);
     if (!room) throw notFound('room not found');
     if (!rec) {
@@ -2851,7 +2852,7 @@ class MockImpl {
       recordingId: nextId(this.state, 'file'),
       state: RoomRecordingState.ACTIVE,
       byUserId: rec.byUserId,
-      since: timestampFromMs(Date.now() - (rec.agoMs ?? 0)),
+      since: timestampFromMs((rec.nowMs ?? Date.now()) - (rec.agoMs ?? 0)),
     });
     this.state.recordings.set(roomId, r);
     this.announceRecording(r);

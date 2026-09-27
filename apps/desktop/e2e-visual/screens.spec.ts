@@ -1051,7 +1051,9 @@ test('voice-room-status', async ({ open, win, mock, shot }) => {
 test('voice-room-recording', async ({ open, win, mock, shot }) => {
   await open();
   await inVoiceWithStatus(win, mock);
-  mock.setRecording(RECORDING_FIXTURE.roomId, { byUserId: RECORDING_FIXTURE.byUserId, agoMs: RECORDING_FIXTURE.agoMs });
+  // The page clock is fixed under test: «since» is counted from it.
+  const nowMs = await win.evaluate(() => Date.now());
+  mock.setRecording(RECORDING_FIXTURE.roomId, { byUserId: RECORDING_FIXTURE.byUserId, agoMs: RECORDING_FIXTURE.agoMs, nowMs });
   await expect(win.getByTestId('toast')).toContainText('Началась запись встречи (начал: Борис Петров)');
   const card = win.getByTestId('voice-room-card');
   await win.evaluate(() => (window as unknown as { __calabaJoinedAt?: (ms: number) => void }).__calabaJoinedAt?.(Date.now() - 60_000));
