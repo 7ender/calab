@@ -187,3 +187,71 @@ test('web link card: room preview, «always in the app», signed in', async ({ p
     await mock?.close();
   }
 });
+
+/**
+ * Room header at the members-column breakpoint (owner's bug 27.09): from 1200 px the members list
+ * is a 240 px column next to the chat; with the widest room column (320 px) the header's right-hand
+ * button group used to overflow the chat and paint over the members column. The header and every
+ * control in it stay inside the chat section. Layout only (no screenshot): runs locally too.
+ */
+test('web room header stays inside the chat at 1200–1320 with a 320 px room column', async ({ page }) => {
+  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+  let mock: MockServer | undefined;
+  try {
+    mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await page.clock.setFixedTime(NOW);
+    await page.goto(`${mock.url}/?visual-test`);
+    await page.evaluate(() => {
+      localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru' }, version: 1 }));
+      localStorage.setItem('calaba-ui', JSON.stringify({ state: { sidebarWidth: 320 }, version: 1 }));
+    });
+    await page.reload();
+    await page.getByLabel('Email').fill('owner@calaba.test');
+    await page.getByLabel('Пароль').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Войти', exact: true }).click();
+    // A short text room (the search field fits from 1200 px), the longest name (it doesn't: the
+    // field goes, ⌘K stays in the title bar), voice rooms.
+    for (const [room, width] of ['общий', 'очень-длинное-название-комнаты-для-проверки-обрезки', 'Созвон', 'Переговорка'].flatMap((r) => [1200, 1220, 1260, 1320, 1440].map((w) => [r, w] as const))) {
+      await page.setViewportSize({ width: 1440, height: 800 });
+      await page.locator('aside').getByRole('button', { name: room }).first().click();
+      await expect(page.locator('section[data-toast-anchor] h1')).toHaveText(room);
+      await page.setViewportSize({ width, height: 800 });
+      await page.waitForFunction((w) => innerWidth === w, width);
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      // Settled (the header re-measures on resize): exactly one ⌘K entry point — the header's
+      // field or the title bar's pill.
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const field = !!document.querySelector('[data-testid="header-search"]');
+            const pill = document.querySelector('[data-testid="titlebar"] button[aria-label="Поиск"]');
+            return !!pill && field === (getComputedStyle(pill).display === 'none');
+          }),
+          `${room} ${width}: one search entry point`,
+        )
+        .toBe(true);
+      const m = await page.evaluate(() => {
+        const section = document.querySelector('section[data-toast-anchor]');
+        const header = section?.querySelector(':scope > header');
+        if (!section || !header) return null;
+        const s = section.getBoundingClientRect();
+        const h = header.getBoundingClientRect();
+        const items = [...header.querySelectorAll('button, input, h1')].map((el) => {
+          const r = el.getBoundingClientRect();
+          return { what: el.getAttribute('aria-label') ?? el.textContent.trim().slice(0, 20), left: r.left, right: r.right };
+        });
+        return { section: { left: s.left, right: s.right }, header: { left: h.left, right: h.right, scrollW: header.scrollWidth, clientW: header.clientWidth }, items, search: !!header.querySelector('[data-testid="header-search"]') };
+      });
+      expect(m, 'chat section with a header').not.toBeNull();
+      if (!m) continue;
+      expect.soft(m.header.right, `${width}: header inside the chat`).toBeLessThanOrEqual(m.section.right + 0.5);
+      for (const it of m.items) expect.soft(it.right, `${width}: «${it.what}» inside the chat`).toBeLessThanOrEqual(m.section.right + 0.5);
+      expect.soft(m.header.scrollW, `${width}: header content fits`).toBeLessThanOrEqual(m.header.clientW);
+      if (room === 'общий') expect.soft(m.search, `${width}: the field fits next to a short name`).toBe(true);
+      if (room.startsWith('очень-длинное') && width === 1200) expect.soft(m.search, 'no room for the field next to the longest name').toBe(false);
+    }
+  } finally {
+    await mock?.close();
+  }
+});
