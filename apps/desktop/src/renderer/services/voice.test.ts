@@ -1020,6 +1020,45 @@ describe('VOICE_MOVED (ADR-0019)', () => {
   });
 });
 
+describe('rights change during a call (docs/16)', () => {
+  it('refreshRights: the stream / camera buttons follow my roles and the room without a rejoin', async () => {
+    const { create } = await import('@bufbuild/protobuf');
+    const { PERMISSION_BITS, PermissionTargetType, RoomPermissionOverrideSchema, RoomSchema, WorkspaceMemberSchema, WorkspaceRole, UserSchema } = await import('@calaba/protocol');
+    const { useSession } = await import('../stores/session');
+    const { useRooms } = await import('../stores/rooms');
+    const { useWorkspaces } = await import('../stores/workspaces');
+    const { legacyRoles } = await import('../lib/roles');
+    useSession.setState({ me: { user: { id: 'u1' } } } as never);
+    const me = create(WorkspaceMemberSchema, { workspaceId: 'ws', role: WorkspaceRole.MEMBER, roleIds: ['member'], user: create(UserSchema, { id: 'u1' }) });
+    useWorkspaces.setState({ byId: { ws: { ws: {} as never, role: WorkspaceRole.MEMBER, members: { u1: me }, roles: legacyRoles('ws'), voice: {} } } });
+    const room = (deny: bigint) =>
+      create(RoomSchema, {
+        id: 'A',
+        workspaceId: 'ws',
+        media: { cameraLimit: 2 },
+        permissionOverrides: [create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.ROLE, targetId: 'member', deny })],
+      });
+    useRooms.setState({ byId: { A: room(0n) } });
+    await voice.join('A', 'ws');
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', canStream: true });
+    // ROOM_PERMISSIONS_UPDATE: the member role loses STREAM and VIDEO here.
+    useRooms.setState({ byId: { A: room(PERMISSION_BITS.STREAM | PERMISSION_BITS.VIDEO) } });
+    voice.refreshRights();
+    expect(useVoice.getState()).toMatchObject({ canStream: false, canVideo: false });
+    // Promoted to admin (WORKSPACE_MEMBER_UPDATE): ADMINISTRATOR ignores the deny.
+    const entry = useWorkspaces.getState().byId.ws;
+    if (!entry) throw new Error('no workspace');
+    useWorkspaces.setState({ byId: { ws: { ...entry, members: { u1: { ...me, role: WorkspaceRole.ADMIN, roleIds: ['admin', 'member'] } } } } });
+    voice.refreshRights();
+    expect(useVoice.getState()).toMatchObject({ canStream: true, canVideo: true });
+    // Not in a call: nothing to refresh.
+    await voice.leave();
+    useVoice.setState({ canStream: false });
+    voice.refreshRights();
+    expect(useVoice.getState().canStream).toBe(false);
+  });
+});
+
 describe('defaultStage (docs/09 #56)', () => {
   it('expands a new stream over a (nearly) empty chat, remembers the per-room choice', async () => {
     const { defaultStage } = await import('./voice');
