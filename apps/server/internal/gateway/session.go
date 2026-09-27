@@ -29,19 +29,32 @@ type encEvent struct {
 
 func newEnc(ev *v1.DispatchEvent) *encEvent { return &encEvent{ev: ev} }
 
+// ephemeral: TYPING_START lives 3 s on the client (TypingIndicator). It goes out without a seq
+// (gateway.proto: clients skip seq tracking for seq 0 — every client since the first release)
+// and never into the resume buffer: a replay after reconnect would only show a stale «печатает»,
+// and buffering it cost a 5-command Redis pipeline per recipient per keystroke burst (docs/18
+// step 7).
+func (e *encEvent) ephemeral() bool {
+	_, ok := e.ev.GetEvent().(*v1.DispatchEvent_TypingStart)
+	return ok
+}
+
 func (e *encEvent) bytes() ([]byte, error) {
 	e.once.Do(func() { e.b, e.err = proto.Marshal(e.ev) })
 	return e.b, e.err
 }
 
 // frameBytes builds a binary GatewayFrame{op: DISPATCH, seq, dispatch: payload} directly
-// from the encoded payload (field numbers from gateway.proto: op=1, seq=2, dispatch=24).
+// from the encoded payload (field numbers from gateway.proto: op=1, seq=2, dispatch=24);
+// seq 0 (an ephemeral event) is omitted, as proto.Marshal would.
 func frameBytes(seq uint64, payload []byte) []byte {
 	b := make([]byte, 0, len(payload)+16)
 	b = protowire.AppendTag(b, 1, protowire.VarintType)
 	b = protowire.AppendVarint(b, uint64(v1.GatewayOpcode_GATEWAY_OPCODE_DISPATCH))
-	b = protowire.AppendTag(b, 2, protowire.VarintType)
-	b = protowire.AppendVarint(b, seq)
+	if seq != 0 {
+		b = protowire.AppendTag(b, 2, protowire.VarintType)
+		b = protowire.AppendVarint(b, seq)
+	}
 	b = protowire.AppendTag(b, 24, protowire.BytesType)
 	return protowire.AppendBytes(b, payload)
 }
@@ -206,13 +219,23 @@ func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
 	s.emit(id, enc)
 }
 
-// emit assigns the next seq, buffers the frame and sends it; s.mu must be held.
+// emit assigns the next seq, buffers the frame and sends it (an ephemeral event: sends only,
+// without a seq); s.mu must be held.
 func (s *Session) emit(id uuid.UUID, enc *encEvent) {
 	if s.dead {
 		return
 	}
 	payload, err := enc.bytes()
 	if err != nil {
+		return
+	}
+	if enc.ephemeral() {
+		eventsDispatched.Inc()
+		if s.conn != nil {
+			if typ, b, err := s.conn.codec.transcode(frameBytes(0, payload)); err == nil {
+				s.conn.send(typ, b)
+			}
+		}
 		return
 	}
 	s.seq++
