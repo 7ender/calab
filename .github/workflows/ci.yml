@@ -165,6 +165,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
       - run: pnpm -r test
+      # Bot SDK (ADR-0031): lint and the node bundle the examples run from
+      - run: pnpm -F @calaba/bot-sdk lint
+      - run: pnpm -F @calaba/bot-sdk build
 
   landing:
     name: landing lint / typecheck / build

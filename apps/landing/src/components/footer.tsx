@@ -1,10 +1,12 @@
-import type { Dict } from '@/i18n';
+import type { Dict, Locale } from '@/i18n';
+import { localePath } from '@/i18n/locales';
 import { CONTACT_EMAIL, GPTUNNEL_URL, REPO_URL, repoFile } from '@/lib/site';
 import { Container } from './ui';
 
-export function Footer({ t }: { t: Dict['footer'] }) {
+export function Footer({ t, locale }: { t: Dict['footer']; locale: Locale }) {
   const links = [
     { href: REPO_URL, label: 'GitHub' },
+    { href: localePath(locale, 'bots/'), label: t.bots },
     { href: repoFile('LICENSE'), label: t.license },
     { href: repoFile('COMMERCIAL-LICENSE.md'), label: t.commercial },
     { href: repoFile('SECURITY.md'), label: t.security },

@@ -1,0 +1,11 @@
+{
+  "name": "calab-bot-echo",
+  "private": true,
+  "type": "module",
+  "description": "Calab bot that echoes messages and /echo",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node index.mjs" },
+  "dependencies": {
+    "@calaba/bot-sdk": "file:../../../packages/bot-sdk"
+  }
+}

@@ -4,15 +4,23 @@ import { SITE_URL } from '@/lib/site';
 
 export const dynamic = 'force-static';
 
-// The locale pages (the root `/` is only a redirect). Each entry lists every language version (hreflang).
+// Pages under each locale ('' = the home page); the root `/` is only a redirect.
+const PAGES = [
+  { page: '', priority: 1 },
+  { page: 'bots/', priority: 0.6 },
+] as const;
+
+// Each entry lists every language version of its page (hreflang).
 export default function sitemap(): MetadataRoute.Sitemap {
-  const languages = Object.fromEntries(
-    Object.entries(hreflangAlternates()).map(([lang, path]) => [lang, `${SITE_URL}${path}`]),
-  );
-  return LOCALES.map((l) => ({
-    url: `${SITE_URL}${localePath(l)}`,
-    changeFrequency: 'monthly',
-    priority: 1,
-    alternates: { languages },
-  }));
+  return PAGES.flatMap(({ page, priority }) => {
+    const languages = Object.fromEntries(
+      Object.entries(hreflangAlternates(page)).map(([lang, path]) => [lang, `${SITE_URL}${path}`]),
+    );
+    return LOCALES.map((l) => ({
+      url: `${SITE_URL}${localePath(l, page)}`,
+      changeFrequency: 'monthly' as const,
+      priority,
+      alternates: { languages },
+    }));
+  });
 }

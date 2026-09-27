@@ -17,6 +17,7 @@ const en: Dict = {
       download: 'Download',
       pricing: 'Pricing',
       faq: 'FAQ',
+      bots: 'Bots',
     },
     openWeb: 'Open in browser',
     openWebShort: 'Web app',
@@ -226,6 +227,43 @@ const en: Dict = {
     commercial: 'Commercial license',
     security: 'Security',
     trademarks: 'Trademarks',
+    bots: 'Bot API',
+  },
+  bots: {
+    meta: {
+      title: 'Calab bots — chat, voice and commands over an API',
+      description:
+        'Calab bots are members with a token: they read and write chat, answer /commands, get events over WebSocket or a webhook and talk in voice rooms through LiveKit. TypeScript SDK, Node and Python examples.',
+    },
+    eyebrow: 'Bots',
+    title: 'A bot is a member like everyone else',
+    lead: 'Create a bot in the workspace settings and give it a role — it works through the same API as the app: chat, commands, voice.',
+    cards: {
+      chat: {
+        title: 'Chat',
+        text: 'Reads and writes messages, replies, reacts, sends files and stickers, writes direct messages. Events arrive in real time over WebSocket.',
+      },
+      voice: {
+        title: 'Voice',
+        text: 'Joins a voice room through LiveKit: hears the participants and speaks itself — text to speech, echo, music, recording. In Node, Python or Go.',
+      },
+      commands: {
+        title: 'Commands',
+        text: 'Registers /commands — the composer suggests them on “/”. A /cmd message reaches the bot with its arguments parsed.',
+      },
+      webhook: {
+        title: 'Webhook',
+        text: 'No open connection needed: events arrive as signed (HMAC) POST requests, retried on failure. Handy for serverless.',
+      },
+    },
+    rights: 'Rights come from roles, as for people: a bot sees only the rooms it was let into.',
+    codeTitle: 'An echo bot in TypeScript',
+    codeCaption: 'This one and three more — voice echo, text to speech and a Python listener — are in {examples}.',
+    ctaTitle: 'Your first bot in 5 minutes',
+    ctaText: 'Token, REST, events, webhook, voice, limits and error codes — all in the docs.',
+    docs: 'Bot API docs',
+    docsLang: '',
+    sdk: 'SDK on GitHub',
   },
 };
 
