@@ -6,7 +6,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, CircleDot, Copy, Gem, Search, Settings2, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, CircleDot, Copy, Gem, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -18,11 +18,11 @@ import { errorText } from '../../lib/api/errors';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { workspaceInitials } from '../../lib/initials';
-import { isAdminRole } from '../../lib/permissions';
+import { can, isAdminRole, workspacePerms } from '../../lib/permissions';
 import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
-import { useWorkspaces } from '../../stores/workspaces';
+import { rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { CommitInput } from '../settings/AppSettingsDialog';
 import { MAX_USES } from '../people/RoomLinkTab';
 import { ROLE_LABEL } from '../shell/MembersPanel';
@@ -34,6 +34,7 @@ import { GptunnelTab } from './GptunnelTab';
 import { reportPlanError } from '../../services/plan';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
+import { RolesTab } from './RolesTab';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -44,9 +45,13 @@ async function patchWorkspace(id: string, init: Parameters<typeof api.workspaces
 
 export function WorkspaceSettingsDialog({ workspaceId, tab, onClose }: { workspaceId: string; tab: string | undefined; onClose: () => void }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const myRoles = useMemberRoles(workspaceId, me);
   if (!entry) return null;
   const admin = isAdminRole(entry.role);
   const owner = entry.role === WorkspaceRole.OWNER;
+  // «Роли» (ADR-0026): whoever may manage roles — admins, or a custom role with MANAGE_ROLES.
+  const manageRoles = can(workspacePerms(myRoles), 'MANAGE_ROLES');
   const sections: SettingsSection[] = [
     ...(admin
       ? [
@@ -55,6 +60,7 @@ export function WorkspaceSettingsDialog({ workspaceId, tab, onClose }: { workspa
         ]
       : []),
     { id: 'members', label: t('ws.members'), icon: Users, content: <MembersTab workspaceId={workspaceId} /> },
+    ...(manageRoles ? [{ id: 'roles', label: t('roles.tab'), icon: Shield, content: <RolesTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
     ...(entry.ws.plan ? [{ id: 'plan', label: t('plan.tab'), icon: Gem, content: <PlanTab workspaceId={workspaceId} /> }] : []),
     // «GPTunneL» (ADR-0025): the meeting recording connection; guests don't see it (the API is 403).
@@ -284,7 +290,7 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
             const name = nameOf(m);
             // Only the owner grants/revokes ADMIN; OWNER is never granted here.
             const editable = admin && u.id !== me && m.role !== WorkspaceRole.OWNER && (owner || m.role !== WorkspaceRole.ADMIN);
-            const canNick = canRenameMember(entry.role, u.id === me, entry.ws.allowSelfNickname);
+            const canNick = canRenameMember(rolesOf(entry, me), u.id === me, entry.ws.allowSelfNickname);
             return (
               <div key={u.id} className="flex min-h-12 items-center gap-3 px-3 py-2" data-testid="ws-member-row">
                 <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={32} presence />

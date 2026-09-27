@@ -1,0 +1,250 @@
+import { create } from '@bufbuild/protobuf';
+import {
+  ALL_PERMISSIONS,
+  BUILTIN_ROLE_POSITION,
+  PERMISSION_BITS,
+  ROLE_DEFAULTS,
+  ROLE_TARGET_ID,
+  RoleSchema,
+  WorkspaceRole,
+  memberRoles,
+  workspacePermissions,
+  type PermissionBits,
+  type PermissionName,
+  type Role,
+  type RoleBits,
+} from '@calaba/protocol';
+
+/*
+ * Workspace roles on the client (ADR-0026, docs/04 «Роли»): pure helpers — the member's roles,
+ * the most senior / coloured one, who may edit or assign what. The client only hides UI; the
+ * server re-checks every rule.
+ */
+
+const { ADMINISTRATOR, MANAGE_ROLES, MANAGE_WORKSPACE } = PERMISSION_BITS;
+
+/** Highest position first (the order of READY `roles[]` and of every list). */
+export function sortRoles<R extends Pick<Role, 'position' | 'id'>>(roles: readonly R[]): R[] {
+  return [...roles].sort((a, b) => b.position - a.position || a.id.localeCompare(b.id));
+}
+
+/**
+ * The four built-in roles as a pre-ADR-0026 server implies them (no READY `roles[]`): ids are
+ * the legacy override names («member»…), default permissions.
+ */
+export function legacyRoles(workspaceId: string): Role[] {
+  return [WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER, WorkspaceRole.GUEST].map((b) =>
+    create(RoleSchema, {
+      id: ROLE_TARGET_ID[b],
+      workspaceId,
+      name: ROLE_TARGET_ID[b],
+      position: BUILTIN_ROLE_POSITION[b],
+      permissions: ROLE_DEFAULTS[b],
+      builtin: b,
+    }),
+  );
+}
+
+/** Built-in roles implied by the legacy single role (docs/04: owner → owner + member …). */
+const IMPLIED: Record<WorkspaceRole, WorkspaceRole[]> = {
+  [WorkspaceRole.UNSPECIFIED]: [],
+  [WorkspaceRole.OWNER]: [WorkspaceRole.OWNER, WorkspaceRole.MEMBER],
+  [WorkspaceRole.ADMIN]: [WorkspaceRole.ADMIN, WorkspaceRole.MEMBER],
+  [WorkspaceRole.MEMBER]: [WorkspaceRole.MEMBER],
+  [WorkspaceRole.GUEST]: [WorkspaceRole.GUEST],
+};
+
+/**
+ * The member's roles among the workspace's, highest first. `role_ids` when the server sends
+ * them; otherwise (an older server) the built-ins implied by the legacy `role`.
+ */
+export function rolesOfMember(
+  all: readonly Role[],
+  member: { role: WorkspaceRole; roleIds: readonly string[] } | undefined,
+): Role[] {
+  if (!member) return [];
+  if (member.roleIds.length > 0) return memberRoles(all, member.roleIds);
+  const implied = new Set(IMPLIED[member.role]);
+  return all.filter((r) => implied.has(r.builtin));
+}
+
+/** The most senior role (highest position), if any. */
+export function topRole<R extends RoleBits>(roles: readonly R[]): R | undefined {
+  let best: R | undefined;
+  for (const r of roles) if (!best || r.position > best.position) best = r;
+  return best;
+}
+
+/** Name colour source (Discord): the most senior of the member's roles that has a colour. */
+export function colorRole(roles: readonly Role[]): Role | undefined {
+  return topRole(roles.filter((r) => r.color !== 0));
+}
+
+/**
+ * The custom role that colours a name (docs/08 «Роли»): none for the owner / admins (their
+ * crown / shield and tokens win), else the most senior coloured role when it is a custom one.
+ */
+export function customLook(roles: readonly Role[]): Role | undefined {
+  if (roles.some((r) => r.builtin === WorkspaceRole.OWNER || r.builtin === WorkspaceRole.ADMIN)) return undefined;
+  const c = colorRole(roles);
+  return c && c.builtin === WorkspaceRole.UNSPECIFIED ? c : undefined;
+}
+
+/** 0xRRGGBB → «#rrggbb». */
+export function roleColorCss(color: number): string {
+  return `#${(color & 0xffffff).toString(16).padStart(6, '0')}`;
+}
+
+/** «#rrggbb» (or «rrggbb», «#rgb») → 0xRRGGBB; null when it is no colour. */
+export function parseRoleColor(s: string): number | null {
+  let h = s.trim().replace(/^#/, '');
+  if (/^[0-9a-f]{3}$/i.test(h)) h = h.replace(/./g, (c) => c + c);
+  return /^[0-9a-f]{6}$/i.test(h) ? parseInt(h, 16) : null;
+}
+
+/** The role palette (12 swatches, Discord-like; the system colours of docs/08 where they fit). */
+export const ROLE_PALETTE: readonly number[] = [
+  0x0a84ff, 0x30b0c7, 0x34c759, 0x1f8b4c, 0xffcc00, 0xff9f0a, 0xff453a, 0xff2d55, 0xbf5af2, 0x5e5ce6, 0xa2845e, 0x8e8e93,
+];
+
+// ---------------------------------------------------------------- permission matrix
+
+/** Bits a guest role may carry (docs/04; the server keeps GUEST within them). */
+export const GUEST_BITS: PermissionBits =
+  PERMISSION_BITS.VIEW_ROOM |
+  PERMISSION_BITS.SEND_MESSAGES |
+  PERMISSION_BITS.ATTACH_FILES |
+  PERMISSION_BITS.CONNECT |
+  PERMISSION_BITS.SPEAK |
+  PERMISSION_BITS.STREAM |
+  PERMISSION_BITS.VIDEO;
+
+export type PermGroupId = 'general' | 'rooms' | 'voice' | 'moderation';
+
+/** The role card's matrix (ADR-0026 §5): Общие / Комнаты / Голос / Модерация. ADMINISTRATOR is never grantable. */
+export const ROLE_PERM_GROUPS: ReadonlyArray<{ id: PermGroupId; perms: readonly PermissionName[] }> = [
+  { id: 'general', perms: ['MANAGE_WORKSPACE', 'MANAGE_ROLES', 'MANAGE_ROOM', 'MANAGE_NICKNAMES'] },
+  { id: 'rooms', perms: ['VIEW_ROOM', 'SEND_MESSAGES', 'ATTACH_FILES', 'MENTION_EVERYONE'] },
+  { id: 'voice', perms: ['CONNECT', 'SPEAK', 'STREAM', 'VIDEO'] },
+  { id: 'moderation', perms: ['MANAGE_MESSAGES', 'MUTE_MEMBERS', 'MOVE_MEMBERS'] },
+];
+
+export const isFullRole = (r: Pick<Role, 'builtin'>): boolean => r.builtin === WorkspaceRole.OWNER || r.builtin === WorkspaceRole.ADMIN;
+export const isCustomRole = (r: Pick<Role, 'builtin'>): boolean => r.builtin === WorkspaceRole.UNSPECIFIED;
+
+// ---------------------------------------------------------------- who may do what
+
+/** Me as far as role management goes. */
+export interface RoleActor {
+  owner: boolean;
+  /** ADMINISTRATOR (owner, admins): every permission. */
+  admin: boolean;
+  /** Workspace-level bits (OR of my roles). */
+  perms: PermissionBits;
+  /** Position of my most senior role (-1 = none). */
+  top: number;
+}
+
+export function roleActor(myRoles: readonly Role[]): RoleActor {
+  const perms = workspacePermissions(myRoles);
+  return {
+    owner: myRoles.some((r) => r.builtin === WorkspaceRole.OWNER),
+    admin: (perms & ADMINISTRATOR) !== 0n,
+    perms,
+    top: topRole(myRoles)?.position ?? -1,
+  };
+}
+
+export const canManageRoles = (a: RoleActor): boolean => (a.perms & MANAGE_ROLES) !== 0n;
+
+/** Create: MANAGE_ROLES and a top role above the new one's place (position 2). */
+export const canCreateRole = (a: RoleActor): boolean => canManageRoles(a) && (a.owner || a.top > 2);
+
+/** Edit (name / colour / permissions / order / members): roles below my most senior one; the owner — any. */
+export function canEditRole(a: RoleActor, r: Pick<Role, 'position'>): boolean {
+  return canManageRoles(a) && (a.owner || r.position < a.top);
+}
+
+export const canDeleteRole = (a: RoleActor, r: Pick<Role, 'position' | 'builtin'>): boolean => isCustomRole(r) && canEditRole(a, r);
+
+/** Name is fixed for the built-ins. */
+export const canRenameRole = (a: RoleActor, r: Pick<Role, 'position' | 'builtin'>): boolean => isCustomRole(r) && canEditRole(a, r);
+
+/**
+ * Permission bits I may toggle on a role: none on owner / admin (full access, fixed); the guest
+ * set on the guest role; a non-admin only bits they hold, never MANAGE_ROLES / MANAGE_WORKSPACE.
+ */
+export function editableBits(a: RoleActor, r: Pick<Role, 'position' | 'builtin'>): PermissionBits {
+  if (isFullRole(r) || !canEditRole(a, r)) return 0n;
+  let bits = ALL_PERMISSIONS & ~ADMINISTRATOR;
+  if (r.builtin === WorkspaceRole.GUEST) bits &= GUEST_BITS;
+  if (!a.admin) bits &= a.perms & ~(MANAGE_ROLES | MANAGE_WORKSPACE);
+  return bits;
+}
+
+/**
+ * May I give / take `role` to / from a member whose most senior role sits at `targetTop`
+ * (docs/04 «Назначение»)? MEMBER / GUEST follow the member itself, OWNER never; ADMIN — the
+ * owner only; others: below my top role, within my own permissions (non-admin), and the target
+ * below me (or myself).
+ */
+export function canAssignRole(a: RoleActor, role: Pick<Role, 'position' | 'builtin' | 'permissions'>, targetTop: number, self: boolean): boolean {
+  if (!canManageRoles(a)) return false;
+  if (role.builtin === WorkspaceRole.MEMBER || role.builtin === WorkspaceRole.GUEST || role.builtin === WorkspaceRole.OWNER) return false;
+  if (role.builtin === WorkspaceRole.ADMIN) return a.owner && !self;
+  if (!a.owner && role.position >= a.top) return false;
+  if (!a.admin && (role.permissions & ~a.perms) !== 0n) return false;
+  return self || a.owner || targetTop < a.top;
+}
+
+/** The member's complete role set with `roleId` added or removed (PUT …/members/{uid}/roles). */
+export function withRole(roleIds: readonly string[], roleId: string, on: boolean): string[] {
+  const rest = roleIds.filter((id) => id !== roleId);
+  return on ? [...rest, roleId] : rest;
+}
+
+// ---------------------------------------------------------------- the role form
+
+export const ROLE_NAME_MAX = 32;
+
+export type RoleNameError = 'empty' | 'long' | 'taken' | null;
+
+/** Name check of the role card: 1..32 characters after trimming, unique (case-insensitive) in the workspace. */
+export function roleNameError(name: string, others: readonly Pick<Role, 'id' | 'name'>[], selfId = ''): RoleNameError {
+  const n = name.trim();
+  if (!n) return 'empty';
+  // Characters as the server counts them (code points).
+  // eslint-disable-next-line @typescript-eslint/no-misused-spread
+  if ([...n].length > ROLE_NAME_MAX) return 'long';
+  const low = n.toLocaleLowerCase();
+  if (others.some((r) => r.id !== selfId && r.name.toLocaleLowerCase() === low)) return 'taken';
+  return null;
+}
+
+/** «Новая роль», «Новая роль 2»…: the first name not taken in the workspace. */
+export function uniqueRoleName(base: string, roles: readonly Pick<Role, 'id' | 'name'>[]): string {
+  for (let i = 1; ; i++) {
+    const n = i === 1 ? base : `${base} ${i}`;
+    if (roleNameError(n, roles) === null) return n;
+  }
+}
+
+/** Members per role (the list's counts), legacy members included (lib/roles rolesOfMember). */
+export function roleCounts(all: readonly Role[], members: readonly { role: WorkspaceRole; roleIds: readonly string[] }[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const m of members) for (const r of rolesOfMember(all, m)) out.set(r.id, (out.get(r.id) ?? 0) + 1);
+  return out;
+}
+
+/**
+ * New order of the custom roles after dragging `activeId` onto `overId` (both custom), highest
+ * first — the body of PUT …/roles/order. Null when nothing moves.
+ */
+export function reorderCustom(roles: readonly Role[], activeId: string, overId: string): string[] | null {
+  const ids = sortRoles(roles.filter(isCustomRole)).map((r) => r.id);
+  const from = ids.indexOf(activeId);
+  const to = ids.indexOf(overId);
+  if (from < 0 || to < 0 || from === to) return null;
+  ids.splice(to, 0, ...ids.splice(from, 1));
+  return ids;
+}

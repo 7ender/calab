@@ -1,4 +1,4 @@
-import type { Room, WorkspaceRole } from '@calaba/protocol';
+import type { Role, Room, WorkspaceRole } from '@calaba/protocol';
 import { AtSign } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
@@ -6,10 +6,11 @@ import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { SPECIAL, type MentionCandidate } from '../../lib/mentions';
 import { can, roomPerms } from '../../lib/permissions';
-import { isGuest, useWorkspaces } from '../../stores/workspaces';
-import { RoleMark, roleTextClass } from '../people/MemberBits';
+import { customLook } from '../../lib/roles';
+import { isGuest, rolesOf, useWorkspaces } from '../../stores/workspaces';
+import { RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 
-export type MentionOption = { kind: 'member'; c: MentionCandidate; guest: boolean; role?: WorkspaceRole | undefined } | { kind: 'special'; v: (typeof SPECIAL)[number] };
+export type MentionOption = { kind: 'member'; c: MentionCandidate; guest: boolean; role?: WorkspaceRole | undefined; custom?: Role | undefined } | { kind: 'special'; v: (typeof SPECIAL)[number] };
 
 export const optionKey = (o: MentionOption): string => (o.kind === 'member' ? o.c.id : o.v);
 
@@ -18,28 +19,30 @@ export interface Mentionables {
   candidates: MentionCandidate[];
   guests: Set<string>;
   /** Workspace role per candidate (name colour + RoleMark, docs/09 #26). */
-  roles: Map<string, WorkspaceRole>;
+  roles: Map<string, { role: WorkspaceRole; custom: Role | undefined }>;
   /** Every member of the workspace with the name shown in the field (typed-name conversion). */
   all: Array<{ id: string; name: string }>;
 }
 
 /** Members of the workspace for the composer: names are nickname-aware (like memberName()). */
 export function useMentionables(workspaceId: string, room: Room, me: string): Mentionables {
-  const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
+  const entry = useWorkspaces((s) => s.byId[workspaceId]);
   return useMemo(() => {
+    const members = entry?.members;
     const out: Mentionables = { candidates: [], guests: new Set(), roles: new Map(), all: [] };
     for (const m of Object.values(members ?? {})) {
       const u = m.user;
       if (!u) continue;
       const name = m.nickname || u.displayName;
       out.all.push({ id: u.id, name });
-      if (u.id === me || !can(roomPerms(m.role, u.id, room), 'VIEW_ROOM')) continue;
+      const roles = rolesOf(entry, u.id);
+      if (u.id === me || !can(roomPerms(roles, u.id, room), 'VIEW_ROOM')) continue;
       if (isGuest(m)) out.guests.add(u.id);
-      out.roles.set(u.id, m.role);
+      out.roles.set(u.id, { role: m.role, custom: customLook(roles) });
       out.candidates.push({ id: u.id, name, alt: m.nickname && m.nickname !== u.displayName ? [u.displayName] : [] });
     }
     return out;
-  }, [members, me, room]);
+  }, [entry, me, room]);
 }
 
 /**
@@ -90,10 +93,14 @@ export function MentionPopover({
               {o.kind === 'member' ? (
                 <>
                   <Avatar userId={o.c.id} name={o.c.name} fileId={users[o.c.id]?.avatarFileId || undefined} size={24} />
-                  <span className={cx('min-w-0 truncate font-medium', roleTextClass(o.role, active ? 'inherit' : 'role'))} title={o.c.name}>
+                  <span
+                    className={cx('min-w-0 truncate font-medium', roleTextClass(o.role, active ? 'inherit' : 'role', o.custom))}
+                    style={roleTextStyle(o.role, active ? 'inherit' : 'role', o.custom)}
+                    title={o.c.name}
+                  >
                     {o.c.name}
                   </span>
-                  <RoleMark role={o.role} tone={active ? 'inherit' : 'role'} />
+                  <RoleMark role={o.role} custom={o.custom} tone={active ? 'inherit' : 'role'} />
                   {o.c.alt[0] ? <span className={cx('min-w-0 truncate', active ? 'text-accent-fg' : 'text-muted')}>{o.c.alt[0]}</span> : null}
                   {o.guest ? (
                     <span className={cx('ml-auto shrink-0 text-micro', active ? 'text-accent-fg' : 'text-muted')}>{t('chat.mentionGuest')}</span>

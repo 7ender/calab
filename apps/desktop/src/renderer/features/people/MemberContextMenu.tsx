@@ -11,10 +11,12 @@ import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { banMember, copyUserId, disconnectFromVoice, moveMember, openProfile, promoteGuest, removeMember, serverMute, serverUnmute, setMemberRole, stopMemberCamera } from './actions';
+import { banMember, copyUserId, disconnectFromVoice, moveMember, openProfile, promoteGuest, removeMember, serverMute, serverUnmute, stopMemberCamera, toggleMemberRole } from './actions';
+import { roleColorCss } from '../../lib/roles';
 import { USER_VOLUME_MAX, userVolumeCapped } from '../../lib/voiceLogic';
 import { requestMention } from '../chat/mentionRequest';
 import { memberActions, type MenuActions } from './members';
+import { roleName } from './MemberBits';
 import { NicknameDialog } from './NicknameDialog';
 import { useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
@@ -32,6 +34,8 @@ export function useMemberActions(workspaceId: string, userId: string): MenuActio
     return memberActions({
       meId,
       myRole: entry.role,
+      myRoleIds: entry.members[meId]?.roleIds ?? [],
+      roles: entry.roles,
       target,
       targetVoice: entry.voice[userId],
       myVoiceRoomId,
@@ -94,8 +98,11 @@ function MenuCheck({
   tone,
   title,
   testId,
+  dot,
 }: {
   label: string;
+  /** A role colour dot before the label (the «Роли ›» submenu). */
+  dot?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
@@ -114,6 +121,7 @@ function MenuCheck({
       // A checkbox toggles in place (Discord): the menu stays open.
       onSelect={(e) => e.preventDefault()}
     >
+      {dot ? <span className="size-2.5 shrink-0 rounded-full" style={{ background: dot }} aria-hidden /> : null}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span
         aria-hidden
@@ -145,7 +153,6 @@ function MemberMenuContent({
   const name = useMemberName(workspaceId, userId);
   const self = useSession((s) => s.me?.user?.id) === userId;
   const roomId = useWorkspaces((s) => s.byId[workspaceId]?.voice[userId]?.roomId ?? '');
-  const role = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]?.role);
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
   const localDeaf = usePrefs((s) => !!s.deafUsers[userId]);
   const videoHidden = usePrefs((s) => !!s.hiddenVideo[userId]);
@@ -211,22 +218,17 @@ function MemberMenuContent({
             <ChevronRight className="size-4" aria-hidden />
           </ContextMenu.SubTrigger>
           <ContextMenu.Portal>
-            <ContextMenu.SubContent className={cx(menuBox, 'w-56')} sideOffset={4} collisionPadding={8}>
-              <ContextMenu.RadioGroup value={String(role ?? '')} onValueChange={(v) => setMemberRole(workspaceId, userId, Number(v))}>
-                {[
-                  { r: WorkspaceRole.ADMIN, key: 'role.admin' as const, ok: a.roles.admin },
-                  { r: WorkspaceRole.MEMBER, key: 'role.member' as const, ok: a.roles.member },
-                ].map((o) => (
-                  <ContextMenu.RadioItem key={o.r} value={String(o.r)} disabled={!o.ok} className={row}>
-                    <span className="grid w-4 place-items-center">
-                      <ContextMenu.ItemIndicator>
-                        <Check className="size-4" aria-hidden />
-                      </ContextMenu.ItemIndicator>
-                    </span>
-                    {t(o.key)}
-                  </ContextMenu.RadioItem>
-                ))}
-              </ContextMenu.RadioGroup>
+            <ContextMenu.SubContent className={cx(menuBox, 'max-h-80 w-60 overflow-y-auto')} sideOffset={4} collisionPadding={8} data-testid="member-roles-menu">
+              {a.roles.map((x) => (
+                <MenuCheck
+                  key={x.role.id}
+                  label={roleName(x.role)}
+                  dot={x.role.builtin === WorkspaceRole.ADMIN ? 'var(--color-role-admin)' : x.role.color ? roleColorCss(x.role.color) : 'var(--color-label-tertiary)'}
+                  checked={x.on}
+                  disabled={!x.enabled}
+                  onChange={(v) => void toggleMemberRole(workspaceId, userId, x.role, v)}
+                />
+              ))}
             </ContextMenu.SubContent>
           </ContextMenu.Portal>
         </ContextMenu.Sub>

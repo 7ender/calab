@@ -23,14 +23,15 @@ test('room-permissions-picker', async ({ open, win, shot }) => {
 
   const picker = win.getByTestId('member-picker');
   await expect(picker).toBeVisible();
-  // The whole workspace (fixture: Анна owner, Борис admin, Вера, Григорий, Дина guest) + 4 roles.
-  await expect(picker.getByTestId('picker-option')).toHaveCount(9);
+  // The whole workspace (fixture: Анна owner, Борис admin, Вера, Григорий, Дина guest) + 6 roles
+  // (4 built-in, «Дизайн», «Модератор»; ADR-0026).
+  await expect(picker.getByTestId('picker-option')).toHaveCount(11);
   await expect(picker.getByRole('option', { name: /Анна/ })).toHaveAttribute('aria-disabled', 'true');
   await expect(picker.getByRole('option', { name: /Борис/ })).toHaveAttribute('aria-disabled', 'true');
   const field = picker.getByRole('combobox');
   await expect(field).toBeFocused();
-  // Keyboard: the first choosable row is @Участник (owner / admin rows are skipped).
-  await expect(picker.getByRole('option', { selected: true })).toContainText('Участник');
+  // Keyboard: the first choosable row is @Дизайн (owner / admin rows are skipped).
+  await expect(picker.getByRole('option', { selected: true })).toContainText('Дизайн');
   await settle(win);
   await checkpoint(shot, 'room-permissions-picker');
 

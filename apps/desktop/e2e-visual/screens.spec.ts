@@ -74,6 +74,8 @@ const KEY = new Set([
   'settings-plan',
   'settings-gptunnel',
   'settings-members',
+  'settings-roles',
+  'settings-role-edit',
   'admin-workspaces',
   'admin-plan',
   'admin-suspend',
@@ -578,7 +580,12 @@ test('members-menu', async ({ open, win, mock, shot }) => {
   const members = await membersList(win);
   await members.getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
   await expect(win.getByRole('menu')).toBeVisible();
-  await checkpoint(shot, 'members-menu');
+  // «Роли ›» (ADR-0026): a checkbox per role the owner may give — admin (checked), «Дизайн», «Модератор».
+  await win.getByRole('menuitem', { name: 'Роли' }).hover();
+  const roles = win.getByTestId('member-roles-menu');
+  await expect(roles.getByRole('menuitemcheckbox')).toHaveCount(3);
+  await expect(roles.getByRole('menuitemcheckbox', { name: 'Администратор' })).toBeChecked();
+  await checkpoint(shot, 'members-menu', { keepPointer: true });
 });
 
 test('profile-dialog', async ({ open, win, mock, shot }) => {
@@ -850,6 +857,47 @@ test('settings-members', async ({ open, win, mock, shot }) => {
   await win.keyboard.press('Escape');
   await expect(dialog.getByTestId('nick-input')).toHaveCount(0);
   await expect(dialog.getByRole('tab', { name: 'Участники' })).toBeVisible();
+});
+
+/** The fixture's custom roles (ADR-0026) given out: «Дизайн» to Вера and Григорий, «Модератор» to Григорий. */
+function giveFixtureRoles(mock: MockServer): void {
+  mock.setMemberRoles(IDS.workspaces.main, IDS.users.vera, [IDS.roles.design]);
+  mock.setMemberRoles(IDS.workspaces.main, IDS.users.grigory, [IDS.roles.design, IDS.roles.moderator]);
+}
+
+/**
+ * Workspace settings → «Роли» (ADR-0026, docs/08 «Роли»): owner / admin / member / guest marked
+ * «встроенная», the custom «Дизайн» (blue) above «Модератор» (green) with drag handles and counts.
+ */
+test('settings-roles', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  giveFixtureRoles(mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Роли' }).click();
+  await expect(dialog.getByTestId('role-row')).toHaveCount(6);
+  await expect(dialog.getByTestId('role-row').filter({ hasText: 'Дизайн' })).toContainText('2 участника');
+  await checkpoint(shot, 'settings-roles');
+});
+
+/** The role card of «Дизайн»: name, palette (blue picked), «Упоминаемая», the permission matrix, members. */
+test('settings-role-edit', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  giveFixtureRoles(mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Роли' }).click();
+  await dialog.getByRole('button', { name: 'Дизайн', exact: true }).click();
+  await expect(dialog.getByTestId('role-title')).toHaveText('Дизайн');
+  await expect(dialog.getByTestId('role-name')).toHaveValue('Дизайн');
+  await expect(dialog.getByTestId('role-perm-STREAM')).toBeChecked();
+  await expect(dialog.getByTestId('role-perm-MANAGE_ROLES')).not.toBeChecked();
+  await expect(dialog.getByTestId('role-member')).toHaveCount(2);
+  await checkpoint(shot, 'settings-role-edit');
 });
 
 /** Workspace settings → «Тариф» (ADR-0024) on the Free plan: limits against the usage, the contact. */

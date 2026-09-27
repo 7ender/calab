@@ -4,9 +4,9 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { IconButton, Input, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { isGuest, useWorkspaces } from '../../stores/workspaces';
+import { isGuest, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { peopleError } from './actions';
-import { GuestBadge, RoleMark, roleTextClass } from './MemberBits';
+import { GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
 import { NICK_MAX, createNickEditor, type NickEditState } from './nickEditor';
 
 /**
@@ -18,6 +18,7 @@ export function NickInline({ workspaceId, member: m, canEdit }: { workspaceId: s
   const u = m.user;
   const userId = u?.id ?? '';
   const name = m.nickname || u?.displayName || '';
+  const look = useRoleLook(workspaceId, userId);
   const [state, setState] = useState<NickEditState>({ mode: 'view' });
   const [editor] = useState(() =>
     createNickEditor({
@@ -92,14 +93,15 @@ export function NickInline({ workspaceId, member: m, canEdit }: { workspaceId: s
   return (
     <div className="group/nick flex min-w-0 flex-1 items-center gap-1">
       <span
-        className={cx('min-w-0 truncate text-body font-medium', roleTextClass(m.role), canEdit && 'cursor-text')}
+        className={cx('min-w-0 truncate text-body font-medium', roleTextClass(m.role, 'role', look), canEdit && 'cursor-text')}
+        style={roleTextStyle(m.role, 'role', look)}
         title={name}
         data-testid="nick-name"
         onDoubleClick={canEdit ? () => editor.start() : undefined}
       >
         {name}
       </span>
-      <RoleMark role={m.role} />
+      <RoleMark role={m.role} custom={look} />
       {isGuest(m) ? <GuestBadge /> : null}
       {canEdit ? (
         <IconButton

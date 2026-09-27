@@ -190,9 +190,21 @@ import {
   WorkspaceSchema,
   WorkspaceSnapshotSchema,
   WorkspaceVisibility,
+  computeMemberRoomPermissions,
   computePermissions,
-  computeRoomPermissions,
   has,
+  workspacePermissions,
+  CreateRoleRequestSchema,
+  CreateRoleResponseSchema,
+  ListRolesResponseSchema,
+  RoleSchema,
+  SetMemberRolesRequestSchema,
+  SetMemberRolesResponseSchema,
+  SetRoleOrderRequestSchema,
+  SetRoleOrderResponseSchema,
+  UpdateRoleRequestSchema,
+  UpdateRoleResponseSchema,
+  type Role,
   type DispatchEvent,
   type DmSummary,
   type GatewayFrame,
@@ -222,6 +234,7 @@ import {
   MOCK_GPTUNNEL_WEB,
   PASSWORD,
   buildState,
+  builtinRoles,
   defaultSettings,
   effectiveMedia,
   fileMeta,
@@ -308,6 +321,8 @@ export interface MockServer {
    * `nowMs`: the client's clock (a visual test's page clock is fixed), default Date.now().
    */
   setRecording(roomId: string, rec: { byUserId: string; agoMs?: number; nowMs?: number } | null): void;
+  /** ADR-0026: the member's custom roles (built-ins follow their role) → WORKSPACE_MEMBER_UPDATE (+ room visibility). */
+  setMemberRoles(workspaceId: string, userId: string, roleIds: string[]): void;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
   /**
@@ -334,6 +349,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     injectMessage: (a) => impl.injectMessage(a),
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
+    setMemberRoles: (w, u, ids) => impl.setMemberRoles(w, u, ids),
     stopCamera: (u, r) => impl.stopCamera(u, r),
     setEmailState: (u, st) => impl.setEmailState(u, st),
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
@@ -429,6 +445,33 @@ export function parseMentions(content: string): { users: string[]; everyone: boo
 }
 
 const isAdminRole = (r: WorkspaceRole): boolean => r === WorkspaceRole.OWNER || r === WorkspaceRole.ADMIN;
+
+/** Built-in role ids (= legacy names in the mock) implied by the member's built-in role (docs/04). */
+const IMPLIED_BUILTINS: Record<WorkspaceRole, string[]> = {
+  [WorkspaceRole.UNSPECIFIED]: [],
+  [WorkspaceRole.OWNER]: ['owner', 'member'],
+  [WorkspaceRole.ADMIN]: ['admin', 'member'],
+  [WorkspaceRole.MEMBER]: ['member'],
+  [WorkspaceRole.GUEST]: ['guest'],
+};
+
+/** Permissions a guest role may carry (docs/04). */
+const GUEST_ROLE_BITS =
+  PERMISSION_BITS.VIEW_ROOM |
+  PERMISSION_BITS.SEND_MESSAGES |
+  PERMISSION_BITS.ATTACH_FILES |
+  PERMISSION_BITS.CONNECT |
+  PERMISSION_BITS.SPEAK |
+  PERMISSION_BITS.STREAM |
+  PERMISSION_BITS.VIDEO;
+
+/** A role name as the server takes it: 1..32 characters after trimming, unique (case-insensitive). */
+function roleNameOk(raw: string, roles: readonly Role[] = [], selfId = ''): string {
+  const name = raw.trim();
+  if (!name || Array.from(name).length > 32) throw invalid('name', 'name must be 1..32 characters');
+  if (roles.some((r) => r.id !== selfId && r.name.toLowerCase() === name.toLowerCase())) throw conflict('a role with this name exists', 'name');
+  return name;
+}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -644,7 +687,7 @@ class MockImpl {
       return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.dmPeer(room.id, userId) !== null } });
     }
     const m = this.member(room.workspaceId, userId);
-    return m ? computeRoomPermissions(m.role, userId, room.permissionOverrides) : 0n;
+    return m ? computeMemberRoomPermissions(this.memberRoles(m), userId, room.permissionOverrides) : 0n;
   }
 
   /** The other participant of a DM room, or null when `userId` is not in it (or it is no DM). */
@@ -732,6 +775,60 @@ class MockImpl {
     if (!isAdminRole(m.role)) throw forbidden('MANAGE_WORKSPACE required');
   }
 
+  // ------------------------------------------------ roles (ADR-0026)
+
+  /** The workspace's roles, highest first; the four built-ins are created on first use. */
+  private rolesOfWs(wsId: string): Role[] {
+    let list = this.state.roles.get(wsId);
+    if (!list) {
+      list = builtinRoles(wsId);
+      this.state.roles.set(wsId, list);
+    }
+    return [...list].sort((a, b) => b.position - a.position || a.id.localeCompare(b.id));
+  }
+
+  /** A member's roles: the built-ins implied by `role` (docs/04) + custom `roleIds`. */
+  private memberRoles(m: MemberRec): Role[] {
+    const ids = new Set([...IMPLIED_BUILTINS[m.role], ...(m.roleIds ?? [])]);
+    return this.rolesOfWs(m.workspaceId).filter((r) => ids.has(r.id));
+  }
+
+  /** The caller as a role manager; 403 without MANAGE_ROLES. */
+  private roleActor(m: MemberRec): { owner: boolean; admin: boolean; perms: bigint; top: number } {
+    const roles = this.memberRoles(m);
+    const perms = workspacePermissions(roles);
+    if (!has(perms, PERMISSION_BITS.MANAGE_ROLES)) throw forbidden('MANAGE_ROLES required');
+    return {
+      owner: m.role === WorkspaceRole.OWNER,
+      admin: has(perms, PERMISSION_BITS.ADMINISTRATOR),
+      perms,
+      top: Math.max(-1, ...roles.map((r) => r.position)),
+    };
+  }
+
+  /** Bits a caller may put on / take off a role: never ADMINISTRATOR; a non-admin only its own, never MANAGE_ROLES / MANAGE_WORKSPACE. */
+  private checkGrant(a: { admin: boolean; perms: bigint }, bits: bigint): void {
+    if (bits & PERMISSION_BITS.ADMINISTRATOR) throw forbidden('ADMINISTRATOR is not grantable');
+    if (a.admin) return;
+    if (bits & (PERMISSION_BITS.MANAGE_ROLES | PERMISSION_BITS.MANAGE_WORKSPACE)) throw forbidden('only admins grant role / workspace management');
+    if (bits & ~a.perms) throw forbidden('cannot grant permissions you lack');
+  }
+
+  /** Runs `fn`; then ROOM_CREATE / ROOM_DELETE to each member whose room visibility changed (docs/05). */
+  private withVisibility(wsId: string, fn: () => void): void {
+    const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === wsId);
+    const before = new Map(this.membersOf(wsId).map((m) => [m.userId, new Set(rooms.filter((r) => this.canView(r, m.userId)).map((r) => r.id))]));
+    fn();
+    for (const m of this.membersOf(wsId)) {
+      const was = before.get(m.userId) ?? new Set<string>();
+      for (const r of rooms) {
+        const now = this.canView(r, m.userId);
+        if (now && !was.has(r.id)) this.toUser(m.userId, { event: { case: 'roomCreate', value: { room: this.roomOut(r) } } });
+        if (!now && was.has(r.id)) this.toUser(m.userId, { event: { case: 'roomDelete', value: { workspaceId: wsId, roomId: r.id } } });
+      }
+    }
+  }
+
   // ------------------------------------------------ serialisation
 
   private me(u: UserRec): Me {
@@ -752,6 +849,7 @@ class MockImpl {
       workspaceId: m.workspaceId,
       user: this.state.users.get(m.userId)?.user ?? create(UserSchema, { id: m.userId }),
       role: m.role,
+      roleIds: this.memberRoles(m).map((r) => r.id),
       nickname: m.nickname,
       joinedAt: m.joinedAt,
     });
@@ -804,6 +902,7 @@ class MockImpl {
         .filter((c) => c.workspaceId === wsId)
         .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)),
       recordings: [...this.state.recordings.values()].filter((r) => r.workspaceId === wsId && rooms.some((x) => x.id === r.roomId)),
+      roles: this.rolesOfWs(wsId),
     });
   }
 
@@ -1085,6 +1184,15 @@ class MockImpl {
     if (!room) return;
     this.setVoice(userId, room.id, { camera: false });
     this.toWorkspace(room.workspaceId, { event: { case: 'voiceCameraStop', value: { workspaceId: room.workspaceId, roomId: room.id, userId, trackSid: '', reason } } }, room.id);
+  }
+
+  setMemberRoles(workspaceId: string, userId: string, roleIds: string[]): void {
+    const m = this.member(workspaceId, userId);
+    if (!m) throw new Error(`no member ${userId}`);
+    this.withVisibility(workspaceId, () => {
+      m.roleIds = [...roleIds];
+    });
+    this.toWorkspace(workspaceId, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
   }
 
   setPresence(userId: string, status: PresenceStatus): void {
@@ -1789,6 +1897,166 @@ class MockImpl {
       const member = this.memberOut(target);
       this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member } } });
       sendMsg(c.res, 200, UpdateMemberResponseSchema, { member });
+    });
+
+    // ---------------- roles (ADR-0026, docs/04 «Роли»): MANAGE_ROLES, roles below the caller's top one
+    this.route('GET', '/api/workspaces/:id/roles', (c) => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      sendMsg(c.res, 200, ListRolesResponseSchema, { roles: this.rolesOfWs(ws.id) });
+    });
+    this.route('POST', '/api/workspaces/:id/roles', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      const a = this.roleActor(caller);
+      const b = parseBody(c, CreateRoleRequestSchema);
+      if (!a.owner && a.top <= 2) throw forbidden('your highest role is too low to create roles');
+      const name = roleNameOk(b.name);
+      const all = this.rolesOfWs(ws.id);
+      if (all.length >= 50) throw conflict('at most 50 roles per workspace');
+      if (b.color > 0xffffff) throw invalid('color', 'color must be 0xRRGGBB');
+      this.checkGrant(a, b.permissions);
+      const role = create(RoleSchema, {
+        id: nextId(s(), 'role'),
+        workspaceId: ws.id,
+        name,
+        color: b.color,
+        position: 2,
+        permissions: b.permissions,
+        builtin: WorkspaceRole.UNSPECIFIED,
+        mentionable: b.mentionable,
+        createdAt: tick(s()),
+      });
+      // The new role goes to the bottom of the custom ones: the others move up.
+      for (const r of all) {
+        if (r.builtin !== WorkspaceRole.UNSPECIFIED) continue;
+        r.position += 1;
+        this.toWorkspace(ws.id, { event: { case: 'roleUpdate', value: { role: r } } });
+      }
+      s().roles.set(ws.id, [...all, role]);
+      this.toWorkspace(ws.id, { event: { case: 'roleCreate', value: { role } } });
+      sendMsg(c.res, 201, CreateRoleResponseSchema, { role });
+    });
+    this.route('PATCH', '/api/workspaces/:id/roles/:roleId', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      const a = this.roleActor(caller);
+      const role = this.rolesOfWs(ws.id).find((r) => r.id === c.params[1]);
+      if (!role) throw notFound('role not found');
+      if (!a.owner && role.position >= a.top) throw forbidden('the role is not below your highest role');
+      const b = parseBody(c, UpdateRoleRequestSchema);
+      const custom = role.builtin === WorkspaceRole.UNSPECIFIED;
+      const name = b.name !== undefined ? (custom ? roleNameOk(b.name, this.rolesOfWs(ws.id), role.id) : b.name === role.name ? role.name : null) : role.name;
+      if (name === null) throw invalid('name', 'built-in roles keep their name');
+      if (b.color !== undefined && b.color > 0xffffff) throw invalid('color', 'color must be 0xRRGGBB');
+      if (b.permissions !== undefined && b.permissions !== role.permissions) {
+        if (role.builtin === WorkspaceRole.OWNER || role.builtin === WorkspaceRole.ADMIN) throw invalid('permissions', 'owner / admin permissions are fixed');
+        if (role.builtin === WorkspaceRole.GUEST && (b.permissions & ~GUEST_ROLE_BITS) !== 0n) throw invalid('permissions', 'guest permissions are limited');
+        this.checkGrant(a, b.permissions ^ role.permissions);
+      }
+      this.withVisibility(ws.id, () => {
+        role.name = name;
+        if (b.color !== undefined) role.color = b.color;
+        if (b.mentionable !== undefined) role.mentionable = b.mentionable;
+        if (b.permissions !== undefined) role.permissions = b.permissions;
+      });
+      this.toWorkspace(ws.id, { event: { case: 'roleUpdate', value: { role } } });
+      sendMsg(c.res, 200, UpdateRoleResponseSchema, { role });
+    });
+    this.route('DELETE', '/api/workspaces/:id/roles/:roleId', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      const a = this.roleActor(caller);
+      const all = this.rolesOfWs(ws.id);
+      const role = all.find((r) => r.id === c.params[1]);
+      if (!role) throw notFound('role not found');
+      if (role.builtin !== WorkspaceRole.UNSPECIFIED) throw invalid('role', 'built-in roles cannot be deleted');
+      if (!a.owner && role.position >= a.top) throw forbidden('the role is not below your highest role');
+      const touched: Room[] = [];
+      this.withVisibility(ws.id, () => {
+        s().roles.set(ws.id, all.filter((r) => r !== role));
+        for (const m of this.membersOf(ws.id)) if (m.roleIds?.includes(role.id)) m.roleIds = m.roleIds.filter((x) => x !== role.id);
+        for (const r of s().rooms.values()) {
+          if (r.workspaceId !== ws.id) continue;
+          const kept = r.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.ROLE && o.targetId === role.id));
+          if (kept.length !== r.permissionOverrides.length) {
+            r.permissionOverrides = kept;
+            touched.push(r);
+          }
+        }
+      });
+      this.toWorkspace(ws.id, { event: { case: 'roleDelete', value: { workspaceId: ws.id, roleId: role.id } } });
+      for (const r of touched) {
+        this.toWorkspace(ws.id, { event: { case: 'roomPermissionsUpdate', value: { workspaceId: ws.id, roomId: r.id, permissions: r.permissionOverrides } } }, r.id);
+      }
+      noContent(c.res);
+    });
+    this.route('PUT', '/api/workspaces/:id/roles/order', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      const a = this.roleActor(caller);
+      const b = parseBody(c, SetRoleOrderRequestSchema);
+      const all = this.rolesOfWs(ws.id);
+      const customs = all.filter((r) => r.builtin === WorkspaceRole.UNSPECIFIED);
+      if (b.roleIds.length !== customs.length || new Set(b.roleIds).size !== customs.length || !customs.every((r) => b.roleIds.includes(r.id))) {
+        throw invalid('role_ids', 'all custom roles, each once');
+      }
+      const next = new Map(b.roleIds.map((id, i) => [id, b.roleIds.length + 1 - i]));
+      for (const r of customs) {
+        const pos = next.get(r.id) ?? r.position;
+        if (pos !== r.position && !a.owner && (r.position >= a.top || pos >= a.top)) throw forbidden('roles at or above your highest role keep their place');
+      }
+      this.withVisibility(ws.id, () => {
+        for (const r of customs) {
+          const pos = next.get(r.id) ?? r.position;
+          if (pos === r.position) continue;
+          r.position = pos;
+          this.toWorkspace(ws.id, { event: { case: 'roleUpdate', value: { role: r } } });
+        }
+      });
+      sendMsg(c.res, 200, SetRoleOrderResponseSchema, { roles: this.rolesOfWs(ws.id) });
+    });
+    this.route('PUT', '/api/workspaces/:id/members/:userId/roles', (c) => {
+      const me = this.uid(c);
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', me);
+      const a = this.roleActor(caller);
+      const targetId = c.params[1] === '@me' ? me : (c.params[1] ?? '');
+      const target = this.member(ws.id, targetId);
+      if (!target) throw notFound('member not found');
+      const b = parseBody(c, SetMemberRolesRequestSchema);
+      const all = this.rolesOfWs(ws.id);
+      const want = new Set(b.roleIds);
+      for (const id of want) if (!all.some((r) => r.id === id)) throw invalid('role_ids', 'unknown role');
+      const have = new Set(this.memberRoles(target).map((r) => r.id));
+      const self = targetId === me;
+      const targetTop = Math.max(-1, ...this.memberRoles(target).map((r) => r.position));
+      if (!self && !a.owner && targetTop >= a.top) throw forbidden('the member is not below you');
+      let role = target.role;
+      const customIds: string[] = [];
+      for (const r of all) {
+        const on = want.has(r.id);
+        const changed = on !== have.has(r.id);
+        // MEMBER / GUEST follow the member itself (listed or not); OWNER never changes here.
+        if (r.builtin === WorkspaceRole.MEMBER || r.builtin === WorkspaceRole.GUEST) continue;
+        if (r.builtin === WorkspaceRole.OWNER) {
+          if (changed) throw forbidden('the owner role is not granted here');
+          continue;
+        }
+        if (changed) {
+          if (r.builtin === WorkspaceRole.ADMIN) {
+            if (!a.owner) throw forbidden('only the owner manages admins');
+            if (target.role === WorkspaceRole.GUEST) throw forbidden('a guest is promoted first');
+          } else {
+            if (!a.owner && r.position >= a.top) throw forbidden('the role is not below your highest role');
+            if (!a.admin && (r.permissions & ~a.perms) !== 0n) throw forbidden('the role has permissions you lack');
+          }
+        }
+        if (r.builtin === WorkspaceRole.ADMIN) {
+          if (target.role !== WorkspaceRole.OWNER) role = on ? WorkspaceRole.ADMIN : target.role === WorkspaceRole.ADMIN ? WorkspaceRole.MEMBER : target.role;
+        } else if (on) customIds.push(r.id);
+      }
+      this.withVisibility(ws.id, () => {
+        target.role = role;
+        target.roleIds = customIds;
+      });
+      const member = this.memberOut(target);
+      this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member } } });
+      sendMsg(c.res, 200, SetMemberRolesResponseSchema, { member });
     });
 
     this.route('GET', '/api/invites/:code', (c) => {

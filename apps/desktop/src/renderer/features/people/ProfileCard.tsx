@@ -9,8 +9,8 @@ import { fmt } from '../../lib/format';
 import { t, type MessageKey } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
-import { isGuest, useMemberName, useWorkspaces } from '../../stores/workspaces';
-import { GuestBadge, RoleMark, roleTextClass } from './MemberBits';
+import { isGuest, useMemberName, useRoleLook, useWorkspaces } from '../../stores/workspaces';
+import { GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
 import { VolumeRow, useMemberActions } from './MemberContextMenu';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -55,6 +55,7 @@ export function ProfileCard({
   const roomName = useRooms((s) => (v?.roomId ? s.byId[v.roomId]?.name : undefined));
   const self = useSession((s) => s.me?.user?.id) === userId;
   const name = useMemberName(workspaceId, userId);
+  const look = useRoleLook(workspaceId, userId);
   const tz = useTimeZoneLabel(userId);
   const actions = useMemberActions(workspaceId, userId);
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
@@ -71,11 +72,11 @@ export function ProfileCard({
         <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={56} presence speaking={speaking && !v?.muted} ring="var(--color-popover-solid)" />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
-            <h3 className={`truncate text-headline font-semibold ${roleTextClass(m.role)}`} title={name}>
+            <h3 className={`truncate text-headline font-semibold ${roleTextClass(m.role, 'role', look)}`} style={roleTextStyle(m.role, 'role', look)} title={name}>
               {name}
               {tz ? <span className="font-normal text-muted"> {tz}</span> : null}
             </h3>
-            <RoleMark role={m.role} />
+            <RoleMark role={m.role} custom={look} />
             {isGuest(m) ? <GuestBadge /> : null}
           </div>
           {m.nickname && m.nickname !== u.displayName ? (

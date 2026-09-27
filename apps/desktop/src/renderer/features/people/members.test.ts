@@ -4,6 +4,7 @@ import {
   PermissionTargetType,
   PresenceSchema,
   PresenceStatus,
+  RoleSchema,
   RoomPermissionOverrideSchema,
   RoomSchema,
   RoomType,
@@ -15,6 +16,7 @@ import {
   type WorkspaceMember,
 } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
+import { legacyRoles } from '../../lib/roles';
 import { groupMembers, hasAnyAction, memberActions, type MenuContext } from './members';
 
 const member = (id: string, name: string, role: WorkspaceRole, nickname = '', isGuest = false): WorkspaceMember =>
@@ -101,13 +103,35 @@ describe('memberActions', () => {
     expect(memberActions(base({ target: member('me', 'Me', WorkspaceRole.MEMBER), targetVoice: { ...cam, userId: 'me' }, myVoiceRoomId: 'call' }))).toMatchObject({ hideVideo: false, stopCamera: false });
   });
 
-  it('roles: an admin changes members (not to admin); only the owner grants / revokes admin', () => {
-    expect(memberActions(base({})).roles).toEqual({ admin: false, member: true });
-    expect(memberActions(base({ myRole: WorkspaceRole.OWNER })).roles).toEqual({ admin: true, member: true });
-    expect(memberActions(base({ target: member('t', 'A', WorkspaceRole.ADMIN) })).roles).toBeNull();
-    expect(memberActions(base({ myRole: WorkspaceRole.OWNER, target: member('t', 'A', WorkspaceRole.ADMIN) })).roles).toEqual({ admin: true, member: true });
-    expect(memberActions(base({ myRole: WorkspaceRole.MEMBER })).roles).toBeNull();
-    expect(memberActions(base({ target: member('t', 'G', WorkspaceRole.GUEST, '', true) })).roles).toBeNull();
+  it('roles (ADR-0026): checkboxes for the roles I may give; only the owner grants / revokes admin', () => {
+    const design = create(RoleSchema, { id: 'r-design', name: 'Design', position: 3, permissions: PERMISSION_BITS.STREAM });
+    const mod = create(RoleSchema, { id: 'r-mod', name: 'Moderator', position: 2, permissions: PERMISSION_BITS.MUTE_MEMBERS | PERMISSION_BITS.MANAGE_ROLES });
+    const roles = [...legacyRoles('w'), design, mod];
+    const ids = (a: ReturnType<typeof memberActions>): Array<[string, boolean, boolean]> | null =>
+      a.roles?.map((x) => [x.role.id, x.on, x.enabled]) ?? null;
+    // Admin: custom roles yes, admin no (only the owner) — the admin row is left out as the target lacks it.
+    expect(ids(memberActions(base({ roles })))).toEqual([
+      ['r-design', false, true],
+      ['r-mod', false, true],
+    ]);
+    // Owner: admin too; a held role shows checked.
+    const withDesign = create(WorkspaceMemberSchema, { ...member('t', 'T', WorkspaceRole.MEMBER), roleIds: ['member', 'r-design'] });
+    expect(ids(memberActions(base({ roles, myRole: WorkspaceRole.OWNER, target: withDesign })))).toEqual([
+      ['admin', false, true],
+      ['r-design', true, true],
+      ['r-mod', false, true],
+    ]);
+    // An admin target: an admin may not touch them (not below), the owner may.
+    expect(memberActions(base({ roles, target: member('t', 'A', WorkspaceRole.ADMIN) })).roles).toBeNull();
+    expect(ids(memberActions(base({ roles, myRole: WorkspaceRole.OWNER, target: member('t', 'A', WorkspaceRole.ADMIN) })))?.[0]).toEqual(['admin', true, true]);
+    // A plain member: no MANAGE_ROLES → nothing; with Moderator (MANAGE_ROLES, position 2): only roles below 2 — none.
+    expect(memberActions(base({ roles, myRole: WorkspaceRole.MEMBER })).roles).toBeNull();
+    expect(memberActions(base({ roles, myRole: WorkspaceRole.MEMBER, myRoleIds: ['member', 'r-mod'] })).roles).toBeNull();
+    // A guest can get custom roles, but not admin.
+    expect(ids(memberActions(base({ roles, myRole: WorkspaceRole.OWNER, target: member('t', 'G', WorkspaceRole.GUEST, '', true) })))?.map((x) => x[0])).toEqual(['r-design', 'r-mod']);
+    // Legacy server (only built-ins): an admin has nothing to give, the owner gives admin.
+    expect(memberActions(base({})).roles).toBeNull();
+    expect(ids(memberActions(base({ myRole: WorkspaceRole.OWNER })))).toEqual([['admin', false, true]]);
   });
 
   it('volume only for someone in my voice room; «Заглушить» for anyone but me', () => {

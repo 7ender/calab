@@ -43,7 +43,7 @@ import { useRooms } from '../stores/rooms';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast, useToasts } from '../stores/toasts';
-import { memberName, useWorkspaces } from '../stores/workspaces';
+import { memberName, rolesOf, useWorkspaces } from '../stores/workspaces';
 import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQuality, type VoiceLink } from '../stores/voice';
 import { platform } from '../platform';
 import { cameraWanted } from '../lib/media/cameraLogic';
@@ -466,7 +466,7 @@ class VoiceEngine {
   ): { url: string; token: string; canSpeak: boolean; canStream: boolean; canVideo: boolean; media: { audioBitrateKbps: number } } {
     const room = useRooms.getState().byId[roomId];
     const me = useSession.getState().me?.user?.id ?? '';
-    const role = useWorkspaces.getState().byId[workspaceId]?.members[me]?.role;
+    const role = rolesOf(useWorkspaces.getState().byId[workspaceId], me);
     return {
       url: moved.url,
       token: moved.token,

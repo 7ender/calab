@@ -8,6 +8,7 @@ import { zhRecording } from './recording';
 import { zhPeople } from './people';
 import { zhModeration } from './moderation';
 import { zhPicker } from './picker';
+import { zhRoles } from './roles';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
@@ -26,6 +27,7 @@ export const zhCN: Dict = {
   ...zhMail,
   ...zhRecording,
   ...zhPicker,
+  ...zhRoles,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',

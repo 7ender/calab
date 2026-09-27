@@ -1,4 +1,5 @@
-import { WorkspaceRole, type User, type WorkspaceMember } from '@calaba/protocol';
+import { WorkspaceRole, type Role, type User, type WorkspaceMember } from '@calaba/protocol';
+import { customLook, rolesOfMember } from '../../lib/roles';
 import { getLocale } from '../../i18n';
 import type { PickerItem } from '../../components/picker/pickerModel';
 import { nameOf, roleRank } from './members';
@@ -17,6 +18,8 @@ export interface MemberPickItem extends PickerItem {
   secondary: string;
   avatarFileId: string;
   role: WorkspaceRole | undefined;
+  /** The custom role colouring the name (ADR-0026; none for owner / admins). */
+  custom?: Role | undefined;
   guest: boolean;
   /** Muted note at the end of the row («полный доступ», «в списке»). */
   note: string;
@@ -24,7 +27,12 @@ export interface MemberPickItem extends PickerItem {
 
 export interface RolePickItem extends PickerItem {
   kind: 'role';
+  /** Built-in kind (UNSPECIFIED = a custom role, ADR-0026). */
   role: WorkspaceRole;
+  /** Role id (a room override target, PUT …/members/{uid}/roles). */
+  roleId: string;
+  /** 0xRRGGBB, 0 = none (custom roles show a dot in it). */
+  color: number;
   label: string;
   note: string;
 }
@@ -38,6 +46,8 @@ export interface MemberItemOpts {
   decorate?: (m: WorkspaceMember) => { note?: string; disabled?: boolean } | undefined;
   /** Emails by user id, where the caller knows them (the server does not send others' emails). */
   emails?: Readonly<Record<string, string>>;
+  /** Workspace roles (ADR-0026): names coloured by the member's custom role. */
+  roles?: readonly Role[];
 }
 
 /** Workspace members → picker items: owner → admins → members → guests, then by name. */
@@ -58,6 +68,7 @@ export function memberItems(members: readonly WorkspaceMember[], opts: MemberIte
       secondary,
       avatarFileId: u.avatarFileId,
       role: m.role,
+      custom: opts.roles ? customLook(rolesOfMember(opts.roles, m)) : undefined,
       guest: m.role === WorkspaceRole.GUEST,
       note: extra?.note ?? '',
       search: [m.nickname, u.displayName, email].filter(Boolean),

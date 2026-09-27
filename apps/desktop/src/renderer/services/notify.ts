@@ -9,7 +9,7 @@ import { HOME, isDm } from '../stores/dms';
 import { effectiveNotify, useRooms } from '../stores/rooms';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
-import { memberName, useWorkspaces } from '../stores/workspaces';
+import { memberName, rolesOf, useWorkspaces } from '../stores/workspaces';
 import { platform } from '../platform';
 import { previewText } from '../features/chat/mentionText';
 import { roomLabel } from '../features/chat/roomLabel';
@@ -36,7 +36,7 @@ export function shouldNotify(m: Message, workspaceId: string, now = Date.now()):
   const rooms = useRooms.getState();
   const room = rooms.byId[m.roomId];
   const dm = isDm(room) || (!workspaceId && !room);
-  const authorRole = useWorkspaces.getState().byId[workspaceId]?.members[m.authorId]?.role;
+  const authorRole = rolesOf(useWorkspaces.getState().byId[workspaceId], m.authorId);
   const mention = dm || mentionsMe(m, myId, mayMentionAll(authorRole, m.authorId, room));
   const eff = effectiveNotify(m.roomId, rooms, now);
   const notify = levelNotifies({

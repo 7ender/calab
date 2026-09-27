@@ -81,9 +81,10 @@ func TestRolesReviewConcurrentOrder(t *testing.T) {
 		st := make([]int, len(orders))
 		for i, ord := range orders {
 			wg.Add(1)
+			c := *o.client // own client per goroutine: do() records lastBody
 			go func() {
 				defer wg.Done()
-				st[i] = o.do("PUT", "/api/workspaces/"+wid+"/roles/order", &v1.SetRoleOrderRequest{RoleIds: ord}, nil)
+				st[i] = c.do("PUT", "/api/workspaces/"+wid+"/roles/order", &v1.SetRoleOrderRequest{RoleIds: ord}, nil)
 			}()
 		}
 		wg.Wait()

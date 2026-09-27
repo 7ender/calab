@@ -1,8 +1,9 @@
-import { WorkspaceRole } from '@calaba/protocol';
+import { WorkspaceRole, type Role } from '@calaba/protocol';
 import { Crown, ShieldCheck } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Badge, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { t, type MessageKey } from '../../i18n';
+import { roleColorCss } from '../../lib/roles';
 import { useWorkspaces } from '../../stores/workspaces';
 
 /** «Гость» next to a name (ADR-0016): the shared badge (11/600, sentence case, radius 4). */
@@ -20,12 +21,39 @@ export type RoleTone = 'role' | 'muted' | 'inherit';
  * Name colour per role (docs/09 #26; tokens --color-role-*, ≥ 4.5:1 on the sidebar incl. hover
  * and on the light cards): owner gold, admin accent, everyone else the plain label colour.
  */
-export function roleTextClass(role: WorkspaceRole | undefined, tone: RoleTone = 'role'): string {
+export function roleTextClass(role: WorkspaceRole | undefined, tone: RoleTone = 'role', custom?: RoleLook): string {
   if (tone === 'muted') return 'text-muted';
   if (tone === 'inherit') return '';
   if (role === WorkspaceRole.OWNER) return 'text-role-owner';
   if (role === WorkspaceRole.ADMIN) return 'text-role-admin';
+  // A custom role's colour comes inline (roleTextStyle).
+  if (custom?.color) return '';
   return 'text-fg';
+}
+
+const BUILTIN_NAME: Record<WorkspaceRole, MessageKey> = {
+  [WorkspaceRole.UNSPECIFIED]: 'role.member',
+  [WorkspaceRole.OWNER]: 'role.owner',
+  [WorkspaceRole.ADMIN]: 'role.admin',
+  [WorkspaceRole.MEMBER]: 'role.member',
+  [WorkspaceRole.GUEST]: 'role.guest',
+};
+
+/** Shown name of a role: the localized one for the built-ins (their `name` is a key), else its own. */
+export function roleName(r: Pick<Role, 'name' | 'builtin'>): string {
+  return r.builtin === WorkspaceRole.UNSPECIFIED ? r.name : t(BUILTIN_NAME[r.builtin]);
+}
+
+/** A custom role as far as the look goes (ADR-0026): its name (tooltip) and 0xRRGGBB colour. */
+export type RoleLook = Pick<Role, 'name' | 'color'>;
+
+/**
+ * Inline name colour of a custom role (lib/roles customLook: the member's most senior coloured
+ * role, never for owner / admins — the caller passes `custom` only then); `undefined` otherwise.
+ */
+export function roleTextStyle(role: WorkspaceRole | undefined, tone: RoleTone = 'role', custom?: RoleLook): CSSProperties | undefined {
+  if (tone !== 'role' || hasRoleMark(role) || !custom?.color) return undefined;
+  return { color: roleColorCss(custom.color) };
 }
 
 /** Owner and admins carry a mark; members and guests don't (the guest badge is separate). */
@@ -35,20 +63,34 @@ export const hasRoleMark = (role: WorkspaceRole | undefined): boolean => role ==
  * The one role mark next to a name (docs/09 #26, docs/08 «Роли в списках»): a crown for the
  * owner, a 14 px shield for admins, in the role colour; the tooltip (and accessible name) is the
  * role — «Владелец» / «Администратор» — or `label` when the context needs more (the DM header
- * names the workspace). The speaking ring lives on the avatar, the role on the name: no clash.
+ * names the workspace). A custom role (ADR-0026, `custom`) — an 8 px dot in its colour, the
+ * role name in the tooltip. The speaking ring lives on the avatar, the role on the name: no clash.
  */
 export function RoleMark({
   role,
+  custom,
   tone = 'role',
   label,
   className,
 }: {
   role: WorkspaceRole | undefined;
+  custom?: RoleLook | undefined;
   tone?: RoleTone;
   label?: string;
   className?: string;
 }): ReactNode {
-  if (!hasRoleMark(role)) return null;
+  if (!hasRoleMark(role)) {
+    if (!custom) return null;
+    const name = label ?? custom.name;
+    return (
+      <span role="img" aria-label={name} title={name} data-role-mark="custom" className={cx('inline-grid size-3.5 shrink-0 place-items-center', className)}>
+        <span
+          className={cx('size-2 rounded-full', tone === 'muted' && 'opacity-60', tone === 'inherit' && 'ring-1 ring-current')}
+          style={{ background: custom.color ? roleColorCss(custom.color) : 'var(--color-label-tertiary)' }}
+        />
+      </span>
+    );
+  }
   const owner = role === WorkspaceRole.OWNER;
   const Icon = owner ? Crown : ShieldCheck;
   const title = label ?? t(owner ? 'role.owner' : 'role.admin');

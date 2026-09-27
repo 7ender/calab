@@ -16,7 +16,7 @@ import {
 } from '@dnd-kit/core';
 import { create } from '@bufbuild/protobuf';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { NotificationLevel, RoomCategorySchema, WorkspaceRole, type Room, type RoomCategory, type VoiceState } from '@calaba/protocol';
+import { NotificationLevel, RoomCategorySchema, WorkspaceRole, type Role, type Room, type RoomCategory, type VoiceState } from '@calaba/protocol';
 import {
   ArrowDown,
   ArrowUp,
@@ -53,7 +53,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, isAdminRole, roomPerms, workspacePerms } from '../../lib/permissions';
+import { can, isAdminRole, mayArrangeRooms, mayMoveMembersIn, roomPerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
 import { setRoomNotifications, setWorkspaceNotifications } from '../../services/mentions';
@@ -62,7 +62,7 @@ import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { memberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
 import { joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
@@ -131,9 +131,9 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const mobile = useMobile();
   const listRef = useRef<HTMLDivElement>(null);
   const [catDialog, setCatDialog] = useState(false);
-  const role = entry?.role;
-  const admin = isAdminRole(role);
-  const manageRooms = can(workspacePerms(role), 'MANAGE_ROOM');
+  const myRoles = useMemberRoles(workspaceId, me);
+  const admin = isAdminRole(entry?.role);
+  const manageRooms = mayArrangeRooms(myRoles);
   // Pointer reordering on the desktop layout only: on a phone a drag would fight the scroll
   // (the room menu's «Переместить вверх/вниз» works everywhere).
   const canDrag = manageRooms && !mobile;
@@ -183,7 +183,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
                         room={r}
                         workspaceId={workspaceId}
                         me={me}
-                        role={entry.role}
+                        role={myRoles}
                         admin={admin}
                         voiceStates={voiceStates}
                         container={container}
@@ -196,7 +196,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
                         room={r}
                         workspaceId={workspaceId}
                         me={me}
-                        role={entry.role}
+                        role={myRoles}
                         admin={admin}
                         container={container}
                         canOrder={manageRooms}
@@ -226,8 +226,9 @@ function SidebarMenu({ workspaceId, onCreateCategory, children }: { workspaceId:
   const open = useUi((s) => s.openDialog);
   const hideMuted = useUi((s) => s.hideMuted);
   const setHideMuted = useUi((s) => s.setHideMuted);
+  const me = useSession((s) => s.me?.user?.id ?? '');
   const admin = isAdminRole(entry?.role);
-  const manageRooms = can(workspacePerms(entry?.role), 'MANAGE_ROOM');
+  const manageRooms = mayArrangeRooms(useMemberRoles(workspaceId, me));
   return (
     <ContextMenu.Root modal={false}>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
@@ -271,9 +272,11 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
   const open = useUi((s) => s.openDialog);
   const hideMuted = useUi((s) => s.hideMuted);
   const setHideMuted = useUi((s) => s.setHideMuted);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const myRoles = useMemberRoles(workspaceId, me);
   if (!entry) return null;
   const admin = isAdminRole(entry.role);
-  const manageRooms = can(workspacePerms(entry.role), 'MANAGE_ROOM');
+  const manageRooms = mayArrangeRooms(myRoles);
 
   const leave = async (): Promise<void> => {
     if (!(await confirmAction(t('ws.leave'), t('ws.leaveConfirm', { name: entry.ws.name }), t('ws.leave')))) return;
@@ -940,7 +943,7 @@ function TextRoomRow({
   container,
   canOrder,
   canDrag,
-}: { room: Room; workspaceId: string; me: string; role: WorkspaceRole; admin: boolean } & RowOrder): ReactNode {
+}: { room: Room; workspaceId: string; me: string; role: readonly Role[]; admin: boolean } & RowOrder): ReactNode {
   const active = useUi((s) => s.lastRoom[workspaceId] === room.id && s.activeWorkspaceId === workspaceId);
   const openRoom = useUi((s) => s.openRoom);
   const unread = useRooms((s) => showsUnread(room.id, s));
@@ -950,7 +953,7 @@ function TextRoomRow({
   const { setNodeRef, listeners, isDragging } = useRoomDrag(room, canDrag);
   return (
     <div ref={setNodeRef} {...(canDrag ? listeners : {})} data-room-slot={room.id} data-slot-category={container} className={cx(isDragging && 'opacity-40')}>
-      <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role === WorkspaceRole.GUEST}>
+      <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
         <div className={cx(rowBox, active ? 'bg-active' : 'hover:bg-hover')}>
           <UnreadPill show={unread && !active} />
           <button
@@ -996,7 +999,7 @@ function VoiceRoomRow({
   room: Room;
   workspaceId: string;
   me: string;
-  role: WorkspaceRole;
+  role: readonly Role[];
   admin: boolean;
   voiceStates: Record<string, VoiceState>;
 } & RowOrder): ReactNode {
@@ -1015,7 +1018,7 @@ function VoiceRoomRow({
     [voiceStates, room.id],
   );
   const canConnect = can(perms, 'CONNECT');
-  const canMove = can(perms, 'MOVE_MEMBERS');
+  const canMove = mayMoveMembersIn(role, me, room);
   const statusLine = useStatusLine(room.id, inRoom, canConnect, can(perms, 'MANAGE_ROOM'));
   const card = statusLine.shown;
   const limit = room.userLimit;
@@ -1054,7 +1057,7 @@ function VoiceRoomRow({
     >
       {/* The drag handle is the room line / card only: participants below drag themselves. */}
       <div {...(canDrag ? dragListeners : {})}>
-        <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role === WorkspaceRole.GUEST}>
+        <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
           {/* With a status line the room is one raised two-line card (Discord): name + status. */}
           <div
             className={cx(

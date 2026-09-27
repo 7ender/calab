@@ -11,7 +11,7 @@ import { useTyping } from '../stores/typing';
 import { myUserId, useSession } from '../stores/session';
 import { activeRoomId, useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
-import { useWorkspaces } from '../stores/workspaces';
+import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms } from './chat';
 import { queryClient } from '../lib/queryClient';
 import { bansKey } from '../lib/moderation';
@@ -129,7 +129,21 @@ export function applyDispatch(ev: DispatchEvent): void {
     }
     case 'workspaceMemberAdd':
     case 'workspaceMemberUpdate':
-      if (e.value.member) useWorkspaces.getState().upsertMember(e.value.member);
+      if (e.value.member) {
+        const m = e.value.member;
+        useWorkspaces.getState().upsertMember(m);
+        // My roles changed (ADR-0026): the entry's built-in role (admin UI) follows.
+        if (m.user?.id === myUserId() && m.role) useWorkspaces.getState().setMyRole(m.workspaceId, m.role);
+      }
+      return;
+    // Workspace roles (ADR-0026): permissions are recomputed from the store on render; room
+    // visibility changes arrive as ROOM_CREATE / ROOM_DELETE from the server.
+    case 'roleCreate':
+    case 'roleUpdate':
+      if (e.value.role) useWorkspaces.getState().upsertRole(e.value.role);
+      return;
+    case 'roleDelete':
+      useWorkspaces.getState().removeRole(e.value.workspaceId, e.value.roleId);
       return;
     case 'workspaceMemberRemove':
       useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId);
@@ -289,8 +303,8 @@ function onMessage(m: Message, workspaceId: string): void {
 /** An edit can add or remove a mention of me: keep the inbox in step (badges stay as they are). */
 function onMessageEdited(m: Message, workspaceId: string): void {
   if (!workspaceId) return; // a DM: never in the mentions inbox
-  const author = useWorkspaces.getState().byId[workspaceId]?.members[m.authorId];
-  useInbox.getState().update(m, mentionsMe(m, myUserId(), mayMentionAll(author?.role, m.authorId, useRooms.getState().byId[m.roomId])));
+  const author = rolesOf(useWorkspaces.getState().byId[workspaceId], m.authorId);
+  useInbox.getState().update(m, mentionsMe(m, myUserId(), mayMentionAll(author, m.authorId, useRooms.getState().byId[m.roomId])));
 }
 
 /** Snapshot data beyond rooms/members: categories. */

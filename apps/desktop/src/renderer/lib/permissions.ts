@@ -1,39 +1,52 @@
 import {
   PERMISSION_BITS,
   PermissionTargetType,
-  ROLE_DEFAULTS,
   RoomType,
+  computeMemberRoomPermissions,
   computePermissions,
   WorkspaceRole,
-  computeRoomPermissions,
   has,
+  workspacePermissions,
   type PermissionBits,
   type PermissionName,
+  type RoleBits,
   type Room,
   type RoomPermissionOverride,
 } from '@calaba/protocol';
 
 /**
- * UI permission helpers on top of `computePermissions` (packages/protocol).
- * The client only hides UI; every action is checked by the server (CLAUDE.md).
+ * UI permission helpers on top of `computePermissions` (packages/protocol). Since ADR-0026 a
+ * member holds several roles: callers pass them (`rolesOf` / `useMemberRoles` in
+ * stores/workspaces). The client only hides UI; every action is checked by the server (CLAUDE.md).
  */
 
-export function roomPerms(role: WorkspaceRole | undefined, userId: string, room: Room | undefined): PermissionBits {
+export function roomPerms(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): PermissionBits {
   // A DM (ADR-0020): the fixed set; the client only knows DMs it takes part in.
-  if (room?.type === RoomType.DM) return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: true } });
-  if (!room || role === undefined) return 0n;
-  return computeRoomPermissions(role, userId, room.permissionOverrides);
+  if (room?.type === RoomType.DM) return computePermissions({ dm: { participant: true } });
+  if (!room || !roles || roles.length === 0) return 0n;
+  return computeMemberRoomPermissions(roles, userId, room.permissionOverrides);
 }
 
-/** Workspace-level permissions (no room overrides): role defaults. */
-export function workspacePerms(role: WorkspaceRole | undefined): PermissionBits {
-  if (role === undefined) return 0n;
-  const base = ROLE_DEFAULTS[role];
-  return base & PERMISSION_BITS.ADMINISTRATOR ? Object.values(PERMISSION_BITS).reduce((a, b) => a | b, 0n) : base;
+/** Workspace-level permissions (no room overrides): the OR of the member's roles. */
+export function workspacePerms(roles: readonly RoleBits[] | undefined): PermissionBits {
+  return roles ? workspacePermissions(roles) : 0n;
 }
 
 export function can(perms: PermissionBits, name: PermissionName): boolean {
   return has(perms, PERMISSION_BITS[name]);
+}
+
+/**
+ * Rooms and categories: create, rename, reorder (drag & drop, «Переместить вверх / вниз») —
+ * workspace-level MANAGE_ROOM of my roles (owner / admins: ADMINISTRATOR = everything).
+ */
+export function mayArrangeRooms(roles: readonly RoleBits[] | undefined): boolean {
+  return can(workspacePerms(roles), 'MANAGE_ROOM');
+}
+
+/** Drag a voice participant out of / into `room` (docs/09 #32): MOVE_MEMBERS in that room. */
+export function mayMoveMembersIn(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  return can(roomPerms(roles, userId, room), 'MOVE_MEMBERS');
 }
 
 /** Pin / unpin: MANAGE_MESSAGES, or either participant of a DM (by room type, docs/04). */
@@ -42,8 +55,8 @@ export function mayPin(perms: PermissionBits, room: Pick<Room, 'type'> | undefin
 }
 
 /** May this author's @everyone / @here in the room notify people (MENTION_EVERYONE)? */
-export function mayMentionAll(role: WorkspaceRole | undefined, userId: string, room: Room | undefined): boolean {
-  return can(roomPerms(role, userId, room), 'MENTION_EVERYONE');
+export function mayMentionAll(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  return can(roomPerms(roles, userId, room), 'MENTION_EVERYONE');
 }
 
 export const isAdminRole = (role: WorkspaceRole | undefined): boolean =>

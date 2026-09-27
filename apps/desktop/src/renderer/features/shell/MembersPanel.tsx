@@ -8,8 +8,8 @@ import { type MessageKey, t, useLocale } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
-import { isGuest, useWorkspaces } from '../../stores/workspaces';
-import { GuestBadge, RoleMark, roleTextClass } from '../people/MemberBits';
+import { isGuest, useRoleLook, useWorkspaces } from '../../stores/workspaces';
+import { GuestBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { MutedByMe } from '../../components/SpeakerIdentity';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
@@ -102,6 +102,7 @@ const MemberRow = memo(function MemberRow({
   const connectingRing = useConnectingRing(workspaceId, userId, v?.pending ?? false);
   const roomName = useRooms((s) => (v?.roomId ? s.byId[v.roomId]?.name : undefined));
   const speaking = useVoice((s) => s.speaking[userId] ?? false);
+  const look = useRoleLook(workspaceId, userId);
   const [renaming, setRenaming] = useState(false);
   if (!u) return null;
   const name = nameOf(m);
@@ -146,8 +147,13 @@ const MemberRow = memo(function MemberRow({
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex min-w-0 items-center gap-1">
-                <span className={cx('truncate text-body font-medium leading-[18px]', roleTextClass(m.role, offline ? 'muted' : 'role'))}>{name}</span>
-                <RoleMark role={m.role} tone={offline ? 'muted' : 'role'} />
+                <span
+                  className={cx('truncate text-body font-medium leading-[18px]', roleTextClass(m.role, offline ? 'muted' : 'role', look))}
+                  style={roleTextStyle(m.role, offline ? 'muted' : 'role', look)}
+                >
+                  {name}
+                </span>
+                <RoleMark role={m.role} custom={look} tone={offline ? 'muted' : 'role'} />
                 {isGuest(m) ? <GuestBadge /> : null}
                 <MutedByMe userId={userId} className="size-3.5" />
               </span>
