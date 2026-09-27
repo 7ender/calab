@@ -23,6 +23,8 @@ export function installWindowVisibility(doc: Document, win: ShownSource, native:
   const set = (next: boolean): void => {
     const before = state();
     shown = next;
+    // CSS hook: endless animations pause while the window is hidden (styles.css).
+    doc.documentElement.classList.toggle('window-hidden', !shown);
     if (state() !== before) doc.dispatchEvent(new Event('visibilitychange'));
   };
   let live = true;

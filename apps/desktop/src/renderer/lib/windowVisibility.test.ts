@@ -17,6 +17,10 @@ function fakeWindow(initial: boolean): ShownSource & { set(v: boolean): void } {
 
 function fakeDoc(): Document & { events: number } {
   const t = new EventTarget() as unknown as Document & { events: number };
+  const classes = new Set<string>();
+  Object.defineProperty(t, 'documentElement', {
+    value: { classList: { toggle: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c)), contains: (c: string) => classes.has(c) } },
+  });
   t.events = 0;
   t.addEventListener('visibilitychange', () => t.events++);
   return t;
@@ -32,7 +36,9 @@ describe('installWindowVisibility', () => {
     win.set(false);
     expect(doc.visibilityState).toBe('hidden');
     expect(doc.hidden).toBe(true);
+    expect(doc.documentElement.classList.contains('window-hidden')).toBe(true); // CSS pauses animations
     win.set(true);
+    expect(doc.documentElement.classList.contains('window-hidden')).toBe(false);
     expect(doc.visibilityState).toBe('visible');
     expect(doc.events).toBe(2);
   });
