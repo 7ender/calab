@@ -44,9 +44,41 @@ export function mayArrangeRooms(roles: readonly RoleBits[] | undefined): boolean
   return can(workspacePerms(roles), 'MANAGE_ROOM');
 }
 
+/**
+ * Workspace management (settings, media defaults, invites, bans, GPTunneL, a room's
+ * allow_recording): workspace-level MANAGE_WORKSPACE of my roles — the server's check. A custom
+ * role with MANAGE_WORKSPACE gets it too, not only the built-in owner / admins.
+ */
+export function mayManageWorkspace(roles: readonly RoleBits[] | undefined): boolean {
+  return can(workspacePerms(roles), 'MANAGE_WORKSPACE');
+}
+
+const voiceRank = (r: WorkspaceRole | undefined): number => (r === WorkspaceRole.OWNER ? 3 : r === WorkspaceRole.ADMIN ? 2 : 1);
+
+/**
+ * Voice moderation hierarchy (server rtc.outranks): mute, disconnect, stop a stream / camera and
+ * move another member only below the owner / admins by built-in role — the owner is untouchable,
+ * an admin is moderated by the owner only; members and guests by anyone with the bit. Oneself: yes.
+ */
+export function mayModerateVoice(myRole: WorkspaceRole | undefined, targetRole: WorkspaceRole | undefined, self: boolean): boolean {
+  if (self) return true;
+  const t = voiceRank(targetRole);
+  return t < 2 || voiceRank(myRole) > t;
+}
+
 /** Drag a voice participant out of / into `room` (docs/09 #32): MOVE_MEMBERS in that room. */
 export function mayMoveMembersIn(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
   return can(roomPerms(roles, userId, room), 'MOVE_MEMBERS');
+}
+
+/**
+ * The call's «Демонстрация» / «Камера» gates from my rights in the room (UI only: the server
+ * re-checks STREAM + a free slot in /stream/request, VIDEO + camera_limit in /camera/request).
+ * Used for a move (no /join answer) and whenever my roles or the room's overrides change during
+ * a call — the /join answer is not refreshed by the server.
+ */
+export function voiceCaps(perms: PermissionBits, room: Pick<Room, 'media'> | undefined): { canStream: boolean; canVideo: boolean } {
+  return { canStream: can(perms, 'STREAM'), canVideo: can(perms, 'VIDEO') && (room?.media?.cameraLimit ?? 0) > 0 };
 }
 
 /** Pin / unpin: MANAGE_MESSAGES, or either participant of a DM (by room type, docs/04). */

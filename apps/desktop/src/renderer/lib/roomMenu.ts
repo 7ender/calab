@@ -15,7 +15,7 @@ export interface RoomMenuInput {
   /** Phone layout: no hover actions, so the voice room's chat is the first item. */
   mobile: boolean;
   guest: boolean;
-  /** Workspace invites (admin). */
+  /** Workspace invites: MANAGE_WORKSPACE (lib/permissions mayManageWorkspace). */
   admin: boolean;
   /** Room MANAGE_ROOM: settings and (voice) the room link. */
   canManage: boolean;
@@ -28,7 +28,7 @@ export interface RoomMenuInput {
 export function roomMenuGroups(i: RoomMenuInput): RoomMenuGroup[] {
   const head: RoomMenuItem[] = [];
   if (i.voice && i.mobile) head.push('openChat');
-  // Voice: a room link (MANAGE_ROOM, ADR-0016) or the workspace invite (admin); text: the latter.
+  // Voice: a room link (MANAGE_ROOM, ADR-0016) or the workspace invite (MANAGE_WORKSPACE); text: the latter.
   if (!i.guest && (i.admin || (i.voice && i.canManage))) head.push('invite');
   // Meeting recording (docs/09 #30): any member but a guest; start, or stop the running one (ADR-0025).
   if (i.voice && !i.guest) head.push('record');

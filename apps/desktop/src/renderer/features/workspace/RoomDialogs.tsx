@@ -17,11 +17,12 @@ import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, Toggle, cx
 import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
-import { isAdminRole, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { isAdminRole, mayManageWorkspace, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { isGuest, memberName, rolesOf, useWorkspaces } from '../../stores/workspaces';
+import { isGuest, memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
+import { useSession } from '../../stores/session';
 import { customLook, isCustomRole, isFullRole, roleColorCss } from '../../lib/roles';
 import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
@@ -293,7 +294,9 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
  */
 function RecordingCard({ roomId }: { roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
-  const admin = useWorkspaces((s) => isAdminRole(room ? s.byId[room.workspaceId]?.role : undefined));
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  // MANAGE_WORKSPACE of my roles (a custom role's included), as the server checks.
+  const admin = mayManageWorkspace(useMemberRoles(room?.workspaceId, me));
   const [busy, setBusy] = useState(false);
   if (!room) return null;
   const set = (v: boolean): void => {

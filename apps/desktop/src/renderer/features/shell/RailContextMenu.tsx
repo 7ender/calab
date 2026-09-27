@@ -6,12 +6,13 @@ import { confirmAction } from '../../components/Confirm';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { isAdminRole } from '../../lib/permissions';
+import { mayManageWorkspace } from '../../lib/permissions';
 import { markRead } from '../../services/chat';
 import { isUnread, useRooms } from '../../stores/rooms';
+import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { useWorkspaces } from '../../stores/workspaces';
+import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem, menuSeparator } from './menu';
 
 /**
@@ -22,8 +23,11 @@ import { menuBox, menuItem, menuSeparator } from './menu';
 export function RailContextMenu({ workspaceId, tip, children }: { workspaceId: string; tip: string; children: ReactNode }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const open = useUi((s) => s.openDialog);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const myRoles = useMemberRoles(workspaceId, me);
   if (!entry) return <Tip label={tip} side="right">{children}</Tip>;
-  const admin = isAdminRole(entry.role);
+  // Invites and settings: MANAGE_WORKSPACE (the server's check), a custom role's included.
+  const admin = mayManageWorkspace(myRoles);
   const owner = entry.role === WorkspaceRole.OWNER;
 
   const markAllRead = (): void => {

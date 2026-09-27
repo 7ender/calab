@@ -72,6 +72,7 @@ export const ruShell = {
   'shell.live': 'LIVE',
   'shell.moveTo': 'Переместить в…',
   'shell.moveNotAllowed': 'Нет права перемещать участников',
+  'shell.moveNoAccess': '{name}: нет доступа к этой комнате',
   'shell.moved': 'Участник перемещён',
   'shell.dragHint': 'Перетащите в другую голосовую комнату',
   'shell.serverMuted': 'Микрофон выключен модератором',

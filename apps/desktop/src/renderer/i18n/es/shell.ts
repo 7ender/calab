@@ -74,6 +74,7 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.live': 'EN VIVO',
   'shell.moveTo': 'Mover a…',
   'shell.moveNotAllowed': 'No tienes permiso para mover miembros',
+  'shell.moveNoAccess': '{name} no tiene acceso a esta sala',
   'shell.moved': 'Miembro movido',
   'shell.dragHint': 'Arrastra a otra sala de voz',
   'shell.serverMuted': 'Silenciado por un moderador',
