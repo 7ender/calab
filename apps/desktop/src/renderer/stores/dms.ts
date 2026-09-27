@@ -1,6 +1,7 @@
 import { RoomType, type DmSummary, type Message, type Room } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { create } from 'zustand';
+import { systemPreview } from '../lib/recording';
 
 /**
  * Direct messages (ADR-0020). A DM is a room without a workspace: the room itself lives in
@@ -56,7 +57,8 @@ function entryOf(dm: DmSummary): DmEntry | null {
 }
 
 export function previewOf(m: Message): DmPreview {
-  return { messageId: m.id, authorId: m.authorId, content: m.content, attachments: m.attachments.length, at: ms(m.createdAt) };
+  // A system card previews as its one line (ADR-0025; its content is empty).
+  return { messageId: m.id, authorId: m.authorId, content: systemPreview(m) || m.content, attachments: m.attachments.length, at: ms(m.createdAt) };
 }
 
 /** The summary's preview (DmSummary.last_message; content ≤ 200 characters); null = no messages. */

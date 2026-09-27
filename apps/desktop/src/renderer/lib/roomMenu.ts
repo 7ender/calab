@@ -30,7 +30,7 @@ export function roomMenuGroups(i: RoomMenuInput): RoomMenuGroup[] {
   if (i.voice && i.mobile) head.push('openChat');
   // Voice: a room link (MANAGE_ROOM, ADR-0016) or the workspace invite (admin); text: the latter.
   if (!i.guest && (i.admin || (i.voice && i.canManage))) head.push('invite');
-  // Meeting recording (docs/09 #30): any member but a guest; disabled until the server side lands.
+  // Meeting recording (docs/09 #30): any member but a guest; start, or stop the running one (ADR-0025).
   if (i.voice && !i.guest) head.push('record');
   if (i.canManage) head.push('settings');
   const groups: RoomMenuGroup[] = [head, ['markRead', 'notify']];

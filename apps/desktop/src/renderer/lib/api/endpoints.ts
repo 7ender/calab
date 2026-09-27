@@ -80,6 +80,11 @@ import {
   CreateEmailInviteRequestSchema,
   CreateEmailInviteResponseSchema,
   ListEmailInvitesResponseSchema,
+  GetGptunnelIntegrationResponseSchema,
+  PairGptunnelRequestSchema,
+  PairGptunnelResponseSchema,
+  StartRecordingResponseSchema,
+  StopRecordingResponseSchema,
   type FileMeta,
   type ScreenSharePreset,
   type WorkspaceRole,
@@ -259,6 +264,21 @@ export const api = {
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
   unfurl: {
     get: (url: string, signal?: AbortSignal) => call('GET', `/api/unfurl${qs({ url })}`, UnfurlResponseSchema, undefined, signal),
+  },
+  /**
+   * Meeting recording (ADR-0025, docs/05 «Запись встреч»). The GPTunneL connection of a workspace:
+   * GET — any member but a guest; pair / unpair — MANAGE_WORKSPACE (422 CODE_INVALID | VALIDATION
+   * code, 429, 503). Start / stop — a member (not a guest) with CONNECT in a voice room with a call:
+   * 403 (guest / allow_recording off), 409 NOT_PAIRED | ALREADY_RECORDING | RECORDING_LIMIT |
+   * CONFLICT (nobody in the call), 503; stop → 404 when nothing is recorded.
+   */
+  recording: {
+    integration: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/integrations/gptunnel`, GetGptunnelIntegrationResponseSchema),
+    pair: (workspaceId: string, code: string) =>
+      call('POST', `/api/workspaces/${workspaceId}/integrations/gptunnel`, PairGptunnelResponseSchema, body(PairGptunnelRequestSchema, { code })),
+    unpair: (workspaceId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/integrations/gptunnel`),
+    start: (roomId: string) => call('POST', `/api/rooms/${roomId}/recording/start`, StartRecordingResponseSchema),
+    stop: (roomId: string) => call('POST', `/api/rooms/${roomId}/recording/stop`, StopRecordingResponseSchema),
   },
   voice: {
     join: (roomId: string) => call('POST', `/api/rooms/${roomId}/join`, JoinVoiceResponseSchema),

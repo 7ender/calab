@@ -18,6 +18,7 @@ import { useChatView } from '../chat/chatView';
 import { previewText } from '../chat/mentionText';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
 import { roomLabel } from '../chat/roomLabel';
+import { systemPreview } from '../../lib/recording';
 
 type Item =
   | { kind: 'dm'; id: string; roomId: string; peerId: string; name: string }
@@ -293,7 +294,7 @@ function Row({
   const room = rooms[m.roomId];
   const d = toDate(m.createdAt);
   const wsId = room?.workspaceId ?? null;
-  const text = previewText(wsId, m.content) || t('chat.attachment');
+  const text = systemPreview(m) || previewText(wsId, m.content) || t('chat.attachment');
   const author = memberName(wsId, m.authorId);
   const user = useWorkspaces.getState().users[m.authorId];
   return (

@@ -22,11 +22,13 @@ const LABEL: Record<SoundName, MessageKey> = {
   moved: 'sounds.moved',
   disconnect: 'sounds.disconnect',
   reconnect: 'sounds.reconnect',
+  recStart: 'sounds.recStart',
+  recStop: 'sounds.recStop',
 };
 
 /** Every event of SOUND_EVENTS, grouped for scanning (a test keeps the two in sync). */
 export const GROUPS: Array<{ title: MessageKey; names: SoundName[] }> = [
-  { title: 'sounds.groupVoice', names: ['join', 'leave', 'streamStart', 'moved', 'disconnect', 'reconnect'] },
+  { title: 'sounds.groupVoice', names: ['join', 'leave', 'streamStart', 'moved', 'disconnect', 'reconnect', 'recStart', 'recStop'] },
   { title: 'sounds.groupMic', names: ['mute', 'unmute', 'deafen', 'undeafen', 'pttOn', 'pttOff'] },
   { title: 'sounds.groupChat', names: ['mention', 'message'] },
 ];

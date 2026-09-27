@@ -1,6 +1,6 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { MessageSchema } from '@calaba/protocol';
+import { MessageKind, MessageSchema } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '../../stores/messages';
 import { buildMetas, rowMeta, userColorIndex, type RowMeta } from './grouping';
@@ -21,6 +21,13 @@ describe('grouping (Telegram: same author within 5 min)', () => {
   it('a new day or the «new» marker breaks a group', () => {
     const items = [m('01', 'a', at(0)), m('02', 'a', at(1)), m('03', 'a', at(2)), m('04', 'a', at(24 * 60))];
     expect(items.map((_, i) => flags(rowMeta(items, i, '02', 'me')))).toEqual(['DF', 'L', 'NFL', 'DFL']);
+  });
+
+  it('a system card (ADR-0025) breaks the group of its author', () => {
+    const sys = m('02', 'a', at(1));
+    sys.msg.kind = MessageKind.SYSTEM;
+    const items = [m('01', 'a', at(0)), sys, m('03', 'a', at(2))];
+    expect(items.map((_, i) => flags(rowMeta(items, i, '', 'me')))).toEqual(['DFL', 'FL', 'FL']);
   });
 
   it('the «new» pill is never shown before my own message', () => {

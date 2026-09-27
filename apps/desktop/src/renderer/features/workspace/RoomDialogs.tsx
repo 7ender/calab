@@ -14,11 +14,11 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { AudioLines, Check, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Volume2, X } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, cx } from '../../components/ui';
+import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
-import { ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { isAdminRole, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -278,7 +278,32 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
         </Select>
       </Row>
     </Card>
+    <RecordingCard roomId={roomId} />
     </>
+  );
+}
+
+/**
+ * «Запись встреч» (ADR-0025): whether members may record meetings in this voice room. The server
+ * wants MANAGE_WORKSPACE for it (not just MANAGE_ROOM): a room manager sees it switched off.
+ */
+function RecordingCard({ roomId }: { roomId: string }): ReactNode {
+  const room = useRooms((s) => s.byId[roomId]);
+  const admin = useWorkspaces((s) => isAdminRole(room ? s.byId[room.workspaceId]?.role : undefined));
+  const [busy, setBusy] = useState(false);
+  if (!room) return null;
+  const set = (v: boolean): void => {
+    setBusy(true);
+    void patchRoom(roomId, { allowRecording: v })
+      .catch((e: unknown) => toast.error(err(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Card title={t('room.recCard')}>
+      <Row label={t('room.allowRec')} hint={admin ? t('room.allowRecHint') : t('room.allowRecAdmin')}>
+        <Toggle label={t('room.allowRec')} checked={room.allowRecording} disabled={!admin || busy} onChange={set} />
+      </Row>
+    </Card>
   );
 }
 

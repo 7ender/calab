@@ -4,6 +4,7 @@ import { zhChat } from './chat';
 import { zhDm } from './dm';
 import { zhEcho } from './echo';
 import { zhMail } from './mail';
+import { zhRecording } from './recording';
 import { zhPeople } from './people';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
@@ -20,6 +21,7 @@ export const zhCN: Dict = {
   ...zhEcho,
   ...zhPlan,
   ...zhMail,
+  ...zhRecording,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',

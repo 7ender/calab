@@ -23,6 +23,7 @@ import { useChatView } from '../chat/chatView';
 import { usePreviewText } from '../chat/mentionText';
 import { bindingLabel } from '../settings/PttBinder';
 import { popoverBox } from './menu';
+import { systemPreview } from '../../lib/recording';
 
 /**
  * Window title bar (docs/09 #1): 38 px across the whole window, drag region in Electron.
@@ -239,7 +240,8 @@ function InboxItem({ m }: { m: Message }): ReactNode {
   const author = useMemberName(wsId, m.authorId);
   const avatar = useWorkspaces((s) => s.users[m.authorId]?.avatarFileId);
   // Re-renders on nickname changes of mentioned people only.
-  const text = usePreviewText(wsId, m.content) || t('chat.attachment');
+  const preview = usePreviewText(wsId, m.content);
+  const text = systemPreview(m) || preview || t('chat.attachment');
   const openRoom = useUi((s) => s.openRoom);
   if (!room) return null;
   const Icon = isVoice(room) ? Volume2 : Hash;

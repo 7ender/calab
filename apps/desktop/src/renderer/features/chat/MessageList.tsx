@@ -2,7 +2,7 @@ import type { PermissionBits, Room } from '@calaba/protocol';
 import { ArrowDown, Hash, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { RoomType } from '@calaba/protocol';
+import { MessageKind, RoomType } from '@calaba/protocol';
 import { Spinner, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
@@ -14,7 +14,7 @@ import { useVoice } from '../../stores/voice';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { buildMetas, type RowMeta } from './grouping';
-import { DatePill, MessageRow } from './MessageBubble';
+import { DatePill, MessageRow, SystemRow } from './MessageBubble';
 import { EmptyRoom } from './RoomPanels';
 import { Avatar } from '../../components/Avatar';
 import { useDms } from '../../stores/dms';
@@ -269,6 +269,8 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         }}
         itemContent={(index, c: ChatMessage) => {
           const meta = metas[index - firstIndex] ?? FALLBACK_META;
+          if (c.msg.kind === MessageKind.SYSTEM)
+            return <SystemRow c={c} meta={meta} workspaceId={workspaceId} highlighted={highlight === c.key} />;
           return (
             <MessageRow
               c={c}
