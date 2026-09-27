@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -69,8 +70,33 @@ func TestMigration21Roles(t *testing.T) {
 	exec(`INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny) VALUES
 		($1, 'role', 'member', 0, 1), ($1, 'role', 'guest', 3, 0), ($1, 'user', $2::text, 1, 0)`, room, users["member"])
 
+	// A second workspace (same member ids in both) with its own role targets: each maps to
+	// the built-in role of its own workspace.
+	wsB := uuid.New()
+	exec(`INSERT INTO workspaces (id, slug, name, owner_id) VALUES ($1, 'mig-roles-b', 'B', $2)`, wsB, users["admin"])
+	exec(`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'owner'), ($1, $3, 'guest'), ($1, $4, 'member')`,
+		wsB, users["admin"], users["owner"], users["guest"])
+	roomB := uuid.New()
+	exec(`INSERT INTO rooms (id, workspace_id, type, name) VALUES ($1, $2, 'voice', 'b')`, roomB, wsB)
+	exec(`INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny) VALUES
+		($1, 'role', 'guest', 1, 0), ($1, 'role', 'member', 0, 64), ($1, 'user', $2::text, 0, 32)`, roomB, users["guest"])
+
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatal(err)
+	}
+	var bTargets []string
+	scalar(&bTargets, `SELECT array_agg(rp.target_id || '=' || coalesce(wr.builtin, '?') || '@' || coalesce((wr.workspace_id = $2)::text, 'user')
+		ORDER BY rp.target_type, rp.allow) FROM room_permissions rp LEFT JOIN workspace_roles wr ON wr.id::text = rp.target_id
+		WHERE rp.room_id = $1`, roomB, wsB)
+	if len(bTargets) != 3 || !strings.HasSuffix(bTargets[0], "=member@true") || !strings.HasSuffix(bTargets[1], "=guest@true") ||
+		bTargets[2] != users["guest"].String()+"=?@user" {
+		t.Fatalf("second workspace targets: %v", bTargets)
+	}
+	var bHeld []string
+	scalar(&bHeld, `SELECT array_agg(mr.user_id::text || ':' || wr.builtin ORDER BY mr.user_id, wr.position) FROM member_roles mr
+		JOIN workspace_roles wr ON wr.id = mr.role_id WHERE mr.workspace_id = $1 AND wr.workspace_id = $1`, wsB)
+	if len(bHeld) != 4 { // admin-user: owner + member, owner-user: guest, guest-user: member
+		t.Fatalf("second workspace member roles: %v", bHeld)
 	}
 	// Built-in roles with the legacy permission sets; members hold theirs.
 	roleID := map[string]uuid.UUID{}
@@ -131,8 +157,15 @@ func TestMigration21Roles(t *testing.T) {
 	if got := held(users["admin"]); !slices.Equal(got, []string{"guest"}) {
 		t.Fatalf("after demotion to guest: %v", got)
 	}
+	// A guest and a member joining the new workspace get their built-in role by trigger.
+	exec(`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'guest'), ($1, $3, 'member')`, ws2, users["guest"], users["member"])
+	scalar(&n, `SELECT count(*) FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
+		WHERE mr.workspace_id = $1 AND wr.workspace_id = $1 AND wr.builtin IN ('guest', 'member')`, ws2)
+	if n != 2 {
+		t.Fatalf("new guest / member in a new workspace: %d built-in roles", n)
+	}
 	exec(`DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`, ws, users["guest"])
-	scalar(&n, `SELECT count(*) FROM member_roles WHERE user_id = $1`, users["guest"])
+	scalar(&n, `SELECT count(*) FROM member_roles WHERE workspace_id = $1 AND user_id = $2`, ws, users["guest"])
 	if n != 0 {
 		t.Fatal("member_roles of a removed member left behind")
 	}

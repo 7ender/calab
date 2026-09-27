@@ -48,6 +48,9 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) error {
 	if target == uid(r) {
 		return httpx.Forbidden("cannot ban yourself")
 	}
+	if err := outranks(r, wsID, target); err != nil {
+		return err
+	}
 	u, err := h.db.Q.GetUser(r.Context(), target)
 	if db.IsNotFound(err) {
 		return httpx.NotFound("user")

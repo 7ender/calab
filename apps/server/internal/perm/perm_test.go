@@ -2,6 +2,7 @@ package perm
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 )
@@ -97,5 +98,28 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	}
 	if GuestMax&^RoleDefaults[RoleMember] != 0 || RoleDefaults[RoleGuest]&^GuestMax != 0 {
 		t.Fatal("guest bounds")
+	}
+}
+
+// BenchmarkComputeIn50Roles100Rooms: a member holding all 50 roles, 100 rooms with an
+// override for every role and a user override (the worst case of a READY snapshot).
+func BenchmarkComputeIn50Roles100Rooms(b *testing.B) {
+	roles := make([]RoleBits, 50)
+	for i := range roles {
+		roles[i] = RoleBits{ID: fmt.Sprintf("r%02d", i), Position: int32(i), Permissions: Bits(1) << (i % 10)} //nolint:gosec // < 50
+	}
+	m := NewMember("u", RoleMember, roles)
+	rooms := make([][]OverrideTarget, 100)
+	for i := range rooms {
+		for j, r := range roles {
+			rooms[i] = append(rooms[i], OverrideTarget{TargetType: "role", TargetID: r.ID, Override: Override{Allow: Bits(1) << (j % 9), Deny: ViewRoom * Bits(j%2)}})
+		}
+		rooms[i] = append(rooms[i], OverrideTarget{TargetType: "user", TargetID: "u", Override: Override{Allow: ViewRoom}})
+	}
+	b.ResetTimer()
+	for range b.N {
+		for _, ovs := range rooms {
+			_ = ComputeIn(m, ovs)
+		}
 	}
 }

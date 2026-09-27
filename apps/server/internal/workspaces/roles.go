@@ -65,6 +65,29 @@ func above(actor perm.Member, pos int32) bool {
 	return actor.Role == perm.RoleOwner || pos < actor.Top()
 }
 
+// outranks checks that the caller may moderate member target (remove, ban, change the
+// built-in role): the owner always; anyone else only members whose highest role is below
+// their own (ADR-0026 hierarchy: MANAGE_WORKSPACE on a custom role does not reach up).
+// A target that is not a member passes (nothing to protect).
+func outranks(r *http.Request, wsID, target uuid.UUID) error {
+	res := perm.FromContext(r.Context())
+	actor, err := res.Member(r.Context(), wsID, uid(r))
+	if err != nil {
+		return err
+	}
+	t, err := res.Member(r.Context(), wsID, target)
+	if errors.Is(err, perm.ErrNotMember) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !above(actor, t.Top()) {
+		return httpx.Forbidden("cannot act on a member at or above your highest role")
+	}
+	return nil
+}
+
 func validateRoleName(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if n := utf8.RuneCountInString(s); n < 1 || n > 32 {

@@ -923,6 +923,9 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 			// Promotion also keeps guest accounts from being cleaned up: one path only.
 			return httpx.Validation("role", "use POST …/members/{userId}/promote to make a guest a member")
 		}
+		if err := outranks(r, wsID, target); err != nil {
+			return err
+		}
 		s := string(newRole)
 		p.Role = &s
 	}
@@ -975,6 +978,9 @@ func (h *Handlers) removeMember(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Forbidden("the owner cannot be removed")
 		case targetRole == perm.RoleAdmin && actorRole != perm.RoleOwner:
 			return httpx.Forbidden("only the owner can remove an admin")
+		}
+		if err := outranks(r, wsID, target); err != nil {
+			return err
 		}
 	}
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
