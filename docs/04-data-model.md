@@ -43,7 +43,8 @@ files               id, workspace_id? (NULL — файл пользовател�
 read_states         user_id, room_id, last_read_message_id      PK (user_id, room_id)
 message_mentions    user_id, message_id, room_id                PK (user_id, message_id) — прямые @<user_id>
 message_everyone_mentions  message_id PK, room_id                — @everyone / @here
-room_notification_settings user_id, room_id, level (all|mentions|none), muted_until?   PK (user_id, room_id)
+room_notification_settings user_id, room_id, level (inherit|all|mentions|none), muted_until?   PK (user_id, room_id)
+workspace_notification_settings user_id, workspace_id, level (all|mentions|none), muted_until?   PK (user_id, workspace_id)
 room_categories     id, workspace_id, name, position            (rooms.category_id → ON DELETE SET NULL)
 room_invites        id, room_id, code (unique, 12 символов), created_by, expires_at?, max_uses, uses,
                     allow_guests, allow_bits, revoked_at?       — ссылка на комнату (ADR-0016)
@@ -85,6 +86,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 
 ### Личные сообщения (ADR-0020)
 
+- **Уровни уведомлений** (docs/09 п. 22, миграция 00014): у пользователя уровень на пространство (`workspace_notification_settings`, по умолчанию `mentions` = нет строки) и на комнату (по умолчанию `inherit` = нет строки). Эффективный уровень комнаты — её собственный, если не `inherit`, иначе уровень пространства; DM — каждое сообщение как упоминание, глушит только `none`/`muted_until`. `muted_until` пространства глушит все его комнаты. Миграция: комнаты без явного уровня и строки `all`, которые хранили только временный mute, стали `inherit` — у существующих пользователей фактически «Только упоминания». Правило — `internal/notifications` (Go) и `packages/protocol/src/notifications.ts`, общие векторы `proto/testdata/notifications.json`.
 - DM — комната без пространства: `type = 'dm'`, `workspace_id IS NULL`, два участника в `dm_members`, одна на пару (`dm_key`). Сообщения, реакции, закрепы, read-state, настройки уведомлений — те же таблицы и эндпоинты комнат; доступ — по участию (`GetRoomAccess` отдаёт `dm_members`).
 - Запросы по комнатам пространства фильтруют по `workspace_id` и DM не видят (списки, overrides, категории, позиции, поиск по пространству, `/api/me/mentions`). Голоса в DM нет: `rtc` считает комнату без пространства несуществующей.
 - Файлы DM — пользовательские (`workspace_id IS NULL`, ключ `users/<user_id>/<file_id>`), грузятся через `POST /api/dms/{id}/files`, в квоту пространства не входят (действуют общий потолок `STORAGE_MAX_TOTAL_BYTES` и лимит 1 GiB неприкреплённых на пользователя). Публичны только аватары; остальные пользовательские файлы после прикрепления читаются по праву на комнату сообщения, т.е. только участниками DM.
