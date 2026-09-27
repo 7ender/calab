@@ -611,7 +611,7 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 		seen[tt+":"+target] = true
 		allow, deny := perm.Bits(o.GetAllow()), perm.Bits(o.GetDeny())
 		if (allow|deny)&^perm.RoomOnly != 0 {
-			return nil, httpx.Validation(field, "ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES and MANAGE_ROLES cannot be set per room")
+			return nil, httpx.Validation(field, "ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES and MANAGE_STICKERS cannot be set per room")
 		}
 		if allow&deny != 0 {
 			return nil, httpx.Validation(field, "a bit cannot be both allowed and denied")

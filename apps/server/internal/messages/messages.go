@@ -84,7 +84,66 @@ func withAttachments(ctx context.Context, q *sqlc.Queries, ms []sqlc.Message) ([
 	for i, m := range ms {
 		out[i] = pbconv.Message(m, files[m.ID])
 	}
-	return out, nil
+	return out, withStickers(ctx, q, ms, out)
+}
+
+// withStickers fills Message.sticker of sticker messages (ADR-0030) in one query; deleted
+// stickers are included (the history keeps showing them).
+func withStickers(ctx context.Context, q *sqlc.Queries, ms []sqlc.Message, out []*v1.Message) error {
+	var ids []uuid.UUID
+	for _, m := range ms {
+		if m.StickerID != nil {
+			ids = append(ids, *m.StickerID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := q.ListStickersByID(ctx, ids)
+	if err != nil {
+		return err
+	}
+	by := make(map[uuid.UUID]*v1.Sticker, len(rows))
+	for _, r := range rows {
+		by[r.Sticker.ID] = pbconv.Sticker(r.Sticker, r.FileSize)
+	}
+	for i, m := range ms {
+		if m.StickerID != nil {
+			out[i].Sticker = by[*m.StickerID]
+		}
+	}
+	return nil
+}
+
+// sticker resolves CreateMessageRequest.sticker_id (ADR-0030 §4): a live sticker whose pack
+// may be used in the room — a room of the pack's workspace by a member who is not a guest
+// there, or a DM whose two participants are both non-guest members of it.
+func (h *Handlers) sticker(ctx context.Context, raw string, acc perm.RoomAccess, author uuid.UUID) (*sqlc.GetStickerRow, error) {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return nil, httpx.Validation("stickerId", "invalid sticker id")
+	}
+	s, err := h.db.Q.GetSticker(ctx, id)
+	if db.IsNotFound(err) {
+		return nil, httpx.Validation("stickerId", "sticker not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	users, ws := []uuid.UUID{author}, s.WorkspaceID
+	if acc.DM {
+		users = acc.Members
+	} else if acc.WorkspaceID != ws {
+		return nil, httpx.Forbidden("this sticker pack cannot be used here")
+	}
+	n, err := h.db.Q.CountNonGuestMembers(ctx, sqlc.CountNonGuestMembersParams{WorkspaceID: ws, UserIds: users})
+	if err != nil {
+		return nil, err
+	}
+	if int(n) != len(users) {
+		return nil, httpx.Forbidden("this sticker pack cannot be used here")
+	}
+	return &s, nil
 }
 
 // Page parses ?before=&after=&limit=. A malformed cursor is a 400.
@@ -252,7 +311,15 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := ValidateContent(req.GetContent(), len(fileIDs)); err != nil {
+	var sticker *sqlc.GetStickerRow
+	if sid := req.GetStickerId(); sid != "" {
+		if req.GetContent() != "" || len(fileIDs) > 0 {
+			return httpx.Validation("stickerId", "a sticker message has no text or attachments")
+		}
+		if sticker, err = h.sticker(r.Context(), sid, acc, uid(r)); err != nil {
+			return err
+		}
+	} else if err := ValidateContent(req.GetContent(), len(fileIDs)); err != nil {
 		return err
 	}
 	if len(fileIDs) > 0 && !acc.Bits.Has(perm.AttachFiles) {
@@ -319,9 +386,13 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		var err error
-		msg, err = q.InsertMessage(r.Context(), sqlc.InsertMessageParams{
+		params := sqlc.InsertMessageParams{
 			RoomID: roomID, AuthorID: uid(r), Content: req.GetContent(), ReplyToID: replyTo, Nonce: nonce,
-		})
+		}
+		if sticker != nil {
+			params.StickerID = &sticker.Sticker.ID
+		}
+		msg, err = q.InsertMessage(r.Context(), params)
 		if db.IsNotFound(err) { // concurrent retry with the same nonce won the race
 			dup = true
 			return nil
@@ -355,6 +426,9 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	pb := pbconv.Message(msg, files)
+	if sticker != nil {
+		pb.Sticker = pbconv.Sticker(sticker.Sticker, sticker.FileSize)
+	}
 	if acc.DM { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
 		states, err := h.db.Q.UnarchiveDMForRecipients(r.Context(), sqlc.UnarchiveDMForRecipientsParams{RoomID: roomID, AuthorID: uid(r)})
 		if err != nil {
@@ -404,6 +478,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if m.Kind == pbconv.MessageKindSystem {
 		return httpx.Forbidden("system messages cannot be edited")
+	}
+	if m.StickerID != nil {
+		return httpx.Forbidden("sticker messages cannot be edited")
 	}
 	var req v1.UpdateMessageRequest
 	if err := httpx.Decode(w, r, &req); err != nil {

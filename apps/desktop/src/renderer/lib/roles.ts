@@ -123,7 +123,7 @@ export type PermGroupId = 'general' | 'rooms' | 'voice' | 'moderation';
 
 /** The role card's matrix (ADR-0026 §5): Общие / Комнаты / Голос / Модерация. ADMINISTRATOR is never grantable. */
 export const ROLE_PERM_GROUPS: ReadonlyArray<{ id: PermGroupId; perms: readonly PermissionName[] }> = [
-  { id: 'general', perms: ['MANAGE_WORKSPACE', 'MANAGE_ROLES', 'MANAGE_ROOM', 'MANAGE_NICKNAMES'] },
+  { id: 'general', perms: ['MANAGE_WORKSPACE', 'MANAGE_ROLES', 'MANAGE_ROOM', 'MANAGE_NICKNAMES', 'MANAGE_STICKERS'] },
   { id: 'rooms', perms: ['VIEW_ROOM', 'SEND_MESSAGES', 'ATTACH_FILES', 'MENTION_EVERYONE'] },
   { id: 'voice', perms: ['CONNECT', 'SPEAK', 'STREAM', 'VIDEO'] },
   { id: 'moderation', perms: ['MANAGE_MESSAGES', 'MUTE_MEMBERS', 'MOVE_MEMBERS'] },

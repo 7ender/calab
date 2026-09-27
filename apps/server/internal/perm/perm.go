@@ -26,8 +26,9 @@ const (
 	MentionEveryone Bits = 1 << 13 // @everyone / @here notify everyone who sees the room
 	Video           Bits = 1 << 14 // publish a webcam in voice rooms
 	ManageRoles     Bits = 1 << 15 // workspace-level: manage and assign roles below one's own (ADR-0026)
+	ManageStickers  Bits = 1 << 16 // workspace-level: manage the workspace's sticker packs (ADR-0030)
 
-	All Bits = ManageRoles<<1 - 1
+	All Bits = ManageStickers<<1 - 1
 )
 
 // Role is a built-in workspace role as stored in workspace_members.role and
@@ -158,7 +159,7 @@ func ScopeOf(m Member, restricted bool) Scope {
 // everything, overrides ignored. Then each role's override in the room lowest position first
 // (deny, then allow; the most senior role wins), then the user's own override; without
 // VIEW_ROOM nothing. Overrides only touch RoomOnly bits: the workspace-level ones
-// (ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES) are neither granted nor
+// (ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES, MANAGE_STICKERS) are neither granted nor
 // taken away per room, whatever is stored. roleOvs are in the order of the roles; a zero
 // Override is "none".
 func ComputeOrdered(raw Bits, sc Scope, roleOvs []Override, userOv *Override) Bits {

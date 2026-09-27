@@ -45,6 +45,9 @@ const (
 	// 1 << 15: workspace-level, create / edit / delete / order roles below one's highest role
 	// and assign them (ADR-0026). Not settable per room; only admins may grant it to a role.
 	Permission_PERMISSION_MANAGE_ROLES Permission = 32768
+	// 1 << 16: workspace-level, create / edit / delete the workspace's sticker packs (ADR-0030).
+	// Not settable per room.
+	Permission_PERMISSION_MANAGE_STICKERS Permission = 65536
 )
 
 // Enum value maps for Permission.
@@ -67,6 +70,7 @@ var (
 		8192:  "PERMISSION_MENTION_EVERYONE",
 		16384: "PERMISSION_VIDEO",
 		32768: "PERMISSION_MANAGE_ROLES",
+		65536: "PERMISSION_MANAGE_STICKERS",
 	}
 	Permission_value = map[string]int32{
 		"PERMISSION_UNSPECIFIED":      0,
@@ -86,6 +90,7 @@ var (
 		"PERMISSION_MENTION_EVERYONE": 8192,
 		"PERMISSION_VIDEO":            16384,
 		"PERMISSION_MANAGE_ROLES":     32768,
+		"PERMISSION_MANAGE_STICKERS":  65536,
 	}
 )
 
@@ -359,7 +364,7 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\abuiltin\x18\a \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\abuiltin\x12 \n" +
 	"\vmentionable\x18\b \x01(\bR\vmentionable\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\xf7\x03\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\x99\x04\n" +
 	"\n" +
 	"Permission\x12\x1a\n" +
 	"\x16PERMISSION_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -378,7 +383,8 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\x1bPERMISSION_MANAGE_NICKNAMES\x10\x80 \x12 \n" +
 	"\x1bPERMISSION_MENTION_EVERYONE\x10\x80@\x12\x16\n" +
 	"\x10PERMISSION_VIDEO\x10\x80\x80\x01\x12\x1d\n" +
-	"\x17PERMISSION_MANAGE_ROLES\x10\x80\x80\x02*\x98\x01\n" +
+	"\x17PERMISSION_MANAGE_ROLES\x10\x80\x80\x02\x12 \n" +
+	"\x1aPERMISSION_MANAGE_STICKERS\x10\x80\x80\x04*\x98\x01\n" +
 	"\rWorkspaceRole\x12\x1e\n" +
 	"\x1aWORKSPACE_ROLE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14WORKSPACE_ROLE_OWNER\x10\x01\x12\x18\n" +

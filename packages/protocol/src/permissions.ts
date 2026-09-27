@@ -22,6 +22,7 @@ export const PERMISSION_BITS = {
   MENTION_EVERYONE: BigInt(Permission.MENTION_EVERYONE),
   VIDEO: BigInt(Permission.VIDEO),
   MANAGE_ROLES: BigInt(Permission.MANAGE_ROLES),
+  MANAGE_STICKERS: BigInt(Permission.MANAGE_STICKERS),
 } as const;
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -32,12 +33,18 @@ export const ALL_PERMISSIONS: PermissionBits = Object.values(PERMISSION_BITS).re
 const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, ADMINISTRATOR } = PERMISSION_BITS;
 
 /**
- * Bits room overrides may touch. ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES and
- * MANAGE_ROLES are workspace-level: computePermissions ignores them in overrides (Go: perm.RoomOnly).
+ * Bits room overrides may touch. ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES
+ * and MANAGE_STICKERS are workspace-level: computePermissions ignores them in overrides (Go: perm.RoomOnly).
  */
 export const ROOM_ONLY_PERMISSIONS: PermissionBits =
   ALL_PERMISSIONS &
-  ~(ADMINISTRATOR | PERMISSION_BITS.MANAGE_WORKSPACE | PERMISSION_BITS.MANAGE_NICKNAMES | PERMISSION_BITS.MANAGE_ROLES);
+  ~(
+    ADMINISTRATOR |
+    PERMISSION_BITS.MANAGE_WORKSPACE |
+    PERMISSION_BITS.MANAGE_NICKNAMES |
+    PERMISSION_BITS.MANAGE_ROLES |
+    PERMISSION_BITS.MANAGE_STICKERS
+  );
 
 /** Initial permissions of the built-in roles (the member / guest roles are editable since ADR-0026). */
 export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {

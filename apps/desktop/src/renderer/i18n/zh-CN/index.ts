@@ -14,6 +14,7 @@ import { zhRoles } from './roles';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
+import { zhStickers } from './stickers';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const zhCN: Dict = {
@@ -22,6 +23,7 @@ export const zhCN: Dict = {
   ...zhPeople,
   ...zhApp,
   ...zhVideo,
+  ...zhStickers,
   ...zhDm,
   ...zhEcho,
   ...zhMedia,
@@ -241,6 +243,7 @@ export const zhCN: Dict = {
   'perm.MENTION_EVERYONE': '提及所有人（@everyone、@here）',
   'perm.MANAGE_WORKSPACE': '管理工作区',
   'perm.MANAGE_ROLES': '管理角色',
+  'perm.MANAGE_STICKERS': '管理贴纸',
   'perm.ADMINISTRATOR': '管理员',
   'perm.allow': '允许',
   'perm.deny': '禁止',

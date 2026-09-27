@@ -90,8 +90,12 @@ type Message struct {
 	// SYSTEM: a message posted by the server about an event (ADR-0025), rendered from `system`
 	// instead of `content` (empty); author_id is the user the event is about. It cannot be
 	// edited; it can be deleted (MANAGE_MESSAGES or the author), reacted to and pinned.
-	Kind          MessageKind    `protobuf:"varint,14,opt,name=kind,proto3,enum=calaba.v1.MessageKind" json:"kind,omitempty"`
-	System        *SystemMessage `protobuf:"bytes,15,opt,name=system,proto3" json:"system,omitempty"` // set for kind SYSTEM
+	Kind   MessageKind    `protobuf:"varint,14,opt,name=kind,proto3,enum=calaba.v1.MessageKind" json:"kind,omitempty"`
+	System *SystemMessage `protobuf:"bytes,15,opt,name=system,proto3" json:"system,omitempty"` // set for kind SYSTEM
+	// A sticker message (ADR-0030): empty content, no attachments, cannot be edited. Unset
+	// with an empty content and no attachments = the sticker is gone (its workspace was
+	// deleted); clients show a placeholder.
+	Sticker       *Sticker `protobuf:"bytes,16,opt,name=sticker,proto3" json:"sticker,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -227,6 +231,13 @@ func (x *Message) GetKind() MessageKind {
 func (x *Message) GetSystem() *SystemMessage {
 	if x != nil {
 		return x.System
+	}
+	return nil
+}
+
+func (x *Message) GetSticker() *Sticker {
+	if x != nil {
+		return x.Sticker
 	}
 	return nil
 }
@@ -421,6 +432,10 @@ type CreateMessageRequest struct {
 	AttachmentIds []string               `protobuf:"bytes,2,rep,name=attachment_ids,json=attachmentIds,proto3" json:"attachment_ids,omitempty"`
 	ReplyToId     string                 `protobuf:"bytes,3,opt,name=reply_to_id,json=replyToId,proto3" json:"reply_to_id,omitempty"`
 	Nonce         string                 `protobuf:"bytes,4,opt,name=nonce,proto3" json:"nonce,omitempty"` // ≤ 64 chars
+	// Send a sticker (ADR-0030) instead of text: content and attachments must be empty. The
+	// sticker's pack must be usable here: a room of its workspace, or a DM whose participants
+	// are both non-guest members of it; the sender must not be a guest there.
+	StickerId     string `protobuf:"bytes,5,opt,name=sticker_id,json=stickerId,proto3" json:"sticker_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -483,6 +498,13 @@ func (x *CreateMessageRequest) GetNonce() string {
 	return ""
 }
 
+func (x *CreateMessageRequest) GetStickerId() string {
+	if x != nil {
+		return x.StickerId
+	}
+	return ""
+}
+
 type CreateMessageResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Message       *Message               `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
@@ -527,7 +549,7 @@ func (x *CreateMessageResponse) GetMessage() *Message {
 	return nil
 }
 
-// PATCH /api/messages/{id} (author only)
+// PATCH /api/messages/{id} (author only; not a sticker message)
 type UpdateMessageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Content       string                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
@@ -711,7 +733,7 @@ var File_calaba_v1_message_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_message_proto_rawDesc = "" +
 	"\n" +
-	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\"\xd6\x04\n" +
+	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\x1a\x17calaba/v1/sticker.proto\"\x84\x05\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
@@ -729,7 +751,8 @@ const file_calaba_v1_message_proto_rawDesc = "" +
 	"\tpinned_by\x18\f \x01(\tR\bpinnedBy\x12#\n" +
 	"\rembeds_hidden\x18\r \x01(\bR\fembedsHidden\x12*\n" +
 	"\x04kind\x18\x0e \x01(\x0e2\x16.calaba.v1.MessageKindR\x04kind\x120\n" +
-	"\x06system\x18\x0f \x01(\v2\x18.calaba.v1.SystemMessageR\x06system\"T\n" +
+	"\x06system\x18\x0f \x01(\v2\x18.calaba.v1.SystemMessageR\x06system\x12,\n" +
+	"\asticker\x18\x10 \x01(\v2\x12.calaba.v1.StickerR\asticker\"T\n" +
 	"\rSystemMessage\x128\n" +
 	"\trecording\x18\x01 \x01(\v2\x18.calaba.v1.RecordingCardH\x00R\trecordingB\t\n" +
 	"\apayload\"F\n" +
@@ -739,12 +762,14 @@ const file_calaba_v1_message_proto_rawDesc = "" +
 	"\x02me\x18\x03 \x01(\bR\x02me\"a\n" +
 	"\x14ListMessagesResponse\x12.\n" +
 	"\bmessages\x18\x01 \x03(\v2\x12.calaba.v1.MessageR\bmessages\x12\x19\n" +
-	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"\x8d\x01\n" +
+	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"\xac\x01\n" +
 	"\x14CreateMessageRequest\x12\x18\n" +
 	"\acontent\x18\x01 \x01(\tR\acontent\x12%\n" +
 	"\x0eattachment_ids\x18\x02 \x03(\tR\rattachmentIds\x12\x1e\n" +
 	"\vreply_to_id\x18\x03 \x01(\tR\treplyToId\x12\x14\n" +
-	"\x05nonce\x18\x04 \x01(\tR\x05nonce\"E\n" +
+	"\x05nonce\x18\x04 \x01(\tR\x05nonce\x12\x1d\n" +
+	"\n" +
+	"sticker_id\x18\x05 \x01(\tR\tstickerId\"E\n" +
 	"\x15CreateMessageResponse\x12,\n" +
 	"\amessage\x18\x01 \x01(\v2\x12.calaba.v1.MessageR\amessage\"0\n" +
 	"\x14UpdateMessageRequest\x12\x18\n" +
@@ -790,7 +815,8 @@ var file_calaba_v1_message_proto_goTypes = []any{
 	(*UpdateReadStateRequest)(nil), // 10: calaba.v1.UpdateReadStateRequest
 	(*FileMeta)(nil),               // 11: calaba.v1.FileMeta
 	(*timestamppb.Timestamp)(nil),  // 12: google.protobuf.Timestamp
-	(*RecordingCard)(nil),          // 13: calaba.v1.RecordingCard
+	(*Sticker)(nil),                // 13: calaba.v1.Sticker
+	(*RecordingCard)(nil),          // 14: calaba.v1.RecordingCard
 }
 var file_calaba_v1_message_proto_depIdxs = []int32{
 	11, // 0: calaba.v1.Message.attachments:type_name -> calaba.v1.FileMeta
@@ -800,15 +826,16 @@ var file_calaba_v1_message_proto_depIdxs = []int32{
 	12, // 4: calaba.v1.Message.pinned_at:type_name -> google.protobuf.Timestamp
 	0,  // 5: calaba.v1.Message.kind:type_name -> calaba.v1.MessageKind
 	2,  // 6: calaba.v1.Message.system:type_name -> calaba.v1.SystemMessage
-	13, // 7: calaba.v1.SystemMessage.recording:type_name -> calaba.v1.RecordingCard
-	1,  // 8: calaba.v1.ListMessagesResponse.messages:type_name -> calaba.v1.Message
-	1,  // 9: calaba.v1.CreateMessageResponse.message:type_name -> calaba.v1.Message
-	1,  // 10: calaba.v1.UpdateMessageResponse.message:type_name -> calaba.v1.Message
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	13, // 7: calaba.v1.Message.sticker:type_name -> calaba.v1.Sticker
+	14, // 8: calaba.v1.SystemMessage.recording:type_name -> calaba.v1.RecordingCard
+	1,  // 9: calaba.v1.ListMessagesResponse.messages:type_name -> calaba.v1.Message
+	1,  // 10: calaba.v1.CreateMessageResponse.message:type_name -> calaba.v1.Message
+	1,  // 11: calaba.v1.UpdateMessageResponse.message:type_name -> calaba.v1.Message
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_message_proto_init() }
@@ -818,6 +845,7 @@ func file_calaba_v1_message_proto_init() {
 	}
 	file_calaba_v1_file_proto_init()
 	file_calaba_v1_recording_proto_init()
+	file_calaba_v1_sticker_proto_init()
 	file_calaba_v1_message_proto_msgTypes[1].OneofWrappers = []any{
 		(*SystemMessage_Recording)(nil),
 	}

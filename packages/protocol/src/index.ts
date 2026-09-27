@@ -14,6 +14,7 @@ export * from './gen/calaba/v1/plan_pb.js';
 export * from './gen/calaba/v1/recording_pb.js';
 export * from './gen/calaba/v1/room_pb.js';
 export * from './gen/calaba/v1/rtc_pb.js';
+export * from './gen/calaba/v1/sticker_pb.js';
 export * from './gen/calaba/v1/unfurl_pb.js';
 export * from './gen/calaba/v1/user_pb.js';
 export * from './gen/calaba/v1/workspace_pb.js';

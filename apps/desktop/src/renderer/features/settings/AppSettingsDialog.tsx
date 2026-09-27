@@ -38,6 +38,7 @@ import { deviceLabel, osLabel, updateLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
 import { SoundSettings } from '../people/SoundSettings';
 import { CameraPreview, useCameras } from '../voice/CameraPreview';
+import { MyStickersCard } from './MyStickersCard';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
@@ -174,6 +175,8 @@ function ProfileTab(): ReactNode {
       {credDialog === 'email-code' ? <ChangeEmailDialog mode="confirm" onClose={() => setCredDialog(null)} /> : null}
       {credDialog === 'email-cancel' ? <ChangeEmailDialog mode="cancel" onClose={() => setCredDialog(null)} /> : null}
       <AfkCard />
+      {/* Guest accounts do not install sticker packs (ADR-0030 §4). */}
+      {u.isGuest ? null : <MyStickersCard />}
     </>
   );
 }

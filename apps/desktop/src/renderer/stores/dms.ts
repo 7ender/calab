@@ -2,6 +2,7 @@ import { RoomType, type DmSummary, type Message, type Room } from '@calaba/proto
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { create } from 'zustand';
 import { systemPreview } from '../lib/recording';
+import { stickerPreview } from '../lib/stickers';
 
 /**
  * Direct messages (ADR-0020). A DM is a room without a workspace: the room itself lives in
@@ -80,7 +81,9 @@ export function previewOf(m: Message): DmPreview {
 function summaryPreview(dm: DmSummary): DmPreview | null {
   const m = dm.lastMessage;
   if (!m?.id) return null;
-  return { messageId: m.id, authorId: m.authorId, content: m.content, attachments: m.attachmentCount, at: ms(m.createdAt) };
+  // A sticker (ADR-0030) previews as «😀 Стикер» (its content is empty).
+  const content = m.stickerEmoji ? stickerPreview(m.stickerEmoji) : m.content;
+  return { messageId: m.id, authorId: m.authorId, content, attachments: m.attachmentCount, at: ms(m.createdAt) };
 }
 
 /** The newer of two previews (message ids are time-ordered uuidv7): a live event may be ahead of a summary. */

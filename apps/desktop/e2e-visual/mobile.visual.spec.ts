@@ -436,6 +436,22 @@ test('m-members', async ({ page }) => {
   await checkpoint(page, 'm-members');
 });
 
+// The composer's emoji panel as a bottom sheet, on its «Стикеры» tab (ADR-0030): my pack,
+// «Эмоции» to add; reduced motion keeps the animated sticker on its first frame for the shot.
+test('m-sticker-picker', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Эмодзи' }).tap();
+  const panel = page.getByTestId('emoji-picker');
+  await panel.getByRole('radio', { name: 'Стикеры' }).tap();
+  await expect(panel.getByTestId('sticker-grid').locator('button[data-sticker-pick]')).toHaveCount(3);
+  await expect(page.locator('[data-sticker-still][data-drawn]')).toHaveCount(1);
+  await checkpoint(page, 'm-sticker-picker');
+  await panel.getByRole('button', { name: 'Стикер ☀️' }).tap();
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId('sticker-message')).toHaveCount(1);
+});
+
 test('m-sheet', async ({ page }) => {
   await signedIn(page);
   await page.getByRole('button', { name: 'Прикрепить файл' }).tap();

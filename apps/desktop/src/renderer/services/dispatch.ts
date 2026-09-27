@@ -20,6 +20,7 @@ import { applyDm, applyDmState, refreshDmPreview, refreshDms } from './dms';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
+import { applyStickerEvent } from './stickers';
 import { voice } from './voice';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
@@ -276,6 +277,12 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'readStateUpdate':
       if (e.value.readState) useRooms.getState().setRead(e.value.readState.roomId, e.value.readState.lastReadMessageId);
+      return;
+    // Sticker packs (ADR-0030): the loaded lists follow; the picker reads them from the store.
+    case 'stickerPackCreate':
+    case 'stickerPackUpdate':
+    case 'stickerPackDelete':
+      applyStickerEvent(e);
       return;
     case 'userUpdate':
       if (e.value.me) {

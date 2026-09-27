@@ -10,13 +10,15 @@ import type { FileMeta } from "./file_pb.js";
 import { file_calaba_v1_file } from "./file_pb.js";
 import type { RecordingCard } from "./recording_pb.js";
 import { file_calaba_v1_recording } from "./recording_pb.js";
+import type { Sticker } from "./sticker_pb.js";
+import { file_calaba_v1_sticker } from "./sticker_pb.js";
 import type { Message as Message$1 } from "@bufbuild/protobuf";
 
 /**
  * Describes the file calaba/v1/message.proto.
  */
 export const file_calaba_v1_message: GenFile = /*@__PURE__*/
-  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIsgDCgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkSFQoNZW1iZWRzX2hpZGRlbhgNIAEoCBIkCgRraW5kGA4gASgOMhYuY2FsYWJhLnYxLk1lc3NhZ2VLaW5kEigKBnN5c3RlbRgPIAEoCzIYLmNhbGFiYS52MS5TeXN0ZW1NZXNzYWdlIkkKDVN5c3RlbU1lc3NhZ2USLQoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJlY29yZGluZ0NhcmRIAEIJCgdwYXlsb2FkIjQKCFJlYWN0aW9uEg0KBWVtb2ppGAEgASgJEg0KBWNvdW50GAIgASgNEgoKAm1lGAMgASgIIk4KFExpc3RNZXNzYWdlc1Jlc3BvbnNlEiQKCG1lc3NhZ2VzGAEgAygLMhIuY2FsYWJhLnYxLk1lc3NhZ2USEAoIaGFzX21vcmUYAiABKAgiYwoUQ3JlYXRlTWVzc2FnZVJlcXVlc3QSDwoHY29udGVudBgBIAEoCRIWCg5hdHRhY2htZW50X2lkcxgCIAMoCRITCgtyZXBseV90b19pZBgDIAEoCRINCgVub25jZRgEIAEoCSI8ChVDcmVhdGVNZXNzYWdlUmVzcG9uc2USIwoHbWVzc2FnZRgBIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIicKFFVwZGF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkiPAoVVXBkYXRlTWVzc2FnZVJlc3BvbnNlEiMKB21lc3NhZ2UYASABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSIoChZTZXRFbWJlZHNIaWRkZW5SZXF1ZXN0Eg4KBmhpZGRlbhgBIAEoCCIsChZVcGRhdGVSZWFkU3RhdGVSZXF1ZXN0EhIKCm1lc3NhZ2VfaWQYASABKAkqRAoLTWVzc2FnZUtpbmQSHAoYTUVTU0FHRV9LSU5EX1VOU1BFQ0lGSUVEEAASFwoTTUVTU0FHRV9LSU5EX1NZU1RFTRABQpoBCg1jb20uY2FsYWJhLnYxQgxNZXNzYWdlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_file, file_calaba_v1_recording]);
+  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIu0DCgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkSFQoNZW1iZWRzX2hpZGRlbhgNIAEoCBIkCgRraW5kGA4gASgOMhYuY2FsYWJhLnYxLk1lc3NhZ2VLaW5kEigKBnN5c3RlbRgPIAEoCzIYLmNhbGFiYS52MS5TeXN0ZW1NZXNzYWdlEiMKB3N0aWNrZXIYECABKAsyEi5jYWxhYmEudjEuU3RpY2tlciJJCg1TeXN0ZW1NZXNzYWdlEi0KCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5SZWNvcmRpbmdDYXJkSABCCQoHcGF5bG9hZCI0CghSZWFjdGlvbhINCgVlbW9qaRgBIAEoCRINCgVjb3VudBgCIAEoDRIKCgJtZRgDIAEoCCJOChRMaXN0TWVzc2FnZXNSZXNwb25zZRIkCghtZXNzYWdlcxgBIAMoCzISLmNhbGFiYS52MS5NZXNzYWdlEhAKCGhhc19tb3JlGAIgASgIIncKFENyZWF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkSFgoOYXR0YWNobWVudF9pZHMYAiADKAkSEwoLcmVwbHlfdG9faWQYAyABKAkSDQoFbm9uY2UYBCABKAkSEgoKc3RpY2tlcl9pZBgFIAEoCSI8ChVDcmVhdGVNZXNzYWdlUmVzcG9uc2USIwoHbWVzc2FnZRgBIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIicKFFVwZGF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkiPAoVVXBkYXRlTWVzc2FnZVJlc3BvbnNlEiMKB21lc3NhZ2UYASABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSIoChZTZXRFbWJlZHNIaWRkZW5SZXF1ZXN0Eg4KBmhpZGRlbhgBIAEoCCIsChZVcGRhdGVSZWFkU3RhdGVSZXF1ZXN0EhIKCm1lc3NhZ2VfaWQYASABKAkqRAoLTWVzc2FnZUtpbmQSHAoYTUVTU0FHRV9LSU5EX1VOU1BFQ0lGSUVEEAASFwoTTUVTU0FHRV9LSU5EX1NZU1RFTRABQpoBCg1jb20uY2FsYWJhLnYxQgxNZXNzYWdlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_file, file_calaba_v1_recording, file_calaba_v1_sticker]);
 
 /**
  * @generated from message calaba.v1.Message
@@ -118,6 +120,15 @@ export type Message = Message$1<"calaba.v1.Message"> & {
    * @generated from field: calaba.v1.SystemMessage system = 15;
    */
   system?: SystemMessage | undefined;
+
+  /**
+   * A sticker message (ADR-0030): empty content, no attachments, cannot be edited. Unset
+   * with an empty content and no attachments = the sticker is gone (its workspace was
+   * deleted); clients show a placeholder.
+   *
+   * @generated from field: calaba.v1.Sticker sticker = 16;
+   */
+  sticker?: Sticker | undefined;
 };
 
 /**
@@ -237,6 +248,15 @@ export type CreateMessageRequest = Message$1<"calaba.v1.CreateMessageRequest"> &
    * @generated from field: string nonce = 4;
    */
   nonce: string;
+
+  /**
+   * Send a sticker (ADR-0030) instead of text: content and attachments must be empty. The
+   * sticker's pack must be usable here: a room of its workspace, or a DM whose participants
+   * are both non-guest members of it; the sender must not be a guest there.
+   *
+   * @generated from field: string sticker_id = 5;
+   */
+  stickerId: string;
 };
 
 /**
@@ -264,7 +284,7 @@ export const CreateMessageResponseSchema: GenMessage<CreateMessageResponse> = /*
   messageDesc(file_calaba_v1_message, 5);
 
 /**
- * PATCH /api/messages/{id} (author only)
+ * PATCH /api/messages/{id} (author only; not a sticker message)
  *
  * @generated from message calaba.v1.UpdateMessageRequest
  */

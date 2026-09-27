@@ -604,6 +604,8 @@ func (s *Service) avatar(w http.ResponseWriter, r *http.Request) error {
 //   - the uploader;
 //   - an avatar (user-scoped): any authenticated user;
 //   - a workspace icon: members of the workspace;
+//   - a sticker (ADR-0030): members of its workspace, or VIEW_ROOM in a room where a live
+//     message shows it;
 //   - a file attached to a live message: VIEW_ROOM in that room.
 func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 	ctx := r.Context()
@@ -632,7 +634,22 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 			return err == nil, err
 		}
 	}
-	roomIDs, err := s.db.Q.FileRooms(ctx, f.ID)
+	lookup := s.db.Q.FileRooms
+	if f.WorkspaceID != nil {
+		// A sticker (ADR-0030): members of its workspace (guests too), else through the live
+		// messages that show it (e.g. a DM after leaving the workspace).
+		if _, err := s.db.Q.GetStickerFileWorkspace(ctx, f.ID); err == nil {
+			if _, err := res.Role(ctx, *f.WorkspaceID, uid); err == nil {
+				return true, nil
+			} else if !errors.Is(err, perm.ErrNotMember) {
+				return false, err
+			}
+			lookup = s.db.Q.StickerFileRooms
+		} else if !db.IsNotFound(err) {
+			return false, err
+		}
+	}
+	roomIDs, err := lookup(ctx, f.ID)
 	if err != nil {
 		return false, err
 	}

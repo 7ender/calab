@@ -86,6 +86,8 @@ CATEGORY_CREATE / UPDATE / DELETE
 MESSAGE_REACTION_ADD / REMOVE { workspace_id, room_id, message_id, user_id, emoji }
 DM_CREATE                     { dm: DmSummary } — обоим участникам нового DM, каждому со своим peer
 DM_STATE_UPDATE               { room_id, archived_at, cleared_before_message_id } — своё состояние DM (архив / «Удалить чат»), только своим устройствам
+STICKER_PACK_CREATE / UPDATE  { pack } — пак пространства целиком (живые стикеры по порядку), всем участникам (ADR-0030)
+STICKER_PACK_DELETE           { workspace_id, pack_id } — пак удалён; стикеры в уже отправленных сообщениях остаются
 ROOM_RECORDING                { workspace_id, room_id, recording_id, state: ACTIVE | STOPPED, by_user_id, since,
                                 stop_reason, stopped_by } — запись встречи началась / остановилась (ADR-0025)
 ```
@@ -153,6 +155,14 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 ## REST
 
 Тела запросов и ответов — proto-сообщения из `proto/calaba/v1/*.proto` в JSON (`protojson`): поля в lowerCamelCase (`displayName`), enum — полными именами (`"ROOM_TYPE_VOICE"`), `uint64` (биты прав, байты) — строками, время — RFC 3339; скалярные поля по умолчанию в ответе присутствуют, неизвестные поля в запросе игнорируются. Авторизация — `Authorization: Bearer <access JWT>`.
+
+### Стикеры (ADR-0030)
+
+- `GET /api/workspaces/{id}/sticker-packs` (любой участник) → `{packs[]}`; `POST` `{name, short_name?}` (`MANAGE_STICKERS`; создатель получает пак установленным) → 201; `409 PLAN_LIMIT` сверх `sticker_packs`.
+- `GET /api/sticker-packs/{id}` (участник пространства пака) · `PATCH {name?, short_name?, cover_sticker_id?, sticker_ids[]}` · `DELETE` (`MANAGE_STICKERS`) → `STICKER_PACK_UPDATE` / `DELETE`.
+- `POST /api/sticker-packs/{id}/stickers` — multipart, перед каждым `file` (WebP) поле `emoji`; ≤ 50 за раз, всё или ничего (`422`, `field = file[i]` / `emoji[i]`), квота как у файлов (`413`), `409 PLAN_LIMIT` сверх `stickers`. `PATCH /api/stickers/{id} {emoji}`, `DELETE /api/stickers/{id}` → пак.
+- `GET /api/me/sticker-packs` → `{installed[] (мой порядок), available[] (паки моих пространств, где я не гость)}`; `PUT /api/me/sticker-packs/{id}` (в начало), `DELETE …/{id}`, `PUT …/order {pack_ids}` (полный список). События установки нет — клиент перечитывает список.
+- Отправка: `POST /api/rooms/{id}/messages {sticker_id, reply_to_id?, nonce}` (`SEND_MESSAGES`; пустой `content`, без вложений); `Message.sticker` в истории и событиях, `DmLastMessage.sticker_emoji` в списке DM.
 
 ### Веб-клиент: refresh в cookie (ADR-0015)
 

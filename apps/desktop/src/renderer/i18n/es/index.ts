@@ -14,6 +14,7 @@ import { esRoles } from './roles';
 import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
+import { esStickers } from './stickers';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
@@ -22,6 +23,7 @@ export const es: Dict = {
   ...esPeople,
   ...esApp,
   ...esVideo,
+  ...esStickers,
   ...esDm,
   ...esEcho,
   ...esMedia,
@@ -241,6 +243,7 @@ export const es: Dict = {
   'perm.MENTION_EVERYONE': 'Mencionar a todos (@everyone, @here)',
   'perm.MANAGE_WORKSPACE': 'Gestionar espacio',
   'perm.MANAGE_ROLES': 'Gestionar roles',
+  'perm.MANAGE_STICKERS': 'Gestionar stickers',
   'perm.ADMINISTRATOR': 'Administrador',
   'perm.allow': 'permitido',
   'perm.deny': 'denegado',

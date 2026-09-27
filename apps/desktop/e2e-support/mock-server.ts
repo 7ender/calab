@@ -87,6 +87,18 @@ import {
   CreateInviteRequestSchema,
   CreateInviteResponseSchema,
   CreateMessageRequestSchema,
+  CreateStickerPackRequestSchema,
+  ListStickerPacksResponseSchema,
+  MyStickerPacksResponseSchema,
+  SetStickerPackOrderRequestSchema,
+  StickerPackResponseSchema,
+  StickerPackSchema,
+  StickerSchema,
+  UpdateStickerPackRequestSchema,
+  UpdateStickerRequestSchema,
+  UploadStickersResponseSchema,
+  type Sticker,
+  type StickerPack,
   CreateRoomInviteRequestSchema,
   CreateRoomInviteResponseSchema,
   CreateMessageResponseSchema,
@@ -320,7 +332,7 @@ export interface MockServer {
   reset(scenario?: Scenario): void;
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   /** `attachments`: fixture file ids uploaded by the author (e.g. IDS.files.audio by Вера). */
-  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[] }): Message;
+  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string }): Message;
   /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
   setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
@@ -796,6 +808,7 @@ class MockImpl {
               authorId: last.authorId,
               content: Array.from(last.content).slice(0, 200).join(''),
               attachmentCount: last.attachments.length,
+              stickerEmoji: last.sticker?.emoji ?? '',
               ...(last.createdAt ? { createdAt: last.createdAt } : {}),
             },
           }
@@ -1375,7 +1388,7 @@ class MockImpl {
     sendMsg(c.res, 200, ListMessagesResponseSchema, { messages: hits.slice(0, limit).map((m) => this.msgOut(m, me)), hasMore: hits.length > limit });
   }
 
-  private createMessage(room: Room, authorId: string, content: string, replyToId: string, nonce: string, attachmentIds: string[]): Message {
+  private createMessage(room: Room, authorId: string, content: string, replyToId: string, nonce: string, attachmentIds: string[], sticker?: Sticker): Message {
     const attachments = attachmentIds.map((id) => {
       const f = this.state.files.get(id);
       if (!f || f.meta.uploaderId !== authorId) throw invalid('attachmentIds', `unknown attachment ${id}`);
@@ -1392,6 +1405,7 @@ class MockImpl {
       replyToId,
       nonce,
       createdAt: tick(this.state),
+      ...(sticker ? { sticker } : {}),
     });
     list.push(msg);
     this.state.messages.set(room.id, list);
@@ -1406,10 +1420,58 @@ class MockImpl {
     return msg;
   }
 
-  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[] }): Message {
+  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
-    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? []);
+    const sticker = a.stickerId ? (this.findSticker(a.stickerId)?.sticker ?? this.state.deletedStickers.get(a.stickerId)) : undefined;
+    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? [], sticker);
+  }
+
+  // ------------------------------------------------ sticker packs (ADR-0030)
+
+  /** A live sticker and its pack. */
+  private findSticker(id: string): { sticker: Sticker; pack: StickerPack } | null {
+    for (const pack of this.state.stickerPacks.values()) {
+      const sticker = pack.stickers.find((x) => x.id === id);
+      if (sticker) return { sticker, pack };
+    }
+    return null;
+  }
+
+  private stickerManager(wsId: string, userId: string): void {
+    const m = this.member(wsId, userId);
+    if (!m) throw notFound('workspace not found');
+    if (!has(workspacePermissions(this.memberRoles(m)), PERMISSION_BITS.MANAGE_STICKERS)) throw forbidden('MANAGE_STICKERS required');
+  }
+
+  private packFor(id: string, userId: string, manage: boolean): StickerPack {
+    const p = this.state.stickerPacks.get(id);
+    if (!p || !this.member(p.workspaceId, userId)) throw notFound('sticker pack not found');
+    if (manage) this.stickerManager(p.workspaceId, userId);
+    return p;
+  }
+
+  /** Non-guest members of the pack's workspace may use it: its rooms, and DMs of two such members. */
+  private stickerUsable(pack: StickerPack, room: Room, userId: string): boolean {
+    const full = (u: string): boolean => {
+      const m = this.member(pack.workspaceId, u);
+      return !!m && m.role !== WorkspaceRole.GUEST;
+    };
+    if (room.type === RoomType.DM) return (this.state.dmMembers.get(room.id) ?? []).every(full);
+    return room.workspaceId === pack.workspaceId && full(userId);
+  }
+
+  private myPacks(userId: string): MessageInitShape<typeof MyStickerPacksResponseSchema> {
+    const mine = (this.state.userStickerPacks.get(userId) ?? []).map((id) => this.state.stickerPacks.get(id)).filter((p): p is StickerPack => !!p);
+    const ws = new Set(this.state.members.filter((m) => m.userId === userId && m.role !== WorkspaceRole.GUEST).map((m) => m.workspaceId));
+    const installed = mine.filter((p) => ws.has(p.workspaceId));
+    const ids = new Set(installed.map((p) => p.id));
+    const available = [...this.state.stickerPacks.values()].filter((p) => ws.has(p.workspaceId) && !ids.has(p.id));
+    return { installed, available };
+  }
+
+  private packEvent(p: StickerPack, created = false): void {
+    this.toWorkspace(p.workspaceId, { event: created ? { case: 'stickerPackCreate', value: { pack: p } } : { case: 'stickerPackUpdate', value: { pack: p } } });
   }
 
   private findMessage(id: string): { room: Room; list: Message[]; index: number } {
@@ -2447,7 +2509,15 @@ class MockImpl {
       const b = parseBody(c, CreateMessageRequestSchema);
       if (b.attachmentIds.length) this.requireRoomPerm(room, me, ATTACH_FILES);
       if (b.content.length > 4000) throw invalid('content', 'message too long');
-      if (!b.content.trim() && !b.attachmentIds.length) throw invalid('content', 'empty message');
+      // A sticker message (ADR-0030): no text, no attachments, a pack usable here.
+      let sticker: Sticker | undefined;
+      if (b.stickerId) {
+        if (b.content || b.attachmentIds.length) throw invalid('stickerId', 'a sticker message has no text or attachments');
+        const found = this.findSticker(b.stickerId);
+        if (!found) throw invalid('stickerId', 'sticker not found');
+        if (!this.stickerUsable(found.pack, room, me)) throw forbidden('this sticker pack cannot be used here');
+        sticker = found.sticker;
+      } else if (!b.content.trim() && !b.attachmentIds.length) throw invalid('content', 'empty message');
       if (b.attachmentIds.length > 20) throw invalid('attachmentIds', 'too many attachments');
       if (b.nonce.length > 64) throw invalid('nonce', 'nonce too long');
       if (b.nonce) {
@@ -2457,7 +2527,7 @@ class MockImpl {
           return;
         }
       }
-      const message = this.createMessage(room, me, b.content, b.replyToId, b.nonce, b.attachmentIds);
+      const message = this.createMessage(room, me, b.content, b.replyToId, b.nonce, b.attachmentIds, sticker);
       sendMsg(c.res, 201, CreateMessageResponseSchema, { message });
     });
 
@@ -2467,6 +2537,7 @@ class MockImpl {
       if (!this.canView(room, me)) throw notFound('message not found');
       const msg = list[index];
       if (!msg || msg.authorId !== me) throw forbidden('only the author can edit');
+      if (msg.sticker) throw forbidden('sticker messages cannot be edited');
       const b = parseBody(c, UpdateMessageRequestSchema);
       if (b.content.length > 4000) throw invalid('content', 'message too long');
       if (!b.content.trim() && !msg.attachments.length) throw invalid('content', 'empty message');
@@ -2805,6 +2876,145 @@ class MockImpl {
       serveFile(c, false);
     });
     this.route('GET', '/api/files/:id/thumbnail', (c) => serveFile(c, true));
+
+    // ---------------- sticker packs (ADR-0030)
+    this.route('GET', '/api/workspaces/:id/sticker-packs', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      if (!this.member(wsId, me)) throw notFound('workspace not found');
+      const packs = [...s().stickerPacks.values()].filter((p) => p.workspaceId === wsId);
+      sendMsg(c.res, 200, ListStickerPacksResponseSchema, { packs });
+    });
+    this.route('POST', '/api/workspaces/:id/sticker-packs', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      this.stickerManager(wsId, me);
+      this.requireActive(wsId);
+      const b = parseBody(c, CreateStickerPackRequestSchema);
+      const name = b.name.trim();
+      if (!name || Array.from(name).length > 64) throw invalid('name', 'name must be 1..64 characters');
+      const id = nextId(s(), 'stickerPack');
+      const at = tick(s());
+      const pack = create(StickerPackSchema, { id, workspaceId: wsId, name, shortName: b.shortName || `p_${id.slice(-8)}`, stickers: [], createdBy: me, createdAt: at, updatedAt: at });
+      s().stickerPacks.set(id, pack);
+      s().userStickerPacks.set(me, [id, ...(s().userStickerPacks.get(me) ?? [])]);
+      this.packEvent(pack, true);
+      sendMsg(c.res, 201, StickerPackResponseSchema, { pack });
+    });
+    this.route('GET', '/api/sticker-packs/:id', (c) => {
+      const pack = this.packFor(c.params[0] ?? '', this.uid(c), false);
+      sendMsg(c.res, 200, StickerPackResponseSchema, { pack });
+    });
+    this.route('PATCH', '/api/sticker-packs/:id', (c) => {
+      const pack = this.packFor(c.params[0] ?? '', this.uid(c), true);
+      const b = parseBody(c, UpdateStickerPackRequestSchema);
+      if (b.name !== undefined) {
+        const name = b.name.trim();
+        if (!name || Array.from(name).length > 64) throw invalid('name', 'name must be 1..64 characters');
+        pack.name = name;
+      }
+      if (b.coverStickerId !== undefined) {
+        if (b.coverStickerId && !pack.stickers.some((x) => x.id === b.coverStickerId)) throw invalid('coverStickerId', 'not a sticker of this pack');
+        pack.coverStickerId = b.coverStickerId;
+      }
+      if (b.stickerIds.length) {
+        const byId = new Map(pack.stickers.map((x) => [x.id, x]));
+        if (b.stickerIds.length !== pack.stickers.length || b.stickerIds.some((id) => !byId.has(id))) throw invalid('stickerIds', 'must list every sticker of the pack once');
+        pack.stickers = b.stickerIds.map((id) => byId.get(id)).filter((x): x is Sticker => !!x);
+      }
+      pack.updatedAt = tick(s());
+      this.packEvent(pack);
+      sendMsg(c.res, 200, StickerPackResponseSchema, { pack });
+    });
+    this.route('DELETE', '/api/sticker-packs/:id', (c) => {
+      const pack = this.packFor(c.params[0] ?? '', this.uid(c), true);
+      for (const x of pack.stickers) s().deletedStickers.set(x.id, create(StickerSchema, { ...x, deleted: true }));
+      s().stickerPacks.delete(pack.id);
+      for (const [u, ids] of s().userStickerPacks) s().userStickerPacks.set(u, ids.filter((id) => id !== pack.id));
+      this.toWorkspace(pack.workspaceId, { event: { case: 'stickerPackDelete', value: { workspaceId: pack.workspaceId, packId: pack.id } } });
+      noContent(c.res);
+    });
+    this.route('POST', '/api/sticker-packs/:id/stickers', async (c) => {
+      const me = this.uid(c);
+      const pack = this.packFor(c.params[0] ?? '', me, true);
+      const type = c.req.headers['content-type'] ?? '';
+      if (!type.startsWith('multipart/form-data')) throw new HttpError(400, ErrorCode.BAD_REQUEST, 'multipart/form-data expected');
+      const form = await new Request('http://mock/upload', { method: 'POST', headers: { 'content-type': type }, body: new Uint8Array(c.raw) }).formData();
+      const emojis = form.getAll('emoji').map(String);
+      const files = form.getAll('file').filter((f): f is File => typeof f !== 'string');
+      if (!files.length) throw invalid('file', 'no sticker files');
+      if (pack.stickers.length + files.length > 120) throw invalid('file', 'a pack holds at most 120 stickers');
+      const added: Sticker[] = [];
+      for (const [i, f] of files.entries()) {
+        const bytes = Buffer.from(await f.arrayBuffer());
+        const emoji = (emojis[i] ?? '').trim();
+        if (!emoji || /^[ -~]+$/.test(emoji)) throw invalid(`emoji[${i}]`, 'must be one emoji');
+        if (bytes.subarray(0, 4).toString('latin1') !== 'RIFF' || bytes.subarray(8, 12).toString('latin1') !== 'WEBP') throw invalid(`file[${i}]`, 'not a valid WebP sticker');
+        const animated = bytes.includes(Buffer.from('ANIM'));
+        if (bytes.length > (animated ? 1 << 20 : 512 << 10)) throw invalid(`file[${i}]`, 'file too large');
+        const fileId = this.storeFile(pack.workspaceId, me, { name: f.name || 'sticker.webp', mime: 'image/webp', bytes });
+        added.push(create(StickerSchema, { id: nextId(s(), 'sticker'), packId: pack.id, emoji, url: `/api/files/${fileId}`, width: 160, height: 160, animated, size: bytes.length }));
+      }
+      pack.stickers = [...pack.stickers, ...added];
+      pack.updatedAt = tick(s());
+      this.packEvent(pack);
+      sendMsg(c.res, 201, UploadStickersResponseSchema, { pack, added });
+    });
+    this.route('PATCH', '/api/stickers/:id', (c) => {
+      const me = this.uid(c);
+      const found = this.findSticker(c.params[0] ?? '');
+      if (!found || !this.member(found.pack.workspaceId, me)) throw notFound('sticker not found');
+      this.stickerManager(found.pack.workspaceId, me);
+      const b = parseBody(c, UpdateStickerRequestSchema);
+      const emoji = b.emoji.trim();
+      if (!emoji || /^[ -~]+$/.test(emoji)) throw invalid('emoji', 'must be one emoji');
+      found.sticker.emoji = emoji;
+      found.pack.updatedAt = tick(s());
+      this.packEvent(found.pack);
+      sendMsg(c.res, 200, StickerPackResponseSchema, { pack: found.pack });
+    });
+    this.route('DELETE', '/api/stickers/:id', (c) => {
+      const me = this.uid(c);
+      const found = this.findSticker(c.params[0] ?? '');
+      if (!found || !this.member(found.pack.workspaceId, me)) throw notFound('sticker not found');
+      this.stickerManager(found.pack.workspaceId, me);
+      const { pack, sticker } = found;
+      s().deletedStickers.set(sticker.id, create(StickerSchema, { ...sticker, deleted: true }));
+      pack.stickers = pack.stickers.filter((x) => x.id !== sticker.id);
+      if (pack.coverStickerId === sticker.id) pack.coverStickerId = '';
+      pack.updatedAt = tick(s());
+      this.packEvent(pack);
+      sendMsg(c.res, 200, StickerPackResponseSchema, { pack });
+    });
+    this.route('GET', '/api/me/sticker-packs', (c) => {
+      sendMsg(c.res, 200, MyStickerPacksResponseSchema, this.myPacks(this.uid(c)));
+    });
+    // Before …/:id: the same path shape.
+    this.route('PUT', '/api/me/sticker-packs/order', (c) => {
+      const me = this.uid(c);
+      const b = parseBody(c, SetStickerPackOrderRequestSchema);
+      const have = s().userStickerPacks.get(me) ?? [];
+      if (b.packIds.length !== have.length || b.packIds.some((id) => !have.includes(id))) throw invalid('packIds', 'must list every installed pack once');
+      s().userStickerPacks.set(me, [...b.packIds]);
+      sendMsg(c.res, 200, MyStickerPacksResponseSchema, this.myPacks(me));
+    });
+    this.route('PUT', '/api/me/sticker-packs/:id', (c) => {
+      const me = this.uid(c);
+      const pack = s().stickerPacks.get(c.params[0] ?? '');
+      const m = pack ? this.member(pack.workspaceId, me) : undefined;
+      if (!pack || !m || m.role === WorkspaceRole.GUEST) throw notFound('sticker pack not found');
+      const have = s().userStickerPacks.get(me) ?? [];
+      if (!have.includes(pack.id)) {
+        if (have.length >= 50) throw invalid('id', 'at most 50 installed sticker packs');
+        s().userStickerPacks.set(me, [pack.id, ...have]);
+      }
+      sendMsg(c.res, 200, MyStickerPacksResponseSchema, this.myPacks(me));
+    });
+    this.route('DELETE', '/api/me/sticker-packs/:id', (c) => {
+      const me = this.uid(c);
+      s().userStickerPacks.set(me, (s().userStickerPacks.get(me) ?? []).filter((id) => id !== c.params[0]));
+      sendMsg(c.res, 200, MyStickerPacksResponseSchema, this.myPacks(me));
+    });
 
     // ---------------- voice
     // Call status (docs/09 #48): a participant of the call (CONNECT + in the room now) or MANAGE_ROOM.

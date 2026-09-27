@@ -547,7 +547,7 @@ func (q *Queries) InsertRecording(ctx context.Context, arg InsertRecordingParams
 const insertSystemMessage = `-- name: InsertSystemMessage :one
 INSERT INTO messages (room_id, author_id, content, kind, payload)
 VALUES ($1, $2, '', 'system', $3)
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id
 `
 
 type InsertSystemMessageParams struct {
@@ -574,6 +574,7 @@ func (q *Queries) InsertSystemMessage(ctx context.Context, arg InsertSystemMessa
 		&i.EmbedsHidden,
 		&i.Kind,
 		&i.Payload,
+		&i.StickerID,
 	)
 	return i, err
 }
@@ -1591,7 +1592,7 @@ func (q *Queries) SetRecordingResult(ctx context.Context, arg SetRecordingResult
 
 const updateSystemMessage = `-- name: UpdateSystemMessage :one
 UPDATE messages SET payload = $2 WHERE id = $1 AND kind = 'system' AND deleted_at IS NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id
 `
 
 type UpdateSystemMessageParams struct {
@@ -1617,6 +1618,7 @@ func (q *Queries) UpdateSystemMessage(ctx context.Context, arg UpdateSystemMessa
 		&i.EmbedsHidden,
 		&i.Kind,
 		&i.Payload,
+		&i.StickerID,
 	)
 	return i, err
 }

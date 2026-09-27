@@ -112,7 +112,7 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
             <Link2 className="size-4" aria-hidden /> {t('chat.embedShow')}
           </ContextMenu.Item>
         ) : null}
-        {own ? (
+        {own && !m.sticker ? (
           <ContextMenu.Item className={menuItem} onSelect={() => useUi.getState().setEditing(c.key)}>
             <Pencil className="size-4" aria-hidden /> {t('chat.edit')}
           </ContextMenu.Item>

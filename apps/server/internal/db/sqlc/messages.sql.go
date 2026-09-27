@@ -52,7 +52,7 @@ func (q *Queries) DetachMessageFiles(ctx context.Context, messageID uuid.UUID) e
 }
 
 const getMessage = `-- name: GetMessage :one
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload FROM messages WHERE id = $1 AND deleted_at IS NULL
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id FROM messages WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error) {
@@ -73,12 +73,13 @@ func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error)
 		&i.EmbedsHidden,
 		&i.Kind,
 		&i.Payload,
+		&i.StickerID,
 	)
 	return i, err
 }
 
 const getMessageByNonce = `-- name: GetMessageByNonce :one
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload FROM messages WHERE author_id = $1 AND nonce = $2
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id FROM messages WHERE author_id = $1 AND nonce = $2
 `
 
 type GetMessageByNonceParams struct {
@@ -104,6 +105,7 @@ func (q *Queries) GetMessageByNonce(ctx context.Context, arg GetMessageByNoncePa
 		&i.EmbedsHidden,
 		&i.Kind,
 		&i.Payload,
+		&i.StickerID,
 	)
 	return i, err
 }
@@ -124,10 +126,10 @@ func (q *Queries) InsertAttachment(ctx context.Context, arg InsertAttachmentPara
 }
 
 const insertMessage = `-- name: InsertMessage :one
-INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (author_id, nonce) WHERE nonce IS NOT NULL DO NOTHING
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id
 `
 
 type InsertMessageParams struct {
@@ -136,6 +138,7 @@ type InsertMessageParams struct {
 	Content   string
 	ReplyToID *uuid.UUID
 	Nonce     *string
+	StickerID *uuid.UUID
 }
 
 // Idempotent by (author_id, nonce): no row = a message with this nonce already exists.
@@ -146,6 +149,7 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		arg.Content,
 		arg.ReplyToID,
 		arg.Nonce,
+		arg.StickerID,
 	)
 	var i Message
 	err := row.Scan(
@@ -163,6 +167,7 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		&i.EmbedsHidden,
 		&i.Kind,
 		&i.Payload,
+		&i.StickerID,
 	)
 	return i, err
 }
@@ -255,7 +260,7 @@ func (q *Queries) ListAttachments(ctx context.Context, ids []uuid.UUID) ([]ListA
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload FROM messages
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id FROM messages
 WHERE room_id = $1 AND deleted_at IS NULL AND id > $2::uuid
 ORDER BY id ASC
 LIMIT $3
@@ -292,6 +297,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.EmbedsHidden,
 			&i.Kind,
 			&i.Payload,
+			&i.StickerID,
 		); err != nil {
 			return nil, err
 		}
@@ -304,7 +310,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload FROM messages
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id FROM messages
 WHERE room_id = $1 AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR id < $2::uuid)
   AND ($3::uuid IS NULL OR id > $3::uuid)
@@ -350,6 +356,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.EmbedsHidden,
 			&i.Kind,
 			&i.Payload,
+			&i.StickerID,
 		); err != nil {
 			return nil, err
 		}
@@ -362,7 +369,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 }
 
 const listPins = `-- name: ListPins :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload FROM messages
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id FROM messages
 WHERE room_id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL
 ORDER BY pinned_at DESC
 LIMIT 50
@@ -392,6 +399,7 @@ func (q *Queries) ListPins(ctx context.Context, roomID uuid.UUID) ([]Message, er
 			&i.EmbedsHidden,
 			&i.Kind,
 			&i.Payload,
+			&i.StickerID,
 		); err != nil {
 			return nil, err
 		}
@@ -539,7 +547,7 @@ func (q *Queries) LockMessageReactions(ctx context.Context, id uuid.UUID) error 
 const pinMessage = `-- name: PinMessage :one
 UPDATE messages SET pinned_at = now(), pinned_by = $1
 WHERE id = $2 AND deleted_at IS NULL AND pinned_at IS NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id
 `
 
 type PinMessageParams struct {
@@ -565,6 +573,7 @@ func (q *Queries) PinMessage(ctx context.Context, arg PinMessageParams) (Message
 		&i.EmbedsHidden,
 		&i.Kind,
 		&i.Payload,
+		&i.StickerID,
 	)
 	return i, err
 }
@@ -623,7 +632,7 @@ func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) 
 }
 
 const searchMessages = `-- name: SearchMessages :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload FROM messages
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id FROM messages
 WHERE room_id = ANY($1::uuid[]) AND deleted_at IS NULL
   AND (to_tsvector('russian', content) || to_tsvector('simple', content))
       @@ (websearch_to_tsquery('russian', $2::text) || websearch_to_tsquery('simple', $2::text))
@@ -675,6 +684,7 @@ func (q *Queries) SearchMessages(ctx context.Context, arg SearchMessagesParams) 
 			&i.EmbedsHidden,
 			&i.Kind,
 			&i.Payload,
+			&i.StickerID,
 		); err != nil {
 			return nil, err
 		}
@@ -688,7 +698,7 @@ func (q *Queries) SearchMessages(ctx context.Context, arg SearchMessagesParams) 
 
 const setEmbedsHidden = `-- name: SetEmbedsHidden :one
 UPDATE messages SET embeds_hidden = $2 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id
 `
 
 type SetEmbedsHiddenParams struct {
@@ -714,6 +724,7 @@ func (q *Queries) SetEmbedsHidden(ctx context.Context, arg SetEmbedsHiddenParams
 		&i.EmbedsHidden,
 		&i.Kind,
 		&i.Payload,
+		&i.StickerID,
 	)
 	return i, err
 }
@@ -734,7 +745,7 @@ func (q *Queries) SoftDeleteMessage(ctx context.Context, id uuid.UUID) (int64, e
 const unpinMessage = `-- name: UnpinMessage :one
 UPDATE messages SET pinned_at = NULL, pinned_by = NULL
 WHERE id = $1 AND deleted_at IS NULL AND pinned_at IS NOT NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id
 `
 
 func (q *Queries) UnpinMessage(ctx context.Context, id uuid.UUID) (Message, error) {
@@ -755,6 +766,7 @@ func (q *Queries) UnpinMessage(ctx context.Context, id uuid.UUID) (Message, erro
 		&i.EmbedsHidden,
 		&i.Kind,
 		&i.Payload,
+		&i.StickerID,
 	)
 	return i, err
 }
@@ -762,7 +774,7 @@ func (q *Queries) UnpinMessage(ctx context.Context, id uuid.UUID) (Message, erro
 const updateMessageContent = `-- name: UpdateMessageContent :one
 UPDATE messages SET content = $2, edited_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id
 `
 
 type UpdateMessageContentParams struct {
@@ -788,6 +800,7 @@ func (q *Queries) UpdateMessageContent(ctx context.Context, arg UpdateMessageCon
 		&i.EmbedsHidden,
 		&i.Kind,
 		&i.Payload,
+		&i.StickerID,
 	)
 	return i, err
 }

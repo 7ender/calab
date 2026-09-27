@@ -13,6 +13,7 @@ import { ruRoles } from './roles';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
+import { ruStickers } from './stickers';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
@@ -21,6 +22,7 @@ export const ru = {
   ...ruPeople,
   ...ruApp,
   ...ruVideo,
+  ...ruStickers,
   ...ruDm,
   ...ruEcho,
   ...ruMedia,
@@ -239,6 +241,7 @@ export const ru = {
   'perm.MENTION_EVERYONE': 'Упоминать всех (@everyone, @here)',
   'perm.MANAGE_WORKSPACE': 'Управлять пространством',
   'perm.MANAGE_ROLES': 'Управлять ролями',
+  'perm.MANAGE_STICKERS': 'Управлять стикерами',
   'perm.ADMINISTRATOR': 'Администратор',
   'perm.allow': 'разрешено',
   'perm.deny': 'запрещено',

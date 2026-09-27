@@ -7,6 +7,7 @@ import {
   ALL_PERMISSIONS,
   PERMISSION_BITS,
   ROLE_DEFAULTS,
+  ROOM_ONLY_PERMISSIONS,
   computeMemberRoomPermissions,
   computePermissions,
   computeRoomPermissions,
@@ -130,6 +131,7 @@ describe('roles (ADR-0026)', () => {
     expect(memberRoles(all, ['m']).map((r) => r.id)).toEqual(['m']);
     expect(workspacePermissions(memberRoles(all, ['m', 'a']))).toBe(ALL_PERMISSIONS);
     expect(ALL_PERMISSIONS & PERMISSION_BITS.MANAGE_ROLES).toBe(PERMISSION_BITS.MANAGE_ROLES);
-    expect(ALL_PERMISSIONS).toBe(65535n);
+    expect(ALL_PERMISSIONS).toBe(131071n);
+    expect(ROOM_ONLY_PERMISSIONS & PERMISSION_BITS.MANAGE_STICKERS).toBe(0n);
   });
 });

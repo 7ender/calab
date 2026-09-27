@@ -1,7 +1,7 @@
 -- name: InsertMessage :one
 -- Idempotent by (author_id, nonce): no row = a message with this nonce already exists.
-INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (author_id, nonce) WHERE nonce IS NOT NULL DO NOTHING
 RETURNING *;
 

@@ -7,6 +7,7 @@ import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
 import "calaba/v1/recording.proto";
 import "calaba/v1/room.proto";
+import "calaba/v1/sticker.proto";
 import "calaba/v1/user.proto";
 import "calaba/v1/workspace.proto";
 
@@ -174,6 +175,10 @@ message DispatchEvent {
     RoleDelete role_delete = 38;
     // The caller's own state of a DM changed (item 51); to the user's own devices only.
     DmStateUpdate dm_state_update = 39;
+    // Sticker packs of the workspace (ADR-0030); to every member of the workspace.
+    StickerPackCreate sticker_pack_create = 40;
+    StickerPackUpdate sticker_pack_update = 41;
+    StickerPackDelete sticker_pack_delete = 42;
   }
 }
 
@@ -289,6 +294,7 @@ message DmLastMessage {
   string content = 3; // the first 200 characters of the text (Markdown as sent)
   uint32 attachment_count = 4;
   google.protobuf.Timestamp created_at = 5;
+  string sticker_emoji = 6; // set for a sticker message (ADR-0030): its emoji
 }
 
 message CategoryCreate {
@@ -379,6 +385,23 @@ message RoleUpdate {
 message RoleDelete {
   string workspace_id = 1;
   string role_id = 2;
+}
+
+// The whole pack with its live stickers (create, rename, cover, order, stickers added /
+// changed / removed).
+message StickerPackCreate {
+  StickerPack pack = 1;
+}
+
+message StickerPackUpdate {
+  StickerPack pack = 1;
+}
+
+// The pack is gone: clients drop it from pickers and installed lists. Messages that show its
+// stickers keep them.
+message StickerPackDelete {
+  string workspace_id = 1;
+  string pack_id = 2;
 }
 
 message WorkspaceMemberRemove {
