@@ -265,6 +265,7 @@ export {
   MOCK_GPTUNNEL_WEB,
   PASSWORD,
   RECORDING_FIXTURE,
+  CODE_FIXTURE,
   mockId,
   type Scenario,
 } from './fixtures';

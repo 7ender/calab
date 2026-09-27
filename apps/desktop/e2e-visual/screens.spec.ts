@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { Plan, RecordingStatus, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
-import { IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, type MockServer } from '../e2e-support/mock-server';
+import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, type MockServer } from '../e2e-support/mock-server';
 import { expect, test } from './app';
 import { checkpoint, settle } from './harness';
 import { startPublisher } from './publisher';
@@ -53,6 +53,7 @@ const KEY = new Set([
   'chat-recording-card',
   'chat-audio',
   'chat-video',
+  'chat-code',
   'chat-voice-recording',
   'chat-voice-bubble',
   'voice-room-speaking',
@@ -1410,6 +1411,35 @@ test('chat-video', async ({ open, win, mock, shot }) => {
   await expect.poll(() => win.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await win.keyboard.press('Escape');
   await expect.poll(() => win.evaluate(() => !!document.fullscreenElement)).toBe(false);
+});
+
+// Code blocks (docs/09 #45, docs/08 «Код в сообщениях»): Вера's 420-line log collapsed at 400
+// lines (unknown language: plain), my js block highlighted; «Копировать» shows the toast; Enter
+// inside an unclosed ``` adds a line instead of sending.
+test('chat-code', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: CODE_FIXTURE.long });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: CODE_FIXTURE.js });
+  await expect(win.getByText('Вот обработчик для поиска:')).toBeVisible();
+  await feedAtBottom(win);
+  const blocks = win.getByTestId('code-block');
+  const js = blocks.last();
+  await expect(js.locator('.syn-keyword').first()).toBeVisible();
+  await expect(js).toContainText('js');
+  await expect(win.getByRole('button', { name: 'Показать всё — 420 строк' })).toBeVisible();
+  await win.mouse.move(0, 0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await feedAtBottom(win);
+  await checkpoint(shot, 'chat-code');
+  await js.hover();
+  await js.getByTestId('code-copy').click();
+  await expect(win.getByText('Скопировано')).toBeVisible();
+  const field = win.getByTestId('composer').locator('textarea');
+  await field.fill('```js');
+  await field.press('Enter');
+  await expect(field).toHaveValue('```js\n');
+  await field.fill('');
 });
 
 // Voice messages (docs/09 #43, docs/08 «Голосовые сообщения»): recording with the fake mic
