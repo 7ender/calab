@@ -91,6 +91,8 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
   return (
     <section
       ref={sectionRef}
+      // The toast stack centres over this column (lib/toastPlacement.ts).
+      data-toast-anchor
       className="mat-content relative flex min-w-0 flex-1 flex-col"
       aria-label={isDm(room) ? roomLabel(room) : room.name}
       onDragOver={(e) => {
