@@ -90,7 +90,7 @@ func (s *Service) card(ctx context.Context, rec sqlc.RoomRecording) {
 	if rec.StartedBy == nil {
 		return // the author's account is gone: a system message needs one
 	}
-	payload := pbconv.RecordingCard(rec)
+	payload := s.cardOf(rec)
 	if rec.MessageID != nil {
 		if err := s.system.Update(ctx, rec.WorkspaceID, *rec.MessageID, payload); err != nil {
 			slog.WarnContext(ctx, "recording: update chat card", "recording", rec.ID, "err", err)
@@ -209,10 +209,11 @@ func (s *Service) ProcessOnce(ctx context.Context) (int, error) {
 			done++
 		}
 		if len(rows) < 4 {
-			return done, nil
+			break
 		}
 	}
-	return done, nil
+	n, err := s.processResults(ctx)
+	return done + n, err
 }
 
 // backoff before retry number attempt+1: 30 s doubling, capped at 30 min.
@@ -360,8 +361,8 @@ func (s *Service) applyStatus(ctx context.Context, rec sqlc.RoomRecording, st *g
 			return true
 		}
 		slog.InfoContext(ctx, "recording done", "recording", rec.ID)
-		s.removeFile(ctx, upd)
 		s.card(ctx, upd)
+		s.Wake() // the result job: keep the audio, fetch the summary and transcript
 		return true
 	case gptunnel.StatusFailed, gptunnel.StatusCancelled:
 		if transientFailure(st) {
@@ -612,9 +613,11 @@ func (s *Service) forgetFile(ctx context.Context, rec sqlc.RoomRecording) {
 	}
 }
 
-// Janitor removes local files that are no longer needed: of done recordings, of the others
-// 7 days after they stopped, and any stray .mp4 older than that plus a day.
+// Janitor removes audio attachments older than RECORDING_KEEP_DAYS and local files that are no
+// longer needed: of done recordings (once the audio is kept), of the others 7 days after they
+// stopped, and any stray .mp4 older than that plus a day.
 func (s *Service) Janitor(ctx context.Context) {
+	s.expireAudio(ctx)
 	before := s.Now().Add(-s.KeepFiles)
 	rows, err := s.db.Q.ListRecordingFilesToDelete(ctx, &before)
 	if err != nil {

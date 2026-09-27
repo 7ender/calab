@@ -168,6 +168,8 @@ func run(m *testing.M) int {
 		MailPerHour:           1 << 20, // every test user gets a verification code
 		// Recording (ADR-0025): fakes of GPTunneL and the egress, see recording_integration_test.
 		GPTunnelAPIURL:         gptFake.URL,
+		GPTunnelWebURL:         "https://gptunnel.ru",
+		RecordingKeepDays:      30,
 		RecordingMaxConcurrent: 2,
 		RecordingsPath:         recordDir,
 		RecordingEgressDir:     "/out",
@@ -188,6 +190,7 @@ func run(m *testing.M) int {
 		Mail:            testMail,
 		Egress:          rtc.NewEgress(egressURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)})
 	a.Recording.Tick, a.Recording.PollMin = 100*time.Millisecond, 50*time.Millisecond
+	a.Recording.ResultBackoff = []time.Duration{50 * time.Millisecond, 50 * time.Millisecond}
 	a.Mail.Poll = 200 * time.Millisecond
 	testApp, testDB, testRedis, testCfg, testStore = a, d, rc, cfg, store
 	bg, stop := context.WithCancel(ctx)

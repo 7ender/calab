@@ -169,8 +169,10 @@ services:
       - PLAN_CONTACT_EMAIL=${PLAN_CONTACT_EMAIL:-it@gptunnel.ai}
       - SUPERADMIN_EMAILS=${SUPERADMIN_EMAILS:-}
       # meeting recording (ADR-0025)
-      - GPTUNNEL_API_URL=${GPTUNNEL_API_URL:-https://gptunnel.ai}
+      - GPTUNNEL_API_URL=${GPTUNNEL_API_URL:-https://gptunnel.ru}
+      - GPTUNNEL_WEB_URL=${GPTUNNEL_WEB_URL:-https://gptunnel.ru}
       - RECORDING_MAX_CONCURRENT=${RECORDING_MAX_CONCURRENT:-3}
+      - RECORDING_KEEP_DAYS=${RECORDING_KEEP_DAYS:-30}
       - RECORDINGS_PATH=/data/recordings
       - RECORDING_EGRESS_DIR=/out
     <<: *hardening                 # distroless nonroot (65532); writes only to /data/files, /data/recordings

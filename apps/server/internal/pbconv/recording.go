@@ -43,13 +43,22 @@ func RecordingStatus(status string) v1.RecordingStatus {
 	return v1.RecordingStatus_RECORDING_STATUS_UNSPECIFIED
 }
 
-// RecordingCard is the chat card of a recording.
+// RecordingCard is the chat card of a recording. The audio's expiry (audio_until) and the
+// normalized web_url are the recording service's (they depend on its configuration).
 func RecordingCard(r sqlc.RoomRecording) *v1.SystemMessage {
-	return &v1.SystemMessage{Payload: &v1.SystemMessage_Recording{Recording: &v1.RecordingCard{
+	c := &v1.RecordingCard{
 		RecordingId: r.ID.String(), StartedBy: idp(r.StartedBy), StartedAt: ts(r.StartedAt),
-		DurationSec: uint32(max(r.DurationSec, 0)), Status: RecordingStatus(r.Status), WebUrl: r.WebUrl, Error: r.Error,
-		FileGone: !RecordingHasFile(r), NotUploaded: !RecordingUploaded(r),
-	}}}
+		DurationSec: uint32(max(r.DurationSec, 0)), Status: RecordingStatus(r.Status),
+	}
+	if r.DeletedAt != nil {
+		c.DeletedAt, c.DeletedBy, c.FileGone, c.NotUploaded = ts(*r.DeletedAt), idp(r.DeletedBy), true, true
+	} else {
+		c.WebUrl, c.Error, c.FileGone, c.NotUploaded = r.WebUrl, r.Error, !RecordingHasFile(r), !RecordingUploaded(r)
+		if r.Status == "done" {
+			c.Summary, c.HasTranscript, c.ResultPending = r.Summary, r.TranscriptJson != nil, r.ResultState == "pending"
+		}
+	}
+	return &v1.SystemMessage{Payload: &v1.SystemMessage_Recording{Recording: c}}
 }
 
 // RecordingHasFile reports whether the recording's local file should still be on the volume

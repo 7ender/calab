@@ -1,6 +1,7 @@
 // Package gptunnel is a client of GPTunneL's meeting-recording device API
-// (`/v1/meetings/device/*`, ADR-0025): pair a device with a one-time code, upload a recording
-// in resumable chunks and read its processing status. The contract is the one of
+// (`/v1/meetings/device/*`, ADR-0025, docs/17): pair a device with a one-time code, upload a
+// recording in resumable chunks, read its processing status and — once done — its result
+// (summary) and transcript. The contract is the one of
 // gptunnel-recorder (packages/shared/types/meetings.d.ts): Bearer device token, JSON errors
 // `{error, message}`, chunks with Content-Range and the accepted offset in Upload-Offset.
 package gptunnel
@@ -42,7 +43,8 @@ const (
 	CodeIncomplete          = "incomplete"
 	CodeInsufficientBalance = "insufficient_balance"
 	CodeTooManyUploads      = "too_many_uploads"
-	CodeInternal            = "internal" // a recording's status error: GPTunneL's own fault
+	CodeInternal            = "internal"  // a recording's status error: GPTunneL's own fault
+	CodeNotReady            = "not_ready" // the transcript is not there yet (docs/17)
 	CodeNetwork             = "network"
 	CodeHTTP                = "http"
 	CodeServerUnsupported   = "server_unsupported"
@@ -170,7 +172,7 @@ type Client struct {
 	Backoff     func(attempt int) time.Duration
 }
 
-// New creates a client for baseURL (e.g. https://gptunnel.ai).
+// New creates a client for baseURL (e.g. https://gptunnel.ru).
 func New(baseURL string) *Client {
 	return &Client{
 		base:      strings.TrimRight(baseURL, "/") + "/v1/meetings/device",
@@ -391,6 +393,116 @@ func (c *Client) PutChunk(ctx context.Context, token, id string, start int64, ch
 func (c *Client) Complete(ctx context.Context, token, id string) (*RecordingStatus, error) {
 	var st RecordingStatus
 	return &st, c.jsonCall(ctx, call{method: http.MethodPost, path: recPath(id, "/complete"), token: token}, &st)
+}
+
+// DeleteRecording deletes (or cancels) a recording of this device in GPTunneL.
+func (c *Client) DeleteRecording(ctx context.Context, token, id string) error {
+	return c.jsonCall(ctx, call{method: http.MethodDelete, path: recPath(id, ""), token: token}, nil)
+}
+
+// Result is GET /recordings/:id/result (docs/17 §3.1): the outcome of the processing without
+// the transcript. Nil pointers = not there (yet).
+type Result struct {
+	ID                 string  `json:"id"`
+	Status             string  `json:"status"`
+	Error              *string `json:"error"`
+	Title              string  `json:"title"`
+	Language           *string `json:"language"`
+	DurationSec        *int64  `json:"duration_sec"`
+	Summary            *string `json:"summary"`
+	TranscriptSegments *int    `json:"transcript_segments"`
+	Speakers           *int    `json:"speakers"`
+	WebURL             string  `json:"web_url"`
+}
+
+// Segment is one remark of a transcript (GPTunneL's MeetingTranscriptSegment): the speaker's
+// number (nil = unknown) and seconds from the start of the recording.
+type Segment struct {
+	Speaker *int    `json:"speaker"`
+	Start   float64 `json:"start"`
+	End     float64 `json:"end"`
+	Text    string  `json:"text"`
+}
+
+// TranscriptPage is GET /recordings/:id/transcript (docs/17 §3.2).
+type TranscriptPage struct {
+	ID         string    `json:"id"`
+	Language   *string   `json:"language"`
+	Total      int       `json:"total"`
+	Segments   []Segment `json:"segments"`
+	NextCursor *string   `json:"next_cursor"`
+}
+
+// Result reads the summary and the transcript's size.
+func (c *Client) Result(ctx context.Context, token, id string) (*Result, error) {
+	var r Result
+	return &r, c.jsonCall(ctx, call{method: http.MethodGet, path: recPath(id, "/result"), token: token}, &r)
+}
+
+// TranscriptPageSize is the page Transcript asks for (the API's maximum).
+const TranscriptPageSize = 2000
+
+// MaxTranscriptSegments bounds what Transcript collects (a 4 h meeting has a few thousand).
+const MaxTranscriptSegments = 100_000
+
+// Transcript reads the whole transcript page by page. A transcript replaced while it is read
+// (its total changed) is read again from the start, once.
+func (c *Client) Transcript(ctx context.Context, token, id string) (language string, segs []Segment, err error) {
+	for range 2 {
+		segs = segs[:0]
+		total, cursor := -1, ""
+		for {
+			q := url.Values{"limit": {strconv.Itoa(TranscriptPageSize)}}
+			if cursor != "" {
+				q.Set("cursor", cursor)
+			}
+			var p TranscriptPage
+			// Pages are up to ~150 KB (docs/17): the 1 MiB answer cap of do() holds.
+			if err := c.jsonCall(ctx, call{method: http.MethodGet, path: recPath(id, "/transcript?"+q.Encode()), token: token}, &p); err != nil {
+				return "", nil, err
+			}
+			if total >= 0 && p.Total != total {
+				break // replaced meanwhile: read it again
+			}
+			total = p.Total
+			if p.Language != nil {
+				language = *p.Language
+			}
+			segs = append(segs, p.Segments...)
+			if len(segs) > MaxTranscriptSegments {
+				return "", nil, &Error{Status: http.StatusOK, Code: CodeHTTP, Message: "transcript too long", Offset: -1}
+			}
+			if p.NextCursor == nil || *p.NextCursor == "" || len(p.Segments) == 0 {
+				return language, segs, nil
+			}
+			cursor = *p.NextCursor
+		}
+	}
+	return "", nil, &Error{Status: http.StatusConflict, Code: CodeHTTP, Message: "transcript changed while reading", Offset: -1}
+}
+
+// NormalizeWebURL points a GPTunneL web link at base (GPTUNNEL_WEB_URL): the international
+// host app.gptunnel.ai (and gptunnel.ai) becomes base, the path and query stay; other hosts
+// (another GPTunneL deployment) and non-http(s) links are kept / dropped as they are.
+func NormalizeWebURL(raw, base string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "" // never hand a javascript: or relative link to the client
+	}
+	switch strings.ToLower(u.Hostname()) {
+	case "app.gptunnel.ai", "gptunnel.ai", "www.gptunnel.ai":
+		b, err := url.Parse(strings.TrimRight(strings.TrimSpace(base), "/"))
+		if err != nil || b.Host == "" || (b.Scheme != "http" && b.Scheme != "https") {
+			return u.String()
+		}
+		u.Scheme, u.Host = b.Scheme, b.Host
+		u.Path = strings.TrimRight(b.Path, "/") + u.Path
+	}
+	return u.String()
 }
 
 // Recording reads the processing status.
