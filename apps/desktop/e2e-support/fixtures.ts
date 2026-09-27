@@ -11,8 +11,12 @@ import {
   PlanLimitsSchema,
   PlanLogEntrySchema,
   WorkspacePlanSchema,
+  BUILTIN_ROLE_POSITION,
   PERMISSION_BITS,
   PermissionTargetType,
+  ROLE_DEFAULTS,
+  ROLE_TARGET_ID,
+  RoleSchema,
   PresenceSchema,
   PresenceStatus,
   RoomCategorySchema,
@@ -39,6 +43,7 @@ import {
   type PlanLogEntry,
   type WorkspaceBan,
   type Presence,
+  type Role,
   type Room,
   type RoomCategory,
   type RoomInvite,
@@ -70,7 +75,7 @@ import { avatarPicture, cardPicture, encodePng } from './png';
 export type Scenario = 'data' | 'empty' | 'marketing';
 export const SCENARIOS: readonly Scenario[] = ['data', 'empty', 'marketing'];
 
-const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8 } as const;
+const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9 } as const;
 export type IdKind = keyof typeof KIND;
 
 export function mockId(kind: IdKind, n: number): string {
@@ -78,6 +83,23 @@ export function mockId(kind: IdKind, n: number): string {
 }
 
 export const ts = (iso: string): Timestamp => timestampFromMs(Date.parse(iso));
+
+/**
+ * The four built-in roles of a workspace (ADR-0026), highest first. The mock uses their legacy
+ * names as ids («owner» …), so room overrides by name and by id are the same thing.
+ */
+export function builtinRoles(workspaceId: string): Role[] {
+  return [WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER, WorkspaceRole.GUEST].map((b) =>
+    create(RoleSchema, {
+      id: ROLE_TARGET_ID[b],
+      workspaceId,
+      name: ROLE_TARGET_ID[b],
+      position: BUILTIN_ROLE_POSITION[b],
+      permissions: ROLE_DEFAULTS[b],
+      builtin: b,
+    }),
+  );
+}
 
 /** Mutations made at runtime get timestamps from this clock: 2026-01-15T12:00Z + 1 min per tick. */
 export const RUNTIME_CLOCK_START_MS = Date.parse('2026-01-15T12:00:00Z');
@@ -126,6 +148,11 @@ export const IDS = {
   sessions: {
     annaDesktop: mockId('session', 1),
     annaWeb: mockId('session', 2),
+  },
+  /** Custom roles of the main workspace (ADR-0026); nobody holds them in the fixture. */
+  roles: {
+    design: mockId('role', 1),
+    moderator: mockId('role', 2),
   },
 } as const;
 
@@ -188,7 +215,10 @@ export const MOCK_EMAIL_CODE = '123456';
 export interface MemberRec {
   workspaceId: string;
   userId: string;
+  /** The highest built-in role (owner / admin / member / guest). */
   role: WorkspaceRole;
+  /** Custom roles (ADR-0026); the built-ins follow `role`. */
+  roleIds?: string[];
   nickname: string;
   joinedAt: Timestamp;
 }
@@ -244,6 +274,11 @@ export interface MockState {
   suspendedBy: Map<string, string>;
   /** workspaceId → bans, newest first (docs/09 #32). */
   bans: Map<string, WorkspaceBan[]>;
+  /**
+   * workspaceId → roles (ADR-0026). The four built-ins carry their legacy names as ids
+   * («member»…: the fixture's room overrides stay valid); created lazily for new workspaces.
+   */
+  roles: Map<string, Role[]>;
   /** Email codes (ADR-0023): `verify:<userId>` (also the email change) and `reset:<email>`. */
   emailCodes: Map<string, EmailCodeRec>;
   /** Pending invitations by email, by id. */
@@ -514,11 +549,12 @@ export function buildState(scenario: Scenario): MockState {
     planLog: new Map(),
     suspendedBy: new Map(),
     bans: new Map(),
+    roles: new Map(),
     emailCodes: new Map(),
     emailInvites: new Map(),
     gptunnel: new Map(),
     recordings: new Map(),
-    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100 },
+    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100 },
     clock: 0,
   };
   if (scenario === 'marketing') return buildMarketingState(s);
@@ -673,6 +709,31 @@ export function buildState(scenario: Scenario): MockState {
     '2026-01-12T15:30:00Z',
     '2026-04-30T23:59:59Z',
   );
+
+  // ---- custom roles (ADR-0026): «Дизайн» (blue) above «Модератор» (green), nobody holds them —
+  // the role screens assign them (visual tests), the other screens stay as they are.
+  s.roles.set(W.main, [
+    ...builtinRoles(W.main),
+    create(RoleSchema, {
+      id: IDS.roles.design,
+      workspaceId: W.main,
+      name: 'Дизайн',
+      color: 0x0a84ff,
+      position: 3,
+      permissions: PERMISSION_BITS.STREAM | PERMISSION_BITS.VIDEO | PERMISSION_BITS.ATTACH_FILES,
+      mentionable: true,
+      createdAt: ts('2026-01-05T10:00:00Z'),
+    }),
+    create(RoleSchema, {
+      id: IDS.roles.moderator,
+      workspaceId: W.main,
+      name: 'Модератор',
+      color: 0x34c759,
+      position: 2,
+      permissions: PERMISSION_BITS.MANAGE_MESSAGES | PERMISSION_BITS.MUTE_MEMBERS | PERMISSION_BITS.MOVE_MEMBERS,
+      createdAt: ts('2026-01-05T10:05:00Z'),
+    }),
+  ]);
 
   member(W.main, U.anna, WorkspaceRole.OWNER, '2025-12-01T10:05:00Z');
   member(W.main, U.boris, WorkspaceRole.ADMIN, '2025-12-01T11:00:00Z');
