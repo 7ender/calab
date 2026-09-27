@@ -38,6 +38,8 @@ import { isVoice } from '../../lib/voiceNote';
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
 const IMAGE_MAX_H = 460;
+/** A tall photo is at most this share of the screen high (on a phone 460 px is most of it). */
+const IMAGE_MAX_VH = 60;
 
 /** Mention chip in a message: my mentions (me, @everyone, @here) on a warm tint, others accent. */
 function MentionChip({ workspaceId, v, own }: { workspaceId: string; v: string; own: boolean }): ReactNode {
@@ -238,7 +240,8 @@ function Bubble({
   ) : (
     // data-focus-shape: keyboard focus draws the ring on this shape (body + tail), app/styles.css.
     <div
-      className={cx('relative bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]', videos.length > 0 && 'max-w-full')}
+      // max-w-full: a media box's fixed width never outgrows the bubble (a phone's 70 % lane, #9).
+      className="relative max-w-full bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]"
       style={{ ...radius, ...(width ? { width } : {}) }}
       data-focus-shape
     >
@@ -253,7 +256,7 @@ function Bubble({
         ) : null}
         {m.replyToId ? <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop={!showName} /> : null}
         {images.length ? (
-          <ImageGrid files={images} width={width ?? IMAGE_MAX} padTop={showName || !!m.replyToId} overlay={imageOnly ? metaNode : null} />
+          <ImageGrid files={images} padTop={showName || !!m.replyToId} overlay={imageOnly ? metaNode : null} />
         ) : null}
         {videos.length ? (
           <div className={cx('flex flex-col gap-0.5', (showName || !!m.replyToId || images.length > 0) && 'pt-1.5')}>
@@ -362,8 +365,8 @@ function useActionBar(enabled: boolean): {
   visible: boolean;
   setPicker: (open: boolean) => void;
   handlers: {
-    onMouseEnter?: (e: MouseEvent<HTMLDivElement>) => void;
-    onMouseLeave?: () => void;
+    onPointerEnter?: (e: PointerEvent<HTMLDivElement>) => void;
+    onPointerLeave?: (e: PointerEvent<HTMLDivElement>) => void;
     onMouseDown?: () => void;
     onPointerDown?: (e: PointerEvent<HTMLDivElement>) => void;
     onFocus?: (e: FocusEvent<HTMLDivElement>) => void;
@@ -393,12 +396,17 @@ function useActionBar(enabled: boolean): {
     visible: hover || focused || picker,
     setPicker,
     handlers: {
-      onMouseEnter: (e) => {
+      // A mouse only: a tap on a phone (iOS emulates hover on touch) would open the bar beside
+      // the bubble, past the screen's edge — touch has the long-press menu instead.
+      onPointerEnter: (e) => {
+        if (e.pointerType !== 'mouse') return;
         // A selection dragged in from another message: stay hidden until the button is released.
         if (e.buttons & 1) press();
         intent.enter();
       },
-      onMouseLeave: () => intent.leave(),
+      onPointerLeave: (e) => {
+        if (e.pointerType === 'mouse') intent.leave();
+      },
       onMouseDown: () => {
         pressing.current = true;
         setTimeout(() => {
@@ -504,16 +512,21 @@ function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string
   );
 }
 
-function imageBoxWidth(files: FileMeta[]): number {
-  if (files.length > 1) return IMAGE_MAX;
+/**
+ * CSS width of the image box: the photo's own width up to IMAGE_MAX, narrower when it would be
+ * taller than IMAGE_MAX_H px or (portrait) IMAGE_MAX_VH of the screen — proportions kept.
+ */
+function imageBoxWidth(files: FileMeta[]): string {
+  if (files.length > 1) return `${IMAGE_MAX}px`;
   const f = files[0];
-  if (!f?.width || !f.height) return 320;
+  if (!f?.width || !f.height) return '320px';
   const w = Math.min(IMAGE_MAX, f.width);
   const h = (w * f.height) / f.width;
-  return Math.max(200, Math.round(h > IMAGE_MAX_H ? (IMAGE_MAX_H * f.width) / f.height : w));
+  const px = Math.max(200, Math.round(h > IMAGE_MAX_H ? (IMAGE_MAX_H * f.width) / f.height : w));
+  return f.height > f.width ? `min(${px}px, calc(${IMAGE_MAX_VH}dvh * ${f.width} / ${f.height}))` : `${px}px`;
 }
 
-function ImageGrid({ files, width, padTop, overlay }: { files: FileMeta[]; width: number; padTop: boolean; overlay: ReactNode }): ReactNode {
+function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: boolean; overlay: ReactNode }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const single = files.length === 1 ? files[0] : undefined;
   const aspect = single?.width && single.height ? `${single.width} / ${single.height}` : undefined;
@@ -526,7 +539,7 @@ function ImageGrid({ files, width, padTop, overlay }: { files: FileMeta[]; width
           aria-label={t('chat.openImage', { name: f.name })}
           onClick={() => open({ kind: 'image', fileId: f.id, name: f.name })}
           className="block overflow-hidden bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] focus-visible:outline-offset-[-2px]"
-          style={single ? { aspectRatio: aspect ?? '4 / 3', maxHeight: IMAGE_MAX_H, width } : { aspectRatio: '1 / 1' }}
+          style={single ? { aspectRatio: aspect ?? '4 / 3', maxHeight: IMAGE_MAX_H, width: '100%' } : { aspectRatio: '1 / 1' }}
         >
           <MediaImg path={thumbnailPath(f.id)} alt={f.name} loading="lazy" className="block size-full object-cover" draggable={false} />
         </button>
@@ -545,7 +558,7 @@ function FileRow({ f }: { f: FileMeta }): ReactNode {
       (e: unknown) => toast.fail(e, t('err.ctx.download')),
     );
   return (
-    <div className="group/file flex min-w-[220px] items-center gap-3 py-1">
+    <div className="group/file flex min-w-[min(220px,100%)] items-center gap-3 py-1">
       <Tip label={t('chat.download')}>
         <button
           type="button"
@@ -569,7 +582,7 @@ function FileRow({ f }: { f: FileMeta }): ReactNode {
 
 function Uploads({ uploads }: { uploads: PendingUpload[] }): ReactNode {
   return (
-    <div className="flex min-w-[240px] flex-col gap-1.5 px-3 pt-2">
+    <div className="flex min-w-[min(240px,100%)] flex-col gap-1.5 px-3 pt-2">
       {uploads.map((u) => (
         <div key={u.key}>
           <div className="flex justify-between gap-3 text-caption">

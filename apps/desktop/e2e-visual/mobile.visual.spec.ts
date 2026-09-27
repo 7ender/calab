@@ -248,6 +248,49 @@ test('m-chat', async ({ page }) => {
   await checkpoint(page, 'm-chat-multiline', { main: true, snapshot: false });
 });
 
+/** The feed never scrolls sideways and nothing in it pokes past the screen (issue #9). */
+async function expectFeedFits(page: Page): Promise<void> {
+  const wide = await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => {
+    const out: string[] = [];
+    if (el.scrollWidth > el.clientWidth + 1) out.push(`feed scrolls sideways: ${el.scrollWidth} > ${el.clientWidth}`);
+    // Whatever pokes out (not inside its own horizontal scroller, like a code block's lines).
+    for (const b of el.querySelectorAll('*')) {
+      const r = b.getBoundingClientRect();
+      if (!r.width || (r.right <= innerWidth + 1 && r.left >= -1)) continue;
+      let scroller = false;
+      for (let p = b.parentElement; p && p !== el && !scroller; p = p.parentElement) scroller = ['auto', 'scroll', 'hidden'].includes(getComputedStyle(p).overflowX);
+      if (!scroller) out.push(`<${b.tagName.toLowerCase()} class="${String(b.getAttribute('class')).slice(0, 80)}"> ${Math.round(r.left)}..${Math.round(r.right)} outside 0..${innerWidth}`);
+      if (out.length > 5) break;
+    }
+    return out;
+  });
+  expect(wide).toEqual([]);
+}
+
+// Issue #9: a portrait photo in a phone's bubble stays inside the 70 % lane (no sideways scroll of
+// the feed), proportions kept, no taller than 60 % of the screen.
+test('m-chat-image', async ({ page }) => {
+  await signedIn(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', attachments: [IDS.files.portrait] });
+  const img = page.getByRole('button', { name: 'Открыть изображение «IMG_2041.png»' });
+  await expect.poll(() => img.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+  await feedToBottom(page);
+  await expect(page.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
+  // Playwright's WebKit keeps a mouse where the sign-in tap was: the message may land under it.
+  await page.mouse.move(0, 0);
+  await expect(page.locator('[data-message-actions]')).toHaveCount(0);
+  await expectFeedFits(page);
+  const r = await img.boundingBox();
+  const vh = await page.evaluate(() => innerHeight);
+  expect(r).not.toBeNull();
+  if (r) {
+    expect(Math.abs(r.width / r.height - 720 / 1280)).toBeLessThan(0.02);
+    expect(r.height).toBeLessThanOrEqual(vh * 0.6 + 1);
+  }
+  await checkpoint(page, 'm-chat-image', { main: true });
+});
+
 // Chat audio player on a phone (docs/08 «Медиа в чате»): the same player, 44 px targets; the web
 // client shows the size until the file is played (no download just for the duration).
 test('m-chat-audio', async ({ page }) => {

@@ -151,6 +151,8 @@ export const IDS = {
     video: mockId('file', 5),
     /** Voice message (docs/09 #43): fixtures/voice-note.ogg (5 s Ogg/Opus 24 kbit/s), waveform VOICE_WAVEFORM. */
     voice: mockId('file', 6),
+    /** A phone photo (720×1280 portrait, issues #7/#9): not in any message, injectMessage posts it. */
+    portrait: mockId('file', 7),
   },
   sessions: {
     annaDesktop: mockId('session', 1),
@@ -703,6 +705,13 @@ export function buildState(scenario: Scenario): MockState {
   const noteMeta = fileMeta(IDS.files.voice, IDS.workspaces.design, U.vera, 'voice-2026-01-15-11-32-00.ogg', 'audio/ogg', note, ts('2026-01-15T11:32:00Z'));
   noteMeta.voice = create(VoiceInfoSchema, { durationMs: 5010, waveform: VOICE_WAVEFORM });
   s.files.set(IDS.files.voice, { meta: noteMeta, bytes: note });
+  const portrait = encodePng(720, 1280, cardPicture([64, 170, 140], [255, 255, 255], [204, 240, 228], 720 / 1280));
+  const portraitThumb = encodePng(288, 512, cardPicture([64, 170, 140], [255, 255, 255], [204, 240, 228], 288 / 512));
+  s.files.set(IDS.files.portrait, {
+    meta: fileMeta(IDS.files.portrait, IDS.workspaces.main, U.vera, 'IMG_2041.png', 'image/png', portrait, ts('2026-01-15T11:33:00Z'), { width: 720, height: 1280 }),
+    bytes: portrait,
+    thumbnail: { bytes: portraitThumb, mime: 'image/png' },
+  });
   const avatar = encodePng(128, 128, avatarPicture([255, 150, 120], [96, 72, 190]));
   s.files.set(IDS.files.veraAvatar, {
     meta: fileMeta(IDS.files.veraAvatar, '', U.vera, 'avatar.png', 'image/png', avatar, ts('2025-12-02T10:00:00Z'), { width: 128, height: 128 }),
