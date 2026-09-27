@@ -87,6 +87,7 @@ type PlanLimits struct {
 	Members         uint32                 `protobuf:"varint,8,opt,name=members,proto3" json:"members,omitempty"`                                                                           // workspace members (informational; guests do not count)
 	StickerPacks    uint32                 `protobuf:"varint,9,opt,name=sticker_packs,json=stickerPacks,proto3" json:"sticker_packs,omitempty"`                                             // live sticker packs of the workspace (ADR-0030)
 	Stickers        uint32                 `protobuf:"varint,10,opt,name=stickers,proto3" json:"stickers,omitempty"`                                                                        // live stickers over all packs of the workspace
+	Bots            uint32                 `protobuf:"varint,20,opt,name=bots,proto3" json:"bots,omitempty"`                                                                                // bots that are members of the workspace (ADR-0031)
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -191,6 +192,13 @@ func (x *PlanLimits) GetStickers() uint32 {
 	return 0
 }
 
+func (x *PlanLimits) GetBots() uint32 {
+	if x != nil {
+		return x.Bots
+	}
+	return 0
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -264,7 +272,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\xb3\x03\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\xc7\x03\n" +
 	"\n" +
 	"PlanLimits\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
@@ -278,7 +286,8 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\amembers\x18\b \x01(\rR\amembers\x12#\n" +
 	"\rsticker_packs\x18\t \x01(\rR\fstickerPacks\x12\x1a\n" +
 	"\bstickers\x18\n" +
-	" \x01(\rR\bstickers\"\xba\x01\n" +
+	" \x01(\rR\bstickers\x12\x12\n" +
+	"\x04bots\x18\x14 \x01(\rR\x04bots\"\xba\x01\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +

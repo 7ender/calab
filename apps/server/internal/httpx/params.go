@@ -14,3 +14,10 @@ func PathUUID(r *http.Request, name, what string) (uuid.UUID, error) {
 	}
 	return id, nil
 }
+
+// Router is what route registration needs. *http.ServeMux implements it; the app wraps the
+// mux to record every pattern (the bot route table test, ADR-0031).
+type Router interface {
+	Handle(pattern string, handler http.Handler)
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}

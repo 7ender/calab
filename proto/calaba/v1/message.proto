@@ -33,6 +33,17 @@ message Message {
   // with an empty content and no attachments = the sticker is gone (its workspace was
   // deleted); clients show a placeholder.
   Sticker sticker = 16;
+  // A bot command (ADR-0031): the message starts with /name or /name@username of a bot of the
+  // room. Set only in MESSAGE_CREATE (gateway and webhook) delivered to that bot; everyone
+  // else, REST responses included, gets the plain message.
+  MessageCommand command = 30;
+}
+
+// A command addressed to a bot: "/name args" or "/name@username args".
+message MessageCommand {
+  string bot_user_id = 1;
+  string name = 2; // without the slash and @username, lower case
+  string args = 3; // the rest of the message after the command, trimmed
 }
 
 enum MessageKind {

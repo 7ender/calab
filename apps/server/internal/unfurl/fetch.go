@@ -91,9 +91,10 @@ func CheckURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-// newClient builds the SSRF-safe HTTP client. allow decides which resolved addresses may
-// be dialed (PublicAddr in production; tests may allow loopback).
-func newClient(timeout time.Duration, allow func(netip.Addr) bool) *http.Client {
+// SafeTransport is an HTTP transport that dials only addresses allow accepts, checked at
+// connect time after DNS resolution (DNS rebinding cannot bypass it), and never uses
+// environment proxies. Shared with bot webhooks (ADR-0031).
+func SafeTransport(timeout time.Duration, allow func(netip.Addr) bool) *http.Transport {
 	dialer := &net.Dialer{
 		Timeout: timeout,
 		Control: func(_, address string, _ syscall.RawConn) error {
@@ -108,7 +109,7 @@ func newClient(timeout time.Duration, allow func(netip.Addr) bool) *http.Client 
 			return nil
 		},
 	}
-	tr := &http.Transport{
+	return &http.Transport{
 		Proxy:                 nil, // never follow HTTP(S)_PROXY for user-supplied URLs
 		DialContext:           dialer.DialContext,
 		TLSHandshakeTimeout:   timeout,
@@ -117,8 +118,13 @@ func newClient(timeout time.Duration, allow func(netip.Addr) bool) *http.Client 
 		IdleConnTimeout:       30 * time.Second,
 		ForceAttemptHTTP2:     true,
 	}
+}
+
+// newClient builds the SSRF-safe HTTP client. allow decides which resolved addresses may
+// be dialed (PublicAddr in production; tests may allow loopback).
+func newClient(timeout time.Duration, allow func(netip.Addr) bool) *http.Client {
 	return &http.Client{
-		Transport: tr,
+		Transport: SafeTransport(timeout, allow),
 		Timeout:   timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) > maxRedirects {

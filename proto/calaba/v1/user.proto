@@ -16,6 +16,9 @@ message User {
   bool is_guest = 8; // guest account from a room link (ADR-0016): show a "Guest" badge
   // IANA time zone ("Europe/Moscow"); empty = not set. Clients show the offset ("+3 UTC").
   string timezone = 9;
+  // A bot account (ADR-0031): show a "BOT" badge; clients list bots in their own section, not
+  // among people online / offline.
+  bool is_bot = 10;
 }
 
 enum MicMode {

@@ -1,10 +1,12 @@
 -- name: InsertMentions :exec
--- Direct mentions: only members of the room's workspace, never the author.
+-- Direct mentions: only members of the room's workspace, never the author, never a person
+-- who blocked the author (a bot, ADR-0031).
 INSERT INTO message_mentions (user_id, message_id, room_id)
 SELECT u, sqlc.arg('message_id')::uuid, sqlc.arg('room_id')::uuid
 FROM unnest(sqlc.arg('user_ids')::uuid[]) AS u
 JOIN workspace_members wm ON wm.user_id = u AND wm.workspace_id = sqlc.arg('workspace_id')::uuid
 WHERE u <> sqlc.arg('author_id')::uuid
+  AND NOT EXISTS (SELECT 1 FROM bot_blocks bb WHERE bb.user_id = u AND bb.bot_user_id = sqlc.arg('author_id')::uuid)
 ON CONFLICT DO NOTHING;
 
 -- name: InsertEveryoneMention :exec

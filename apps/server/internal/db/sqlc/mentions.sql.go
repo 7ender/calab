@@ -79,6 +79,7 @@ SELECT u, $1::uuid, $2::uuid
 FROM unnest($3::uuid[]) AS u
 JOIN workspace_members wm ON wm.user_id = u AND wm.workspace_id = $4::uuid
 WHERE u <> $5::uuid
+  AND NOT EXISTS (SELECT 1 FROM bot_blocks bb WHERE bb.user_id = u AND bb.bot_user_id = $5::uuid)
 ON CONFLICT DO NOTHING
 `
 
@@ -90,7 +91,8 @@ type InsertMentionsParams struct {
 	AuthorID    uuid.UUID
 }
 
-// Direct mentions: only members of the room's workspace, never the author.
+// Direct mentions: only members of the room's workspace, never the author, never a person
+// who blocked the author (a bot, ADR-0031).
 func (q *Queries) InsertMentions(ctx context.Context, arg InsertMentionsParams) error {
 	_, err := q.db.Exec(ctx, insertMentions,
 		arg.MessageID,

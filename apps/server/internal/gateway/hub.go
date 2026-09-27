@@ -59,6 +59,8 @@ type Hub struct {
 
 	closing  atomic.Bool
 	nSockets atomic.Int64
+	// botSeen: when a bot's REST activity was last recorded here (TouchBot throttle).
+	botSeen sync.Map
 }
 
 // New creates a hub. Run must be started for fan-out.
@@ -351,7 +353,22 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		} else {
 			m = ev.GetMessageUpdate().GetMessage()
 		}
-		h.toViewers(sessions, view, parseID(m.GetRoomId()), id, shared)
+		rid := parseID(m.GetRoomId())
+		if cmd := m.GetCommand(); cmd != nil {
+			// A bot command (ADR-0031): only the addressed bot sees Message.command.
+			bot, plain := parseID(cmd.GetBotUserId()), newEnc(withoutCommand(ev))
+			for _, s := range sessions {
+				switch {
+				case !view(rid, s.user):
+				case s.user == bot:
+					s.dispatchEnc(id, shared)
+				default:
+					s.dispatchEnc(id, plain)
+				}
+			}
+			return
+		}
+		h.toViewers(sessions, view, rid, id, shared)
 	case *v1.DispatchEvent_MessageDelete:
 		h.toViewers(sessions, view, parseID(e.MessageDelete.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_MessageReactionAdd:
@@ -445,6 +462,18 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 					WorkspaceUpdate: &v1.WorkspaceUpdate{Workspace: pbconv.ForViewer(st.ws, "")}}})
 			}
 			s.dispatchEnc(id, hidden)
+		}
+	case *v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete:
+		// Bots (ADR-0031) are managed by MANAGE_WORKSPACE members; the owner of a bot sees its
+		// events too (the owner's own devices also get BOT_UPDATE on the user channel).
+		owner := parseID(ev.GetBotCreate().GetBot().GetOwnerUserId())
+		if b := ev.GetBotUpdate().GetBot(); b != nil {
+			owner = parseID(b.GetOwnerUserId())
+		}
+		for _, s := range sessions {
+			if st.members[s.user].Workspace().Has(perm.ManageWorkspace) || (owner != uuid.Nil && s.user == owner) {
+				s.dispatchEnc(id, shared)
+			}
 		}
 	case *v1.DispatchEvent_WorkspaceBanAdd, *v1.DispatchEvent_WorkspaceBanRemove:
 		// Bans are shown to those who manage members (item 32).
@@ -659,6 +688,11 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 		for _, s := range sessions {
 			s.rememberDM(rid, peer)
 		}
+	case *v1.DispatchEvent_MessageCreate:
+		// A bot command in a DM (ADR-0031): only the addressed bot sees Message.command.
+		if cmd := e.MessageCreate.GetMessage().GetCommand(); cmd != nil && parseID(cmd.GetBotUserId()) != uid {
+			ev = withoutCommand(ev)
+		}
 	case *v1.DispatchEvent_TypingStart:
 		// DM typing (ADR-0020) comes on the recipient's user channel: only the sessions that
 		// subscribed to the room get it, as in workspace rooms.
@@ -834,6 +868,26 @@ func (h *Hub) invalidateAll() {
 }
 
 // ---- presence ----
+
+// TouchBot keeps a bot that works over REST only (webhook bots) online (ADR-0031): its
+// token id acts as one presence session, expiring like a silent gateway session (2 ×
+// heartbeat), so the sweeper announces OFFLINE after the bot goes quiet. Throttled to one
+// write per half heartbeat per bot and instance; runs in the background.
+func (h *Hub) TouchBot(_ context.Context, id auth.Identity) {
+	now := time.Now()
+	if v, ok := h.botSeen.Load(id.UserID); ok && now.Sub(v.(time.Time)) < h.cfg.HeartbeatInterval/2 { //nolint:forcetypeassert // only times are stored
+		return
+	}
+	h.botSeen.Store(id.UserID, now)
+	go func() { //nolint:gosec // G118: presence outlives the request that reported it
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := h.pres.set(ctx, id.UserID, id.SessionID, v1.PresenceStatus_PRESENCE_STATUS_ONLINE); err != nil {
+			return
+		}
+		h.publishPresence(ctx, id.UserID)
+	}()
+}
 
 func (h *Hub) publishPresence(ctx context.Context, user uuid.UUID) {
 	h.announcePresence(ctx, user, false)
@@ -1029,4 +1083,13 @@ func (h *Hub) Shutdown(ctx context.Context) {
 		}()
 	}
 	wg.Wait()
+}
+
+// withoutCommand returns a MESSAGE_CREATE without Message.command (ADR-0031): what everyone
+// but the addressed bot gets.
+func withoutCommand(ev *v1.DispatchEvent) *v1.DispatchEvent {
+	mc := ev.GetMessageCreate()
+	m := proto.CloneOf(mc.GetMessage())
+	m.Command = nil
+	return &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{MessageCreate: &v1.MessageCreate{WorkspaceId: mc.GetWorkspaceId(), Message: m}}}
 }

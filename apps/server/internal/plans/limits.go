@@ -26,21 +26,22 @@ type Limits struct {
 	Members         uint32
 	StickerPacks    uint32 // live sticker packs of the workspace (ADR-0030)
 	Stickers        uint32 // live stickers over all its packs
+	Bots            uint32 // bots that are members of the workspace (ADR-0031)
 }
 
 // Built-in defaults; PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS override them key by key.
 var (
 	// DefaultFree: 5 in a room, video up to 720p / 15 fps, one stream per room, 1 GiB of files,
-	// 5 sticker packs with 200 stickers in all.
+	// 5 sticker packs with 200 stickers in all, 2 bots.
 	DefaultFree = Limits{
 		RoomMembers:     5,
 		StreamMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, StreamMaxFPS: 15,
 		CameraMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, CameraMaxFPS: 15,
-		StreamsPerRoom: 1, StorageMB: 1024, StickerPacks: 5, Stickers: 200,
+		StreamsPerRoom: 1, StorageMB: 1024, StickerPacks: 5, Stickers: 200, Bots: 2,
 	}
-	// DefaultTeam: 50 in a room, video and storage not limited by the plan (the workspace
-	// storage quota still applies).
-	DefaultTeam = Limits{RoomMembers: 50}
+	// DefaultTeam: 50 in a room, 20 bots, video and storage not limited by the plan (the
+	// workspace storage quota still applies).
+	DefaultTeam = Limits{RoomMembers: 50, Bots: 20}
 )
 
 // Upper bounds of every limit (validation of env and admin input).
@@ -52,6 +53,7 @@ const (
 	maxMembers        = 1_000_000
 	maxStickerPacks   = 10_000
 	maxStickers       = 1_000_000
+	maxBots           = 1000
 )
 
 var presetNames = map[string]v1.ScreenSharePreset{
@@ -84,6 +86,7 @@ type limitsJSON struct {
 	Members         *uint32 `json:"members,omitempty"`
 	StickerPacks    *uint32 `json:"sticker_packs,omitempty"`
 	Stickers        *uint32 `json:"stickers,omitempty"`
+	Bots            *uint32 `json:"bots,omitempty"`
 }
 
 // ParseLimits applies a JSON object over base: keys present replace the base value, absent
@@ -115,6 +118,7 @@ func ParseLimits(raw string, base Limits) (Limits, error) {
 	setU32(&l.Members, j.Members)
 	setU32(&l.StickerPacks, j.StickerPacks)
 	setU32(&l.Stickers, j.Stickers)
+	setU32(&l.Bots, j.Bots)
 	if j.StorageMB != nil {
 		l.StorageMB = *j.StorageMB
 	}
@@ -146,7 +150,7 @@ func (l Limits) MarshalJSON() ([]byte, error) {
 	err := enc.Encode(limitsJSON{
 		RoomMembers: &l.RoomMembers, StreamMaxPreset: &sp, StreamMaxFPS: &l.StreamMaxFPS,
 		CameraMaxPreset: &cp, CameraMaxFPS: &l.CameraMaxFPS, StreamsPerRoom: &l.StreamsPerRoom,
-		StorageMB: &l.StorageMB, Members: &l.Members, StickerPacks: &l.StickerPacks, Stickers: &l.Stickers,
+		StorageMB: &l.StorageMB, Members: &l.Members, StickerPacks: &l.StickerPacks, Stickers: &l.Stickers, Bots: &l.Bots,
 	})
 	return bytes.TrimSpace(buf.Bytes()), err
 }
@@ -167,6 +171,7 @@ func (l Limits) Validate() error {
 	check(l.Members <= maxMembers, "members", maxMembers)
 	check(l.StickerPacks <= maxStickerPacks, "sticker_packs", maxStickerPacks)
 	check(l.Stickers <= maxStickers, "stickers", maxStickers)
+	check(l.Bots <= maxBots, "bots", maxBots)
 	for name, p := range map[string]v1.ScreenSharePreset{"stream_max_preset": l.StreamMaxPreset, "camera_max_preset": l.CameraMaxPreset} {
 		if p < v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED || p > v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL {
 			errs = append(errs, fmt.Errorf("plan limits: invalid %s", name))
@@ -180,7 +185,7 @@ func (l Limits) Proto() *v1.PlanLimits {
 	return &v1.PlanLimits{
 		RoomMembers: l.RoomMembers, StreamMaxPreset: l.StreamMaxPreset, StreamMaxFps: l.StreamMaxFPS,
 		CameraMaxPreset: l.CameraMaxPreset, CameraMaxFps: l.CameraMaxFPS, StreamsPerRoom: l.StreamsPerRoom,
-		StorageMb: l.StorageMB, Members: l.Members, StickerPacks: l.StickerPacks, Stickers: l.Stickers,
+		StorageMb: l.StorageMB, Members: l.Members, StickerPacks: l.StickerPacks, Stickers: l.Stickers, Bots: l.Bots,
 	}
 }
 
@@ -189,7 +194,7 @@ func FromProto(p *v1.PlanLimits) Limits {
 	return Limits{
 		RoomMembers: p.GetRoomMembers(), StreamMaxPreset: p.GetStreamMaxPreset(), StreamMaxFPS: p.GetStreamMaxFps(),
 		CameraMaxPreset: p.GetCameraMaxPreset(), CameraMaxFPS: p.GetCameraMaxFps(), StreamsPerRoom: p.GetStreamsPerRoom(),
-		StorageMB: p.GetStorageMb(), Members: p.GetMembers(), StickerPacks: p.GetStickerPacks(), Stickers: p.GetStickers(),
+		StorageMB: p.GetStorageMb(), Members: p.GetMembers(), StickerPacks: p.GetStickerPacks(), Stickers: p.GetStickers(), Bots: p.GetBots(),
 	}
 }
 

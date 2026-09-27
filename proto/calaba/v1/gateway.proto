@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/bot.proto";
 import "calaba/v1/media.proto";
 import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
@@ -179,7 +180,22 @@ message DispatchEvent {
     StickerPackCreate sticker_pack_create = 40;
     StickerPackUpdate sticker_pack_update = 41;
     StickerPackDelete sticker_pack_delete = 42;
+    // Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
+    BotCreate bot_create = 60;
+    BotUpdate bot_update = 61;
+    BotDelete bot_delete = 62;
   }
+}
+
+// Body of a bot webhook delivery (ADR-0031), JSON (protojson): POST to the bot's webhook URL
+// with X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, body)> and X-Calab-Delivery: <id>.
+// Delivered events: MESSAGE_CREATE / UPDATE / DELETE and MESSAGE_REACTION_ADD / REMOVE of
+// rooms the bot can view and of its DMs. A delivery may repeat (retries): dedupe by id.
+message BotWebhookUpdate {
+  string id = 1;
+  string bot_user_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  DispatchEvent event = 4;
 }
 
 // Aggregated per user (docs/05, "multiple devices").

@@ -47,7 +47,7 @@ func (q *Queries) AdminSearchWorkspaces(ctx context.Context, pattern string) ([]
 }
 
 const adminWorkspaceDetails = `-- name: AdminWorkspaceDetails :many
-SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until,
+SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot,
     p.note AS plan_note, p.updated_by AS plan_updated_by, p.updated_at AS plan_updated_at,
     sb.email AS suspended_by_email,
     (SELECT count(*) FROM workspace_members m WHERE m.workspace_id = w.id AND m.role <> 'guest')::integer AS members,
@@ -122,6 +122,7 @@ func (q *Queries) AdminWorkspaceDetails(ctx context.Context, ids []uuid.UUID) ([
 			&i.User.Locale,
 			&i.User.PresenceStatus,
 			&i.User.PresenceUntil,
+			&i.User.IsBot,
 			&i.PlanNote,
 			&i.PlanUpdatedBy,
 			&i.PlanUpdatedAt,

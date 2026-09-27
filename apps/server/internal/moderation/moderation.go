@@ -66,6 +66,9 @@ var blocked = map[string]scope{
 	"POST /api/workspaces/{id}/members":       scopeWorkspace,
 	"POST /api/workspaces/{id}/join":          scopeWorkspace,
 	"POST /api/invites/{code}/join":           scopeInvite,
+	// bots (ADR-0031): a bot joining the workspace is an invitation too
+	"POST /api/workspaces/{id}/bots":     scopeWorkspace,
+	"POST /api/workspaces/{id}/bots/add": scopeWorkspace,
 }
 
 // Blocked reports whether a suspension refuses the route pattern (tests, docs).

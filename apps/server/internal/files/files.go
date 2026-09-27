@@ -124,7 +124,7 @@ func (s *Service) RunStorageMetrics(ctx context.Context, interval time.Duration)
 }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
-func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/workspaces/{id}/files", wrap(httpx.HandlerFunc(s.upload)))
 	mux.Handle("POST /api/dms/{id}/files", wrap(httpx.HandlerFunc(s.uploadDM)))
 	mux.Handle("POST /api/me/avatar", wrap(httpx.HandlerFunc(s.avatar)))

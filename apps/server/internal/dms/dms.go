@@ -6,6 +6,7 @@ package dms
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -43,7 +44,7 @@ func NewHandlers(d *db.DB, ev events.Publisher, limiter *redisx.RateLimiter) *Ha
 }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
-func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/dms", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("GET /api/dms", wrap(httpx.HandlerFunc(h.list)))
 	mux.Handle("GET /api/dms/candidates", wrap(httpx.HandlerFunc(h.candidates)))
@@ -152,6 +153,13 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	if peer.IsGuest {
 		return httpx.Forbidden("guest accounts cannot receive direct messages")
+	}
+	if auth.MustFromContext(r.Context()).IsBot { // ADR-0031: blocked, or no shared workspace any more
+		if err := CheckBotDM(r.Context(), h.db.Q, me, peerID); errors.Is(err, ErrBotNoSharedWorkspace) {
+			return httpx.NotFound("user") // as for people: users outside the caller's workspaces are not revealed
+		} else if err != nil {
+			return err
+		}
 	}
 	key := Key(me, peerID)
 	room, err := h.db.Q.GetDMByKey(r.Context(), &key)
@@ -309,5 +317,32 @@ func (h *Handlers) candidates(w http.ResponseWriter, r *http.Request) error {
 		out.Users[i] = pbconv.User(u)
 	}
 	httpx.Write(w, http.StatusOK, out)
+	return nil
+}
+
+// ErrBotBlocked means the person blocked this bot (ADR-0031, POST /api/me/blocked-bots/{id}).
+var ErrBotBlocked = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_BOT_BLOCKED, "this person blocked the bot")
+
+// ErrBotNoSharedWorkspace means a bot writes in DMs only to members of workspaces it is in now
+// (ADR-0031); a bot removed from them cannot keep writing into an existing DM.
+var ErrBotNoSharedWorkspace = httpx.Forbidden("the bot shares no workspace with this person")
+
+// CheckBotDM refuses a bot writing to a person who blocked it or with whom it no longer
+// shares a workspace.
+func CheckBotDM(ctx context.Context, q *sqlc.Queries, bot, person uuid.UUID) error {
+	blocked, err := q.IsBotBlocked(ctx, sqlc.IsBotBlockedParams{UserID: person, BotUserID: bot})
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return ErrBotBlocked
+	}
+	shared, err := q.ShareWorkspace(ctx, sqlc.ShareWorkspaceParams{UserID: bot, OtherID: person})
+	if err != nil {
+		return err
+	}
+	if !shared {
+		return ErrBotNoSharedWorkspace
+	}
 	return nil
 }

@@ -95,7 +95,11 @@ type Message struct {
 	// A sticker message (ADR-0030): empty content, no attachments, cannot be edited. Unset
 	// with an empty content and no attachments = the sticker is gone (its workspace was
 	// deleted); clients show a placeholder.
-	Sticker       *Sticker `protobuf:"bytes,16,opt,name=sticker,proto3" json:"sticker,omitempty"`
+	Sticker *Sticker `protobuf:"bytes,16,opt,name=sticker,proto3" json:"sticker,omitempty"`
+	// A bot command (ADR-0031): the message starts with /name or /name@username of a bot of the
+	// room. Set only in MESSAGE_CREATE (gateway and webhook) delivered to that bot; everyone
+	// else, REST responses included, gets the plain message.
+	Command       *MessageCommand `protobuf:"bytes,30,opt,name=command,proto3" json:"command,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -242,6 +246,74 @@ func (x *Message) GetSticker() *Sticker {
 	return nil
 }
 
+func (x *Message) GetCommand() *MessageCommand {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
+// A command addressed to a bot: "/name args" or "/name@username args".
+type MessageCommand struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BotUserId     string                 `protobuf:"bytes,1,opt,name=bot_user_id,json=botUserId,proto3" json:"bot_user_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // without the slash and @username, lower case
+	Args          string                 `protobuf:"bytes,3,opt,name=args,proto3" json:"args,omitempty"` // the rest of the message after the command, trimmed
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MessageCommand) Reset() {
+	*x = MessageCommand{}
+	mi := &file_calaba_v1_message_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessageCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessageCommand) ProtoMessage() {}
+
+func (x *MessageCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_message_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessageCommand.ProtoReflect.Descriptor instead.
+func (*MessageCommand) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *MessageCommand) GetBotUserId() string {
+	if x != nil {
+		return x.BotUserId
+	}
+	return ""
+}
+
+func (x *MessageCommand) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *MessageCommand) GetArgs() string {
+	if x != nil {
+		return x.Args
+	}
+	return ""
+}
+
 // Payload of a system message. Clients that do not know the case show nothing for it.
 type SystemMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -255,7 +327,7 @@ type SystemMessage struct {
 
 func (x *SystemMessage) Reset() {
 	*x = SystemMessage{}
-	mi := &file_calaba_v1_message_proto_msgTypes[1]
+	mi := &file_calaba_v1_message_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -267,7 +339,7 @@ func (x *SystemMessage) String() string {
 func (*SystemMessage) ProtoMessage() {}
 
 func (x *SystemMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[1]
+	mi := &file_calaba_v1_message_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -280,7 +352,7 @@ func (x *SystemMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SystemMessage.ProtoReflect.Descriptor instead.
 func (*SystemMessage) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{1}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SystemMessage) GetPayload() isSystemMessage_Payload {
@@ -320,7 +392,7 @@ type Reaction struct {
 
 func (x *Reaction) Reset() {
 	*x = Reaction{}
-	mi := &file_calaba_v1_message_proto_msgTypes[2]
+	mi := &file_calaba_v1_message_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -332,7 +404,7 @@ func (x *Reaction) String() string {
 func (*Reaction) ProtoMessage() {}
 
 func (x *Reaction) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[2]
+	mi := &file_calaba_v1_message_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -345,7 +417,7 @@ func (x *Reaction) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Reaction.ProtoReflect.Descriptor instead.
 func (*Reaction) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Reaction) GetEmoji() string {
@@ -382,7 +454,7 @@ type ListMessagesResponse struct {
 
 func (x *ListMessagesResponse) Reset() {
 	*x = ListMessagesResponse{}
-	mi := &file_calaba_v1_message_proto_msgTypes[3]
+	mi := &file_calaba_v1_message_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -394,7 +466,7 @@ func (x *ListMessagesResponse) String() string {
 func (*ListMessagesResponse) ProtoMessage() {}
 
 func (x *ListMessagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[3]
+	mi := &file_calaba_v1_message_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -407,7 +479,7 @@ func (x *ListMessagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMessagesResponse.ProtoReflect.Descriptor instead.
 func (*ListMessagesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListMessagesResponse) GetMessages() []*Message {
@@ -442,7 +514,7 @@ type CreateMessageRequest struct {
 
 func (x *CreateMessageRequest) Reset() {
 	*x = CreateMessageRequest{}
-	mi := &file_calaba_v1_message_proto_msgTypes[4]
+	mi := &file_calaba_v1_message_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -454,7 +526,7 @@ func (x *CreateMessageRequest) String() string {
 func (*CreateMessageRequest) ProtoMessage() {}
 
 func (x *CreateMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[4]
+	mi := &file_calaba_v1_message_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -467,7 +539,7 @@ func (x *CreateMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateMessageRequest.ProtoReflect.Descriptor instead.
 func (*CreateMessageRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CreateMessageRequest) GetContent() string {
@@ -514,7 +586,7 @@ type CreateMessageResponse struct {
 
 func (x *CreateMessageResponse) Reset() {
 	*x = CreateMessageResponse{}
-	mi := &file_calaba_v1_message_proto_msgTypes[5]
+	mi := &file_calaba_v1_message_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -526,7 +598,7 @@ func (x *CreateMessageResponse) String() string {
 func (*CreateMessageResponse) ProtoMessage() {}
 
 func (x *CreateMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[5]
+	mi := &file_calaba_v1_message_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -539,7 +611,7 @@ func (x *CreateMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateMessageResponse.ProtoReflect.Descriptor instead.
 func (*CreateMessageResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateMessageResponse) GetMessage() *Message {
@@ -559,7 +631,7 @@ type UpdateMessageRequest struct {
 
 func (x *UpdateMessageRequest) Reset() {
 	*x = UpdateMessageRequest{}
-	mi := &file_calaba_v1_message_proto_msgTypes[6]
+	mi := &file_calaba_v1_message_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -571,7 +643,7 @@ func (x *UpdateMessageRequest) String() string {
 func (*UpdateMessageRequest) ProtoMessage() {}
 
 func (x *UpdateMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[6]
+	mi := &file_calaba_v1_message_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -584,7 +656,7 @@ func (x *UpdateMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMessageRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMessageRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *UpdateMessageRequest) GetContent() string {
@@ -603,7 +675,7 @@ type UpdateMessageResponse struct {
 
 func (x *UpdateMessageResponse) Reset() {
 	*x = UpdateMessageResponse{}
-	mi := &file_calaba_v1_message_proto_msgTypes[7]
+	mi := &file_calaba_v1_message_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -615,7 +687,7 @@ func (x *UpdateMessageResponse) String() string {
 func (*UpdateMessageResponse) ProtoMessage() {}
 
 func (x *UpdateMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[7]
+	mi := &file_calaba_v1_message_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -628,7 +700,7 @@ func (x *UpdateMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMessageResponse.ProtoReflect.Descriptor instead.
 func (*UpdateMessageResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{7}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *UpdateMessageResponse) GetMessage() *Message {
@@ -649,7 +721,7 @@ type SetEmbedsHiddenRequest struct {
 
 func (x *SetEmbedsHiddenRequest) Reset() {
 	*x = SetEmbedsHiddenRequest{}
-	mi := &file_calaba_v1_message_proto_msgTypes[8]
+	mi := &file_calaba_v1_message_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -661,7 +733,7 @@ func (x *SetEmbedsHiddenRequest) String() string {
 func (*SetEmbedsHiddenRequest) ProtoMessage() {}
 
 func (x *SetEmbedsHiddenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[8]
+	mi := &file_calaba_v1_message_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -674,7 +746,7 @@ func (x *SetEmbedsHiddenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetEmbedsHiddenRequest.ProtoReflect.Descriptor instead.
 func (*SetEmbedsHiddenRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{8}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SetEmbedsHiddenRequest) GetHidden() bool {
@@ -694,7 +766,7 @@ type UpdateReadStateRequest struct {
 
 func (x *UpdateReadStateRequest) Reset() {
 	*x = UpdateReadStateRequest{}
-	mi := &file_calaba_v1_message_proto_msgTypes[9]
+	mi := &file_calaba_v1_message_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -706,7 +778,7 @@ func (x *UpdateReadStateRequest) String() string {
 func (*UpdateReadStateRequest) ProtoMessage() {}
 
 func (x *UpdateReadStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_message_proto_msgTypes[9]
+	mi := &file_calaba_v1_message_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -719,7 +791,7 @@ func (x *UpdateReadStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateReadStateRequest.ProtoReflect.Descriptor instead.
 func (*UpdateReadStateRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_message_proto_rawDescGZIP(), []int{9}
+	return file_calaba_v1_message_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UpdateReadStateRequest) GetMessageId() string {
@@ -733,7 +805,7 @@ var File_calaba_v1_message_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_message_proto_rawDesc = "" +
 	"\n" +
-	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\x1a\x17calaba/v1/sticker.proto\"\x84\x05\n" +
+	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\x1a\x17calaba/v1/sticker.proto\"\xb9\x05\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
@@ -752,7 +824,12 @@ const file_calaba_v1_message_proto_rawDesc = "" +
 	"\rembeds_hidden\x18\r \x01(\bR\fembedsHidden\x12*\n" +
 	"\x04kind\x18\x0e \x01(\x0e2\x16.calaba.v1.MessageKindR\x04kind\x120\n" +
 	"\x06system\x18\x0f \x01(\v2\x18.calaba.v1.SystemMessageR\x06system\x12,\n" +
-	"\asticker\x18\x10 \x01(\v2\x12.calaba.v1.StickerR\asticker\"T\n" +
+	"\asticker\x18\x10 \x01(\v2\x12.calaba.v1.StickerR\asticker\x123\n" +
+	"\acommand\x18\x1e \x01(\v2\x19.calaba.v1.MessageCommandR\acommand\"X\n" +
+	"\x0eMessageCommand\x12\x1e\n" +
+	"\vbot_user_id\x18\x01 \x01(\tR\tbotUserId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04args\x18\x03 \x01(\tR\x04args\"T\n" +
 	"\rSystemMessage\x128\n" +
 	"\trecording\x18\x01 \x01(\v2\x18.calaba.v1.RecordingCardH\x00R\trecordingB\t\n" +
 	"\apayload\"F\n" +
@@ -800,42 +877,44 @@ func file_calaba_v1_message_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_message_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_message_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_calaba_v1_message_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_calaba_v1_message_proto_goTypes = []any{
 	(MessageKind)(0),               // 0: calaba.v1.MessageKind
 	(*Message)(nil),                // 1: calaba.v1.Message
-	(*SystemMessage)(nil),          // 2: calaba.v1.SystemMessage
-	(*Reaction)(nil),               // 3: calaba.v1.Reaction
-	(*ListMessagesResponse)(nil),   // 4: calaba.v1.ListMessagesResponse
-	(*CreateMessageRequest)(nil),   // 5: calaba.v1.CreateMessageRequest
-	(*CreateMessageResponse)(nil),  // 6: calaba.v1.CreateMessageResponse
-	(*UpdateMessageRequest)(nil),   // 7: calaba.v1.UpdateMessageRequest
-	(*UpdateMessageResponse)(nil),  // 8: calaba.v1.UpdateMessageResponse
-	(*SetEmbedsHiddenRequest)(nil), // 9: calaba.v1.SetEmbedsHiddenRequest
-	(*UpdateReadStateRequest)(nil), // 10: calaba.v1.UpdateReadStateRequest
-	(*FileMeta)(nil),               // 11: calaba.v1.FileMeta
-	(*timestamppb.Timestamp)(nil),  // 12: google.protobuf.Timestamp
-	(*Sticker)(nil),                // 13: calaba.v1.Sticker
-	(*RecordingCard)(nil),          // 14: calaba.v1.RecordingCard
+	(*MessageCommand)(nil),         // 2: calaba.v1.MessageCommand
+	(*SystemMessage)(nil),          // 3: calaba.v1.SystemMessage
+	(*Reaction)(nil),               // 4: calaba.v1.Reaction
+	(*ListMessagesResponse)(nil),   // 5: calaba.v1.ListMessagesResponse
+	(*CreateMessageRequest)(nil),   // 6: calaba.v1.CreateMessageRequest
+	(*CreateMessageResponse)(nil),  // 7: calaba.v1.CreateMessageResponse
+	(*UpdateMessageRequest)(nil),   // 8: calaba.v1.UpdateMessageRequest
+	(*UpdateMessageResponse)(nil),  // 9: calaba.v1.UpdateMessageResponse
+	(*SetEmbedsHiddenRequest)(nil), // 10: calaba.v1.SetEmbedsHiddenRequest
+	(*UpdateReadStateRequest)(nil), // 11: calaba.v1.UpdateReadStateRequest
+	(*FileMeta)(nil),               // 12: calaba.v1.FileMeta
+	(*timestamppb.Timestamp)(nil),  // 13: google.protobuf.Timestamp
+	(*Sticker)(nil),                // 14: calaba.v1.Sticker
+	(*RecordingCard)(nil),          // 15: calaba.v1.RecordingCard
 }
 var file_calaba_v1_message_proto_depIdxs = []int32{
-	11, // 0: calaba.v1.Message.attachments:type_name -> calaba.v1.FileMeta
-	12, // 1: calaba.v1.Message.created_at:type_name -> google.protobuf.Timestamp
-	12, // 2: calaba.v1.Message.edited_at:type_name -> google.protobuf.Timestamp
-	3,  // 3: calaba.v1.Message.reactions:type_name -> calaba.v1.Reaction
-	12, // 4: calaba.v1.Message.pinned_at:type_name -> google.protobuf.Timestamp
+	12, // 0: calaba.v1.Message.attachments:type_name -> calaba.v1.FileMeta
+	13, // 1: calaba.v1.Message.created_at:type_name -> google.protobuf.Timestamp
+	13, // 2: calaba.v1.Message.edited_at:type_name -> google.protobuf.Timestamp
+	4,  // 3: calaba.v1.Message.reactions:type_name -> calaba.v1.Reaction
+	13, // 4: calaba.v1.Message.pinned_at:type_name -> google.protobuf.Timestamp
 	0,  // 5: calaba.v1.Message.kind:type_name -> calaba.v1.MessageKind
-	2,  // 6: calaba.v1.Message.system:type_name -> calaba.v1.SystemMessage
-	13, // 7: calaba.v1.Message.sticker:type_name -> calaba.v1.Sticker
-	14, // 8: calaba.v1.SystemMessage.recording:type_name -> calaba.v1.RecordingCard
-	1,  // 9: calaba.v1.ListMessagesResponse.messages:type_name -> calaba.v1.Message
-	1,  // 10: calaba.v1.CreateMessageResponse.message:type_name -> calaba.v1.Message
-	1,  // 11: calaba.v1.UpdateMessageResponse.message:type_name -> calaba.v1.Message
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	3,  // 6: calaba.v1.Message.system:type_name -> calaba.v1.SystemMessage
+	14, // 7: calaba.v1.Message.sticker:type_name -> calaba.v1.Sticker
+	2,  // 8: calaba.v1.Message.command:type_name -> calaba.v1.MessageCommand
+	15, // 9: calaba.v1.SystemMessage.recording:type_name -> calaba.v1.RecordingCard
+	1,  // 10: calaba.v1.ListMessagesResponse.messages:type_name -> calaba.v1.Message
+	1,  // 11: calaba.v1.CreateMessageResponse.message:type_name -> calaba.v1.Message
+	1,  // 12: calaba.v1.UpdateMessageResponse.message:type_name -> calaba.v1.Message
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_message_proto_init() }
@@ -846,7 +925,7 @@ func file_calaba_v1_message_proto_init() {
 	file_calaba_v1_file_proto_init()
 	file_calaba_v1_recording_proto_init()
 	file_calaba_v1_sticker_proto_init()
-	file_calaba_v1_message_proto_msgTypes[1].OneofWrappers = []any{
+	file_calaba_v1_message_proto_msgTypes[2].OneofWrappers = []any{
 		(*SystemMessage_Recording)(nil),
 	}
 	type x struct{}
@@ -855,7 +934,7 @@ func file_calaba_v1_message_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_message_proto_rawDesc), len(file_calaba_v1_message_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

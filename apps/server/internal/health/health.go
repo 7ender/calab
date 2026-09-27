@@ -10,10 +10,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/rueidis"
+
+	"github.com/calaba/calaba/server/internal/httpx"
 )
 
 // Routes registers /healthz and /readyz (outside /api; not proxied publicly by Caddy).
-func Routes(mux *http.ServeMux, pool *pgxpool.Pool, redis rueidis.Client) {
+func Routes(mux httpx.Router, pool *pgxpool.Pool, redis rueidis.Client) {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -31,11 +32,16 @@ func WithIdentity(ctx context.Context, id Identity) context.Context {
 	return context.WithValue(ctx, ctxKey{}, id)
 }
 
-// Require authenticates `Authorization: Bearer <access JWT>` and rejects revoked sessions.
-// Redis failure fails closed (503): a revoked session must not slip through.
+// Require authenticates `Authorization: Bearer <access JWT | bot token>` and rejects revoked
+// sessions and tokens. Redis failure fails closed (503): a revoked session must not slip
+// through. Bot identities (ADR-0031) pass here; whether a route admits them is decided by
+// the route table of the app (NoBots). Bots are rate limited per bot (BotLimiter).
 func (s *Service) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, err := s.Authenticate(r)
+		id, err := s.authenticate(r)
+		if err == nil && id.IsBot {
+			err = s.botRequest(r.Context(), id)
+		}
 		if err != nil {
 			httpx.WriteError(w, r, err)
 			return
@@ -44,28 +50,69 @@ func (s *Service) Require(next http.Handler) http.Handler {
 	})
 }
 
+// botRequest applies the per-bot request limit and reports the activity (presence).
+func (s *Service) botRequest(ctx context.Context, id Identity) error {
+	if s.BotLimiter != nil {
+		if err := s.BotLimiter.Take(ctx, id.UserID.String()); err != nil {
+			return err
+		}
+	}
+	if s.OnBotRequest != nil {
+		s.OnBotRequest(ctx, id)
+	}
+	return nil
+}
+
 // HasBearer reports whether the request carries an Authorization bearer token.
 func HasBearer(r *http.Request) bool {
 	return strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
 }
 
-// Authenticate validates the bearer access token of r.
+// Authenticate validates the bearer access token of r for routes that do their own
+// authentication (logout, room links). Those are for people only: a bot token gets 403.
 func (s *Service) Authenticate(r *http.Request) (Identity, error) {
+	id, err := s.authenticate(r)
+	if err == nil && id.IsBot {
+		return Identity{}, ErrBotNotAllowed
+	}
+	return id, err
+}
+
+func (s *Service) authenticate(r *http.Request) (Identity, error) {
 	tok, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !found || tok == "" {
 		return Identity{}, httpx.Unauthenticated("missing bearer token")
 	}
-	id, err := s.tokens.Parse(tok)
-	if err != nil {
+	id, err := s.AuthenticateToken(r.Context(), tok)
+	switch {
+	case err == nil:
+		return id, nil
+	case errors.Is(err, ErrInvalidToken):
 		return Identity{}, httpx.Unauthenticated("invalid or expired access token")
-	}
-	revoked, err := s.IsRevoked(r.Context(), id.SessionID)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "revocation check failed", "err", err)
+	case errors.Is(err, ErrSessionRevoked):
+		return Identity{}, httpx.Unauthenticated("session revoked")
+	default:
+		slog.ErrorContext(r.Context(), "token check failed", "err", err)
 		return Identity{}, httpx.Unavailable(err)
 	}
+}
+
+// AuthenticateToken validates an access JWT or a bot token (REST and gateway IDENTIFY).
+// Errors: ErrInvalidToken, ErrSessionRevoked, or a dependency failure (fail closed).
+func (s *Service) AuthenticateToken(ctx context.Context, tok string) (Identity, error) {
+	if IsBotToken(tok) {
+		return s.authenticateBot(ctx, tok)
+	}
+	id, err := s.tokens.Parse(tok)
+	if err != nil {
+		return Identity{}, ErrInvalidToken
+	}
+	revoked, err := s.IsRevoked(ctx, id.SessionID)
+	if err != nil {
+		return Identity{}, err
+	}
 	if revoked {
-		return Identity{}, httpx.Unauthenticated("session revoked")
+		return Identity{}, ErrSessionRevoked
 	}
 	return id, nil
 }

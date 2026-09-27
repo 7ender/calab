@@ -14,6 +14,7 @@ import (
 
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/bots"
 	"github.com/calaba/calaba/server/internal/buildinfo"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
@@ -59,6 +60,9 @@ type Deps struct {
 	Mail mail.Sender
 	// Egress overrides the LiveKit Egress client (tests); nil = real client from config.
 	Egress rtc.Egress
+	// BotWebhooks tunes bot webhook delivery (tests: TLS roots of a test server, short
+	// backoff); the zero value is production. The address policy is UnfurlAllowAddr's.
+	BotWebhooks bots.WebhookOptions
 }
 
 // App is the assembled server.
@@ -73,6 +77,10 @@ type App struct {
 	Mail    *mail.Service
 	// Recording: meeting recording and GPTunneL (ADR-0025).
 	Recording *recording.Service
+	// Bots: bots and the Bot API (ADR-0031), with the webhook worker.
+	Bots *bots.Service
+	// Routes: every registered route pattern (the bot route table test).
+	Routes []string
 }
 
 // Run starts background work (gateway fan-out, presence sweeper, orphan file cleanup,
@@ -88,6 +96,7 @@ func (a *App) Run(ctx context.Context) {
 	}
 	go a.Mail.Run(ctx) // returns at once without mail
 	go a.Recording.Run(ctx)
+	go a.Bots.Run(ctx) // bot webhook deliveries
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -143,6 +152,16 @@ func New(d Deps) *App {
 		pub = rtc.SyncPublisher{Publisher: base, S: rtcSvc}
 	}
 
+	// Bot webhooks (ADR-0031): events bots would get from the gateway are also queued for
+	// bots with a webhook. The service gets its own publisher once it is decorated.
+	whOpts := d.BotWebhooks
+	if whOpts.AllowAddr == nil {
+		whOpts.AllowAddr = unfurlPolicy(d)
+	}
+	botSvc := bots.New(d.DB, d.Redis, nil, planSvc, []byte(d.Config.JWTSecret), whOpts)
+	pub = bots.Publisher{Publisher: pub, S: botSvc}
+	botSvc.SetEvents(pub)
+
 	sender, err := mailSender(d)
 	if err != nil {
 		panic(err) // config.Validate checks the SMTP settings first
@@ -153,6 +172,9 @@ func New(d Deps) *App {
 
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)
 	authSvc.Mail = mailSvc
+	botSvc.SetAuth(authSvc)
+	botPerSec, botMsgsPerMin := d.Config.BotLimits()
+	authSvc.BotLimiter = redisx.NewRateLimiter(d.Redis, "rl:bot:req:", botPerSec, float64(botPerSec*60))
 	authSvc.OnEmailVerified = func(ctx context.Context, u sqlc.User) []uuid.UUID {
 		return workspaces.AcceptEmailInvites(ctx, d.DB, planSvc, pub, u)
 	}
@@ -189,17 +211,20 @@ func New(d Deps) *App {
 		PlanContact:        d.Config.PlanContact(),
 	}, d.DB, d.Redis, authSvc, pub)
 
-	// Authenticated API routes: identity + fresh per-request permission resolver + the
-	// suspension guard (write routes of suspended workspaces, item 32).
+	authSvc.OnBotRequest = hub.TouchBot
+
+	// Authenticated API routes: identity + the bot route table (ADR-0031) + fresh per-request
+	// permission resolver + the suspension guard (write routes of suspended workspaces,
+	// item 32).
 	guard := moderation.Guard(d.DB.Q, func(ctx context.Context) uuid.UUID { return auth.MustFromContext(ctx).UserID })
 	private := func(h http.Handler) http.Handler {
 		g := guard(h)
-		return authSvc.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return authSvc.Require(botGate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			g.ServeHTTP(w, r.WithContext(perm.WithResolver(r.Context(), d.DB.Q)))
-		}))
+		})))
 	}
 
-	mux := http.NewServeMux()
+	mux := &routeRecorder{ServeMux: http.NewServeMux()}
 	health.Routes(mux, d.DB.Pool, d.Redis)
 	buildinfo.Routes(mux, d.Config.PlanContact())
 	mux.Handle("GET /metrics", promhttp.Handler())
@@ -223,7 +248,9 @@ func New(d Deps) *App {
 	roomHandlers := rooms.NewHandlers(d.DB, pub)
 	roomHandlers.Routes(mux, private)
 	roomHandlers.CategoryRoutes(mux, private)
-	messages.NewHandlers(d.DB, pub, msgLimiter).Routes(mux, private)
+	msgHandlers := messages.NewHandlers(d.DB, pub, msgLimiter)
+	msgHandlers.BotLimiter = redisx.NewRateLimiter(d.Redis, "rl:bot:msg:", botMsgsPerMin, float64(botMsgsPerMin))
+	msgHandlers.Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
 	filesSvc.Routes(mux, private)
 	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,
@@ -236,6 +263,7 @@ func New(d Deps) *App {
 	unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
 		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
 	recSvc.Routes(mux, private)
+	botSvc.Routes(mux, private)
 	if rtcSvc != nil {
 		rtcSvc.Routes(mux, private)
 	} else {
@@ -245,7 +273,7 @@ func New(d Deps) *App {
 		return httpx.NotFound("route")
 	}))
 
-	h := httpx.Chain(mux,
+	h := httpx.Chain(mux.ServeMux,
 		httpx.WithRequestID,
 		httpx.WithClientIP(d.Config.TrustedProxies),
 		httpx.APIHeaders,
@@ -253,5 +281,6 @@ func New(d Deps) *App {
 		httpx.Recover,
 		events.Middleware, // one post-commit publish budget per request
 	)
-	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc, Recording: recSvc}
+	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
+		Recording: recSvc, Bots: botSvc, Routes: mux.patterns}
 }

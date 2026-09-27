@@ -16,7 +16,7 @@ import (
 )
 
 // CategoryRoutes registers category and ordering routes.
-func (h *Handlers) CategoryRoutes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (h *Handlers) CategoryRoutes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/workspaces/{id}/categories", wrap(httpx.HandlerFunc(h.listCategories)))
 	mux.Handle("POST /api/workspaces/{id}/categories", wrap(httpx.HandlerFunc(h.createCategory)))
 	mux.Handle("PATCH /api/categories/{id}", wrap(httpx.HandlerFunc(h.updateCategory)))

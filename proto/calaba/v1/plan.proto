@@ -26,6 +26,7 @@ message PlanLimits {
   uint32 members = 8;                      // workspace members (informational; guests do not count)
   uint32 sticker_packs = 9;                // live sticker packs of the workspace (ADR-0030)
   uint32 stickers = 10;                    // live stickers over all packs of the workspace
+  uint32 bots = 20;                        // bots that are members of the workspace (ADR-0031)
 }
 
 // The plan of a workspace as members see it (Workspace.plan).
