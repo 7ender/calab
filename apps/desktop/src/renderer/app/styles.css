@@ -552,6 +552,25 @@ body {
   animation: calaba-pulse 1.2s infinite;
 }
 
+/* REC (docs/09 #30): a soft, slow pulse of the red recording dot; still with reduced motion. */
+@keyframes calaba-rec {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.rec-dot {
+  animation: calaba-rec 2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rec-dot {
+    animation: none;
+  }
+}
+
 @keyframes calaba-fade-in {
   from {
     opacity: 0;

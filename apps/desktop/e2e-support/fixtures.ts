@@ -126,6 +126,13 @@ export const IDS = {
   },
 } as const;
 
+/**
+ * Meeting recording of «Переговорка» (docs/09 #30): Борис started it 12:34 ago. There is no
+ * server contract yet, so tests hand it to the client (`window.__calabaRecording`) as the
+ * future `room.recording {by, since}` would arrive.
+ */
+export const RECORDING_FIXTURE = { roomId: IDS.rooms.meeting, byUserId: IDS.users.boris, agoMs: 754_000 } as const;
+
 // ---------------------------------------------------------------- state
 
 export interface UserRec {

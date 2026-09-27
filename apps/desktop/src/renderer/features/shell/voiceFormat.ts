@@ -10,6 +10,11 @@ export function formatDuration(ms: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
+/** The REC timer (docs/09 #30): time since the recording started, like the call timer. */
+export function recordingTime(since: number, now: number): string {
+  return formatDuration(now - since);
+}
+
 /** Zero-pads 0..99 for the two-segment room-limit pill (docs/09 #9): 0 → "00", 7 → "07", 42 → "42". */
 export function pad2(n: number): string {
   return String(Math.max(0, Math.min(99, Math.trunc(n)))).padStart(2, '0');
