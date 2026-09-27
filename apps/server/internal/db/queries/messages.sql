@@ -12,10 +12,12 @@ SELECT * FROM messages WHERE author_id = $1 AND nonce = $2;
 SELECT * FROM messages WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: ListMessagesBefore :many
--- Newest first. NULL before = from the newest message.
+-- Newest first. NULL before = from the newest message; since = only after this id (a DM the
+-- caller cleared, dm_state.cleared_before).
 SELECT * FROM messages
 WHERE room_id = sqlc.arg('room_id') AND deleted_at IS NULL
   AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
+  AND (sqlc.narg('since')::uuid IS NULL OR id > sqlc.narg('since')::uuid)
 ORDER BY id DESC
 LIMIT sqlc.arg('lim');
 
@@ -109,6 +111,7 @@ WHERE room_id = ANY(sqlc.arg('room_ids')::uuid[]) AND deleted_at IS NULL
       @@ (websearch_to_tsquery('russian', sqlc.arg('q')::text) || websearch_to_tsquery('simple', sqlc.arg('q')::text))
   AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
   AND (sqlc.narg('author_id')::uuid IS NULL OR author_id = sqlc.narg('author_id')::uuid)
+  AND (sqlc.narg('since')::uuid IS NULL OR id > sqlc.narg('since')::uuid)
 ORDER BY id DESC
 LIMIT sqlc.arg('lim');
 

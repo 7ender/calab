@@ -47,6 +47,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	mux.Handle("POST /api/dms", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("GET /api/dms", wrap(httpx.HandlerFunc(h.list)))
 	mux.Handle("GET /api/dms/candidates", wrap(httpx.HandlerFunc(h.candidates)))
+	mux.Handle("PATCH /api/dms/{id}/state", wrap(httpx.HandlerFunc(h.setState)))
 }
 
 // Key is the pair key of a DM: the smaller id, ':', the larger one.
@@ -67,6 +68,12 @@ func Summary(row sqlc.ListDMsRow) *v1.DmSummary {
 		rs.LastReadMessageId = row.LastReadMessageID.String()
 	}
 	out := &v1.DmSummary{Room: room, Peer: pbconv.User(row.User), ReadState: rs}
+	if row.ArchivedAt != nil {
+		out.ArchivedAt = timestamppb.New(*row.ArchivedAt)
+	}
+	if row.ClearedBefore != nil {
+		out.ClearedBeforeMessageId = row.ClearedBefore.String()
+	}
 	if row.HasMessages {
 		room.LastMessageId = row.LastMessageID.String()
 		room.LastMessageAt = timestamppb.New(row.LastMessageAt)
@@ -217,6 +224,67 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	httpx.Write(w, http.StatusOK, &v1.ListDmsResponse{Dms: out})
+	return nil
+}
+
+// StateEvent is DM_STATE_UPDATE for the user's own devices (item 51).
+func StateEvent(st sqlc.DmState) *v1.DispatchEvent {
+	ev := &v1.DmStateUpdate{RoomId: st.RoomID.String()}
+	if st.ArchivedAt != nil {
+		ev.ArchivedAt = timestamppb.New(*st.ArchivedAt)
+	}
+	if st.ClearedBefore != nil {
+		ev.ClearedBeforeMessageId = st.ClearedBefore.String()
+	}
+	return &v1.DispatchEvent{Event: &v1.DispatchEvent_DmStateUpdate{DmStateUpdate: ev}}
+}
+
+// setState: PATCH /api/dms/{id}/state {archived?, cleared} — the caller's own archive / «Удалить
+// чат» (docs/09 item 51). Participants only; the peer's history and counts do not change.
+func (h *Handlers) setState(w http.ResponseWriter, r *http.Request) error {
+	if err := h.notGuest(r); err != nil {
+		return err
+	}
+	roomID, err := httpx.PathUUID(r, "id", "dm")
+	if err != nil {
+		return err
+	}
+	me := uid(r)
+	if _, err := h.db.Q.GetDMPeer(r.Context(), sqlc.GetDMPeerParams{RoomID: roomID, UserID: me}); err != nil {
+		if db.IsNotFound(err) {
+			return httpx.NotFound("dm")
+		}
+		return err
+	}
+	var req v1.UpdateDmStateRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	if req.Archived == nil && !req.GetCleared() {
+		return httpx.Validation("archived", "set archived or cleared")
+	}
+	var st sqlc.DmState
+	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		var err error
+		if req.GetCleared() { // clearing also leaves the archive; archived below may put it back
+			if st, err = q.ClearDM(r.Context(), sqlc.ClearDMParams{UserID: me, RoomID: roomID}); err != nil {
+				return err
+			}
+		}
+		if req.Archived != nil {
+			st, err = q.SetDMArchived(r.Context(), sqlc.SetDMArchivedParams{UserID: me, RoomID: roomID, Archived: req.GetArchived()})
+		}
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	h.events.User(r.Context(), me, StateEvent(st))
+	s, err := one(r.Context(), h.db.Q, me, roomID)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.UpdateDmStateResponse{Dm: s})
 	return nil
 }
 

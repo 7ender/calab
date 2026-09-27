@@ -16,6 +16,13 @@ type DmMember struct {
 	CreatedAt time.Time
 }
 
+type DmState struct {
+	UserID        uuid.UUID
+	RoomID        uuid.UUID
+	ArchivedAt    *time.Time
+	ClearedBefore *uuid.UUID
+}
+
 type EmailCode struct {
 	UserID    uuid.UUID
 	Purpose   string

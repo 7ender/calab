@@ -2,6 +2,7 @@
 package messages
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/dms"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
@@ -122,11 +124,16 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := rooms.Access(r, roomID); err != nil {
+	acc, err := rooms.Access(r, roomID)
+	if err != nil {
+		return err
+	}
+	since, err := h.clearedBefore(r, acc, roomID)
+	if err != nil {
 		return err
 	}
 	if r.URL.Query().Has("q") {
-		return h.search(w, r, []uuid.UUID{roomID}, nil)
+		return h.search(w, r, []uuid.UUID{roomID}, nil, since)
 	}
 	p, err := ParsePage(r)
 	if err != nil {
@@ -134,9 +141,13 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	}
 	var ms []sqlc.Message
 	if p.After != nil {
-		ms, err = h.db.Q.ListMessagesAfter(r.Context(), sqlc.ListMessagesAfterParams{RoomID: roomID, After: *p.After, Lim: p.Limit + 1})
+		after := *p.After
+		if since != nil && bytes.Compare(after[:], since[:]) < 0 {
+			after = *since
+		}
+		ms, err = h.db.Q.ListMessagesAfter(r.Context(), sqlc.ListMessagesAfterParams{RoomID: roomID, After: after, Lim: p.Limit + 1})
 	} else {
-		ms, err = h.db.Q.ListMessagesBefore(r.Context(), sqlc.ListMessagesBeforeParams{RoomID: roomID, Before: p.Before, Lim: p.Limit + 1})
+		ms, err = h.db.Q.ListMessagesBefore(r.Context(), sqlc.ListMessagesBeforeParams{RoomID: roomID, Before: p.Before, Since: since, Lim: p.Limit + 1})
 	}
 	if err != nil {
 		return err
@@ -151,6 +162,19 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.Write(w, http.StatusOK, &v1.ListMessagesResponse{Messages: out, HasMore: more})
 	return nil
+}
+
+// clearedBefore is the caller's «Удалить чат» mark in a DM (docs/09 item 51): they see only
+// messages after it. nil = the whole history (never cleared, or not a DM).
+func (h *Handlers) clearedBefore(r *http.Request, acc perm.RoomAccess, roomID uuid.UUID) (*uuid.UUID, error) {
+	if !acc.DM {
+		return nil, nil
+	}
+	id, err := h.db.Q.GetDMClearedBefore(r.Context(), sqlc.GetDMClearedBeforeParams{UserID: uid(r), RoomID: roomID})
+	if err != nil || id == uuid.Nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 // ValidateContent checks message text; empty text is allowed only with attachments.
@@ -331,6 +355,15 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	pb := pbconv.Message(msg, files)
+	if acc.DM { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
+		states, err := h.db.Q.UnarchiveDMForRecipients(r.Context(), sqlc.UnarchiveDMForRecipientsParams{RoomID: roomID, AuthorID: uid(r)})
+		if err != nil {
+			return err
+		}
+		for _, st := range states {
+			h.events.User(r.Context(), st.UserID, dms.StateEvent(st))
+		}
+	}
 	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
 		MessageCreate: &v1.MessageCreate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: pb},
 	}})

@@ -46,7 +46,8 @@ func searchParams(r *http.Request) (q string, before *uuid.UUID, limit int32, er
 	return q, before, limit, nil
 }
 
-func (h *Handlers) search(w http.ResponseWriter, r *http.Request, roomIDs []uuid.UUID, author *uuid.UUID) error {
+// search finds messages in roomIDs; since (a cleared DM) = only messages after it.
+func (h *Handlers) search(w http.ResponseWriter, r *http.Request, roomIDs []uuid.UUID, author, since *uuid.UUID) error {
 	q, before, limit, err := searchParams(r)
 	if err != nil {
 		return err
@@ -54,7 +55,7 @@ func (h *Handlers) search(w http.ResponseWriter, r *http.Request, roomIDs []uuid
 	out := &v1.ListMessagesResponse{Messages: []*v1.Message{}}
 	if len(roomIDs) > 0 {
 		ms, err := h.db.Q.SearchMessages(r.Context(), sqlc.SearchMessagesParams{
-			RoomIds: roomIDs, Q: q, Before: before, AuthorID: author, Lim: limit + 1,
+			RoomIds: roomIDs, Q: q, Before: before, AuthorID: author, Since: since, Lim: limit + 1,
 		})
 		if err != nil {
 			return err
@@ -113,5 +114,5 @@ func (h *Handlers) searchWorkspace(w http.ResponseWriter, r *http.Request) error
 		}
 		author = &a
 	}
-	return h.search(w, r, ids, author)
+	return h.search(w, r, ids, author, nil)
 }

@@ -1,8 +1,10 @@
 package messages
 
 import (
+	"bytes"
 	"context"
 	"net/http"
+	"slices"
 	"unicode"
 	"unicode/utf8"
 
@@ -220,12 +222,20 @@ func (h *Handlers) listPins(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := rooms.Access(r, roomID); err != nil {
+	acc, err := rooms.Access(r, roomID)
+	if err != nil {
+		return err
+	}
+	since, err := h.clearedBefore(r, acc, roomID)
+	if err != nil {
 		return err
 	}
 	ms, err := h.db.Q.ListPins(r.Context(), roomID)
 	if err != nil {
 		return err
+	}
+	if since != nil { // a cleared DM (item 51): pins of the hidden history are hidden too
+		ms = slices.DeleteFunc(ms, func(m sqlc.Message) bool { return bytes.Compare(m.ID[:], since[:]) <= 0 })
 	}
 	out, err := h.withDetails(r, ms)
 	if err != nil {
