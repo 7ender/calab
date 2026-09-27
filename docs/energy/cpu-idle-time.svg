@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 280" width="860" height="280" role="img" aria-label="CPU без звонка по времени">
+<style>:root{--ink:#0b0b0b;--muted:#52514e;--grid:#e4e3df;--bg:#fcfcfb}.s0{fill:#2a78d6;stroke:#2a78d6}.s1{fill:#eb6834;stroke:#eb6834}.s2{fill:#1baf7a;stroke:#1baf7a}text{font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:var(--muted)}.t{font-size:14px;font-weight:600;fill:var(--ink)}.v{fill:var(--ink);font-size:11px}.g{stroke:var(--grid);stroke-width:1}.l{fill:none;stroke-width:2}@media (prefers-color-scheme:dark){:root{--ink:#ffffff;--muted:#c3c2b7;--grid:#383835;--bg:#1a1a19}.s0{fill:#3987e5;stroke:#3987e5}.s1{fill:#d95926;stroke:#d95926}.s2{fill:#199e70;stroke:#199e70}}</style><rect width="100%" height="100%" style="fill:var(--bg)"/>
+<text class="t" x="48" y="22">Без звонка, окно видно: CPU по времени (3 мин)</text>
+<rect class="s0" x="48" y="35" width="10" height="10" rx="2"/><text x="62" y="44">Calab (оптимизации)</text><rect class="s1" x="216.8" y="35" width="10" height="10" rx="2"/><text x="230.8" y="44">Discord 0.0.413</text><rect class="s2" x="356.8" y="35" width="10" height="10" rx="2"/><text x="370.8" y="44">Calab 0.5.1</text>
+<line class="g" x1="48" x2="844" y1="236.0" y2="236.0"/><text x="42" y="240.0" text-anchor="end">0</text>
+<line class="g" x1="48" x2="844" y1="193.0" y2="193.0"/><text x="42" y="197.0" text-anchor="end">5</text>
+<line class="g" x1="48" x2="844" y1="150.0" y2="150.0"/><text x="42" y="154.0" text-anchor="end">10</text>
+<line class="g" x1="48" x2="844" y1="107.0" y2="107.0"/><text x="42" y="111.0" text-anchor="end">15</text>
+<line class="g" x1="48" x2="844" y1="64.0" y2="64.0"/><text x="42" y="68.0" text-anchor="end">20</text>
+<text x="48.0" y="254" text-anchor="middle">0 с</text>
+<text x="184.5" y="254" text-anchor="middle">30 с</text>
+<text x="320.9" y="254" text-anchor="middle">60 с</text>
+<text x="457.4" y="254" text-anchor="middle">90 с</text>
+<text x="593.8" y="254" text-anchor="middle">120 с</text>
+<text x="730.3" y="254" text-anchor="middle">150 с</text>
+<polyline class="l s0" style="fill:none" points="48.0,230.8 70.7,232.6 93.5,236.0 116.2,236.0 139.0,236.0 161.7,230.0 184.5,236.0 207.2,235.1 229.9,236.0 252.7,236.0 275.4,236.0 298.2,236.0 320.9,236.0 343.7,236.0 366.4,235.1 389.1,236.0 411.9,236.0 434.6,236.0 457.4,236.0 480.1,236.0 502.9,236.0 525.6,236.0 548.3,236.0 571.1,236.0 593.8,236.0 616.6,236.0 639.3,236.0 662.1,236.0 684.8,236.0 707.5,236.0 730.3,236.0 753.0,236.0 775.8,236.0 798.5,236.0 821.3,236.0 844.0,236.0"><title>Calab (оптимизации)</title></polyline>
+<polyline class="l s1" style="fill:none" points="48.0,230.0 70.7,232.6 93.5,231.7 116.2,226.5 139.0,224.8 161.7,227.4 184.5,229.1 207.2,228.3 229.9,230.0 252.7,227.4 275.4,230.8 298.2,230.8 320.9,229.1 343.7,229.1 366.4,229.1 389.1,228.3 411.9,231.7 434.6,231.7 457.4,229.1 480.1,229.1 502.9,228.3 525.6,230.0 548.3,230.8 571.1,230.0 593.8,230.8 616.6,227.4 639.3,230.8 662.1,229.1 684.8,151.7 707.5,231.7 730.3,231.7 753.0,230.8 775.8,231.7 798.5,231.7 821.3,231.7 844.0,231.7"><title>Discord 0.0.413</title></polyline>
+<polyline class="l s2" style="fill:none" points="48.0,220.5 70.7,218.8 93.5,223.1 116.2,199.9 139.0,199.0 161.7,236.0 184.5,236.0 207.2,236.0 229.9,236.0 252.7,236.0 275.4,236.0 298.2,236.0 320.9,236.0 343.7,236.0 366.4,236.0 389.1,236.0 411.9,236.0 434.6,236.0 457.4,236.0 480.1,236.0 502.9,236.0 525.6,236.0 548.3,236.0 571.1,236.0 593.8,236.0 616.6,236.0 639.3,236.0 662.1,236.0 684.8,236.0 707.5,236.0 730.3,236.0 753.0,236.0 775.8,236.0 798.5,236.0 821.3,236.0 844.0,236.0"><title>Calab 0.5.1</title></polyline>
+<text x="48" y="274">CPU, % одного ядра, сумма процессов; точка = 5 с</text>
+</svg>
