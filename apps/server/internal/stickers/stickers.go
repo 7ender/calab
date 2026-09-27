@@ -64,7 +64,7 @@ func NewHandlers(d *db.DB, ev events.Publisher, fs *files.Service, ps *plans.Ser
 }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
-func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	handle := func(p string, f httpx.HandlerFunc) { mux.Handle(p, wrap(f)) }
 	handle("GET /api/workspaces/{id}/sticker-packs", h.list)
 	handle("POST /api/workspaces/{id}/sticker-packs", h.create)

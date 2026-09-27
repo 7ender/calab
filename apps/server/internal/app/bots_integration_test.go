@@ -625,3 +625,41 @@ func TestBotBlockMentionsAndSharedWorkspace(t *testing.T) {
 	// The person may still write to the bot in the existing DM.
 	bob.must(201, "POST", "/api/rooms/"+rid+"/messages", &v1.CreateMessageRequest{Content: "bye"}, nil)
 }
+
+// Stickers (ADR-0030, ADR-0031 §3): a bot lists packs, installs them for itself and sends
+// stickers; managing packs needs MANAGE_STICKERS, as for people.
+func TestBotStickers(t *testing.T) {
+	o := owner(t)
+	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	b := createBot(t, o, ws.GetId(), "stick")
+	bu := &user{client: b.client, id: b.id}
+	room := textRoom(t, o, ws.GetId(), "chat", false)
+	p := createPack(t, o, ws.GetId(), "Faces")
+	_, up, _ := uploadStickers(t, o, p.GetId(), stickerFile{"😀", "s.webp", stickerFixture(t, "sun.webp")})
+	sid := up.GetAdded()[0].GetId()
+
+	b.must(200, "GET", "/api/workspaces/"+ws.GetId()+"/sticker-packs", nil, nil)
+	b.must(200, "GET", "/api/sticker-packs/"+p.GetId(), nil, nil)
+	b.must(200, "PUT", "/api/me/sticker-packs/"+p.GetId(), nil, nil)
+	b.must(200, "GET", "/api/me/sticker-packs", nil, nil)
+	var cr v1.CreateMessageResponse
+	b.must(201, "POST", "/api/rooms/"+room+"/messages", &v1.CreateMessageRequest{StickerId: sid, Nonce: uniq("n")}, &cr)
+	if cr.GetMessage().GetSticker().GetId() != sid {
+		t.Fatalf("bot sticker message: %v", cr.GetMessage())
+	}
+
+	// Without MANAGE_STICKERS: 403 from the handler (not BOT_NOT_ALLOWED).
+	b.must(403, "POST", "/api/workspaces/"+ws.GetId()+"/sticker-packs", &v1.CreateStickerPackRequest{Name: "Bot"}, nil)
+	if reason, _ := errReason(b.client); reason == "BOT_NOT_ALLOWED" {
+		t.Fatalf("sticker pack creation closed to bots by the route table")
+	}
+	role := newRole(t, o, ws.GetId(), "bot-stickers", perm.ManageStickers)
+	if st, _ := setMemberRoles(o, ws.GetId(), b.id, role.GetId()); st != 200 {
+		t.Fatalf("assign sticker role to bot: %d", st)
+	}
+	bp := createPack(t, bu, ws.GetId(), "Bot pack")
+	if st, res, e := uploadStickers(t, bu, bp.GetId(), stickerFile{"🌀", "o.webp", stickerFixture(t, "orbit.webp")}); st != 201 || len(res.GetAdded()) != 1 {
+		t.Fatalf("bot upload: %d %v", st, e)
+	}
+	b.must(204, "DELETE", "/api/sticker-packs/"+bp.GetId(), nil, nil)
+}
