@@ -24,6 +24,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 )
@@ -62,6 +63,7 @@ type Limits struct {
 	MaxOwned      int                 // workspaces a user may own
 	Quota         int64               // storage quota of a new workspace
 	CreateLimiter *redisx.RateLimiter // creations per user (3/h)
+	Plans         *plans.Service      // fills Workspace.plan (ADR-0024); nil = unset
 }
 
 // NewHandlers creates the workspace handlers.
@@ -117,9 +119,9 @@ func requireManage(r *http.Request) (uuid.UUID, perm.Role, error) {
 	return wsID, role, nil
 }
 
-// Snapshot builds the workspace state as seen by userID (rooms filtered by VIEW_ROOM).
-// Voice states and presences are filled in by the gateway.
-func Snapshot(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uuid.UUID, role perm.Role) (*v1.WorkspaceSnapshot, error) {
+// Snapshot builds the workspace state as seen by userID (rooms filtered by VIEW_ROOM), with
+// the plan from pl (nil = unset). Voice states and presences are filled in by the gateway.
+func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.Workspace, userID uuid.UUID, role perm.Role) (*v1.WorkspaceSnapshot, error) {
 	rs, err := rooms.Visible(ctx, q, ws, userID, role)
 	if err != nil {
 		return nil, err
@@ -148,25 +150,29 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, userID uu
 	if err != nil {
 		return nil, err
 	}
-	return &v1.WorkspaceSnapshot{Workspace: pbconv.Workspace(ws), Role: role.Proto(), Rooms: rs, Members: members,
+	pw := pbconv.Workspace(ws)
+	if err := pl.Fill(ctx, pw); err != nil {
+		return nil, err
+	}
+	return &v1.WorkspaceSnapshot{Workspace: pw, Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats)}, nil
 }
 
 // joined publishes membership events after a user joined a workspace.
 func (h *Handlers) joined(ctx context.Context, ws sqlc.Workspace, m sqlc.WorkspaceMember) {
-	AnnounceJoin(ctx, h.db.Q, h.events, ws, m)
+	AnnounceJoin(ctx, h.db.Q, h.limits.Plans, h.events, ws, m)
 }
 
 // AnnounceJoin publishes WORKSPACE_MEMBER_ADD to the workspace and WORKSPACE_CREATE (with a
 // snapshot) to the new member's devices.
-func AnnounceJoin(ctx context.Context, q *sqlc.Queries, pub events.Publisher, ws sqlc.Workspace, m sqlc.WorkspaceMember) {
+func AnnounceJoin(ctx context.Context, q *sqlc.Queries, pl *plans.Service, pub events.Publisher, ws sqlc.Workspace, m sqlc.WorkspaceMember) {
 	u, err := q.GetUser(ctx, m.UserID)
 	if err == nil {
 		pub.Workspace(ctx, ws.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberAdd{
 			WorkspaceMemberAdd: &v1.WorkspaceMemberAdd{Member: pbconv.Member(m, u)},
 		}})
 	}
-	if snap, err := Snapshot(ctx, q, ws, m.UserID, perm.Role(m.Role)); err == nil {
+	if snap, err := Snapshot(ctx, q, pl, ws, m.UserID, perm.Role(m.Role)); err == nil {
 		pub.User(ctx, m.UserID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceCreate{
 			WorkspaceCreate: &v1.WorkspaceCreate{Snapshot: snap},
 		}})
@@ -250,7 +256,11 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	h.joined(r.Context(), ws, m)
-	httpx.Write(w, http.StatusCreated, &v1.CreateWorkspaceResponse{Workspace: pbconv.Workspace(ws)})
+	pw := pbconv.Workspace(ws)
+	if err := h.limits.Plans.Fill(r.Context(), pw); err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusCreated, &v1.CreateWorkspaceResponse{Workspace: pw})
 	return nil
 }
 
@@ -267,7 +277,11 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.ListWorkspacesResponse{Workspaces: workspaceList(rows)})
+	list := workspaceList(rows)
+	if err := h.limits.Plans.FillAll(r.Context(), list); err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.ListWorkspacesResponse{Workspaces: list})
 	return nil
 }
 
@@ -292,7 +306,11 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.GetWorkspaceResponse{Workspace: pbconv.Workspace(ws), Role: role.Proto()})
+	pw := pbconv.Workspace(ws)
+	if err := h.limits.Plans.Fill(r.Context(), pw); err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.GetWorkspaceResponse{Workspace: pw, Role: role.Proto()})
 	return nil
 }
 
@@ -380,6 +398,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		return slugConflict(err)
 	}
 	pb := pbconv.Workspace(ws)
+	if err := h.limits.Plans.Fill(r.Context(), pb); err != nil {
+		return err
+	}
 	h.events.Workspace(r.Context(), wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceUpdate{WorkspaceUpdate: &v1.WorkspaceUpdate{Workspace: pb}}})
 	if mediaChanged {
 		h.publishRoomMedia(r.Context(), ws)
@@ -463,7 +484,11 @@ func (h *Handlers) memberResponse(ctx context.Context, ws sqlc.Workspace, m sqlc
 	if err != nil {
 		return nil, err
 	}
-	return &v1.JoinWorkspaceResponse{Workspace: pbconv.Workspace(ws), Member: pbconv.Member(m, u)}, nil
+	pw := pbconv.Workspace(ws)
+	if err := h.limits.Plans.Fill(ctx, pw); err != nil {
+		return nil, err
+	}
+	return &v1.JoinWorkspaceResponse{Workspace: pw, Member: pbconv.Member(m, u)}, nil
 }
 
 func (h *Handlers) joinOpen(w http.ResponseWriter, r *http.Request) error {

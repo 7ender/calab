@@ -25,6 +25,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/voice"
 )
@@ -57,6 +58,8 @@ type Service struct {
 	noSFUMove atomic.Bool
 	// waits: the armed expectConnect timers of this instance, session id -> *connectWait.
 	waits sync.Map
+	// Plans resolves workspace plan limits (ADR-0024); nil = no plan limits.
+	Plans *plans.Service
 }
 
 // SetSFUMove overrides the detected move mode — tests, or ops after a LiveKit upgrade that
@@ -94,6 +97,8 @@ func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handle
 type wsRoom struct {
 	sqlc.Room
 	WorkspaceID uuid.UUID // shadows the nullable Room.WorkspaceID
+	// Plan: effective limits of the workspace plan (ADR-0024); set by roomInfo only.
+	Plan plans.Limits
 }
 
 func (s *Service) getRoom(ctx context.Context, roomID uuid.UUID) (wsRoom, error) {
@@ -107,7 +112,8 @@ func (s *Service) getRoom(ctx context.Context, roomID uuid.UUID) (wsRoom, error)
 	return wsRoom{Room: room, WorkspaceID: *room.WorkspaceID}, nil
 }
 
-// roomInfo loads a live room with its effective media settings.
+// roomInfo loads a live room with its effective media settings: the room's own capped by the
+// workspace plan (max_stream_preset, max_streams; ADR-0024). room.Plan carries the plan limits.
 func (s *Service) roomInfo(ctx context.Context, roomID uuid.UUID) (wsRoom, *v1.RoomMediaSettings, error) {
 	room, err := s.getRoom(ctx, roomID)
 	if err != nil {
@@ -117,7 +123,28 @@ func (s *Service) roomInfo(ctx context.Context, roomID uuid.UUID) (wsRoom, *v1.R
 	if err != nil {
 		return room, nil, err
 	}
-	return room, pbconv.EffectiveMedia(room.Room, pbconv.WorkspaceDefaults(ws)), nil
+	if s.Plans != nil {
+		if room.Plan, err = s.Plans.Effective(ctx, room.WorkspaceID); err != nil {
+			return room, nil, err
+		}
+	}
+	return room, room.Plan.CapMedia(pbconv.EffectiveMedia(room.Room, pbconv.WorkspaceDefaults(ws))), nil
+}
+
+// admission is the occupancy check of a voice room: the room's user_limit (0 = none or the
+// caller is exempt) and the plan's room_members (0 = none), which applies to everyone.
+type admission struct{ room, plan int }
+
+func (a admission) active() bool { return a.room > 0 || a.plan > 0 }
+
+// admissionFor builds the check for a user joining room; exempt skips the room's user_limit
+// (MOVE_MEMBERS on join, ADMINISTRATOR on moves), never the plan limit.
+func admissionFor(room wsRoom, exempt bool) admission {
+	a := admission{plan: int(room.Plan.RoomMembers)}
+	if room.UserLimit > 0 && !exempt {
+		a.room = int(room.UserLimit)
+	}
+	return a
 }
 
 // streamSlotFree reports whether identity may start a stream: fewer than max streams by
@@ -173,14 +200,10 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	id := auth.MustFromContext(r.Context())
 	identity := voice.Identity(id.UserID, id.SessionID)
 	name := voice.RoomName(room.WorkspaceID, room.ID)
-	limited := room.UserLimit > 0 && !acc.Bits.Has(perm.MoveMembers)
-	if limited { // early answer without LiveKit; repeated atomically with the write below
-		full, err := s.roomFull(r.Context(), room.WorkspaceID, room.ID, int(room.UserLimit), id.UserID)
-		if err != nil {
+	adm := admissionFor(room, acc.Bits.Has(perm.MoveMembers))
+	if adm.active() { // early answer without LiveKit; repeated atomically with the write below
+		if err := s.admit(r.Context(), room.WorkspaceID, room.ID, id.UserID, adm); err != nil {
 			return err
-		}
-		if full {
-			return errRoomFull
 		}
 	}
 	if err := s.lk.CreateRoom(r.Context(), name, EmptyTimeout, s.cfg.MaxParticipants); err != nil {
@@ -197,7 +220,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	pending, joinedAt, err := s.recordPending(r.Context(), room, id.UserID, id.SessionID, limited)
+	pending, joinedAt, err := s.recordPending(r.Context(), room, id.UserID, id.SessionID, adm)
 	if err != nil {
 		return err
 	}
@@ -207,26 +230,23 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	httpx.Write(w, http.StatusOK, &v1.JoinVoiceResponse{
 		Url: s.cfg.PublicURL, Token: tok, Identity: identity, Media: media,
 		CanSpeak: s.canSpeak(r.Context(), room.WorkspaceID, id.UserID, acc.Bits), CanStream: slot,
-		CanVideo: acc.Bits.Has(perm.Video) && media.GetCameraLimit() > 0,
-		Pending:  pending,
+		CanVideo:   acc.Bits.Has(perm.Video) && media.GetCameraLimit() > 0,
+		Pending:    pending,
+		PlanLimits: room.Plan.Proto(),
 	})
 	return nil
 }
 
 // recordPending records the device in the room as pending under the workspace voice lock
-// (with the user_limit check when limited) and publishes the new state. A device already
+// (with the occupancy check when adm is active) and publishes the new state. A device already
 // recorded in the room is left as it is: pending reports whether it still waits for its
 // LiveKit connection, joinedAt identifies that wait (expectConnect). A device recorded in
 // another room (switching rooms) moves here and keeps its mute / deafen.
-func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.UUID, limited bool) (pending bool, joinedAt int64, err error) {
-	var (
-		full bool
-		c    voice.Change
-	)
+func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.UUID, adm admission) (pending bool, joinedAt int64, err error) {
+	var c voice.Change
 	err = s.voice.WithLock(ctx, room.WorkspaceID, func() error {
-		if limited {
-			var err error
-			if full, err = s.roomFull(ctx, room.WorkspaceID, room.ID, int(room.UserLimit), uid); err != nil || full {
+		if adm.active() {
+			if err := s.admit(ctx, room.WorkspaceID, room.ID, uid, adm); err != nil {
 				return err
 			}
 		}
@@ -247,9 +267,6 @@ func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.
 	})
 	if err != nil {
 		return false, 0, err
-	}
-	if full {
-		return false, 0, errRoomFull
 	}
 	s.publishVoice(ctx, room.WorkspaceID, c)
 	return pending, joinedAt, nil
@@ -291,14 +308,14 @@ func (s *Service) requestStream(w http.ResponseWriter, r *http.Request) error {
 	if !free {
 		return httpx.Conflict("stream limit of the room is reached")
 	}
-	preset := ClampPreset(req.GetPreset(), media.GetMaxStreamPreset())
+	preset := ClampPreset(req.GetPreset(), media.GetMaxStreamPreset()) // media is capped by the plan
 	if err := s.voice.ReserveStream(r.Context(), identity, preset); err != nil {
 		return err
 	}
 	if err := s.pushGrant(r.Context(), name, identity, room.WorkspaceID, id.UserID, acc.Bits, true); err != nil {
 		return httpx.Unavailable(err)
 	}
-	httpx.Write(w, http.StatusOK, &v1.RequestStreamResponse{Preset: preset})
+	httpx.Write(w, http.StatusOK, &v1.RequestStreamResponse{Preset: preset, Fps: room.Plan.StreamFPS(preset, req.GetFps())})
 	return nil
 }
 
@@ -691,25 +708,37 @@ func (s *Service) removeIdentities(ctx context.Context, room string, ids []strin
 	}
 }
 
-var errRoomFull = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL, "the room is full")
+var (
+	errRoomFull     = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL, "the room is full")
+	errRoomFullPlan = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_ROOM_FULL, "the room is full: the workspace plan limits users in a room")
+)
 
-// roomFull reports whether the room already has `limit` distinct users other than self
-// (a user already inside, e.g. joining from a second device, does not take a new place).
-func (s *Service) roomFull(ctx context.Context, wid, rid uuid.UUID, limit int, self uuid.UUID) (bool, error) {
+// admit fails with ROOM_FULL when the room already has as many distinct users other than
+// self (pending devices included) as a limit of adm allows; a user already inside (e.g.
+// joining from a second device) does not take a new place. The plan limit is reported with
+// reason PLAN_LIMIT.
+func (s *Service) admit(ctx context.Context, wid, rid, self uuid.UUID, adm admission) error {
 	states, err := s.voice.List(ctx, wid)
 	if err != nil {
-		return false, err
+		return err
 	}
 	users := map[uuid.UUID]bool{}
 	for _, st := range states {
 		if st.RoomID == rid {
 			if st.UserID == self {
-				return false, nil
+				return nil
 			}
 			users[st.UserID] = true
 		}
 	}
-	return len(users) >= limit, nil
+	n := len(users)
+	switch {
+	case adm.plan > 0 && n >= adm.plan:
+		return errRoomFullPlan.WithDetails(httpx.ReasonPlanLimit, uint64(n), uint64(adm.plan))
+	case adm.room > 0 && n >= adm.room:
+		return errRoomFull.WithDetails("", uint64(n), uint64(adm.room))
+	}
+	return nil
 }
 
 func rank(r perm.Role) int {

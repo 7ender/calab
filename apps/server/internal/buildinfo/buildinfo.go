@@ -51,10 +51,13 @@ func Info() *v1.GetVersionResponse {
 	}
 }
 
-// Routes registers the public GET /api/version.
-func Routes(mux *http.ServeMux) {
+// Routes registers the public GET /api/version; planContact is where users ask for a paid
+// plan (ADR-0024, config PlanContact).
+func Routes(mux *http.ServeMux, planContact string) {
 	mux.Handle("GET /api/version", httpx.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
-		httpx.Write(w, http.StatusOK, Info())
+		info := Info()
+		info.PlanContact = planContact
+		httpx.Write(w, http.StatusOK, info)
 		return nil
 	}))
 }

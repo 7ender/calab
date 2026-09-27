@@ -218,10 +218,15 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 		full bool
 		c    voice.Change
 	)
+	adm := admissionFor(room, acc.Bits.Has(perm.MoveMembers))
 	err = s.voice.WithLock(ctx, wid, func() error {
-		if room.UserLimit > 0 && !acc.Bits.Has(perm.MoveMembers) {
-			var err error
-			if full, err = s.roomFull(ctx, wid, rid, int(room.UserLimit), uid); err != nil || full {
+		if adm.active() {
+			if err := s.admit(ctx, wid, rid, uid, adm); err != nil {
+				var he *httpx.Error
+				if errors.As(err, &he) && he.Code == v1.ErrorCode_ERROR_CODE_ROOM_FULL {
+					full = true
+					return nil
+				}
 				return err
 			}
 		}

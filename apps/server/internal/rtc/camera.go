@@ -84,8 +84,8 @@ func (s *Service) cameraSlotFree(ctx context.Context, rid uuid.UUID, identity st
 	return n < limit, nil
 }
 
-// requestCamera: POST /api/rooms/{id}/camera/request → 204 | 409 (limit reached, cameras
-// off, not in the call).
+// requestCamera: POST /api/rooms/{id}/camera/request {preset?, fps?} → 200 with the granted
+// quality (capped by the plan, ADR-0024) | 409 (limit reached, cameras off, not in the call).
 func (s *Service) requestCamera(w http.ResponseWriter, r *http.Request) error {
 	roomID, err := httpx.PathUUID(r, "id", "room")
 	if err != nil {
@@ -97,6 +97,10 @@ func (s *Service) requestCamera(w http.ResponseWriter, r *http.Request) error {
 	}
 	if !acc.Bits.Has(perm.Connect | perm.Video) {
 		return httpx.Forbidden("VIDEO required")
+	}
+	var req v1.RequestCameraRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
 	}
 	room, media, err := s.roomInfo(r.Context(), roomID)
 	if err != nil {
@@ -135,7 +139,8 @@ func (s *Service) requestCamera(w http.ResponseWriter, r *http.Request) error {
 	if err := s.pushGrant(r.Context(), name, identity, room.WorkspaceID, id.UserID, acc.Bits, s.streamHeld(r.Context(), roomID, identity)); err != nil {
 		return httpx.Unavailable(err)
 	}
-	httpx.NoContent(w)
+	preset, fps := room.Plan.Camera(req.GetPreset(), req.GetFps())
+	httpx.Write(w, http.StatusOK, &v1.RequestCameraResponse{Preset: preset, Fps: fps})
 	return nil
 }
 

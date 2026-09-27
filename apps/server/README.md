@@ -77,6 +77,9 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `LIVEKIT_INTERNAL_URL` | — | URL для API (`http://127.0.0.1:7880`) |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | — | задаются все четыре LIVEKIT_* или ни одной (тогда voice-эндпоинты → 503) |
 | `LIVEKIT_MAX_PARTICIPANTS` | `50` | `max_participants` комнаты LiveKit |
+| `PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` | встроенные (ADR-0024) | JSON поверх дефолтов тарифа, напр. `{"room_members":5,"stream_max_preset":"h720","stream_max_fps":15,"storage_mb":1024}`; 0 / `""` = без лимита; неверный JSON — сервер не стартует |
+| `PLAN_CONTACT_URL` / `PLAN_CONTACT_EMAIL` | — / `it@gptunnel.ai` | куда писать за подпиской (`plan_contact` в READY и `/api/version`): URL, иначе `mailto:` |
+| `SUPERADMIN_EMAILS` | — | email суперадминов через запятую: `/api/admin/*`, `me.is_superadmin` |
 | `UNFURL_ALLOW_CIDRS` | — | только dev: диапазоны, которые превью ссылок может запрашивать, хотя они не публичные (VPN с fake-IP, напр. `198.18.0.0/15`); loopback/link-local всё равно запрещены |
 | `GATEWAY_HEARTBEAT_INTERVAL` | `41s` | интервал heartbeat (presence TTL = 2×) |
 | `GATEWAY_MAX_SESSIONS_PER_USER` | `5` | лимит устройств с активным gateway |

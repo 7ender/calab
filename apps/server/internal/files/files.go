@@ -13,6 +13,7 @@ import (
 	"hash"
 	"io"
 	"log/slog"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -34,6 +35,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/profile"
 	"github.com/calaba/calaba/server/internal/redisx"
 )
@@ -52,7 +54,11 @@ type Service struct {
 	maxBytes int64
 	maxTotal int64               // server-wide cap on stored bytes (STORAGE_MAX_TOTAL_BYTES)
 	limiter  *redisx.RateLimiter // uploads per user
+	plans    *plans.Service      // workspace plan storage limit (ADR-0024); nil = none
 }
+
+// SetPlans sets the plan resolver (storage_mb caps the workspace quota).
+func (s *Service) SetPlans(p *plans.Service) { s.plans = p }
 
 // MaxUnattachedBytes caps what one user may keep uploaded-but-not-attached in a workspace,
 // so that nobody (e.g. a guest) can occupy the quota with orphans until the 24 h cleanup.
@@ -119,6 +125,42 @@ var (
 	errTooLarge = errors.New("file too large")
 	errQuota    = httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED, "workspace storage quota exceeded")
 )
+
+// quotaLimit is the effective storage quota of a workspace: its own storage_quota_bytes or
+// the plan's storage_mb, whichever is lower (byPlan: the plan's is the binding one).
+type quotaLimit struct {
+	limit  int64
+	byPlan bool
+}
+
+// err is 413 FILE_QUOTA_EXCEEDED with the usage and the quota (reason PLAN_LIMIT when the
+// plan's limit is the binding one).
+func (q quotaLimit) err(used int64) error {
+	reason := ""
+	if q.byPlan {
+		reason = httpx.ReasonPlanLimit
+	}
+	return errQuota.WithDetails(reason, uint64(max(used, 0)), uint64(max(q.limit, 0)))
+}
+
+// quota returns the effective quota and the plan's limit for ReserveQuota (MaxInt64 = none).
+func (s *Service) quota(ctx context.Context, ws sqlc.Workspace) (quotaLimit, int64, error) {
+	q, planQuota := quotaLimit{limit: ws.StorageQuotaBytes}, int64(math.MaxInt64)
+	if s.plans == nil {
+		return q, planQuota, nil
+	}
+	l, err := s.plans.Effective(ctx, ws.ID)
+	if err != nil {
+		return q, planQuota, err
+	}
+	if b, ok := l.StorageBytes(); ok {
+		planQuota = b
+		if b < q.limit {
+			q = quotaLimit{limit: b, byPlan: true}
+		}
+	}
+	return q, planQuota, nil
+}
 
 func tooLarge(limit int64) error {
 	return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_TOO_LARGE,
@@ -317,8 +359,12 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if r.ContentLength > 0 && ws.StorageUsedBytes+r.ContentLength-(1<<20) > ws.StorageQuotaBytes {
-		return errQuota // early reject from Content-Length before reading the body
+	quota, planQuota, err := s.quota(r.Context(), ws)
+	if err != nil {
+		return err
+	}
+	if r.ContentLength > 0 && ws.StorageUsedBytes+r.ContentLength-(1<<20) > quota.limit {
+		return quota.err(ws.StorageUsedBytes) // early reject from Content-Length before reading the body
 	}
 	st, err := s.receive(w, r, s.maxBytes, func(id uuid.UUID) string { return blob.FileKey(wsID, id) }, false)
 	if err != nil {
@@ -329,9 +375,12 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 		if err := s.checkTotal(r.Context(), q, st.size); err != nil {
 			return err
 		}
-		if _, err := q.ReserveQuota(r.Context(), sqlc.ReserveQuotaParams{ID: wsID, Size: st.size}); err != nil {
+		if _, err := q.ReserveQuota(r.Context(), sqlc.ReserveQuotaParams{ID: wsID, Size: st.size, PlanQuota: planQuota}); err != nil {
 			if db.IsNotFound(err) {
-				return errQuota
+				if cur, err := q.GetWorkspace(r.Context(), wsID); err == nil {
+					return quota.err(cur.StorageUsedBytes)
+				}
+				return quota.err(ws.StorageUsedBytes)
 			}
 			return err
 		}

@@ -23,15 +23,18 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/voice"
 )
 
 // Config tunes the gateway.
 type Config struct {
-	HeartbeatInterval  time.Duration // docs/05: ~41 s
-	MaxSessionsPerUser int           // docs/05: 5
-	ShutdownSpread     time.Duration // RECONNECT spread on graceful shutdown
-	AllowedOrigins     []string      // web client origins (PUBLIC_APP_URL[_ALT]), see OriginAllowed
+	HeartbeatInterval  time.Duration  // docs/05: ~41 s
+	MaxSessionsPerUser int            // docs/05: 5
+	ShutdownSpread     time.Duration  // RECONNECT spread on graceful shutdown
+	AllowedOrigins     []string       // web client origins (PUBLIC_APP_URL[_ALT]), see OriginAllowed
+	Plans              *plans.Service // Workspace.plan in snapshots (ADR-0024); nil = unset
+	PlanContact        string         // Ready.plan_contact
 }
 
 // Hub owns this instance's gateway sessions.

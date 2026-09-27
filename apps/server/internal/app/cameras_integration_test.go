@@ -90,7 +90,7 @@ func TestCameras(t *testing.T) {
 
 	// A real participant with a real camera track in the dev LiveKit.
 	sid := publishDemoCamera(t, roomName, bj.GetIdentity())
-	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	bob.must(200, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
 	if p, _ := lkRec.lastPerm(bj.GetIdentity()); !hasSource(p, rtc.SourceCamera) {
 		t.Fatalf("camera source not granted: %+v", p)
 	}
@@ -168,7 +168,7 @@ func TestCameras(t *testing.T) {
 	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/allow-camera", nil, nil)
 
 	// Own stop releases the grant; cameras off (0) and a VIDEO deny refuse requests.
-	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	bob.must(200, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
 	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/stop", nil, nil)
 	if p, _ := lkRec.lastPerm(bj.GetIdentity()); hasSource(p, rtc.SourceCamera) {
 		t.Fatalf("camera still granted after own stop: %+v", p)
@@ -275,7 +275,7 @@ func TestCameraLifecycle(t *testing.T) {
 	granted := func() bool { p, _ := lkRec.lastPerm(bi); return hasSource(p, rtc.SourceCamera) }
 
 	// Reconcile records a live camera whose webhook was missed.
-	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	bob.must(200, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
 	reconcileNow(t)
 	camOn(true)
 	if _, ok := cameraRecords(t, rid)[sid]; !ok {
@@ -323,7 +323,7 @@ func TestCameraLifecycle(t *testing.T) {
 		t.Fatal("camera granted after stop-camera")
 	}
 	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/allow-camera", nil, nil)
-	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	bob.must(200, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
 	// Only a reservation (no track yet): stop-camera still acts → 204 (L8).
 	o.must(204, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-camera", nil, nil)
 	o.must(404, "POST", "/api/rooms/"+rid+"/voice/"+bob.id+"/stop-camera", nil, nil)
@@ -356,7 +356,7 @@ func TestCameraMove(t *testing.T) {
 	g.identify(o.token)
 	bi := joinCall(t, bob, g, a, name(a))
 	sid := publishDemoCamera(t, name(a), bi)
-	bob.must(204, "POST", "/api/rooms/"+a+"/camera/request", nil, nil)
+	bob.must(200, "POST", "/api/rooms/"+a+"/camera/request", nil, nil)
 	cameraPublished(t, name(a), bi, sid)
 	g.wait("camera on in a", func(e *v1.DispatchEvent) bool {
 		s := e.GetVoiceStateUpdate().GetState()
@@ -417,7 +417,7 @@ func TestCameraAppLevelMove(t *testing.T) {
 	bg.identify(bob.token)
 	bi := joinCall(t, bob, g, a, name(a))
 	sid := publishDemoCamera(t, name(a), bi)
-	bob.must(204, "POST", "/api/rooms/"+a+"/camera/request", nil, nil)
+	bob.must(200, "POST", "/api/rooms/"+a+"/camera/request", nil, nil)
 	cameraPublished(t, name(a), bi, sid)
 	g.wait("camera on in a", func(e *v1.DispatchEvent) bool {
 		s := e.GetVoiceStateUpdate().GetState()
@@ -447,7 +447,7 @@ func TestCameraAppLevelMove(t *testing.T) {
 	// A moderator's stop in the target survives the old connection leaving room a.
 	signalJoin(t, mv.GetToken()) // the device reconnects to b with the move token
 	webhook(t, whEvent("participant_joined", name(b), bi, nil), "secret")
-	bob.must(204, "POST", "/api/rooms/"+b+"/camera/request", nil, nil)
+	bob.must(200, "POST", "/api/rooms/"+b+"/camera/request", nil, nil)
 	o.must(204, "POST", "/api/rooms/"+b+"/voice/"+bob.id+"/stop-camera", nil, nil)
 	webhook(t, whEvent("participant_left", name(a), bi, nil), "secret")
 	bob.must(403, "POST", "/api/rooms/"+b+"/camera/request", nil, nil)
@@ -481,7 +481,7 @@ func TestCameraStopSurvivesReconnect(t *testing.T) {
 	}
 
 	// Camera on, a record for the live track and an old ghost track of the replaced connection.
-	bob.must(204, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
+	bob.must(200, "POST", "/api/rooms/"+rid+"/camera/request", nil, nil)
 	cameraPublished(t, roomName, bi, sid)
 	g.wait("camera on", func(e *v1.DispatchEvent) bool {
 		s := e.GetVoiceStateUpdate().GetState()

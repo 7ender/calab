@@ -24,6 +24,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/workspaces"
@@ -46,6 +47,8 @@ type Service struct {
 	store   blob.Store
 	limiter *redisx.RateLimiter // guest creation per IP (5/h)
 	origins []string
+	// Plans fills Workspace.plan in the snapshot of a newly joined workspace (nil = unset).
+	Plans *plans.Service
 }
 
 // NewService creates the guests service.
@@ -302,7 +305,7 @@ func (s *Service) announce(ctx context.Context, row sqlc.GetRoomInviteByCodeRow,
 		}})
 	}
 	if added != nil {
-		workspaces.AnnounceJoin(ctx, s.db.Q, s.events, row.Workspace, *added)
+		workspaces.AnnounceJoin(ctx, s.db.Q, s.Plans, s.events, row.Workspace, *added)
 	}
 }
 

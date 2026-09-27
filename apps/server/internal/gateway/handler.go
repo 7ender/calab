@@ -365,13 +365,13 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	if err != nil {
 		return nil, err
 	}
-	ready := &v1.Ready{SessionId: s.id.String(), Me: pbconv.Me(u)}
+	ready := &v1.Ready{SessionId: s.id.String(), Me: pbconv.Me(u), PlanContact: h.cfg.PlanContact}
 	for _, w := range wss {
 		role, err := res.Role(ctx, w.ID, uid)
 		if err != nil {
 			continue
 		}
-		snap, err := workspaces.Snapshot(ctx, h.db.Q, w, uid, role)
+		snap, err := workspaces.Snapshot(ctx, h.db.Q, h.cfg.Plans, w, uid, role)
 		if err != nil {
 			return nil, err
 		}

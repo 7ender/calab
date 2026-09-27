@@ -78,6 +78,27 @@ type Config struct {
 	StoragePath    string `env:"STORAGE_PATH" envDefault:"./data/files"`
 	MaxFileSizeMB  int64  `env:"MAX_FILE_SIZE_MB" envDefault:"50"`
 	MigrateOnStart bool   `env:"MIGRATE_ON_START" envDefault:"true"`
+
+	// Plans (ADR-0024). JSON limits over the built-in defaults, e.g.
+	// {"room_members":5,"stream_max_preset":"h720","stream_max_fps":15,"storage_mb":1024}; 0 = no limit.
+	PlanFreeLimits string `env:"PLAN_FREE_LIMITS"`
+	PlanTeamLimits string `env:"PLAN_TEAM_LIMITS"`
+	// Where to ask for a paid plan: PLAN_CONTACT_URL wins, else mailto:PLAN_CONTACT_EMAIL.
+	PlanContactURL   string `env:"PLAN_CONTACT_URL"`
+	PlanContactEmail string `env:"PLAN_CONTACT_EMAIL" envDefault:"it@gptunnel.ai"`
+	// Product superadmins (comma-separated emails): /api/admin/*, Me.is_superadmin.
+	SuperadminEmails []string `env:"SUPERADMIN_EMAILS" envSeparator:","`
+}
+
+// PlanContact is the "contact us to buy" link shown to users (ADR-0024).
+func (c *Config) PlanContact() string {
+	if u := strings.TrimSpace(c.PlanContactURL); u != "" {
+		return u
+	}
+	if e := strings.TrimSpace(c.PlanContactEmail); e != "" {
+		return "mailto:" + e
+	}
+	return ""
 }
 
 // Load parses the environment and validates the result.

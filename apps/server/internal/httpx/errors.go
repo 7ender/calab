@@ -19,7 +19,29 @@ type Error struct {
 	Err     error // internal cause, logged but never sent
 	// RetryAfter, if set, is sent as the Retry-After header (429).
 	RetryAfter time.Duration
+	// Reason, Used, Limit: optional details (ApiError.reason / used / limit), e.g. a plan
+	// limit (ADR-0024).
+	Reason      string
+	Used, Limit uint64
+	base        *Error // the error WithDetails copied (errors.Is matches it)
 }
+
+// ReasonPlanLimit marks errors caused by a limit of the workspace plan (ADR-0024).
+const ReasonPlanLimit = "PLAN_LIMIT"
+
+// WithDetails returns a copy of e with ApiError.reason / used / limit set; errors.Is(copy, e)
+// holds.
+func (e *Error) WithDetails(reason string, used, limit uint64) *Error {
+	c := *e
+	c.Reason, c.Used, c.Limit = reason, used, limit
+	if c.base == nil {
+		c.base = e
+	}
+	return &c
+}
+
+// Is reports whether target is the error this one was copied from by WithDetails.
+func (e *Error) Is(target error) bool { return e.base != nil && target == error(e.base) }
 
 func (e *Error) Error() string {
 	if e.Err != nil {
@@ -32,7 +54,14 @@ func (e *Error) Unwrap() error { return e.Err }
 
 // Proto converts the error to the wire message.
 func (e *Error) Proto() *v1.ApiError {
-	return &v1.ApiError{Code: e.Code, Message: e.Message, Field: e.Field}
+	p := &v1.ApiError{Code: e.Code, Message: e.Message, Field: e.Field}
+	if e.Reason != "" {
+		p.Reason = &e.Reason
+	}
+	if e.Limit > 0 {
+		p.Used, p.Limit = &e.Used, &e.Limit
+	}
+	return p
 }
 
 // AsError extracts an *Error from err; unknown errors become 500 INTERNAL.

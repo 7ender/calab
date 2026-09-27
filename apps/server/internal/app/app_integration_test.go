@@ -149,6 +149,11 @@ func run(m *testing.M) int {
 		LiveKitAPIKey:              "devkey",
 		LiveKitAPISecret:           "secret",
 		LiveKitMaxParticipants:     50,
+		// Plans (ADR-0024): no plan limits by default, so other tests see room settings only;
+		// plans_integration_test sets the free limits it needs.
+		PlanFreeLimits:   unlimitedPlan,
+		PlanContactEmail: "it@gptunnel.ai",
+		SuperadminEmails: []string{superadminEmail},
 	}
 	cfg.TrustedProxies = mustPrefixes("127.0.0.1/32", "::1/128")
 	if err := cfg.Validate(); err != nil {

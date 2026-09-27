@@ -25,9 +25,11 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/rtc"
+	"github.com/calaba/calaba/server/internal/superadmin"
 	"github.com/calaba/calaba/server/internal/unfurl"
 	"github.com/calaba/calaba/server/internal/users"
 	"github.com/calaba/calaba/server/internal/workspaces"
@@ -55,6 +57,7 @@ type App struct {
 	Files   *files.Service
 	Guests  *guests.Service
 	RTC     *rtc.Service // nil when LiveKit is not configured
+	Plans   *plans.Service
 }
 
 // Run starts background work (gateway fan-out, presence sweeper, orphan file cleanup,
@@ -64,6 +67,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Files.RunCleanup(ctx, time.Hour)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
 	go a.Guests.RunCleanup(ctx, time.Hour)
+	go a.Plans.Run(ctx)
 	if a.RTC != nil {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)
 	}
@@ -80,8 +84,15 @@ func unfurlPolicy(d Deps) func(netip.Addr) bool {
 }
 
 // New builds the router. Next stages (gateway, messages, files, rtc) register their
-// routes here the same way.
+// routes here the same way. The config must be valid (config.Load / Validate): invalid
+// PLAN_*_LIMITS panic here.
 func New(d Deps) *App {
+	superadmin.Configure(d.Config.SuperadminEmails)
+	free, team, err := plans.Defaults(d.Config.PlanFreeLimits, d.Config.PlanTeamLimits)
+	if err != nil {
+		panic(err) // validated by config.Validate
+	}
+	planSvc := plans.New(d.DB, d.Redis, free, team)
 	base := d.Events
 	if base == nil {
 		base = events.Redis{C: d.Redis}
@@ -99,6 +110,7 @@ func New(d Deps) *App {
 			PublicURL: d.Config.LiveKitURL, APIKey: d.Config.LiveKitAPIKey, Secret: d.Config.LiveKitAPISecret,
 			MaxParticipants: d.Config.LiveKitMaxParticipants,
 		}, d.DB, d.Redis, lk, base)
+		rtcSvc.Plans = planSvc
 		pub = rtc.SyncPublisher{Publisher: base, S: rtcSvc}
 	}
 
@@ -111,11 +123,14 @@ func New(d Deps) *App {
 	msgLimiter := redisx.NewRateLimiter(d.Redis, "rl:msg:", 5, 60)                                                                         // 5 per 5 s per room and user
 	filesSvc := files.NewService(d.DB, d.Blob, pub, d.Config.MaxFileSizeMB<<20, d.Config.StorageMaxTotalBytes)
 	filesSvc.SetLimiter(redisx.NewRateLimiter(d.Redis, "rl:upload:", 30, 2)) // 30 at once, 120 per hour
+	filesSvc.SetPlans(planSvc)
 	hub := gateway.New(gateway.Config{
 		HeartbeatInterval:  d.Config.HeartbeatInterval,
 		MaxSessionsPerUser: d.Config.MaxDevicesPerUser,
 		ShutdownSpread:     5 * time.Second,
 		AllowedOrigins:     d.Config.AllowedOrigins(),
+		Plans:              planSvc,
+		PlanContact:        d.Config.PlanContact(),
 	}, d.DB, d.Redis, authSvc, pub)
 
 	// Authenticated API routes: identity + fresh per-request permission resolver.
@@ -127,7 +142,7 @@ func New(d Deps) *App {
 
 	mux := http.NewServeMux()
 	health.Routes(mux, d.DB.Pool, d.Redis)
-	buildinfo.Routes(mux)
+	buildinfo.Routes(mux, d.Config.PlanContact())
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.Handle("GET /gateway", hub)
 
@@ -139,6 +154,7 @@ func New(d Deps) *App {
 		MaxOwned:      d.Config.MaxWorkspacesPerUser,
 		Quota:         d.Config.DefaultWorkspaceQuotaBytes,
 		CreateLimiter: redisx.NewRateLimiter(d.Redis, "rl:ws-create:", d.Config.WorkspaceCreatesPerHour, float64(d.Config.WorkspaceCreatesPerHour)/60),
+		Plans:         planSvc,
 	}).Routes(mux, private)
 	roomHandlers := rooms.NewHandlers(d.DB, pub)
 	roomHandlers.Routes(mux, private)
@@ -148,7 +164,9 @@ func New(d Deps) *App {
 	filesSvc.Routes(mux, private)
 	guestSvc := guests.NewService(d.DB, authSvc, pub, d.Blob,
 		redisx.NewRateLimiter(d.Redis, "rl:guest:", 5, 5.0/60), d.Config.AllowedOrigins()) // 5 guests/h per IP
+	guestSvc.Plans = planSvc
 	guestSvc.Routes(mux, private)
+	plans.NewAdmin(d.DB, planSvc, pub, redisx.NewRateLimiter(d.Redis, "rl:admin:", 60, 60)).Routes(mux, private) // 60 per minute
 	unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
 		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
 	if rtcSvc != nil {
@@ -168,5 +186,5 @@ func New(d Deps) *App {
 		httpx.Recover,
 		events.Middleware, // one post-commit publish budget per request
 	)
-	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc}
+	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc}
 }

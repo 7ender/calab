@@ -41,7 +41,7 @@ func TestVoiceLeave(t *testing.T) {
 	u, sid := uuid.New(), uuid.New()
 
 	// Pending → leave: state gone, the 15 s wait cancelled.
-	_, joined, err := s.recordPending(ctx, room, u, sid, false)
+	_, joined, err := s.recordPending(ctx, room, u, sid, admission{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestVoiceLeave(t *testing.T) {
 	}
 
 	// Connected → leave: removed from LiveKit and from the room.
-	if _, _, err := s.recordPending(ctx, room, u, sid, false); err != nil {
+	if _, _, err := s.recordPending(ctx, room, u, sid, admission{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.setFlag(ctx, wid, rid, u, sid, func(n *voice.SessionState) { n.Pending = false }); err != nil {
@@ -91,7 +91,7 @@ func TestCallStartsOnConnect(t *testing.T) {
 
 	// Pending join, never connected: no call, before and after the rollback.
 	a, as := uuid.New(), uuid.New()
-	_, aj, err := s.recordPending(ctx, room, a, as, false)
+	_, aj, err := s.recordPending(ctx, room, a, as, admission{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestCallStartsOnConnect(t *testing.T) {
 
 	// Pending, then connected: the call starts at the connect.
 	b, bs := uuid.New(), uuid.New()
-	_, bj, err := s.recordPending(ctx, room, b, bs, false)
+	_, bj, err := s.recordPending(ctx, room, b, bs, admission{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestCallStartsOnConnect(t *testing.T) {
 		t.Fatalf("call start %d (ok=%v, calls %v), pending since %d", at, ok, c.Calls, bj)
 	}
 	// Another pending device does not move it; the connected one leaving ends the call.
-	if _, _, err := s.recordPending(ctx, room, uuid.New(), uuid.New(), false); err != nil {
+	if _, _, err := s.recordPending(ctx, room, uuid.New(), uuid.New(), admission{}); err != nil {
 		t.Fatal(err)
 	}
 	if at2, _ := started(); at2 != at {

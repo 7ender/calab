@@ -14,6 +14,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/notifications"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/superadmin"
 )
 
 func ts(t time.Time) *timestamppb.Timestamp { return timestamppb.New(t) }
@@ -188,7 +189,7 @@ func Me(u sqlc.User) *v1.Me {
 	if u.Email != nil {
 		email = *u.Email
 	}
-	return &v1.Me{User: User(u), Email: email, Settings: Settings(u.Settings)}
+	return &v1.Me{User: User(u), Email: email, Settings: Settings(u.Settings), IsSuperadmin: superadmin.IsPtr(u.Email)}
 }
 
 // Session converts a session; current marks the caller's own session.

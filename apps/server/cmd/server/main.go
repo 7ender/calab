@@ -24,6 +24,7 @@ import (
 	"github.com/calaba/calaba/server/internal/buildinfo"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 )
 
@@ -88,6 +89,9 @@ func migrate(ctx context.Context, cfg *config.Config, args []string) error {
 }
 
 func serve(ctx context.Context, cfg *config.Config) error {
+	if _, _, err := plans.Defaults(cfg.PlanFreeLimits, cfg.PlanTeamLimits); err != nil {
+		return fmt.Errorf("config: PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS: %w", err)
+	}
 	d, err := db.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err

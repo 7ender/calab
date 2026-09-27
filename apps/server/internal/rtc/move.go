@@ -94,13 +94,9 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	if !movedDst.Bits.Has(perm.ViewRoom | perm.Connect) {
 		return httpx.Forbidden("the member cannot connect to the target room")
 	}
-	if dst.UserLimit > 0 && !actorDst.Bits.Has(perm.Administrator) {
-		full, err := s.roomFull(r.Context(), dst.WorkspaceID, dstID, int(dst.UserLimit), target)
-		if err != nil {
+	if adm := admissionFor(dst, actorDst.Bits.Has(perm.Administrator)); adm.active() {
+		if err := s.admit(r.Context(), dst.WorkspaceID, dstID, target, adm); err != nil {
 			return err
-		}
-		if full {
-			return errRoomFull
 		}
 	}
 	sess, err := s.memberSessions(r.Context(), acc.WorkspaceID, srcID, target)
