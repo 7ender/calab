@@ -188,7 +188,8 @@ func run(m *testing.M) int {
 	a := app.New(app.Deps{Config: cfg, DB: d, Redis: rc, Events: events.Redis{C: rc}, Blob: store, LiveKit: lkRec,
 		UnfurlAllowAddr: func(netip.Addr) bool { return true }, // test pages are served on loopback
 		Mail:            testMail,
-		Egress:          rtc.NewEgress(egressURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)})
+		Egress:          rtc.NewEgress(egressURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret),
+		BotWebhooks:     botWebhookOptions})
 	a.Recording.Tick, a.Recording.PollMin = 100*time.Millisecond, 50*time.Millisecond
 	a.Recording.ResultBackoff = []time.Duration{50 * time.Millisecond, 50 * time.Millisecond}
 	a.Mail.Poll = 200 * time.Millisecond

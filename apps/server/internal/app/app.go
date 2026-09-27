@@ -95,6 +95,7 @@ func (a *App) Run(ctx context.Context) {
 	}
 	go a.Mail.Run(ctx) // returns at once without mail
 	go a.Recording.Run(ctx)
+	go a.Bots.Run(ctx) // bot webhook deliveries
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
