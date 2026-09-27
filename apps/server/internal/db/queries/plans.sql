@@ -39,6 +39,7 @@ LIMIT 50;
 -- time of the newest message; epoch = none).
 SELECT sqlc.embed(w), sqlc.embed(u),
     p.note AS plan_note, p.updated_by AS plan_updated_by, p.updated_at AS plan_updated_at,
+    sb.email AS suspended_by_email,
     (SELECT count(*) FROM workspace_members m WHERE m.workspace_id = w.id AND m.role <> 'guest')::integer AS members,
     (SELECT count(*) FROM rooms r WHERE r.workspace_id = w.id AND r.archived_at IS NULL)::integer AS rooms,
     coalesce((SELECT max(lm.created_at) FROM rooms r
@@ -47,4 +48,5 @@ SELECT sqlc.embed(w), sqlc.embed(u),
 FROM workspaces w
 JOIN users u ON u.id = w.owner_id
 LEFT JOIN workspace_plans p ON p.workspace_id = w.id
+LEFT JOIN users sb ON sb.id = w.suspended_by
 WHERE w.id = ANY(sqlc.arg('ids')::uuid[]);

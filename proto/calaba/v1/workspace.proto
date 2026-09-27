@@ -30,6 +30,25 @@ message Workspace {
   // GET /api/workspaces[/{id}], create / join); unset in discover and invite previews. The
   // effective file quota is min(storage_quota_bytes, plan.limits.storage_mb MiB).
   WorkspacePlan plan = 12;
+  // Set while a superadmin has suspended the workspace (read-only: writes get 403
+  // WORKSPACE_SUSPENDED). Unset = active.
+  WorkspaceSuspension suspension = 13;
+}
+
+message WorkspaceSuspension {
+  google.protobuf.Timestamp at = 1;
+  // Why: only for the owner and admins (and the admin API); empty for everyone else.
+  string reason = 2;
+}
+
+// A banned user (settings → «Banned»; MANAGE_WORKSPACE).
+message WorkspaceBan {
+  string workspace_id = 1;
+  User user = 2;       // the banned account (guest accounts too)
+  string email = 3;    // the account's address at ban time, if any: it is banned as well
+  string reason = 4;
+  string banned_by = 5; // user id; empty = account deleted
+  google.protobuf.Timestamp created_at = 6;
 }
 
 message WorkspaceMember {
@@ -204,4 +223,27 @@ message CreateEmailInviteResponse {
 // DELETE /api/workspaces/{id}/invites/email/{inviteId} → 204: revokes the link.
 message ListEmailInvitesResponse {
   repeated EmailInvite invites = 1;
+}
+
+// ---- Bans (backlog item 32). MANAGE_WORKSPACE; the owner cannot be banned, an admin only by
+// the owner, nobody bans themself. ----
+
+// POST /api/workspaces/{id}/bans → 201 CreateBanResponse. Removes the member (like
+// DELETE …/members/{user_id}: WORKSPACE_MEMBER_REMOVE, voice disconnect) and refuses every way
+// back (403 BANNED): invitations, open join, email invitations (pending ones to the address are
+// revoked), room links. Banning a user who is no longer a member works too. WORKSPACE_BAN_ADD
+// goes to the owner / admins. reason ≤ 500 characters.
+message CreateBanRequest {
+  string user_id = 1;
+  string reason = 2;
+}
+
+message CreateBanResponse {
+  WorkspaceBan ban = 1;
+}
+
+// GET /api/workspaces/{id}/bans → newest first. DELETE /api/workspaces/{id}/bans/{user_id} →
+// 204 (WORKSPACE_BAN_REMOVE to the owner / admins); the user may be invited again.
+message ListBansResponse {
+  repeated WorkspaceBan bans = 1;
 }

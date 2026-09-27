@@ -22,6 +22,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -265,6 +266,15 @@ func grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomInviteByCodeRow
 	isMember := err == nil
 	if err != nil && !db.IsNotFound(err) {
 		return nil, false, err
+	}
+	// A suspended workspace takes nobody in; banned users stay out (item 32).
+	if err := moderation.CheckSuspended(ctx, q, wsID); err != nil {
+		return nil, false, err
+	}
+	if !isMember {
+		if err := moderation.CheckBan(ctx, q, wsID, userID, nil); err != nil {
+			return nil, false, err
+		}
 	}
 	if isMember {
 		acc, err := perm.NewResolver(q).Room(ctx, roomID, userID)

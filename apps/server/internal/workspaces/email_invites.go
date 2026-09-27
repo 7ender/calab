@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"math"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -157,6 +159,9 @@ func (h *Handlers) addMember(w http.ResponseWriter, r *http.Request) error {
 		if ws, err = q.GetWorkspace(r.Context(), wsID); err != nil {
 			return err
 		}
+		if err := moderation.CheckBan(r.Context(), q, wsID, target, u.Email); err != nil {
+			return err
+		}
 		m, err = q.AddMember(r.Context(), sqlc.AddMemberParams{WorkspaceID: wsID, UserID: target, Role: string(perm.RoleMember)})
 		if db.IsNotFound(err) { // ON CONFLICT DO NOTHING
 			return httpx.Conflict("already a member")
@@ -237,13 +242,19 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 			return httpx.Validation("role", "role must be MEMBER or ADMIN")
 		}
 	}
+	var existing uuid.UUID // the address's account, if any
 	if u, err := h.db.Q.GetUserByEmail(r.Context(), &email); err == nil {
+		existing = u.ID
 		if _, err := h.db.Q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: u.ID}); err == nil {
 			return httpx.Conflict("already a member")
 		} else if !db.IsNotFound(err) {
 			return err
 		}
 	} else if !db.IsNotFound(err) {
+		return err
+	}
+	// A banned address (or account) is not invited again until the ban is lifted (item 32).
+	if err := moderation.CheckBan(r.Context(), h.db.Q, wsID, existing, &email); err != nil {
 		return err
 	}
 	if err := take(r.Context(), h.email.Send, uid(r).String()); err != nil {
@@ -406,6 +417,20 @@ func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub ev
 			return err
 		}
 		for _, ei := range rows {
+			// Banned meanwhile (the ban revokes pending invitations, but an account can carry
+			// another address) or suspended: the invitation stays unused.
+			if err := moderation.CheckBan(ctx, q, ei.WorkspaceID, u.ID, u.Email); err != nil {
+				if errors.Is(err, moderation.ErrBanned) {
+					continue
+				}
+				return err
+			}
+			if err := moderation.CheckSuspended(ctx, q, ei.WorkspaceID); err != nil {
+				if errors.Is(err, moderation.ErrSuspended) {
+					continue
+				}
+				return err
+			}
 			if err := q.AcceptEmailInvite(ctx, ei.ID); err != nil {
 				return err
 			}
