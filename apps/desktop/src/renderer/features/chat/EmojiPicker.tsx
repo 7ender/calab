@@ -33,6 +33,7 @@ export function EmojiPicker({
   closeOnPick = false,
   canPick,
   hint,
+  inModal = false,
 }: {
   onPick: (emoji: string) => void;
   label: string;
@@ -45,6 +46,13 @@ export function EmojiPicker({
   canPick?: (emoji: string) => boolean;
   /** A note above the grid, e.g. «Не больше 3 реакций на сообщение». */
   hint?: string | undefined;
+  /**
+   * Opened from a modal sheet («Свой статус»): the popover layer (--z-popover) sits under the
+   * sheet's scrim (--z-modal) — shown off to the side, behind the scrim, and not clickable. Use
+   * --z-modal-popover and open below the trigger (a field near the sheet's top edge has no room
+   * above). Radix nests the layers: Esc and outside clicks close the picker only.
+   */
+  inModal?: boolean;
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const change = (v: boolean): void => {
@@ -58,12 +66,17 @@ export function EmojiPicker({
       </Tip>
       <Popover.Portal>
         <Popover.Content
-          side="top"
-          align="end"
-          sideOffset={10}
+          side={inModal ? 'bottom' : 'top'}
+          align={inModal ? 'start' : 'end'}
+          sideOffset={inModal ? 6 : 10}
           collisionPadding={16}
           aria-label={t('chat.emoji')}
-          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[372px] w-[348px] mobile:h-[min(75dvh,560px)] flex-col overflow-hidden rounded-[var(--radius-panel)]"
+          data-testid="emoji-picker"
+          className={cx(
+            'mat-popover dense anim-in flex h-[372px] w-[348px] mobile:h-[min(75dvh,560px)] flex-col overflow-hidden rounded-[var(--radius-panel)]',
+            // A short window: the grid shrinks to the room under the button (the picker scrolls anyway).
+            inModal ? 'z-[var(--z-modal-popover)] max-h-[var(--radix-popover-content-available-height)]' : 'z-[var(--z-popover)]',
+          )}
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <PickerBody

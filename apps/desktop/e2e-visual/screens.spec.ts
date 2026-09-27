@@ -63,6 +63,7 @@ const KEY = new Set([
   'workspace-menu',
   'self-mic-menu',
   'self-status-menu',
+  'self-custom-status',
   'quick-switcher',
   'settings-2',
   'settings-3',
@@ -743,6 +744,39 @@ test('self-status-menu', async ({ open, win, mock, shot }) => {
   await win.keyboard.press('ArrowRight');
   await expect(win.getByRole('menuitem', { name: '15 минут' })).toBeFocused();
   await checkpoint(shot, 'self-status-menu');
+});
+
+/**
+ * «Свой статус» sheet: the emoji picker opens over the sheet, under the emoji button — not behind
+ * the scrim (it did: --z-popover < --z-modal). A pick fills the button; Esc closes only the picker.
+ */
+test('self-custom-status', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByRole('button', { name: /^Мой статус/ }).click();
+  await win.getByTestId('status-custom').click();
+  const dialog = win.getByRole('dialog', { name: 'Свой статус' });
+  await expect(dialog).toBeVisible();
+  const button = dialog.getByTestId('custom-status-emoji');
+  const picker = win.getByTestId('emoji-picker');
+  await button.click();
+  await expect(picker).toBeVisible();
+  await win.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await button.click();
+  await picker.getByRole('button', { name: '😀', exact: true }).first().click();
+  await expect(picker).toBeHidden();
+  await expect(button).toHaveText('😀');
+  await dialog.locator('#custom-status-text').fill('Пишу ADR');
+  await button.click();
+  await expect(picker).toBeVisible();
+  // On top: the picker itself takes a click at its centre (not the sheet's scrim).
+  const box = await picker.boundingBox();
+  if (!box) throw new Error('picker has no box');
+  const topmost = await win.evaluate(([x, y]) => !!document.elementFromPoint(x ?? 0, y ?? 0)?.closest('[data-testid="emoji-picker"]'), [box.x + box.width / 2, box.y + box.height / 2]);
+  expect(topmost).toBe(true);
+  await checkpoint(shot, 'self-custom-status');
 });
 
 /** Mic ▾ (docs/09 #28): «Режим» switched to push-to-talk in the menu — key pill, «Изменить…», release delay. */

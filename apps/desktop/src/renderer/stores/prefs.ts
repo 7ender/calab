@@ -15,6 +15,7 @@ import type { LocalePref } from '../i18n/types';
 import type { OpenChatSound } from '../lib/chatSound';
 import type { SoundName } from '../lib/sounds';
 import type { Combo, HotkeyAction } from '../lib/shortcuts';
+import type { StatusChoice } from '../services/customStatus';
 
 /**
  * Device-local preferences (localStorage — nothing secret here). Settings that
@@ -77,6 +78,8 @@ export interface Prefs {
   presenceUntil: number | null;
   /** false = `presence` was chosen here while offline (or predates server-side statuses): the next READY sends it instead of taking the server's. */
   presenceSynced: boolean;
+  /** My last custom statuses (status menu «Свой статус», newest first, ≤ 3; presets excluded). */
+  recentStatuses: StatusChoice[];
   /** Personal voice bitrate cap (UserSettings.audio_bitrate_kbps); null = room setting. */
   personalBitrateKbps: number | null;
   /** First-run onboarding finished on this device (docs/08, «Онбординг»). */
@@ -122,6 +125,7 @@ const DEFAULTS: Prefs = {
   presence: PresenceStatus.ONLINE,
   presenceUntil: null,
   presenceSynced: true,
+  recentStatuses: [],
   personalBitrateKbps: null,
   onboarded: false,
   afkMinutes: 10,
