@@ -23,7 +23,8 @@ import { userColorIndex, type RowMeta } from './grouping';
 import { LinkPreview } from './LinkPreview';
 import { MessageActions, hasMessageActions } from './MessageActions';
 import { HOVER_DELAY_MS, createHoverIntent } from './hoverIntent';
-import { previewText, useMentionLabel } from './mentionText';
+import { previewPartsOf, useMentionLabel } from './mentionText';
+import { PreviewRuns } from './PreviewRuns';
 import { MessageMenu } from './MessageMenu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
@@ -485,9 +486,9 @@ function ReactionChip({ roomId, m, emoji, count, me, canReact }: { roomId: strin
 function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string; workspaceId: string; replyToId: string; padTop: boolean }): ReactNode {
   const target = useMessages((s) => s.rooms[roomId]?.items.find((c) => c.key === replyToId)?.msg);
   const jump = useChatView((s) => s.requestJump);
-  const snippet = target
-    ? systemPreview(target) || previewText(workspaceId, target.content).slice(0, 140) || (target.attachments.length ? t('chat.attachment') : '')
-    : '';
+  const sys = target ? systemPreview(target) : '';
+  const parts = target && !sys ? previewPartsOf(workspaceId, target.content, 140) : [];
+  const snippet = sys || (parts.length ? <PreviewRuns parts={parts} /> : target?.attachments.length ? t('chat.attachment') : '');
   const who = target ? memberName(workspaceId, target.authorId) : t('chat.reply');
   return (
     <div className={cx('px-2 pb-0.5', padTop ? 'pt-2' : 'pt-1')}>

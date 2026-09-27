@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { t } from '../../i18n';
-import { mentionTargets, parseMarkdown, toPlainText } from '../../lib/markdown/parse';
+import { mentionTargets, parseMarkdown, previewParts, toPlainText, type PreviewPart } from '../../lib/markdown/parse';
 import { useWorkspaces } from '../../stores/workspaces';
 
 type WsState = ReturnType<typeof useWorkspaces.getState>;
@@ -34,17 +34,28 @@ export function previewText(wsId: string | null, content: string): string {
   return toPlainText(parseMarkdown(content), (v) => mentionLabel(wsId, v));
 }
 
+/** previewText() as runs: code (inline or a block squeezed to one line) is drawn monospace (PreviewRuns). */
+export function previewPartsOf(wsId: string | null, content: string, max?: number): PreviewPart[] {
+  return previewParts(parseMarkdown(content), (v) => mentionLabel(wsId, v), max);
+}
+
 /**
- * Reactive previewText(): the markdown is parsed once per content; the store selector only
+ * Reactive previewPartsOf(): the markdown is parsed once per content; the store selector only
  * joins the labels of the mentioned users (a string), so unrelated store updates (presence,
  * other members) cost a few lookups and no re-render.
  */
-export function usePreviewText(wsId: string | null, content: string): string {
+export function usePreviewParts(wsId: string | null, content: string): PreviewPart[] {
   const nodes = useMemo(() => parseMarkdown(content), [content]);
   const ids = useMemo(() => mentionTargets(nodes).users, [nodes]);
   const labels = useWorkspaces((st) => ids.map((v) => labelIn(st, wsId, v)).join('\u0000'));
   return useMemo(() => {
     const byId = new Map(ids.map((v, i) => [v, labels.split('\u0000')[i] ?? '']));
-    return toPlainText(nodes, (v) => byId.get(v) ?? labelIn(useWorkspaces.getState(), wsId, v));
+    return previewParts(nodes, (v) => byId.get(v) ?? labelIn(useWorkspaces.getState(), wsId, v));
   }, [nodes, ids, labels, wsId]);
+}
+
+/** Reactive previewText() (usePreviewParts joined). */
+export function usePreviewText(wsId: string | null, content: string): string {
+  const parts = usePreviewParts(wsId, content);
+  return useMemo(() => parts.map((p) => p.v).join(''), [parts]);
 }
