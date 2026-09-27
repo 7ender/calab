@@ -15,6 +15,8 @@
 | api | `apps/server/Dockerfile` (Go → distroless static, nonroot) | **host**, `HTTP_ADDR=127.0.0.1:3000` | ходит в Postgres/Valkey/LiveKit по 127.0.0.1; миграции сам при старте; файлы — `STORAGE_DRIVER=fs`, volume `files_data` → `/data/files` (ADR-0011; каталог создан в образе с владельцем nonroot 65532, свежий named volume наследует его — отдельный chown не нужен); healthcheck — `/server healthcheck` |
 | postgres | `postgres:18-alpine` | bridge, `127.0.0.1:5432` | PG 18 — встроенный `uuidv7()`; volume на `/var/lib/postgresql` |
 | valkey | `valkey/valkey:9-alpine` — Valkey, совместим с Redis (ADR-0017) | bridge, `127.0.0.1:6379` | AOF, volume `valkey_data`; healthcheck `valkey-cli ping` |
+| egress | `livekit/egress:v1.14.1` (digest запинен; совместим с livekit-server 1.13) | host | запись встреч (ADR-0025): audio-only room composite без Chrome → MP4 в volume `recordings_data` (`/out`); с LiveKit — через Valkey (DB 1) и ws `127.0.0.1:7880`; лимит 4 CPU / 4 GB; внутренний порт шаблонов 7980 (снаружи закрыт файрволом) |
+| recordings-init | образ valkey (one-shot) | none | делает `recordings_data` владением api (65532) до старта api/egress |
 
 Почему api в host network: API обращается к LiveKit (`127.0.0.1:7880`, signal слушает только loopback), а LiveKit шлёт webhook на `127.0.0.1:3000`. Из bridge-сети это требовало бы `host.docker.internal` и правил файрвола для `docker0`; в host network всё идёт по loopback, наружу API не торчит (слушает только 127.0.0.1).
 
@@ -34,7 +36,8 @@ MinIO нет (ADR-0011): образ `minio/minio` удалён с Docker Hub, с
 - Деплой на стенд — с машины разработчика, **git на хосте нет**: `infra/docker/sync.sh [сервисы…]` = `rsync` рабочего дерева в `/opt/calaba` (без `node_modules`, `.git`, `dist`, `.env*`, `livekit.gen.yaml`; `--delete`, исключённые пути защищены) + `ssh … /opt/calaba/infra/docker/deploy.sh [сервисы…]`. `SYNC_ONLY=1` — только синхронизация; `STAND_HOST`/`STAND_DIR` переопределяют хост/каталог. CI (GitHub Actions) позже будет собирать образы.
 - Миграции (`goose`) API выполняет **автоматически при старте** под `pg_advisory_lock` — при нескольких репликах мигрирует только одна, остальные ждут. Отдельного шага `migrate` при деплое нет (для k8s та же команда доступна как job).
 - Детектор говорящих LiveKit (секция `audio` шаблона: `active_level: 40`, `update_interval: 150`, см. docs/02 «Индикация речи собеседников») читается только при старте: изменение вступает в силу после перезапуска `livekit` — `deploy.sh` делает это сам при изменении отрендеренного конфига (короткий обрыв медиа, выкатывать в релизное окно).
-- LiveKit работает одной нодой, Redis ему не нужен; блок `redis:` в шаблоне закомментирован — включить при добавлении второй ноды (db 1).
+- LiveKit работает одной нодой, но с Redis (Valkey, DB 1, пароль — env `REDIS_PASSWORD` контейнера, в файл не рендерится): без него egress недоступен (ADR-0025). **Первый деплой с записью встреч перезапускает LiveKit** (изменился отрендеренный конфиг) — короткий обрыв звонков, выкатывать в релизное окно; порядок: `deploy.sh valkey livekit egress api`.
+- **Запись встреч (ADR-0025).** env api: `GPTUNNEL_API_URL` (по умолчанию `https://gptunnel.ai`), `RECORDING_MAX_CONCURRENT` (3; одна запись ≈ 0.5 CPU egress), `RECORDINGS_PATH=/data/recordings` + `RECORDING_EGRESS_DIR=/out` (один volume `recordings_data` в двух контейнерах). Диск: AAC ~128 кбит/с ≈ 60 МБ/ч, ≤ 4 ч на запись → ≤ ~250 МБ; файл удаляется после `done`, неудачные — через 7 дней; volume в бэкапы не входит (записи временные). Проверка на стенде — smoke из TESTING «Запись встреч». Подключение пространства — код из GPTunneL в настройках пространства.
 
 Подготовка хоста (одноразово):
 ```
@@ -180,7 +183,7 @@ STEPS="preflight build" VERSION=0.1.0 infra/docker/release.sh <commit> # лок�
 
 ## Dev локально (macOS)
 
-`infra/docker/compose.dev.yml`: postgres, valkey, livekit (dev-режим: `--dev`, ключи `devkey/secret`, без TLS, UDP mux 7882). API и Electron — на хосте через pnpm; файлы API в dev — `STORAGE_DRIVER=fs` с локальным каталогом (`infra/docker/data/` в `.gitignore`). LiveKit в Docker на macOS не имеет host-сети → для локальных тестов медиа между двумя машинами в LAN LiveKit лучше запускать бинарником (`brew install livekit`), в Docker — только для одного клиента на localhost.
+`infra/docker/compose.dev.yml`: postgres, valkey, livekit (dev-режим: `--dev`, ключи `devkey/secret`, без TLS, UDP mux 7882, Valkey DB 1), egress (в сетевом пространстве livekit; файлы — `apps/server/data/recordings`, это `RECORDINGS_PATH` API по умолчанию). Образ egress ~1.5 ГБ: `docker compose -f infra/docker/compose.dev.yml up -d` без имён сервисов его скачает — если запись не нужна, поднимать `postgres valkey livekit mailpit`. API и Electron — на хосте через pnpm; файлы API в dev — `STORAGE_DRIVER=fs` с локальным каталогом (`infra/docker/data/` в `.gitignore`). LiveKit в Docker на macOS не имеет host-сети → для локальных тестов медиа между двумя машинами в LAN LiveKit лучше запускать бинарником (`brew install livekit`), в Docker — только для одного клиента на localhost.
 
 ## Потом: Kubernetes
 

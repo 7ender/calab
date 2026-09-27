@@ -51,6 +51,10 @@ const (
 	ErrorCode_ERROR_CODE_EMAIL_NOT_VERIFIED ErrorCode = 20
 	ErrorCode_ERROR_CODE_CODE_INVALID       ErrorCode = 21 // 422: wrong email code (password reset: also unknown / expired)
 	ErrorCode_ERROR_CODE_CODE_EXPIRED       ErrorCode = 22 // 422: no active email code (expired, used up after 5 attempts) — request a new one
+	// Meeting recording (ADR-0025).
+	ErrorCode_ERROR_CODE_NOT_PAIRED        ErrorCode = 23 // 409: the workspace is not connected to GPTunneL (ask an owner / admin)
+	ErrorCode_ERROR_CODE_ALREADY_RECORDING ErrorCode = 24 // 409: the room is already being recorded
+	ErrorCode_ERROR_CODE_RECORDING_LIMIT   ErrorCode = 25 // 409: RECORDING_MAX_CONCURRENT recordings run on the server (used / limit)
 )
 
 // Enum value maps for ErrorCode.
@@ -79,6 +83,9 @@ var (
 		20: "ERROR_CODE_EMAIL_NOT_VERIFIED",
 		21: "ERROR_CODE_CODE_INVALID",
 		22: "ERROR_CODE_CODE_EXPIRED",
+		23: "ERROR_CODE_NOT_PAIRED",
+		24: "ERROR_CODE_ALREADY_RECORDING",
+		25: "ERROR_CODE_RECORDING_LIMIT",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":           0,
@@ -104,6 +111,9 @@ var (
 		"ERROR_CODE_EMAIL_NOT_VERIFIED":    20,
 		"ERROR_CODE_CODE_INVALID":          21,
 		"ERROR_CODE_CODE_EXPIRED":          22,
+		"ERROR_CODE_NOT_PAIRED":            23,
+		"ERROR_CODE_ALREADY_RECORDING":     24,
+		"ERROR_CODE_RECORDING_LIMIT":       25,
 	}
 )
 
@@ -503,7 +513,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xc3\x05\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xa0\x06\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -528,7 +538,10 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x17ERROR_CODE_STORAGE_FULL\x10\x13\x12!\n" +
 	"\x1dERROR_CODE_EMAIL_NOT_VERIFIED\x10\x14\x12\x1b\n" +
 	"\x17ERROR_CODE_CODE_INVALID\x10\x15\x12\x1b\n" +
-	"\x17ERROR_CODE_CODE_EXPIRED\x10\x16B\x99\x01\n" +
+	"\x17ERROR_CODE_CODE_EXPIRED\x10\x16\x12\x19\n" +
+	"\x15ERROR_CODE_NOT_PAIRED\x10\x17\x12 \n" +
+	"\x1cERROR_CODE_ALREADY_RECORDING\x10\x18\x12\x1e\n" +
+	"\x1aERROR_CODE_RECORDING_LIMIT\x10\x19B\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

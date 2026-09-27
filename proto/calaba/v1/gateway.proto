@@ -5,6 +5,7 @@ import "google/protobuf/timestamp.proto";
 import "calaba/v1/media.proto";
 import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
+import "calaba/v1/recording.proto";
 import "calaba/v1/room.proto";
 import "calaba/v1/user.proto";
 import "calaba/v1/workspace.proto";
@@ -162,6 +163,8 @@ message DispatchEvent {
     VoiceCameraStop voice_camera_stop = 30;
     DmCreate dm_create = 31;
     WorkspaceNotificationUpdate workspace_notification_update = 32;
+    // A room's recording started or stopped (ADR-0025); to everyone who sees the room.
+    RoomRecording room_recording = 33;
   }
 }
 
@@ -219,6 +222,8 @@ message WorkspaceSnapshot {
   // After READY, clients recompute from Room.permission_overrides (computeRoomPermissions).
   map<string, uint64> permissions = 7;
   repeated RoomCategory categories = 8;
+  // Rooms being recorded now (state ACTIVE; ADR-0025), among the visible rooms.
+  repeated RoomRecording recordings = 9;
 }
 
 message Ready {

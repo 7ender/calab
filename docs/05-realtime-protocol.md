@@ -83,10 +83,12 @@ RESUMED                       { replayed }  — после успешного RE
 CATEGORY_CREATE / UPDATE / DELETE
 MESSAGE_REACTION_ADD / REMOVE { workspace_id, room_id, message_id, user_id, emoji }
 DM_CREATE                     { dm: DmSummary } — обоим участникам нового DM, каждому со своим peer
+ROOM_RECORDING                { workspace_id, room_id, recording_id, state: ACTIVE | STOPPED, by_user_id, since,
+                                stop_reason, stopped_by } — запись встречи началась / остановилась (ADR-0025)
 ```
 
 Фильтрация по получателю (выполняет gateway, без запросов в БД — у инстанса кэш комнат и ролей каждого workspace, обновляемый самими событиями):
-- `MESSAGE_*`, `VOICE_STREAM_*` — только тем, у кого `VIEW_ROOM` в комнате; `TYPING_START` — кроме того только сессиям, подписанным на комнату через `SUBSCRIBE` (и не самому печатающему).
+- `MESSAGE_*`, `VOICE_STREAM_*`, `ROOM_RECORDING` — только тем, у кого `VIEW_ROOM` в комнате; `TYPING_START` — кроме того только сессиям, подписанным на комнату через `SUBSCRIBE` (и не самому печатающему).
 - `ROOM_UPDATE` / `ROOM_PERMISSIONS_UPDATE` / `WORKSPACE_MEMBER_UPDATE` (смена роли) пересчитывают видимость: доступ появился → получатель видит `ROOM_CREATE` с комнатой, пропал → `ROOM_DELETE`, остался → исходное событие.
 - `VOICE_STATE_UPDATE` для невидимой получателю комнаты приходит с пустым `room_id` (пользователь выглядит не в голосе).
 - Вступление в workspace → `WORKSPACE_CREATE { snapshot }` на все устройства пользователя; выход/исключение/удаление → `WORKSPACE_DELETE`.
@@ -130,6 +132,14 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
   - **Выход** — `POST /api/rooms/{id}/voice/leave` (только своя сессия, всегда 204): снимает состояние устройства в этой комнате (pending или connected) с `VOICE_STATE_UPDATE` сразу, отменяет 15-секундное ожидание и удаляет участника из LiveKit, если он там есть. Устройство, уже записанное в другой комнате (новый `/join`), не трогается. Клиент вызывает его при «Отключиться» и отмене входа — после `room.disconnect()`, без ожидания ответа, но после ответа `/join`, если тот ещё в пути; следующий `/join` ждёт незавершённый leave (≤ 3 с).
   - Агрегат по пользователю: `pending` = все его устройства в этой комнате ещё подключаются. Клиент до ответа `/join` вставляет себя в список сам, а при ошибке `/join` убирает.
   Свежие записи не удаляются (grace 15 с от начала прохода): состояние с `joinedAt` и стрим (демонстрация экрана) со `startedAt` моложе «начало − 15 с» могли появиться по webhook'у уже после листинга; запись стрима без времени старта считается старой.
+
+## Запись встреч (ADR-0025)
+
+- `GET /api/workspaces/{id}/integrations/gptunnel` (участник, не гость) → `{ integration: { paired, deviceName, account, pairedBy, pairedAt, webUrl } }`; `POST` `{ code: "ABCD-EFGH" }` (`MANAGE_WORKSPACE`) — подключить (заменяет прежнее; `422 CODE_INVALID`, `429`, `503`); `DELETE` → 204 — отключить (токен отзывается в GPTunneL).
+- `POST /api/rooms/{id}/recording/start` → `{ recording: RoomRecording }` (участник не гость, `VIEW_ROOM | CONNECT`, голосовая комната, идёт звонок). Ошибки: `403` (гость / `allow_recording = false`), `409 NOT_PAIRED`, `409 ALREADY_RECORDING`, `409 RECORDING_LIMIT` (`used`/`limit`), `409 CONFLICT` (в звонке никого), `503` (egress недоступен). `POST …/recording/stop` → `{ recording }` со `state = STOPPED`, `404`, если запись не идёт.
+- `READY` / `WORKSPACE_CREATE`: `WorkspaceSnapshot.recordings[]` — идущие записи видимых комнат (`state = ACTIVE`); таймер «REC» — от `since`.
+- Карточка в чате комнаты — системное сообщение: `Message.kind = SYSTEM`, `content` пуст, `system.recording = RecordingCard { recording_id, started_by, started_at, duration_sec, status: UPLOADING | PROCESSING | DONE | FAILED, web_url, error }`, автор — кто начал запись. Появляется при остановке (`MESSAGE_CREATE`), дальше обновляется (`MESSAGE_UPDATE`, без `edited_at`). Редактировать нельзя (403), удалять/закреплять/реагировать — как обычное. `error`: коды GPTunneL (`insufficient_balance`, `empty_audio`, …) или наши (`device_revoked`, `not_paired`, `upload_failed`, `no_audio`, `recorder_failed`, `timeout`).
+- `Room.allow_recording` (по умолчанию `true`) меняет `PATCH /api/rooms/{id}` `{ allowRecording }` — нужно `MANAGE_WORKSPACE`.
 
 ## REST
 

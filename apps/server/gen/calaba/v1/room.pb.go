@@ -349,9 +349,12 @@ type Room struct {
 	UserLimit      uint32                 `protobuf:"varint,16,opt,name=user_limit,json=userLimit,proto3" json:"user_limit,omitempty"` // voice rooms: max users (0 = unlimited, 1..99); MOVE_MEMBERS ignores it
 	// Voice rooms: a short status of the current call ("Планёрка", ≤ 60 chars); empty = none.
 	// Set by PATCH /api/rooms/{id}/voice-status, cleared when the room empties (ROOM_UPDATE).
-	VoiceStatus   string `protobuf:"bytes,17,opt,name=voice_status,json=voiceStatus,proto3" json:"voice_status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	VoiceStatus string `protobuf:"bytes,17,opt,name=voice_status,json=voiceStatus,proto3" json:"voice_status,omitempty"`
+	// Voice rooms: members may record the meeting (ADR-0025). Default true; changed with
+	// PATCH /api/rooms/{id} allow_recording, which needs MANAGE_WORKSPACE.
+	AllowRecording bool `protobuf:"varint,18,opt,name=allow_recording,json=allowRecording,proto3" json:"allow_recording,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Room) Reset() {
@@ -501,6 +504,13 @@ func (x *Room) GetVoiceStatus() string {
 		return x.VoiceStatus
 	}
 	return ""
+}
+
+func (x *Room) GetAllowRecording() bool {
+	if x != nil {
+		return x.AllowRecording
+	}
+	return false
 }
 
 // The caller's notification settings for one room. Rooms without a stored row use the
@@ -1495,8 +1505,11 @@ type UpdateRoomRequest struct {
 	MediaOverride *RoomMediaOverride     `protobuf:"bytes,4,opt,name=media_override,json=mediaOverride,proto3,oneof" json:"media_override,omitempty"`
 	CategoryId    *string                `protobuf:"bytes,5,opt,name=category_id,json=categoryId,proto3,oneof" json:"category_id,omitempty"` // "" = remove from category
 	UserLimit     *uint32                `protobuf:"varint,6,opt,name=user_limit,json=userLimit,proto3,oneof" json:"user_limit,omitempty"`   // 0 = unlimited
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_WORKSPACE besides
+	// MANAGE_ROOM; switching it off stops a running recording.
+	AllowRecording *bool `protobuf:"varint,7,opt,name=allow_recording,json=allowRecording,proto3,oneof" json:"allow_recording,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *UpdateRoomRequest) Reset() {
@@ -1569,6 +1582,13 @@ func (x *UpdateRoomRequest) GetUserLimit() uint32 {
 		return *x.UserLimit
 	}
 	return 0
+}
+
+func (x *UpdateRoomRequest) GetAllowRecording() bool {
+	if x != nil && x.AllowRecording != nil {
+		return *x.AllowRecording
+	}
+	return false
 }
 
 // PATCH /api/rooms/{id}/voice-status (voice rooms): CONNECT and being in the call now, or
@@ -1882,7 +1902,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x13_audio_bitrate_kbpsB\x14\n" +
 	"\x12_max_stream_presetB\x0e\n" +
 	"\f_max_streamsB\x0f\n" +
-	"\r_camera_limit\"\xe6\x05\n" +
+	"\r_camera_limit\"\x8f\x06\n" +
 	"\x04Room\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12'\n" +
@@ -1905,7 +1925,8 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x10voice_started_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x0evoiceStartedAt\x12\x1d\n" +
 	"\n" +
 	"user_limit\x18\x10 \x01(\rR\tuserLimit\x12!\n" +
-	"\fvoice_status\x18\x11 \x01(\tR\vvoiceStatus\"\xa4\x01\n" +
+	"\fvoice_status\x18\x11 \x01(\tR\vvoiceStatus\x12'\n" +
+	"\x0fallow_recording\x18\x12 \x01(\bR\x0eallowRecording\"\xa4\x01\n" +
 	"\x18RoomNotificationSettings\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x122\n" +
 	"\x05level\x18\x02 \x01(\x0e2\x1c.calaba.v1.NotificationLevelR\x05level\x12;\n" +
@@ -1988,7 +2009,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\"X\n" +
 	"\x0fGetRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12 \n" +
-	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\xce\x02\n" +
+	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\x90\x03\n" +
 	"\x11UpdateRoomRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x19\n" +
 	"\x05topic\x18\x02 \x01(\tH\x01R\x05topic\x88\x01\x01\x12\x1f\n" +
@@ -1997,13 +2018,15 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\vcategory_id\x18\x05 \x01(\tH\x04R\n" +
 	"categoryId\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"user_limit\x18\x06 \x01(\rH\x05R\tuserLimit\x88\x01\x01B\a\n" +
+	"user_limit\x18\x06 \x01(\rH\x05R\tuserLimit\x88\x01\x01\x12,\n" +
+	"\x0fallow_recording\x18\a \x01(\bH\x06R\x0eallowRecording\x88\x01\x01B\a\n" +
 	"\x05_nameB\b\n" +
 	"\x06_topicB\v\n" +
 	"\t_positionB\x11\n" +
 	"\x0f_media_overrideB\x0e\n" +
 	"\f_category_idB\r\n" +
-	"\v_user_limit\"2\n" +
+	"\v_user_limitB\x12\n" +
+	"\x10_allow_recording\"2\n" +
 	"\x18UpdateVoiceStatusRequest\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\"9\n" +
 	"\x12UpdateRoomResponse\x12#\n" +

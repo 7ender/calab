@@ -63,6 +63,9 @@ message Room {
   // Voice rooms: a short status of the current call ("Планёрка", ≤ 60 chars); empty = none.
   // Set by PATCH /api/rooms/{id}/voice-status, cleared when the room empties (ROOM_UPDATE).
   string voice_status = 17;
+  // Voice rooms: members may record the meeting (ADR-0025). Default true; changed with
+  // PATCH /api/rooms/{id} allow_recording, which needs MANAGE_WORKSPACE.
+  bool allow_recording = 18;
 }
 
 // Per-user notification level of a room or a workspace (docs/05 «Уведомления»). UNSPECIFIED
@@ -209,6 +212,9 @@ message UpdateRoomRequest {
   optional RoomMediaOverride media_override = 4;
   optional string category_id = 5; // "" = remove from category
   optional uint32 user_limit = 6;  // 0 = unlimited
+  // Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_WORKSPACE besides
+  // MANAGE_ROOM; switching it off stops a running recording.
+  optional bool allow_recording = 7;
 }
 
 // PATCH /api/rooms/{id}/voice-status (voice rooms): CONNECT and being in the call now, or

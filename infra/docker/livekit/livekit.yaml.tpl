@@ -18,10 +18,12 @@ rtc:
       - 172.16.0.0/12
   # on bad UDP the SDK falls back to TCP / TURN by itself
 
-# Single node for MVP. Enable when adding a 2nd node; use db 1 (db 0 belongs to the API):
-# redis:
-#   address: 127.0.0.1:6379
-#   db: 1
+# Redis (Valkey): the egress service (meeting recording, ADR-0025) is reached only through it;
+# also what a 2nd node would need. DB 1 (DB 0 belongs to the API). The password comes from env
+# REDIS_PASSWORD (compose.yml), not from this file.
+redis:
+  address: 127.0.0.1:6379
+  db: 1
 
 turn:
   enabled: true

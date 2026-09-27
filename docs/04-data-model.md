@@ -68,6 +68,16 @@ dm_members          room_id, user_id, created_at                PK (room_id, use
                     rooms += dm_key? (unique: least(a,b) || ':' || greatest(a,b));
                     CHECK (type = 'dm') = (workspace_id IS NULL), (type = 'dm') = (dm_key IS NOT NULL)
 
+workspace_integrations workspace_id, kind ('gptunnel'), token_enc? (device token, AES-GCM как mail_outbox; NULL = отключено),
+                    device_id, device_name, account, web_url, paired_by?, paired_at, revoked_at?   PK (workspace_id, kind)
+room_recordings     id (uuidv7 приложения), workspace_id, room_id, started_by?, stopped_by?,
+                    status (pending|recording|uploading|processing|done|failed), stop_reason, egress_id? (unique),
+                    file (<workspace>/<id>.mp4 на томе записей), size_bytes, duration_sec, started_at, stopped_at?,
+                    empty_since?, gptunnel_id, web_url, error, message_id? (карточка в чате), attempts, next_at?
+                    (очередь загрузки/опроса), processing_since?, file_deleted_at?
+                    UNIQUE (room_id) WHERE status IN (pending, recording) — одна запись на комнату (ADR-0025)
+                    rooms += allow_recording (true);  messages += kind ('user'|'system'), payload? (jsonb SystemMessage)
+
 voice_states        (не в Postgres — в Redis, источник LiveKit webhooks)
                     ключ — сессия (LiveKit identity = <user_id>:<session_id>):
                     workspace_id → { session_id → { user_id, room_id, muted, deafened,
@@ -191,6 +201,13 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
   - файлы: квота = `min(storage_quota_bytes, storage_mb MiB)`; превышение → `413 FILE_QUOTA_EXCEEDED` c `used`/`limit` (байты), `reason = PLAN_LIMIT`, если упёрлись в план.
 - `Room.media` остаётся настройками комнаты (UI различает замок «комната» и замок «тариф»); эффективные лимиты плана — в `Workspace.plan.limits` и в ответе `/join` (`media` уже урезан планом, `plan_limits`).
 - Суперадмин — пользователь с email из `SUPERADMIN_EMAILS`; флаг не хранится, вычисляется из текущего email при каждом запросе (`Me.is_superadmin`).
+
+## Запись встреч (ADR-0025)
+
+- **Подключение GPTunneL** — на пространство: код из GPTunneL → `POST /v1/meetings/device/pair` → device token хранится зашифрованным в `workspace_integrations` (ключ из `JWT_SECRET`, назначение `calaba/workspace-integration/v1`). Подключает/отключает `MANAGE_WORKSPACE`; статус видят все участники, кроме гостей. 401 от GPTunneL (устройство отозвано в вебе) → токен забывается, запись падает с `device_revoked`.
+- **Кто пишет**: участник пространства (не гость) с `VIEW_ROOM | CONNECT` в голосовой комнате, где идёт звонок и `allow_recording = true` (выключает `MANAGE_WORKSPACE`; выключение останавливает идущую запись). Одна запись на комнату, не больше `RECORDING_MAX_CONCURRENT` на сервер (под `pg_advisory_xact_lock`).
+- **Жизнь записи** (`room_recordings.status`): `pending` (строка до старта egress) → `recording` (egress идёт; стоп — `stopped_at`/`stop_reason`, строка остаётся `recording`, пока egress не отдаст файл) → `uploading` (файл на томе, очередь) → `processing` (загружено, GPTunneL распознаёт; `web_url`) → `done` (файл удалён) | `failed` (`error`). Авто-стоп: 4 ч, звонок пуст 2 мин, комната запретила запись. Файлы `failed` удаляются через 7 дней (janitor), бесхозные `.mp4` — через 8.
+- **Воркер**: один на кластер (блокировка Valkey `rec:worker`), очередь — строки `uploading|processing` с `next_at` (захват сдвигает `next_at` на аренду 15 мин). Загрузка — кусками 8 МБ с `Content-Range`, докачка по `Upload-Offset`/409/HEAD, ретраи с backoff 30 с → 30 мин ≤ 24 ч; опрос статуса 20 с → 5 мин ≤ 2 ч (`timeout`). Reconcile (раз в 15 с): строки без живого egress забираются (файл есть → загрузка, нет → `failed`), `pending` старше 2 мин падают, наши egress без строки останавливаются.
 
 ## Auth (MVP)
 

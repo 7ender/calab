@@ -21,6 +21,11 @@ webhook:
   urls:
     - http://host.docker.internal:3000/api/rtc/webhook
 
+# Egress (meeting recording, ADR-0025) is reached only over Redis. DB 1: DB 0 is the API's.
+redis:
+  address: valkey:6379
+  db: 1
+
 room:
   auto_create: false      # as in production: only the API creates rooms
   empty_timeout: 300

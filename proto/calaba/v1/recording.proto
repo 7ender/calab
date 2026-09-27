@@ -1,0 +1,105 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Meeting recording and transcription in GPTunneL (ADR-0025). The server records the room's
+// mixed audio (LiveKit Egress), uploads it to GPTunneL with the workspace's device token and
+// posts a card (SystemMessage.recording) into the room chat.
+
+// Whether a room is being recorded (the "REC" indicator).
+enum RoomRecordingState {
+  ROOM_RECORDING_STATE_UNSPECIFIED = 0;
+  ROOM_RECORDING_STATE_ACTIVE = 1;  // recording now
+  ROOM_RECORDING_STATE_STOPPED = 2; // stopped: the indicator goes away (upload continues, see the card)
+}
+
+// The recording of a voice room. In WorkspaceSnapshot.recordings (active ones, READY /
+// WORKSPACE_CREATE), in the ROOM_RECORDING event (start and stop, to everyone who sees the
+// room) and in the start / stop responses.
+message RoomRecording {
+  string workspace_id = 1;
+  string room_id = 2;
+  string recording_id = 3;
+  RoomRecordingState state = 4;
+  string by_user_id = 5; // who started it (empty if that account is gone)
+  google.protobuf.Timestamp since = 6; // when it started: clients count the REC timer from it
+  // STOPPED only: why — "user" (POST …/recording/stop), "empty" (nobody in the call for
+  // 2 min), "max_duration" (4 h), "disabled" (recording forbidden in the room), "egress"
+  // (the recorder ended by itself, e.g. the call ended), "lost" (the recorder is gone).
+  string stop_reason = 7;
+  string stopped_by = 8; // "user": who stopped it
+}
+
+// Life of a recording after it stops (RecordingCard.status).
+enum RecordingStatus {
+  RECORDING_STATUS_UNSPECIFIED = 0;
+  RECORDING_STATUS_RECORDING = 1;  // still recording
+  RECORDING_STATUS_UPLOADING = 2;  // uploading to GPTunneL
+  RECORDING_STATUS_PROCESSING = 3; // uploaded; GPTunneL transcribes and summarizes (web_url is set)
+  RECORDING_STATUS_DONE = 4;       // transcript and summary are ready in GPTunneL (web_url)
+  RECORDING_STATUS_FAILED = 5;     // see error
+}
+
+// The chat card of a recording (SystemMessage.recording). Posted when the recording stops,
+// updated in place (MESSAGE_UPDATE) as it moves on: UPLOADING → PROCESSING → DONE | FAILED.
+message RecordingCard {
+  string recording_id = 1;
+  string started_by = 2;
+  google.protobuf.Timestamp started_at = 3;
+  uint32 duration_sec = 4;
+  RecordingStatus status = 5;
+  string web_url = 6; // the recording's page in GPTunneL (PROCESSING, DONE; also FAILED once uploaded)
+  // FAILED: machine-readable reason. GPTunneL's: "insufficient_balance", "account_unavailable",
+  // "transcription_failed", "summary_failed", "empty_audio", "storage_failed", "internal";
+  // ours: "device_revoked" (the workspace was disconnected from GPTunneL), "not_paired",
+  // "upload_failed", "too_large", "no_audio" (the recorder produced no file), "recorder_failed",
+  // "timeout" (no result within 2 h; the page may still get it).
+  string error = 7;
+}
+
+// The GPTunneL connection of a workspace. GET/POST/DELETE /api/workspaces/{id}/integrations/gptunnel.
+message GptunnelIntegration {
+  bool paired = 1;
+  string device_name = 2;  // as shown in GPTunneL's device list ("Calab · <workspace>")
+  string account = 3;      // the GPTunneL account the recordings go to (name or email)
+  string paired_by = 4;    // user id
+  google.protobuf.Timestamp paired_at = 5;
+  string web_url = 6;      // GPTunneL web base ("https://gptunnel.ru")
+}
+
+// GET /api/workspaces/{id}/integrations/gptunnel (any member except guests).
+message GetGptunnelIntegrationResponse {
+  GptunnelIntegration integration = 1; // paired = false when not connected
+}
+
+// POST /api/workspaces/{id}/integrations/gptunnel (MANAGE_WORKSPACE): pair with a code shown
+// by GPTunneL (8 characters, "ABCD-EFGH"; case, dashes and spaces are ignored). Replaces an
+// existing connection. Errors: 422 CODE_INVALID (wrong or expired code), 429 RATE_LIMITED,
+// 503 UNAVAILABLE (GPTunneL unreachable).
+message PairGptunnelRequest {
+  string code = 1;
+}
+
+message PairGptunnelResponse {
+  GptunnelIntegration integration = 1;
+}
+
+// DELETE /api/workspaces/{id}/integrations/gptunnel (MANAGE_WORKSPACE) → 204: revokes the
+// device token in GPTunneL (best effort) and forgets it. Uploads in progress fail with
+// "device_revoked".
+
+// POST /api/rooms/{id}/recording/start (voice room; a member of the workspace — not a guest —
+// with VIEW_ROOM and CONNECT; somebody must be in the call). Errors: 403 FORBIDDEN (guest,
+// no CONNECT, or the room does not allow recording: Room.allow_recording), 409 NOT_PAIRED,
+// 409 ALREADY_RECORDING, 409 RECORDING_LIMIT (RECORDING_MAX_CONCURRENT on the server; used /
+// limit set), 409 CONFLICT (nobody is in the call), 503 UNAVAILABLE (recorder unavailable).
+message StartRecordingResponse {
+  RoomRecording recording = 1;
+}
+
+// POST /api/rooms/{id}/recording/stop (the same people as start) → the stopped recording;
+// 404 NOT_FOUND when the room is not being recorded.
+message StopRecordingResponse {
+  RoomRecording recording = 1;
+}

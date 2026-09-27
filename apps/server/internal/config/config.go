@@ -100,6 +100,13 @@ type Config struct {
 	SMTPUser     string `env:"SMTP_USER"`                      // empty = no AUTH
 	SMTPPassword string `env:"SMTP_PASSWORD"`                  //
 	SMTPFrom     string `env:"SMTP_FROM"`                      // "Calab <noreply@calab.ru>"
+	// Meeting recording (ADR-0025). Needs LiveKit and the egress service; the recordings
+	// volume is RECORDINGS_PATH here and RECORDING_EGRESS_DIR in the egress container.
+	GPTunnelAPIURL         string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ai"`
+	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
+	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
+	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
+
 	// Mail limits: per recipient address and for the whole server, per hour.
 	MailPerAddressPerHour int `env:"MAIL_PER_ADDRESS_PER_HOUR" envDefault:"3"`
 	MailPerHour           int `env:"MAIL_PER_HOUR" envDefault:"200"`
@@ -196,6 +203,12 @@ func (c *Config) Validate() error {
 		if c.MailPerAddressPerHour < 1 || c.MailPerHour < 1 {
 			errs = append(errs, errors.New("MAIL_PER_ADDRESS_PER_HOUR and MAIL_PER_HOUR must be >= 1"))
 		}
+	}
+	if Origin(c.GPTunnelAPIURL) == "" {
+		errs = append(errs, fmt.Errorf("GPTUNNEL_API_URL must be an absolute http(s) URL, got %q", c.GPTunnelAPIURL))
+	}
+	if c.RecordingMaxConcurrent < 1 || c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/") {
+		errs = append(errs, errors.New("RECORDING_MAX_CONCURRENT must be >= 1, RECORDINGS_PATH set and RECORDING_EGRESS_DIR an absolute path"))
 	}
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("config: %w", err)

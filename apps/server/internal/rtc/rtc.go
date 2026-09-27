@@ -60,6 +60,9 @@ type Service struct {
 	waits sync.Map
 	// Plans resolves workspace plan limits (ADR-0024); nil = no plan limits.
 	Plans *plans.Service
+	// OnEgress receives egress webhook events (meeting recording, ADR-0025); an error makes
+	// LiveKit redeliver the event.
+	OnEgress func(ctx context.Context, event string, info *EgressInfo) error
 }
 
 // SetSFUMove overrides the detected move mode — tests, or ops after a LiveKit upgrade that

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -66,6 +67,12 @@ func micMuted(p *Participant) bool {
 
 // HandleEvent applies one LiveKit webhook event to voice state and publishes gateway events.
 func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
+	if eg := ev.Egress(); eg != nil && strings.HasPrefix(ev.Event, "egress_") {
+		if s.OnEgress != nil {
+			return s.OnEgress(ctx, ev.Event, eg)
+		}
+		return nil
+	}
 	if ev.Room == nil {
 		return nil
 	}

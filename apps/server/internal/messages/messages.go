@@ -368,6 +368,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if m.AuthorID != uid(r) {
 		return httpx.Forbidden("only the author can edit a message")
 	}
+	if m.Kind == pbconv.MessageKindSystem {
+		return httpx.Forbidden("system messages cannot be edited")
+	}
 	var req v1.UpdateMessageRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
