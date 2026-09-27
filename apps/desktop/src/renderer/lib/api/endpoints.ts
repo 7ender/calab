@@ -58,6 +58,15 @@ import {
   UpdateMeResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberResponseSchema,
+  ListRolesResponseSchema,
+  CreateRoleRequestSchema,
+  CreateRoleResponseSchema,
+  UpdateRoleRequestSchema,
+  UpdateRoleResponseSchema,
+  SetRoleOrderRequestSchema,
+  SetRoleOrderResponseSchema,
+  SetMemberRolesRequestSchema,
+  SetMemberRolesResponseSchema,
   UpdateStatusRequestSchema,
   UpdateMessageRequestSchema,
   UpdateMessageResponseSchema,
@@ -188,6 +197,23 @@ export const api = {
     ban: (id: string, userId: string, reason: string) =>
       call('POST', `/api/workspaces/${id}/bans`, CreateBanResponseSchema, body(CreateBanRequestSchema, { userId, reason })),
     unban: (id: string, userId: string) => callEmpty('DELETE', `/api/workspaces/${id}/bans/${userId}`),
+    /** The member's complete role set (ADR-0026; MANAGE_ROLES) → WORKSPACE_MEMBER_UPDATE. */
+    setMemberRoles: (id: string, userId: string, roleIds: readonly string[]) =>
+      call('PUT', `/api/workspaces/${id}/members/${userId}/roles`, SetMemberRolesResponseSchema, body(SetMemberRolesRequestSchema, { roleIds: [...roleIds] })),
+  },
+  /** Workspace roles (ADR-0026): list for any member; the rest MANAGE_ROLES, roles below my top one. */
+  roles: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/roles`, ListRolesResponseSchema),
+    /** 201; 409 = 50 roles already; 422 = invalid name / colour / permissions. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateRoleRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/roles`, CreateRoleResponseSchema, body(CreateRoleRequestSchema, init)),
+    update: (workspaceId: string, roleId: string, init: MessageInitShape<typeof UpdateRoleRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/roles/${roleId}`, UpdateRoleResponseSchema, body(UpdateRoleRequestSchema, init)),
+    /** 204, custom roles only: holders keep their other roles (ROLE_DELETE). */
+    remove: (workspaceId: string, roleId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/roles/${roleId}`),
+    /** All custom roles, highest first. */
+    order: (workspaceId: string, roleIds: readonly string[]) =>
+      call('PUT', `/api/workspaces/${workspaceId}/roles/order`, SetRoleOrderResponseSchema, body(SetRoleOrderRequestSchema, { roleIds: [...roleIds] })),
   },
   categories: {
     create: (workspaceId: string, init: MessageInitShape<typeof CreateCategoryRequestSchema>) =>

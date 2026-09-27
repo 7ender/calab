@@ -1,5 +1,4 @@
 import * as DialogP from '@radix-ui/react-dialog';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { WorkspaceRole } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,22 +13,16 @@ import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { startDm } from '../../services/dms';
 import { useTimeZoneLabel } from '../../services/timezone';
-import { isGuest, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { isGuest, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { requestMention } from '../chat/mentionRequest';
 import { useCanDm } from '../dm/canDm';
-import { menuBox, menuItem } from '../shell/menu';
-import { promoteGuest, setMemberRole } from './actions';
-import { GuestBadge, RoleMark, roleTextClass } from './MemberBits';
+import { promoteGuest, toggleMemberRole } from './actions';
+import { MemberPicker } from './MemberPicker';
+import type { PeoplePickItem, RolePickItem } from './memberPickItems';
+import { roleColorCss } from '../../lib/roles';
+import { GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from './MemberBits';
 import { MemberContextMenu, useMemberActions } from './MemberContextMenu';
 import { NOTE_MAX, createNoteSaver, type NoteSaveState, type NoteSaver } from './noteSaver';
-
-const ROLE_KEY: Record<WorkspaceRole, MessageKey> = {
-  [WorkspaceRole.UNSPECIFIED]: 'role.member',
-  [WorkspaceRole.OWNER]: 'role.owner',
-  [WorkspaceRole.ADMIN]: 'role.admin',
-  [WorkspaceRole.MEMBER]: 'role.member',
-  [WorkspaceRole.GUEST]: 'role.guest',
-};
 
 /** Role dot colour: owner / admin tokens, the rest neutral. */
 function roleDot(role: WorkspaceRole): string {
@@ -93,6 +86,7 @@ export function ProfileDialog({
   const m = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]);
   const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
   const name = useMemberName(workspaceId, userId);
+  const look = useRoleLook(workspaceId, userId);
   const tz = useTimeZoneLabel(userId);
   const canDm = useCanDm(workspaceId, userId);
   const u = m?.user;
@@ -142,11 +136,11 @@ export function ProfileDialog({
                 <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={80} presence ring="var(--color-popover-solid)" />
               </div>
               <div className="flex min-w-0 items-center gap-2">
-                <DialogP.Title className={cx('min-w-0 truncate text-title font-semibold leading-tight', roleTextClass(m.role))} title={name}>
+                <DialogP.Title className={cx('min-w-0 truncate text-title font-semibold leading-tight', roleTextClass(m.role, 'role', look))} style={roleTextStyle(m.role, 'role', look)} title={name}>
                   {name}
                   {tz ? <span className="font-normal text-muted"> {tz}</span> : null}
                 </DialogP.Title>
-                <RoleMark role={m.role} />
+                <RoleMark role={m.role} custom={look} />
                 {isGuest(m) ? <GuestBadge /> : null}
               </div>
               {m.nickname && m.nickname !== u.displayName ? (
@@ -197,7 +191,7 @@ export function ProfileDialog({
               ) : null}
 
               <Section title={t('people.profile.roles')}>
-                <RoleChips workspaceId={workspaceId} userId={userId} role={m.role} />
+                <RoleChips workspaceId={workspaceId} userId={userId} />
               </Section>
 
               <NoteEditor userId={userId} textareaRef={noteRef} />
@@ -250,51 +244,77 @@ function MoreButton({ workspaceId, userId }: { workspaceId: string; userId: stri
 }
 
 /**
- * «Роли»: the member's workspace role as a chip (roles are one per member, docs/04). × and + by
- * the same rights as the menu's «Роли ›»: only the owner grants / revokes admin; a guest becomes
- * a member through «Сделать участником». The server re-checks; MEMBER_UPDATE updates the chip.
+ * «Роли» (ADR-0026): the member's roles as chips, highest first — the built-in one (owner /
+ * admin / member / guest; «Участник» is left out next to owner / admin) and every custom role
+ * with its colour dot. × and «+» by the same rules as the menu's «Роли ›» (memberActions.roles);
+ * «+» opens the picker with the roles I may give (and «Участник» for a guest: «Сделать
+ * участником»). The server re-checks; MEMBER_UPDATE updates the chips.
  */
-function RoleChips({ workspaceId, userId, role }: { workspaceId: string; userId: string; role: WorkspaceRole }): ReactNode {
+function RoleChips({ workspaceId, userId }: { workspaceId: string; userId: string }): ReactNode {
   const a = useMemberActions(workspaceId, userId);
-  const label = t(ROLE_KEY[role]);
-  const removable = role === WorkspaceRole.ADMIN && a?.roles?.admin === true;
-  const options: { key: string; label: string; run: () => void }[] = [];
-  if (role === WorkspaceRole.MEMBER && a?.roles?.admin) options.push({ key: 'admin', label: t('role.admin'), run: () => setMemberRole(workspaceId, userId, WorkspaceRole.ADMIN) });
-  if (role === WorkspaceRole.GUEST && a?.promote) options.push({ key: 'member', label: t('role.member'), run: () => promoteGuest(workspaceId, userId) });
+  const roles = useMemberRoles(workspaceId, userId);
+  const [adding, setAdding] = useState(false);
+  const full = roles.some((r) => r.builtin === WorkspaceRole.OWNER || r.builtin === WorkspaceRole.ADMIN);
+  const shown = roles.filter((r) => !(full && r.builtin === WorkspaceRole.MEMBER));
+  const toggles = new Map((a?.roles ?? []).map((x) => [x.role.id, x]));
+  const items: RolePickItem[] = (a?.roles ?? [])
+    .filter((x) => x.enabled && !x.on)
+    .map((x) => ({ kind: 'role', id: x.role.id, roleId: x.role.id, role: x.role.builtin, color: x.role.color, label: roleName(x.role), note: '', search: [roleName(x.role)] }));
+  if (a?.promote) {
+    items.push({ kind: 'role', id: 'promote', roleId: '', role: WorkspaceRole.MEMBER, color: 0, label: t('role.member'), note: t('people.menu.promote'), search: [t('role.member')] });
+  }
+  const pick = (item: PeoplePickItem): void => {
+    setAdding(false);
+    if (item.kind !== 'role') return;
+    if (item.id === 'promote') {
+      promoteGuest(workspaceId, userId);
+      return;
+    }
+    const x = toggles.get(item.roleId);
+    if (x) void toggleMemberRole(workspaceId, userId, x.role, true);
+  };
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-line pl-2.5 pr-2.5 text-caption" data-testid="role-chip">
-        <span className={cx('size-2.5 shrink-0 rounded-full', roleDot(role))} aria-hidden />
-        {label}
-        {removable ? (
+      {shown.map((r) => {
+        const label = roleName(r);
+        const removable = toggles.get(r.id)?.enabled === true;
+        return (
+          <span key={r.id} className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border border-line pl-2.5 pr-2.5 text-caption" data-testid="role-chip">
+            <span className={cx('size-2.5 shrink-0 rounded-full', roleDot(r.builtin))} style={r.builtin === WorkspaceRole.UNSPECIFIED && r.color ? { background: roleColorCss(r.color) } : undefined} aria-hidden />
+            <span className="min-w-0 truncate">{label}</span>
+            {removable ? (
+              <button
+                type="button"
+                aria-label={t('people.profile.removeRole', { role: label })}
+                className="-mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+                onClick={() => void toggleMemberRole(workspaceId, userId, r, false)}
+              >
+                <X className="size-3.5" aria-hidden />
+              </button>
+            ) : null}
+          </span>
+        );
+      })}
+      {items.length > 0 ? (
+        <MemberPicker
+          open={adding}
+          onOpenChange={setAdding}
+          groups={[{ id: 'roles', label: '', items }]}
+          onSelect={pick}
+          placeholder={t('roles.search')}
+          label={t('people.profile.addRole')}
+          testId="role-picker"
+          width={260}
+          align="start"
+        >
           <button
             type="button"
-            aria-label={t('people.profile.removeRole', { role: label })}
-            className="-mr-1 grid size-5 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
-            onClick={() => setMemberRole(workspaceId, userId, WorkspaceRole.MEMBER)}
-          >
-            <X className="size-3.5" aria-hidden />
-          </button>
-        ) : null}
-      </span>
-      {options.length > 0 ? (
-        <DropdownMenu.Root modal={false}>
-          <DropdownMenu.Trigger
             aria-label={t('people.profile.addRole')}
             className="grid size-7 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
           >
             <Plus className="size-4" aria-hidden />
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content className={menuBox} align="start" sideOffset={4} collisionPadding={8}>
-              {options.map((o) => (
-                <DropdownMenu.Item key={o.key} className={menuItem} onSelect={o.run}>
-                  {o.label}
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
+          </button>
+        </MemberPicker>
       ) : null}
     </div>
   );

@@ -12,8 +12,9 @@ import { HOME, sortedDms, useDms } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
-import { RoleMark, roleTextClass } from '../people/MemberBits';
+import { memberName, rolesOf, useWorkspaces } from '../../stores/workspaces';
+import { customLook } from '../../lib/roles';
+import { RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 import { useChatView } from '../chat/chatView';
 import { previewText } from '../chat/mentionText';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
@@ -277,14 +278,15 @@ function Row({
   if (it.kind === 'member') {
     const u = it.member.user;
     const name = it.member.nickname || u?.displayName || '';
+    const look = customLook(rolesOf(useWorkspaces.getState().byId[it.member.workspaceId], u?.id ?? ''));
     return (
       <>
         <Avatar userId={u?.id ?? ''} name={name} fileId={u?.avatarFileId || undefined} size={20} />
         <span className="flex min-w-0 flex-1 items-center gap-1">
-          <span className={cx('min-w-0 truncate', roleTextClass(it.member.role, selected ? 'inherit' : 'role'))}>
+          <span className={cx('min-w-0 truncate', roleTextClass(it.member.role, selected ? 'inherit' : 'role', look))} style={roleTextStyle(it.member.role, selected ? 'inherit' : 'role', look)}>
             <Highlight text={name} q={q} selected={selected} />
           </span>
-          <RoleMark role={it.member.role} tone={selected ? 'inherit' : 'role'} />
+          <RoleMark role={it.member.role} custom={look} tone={selected ? 'inherit' : 'role'} />
         </span>
         <span className={sub}>{t('search.memberHint')}</span>
       </>

@@ -4,7 +4,8 @@ import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { PickerPopover, type PickerPanelProps } from '../../components/picker/Picker';
 import { cx } from '../../components/ui';
-import { GuestBadge, RoleMark, roleTextClass } from './MemberBits';
+import { roleColorCss } from '../../lib/roles';
+import { GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
 import type { MemberPickItem, PeoplePickItem, RolePickItem } from './memberPickItems';
 
 /**
@@ -25,10 +26,10 @@ export function MemberPickRow({ item, active, trailing }: { item: MemberPickItem
         ring={active ? 'var(--color-accent-strong)' : 'var(--color-popover-solid)'}
       />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
-        <span className={cx('min-w-0 shrink truncate font-medium', roleTextClass(item.role, tone))} title={item.name}>
+        <span className={cx('min-w-0 shrink truncate font-medium', roleTextClass(item.role, tone, item.custom))} style={roleTextStyle(item.role, tone, item.custom)} title={item.name}>
           {item.name}
         </span>
-        <RoleMark role={item.role} tone={tone} />
+        <RoleMark role={item.role} custom={item.custom} tone={tone} />
         {item.guest ? <GuestBadge /> : null}
         {item.secondary ? (
           <span className={cx('min-w-0 shrink-[2] truncate text-caption', active ? 'opacity-75' : 'text-muted')} title={item.secondary}>
@@ -42,8 +43,15 @@ export function MemberPickRow({ item, active, trailing }: { item: MemberPickItem
   );
 }
 
-/** Icon of a role target: crown / shield for the owner and admins, @ for the others. */
-function RoleGlyph({ role }: { role: WorkspaceRole }): ReactNode {
+/** Icon of a role target: crown / shield for the owner and admins, a colour dot for a custom role, @ for the others. */
+function RoleGlyph({ role, color }: { role: WorkspaceRole; color: number }): ReactNode {
+  if (role === WorkspaceRole.UNSPECIFIED) {
+    return (
+      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[var(--color-fill)]" aria-hidden>
+        <span className="size-2.5 rounded-full" style={{ background: color ? roleColorCss(color) : 'var(--color-label-tertiary)' }} />
+      </span>
+    );
+  }
   const Icon = role === WorkspaceRole.OWNER ? Crown : role === WorkspaceRole.ADMIN ? ShieldCheck : role === WorkspaceRole.GUEST ? UserRound : AtSign;
   return (
     <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[var(--color-fill)]" aria-hidden>
@@ -55,7 +63,7 @@ function RoleGlyph({ role }: { role: WorkspaceRole }): ReactNode {
 export function RolePickRow({ item, active }: { item: RolePickItem; active: boolean }): ReactNode {
   return (
     <>
-      <RoleGlyph role={item.role} />
+      <RoleGlyph role={item.role} color={item.color} />
       <span className={cx('min-w-0 flex-1 truncate font-medium', roleTextClass(item.role, active ? 'inherit' : 'role'))}>@{item.label}</span>
       {item.note ? <span className={cx('shrink-0 text-caption', active ? 'opacity-75' : 'text-muted')}>{item.note}</span> : null}
     </>

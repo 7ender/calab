@@ -9,7 +9,7 @@ import { useSession } from '../../stores/session';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { useWorkspaces } from '../../stores/workspaces';
+import { useMemberRoles } from '../../stores/workspaces';
 import { StatsOverlay } from '../voice/StatsOverlay';
 import { StreamArea } from '../voice/StreamArea';
 import { useChatView } from './chatView';
@@ -22,8 +22,8 @@ import { roomLabel } from './roomLabel';
 
 export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
-  const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const me = useSession((s) => s.me?.user?.id ?? '');
+  const role = useMemberRoles(workspaceId, me);
   const wide = useMediaQuery(`(min-width: ${MEMBERS_COLUMN_MIN}px)`);
   const toggleColumn = useUi((s) => s.toggleMembers);
   const columnOpen = useUi((s) => s.membersPanel);

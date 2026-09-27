@@ -1,9 +1,10 @@
 import { create } from '@bufbuild/protobuf';
-import { PERMISSION_BITS, PermissionTargetType, RoomPermissionOverrideSchema, RoomSchema, WorkspaceRole } from '@calaba/protocol';
+import { PERMISSION_BITS, PermissionTargetType, RoleSchema, RoomPermissionOverrideSchema, RoomSchema, WorkspaceRole, type Role } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import { can, compactDrafts, cycleTri, isAdminRole, roomPerms, triOf, withTri, workspacePerms } from './permissions';
+import { legacyRoles, rolesOfMember } from './roles';
 
-const { VIEW_ROOM, SEND_MESSAGES, STREAM, MANAGE_ROOM } = PERMISSION_BITS;
+const { VIEW_ROOM, SEND_MESSAGES, STREAM, MANAGE_ROOM, MUTE_MEMBERS, CONNECT, SPEAK } = PERMISSION_BITS;
 
 function room(overrides: { t: PermissionTargetType; id: string; allow?: bigint; deny?: bigint }[]) {
   return create(RoomSchema, {
@@ -14,9 +15,17 @@ function room(overrides: { t: PermissionTargetType; id: string; allow?: bigint; 
   });
 }
 
+// Built-ins with their legacy ids ("member"…) plus two custom roles (ADR-0026).
+const design = create(RoleSchema, { id: 'r-design', name: 'Design', position: 3, permissions: STREAM, color: 0x0a84ff });
+const mod = create(RoleSchema, { id: 'r-mod', name: 'Moderator', position: 2, permissions: MUTE_MEMBERS | MANAGE_ROOM, color: 0x34c759 });
+const ALL: Role[] = [...legacyRoles('w'), design, mod];
+
+/** A member's roles: the built-ins implied by `role` + the given custom roles. */
+const as = (role: WorkspaceRole, ...custom: Role[]): Role[] => [...rolesOfMember(ALL, { role, roleIds: [] }), ...custom];
+
 describe('roomPerms', () => {
   it('member defaults allow chat, not management', () => {
-    const p = roomPerms(WorkspaceRole.MEMBER, 'u1', room([]));
+    const p = roomPerms(as(WorkspaceRole.MEMBER), 'u1', room([]));
     expect(can(p, 'SEND_MESSAGES')).toBe(true);
     expect(can(p, 'MANAGE_ROOM')).toBe(false);
   });
@@ -26,31 +35,61 @@ describe('roomPerms', () => {
       { t: PermissionTargetType.ROLE, id: 'member', deny: VIEW_ROOM },
       { t: PermissionTargetType.USER, id: 'u2', allow: VIEW_ROOM },
     ]);
-    expect(roomPerms(WorkspaceRole.MEMBER, 'u1', r)).toBe(0n);
-    expect(can(roomPerms(WorkspaceRole.MEMBER, 'u2', r), 'VIEW_ROOM')).toBe(true);
+    expect(roomPerms(as(WorkspaceRole.MEMBER), 'u1', r)).toBe(0n);
+    expect(can(roomPerms(as(WorkspaceRole.MEMBER), 'u2', r), 'VIEW_ROOM')).toBe(true);
   });
 
   it('admin ignores deny', () => {
     const r = room([{ t: PermissionTargetType.ROLE, id: 'admin', deny: VIEW_ROOM | STREAM }]);
-    expect(can(roomPerms(WorkspaceRole.ADMIN, 'a', r), 'STREAM')).toBe(true);
+    expect(can(roomPerms(as(WorkspaceRole.ADMIN), 'a', r), 'STREAM')).toBe(true);
   });
 
   it('guest sees nothing without explicit allow', () => {
-    expect(roomPerms(WorkspaceRole.GUEST, 'g', room([]))).toBe(0n);
+    expect(roomPerms(as(WorkspaceRole.GUEST), 'g', room([]))).toBe(0n);
     const r = room([{ t: PermissionTargetType.ROLE, id: 'guest', allow: VIEW_ROOM | SEND_MESSAGES }]);
-    expect(can(roomPerms(WorkspaceRole.GUEST, 'g', r), 'SEND_MESSAGES')).toBe(true);
+    expect(can(roomPerms(as(WorkspaceRole.GUEST), 'g', r), 'SEND_MESSAGES')).toBe(true);
   });
 
-  it('unknown room / role → no permissions', () => {
+  it('unknown room / no roles → no permissions', () => {
     expect(roomPerms(undefined, 'u', room([]))).toBe(0n);
-    expect(roomPerms(WorkspaceRole.MEMBER, 'u', undefined)).toBe(0n);
+    expect(roomPerms([], 'u', room([]))).toBe(0n);
+    expect(roomPerms(as(WorkspaceRole.MEMBER), 'u', undefined)).toBe(0n);
+  });
+
+  it('several roles: workspace bits are the OR, overrides go lowest position first', () => {
+    // Custom role bits add up with the member defaults.
+    const p = roomPerms(as(WorkspaceRole.MEMBER, mod), 'u', room([]));
+    expect(can(p, 'MUTE_MEMBERS') && can(p, 'MANAGE_ROOM') && can(p, 'SEND_MESSAGES')).toBe(true);
+    // A private room: member denied, Design (higher) allowed → the senior role wins.
+    const priv = room([
+      { t: PermissionTargetType.ROLE, id: 'member', deny: VIEW_ROOM },
+      { t: PermissionTargetType.ROLE, id: design.id, allow: VIEW_ROOM },
+    ]);
+    expect(roomPerms(as(WorkspaceRole.MEMBER), 'u', priv)).toBe(0n);
+    expect(can(roomPerms(as(WorkspaceRole.MEMBER, design), 'u', priv), 'VIEW_ROOM')).toBe(true);
+    // Moderator (2) allows SPEAK, Design (3) denies it: the higher position applies last.
+    const voice = room([
+      { t: PermissionTargetType.ROLE, id: mod.id, allow: SPEAK },
+      { t: PermissionTargetType.ROLE, id: design.id, deny: SPEAK | CONNECT },
+    ]);
+    const both = roomPerms(as(WorkspaceRole.MEMBER, mod, design), 'u', voice);
+    expect(can(both, 'SPEAK')).toBe(false);
+    expect(can(both, 'CONNECT')).toBe(false);
+    // … and the user's own override beats every role.
+    const user = room([
+      { t: PermissionTargetType.ROLE, id: design.id, deny: SPEAK },
+      { t: PermissionTargetType.USER, id: 'u', allow: SPEAK },
+    ]);
+    expect(can(roomPerms(as(WorkspaceRole.MEMBER, design), 'u', user), 'SPEAK')).toBe(true);
   });
 });
 
 describe('workspace level', () => {
-  it('admins get everything', () => {
-    expect(can(workspacePerms(WorkspaceRole.OWNER), 'MANAGE_WORKSPACE')).toBe(true);
-    expect(can(workspacePerms(WorkspaceRole.MEMBER), 'MANAGE_WORKSPACE')).toBe(false);
+  it('admins get everything; custom roles add their bits', () => {
+    expect(can(workspacePerms(as(WorkspaceRole.OWNER)), 'MANAGE_WORKSPACE')).toBe(true);
+    expect(can(workspacePerms(as(WorkspaceRole.MEMBER)), 'MANAGE_WORKSPACE')).toBe(false);
+    expect(can(workspacePerms(as(WorkspaceRole.MEMBER, mod)), 'MANAGE_ROOM')).toBe(true);
+    expect(workspacePerms(undefined)).toBe(0n);
     expect(isAdminRole(WorkspaceRole.ADMIN)).toBe(true);
     expect(isAdminRole(WorkspaceRole.MEMBER)).toBe(false);
   });

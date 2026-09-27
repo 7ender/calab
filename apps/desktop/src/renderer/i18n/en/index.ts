@@ -8,6 +8,7 @@ import { enRecording } from './recording';
 import { enPeople } from './people';
 import { enModeration } from './moderation';
 import { enPicker } from './picker';
+import { enRoles } from './roles';
 import { enPlan } from './plan';
 import { enShell } from './shell';
 import { enVideo } from './video';
@@ -26,6 +27,7 @@ export const en: Dict = {
   ...enMail,
   ...enRecording,
   ...enPicker,
+  ...enRoles,
   'voice.pendingMember': 'Connecting…',
   // common
   'common.cancel': 'Cancel',

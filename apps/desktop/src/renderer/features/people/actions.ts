@@ -1,4 +1,4 @@
-import type { WorkspaceRole } from '@calaba/protocol';
+import { WorkspaceRole, type Role } from '@calaba/protocol';
 import { confirmAction, promptAction } from '../../components/Confirm';
 import { REASON_MAX } from '../../lib/moderation';
 import { t } from '../../i18n';
@@ -8,7 +8,8 @@ import { api } from '../../lib/api/endpoints';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { withRole } from '../../lib/roles';
+import { memberName, rolesOf, useWorkspaces } from '../../stores/workspaces';
 
 /** Human error text for member actions (docs/09 #16: no raw strings where we know better). */
 export function peopleError(e: unknown): string {
@@ -59,6 +60,28 @@ export function setMemberRole(workspaceId: string, userId: string, role: Workspa
 }
 
 /** The profile dialog (docs/09 #20); `note` = «Добавить заметку»: the note field focused. */
+/**
+ * Give / take one role (ADR-0026, «Роли ›», profile chips): PUT …/members/{uid}/roles with the
+ * member's complete set. An older server (no role_ids) knows only admin ↔ member (legacy PATCH).
+ */
+export function toggleMemberRole(workspaceId: string, userId: string, role: Role, on: boolean): Promise<void> {
+  const entry = useWorkspaces.getState().byId[workspaceId];
+  const m = entry?.members[userId];
+  if (!entry || !m) return Promise.resolve();
+  const p =
+    m.roleIds.length === 0
+      ? role.builtin === WorkspaceRole.ADMIN
+        ? api.workspaces.updateMember(workspaceId, userId, { role: on ? WorkspaceRole.ADMIN : WorkspaceRole.MEMBER })
+        : Promise.reject(new Error('custom roles need a newer server'))
+      : api.workspaces.setMemberRoles(workspaceId, userId, withRole(rolesOf(entry, userId).map((r) => r.id), role.id, on));
+  return p.then(
+    (r) => {
+      if (r.member) useWorkspaces.getState().upsertMember(r.member);
+    },
+    (e: unknown) => toast.error(peopleError(e)),
+  );
+}
+
 export function openProfile(workspaceId: string, userId: string, note = false): void {
   useUi.getState().openDialog({ kind: 'profile', workspaceId, userId, note });
 }

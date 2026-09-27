@@ -3,12 +3,15 @@ import {
   RoomType,
   WorkspaceRole,
   type Presence,
+  type Role,
+  type RoleBits,
   type Room,
   type VoiceState,
   type WorkspaceMember,
 } from '@calaba/protocol';
 import { getLocale } from '../../i18n';
 import { can, roomPerms, workspacePerms } from '../../lib/permissions';
+import { canAssignRole, legacyRoles, roleActor, rolesOfMember, topRole } from '../../lib/roles';
 
 /*
  * Pure people logic (members column grouping, member context-menu availability). The client
@@ -61,7 +64,12 @@ export function groupMembers(
 
 export interface MenuContext {
   meId: string;
+  /** My built-in role (WorkspaceSnapshot.role). */
   myRole: WorkspaceRole | undefined;
+  /** My role_ids (ADR-0026); empty = the built-ins implied by `myRole`. */
+  myRoleIds?: readonly string[];
+  /** All roles of the workspace, highest first (default: the four built-ins). */
+  roles?: readonly Role[];
   target: WorkspaceMember;
   /** Target's aggregated voice state in this workspace (room_id set = in voice). */
   targetVoice: VoiceState | undefined;
@@ -90,8 +98,11 @@ export interface MenuActions {
   /** Voice rooms the target can be moved to (empty = no «Переместить в…»). */
   moveTargets: Room[];
   rename: boolean;
-  /** «Роли ›»: which roles I may give (null = no submenu). Only the owner grants / revokes admin. */
-  roles: { admin: boolean; member: boolean } | null;
+  /**
+   * «Роли ›» (ADR-0026): a checkbox per role I may give or take (docs/04 «Назначение»), plus the
+   * target's roles I may not touch (shown checked, disabled); null = no submenu.
+   */
+  roles: RoleToggle[] | null;
   promote: boolean;
   removeGuest: boolean;
   kick: boolean;
@@ -99,21 +110,52 @@ export interface MenuActions {
   ban: boolean;
 }
 
+export interface RoleToggle {
+  role: Role;
+  /** The target holds it. */
+  on: boolean;
+  /** I may change it. */
+  enabled: boolean;
+}
+
+/**
+ * The role checkboxes for a member (menu «Роли ›», profile chips): every role but the built-in
+ * owner / member / guest (they follow the member itself), highest first; null when I may change
+ * none of them.
+ */
+export function roleToggles(all: readonly Role[], myRoles: readonly Role[], targetRoles: readonly Role[], self: boolean, targetGuest: boolean): RoleToggle[] | null {
+  const actor = roleActor(myRoles);
+  const held = new Set(targetRoles.map((r) => r.id));
+  const targetTop = topRole(targetRoles)?.position ?? -1;
+  const out: RoleToggle[] = [];
+  for (const role of all) {
+    if (role.builtin === WorkspaceRole.OWNER || role.builtin === WorkspaceRole.MEMBER || role.builtin === WorkspaceRole.GUEST) continue;
+    const on = held.has(role.id);
+    // A guest becomes an admin only through «Сделать участником» first.
+    const enabled = canAssignRole(actor, role, targetTop, self) && !(targetGuest && role.builtin === WorkspaceRole.ADMIN);
+    if (enabled || on) out.push({ role, on, enabled });
+  }
+  return out.some((x) => x.enabled) ? out : null;
+}
+
 /**
  * May I change this member's workspace nickname (docs/09 #33, #26)? Others' — MANAGE_NICKNAMES;
  * my own — also when the workspace allows self nicknames. The server re-checks.
  */
-export function canRenameMember(myRole: WorkspaceRole | undefined, self: boolean, allowSelfNickname: boolean): boolean {
-  const ws = workspacePerms(myRole);
+export function canRenameMember(myRoles: readonly RoleBits[] | undefined, self: boolean, allowSelfNickname: boolean): boolean {
+  const ws = workspacePerms(myRoles);
   return self ? allowSelfNickname || can(ws, 'MANAGE_NICKNAMES') : can(ws, 'MANAGE_NICKNAMES');
 }
 
 export function memberActions(c: MenuContext): MenuActions {
   const userId = c.target.user?.id ?? '';
   const self = userId === c.meId;
-  const ws = workspacePerms(c.myRole);
+  const all = c.roles ?? legacyRoles('');
+  const myRoles = rolesOfMember(all, c.myRole === undefined ? undefined : { role: c.myRole, roleIds: c.myRoleIds ?? [] });
+  const targetRoles = rolesOfMember(all, c.target);
+  const ws = workspacePerms(myRoles);
   const inRoom = c.targetVoice?.roomId ? c.rooms.find((r) => r.id === c.targetVoice?.roomId) : undefined;
-  const permsIn = (r: Room): bigint => roomPerms(c.myRole, c.meId, r);
+  const permsIn = (r: Room): bigint => roomPerms(myRoles, c.meId, r);
   // Disconnect / stop-stream honour the room override; server mute needs MUTE_MEMBERS at the
   // workspace level (owner/admin) — a room grant cannot silence someone everywhere.
   const moderate = !self && !!inRoom && can(permsIn(inRoom), 'MUTE_MEMBERS');
@@ -139,11 +181,8 @@ export function memberActions(c: MenuContext): MenuActions {
     hideVideo: !self && !!c.myVoiceRoomId && c.targetVoice?.roomId === c.myVoiceRoomId && c.targetVoice.camera,
     stopCamera: moderate && !!c.targetVoice?.camera,
     moveTargets,
-    rename: canRenameMember(c.myRole, self, c.allowSelfNickname),
-    roles:
-      !self && manage && (c.target.role === WorkspaceRole.MEMBER || (c.target.role === WorkspaceRole.ADMIN && c.myRole === WorkspaceRole.OWNER))
-        ? { admin: c.myRole === WorkspaceRole.OWNER, member: true }
-        : null,
+    rename: canRenameMember(myRoles, self, c.allowSelfNickname),
+    roles: roleToggles(all, myRoles, targetRoles, self, guest),
     promote: manage && guest && !self,
     removeGuest: removable && guest,
     kick: removable && !guest,
