@@ -64,6 +64,16 @@ export function setTrayBadge(n: number): void {
   rebuild();
 }
 
+/** A voice room is joined (renderer tray state) — the quit confirmation asks (docs/09 #31). */
+export const trayInVoice = (): boolean => state.inVoice;
+
+/** Windows tray balloon; false where there is none (macOS, Linux) or no tray. */
+export function showTrayBalloon(title: string, content: string): boolean {
+  if (!tray || process.platform !== 'win32') return false;
+  tray.displayBalloon({ title, content, iconType: 'info' });
+  return true;
+}
+
 export function setTrayState(next: TrayState): void {
   state = next;
   rebuild();

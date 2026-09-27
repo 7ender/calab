@@ -23,6 +23,8 @@ const DEFAULTS = (): AppSettings => ({
   autostart: false,
   autoUpdate: true,
   autoCheckUpdates: true,
+  closeToTray: true,
+  trayHintShown: false,
 });
 
 let cache: AppSettings | null = null;

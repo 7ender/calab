@@ -44,6 +44,12 @@ function pushMainStrings(): void {
     updateAvailable: t('main.updateAvailable'),
     trayRestartUpdate: t('main.trayRestartUpdate'),
     streamWindow: t('main.streamWindow'),
+    quitInCall: t('main.quitInCall'),
+    quitInCallDetail: t('main.quitInCallDetail'),
+    quitConfirm: t('main.quitConfirm'),
+    quitCancel: t('main.quitCancel'),
+    trayHintTitle: t('main.trayHintTitle'),
+    trayHintBody: t('main.trayHintBody'),
   };
   platform.app.setStrings(s);
 }

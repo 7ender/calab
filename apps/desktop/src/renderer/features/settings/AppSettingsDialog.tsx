@@ -1,13 +1,13 @@
 import { AUDIO_BITRATE_OPTIONS_KBPS } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppWindow, Bell, CircleUser, Info, Keyboard, LogOut, Mic, MonitorSmartphone, Palette, Trash2, Upload, Wifi } from 'lucide-react';
+import { AppWindow, Bell, CircleUser, Info, Keyboard, Mic, MonitorSmartphone, Palette, Trash2, Upload, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { Logo } from '../../components/Logo';
-import { SettingsAction, SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
+import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { Badge, Button, Card, IconButton, Input, Row, Segmented, Select, Slider, Spinner, Toggle, cx } from '../../components/ui';
 import { availableLocales, LOCALE_NAMES, t, type LocalePref, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
@@ -23,10 +23,12 @@ import { voice } from '../../services/voice';
 import { usePrefs, type Theme } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
+import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { ChangeEmailDialog, ChangePasswordDialog } from './CredentialDialogs';
 import { LicenseCard } from '../legal/Legal';
 import { HotkeyRow } from './HotkeyRow';
+import { SettingsFooter } from './SettingsFooter';
 import { EchoCard } from './EchoCard';
 import { PttBinder } from './PttBinder';
 import { PttReleaseDelay, PttReleaseLink } from './PttReleaseDelay';
@@ -88,6 +90,7 @@ export function CommitInput({
 }
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
+  const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   const sections: SettingsSection[] = [
     { id: 'profile', label: t('settings.profile'), icon: CircleUser, content: <ProfileTab /> },
     { id: 'voice', label: t('settings.voice'), icon: Mic, content: <VoiceTab /> },
@@ -106,7 +109,14 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
       initial={tab ?? 'voice'}
       onClose={onClose}
       sections={sections}
-      footer={<SettingsAction label={t('settings.logout')} icon={LogOut} destructive onClick={() => void logout()} />}
+      footer={
+        <SettingsFooter
+          superadmin={superadmin}
+          // One dialog at a time: the admin window replaces settings (same as the status menu item).
+          onAdmin={() => useUi.getState().openDialog({ kind: 'admin' })}
+          onLogout={() => void logout()}
+        />
+      }
     />
   );
 }
@@ -855,6 +865,20 @@ function DesktopAppCards({
             onChange={(v) => void save({ autostart: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
           />
         </Row>
+        {/* macOS always hides on close, like every Mac app — no choice there (docs/09 #31). */}
+        {info && info.platform !== 'darwin' ? (
+          <Row label={t('app.onClose')} hint={t('app.onCloseHint')}>
+            <Segmented<'tray' | 'quit'>
+              label={t('app.onClose')}
+              value={(settings?.closeToTray ?? true) ? 'tray' : 'quit'}
+              options={[
+                { value: 'tray', label: t('app.onCloseTray') },
+                { value: 'quit', label: t('app.onCloseQuit') },
+              ]}
+              onChange={(v) => void save({ closeToTray: v === 'tray' }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
+            />
+          </Row>
+        ) : null}
       </Card>
       {/* Main decides what «auto» means per platform (updateFlow.ts); the renderer only toggles. */}
       <Card title={t('about.updates')}>

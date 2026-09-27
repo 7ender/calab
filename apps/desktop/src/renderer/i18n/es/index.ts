@@ -391,6 +391,10 @@ export const es: Dict = {
   'sessions.logoutAllText': 'Los otros dispositivos deberán iniciar sesión de nuevo. Este dispositivo seguirá conectado.',
   'app.autostart': 'Iniciar al arrancar el sistema',
   'app.autostartDev': 'Solo funciona en la app empaquetada',
+  'app.onClose': 'Al cerrar la ventana',
+  'app.onCloseHint': 'Calab minimizado sigue en la voz y atiende el push-to-talk',
+  'app.onCloseTray': 'Minimizar a la bandeja',
+  'app.onCloseQuit': 'Salir',
   'app.devStats': 'Estadísticas de audio y video',
   'app.devStatsHint': 'Tasas de bits, códecs y carga — en el panel de voz',
 
@@ -565,4 +569,10 @@ export const es: Dict = {
   'main.updateAvailable': 'La versión {version} está disponible — Descargar',
   'main.trayRestartUpdate': 'Reiniciar para actualizar a {version}',
   'main.streamWindow': 'Calab — pantalla compartida',
+  'main.quitInCall': 'Estás en una sala de voz. ¿Salir de Calab?',
+  'main.quitInCallDetail': 'La llamada terminará.',
+  'main.quitConfirm': 'Salir',
+  'main.quitCancel': 'Cancelar',
+  'main.trayHintTitle': 'Calab sigue funcionando en la bandeja',
+  'main.trayHintBody': 'La llamada continúa. Para salir, usa el menú del icono de la bandeja.',
 };

@@ -103,6 +103,7 @@ function parseSettings(v: unknown): Partial<AppSettings> {
   if (r['autostart'] !== undefined) out.autostart = Boolean(r['autostart']);
   if (r['autoUpdate'] !== undefined) out.autoUpdate = Boolean(r['autoUpdate']);
   if (r['autoCheckUpdates'] !== undefined) out.autoCheckUpdates = Boolean(r['autoCheckUpdates']);
+  if (r['closeToTray'] !== undefined) out.closeToTray = Boolean(r['closeToTray']);
   return out;
 }
 

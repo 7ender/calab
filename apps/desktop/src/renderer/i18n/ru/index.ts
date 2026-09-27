@@ -386,6 +386,10 @@ export const ru = {
   'sessions.logoutAllText': 'На остальных устройствах нужно будет войти заново. Это устройство останется в системе.',
   'app.autostart': 'Запускать при входе в систему',
   'app.autostartDev': 'Работает только в собранном приложении',
+  'app.onClose': 'При закрытии окна',
+  'app.onCloseHint': 'Свёрнутый Calab остаётся в голосе и слышит push-to-talk',
+  'app.onCloseTray': 'Сворачивать в трей',
+  'app.onCloseQuit': 'Выходить',
   'app.devStats': 'Статистика звука и видео',
   'app.devStatsHint': 'Битрейты, кодеки и нагрузка — в панели голоса',
 
@@ -558,5 +562,11 @@ export const ru = {
   'main.updateAvailable': 'Доступна версия {version} — Скачать',
   'main.trayRestartUpdate': 'Перезапустить для обновления {version}',
   'main.streamWindow': 'Calab — стрим',
+  'main.quitInCall': 'Вы в голосовой комнате. Выйти из Calab?',
+  'main.quitInCallDetail': 'Звонок прервётся.',
+  'main.quitConfirm': 'Выйти',
+  'main.quitCancel': 'Отмена',
+  'main.trayHintTitle': 'Calab продолжает работать в трее',
+  'main.trayHintBody': 'Звонок не прерывается. Выйти — через меню значка в трее.',
 } as const;
 
