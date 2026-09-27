@@ -101,8 +101,10 @@ for (const theme of THEMES) {
         await page.clock.setFixedTime(NOW);
         await openLink(page, mock.url, '/join/calaba-team-2026', theme);
         const card = page.getByTestId('link-landing');
-        // Signed out: GET /api/invites/{code} needs a session, so the card names no workspace.
-        await expect(card.getByRole('heading', { name: 'Вас пригласили в пространство' })).toBeVisible();
+        // Signed out: GET /api/invites/{code} is public (ADR-0023) — the workspace and its members.
+        await expect(card.getByText('Вас пригласили в пространство')).toBeVisible();
+        await expect(card.getByRole('heading', { name: 'Команда Calab' })).toBeVisible();
+        await expect(card.getByText('4 участника')).toBeVisible();
         const open = card.getByRole('button', { name: 'Открыть в Calab' });
         const browser = card.getByRole('button', { name: 'Продолжить в браузере' });
         const download = card.getByRole('link', { name: 'Скачать приложение' });

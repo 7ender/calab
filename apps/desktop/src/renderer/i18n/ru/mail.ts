@@ -76,4 +76,7 @@ export const ruMail = {
   'mail.invite.until': 'до {date}',
   'mail.invite.revoke': 'Отозвать',
   'mail.invite.revoked': 'Приглашение отозвано',
+  // /join/<code> page (public preview)
+  'mail.landing.members': { one: '{n} участник', few: '{n} участника', many: '{n} участников', other: '{n} участника' },
+  'mail.landing.forEmail': 'Приглашение для {email}',
 } as const;

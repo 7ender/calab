@@ -2,7 +2,7 @@ import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { GatewayFrameSchema, GatewayOpcode, NotificationLevel, RoomType, VoiceStreamStopReason, type DispatchEvent, type GatewayFrame } from '@calaba/protocol';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { GENERAL_MESSAGE_COUNT, IDS, MARKETING_IDS, parseMentions, startMockServer, type MockServer } from './mock-server';
+import { GENERAL_MESSAGE_COUNT, IDS, MARKETING_IDS, MOCK_EMAIL_CODE, parseMentions, startMockServer, type MockServer } from './mock-server';
 
 // Smoke test: pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts
 
@@ -529,7 +529,11 @@ describe('password and email change (user.proto)', () => {
     expect((await patch('/api/me/email', { newEmail: 'not-an-email', currentPassword: 'newpassword1' })).status).toBe(422);
     const ok = await patch('/api/me/email', { newEmail: 'Boris.New@calaba.test', currentPassword: 'newpassword1' });
     expect(ok.status).toBe(200);
-    expect(((await ok.json()) as { me: { email: string } }).me.email).toBe('boris.new@calaba.test');
+    // ADR-0023: the new address waits for its code; login stays on the old one.
+    expect(((await ok.json()) as { me: { email: string; pendingEmail: string } }).me).toMatchObject({
+      email: 'boris@calaba.test',
+      pendingEmail: 'boris.new@calaba.test',
+    });
     server.reset('data');
   });
 });
@@ -715,5 +719,98 @@ describe('room order (docs/09 P1 #19)', () => {
       ],
     });
     expect(back.status).toBe(200);
+  });
+});
+
+describe('email (ADR-0023)', () => {
+  const call = (token: string | null, method: string, path: string, body?: unknown): Promise<Response> =>
+    fetch(`${server.url}${path}`, {
+      method,
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const codeOf = async (r: Response): Promise<string> => ((await r.json()) as { code: string }).code;
+
+  it('sign-up is unverified: 403 EMAIL_NOT_VERIFIED until the code; resend 429 + Retry-After; attempts', async () => {
+    const reg = await call(null, 'POST', '/api/auth/register', { email: 'new@calaba.test', password: 'password123', displayName: 'Новый', locale: 'ru-RU' });
+    expect(reg.status).toBe(201);
+    const body = (await reg.json()) as { tokens: { accessToken: string }; me: { emailVerified?: boolean; locale: string } };
+    expect(body.me.emailVerified ?? false).toBe(false);
+    expect(body.me.locale).toBe('ru');
+    const token = body.tokens.accessToken;
+    const ws = await call(token, 'POST', '/api/workspaces', { name: 'X', slug: 'x-ws' });
+    expect(ws.status).toBe(403);
+    expect(await codeOf(ws)).toBe('ERROR_CODE_EMAIL_NOT_VERIFIED');
+
+    const resend = await call(token, 'POST', '/api/auth/verify/send');
+    expect(resend.status).toBe(429);
+    expect(Number(resend.headers.get('retry-after'))).toBeGreaterThan(50);
+
+    const wrong = await call(token, 'POST', '/api/auth/verify', { code: '000000' });
+    expect(wrong.status).toBe(422);
+    expect(((await wrong.json()) as { message: string }).message).toBe('wrong code, 4 attempt(s) left');
+    const ok = await call(token, 'POST', '/api/auth/verify', { code: MOCK_EMAIL_CODE });
+    expect(((await ok.json()) as { me: { emailVerified: boolean } }).me.emailVerified).toBe(true);
+    expect((await call(token, 'POST', '/api/workspaces', { name: 'X', slug: 'x-ws' })).status).toBe(201);
+    expect((await call(token, 'POST', '/api/auth/verify/send')).status).toBe(409);
+    server.reset('data');
+  });
+
+  it('five wrong codes use the code up (CODE_EXPIRED)', async () => {
+    server.setEmailState(IDS.users.grigory, { verified: false });
+    const token = await login('grigory@calaba.test');
+    for (let i = 0; i < 4; i++) expect(await codeOf(await call(token, 'POST', '/api/auth/verify', { code: '000000' }))).toBe('ERROR_CODE_CODE_INVALID');
+    expect(await codeOf(await call(token, 'POST', '/api/auth/verify', { code: '000000' }))).toBe('ERROR_CODE_CODE_EXPIRED');
+    expect(await codeOf(await call(token, 'POST', '/api/auth/verify', { code: MOCK_EMAIL_CODE }))).toBe('ERROR_CODE_CODE_EXPIRED');
+    server.reset('data');
+  });
+
+  it('password reset: forgot is always 204; reset revokes sessions; the new password signs in', async () => {
+    const old = await login('vera@calaba.test');
+    expect((await call(null, 'POST', '/api/auth/password/forgot', { email: 'nobody@calaba.test' })).status).toBe(204);
+    expect((await call(null, 'POST', '/api/auth/password/forgot', { email: 'vera@calaba.test' })).status).toBe(204);
+    expect(await codeOf(await call(null, 'POST', '/api/auth/password/reset', { email: 'vera@calaba.test', code: '999999', password: 'brandnew123' }))).toBe(
+      'ERROR_CODE_CODE_INVALID',
+    );
+    expect((await call(null, 'POST', '/api/auth/password/reset', { email: 'vera@calaba.test', code: MOCK_EMAIL_CODE, password: 'brandnew123' })).status).toBe(204);
+    expect((await call(old, 'GET', '/api/me')).status).toBe(401);
+    const res = await call(null, 'POST', '/api/auth/login', { email: 'vera@calaba.test', password: 'brandnew123' });
+    expect(res.status).toBe(200);
+    server.reset('data');
+  });
+
+  it('invite by email: lookup, add, invitation with a public preview, sign-up by the link joins verified', async () => {
+    const anna = await login();
+    const ws = IDS.workspaces.main;
+    const found = (await (await call(anna, 'POST', `/api/workspaces/${ws}/invites/lookup`, { email: 'Vera@calaba.test' })).json()) as {
+      user?: { id: string };
+      member: boolean;
+    };
+    expect(found).toMatchObject({ user: { id: IDS.users.vera }, member: true });
+    expect(await (await call(anna, 'POST', `/api/workspaces/${ws}/invites/lookup`, { email: 'x@example.com' })).json()).toEqual({ member: false });
+    expect((await call(await login('vera@calaba.test'), 'POST', `/api/workspaces/${ws}/invites/lookup`, { email: 'x@example.com' })).status).toBe(403);
+
+    const created = await call(anna, 'POST', `/api/workspaces/${ws}/invites/email`, { email: 'x@example.com' });
+    expect(created.status).toBe(201);
+    const again = await call(anna, 'POST', `/api/workspaces/${ws}/invites/email`, { email: 'x@example.com' });
+    expect(again.status).toBe(429);
+    expect(Number(again.headers.get('retry-after'))).toBeGreaterThan(3600);
+    const list = (await (await call(anna, 'GET', `/api/workspaces/${ws}/invites/email`)).json()) as { invites: { id: string; email: string }[] };
+    expect(list.invites.map((i) => i.email)).toEqual(['x@example.com']);
+
+    const code = [...server.state.emailInvites.values()][0]?.code ?? '';
+    const preview = (await (await call(null, 'GET', `/api/invites/${code}`)).json()) as { email: string; memberCount: number; workspace: { name: string } };
+    expect(preview).toMatchObject({ email: 'x@example.com', memberCount: 4, workspace: { name: 'Команда Calab' } });
+    const other = await call(null, 'POST', '/api/auth/register', { email: 'y@example.com', password: 'password123', displayName: 'Y', inviteCode: code });
+    expect(await codeOf(other)).toBe('ERROR_CODE_INVITE_INVALID');
+    const reg = await call(null, 'POST', '/api/auth/register', { email: 'x@example.com', password: 'password123', displayName: 'X', inviteCode: code });
+    const me = ((await reg.json()) as { me: { emailVerified: boolean; user: { id: string } } }).me;
+    expect(me.emailVerified).toBe(true);
+    expect(server.state.members.some((m) => m.workspaceId === ws && m.userId === me.user.id)).toBe(true);
+
+    // A verified non-member found by lookup is added at once.
+    const add = await call(anna, 'POST', `/api/workspaces/${IDS.workspaces.main}/members`, { userId: me.user.id });
+    expect(add.status).toBe(409);
+    server.reset('data');
   });
 });

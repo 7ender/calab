@@ -1646,16 +1646,19 @@ class MockImpl {
     this.route('GET', '/api/invites/:code', (c) => {
       // Invitation by email: public preview with the address (the sign-up form locks it).
       const ei = this.emailInviteByCode(c.params[0] ?? '');
-      const eiWs = ei ? s().workspaces.get(ei.workspaceId) : undefined;
-      if (ei && eiWs) {
-        sendMsg(c.res, 200, GetInviteResponseSchema, { workspace: eiWs, expiresAt: ei.expiresAt, email: ei.email });
-        return;
-      }
-      this.uid(c);
-      const inv = [...s().invites.values()].find((i) => i.code === c.params[0]);
-      const ws = inv ? s().workspaces.get(inv.workspaceId) : undefined;
-      if (!inv || !ws) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
-      sendMsg(c.res, 200, GetInviteResponseSchema, { workspace: ws, ...(inv.expiresAt ? { expiresAt: inv.expiresAt } : {}) });
+      const inv = ei ? undefined : [...s().invites.values()].find((i) => i.code === c.params[0]);
+      const ws = s().workspaces.get(ei?.workspaceId ?? inv?.workspaceId ?? '');
+      if ((!ei && !inv) || !ws) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+      if (inv?.maxUses && inv.uses >= inv.maxUses) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite used up');
+      // Public (no token, server 260e8d9): the public subset of the workspace + member count.
+      const memberCount = this.membersOf(ws.id).filter((m) => m.role !== WorkspaceRole.GUEST).length;
+      const expiresAt = ei?.expiresAt ?? inv?.expiresAt;
+      sendMsg(c.res, 200, GetInviteResponseSchema, {
+        workspace: { id: ws.id, slug: ws.slug, name: ws.name, iconFileId: ws.iconFileId },
+        memberCount,
+        ...(expiresAt ? { expiresAt } : {}),
+        ...(ei ? { email: ei.email } : {}),
+      });
     });
 
     this.route('POST', '/api/invites/:code/join', (c) => {

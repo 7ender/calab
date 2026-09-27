@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Logo } from '../../components/Logo';
 import { MediaImg } from '../../components/MediaImg';
 import { Button, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { plural, t } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { bindLaunchSignals, createLaunchProbe, deepLinkFor, launchMethod, type LaunchProbe, type LaunchState } from '../../lib/appLaunch';
@@ -183,12 +183,12 @@ function Invalid({ text }: { text: string }): ReactNode {
 }
 
 /**
- * GET /api/invites/{code} needs a session on the server: signed out, the card names Calab only
- * (the invite itself is checked on «Продолжить в браузере» → registration / join).
+ * GET /api/invites/{code} is public (ADR-0023): the workspace, its member count and, for an
+ * invitation sent by email, the address (the sign-up form then locks it).
  */
 function WorkspacePreview({ code, authed }: { code: string; authed: boolean }): ReactNode {
-  const q = useQuery({ queryKey: ['invite', code], queryFn: () => api.invites.get(code), enabled: authed, retry: false, staleTime: 60_000 });
-  if (authed && q.isLoading) return <PreviewSkeleton />;
+  const q = useQuery({ queryKey: ['invite', code], queryFn: () => api.invites.get(code), retry: false, staleTime: 60_000 });
+  if (q.isLoading) return <PreviewSkeleton />;
   const ws = q.data?.workspace;
   const invalid = q.error instanceof ApiError && (q.error.is('ERROR_CODE_INVITE_INVALID') || q.error.status === 404 || q.error.status === 410);
   return (
@@ -200,6 +200,12 @@ function WorkspacePreview({ code, authed }: { code: string; authed: boolean }): 
           <h1 className="mt-1 max-w-full truncate text-title font-semibold" title={ws.name}>
             {ws.name}
           </h1>
+          {q.data?.memberCount ? <p className="mt-0.5 text-body text-muted">{plural('mail.landing.members', q.data.memberCount)}</p> : null}
+          {q.data?.email ? (
+            <p className="mt-0.5 max-w-full truncate text-body text-muted" title={q.data.email}>
+              {t('mail.landing.forEmail', { email: q.data.email })}
+            </p>
+          ) : null}
         </div>
       ) : (
         <div className="flex max-w-full flex-col items-center">

@@ -68,4 +68,6 @@ export const esMail: DictShape<typeof enMail> = {
   'mail.invite.until': 'hasta el {date}',
   'mail.invite.revoke': 'Revocar',
   'mail.invite.revoked': 'Invitación revocada',
+  'mail.landing.members': { one: '{n} miembro', many: '{n} miembros', other: '{n} miembros' },
+  'mail.landing.forEmail': 'Invitación para {email}',
 };

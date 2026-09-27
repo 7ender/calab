@@ -60,4 +60,6 @@ export const zhMail: DictShape<typeof enMail> = {
   'mail.invite.until': '有效期至 {date}',
   'mail.invite.revoke': '撤销',
   'mail.invite.revoked': '邀请已撤销',
+  'mail.landing.members': { other: '{n} 位成员' },
+  'mail.landing.forEmail': '发给 {email} 的邀请',
 };
