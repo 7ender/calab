@@ -6,7 +6,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, CircleDot, Copy, Gem, Search, Settings2, Shield, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -36,6 +36,7 @@ import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
 import { RolesTab } from './RolesTab';
+import { StickersTab } from './StickersTab';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -66,6 +67,8 @@ export function WorkspaceSettingsDialog({
   const owner = entry.role === WorkspaceRole.OWNER;
   // «Роли» (ADR-0026): whoever may manage roles — admins, or a custom role with MANAGE_ROLES.
   const manageRoles = can(workspacePerms(myRoles), 'MANAGE_ROLES');
+  // «Стикеры» (ADR-0030): MANAGE_STICKERS — admins, or a custom role with it.
+  const manageStickers = can(workspacePerms(myRoles), 'MANAGE_STICKERS');
   const sections: SettingsSection[] = [
     ...(admin
       ? [
@@ -75,6 +78,7 @@ export function WorkspaceSettingsDialog({
       : []),
     { id: 'members', label: t('ws.members'), icon: Users, content: <MembersTab workspaceId={workspaceId} /> },
     ...(manageRoles ? [{ id: 'roles', label: t('roles.tab'), icon: Shield, content: <RolesTab workspaceId={workspaceId} /> }] : []),
+    ...(manageStickers ? [{ id: 'stickers', label: t('stk.tab'), icon: Sticker, content: <StickersTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
     ...(entry.ws.plan ? [{ id: 'plan', label: t('plan.tab'), icon: Gem, content: <PlanTab workspaceId={workspaceId} /> }] : []),
     // «GPTunneL» (ADR-0025): the meeting recording connection; guests don't see it (the API is 403).

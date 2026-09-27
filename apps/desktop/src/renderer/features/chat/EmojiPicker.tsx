@@ -1,13 +1,20 @@
 import * as Popover from '@radix-ui/react-popover';
 import { Car, Clock3, Hand, Heart, Leaf, Lightbulb, Pizza, Search, Smile, Trophy, type LucideIcon } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Tip, cx } from '../../components/ui';
+import type { Sticker } from '@calaba/protocol';
+import { Segmented, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { useChatView } from './chatView';
 import { EMOJI_GROUPS, searchEmoji } from './emoji';
+import type { StickerPlace } from '../../lib/stickers';
+import { StickerPicker } from './stickers/StickerPicker';
 
 const COLS = 9;
+
+type PanelTab = 'emoji' | 'stickers';
+/** The composer's panel reopens on the tab used last (Telegram), for this session. */
+let lastTab: PanelTab = 'emoji';
 
 /** Category bar glyphs: monochrome, SF-Symbols-like (Telegram / macOS), not colour emoji. */
 const GROUP_ICONS: Record<string, LucideIcon> = {
@@ -34,6 +41,7 @@ export function EmojiPicker({
   canPick,
   hint,
   inModal = false,
+  stickers,
 }: {
   onPick: (emoji: string) => void;
   label: string;
@@ -53,8 +61,18 @@ export function EmojiPicker({
    * above). Radix nests the layers: Esc and outside clicks close the picker only.
    */
   inModal?: boolean;
+  /**
+   * The composer's panel (ADR-0030): a «Стикеры» tab next to the emoji; `place` says which packs
+   * may be used here, `onSend` posts the picked sticker (the panel closes).
+   */
+  stickers?: { place: StickerPlace; onSend: (s: Sticker) => void } | undefined;
 }): ReactNode {
   const [open, setOpen] = useState(false);
+  const [tab, setTabState] = useState<PanelTab>(() => (stickers ? lastTab : 'emoji'));
+  const setTab = (v: PanelTab): void => {
+    lastTab = v;
+    setTabState(v);
+  };
   const change = (v: boolean): void => {
     setOpen(v);
     onOpenChange?.(v);
@@ -79,16 +97,39 @@ export function EmojiPicker({
           )}
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
-          <PickerBody
-            {...(canPick ? { canPick } : {})}
-            {...(hint ? { hint } : {})}
-            onPick={(e) => {
-              if (canPick && !canPick(e)) return;
-              useChatView.getState().pushRecent(e);
-              onPick(e);
-              if (closeOnPick) change(false);
-            }}
-          />
+          {stickers ? (
+            <div className="flex shrink-0 justify-center border-b border-line px-3 py-2">
+              <Segmented
+                label={t('stk.tabs')}
+                value={tab}
+                onChange={setTab}
+                options={[
+                  { value: 'emoji', label: t('stk.tabEmoji') },
+                  { value: 'stickers', label: t('stk.tabStickers') },
+                ]}
+              />
+            </div>
+          ) : null}
+          {stickers && tab === 'stickers' ? (
+            <StickerPicker
+              place={stickers.place}
+              onSend={(s) => {
+                stickers.onSend(s);
+                change(false);
+              }}
+            />
+          ) : (
+            <PickerBody
+              {...(canPick ? { canPick } : {})}
+              {...(hint ? { hint } : {})}
+              onPick={(e) => {
+                if (canPick && !canPick(e)) return;
+                useChatView.getState().pushRecent(e);
+                onPick(e);
+                if (closeOnPick) change(false);
+              }}
+            />
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

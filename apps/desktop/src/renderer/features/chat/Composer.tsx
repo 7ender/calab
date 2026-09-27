@@ -1,7 +1,7 @@
 import { RoomType, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
@@ -13,6 +13,9 @@ import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, s
 import { useMessages } from '../../stores/messages';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
+import { useDms } from '../../stores/dms';
+import { sendSticker } from '../../services/stickers';
+import type { StickerPlace } from '../../lib/stickers';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from './EmojiPicker';
 import { MentionPopover, optionKey, useMentionables, type MentionOption } from './MentionPopover';
@@ -193,6 +196,21 @@ export function Composer({
   };
   const voice = useVoiceRecorder({ onSend: sendVoice });
 
+  // Stickers (ADR-0030): a message of their own, like a voice message; not while editing.
+  const dmPeer = useDms((s) => (room.type === RoomType.DM ? (s.byRoom[room.id]?.peerId ?? '') : ''));
+  const stickerPlace = useMemo<StickerPlace | null>(() => (workspaceId ? { workspaceId } : dmPeer ? { dmPeerId: dmPeer } : null), [workspaceId, dmPeer]);
+  const stickers =
+    stickerPlace && canSend && !suspended && !editMsg
+      ? {
+          place: stickerPlace,
+          onSend: (s: Parameters<typeof sendSticker>[2]) => {
+            if (useMessages.getState().rooms[room.id]?.hasMoreAfter) void loadPresent(room.id);
+            void sendSticker(workspaceId, room.id, s, replyTo);
+            setReply(room.id, undefined);
+          },
+        }
+      : undefined;
+
   const send = (): void => {
     const content = wire(trimMessage(text));
     if (content.length > MAX_CONTENT) return;
@@ -252,7 +270,8 @@ export function Composer({
       // Edit my last message (Telegram / Discord habit).
       const items = useMessages.getState().rooms[room.id]?.items ?? [];
       const mine = [...items].reverse().find((c) => c.status === 'sent' && c.msg.authorId === me);
-      if (mine) {
+      // A sticker message cannot be edited (ADR-0030): ↑ does nothing then.
+      if (mine && !mine.msg.sticker) {
         e.preventDefault();
         setEditing(mine.key);
       }
@@ -416,7 +435,7 @@ export function Composer({
             className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint focus:outline-none focus-visible:outline-none"
             style={{ maxHeight: MAX_FIELD_H }}
           />
-          <EmojiPicker onPick={insert} label={t('chat.emoji')}>
+          <EmojiPicker onPick={insert} label={t('chat.emoji')} stickers={stickers}>
             <IconButton tip={false} label={t('chat.emoji')} className="mb-1 rounded-full">
               <Smile className="size-5" />
             </IconButton>

@@ -5,6 +5,7 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
 import { api, uploadFile, uploadPath, type UploadHandle } from '../lib/api/endpoints';
+import { sendSticker } from './stickers';
 import { voiceQuery, type VoiceMeta } from '../lib/voiceNote';
 import { canToggleReaction } from '../features/chat/reactionLimit';
 import { reportPlanError } from './plan';
@@ -326,6 +327,7 @@ export async function sendMessage(
 
 /** Retry keeps the same nonce, so the server never creates a duplicate. */
 export function retrySend(workspaceId: string, roomId: string, c: ChatMessage, files: OutgoingFile[] = []): Promise<void> {
+  if (c.msg.sticker) return sendSticker(workspaceId, roomId, c.msg.sticker, c.msg.replyToId || undefined, c.msg.nonce);
   return sendMessage(workspaceId, roomId, c.msg.content, files, c.msg.replyToId || undefined, c.msg.nonce);
 }
 

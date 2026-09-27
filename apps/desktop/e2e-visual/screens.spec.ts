@@ -97,6 +97,9 @@ const KEY = new Set([
   'admin-suspend',
   'settings-bans',
   'workspace-suspended',
+  'chat-sticker',
+  'sticker-picker',
+  'settings-stickers',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -2181,3 +2184,68 @@ async function expectWelcomeCentred(page: Page): Promise<void> {
   expect(off, 'empty-room welcome present').not.toBeNull();
   expect(Math.abs(off ?? 99), 'empty-room welcome centred').toBeLessThanOrEqual(4);
 }
+
+// ---------------------------------------------------------------- stickers (ADR-0030)
+
+/**
+ * Stickers stand still for the shots: reduced motion shows an animated one's first frame
+ * (the playback rule itself, docs/08 «Стикеры»), drawn on a canvas.
+ */
+async function stillStickers(win: Page, n: number): Promise<void> {
+  await expect(win.locator('[data-sticker-still][data-drawn]')).toHaveCount(n);
+}
+
+// A sticker message from Вера (animated, standing still) and my own: 160 px, no bubble, the time
+// on a pill; a click on a sticker opens its pack («Убрать из моих»: «Calab» is installed).
+test('chat-sticker', async ({ open, win, mock, shot }) => {
+  await open();
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  await mainWindow(win, mock);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', stickerId: IDS.stickers.orbit });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: '', stickerId: IDS.stickers.sun });
+  await expect(win.getByTestId('sticker-message')).toHaveCount(2);
+  await stillStickers(win, 1);
+  await feedAtBottom(win);
+  await checkpoint(shot, 'chat-sticker');
+  await win.getByRole('button', { name: 'Стикер 🌀' }).click();
+  const dialog = win.getByRole('dialog', { name: 'Calab' });
+  await expect(dialog.getByTestId('sticker-pack-grid').locator('[data-sticker]')).toHaveCount(3);
+  await expect(dialog.getByTestId('sticker-pack-action')).toHaveText('Убрать из моих');
+});
+
+// The emoji panel's «Стикеры» tab: search, my pack «Calab», the workspace's «Эмоции» to add, the
+// pack covers along the bottom; a pick sends the sticker and closes the panel.
+test('sticker-picker', async ({ open, win, mock, shot }) => {
+  await open();
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  await mainWindow(win, mock);
+  await win.getByRole('button', { name: 'Эмодзи' }).click();
+  const panel = win.getByTestId('emoji-picker');
+  await panel.getByRole('radio', { name: 'Стикеры' }).click();
+  const grid = panel.getByTestId('sticker-grid');
+  await expect(grid.locator('button[data-sticker-pick]')).toHaveCount(3);
+  await expect(grid.getByRole('button', { name: 'Добавить' })).toBeVisible();
+  await stillStickers(win, 1); // the animated 🌀 in the grid (covers are the static ☀️)
+  await checkpoint(shot, 'sticker-picker');
+  await grid.getByRole('button', { name: 'Стикер 💎' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(win.getByTestId('sticker-message')).toHaveCount(1);
+});
+
+// Workspace settings → «Стикеры» → the pack «Calab»: name, the WebP drop zone, the stickers with
+// their emoji (the first is the cover).
+test('settings-stickers', async ({ open, win, mock, shot }) => {
+  await open();
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  await mainWindow(win, mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Стикеры' }).click();
+  await expect(dialog.getByTestId('sticker-pack-row')).toHaveCount(2);
+  await dialog.getByTestId('sticker-pack-row').filter({ hasText: 'Calab' }).click();
+  await expect(dialog.getByTestId('sticker-pack-title')).toHaveText('Calab');
+  await expect(dialog.getByTestId('sticker-pack-stickers').locator('[data-sticker]')).toHaveCount(3);
+  await stillStickers(win, 1);
+  await checkpoint(shot, 'settings-stickers');
+});

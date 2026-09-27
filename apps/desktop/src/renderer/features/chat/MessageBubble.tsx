@@ -34,6 +34,8 @@ import { mediaKind } from '../../lib/chatMedia';
 import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
 import { VoiceAttachment } from './VoiceBubble';
 import { isVoice } from '../../lib/voiceNote';
+import { StickerImage } from './stickers/StickerImage';
+import { StickerPackDialog } from './stickers/StickerPackDialog';
 
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
@@ -214,6 +216,10 @@ function Bubble({
   const rows = files.filter((f) => isVoice(f) || mediaKind(f) !== 'video');
   const uploads = c.uploads && c.status !== 'sent' ? c.uploads : [];
   const hasText = !!m.content.trim();
+  // A sticker message (ADR-0030): the sticker alone, no bubble; one whose sticker is gone
+  // (its workspace was deleted) keeps an empty body — a placeholder stands in.
+  const stickerMsg = m.sticker ?? null;
+  const stickerGone = !stickerMsg && !hasText && !m.attachments.length && !uploads.length;
   const sticker = hasText && !images.length && !files.length && !uploads.length && !m.replyToId && !m.reactions.length && isEmojiOnly(m.content);
   const showName = !own && meta.first && !sticker;
   const imageOnly = images.length > 0 && !hasText && !files.length && !m.replyToId && !showName && !m.reactions.length;
@@ -232,7 +238,28 @@ function Bubble({
     : { borderRadius: `${meta.first ? r : ri} ${r} ${r} ${tail ? '0' : ri}` };
   if (meta.last && !tail) Object.assign(radius, own ? { borderBottomRightRadius: r } : { borderBottomLeftRadius: r });
 
-  const body = sticker ? (
+  const body = stickerMsg || stickerGone ? (
+    <div className={cx('flex flex-col gap-1', own ? 'items-end' : 'items-start')} data-testid="sticker-message">
+      {m.replyToId ? (
+        <div className="max-w-[260px] overflow-hidden rounded-[var(--radius-bubble)] bg-[var(--bubble-bg)] pb-1.5 shadow-[var(--shadow-bubble)]">
+          <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop />
+        </div>
+      ) : null}
+      {stickerMsg ? (
+        <StickerTarget sticker={stickerMsg} />
+      ) : (
+        <span className="grid size-[160px] place-items-center rounded-[var(--radius-card)] border border-dashed border-line text-caption text-muted">{t('stk.unavailable')}</span>
+      )}
+      {m.reactions.length ? (
+        <div className="flex flex-wrap gap-1">
+          {m.reactions.map((re) => (
+            <ReactionChip key={re.emoji} roomId={roomId} m={m} emoji={re.emoji} count={re.count} me={re.me} canReact={c.status === 'sent'} />
+          ))}
+        </div>
+      ) : null}
+      <span className="rounded-full bg-[var(--bubble-bg)] px-2 py-0.5 shadow-[var(--shadow-bubble)]">{metaNode}</span>
+    </div>
+  ) : sticker ? (
     <div className="flex flex-col items-end gap-1">
       <span className="text-[44px] leading-none">{m.content.trim()}</span>
       <span className="rounded-full bg-[var(--bubble-bg)] px-2 py-0.5 shadow-[var(--shadow-bubble)]">{metaNode}</span>
@@ -344,6 +371,31 @@ function Bubble({
       </ContextMenu.Trigger>
       <MessageMenu c={c} own={own} roomId={roomId} perms={perms} />
     </ContextMenu.Root>
+  );
+}
+
+/**
+ * The sticker of a sticker message: 160 px, no background (docs/08 «Стикеры»). A click opens its
+ * pack (Telegram: «Добавить пак»).
+ */
+function StickerTarget({ sticker }: { sticker: NonNullable<Message['sticker']> }): ReactNode {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="rounded-[var(--radius-card)] focus-visible:outline-offset-2"
+        aria-label={t('stk.sticker', { emoji: sticker.emoji })}
+        aria-haspopup="dialog"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        <StickerImage sticker={sticker} size={160} />
+      </button>
+      {open ? <StickerPackDialog sticker={sticker} onClose={() => setOpen(false)} /> : null}
+    </>
   );
 }
 

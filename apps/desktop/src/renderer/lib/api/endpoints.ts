@@ -104,6 +104,15 @@ import {
   StopRecordingResponseSchema,
   RetryRecordingResponseSchema,
   GetRecordingTranscriptResponseSchema,
+  CreateStickerPackRequestSchema,
+  ListStickerPacksResponseSchema,
+  MyStickerPacksResponseSchema,
+  SetStickerPackOrderRequestSchema,
+  StickerPackResponseSchema,
+  UpdateStickerPackRequestSchema,
+  UpdateStickerRequestSchema,
+  UploadStickersResponseSchema,
+  type UploadStickersResponse,
   type FileMeta,
   type ScreenSharePreset,
   type WorkspaceRole,
@@ -266,6 +275,28 @@ export const api = {
         UpdateRoomNotificationSettingsResponseSchema,
         body(UpdateRoomNotificationSettingsRequestSchema, init),
       ),
+  },
+  /** Sticker packs (ADR-0030): managing needs MANAGE_STICKERS; installs are the caller's own. */
+  stickers: {
+    /** Live packs of a workspace (any member). */
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sticker-packs`, ListStickerPacksResponseSchema),
+    /** One live pack (any member of its workspace; 404 otherwise). */
+    get: (packId: string) => call('GET', `/api/sticker-packs/${packId}`, StickerPackResponseSchema),
+    /** 201; 409 PLAN_LIMIT (sticker_packs) or a taken short name. The creator gets it installed. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateStickerPackRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sticker-packs`, StickerPackResponseSchema, body(CreateStickerPackRequestSchema, init)),
+    update: (packId: string, init: MessageInitShape<typeof UpdateStickerPackRequestSchema>) =>
+      call('PATCH', `/api/sticker-packs/${packId}`, StickerPackResponseSchema, body(UpdateStickerPackRequestSchema, init)),
+    remove: (packId: string) => callEmpty('DELETE', `/api/sticker-packs/${packId}`),
+    setEmoji: (stickerId: string, emoji: string) =>
+      call('PATCH', `/api/stickers/${stickerId}`, StickerPackResponseSchema, body(UpdateStickerRequestSchema, { emoji })),
+    removeSticker: (stickerId: string) => call('DELETE', `/api/stickers/${stickerId}`, StickerPackResponseSchema),
+    /** Installed packs in my order + the packs of my workspaces I have not installed. */
+    mine: () => call('GET', '/api/me/sticker-packs', MyStickerPacksResponseSchema),
+    install: (packId: string) => call('PUT', `/api/me/sticker-packs/${packId}`, MyStickerPacksResponseSchema),
+    uninstall: (packId: string) => call('DELETE', `/api/me/sticker-packs/${packId}`, MyStickerPacksResponseSchema),
+    order: (packIds: readonly string[]) =>
+      call('PUT', '/api/me/sticker-packs/order', MyStickerPacksResponseSchema, body(SetStickerPackOrderRequestSchema, { packIds: [...packIds] })),
   },
   messages: {
     list: (roomId: string, p: { before?: string; after?: string; limit?: number }, signal?: AbortSignal) =>
@@ -441,6 +472,47 @@ export function uploadFile(path: string, file: Blob, name: string, onProgress: (
     }, reject);
   });
   return { promise, abort: () => xhr.abort() };
+}
+
+/**
+ * A batch of stickers (ADR-0030): multipart with an «emoji» field before each «file»; all or
+ * nothing (422 field `file[i]` / `emoji[i]` names the bad one). Progress over the whole batch.
+ */
+export function uploadStickers(
+  packId: string,
+  items: ReadonlyArray<{ file: Blob; name: string; emoji: string }>,
+  onProgress: (fraction: number) => void,
+): Promise<UploadStickersResponse> {
+  const xhr = new XMLHttpRequest();
+  return new Promise<UploadStickersResponse>((resolve, reject) => {
+    xhr.open('POST', apiUrl(`/api/sticker-packs/${packId}/stickers`));
+    xhr.responseType = 'text';
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(fromJson(UploadStickersResponseSchema, JSON.parse(xhr.responseText) as JsonValue, { ignoreUnknownFields: true }));
+        } catch {
+          reject(new ApiError('ERROR_CODE_INTERNAL', 'bad upload response', xhr.status));
+        }
+        return;
+      }
+      const res = new Response(xhr.responseText, { status: xhr.status });
+      toApiError(res).then(reject, () => reject(new ApiError('ERROR_CODE_INTERNAL', `HTTP ${xhr.status}`, xhr.status)));
+    };
+    xhr.onerror = () => reject(new ApiError('ERROR_CODE_UNAVAILABLE', 'upload failed', 0));
+    const form = new FormData();
+    for (const it of items) {
+      form.append('emoji', it.emoji);
+      form.append('file', it.file, it.name);
+    }
+    void platform.authHeaders().then((headers) => {
+      for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+      xhr.send(form);
+    }, reject);
+  });
 }
 
 export async function uploadAvatar(file: Blob, name: string): Promise<void> {

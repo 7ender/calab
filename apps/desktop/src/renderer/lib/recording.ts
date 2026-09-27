@@ -1,6 +1,7 @@
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { MessageKind, RecordingStatus, RoomRecordingState, type Message, type RecordingCard, type RoomRecording } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
+import { stickerPreview } from './stickers';
 
 /**
  * Meeting recording (ADR-0025, docs/08 «Запись встреч»): the pure parts — the GPTunneL pairing
@@ -209,10 +210,12 @@ export function durationText(sec: number): string {
 
 /**
  * One line for a system message wherever a message is previewed (pins, search, reply quote,
- * notification, DM list): «Встреча записана · 42 мин». '' = not a system message (use its
- * content); an unknown system payload also previews as ''.
+ * notification, DM list): «Встреча записана · 42 мин», and «😀 Стикер» for a sticker message.
+ * '' = a plain message (use its content); an unknown system payload also previews as ''.
  */
-export function systemPreview(m: Pick<Message, 'kind' | 'system'>): string {
+export function systemPreview(m: Pick<Message, 'kind' | 'system'> & { sticker?: Message['sticker']; content?: string }): string {
+  // A sticker message (ADR-0030) previews as «😀 Стикер» too; one whose sticker is gone has no content.
+  if (m.sticker) return stickerPreview(m.sticker.emoji);
   const card = recordingCardOf(m);
   if (!card) return '';
   return card.deletedAt ? t('rec.card.deleted') : t('rec.card.preview', { duration: durationText(card.durationSec) });

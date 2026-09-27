@@ -108,6 +108,7 @@ export function contactHref(raw: string | undefined): string | null {
 interface ApiLike {
   name: string;
   code: string;
+  message?: string;
   extra?: { reason?: string; used?: number; limit?: number };
 }
 
@@ -139,6 +140,11 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     const n = x.limit ?? 0;
     const key: MessageKey = plan === Plan.FREE || plan === Plan.UNSPECIFIED ? 'plan.toast.roomFree' : 'plan.toast.room';
     return { text: n > 0 ? t(key, { n }) : t('plan.toast.roomAny'), contact: true };
+  }
+  // Sticker packs / stickers over the plan (ADR-0030): 409 CONFLICT, reason PLAN_LIMIT.
+  if (e.code === 'ERROR_CODE_CONFLICT' && byPlan) {
+    const n = x.limit ?? 0;
+    return { text: t(/pack/i.test(e.message ?? '') ? 'stk.planPacks' : 'stk.planStickers', { n }), contact: true };
   }
   if (e.code === 'ERROR_CODE_FILE_QUOTA_EXCEEDED') {
     const text =

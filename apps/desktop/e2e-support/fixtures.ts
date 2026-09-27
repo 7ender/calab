@@ -29,6 +29,10 @@ import {
   RoomPermissionOverrideSchema,
   RoomSchema,
   RoomType,
+  StickerPackSchema,
+  StickerSchema,
+  type Sticker,
+  type StickerPack,
   ScreenSharePreset,
   SessionSchema,
   UserSchema,
@@ -77,7 +81,7 @@ import { avatarPicture, cardPicture, encodePng } from './png';
 export type Scenario = 'data' | 'empty' | 'marketing';
 export const SCENARIOS: readonly Scenario[] = ['data', 'empty', 'marketing'];
 
-const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9 } as const;
+const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9, sticker: 10, stickerPack: 11 } as const;
 export type IdKind = keyof typeof KIND;
 
 export function mockId(kind: IdKind, n: number): string {
@@ -155,6 +159,25 @@ export const IDS = {
     portrait: mockId('file', 7),
     /** A meeting recording's audio (docs/09 #47): fixtures/meeting-recording.m4a (6 s AAC in MP4, as LiveKit Egress writes). */
     meeting: mockId('file', 8),
+    /** Sticker files (ADR-0030): fixtures/sticker-*.webp, 160×160 (orbit is animated, 6 frames). */
+    stickerSun: mockId('file', 9),
+    stickerGem: mockId('file', 10),
+    stickerOrbit: mockId('file', 11),
+    stickerSun2: mockId('file', 12),
+    stickerGem2: mockId('file', 13),
+  },
+  /**
+   * Sticker packs of «Команда Calab» (ADR-0030): «Calab» (☀️ 💎 🌀, installed by Анна) and
+   * «Эмоции» (not installed: «Паки пространств» in the picker). No message shows a sticker —
+   * the sticker tests post one (injectMessage({ stickerId })).
+   */
+  stickerPacks: { calab: mockId('stickerPack', 1), moods: mockId('stickerPack', 2) },
+  stickers: {
+    sun: mockId('sticker', 1),
+    gem: mockId('sticker', 2),
+    orbit: mockId('sticker', 3),
+    wave: mockId('sticker', 4),
+    heart: mockId('sticker', 5),
   },
   sessions: {
     annaDesktop: mockId('session', 1),
@@ -365,6 +388,12 @@ export interface MockState {
   gptunnel: Map<string, GptunnelIntegration>;
   /** Rooms being recorded now (state ACTIVE), by room id. */
   recordings: Map<string, RoomRecording>;
+  /** Sticker packs by id (ADR-0030), live stickers inside in order; deleted stickers stay in `deletedStickers`. */
+  stickerPacks: Map<string, StickerPack>;
+  /** Stickers removed from a pack that messages still show, by id. */
+  deletedStickers: Map<string, Sticker>;
+  /** userId → installed pack ids in the user's order. */
+  userStickerPacks: Map<string, string[]>;
   /** Next sequence number per id kind (runtime-created entities). */
   next: Record<IdKind, number>;
   /** Runtime clock ticks (see RUNTIME_CLOCK_START_MS). */
@@ -649,7 +678,10 @@ export function buildState(scenario: Scenario): MockState {
     emailInvites: new Map(),
     gptunnel: new Map(),
     recordings: new Map(),
-    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100 },
+    stickerPacks: new Map(),
+    deletedStickers: new Map(),
+    userStickerPacks: new Map(),
+    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100 },
     clock: 0,
   };
   if (scenario === 'marketing') return buildMarketingState(s);
@@ -756,6 +788,50 @@ export function buildState(scenario: Scenario): MockState {
     meta: fileMeta(IDS.files.meeting, IDS.workspaces.main, U.boris, 'Переговорка 2026-01-15 12-00.m4a', 'audio/mp4', meeting, ts('2026-01-15T12:43:00Z')),
     bytes: meeting,
   });
+  // ---- sticker packs (ADR-0030)
+  const stickerFile = (id: string, name: string, bytes: Buffer): void => {
+    s.files.set(id, { meta: fileMeta(id, IDS.workspaces.main, U.anna, name, 'image/webp', bytes, ts('2026-01-12T10:00:00Z'), { width: 160, height: 160 }), bytes });
+  };
+  const sun = media('sticker-sun.webp');
+  const gem = media('sticker-gem.webp');
+  const orbit = media('sticker-orbit.webp');
+  stickerFile(IDS.files.stickerSun, 'sun.webp', sun);
+  stickerFile(IDS.files.stickerGem, 'gem.webp', gem);
+  stickerFile(IDS.files.stickerOrbit, 'orbit.webp', orbit);
+  stickerFile(IDS.files.stickerSun2, 'wave.webp', sun);
+  stickerFile(IDS.files.stickerGem2, 'heart.webp', gem);
+  const st = (id: string, packId: string, fileId: string, emoji: string, bytes: Buffer, animated = false) =>
+    create(StickerSchema, { id, packId, emoji, url: `/api/files/${fileId}`, width: 160, height: 160, animated, size: bytes.length });
+  const P = IDS.stickerPacks;
+  const S = IDS.stickers;
+  s.stickerPacks.set(
+    P.calab,
+    create(StickerPackSchema, {
+      id: P.calab,
+      workspaceId: IDS.workspaces.main,
+      name: 'Calab',
+      shortName: 'calab',
+      stickers: [st(S.sun, P.calab, IDS.files.stickerSun, '☀️', sun), st(S.gem, P.calab, IDS.files.stickerGem, '💎', gem), st(S.orbit, P.calab, IDS.files.stickerOrbit, '🌀', orbit, true)],
+      createdBy: U.anna,
+      createdAt: ts('2026-01-12T10:00:00Z'),
+      updatedAt: ts('2026-01-12T10:05:00Z'),
+    }),
+  );
+  s.stickerPacks.set(
+    P.moods,
+    create(StickerPackSchema, {
+      id: P.moods,
+      workspaceId: IDS.workspaces.main,
+      name: 'Эмоции',
+      shortName: 'moods',
+      stickers: [st(S.wave, P.moods, IDS.files.stickerSun2, '👋', sun), st(S.heart, P.moods, IDS.files.stickerGem2, '❤️', gem)],
+      createdBy: U.boris,
+      createdAt: ts('2026-01-13T10:00:00Z'),
+      updatedAt: ts('2026-01-13T10:00:00Z'),
+    }),
+  );
+  s.userStickerPacks.set(U.anna, [P.calab]);
+
   const avatar = encodePng(128, 128, avatarPicture([255, 150, 120], [96, 72, 190]));
   s.files.set(IDS.files.veraAvatar, {
     meta: fileMeta(IDS.files.veraAvatar, '', U.vera, 'avatar.png', 'image/png', avatar, ts('2025-12-02T10:00:00Z'), { width: 128, height: 128 }),
