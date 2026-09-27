@@ -133,11 +133,11 @@ export type RecordingCard = Message<"calaba.v1.RecordingCard"> & {
   /**
    * FAILED — which retry the card offers (backlog 40). Both negative, so that cards stored
    * before these fields (both false) offer «Проверить снова» only:
-   *   not_uploaded = false → the file was delivered (the upload completed): «Проверить снова»
-   *                          (POST …/recheck); it is never sent again (reupload → 409).
-   *   not_uploaded = true, file_gone = false → the upload did not complete and the local file
-   *                          is kept: «Отправить снова» (POST …/reupload).
-   *   not_uploaded = true, file_gone = true → nothing to retry.
+   * not_uploaded = false: the file was delivered (the upload completed), «Проверить снова»
+   * (POST …/recheck); it is never sent again (reupload → 409).
+   * not_uploaded = true and file_gone = false: the upload did not complete and the local file
+   * is kept, «Отправить снова» (POST …/reupload).
+   * not_uploaded = true and file_gone = true: nothing to retry.
    * file_gone: the local file is gone (removed after done, 7 days after the stop, or never
    * written).
    *
