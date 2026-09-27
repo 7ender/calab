@@ -116,7 +116,7 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
 function ProfileTab(): ReactNode {
   const me = useSession((s) => s.me);
   const [busyAvatar, setBusyAvatar] = useState(false);
-  const [credDialog, setCredDialog] = useState<'password' | 'email' | null>(null);
+  const [credDialog, setCredDialog] = useState<'password' | 'email' | 'email-code' | 'email-cancel' | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const update = async (init: Parameters<typeof api.me.update>[0]): Promise<void> => {
     const r = await api.me.update(init);
@@ -173,7 +173,23 @@ function ProfileTab(): ReactNode {
           <CommitInput label={t('profile.status')} value={u.statusText} maxLength={128} placeholder={t('profile.statusPh')} onCommit={(v) => update({ statusText: v })} />
         </Row>
         {/* Guests have no password of their own (server: 403 FORBIDDEN): no rows to change it. */}
-        <Row label={t('profile.email')}>
+        <Row
+          label={t('profile.email')}
+          hint={
+            me.pendingEmail ? (
+              // ADR-0023: the new address waits for its code; login stays on the old one.
+              <span className="flex flex-wrap items-center gap-x-2" data-testid="pending-email">
+                <span>{t('mail.change.pending', { email: me.pendingEmail })}</span>
+                <button type="button" className="rounded-[var(--radius-control)] text-accent-text hover:underline" onClick={() => setCredDialog('email-code')}>
+                  {t('mail.change.enterCode')}
+                </button>
+                <button type="button" className="rounded-[var(--radius-control)] text-accent-text hover:underline" onClick={() => setCredDialog('email-cancel')}>
+                  {t('mail.change.cancel')}
+                </button>
+              </span>
+            ) : undefined
+          }
+        >
           <span className="flex min-w-0 items-center gap-3">
             <span className="selectable min-w-0 max-w-60 truncate text-body text-muted" title={me.email}>
               {me.email}
@@ -195,6 +211,8 @@ function ProfileTab(): ReactNode {
       </Card>
       {credDialog === 'password' ? <ChangePasswordDialog onClose={() => setCredDialog(null)} /> : null}
       {credDialog === 'email' ? <ChangeEmailDialog onClose={() => setCredDialog(null)} /> : null}
+      {credDialog === 'email-code' ? <ChangeEmailDialog mode="confirm" onClose={() => setCredDialog(null)} /> : null}
+      {credDialog === 'email-cancel' ? <ChangeEmailDialog mode="cancel" onClose={() => setCredDialog(null)} /> : null}
       <AfkCard />
     </>
   );

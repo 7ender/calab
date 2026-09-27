@@ -36,6 +36,9 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_ROOM_FULL: { key: 'err.roomFull' },
   ERROR_CODE_WORKSPACE_LIMIT: { key: 'err.workspaceLimit' },
   ERROR_CODE_STORAGE_FULL: { key: 'err.storageFull' },
+  ERROR_CODE_EMAIL_NOT_VERIFIED: { key: 'mail.err.notVerified' },
+  ERROR_CODE_CODE_INVALID: { key: 'mail.err.codeInvalid' },
+  ERROR_CODE_CODE_EXPIRED: { key: 'mail.err.codeExpired' },
 };
 
 /** ERROR_CODE_VALIDATION `field` (protojson name, see apps/server Validation(...)) → text. */

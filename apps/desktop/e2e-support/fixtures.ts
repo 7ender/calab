@@ -133,7 +133,38 @@ export interface UserRec {
   email: string;
   password: string;
   settings: UserSettings;
+  /** ADR-0023. Fixture accounts are verified (the screens stay as they were); sign-ups are not. */
+  emailVerified: boolean;
+  /** Requested new address waiting for its code ('' = none). */
+  pendingEmail: string;
+  /** Language of emails ('' = not set). */
+  locale: string;
 }
+
+/** A live email code (ADR-0023): the mock's code is always MOCK_EMAIL_CODE. */
+export interface EmailCodeRec {
+  attempts: number;
+  /** Real time (Date.now()) of the send: the 60 s resend rule. */
+  sentAtMs: number;
+}
+
+/** An invitation sent to an address (ADR-0023); `code` is its single-use /join/<code> link. */
+export interface EmailInviteRec {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: WorkspaceRole;
+  invitedBy: string;
+  code: string;
+  createdAt: Timestamp;
+  expiresAt: Timestamp;
+  lastSentAt: Timestamp;
+  /** Real time of the last send: the once-a-day rule. */
+  lastSentMs: number;
+}
+
+/** The code every mock email «contains» (verification, email change, password reset). */
+export const MOCK_EMAIL_CODE = '123456';
 
 export interface MemberRec {
   workspaceId: string;
@@ -190,6 +221,10 @@ export interface MockState {
   planMeta: Map<string, { note: string; updatedBy: string; updatedAt?: Timestamp }>;
   /** workspaceId → plan changes, newest first (GET /api/admin/workspaces/{id}/plan/log). */
   planLog: Map<string, PlanLogEntry[]>;
+  /** Email codes (ADR-0023): `verify:<userId>` (also the email change) and `reset:<email>`. */
+  emailCodes: Map<string, EmailCodeRec>;
+  /** Pending invitations by email, by id. */
+  emailInvites: Map<string, EmailInviteRec>;
   /** Next sequence number per id kind (runtime-created entities). */
   next: Record<IdKind, number>;
   /** Runtime clock ticks (see RUNTIME_CLOCK_START_MS). */
@@ -450,6 +485,8 @@ export function buildState(scenario: Scenario): MockState {
     superadmins: new Set(),
     planMeta: new Map(),
     planLog: new Map(),
+    emailCodes: new Map(),
+    emailInvites: new Map(),
     next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100 },
     clock: 0,
   };
@@ -472,6 +509,9 @@ export function buildState(scenario: Scenario): MockState {
       email: u.email,
       password: PASSWORD,
       settings: defaultSettings(),
+      emailVerified: true,
+      pendingEmail: '',
+      locale: '',
     });
     s.sessions.set(id, [
       create(SessionSchema, {

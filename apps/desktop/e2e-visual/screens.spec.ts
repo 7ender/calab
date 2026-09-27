@@ -1,8 +1,8 @@
-import type { Locator, Page } from '@playwright/test';
 import { create } from '@bufbuild/protobuf';
-import { Plan, WorkspacePlanSchema } from '@calaba/protocol';
-import { FREE_PLAN_LIMITS } from '../e2e-support/fixtures';
-import { IDS, type MockServer } from '../e2e-support/mock-server';
+import { Plan, UserSchema, WorkspacePlanSchema } from '@calaba/protocol';
+import type { Locator, Page } from '@playwright/test';
+import { FREE_PLAN_LIMITS, defaultSettings } from '../e2e-support/fixtures';
+import { IDS, PASSWORD, type MockServer } from '../e2e-support/mock-server';
 import { expect, test } from './app';
 import { checkpoint, settle } from './harness';
 import { startPublisher } from './publisher';
@@ -32,6 +32,9 @@ const ALL = process.env['CALABA_VISUAL_ALL'] === '1';
  */
 const KEY = new Set([
   'auth-login',
+  'auth-forgot',
+  'verify-banner',
+  'invite-email',
   'onboarding-mic',
   'onboarding-screen',
   'onboarding-done',
@@ -276,6 +279,69 @@ test('auth-register', async ({ open, win, shot }) => {
   await win.getByRole('button', { name: 'Зарегистрироваться' }).click();
   await expect(win.getByLabel('Имя')).toBeVisible();
   await checkpoint(shot, 'auth-register');
+});
+
+// ---------------------------------------------------------------- email (ADR-0023)
+
+/** «Забыли пароль?» → the code step: code field with the resend timer, new password. */
+test('auth-forgot', async ({ open, win, shot }) => {
+  await open({ auth: 'out' });
+  await win.getByRole('button', { name: 'Забыли пароль?' }).click();
+  await win.getByLabel('Email').fill('owner@calaba.test');
+  await win.getByRole('button', { name: 'Отправить код' }).click();
+  await expect(win.getByTestId('forgot-code')).toBeVisible();
+  await expect(win.getByText('Если owner@calaba.test зарегистрирован, мы отправили на него код.')).toBeVisible();
+  await win.getByRole('textbox', { name: 'Код из письма' }).fill('123456');
+  await checkpoint(shot, 'auth-forgot');
+});
+
+/** The unverified account: the bar over the main window, a wrong code answered inline. */
+test('verify-banner', async ({ open, win, mock, shot }) => {
+  await open();
+  mock.setEmailState(IDS.users.anna, { verified: false });
+  const bar = win.getByTestId('verify-banner');
+  await expect(bar).toBeVisible();
+  await expect(bar).toContainText('мы отправили код на owner@calaba.test');
+  await mainWindow(win, mock);
+  await bar.getByRole('textbox', { name: 'Код из письма' }).fill('000000'); // 6 digits submit by themselves
+  await expect(bar.getByRole('alert')).toHaveText('Неверный код. Осталось 4 попытки');
+  await checkpoint(shot, 'verify-banner');
+});
+
+/** Workspace settings → «Приглашения»: a found account with «Добавить» and one sent invitation. */
+test('invite-email', async ({ open, win, mock, shot }) => {
+  await open();
+  // A verified account outside «Команда Calab» (found by the exact address).
+  const egor = 'mock-egor-0001';
+  mock.state.users.set(egor, {
+    user: create(UserSchema, { id: egor, displayName: 'Егор Лебедев' }),
+    email: 'egor@example.com',
+    password: PASSWORD,
+    settings: defaultSettings(),
+    emailVerified: true,
+    pendingEmail: '',
+    locale: '',
+  });
+  await mainWindow(win, mock);
+  await openSettingsTab(
+    win,
+    async () => {
+      await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+      await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+    },
+    4,
+  );
+  const field = win.getByRole('textbox', { name: 'Email для приглашения' });
+  await field.fill('new.colleague@example.com');
+  await win.getByRole('button', { name: 'Отправить приглашение на почту' }).click();
+  await expect(win.getByText('Отправленные приглашения')).toBeVisible();
+  // The toast sits outside the modal (inert for pointer and a11y): close it by a DOM click.
+  await win.getByTestId('toast').locator('button[aria-label="Закрыть уведомление"]').evaluate((b) => (b as HTMLButtonElement).click());
+  await expect(win.getByTestId('toast')).toHaveCount(0);
+  await field.fill('egor@example.com');
+  await expect(win.getByTestId('invite-email-found')).toContainText('Егор Лебедев');
+  await expect(win.getByRole('button', { name: 'Добавить', exact: true })).toBeVisible();
+  await checkpoint(shot, 'invite-email');
 });
 
 // ---------------------------------------------------------------- onboarding

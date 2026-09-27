@@ -14,6 +14,7 @@ import { MembersPanel } from './MembersPanel';
 import { MobileVoiceStrip } from './MobileVoiceStrip';
 import { Sidebar } from './Sidebar';
 import { WorkspaceRail } from './WorkspaceRail';
+import { VerifyBanner } from '../auth/VerifyEmail';
 
 /** A horizontal swipe longer than this (and mostly horizontal) opens / closes a drawer. */
 const SWIPE_PX = 56;
@@ -69,6 +70,7 @@ export function MobileShell({
           {t('gateway.reconnecting')}
         </div>
       ) : null}
+      <VerifyBanner />
       <main className="mat-content relative flex min-h-0 flex-1 flex-col">
         {chat ? null : <MobileTopBar workspaceId={workspaceId} />}
         {children}

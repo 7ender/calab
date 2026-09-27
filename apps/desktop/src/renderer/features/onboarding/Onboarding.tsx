@@ -1,5 +1,5 @@
-import { AudioWaveform, Bell, Languages, Mic, MonitorUp, TriangleAlert } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { AudioWaveform, Bell, Languages, MailCheck, Mic, MonitorUp, TriangleAlert } from 'lucide-react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import type { PermissionStatus, ScreenAccess } from '../../../shared/ipc';
 import { Logo } from '../../components/Logo';
 import { Button, Segmented, Select, cx } from '../../components/ui';
@@ -15,6 +15,9 @@ import { MicMeter } from '../settings/AppSettingsDialog';
 import { PttBinder, bindingLabel } from '../settings/PttBinder';
 import { notifyStepView, readNotifyState, requestNotify, type NotifyState } from '../../lib/notifyPermission';
 import { screenStepState, screenStepView } from '../../lib/screenPermission';
+import { resendVerification, verifyEmail } from '../../services/email';
+import { toast } from '../../stores/toasts';
+import { CodeInput, CodeNote, ResendButton, useCodeAddress, useCodeFlow } from '../auth/VerifyEmail';
 
 /**
  * First run (docs/08 «Онбординг», docs/09 #20, #55): one card per step — an icon illustration, a
@@ -24,7 +27,7 @@ import { screenStepState, screenStepView } from '../../lib/screenPermission';
  * bottom (buttons too), and the body is centred between them — every step has one, so no step
  * shows an empty card. Everything is skippable; each permission is asked at its step.
  */
-type Step = 'lang' | 'mic' | 'mode' | 'screen' | 'notifications' | 'done';
+type Step = 'verify' | 'lang' | 'mic' | 'mode' | 'screen' | 'notifications' | 'done';
 
 function useIsMacDesktop(): boolean {
   const os = useSession((s) => s.appInfo?.platform);
@@ -41,7 +44,13 @@ export function Onboarding(): ReactNode {
   // Language first (ADR-0022) when nothing was chosen explicitly and the OS is not Russian. Fixed
   // at mount: picking «Русский» on the step must not make the step disappear under the cursor.
   const [withLang] = useState(() => usePrefs.getState().locale === 'auto' && getLocale() !== 'ru' && availableLocales().length > 1);
-  const steps: Step[] = [...(withLang ? (['lang'] as Step[]) : []), 'mic', 'mode', ...(mac ? (['screen'] as Step[]) : []), 'notifications', 'done'];
+  // «Подтвердите почту» first (ADR-0023): right after sign-up the code is in the inbox and the
+  // user's attention is on it. «Позже» leaves the bar in the main window instead. Fixed at mount.
+  const [withVerify] = useState(() => {
+    const me = useSession.getState().me;
+    return !!me && !me.emailVerified && !me.user?.isGuest;
+  });
+  const steps: Step[] = [...(withVerify ? (['verify'] as Step[]) : []), ...(withLang ? (['lang'] as Step[]) : []), 'mic', 'mode', ...(mac ? (['screen'] as Step[]) : []), 'notifications', 'done'];
   const [i, setI] = useState(0);
   // What the user actually set up, so «Всё готово» does not claim a mic check that was skipped.
   const [micChecked, setMicChecked] = useState(false);
@@ -73,6 +82,7 @@ export function Onboarding(): ReactNode {
           ))}
         </ol>
         <div className="flex flex-col [@media(min-height:600px)]:min-h-[488px]" data-onb-card>
+          {step === 'verify' ? <VerifyStep nav={nav} /> : null}
           {step === 'lang' ? <LangStep nav={nav} /> : null}
           {step === 'mic' ? <MicStep nav={nav} onResult={setMicChecked} /> : null}
           {step === 'mode' ? <ModeStep nav={nav} /> : null}
@@ -241,6 +251,40 @@ function MicStep({ nav, onResult }: { nav: Nav; onResult: (checked: boolean) => 
           )}
         </WarnNote>
       ) : null}
+    </StepFrame>
+  );
+}
+
+function VerifyStep({ nav }: { nav: Nav }): ReactNode {
+  const email = useCodeAddress();
+  const noteId = useId();
+  const flow = useCodeFlow(verifyEmail, resendVerification, () => {
+    toast.success(t('mail.verified'));
+    nav.next();
+  });
+  return (
+    <StepFrame
+      illustration={<Illustration icon={MailCheck} />}
+      title={t('mail.step.title')}
+      text={t('mail.step.text', { email })}
+      back={nav.back}
+      actions={
+        <>
+          <Button variant="secondary" size="lg" onClick={nav.next}>
+            {t('onb.later')}
+          </Button>
+          <Button size="lg" busy={flow.state.busy === 'verify'} onClick={flow.submit}>
+            {t('mail.confirm')}
+          </Button>
+        </>
+      }
+    >
+      <div className="mx-auto flex w-full max-w-[260px] flex-col items-center gap-2">
+        <CodeInput flow={flow} autoFocus label={t('mail.code')} describedBy={noteId} className="h-10 text-large" />
+        <CodeNote flow={flow} id={noteId} className="text-center" />
+        <ResendButton flow={flow} />
+      </div>
+      <p className="text-center text-caption text-muted">{t('mail.step.later')}</p>
     </StepFrame>
   );
 }

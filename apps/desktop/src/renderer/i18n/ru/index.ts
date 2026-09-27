@@ -2,6 +2,7 @@ import { ruApp } from './app';
 import { ruChat } from './chat';
 import { ruDm } from './dm';
 import { ruEcho } from './echo';
+import { ruMail } from './mail';
 import { ruPeople } from './people';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
@@ -17,6 +18,7 @@ export const ru = {
   ...ruDm,
   ...ruEcho,
   ...ruPlan,
+  ...ruMail,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',

@@ -26,9 +26,10 @@ export class ApiError extends Error {
     /**
      * Why, when a code has several causes (ApiError.reason): "PLAN_LIMIT" = a limit of the
      * workspace plan (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED). `used` / `limit`: the counter
-     * that was hit (ROOM_FULL — users; FILE_QUOTA_EXCEEDED — bytes).
+     * that was hit (ROOM_FULL — users; FILE_QUOTA_EXCEEDED — bytes). `retryAfter`: seconds from
+     * a 429's `Retry-After` header (ADR-0023: code resend, mail limits).
      */
-    readonly extra: { reason?: string; used?: number; limit?: number } = {},
+    readonly extra: { reason?: string; used?: number; limit?: number; retryAfter?: number } = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -38,23 +39,52 @@ export class ApiError extends Error {
     return this.extra.reason;
   }
 
+  get retryAfter(): number | undefined {
+    return this.extra.retryAfter;
+  }
+
   is(code: string): boolean {
     return this.code === code;
   }
 }
 
+/** `Retry-After` in seconds (delta form only, as the server sends it); undefined when absent. */
+export function retryAfterSeconds(res: Response): number | undefined {
+  const v = Number(res.headers.get('Retry-After') ?? '');
+  return Number.isFinite(v) && v > 0 ? Math.ceil(v) : undefined;
+}
+
 export async function toApiError(res: Response): Promise<ApiError> {
+  const retry = retryAfterSeconds(res);
   try {
     const b = (await res.json()) as { code?: string; message?: string; field?: string; reason?: string; used?: unknown; limit?: unknown };
     // protojson: uint64 as a string.
     const num = (v: unknown): number | undefined => (typeof v === 'string' || typeof v === 'number') && Number.isFinite(Number(v)) ? Number(v) : undefined;
     const used = num(b.used);
     const limit = num(b.limit);
-    const extra = { ...(b.reason ? { reason: b.reason } : {}), ...(used !== undefined ? { used } : {}), ...(limit !== undefined ? { limit } : {}) };
-    return new ApiError(b.code ?? 'ERROR_CODE_UNSPECIFIED', b.message ?? res.statusText, res.status, b.field || undefined, extra);
+    const extra = {
+      ...(b.reason ? { reason: b.reason } : {}),
+      ...(used !== undefined ? { used } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+      ...(retry !== undefined ? { retryAfter: retry } : {}),
+    };
+    const err = new ApiError(b.code ?? 'ERROR_CODE_UNSPECIFIED', b.message ?? res.statusText, res.status, b.field || undefined, extra);
+    for (const h of errorHooks) h(err);
+    return err;
   } catch {
-    return new ApiError('ERROR_CODE_UNSPECIFIED', res.statusText || `HTTP ${res.status}`, res.status);
+    return new ApiError('ERROR_CODE_UNSPECIFIED', res.statusText || `HTTP ${res.status}`, res.status, undefined, retry !== undefined ? { retryAfter: retry } : {});
   }
+}
+
+const errorHooks = new Set<(e: ApiError) => void>();
+
+/**
+ * Observes every API error (e.g. 403 EMAIL_NOT_VERIFIED → the «Подтвердите почту» bar asks for
+ * attention, ADR-0023) without each caller handling it. Returns the unsubscribe function.
+ */
+export function onApiError(h: (e: ApiError) => void): () => void {
+  errorHooks.add(h);
+  return () => errorHooks.delete(h);
 }
 
 /** Absolute URL of an API path for the current platform (Electron: calaba-api://, web: same origin). */

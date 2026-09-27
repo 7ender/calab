@@ -62,6 +62,7 @@ function parseRegister(v: unknown): RegisterArgs {
     ...parseLogin(v),
     displayName: str(r['displayName'], 100),
     inviteCode: str(r['inviteCode'], 128, true),
+    locale: r['locale'] === undefined ? '' : str(r['locale'], 35, true),
   };
 }
 

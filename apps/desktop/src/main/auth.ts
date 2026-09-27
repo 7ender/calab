@@ -208,6 +208,7 @@ export function register(args: RegisterArgs): Promise<IpcResult<AuthSession>> {
     password: args.password,
     displayName: args.displayName,
     inviteCode: args.inviteCode,
+    locale: args.locale ?? '',
     deviceName: deviceName(),
   });
 }

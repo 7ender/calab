@@ -70,8 +70,19 @@ import {
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
   UploadFileResponseSchema,
+  VerifyEmailRequestSchema,
+  ForgotPasswordRequestSchema,
+  ResetPasswordRequestSchema,
+  InviteLookupRequestSchema,
+  InviteLookupResponseSchema,
+  AddMemberRequestSchema,
+  AddMemberResponseSchema,
+  CreateEmailInviteRequestSchema,
+  CreateEmailInviteResponseSchema,
+  ListEmailInvitesResponseSchema,
   type FileMeta,
   type ScreenSharePreset,
+  type WorkspaceRole,
 } from '@calaba/protocol';
 import type { MessageInitShape } from '@bufbuild/protobuf';
 import { platform } from '../../platform';
@@ -81,6 +92,18 @@ import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 // Every REST endpoint the client uses, typed by the generated contract (docs/05, "REST").
 
 export const api = {
+  /** Email verification and password reset (ADR-0023). */
+  auth: {
+    /** 204: a code to me.pendingEmail or me.email; 409 = already verified; 429 + Retry-After. */
+    sendVerification: () => callEmpty('POST', '/api/auth/verify/send'),
+    /** 422 CODE_INVALID (message: attempts left) | CODE_EXPIRED. */
+    verify: (code: string) => call('POST', '/api/auth/verify', UpdateMeResponseSchema, body(VerifyEmailRequestSchema, { code })),
+    /** No session needed; always 204 (503 = the server sends no mail). */
+    forgotPassword: (email: string) => callEmpty('POST', '/api/auth/password/forgot', body(ForgotPasswordRequestSchema, { email })),
+    /** 204, every session revoked (sign in again); 422 CODE_INVALID for a wrong code or address. */
+    resetPassword: (init: MessageInitShape<typeof ResetPasswordRequestSchema>) =>
+      callEmpty('POST', '/api/auth/password/reset', body(ResetPasswordRequestSchema, init)),
+  },
   me: {
     get: () => call('GET', '/api/me', GetMeResponseSchema),
     update: (init: MessageInitShape<typeof UpdateMeRequestSchema>) =>
@@ -133,6 +156,22 @@ export const api = {
     createInvite: (id: string, init: MessageInitShape<typeof CreateInviteRequestSchema>) =>
       call('POST', `/api/workspaces/${id}/invites`, CreateInviteResponseSchema, body(CreateInviteRequestSchema, init)),
     deleteInvite: (id: string, inviteId: string) => callEmpty('DELETE', `/api/workspaces/${id}/invites/${inviteId}`),
+    /** Invitations by email (ADR-0023): MANAGE_WORKSPACE + a verified address of the caller. */
+    lookupInvitee: (id: string, email: string, signal?: AbortSignal) =>
+      call('POST', `/api/workspaces/${id}/invites/lookup`, InviteLookupResponseSchema, body(InviteLookupRequestSchema, { email }), signal),
+    /** 201: a found (verified) account becomes a member at once; 409 = already a member. */
+    addMember: (id: string, userId: string) =>
+      call('POST', `/api/workspaces/${id}/members`, AddMemberResponseSchema, body(AddMemberRequestSchema, { userId })),
+    emailInvites: (id: string) => call('GET', `/api/workspaces/${id}/invites/email`, ListEmailInvitesResponseSchema),
+    /** 201; 429 + Retry-After = the same address was invited < 24 h ago. */
+    createEmailInvite: (id: string, email: string, role?: WorkspaceRole) =>
+      call(
+        'POST',
+        `/api/workspaces/${id}/invites/email`,
+        CreateEmailInviteResponseSchema,
+        body(CreateEmailInviteRequestSchema, role === undefined ? { email } : { email, role }),
+      ),
+    revokeEmailInvite: (id: string, inviteId: string) => callEmpty('DELETE', `/api/workspaces/${id}/invites/email/${inviteId}`),
   },
   categories: {
     create: (workspaceId: string, init: MessageInitShape<typeof CreateCategoryRequestSchema>) =>

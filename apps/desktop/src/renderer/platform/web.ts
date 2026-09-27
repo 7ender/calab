@@ -411,7 +411,7 @@ export function createWebPlatform(): Platform {
       },
       login: (a: LoginArgs) => authenticate('/api/auth/login', { email: a.email, password: a.password }),
       register: (a: RegisterArgs) =>
-        authenticate('/api/auth/register', { email: a.email, password: a.password, displayName: a.displayName, inviteCode: a.inviteCode }),
+        authenticate('/api/auth/register', { email: a.email, password: a.password, displayName: a.displayName, inviteCode: a.inviteCode, locale: a.locale ?? '' }),
       guestJoin,
       logout: async (allSessions) => {
         const t = access?.token;
