@@ -32,6 +32,7 @@ import {
 import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '../lib/media/echo';
 import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
+import { denoiseMode, wakeDbFor } from '../lib/media/denoiseSleep';
 import { playSound } from '../lib/sounds';
 import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
@@ -173,8 +174,9 @@ class VoiceEngine {
    */
   private remoteSpeakers: string[] = [];
   private readonly levelSpeakers = new RemoteLevelSpeaking();
-  /** One 100 ms sampler per room, running only while there are remote mic tracks to read. */
-  private levelSpeakTimer: number | null = null;
+  /** The remote-level speaking sampler runs (on every 2nd echo tick: one timer, docs/14-energy.md). */
+  private levelSpeakOn = false;
+  private levelTick = 0;
   private selfSpeaking = false;
   private readonly active = new ActiveSpeaker((id) => this.onActiveSpeaker(id));
   /** My webcam (services/camera.ts). */
@@ -232,7 +234,10 @@ class VoiceEngine {
   // ------------------------------------------------------------ prefs
 
   private onPrefs(s: Prefs, p: Prefs): void {
-    if (s.thresholdDb !== p.thresholdDb) this.gate.configure({ thresholdDb: s.thresholdDb });
+    if (s.thresholdDb !== p.thresholdDb) {
+      this.gate.configure({ thresholdDb: s.thresholdDb });
+      this.applyDenoise();
+    }
     if (s.micMode !== p.micMode || !sameBinding(s.pttBinding, p.pttBinding)) {
       // A pending release tail belongs to the old binding / mode: off now.
       if (this.ptt.pending) this.ptt.stop();
@@ -948,17 +953,15 @@ class VoiceEngine {
   }
 
   private startLevelSpeaking(): void {
-    if (this.levelSpeakTimer !== null) return;
-    this.levelSpeakTimer = window.setInterval(() => this.sampleLevelSpeaking(), REMOTE_LEVEL.sampleMs);
+    this.levelSpeakOn = true;
   }
 
   private stopLevelSpeaking(): void {
-    if (this.levelSpeakTimer !== null) window.clearInterval(this.levelSpeakTimer);
-    this.levelSpeakTimer = null;
+    this.levelSpeakOn = false;
   }
 
   /**
-   * Every 100 ms: the RFC 6464 level of each remote mic track (receiver synchronization sources —
+   * Every 100 ms (every 2nd echo tick, `sampleLevels`): the RFC 6464 level of each remote mic track (receiver synchronization sources —
    * no WebAudio, echo rule 1). No track with the API (none subscribed, or Firefox/Safari web) →
    * the sampler stops and the ring follows the server alone; the next mic subscription restarts it.
    */
@@ -1157,11 +1160,33 @@ class VoiceEngine {
   async startMicTest(): Promise<void> {
     this.micTesting = true;
     await this.ensureMic();
+    this.applyDenoise();
   }
 
   stopMicTest(): void {
     this.micTesting = false;
     if (!this.room) this.stopMicPipeline();
+    this.applyDenoise();
+  }
+
+  private meters = 0;
+
+  /** A live mic meter is on screen (Settings → Голос): keep the level denoised and at full rate. */
+  meterVisible(on: boolean): void {
+    this.meters = Math.max(0, this.meters + (on ? 1 : -1));
+    this.applyDenoise();
+  }
+
+  /**
+   * RNNoise on demand (lib/media/denoiseSleep.ts, docs/14-energy.md): always on while the mic is on
+   * air or a meter is shown; in VAD mode with the gate closed it sleeps after 2 s of quiet; PTT
+   * released / muted — off. The capture itself never stops (AEC3 keeps converging).
+   */
+  private applyDenoise(d = this.decision()): void {
+    const mic = this.mic;
+    if (!mic) return;
+    const p = prefs();
+    mic.setDenoise(denoiseMode({ onAir: d.audioEnabled, meter: this.meters > 0 || this.micTesting, micMode: p.micMode, muted: d.livekitMuted }), wakeDbFor(p.thresholdDb));
   }
 
   /** Pipeline builds / swaps run one at a time: concurrent builds leaked a capture (review M2). */
@@ -1223,6 +1248,7 @@ class VoiceEngine {
           return;
         }
         this.mic = next;
+        this.applyDenoise();
       } catch (err) {
         log.error('mic start failed', err);
         const h = reportMediaError(err, 'mic');
@@ -1322,6 +1348,7 @@ class VoiceEngine {
         // Only now is `next` the live capture: a failed swap keeps `old` (still published)
         // and drops `next`, so neither capture leaks (review N4).
         this.mic = next;
+        this.applyDenoise();
         old.stop();
       } catch (err) {
         if (next && this.mic !== next) next.stop();
@@ -1417,6 +1444,7 @@ class VoiceEngine {
     // before the store / ring / duck updates and regardless of an in-flight LiveKit mute op
     // (a finishing unmute() re-enables the track, then `finally` re-applies this decision).
     if (t && !d.audioEnabled) t.mediaStreamTrack.enabled = false;
+    this.applyDenoise(d);
     this.applyDuck(); // PTT pressed / deafen: the duck follows at once, not at the next level tick
     setVoice({ transmitting: d.transmitting && t !== null });
     this.setSelfSpeaking(d.transmitting && t !== null);
@@ -1863,6 +1891,9 @@ class VoiceEngine {
   private sampleLevels(): void {
     const room = this.room;
     if (!room) return;
+    // One 50 ms timer for both level consumers: the speaking rings sample at half its rate.
+    const every = Math.round(REMOTE_LEVEL.sampleMs / ECHO.frameMs);
+    if (this.levelSpeakOn && ++this.levelTick % every === 0) this.sampleLevelSpeaking();
     // Spec time base: performance.timeOrigin + performance.now(); tolerate a page-relative one too.
     const mono = performance.now();
     const epoch = performance.timeOrigin + mono;

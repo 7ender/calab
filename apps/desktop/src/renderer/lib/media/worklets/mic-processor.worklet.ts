@@ -8,15 +8,21 @@
  * - denoise=true: 1 input, 1 output; output is the denoised mono signal
  *   (≈10 ms algorithmic delay + one render quantum of buffering).
  * - denoise=false: analysis only (0 outputs) — reports RMS, vad = -1.
+ *
+ * RNNoise runs on demand (lib/media/denoiseSleep.ts): the main thread sends a `DenoiseControl`
+ * whenever the mic goes on / off air; while asleep the output is silence (the published track is
+ * disabled then anyway) and reports come every 100 ms with the raw level.
  */
 import '@rnnoise-dist/polyfills.js';
 import createRNNWasmModuleSync, { type RnnoiseWasmModule } from '@rnnoise-dist/generated/rnnoise-sync.js';
 import type { MicReport } from '../micReport';
+import { DENOISE_SLEEP, DenoiseScheduler, rmsDb, type DenoiseControl } from '../denoiseSleep';
 
 const FRAME = 480; // RNNoise frame: 10 ms @ 48 kHz
 const PCM_SCALE = 32768; // RNNoise expects int16-range floats
 const FRAMES_PER_REPORT = 2; // 2 × 10 ms = one 20 ms VAD frame
 const RING = 4096;
+const PRE_ROLL = DENOISE_SLEEP.preRollFrames;
 
 
 interface ProcessorOptions {
@@ -42,6 +48,13 @@ class MicProcessor extends AudioWorkletProcessor {
   private sumSq = 0;
   private maxVad = -1;
 
+  private readonly sched = new DenoiseScheduler();
+  /** The last raw frames, replayed through RNNoise on wake (state warm-up). */
+  private readonly history = new Float32Array(FRAME * PRE_ROLL);
+  private historyPos = 0;
+  private historyLen = 0;
+  private readonly scratch = new Float32Array(FRAME);
+
   constructor(options?: { processorOptions?: ProcessorOptions }) {
     super();
     const opts = options?.processorOptions ?? { denoise: false };
@@ -54,6 +67,7 @@ class MicProcessor extends AudioWorkletProcessor {
     }
     this.port.onmessage = (e: MessageEvent<unknown>) => {
       if (e.data === 'destroy') this.destroy();
+      else if (isControl(e.data)) this.sched.control(e.data);
     };
   }
 
@@ -66,17 +80,52 @@ class MicProcessor extends AudioWorkletProcessor {
     }
   }
 
+  /** RNNoise in place on `buf` (FRAME samples); returns the VAD probability. */
+  private denoiseInPlace(mod: RnnoiseWasmModule, buf: Float32Array, offset: number): number {
+    const heap = mod.HEAPF32; // re-read: may be replaced on memory growth
+    const base = this.buf >> 2;
+    for (let i = 0; i < FRAME; i++) heap[base + i] = (buf[offset + i] ?? 0) * PCM_SCALE;
+    const vad = mod._rnnoise_process_frame(this.state, this.buf, this.buf);
+    const out = mod.HEAPF32;
+    for (let i = 0; i < FRAME; i++) buf[offset + i] = (out[base + i] ?? 0) / PCM_SCALE;
+    return vad;
+  }
+
   private processFrame(): void {
     const f = this.frame;
+    let rawSq = 0;
+    for (let i = 0; i < FRAME; i++) {
+      const s = f[i] ?? 0;
+      rawSq += s * s;
+    }
+    const action = this.sched.step(rmsDb(Math.sqrt(rawSq / FRAME)));
     let vad = -1;
+    let sq = rawSq;
     const mod = this.mod;
     if (mod) {
-      const heap = mod.HEAPF32; // re-read: may be replaced on memory growth
-      const base = this.buf >> 2;
-      for (let i = 0; i < FRAME; i++) heap[base + i] = (f[i] ?? 0) * PCM_SCALE;
-      vad = mod._rnnoise_process_frame(this.state, this.buf, this.buf);
-      const out = mod.HEAPF32;
-      for (let i = 0; i < FRAME; i++) f[i] = (out[base + i] ?? 0) / PCM_SCALE;
+      if (action === 'wake') {
+        // Oldest first; the output is dropped — only RNNoise's recurrent state matters.
+        const scratch = this.scratch;
+        for (let k = this.historyLen; k > 0; k--) {
+          const slot = (this.historyPos - k + PRE_ROLL) % PRE_ROLL;
+          scratch.set(this.history.subarray(slot * FRAME, (slot + 1) * FRAME));
+          this.denoiseInPlace(mod, scratch, 0);
+        }
+      }
+      this.history.set(f, this.historyPos * FRAME);
+      this.historyPos = (this.historyPos + 1) % PRE_ROLL;
+      this.historyLen = Math.min(PRE_ROLL, this.historyLen + 1);
+      if (action === 'sleep') {
+        vad = 0; // not speech: the gate stays closed (its level test fails anyway)
+        f.fill(0); // silence out: the track is disabled while the mic is off air
+      } else {
+        vad = this.denoiseInPlace(mod, f, 0);
+        sq = 0;
+        for (let i = 0; i < FRAME; i++) {
+          const s = f[i] ?? 0;
+          sq += s * s;
+        }
+      }
       for (let i = 0; i < FRAME; i++) {
         this.ring[this.wr] = f[i] ?? 0;
         this.wr = (this.wr + 1) % RING;
@@ -84,16 +133,12 @@ class MicProcessor extends AudioWorkletProcessor {
       this.avail = Math.min(RING, this.avail + FRAME);
     }
 
-    let sq = 0;
-    for (let i = 0; i < FRAME; i++) {
-      const s = f[i] ?? 0;
-      sq += s * s;
-    }
     this.sumSq += sq;
     if (vad > this.maxVad) this.maxVad = vad;
-    if (++this.framesInReport === FRAMES_PER_REPORT) {
+    const every = this.sched.asleep ? DENOISE_SLEEP.sleepReportFrames : FRAMES_PER_REPORT;
+    if (++this.framesInReport >= every) {
       const report: MicReport = {
-        rms: Math.sqrt(this.sumSq / (FRAME * FRAMES_PER_REPORT)),
+        rms: Math.sqrt(this.sumSq / (FRAME * this.framesInReport)),
         vad: this.maxVad,
       };
       this.port.postMessage(report);
@@ -129,6 +174,10 @@ class MicProcessor extends AudioWorkletProcessor {
     }
     return true;
   }
+}
+
+function isControl(d: unknown): d is DenoiseControl {
+  return typeof d === 'object' && d !== null && (d as { type?: unknown }).type === 'denoise';
 }
 
 registerProcessor('calaba-mic', MicProcessor);
