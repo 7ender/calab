@@ -3,15 +3,16 @@ import { MessageSchema, type Message } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createMessage = vi.fn<(roomId: string, body: { nonce: string; content: string }) => Promise<{ message?: Message }>>();
+const listPins = vi.fn<(roomId: string) => Promise<{ messages: Message[] }>>();
 vi.mock('../lib/api/endpoints', () => ({
-  api: { messages: { create: (roomId: string, body: { nonce: string; content: string }) => createMessage(roomId, body) } },
+  api: { messages: { create: (roomId: string, body: { nonce: string; content: string }) => createMessage(roomId, body), pins: (roomId: string) => listPins(roomId) } },
   uploadFile: vi.fn(),
 }));
 vi.mock('./gateway', () => ({ sendTyping: () => undefined }));
 vi.mock('../stores/toasts', () => ({ toast: { fail: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined } } }));
 
-const { sendMessage, retrySend } = await import('./chat');
+const { sendMessage, retrySend, loadPins, resyncPins } = await import('./chat');
 const { useMessages } = await import('../stores/messages');
 
 const ROOM = 'room-1';
@@ -79,5 +80,42 @@ describe('chat.sendMessage', () => {
     expect(createMessage.mock.calls.map((c) => c[1].nonce)).toEqual(['n4', 'n4']);
     expect(items()).toHaveLength(1);
     expect(items()[0]?.status).toBe('sent');
+  });
+});
+
+describe('chat.loadPins (docs/18 step 4)', () => {
+  const pinned = (id: string): Message => create(MessageSchema, { id, roomId: ROOM, authorId: 'me', content: 'pin', pinnedAt: '2026-09-27T10:00:00Z' });
+
+  beforeEach(() => {
+    listPins.mockReset();
+    listPins.mockImplementation(() => Promise.resolve({ messages: [pinned('p1')] }));
+  });
+
+  it('fetches once per room; reopening uses the live-updated store', async () => {
+    await loadPins(ROOM);
+    await loadPins(ROOM);
+    expect(listPins).toHaveBeenCalledTimes(1);
+    useMessages.getState().upsert(pinned('p2')); // a pin event while the room is closed
+    expect(useMessages.getState().pins[ROOM]?.map((m) => m.id)).toEqual(['p2', 'p1']);
+    await loadPins(ROOM);
+    expect(listPins).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches after the store dropped them (unload) and on resync', async () => {
+    await loadPins(ROOM);
+    useMessages.getState().unload(ROOM);
+    await loadPins(ROOM);
+    expect(listPins).toHaveBeenCalledTimes(2);
+    listPins.mockImplementation(() => Promise.resolve({ messages: [] }));
+    await resyncPins();
+    expect(listPins).toHaveBeenCalledTimes(3);
+    expect(useMessages.getState().pins[ROOM]).toEqual([]);
+  });
+
+  it('a failed fetch is retried on the next open', async () => {
+    listPins.mockImplementationOnce(() => Promise.reject(new Error('net')));
+    await loadPins(ROOM);
+    await loadPins(ROOM);
+    expect(listPins).toHaveBeenCalledTimes(2);
   });
 });
