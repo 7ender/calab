@@ -38,7 +38,7 @@
 | 1 `HEARTBEAT` | c→s | `d = последний s` |
 | 2 `IDENTIFY` | c→s | `{ token, device, capabilities }` |
 | 3 `RESUME` | c→s | `{ session_id, seq }` |
-| 4 `PRESENCE_UPDATE` | c→s | `{ status: online|idle|dnd|invisible }` |
+| 4 `PRESENCE_UPDATE` | c→s | `{ status: online|idle|dnd|invisible, until? }` — с `until` ручной статус пользователя (см. «Presence»), без — автоматический статус сессии (AFK) |
 | 5 `TYPING` | c→s | `{ room_id }` — нужны `VIEW_ROOM` + `SEND_MESSAGES`; не чаще 1 раза в 3 с на пользователя и комнату (лишние молча отбрасываются) |
 | 6 `SUBSCRIBE` | c→s | `{ room_ids: [...] }` (≤ 100) — **заменяет** набор комнат, для которых сессия получает `TYPING_START`. Клиент шлёт его при каждом открытии/закрытии комнаты: `[id открытой комнаты]` (или `[]`). Без подписки `TYPING_START` не приходит вообще |
 | 10 `HELLO` | s→c | `{ heartbeat_interval }` |
@@ -118,6 +118,7 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 - Redis-хэш `presence:<user_id>`: поле на каждую gateway-сессию (`<session_id>` → `status`) со своим TTL (HEXPIRE) = 2 × `heartbeat_interval`, продлевается каждым heartbeat; `presence:seen:<user_id>` — `last_seen`. Сессия умерла без закрытия → её поле истекает; sweeper (раз в 15 с, один инстанс) публикует OFFLINE, когда у пользователя не осталось живых сессий.
 - Итоговый статус — максимум по приоритету среди сессий: `dnd` > `invisible` > `online` > `idle` (ручной статус не перебивается AFK-`idle` с другого устройства); `invisible` показывается как offline, `last_seen` не раскрывается.
 - `PRESENCE_UPDATE` рассылается только при смене агрегированного статуса.
+- **Ручной статус со сроком** (меню статуса: 15 мин … 3 дня / навсегда) — per-user, общий для всех устройств: `SetPresence{status, until}` (`until` = 0 — без срока, `online` или прошедшее время — сброс, не дальше 30 дней). Хранится в `users.presence_status/presence_until` (Postgres, переживает рестарт Valkey — при старте копируется обратно) и в Valkey `presence:manual:<user_id>` = `<status>:<until_ms>` с PXAT до `until`. Ручной статус перебивает статусы сессий (включая AFK), но без живых сессий пользователь offline. Другие видят его в `Presence.until` (`PRESENCE_UPDATE`, `READY.presences`); `invisible` для них — `offline` без `until` и `last_seen`, `dnd` — как есть. Сам пользователь получает свой статус как есть (с `invisible`) в `READY.presence` и `USER_UPDATE{presence}` (только своим сессиям). По истечении sweeper (тот же, раз в 15 с) очищает строку, возвращает `online` и рассылает `PRESENCE_UPDATE` во все общие пространства + `USER_UPDATE{presence: online}`. Клиент берёт статус из READY/событий; выбор, сделанный офлайн, отправляет после READY; локальный таймер лишь сбрасывает отображение «до 14:30».
 
 ## Voice state — источник LiveKit
 

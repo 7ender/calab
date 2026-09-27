@@ -3,9 +3,10 @@ import { ReconnectBanner } from '../lib/gateway/banner';
 import { GatewayClient, gatewayUrl, type GatewayFatal } from '../lib/gateway/client';
 import { log } from '../lib/log';
 import { useSession } from '../stores/session';
-import { effectivePresence } from './afk';
+import { isAway } from './afk';
 import { applyDispatch } from './dispatch';
 import { platform } from '../platform';
+import { applyServerPresence } from './presenceTimer';
 
 let client: GatewayClient | null = null;
 /** Rooms we want typing/read-state for (SUBSCRIBE replaces the set; resent after READY/RESUMED). */
@@ -41,10 +42,12 @@ export function startGateway(onFatal: (kind: GatewayFatal) => void): void {
     onDispatch: (ev) => {
       try {
         applyDispatch(ev);
+        // The manual status lives on the server (docs/05 «Presence»); READY / USER_UPDATE bring it.
+        if (ev.event.case === 'ready') applyServerPresence(ev.event.value.presence, true);
+        if (ev.event.case === 'userUpdate' && ev.event.value.presence) applyServerPresence(ev.event.value.presence, false);
         if (ev.event.case === 'ready' || ev.event.case === 'resumed') {
           if (subscribed.length) client?.subscribe(subscribed);
-          const presence = effectivePresence();
-          if (presence !== PresenceStatus.ONLINE) client?.setPresence(presence);
+          if (isAway()) client?.setPresence(PresenceStatus.IDLE); // a new session starts online
         }
       } catch (e) {
         log.error('dispatch failed', ev.event.case, e);
@@ -90,6 +93,7 @@ export function sendTyping(roomId: string): void {
   client?.sendTyping(roomId);
 }
 
-export function setPresence(status: PresenceStatus): void {
-  client?.setPresence(status);
+/** `untilMs` given = a manual status for all devices (0 = no end), else this session's AFK status. */
+export function setPresence(status: PresenceStatus, untilMs?: number): void {
+  client?.setPresence(status, untilMs);
 }

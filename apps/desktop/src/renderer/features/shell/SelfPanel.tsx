@@ -1,40 +1,21 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Popover from '@radix-ui/react-popover';
-import { PresenceStatus } from '@calaba/protocol';
-import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, Volume2, X } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, Volume2 } from 'lucide-react';
+import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { IconButton, Input, Slider, Tip, cx } from '../../components/ui';
-import { t, type MessageKey } from '../../i18n';
-import { ApiError } from '../../lib/api/client';
-import { api } from '../../lib/api/endpoints';
-import { setPresence } from '../../services/gateway';
+import { IconButton, Tip, cx } from '../../components/ui';
+import { t } from '../../i18n';
 import { useHotkeyLabel } from '../../services/hotkeys';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
-import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { useWorkspaces } from '../../stores/workspaces';
-import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
-
-const STATUSES: Array<{ s: PresenceStatus; key: MessageKey; dot: string }> = [
-  { s: PresenceStatus.ONLINE, key: 'presence.online', dot: 'bg-ok' },
-  // Dots are non-text: the system yellow in both themes, as in the members column (Avatar.tsx).
-  { s: PresenceStatus.IDLE, key: 'presence.idle', dot: 'bg-[var(--color-presence-idle)]' },
-  { s: PresenceStatus.DND, key: 'presence.dnd', dot: 'bg-danger' },
-  { s: PresenceStatus.INVISIBLE, key: 'presence.invisible', dot: 'bg-faint' },
-];
-
-/** What others see: my manual choice, or the server's aggregate (AFK idle) while «online». */
-function useMyStatus(): PresenceStatus {
-  const chosen = usePrefs((s) => s.presence);
-  const me = useSession((s) => s.me?.user?.id ?? '');
-  const server = useWorkspaces((s) => s.presences[me]?.status);
-  if (chosen !== PresenceStatus.ONLINE) return chosen;
-  return server === PresenceStatus.IDLE ? PresenceStatus.IDLE : PresenceStatus.ONLINE;
-}
+import { PttLastKey, bindingLabel, usePttCapture, type PttCapture } from '../settings/PttBinder';
+import { PttReleaseDelay } from '../settings/PttReleaseDelay';
+import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
+import { MenuSliderItem } from './MenuSliderItem';
+import { selectMicMode, swallowMenuKey } from './micMenu';
+import { STATUS_KEY, StatusMenu, useMyStatus } from './StatusMenu';
 
 /** Self panel (docs/09 #6): avatar + status, name, mic / headphones with device pickers, settings. */
 export function SelfPanel(): ReactNode {
@@ -50,65 +31,42 @@ export function SelfPanel(): ReactNode {
   const status = useMyStatus();
   const user = me?.user;
   if (!user) return null;
-  const cur = STATUSES.find((x) => x.s === status) ?? STATUSES[0];
+  const statusName = t(STATUS_KEY[status] ?? 'presence.online');
   const custom = [user.statusEmoji, user.statusText].filter(Boolean).join(' ');
   // In a call the second line says so, with the speaker icon (Discord «In voice»); otherwise the
-  // custom status, else the presence. (The custom status is in the profile popover and the members column.)
+  // custom status, else the presence. (The custom status is in the status menu and the members column.)
   const voiceLine = inVoice;
-  const second = inVoice ? t('shell.inVoiceStatus') : custom || (cur ? t(cur.key) : '');
+  const second = inVoice ? t('shell.inVoiceStatus') : custom || statusName;
 
   return (
     // Bottom island across the rail + room column (Discord 2x reference): 52 px, 32 px avatar with a
-    // 10 px status dot, 14 px semibold name / 13 px status
+    // 12 px status dot overlapping it, 14 px semibold name / 13 px status
     // that fades out when long; controls ≤ 134 px (mic ▾ 40, headphones ▾ 40, gear 32, 6 px
     // apart, 10 px from the edge), so the name keeps ≥ 110 px.
     <div className="flex h-[52px] shrink-0 items-center gap-1 pl-2 pr-2.5">
-      <Popover.Root>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            aria-label={`${t('shell.profile')}: ${user.displayName}, ${cur ? t(cur.key) : ''}`}
-            className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-1 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
-          >
-            <span className="relative shrink-0">
-              <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} />
-              <span className={cx('absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-[var(--color-bg)]', cur?.dot)} aria-hidden />
+      <StatusMenu>
+        <button
+          type="button"
+          aria-label={`${t('shell.profile')}: ${user.displayName}, ${statusName}`}
+          className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-1 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+        >
+          {/* A flex box, not an inline span: no line-box descender space pushing the avatar up. */}
+          <span className="flex shrink-0">
+            <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} status={status} ring="var(--color-bg)" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="fade-end block overflow-hidden whitespace-nowrap text-[14px] font-semibold leading-[18px] text-fg" title={user.displayName}>
+              {user.displayName}
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="fade-end block overflow-hidden whitespace-nowrap text-[14px] font-semibold leading-[18px] text-fg" title={user.displayName}>
-                {user.displayName}
-              </span>
-              {/* Secondary line: a long status fades out at the right edge (Discord) instead of «…»
-                  in the middle of its meaning; the row is full width, so short text is untouched. */}
-              <span className="fade-end flex min-w-0 items-center gap-1 text-[13px] leading-[18px] text-muted" title={second}>
-                {voiceLine ? <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden /> : null}
-                <span className="min-w-0 overflow-hidden whitespace-nowrap">{second}</span>
-              </span>
+            {/* Secondary line: a long status fades out at the right edge (Discord) instead of «…»
+                in the middle of its meaning; the row is full width, so short text is untouched. */}
+            <span className="fade-end flex min-w-0 items-center gap-1 text-[13px] leading-[18px] text-muted" title={second}>
+              {voiceLine ? <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden /> : null}
+              <span className="min-w-0 overflow-hidden whitespace-nowrap">{second}</span>
             </span>
-          </button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            side="top"
-            align="start"
-            sideOffset={8}
-            collisionPadding={16}
-            aria-label={t('presence.change')}
-            className={cx(popoverBox, 'w-[280px] p-0')}
-            // Focus the status field without selecting its text (Radix selects on auto-focus).
-            onOpenAutoFocus={(e) => {
-              e.preventDefault();
-              const el = document.getElementById('self-status');
-              if (el instanceof HTMLInputElement) {
-                el.focus();
-                el.setSelectionRange(el.value.length, el.value.length);
-              }
-            }}
-          >
-            <ProfilePopover />
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+          </span>
+        </button>
+      </StatusMenu>
 
       {/* The three controls, 6 px apart. */}
       <span className="flex shrink-0 items-center gap-1.5">
@@ -118,7 +76,7 @@ export function SelfPanel(): ReactNode {
           danger={muted}
           onClick={() => voice.toggleMute()}
           menuLabel={t('shell.micOptions')}
-          menu={<DeviceMenu kind="audioinput" />}
+          menu={<MicMenu />}
         >
           {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
         </SplitButton>
@@ -185,13 +143,135 @@ function SplitButton({
 
 const DEFAULT_ID = '__default__';
 
-/** Device quick-picker: list of inputs/outputs; the mic menu also has the activation threshold. */
-function DeviceMenu({ kind }: { kind: 'audioinput' | 'audiooutput' }): ReactNode {
+/**
+ * Mic ▾ (docs/09 #28): «Режим» on top — voice activation (+ threshold) / push-to-talk (+ the key,
+ * captured right in the menu, and the release delay) — then the input devices and «Настройки
+ * голоса». While a key capture is armed the menu stays open (Esc cancels the capture, a click
+ * outside is ignored) and keys go to the capture, not to the menu's typeahead / items.
+ */
+function MicMenu(): ReactNode {
+  const cap = usePttCapture();
+  const endedAt = useRef(0);
+  const wasCapturing = useRef(false);
+  useEffect(() => {
+    if (wasCapturing.current && !cap.capturing) endedAt.current = Date.now();
+    wasCapturing.current = cap.capturing;
+  }, [cap.capturing]);
+  const hold = (e: Event): void => {
+    if (cap.capturing) e.preventDefault();
+  };
+  return (
+    <DeviceMenu
+      kind="audioinput"
+      top={<MicModeSection cap={cap} />}
+      testId="mic-menu"
+      contentProps={{
+        onEscapeKeyDown: (e) => {
+          if (!cap.capturing) return;
+          e.preventDefault();
+          cap.cancel();
+        },
+        onPointerDownOutside: hold,
+        onFocusOutside: hold,
+        onInteractOutside: hold,
+        onKeyDownCapture: (e) => {
+          if (e.key !== 'Escape' && swallowMenuKey(cap.capturing, endedAt.current, Date.now())) e.preventDefault();
+        },
+      }}
+    />
+  );
+}
+
+/** Mic ▾ «Режим»: two radio items, then the chosen mode's controls. */
+function MicModeSection({ cap }: { cap: PttCapture }): ReactNode {
+  const micMode = usePrefs((s) => s.micMode);
+  const threshold = usePrefs((s) => s.thresholdDb);
+  const binding = usePrefs((s) => s.pttBinding);
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const os = useSession((s) => s.appInfo?.platform ?? 'web');
+  const radio = cx(menuItem, 'relative pl-7');
+  return (
+    <>
+      <Dropdown.Label className={menuLabel}>{t('shell.micMode')}</Dropdown.Label>
+      <Dropdown.RadioGroup value={micMode} onValueChange={selectMicMode}>
+        {/* Selecting a mode keeps the menu open: its controls appear right below. */}
+        <Dropdown.RadioItem value="voice" className={radio} onSelect={(e) => e.preventDefault()} data-testid="mic-mode-voice">
+          <Dropdown.ItemIndicator className="absolute left-2">
+            <Check className="size-3.5" />
+          </Dropdown.ItemIndicator>
+          {t('shell.micModeVoice')}
+        </Dropdown.RadioItem>
+        <Dropdown.RadioItem value="ptt" className={radio} onSelect={(e) => e.preventDefault()} data-testid="mic-mode-ptt">
+          <Dropdown.ItemIndicator className="absolute left-2">
+            <Check className="size-3.5" />
+          </Dropdown.ItemIndicator>
+          {t('voice.modePtt')}
+        </Dropdown.RadioItem>
+      </Dropdown.RadioGroup>
+      {micMode === 'voice' ? (
+        <MenuSliderItem
+          label={t('shell.inputVolume')}
+          valueText={t('unit.db', { n: threshold })}
+          value={threshold}
+          min={-80}
+          max={-10}
+          onChange={(v) => setPrefs({ thresholdDb: v })}
+        />
+      ) : (
+        <>
+          {/* The key as a pill; the row (or Enter on it) arms the capture in place. */}
+          <Dropdown.Item
+            className={cx(menuItem, 'group/key h-8 justify-between pl-7')}
+            onSelect={(e) => {
+              e.preventDefault();
+              if (!cap.capturing) void cap.bind();
+            }}
+            aria-label={cap.capturing ? t('voice.pttPress') : `${t('voice.pttKey')}: ${bindingLabel(binding, os)}. ${t('shell.pttChange')}`}
+            data-testid="mic-ptt-key"
+            data-capturing={cap.capturing || undefined}
+          >
+            <kbd
+              className={cx(
+                'min-w-0 truncate rounded-[var(--radius-control)] border px-2.5 py-px font-sans text-caption',
+                cap.capturing ? 'border-accent text-fg' : 'border-line bg-elev text-fg',
+              )}
+            >
+              {cap.capturing ? t('voice.pttPress') : bindingLabel(binding, os)}
+            </kbd>
+            <span className="shrink-0 text-caption text-muted group-data-[highlighted]/key:text-accent-fg">
+              {cap.capturing ? t('shell.pttEscCancel') : t('shell.pttChange')}
+            </span>
+          </Dropdown.Item>
+          {cap.lastKey ? (
+            <div className="px-2 pl-7">
+              <PttLastKey lastKey={cap.lastKey} os={os} />
+            </div>
+          ) : null}
+          <PttReleaseDelay compact />
+        </>
+      )}
+      <Dropdown.Separator className={menuSeparator} />
+    </>
+  );
+}
+
+type ContentProps = ComponentPropsWithoutRef<typeof Dropdown.Content>;
+
+/** Device quick-picker: list of inputs/outputs (the mic menu puts «Режим» on top). */
+function DeviceMenu({
+  kind,
+  top,
+  testId,
+  contentProps,
+}: {
+  kind: 'audioinput' | 'audiooutput';
+  top?: ReactNode;
+  testId?: string;
+  contentProps?: Pick<ContentProps, 'onEscapeKeyDown' | 'onPointerDownOutside' | 'onFocusOutside' | 'onInteractOutside' | 'onKeyDownCapture'>;
+}): ReactNode {
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
   const micId = usePrefs((s) => s.micDeviceId);
   const outId = usePrefs((s) => s.outputDeviceId);
-  const micMode = usePrefs((s) => s.micMode);
-  const threshold = usePrefs((s) => s.thresholdDb);
   const outputVolume = usePrefs((s) => s.outputVolume);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const open = useUi((s) => s.openDialog);
@@ -223,7 +303,10 @@ function DeviceMenu({ kind }: { kind: 'audioinput' | 'audiooutput' }): ReactNode
       align="end"
       sideOffset={6}
       collisionPadding={16}
+      data-testid={testId}
+      {...contentProps}
     >
+      {top}
       <Dropdown.Label className={menuLabel}>{kind === 'audioinput' ? t('shell.inputDevice') : t('shell.outputDevice')}</Dropdown.Label>
       <Dropdown.RadioGroup value={current} onValueChange={select}>
         <Dropdown.RadioItem value={DEFAULT_ID} className={cx(menuItem, 'relative pl-7')}>
@@ -242,29 +325,18 @@ function DeviceMenu({ kind }: { kind: 'audioinput' | 'audiooutput' }): ReactNode
         ))}
       </Dropdown.RadioGroup>
       {devices !== null && list.length === 0 ? <div className="px-2 py-1 text-caption text-muted">{t('shell.noDevices')}</div> : null}
-      {kind === 'audioinput' && micMode === 'voice' ? (
-        <>
-          <Dropdown.Separator className={menuSeparator} />
-          <div className="px-2 pb-2 pt-1">
-            <div className="mb-1 flex justify-between text-caption text-muted">
-              <span>{t('shell.inputVolume')}</span>
-              <span className="tabular-nums">{t('unit.db', { n: threshold })}</span>
-            </div>
-            <Slider label={t('shell.inputVolume')} value={threshold} min={-80} max={-10} step={1} onChange={(v) => setPrefs({ thresholdDb: v })} />
-          </div>
-        </>
-      ) : null}
       {kind === 'audiooutput' ? (
         <>
           <Dropdown.Separator className={menuSeparator} />
-          <div className="px-2 pb-2 pt-1">
-            <div className="mb-1 flex justify-between text-caption text-muted">
-              <span>{t('shell.outputVolume')}</span>
-              <span className="tabular-nums">{Math.round(outputVolume * 100)}%</span>
-            </div>
-            {/* element.volume only (no WebAudio, docs/02 echo rule 1): 100 % is the maximum. */}
-            <Slider label={t('shell.outputVolume')} value={Math.round(outputVolume * 100)} min={0} max={100} step={1} onChange={(v) => setPrefs({ outputVolume: v / 100 })} />
-          </div>
+          {/* element.volume only (no WebAudio, docs/02 echo rule 1): 100 % is the maximum. */}
+          <MenuSliderItem
+            label={t('shell.outputVolume')}
+            valueText={`${Math.round(outputVolume * 100)}%`}
+            value={Math.round(outputVolume * 100)}
+            min={0}
+            max={100}
+            onChange={(v) => setPrefs({ outputVolume: v / 100 })}
+          />
         </>
       ) : null}
       <Dropdown.Separator className={menuSeparator} />
@@ -272,131 +344,5 @@ function DeviceMenu({ kind }: { kind: 'audioinput' | 'audiooutput' }): ReactNode
         <Settings className="size-4" /> {t('shell.voiceSettings')}
       </Dropdown.Item>
     </Dropdown.Content>
-  );
-}
-
-/** Profile popover: presence (online/idle/dnd/invisible) and custom status text. */
-function ProfilePopover(): ReactNode {
-  const me = useSession((s) => s.me);
-  const chosen = usePrefs((s) => s.presence);
-  const setPrefs = usePrefs((s) => s.setPrefs);
-  const open = useUi((s) => s.openDialog);
-  const status = useMyStatus();
-  const user = me?.user;
-  const [text, setText] = useState(user?.statusText ?? '');
-  const [busy, setBusy] = useState(false);
-  if (!user) return null;
-  const cur = STATUSES.find((x) => x.s === status);
-
-  const saveStatus = async (value: string): Promise<void> => {
-    if (value === user.statusText) return;
-    setBusy(true);
-    try {
-      // PATCH /api/me/status (text + emoji + expiry); older servers only know PATCH /api/me {statusText}.
-      const r = await api.me
-        .setStatus({ text: value, emoji: value ? user.statusEmoji : '', expiresInSeconds: 0 })
-        .catch((e: unknown) => {
-          if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return api.me.update({ statusText: value });
-          throw e;
-        });
-      if (r.me) useSession.getState().set({ me: r.me });
-    } catch (e) {
-      toast.fail(e, t('err.ctx.save'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-3 border-b border-line p-3">
-        <span className="relative shrink-0">
-          <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={40} />
-          <span className={cx('absolute -bottom-0.5 -right-0.5 size-4 rounded-full border-[3px] border-[var(--color-popover-solid)]', cur?.dot)} aria-hidden />
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-list font-semibold" title={user.displayName}>
-            {user.displayName}
-          </span>
-          <span className="block truncate text-caption text-muted">{me.email}</span>
-        </span>
-      </div>
-      <form
-        className="border-b border-line p-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void saveStatus(text.trim());
-        }}
-      >
-        <label className="mb-1 block text-caption font-medium text-muted" htmlFor="self-status">
-          {t('shell.statusText')}
-        </label>
-        <div className="flex items-center gap-1">
-          <Input
-            id="self-status"
-            value={text}
-            maxLength={128}
-            placeholder={t('shell.statusPh')}
-            disabled={busy}
-            onChange={(e) => setText(e.target.value)}
-            onBlur={() => void saveStatus(text.trim())}
-          />
-          {user.statusText ? (
-            <IconButton
-              size="sm"
-              label={t('shell.statusClear')}
-              onClick={() => {
-                setText('');
-                void saveStatus('');
-              }}
-            >
-              <X className="size-4" />
-            </IconButton>
-          ) : null}
-        </div>
-      </form>
-      <div className="p-1" role="radiogroup" aria-label={t('presence.change')}>
-        {STATUSES.map((x) => (
-          <button
-            key={x.s}
-            type="button"
-            role="radio"
-            aria-checked={chosen === x.s}
-            onClick={() => {
-              setPrefs({ presence: x.s });
-              setPresence(x.s);
-            }}
-            className="flex h-8 w-full items-center gap-2.5 rounded-[5px] px-2 text-left text-body hover:bg-hover"
-          >
-            <span className={cx('size-2.5 shrink-0 rounded-full', x.dot)} aria-hidden />
-            <span className="flex-1">{t(x.key)}</span>
-            {/* «В сети» chosen, but the server made me idle (AFK): say why the dot is yellow. */}
-            {x.s === PresenceStatus.ONLINE && chosen === x.s && status === PresenceStatus.IDLE ? (
-              <span className="truncate text-caption text-muted">{t('presence.autoIdle')}</span>
-            ) : null}
-            {chosen === x.s ? <Check className="size-4 text-accent" aria-hidden /> : null}
-          </button>
-        ))}
-      </div>
-      <div className="border-t border-line p-1">
-        <Popover.Close asChild>
-          <button type="button" onClick={() => open({ kind: 'settings', tab: 'profile' })} className="flex h-8 w-full items-center rounded-[5px] px-2 text-left text-body hover:bg-hover">
-            {t('shell.editProfile')}
-          </button>
-        </Popover.Close>
-        {/* Product superadmin (SUPERADMIN_EMAILS, ADR-0024): plans of every workspace. */}
-        {me.isSuperadmin ? (
-          <Popover.Close asChild>
-            <button
-              type="button"
-              onClick={() => open({ kind: 'admin' })}
-              className="flex h-8 w-full items-center rounded-[5px] px-2 text-left text-body hover:bg-hover"
-            >
-              {t('admin.title')}
-            </button>
-          </Popover.Close>
-        ) : null}
-      </div>
-    </div>
   );
 }

@@ -1765,3 +1765,8 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 ## Лимит реакций (docs/09 п. 27, ветка `feat/reaction-limit`)
 Авто: `go test -tags integration -run ReactionLimit ./internal/app/` (комната и DM: 3 ок, 4-я → 409 `REACTION_LIMIT`, снятие освобождает место, 8 параллельных → ровно 3); клиент — `reactionLimit.test.ts`, mock — «reactions: at most 3».
 Руками: поставить 3 разные реакции → в панели при наведении остальные быстрые реакции тусклые с подсказкой, пикер показывает «Не больше 3 реакций на сообщение» и не добавляет новые; клик по своей — снимает, после этого можно добавить другую; чужие реакции на лимит не влияют.
+
+## Срок статуса на сервере (ветка `feat/presence-until`)
+- Сервер: `TEST_PG_URL=… TEST_REDIS_URL=redis://localhost:56379/4 go test -tags integration -run TestManualPresenceUntil ./internal/app/` (~16 с: ждёт sweeper) — DND/невидимый с `until` виден другим (`until`, невидимый = offline без `until`/`last_seen`), приходит в `READY.presence` и `USER_UPDATE` второму устройству; через 2 с sweeper возвращает online и чистит `users.presence_*`.
+- Клиент: `pnpm -F @calaba/desktop exec vitest run src/renderer/services/presenceTimer.test.ts` — синхронизация из READY/USER_UPDATE, офлайн-выбор уходит после READY.
+- Руками: два устройства одного пользователя → на первом «Не беспокоить › 15 минут» → на втором статус и «до ЧЧ:ММ» появляются сразу; закрыть оба клиента до конца срока → после входа статус «В сети».

@@ -174,7 +174,7 @@ func (q *Queries) ListEmailInvites(ctx context.Context, workspaceID uuid.UUID) (
 
 const lookupInvitee = `-- name: LookupInvitee :one
 
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until FROM users
 WHERE email = $1 AND email_verified_at IS NOT NULL AND disabled_at IS NULL AND NOT is_guest
 `
 
@@ -201,6 +201,8 @@ func (q *Queries) LookupInvitee(ctx context.Context, email *string) (User, error
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
 }

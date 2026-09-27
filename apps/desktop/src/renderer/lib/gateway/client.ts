@@ -1,4 +1,5 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import {
   DeviceInfoSchema,
   GatewayCloseCode,
@@ -129,8 +130,11 @@ export class GatewayClient {
   private readonly rnd: () => number;
   private tokens = OUT_BURST;
   private tokensAt = Date.now();
-  /** Latest presence / subscription waiting for a token (coalesced: only the newest matters). */
-  private deferred = new Map<GatewayOpcode, GatewayFrame['payload']>();
+  /**
+   * Latest presence / subscription waiting for a token (coalesced per slot: only the newest
+   * matters). A manual status and this session's automatic (AFK) one have separate slots.
+   */
+  private deferred = new Map<string, { op: GatewayOpcode; payload: GatewayFrame['payload'] }>();
   private deferTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: GatewayDeps) {
@@ -221,8 +225,13 @@ export class GatewayClient {
     if (this.takeToken()) this.sendFrame(GatewayOpcode.TYPING, { case: 'typing', value: create(TypingSchema, { roomId }) });
   }
 
-  setPresence(status: PresenceStatus): void {
-    this.sendLimited(GatewayOpcode.PRESENCE_UPDATE, { case: 'setPresence', value: create(SetPresenceSchema, { status }) });
+  /**
+   * `untilMs` given = a manual choice kept by the server for all devices until then (0 = no
+   * end; ONLINE clears it); omitted = this session's automatic status (AFK). docs/05.
+   */
+  setPresence(status: PresenceStatus, untilMs?: number): void {
+    const until = untilMs === undefined ? undefined : timestampFromMs(untilMs);
+    this.sendLimited(GatewayOpcode.PRESENCE_UPDATE, { case: 'setPresence', value: create(SetPresenceSchema, { status, until }) }, until ? 'presence:manual' : 'presence');
   }
 
   subscribe(roomIds: string[]): void {
@@ -245,12 +254,12 @@ export class GatewayClient {
   }
 
   /** Sends now if a token is free, else keeps only the newest frame of this op and flushes later. */
-  private sendLimited(op: GatewayOpcode, payload: GatewayFrame['payload']): void {
-    if (!this.deferred.has(op) && this.takeToken()) {
+  private sendLimited(op: GatewayOpcode, payload: GatewayFrame['payload'], slot: string = String(op)): void {
+    if (!this.deferred.has(slot) && this.takeToken()) {
       this.sendFrame(op, payload);
       return;
     }
-    this.deferred.set(op, payload);
+    this.deferred.set(slot, { op, payload });
     this.scheduleFlush();
   }
 
@@ -260,9 +269,9 @@ export class GatewayClient {
     const wait = this.tokens >= 1 ? 0 : Math.ceil(((1 - this.tokens) / OUT_PER_SEC) * 1000);
     this.deferTimer = setTimeout(() => {
       this.deferTimer = null;
-      for (const [op, payload] of this.deferred) {
+      for (const [slot, { op, payload }] of this.deferred) {
         if (!this.takeToken()) break;
-        this.deferred.delete(op);
+        this.deferred.delete(slot);
         this.sendFrame(op, payload);
       }
       this.scheduleFlush();

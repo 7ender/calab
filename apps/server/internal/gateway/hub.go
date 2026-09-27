@@ -84,6 +84,7 @@ func instKey(instance string) string    { return "gw:inst:" + instance }
 // Run subscribes to events and runs background loops until ctx is done.
 func (h *Hub) Run(ctx context.Context) {
 	go h.lease(ctx) //nolint:gosec // G118: final DEL after ctx is done uses its own context on purpose
+	go h.restoreManual(ctx)
 	go h.sweepPresence(ctx)
 	first := true
 	for ctx.Err() == nil {
@@ -771,12 +772,47 @@ func (h *Hub) sweepPresence(ctx context.Context) {
 		if h.redis.Do(ctx, lock).Error() != nil {
 			continue
 		}
+		h.expireManual(ctx)
 		users, err := h.pres.stale(ctx)
 		if err != nil {
 			continue
 		}
 		for _, u := range users {
 			h.publishPresence(ctx, u)
+		}
+	}
+}
+
+// expireManual ends manual statuses whose time is up: back to ONLINE on all devices, and a
+// PRESENCE_UPDATE to the user's workspaces (docs/05 «Presence»).
+func (h *Hub) expireManual(ctx context.Context) {
+	rows, err := h.db.Q.ExpireManualPresence(ctx)
+	if err != nil {
+		slog.Warn("gateway: expire manual presence", "err", err)
+		return
+	}
+	for _, r := range rows {
+		ended := manualStatus{status: v1.PresenceStatus(*r.PresenceStatus)} //nolint:gosec // small enum
+		if r.PresenceUntil != nil {
+			ended.until = *r.PresenceUntil
+		}
+		_ = h.pres.dropManual(ctx, r.ID, ended)
+		h.manualChanged(ctx, r.ID, manualStatus{})
+	}
+}
+
+// restoreManual copies live manual statuses from Postgres into Valkey (after a Valkey
+// restart or flush); keys already there are kept.
+func (h *Hub) restoreManual(ctx context.Context) {
+	rows, err := h.db.Q.ListManualPresence(ctx)
+	if err != nil {
+		slog.Warn("gateway: restore manual presence", "err", err)
+		return
+	}
+	now := time.Now()
+	for _, r := range rows {
+		if m := manualFromDB(r.PresenceStatus, r.PresenceUntil, now); m.status != v1.PresenceStatus_PRESENCE_STATUS_UNSPECIFIED {
+			_ = h.pres.restoreManual(ctx, r.ID, m)
 		}
 	}
 }

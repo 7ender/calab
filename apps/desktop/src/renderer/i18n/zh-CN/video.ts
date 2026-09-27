@@ -90,4 +90,15 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'voicePreview.notInVoice': '你不在语音中',
   'voicePreview.join': '加入语音',
   'voicePreview.openChat': '打开聊天',
+  // room «…» menu and meeting recording (docs/09 #30)
+  'roomMenu.more': '更多',
+  'roomMenu.moreOf': '“{name}”的操作',
+  'roomMenu.invite': '邀请加入房间',
+  'roomMenu.record': '录制会议',
+  'roomMenu.soon': '即将推出',
+  'rec.badge': 'REC',
+  'rec.label': '录制中',
+  'rec.on': '正在录制',
+  'rec.time': '正在录制，{time}',
+  'rec.by': '由 {name} 开启录制',
 } as const;

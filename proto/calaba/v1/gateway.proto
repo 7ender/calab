@@ -98,6 +98,12 @@ message Resume {
 
 message SetPresence {
   PresenceStatus status = 1; // ONLINE | IDLE | DND | INVISIBLE
+  // Present = a manual choice from the status menu, stored per user (all devices) and
+  // announced to the user (Ready.presence, USER_UPDATE.presence): `status` until this time, then the
+  // server returns the user to ONLINE. The zero timestamp (seconds = 0) = no end; ONLINE (or a
+  // time already past) clears the manual status. At most 30 days ahead. Absent = this
+  // session's automatic status (AFK IDLE / back to ONLINE); a manual status wins over it.
+  google.protobuf.Timestamp until = 2;
 }
 
 message Typing {
@@ -189,6 +195,9 @@ message Presence {
   string status_text = 4;
   string status_emoji = 5;
   google.protobuf.Timestamp status_expires_at = 6;
+  // When a manual IDLE / DND ends (SetPresence.until); unset = no end, or not shown
+  // (invisible users are OFFLINE to others, with no until).
+  google.protobuf.Timestamp until = 7;
 }
 
 message ReadState {
@@ -232,6 +241,10 @@ message Ready {
   repeated WorkspaceNotificationSettings workspace_notification_settings = 7;
   // Where to ask for a paid plan (ADR-0024): PLAN_CONTACT_URL, else mailto:PLAN_CONTACT_EMAIL.
   string plan_contact = 8;
+  // The recipient's manual status (SetPresence with until), shared by all their devices:
+  // status IDLE | DND | INVISIBLE as chosen (not as others see it) and `until` (unset = no
+  // end). Unset = none (online / automatic). Changes arrive as USER_UPDATE.presence.
+  Presence presence = 9;
 }
 
 // A direct message as seen by one participant (ADR-0020). In READY, GET /api/dms,
@@ -448,4 +461,7 @@ message WorkspaceNotificationUpdate {
 message UserUpdate {
   Me me = 1;
   User user = 2;
+  // To the user's own sessions only, alone (me / user unset): their manual status changed or
+  // ended (see Ready.presence); status ONLINE with no until = none.
+  Presence presence = 3;
 }

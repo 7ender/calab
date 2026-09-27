@@ -93,4 +93,15 @@ export const esVideo: DictShape<typeof enVideo> = {
   'voicePreview.notInVoice': 'No estás en voz',
   'voicePreview.join': 'Unirse a la voz',
   'voicePreview.openChat': 'Abrir chat',
+  // room «…» menu and meeting recording (docs/09 #30)
+  'roomMenu.more': 'Más',
+  'roomMenu.moreOf': 'Acciones de «{name}»',
+  'roomMenu.invite': 'Invitar a la sala',
+  'roomMenu.record': 'Grabar reunión',
+  'roomMenu.soon': 'Próximamente',
+  'rec.badge': 'REC',
+  'rec.label': 'Grabando',
+  'rec.on': 'Grabación en curso',
+  'rec.time': 'Grabación en curso, {time}',
+  'rec.by': 'Grabación iniciada por {name}',
 } as const;

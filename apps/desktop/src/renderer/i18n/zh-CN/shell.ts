@@ -95,6 +95,10 @@ export const zhShell: DictShape<typeof enShell> = {
   // self panel
   'shell.inVoiceStatus': '语音中',
   'shell.micOptions': '选择麦克风',
+  'shell.micMode': '模式',
+  'shell.micModeVoice': '语音激活',
+  'shell.pttChange': '更改…',
+  'shell.pttEscCancel': 'Esc 取消',
   'shell.outputOptions': '选择输出设备',
   'shell.inputDevice': '输入设备',
   'shell.outputDevice': '输出设备',

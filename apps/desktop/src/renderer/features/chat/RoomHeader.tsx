@@ -177,7 +177,7 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
       data-testid="dm-header"
     >
       {mobile ? <NavButton /> : null}
-      <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence className="[&>span:last-child]:border-[var(--color-bg)]" />
+      <Avatar userId={peerId} name={name} fileId={user?.avatarFileId || undefined} size={28} presence ring="var(--color-bg)" />
       <h1 className={cx('min-w-0 max-w-[40%] shrink-0 truncate text-list font-semibold', roleTextClass(shared?.role), mobile && 'max-w-none shrink')} title={name}>
         {name}
       </h1>

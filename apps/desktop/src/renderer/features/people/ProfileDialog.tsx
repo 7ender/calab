@@ -139,7 +139,7 @@ export function ProfileDialog({
             <div className="px-5 pb-5">
               {/* Avatar 80 over the banner edge, ringed with the sheet colour (presence dot too). */}
               <div className="relative -mt-11 mb-2 inline-flex rounded-full bg-[var(--color-popover-solid)] p-1.5">
-                <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={80} presence className="[&>span:last-child]:border-[var(--color-popover-solid)]" />
+                <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={80} presence ring="var(--color-popover-solid)" />
               </div>
               <div className="flex min-w-0 items-center gap-2">
                 <DialogP.Title className={cx('min-w-0 truncate text-title font-semibold leading-tight', roleTextClass(m.role))} title={name}>

@@ -23,7 +23,10 @@ import {
   Bell,
   BellOff,
   Check,
+  CheckCheck,
   ChevronDown,
+  CircleDot,
+  Ellipsis,
   ChevronRight,
   FolderInput,
   FolderPlus,
@@ -41,7 +44,7 @@ import {
   Video,
   Volume2,
 } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
@@ -52,7 +55,7 @@ import { api } from '../../lib/api/endpoints';
 import { can, isAdminRole, roomPerms, workspacePerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
-import { setWorkspaceNotifications } from '../../services/mentions';
+import { setRoomNotifications, setWorkspaceNotifications } from '../../services/mentions';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -72,6 +75,9 @@ import { useMobile } from '../../lib/mobile';
 import { categoryDropAt, roomDropAt, stepTarget, type RoomTarget, type Slot } from '../../lib/roomOrder';
 import { moveCategoryTo, moveRoomTo, workspaceCategories, workspaceLayout } from '../../services/roomOrder';
 import { useTimeZoneLabel } from '../../services/timezone';
+import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
+import { copyRoomInviteLink } from '../people/roomLink';
+import { RoomRecBadge } from '../voice/Recording';
 
 export { menuBox, menuItem };
 
@@ -655,23 +661,79 @@ function RoomActions({ room, canInvite, canSettings, active }: { room: Room; can
   );
 }
 
-function RoomMenu({ room, children, canManage, canOrder }: { room: Room; children: ReactNode; canManage: boolean; canOrder: boolean }): ReactNode {
+/**
+ * The room menu (docs/09 #30): right click / long press on a room row, and the voice room's «…»
+ * button (the same menu, opened at the button). Item set: lib/roomMenu.roomMenuGroups.
+ */
+function RoomMenu({
+  room,
+  children,
+  canManage,
+  canOrder,
+  admin,
+  guest,
+}: {
+  room: Room;
+  children: ReactNode;
+  canManage: boolean;
+  canOrder: boolean;
+  admin: boolean;
+  guest: boolean;
+}): ReactNode {
   const open = useUi((s) => s.openDialog);
   const openRoom = useUi((s) => s.openRoom);
   const last = useRooms((s) => s.lastMessage[room.id]);
   const unread = useRooms((s) => isUnread(room.id, s));
-  return (
-    <ContextMenu.Root modal={false}>
-      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content className={menuBox}>
-          {/* A voice room's chat without joining (docs/09 #14): the phone has no hover actions, long-press opens this menu. */}
-          {isVoice(room) ? (
-            <ContextMenu.Item className={menuItem} onSelect={() => openRoom(room.workspaceId, room.id)}>
-              <MessageSquare className="size-4" /> {t('voicePreview.openChat')}
-            </ContextMenu.Item>
-          ) : null}
+  const mobile = useMobile();
+  const voiceRoom = isVoice(room);
+  // Categories are read when the menu renders (it mounts on open), like RoomOrderItems.
+  const groups = roomMenuGroups({
+    voice: voiceRoom,
+    mobile,
+    guest,
+    admin,
+    canManage,
+    canOrder,
+    hasCategories: canOrder && workspaceCategories(room.workspaceId).length > 0,
+  });
+  const item = (id: RoomMenuItem): ReactNode => {
+    switch (id) {
+      case 'openChat':
+        // A voice room's chat without joining (docs/09 #14): the phone has no hover actions.
+        return (
+          <ContextMenu.Item key={id} className={menuItem} onSelect={() => openRoom(room.workspaceId, room.id)}>
+            <MessageSquare className="size-4" /> {t('voicePreview.openChat')}
+          </ContextMenu.Item>
+        );
+      case 'invite':
+        // Voice + MANAGE_ROOM: the room link (ADR-0016, like the invite row); otherwise the workspace invite.
+        return (
           <ContextMenu.Item
+            key={id}
+            className={menuItem}
+            onSelect={() => (voiceRoom && canManage ? void copyRoomInviteLink(room.id) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' }))}
+          >
+            <UserPlus className="size-4" /> {voiceRoom ? t('roomMenu.invite') : t('shell.invite')}
+          </ContextMenu.Item>
+        );
+      case 'record':
+        // Listed, not yet available: it turns on with the server side of the recording («Скоро»).
+        return (
+          <ContextMenu.Item key={id} className={menuItem} disabled data-testid="room-menu-record">
+            <CircleDot className="size-4" /> <span className="flex-1">{t('roomMenu.record')}</span>
+            <span className="text-micro text-muted">{t('roomMenu.soon')}</span>
+          </ContextMenu.Item>
+        );
+      case 'settings':
+        return (
+          <ContextMenu.Item key={id} className={menuItem} onSelect={() => open({ kind: 'room-settings', roomId: room.id })}>
+            <Settings className="size-4" /> {t('room.settings')}
+          </ContextMenu.Item>
+        );
+      case 'markRead':
+        return (
+          <ContextMenu.Item
+            key={id}
             className={menuItem}
             disabled={!last || !unread}
             onSelect={() => {
@@ -681,17 +743,68 @@ function RoomMenu({ room, children, canManage, canOrder }: { room: Room; childre
               }
             }}
           >
-            {t('room.markRead')}
+            <CheckCheck className="size-4" /> {t('room.markRead')}
           </ContextMenu.Item>
-          {canManage ? (
-            <ContextMenu.Item className={menuItem} onSelect={() => open({ kind: 'room-settings', roomId: room.id })}>
-              <Settings className="size-4" /> {t('room.settings')}
-            </ContextMenu.Item>
-          ) : null}
-          {canOrder ? <RoomOrderItems room={room} /> : null}
+        );
+      case 'notify':
+        return <RoomNotifySub key={id} room={room} />;
+      case 'moveUp':
+      case 'moveDown':
+      case 'toCategory':
+        return null;
+    }
+  };
+  return (
+    <ContextMenu.Root modal={false}>
+      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className={cx(menuBox, 'w-60')} collisionPadding={16} aria-label={t('roomMenu.moreOf', { name: room.name })}>
+          {groups.map((g, i) => (
+            <Fragment key={g.join()}>
+              {i > 0 ? <ContextMenu.Separator className={menuSeparator} /> : null}
+              {g.includes('moveUp') ? <RoomOrderItems room={room} /> : g.map(item)}
+            </Fragment>
+          ))}
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
+  );
+}
+
+/** «Уведомления ›» of the room menu: the same choices as the room header's bell (docs/09 #22). */
+function RoomNotifySub({ room }: { room: Room }): ReactNode {
+  const stored = useRooms((s) => s.notify[room.id]);
+  const wsStored = useRooms((s) => s.wsNotify[room.workspaceId]);
+  const n = roomNotify(stored);
+  const ws = workspaceNotify(wsStored);
+  const quiet = n.mutedUntil !== null || n.level === NotificationLevel.NONE;
+  const options: LevelOption[] = [
+    { level: NotificationLevel.INHERIT, label: t('chat.notifyInherit', { level: t(LEVEL_LABEL[ws.level] ?? 'chat.notifyMentions') }) },
+    { level: NotificationLevel.ALL, label: t('chat.notifyAll') },
+    { level: NotificationLevel.MENTIONS, label: t('chat.notifyMentions') },
+    { level: NotificationLevel.NONE, label: t('chat.notifyNone') },
+  ];
+  return (
+    <ContextMenu.Sub>
+      <ContextMenu.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
+        {quiet ? <BellOff className="size-4" aria-hidden /> : <Bell className="size-4" aria-hidden />}
+        <span className="flex-1">{t('chat.notify')}</span>
+        <ChevronRight className="size-4" aria-hidden />
+      </ContextMenu.SubTrigger>
+      <ContextMenu.Portal>
+        <ContextMenu.SubContent className={cx(menuBox, 'w-60')} sideOffset={4} collisionPadding={16}>
+          <NotifyMenuItems
+            kit="context"
+            title={t('chat.notify')}
+            options={options}
+            value={n.level}
+            mutedUntil={n.mutedUntil}
+            defaultLevel={NotificationLevel.INHERIT}
+            onChange={(level, until) => void setRoomNotifications(room.id, level, until)}
+          />
+        </ContextMenu.SubContent>
+      </ContextMenu.Portal>
+    </ContextMenu.Sub>
   );
 }
 
@@ -713,7 +826,6 @@ function RoomOrderItems({ room }: { room: Room }): ReactNode {
     go({ categoryId, index: layout.find((c) => c.categoryId === categoryId)?.rooms.filter((id) => id !== room.id).length ?? 0 });
   return (
     <>
-      <ContextMenu.Separator className={menuSeparator} />
       <ContextMenu.Item className={menuItem} disabled={!up} onSelect={() => go(up)}>
         <ArrowUp className="size-4" /> {t('shell.moveUp')}
       </ContextMenu.Item>
@@ -753,36 +865,34 @@ function useRoomDrag(room: Room, enabled: boolean): ReturnType<typeof useDraggab
 }
 
 /**
- * Actions on a voice room row, active or not (Discord reference): exactly three — chat, invite,
- * settings — by permission, with no reserved space for one that's missing; 18 px icons, 10 px
- * apart, 10 px from the row's right edge (the card's own px-2.5, or pr-2.5 on the plain row),
- * shown on hover / keyboard focus (the call timer stands there otherwise).
+ * Actions on a voice room row, active or not (docs/09 #30, Discord reference): exactly two —
+ * «чат» and «…» (the room menu: invite · recording · settings · the context-menu items); 18 px
+ * icons, 10 px apart, 10 px from the row's right edge (the card's own px-2.5, or pr-2.5 on the
+ * plain row), shown on hover / keyboard focus and while the menu is open (the call timer stands
+ * there otherwise).
  */
-function CardActions({ room, workspaceId, canInvite, canSettings }: { room: Room; workspaceId: string; canInvite: boolean; canSettings: boolean }): ReactNode {
-  const open = useUi((s) => s.openDialog);
+function CardActions({ room, workspaceId }: { room: Room; workspaceId: string }): ReactNode {
   const openRoom = useUi((s) => s.openRoom);
-  const btn = 'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
+  const btn =
+    'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
+  // «…» opens the row's own context menu (RoomMenu) under the button: one menu for the click, the
+  // right click and the phone's long press — never two item lists drifting apart.
+  const openMenu = (e: ReactMouseEvent<HTMLButtonElement>): void => {
+    const r = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left, clientY: r.bottom + 4 }));
+  };
   return (
-    <span className="hidden shrink-0 items-center gap-2.5 group-hover/row:flex group-focus-within/row:flex">
+    <span className="hidden shrink-0 items-center gap-2.5 group-focus-within/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
       <Tip label={t('shell.roomChat')}>
         <button type="button" className={btn} aria-label={t('shell.roomChatOf', { name: room.name })} onClick={() => openRoom(workspaceId, room.id)}>
           <MessageSquare className="size-[18px]" aria-hidden />
         </button>
       </Tip>
-      {canInvite ? (
-        <Tip label={t('shell.invite')}>
-          <button type="button" className={btn} aria-label={t('shell.inviteTo', { name: room.name })} onClick={() => open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' })}>
-            <UserPlus className="size-[18px]" aria-hidden />
-          </button>
-        </Tip>
-      ) : null}
-      {canSettings ? (
-        <Tip label={t('room.settings')}>
-          <button type="button" className={btn} aria-label={t('shell.roomSettingsOf', { name: room.name })} onClick={() => open({ kind: 'room-settings', roomId: room.id })}>
-            <Settings className="size-[18px]" aria-hidden />
-          </button>
-        </Tip>
-      ) : null}
+      <Tip label={t('roomMenu.more')}>
+        <button type="button" className={btn} aria-label={t('roomMenu.moreOf', { name: room.name })} aria-haspopup="menu" data-testid="room-more" onClick={openMenu}>
+          <Ellipsis className="size-[18px]" aria-hidden />
+        </button>
+      </Tip>
     </span>
   );
 }
@@ -824,7 +934,7 @@ function TextRoomRow({
   const { setNodeRef, listeners, isDragging } = useRoomDrag(room, canDrag);
   return (
     <div ref={setNodeRef} {...(canDrag ? listeners : {})} data-room-slot={room.id} data-slot-category={container} className={cx(isDragging && 'opacity-40')}>
-      <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder}>
+      <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role === WorkspaceRole.GUEST}>
         <div className={cx(rowBox, active ? 'bg-active' : 'hover:bg-hover')}>
           <UnreadPill show={unread && !active} />
           <button
@@ -928,7 +1038,7 @@ function VoiceRoomRow({
     >
       {/* The drag handle is the room line / card only: participants below drag themselves. */}
       <div {...(canDrag ? dragListeners : {})}>
-        <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder}>
+        <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role === WorkspaceRole.GUEST}>
           {/* With a status line the room is one raised two-line card (Discord): name + status. */}
           <div
             className={cx(
@@ -974,16 +1084,24 @@ function VoiceRoomRow({
                 <MentionBadge n={mentions} />
                 {/* Hover / focus swaps the timer and N/M for the actions (Discord; «чат» is always there,
                     docs/09 #14), so the name keeps ≥ 120 px. On the card the timer stays green on the name line. */}
-                <span className={cx('flex items-center gap-2', 'group-hover/row:hidden group-focus-within/row:hidden')}>
+                <span className={cx('flex items-center gap-2', 'group-focus-within/row:hidden group-hover/row:hidden group-data-[state=open]/row:hidden')}>
+                  {/* REC (docs/09 #30): on a plain row just the dot before the call timer (the name keeps
+                      its width); the card shows «● REC 12:34» on its status line, right under the timer. */}
+                  {card ? null : <RoomRecBadge roomId={room.id} compact />}
                   {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom ? 'text-[var(--color-green-text)]' : 'text-fg') : undefined} /> : null}
                   {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
                 </span>
-                {/* Same three actions (chat · invite · settings) whether the room is active (card) or
-                    not, on hover (owner, Discord reference): no separate action set for either. */}
-                <CardActions room={room} workspaceId={workspaceId} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} />
+                {/* Same two actions (chat · «…») whether the room is active (card) or not, on hover
+                    (owner, Discord reference): no separate action set for either. */}
+                <CardActions room={room} workspaceId={workspaceId} />
               </span>
             </div>
-            {card ? <VoiceStatusLine roomId={room.id} canEdit={statusLine.canEdit} status={statusLine.status} /> : null}
+            {card ? (
+              <div className="flex min-w-0 items-center gap-2">
+                <VoiceStatusLine roomId={room.id} canEdit={statusLine.canEdit} status={statusLine.status} />
+                <RoomRecBadge roomId={room.id} className="text-[13px]" />
+              </div>
+            ) : null}
           </div>
         </RoomMenu>
       </div>

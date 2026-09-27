@@ -71,8 +71,12 @@ export interface Prefs {
   /** Rebound in-window shortcuts (lib/shortcuts.ts); missing actions use the defaults. */
   hotkeys: Partial<Record<HotkeyAction, Combo>>;
   devStats: boolean;
-  /** Chosen presence (PresenceStatus value), re-sent after every gateway (re)connect. */
+  /** Chosen presence (PresenceStatus value): a copy of the server's per-user manual status (READY / USER_UPDATE, docs/05). */
   presence: PresenceStatus;
+  /** When the chosen status ends (epoch ms; status menu «1 час»…, docs/09 #29) → back to «В сети». null = until changed. */
+  presenceUntil: number | null;
+  /** false = `presence` was chosen here while offline (or predates server-side statuses): the next READY sends it instead of taking the server's. */
+  presenceSynced: boolean;
   /** Personal voice bitrate cap (UserSettings.audio_bitrate_kbps); null = room setting. */
   personalBitrateKbps: number | null;
   /** First-run onboarding finished on this device (docs/08, «Онбординг»). */
@@ -116,6 +120,8 @@ const DEFAULTS: Prefs = {
   hotkeys: {},
   devStats: false,
   presence: PresenceStatus.ONLINE,
+  presenceUntil: null,
+  presenceSynced: true,
   personalBitrateKbps: null,
   onboarded: false,
   afkMinutes: 10,
@@ -128,7 +134,12 @@ interface PrefsState extends Prefs {
 export const usePrefs = create<PrefsState>()(
   persist((set) => ({ ...DEFAULTS, setPrefs: (p) => set(p) }), {
     name: 'calaba-prefs',
-    version: 1,
+    version: 2,
+    // v2: statuses moved to the server — a status chosen on this device before is sent once.
+    migrate: (state, version) => {
+      const s = state as Partial<Prefs>;
+      return version < 2 ? { ...s, presenceSynced: (s.presence ?? PresenceStatus.ONLINE) === PresenceStatus.ONLINE } : s;
+    },
     partialize: ({ setPrefs: _s, ...rest }) => rest,
   }),
 );

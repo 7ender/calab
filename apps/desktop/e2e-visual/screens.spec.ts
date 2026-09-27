@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { Plan, UserSchema, WorkspacePlanSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, defaultSettings } from '../e2e-support/fixtures';
-import { IDS, PASSWORD, type MockServer } from '../e2e-support/mock-server';
+import { IDS, PASSWORD, RECORDING_FIXTURE, type MockServer } from '../e2e-support/mock-server';
 import { expect, test } from './app';
 import { checkpoint, settle } from './harness';
 import { startPublisher } from './publisher';
@@ -48,6 +48,7 @@ const KEY = new Set([
   'dm-list',
   'dm-chat',
   'voice-room-status',
+  'voice-room-recording',
   'voice-room-speaking',
   'voice-room-pending',
   'voice-stream',
@@ -59,6 +60,8 @@ const KEY = new Set([
   'members-menu',
   'profile-dialog',
   'workspace-menu',
+  'self-mic-menu',
+  'self-status-menu',
   'quick-switcher',
   'settings-2',
   'settings-3',
@@ -723,12 +726,32 @@ test('shell-mentions', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'shell-mentions');
 });
 
-test('shell-profile', async ({ open, win, mock, shot }) => {
+/** Status menu (docs/09 #29): «Не беспокоить» hovered — its duration submenu open to the right. */
+test('self-status-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await win.getByRole('button', { name: /^Мой статус/ }).click();
-  await expect(win.getByRole('radiogroup', { name: 'Статус и профиль' })).toBeVisible();
-  await checkpoint(shot, 'shell-profile');
+  const menu = win.getByTestId('status-menu');
+  await expect(menu).toBeVisible();
+  // Keyboard: the submenu stays open (a parked pointer would close it).
+  await menu.getByRole('menuitem', { name: /^Не беспокоить/ }).focus();
+  await win.keyboard.press('ArrowRight');
+  await expect(win.getByRole('menuitem', { name: '15 минут' })).toBeFocused();
+  await checkpoint(shot, 'self-status-menu');
+});
+
+/** Mic ▾ (docs/09 #28): «Режим» switched to push-to-talk in the menu — key pill, «Изменить…», release delay. */
+test('self-mic-menu', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByRole('button', { name: 'Выбор микрофона' }).click();
+  const menu = win.getByTestId('mic-menu');
+  await expect(menu).toBeVisible();
+  await menu.getByRole('menuitemradio', { name: 'Push-to-talk' }).click();
+  // The menu stays open and shows the PTT controls in place.
+  await expect(menu.getByTestId('mic-ptt-key')).toBeVisible();
+  await expect(menu.getByTestId('ptt-release-compact')).toBeVisible();
+  await checkpoint(shot, 'self-mic-menu');
 });
 
 test('workspace-menu', async ({ open, win, mock, shot }) => {
@@ -799,7 +822,7 @@ test('settings-plan', async ({ open, win, mock, shot }) => {
 /** «Администрирование» (superadmin, ADR-0024): the search and the workspace cards. */
 async function openAdmin(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: /^Мой статус/ }).click();
-  await page.getByRole('button', { name: 'Администрирование' }).click();
+  await page.getByRole('menuitem', { name: 'Администрирование' }).click();
   const admin = page.getByTestId('admin-window');
   await expect(admin.getByTestId('admin-workspace')).toHaveCount(3);
   return admin;
@@ -971,7 +994,46 @@ test('voice-room-status', async ({ open, win, mock, shot }) => {
   await editRoomStatus(win, true);
   // Just joined (docs/09 #10): the invite row is in its 30 s window.
   await expect(win.getByTestId('voice-invite-row')).toBeVisible();
-  await checkpoint(shot, 'voice-room-status');
+  // Card actions (docs/09 #30): only «чат» and «…»; «…» opens the room menu with «Запись встречи»
+  // listed but disabled («Скоро») until the server side of the recording lands.
+  const card = win.getByTestId('voice-room-card');
+  await card.hover();
+  await expect(card.getByRole('button', { name: /^Чат комнаты/ })).toBeVisible();
+  await card.getByTestId('room-more').click();
+  const record = win.getByTestId('room-menu-record');
+  await expect(record).toBeVisible();
+  await expect(record).toHaveAttribute('aria-disabled', 'true');
+  await expect(win.getByRole('menuitem', { name: 'Настройки комнаты' })).toBeVisible();
+  await win.keyboard.press('Escape');
+  await expect(record).toHaveCount(0);
+  // Closing returns focus to «…» (a tick later); the shot shows no focus ring.
+  const more = card.getByTestId('room-more');
+  await expect(more).toBeFocused();
+  await more.blur();
+  // The shot: the card hovered — the two actions stand where the timer was.
+  await card.hover();
+  await expect(card.getByTestId('room-more')).toBeVisible();
+  await checkpoint(shot, 'voice-room-status', { keepPointer: true });
+});
+
+// Meeting recording (docs/09 #30): Борис started it 12:34 ago — «● REC 12:34» on the room card
+// next to the call timer, the red «● Запись · 12:34» pill in «Голос подключён» (who started it:
+// tooltip / accessible name). The pointer rests away from the card, so the timer side shows.
+test('voice-room-recording', async ({ open, win, mock, shot }) => {
+  await open();
+  await inVoiceWithStatus(win, mock);
+  await win.evaluate(
+    ({ byUserId, agoMs }) =>
+      (window as unknown as { __calabaRecording?: (r: { byUserId: string; since: number }) => void }).__calabaRecording?.({ byUserId, since: Date.now() - agoMs }),
+    RECORDING_FIXTURE,
+  );
+  await win.evaluate(() => (window as unknown as { __calabaJoinedAt?: (ms: number) => void }).__calabaJoinedAt?.(Date.now() - 60_000));
+  await expect(win.getByTestId('voice-invite-row')).toHaveCount(0);
+  await win.mouse.move(0, 0);
+  const card = win.getByTestId('voice-room-card');
+  await expect(card.getByTestId('room-rec')).toHaveAccessibleName('Идёт запись, 12:34');
+  await expect(win.getByTestId('voice-rec-pill')).toHaveAccessibleName(/Запись включена: Борис Петров/);
+  await checkpoint(shot, 'voice-room-recording');
 });
 
 // Speaking indication (docs/08): Борис talks — green ring + bright name in the sidebar row

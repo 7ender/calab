@@ -75,6 +75,15 @@ export interface EchoDiag {
   corr: number | null;
 }
 
+/**
+ * A meeting recording in my voice room (docs/09 #30): who switched it on and when (ms). Local
+ * state for now — the server's `room.recording {by, since}` fills it once the contract lands.
+ */
+export interface VoiceRecording {
+  byUserId: string;
+  since: number;
+}
+
 export interface VoiceStore {
   roomId: string | null;
   workspaceId: string | null;
@@ -144,6 +153,8 @@ export interface VoiceStore {
   /** Bumped when a video track (stream or camera, remote or mine) changes, so video elements re-attach. */
   trackEpoch: number;
   link: VoiceLink;
+  /** Recording of my room, if any (REC on the room card, the voice panel, the phone strip). */
+  recording: VoiceRecording | null;
   set: (p: Partial<VoiceStore>) => void;
 }
 
@@ -190,6 +201,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   stats: null,
   trackEpoch: 0,
   link: { rtcHost: null, attempts: 0, lastError: null, blockedHost: null },
+  recording: null,
   set: (p) => set(p),
 }));
 

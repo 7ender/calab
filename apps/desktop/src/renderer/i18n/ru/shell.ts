@@ -93,6 +93,10 @@ export const ruShell = {
   // self panel
   'shell.inVoiceStatus': 'В голосе',
   'shell.micOptions': 'Выбор микрофона',
+  'shell.micMode': 'Режим',
+  'shell.micModeVoice': 'По голосу',
+  'shell.pttChange': 'Изменить…',
+  'shell.pttEscCancel': 'Esc — отмена',
   'shell.outputOptions': 'Выбор устройства вывода',
   'shell.inputDevice': 'Устройство ввода',
   'shell.outputDevice': 'Устройство вывода',

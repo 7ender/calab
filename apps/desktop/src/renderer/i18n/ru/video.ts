@@ -90,4 +90,15 @@ export const ruVideo = {
   'voicePreview.notInVoice': 'Вы не в голосе',
   'voicePreview.join': 'Войти в голос',
   'voicePreview.openChat': 'Открыть чат',
+  // room «…» menu and meeting recording (docs/09 #30)
+  'roomMenu.more': 'Ещё',
+  'roomMenu.moreOf': 'Действия с «{name}»',
+  'roomMenu.invite': 'Пригласить в комнату',
+  'roomMenu.record': 'Запись встречи',
+  'roomMenu.soon': 'Скоро',
+  'rec.badge': 'REC',
+  'rec.label': 'Запись',
+  'rec.on': 'Идёт запись',
+  'rec.time': 'Идёт запись, {time}',
+  'rec.by': 'Запись включена: {name}',
 } as const;

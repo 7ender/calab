@@ -471,6 +471,22 @@ describe('GatewayClient', () => {
     expect(presences()).toEqual([PresenceStatus.ONLINE]);
   });
 
+  it('a deferred manual status is not coalesced away by an automatic (AFK) one', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1));
+    for (let i = 0; i < OUT_BURST; i++) t.client.sendTyping('r');
+    t.client.setPresence(PresenceStatus.DND, 5_000);
+    t.client.setPresence(PresenceStatus.IDLE);
+    await vi.advanceTimersByTimeAsync(2000);
+    const sent = s.sent.flatMap((f) => (f.payload.case === 'setPresence' ? [[f.payload.value.status, f.payload.value.until !== undefined]] : []));
+    expect(sent).toEqual([
+      [PresenceStatus.DND, true],
+      [PresenceStatus.IDLE, false],
+    ]);
+  });
+
   it('heartbeats are never rate limited', async () => {
     const t = setup();
     t.client.start();
