@@ -11,7 +11,8 @@ gen:            ## generate Go + TS from proto/ and Go from SQL (run `pnpm insta
 	buf generate
 	cd apps/server && sqlc generate
 
-# Dev defaults match infra/docker/compose.dev.yml (postgres :55432, redis :56379, livekit devkey/secret).
+# Dev defaults match infra/docker/compose.dev.yml (postgres :55432, redis :56379, livekit devkey/secret,
+# mail → Mailpit :1025, read at http://localhost:8025; SMTP_HOST= disables mail).
 dev-server:
 	cd apps/server && \
 	DATABASE_URL=$${DATABASE_URL:-postgres://calaba:calaba@localhost:55432/calaba} \
@@ -20,6 +21,7 @@ dev-server:
 	REGISTRATION_MODE=$${REGISTRATION_MODE:-open} \
 	LIVEKIT_URL=$${LIVEKIT_URL:-ws://localhost:7880} LIVEKIT_INTERNAL_URL=$${LIVEKIT_INTERNAL_URL:-http://localhost:7880} \
 	LIVEKIT_API_KEY=$${LIVEKIT_API_KEY:-devkey} LIVEKIT_API_SECRET=$${LIVEKIT_API_SECRET:-secret} \
+	SMTP_HOST=$${SMTP_HOST-localhost:1025} SMTP_TLS=$${SMTP_TLS:-none} SMTP_FROM="$${SMTP_FROM:-Calab <noreply@calab.test>}" \
 	go run ./cmd/server
 
 test:           ## unit tests (no external services)

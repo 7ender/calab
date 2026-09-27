@@ -1721,3 +1721,12 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 2. Колокольчик комнаты → «Все сообщения» (иконка `BellRing`) → обычное сообщение даёт «Новое сообщение»; меню пространства → «Все сообщения» при комнате «Как в пространстве» — так же во всех комнатах.
 3. «Заглушить → На 1 ч» в пространстве → тишина даже на `@A`, у комнат нет точки, счётчик упоминаний и бейдж Dock остаются; «Включить уведомления» возвращает.
 4. Бейдж Dock/заголовок окна = упоминания + непрочитанные DM; открыть эти чаты → бейдж пропадает. Второе устройство A получает смену уровня сразу.
+
+## Почта: подтверждение, сброс пароля, приглашения по email (ADR-0023, ветка `feat/email-server`)
+Авто: `go test ./internal/mail ./internal/auth` (шаблоны × 4 локали, SMTP против фейкового сервера, коды) и `go test -tags integration -run "Email|PasswordReset|ChangeEmail|InviteLookup|MailOutbox|ChangeCredentials" ./internal/app/` (`TEST_PG_URL`/`TEST_REDIS_URL` — свои).
+Руками (`pnpm infra:dev` поднимает Mailpit: письма на http://localhost:8025; `make dev-server` шлёт в него):
+1. Регистрация → письмо «Код подтверждения: NNNNNN» (язык — по `Accept-Language`/`locale`); до кода `POST /api/workspaces` → 403 `EMAIL_NOT_VERIFIED`; `POST /api/auth/verify {code}` → `emailVerified: true`, создание работает.
+2. 5 неверных кодов → `CODE_INVALID` ×4, затем `CODE_EXPIRED`; `verify/send` раньше 60 с → 429.
+3. `password/forgot` (свой и чужой адрес) → 204 оба, письмо только своему; `password/reset` → 204, все устройства разлогинены, вход с новым паролем.
+4. `invites/lookup` своего участника → `member: true`; неизвестного → `{}`; `invites/email` → письмо со ссылкой `/join/<code>`; регистрация по ней → сразу в пространстве; повтор приглашения < 24 ч → 429.
+5. Письма: светлая/тёмная тема клиента, подвал «Powered by GPTunneL · calab.ru».

@@ -7,7 +7,12 @@ PostgreSQL 18, `pgx` + `sqlc` + `goose` (миграции). Все id — `uuid 
 ```
 users               id, email (unique, citext), password_hash (argon2id), display_name,
                     avatar_file_id, status_text, settings (jsonb, UserSettings),
-                    created_at, disabled_at, timezone? (IANA, «+3 UTC» у участников)
+                    created_at, disabled_at, timezone? (IANA, «+3 UTC» у участников),
+                    email_verified_at?, pending_email? (новый адрес до кода), locale? (en|ru|es|zh-CN, язык писем)
+email_codes         user_id, purpose ('verify'|'change'|'reset'), code_hash (argon2id), expires_at,
+                    attempts, created_at   PK (user_id, purpose) — один живой код на цель (ADR-0023)
+mail_outbox         id, to_addr, template, locale, params (AES-GCM, ключ из JWT_SECRET; NULL после отправки),
+                    priority (0 коды / 1 уведомления), attempts, next_at, expires_at, sent_at?, failed_at?, error
 sessions            id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at,
                     device_name, ip, user_agent,
                     created_at, last_seen_at, expires_at, revoked_at
@@ -21,6 +26,9 @@ workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest
                     nickname, joined_at            PK (workspace_id, user_id)
 workspace_invites   id, workspace_id, code (unique), created_by, max_uses, uses,
                     expires_at, created_at
+email_invites       id, workspace_id, email (citext), role ('member'|'admin'), invited_by,
+                    invite_id → workspace_invites (одноразовая ссылка /join/<code>, 7 дней),
+                    expires_at, last_sent_at, accepted_at?   UNIQUE (workspace_id, email) среди непринятых
 
 rooms               id, workspace_id? (NULL только у DM), type ('voice'|'text'|'dm'), name, topic,
                     position, category_id?, is_private,
@@ -188,6 +196,11 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - Refresh-токен = `<session_id>.<secret>`, в БД — только `sha256(secret)`. Каждый refresh выдаёт новый секрет. Предъявлен не текущий секрет живой сессии → это повтор уже ротированного токена (или подделка) → сессия отзывается целиком. Исключение: предыдущий секрет в течение 30 с после ротации (гонка двух параллельных refresh) → `401` без отзыва.
 - Отзыв сессии (logout, reuse, «выйти везде») мгновенно действует и на выданные access-токены: API ставит в Redis `auth:revoked:<session_id>` (TTL = время жизни access-токена), middleware проверяет его (rueidis client-side cache, инвалидация сервером Redis). Redis недоступен → `503` (fail closed).
 - Регистрация: открытая или по инвайту (флаг сервера `REGISTRATION_MODE=open|invite`). В режиме `invite` без кода может зарегистрироваться только **первый пользователь сервера** (bootstrap владельца, под `pg_advisory_xact_lock`). Регистрация с инвайтом сразу добавляет в workspace ролью `member`.
+- **Почта (ADR-0023).** Письма уходят только через outbox `mail_outbox` (в транзакции вызывающего) → воркер: цикл на каждом инстансе, отправляет держатель блокировки Valkey `mail:worker` (30 с); взятые строки «арендуются» (`next_at` +5 мин), поэтому потеря блокировки или падение не дают дубля. Ретраи 30 с × 2ⁿ (≤ 1 ч) до конца жизни письма (код — 10 мин, остальное — 24 ч); SMTP 5xx и ошибки шаблона — сразу `failed_at`. Лимиты (Valkey): `MAIL_PER_ADDRESS_PER_HOUR` (3) на адрес — при постановке (429), `MAIL_PER_HOUR` (200) на сервер — воркер ждёт. Без `SMTP_HOST` почты нет: регистрация сразу помечает адрес подтверждённым.
+- **Подтверждение email.** Код — 6 цифр, argon2id, 10 мин, 5 попыток (попытка списывается до сравнения), новый — не чаще раза в 60 с (атомарно в `PutEmailCode`). Код шлют регистрация, вход неподтверждённого (если прошлый старше 60 с) и `verify/send`. Неподтверждённый аккаунт читает и входит, но `EMAIL_NOT_VERIFIED` (403) на создание пространства, приглашения (ссылки на пространство/комнату, email-приглашения, lookup, добавление) и **новый** DM; гости не затрагиваются. Существующие аккаунты **не** считаются подтверждёнными (владелец, 27.09). Суперадмин (`SUPERADMIN_EMAILS`) — только с подтверждённым адресом.
+- **Смена email** — адрес попадает в `pending_email`, код уходит на новый адрес; вход — по старому, пока код не подтверждён (`verify` переносит адрес и ставит `email_verified_at`). Смена на текущий адрес отменяет ожидающую.
+- **Сброс пароля.** `forgot` всегда 204 (работа в фоне, тайминг одинаковый); `reset` с неверным/просроченным кодом или неизвестным адресом — одинаково `422 CODE_INVALID`; успех: новый хэш, адрес подтверждён, **все** сессии отозваны.
+- **Приглашения по email.** Право — `MANAGE_WORKSPACE` (право на приглашения) + подтверждённый адрес. `lookup` — точное совпадение среди подтверждённых активных не-гостей, 20/мин на пользователя, в лог — id действующего и sha256-префикс адреса. `members {user_id}` добавляет сразу (`member`) + письмо `workspace_added`. `invites/email` создаёт одноразовую ссылку, привязанную к адресу (регистрация/вход по ней с другим адресом → `INVITE_INVALID`; с этим — адрес сразу подтверждён), повтор тому же адресу — не чаще раза в 24 ч (новая ссылка, старая удаляется); 20 подряд / 30 в час на пользователя. Подтверждение адреса (код, сброс пароля, ссылка) принимает **все** живые email-приглашения этого адреса.
 - Позже: OIDC (Google Workspace / Keycloak) — таблица `users` уже без привязки к паролю как единственному способу (`password_hash` nullable).
 
 ## Гости (ADR-0016)

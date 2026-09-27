@@ -166,7 +166,11 @@ PATCH  /api/me                         UpdateMeRequest → UpdateMeResponse   (+
 GET    /api/me/sessions                ListSessionsResponse
 DELETE /api/me/sessions/{id}           204
 PATCH  /api/me/password                ChangePasswordRequest{currentPassword, newPassword} → 204; остальные сессии отзываются
-PATCH  /api/me/email                   ChangeEmailRequest{newEmail, currentPassword} → UpdateMeResponse; 409 — адрес занят
+PATCH  /api/me/email                   ChangeEmailRequest{newEmail, currentPassword} → UpdateMeResponse (me.pendingEmail; код на новый адрес); 409 — адрес занят
+POST   /api/auth/verify/send           → 204: код на pendingEmail или email; 409 — уже подтверждён; без SMTP — помечает подтверждённым
+POST   /api/auth/verify                VerifyEmailRequest{code} → UpdateMeResponse; 422 CODE_INVALID | CODE_EXPIRED
+POST   /api/auth/password/forgot       ForgotPasswordRequest{email} → 204 всегда (без auth; 503 без SMTP)
+POST   /api/auth/password/reset        ResetPasswordRequest{email, code, password} → 204, все сессии отозваны; 422 CODE_INVALID
 POST   /api/workspaces                 CreateWorkspaceRequest → 201         (создатель — owner)
 GET    /api/workspaces                 ListWorkspacesResponse               (мои)
 GET    /api/workspaces/discover        DiscoverWorkspacesResponse           (open, где я не участник)
@@ -180,7 +184,12 @@ DELETE /api/workspaces/{id}/invites/{inviteId}   204
 GET    /api/workspaces/{id}/members    ListMembersResponse
 PATCH  /api/workspaces/{id}/members/{userId|@me}  UpdateMemberRequest{role?, nickname?}
 DELETE /api/workspaces/{id}/members/{userId|@me}  204                        (kick / leave)
-GET    /api/invites/{code}             GetInviteResponse                     (превью перед входом)
+POST   /api/workspaces/{id}/invites/lookup   InviteLookupRequest{email} → {user?, member}   (MANAGE_WORKSPACE, 20/мин)
+POST   /api/workspaces/{id}/members    AddMemberRequest{userId} → 201 AddMemberResponse   (сразу member + письмо; 409 — уже участник)
+POST   /api/workspaces/{id}/invites/email    CreateEmailInviteRequest{email, role?} → 201 (ссылка PUBLIC_APP_URL/join/<code>, 7 дней; 429 < 24 ч)
+GET    /api/workspaces/{id}/invites/email    ListEmailInvitesResponse (ожидающие)
+DELETE /api/workspaces/{id}/invites/email/{inviteId}   204 (ссылка отзывается)
+GET    /api/invites/{code}             GetInviteResponse                     (превью перед входом; email — для приглашения по почте)
 POST   /api/invites/{code}/join        JoinWorkspaceResponse                 (вместо /api/workspaces/join/:code — конфликт шаблонов роутера)
 POST   /api/workspaces/{id}/rooms      CreateRoomRequest → 201               (MANAGE_ROOM на уровне workspace = admin/owner)
 GET    /api/workspaces/{id}/rooms      ListRoomsResponse                     (только комнаты с VIEW_ROOM)
@@ -331,7 +340,8 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
   - Неверный пароль → 403 `INVALID_CREDENTIALS` (не 401: клиент не должен уходить в refresh/logout). Гости (без пароля) → 403 `FORBIDDEN`.
   - Проверки пароля ограничены 5 за 15 мин на аккаунт (429 + `Retry-After`); запросы с неверным форматом (`newPassword` не 8..256 символов → 422, невалидный `newEmail` → 422) бюджет не тратят.
   - Новый пароль — argon2id. Все **другие** сессии отзываются сразу, их access-токены отклоняются по Redis-маркеру, а gateway закрывает их сокеты; текущая сессия остаётся.
-  - Email уникален без учёта регистра (citext), занятый → 409 `CONFLICT`. Письма подтверждения нет (сервер не отправляет почту). Устройства пользователя получают `USER_UPDATE {me}`; другим участникам email не рассылается.
+  - Email уникален без учёта регистра (citext), занятый → 409 `CONFLICT`. Новый адрес становится `me.pendingEmail`, на него уходит код; `POST /api/auth/verify` делает его адресом входа (ADR-0023; без SMTP — сразу). Устройства пользователя получают `USER_UPDATE {me}`; другим участникам email не рассылается.
+- **Почта (ADR-0023).** `Me.emailVerified` (READY, `GET /api/me`, login/register, `USER_UPDATE {me}`), `Me.pendingEmail`, `Me.locale` (язык писем; `PATCH /api/me {locale}` — BCP 47 → `en|ru|es|zh-CN`, `""` — сброс; при регистрации — `RegisterRequest.locale`, иначе `Accept-Language`). Неподтверждённый: неубираемая плашка с полем кода; `403 EMAIL_NOT_VERIFIED` на создание пространств, приглашения и новые DM. Коды: `422 CODE_INVALID` (неверный; в сообщении — сколько попыток осталось), `422 CODE_EXPIRED` (нет живого кода — запросить новый), `429` + `Retry-After` (код < 60 с назад / 3 письма в час на адрес / приглашение тому же адресу < 24 ч). Подтверждение принимает ожидающие email-приглашения: `WORKSPACE_CREATE` на каждое пространство.
 - **Непрочитанное в READY.** `read_states` в READY — по одному на **каждую видимую комнату**. Каждый несёт:
   - `unread_count` — чужие живые сообщения после `last_read_message_id`, максимум 999 (показывать «999+»);
   - `mention_count` — сколько из них упоминают пользователя (`@<user_id>`, `@everyone`, `@here`); своё `@everyone` не считается.

@@ -23,6 +23,14 @@ services:
     image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11   # ≥ 9.0: HEXPIRE for presence
     ports: ["56379:6379"]   # 6379 is often taken by a native Redis
 
+  # Mail catcher (ADR-0023): the API sends to SMTP localhost:1025 (SMTP_TLS=none),
+  # letters are read at http://localhost:8025. Nothing leaves the machine.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   livekit:
     image: livekit/livekit-server:v1.13
     # livekit.dev.yaml: ключи devkey / secret, UDP mux 7882, webhook → API на хосте (:3000)
