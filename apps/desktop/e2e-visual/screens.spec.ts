@@ -36,6 +36,7 @@ const KEY = new Set([
   'verify-banner',
   'invite-email',
   'room-invite',
+  'room-invite-voice',
   'onboarding-mic',
   'onboarding-screen',
   'onboarding-done',
@@ -379,6 +380,22 @@ test('room-invite', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByRole('button', { name: 'Настроить срок и права…' })).toBeVisible();
   // The link carries the mock's port: masked (like onboarding-join).
   await checkpoint(shot, 'room-invite', { mask: [dialog.getByRole('textbox', { name: 'Ссылка для гостей' })] });
+});
+
+/** «Пригласить в комнату» (voice room menu, MANAGE_ROOM): the guest link card above the member picker (docs/09 #55). */
+test('room-invite-voice', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.locator('aside').getByRole('button', { name: /Созвон/ }).first().click({ button: 'right' });
+  await win.getByRole('menuitem', { name: 'Пригласить в комнату' }).click();
+  const dialog = win.getByTestId('room-invite');
+  await expect(dialog.getByText('Пригласить гостя без регистрации')).toBeVisible();
+  const field = dialog.getByRole('textbox', { name: 'Ссылка для гостей' });
+  await expect(field).toHaveValue(/\/r\/call-guest-link$/);
+  // One link field: the card replaces «Или отправьте ссылку».
+  await expect(dialog.getByRole('textbox', { name: 'Или отправьте ссылку' })).toHaveCount(0);
+  await expect(dialog.getByTestId('picker-option').first()).toBeVisible();
+  await checkpoint(shot, 'room-invite-voice', { mask: [field] });
 });
 
 // ---------------------------------------------------------------- onboarding
