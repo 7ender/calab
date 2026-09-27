@@ -84,7 +84,7 @@ describe('chat.sendMessage', () => {
 });
 
 describe('chat.loadPins (docs/18 step 4)', () => {
-  const pinned = (id: string): Message => create(MessageSchema, { id, roomId: ROOM, authorId: 'me', content: 'pin', pinnedAt: '2026-09-27T10:00:00Z' });
+  const pinned = (id: string): Message => create(MessageSchema, { id, roomId: ROOM, authorId: 'me', content: 'pin', pinnedAt: { seconds: 1n } });
 
   beforeEach(() => {
     listPins.mockReset();
