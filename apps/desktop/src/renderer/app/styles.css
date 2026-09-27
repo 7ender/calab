@@ -382,6 +382,12 @@ body {
   border: 1px solid var(--color-border-popover);
   box-shadow: var(--shadow-popover);
 }
+/* Menus and popovers opened from a modal sheet (the profile's «…» and its submenus, pickers) sit
+   above the sheet and its scrim, not under it (--z-popover < --z-modal, issue #8). Radix copies
+   the content's z-index onto the portal wrapper inline, hence !important; tooltips keep theirs. */
+body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
+  z-index: var(--z-modal-popover) !important;
+}
 .mat-popover {
   background: var(--color-popover);
   -webkit-backdrop-filter: var(--blur-popover);

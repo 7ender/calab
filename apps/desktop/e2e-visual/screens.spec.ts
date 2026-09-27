@@ -66,6 +66,7 @@ const KEY = new Set([
   'main-members-toggled',
   'members-menu',
   'profile-dialog',
+  'profile-menu',
   'workspace-menu',
   'self-mic-menu',
   'self-status-menu',
@@ -608,6 +609,29 @@ test('profile-dialog', async ({ open, win, mock, shot }) => {
   await note.blur();
   await expect(dialog.getByTestId('note-status')).toHaveText('Сохранено');
   await checkpoint(shot, 'profile-dialog');
+});
+
+// Issue #8: the profile's «…» opens the member menu above the sheet and its scrim (not under it).
+test('profile-menu', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const members = await membersList(win);
+  await members.getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
+  await win.getByRole('menuitem', { name: 'Профиль' }).click();
+  const dialog = win.getByTestId('profile-dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId('profile-more').click();
+  const menu = win.getByRole('menu');
+  await expect(menu).toBeVisible();
+  // Topmost: the point under the first and the last item hits the menu, not the sheet.
+  for (const item of [menu.getByRole('menuitem').first(), menu.getByRole('menuitem', { name: 'Копировать ID' })]) {
+    const hit = await item.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+    });
+    expect(hit, `${await item.textContent()} is on top`).toBe(true);
+  }
+  await checkpoint(shot, 'profile-menu', { keepPointer: true });
 });
 
 test('quick-switcher', async ({ open, win, mock, shot }) => {
