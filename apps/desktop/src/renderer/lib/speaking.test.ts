@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SPEAKING_BATCH_MS, SpeakingDebouncer, speakingUserIds, type Timers } from './speaking';
+import { SPEAKING_BATCH_MS, SPEAKING_HIDE_MS, SpeakingDebouncer, speakingUserIds, type Timers } from './speaking';
 
 const timers: Timers = { set: (fn, ms) => setTimeout(fn, ms) as unknown as number, clear: (id) => clearTimeout(id) };
 
@@ -13,13 +13,13 @@ describe('SpeakingDebouncer', () => {
     return { d, last: () => out.at(-1) ?? {}, calls: () => out.length };
   };
 
-  it('shows at once (one batch) and holds 300 ms after speech stops', () => {
+  it('shows at once (one batch) and holds SPEAKING_HIDE_MS (200 ms) after speech stops', () => {
     const { d, last } = make();
     d.update(['a']);
     vi.advanceTimersByTime(SPEAKING_BATCH_MS);
     expect(last()).toEqual({ a: true });
     d.update([]);
-    vi.advanceTimersByTime(299);
+    vi.advanceTimersByTime(SPEAKING_HIDE_MS - 1);
     expect(last()).toEqual({ a: true });
     vi.advanceTimersByTime(1 + SPEAKING_BATCH_MS);
     expect(last()).toEqual({});
@@ -32,7 +32,7 @@ describe('SpeakingDebouncer', () => {
     expect(last()).toEqual({ me: true, a: true });
     d.update([], new Set(['me']));
     expect(last()).toEqual({ a: true });
-    vi.advanceTimersByTime(300 + SPEAKING_BATCH_MS);
+    vi.advanceTimersByTime(SPEAKING_HIDE_MS + SPEAKING_BATCH_MS);
     expect(last()).toEqual({});
   });
 
@@ -42,7 +42,7 @@ describe('SpeakingDebouncer', () => {
     vi.advanceTimersByTime(100);
     for (let i = 0; i < 5; i++) {
       d.update([]);
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(SPEAKING_HIDE_MS - 50);
       d.update(['a']);
       vi.advanceTimersByTime(100);
     }
@@ -80,7 +80,7 @@ describe('SpeakingDebouncer', () => {
     vi.advanceTimersByTime(SPEAKING_BATCH_MS);
     expect(last()).toEqual({ a: true, b: true });
     d.update(['b']);
-    vi.advanceTimersByTime(300 + SPEAKING_BATCH_MS);
+    vi.advanceTimersByTime(SPEAKING_HIDE_MS + SPEAKING_BATCH_MS);
     expect(last()).toEqual({ b: true });
     d.reset();
     expect(last()).toEqual({});
