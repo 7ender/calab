@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { CODE_FIXTURE, IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
 
@@ -449,9 +449,43 @@ test('m-dm-list', async ({ page }) => {
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
   const nav = page.getByTestId('mobile-nav');
   await nav.getByTestId('rail-home').getByRole('button').tap();
-  await expect(nav.getByTestId('dm-list').getByRole('button', { name: /Борис Петров/ })).toContainText('Закрепил, чтобы не потерялся');
+  const list = nav.getByTestId('dm-list');
+  await expect(list.getByRole('button', { name: /Борис Петров/ })).toContainText('Закрепил, чтобы не потерялся');
+  // docs/09 #51: a left swipe on Григорий's row reveals «В архив»; tapping it archives the DM
+  // («Архив — 1» at the bottom, collapsed). The drawer stays open (the row keeps the gesture).
+  await swipeLeft(list.getByRole('button', { name: /Григорий/ }));
+  await expect(nav).toBeVisible();
+  await checkpoint(page, 'm-dm-swipe', { snapshot: false });
+  await nav.getByTestId('dm-swipe-action').getByText('В архив').tap();
+  await expect(list.getByRole('button')).toHaveCount(2);
+  await expect(nav.getByTestId('dm-archive').getByRole('button', { name: 'Архив — 1' })).toHaveAttribute('aria-expanded', 'false');
   await checkpoint(page, 'm-dm-list');
 });
+
+/**
+ * A finger swipe to the left over the element. Synthetic events: desktop WebKit has neither a
+ * touch input API for Playwright nor a Touch constructor, so plain events carry `touches` (what
+ * React's touch handlers read).
+ */
+async function swipeLeft(target: Locator): Promise<void> {
+  await target.evaluate(async (el) => {
+    const r = el.getBoundingClientRect();
+    const y = r.top + r.height / 2;
+    const fire = (type: string, x: number): void => {
+      const t = { identifier: 1, target: el, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y };
+      const ev = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(ev, { touches: { value: type === 'touchend' ? [] : [t] }, changedTouches: { value: [t] }, targetTouches: { value: type === 'touchend' ? [] : [t] } });
+      el.dispatchEvent(ev);
+    };
+    const x0 = r.right - 20;
+    fire('touchstart', x0);
+    for (let dx = 15; dx <= 120; dx += 15) {
+      fire('touchmove', x0 - dx);
+      await new Promise((ok) => requestAnimationFrame(ok));
+    }
+    fire('touchend', x0 - 120);
+  });
+}
 
 test('m-dm-chat', async ({ page }) => {
   await signedIn(page);

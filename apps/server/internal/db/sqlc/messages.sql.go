@@ -307,19 +307,27 @@ const listMessagesBefore = `-- name: ListMessagesBefore :many
 SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload FROM messages
 WHERE room_id = $1 AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR id < $2::uuid)
+  AND ($3::uuid IS NULL OR id > $3::uuid)
 ORDER BY id DESC
-LIMIT $3
+LIMIT $4
 `
 
 type ListMessagesBeforeParams struct {
 	RoomID uuid.UUID
 	Before *uuid.UUID
+	Since  *uuid.UUID
 	Lim    int32
 }
 
-// Newest first. NULL before = from the newest message.
+// Newest first. NULL before = from the newest message; since = only after this id (a DM the
+// caller cleared, dm_state.cleared_before).
 func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBeforeParams) ([]Message, error) {
-	rows, err := q.db.Query(ctx, listMessagesBefore, arg.RoomID, arg.Before, arg.Lim)
+	rows, err := q.db.Query(ctx, listMessagesBefore,
+		arg.RoomID,
+		arg.Before,
+		arg.Since,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -621,8 +629,9 @@ WHERE room_id = ANY($1::uuid[]) AND deleted_at IS NULL
       @@ (websearch_to_tsquery('russian', $2::text) || websearch_to_tsquery('simple', $2::text))
   AND ($3::uuid IS NULL OR id < $3::uuid)
   AND ($4::uuid IS NULL OR author_id = $4::uuid)
+  AND ($5::uuid IS NULL OR id > $5::uuid)
 ORDER BY id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type SearchMessagesParams struct {
@@ -630,6 +639,7 @@ type SearchMessagesParams struct {
 	Q        string
 	Before   *uuid.UUID
 	AuthorID *uuid.UUID
+	Since    *uuid.UUID
 	Lim      int32
 }
 
@@ -640,6 +650,7 @@ func (q *Queries) SearchMessages(ctx context.Context, arg SearchMessagesParams) 
 		arg.Q,
 		arg.Before,
 		arg.AuthorID,
+		arg.Since,
 		arg.Lim,
 	)
 	if err != nil {

@@ -37,7 +37,9 @@ SELECT EXISTS (
 -- (dm_members_user_id_idx, messages_live_room_id_idx). room_id NULL = all DMs. Without
 -- messages (has_messages false) last_message_* are the room's id and creation time. The
 -- newest message's author, first 200 characters and attachment count are the list preview
--- (DmSummary.last_message): the client needs no history request per DM.
+-- (DmSummary.last_message): the client needs no history request per DM. The user's own
+-- dm_state (item 51): archived_at, and cleared_before — the preview and the unread count start
+-- after it (the DM stays listed; the client hides a cleared DM without newer messages).
 SELECT r.id AS room_id, r.created_at AS room_created_at,
        sqlc.embed(u),
        rs.last_read_message_id,
@@ -50,18 +52,22 @@ SELECT r.id AS room_id, r.created_at AS room_created_at,
        (SELECT count(*) FROM (
            SELECT 1 FROM messages m
            WHERE m.room_id = r.id AND m.deleted_at IS NULL AND m.author_id <> me.user_id
-             AND m.id > coalesce(rs.last_read_message_id, '00000000-0000-0000-0000-000000000000'::uuid)
-           LIMIT 999) x)::integer AS unread_count
+             AND m.id > greatest(coalesce(rs.last_read_message_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                                 coalesce(ds.cleared_before, '00000000-0000-0000-0000-000000000000'::uuid))
+           LIMIT 999) x)::integer AS unread_count,
+       ds.archived_at, ds.cleared_before
 FROM dm_members me
 JOIN rooms r ON r.id = me.room_id AND r.archived_at IS NULL
 JOIN dm_members p ON p.room_id = me.room_id AND p.user_id <> me.user_id
 JOIN users u ON u.id = p.user_id
 LEFT JOIN read_states rs ON rs.user_id = me.user_id AND rs.room_id = r.id
+LEFT JOIN dm_state ds ON ds.user_id = me.user_id AND ds.room_id = r.id
 LEFT JOIN LATERAL (
     SELECT m.id, m.created_at, m.author_id, left(m.content, 200) AS preview,
            (SELECT count(*) FROM message_attachments ma WHERE ma.message_id = m.id) AS attachments
     FROM messages m
     WHERE m.room_id = r.id AND m.deleted_at IS NULL
+      AND m.id > coalesce(ds.cleared_before, '00000000-0000-0000-0000-000000000000'::uuid)
     ORDER BY m.id DESC
     LIMIT 1
 ) lm ON true
@@ -69,6 +75,33 @@ WHERE me.user_id = sqlc.arg('user_id')
   AND (sqlc.narg('room_id')::uuid IS NULL OR r.id = sqlc.narg('room_id')::uuid)
 ORDER BY coalesce(lm.id, r.id) DESC
 LIMIT sqlc.arg('lim');
+
+-- name: SetDMArchived :one
+-- Moves the user's DM to / out of their archive (archiving again keeps the first time).
+INSERT INTO dm_state (user_id, room_id, archived_at)
+VALUES (sqlc.arg('user_id'), sqlc.arg('room_id'), CASE WHEN sqlc.arg('archived')::boolean THEN now() END)
+ON CONFLICT (user_id, room_id) DO UPDATE
+SET archived_at = CASE WHEN sqlc.arg('archived')::boolean THEN coalesce(dm_state.archived_at, now()) END
+RETURNING *;
+
+-- name: ClearDM :one
+-- «Удалить чат» for the user only: hides the history up to now (uuidv7() orders after every
+-- message created before) and takes the DM out of the archive.
+INSERT INTO dm_state (user_id, room_id, cleared_before)
+VALUES (sqlc.arg('user_id'), sqlc.arg('room_id'), uuidv7())
+ON CONFLICT (user_id, room_id) DO UPDATE SET archived_at = NULL, cleared_before = uuidv7()
+RETURNING *;
+
+-- name: UnarchiveDMForRecipients :many
+-- A new message takes the DM out of the archive of the participants other than its author.
+UPDATE dm_state SET archived_at = NULL
+WHERE room_id = sqlc.arg('room_id') AND user_id <> sqlc.arg('author_id') AND archived_at IS NOT NULL
+RETURNING *;
+
+-- name: GetDMClearedBefore :one
+-- The user's «Удалить чат» mark in a room (the zero uuid = none, also for rooms that are no DM).
+SELECT coalesce((SELECT ds.cleared_before FROM dm_state ds WHERE ds.user_id = sqlc.arg('user_id') AND ds.room_id = sqlc.arg('room_id')),
+                '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS cleared_before;
 
 -- name: ListDMCandidates :many
 -- Users the caller may start a DM with: full members of a workspace the caller is a full

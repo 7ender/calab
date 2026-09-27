@@ -27,6 +27,32 @@ func (q *Queries) AddDMMembers(ctx context.Context, arg AddDMMembersParams) erro
 	return err
 }
 
+const clearDM = `-- name: ClearDM :one
+INSERT INTO dm_state (user_id, room_id, cleared_before)
+VALUES ($1, $2, uuidv7())
+ON CONFLICT (user_id, room_id) DO UPDATE SET archived_at = NULL, cleared_before = uuidv7()
+RETURNING user_id, room_id, archived_at, cleared_before
+`
+
+type ClearDMParams struct {
+	UserID uuid.UUID
+	RoomID uuid.UUID
+}
+
+// «Удалить чат» for the user only: hides the history up to now (uuidv7() orders after every
+// message created before) and takes the DM out of the archive.
+func (q *Queries) ClearDM(ctx context.Context, arg ClearDMParams) (DmState, error) {
+	row := q.db.QueryRow(ctx, clearDM, arg.UserID, arg.RoomID)
+	var i DmState
+	err := row.Scan(
+		&i.UserID,
+		&i.RoomID,
+		&i.ArchivedAt,
+		&i.ClearedBefore,
+	)
+	return i, err
+}
+
 const createDMRoom = `-- name: CreateDMRoom :one
 INSERT INTO rooms (workspace_id, type, name, dm_key)
 VALUES (NULL, 'dm', 'dm', $1)
@@ -94,6 +120,24 @@ func (q *Queries) GetDMByKey(ctx context.Context, dmKey *string) (Room, error) {
 		&i.Restricted,
 	)
 	return i, err
+}
+
+const getDMClearedBefore = `-- name: GetDMClearedBefore :one
+SELECT coalesce((SELECT ds.cleared_before FROM dm_state ds WHERE ds.user_id = $1 AND ds.room_id = $2),
+                '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS cleared_before
+`
+
+type GetDMClearedBeforeParams struct {
+	UserID uuid.UUID
+	RoomID uuid.UUID
+}
+
+// The user's «Удалить чат» mark in a room (the zero uuid = none, also for rooms that are no DM).
+func (q *Queries) GetDMClearedBefore(ctx context.Context, arg GetDMClearedBeforeParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getDMClearedBefore, arg.UserID, arg.RoomID)
+	var cleared_before uuid.UUID
+	err := row.Scan(&cleared_before)
+	return cleared_before, err
 }
 
 const getDMPeer = `-- name: GetDMPeer :one
@@ -203,18 +247,22 @@ SELECT r.id AS room_id, r.created_at AS room_created_at,
        (SELECT count(*) FROM (
            SELECT 1 FROM messages m
            WHERE m.room_id = r.id AND m.deleted_at IS NULL AND m.author_id <> me.user_id
-             AND m.id > coalesce(rs.last_read_message_id, '00000000-0000-0000-0000-000000000000'::uuid)
-           LIMIT 999) x)::integer AS unread_count
+             AND m.id > greatest(coalesce(rs.last_read_message_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                                 coalesce(ds.cleared_before, '00000000-0000-0000-0000-000000000000'::uuid))
+           LIMIT 999) x)::integer AS unread_count,
+       ds.archived_at, ds.cleared_before
 FROM dm_members me
 JOIN rooms r ON r.id = me.room_id AND r.archived_at IS NULL
 JOIN dm_members p ON p.room_id = me.room_id AND p.user_id <> me.user_id
 JOIN users u ON u.id = p.user_id
 LEFT JOIN read_states rs ON rs.user_id = me.user_id AND rs.room_id = r.id
+LEFT JOIN dm_state ds ON ds.user_id = me.user_id AND ds.room_id = r.id
 LEFT JOIN LATERAL (
     SELECT m.id, m.created_at, m.author_id, left(m.content, 200) AS preview,
            (SELECT count(*) FROM message_attachments ma WHERE ma.message_id = m.id) AS attachments
     FROM messages m
     WHERE m.room_id = r.id AND m.deleted_at IS NULL
+      AND m.id > coalesce(ds.cleared_before, '00000000-0000-0000-0000-000000000000'::uuid)
     ORDER BY m.id DESC
     LIMIT 1
 ) lm ON true
@@ -242,6 +290,8 @@ type ListDMsRow struct {
 	LastPreview       string
 	LastAttachments   int32
 	UnreadCount       int32
+	ArchivedAt        *time.Time
+	ClearedBefore     *uuid.UUID
 }
 
 // The user's DMs, most recent activity first: the peer, the read marker, the newest live
@@ -250,7 +300,9 @@ type ListDMsRow struct {
 // (dm_members_user_id_idx, messages_live_room_id_idx). room_id NULL = all DMs. Without
 // messages (has_messages false) last_message_* are the room's id and creation time. The
 // newest message's author, first 200 characters and attachment count are the list preview
-// (DmSummary.last_message): the client needs no history request per DM.
+// (DmSummary.last_message): the client needs no history request per DM. The user's own
+// dm_state (item 51): archived_at, and cleared_before — the preview and the unread count start
+// after it (the DM stays listed; the client hides a cleared DM without newer messages).
 func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow, error) {
 	rows, err := q.db.Query(ctx, listDMs, arg.UserID, arg.RoomID, arg.Lim)
 	if err != nil {
@@ -290,6 +342,8 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 			&i.LastPreview,
 			&i.LastAttachments,
 			&i.UnreadCount,
+			&i.ArchivedAt,
+			&i.ClearedBefore,
 		); err != nil {
 			return nil, err
 		}
@@ -299,6 +353,33 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 		return nil, err
 	}
 	return items, nil
+}
+
+const setDMArchived = `-- name: SetDMArchived :one
+INSERT INTO dm_state (user_id, room_id, archived_at)
+VALUES ($1, $2, CASE WHEN $3::boolean THEN now() END)
+ON CONFLICT (user_id, room_id) DO UPDATE
+SET archived_at = CASE WHEN $3::boolean THEN coalesce(dm_state.archived_at, now()) END
+RETURNING user_id, room_id, archived_at, cleared_before
+`
+
+type SetDMArchivedParams struct {
+	UserID   uuid.UUID
+	RoomID   uuid.UUID
+	Archived bool
+}
+
+// Moves the user's DM to / out of their archive (archiving again keeps the first time).
+func (q *Queries) SetDMArchived(ctx context.Context, arg SetDMArchivedParams) (DmState, error) {
+	row := q.db.QueryRow(ctx, setDMArchived, arg.UserID, arg.RoomID, arg.Archived)
+	var i DmState
+	err := row.Scan(
+		&i.UserID,
+		&i.RoomID,
+		&i.ArchivedAt,
+		&i.ClearedBefore,
+	)
+	return i, err
 }
 
 const shareWorkspace = `-- name: ShareWorkspace :one
@@ -320,6 +401,43 @@ func (q *Queries) ShareWorkspace(ctx context.Context, arg ShareWorkspaceParams) 
 	var column_1 bool
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const unarchiveDMForRecipients = `-- name: UnarchiveDMForRecipients :many
+UPDATE dm_state SET archived_at = NULL
+WHERE room_id = $1 AND user_id <> $2 AND archived_at IS NOT NULL
+RETURNING user_id, room_id, archived_at, cleared_before
+`
+
+type UnarchiveDMForRecipientsParams struct {
+	RoomID   uuid.UUID
+	AuthorID uuid.UUID
+}
+
+// A new message takes the DM out of the archive of the participants other than its author.
+func (q *Queries) UnarchiveDMForRecipients(ctx context.Context, arg UnarchiveDMForRecipientsParams) ([]DmState, error) {
+	rows, err := q.db.Query(ctx, unarchiveDMForRecipients, arg.RoomID, arg.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DmState{}
+	for rows.Next() {
+		var i DmState
+		if err := rows.Scan(
+			&i.UserID,
+			&i.RoomID,
+			&i.ArchivedAt,
+			&i.ClearedBefore,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const unattachedUserBytes = `-- name: UnattachedUserBytes :one

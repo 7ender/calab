@@ -36,6 +36,15 @@ export const ruDm = {
   'dm.errCreate': 'Не удалось начать переписку',
   // a /dm/<id> link of someone else's (or a deleted) conversation
   'dm.errLink': 'Переписка по ссылке недоступна: она не ваша или удалена',
+  // archive and «delete for me» (docs/09 #51)
+  'dm.archive': 'В архив',
+  'dm.unarchive': 'Вернуть из архива',
+  'dm.archiveSection': 'Архив — {n}',
+  'dm.delete': 'Удалить чат',
+  'dm.deleteTitle': 'Удалить чат?',
+  'dm.deleteConfirm': 'История будет удалена только у вас; у собеседника она останется.',
+  'dm.errState': 'Не удалось изменить переписку',
+  'dm.actions': 'Действия с перепиской',
   // quick switcher
   'search.dms': 'Личные сообщения',
 } as const;

@@ -1,4 +1,5 @@
 import { VoiceStreamStopReason, type DispatchEvent, type Message, type WorkspaceSnapshot } from '@calaba/protocol';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { syncTimeZone } from './timezone';
 import { log } from '../lib/log';
 import { HOME, isDm, useDms } from '../stores/dms';
@@ -15,7 +16,7 @@ import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms } from './chat';
 import { queryClient } from '../lib/queryClient';
 import { bansKey } from '../lib/moderation';
-import { applyDm, refreshDmPreview, refreshDms } from './dms';
+import { applyDm, applyDmState, refreshDmPreview, refreshDms } from './dms';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
@@ -113,6 +114,9 @@ export function applyDispatch(ev: DispatchEvent): void {
     }
     case 'dmCreate':
       if (e.value.dm) applyDm(e.value.dm, true);
+      return;
+    case 'dmStateUpdate':
+      applyDmState(e.value.roomId, e.value.archivedAt ? timestampMs(e.value.archivedAt) : 0, e.value.clearedBeforeMessageId);
       return;
     case 'workspaceUpdate':
       if (e.value.workspace) useWorkspaces.getState().updateWorkspace(e.value.workspace);

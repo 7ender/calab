@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/dm.proto.
  */
 export const file_calaba_v1_dm: GenFile = /*@__PURE__*/
-  fileDesc("ChJjYWxhYmEvdjEvZG0ucHJvdG8SCWNhbGFiYS52MSIiCg9DcmVhdGVEbVJlcXVlc3QSDwoHdXNlcl9pZBgBIAEoCSI0ChBDcmVhdGVEbVJlc3BvbnNlEiAKAmRtGAEgASgLMhQuY2FsYWJhLnYxLkRtU3VtbWFyeSI0Cg9MaXN0RG1zUmVzcG9uc2USIQoDZG1zGAEgAygLMhQuY2FsYWJhLnYxLkRtU3VtbWFyeSI6ChhMaXN0RG1DYW5kaWRhdGVzUmVzcG9uc2USHgoFdXNlcnMYASADKAsyDy5jYWxhYmEudjEuVXNlckKVAQoNY29tLmNhbGFiYS52MUIHRG1Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_calaba_v1_gateway, file_calaba_v1_user]);
+  fileDesc("ChJjYWxhYmEvdjEvZG0ucHJvdG8SCWNhbGFiYS52MSIiCg9DcmVhdGVEbVJlcXVlc3QSDwoHdXNlcl9pZBgBIAEoCSI0ChBDcmVhdGVEbVJlc3BvbnNlEiAKAmRtGAEgASgLMhQuY2FsYWJhLnYxLkRtU3VtbWFyeSI0Cg9MaXN0RG1zUmVzcG9uc2USIQoDZG1zGAEgAygLMhQuY2FsYWJhLnYxLkRtU3VtbWFyeSJLChRVcGRhdGVEbVN0YXRlUmVxdWVzdBIVCghhcmNoaXZlZBgBIAEoCEgAiAEBEg8KB2NsZWFyZWQYAiABKAhCCwoJX2FyY2hpdmVkIjkKFVVwZGF0ZURtU3RhdGVSZXNwb25zZRIgCgJkbRgBIAEoCzIULmNhbGFiYS52MS5EbVN1bW1hcnkiOgoYTGlzdERtQ2FuZGlkYXRlc1Jlc3BvbnNlEh4KBXVzZXJzGAEgAygLMg8uY2FsYWJhLnYxLlVzZXJClQEKDWNvbS5jYWxhYmEudjFCB0RtUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_calaba_v1_gateway, file_calaba_v1_user]);
 
 /**
  * POST /api/dms — get-or-create the DM with user_id: 201 when created (both participants get
@@ -75,6 +75,51 @@ export const ListDmsResponseSchema: GenMessage<ListDmsResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_dm, 2);
 
 /**
+ * PATCH /api/dms/{id}/state — the caller's own state of the DM (docs/09 item 51); the peer's
+ * history, counts and list do not change. archived set: move the DM to / out of the archive.
+ * cleared true: «Удалить чат» for the caller only — messages up to now are no longer shown to
+ * them, the DM leaves the archive and the list until a new message arrives. Not a participant:
+ * 404. The caller's devices get DM_STATE_UPDATE; the answer is the DM as the caller sees it now.
+ *
+ * @generated from message calaba.v1.UpdateDmStateRequest
+ */
+export type UpdateDmStateRequest = Message<"calaba.v1.UpdateDmStateRequest"> & {
+  /**
+   * @generated from field: optional bool archived = 1;
+   */
+  archived?: boolean | undefined;
+
+  /**
+   * @generated from field: bool cleared = 2;
+   */
+  cleared: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateDmStateRequest.
+ * Use `create(UpdateDmStateRequestSchema)` to create a new message.
+ */
+export const UpdateDmStateRequestSchema: GenMessage<UpdateDmStateRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_dm, 3);
+
+/**
+ * @generated from message calaba.v1.UpdateDmStateResponse
+ */
+export type UpdateDmStateResponse = Message<"calaba.v1.UpdateDmStateResponse"> & {
+  /**
+   * @generated from field: calaba.v1.DmSummary dm = 1;
+   */
+  dm?: DmSummary | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateDmStateResponse.
+ * Use `create(UpdateDmStateResponseSchema)` to create a new message.
+ */
+export const UpdateDmStateResponseSchema: GenMessage<UpdateDmStateResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_dm, 4);
+
+/**
  * GET /api/dms/candidates?q= — users the caller may start a DM with: full members of the
  * caller's workspaces, no guest accounts; q matches the display name or a workspace nickname
  * (case-insensitive substring, ≤ 64 chars; empty = anyone); by name, at most 20.
@@ -93,5 +138,5 @@ export type ListDmCandidatesResponse = Message<"calaba.v1.ListDmCandidatesRespon
  * Use `create(ListDmCandidatesResponseSchema)` to create a new message.
  */
 export const ListDmCandidatesResponseSchema: GenMessage<ListDmCandidatesResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_dm, 3);
+  messageDesc(file_calaba_v1_dm, 5);
 

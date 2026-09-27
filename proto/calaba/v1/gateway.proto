@@ -172,6 +172,8 @@ message DispatchEvent {
     RoleCreate role_create = 36;
     RoleUpdate role_update = 37;
     RoleDelete role_delete = 38;
+    // The caller's own state of a DM changed (item 51); to the user's own devices only.
+    DmStateUpdate dm_state_update = 39;
   }
 }
 
@@ -271,6 +273,13 @@ message DmSummary {
   // The newest live message for the list preview (unset = no messages yet): the client shows
   // it without fetching the history of every DM.
   DmLastMessage last_message = 5;
+  // The caller's own state of the DM (docs/09 item 51); the peer never sees it. Set = in the
+  // caller's archive since then; an incoming message takes the DM out (DM_STATE_UPDATE).
+  google.protobuf.Timestamp archived_at = 6;
+  // «Удалить чат»: the caller no longer sees messages with id <= this one (history, search,
+  // pins, last_message and read_state counts start after it). Empty = never cleared. A cleared
+  // DM without last_message is hidden from the caller's list until a new message arrives.
+  string cleared_before_message_id = 7;
 }
 
 // Preview of a DM's newest live message (DmSummary.last_message).
@@ -479,6 +488,15 @@ message ReadStateUpdate {
 // the participants' user channels, with an empty workspace_id.
 message DmCreate {
   DmSummary dm = 1;
+}
+
+// The user's own state of a DM (DmSummary.archived_at / cleared_before_message_id): after
+// PATCH /api/dms/{id}/state on any of their devices, or when an incoming message takes the DM
+// out of the archive. A new cleared_before_message_id drops the loaded history up to it.
+message DmStateUpdate {
+  string room_id = 1;
+  google.protobuf.Timestamp archived_at = 2; // unset = not archived
+  string cleared_before_message_id = 3; // empty = never cleared
 }
 
 // The user's notification settings of a room changed (sent to the user's own devices only).

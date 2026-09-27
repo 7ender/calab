@@ -85,6 +85,7 @@ RESUMED                       { replayed }  — после успешного RE
 CATEGORY_CREATE / UPDATE / DELETE
 MESSAGE_REACTION_ADD / REMOVE { workspace_id, room_id, message_id, user_id, emoji }
 DM_CREATE                     { dm: DmSummary } — обоим участникам нового DM, каждому со своим peer
+DM_STATE_UPDATE               { room_id, archived_at, cleared_before_message_id } — своё состояние DM (архив / «Удалить чат»), только своим устройствам
 ROOM_RECORDING                { workspace_id, room_id, recording_id, state: ACTIVE | STOPPED, by_user_id, since,
                                 stop_reason, stopped_by } — запись встречи началась / остановилась (ADR-0025)
 ```
@@ -304,6 +305,7 @@ POST   /api/dms                                        CreateDmRequest{userId} �
 GET    /api/dms                                        ListDmsResponse{dms[]} (свежие первыми, ≤ 500)
 GET    /api/dms/candidates?q=                          ListDmCandidatesResponse{users[]} (≤ 20)
 POST   /api/dms/{id}/files                             multipart, поле "file" → 201 UploadFileResponse (участник DM; вложение для DM)
+PATCH  /api/dms/{id}/state                             UpdateDmStateRequest{archived?, cleared} → UpdateDmStateResponse{dm} (участник; иначе 404)
 PATCH  /api/me/status                                  UpdateStatusRequest{text, emoji, expiresInSeconds} → UpdateMeResponse
 GET    /api/users/{id}/note                            UserNoteResponse{note} — моя заметка о человеке (пустой text = нет)
 PUT    /api/users/{id}/note                            PutUserNoteRequest{text ≤ 1000} → UserNoteResponse (пустой text удаляет)
@@ -319,6 +321,7 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
   - `DmSummary { room, peer, read_state, last_message_at, last_message }`: `room` — без имени и медиа (клиент подписывает его именем peer), `last_message_id/at` как в READY. `last_message` — превью для списка: `{id, author_id, content (первые 200 символов), attachment_count, created_at}`, не задано — сообщений нет; клиент не запрашивает историю каждого DM. `read_state.unread_count` — сообщения peer после маркера (≤ 999; до первого прочтения — с начала DM), `mention_count = unread_count`. Тот же `read_state` есть и в `READY.read_states`, сохранённые настройки уведомлений DM — в `READY.notification_settings`.
   - Уведомления: каждое сообщение DM клиент показывает как упоминание — уровни `ALL` и `MENTIONS` уведомляют, `NONE` и `muted_until` глушат DM, «не беспокоить» действует как для упоминаний. `@everyone` и прямые упоминания в DM не хранятся (`/api/me/mentions` DM не содержит).
   - `GET /api/dms/candidates?q=` — кому можно написать: участники (не `guest`) общих пространств, без гостевых аккаунтов и себя; `q` — подстрока имени или ника в пространстве без учёта регистра (≤ 64 символов, иначе `422`), сортировка по имени, до 20.
+  - **Архив и «Удалить чат»** (docs/09 #51) — только для себя, у собеседника ничего не меняется. `PATCH /api/dms/{id}/state {archived}` кладёт DM в архив / достаёт; `{cleared: true}` запоминает `cleared_before` (uuidv7 «сейчас») и снимает архив: история, поиск, закрепы, `last_message` и счётчики непрочитанного для меня начинаются после метки. Состояние — `DmSummary.archived_at` / `cleared_before_message_id` (READY, `GET /api/dms`), изменения — `DM_STATE_UPDATE` своим устройствам. Входящее сообщение снимает архив у получателя (`DM_STATE_UPDATE` раньше `MESSAGE_CREATE`); своё — нет. Очищенный DM без новых сообщений клиент не показывает в списке; новое сообщение возвращает его «чистым» с тем же id.
   - Вложения DM грузятся через `POST /api/dms/{id}/files` (файл без пространства, в квоту workspace не входит); файл пространства к DM не прикрепить и наоборот (`422`). Скачивание — участникам DM.
   - Ссылка `/dm/<id>` на чужую / несуществующую переписку — после READY (и перечитывания `GET /api/dms`) клиент показывает ошибку «Переписка по ссылке недоступна», «Личные» остаются без выбранной переписки.
   - Presence и профиль peer приходят через общие пространства; если общего пространства больше нет, DM остаётся, но `PRESENCE_UPDATE` / `USER_UPDATE` peer не приходят (профиль — из `DmSummary.peer` при следующем READY).

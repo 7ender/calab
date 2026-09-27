@@ -15,6 +15,10 @@ export interface DmEntry {
   peerId: string;
   /** Last activity, unix ms: the newest message, else the DM's creation. Sorts the list. */
   activity: number;
+  /** In my archive since (unix ms); 0 = not archived (docs/09 #51). */
+  archivedAt: number;
+  /** «Удалить чат»: messages with ids <= this are hidden from me; '' = never cleared. */
+  clearedBefore: string;
 }
 
 export interface DmPreview {
@@ -42,6 +46,11 @@ interface DmsState {
   /** An edit / deletion of the previewed message: `null` = deleted (the caller refetches it). */
   onChanged: (roomId: string, messageId: string, m: Message | null) => void;
   setPreview: (roomId: string, m: Message | null) => void;
+  /**
+   * My own state of a DM (DM_STATE_UPDATE, PATCH /api/dms/{id}/state): archive / «Удалить чат».
+   * A newer clear mark drops the preview it hides.
+   */
+  setState: (roomId: string, archivedAt: number, clearedBefore: string) => void;
 }
 
 /** The «Личные» pseudo-workspace id in the UI store (Discord's `@me`). Never a real workspace id. */
@@ -53,7 +62,13 @@ const ms = (t: Parameters<typeof timestampMs>[0] | undefined): number => (t ? ti
 
 function entryOf(dm: DmSummary): DmEntry | null {
   if (!dm.room || !dm.peer) return null;
-  return { roomId: dm.room.id, peerId: dm.peer.id, activity: Math.max(ms(dm.lastMessageAt ?? dm.room.lastMessageAt), ms(dm.room.createdAt)) };
+  return {
+    roomId: dm.room.id,
+    peerId: dm.peer.id,
+    activity: Math.max(ms(dm.lastMessageAt ?? dm.room.lastMessageAt), ms(dm.room.createdAt)),
+    archivedAt: ms(dm.archivedAt),
+    clearedBefore: dm.clearedBeforeMessageId,
+  };
 }
 
 export function previewOf(m: Message): DmPreview {
@@ -122,7 +137,40 @@ export const useDms = create<DmsState>()((set) => ({
       return { preview };
     }),
   setPreview: (roomId, m) => set((s) => ({ preview: { ...s.preview, [roomId]: m ? previewOf(m) : null } })),
+  setState: (roomId, archivedAt, clearedBefore) =>
+    set((s) => {
+      const e = s.byRoom[roomId];
+      if (!e) return {};
+      const out: Partial<DmsState> = { byRoom: { ...s.byRoom, [roomId]: { ...e, archivedAt, clearedBefore } } };
+      const p = s.preview[roomId];
+      if (clearedBefore && p && p.messageId <= clearedBefore) out.preview = { ...s.preview, [roomId]: null };
+      return out;
+    }),
 }));
+
+/**
+ * A DM I deleted («Удалить чат») with nothing newer since: not listed until a new message
+ * arrives (the same room then shows as a clean chat). An unknown preview (being refetched) counts
+ * as not hidden.
+ */
+export function isHiddenDm(e: DmEntry, preview: DmPreview | null | undefined): boolean {
+  if (!e.clearedBefore) return false;
+  return preview === null || (preview !== undefined && preview.messageId <= e.clearedBefore);
+}
+
+/**
+ * The «Личные» list split (docs/09 #51): the main list and «Архив», both by last activity.
+ * Deleted chats are left out, except `keep` (the open DM: «Написать» to a deleted chat opens it).
+ */
+export function splitDms(byRoom: Record<string, DmEntry>, preview: Record<string, DmPreview | null>, keep = ''): { main: DmEntry[]; archived: DmEntry[] } {
+  const main: DmEntry[] = [];
+  const archived: DmEntry[] = [];
+  for (const e of sortedDms(byRoom)) {
+    if (e.roomId !== keep && isHiddenDm(e, preview[e.roomId])) continue;
+    (e.archivedAt ? archived : main).push(e);
+  }
+  return { main, archived };
+}
 
 /** DMs, most recent activity first (ties: newest room first). */
 export function sortedDms(byRoom: Record<string, DmEntry>): DmEntry[] {

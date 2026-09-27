@@ -36,6 +36,15 @@ export const zhDm: DictShape<typeof enDm> = {
   'dm.errCreate': '对话创建失败',
   // a /dm/<id> link of someone else's (or a deleted) conversation
   'dm.errLink': '该对话不可用：不属于你，或已被删除',
+  // archive and «delete for me» (docs/09 #51)
+  'dm.archive': '归档',
+  'dm.unarchive': '取消归档',
+  'dm.archiveSection': '归档 — {n}',
+  'dm.delete': '删除聊天',
+  'dm.deleteTitle': '删除聊天？',
+  'dm.deleteConfirm': '聊天记录只会为你删除，对方仍会保留。',
+  'dm.errState': '无法更新对话',
+  'dm.actions': '对话操作',
   // quick switcher
   'search.dms': '私信',
 } as const;

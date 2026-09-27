@@ -25,6 +25,20 @@ message ListDmsResponse {
   repeated DmSummary dms = 1;
 }
 
+// PATCH /api/dms/{id}/state — the caller's own state of the DM (docs/09 item 51); the peer's
+// history, counts and list do not change. archived set: move the DM to / out of the archive.
+// cleared true: «Удалить чат» for the caller only — messages up to now are no longer shown to
+// them, the DM leaves the archive and the list until a new message arrives. Not a participant:
+// 404. The caller's devices get DM_STATE_UPDATE; the answer is the DM as the caller sees it now.
+message UpdateDmStateRequest {
+  optional bool archived = 1;
+  bool cleared = 2;
+}
+
+message UpdateDmStateResponse {
+  DmSummary dm = 1;
+}
+
 // GET /api/dms/candidates?q= — users the caller may start a DM with: full members of the
 // caller's workspaces, no guest accounts; q matches the display name or a workspace nickname
 // (case-insensitive substring, ≤ 64 chars; empty = anyone); by name, at most 20.

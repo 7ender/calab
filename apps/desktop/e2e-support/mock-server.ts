@@ -114,6 +114,8 @@ import {
   ListDmsResponseSchema,
   CreateDmRequestSchema,
   CreateDmResponseSchema,
+  UpdateDmStateRequestSchema,
+  UpdateDmStateResponseSchema,
   DmSummarySchema,
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
@@ -346,6 +348,11 @@ export interface MockServer {
   }): Message;
   /** Moves a card on (MESSAGE_UPDATE), like the server's upload worker. */
   updateRecordingCard(messageId: string, patch: { status: RecordingStatus; error?: string; webUrl?: string }): void;
+  /**
+   * docs/09 #51: a user's own state of a DM, like PATCH /api/dms/{id}/state — archive / «Удалить
+   * чат» (for them only) — and DM_STATE_UPDATE to their devices.
+   */
+  setDmState(userId: string, roomId: string, patch: { archived?: boolean; cleared?: boolean }): void;
   /** Full files (not thumbnails) wait until releaseFiles() or reset(): a slow download (the lightbox's loading state). */
   holdFiles(): void;
   releaseFiles(): void;
@@ -364,6 +371,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     dispatch: (e) => impl.broadcast(create(DispatchEventSchema, e)),
     reset: (sc) => impl.reset(sc ?? impl.state.scenario),
     injectMessage: (a) => impl.injectMessage(a),
+    setDmState: (u, roomId, patch) => impl.setDmState(u, roomId, patch),
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
     setMemberRoles: (w, u, ids) => impl.setMemberRoles(w, u, ids),
@@ -752,12 +760,17 @@ class MockImpl {
     if (!room || !peer) return null;
     const out = this.roomOut(room);
     const lastRead = this.state.readStates.get(userId)?.get(roomId) ?? '';
-    const last = this.state.messages.get(roomId)?.at(-1);
+    // docs/09 #51: the preview and the counts start after the user's «Удалить чат» mark.
+    const st = this.dmStateOf(userId, roomId);
+    const last = this.visibleMessages(userId, roomId).at(-1);
+    const floor = st.clearedBefore > lastRead ? st.clearedBefore : lastRead;
     return create(DmSummarySchema, {
       room: out,
       peer,
-      readState: { roomId, lastReadMessageId: lastRead, ...this.readCounts(roomId, userId, lastRead) },
+      readState: { roomId, lastReadMessageId: lastRead, ...this.readCounts(roomId, userId, floor) },
       ...(out.lastMessageAt ? { lastMessageAt: out.lastMessageAt } : {}),
+      ...(st.archivedAt ? { archivedAt: timestampFromMs(st.archivedAt) } : {}),
+      clearedBeforeMessageId: st.clearedBefore,
       // The list preview (server: the first 200 characters of the newest live message).
       ...(last
         ? {
@@ -770,6 +783,38 @@ class MockImpl {
             },
           }
         : {}),
+    });
+  }
+
+  /** The user's own state of a DM (docs/09 #51; none = not archived, never cleared). */
+  private dmStateOf(userId: string, roomId: string): { archivedAt: number; clearedBefore: string } {
+    return this.state.dmState.get(userId)?.get(roomId) ?? { archivedAt: 0, clearedBefore: '' };
+  }
+
+  /** A room's messages as the user sees them: a DM they cleared starts after the mark. */
+  private visibleMessages(userId: string, roomId: string): Message[] {
+    const all = this.state.messages.get(roomId) ?? [];
+    const floor = this.state.rooms.get(roomId)?.type === RoomType.DM ? this.dmStateOf(userId, roomId).clearedBefore : '';
+    return floor ? all.filter((m) => m.id > floor) : all;
+  }
+
+  setDmState(userId: string, roomId: string, patch: { archived?: boolean; cleared?: boolean }): void {
+    if (this.dmPeer(roomId, userId) === null) throw notFound('dm not found');
+    const cur = this.dmStateOf(userId, roomId);
+    const next = { ...cur };
+    if (patch.cleared) {
+      next.clearedBefore = nextId(this.state, 'message'); // after every message so far
+      next.archivedAt = 0;
+    }
+    if (patch.archived !== undefined) next.archivedAt = patch.archived ? cur.archivedAt || Date.now() : 0;
+    const mine = this.state.dmState.get(userId) ?? new Map<string, { archivedAt: number; clearedBefore: string }>();
+    mine.set(roomId, next);
+    this.state.dmState.set(userId, mine);
+    this.toUser(userId, {
+      event: {
+        case: 'dmStateUpdate',
+        value: { roomId, clearedBeforeMessageId: next.clearedBefore, ...(next.archivedAt ? { archivedAt: timestampFromMs(next.archivedAt) } : {}) },
+      },
     });
   }
 
@@ -1306,7 +1351,7 @@ class MockImpl {
     const author = c.url.searchParams.get('author_id') ?? '';
     const words = q.split(/\s+/);
     const hits = roomIds
-      .flatMap((id) => this.state.messages.get(id) ?? [])
+      .flatMap((id) => this.visibleMessages(me, id))
       .filter((m) => (!before || m.id < before) && (!author || m.authorId === author))
       .filter((m) => words.every((w) => m.content.toLowerCase().includes(w)))
       .sort((a, b) => (a.id < b.id ? 1 : -1));
@@ -1337,6 +1382,9 @@ class MockImpl {
     const reads = this.state.readStates.get(authorId) ?? new Map<string, string>();
     reads.set(room.id, msg.id);
     this.state.readStates.set(authorId, reads);
+    // docs/09 #51: an incoming message takes the DM out of the recipient's archive.
+    const peer = room.type === RoomType.DM ? this.dmPeer(room.id, authorId) : null;
+    if (peer && this.dmStateOf(peer, room.id).archivedAt) this.setDmState(peer, room.id, { archived: false });
     this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
     return msg;
   }
@@ -2355,7 +2403,7 @@ class MockImpl {
         this.search(c, [room.id]);
         return;
       }
-      const all = s().messages.get(room.id) ?? [];
+      const all = this.visibleMessages(this.uid(c), room.id);
       const limit = Math.min(100, Math.max(1, Number(c.url.searchParams.get('limit') ?? '50') || 50));
       const before = c.url.searchParams.get('before') ?? '';
       const after = c.url.searchParams.get('after') ?? '';
@@ -2585,7 +2633,7 @@ class MockImpl {
     this.route('GET', '/api/rooms/:id/pins', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
-      const pinned = (s().messages.get(room.id) ?? [])
+      const pinned = this.visibleMessages(me, room.id)
         .filter((m) => m.pinnedAt)
         .sort((a, b) => (a.pinnedAt && b.pinnedAt ? timestampMs(b.pinnedAt) - timestampMs(a.pinnedAt) : 0));
       sendMsg(c.res, 200, ListMessagesResponseSchema, { messages: pinned.map((m) => this.msgOut(m, me)), hasMore: false });
@@ -2678,6 +2726,17 @@ class MockImpl {
         if (dm) this.toUser(u, { event: { case: 'dmCreate', value: { dm } } });
       }
       sendMsg(c.res, 201, CreateDmResponseSchema, { dm: this.dmOut(id, me) ?? undefined });
+    });
+    this.route('PATCH', '/api/dms/:id/state', (c) => {
+      const { user } = this.auth(c);
+      noGuest(user);
+      const me = user.user.id;
+      const roomId = c.params[0] ?? '';
+      if (this.dmPeer(roomId, me) === null) throw notFound('dm not found');
+      const b = parseBody(c, UpdateDmStateRequestSchema);
+      if (b.archived === undefined && !b.cleared) throw invalid('archived', 'set archived or cleared');
+      this.setDmState(me, roomId, { cleared: b.cleared, ...(b.archived !== undefined ? { archived: b.archived } : {}) });
+      sendMsg(c.res, 200, UpdateDmStateResponseSchema, { dm: this.dmOut(roomId, me) ?? undefined });
     });
     this.route('POST', '/api/dms/:id/files', async (c) => {
       const me = this.uid(c);

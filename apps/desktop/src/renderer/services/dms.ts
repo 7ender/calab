@@ -1,4 +1,5 @@
 import type { DmSummary } from '@calaba/protocol';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
@@ -29,6 +30,61 @@ export function applyDm(dm: DmSummary, withReadState: boolean): void {
     rooms.setCounts(room.id, dm.readState.unreadCount, dm.readState.mentionCount);
   }
   useDms.getState().upsert(dm);
+}
+
+/**
+ * My own state of a DM (docs/09 #51): from DM_STATE_UPDATE, a PATCH answer or an optimistic
+ * change. A new «Удалить чат» mark drops the loaded history and the counters (the server counts
+ * from the mark too) and closes the chat if it is open here.
+ */
+export function applyDmState(roomId: string, archivedAt: number, clearedBefore: string): void {
+  const dms = useDms.getState();
+  const prev = dms.byRoom[roomId];
+  if (!prev) return;
+  const cleared = clearedBefore !== '' && clearedBefore > prev.clearedBefore;
+  if (clearedBefore < prev.clearedBefore) clearedBefore = prev.clearedBefore; // a stale event never un-hides
+  dms.setState(roomId, archivedAt, clearedBefore);
+  if (!cleared) return;
+  useMessages.getState().unload(roomId);
+  useRooms.getState().setCounts(roomId, 0, 0);
+  const ui = useUi.getState();
+  if (ui.lastRoom[HOME] === roomId) ui.selectDefaultRoom(HOME, '');
+}
+
+/** Applies a DmSummary's own state (PATCH answer). */
+function applySummaryState(dm: DmSummary): void {
+  if (dm.room) applyDmState(dm.room.id, dm.archivedAt ? timestampMs(dm.archivedAt) : 0, dm.clearedBeforeMessageId);
+}
+
+/** «В архив» / «Вернуть из архива»: for me only; optimistic, rolled back on failure. */
+export async function setDmArchived(roomId: string, archived: boolean): Promise<void> {
+  const prev = useDms.getState().byRoom[roomId];
+  if (!prev) return;
+  useDms.getState().setState(roomId, archived ? Date.now() : 0, prev.clearedBefore);
+  try {
+    const res = await api.dms.setState(roomId, { archived });
+    if (res.dm) applySummaryState(res.dm);
+  } catch (e) {
+    log.warn('dm archive failed', e);
+    useDms.getState().setState(roomId, prev.archivedAt, prev.clearedBefore);
+    toast.error(t('dm.errState'));
+  }
+}
+
+/**
+ * «Удалить чат» (for me only; the UI confirms first): the history up to now is no longer shown to
+ * me, the peer keeps theirs. The DM leaves the list until a new message arrives.
+ */
+export async function clearDm(roomId: string): Promise<boolean> {
+  try {
+    const res = await api.dms.setState(roomId, { cleared: true });
+    if (res.dm) applySummaryState(res.dm);
+    return true;
+  } catch (e) {
+    log.warn('dm delete failed', e);
+    toast.error(t('dm.errState'));
+    return false;
+  }
 }
 
 /** Opens the DM in the «Личные» view. */
