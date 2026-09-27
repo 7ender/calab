@@ -87,7 +87,7 @@ function createDriver(ev: DriverEvents): MediaDriver {
 
 let installed = false;
 
-/** Installs the real element once (first chat media player on screen). */
+/** Installs the real element's factory once, at startup (main.tsx); the element is created on first use. */
 export function installPlayer(): void {
   if (installed) return;
   installed = true;
