@@ -159,7 +159,7 @@ STEPS="preflight build" VERSION=0.1.0 infra/docker/release.sh <commit> # лок�
 
 | Шаг | Что делает | Стоп-условие |
 |---|---|---|
-| preflight | тег `v$VERSION` свободен локально и в `origin`; в коммите есть `release.yml`; `gh` видит `itrcz/calab` (`GITHUB_TOKEN` из `.env` как `GH_TOKEN`); `pnpm install --frozen-lockfile --lockfile-only` на экспорте коммита; ≥ 15 GB свободно локально; стенд доступен; снимок чужой GPU-задачи; **бэкап до** | любое — выход |
+| preflight | тег `v$VERSION` свободен локально и в `origin`; в коммите есть `release.yml`; `gh` видит `itrcz/calab` (`GITHUB_TOKEN` из `.env` как `GH_TOKEN`); `pnpm install --frozen-lockfile --lockfile-only` на экспорте коммита; ≥ 5 GB свободно локально (≥ 15 GB с шагом `build`); стенд доступен; снимок чужой GPU-задачи; **бэкап до** | любое — выход |
 | build | *(не по умолчанию)* `build-release.sh mac linux win` с `SIGN=1 NOTARIZE=1`, `SRC_REF=<commit>`, Linux/Windows на стенде → `$WORK_DIR/dist-release`; только для проверки, не публикуется | ошибка сборки |
 | web | чистый экспорт коммита (`git archive` + `pnpm install --frozen-lockfile`, переиспользуется от `build`) → `build:web` → `dist-web`; при `LANDING_HOST` — `pnpm -F @calaba/landing build` → `apps/landing/out` | нет `index.html` |
 | deploy | `sync.sh` с `SYNC_REF=<commit>`, `VERSION`, `WEB_DIST` и `LANDING_DIST` из этого экспорта (лендинг — всегда из релизного коммита, не из рабочей копии), `SKIP_RELEASES=1`: весь стек (api с build info; неизменённые сервисы не трогаются), веб, лендинг | ошибка деплоя |

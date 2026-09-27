@@ -104,8 +104,11 @@ if step preflight; then
   tmp="$(mktemp -d)"; git archive "$COMMIT" package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc patches apps/*/package.json packages/*/package.json | tar -x -C "$tmp"
   if (cd "$tmp" && pnpm install --frozen-lockfile --lockfile-only --ignore-scripts >/dev/null 2>&1); then ok "lockfile in sync (frozen install)"; else rm -rf "$tmp"; bad "pnpm-lock.yaml out of sync with package.json in $COMMIT"; exit 1; fi
   rm -rf "$tmp"
+  # the local desktop build (optional `build` step) needs ~15 GB; the default path (export, web, landing,
+  # e2e) a couple of GB — desktop installers are built in GitHub Actions
+  need_gb=5; step build && need_gb=15
   free_gb=$(df -g "${TMPDIR:-/tmp}" | awk 'NR==2{print $4}')
-  (( free_gb >= 15 )) && ok "local disk: ${free_gb} GB free" || { bad "local disk: only ${free_gb} GB free (need 15)"; exit 1; }
+  (( free_gb >= need_gb )) && ok "local disk: ${free_gb} GB free (need ${need_gb})" || { bad "local disk: only ${free_gb} GB free (need ${need_gb})"; exit 1; }
   check "stand reachable" on_stand true
   mkdir -p "$(dirname "$WORK")"; foreign_state > "$WORK.foreign-before"
   ok "foreign job baseline: $(head -1 "$WORK.foreign-before")"
