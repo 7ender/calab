@@ -1,17 +1,19 @@
+import { timestampMs } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { PresenceStatus } from '@calaba/protocol';
-import { Check, ChevronRight } from 'lucide-react';
+import { Check, ChevronRight, Pencil, Smile, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Avatar, StatusGlyph } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { getLocale, t, type MessageKey } from '../../i18n';
+import { AFTER_SHORT, STATUS_PRESETS, applyCustomStatus, saveCustomStatus, type StatusChoice } from '../../services/customStatus';
 import { PRESENCE_DURATIONS, choosePresence } from '../../services/presenceTimer';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
-import { CustomStatusDialog, saveCustomStatus } from './CustomStatusDialog';
-import { menuBox, menuItem, menuSeparator } from './menu';
+import { CustomStatusDialog } from './CustomStatusDialog';
+import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 
 export const STATUS_KEY: Record<number, MessageKey> = {
   [PresenceStatus.ONLINE]: 'presence.online',
@@ -47,16 +49,26 @@ function untilLabel(until: number): string {
   return t('presence.until', { time: fmt.format(d) });
 }
 
+/** «Свой статус» one-click rows: the presets, then my recent statuses — minus the one I have now. */
+function customChoices(recent: readonly StatusChoice[], current: { emoji: string; text: string }): Array<StatusChoice & { id: string }> {
+  const isCurrent = (c: { emoji: string; text: string }): boolean => !!current.text && c.text === current.text && c.emoji === current.emoji;
+  const presets = STATUS_PRESETS.map((p) => ({ id: p.id, emoji: p.emoji, text: t(p.key), after: p.after }));
+  const mine = recent.map((r, i) => ({ ...r, id: `recent-${i}` }));
+  return [...presets, ...mine].filter((c) => !isCurrent(c));
+}
+
 /**
  * Status menu (docs/09 #29, Discord reference `discord-status-menu.png`): a click on my avatar /
  * name in the self panel. «В сети» | «Не активен» › · «Не беспокоить» › · «Невидимый» › with
- * durations (15 минут … Навсегда; a plain click on the row = «Навсегда») | my custom status with
- * «Очистить», or «Задать свой статус…» | «Редактировать профиль» (+ admin).
+ * durations (15 минут … Навсегда; a plain click on the row = «Навсегда») | «Свой статус»: the
+ * current one (click = edit, × = clear), presets and up to 3 recent ones (one click), «Задать
+ * свой…» | «Редактировать профиль» (+ admin).
  */
 export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
   const me = useSession((s) => s.me);
   const chosen = usePrefs((s) => s.presence);
   const until = usePrefs((s) => s.presenceUntil);
+  const recent = usePrefs((s) => s.recentStatuses);
   const openDialog = useUi((s) => s.openDialog);
   const status = useMyStatus();
   const [open, setOpen] = useState(false);
@@ -64,6 +76,8 @@ export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
   const user = me?.user;
   if (!user) return null;
   const customText = [user.statusEmoji, user.statusText].filter(Boolean).join(' ');
+  const customUntil = user.statusText && user.statusExpiresAt ? timestampMs(user.statusExpiresAt) : null;
+  const choices = customChoices(recent, { emoji: user.statusEmoji, text: user.statusText });
   const pick = (s: PresenceStatus, ms: number | null = null): void => {
     choosePresence(s, ms);
     setOpen(false);
@@ -87,7 +101,7 @@ export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
             collisionPadding={16}
             aria-label={t('presence.change')}
             data-testid="status-menu"
-            className={cx(menuBox, 'w-[280px]')}
+            className={cx(menuBox, 'max-h-[var(--radix-dropdown-menu-content-available-height)] w-[280px] overflow-y-auto')}
             onCloseAutoFocus={(e) => {
               if (custom) e.preventDefault(); // the custom status sheet takes the focus
             }}
@@ -154,24 +168,49 @@ export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
             })}
             <Dropdown.Separator className={menuSeparator} />
 
+            <Dropdown.Label className={menuLabel}>{t('presence.customTitle')}</Dropdown.Label>
             {customText ? (
-              <div className="flex items-center gap-1">
-                <Dropdown.Item className={cx(menuItem, 'min-w-0 flex-1')} onSelect={() => setCustom(true)} title={customText}>
-                  <span className="truncate">{customText}</span>
+              <div className="flex items-center gap-1" data-testid="status-current">
+                <Dropdown.Item
+                  className={cx(row, 'min-w-0 flex-1')}
+                  onSelect={() => setCustom(true)}
+                  title={t('presence.editStatus')}
+                  aria-label={`${t('presence.editStatus')}: ${customText}`}
+                >
+                  <span className="grid w-4 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
+                    {user.statusEmoji || <Smile className="size-4 opacity-70" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{user.statusText}</span>
+                    {customUntil !== null ? <span className="block truncate text-caption opacity-70">{untilLabel(customUntil)}</span> : null}
+                  </span>
                 </Dropdown.Item>
                 <Dropdown.Item
-                  className={cx(menuItem, 'shrink-0 text-caption text-muted')}
+                  className={cx(menuItem, 'w-7 shrink-0 justify-center px-0 text-muted')}
                   onSelect={() => void saveCustomStatus({ text: '', emoji: '', expiresInSeconds: 0 })}
+                  aria-label={t('presence.clearStatus')}
+                  title={t('presence.clearStatus')}
                   data-testid="status-clear"
                 >
-                  {t('presence.clear')}
+                  <X className="size-4" aria-hidden />
                 </Dropdown.Item>
               </div>
-            ) : (
-              <Dropdown.Item className={menuItem} onSelect={() => setCustom(true)} data-testid="status-custom">
-                {t('presence.custom')}
+            ) : null}
+            {choices.map((c) => (
+              <Dropdown.Item key={c.id} className={menuItem} onSelect={() => void applyCustomStatus(c)} data-testid={`status-choice-${c.id}`}>
+                <span className="grid w-4 shrink-0 place-items-center text-[15px] leading-none" aria-hidden>
+                  {c.emoji || <Smile className="size-4 opacity-70" />}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{c.text}</span>
+                <span className="shrink-0 text-caption opacity-70">{t(AFTER_SHORT[c.after])}</span>
               </Dropdown.Item>
-            )}
+            ))}
+            <Dropdown.Item className={menuItem} onSelect={() => setCustom(true)} data-testid="status-custom">
+              <span className="grid w-4 shrink-0 place-items-center" aria-hidden>
+                <Pencil className="size-3.5 opacity-70" />
+              </span>
+              {t('presence.custom')}
+            </Dropdown.Item>
             <Dropdown.Separator className={menuSeparator} />
             <Dropdown.Item className={menuItem} onSelect={() => openDialog({ kind: 'settings', tab: 'profile' })}>
               {t('shell.editProfile')}

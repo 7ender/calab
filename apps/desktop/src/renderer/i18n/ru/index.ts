@@ -6,6 +6,7 @@ import { ruMail } from './mail';
 import { ruRecording } from './recording';
 import { ruPeople } from './people';
 import { ruModeration } from './moderation';
+import { ruPicker } from './picker';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
@@ -23,6 +24,7 @@ export const ru = {
   ...ruModeration,
   ...ruMail,
   ...ruRecording,
+  ...ruPicker,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',
@@ -142,7 +144,7 @@ export const ru = {
   'presence.for3d': '3 дня',
   'presence.forever': 'Навсегда',
   'presence.until': 'до {time}',
-  'presence.custom': 'Задать свой статус…',
+  'presence.custom': 'Задать свой…',
   'presence.customTitle': 'Свой статус',
   'presence.clear': 'Очистить',
   'presence.clearAfter': 'Очистить через',
@@ -152,6 +154,17 @@ export const ru = {
   'presence.clear4h': '4 часа',
   'presence.clearToday': 'Сегодня',
   'presence.emoji': 'Эмодзи статуса',
+  'presence.presetMeeting': 'На встрече',
+  'presence.presetLunch': 'Обед',
+  'presence.presetFocus': 'Сосредоточен',
+  'presence.presetVacation': 'В отпуске',
+  'presence.durNever': 'без срока',
+  'presence.dur30m': '30 мин',
+  'presence.dur1h': '1 ч',
+  'presence.dur4h': '4 ч',
+  'presence.durToday': 'до конца дня',
+  'presence.clearStatus': 'Очистить статус',
+  'presence.editStatus': 'Изменить статус',
 
   // invites
   'invite.create': 'Создать приглашение',

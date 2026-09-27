@@ -7,6 +7,7 @@ import { esMail } from './mail';
 import { esRecording } from './recording';
 import { esPeople } from './people';
 import { esModeration } from './moderation';
+import { esPicker } from './picker';
 import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
@@ -24,6 +25,7 @@ export const es: Dict = {
   ...esModeration,
   ...esMail,
   ...esRecording,
+  ...esPicker,
   'voice.pendingMember': 'Conectando…',
   // common
   'common.cancel': 'Cancelar',
@@ -144,7 +146,7 @@ export const es: Dict = {
   'presence.for3d': 'Durante 3 días',
   'presence.forever': 'Para siempre',
   'presence.until': 'hasta {time}',
-  'presence.custom': 'Establecer estado personalizado…',
+  'presence.custom': 'Personalizar…',
   'presence.customTitle': 'Estado personalizado',
   'presence.clear': 'Borrar',
   'presence.clearAfter': 'Borrar después de',
@@ -154,6 +156,17 @@ export const es: Dict = {
   'presence.clear4h': '4 horas',
   'presence.clearToday': 'Hoy',
   'presence.emoji': 'Emoji del estado',
+  'presence.presetMeeting': 'En una reunión',
+  'presence.presetLunch': 'Almuerzo',
+  'presence.presetFocus': 'Concentrado',
+  'presence.presetVacation': 'De vacaciones',
+  'presence.durNever': 'sin límite',
+  'presence.dur30m': '30 min',
+  'presence.dur1h': '1 h',
+  'presence.dur4h': '4 h',
+  'presence.durToday': 'hasta el final del día',
+  'presence.clearStatus': 'Borrar estado',
+  'presence.editStatus': 'Editar estado',
 
   // invites
   'invite.create': 'Crear invitación',

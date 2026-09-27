@@ -3,6 +3,7 @@ import {
   AUDIO_BITRATE_OPTIONS_KBPS,
   PERMISSION_BITS,
   PermissionTargetType,
+  ROLE_TARGET_ID,
   RoomMediaOverrideSchema,
   RoomPermissionOverrideSchema,
   RoomType,
@@ -10,7 +11,6 @@ import {
   type PermissionName,
 } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { AudioLines, Check, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Volume2, X } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
@@ -22,12 +22,16 @@ import { isAdminRole, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, ty
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { isGuest, memberName, useWorkspaces } from '../../stores/workspaces';
+import { Avatar } from '../../components/Avatar';
+import type { PickerGroup } from '../../components/picker/pickerModel';
+import { GuestBadge, RoleMark, roleTextClass } from '../people/MemberBits';
+import { MemberPicker } from '../people/MemberPicker';
+import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { CommitInput } from '../settings/AppSettingsDialog';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { UserLimitCard } from '../shell/UserLimitCard';
-import { menuBox, menuItem, menuLabel } from '../shell/menu';
 import { RoomLinkTab } from '../people/RoomLinkTab';
 
 const err = (e: unknown): string => errorText(e);
@@ -331,6 +335,15 @@ const ROLE_TARGETS: Array<{ id: string; key: MessageKey }> = [
   { id: 'guest', key: 'role.guest' },
 ];
 
+/** Roles in the picker and the target list: owner · admin (fixed, full access) · member · guest. */
+const ROLE_ORDER = [WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER, WorkspaceRole.GUEST] as const;
+const ROLE_KEY: Record<(typeof ROLE_ORDER)[number], MessageKey> = {
+  [WorkspaceRole.OWNER]: 'role.owner',
+  [WorkspaceRole.ADMIN]: 'role.admin',
+  [WorkspaceRole.MEMBER]: 'role.member',
+  [WorkspaceRole.GUEST]: 'role.guest',
+};
+
 function targetKey(o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string {
   return `${o.targetType}:${o.targetId}`;
 }
@@ -377,6 +390,7 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   const members = useWorkspaces((s) => (room ? s.byId[room.workspaceId]?.members : undefined));
   const [drafts, setDrafts] = useState<OverrideDraft[]>(() => toDrafts(room?.permissionOverrides ?? []));
   const [selected, setSelected] = useState(`${PermissionTargetType.ROLE}:member`);
+  const [adding, setAdding] = useState(false);
 
   const targets = useMemo(() => {
     const roles = ROLE_TARGETS.map((r) => ({ key: `${PermissionTargetType.ROLE}:${r.id}`, type: PermissionTargetType.ROLE, id: r.id, label: t(r.key) }));
@@ -420,45 +434,86 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   };
   const editable = ROOM_EDITABLE.filter((name) => room?.type === RoomType.VOICE || !VOICE_ONLY.has(name));
 
-  const candidates = Object.values(members ?? {}).filter(
-    (m) => m.user && m.role !== WorkspaceRole.OWNER && m.role !== WorkspaceRole.ADMIN && !drafts.some((d) => d.targetType === PermissionTargetType.USER && d.targetId === m.user?.id),
-  );
+  // docs/09 #33: every member of the workspace is in the picker (it used to drop the owner, the
+  // admins and anyone already listed — «не все видны»). Owner and admins always have every right
+  // (ADMINISTRATOR ignores room overrides, docs/04): shown, marked, not choosable.
+  const pickGroups = useMemo((): Array<PickerGroup<PeoplePickItem>> => {
+    const listed = new Set(drafts.filter((d) => d.targetType === PermissionTargetType.USER).map((d) => d.targetId));
+    const full = t('picker.fullAccess');
+    const roles: RolePickItem[] = ROLE_ORDER.map((r) => ({
+      kind: 'role',
+      id: `role:${ROLE_TARGET_ID[r]}`,
+      role: r,
+      label: t(ROLE_KEY[r]),
+      note: isAdminRole(r) ? full : '',
+      search: [t(ROLE_KEY[r]), ROLE_TARGET_ID[r]],
+      ...(isAdminRole(r) ? { disabled: true } : {}),
+    }));
+    const people = memberItems(Object.values(members ?? {}), {
+      decorate: (m) => (isAdminRole(m.role) ? { note: full, disabled: true } : listed.has(m.user?.id ?? '') ? { note: t('picker.listed') } : undefined),
+    });
+    return [
+      { id: 'roles', label: t('picker.roles'), items: roles },
+      { id: 'members', label: t('picker.members'), items: people },
+    ];
+  }, [drafts, members]);
+  const pick = (item: PeoplePickItem): void => {
+    if (item.kind === 'role') setSelected(`${PermissionTargetType.ROLE}:${ROLE_TARGET_ID[item.role]}`);
+    else addUser(item.userId);
+    setAdding(false);
+  };
 
   return (
     <div className="flex gap-4">
-      <div className="flex w-56 shrink-0 flex-col gap-0.5">
-        {targets.map((x) => (
-          <button
-            key={x.key}
-            type="button"
-            aria-pressed={current?.key === x.key}
-            title={x.label}
-            onClick={() => setSelected(x.key)}
-            className={cx('h-8 shrink-0 truncate rounded-[var(--radius-row)] px-2 text-left text-body', current?.key === x.key ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
-          >
-            {x.type === PermissionTargetType.ROLE ? '@' : ''}
-            {x.label}
-          </button>
+      <div className="flex w-56 shrink-0 flex-col gap-0.5" data-testid="perm-targets">
+        {([WorkspaceRole.OWNER, WorkspaceRole.ADMIN] as const).map((r) => (
+          // Fixed rows (docs/04: ADMINISTRATOR ignores room overrides) — shown, never edited.
+          <div key={r} className="flex shrink-0 flex-col justify-center px-2 py-1" data-testid="perm-fixed-role" title={t('picker.alwaysFull')}>
+            <span className="flex min-w-0 items-center gap-1.5 text-body">
+              <span className={cx('min-w-0 truncate', roleTextClass(r))}>@{t(ROLE_KEY[r])}</span>
+              <RoleMark role={r} />
+            </span>
+            <span className="truncate text-micro text-faint first-letter:uppercase">{t('picker.fullAccess')}</span>
+          </div>
         ))}
-        <DropdownMenu.Root modal={false}>
-          <DropdownMenu.Trigger asChild>
-            <Button variant="secondary" size="sm" className="mt-2 justify-start" disabled={candidates.length === 0} title={candidates.length === 0 ? t('perm.noCandidates') : undefined}>
-              <Plus className="size-3.5" aria-hidden />
-              <span className="truncate">{t('perm.addUser')}</span>
-            </Button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content align="start" sideOffset={4} collisionPadding={8} className={cx(menuBox, 'z-[var(--z-modal-popover)] max-h-72 min-w-52 overflow-y-auto')}>
-              <DropdownMenu.Label className={menuLabel}>{t('perm.people')}</DropdownMenu.Label>
-              {candidates.map((m) => (
-                <DropdownMenu.Item key={m.user?.id} className={menuItem} onSelect={() => m.user && addUser(m.user.id)}>
-                  <span className="min-w-0 truncate">{m.nickname || m.user?.displayName}</span>
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-        <p className="mt-2 text-caption text-faint">{t('perm.adminNote')}</p>
+        {targets.map((x) => {
+          const on = current?.key === x.key;
+          const m = x.type === PermissionTargetType.USER ? members?.[x.id] : undefined;
+          return (
+            <button
+              key={x.key}
+              type="button"
+              aria-pressed={on}
+              title={x.label}
+              onClick={() => setSelected(x.key)}
+              className={cx('flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-left text-body', on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
+            >
+              {x.type === PermissionTargetType.USER ? (
+                <Avatar userId={x.id} name={x.label} {...(m?.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} />
+              ) : null}
+              <span className={cx('min-w-0 truncate', x.type === PermissionTargetType.USER && roleTextClass(m?.role, on ? 'inherit' : 'role'))}>
+                {x.type === PermissionTargetType.ROLE ? '@' : ''}
+                {x.label}
+              </span>
+              {m ? <RoleMark role={m.role} tone={on ? 'inherit' : 'role'} /> : null}
+              {m && isGuest(m) ? <GuestBadge /> : null}
+            </button>
+          );
+        })}
+        <MemberPicker
+          open={adding}
+          onOpenChange={setAdding}
+          groups={pickGroups}
+          onSelect={pick}
+          placeholder={t('picker.searchPeople')}
+          label={t('perm.addUser')}
+          testId="member-picker"
+        >
+          <Button variant="secondary" size="sm" className="mt-2 justify-start" data-testid="perm-add">
+            <Plus className="size-3.5" aria-hidden />
+            <span className="truncate">{t('perm.addUser')}</span>
+          </Button>
+        </MemberPicker>
       </div>
       <div className="min-w-0 flex-1">
         <table className="w-full overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)] text-body">

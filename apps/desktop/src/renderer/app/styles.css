@@ -854,3 +854,11 @@ svg.lucide {
     font-size: 15px;
   }
 }
+
+/* Room list (owner, 27.09): no visible scrollbar — the column still scrolls (wheel/trackpad/keys). */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

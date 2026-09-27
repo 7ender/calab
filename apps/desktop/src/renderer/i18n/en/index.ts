@@ -7,6 +7,7 @@ import { enMail } from './mail';
 import { enRecording } from './recording';
 import { enPeople } from './people';
 import { enModeration } from './moderation';
+import { enPicker } from './picker';
 import { enPlan } from './plan';
 import { enShell } from './shell';
 import { enVideo } from './video';
@@ -24,6 +25,7 @@ export const en: Dict = {
   ...enModeration,
   ...enMail,
   ...enRecording,
+  ...enPicker,
   'voice.pendingMember': 'Connecting…',
   // common
   'common.cancel': 'Cancel',
@@ -144,7 +146,7 @@ export const en: Dict = {
   'presence.for3d': 'For 3 days',
   'presence.forever': 'Forever',
   'presence.until': 'until {time}',
-  'presence.custom': 'Set a custom status…',
+  'presence.custom': 'Set custom…',
   'presence.customTitle': 'Custom status',
   'presence.clear': 'Clear',
   'presence.clearAfter': 'Clear after',
@@ -154,6 +156,17 @@ export const en: Dict = {
   'presence.clear4h': '4 hours',
   'presence.clearToday': 'Today',
   'presence.emoji': 'Status emoji',
+  'presence.presetMeeting': 'In a meeting',
+  'presence.presetLunch': 'Lunch',
+  'presence.presetFocus': 'Focusing',
+  'presence.presetVacation': 'On vacation',
+  'presence.durNever': 'no end',
+  'presence.dur30m': '30 min',
+  'presence.dur1h': '1 h',
+  'presence.dur4h': '4 h',
+  'presence.durToday': 'until end of day',
+  'presence.clearStatus': 'Clear status',
+  'presence.editStatus': 'Edit status',
 
   // invites
   'invite.create': 'Create invite',

@@ -77,7 +77,6 @@ import { categoryDropAt, roomDropAt, stepTarget, type RoomTarget, type Slot } fr
 import { moveCategoryTo, moveRoomTo, workspaceCategories, workspaceLayout } from '../../services/roomOrder';
 import { useTimeZoneLabel } from '../../services/timezone';
 import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
-import { copyRoomInviteLink } from '../people/roomLink';
 import { RoomRecBadge } from '../voice/Recording';
 import { useRecordings } from '../../stores/recordings';
 import { startRecording, stopRecording } from '../../services/recording';
@@ -156,7 +155,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
           {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}
           <div
             ref={listRef}
-            className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2"
+            className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2"
             style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
             data-testid="room-list"
           >
@@ -715,7 +714,7 @@ function RoomMenu({
           <ContextMenu.Item
             key={id}
             className={menuItem}
-            onSelect={() => (voiceRoom && canManage ? void copyRoomInviteLink(room.id) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' }))}
+            onSelect={() => (voiceRoom && canManage ? open({ kind: 'room-invite', roomId: room.id }) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' }))}
           >
             <UserPlus className="size-4" /> {voiceRoom ? t('roomMenu.invite') : t('shell.invite')}
           </ContextMenu.Item>
