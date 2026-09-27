@@ -63,6 +63,8 @@ export function Composer({
   const editMsg = useMessages((s) => (editing ? s.rooms[room.id]?.items.find((c) => c.key === editing)?.msg : undefined));
   const me = useSession((s) => s.me?.user?.id ?? '');
   const canSend = can(perms, 'SEND_MESSAGES');
+  // A suspended workspace is read-only (docs/09 #32): the server refuses, the field explains.
+  const suspended = useWorkspaces((s) => !!workspaceId && !!s.byId[workspaceId]?.ws.suspension);
   const canAttach = can(perms, 'ATTACH_FILES');
   // Edit mode uses the same field: the draft is kept aside and comes back afterwards
   // (derived during render when the edited message changes — no effect cascade).
@@ -266,6 +268,13 @@ export function Composer({
     });
   };
 
+  if (suspended) {
+    return (
+      <div className="mx-4 my-3 rounded-[var(--radius-card)] bg-hover px-4 py-3 text-body text-muted" data-testid="composer-suspended">
+        {t('suspended.composer')}
+      </div>
+    );
+  }
   if (!canSend) {
     return <div className="mx-4 my-3 rounded-[var(--radius-card)] bg-hover px-4 py-3 text-body text-muted">{t('chat.noSend')}</div>;
   }

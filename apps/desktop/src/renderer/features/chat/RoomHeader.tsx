@@ -118,6 +118,7 @@ function VoicePreviewBar({ workspaceId, room, perms }: { workspaceId: string; ro
   const preview = useVoice((s) => isVoicePreview(room, s.roomId));
   const states = useVoiceStates(workspaceId);
   const mobile = useMobile();
+  const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
   if (!preview) return null;
   const people = Object.values(states).filter((v) => v.roomId === room.id).length;
   const canConnect = can(perms, 'CONNECT');
@@ -130,11 +131,11 @@ function VoicePreviewBar({ workspaceId, room, perms }: { workspaceId: string; ro
     <div className="no-drag flex shrink-0 items-center gap-2" data-testid="voice-preview">
       {mobile ? null : <Badge className="text-muted">{t('voicePreview.notInVoice')}</Badge>}
       {!canConnect ? null : mobile ? (
-        <IconButton label={t('voicePreview.join')} onClick={join} className="size-10 rounded-full text-ok">
+        <IconButton label={suspended ? t('suspended.voice') : t('voicePreview.join')} disabled={suspended} onClick={join} className="size-10 rounded-full text-ok">
           <Phone className="size-5" />
         </IconButton>
       ) : (
-        <Button size="sm" onClick={join}>
+        <Button size="sm" onClick={join} disabled={suspended} title={suspended ? t('suspended.voice') : undefined}>
           <Phone className="size-3.5" aria-hidden />
           {t('voicePreview.join')}
         </Button>

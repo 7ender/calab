@@ -5,6 +5,7 @@ import { zhDm } from './dm';
 import { zhEcho } from './echo';
 import { zhMail } from './mail';
 import { zhPeople } from './people';
+import { zhModeration } from './moderation';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
@@ -19,6 +20,7 @@ export const zhCN: Dict = {
   ...zhDm,
   ...zhEcho,
   ...zhPlan,
+  ...zhModeration,
   ...zhMail,
   'voice.pendingMember': '连接中…',
   // common

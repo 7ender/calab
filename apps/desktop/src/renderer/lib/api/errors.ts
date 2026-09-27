@@ -39,6 +39,8 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_EMAIL_NOT_VERIFIED: { key: 'mail.err.notVerified' },
   ERROR_CODE_CODE_INVALID: { key: 'mail.err.codeInvalid' },
   ERROR_CODE_CODE_EXPIRED: { key: 'mail.err.codeExpired' },
+  ERROR_CODE_WORKSPACE_SUSPENDED: { key: 'err.suspended' },
+  ERROR_CODE_BANNED: { key: 'err.banned' },
 };
 
 /** ERROR_CODE_VALIDATION `field` (protojson name, see apps/server Validation(...)) → text. */

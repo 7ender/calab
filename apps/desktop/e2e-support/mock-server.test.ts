@@ -775,6 +775,41 @@ describe('plans and the superadmin API (ADR-0024)', () => {
     server.reset('data');
   });
 
+  it('suspension (docs/09 #32): reason required, writes 403, calls end, resume', async () => {
+    const anna = await login();
+    const path = `/api/admin/workspaces/${IDS.workspaces.main}/suspension`;
+    expect((await api(anna, path, { method: 'PUT', body: JSON.stringify({ suspended: true }) })).status).toBe(422);
+    server.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.meeting });
+    const res = await api(anna, path, { method: 'PUT', body: JSON.stringify({ suspended: true, reason: 'неоплата' }) });
+    const aw = ((await res.json()) as { workspace: { workspace: { suspension?: { reason: string } }; suspendedByEmail: string } }).workspace;
+    expect(aw.workspace.suspension?.reason).toBe('неоплата');
+    expect(aw.suspendedByEmail).toBe('owner@calaba.test');
+    expect(server.state.voiceStates.get(IDS.users.boris)?.roomId ?? '').toBe('');
+    const send = await api(anna, `/api/rooms/${IDS.rooms.general}/messages`, { method: 'POST', body: JSON.stringify({ content: 'x' }) });
+    expect(send.status).toBe(403);
+    expect(await send.json()).toMatchObject({ code: 'ERROR_CODE_WORKSPACE_SUSPENDED' });
+    expect((await api(anna, `/api/rooms/${IDS.rooms.meeting}/join`, { method: 'POST' })).status).toBe(403);
+    await api(anna, path, { method: 'PUT', body: JSON.stringify({ suspended: false }) });
+    expect(server.state.workspaces.get(IDS.workspaces.main)?.suspension).toBeUndefined();
+    server.reset('data');
+  });
+
+  it('bans (docs/09 #32): ban removes the member, listed, unban; the owner cannot be banned', async () => {
+    const anna = await login();
+    const base = `/api/workspaces/${IDS.workspaces.main}/bans`;
+    const vera = await login('vera@calaba.test');
+    expect((await api(vera, base)).status).toBe(403);
+    expect((await api(anna, base, { method: 'POST', body: JSON.stringify({ userId: IDS.users.anna }) })).status).toBe(403);
+    const r = await api(anna, base, { method: 'POST', body: JSON.stringify({ userId: IDS.users.vera, reason: 'спам' }) });
+    expect(r.status).toBe(201);
+    expect(server.state.members.some((m) => m.workspaceId === IDS.workspaces.main && m.userId === IDS.users.vera)).toBe(false);
+    const list = (await (await api(anna, base)).json()) as { bans: { user: { id: string }; reason: string }[] };
+    expect(list.bans.map((b) => [b.user.id, b.reason])).toEqual([[IDS.users.vera, 'спам']]);
+    expect((await api(anna, `${base}/${IDS.users.vera}`, { method: 'DELETE' })).status).toBe(204);
+    expect((await api(anna, `${base}/${IDS.users.vera}`, { method: 'DELETE' })).status).toBe(404);
+    server.reset('data');
+  });
+
   it('limits: 409 ROOM_FULL PLAN_LIMIT with used / limit; stream and camera capped; 413 quota with reason', async () => {
     const anna = await login();
     const ws = server.state.workspaces.get(IDS.workspaces.main);

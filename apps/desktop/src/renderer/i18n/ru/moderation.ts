@@ -1,0 +1,52 @@
+/**
+ * Russian UI strings — workspace suspension and bans (docs/09 #32). Same rules as ru.ts: flat
+ * dotted keys, `{param}` placeholders, short, no exclamation marks.
+ */
+export const ruModeration = {
+  // the non-dismissable bar over a suspended workspace
+  'suspended.title': 'Пространство приостановлено',
+  'suspended.member': 'Читать можно, но сообщения, голос и приглашения недоступны. Подробности — у владельца пространства.',
+  'suspended.owner': 'Администратор Calab приостановил пространство. Читать можно, остальное — после возобновления.',
+  'suspended.reason': 'Причина: {reason}',
+  'suspended.contact': 'Связаться',
+  'suspended.composer': 'Пространство приостановлено — отправлять сообщения нельзя.',
+  'suspended.voice': 'Пространство приостановлено — голос недоступен',
+  'suspended.kicked': 'Пространство приостановлено: звонок завершён',
+  'suspended.badge': 'Приостановлено',
+  'err.suspended': 'Пространство приостановлено',
+  'err.banned': 'Вход в это пространство для вас закрыт',
+  // «Администрирование» → карточка пространства
+  'admin.card.suspension': 'Приостановка',
+  'admin.suspend.toggle': 'Приостановить пространство',
+  'admin.suspend.hint': 'Сообщения, голос, стримы, приглашения и запись станут недоступны. Чтение останется.',
+  'admin.suspend.reason': 'Причина',
+  'admin.suspend.reasonPh': 'Видна владельцу и администраторам',
+  'admin.suspend.reasonRequired': 'Укажите причину приостановки',
+  'admin.suspend.by': 'Приостановил {who}, {when}',
+  'admin.suspend.saveReason': 'Сохранить причину',
+  'admin.suspend.title': 'Приостановить пространство?',
+  'admin.suspend.text': '«{name}»: сообщения, голос, стримы, приглашения и запись станут недоступны, все звонки будут завершены. Чтение останется.',
+  'admin.suspend.action': 'Приостановить',
+  'admin.resume.title': 'Возобновить пространство?',
+  'admin.resume.text': '«{name}» снова будет работать полностью.',
+  'admin.resume.action': 'Возобновить',
+  'admin.suspend.done': 'Пространство приостановлено',
+  'admin.resume.done': 'Пространство возобновлено',
+  // bans
+  'ban.menu': 'Забанить…',
+  'ban.title': 'Забанить {name}?',
+  'ban.text': 'Участник будет исключён и не сможет вернуться — ни по приглашению, ни через открытый доступ, пока его не разбанят.',
+  'ban.reason': 'Причина',
+  'ban.reasonPh': 'Видна администраторам',
+  'ban.action': 'Забанить',
+  'ban.done': '{name}: бан',
+  'bans.tab': 'Забаненные',
+  'bans.card': 'Забаненные — {n}',
+  'bans.none': 'Никто не забанен',
+  'bans.hint': 'Забаненный не вернётся по приглашению, через открытый доступ или ссылку в комнату. Банят в меню участника.',
+  'bans.unban': 'Разбанить',
+  'bans.unbanFor': 'Разбанить: {name}',
+  'bans.unbanText': 'Разбанить {name}? Его снова можно будет пригласить.',
+  'bans.meta': '{when} · {who}',
+  'bans.noReason': 'Без причины',
+} as const;

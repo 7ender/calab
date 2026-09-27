@@ -4,6 +4,11 @@ import {
   AdminSearchWorkspacesResponseSchema,
   AdminSetPlanRequestSchema,
   AdminSetPlanResponseSchema,
+  AdminSetSuspensionRequestSchema,
+  AdminSetSuspensionResponseSchema,
+  CreateBanRequestSchema,
+  CreateBanResponseSchema,
+  ListBansResponseSchema,
   RequestCameraRequestSchema,
   RequestCameraResponseSchema,
   PutUserNoteRequestSchema,
@@ -172,6 +177,12 @@ export const api = {
         body(CreateEmailInviteRequestSchema, role === undefined ? { email } : { email, role }),
       ),
     revokeEmailInvite: (id: string, inviteId: string) => callEmpty('DELETE', `/api/workspaces/${id}/invites/email/${inviteId}`),
+    /** Bans (docs/09 #32; MANAGE_WORKSPACE): newest first. */
+    bans: (id: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${id}/bans`, ListBansResponseSchema, undefined, signal),
+    /** 201: removes the member (if one) and keeps them out (403 BANNED on every way back). */
+    ban: (id: string, userId: string, reason: string) =>
+      call('POST', `/api/workspaces/${id}/bans`, CreateBanResponseSchema, body(CreateBanRequestSchema, { userId, reason })),
+    unban: (id: string, userId: string) => callEmpty('DELETE', `/api/workspaces/${id}/bans/${userId}`),
   },
   categories: {
     create: (workspaceId: string, init: MessageInitShape<typeof CreateCategoryRequestSchema>) =>
@@ -303,6 +314,14 @@ export const adminApi = {
     call('PUT', `/api/admin/workspaces/${id}/plan`, AdminSetPlanResponseSchema, body(AdminSetPlanRequestSchema, init)),
   /** Newest first, ≤ 100. */
   log: (id: string, signal?: AbortSignal) => call('GET', `/api/admin/workspaces/${id}/plan/log`, AdminPlanLogResponseSchema, undefined, signal),
+  /** Suspend (reason required) / resume (docs/09 #32); members get WORKSPACE_UPDATE, calls end. */
+  setSuspension: (id: string, suspended: boolean, reason: string) =>
+    call(
+      'PUT',
+      `/api/admin/workspaces/${id}/suspension`,
+      AdminSetSuspensionResponseSchema,
+      body(AdminSetSuspensionRequestSchema, { suspended, reason }),
+    ),
 };
 
 export interface UploadHandle {

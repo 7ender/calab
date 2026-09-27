@@ -267,6 +267,11 @@ class VoiceEngine {
 
   /** User intent: connect to a voice room (switches rooms; cancels a pending rejoin). */
   async join(roomId: string, workspaceId: string): Promise<void> {
+    // A suspended workspace has no calls (docs/09 #32): say so instead of a 403 toast.
+    if (useWorkspaces.getState().byId[workspaceId]?.ws.suspension) {
+      toast.info(t('suspended.voice'));
+      return;
+    }
     this.rejoinGen++;
     this.rejoinRoomId = null;
     this.failedSeat = null;
@@ -657,7 +662,10 @@ class VoiceEngine {
       .on(RoomEvent.Disconnected, (reason) => {
         if (this.room !== room) return;
         log.info('voice disconnected, reason', reason ?? 'none');
-        if (reason === DisconnectReason.PARTICIPANT_REMOVED) toast.info(t('mediaErr.voice.kicked'));
+        if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
+          const ws = useVoice.getState().workspaceId;
+          toast.info(ws && useWorkspaces.getState().byId[ws]?.ws.suspension ? t('suspended.kicked') : t('mediaErr.voice.kicked'));
+        }
         else if (reason === DisconnectReason.DUPLICATE_IDENTITY) toast.info(t('mediaErr.voice.duplicate'));
         else if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) toast.info(t('mediaErr.voice.closed'));
         else if (reason !== DisconnectReason.CLIENT_INITIATED) {
