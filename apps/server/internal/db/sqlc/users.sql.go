@@ -15,7 +15,7 @@ import (
 const confirmPendingEmail = `-- name: ConfirmPendingEmail :one
 UPDATE users SET email = pending_email, pending_email = NULL, email_verified_at = now()
 WHERE id = $1 AND pending_email IS NOT NULL
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until
 `
 
 // The confirmed pending address becomes the login email (unique: may fail with 23505).
@@ -40,6 +40,8 @@ func (q *Queries) ConfirmPendingEmail(ctx context.Context, id uuid.UUID) (User, 
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
 }
@@ -58,7 +60,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, display_name, settings, locale, email_verified_at)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until
 `
 
 type CreateUserParams struct {
@@ -98,12 +100,55 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
 }
 
+const expireManualPresence = `-- name: ExpireManualPresence :many
+WITH ended AS (
+    SELECT id, presence_status, presence_until FROM users
+    WHERE presence_status IS NOT NULL AND presence_until <= now()
+    LIMIT 500
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE users u SET presence_status = NULL, presence_until = NULL
+FROM ended
+WHERE u.id = ended.id
+RETURNING ended.id, ended.presence_status, ended.presence_until
+`
+
+type ExpireManualPresenceRow struct {
+	ID             uuid.UUID
+	PresenceStatus *int16
+	PresenceUntil  *time.Time
+}
+
+// Claims manual statuses that ran out (the presence sweeper, one instance at a time).
+// Returns the ended values (to drop exactly that Valkey copy, not a newer choice).
+func (q *Queries) ExpireManualPresence(ctx context.Context) ([]ExpireManualPresenceRow, error) {
+	rows, err := q.db.Query(ctx, expireManualPresence)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExpireManualPresenceRow{}
+	for rows.Next() {
+		var i ExpireManualPresenceRow
+		if err := rows.Scan(&i.ID, &i.PresenceStatus, &i.PresenceUntil); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUser = `-- name: GetUser :one
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale FROM users WHERE id = $1
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -127,12 +172,14 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale FROM users WHERE email = $1
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, error) {
@@ -156,8 +203,42 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, erro
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
+}
+
+const listManualPresence = `-- name: ListManualPresence :many
+SELECT id, presence_status, presence_until FROM users
+WHERE presence_status IS NOT NULL AND (presence_until IS NULL OR presence_until > now())
+`
+
+type ListManualPresenceRow struct {
+	ID             uuid.UUID
+	PresenceStatus *int16
+	PresenceUntil  *time.Time
+}
+
+// Live manual statuses, to restore Valkey at startup.
+func (q *Queries) ListManualPresence(ctx context.Context) ([]ListManualPresenceRow, error) {
+	rows, err := q.db.Query(ctx, listManualPresence)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListManualPresenceRow{}
+	for rows.Next() {
+		var i ListManualPresenceRow
+		if err := rows.Scan(&i.ID, &i.PresenceStatus, &i.PresenceUntil); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockPasswordHash = `-- name: LockPasswordHash :one
@@ -186,7 +267,7 @@ func (q *Queries) LockRegistration(ctx context.Context) error {
 
 const setEmail = `-- name: SetEmail :one
 UPDATE users SET email = $2 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until
 `
 
 type SetEmailParams struct {
@@ -215,13 +296,15 @@ func (q *Queries) SetEmail(ctx context.Context, arg SetEmailParams) (User, error
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
 }
 
 const setEmailAndVerified = `-- name: SetEmailAndVerified :one
 UPDATE users SET email = $2, pending_email = NULL, email_verified_at = now() WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until
 `
 
 type SetEmailAndVerifiedParams struct {
@@ -251,13 +334,15 @@ func (q *Queries) SetEmailAndVerified(ctx context.Context, arg SetEmailAndVerifi
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
 }
 
 const setEmailVerified = `-- name: SetEmailVerified :one
 UPDATE users SET email_verified_at = coalesce(email_verified_at, now()) WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until
 `
 
 // Marks the current address verified (no-op if it already is).
@@ -282,8 +367,27 @@ func (q *Queries) SetEmailVerified(ctx context.Context, id uuid.UUID) (User, err
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
+}
+
+const setManualPresence = `-- name: SetManualPresence :exec
+UPDATE users SET presence_status = $1::smallint, presence_until = $2::timestamptz
+WHERE id = $3
+`
+
+type SetManualPresenceParams struct {
+	Status *int16
+	Until  *time.Time
+	ID     uuid.UUID
+}
+
+// NULL status clears the manual status (docs/05 «Presence»).
+func (q *Queries) SetManualPresence(ctx context.Context, arg SetManualPresenceParams) error {
+	_, err := q.db.Exec(ctx, setManualPresence, arg.Status, arg.Until, arg.ID)
+	return err
 }
 
 const setPasswordHash = `-- name: SetPasswordHash :exec
@@ -302,7 +406,7 @@ func (q *Queries) SetPasswordHash(ctx context.Context, arg SetPasswordHashParams
 
 const setPendingEmail = `-- name: SetPendingEmail :one
 UPDATE users SET pending_email = $2 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until
 `
 
 type SetPendingEmailParams struct {
@@ -331,6 +435,8 @@ func (q *Queries) SetPendingEmail(ctx context.Context, arg SetPendingEmailParams
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
 }
@@ -338,7 +444,7 @@ func (q *Queries) SetPendingEmail(ctx context.Context, arg SetPendingEmailParams
 const updateStatus = `-- name: UpdateStatus :one
 UPDATE users SET status_text = $2, status_emoji = $3, status_expires_at = $4
 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until
 `
 
 type UpdateStatusParams struct {
@@ -374,6 +480,8 @@ func (q *Queries) UpdateStatus(ctx context.Context, arg UpdateStatusParams) (Use
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
 }
@@ -387,7 +495,7 @@ UPDATE users SET
     timezone       = CASE WHEN $6::boolean THEN $7::text ELSE timezone END,
     locale         = CASE WHEN $8::boolean THEN $9::text ELSE locale END
 WHERE id = $10
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until
 `
 
 type UpdateUserParams struct {
@@ -435,6 +543,8 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.EmailVerifiedAt,
 		&i.PendingEmail,
 		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
 	)
 	return i, err
 }

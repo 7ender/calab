@@ -124,7 +124,7 @@ func (q *Queries) IsAvatar(ctx context.Context, avatarFileID *uuid.UUID) (bool, 
 }
 
 const listDMCandidates = `-- name: ListDMCandidates :many
-SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale FROM users u
+SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until FROM users u
 WHERE u.id <> $1 AND NOT u.is_guest AND u.disabled_at IS NULL
   AND EXISTS (
     SELECT 1 FROM workspace_members a
@@ -173,6 +173,8 @@ func (q *Queries) ListDMCandidates(ctx context.Context, arg ListDMCandidatesPara
 			&i.EmailVerifiedAt,
 			&i.PendingEmail,
 			&i.Locale,
+			&i.PresenceStatus,
+			&i.PresenceUntil,
 		); err != nil {
 			return nil, err
 		}
@@ -186,7 +188,7 @@ func (q *Queries) ListDMCandidates(ctx context.Context, arg ListDMCandidatesPara
 
 const listDMs = `-- name: ListDMs :many
 SELECT r.id AS room_id, r.created_at AS room_created_at,
-       u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale,
+       u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until,
        rs.last_read_message_id,
        (lm.id IS NOT NULL)::boolean AS has_messages,
        coalesce(lm.id, r.id)::uuid AS last_message_id,
@@ -274,6 +276,8 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 			&i.User.EmailVerifiedAt,
 			&i.User.PendingEmail,
 			&i.User.Locale,
+			&i.User.PresenceStatus,
+			&i.User.PresenceUntil,
 			&i.LastReadMessageID,
 			&i.HasMessages,
 			&i.LastMessageID,

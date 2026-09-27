@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -59,6 +60,40 @@ func TestAggregateStatus(t *testing.T) {
 		if got := AggregateStatus(c.in); got != c.want {
 			t.Errorf("%v: got %v want %v", c.in, got, c.want)
 		}
+	}
+}
+
+func TestManualAggregate(t *testing.T) {
+	on, idle, dnd, inv := v1.PresenceStatus_PRESENCE_STATUS_ONLINE, v1.PresenceStatus_PRESENCE_STATUS_IDLE,
+		v1.PresenceStatus_PRESENCE_STATUS_DND, v1.PresenceStatus_PRESENCE_STATUS_INVISIBLE
+	off := v1.PresenceStatus_PRESENCE_STATUS_OFFLINE
+	now := time.UnixMilli(1_000_000)
+	later := now.Add(time.Hour)
+	for _, c := range []struct {
+		sessions []v1.PresenceStatus
+		m        manualStatus
+		want     v1.PresenceStatus
+		until    bool
+	}{
+		{nil, manualStatus{dnd, later}, off, false},                      // no live session
+		{[]v1.PresenceStatus{on}, manualStatus{idle, later}, idle, true}, // manual idle beats online
+		{[]v1.PresenceStatus{idle}, manualStatus{dnd, time.Time{}}, dnd, false},
+		{[]v1.PresenceStatus{on}, manualStatus{inv, later}, off, false},  // invisible: no until
+		{[]v1.PresenceStatus{idle}, manualStatus{dnd, now}, idle, false}, // ended: sessions decide
+		{[]v1.PresenceStatus{on}, manualStatus{}, on, false},
+	} {
+		st, until := Aggregate(c.sessions, c.m, now)
+		if st != c.want || until.IsZero() == c.until {
+			t.Errorf("%v %+v: got %v %v", c.sessions, c.m, st, until)
+		}
+	}
+	for _, m := range []manualStatus{{dnd, later}, {inv, time.Time{}}} {
+		if got := decodeManual(m.encode()); got.status != m.status || !got.until.Equal(m.until) {
+			t.Errorf("round trip %+v: %+v", m, got)
+		}
+	}
+	if decodeManual("1:0").status != v1.PresenceStatus_PRESENCE_STATUS_UNSPECIFIED || decodeManual("x").status != 0 {
+		t.Error("online / garbage must decode as none")
 	}
 }
 

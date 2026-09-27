@@ -1,4 +1,5 @@
-import { PresenceStatus } from '@calaba/protocol';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
+import { PresenceStatus, type Presence } from '@calaba/protocol';
 import type { MessageKey } from '../i18n';
 import { prefs, usePrefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
@@ -7,8 +8,10 @@ import { setPresence } from './gateway';
 /**
  * Status durations of the status menu (docs/09 #29, Discord): «Не активен / Не беспокоить /
  * Невидимый» › 15 минут · 1 час · 8 часов · 24 часа · 3 дня · Навсегда. When the time is up the
- * status goes back to «В сети». Client-side for now (prefs.presenceUntil, per device): the server
- * has no `until` yet — the timer runs while the app does and is re-checked at startup.
+ * status goes back to «В сети». The server keeps the status and its end for all devices
+ * (SetPresence.until, docs/05 «Presence») and ends it itself; prefs.presence / presenceUntil are
+ * its copy from READY / USER_UPDATE. The local timer only resets the display at the end (the
+ * server's USER_UPDATE follows within ~15 s, or the next READY brings the truth).
  */
 export interface PresenceDuration {
   key: MessageKey;
@@ -70,10 +73,41 @@ export function nextCheckMs(until: number | null, now: number): number | null {
   return Math.max(0, Math.min(until - now, MIN));
 }
 
-/** Status menu: set my status (for `ms`, or forever) and tell the gateway. */
+/** The server's manual status (Ready.presence / USER_UPDATE.presence) as prefs; none = «В сети». */
+export function fromServer(p: Presence | undefined): { presence: PresenceStatus; presenceUntil: number | null } {
+  const manual = p !== undefined && [PresenceStatus.IDLE, PresenceStatus.DND, PresenceStatus.INVISIBLE].includes(p.status);
+  if (!manual) return { presence: PresenceStatus.ONLINE, presenceUntil: null };
+  return { presence: p.status, presenceUntil: p.until ? timestampMs(p.until) : null };
+}
+
+/** Sends a manual choice: `until` 0 = no end; «В сети» clears the server's status. */
+function send(p: { presence: PresenceStatus; presenceUntil: number | null }): void {
+  setPresence(p.presence, p.presence === PresenceStatus.ONLINE ? 0 : (p.presenceUntil ?? 0));
+}
+
+/** Status menu: set my status (for `ms`, or forever) for all my devices. Offline: sent after READY. */
 export function choosePresence(status: PresenceStatus, ms: number | null = null): void {
-  usePrefs.getState().setPrefs(presencePatch(status, ms, Date.now()));
-  if (useSession.getState().gateway === 'ready') setPresence(status);
+  const patch = presencePatch(status, ms, Date.now());
+  const ready = useSession.getState().gateway === 'ready';
+  usePrefs.getState().setPrefs({ ...patch, presenceSynced: ready });
+  if (ready) send(patch);
+}
+
+/**
+ * READY (`ready`) / USER_UPDATE: take the server's status — unless a choice made here while
+ * offline is waiting (presenceSynced = false), which READY sends instead.
+ */
+export function applyServerPresence(p: Presence | undefined, ready: boolean): void {
+  const local = prefs();
+  if (ready && !local.presenceSynced) {
+    usePrefs.getState().setPrefs({ presenceSynced: true });
+    send(local);
+    return;
+  }
+  const next = fromServer(p);
+  if (next.presence !== local.presence || next.presenceUntil !== local.presenceUntil || !local.presenceSynced) {
+    usePrefs.getState().setPrefs({ ...next, presenceSynced: true });
+  }
 }
 
 let timer: number | null = null;
@@ -84,7 +118,8 @@ function check(): void {
   const p = prefs();
   const now = Date.now();
   if (presenceExpired(p, now)) {
-    choosePresence(PresenceStatus.ONLINE);
+    // Display only: the server ends the status itself (and tells every device).
+    usePrefs.getState().setPrefs({ presence: PresenceStatus.ONLINE, presenceUntil: null });
     return; // the prefs subscription re-schedules (nothing to wait for now)
   }
   const wait = p.presence === PresenceStatus.ONLINE ? null : nextCheckMs(p.presenceUntil, now);

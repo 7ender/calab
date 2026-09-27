@@ -64,3 +64,27 @@ RETURNING *;
 -- Servers without SMTP: an email change takes effect at once (nothing to verify with).
 UPDATE users SET email = $2, pending_email = NULL, email_verified_at = now() WHERE id = $1
 RETURNING *;
+
+-- name: SetManualPresence :exec
+-- NULL status clears the manual status (docs/05 «Presence»).
+UPDATE users SET presence_status = sqlc.narg('status')::smallint, presence_until = sqlc.narg('until')::timestamptz
+WHERE id = sqlc.arg('id');
+
+-- name: ExpireManualPresence :many
+-- Claims manual statuses that ran out (the presence sweeper, one instance at a time).
+-- Returns the ended values (to drop exactly that Valkey copy, not a newer choice).
+WITH ended AS (
+    SELECT id, presence_status, presence_until FROM users
+    WHERE presence_status IS NOT NULL AND presence_until <= now()
+    LIMIT 500
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE users u SET presence_status = NULL, presence_until = NULL
+FROM ended
+WHERE u.id = ended.id
+RETURNING ended.id, ended.presence_status, ended.presence_until;
+
+-- name: ListManualPresence :many
+-- Live manual statuses, to restore Valkey at startup.
+SELECT id, presence_status, presence_until FROM users
+WHERE presence_status IS NOT NULL AND (presence_until IS NULL OR presence_until > now());

@@ -142,7 +142,7 @@ func (q *Queries) GetMember(ctx context.Context, arg GetMemberParams) (Workspace
 }
 
 const getMemberWithUser = `-- name: GetMemberWithUser :one
-SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale
+SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until
 FROM workspace_members m JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1 AND m.user_id = $2
 `
@@ -183,6 +183,8 @@ func (q *Queries) GetMemberWithUser(ctx context.Context, arg GetMemberWithUserPa
 		&i.User.EmailVerifiedAt,
 		&i.User.PendingEmail,
 		&i.User.Locale,
+		&i.User.PresenceStatus,
+		&i.User.PresenceUntil,
 	)
 	return i, err
 }
@@ -280,7 +282,7 @@ func (q *Queries) ListMemberRoles(ctx context.Context, workspaceID uuid.UUID) ([
 }
 
 const listMembers = `-- name: ListMembers :many
-SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale
+SELECT m.workspace_id, m.user_id, m.role, m.nickname, m.joined_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until
 FROM workspace_members m JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1
 ORDER BY m.joined_at
@@ -323,6 +325,8 @@ func (q *Queries) ListMembers(ctx context.Context, workspaceID uuid.UUID) ([]Lis
 			&i.User.EmailVerifiedAt,
 			&i.User.PendingEmail,
 			&i.User.Locale,
+			&i.User.PresenceStatus,
+			&i.User.PresenceUntil,
 		); err != nil {
 			return nil, err
 		}
