@@ -152,6 +152,13 @@ export interface AppSettings {
    * back online. Off → only «Проверить» in «О программе».
    */
   autoCheckUpdates: boolean;
+  /**
+   * Windows/Linux «При закрытии окна»: true (default) — hide to the tray, the call goes on;
+   * false — quit (asks during a call). macOS ignores it: the close button always hides (docs/09 #31).
+   */
+  closeToTray: boolean;
+  /** Main-owned: the one-time «Calab продолжает работать в трее» was shown. Not settable by the renderer. */
+  trayHintShown: boolean;
 }
 
 /** Licence texts for «О программе» (BUSL-1.1 LICENSE, NOTICE, commercial terms, third-party notices). */
@@ -196,6 +203,14 @@ export interface MainStrings {
   /** Tray item when an update is downloaded; `{version}` placeholder. */
   trayRestartUpdate: string;
   streamWindow: string;
+  /** Native quit confirmation during a call (docs/09 #31). */
+  quitInCall: string;
+  quitInCallDetail: string;
+  quitConfirm: string;
+  quitCancel: string;
+  /** One-time tray balloon / notification after the first close-to-tray (Windows/Linux). */
+  trayHintTitle: string;
+  trayHintBody: string;
 }
 
 export const MAIN_STRING_KEYS = [
@@ -209,6 +224,12 @@ export const MAIN_STRING_KEYS = [
   'updateAvailable',
   'trayRestartUpdate',
   'streamWindow',
+  'quitInCall',
+  'quitInCallDetail',
+  'quitConfirm',
+  'quitCancel',
+  'trayHintTitle',
+  'trayHintBody',
 ] as const satisfies ReadonlyArray<keyof MainStrings>;
 
 export type PowerEvent = 'suspend' | 'resume' | 'lock-screen' | 'unlock-screen';

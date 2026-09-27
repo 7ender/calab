@@ -1770,3 +1770,9 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - Сервер: `TEST_PG_URL=… TEST_REDIS_URL=redis://localhost:56379/4 go test -tags integration -run TestManualPresenceUntil ./internal/app/` (~16 с: ждёт sweeper) — DND/невидимый с `until` виден другим (`until`, невидимый = offline без `until`/`last_seen`), приходит в `READY.presence` и `USER_UPDATE` второму устройству; через 2 с sweeper возвращает online и чистит `users.presence_*`.
 - Клиент: `pnpm -F @calaba/desktop exec vitest run src/renderer/services/presenceTimer.test.ts` — синхронизация из READY/USER_UPDATE, офлайн-выбор уходит после READY.
 - Руками: два устройства одного пользователя → на первом «Не беспокоить › 15 минут» → на втором статус и «до ЧЧ:ММ» появляются сразу; закрыть оба клиента до конца срока → после входа статус «В сети».
+
+## Закрытие окна и выход (docs/09 п. 31, ветка `fix/close-hide`)
+- Авто: `pnpm -F @calaba/desktop exec vitest run src/main/lifecycle.test.ts src/main/updateFlow.test.ts`.
+- Руками (macOS): войти в голос → закрыть окно крестиком → звонок и PTT продолжаются, иконка в Dock; клик по Dock → окно вернулось. ⌘Q в звонке → диалог «Вы в голосовой комнате. Выйти из Calab?»: «Отмена» — остаёмся, «Выйти» — выход; вне звонка ⌘Q выходит сразу.
+- Руками (Windows/Linux): крестик → окно в трее + один раз баллон «Calab продолжает работать в трее»; клик по значку возвращает; «Выход» в меню трея в звонке — тот же диалог; «При закрытии окна: Выходить» → крестик ведёт себя как «Выход».
+- Web: в звонке закрыть вкладку → браузер спрашивает «Покинуть сайт?»; вне звонка — без вопроса.

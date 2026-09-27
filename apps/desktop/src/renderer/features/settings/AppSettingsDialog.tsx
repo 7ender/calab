@@ -855,6 +855,20 @@ function DesktopAppCards({
             onChange={(v) => void save({ autostart: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
           />
         </Row>
+        {/* macOS always hides on close, like every Mac app — no choice there (docs/09 #31). */}
+        {info && info.platform !== 'darwin' ? (
+          <Row label={t('app.onClose')} hint={t('app.onCloseHint')}>
+            <Segmented<'tray' | 'quit'>
+              label={t('app.onClose')}
+              value={(settings?.closeToTray ?? true) ? 'tray' : 'quit'}
+              options={[
+                { value: 'tray', label: t('app.onCloseTray') },
+                { value: 'quit', label: t('app.onCloseQuit') },
+              ]}
+              onChange={(v) => void save({ closeToTray: v === 'tray' }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
+            />
+          </Row>
+        ) : null}
       </Card>
       {/* Main decides what «auto» means per platform (updateFlow.ts); the renderer only toggles. */}
       <Card title={t('about.updates')}>

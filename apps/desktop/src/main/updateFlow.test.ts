@@ -228,6 +228,21 @@ describe('update flow', () => {
     });
   });
 
+  it('install() marks the quit as real before quitAndInstall (docs/09 #31)', async () => {
+    const order: string[] = [];
+    const t = setup({ beforeInstall: () => order.push('force') });
+    const orig = t.updater.quitAndInstall.bind(t.updater);
+    t.updater.quitAndInstall = (a, b) => {
+      order.push('install');
+      orig(a, b);
+    };
+    t.updater.next = { version: '0.1.1' };
+    await t.flow.check();
+    t.updater.finishDownload('0.1.1');
+    expect(t.flow.install()).toBe(true);
+    expect(order).toEqual(['force', 'install']);
+  });
+
   it('install() without a downloaded update does nothing', async () => {
     const t = setup();
     await t.flow.check();

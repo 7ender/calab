@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, powerMonitor, session } from 'electron';
 import { IPC, type PowerEvent } from '../shared/ipc';
 import { handleApiScheme, registerApiScheme } from './apiProtocol';
+import { forceQuit, handleMainWindowClose, installLifecycle } from './appLifecycle';
 import { installDisplayMediaHandler, MAC_SYSTEM_AUDIO_FEATURES, macSystemAudioEnabled } from './capture';
 import { echoFeatures } from './echoFeatures';
 import { findDeepLink, handleDeepLink, registerProtocolClient } from './deeplink';
@@ -13,7 +14,15 @@ import { applyDevDockIcon } from './icons';
 import { resetPttGate, shutdownPtt } from './ptt';
 import { createTray } from './tray';
 import { startUpdates } from './updater';
-import { createMainWindow, getMainWindow, installWebContentsGuards, isOwnOrigin, isOwnPage, showMainWindow } from './windows';
+import {
+  createMainWindow,
+  getMainWindow,
+  installWebContentsGuards,
+  isOwnOrigin,
+  isOwnPage,
+  setMainWindowHooks,
+  showMainWindow,
+} from './windows';
 
 // The product is «Calab» (docs/10), but installed builds keep their data under the old name:
 // userData (session, settings, logs) and the macOS Keychain item «Calaba Safe Storage» that
@@ -63,6 +72,9 @@ if (process.env['CALABA_FAKE_MEDIA'] === '1') {
 }
 
 registerApiScheme();
+// Close button hides (the call goes on), ⌘Q / tray «Выход» during a call asks (docs/09 #31).
+installLifecycle();
+setMainWindowHooks({ close: handleMainWindowClose, sessionEnd: forceQuit });
 // Every webContents (main window, stream pop-outs, anything created later) gets the same
 // navigation / window.open / <webview> guards (review L12).
 installWebContentsGuards();
@@ -113,16 +125,13 @@ void app.whenReady().then(() => {
   });
   powerMonitor.on('unlock-screen', () => forwardPower('unlock-screen'));
 
+  // Dock icon click: bring the hidden window back (or a new one if it is gone).
   app.on('activate', () => {
     if (!getMainWindow()) createMainWindow();
     else showMainWindow();
   });
 
   startUpdates();
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('will-quit', () => {

@@ -330,6 +330,17 @@ window.addEventListener('blur', () => {
   if (binding && !isLockCode(binding.code as string) && (binding.mode ?? 'hold') === 'hold') gate?.reset();
 });
 
+/**
+ * Closing / reloading the tab during a call asks first (the browser's own «Leave site?»; docs/09
+ * #31 — the desktop equivalent is the quit confirmation). Outside a call: no prompt.
+ */
+let webInVoice = false;
+window.addEventListener('beforeunload', (e) => {
+  if (!webInVoice) return;
+  // preventDefault() alone triggers the prompt in Chromium 119+, Firefox and Safari.
+  e.preventDefault();
+});
+
 function pttStatus(): PttStatus {
   return { active: binding !== null, binding, trusted: true, error: null, capsRemap: 'unsupported', wayland: false, hid: 'unsupported' };
 }
@@ -370,7 +381,7 @@ function info(): AppInfo {
   };
 }
 
-const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', autostart: false, autoUpdate: false, autoCheckUpdates: false });
+const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', autostart: false, autoUpdate: false, autoCheckUpdates: false, closeToTray: false, trayHintShown: false });
 
 /**
  * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>
@@ -485,7 +496,13 @@ export function createWebPlatform(): Platform {
       setTheme: () => undefined,
       setStrings: () => undefined,
     },
-    tray: { setState: () => undefined, onAction: noop },
+    tray: {
+      // No tray on the web: the voice state only arms the «leave the page?» prompt.
+      setState: (s) => {
+        webInVoice = s.inVoice;
+      },
+      onAction: noop,
+    },
     files: { download, onProgress: noop, pathOf: (f) => f.name },
     capture: {
       // The browser shows its own picker on getDisplayMedia().

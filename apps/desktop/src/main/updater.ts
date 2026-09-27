@@ -4,6 +4,7 @@ import electronUpdater from 'electron-updater';
 import { IPC, type UpdateStatus } from '../shared/ipc';
 import { downloadPage, feedUrl, httpsFeed } from '../shared/updateFeed';
 import { currentServerUrl } from './auth';
+import { forceQuit } from './appLifecycle';
 import { getSettings } from './settings';
 import { mainStrings } from './strings';
 import { setTrayUpdate } from './tray';
@@ -75,6 +76,7 @@ function getFlow(): UpdateFlow {
     publish: broadcast,
     notify: notifyAvailable,
     log,
+    beforeInstall: forceQuit,
   });
   return flow;
 }

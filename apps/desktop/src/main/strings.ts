@@ -16,6 +16,12 @@ let strings: MainStrings = {
   updateAvailable: 'Доступна версия {version} — Скачать',
   trayRestartUpdate: 'Перезапустить для обновления {version}',
   streamWindow: 'Calab — стрим',
+  quitInCall: 'Вы в голосовой комнате. Выйти из Calab?',
+  quitInCallDetail: 'Звонок прервётся.',
+  quitConfirm: 'Выйти',
+  quitCancel: 'Отмена',
+  trayHintTitle: 'Calab продолжает работать в трее',
+  trayHintBody: 'Звонок не прерывается. Выйти — через меню значка в трее.',
 };
 
 const listeners = new Set<() => void>();

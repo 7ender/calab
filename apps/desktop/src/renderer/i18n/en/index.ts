@@ -389,6 +389,10 @@ export const en: Dict = {
   'sessions.logoutAllText': 'Other devices will need to sign in again. This device stays signed in.',
   'app.autostart': 'Launch at login',
   'app.autostartDev': 'Works only in the packaged app',
+  'app.onClose': 'When closing the window',
+  'app.onCloseHint': 'Minimized Calab stays in voice and keeps listening for push-to-talk',
+  'app.onCloseTray': 'Minimize to tray',
+  'app.onCloseQuit': 'Quit',
   'app.devStats': 'Audio and video stats',
   'app.devStatsHint': 'Bitrates, codecs and load — in the voice panel',
 
@@ -563,4 +567,10 @@ export const en: Dict = {
   'main.updateAvailable': 'Version {version} is available — Download',
   'main.trayRestartUpdate': 'Restart to update to {version}',
   'main.streamWindow': 'Calab — screen share',
+  'main.quitInCall': 'You are in a voice room. Quit Calab?',
+  'main.quitInCallDetail': 'The call will end.',
+  'main.quitConfirm': 'Quit',
+  'main.quitCancel': 'Cancel',
+  'main.trayHintTitle': 'Calab is still running in the tray',
+  'main.trayHintBody': 'Your call continues. To quit, use the tray icon menu.',
 };

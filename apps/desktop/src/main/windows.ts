@@ -13,6 +13,17 @@ const BG = '#1e1f22';
 
 let mainWindow: BrowserWindow | null = null;
 
+/** Close / session-end hooks of the main window (appLifecycle.ts; a setter avoids an import cycle). */
+export interface MainWindowHooks {
+  close: (e: Electron.Event, win: BrowserWindow) => void;
+  /** Windows logoff / shutdown: quit for real, without questions. */
+  sessionEnd: () => void;
+}
+let hooks: MainWindowHooks | null = null;
+export function setMainWindowHooks(h: MainWindowHooks): void {
+  hooks = h;
+}
+
 interface WindowState {
   bounds: Rectangle;
   maximized: boolean;
@@ -130,7 +141,13 @@ export function createMainWindow(): BrowserWindow {
   };
   win.on('resize', scheduleSave);
   win.on('move', scheduleSave);
-  win.on('close', () => saveState(win));
+  win.on('close', (e) => {
+    saveState(win);
+    // Hides instead of closing unless the app is really quitting (docs/09 #31).
+    hooks?.close(e, win);
+  });
+  win.on('query-session-end', () => hooks?.sessionEnd());
+  win.on('session-end', () => hooks?.sessionEnd());
 
   win.webContents.setWindowOpenHandler(({ url, frameName }) => {
     if (url === 'about:blank' && frameName.startsWith(POPUP_PREFIX)) {

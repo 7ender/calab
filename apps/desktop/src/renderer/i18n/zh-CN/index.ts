@@ -389,6 +389,10 @@ export const zhCN: Dict = {
   'sessions.logoutAllText': '其他设备需要重新登录，此设备将保持登录状态。',
   'app.autostart': '开机自动启动',
   'app.autostartDev': '仅在打包后的应用中生效',
+  'app.onClose': '关闭窗口时',
+  'app.onCloseHint': '最小化后 Calab 仍保持语音连接并响应按键通话',
+  'app.onCloseTray': '最小化到托盘',
+  'app.onCloseQuit': '退出',
   'app.devStats': '音视频统计',
   'app.devStatsHint': '码率、编解码器与负载——见语音面板',
 
@@ -563,4 +567,10 @@ export const zhCN: Dict = {
   'main.updateAvailable': '版本 {version} 现已可用——下载',
   'main.trayRestartUpdate': '重启以更新到 {version}',
   'main.streamWindow': 'Calab——屏幕共享',
+  'main.quitInCall': '你正在语音房间中。要退出 Calab 吗？',
+  'main.quitInCallDetail': '通话将会结束。',
+  'main.quitConfirm': '退出',
+  'main.quitCancel': '取消',
+  'main.trayHintTitle': 'Calab 仍在托盘中运行',
+  'main.trayHintBody': '通话不会中断。如需退出，请使用托盘图标菜单。',
 };

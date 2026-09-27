@@ -66,6 +66,12 @@ export interface UpdateFlowEnv {
   /** Notify-only: «Доступна версия X — Скачать» opening `page`. Called once per version. */
   notify: (version: string, page: string) => void;
   log: { info: (...a: unknown[]) => void; warn: (...a: unknown[]) => void };
+  /**
+   * Called right before quitAndInstall: marks the quit as real (windows close instead of hiding
+   * to the tray, no «Вы в голосовой комнате» question — docs/09 #31). On macOS Electron closes
+   * the windows before `before-quit`, so the flag must be set here.
+   */
+  beforeInstall?: () => void;
 }
 
 export const FIRST_CHECK_MS = 10_000;
@@ -318,6 +324,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     install() {
       if (status.state !== 'downloaded') return false;
       env.log.info('[update] quit and install', status.version);
+      env.beforeInstall?.();
       // Not silent (Windows shows the installer progress), relaunch after install.
       updater.quitAndInstall(false, true);
       return true;
