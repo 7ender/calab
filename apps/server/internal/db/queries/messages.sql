@@ -119,10 +119,19 @@ ON CONFLICT DO NOTHING;
 -- name: RemoveReaction :execrows
 DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3;
 
+-- name: LockMessageReactions :exec
+-- Serializes reaction writes on one message (inside a transaction) so the per-message and
+-- per-user caps cannot be exceeded by concurrent requests. NO KEY UPDATE does not block
+-- foreign-key checks of other transactions.
+SELECT id FROM messages WHERE id = $1 FOR NO KEY UPDATE;
+
 -- name: ReactionEmojiStats :one
--- Distinct emojis on a message and whether this emoji is among them (for the per-message cap).
+-- Distinct emojis on a message and whether this emoji is among them (per-message cap), plus
+-- the same for the given user (per-user cap, MaxReactionsPerUser).
 SELECT count(DISTINCT emoji)::integer AS distinct_emojis,
-       coalesce(bool_or(emoji = sqlc.arg('emoji')), false)::boolean AS has_emoji
+       coalesce(bool_or(emoji = sqlc.arg('emoji')), false)::boolean AS has_emoji,
+       count(*) FILTER (WHERE user_id = sqlc.arg('user_id'))::integer AS user_emojis,
+       coalesce(bool_or(emoji = sqlc.arg('emoji') AND user_id = sqlc.arg('user_id')), false)::boolean AS user_has_emoji
 FROM message_reactions WHERE message_id = sqlc.arg('message_id');
 
 -- name: ListReactions :many

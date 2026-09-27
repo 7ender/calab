@@ -40,6 +40,7 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.actions': '操作',
   'chat.reactWith': '回应{emoji}',
   'chat.addReaction': '添加表情回应',
+  'chat.reactionLimit': '每条消息最多 3 个表情回应',
   'chat.more': '更多…',
   // link previews (docs/09 #51)
   'chat.embedHide': '隐藏预览',

@@ -38,6 +38,7 @@ export const ruChat = {
   'chat.actions': 'Действия',
   'chat.reactWith': 'Реакция {emoji}',
   'chat.addReaction': 'Добавить реакцию',
+  'chat.reactionLimit': 'Не больше 3 реакций на сообщение',
   'chat.more': 'Ещё…',
   // link previews (docs/09 #51)
   'chat.embedHide': 'Скрыть превью',

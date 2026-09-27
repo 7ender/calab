@@ -345,6 +345,8 @@ function mailLocale(tag: string): string | null {
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
 const invalid = (field: string, what: string): HttpError => new HttpError(422, ErrorCode.VALIDATION, what, field);
+/** The server's messages.MaxReactionsPerUser. */
+const MAX_REACTIONS_PER_USER = 3;
 const conflict = (what: string, field = ''): HttpError => new HttpError(409, ErrorCode.CONFLICT, what, field);
 
 // Mentions as the server parses them (apps/server/internal/messages/mentions.go).
@@ -2077,6 +2079,17 @@ class MockImpl {
       if (!msg || !emoji || emoji.length > 32) throw invalid('emoji', 'bad emoji');
       const byEmoji = s().reactions.get(msg.id) ?? new Map<string, Set<string>>();
       const users = byEmoji.get(emoji) ?? new Set<string>();
+      // At most MAX_REACTIONS_PER_USER different emojis per user per message (docs/09 #27);
+      // a repeat is idempotent, removal is never limited.
+      if (add && !users.has(me)) {
+        const mine = [...byEmoji.values()].filter((u) => u.has(me)).length;
+        if (mine >= MAX_REACTIONS_PER_USER)
+          throw new HttpError(409, ErrorCode.CONFLICT, 'at most 3 different reactions per message', '', {
+            reason: 'REACTION_LIMIT',
+            used: BigInt(mine),
+            limit: BigInt(MAX_REACTIONS_PER_USER),
+          });
+      }
       const changed = add ? !users.has(me) : users.has(me);
       if (add) users.add(me);
       else users.delete(me);

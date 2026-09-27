@@ -5,6 +5,7 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { errorText } from '../lib/api/errors';
 import { api, uploadFile, uploadPath, type UploadHandle } from '../lib/api/endpoints';
+import { canToggleReaction } from '../features/chat/reactionLimit';
 import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
@@ -155,15 +156,27 @@ export async function loadPresent(roomId: string): Promise<void> {
 
 // ---- reactions / pins
 
+/**
+ * Adds or removes the viewer's `emoji`. At most MAX_REACTIONS_PER_USER different emojis per
+ * message (docs/09 #27): a new one past the limit is not sent, only the hint is shown; the
+ * server's 409 REACTION_LIMIT (a stale view, another device) shows the same hint.
+ */
 export async function toggleReaction(roomId: string, m: Message, emoji: string): Promise<void> {
-  const mine = m.reactions.find((r) => r.emoji === emoji)?.me ?? false;
+  // The store's copy: the caller's may be a render old.
+  const cur = useMessages.getState().rooms[roomId]?.items.find((c) => c.key === m.id)?.msg ?? m;
+  const mine = cur.reactions.find((r) => r.emoji === emoji)?.me ?? false;
   const add = !mine;
+  if (add && !canToggleReaction(cur.reactions, emoji)) {
+    toast.info(t('chat.reactionLimit'));
+    return;
+  }
   useMessages.getState().applyReaction(roomId, m.id, emoji, add, true);
   try {
     await (add ? api.messages.addReaction(m.id, emoji) : api.messages.removeReaction(m.id, emoji));
   } catch (e) {
     useMessages.getState().applyReaction(roomId, m.id, emoji, !add, true);
-    toast.fail(e, t('err.ctx.react'));
+    if (e instanceof ApiError && e.reason === 'REACTION_LIMIT') toast.info(t('chat.reactionLimit'));
+    else toast.fail(e, t('err.ctx.react'));
   }
 }
 

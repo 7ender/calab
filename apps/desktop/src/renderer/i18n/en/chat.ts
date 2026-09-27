@@ -40,6 +40,7 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.actions': 'Actions',
   'chat.reactWith': 'React with {emoji}',
   'chat.addReaction': 'Add reaction',
+  'chat.reactionLimit': 'No more than 3 reactions per message',
   'chat.more': 'More…',
   // link previews (docs/09 #51)
   'chat.embedHide': 'Hide preview',

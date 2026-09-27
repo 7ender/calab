@@ -37,7 +37,9 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
 
   /**
    * Why, when a code has several causes: "PLAN_LIMIT" = a limit of the workspace plan
-   * (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED). Absent otherwise.
+   * (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED); "REACTION_LIMIT" = CONFLICT on adding a
+   * reaction when the caller already has `limit` different emojis on the message. Absent
+   * otherwise.
    *
    * @generated from field: optional string reason = 4;
    */
@@ -45,7 +47,8 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
 
   /**
    * The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
-   * the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes.
+   * the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;
+   * REACTION_LIMIT — the caller's different emojis on the message and the per-user cap (3).
    * Absent when not meaningful.
    *
    * @generated from field: optional uint64 used = 5;

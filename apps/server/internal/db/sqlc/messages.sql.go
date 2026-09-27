@@ -502,6 +502,18 @@ func (q *Queries) ListReadStates(ctx context.Context, arg ListReadStatesParams) 
 	return items, nil
 }
 
+const lockMessageReactions = `-- name: LockMessageReactions :exec
+SELECT id FROM messages WHERE id = $1 FOR NO KEY UPDATE
+`
+
+// Serializes reaction writes on one message (inside a transaction) so the per-message and
+// per-user caps cannot be exceeded by concurrent requests. NO KEY UPDATE does not block
+// foreign-key checks of other transactions.
+func (q *Queries) LockMessageReactions(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockMessageReactions, id)
+	return err
+}
+
 const pinMessage = `-- name: PinMessage :one
 UPDATE messages SET pinned_at = now(), pinned_by = $1
 WHERE id = $2 AND deleted_at IS NULL AND pinned_at IS NULL
@@ -535,25 +547,36 @@ func (q *Queries) PinMessage(ctx context.Context, arg PinMessageParams) (Message
 
 const reactionEmojiStats = `-- name: ReactionEmojiStats :one
 SELECT count(DISTINCT emoji)::integer AS distinct_emojis,
-       coalesce(bool_or(emoji = $1), false)::boolean AS has_emoji
-FROM message_reactions WHERE message_id = $2
+       coalesce(bool_or(emoji = $1), false)::boolean AS has_emoji,
+       count(*) FILTER (WHERE user_id = $2)::integer AS user_emojis,
+       coalesce(bool_or(emoji = $1 AND user_id = $2), false)::boolean AS user_has_emoji
+FROM message_reactions WHERE message_id = $3
 `
 
 type ReactionEmojiStatsParams struct {
 	Emoji     string
+	UserID    uuid.UUID
 	MessageID uuid.UUID
 }
 
 type ReactionEmojiStatsRow struct {
 	DistinctEmojis int32
 	HasEmoji       bool
+	UserEmojis     int32
+	UserHasEmoji   bool
 }
 
-// Distinct emojis on a message and whether this emoji is among them (for the per-message cap).
+// Distinct emojis on a message and whether this emoji is among them (per-message cap), plus
+// the same for the given user (per-user cap, MaxReactionsPerUser).
 func (q *Queries) ReactionEmojiStats(ctx context.Context, arg ReactionEmojiStatsParams) (ReactionEmojiStatsRow, error) {
-	row := q.db.QueryRow(ctx, reactionEmojiStats, arg.Emoji, arg.MessageID)
+	row := q.db.QueryRow(ctx, reactionEmojiStats, arg.Emoji, arg.UserID, arg.MessageID)
 	var i ReactionEmojiStatsRow
-	err := row.Scan(&i.DistinctEmojis, &i.HasEmoji)
+	err := row.Scan(
+		&i.DistinctEmojis,
+		&i.HasEmoji,
+		&i.UserEmojis,
+		&i.UserHasEmoji,
+	)
 	return i, err
 }
 

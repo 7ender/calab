@@ -142,10 +142,13 @@ type ApiError struct {
 	// Offending field for ERROR_CODE_VALIDATION (lowerCamelCase JSON name), if any.
 	Field string `protobuf:"bytes,3,opt,name=field,proto3" json:"field,omitempty"`
 	// Why, when a code has several causes: "PLAN_LIMIT" = a limit of the workspace plan
-	// (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED). Absent otherwise.
+	// (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED); "REACTION_LIMIT" = CONFLICT on adding a
+	// reaction when the caller already has `limit` different emojis on the message. Absent
+	// otherwise.
 	Reason *string `protobuf:"bytes,4,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
 	// The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
-	// the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes.
+	// the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;
+	// REACTION_LIMIT — the caller's different emojis on the message and the per-user cap (3).
 	// Absent when not meaningful.
 	Used          *uint64 `protobuf:"varint,5,opt,name=used,proto3,oneof" json:"used,omitempty"`
 	Limit         *uint64 `protobuf:"varint,6,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
