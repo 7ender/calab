@@ -127,10 +127,11 @@ export function recordingCardOf(m: Pick<Message, 'kind' | 'system'>): RecordingC
 export type CardTone = 'busy' | 'ok' | 'error';
 
 /** The card's status line: what it says and how it looks. */
-export function cardStatus(card: Pick<RecordingCard, 'status' | 'error'>): { key: MessageKey; tone: CardTone } {
+export function cardStatus(card: Pick<RecordingCard, 'status' | 'error' | 'resultPending'>): { key: MessageKey; tone: CardTone } {
   switch (card.status) {
     case RecordingStatus.DONE:
-      return { key: 'rec.card.done', tone: 'ok' };
+      // Done in GPTunneL; the summary / transcript / audio are still being brought here.
+      return card.resultPending ? { key: 'rec.card.fetching', tone: 'busy' } : { key: 'rec.card.done', tone: 'ok' };
     case RecordingStatus.FAILED:
       return { key: cardErrorKey(card.error), tone: 'error' };
     case RecordingStatus.PROCESSING:
@@ -213,5 +214,6 @@ export function durationText(sec: number): string {
  */
 export function systemPreview(m: Pick<Message, 'kind' | 'system'>): string {
   const card = recordingCardOf(m);
-  return card ? t('rec.card.preview', { duration: durationText(card.durationSec) }) : '';
+  if (!card) return '';
+  return card.deletedAt ? t('rec.card.deleted') : t('rec.card.preview', { duration: durationText(card.durationSec) });
 }

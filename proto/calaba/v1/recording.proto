@@ -37,7 +37,7 @@ enum RecordingStatus {
   RECORDING_STATUS_RECORDING = 1;  // still recording
   RECORDING_STATUS_UPLOADING = 2;  // uploading to GPTunneL
   RECORDING_STATUS_PROCESSING = 3; // uploaded; GPTunneL transcribes and summarizes (web_url is set)
-  RECORDING_STATUS_DONE = 4;       // transcript and summary are ready in GPTunneL (web_url)
+  RECORDING_STATUS_DONE = 4;       // transcript and summary are ready in GPTunneL (web_url), then copied here
   RECORDING_STATUS_FAILED = 5;     // see error
 }
 
@@ -49,7 +49,7 @@ message RecordingCard {
   google.protobuf.Timestamp started_at = 3;
   uint32 duration_sec = 4;
   RecordingStatus status = 5;
-  string web_url = 6; // the recording's page in GPTunneL (PROCESSING, DONE; also FAILED once uploaded)
+  string web_url = 6; // the recording's page in GPTunneL (PROCESSING, DONE; also FAILED once uploaded); host app.gptunnel.ai → GPTUNNEL_WEB_URL
   // FAILED: machine-readable reason. GPTunneL's: "insufficient_balance", "account_unavailable",
   // "transcription_failed", "summary_failed", "empty_audio", "storage_failed", "internal";
   // ours: "device_revoked" (the workspace was disconnected from GPTunneL), "not_paired",
@@ -67,7 +67,47 @@ message RecordingCard {
   // written).
   bool file_gone = 8;
   bool not_uploaded = 9;
+  // DONE: the meeting summary from GPTunneL, Markdown (headings, lists, bold); empty until it
+  // is fetched or when GPTunneL does not give it (docs/17). Visible to everyone who sees the
+  // room's chat (VIEW_ROOM), like the card itself.
+  string summary = 10;
+  // DONE: the full transcript is kept on the server: GET /api/rooms/{id}/recordings/{rid}/transcript.
+  bool has_transcript = 11;
+  // DONE: the summary / transcript are still being fetched from GPTunneL (the card may say so).
+  bool result_pending = 12;
+  // DONE: the recording's audio is attached to the card message (Message.attachments, an
+  // audio/mp4 file) until this moment (RECORDING_KEEP_DAYS after DONE); unset = no audio.
+  google.protobuf.Timestamp audio_until = 13;
+  // The recording was deleted (DELETE /api/rooms/{id}/recordings/{rid}): the card only says
+  // who deleted it and when; every other field but recording_id, started_by, started_at and
+  // duration_sec is empty.
+  google.protobuf.Timestamp deleted_at = 14;
+  string deleted_by = 15;
 }
+
+// One remark of a transcript (GPTunneL's MeetingTranscriptSegment).
+message TranscriptSegment {
+  int32 speaker = 1; // the speaker's number from recognition (0, 1, …); -1 = unknown
+  uint32 start_ms = 2; // from the start of the recording
+  uint32 end_ms = 3;
+  string text = 4;
+}
+
+// GET /api/rooms/{id}/recordings/{rid}/transcript (VIEW_ROOM in the room; in a restricted room
+// only its members, ADR-0029): the whole transcript kept on the server. 404 NOT_FOUND: no such
+// recording in this room, deleted, or no transcript (RecordingCard.has_transcript = false).
+message GetRecordingTranscriptResponse {
+  string recording_id = 1;
+  string language = 2; // "ru", "en", … ("" = unknown)
+  repeated TranscriptSegment segments = 3;
+}
+
+// DELETE /api/rooms/{id}/recordings/{rid} → 204 (docs/09 #50): who started the recording, the
+// workspace owner, or MANAGE_MESSAGES in the room (and VIEW_ROOM). Removes the audio
+// attachment, the local file, the summary and the transcript, deletes the recording in
+// GPTunneL too (best effort) and turns the chat card into «Запись удалена» (MESSAGE_UPDATE,
+// RecordingCard.deleted_at). A running recording is stopped first: 409 CONFLICT. Errors: 403
+// FORBIDDEN, 404 NOT_FOUND (no such recording in this room, or already deleted).
 
 // The GPTunneL connection of a workspace. GET/POST/DELETE /api/workspaces/{id}/integrations/gptunnel.
 message GptunnelIntegration {
@@ -76,7 +116,7 @@ message GptunnelIntegration {
   string account = 3;      // the GPTunneL account the recordings go to (name or email)
   string paired_by = 4;    // user id
   google.protobuf.Timestamp paired_at = 5;
-  string web_url = 6;      // GPTunneL web base ("https://gptunnel.ru")
+  string web_url = 6;      // GPTunneL web base ("https://gptunnel.ru"; app.gptunnel.ai is shown as GPTUNNEL_WEB_URL)
 }
 
 // GET /api/workspaces/{id}/integrations/gptunnel (any member except guests).

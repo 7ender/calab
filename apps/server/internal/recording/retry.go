@@ -59,7 +59,7 @@ func (s *Service) retried(w http.ResponseWriter, r *http.Request, upd sqlc.RoomR
 	slog.InfoContext(r.Context(), "recording: "+what, "recording", upd.ID, "by", uid(r))
 	s.card(r.Context(), upd)
 	s.Wake()
-	httpx.Write(w, http.StatusOK, &v1.RetryRecordingResponse{Recording: pbconv.RecordingCard(upd).GetRecording()})
+	httpx.Write(w, http.StatusOK, &v1.RetryRecordingResponse{Recording: s.cardOf(upd).GetRecording()})
 }
 
 func (s *Service) recheck(w http.ResponseWriter, r *http.Request) error {

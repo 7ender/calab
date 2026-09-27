@@ -1,4 +1,5 @@
 import type { RoomRecording, WorkspaceSnapshot } from '@calaba/protocol';
+import { confirmAction } from '../components/Confirm';
 import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
@@ -155,6 +156,21 @@ export async function retryRecording(roomId: string, recordingId: string, action
     if (code === 'ERROR_CODE_NOT_PAIRED') notPaired(workspaceId);
     else if (key) toast.info(t(key));
     else toast.fail(e, t('rec.retry.failed'));
+  }
+}
+
+/**
+ * «Удалить запись» from the card menu (docs/09 #50): asks first; the card turns into «Запись
+ * удалена» by MESSAGE_UPDATE. 409 — still recording (stop it first), 404 — already deleted.
+ */
+export async function deleteRecording(roomId: string, recordingId: string): Promise<void> {
+  if (!(await confirmAction(t('rec.delete.title'), t('rec.delete.text'), t('rec.delete.action')))) return;
+  try {
+    await api.recording.remove(roomId, recordingId);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return; // gone already: the card follows
+    if (e instanceof ApiError && e.code === 'ERROR_CODE_CONFLICT') toast.info(t('rec.delete.recording'));
+    else toast.fail(e, t('rec.delete.failed'));
   }
 }
 

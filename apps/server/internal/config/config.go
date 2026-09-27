@@ -102,7 +102,11 @@ type Config struct {
 	SMTPFrom     string `env:"SMTP_FROM"`                      // "Calab <noreply@calab.ru>"
 	// Meeting recording (ADR-0025). Needs LiveKit and the egress service; the recordings
 	// volume is RECORDINGS_PATH here and RECORDING_EGRESS_DIR in the egress container.
-	GPTunnelAPIURL         string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ai"`
+	// GPTUNNEL_WEB_URL replaces the host app.gptunnel.ai in links GPTunneL gives (docs/17 §4);
+	// RECORDING_KEEP_DAYS: a done recording's audio stays attached to its chat card this long.
+	GPTunnelAPIURL         string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
+	GPTunnelWebURL         string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
+	RecordingKeepDays      int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
@@ -206,6 +210,12 @@ func (c *Config) Validate() error {
 	}
 	if Origin(c.GPTunnelAPIURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_API_URL must be an absolute http(s) URL, got %q", c.GPTunnelAPIURL))
+	}
+	if Origin(c.GPTunnelWebURL) == "" {
+		errs = append(errs, fmt.Errorf("GPTUNNEL_WEB_URL must be an absolute http(s) URL, got %q", c.GPTunnelWebURL))
+	}
+	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
+		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
 	}
 	if c.RecordingMaxConcurrent < 1 || c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/") {
 		errs = append(errs, errors.New("RECORDING_MAX_CONCURRENT must be >= 1, RECORDINGS_PATH set and RECORDING_EGRESS_DIR an absolute path"))

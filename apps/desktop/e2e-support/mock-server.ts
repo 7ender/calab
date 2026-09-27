@@ -76,6 +76,7 @@ import {
   StartRecordingResponseSchema,
   StopRecordingResponseSchema,
   RetryRecordingResponseSchema,
+  GetRecordingTranscriptResponseSchema,
   type GptunnelIntegration,
   type RecordingCard,
   type RoomRecording,
@@ -213,6 +214,7 @@ import {
   type DmSummary,
   type GatewayFrame,
   type Me,
+  type FileMeta,
   type Message,
   type Room,
   type RoomNotificationSettings,
@@ -237,6 +239,7 @@ import {
   MOCK_GPTUNNEL_RATE_CODE,
   MOCK_GPTUNNEL_WEB,
   PASSWORD,
+  RECORDING_RESULT,
   buildState,
   builtinRoles,
   defaultSettings,
@@ -267,6 +270,7 @@ export {
   MOCK_GPTUNNEL_WEB,
   PASSWORD,
   RECORDING_FIXTURE,
+  RECORDING_RESULT,
   CODE_FIXTURE,
   mockId,
   type Scenario,
@@ -274,6 +278,17 @@ export {
 export { MARKETING_IDS, MARKETING_VOICE_STARTED_AT } from './fixtures-marketing';
 
 // ---------------------------------------------------------------- public API
+
+/**
+ * A recording card's next state. `result: true` = done with the result (docs/09 #47): the
+ * fixture summary (RECORDING_RESULT), a transcript and the audio attachment (IDS.files.meeting).
+ */
+export interface RecordingCardPatch {
+  status: RecordingStatus;
+  error?: string;
+  webUrl?: string;
+  result?: boolean;
+}
 
 export interface MockServerOptions {
   /** 0 / unset = random free port. */
@@ -345,9 +360,11 @@ export interface MockServer {
     /** FAILED (docs/09 #40): the upload did not complete («Отправить снова»); the file is gone. */
     notUploaded?: boolean;
     fileGone?: boolean;
+    /** DONE with the result (docs/09 #47): the fixture summary, a transcript, the audio attachment. */
+    result?: boolean;
   }): Message;
   /** Moves a card on (MESSAGE_UPDATE), like the server's upload worker. */
-  updateRecordingCard(messageId: string, patch: { status: RecordingStatus; error?: string; webUrl?: string }): void;
+  updateRecordingCard(messageId: string, patch: RecordingCardPatch): void;
   /**
    * docs/09 #51: a user's own state of a DM, like PATCH /api/dms/{id}/state — archive / «Удалить
    * чат» (for them only) — and DM_STATE_UPDATE to their devices.
@@ -3431,7 +3448,7 @@ class MockImpl {
       if (RECORDING_STEP_MS > 0) {
         const web = `${MOCK_GPTUNNEL_WEB}/meetings/${cur.recordingId}`;
         this.later(RECORDING_STEP_MS, () => this.updateRecordingCard(msg.id, { status: RecordingStatus.PROCESSING, webUrl: web }));
-        this.later(RECORDING_STEP_MS * 2, () => this.updateRecordingCard(msg.id, { status: RecordingStatus.DONE, webUrl: web }));
+        this.later(RECORDING_STEP_MS * 2, () => this.updateRecordingCard(msg.id, { status: RecordingStatus.DONE, webUrl: web, result: true }));
       }
     }
     return stopped;
@@ -3459,6 +3476,8 @@ class MockImpl {
     recordingId?: string;
     notUploaded?: boolean;
     fileGone?: boolean;
+    /** DONE with the result (docs/09 #47): summary, transcript, audio attachment. */
+    result?: boolean;
   }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
@@ -3474,6 +3493,7 @@ class MockImpl {
       error: a.error ?? '',
       notUploaded: a.notUploaded ?? false,
       fileGone: a.fileGone ?? false,
+      ...(a.result ? this.recordingResult(timestampMs(createdAt)) : {}),
     };
     // The server posts it as the one who started the recording, content empty (docs/05).
     const msg = create(MessageSchema, {
@@ -3483,6 +3503,7 @@ class MockImpl {
       content: '',
       kind: MessageKind.SYSTEM,
       system: { payload: { case: 'recording', value: card } },
+      attachments: a.result ? this.recordingAudio() : [],
       createdAt,
     });
     list.push(msg);
@@ -3494,7 +3515,7 @@ class MockImpl {
     return msg;
   }
 
-  updateRecordingCard(messageId: string, patch: { status: RecordingStatus; error?: string; webUrl?: string }): void {
+  updateRecordingCard(messageId: string, patch: RecordingCardPatch): void {
     const { room, list, index } = this.findMessage(messageId);
     const msg = list[index];
     const p = msg?.system?.payload;
@@ -3503,7 +3524,29 @@ class MockImpl {
     value.status = patch.status;
     if (patch.error !== undefined) value.error = patch.error;
     if (patch.webUrl !== undefined) value.webUrl = patch.webUrl;
+    if (patch.result) {
+      Object.assign(value, this.recordingResult(Date.now()));
+      msg.attachments = this.recordingAudio();
+    }
     this.toWorkspace(room.workspaceId, { event: { case: 'messageUpdate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+  }
+
+  /** The card fields of a done recording with its result (the audio kept 30 days from `doneMs`). */
+  private recordingResult(doneMs: number): Pick<RecordingCard, 'summary' | 'hasTranscript' | 'resultPending' | 'audioUntil'> {
+    return { summary: RECORDING_RESULT.summary, hasTranscript: true, resultPending: false, audioUntil: timestampFromMs(doneMs + 30 * 86_400_000) };
+  }
+
+  private recordingAudio(): FileMeta[] {
+    const f = this.state.files.get(IDS.files.meeting);
+    return f ? [f.meta] : [];
+  }
+
+  /** The recording card with this recording id in a room, or 404. */
+  private recordingCard(roomId: string, recordingId: string): { msg: Message; card: RecordingCard } {
+    const msg = (this.state.messages.get(roomId) ?? []).find((m) => m.system?.payload.case === 'recording' && m.system.payload.value.recordingId === recordingId);
+    const p = msg?.system?.payload;
+    if (!msg || p?.case !== 'recording' || p.value.deletedAt) throw notFound('recording not found');
+    return { msg, card: p.value };
   }
 
   /** Who may start / stop (docs/05): a member, not a guest, with VIEW_ROOM + CONNECT, voice room. */
@@ -3583,6 +3626,46 @@ class MockImpl {
         sendMsg(c.res, 200, RetryRecordingResponseSchema, { recording: card });
       });
     }
+
+    // The transcript kept on the server (docs/09 #47): VIEW_ROOM; 404 without one.
+    this.route('GET', '/api/rooms/:id/recordings/:rid/transcript', (c) => {
+      const room = this.roomFor(c.params[0] ?? '', this.uid(c));
+      const { card } = this.recordingCard(room.id, c.params[1] ?? '');
+      if (!card.hasTranscript) throw notFound('transcript');
+      sendMsg(c.res, 200, GetRecordingTranscriptResponseSchema, {
+        recordingId: card.recordingId,
+        language: RECORDING_RESULT.language,
+        segments: RECORDING_RESULT.transcript.map((x) => ({ ...x })),
+      });
+    });
+
+    // «Удалить запись» (docs/09 #50): who started it, the owner or MANAGE_MESSAGES; not while recording.
+    this.route('DELETE', '/api/rooms/:id/recordings/:rid', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      const { msg, card } = this.recordingCard(room.id, c.params[1] ?? '');
+      const m = this.member(room.workspaceId, me);
+      const ws = this.state.workspaces.get(room.workspaceId);
+      const owner = !!ws && ws.ownerId === me;
+      if (card.startedBy !== me && !owner && !has(this.perms(room, me), MANAGE_MESSAGES)) throw forbidden('not allowed to delete this recording');
+      if (!m) throw notFound('room not found');
+      if (card.status === RecordingStatus.RECORDING) throw conflict('the meeting is still being recorded');
+      Object.assign(card, {
+        deletedAt: tick(this.state),
+        deletedBy: me,
+        summary: '',
+        hasTranscript: false,
+        resultPending: false,
+        webUrl: '',
+        error: '',
+        fileGone: true,
+        notUploaded: true,
+      });
+      delete card.audioUntil;
+      msg.attachments = [];
+      this.toWorkspace(room.workspaceId, { event: { case: 'messageUpdate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+      noContent(c.res);
+    });
 
     this.route('POST', '/api/rooms/:id/recording/stop', (c) => {
       const { room, me } = this.recordingRoom(c);

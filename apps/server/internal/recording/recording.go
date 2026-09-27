@@ -7,7 +7,9 @@
 // When the egress ends (stop, auto-stop, the call ended) the file is uploaded to GPTunneL in
 // resumable chunks by a single worker (Valkey lock, Postgres queue with leases, retries with
 // backoff), GPTunneL's status is polled until done or failed, and a card in the room chat
-// follows each step. Local files go away after done, or after 7 days.
+// follows each step. After done the file becomes the card's audio attachment (kept
+// RECORDING_KEEP_DAYS) and the summary and transcript are copied from GPTunneL (result.go);
+// other local files go away after 7 days.
 package recording
 
 import (
@@ -33,6 +35,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/gptunnel"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/messages"
@@ -58,6 +61,7 @@ type Config struct {
 	EgressDir     string // RECORDING_EGRESS_DIR: the same volume in the egress container
 	MaxConcurrent int    // RECORDING_MAX_CONCURRENT, server-wide
 	Secret        []byte // JWT_SECRET: seals device tokens
+	WebURL        string // GPTUNNEL_WEB_URL: app.gptunnel.ai links are shown on it (docs/17 §4)
 }
 
 // Service implements the integration and recording endpoints and the background worker.
@@ -67,6 +71,7 @@ type Service struct {
 	redis  rueidis.Client
 	eg     rtc.Egress // nil = voice (LiveKit) not configured
 	gpt    *gptunnel.Client
+	files  *files.Service // audio attachments of done recordings (SetFiles); nil = not kept
 	box    *sealbox.Box
 	events events.Publisher
 	system *messages.System
@@ -76,16 +81,18 @@ type Service struct {
 	token  string // this instance's worker lock token
 
 	// Tunables (tests shorten them).
-	Tick         time.Duration // worker loop period
-	LockTTL      time.Duration
-	Lease        time.Duration // a claimed job is not picked again for this long
-	MaxDuration  time.Duration // auto-stop: 2 min under GPTunneL's 4 h, the stop takes a few seconds
-	EmptyTimeout time.Duration // auto-stop when nobody is in the call (2 min)
-	UploadFor    time.Duration // give up retrying an upload after this (24 h)
-	PollFor      time.Duration // give up polling GPTunneL after this (2 h)
-	PollMin      time.Duration // first status poll after the upload, and the shortest interval (20 s)
-	KeepFiles    time.Duration // local files of failed recordings (7 days)
-	Now          func() time.Time
+	Tick          time.Duration // worker loop period
+	LockTTL       time.Duration
+	Lease         time.Duration   // a claimed job is not picked again for this long
+	MaxDuration   time.Duration   // auto-stop: 2 min under GPTunneL's 4 h, the stop takes a few seconds
+	EmptyTimeout  time.Duration   // auto-stop when nobody is in the call (2 min)
+	UploadFor     time.Duration   // give up retrying an upload after this (24 h)
+	PollFor       time.Duration   // give up polling GPTunneL after this (2 h)
+	PollMin       time.Duration   // first status poll after the upload, and the shortest interval (20 s)
+	KeepFiles     time.Duration   // local files of failed recordings (7 days)
+	KeepAudio     time.Duration   // audio attachments of done recordings (RECORDING_KEEP_DAYS, 30 days)
+	ResultBackoff []time.Duration // waits between result attempts; past the last one it gives up
+	Now           func() time.Time
 }
 
 // New creates the service. eg nil = recording unavailable (start answers 503).
@@ -104,6 +111,7 @@ func New(cfg Config, d *db.DB, r rueidis.Client, eg rtc.Egress, gpt *gptunnel.Cl
 		Tick:   5 * time.Second, LockTTL: 30 * time.Second, Lease: 15 * time.Minute,
 		MaxDuration: gptunnel.MaxDuration - 2*time.Minute, EmptyTimeout: 2 * time.Minute,
 		UploadFor: 24 * time.Hour, PollFor: 2 * time.Hour, PollMin: 20 * time.Second, KeepFiles: 7 * 24 * time.Hour,
+		KeepAudio: 30 * 24 * time.Hour, ResultBackoff: defaultResultBackoff,
 		Now: time.Now,
 	}
 }
@@ -117,6 +125,8 @@ func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handle
 	mux.Handle("POST /api/rooms/{id}/recording/stop", wrap(httpx.HandlerFunc(s.stop)))
 	mux.Handle("POST /api/rooms/{id}/recordings/{rid}/recheck", wrap(httpx.HandlerFunc(s.recheck)))
 	mux.Handle("POST /api/rooms/{id}/recordings/{rid}/reupload", wrap(httpx.HandlerFunc(s.reupload)))
+	mux.Handle("GET /api/rooms/{id}/recordings/{rid}/transcript", wrap(httpx.HandlerFunc(s.transcript)))
+	mux.Handle("DELETE /api/rooms/{id}/recordings/{rid}", wrap(httpx.HandlerFunc(s.remove)))
 }
 
 var (
@@ -146,12 +156,12 @@ func workspaceAccess(r *http.Request) (uuid.UUID, perm.Bits, perm.Role, error) {
 	return wsID, bits, role, err
 }
 
-func integrationProto(row *sqlc.WorkspaceIntegration) *v1.GptunnelIntegration {
+func (s *Service) integrationProto(row *sqlc.WorkspaceIntegration) *v1.GptunnelIntegration {
 	if row == nil || row.TokenEnc == nil {
 		return &v1.GptunnelIntegration{}
 	}
 	out := &v1.GptunnelIntegration{Paired: true, DeviceName: row.DeviceName, Account: row.Account,
-		WebUrl: row.WebUrl, PairedAt: timestamppb.New(row.PairedAt)}
+		WebUrl: gptunnel.NormalizeWebURL(row.WebUrl, s.cfg.WebURL), PairedAt: timestamppb.New(row.PairedAt)}
 	if row.PairedBy != nil {
 		out.PairedBy = row.PairedBy.String()
 	}
@@ -194,7 +204,7 @@ func (s *Service) getIntegration(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.GetGptunnelIntegrationResponse{Integration: integrationProto(row)})
+	httpx.Write(w, http.StatusOK, &v1.GetGptunnelIntegrationResponse{Integration: s.integrationProto(row)})
 	return nil
 }
 
@@ -252,7 +262,7 @@ func (s *Service) pairIntegration(w http.ResponseWriter, r *http.Request) error 
 		s.revokeRemote(r.Context(), oldToken)
 	}
 	slog.InfoContext(r.Context(), "gptunnel: workspace paired", "workspace", wsID, "by", me, "device", sess.Device.ID)
-	httpx.Write(w, http.StatusOK, &v1.PairGptunnelResponse{Integration: integrationProto(&row)})
+	httpx.Write(w, http.StatusOK, &v1.PairGptunnelResponse{Integration: s.integrationProto(&row)})
 	return nil
 }
 

@@ -216,6 +216,16 @@ type RoomRecording struct {
 	UpdatedAt       time.Time
 	Reuploads       int32
 	ReuploadAt      *time.Time
+	DoneAt          *time.Time
+	Summary         string
+	Language        string
+	TranscriptJson  []byte
+	ResultState     string
+	ResultAttempts  int32
+	ResultNextAt    *time.Time
+	FileID          *uuid.UUID
+	DeletedAt       *time.Time
+	DeletedBy       *uuid.UUID
 }
 
 type Session struct {

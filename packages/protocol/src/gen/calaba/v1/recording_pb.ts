@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/recording.proto.
  */
 export const file_calaba_v1_recording: GenFile = /*@__PURE__*/
-  fileDesc("ChljYWxhYmEvdjEvcmVjb3JkaW5nLnByb3RvEgljYWxhYmEudjEi4gEKDVJvb21SZWNvcmRpbmcSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSFAoMcmVjb3JkaW5nX2lkGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uY2FsYWJhLnYxLlJvb21SZWNvcmRpbmdTdGF0ZRISCgpieV91c2VyX2lkGAUgASgJEikKBXNpbmNlGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtzdG9wX3JlYXNvbhgHIAEoCRISCgpzdG9wcGVkX2J5GAggASgJIvQBCg1SZWNvcmRpbmdDYXJkEhQKDHJlY29yZGluZ19pZBgBIAEoCRISCgpzdGFydGVkX2J5GAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDGR1cmF0aW9uX3NlYxgEIAEoDRIqCgZzdGF0dXMYBSABKA4yGi5jYWxhYmEudjEuUmVjb3JkaW5nU3RhdHVzEg8KB3dlYl91cmwYBiABKAkSDQoFZXJyb3IYByABKAkSEQoJZmlsZV9nb25lGAggASgIEhQKDG5vdF91cGxvYWRlZBgJIAEoCCKeAQoTR3B0dW5uZWxJbnRlZ3JhdGlvbhIOCgZwYWlyZWQYASABKAgSEwoLZGV2aWNlX25hbWUYAiABKAkSDwoHYWNjb3VudBgDIAEoCRIRCglwYWlyZWRfYnkYBCABKAkSLQoJcGFpcmVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgd3ZWJfdXJsGAYgASgJIlUKHkdldEdwdHVubmVsSW50ZWdyYXRpb25SZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIiMKE1BhaXJHcHR1bm5lbFJlcXVlc3QSDAoEY29kZRgBIAEoCSJLChRQYWlyR3B0dW5uZWxSZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIkUKFlN0YXJ0UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJvb21SZWNvcmRpbmciRAoVU3RvcFJlY29yZGluZ1Jlc3BvbnNlEisKCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5Sb29tUmVjb3JkaW5nIkUKFlJldHJ5UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJlY29yZGluZ0NhcmQqfQoSUm9vbVJlY29yZGluZ1N0YXRlEiQKIFJPT01fUkVDT1JESU5HX1NUQVRFX1VOU1BFQ0lGSUVEEAASHwobUk9PTV9SRUNPUkRJTkdfU1RBVEVfQUNUSVZFEAESIAocUk9PTV9SRUNPUkRJTkdfU1RBVEVfU1RPUFBFRBACKswBCg9SZWNvcmRpbmdTdGF0dXMSIAocUkVDT1JESU5HX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGlJFQ09SRElOR19TVEFUVVNfUkVDT1JESU5HEAESHgoaUkVDT1JESU5HX1NUQVRVU19VUExPQURJTkcQAhIfChtSRUNPUkRJTkdfU1RBVFVTX1BST0NFU1NJTkcQAxIZChVSRUNPUkRJTkdfU1RBVFVTX0RPTkUQBBIbChdSRUNPUkRJTkdfU1RBVFVTX0ZBSUxFRBAFQpwBCg1jb20uY2FsYWJhLnYxQg5SZWNvcmRpbmdQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChljYWxhYmEvdjEvcmVjb3JkaW5nLnByb3RvEgljYWxhYmEudjEi4gEKDVJvb21SZWNvcmRpbmcSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSFAoMcmVjb3JkaW5nX2lkGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uY2FsYWJhLnYxLlJvb21SZWNvcmRpbmdTdGF0ZRISCgpieV91c2VyX2lkGAUgASgJEikKBXNpbmNlGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtzdG9wX3JlYXNvbhgHIAEoCRISCgpzdG9wcGVkX2J5GAggASgJIqoDCg1SZWNvcmRpbmdDYXJkEhQKDHJlY29yZGluZ19pZBgBIAEoCRISCgpzdGFydGVkX2J5GAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDGR1cmF0aW9uX3NlYxgEIAEoDRIqCgZzdGF0dXMYBSABKA4yGi5jYWxhYmEudjEuUmVjb3JkaW5nU3RhdHVzEg8KB3dlYl91cmwYBiABKAkSDQoFZXJyb3IYByABKAkSEQoJZmlsZV9nb25lGAggASgIEhQKDG5vdF91cGxvYWRlZBgJIAEoCBIPCgdzdW1tYXJ5GAogASgJEhYKDmhhc190cmFuc2NyaXB0GAsgASgIEhYKDnJlc3VsdF9wZW5kaW5nGAwgASgIEi8KC2F1ZGlvX3VudGlsGA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpkZWxldGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpkZWxldGVkX2J5GA8gASgJIlQKEVRyYW5zY3JpcHRTZWdtZW50Eg8KB3NwZWFrZXIYASABKAUSEAoIc3RhcnRfbXMYAiABKA0SDgoGZW5kX21zGAMgASgNEgwKBHRleHQYBCABKAkieAoeR2V0UmVjb3JkaW5nVHJhbnNjcmlwdFJlc3BvbnNlEhQKDHJlY29yZGluZ19pZBgBIAEoCRIQCghsYW5ndWFnZRgCIAEoCRIuCghzZWdtZW50cxgDIAMoCzIcLmNhbGFiYS52MS5UcmFuc2NyaXB0U2VnbWVudCKeAQoTR3B0dW5uZWxJbnRlZ3JhdGlvbhIOCgZwYWlyZWQYASABKAgSEwoLZGV2aWNlX25hbWUYAiABKAkSDwoHYWNjb3VudBgDIAEoCRIRCglwYWlyZWRfYnkYBCABKAkSLQoJcGFpcmVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgd3ZWJfdXJsGAYgASgJIlUKHkdldEdwdHVubmVsSW50ZWdyYXRpb25SZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIiMKE1BhaXJHcHR1bm5lbFJlcXVlc3QSDAoEY29kZRgBIAEoCSJLChRQYWlyR3B0dW5uZWxSZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIkUKFlN0YXJ0UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJvb21SZWNvcmRpbmciRAoVU3RvcFJlY29yZGluZ1Jlc3BvbnNlEisKCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5Sb29tUmVjb3JkaW5nIkUKFlJldHJ5UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJlY29yZGluZ0NhcmQqfQoSUm9vbVJlY29yZGluZ1N0YXRlEiQKIFJPT01fUkVDT1JESU5HX1NUQVRFX1VOU1BFQ0lGSUVEEAASHwobUk9PTV9SRUNPUkRJTkdfU1RBVEVfQUNUSVZFEAESIAocUk9PTV9SRUNPUkRJTkdfU1RBVEVfU1RPUFBFRBACKswBCg9SZWNvcmRpbmdTdGF0dXMSIAocUkVDT1JESU5HX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGlJFQ09SRElOR19TVEFUVVNfUkVDT1JESU5HEAESHgoaUkVDT1JESU5HX1NUQVRVU19VUExPQURJTkcQAhIfChtSRUNPUkRJTkdfU1RBVFVTX1BST0NFU1NJTkcQAxIZChVSRUNPUkRJTkdfU1RBVFVTX0RPTkUQBBIbChdSRUNPUkRJTkdfU1RBVFVTX0ZBSUxFRBAFQpwBCg1jb20uY2FsYWJhLnYxQg5SZWNvcmRpbmdQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * The recording of a voice room. In WorkspaceSnapshot.recordings (active ones, READY /
@@ -113,7 +113,7 @@ export type RecordingCard = Message<"calaba.v1.RecordingCard"> & {
   status: RecordingStatus;
 
   /**
-   * the recording's page in GPTunneL (PROCESSING, DONE; also FAILED once uploaded)
+   * the recording's page in GPTunneL (PROCESSING, DONE; also FAILED once uploaded); host app.gptunnel.ai → GPTUNNEL_WEB_URL
    *
    * @generated from field: string web_url = 6;
    */
@@ -149,6 +149,51 @@ export type RecordingCard = Message<"calaba.v1.RecordingCard"> & {
    * @generated from field: bool not_uploaded = 9;
    */
   notUploaded: boolean;
+
+  /**
+   * DONE: the meeting summary from GPTunneL, Markdown (headings, lists, bold); empty until it
+   * is fetched or when GPTunneL does not give it (docs/17). Visible to everyone who sees the
+   * room's chat (VIEW_ROOM), like the card itself.
+   *
+   * @generated from field: string summary = 10;
+   */
+  summary: string;
+
+  /**
+   * DONE: the full transcript is kept on the server: GET /api/rooms/{id}/recordings/{rid}/transcript.
+   *
+   * @generated from field: bool has_transcript = 11;
+   */
+  hasTranscript: boolean;
+
+  /**
+   * DONE: the summary / transcript are still being fetched from GPTunneL (the card may say so).
+   *
+   * @generated from field: bool result_pending = 12;
+   */
+  resultPending: boolean;
+
+  /**
+   * DONE: the recording's audio is attached to the card message (Message.attachments, an
+   * audio/mp4 file) until this moment (RECORDING_KEEP_DAYS after DONE); unset = no audio.
+   *
+   * @generated from field: google.protobuf.Timestamp audio_until = 13;
+   */
+  audioUntil?: Timestamp | undefined;
+
+  /**
+   * The recording was deleted (DELETE /api/rooms/{id}/recordings/{rid}): the card only says
+   * who deleted it and when; every other field but recording_id, started_by, started_at and
+   * duration_sec is empty.
+   *
+   * @generated from field: google.protobuf.Timestamp deleted_at = 14;
+   */
+  deletedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string deleted_by = 15;
+   */
+  deletedBy: string;
 };
 
 /**
@@ -157,6 +202,77 @@ export type RecordingCard = Message<"calaba.v1.RecordingCard"> & {
  */
 export const RecordingCardSchema: GenMessage<RecordingCard> = /*@__PURE__*/
   messageDesc(file_calaba_v1_recording, 1);
+
+/**
+ * One remark of a transcript (GPTunneL's MeetingTranscriptSegment).
+ *
+ * @generated from message calaba.v1.TranscriptSegment
+ */
+export type TranscriptSegment = Message<"calaba.v1.TranscriptSegment"> & {
+  /**
+   * the speaker's number from recognition (0, 1, …); -1 = unknown
+   *
+   * @generated from field: int32 speaker = 1;
+   */
+  speaker: number;
+
+  /**
+   * from the start of the recording
+   *
+   * @generated from field: uint32 start_ms = 2;
+   */
+  startMs: number;
+
+  /**
+   * @generated from field: uint32 end_ms = 3;
+   */
+  endMs: number;
+
+  /**
+   * @generated from field: string text = 4;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message calaba.v1.TranscriptSegment.
+ * Use `create(TranscriptSegmentSchema)` to create a new message.
+ */
+export const TranscriptSegmentSchema: GenMessage<TranscriptSegment> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_recording, 2);
+
+/**
+ * GET /api/rooms/{id}/recordings/{rid}/transcript (VIEW_ROOM in the room; in a restricted room
+ * only its members, ADR-0029): the whole transcript kept on the server. 404 NOT_FOUND: no such
+ * recording in this room, deleted, or no transcript (RecordingCard.has_transcript = false).
+ *
+ * @generated from message calaba.v1.GetRecordingTranscriptResponse
+ */
+export type GetRecordingTranscriptResponse = Message<"calaba.v1.GetRecordingTranscriptResponse"> & {
+  /**
+   * @generated from field: string recording_id = 1;
+   */
+  recordingId: string;
+
+  /**
+   * "ru", "en", … ("" = unknown)
+   *
+   * @generated from field: string language = 2;
+   */
+  language: string;
+
+  /**
+   * @generated from field: repeated calaba.v1.TranscriptSegment segments = 3;
+   */
+  segments: TranscriptSegment[];
+};
+
+/**
+ * Describes the message calaba.v1.GetRecordingTranscriptResponse.
+ * Use `create(GetRecordingTranscriptResponseSchema)` to create a new message.
+ */
+export const GetRecordingTranscriptResponseSchema: GenMessage<GetRecordingTranscriptResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_recording, 3);
 
 /**
  * The GPTunneL connection of a workspace. GET/POST/DELETE /api/workspaces/{id}/integrations/gptunnel.
@@ -196,7 +312,7 @@ export type GptunnelIntegration = Message<"calaba.v1.GptunnelIntegration"> & {
   pairedAt?: Timestamp | undefined;
 
   /**
-   * GPTunneL web base ("https://gptunnel.ru")
+   * GPTunneL web base ("https://gptunnel.ru"; app.gptunnel.ai is shown as GPTUNNEL_WEB_URL)
    *
    * @generated from field: string web_url = 6;
    */
@@ -208,7 +324,7 @@ export type GptunnelIntegration = Message<"calaba.v1.GptunnelIntegration"> & {
  * Use `create(GptunnelIntegrationSchema)` to create a new message.
  */
 export const GptunnelIntegrationSchema: GenMessage<GptunnelIntegration> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 2);
+  messageDesc(file_calaba_v1_recording, 4);
 
 /**
  * GET /api/workspaces/{id}/integrations/gptunnel (any member except guests).
@@ -229,7 +345,7 @@ export type GetGptunnelIntegrationResponse = Message<"calaba.v1.GetGptunnelInteg
  * Use `create(GetGptunnelIntegrationResponseSchema)` to create a new message.
  */
 export const GetGptunnelIntegrationResponseSchema: GenMessage<GetGptunnelIntegrationResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 3);
+  messageDesc(file_calaba_v1_recording, 5);
 
 /**
  * POST /api/workspaces/{id}/integrations/gptunnel (MANAGE_WORKSPACE): pair with a code shown
@@ -251,7 +367,7 @@ export type PairGptunnelRequest = Message<"calaba.v1.PairGptunnelRequest"> & {
  * Use `create(PairGptunnelRequestSchema)` to create a new message.
  */
 export const PairGptunnelRequestSchema: GenMessage<PairGptunnelRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 4);
+  messageDesc(file_calaba_v1_recording, 6);
 
 /**
  * @generated from message calaba.v1.PairGptunnelResponse
@@ -268,7 +384,7 @@ export type PairGptunnelResponse = Message<"calaba.v1.PairGptunnelResponse"> & {
  * Use `create(PairGptunnelResponseSchema)` to create a new message.
  */
 export const PairGptunnelResponseSchema: GenMessage<PairGptunnelResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 5);
+  messageDesc(file_calaba_v1_recording, 7);
 
 /**
  * POST /api/rooms/{id}/recording/start (voice room; a member of the workspace — not a guest —
@@ -291,7 +407,7 @@ export type StartRecordingResponse = Message<"calaba.v1.StartRecordingResponse">
  * Use `create(StartRecordingResponseSchema)` to create a new message.
  */
 export const StartRecordingResponseSchema: GenMessage<StartRecordingResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 6);
+  messageDesc(file_calaba_v1_recording, 8);
 
 /**
  * POST /api/rooms/{id}/recording/stop (the same people as start) → the stopped recording;
@@ -311,7 +427,7 @@ export type StopRecordingResponse = Message<"calaba.v1.StopRecordingResponse"> &
  * Use `create(StopRecordingResponseSchema)` to create a new message.
  */
 export const StopRecordingResponseSchema: GenMessage<StopRecordingResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 7);
+  messageDesc(file_calaba_v1_recording, 9);
 
 /**
  * Retry of a FAILED recording (backlog 40); the same people as start (a member, not a guest,
@@ -340,7 +456,7 @@ export type RetryRecordingResponse = Message<"calaba.v1.RetryRecordingResponse">
  * Use `create(RetryRecordingResponseSchema)` to create a new message.
  */
 export const RetryRecordingResponseSchema: GenMessage<RetryRecordingResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 8);
+  messageDesc(file_calaba_v1_recording, 10);
 
 /**
  * Whether a room is being recorded (the "REC" indicator).
@@ -407,7 +523,7 @@ export enum RecordingStatus {
   PROCESSING = 3,
 
   /**
-   * transcript and summary are ready in GPTunneL (web_url)
+   * transcript and summary are ready in GPTunneL (web_url), then copied here
    *
    * @generated from enum value: RECORDING_STATUS_DONE = 4;
    */

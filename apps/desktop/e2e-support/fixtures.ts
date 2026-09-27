@@ -153,6 +153,8 @@ export const IDS = {
     voice: mockId('file', 6),
     /** A phone photo (720×1280 portrait, issues #7/#9): not in any message, injectMessage posts it. */
     portrait: mockId('file', 7),
+    /** A meeting recording's audio (docs/09 #47): fixtures/meeting-recording.m4a (6 s AAC in MP4, as LiveKit Egress writes). */
+    meeting: mockId('file', 8),
   },
   sessions: {
     annaDesktop: mockId('session', 1),
@@ -170,6 +172,39 @@ export const IDS = {
  * (MockServer.setRecording → ROOM_RECORDING, READY `recordings[]`).
  */
 export const RECORDING_FIXTURE = { roomId: IDS.rooms.meeting, byUserId: IDS.users.boris, agoMs: 754_000 } as const;
+
+/**
+ * The result of a recorded meeting (docs/09 #47, docs/17): GPTunneL's summary (Markdown) and
+ * transcript, as the server keeps them. Deterministic.
+ */
+export const RECORDING_RESULT = {
+  summary: [
+    '## Темы',
+    '- Релиз **0.7**: что попадает и что переносим',
+    '- Эталоны скриншотов после правок островка',
+    '## Решения',
+    '- Выпускаем в пятницу, *без* новых фич',
+    '- Запись встреч v2 — в этот релиз',
+    '## Задачи',
+    '1. **Аня** — переснять эталоны карточки записи',
+    '2. **Борис** — проверить загрузку в GPTunneL на стенде',
+    '3. **Вера** — тексты для es и zh-CN',
+    '## Открытые вопросы',
+    '- Сколько дней хранить аудио: 30 или 90?',
+  ].join('\n'),
+  language: 'ru',
+  transcript: [
+    { speaker: 0, startMs: 1_200, endMs: 6_800, text: 'Коллеги, начнём. Сегодня релиз и запись встреч.' },
+    { speaker: 1, startMs: 7_400, endMs: 15_100, text: 'По релизу: всё, что в main до четверга, едет. Остальное — после тега.' },
+    { speaker: 2, startMs: 15_600, endMs: 22_000, text: 'Эталоны карточки записи надо переснять, она теперь во всю ширину ленты.' },
+    { speaker: 0, startMs: 22_300, endMs: 27_900, text: 'Хорошо, Аня берёт эталоны. Борис, что со стендом?' },
+    { speaker: 1, startMs: 28_400, endMs: 38_000, text: 'Загрузка в GPTunneL работает, саммари приходит через пару минут после остановки.' },
+    { speaker: 3, startMs: 38_500, endMs: 44_200, text: 'Я подготовлю переводы для испанского и китайского.' },
+    { speaker: 0, startMs: 44_800, endMs: 52_000, text: 'Остался вопрос хранения аудио: тридцать дней или девяносто?' },
+    { speaker: 2, startMs: 52_300, endMs: 58_400, text: 'Давайте начнём с тридцати и посмотрим на диск.' },
+    { speaker: -1, startMs: 58_900, endMs: 60_000, text: 'Договорились.' },
+  ],
+} as const;
 
 /**
  * Code blocks (docs/09 #45, docs/08 «Код в сообщениях»): a highlighted js block and a log longer
@@ -714,6 +749,12 @@ export function buildState(scenario: Scenario): MockState {
     meta: fileMeta(IDS.files.portrait, IDS.workspaces.main, U.vera, 'IMG_2041.png', 'image/png', portrait, ts('2026-01-15T11:33:00Z'), { width: 720, height: 1280 }),
     bytes: portrait,
     thumbnail: { bytes: portraitThumb, mime: 'image/png' },
+  });
+  // Kept by the server after GPTunneL's done (docs/09 #47): the card's audio, posted by Борис.
+  const meeting = media('meeting-recording.m4a');
+  s.files.set(IDS.files.meeting, {
+    meta: fileMeta(IDS.files.meeting, IDS.workspaces.main, U.boris, 'Переговорка 2026-01-15 12-00.m4a', 'audio/mp4', meeting, ts('2026-01-15T12:43:00Z')),
+    bytes: meeting,
   });
   const avatar = encodePng(128, 128, avatarPicture([255, 150, 120], [96, 72, 190]));
   s.files.set(IDS.files.veraAvatar, {

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { CODE_FIXTURE, IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { RecordingStatus } from '@calaba/protocol';
+import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
 
 /**
@@ -298,6 +299,33 @@ test('m-chat-image', async ({ page }) => {
     expect(r.height).toBeLessThanOrEqual(vh * 0.6 + 1);
   }
   await checkpoint(page, 'm-chat-image', { main: true });
+});
+
+// A done meeting recording on a phone (docs/09 #47): the card across the feed, the summary folded,
+// the actions wrap; 44 px targets.
+test('m-chat-recording', async ({ page }) => {
+  await signedIn(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  mock.injectRecordingCard({
+    roomId: IDS.rooms.general,
+    byUserId: IDS.users.boris,
+    durationSec: 42 * 60 + 10,
+    status: RecordingStatus.DONE,
+    webUrl: `${MOCK_GPTUNNEL_WEB}/meetings/1`,
+    result: true,
+  });
+  const card = page.getByTestId('recording-card');
+  await expect(card).toContainText('Релиз 0.7');
+  await expect(card.getByRole('button', { name: 'Послушать запись' })).toBeVisible();
+  for (const b of await card.getByRole('button').all()) {
+    const box = await b.boundingBox();
+    expect(box && box.height, `${await b.textContent()}: tall enough to tap`).toBeGreaterThanOrEqual(32);
+  }
+  await feedToBottom(page);
+  await expect(page.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
+  await page.mouse.move(0, 0);
+  await expectFeedFits(page);
+  await checkpoint(page, 'm-chat-recording', { main: true });
 });
 
 // Chat audio player on a phone (docs/08 «Медиа в чате»): the same player, 44 px targets; the web

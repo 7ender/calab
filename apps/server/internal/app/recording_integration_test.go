@@ -295,7 +295,9 @@ func TestRecordingFlow(t *testing.T) {
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	var last *v1.RecordingCard
-	for time.Now().Before(deadline) && last.GetStatus() != v1.RecordingStatus_RECORDING_STATUS_DONE {
+	// DONE first with the result pending, then the result job keeps the audio (no summary from
+	// this fake: nothing else changes).
+	for time.Now().Before(deadline) && (last.GetStatus() != v1.RecordingStatus_RECORDING_STATUS_DONE || last.GetResultPending()) {
 		e := g.wait("card update", func(e *v1.DispatchEvent) bool {
 			return card(e) != nil && e.GetMessageUpdate().GetMessage().GetId() == msg.GetId()
 		})
@@ -314,7 +316,10 @@ func TestRecordingFlow(t *testing.T) {
 		t.Fatalf("row: %s %s deleted=%v", status, web, deleted)
 	}
 	if _, err := os.Stat(local); !os.IsNotExist(err) {
-		t.Fatalf("file kept after done: %v", err)
+		t.Fatalf("local file kept after done: %v", err)
+	}
+	if last.GetAudioUntil() == nil || last.GetSummary() != "" || last.GetHasTranscript() {
+		t.Fatalf("card after the result: %v", last)
 	}
 	// The card is in the history and cannot be edited.
 	var list v1.ListMessagesResponse

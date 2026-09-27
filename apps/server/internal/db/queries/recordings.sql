@@ -85,7 +85,7 @@ RETURNING *;
 UPDATE room_recordings SET next_at = now() + sqlc.arg('lease')::interval
 WHERE id IN (
     SELECT r.id FROM room_recordings r
-    WHERE r.status IN ('uploading', 'processing') AND r.next_at <= now()
+    WHERE r.status IN ('uploading', 'processing') AND r.next_at <= now() AND r.deleted_at IS NULL
     ORDER BY r.next_at
     LIMIT sqlc.arg('lim')
     FOR UPDATE SKIP LOCKED
@@ -110,8 +110,10 @@ UPDATE room_recordings SET next_at = $2, web_url = CASE WHEN sqlc.arg('web_url')
 WHERE id = $1 AND status = 'processing';
 
 -- name: MarkRecordingDone :one
+-- Done in GPTunneL: queue the result job (keep the audio, fetch the summary and transcript).
 UPDATE room_recordings SET status = 'done', web_url = CASE WHEN sqlc.arg('web_url')::text <> '' THEN sqlc.arg('web_url')::text ELSE web_url END,
-    next_at = NULL, error = '', updated_at = now()
+    next_at = NULL, error = '', done_at = now(), result_state = 'pending', result_attempts = 0, result_next_at = now(),
+    updated_at = now()
 WHERE id = sqlc.arg('id') AND status = 'processing'
 RETURNING *;
 
@@ -120,7 +122,7 @@ RETURNING *;
 -- the poll window starting now.
 UPDATE room_recordings SET status = 'processing', processing_since = now(), next_at = now(),
     attempts = 0, error = '', updated_at = now()
-WHERE id = $1 AND status = 'failed' AND gptunnel_id <> '' AND processing_since IS NOT NULL
+WHERE id = $1 AND status = 'failed' AND gptunnel_id <> '' AND processing_since IS NOT NULL AND deleted_at IS NULL
 RETURNING *;
 
 -- name: ReuploadRecording :one
@@ -129,23 +131,81 @@ RETURNING *;
 UPDATE room_recordings SET status = 'uploading', gptunnel_id = '', web_url = '',
     next_at = now(), attempts = 0, error = '', reuploads = reuploads + 1, reupload_at = now(), updated_at = now()
 WHERE id = $1 AND status = 'failed' AND processing_since IS NULL
-  AND file <> '' AND file_deleted_at IS NULL AND size_bytes > 0
+  AND file <> '' AND file_deleted_at IS NULL AND size_bytes > 0 AND deleted_at IS NULL
 RETURNING *;
 
 -- name: SetRecordingMessage :exec
 UPDATE room_recordings SET message_id = $2 WHERE id = $1;
 
 -- name: ListRecordingFilesToDelete :many
--- Local files no longer needed: done, or failed / stuck and stopped (or last sent again)
--- before `before` (7 days).
+-- Local files no longer needed: done (once its audio was attached or given up), deleted, or
+-- failed / stuck and stopped (or last sent again) before `before` (7 days).
 SELECT * FROM room_recordings
 WHERE file <> '' AND file_deleted_at IS NULL
-  AND (status = 'done' OR (status NOT IN ('pending', 'recording') AND coalesce(reupload_at, stopped_at) < sqlc.arg('before')))
+  AND ((status = 'done' AND result_state <> 'pending') OR deleted_at IS NOT NULL
+       OR (status NOT IN ('pending', 'recording') AND coalesce(reupload_at, stopped_at) < sqlc.arg('before')))
 ORDER BY id
 LIMIT 100;
 
 -- name: MarkRecordingFileDeleted :exec
 UPDATE room_recordings SET file_deleted_at = now() WHERE id = $1;
+
+-- name: ClaimRecordingResults :many
+-- Due result jobs of done recordings (attach the audio, fetch the summary / transcript), leased
+-- like ClaimRecordingJobs.
+UPDATE room_recordings SET result_next_at = now() + sqlc.arg('lease')::interval
+WHERE id IN (
+    SELECT r.id FROM room_recordings r
+    WHERE r.result_state = 'pending' AND r.result_next_at <= now() AND r.deleted_at IS NULL
+    ORDER BY r.result_next_at
+    LIMIT sqlc.arg('lim')
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING *;
+
+-- name: SetRecordingAudio :one
+UPDATE room_recordings SET file_id = $2, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
+
+-- name: SetRecordingResult :one
+-- The result job ended: ready (with whatever GPTunneL gave) or unavailable.
+UPDATE room_recordings SET summary = $2, language = $3, transcript_json = $4, result_state = $5,
+    result_next_at = NULL, updated_at = now()
+WHERE id = $1 AND result_state = 'pending' AND deleted_at IS NULL
+RETURNING *;
+
+-- name: RetryRecordingResult :exec
+UPDATE room_recordings SET result_attempts = result_attempts + 1, result_next_at = $2, updated_at = now()
+WHERE id = $1 AND result_state = 'pending';
+
+-- name: GetRecordingTranscript :one
+SELECT language, transcript_json FROM room_recordings
+WHERE id = $1 AND room_id = $2 AND deleted_at IS NULL AND transcript_json IS NOT NULL;
+
+-- name: ListExpiredRecordingAudio :many
+-- Audio attachments of done recordings older than RECORDING_KEEP_DAYS.
+SELECT * FROM room_recordings
+WHERE file_id IS NOT NULL AND done_at < sqlc.arg('before')
+ORDER BY done_at
+LIMIT 100;
+
+-- name: ClearRecordingAudio :one
+UPDATE room_recordings SET file_id = NULL, updated_at = now()
+WHERE id = $1 AND file_id = $2
+RETURNING *;
+
+-- name: DeleteRecording :one
+-- «Удалить запись» (docs/09 #50): the row stays for its card; the result, the audio link and any
+-- pending work go. An upload / poll in flight is ended as failed ('deleted').
+UPDATE room_recordings SET deleted_at = now(), deleted_by = sqlc.narg('deleted_by')::uuid,
+    status = CASE WHEN status IN ('uploading', 'processing') THEN 'failed' ELSE status END,
+    error = CASE WHEN status IN ('uploading', 'processing') THEN 'deleted' ELSE error END,
+    next_at = NULL, summary = '', language = '', transcript_json = NULL,
+    result_state = CASE WHEN result_state = 'pending' THEN 'unavailable' ELSE result_state END,
+    result_next_at = NULL, file_id = NULL, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL AND status NOT IN ('pending', 'recording')
+RETURNING *;
 
 -- name: ListStalePendingRecordings :many
 -- Rows whose recorder never started (the server died between insert and StartEgress).

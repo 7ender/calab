@@ -1,7 +1,8 @@
 // Package gptunneltest is an in-memory fake of GPTunneL's meeting device API for tests. It
 // checks what a real server would: the Bearer token, Content-Range syntax and bounds, chunks
 // that start exactly at the accepted offset, the declared total size and a complete upload
-// before /complete. Faults can be injected (503s, a lost offset, statuses, errors).
+// before /complete. Faults can be injected (503s, a lost offset, statuses, errors). Done
+// recordings answer the result / transcript methods of docs/17 with Summary / Transcript.
 package gptunneltest
 
 import (
@@ -27,6 +28,15 @@ type Recording struct {
 	Polls                                      int
 	Status, Error                              string
 	Puts                                       int // accepted chunks
+	Deleted                                    bool
+}
+
+// Segment is a transcript remark as GPTunneL gives it (speaker nil = unknown).
+type Segment struct {
+	Speaker *int    `json:"speaker"`
+	Start   float64 `json:"start"`
+	End     float64 `json:"end"`
+	Text    string  `json:"text"`
 }
 
 // Server is the fake. Fields under "faults" may be changed between requests (use Lock).
@@ -50,6 +60,16 @@ type Server struct {
 	MaxChunk      int64    // larger chunks are rejected (413); 0 = 8 MiB
 	Requests      []string // "METHOD path" log
 	RevokedCalled int      // DELETE /me calls
+
+	// result (docs/17): what a done recording answers
+	Summary      string    // "" = null
+	Language     string    // "" = null
+	Transcript   []Segment // nil = no transcript (409 not_ready)
+	NoResultAPI  bool      // the result / transcript routes do not exist (an older GPTunneL): 404
+	FailResults  int       // the next N result calls answer 503
+	ResultCalls  int       // result calls answered
+	PageSize     int       // transcript pages are at most this long (0 = as asked)
+	DeleteCalled int       // DELETE /recordings/:id calls
 }
 
 // New starts a fake. Close it when done.
@@ -167,7 +187,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		rest := strings.TrimPrefix(path, "/recordings/")
 		id, sub, _ := strings.Cut(rest, "/")
 		rec := s.recs[id]
-		if rec == nil || rec.Token != token {
+		if rec == nil || rec.Token != token || rec.Deleted || (s.NoResultAPI && (sub == "result" || sub == "transcript")) {
 			fail(w, 404, "not_found", "no such recording")
 			return
 		}
@@ -201,6 +221,20 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			}
 			rec.Polls++
 			writeJSON(w, 200, s.status(rec))
+		case sub == "" && r.Method == http.MethodDelete:
+			rec.Deleted = true
+			s.DeleteCalled++
+			w.WriteHeader(204)
+		case sub == "result" && r.Method == http.MethodGet:
+			if s.FailResults > 0 {
+				s.FailResults--
+				fail(w, 503, "unavailable", "try again")
+				return
+			}
+			s.ResultCalls++
+			writeJSON(w, 200, s.result(rec))
+		case sub == "transcript" && r.Method == http.MethodGet:
+			s.transcript(w, r, rec)
 		default:
 			fail(w, 405, "bad_request", "method")
 		}
@@ -327,4 +361,68 @@ func (s *Server) status(rec *Recording) map[string]any {
 	}
 	return map[string]any{"id": rec.ID, "status": rec.Status, "error": e, "offset": len(rec.Data),
 		"web_url": s.WebBase + "/meetings/" + rec.ID}
+}
+
+func nullable(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
+}
+
+func (s *Server) result(rec *Recording) map[string]any {
+	out := s.status(rec)
+	delete(out, "offset")
+	out["title"], out["language"], out["duration_sec"], out["mime"], out["media_url"] = rec.Title, nil, rec.DurationSec, rec.Mime, nil
+	out["summary"], out["transcript_segments"], out["speakers"] = nil, nil, nil
+	if rec.Status != "done" {
+		return out
+	}
+	out["language"], out["summary"] = nullable(s.Language), nullable(s.Summary)
+	if s.Transcript != nil {
+		speakers := map[int]bool{}
+		for _, sg := range s.Transcript {
+			if sg.Speaker != nil {
+				speakers[*sg.Speaker] = true
+			}
+		}
+		out["transcript_segments"], out["speakers"] = len(s.Transcript), len(speakers)
+	}
+	return out
+}
+
+func (s *Server) transcript(w http.ResponseWriter, r *http.Request, rec *Recording) {
+	if rec.Status != "done" || s.Transcript == nil {
+		fail(w, 409, "not_ready", "no transcript yet")
+		return
+	}
+	limit, cursor := 500, 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 2000 {
+			fail(w, 400, "bad_request", "limit")
+			return
+		}
+		limit = n
+	}
+	if v := r.URL.Query().Get("cursor"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			fail(w, 400, "bad_request", "cursor")
+			return
+		}
+		cursor = n
+	}
+	if s.PageSize > 0 {
+		limit = min(limit, s.PageSize)
+	}
+	total := len(s.Transcript)
+	from := min(cursor, total)
+	to := min(from+limit, total)
+	var next any
+	if to < total {
+		next = strconv.Itoa(to)
+	}
+	writeJSON(w, 200, map[string]any{"id": rec.ID, "language": nullable(s.Language), "total": total,
+		"segments": append([]Segment{}, s.Transcript[from:to]...), "next_cursor": next})
 }

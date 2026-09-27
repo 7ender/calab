@@ -103,6 +103,7 @@ import {
   StartRecordingResponseSchema,
   StopRecordingResponseSchema,
   RetryRecordingResponseSchema,
+  GetRecordingTranscriptResponseSchema,
   type FileMeta,
   type ScreenSharePreset,
   type WorkspaceRole,
@@ -332,6 +333,11 @@ export const api = {
       call('POST', `/api/rooms/${roomId}/recordings/${recordingId}/recheck`, RetryRecordingResponseSchema),
     reupload: (roomId: string, recordingId: string) =>
       call('POST', `/api/rooms/${roomId}/recordings/${recordingId}/reupload`, RetryRecordingResponseSchema),
+    /** The transcript kept on the server (docs/09 #47): VIEW_ROOM; 404 when there is none / deleted. */
+    transcript: (roomId: string, recordingId: string, signal?: AbortSignal) =>
+      call('GET', `/api/rooms/${roomId}/recordings/${recordingId}/transcript`, GetRecordingTranscriptResponseSchema, undefined, signal),
+    /** «Удалить запись» (#50): the starter, the owner or MANAGE_MESSAGES; 409 while recording. */
+    remove: (roomId: string, recordingId: string) => callEmpty('DELETE', `/api/rooms/${roomId}/recordings/${recordingId}`),
   },
   voice: {
     join: (roomId: string) => call('POST', `/api/rooms/${roomId}/join`, JoinVoiceResponseSchema),

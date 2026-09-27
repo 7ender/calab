@@ -676,6 +676,15 @@ svg.lucide {
   --bubble-chip-bg: var(--color-bubble-out-meta);
   --bubble-chip-fg: var(--color-bubble-out);
 }
+/* The meeting recording card (a system message, docs/08 «Запись встреч»): its audio player uses
+   the incoming bubble's colours. */
+.rec-card {
+  --bubble-meta: var(--color-label-tertiary);
+  --bubble-link: var(--color-bubble-in-accent);
+  --bubble-accent: var(--color-bubble-in-accent);
+  --bubble-chip-bg: var(--color-accent-strong);
+  --bubble-chip-fg: var(--color-on-accent);
+}
 .bubble-in .text-accent-text,
 .bubble-out .text-accent-text {
   color: var(--bubble-link);
