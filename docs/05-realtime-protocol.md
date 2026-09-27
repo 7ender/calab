@@ -64,7 +64,7 @@
 
 ```
 READY
-WORKSPACE_CREATE / UPDATE / DELETE
+WORKSPACE_CREATE / UPDATE / DELETE    -- Workspace.plan: тариф и эффективные лимиты (ADR-0024); смена тарифа → WORKSPACE_UPDATE всем участникам
 WORKSPACE_MEMBER_ADD / UPDATE (роль, ник) / REMOVE
 ROOM_CREATE / UPDATE / DELETE
 ROOM_PERMISSIONS_UPDATE      { room_id, permissions[] }
@@ -350,7 +350,16 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 
 `POST /api/rooms/:id/messages` идемпотентен по `nonce`: `id` генерирует Postgres (`uuidv7()`), а повтор с уже использованным `(author_id, nonce)` возвращает существующее сообщение (`200` вместо `201`) без повторного `MESSAGE_CREATE`.
 
-Файлы: хранилище (ADR-0011, `blob.Store`) наружу не публикуется, загрузка и скачивание идут только через API. Лимиты — 50 MB на файл (`MAX_FILE_SIZE_MB`, иначе `413`), 20 вложений на сообщение, квота workspace (`storage_quota_bytes`, по умолчанию 10 GB; превышение → `ERROR_CODE_FILE_QUOTA_EXCEEDED`). Для `image/*` сервер генерирует превью (≤ 512 px, WebP), в сообщении приходит `thumbnail_url`.
+Тарифы (ADR-0024):
+- `READY.plan_contact` и `GET /api/version` → `planContact`: куда писать за подпиской (`PLAN_CONTACT_URL`, иначе `mailto:` + `PLAN_CONTACT_EMAIL`, по умолчанию `mailto:it@gptunnel.ai`). `READY.me.is_superadmin`.
+- `Workspace.plan {plan, limits, valid_until, expired}` — в READY / `WORKSPACE_CREATE` / `WORKSPACE_UPDATE` и REST пространства (не в discover и превью инвайта).
+- `POST /api/rooms/{id}/join` → `media` урезан планом (`max_stream_preset`, `max_streams`), `plan_limits`. Места в комнате: pending считается; упор в план → `409 ROOM_FULL` с `reason: "PLAN_LIMIT"`, `used`, `limit`.
+- `POST …/stream/request {preset, fps?}` → `{preset, fps}` фактические (1080p на free → `H720` / 15). `POST …/camera/request {preset?, fps?}` → `200 {preset, fps}` (раньше 204): `min(запрошенное, план)`; `UNSPECIFIED`/0 = без ограничения.
+- Файлы: `413 FILE_QUOTA_EXCEEDED` c `used`/`limit` (байты) и `reason: "PLAN_LIMIT"`, если упёрлись в `storage_mb`.
+- `ApiError.reason` / `used` / `limit` — необязательные поля, есть только у этих ошибок.
+- Суперадмин (`/api/admin/*`, только email из `SUPERADMIN_EMAILS`, остальным `404`; лимит 60/мин на пользователя; каждый запрос в лог): `GET /api/admin/workspaces?q=` (имя / slug / email владельца, ≤ 50, с планом и использованием: участники без гостей, комнаты, МБ, последнее сообщение), `GET /api/admin/workspaces/{id}`, `PUT /api/admin/workspaces/{id}/plan {plan, limits? (только CUSTOM), valid_until?, note ≤ 500}` (422 на неверное; журнал; `WORKSPACE_UPDATE`), `GET /api/admin/workspaces/{id}/plan/log` (≤ 100, новые сверху).
+
+Файлы: хранилище (ADR-0011, `blob.Store`) наружу не публикуется, загрузка и скачивание идут только через API. Лимиты — 50 MB на файл (`MAX_FILE_SIZE_MB`, иначе `413`), 20 вложений на сообщение, квота workspace (`min(storage_quota_bytes, план storage_mb)`, по умолчанию 10 GB; превышение → `ERROR_CODE_FILE_QUOTA_EXCEEDED`). Для `image/*` сервер генерирует превью (≤ 512 px, WebP), в сообщении приходит `thumbnail_url`.
 
 Защита от злоупотреблений (security review, 2026-09-26):
 - **Rate limit.** Все лимитеры — token bucket в Redis. При исчерпании — `429` с `Retry-After` (секунды). При недоступности Redis лимитеры **fail closed**: `503`, как и проверка отзыва сессий.

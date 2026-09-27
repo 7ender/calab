@@ -41,6 +41,7 @@
 | [3.15 Valkey вместо Redis (ADR-0017)](#315-valkey-вместо-redis-adr-0017) | Valkey вместо Redis (ADR-0017) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
 | [3.16 Ревью 4 (M1, M2, L1–L10)](#316-ревью-4-m1-m2-l1l10) | Ревью 4 (M1, M2, L1–L10) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
 | [3.17 Статус звонка и скрытые превью (P0.6)](#317-статус-звонка-и-скрытые-превью-p06) | Статус звонка и скрытые превью (P0.6) | Go, Docker; часть тестов — dev-LiveKit | 5 мин |
+| [3.18 Тарифы и лимиты, суперадмин (ADR-0024)](#318-тарифы-и-лимиты-суперадмин-adr-0024) | Тарифы и лимиты, суперадмин | Go, Docker; часть тестов — dev-LiveKit, `lk` | 3 мин |
 | [4. Инфра и стенд](#4-инфра-и-стенд) | контейнеры, сертификаты, `/download/`→releases, LiveKit, relay, нагрузка, защита, бэкапы | ssh к стенду (только чтение), `lk`, openssl | 45 мин |
 | [Хотфикс 0.1.1: сервер (move без SFU, 499)](#server-перемещение-без-sfu-move-хотфикс-011-adr-0019) | app-level move против реального LiveKit, 499 для оборванных запросов | Go, Docker, dev-LiveKit, `lk` | 10 мин |
 | [Приёмка 0.1.1: клиент H.1–H.6](#приёмка-011-хотфикс-десктопа-и-веба) | плашка соединения, диалог «Присоединиться», обводка сообщения, уведомления, 4008, перемещение | Chrome, десктоп, локальный API или стенд | 40 мин |
@@ -1100,6 +1101,16 @@ go test -race -tags integration -count=1 -v -run 'TestEmbedsHidden|TestVoiceStat
   - участник звонка ставит «  Планёрка  » → сохраняется обрезанным, `ROOM_UPDATE` с `voiceStatus` и `voiceStartedAt`;
   - последний вышел → один `ROOM_UPDATE` без `voiceStartedAt` и с пустым `voiceStatus`, READY тоже без статуса;
   - `MANAGE_ROOM` ставит статус не будучи в звонке, пустая строка очищает.
+
+### 3.18 Тарифы и лимиты, суперадмин (ADR-0024)
+
+```sh
+cd apps/server
+go test -race -count=1 ./internal/plans/
+TEST_REDIS_URL=redis://localhost:56379/1 TEST_RTC_REDIS_DB=13 go test -race -tags integration -count=1 -v -run 'TestPlan|TestAdminPlans' ./internal/app/ 2>&1 | grep -E '^(--- |ok|FAIL)'
+```
+Ожидается: 4 `--- PASS` и `ok` (`TestPlanRoomMembersLimit`, `TestPlanMediaCaps` — `SKIP` без dev-LiveKit / `lk`). Проверяется: 6-й в комнате (и владелец) → `409 ROOM_FULL` `reason PLAN_LIMIT`; 1080p → `H720`/15 в `/stream/request`, `/camera/request`, `/join` (`media`, `planLimits`) и `Workspace.plan` в READY; `storage_mb` → `413` c `used`/`limit`; admin: не-суперадмин → 404, поиск (slug/имя/email), 422 на неверный план, `WORKSPACE_UPDATE` с лимитами, журнал; `me.isSuperadmin`, `planContact`.
+Вручную: `curl -s localhost:3000/api/version | jq .planContact` → `"mailto:it@gptunnel.ai"`.
 
 ---
 

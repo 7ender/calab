@@ -101,6 +101,11 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-}
+      - PLAN_FREE_LIMITS=${PLAN_FREE_LIMITS:-}          # ADR-0024; empty = built-in
+      - PLAN_TEAM_LIMITS=${PLAN_TEAM_LIMITS:-}
+      - PLAN_CONTACT_URL=${PLAN_CONTACT_URL:-}
+      - PLAN_CONTACT_EMAIL=${PLAN_CONTACT_EMAIL:-it@gptunnel.ai}
+      - SUPERADMIN_EMAILS=${SUPERADMIN_EMAILS:-}
     <<: *hardening                 # distroless nonroot (65532); writes only to /data/files
     tmpfs: [/tmp]
     volumes:
