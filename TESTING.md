@@ -1794,3 +1794,9 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - Руками (macOS): войти в голос → закрыть окно крестиком → звонок и PTT продолжаются, иконка в Dock; клик по Dock → окно вернулось. ⌘Q в звонке → диалог «Вы в голосовой комнате. Выйти из Calab?»: «Отмена» — остаёмся, «Выйти» — выход; вне звонка ⌘Q выходит сразу.
 - Руками (Windows/Linux): крестик → окно в трее + один раз баллон «Calab продолжает работать в трее»; клик по значку возвращает; «Выход» в меню трея в звонке — тот же диалог; «При закрытии окна: Выходить» → крестик ведёт себя как «Выход».
 - Web: в звонке закрыть вкладку → браузер спрашивает «Покинуть сайт?»; вне звонка — без вопроса.
+
+## Server: свои роли пространства (ADR-0026, ветка `feat/roles-server`)
+- Авто (свои БД/Valkey): `TEST_PG_URL=…/calaba_test_roles TEST_REDIS_URL=redis://localhost:56379/12 TEST_RTC_REDIS_DB=11 go test -tags integration -run 'TestRoles|TestRoleRoomMatrix' ./internal/app/` — CRUD и ограничения (≤ 50, встроенные, иерархия, без эскалации), назначение, матрица прав комнаты с двумя ролями, READY/события, гранты LiveKit при смене ролей; `go test -tags integration -run TestMigration21Roles ./internal/db/` — 00021 up/down на фикстуре с переопределениями.
+- Векторы: `go test ./internal/perm` и `pnpm -F @calaba/protocol test` (общий `proto/testdata/permissions.json`).
+- Руками (curl, владелец): `POST /api/workspaces/{id}/roles {"name":"DJ","permissions":"64"}` → 201, `position` 2; `PUT …/members/{uid}/roles {"roleIds":["<DJ>"]}` → у участника в ответе `roleIds` = DJ + member; приватная комната с `allow VIEW_ROOM` для DJ → участник видит её (`ROOM_CREATE` в gateway), `DELETE …/roles/<DJ>` → `ROLE_DELETE`, `ROOM_DELETE`.
+- Стенд после деплоя: старые приватные комнаты остались приватными (цель `member` переведена в id роли), гость по-прежнему видит только разрешённые комнаты.

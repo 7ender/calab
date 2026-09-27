@@ -22,8 +22,11 @@ workspaces          id, slug (unique), name, icon_file_id, visibility ('private'
                     default_audio_bitrate_kbps (32), default_max_stream_preset ('h1080'),
                     default_max_streams (3),
                     storage_quota_bytes (10 GB), storage_used_bytes (0)
-workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest'),
+workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest' — старшая встроенная роль),
                     nickname, joined_at            PK (workspace_id, user_id)
+workspace_roles     id, workspace_id, name (1..32), color (0xRRGGBB, 0 = нет), position (UNIQUE в пространстве),
+                    permissions bigint, builtin ('owner'|'admin'|'member'|'guest'|NULL), mentionable, created_at
+member_roles        workspace_id, user_id, role_id      PK (workspace_id, user_id, role_id)   (ADR-0026)
 workspace_invites   id, workspace_id, code (unique), created_by, max_uses, uses,
                     expires_at, created_at
 email_invites       id, workspace_id, email (citext), role ('member'|'admin'), invited_by,
@@ -37,7 +40,7 @@ rooms               id, workspace_id? (NULL только у DM), type ('voice'|'
                     max_stream_preset?   ('economy'|'h720'|'h1080'|'original'),
                     max_streams?         (0..10),
                     created_at, archived_at
-room_permissions    room_id, target_type ('role'|'user'), target_id,
+room_permissions    room_id, target_type ('role'|'user'), target_id (id роли | id пользователя),
                     allow bigint, deny bigint            -- overrides, как в Discord
                     PK (room_id, target_type, target_id)
 
@@ -115,16 +118,26 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 ### Профиль участника (docs/09 #20)
 
 - «Участник с» — без новых полей: регистрация `users.created_at` (`User.created_at`) и вступление в пространство `workspace_members.joined_at` (`WorkspaceMember.joined_at`).
-- Личные заметки `user_notes`: одна на пару (автор, о ком), видит и меняет только автор (`GET/PUT/DELETE /api/users/{id}/note`, docs/05). Писать можно о себе и о тех, с кем есть общее пространство (любая роль) или DM, иначе `404`. Пустой текст удаляет заметку. При анонимизации гостя удаляются его заметки и заметки о нём. Роли меняются существующим `PATCH …/members/{userId} {role}` (права — «Роли workspace» ниже).
+- Личные заметки `user_notes`: одна на пару (автор, о ком), видит и меняет только автор (`GET/PUT/DELETE /api/users/{id}/note`, docs/05). Писать можно о себе и о тех, с кем есть общее пространство (любая роль) или DM, иначе `404`. Пустой текст удаляет заметку. При анонимизации гостя удаляются его заметки и заметки о нём. Роли меняются `PUT …/members/{userId}/roles` (или legacy `PATCH …/members/{userId} {role}`; см. «Роли workspace» ниже).
 
-## Роли workspace
+## Роли workspace (ADR-0026)
 
-| Роль | Кто |
-|---|---|
-| `owner` | создатель; единственный, кто может удалить workspace и передать владение |
-| `admin` | управление комнатами, участниками, инвайтами, правами |
-| `member` | обычный сотрудник |
-| `guest` | ограниченный: видит только комнаты с явным `allow VIEW_ROOM` |
+У участника **несколько ролей** (`member_roles`). В каждом пространстве четыре встроенные роли (создаются триггером вместе с пространством, миграция 00021 — для существующих) и до 46 своих (всего ≤ 50):
+
+| Роль | position | Права по умолчанию | Что можно менять |
+|---|---|---|---|
+| `owner` | 1001 | `ADMINISTRATOR` | только цвет/`mentionable`; снять/выдать нельзя; единственный, кто удаляет workspace |
+| `admin` | 1000 | `ADMINISTRATOR` | цвет/`mentionable`; выдаёт и снимает только владелец |
+| свои роли | 2 … | заданные | имя, цвет, права, порядок; удаляются |
+| `member` | 1 | `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO` | права; есть у каждого не-гостя |
+| `guest` | 0 | `CONNECT, SPEAK` (комнаты — только с явным `allow VIEW_ROOM`) | права в пределах `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO` |
+
+- Встроенные роли участника следуют `workspace_members.role` (триггер): `owner` → owner + member, `admin` → admin + member, `member` → member, `guest` → guest. Поле `role` остаётся «старшей встроенной ролью» для клиентов до 0.6.0 (`WorkspaceMember.role`); свои роли назначаются отдельно (`member_roles`) и переживают смену встроенной. Имена встроенных ролей — ключи (`owner` …), клиент показывает локализованные.
+- Новая своя роль встаёт в самый низ своих (position 2, остальные сдвигаются вверх, `ROLE_UPDATE`); порядок — `PUT …/roles/order` (свои роли от старшей к младшей).
+- **Управление** (право `MANAGE_ROLES`, у admin — через `ADMINISTRATOR`): создавать, менять, удалять и переставлять можно только роли **ниже своей старшей** (владелец — любые); `ADMINISTRATOR` своей роли не выдаётся никогда; не-админ не может менять у роли `MANAGE_ROLES` / `MANAGE_WORKSPACE` и биты, которых нет у него самого. Создать роль может только тот, у кого старшая роль выше position 2.
+- **Назначение** `PUT …/members/{userId}/roles {role_ids}` — полный набор ролей: `member`/`guest` сохраняется сам и не меняется (гость → участник — `promote`); `owner` не выдаётся и не снимается; `admin` — только владелец; каждая добавляемая/снимаемая роль — ниже старшей роли действующего и (для не-админа) без прав сверх его собственных; старшая роль цели — ниже старшей роли действующего (кроме себя).
+- **Удаление** своей роли: её держатели остаются со своими прочими ролями (у каждого есть `member`/`guest` — это и есть «роль по умолчанию»), её переопределения в комнатах удаляются (`ROLE_DELETE` + `ROOM_PERMISSIONS_UPDATE`).
+- Legacy `PATCH …/members/{userId} {role}` (`MANAGE_WORKSPACE`) меняет только встроенную роль, свои роли сохраняются.
 
 Видимость workspace:
 - `private` — вход только по инвайту (код/ссылка `calaba://join/<code>`).
@@ -132,7 +145,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 
 ## Права (битмаска)
 
-Проще Discord: один набор битов, действующий на уровне workspace (по роли) с overrides на уровне комнаты.
+Проще Discord: один набор битов, действующий на уровне workspace (OR прав ролей участника) с overrides ролей и пользователя на уровне комнаты.
 
 ```ts
 export const Permission = {
@@ -151,26 +164,27 @@ export const Permission = {
   MANAGE_NICKNAMES: 1n << 12n,  // менять ники других (только уровень workspace)
   MENTION_EVERYONE: 1n << 13n,  // @everyone / @here (у member по умолчанию нет)
   VIDEO:            1n << 14n,  // веб-камера в voice (у member по умолчанию есть)
+  MANAGE_ROLES:     1n << 15n,  // свои роли ниже своей старшей и их назначение (только уровень workspace, ADR-0026)
 } as const;
 ```
 
-Дефолты по ролям:
-- `owner`, `admin` → `ADMINISTRATOR`
-- `member` → `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM | VIDEO`
-- `guest` → `CONNECT | SPEAK` — без `VIEW_ROOM`, поэтому по умолчанию гость не видит ни одной комнаты; видит только комнаты с явным override `allow VIEW_ROOM` (для роли `guest` или для конкретного пользователя)
+Дефолты встроенных ролей — в таблице «Роли workspace» выше (права `member`/`guest` редактируются).
 
-Вычисление эффективных прав в комнате (единственная функция, живёт в `packages/protocol`, используется и сервером, и клиентом для UI):
+Вычисление эффективных прав в комнате (единственная функция `computePermissions` в `packages/protocol`, зеркало — Go `internal/perm`, общие тест-векторы `proto/testdata/permissions.json`; сервер проверяет, клиент — для UI):
 
 ```
-base   = defaults[role]
-if base & ADMINISTRATOR → all
+base   = OR(roles[].permissions)                     (права пространства; без переопределений)
+if base & ADMINISTRATOR → all                        (owner/admin: переопределения, в т.ч. deny, не действуют)
 perms  = base
-perms &= ~roleOverride.deny;  perms |= roleOverride.allow     (override для роли)
-perms &= ~userOverride.deny;  perms |= userOverride.allow     (override для конкретного пользователя — приоритетнее)
+for role in roles sorted by position ASC:            (младшие первыми, старшая последней — её слово решает)
+    perms &= ~roleOverride[role].deny;  perms |= roleOverride[role].allow
+perms &= ~userOverride.deny;  perms |= userOverride.allow   (персональное — приоритетнее всех ролей)
 if !(perms & VIEW_ROOM) → 0
 ```
 
-Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
+`ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES` — только уровень пространства, в переопределениях комнаты запрещены. Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
+
+Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для своих ролей или конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
 
 **DM (ADR-0020).** Роли и overrides не применяются: `computePermissions({dm: {participant}})` (Go: `perm.ComputeDM`) даёт участнику фиксированный набор `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES` (= 7), остальным — 0 (тест-векторы `roomType: "dm"` в `proto/testdata/permissions.json`). Остальные пункты ADR ложатся на правила, а не на биты: чтение истории — `VIEW_ROOM`, реакции — `SEND_MESSAGES`, правка/удаление своих сообщений — право автора везде, закреп в DM разрешён обоим участникам по типу комнаты. `MANAGE_MESSAGES`, `MENTION_EVERYONE`, модерации и голоса в DM нет.
 

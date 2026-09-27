@@ -49,7 +49,7 @@
 ## Жизненный цикл
 
 1. Открыли сокет → `HELLO { heartbeat_interval_ms }`.
-2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль, видимые комнаты, участники, voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states (с `unread_count` / `mention_count`), notification_settings, workspace_notification_settings, dms[] (DmSummary, см. «Личные сообщения») }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
+2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль (старшая встроенная), видимые комнаты, участники с `role_ids`, `roles` — все роли пространства от старшей к младшей (ADR-0026), voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states (с `unread_count` / `mention_count`), notification_settings, workspace_notification_settings, dms[] (DmSummary, см. «Личные сообщения») }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
 3. Клиент шлёт `HEARTBEAT` каждые `heartbeat_interval` (~41 с) с jitter; нет `ACK` за 2 интервала → закрыть и переподключиться.
 4. Обрыв → переподключение с экспоненциальным backoff (1s → 30s, jitter) → `RESUME { token, session_id, seq }` (token — свежий access JWT):
    - сервер держит буфер событий сессии в Redis (последние ~5 мин / 1000 событий) → досылает пропущенное по порядку, затем событие `RESUMED { replayed }`;
@@ -65,7 +65,9 @@
 ```
 READY
 WORKSPACE_CREATE / UPDATE / DELETE    -- Workspace.plan: тариф и эффективные лимиты (ADR-0024); смена тарифа → WORKSPACE_UPDATE всем участникам
-WORKSPACE_MEMBER_ADD / UPDATE (роль, ник) / REMOVE
+WORKSPACE_MEMBER_ADD / UPDATE (роль, role_ids, ник) / REMOVE
+ROLE_CREATE / ROLE_UPDATE     { role } — роли пространства (ADR-0026); ROLE_UPDATE и для каждой роли со сменившейся позицией
+ROLE_DELETE                   { workspace_id, role_id } — убрать role_id у всех участников; затем ROOM_PERMISSIONS_UPDATE по комнатам, где были её переопределения
 ROOM_CREATE / UPDATE / DELETE
 ROOM_PERMISSIONS_UPDATE      { room_id, permissions[] }
 MESSAGE_CREATE / UPDATE / DELETE
@@ -89,7 +91,7 @@ ROOM_RECORDING                { workspace_id, room_id, recording_id, state: ACTI
 
 Фильтрация по получателю (выполняет gateway, без запросов в БД — у инстанса кэш комнат и ролей каждого workspace, обновляемый самими событиями):
 - `MESSAGE_*`, `VOICE_STREAM_*`, `ROOM_RECORDING` — только тем, у кого `VIEW_ROOM` в комнате; `TYPING_START` — кроме того только сессиям, подписанным на комнату через `SUBSCRIBE` (и не самому печатающему).
-- `ROOM_UPDATE` / `ROOM_PERMISSIONS_UPDATE` / `WORKSPACE_MEMBER_UPDATE` (смена роли) пересчитывают видимость: доступ появился → получатель видит `ROOM_CREATE` с комнатой, пропал → `ROOM_DELETE`, остался → исходное событие.
+- `ROOM_UPDATE` / `ROOM_PERMISSIONS_UPDATE` / `WORKSPACE_MEMBER_UPDATE` (смена ролей) / `ROLE_UPDATE` / `ROLE_DELETE` (права, порядок, удаление роли — для всех её держателей) пересчитывают видимость: доступ появился → получатель видит `ROOM_CREATE` с комнатой, пропал → `ROOM_DELETE`, остался → исходное событие.
 - `VOICE_STATE_UPDATE` для невидимой получателю комнаты приходит с пустым `room_id` (пользователь выглядит не в голосе).
 - Вступление в workspace → `WORKSPACE_CREATE { snapshot }` на все устройства пользователя; выход/исключение/удаление → `WORKSPACE_DELETE`.
 - `VOICE_STREAM_STOP.reason`: `ENDED` | `LIMIT_REACHED` (превышен `max_streams`, трек заглушён сервером) | `MODERATOR`.
@@ -193,7 +195,13 @@ GET    /api/workspaces/{id}/invites    ListInvitesResponse                   (MA
 POST   /api/workspaces/{id}/invites    CreateInviteRequest → 201
 DELETE /api/workspaces/{id}/invites/{inviteId}   204
 GET    /api/workspaces/{id}/members    ListMembersResponse
-PATCH  /api/workspaces/{id}/members/{userId|@me}  UpdateMemberRequest{role?, nickname?}
+PATCH  /api/workspaces/{id}/members/{userId|@me}  UpdateMemberRequest{role?, nickname?}   (role — legacy: только встроенная роль, свои роли сохраняются)
+PUT    /api/workspaces/{id}/members/{userId|@me}/roles  SetMemberRolesRequest{role_ids} → {member}   (MANAGE_ROLES, ADR-0026)
+GET    /api/workspaces/{id}/roles      ListRolesResponse                    (любой участник; от старшей к младшей)
+POST   /api/workspaces/{id}/roles      CreateRoleRequest{name, color, permissions, mentionable} → 201   (MANAGE_ROLES; ≤ 50 ролей → 409)
+PATCH  /api/workspaces/{id}/roles/{roleId}   UpdateRoleRequest{name?, color?, permissions?, mentionable?}
+DELETE /api/workspaces/{id}/roles/{roleId}   204                           (только свои роли)
+PUT    /api/workspaces/{id}/roles/order      SetRoleOrderRequest{role_ids: свои роли от старшей} → {roles}
 DELETE /api/workspaces/{id}/members/{userId|@me}  204                        (kick / leave)
 POST   /api/workspaces/{id}/invites/lookup   InviteLookupRequest{email} → {user?, member}   (MANAGE_WORKSPACE, 20/мин)
 POST   /api/workspaces/{id}/members    AddMemberRequest{userId} → 201 AddMemberResponse   (сразу member + письмо; 409 — уже участник)
@@ -207,7 +215,7 @@ GET    /api/workspaces/{id}/rooms      ListRoomsResponse                     (т
 GET    /api/rooms/{id}                 GetRoomResponse{room, permissions}    (нет VIEW_ROOM → 404)
 PATCH  /api/rooms/{id}                 UpdateRoomRequest                     (MANAGE_ROOM; mediaOverride заменяется целиком)
 DELETE /api/rooms/{id}                 204                                   (MANAGE_ROOM; архивирование, archived_at)
-PUT    /api/rooms/{id}/permissions     SetRoomPermissionsRequest             (MANAGE_ROOM; заменяет все overrides)
+PUT    /api/rooms/{id}/permissions     SetRoomPermissionsRequest             (MANAGE_ROOM; заменяет все overrides; цель ROLE — id роли, имя встроенной роли тоже принимается и сохраняется как её id)
 GET    /healthz  /readyz  /metrics     вне /api, Caddy наружу не проксирует
 ```
 
