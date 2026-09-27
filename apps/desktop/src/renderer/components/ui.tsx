@@ -124,18 +124,36 @@ export function Tip({
   );
 }
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, autoFocus, ...rest }, ref) {
-  return (
+/**
+ * Text field. `icon` (16 px glyph: search, #, mail…) is drawn inside at the start and the text keeps
+ * clear of it at every size — the phone's wider padding (mobile:px-3) included, which a caller's
+ * plain `pl-7` would lose to (issue #10).
+ */
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { icon?: ReactNode }>(function Input(
+  { className, autoFocus, icon, ...rest },
+  ref,
+) {
+  const field = (
     <input
       ref={ref}
       // Phones: a field is focused only by a tap (iOS would scroll to it and raise the keyboard).
       autoFocus={autoFocus && autoFocusAllowed()}
       className={cx(
         'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:h-10 mobile:px-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus-visible:outline-offset-0 disabled:opacity-50',
+        icon ? 'pl-7 mobile:pl-9' : null,
         className,
       )}
       {...rest}
     />
+  );
+  if (!icon) return field;
+  return (
+    <span className="relative flex w-full min-w-0 items-center">
+      <span className="pointer-events-none absolute left-2 grid w-4 place-items-center text-muted mobile:left-3" aria-hidden>
+        {icon}
+      </span>
+      {field}
+    </span>
   );
 });
 

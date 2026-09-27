@@ -66,8 +66,7 @@ export function EmailInviteCard({ workspaceId }: { workspaceId: string }): React
   return (
     <Card title={t('mail.invite.title')} footer={t('mail.invite.hint')}>
       <div className="flex flex-col gap-3 px-3 py-3" data-testid="invite-email">
-        <label className="relative flex items-center">
-          <Mail className="pointer-events-none absolute left-2 size-3.5 text-muted mobile:left-3" aria-hidden />
+        <label className="flex items-center">
           <Input
             type="email"
             aria-label={t('mail.invite.field')}
@@ -81,7 +80,7 @@ export function EmailInviteCard({ workspaceId }: { workspaceId: string }): React
               invite.reset();
               lookup.input(e.target.value);
             }}
-            className="pl-7 mobile:pl-9"
+            icon={<Mail className="size-3.5" />}
           />
         </label>
         <div aria-live="polite" className="empty:hidden">

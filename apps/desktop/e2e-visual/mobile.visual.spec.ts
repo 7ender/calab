@@ -441,6 +441,29 @@ test('m-dialog', async ({ page }) => {
   await checkpoint(page, 'm-dialog', { snapshot: false });
 });
 
+// Issue #10: «Новая комната» on a phone — the room-type glyph inside «Название» keeps clear of the
+// typed text (the field's phone padding used to override the caller's pl-7).
+test('m-room-new', async ({ page }) => {
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  // The workspace header's menu (not the rail icon of the same name).
+  await page.getByTestId('mobile-nav').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
+  await page.getByRole('menuitem', { name: 'Создать комнату' }).tap();
+  const dialog = page.getByRole('dialog', { name: 'Новая комната' });
+  await expect(dialog).toBeVisible();
+  const name = dialog.getByLabel('Название');
+  await name.tap();
+  await name.fill('дизайн-ревью');
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const gap = await name.evaluate((el) => {
+    const icon = el.parentElement?.querySelector('svg')?.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return icon ? r.left + parseFloat(getComputedStyle(el).paddingLeft) - icon.right : -1;
+  });
+  expect(gap, 'text starts right of the icon').toBeGreaterThanOrEqual(4);
+  await checkpoint(page, 'm-room-new');
+});
+
 type KeyboardStub = { __keyboard: (px: number | null) => void };
 
 /**
