@@ -82,6 +82,13 @@ room_recordings     id (uuidv7 приложения), workspace_id, room_id, sta
                     UNIQUE (room_id) WHERE status IN (pending, recording) — одна запись на комнату (ADR-0025)
                     rooms += allow_recording (true);  messages += kind ('user'|'system'), payload? (jsonb SystemMessage)
 
+sticker_packs       id, workspace_id, name (1..64), short_name ([a-z0-9_]{1,32}, UNIQUE среди живых в пространстве),
+                    cover_sticker_id?, created_by?, created_at, updated_at, deleted_at?      (ADR-0030)
+stickers            id, pack_id, file_id → files (UNIQUE), emoji, position, width, height (1..512), animated,
+                    created_at, deleted_at?
+user_sticker_packs  user_id, pack_id, position, added_at      PK (user_id, pack_id) — установленные паки и их порядок
+                    messages += sticker_id? → stickers ON DELETE SET NULL (сообщение-стикер)
+
 voice_states        (не в Postgres — в Redis, источник LiveKit webhooks)
                     ключ — сессия (LiveKit identity = <user_id>:<session_id>):
                     workspace_id → { session_id → { user_id, room_id, muted, deafened,
@@ -166,6 +173,7 @@ export const Permission = {
   MENTION_EVERYONE: 1n << 13n,  // @everyone / @here (у member по умолчанию нет)
   VIDEO:            1n << 14n,  // веб-камера в voice (у member по умолчанию есть)
   MANAGE_ROLES:     1n << 15n,  // свои роли ниже своей старшей и их назначение (только уровень workspace, ADR-0026)
+  MANAGE_STICKERS:  1n << 16n,  // стикерпаки пространства (только уровень workspace, ADR-0030)
 } as const;
 ```
 
@@ -187,7 +195,7 @@ perms &= ~userOverride.deny;  perms |= userOverride.allow   (персональ�
 if !(perms & VIEW_ROOM) → 0
 ```
 
-`ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES` — только уровень пространства, в переопределениях комнаты запрещены (API отвечает `422`), а `computePermissions` их в переопределениях игнорирует (`allow`/`deny` маскируются `RoomOnly` / `ROOM_ONLY_PERMISSIONS`). Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
+`ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES`, `MANAGE_STICKERS` — только уровень пространства, в переопределениях комнаты запрещены (API отвечает `422`), а `computePermissions` их в переопределениях игнорирует (`allow`/`deny` маскируются `RoomOnly` / `ROOM_ONLY_PERMISSIONS`). Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
 
 Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для своих ролей или конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
 
@@ -215,13 +223,20 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 ## Тарифы и лимиты пространств (ADR-0024)
 
 - `workspace_plans(workspace_id PK, plan free|team|custom, limits jsonb, valid_until, note, updated_by, updated_at)`; нет записи → `free`. `limits` хранится только у `custom` (как записано, 0 = без лимита); `free` / `team` берут лимиты из env `PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` (JSON поверх встроенных дефолтов, ключи ниже). Истёкший `valid_until` → лимиты `free`, запись остаётся (`Workspace.plan.expired = true`). Каждое изменение через admin API пишется в `workspace_plan_log` (кто, план, лимиты в силе на момент изменения, срок, заметка).
-- Ключи: `room_members` (5), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (1024), `members` (0 = ∞; пока информационный). Team по умолчанию: 50 в комнате, остальное без лимита.
+- Ключи: `room_members` (5), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (1024), `members` (0 = ∞; пока информационный), `sticker_packs` (5) и `stickers` (200 на пространство, ADR-0030; упор — `409 CONFLICT, reason PLAN_LIMIT`). Team по умолчанию: 50 в комнате, остальное без лимита.
 - Сервер (`internal/plans`, кэш 30 с, сброс при изменении на всех инстансах через Redis `plans:changed`) применяет лимиты **для всех, включая владельца** (это не биты прав):
   - вход в голосовую комнату (`/join`, webhook `participant_joined`, перемещение): мест `min(user_limit, room_members)`, pending-устройства и гости считаются; упор в лимит плана → `409 ROOM_FULL`, `reason = PLAN_LIMIT`, `used`/`limit`. `user_limit` комнаты по-прежнему не действует на `MOVE_MEMBERS`, лимит плана — действует;
   - стрим: пресет ≤ `min(max_stream_preset комнаты, stream_max_preset)`, стримов ≤ `min(max_streams, streams_per_room)` (и при выдаче слота, и в webhook), fps ≤ `stream_max_fps`; камера: пресет/fps ≤ `camera_max_*` (ответ `/camera/request`);
   - файлы: квота = `min(storage_quota_bytes, storage_mb MiB)`; превышение → `413 FILE_QUOTA_EXCEEDED` c `used`/`limit` (байты), `reason = PLAN_LIMIT`, если упёрлись в план.
 - `Room.media` остаётся настройками комнаты (UI различает замок «комната» и замок «тариф»); эффективные лимиты плана — в `Workspace.plan.limits` и в ответе `/join` (`media` уже урезан планом, `plan_limits`).
 - Суперадмин — пользователь с email из `SUPERADMIN_EMAILS`; флаг не хранится, вычисляется из текущего email при каждом запросе (`Me.is_superadmin`).
+
+## Стикеры (ADR-0030)
+
+- Пак принадлежит пространству; стикер — WebP-файл пространства (строка `files`, ключ `<workspace>/<file_id>`, в квоте хранения, без превью) + эмодзи для поиска. Сервер разбирает контейнер сам (`internal/stickers.ValidateWebP`): `RIFF`/`WEBP`, размер RIFF = файлу, только известные чанки, стороны 1..512, анимация — `VP8X` + `ANIM` + 1..300 `ANMF` в пределах canvas, ≤ 10 с; ≤ 512 КБ статичный, ≤ 1 МБ анимированный; ≤ 120 стикеров в паке, ≤ 50 за загрузку, ≤ 50 установленных паков у пользователя.
+- Права: управление паками — `MANAGE_STICKERS` (у owner/admin через `ADMINISTRATOR`); видеть паки и стикеры в ленте — все участники (и гости); устанавливать и отправлять — не-гости. Пак пространства W используется в комнатах W и в DM, где оба участника — не-гости W. Файл стикера читает участник W или тот, кто видит комнату с живым сообщением-стикером.
+- Удаление не ломает историю: стикер (или пак), который показывает хоть одно сообщение, помечается `deleted_at` и уходит из пикеров; без ссылок — удаляется, файл забирает чистка сирот (она пропускает файлы живых стикеров). Удалённый пак снимается у всех.
+- Сообщение-стикер: `messages.sticker_id`, пустой `content`, без вложений, правка запрещена (`403`); ответ и реакции — как обычно.
 
 ## Приостановка пространства и баны (docs/09 #32)
 
