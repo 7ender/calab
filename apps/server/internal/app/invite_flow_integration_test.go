@@ -137,3 +137,22 @@ func TestInviteFlowLinkCode(t *testing.T) {
 		t.Fatalf("join again: %v", &jr)
 	}
 }
+
+// A suspended workspace's emailed code no longer passes the invite-only gate (item 32): the
+// sign-up is refused although the code joins only after the address is confirmed.
+func TestInviteFlowEmailedCodeSuspended(t *testing.T) {
+	a, ws := wsOwner(t)
+	addr := uniq("susp") + "@example.com"
+	code := emailInviteCode(t, a, ws.GetId(), addr)
+	suspend(t, ws.GetId(), true, "review")
+	newClient(t).wantErr(403, v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED, "POST", "/api/auth/register", &v1.RegisterRequest{
+		Email: addr, Password: "password123", DisplayName: "S", InviteCode: code})
+	suspend(t, ws.GetId(), false, "")
+	u, resp := registerRaw(t, addr, code, "")
+	if resp.GetMe().GetEmailVerified() {
+		t.Fatal("verified by the emailed code")
+	}
+	if ids := verifyAddr(t, u).GetJoinedWorkspaceIds(); len(ids) != 1 || ids[0] != ws.GetId() {
+		t.Fatalf("joined: %v", ids)
+	}
+}

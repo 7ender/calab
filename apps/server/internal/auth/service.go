@@ -267,6 +267,9 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		}
 		var inv *sqlc.WorkspaceInvite
 		role := perm.RoleMember
+		// gate: the workspace whose code let this sign-up in — its suspension and bans refuse
+		// the sign-up (item 32), also for an emailed code that joins only later (ADR-0027).
+		var gate *uuid.UUID
 		if code != "" {
 			i, err := q.GetInviteByCode(ctx, code)
 			if db.IsNotFound(err) {
@@ -289,6 +292,7 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 					return errInviteEmail
 				}
 				if s.mailOn() {
+					gate = &i.WorkspaceID
 					break
 				}
 				// No SMTP (the invitation predates turning mail off): nothing can confirm the
@@ -302,7 +306,7 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 					}
 					return err
 				}
-				inv, role = &i, perm.Role(ei.Role)
+				inv, gate, role = &i, &i.WorkspaceID, perm.Role(ei.Role)
 			case db.IsNotFound(err):
 				if _, err := q.ConsumeInvite(ctx, code); err != nil {
 					if db.IsNotFound(err) {
@@ -310,7 +314,7 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 					}
 					return err
 				}
-				inv = &i
+				inv, gate = &i, &i.WorkspaceID
 			default:
 				return err
 			}
@@ -323,14 +327,16 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		if err != nil {
 			return err
 		}
-		if inv != nil {
+		if gate != nil {
 			// A suspended workspace takes nobody in; a banned address stays out (item 32).
-			if err := moderation.CheckSuspended(ctx, q, inv.WorkspaceID); err != nil {
+			if err := moderation.CheckSuspended(ctx, q, *gate); err != nil {
 				return err
 			}
-			if err := moderation.CheckBan(ctx, q, inv.WorkspaceID, user.ID, &email); err != nil {
+			if err := moderation.CheckBan(ctx, q, *gate, user.ID, &email); err != nil {
 				return err
 			}
+		}
+		if inv != nil {
 			m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: inv.WorkspaceID, UserID: user.ID, Role: string(role)})
 			if err != nil {
 				return err
