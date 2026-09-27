@@ -3,6 +3,7 @@ import { zhApp } from './app';
 import { zhChat } from './chat';
 import { zhDm } from './dm';
 import { zhEcho } from './echo';
+import { zhMedia } from './media';
 import { zhMail } from './mail';
 import { zhRecording } from './recording';
 import { zhPeople } from './people';
@@ -22,6 +23,7 @@ export const zhCN: Dict = {
   ...zhVideo,
   ...zhDm,
   ...zhEcho,
+  ...zhMedia,
   ...zhPlan,
   ...zhModeration,
   ...zhMail,

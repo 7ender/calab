@@ -299,7 +299,8 @@ export interface MockServer {
   /** Rebuilds the fixtures (optionally another scenario) and drops gateway sessions (clients re-IDENTIFY). */
   reset(scenario?: Scenario): void;
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
-  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string }): Message;
+  /** `attachments`: fixture file ids uploaded by the author (e.g. IDS.files.audio by Вера). */
+  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[] }): Message;
   /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
   setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
@@ -1302,10 +1303,10 @@ class MockImpl {
     return msg;
   }
 
-  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string }): Message {
+  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[] }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
-    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', []);
+    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? []);
   }
 
   private findMessage(id: string): { room: Room; list: Message[]; index: number } {
@@ -2653,7 +2654,26 @@ class MockImpl {
         send(c.res, 200, f.thumbnail.bytes, f.thumbnail.mime, { ETag: `"${f.meta.sha256}-thumb"`, 'Cache-Control': 'private, max-age=31536000' });
         return;
       }
+      // Byte ranges like the server's http.ServeContent (media elements stream and seek with them).
+      const range = /^bytes=(\d*)-(\d*)$/.exec(c.req.headers.range ?? '');
+      const total = f.bytes.length;
+      if (range && (range[1] || range[2])) {
+        const start = range[1] ? Number(range[1]) : Math.max(0, total - Number(range[2]));
+        const end = range[1] && range[2] ? Math.min(total - 1, Number(range[2])) : total - 1;
+        if (start >= total || start > end) {
+          send(c.res, 416, Buffer.alloc(0), f.meta.mime, { 'Content-Range': `bytes */${total}` });
+          return;
+        }
+        send(c.res, 206, f.bytes.subarray(start, end + 1), f.meta.mime, {
+          ETag: `"${f.meta.sha256}"`,
+          'Accept-Ranges': 'bytes',
+          'Content-Range': `bytes ${start}-${end}/${total}`,
+          'Cache-Control': 'private, max-age=31536000',
+        });
+        return;
+      }
       send(c.res, 200, f.bytes, f.meta.mime, {
+        'Accept-Ranges': 'bytes',
         ETag: `"${f.meta.sha256}"`,
         'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(f.meta.name)}`,
         'Cache-Control': 'private, max-age=31536000',

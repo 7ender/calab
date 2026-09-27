@@ -2,6 +2,7 @@ import { ruApp } from './app';
 import { ruChat } from './chat';
 import { ruDm } from './dm';
 import { ruEcho } from './echo';
+import { ruMedia } from './media';
 import { ruMail } from './mail';
 import { ruRecording } from './recording';
 import { ruPeople } from './people';
@@ -21,6 +22,7 @@ export const ru = {
   ...ruVideo,
   ...ruDm,
   ...ruEcho,
+  ...ruMedia,
   ...ruPlan,
   ...ruModeration,
   ...ruMail,

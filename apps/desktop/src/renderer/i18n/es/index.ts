@@ -3,6 +3,7 @@ import { esApp } from './app';
 import { esChat } from './chat';
 import { esDm } from './dm';
 import { esEcho } from './echo';
+import { esMedia } from './media';
 import { esMail } from './mail';
 import { esRecording } from './recording';
 import { esPeople } from './people';
@@ -22,6 +23,7 @@ export const es: Dict = {
   ...esVideo,
   ...esDm,
   ...esEcho,
+  ...esMedia,
   ...esPlan,
   ...esModeration,
   ...esMail,

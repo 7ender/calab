@@ -51,6 +51,8 @@ const KEY = new Set([
   'voice-room-status',
   'voice-room-recording',
   'chat-recording-card',
+  'chat-audio',
+  'chat-video',
   'voice-room-speaking',
   'voice-room-pending',
   'voice-stream',
@@ -1323,6 +1325,82 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await win.mouse.move(0, 0);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'chat-recording-card');
+});
+
+// Chat media (docs/09 #41, docs/08 «Медиа в чате»): Вера posts an audio / a video in «общий».
+async function postMedia(win: Page, mock: MockServer, kind: 'audio' | 'video'): Promise<Locator> {
+  await mainWindow(win, mock);
+  const content = kind === 'audio' ? 'Джингл для релиза' : 'И ролик с анимацией';
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content, attachments: [IDS.files[kind]] });
+  const player = win.getByTestId(`${kind}-player`);
+  await expect(player).toBeVisible();
+  return player;
+}
+
+const feedTo = (win: Page, where: 'top' | 'bottom'): Promise<void> =>
+  win.locator('[data-virtuoso-scroller]').first().evaluate((el, w) => el.scrollTo({ top: w === 'top' ? 0 : el.scrollHeight }), where);
+
+/** The feed at its bottom and at rest (the floating date pill faded out). */
+async function feedAtBottom(win: Page): Promise<void> {
+  for (let i = 0; i < 2; i++) {
+    await feedTo(win, 'bottom');
+    await settle(win);
+  }
+  await expect(win.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
+  await settle(win);
+}
+
+// Audio: duration from the metadata probe; played, paused, set to 0:05 at 1.5×; the mini-player
+// shows only while the message is scrolled away, and «close» stops the track.
+test('chat-audio', async ({ open, win, mock, shot }) => {
+  await open();
+  const player = await postMedia(win, mock, 'audio');
+  await expect(player).toContainText('Джингл релиза');
+  await expect(player).toContainText('0:06 · Команда Calab');
+  await player.getByRole('button', { name: 'Воспроизвести' }).click();
+  await expect(player).toHaveAttribute('data-playing', 'true');
+  await player.getByRole('button', { name: 'Пауза' }).click();
+  await expect(player).not.toHaveAttribute('data-playing');
+  await player.getByRole('button', { name: 'Скорость: 1×' }).click();
+  const seek = player.getByRole('slider', { name: 'Перемотка' });
+  await seek.focus();
+  await win.keyboard.press('Home');
+  await win.keyboard.press('ArrowRight');
+  await expect(seek).toHaveAttribute('aria-valuetext', '0:05 из 0:06');
+  await expect(win.getByTestId('mini-player')).toHaveCount(0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await feedAtBottom(win);
+  await checkpoint(shot, 'chat-audio');
+  // Space on the focused player toggles playback.
+  await player.focus();
+  await win.keyboard.press('Space');
+  await expect(player).toHaveAttribute('data-playing', 'true');
+  // Another room: the track keeps playing in the mini-player over that feed; «close» stops it.
+  await win.locator('aside').getByRole('button', { name: /разработка/ }).first().click();
+  await expect(win.getByRole('heading', { name: 'разработка' })).toBeVisible();
+  const mini = win.getByTestId('mini-player');
+  await expect(mini).toContainText('Джингл релиза');
+  await expect(mini.getByRole('button', { name: 'Пауза' })).toBeVisible();
+  await mini.getByRole('button', { name: 'Закрыть плеер' }).click();
+  await expect(mini).toHaveCount(0);
+});
+
+// Video: the first frame as the poster with a play button and the duration; plays in place with
+// the native controls; Escape leaves full screen.
+test('chat-video', async ({ open, win, mock, shot }) => {
+  await open();
+  const player = await postMedia(win, mock, 'video');
+  await expect.poll(() => player.locator('video').evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThanOrEqual(2);
+  await expect(player).toContainText('0:03');
+  await expect(player.getByRole('button', { name: 'На весь экран' })).toBeAttached();
+  await feedAtBottom(win);
+  await checkpoint(shot, 'chat-video');
+  await player.getByRole('button', { name: 'Воспроизвести demo-clip.mp4' }).click();
+  await expect.poll(() => player.locator('video').evaluate((v: HTMLVideoElement) => v.controls && !v.paused)).toBe(true);
+  await player.getByRole('button', { name: 'На весь экран' }).click();
+  await expect.poll(() => win.evaluate(() => !!document.fullscreenElement)).toBe(true);
+  await win.keyboard.press('Escape');
+  await expect.poll(() => win.evaluate(() => !!document.fullscreenElement)).toBe(false);
 });
 
 // Optimistic join (docs/05, docs/08): Григорий is in the room list at once but still connecting

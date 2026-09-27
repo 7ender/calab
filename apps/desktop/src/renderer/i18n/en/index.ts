@@ -3,6 +3,7 @@ import { enApp } from './app';
 import { enChat } from './chat';
 import { enDm } from './dm';
 import { enEcho } from './echo';
+import { enMedia } from './media';
 import { enMail } from './mail';
 import { enRecording } from './recording';
 import { enPeople } from './people';
@@ -22,6 +23,7 @@ export const en: Dict = {
   ...enVideo,
   ...enDm,
   ...enEcho,
+  ...enMedia,
   ...enPlan,
   ...enModeration,
   ...enMail,

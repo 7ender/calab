@@ -29,6 +29,8 @@ import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
 import { recordingCardOf, systemPreview } from '../../lib/recording';
 import { RecordingCardView } from './RecordingCard';
+import { mediaKind } from '../../lib/chatMedia';
+import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
 
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
@@ -202,12 +204,15 @@ function Bubble({
   const bar = useActionBar(hasMessageActions(c, own, perms));
   const images = m.attachments.filter(isImage);
   const files = m.attachments.filter((f) => !isImage(f));
+  // Videos are full-bleed boxes like images; audio players and other files are rows (docs/08 «Медиа в чате»).
+  const videos = files.filter((f) => mediaKind(f) === 'video');
+  const rows = files.filter((f) => mediaKind(f) !== 'video');
   const uploads = c.uploads && c.status !== 'sent' ? c.uploads : [];
   const hasText = !!m.content.trim();
   const sticker = hasText && !images.length && !files.length && !uploads.length && !m.replyToId && !m.reactions.length && isEmojiOnly(m.content);
   const showName = !own && meta.first && !sticker;
   const imageOnly = images.length > 0 && !hasText && !files.length && !m.replyToId && !showName && !m.reactions.length;
-  const width = images.length ? imageBoxWidth(images) : undefined;
+  const width = images.length ? imageBoxWidth(images) : videos.length ? VIDEO_WIDTH : undefined;
 
   const metaNode = <MetaInfo c={c} own={own} />;
   const tail = meta.last && !sticker;
@@ -228,7 +233,7 @@ function Bubble({
   ) : (
     // data-focus-shape: keyboard focus draws the ring on this shape (body + tail), app/styles.css.
     <div
-      className="relative bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]"
+      className={cx('relative bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]', videos.length > 0 && 'max-w-full')}
       style={{ ...radius, ...(width ? { width } : {}) }}
       data-focus-shape
     >
@@ -244,6 +249,13 @@ function Bubble({
         {m.replyToId ? <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop={!showName} /> : null}
         {images.length ? (
           <ImageGrid files={images} width={width ?? IMAGE_MAX} padTop={showName || !!m.replyToId} overlay={imageOnly ? metaNode : null} />
+        ) : null}
+        {videos.length ? (
+          <div className={cx('flex flex-col gap-0.5', (showName || !!m.replyToId || images.length > 0) && 'pt-1.5')}>
+            {videos.map((f) => (
+              <VideoAttachment key={f.id} f={f} />
+            ))}
+          </div>
         ) : null}
         {uploads.length ? <Uploads uploads={uploads} /> : null}
         {hasText ? (
@@ -262,11 +274,15 @@ function Bubble({
             <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />
           </div>
         ) : null}
-        {files.length ? (
+        {rows.length ? (
           <div className={cx('flex flex-col gap-1 px-3 pb-1', hasText || showName || m.replyToId ? 'pt-0.5' : 'pt-2')}>
-            {files.map((f) => (
-              <FileRow key={f.id} f={f} />
-            ))}
+            {rows.map((f) =>
+              mediaKind(f) === 'audio' && c.status === 'sent' ? (
+                <AudioAttachment key={f.id} f={f} messageId={m.id} roomId={roomId} />
+              ) : (
+                <FileRow key={f.id} f={f} />
+              ),
+            )}
           </div>
         ) : null}
         {m.reactions.length ? (
