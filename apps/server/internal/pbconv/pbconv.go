@@ -155,9 +155,9 @@ func Settings(raw []byte) *v1.UserSettings {
 	if len(raw) > 0 && json.Unmarshal(raw, &present) == nil {
 		_ = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(raw, s)
 	}
-	if _, ok := present["noiseSuppression"]; !ok {
-		s.NoiseSuppression = true
-	}
+	// noiseSuppression (RNNoise) defaults to off since migration 00025 (owner, 27.09: CPU on weak
+	// machines); rows without the field are older than 00025, which wrote it explicitly.
+	_ = present
 	return NormalizeSettings(s)
 }
 
@@ -181,7 +181,7 @@ func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
 
 // DefaultSettings are the settings of a new user.
 func DefaultSettings() *v1.UserSettings {
-	return &v1.UserSettings{NoiseSuppression: true, MicMode: v1.MicMode_MIC_MODE_VAD}
+	return &v1.UserSettings{NoiseSuppression: false, MicMode: v1.MicMode_MIC_MODE_VAD}
 }
 
 // Me is the authenticated user's own view.

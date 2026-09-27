@@ -12,11 +12,11 @@ func TestSettingsDefaults(t *testing.T) {
 		noise bool
 		mode  v1.MicMode
 	}{
-		"empty row":           {`{}`, true, v1.MicMode_MIC_MODE_VAD},
-		"nil":                 {``, true, v1.MicMode_MIC_MODE_VAD},
+		"empty row":           {`{}`, false, v1.MicMode_MIC_MODE_VAD},
+		"nil":                 {``, false, v1.MicMode_MIC_MODE_VAD},
 		"explicit false":      {`{"noiseSuppression":false,"micMode":"MIC_MODE_PUSH_TO_TALK"}`, false, v1.MicMode_MIC_MODE_PUSH_TO_TALK},
-		"legacy push to talk": {`{"pushToTalk":true}`, true, v1.MicMode_MIC_MODE_PUSH_TO_TALK},
-		"corrupt":             {`not json`, true, v1.MicMode_MIC_MODE_VAD},
+		"legacy push to talk": {`{"pushToTalk":true}`, false, v1.MicMode_MIC_MODE_PUSH_TO_TALK},
+		"corrupt":             {`not json`, false, v1.MicMode_MIC_MODE_VAD},
 	} {
 		s := Settings([]byte(c.raw))
 		if s.GetNoiseSuppression() != c.noise || s.GetMicMode() != c.mode || s.GetPushToTalk() != (c.mode == v1.MicMode_MIC_MODE_PUSH_TO_TALK) || s.AudioBitrateKbps != nil { //nolint:staticcheck // legacy field

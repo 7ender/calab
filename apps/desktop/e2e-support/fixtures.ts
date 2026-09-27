@@ -375,7 +375,7 @@ export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride |
 
 export function defaultSettings(): UserSettings {
   return create(UserSettingsSchema, {
-    noiseSuppression: true,
+    noiseSuppression: false, // RNNoise off by default (owner, 27.09)
     unstableNetworkRed: false,
     pushToTalk: false,
     pushToTalkKey: '',
