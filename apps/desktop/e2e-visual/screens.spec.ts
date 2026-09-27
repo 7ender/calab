@@ -804,12 +804,13 @@ test('chat-hover-actions', async ({ open, win, mock, shot }) => {
 test('tooltip-lazy', async ({ open, win, mock }) => {
   await open();
   await mainWindow(win, mock);
-  const tooltip = win.getByRole('tooltip');
+  // By name: the real OS cursor may rest over another Tip of the Electron window.
+  const tip = (name: string) => win.getByRole('tooltip', { name });
   // Hover: one move over an untouched Tip (a Dropdown trigger inside) opens it after the delay.
   const attach = win.getByRole('button', { name: 'Прикрепить файл' });
   await attach.hover();
-  await expect(tooltip).toHaveText('Прикрепить файл');
-  const id = await tooltip.getAttribute('id');
+  await expect(tip('Прикрепить файл')).toBeAttached();
+  const id = await tip('Прикрепить файл').getAttribute('id');
   await expect(attach).toHaveAttribute('aria-describedby', id ?? '');
   // The first click after the wake reaches the (remounted) trigger: the menu opens.
   await attach.click();
@@ -820,8 +821,8 @@ test('tooltip-lazy', async ({ open, win, mock }) => {
   // Keyboard: focus lands on an untouched Tip, stays there after the remount, tooltip at once.
   const help = win.getByRole('button', { name: 'Горячие клавиши' });
   await keyboardFocus(help);
-  await expect(tooltip).toHaveText('Горячие клавиши');
-  await expect(help).toHaveAttribute('aria-describedby', (await tooltip.getAttribute('id')) ?? '');
+  await expect(tip('Горячие клавиши')).toBeAttached();
+  await expect(help).toHaveAttribute('aria-describedby', (await tip('Горячие клавиши').getAttribute('id')) ?? '');
   await expect(help).toBeFocused();
   await win.keyboard.press('Enter');
   await expect(win.getByRole('dialog', { name: 'Горячие клавиши' })).toBeVisible();
