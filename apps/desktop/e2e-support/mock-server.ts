@@ -214,7 +214,7 @@ import {
 import { MARKETING_UNFURLS } from './fixtures-marketing';
 import { cardPicture, encodePng, pngSize } from './png';
 
-export { IDS, GENERAL_MESSAGE_COUNT, MOCK_EMAIL_CODE, PASSWORD, mockId, type Scenario } from './fixtures';
+export { IDS, GENERAL_MESSAGE_COUNT, MOCK_EMAIL_CODE, PASSWORD, RECORDING_FIXTURE, mockId, type Scenario } from './fixtures';
 export { MARKETING_IDS, MARKETING_VOICE_STARTED_AT } from './fixtures-marketing';
 
 // ---------------------------------------------------------------- public API

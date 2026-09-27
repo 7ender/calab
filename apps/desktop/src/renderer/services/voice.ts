@@ -619,7 +619,7 @@ class VoiceEngine {
     this.wanted.clear();
     this.announced = null;
     setVoice({
-      ...(keepSeat ? {} : { roomId: null, workspaceId: null, joinedAt: null, phase: 'idle' as const, serverMuted: false, link: { ...useVoice.getState().link, attempts: 0, blockedHost: null } }),
+      ...(keepSeat ? {} : { roomId: null, workspaceId: null, joinedAt: null, phase: 'idle' as const, serverMuted: false, recording: null, link: { ...useVoice.getState().link, attempts: 0, blockedHost: null } }),
       transmitting: false,
       speaking: {},
       streams: [],

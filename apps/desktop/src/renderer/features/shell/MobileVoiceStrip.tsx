@@ -11,6 +11,7 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useConnectingRing, useVoiceStateOf } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
+import { RecDot, useRecording } from '../voice/Recording';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
 const round = 'grid size-10 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
@@ -40,6 +41,7 @@ export function MobileVoiceStrip(): ReactNode {
   // Still pending (optimistic join, docs/05) after 3 s: the «connecting» ring on my avatar.
   const mine = useVoiceStateOf(wsId ?? '', me?.id ?? '');
   const connectingRing = useConnectingRing(wsId, me?.id, mine?.pending ?? false);
+  const recording = useRecording(roomId) !== null;
   if (!roomId) return null;
   const connected = phase === 'connected';
   // While the PTT button is held the status line says so (the button itself is a 40 px circle).
@@ -64,7 +66,15 @@ export function MobileVoiceStrip(): ReactNode {
           onClick={() => wsId && openRoom(wsId, roomId)}
           aria-live="polite"
         >
-          <span className={cx('max-w-full truncate text-[13px] font-semibold leading-[18px]', connected ? 'text-ok' : 'text-warn')}>{phaseText}</span>
+          <span className="flex max-w-full items-center gap-1.5">
+            <span className={cx('min-w-0 truncate text-[13px] font-semibold leading-[18px]', connected ? 'text-ok' : 'text-warn')}>{phaseText}</span>
+            {/* Recording (docs/09 #30): the red dot only — the strip has no room for the timer. */}
+            {recording ? (
+              <span role="img" aria-label={t('rec.on')} data-testid="mobile-rec" className="flex">
+                <RecDot />
+              </span>
+            ) : null}
+          </span>
           <span className="max-w-full truncate text-caption text-muted">{room?.name ?? ''}</span>
         </button>
         <button

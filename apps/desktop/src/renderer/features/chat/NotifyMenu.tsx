@@ -1,4 +1,5 @@
 import { NotificationLevel } from '@calaba/protocol';
+import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { Bell, Check } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -38,9 +39,10 @@ export interface LevelOption {
 /**
  * The body of a notification menu (room bell, workspace menu — docs/09 item 22): the level
  * radio group, then «Заглушить: 1 ч · 8 ч · до утра · навсегда», and «Включить уведомления»
- * while muted. Works inside a Dropdown.Content or SubContent.
+ * while muted. Works inside a Dropdown or ContextMenu Content / SubContent (`kit`).
  */
 export function NotifyMenuItems({
+  kit = 'dropdown',
   title,
   options,
   value,
@@ -58,44 +60,47 @@ export function NotifyMenuItems({
   /** An extra line under the mute header (e.g. «Пространство заглушено до …»). */
   note?: string | undefined;
   onChange: (level: NotificationLevel, mutedUntil: number | null) => void;
+  /** Which Radix menu hosts the items: a dropdown, or a context menu (the room row's, docs/09 #30). */
+  kit?: 'dropdown' | 'context';
 }): ReactNode {
+  const M = kit === 'context' ? ContextMenu : Dropdown;
   return (
     <>
-      <Dropdown.Label className={menuLabel}>{title}</Dropdown.Label>
-      <Dropdown.RadioGroup value={String(value)} onValueChange={(v) => onChange(Number(v), mutedUntil)}>
+      <M.Label className={menuLabel}>{title}</M.Label>
+      <M.RadioGroup value={String(value)} onValueChange={(v) => onChange(Number(v), mutedUntil)}>
         {options.map((o) => (
-          <Dropdown.RadioItem key={o.level} value={String(o.level)} className={menuItem}>
+          <M.RadioItem key={o.level} value={String(o.level)} className={menuItem}>
             <span className="grid w-4 place-items-center">
-              <Dropdown.ItemIndicator>
+              <M.ItemIndicator>
                 <Check className="size-4" aria-hidden />
-              </Dropdown.ItemIndicator>
+              </M.ItemIndicator>
             </span>
             <span className="truncate">{o.label}</span>
-          </Dropdown.RadioItem>
+          </M.RadioItem>
         ))}
-      </Dropdown.RadioGroup>
-      <Dropdown.Separator className={menuSeparator} />
-      <Dropdown.Label className={menuLabel}>{mutedUntil ? mutedText(mutedUntil) : t('chat.notifyMute')}</Dropdown.Label>
+      </M.RadioGroup>
+      <M.Separator className={menuSeparator} />
+      <M.Label className={menuLabel}>{mutedUntil ? mutedText(mutedUntil) : t('chat.notifyMute')}</M.Label>
       {note ? <div className="px-2 pb-1 text-micro text-muted">{note}</div> : null}
       {MUTES.map((m) => (
-        <Dropdown.Item key={m.label} className={menuItem} onSelect={() => onChange(value, m.until(new Date()))}>
+        <M.Item key={m.label} className={menuItem} onSelect={() => onChange(value, m.until(new Date()))}>
           <span className="w-4" aria-hidden />
           {t(m.label)}
-        </Dropdown.Item>
+        </M.Item>
       ))}
-      <Dropdown.Item className={menuItem} onSelect={() => onChange(NotificationLevel.NONE, null)}>
+      <M.Item className={menuItem} onSelect={() => onChange(NotificationLevel.NONE, null)}>
         <span className="w-4" aria-hidden />
         {t('chat.notifyMuteForever')}
-      </Dropdown.Item>
+      </M.Item>
       {mutedUntil || value === NotificationLevel.NONE ? (
         <>
-          <Dropdown.Separator className={menuSeparator} />
-          <Dropdown.Item
+          <M.Separator className={menuSeparator} />
+          <M.Item
             className={menuItem}
             onSelect={() => onChange(value === NotificationLevel.NONE ? defaultLevel : value, null)}
           >
             <Bell className="size-4" aria-hidden /> {t('chat.notifyUnmute')}
-          </Dropdown.Item>
+          </M.Item>
         </>
       ) : null}
     </>

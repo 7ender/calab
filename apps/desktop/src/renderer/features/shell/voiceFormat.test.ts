@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, inviteRowVisible, pad2, parseUserLimit } from './voiceFormat';
+import { formatDuration, inviteRowVisible, pad2, parseUserLimit, recordingTime } from './voiceFormat';
 
 describe('formatDuration', () => {
   it('formats minutes and hours', () => {
@@ -41,5 +41,16 @@ describe('parseUserLimit', () => {
     expect(parseUserLimit('100')).toBeNull();
     expect(parseUserLimit('-1')).toBeNull();
     expect(parseUserLimit('2.5')).toBeNull();
+  });
+});
+
+describe('recordingTime', () => {
+  it('counts from the recording start', () => {
+    const since = 1_000_000;
+    expect(recordingTime(since, since)).toBe('0:00');
+    expect(recordingTime(since, since + 754_000)).toBe('12:34');
+    expect(recordingTime(since, since + 3_600_000)).toBe('1:00:00');
+    // A clock behind the server's `since` never shows a negative time.
+    expect(recordingTime(since, since - 5_000)).toBe('0:00');
   });
 });

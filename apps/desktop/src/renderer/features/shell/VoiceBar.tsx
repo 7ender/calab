@@ -12,7 +12,8 @@ import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
-import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
+import { setVoice, useVoice, type LinkQuality, type VoicePhase, type VoiceRecording } from '../../stores/voice';
+import { RecordingPill } from '../voice/Recording';
 import { useWorkspaces } from '../../stores/workspaces';
 import { NoiseButton } from './NoisePopover';
 import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
@@ -365,6 +366,8 @@ declare global {
     __calabaSpeaking?: (userIds: string[]) => void;
     /** Visual tests only: back-date my room join (docs/09 #10 — the invite row's 30 s window). */
     __calabaJoinedAt?: (ms: number) => void;
+    /** Visual tests only: a meeting recording of my room (docs/09 #30), until the server sends it. */
+    __calabaRecording?: (rec: VoiceRecording | null) => void;
   }
 }
 
@@ -377,7 +380,9 @@ export function VoiceBar(): ReactNode {
     window.__calabaCameras = () => useVoice.getState().cameras.length;
     window.__calabaSpeaking = (ids) => setVoice({ speaking: Object.fromEntries(ids.map((id) => [id, true])) });
     window.__calabaJoinedAt = (ms) => setVoice({ joinedAt: ms });
+    window.__calabaRecording = (recording) => setVoice({ recording });
     return () => {
+      delete window.__calabaRecording;
       delete window.__calabaSpeaking;
       delete window.__calabaVoicePhase;
       delete window.__calabaCameras;
@@ -442,6 +447,10 @@ export function VoiceBar(): ReactNode {
           </button>
         </Tip>
       </div>
+
+      {/* A recording (docs/09 #30): the red «● Запись · 12:34» pill on a line under the header,
+          aligned with its text (36 px square + 8 px); who started it — in the tooltip. */}
+      <RecordingPill roomId={roomId} workspaceId={wsId} className="mt-1 pl-11" />
 
       {phase === 'reconnecting' || phase === 'blocked' ? (
         // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it
