@@ -92,7 +92,8 @@ type Member struct {
 // NewMember returns a Member with roles sorted by position (lowest first).
 func NewMember(userID string, role Role, roles []RoleBits) Member {
 	rs := slices.Clone(roles)
-	slices.SortFunc(rs, func(a, b RoleBits) int { return int(a.Position) - int(b.Position) })
+	// Stable, like Array.prototype.sort in the TS mirror (positions are unique per workspace).
+	slices.SortStableFunc(rs, func(a, b RoleBits) int { return int(a.Position) - int(b.Position) })
 	return Member{UserID: userID, Role: role, Roles: rs}
 }
 
@@ -132,20 +133,22 @@ func (m Member) Has(id string) bool {
 // ComputeOrdered is the one room-permission rule (ADR-0026): workspace bits (OR of the
 // member's roles; ADMINISTRATOR → everything, no overrides), then each role's override in
 // the room lowest position first (deny, then allow; the most senior role wins), then the
-// user's own override; without VIEW_ROOM nothing. roleOvs are in the order of the roles;
-// a zero Override is "none".
+// user's own override; without VIEW_ROOM nothing. Overrides only touch RoomOnly bits: the
+// workspace-level ones (ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES) are
+// neither granted nor taken away per room, whatever is stored. roleOvs are in the order of
+// the roles; a zero Override is "none".
 func ComputeOrdered(workspace Bits, roleOvs []Override, userOv *Override) Bits {
 	if workspace&Administrator != 0 {
 		return All
 	}
 	p := workspace
 	for _, o := range roleOvs {
-		p &^= o.Deny
-		p |= o.Allow
+		p &^= o.Deny & RoomOnly
+		p |= o.Allow & RoomOnly
 	}
 	if userOv != nil {
-		p &^= userOv.Deny
-		p |= userOv.Allow
+		p &^= userOv.Deny & RoomOnly
+		p |= userOv.Allow & RoomOnly
 	}
 	if p&ViewRoom == 0 {
 		return 0

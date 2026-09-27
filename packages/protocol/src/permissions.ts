@@ -31,6 +31,14 @@ export const ALL_PERMISSIONS: PermissionBits = Object.values(PERMISSION_BITS).re
 
 const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, ADMINISTRATOR } = PERMISSION_BITS;
 
+/**
+ * Bits room overrides may touch. ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES and
+ * MANAGE_ROLES are workspace-level: computePermissions ignores them in overrides (Go: perm.RoomOnly).
+ */
+export const ROOM_ONLY_PERMISSIONS: PermissionBits =
+  ALL_PERMISSIONS &
+  ~(ADMINISTRATOR | PERMISSION_BITS.MANAGE_WORKSPACE | PERMISSION_BITS.MANAGE_NICKNAMES | PERMISSION_BITS.MANAGE_ROLES);
+
 /** Initial permissions of the built-in roles (the member / guest roles are editable since ADR-0026). */
 export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
   [WorkspaceRole.UNSPECIFIED]: 0n,
@@ -114,7 +122,7 @@ function overrideOf(
  * The single function computing effective room permissions (docs/04, ADR-0026): workspace
  * bits (OR of the roles; ADMINISTRATOR → everything, overrides ignored), then each role's
  * room override lowest position first (deny, then allow: the most senior role wins), then the
- * user's own override; without VIEW_ROOM nothing.
+ * user's own override; without VIEW_ROOM nothing. Overrides only touch ROOM_ONLY_PERMISSIONS.
  * Used by the client for UI; mirrored in Go (apps/server/internal/perm). Pure.
  */
 export function computePermissions(input: ComputePermissionsInput): PermissionBits {
@@ -137,13 +145,13 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
   for (const r of ordered) {
     const o = overrideOf(roleOverrides, r.id);
     if (o) {
-      perms &= ~o.deny;
-      perms |= o.allow;
+      perms &= ~(o.deny & ROOM_ONLY_PERMISSIONS);
+      perms |= o.allow & ROOM_ONLY_PERMISSIONS;
     }
   }
   if (input.userOverride) {
-    perms &= ~input.userOverride.deny;
-    perms |= input.userOverride.allow;
+    perms &= ~(input.userOverride.deny & ROOM_ONLY_PERMISSIONS);
+    perms |= input.userOverride.allow & ROOM_ONLY_PERMISSIONS;
   }
   if (!(perms & VIEW_ROOM)) return 0n;
   return perms;
@@ -162,7 +170,10 @@ export function computeMemberRoomPermissions(
   overrides: readonly RoomPermissionOverride[],
 ): PermissionBits {
   const roleOverrides = new Map<string, OverrideBits>();
-  for (const o of overrides) if (o.targetType === PermissionTargetType.ROLE) roleOverrides.set(o.targetId, o);
+  // First match per target, like Go perm.ComputeIn (the server never stores duplicates).
+  for (const o of overrides) {
+    if (o.targetType === PermissionTargetType.ROLE && !roleOverrides.has(o.targetId)) roleOverrides.set(o.targetId, o);
+  }
   return computePermissions({
     roles,
     roleOverrides,
