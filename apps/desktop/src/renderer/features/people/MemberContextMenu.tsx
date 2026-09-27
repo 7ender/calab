@@ -21,6 +21,7 @@ import { NicknameDialog } from './NicknameDialog';
 import { useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
 import { RoomSubmenuPicker } from '../workspace/RoomPicker';
+import { LocalTime } from './LocalTime';
 
 /** What I may do with a member right now (reactive; the server re-checks every action). */
 export function useMemberActions(workspaceId: string, userId: string): MenuActions | null {
@@ -175,6 +176,7 @@ function MemberMenuContent({
       <div className={cx(menuLabel, 'truncate')} title={name}>
         {name}
       </div>
+      <LocalTime userId={userId} variant="menu" />
       {!inProfile ? (
         <ContextMenu.Item className={row} onSelect={() => openProfile(workspaceId, userId)}>
           <UserRound className="size-4" aria-hidden /> {t('people.menu.profile')}

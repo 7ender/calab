@@ -3,6 +3,7 @@
  * from UTC differs from mine (Discord style). Pure, unit-tested; offsets are taken for the given
  * moment, so daylight saving time is right on both sides.
  */
+import { t } from '../i18n';
 
 /** This device's IANA zone ('' when the runtime can't tell). */
 export function localTimeZone(): string {
@@ -51,4 +52,51 @@ export function timeZoneLabel(theirs: string, mine: string, at: Date = new Date(
   const m = utcOffsetMinutes(mine, at);
   if (m !== null && m === t) return null;
   return formatUtcOffset(t);
+}
+
+/**
+ * The zone as the profile's local-time line shows it (docs/09 #48): «UTC+3», «UTC−5:30», «UTC»
+ * (no «+0») — the true minus sign, minutes only when not whole hours.
+ */
+export function formatUtcZone(minutes: number): string {
+  if (minutes === 0) return 'UTC';
+  const sign = minutes > 0 ? '+' : '−';
+  const abs = Math.abs(minutes);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return `UTC${sign}${h}${m ? `:${String(m).padStart(2, '0')}` : ''}`;
+}
+
+/** Their offset minus mine at `at`, in minutes (positive: they are ahead); null when either is unknown. */
+export function zoneDiffMinutes(theirs: string, mine: string, at: Date): number | null {
+  const t = utcOffsetMinutes(theirs, at);
+  const m = utcOffsetMinutes(mine, at);
+  return t === null || m === null ? null : t - m;
+}
+
+/** A member's local clock: their zone right now, their wall time, and how far they are from me. */
+export type LocalClock = {
+  /** «UTC+3». */
+  zone: string;
+  /** Their wall time, «14:05» (locale format). */
+  time: string;
+  /** Minutes they are ahead of me (negative: behind); 0 / null → no hint. */
+  diff: number | null;
+};
+
+/** «на 2 ч впереди», «на 30 мин позади», «на 5 ч 30 мин впереди»; null when the offset is the same. */
+export function zoneDiffHint(diff: number | null): string | null {
+  if (!diff) return null;
+  const abs = Math.abs(diff);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  const span = h && m ? t('people.tz.hoursMinutes', { h, m }) : h ? t('people.tz.hours', { h }) : t('people.tz.minutes', { m });
+  return t(diff > 0 ? 'people.tz.ahead' : 'people.tz.behind', { diff: span });
+}
+
+/** The clock for `theirs` at `at`, or null when the zone is unset / unknown (no line then). */
+export function localClock(theirs: string, mine: string, at: Date, formatTime: (d: Date, tz: string) => string): LocalClock | null {
+  const off = utcOffsetMinutes(theirs, at);
+  if (off === null) return null;
+  return { zone: formatUtcZone(off), time: formatTime(at, theirs), diff: zoneDiffMinutes(theirs, mine, at) };
 }

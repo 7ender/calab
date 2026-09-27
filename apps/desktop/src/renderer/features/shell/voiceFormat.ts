@@ -37,30 +37,48 @@ export function parseUserLimit(v: string): number | null {
   return Number(s);
 }
 
-// One shared 1 s ticker for every call timer on screen (no interval per row).
-let now = Date.now();
-let timer: number | null = null;
-const listeners = new Set<() => void>();
+// One shared ticker per period for everything on screen (no interval per row): the 1 s call
+// timers, the 60 s local clocks of members (docs/09 #48). Ticks land on period boundaries, so a
+// minute clock flips at :00 and every subscriber of a period re-renders from the same wake-up.
+type Ticker = { now: number; timer: number | null; listeners: Set<() => void>; subscribe: (cb: () => void) => () => void };
+const tickers = new Map<number, Ticker>();
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  if (timer === null) {
-    now = Date.now();
-    timer = window.setInterval(() => {
-      now = Date.now();
-      for (const l of listeners) l();
-    }, 1000);
-  }
-  return () => {
-    listeners.delete(cb);
-    if (!listeners.size && timer !== null) {
-      window.clearInterval(timer);
-      timer = null;
-    }
+function ticker(period: number): Ticker {
+  let tk = tickers.get(period);
+  if (tk) return tk;
+  const self: Ticker = {
+    now: Date.now(),
+    timer: null,
+    listeners: new Set(),
+    subscribe(cb) {
+      self.listeners.add(cb);
+      if (self.timer === null) {
+        self.now = Date.now();
+        const schedule = (): void => {
+          self.timer = window.setTimeout(() => {
+            self.now = Date.now();
+            for (const l of self.listeners) l();
+            schedule();
+          }, period - (Date.now() % period));
+        };
+        schedule();
+      }
+      return () => {
+        self.listeners.delete(cb);
+        if (!self.listeners.size && self.timer !== null) {
+          window.clearTimeout(self.timer);
+          self.timer = null;
+        }
+      };
+    },
   };
+  tk = self;
+  tickers.set(period, tk);
+  return tk;
 }
 
-/** Current time, re-rendering once a second while mounted. */
-export function useNow(): number {
-  return useSyncExternalStore(subscribe, () => now);
+/** Current time, re-rendering every `period` ms (default 1 s) while mounted; one timer per period. */
+export function useNow(period = 1000): number {
+  const tk = ticker(period);
+  return useSyncExternalStore(tk.subscribe, () => tk.now);
 }

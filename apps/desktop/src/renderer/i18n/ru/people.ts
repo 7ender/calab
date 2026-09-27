@@ -21,6 +21,13 @@ export const ruPeople = {
   'people.profile.name': 'Имя профиля',
   'people.profile.status': 'Статус',
   'people.profile.lastSeen': 'Был(а) в сети {when}',
+  // local time line (docs/09 #48)
+  'people.tz.title': 'Местное время',
+  'people.tz.hours': '{h} ч',
+  'people.tz.hoursMinutes': '{h} ч {m} мин',
+  'people.tz.minutes': '{m} мин',
+  'people.tz.ahead': 'на {diff} впереди',
+  'people.tz.behind': 'на {diff} позади',
 
   // member context menu
   'people.menu.profile': 'Профиль',

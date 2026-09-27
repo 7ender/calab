@@ -1,5 +1,4 @@
 import { PresenceStatus, WorkspaceRole } from '@calaba/protocol';
-import { useTimeZoneLabel } from '../../services/timezone';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { MessageCircle, MonitorUp, Pencil, UserRound, Volume2 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -18,6 +17,7 @@ import { useVoice } from '../../stores/voice';
 import { useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
 import { openProfile } from './actions';
+import { LocalTime } from './LocalTime';
 
 const ROLE_KEY: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -56,7 +56,6 @@ export function ProfileCard({
   const self = useSession((s) => s.me?.user?.id) === userId;
   const name = useMemberName(workspaceId, userId);
   const look = useRoleLook(workspaceId, userId);
-  const tz = useTimeZoneLabel(userId);
   const actions = useMemberActions(workspaceId, userId);
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
   const canDm = useCanDm(workspaceId, userId);
@@ -74,7 +73,6 @@ export function ProfileCard({
           <div className="flex min-w-0 items-center gap-1.5">
             <h3 className={`truncate text-headline font-semibold ${roleTextClass(m.role, 'role', look)}`} style={roleTextStyle(m.role, 'role', look)} title={name}>
               {name}
-              {tz ? <span className="font-normal text-muted"> {tz}</span> : null}
             </h3>
             <RoleMark role={m.role} custom={look} />
             {isGuest(m) ? <GuestBadge /> : null}
@@ -106,6 +104,7 @@ export function ProfileCard({
         <dd className="flex min-w-0 items-center gap-1.5">
           {t(ROLE_KEY[m.role])}
         </dd>
+        <LocalTime userId={userId} variant="row" />
         {v?.roomId ? (
           <>
             <dt className="text-muted">{t('people.profile.voice')}</dt>
