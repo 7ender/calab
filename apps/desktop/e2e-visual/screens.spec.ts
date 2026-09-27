@@ -55,6 +55,7 @@ const KEY = new Set([
   'chat-video',
   'chat-code',
   'chat-voice-recording',
+  'chat-voice-recording-narrow',
   'chat-voice-bubble',
   'voice-room-speaking',
   'voice-room-pending',
@@ -1559,7 +1560,7 @@ test('chat-voice-recording', async ({ open, win, mock, shot }) => {
   await win.mouse.move(box.x + box.width / 2, box.y - 80, { steps: 4 });
   await win.mouse.up();
   await expect(win.getByTestId('voice-lock')).toHaveCount(0);
-  await expect(composer.getByRole('button', { name: 'Отмена' })).toBeVisible();
+  await expect(win.getByTestId('voice-recording').getByRole('button', { name: 'Отмена' })).toBeVisible();
   await win.evaluate(() => ((window as unknown as { __calabaVoiceElapsedMs?: number }).__calabaVoiceElapsedMs = 7400));
   await expect(win.getByTestId('voice-timer')).toHaveText('0:07,4');
   await checkpoint(shot, 'chat-voice-recording');
@@ -1588,6 +1589,39 @@ test('chat-voice-recording', async ({ open, win, mock, shot }) => {
   await win.mouse.up();
   await win.waitForTimeout(500);
   await expect(voices).toHaveCount(2);
+});
+
+// docs/09 #49: the strip and the lock are on the popover layer (portalled to <body>), over the
+// feed's «вниз» button and the floating members panel of a narrow window; the lock is centred
+// on the mic button.
+test('chat-voice-recording-narrow', async ({ open, win, mock, shot, size: viewport }) => {
+  test.skip(viewport.width >= 1200, 'the members panel floats below 1200 px');
+  await open();
+  await mainWindow(win, mock);
+  await feedTo(win, 'top');
+  await settle(win);
+  await expect(win.getByRole('button', { name: 'К новым' })).toBeVisible();
+  await membersList(win);
+  await holdMic(win);
+  const lock = win.getByTestId('voice-lock');
+  await expect(lock).toBeVisible();
+  const [l, m] = await Promise.all([lock.boundingBox(), win.getByTestId('voice-button').boundingBox()]);
+  if (!l || !m) throw new Error('no lock / mic box');
+  expect(Math.abs(l.x + l.width / 2 - (m.x + m.width / 2))).toBeLessThanOrEqual(1);
+  // Topmost: the point in the middle of the lock and of the strip hits them, not a panel.
+  for (const el of [lock, win.getByTestId('voice-recording')]) {
+    const hit = await el.evaluate((e) => {
+      const r = e.getBoundingClientRect();
+      return e.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+    });
+    expect(hit, `${await el.getAttribute('data-testid')} is on top`).toBe(true);
+  }
+  await win.evaluate(() => ((window as unknown as { __calabaVoiceElapsedMs?: number }).__calabaVoiceElapsedMs = 2300));
+  await expect(win.getByTestId('voice-timer')).toHaveText('0:02,3');
+  await checkpoint(shot, 'chat-voice-recording-narrow', { keepPointer: true });
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('voice-recording')).toHaveCount(0);
+  await win.mouse.up();
 });
 
 // The bubble: waveform, duration, play / pause through the chat player, seek on the waveform
