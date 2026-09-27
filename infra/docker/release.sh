@@ -310,10 +310,24 @@ if step desktop; then
     done
     if [[ -z "$run" ]]; then
       bad "no release.yml run for tag v$VERSION"
-    elif gh run watch "$run" --repo "$REPO" --exit-status --interval 60 >"$WORK.actions.log" 2>&1; then
-      ok "release.yml run $run: all jobs green"
     else
-      bad "release.yml run $run failed: $(gh run view "$run" --repo "$REPO" --json jobs --jq '[.jobs[]|select(.conclusion!="success" and .conclusion!="skipped")|.name]|join(", ")' 2>/dev/null)"
+      # Poll instead of `gh run watch`: one API hiccup (TLS handshake timeout through a VPN) made
+      # `watch` exit non-zero while the run was still going (0.7.0). Up to 10 failed polls in a row
+      # are tolerated; the run itself has no time limit here (mac notarization takes ~40–60 min).
+      st="" errs=0
+      while :; do
+        if st=$(gh run view "$run" --repo "$REPO" --json status,conclusion --jq '.status + " " + .conclusion' 2>>"$WORK.actions.log"); then
+          errs=0; [[ "$st" == completed* ]] && break
+        else
+          errs=$((errs + 1)); (( errs >= 10 )) && { st="unknown (10 failed polls)"; break; }
+        fi
+        sleep 60
+      done
+      if [[ "$st" == "completed success" ]]; then
+        ok "release.yml run $run: all jobs green"
+      else
+        bad "release.yml run $run: $st — $(gh run view "$run" --repo "$REPO" --json jobs --jq '[.jobs[]|select(.conclusion!="success" and .conclusion!="skipped")|.name]|join(", ")' 2>/dev/null)"
+      fi
     fi
     # the feed on the release host (through the stand IP: Caddy → S3)
     files=""
