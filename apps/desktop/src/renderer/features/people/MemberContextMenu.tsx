@@ -18,6 +18,7 @@ import { memberActions, type MenuActions } from './members';
 import { NicknameDialog } from './NicknameDialog';
 import { useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
+import { RoomSubmenuPicker } from '../workspace/RoomPicker';
 
 /** What I may do with a member right now (reactive; the server re-checks every action). */
 export function useMemberActions(workspaceId: string, userId: string): MenuActions | null {
@@ -239,14 +240,7 @@ function MemberMenuContent({
           </ContextMenu.SubTrigger>
           <ContextMenu.Portal>
             <ContextMenu.SubContent className={cx(menuBox, 'max-h-80 w-56 overflow-y-auto')} sideOffset={4} collisionPadding={8}>
-              {a.moveTargets.map((r) => (
-                <ContextMenu.Item key={r.id} className={row} onSelect={() => moveMember(workspaceId, roomId, userId, r.id)}>
-                  <Volume2 className="size-4 shrink-0" aria-hidden />
-                  <span className="truncate" title={r.name}>
-                    {r.name}
-                  </span>
-                </ContextMenu.Item>
-              ))}
+              <RoomSubmenuPicker rooms={a.moveTargets} itemClass={row} onSelect={(r) => moveMember(workspaceId, roomId, userId, r.id)} />
             </ContextMenu.SubContent>
           </ContextMenu.Portal>
         </ContextMenu.Sub>

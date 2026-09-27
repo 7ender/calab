@@ -6,6 +6,7 @@ import { esEcho } from './echo';
 import { esMail } from './mail';
 import { esRecording } from './recording';
 import { esPeople } from './people';
+import { esPicker } from './picker';
 import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
@@ -22,6 +23,7 @@ export const es: Dict = {
   ...esPlan,
   ...esMail,
   ...esRecording,
+  ...esPicker,
   'voice.pendingMember': 'Conectando…',
   // common
   'common.cancel': 'Cancelar',

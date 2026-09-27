@@ -4,7 +4,7 @@ import { Input, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { VOICE_STATUS_MAX, setVoiceStatus, useVoiceStatus } from '../../services/roomStatus';
 import { useVoice } from '../../stores/voice';
-import { copyRoomInviteLink } from '../people/roomLink';
+import { useUi } from '../../stores/ui';
 import { inviteRowVisible, useNow } from './voiceFormat';
 
 /** How long the invite row's opacity fade runs before it unmounts (docs/09 #10). */
@@ -101,7 +101,7 @@ export function VoiceInviteRow({ roomId, full }: { roomId: string; full: boolean
     <button
       type="button"
       data-testid="voice-invite-row"
-      onClick={() => void copyRoomInviteLink(roomId)}
+      onClick={() => useUi.getState().openDialog({ kind: 'room-invite', roomId })}
       title={t('shell.voiceInviteHint')}
       className={cx(
         'group/inv flex h-7 w-full min-w-0 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-left text-[13px] text-muted transition duration-300 hover:bg-hover hover:text-fg',
