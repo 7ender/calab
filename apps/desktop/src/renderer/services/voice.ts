@@ -35,6 +35,7 @@ import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { playSound } from '../lib/sounds';
 import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
+import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
 import { canSpeakFrom, isDeviceGone, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { useMessages } from '../stores/messages';
@@ -160,10 +161,16 @@ class VoiceEngine {
   /** Set while we mute the mic ourselves, to tell a moderator mute apart. */
   private selfMuting = false;
   private micTesting = false;
-  /** Speaking rings: at once on, 300 ms hold off, batched store updates (lib/speaking.ts). */
+  /** Speaking rings: at once on, 200 ms hold off, batched store updates (lib/speaking.ts). */
   private readonly speakers = new SpeakingDebouncer((speaking) => this.onSpeaking(speaking));
-  /** Raw speaking sources: remote LiveKit active-speaker identities and my own transmit state. */
+  /**
+   * Raw speaking sources: remote — LiveKit active-speaker identities OR the local level of their
+   * incoming audio (lib/remoteSpeaking.ts); me — my own transmit state.
+   */
   private remoteSpeakers: string[] = [];
+  private readonly levelSpeakers = new RemoteLevelSpeaking();
+  /** One 100 ms sampler per room, running only while there are remote mic tracks to read. */
+  private levelSpeakTimer: number | null = null;
   private selfSpeaking = false;
   private readonly active = new ActiveSpeaker((id) => this.onActiveSpeaker(id));
   /** My webcam (services/camera.ts). */
@@ -681,6 +688,7 @@ class VoiceEngine {
       })
       .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
         if (track.kind === Track.Kind.Audio) this.attachAudio(track, p, pub.source === Track.Source.ScreenShareAudio);
+        if (pub.source === Track.Source.Microphone) this.startLevelSpeaking();
         if (pub.source === Track.Source.ScreenShare) {
           this.applyQuality(pub);
           this.syncAnnounce();
@@ -718,6 +726,7 @@ class VoiceEngine {
         this.clearMoveTimer();
         this.resetSpeaking();
         this.setSelfSpeaking(useVoice.getState().transmitting); // the mic stays on air across the move
+        this.startLevelSpeaking(); // stops itself on the first tick if no mic track is left
         this.active.reset();
         for (const set of this.viewers.values()) set.clear();
         for (const p of room.remoteParticipants.values()) for (const pub of p.trackPublications.values()) this.onPublished(pub);
@@ -913,9 +922,42 @@ class VoiceEngine {
     const local = this.room?.localParticipant.identity ?? null;
     const me = this.myId() || null;
     // PTT: my ring is the gate itself (the release tail already applied) — off at once, without
-    // the 300 ms speaking hold. VAD keeps the hold: the gate flaps between words.
+    // the speaking hold. VAD keeps the hold: the gate flaps between words.
     const instantOff = me && prefs().micMode === 'ptt' && !this.selfSpeaking ? new Set([me]) : undefined;
-    this.speakers.update(speakingUserIds(this.remoteSpeakers, local, { userId: me, on: this.selfSpeaking && this.room !== null }), instantOff);
+    const remote = [...this.remoteSpeakers, ...this.levelSpeakers.identities()];
+    this.speakers.update(speakingUserIds(remote, local, { userId: me, on: this.selfSpeaking && this.room !== null }), instantOff);
+  }
+
+  private startLevelSpeaking(): void {
+    if (this.levelSpeakTimer !== null) return;
+    this.levelSpeakTimer = window.setInterval(() => this.sampleLevelSpeaking(), REMOTE_LEVEL.sampleMs);
+  }
+
+  private stopLevelSpeaking(): void {
+    if (this.levelSpeakTimer !== null) window.clearInterval(this.levelSpeakTimer);
+    this.levelSpeakTimer = null;
+  }
+
+  /**
+   * Every 100 ms: the RFC 6464 level of each remote mic track (receiver synchronization sources —
+   * no WebAudio, echo rule 1). No track with the API (none subscribed, or Firefox/Safari web) →
+   * the sampler stops and the ring follows the server alone; the next mic subscription restarts it.
+   */
+  private sampleLevelSpeaking(): void {
+    const room = this.room;
+    const samples: LevelSample[] = [];
+    const mono = performance.now();
+    if (room) {
+      const epoch = performance.timeOrigin + mono;
+      for (const rp of room.remoteParticipants.values()) {
+        const track = rp.getTrackPublication(Track.Source.Microphone)?.track;
+        if (!track?.sid) continue;
+        const level = readLevel(track.receiver, epoch, mono);
+        if (level !== undefined) samples.push({ key: track.sid, identity: rp.identity, level });
+      }
+    }
+    if (samples.length === 0) this.stopLevelSpeaking();
+    if (this.levelSpeakers.push(samples, mono)) this.syncSpeaking();
   }
 
   /** My ring: the mic is actually on air (VAD gate open / PTT held, not muted). */
@@ -927,6 +969,8 @@ class VoiceEngine {
 
   private resetSpeaking(): void {
     this.remoteSpeakers = [];
+    this.stopLevelSpeaking();
+    this.levelSpeakers.reset();
     this.selfSpeaking = false;
     this.speakers.reset();
   }

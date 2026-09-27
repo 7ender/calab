@@ -1,13 +1,13 @@
 /**
  * Speaking indicator (docs/08 «Индикация речи», docs/09 #15/#30): the ring around a speaker's
- * avatar and their brighter name. The ring appears at once (LiveKit already needs speech to call
- * someone an active speaker) and stays 300 ms after the last speech, so short pauses between
+ * avatar and their brighter name. The ring appears at once (both sources already need speech to call
+ * someone speaking) and stays 200 ms after the last speech, so short pauses between
  * words don't flicker. Store updates are coalesced (≤ one per `BATCH_MS`) and only emitted when
  * the set actually changed, so a busy call doesn't re-render the store's subscribers per event.
  * Pure timer logic, no React / LiveKit.
  */
 export const SPEAKING_SHOW_MS = 0;
-export const SPEAKING_HIDE_MS = 300;
+export const SPEAKING_HIDE_MS = 200;
 export const SPEAKING_BATCH_MS = 50;
 
 export interface Timers {
@@ -28,7 +28,8 @@ const userIdOfIdentity = (identity: string): string => identity.split(':')[0] ??
 /**
  * Who speaks, by user id, from the two sources (one person may be in the room from several
  * devices — any of them speaking lights the person up once):
- *  - remote participants: LiveKit ActiveSpeakersChanged identities, my own session excluded;
+ *  - remote participants: LiveKit ActiveSpeakersChanged identities OR-ed with the local level of
+ *    their incoming audio (lib/remoteSpeaking.ts), my own session excluded;
  *  - me: the local VAD gate / PTT (`transmitting`) — instant, not the server's round trip.
  */
 export function speakingUserIds(remoteIdentities: Iterable<string>, localIdentity: string | null, me: { userId: string | null; on: boolean }): Set<string> {

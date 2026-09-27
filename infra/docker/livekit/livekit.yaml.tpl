@@ -42,11 +42,18 @@ room:
   empty_timeout: 300
   max_participants: 100
 
+# Active-speaker detection (ActiveSpeakersChanged → the green speaking ring, docs/02 «Индикация
+# речи собеседников»). Units per livekit-server pkg/sfu/audio (v1.13): active_level is 0–127 in
+# -dBov, 0 = loudest, so a HIGHER value lets QUIETER speech count (default 35 = −35 dBov; our old
+# 30 cut off quiet talkers). A participant is active when above active_level in ≥ min_percentile %
+# of the packets of one update_interval window (ms); the level is averaged over smooth_intervals
+# windows. Senders run RNNoise + a VAD gate + DTX, so silence is real silence and −40 dBov is safe.
+# Changing this needs a LiveKit restart (deploy.sh does it when the rendered config changes).
 audio:
-  active_level: 30
-  min_percentile: 40
-  update_interval: 400
-  smooth_intervals: 2
+  active_level: 40        # −40 dBov (default 35)
+  min_percentile: 40      # % of the window above active_level (default 40)
+  update_interval: 150    # ms between ActiveSpeakersChanged updates (default 400)
+  smooth_intervals: 2     # average over 2 windows ≈ 300 ms (default 2)
 
 webhook:
   api_key: ${LIVEKIT_API_KEY}
