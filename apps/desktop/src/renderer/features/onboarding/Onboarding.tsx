@@ -1,9 +1,9 @@
-import { AudioWaveform, Bell, Languages, MailCheck, Mic, MonitorUp, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { AudioWaveform, Bell, MailCheck, Mic, MonitorUp, TriangleAlert, Users } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { PermissionStatus, ScreenAccess } from '../../../shared/ipc';
 import { Logo } from '../../components/Logo';
-import { Button, Segmented, Select, cx } from '../../components/ui';
-import { availableLocales, getLocale, LOCALE_NAMES, t, useLocale, type Locale } from '../../i18n';
+import { Button, Field, Input, Segmented, Select, cx } from '../../components/ui';
+import { t } from '../../i18n';
 import { platform } from '../../platform';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -11,13 +11,16 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
+import { useInvite } from '../../stores/invite';
 import { MicMeter } from '../settings/AppSettingsDialog';
 import { PttBinder, bindingLabel } from '../settings/PttBinder';
 import { notifyStepView, readNotifyState, requestNotify, type NotifyState } from '../../lib/notifyPermission';
 import { screenStepState, screenStepView } from '../../lib/screenPermission';
 import { resendVerification, verifyEmail } from '../../services/email';
-import { toast } from '../../stores/toasts';
 import { CodeInput, CodeNote, ResendButton, useCodeAddress, useCodeFlow } from '../auth/VerifyEmail';
+import { InvitePreviewRow, useInviteJoin } from '../workspace/WorkspaceDialogs';
+import { joinPlaceholder } from '../../services/links';
+import { micStateAfterRequest, micStateOnArrival, nextStep, onboardingSteps, prevStep, resolveStep, type MicState, type Step } from './steps';
 
 /**
  * First run (docs/08 «Онбординг», docs/09 #20, #55): one card per step — an icon illustration, a
@@ -27,8 +30,6 @@ import { CodeInput, CodeNote, ResendButton, useCodeAddress, useCodeFlow } from '
  * bottom (buttons too), and the body is centred between them — every step has one, so no step
  * shows an empty card. Everything is skippable; each permission is asked at its step.
  */
-type Step = 'verify' | 'lang' | 'mic' | 'mode' | 'screen' | 'notifications' | 'done';
-
 function useIsMacDesktop(): boolean {
   const os = useSession((s) => s.appInfo?.platform);
   return os === 'darwin' && platform.kind === 'electron';
@@ -41,27 +42,35 @@ interface Nav {
 
 export function Onboarding(): ReactNode {
   const mac = useIsMacDesktop();
-  // Language first (ADR-0022) when nothing was chosen explicitly and the OS is not Russian. Fixed
-  // at mount: picking «Русский» on the step must not make the step disappear under the cursor.
-  const [withLang] = useState(() => usePrefs.getState().locale === 'auto' && getLocale() !== 'ru' && availableLocales().length > 1);
   // «Подтвердите почту» first (ADR-0023): right after sign-up the code is in the inbox and the
   // user's attention is on it. «Позже» leaves the bar in the main window instead. Fixed at mount.
   const [withVerify] = useState(() => {
     const me = useSession.getState().me;
     return !!me && !me.emailVerified && !me.user?.isGuest;
   });
-  const steps: Step[] = [...(withVerify ? (['verify'] as Step[]) : []), ...(withLang ? (['lang'] as Step[]) : []), 'mic', 'mode', ...(mac ? (['screen'] as Step[]) : []), 'notifications', 'done'];
-  const [i, setI] = useState(0);
+  // Before READY nothing is known: no join step rather than one that vanishes a moment later.
+  const hasWorkspace = useWorkspaces((s) => s.order.length > 0);
+  const ready = useSession((s) => s.ready);
+  const invited = useInvite((s) => s.signedUp);
+  const steps = onboardingSteps({ verify: withVerify, mac, hasWorkspace: hasWorkspace || !ready, invited });
+  // The step survives a relaunch (macOS asks to quit and reopen after some grants): prefs.
+  const saved = usePrefs((s) => s.onboardingStep);
+  const [resumed] = useState(() => usePrefs.getState().onboardingStep);
+  const step = resolveStep(steps, saved);
+  const i = steps.indexOf(step);
+  const go = (s: Step | null): void => {
+    if (s) usePrefs.getState().setPrefs({ onboardingStep: s });
+  };
   // What the user actually set up, so «Всё готово» does not claim a mic check that was skipped.
   const [micChecked, setMicChecked] = useState(false);
-  const step = steps[i] ?? 'done';
+  const back = prevStep(steps, step);
   const nav: Nav = {
-    next: () => setI((v) => Math.min(steps.length - 1, v + 1)),
-    back: i > 0 ? () => setI((v) => Math.max(0, v - 1)) : null,
+    next: () => go(nextStep(steps, step)),
+    back: back ? () => go(back) : null,
   };
   const finish = (): void => {
     voice.stopMicTest();
-    usePrefs.getState().setPrefs({ onboarded: true });
+    usePrefs.getState().setPrefs({ onboarded: true, onboardingStep: '' });
   };
 
   return (
@@ -83,11 +92,11 @@ export function Onboarding(): ReactNode {
         </ol>
         <div className="flex flex-col [@media(min-height:600px)]:min-h-[488px]" data-onb-card>
           {step === 'verify' ? <VerifyStep nav={nav} /> : null}
-          {step === 'lang' ? <LangStep nav={nav} /> : null}
-          {step === 'mic' ? <MicStep nav={nav} onResult={setMicChecked} /> : null}
-          {step === 'mode' ? <ModeStep nav={nav} /> : null}
+          {step === 'mic' ? <MicStep nav={nav} onResult={setMicChecked} resumed={resumed === 'mic'} /> : null}
           {step === 'screen' ? <ScreenStep nav={nav} /> : null}
           {step === 'notifications' ? <NotificationsStep nav={nav} /> : null}
+          {step === 'mode' ? <ModeStep nav={nav} /> : null}
+          {step === 'join' ? <JoinStep nav={nav} /> : null}
           {step === 'done' ? <DoneStep nav={nav} onFinish={finish} micChecked={micChecked} /> : null}
         </div>
         {/* Kept (invisible) on the last step too, so the composition does not shift. */}
@@ -168,25 +177,34 @@ function WarnNote({ children }: { children: ReactNode }): ReactNode {
   );
 }
 
-function MicStep({ nav, onResult }: { nav: Nav; onResult: (checked: boolean) => void }): ReactNode {
-  const [state, setState] = useState<'idle' | 'asking' | 'ok' | 'denied'>('idle');
+function MicStep({ nav, onResult, resumed }: { nav: Nav; onResult: (checked: boolean) => void; resumed: boolean }): ReactNode {
+  const [state, setState] = useState<MicState>('idle');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const micId = usePrefs((s) => s.micDeviceId);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const micError = useVoice((s) => s.micError);
   const os = useSession((s) => s.appInfo?.platform);
 
+  // A grant applies to this process at once: straight on to the level check, no relaunch.
   const ask = async (): Promise<void> => {
     setState('asking');
     const granted = await platform.system.requestMic();
-    if (!granted) {
-      setState('denied');
-      return;
+    if (granted) {
+      await voice.startMicTest();
+      setDevices((await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default'));
     }
-    await voice.startMicTest();
-    setDevices((await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default'));
-    setState(useVoice.getState().micError ? 'denied' : 'ok');
+    setState(micStateAfterRequest(granted, useVoice.getState().micError));
   };
+  // Back on this step after a relaunch with the access already given: the check starts by itself.
+  const auto = useRef(false);
+  useEffect(() => {
+    if (!resumed || auto.current) return;
+    auto.current = true;
+    void platform.system.permissions().then((p) => {
+      if (micStateOnArrival(p.microphone) === 'granted') void ask();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once on arrival
+  }, []);
 
   const ok = state === 'ok';
   return (
@@ -258,10 +276,9 @@ function MicStep({ nav, onResult }: { nav: Nav; onResult: (checked: boolean) => 
 function VerifyStep({ nav }: { nav: Nav }): ReactNode {
   const email = useCodeAddress();
   const noteId = useId();
-  const flow = useCodeFlow(verifyEmail, resendVerification, () => {
-    toast.success(t('mail.verified'));
-    nav.next();
-  });
+  // The confirmation may join workspaces (emailed invitations): verifyEmail opens the first and
+  // says so in its one toast; the join step then drops out of the run by itself.
+  const flow = useCodeFlow(verifyEmail, resendVerification, nav.next);
   return (
     <StepFrame
       illustration={<Illustration icon={MailCheck} />}
@@ -285,33 +302,6 @@ function VerifyStep({ nav }: { nav: Nav }): ReactNode {
         <ResendButton flow={flow} />
       </div>
       <p className="text-center text-caption text-muted">{t('mail.step.later')}</p>
-    </StepFrame>
-  );
-}
-
-function LangStep({ nav }: { nav: Nav }): ReactNode {
-  const locale = useLocale();
-  const set = usePrefs((s) => s.setPrefs);
-  return (
-    <StepFrame
-      illustration={<Illustration icon={Languages} />}
-      title={t('onb.lang.title')}
-      text={t('onb.lang.text')}
-      back={nav.back}
-      actions={
-        <Button size="lg" onClick={nav.next}>
-          {t('onb.next')}
-        </Button>
-      }
-    >
-      <div className="flex justify-center">
-        <Segmented<Locale>
-          label={t('lang.label')}
-          value={locale}
-          onChange={(l) => set({ locale: l })}
-          options={availableLocales().map((l) => ({ value: l, label: LOCALE_NAMES[l] }))}
-        />
-      </div>
     </StepFrame>
   );
 }
@@ -501,6 +491,69 @@ function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
           {t('onb.notifUnsupported')}
         </p>
       ) : null}
+    </StepFrame>
+  );
+}
+
+/**
+ * «Присоединиться к пространству» (docs/09 #36): last before «Готово», only without any workspace
+ * and not after a sign-up by an invitation. A successful join adds the workspace, so the step
+ * leaves the run and the next one («Готово») shows.
+ */
+function JoinStep({ nav }: { nav: Nav }): ReactNode {
+  const [input, setInput] = useState('');
+  const serverUrl = useSession((s) => s.serverUrl);
+  const open = useUi((s) => s.openDialog);
+  const { code, preview, join, canJoin, error } = useInviteJoin(input, () => undefined);
+  const submit = (): void => {
+    if (canJoin) join.mutate({ code: code ?? '' });
+  };
+  return (
+    <StepFrame
+      illustration={<Illustration icon={Users} />}
+      title={t('mail.inv.joinTitle')}
+      text={t('mail.inv.joinText')}
+      back={nav.back}
+      actions={
+        <>
+          <Button variant="secondary" size="lg" onClick={nav.next}>
+            {t('onb.later')}
+          </Button>
+          <Button size="lg" busy={join.isPending} disabled={!canJoin} onClick={submit}>
+            {t('ws.join')}
+          </Button>
+        </>
+      }
+    >
+      <div className="mx-auto flex w-full max-w-[380px] flex-col gap-3">
+        <Field label={t('ws.inviteCode')} error={error}>
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit();
+            }}
+            placeholder={joinPlaceholder(serverUrl)}
+            spellCheck={false}
+            className="h-9"
+          />
+        </Field>
+        <InvitePreviewRow preview={preview} />
+        {/* No invitation: a workspace of one's own (the step's footer keeps two actions). */}
+        <p className="text-center text-body text-muted">
+          {t('mail.inv.noInvite')}{' '}
+          <button
+            type="button"
+            className="rounded-[var(--radius-control)] text-accent-text hover:underline"
+            onClick={() => {
+              usePrefs.getState().setPrefs({ onboarded: true, onboardingStep: '' });
+              open({ kind: 'create-workspace' });
+            }}
+          >
+            {t('ws.create')}
+          </button>
+        </p>
+      </div>
     </StepFrame>
   );
 }

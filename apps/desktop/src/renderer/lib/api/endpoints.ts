@@ -76,6 +76,7 @@ import {
   UpdateWorkspaceResponseSchema,
   UploadFileResponseSchema,
   VerifyEmailRequestSchema,
+  VerifyEmailResponseSchema,
   ForgotPasswordRequestSchema,
   ResetPasswordRequestSchema,
   InviteLookupRequestSchema,
@@ -107,7 +108,7 @@ export const api = {
     /** 204: a code to me.pendingEmail or me.email; 409 = already verified; 429 + Retry-After. */
     sendVerification: () => callEmpty('POST', '/api/auth/verify/send'),
     /** 422 CODE_INVALID (message: attempts left) | CODE_EXPIRED. */
-    verify: (code: string) => call('POST', '/api/auth/verify', UpdateMeResponseSchema, body(VerifyEmailRequestSchema, { code })),
+    verify: (code: string) => call('POST', '/api/auth/verify', VerifyEmailResponseSchema, body(VerifyEmailRequestSchema, { code })),
     /** No session needed; always 204 (503 = the server sends no mail). */
     forgotPassword: (email: string) => callEmpty('POST', '/api/auth/password/forgot', body(ForgotPasswordRequestSchema, { email })),
     /** 204, every session revoked (sign in again); 422 CODE_INVALID for a wrong code or address. */

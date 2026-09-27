@@ -907,7 +907,7 @@ describe('email (ADR-0023)', () => {
     server.reset('data');
   });
 
-  it('invite by email: lookup, add, invitation with a public preview, sign-up by the link joins verified', async () => {
+  it('invite by email: lookup, add, invitation with a public preview, sign-up with the emailed code joins once confirmed (docs/09 #36)', async () => {
     const anna = await login();
     const ws = IDS.workspaces.main;
     const found = (await (await call(anna, 'POST', `/api/workspaces/${ws}/invites/lookup`, { email: 'Vera@calaba.test' })).json()) as {
@@ -930,11 +930,25 @@ describe('email (ADR-0023)', () => {
     const preview = (await (await call(null, 'GET', `/api/invites/${code}`)).json()) as { email: string; memberCount: number; workspace: { name: string } };
     expect(preview).toMatchObject({ email: 'x@example.com', memberCount: 4, workspace: { name: 'Команда Calab' } });
     const other = await call(null, 'POST', '/api/auth/register', { email: 'y@example.com', password: 'password123', displayName: 'Y', inviteCode: code });
-    expect(await codeOf(other)).toBe('ERROR_CODE_INVITE_INVALID');
+    expect(await codeOf(other)).toBe('ERROR_CODE_INVITE_EMAIL_MISMATCH');
+    // ADR-0027: the emailed code signs up; confirming the address joins (docs/09 #36).
     const reg = await call(null, 'POST', '/api/auth/register', { email: 'x@example.com', password: 'password123', displayName: 'X', inviteCode: code });
-    const me = ((await reg.json()) as { me: { emailVerified: boolean; user: { id: string } } }).me;
-    expect(me.emailVerified).toBe(true);
+    const body = (await reg.json()) as { tokens: { accessToken: string }; me: { emailVerified: boolean; user: { id: string } } };
+    const me = body.me;
+    expect(me.emailVerified).toBe(false);
+    expect(server.state.members.some((m) => m.workspaceId === ws && m.userId === me.user.id)).toBe(false);
+    const x = body.tokens.accessToken;
+    expect(await codeOf(await call(x, 'POST', `/api/invites/${code}/join`))).toBe('ERROR_CODE_EMAIL_NOT_VERIFIED');
+    const verified = (await (await call(x, 'POST', '/api/auth/verify', { code: MOCK_EMAIL_CODE })).json()) as { joinedWorkspaceIds: string[] };
+    expect(verified.joinedWorkspaceIds).toEqual([ws]);
     expect(server.state.members.some((m) => m.workspaceId === ws && m.userId === me.user.id)).toBe(true);
+    // The link again: the preview still shows, joining answers with the membership; others get 403.
+    expect((await call(null, 'GET', `/api/invites/${code}`)).status).toBe(200);
+    expect((await call(x, 'POST', `/api/invites/${code}/join`)).status).toBe(200);
+    const zReg = await call(null, 'POST', '/api/auth/register', { email: 'z@example.com', password: 'password123', displayName: 'Z' });
+    const z = ((await zReg.json()) as { tokens: { accessToken: string } }).tokens.accessToken;
+    expect(await codeOf(await call(z, 'POST', `/api/invites/${code}/join`))).toBe('ERROR_CODE_INVITE_EMAIL_MISMATCH');
+    expect(((await (await call(anna, 'GET', `/api/workspaces/${ws}/invites/email`)).json()) as { invites: unknown[] }).invites).toEqual([]);
 
     // A verified non-member found by lookup is added at once.
     const add = await call(anna, 'POST', `/api/workspaces/${IDS.workspaces.main}/members`, { userId: me.user.id });

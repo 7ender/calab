@@ -5,7 +5,6 @@ import { t } from '../../i18n';
 import { autoFocusAllowed } from '../../lib/phone';
 import { resendVerification, verifyEmail } from '../../services/email';
 import { useSession } from '../../stores/session';
-import { toast } from '../../stores/toasts';
 import { useVerify } from '../../stores/verify';
 import { CODE_LENGTH, CodeFlow, formatCountdown, type CodeFlowState } from './emailCode';
 
@@ -159,7 +158,7 @@ function VerifyBar(): ReactNode {
   const [seen] = useState(attention);
   const input = useRef<HTMLInputElement>(null);
   const noteId = useId();
-  const flow = useCodeFlow(verifyEmail, resendVerification, () => toast.success(t('mail.verified')));
+  const flow = useCodeFlow(verifyEmail, resendVerification); // verifyEmail toasts
   const asked = attention !== seen;
   const [flash, setFlash] = useState(false);
   useEffect(() => {

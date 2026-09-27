@@ -63,6 +63,7 @@ import {
   ListEmailInvitesResponseSchema,
   ResetPasswordRequestSchema,
   VerifyEmailRequestSchema,
+  VerifyEmailResponseSchema,
   GetGptunnelIntegrationResponseSchema,
   GptunnelIntegrationSchema,
   MessageKind,
@@ -1308,10 +1309,13 @@ class MockImpl {
       if (!b.displayName.trim()) throw invalid('displayName', 'display name required');
       if ([...s().users.values()].some((u) => u.email === email)) throw conflict('email already registered', 'email');
       const emailInvite = b.inviteCode ? this.emailInviteByCode(b.inviteCode) : undefined;
-      // An emailed invitation works only with its address (and verifies it, ADR-0023).
-      if (emailInvite && emailInvite.email !== email) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+      // An emailed invitation (ADR-0027): a sign-up code for its address only; the user joins once
+      // the address is confirmed (POST /api/auth/verify), like the server.
+      if (emailInvite?.accepted) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite used up');
+      if (emailInvite && emailInvite.email !== email) throw new HttpError(403, ErrorCode.INVITE_EMAIL_MISMATCH, 'invitation for another address');
       const invite = b.inviteCode && !emailInvite ? [...s().invites.values()].find((i) => i.code === b.inviteCode) : undefined;
       if (b.inviteCode && !invite && !emailInvite) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+      if (invite?.maxUses && invite.uses >= invite.maxUses) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite used up');
       const locale = mailLocale(b.locale) ?? '';
       const id = nextId(s(), 'user');
       const at = tick(s());
@@ -1320,7 +1324,7 @@ class MockImpl {
         email,
         password: b.password,
         settings: defaultSettings(),
-        emailVerified: !!emailInvite,
+        emailVerified: false,
         pendingEmail: '',
         locale,
       };
@@ -1339,8 +1343,7 @@ class MockImpl {
         }),
       ]);
       if (invite) this.joinWorkspace(invite.workspaceId, id, invite.id);
-      if (emailInvite) this.acceptEmailInvites(rec);
-      else s().emailCodes.set(`verify:${id}`, { attempts: 0, sentAtMs: Date.now() }); // the code «mail»
+      s().emailCodes.set(`verify:${id}`, { attempts: 0, sentAtMs: Date.now() }); // the code «mail»
       sendMsg(c.res, 201, RegisterResponseSchema, { tokens: this.tokensJson(c, sessionId), me: this.me(rec) });
     });
 
@@ -1790,6 +1793,7 @@ class MockImpl {
 
     this.route('GET', '/api/invites/:code', (c) => {
       // Invitation by email: public preview with the address (the sign-up form locks it).
+      // An accepted one stays previewable (its invitee may open the link again, docs/09 #36).
       const ei = this.emailInviteByCode(c.params[0] ?? '');
       const inv = ei ? undefined : [...s().invites.values()].find((i) => i.code === c.params[0]);
       const ws = s().workspaces.get(ei?.workspaceId ?? inv?.workspaceId ?? '');
@@ -1809,24 +1813,35 @@ class MockImpl {
     this.route('POST', '/api/invites/:code/join', (c) => {
       const me = this.uid(c);
       const ei = this.emailInviteByCode(c.params[0] ?? '');
+      // Like the server: an existing member gets the membership (200); an emailed code needs the
+      // invited address (403 INVITE_EMAIL_MISMATCH), confirmed (403 EMAIL_NOT_VERIFIED).
       if (ei) {
         const u = s().users.get(me);
         const ws = s().workspaces.get(ei.workspaceId);
-        if (!u || !ws || u.email !== ei.email) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
-        if (this.member(ws.id, me)) throw conflict('already a member');
-        u.emailVerified = true;
+        if (!u || !ws) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+        const existing = this.member(ws.id, me);
+        if (existing) {
+          sendMsg(c.res, 200, JoinWorkspaceResponseSchema, { workspace: ws, member: this.memberOut(existing) });
+          return;
+        }
+        if (u.email !== ei.email) throw new HttpError(403, ErrorCode.INVITE_EMAIL_MISMATCH, 'invitation for another address');
+        if (ei.accepted) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite used up');
+        if (!u.emailVerified) throw notVerified();
         const m = this.joinWorkspace(ws.id, me);
         m.role = ei.role;
-        s().emailInvites.delete(ei.id);
-        this.emitUserUpdate(u);
+        ei.accepted = true;
         sendMsg(c.res, 200, JoinWorkspaceResponseSchema, { workspace: ws, member: this.memberOut(m) });
         return;
       }
       const inv = [...s().invites.values()].find((i) => i.code === c.params[0]);
       const ws = inv ? s().workspaces.get(inv.workspaceId) : undefined;
       if (!inv || !ws) throw new HttpError(404, ErrorCode.INVITE_INVALID, 'invite invalid');
+      const existing = this.member(ws.id, me);
+      if (existing) {
+        sendMsg(c.res, 200, JoinWorkspaceResponseSchema, { workspace: ws, member: this.memberOut(existing) });
+        return;
+      }
       if (inv.maxUses && inv.uses >= inv.maxUses) throw new HttpError(410, ErrorCode.INVITE_INVALID, 'invite used up');
-      if (this.member(ws.id, me)) throw conflict('already a member');
       const m = this.joinWorkspace(ws.id, me, inv.id);
       sendMsg(c.res, 200, JoinWorkspaceResponseSchema, { workspace: ws, member: this.memberOut(m) });
     });
@@ -2785,6 +2800,38 @@ class MockImpl {
       this.setEmailState(b.userId ?? IDS.users.anna, { verified: b.verified ?? false, ...(b.pendingEmail ? { pendingEmail: b.pendingEmail } : {}) });
       noContent(c.res);
     });
+    /**
+     * Invitations as the e2e needs them (docs/09 #36): `{email}` → an emailed invitation of anna's
+     * workspace (the «mail» with the code is not sent anywhere: the code comes back here); no email
+     * → a plain link. Answers `{code}`.
+     */
+    this.route('POST', '/__mock/invite', (c) => {
+      const b = ctl(c);
+      const email = str(b['email']).trim().toLowerCase();
+      const wsId = str(b['workspaceId']) || IDS.workspaces.main;
+      const id = nextId(s(), 'invite');
+      const at = tick(s());
+      if (email) {
+        const code = `mock-mail-${id.slice(-4)}`;
+        s().emailInvites.set(id, {
+          id,
+          workspaceId: wsId,
+          email,
+          role: WorkspaceRole.MEMBER,
+          invitedBy: IDS.users.anna,
+          code,
+          createdAt: at,
+          expiresAt: timestampFromMs(timestampMs(at) + 7 * 86400_000),
+          lastSentAt: at,
+          lastSentMs: Date.now(),
+        });
+        send(c.res, 201, JSON.stringify({ code }), 'application/json');
+        return;
+      }
+      const code = `mock-invite-${id.slice(-4)}`;
+      s().invites.set(id, create(InviteSchema, { id, workspaceId: wsId, code, createdBy: IDS.users.anna, maxUses: 0, uses: 0, createdAt: at }));
+      send(c.res, 201, JSON.stringify({ code }), 'application/json');
+    });
     this.route('POST', '/__mock/reset', (c) => {
       const scenario = str(ctl(c)['scenario']);
       this.reset(SCENARIOS.find((x) => x === scenario) ?? s().scenario);
@@ -2846,15 +2893,21 @@ class MockImpl {
     return [...this.state.emailInvites.values()].find((i) => i.code === code);
   }
 
-  /** A confirmed address accepts every pending invitation to it (WORKSPACE_CREATE per workspace). */
-  private acceptEmailInvites(u: UserRec): void {
+  /**
+   * A confirmed address accepts every pending invitation to it (WORKSPACE_CREATE per workspace);
+   * returns the joined workspaces (VerifyEmailResponse.joined_workspace_ids).
+   */
+  private acceptEmailInvites(u: UserRec): string[] {
+    const joined: string[] = [];
     for (const inv of [...this.state.emailInvites.values()]) {
-      if (inv.email !== u.email) continue;
-      this.state.emailInvites.delete(inv.id);
+      if (inv.email !== u.email || inv.accepted) continue;
+      inv.accepted = true;
       if (this.member(inv.workspaceId, u.user.id) || !this.state.workspaces.has(inv.workspaceId)) continue;
       const m = this.joinWorkspace(inv.workspaceId, u.user.id);
       m.role = inv.role;
+      joined.push(inv.workspaceId);
     }
+    return joined;
   }
 
   setEmailState(userId: string, st: { verified: boolean; pendingEmail?: string }): void {
@@ -3144,8 +3197,8 @@ class MockImpl {
       }
       u.emailVerified = true;
       this.emitUserUpdate(u);
-      this.acceptEmailInvites(u);
-      sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
+      const joinedWorkspaceIds = this.acceptEmailInvites(u);
+      sendMsg(c.res, 200, VerifyEmailResponseSchema, { me: this.me(u), joinedWorkspaceIds });
     });
 
     this.route('POST', '/api/auth/password/forgot', (c) => {
@@ -3202,7 +3255,7 @@ class MockImpl {
       if (role === WorkspaceRole.ADMIN && m.role !== WorkspaceRole.OWNER) throw forbidden('only the owner invites admins');
       const existing = [...s().users.values()].find((x) => x.email === email);
       if (existing && this.member(wsId, existing.user.id)) throw conflict('already a member');
-      const prev = [...s().emailInvites.values()].find((i) => i.workspaceId === wsId && i.email === email);
+      const prev = [...s().emailInvites.values()].find((i) => i.workspaceId === wsId && i.email === email && !i.accepted);
       if (prev && Date.now() - prev.lastSentMs < REINVITE_MS) {
         throw tooMany('invited less than 24 h ago', (REINVITE_MS - (Date.now() - prev.lastSentMs)) / 1000);
       }
@@ -3228,7 +3281,7 @@ class MockImpl {
     this.route('GET', '/api/workspaces/:id/invites/email', (c) => {
       const { wsId } = this.inviter(c);
       const invites = [...s().emailInvites.values()]
-        .filter((i) => i.workspaceId === wsId)
+        .filter((i) => i.workspaceId === wsId && !i.accepted)
         .sort((a, b) => b.id.localeCompare(a.id))
         .map((i) => this.emailInviteOut(i));
       sendMsg(c.res, 200, ListEmailInvitesResponseSchema, { invites });
@@ -3237,7 +3290,7 @@ class MockImpl {
     this.route('DELETE', '/api/workspaces/:id/invites/email/:inviteId', (c) => {
       const { wsId } = this.inviter(c);
       const inv = s().emailInvites.get(c.params[1] ?? '');
-      if (!inv || inv.workspaceId !== wsId) throw notFound('invite not found');
+      if (!inv || inv.workspaceId !== wsId || inv.accepted) throw notFound('invite not found');
       s().emailInvites.delete(inv.id);
       noContent(c.res);
     });

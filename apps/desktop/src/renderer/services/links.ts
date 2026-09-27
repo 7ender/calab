@@ -1,5 +1,6 @@
 import { openRoomLink } from '../features/people/roomLink';
 import { HOME } from '../stores/dms';
+import { setPendingInvite } from '../stores/invite';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
 
@@ -11,8 +12,6 @@ import { useUi } from '../stores/ui';
  * Shared links are ALWAYS https (docs/09 #53): the web page `/join/<code>` / `/r/<code>` offers
  * «Открыть в Calab» itself; `calab://` stays an internal mechanism, never copied or shown.
  */
-let pendingInvite: string | null = null;
-
 const CODE = '([A-Za-z0-9_-]{4,64})';
 /** Deep-link schemes: `calab://`, and `calaba://` from before the rename (docs/10). */
 const SCHEME = 'calaba?';
@@ -116,11 +115,7 @@ export function handleDeepLink(url: string): void {
   const code = parseInviteCode(url);
   if (!code) return;
   if (useSession.getState().status === 'authed') useUi.getState().openDialog({ kind: 'join-workspace', code });
-  else pendingInvite = code;
+  else setPendingInvite(code);
 }
 
-export function takePendingInvite(): string | null {
-  const c = pendingInvite;
-  pendingInvite = null;
-  return c;
-}
+export { takePendingInvite } from '../stores/invite';

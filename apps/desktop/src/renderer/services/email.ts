@@ -1,9 +1,11 @@
-import { getLocale, subscribeLocale } from '../i18n';
+import { getLocale, subscribeLocale, t } from '../i18n';
 import { ApiError, onApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { useSession } from '../stores/session';
+import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
+import { useWorkspaces } from '../stores/workspaces';
 import { useVerify } from '../stores/verify';
 
 /**
@@ -56,10 +58,23 @@ export function installEmail(): () => void {
   };
 }
 
-/** Confirms the address with a code; the bar disappears with `emailVerified`. */
+/**
+ * Confirms the address with a code; the bar disappears with `emailVerified`. Confirming may join
+ * workspaces that invited the address by email (docs/09 #36): the first one opens (its
+ * WORKSPACE_CREATE snapshot arrives over the gateway) and the one toast says so — the only notice
+ * of the join, whichever screen confirmed.
+ */
 export async function verifyEmail(code: string): Promise<void> {
   const r = await api.auth.verify(code);
   if (r.me) useSession.getState().set({ me: r.me });
+  const joined = r.joinedWorkspaceIds[0];
+  if (!joined) {
+    toast.success(t('mail.verified'));
+    return;
+  }
+  useUi.getState().setWorkspace(joined);
+  const name = useWorkspaces.getState().byId[joined]?.ws.name;
+  toast.success(name ? t('mail.inv.joined', { ws: name }) : t('mail.inv.joinedGeneric'));
 }
 
 /** A new code; 409 = already verified (another device): refresh `me` instead of an error. */

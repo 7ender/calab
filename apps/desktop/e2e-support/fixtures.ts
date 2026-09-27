@@ -180,6 +180,8 @@ export interface EmailInviteRec {
   lastSentAt: Timestamp;
   /** Real time of the last send: the once-a-day rule. */
   lastSentMs: number;
+  /** Accepted (the invitee joined): kept for the preview of the link until it expires (docs/09 #36). */
+  accepted?: boolean;
 }
 
 /** The code every mock email «contains» (verification, email change, password reset). */

@@ -79,4 +79,16 @@ export const ruMail = {
   // /join/<code> page (public preview)
   'mail.landing.members': { one: '{n} участник', few: '{n} участника', many: '{n} участников', other: '{n} участника' },
   'mail.landing.forEmail': 'Приглашение для {email}',
+  // Invitations end to end (docs/09 #36)
+  'mail.inv.title': 'Приглашение в «{ws}»',
+  'mail.inv.register': 'Создайте аккаунт — и вы в пространстве.',
+  'mail.inv.registerEmail': 'Создайте аккаунт и подтвердите почту кодом из письма — и вы в пространстве.',
+  'mail.inv.login': 'Войдите — и присоединитесь к пространству.',
+  'mail.inv.emailMismatch': 'Приглашение для другого адреса. Используйте адрес, на который пришло письмо.',
+  'mail.inv.joined': 'Почта подтверждена — вы в «{ws}»',
+  'mail.inv.joinedGeneric': 'Почта подтверждена — вы в пространстве',
+  'mail.inv.verifyFirst': 'Сначала подтвердите почту — после этого вы вступите в пространство автоматически.',
+  'mail.inv.joinTitle': 'Присоединитесь к пространству',
+  'mail.inv.joinText': 'Вставьте ссылку-приглашение или код от коллег.',
+  'mail.inv.noInvite': 'Нет приглашения?',
 } as const;

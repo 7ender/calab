@@ -9,8 +9,9 @@ import { toast } from '../../stores/toasts';
 import { ApiError } from '../../lib/api/client';
 import { describeError } from '../../lib/api/errors';
 import { beginSession } from '../../services/session';
-import { takePendingInvite } from '../../services/links';
 import { useSession } from '../../stores/session';
+import { markSignedUpByInvite, useInvite } from '../../stores/invite';
+import { workspaceInitials } from '../../lib/initials';
 import { platform } from '../../platform';
 import { useRoomLink } from '../people/roomLink';
 import { INSECURE_SERVER_CODE } from '../../../shared/serverUrl';
@@ -24,6 +25,8 @@ function authError(e: ApiErrorJson): { text: string; field?: string } {
       return { text: t('auth.err.inviteOnly'), field: 'inviteCode' };
     case 'ERROR_CODE_INVITE_INVALID':
       return { text: t('auth.err.inviteInvalid'), field: 'inviteCode' };
+    case 'ERROR_CODE_INVITE_EMAIL_MISMATCH':
+      return { text: t('mail.inv.emailMismatch'), field: 'email' };
     case 'ERROR_CODE_CONFLICT':
       return { text: t('auth.err.emailTaken'), field: 'email' };
     case 'ERROR_CODE_RATE_LIMITED':
@@ -51,35 +54,50 @@ function LoginScreen(): ReactNode {
   const pendingRoom = useRoomLink((s) => s.code);
   const settings = useSession((s) => s.settings);
   const reason = useSession((s) => s.loggedOutReason);
-  const [invite] = useState(() => takePendingInvite() ?? '');
+  // An invitation link (docs/09 #36) — also one that arrives while this form is on screen.
+  const invite = useInvite((s) => s.code) ?? '';
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(invite ? 'register' : 'login');
   const [serverUrl, setServerUrl] = useState(settings?.serverUrl ?? '');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [inviteCode, setInviteCode] = useState(invite);
+  const [linkInvite, setLinkInvite] = useState(invite);
+  if (invite && invite !== linkInvite) {
+    // A new link: the sign-up form with its code (render-time sync, no effect round trip).
+    setLinkInvite(invite);
+    setInviteCode(invite);
+    setMode('register');
+  }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<{ text: string; field?: string } | null>(null);
   // Web: the API is the page's own origin — nothing to configure.
   const [showServer, setShowServer] = useState(platform.kind === 'electron' && !settings?.serverUrl);
-  // An invitation sent by email (ADR-0023) works only with its address: prefilled and locked.
+  // The link's workspace (public preview, ADR-0023): a card on top instead of a code field. An
+  // invitation sent by email works only with its address: prefilled and locked.
+  const [preview, setPreview] = useState<{ code: string; ws: string; email: string } | null>(null);
   const [invitedEmail, setInvitedEmail] = useState('');
   useEffect(() => {
     if (!invite) return;
     let live = true;
     api.invites.get(invite).then(
       (r) => {
-        if (!live || !r.email) return;
+        if (!live) return;
+        setPreview({ code: invite, ws: r.workspace?.name ?? '', email: r.email });
+        if (!r.email) return;
         setInvitedEmail(r.email);
         setEmail(r.email);
       },
-      () => undefined, // a server that needs a session for the preview: the field stays free
+      () => undefined, // unknown / expired, or a server that needs a session: the code field shows
     );
     return () => {
       live = false;
     };
   }, [invite]);
   const emailLocked = !!invitedEmail && mode === 'register';
+  // The code from the link goes along unseen while it is the one the preview resolved; the field
+  // comes back when the server rejects it (so it can be corrected) or the user types another one.
+  const codeFromLink = !!preview && !!preview.ws && preview.code === inviteCode && err?.field !== 'inviteCode';
 
   const serverOk = (): boolean => {
     if (/^https?:\/\/.+/.test(serverUrl.trim())) return true;
@@ -94,13 +112,20 @@ function LoginScreen(): ReactNode {
     if (!serverOk()) return;
     setBusy(true);
     const args = { serverUrl: serverUrl.trim(), email: email.trim(), password };
+    const code = inviteCode.trim();
     const res =
       mode === 'login'
         ? await platform.auth.login(args)
-        : await platform.auth.register({ ...args, displayName: name.trim(), inviteCode: inviteCode.trim(), locale: getLocale() });
+        : await platform.auth.register({ ...args, displayName: name.trim(), inviteCode: code, locale: getLocale() });
     setBusy(false);
-    if (res.ok) beginSession(res.data);
-    else setErr(authError(res.error));
+    if (!res.ok) {
+      setErr(authError(res.error));
+      return;
+    }
+    // The sign-up used the code (joined, or joins once the address is confirmed): no join dialog
+    // afterwards and no «Присоединиться» step. A sign-in hands the pending code to the dialog.
+    if (mode === 'register' && code) markSignedUpByInvite();
+    beginSession(res.data);
   };
 
   const fieldErr = (f: string): string | null => (err?.field === f ? err.text : null);
@@ -159,6 +184,21 @@ function LoginScreen(): ReactNode {
           <p className="mt-1 text-body text-muted">{mode === 'login' ? t('auth.welcomeSub') : t('auth.createSub')}</p>
         </div>
         <div className="mat-popover flex flex-col gap-4 rounded-[var(--radius-panel)] p-6">
+          {codeFromLink ? (
+            <div className="flex items-center gap-3 rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2.5" data-testid="auth-invite-card">
+              <span className="grid size-9 shrink-0 place-items-center rounded-[var(--radius-card)] bg-accent-strong text-caption font-semibold text-accent-fg" aria-hidden>
+                {workspaceInitials(preview.ws)}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate font-semibold" title={preview.ws}>
+                  {t('mail.inv.title', { ws: preview.ws })}
+                </p>
+                <p className="text-caption text-muted">
+                  {mode === 'login' ? t('mail.inv.login') : preview.email ? t('mail.inv.registerEmail') : t('mail.inv.register')}
+                </p>
+              </div>
+            </div>
+          ) : null}
           {reason === 'revoked' || reason === 'expired' ? (
             <p className="rounded-[var(--radius-row)] bg-mention px-3 py-2 text-body">{reason === 'revoked' ? t('auth.revoked') : t('auth.expired')}</p>
           ) : null}
@@ -205,7 +245,7 @@ function LoginScreen(): ReactNode {
               </button>
             ) : null}
           </div>
-          {mode === 'register' ? (
+          {mode === 'register' && !codeFromLink ? (
             <Field label={t('auth.invite')} hint={t('auth.inviteHint')} error={fieldErr('inviteCode')}>
               <Input value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} spellCheck={false} className="h-8" />
             </Field>

@@ -84,6 +84,8 @@ export interface Prefs {
   personalBitrateKbps: number | null;
   /** First-run onboarding finished on this device (docs/08, «Онбординг»). */
   onboarded: boolean;
+  /** The onboarding step shown last (features/onboarding/steps.ts): a relaunch resumes there. empty = from the start. */
+  onboardingStep: string;
   /** AFK: minutes without input before presence becomes idle; 0 = off (docs/09 #34). */
   afkMinutes: number;
   /** The viewer's last stream layout per voice room (docs/09 #56): PiP or expanded stage. */
@@ -128,6 +130,7 @@ const DEFAULTS: Prefs = {
   recentStatuses: [],
   personalBitrateKbps: null,
   onboarded: false,
+  onboardingStep: '',
   afkMinutes: 10,
 };
 

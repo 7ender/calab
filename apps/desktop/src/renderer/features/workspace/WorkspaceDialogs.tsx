@@ -37,8 +37,49 @@ function errText(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.is('ERROR_CODE_CONFLICT')) return t('ws.slugTaken');
     if (e.is('ERROR_CODE_INVITE_INVALID') || e.is('ERROR_CODE_NOT_FOUND')) return t('ws.inviteInvalid');
+    // An emailed invitation (docs/09 #36): bound to its address, joined once it is confirmed.
+    if (e.is('ERROR_CODE_INVITE_EMAIL_MISMATCH')) return t('mail.inv.emailMismatch');
+    if (e.is('ERROR_CODE_EMAIL_NOT_VERIFIED')) return t('mail.inv.verifyFirst');
   }
   return errorText(e);
+}
+
+/**
+ * Joining by an invitation link or code (the join dialog and the onboarding's join step): the
+ * public preview, then POST /api/invites/{code}/join — a link's code or an emailed one (for the
+ * account's own address). An existing member gets the membership back: the workspace opens.
+ */
+export function useInviteJoin(input: string, onJoined: () => void) {
+  const code = parseInviteCode(input);
+  const setWs = useUi((s) => s.setWorkspace);
+  const preview = useQuery({ queryKey: ['invite', code], queryFn: () => api.invites.get(code ?? ''), enabled: !!code, retry: false });
+  const join = useMutation({
+    mutationFn: (arg: { code?: string; id?: string }) => (arg.code ? api.invites.join(arg.code) : api.workspaces.joinOpen(arg.id ?? '')),
+    onSuccess: (r) => {
+      if (r.workspace) setWs(r.workspace.id);
+      onJoined();
+    },
+  });
+  // Enabled only for a well-formed invite (parseInviteCode) that the server resolved to a workspace.
+  const canJoin = !!code && !!preview.data?.workspace;
+  const error = preview.error ? errText(preview.error) : join.error ? errText(join.error) : null;
+  return { code, preview, join, canJoin, error };
+}
+
+/** The workspace an invitation leads to (initials + name), or a spinner while it loads. */
+export function InvitePreviewRow({ preview }: { preview: ReturnType<typeof useInviteJoin>['preview'] }): ReactNode {
+  if (preview.data?.workspace)
+    return (
+      <div className="flex items-center gap-3 rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-card)] bg-accent-strong text-caption font-semibold text-accent-fg" aria-hidden>
+          {workspaceInitials(preview.data.workspace.name)}
+        </span>
+        <span className="min-w-0 truncate font-semibold" title={preview.data.workspace.name}>
+          {preview.data.workspace.name}
+        </span>
+      </div>
+    );
+  return preview.isFetching ? <Spinner /> : null;
 }
 
 export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): ReactNode {
@@ -100,21 +141,10 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): Rea
 
 export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => void; initialCode: string }): ReactNode {
   const [input, setInput] = useState(initialCode);
-  const code = parseInviteCode(input);
   const roomCode = parseRoomInviteCode(input);
-  const setWs = useUi((s) => s.setWorkspace);
   const serverUrl = useSession((s) => s.serverUrl);
-  const preview = useQuery({ queryKey: ['invite', code], queryFn: () => api.invites.get(code ?? ''), enabled: !!code, retry: false });
+  const { code, preview, join, canJoin, error } = useInviteJoin(input, onClose);
   const discover = useQuery({ queryKey: ['discover'], queryFn: () => api.workspaces.discover() });
-  // Enabled only for a well-formed invite (parseInviteCode) that the server resolved to a workspace.
-  const canJoin = !!code && !!preview.data?.workspace;
-  const join = useMutation({
-    mutationFn: (arg: { code?: string; id?: string }) => (arg.code ? api.invites.join(arg.code) : api.workspaces.joinOpen(arg.id ?? '')),
-    onSuccess: (r) => {
-      if (r.workspace) setWs(r.workspace.id);
-      onClose();
-    },
-  });
 
   return (
     <Modal
@@ -134,31 +164,20 @@ export function JoinWorkspaceDialog({ onClose, initialCode }: { onClose: () => v
       }
     >
       <div className="flex flex-col gap-3">
-        <Field label={t('ws.inviteCode')} error={preview.error ? errText(preview.error) : join.error ? errText(join.error) : null}>
+        <Field label={t('ws.inviteCode')} error={error}>
           <Input
             autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && canJoin) join.mutate({ code });
+              if (e.key === 'Enter' && canJoin) join.mutate({ code: code ?? '' });
             }}
             placeholder={joinPlaceholder(serverUrl)}
             spellCheck={false}
           />
         </Field>
         {roomCode ? <RoomLinkPreview code={roomCode} onDone={onClose} /> : null}
-        {preview.data?.workspace ? (
-          <div className="flex items-center gap-3 rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2">
-            <span className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-card)] bg-accent-strong text-caption font-semibold text-accent-fg" aria-hidden>
-              {workspaceInitials(preview.data.workspace.name)}
-            </span>
-            <span className="min-w-0 truncate font-semibold" title={preview.data.workspace.name}>
-              {preview.data.workspace.name}
-            </span>
-          </div>
-        ) : preview.isFetching ? (
-          <Spinner />
-        ) : null}
+        <InvitePreviewRow preview={preview} />
         {/* Only when there is something to offer: no header, empty text or spinner otherwise. */}
         {discover.data?.workspaces.length ? <h3 className="mt-3 text-caption font-semibold text-muted">{t('ws.discover')}</h3> : null}
         {discover.data?.workspaces.map((w) => (

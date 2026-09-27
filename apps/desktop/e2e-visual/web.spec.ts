@@ -134,11 +134,14 @@ for (const theme of THEMES) {
         await expect(card.getByRole('checkbox')).toHaveCount(0);
         if (ALL) await checkpoint(s, 'web-join-card-not-found');
 
-        // «Продолжить в браузере» → the regular web flow: registration with the invite code.
+        // «Продолжить в браузере» → the regular web flow: registration with the invitation card on
+        // top; the code travels unseen (docs/09 #36).
         await card.getByRole('button', { name: 'Продолжить в браузере' }).click();
         await expect(page.getByTestId('link-landing')).toHaveCount(0);
-        await expect(page.getByLabel('Код приглашения')).toHaveValue('calaba-team-2026');
+        await expect(page.getByTestId('auth-invite-card')).toContainText('Приглашение в «Команда Calab»');
+        await expect(page.getByLabel('Код приглашения')).toHaveCount(0);
         expect(new URL(page.url()).pathname).toBe('/');
+        await checkpoint(s, 'web-join-signup');
       } finally {
         await mock?.close();
       }

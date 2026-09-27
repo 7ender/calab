@@ -572,8 +572,6 @@ export const es: Dict = {
   'lang.label': 'Idioma',
   'lang.hint': 'Idioma de la interfaz. «Predeterminado del sistema» sigue tu sistema operativo.',
   'lang.auto': 'Predeterminado del sistema',
-  'onb.lang.title': 'Elige tu idioma',
-  'onb.lang.text': 'Puedes cambiarlo más tarde: Ajustes → Aplicación → Idioma.',
   // main-process strings (tray, notifications, windows): pushed to main on a locale change
   'main.trayOpen': 'Abrir Calab',
   'main.trayMute': 'Silenciar',

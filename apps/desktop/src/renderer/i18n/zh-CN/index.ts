@@ -572,8 +572,6 @@ export const zhCN: Dict = {
   'lang.label': '语言',
   'lang.hint': '界面语言。"跟随系统"将使用你的操作系统语言。',
   'lang.auto': '跟随系统',
-  'onb.lang.title': '选择你的语言',
-  'onb.lang.text': '你可以稍后在"设置 → 应用 → 语言"中更改。',
   // main-process strings (tray, notifications, windows): pushed to main on a locale change
   'main.trayOpen': '打开 Calab',
   'main.trayMute': '静音',

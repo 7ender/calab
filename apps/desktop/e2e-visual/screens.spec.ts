@@ -38,6 +38,7 @@ const KEY = new Set([
   'onboarding-mic',
   'onboarding-screen',
   'onboarding-done',
+  'onboarding-join',
   'onboarding-layout',
   'welcome',
   'main-chat',
@@ -352,7 +353,21 @@ test('invite-email', async ({ open, win, mock, shot }) => {
 
 // ---------------------------------------------------------------- onboarding
 
-/** The onboarding steps in order; `to` walks there from the first one. */
+/**
+ * The onboarding steps in order (docs/09 #36: settings first — microphone, screen on macOS,
+ * notifications, push-to-talk; the account has a workspace, so no join step); `to` walks there
+ * from the first one.
+ */
+const mac = process.platform === 'darwin';
+async function toNotifications(p: Page): Promise<void> {
+  await p.getByRole('button', { name: 'Разрешить микрофон' }).click();
+  await p.getByRole('button', { name: 'Слышно хорошо' }).click();
+  if (mac) await p.getByRole('button', { name: 'Позже' }).click();
+}
+async function toMode(p: Page): Promise<void> {
+  await toNotifications(p);
+  await p.getByRole('button', { name: 'Позже' }).click();
+}
 const ONBOARDING: Array<{ name: string; to: (page: Page) => Promise<void> }> = [
   { name: 'onboarding-mic', to: () => Promise.resolve() },
   {
@@ -362,50 +377,31 @@ const ONBOARDING: Array<{ name: string; to: (page: Page) => Promise<void> }> = [
       await expect(p.getByTestId('mic-meter')).toBeVisible();
     },
   },
-  {
-    name: 'onboarding-mode',
-    to: async (p) => {
-      await p.getByRole('button', { name: 'Разрешить микрофон' }).click();
-      await p.getByRole('button', { name: 'Слышно хорошо' }).click();
-    },
-  },
-  {
-    name: 'onboarding-mode-ptt',
-    to: async (p) => {
-      await p.getByRole('button', { name: 'Разрешить микрофон' }).click();
-      await p.getByRole('button', { name: 'Слышно хорошо' }).click();
-      await p.getByRole('radio', { name: 'Push-to-talk' }).click();
-    },
-  },
-  ...(process.platform === 'darwin'
+  ...(mac
     ? [
         {
           name: 'onboarding-screen',
           to: async (p: Page) => {
             await p.getByRole('button', { name: 'Разрешить микрофон' }).click();
             await p.getByRole('button', { name: 'Слышно хорошо' }).click();
-            await p.getByRole('button', { name: 'Продолжить' }).click();
           },
         },
       ]
     : []),
+  { name: 'onboarding-notifications', to: toNotifications },
+  { name: 'onboarding-mode', to: toMode },
   {
-    name: 'onboarding-notifications',
+    name: 'onboarding-mode-ptt',
     to: async (p) => {
-      await p.getByRole('button', { name: 'Разрешить микрофон' }).click();
-      await p.getByRole('button', { name: 'Слышно хорошо' }).click();
-      await p.getByRole('button', { name: 'Продолжить' }).click();
-      if (process.platform === 'darwin') await p.getByRole('button', { name: 'Позже' }).click();
+      await toMode(p);
+      await p.getByRole('radio', { name: 'Push-to-talk' }).click();
     },
   },
   {
     name: 'onboarding-done',
     to: async (p) => {
-      await p.getByRole('button', { name: 'Разрешить микрофон' }).click();
-      await p.getByRole('button', { name: 'Слышно хорошо' }).click();
+      await toMode(p);
       await p.getByRole('button', { name: 'Продолжить' }).click();
-      if (process.platform === 'darwin') await p.getByRole('button', { name: 'Позже' }).click();
-      await p.getByRole('button', { name: 'Позже' }).click();
     },
   },
 ];
@@ -419,6 +415,21 @@ for (const step of ONBOARDING) {
     await checkpoint(shot, step.name);
   });
 }
+
+/**
+ * «Присоединиться к пространству» (docs/09 #36): only for an account without any workspace, last
+ * before «Готово».
+ */
+test('onboarding-join', async ({ open, win, shot }) => {
+  await open({ scenario: 'empty', onboarded: false });
+  await toMode(win);
+  await win.getByRole('button', { name: 'Продолжить' }).click();
+  const step = win.getByTestId('onboarding-join');
+  await expect(step).toBeVisible();
+  await expect(step.getByRole('button', { name: 'Присоединиться' })).toBeDisabled();
+  // The placeholder carries the mock's port (a real-looking link on this server): masked.
+  await checkpoint(shot, 'onboarding-join', { mask: [step.getByRole('textbox')] });
+});
 
 /** Owner's rule for onboarding (docs/09 #55): the same geometry on every step, no snapshot. */
 test('onboarding-layout', async ({ open, win, size: viewport }) => {

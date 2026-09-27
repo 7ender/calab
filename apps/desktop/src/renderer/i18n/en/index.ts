@@ -572,8 +572,6 @@ export const en: Dict = {
   'lang.label': 'Language',
   'lang.hint': 'Interface language. “System default” follows your OS.',
   'lang.auto': 'System default',
-  'onb.lang.title': 'Choose your language',
-  'onb.lang.text': 'You can change it later: Settings → App → Language.',
   // main-process strings (tray, notifications, windows): pushed to main on a locale change
   'main.trayOpen': 'Open Calab',
   'main.trayMute': 'Mute',

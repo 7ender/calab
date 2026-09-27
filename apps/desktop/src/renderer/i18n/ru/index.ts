@@ -565,8 +565,6 @@ export const ru = {
   'lang.label': 'Язык',
   'lang.hint': 'Язык интерфейса. «Как в системе» — по языку ОС.',
   'lang.auto': 'Как в системе',
-  'onb.lang.title': 'Выберите язык',
-  'onb.lang.text': 'Его можно изменить позже: Настройки → Приложение → Язык.',
   // main-process strings (tray, notifications, windows): pushed to main on a locale change
   'main.trayOpen': 'Открыть Calab',
   'main.trayMute': 'Выключить микрофон',

@@ -209,7 +209,7 @@ test('m-onboarding', async ({ page }) => {
   await expect(page.getByTestId('onboarding-mic')).toBeVisible();
   await checkpoint(page, 'm-onboarding');
   // The other steps: layout only (and shots for review with CALABA_MOBILE_SHOTS).
-  for (const step of ['mode', 'notifications', 'done']) {
+  for (const step of ['notifications', 'mode', 'done']) {
     // The first action of the step («Позже» where there is a permission to grant, else «Продолжить»).
     await page.locator('[data-onb-footer] .ml-auto button').first().tap();
     await expect(page.getByTestId(`onboarding-${step}`)).toBeVisible();
