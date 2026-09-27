@@ -62,6 +62,9 @@ const (
 	// 403: the caller (or their email address) is banned from the workspace: joining by
 	// invitation, open join, email invitation or room link is refused.
 	ErrorCode_ERROR_CODE_BANNED ErrorCode = 27
+	// 403: an invitation sent by email to another address than the account's (or the sign-up
+	// form's): sign in with / register the invited address.
+	ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH ErrorCode = 28
 )
 
 // Enum value maps for ErrorCode.
@@ -95,6 +98,7 @@ var (
 		25: "ERROR_CODE_RECORDING_LIMIT",
 		26: "ERROR_CODE_WORKSPACE_SUSPENDED",
 		27: "ERROR_CODE_BANNED",
+		28: "ERROR_CODE_INVITE_EMAIL_MISMATCH",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":           0,
@@ -125,6 +129,7 @@ var (
 		"ERROR_CODE_RECORDING_LIMIT":       25,
 		"ERROR_CODE_WORKSPACE_SUSPENDED":   26,
 		"ERROR_CODE_BANNED":                27,
+		"ERROR_CODE_INVITE_EMAIL_MISMATCH": 28,
 	}
 )
 
@@ -524,7 +529,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xdb\x06\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\x81\a\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -554,7 +559,8 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x1cERROR_CODE_ALREADY_RECORDING\x10\x18\x12\x1e\n" +
 	"\x1aERROR_CODE_RECORDING_LIMIT\x10\x19\x12\"\n" +
 	"\x1eERROR_CODE_WORKSPACE_SUSPENDED\x10\x1a\x12\x15\n" +
-	"\x11ERROR_CODE_BANNED\x10\x1bB\x99\x01\n" +
+	"\x11ERROR_CODE_BANNED\x10\x1b\x12$\n" +
+	" ERROR_CODE_INVITE_EMAIL_MISMATCH\x10\x1cB\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

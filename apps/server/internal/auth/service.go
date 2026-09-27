@@ -49,8 +49,9 @@ type Service struct {
 	// then verified at registration). Set before serving.
 	Mail *mail.Service
 	// OnEmailVerified runs after an account's address became verified (auto-join of pending
-	// email invitations, see workspaces.AcceptEmailInvites). Optional.
-	OnEmailVerified func(ctx context.Context, u sqlc.User)
+	// email invitations, see workspaces.AcceptEmailInvites) and returns the joined workspaces.
+	// Optional.
+	OnEmailVerified func(ctx context.Context, u sqlc.User) []uuid.UUID
 }
 
 // NewService wires the auth service.
@@ -124,6 +125,8 @@ var (
 	errInvalidRefresh     = httpx.Coded(http.StatusUnauthorized, v1.ErrorCode_ERROR_CODE_INVALID_REFRESH_TOKEN, "invalid refresh token")
 	errInviteInvalid      = httpx.Coded(http.StatusNotFound, v1.ErrorCode_ERROR_CODE_INVITE_INVALID, "invite is invalid, expired or used up")
 	errRegistrationClosed = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_REGISTRATION_CLOSED, "registration requires an invite")
+	errInviteEmail        = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH,
+		"this invitation was sent to another email address: use that address")
 	// errRefreshRace: the previous refresh token was presented within the grace window
 	// right after a rotation (another tab / request won). The session is intact: retry with
 	// the current token (web: the cookie already holds it). Must not clear the cookie.
@@ -132,6 +135,9 @@ var (
 
 // ErrInviteInvalid is shared with the workspaces package.
 func ErrInviteInvalid() error { return errInviteInvalid }
+
+// ErrInviteEmailMismatch (403 INVITE_EMAIL_MISMATCH) is shared with the workspaces package.
+func ErrInviteEmailMismatch() error { return errInviteEmail }
 
 // Guest accounts (ADR-0016): short sessions renewed by activity; the account is removed
 // (anonymised) after GuestInactivity without a refresh.
@@ -262,27 +268,50 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		var inv *sqlc.WorkspaceInvite
 		role := perm.RoleMember
 		if code != "" {
-			i, err := q.ConsumeInvite(ctx, code)
+			i, err := q.GetInviteByCode(ctx, code)
 			if db.IsNotFound(err) {
 				return errInviteInvalid
 			}
 			if err != nil {
 				return err
 			}
-			inv = &i
-			// An invitation sent by email works only for that address; the link came
-			// through the mailbox, so the address counts as verified (ADR-0023).
 			ei, err := q.GetEmailInviteByInvite(ctx, i.ID)
 			switch {
 			case err == nil:
-				if ei.AcceptedAt != nil || !strings.EqualFold(ei.Email, email) {
+				// An invitation sent by email (ADR-0027): a valid sign-up code for the invited
+				// address only. It is not spent here: the user joins after confirming the
+				// address (OnEmailVerified → workspaces.AcceptEmailInvites), so a leaked code
+				// alone never yields an account with a verified address.
+				if ei.AcceptedAt != nil || !inviteLive(i, s.now()) {
 					return errInviteInvalid
 				}
+				if !strings.EqualFold(ei.Email, email) {
+					return errInviteEmail
+				}
+				if s.mailOn() {
+					break
+				}
+				// No SMTP (the invitation predates turning mail off): nothing can confirm the
+				// address later, so the emailed code itself is the proof, as before.
 				if err := q.AcceptEmailInvite(ctx, ei.ID); err != nil {
 					return err
 				}
-				role, verifiedAt = perm.Role(ei.Role), ptrTime(s.now())
-			case !db.IsNotFound(err):
+				if _, err := q.ConsumeInvite(ctx, code); err != nil {
+					if db.IsNotFound(err) {
+						return errInviteInvalid
+					}
+					return err
+				}
+				inv, role = &i, perm.Role(ei.Role)
+			case db.IsNotFound(err):
+				if _, err := q.ConsumeInvite(ctx, code); err != nil {
+					if db.IsNotFound(err) {
+						return errInviteInvalid
+					}
+					return err
+				}
+				inv = &i
+			default:
 				return err
 			}
 		}
@@ -325,8 +354,6 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 	}
 	if user.EmailVerifiedAt == nil {
 		s.sendVerificationQuietly(ctx, user)
-	} else if s.mailOn() && s.OnEmailVerified != nil {
-		s.OnEmailVerified(ctx, user) // other workspaces that invited this address
 	}
 	return &v1.RegisterResponse{Tokens: tokens, Me: pbconv.Me(user)}, nil
 }
@@ -580,6 +607,11 @@ func (s *Service) IsRevoked(ctx context.Context, sid uuid.UUID) (bool, error) {
 		return false, nil
 	}
 	return err == nil, err
+}
+
+// inviteLive: not expired and not used up.
+func inviteLive(i sqlc.WorkspaceInvite, now time.Time) bool {
+	return (i.ExpiresAt == nil || now.Before(*i.ExpiresAt)) && (i.MaxUses == 0 || i.Uses < i.MaxUses)
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }

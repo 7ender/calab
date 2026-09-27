@@ -111,7 +111,7 @@ func TestEmailVerification(t *testing.T) {
 	}
 	code = nthMail(t, 2, mail.TemplateVerifyCode, email).Params["code"]
 
-	var me v1.UpdateMeResponse
+	var me v1.VerifyEmailResponse
 	u.must(200, "POST", "/api/auth/verify", &v1.VerifyEmailRequest{Code: code[:3] + " " + code[3:]}, &me)
 	if !me.GetMe().GetEmailVerified() {
 		t.Fatal("not verified after the code")
@@ -215,9 +215,10 @@ func TestChangeEmailWithCode(t *testing.T) {
 		t.Fatalf("pending change: %v", resp.GetMe())
 	}
 	code := nthMail(t, 1, mail.TemplateVerifyCode, newEmail).Params["code"]
-	u.must(200, "POST", "/api/auth/verify", &v1.VerifyEmailRequest{Code: code}, &resp)
-	if resp.GetMe().GetEmail() != newEmail || resp.GetMe().GetPendingEmail() != "" || !resp.GetMe().GetEmailVerified() {
-		t.Fatalf("after confirming: %v", resp.GetMe())
+	var vresp v1.VerifyEmailResponse
+	u.must(200, "POST", "/api/auth/verify", &v1.VerifyEmailRequest{Code: code}, &vresp)
+	if vresp.GetMe().GetEmail() != newEmail || vresp.GetMe().GetPendingEmail() != "" || !vresp.GetMe().GetEmailVerified() {
+		t.Fatalf("after confirming: %v", vresp.GetMe())
 	}
 	newClient(t).must(200, "POST", "/api/auth/login", &v1.LoginRequest{Email: newEmail, Password: "password123"}, nil)
 }
@@ -330,12 +331,22 @@ func TestEmailInviteAutoJoin(t *testing.T) {
 	// Bound to the address: another email cannot use the code.
 	c := newClient(t)
 	if st, e := c.apiErrBody("POST", "/api/auth/register", &v1.RegisterRequest{Email: uniq("thief") + "@example.com", Password: "password123",
-		DisplayName: "T", InviteCode: code}); st != 404 || e.GetCode() != v1.ErrorCode_ERROR_CODE_INVITE_INVALID {
+		DisplayName: "T", InviteCode: code}); st != 403 || e.GetCode() != v1.ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH {
 		t.Fatalf("other address with a bound code: %d %s", st, e.GetCode())
 	}
+	// ADR-0027: the emailed code is a sign-up code, not a proof of the address — the user
+	// joins once the address is confirmed with the code of the next mail.
 	u1, resp := registerRaw(t, first, code, "")
-	if !resp.GetMe().GetEmailVerified() {
-		t.Fatal("registration through the emailed link: not verified")
+	if resp.GetMe().GetEmailVerified() {
+		t.Fatal("registration with an emailed code verified the address")
+	}
+	if st := u1.do("GET", path, nil, nil); st != 404 {
+		t.Fatalf("member before confirming the address: %d", st)
+	}
+	var vr v1.VerifyEmailResponse
+	u1.must(200, "POST", "/api/auth/verify", &v1.VerifyEmailRequest{Code: nthMail(t, 1, mail.TemplateVerifyCode, first).Params["code"]}, &vr)
+	if ids := vr.GetJoinedWorkspaceIds(); len(ids) != 1 || ids[0] != ws.GetId() || !vr.GetMe().GetEmailVerified() {
+		t.Fatalf("verify: %v", &vr)
 	}
 	u1.must(200, "GET", path, nil, nil)
 

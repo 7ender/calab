@@ -30,13 +30,14 @@ message RegisterRequest {
   string email = 1;
   string password = 2; // 8..256 chars
   string display_name = 3;
-  // Required when REGISTRATION_MODE=invite: a valid workspace invite code.
-  // The new user also joins that workspace.
+  // Required when REGISTRATION_MODE=invite: a valid workspace invite code — a link's code or
+  // the code of an invitation sent by email. A link's code: the new user joins that workspace
+  // at once. An emailed code works only with the invited address (else 403
+  // INVITE_EMAIL_MISMATCH); the user joins after confirming the address (POST /api/auth/verify).
   string invite_code = 4;
   string device_name = 5;
   // Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
-  // Registration sends a verification code to `email` (ADR-0023). An invite code sent by
-  // email (POST …/invites/email) only works with that address and verifies it at once.
+  // Registration sends a verification code to `email` (ADR-0023, ADR-0027).
   string locale = 6;
 }
 
@@ -91,12 +92,19 @@ message ListSessionsResponse {
 // if the last is older than 60 s. 409 CONFLICT: already verified and no pending change;
 // 403: guest. Servers without SMTP mark the address verified instead (USER_UPDATE {me}).
 //
-// POST /api/auth/verify (access token) → UpdateMeResponse (+ USER_UPDATE {me}): confirms the
-// email (or the pending change). Afterwards pending email invitations of the address are
+// POST /api/auth/verify (access token) → VerifyEmailResponse (+ USER_UPDATE {me}): confirms
+// the email (or the pending change). Afterwards pending email invitations of the address are
 // accepted automatically (WORKSPACE_CREATE per workspace). 422 CODE_INVALID: wrong code;
 // 422 CODE_EXPIRED: no active code (expired / 5 attempts used) — send a new one.
 message VerifyEmailRequest {
   string code = 1;
+}
+
+message VerifyEmailResponse {
+  Me me = 1;
+  // Workspaces joined by this verification (pending email invitations of the address); the
+  // same WORKSPACE_CREATE events also arrive over the gateway. Empty = none.
+  repeated string joined_workspace_ids = 2;
 }
 
 // POST /api/auth/password/forgot (no auth) → always 204, whether or not the address has an

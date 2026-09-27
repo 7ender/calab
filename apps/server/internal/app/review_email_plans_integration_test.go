@@ -36,7 +36,7 @@ func TestAdminGuardAndLimit(t *testing.T) {
 		}
 	}
 	code := nthMail(t, 1, mail.TemplateVerifyCode, superadminEmail2).Params["code"]
-	var me v1.UpdateMeResponse
+	var me v1.VerifyEmailResponse
 	u.must(200, "POST", "/api/auth/verify", &v1.VerifyEmailRequest{Code: code}, &me)
 	if !me.GetMe().GetIsSuperadmin() {
 		t.Fatal("verified listed address is not superadmin")

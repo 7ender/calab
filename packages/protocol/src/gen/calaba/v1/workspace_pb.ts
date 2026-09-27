@@ -641,7 +641,13 @@ export const UpdateMemberResponseSchema: GenMessage<UpdateMemberResponse> = /*@_
 /**
  * GET /api/invites/{code} — preview before joining. Public (no token: the /join/<code> page
  * of a signed-out visitor, e.g. from an invitation email), 30 per minute per IP; an unknown,
- * expired or used-up code is 404 INVITE_INVALID.
+ * expired or used-up code is 404 INVITE_INVALID. An emailed invitation stays previewable
+ * after it was accepted (until it expires): its invitee may open the link again.
+ *
+ * POST /api/invites/{code}/join → JoinWorkspaceResponse: a link's code or an emailed code.
+ * An existing member gets the membership (200, no use spent). An emailed code: 403
+ * INVITE_EMAIL_MISMATCH for another address than the account's, 403 EMAIL_NOT_VERIFIED for
+ * an unverified account (confirming the address joins automatically, ADR-0027).
  *
  * @generated from message calaba.v1.GetInviteResponse
  */
@@ -662,7 +668,8 @@ export type GetInviteResponse = Message<"calaba.v1.GetInviteResponse"> & {
 
   /**
    * Email invitation (ADR-0023): the code works only for this address (register with it /
-   * be signed in with it verified), else 404 INVITE_INVALID. Prefill it on the sign-up form.
+   * be signed in with it), else 403 INVITE_EMAIL_MISMATCH. Prefill and lock it on the
+   * sign-up form.
    *
    * @generated from field: string email = 3;
    */
@@ -830,7 +837,8 @@ export const EmailInviteSchema: GenMessage<EmailInvite> = /*@__PURE__*/
 
 /**
  * POST /api/workspaces/{id}/invites/email → 201 CreateEmailInviteResponse. Mails a link
- * PUBLIC_APP_URL/join/<code> (single use, 7 days, bound to the address). Registering with
+ * PUBLIC_APP_URL/join/<code> (single use, 7 days, bound to the address); the mail also shows
+ * the code as text (it is a valid sign-up invite code for that address). Registering with
  * the address (link or not) and verifying it joins the workspace automatically. Sending
  * again to the same address renews the link, at most once per 24 h (429 with Retry-After).
  * role: MEMBER (default) or ADMIN (owner only). 409 CONFLICT: already a member.

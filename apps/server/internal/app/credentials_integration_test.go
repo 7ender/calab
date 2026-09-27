@@ -41,9 +41,10 @@ func TestChangeCredentials(t *testing.T) {
 	}
 	bg.wait("USER_UPDATE me (pending)", func(e *v1.DispatchEvent) bool { return e.GetUserUpdate().GetMe().GetPendingEmail() == newEmail })
 	code := nthMail(t, 1, mail.TemplateVerifyCode, newEmail).Params["code"]
-	bob.must(200, "POST", "/api/auth/verify", &v1.VerifyEmailRequest{Code: code}, &me)
-	if me.GetMe().GetEmail() != newEmail {
-		t.Fatalf("email: %q", me.GetMe().GetEmail())
+	var vme v1.VerifyEmailResponse
+	bob.must(200, "POST", "/api/auth/verify", &v1.VerifyEmailRequest{Code: code}, &vme)
+	if vme.GetMe().GetEmail() != newEmail {
+		t.Fatalf("email: %q", vme.GetMe().GetEmail())
 	}
 	bg.wait("USER_UPDATE me", func(e *v1.DispatchEvent) bool { return e.GetUserUpdate().GetMe().GetEmail() == newEmail })
 	anon.must(200, "POST", "/api/auth/login", &v1.LoginRequest{Email: newEmail, Password: "newpassword1"}, nil)

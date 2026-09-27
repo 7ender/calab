@@ -64,6 +64,35 @@ func TestTemplatesAllLocales(t *testing.T) {
 	}
 }
 
+// Invitation (docs/09 #36): three numbered steps and the code as text in every locale; an
+// invitation queued before the code param existed still renders, without the code block.
+func TestWorkspaceInviteStepsAndCode(t *testing.T) {
+	labels := map[string]string{LocaleEN: "Invitation code: ", LocaleRU: "Код приглашения: ", LocaleES: "Código de invitación: ", LocaleZhCN: "邀请码: "}
+	for _, loc := range Locales() {
+		m, err := Render(TemplateWorkspaceInvite, loc, params())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range []string{"\n1. ", "\n2. ", "\n3. "} {
+			if !strings.Contains(m.Text, n) {
+				t.Errorf("%s text: no step %q", loc, n)
+			}
+		}
+		if strings.Count(m.HTML, "<li ") != 3 {
+			t.Errorf("%s html: want 3 steps", loc)
+		}
+		if !strings.Contains(m.Text, labels[loc]+"042917") || !strings.Contains(m.HTML, "042917</span>") {
+			t.Errorf("%s: no invitation code as text", loc)
+		}
+		p := params()
+		delete(p, "code")
+		old, err := Render(TemplateWorkspaceInvite, loc, p)
+		if err != nil || strings.Contains(old.Text, labels[loc]) {
+			t.Errorf("%s without code: %v", loc, err)
+		}
+	}
+}
+
 func TestRenderRejectsMissingParams(t *testing.T) {
 	_, err := Render(TemplateWorkspaceInvite, "en", Params{"workspace": "x", "inviter": "y", "days": "7"})
 	var pe *PermanentError

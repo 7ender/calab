@@ -152,7 +152,9 @@ func New(d Deps) *App {
 
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)
 	authSvc.Mail = mailSvc
-	authSvc.OnEmailVerified = func(ctx context.Context, u sqlc.User) { workspaces.AcceptEmailInvites(ctx, d.DB, planSvc, pub, u) }
+	authSvc.OnEmailVerified = func(ctx context.Context, u sqlc.User) []uuid.UUID {
+		return workspaces.AcceptEmailInvites(ctx, d.DB, planSvc, pub, u)
+	}
 	if rtcSvc != nil {
 		rtcSvc.Revoked = authSvc.IsRevoked
 	}

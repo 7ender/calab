@@ -320,7 +320,7 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 			// workspace): the inviter's language is the best guess.
 			To: email, Template: mail.TemplateWorkspaceInvite, Locale: localeOf(actor), Priority: mail.PriorityNotice, TTL: mail.MaxRetry,
 			Params: mail.Params{
-				"workspace": ws.Name, "inviter": actor.DisplayName, "days": "7",
+				"workspace": ws.Name, "inviter": actor.DisplayName, "days": "7", "code": code,
 				"url": strings.TrimRight(h.email.PublicURL, "/") + "/join/" + code,
 			},
 		})
@@ -375,39 +375,40 @@ func (h *Handlers) deleteEmailInvite(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
-// boundInvite applies an email invitation's binding to a join by code: the caller's
-// address must be the invited one. The link came through that mailbox, so an unverified
-// address becomes verified. Returns the role to join with (member for plain links).
-func boundInvite(ctx context.Context, q *sqlc.Queries, inv sqlc.WorkspaceInvite, u sqlc.User) (perm.Role, bool, error) {
+// boundInvite applies an email invitation's binding to a join by code (ADR-0027): the
+// caller's address must be the invited one (403 INVITE_EMAIL_MISMATCH) and confirmed (403
+// EMAIL_NOT_VERIFIED: confirming it joins automatically). Returns the role to join with
+// (member for plain links).
+func boundInvite(ctx context.Context, q *sqlc.Queries, inv sqlc.WorkspaceInvite, u sqlc.User) (perm.Role, error) {
 	ei, err := q.GetEmailInviteByInvite(ctx, inv.ID)
 	if db.IsNotFound(err) {
-		return perm.RoleMember, false, nil
+		return perm.RoleMember, nil
 	}
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
-	if ei.AcceptedAt != nil || u.Email == nil || !strings.EqualFold(*u.Email, ei.Email) {
-		return "", false, auth.ErrInviteInvalid()
+	if u.Email == nil || !strings.EqualFold(*u.Email, ei.Email) {
+		return "", auth.ErrInviteEmailMismatch()
+	}
+	if ei.AcceptedAt != nil {
+		return "", auth.ErrInviteInvalid()
+	}
+	if err := auth.RequireVerified(u); err != nil {
+		return "", err
 	}
 	if err := q.AcceptEmailInvite(ctx, ei.ID); err != nil {
-		return "", false, err
+		return "", err
 	}
-	newlyVerified := false
-	if u.EmailVerifiedAt == nil {
-		if _, err := q.SetEmailVerified(ctx, u.ID); err != nil {
-			return "", false, err
-		}
-		newlyVerified = true
-	}
-	return perm.Role(ei.Role), newlyVerified, nil
+	return perm.Role(ei.Role), nil
 }
 
 // AcceptEmailInvites joins a user with a verified address to every workspace that has a
 // live email invitation for it (ADR-0023: registering with an invited address and
-// verifying it is enough, the link is not needed). Idempotent; errors are logged.
-func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub events.Publisher, u sqlc.User) {
+// verifying it is enough, the link is not needed). Idempotent; errors are logged. Returns
+// the joined workspaces.
+func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub events.Publisher, u sqlc.User) []uuid.UUID {
 	if u.Email == nil || u.EmailVerifiedAt == nil || u.IsGuest {
-		return
+		return nil
 	}
 	type join struct {
 		ws sqlc.Workspace
@@ -458,9 +459,12 @@ func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub ev
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "accept email invites", "user_id", u.ID, "err", err)
-		return
+		return nil
 	}
+	ids := make([]uuid.UUID, 0, len(joins))
 	for _, j := range joins {
 		AnnounceJoin(ctx, d.Q, pl, pub, j.ws, j.m)
+		ids = append(ids, j.ws.ID)
 	}
+	return ids
 }

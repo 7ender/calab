@@ -19,7 +19,7 @@ const (
 	TemplateVerifyCode      Template = "verify_code"      // code, minutes
 	TemplatePasswordReset   Template = "password_reset"   // code, minutes
 	TemplateWorkspaceAdded  Template = "workspace_added"  // workspace, inviter, url
-	TemplateWorkspaceInvite Template = "workspace_invite" // workspace, inviter, url, days
+	TemplateWorkspaceInvite Template = "workspace_invite" // workspace, inviter, url, days; code (optional)
 )
 
 // ProductURL is the product site linked from every mail's footer (docs/10-branding.md).
@@ -96,8 +96,11 @@ var htmlPage = htmltemplate.Must(htmltemplate.New("mail").Parse(`<!doctype html>
 <p class="fg" style="margin:0 0 28px;font-size:15px;font-weight:700;letter-spacing:.2px;color:#18181b">Calab</p>
 <h1 class="fg" style="margin:0 0 12px;font-size:22px;line-height:1.3;font-weight:600;color:#18181b">{{.Title}}</h1>
 <p class="fg" style="margin:0 0 24px;font-size:15px;line-height:1.55;color:#18181b">{{.Line}}</p>
-{{if .Code}}<p class="fg" style="margin:0 0 24px;font-size:34px;line-height:1;font-weight:600;letter-spacing:8px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;color:#18181b">{{.Code}}</p>
+{{if .Steps}}<ol class="fg" style="margin:0 0 24px;padding-left:22px;font-size:15px;line-height:1.55;color:#18181b">{{range .Steps}}<li style="margin:0 0 6px">{{.}}</li>{{end}}</ol>
+{{end}}{{if .Code}}<p class="fg" style="margin:0 0 24px;font-size:34px;line-height:1;font-weight:600;letter-spacing:8px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;color:#18181b">{{.Code}}</p>
 {{end}}{{if .URL}}<p style="margin:0 0 24px"><a class="btn" href="{{.URL}}" style="display:inline-block;padding:12px 24px;border-radius:999px;background:#18181b;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600">{{.Button}}</a></p>
+{{end}}{{if .InviteCode}}<p class="muted" style="margin:0 0 6px;font-size:13px;line-height:1.55;color:#71717a">{{.CodeHint}}</p>
+<p class="fg" style="margin:0 0 24px;font-size:15px;line-height:1.55;color:#18181b">{{.CodeLabel}}: <span style="font-weight:600;letter-spacing:1px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace">{{.InviteCode}}</span></p>
 {{end}}<p class="muted" style="margin:0;font-size:13px;line-height:1.55;color:#71717a">{{.Note}}</p>
 </div>
 <p class="muted" style="max-width:560px;margin:16px auto 0;text-align:center;font-size:12px;line-height:1.5;color:#71717a"><a class="muted" href="{{.AttributionURL}}" style="color:#71717a">{{.Attribution}}</a> · <a class="muted" href="{{.ProductURL}}" style="color:#71717a">calab.ru</a></p>
@@ -133,13 +136,22 @@ func Render(t Template, locale string, p Params) (Message, error) {
 	}
 	data := struct {
 		Lang, Subject, Title, Line, Code, URL, Button, Note string
+		Steps                                               []string
+		CodeHint, CodeLabel, InviteCode                     string
 		Attribution, AttributionURL, ProductURL             string
 	}{
 		Lang: locale, Subject: x(tx.Subject), Title: x(tx.Title), Line: x(tx.Line), Note: x(tx.Note),
 		Button: tx.Button, Attribution: buildinfo.Attribution, AttributionURL: buildinfo.AttributionURL, ProductURL: ProductURL,
 	}
+	for _, st := range tx.Steps {
+		data.Steps = append(data.Steps, x(st))
+	}
 	if tx.Button != "" {
 		data.URL = vals["url"]
+		// The invitation code as text: the fallback when the link does not open.
+		if tx.CodeLabel != "" && vals["code"] != "" {
+			data.CodeHint, data.CodeLabel, data.InviteCode = x(tx.CodeHint), tx.CodeLabel, vals["code"]
+		}
 	} else {
 		data.Code = vals["code"]
 	}
@@ -149,11 +161,20 @@ func Render(t Template, locale string, p Params) (Message, error) {
 
 	var text strings.Builder
 	text.WriteString(data.Title + "\n\n" + data.Line + "\n\n")
+	for i, st := range data.Steps {
+		fmt.Fprintf(&text, "%d. %s\n", i+1, st)
+	}
+	if len(data.Steps) > 0 {
+		text.WriteString("\n")
+	}
 	if data.Code != "" {
 		text.WriteString(data.Code + "\n\n")
 	}
 	if data.URL != "" {
 		text.WriteString(data.Button + ": " + data.URL + "\n\n")
+	}
+	if data.InviteCode != "" {
+		text.WriteString(data.CodeHint + "\n" + data.CodeLabel + ": " + data.InviteCode + "\n\n")
 	}
 	text.WriteString(data.Note + "\n\n-- \n" + buildinfo.Attribution + " — " + buildinfo.AttributionURL + "\nCalab — " + ProductURL + "\n")
 

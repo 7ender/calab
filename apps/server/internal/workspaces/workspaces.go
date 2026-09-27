@@ -609,11 +609,25 @@ func (h *Handlers) getInvite(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	inv, err := h.db.Q.GetInviteByCode(r.Context(), r.PathValue("code"))
-	if db.IsNotFound(err) || (err == nil && !inviteUsable(inv, time.Now())) {
+	if db.IsNotFound(err) {
 		return auth.ErrInviteInvalid()
 	}
 	if err != nil {
 		return err
+	}
+	ei, err := h.db.Q.GetEmailInviteByInvite(r.Context(), inv.ID)
+	emailed := err == nil
+	if err != nil && !db.IsNotFound(err) {
+		return err
+	}
+	// An accepted email invitation stays previewable until it expires: its invitee opens
+	// the link again after the auto-join (joining then answers with the membership).
+	if emailed && ei.AcceptedAt != nil {
+		if inv.ExpiresAt != nil && !time.Now().Before(*inv.ExpiresAt) {
+			return auth.ErrInviteInvalid()
+		}
+	} else if !inviteUsable(inv, time.Now()) {
+		return auth.ErrInviteInvalid()
 	}
 	ws, err := h.db.Q.GetWorkspace(r.Context(), inv.WorkspaceID)
 	if err != nil {
@@ -631,10 +645,8 @@ func (h *Handlers) getInvite(w http.ResponseWriter, r *http.Request) error {
 	if inv.ExpiresAt != nil {
 		resp.ExpiresAt = timestamppb.New(*inv.ExpiresAt)
 	}
-	if ei, err := h.db.Q.GetEmailInviteByInvite(r.Context(), inv.ID); err == nil {
+	if emailed {
 		resp.Email = ei.Email
-	} else if !db.IsNotFound(err) {
-		return err
 	}
 	httpx.Write(w, http.StatusOK, resp)
 	return nil
@@ -650,10 +662,9 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var (
-		ws       sqlc.Workspace
-		m        sqlc.WorkspaceMember
-		added    bool
-		verified bool
+		ws    sqlc.Workspace
+		m     sqlc.WorkspaceMember
+		added bool
 	)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		inv, err := q.GetInviteByCode(r.Context(), code)
@@ -676,17 +687,17 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 		if err := moderation.CheckBan(r.Context(), q, ws.ID, caller.ID, caller.Email); err != nil {
 			return err
 		}
+		// The email binding first: a clear 403 for the wrong address beats «used up».
+		role, err := boundInvite(r.Context(), q, inv, caller)
+		if err != nil {
+			return err
+		}
 		if _, err := q.ConsumeInvite(r.Context(), code); err != nil {
 			if db.IsNotFound(err) {
 				return auth.ErrInviteInvalid()
 			}
 			return err
 		}
-		role, v, err := boundInvite(r.Context(), q, inv, caller)
-		if err != nil {
-			return err
-		}
-		verified = v
 		m, err = q.AddMember(r.Context(), sqlc.AddMemberParams{WorkspaceID: ws.ID, UserID: uid(r), Role: string(role)})
 		if db.IsNotFound(err) { // joined concurrently (ON CONFLICT DO NOTHING)
 			m, err = q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: ws.ID, UserID: uid(r)})
@@ -700,12 +711,6 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 	}
 	if added {
 		h.joined(r.Context(), ws, m)
-	}
-	if verified { // the email link verified the address: announce it, join other invitations
-		if u, err := h.db.Q.GetUser(r.Context(), uid(r)); err == nil {
-			h.events.User(r.Context(), u.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: pbconv.Me(u)}}})
-			AcceptEmailInvites(r.Context(), h.db, h.limits.Plans, h.events, u)
-		}
 	}
 	resp, err := h.memberResponse(r.Context(), ws, m)
 	if err != nil {

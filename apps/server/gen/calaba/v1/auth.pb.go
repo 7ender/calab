@@ -206,13 +206,14 @@ type RegisterRequest struct {
 	Email       string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
 	Password    string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"` // 8..256 chars
 	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	// Required when REGISTRATION_MODE=invite: a valid workspace invite code.
-	// The new user also joins that workspace.
+	// Required when REGISTRATION_MODE=invite: a valid workspace invite code — a link's code or
+	// the code of an invitation sent by email. A link's code: the new user joins that workspace
+	// at once. An emailed code works only with the invited address (else 403
+	// INVITE_EMAIL_MISMATCH); the user joins after confirming the address (POST /api/auth/verify).
 	InviteCode string `protobuf:"bytes,4,opt,name=invite_code,json=inviteCode,proto3" json:"invite_code,omitempty"`
 	DeviceName string `protobuf:"bytes,5,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
 	// Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
-	// Registration sends a verification code to `email` (ADR-0023). An invite code sent by
-	// email (POST …/invites/email) only works with that address and verifies it at once.
+	// Registration sends a verification code to `email` (ADR-0023, ADR-0027).
 	Locale        string `protobuf:"bytes,6,opt,name=locale,proto3" json:"locale,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -656,8 +657,8 @@ func (x *ListSessionsResponse) GetSessions() []*Session {
 // if the last is older than 60 s. 409 CONFLICT: already verified and no pending change;
 // 403: guest. Servers without SMTP mark the address verified instead (USER_UPDATE {me}).
 //
-// POST /api/auth/verify (access token) → UpdateMeResponse (+ USER_UPDATE {me}): confirms the
-// email (or the pending change). Afterwards pending email invitations of the address are
+// POST /api/auth/verify (access token) → VerifyEmailResponse (+ USER_UPDATE {me}): confirms
+// the email (or the pending change). Afterwards pending email invitations of the address are
 // accepted automatically (WORKSPACE_CREATE per workspace). 422 CODE_INVALID: wrong code;
 // 422 CODE_EXPIRED: no active code (expired / 5 attempts used) — send a new one.
 type VerifyEmailRequest struct {
@@ -704,6 +705,60 @@ func (x *VerifyEmailRequest) GetCode() string {
 	return ""
 }
 
+type VerifyEmailResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Me    *Me                    `protobuf:"bytes,1,opt,name=me,proto3" json:"me,omitempty"`
+	// Workspaces joined by this verification (pending email invitations of the address); the
+	// same WORKSPACE_CREATE events also arrive over the gateway. Empty = none.
+	JoinedWorkspaceIds []string `protobuf:"bytes,2,rep,name=joined_workspace_ids,json=joinedWorkspaceIds,proto3" json:"joined_workspace_ids,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *VerifyEmailResponse) Reset() {
+	*x = VerifyEmailResponse{}
+	mi := &file_calaba_v1_auth_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyEmailResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyEmailResponse) ProtoMessage() {}
+
+func (x *VerifyEmailResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_auth_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyEmailResponse.ProtoReflect.Descriptor instead.
+func (*VerifyEmailResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *VerifyEmailResponse) GetMe() *Me {
+	if x != nil {
+		return x.Me
+	}
+	return nil
+}
+
+func (x *VerifyEmailResponse) GetJoinedWorkspaceIds() []string {
+	if x != nil {
+		return x.JoinedWorkspaceIds
+	}
+	return nil
+}
+
 // POST /api/auth/password/forgot (no auth) → always 204, whether or not the address has an
 // account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
 type ForgotPasswordRequest struct {
@@ -715,7 +770,7 @@ type ForgotPasswordRequest struct {
 
 func (x *ForgotPasswordRequest) Reset() {
 	*x = ForgotPasswordRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[11]
+	mi := &file_calaba_v1_auth_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -727,7 +782,7 @@ func (x *ForgotPasswordRequest) String() string {
 func (*ForgotPasswordRequest) ProtoMessage() {}
 
 func (x *ForgotPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[11]
+	mi := &file_calaba_v1_auth_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -740,7 +795,7 @@ func (x *ForgotPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForgotPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ForgotPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{11}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ForgotPasswordRequest) GetEmail() string {
@@ -765,7 +820,7 @@ type ResetPasswordRequest struct {
 
 func (x *ResetPasswordRequest) Reset() {
 	*x = ResetPasswordRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[12]
+	mi := &file_calaba_v1_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -777,7 +832,7 @@ func (x *ResetPasswordRequest) String() string {
 func (*ResetPasswordRequest) ProtoMessage() {}
 
 func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[12]
+	mi := &file_calaba_v1_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -790,7 +845,7 @@ func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ResetPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{12}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ResetPasswordRequest) GetEmail() string {
@@ -871,7 +926,10 @@ const file_calaba_v1_auth_proto_rawDesc = "" +
 	"\x14ListSessionsResponse\x12.\n" +
 	"\bsessions\x18\x01 \x03(\v2\x12.calaba.v1.SessionR\bsessions\"(\n" +
 	"\x12VerifyEmailRequest\x12\x12\n" +
-	"\x04code\x18\x01 \x01(\tR\x04code\"-\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\"f\n" +
+	"\x13VerifyEmailResponse\x12\x1d\n" +
+	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\x120\n" +
+	"\x14joined_workspace_ids\x18\x02 \x03(\tR\x12joinedWorkspaceIds\"-\n" +
 	"\x15ForgotPasswordRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\"\\\n" +
 	"\x14ResetPasswordRequest\x12\x14\n" +
@@ -893,7 +951,7 @@ func file_calaba_v1_auth_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_auth_proto_rawDescData
 }
 
-var file_calaba_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_calaba_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_calaba_v1_auth_proto_goTypes = []any{
 	(*Session)(nil),               // 0: calaba.v1.Session
 	(*AuthTokens)(nil),            // 1: calaba.v1.AuthTokens
@@ -906,28 +964,30 @@ var file_calaba_v1_auth_proto_goTypes = []any{
 	(*LogoutRequest)(nil),         // 8: calaba.v1.LogoutRequest
 	(*ListSessionsResponse)(nil),  // 9: calaba.v1.ListSessionsResponse
 	(*VerifyEmailRequest)(nil),    // 10: calaba.v1.VerifyEmailRequest
-	(*ForgotPasswordRequest)(nil), // 11: calaba.v1.ForgotPasswordRequest
-	(*ResetPasswordRequest)(nil),  // 12: calaba.v1.ResetPasswordRequest
-	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
-	(*Me)(nil),                    // 14: calaba.v1.Me
+	(*VerifyEmailResponse)(nil),   // 11: calaba.v1.VerifyEmailResponse
+	(*ForgotPasswordRequest)(nil), // 12: calaba.v1.ForgotPasswordRequest
+	(*ResetPasswordRequest)(nil),  // 13: calaba.v1.ResetPasswordRequest
+	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
+	(*Me)(nil),                    // 15: calaba.v1.Me
 }
 var file_calaba_v1_auth_proto_depIdxs = []int32{
-	13, // 0: calaba.v1.Session.created_at:type_name -> google.protobuf.Timestamp
-	13, // 1: calaba.v1.Session.last_seen_at:type_name -> google.protobuf.Timestamp
-	13, // 2: calaba.v1.Session.expires_at:type_name -> google.protobuf.Timestamp
-	13, // 3: calaba.v1.AuthTokens.access_expires_at:type_name -> google.protobuf.Timestamp
-	13, // 4: calaba.v1.AuthTokens.refresh_expires_at:type_name -> google.protobuf.Timestamp
+	14, // 0: calaba.v1.Session.created_at:type_name -> google.protobuf.Timestamp
+	14, // 1: calaba.v1.Session.last_seen_at:type_name -> google.protobuf.Timestamp
+	14, // 2: calaba.v1.Session.expires_at:type_name -> google.protobuf.Timestamp
+	14, // 3: calaba.v1.AuthTokens.access_expires_at:type_name -> google.protobuf.Timestamp
+	14, // 4: calaba.v1.AuthTokens.refresh_expires_at:type_name -> google.protobuf.Timestamp
 	1,  // 5: calaba.v1.RegisterResponse.tokens:type_name -> calaba.v1.AuthTokens
-	14, // 6: calaba.v1.RegisterResponse.me:type_name -> calaba.v1.Me
+	15, // 6: calaba.v1.RegisterResponse.me:type_name -> calaba.v1.Me
 	1,  // 7: calaba.v1.LoginResponse.tokens:type_name -> calaba.v1.AuthTokens
-	14, // 8: calaba.v1.LoginResponse.me:type_name -> calaba.v1.Me
+	15, // 8: calaba.v1.LoginResponse.me:type_name -> calaba.v1.Me
 	1,  // 9: calaba.v1.RefreshResponse.tokens:type_name -> calaba.v1.AuthTokens
 	0,  // 10: calaba.v1.ListSessionsResponse.sessions:type_name -> calaba.v1.Session
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	15, // 11: calaba.v1.VerifyEmailResponse.me:type_name -> calaba.v1.Me
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_auth_proto_init() }
@@ -942,7 +1002,7 @@ func file_calaba_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_auth_proto_rawDesc), len(file_calaba_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -1285,14 +1285,21 @@ func (x *UpdateMemberResponse) GetMember() *WorkspaceMember {
 
 // GET /api/invites/{code} — preview before joining. Public (no token: the /join/<code> page
 // of a signed-out visitor, e.g. from an invitation email), 30 per minute per IP; an unknown,
-// expired or used-up code is 404 INVITE_INVALID.
+// expired or used-up code is 404 INVITE_INVALID. An emailed invitation stays previewable
+// after it was accepted (until it expires): its invitee may open the link again.
+//
+// POST /api/invites/{code}/join → JoinWorkspaceResponse: a link's code or an emailed code.
+// An existing member gets the membership (200, no use spent). An emailed code: 403
+// INVITE_EMAIL_MISMATCH for another address than the account's, 403 EMAIL_NOT_VERIFIED for
+// an unverified account (confirming the address joins automatically, ADR-0027).
 type GetInviteResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Public subset only: id, slug, name, icon_file_id (the rest is unset).
 	Workspace *Workspace             `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // unset = never
 	// Email invitation (ADR-0023): the code works only for this address (register with it /
-	// be signed in with it verified), else 404 INVITE_INVALID. Prefill it on the sign-up form.
+	// be signed in with it), else 403 INVITE_EMAIL_MISMATCH. Prefill and lock it on the
+	// sign-up form.
 	Email         string `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
 	MemberCount   uint32 `protobuf:"varint,4,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"` // members without guests
 	unknownFields protoimpl.UnknownFields
@@ -1650,7 +1657,8 @@ func (x *EmailInvite) GetLastSentAt() *timestamppb.Timestamp {
 }
 
 // POST /api/workspaces/{id}/invites/email → 201 CreateEmailInviteResponse. Mails a link
-// PUBLIC_APP_URL/join/<code> (single use, 7 days, bound to the address). Registering with
+// PUBLIC_APP_URL/join/<code> (single use, 7 days, bound to the address); the mail also shows
+// the code as text (it is a valid sign-up invite code for that address). Registering with
 // the address (link or not) and verifying it joins the workspace automatically. Sending
 // again to the same address renews the link, at most once per 24 h (429 with Retry-After).
 // role: MEMBER (default) or ADMIN (owner only). 409 CONFLICT: already a member.

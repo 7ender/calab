@@ -212,26 +212,27 @@ func (s *Service) SendVerification(ctx context.Context, userID uuid.UUID) error 
 }
 
 // VerifyEmail confirms the pending new address (if any) or the account email with code.
-func (s *Service) VerifyEmail(ctx context.Context, userID uuid.UUID, code string) (*v1.Me, error) {
+// It returns the workspaces joined by the confirmation (pending email invitations).
+func (s *Service) VerifyEmail(ctx context.Context, userID uuid.UUID, code string) (*v1.Me, []uuid.UUID, error) {
 	c, ok := normalizeCode(code)
 	if !ok {
-		return nil, httpx.Validation("code", "the code is 6 digits")
+		return nil, nil, httpx.Validation("code", "the code is 6 digits")
 	}
 	u, err := s.db.Q.GetUser(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if u.IsGuest || u.Email == nil {
-		return nil, httpx.Forbidden("guest accounts have no email")
+		return nil, nil, httpx.Forbidden("guest accounts have no email")
 	}
 	purpose := purposeVerify
 	if u.PendingEmail != nil {
 		purpose = purposeChange
 	} else if u.EmailVerifiedAt != nil {
-		return nil, httpx.Conflict("email is already verified")
+		return nil, nil, httpx.Conflict("email is already verified")
 	}
 	if err := s.checkCode(ctx, userID, purpose, c); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		if err := q.DeleteEmailCode(ctx, sqlc.DeleteEmailCodeParams{UserID: userID, Purpose: purpose}); err != nil {
@@ -252,19 +253,20 @@ func (s *Service) VerifyEmail(ctx context.Context, userID uuid.UUID, code string
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	s.verified(ctx, u)
-	return pbconv.Me(u), nil
+	joined := s.verified(ctx, u)
+	return pbconv.Me(u), joined, nil
 }
 
 // verified announces the (newly) verified account to its devices and runs the
 // auto-join of pending email invitations.
-func (s *Service) verified(ctx context.Context, u sqlc.User) {
+func (s *Service) verified(ctx context.Context, u sqlc.User) []uuid.UUID {
 	s.events.User(ctx, u.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: pbconv.Me(u)}}})
 	if s.OnEmailVerified != nil {
-		s.OnEmailVerified(ctx, u)
+		return s.OnEmailVerified(ctx, u)
 	}
+	return nil
 }
 
 // ForgotPassword mails a reset code if email belongs to an account with a password. It
@@ -370,11 +372,15 @@ func (h *Handlers) verifyEmail(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
-	me, err := h.svc.VerifyEmail(r.Context(), MustFromContext(r.Context()).UserID, req.GetCode())
+	me, joined, err := h.svc.VerifyEmail(r.Context(), MustFromContext(r.Context()).UserID, req.GetCode())
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: me})
+	resp := &v1.VerifyEmailResponse{Me: me, JoinedWorkspaceIds: make([]string, len(joined))}
+	for i, id := range joined {
+		resp.JoinedWorkspaceIds[i] = id.String()
+	}
+	httpx.Write(w, http.StatusOK, resp)
 	return nil
 }
 

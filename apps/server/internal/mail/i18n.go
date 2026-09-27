@@ -12,6 +12,11 @@ type texts struct {
 	Line    string
 	Button  string // link label (templates with a url); code templates show the code
 	Note    string // grey: validity / "if it wasn't you"
+	// Invitations: numbered steps under the line, and the invitation code as text for when the
+	// link does not open (shown only with a "code" param: "<CodeHint>" + "<CodeLabel>: <code>").
+	Steps     []string
+	CodeHint  string
+	CodeLabel string
 }
 
 var dict = map[string]map[Template]texts{
@@ -37,6 +42,13 @@ var dict = map[string]map[Template]texts{
 			Line:   "{{.inviter}} invited you to the workspace “{{.workspace}}” in Calab, a voice-first team messenger.",
 			Button: "Accept invitation",
 			Note:   "The link is valid for {{.days}} days and only for this email address. If you weren’t expecting it, ignore this email.",
+			Steps: []string{
+				"Open the “Accept invitation” link.",
+				"Create an account — your email address is already filled in.",
+				"Enter the confirmation code from the next email — and you’re in the workspace.",
+			},
+			CodeHint:  "Link not opening? Sign up in Calab with this email address and enter the invitation code.",
+			CodeLabel: "Invitation code",
 		},
 	},
 	LocaleRU: {
@@ -61,6 +73,13 @@ var dict = map[string]map[Template]texts{
 			Line:   "{{.inviter}} приглашает вас в пространство «{{.workspace}}» в Calab — мессенджере для команды, где голос на первом месте.",
 			Button: "Принять приглашение",
 			Note:   "Ссылка действует {{.days}} дней и только для этого адреса почты. Если вы не ждали приглашения — проигнорируйте письмо.",
+			Steps: []string{
+				"Откройте ссылку «Принять приглашение».",
+				"Создайте аккаунт — адрес почты уже подставлен.",
+				"Введите код подтверждения из следующего письма — и вы в пространстве.",
+			},
+			CodeHint:  "Ссылка не открывается? Зарегистрируйтесь в Calab с этим адресом почты и укажите код приглашения.",
+			CodeLabel: "Код приглашения",
 		},
 	},
 	LocaleES: {
@@ -85,6 +104,13 @@ var dict = map[string]map[Template]texts{
 			Line:   "{{.inviter}} te invitó al espacio «{{.workspace}}» en Calab, un mensajero de equipo centrado en la voz.",
 			Button: "Aceptar invitación",
 			Note:   "El enlace es válido durante {{.days}} días y solo para esta dirección de correo. Si no lo esperabas, ignora este correo.",
+			Steps: []string{
+				"Abre el enlace «Aceptar invitación».",
+				"Crea una cuenta: tu dirección de correo ya está rellenada.",
+				"Introduce el código de confirmación del siguiente correo y ya estarás en el espacio.",
+			},
+			CodeHint:  "¿No se abre el enlace? Regístrate en Calab con esta dirección de correo e introduce el código de invitación.",
+			CodeLabel: "Código de invitación",
 		},
 	},
 	LocaleZhCN: {
@@ -109,6 +135,13 @@ var dict = map[string]map[Template]texts{
 			Line:   "{{.inviter}} 邀请你加入 Calab 的工作区“{{.workspace}}”——一款以语音为核心的团队通讯工具。",
 			Button: "接受邀请",
 			Note:   "链接在 {{.days}} 天内有效，且仅限此邮箱地址使用。如果你没有预料到这份邀请，请忽略此邮件。",
+			Steps: []string{
+				"打开“接受邀请”链接。",
+				"创建账户——邮箱地址已自动填好。",
+				"输入下一封邮件中的验证码，即可进入工作区。",
+			},
+			CodeHint:  "链接打不开？请在 Calab 中使用此邮箱地址注册，并填写邀请码。",
+			CodeLabel: "邀请码",
 		},
 	},
 }

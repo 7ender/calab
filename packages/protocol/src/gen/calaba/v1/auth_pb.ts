@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/auth.proto.
  */
 export const file_calaba_v1_auth: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkiggEKD1JlZ2lzdGVyUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEwoLaW52aXRlX2NvZGUYBCABKAkSEwoLZGV2aWNlX25hbWUYBSABKAkSDgoGbG9jYWxlGAYgASgJIlQKEFJlZ2lzdGVyUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUiRAoMTG9naW5SZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhMKC2RldmljZV9uYW1lGAMgASgJIlEKDUxvZ2luUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUiJwoOUmVmcmVzaFJlcXVlc3QSFQoNcmVmcmVzaF90b2tlbhgBIAEoCSI4Cg9SZWZyZXNoUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMiPAoNTG9nb3V0UmVxdWVzdBIUCgxhbGxfc2Vzc2lvbnMYASABKAgSFQoNcmVmcmVzaF90b2tlbhgCIAEoCSI8ChRMaXN0U2Vzc2lvbnNSZXNwb25zZRIkCghzZXNzaW9ucxgBIAMoCzISLmNhbGFiYS52MS5TZXNzaW9uIiIKElZlcmlmeUVtYWlsUmVxdWVzdBIMCgRjb2RlGAEgASgJIiYKFUZvcmdvdFBhc3N3b3JkUmVxdWVzdBINCgVlbWFpbBgBIAEoCSJFChRSZXNldFBhc3N3b3JkUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIMCgRjb2RlGAIgASgJEhAKCHBhc3N3b3JkGAMgASgJQpcBCg1jb20uY2FsYWJhLnYxQglBdXRoUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_user]);
+  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkiggEKD1JlZ2lzdGVyUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEwoLaW52aXRlX2NvZGUYBCABKAkSEwoLZGV2aWNlX25hbWUYBSABKAkSDgoGbG9jYWxlGAYgASgJIlQKEFJlZ2lzdGVyUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUiRAoMTG9naW5SZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhMKC2RldmljZV9uYW1lGAMgASgJIlEKDUxvZ2luUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUiJwoOUmVmcmVzaFJlcXVlc3QSFQoNcmVmcmVzaF90b2tlbhgBIAEoCSI4Cg9SZWZyZXNoUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMiPAoNTG9nb3V0UmVxdWVzdBIUCgxhbGxfc2Vzc2lvbnMYASABKAgSFQoNcmVmcmVzaF90b2tlbhgCIAEoCSI8ChRMaXN0U2Vzc2lvbnNSZXNwb25zZRIkCghzZXNzaW9ucxgBIAMoCzISLmNhbGFiYS52MS5TZXNzaW9uIiIKElZlcmlmeUVtYWlsUmVxdWVzdBIMCgRjb2RlGAEgASgJIk4KE1ZlcmlmeUVtYWlsUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUSHAoUam9pbmVkX3dvcmtzcGFjZV9pZHMYAiADKAkiJgoVRm9yZ290UGFzc3dvcmRSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJIkUKFFJlc2V0UGFzc3dvcmRSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEgwKBGNvZGUYAiABKAkSEAoIcGFzc3dvcmQYAyABKAlClwEKDWNvbS5jYWxhYmEudjFCCUF1dGhQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_user]);
 
 /**
  * A login session = one device. Each session has its own rotating refresh token.
@@ -139,8 +139,10 @@ export type RegisterRequest = Message<"calaba.v1.RegisterRequest"> & {
   displayName: string;
 
   /**
-   * Required when REGISTRATION_MODE=invite: a valid workspace invite code.
-   * The new user also joins that workspace.
+   * Required when REGISTRATION_MODE=invite: a valid workspace invite code — a link's code or
+   * the code of an invitation sent by email. A link's code: the new user joins that workspace
+   * at once. An emailed code works only with the invited address (else 403
+   * INVITE_EMAIL_MISMATCH); the user joins after confirming the address (POST /api/auth/verify).
    *
    * @generated from field: string invite_code = 4;
    */
@@ -153,8 +155,7 @@ export type RegisterRequest = Message<"calaba.v1.RegisterRequest"> & {
 
   /**
    * Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
-   * Registration sends a verification code to `email` (ADR-0023). An invite code sent by
-   * email (POST …/invites/email) only works with that address and verifies it at once.
+   * Registration sends a verification code to `email` (ADR-0023, ADR-0027).
    *
    * @generated from field: string locale = 6;
    */
@@ -335,8 +336,8 @@ export const ListSessionsResponseSchema: GenMessage<ListSessionsResponse> = /*@_
  * if the last is older than 60 s. 409 CONFLICT: already verified and no pending change;
  * 403: guest. Servers without SMTP mark the address verified instead (USER_UPDATE {me}).
  *
- * POST /api/auth/verify (access token) → UpdateMeResponse (+ USER_UPDATE {me}): confirms the
- * email (or the pending change). Afterwards pending email invitations of the address are
+ * POST /api/auth/verify (access token) → VerifyEmailResponse (+ USER_UPDATE {me}): confirms
+ * the email (or the pending change). Afterwards pending email invitations of the address are
  * accepted automatically (WORKSPACE_CREATE per workspace). 422 CODE_INVALID: wrong code;
  * 422 CODE_EXPIRED: no active code (expired / 5 attempts used) — send a new one.
  *
@@ -357,6 +358,31 @@ export const VerifyEmailRequestSchema: GenMessage<VerifyEmailRequest> = /*@__PUR
   messageDesc(file_calaba_v1_auth, 10);
 
 /**
+ * @generated from message calaba.v1.VerifyEmailResponse
+ */
+export type VerifyEmailResponse = Message<"calaba.v1.VerifyEmailResponse"> & {
+  /**
+   * @generated from field: calaba.v1.Me me = 1;
+   */
+  me?: Me | undefined;
+
+  /**
+   * Workspaces joined by this verification (pending email invitations of the address); the
+   * same WORKSPACE_CREATE events also arrive over the gateway. Empty = none.
+   *
+   * @generated from field: repeated string joined_workspace_ids = 2;
+   */
+  joinedWorkspaceIds: string[];
+};
+
+/**
+ * Describes the message calaba.v1.VerifyEmailResponse.
+ * Use `create(VerifyEmailResponseSchema)` to create a new message.
+ */
+export const VerifyEmailResponseSchema: GenMessage<VerifyEmailResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_auth, 11);
+
+/**
  * POST /api/auth/password/forgot (no auth) → always 204, whether or not the address has an
  * account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
  *
@@ -374,7 +400,7 @@ export type ForgotPasswordRequest = Message<"calaba.v1.ForgotPasswordRequest"> &
  * Use `create(ForgotPasswordRequestSchema)` to create a new message.
  */
 export const ForgotPasswordRequestSchema: GenMessage<ForgotPasswordRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 11);
+  messageDesc(file_calaba_v1_auth, 12);
 
 /**
  * POST /api/auth/password/reset (no auth) → 204. Sets the new password, marks the email
@@ -406,5 +432,5 @@ export type ResetPasswordRequest = Message<"calaba.v1.ResetPasswordRequest"> & {
  * Use `create(ResetPasswordRequestSchema)` to create a new message.
  */
 export const ResetPasswordRequestSchema: GenMessage<ResetPasswordRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 12);
+  messageDesc(file_calaba_v1_auth, 13);
 

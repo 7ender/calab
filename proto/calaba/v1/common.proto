@@ -40,6 +40,9 @@ enum ErrorCode {
   // 403: the caller (or their email address) is banned from the workspace: joining by
   // invitation, open join, email invitation or room link is refused.
   ERROR_CODE_BANNED = 27;
+  // 403: an invitation sent by email to another address than the account's (or the sign-up
+  // form's): sign in with / register the invited address.
+  ERROR_CODE_INVITE_EMAIL_MISMATCH = 28;
 }
 
 // Error body of every non-2xx REST response.
