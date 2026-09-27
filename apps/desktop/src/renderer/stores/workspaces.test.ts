@@ -1,6 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import {
   PERMISSION_BITS,
+  PresenceSchema,
   RoleSchema,
   RoomSchema,
   UserSchema,
@@ -86,5 +87,23 @@ describe('workspace roles in the store (ADR-0026)', () => {
     const before = useWorkspaces.getState().byId[W];
     st.clearRoomVoice(W, 'nothing-here');
     expect(useWorkspaces.getState().byId[W]).toBe(before);
+  });
+});
+
+describe('custom status (owner, 27.09: it showed everywhere only after a reload)', () => {
+  it('PRESENCE_UPDATE with a custom status updates the user card at once, and clearing it too', () => {
+    const me = member('u1', WorkspaceRole.MEMBER);
+    useWorkspaces.getState().applySnapshot(snapshot(me));
+    const st = useWorkspaces.getState();
+    st.setPresence(create(PresenceSchema, { userId: 'u1', statusText: 'В отпуске', statusEmoji: '🏖️' }));
+    expect(useWorkspaces.getState().users['u1']).toMatchObject({ statusText: 'В отпуске', statusEmoji: '🏖️' });
+    st.setPresence(create(PresenceSchema, { userId: 'u1', statusText: '', statusEmoji: '' }));
+    expect(useWorkspaces.getState().users['u1']).toMatchObject({ statusText: '', statusEmoji: '' });
+    // Unknown users only get a presence entry; an unchanged status keeps the same user object.
+    const before = useWorkspaces.getState().users['u1'];
+    st.setPresence(create(PresenceSchema, { userId: 'u1' }));
+    expect(useWorkspaces.getState().users['u1']).toBe(before);
+    st.setPresence(create(PresenceSchema, { userId: 'nobody', statusText: 'x' }));
+    expect(useWorkspaces.getState().users['nobody']).toBeUndefined();
   });
 });

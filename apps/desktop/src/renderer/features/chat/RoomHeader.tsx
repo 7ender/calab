@@ -2,7 +2,7 @@ import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Permis
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Badge, Button, IconButton, MOD, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
@@ -76,7 +76,7 @@ export function RoomHeader({
   const touch = mobile ? 'size-10 rounded-full' : undefined;
   // Re-render (and re-measure) when «Войти в голос» appears or goes.
   const preview = useVoice((s) => voiceRoom && isVoicePreview(room, s.roomId));
-  const fit = useHeaderFit(!mobile);
+  const [fit, headerEl] = useHeaderFit(!mobile);
   const search = wide && !mobile && fit.search;
   const setHeaderSearch = useUi((s) => s.setHeaderSearch);
   const owner = useId();
@@ -88,7 +88,7 @@ export function RoomHeader({
 
   return (
     <header
-      ref={fit.ref}
+      ref={headerEl}
       className={cx(
         'mat-toolbar drag sticky top-0 z-[var(--z-sticky)] flex h-12 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-line pl-4 pr-2',
         fit.tight && !mobile && 'gap-1 pl-3 pr-1',
@@ -139,27 +139,28 @@ export function RoomHeader({
  * items that change without a resize (name, «Войти в голос», typing) re-render the header, which
  * re-measures too.
  */
-function useHeaderFit(enabled: boolean): HeaderFit & { ref: (el: HTMLElement | null) => void } {
-  const [el, ref] = useState<HTMLElement | null>(null);
+function useHeaderFit(enabled: boolean): [HeaderFit, (el: HTMLElement | null) => void] {
+  const [el, setEl] = useState<HTMLElement | null>(null);
   const [fit, setFit] = useState<HeaderFit>({ search: false, tight: false });
-  const apply = useRef<() => void>(() => undefined);
-  apply.current = () => {
+  const measure = useCallback(() => {
     if (!el || !enabled) return;
     const { width, used } = measureHeader(el);
     const next = headerFit(width, used);
     setFit((f) => (f.search === next.search && f.tight === next.tight ? f : next));
-  };
-  // Every render: cheap (a handful of rects), and the header re-renders rarely.
-  useLayoutEffect(() => apply.current());
+  }, [el, enabled]);
+  // Every render: cheap (a handful of rects), and the header re-renders rarely. DOM measurement
+  // before paint has to set state here; the setter bails out when nothing changed.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useLayoutEffect(measure);
   useEffect(() => {
     if (!el || !enabled) return;
-    const ro = new ResizeObserver(() => apply.current());
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     const name = el.querySelector('[data-header-name]');
     if (name) ro.observe(name);
     return () => ro.disconnect();
-  }, [el, enabled]);
-  return { ...fit, ref };
+  }, [el, enabled, measure]);
+  return [fit, setEl];
 }
 
 /**
