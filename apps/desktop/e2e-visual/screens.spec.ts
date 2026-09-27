@@ -557,6 +557,10 @@ test('dm-new', async ({ open, win, shot }) => {
   const dialog = win.getByRole('dialog', { name: 'Новое сообщение' });
   await expect(dialog.getByRole('option')).toHaveCount(3);
   await settle(win);
+  // docs/09 #52: the list runs down to the dialog's bottom padding (20 px) — no empty band under it.
+  const [d, l] = await Promise.all([dialog.boundingBox(), dialog.getByRole('listbox').boundingBox()]);
+  if (!d || !l) throw new Error('no dialog / list box');
+  expect(Math.abs(d.y + d.height - (l.y + l.height) - 20)).toBeLessThanOrEqual(1);
   await checkpoint(shot, 'dm-new');
 });
 

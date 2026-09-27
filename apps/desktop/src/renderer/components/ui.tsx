@@ -355,6 +355,7 @@ export function Modal({
   footer,
   closeButton = true,
   initialFocus,
+  fill = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -367,6 +368,13 @@ export function Modal({
   closeButton?: boolean;
   /** Field focused on open (Radix would focus the close box first — and show its tooltip). */
   initialFocus?: RefObject<HTMLElement | null>;
+  /**
+   * A list dialog (docs/09 #52): the body is a flex column, so a child with `flex-1 min-h-0`
+   * (PickerPanel with `fill`) takes the height left under the header, down to the bottom
+   * padding — it scrolls inside instead of the body, and the dialog is never taller than the
+   * window. Without it the body scrolls as a whole.
+   */
+  fill?: boolean;
 }): ReactNode {
   return (
     <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -406,7 +414,7 @@ export function Modal({
               </IconButton>
             ) : null}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">{children}</div>
+          <div className={cx('min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4', fill && 'flex flex-col')}>{children}</div>
           {/* macOS order: secondary/cancel on the left of the primary action, primary rightmost. */}
           {footer ? <div className="flex justify-end gap-2 px-5 pb-5">{footer}</div> : null}
         </DialogP.Content>
