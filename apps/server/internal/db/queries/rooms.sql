@@ -12,6 +12,10 @@ RETURNING *;
 -- name: GetRoom :one
 SELECT * FROM rooms WHERE id = $1 AND archived_at IS NULL;
 
+-- name: GetRoomForUpdate :one
+-- The live room, locked for the rest of the transaction (PATCH restricted, ADR-0029).
+SELECT * FROM rooms WHERE id = $1 AND archived_at IS NULL FOR UPDATE;
+
 -- name: ListRooms :many
 SELECT * FROM rooms
 WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL

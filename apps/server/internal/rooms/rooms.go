@@ -450,6 +450,18 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.AllowRecording = req.AllowRecording
 	}
+	if req.Restricted != nil {
+		// «Только по списку» is the owner's call (ADR-0029): workspaces.owner_id, not a bit —
+		// admins hold ADMINISTRATOR and are exactly who the flag hides the room from.
+		ws, err := h.db.Q.GetWorkspace(r.Context(), acc.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if ws.OwnerID != auth.MustFromContext(r.Context()).UserID {
+			return httpx.Forbidden("only the workspace owner may change restricted").WithDetails(ReasonOwnerOnly, 0, 0)
+		}
+		p.Restricted = req.Restricted
+	}
 	if req.CategoryId != nil {
 		p.SetCategory = true
 		if p.CategoryID, err = parseCategory(r.Context(), h.db.Q, acc.WorkspaceID, req.GetCategoryId()); err != nil {
@@ -465,7 +477,21 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		p.AudioBitrateKbps, p.MaxStreamPreset, p.MaxStreams, p.CameraLimit = m.audio, m.preset, m.streams, m.cameras
 	}
 	var pb *v1.Room
+	restrictedChanged := false
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		if p.Restricted != nil {
+			cur, err := q.GetRoomForUpdate(r.Context(), roomID)
+			if db.IsNotFound(err) {
+				return httpx.NotFound("room")
+			}
+			if err != nil {
+				return err
+			}
+			if *p.Restricted && !cur.IsPrivate {
+				return httpx.Validation("restricted", "only private rooms can be restricted")
+			}
+			restrictedChanged = cur.Restricted != *p.Restricted
+		}
 		room, err := q.UpdateRoom(r.Context(), p)
 		if db.IsNotFound(err) {
 			return httpx.NotFound("room")
@@ -485,10 +511,24 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	h.events.Workspace(r.Context(), acc.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: pb}}})
+	update := &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomUpdate{RoomUpdate: &v1.RoomUpdate{Room: pb}}}
+	if !restrictedChanged {
+		h.events.Workspace(r.Context(), acc.WorkspaceID, update)
+	} else {
+		// Who sees the room changed (ADR-0029): the gateway turns the ROOM_UPDATE into
+		// ROOM_CREATE / ROOM_DELETE per recipient; the permissions update (same overrides)
+		// makes rtc.SyncPublisher re-grant or remove the room's call participants.
+		perm.FromContext(r.Context()).Invalidate()
+		h.events.WorkspaceEvents(r.Context(), acc.WorkspaceID, []*v1.DispatchEvent{update, {Event: &v1.DispatchEvent_RoomPermissionsUpdate{RoomPermissionsUpdate: &v1.RoomPermissionsUpdate{
+			WorkspaceId: acc.WorkspaceID.String(), RoomId: roomID.String(), Permissions: pb.GetPermissionOverrides(),
+		}}}})
+	}
 	httpx.Write(w, http.StatusOK, &v1.UpdateRoomResponse{Room: pb})
 	return nil
 }
+
+// ReasonOwnerOnly (ApiError.reason, 403): only the workspace owner may do this (ADR-0029).
+const ReasonOwnerOnly = "OWNER_ONLY"
 
 func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 	roomID, acc, err := h.manage(r)

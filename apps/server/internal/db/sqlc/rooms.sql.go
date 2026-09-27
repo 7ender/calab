@@ -307,6 +307,38 @@ func (q *Queries) GetRoomAccess(ctx context.Context, arg GetRoomAccessParams) (G
 	return i, err
 }
 
+const getRoomForUpdate = `-- name: GetRoomForUpdate :one
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted FROM rooms WHERE id = $1 AND archived_at IS NULL FOR UPDATE
+`
+
+// The live room, locked for the rest of the transaction (PATCH restricted, ADR-0029).
+func (q *Queries) GetRoomForUpdate(ctx context.Context, id uuid.UUID) (Room, error) {
+	row := q.db.QueryRow(ctx, getRoomForUpdate, id)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+		&i.UserLimit,
+		&i.VoiceStatus,
+		&i.CameraLimit,
+		&i.DmKey,
+		&i.AllowRecording,
+		&i.Restricted,
+	)
+	return i, err
+}
+
 const insertRoomOverride = `-- name: InsertRoomOverride :exec
 INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
 VALUES ($1, $2, $3, $4, $5)
