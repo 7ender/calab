@@ -132,8 +132,12 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (e.value.member) {
         const m = e.value.member;
         useWorkspaces.getState().upsertMember(m);
-        // My roles changed (ADR-0026): the entry's built-in role (admin UI) follows.
-        if (m.user?.id === myUserId() && m.role) useWorkspaces.getState().setMyRole(m.workspaceId, m.role);
+        // My roles changed (ADR-0026): the entry's built-in role (admin UI) and my call's
+        // stream / camera buttons follow.
+        if (m.user?.id === myUserId()) {
+          if (m.role) useWorkspaces.getState().setMyRole(m.workspaceId, m.role);
+          voice.refreshRights();
+        }
       }
       return;
     // Workspace roles (ADR-0026): permissions are recomputed from the store on render; room
@@ -141,9 +145,11 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'roleCreate':
     case 'roleUpdate':
       if (e.value.role) useWorkspaces.getState().upsertRole(e.value.role);
+      voice.refreshRights();
       return;
     case 'roleDelete':
       useWorkspaces.getState().removeRole(e.value.workspaceId, e.value.roleId);
+      voice.refreshRights();
       return;
     case 'workspaceMemberRemove':
       useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId);
@@ -157,10 +163,16 @@ export function applyDispatch(ev: DispatchEvent): void {
     }
     case 'roomCreate':
     case 'roomUpdate':
-      if (e.value.room) useRooms.getState().upsert(e.value.room);
+      if (e.value.room) {
+        useRooms.getState().upsert(e.value.room);
+        if (e.value.room.id === voice.currentRoomId) voice.refreshRights();
+      }
       return;
     case 'roomDelete': {
       useRooms.getState().remove(e.value.roomId);
+      // Deleted, or hidden from me by a role / override change: its participants are no longer
+      // «in voice» for me (the server stops sending their states for a room I cannot see).
+      useWorkspaces.getState().clearRoomVoice(e.value.workspaceId, e.value.roomId);
       useMessages.getState().unload(e.value.roomId);
       dropRecordings((room) => room === e.value.roomId);
       useInbox.getState().removeRooms((id) => id !== e.value.roomId);
@@ -169,6 +181,7 @@ export function applyDispatch(ev: DispatchEvent): void {
     }
     case 'roomPermissionsUpdate':
       useRooms.getState().setOverrides(e.value.roomId, e.value.permissions);
+      if (e.value.roomId === voice.currentRoomId) voice.refreshRights();
       return;
     case 'messageCreate':
       if (e.value.message) onMessage(e.value.message, e.value.workspaceId);

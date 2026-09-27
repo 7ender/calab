@@ -18,7 +18,7 @@ import type { PttEvent } from '../../shared/ipc';
 import { t } from '../i18n';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
-import { can, roomPerms } from '../lib/permissions';
+import { roomPerms, voiceCaps } from '../lib/permissions';
 import { MicPipeline } from '../lib/media/micPipeline';
 import type { MicReport } from '../lib/media/micReport';
 import {
@@ -474,11 +474,28 @@ class VoiceEngine {
       url: moved.url,
       token: moved.token,
       canSpeak: true,
-      canStream: can(roomPerms(role, me, room), 'STREAM'),
       // The camera needs /camera/request in the target anyway (the server re-checks VIDEO + limit).
-      canVideo: can(roomPerms(role, me, room), 'VIDEO') && (room?.media?.cameraLimit ?? 0) > 0,
+      ...voiceCaps(roomPerms(role, me, room), room),
       media: { audioBitrateKbps: room?.media?.audioBitrateKbps || this.audioBitrateKbps },
     };
+  }
+
+  /**
+   * My roles or the room's overrides / media changed during a call (ROLE_*, my
+   * WORKSPACE_MEMBER_UPDATE, ROOM_PERMISSIONS_UPDATE, ROOM_UPDATE): the stream / camera buttons
+   * follow at once instead of keeping the /join answer until a rejoin. SPEAK follows LiveKit's
+   * grant (ParticipantPermissionsChanged), which the server pushes on the same changes.
+   */
+  refreshRights(): void {
+    const { roomId, workspaceId, phase, canStream, canVideo } = useVoice.getState();
+    if (!roomId || !workspaceId || phase !== 'connected') return;
+    const room = useRooms.getState().byId[roomId];
+    const me = useSession.getState().me?.user?.id ?? '';
+    const roles = rolesOf(useWorkspaces.getState().byId[workspaceId], me);
+    // Unknown room / member (a READY is being applied): keep what /join said.
+    if (!room || roles.length === 0) return;
+    const next = voiceCaps(roomPerms(roles, me, room), room);
+    if (next.canStream !== canStream || next.canVideo !== canVideo) setVoice(next);
   }
 
   /** Bumped by every user join/leave: a running rejoin loop stops when it changes. */
