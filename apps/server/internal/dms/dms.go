@@ -43,7 +43,7 @@ func NewHandlers(d *db.DB, ev events.Publisher, limiter *redisx.RateLimiter) *Ha
 }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
-func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/dms", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("GET /api/dms", wrap(httpx.HandlerFunc(h.list)))
 	mux.Handle("GET /api/dms/candidates", wrap(httpx.HandlerFunc(h.candidates)))
@@ -151,6 +151,11 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	if peer.IsGuest {
 		return httpx.Forbidden("guest accounts cannot receive direct messages")
+	}
+	if auth.MustFromContext(r.Context()).IsBot { // ADR-0031: the person may have blocked the bot
+		if err := CheckBotBlocked(r.Context(), h.db.Q, me, peerID); err != nil {
+			return err
+		}
 	}
 	key := Key(me, peerID)
 	room, err := h.db.Q.GetDMByKey(r.Context(), &key)
@@ -308,5 +313,20 @@ func (h *Handlers) candidates(w http.ResponseWriter, r *http.Request) error {
 		out.Users[i] = pbconv.User(u)
 	}
 	httpx.Write(w, http.StatusOK, out)
+	return nil
+}
+
+// ErrBotBlocked means the person blocked this bot (ADR-0031, POST /api/me/blocked-bots/{id}).
+var ErrBotBlocked = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_BOT_BLOCKED, "this person blocked the bot")
+
+// CheckBotBlocked refuses a bot writing to a person who blocked it.
+func CheckBotBlocked(ctx context.Context, q *sqlc.Queries, bot, person uuid.UUID) error {
+	blocked, err := q.IsBotBlocked(ctx, sqlc.IsBotBlockedParams{UserID: person, BotUserID: bot})
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return ErrBotBlocked
+	}
 	return nil
 }

@@ -134,6 +134,7 @@ func User(u sqlc.User) *v1.User {
 		CreatedAt:    ts(u.CreatedAt),
 		IsGuest:      u.IsGuest,
 		Timezone:     deref(u.Timezone),
+		IsBot:        u.IsBot,
 	}
 	out.StatusText, out.StatusEmoji, out.StatusExpiresAt = Status(u)
 	return out

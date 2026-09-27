@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
@@ -38,6 +39,9 @@ type Handlers struct {
 	db      *db.DB
 	events  events.Publisher
 	limiter *redisx.RateLimiter // per (room, user): burst 5, 1/s
+	// BotLimiter bounds the messages of one bot in all rooms and DMs (ADR-0031,
+	// BOT_MESSAGES_PER_MIN); nil = none.
+	BotLimiter *redisx.RateLimiter
 }
 
 // NewHandlers creates the message handlers.
@@ -46,7 +50,7 @@ func NewHandlers(d *db.DB, ev events.Publisher, limiter *redisx.RateLimiter) *Ha
 }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
-func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.list)))
 	mux.Handle("POST /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("PATCH /api/messages/{id}", wrap(httpx.HandlerFunc(h.update)))
@@ -275,6 +279,23 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if err := h.limiter.Take(r.Context(), roomID.String()+":"+uid(r).String()); err != nil {
 		return err
 	}
+	isBot := auth.MustFromContext(r.Context()).IsBot
+	if isBot {
+		if acc.DM { // ADR-0031: a person may block a bot
+			for _, u := range acc.Members {
+				if u != uid(r) {
+					if err := dms.CheckBotBlocked(r.Context(), h.db.Q, uid(r), u); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		if h.BotLimiter != nil {
+			if err := h.BotLimiter.Take(r.Context(), uid(r).String()); err != nil {
+				return err
+			}
+		}
+	}
 	var replyTo *uuid.UUID
 	if s := req.GetReplyToId(); s != "" {
 		id, err := uuid.Parse(s)
@@ -364,8 +385,15 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			h.events.User(r.Context(), st.UserID, dms.StateEvent(st))
 		}
 	}
+	ev := pb
+	// A bot command (ADR-0031): the event carries it; the gateway and the webhook outbox keep
+	// it only for the addressed bot. The author's response is the plain message.
+	if cmd := resolveCommand(r.Context(), h.db.Q, acc, roomID, uid(r), isBot, msg.Content); cmd != nil {
+		ev = proto.CloneOf(pb)
+		ev.Command = cmd
+	}
 	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
-		MessageCreate: &v1.MessageCreate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: pb},
+		MessageCreate: &v1.MessageCreate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: ev},
 	}})
 	h.events.User(r.Context(), uid(r), &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{
 		ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: roomID.String(), LastReadMessageId: msg.ID.String()}},

@@ -76,7 +76,7 @@ func NewHandlers(d *db.DB, ev events.Publisher, store blob.Store, limits Limits)
 }
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
-func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
+func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	handle := func(pattern string, f httpx.HandlerFunc) { mux.Handle(pattern, wrap(f)) }
 	handle("POST /api/workspaces", h.create)
 	handle("GET /api/workspaces", h.list)
@@ -102,6 +102,10 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
+
+// errBotAdmin: a bot keeps the built-in member role (ADR-0031); its rights come from custom
+// roles and room overrides.
+var errBotAdmin = httpx.Validation("role", "a bot cannot be an admin or a guest: give it a role instead")
 
 // access returns the caller's workspace bits and role; non-members get 404.
 func access(r *http.Request) (uuid.UUID, perm.Bits, perm.Role, error) {
@@ -927,6 +931,13 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 		case perm.Role(cur.Role) == perm.RoleGuest && newRole != perm.RoleGuest:
 			// Promotion also keeps guest accounts from being cleaned up: one path only.
 			return httpx.Validation("role", "use POST …/members/{userId}/promote to make a guest a member")
+		}
+		if newRole == perm.RoleAdmin || newRole == perm.RoleGuest {
+			if tu, err := h.db.Q.GetUser(r.Context(), target); err != nil {
+				return err
+			} else if tu.IsBot {
+				return errBotAdmin
+			}
 		}
 		if err := outranks(r, wsID, target); err != nil {
 			return err

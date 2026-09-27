@@ -521,6 +521,10 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 		if perm.Role(m.Role) == perm.RoleGuest {
 			base = perm.RoleGuest
 		}
+		tu, err := q.GetUser(r.Context(), target)
+		if err != nil {
+			return err
+		}
 		// The base role (MEMBER / GUEST) is kept whether listed or not; the other one cannot
 		// be added here (guest → member is POST …/promote).
 		for id, rr := range byID {
@@ -548,6 +552,8 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 				return httpx.Validation("roleIds", "the owner has full access already")
 			case b == perm.RoleAdmin && base == perm.RoleGuest:
 				return httpx.Validation("roleIds", "promote the guest to a member first")
+			case b == perm.RoleAdmin && want[id] && tu.IsBot:
+				return errBotAdmin
 			case !above(actor, rr.Position):
 				return httpx.Forbidden("cannot assign roles at or above your highest role")
 			case !own.Has(perm.Administrator) && perm.Bits(uint64(rr.Permissions))&^own != 0: //nolint:gosec // bit mask
