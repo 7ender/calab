@@ -7,7 +7,7 @@
  * Tokenizing runs off the render path: in idle time, a few blocks per idle slice, and the result
  * is cached by (language, text), so a message re-rendered or scrolled back in highlights at once.
  */
-import type { Grammar, Token, TokenStream } from 'prismjs';
+import type { TokenStream } from 'prismjs';
 
 type PrismApi = typeof import('prismjs');
 
@@ -170,7 +170,7 @@ function convert(stream: TokenStream, out: HlNode[]): void {
     for (const s of stream) convert(s, out);
     return;
   }
-  const tok = stream as Token;
+  const tok = stream;
   const aliases = Array.isArray(tok.alias) ? tok.alias : tok.alias ? [tok.alias] : [];
   const cls = CLASS_OF[tok.type] ?? aliases.map((a) => CLASS_OF[a]).find(Boolean);
   if (!cls) {
@@ -184,7 +184,7 @@ function convert(stream: TokenStream, out: HlNode[]): void {
 
 /** Tokenize synchronously (the grammar must be loaded). Exported for tests. */
 export function tokenize(api: PrismApi, code: string, id: string): HlNode[] | null {
-  const grammar = api.languages[id] as Grammar | undefined;
+  const grammar = api.languages[id];
   if (!grammar) return null;
   const out: HlNode[] = [];
   convert(api.tokenize(code, grammar), out);

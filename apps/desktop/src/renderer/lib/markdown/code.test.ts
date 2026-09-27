@@ -88,7 +88,11 @@ describe('code blocks: previews', () => {
 
 const flat = (ns: HlNode[]): string => ns.map((n) => (typeof n === 'string' ? n : flat(n.v))).join('');
 const classes = (ns: HlNode[], out: string[] = []): string[] => {
-  for (const n of ns) if (typeof n !== 'string') (out.push(n.c), classes(n.v, out));
+  for (const n of ns) {
+    if (typeof n === 'string') continue;
+    out.push(n.c);
+    classes(n.v, out);
+  }
   return out;
 };
 
