@@ -48,5 +48,18 @@ func RecordingCard(r sqlc.RoomRecording) *v1.SystemMessage {
 	return &v1.SystemMessage{Payload: &v1.SystemMessage_Recording{Recording: &v1.RecordingCard{
 		RecordingId: r.ID.String(), StartedBy: idp(r.StartedBy), StartedAt: ts(r.StartedAt),
 		DurationSec: uint32(max(r.DurationSec, 0)), Status: RecordingStatus(r.Status), WebUrl: r.WebUrl, Error: r.Error,
+		FileGone: !RecordingHasFile(r), NotUploaded: !RecordingUploaded(r),
 	}}}
+}
+
+// RecordingHasFile reports whether the recording's local file should still be on the volume
+// (the reupload endpoint checks the disk too).
+func RecordingHasFile(r sqlc.RoomRecording) bool {
+	return r.File != "" && r.FileDeletedAt == nil && r.SizeBytes > 0
+}
+
+// RecordingUploaded reports whether the recording reached GPTunneL's processing (its status
+// can be polled again).
+func RecordingUploaded(r sqlc.RoomRecording) bool {
+	return r.GptunnelID != "" && r.ProcessingSince != nil
 }

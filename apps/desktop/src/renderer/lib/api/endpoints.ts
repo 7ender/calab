@@ -100,6 +100,7 @@ import {
   PairGptunnelResponseSchema,
   StartRecordingResponseSchema,
   StopRecordingResponseSchema,
+  RetryRecordingResponseSchema,
   type FileMeta,
   type ScreenSharePreset,
   type WorkspaceRole,
@@ -317,6 +318,15 @@ export const api = {
     unpair: (workspaceId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/integrations/gptunnel`),
     start: (roomId: string) => call('POST', `/api/rooms/${roomId}/recording/start`, StartRecordingResponseSchema),
     stop: (roomId: string) => call('POST', `/api/rooms/${roomId}/recording/stop`, StopRecordingResponseSchema),
+    /**
+     * Retry of a FAILED recording (docs/09 #40), the same people as start: recheck (delivered file:
+     * poll GPTunneL again) / reupload (upload did not complete, file kept). 409 CONFLICT |
+     * ALREADY_UPLOADED | FILE_GONE | NOT_PAIRED; the card follows by MESSAGE_UPDATE.
+     */
+    recheck: (roomId: string, recordingId: string) =>
+      call('POST', `/api/rooms/${roomId}/recordings/${recordingId}/recheck`, RetryRecordingResponseSchema),
+    reupload: (roomId: string, recordingId: string) =>
+      call('POST', `/api/rooms/${roomId}/recordings/${recordingId}/reupload`, RetryRecordingResponseSchema),
   },
   voice: {
     join: (roomId: string) => call('POST', `/api/rooms/${roomId}/join`, JoinVoiceResponseSchema),

@@ -22,7 +22,7 @@ WHERE id IN (
     LIMIT $2
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
 `
 
 type ClaimRecordingJobsParams struct {
@@ -65,6 +65,8 @@ func (q *Queries) ClaimRecordingJobs(ctx context.Context, arg ClaimRecordingJobs
 			&i.ProcessingSince,
 			&i.FileDeletedAt,
 			&i.UpdatedAt,
+			&i.Reuploads,
+			&i.ReuploadAt,
 		); err != nil {
 			return nil, err
 		}
@@ -88,7 +90,7 @@ func (q *Queries) CountActiveRecordings(ctx context.Context) (int64, error) {
 }
 
 const getActiveRecording = `-- name: GetActiveRecording :one
-SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at FROM room_recordings WHERE room_id = $1 AND status IN ('pending', 'recording')
+SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at FROM room_recordings WHERE room_id = $1 AND status IN ('pending', 'recording')
 `
 
 func (q *Queries) GetActiveRecording(ctx context.Context, roomID uuid.UUID) (RoomRecording, error) {
@@ -118,6 +120,8 @@ func (q *Queries) GetActiveRecording(ctx context.Context, roomID uuid.UUID) (Roo
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
@@ -152,7 +156,7 @@ func (q *Queries) GetIntegration(ctx context.Context, arg GetIntegrationParams) 
 }
 
 const getRecording = `-- name: GetRecording :one
-SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at FROM room_recordings WHERE id = $1
+SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at FROM room_recordings WHERE id = $1
 `
 
 func (q *Queries) GetRecording(ctx context.Context, id uuid.UUID) (RoomRecording, error) {
@@ -182,12 +186,14 @@ func (q *Queries) GetRecording(ctx context.Context, id uuid.UUID) (RoomRecording
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
 
 const getRecordingByEgress = `-- name: GetRecordingByEgress :one
-SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at FROM room_recordings WHERE egress_id = $1
+SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at FROM room_recordings WHERE egress_id = $1
 `
 
 func (q *Queries) GetRecordingByEgress(ctx context.Context, egressID *string) (RoomRecording, error) {
@@ -217,6 +223,8 @@ func (q *Queries) GetRecordingByEgress(ctx context.Context, egressID *string) (R
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
@@ -224,7 +232,7 @@ func (q *Queries) GetRecordingByEgress(ctx context.Context, egressID *string) (R
 const insertRecording = `-- name: InsertRecording :one
 INSERT INTO room_recordings (id, workspace_id, room_id, started_by, file)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
 `
 
 type InsertRecordingParams struct {
@@ -268,6 +276,8 @@ func (q *Queries) InsertRecording(ctx context.Context, arg InsertRecordingParams
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
@@ -307,7 +317,7 @@ func (q *Queries) InsertSystemMessage(ctx context.Context, arg InsertSystemMessa
 }
 
 const listActiveRecordings = `-- name: ListActiveRecordings :many
-SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at FROM room_recordings
+SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at FROM room_recordings
 WHERE status IN ('pending', 'recording')
   AND ($1::uuid IS NULL OR workspace_id = $1::uuid)
 ORDER BY id
@@ -347,6 +357,8 @@ func (q *Queries) ListActiveRecordings(ctx context.Context, workspaceID *uuid.UU
 			&i.ProcessingSince,
 			&i.FileDeletedAt,
 			&i.UpdatedAt,
+			&i.Reuploads,
+			&i.ReuploadAt,
 		); err != nil {
 			return nil, err
 		}
@@ -359,14 +371,15 @@ func (q *Queries) ListActiveRecordings(ctx context.Context, workspaceID *uuid.UU
 }
 
 const listRecordingFilesToDelete = `-- name: ListRecordingFilesToDelete :many
-SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at FROM room_recordings
+SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at FROM room_recordings
 WHERE file <> '' AND file_deleted_at IS NULL
-  AND (status = 'done' OR (status NOT IN ('pending', 'recording') AND stopped_at < $1))
+  AND (status = 'done' OR (status NOT IN ('pending', 'recording') AND coalesce(reupload_at, stopped_at) < $1))
 ORDER BY id
 LIMIT 100
 `
 
-// Local files no longer needed: done, or failed / stuck and stopped before `before` (7 days).
+// Local files no longer needed: done, or failed / stuck and stopped (or last sent again)
+// before `before` (7 days).
 func (q *Queries) ListRecordingFilesToDelete(ctx context.Context, before *time.Time) ([]RoomRecording, error) {
 	rows, err := q.db.Query(ctx, listRecordingFilesToDelete, before)
 	if err != nil {
@@ -400,6 +413,8 @@ func (q *Queries) ListRecordingFilesToDelete(ctx context.Context, before *time.T
 			&i.ProcessingSince,
 			&i.FileDeletedAt,
 			&i.UpdatedAt,
+			&i.Reuploads,
+			&i.ReuploadAt,
 		); err != nil {
 			return nil, err
 		}
@@ -412,7 +427,7 @@ func (q *Queries) ListRecordingFilesToDelete(ctx context.Context, before *time.T
 }
 
 const listStalePendingRecordings = `-- name: ListStalePendingRecordings :many
-SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at FROM room_recordings WHERE status = 'pending' AND started_at < $1
+SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at FROM room_recordings WHERE status = 'pending' AND started_at < $1
 `
 
 // Rows whose recorder never started (the server died between insert and StartEgress).
@@ -449,6 +464,8 @@ func (q *Queries) ListStalePendingRecordings(ctx context.Context, before time.Ti
 			&i.ProcessingSince,
 			&i.FileDeletedAt,
 			&i.UpdatedAt,
+			&i.Reuploads,
+			&i.ReuploadAt,
 		); err != nil {
 			return nil, err
 		}
@@ -474,7 +491,7 @@ const markRecordingDone = `-- name: MarkRecordingDone :one
 UPDATE room_recordings SET status = 'done', web_url = CASE WHEN $1::text <> '' THEN $1::text ELSE web_url END,
     next_at = NULL, error = '', updated_at = now()
 WHERE id = $2 AND status = 'processing'
-RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
 `
 
 type MarkRecordingDoneParams struct {
@@ -509,6 +526,8 @@ func (q *Queries) MarkRecordingDone(ctx context.Context, arg MarkRecordingDonePa
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
@@ -518,7 +537,7 @@ UPDATE room_recordings SET status = 'uploading', size_bytes = $2, duration_sec =
     stopped_at = coalesce(stopped_at, now()), stop_reason = CASE WHEN stop_reason = '' THEN $4 ELSE stop_reason END,
     next_at = now(), attempts = 0, error = '', updated_at = now()
 WHERE id = $1 AND status IN ('pending', 'recording')
-RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
 `
 
 type MarkRecordingEndedParams struct {
@@ -561,6 +580,8 @@ func (q *Queries) MarkRecordingEnded(ctx context.Context, arg MarkRecordingEnded
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
@@ -570,7 +591,7 @@ UPDATE room_recordings SET status = 'failed', error = $2, next_at = NULL,
     stopped_at = coalesce(stopped_at, now()), stop_reason = CASE WHEN stop_reason = '' THEN $3::text ELSE stop_reason END,
     updated_at = now()
 WHERE id = $1 AND status NOT IN ('done', 'failed')
-RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
 `
 
 type MarkRecordingFailedParams struct {
@@ -607,6 +628,8 @@ func (q *Queries) MarkRecordingFailed(ctx context.Context, arg MarkRecordingFail
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
@@ -624,7 +647,7 @@ const markRecordingProcessing = `-- name: MarkRecordingProcessing :one
 UPDATE room_recordings SET status = 'processing', gptunnel_id = $2, web_url = $3, next_at = $4,
     attempts = 0, error = '', processing_since = now(), updated_at = now()
 WHERE id = $1 AND status = 'uploading'
-RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
 `
 
 type MarkRecordingProcessingParams struct {
@@ -666,6 +689,8 @@ func (q *Queries) MarkRecordingProcessing(ctx context.Context, arg MarkRecording
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
@@ -673,7 +698,7 @@ func (q *Queries) MarkRecordingProcessing(ctx context.Context, arg MarkRecording
 const markRecordingStarted = `-- name: MarkRecordingStarted :one
 UPDATE room_recordings SET status = 'recording', egress_id = $2, started_at = now(), updated_at = now()
 WHERE id = $1 AND status = 'pending'
-RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
 `
 
 type MarkRecordingStartedParams struct {
@@ -708,6 +733,8 @@ func (q *Queries) MarkRecordingStarted(ctx context.Context, arg MarkRecordingSta
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
@@ -716,7 +743,7 @@ const markRecordingStopRequested = `-- name: MarkRecordingStopRequested :one
 UPDATE room_recordings SET stopped_at = coalesce(stopped_at, now()), stop_reason = CASE WHEN stop_reason = '' THEN $2 ELSE stop_reason END,
     stopped_by = coalesce(stopped_by, $3::uuid), updated_at = now()
 WHERE id = $1 AND status IN ('pending', 'recording')
-RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
 `
 
 type MarkRecordingStopRequestedParams struct {
@@ -754,6 +781,8 @@ func (q *Queries) MarkRecordingStopRequested(ctx context.Context, arg MarkRecord
 		&i.ProcessingSince,
 		&i.FileDeletedAt,
 		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
 	)
 	return i, err
 }
@@ -822,6 +851,48 @@ func (q *Queries) PutIntegration(ctx context.Context, arg PutIntegrationParams) 
 	return i, err
 }
 
+const recheckRecording = `-- name: RecheckRecording :one
+UPDATE room_recordings SET status = 'processing', processing_since = now(), next_at = now(),
+    attempts = 0, error = '', updated_at = now()
+WHERE id = $1 AND status = 'failed' AND gptunnel_id <> '' AND processing_since IS NOT NULL
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
+`
+
+// «Проверить снова»: a failed recording that reached GPTunneL's processing is polled again,
+// the poll window starting now.
+func (q *Queries) RecheckRecording(ctx context.Context, id uuid.UUID) (RoomRecording, error) {
+	row := q.db.QueryRow(ctx, recheckRecording, id)
+	var i RoomRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RoomID,
+		&i.StartedBy,
+		&i.StoppedBy,
+		&i.Status,
+		&i.StopReason,
+		&i.EgressID,
+		&i.File,
+		&i.SizeBytes,
+		&i.DurationSec,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EmptySince,
+		&i.GptunnelID,
+		&i.WebUrl,
+		&i.Error,
+		&i.MessageID,
+		&i.Attempts,
+		&i.NextAt,
+		&i.ProcessingSince,
+		&i.FileDeletedAt,
+		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
+	)
+	return i, err
+}
+
 const retryRecording = `-- name: RetryRecording :exec
 UPDATE room_recordings SET attempts = attempts + 1, next_at = $2, error = $3, updated_at = now()
 WHERE id = $1 AND status IN ('uploading', 'processing')
@@ -836,6 +907,49 @@ type RetryRecordingParams struct {
 func (q *Queries) RetryRecording(ctx context.Context, arg RetryRecordingParams) error {
 	_, err := q.db.Exec(ctx, retryRecording, arg.ID, arg.NextAt, arg.Error)
 	return err
+}
+
+const reuploadRecording = `-- name: ReuploadRecording :one
+UPDATE room_recordings SET status = 'uploading', gptunnel_id = '', web_url = '',
+    next_at = now(), attempts = 0, error = '', reuploads = reuploads + 1, reupload_at = now(), updated_at = now()
+WHERE id = $1 AND status = 'failed' AND processing_since IS NULL
+  AND file <> '' AND file_deleted_at IS NULL AND size_bytes > 0
+RETURNING id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at
+`
+
+// «Отправить снова»: a failed recording whose upload did not complete and whose file is still
+// here is uploaded again as a new GPTunneL recording (a partial one there is abandoned).
+func (q *Queries) ReuploadRecording(ctx context.Context, id uuid.UUID) (RoomRecording, error) {
+	row := q.db.QueryRow(ctx, reuploadRecording, id)
+	var i RoomRecording
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RoomID,
+		&i.StartedBy,
+		&i.StoppedBy,
+		&i.Status,
+		&i.StopReason,
+		&i.EgressID,
+		&i.File,
+		&i.SizeBytes,
+		&i.DurationSec,
+		&i.StartedAt,
+		&i.StoppedAt,
+		&i.EmptySince,
+		&i.GptunnelID,
+		&i.WebUrl,
+		&i.Error,
+		&i.MessageID,
+		&i.Attempts,
+		&i.NextAt,
+		&i.ProcessingSince,
+		&i.FileDeletedAt,
+		&i.UpdatedAt,
+		&i.Reuploads,
+		&i.ReuploadAt,
+	)
+	return i, err
 }
 
 const revokeIntegration = `-- name: RevokeIntegration :execrows

@@ -1,13 +1,14 @@
-import type { RecordingCard as Card } from '@calaba/protocol';
+import { WorkspaceRole, type RecordingCard as Card } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { AlertCircle, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { AlertCircle, CheckCircle2, ExternalLink, Loader2, RefreshCw, Upload } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import { Button, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
-import { cardStatus, durationText } from '../../lib/recording';
+import { cardStatus, durationText, retryActions, type RetryAction } from '../../lib/recording';
 import { platform } from '../../platform';
-import { useMemberName } from '../../stores/workspaces';
+import { retryRecording } from '../../services/recording';
+import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import type { ChatMessage } from '../../stores/messages';
 
 /**
@@ -15,6 +16,8 @@ import type { ChatMessage } from '../../stores/messages';
  * centred in the feed like a date pill but a card — the REC glyph, «Встреча записана · 42 мин»,
  * who started it and when, the status (Загрузка… / Обработка… / Готово / Ошибка: …) and «Открыть в
  * GPTunneL» once the recording has a page. MESSAGE_UPDATE replaces the message: the card follows.
+ * A failed card offers a retry (docs/09 #40, not to guests): «Проверить снова» when the file was
+ * delivered, «Отправить снова» when the upload did not complete and the server still has the file.
  */
 export function RecordingCardView({ c, card, workspaceId }: { c: ChatMessage; card: Card; workspaceId: string }): ReactNode {
   const by = useMemberName(workspaceId, card.startedBy || c.msg.authorId);
@@ -22,6 +25,13 @@ export function RecordingCardView({ c, card, workspaceId }: { c: ChatMessage; ca
   const status = cardStatus(card);
   const title = `${t('rec.card.title')} · ${durationText(card.durationSec)}`;
   const StatusIcon = status.tone === 'ok' ? CheckCircle2 : status.tone === 'error' ? AlertCircle : Loader2;
+  const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
+  const retries = guest ? [] : retryActions(card);
+  const [busy, setBusy] = useState<RetryAction | null>(null);
+  const retry = (action: RetryAction): void => {
+    setBusy(action);
+    void retryRecording(c.msg.roomId, card.recordingId, action, workspaceId).finally(() => setBusy(null));
+  };
   return (
     <div
       role="article"
@@ -49,12 +59,20 @@ export function RecordingCardView({ c, card, workspaceId }: { c: ChatMessage; ca
           <StatusIcon className={cx('mt-px size-3.5 shrink-0', status.tone === 'busy' && 'animate-spin motion-reduce:animate-none')} aria-hidden />
           <span className="min-w-0">{t(status.key)}</span>
         </span>
-        {card.webUrl ? (
-          <div className="pt-1.5">
-            <Button size="sm" variant="secondary" onClick={() => void platform.app.openExternal(card.webUrl)}>
-              {t('rec.card.open')}
-              <ExternalLink className="size-3" aria-hidden />
-            </Button>
+        {card.webUrl || retries.length > 0 ? (
+          <div className="flex flex-wrap gap-2 pt-1.5">
+            {retries.map((a) => (
+              <Button key={a} size="sm" variant="secondary" busy={busy === a} disabled={busy !== null} onClick={() => retry(a)} data-testid={`recording-card-${a}`}>
+                {busy === a ? null : a === 'recheck' ? <RefreshCw className="size-3" aria-hidden /> : <Upload className="size-3" aria-hidden />}
+                {t(a === 'recheck' ? 'rec.card.recheck' : 'rec.card.reupload')}
+              </Button>
+            ))}
+            {card.webUrl ? (
+              <Button size="sm" variant="secondary" onClick={() => void platform.app.openExternal(card.webUrl)}>
+                {t('rec.card.open')}
+                <ExternalLink className="size-3" aria-hidden />
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>

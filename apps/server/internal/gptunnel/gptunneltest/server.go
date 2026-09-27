@@ -42,6 +42,7 @@ type Server struct {
 
 	// faults
 	FailPuts      int      // the next N PUTs answer 503 unavailable (Retry-After 0)
+	FailGets      int      // the next N status GETs answer 502 (counted as polls)
 	LoseOffset    bool     // the next PUT answers 409 with Upload-Offset 0 and drops the bytes
 	CreateError   string   // create answers 402 with this error code (e.g. insufficient_balance)
 	Statuses      []string // statuses GET returns after complete, one per poll; the last repeats
@@ -185,6 +186,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			rec.Completed, rec.Status = true, "uploaded"
 			writeJSON(w, 200, s.status(rec))
 		case sub == "" && r.Method == http.MethodGet:
+			if s.FailGets > 0 {
+				s.FailGets--
+				rec.Polls++
+				fail(w, 502, "internal", "bad gateway")
+				return
+			}
 			if rec.Completed && len(s.Statuses) > 0 {
 				i := min(rec.Polls, len(s.Statuses)-1)
 				rec.Status = s.Statuses[i]

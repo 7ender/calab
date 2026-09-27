@@ -265,7 +265,11 @@ func (s *Service) remoteError(ctx context.Context, rec sqlc.RoomRecording, seale
 
 func (s *Service) retry(ctx context.Context, rec sqlc.RoomRecording, cause error) {
 	next := s.Now().Add(backoff(rec.Attempts))
-	if rec.StoppedAt != nil && next.After(rec.StoppedAt.Add(s.UploadFor)) {
+	since := rec.StoppedAt
+	if rec.ReuploadAt != nil {
+		since = rec.ReuploadAt // sent again: the window starts anew
+	}
+	if since != nil && next.After(since.Add(s.UploadFor)) {
 		slog.WarnContext(ctx, "recording: giving up the upload", "recording", rec.ID, "err", cause)
 		s.fail(ctx, rec, "upload_failed")
 		return
@@ -309,8 +313,14 @@ func (s *Service) upload(ctx context.Context, rec sqlc.RoomRecording) {
 		title = room.Name
 	}
 	title += " · " + rec.StartedAt.UTC().Format("2006-01-02 15:04") + " UTC"
+	// GPTunneL's create is idempotent on client_id: a re-upload needs a new one to get a new
+	// recording there (the old one failed).
+	clientID := rec.ID.String()
+	if rec.Reuploads > 0 {
+		clientID += fmt.Sprintf("#%d", rec.Reuploads)
+	}
 	req := gptunnel.CreateRequest{
-		ClientID: rec.ID.String(), Title: title, Kind: "video", Mime: "video/mp4", SizeBytes: st.Size(),
+		ClientID: clientID, Title: title, Kind: "video", Mime: "video/mp4", SizeBytes: st.Size(),
 		DurationSec: int64(max(rec.DurationSec, 1)), StartedAt: rec.StartedAt.UTC().Format(time.RFC3339),
 	}
 	res, err := s.gpt.Upload(ctx, token, f, req, rec.GptunnelID, func(id string) error {
@@ -354,6 +364,9 @@ func (s *Service) applyStatus(ctx context.Context, rec sqlc.RoomRecording, st *g
 		s.card(ctx, upd)
 		return true
 	case gptunnel.StatusFailed, gptunnel.StatusCancelled:
+		if transientFailure(st) {
+			return false // GPTunneL's own fault: they retry or fix it, keep polling until PollFor
+		}
 		code := st.ErrorCode()
 		if code == "" {
 			code = st.Status
@@ -365,6 +378,12 @@ func (s *Service) applyStatus(ctx context.Context, rec sqlc.RoomRecording, st *g
 		return true
 	}
 	return false
+}
+
+// transientFailure: a "failed" status caused by an internal error of GPTunneL, which may be
+// fixed there — not final while the poll window lasts (backlog 40).
+func transientFailure(st *gptunnel.RecordingStatus) bool {
+	return st.Status == gptunnel.StatusFailed && st.ErrorCode() == gptunnel.CodeInternal
 }
 
 func (s *Service) poll(ctx context.Context, rec sqlc.RoomRecording) {
@@ -392,7 +411,11 @@ func (s *Service) poll(ctx context.Context, rec sqlc.RoomRecording) {
 	}
 	elapsed := s.Now().Sub(since)
 	if elapsed > s.PollFor {
-		s.fail(ctx, rec, "timeout")
+		code := "timeout"
+		if st != nil && transientFailure(st) {
+			code = st.ErrorCode() // still failing on GPTunneL's side: say so on the card
+		}
+		s.fail(ctx, rec, code)
 		return
 	}
 	// Transcription takes minutes: poll often at first, then every 5 min at most.
@@ -572,8 +595,20 @@ func (s *Service) removeFile(ctx context.Context, rec sqlc.RoomRecording) {
 		slog.WarnContext(ctx, "recording: remove file", "recording", rec.ID, "err", err)
 		return
 	}
+	s.forgetFile(ctx, rec)
+}
+
+// forgetFile records that the local file is gone; a failed recording's card is updated (it
+// no longer offers «Отправить снова»).
+func (s *Service) forgetFile(ctx context.Context, rec sqlc.RoomRecording) {
 	if err := s.db.Q.MarkRecordingFileDeleted(ctx, rec.ID); err != nil {
 		slog.WarnContext(ctx, "recording: mark file deleted", "recording", rec.ID, "err", err)
+		return
+	}
+	if rec.Status == "failed" {
+		now := s.Now()
+		rec.FileDeletedAt = &now
+		s.card(ctx, rec)
 	}
 }
 

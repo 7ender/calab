@@ -65,6 +65,12 @@ const (
 	// 403: an invitation sent by email to another address than the account's (or the sign-up
 	// form's): sign in with / register the invited address.
 	ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH ErrorCode = 28
+	// 409: POST …/recordings/{rid}/reupload — the recording's local file is gone (removed 7 days
+	// after the recording stopped, or it never had one).
+	ErrorCode_ERROR_CODE_FILE_GONE ErrorCode = 29
+	// 409: POST …/recordings/{rid}/reupload — the file was already delivered to GPTunneL (only
+	// …/recheck applies).
+	ErrorCode_ERROR_CODE_ALREADY_UPLOADED ErrorCode = 30
 )
 
 // Enum value maps for ErrorCode.
@@ -99,6 +105,8 @@ var (
 		26: "ERROR_CODE_WORKSPACE_SUSPENDED",
 		27: "ERROR_CODE_BANNED",
 		28: "ERROR_CODE_INVITE_EMAIL_MISMATCH",
+		29: "ERROR_CODE_FILE_GONE",
+		30: "ERROR_CODE_ALREADY_UPLOADED",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":           0,
@@ -130,6 +138,8 @@ var (
 		"ERROR_CODE_WORKSPACE_SUSPENDED":   26,
 		"ERROR_CODE_BANNED":                27,
 		"ERROR_CODE_INVITE_EMAIL_MISMATCH": 28,
+		"ERROR_CODE_FILE_GONE":             29,
+		"ERROR_CODE_ALREADY_UPLOADED":      30,
 	}
 )
 
@@ -529,7 +539,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\x81\a\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xbc\a\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -560,7 +570,9 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x1aERROR_CODE_RECORDING_LIMIT\x10\x19\x12\"\n" +
 	"\x1eERROR_CODE_WORKSPACE_SUSPENDED\x10\x1a\x12\x15\n" +
 	"\x11ERROR_CODE_BANNED\x10\x1b\x12$\n" +
-	" ERROR_CODE_INVITE_EMAIL_MISMATCH\x10\x1cB\x99\x01\n" +
+	" ERROR_CODE_INVITE_EMAIL_MISMATCH\x10\x1c\x12\x18\n" +
+	"\x14ERROR_CODE_FILE_GONE\x10\x1d\x12\x1f\n" +
+	"\x1bERROR_CODE_ALREADY_UPLOADED\x10\x1eB\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

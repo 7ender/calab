@@ -156,7 +156,41 @@ const ERRORS: Record<string, MessageKey> = {
   too_large: 'rec.err.tooLarge',
   recorder_failed: 'rec.err.recorder',
   timeout: 'rec.err.timeout',
+  internal: 'rec.err.internal',
 };
+
+// ---------------------------------------------------------------- retry (docs/09 #40)
+
+export type RetryAction = 'recheck' | 'reupload';
+
+/**
+ * Which retry a FAILED card offers (RecordingCard.not_uploaded / file_gone): a delivered file
+ * is only rechecked (GPTunneL polled again), a file whose upload did not complete is sent again
+ * while the server keeps it. Cards stored before these fields (both false) offer the recheck.
+ */
+export function retryActions(card: Pick<RecordingCard, 'status' | 'notUploaded' | 'fileGone'>): RetryAction[] {
+  if (card.status !== RecordingStatus.FAILED) return [];
+  if (!card.notUploaded) return ['recheck'];
+  return card.fileGone ? [] : ['reupload'];
+}
+
+/**
+ * A refused retry → an info toast text (the card is refreshed by the server at the same time);
+ * null = not a known refusal (a generic error toast; NOT_PAIRED is handled like start).
+ */
+export function retryRefusalKey(code: string): MessageKey | null {
+  switch (code) {
+    case 'ERROR_CODE_FILE_GONE':
+      return 'rec.retry.fileGone';
+    case 'ERROR_CODE_ALREADY_UPLOADED':
+      return 'rec.retry.alreadyUploaded';
+    case 'ERROR_CODE_CONFLICT':
+    case 'ERROR_CODE_NOT_FOUND':
+      return 'rec.retry.changed';
+    default:
+      return null;
+  }
+}
 
 /** FAILED card: the machine-readable reason → a human text. */
 export function cardErrorKey(error: string): MessageKey {

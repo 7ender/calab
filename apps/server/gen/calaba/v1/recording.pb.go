@@ -252,7 +252,18 @@ type RecordingCard struct {
 	// ours: "device_revoked" (the workspace was disconnected from GPTunneL), "not_paired",
 	// "upload_failed", "too_large", "no_audio" (the recorder produced no file), "recorder_failed",
 	// "timeout" (no result within 2 h; the page may still get it).
-	Error         string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	Error string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	// FAILED — which retry the card offers (backlog 40). Both negative, so that cards stored
+	// before these fields (both false) offer «Проверить снова» only:
+	//   not_uploaded = false → the file was delivered (the upload completed): «Проверить снова»
+	//                          (POST …/recheck); it is never sent again (reupload → 409).
+	//   not_uploaded = true, file_gone = false → the upload did not complete and the local file
+	//                          is kept: «Отправить снова» (POST …/reupload).
+	//   not_uploaded = true, file_gone = true → nothing to retry.
+	// file_gone: the local file is gone (removed after done, 7 days after the stop, or never
+	// written).
+	FileGone      bool `protobuf:"varint,8,opt,name=file_gone,json=fileGone,proto3" json:"file_gone,omitempty"`
+	NotUploaded   bool `protobuf:"varint,9,opt,name=not_uploaded,json=notUploaded,proto3" json:"not_uploaded,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -334,6 +345,20 @@ func (x *RecordingCard) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *RecordingCard) GetFileGone() bool {
+	if x != nil {
+		return x.FileGone
+	}
+	return false
+}
+
+func (x *RecordingCard) GetNotUploaded() bool {
+	if x != nil {
+		return x.NotUploaded
+	}
+	return false
 }
 
 // The GPTunneL connection of a workspace. GET/POST/DELETE /api/workspaces/{id}/integrations/gptunnel.
@@ -653,6 +678,61 @@ func (x *StopRecordingResponse) GetRecording() *RoomRecording {
 	return nil
 }
 
+// Retry of a FAILED recording (backlog 40); the same people as start (a member, not a guest,
+// with VIEW_ROOM and CONNECT; allow_recording is not required). The chat card follows by
+// MESSAGE_UPDATE. Errors: 404 NOT_FOUND (no such recording in this room), 409 NOT_PAIRED,
+// 409 CONFLICT (not FAILED, or — recheck — never delivered: RecordingCard.not_uploaded),
+// 409 ALREADY_UPLOADED (reupload of a delivered recording), 409 FILE_GONE (reupload: the local
+// file is gone). A 409 about the recording also refreshes its card (MESSAGE_UPDATE).
+//
+// POST /api/rooms/{id}/recordings/{rid}/recheck: FAILED → PROCESSING; GPTunneL's status is
+// polled again by gptunnel id, the 2 h window starts anew.
+// POST /api/rooms/{id}/recordings/{rid}/reupload (upload did not complete, file kept):
+// FAILED → UPLOADING; the local file is sent to GPTunneL again as a new recording there.
+type RetryRecordingResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Recording     *RecordingCard         `protobuf:"bytes,1,opt,name=recording,proto3" json:"recording,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetryRecordingResponse) Reset() {
+	*x = RetryRecordingResponse{}
+	mi := &file_calaba_v1_recording_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetryRecordingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetryRecordingResponse) ProtoMessage() {}
+
+func (x *RetryRecordingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_recording_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetryRecordingResponse.ProtoReflect.Descriptor instead.
+func (*RetryRecordingResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RetryRecordingResponse) GetRecording() *RecordingCard {
+	if x != nil {
+		return x.Recording
+	}
+	return nil
+}
+
 var File_calaba_v1_recording_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_recording_proto_rawDesc = "" +
@@ -669,7 +749,7 @@ const file_calaba_v1_recording_proto_rawDesc = "" +
 	"\vstop_reason\x18\a \x01(\tR\n" +
 	"stopReason\x12\x1d\n" +
 	"\n" +
-	"stopped_by\x18\b \x01(\tR\tstoppedBy\"\x92\x02\n" +
+	"stopped_by\x18\b \x01(\tR\tstoppedBy\"\xd2\x02\n" +
 	"\rRecordingCard\x12!\n" +
 	"\frecording_id\x18\x01 \x01(\tR\vrecordingId\x12\x1d\n" +
 	"\n" +
@@ -679,7 +759,9 @@ const file_calaba_v1_recording_proto_rawDesc = "" +
 	"\fduration_sec\x18\x04 \x01(\rR\vdurationSec\x122\n" +
 	"\x06status\x18\x05 \x01(\x0e2\x1a.calaba.v1.RecordingStatusR\x06status\x12\x17\n" +
 	"\aweb_url\x18\x06 \x01(\tR\x06webUrl\x12\x14\n" +
-	"\x05error\x18\a \x01(\tR\x05error\"\xd7\x01\n" +
+	"\x05error\x18\a \x01(\tR\x05error\x12\x1b\n" +
+	"\tfile_gone\x18\b \x01(\bR\bfileGone\x12!\n" +
+	"\fnot_uploaded\x18\t \x01(\bR\vnotUploaded\"\xd7\x01\n" +
 	"\x13GptunnelIntegration\x12\x16\n" +
 	"\x06paired\x18\x01 \x01(\bR\x06paired\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +
@@ -697,7 +779,9 @@ const file_calaba_v1_recording_proto_rawDesc = "" +
 	"\x16StartRecordingResponse\x126\n" +
 	"\trecording\x18\x01 \x01(\v2\x18.calaba.v1.RoomRecordingR\trecording\"O\n" +
 	"\x15StopRecordingResponse\x126\n" +
-	"\trecording\x18\x01 \x01(\v2\x18.calaba.v1.RoomRecordingR\trecording*}\n" +
+	"\trecording\x18\x01 \x01(\v2\x18.calaba.v1.RoomRecordingR\trecording\"P\n" +
+	"\x16RetryRecordingResponse\x126\n" +
+	"\trecording\x18\x01 \x01(\v2\x18.calaba.v1.RecordingCardR\trecording*}\n" +
 	"\x12RoomRecordingState\x12$\n" +
 	" ROOM_RECORDING_STATE_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bROOM_RECORDING_STATE_ACTIVE\x10\x01\x12 \n" +
@@ -725,7 +809,7 @@ func file_calaba_v1_recording_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_recording_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_recording_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_calaba_v1_recording_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_calaba_v1_recording_proto_goTypes = []any{
 	(RoomRecordingState)(0),                // 0: calaba.v1.RoomRecordingState
 	(RecordingStatus)(0),                   // 1: calaba.v1.RecordingStatus
@@ -737,23 +821,25 @@ var file_calaba_v1_recording_proto_goTypes = []any{
 	(*PairGptunnelResponse)(nil),           // 7: calaba.v1.PairGptunnelResponse
 	(*StartRecordingResponse)(nil),         // 8: calaba.v1.StartRecordingResponse
 	(*StopRecordingResponse)(nil),          // 9: calaba.v1.StopRecordingResponse
-	(*timestamppb.Timestamp)(nil),          // 10: google.protobuf.Timestamp
+	(*RetryRecordingResponse)(nil),         // 10: calaba.v1.RetryRecordingResponse
+	(*timestamppb.Timestamp)(nil),          // 11: google.protobuf.Timestamp
 }
 var file_calaba_v1_recording_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.RoomRecording.state:type_name -> calaba.v1.RoomRecordingState
-	10, // 1: calaba.v1.RoomRecording.since:type_name -> google.protobuf.Timestamp
-	10, // 2: calaba.v1.RecordingCard.started_at:type_name -> google.protobuf.Timestamp
+	11, // 1: calaba.v1.RoomRecording.since:type_name -> google.protobuf.Timestamp
+	11, // 2: calaba.v1.RecordingCard.started_at:type_name -> google.protobuf.Timestamp
 	1,  // 3: calaba.v1.RecordingCard.status:type_name -> calaba.v1.RecordingStatus
-	10, // 4: calaba.v1.GptunnelIntegration.paired_at:type_name -> google.protobuf.Timestamp
+	11, // 4: calaba.v1.GptunnelIntegration.paired_at:type_name -> google.protobuf.Timestamp
 	4,  // 5: calaba.v1.GetGptunnelIntegrationResponse.integration:type_name -> calaba.v1.GptunnelIntegration
 	4,  // 6: calaba.v1.PairGptunnelResponse.integration:type_name -> calaba.v1.GptunnelIntegration
 	2,  // 7: calaba.v1.StartRecordingResponse.recording:type_name -> calaba.v1.RoomRecording
 	2,  // 8: calaba.v1.StopRecordingResponse.recording:type_name -> calaba.v1.RoomRecording
-	9,  // [9:9] is the sub-list for method output_type
-	9,  // [9:9] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	3,  // 9: calaba.v1.RetryRecordingResponse.recording:type_name -> calaba.v1.RecordingCard
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_recording_proto_init() }
@@ -767,7 +853,7 @@ func file_calaba_v1_recording_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_recording_proto_rawDesc), len(file_calaba_v1_recording_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -43,6 +43,12 @@ enum ErrorCode {
   // 403: an invitation sent by email to another address than the account's (or the sign-up
   // form's): sign in with / register the invited address.
   ERROR_CODE_INVITE_EMAIL_MISMATCH = 28;
+  // 409: POST …/recordings/{rid}/reupload — the recording's local file is gone (removed 7 days
+  // after the recording stopped, or it never had one).
+  ERROR_CODE_FILE_GONE = 29;
+  // 409: POST …/recordings/{rid}/reupload — the file was already delivered to GPTunneL (only
+  // …/recheck applies).
+  ERROR_CODE_ALREADY_UPLOADED = 30;
 }
 
 // Error body of every non-2xx REST response.

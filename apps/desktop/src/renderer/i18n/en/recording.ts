@@ -50,6 +50,14 @@ export const enRecording: DictShape<typeof ruRecording> = {
   'rec.err.recorder': 'Error: the recorder failed on the server',
   'rec.err.timeout': 'Error: GPTunneL is taking too long — check the recording page',
   'rec.err.generic': 'Error processing the recording',
+  'rec.err.internal': 'Error: a failure on GPTunneL’s side',
+  // retry of a failed recording
+  'rec.card.recheck': 'Check again',
+  'rec.card.reupload': 'Send again',
+  'rec.retry.failed': 'Couldn’t retry — try again',
+  'rec.retry.fileGone': 'The recording file has been deleted from the server — it can’t be sent again',
+  'rec.retry.alreadyUploaded': 'The recording is already in GPTunneL — use “Check again”',
+  'rec.retry.changed': 'The recording’s state has already changed',
   'gpt.tab': 'GPTunneL',
   'gpt.card': 'Meeting recording and transcripts',
   'gpt.intro':

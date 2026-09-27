@@ -3,7 +3,7 @@ import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { isAdminRole } from '../lib/permissions';
-import { stopReasonKey, withEvent, withSnapshot, withoutRooms, type ActiveRecording, type RecordingMap } from '../lib/recording';
+import { retryRefusalKey, stopReasonKey, withEvent, withSnapshot, withoutRooms, type ActiveRecording, type RecordingMap, type RetryAction } from '../lib/recording';
 import { playSound } from '../lib/sounds';
 import { useRecordings } from '../stores/recordings';
 import { myUserId } from '../stores/session';
@@ -112,16 +112,20 @@ export async function startRecording(roomId: string, workspaceId: string): Promi
   }
 }
 
+function notPaired(workspaceId: string): void {
+  // The one who can connect it gets the way there; the others know whom to ask.
+  if (canManage(workspaceId)) {
+    useToasts.getState().push('info', t('rec.start.notPairedAdmin'), {
+      label: t('rec.start.connect'),
+      run: () => useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId, tab: 'gptunnel' }),
+    });
+  } else toast.info(t('rec.start.notPaired'));
+}
+
 function startFailed(e: unknown, workspaceId: string): void {
   const code = e instanceof ApiError ? e.code : '';
   if (code === 'ERROR_CODE_NOT_PAIRED') {
-    // The one who can connect it gets the way there; the others know whom to ask.
-    if (canManage(workspaceId)) {
-      useToasts.getState().push('info', t('rec.start.notPairedAdmin'), {
-        label: t('rec.start.connect'),
-        run: () => useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId, tab: 'gptunnel' }),
-      });
-    } else toast.info(t('rec.start.notPaired'));
+    notPaired(workspaceId);
     return;
   }
   const info: Record<string, MessageKey> = {
@@ -134,6 +138,23 @@ function startFailed(e: unknown, workspaceId: string): void {
   else if (code === 'ERROR_CODE_FORBIDDEN') toast.error(t('rec.start.forbidden'));
   else if (code === 'ERROR_CODE_UNAVAILABLE' && e instanceof ApiError && e.status !== 0) toast.error(t('rec.start.unavailable'));
   else toast.fail(e, t('rec.start.failed'));
+}
+
+/**
+ * «Проверить снова» / «Отправить снова» on a failed card (docs/09 #40). The card follows by
+ * MESSAGE_UPDATE; a refusal (file gone, already delivered, state changed) is an info toast — the
+ * server refreshes the card at the same time.
+ */
+export async function retryRecording(roomId: string, recordingId: string, action: RetryAction, workspaceId: string): Promise<void> {
+  try {
+    await (action === 'recheck' ? api.recording.recheck(roomId, recordingId) : api.recording.reupload(roomId, recordingId));
+  } catch (e) {
+    const code = e instanceof ApiError ? e.code : '';
+    const key = retryRefusalKey(code);
+    if (code === 'ERROR_CODE_NOT_PAIRED') notPaired(workspaceId);
+    else if (key) toast.info(t(key));
+    else toast.fail(e, t('rec.retry.failed'));
+  }
 }
 
 /** «Остановить запись»: any participant (not a guest) may stop it (ADR-0025). */

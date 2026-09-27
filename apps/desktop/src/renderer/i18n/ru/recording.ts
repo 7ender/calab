@@ -55,6 +55,14 @@ export const ruRecording = {
   'rec.err.recorder': 'Ошибка: сбой записи на сервере',
   'rec.err.timeout': 'Ошибка: GPTunneL долго не отвечает — проверьте страницу записи',
   'rec.err.generic': 'Ошибка обработки записи',
+  'rec.err.internal': 'Ошибка: сбой на стороне GPTunneL',
+  // retry of a failed recording
+  'rec.card.recheck': 'Проверить снова',
+  'rec.card.reupload': 'Отправить снова',
+  'rec.retry.failed': 'Не удалось повторить — попробуйте ещё раз',
+  'rec.retry.fileGone': 'Файл записи уже удалён с сервера — отправить снова нельзя',
+  'rec.retry.alreadyUploaded': 'Запись уже в GPTunneL — нажмите «Проверить снова»',
+  'rec.retry.changed': 'Состояние записи уже изменилось',
   // workspace settings → GPTunneL
   'gpt.tab': 'GPTunneL',
   'gpt.card': 'Запись и расшифровка встреч',
