@@ -196,7 +196,9 @@ function ResizeHandle(): ReactNode {
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
-      className="relative z-[var(--z-sticky)] -ml-[3px] w-[6px] shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-[2.5px] after:w-px after:bg-line hover:after:bg-accent focus-visible:after:bg-accent"
+      // Zero layout width: the 6 px grab area overlaps both panes, so the column and the chat touch
+      // (a visible 3 px strip of the window layer showed between them otherwise).
+      className="relative z-[var(--z-sticky)] -ml-[3px] -mr-[3px] w-[6px] shrink-0 cursor-col-resize after:absolute after:inset-y-0 after:left-[2.5px] after:w-px after:bg-line hover:after:bg-accent focus-visible:after:bg-accent"
     />
   );
 }
