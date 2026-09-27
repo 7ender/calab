@@ -39,6 +39,15 @@ export const esDm: DictShape<typeof enDm> = {
   'dm.errCreate': 'No se pudo iniciar la conversación',
   // a /dm/<id> link of someone else's (or a deleted) conversation
   'dm.errLink': 'Esta conversación no está disponible: no es tuya o fue eliminada',
+  // archive and «delete for me» (docs/09 #51)
+  'dm.archive': 'Archivar',
+  'dm.unarchive': 'Desarchivar',
+  'dm.archiveSection': 'Archivo — {n}',
+  'dm.delete': 'Eliminar chat',
+  'dm.deleteTitle': '¿Eliminar el chat?',
+  'dm.deleteConfirm': 'El historial se eliminará solo para ti; la otra persona lo conservará.',
+  'dm.errState': 'No se pudo actualizar la conversación',
+  'dm.actions': 'Acciones de la conversación',
   // quick switcher
   'search.dms': 'Mensajes directos',
 } as const;

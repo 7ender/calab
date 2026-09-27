@@ -28,6 +28,8 @@ import {
   CreateDmRequestSchema,
   CreateDmResponseSchema,
   ListDmCandidatesResponseSchema,
+  UpdateDmStateRequestSchema,
+  UpdateDmStateResponseSchema,
   ListDmsResponseSchema,
   CreateMessageRequestSchema,
   CreateMessageResponseSchema,
@@ -299,6 +301,9 @@ export const api = {
     create: (userId: string) => call('POST', '/api/dms', CreateDmResponseSchema, body(CreateDmRequestSchema, { userId })),
     /** Who I may write to (≤ 20, by name); q = substring of the name or a nickname. */
     candidates: (q: string, signal?: AbortSignal) => call('GET', `/api/dms/candidates${qs({ q })}`, ListDmCandidatesResponseSchema, undefined, signal),
+    /** My own state of a DM (docs/09 #51): archive / «Удалить чат» (for me only); 404 not a participant. */
+    setState: (roomId: string, state: { archived?: boolean; cleared?: boolean }) =>
+      call('PATCH', `/api/dms/${roomId}/state`, UpdateDmStateResponseSchema, body(UpdateDmStateRequestSchema, state)),
   },
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
   unfurl: {

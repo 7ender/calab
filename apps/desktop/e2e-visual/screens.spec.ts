@@ -47,6 +47,8 @@ const KEY = new Set([
   'chat-context-menu',
   'room-notify-menu',
   'dm-list',
+  'dm-archive',
+  'dm-delete-confirm',
   'dm-chat',
   'voice-room-status',
   'voice-room-recording',
@@ -527,12 +529,58 @@ async function dmHome(page: Page): Promise<Locator> {
   return list;
 }
 
+/** docs/09 #51: Григорий goes to the archive through the row's context menu («Архив — 1», collapsed). */
+async function archiveGrigory(page: Page, list: Locator): Promise<Locator> {
+  await list.getByRole('button', { name: /Григорий/ }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'В архив' }).click();
+  await expect(list.getByRole('button')).toHaveCount(2);
+  const archive = page.getByTestId('dm-archive');
+  await expect(archive.getByRole('button', { name: 'Архив — 1' })).toHaveAttribute('aria-expanded', 'false');
+  return archive;
+}
+
 test('dm-list', async ({ open, win, shot }) => {
   await open(DM_SEED);
-  await dmHome(win);
+  const list = await dmHome(win);
+  await archiveGrigory(win, list);
   await expect(win.getByTestId('dm-pick')).toBeVisible();
   await settle(win);
   await checkpoint(shot, 'dm-list');
+});
+
+test('dm-archive', async ({ open, win, shot }) => {
+  await open(DM_SEED);
+  const archive = await archiveGrigory(win, await dmHome(win));
+  // Expanded: the archived DM, its menu offers «Вернуть из архива».
+  await archive.getByRole('button', { name: 'Архив — 1' }).click();
+  const row = win.getByTestId('dm-archive-list').getByRole('button', { name: /Григорий/ });
+  await expect(row).toContainText('Да, подготовлю пару слайдов');
+  await row.click({ button: 'right' });
+  await expect(win.getByRole('menuitem', { name: 'Вернуть из архива' })).toBeVisible();
+  await settle(win);
+  await checkpoint(shot, 'dm-archive');
+});
+
+test('dm-delete-confirm', async ({ open, win, shot }) => {
+  await open(DM_SEED);
+  const list = await dmHome(win);
+  await list.getByRole('button', { name: /Вера/ }).click();
+  await expect(win.getByTestId('dm-header')).toContainText('Вера');
+  await win.getByTestId('dm-actions').click();
+  await win.getByRole('menuitem', { name: 'Удалить чат' }).click();
+  const dialog = win.getByRole('dialog', { name: 'Удалить чат?' });
+  await expect(dialog).toContainText('История будет удалена только у вас');
+  await settle(win);
+  await checkpoint(shot, 'dm-delete-confirm');
+  // «Удалить»: the chat closes, the DM leaves the list; opened again, its feed is empty.
+  await dialog.getByRole('button', { name: 'Удалить' }).click();
+  await expect(win.getByTestId('dm-pick')).toBeVisible();
+  await expect(list.getByRole('button')).toHaveCount(2);
+  await expect(list.getByRole('button', { name: /Вера/ })).toHaveCount(0);
+  await win.getByRole('button', { name: 'Новое сообщение' }).first().click();
+  await win.getByRole('dialog', { name: 'Новое сообщение' }).getByRole('option', { name: /Вера/ }).click();
+  await expect(win.getByTestId('dm-header')).toContainText('Вера');
+  await expect(win.locator('[data-message-id]')).toHaveCount(0);
 });
 
 test('dm-chat', async ({ open, win, shot }) => {

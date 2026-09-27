@@ -23,6 +23,7 @@ import { toast } from '../../stores/toasts';
 import { voice } from '../../services/voice';
 import { isVoicePreview, joinOutcome } from '../../lib/voiceEntry';
 import { useDms } from '../../stores/dms';
+import { DmActionsMenu } from '../dm/DmActionsMenu';
 import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
@@ -259,6 +260,7 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
         </IconButton>
         {mobile ? null : <PinsButton workspaceId="" roomId={room.id} canManage />}
         <NotifyButton roomId={room.id} className={touch} />
+        <DmActionsMenu roomId={room.id} className={touch} />
       </div>
     </header>
   );

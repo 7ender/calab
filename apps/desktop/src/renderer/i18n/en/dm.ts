@@ -39,6 +39,15 @@ export const enDm: DictShape<typeof ruDm> = {
   'dm.errCreate': 'Couldn’t start the conversation',
   // a /dm/<id> link of someone else's (or a deleted) conversation
   'dm.errLink': 'This conversation isn’t available: it isn’t yours or it was deleted',
+  // archive and «delete for me» (docs/09 #51)
+  'dm.archive': 'Archive',
+  'dm.unarchive': 'Unarchive',
+  'dm.archiveSection': 'Archive — {n}',
+  'dm.delete': 'Delete chat',
+  'dm.deleteTitle': 'Delete chat?',
+  'dm.deleteConfirm': 'The history will be deleted only for you; the other person keeps it.',
+  'dm.errState': 'Couldn’t update the conversation',
+  'dm.actions': 'Conversation actions',
   // quick switcher
   'search.dms': 'Direct messages',
 };

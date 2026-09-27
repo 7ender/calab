@@ -43,6 +43,8 @@ const { useMessages } = await import('../stores/messages');
 const { useRooms } = await import('../stores/rooms');
 const { useTyping } = await import('../stores/typing');
 const { useInbox } = await import('../stores/inbox');
+const { useDms, HOME } = await import('../stores/dms');
+const { useUi } = await import('../stores/ui');
 
 const WS = 'ws-1';
 const id = (n: number): string => `0190a0b0-0000-7000-8000-${String(n).padStart(12, '0')}`;
@@ -157,5 +159,49 @@ describe('dispatch TYPING_START', () => {
     expect(until).toBeLessThanOrEqual(Date.now() + 8000);
     await vi.advanceTimersByTimeAsync(8100);
     expect(useTyping.getState().rooms['a']?.['other']).toBeUndefined();
+  });
+});
+
+describe('DM_STATE_UPDATE (docs/09 #51)', () => {
+  const dmReady = (): DispatchEvent =>
+    create(DispatchEventSchema, {
+      event: {
+        case: 'ready',
+        value: create(ReadySchema, {
+          sessionId: 'gs',
+          dms: [
+            {
+              room: { id: 'd', type: RoomType.DM, lastMessageId: id(3), createdAt: timestampFromMs(1000) },
+              peer: { id: 'p', displayName: 'P' },
+              lastMessage: { id: id(3), authorId: 'p', content: 'old', attachmentCount: 0, createdAt: timestampFromMs(2000) },
+            },
+          ],
+          readStates: [create(ReadStateSchema, { roomId: 'd', lastReadMessageId: id(1), unreadCount: 2, mentionCount: 2 })],
+        }),
+      },
+    });
+  const state = (archivedAt: number, cleared: string): DispatchEvent =>
+    create(DispatchEventSchema, {
+      event: { case: 'dmStateUpdate', value: { roomId: 'd', clearedBeforeMessageId: cleared, ...(archivedAt ? { archivedAt: timestampFromMs(archivedAt) } : {}) } },
+    });
+
+  it('archives and un-archives; a new clear mark drops the history, counters and the open chat', () => {
+    applyDispatch(dmReady());
+    applyDispatch(state(5000, ''));
+    expect(useDms.getState().byRoom['d']).toMatchObject({ archivedAt: 5000, clearedBefore: '' });
+    applyDispatch(state(0, ''));
+    expect(useDms.getState().byRoom['d']?.archivedAt).toBe(0);
+
+    useUi.getState().openRoom(HOME, 'd');
+    useMessages.getState().setWindow('d', [create(MessageSchema, { id: id(3), roomId: 'd' })], false, false);
+    applyDispatch(state(0, id(4)));
+    expect(useMessages.getState().rooms['d']).toBeUndefined();
+    expect(useRooms.getState().unread['d']).toBe(0);
+    expect(useRooms.getState().mentions['d'] ?? 0).toBe(0);
+    expect(useDms.getState().preview['d']).toBeNull();
+    expect(useUi.getState().lastRoom[HOME]).toBe('');
+    // A stale (older) mark never brings the hidden history back.
+    applyDispatch(state(0, id(2)));
+    expect(useDms.getState().byRoom['d']?.clearedBefore).toBe(id(4));
   });
 });

@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { DmSummarySchema, MessageSchema, RoomType } from '@calaba/protocol';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { dmWith, sortedDms, useDms } from './dms';
+import { dmWith, isHiddenDm, sortedDms, splitDms, useDms } from './dms';
 
 const id = (n: number): string => `0190a0b0-0000-7000-8000-${String(n).padStart(12, '0')}`;
 const dm = (room: string, peer: string, lastAt: number, lastId = '', lastText = 'x') =>
@@ -45,5 +45,34 @@ describe('dms store', () => {
     expect(useDms.getState().preview['a']?.content).toBe('живое');
     useDms.getState().onChanged('a', id(3), null);
     expect(useDms.getState().preview['a']).toBeUndefined();
+  });
+
+  it('archive and «Удалить чат» (docs/09 #51): the summary state, the split, hidden until a new message', () => {
+    const archived = dm('c', 'pc', 3000, id(3));
+    archived.archivedAt = timestampFromMs(4000);
+    useDms.getState().setAll([dm('a', 'pa', 5000, id(5)), dm('b', 'pb', 9000, id(9)), archived]);
+    expect(useDms.getState().byRoom['c']).toMatchObject({ archivedAt: 4000, clearedBefore: '' });
+    const split = () => {
+      const r = splitDms(useDms.getState().byRoom, useDms.getState().preview);
+      return { main: r.main.map((e) => e.roomId), archived: r.archived.map((e) => e.roomId) };
+    };
+    expect(split()).toEqual({ main: ['b', 'a'], archived: ['c'] });
+
+    // «Удалить чат» of b: the preview it hides goes, b leaves the list (unless it is the open chat).
+    useDms.getState().setState('b', 0, id(10));
+    expect(useDms.getState().preview['b']).toBeNull();
+    expect(isHiddenDm(useDms.getState().byRoom['b']!, null)).toBe(true);
+    expect(split()).toEqual({ main: ['a'], archived: ['c'] });
+    expect(splitDms(useDms.getState().byRoom, useDms.getState().preview, 'b').main.map((e) => e.roomId)).toEqual(['b', 'a']);
+    // A new message after the mark: the same DM is back as a clean chat.
+    useDms.getState().onMessage(msg('b', 11, 20_000, 'снова'));
+    expect(split()).toEqual({ main: ['b', 'a'], archived: ['c'] });
+
+    // Un-archive; a summary without a state (never cleared) is not hidden when it has no messages.
+    useDms.getState().setState('c', 0, '');
+    expect(split().archived).toEqual([]);
+    expect(isHiddenDm({ roomId: 'x', peerId: 'px', activity: 0, archivedAt: 0, clearedBefore: '' }, null)).toBe(false);
+    // A preview being refetched (undefined) does not hide a cleared DM.
+    expect(isHiddenDm({ roomId: 'x', peerId: 'px', activity: 0, archivedAt: 0, clearedBefore: id(1) }, undefined)).toBe(false);
   });
 });
