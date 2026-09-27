@@ -1,8 +1,22 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { GatewayFrameSchema, GatewayOpcode, NotificationLevel, Plan, PlanLimitsSchema, RoomType, ScreenSharePreset, VoiceStreamStopReason, type DispatchEvent, type GatewayFrame } from '@calaba/protocol';
+import {
+  GatewayFrameSchema,
+  GatewayOpcode,
+  MessageKind,
+  NotificationLevel,
+  Plan,
+  PlanLimitsSchema,
+  RecordingStatus,
+  RoomRecordingState,
+  RoomType,
+  ScreenSharePreset,
+  VoiceStreamStopReason,
+  type DispatchEvent,
+  type GatewayFrame,
+} from '@calaba/protocol';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { GENERAL_MESSAGE_COUNT, IDS, MARKETING_IDS, MOCK_EMAIL_CODE, parseMentions, startMockServer, type MockServer } from './mock-server';
+import { GENERAL_MESSAGE_COUNT, IDS, MARKETING_IDS, MOCK_EMAIL_CODE, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, parseMentions, startMockServer, type MockServer } from './mock-server';
 
 // Smoke test: pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts
 
@@ -910,6 +924,77 @@ describe('email (ADR-0023)', () => {
     expect(await over.json()).toMatchObject({ code: 'ERROR_CODE_CONFLICT', reason: 'REACTION_LIMIT', limit: '3' });
     expect((await put('🧫', 'DELETE')).status).toBe(204);
     expect((await put('🔬')).status).toBe(204);
+    server.reset('data');
+  });
+});
+
+describe('meeting recording (ADR-0025)', () => {
+  it('pairs GPTunneL, records a room, posts a card that moves on to DONE', async () => {
+    server.reset('data');
+    const owner = { Authorization: `Bearer ${await login()}`, 'Content-Type': 'application/json' };
+    const member = { Authorization: `Bearer ${await login('vera@calaba.test')}`, 'Content-Type': 'application/json' };
+    const guest = { Authorization: `Bearer ${await login('dina@calaba.test')}` };
+    const ws = `${server.url}/api/workspaces/${IDS.workspaces.main}/integrations/gptunnel`;
+    const room = `${server.url}/api/rooms/${IDS.rooms.meeting}`;
+    const code = async (r: Response): Promise<string> => ((await r.json()) as { code: string }).code;
+
+    expect((await fetch(ws, { headers: guest })).status).toBe(403);
+    expect(((await (await fetch(ws, { headers: member })).json()) as { integration: { paired: boolean } }).integration.paired).toBe(false);
+    // Not paired: start is 409 NOT_PAIRED.
+    const notPaired = await fetch(`${room}/recording/start`, { method: 'POST', headers: member });
+    expect([notPaired.status, await code(notPaired)]).toEqual([409, 'ERROR_CODE_NOT_PAIRED']);
+    // Pairing: members may not; wrong / rate-limited / unavailable codes; the mock's code pairs.
+    expect((await fetch(ws, { method: 'POST', headers: member, body: JSON.stringify({ code: MOCK_GPTUNNEL_CODE }) })).status).toBe(403);
+    const pair = (c: string): Promise<Response> => fetch(ws, { method: 'POST', headers: owner, body: JSON.stringify({ code: c }) });
+    const wrong = await pair('WXYZ-1234');
+    expect([wrong.status, await code(wrong)]).toEqual([422, 'ERROR_CODE_CODE_INVALID']);
+    expect((await pair('ABC')).status).toBe(422);
+    expect((await pair('rate-rate')).status).toBe(429);
+    expect((await pair('DOWN DOWN')).status).toBe(503);
+    const ok = (await (await pair('abcd efgh')).json()) as { integration: { paired: boolean; deviceName: string; webUrl: string } };
+    expect(ok.integration).toMatchObject({ paired: true, deviceName: 'Calab · Команда Calab', webUrl: MOCK_GPTUNNEL_WEB });
+
+    // A member starts: ROOM_RECORDING ACTIVE to the workspace; guests cannot.
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token: owner.Authorization.slice(7), device: { name: 'vitest', platform: 'test', appVersion: '0' } } } });
+    await gw.next((f) => dispatchOf(f)?.event.case === 'ready');
+    expect((await fetch(`${room}/recording/start`, { method: 'POST', headers: guest })).status).toBe(403);
+    expect((await fetch(`${room}/recording/start`, { method: 'POST', headers: member })).status).toBe(200);
+    const active = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'roomRecording'))?.event;
+    expect(active?.case === 'roomRecording' && active.value.state).toBe(RoomRecordingState.ACTIVE);
+    const again = await fetch(`${room}/recording/start`, { method: 'POST', headers: owner });
+    expect([again.status, await code(again)]).toEqual([409, 'ERROR_CODE_ALREADY_RECORDING']);
+    expect(server.state.recordings.has(IDS.rooms.meeting)).toBe(true);
+
+    // Anyone (not a guest) stops: STOPPED {user, by}, then the card UPLOADING → PROCESSING → DONE.
+    expect((await fetch(`${room}/recording/stop`, { method: 'POST', headers: owner })).status).toBe(200);
+    const stopped = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'roomRecording'))?.event;
+    expect(stopped?.case === 'roomRecording' && [stopped.value.state, stopped.value.stopReason, stopped.value.stoppedBy]).toEqual([
+      RoomRecordingState.STOPPED,
+      'user',
+      IDS.users.anna,
+    ]);
+    const card = (e: DispatchEvent['event']): RecordingStatus | undefined =>
+      (e.case === 'messageCreate' || e.case === 'messageUpdate') && e.value.message?.system?.payload.case === 'recording'
+        ? e.value.message.system.payload.value.status
+        : undefined;
+    const created = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'messageCreate'))?.event;
+    expect(created?.case === 'messageCreate' && [created.value.message?.kind, created.value.message?.authorId]).toEqual([MessageKind.SYSTEM, IDS.users.vera]);
+    expect(created && card(created)).toBe(RecordingStatus.UPLOADING);
+    const seen: (RecordingStatus | undefined)[] = [];
+    for (let i = 0; i < 2; i++) {
+      const upd = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'messageUpdate'))?.event;
+      if (upd) seen.push(card(upd));
+    }
+    expect(seen).toEqual([RecordingStatus.PROCESSING, RecordingStatus.DONE]);
+    expect((await fetch(`${room}/recording/stop`, { method: 'POST', headers: owner })).status).toBe(404);
+
+    // allowRecording: MANAGE_WORKSPACE; off → start is 403.
+    expect((await fetch(room, { method: 'PATCH', headers: owner, body: JSON.stringify({ allowRecording: false }) })).status).toBe(200);
+    expect((await fetch(`${room}/recording/start`, { method: 'POST', headers: member })).status).toBe(403);
+    expect((await fetch(ws, { method: 'DELETE', headers: owner })).status).toBe(204);
+    gw.ws.close();
     server.reset('data');
   });
 });

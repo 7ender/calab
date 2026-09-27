@@ -33,6 +33,7 @@ import {
   WorkspaceVisibility,
   type FileMeta,
   type Invite,
+  type GptunnelIntegration,
   type Message,
   type PlanLimits,
   type PlanLogEntry,
@@ -45,6 +46,7 @@ import {
   type RoomNotificationSettings,
   type WorkspaceNotificationSettings,
   type RoomPermissionOverride,
+  type RoomRecording,
   type Session,
   type User,
   type UserSettings,
@@ -127,11 +129,20 @@ export const IDS = {
 } as const;
 
 /**
- * Meeting recording of «Переговорка» (docs/09 #30): Борис started it 12:34 ago. There is no
- * server contract yet, so tests hand it to the client (`window.__calabaRecording`) as the
- * future `room.recording {by, since}` would arrive.
+ * Meeting recording of «Переговорка» (docs/09 #30, ADR-0025): Борис started it 12:34 ago
+ * (MockServer.setRecording → ROOM_RECORDING, READY `recordings[]`).
  */
 export const RECORDING_FIXTURE = { roomId: IDS.rooms.meeting, byUserId: IDS.users.boris, agoMs: 754_000 } as const;
+
+/**
+ * GPTunneL pairing in the mock (ADR-0025): this code pairs; MOCK_GPTUNNEL_RATE_CODE answers 429,
+ * MOCK_GPTUNNEL_DOWN_CODE 503; any other well-formed code is 422 CODE_INVALID.
+ */
+export const MOCK_GPTUNNEL_CODE = 'ABCD-EFGH';
+export const MOCK_GPTUNNEL_RATE_CODE = 'RATE-RATE';
+export const MOCK_GPTUNNEL_DOWN_CODE = 'DOWN-DOWN';
+/** The GPTunneL web base the mock reports (never a real host). */
+export const MOCK_GPTUNNEL_WEB = 'https://gptunnel.test';
 
 // ---------------------------------------------------------------- state
 
@@ -232,6 +243,10 @@ export interface MockState {
   emailCodes: Map<string, EmailCodeRec>;
   /** Pending invitations by email, by id. */
   emailInvites: Map<string, EmailInviteRec>;
+  /** GPTunneL connection per workspace (ADR-0025); absent = not paired. */
+  gptunnel: Map<string, GptunnelIntegration>;
+  /** Rooms being recorded now (state ACTIVE), by room id. */
+  recordings: Map<string, RoomRecording>;
   /** Next sequence number per id kind (runtime-created entities). */
   next: Record<IdKind, number>;
   /** Runtime clock ticks (see RUNTIME_CLOCK_START_MS). */
@@ -494,6 +509,8 @@ export function buildState(scenario: Scenario): MockState {
     planLog: new Map(),
     emailCodes: new Map(),
     emailInvites: new Map(),
+    gptunnel: new Map(),
+    recordings: new Map(),
     next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100 },
     clock: 0,
   };
@@ -694,6 +711,7 @@ export function buildState(scenario: Scenario): MockState {
         createdAt: ts('2025-12-01T10:10:00Z'),
         categoryId: opts.categoryId ?? '',
         userLimit: opts.userLimit ?? 0,
+        allowRecording: true, // the server's default (ADR-0025)
         ...(opts.voiceStartedAt ? { voiceStartedAt: ts(opts.voiceStartedAt) } : {}),
       }),
     );

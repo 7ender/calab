@@ -56,6 +56,20 @@ import {
   ListEmailInvitesResponseSchema,
   ResetPasswordRequestSchema,
   VerifyEmailRequestSchema,
+  GetGptunnelIntegrationResponseSchema,
+  GptunnelIntegrationSchema,
+  MessageKind,
+  PairGptunnelRequestSchema,
+  PairGptunnelResponseSchema,
+  RecordingCardSchema,
+  RecordingStatus,
+  RoomRecordingSchema,
+  RoomRecordingState,
+  StartRecordingResponseSchema,
+  StopRecordingResponseSchema,
+  type GptunnelIntegration,
+  type RecordingCard,
+  type RoomRecording,
   ApiErrorSchema,
   AuthTokensSchema,
   CreateCategoryRequestSchema,
@@ -194,6 +208,10 @@ import {
   IDS,
   TEAM_PLAN_LIMITS,
   MOCK_EMAIL_CODE,
+  MOCK_GPTUNNEL_CODE,
+  MOCK_GPTUNNEL_DOWN_CODE,
+  MOCK_GPTUNNEL_RATE_CODE,
+  MOCK_GPTUNNEL_WEB,
   PASSWORD,
   buildState,
   defaultSettings,
@@ -214,7 +232,19 @@ import {
 import { MARKETING_UNFURLS } from './fixtures-marketing';
 import { cardPicture, encodePng, pngSize } from './png';
 
-export { IDS, GENERAL_MESSAGE_COUNT, MOCK_EMAIL_CODE, PASSWORD, RECORDING_FIXTURE, mockId, type Scenario } from './fixtures';
+export {
+  IDS,
+  GENERAL_MESSAGE_COUNT,
+  MOCK_EMAIL_CODE,
+  MOCK_GPTUNNEL_CODE,
+  MOCK_GPTUNNEL_DOWN_CODE,
+  MOCK_GPTUNNEL_RATE_CODE,
+  MOCK_GPTUNNEL_WEB,
+  PASSWORD,
+  RECORDING_FIXTURE,
+  mockId,
+  type Scenario,
+} from './fixtures';
 export { MARKETING_IDS, MARKETING_VOICE_STARTED_AT } from './fixtures-marketing';
 
 // ---------------------------------------------------------------- public API
@@ -264,6 +294,20 @@ export interface MockServer {
    * code (MOCK_EMAIL_CODE, «sent» now) and USER_UPDATE {me} like after a sign-up.
    */
   setEmailState(userId: string, st: { verified: boolean; pendingEmail?: string }): void;
+  /**
+   * ADR-0025: a room is being recorded (`byUserId` started it `agoMs` ago) — ROOM_RECORDING ACTIVE
+   * to the room's viewers, READY `recordings[]` from now on; `null` stops it (reason `user`, no card).
+   */
+  setRecording(roomId: string, rec: { byUserId: string; agoMs?: number } | null): void;
+  /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
+  setGptunnel(workspaceId: string, pairedBy: string | null): void;
+  /**
+   * A recording card in the room chat (SYSTEM message, MESSAGE_CREATE) in the given state; the
+   * status never advances by itself (unlike a stop through the API).
+   */
+  injectRecordingCard(a: { roomId: string; byUserId: string; durationSec: number; status: RecordingStatus; error?: string; webUrl?: string }): Message;
+  /** Moves a card on (MESSAGE_UPDATE), like the server's upload worker. */
+  updateRecordingCard(messageId: string, patch: { status: RecordingStatus; error?: string; webUrl?: string }): void;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -283,6 +327,10 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setPresence: (u, st) => impl.setPresence(u, st),
     stopCamera: (u, r) => impl.stopCamera(u, r),
     setEmailState: (u, st) => impl.setEmailState(u, st),
+    setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
+    setGptunnel: (ws, by) => impl.setGptunnel(ws, by),
+    injectRecordingCard: (a) => impl.injectRecordingCard(a),
+    updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
   };
 }
 
@@ -298,6 +346,12 @@ const JSON_READ = { ignoreUnknownFields: true } as const;
 export function livekitRoomPrefix(): string {
   return process.env['MOCK_LIVEKIT_ROOM_PREFIX'] || 'mock_';
 }
+/**
+ * Recording card after a stop (ADR-0025): UPLOADING, then PROCESSING and DONE this much later each
+ * (MOCK_RECORDING_STEP_MS; 0 = the card stays UPLOADING). The server's RECORDING_MAX_CONCURRENT.
+ */
+const RECORDING_STEP_MS = Number(process.env['MOCK_RECORDING_STEP_MS'] ?? 1500);
+const RECORDING_MAX_CONCURRENT = 3;
 /** Simulated LiveKit connect after /join: the pending voice state is cleared this much later. */
 const JOIN_CONNECT_MS = 250;
 /** ADR-0023: a new email code at most every 60 s; 5 attempts; a re-invite at most once a day. */
@@ -478,6 +532,8 @@ class MockImpl {
   private readonly voiceSessions = new Map<string, string>();
   private readonly staticDir: string | null;
   private readonly log: (line: string) => void;
+  /** Recording card transitions in flight (cleared on reset / close). */
+  private readonly timers = new Set<ReturnType<typeof setTimeout>>();
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
@@ -516,6 +572,8 @@ class MockImpl {
   }
 
   async close(): Promise<void> {
+    for (const t of this.timers) clearTimeout(t);
+    this.timers.clear();
     for (const c of this.conns) c.ws.terminate();
     this.conns.clear();
     await new Promise<void>((r) => this.wss.close(() => r()));
@@ -524,6 +582,8 @@ class MockImpl {
   }
 
   reset(scenario: Scenario): void {
+    for (const t of this.timers) clearTimeout(t);
+    this.timers.clear();
     this.state = buildState(scenario);
     this.voiceSessions.clear();
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
@@ -734,6 +794,7 @@ class MockImpl {
       categories: [...this.state.categories.values()]
         .filter((c) => c.workspaceId === wsId)
         .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)),
+      recordings: [...this.state.recordings.values()].filter((r) => r.workspaceId === wsId && rooms.some((x) => x.id === r.roomId)),
     });
   }
 
@@ -1307,6 +1368,7 @@ class MockImpl {
     });
 
     this.emailRoutes();
+    this.recordingRoutes();
 
     // ---------------- me
     this.route('GET', '/api/me', (c) => {
@@ -1743,6 +1805,7 @@ class MockImpl {
         createdAt: tick(s()),
         categoryId: b.categoryId && s().categories.get(b.categoryId)?.workspaceId === ws.id ? b.categoryId : '',
         userLimit: b.type === RoomType.VOICE ? Math.min(99, b.userLimit) : 0,
+        allowRecording: true,
       });
       s().rooms.set(room.id, room);
       this.toWorkspace(ws.id, { event: { case: 'roomCreate', value: { room } } }, room.id);
@@ -1870,7 +1933,13 @@ class MockImpl {
         if (b.categoryId && s().categories.get(b.categoryId)?.workspaceId !== room.workspaceId) throw invalid('categoryId', 'unknown category');
         room.categoryId = b.categoryId;
       }
+      // ADR-0025: MANAGE_WORKSPACE besides MANAGE_ROOM; switching it off stops a running recording.
+      if (b.allowRecording !== undefined) {
+        this.requireAdmin(this.workspaceFor(room.workspaceId, me).m);
+        room.allowRecording = b.allowRecording;
+      }
       this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
+      if (b.allowRecording === false && s().recordings.has(room.id)) this.stopRecording(room, 'disabled', '');
       sendMsg(c.res, 200, UpdateRoomResponseSchema, { room });
     });
 
@@ -2761,6 +2830,217 @@ class MockImpl {
     this.requireAdmin(m);
     this.requireVerified(c);
     return { wsId: ws.id, m, me };
+  }
+
+  // ------------------------------------------------ meeting recording (ADR-0025)
+
+  private announceRecording(rec: RoomRecording): void {
+    this.toWorkspace(rec.workspaceId, { event: { case: 'roomRecording', value: rec } }, rec.roomId);
+  }
+
+  setRecording(roomId: string, rec: { byUserId: string; agoMs?: number } | null): void {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw notFound('room not found');
+    if (!rec) {
+      if (this.state.recordings.has(roomId)) this.stopRecording(room, 'user', '', false);
+      return;
+    }
+    const r = create(RoomRecordingSchema, {
+      workspaceId: room.workspaceId,
+      roomId,
+      recordingId: nextId(this.state, 'file'),
+      state: RoomRecordingState.ACTIVE,
+      byUserId: rec.byUserId,
+      since: timestampFromMs(Date.now() - (rec.agoMs ?? 0)),
+    });
+    this.state.recordings.set(roomId, r);
+    this.announceRecording(r);
+  }
+
+  setGptunnel(workspaceId: string, pairedBy: string | null): void {
+    const ws = this.state.workspaces.get(workspaceId);
+    if (!ws) throw notFound('workspace not found');
+    if (!pairedBy) {
+      this.state.gptunnel.delete(workspaceId);
+      return;
+    }
+    this.state.gptunnel.set(
+      workspaceId,
+      create(GptunnelIntegrationSchema, {
+        paired: true,
+        deviceName: `Calab · ${ws.name}`,
+        account: this.state.users.get(pairedBy)?.email ?? '',
+        pairedBy,
+        pairedAt: tick(this.state),
+        webUrl: MOCK_GPTUNNEL_WEB,
+      }),
+    );
+  }
+
+  /** Stops a room's recording: ROOM_RECORDING STOPPED and (unless `card` is false) the chat card. */
+  private stopRecording(room: Room, reason: string, stoppedBy: string, card = true): RoomRecording {
+    const cur = this.state.recordings.get(room.id);
+    if (!cur) throw notFound('recording of this room');
+    this.state.recordings.delete(room.id);
+    const stopped = create(RoomRecordingSchema, { ...cur, state: RoomRecordingState.STOPPED, stopReason: reason, stoppedBy });
+    this.announceRecording(stopped);
+    if (card) {
+      const durationSec = Math.max(0, Math.round((Date.now() - (cur.since ? timestampMs(cur.since) : Date.now())) / 1000));
+      const msg = this.injectRecordingCard({ roomId: room.id, byUserId: cur.byUserId, durationSec, status: RecordingStatus.UPLOADING, recordingId: cur.recordingId });
+      // The upload worker's steps: UPLOADING → PROCESSING (a page) → DONE.
+      if (RECORDING_STEP_MS > 0) {
+        const web = `${MOCK_GPTUNNEL_WEB}/meetings/${cur.recordingId}`;
+        this.later(RECORDING_STEP_MS, () => this.updateRecordingCard(msg.id, { status: RecordingStatus.PROCESSING, webUrl: web }));
+        this.later(RECORDING_STEP_MS * 2, () => this.updateRecordingCard(msg.id, { status: RecordingStatus.DONE, webUrl: web }));
+      }
+    }
+    return stopped;
+  }
+
+  private later(ms: number, fn: () => void): void {
+    const timer = setTimeout(() => {
+      this.timers.delete(timer);
+      try {
+        fn();
+      } catch (e) {
+        this.log(`recording timer: ${String(e)}`);
+      }
+    }, ms);
+    this.timers.add(timer);
+  }
+
+  injectRecordingCard(a: {
+    roomId: string;
+    byUserId: string;
+    durationSec: number;
+    status: RecordingStatus;
+    error?: string;
+    webUrl?: string;
+    recordingId?: string;
+  }): Message {
+    const room = this.state.rooms.get(a.roomId);
+    if (!room) throw notFound('room not found');
+    const list = this.state.messages.get(room.id) ?? [];
+    const createdAt = tick(this.state);
+    const card: MessageInitShape<typeof RecordingCardSchema> = {
+      recordingId: a.recordingId ?? nextId(this.state, 'file'),
+      startedBy: a.byUserId,
+      startedAt: timestampFromMs(timestampMs(createdAt) - a.durationSec * 1000),
+      durationSec: a.durationSec,
+      status: a.status,
+      webUrl: a.webUrl ?? '',
+      error: a.error ?? '',
+    };
+    // The server posts it as the one who started the recording, content empty (docs/05).
+    const msg = create(MessageSchema, {
+      id: nextId(this.state, 'message'),
+      roomId: room.id,
+      authorId: a.byUserId,
+      content: '',
+      kind: MessageKind.SYSTEM,
+      system: { payload: { case: 'recording', value: card } },
+      createdAt,
+    });
+    list.push(msg);
+    this.state.messages.set(room.id, list);
+    const reads = this.state.readStates.get(a.byUserId) ?? new Map<string, string>();
+    reads.set(room.id, msg.id);
+    this.state.readStates.set(a.byUserId, reads);
+    this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+    return msg;
+  }
+
+  updateRecordingCard(messageId: string, patch: { status: RecordingStatus; error?: string; webUrl?: string }): void {
+    const { room, list, index } = this.findMessage(messageId);
+    const msg = list[index];
+    const p = msg?.system?.payload;
+    if (!msg || p?.case !== 'recording') throw notFound('recording card not found');
+    const value: RecordingCard = p.value;
+    value.status = patch.status;
+    if (patch.error !== undefined) value.error = patch.error;
+    if (patch.webUrl !== undefined) value.webUrl = patch.webUrl;
+    this.toWorkspace(room.workspaceId, { event: { case: 'messageUpdate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+  }
+
+  /** Who may start / stop (docs/05): a member, not a guest, with VIEW_ROOM + CONNECT, voice room. */
+  private recordingRoom(c: Ctx): { room: Room; me: string } {
+    const me = this.uid(c);
+    const room = this.roomFor(c.params[0] ?? '', me);
+    if (room.type === RoomType.DM) throw notFound('room not found');
+    const m = this.member(room.workspaceId, me);
+    if (!m || m.role === WorkspaceRole.GUEST) throw forbidden('guests cannot record meetings');
+    this.requireRoomPerm(room, me, CONNECT);
+    if (room.type !== RoomType.VOICE) throw invalid('id', 'only voice rooms can be recorded');
+    return { room, me };
+  }
+
+  private recordingRoutes(): void {
+    const s = (): MockState => this.state;
+    const integration = (wsId: string): GptunnelIntegration => s().gptunnel.get(wsId) ?? create(GptunnelIntegrationSchema, { paired: false });
+
+    this.route('GET', '/api/workspaces/:id/integrations/gptunnel', (c) => {
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      if (m.role === WorkspaceRole.GUEST) throw forbidden('not available to guests');
+      sendMsg(c.res, 200, GetGptunnelIntegrationResponseSchema, { integration: integration(ws.id) });
+    });
+
+    this.route('POST', '/api/workspaces/:id/integrations/gptunnel', (c) => {
+      const me = this.uid(c);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      this.requireAdmin(m);
+      const code = parseBody(c, PairGptunnelRequestSchema).code.trim().toUpperCase().replace(/[-\s]/g, '');
+      if (!/^[A-Z0-9]{8}$/.test(code)) throw invalid('code', 'the code has 8 letters and digits, e.g. ABCD-EFGH');
+      const norm = (x: string): string => x.replace(/-/g, '');
+      if (code === norm(MOCK_GPTUNNEL_RATE_CODE)) throw tooMany('too many attempts', 60);
+      if (code === norm(MOCK_GPTUNNEL_DOWN_CODE)) throw new HttpError(503, ErrorCode.UNAVAILABLE, 'GPTunneL unreachable');
+      if (code !== norm(MOCK_GPTUNNEL_CODE)) throw new HttpError(422, ErrorCode.CODE_INVALID, 'the code is wrong or expired: get a new one in GPTunneL');
+      this.setGptunnel(ws.id, me);
+      sendMsg(c.res, 200, PairGptunnelResponseSchema, { integration: integration(ws.id) });
+    });
+
+    this.route('DELETE', '/api/workspaces/:id/integrations/gptunnel', (c) => {
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireAdmin(m);
+      this.setGptunnel(ws.id, null);
+      noContent(c.res);
+    });
+
+    this.route('POST', '/api/rooms/:id/recording/start', (c) => {
+      const { room, me } = this.recordingRoom(c);
+      if (!room.allowRecording) throw forbidden('recording is not allowed in this room');
+      if (!s().gptunnel.get(room.workspaceId)?.paired)
+        throw new HttpError(409, ErrorCode.NOT_PAIRED, 'the workspace is not connected to GPTunneL: an owner or admin connects it in the workspace settings');
+      if (s().recordings.has(room.id)) throw new HttpError(409, ErrorCode.ALREADY_RECORDING, 'the room is already being recorded');
+      const used = s().recordings.size;
+      if (used >= RECORDING_MAX_CONCURRENT)
+        throw new HttpError(409, ErrorCode.RECORDING_LIMIT, 'too many meetings are being recorded on this server; try again later', '', {
+          used: BigInt(used),
+          limit: BigInt(RECORDING_MAX_CONCURRENT),
+        });
+      if (![...s().voiceStates.values()].some((v) => v.roomId === room.id)) throw conflict('nobody is in the call');
+      this.setRecording(room.id, { byUserId: me });
+      sendMsg(c.res, 200, StartRecordingResponseSchema, { recording: s().recordings.get(room.id) });
+    });
+
+    this.route('POST', '/api/rooms/:id/recording/stop', (c) => {
+      const { room, me } = this.recordingRoom(c);
+      const stopped = this.stopRecording(room, 'user', me);
+      sendMsg(c.res, 200, StopRecordingResponseSchema, { recording: stopped });
+    });
+
+    // e2e control: a card's next state ({messageId, status: "RECORDING_STATUS_FAILED", error}).
+    this.route('POST', '/__mock/recording-card', (c) => {
+      const b = (c.raw.length ? JSON.parse(c.raw.toString('utf8')) : {}) as Record<string, unknown>;
+      const key = (typeof b['status'] === 'string' ? b['status'] : '').replace(/^RECORDING_STATUS_/, '');
+      const status = key in RecordingStatus && !/^\d+$/.test(key) ? RecordingStatus[key as keyof typeof RecordingStatus] : undefined;
+      if (status === undefined) throw invalid('status', 'unknown status');
+      this.updateRecordingCard(typeof b['messageId'] === 'string' ? b['messageId'] : '', {
+        status,
+        ...(typeof b['error'] === 'string' ? { error: b['error'] } : {}),
+        ...(typeof b['webUrl'] === 'string' ? { webUrl: b['webUrl'] } : {}),
+      });
+      noContent(c.res);
+    });
   }
 
   private emailRoutes(): void {
