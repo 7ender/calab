@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** Prism grammars (lib/markdown/syntax.ts): side-effect scripts that extend the global `Prism`. */
+declare module 'prismjs/components/*';
+
 interface ImportMetaEnv {
   /** 'web' for the browser build (ADR-0015); unset = Electron renderer. */
   readonly VITE_PLATFORM?: 'web';

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { CODE_FIXTURE, IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
 
 /**
@@ -273,6 +273,22 @@ test('m-chat-audio', async ({ page }) => {
   // At rest: the floating date pill fades out 1 s after scrolling.
   await expect(page.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
   await checkpoint(page, 'm-chat-audio', { main: true });
+});
+
+// Code blocks on a phone (docs/08 «Код в сообщениях»): the same block — language label, copy
+// always visible (no hover on touch), horizontal scroll inside the block, not the page.
+test('m-chat-code', async ({ page }) => {
+  await signedIn(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: CODE_FIXTURE.long });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.anna, content: CODE_FIXTURE.js });
+  await expect(page.getByText('Вот обработчик для поиска:')).toBeAttached();
+  await feedToBottom(page);
+  const js = page.getByTestId('code-block').last();
+  await expect(js.locator('.syn-keyword').first()).toBeVisible();
+  await expect(js.getByTestId('code-copy')).toHaveCSS('opacity', '1');
+  await expect(page.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
+  await checkpoint(page, 'm-chat-code', { main: true });
 });
 
 // Voice message on a phone (docs/08 «Голосовые сообщения»): the bubble with 44 px targets and

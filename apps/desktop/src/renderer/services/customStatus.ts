@@ -4,6 +4,7 @@ import { api } from '../lib/api/endpoints';
 import { usePrefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
+import { useWorkspaces } from '../stores/workspaces';
 import { clearAfterSeconds, type ClearAfter } from './presenceTimer';
 
 /**
@@ -62,7 +63,11 @@ export async function saveCustomStatus(s: { text: string; emoji: string; expires
       if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return api.me.update({ statusText: s.text });
       throw e;
     });
-    if (r.me) useSession.getState().set({ me: r.me });
+    if (r.me) {
+      useSession.getState().set({ me: r.me });
+      // My own card in the member list / profile / header reads `users[me]`, not the session.
+      if (r.me.user) useWorkspaces.getState().upsertUser(r.me.user);
+    }
     return true;
   } catch (e) {
     toast.fail(e, t('err.ctx.save'));

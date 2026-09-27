@@ -14,7 +14,8 @@ import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
-import { usePreviewText } from '../chat/mentionText';
+import { usePreviewParts } from '../chat/mentionText';
+import { PreviewRuns } from '../chat/PreviewRuns';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 
 /**
@@ -85,8 +86,14 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
   const count = useRooms((s) => s.mentions[roomId] ?? 0);
   const preview = useDms((s) => s.preview[roomId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const text = usePreviewText(null, preview?.content ?? '');
-  const line = preview === undefined ? '' : preview === null ? t('dm.noMessages') : `${preview.authorId === me ? `${t('dm.you')}: ` : ''}${text || (preview.attachments ? t('chat.attachment') : '')}`;
+  const parts = usePreviewParts(null, preview?.content ?? '');
+  const line =
+    preview === undefined ? '' : preview === null ? t('dm.noMessages') : (
+      <>
+        {preview.authorId === me ? `${t('dm.you')}: ` : ''}
+        {parts.length ? <PreviewRuns parts={parts} /> : preview.attachments ? t('chat.attachment') : ''}
+      </>
+    );
   const at = preview?.at ?? entry.activity;
   const time = at ? fmt.listTime(new Date(at)) : '';
   const bright = active || unread;

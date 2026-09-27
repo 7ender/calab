@@ -127,7 +127,18 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
         return { ...e, members, voice };
       }),
     ),
-  setPresence: (p) => set((s) => ({ presences: { ...s.presences, [p.userId]: p } })),
+  // PRESENCE_UPDATE also carries the custom status (docs/05): the member list, profile and
+  // header read it from `users`, so keep that copy in sync (set / edited / cleared / expired).
+  setPresence: (p) =>
+    set((s) => {
+      const u = s.users[p.userId];
+      const stale =
+        u && (u.statusText !== p.statusText || u.statusEmoji !== p.statusEmoji || (u.statusExpiresAt?.seconds ?? 0n) !== (p.statusExpiresAt?.seconds ?? 0n));
+      return {
+        presences: { ...s.presences, [p.userId]: p },
+        ...(stale ? { users: { ...s.users, [p.userId]: { ...u, statusText: p.statusText, statusEmoji: p.statusEmoji, statusExpiresAt: p.statusExpiresAt } } } : {}),
+      };
+    }),
   setVoiceState: (v) =>
     set((s) =>
       withEntry(s, v.workspaceId, (e) => {

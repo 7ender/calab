@@ -16,7 +16,9 @@ import { useUi } from '../../stores/ui';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from './EmojiPicker';
 import { MentionPopover, optionKey, useMentionables, type MentionOption } from './MentionPopover';
-import { previewText } from './mentionText';
+import { previewPartsOf } from './mentionText';
+import { enterInsertsNewline, trimMessage } from './composerText';
+import { PreviewRuns } from './PreviewRuns';
 import { roomLabel } from './roomLabel';
 import { menuBox, menuItem } from './MessageMenu';
 import { useVoiceRecorder } from './VoiceRecorder';
@@ -192,7 +194,7 @@ export function Composer({
   const voice = useVoiceRecorder({ onSend: sendVoice });
 
   const send = (): void => {
-    const content = wire(text.trim());
+    const content = wire(trimMessage(text));
     if (content.length > MAX_CONTENT) return;
     if (editMsg) {
       if (!content && editMsg.attachments.length === 0) return;
@@ -230,6 +232,8 @@ export function Composer({
       }
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      // Inside an unclosed ``` block Enter is a new line of code (the textarea inserts it).
+      if (enterInsertsNewline(text, e.currentTarget.selectionStart)) return;
       e.preventDefault();
       send();
       return;
@@ -306,7 +310,7 @@ export function Composer({
     <ContextBar
       icon={<CornerUpLeft className="size-4" aria-hidden />}
       title={t('chat.replyTo', { name: memberName(workspaceId, replyMsg.authorId) })}
-      text={snippet(workspaceId, replyMsg.content) || t('chat.attachment')}
+      text={snippet(workspaceId, replyMsg.content, t('chat.attachment'))}
       onClose={() => setReply(room.id, undefined)}
     />
   ) : null;
@@ -442,12 +446,13 @@ export function Composer({
   );
 }
 
-function snippet(workspaceId: string, content: string): string {
-  return previewText(workspaceId, content).slice(0, 160);
+function snippet(workspaceId: string, content: string, empty = ''): ReactNode {
+  const parts = previewPartsOf(workspaceId, content, 160);
+  return parts.length ? <PreviewRuns parts={parts} /> : empty;
 }
 
 /** Reply / edit strip above the field (accent bar, title, snippet, ×). */
-function ContextBar({ icon, title, text, onClose }: { icon: ReactNode; title: string; text: string; onClose: () => void }): ReactNode {
+function ContextBar({ icon, title, text, onClose }: { icon: ReactNode; title: string; text: ReactNode; onClose: () => void }): ReactNode {
   return (
     <div className="mb-2 flex items-center gap-3 pl-2">
       <span className="text-accent-text">{icon}</span>

@@ -119,4 +119,9 @@ export const zhChat: DictShape<typeof enChat> = {
   // lightbox
   'lightbox.close': '关闭',
   'lightbox.download': '下载',
+  // code blocks (docs/08, «Код в сообщениях»)
+  'chat.code.copy': '复制代码',
+  'chat.code.label': '代码',
+  'chat.code.labelLang': '代码，{lang}',
+  'chat.code.showAll': { other: '显示全部 — 共 {n} 行' },
 } as const;

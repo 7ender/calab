@@ -9,7 +9,7 @@ import { useSession } from '../stores/session';
 
 /**
  * UserSettings (synced across the user's devices, USER_UPDATE on change) ↔ local prefs.
- * The server fills defaults for new users (RNNoise on, VAD). push_to_talk_key is
+ * The server fills defaults for new users (RNNoise off since migration 00025, VAD). push_to_talk_key is
  * client-defined: we store the uiohook binding as JSON.
  */
 let applying = false;

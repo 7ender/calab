@@ -170,6 +170,36 @@ export const IDS = {
 export const RECORDING_FIXTURE = { roomId: IDS.rooms.meeting, byUserId: IDS.users.boris, agoMs: 754_000 } as const;
 
 /**
+ * Code blocks (docs/09 #45, docs/08 «Код в сообщениях»): a highlighted js block and a log longer
+ * than 400 lines (collapsed behind «Показать всё»; unknown language — no highlighting). Deterministic.
+ */
+export const CODE_FIXTURE = {
+  js: [
+    'Вот обработчик для поиска:',
+    '```js',
+    '// Debounce the search field',
+    'export function debounce(fn, ms = 200) {',
+    '  let timer = null;',
+    '  return (...args) => {',
+    '    clearTimeout(timer);',
+    '    timer = setTimeout(() => fn(...args), ms);',
+    "    console.debug('debounced', ms);",
+    '  };',
+    '}',
+    '```',
+  ].join('\n'),
+  long: [
+    'Лог сборки:',
+    '```log',
+    ...Array.from(
+      { length: 420 },
+      (_, i) => `12:00:${String(i % 60).padStart(2, '0')} build step ${i + 1}: compile packages/protocol/src/gen/calaba_pb.ts -> out/chunk-${i + 1}.js (ok, ${(i * 37) % 900} ms)`,
+    ),
+    '```',
+  ].join('\n'),
+} as const;
+
+/**
  * GPTunneL pairing in the mock (ADR-0025): this code pairs; MOCK_GPTUNNEL_RATE_CODE answers 429,
  * MOCK_GPTUNNEL_DOWN_CODE 503; any other well-formed code is 422 CODE_INVALID.
  */
@@ -345,7 +375,7 @@ export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride |
 
 export function defaultSettings(): UserSettings {
   return create(UserSettingsSchema, {
-    noiseSuppression: true,
+    noiseSuppression: false, // RNNoise off by default (owner, 27.09)
     unstableNetworkRed: false,
     pushToTalk: false,
     pushToTalkKey: '',

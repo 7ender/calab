@@ -117,4 +117,9 @@ export const ruChat = {
   // lightbox
   'lightbox.close': 'Закрыть',
   'lightbox.download': 'Скачать',
+  // code blocks (docs/08, «Код в сообщениях»)
+  'chat.code.copy': 'Копировать код',
+  'chat.code.label': 'Код',
+  'chat.code.labelLang': 'Код, {lang}',
+  'chat.code.showAll': { one: 'Показать всё — {n} строка', few: 'Показать всё — {n} строки', many: 'Показать всё — {n} строк', other: 'Показать всё — {n} строки' },
 } as const;
