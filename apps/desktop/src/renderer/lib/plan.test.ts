@@ -100,6 +100,11 @@ describe('planErrorNotice (toasts on API errors)', () => {
     const own = new ApiError('ERROR_CODE_FILE_QUOTA_EXCEEDED', 'quota', 413);
     expect(planErrorNotice(own, Plan.TEAM)).toEqual({ text: 'Хранилище файлов пространства заполнено', contact: false });
   });
+
+  it('409 CONFLICT PLAN_LIMIT about bots → the bot limit (ADR-0031)', () => {
+    const bots = new ApiError('ERROR_CODE_CONFLICT', 'the workspace plan allows no more bots', 409, undefined, { reason: 'PLAN_LIMIT', used: 2, limit: 2 });
+    expect(planErrorNotice(bots, Plan.FREE)).toEqual({ text: 'По тарифу пространства — до 2 ботов', contact: true });
+  });
 });
 
 describe('admin CUSTOM form', () => {

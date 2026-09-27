@@ -15,6 +15,7 @@ import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
 import { esStickers } from './stickers';
+import { esBots } from './bots';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
@@ -24,6 +25,7 @@ export const es: Dict = {
   ...esApp,
   ...esVideo,
   ...esStickers,
+  ...esBots,
   ...esDm,
   ...esEcho,
   ...esMedia,

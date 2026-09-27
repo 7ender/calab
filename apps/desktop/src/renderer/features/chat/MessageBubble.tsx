@@ -36,6 +36,8 @@ import { VoiceAttachment } from './VoiceBubble';
 import { isVoice } from '../../lib/voiceNote';
 import { StickerImage } from './stickers/StickerImage';
 import { StickerPackDialog } from './stickers/StickerPackDialog';
+import { BotBadge } from '../people/MemberBits';
+import { highlightCommand } from '../../lib/botCommands';
 
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
@@ -201,6 +203,9 @@ function Bubble({
   const m = c.msg;
   const mention = useCallback((v: string, key: string) => <MentionChip key={key} workspaceId={workspaceId} v={v} own={own} />, [workspaceId, own]);
   const nodes = useMemo(() => parseMarkdown(m.content), [m.content]);
+  // A leading bot command (ADR-0031) reads as inline code; the message stays ordinary text.
+  const shown = useMemo(() => highlightCommand(m.content), [m.content]);
+  const authorBot = useWorkspaces((s) => s.users[m.authorId]?.isBot ?? false);
   // In-room search: 0 = not a hit, 1 = hit, 2 = the current hit (primitive → no extra renders).
   const hit = useChatView((s) => (s.searchHits?.roomId === roomId && s.searchHits.ids.has(m.id) ? (s.searchHits.current === m.id ? 2 : 1) : 0));
   const words = useChatView((s) => s.searchHits?.words);
@@ -279,6 +284,7 @@ function Bubble({
             <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="max-w-full truncate hover:underline">
               {name}
             </AuthorTarget>
+            {authorBot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
           </div>
         ) : null}
         {m.replyToId ? <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop={!showName} /> : null}
@@ -295,7 +301,7 @@ function Bubble({
         {uploads.length ? <Uploads uploads={uploads} /> : null}
         {hasText ? (
           <div className="selectable whitespace-pre-wrap break-words px-3 pb-1.5 pt-1.5 text-list leading-5 [overflow-wrap:anywhere]">
-            <Markdown text={m.content} mention={mention} highlight={highlight} />
+            <Markdown text={shown} mention={mention} highlight={highlight} />
             {!link && !files.length && !m.reactions.length ? (
               // Reserve room for the time on the last line (it is drawn absolutely, Telegram-style).
               <span className="invisible ml-2 inline-flex select-none" aria-hidden>

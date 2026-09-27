@@ -1,17 +1,29 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Archive, ArchiveRestore, Ellipsis, Trash2 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { Archive, ArchiveRestore, Ban, Ellipsis, ShieldCheck, Trash2 } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { setDmArchived } from '../../services/dms';
+import { loadBlockedBots, setBotBlocked } from '../../services/bots';
+import { useBots } from '../../stores/bots';
+import { useWorkspaces } from '../../stores/workspaces';
 import { useDms } from '../../stores/dms';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { confirmDeleteDm } from './dmActions';
 
-/** «⋯» in the DM header (docs/09 #51): «В архив» / «Вернуть из архива» and «Удалить чат». */
+/**
+ * «⋯» in the DM header (docs/09 #51): «В архив» / «Вернуть из архива» and «Удалить чат»; with a
+ * bot also «Заблокировать бота» / «Разблокировать» (ADR-0031: it can no longer write to me).
+ */
 export function DmActionsMenu({ roomId, className }: { roomId: string; className?: string | undefined }): ReactNode {
   const archived = useDms((s) => (s.byRoom[roomId]?.archivedAt ?? 0) > 0);
+  const peerId = useDms((s) => s.byRoom[roomId]?.peerId ?? '');
+  const bot = useWorkspaces((s) => !!peerId && (s.users[peerId]?.isBot ?? false));
+  const blocked = useBots((s) => (s.blocked ? !!s.blocked[peerId] : null));
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (bot) void loadBlockedBots();
+  }, [bot]);
   const label = t('dm.actions');
   return (
     <Dropdown.Root modal={false} open={open} onOpenChange={setOpen}>
@@ -28,6 +40,12 @@ export function DmActionsMenu({ roomId, className }: { roomId: string; className
             {archived ? <ArchiveRestore className="size-4" aria-hidden /> : <Archive className="size-4" aria-hidden />}
             {t(archived ? 'dm.unarchive' : 'dm.archive')}
           </Dropdown.Item>
+          {bot && blocked !== null ? (
+            <Dropdown.Item className={cx(menuItem, !blocked && 'text-danger-text')} onSelect={() => void setBotBlocked(peerId, !blocked)} data-testid="dm-bot-block">
+              {blocked ? <ShieldCheck className="size-4" aria-hidden /> : <Ban className="size-4" aria-hidden />}
+              {t(blocked ? 'bots.unblock' : 'bots.block')}
+            </Dropdown.Item>
+          ) : null}
           <Dropdown.Separator className={menuSeparator} />
           <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void confirmDeleteDm(roomId)}>
             <Trash2 className="size-4" aria-hidden /> {t('dm.delete')}

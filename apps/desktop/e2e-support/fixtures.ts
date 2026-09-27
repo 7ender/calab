@@ -33,6 +33,8 @@ import {
   StickerSchema,
   type Sticker,
   type StickerPack,
+  type BotCommand,
+  type BotWebhook,
   ScreenSharePreset,
   SessionSchema,
   UserSchema,
@@ -183,6 +185,15 @@ export const IDS = {
     annaDesktop: mockId('session', 1),
     annaWeb: mockId('session', 2),
   },
+  /**
+   * Bots of «Команда Calab» (ADR-0031) — not in the fixture until MockServer.seedBots() (so the
+   * other screens keep their member lists): «Погода» @weather_bot (Анна's, commands, webhook
+   * delivering) and «Деплой» @deploy_bot (Бориса, no commands, webhook failing).
+   */
+  bots: {
+    weather: mockId('user', 0x31),
+    deploy: mockId('user', 0x32),
+  },
   /** Custom roles of the main workspace (ADR-0026); nobody holds them in the fixture. */
   roles: {
     design: mockId('role', 1),
@@ -308,6 +319,21 @@ export interface EmailInviteRec {
   accepted?: boolean;
 }
 
+/** A bot (ADR-0031): its account is a UserRec (`user.isBot`); this is what only bots have. */
+export interface BotRec {
+  userId: string;
+  username: string;
+  ownerUserId: string;
+  /** Home workspace (where it was created; tokens and deletion are managed there). */
+  workspaceId: string;
+  description: string;
+  commands: BotCommand[];
+  tokenPrefix: string;
+  createdAt: Timestamp;
+  revokedAt?: Timestamp;
+  webhook?: BotWebhook;
+}
+
 /** The code every mock email «contains» (verification, email change, password reset). */
 export const MOCK_EMAIL_CODE = '123456';
 
@@ -394,6 +420,10 @@ export interface MockState {
   deletedStickers: Map<string, Sticker>;
   /** userId → installed pack ids in the user's order. */
   userStickerPacks: Map<string, string[]>;
+  /** Bots by user id (ADR-0031); empty until MockServer.seedBots(). */
+  bots: Map<string, BotRec>;
+  /** userId → bots they blocked. */
+  blockedBots: Map<string, Set<string>>;
   /** Next sequence number per id kind (runtime-created entities). */
   next: Record<IdKind, number>;
   /** Runtime clock ticks (see RUNTIME_CLOCK_START_MS). */
@@ -428,8 +458,9 @@ export const FREE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
   streamsPerRoom: 1,
   storageMb: 1024n,
   members: 0,
+  bots: 2,
 });
-export const TEAM_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, { roomMembers: 50 });
+export const TEAM_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, { roomMembers: 50, bots: 20 });
 
 export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride | undefined): RoomMediaSettings {
   const d = ws?.mediaDefaults ?? DEFAULT_MEDIA;
@@ -681,6 +712,8 @@ export function buildState(scenario: Scenario): MockState {
     stickerPacks: new Map(),
     deletedStickers: new Map(),
     userStickerPacks: new Map(),
+    bots: new Map(),
+    blockedBots: new Map(),
     next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100 },
     clock: 0,
   };

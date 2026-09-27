@@ -40,24 +40,30 @@ export const nameOf = (m: WorkspaceMember): string => m.nickname || m.user?.disp
 export interface MemberGroups {
   online: WorkspaceMember[];
   offline: WorkspaceMember[];
+  /** Bots (ADR-0031 §7): a section of their own, by name — never «в сети» / «не в сети». */
+  bots: WorkspaceMember[];
 }
 
 /**
  * «В сети» / «Не в сети» (docs/09 #12), each sorted by role (owner → admins → members →
- * guests), then name. Someone in voice counts as online even if their presence lags.
+ * guests), then name. Someone in voice counts as online even if their presence lags. Bots go
+ * to «Боты» (like Discord's apps).
  */
 export function groupMembers(
   members: readonly WorkspaceMember[],
   presences: Readonly<Record<string, Presence | undefined>>,
   voice: Readonly<Record<string, VoiceState | undefined>> = {},
 ): MemberGroups {
-  const list = members.filter((m) => m.user);
-  list.sort((a, b) => roleRank(a.role) - roleRank(b.role) || nameOf(a).localeCompare(nameOf(b), getLocale()));
+  const all = members.filter((m) => m.user);
+  const byName = (a: WorkspaceMember, b: WorkspaceMember): number => nameOf(a).localeCompare(nameOf(b), getLocale());
+  const bots = all.filter((m) => m.user?.isBot).sort(byName);
+  const list = all.filter((m) => !m.user?.isBot);
+  list.sort((a, b) => roleRank(a.role) - roleRank(b.role) || byName(a, b));
   const on = (m: WorkspaceMember): boolean => {
     const id = m.user?.id ?? '';
     return isOnline(presences[id]?.status) || !!voice[id]?.roomId;
   };
-  return { online: list.filter(on), offline: list.filter((m) => !on(m)) };
+  return { online: list.filter(on), offline: list.filter((m) => !on(m)), bots };
 }
 
 // ---------------------------------------------------------------- context menu

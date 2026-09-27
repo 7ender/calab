@@ -20,7 +20,8 @@ import { promoteGuest, toggleMemberRole } from './actions';
 import { MemberPicker } from './MemberPicker';
 import type { PeoplePickItem, RolePickItem } from './memberPickItems';
 import { roleColorCss } from '../../lib/roles';
-import { GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from './MemberBits';
+import { BotBadge, GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from './MemberBits';
+import { BotActions, BotDetails, BotHandle } from './BotProfile';
 import { MemberContextMenu, useMemberActions } from './MemberContextMenu';
 import { NOTE_MAX, createNoteSaver, type NoteSaveState, type NoteSaver } from './noteSaver';
 
@@ -140,12 +141,14 @@ export function ProfileDialog({
                 </DialogP.Title>
                 <RoleMark role={m.role} custom={look} />
                 {isGuest(m) ? <GuestBadge /> : null}
+                {u.isBot ? <BotBadge /> : null}
               </div>
               {m.nickname && m.nickname !== u.displayName ? (
                 <div className="truncate text-body text-muted" title={u.displayName}>
                   {u.displayName}
                 </div>
               ) : null}
+              {u.isBot ? <BotHandle botUserId={userId} /> : null}
               <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
               <LocalTime userId={userId} variant="line" />
 
@@ -162,6 +165,14 @@ export function ProfileDialog({
                 </Button>
                 <MoreButton workspaceId={workspaceId} userId={userId} />
               </div>
+
+              {u.isBot ? (
+                // ADR-0031: what the bot is and does; add it elsewhere or block it.
+                <div className="mt-4 flex flex-col gap-3">
+                  <BotDetails botUserId={userId} />
+                  <BotActions botUserId={userId} />
+                </div>
+              ) : null}
 
               {registered || joined ? (
                 <Section title={t('people.profile.memberSince')}>

@@ -9,7 +9,7 @@ import { useRooms } from '../../stores/rooms';
 import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 import { isGuest, useRoleLook, useWorkspaces } from '../../stores/workspaces';
-import { GuestBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
+import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { MutedByMe } from '../../components/SpeakerIdentity';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
@@ -28,7 +28,8 @@ export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
 /**
  * Members column (docs/09 #12): 240 px next to the chat from MEMBERS_COLUMN_MIN, a floating
  * panel below it (Esc closes it: services/hotkeys.ts). Groups «В сети» / «Не в сети», each ordered owner → admins →
- * members → guests: with a handful of built-in roles, role headers would mostly be groups of
+ * members → guests, then «Боты» (ADR-0031: bots are not people online or offline — their own
+ * section, like Discord's apps). With a handful of built-in roles, role headers would mostly be groups of
  * one, so the role shows as the name colour (+ RoleMark: crown / shield) instead — the Discord look without
  * the noise. Click → profile, right click → member menu.
  */
@@ -39,7 +40,7 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
   const groups = useMemo(() => groupMembers(Object.values(members ?? {}), presences, voice), [members, presences, voice]);
   const [profile, setProfile] = useState<string | null>(null);
 
-  const section = (key: 'on' | 'off', title: string, list: WorkspaceMember[]): ReactNode =>
+  const section = (key: 'on' | 'off' | 'bots', title: string, list: WorkspaceMember[]): ReactNode =>
     list.length > 0 ? (
       <section aria-labelledby={`members-${key}`} className="mt-4 flex flex-col first:mt-0">
         <h3 id={`members-${key}`} className="px-2 pb-1 text-micro font-semibold uppercase tracking-wide text-faint">
@@ -75,7 +76,8 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
     >
       {section('on', t('members.online'), groups.online)}
       {section('off', t('members.offline'), groups.offline)}
-      {groups.online.length + groups.offline.length === 0 ? <p className="px-2 text-body text-muted">{t('people.empty')}</p> : null}
+      {section('bots', t('bots.section'), groups.bots)}
+      {groups.online.length + groups.offline.length + groups.bots.length === 0 ? <p className="px-2 text-body text-muted">{t('people.empty')}</p> : null}
     </aside>
   );
 }
@@ -155,6 +157,7 @@ const MemberRow = memo(function MemberRow({
                 </span>
                 <RoleMark role={m.role} custom={look} tone={offline ? 'muted' : 'role'} />
                 {isGuest(m) ? <GuestBadge /> : null}
+                {u.isBot ? <BotBadge /> : null}
                 <MutedByMe userId={userId} className="size-3.5" />
               </span>
               {second ? <span className="flex min-w-0 items-center gap-1 text-caption leading-4 text-muted">{second}</span> : null}

@@ -104,6 +104,10 @@ const KEY = new Set([
   'chat-sticker',
   'sticker-picker',
   'settings-stickers',
+  'settings-bots',
+  'settings-bot-token',
+  'bot-profile',
+  'chat-bot-commands',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -2341,4 +2345,87 @@ test('settings-stickers', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('sticker-pack-stickers').locator('[data-sticker]')).toHaveCount(3);
   await stillStickers(win, 1);
   await checkpoint(shot, 'settings-stickers');
+});
+
+// ---------------------------------------------------------------- bots (ADR-0031)
+
+/** Workspace settings → «Боты» with the two seeded bots (mock.seedBots()). */
+async function botsTab(win: Page, mock: MockServer): Promise<Locator> {
+  mock.seedBots();
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Боты' }).click();
+  await expect(dialog.getByTestId('bot-row')).toHaveCount(2);
+  return dialog;
+}
+
+// «Боты»: create form, add by @username, the plan line, the list — «Погода» (webhook delivering)
+// and «Деплой» (webhook failing since 12:12, 7 queued), each with «…».
+test('settings-bots', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const dialog = await botsTab(win, mock);
+  await expect(dialog.getByTestId('bot-status').filter({ hasText: 'HTTP 502' })).toBeVisible();
+  await checkpoint(shot, 'settings-bots');
+});
+
+// «Создать бота» → the token once: read-only field with «Копировать» and the warning.
+test('settings-bot-token', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const dialog = await botsTab(win, mock);
+  await dialog.getByTestId('bot-name').fill('Эхо');
+  await dialog.getByTestId('bot-username').fill('echo_bot');
+  await dialog.getByTestId('bot-create').click();
+  const token = win.getByTestId('bot-token-dialog');
+  await expect(token).toBeVisible();
+  await expect(token.getByTestId('bot-token')).toHaveValue(/^calab_bot_/);
+  await checkpoint(shot, 'settings-bot-token');
+  await win.getByTestId('bot-token-done').click();
+  await expect(token).toHaveCount(0);
+  // The settings sheet was aria-hidden under the token dialog; the new bot is in the list.
+  await expect(dialog.getByTestId('bot-row')).toHaveCount(3);
+});
+
+// A bot's card from the members list («Боты — 2» section): «БОТ», @username, description,
+// «Команды», «Добавить в пространство…» (where I manage and it is not yet) and «Заблокировать».
+test('bot-profile', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.seedBots();
+  const members = await membersList(win);
+  await expect(members.getByRole('heading', { name: /Боты — 2/ })).toBeVisible();
+  await members.getByRole('button', { name: /Погода/ }).click();
+  const card = win.getByRole('dialog', { name: 'Погода' });
+  await expect(card.getByTestId('bot-commands').getByRole('listitem')).toHaveCount(4);
+  await expect(card.getByTestId('bot-block')).toBeVisible();
+  await checkpoint(shot, 'bot-profile');
+});
+
+// «/» at the start of the field: the room's bot commands («/cmd — описание · @bot»); a sent
+// «/weather Москва» shows the command as inline code, the bot's answer carries «БОТ».
+test('chat-bot-commands', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.seedBots();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.boris, content: '/weather Москва' });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.bots.weather, content: 'Москва: −3 °C, облачно, ветер 4 м/с. Вечером снег.' });
+  await expect(win.getByText('Москва: −3 °C', { exact: false })).toBeVisible();
+  await feedAtBottom(win);
+  // Under the popover in the shot: the command as inline code, «БОТ» on the answer's author line.
+  const feed = win.locator('[data-virtuoso-scroller]').first();
+  await expect(feed.locator('code', { hasText: '/weather' })).toBeVisible();
+  await expect(feed.locator('[data-bot-badge]')).toHaveCount(1);
+  const field = win.getByRole('textbox', { name: /Сообщение в/ });
+  await field.click();
+  await field.pressSequentially('/');
+  const popover = win.getByTestId('bot-command-popover');
+  await expect(popover.getByRole('option')).toHaveCount(4);
+  await field.press('ArrowDown');
+  await expect(popover.getByRole('option', { selected: true })).toContainText('/help');
+  await checkpoint(shot, 'chat-bot-commands');
+  await field.press('Enter');
+  await expect(field).toHaveValue('/help ');
+  await expect(popover).toHaveCount(0);
 });

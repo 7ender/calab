@@ -1,0 +1,81 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { IDS, startMockServer, type MockServer } from './mock-server';
+
+// Bots in the mock (ADR-0031): pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts
+
+let server: MockServer;
+
+beforeAll(async () => {
+  server = await startMockServer({ scenario: 'data' });
+  server.seedBots();
+});
+afterAll(async () => {
+  await server.close();
+});
+
+async function login(email = 'owner@calaba.test'): Promise<string> {
+  const res = await fetch(`${server.url}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'password123', deviceName: 'vitest' }),
+  });
+  return ((await res.json()) as { tokens: { accessToken: string } }).tokens.accessToken;
+}
+
+const api = (token: string, path: string, init: { method?: string; body?: string } = {}): Promise<Response> =>
+  fetch(`${server.url}${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.body ? { 'Content-Type': 'application/json' } : {}) } });
+
+type BotJson = { user?: { id: string; isBot?: boolean }; username: string; ownerUserId?: string; webhook?: { lastError?: string }; revokedAt?: string };
+
+describe('bots (ADR-0031)', () => {
+  it('lists the seeded bots with their webhook state; only managers', async () => {
+    const anna = await login();
+    const r = (await (await api(anna, `/api/workspaces/${IDS.workspaces.main}/bots`)).json()) as { bots: BotJson[] };
+    expect(r.bots.map((b) => b.username)).toEqual(['weather_bot', 'deploy_bot']);
+    expect(r.bots[1]?.webhook?.lastError).toBe('HTTP 502 Bad Gateway');
+    expect(r.bots[0]?.user?.isBot).toBe(true);
+    const vera = await login('vera@calaba.test');
+    expect((await api(vera, `/api/workspaces/${IDS.workspaces.main}/bots`)).status).toBe(403);
+  });
+
+  it('room commands, the public card without the owner, blocking', async () => {
+    const anna = await login();
+    const cmds = (await (await api(anna, `/api/rooms/${IDS.rooms.general}/bot-commands`)).json()) as { bots: { username: string; commands: { name: string }[] }[] };
+    expect(cmds.bots.map((b) => b.username)).toEqual(['weather_bot']);
+    expect(cmds.bots[0]?.commands.map((c) => c.name)).toContain('weather');
+    const card = (await (await api(anna, '/api/bots/deploy_bot')).json()) as { bot: BotJson };
+    expect(card.bot.user?.id).toBe(IDS.bots.deploy);
+    expect(card.bot.ownerUserId ?? '').toBe('');
+    expect((await api(anna, `/api/me/blocked-bots/${IDS.bots.deploy}`, { method: 'POST' })).status).toBe(204);
+    expect((await (await api(anna, '/api/me/blocked-bots')).json()) as unknown).toEqual({ botUserIds: [IDS.bots.deploy] });
+    expect((await api(anna, `/api/me/blocked-bots/${IDS.users.boris}`, { method: 'POST' })).status).toBe(404);
+  });
+
+  it('creates a bot with a token, reissues, revokes and deletes it', async () => {
+    const anna = await login();
+    const ws = IDS.workspaces.main;
+    const res = await api(anna, `/api/workspaces/${ws}/bots`, { method: 'POST', body: JSON.stringify({ displayName: 'Эхо', username: 'echo_bot' }) });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as { bot: BotJson; token: string };
+    expect(created.token).toMatch(/^calab_bot_/);
+    const id = created.bot.user?.id ?? '';
+    expect((await api(anna, `/api/workspaces/${ws}/bots`, { method: 'POST', body: JSON.stringify({ displayName: 'x', username: 'echo_bot' }) })).status).toBe(409);
+    const re = (await (await api(anna, `/api/workspaces/${ws}/bots/${id}/token`, { method: 'POST' })).json()) as { token: string };
+    expect(re.token).not.toBe(created.token);
+    expect((await api(anna, `/api/workspaces/${ws}/bots/${id}/token`, { method: 'DELETE' })).status).toBe(204);
+    expect((await api(anna, `/api/workspaces/${ws}/bots/${id}`, { method: 'DELETE' })).status).toBe(204);
+    expect((await api(anna, `/api/bots/${id}`)).status).toBe(404);
+  });
+
+  it('adds a bot to another workspace by username; the plan limit answers 409 PLAN_LIMIT', async () => {
+    const vera = await login('vera@calaba.test'); // owner of «Дизайн» (Free: 2 bots)
+    const add = (username: string): Promise<Response> =>
+      api(vera, `/api/workspaces/${IDS.workspaces.design}/bots/add`, { method: 'POST', body: JSON.stringify({ username }) });
+    expect((await add('weather_bot')).status).toBe(201);
+    expect((await add('weather_bot')).status).toBe(409);
+    expect((await add('deploy_bot')).status).toBe(201);
+    const full = await api(vera, `/api/workspaces/${IDS.workspaces.design}/bots`, { method: 'POST', body: JSON.stringify({ displayName: 'Ещё', username: 'more_bot' }) });
+    expect(full.status).toBe(409);
+    expect(((await full.json()) as { reason?: string }).reason).toBe('PLAN_LIMIT');
+  });
+});

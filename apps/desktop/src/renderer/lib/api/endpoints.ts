@@ -112,6 +112,15 @@ import {
   UpdateStickerPackRequestSchema,
   UpdateStickerRequestSchema,
   UploadStickersResponseSchema,
+  AddBotRequestSchema,
+  AddBotResponseSchema,
+  CreateBotRequestSchema,
+  CreateBotResponseSchema,
+  GetBotMeResponseSchema,
+  ListBlockedBotsResponseSchema,
+  ListBotsResponseSchema,
+  ListRoomBotCommandsResponseSchema,
+  ReissueBotTokenResponseSchema,
   type UploadStickersResponse,
   type FileMeta,
   type ScreenSharePreset,
@@ -297,6 +306,34 @@ export const api = {
     uninstall: (packId: string) => call('DELETE', `/api/me/sticker-packs/${packId}`, MyStickerPacksResponseSchema),
     order: (packIds: readonly string[]) =>
       call('PUT', '/api/me/sticker-packs/order', MyStickerPacksResponseSchema, body(SetStickerPackOrderRequestSchema, { packIds: [...packIds] })),
+  },
+  /**
+   * Bots (ADR-0031, docs/05 «Боты»). Managing: MANAGE_WORKSPACE (tokens and deletion — in the
+   * bot's home workspace, also its owner); the token comes back only from create / reissue.
+   */
+  bots: {
+    list: (workspaceId: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${workspaceId}/bots`, ListBotsResponseSchema, undefined, signal),
+    /** 201 {bot, token}; 409 username taken or PLAN_LIMIT (bots); 422 invalid name / username / description. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateBotRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/bots`, CreateBotResponseSchema, body(CreateBotRequestSchema, init)),
+    /** 201 {bot}; 404 no such bot; 409 already a member or PLAN_LIMIT. */
+    add: (workspaceId: string, ref: { botUserId?: string; username?: string }) =>
+      call('POST', `/api/workspaces/${workspaceId}/bots/add`, AddBotResponseSchema, body(AddBotRequestSchema, ref)),
+    /** 204: at home the bot is deleted; elsewhere it only leaves the workspace. */
+    remove: (workspaceId: string, botUserId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/bots/${botUserId}`),
+    /** {bot, token}: the old token stops working at once. */
+    reissue: (workspaceId: string, botUserId: string) =>
+      call('POST', `/api/workspaces/${workspaceId}/bots/${botUserId}/token`, ReissueBotTokenResponseSchema),
+    /** 204: no token until «Перевыпустить». */
+    revoke: (workspaceId: string, botUserId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/bots/${botUserId}/token`),
+    /** The public card by id or username (no owner / home workspace). */
+    get: (ref: string, signal?: AbortSignal) => call('GET', `/api/bots/${encodeURIComponent(ref)}`, GetBotMeResponseSchema, undefined, signal),
+    /** Commands of the bots that can view the room (composer hints). */
+    roomCommands: (roomId: string, signal?: AbortSignal) =>
+      call('GET', `/api/rooms/${roomId}/bot-commands`, ListRoomBotCommandsResponseSchema, undefined, signal),
+    blocked: () => call('GET', '/api/me/blocked-bots', ListBlockedBotsResponseSchema),
+    block: (botUserId: string) => callEmpty('POST', `/api/me/blocked-bots/${botUserId}`),
+    unblock: (botUserId: string) => callEmpty('DELETE', `/api/me/blocked-bots/${botUserId}`),
   },
   messages: {
     list: (roomId: string, p: { before?: string; after?: string; limit?: number }, signal?: AbortSignal) =>

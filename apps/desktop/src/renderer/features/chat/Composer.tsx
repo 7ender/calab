@@ -19,6 +19,10 @@ import type { StickerPlace } from '../../lib/stickers';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from './EmojiPicker';
 import { MentionPopover, optionKey, useMentionables, type MentionOption } from './MentionPopover';
+import { CommandPopover } from './CommandPopover';
+import { applyCommand, commandKey, commandQuery, filterCommands, type CommandOption } from '../../lib/botCommands';
+import { loadRoomCommands } from '../../services/bots';
+import { useBots } from '../../stores/bots';
 import { previewPartsOf } from './mentionText';
 import { enterInsertsNewline, trimMessage } from './composerText';
 import { PreviewRuns } from './PreviewRuns';
@@ -126,6 +130,33 @@ export function Composer({
   }
   const syncCaret = (): void => setCaret(ref.current?.selectionStart ?? 0);
 
+  // ---- bot commands (ADR-0031 §6): `/` at the start hints the room's bots' commands
+  const cmdListId = useId();
+  const slash = !editMsg && text.startsWith('/');
+  const roomCommands = useBots((s) => s.commands[room.id]?.bots);
+  useEffect(() => {
+    if (slash) void loadRoomCommands(room.id);
+  }, [slash, room.id, roomCommands]);
+  const [cmdDismissed, setCmdDismissed] = useState(false);
+  if (!slash && cmdDismissed) setCmdDismissed(false);
+  const cq = slash && !cmdDismissed ? commandQuery(text, caret) : null;
+  const cmdOptions: CommandOption[] = cq && roomCommands ? filterCommands(cq, roomCommands) : [];
+  const cmdPopover = cmdOptions.length > 0;
+  const cmdIdx = Math.min(sel, Math.max(0, cmdOptions.length - 1));
+  const [cmdTrack, setCmdTrack] = useState<string | null>(null);
+  const cmdKeyNow = cq ? `${cq.name}@${cq.bot ?? ''}` : null;
+  if (cmdKeyNow !== cmdTrack) {
+    setCmdTrack(cmdKeyNow);
+    setSel(0);
+  }
+  const pickCommand = (o: CommandOption): void => {
+    if (!cq) return;
+    const next = applyCommand(text, cq, o);
+    setText(next.text);
+    setCaret(next.caret);
+    pendingCaret.current = next.caret;
+  };
+
   const pick = (o: MentionOption): void => {
     if (!mq) return;
     const name = o.kind === 'member' ? o.c.name : o.v;
@@ -231,6 +262,24 @@ export function Composer({
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (cmdPopover && !e.nativeEvent.isComposing) {
+      const o = cmdOptions[cmdIdx];
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSel((cmdIdx + (e.key === 'ArrowDown' ? 1 : cmdOptions.length - 1)) % cmdOptions.length);
+        return;
+      }
+      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+        e.preventDefault();
+        if (o) pickCommand(o);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setCmdDismissed(true);
+        return;
+      }
+    }
     if (popover && !e.nativeEvent.isComposing) {
       const o = options[selIdx];
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -339,7 +388,11 @@ export function Composer({
       {bar}
       {files.length > 0 && !editMsg ? <AttachmentGrid files={files} setFiles={setFiles} /> : null}
       <div className="relative flex items-end gap-2">
-        {popover ? <MentionPopover id={listId} options={options} sel={selIdx} onPick={pick} onHover={setSel} /> : null}
+        {cmdPopover ? (
+          <CommandPopover id={cmdListId} options={cmdOptions} sel={cmdIdx} onPick={pickCommand} onHover={setSel} />
+        ) : popover ? (
+          <MentionPopover id={listId} options={options} sel={selIdx} onPick={pick} onHover={setSel} />
+        ) : null}
         {voice.strip}
         <div
           data-focus-box
@@ -424,11 +477,23 @@ export function Composer({
               if (e.target.value && !editMsg) notifyTyping(room.id);
             }}
             onSelect={syncCaret}
-            onBlur={() => setDismissed(mq?.start ?? null)}
-            onFocus={() => setDismissed(null)}
+            onBlur={() => {
+              setDismissed(mq?.start ?? null);
+              if (slash) setCmdDismissed(true);
+            }}
+            onFocus={() => {
+              setDismissed(null);
+              setCmdDismissed(false);
+            }}
             aria-autocomplete="list"
-            aria-controls={popover ? listId : undefined}
-            aria-activedescendant={popover && options[selIdx] ? `${listId}-${optionKey(options[selIdx])}` : undefined}
+            aria-controls={cmdPopover ? cmdListId : popover ? listId : undefined}
+            aria-activedescendant={
+              cmdPopover && cmdOptions[cmdIdx]
+                ? `${cmdListId}-${commandKey(cmdOptions[cmdIdx])}`
+                : popover && options[selIdx]
+                  ? `${listId}-${optionKey(options[selIdx])}`
+                  : undefined
+            }
             onKeyDown={onKey}
             onPaste={onPaste}
             aria-label={placeholder}

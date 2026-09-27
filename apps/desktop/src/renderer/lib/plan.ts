@@ -141,10 +141,13 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     const key: MessageKey = plan === Plan.FREE || plan === Plan.UNSPECIFIED ? 'plan.toast.roomFree' : 'plan.toast.room';
     return { text: n > 0 ? t(key, { n }) : t('plan.toast.roomAny'), contact: true };
   }
-  // Sticker packs / stickers over the plan (ADR-0030): 409 CONFLICT, reason PLAN_LIMIT.
+  // Sticker packs / stickers (ADR-0030) and bots (ADR-0031) over the plan: 409 CONFLICT, reason
+  // PLAN_LIMIT; the message tells which limit.
   if (e.code === 'ERROR_CODE_CONFLICT' && byPlan) {
     const n = x.limit ?? 0;
-    return { text: t(/pack/i.test(e.message ?? '') ? 'stk.planPacks' : 'stk.planStickers', { n }), contact: true };
+    const msg = e.message ?? '';
+    const key: MessageKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
+    return { text: t(key, { n }), contact: true };
   }
   if (e.code === 'ERROR_CODE_FILE_QUOTA_EXCEEDED') {
     const text =

@@ -9,7 +9,8 @@ import { t, type MessageKey } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { isGuest, useMemberName, useRoleLook, useWorkspaces } from '../../stores/workspaces';
-import { GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
+import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
+import { BotActions, BotDetails, BotHandle } from './BotProfile';
 import { VolumeRow, useMemberActions } from './MemberContextMenu';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -76,16 +77,19 @@ export function ProfileCard({
             </h3>
             <RoleMark role={m.role} custom={look} />
             {isGuest(m) ? <GuestBadge /> : null}
+            {u.isBot ? <BotBadge /> : null}
           </div>
           {m.nickname && m.nickname !== u.displayName ? (
             <div className="truncate text-body text-muted" title={u.displayName}>
               {u.displayName}
             </div>
           ) : null}
-          <div className="text-caption text-muted">{t(presence ?? 'members.offline')}</div>
+          {/* A bot (ADR-0031): its @username instead of presence (bots are never «в сети» as people). */}
+          {u.isBot ? <BotHandle botUserId={userId} /> : <div className="text-caption text-muted">{t(presence ?? 'members.offline')}</div>}
         </div>
       </div>
       {statusLine ? <p className="selectable break-words text-body">{statusLine}</p> : null}
+      {u.isBot ? <BotDetails botUserId={userId} compact /> : null}
       {canDm ? (
         // ADR-0020: the most direct next step from a profile.
         <Button
@@ -104,7 +108,7 @@ export function ProfileCard({
         <dd className="flex min-w-0 items-center gap-1.5">
           {t(ROLE_KEY[m.role])}
         </dd>
-        <LocalTime userId={userId} variant="row" />
+        {u.isBot ? null : <LocalTime userId={userId} variant="row" />}
         {v?.roomId ? (
           <>
             <dt className="text-muted">{t('people.profile.voice')}</dt>
@@ -134,6 +138,7 @@ export function ProfileCard({
           </label>
         </div>
       ) : null}
+      {u.isBot && !self ? <BotActions botUserId={userId} /> : null}
       {actions?.rename ? (
         <Button variant="secondary" className="w-full" onClick={onRename}>
           <Pencil className="size-3.5" aria-hidden />

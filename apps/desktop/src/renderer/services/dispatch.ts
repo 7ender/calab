@@ -21,6 +21,8 @@ import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
 import { applyStickerEvent } from './stickers';
+import { applyBotEvent } from './bots';
+import { useBots } from '../stores/bots';
 import { voice } from './voice';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
@@ -138,6 +140,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (e.value.member) {
         const m = e.value.member;
         useWorkspaces.getState().upsertMember(m);
+        // A bot joined (ADR-0031): the rooms' command hints may have grown.
+        if (m.user?.isBot) useBots.getState().dropCommands();
         // My roles changed (ADR-0026): the entry's built-in role (admin UI) and my call's
         // stream / camera buttons follow.
         if (m.user?.id === myUserId()) {
@@ -158,6 +162,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       voice.refreshRights();
       return;
     case 'workspaceMemberRemove':
+      if (useWorkspaces.getState().users[e.value.userId]?.isBot) useBots.getState().dropCommands();
       useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId);
       return;
     case 'workspaceBanAdd':
@@ -283,6 +288,12 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'stickerPackUpdate':
     case 'stickerPackDelete':
       applyStickerEvent(e);
+      return;
+    // Bots (ADR-0031): the managers' list, bot cards, the composer's command hints.
+    case 'botCreate':
+    case 'botUpdate':
+    case 'botDelete':
+      applyBotEvent(e);
       return;
     case 'userUpdate':
       if (e.value.me) {

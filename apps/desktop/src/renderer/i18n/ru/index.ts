@@ -14,6 +14,7 @@ import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
 import { ruStickers } from './stickers';
+import { ruBots } from './bots';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
@@ -23,6 +24,7 @@ export const ru = {
   ...ruApp,
   ...ruVideo,
   ...ruStickers,
+  ...ruBots,
   ...ruDm,
   ...ruEcho,
   ...ruMedia,

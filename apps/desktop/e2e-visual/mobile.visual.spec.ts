@@ -571,6 +571,23 @@ test('m-dialog', async ({ page }) => {
   await checkpoint(page, 'm-dialog', { snapshot: false });
 });
 
+// ADR-0031: workspace settings → «Боты» as a phone sheet — the create form wraps, the bot rows
+// keep «…» in reach, the webhook error line truncates.
+test('m-settings-bots', async ({ page }) => {
+  await signedIn(page);
+  mock.seedBots();
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await page.getByTestId('mobile-nav').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
+  await page.getByRole('menuitem', { name: 'Настройки пространства' }).tap();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Боты' }).tap();
+  await expect(dialog.getByTestId('bot-row')).toHaveCount(2);
+  await expectNoFieldFocus(page, 'bots');
+  // The list, not the form: the rows are what the phone shot is about.
+  await dialog.getByTestId('bot-row').last().scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-settings-bots');
+});
+
 // Issue #10: «Новая комната» on a phone — the room-type glyph inside «Название» keeps clear of the
 // typed text (the field's phone padding used to override the caller's pl-7).
 test('m-room-new', async ({ page }) => {

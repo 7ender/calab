@@ -52,6 +52,15 @@ describe('groupMembers', () => {
     expect(g.online).toHaveLength(1);
     expect(g.offline).toHaveLength(0);
   });
+
+  it('puts bots in their own section by name, whatever their presence (ADR-0031)', () => {
+    const bot = (id: string, name: string) =>
+      create(WorkspaceMemberSchema, { workspaceId: 'w', role: WorkspaceRole.MEMBER, user: create(UserSchema, { id, displayName: name, isBot: true }) });
+    const g = groupMembers([bot('b2', 'Погода'), m1, bot('b1', 'Деплой')], { b2: p('b2', PresenceStatus.ONLINE), m1: p('m1', PresenceStatus.ONLINE) });
+    expect(g.bots.map((m) => m.user?.id)).toEqual(['b1', 'b2']);
+    expect(g.online.map((m) => m.user?.id)).toEqual(['m1']);
+    expect(g.offline).toHaveLength(0);
+  });
 });
 
 describe('memberActions', () => {

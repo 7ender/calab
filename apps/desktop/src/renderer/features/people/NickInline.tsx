@@ -6,7 +6,7 @@ import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { isGuest, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { peopleError } from './actions';
-import { GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
+import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
 import { NICK_MAX, createNickEditor, type NickEditState } from './nickEditor';
 
 /**
@@ -103,6 +103,7 @@ export function NickInline({ workspaceId, member: m, canEdit }: { workspaceId: s
       </span>
       <RoleMark role={m.role} custom={look} />
       {isGuest(m) ? <GuestBadge /> : null}
+      {m.user?.isBot ? <BotBadge /> : null}
       {canEdit ? (
         <IconButton
           ref={pencil}

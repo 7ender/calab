@@ -92,6 +92,21 @@ import {
   MyStickerPacksResponseSchema,
   SetStickerPackOrderRequestSchema,
   StickerPackResponseSchema,
+  AddBotRequestSchema,
+  AddBotResponseSchema,
+  BotCommandSchema,
+  BotSchema,
+  BotWebhookSchema,
+  CreateBotRequestSchema,
+  CreateBotResponseSchema,
+  GetBotMeResponseSchema,
+  ListBlockedBotsResponseSchema,
+  ListBotsResponseSchema,
+  ListRoomBotCommandsResponseSchema,
+  ReissueBotTokenResponseSchema,
+  RoomBotCommandsSchema,
+  type Bot,
+  type RoomBotCommands,
   StickerPackSchema,
   StickerSchema,
   UpdateStickerPackRequestSchema,
@@ -258,9 +273,11 @@ import {
   effectiveMedia,
   fileMeta,
   nextId,
+  sha256,
   tick,
   tokensFor,
   ts,
+  type BotRec,
   type EmailInviteRec,
   type MemberRec,
   type MockState,
@@ -382,6 +399,11 @@ export interface MockServer {
    * чат» (for them only) — and DM_STATE_UPDATE to their devices.
    */
   setDmState(userId: string, roomId: string, patch: { archived?: boolean; cleared?: boolean }): void;
+  /**
+   * ADR-0031: the two bots of «Команда Calab» join it (IDS.bots — «Погода» with commands and a
+   * delivering webhook, «Деплой» with a failing one) → WORKSPACE_MEMBER_ADD + BOT_CREATE.
+   */
+  seedBots(): void;
   /** Full files (not thumbnails) wait until releaseFiles() or reset(): a slow download (the lightbox's loading state). */
   holdFiles(): void;
   releaseFiles(): void;
@@ -410,6 +432,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setGptunnel: (ws, by) => impl.setGptunnel(ws, by),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
+    seedBots: () => impl.seedBots(),
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
   };
@@ -1298,6 +1321,124 @@ class MockImpl {
     if (!room) return;
     this.setVoice(userId, room.id, { camera: false });
     this.toWorkspace(room.workspaceId, { event: { case: 'voiceCameraStop', value: { workspaceId: room.workspaceId, roomId: room.id, userId, trackSid: '', reason } } }, room.id);
+  }
+
+  // ------------------------------------------------ bots (ADR-0031)
+
+  private botOut(b: BotRec, manage: boolean): Bot {
+    return create(BotSchema, {
+      user: this.state.users.get(b.userId)?.user ?? create(UserSchema, { id: b.userId, isBot: true }),
+      username: b.username,
+      ownerUserId: b.ownerUserId,
+      workspaceId: b.workspaceId,
+      description: b.description,
+      commands: b.commands,
+      createdAt: b.createdAt,
+      ...(b.revokedAt ? { revokedAt: b.revokedAt } : {}),
+      ...(manage ? { tokenPrefix: b.tokenPrefix, webhook: b.webhook ?? create(BotWebhookSchema, {}) } : {}),
+    });
+  }
+
+  /** A bot token, deterministic per bot and issue (the token dialog is photographed). */
+  private botToken(b: BotRec): string {
+    const secret = Buffer.from(sha256(Buffer.from(`${b.userId}:${this.state.clock}`)), 'hex').toString('base64url');
+    b.tokenPrefix = `calab_bot_${b.userId.slice(0, 8)}`;
+    return `calab_bot_${b.userId}_${secret}`;
+  }
+
+  /** 409 PLAN_LIMIT when the workspace has as many bots as its plan allows (0 = no limit). */
+  private checkBotPlan(wsId: string): void {
+    const limit = this.state.workspaces.get(wsId)?.plan?.limits?.bots ?? 0;
+    const used = this.membersOf(wsId).filter((m) => this.state.bots.has(m.userId)).length;
+    if (limit > 0 && used >= limit) {
+      throw new HttpError(409, ErrorCode.CONFLICT, 'the workspace plan allows no more bots', '', { reason: 'PLAN_LIMIT', used: BigInt(used), limit: BigInt(limit) });
+    }
+  }
+
+  /** The bot becomes a member (member role) → WORKSPACE_MEMBER_ADD + BOT_CREATE. */
+  private botJoin(wsId: string, b: BotRec): void {
+    const m: MemberRec = { workspaceId: wsId, userId: b.userId, role: WorkspaceRole.MEMBER, nickname: '', joinedAt: tick(this.state) };
+    this.state.members.push(m);
+    const member = this.memberOut(m);
+    this.toWorkspace(wsId, { event: { case: 'workspaceMemberAdd', value: { member } } });
+    this.toWorkspace(wsId, { event: { case: 'botCreate', value: { workspaceId: wsId, bot: this.botOut(b, b.workspaceId === wsId) } } });
+  }
+
+  private botLeave(wsId: string, botId: string): void {
+    this.toWorkspace(wsId, { event: { case: 'workspaceMemberRemove', value: { workspaceId: wsId, userId: botId } } });
+    this.toWorkspace(wsId, { event: { case: 'botDelete', value: { workspaceId: wsId, botUserId: botId } } });
+    this.state.members = this.state.members.filter((m) => !(m.workspaceId === wsId && m.userId === botId));
+  }
+
+  private botUpdate(b: BotRec): void {
+    for (const wsId of this.workspacesOf(b.userId)) {
+      this.toWorkspace(wsId, { event: { case: 'botUpdate', value: { workspaceId: wsId, bot: this.botOut(b, wsId === b.workspaceId) } } });
+    }
+  }
+
+  private newBot(a: { id: string; name: string; username: string; owner: string; workspaceId: string; description: string; commands?: Array<[string, string]> }): BotRec {
+    const s = this.state;
+    s.users.set(a.id, {
+      user: create(UserSchema, { id: a.id, displayName: a.name, isBot: true, createdAt: tick(s) }),
+      email: '',
+      password: '',
+      settings: defaultSettings(),
+      emailVerified: true,
+      pendingEmail: '',
+      locale: '',
+    });
+    const b: BotRec = {
+      userId: a.id,
+      username: a.username,
+      ownerUserId: a.owner,
+      workspaceId: a.workspaceId,
+      description: a.description,
+      commands: (a.commands ?? []).map(([name, description]) => create(BotCommandSchema, { name, description })),
+      tokenPrefix: '',
+      createdAt: tick(s),
+    };
+    s.bots.set(a.id, b);
+    return b;
+  }
+
+  seedBots(): void {
+    const ws = IDS.workspaces.main;
+    const weather = this.newBot({
+      id: IDS.bots.weather,
+      name: 'Погода',
+      username: 'weather_bot',
+      owner: IDS.users.anna,
+      workspaceId: ws,
+      description: 'Погода и прогноз для любого города. Утренняя сводка — в комнату, где её включили.',
+      commands: [
+        ['weather', 'Погода сейчас: /weather Москва'],
+        ['forecast', 'Прогноз на 5 дней'],
+        ['subscribe', 'Утренняя сводка в эту комнату'],
+        ['help', 'Что я умею'],
+      ],
+    });
+    this.botToken(weather);
+    weather.webhook = create(BotWebhookSchema, { url: 'https://hooks.calab.test/weather', enabled: true, lastOkAt: ts('2026-01-15T11:58:00Z') });
+    const deploy = this.newBot({
+      id: IDS.bots.deploy,
+      name: 'Деплой',
+      username: 'deploy_bot',
+      owner: IDS.users.boris,
+      workspaceId: ws,
+      description: 'Выкатывает ветки на стенд и пишет, что поменялось.',
+    });
+    this.botToken(deploy);
+    deploy.webhook = create(BotWebhookSchema, {
+      url: 'https://ci.calab.test/hooks/calab',
+      enabled: true,
+      failingSince: ts('2026-01-15T09:12:00Z'),
+      lastError: 'HTTP 502 Bad Gateway',
+      pending: 7,
+    });
+    this.botJoin(ws, weather);
+    this.botJoin(ws, deploy);
+    // «Погода» runs (a gateway socket); «Деплой» is a webhook bot that is down.
+    this.setPresence(weather.userId, PresenceStatus.ONLINE);
   }
 
   setMemberRoles(workspaceId: string, userId: string, roleIds: string[]): void {
@@ -2876,6 +3017,124 @@ class MockImpl {
       serveFile(c, false);
     });
     this.route('GET', '/api/files/:id/thumbnail', (c) => serveFile(c, true));
+
+    // ---------------- bots (ADR-0031)
+    const botManager = (c: Ctx): { wsId: string; me: string } => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      const { m } = this.workspaceFor(wsId, me);
+      this.requireAdmin(m);
+      return { wsId, me };
+    };
+    const botIn = (wsId: string, botId: string): BotRec => {
+      const b = s().bots.get(botId);
+      if (!b || !this.member(wsId, botId)) throw notFound('bot not found');
+      return b;
+    };
+    const findBot = (ref: string): BotRec => {
+      const r = ref.trim().toLowerCase();
+      const b = s().bots.get(ref) ?? [...s().bots.values()].find((x) => x.username === r);
+      if (!b) throw notFound('bot not found');
+      return b;
+    };
+    this.route('GET', '/api/workspaces/:id/bots', (c) => {
+      const { wsId } = botManager(c);
+      const bots = this.membersOf(wsId)
+        .map((m) => s().bots.get(m.userId))
+        .filter((b): b is BotRec => !!b)
+        .map((b) => this.botOut(b, b.workspaceId === wsId));
+      sendMsg(c.res, 200, ListBotsResponseSchema, { bots });
+    });
+    this.route('POST', '/api/workspaces/:id/bots', (c) => {
+      const { wsId, me } = botManager(c);
+      this.requireActive(wsId);
+      const b = parseBody(c, CreateBotRequestSchema);
+      const name = b.displayName.trim();
+      if (!name || Array.from(name).length > 64) throw invalid('display_name', 'display name must be 1..64 characters');
+      const username = b.username.trim().toLowerCase();
+      if (!/^[a-z0-9_]{3,32}$/.test(username)) throw invalid('username', 'username must be 3..32 characters of a-z, 0-9 and _');
+      if ([...s().bots.values()].some((x) => x.username === username)) throw conflict('username is taken', 'username');
+      if (Array.from(b.description).length > 512) throw invalid('description', 'description must be at most 512 characters');
+      this.checkBotPlan(wsId);
+      const bot = this.newBot({ id: nextId(s(), 'user'), name, username, owner: me, workspaceId: wsId, description: b.description.trim() });
+      const token = this.botToken(bot);
+      this.botJoin(wsId, bot);
+      sendMsg(c.res, 201, CreateBotResponseSchema, { bot: this.botOut(bot, true), token });
+    });
+    this.route('POST', '/api/workspaces/:id/bots/add', (c) => {
+      const { wsId } = botManager(c);
+      this.requireActive(wsId);
+      const req = parseBody(c, AddBotRequestSchema);
+      const bot = findBot(req.botUserId || req.username);
+      if (this.member(wsId, bot.userId)) throw conflict('the bot is already a member');
+      this.checkBotPlan(wsId);
+      this.botJoin(wsId, bot);
+      sendMsg(c.res, 201, AddBotResponseSchema, { bot: this.botOut(bot, false) });
+    });
+    this.route('DELETE', '/api/workspaces/:id/bots/:botId', (c) => {
+      const { wsId } = botManager(c);
+      const bot = botIn(wsId, c.params[1] ?? '');
+      if (bot.workspaceId !== wsId) {
+        this.botLeave(wsId, bot.userId);
+      } else {
+        for (const w of this.workspacesOf(bot.userId)) this.botLeave(w, bot.userId);
+        s().bots.delete(bot.userId);
+      }
+      noContent(c.res);
+    });
+    this.route('POST', '/api/workspaces/:id/bots/:botId/token', (c) => {
+      const { wsId } = botManager(c);
+      const bot = botIn(wsId, c.params[1] ?? '');
+      if (bot.workspaceId !== wsId) throw forbidden('the bot is managed in the workspace where it was created');
+      tick(s());
+      const token = this.botToken(bot);
+      delete bot.revokedAt;
+      this.botUpdate(bot);
+      sendMsg(c.res, 200, ReissueBotTokenResponseSchema, { bot: this.botOut(bot, true), token });
+    });
+    this.route('DELETE', '/api/workspaces/:id/bots/:botId/token', (c) => {
+      const { wsId } = botManager(c);
+      const bot = botIn(wsId, c.params[1] ?? '');
+      if (bot.workspaceId !== wsId) throw forbidden('the bot is managed in the workspace where it was created');
+      bot.revokedAt = tick(s());
+      this.botUpdate(bot);
+      noContent(c.res);
+    });
+    this.route('GET', '/api/bots/:ref', (c) => {
+      this.uid(c);
+      const bot = this.botOut(findBot(c.params[0] ?? ''), false);
+      bot.ownerUserId = '';
+      bot.workspaceId = '';
+      sendMsg(c.res, 200, GetBotMeResponseSchema, { bot });
+    });
+    this.route('GET', '/api/rooms/:id/bot-commands', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      const ids = room.type === RoomType.DM ? (s().dmMembers.get(room.id) ?? []).filter((u) => u !== me) : this.membersOf(room.workspaceId).map((m) => m.userId);
+      const bots: RoomBotCommands[] = [];
+      for (const id of ids) {
+        const b = s().bots.get(id);
+        if (!b || b.revokedAt || !b.commands.length || !this.canView(room, id)) continue;
+        bots.push(create(RoomBotCommandsSchema, { botUserId: b.userId, username: b.username, commands: b.commands }));
+      }
+      sendMsg(c.res, 200, ListRoomBotCommandsResponseSchema, { bots });
+    });
+    this.route('GET', '/api/me/blocked-bots', (c) => {
+      sendMsg(c.res, 200, ListBlockedBotsResponseSchema, { botUserIds: [...(s().blockedBots.get(this.uid(c)) ?? [])] });
+    });
+    this.route('POST', '/api/me/blocked-bots/:id', (c) => {
+      const me = this.uid(c);
+      const id = c.params[0] ?? '';
+      if (!s().users.get(id)?.user.isBot) throw notFound('bot not found');
+      const set = s().blockedBots.get(me) ?? new Set<string>();
+      set.add(id);
+      s().blockedBots.set(me, set);
+      noContent(c.res);
+    });
+    this.route('DELETE', '/api/me/blocked-bots/:id', (c) => {
+      s().blockedBots.get(this.uid(c))?.delete(c.params[0] ?? '');
+      noContent(c.res);
+    });
 
     // ---------------- sticker packs (ADR-0030)
     this.route('GET', '/api/workspaces/:id/sticker-packs', (c) => {

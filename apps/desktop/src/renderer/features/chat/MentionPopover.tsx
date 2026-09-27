@@ -8,7 +8,7 @@ import { SPECIAL, type MentionCandidate } from '../../lib/mentions';
 import { can, roomPerms } from '../../lib/permissions';
 import { customLook } from '../../lib/roles';
 import { isGuest, rolesOf, useWorkspaces } from '../../stores/workspaces';
-import { RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
+import { BotBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 
 export type MentionOption = { kind: 'member'; c: MentionCandidate; guest: boolean; role?: WorkspaceRole | undefined; custom?: Role | undefined } | { kind: 'special'; v: (typeof SPECIAL)[number] };
 
@@ -101,6 +101,7 @@ export function MentionPopover({
                     {o.c.name}
                   </span>
                   <RoleMark role={o.role} custom={o.custom} tone={active ? 'inherit' : 'role'} />
+                  {users[o.c.id]?.isBot ? <BotBadge tone={active ? 'inherit' : 'neutral'} /> : null}
                   {o.c.alt[0] ? <span className={cx('min-w-0 truncate', active ? 'text-accent-fg' : 'text-muted')}>{o.c.alt[0]}</span> : null}
                   {o.guest ? (
                     <span className={cx('ml-auto shrink-0 text-micro', active ? 'text-accent-fg' : 'text-muted')}>{t('chat.mentionGuest')}</span>

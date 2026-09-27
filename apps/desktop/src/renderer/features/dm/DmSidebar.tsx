@@ -19,6 +19,7 @@ import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { confirmDeleteDm } from './dmActions';
+import { BotBadge } from '../people/MemberBits';
 import { SWIPE_ACTION_PX, useRowSwipe } from './rowSwipe';
 
 /**
@@ -116,6 +117,7 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
   const active = useUi((s) => s.activeWorkspaceId === HOME && s.lastRoom[HOME] === roomId);
   const name = useMemberName(null, peerId);
   const avatar = useWorkspaces((s) => s.users[peerId]?.avatarFileId ?? '');
+  const bot = useWorkspaces((s) => s.users[peerId]?.isBot ?? false);
   const unread = useRooms((s) => isUnread(roomId, s));
   const count = useRooms((s) => s.mentions[roomId] ?? 0);
   const preview = useDms((s) => s.preview[roomId]);
@@ -171,9 +173,14 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
           <Avatar userId={peerId} name={name} fileId={avatar || undefined} size={32} presence />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-baseline gap-2">
-              <span className={cx('min-w-0 flex-1 truncate text-list leading-5', bright ? 'text-fg' : 'text-muted group-hover/row:text-fg', unread && !active && 'font-semibold')} title={name}>
+              <span className={cx('min-w-0 truncate text-list leading-5', !bot && 'flex-1', bright ? 'text-fg' : 'text-muted group-hover/row:text-fg', unread && !active && 'font-semibold')} title={name}>
                 {name}
               </span>
+              {bot ? (
+                <span className="flex min-w-0 flex-1 self-center">
+                  <BotBadge />
+                </span>
+              ) : null}
               <span className="shrink-0 text-micro text-faint">{time}</span>
             </span>
             <span className="flex min-w-0 items-center gap-2">

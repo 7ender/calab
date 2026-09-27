@@ -12,6 +12,26 @@ export function GuestBadge({ className }: { className?: string }): ReactNode {
 }
 
 /**
+ * «БОТ» next to a bot's name (ADR-0031, docs/08 «Боты»): a neutral pill, 10/600 upper case —
+ * smaller and quieter than «Гость», it labels an account type, not a role. `inherit` keeps the
+ * surrounding text colour (a selected row on the accent fill).
+ */
+export function BotBadge({ className, tone = 'neutral' }: { className?: string; tone?: 'neutral' | 'inherit' }): ReactNode {
+  return (
+    <span
+      data-bot-badge
+      className={cx(
+        'inline-flex h-[15px] shrink-0 items-center rounded-full px-1.5 text-[10px] font-semibold uppercase leading-none tracking-[0.04em]',
+        tone === 'inherit' ? 'bg-[rgb(255_255_255/22%)] text-current' : 'bg-hover text-fg',
+        className,
+      )}
+    >
+      {t('bots.badge')}
+    </span>
+  );
+}
+
+/**
  * How a role mark / name is coloured: `role` = the role token (default), `muted` = secondary
  * (offline rows), `inherit` = the surrounding text colour (a selected row on the accent fill).
  */
