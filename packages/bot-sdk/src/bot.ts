@@ -385,6 +385,16 @@ export class Bot extends Emitter<BotEvents> {
     return (await this.rest.call(ListMembersResponseSchema, 'GET', `/api/workspaces/${enc(info.workspaceId)}/members`)).members;
   }
 
+  /** Whether a room is a DM of the bot (known from READY / DM_CREATE / `dm()`). */
+  isDm(roomId: string): boolean {
+    return this.roomsById.get(roomId)?.type === RoomType.DM;
+  }
+
+  /** The workspace of a room seen on the gateway ('' for a DM, undefined when unknown). */
+  workspaceOf(roomId: string): string | undefined {
+    return this.roomsById.get(roomId)?.workspaceId;
+  }
+
   // ---- voice (LiveKit) ----
 
   readonly voice = {

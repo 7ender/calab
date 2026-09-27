@@ -221,13 +221,16 @@ importers:
 
   packages/bot-sdk:
     dependencies:
-      '@calaba/protocol':
-        specifier: workspace:*
-        version: link:../protocol
       ws:
         specifier: ^8.21.3
         version: 8.21.3
     devDependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.15.0
+        version: 2.15.0
+      '@calaba/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.11.0(jiti@2.7.0))

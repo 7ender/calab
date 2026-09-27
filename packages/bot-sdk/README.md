@@ -53,6 +53,7 @@ console.log(`${ready.me?.user?.displayName} is online in ${ready.workspaces.leng
 | `dm(userId)` | open / find a DM with a member of a shared workspace → `DmSummary` (send to `dm.room.id`) |
 | `commands([{ name, description }])` | replaces the bot's commands (composer hints on `/`) |
 | `workspaces()`, `rooms(workspaceId?)`, `room(id)`, `members(roomId)` | what the bot can see (by its roles) |
+| `isDm(roomId)`, `workspaceOf(roomId)` | from the gateway cache (READY, ROOM_*, DM_CREATE) |
 | `voice.join(roomId)` → `{ url, token, identity, canSpeak, … }`, `voice.leave(roomId)` | LiveKit credentials; see `examples/bots/voice-echo` |
 | `voice.participants(roomId)` | voice states of a room, from the gateway |
 | `webhook.get()`, `webhook.set(url, secret)`, `webhook.delete()` | https webhook instead of (or with) the gateway |
