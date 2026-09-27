@@ -418,6 +418,13 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	for _, n := range ns {
 		ready.NotificationSettings = append(ready.NotificationSettings, pbconv.RoomNotificationSettings(n))
 	}
+	wns, err := h.db.Q.ListWorkspaceNotificationSettings(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range wns {
+		ready.WorkspaceNotificationSettings = append(ready.WorkspaceNotificationSettings, pbconv.WorkspaceNotificationSettings(n))
+	}
 	return ready, nil
 }
 

@@ -44,6 +44,20 @@ func (q *Queries) DeleteRoomNotificationSettings(ctx context.Context, arg Delete
 	return err
 }
 
+const deleteWorkspaceNotificationSettings = `-- name: DeleteWorkspaceNotificationSettings :exec
+DELETE FROM workspace_notification_settings WHERE user_id = $1 AND workspace_id = $2
+`
+
+type DeleteWorkspaceNotificationSettingsParams struct {
+	UserID      uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+func (q *Queries) DeleteWorkspaceNotificationSettings(ctx context.Context, arg DeleteWorkspaceNotificationSettingsParams) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceNotificationSettings, arg.UserID, arg.WorkspaceID)
+	return err
+}
+
 const insertEveryoneMention = `-- name: InsertEveryoneMention :exec
 INSERT INTO message_everyone_mentions (message_id, room_id) VALUES ($1, $2)
 ON CONFLICT DO NOTHING
@@ -191,6 +205,38 @@ func (q *Queries) ListRoomNotificationSettings(ctx context.Context, arg ListRoom
 	return items, nil
 }
 
+const listWorkspaceNotificationSettings = `-- name: ListWorkspaceNotificationSettings :many
+SELECT s.user_id, s.workspace_id, s.level, s.muted_until FROM workspace_notification_settings s
+JOIN workspace_members m ON m.workspace_id = s.workspace_id AND m.user_id = s.user_id
+WHERE s.user_id = $1
+`
+
+// Stored settings of the workspaces the user is a member of now.
+func (q *Queries) ListWorkspaceNotificationSettings(ctx context.Context, userID uuid.UUID) ([]WorkspaceNotificationSetting, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceNotificationSettings, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WorkspaceNotificationSetting{}
+	for rows.Next() {
+		var i WorkspaceNotificationSetting
+		if err := rows.Scan(
+			&i.UserID,
+			&i.WorkspaceID,
+			&i.Level,
+			&i.MutedUntil,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertRoomNotificationSettings = `-- name: UpsertRoomNotificationSettings :one
 INSERT INTO room_notification_settings (user_id, room_id, level, muted_until)
 VALUES ($1, $2, $3, $4)
@@ -216,6 +262,37 @@ func (q *Queries) UpsertRoomNotificationSettings(ctx context.Context, arg Upsert
 	err := row.Scan(
 		&i.UserID,
 		&i.RoomID,
+		&i.Level,
+		&i.MutedUntil,
+	)
+	return i, err
+}
+
+const upsertWorkspaceNotificationSettings = `-- name: UpsertWorkspaceNotificationSettings :one
+INSERT INTO workspace_notification_settings (user_id, workspace_id, level, muted_until)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (user_id, workspace_id) DO UPDATE SET level = EXCLUDED.level, muted_until = EXCLUDED.muted_until
+RETURNING user_id, workspace_id, level, muted_until
+`
+
+type UpsertWorkspaceNotificationSettingsParams struct {
+	UserID      uuid.UUID
+	WorkspaceID uuid.UUID
+	Level       string
+	MutedUntil  *time.Time
+}
+
+func (q *Queries) UpsertWorkspaceNotificationSettings(ctx context.Context, arg UpsertWorkspaceNotificationSettingsParams) (WorkspaceNotificationSetting, error) {
+	row := q.db.QueryRow(ctx, upsertWorkspaceNotificationSettings,
+		arg.UserID,
+		arg.WorkspaceID,
+		arg.Level,
+		arg.MutedUntil,
+	)
+	var i WorkspaceNotificationSetting
+	err := row.Scan(
+		&i.UserID,
+		&i.WorkspaceID,
 		&i.Level,
 		&i.MutedUntil,
 	)

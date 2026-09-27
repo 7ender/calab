@@ -207,3 +207,10 @@ type WorkspaceMember struct {
 	Nickname    string
 	JoinedAt    time.Time
 }
+
+type WorkspaceNotificationSetting struct {
+	UserID      uuid.UUID
+	WorkspaceID uuid.UUID
+	Level       string
+	MutedUntil  *time.Time
+}

@@ -79,6 +79,7 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	handle("PATCH /api/workspaces/{id}", h.update)
 	handle("DELETE /api/workspaces/{id}", h.delete)
 	handle("POST /api/workspaces/{id}/join", h.joinOpen)
+	handle("PUT /api/workspaces/{id}/notifications", h.setNotifications)
 	handle("GET /api/workspaces/{id}/invites", h.listInvites)
 	handle("POST /api/workspaces/{id}/invites", h.createInvite)
 	handle("DELETE /api/workspaces/{id}/invites/{inviteId}", h.deleteInvite)

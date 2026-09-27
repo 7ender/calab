@@ -155,6 +155,7 @@ message DispatchEvent {
     RoomNotificationUpdate room_notification_update = 29;
     VoiceCameraStop voice_camera_stop = 30;
     DmCreate dm_create = 31;
+    WorkspaceNotificationUpdate workspace_notification_update = 32;
   }
 }
 
@@ -221,6 +222,9 @@ message Ready {
   // The user's direct messages (ADR-0020), most recent activity first. Their read states
   // are also in read_states, their stored notification settings in notification_settings.
   repeated DmSummary dms = 6;
+  // The user's stored per-workspace notification settings (workspaces not listed use the
+  // default, MENTIONS). Rooms left at INHERIT follow them.
+  repeated WorkspaceNotificationSettings workspace_notification_settings = 7;
 }
 
 // A direct message as seen by one participant (ADR-0020). In READY, GET /api/dms,
@@ -415,7 +419,6 @@ message ReadStateUpdate {
   ReadState read_state = 1;
 }
 
-// The user's notification settings of a room changed (sent to the user's own devices only).
 // A DM was created (POST /api/dms): sent to both participants' user channels, each with
 // their own peer. Events of DM rooms (MESSAGE_*, MESSAGE_REACTION_*, TYPING_START) come on
 // the participants' user channels, with an empty workspace_id.
@@ -423,8 +426,14 @@ message DmCreate {
   DmSummary dm = 1;
 }
 
+// The user's notification settings of a room changed (sent to the user's own devices only).
 message RoomNotificationUpdate {
   RoomNotificationSettings settings = 1;
+}
+
+// The user's notification settings of a workspace changed (sent to the user's own devices only).
+message WorkspaceNotificationUpdate {
+  WorkspaceNotificationSettings settings = 1;
 }
 
 // Profile change. On the user's own devices `me` is set (profile + email + settings);

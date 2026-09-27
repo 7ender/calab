@@ -1,0 +1,93 @@
+package notifications
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"testing"
+	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+)
+
+type vector struct {
+	Name           string `json:"name"`
+	DM             bool   `json:"dm"`
+	Mention        bool   `json:"mention"`
+	Room           string `json:"room"`
+	Workspace      string `json:"workspace"`
+	RoomMuted      bool   `json:"roomMuted"`
+	WorkspaceMuted bool   `json:"workspaceMuted"`
+	Effective      string `json:"effective"`
+	Notifies       bool   `json:"notifies"`
+}
+
+func TestVectors(t *testing.T) {
+	raw, err := os.ReadFile("../../../../proto/testdata/notifications.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vs []vector
+	if err := json.Unmarshal(raw, &vs); err != nil {
+		t.Fatal(err)
+	}
+	if len(vs) < 50 {
+		t.Fatalf("only %d vectors", len(vs))
+	}
+	lvl := func(s string) v1.NotificationLevel {
+		return LevelFromDB(s, v1.NotificationLevel_NOTIFICATION_LEVEL_UNSPECIFIED)
+	}
+	for _, v := range vs {
+		if got := Effective(lvl(v.Room), lvl(v.Workspace), v.DM); got != lvl(v.Effective) {
+			t.Errorf("%s: effective %v, want %s", v.Name, got, v.Effective)
+		}
+		f := Facts{DM: v.DM, Mention: v.Mention, Room: lvl(v.Room), Workspace: lvl(v.Workspace), RoomMuted: v.RoomMuted, WorkspaceMuted: v.WorkspaceMuted}
+		if got := Notifies(f); got != v.Notifies {
+			t.Errorf("%s: notifies %v, want %v", v.Name, got, v.Notifies)
+		}
+	}
+}
+
+func TestDefaults(t *testing.T) {
+	u := v1.NotificationLevel_NOTIFICATION_LEVEL_UNSPECIFIED
+	// No stored rows at all: «Только упоминания».
+	if got := Effective(u, u, false); got != v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS {
+		t.Fatalf("default effective = %v", got)
+	}
+	if Notifies(Facts{}) || !Notifies(Facts{Mention: true}) || !Notifies(Facts{DM: true}) {
+		t.Fatal("defaults: only mentions and DMs notify")
+	}
+	if s, ok := RoomLevelToDB(u); !ok || s != DBInherit {
+		t.Fatalf("room default %q", s)
+	}
+	if s, ok := WorkspaceLevelToDB(u); !ok || s != DBMentions {
+		t.Fatalf("workspace default %q", s)
+	}
+	if _, ok := WorkspaceLevelToDB(v1.NotificationLevel_NOTIFICATION_LEVEL_INHERIT); ok {
+		t.Fatal("workspace INHERIT accepted")
+	}
+	if _, ok := RoomLevelToDB(42); ok {
+		t.Fatal("unknown level accepted")
+	}
+}
+
+func TestParseMute(t *testing.T) {
+	now := time.Now()
+	if m, err := ParseMute(nil, now); m != nil || err != nil {
+		t.Fatal("nil mute")
+	}
+	if m, err := ParseMute(timestamppb.New(now.Add(-time.Minute)), now); m != nil || err != nil {
+		t.Fatal("past mute must be dropped")
+	}
+	if m, err := ParseMute(timestamppb.New(now.Add(time.Hour)), now); m == nil || err != nil {
+		t.Fatal("future mute")
+	}
+	if _, err := ParseMute(timestamppb.New(now.Add(MaxMute+time.Hour)), now); !errors.Is(err, ErrMuteTooFar) {
+		t.Fatal("too far")
+	}
+	if _, err := ParseMute(&timestamppb.Timestamp{Seconds: 1, Nanos: -1}, now); !errors.Is(err, ErrMuteInvalid) {
+		t.Fatal("invalid")
+	}
+}
