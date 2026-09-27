@@ -1,43 +1,20 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Popover from '@radix-ui/react-popover';
-import { PresenceStatus } from '@calaba/protocol';
-import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, Volume2, X } from 'lucide-react';
+import { Check, ChevronDown, Headphones, HeadphoneOff, Mic, MicOff, Settings, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { IconButton, Input, Slider, Tip, cx } from '../../components/ui';
-import { t, type MessageKey } from '../../i18n';
-import { ApiError } from '../../lib/api/client';
-import { api } from '../../lib/api/endpoints';
-import { setPresence } from '../../services/gateway';
+import { IconButton, Slider, Tip, cx } from '../../components/ui';
+import { t } from '../../i18n';
 import { useHotkeyLabel } from '../../services/hotkeys';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
-import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
-import { useWorkspaces } from '../../stores/workspaces';
 import { PttLastKey, bindingLabel, usePttCapture, type PttCapture } from '../settings/PttBinder';
 import { PttReleaseDelay } from '../settings/PttReleaseDelay';
-import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
+import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { selectMicMode, swallowMenuKey } from './micMenu';
-
-const STATUSES: Array<{ s: PresenceStatus; key: MessageKey; dot: string }> = [
-  { s: PresenceStatus.ONLINE, key: 'presence.online', dot: 'bg-ok' },
-  // Dots are non-text: the system yellow in both themes, as in the members column (Avatar.tsx).
-  { s: PresenceStatus.IDLE, key: 'presence.idle', dot: 'bg-[var(--color-presence-idle)]' },
-  { s: PresenceStatus.DND, key: 'presence.dnd', dot: 'bg-danger' },
-  { s: PresenceStatus.INVISIBLE, key: 'presence.invisible', dot: 'bg-faint' },
-];
-
-/** What others see: my manual choice, or the server's aggregate (AFK idle) while «online». */
-function useMyStatus(): PresenceStatus {
-  const chosen = usePrefs((s) => s.presence);
-  const me = useSession((s) => s.me?.user?.id ?? '');
-  const server = useWorkspaces((s) => s.presences[me]?.status);
-  if (chosen !== PresenceStatus.ONLINE) return chosen;
-  return server === PresenceStatus.IDLE ? PresenceStatus.IDLE : PresenceStatus.ONLINE;
-}
+import { STATUS_KEY, StatusMenu, useMyStatus } from './StatusMenu';
 
 /** Self panel (docs/09 #6): avatar + status, name, mic / headphones with device pickers, settings. */
 export function SelfPanel(): ReactNode {
@@ -53,65 +30,42 @@ export function SelfPanel(): ReactNode {
   const status = useMyStatus();
   const user = me?.user;
   if (!user) return null;
-  const cur = STATUSES.find((x) => x.s === status) ?? STATUSES[0];
+  const statusName = t(STATUS_KEY[status] ?? 'presence.online');
   const custom = [user.statusEmoji, user.statusText].filter(Boolean).join(' ');
   // In a call the second line says so, with the speaker icon (Discord «In voice»); otherwise the
-  // custom status, else the presence. (The custom status is in the profile popover and the members column.)
+  // custom status, else the presence. (The custom status is in the status menu and the members column.)
   const voiceLine = inVoice;
-  const second = inVoice ? t('shell.inVoiceStatus') : custom || (cur ? t(cur.key) : '');
+  const second = inVoice ? t('shell.inVoiceStatus') : custom || statusName;
 
   return (
     // Bottom island across the rail + room column (Discord 2x reference): 52 px, 32 px avatar with a
-    // 10 px status dot, 14 px semibold name / 13 px status
+    // 12 px status dot overlapping it, 14 px semibold name / 13 px status
     // that fades out when long; controls ≤ 134 px (mic ▾ 40, headphones ▾ 40, gear 32, 6 px
     // apart, 10 px from the edge), so the name keeps ≥ 110 px.
     <div className="flex h-[52px] shrink-0 items-center gap-1 pl-2 pr-2.5">
-      <Popover.Root>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            aria-label={`${t('shell.profile')}: ${user.displayName}, ${cur ? t(cur.key) : ''}`}
-            className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-1 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
-          >
-            <span className="relative shrink-0">
-              <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} />
-              <span className={cx('absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-[var(--color-bg)]', cur?.dot)} aria-hidden />
+      <StatusMenu>
+        <button
+          type="button"
+          aria-label={`${t('shell.profile')}: ${user.displayName}, ${statusName}`}
+          className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-1 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
+        >
+          {/* A flex box, not an inline span: no line-box descender space pushing the avatar up. */}
+          <span className="flex shrink-0">
+            <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={32} speaking={speaking && !muted} status={status} ring="var(--color-bg)" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="fade-end block overflow-hidden whitespace-nowrap text-[14px] font-semibold leading-[18px] text-fg" title={user.displayName}>
+              {user.displayName}
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="fade-end block overflow-hidden whitespace-nowrap text-[14px] font-semibold leading-[18px] text-fg" title={user.displayName}>
-                {user.displayName}
-              </span>
-              {/* Secondary line: a long status fades out at the right edge (Discord) instead of «…»
-                  in the middle of its meaning; the row is full width, so short text is untouched. */}
-              <span className="fade-end flex min-w-0 items-center gap-1 text-[13px] leading-[18px] text-muted" title={second}>
-                {voiceLine ? <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden /> : null}
-                <span className="min-w-0 overflow-hidden whitespace-nowrap">{second}</span>
-              </span>
+            {/* Secondary line: a long status fades out at the right edge (Discord) instead of «…»
+                in the middle of its meaning; the row is full width, so short text is untouched. */}
+            <span className="fade-end flex min-w-0 items-center gap-1 text-[13px] leading-[18px] text-muted" title={second}>
+              {voiceLine ? <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden /> : null}
+              <span className="min-w-0 overflow-hidden whitespace-nowrap">{second}</span>
             </span>
-          </button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            side="top"
-            align="start"
-            sideOffset={8}
-            collisionPadding={16}
-            aria-label={t('presence.change')}
-            className={cx(popoverBox, 'w-[280px] p-0')}
-            // Focus the status field without selecting its text (Radix selects on auto-focus).
-            onOpenAutoFocus={(e) => {
-              e.preventDefault();
-              const el = document.getElementById('self-status');
-              if (el instanceof HTMLInputElement) {
-                el.focus();
-                el.setSelectionRange(el.value.length, el.value.length);
-              }
-            }}
-          >
-            <ProfilePopover />
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+          </span>
+        </button>
+      </StatusMenu>
 
       {/* The three controls, 6 px apart. */}
       <span className="flex shrink-0 items-center gap-1.5">
@@ -387,131 +341,5 @@ function DeviceMenu({
         <Settings className="size-4" /> {t('shell.voiceSettings')}
       </Dropdown.Item>
     </Dropdown.Content>
-  );
-}
-
-/** Profile popover: presence (online/idle/dnd/invisible) and custom status text. */
-function ProfilePopover(): ReactNode {
-  const me = useSession((s) => s.me);
-  const chosen = usePrefs((s) => s.presence);
-  const setPrefs = usePrefs((s) => s.setPrefs);
-  const open = useUi((s) => s.openDialog);
-  const status = useMyStatus();
-  const user = me?.user;
-  const [text, setText] = useState(user?.statusText ?? '');
-  const [busy, setBusy] = useState(false);
-  if (!user) return null;
-  const cur = STATUSES.find((x) => x.s === status);
-
-  const saveStatus = async (value: string): Promise<void> => {
-    if (value === user.statusText) return;
-    setBusy(true);
-    try {
-      // PATCH /api/me/status (text + emoji + expiry); older servers only know PATCH /api/me {statusText}.
-      const r = await api.me
-        .setStatus({ text: value, emoji: value ? user.statusEmoji : '', expiresInSeconds: 0 })
-        .catch((e: unknown) => {
-          if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return api.me.update({ statusText: value });
-          throw e;
-        });
-      if (r.me) useSession.getState().set({ me: r.me });
-    } catch (e) {
-      toast.fail(e, t('err.ctx.save'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-3 border-b border-line p-3">
-        <span className="relative shrink-0">
-          <Avatar userId={user.id} name={user.displayName} fileId={user.avatarFileId || undefined} size={40} />
-          <span className={cx('absolute -bottom-0.5 -right-0.5 size-4 rounded-full border-[3px] border-[var(--color-popover-solid)]', cur?.dot)} aria-hidden />
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-list font-semibold" title={user.displayName}>
-            {user.displayName}
-          </span>
-          <span className="block truncate text-caption text-muted">{me.email}</span>
-        </span>
-      </div>
-      <form
-        className="border-b border-line p-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void saveStatus(text.trim());
-        }}
-      >
-        <label className="mb-1 block text-caption font-medium text-muted" htmlFor="self-status">
-          {t('shell.statusText')}
-        </label>
-        <div className="flex items-center gap-1">
-          <Input
-            id="self-status"
-            value={text}
-            maxLength={128}
-            placeholder={t('shell.statusPh')}
-            disabled={busy}
-            onChange={(e) => setText(e.target.value)}
-            onBlur={() => void saveStatus(text.trim())}
-          />
-          {user.statusText ? (
-            <IconButton
-              size="sm"
-              label={t('shell.statusClear')}
-              onClick={() => {
-                setText('');
-                void saveStatus('');
-              }}
-            >
-              <X className="size-4" />
-            </IconButton>
-          ) : null}
-        </div>
-      </form>
-      <div className="p-1" role="radiogroup" aria-label={t('presence.change')}>
-        {STATUSES.map((x) => (
-          <button
-            key={x.s}
-            type="button"
-            role="radio"
-            aria-checked={chosen === x.s}
-            onClick={() => {
-              setPrefs({ presence: x.s });
-              setPresence(x.s);
-            }}
-            className="flex h-8 w-full items-center gap-2.5 rounded-[5px] px-2 text-left text-body hover:bg-hover"
-          >
-            <span className={cx('size-2.5 shrink-0 rounded-full', x.dot)} aria-hidden />
-            <span className="flex-1">{t(x.key)}</span>
-            {/* «В сети» chosen, but the server made me idle (AFK): say why the dot is yellow. */}
-            {x.s === PresenceStatus.ONLINE && chosen === x.s && status === PresenceStatus.IDLE ? (
-              <span className="truncate text-caption text-muted">{t('presence.autoIdle')}</span>
-            ) : null}
-            {chosen === x.s ? <Check className="size-4 text-accent" aria-hidden /> : null}
-          </button>
-        ))}
-      </div>
-      <div className="border-t border-line p-1">
-        <Popover.Close asChild>
-          <button type="button" onClick={() => open({ kind: 'settings', tab: 'profile' })} className="flex h-8 w-full items-center rounded-[5px] px-2 text-left text-body hover:bg-hover">
-            {t('shell.editProfile')}
-          </button>
-        </Popover.Close>
-        {/* Product superadmin (SUPERADMIN_EMAILS, ADR-0024): plans of every workspace. */}
-        {me.isSuperadmin ? (
-          <Popover.Close asChild>
-            <button
-              type="button"
-              onClick={() => open({ kind: 'admin' })}
-              className="flex h-8 w-full items-center rounded-[5px] px-2 text-left text-body hover:bg-hover"
-            >
-              {t('admin.title')}
-            </button>
-          </Popover.Close>
-        ) : null}
-      </div>
-    </div>
   );
 }

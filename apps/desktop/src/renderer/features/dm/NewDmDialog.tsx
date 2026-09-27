@@ -114,7 +114,7 @@ export function NewDmDialog({ onClose }: { onClose: () => void }): ReactNode {
                   i === cur ? 'bg-accent-strong text-accent-fg' : 'text-fg',
                 )}
               >
-                <Avatar userId={u.id} name={u.displayName} fileId={u.avatarFileId || undefined} size={32} presence className={i === cur ? '[&>span:last-child]:border-[var(--color-accent-strong)]' : '[&>span:last-child]:border-[var(--color-popover-solid)]'} />
+                <Avatar userId={u.id} name={u.displayName} fileId={u.avatarFileId || undefined} size={32} presence ring={i === cur ? 'var(--color-accent-strong)' : 'var(--color-popover-solid)'} />
                 <span className="min-w-0 flex-1 truncate font-medium" title={u.displayName}>
                   {u.displayName}
                 </span>

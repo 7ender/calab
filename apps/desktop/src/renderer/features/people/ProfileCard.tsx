@@ -68,7 +68,7 @@ export function ProfileCard({
   return (
     <div className="flex w-72 flex-col gap-3 p-4">
       <div className="flex items-center gap-3">
-        <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={56} presence speaking={speaking && !v?.muted} className="[&>span:last-child]:border-[var(--color-popover-solid)]" />
+        <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={56} presence speaking={speaking && !v?.muted} ring="var(--color-popover-solid)" />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <h3 className={`truncate text-headline font-semibold ${roleTextClass(m.role)}`} title={name}>

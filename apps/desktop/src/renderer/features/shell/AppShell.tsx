@@ -5,6 +5,7 @@ import { Button, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { isAdminRole } from '../../lib/permissions';
 import { installAfk } from '../../services/afk';
+import { installPresenceTimer } from '../../services/presenceTimer';
 import { installHotkeys } from '../../services/hotkeys';
 import { installEmail } from '../../services/email';
 import { VerifyBanner } from '../auth/VerifyEmail';
@@ -54,6 +55,7 @@ export function AppShell(): ReactNode {
 
   useEffect(() => installHotkeys(), []);
   useEffect(() => installAfk(), []);
+  useEffect(() => installPresenceTimer(), []);
   useEffect(() => installEmail(), []);
 
   if (!onboarded) return <Onboarding />;
