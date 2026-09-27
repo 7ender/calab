@@ -1,12 +1,17 @@
-import { useEffect, useState, type ImgHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ImgHTMLAttributes, type ReactNode } from 'react';
 import { platform } from '../platform';
 
 /**
  * URL for an API media path. Electron: synchronous `calaba-api://` URL (main adds auth).
- * Web: an authenticated fetch turned into a cached blob: URL.
+ * Web: an authenticated fetch turned into a cached blob: URL; `onError` hears a failed fetch
+ * (Electron: the <img>'s own error event).
  */
-export function useMediaUrl(path: string | null | undefined): string | undefined {
+export function useMediaUrl(path: string | null | undefined, onError?: () => void): string | undefined {
   const [url, setUrl] = useState<string | undefined>(() => (path && platform.directMedia ? `${platform.apiBase}${path}` : undefined));
+  const failed = useRef(onError);
+  useEffect(() => {
+    failed.current = onError;
+  });
   useEffect(() => {
     if (!path) return;
     let alive = true;
@@ -14,7 +19,9 @@ export function useMediaUrl(path: string | null | undefined): string | undefined
       (u) => {
         if (alive) setUrl(u);
       },
-      () => undefined,
+      () => {
+        if (alive) failed.current?.();
+      },
     );
     return () => {
       alive = false;

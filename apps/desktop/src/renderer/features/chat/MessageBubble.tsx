@@ -532,12 +532,12 @@ function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: bool
   const aspect = single?.width && single.height ? `${single.width} / ${single.height}` : undefined;
   return (
     <div className={cx('relative grid gap-0.5', files.length > 1 && 'grid-cols-2', padTop && 'pt-1.5')} style={{ width: '100%' }}>
-      {files.map((f) => (
+      {files.map((f, index) => (
         <button
           key={f.id}
           type="button"
           aria-label={t('chat.openImage', { name: f.name })}
-          onClick={() => open({ kind: 'image', fileId: f.id, name: f.name })}
+          onClick={() => open({ kind: 'image', images: files.map((g) => ({ fileId: g.id, name: g.name, width: g.width, height: g.height })), index })}
           className="block overflow-hidden bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] focus-visible:outline-offset-[-2px]"
           style={single ? { aspectRatio: aspect ?? '4 / 3', maxHeight: IMAGE_MAX_H, width: '100%' } : { aspectRatio: '1 / 1' }}
         >

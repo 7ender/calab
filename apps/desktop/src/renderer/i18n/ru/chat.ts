@@ -117,6 +117,10 @@ export const ruChat = {
   // lightbox
   'lightbox.close': 'Закрыть',
   'lightbox.download': 'Скачать',
+  'lightbox.prev': 'Предыдущее',
+  'lightbox.next': 'Следующее',
+  'lightbox.loading': 'Загрузка изображения',
+  'lightbox.failed': 'Не удалось загрузить изображение',
   // code blocks (docs/08, «Код в сообщениях»)
   'chat.code.copy': 'Копировать код',
   'chat.code.label': 'Код',

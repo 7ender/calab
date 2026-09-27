@@ -67,6 +67,7 @@ const KEY = new Set([
   'members-menu',
   'profile-dialog',
   'profile-menu',
+  'chat-lightbox',
   'workspace-menu',
   'self-mic-menu',
   'self-status-menu',
@@ -1435,6 +1436,47 @@ test('chat-video', async ({ open, win, mock, shot }) => {
   await expect.poll(() => win.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await win.keyboard.press('Escape');
   await expect.poll(() => win.evaluate(() => !!document.fullscreenElement)).toBe(false);
+});
+
+// Issue #7: the lightbox opens at once with the thumbnail and a spinner (the full file held back by
+// the mock), then shows the full image fitted whole into the window; ←/→ none (one image), Esc closes.
+test('chat-lightbox', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', attachments: [IDS.files.portrait] });
+  const thumb = win.getByRole('button', { name: 'Открыть изображение «IMG_2041.png»' });
+  await expect.poll(() => thumb.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+  // A mouse hover still opens the action bar (touch does not: MessageBubble useActionBar).
+  await thumb.hover();
+  await expect(win.locator('[data-message-actions]')).toBeVisible();
+  mock.holdFiles();
+  await thumb.click();
+  const box = win.getByTestId('lightbox');
+  const frame = box.getByTestId('lightbox-frame');
+  await expect(frame).toHaveAttribute('data-state', 'loading');
+  await expect(box.getByRole('status', { name: 'Загрузка изображения' })).toBeVisible();
+  await expect.poll(() => frame.locator('img').first().evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+  // The top bar keeps clear of the macOS traffic lights (80 px, like the title bar).
+  const title = await box.getByRole('heading', { name: 'IMG_2041.png' }).boundingBox();
+  if (process.platform === 'darwin') expect(title?.x ?? 0).toBeGreaterThanOrEqual(80);
+  await checkpoint(shot, 'chat-lightbox');
+  mock.releaseFiles();
+  await expect(frame).toHaveAttribute('data-state', 'loaded');
+  await expect(box.getByRole('status')).toHaveCount(0);
+  // Fitted, not zoomed: whole inside the window, the photo's proportions, as tall as the stage allows.
+  const r = await frame.boundingBox();
+  const vp = await win.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+  expect(r).not.toBeNull();
+  if (r) {
+    expect(r.x).toBeGreaterThanOrEqual(0);
+    expect(r.y).toBeGreaterThanOrEqual(0);
+    expect(r.x + r.width).toBeLessThanOrEqual(vp.w);
+    expect(r.y + r.height).toBeLessThanOrEqual(vp.h);
+    expect(Math.abs(r.width / r.height - 720 / 1280)).toBeLessThan(0.01);
+    expect(r.height).toBeGreaterThan(vp.h - 12 - 48 - 24 - 2);
+  }
+  await win.keyboard.press('Escape');
+  await expect(box).toHaveCount(0);
 });
 
 // Code blocks (docs/09 #45, docs/08 «Код в сообщениях»): Вера's 420-line log collapsed at 400

@@ -346,6 +346,9 @@ export interface MockServer {
   }): Message;
   /** Moves a card on (MESSAGE_UPDATE), like the server's upload worker. */
   updateRecordingCard(messageId: string, patch: { status: RecordingStatus; error?: string; webUrl?: string }): void;
+  /** Full files (not thumbnails) wait until releaseFiles() or reset(): a slow download (the lightbox's loading state). */
+  holdFiles(): void;
+  releaseFiles(): void;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -370,6 +373,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setGptunnel: (ws, by) => impl.setGptunnel(ws, by),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
+    holdFiles: () => impl.holdFiles(),
+    releaseFiles: () => impl.releaseFiles(),
   };
 }
 
@@ -616,6 +621,7 @@ class MockImpl {
   private readonly log: (line: string) => void;
   /** Recording card transitions in flight (cleared on reset / close). */
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
+  private fileGate: { done: Promise<void>; release: () => void } | null = null;
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
@@ -666,6 +672,7 @@ class MockImpl {
   reset(scenario: Scenario): void {
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
+    this.releaseFiles();
     this.state = buildState(scenario);
     this.voiceSessions.clear();
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
@@ -2708,7 +2715,11 @@ class MockImpl {
         'Cache-Control': 'private, max-age=31536000',
       });
     };
-    this.route('GET', '/api/files/:id', (c) => serveFile(c, false));
+    this.route('GET', '/api/files/:id', async (c) => {
+      // holdFiles(): the full file waits (thumbnails do not) — a slow download in visual tests.
+      if (this.fileGate) await this.fileGate.done;
+      serveFile(c, false);
+    });
     this.route('GET', '/api/files/:id/thumbnail', (c) => serveFile(c, true));
 
     // ---------------- voice
@@ -3301,6 +3312,22 @@ class MockImpl {
     });
     this.state.recordings.set(roomId, r);
     this.announceRecording(r);
+  }
+
+  /**
+   * Full files (GET /api/files/:id, not thumbnails) wait until releaseFiles() or reset(): the
+   * lightbox's loading state (thumbnail + spinner) for a screenshot.
+   */
+  holdFiles(): void {
+    if (this.fileGate) return;
+    let release = (): void => undefined;
+    const done = new Promise<void>((r) => (release = r));
+    this.fileGate = { done, release };
+  }
+
+  releaseFiles(): void {
+    this.fileGate?.release();
+    this.fileGate = null;
   }
 
   setGptunnel(workspaceId: string, pairedBy: string | null): void {

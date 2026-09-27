@@ -4,6 +4,7 @@ import { emptyHistory, pushLoc, step, type History, type Loc } from '../lib/room
 import { HOME } from './dms';
 import { RoomType } from '@calaba/protocol';
 import { useRooms } from './rooms';
+import type { LightboxImage } from '../lib/lightbox';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -14,7 +15,8 @@ export type Dialog =
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }
   | { kind: 'camera-preview' }
-  | { kind: 'image'; fileId: string; name: string }
+  /** The image viewer; `images` are the message's images (←/→), `index` the one opened. */
+  | { kind: 'image'; images: LightboxImage[]; index: number }
   /** ⌘K search; `query` pre-fills it (typed into the room header's search field). */
   | { kind: 'quick-switcher'; query?: string }
   /** «Новое сообщение»: pick a person to write to (ADR-0020). */

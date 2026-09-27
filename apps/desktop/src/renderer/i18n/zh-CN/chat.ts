@@ -119,6 +119,10 @@ export const zhChat: DictShape<typeof enChat> = {
   // lightbox
   'lightbox.close': '关闭',
   'lightbox.download': '下载',
+  'lightbox.prev': '上一张',
+  'lightbox.next': '下一张',
+  'lightbox.loading': '正在加载图片',
+  'lightbox.failed': '无法加载图片',
   // code blocks (docs/08, «Код в сообщениях»)
   'chat.code.copy': '复制代码',
   'chat.code.label': '代码',
