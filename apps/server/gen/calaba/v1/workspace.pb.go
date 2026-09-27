@@ -1126,9 +1126,12 @@ func (x *UpdateMemberResponse) GetMember() *WorkspaceMember {
 
 // GET /api/invites/{code} — preview before joining (any authenticated user with the code).
 type GetInviteResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Workspace     *Workspace             `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // unset = never
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Workspace *Workspace             `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // unset = never
+	// Email invitation (ADR-0023): the code works only for this address (register with it /
+	// be signed in with it verified), else 404 INVITE_INVALID. Prefill it on the sign-up form.
+	Email         string `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1173,6 +1176,452 @@ func (x *GetInviteResponse) GetWorkspace() *Workspace {
 func (x *GetInviteResponse) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *GetInviteResponse) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+// POST /api/workspaces/{id}/invites/lookup → InviteLookupResponse. Exact (case-insensitive)
+// match on verified, active accounts; 20 lookups per minute per user; every lookup is logged.
+type InviteLookupRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InviteLookupRequest) Reset() {
+	*x = InviteLookupRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InviteLookupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InviteLookupRequest) ProtoMessage() {}
+
+func (x *InviteLookupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InviteLookupRequest.ProtoReflect.Descriptor instead.
+func (*InviteLookupRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *InviteLookupRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+// Empty object (user unset) = no such account: invite by email instead.
+type InviteLookupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	Member        bool                   `protobuf:"varint,2,opt,name=member,proto3" json:"member,omitempty"` // already a member of this workspace
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InviteLookupResponse) Reset() {
+	*x = InviteLookupResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InviteLookupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InviteLookupResponse) ProtoMessage() {}
+
+func (x *InviteLookupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InviteLookupResponse.ProtoReflect.Descriptor instead.
+func (*InviteLookupResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *InviteLookupResponse) GetUser() *User {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
+func (x *InviteLookupResponse) GetMember() bool {
+	if x != nil {
+		return x.Member
+	}
+	return false
+}
+
+// POST /api/workspaces/{id}/members → 201 AddMemberResponse: adds a verified account found
+// by lookup as `member` right away (WORKSPACE_MEMBER_ADD to the workspace, WORKSPACE_CREATE
+// to the user) and mails them "you were added to …". 409 CONFLICT: already a member;
+// 404: no such (verified, non-guest) user.
+type AddMemberRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddMemberRequest) Reset() {
+	*x = AddMemberRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddMemberRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddMemberRequest) ProtoMessage() {}
+
+func (x *AddMemberRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddMemberRequest.ProtoReflect.Descriptor instead.
+func (*AddMemberRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *AddMemberRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type AddMemberResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Member        *WorkspaceMember       `protobuf:"bytes,1,opt,name=member,proto3" json:"member,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddMemberResponse) Reset() {
+	*x = AddMemberResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddMemberResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddMemberResponse) ProtoMessage() {}
+
+func (x *AddMemberResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddMemberResponse.ProtoReflect.Descriptor instead.
+func (*AddMemberResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *AddMemberResponse) GetMember() *WorkspaceMember {
+	if x != nil {
+		return x.Member
+	}
+	return nil
+}
+
+// A pending invitation sent to an address (settings → invitations).
+type EmailInvite struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Email         string                 `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
+	Role          WorkspaceRole          `protobuf:"varint,4,opt,name=role,proto3,enum=calaba.v1.WorkspaceRole" json:"role,omitempty"` // MEMBER or ADMIN
+	InvitedBy     string                 `protobuf:"bytes,5,opt,name=invited_by,json=invitedBy,proto3" json:"invited_by,omitempty"`    // user id
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // 7 days after the last send
+	LastSentAt    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_sent_at,json=lastSentAt,proto3" json:"last_sent_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EmailInvite) Reset() {
+	*x = EmailInvite{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EmailInvite) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EmailInvite) ProtoMessage() {}
+
+func (x *EmailInvite) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EmailInvite.ProtoReflect.Descriptor instead.
+func (*EmailInvite) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *EmailInvite) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *EmailInvite) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *EmailInvite) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *EmailInvite) GetRole() WorkspaceRole {
+	if x != nil {
+		return x.Role
+	}
+	return WorkspaceRole_WORKSPACE_ROLE_UNSPECIFIED
+}
+
+func (x *EmailInvite) GetInvitedBy() string {
+	if x != nil {
+		return x.InvitedBy
+	}
+	return ""
+}
+
+func (x *EmailInvite) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *EmailInvite) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *EmailInvite) GetLastSentAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSentAt
+	}
+	return nil
+}
+
+// POST /api/workspaces/{id}/invites/email → 201 CreateEmailInviteResponse. Mails a link
+// PUBLIC_APP_URL/join/<code> (single use, 7 days, bound to the address). Registering with
+// the address (link or not) and verifying it joins the workspace automatically. Sending
+// again to the same address renews the link, at most once per 24 h (429 with Retry-After).
+// role: MEMBER (default) or ADMIN (owner only). 409 CONFLICT: already a member.
+type CreateEmailInviteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Role          *WorkspaceRole         `protobuf:"varint,2,opt,name=role,proto3,enum=calaba.v1.WorkspaceRole,oneof" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateEmailInviteRequest) Reset() {
+	*x = CreateEmailInviteRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateEmailInviteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateEmailInviteRequest) ProtoMessage() {}
+
+func (x *CreateEmailInviteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateEmailInviteRequest.ProtoReflect.Descriptor instead.
+func (*CreateEmailInviteRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *CreateEmailInviteRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *CreateEmailInviteRequest) GetRole() WorkspaceRole {
+	if x != nil && x.Role != nil {
+		return *x.Role
+	}
+	return WorkspaceRole_WORKSPACE_ROLE_UNSPECIFIED
+}
+
+type CreateEmailInviteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Invite        *EmailInvite           `protobuf:"bytes,1,opt,name=invite,proto3" json:"invite,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateEmailInviteResponse) Reset() {
+	*x = CreateEmailInviteResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateEmailInviteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateEmailInviteResponse) ProtoMessage() {}
+
+func (x *CreateEmailInviteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateEmailInviteResponse.ProtoReflect.Descriptor instead.
+func (*CreateEmailInviteResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *CreateEmailInviteResponse) GetInvite() *EmailInvite {
+	if x != nil {
+		return x.Invite
+	}
+	return nil
+}
+
+// GET /api/workspaces/{id}/invites/email → pending (not accepted) invitations, newest first.
+// DELETE /api/workspaces/{id}/invites/email/{inviteId} → 204: revokes the link.
+type ListEmailInvitesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Invites       []*EmailInvite         `protobuf:"bytes,1,rep,name=invites,proto3" json:"invites,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEmailInvitesResponse) Reset() {
+	*x = ListEmailInvitesResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEmailInvitesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEmailInvitesResponse) ProtoMessage() {}
+
+func (x *ListEmailInvitesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEmailInvitesResponse.ProtoReflect.Descriptor instead.
+func (*ListEmailInvitesResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ListEmailInvitesResponse) GetInvites() []*EmailInvite {
+	if x != nil {
+		return x.Invites
 	}
 	return nil
 }
@@ -1279,11 +1728,42 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x05_roleB\v\n" +
 	"\t_nickname\"J\n" +
 	"\x14UpdateMemberResponse\x122\n" +
-	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\"\x82\x01\n" +
+	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\"\x98\x01\n" +
 	"\x11GetInviteResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x129\n" +
 	"\n" +
-	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt*|\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x14\n" +
+	"\x05email\x18\x03 \x01(\tR\x05email\"+\n" +
+	"\x13InviteLookupRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\"S\n" +
+	"\x14InviteLookupResponse\x12#\n" +
+	"\x04user\x18\x01 \x01(\v2\x0f.calaba.v1.UserR\x04user\x12\x16\n" +
+	"\x06member\x18\x02 \x01(\bR\x06member\"+\n" +
+	"\x10AddMemberRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"G\n" +
+	"\x11AddMemberResponse\x122\n" +
+	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\"\xd7\x02\n" +
+	"\vEmailInvite\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x14\n" +
+	"\x05email\x18\x03 \x01(\tR\x05email\x12,\n" +
+	"\x04role\x18\x04 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\x04role\x12\x1d\n" +
+	"\n" +
+	"invited_by\x18\x05 \x01(\tR\tinvitedBy\x129\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12<\n" +
+	"\flast_sent_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"lastSentAt\"l\n" +
+	"\x18CreateEmailInviteRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x121\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleH\x00R\x04role\x88\x01\x01B\a\n" +
+	"\x05_role\"K\n" +
+	"\x19CreateEmailInviteResponse\x12.\n" +
+	"\x06invite\x18\x01 \x01(\v2\x16.calaba.v1.EmailInviteR\x06invite\"L\n" +
+	"\x18ListEmailInvitesResponse\x120\n" +
+	"\ainvites\x18\x01 \x03(\v2\x16.calaba.v1.EmailInviteR\ainvites*|\n" +
 	"\x13WorkspaceVisibility\x12$\n" +
 	" WORKSPACE_VISIBILITY_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cWORKSPACE_VISIBILITY_PRIVATE\x10\x01\x12\x1d\n" +
@@ -1304,7 +1784,7 @@ func file_calaba_v1_workspace_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_workspace_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_calaba_v1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_calaba_v1_workspace_proto_goTypes = []any{
 	(WorkspaceVisibility)(0),           // 0: calaba.v1.WorkspaceVisibility
 	(*Workspace)(nil),                  // 1: calaba.v1.Workspace
@@ -1325,46 +1805,63 @@ var file_calaba_v1_workspace_proto_goTypes = []any{
 	(*UpdateMemberRequest)(nil),        // 16: calaba.v1.UpdateMemberRequest
 	(*UpdateMemberResponse)(nil),       // 17: calaba.v1.UpdateMemberResponse
 	(*GetInviteResponse)(nil),          // 18: calaba.v1.GetInviteResponse
-	(*timestamppb.Timestamp)(nil),      // 19: google.protobuf.Timestamp
-	(*RoomMediaSettings)(nil),          // 20: calaba.v1.RoomMediaSettings
-	(*WorkspacePlan)(nil),              // 21: calaba.v1.WorkspacePlan
-	(*User)(nil),                       // 22: calaba.v1.User
-	(WorkspaceRole)(0),                 // 23: calaba.v1.WorkspaceRole
-	(ScreenSharePreset)(0),             // 24: calaba.v1.ScreenSharePreset
+	(*InviteLookupRequest)(nil),        // 19: calaba.v1.InviteLookupRequest
+	(*InviteLookupResponse)(nil),       // 20: calaba.v1.InviteLookupResponse
+	(*AddMemberRequest)(nil),           // 21: calaba.v1.AddMemberRequest
+	(*AddMemberResponse)(nil),          // 22: calaba.v1.AddMemberResponse
+	(*EmailInvite)(nil),                // 23: calaba.v1.EmailInvite
+	(*CreateEmailInviteRequest)(nil),   // 24: calaba.v1.CreateEmailInviteRequest
+	(*CreateEmailInviteResponse)(nil),  // 25: calaba.v1.CreateEmailInviteResponse
+	(*ListEmailInvitesResponse)(nil),   // 26: calaba.v1.ListEmailInvitesResponse
+	(*timestamppb.Timestamp)(nil),      // 27: google.protobuf.Timestamp
+	(*RoomMediaSettings)(nil),          // 28: calaba.v1.RoomMediaSettings
+	(*WorkspacePlan)(nil),              // 29: calaba.v1.WorkspacePlan
+	(*User)(nil),                       // 30: calaba.v1.User
+	(WorkspaceRole)(0),                 // 31: calaba.v1.WorkspaceRole
+	(ScreenSharePreset)(0),             // 32: calaba.v1.ScreenSharePreset
 }
 var file_calaba_v1_workspace_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.Workspace.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	19, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
-	20, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
-	21, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
-	22, // 4: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
-	23, // 5: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
-	19, // 6: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
-	19, // 7: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
-	19, // 8: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
+	27, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
+	28, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
+	29, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
+	30, // 4: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
+	31, // 5: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
+	27, // 6: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
+	27, // 7: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
+	27, // 8: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 9: calaba.v1.CreateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
 	1,  // 10: calaba.v1.CreateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	1,  // 11: calaba.v1.ListWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
 	1,  // 12: calaba.v1.DiscoverWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
 	1,  // 13: calaba.v1.GetWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
-	23, // 14: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
+	31, // 14: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
 	0,  // 15: calaba.v1.UpdateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	24, // 16: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
+	32, // 16: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
 	1,  // 17: calaba.v1.UpdateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	1,  // 18: calaba.v1.JoinWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	2,  // 19: calaba.v1.JoinWorkspaceResponse.member:type_name -> calaba.v1.WorkspaceMember
 	3,  // 20: calaba.v1.CreateInviteResponse.invite:type_name -> calaba.v1.Invite
 	3,  // 21: calaba.v1.ListInvitesResponse.invites:type_name -> calaba.v1.Invite
 	2,  // 22: calaba.v1.ListMembersResponse.members:type_name -> calaba.v1.WorkspaceMember
-	23, // 23: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
+	31, // 23: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
 	2,  // 24: calaba.v1.UpdateMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
 	1,  // 25: calaba.v1.GetInviteResponse.workspace:type_name -> calaba.v1.Workspace
-	19, // 26: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	27, // 26: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	30, // 27: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
+	2,  // 28: calaba.v1.AddMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
+	31, // 29: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
+	27, // 30: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
+	27, // 31: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
+	27, // 32: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
+	31, // 33: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
+	23, // 34: calaba.v1.CreateEmailInviteResponse.invite:type_name -> calaba.v1.EmailInvite
+	23, // 35: calaba.v1.ListEmailInvitesResponse.invites:type_name -> calaba.v1.EmailInvite
+	36, // [36:36] is the sub-list for method output_type
+	36, // [36:36] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_workspace_proto_init() }
@@ -1378,13 +1875,14 @@ func file_calaba_v1_workspace_proto_init() {
 	file_calaba_v1_user_proto_init()
 	file_calaba_v1_workspace_proto_msgTypes[8].OneofWrappers = []any{}
 	file_calaba_v1_workspace_proto_msgTypes[15].OneofWrappers = []any{}
+	file_calaba_v1_workspace_proto_msgTypes[23].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_workspace_proto_rawDesc), len(file_calaba_v1_workspace_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   18,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

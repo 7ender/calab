@@ -46,6 +46,17 @@ message Me {
   UserSettings settings = 3;
   // Product superadmin (email in SUPERADMIN_EMAILS, ADR-0024): may use /api/admin/*.
   bool is_superadmin = 4;
+  // ADR-0023: false until the address is confirmed with a code (POST /api/auth/verify).
+  // Unverified accounts may sign in and read, but get 403 EMAIL_NOT_VERIFIED on creating
+  // workspaces, invites and new DMs. Accounts from before ADR-0023 start unverified too
+  // (no grandfathering): show a non-dismissable "confirm your email" bar with a code field.
+  // Always true for guests (no email). Servers without SMTP verify at registration.
+  bool email_verified = 5;
+  // Requested new address (PATCH /api/me/email) waiting for its code; empty = none.
+  // `email` stays the login address until the code is confirmed.
+  string pending_email = 6;
+  // Language of emails: "en" | "ru" | "es" | "zh-CN"; empty = not set (English).
+  string locale = 7;
 }
 
 // GET /api/me
@@ -60,6 +71,9 @@ message UpdateMeRequest {
   optional string avatar_file_id = 3; // "" clears the avatar
   optional UserSettings settings = 4;
   optional string timezone = 5; // IANA name (validated by the server); "" clears
+  // Language of emails (ADR-0023): a BCP 47 tag mapped to "en" | "ru" | "es" | "zh-CN";
+  // "" clears (English). Unsupported languages → 422.
+  optional string locale = 6;
 }
 
 message UpdateMeResponse {
@@ -74,8 +88,11 @@ message ChangePasswordRequest {
   string new_password = 2; // 8..256 characters
 }
 
-// PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices). No
-// confirmation mail (the server sends no email). 409 CONFLICT: address taken; 403 as above.
+// PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices).
+// ADR-0023: the address does not change yet — a 6-digit code goes to the new address and
+// me.pending_email is set; POST /api/auth/verify {code} makes it the login email (verified).
+// Servers without SMTP change it at once. 409 CONFLICT: address taken; 403 as above;
+// 429: another code was sent to that address less than 60 s ago / 3 mails per hour.
 message ChangeEmailRequest {
   string new_email = 1;
   string current_password = 2;

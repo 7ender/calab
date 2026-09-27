@@ -281,7 +281,18 @@ type Me struct {
 	Email    string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	Settings *UserSettings          `protobuf:"bytes,3,opt,name=settings,proto3" json:"settings,omitempty"`
 	// Product superadmin (email in SUPERADMIN_EMAILS, ADR-0024): may use /api/admin/*.
-	IsSuperadmin  bool `protobuf:"varint,4,opt,name=is_superadmin,json=isSuperadmin,proto3" json:"is_superadmin,omitempty"`
+	IsSuperadmin bool `protobuf:"varint,4,opt,name=is_superadmin,json=isSuperadmin,proto3" json:"is_superadmin,omitempty"`
+	// ADR-0023: false until the address is confirmed with a code (POST /api/auth/verify).
+	// Unverified accounts may sign in and read, but get 403 EMAIL_NOT_VERIFIED on creating
+	// workspaces, invites and new DMs. Accounts from before ADR-0023 start unverified too
+	// (no grandfathering): show a non-dismissable "confirm your email" bar with a code field.
+	// Always true for guests (no email). Servers without SMTP verify at registration.
+	EmailVerified bool `protobuf:"varint,5,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
+	// Requested new address (PATCH /api/me/email) waiting for its code; empty = none.
+	// `email` stays the login address until the code is confirmed.
+	PendingEmail string `protobuf:"bytes,6,opt,name=pending_email,json=pendingEmail,proto3" json:"pending_email,omitempty"`
+	// Language of emails: "en" | "ru" | "es" | "zh-CN"; empty = not set (English).
+	Locale        string `protobuf:"bytes,7,opt,name=locale,proto3" json:"locale,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -344,6 +355,27 @@ func (x *Me) GetIsSuperadmin() bool {
 	return false
 }
 
+func (x *Me) GetEmailVerified() bool {
+	if x != nil {
+		return x.EmailVerified
+	}
+	return false
+}
+
+func (x *Me) GetPendingEmail() string {
+	if x != nil {
+		return x.PendingEmail
+	}
+	return ""
+}
+
+func (x *Me) GetLocale() string {
+	if x != nil {
+		return x.Locale
+	}
+	return ""
+}
+
 // GET /api/me
 type GetMeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -391,12 +423,15 @@ func (x *GetMeResponse) GetMe() *Me {
 
 // PATCH /api/me. Unset fields are left unchanged; `settings`, when present, replaces all settings.
 type UpdateMeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName,proto3,oneof" json:"display_name,omitempty"`
-	StatusText    *string                `protobuf:"bytes,2,opt,name=status_text,json=statusText,proto3,oneof" json:"status_text,omitempty"`
-	AvatarFileId  *string                `protobuf:"bytes,3,opt,name=avatar_file_id,json=avatarFileId,proto3,oneof" json:"avatar_file_id,omitempty"` // "" clears the avatar
-	Settings      *UserSettings          `protobuf:"bytes,4,opt,name=settings,proto3,oneof" json:"settings,omitempty"`
-	Timezone      *string                `protobuf:"bytes,5,opt,name=timezone,proto3,oneof" json:"timezone,omitempty"` // IANA name (validated by the server); "" clears
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	DisplayName  *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName,proto3,oneof" json:"display_name,omitempty"`
+	StatusText   *string                `protobuf:"bytes,2,opt,name=status_text,json=statusText,proto3,oneof" json:"status_text,omitempty"`
+	AvatarFileId *string                `protobuf:"bytes,3,opt,name=avatar_file_id,json=avatarFileId,proto3,oneof" json:"avatar_file_id,omitempty"` // "" clears the avatar
+	Settings     *UserSettings          `protobuf:"bytes,4,opt,name=settings,proto3,oneof" json:"settings,omitempty"`
+	Timezone     *string                `protobuf:"bytes,5,opt,name=timezone,proto3,oneof" json:"timezone,omitempty"` // IANA name (validated by the server); "" clears
+	// Language of emails (ADR-0023): a BCP 47 tag mapped to "en" | "ru" | "es" | "zh-CN";
+	// "" clears (English). Unsupported languages → 422.
+	Locale        *string `protobuf:"bytes,6,opt,name=locale,proto3,oneof" json:"locale,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -462,6 +497,13 @@ func (x *UpdateMeRequest) GetSettings() *UserSettings {
 func (x *UpdateMeRequest) GetTimezone() string {
 	if x != nil && x.Timezone != nil {
 		return *x.Timezone
+	}
+	return ""
+}
+
+func (x *UpdateMeRequest) GetLocale() string {
+	if x != nil && x.Locale != nil {
+		return *x.Locale
 	}
 	return ""
 }
@@ -565,8 +607,11 @@ func (x *ChangePasswordRequest) GetNewPassword() string {
 	return ""
 }
 
-// PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices). No
-// confirmation mail (the server sends no email). 409 CONFLICT: address taken; 403 as above.
+// PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices).
+// ADR-0023: the address does not change yet — a 6-digit code goes to the new address and
+// me.pending_email is set; POST /api/auth/verify {code} makes it the login email (verified).
+// Servers without SMTP change it at once. 409 CONFLICT: address taken; 403 as above;
+// 429: another code was sent to that address less than 60 s ago / 3 mails per hour.
 type ChangeEmailRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	NewEmail        string                 `protobuf:"bytes,1,opt,name=new_email,json=newEmail,proto3" json:"new_email,omitempty"`
@@ -861,26 +906,31 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x10push_to_talk_key\x18\x04 \x01(\tR\rpushToTalkKey\x12-\n" +
 	"\bmic_mode\x18\x05 \x01(\x0e2\x12.calaba.v1.MicModeR\amicMode\x121\n" +
 	"\x12audio_bitrate_kbps\x18\x06 \x01(\rH\x00R\x10audioBitrateKbps\x88\x01\x01B\x15\n" +
-	"\x13_audio_bitrate_kbps\"\x99\x01\n" +
+	"\x13_audio_bitrate_kbps\"\xfd\x01\n" +
 	"\x02Me\x12#\n" +
 	"\x04user\x18\x01 \x01(\v2\x0f.calaba.v1.UserR\x04user\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x123\n" +
 	"\bsettings\x18\x03 \x01(\v2\x17.calaba.v1.UserSettingsR\bsettings\x12#\n" +
-	"\ris_superadmin\x18\x04 \x01(\bR\fisSuperadmin\".\n" +
+	"\ris_superadmin\x18\x04 \x01(\bR\fisSuperadmin\x12%\n" +
+	"\x0eemail_verified\x18\x05 \x01(\bR\remailVerified\x12#\n" +
+	"\rpending_email\x18\x06 \x01(\tR\fpendingEmail\x12\x16\n" +
+	"\x06locale\x18\a \x01(\tR\x06locale\".\n" +
 	"\rGetMeResponse\x12\x1d\n" +
-	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"\xb3\x02\n" +
+	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"\xdb\x02\n" +
 	"\x0fUpdateMeRequest\x12&\n" +
 	"\fdisplay_name\x18\x01 \x01(\tH\x00R\vdisplayName\x88\x01\x01\x12$\n" +
 	"\vstatus_text\x18\x02 \x01(\tH\x01R\n" +
 	"statusText\x88\x01\x01\x12)\n" +
 	"\x0eavatar_file_id\x18\x03 \x01(\tH\x02R\favatarFileId\x88\x01\x01\x128\n" +
 	"\bsettings\x18\x04 \x01(\v2\x17.calaba.v1.UserSettingsH\x03R\bsettings\x88\x01\x01\x12\x1f\n" +
-	"\btimezone\x18\x05 \x01(\tH\x04R\btimezone\x88\x01\x01B\x0f\n" +
+	"\btimezone\x18\x05 \x01(\tH\x04R\btimezone\x88\x01\x01\x12\x1b\n" +
+	"\x06locale\x18\x06 \x01(\tH\x05R\x06locale\x88\x01\x01B\x0f\n" +
 	"\r_display_nameB\x0e\n" +
 	"\f_status_textB\x11\n" +
 	"\x0f_avatar_file_idB\v\n" +
 	"\t_settingsB\v\n" +
-	"\t_timezone\"1\n" +
+	"\t_timezoneB\t\n" +
+	"\a_locale\"1\n" +
 	"\x10UpdateMeResponse\x12\x1d\n" +
 	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"e\n" +
 	"\x15ChangePasswordRequest\x12)\n" +

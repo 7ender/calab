@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/auth.proto.
  */
 export const file_calaba_v1_auth: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkicgoPUmVnaXN0ZXJSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRITCgtpbnZpdGVfY29kZRgEIAEoCRITCgtkZXZpY2VfbmFtZRgFIAEoCSJUChBSZWdpc3RlclJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lIkQKDExvZ2luUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRITCgtkZXZpY2VfbmFtZRgDIAEoCSJRCg1Mb2dpblJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lIicKDlJlZnJlc2hSZXF1ZXN0EhUKDXJlZnJlc2hfdG9rZW4YASABKAkiOAoPUmVmcmVzaFJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zIjwKDUxvZ291dFJlcXVlc3QSFAoMYWxsX3Nlc3Npb25zGAEgASgIEhUKDXJlZnJlc2hfdG9rZW4YAiABKAkiPAoUTGlzdFNlc3Npb25zUmVzcG9uc2USJAoIc2Vzc2lvbnMYASADKAsyEi5jYWxhYmEudjEuU2Vzc2lvbkKXAQoNY29tLmNhbGFiYS52MUIJQXV0aFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_user]);
+  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkiggEKD1JlZ2lzdGVyUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEwoLaW52aXRlX2NvZGUYBCABKAkSEwoLZGV2aWNlX25hbWUYBSABKAkSDgoGbG9jYWxlGAYgASgJIlQKEFJlZ2lzdGVyUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUiRAoMTG9naW5SZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhMKC2RldmljZV9uYW1lGAMgASgJIlEKDUxvZ2luUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUiJwoOUmVmcmVzaFJlcXVlc3QSFQoNcmVmcmVzaF90b2tlbhgBIAEoCSI4Cg9SZWZyZXNoUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMiPAoNTG9nb3V0UmVxdWVzdBIUCgxhbGxfc2Vzc2lvbnMYASABKAgSFQoNcmVmcmVzaF90b2tlbhgCIAEoCSI8ChRMaXN0U2Vzc2lvbnNSZXNwb25zZRIkCghzZXNzaW9ucxgBIAMoCzISLmNhbGFiYS52MS5TZXNzaW9uIiIKElZlcmlmeUVtYWlsUmVxdWVzdBIMCgRjb2RlGAEgASgJIiYKFUZvcmdvdFBhc3N3b3JkUmVxdWVzdBINCgVlbWFpbBgBIAEoCSJFChRSZXNldFBhc3N3b3JkUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIMCgRjb2RlGAIgASgJEhAKCHBhc3N3b3JkGAMgASgJQpcBCg1jb20uY2FsYWJhLnYxQglBdXRoUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_user]);
 
 /**
  * A login session = one device. Each session has its own rotating refresh token.
@@ -150,6 +150,15 @@ export type RegisterRequest = Message<"calaba.v1.RegisterRequest"> & {
    * @generated from field: string device_name = 5;
    */
   deviceName: string;
+
+  /**
+   * Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
+   * Registration sends a verification code to `email` (ADR-0023). An invite code sent by
+   * email (POST …/invites/email) only works with that address and verifies it at once.
+   *
+   * @generated from field: string locale = 6;
+   */
+  locale: string;
 };
 
 /**
@@ -315,4 +324,87 @@ export type ListSessionsResponse = Message<"calaba.v1.ListSessionsResponse"> & {
  */
 export const ListSessionsResponseSchema: GenMessage<ListSessionsResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_auth, 9);
+
+/**
+ * ---- Email verification and password reset (ADR-0023) ----
+ * Codes: 6 digits, valid 10 minutes, 5 attempts, a new one at most every 60 s; at most 3
+ * mails per address per hour (429 with Retry-After).
+ *
+ * POST /api/auth/verify/send (access token) → 204: (re)sends the code to the pending new
+ * address, else to the account email. Signing in (login) while unverified also sends one
+ * if the last is older than 60 s. 409 CONFLICT: already verified and no pending change;
+ * 403: guest. Servers without SMTP mark the address verified instead (USER_UPDATE {me}).
+ *
+ * POST /api/auth/verify (access token) → UpdateMeResponse (+ USER_UPDATE {me}): confirms the
+ * email (or the pending change). Afterwards pending email invitations of the address are
+ * accepted automatically (WORKSPACE_CREATE per workspace). 422 CODE_INVALID: wrong code;
+ * 422 CODE_EXPIRED: no active code (expired / 5 attempts used) — send a new one.
+ *
+ * @generated from message calaba.v1.VerifyEmailRequest
+ */
+export type VerifyEmailRequest = Message<"calaba.v1.VerifyEmailRequest"> & {
+  /**
+   * @generated from field: string code = 1;
+   */
+  code: string;
+};
+
+/**
+ * Describes the message calaba.v1.VerifyEmailRequest.
+ * Use `create(VerifyEmailRequestSchema)` to create a new message.
+ */
+export const VerifyEmailRequestSchema: GenMessage<VerifyEmailRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_auth, 10);
+
+/**
+ * POST /api/auth/password/forgot (no auth) → always 204, whether or not the address has an
+ * account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
+ *
+ * @generated from message calaba.v1.ForgotPasswordRequest
+ */
+export type ForgotPasswordRequest = Message<"calaba.v1.ForgotPasswordRequest"> & {
+  /**
+   * @generated from field: string email = 1;
+   */
+  email: string;
+};
+
+/**
+ * Describes the message calaba.v1.ForgotPasswordRequest.
+ * Use `create(ForgotPasswordRequestSchema)` to create a new message.
+ */
+export const ForgotPasswordRequestSchema: GenMessage<ForgotPasswordRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_auth, 11);
+
+/**
+ * POST /api/auth/password/reset (no auth) → 204. Sets the new password, marks the email
+ * verified and revokes every session of the account (sign in again). 422 CODE_INVALID for a
+ * wrong / expired code or an unknown address (indistinguishable on purpose); 422 VALIDATION
+ * (field "password"): 8..256 characters.
+ *
+ * @generated from message calaba.v1.ResetPasswordRequest
+ */
+export type ResetPasswordRequest = Message<"calaba.v1.ResetPasswordRequest"> & {
+  /**
+   * @generated from field: string email = 1;
+   */
+  email: string;
+
+  /**
+   * @generated from field: string code = 2;
+   */
+  code: string;
+
+  /**
+   * @generated from field: string password = 3;
+   */
+  password: string;
+};
+
+/**
+ * Describes the message calaba.v1.ResetPasswordRequest.
+ * Use `create(ResetPasswordRequestSchema)` to create a new message.
+ */
+export const ResetPasswordRequestSchema: GenMessage<ResetPasswordRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_auth, 12);
 

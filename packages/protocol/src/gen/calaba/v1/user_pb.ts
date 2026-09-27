@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/user.proto.
  */
 export const file_calaba_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIvYBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyJ0CgJNZRIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISDQoFZW1haWwYAiABKAkSKQoIc2V0dGluZ3MYAyABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzEhUKDWlzX3N1cGVyYWRtaW4YBCABKAgiKgoNR2V0TWVSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZSL4AQoPVXBkYXRlTWVSZXF1ZXN0EhkKDGRpc3BsYXlfbmFtZRgBIAEoCUgAiAEBEhgKC3N0YXR1c190ZXh0GAIgASgJSAGIAQESGwoOYXZhdGFyX2ZpbGVfaWQYAyABKAlIAogBARIuCghzZXR0aW5ncxgEIAEoCzIXLmNhbGFiYS52MS5Vc2VyU2V0dGluZ3NIA4gBARIVCgh0aW1lem9uZRgFIAEoCUgEiAEBQg8KDV9kaXNwbGF5X25hbWVCDgoMX3N0YXR1c190ZXh0QhEKD19hdmF0YXJfZmlsZV9pZEILCglfc2V0dGluZ3NCCwoJX3RpbWV6b25lIi0KEFVwZGF0ZU1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIkEKEkNoYW5nZUVtYWlsUmVxdWVzdBIRCgluZXdfZW1haWwYASABKAkSGAoQY3VycmVudF9wYXNzd29yZBgCIAEoCSJOChNVcGRhdGVTdGF0dXNSZXF1ZXN0EgwKBHRleHQYASABKAkSDQoFZW1vamkYAiABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAMgASgNIlwKCFVzZXJOb3RlEhIKCnN1YmplY3RfaWQYASABKAkSDAoEdGV4dBgCIAEoCRIuCgp1cGRhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIiChJQdXRVc2VyTm90ZVJlcXVlc3QSDAoEdGV4dBgBIAEoCSI1ChBVc2VyTm90ZVJlc3BvbnNlEiEKBG5vdGUYASABKAsyEy5jYWxhYmEudjEuVXNlck5vdGUqUAoHTWljTW9kZRIYChRNSUNfTU9ERV9VTlNQRUNJRklFRBAAEhAKDE1JQ19NT0RFX1ZBRBABEhkKFU1JQ19NT0RFX1BVU0hfVE9fVEFMSxACQpcBCg1jb20uY2FsYWJhLnYxQglVc2VyUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIvYBCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyKzAQoCTWUSHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg0KBWVtYWlsGAIgASgJEikKCHNldHRpbmdzGAMgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5ncxIVCg1pc19zdXBlcmFkbWluGAQgASgIEhYKDmVtYWlsX3ZlcmlmaWVkGAUgASgIEhUKDXBlbmRpbmdfZW1haWwYBiABKAkSDgoGbG9jYWxlGAcgASgJIioKDUdldE1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUimAIKD1VwZGF0ZU1lUmVxdWVzdBIZCgxkaXNwbGF5X25hbWUYASABKAlIAIgBARIYCgtzdGF0dXNfdGV4dBgCIAEoCUgBiAEBEhsKDmF2YXRhcl9maWxlX2lkGAMgASgJSAKIAQESLgoIc2V0dGluZ3MYBCABKAsyFy5jYWxhYmEudjEuVXNlclNldHRpbmdzSAOIAQESFQoIdGltZXpvbmUYBSABKAlIBIgBARITCgZsb2NhbGUYBiABKAlIBYgBAUIPCg1fZGlzcGxheV9uYW1lQg4KDF9zdGF0dXNfdGV4dEIRCg9fYXZhdGFyX2ZpbGVfaWRCCwoJX3NldHRpbmdzQgsKCV90aW1lem9uZUIJCgdfbG9jYWxlIi0KEFVwZGF0ZU1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIkEKEkNoYW5nZUVtYWlsUmVxdWVzdBIRCgluZXdfZW1haWwYASABKAkSGAoQY3VycmVudF9wYXNzd29yZBgCIAEoCSJOChNVcGRhdGVTdGF0dXNSZXF1ZXN0EgwKBHRleHQYASABKAkSDQoFZW1vamkYAiABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAMgASgNIlwKCFVzZXJOb3RlEhIKCnN1YmplY3RfaWQYASABKAkSDAoEdGV4dBgCIAEoCRIuCgp1cGRhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIiChJQdXRVc2VyTm90ZVJlcXVlc3QSDAoEdGV4dBgBIAEoCSI1ChBVc2VyTm90ZVJlc3BvbnNlEiEKBG5vdGUYASABKAsyEy5jYWxhYmEudjEuVXNlck5vdGUqUAoHTWljTW9kZRIYChRNSUNfTU9ERV9VTlNQRUNJRklFRBAAEhAKDE1JQ19NT0RFX1ZBRBABEhkKFU1JQ19NT0RFX1BVU0hfVE9fVEFMSxACQpcBCg1jb20uY2FsYWJhLnYxQglVc2VyUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * Public profile, visible to members of shared workspaces.
@@ -172,6 +172,32 @@ export type Me = Message<"calaba.v1.Me"> & {
    * @generated from field: bool is_superadmin = 4;
    */
   isSuperadmin: boolean;
+
+  /**
+   * ADR-0023: false until the address is confirmed with a code (POST /api/auth/verify).
+   * Unverified accounts may sign in and read, but get 403 EMAIL_NOT_VERIFIED on creating
+   * workspaces, invites and new DMs. Accounts from before ADR-0023 start unverified too
+   * (no grandfathering): show a non-dismissable "confirm your email" bar with a code field.
+   * Always true for guests (no email). Servers without SMTP verify at registration.
+   *
+   * @generated from field: bool email_verified = 5;
+   */
+  emailVerified: boolean;
+
+  /**
+   * Requested new address (PATCH /api/me/email) waiting for its code; empty = none.
+   * `email` stays the login address until the code is confirmed.
+   *
+   * @generated from field: string pending_email = 6;
+   */
+  pendingEmail: string;
+
+  /**
+   * Language of emails: "en" | "ru" | "es" | "zh-CN"; empty = not set (English).
+   *
+   * @generated from field: string locale = 7;
+   */
+  locale: string;
 };
 
 /**
@@ -234,6 +260,14 @@ export type UpdateMeRequest = Message<"calaba.v1.UpdateMeRequest"> & {
    * @generated from field: optional string timezone = 5;
    */
   timezone?: string | undefined;
+
+  /**
+   * Language of emails (ADR-0023): a BCP 47 tag mapped to "en" | "ru" | "es" | "zh-CN";
+   * "" clears (English). Unsupported languages → 422.
+   *
+   * @generated from field: optional string locale = 6;
+   */
+  locale?: string | undefined;
 };
 
 /**
@@ -289,8 +323,11 @@ export const ChangePasswordRequestSchema: GenMessage<ChangePasswordRequest> = /*
   messageDesc(file_calaba_v1_user, 6);
 
 /**
- * PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices). No
- * confirmation mail (the server sends no email). 409 CONFLICT: address taken; 403 as above.
+ * PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices).
+ * ADR-0023: the address does not change yet — a 6-digit code goes to the new address and
+ * me.pending_email is set; POST /api/auth/verify {code} makes it the login email (verified).
+ * Servers without SMTP change it at once. 409 CONFLICT: address taken; 403 as above;
+ * 429: another code was sent to that address less than 60 s ago / 3 mails per hour.
  *
  * @generated from message calaba.v1.ChangeEmailRequest
  */

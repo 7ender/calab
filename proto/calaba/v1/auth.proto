@@ -34,6 +34,10 @@ message RegisterRequest {
   // The new user also joins that workspace.
   string invite_code = 4;
   string device_name = 5;
+  // Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
+  // Registration sends a verification code to `email` (ADR-0023). An invite code sent by
+  // email (POST …/invites/email) only works with that address and verifies it at once.
+  string locale = 6;
 }
 
 message RegisterResponse {
@@ -76,4 +80,37 @@ message LogoutRequest {
 // GET /api/me/sessions
 message ListSessionsResponse {
   repeated Session sessions = 1;
+}
+
+// ---- Email verification and password reset (ADR-0023) ----
+// Codes: 6 digits, valid 10 minutes, 5 attempts, a new one at most every 60 s; at most 3
+// mails per address per hour (429 with Retry-After).
+//
+// POST /api/auth/verify/send (access token) → 204: (re)sends the code to the pending new
+// address, else to the account email. Signing in (login) while unverified also sends one
+// if the last is older than 60 s. 409 CONFLICT: already verified and no pending change;
+// 403: guest. Servers without SMTP mark the address verified instead (USER_UPDATE {me}).
+//
+// POST /api/auth/verify (access token) → UpdateMeResponse (+ USER_UPDATE {me}): confirms the
+// email (or the pending change). Afterwards pending email invitations of the address are
+// accepted automatically (WORKSPACE_CREATE per workspace). 422 CODE_INVALID: wrong code;
+// 422 CODE_EXPIRED: no active code (expired / 5 attempts used) — send a new one.
+message VerifyEmailRequest {
+  string code = 1;
+}
+
+// POST /api/auth/password/forgot (no auth) → always 204, whether or not the address has an
+// account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
+message ForgotPasswordRequest {
+  string email = 1;
+}
+
+// POST /api/auth/password/reset (no auth) → 204. Sets the new password, marks the email
+// verified and revokes every session of the account (sign in again). 422 CODE_INVALID for a
+// wrong / expired code or an unknown address (indistinguishable on purpose); 422 VALIDATION
+// (field "password"): 8..256 characters.
+message ResetPasswordRequest {
+  string email = 1;
+  string code = 2;
+  string password = 3;
 }

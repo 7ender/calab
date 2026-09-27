@@ -20,7 +20,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/workspace.proto.
  */
 export const file_calaba_v1_workspace: GenFile = /*@__PURE__*/
-  fileDesc("ChljYWxhYmEvdjEvd29ya3NwYWNlLnByb3RvEgljYWxhYmEudjEi8wIKCVdvcmtzcGFjZRIKCgJpZBgBIAEoCRIMCgRzbHVnGAIgASgJEgwKBG5hbWUYAyABKAkSFAoMaWNvbl9maWxlX2lkGAQgASgJEjIKCnZpc2liaWxpdHkYBSABKA4yHi5jYWxhYmEudjEuV29ya3NwYWNlVmlzaWJpbGl0eRIQCghvd25lcl9pZBgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0Cg5tZWRpYV9kZWZhdWx0cxgIIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIbChNzdG9yYWdlX3F1b3RhX2J5dGVzGAkgASgEEhoKEnN0b3JhZ2VfdXNlZF9ieXRlcxgKIAEoBBIbChNhbGxvd19zZWxmX25pY2tuYW1lGAsgASgIEiYKBHBsYW4YDCABKAsyGC5jYWxhYmEudjEuV29ya3NwYWNlUGxhbiKvAQoPV29ya3NwYWNlTWVtYmVyEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIdCgR1c2VyGAIgASgLMg8uY2FsYWJhLnYxLlVzZXISJgoEcm9sZRgDIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlEhAKCG5pY2tuYW1lGAQgASgJEi0KCWpvaW5lZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAizAEKBkludml0ZRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDAoEY29kZRgDIAEoCRISCgpjcmVhdGVkX2J5GAQgASgJEhAKCG1heF91c2VzGAUgASgNEgwKBHVzZXMYBiABKA0SLgoKZXhwaXJlc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiaAoWQ3JlYXRlV29ya3NwYWNlUmVxdWVzdBIMCgRzbHVnGAEgASgJEgwKBG5hbWUYAiABKAkSMgoKdmlzaWJpbGl0eRgDIAEoDjIeLmNhbGFiYS52MS5Xb3Jrc3BhY2VWaXNpYmlsaXR5IkIKF0NyZWF0ZVdvcmtzcGFjZVJlc3BvbnNlEicKCXdvcmtzcGFjZRgBIAEoCzIULmNhbGFiYS52MS5Xb3Jrc3BhY2UiQgoWTGlzdFdvcmtzcGFjZXNSZXNwb25zZRIoCgp3b3Jrc3BhY2VzGAEgAygLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJGChpEaXNjb3ZlcldvcmtzcGFjZXNSZXNwb25zZRIoCgp3b3Jrc3BhY2VzGAEgAygLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJnChRHZXRXb3Jrc3BhY2VSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEiYKBHJvbGUYAiABKA4yGC5jYWxhYmEudjEuV29ya3NwYWNlUm9sZSKgBAoWVXBkYXRlV29ya3NwYWNlUmVxdWVzdBIRCgRzbHVnGAEgASgJSACIAQESEQoEbmFtZRgCIAEoCUgBiAEBEjcKCnZpc2liaWxpdHkYAyABKA4yHi5jYWxhYmEudjEuV29ya3NwYWNlVmlzaWJpbGl0eUgCiAEBEhkKDGljb25fZmlsZV9pZBgEIAEoCUgDiAEBEicKGmRlZmF1bHRfYXVkaW9fYml0cmF0ZV9rYnBzGAUgASgNSASIAQESRAoZZGVmYXVsdF9tYXhfc3RyZWFtX3ByZXNldBgGIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldEgFiAEBEiAKE2RlZmF1bHRfbWF4X3N0cmVhbXMYByABKA1IBogBARIgChNhbGxvd19zZWxmX25pY2tuYW1lGAggASgISAeIAQESIQoUZGVmYXVsdF9jYW1lcmFfbGltaXQYCSABKA1ICIgBAUIHCgVfc2x1Z0IHCgVfbmFtZUINCgtfdmlzaWJpbGl0eUIPCg1faWNvbl9maWxlX2lkQh0KG19kZWZhdWx0X2F1ZGlvX2JpdHJhdGVfa2Jwc0IcChpfZGVmYXVsdF9tYXhfc3RyZWFtX3ByZXNldEIWChRfZGVmYXVsdF9tYXhfc3RyZWFtc0IWChRfYWxsb3dfc2VsZl9uaWNrbmFtZUIXChVfZGVmYXVsdF9jYW1lcmFfbGltaXQiQgoXVXBkYXRlV29ya3NwYWNlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJsChVKb2luV29ya3NwYWNlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZRIqCgZtZW1iZXIYAiABKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIkMKE0NyZWF0ZUludml0ZVJlcXVlc3QSEAoIbWF4X3VzZXMYASABKA0SGgoSZXhwaXJlc19pbl9zZWNvbmRzGAIgASgNIjkKFENyZWF0ZUludml0ZVJlc3BvbnNlEiEKBmludml0ZRgBIAEoCzIRLmNhbGFiYS52MS5JbnZpdGUiOQoTTGlzdEludml0ZXNSZXNwb25zZRIiCgdpbnZpdGVzGAEgAygLMhEuY2FsYWJhLnYxLkludml0ZSJCChNMaXN0TWVtYmVyc1Jlc3BvbnNlEisKB21lbWJlcnMYASADKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIm8KE1VwZGF0ZU1lbWJlclJlcXVlc3QSKwoEcm9sZRgBIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlSACIAQESFQoIbmlja25hbWUYAiABKAlIAYgBAUIHCgVfcm9sZUILCglfbmlja25hbWUiQgoUVXBkYXRlTWVtYmVyUmVzcG9uc2USKgoGbWVtYmVyGAEgASgLMhouY2FsYWJhLnYxLldvcmtzcGFjZU1lbWJlciJsChFHZXRJbnZpdGVSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wKnwKE1dvcmtzcGFjZVZpc2liaWxpdHkSJAogV09SS1NQQUNFX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIgChxXT1JLU1BBQ0VfVklTSUJJTElUWV9QUklWQVRFEAESHQoZV09SS1NQQUNFX1ZJU0lCSUxJVFlfT1BFThACQpwBCg1jb20uY2FsYWJhLnYxQg5Xb3Jrc3BhY2VQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_permissions, file_calaba_v1_plan, file_calaba_v1_user]);
+  fileDesc("ChljYWxhYmEvdjEvd29ya3NwYWNlLnByb3RvEgljYWxhYmEudjEi8wIKCVdvcmtzcGFjZRIKCgJpZBgBIAEoCRIMCgRzbHVnGAIgASgJEgwKBG5hbWUYAyABKAkSFAoMaWNvbl9maWxlX2lkGAQgASgJEjIKCnZpc2liaWxpdHkYBSABKA4yHi5jYWxhYmEudjEuV29ya3NwYWNlVmlzaWJpbGl0eRIQCghvd25lcl9pZBgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0Cg5tZWRpYV9kZWZhdWx0cxgIIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIbChNzdG9yYWdlX3F1b3RhX2J5dGVzGAkgASgEEhoKEnN0b3JhZ2VfdXNlZF9ieXRlcxgKIAEoBBIbChNhbGxvd19zZWxmX25pY2tuYW1lGAsgASgIEiYKBHBsYW4YDCABKAsyGC5jYWxhYmEudjEuV29ya3NwYWNlUGxhbiKvAQoPV29ya3NwYWNlTWVtYmVyEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIdCgR1c2VyGAIgASgLMg8uY2FsYWJhLnYxLlVzZXISJgoEcm9sZRgDIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlEhAKCG5pY2tuYW1lGAQgASgJEi0KCWpvaW5lZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAizAEKBkludml0ZRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDAoEY29kZRgDIAEoCRISCgpjcmVhdGVkX2J5GAQgASgJEhAKCG1heF91c2VzGAUgASgNEgwKBHVzZXMYBiABKA0SLgoKZXhwaXJlc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiaAoWQ3JlYXRlV29ya3NwYWNlUmVxdWVzdBIMCgRzbHVnGAEgASgJEgwKBG5hbWUYAiABKAkSMgoKdmlzaWJpbGl0eRgDIAEoDjIeLmNhbGFiYS52MS5Xb3Jrc3BhY2VWaXNpYmlsaXR5IkIKF0NyZWF0ZVdvcmtzcGFjZVJlc3BvbnNlEicKCXdvcmtzcGFjZRgBIAEoCzIULmNhbGFiYS52MS5Xb3Jrc3BhY2UiQgoWTGlzdFdvcmtzcGFjZXNSZXNwb25zZRIoCgp3b3Jrc3BhY2VzGAEgAygLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJGChpEaXNjb3ZlcldvcmtzcGFjZXNSZXNwb25zZRIoCgp3b3Jrc3BhY2VzGAEgAygLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJnChRHZXRXb3Jrc3BhY2VSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEiYKBHJvbGUYAiABKA4yGC5jYWxhYmEudjEuV29ya3NwYWNlUm9sZSKgBAoWVXBkYXRlV29ya3NwYWNlUmVxdWVzdBIRCgRzbHVnGAEgASgJSACIAQESEQoEbmFtZRgCIAEoCUgBiAEBEjcKCnZpc2liaWxpdHkYAyABKA4yHi5jYWxhYmEudjEuV29ya3NwYWNlVmlzaWJpbGl0eUgCiAEBEhkKDGljb25fZmlsZV9pZBgEIAEoCUgDiAEBEicKGmRlZmF1bHRfYXVkaW9fYml0cmF0ZV9rYnBzGAUgASgNSASIAQESRAoZZGVmYXVsdF9tYXhfc3RyZWFtX3ByZXNldBgGIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldEgFiAEBEiAKE2RlZmF1bHRfbWF4X3N0cmVhbXMYByABKA1IBogBARIgChNhbGxvd19zZWxmX25pY2tuYW1lGAggASgISAeIAQESIQoUZGVmYXVsdF9jYW1lcmFfbGltaXQYCSABKA1ICIgBAUIHCgVfc2x1Z0IHCgVfbmFtZUINCgtfdmlzaWJpbGl0eUIPCg1faWNvbl9maWxlX2lkQh0KG19kZWZhdWx0X2F1ZGlvX2JpdHJhdGVfa2Jwc0IcChpfZGVmYXVsdF9tYXhfc3RyZWFtX3ByZXNldEIWChRfZGVmYXVsdF9tYXhfc3RyZWFtc0IWChRfYWxsb3dfc2VsZl9uaWNrbmFtZUIXChVfZGVmYXVsdF9jYW1lcmFfbGltaXQiQgoXVXBkYXRlV29ya3NwYWNlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZSJsChVKb2luV29ya3NwYWNlUmVzcG9uc2USJwoJd29ya3NwYWNlGAEgASgLMhQuY2FsYWJhLnYxLldvcmtzcGFjZRIqCgZtZW1iZXIYAiABKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIkMKE0NyZWF0ZUludml0ZVJlcXVlc3QSEAoIbWF4X3VzZXMYASABKA0SGgoSZXhwaXJlc19pbl9zZWNvbmRzGAIgASgNIjkKFENyZWF0ZUludml0ZVJlc3BvbnNlEiEKBmludml0ZRgBIAEoCzIRLmNhbGFiYS52MS5JbnZpdGUiOQoTTGlzdEludml0ZXNSZXNwb25zZRIiCgdpbnZpdGVzGAEgAygLMhEuY2FsYWJhLnYxLkludml0ZSJCChNMaXN0TWVtYmVyc1Jlc3BvbnNlEisKB21lbWJlcnMYASADKAsyGi5jYWxhYmEudjEuV29ya3NwYWNlTWVtYmVyIm8KE1VwZGF0ZU1lbWJlclJlcXVlc3QSKwoEcm9sZRgBIAEoDjIYLmNhbGFiYS52MS5Xb3Jrc3BhY2VSb2xlSACIAQESFQoIbmlja25hbWUYAiABKAlIAYgBAUIHCgVfcm9sZUILCglfbmlja25hbWUiQgoUVXBkYXRlTWVtYmVyUmVzcG9uc2USKgoGbWVtYmVyGAEgASgLMhouY2FsYWJhLnYxLldvcmtzcGFjZU1lbWJlciJ7ChFHZXRJbnZpdGVSZXNwb25zZRInCgl3b3Jrc3BhY2UYASABKAsyFC5jYWxhYmEudjEuV29ya3NwYWNlEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBWVtYWlsGAMgASgJIiQKE0ludml0ZUxvb2t1cFJlcXVlc3QSDQoFZW1haWwYASABKAkiRQoUSW52aXRlTG9va3VwUmVzcG9uc2USHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg4KBm1lbWJlchgCIAEoCCIjChBBZGRNZW1iZXJSZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkiPwoRQWRkTWVtYmVyUmVzcG9uc2USKgoGbWVtYmVyGAEgASgLMhouY2FsYWJhLnYxLldvcmtzcGFjZU1lbWJlciKMAgoLRW1haWxJbnZpdGUSCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEg0KBWVtYWlsGAMgASgJEiYKBHJvbGUYBCABKA4yGC5jYWxhYmEudjEuV29ya3NwYWNlUm9sZRISCgppbnZpdGVkX2J5GAUgASgJEi4KCmNyZWF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDGxhc3Rfc2VudF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiXwoYQ3JlYXRlRW1haWxJbnZpdGVSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEisKBHJvbGUYAiABKA4yGC5jYWxhYmEudjEuV29ya3NwYWNlUm9sZUgAiAEBQgcKBV9yb2xlIkMKGUNyZWF0ZUVtYWlsSW52aXRlUmVzcG9uc2USJgoGaW52aXRlGAEgASgLMhYuY2FsYWJhLnYxLkVtYWlsSW52aXRlIkMKGExpc3RFbWFpbEludml0ZXNSZXNwb25zZRInCgdpbnZpdGVzGAEgAygLMhYuY2FsYWJhLnYxLkVtYWlsSW52aXRlKnwKE1dvcmtzcGFjZVZpc2liaWxpdHkSJAogV09SS1NQQUNFX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIgChxXT1JLU1BBQ0VfVklTSUJJTElUWV9QUklWQVRFEAESHQoZV09SS1NQQUNFX1ZJU0lCSUxJVFlfT1BFThACQpwBCg1jb20uY2FsYWJhLnYxQg5Xb3Jrc3BhY2VQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_permissions, file_calaba_v1_plan, file_calaba_v1_user]);
 
 /**
  * @generated from message calaba.v1.Workspace
@@ -564,6 +564,14 @@ export type GetInviteResponse = Message<"calaba.v1.GetInviteResponse"> & {
    * @generated from field: google.protobuf.Timestamp expires_at = 2;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * Email invitation (ADR-0023): the code works only for this address (register with it /
+   * be signed in with it verified), else 404 INVITE_INVALID. Prefill it on the sign-up form.
+   *
+   * @generated from field: string email = 3;
+   */
+  email: string;
 };
 
 /**
@@ -572,6 +580,216 @@ export type GetInviteResponse = Message<"calaba.v1.GetInviteResponse"> & {
  */
 export const GetInviteResponseSchema: GenMessage<GetInviteResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_workspace, 17);
+
+/**
+ * POST /api/workspaces/{id}/invites/lookup → InviteLookupResponse. Exact (case-insensitive)
+ * match on verified, active accounts; 20 lookups per minute per user; every lookup is logged.
+ *
+ * @generated from message calaba.v1.InviteLookupRequest
+ */
+export type InviteLookupRequest = Message<"calaba.v1.InviteLookupRequest"> & {
+  /**
+   * @generated from field: string email = 1;
+   */
+  email: string;
+};
+
+/**
+ * Describes the message calaba.v1.InviteLookupRequest.
+ * Use `create(InviteLookupRequestSchema)` to create a new message.
+ */
+export const InviteLookupRequestSchema: GenMessage<InviteLookupRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 18);
+
+/**
+ * Empty object (user unset) = no such account: invite by email instead.
+ *
+ * @generated from message calaba.v1.InviteLookupResponse
+ */
+export type InviteLookupResponse = Message<"calaba.v1.InviteLookupResponse"> & {
+  /**
+   * @generated from field: calaba.v1.User user = 1;
+   */
+  user?: User | undefined;
+
+  /**
+   * already a member of this workspace
+   *
+   * @generated from field: bool member = 2;
+   */
+  member: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.InviteLookupResponse.
+ * Use `create(InviteLookupResponseSchema)` to create a new message.
+ */
+export const InviteLookupResponseSchema: GenMessage<InviteLookupResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 19);
+
+/**
+ * POST /api/workspaces/{id}/members → 201 AddMemberResponse: adds a verified account found
+ * by lookup as `member` right away (WORKSPACE_MEMBER_ADD to the workspace, WORKSPACE_CREATE
+ * to the user) and mails them "you were added to …". 409 CONFLICT: already a member;
+ * 404: no such (verified, non-guest) user.
+ *
+ * @generated from message calaba.v1.AddMemberRequest
+ */
+export type AddMemberRequest = Message<"calaba.v1.AddMemberRequest"> & {
+  /**
+   * @generated from field: string user_id = 1;
+   */
+  userId: string;
+};
+
+/**
+ * Describes the message calaba.v1.AddMemberRequest.
+ * Use `create(AddMemberRequestSchema)` to create a new message.
+ */
+export const AddMemberRequestSchema: GenMessage<AddMemberRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 20);
+
+/**
+ * @generated from message calaba.v1.AddMemberResponse
+ */
+export type AddMemberResponse = Message<"calaba.v1.AddMemberResponse"> & {
+  /**
+   * @generated from field: calaba.v1.WorkspaceMember member = 1;
+   */
+  member?: WorkspaceMember | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.AddMemberResponse.
+ * Use `create(AddMemberResponseSchema)` to create a new message.
+ */
+export const AddMemberResponseSchema: GenMessage<AddMemberResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 21);
+
+/**
+ * A pending invitation sent to an address (settings → invitations).
+ *
+ * @generated from message calaba.v1.EmailInvite
+ */
+export type EmailInvite = Message<"calaba.v1.EmailInvite"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string workspace_id = 2;
+   */
+  workspaceId: string;
+
+  /**
+   * @generated from field: string email = 3;
+   */
+  email: string;
+
+  /**
+   * MEMBER or ADMIN
+   *
+   * @generated from field: calaba.v1.WorkspaceRole role = 4;
+   */
+  role: WorkspaceRole;
+
+  /**
+   * user id
+   *
+   * @generated from field: string invited_by = 5;
+   */
+  invitedBy: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 6;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * 7 days after the last send
+   *
+   * @generated from field: google.protobuf.Timestamp expires_at = 7;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp last_sent_at = 8;
+   */
+  lastSentAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.EmailInvite.
+ * Use `create(EmailInviteSchema)` to create a new message.
+ */
+export const EmailInviteSchema: GenMessage<EmailInvite> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 22);
+
+/**
+ * POST /api/workspaces/{id}/invites/email → 201 CreateEmailInviteResponse. Mails a link
+ * PUBLIC_APP_URL/join/<code> (single use, 7 days, bound to the address). Registering with
+ * the address (link or not) and verifying it joins the workspace automatically. Sending
+ * again to the same address renews the link, at most once per 24 h (429 with Retry-After).
+ * role: MEMBER (default) or ADMIN (owner only). 409 CONFLICT: already a member.
+ *
+ * @generated from message calaba.v1.CreateEmailInviteRequest
+ */
+export type CreateEmailInviteRequest = Message<"calaba.v1.CreateEmailInviteRequest"> & {
+  /**
+   * @generated from field: string email = 1;
+   */
+  email: string;
+
+  /**
+   * @generated from field: optional calaba.v1.WorkspaceRole role = 2;
+   */
+  role?: WorkspaceRole | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CreateEmailInviteRequest.
+ * Use `create(CreateEmailInviteRequestSchema)` to create a new message.
+ */
+export const CreateEmailInviteRequestSchema: GenMessage<CreateEmailInviteRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 23);
+
+/**
+ * @generated from message calaba.v1.CreateEmailInviteResponse
+ */
+export type CreateEmailInviteResponse = Message<"calaba.v1.CreateEmailInviteResponse"> & {
+  /**
+   * @generated from field: calaba.v1.EmailInvite invite = 1;
+   */
+  invite?: EmailInvite | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CreateEmailInviteResponse.
+ * Use `create(CreateEmailInviteResponseSchema)` to create a new message.
+ */
+export const CreateEmailInviteResponseSchema: GenMessage<CreateEmailInviteResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 24);
+
+/**
+ * GET /api/workspaces/{id}/invites/email → pending (not accepted) invitations, newest first.
+ * DELETE /api/workspaces/{id}/invites/email/{inviteId} → 204: revokes the link.
+ *
+ * @generated from message calaba.v1.ListEmailInvitesResponse
+ */
+export type ListEmailInvitesResponse = Message<"calaba.v1.ListEmailInvitesResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.EmailInvite invites = 1;
+   */
+  invites: EmailInvite[];
+};
+
+/**
+ * Describes the message calaba.v1.ListEmailInvitesResponse.
+ * Use `create(ListEmailInvitesResponseSchema)` to create a new message.
+ */
+export const ListEmailInvitesResponseSchema: GenMessage<ListEmailInvitesResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_workspace, 25);
 
 /**
  * @generated from enum calaba.v1.WorkspaceVisibility

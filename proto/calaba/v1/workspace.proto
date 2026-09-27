@@ -138,4 +138,66 @@ message UpdateMemberResponse {
 message GetInviteResponse {
   Workspace workspace = 1;
   google.protobuf.Timestamp expires_at = 2; // unset = never
+  // Email invitation (ADR-0023): the code works only for this address (register with it /
+  // be signed in with it verified), else 404 INVITE_INVALID. Prefill it on the sign-up form.
+  string email = 3;
+}
+
+// ---- Invitations by email (ADR-0023). All need MANAGE_WORKSPACE (the invite right) and a
+// verified email of the caller (403 EMAIL_NOT_VERIFIED). ----
+
+// POST /api/workspaces/{id}/invites/lookup → InviteLookupResponse. Exact (case-insensitive)
+// match on verified, active accounts; 20 lookups per minute per user; every lookup is logged.
+message InviteLookupRequest {
+  string email = 1;
+}
+
+// Empty object (user unset) = no such account: invite by email instead.
+message InviteLookupResponse {
+  User user = 1;
+  bool member = 2; // already a member of this workspace
+}
+
+// POST /api/workspaces/{id}/members → 201 AddMemberResponse: adds a verified account found
+// by lookup as `member` right away (WORKSPACE_MEMBER_ADD to the workspace, WORKSPACE_CREATE
+// to the user) and mails them "you were added to …". 409 CONFLICT: already a member;
+// 404: no such (verified, non-guest) user.
+message AddMemberRequest {
+  string user_id = 1;
+}
+
+message AddMemberResponse {
+  WorkspaceMember member = 1;
+}
+
+// A pending invitation sent to an address (settings → invitations).
+message EmailInvite {
+  string id = 1;
+  string workspace_id = 2;
+  string email = 3;
+  WorkspaceRole role = 4; // MEMBER or ADMIN
+  string invited_by = 5;  // user id
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp expires_at = 7; // 7 days after the last send
+  google.protobuf.Timestamp last_sent_at = 8;
+}
+
+// POST /api/workspaces/{id}/invites/email → 201 CreateEmailInviteResponse. Mails a link
+// PUBLIC_APP_URL/join/<code> (single use, 7 days, bound to the address). Registering with
+// the address (link or not) and verifying it joins the workspace automatically. Sending
+// again to the same address renews the link, at most once per 24 h (429 with Retry-After).
+// role: MEMBER (default) or ADMIN (owner only). 409 CONFLICT: already a member.
+message CreateEmailInviteRequest {
+  string email = 1;
+  optional WorkspaceRole role = 2;
+}
+
+message CreateEmailInviteResponse {
+  EmailInvite invite = 1;
+}
+
+// GET /api/workspaces/{id}/invites/email → pending (not accepted) invitations, newest first.
+// DELETE /api/workspaces/{id}/invites/email/{inviteId} → 204: revokes the link.
+message ListEmailInvitesResponse {
+  repeated EmailInvite invites = 1;
 }
