@@ -29,7 +29,7 @@ export function Dialogs(): ReactNode {
         node = <JoinWorkspaceDialog onClose={close} initialCode={d.code ?? ''} />;
         break;
       case 'workspace-settings':
-        node = <WorkspaceSettingsDialog onClose={close} workspaceId={d.workspaceId} tab={d.tab} />;
+        node = <WorkspaceSettingsDialog onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
         break;
       case 'room-create':
         node = <RoomCreateDialog onClose={close} workspaceId={d.workspaceId} voice={d.voice} categoryId={d.categoryId} />;

@@ -9,7 +9,8 @@ import type { LightboxImage } from '../lib/lightbox';
 export type Dialog =
   | { kind: 'create-workspace' }
   | { kind: 'join-workspace'; code?: string }
-  | { kind: 'workspace-settings'; workspaceId: string; tab?: string }
+  /** `roomId`: opened from a room («Пригласить», docs/09 #55) — the invites tab leads with its guest link. */
+  | { kind: 'workspace-settings'; workspaceId: string; tab?: string; roomId?: string }
   | { kind: 'room-create'; workspaceId: string; voice: boolean; categoryId?: string }
   | { kind: 'room-settings'; roomId: string; tab?: string }
   | { kind: 'settings'; tab?: string }

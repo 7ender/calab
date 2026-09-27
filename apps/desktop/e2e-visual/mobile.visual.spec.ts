@@ -172,14 +172,14 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
 }
 
 /** Screenshot (baseline phone) + layout invariants + axe for the current screen. */
-async function checkpoint(page: Page, name: string, opts: { main?: boolean; snapshot?: boolean } = {}): Promise<void> {
+async function checkpoint(page: Page, name: string, opts: { main?: boolean; snapshot?: boolean; mask?: Locator[] } = {}): Promise<void> {
   await settle(page);
   const dir = process.env['CALABA_MOBILE_SHOTS'];
   if (dir) {
     mkdirSync(dir, { recursive: true });
     await page.screenshot({ path: join(dir, `${name}-${test.info().project.name}.png`) });
   }
-  if (baseline() && opts.snapshot !== false) await expect.soft(page, `screenshot: ${name}`).toHaveScreenshot(`${name}.png`);
+  if (baseline() && opts.snapshot !== false) await expect.soft(page, `screenshot: ${name}`).toHaveScreenshot(`${name}.png`, { mask: opts.mask ?? [], maskColor: '#808080' });
   // On a phone every modal is a bottom sheet or a side drawer (never centred), and «outside the
   // window» is checked here with horizontal scrollers (the settings section pills) taken into account.
   const generic = (await layoutProblems(page)).filter((p) => p.kind !== 'modal-off-centre' && p.kind !== 'offscreen').map((p) => `${p.kind}: ${p.detail}`);
@@ -548,6 +548,21 @@ test('m-room-new', async ({ page }) => {
   });
   expect(gap, 'text starts right of the icon').toBeGreaterThanOrEqual(4);
   await checkpoint(page, 'm-room-new');
+});
+
+// docs/09 #55: «Пригласить» from a room's menu (long press) — the guest link first, as a sheet.
+test('m-room-invite', async ({ page }) => {
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.locator('aside button', { hasText: 'общий' }).first().dispatchEvent('contextmenu', { clientX: 120, clientY: 300 });
+  await page.getByRole('menuitem', { name: 'Пригласить' }).tap();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('Пригласить гостя без регистрации')).toBeVisible();
+  await expect(dialog.getByRole('textbox', { name: 'Ссылка для гостей' })).toHaveValue(/\/r\/general-guest-link$/);
+  await expectNoFieldFocus(page, 'room invite');
+  // The link carries the mock's (random) port: masked.
+  await checkpoint(page, 'm-room-invite', { mask: [dialog.getByRole('textbox', { name: 'Ссылка для гостей' })] });
 });
 
 type KeyboardStub = { __keyboard: (px: number | null) => void };

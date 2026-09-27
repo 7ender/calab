@@ -35,6 +35,7 @@ const KEY = new Set([
   'auth-forgot',
   'verify-banner',
   'invite-email',
+  'room-invite',
   'onboarding-mic',
   'onboarding-screen',
   'onboarding-done',
@@ -351,6 +352,8 @@ test('invite-email', async ({ open, win, mock, shot }) => {
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   // By name: the tab's position depends on the plan («Тариф» comes before it, ADR-0024).
   await win.getByRole('dialog').getByRole('tab', { name: 'Приглашения' }).click();
+  // Not opened from a room: no guest-link block (docs/09 #55).
+  await expect(win.getByText('Пригласить гостя без регистрации')).toHaveCount(0);
   const field = win.getByRole('textbox', { name: 'Email для приглашения' });
   await field.fill('new.colleague@example.com');
   await win.getByRole('button', { name: 'Отправить приглашение на почту' }).click();
@@ -362,6 +365,20 @@ test('invite-email', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('invite-email-found')).toContainText('Егор Лебедев');
   await expect(win.getByRole('button', { name: 'Добавить', exact: true })).toBeVisible();
   await checkpoint(shot, 'invite-email');
+});
+
+/** «Пригласить» from a room (docs/09 #55): the room's guest link first, the workspace invites below. */
+test('room-invite', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.locator('aside').getByRole('button', { name: 'Пригласить в «общий»' }).click();
+  const dialog = win.getByRole('dialog');
+  await expect(dialog.getByRole('tab', { name: 'Приглашения' })).toHaveAttribute('aria-selected', 'true');
+  await expect(dialog.getByText('Пригласить гостя без регистрации')).toBeVisible();
+  await expect(dialog.getByRole('textbox', { name: 'Ссылка для гостей' })).toHaveValue(/\/r\/general-guest-link$/);
+  await expect(dialog.getByRole('button', { name: 'Настроить срок и права…' })).toBeVisible();
+  // The link carries the mock's port: masked (like onboarding-join).
+  await checkpoint(shot, 'room-invite', { mask: [dialog.getByRole('textbox', { name: 'Ссылка для гостей' })] });
 });
 
 // ---------------------------------------------------------------- onboarding

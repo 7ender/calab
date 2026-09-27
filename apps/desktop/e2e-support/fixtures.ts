@@ -1049,6 +1049,24 @@ export function buildState(scenario: Scenario): MockState {
       createdAt: ts('2026-01-12T09:00:00Z'),
     }),
   );
+  // ---- guest link for «общий»: the room invite modal shows it right away (docs/09 #55)
+  s.roomInvites.set(
+    mockId('invite', 4),
+    create(RoomInviteSchema, {
+      id: mockId('invite', 4),
+      roomId: R.general,
+      workspaceId: W.main,
+      code: 'general-guest-link',
+      createdBy: U.anna,
+      maxUses: 0,
+      uses: 0,
+      allowGuests: true,
+      allowSpeak: false,
+      allowMessages: true,
+      expiresAt: ts('2099-01-01T00:00:00Z'),
+      createdAt: ts('2026-01-13T09:00:00Z'),
+    }),
+  );
 
   return s;
 }

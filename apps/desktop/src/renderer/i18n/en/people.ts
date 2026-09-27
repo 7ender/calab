@@ -154,6 +154,11 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'people.link.invalid': 'The link is invalid or has expired',
   'people.link.needAccount': 'This link requires an account',
   'people.link.unreachable': 'The server is unavailable — try again later',
+  'guestInvite.title': 'Invite a guest without an account',
+  'guestInvite.hint': 'With the link, a person joins by name and sees only {room}.',
+  'guestInvite.configure': 'Set expiry and rights…',
+  'guestInvite.link': 'Guest link',
+  'guestInvite.none': 'Valid for 7 days, no use limit',
 
   // guest screen (/r/<code>)
   'guest.title': 'You’re invited to a room',

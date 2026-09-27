@@ -651,7 +651,7 @@ function RoomActions({ room, canInvite, canSettings, active }: { room: Room; can
             type="button"
             className={btn}
             aria-label={t('shell.inviteTo', { name: room.name })}
-            onClick={() => open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' })}
+            onClick={() => open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites', roomId: room.id })}
           >
             <UserPlus className="size-[18px]" aria-hidden />
           </button>
@@ -719,7 +719,7 @@ function RoomMenu({
           <ContextMenu.Item
             key={id}
             className={menuItem}
-            onSelect={() => (voiceRoom && canManage ? open({ kind: 'room-invite', roomId: room.id }) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites' }))}
+            onSelect={() => (voiceRoom && canManage ? open({ kind: 'room-invite', roomId: room.id }) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites', roomId: room.id }))}
           >
             <UserPlus className="size-4" /> {voiceRoom ? t('roomMenu.invite') : t('shell.invite')}
           </ContextMenu.Item>
