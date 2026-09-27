@@ -293,18 +293,21 @@ func (q *Queries) ReleaseQuota(ctx context.Context, arg ReleaseQuotaParams) erro
 
 const reserveQuota = `-- name: ReserveQuota :one
 UPDATE workspaces SET storage_used_bytes = storage_used_bytes + $1::bigint
-WHERE id = $2 AND storage_used_bytes + $1::bigint <= storage_quota_bytes
+WHERE id = $2
+  AND storage_used_bytes + $1::bigint <= least(storage_quota_bytes, $3::bigint)
 RETURNING storage_used_bytes
 `
 
 type ReserveQuotaParams struct {
-	Size int64
-	ID   uuid.UUID
+	Size      int64
+	ID        uuid.UUID
+	PlanQuota int64
 }
 
-// Atomically adds size to the workspace usage if it fits the quota; no row = quota exceeded.
+// Atomically adds size to the workspace usage if it fits the quota and the plan's storage
+// limit (plan_quota bytes; ADR-0024); no row = quota exceeded.
 func (q *Queries) ReserveQuota(ctx context.Context, arg ReserveQuotaParams) (int64, error) {
-	row := q.db.QueryRow(ctx, reserveQuota, arg.Size, arg.ID)
+	row := q.db.QueryRow(ctx, reserveQuota, arg.Size, arg.ID, arg.PlanQuota)
 	var storage_used_bytes int64
 	err := row.Scan(&storage_used_bytes)
 	return storage_used_bytes, err

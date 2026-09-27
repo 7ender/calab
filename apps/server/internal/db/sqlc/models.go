@@ -214,3 +214,24 @@ type WorkspaceNotificationSetting struct {
 	Level       string
 	MutedUntil  *time.Time
 }
+
+type WorkspacePlan struct {
+	WorkspaceID uuid.UUID
+	Plan        string
+	Limits      []byte
+	ValidUntil  *time.Time
+	Note        string
+	UpdatedBy   *uuid.UUID
+	UpdatedAt   time.Time
+}
+
+type WorkspacePlanLog struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ActorID     *uuid.UUID
+	Plan        string
+	Limits      []byte
+	ValidUntil  *time.Time
+	Note        string
+	CreatedAt   time.Time
+}

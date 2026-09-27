@@ -2004,8 +2004,10 @@ type Ready struct {
 	// The user's stored per-workspace notification settings (workspaces not listed use the
 	// default, MENTIONS). Rooms left at INHERIT follow them.
 	WorkspaceNotificationSettings []*WorkspaceNotificationSettings `protobuf:"bytes,7,rep,name=workspace_notification_settings,json=workspaceNotificationSettings,proto3" json:"workspace_notification_settings,omitempty"`
-	unknownFields                 protoimpl.UnknownFields
-	sizeCache                     protoimpl.SizeCache
+	// Where to ask for a paid plan (ADR-0024): PLAN_CONTACT_URL, else mailto:PLAN_CONTACT_EMAIL.
+	PlanContact   string `protobuf:"bytes,8,opt,name=plan_contact,json=planContact,proto3" json:"plan_contact,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Ready) Reset() {
@@ -2085,6 +2087,13 @@ func (x *Ready) GetWorkspaceNotificationSettings() []*WorkspaceNotificationSetti
 		return x.WorkspaceNotificationSettings
 	}
 	return nil
+}
+
+func (x *Ready) GetPlanContact() string {
+	if x != nil {
+		return x.PlanContact
+	}
+	return ""
 }
 
 // A direct message as seen by one participant (ADR-0020). In READY, GET /api/dms,
@@ -4073,7 +4082,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"categories\x1a>\n" +
 	"\x10PermissionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xae\x03\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xd1\x03\n" +
 	"\x05Ready\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -4085,7 +4094,8 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"readStates\x12X\n" +
 	"\x15notification_settings\x18\x05 \x03(\v2#.calaba.v1.RoomNotificationSettingsR\x14notificationSettings\x12&\n" +
 	"\x03dms\x18\x06 \x03(\v2\x14.calaba.v1.DmSummaryR\x03dms\x12p\n" +
-	"\x1fworkspace_notification_settings\x18\a \x03(\v2(.calaba.v1.WorkspaceNotificationSettingsR\x1dworkspaceNotificationSettings\"\x8b\x02\n" +
+	"\x1fworkspace_notification_settings\x18\a \x03(\v2(.calaba.v1.WorkspaceNotificationSettingsR\x1dworkspaceNotificationSettings\x12!\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact\"\x8b\x02\n" +
 	"\tDmSummary\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12#\n" +
 	"\x04peer\x18\x02 \x01(\v2\x0f.calaba.v1.UserR\x04peer\x123\n" +

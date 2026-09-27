@@ -276,10 +276,12 @@ func (x *UserSettings) GetAudioBitrateKbps() uint32 {
 
 // The authenticated user: public profile + private fields.
 type Me struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
-	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
-	Settings      *UserSettings          `protobuf:"bytes,3,opt,name=settings,proto3" json:"settings,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	User     *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	Email    string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
+	Settings *UserSettings          `protobuf:"bytes,3,opt,name=settings,proto3" json:"settings,omitempty"`
+	// Product superadmin (email in SUPERADMIN_EMAILS, ADR-0024): may use /api/admin/*.
+	IsSuperadmin  bool `protobuf:"varint,4,opt,name=is_superadmin,json=isSuperadmin,proto3" json:"is_superadmin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -333,6 +335,13 @@ func (x *Me) GetSettings() *UserSettings {
 		return x.Settings
 	}
 	return nil
+}
+
+func (x *Me) GetIsSuperadmin() bool {
+	if x != nil {
+		return x.IsSuperadmin
+	}
+	return false
 }
 
 // GET /api/me
@@ -852,11 +861,12 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x10push_to_talk_key\x18\x04 \x01(\tR\rpushToTalkKey\x12-\n" +
 	"\bmic_mode\x18\x05 \x01(\x0e2\x12.calaba.v1.MicModeR\amicMode\x121\n" +
 	"\x12audio_bitrate_kbps\x18\x06 \x01(\rH\x00R\x10audioBitrateKbps\x88\x01\x01B\x15\n" +
-	"\x13_audio_bitrate_kbps\"t\n" +
+	"\x13_audio_bitrate_kbps\"\x99\x01\n" +
 	"\x02Me\x12#\n" +
 	"\x04user\x18\x01 \x01(\v2\x0f.calaba.v1.UserR\x04user\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x123\n" +
-	"\bsettings\x18\x03 \x01(\v2\x17.calaba.v1.UserSettingsR\bsettings\".\n" +
+	"\bsettings\x18\x03 \x01(\v2\x17.calaba.v1.UserSettingsR\bsettings\x12#\n" +
+	"\ris_superadmin\x18\x04 \x01(\bR\fisSuperadmin\".\n" +
 	"\rGetMeResponse\x12\x1d\n" +
 	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\"\xb3\x02\n" +
 	"\x0fUpdateMeRequest\x12&\n" +

@@ -4,6 +4,7 @@ package calaba.v1;
 import "google/protobuf/timestamp.proto";
 import "calaba/v1/media.proto";
 import "calaba/v1/permissions.proto";
+import "calaba/v1/plan.proto";
 import "calaba/v1/user.proto";
 
 enum WorkspaceVisibility {
@@ -25,6 +26,10 @@ message Workspace {
   uint64 storage_quota_bytes = 9;
   uint64 storage_used_bytes = 10;
   bool allow_self_nickname = 11; // members may set their own nickname (default true)
+  // Plan and effective limits (ADR-0024). Set for members (READY, WORKSPACE_CREATE / UPDATE,
+  // GET /api/workspaces[/{id}], create / join); unset in discover and invite previews. The
+  // effective file quota is min(storage_quota_bytes, plan.limits.storage_mb MiB).
+  WorkspacePlan plan = 12;
 }
 
 message WorkspaceMember {

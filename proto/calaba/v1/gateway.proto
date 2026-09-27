@@ -225,6 +225,8 @@ message Ready {
   // The user's stored per-workspace notification settings (workspaces not listed use the
   // default, MENTIONS). Rooms left at INHERIT follow them.
   repeated WorkspaceNotificationSettings workspace_notification_settings = 7;
+  // Where to ask for a paid plan (ADR-0024): PLAN_CONTACT_URL, else mailto:PLAN_CONTACT_EMAIL.
+  string plan_contact = 8;
 }
 
 // A direct message as seen by one participant (ADR-0020). In READY, GET /api/dms,

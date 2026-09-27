@@ -44,6 +44,8 @@ message Me {
   User user = 1;
   string email = 2;
   UserSettings settings = 3;
+  // Product superadmin (email in SUPERADMIN_EMAILS, ADR-0024): may use /api/admin/*.
+  bool is_superadmin = 4;
 }
 
 // GET /api/me

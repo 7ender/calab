@@ -1,0 +1,35 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/media.proto";
+
+// Workspace plans and limits (ADR-0024). Limits are enforced by the server only and apply
+// to everyone in the workspace, the owner included (they are not permission bits).
+
+enum Plan {
+  PLAN_UNSPECIFIED = 0;
+  PLAN_FREE = 1;   // limits from PLAN_FREE_LIMITS
+  PLAN_TEAM = 2;   // limits from PLAN_TEAM_LIMITS
+  PLAN_CUSTOM = 3; // limits as stored for the workspace
+}
+
+// Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
+message PlanLimits {
+  uint32 room_members = 1;                 // users in one voice room (guests and pending devices count)
+  ScreenSharePreset stream_max_preset = 2; // highest screen share preset
+  uint32 stream_max_fps = 3;               // screen share frame rate cap
+  ScreenSharePreset camera_max_preset = 4; // highest webcam resolution (H720 = 720p, H1080 = 1080p)
+  uint32 camera_max_fps = 5;               // webcam frame rate cap
+  uint32 streams_per_room = 6;             // screen shares at once in one room
+  uint64 storage_mb = 7;                   // file storage of the workspace, MiB
+  uint32 members = 8;                      // workspace members (informational; guests do not count)
+}
+
+// The plan of a workspace as members see it (Workspace.plan).
+message WorkspacePlan {
+  Plan plan = 1;                           // stored plan; FREE when none was ever set
+  PlanLimits limits = 2;                   // effective limits (FREE's when expired)
+  google.protobuf.Timestamp valid_until = 3; // unset = no expiry
+  bool expired = 4;                        // valid_until passed: the FREE limits apply
+}

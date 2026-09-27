@@ -129,7 +129,15 @@ type ApiError struct {
 	Code    ErrorCode              `protobuf:"varint,1,opt,name=code,proto3,enum=calaba.v1.ErrorCode" json:"code,omitempty"`
 	Message string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	// Offending field for ERROR_CODE_VALIDATION (lowerCamelCase JSON name), if any.
-	Field         string `protobuf:"bytes,3,opt,name=field,proto3" json:"field,omitempty"`
+	Field string `protobuf:"bytes,3,opt,name=field,proto3" json:"field,omitempty"`
+	// Why, when a code has several causes: "PLAN_LIMIT" = a limit of the workspace plan
+	// (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED). Absent otherwise.
+	Reason *string `protobuf:"bytes,4,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
+	// The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
+	// the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes.
+	// Absent when not meaningful.
+	Used          *uint64 `protobuf:"varint,5,opt,name=used,proto3,oneof" json:"used,omitempty"`
+	Limit         *uint64 `protobuf:"varint,6,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -183,6 +191,27 @@ func (x *ApiError) GetField() string {
 		return x.Field
 	}
 	return ""
+}
+
+func (x *ApiError) GetReason() string {
+	if x != nil && x.Reason != nil {
+		return *x.Reason
+	}
+	return ""
+}
+
+func (x *ApiError) GetUsed() uint64 {
+	if x != nil && x.Used != nil {
+		return *x.Used
+	}
+	return 0
+}
+
+func (x *ApiError) GetLimit() uint64 {
+	if x != nil && x.Limit != nil {
+		return *x.Limit
+	}
+	return 0
 }
 
 // Cursor pagination over time-ordered ids (uuidv7). At most one of before/after is set.
@@ -338,8 +367,10 @@ type GetVersionResponse struct {
 	Attribution       string                 `protobuf:"bytes,5,opt,name=attribution,proto3" json:"attribution,omitempty"`                                      // "Powered by GPTunneL"
 	Url               string                 `protobuf:"bytes,6,opt,name=url,proto3" json:"url,omitempty"`                                                      // attribution link
 	Product           string                 `protobuf:"bytes,7,opt,name=product,proto3" json:"product,omitempty"`                                              // product name shown to users: "Calab"
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Where to ask for a paid plan (ADR-0024): PLAN_CONTACT_URL, else mailto:PLAN_CONTACT_EMAIL.
+	PlanContact   string `protobuf:"bytes,8,opt,name=plan_contact,json=planContact,proto3" json:"plan_contact,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetVersionResponse) Reset() {
@@ -421,22 +452,35 @@ func (x *GetVersionResponse) GetProduct() string {
 	return ""
 }
 
+func (x *GetVersionResponse) GetPlanContact() string {
+	if x != nil {
+		return x.PlanContact
+	}
+	return ""
+}
+
 var File_calaba_v1_common_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x16calaba/v1/common.proto\x12\tcalaba.v1\"d\n" +
+	"\x16calaba/v1/common.proto\x12\tcalaba.v1\"\xd3\x01\n" +
 	"\bApiError\x12(\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x14.calaba.v1.ErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x14\n" +
-	"\x05field\x18\x03 \x01(\tR\x05field\"Q\n" +
+	"\x05field\x18\x03 \x01(\tR\x05field\x12\x1b\n" +
+	"\x06reason\x18\x04 \x01(\tH\x00R\x06reason\x88\x01\x01\x12\x17\n" +
+	"\x04used\x18\x05 \x01(\x04H\x01R\x04used\x88\x01\x01\x12\x19\n" +
+	"\x05limit\x18\x06 \x01(\x04H\x02R\x05limit\x88\x01\x01B\t\n" +
+	"\a_reasonB\a\n" +
+	"\x05_usedB\b\n" +
+	"\x06_limit\"Q\n" +
 	"\vPageRequest\x12\x16\n" +
 	"\x06before\x18\x01 \x01(\tR\x06before\x12\x14\n" +
 	"\x05after\x18\x02 \x01(\tR\x05after\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\rR\x05limit\"%\n" +
 	"\bPageInfo\x12\x19\n" +
 	"\bhas_more\x18\x01 \x01(\bR\ahasMore\"\a\n" +
-	"\x05Empty\"\xdd\x01\n" +
+	"\x05Empty\"\x80\x02\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
 	"\x06commit\x18\x02 \x01(\tR\x06commit\x12\x18\n" +
@@ -444,7 +488,8 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x12commercial_license\x18\x04 \x01(\tR\x11commercialLicense\x12 \n" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
-	"\aproduct\x18\a \x01(\tR\aproduct*\xe6\x04\n" +
+	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xe6\x04\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -506,6 +551,7 @@ func file_calaba_v1_common_proto_init() {
 	if File_calaba_v1_common_proto != nil {
 		return
 	}
+	file_calaba_v1_common_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

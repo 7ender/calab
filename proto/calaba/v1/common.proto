@@ -32,6 +32,14 @@ message ApiError {
   string message = 2;
   // Offending field for ERROR_CODE_VALIDATION (lowerCamelCase JSON name), if any.
   string field = 3;
+  // Why, when a code has several causes: "PLAN_LIMIT" = a limit of the workspace plan
+  // (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED). Absent otherwise.
+  optional string reason = 4;
+  // The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
+  // the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes.
+  // Absent when not meaningful.
+  optional uint64 used = 5;
+  optional uint64 limit = 6;
 }
 
 // Cursor pagination over time-ordered ids (uuidv7). At most one of before/after is set.
@@ -58,4 +66,6 @@ message GetVersionResponse {
   string attribution = 5;        // "Powered by GPTunneL"
   string url = 6;                // attribution link
   string product = 7;            // product name shown to users: "Calab"
+  // Where to ask for a paid plan (ADR-0024): PLAN_CONTACT_URL, else mailto:PLAN_CONTACT_EMAIL.
+  string plan_contact = 8;
 }

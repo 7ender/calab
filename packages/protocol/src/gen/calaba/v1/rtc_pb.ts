@@ -6,13 +6,15 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { RoomMediaSettings, ScreenSharePreset } from "./media_pb.js";
 import { file_calaba_v1_media } from "./media_pb.js";
+import type { PlanLimits } from "./plan_pb.js";
+import { file_calaba_v1_plan } from "./plan_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file calaba/v1/rtc.proto.
  */
 export const file_calaba_v1_rtc: GenFile = /*@__PURE__*/
-  fileDesc("ChNjYWxhYmEvdjEvcnRjLnByb3RvEgljYWxhYmEudjEiuQEKEUpvaW5Wb2ljZVJlc3BvbnNlEgsKA3VybBgBIAEoCRINCgV0b2tlbhgCIAEoCRIQCghpZGVudGl0eRgDIAEoCRIrCgVtZWRpYRgEIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIRCgljYW5fc3BlYWsYBSABKAgSEgoKY2FuX3N0cmVhbRgGIAEoCBIRCgljYW5fdmlkZW8YByABKAgSDwoHcGVuZGluZxgIIAEoCCJEChRSZXF1ZXN0U3RyZWFtUmVxdWVzdBIsCgZwcmVzZXQYASABKA4yHC5jYWxhYmEudjEuU2NyZWVuU2hhcmVQcmVzZXQiRQoVUmVxdWVzdFN0cmVhbVJlc3BvbnNlEiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldCIrChFNb3ZlTWVtYmVyUmVxdWVzdBIWCg50YXJnZXRfcm9vbV9pZBgBIAEoCSJaChZVcGRhdGVWb2ljZVNlbGZSZXF1ZXN0EhIKBW11dGVkGAEgASgISACIAQESFQoIZGVhZmVuZWQYAiABKAhIAYgBAUIICgZfbXV0ZWRCCwoJX2RlYWZlbmVkQpYBCg1jb20uY2FsYWJhLnYxQghSdGNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_calaba_v1_media]);
+  fileDesc("ChNjYWxhYmEvdjEvcnRjLnByb3RvEgljYWxhYmEudjEi5QEKEUpvaW5Wb2ljZVJlc3BvbnNlEgsKA3VybBgBIAEoCRINCgV0b2tlbhgCIAEoCRIQCghpZGVudGl0eRgDIAEoCRIrCgVtZWRpYRgEIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFTZXR0aW5ncxIRCgljYW5fc3BlYWsYBSABKAgSEgoKY2FuX3N0cmVhbRgGIAEoCBIRCgljYW5fdmlkZW8YByABKAgSDwoHcGVuZGluZxgIIAEoCBIqCgtwbGFuX2xpbWl0cxgJIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzIlEKFFJlcXVlc3RDYW1lcmFSZXF1ZXN0EiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBILCgNmcHMYAiABKA0iUgoVUmVxdWVzdENhbWVyYVJlc3BvbnNlEiwKBnByZXNldBgBIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBILCgNmcHMYAiABKA0iUQoUUmVxdWVzdFN0cmVhbVJlcXVlc3QSLAoGcHJlc2V0GAEgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0EgsKA2ZwcxgCIAEoDSJSChVSZXF1ZXN0U3RyZWFtUmVzcG9uc2USLAoGcHJlc2V0GAEgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0EgsKA2ZwcxgCIAEoDSIrChFNb3ZlTWVtYmVyUmVxdWVzdBIWCg50YXJnZXRfcm9vbV9pZBgBIAEoCSJaChZVcGRhdGVWb2ljZVNlbGZSZXF1ZXN0EhIKBW11dGVkGAEgASgISACIAQESFQoIZGVhZmVuZWQYAiABKAhIAYgBAUIICgZfbXV0ZWRCCwoJX2RlYWZlbmVkQpYBCg1jb20uY2FsYWJhLnYxQghSdGNQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_calaba_v1_media, file_calaba_v1_plan]);
 
 /**
  * POST /api/rooms/{id}/join (CONNECT). Returns a LiveKit token for this device
@@ -41,7 +43,8 @@ export type JoinVoiceResponse = Message<"calaba.v1.JoinVoiceResponse"> & {
   identity: string;
 
   /**
-   * effective settings to apply when publishing
+   * Effective settings to apply when publishing: room settings capped by the workspace plan
+   * (max_stream_preset, max_streams).
    *
    * @generated from field: calaba.v1.RoomMediaSettings media = 4;
    */
@@ -74,6 +77,13 @@ export type JoinVoiceResponse = Message<"calaba.v1.JoinVoiceResponse"> & {
    * @generated from field: bool pending = 8;
    */
   pending: boolean;
+
+  /**
+   * Effective plan limits of the workspace (ADR-0024), e.g. stream / camera fps caps.
+   *
+   * @generated from field: calaba.v1.PlanLimits plan_limits = 9;
+   */
+  planLimits?: PlanLimits | undefined;
 };
 
 /**
@@ -82,6 +92,59 @@ export type JoinVoiceResponse = Message<"calaba.v1.JoinVoiceResponse"> & {
  */
 export const JoinVoiceResponseSchema: GenMessage<JoinVoiceResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_rtc, 0);
+
+/**
+ * Webcam quality wanted by /camera/request; the answer is capped by the plan (ADR-0024).
+ *
+ * @generated from message calaba.v1.RequestCameraRequest
+ */
+export type RequestCameraRequest = Message<"calaba.v1.RequestCameraRequest"> & {
+  /**
+   * H720 = 720p, H1080 = 1080p, ORIGINAL = native; UNSPECIFIED = best allowed
+   *
+   * @generated from field: calaba.v1.ScreenSharePreset preset = 1;
+   */
+  preset: ScreenSharePreset;
+
+  /**
+   * 0 = best allowed
+   *
+   * @generated from field: uint32 fps = 2;
+   */
+  fps: number;
+};
+
+/**
+ * Describes the message calaba.v1.RequestCameraRequest.
+ * Use `create(RequestCameraRequestSchema)` to create a new message.
+ */
+export const RequestCameraRequestSchema: GenMessage<RequestCameraRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_rtc, 1);
+
+/**
+ * Granted webcam quality: min(wanted, plan camera_max_preset / camera_max_fps).
+ * UNSPECIFIED / 0 = no cap (only when nothing was asked and the plan has no cap).
+ *
+ * @generated from message calaba.v1.RequestCameraResponse
+ */
+export type RequestCameraResponse = Message<"calaba.v1.RequestCameraResponse"> & {
+  /**
+   * @generated from field: calaba.v1.ScreenSharePreset preset = 1;
+   */
+  preset: ScreenSharePreset;
+
+  /**
+   * @generated from field: uint32 fps = 2;
+   */
+  fps: number;
+};
+
+/**
+ * Describes the message calaba.v1.RequestCameraResponse.
+ * Use `create(RequestCameraResponseSchema)` to create a new message.
+ */
+export const RequestCameraResponseSchema: GenMessage<RequestCameraResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_rtc, 2);
 
 /**
  * POST /api/rooms/{id}/stream/request (STREAM). Reserves a stream slot for this device and
@@ -96,6 +159,13 @@ export type RequestStreamRequest = Message<"calaba.v1.RequestStreamRequest"> & {
    * @generated from field: calaba.v1.ScreenSharePreset preset = 1;
    */
   preset: ScreenSharePreset;
+
+  /**
+   * wanted frame rate; 0 = the preset's own
+   *
+   * @generated from field: uint32 fps = 2;
+   */
+  fps: number;
 };
 
 /**
@@ -103,18 +173,26 @@ export type RequestStreamRequest = Message<"calaba.v1.RequestStreamRequest"> & {
  * Use `create(RequestStreamRequestSchema)` to create a new message.
  */
 export const RequestStreamRequestSchema: GenMessage<RequestStreamRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 1);
+  messageDesc(file_calaba_v1_rtc, 3);
 
 /**
  * @generated from message calaba.v1.RequestStreamResponse
  */
 export type RequestStreamResponse = Message<"calaba.v1.RequestStreamResponse"> & {
   /**
-   * granted preset (≤ room max_stream_preset)
+   * Granted preset: ≤ room max_stream_preset and ≤ plan stream_max_preset (ADR-0024).
    *
    * @generated from field: calaba.v1.ScreenSharePreset preset = 1;
    */
   preset: ScreenSharePreset;
+
+  /**
+   * Granted frame rate: min(wanted, the preset's own — ECONOMY 5, H720 / H1080 15,
+   * ORIGINAL 30 — and plan stream_max_fps).
+   *
+   * @generated from field: uint32 fps = 2;
+   */
+  fps: number;
 };
 
 /**
@@ -122,7 +200,7 @@ export type RequestStreamResponse = Message<"calaba.v1.RequestStreamResponse"> &
  * Use `create(RequestStreamResponseSchema)` to create a new message.
  */
 export const RequestStreamResponseSchema: GenMessage<RequestStreamResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 2);
+  messageDesc(file_calaba_v1_rtc, 4);
 
 /**
  * POST /api/rooms/{id}/voice/{userId}/move (MOVE_MEMBERS in both rooms): moves all of the
@@ -143,7 +221,7 @@ export type MoveMemberRequest = Message<"calaba.v1.MoveMemberRequest"> & {
  * Use `create(MoveMemberRequestSchema)` to create a new message.
  */
 export const MoveMemberRequestSchema: GenMessage<MoveMemberRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 3);
+  messageDesc(file_calaba_v1_rtc, 5);
 
 /**
  * PATCH /api/voice/self — optimistic self mute/deafen of this device; 204.
@@ -167,5 +245,5 @@ export type UpdateVoiceSelfRequest = Message<"calaba.v1.UpdateVoiceSelfRequest">
  * Use `create(UpdateVoiceSelfRequestSchema)` to create a new message.
  */
 export const UpdateVoiceSelfRequestSchema: GenMessage<UpdateVoiceSelfRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_rtc, 4);
+  messageDesc(file_calaba_v1_rtc, 6);
 

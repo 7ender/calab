@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "calaba/v1/media.proto";
+import "calaba/v1/plan.proto";
 
 // POST /api/rooms/{id}/join (CONNECT). Returns a LiveKit token for this device
 // (identity "<user_id>:<session_id>", TTL 10 min, use it to connect right away).
@@ -9,7 +10,9 @@ message JoinVoiceResponse {
   string url = 1;   // LiveKit signal URL (LIVEKIT_URL)
   string token = 2; // LiveKit access JWT
   string identity = 3;
-  RoomMediaSettings media = 4; // effective settings to apply when publishing
+  // Effective settings to apply when publishing: room settings capped by the workspace plan
+  // (max_stream_preset, max_streams).
+  RoomMediaSettings media = 4;
   bool can_speak = 5;
   bool can_stream = 6; // STREAM granted and a stream slot was free at join time
   // VIDEO granted and the room allows cameras (camera_limit > 0). The camera source is not in
@@ -18,9 +21,12 @@ message JoinVoiceResponse {
   // The device is recorded in the room as pending (VoiceState.pending) until it connects to
   // LiveKit; false when it was already connected there (a repeated /join).
   bool pending = 8;
+  // Effective plan limits of the workspace (ADR-0024), e.g. stream / camera fps caps.
+  PlanLimits plan_limits = 9;
 }
 
-// POST /api/rooms/{id}/camera/request (VIDEO + CONNECT, device in the call) → 204: grants the
+// POST /api/rooms/{id}/camera/request (VIDEO + CONNECT, device in the call), body
+// RequestCameraRequest (optional) → 200 RequestCameraResponse: grants the
 // camera source to this device (reservation for 10 min, kept while the camera is on);
 // 409 ERROR_CODE_CONFLICT when camera_limit is reached (0 = cameras off). The limit itself is
 // enforced atomically when the track is published: an extra camera is muted by the server
@@ -32,14 +38,32 @@ message JoinVoiceResponse {
 // POST /api/rooms/{id}/voice/{userId}/allow-camera (MUTE_MEMBERS) → 204; meanwhile
 // /camera/request answers 403.
 
+// Webcam quality wanted by /camera/request; the answer is capped by the plan (ADR-0024).
+message RequestCameraRequest {
+  ScreenSharePreset preset = 1; // H720 = 720p, H1080 = 1080p, ORIGINAL = native; UNSPECIFIED = best allowed
+  uint32 fps = 2;               // 0 = best allowed
+}
+
+// Granted webcam quality: min(wanted, plan camera_max_preset / camera_max_fps).
+// UNSPECIFIED / 0 = no cap (only when nothing was asked and the plan has no cap).
+message RequestCameraResponse {
+  ScreenSharePreset preset = 1;
+  uint32 fps = 2;
+}
+
 // POST /api/rooms/{id}/stream/request (STREAM). Reserves a stream slot for this device and
 // grants screen share sources; 409 ERROR_CODE_CONFLICT when max_streams is reached.
 message RequestStreamRequest {
   ScreenSharePreset preset = 1; // wanted preset; UNSPECIFIED = room maximum
+  uint32 fps = 2;               // wanted frame rate; 0 = the preset's own
 }
 
 message RequestStreamResponse {
-  ScreenSharePreset preset = 1; // granted preset (≤ room max_stream_preset)
+  // Granted preset: ≤ room max_stream_preset and ≤ plan stream_max_preset (ADR-0024).
+  ScreenSharePreset preset = 1;
+  // Granted frame rate: min(wanted, the preset's own — ECONOMY 5, H720 / H1080 15,
+  // ORIGINAL 30 — and plan stream_max_fps).
+  uint32 fps = 2;
 }
 
 // POST /api/rooms/{id}/voice/{userId}/move (MOVE_MEMBERS in both rooms): moves all of the

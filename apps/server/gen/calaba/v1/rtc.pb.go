@@ -24,19 +24,23 @@ const (
 // POST /api/rooms/{id}/join (CONNECT). Returns a LiveKit token for this device
 // (identity "<user_id>:<session_id>", TTL 10 min, use it to connect right away).
 type JoinVoiceResponse struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Url       string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`     // LiveKit signal URL (LIVEKIT_URL)
-	Token     string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"` // LiveKit access JWT
-	Identity  string                 `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
-	Media     *RoomMediaSettings     `protobuf:"bytes,4,opt,name=media,proto3" json:"media,omitempty"` // effective settings to apply when publishing
-	CanSpeak  bool                   `protobuf:"varint,5,opt,name=can_speak,json=canSpeak,proto3" json:"can_speak,omitempty"`
-	CanStream bool                   `protobuf:"varint,6,opt,name=can_stream,json=canStream,proto3" json:"can_stream,omitempty"` // STREAM granted and a stream slot was free at join time
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Url      string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`     // LiveKit signal URL (LIVEKIT_URL)
+	Token    string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"` // LiveKit access JWT
+	Identity string                 `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
+	// Effective settings to apply when publishing: room settings capped by the workspace plan
+	// (max_stream_preset, max_streams).
+	Media     *RoomMediaSettings `protobuf:"bytes,4,opt,name=media,proto3" json:"media,omitempty"`
+	CanSpeak  bool               `protobuf:"varint,5,opt,name=can_speak,json=canSpeak,proto3" json:"can_speak,omitempty"`
+	CanStream bool               `protobuf:"varint,6,opt,name=can_stream,json=canStream,proto3" json:"can_stream,omitempty"` // STREAM granted and a stream slot was free at join time
 	// VIDEO granted and the room allows cameras (camera_limit > 0). The camera source is not in
 	// the join token: call POST /api/rooms/{id}/camera/request before publishing a webcam.
 	CanVideo bool `protobuf:"varint,7,opt,name=can_video,json=canVideo,proto3" json:"can_video,omitempty"`
 	// The device is recorded in the room as pending (VoiceState.pending) until it connects to
 	// LiveKit; false when it was already connected there (a repeated /join).
-	Pending       bool `protobuf:"varint,8,opt,name=pending,proto3" json:"pending,omitempty"`
+	Pending bool `protobuf:"varint,8,opt,name=pending,proto3" json:"pending,omitempty"`
+	// Effective plan limits of the workspace (ADR-0024), e.g. stream / camera fps caps.
+	PlanLimits    *PlanLimits `protobuf:"bytes,9,opt,name=plan_limits,json=planLimits,proto3" json:"plan_limits,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -127,18 +131,133 @@ func (x *JoinVoiceResponse) GetPending() bool {
 	return false
 }
 
+func (x *JoinVoiceResponse) GetPlanLimits() *PlanLimits {
+	if x != nil {
+		return x.PlanLimits
+	}
+	return nil
+}
+
+// Webcam quality wanted by /camera/request; the answer is capped by the plan (ADR-0024).
+type RequestCameraRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Preset        ScreenSharePreset      `protobuf:"varint,1,opt,name=preset,proto3,enum=calaba.v1.ScreenSharePreset" json:"preset,omitempty"` // H720 = 720p, H1080 = 1080p, ORIGINAL = native; UNSPECIFIED = best allowed
+	Fps           uint32                 `protobuf:"varint,2,opt,name=fps,proto3" json:"fps,omitempty"`                                        // 0 = best allowed
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestCameraRequest) Reset() {
+	*x = RequestCameraRequest{}
+	mi := &file_calaba_v1_rtc_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestCameraRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestCameraRequest) ProtoMessage() {}
+
+func (x *RequestCameraRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_rtc_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestCameraRequest.ProtoReflect.Descriptor instead.
+func (*RequestCameraRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *RequestCameraRequest) GetPreset() ScreenSharePreset {
+	if x != nil {
+		return x.Preset
+	}
+	return ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED
+}
+
+func (x *RequestCameraRequest) GetFps() uint32 {
+	if x != nil {
+		return x.Fps
+	}
+	return 0
+}
+
+// Granted webcam quality: min(wanted, plan camera_max_preset / camera_max_fps).
+// UNSPECIFIED / 0 = no cap (only when nothing was asked and the plan has no cap).
+type RequestCameraResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Preset        ScreenSharePreset      `protobuf:"varint,1,opt,name=preset,proto3,enum=calaba.v1.ScreenSharePreset" json:"preset,omitempty"`
+	Fps           uint32                 `protobuf:"varint,2,opt,name=fps,proto3" json:"fps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestCameraResponse) Reset() {
+	*x = RequestCameraResponse{}
+	mi := &file_calaba_v1_rtc_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestCameraResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestCameraResponse) ProtoMessage() {}
+
+func (x *RequestCameraResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_rtc_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestCameraResponse.ProtoReflect.Descriptor instead.
+func (*RequestCameraResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *RequestCameraResponse) GetPreset() ScreenSharePreset {
+	if x != nil {
+		return x.Preset
+	}
+	return ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED
+}
+
+func (x *RequestCameraResponse) GetFps() uint32 {
+	if x != nil {
+		return x.Fps
+	}
+	return 0
+}
+
 // POST /api/rooms/{id}/stream/request (STREAM). Reserves a stream slot for this device and
 // grants screen share sources; 409 ERROR_CODE_CONFLICT when max_streams is reached.
 type RequestStreamRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Preset        ScreenSharePreset      `protobuf:"varint,1,opt,name=preset,proto3,enum=calaba.v1.ScreenSharePreset" json:"preset,omitempty"` // wanted preset; UNSPECIFIED = room maximum
+	Fps           uint32                 `protobuf:"varint,2,opt,name=fps,proto3" json:"fps,omitempty"`                                        // wanted frame rate; 0 = the preset's own
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RequestStreamRequest) Reset() {
 	*x = RequestStreamRequest{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[1]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -150,7 +269,7 @@ func (x *RequestStreamRequest) String() string {
 func (*RequestStreamRequest) ProtoMessage() {}
 
 func (x *RequestStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[1]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -163,7 +282,7 @@ func (x *RequestStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestStreamRequest.ProtoReflect.Descriptor instead.
 func (*RequestStreamRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{1}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RequestStreamRequest) GetPreset() ScreenSharePreset {
@@ -173,16 +292,27 @@ func (x *RequestStreamRequest) GetPreset() ScreenSharePreset {
 	return ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED
 }
 
+func (x *RequestStreamRequest) GetFps() uint32 {
+	if x != nil {
+		return x.Fps
+	}
+	return 0
+}
+
 type RequestStreamResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Preset        ScreenSharePreset      `protobuf:"varint,1,opt,name=preset,proto3,enum=calaba.v1.ScreenSharePreset" json:"preset,omitempty"` // granted preset (≤ room max_stream_preset)
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Granted preset: ≤ room max_stream_preset and ≤ plan stream_max_preset (ADR-0024).
+	Preset ScreenSharePreset `protobuf:"varint,1,opt,name=preset,proto3,enum=calaba.v1.ScreenSharePreset" json:"preset,omitempty"`
+	// Granted frame rate: min(wanted, the preset's own — ECONOMY 5, H720 / H1080 15,
+	// ORIGINAL 30 — and plan stream_max_fps).
+	Fps           uint32 `protobuf:"varint,2,opt,name=fps,proto3" json:"fps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RequestStreamResponse) Reset() {
 	*x = RequestStreamResponse{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[2]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -194,7 +324,7 @@ func (x *RequestStreamResponse) String() string {
 func (*RequestStreamResponse) ProtoMessage() {}
 
 func (x *RequestStreamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[2]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -207,7 +337,7 @@ func (x *RequestStreamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestStreamResponse.ProtoReflect.Descriptor instead.
 func (*RequestStreamResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RequestStreamResponse) GetPreset() ScreenSharePreset {
@@ -215,6 +345,13 @@ func (x *RequestStreamResponse) GetPreset() ScreenSharePreset {
 		return x.Preset
 	}
 	return ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED
+}
+
+func (x *RequestStreamResponse) GetFps() uint32 {
+	if x != nil {
+		return x.Fps
+	}
+	return 0
 }
 
 // POST /api/rooms/{id}/voice/{userId}/move (MOVE_MEMBERS in both rooms): moves all of the
@@ -229,7 +366,7 @@ type MoveMemberRequest struct {
 
 func (x *MoveMemberRequest) Reset() {
 	*x = MoveMemberRequest{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -241,7 +378,7 @@ func (x *MoveMemberRequest) String() string {
 func (*MoveMemberRequest) ProtoMessage() {}
 
 func (x *MoveMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[3]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -254,7 +391,7 @@ func (x *MoveMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveMemberRequest.ProtoReflect.Descriptor instead.
 func (*MoveMemberRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MoveMemberRequest) GetTargetRoomId() string {
@@ -275,7 +412,7 @@ type UpdateVoiceSelfRequest struct {
 
 func (x *UpdateVoiceSelfRequest) Reset() {
 	*x = UpdateVoiceSelfRequest{}
-	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -287,7 +424,7 @@ func (x *UpdateVoiceSelfRequest) String() string {
 func (*UpdateVoiceSelfRequest) ProtoMessage() {}
 
 func (x *UpdateVoiceSelfRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_rtc_proto_msgTypes[4]
+	mi := &file_calaba_v1_rtc_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -300,7 +437,7 @@ func (x *UpdateVoiceSelfRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateVoiceSelfRequest.ProtoReflect.Descriptor instead.
 func (*UpdateVoiceSelfRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_rtc_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *UpdateVoiceSelfRequest) GetMuted() bool {
@@ -321,7 +458,7 @@ var File_calaba_v1_rtc_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\n" +
-	"\x13calaba/v1/rtc.proto\x12\tcalaba.v1\x1a\x15calaba/v1/media.proto\"\xfe\x01\n" +
+	"\x13calaba/v1/rtc.proto\x12\tcalaba.v1\x1a\x15calaba/v1/media.proto\x1a\x14calaba/v1/plan.proto\"\xb6\x02\n" +
 	"\x11JoinVoiceResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1a\n" +
@@ -331,11 +468,21 @@ const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\n" +
 	"can_stream\x18\x06 \x01(\bR\tcanStream\x12\x1b\n" +
 	"\tcan_video\x18\a \x01(\bR\bcanVideo\x12\x18\n" +
-	"\apending\x18\b \x01(\bR\apending\"L\n" +
+	"\apending\x18\b \x01(\bR\apending\x126\n" +
+	"\vplan_limits\x18\t \x01(\v2\x15.calaba.v1.PlanLimitsR\n" +
+	"planLimits\"^\n" +
+	"\x14RequestCameraRequest\x124\n" +
+	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\x12\x10\n" +
+	"\x03fps\x18\x02 \x01(\rR\x03fps\"_\n" +
+	"\x15RequestCameraResponse\x124\n" +
+	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\x12\x10\n" +
+	"\x03fps\x18\x02 \x01(\rR\x03fps\"^\n" +
 	"\x14RequestStreamRequest\x124\n" +
-	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\"M\n" +
+	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\x12\x10\n" +
+	"\x03fps\x18\x02 \x01(\rR\x03fps\"_\n" +
 	"\x15RequestStreamResponse\x124\n" +
-	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\"9\n" +
+	"\x06preset\x18\x01 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x06preset\x12\x10\n" +
+	"\x03fps\x18\x02 \x01(\rR\x03fps\"9\n" +
 	"\x11MoveMemberRequest\x12$\n" +
 	"\x0etarget_room_id\x18\x01 \x01(\tR\ftargetRoomId\"k\n" +
 	"\x16UpdateVoiceSelfRequest\x12\x19\n" +
@@ -358,25 +505,31 @@ func file_calaba_v1_rtc_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_rtc_proto_rawDescData
 }
 
-var file_calaba_v1_rtc_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_calaba_v1_rtc_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_calaba_v1_rtc_proto_goTypes = []any{
 	(*JoinVoiceResponse)(nil),      // 0: calaba.v1.JoinVoiceResponse
-	(*RequestStreamRequest)(nil),   // 1: calaba.v1.RequestStreamRequest
-	(*RequestStreamResponse)(nil),  // 2: calaba.v1.RequestStreamResponse
-	(*MoveMemberRequest)(nil),      // 3: calaba.v1.MoveMemberRequest
-	(*UpdateVoiceSelfRequest)(nil), // 4: calaba.v1.UpdateVoiceSelfRequest
-	(*RoomMediaSettings)(nil),      // 5: calaba.v1.RoomMediaSettings
-	(ScreenSharePreset)(0),         // 6: calaba.v1.ScreenSharePreset
+	(*RequestCameraRequest)(nil),   // 1: calaba.v1.RequestCameraRequest
+	(*RequestCameraResponse)(nil),  // 2: calaba.v1.RequestCameraResponse
+	(*RequestStreamRequest)(nil),   // 3: calaba.v1.RequestStreamRequest
+	(*RequestStreamResponse)(nil),  // 4: calaba.v1.RequestStreamResponse
+	(*MoveMemberRequest)(nil),      // 5: calaba.v1.MoveMemberRequest
+	(*UpdateVoiceSelfRequest)(nil), // 6: calaba.v1.UpdateVoiceSelfRequest
+	(*RoomMediaSettings)(nil),      // 7: calaba.v1.RoomMediaSettings
+	(*PlanLimits)(nil),             // 8: calaba.v1.PlanLimits
+	(ScreenSharePreset)(0),         // 9: calaba.v1.ScreenSharePreset
 }
 var file_calaba_v1_rtc_proto_depIdxs = []int32{
-	5, // 0: calaba.v1.JoinVoiceResponse.media:type_name -> calaba.v1.RoomMediaSettings
-	6, // 1: calaba.v1.RequestStreamRequest.preset:type_name -> calaba.v1.ScreenSharePreset
-	6, // 2: calaba.v1.RequestStreamResponse.preset:type_name -> calaba.v1.ScreenSharePreset
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	7, // 0: calaba.v1.JoinVoiceResponse.media:type_name -> calaba.v1.RoomMediaSettings
+	8, // 1: calaba.v1.JoinVoiceResponse.plan_limits:type_name -> calaba.v1.PlanLimits
+	9, // 2: calaba.v1.RequestCameraRequest.preset:type_name -> calaba.v1.ScreenSharePreset
+	9, // 3: calaba.v1.RequestCameraResponse.preset:type_name -> calaba.v1.ScreenSharePreset
+	9, // 4: calaba.v1.RequestStreamRequest.preset:type_name -> calaba.v1.ScreenSharePreset
+	9, // 5: calaba.v1.RequestStreamResponse.preset:type_name -> calaba.v1.ScreenSharePreset
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_rtc_proto_init() }
@@ -385,14 +538,15 @@ func file_calaba_v1_rtc_proto_init() {
 		return
 	}
 	file_calaba_v1_media_proto_init()
-	file_calaba_v1_rtc_proto_msgTypes[4].OneofWrappers = []any{}
+	file_calaba_v1_plan_proto_init()
+	file_calaba_v1_rtc_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_rtc_proto_rawDesc), len(file_calaba_v1_rtc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

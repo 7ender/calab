@@ -4,9 +4,11 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: ReserveQuota :one
--- Atomically adds size to the workspace usage if it fits the quota; no row = quota exceeded.
+-- Atomically adds size to the workspace usage if it fits the quota and the plan's storage
+-- limit (plan_quota bytes; ADR-0024); no row = quota exceeded.
 UPDATE workspaces SET storage_used_bytes = storage_used_bytes + sqlc.arg('size')::bigint
-WHERE id = sqlc.arg('id') AND storage_used_bytes + sqlc.arg('size')::bigint <= storage_quota_bytes
+WHERE id = sqlc.arg('id')
+  AND storage_used_bytes + sqlc.arg('size')::bigint <= least(storage_quota_bytes, sqlc.arg('plan_quota')::bigint)
 RETURNING storage_used_bytes;
 
 -- name: ReleaseQuota :exec
