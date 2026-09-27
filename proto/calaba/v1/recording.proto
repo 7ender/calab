@@ -56,6 +56,17 @@ message RecordingCard {
   // "upload_failed", "too_large", "no_audio" (the recorder produced no file), "recorder_failed",
   // "timeout" (no result within 2 h; the page may still get it).
   string error = 7;
+  // FAILED — which retry the card offers (backlog 40). Both negative, so that cards stored
+  // before these fields (both false) offer «Проверить снова» only:
+  //   not_uploaded = false → the file was delivered (the upload completed): «Проверить снова»
+  //                          (POST …/recheck); it is never sent again (reupload → 409).
+  //   not_uploaded = true, file_gone = false → the upload did not complete and the local file
+  //                          is kept: «Отправить снова» (POST …/reupload).
+  //   not_uploaded = true, file_gone = true → nothing to retry.
+  // file_gone: the local file is gone (removed after done, 7 days after the stop, or never
+  // written).
+  bool file_gone = 8;
+  bool not_uploaded = 9;
 }
 
 // The GPTunneL connection of a workspace. GET/POST/DELETE /api/workspaces/{id}/integrations/gptunnel.
@@ -102,4 +113,19 @@ message StartRecordingResponse {
 // 404 NOT_FOUND when the room is not being recorded.
 message StopRecordingResponse {
   RoomRecording recording = 1;
+}
+
+// Retry of a FAILED recording (backlog 40); the same people as start (a member, not a guest,
+// with VIEW_ROOM and CONNECT; allow_recording is not required). The chat card follows by
+// MESSAGE_UPDATE. Errors: 404 NOT_FOUND (no such recording in this room), 409 NOT_PAIRED,
+// 409 CONFLICT (not FAILED, or — recheck — never delivered: RecordingCard.not_uploaded),
+// 409 ALREADY_UPLOADED (reupload of a delivered recording), 409 FILE_GONE (reupload: the local
+// file is gone). A 409 about the recording also refreshes its card (MESSAGE_UPDATE).
+//
+// POST /api/rooms/{id}/recordings/{rid}/recheck: FAILED → PROCESSING; GPTunneL's status is
+// polled again by gptunnel id, the 2 h window starts anew.
+// POST /api/rooms/{id}/recordings/{rid}/reupload (upload did not complete, file kept):
+// FAILED → UPLOADING; the local file is sent to GPTunneL again as a new recording there.
+message RetryRecordingResponse {
+  RecordingCard recording = 1;
 }

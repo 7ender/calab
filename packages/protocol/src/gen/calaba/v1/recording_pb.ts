@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/recording.proto.
  */
 export const file_calaba_v1_recording: GenFile = /*@__PURE__*/
-  fileDesc("ChljYWxhYmEvdjEvcmVjb3JkaW5nLnByb3RvEgljYWxhYmEudjEi4gEKDVJvb21SZWNvcmRpbmcSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSFAoMcmVjb3JkaW5nX2lkGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uY2FsYWJhLnYxLlJvb21SZWNvcmRpbmdTdGF0ZRISCgpieV91c2VyX2lkGAUgASgJEikKBXNpbmNlGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtzdG9wX3JlYXNvbhgHIAEoCRISCgpzdG9wcGVkX2J5GAggASgJIssBCg1SZWNvcmRpbmdDYXJkEhQKDHJlY29yZGluZ19pZBgBIAEoCRISCgpzdGFydGVkX2J5GAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDGR1cmF0aW9uX3NlYxgEIAEoDRIqCgZzdGF0dXMYBSABKA4yGi5jYWxhYmEudjEuUmVjb3JkaW5nU3RhdHVzEg8KB3dlYl91cmwYBiABKAkSDQoFZXJyb3IYByABKAkingEKE0dwdHVubmVsSW50ZWdyYXRpb24SDgoGcGFpcmVkGAEgASgIEhMKC2RldmljZV9uYW1lGAIgASgJEg8KB2FjY291bnQYAyABKAkSEQoJcGFpcmVkX2J5GAQgASgJEi0KCXBhaXJlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHd2ViX3VybBgGIAEoCSJVCh5HZXRHcHR1bm5lbEludGVncmF0aW9uUmVzcG9uc2USMwoLaW50ZWdyYXRpb24YASABKAsyHi5jYWxhYmEudjEuR3B0dW5uZWxJbnRlZ3JhdGlvbiIjChNQYWlyR3B0dW5uZWxSZXF1ZXN0EgwKBGNvZGUYASABKAkiSwoUUGFpckdwdHVubmVsUmVzcG9uc2USMwoLaW50ZWdyYXRpb24YASABKAsyHi5jYWxhYmEudjEuR3B0dW5uZWxJbnRlZ3JhdGlvbiJFChZTdGFydFJlY29yZGluZ1Jlc3BvbnNlEisKCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5Sb29tUmVjb3JkaW5nIkQKFVN0b3BSZWNvcmRpbmdSZXNwb25zZRIrCglyZWNvcmRpbmcYASABKAsyGC5jYWxhYmEudjEuUm9vbVJlY29yZGluZyp9ChJSb29tUmVjb3JkaW5nU3RhdGUSJAogUk9PTV9SRUNPUkRJTkdfU1RBVEVfVU5TUEVDSUZJRUQQABIfChtST09NX1JFQ09SRElOR19TVEFURV9BQ1RJVkUQARIgChxST09NX1JFQ09SRElOR19TVEFURV9TVE9QUEVEEAIqzAEKD1JlY29yZGluZ1N0YXR1cxIgChxSRUNPUkRJTkdfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHgoaUkVDT1JESU5HX1NUQVRVU19SRUNPUkRJTkcQARIeChpSRUNPUkRJTkdfU1RBVFVTX1VQTE9BRElORxACEh8KG1JFQ09SRElOR19TVEFUVVNfUFJPQ0VTU0lORxADEhkKFVJFQ09SRElOR19TVEFUVVNfRE9ORRAEEhsKF1JFQ09SRElOR19TVEFUVVNfRkFJTEVEEAVCnAEKDWNvbS5jYWxhYmEudjFCDlJlY29yZGluZ1Byb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChljYWxhYmEvdjEvcmVjb3JkaW5nLnByb3RvEgljYWxhYmEudjEi4gEKDVJvb21SZWNvcmRpbmcSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSFAoMcmVjb3JkaW5nX2lkGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uY2FsYWJhLnYxLlJvb21SZWNvcmRpbmdTdGF0ZRISCgpieV91c2VyX2lkGAUgASgJEikKBXNpbmNlGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtzdG9wX3JlYXNvbhgHIAEoCRISCgpzdG9wcGVkX2J5GAggASgJIvQBCg1SZWNvcmRpbmdDYXJkEhQKDHJlY29yZGluZ19pZBgBIAEoCRISCgpzdGFydGVkX2J5GAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDGR1cmF0aW9uX3NlYxgEIAEoDRIqCgZzdGF0dXMYBSABKA4yGi5jYWxhYmEudjEuUmVjb3JkaW5nU3RhdHVzEg8KB3dlYl91cmwYBiABKAkSDQoFZXJyb3IYByABKAkSEQoJZmlsZV9nb25lGAggASgIEhQKDG5vdF91cGxvYWRlZBgJIAEoCCKeAQoTR3B0dW5uZWxJbnRlZ3JhdGlvbhIOCgZwYWlyZWQYASABKAgSEwoLZGV2aWNlX25hbWUYAiABKAkSDwoHYWNjb3VudBgDIAEoCRIRCglwYWlyZWRfYnkYBCABKAkSLQoJcGFpcmVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgd3ZWJfdXJsGAYgASgJIlUKHkdldEdwdHVubmVsSW50ZWdyYXRpb25SZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIiMKE1BhaXJHcHR1bm5lbFJlcXVlc3QSDAoEY29kZRgBIAEoCSJLChRQYWlyR3B0dW5uZWxSZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIkUKFlN0YXJ0UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJvb21SZWNvcmRpbmciRAoVU3RvcFJlY29yZGluZ1Jlc3BvbnNlEisKCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5Sb29tUmVjb3JkaW5nIkUKFlJldHJ5UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJlY29yZGluZ0NhcmQqfQoSUm9vbVJlY29yZGluZ1N0YXRlEiQKIFJPT01fUkVDT1JESU5HX1NUQVRFX1VOU1BFQ0lGSUVEEAASHwobUk9PTV9SRUNPUkRJTkdfU1RBVEVfQUNUSVZFEAESIAocUk9PTV9SRUNPUkRJTkdfU1RBVEVfU1RPUFBFRBACKswBCg9SZWNvcmRpbmdTdGF0dXMSIAocUkVDT1JESU5HX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGlJFQ09SRElOR19TVEFUVVNfUkVDT1JESU5HEAESHgoaUkVDT1JESU5HX1NUQVRVU19VUExPQURJTkcQAhIfChtSRUNPUkRJTkdfU1RBVFVTX1BST0NFU1NJTkcQAxIZChVSRUNPUkRJTkdfU1RBVFVTX0RPTkUQBBIbChdSRUNPUkRJTkdfU1RBVFVTX0ZBSUxFRBAFQpwBCg1jb20uY2FsYWJhLnYxQg5SZWNvcmRpbmdQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * The recording of a voice room. In WorkspaceSnapshot.recordings (active ones, READY /
@@ -129,6 +129,26 @@ export type RecordingCard = Message<"calaba.v1.RecordingCard"> & {
    * @generated from field: string error = 7;
    */
   error: string;
+
+  /**
+   * FAILED — which retry the card offers (backlog 40). Both negative, so that cards stored
+   * before these fields (both false) offer «Проверить снова» only:
+   *   not_uploaded = false → the file was delivered (the upload completed): «Проверить снова»
+   *                          (POST …/recheck); it is never sent again (reupload → 409).
+   *   not_uploaded = true, file_gone = false → the upload did not complete and the local file
+   *                          is kept: «Отправить снова» (POST …/reupload).
+   *   not_uploaded = true, file_gone = true → nothing to retry.
+   * file_gone: the local file is gone (removed after done, 7 days after the stop, or never
+   * written).
+   *
+   * @generated from field: bool file_gone = 8;
+   */
+  fileGone: boolean;
+
+  /**
+   * @generated from field: bool not_uploaded = 9;
+   */
+  notUploaded: boolean;
 };
 
 /**
@@ -292,6 +312,35 @@ export type StopRecordingResponse = Message<"calaba.v1.StopRecordingResponse"> &
  */
 export const StopRecordingResponseSchema: GenMessage<StopRecordingResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_recording, 7);
+
+/**
+ * Retry of a FAILED recording (backlog 40); the same people as start (a member, not a guest,
+ * with VIEW_ROOM and CONNECT; allow_recording is not required). The chat card follows by
+ * MESSAGE_UPDATE. Errors: 404 NOT_FOUND (no such recording in this room), 409 NOT_PAIRED,
+ * 409 CONFLICT (not FAILED, or — recheck — never delivered: RecordingCard.not_uploaded),
+ * 409 ALREADY_UPLOADED (reupload of a delivered recording), 409 FILE_GONE (reupload: the local
+ * file is gone). A 409 about the recording also refreshes its card (MESSAGE_UPDATE).
+ *
+ * POST /api/rooms/{id}/recordings/{rid}/recheck: FAILED → PROCESSING; GPTunneL's status is
+ * polled again by gptunnel id, the 2 h window starts anew.
+ * POST /api/rooms/{id}/recordings/{rid}/reupload (upload did not complete, file kept):
+ * FAILED → UPLOADING; the local file is sent to GPTunneL again as a new recording there.
+ *
+ * @generated from message calaba.v1.RetryRecordingResponse
+ */
+export type RetryRecordingResponse = Message<"calaba.v1.RetryRecordingResponse"> & {
+  /**
+   * @generated from field: calaba.v1.RecordingCard recording = 1;
+   */
+  recording?: RecordingCard | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.RetryRecordingResponse.
+ * Use `create(RetryRecordingResponseSchema)` to create a new message.
+ */
+export const RetryRecordingResponseSchema: GenMessage<RetryRecordingResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_recording, 8);
 
 /**
  * Whether a room is being recorded (the "REC" indicator).

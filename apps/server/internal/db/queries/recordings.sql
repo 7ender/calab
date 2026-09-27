@@ -115,14 +115,32 @@ UPDATE room_recordings SET status = 'done', web_url = CASE WHEN sqlc.arg('web_ur
 WHERE id = sqlc.arg('id') AND status = 'processing'
 RETURNING *;
 
+-- name: RecheckRecording :one
+-- «Проверить снова»: a failed recording that reached GPTunneL's processing is polled again,
+-- the poll window starting now.
+UPDATE room_recordings SET status = 'processing', processing_since = now(), next_at = now(),
+    attempts = 0, error = '', updated_at = now()
+WHERE id = $1 AND status = 'failed' AND gptunnel_id <> '' AND processing_since IS NOT NULL
+RETURNING *;
+
+-- name: ReuploadRecording :one
+-- «Отправить снова»: a failed recording whose upload did not complete and whose file is still
+-- here is uploaded again as a new GPTunneL recording (a partial one there is abandoned).
+UPDATE room_recordings SET status = 'uploading', gptunnel_id = '', web_url = '',
+    next_at = now(), attempts = 0, error = '', reuploads = reuploads + 1, reupload_at = now(), updated_at = now()
+WHERE id = $1 AND status = 'failed' AND processing_since IS NULL
+  AND file <> '' AND file_deleted_at IS NULL AND size_bytes > 0
+RETURNING *;
+
 -- name: SetRecordingMessage :exec
 UPDATE room_recordings SET message_id = $2 WHERE id = $1;
 
 -- name: ListRecordingFilesToDelete :many
--- Local files no longer needed: done, or failed / stuck and stopped before `before` (7 days).
+-- Local files no longer needed: done, or failed / stuck and stopped (or last sent again)
+-- before `before` (7 days).
 SELECT * FROM room_recordings
 WHERE file <> '' AND file_deleted_at IS NULL
-  AND (status = 'done' OR (status NOT IN ('pending', 'recording') AND stopped_at < sqlc.arg('before')))
+  AND (status = 'done' OR (status NOT IN ('pending', 'recording') AND coalesce(reupload_at, stopped_at) < sqlc.arg('before')))
 ORDER BY id
 LIMIT 100;
 

@@ -42,6 +42,7 @@ const (
 	CodeIncomplete          = "incomplete"
 	CodeInsufficientBalance = "insufficient_balance"
 	CodeTooManyUploads      = "too_many_uploads"
+	CodeInternal            = "internal" // a recording's status error: GPTunneL's own fault
 	CodeNetwork             = "network"
 	CodeHTTP                = "http"
 	CodeServerUnsupported   = "server_unsupported"

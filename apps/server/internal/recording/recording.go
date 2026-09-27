@@ -115,6 +115,8 @@ func (s *Service) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handle
 	mux.Handle("DELETE /api/workspaces/{id}/integrations/gptunnel", wrap(httpx.HandlerFunc(s.unpairIntegration)))
 	mux.Handle("POST /api/rooms/{id}/recording/start", wrap(httpx.HandlerFunc(s.start)))
 	mux.Handle("POST /api/rooms/{id}/recording/stop", wrap(httpx.HandlerFunc(s.stop)))
+	mux.Handle("POST /api/rooms/{id}/recordings/{rid}/recheck", wrap(httpx.HandlerFunc(s.recheck)))
+	mux.Handle("POST /api/rooms/{id}/recordings/{rid}/reupload", wrap(httpx.HandlerFunc(s.reupload)))
 }
 
 var (

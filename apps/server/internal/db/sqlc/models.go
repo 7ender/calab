@@ -204,6 +204,8 @@ type RoomRecording struct {
 	ProcessingSince *time.Time
 	FileDeletedAt   *time.Time
 	UpdatedAt       time.Time
+	Reuploads       int32
+	ReuploadAt      *time.Time
 }
 
 type Session struct {
