@@ -156,7 +156,7 @@ func run(m *testing.M) int {
 		// plans_integration_test sets the free limits it needs.
 		PlanFreeLimits:        unlimitedPlan,
 		PlanContactEmail:      "it@gptunnel.ai",
-		SuperadminEmails:      []string{superadminEmail},
+		SuperadminEmails:      []string{superadminEmail, superadminEmail2},
 		MailPerAddressPerHour: 3,
 		MailPerHour:           1 << 20, // every test user gets a verification code
 	}

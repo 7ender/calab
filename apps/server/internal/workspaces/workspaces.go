@@ -65,6 +65,8 @@ type Limits struct {
 	Quota         int64               // storage quota of a new workspace
 	CreateLimiter *redisx.RateLimiter // creations per user (3/h)
 	Plans         *plans.Service      // fills Workspace.plan (ADR-0024); nil = unset
+	// PreviewLimiter: public invite previews per IP (30/min); nil = unlimited.
+	PreviewLimiter *redisx.RateLimiter
 }
 
 // NewHandlers creates the workspace handlers.
@@ -90,7 +92,8 @@ func (h *Handlers) Routes(mux *http.ServeMux, wrap func(http.Handler) http.Handl
 	handle("PATCH /api/workspaces/{id}/members/{userId}", h.updateMember)
 	handle("DELETE /api/workspaces/{id}/members/{userId}", h.removeMember)
 	handle("POST /api/workspaces/{id}/members/{userId}/promote", h.promote)
-	handle("GET /api/invites/{code}", h.getInvite)
+	// Public: the /join/<code> page of a signed-out visitor (invitation email) needs it.
+	mux.Handle("GET /api/invites/{code}", httpx.HandlerFunc(h.getInvite))
 	handle("POST /api/invites/{code}/join", h.joinInvite)
 	h.emailRoutes(handle)
 }
@@ -533,7 +536,15 @@ func inviteUsable(i sqlc.WorkspaceInvite, now time.Time) bool {
 	return (i.ExpiresAt == nil || now.Before(*i.ExpiresAt)) && (i.MaxUses == 0 || i.Uses < i.MaxUses)
 }
 
+// getInvite: GET /api/invites/{code} — public preview (no token), limited per IP. It shows
+// only what the link's holder may see before joining: the workspace's name / slug / icon,
+// the member count and, for an invitation by email, the invited address.
 func (h *Handlers) getInvite(w http.ResponseWriter, r *http.Request) error {
+	if l := h.limits.PreviewLimiter; l != nil {
+		if err := l.Take(r.Context(), httpx.ClientIP(r.Context())); err != nil {
+			return err
+		}
+	}
 	inv, err := h.db.Q.GetInviteByCode(r.Context(), r.PathValue("code"))
 	if db.IsNotFound(err) || (err == nil && !inviteUsable(inv, time.Now())) {
 		return auth.ErrInviteInvalid()
@@ -545,7 +556,15 @@ func (h *Handlers) getInvite(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	resp := &v1.GetInviteResponse{Workspace: pbconv.Workspace(ws)}
+	n, err := h.db.Q.CountWorkspaceMembers(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	full := pbconv.Workspace(ws)
+	resp := &v1.GetInviteResponse{
+		Workspace:   &v1.Workspace{Id: full.GetId(), Slug: full.GetSlug(), Name: full.GetName(), IconFileId: full.GetIconFileId()},
+		MemberCount: uint32(max(n, 0)), //nolint:gosec // a count
+	}
 	if inv.ExpiresAt != nil {
 		resp.ExpiresAt = timestamppb.New(*inv.ExpiresAt)
 	}

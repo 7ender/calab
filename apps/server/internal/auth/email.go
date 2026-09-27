@@ -160,6 +160,9 @@ func (s *Service) sendCode(ctx context.Context, u sqlc.User, purpose, addr strin
 func (s *Service) checkCode(ctx context.Context, userID uuid.UUID, purpose, code string) error {
 	row, err := s.db.Q.TakeEmailCodeAttempt(ctx, sqlc.TakeEmailCodeAttemptParams{UserID: userID, Purpose: purpose, MaxAttempts: codeAttempts})
 	if db.IsNotFound(err) {
+		// Same timing as a compared code: POST /api/auth/password/reset must not tell an
+		// existing account without a live code from an unknown address.
+		_, _ = VerifyPassword(ctx, code, dummyHash)
 		return errCodeExpired
 	}
 	if err != nil {

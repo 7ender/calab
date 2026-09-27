@@ -134,13 +134,17 @@ message UpdateMemberResponse {
   WorkspaceMember member = 1;
 }
 
-// GET /api/invites/{code} — preview before joining (any authenticated user with the code).
+// GET /api/invites/{code} — preview before joining. Public (no token: the /join/<code> page
+// of a signed-out visitor, e.g. from an invitation email), 30 per minute per IP; an unknown,
+// expired or used-up code is 404 INVITE_INVALID.
 message GetInviteResponse {
+  // Public subset only: id, slug, name, icon_file_id (the rest is unset).
   Workspace workspace = 1;
   google.protobuf.Timestamp expires_at = 2; // unset = never
   // Email invitation (ADR-0023): the code works only for this address (register with it /
   // be signed in with it verified), else 404 INVITE_INVALID. Prefill it on the sign-up form.
   string email = 3;
+  uint32 member_count = 4; // members without guests
 }
 
 // ---- Invitations by email (ADR-0023). All need MANAGE_WORKSPACE (the invite right) and a
