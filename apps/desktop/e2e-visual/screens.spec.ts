@@ -574,7 +574,7 @@ test('members-menu', async ({ open, win, mock, shot }) => {
   const roles = win.getByTestId('member-roles-menu');
   await expect(roles.getByRole('menuitemcheckbox')).toHaveCount(3);
   await expect(roles.getByRole('menuitemcheckbox', { name: 'Администратор' })).toBeChecked();
-  await checkpoint(shot, 'members-menu');
+  await checkpoint(shot, 'members-menu', { keepPointer: true });
 });
 
 test('profile-dialog', async ({ open, win, mock, shot }) => {
