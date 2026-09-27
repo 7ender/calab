@@ -107,7 +107,7 @@ const DEFAULTS: Prefs = {
   thresholdDb: -50,
   pttBinding: null,
   pttReleaseMs: PTT_RELEASE_DEFAULT_MS,
-  rnnoise: true,
+  rnnoise: false, // off by default (owner, 27.09): Chromium's noiseSuppression is on instead, RNNoise costs CPU
   red: false,
   echoMode: 'headphones',
   streamPreset: ScreenSharePreset.H1080,
@@ -141,11 +141,14 @@ interface PrefsState extends Prefs {
 export const usePrefs = create<PrefsState>()(
   persist((set) => ({ ...DEFAULTS, setPrefs: (p) => set(p) }), {
     name: 'calaba-prefs',
-    version: 2,
+    version: 3,
     // v2: statuses moved to the server — a status chosen on this device before is sent once.
+    // v3: RNNoise off for everyone (it was on by default and costs CPU); re-enable in settings.
     migrate: (state, version) => {
-      const s = state as Partial<Prefs>;
-      return version < 2 ? { ...s, presenceSynced: (s.presence ?? PresenceStatus.ONLINE) === PresenceStatus.ONLINE } : s;
+      let s = state as Partial<Prefs>;
+      if (version < 2) s = { ...s, presenceSynced: (s.presence ?? PresenceStatus.ONLINE) === PresenceStatus.ONLINE };
+      if (version < 3) s = { ...s, rnnoise: false };
+      return s;
     },
     partialize: ({ setPrefs: _s, ...rest }) => rest,
   }),

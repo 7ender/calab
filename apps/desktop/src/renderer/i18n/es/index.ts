@@ -320,7 +320,7 @@ export const es: Dict = {
     'Linux (Wayland): las teclas globales no están disponibles, así que pulsar para hablar solo funciona mientras la ventana de Calab tiene el foco. Bloq Mayús no es compatible con el portal GlobalShortcuts.',
   'voice.pttMac': 'macOS: requiere los permisos «Accesibilidad» y «Monitoreo de entrada».',
   'voice.rnnoise': 'Supresión de ruido',
-  'voice.rnnoiseHint': 'Elimina el ruido del teclado y el ruido de fondo',
+  'voice.rnnoiseHint': 'Elimina el ruido del teclado y el ruido de fondo. Consume más CPU: desactivado por defecto',
   'voice.red': 'Resiliencia a redes deficientes',
   'voice.redHint': 'Menos cortes de voz en Wi-Fi débil o VPN, al doble de tráfico',
   'voice.myBitrate': 'Calidad de mi voz',

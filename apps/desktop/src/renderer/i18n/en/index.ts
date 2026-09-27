@@ -320,7 +320,7 @@ export const en: Dict = {
     'Linux (Wayland): global keys aren’t available, so push‑to‑talk works only while the Calab window is focused. Caps Lock isn’t supported by the GlobalShortcuts portal.',
   'voice.pttMac': 'macOS: requires “Accessibility” and “Input Monitoring” permissions.',
   'voice.rnnoise': 'Noise suppression',
-  'voice.rnnoiseHint': 'Removes keyboard clatter and background noise',
+  'voice.rnnoiseHint': 'Removes keyboard clatter and background noise. Uses extra CPU — off by default',
   'voice.red': 'Resilience to poor networks',
   'voice.redHint': 'Fewer voice dropouts on weak Wi‑Fi or VPN, at twice the traffic',
   'voice.myBitrate': 'My voice quality',

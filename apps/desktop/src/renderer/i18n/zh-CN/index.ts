@@ -320,7 +320,7 @@ export const zhCN: Dict = {
     'Linux（Wayland）：全局快捷键不可用，因此按键说话仅在 Calab 窗口获得焦点时生效。GlobalShortcuts 门户不支持大写锁定键。',
   'voice.pttMac': 'macOS：需要"辅助功能"和"输入监控"权限。',
   'voice.rnnoise': '降噪',
-  'voice.rnnoiseHint': '消除键盘敲击声和背景噪音',
+  'voice.rnnoiseHint': '消除键盘敲击声和背景噪音。会增加 CPU 占用，默认关闭',
   'voice.red': '弱网抗性',
   'voice.redHint': '在较差的 Wi-Fi 或 VPN 下减少语音断续，但流量翻倍',
   'voice.myBitrate': '我的语音音质',
