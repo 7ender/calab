@@ -61,6 +61,7 @@ const KEY = new Set([
   'recording-transcript',
   'chat-recording-delete',
   'chat-audio',
+  'chat-audio-mini',
   'chat-video',
   'chat-code',
   'chat-voice-recording',
@@ -1644,6 +1645,41 @@ test('chat-audio', async ({ open, win, mock, shot }) => {
   await expect(mini).toHaveCount(0);
 });
 
+// docs/09 #57: the mini-player shows whenever the playing message is off screen — above (newer
+// messages pushed it up) or below (scrolled back into history) — over the top of the feed, and
+// hides once the message is back in view.
+test('chat-audio-mini', async ({ open, win, mock, shot }) => {
+  await open();
+  const player = await postMedia(win, mock, 'audio');
+  await player.getByRole('button', { name: 'Воспроизвести' }).click();
+  await expect(player).toHaveAttribute('data-playing', 'true');
+  await player.getByRole('button', { name: 'Пауза' }).click();
+  const seek = player.getByRole('slider', { name: 'Перемотка' });
+  await seek.focus();
+  await win.keyboard.press('Home');
+  await win.keyboard.press('ArrowRight');
+  await expect(seek).toHaveAttribute('aria-valuetext', '0:05 из 0:06');
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const mini = win.getByTestId('mini-player');
+  await expect(mini).toHaveCount(0);
+  // Newer messages push the message above the viewport.
+  for (let i = 1; i <= 16; i++) mock.injectMessage({ roomId: IDS.rooms.general, authorId: i % 2 ? IDS.users.anna : IDS.users.grigory, content: `Сообщение после джингла №${i}` });
+  await expect(win.getByText('Сообщение после джингла №16')).toBeVisible();
+  await feedAtBottom(win);
+  await expect(mini).toBeVisible();
+  await expect(mini).toContainText('Джингл релиза');
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'chat-audio-mini');
+  // Scrolled back past it into history: the message is below the viewport — still shown.
+  await feedTo(win, 'top');
+  await expect(win.getByTestId('audio-player')).toHaveCount(0);
+  await expect(mini).toBeVisible();
+  // «Показать сообщение»: the message comes into view and the strip goes.
+  await mini.getByRole('button', { name: /Джингл релиза/ }).click();
+  await expect(player).toBeInViewport();
+  await expect(mini).toHaveCount(0);
+});
+
 // Video: the first frame as the poster with a play button and the duration; plays in place with
 // the native controls; Escape leaves full screen.
 test('chat-video', async ({ open, win, mock, shot }) => {
@@ -2205,4 +2241,5 @@ async function expectWelcomeCentred(page: Page): Promise<void> {
   expect(off, 'empty-room welcome present').not.toBeNull();
   expect(Math.abs(off ?? 99), 'empty-room welcome centred').toBeLessThanOrEqual(4);
 }
+
 

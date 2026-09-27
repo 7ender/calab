@@ -15,6 +15,7 @@ import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { buildMetas, type RowMeta } from './grouping';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
+import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
 import { Avatar } from '../../components/Avatar';
 import { useDms } from '../../stores/dms';
@@ -67,6 +68,8 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const newestKnown = useRooms((s) => s.lastMessage[roomId] ?? '');
   const highlight = useChatView((s) => s.highlight);
   const jump = useChatView((s) => s.jump);
+  // The mini-player covers the feed's top strip: the unread banner and the date pill go below it.
+  const mini = useMiniPlayerShown();
   const items = state.items;
   const virtuoso = useRef<VirtuosoHandle>(null);
   // False until Virtuoso reports it: opening at the first unread must not mark the room read.
@@ -286,7 +289,13 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
       />
 
       {showBanner && firstUnreadMsg ? (
-        <div className="absolute inset-x-0 top-0 z-[var(--z-sticky)] flex h-8 items-center gap-2 bg-accent-strong pl-4 pr-2 text-body text-accent-fg shadow-[var(--shadow-card)]" data-testid="unread-banner">
+        <div
+          className={cx(
+            'absolute inset-x-0 z-[var(--z-sticky)] flex h-8 items-center gap-2 bg-accent-strong pl-4 pr-2 text-body text-accent-fg shadow-[var(--shadow-card)]',
+            mini ? 'top-11 mobile:top-12' : 'top-0',
+          )}
+          data-testid="unread-banner"
+        >
           <button type="button" className="min-w-0 flex-1 truncate text-left font-medium hover:underline" onClick={toFirstUnread}>
             {plural('chat.unreadBanner', unread, {
               n: `${unread}${moreUnread ? '+' : ''}`,
@@ -307,7 +316,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         <div
           className={cx(
             'pointer-events-none absolute inset-x-0 z-[var(--z-sticky)] flex justify-center transition-opacity duration-[var(--motion)] ease-out',
-            showBanner ? 'top-10' : 'top-2',
+            mini ? (showBanner ? 'top-[5.25rem] mobile:top-[5.5rem]' : 'top-[3.25rem] mobile:top-14') : showBanner ? 'top-10' : 'top-2',
             scrolling ? 'opacity-100' : 'opacity-0',
           )}
           data-idle={scrolling ? undefined : ''}

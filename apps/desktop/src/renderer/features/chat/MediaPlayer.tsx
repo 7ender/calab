@@ -1,6 +1,6 @@
 import type { FileMeta } from '@calaba/protocol';
 import { Download, Film, Maximize, Pause, PictureInPicture2, Play, X } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { filePath } from '../../lib/api/endpoints';
@@ -63,18 +63,7 @@ export function AudioAttachment({
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => probeDuration(f.id), [f.id]);
-
-  // The mini-player shows while the playing message is off screen (or unmounted by the feed).
-  useEffect(() => {
-    const el = root.current;
-    if (!active || !el) return;
-    const io = new IntersectionObserver(([e]) => usePlayer.getState().setInView(!!e?.isIntersecting));
-    io.observe(el);
-    return () => {
-      io.disconnect();
-      usePlayer.getState().setInView(false);
-    };
-  }, [active]);
+  useReportInView(root, active);
 
   const toggle = (): void => usePlayer.getState().toggle(track);
   const time = active ? `${formatTime(position)} / ${formatTime(known || Number.NaN)}` : known ? formatTime(known) : fmt.size(f.size);
@@ -236,9 +225,41 @@ export function SeekBar({
 
 // ---------------------------------------------------------------- mini-player
 
+/** The mini-player's height (44 px, 48 on a phone): it lies over the top of the feed. */
+const MINI_PLAYER_H = 48;
+
+/**
+ * The active track's player in a message reports whether it is on screen (docs/09 #57): the
+ * mini-player shows while it is not — above or below the viewport, or unmounted by the
+ * virtualised feed. Observed against the feed's scroller minus the strip the mini-player covers,
+ * so a row under the mini-player counts as hidden and showing it never changes the answer.
+ */
+export function useReportInView(ref: RefObject<HTMLElement | null>, active: boolean): void {
+  useEffect(() => {
+    const el = ref.current;
+    if (!active || !el) return;
+    const who = {};
+    const scroller = el.closest('[data-virtuoso-scroller]');
+    const io = new IntersectionObserver(([e]) => usePlayer.getState().setInView(who, !!e?.isIntersecting), {
+      root: scroller instanceof HTMLElement ? scroller : null,
+      rootMargin: `-${MINI_PLAYER_H}px 0px 0px 0px`,
+    });
+    io.observe(el);
+    return () => {
+      io.disconnect();
+      usePlayer.getState().setInView(who, false);
+    };
+  }, [ref, active]);
+}
+
+/** The mini-player is on (a track, its message off screen): the feed's top overlays move below it. */
+export const useMiniPlayerShown = (): boolean => usePlayer((s) => !!s.track && !s.inView);
+
 /**
  * The strip over the feed while a track plays and its message is off screen (Telegram): title,
- * play / pause, close; a click on the title jumps to the message when it is in this room.
+ * play / pause, close; a click on the title jumps to the message when it is in this room. It lies
+ * over the top of the feed (MessageList), outside the scroller, so it never resizes the feed —
+ * a resize would scroll the message back into view and hide the strip again.
  */
 export function MiniPlayer({ roomId }: { roomId: string }): ReactNode {
   const track = usePlayer((s) => s.track);
@@ -260,7 +281,7 @@ export function MiniPlayer({ roomId }: { roomId: string }): ReactNode {
       data-testid="mini-player"
       role="region"
       aria-label={t('media.nowPlaying')}
-      className="mat-toolbar relative flex h-11 w-full shrink-0 items-center gap-2 border-b border-line pl-2 pr-2 mobile:h-12"
+      className="mat-toolbar absolute inset-x-0 top-0 z-[var(--z-sticky)] flex h-11 items-center gap-2 border-b border-line pl-2 pr-2 mobile:h-12"
     >
       <button
         type="button"

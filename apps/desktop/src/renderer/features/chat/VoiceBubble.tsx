@@ -6,7 +6,7 @@ import { t } from '../../i18n';
 import { formatTime, rateLabel } from '../../lib/chatMedia';
 import { drawBars } from '../../lib/voiceNote';
 import { usePlayer, type Track } from '../../stores/player';
-import { SeekBar, download, isSpace } from './MediaPlayer';
+import { SeekBar, download, isSpace, useReportInView } from './MediaPlayer';
 
 /**
  * A voice message in a bubble (docs/09 #43, docs/08 «Голосовые сообщения», Telegram): play /
@@ -52,16 +52,7 @@ export function VoiceAttachment({ f, messageId, roomId, author, meta }: { f: Fil
     if (total > 0) usePlayer.getState().noteDuration(f.id, total);
   }, [f.id, total]);
 
-  useEffect(() => {
-    const el = root.current;
-    if (!active || !el) return;
-    const io = new IntersectionObserver(([e]) => usePlayer.getState().setInView(!!e?.isIntersecting));
-    io.observe(el);
-    return () => {
-      io.disconnect();
-      usePlayer.getState().setInView(false);
-    };
-  }, [active]);
+  useReportInView(root, active);
 
   const toggle = (): void => usePlayer.getState().toggle(track);
   const time = active ? formatTime(Math.max(0, total - position)) : formatTime(total);
