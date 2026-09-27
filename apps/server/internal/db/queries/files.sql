@@ -1,6 +1,7 @@
 -- name: InsertFile :one
-INSERT INTO files (id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO files (id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256,
+                   voice_duration_ms, voice_waveform)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING *;
 
 -- name: ReserveQuota :one

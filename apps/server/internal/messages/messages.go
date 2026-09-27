@@ -290,6 +290,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 				files = append(files, sqlc.File{
 					ID: f.ID, WorkspaceID: f.WorkspaceID, UploaderID: f.UploaderID, Key: f.Key, ThumbnailKey: f.ThumbnailKey,
 					Name: f.Name, Mime: f.Mime, Size: f.Size, Width: f.Width, Height: f.Height, Sha256: f.Sha256, CreatedAt: f.CreatedAt,
+					VoiceDurationMs: f.VoiceDurationMs, VoiceWaveform: f.VoiceWaveform,
 				})
 			}
 		}

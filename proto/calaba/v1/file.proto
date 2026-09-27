@@ -17,9 +17,20 @@ message FileMeta {
   string url = 10;   // /api/files/{id} (Authorization header required)
   string thumbnail_url = 11; // /api/files/{id}/thumbnail for images, empty otherwise
   google.protobuf.Timestamp created_at = 12;
+  VoiceInfo voice = 13; // set for voice messages only (docs/09 #43)
 }
 
-// POST /api/workspaces/{id}/files (multipart field "file", streamed). Also the response of
+// A voice message recorded in the app (docs/09 #43, docs/02 «Голосовые сообщения»): an
+// Ogg/Opus file (`audio/ogg`, starts with `OggS` + `OpusHead`, ≤ 1.5 MB, ≤ 5 min). Declared on
+// upload with `?voice_duration_ms=&voice_waveform=` (base64url, no padding); clients render it
+// as a voice bubble instead of the audio player.
+message VoiceInfo {
+  uint32 duration_ms = 1; // 1..300000
+  bytes waveform = 2;     // ≤ 100 bars, each the peak level 0..255, computed while recording
+}
+
+// POST /api/workspaces/{id}/files (multipart field "file", streamed; a voice message adds
+// ?voice_duration_ms=&voice_waveform=, see VoiceInfo). Also the response of
 // POST /api/me/avatar is UpdateMeResponse.
 message UploadFileResponse {
   FileMeta file = 1;

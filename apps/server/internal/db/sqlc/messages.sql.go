@@ -207,7 +207,7 @@ func (q *Queries) LastMessages(ctx context.Context, roomIds []uuid.UUID) ([]Last
 }
 
 const listAttachments = `-- name: ListAttachments :many
-SELECT ma.message_id, f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at
+SELECT ma.message_id, f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform
 FROM message_attachments ma JOIN files f ON f.id = ma.file_id
 WHERE ma.message_id = ANY($1::uuid[])
 ORDER BY ma.message_id, ma.position
@@ -241,6 +241,8 @@ func (q *Queries) ListAttachments(ctx context.Context, ids []uuid.UUID) ([]ListA
 			&i.File.Height,
 			&i.File.Sha256,
 			&i.File.CreatedAt,
+			&i.File.VoiceDurationMs,
+			&i.File.VoiceWaveform,
 		); err != nil {
 			return nil, err
 		}

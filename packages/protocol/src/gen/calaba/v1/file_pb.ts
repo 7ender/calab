@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/file.proto.
  */
 export const file_calaba_v1_file: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvZmlsZS5wcm90bxIJY2FsYWJhLnYxIu4BCghGaWxlTWV0YRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSEwoLdXBsb2FkZXJfaWQYAyABKAkSDAoEbmFtZRgEIAEoCRIMCgRtaW1lGAUgASgJEgwKBHNpemUYBiABKAQSDQoFd2lkdGgYByABKA0SDgoGaGVpZ2h0GAggASgNEg4KBnNoYTI1NhgJIAEoCRILCgN1cmwYCiABKAkSFQoNdGh1bWJuYWlsX3VybBgLIAEoCRIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI3ChJVcGxvYWRGaWxlUmVzcG9uc2USIQoEZmlsZRgBIAEoCzITLmNhbGFiYS52MS5GaWxlTWV0YUKXAQoNY29tLmNhbGFiYS52MUIJRmlsZVByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjYWxhYmEvdjEvZmlsZS5wcm90bxIJY2FsYWJhLnYxIpMCCghGaWxlTWV0YRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSEwoLdXBsb2FkZXJfaWQYAyABKAkSDAoEbmFtZRgEIAEoCRIMCgRtaW1lGAUgASgJEgwKBHNpemUYBiABKAQSDQoFd2lkdGgYByABKA0SDgoGaGVpZ2h0GAggASgNEg4KBnNoYTI1NhgJIAEoCRILCgN1cmwYCiABKAkSFQoNdGh1bWJuYWlsX3VybBgLIAEoCRIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIjCgV2b2ljZRgNIAEoCzIULmNhbGFiYS52MS5Wb2ljZUluZm8iMgoJVm9pY2VJbmZvEhMKC2R1cmF0aW9uX21zGAEgASgNEhAKCHdhdmVmb3JtGAIgASgMIjcKElVwbG9hZEZpbGVSZXNwb25zZRIhCgRmaWxlGAEgASgLMhMuY2FsYWJhLnYxLkZpbGVNZXRhQpcBCg1jb20uY2FsYWJhLnYxQglGaWxlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * Stored file. Bytes are served only through the API (MinIO is never public).
@@ -89,6 +89,13 @@ export type FileMeta = Message<"calaba.v1.FileMeta"> & {
    * @generated from field: google.protobuf.Timestamp created_at = 12;
    */
   createdAt?: Timestamp | undefined;
+
+  /**
+   * set for voice messages only (docs/09 #43)
+   *
+   * @generated from field: calaba.v1.VoiceInfo voice = 13;
+   */
+  voice?: VoiceInfo | undefined;
 };
 
 /**
@@ -99,7 +106,39 @@ export const FileMetaSchema: GenMessage<FileMeta> = /*@__PURE__*/
   messageDesc(file_calaba_v1_file, 0);
 
 /**
- * POST /api/workspaces/{id}/files (multipart field "file", streamed). Also the response of
+ * A voice message recorded in the app (docs/09 #43, docs/02 «Голосовые сообщения»): an
+ * Ogg/Opus file (`audio/ogg`, starts with `OggS` + `OpusHead`, ≤ 1.5 MB, ≤ 5 min). Declared on
+ * upload with `?voice_duration_ms=&voice_waveform=` (base64url, no padding); clients render it
+ * as a voice bubble instead of the audio player.
+ *
+ * @generated from message calaba.v1.VoiceInfo
+ */
+export type VoiceInfo = Message<"calaba.v1.VoiceInfo"> & {
+  /**
+   * 1..300000
+   *
+   * @generated from field: uint32 duration_ms = 1;
+   */
+  durationMs: number;
+
+  /**
+   * ≤ 100 bars, each the peak level 0..255, computed while recording
+   *
+   * @generated from field: bytes waveform = 2;
+   */
+  waveform: Uint8Array;
+};
+
+/**
+ * Describes the message calaba.v1.VoiceInfo.
+ * Use `create(VoiceInfoSchema)` to create a new message.
+ */
+export const VoiceInfoSchema: GenMessage<VoiceInfo> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_file, 1);
+
+/**
+ * POST /api/workspaces/{id}/files (multipart field "file", streamed; a voice message adds
+ * ?voice_duration_ms=&voice_waveform=, see VoiceInfo). Also the response of
  * POST /api/me/avatar is UpdateMeResponse.
  *
  * @generated from message calaba.v1.UploadFileResponse
@@ -116,5 +155,5 @@ export type UploadFileResponse = Message<"calaba.v1.UploadFileResponse"> & {
  * Use `create(UploadFileResponseSchema)` to create a new message.
  */
 export const UploadFileResponseSchema: GenMessage<UploadFileResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_file, 1);
+  messageDesc(file_calaba_v1_file, 2);
 
