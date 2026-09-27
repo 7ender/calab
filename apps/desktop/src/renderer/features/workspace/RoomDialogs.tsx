@@ -31,7 +31,7 @@ import { GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from '..
 import { MemberPicker } from '../people/MemberPicker';
 import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
-import { CommitInput } from '../settings/AppSettingsDialog';
+import { CommitInput } from '../settings/CommitInput';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { UserLimitCard } from '../shell/UserLimitCard';
 import { RoomLinkTab } from '../people/RoomLinkTab';

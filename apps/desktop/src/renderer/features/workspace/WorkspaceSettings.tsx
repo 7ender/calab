@@ -23,7 +23,7 @@ import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
-import { CommitInput } from '../settings/AppSettingsDialog';
+import { CommitInput } from '../settings/CommitInput';
 import { MAX_USES } from '../people/RoomLinkTab';
 import { ROLE_LABEL } from '../shell/MembersPanel';
 import { canRemoveMember, canRenameMember } from '../people/members';

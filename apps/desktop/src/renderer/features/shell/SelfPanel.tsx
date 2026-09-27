@@ -16,6 +16,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MenuSliderItem } from './MenuSliderItem';
 import { selectMicMode, swallowMenuKey } from './micMenu';
 import { STATUS_KEY, StatusMenu, useMyStatus } from './StatusMenu';
+import { AppSettingsWindow } from './lazyWindows';
 
 /** Self panel (docs/09 #6): avatar + status, name, mic / headphones with device pickers, settings. */
 export function SelfPanel(): ReactNode {
@@ -90,7 +91,13 @@ export function SelfPanel(): ReactNode {
         >
           {deafened ? <HeadphoneOff className="size-5" /> : <Headphones className="size-5" />}
         </SplitButton>
-        <IconButton className="size-8" label={t('settings.title')} onClick={() => open({ kind: 'settings' })}>
+        <IconButton
+          className="size-8"
+          label={t('settings.title')}
+          onPointerEnter={() => void AppSettingsWindow.preload()}
+          onFocus={() => void AppSettingsWindow.preload()}
+          onClick={() => open({ kind: 'settings' })}
+        >
           <Settings className="size-5" />
         </IconButton>
       </span>

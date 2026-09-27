@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { ConfirmHost } from '../../components/Confirm';
 import { Lightbox } from '../chat/Lightbox';
 import { useUi } from '../../stores/ui';
-import { AppSettingsDialog } from '../settings/AppSettingsDialog';
 import { CameraPreview } from '../voice/CameraPreview';
 import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
@@ -11,8 +10,7 @@ import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
 import { ProfileDialog } from '../people/ProfileDialog';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
-import { WorkspaceSettingsDialog } from '../workspace/WorkspaceSettings';
-import { AdminWindow } from '../admin/AdminWindow';
+import { AdminWindowLazy, AppSettingsWindow, WorkspaceSettingsWindow } from './lazyWindows';
 import { useSession } from '../../stores/session';
 
 export function Dialogs(): ReactNode {
@@ -29,7 +27,7 @@ export function Dialogs(): ReactNode {
         node = <JoinWorkspaceDialog onClose={close} initialCode={d.code ?? ''} />;
         break;
       case 'workspace-settings':
-        node = <WorkspaceSettingsDialog onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
+        node = <WorkspaceSettingsWindow.Component onClose={close} workspaceId={d.workspaceId} tab={d.tab} roomId={d.roomId} />;
         break;
       case 'room-create':
         node = <RoomCreateDialog onClose={close} workspaceId={d.workspaceId} voice={d.voice} categoryId={d.categoryId} />;
@@ -38,7 +36,7 @@ export function Dialogs(): ReactNode {
         node = <RoomSettingsDialog onClose={close} roomId={d.roomId} tab={d.tab} />;
         break;
       case 'settings':
-        node = <AppSettingsDialog onClose={close} tab={d.tab} />;
+        node = <AppSettingsWindow.Component onClose={close} tab={d.tab} />;
         break;
       case 'stream-picker':
         node = <StreamPicker onClose={close} />;
@@ -60,7 +58,7 @@ export function Dialogs(): ReactNode {
         break;
       case 'admin':
         // Only for superadmins (the server answers 404 to anyone else anyway).
-        node = superadmin ? <AdminWindow onClose={close} workspaceId={d.workspaceId} /> : null;
+        node = superadmin ? <AdminWindowLazy.Component onClose={close} workspaceId={d.workspaceId} /> : null;
         break;
       case 'image':
         node = <Lightbox images={d.images} index={d.index} onClose={close} />;
