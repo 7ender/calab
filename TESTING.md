@@ -1767,7 +1767,7 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 1. Регистрация → письмо «Код подтверждения: NNNNNN» (язык — по `Accept-Language`/`locale`); до кода `POST /api/workspaces` → 403 `EMAIL_NOT_VERIFIED`; `POST /api/auth/verify {code}` → `emailVerified: true`, создание работает.
 2. 5 неверных кодов → `CODE_INVALID` ×4, затем `CODE_EXPIRED`; `verify/send` раньше 60 с → 429.
 3. `password/forgot` (свой и чужой адрес) → 204 оба, письмо только своему; `password/reset` → 204, все устройства разлогинены, вход с новым паролем.
-4. `invites/lookup` своего участника → `member: true`; неизвестного → `{}`; `invites/email` → письмо со ссылкой `/join/<code>`; регистрация по ней → сразу в пространстве; повтор приглашения < 24 ч → 429.
+4. `invites/lookup` своего участника → `member: true`; неизвестного → `{}`; `invites/email` → письмо со ссылкой `/join/<code>`, шагами и кодом текстом; регистрация по ней → код подтверждения → в пространстве (ADR-0027); повтор приглашения < 24 ч → 429.
 5. Письма: светлая/тёмная тема клиента, подвал «Powered by GPTunneL · calab.ru».
 
 ## Client: почта (ADR-0023, ветка `feat/email-client`)
@@ -1779,6 +1779,14 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 4. Профиль → «Изменить email» → код на новый адрес; строка «ожидает подтверждения», «Отменить» (паролем).
 5. Приглашения → «Пригласить по email»: свой участник → «Уже участник»; зарегистрированный → «Добавить»; новый адрес → письмо, запись в «Отправленные», «Отозвать».
 6. Ссылка из письма в вебе без входа: карточка с именем и числом участников; регистрация — email заблокирован, после неё сразу в пространстве.
+
+## Приглашения: один код (docs/09 п. 36, ADR-0027, ветка `fix/invite-flow`)
+- Сервер: `go test ./internal/mail` (3 шага + «Код приглашения: …» × 4 локали); `go test -tags integration -run 'TestInviteFlow|TestEmailInviteAutoJoin' ./internal/app/` — email-код: чужой адрес 403 `INVITE_EMAIL_MISMATCH`, регистрация без вступления → verify → `joinedWorkspaceIds` + `WORKSPACE_CREATE`, повтор (превью 200, участник 200, чужой 403, новая регистрация 404); код ссылки — вступление при регистрации.
+- Клиент: `pnpm -F @calaba/desktop exec vitest run src/renderer/features/onboarding` (порядок шагов, пропуски, восстановление шага, микрофон без перезапуска); мок — describe «email».
+- E2E (мок): `npx tsx e2e-support/mock-server.ts --port 41975 --scenario data --static dist-web --quiet &` → `CALABA_WEB_URL=http://127.0.0.1:41975 pnpm -F @calaba/desktop e2e:web --project=chromium link` — ожидается 3 passed (на стенде 2 новых — skipped).
+- Снимки: `e2e:visual -g "onboarding|web join card"` (`onboarding-join`, `web-join-signup`).
+- Руками (Mailpit): пригласить новый адрес → письмо с шагами и кодом → ссылка → «Продолжить в браузере» → карточка «Приглашение в «…»», email заблокирован, поля кода нет → регистрация → «Подтвердите почту» → код → тост «Почта подтверждена — вы в «…»», онбординг без «Присоединиться», после — пространство открыто, диалога вступления нет.
+- Онбординг: порядок «Почта → Микрофон → Экран (macOS) → Уведомления → PTT → Присоединиться (нет пространств) → Готово», языкового шага нет; закрыть приложение на шаге «Экран» → при запуске тот же шаг.
 
 ## Лимит реакций (docs/09 п. 27, ветка `feat/reaction-limit`)
 Авто: `go test -tags integration -run ReactionLimit ./internal/app/` (комната и DM: 3 ок, 4-я → 409 `REACTION_LIMIT`, снятие освобождает место, 8 параллельных → ровно 3); клиент — `reactionLimit.test.ts`, mock — «reactions: at most 3».
