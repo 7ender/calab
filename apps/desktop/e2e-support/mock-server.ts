@@ -182,6 +182,7 @@ import {
   UpdateWorkspaceRequestSchema,
   UpdateWorkspaceResponseSchema,
   UploadFileResponseSchema,
+  VoiceInfoSchema,
   UserSchema,
   UserSettingsSchema,
   VoiceStateSchema,
@@ -570,6 +571,22 @@ function parseBody<S extends DescMessage>(c: Ctx, schema: S): MessageShape<S> {
   } catch (e) {
     throw new HttpError(400, ErrorCode.BAD_REQUEST, `malformed body: ${e instanceof Error ? e.message : String(e)}`);
   }
+}
+
+/** A voice upload (?voice_duration_ms=&voice_waveform=, docs/09 #43): checked like the server (files.go). */
+function parseVoice(c: Ctx, f: { mime: string; bytes: Buffer }): { durationMs: number; waveform: Uint8Array } | undefined {
+  const d = c.url.searchParams.get('voice_duration_ms');
+  const w = c.url.searchParams.get('voice_waveform');
+  if (d === null && w === null) return undefined;
+  const ms = Number(d);
+  if (!Number.isInteger(ms) || ms < 1 || ms > 300_000) throw invalid('voice_duration_ms', 'must be 1..300000');
+  const waveform = new Uint8Array(Buffer.from(w ?? '', 'base64url'));
+  if (waveform.length > 100) throw invalid('voice_waveform', 'at most 100 bars');
+  const segs = f.bytes[26] ?? 0;
+  const opus = f.bytes.subarray(0, 4).toString() === 'OggS' && f.bytes.subarray(27 + segs, 35 + segs).toString() === 'OpusHead';
+  if (f.mime.split(';')[0] !== 'audio/ogg' || !opus) throw invalid('file', 'a voice message must be Ogg/Opus (audio/ogg)');
+  if (f.bytes.length > 1536 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+  return { durationMs: ms, waveform };
 }
 
 async function parseMultipartFile(c: Ctx): Promise<{ name: string; mime: string; bytes: Buffer }> {
@@ -2589,7 +2606,7 @@ class MockImpl {
       if (ws.storageUsedBytes + BigInt(f.bytes.length) > quota) {
         throw new HttpError(413, ErrorCode.FILE_QUOTA_EXCEEDED, 'storage quota exceeded', '', { ...(byPlan ? { reason: 'PLAN_LIMIT' } : {}), used: ws.storageUsedBytes, limit: quota });
       }
-      const id = this.storeFile(ws.id, me, f);
+      const id = this.storeFile(ws.id, me, f, parseVoice(c, f));
       ws.storageUsedBytes += BigInt(f.bytes.length);
       sendMsg(c.res, 201, UploadFileResponseSchema, { file: s().files.get(id)?.meta });
     });
@@ -2652,7 +2669,7 @@ class MockImpl {
       if (room.type !== RoomType.DM) throw notFound('dm not found');
       const f = await parseMultipartFile(c);
       if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
-      const id = this.storeFile('', me, f);
+      const id = this.storeFile('', me, f, parseVoice(c, f));
       sendMsg(c.res, 201, UploadFileResponseSchema, { file: s().files.get(id)?.meta });
     });
 
@@ -3738,10 +3755,11 @@ class MockImpl {
     });
   }
 
-  private storeFile(wsId: string, uploaderId: string, f: { name: string; mime: string; bytes: Buffer }): string {
+  private storeFile(wsId: string, uploaderId: string, f: { name: string; mime: string; bytes: Buffer }, voice?: { durationMs: number; waveform: Uint8Array }): string {
     const id = nextId(this.state, 'file');
     const size = f.mime === 'image/png' ? pngSize(f.bytes) : null;
-    const meta = fileMeta(id, wsId, uploaderId, f.name, f.mime, f.bytes, tick(this.state), size);
+    const meta = fileMeta(id, wsId, uploaderId, f.name, voice ? 'audio/ogg' : f.mime, f.bytes, tick(this.state), size);
+    if (voice) meta.voice = create(VoiceInfoSchema, voice);
     this.state.files.set(id, { meta, bytes: f.bytes, ...(f.mime.startsWith('image/') ? { thumbnail: { bytes: f.bytes, mime: f.mime } } : {}) });
     return id;
   }

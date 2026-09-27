@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -42,6 +44,15 @@ import (
 
 // MaxAvatarBytes caps avatar uploads (they are user-scoped and not quota-counted).
 const MaxAvatarBytes = 5 << 20
+
+// Voice messages (docs/09 #43, docs/02 «Голосовые сообщения»): Ogg/Opus mono ~24 kbit/s,
+// ≤ 5 min (≈ 0.9 MB); the byte cap leaves room for VBR peaks and the Ogg overhead.
+const (
+	MaxVoiceBytes      = 1536 << 10
+	MaxVoiceDurationMs = 5 * 60 * 1000
+	MaxVoiceBars       = 100
+	VoiceMime          = "audio/ogg"
+)
 
 // uploadDeadline replaces the server's ReadTimeout for upload requests.
 const uploadDeadline = 15 * time.Minute
@@ -234,11 +245,67 @@ type stored struct {
 	sha256     string
 	width      *int32
 	height     *int32
+	voice      *voiceMeta
+}
+
+// accept is what an upload endpoint takes.
+type accept int
+
+const (
+	acceptAny accept = iota
+	acceptImage
+	acceptVoice
+)
+
+// voiceMeta is the client-declared part of a voice message (VoiceInfo).
+type voiceMeta struct {
+	durationMs int32
+	waveform   []byte
+}
+
+// parseVoice reads ?voice_duration_ms=&voice_waveform= of an upload: nil without them, a
+// validation error when they are malformed or out of range.
+func parseVoice(q interface{ Get(string) string }) (*voiceMeta, error) {
+	d, w := q.Get("voice_duration_ms"), q.Get("voice_waveform")
+	if d == "" && w == "" {
+		return nil, nil
+	}
+	ms, err := strconv.ParseInt(d, 10, 32)
+	if err != nil || ms < 1 || ms > MaxVoiceDurationMs {
+		return nil, httpx.Validation("voice_duration_ms", fmt.Sprintf("must be 1..%d", MaxVoiceDurationMs))
+	}
+	bars, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(w, "="))
+	if err != nil || len(bars) > MaxVoiceBars {
+		return nil, httpx.Validation("voice_waveform", fmt.Sprintf("must be base64url, at most %d bars", MaxVoiceBars))
+	}
+	return &voiceMeta{durationMs: int32(ms), waveform: bars}, nil //nolint:gosec // ParseInt(…, 32), range-checked
+}
+
+// IsOggOpus reports whether head starts an Ogg stream whose first packet is an Opus ID
+// header: "OggS" (capture pattern), the 27-byte page header + segment table, "OpusHead".
+func IsOggOpus(head []byte) bool {
+	if len(head) < 28 || !bytes.HasPrefix(head, []byte("OggS")) {
+		return false
+	}
+	segs := int(head[26])
+	off := 27 + segs
+	return len(head) >= off+8 && bytes.Equal(head[off:off+8], []byte("OpusHead"))
 }
 
 // receive streams the "file" part of a multipart request into the store under
 // keyFn(id) and makes a thumbnail for images. Blobs are removed on any error.
-func (s *Service) receive(w http.ResponseWriter, r *http.Request, limit int64, keyFn func(uuid.UUID) string, imagesOnly bool) (*stored, error) {
+func (s *Service) receive(w http.ResponseWriter, r *http.Request, limit int64, keyFn func(uuid.UUID) string, kind accept) (*stored, error) {
+	var voice *voiceMeta
+	if kind != acceptImage {
+		v, err := parseVoice(r.URL.Query())
+		if err != nil {
+			return nil, err
+		}
+		if voice = v; voice != nil {
+			limit = min(limit, MaxVoiceBytes)
+			kind = acceptVoice
+		}
+	}
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadDeadline))
 	r.Body = http.MaxBytesReader(w, r.Body, limit+1<<20) // multipart overhead
 	mr, err := r.MultipartReader()
@@ -261,14 +328,25 @@ func (s *Service) receive(w http.ResponseWriter, r *http.Request, limit int64, k
 	br := bufio.NewReaderSize(part, 4096)
 	head, _ := br.Peek(512)
 	mt := DetectMime(head, part.Header.Get("Content-Type"))
-	if imagesOnly && !pbconv.IsImage(mt) {
-		return nil, httpx.Validation("file", "must be a JPEG, PNG, GIF or WebP image")
+	switch kind {
+	case acceptImage:
+		if !pbconv.IsImage(mt) {
+			return nil, httpx.Validation("file", "must be a JPEG, PNG, GIF or WebP image")
+		}
+	case acceptVoice:
+		// A voice message is an Ogg/Opus file declared as audio/ogg (Go sniffs application/ogg).
+		declared, _, _ := mime.ParseMediaType(part.Header.Get("Content-Type"))
+		if declared != VoiceMime || !IsOggOpus(head) {
+			return nil, httpx.Validation("file", "a voice message must be Ogg/Opus (audio/ogg)")
+		}
+		mt = VoiceMime
+	case acceptAny:
 	}
 	id, err := uuid.NewV7() // file ids are generated here: the blob key is needed before the row exists
 	if err != nil {
 		return nil, err
 	}
-	st := &stored{id: id, key: keyFn(id), name: SanitizeName(part.FileName()), mime: mt}
+	st := &stored{id: id, key: keyFn(id), name: SanitizeName(part.FileName()), mime: mt, voice: voice}
 	lh := &limitHash{r: br, h: sha256.New(), limit: limit}
 	if err := s.store.Put(r.Context(), st.key, lh, -1, mt); err != nil {
 		var mbe *http.MaxBytesError
@@ -366,7 +444,7 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 	if r.ContentLength > 0 && ws.StorageUsedBytes+r.ContentLength-(1<<20) > quota.limit {
 		return quota.err(ws.StorageUsedBytes) // early reject from Content-Length before reading the body
 	}
-	st, err := s.receive(w, r, s.maxBytes, func(id uuid.UUID) string { return blob.FileKey(wsID, id) }, false)
+	st, err := s.receive(w, r, s.maxBytes, func(id uuid.UUID) string { return blob.FileKey(wsID, id) }, acceptAny)
 	if err != nil {
 		return err
 	}
@@ -428,7 +506,7 @@ func (s *Service) uploadDM(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED,
 			"too many uploaded files are not attached to messages yet")
 	}
-	st, err := s.receive(w, r, s.maxBytes, func(id uuid.UUID) string { return "users/" + uid.String() + "/" + id.String() }, false)
+	st, err := s.receive(w, r, s.maxBytes, func(id uuid.UUID) string { return "users/" + uid.String() + "/" + id.String() }, acceptAny)
 	if err != nil {
 		return err
 	}
@@ -478,10 +556,15 @@ func (s *Service) canAttachSomewhere(ctx context.Context, wsID, uid uuid.UUID) (
 }
 
 func (s *Service) row(st *stored, wsID *uuid.UUID, uploader uuid.UUID) sqlc.InsertFileParams {
-	return sqlc.InsertFileParams{
+	p := sqlc.InsertFileParams{
 		ID: st.id, WorkspaceID: wsID, UploaderID: uploader, Key: st.key, ThumbnailKey: st.thumbKey,
 		Name: st.name, Mime: st.mime, Size: st.size, Width: st.width, Height: st.height, Sha256: st.sha256,
 	}
+	if st.voice != nil {
+		d := st.voice.durationMs
+		p.VoiceDurationMs, p.VoiceWaveform = &d, st.voice.waveform
+	}
+	return p
 }
 
 func (s *Service) avatar(w http.ResponseWriter, r *http.Request) error {
@@ -492,7 +575,7 @@ func (s *Service) avatar(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Forbidden("not available for guest accounts")
 	}
 	st, err := s.receive(w, r, min(MaxAvatarBytes, s.maxBytes),
-		func(id uuid.UUID) string { return "users/" + uid.String() + "/" + id.String() }, true)
+		func(id uuid.UUID) string { return "users/" + uid.String() + "/" + id.String() }, acceptImage)
 	if err != nil {
 		return err
 	}

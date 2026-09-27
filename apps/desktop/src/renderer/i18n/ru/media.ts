@@ -16,4 +16,11 @@ export const ruMedia = {
   'media.jump': 'Показать сообщение',
   'media.close': 'Закрыть плеер',
   'media.error': 'Не удалось воспроизвести',
+  'media.voice': 'Голосовое сообщение',
+  'media.voiceDownload': 'Скачать голосовое сообщение: этот браузер не воспроизводит Ogg/Opus',
+  'media.voiceRecord': 'Голосовое сообщение: удерживайте, чтобы записать',
+  'media.voiceHoldHint': 'Удерживайте кнопку микрофона, чтобы записать голосовое',
+  'media.voiceRecording': 'Идёт запись голосового сообщения',
+  'media.voiceSlideCancel': 'Влево — отмена',
+  'media.voiceSlideCancelEsc': 'Влево или Esc — отмена',
 };

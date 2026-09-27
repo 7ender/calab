@@ -400,6 +400,8 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 
 Файлы: хранилище (ADR-0011, `blob.Store`) наружу не публикуется, загрузка и скачивание идут только через API. Лимиты — 50 MB на файл (`MAX_FILE_SIZE_MB`, иначе `413`), 20 вложений на сообщение, квота workspace (`min(storage_quota_bytes, план storage_mb)`, по умолчанию 10 GB; превышение → `ERROR_CODE_FILE_QUOTA_EXCEEDED`). Для `image/*` сервер генерирует превью (≤ 512 px, WebP), в сообщении приходит `thumbnail_url`.
 
+Голосовые сообщения (docs/09 #43): та же загрузка (`POST /api/workspaces/{id}/files` или `/api/dms/{id}/files`, те же права и квота) с `?voice_duration_ms=<1..300000>&voice_waveform=<base64url без паддинга, ≤ 100 байт 0..255>`. Сервер требует объявленный тип части `audio/ogg` и начало `OggS` + `OpusHead`, хранит как `audio/ogg`, лимит `min(MAX_FILE_SIZE_MB, 1,5 MB)`; иначе `422` / `413`. В `FileMeta.voice {duration_ms, waveform}` (proto `VoiceInfo`) — длительность и волна, посчитанные клиентом при записи; у остальных файлов поле не задано. Без параметров тот же `.ogg` — обычное аудио-вложение.
+
 Защита от злоупотреблений (security review, 2026-09-26):
 - **Rate limit.** Все лимитеры — token bucket в Redis. При исчерпании — `429` с `Retry-After` (секунды). При недоступности Redis лимитеры **fail closed**: `503`, как и проверка отзыва сессий.
 - **Login.** Два лимита: по IP и по аккаунту — `LOGIN_ACCOUNT_ATTEMPTS` (10) за 15 мин на email с любых IP. Лимит по аккаунту работает одинаково и для несуществующих email, поэтому не раскрывает, есть ли аккаунт.

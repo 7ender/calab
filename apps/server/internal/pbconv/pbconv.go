@@ -478,6 +478,9 @@ func File(f sqlc.File) *v1.FileMeta {
 	if f.ThumbnailKey != nil {
 		m.ThumbnailUrl = m.Url + "/thumbnail"
 	}
+	if f.VoiceDurationMs != nil {
+		m.Voice = &v1.VoiceInfo{DurationMs: uint32(max(*f.VoiceDurationMs, 0)), Waveform: f.VoiceWaveform}
+	}
 	return m
 }
 

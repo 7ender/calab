@@ -18,6 +18,9 @@ export interface Track {
   roomId: string;
   /** File name (the title and performer are derived from it). */
   name: string;
+  /** Shown instead of the file name's title / performer (a voice message: author, «Голосовое сообщение»). */
+  title?: string;
+  subtitle?: string;
 }
 
 /** What the store asks of the media element (a fake in unit tests). */
@@ -131,7 +134,10 @@ export const usePlayer = create<PlayerState>()((set, get) => {
     durations: {},
 
     toggle: (track) => {
-      if (!same(get().track, track)) return start(track, 0);
+      if (!same(get().track, track)) {
+        start(track, 0);
+        return;
+      }
       if (get().playing) get().pause();
       else get().play();
     },
@@ -149,7 +155,10 @@ export const usePlayer = create<PlayerState>()((set, get) => {
       set({ playing: false });
     },
     seek: (track, sec) => {
-      if (!same(get().track, track)) return start(track, Math.max(0, sec));
+      if (!same(get().track, track)) {
+        start(track, Math.max(0, sec));
+        return;
+      }
       const d = get().duration;
       const at = Math.max(0, d > 0 ? Math.min(sec, d) : sec);
       getDriver()?.seek(at);

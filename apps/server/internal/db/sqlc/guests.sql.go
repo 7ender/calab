@@ -296,7 +296,7 @@ func (q *Queries) ListRoomInvites(ctx context.Context, roomID uuid.UUID) ([]Room
 }
 
 const listUserFiles = `-- name: ListUserFiles :many
-SELECT id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at FROM files WHERE uploader_id = $1
+SELECT id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at, voice_duration_ms, voice_waveform FROM files WHERE uploader_id = $1
 `
 
 func (q *Queries) ListUserFiles(ctx context.Context, uploaderID uuid.UUID) ([]File, error) {
@@ -321,6 +321,8 @@ func (q *Queries) ListUserFiles(ctx context.Context, uploaderID uuid.UUID) ([]Fi
 			&i.Height,
 			&i.Sha256,
 			&i.CreatedAt,
+			&i.VoiceDurationMs,
+			&i.VoiceWaveform,
 		); err != nil {
 			return nil, err
 		}

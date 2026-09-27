@@ -52,7 +52,7 @@ func (q *Queries) FileRooms(ctx context.Context, fileID uuid.UUID) ([]uuid.UUID,
 }
 
 const getFile = `-- name: GetFile :one
-SELECT id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at FROM files WHERE id = $1
+SELECT id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at, voice_duration_ms, voice_waveform FROM files WHERE id = $1
 `
 
 func (q *Queries) GetFile(ctx context.Context, id uuid.UUID) (File, error) {
@@ -71,29 +71,33 @@ func (q *Queries) GetFile(ctx context.Context, id uuid.UUID) (File, error) {
 		&i.Height,
 		&i.Sha256,
 		&i.CreatedAt,
+		&i.VoiceDurationMs,
+		&i.VoiceWaveform,
 	)
 	return i, err
 }
 
 const getFilesWithUsage = `-- name: GetFilesWithUsage :many
-SELECT f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id) AS attached
+SELECT f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform, EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id) AS attached
 FROM files f WHERE f.id = ANY($1::uuid[])
 `
 
 type GetFilesWithUsageRow struct {
-	ID           uuid.UUID
-	WorkspaceID  *uuid.UUID
-	UploaderID   uuid.UUID
-	Key          string
-	ThumbnailKey *string
-	Name         string
-	Mime         string
-	Size         int64
-	Width        *int32
-	Height       *int32
-	Sha256       string
-	CreatedAt    time.Time
-	Attached     bool
+	ID              uuid.UUID
+	WorkspaceID     *uuid.UUID
+	UploaderID      uuid.UUID
+	Key             string
+	ThumbnailKey    *string
+	Name            string
+	Mime            string
+	Size            int64
+	Width           *int32
+	Height          *int32
+	Sha256          string
+	CreatedAt       time.Time
+	VoiceDurationMs *int32
+	VoiceWaveform   []byte
+	Attached        bool
 }
 
 func (q *Queries) GetFilesWithUsage(ctx context.Context, ids []uuid.UUID) ([]GetFilesWithUsageRow, error) {
@@ -118,6 +122,8 @@ func (q *Queries) GetFilesWithUsage(ctx context.Context, ids []uuid.UUID) ([]Get
 			&i.Height,
 			&i.Sha256,
 			&i.CreatedAt,
+			&i.VoiceDurationMs,
+			&i.VoiceWaveform,
 			&i.Attached,
 		); err != nil {
 			return nil, err
@@ -131,23 +137,26 @@ func (q *Queries) GetFilesWithUsage(ctx context.Context, ids []uuid.UUID) ([]Get
 }
 
 const insertFile = `-- name: InsertFile :one
-INSERT INTO files (id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at
+INSERT INTO files (id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256,
+                   voice_duration_ms, voice_waveform)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+RETURNING id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at, voice_duration_ms, voice_waveform
 `
 
 type InsertFileParams struct {
-	ID           uuid.UUID
-	WorkspaceID  *uuid.UUID
-	UploaderID   uuid.UUID
-	Key          string
-	ThumbnailKey *string
-	Name         string
-	Mime         string
-	Size         int64
-	Width        *int32
-	Height       *int32
-	Sha256       string
+	ID              uuid.UUID
+	WorkspaceID     *uuid.UUID
+	UploaderID      uuid.UUID
+	Key             string
+	ThumbnailKey    *string
+	Name            string
+	Mime            string
+	Size            int64
+	Width           *int32
+	Height          *int32
+	Sha256          string
+	VoiceDurationMs *int32
+	VoiceWaveform   []byte
 }
 
 func (q *Queries) InsertFile(ctx context.Context, arg InsertFileParams) (File, error) {
@@ -163,6 +172,8 @@ func (q *Queries) InsertFile(ctx context.Context, arg InsertFileParams) (File, e
 		arg.Width,
 		arg.Height,
 		arg.Sha256,
+		arg.VoiceDurationMs,
+		arg.VoiceWaveform,
 	)
 	var i File
 	err := row.Scan(
@@ -178,6 +189,8 @@ func (q *Queries) InsertFile(ctx context.Context, arg InsertFileParams) (File, e
 		&i.Height,
 		&i.Sha256,
 		&i.CreatedAt,
+		&i.VoiceDurationMs,
+		&i.VoiceWaveform,
 	)
 	return i, err
 }
@@ -194,7 +207,7 @@ func (q *Queries) IsWorkspaceIcon(ctx context.Context, iconFileID *uuid.UUID) (b
 }
 
 const listOrphanFiles = `-- name: ListOrphanFiles :many
-SELECT id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at FROM files f
+SELECT id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at, voice_duration_ms, voice_waveform FROM files f
 WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar_file_id = f.id)
@@ -226,6 +239,8 @@ func (q *Queries) ListOrphanFiles(ctx context.Context, createdAt time.Time) ([]F
 			&i.Height,
 			&i.Sha256,
 			&i.CreatedAt,
+			&i.VoiceDurationMs,
+			&i.VoiceWaveform,
 		); err != nil {
 			return nil, err
 		}

@@ -266,6 +266,24 @@ test('m-chat-audio', async ({ page }) => {
   await checkpoint(page, 'm-chat-audio', { main: true });
 });
 
+// Voice message on a phone (docs/08 «Голосовые сообщения»): the bubble with 44 px targets and
+// the mic in the composer (empty field) instead of «send».
+test('m-chat-voice', async ({ page }) => {
+  await signedIn(page);
+  await expect(page.getByTestId('composer')).toBeVisible();
+  await expect(page.getByTestId('voice-button')).toBeVisible();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', attachments: [IDS.files.voice] });
+  const player = page.getByTestId('voice-player');
+  await expect(player).toContainText('0:05');
+  for (const b of await player.getByRole('button').all()) {
+    const box = await b.boundingBox();
+    expect(box && Math.min(box.width, box.height), `${await b.getAttribute('aria-label')}: 44 px target`).toBeGreaterThanOrEqual(44);
+  }
+  await feedToBottom(page);
+  await expect(page.locator('[data-virtuoso-scroller][data-scrolling]')).toHaveCount(0);
+  await checkpoint(page, 'm-chat-voice', { main: true });
+});
+
 type Size = { width: number; height: number };
 
 /**

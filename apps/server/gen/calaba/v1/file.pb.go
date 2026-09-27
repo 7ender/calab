@@ -37,6 +37,7 @@ type FileMeta struct {
 	Url           string                 `protobuf:"bytes,10,opt,name=url,proto3" json:"url,omitempty"`                                       // /api/files/{id} (Authorization header required)
 	ThumbnailUrl  string                 `protobuf:"bytes,11,opt,name=thumbnail_url,json=thumbnailUrl,proto3" json:"thumbnail_url,omitempty"` // /api/files/{id}/thumbnail for images, empty otherwise
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Voice         *VoiceInfo             `protobuf:"bytes,13,opt,name=voice,proto3" json:"voice,omitempty"` // set for voice messages only (docs/09 #43)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -155,7 +156,71 @@ func (x *FileMeta) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// POST /api/workspaces/{id}/files (multipart field "file", streamed). Also the response of
+func (x *FileMeta) GetVoice() *VoiceInfo {
+	if x != nil {
+		return x.Voice
+	}
+	return nil
+}
+
+// A voice message recorded in the app (docs/09 #43, docs/02 «Голосовые сообщения»): an
+// Ogg/Opus file (`audio/ogg`, starts with `OggS` + `OpusHead`, ≤ 1.5 MB, ≤ 5 min). Declared on
+// upload with `?voice_duration_ms=&voice_waveform=` (base64url, no padding); clients render it
+// as a voice bubble instead of the audio player.
+type VoiceInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DurationMs    uint32                 `protobuf:"varint,1,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"` // 1..300000
+	Waveform      []byte                 `protobuf:"bytes,2,opt,name=waveform,proto3" json:"waveform,omitempty"`                        // ≤ 100 bars, each the peak level 0..255, computed while recording
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VoiceInfo) Reset() {
+	*x = VoiceInfo{}
+	mi := &file_calaba_v1_file_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VoiceInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VoiceInfo) ProtoMessage() {}
+
+func (x *VoiceInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_file_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VoiceInfo.ProtoReflect.Descriptor instead.
+func (*VoiceInfo) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_file_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *VoiceInfo) GetDurationMs() uint32 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *VoiceInfo) GetWaveform() []byte {
+	if x != nil {
+		return x.Waveform
+	}
+	return nil
+}
+
+// POST /api/workspaces/{id}/files (multipart field "file", streamed; a voice message adds
+// ?voice_duration_ms=&voice_waveform=, see VoiceInfo). Also the response of
 // POST /api/me/avatar is UpdateMeResponse.
 type UploadFileResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -166,7 +231,7 @@ type UploadFileResponse struct {
 
 func (x *UploadFileResponse) Reset() {
 	*x = UploadFileResponse{}
-	mi := &file_calaba_v1_file_proto_msgTypes[1]
+	mi := &file_calaba_v1_file_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -178,7 +243,7 @@ func (x *UploadFileResponse) String() string {
 func (*UploadFileResponse) ProtoMessage() {}
 
 func (x *UploadFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_file_proto_msgTypes[1]
+	mi := &file_calaba_v1_file_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -191,7 +256,7 @@ func (x *UploadFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadFileResponse.ProtoReflect.Descriptor instead.
 func (*UploadFileResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_file_proto_rawDescGZIP(), []int{1}
+	return file_calaba_v1_file_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *UploadFileResponse) GetFile() *FileMeta {
@@ -205,7 +270,7 @@ var File_calaba_v1_file_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_file_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/file.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd2\x02\n" +
+	"\x14calaba/v1/file.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfe\x02\n" +
 	"\bFileMeta\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x1f\n" +
@@ -221,7 +286,12 @@ const file_calaba_v1_file_proto_rawDesc = "" +
 	" \x01(\tR\x03url\x12#\n" +
 	"\rthumbnail_url\x18\v \x01(\tR\fthumbnailUrl\x129\n" +
 	"\n" +
-	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"=\n" +
+	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12*\n" +
+	"\x05voice\x18\r \x01(\v2\x14.calaba.v1.VoiceInfoR\x05voice\"H\n" +
+	"\tVoiceInfo\x12\x1f\n" +
+	"\vduration_ms\x18\x01 \x01(\rR\n" +
+	"durationMs\x12\x1a\n" +
+	"\bwaveform\x18\x02 \x01(\fR\bwaveform\"=\n" +
 	"\x12UploadFileResponse\x12'\n" +
 	"\x04file\x18\x01 \x01(\v2\x13.calaba.v1.FileMetaR\x04fileB\x97\x01\n" +
 	"\rcom.calaba.v1B\tFileProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
@@ -239,20 +309,22 @@ func file_calaba_v1_file_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_file_proto_rawDescData
 }
 
-var file_calaba_v1_file_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_calaba_v1_file_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_calaba_v1_file_proto_goTypes = []any{
 	(*FileMeta)(nil),              // 0: calaba.v1.FileMeta
-	(*UploadFileResponse)(nil),    // 1: calaba.v1.UploadFileResponse
-	(*timestamppb.Timestamp)(nil), // 2: google.protobuf.Timestamp
+	(*VoiceInfo)(nil),             // 1: calaba.v1.VoiceInfo
+	(*UploadFileResponse)(nil),    // 2: calaba.v1.UploadFileResponse
+	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
 }
 var file_calaba_v1_file_proto_depIdxs = []int32{
-	2, // 0: calaba.v1.FileMeta.created_at:type_name -> google.protobuf.Timestamp
-	0, // 1: calaba.v1.UploadFileResponse.file:type_name -> calaba.v1.FileMeta
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 0: calaba.v1.FileMeta.created_at:type_name -> google.protobuf.Timestamp
+	1, // 1: calaba.v1.FileMeta.voice:type_name -> calaba.v1.VoiceInfo
+	0, // 2: calaba.v1.UploadFileResponse.file:type_name -> calaba.v1.FileMeta
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_file_proto_init() }
@@ -266,7 +338,7 @@ func file_calaba_v1_file_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_file_proto_rawDesc), len(file_calaba_v1_file_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

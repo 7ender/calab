@@ -39,18 +39,20 @@ type EmailInvite struct {
 }
 
 type File struct {
-	ID           uuid.UUID
-	WorkspaceID  *uuid.UUID
-	UploaderID   uuid.UUID
-	Key          string
-	ThumbnailKey *string
-	Name         string
-	Mime         string
-	Size         int64
-	Width        *int32
-	Height       *int32
-	Sha256       string
-	CreatedAt    time.Time
+	ID              uuid.UUID
+	WorkspaceID     *uuid.UUID
+	UploaderID      uuid.UUID
+	Key             string
+	ThumbnailKey    *string
+	Name            string
+	Mime            string
+	Size            int64
+	Width           *int32
+	Height          *int32
+	Sha256          string
+	CreatedAt       time.Time
+	VoiceDurationMs *int32
+	VoiceWaveform   []byte
 }
 
 type MailOutbox struct {

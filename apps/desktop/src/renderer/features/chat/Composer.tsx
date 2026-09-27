@@ -19,6 +19,9 @@ import { MentionPopover, optionKey, useMentionables, type MentionOption } from '
 import { previewText } from './mentionText';
 import { roomLabel } from './roomLabel';
 import { menuBox, menuItem } from './MessageMenu';
+import { useVoiceRecorder } from './VoiceRecorder';
+import { voiceFileName } from '../../lib/voiceNote';
+import { voiceSupported, type VoiceResult } from '../../services/voiceRecorder';
 
 const drafts = new Map<string, string>();
 /** Per-draft mentions picked in the popover: shown name → user id (the wire format is `@<id>`). */
@@ -179,6 +182,15 @@ export function Composer({
 
   const cancelEdit = (): void => setEditing(null);
 
+  // Voice messages (docs/09 #43): recorded, then sent at once as a message of its own.
+  const sendVoice = (r: VoiceResult): void => {
+    if (useMessages.getState().rooms[room.id]?.hasMoreAfter) void loadPresent(room.id);
+    const file = { file: r.blob, name: voiceFileName(new Date()), voice: { durationMs: r.durationMs, waveform: r.waveform } };
+    void sendMessage(workspaceId, room.id, '', [file], replyTo);
+    setReply(room.id, undefined);
+  };
+  const voice = useVoiceRecorder({ onSend: sendVoice });
+
   const send = (): void => {
     const content = wire(text.trim());
     if (content.length > MAX_CONTENT) return;
@@ -280,6 +292,8 @@ export function Composer({
   }
 
   const hasContent = !!text.trim() || (!editMsg && files.length > 0);
+  // The mic replaces «send» while there is nothing to send (Telegram); it stays during a recording.
+  const showMic = voice.active || (!hasContent && !editMsg && canAttach && voiceSupported());
   const placeholder = room.type === RoomType.DM ? t('dm.placeholder', { name: roomLabel(room) }) : t('chat.placeholderIn', { room: roomLabel(room) });
   const bar = editMsg ? (
     <ContextBar
@@ -303,9 +317,13 @@ export function Composer({
       {files.length > 0 && !editMsg ? <AttachmentGrid files={files} setFiles={setFiles} /> : null}
       <div className="relative flex items-end gap-2">
         {popover ? <MentionPopover id={listId} options={options} sel={selIdx} onPick={pick} onHover={setSel} /> : null}
+        {voice.strip}
         <div
           data-focus-box
-          className="flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 shadow-[var(--shadow-card)] focus-within:border-accent"
+          className={cx(
+            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 shadow-[var(--shadow-card)] focus-within:border-accent',
+            voice.active && 'hidden',
+          )}
         >
           {canAttach && !editMsg ? (
             <Dropdown.Root modal={false}>
@@ -400,7 +418,9 @@ export function Composer({
             </IconButton>
           </EmojiPicker>
         </div>
-        {hasContent ? (
+        {showMic ? (
+          voice.button
+        ) : hasContent ? (
           <Tip label={editMsg ? t('common.save') : t('chat.send')} shortcut="↵">
             <button
               type="button"
