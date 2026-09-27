@@ -18,6 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/rooms"
 )
 
 // Custom workspace roles (ADR-0026, docs/04 «Роли»).
@@ -546,6 +547,20 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 		if len(add)+len(remove) == 0 {
 			return nil
 		}
+		if actor.Role != perm.RoleOwner {
+			rs := perm.RolesOf(rows)
+			before := rs.Member(target.String(), perm.Role(m.Role), perm.IDStrings(curIDs))
+			var next []uuid.UUID
+			for id, on := range want {
+				if on {
+					next = append(next, id)
+				}
+			}
+			after := rs.Member(target.String(), perm.Role(m.Role), perm.IDStrings(next))
+			if err := restrictedGain(r.Context(), q, wsID, actor, before, after); err != nil {
+				return err
+			}
+		}
 		changed = true
 		// Built-in roles follow workspace_members.role (trigger, migration 00021).
 		hasBuiltin := func(b perm.Role) bool {
@@ -592,6 +607,39 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 		}})
 	}
 	httpx.Write(w, http.StatusOK, &v1.SetMemberRolesResponse{Member: pb})
+	return nil
+}
+
+// restrictedGain rejects a role change by a non-owner that would let the member see a
+// restricted room the actor cannot see themselves (ADR-0029): access to such a room is the
+// owner's list, and an admin must not reach it by handing a role with an allow (or taking away
+// a role with a deny) to themselves or to someone else.
+func restrictedGain(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, actor, before, after perm.Member) error {
+	rs, err := q.ListRooms(ctx, wsID)
+	if err != nil {
+		return err
+	}
+	var ovRows []sqlc.RoomPermission
+	for _, room := range rs {
+		if !room.Restricted {
+			continue
+		}
+		if ovRows == nil {
+			if ovRows, err = q.ListWorkspaceRoomOverrides(ctx, wsID); err != nil {
+				return err
+			}
+		}
+		var ovs []perm.OverrideTarget
+		for _, o := range ovRows {
+			if o.RoomID == room.ID {
+				ovs = append(ovs, pbconv.OverrideTargets([]sqlc.RoomPermission{o})...)
+			}
+		}
+		if perm.ComputeIn(after, true, ovs).Has(perm.ViewRoom) && !perm.ComputeIn(before, true, ovs).Has(perm.ViewRoom) &&
+			!perm.ComputeIn(actor, true, ovs).Has(perm.ViewRoom) {
+			return httpx.Forbidden("the roles would open a restricted room you cannot see").WithDetails(rooms.ReasonOwnerOnly, 0, 0)
+		}
+	}
 	return nil
 }
 

@@ -20,7 +20,7 @@ import (
 // a guest.
 type restrictedFixture struct {
 	o, admin, adminUser, adminRole, member, memberUser, guest *user
-	wid, rid, vid                                             string
+	wid, rid, vid, insiders                                   string
 	names                                                     []string
 	actors                                                    map[string]*user
 }
@@ -39,6 +39,7 @@ func setupRestricted(t *testing.T) *restrictedFixture {
 	f.member, f.memberUser, f.guest = register(t, code), register(t, code), register(t, code)
 	// The custom role first: the legacy PATCH below changes only the built-in role.
 	insiders := newRole(t, o, wid, "insiders", 0)
+	f.insiders = insiders.GetId()
 	if st, _ := setMemberRoles(o, wid, f.adminRole.id, insiders.GetId()); st != 200 {
 		t.Fatalf("assign insiders: %d", st)
 	}
@@ -245,6 +246,35 @@ func TestRestrictedFlagOwnerOnly(t *testing.T) {
 	o.must(200, "PATCH", "/api/rooms/"+pid, &v1.UpdateRoomRequest{Restricted: &off}, &res)
 	if bits, st := roomPerms(t, admin, pid); st != 200 || perm.Bits(bits) != perm.All {
 		t.Fatalf("admin after clearing: %d bits %d, want 200 / all", st, bits)
+	}
+}
+
+// Role membership is no way in (ADR-0029): an admin who cannot see the room may not hand
+// themselves or anyone else a role that opens it; the owner and an admin who sees it may.
+func TestRestrictedRoleGrant(t *testing.T) {
+	f := setupRestricted(t)
+	adminID := builtinRole(t, f.o, f.wid, v1.WorkspaceRole_WORKSPACE_ROLE_ADMIN).GetId()
+	for target, ids := range map[*user][]string{f.admin: {adminID, f.insiders}, f.member: {f.insiders}} {
+		st, _ := setMemberRoles(f.admin, f.wid, target.id, ids...)
+		if st != 403 {
+			t.Fatalf("admin grants insiders to %s: %d, want 403", target.id, st)
+		}
+		var e v1.ApiError
+		if err := protojson.Unmarshal(f.admin.lastBody, &e); err != nil || e.GetReason() != "OWNER_ONLY" {
+			t.Fatalf("admin grants insiders: %s, want OWNER_ONLY", f.admin.lastBody)
+		}
+	}
+	if _, st := roomPerms(t, f.admin, f.rid); st != 404 {
+		t.Fatalf("admin sees the room after a refused grant: %d", st)
+	}
+	if st, _ := setMemberRoles(f.adminUser, f.wid, f.member.id, f.insiders); st != 200 {
+		t.Fatalf("admin who sees the room grants insiders: %d, want 200", st)
+	}
+	if st, _ := setMemberRoles(f.o, f.wid, f.admin.id, adminID, f.insiders); st != 200 {
+		t.Fatalf("owner grants insiders to an admin: %d, want 200", st)
+	}
+	if _, st := roomPerms(t, f.admin, f.rid); st != 200 {
+		t.Fatalf("admin granted insiders by the owner: %d, want 200", st)
 	}
 }
 
