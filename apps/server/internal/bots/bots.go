@@ -100,12 +100,16 @@ func identity(r *http.Request) auth.Identity { return auth.MustFromContext(r.Con
 
 // ---- conversion ----
 
-// BotPB converts a bot; webhook adds its webhook state (the bot, its owner, managers).
-func BotPB(b sqlc.Bot, u sqlc.User, cmds []sqlc.BotCommand, webhook bool) *v1.Bot {
+// BotPB converts a bot. manage adds what only the bot, its owner and the managers of its home
+// workspace see: the webhook state and the token prefix.
+func BotPB(b sqlc.Bot, u sqlc.User, cmds []sqlc.BotCommand, manage bool) *v1.Bot {
 	out := &v1.Bot{
 		User: pbconv.User(u), Username: b.Username, OwnerUserId: b.OwnerUserID.String(), WorkspaceId: b.WorkspaceID.String(),
-		Description: b.Description, TokenPrefix: b.TokenPrefix, CreatedAt: timestamppb.New(b.CreatedAt),
+		Description: b.Description, CreatedAt: timestamppb.New(b.CreatedAt),
 		Commands: make([]*v1.BotCommand, 0, len(cmds)),
+	}
+	if manage {
+		out.TokenPrefix = b.TokenPrefix
 	}
 	if b.RevokedAt != nil {
 		out.RevokedAt = timestamppb.New(*b.RevokedAt)
@@ -113,7 +117,7 @@ func BotPB(b sqlc.Bot, u sqlc.User, cmds []sqlc.BotCommand, webhook bool) *v1.Bo
 	for _, c := range cmds {
 		out.Commands = append(out.Commands, &v1.BotCommand{Name: c.Name, Description: c.Description})
 	}
-	if webhook {
+	if manage {
 		out.Webhook = webhookPB(b)
 	}
 	return out
@@ -623,7 +627,7 @@ func (s *Service) profile(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	pb := BotPB(b, u, cmds, false)
-	pb.TokenPrefix = "" // for its managers only
+	pb.OwnerUserId, pb.WorkspaceId = "", "" // the card does not reveal where the bot lives
 	httpx.Write(w, http.StatusOK, &v1.GetBotMeResponse{Bot: pb})
 	return nil
 }

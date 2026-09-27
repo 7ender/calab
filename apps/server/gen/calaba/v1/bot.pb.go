@@ -178,7 +178,8 @@ type Bot struct {
 	Description string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`                    // ≤ 512 characters
 	Commands    []*BotCommand          `protobuf:"bytes,6,rep,name=commands,proto3" json:"commands,omitempty"`
 	// The first characters of the current token's secret, to tell tokens apart; empty = the
-	// token was revoked (the bot cannot sign in until a new one is issued).
+	// token was revoked (the bot cannot sign in until a new one is issued). Like webhook: for
+	// the bot, its owner and MANAGE_WORKSPACE members of its home workspace only.
 	TokenPrefix string                 `protobuf:"bytes,7,opt,name=token_prefix,json=tokenPrefix,proto3" json:"token_prefix,omitempty"`
 	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	RevokedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
@@ -601,7 +602,8 @@ func (x *AddBotResponse) GetBot() *Bot {
 	return nil
 }
 
-// GET /api/bots/me and PATCH /api/bots/me (bots only).
+// GET /api/bots/me and PATCH /api/bots/me (bots only); also GET /api/bots/{id|username}, the
+// public card (no owner, home workspace, token prefix or webhook).
 type GetBotMeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Bot           *Bot                   `protobuf:"bytes,1,opt,name=bot,proto3" json:"bot,omitempty"`

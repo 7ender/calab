@@ -146,7 +146,8 @@ export type Bot = Message<"calaba.v1.Bot"> & {
 
   /**
    * The first characters of the current token's secret, to tell tokens apart; empty = the
-   * token was revoked (the bot cannot sign in until a new one is issued).
+   * token was revoked (the bot cannot sign in until a new one is issued). Like webhook: for
+   * the bot, its owner and MANAGE_WORKSPACE members of its home workspace only.
    *
    * @generated from field: string token_prefix = 7;
    */
@@ -326,7 +327,8 @@ export const AddBotResponseSchema: GenMessage<AddBotResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_bot, 8);
 
 /**
- * GET /api/bots/me and PATCH /api/bots/me (bots only).
+ * GET /api/bots/me and PATCH /api/bots/me (bots only); also GET /api/bots/{id|username}, the
+ * public card (no owner, home workspace, token prefix or webhook).
  *
  * @generated from message calaba.v1.GetBotMeResponse
  */

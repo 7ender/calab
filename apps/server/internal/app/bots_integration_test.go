@@ -216,7 +216,8 @@ func TestBotLifecycle(t *testing.T) {
 	base2 := "/api/workspaces/" + ws2.GetId() + "/bots"
 	var prof v1.GetBotMeResponse
 	o.must(200, "GET", "/api/bots/"+b.username, nil, &prof)
-	if prof.GetBot().GetUser().GetId() != b.id || prof.GetBot().GetWebhook() != nil || prof.GetBot().GetTokenPrefix() != "" {
+	if prof.GetBot().GetUser().GetId() != b.id || prof.GetBot().GetWebhook() != nil || prof.GetBot().GetTokenPrefix() != "" ||
+		prof.GetBot().GetOwnerUserId() != "" || prof.GetBot().GetWorkspaceId() != "" {
 		t.Fatalf("public bot card: %v", prof.GetBot())
 	}
 	var added v1.AddBotResponse
