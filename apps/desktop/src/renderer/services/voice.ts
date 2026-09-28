@@ -40,7 +40,8 @@ import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
 import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
-import { canSpeakFrom, isDeviceGone, meterUpdate, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { canSpeakFrom, isDeviceGone, meterUpdate, pttAllowed, pttCue, qualityOf, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
@@ -147,8 +148,15 @@ class VoiceEngine {
   private lastMeterPush = 0;
   private audioBitrateKbps = 32;
   private screen: ActiveScreenShare | null = null;
-  /** Remote audio: one <audio> per track (echo rule 1); `stream` = a screen share's system audio. */
-  private readonly audioEls = new Map<string, { el: HTMLMediaElement; userId: string; stream: boolean }>();
+  /**
+   * Remote audio: one <audio> per track (echo rule 1), the only writer of their muted / volume /
+   * sink (deafen, per-user volumes survive device switches and LiveKit's own writes; docs/02 «Deafen»).
+   */
+  private readonly audioOut = new RemoteAudioOut(() => {
+    const v = useVoice.getState();
+    const p = prefs();
+    return { deafened: v.deafened, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume };
+  });
   /** Stream subscriptions we requested (setSubscribed signals on every call, so dedupe). */
   private readonly wanted = new Map<string, boolean>();
   /** Whose stream we told «I'm watching» (calaba.watch), to send the matching «stopped». */
@@ -224,8 +232,12 @@ class VoiceEngine {
     (navigator.mediaDevices as MediaDevices | undefined)?.addEventListener('devicechange', () => {
       this.snapshotDevices(true);
       void this.onDevicesChanged();
+      // macOS moves the default output (charger, dock, headphones): re-assert our sink and the
+      // playback state (deafen!) on every remote element once the switch has settled.
+      void this.applyOutputDevice();
     });
     this.snapshotDevices(false);
+    void this.applyOutputDevice(); // the chosen output for every remote element from the first one on
     // Our CSP refusing the LiveKit host (docs/09 P0 #1): retries cannot help — say so.
     document.addEventListener('securitypolicyviolation', (ev) => this.onCspViolation(ev));
     this.gate.configure({ thresholdDb: prefs().thresholdDb });
@@ -400,6 +412,8 @@ class VoiceEngine {
         dynacast: true,
         webAudioMix: false, // echo rule 1
         disconnectOnPageLeave: true,
+        // LiveKit re-selects the output on `devicechange` unless it knows ours (RoomEvent.ActiveDeviceChanged below).
+        ...(prefs().outputDeviceId ? { audioOutput: { deviceId: prefs().outputDeviceId ?? '' } } : {}),
       });
       this.room = room;
       // H.264 «Авто» = High on the wire (hardware on macOS): codec preferences set between
@@ -648,8 +662,7 @@ class VoiceEngine {
       micTrack?.stop();
       this.stopMicPipeline();
     }
-    for (const { el } of this.audioEls.values()) el.remove();
-    this.audioEls.clear();
+    for (const el of this.audioOut.clear()) el.remove();
     this.viewers.clear();
     this.wanted.clear();
     this.announced = null;
@@ -721,6 +734,11 @@ class VoiceEngine {
       // Full reconnect (a new LiveKit session): bring the camera back (services/camera.ts restore).
       .on(RoomEvent.Reconnected, () => {
         if (this.room === room) void this.camera.restore();
+      })
+      // LiveKit switched the remote audio output itself (a device appeared / went away): its
+      // setSinkId hit our elements — put our sink and the playback state (deafen) back.
+      .on(RoomEvent.ActiveDeviceChanged, (kind) => {
+        if (this.room === room && kind === 'audiooutput') void this.applyOutputDevice();
       })
       .on(RoomEvent.TrackUnmuted, (pub, p) => {
         if (p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
@@ -1127,39 +1145,25 @@ class VoiceEngine {
 
   private attachAudio(track: RemoteTrack, p: Participant, stream: boolean): void {
     const sid = track.sid;
-    if (!sid || this.audioEls.has(sid)) return;
+    if (!sid || this.audioOut.has(sid)) return;
     const el = track.attach(); // plain <audio>, WebRTC renders it (AEC reference)
-    const userId = userIdOf(p.identity);
     this.audioSink.appendChild(el);
-    this.audioEls.set(sid, { el, userId, stream });
-    this.applyElement(el, userId, stream);
-    const sink = prefs().outputDeviceId;
-    if (sink) void el.setSinkId(sink).catch(() => undefined);
+    // Deafen / volumes / sink applied here, before the first sample plays (lib/media/remoteAudioOut).
+    this.audioOut.add(sid, el, userIdOf(p.identity), stream);
   }
 
   private detachAudio(track: RemoteTrack): void {
+    if (track.sid) this.audioOut.remove(track.sid);
     for (const el of track.detach()) el.remove();
-    if (track.sid) this.audioEls.delete(track.sid);
-  }
-
-  private applyElement(el: HTMLMediaElement, userId: string, stream: boolean): void {
-    // Local mute («Заглушить для меня») silences the voice, not their stream audio; element.volume
-    // caps at 1.0 — boosting would need WebAudio, which breaks AEC (lib/voiceLogic remoteAudio).
-    const v = useVoice.getState();
-    const p = prefs();
-    const a = remoteAudio({ deafened: v.deafened, stream, userId, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume });
-    el.muted = a.muted;
-    el.volume = a.volume;
   }
 
   private applyVolumes(): void {
-    for (const { el, userId, stream } of this.audioEls.values()) this.applyElement(el, userId, stream);
+    this.audioOut.applyAll();
   }
 
-  /** Echo rule 2: switch output with setSinkId on the same <audio> elements. */
+  /** Echo rule 2: switch output with setSinkId on the same <audio> elements (and re-apply deafen). */
   private async applyOutputDevice(): Promise<void> {
-    const id = prefs().outputDeviceId ?? '';
-    await Promise.all([...this.audioEls.values()].map(({ el }) => el.setSinkId(id).catch(() => undefined)));
+    await this.audioOut.setSink(prefs().outputDeviceId ?? '');
   }
 
   /** Mute someone for me only (CHAT-SHELL, member menu); persisted per device like volumes. */
@@ -1522,6 +1526,8 @@ class VoiceEngine {
   }
 
   private onPtt(ev: PttEvent): void {
+    // Muted / deafened: the key does nothing — no gate, no activation cue (#12).
+    if (ev.down && !pttAllowed(useVoice.getState())) return;
     if (ev.down) {
       this.pttUp = null;
       this.ptt.press();
@@ -1540,7 +1546,8 @@ class VoiceEngine {
     const inCall = this.room !== null && useVoice.getState().phase === 'connected';
     setVoice({ pttDown: on });
     this.applyTransmit();
-    if (inCall) playSound(on ? 'pttOn' : 'pttOff');
+    const cue = pttCue(on, useVoice.getState(), inCall);
+    if (cue) playSound(cue);
     const up = this.pttUp;
     if (!on && up) {
       this.pttUp = null;
@@ -1664,10 +1671,12 @@ class VoiceEngine {
     // the microphone from our grant and PATCH /api/voice/self {muted:false} would be 403.
     if (v.serverMuted && v.muted) {
       toast.info(t('voiceUi.serverMuted'));
+      // Deafened on top: the click still lifts deafen (Discord), the mic stays with the moderator.
+      if (v.deafened) this.toggleDeafen();
       return;
     }
     setVoice(toggleMute(v));
-    playSound(useVoice.getState().muted ? 'mute' : 'unmute');
+    playSound(useVoice.getState().muted ? 'mute' : v.deafened ? 'undeafen' : 'unmute');
     this.afterSelfChange();
   }
 
@@ -1679,7 +1688,8 @@ class VoiceEngine {
 
   private afterSelfChange(): void {
     const v = useVoice.getState();
-    if (v.muted || v.deafened) this.endPttTail();
+    // Muted / deafened: PTT off now, held key included (no cue — pttCue); a new press is ignored.
+    if (v.muted || v.deafened) this.ptt.stop();
     this.applyVolumes();
     this.applyTransmit();
     this.pushSelfState();
@@ -1934,7 +1944,7 @@ class VoiceEngine {
     for (const rp of room.remoteParticipants.values()) {
       const track = rp.getTrackPublication(Track.Source.Microphone)?.track;
       const rx = track?.receiver;
-      const el = track?.sid ? this.audioEls.get(track.sid)?.el : undefined;
+      const el = track?.sid ? this.audioOut.element(track.sid) : undefined;
       if (!rx || !el || el.muted || el.volume === 0) continue;
       for (const src of rx.getSynchronizationSources()) {
         if (Math.min(Math.abs(epoch - src.timestamp), Math.abs(mono - src.timestamp)) > LEVEL_FRESH_MS) continue;

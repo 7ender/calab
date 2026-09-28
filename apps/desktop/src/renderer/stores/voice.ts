@@ -114,6 +114,8 @@ export interface VoiceStore {
   videoPip: boolean;
   muted: boolean;
   deafened: boolean;
+  /** The mic before deafen went on: undeafen returns to it (lib/voiceLogic toggleDeafen, #11). */
+  mutedBeforeDeafen: boolean;
   transmitting: boolean;
   levelDb: number;
   vad: number | null;
@@ -173,6 +175,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   videoPip: true,
   muted: false,
   deafened: false,
+  mutedBeforeDeafen: false,
   transmitting: false,
   levelDb: -80,
   vad: null,
