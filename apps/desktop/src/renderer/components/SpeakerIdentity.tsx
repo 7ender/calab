@@ -57,8 +57,11 @@ export function SpeakerIdentity({
       <span className="flex min-w-0 flex-1 items-center gap-1">
         <span data-testid="speaker-name" className={cx('min-w-0 truncate transition-colors duration-100', speakerNameClass(talking && !pending, role))}>
           {name}
-          {suffix ? <span className="text-muted"> {suffix}</span> : null}
         </span>
+        {suffix ? (
+          // Time zone as a tiny tag (owner, 28.09): present, but takes almost no room.
+          <span className="inline-flex h-[14px] shrink-0 items-center rounded-full bg-hover px-1 text-[9px] font-medium leading-none tabular-nums text-muted">{suffix}</span>
+        ) : null}
         <RoleMark role={role} />
       </span>
       <MutedByMe userId={userId} />
