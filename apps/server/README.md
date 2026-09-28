@@ -56,6 +56,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `HTTP_ADDR` | `127.0.0.1:3000` | адрес HTTP (REST + `/gateway`) |
 | `DATABASE_URL` | — (обязательна) | Postgres 18 (`uuidv7()`) |
 | `REDIS_URL` | — (обязательна) | `redis://host:port/db`, с паролем — `redis://:pass@host:port/db` (спецсимволы в пароле URL-кодировать); **Valkey ≥ 9.0** (или Redis ≥ 7.4): HEXPIRE для presence |
+| `REDIS_KEY_PREFIX` | пусто | пространство имён всех ключей и каналов pub/sub API в Valkey, например `calab:` (буквы, цифры, `._-:`, в конце `:`): для Valkey, общего с другими приложениями, под ACL-пользователем `~calab:* &calab:*` (docs/06 «Общий Valkey»); пусто — прежние имена |
 | `JWT_SECRET` | — (обязательна, ≥ 32 байт) | подпись access JWT (HS256) |
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL` | `15m` / `720h` | время жизни access JWT / сессии (скользящее) |
 | `REGISTRATION_MODE` | `invite` | `open` \| `invite` (без кода — только первый пользователь сервера) |
@@ -123,7 +124,8 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 make test                  # unit: go test ./... + pnpm -r test
 make test-integration      # нужен pnpm infra:dev (postgres :55432, valkey :56379, livekit :7880)
                            # TEST_DATABASE_URL, TEST_REDIS_URL (DB 15 очищается!), TEST_LIVEKIT_URL / TEST_LIVEKIT_INTERNAL_URL
+                           # TEST_REDIS_KEY_PREFIX: пространство имён Valkey для тестов, по умолчанию calab:; пустое значение — без него
 make lint                  # go vet + golangci-lint (+ pnpm lint)
 ```
 
-Интеграционные тесты (`-tags integration`, `internal/app`) создают временную БД `calaba_it_<random>`, поднимают приложение целиком в `httptest` (включая gateway и фоновые задачи) и удаляют БД. Тесты rtc пропускаются (`SKIP`), если dev-LiveKit недоступен.
+Интеграционные тесты (`-tags integration`, `internal/app`) создают временную БД `calaba_it_<random>`, поднимают приложение целиком в `httptest` (включая gateway и фоновые задачи) и удаляют БД. Тесты rtc пропускаются (`SKIP`), если dev-LiveKit недоступен. Valkey в них по умолчанию с пространством имён `calab:` (`REDIS_KEY_PREFIX`): после прогона SCAN проверяет, что в тестовой базе нет ни одного ключа вне него, — ключ, собранный мимо `redisx.Key`, роняет прогон.

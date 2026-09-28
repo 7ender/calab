@@ -77,6 +77,48 @@ mkdir -p /opt/calaba
 - Образы запинены по digest (compose, Dockerfile Caddy и api, CI); обновления — Dependabot (`.github/dependabot.yml`: actions, gomod, npm, docker, docker-compose), в CI — `govulncheck`, Actions по SHA, golangci-lint запинен.
 - Файрвол: TURN-relay ограничен (docs/03 «TURN relay»), IPv6 INPUT — политика DROP (`/etc/iptables/rules.v6`, `ip6tables-restore.service`).
 
+### Общий Valkey (`REDIS_KEY_PREFIX`)
+
+По умолчанию API занимает свой Valkey целиком (как в compose выше). Чтобы делить один Valkey с другими приложениями, API нужны пространство имён и свой ACL-пользователь:
+
+- `REDIS_KEY_PREFIX=calab:` — с ним **все** ключи и **все** каналы pub/sub API начинаются с префикса (`calab:voice:ws:<id>`, `calab:rl:auth:<ip>`, `calab:ws:<workspace_id>`, `calab:gw:ctl:<instance>`, `calab:plans:changed`…). Пусто (по умолчанию) — прежние имена байт в байт, существующие данные не затрагиваются. Формат: буквы, цифры, `.`, `_`, `-`, `:`, в конце обязательно `:`, до 64 байт — без символов glob и так, чтобы `~calab:*` не захватил ключи соседа `calabash:…`.
+- Префикс меняют на всех инстансах API одним деплоем: инстансы с разными префиксами не видят событий друг друга. Для API смена префикса — как пустой Valkey: presence, voice, буферы gateway, лимиты и маркеры отзыва остаются под старыми именами и истекают по TTL, клиенты переподключаются, сессии живут в Postgres.
+- Gateway с префиксом подписан одним шаблоном `PSUBSCRIBE calab:*` (без префикса — прежние `ws:*`, `user:*`, `session:revoked:*` и свой `gw:ctl:<instance>`): шаблон PSUBSCRIBE Valkey сверяет с ACL буквально, а не как glob, и пользователю с `&calab:*` разрешён ровно `calab:*` (`PSUBSCRIBE calab:ws:*` получит `NOPERM`).
+- База одна: номер из `REDIS_URL` (по умолчанию 0). Сам API базу не переключает; `SELECT` клиент (rueidis) шлёт один раз при подключении и только если в `REDIS_URL` база ≠ 0. `SCAN`/`KEYS`, `FLUSHDB`, `CONFIG` API не вызывает.
+- LiveKit и egress со своей базой (DB 1 в compose) и своими ключами префикс не затрагивает; для общего Valkey им нужен отдельный пользователь.
+
+ACL-пользователь API (одной строкой; в `users.acl` — те же правила после `user calab`):
+
+```
+ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=0 -@all
+  +ping +info +cluster|shards +cluster|slots
+  +client|tracking +client|caching +client|setinfo +multi +exec
+  +get +set +del +exists +expire +pexpire +pttl
+  +hset +hmget +hgetall +hvals +hdel +hlen +hexists +hexpire
+  +sadd +srem +smembers +sismember
+  +zadd +zrem +zscore +zcard +zrange +zrangebyscore +zremrangebyscore
+  +rpush +ltrim +lrange
+  +eval +evalsha +time
+  +publish +subscribe +unsubscribe +psubscribe +punsubscribe
+```
+
+и `REDIS_URL=redis://calab:ПАРОЛЬ@<хост>:6379/0`. Список собран по коду (`B().<Команда>()`, `redis.call` в Lua-скриптах, рукопожатие rueidis):
+
+| Команды | Зачем |
+|---|---|
+| `ping`, `info` | старт: связь и версия (`INFO server`, ADR-0017); `/readyz`; keepalive клиента |
+| `client\|tracking`, `client\|caching`, `multi`, `exec`, `pttl` | client-side caching RESP3 (`DoCache`: отзыв сессии и токен бота на каждом запросе): `CLIENT TRACKING ON OPTIN` при подключении, на промах — `CLIENT CACHING YES`, `MULTI`, `PTTL`, `GET`, `EXEC` |
+| `client\|setinfo` | имя и версия библиотеки при подключении: ошибку клиент пропускает, но без права каждое подключение оставляет запись в `ACL LOG` |
+| `cluster\|shards`, `cluster\|slots` | при подключении клиент проверяет, не кластер ли это (`CLUSTER SHARDS` на сервере версии ≥ 8, иначе `CLUSTER SLOTS`): одиночный сервер отвечает ошибкой, и клиент работает в обычном режиме. Без права исход тот же, но через `NOPERM` и с записью в `ACL LOG` на каждое подключение |
+| строки, хэши (`hexpire` — TTL поля сессии в presence), множества, sorted sets, списки | presence, voice, звонки 1:1, буфер и lease gateway, маркеры отзыва, лимиты, кэш превью ссылок, локи воркеров |
+| `eval`, `evalsha` | Lua-скрипты (token bucket, локи, привязка устройства, лимит стримов, переходы звонка): `EVALSHA`, при `NOSCRIPT` — `EVAL`; `SCRIPT LOAD` не используется. Ключи скрипты получают только через `KEYS` |
+| `pexpire`, `hmget`, `hexists`, `zscore`, `zcard`, `zremrangebyscore`, `time` | вызываются только внутри Lua-скриптов — ACL проверяет и их |
+| `publish`, `subscribe`, `unsubscribe`, `psubscribe`, `punsubscribe` | события gateway, отзыв сессий, управление между инстансами, сброс кэша тарифов |
+
+`HELLO` и `AUTH` в ACL не нужны (разрешены всегда). `db=0` появился в Valkey 9.1: на Valkey 9.0 и Redis его убрать — там базы ACL не разделяет, изоляция только по ключам и каналам. База не 0 — `db=<номер>` и `+select`.
+
+Проверено на Valkey 9.1.2 (2026-09-28): сервер под этим пользователем как есть (`db=0`) стартует, регистрирует, пускает в gateway, доставляет события и закрывает сокет отозванной сессии, в `ACL LOG` ни одного отказа; интеграционные тесты `internal/app` и `internal/rtc` с `TEST_REDIS_KEY_PREFIX=calab:` проходят под ним же плюс права самой тестовой обвязки (`FLUSHDB`, `CLIENT LIST`, `SELECT`, `SCAN`, `HGET`, ключи аренды баз `calaba:it:db:*`), единственный отказ — намеренная публикация теста вне пространства имён.
+
 ### Веб-клиент на `<домен>` (ADR-0015)
 
 - Маршруты Caddy на каждом `<домен>` (приложение живёт на самом домене, без префикса `app.`): `/metrics` → 404; `/api/*`, `/gateway`, `/healthz`, `/readyz` → `reverse_proxy 127.0.0.1:3000`; остальное — SPA-статика из `/srv/web` (`file_server`, `try_files {path} /index.html`).
