@@ -65,6 +65,7 @@
 ```
 READY
 WORKSPACE_CREATE / UPDATE / DELETE    -- Workspace.plan: тариф и эффективные лимиты (ADR-0024); смена тарифа → WORKSPACE_UPDATE всем участникам
+                                      -- Workspace.time_format (AUTO|H24|H12; UNSPECIFIED = AUTO): PATCH /api/workspaces/{id} {time_format} → WORKSPACE_UPDATE, клиент применяет живьём (docs/09 #73)
 WORKSPACE_MEMBER_ADD / UPDATE (роль, role_ids, ник) / REMOVE
 ROLE_CREATE / ROLE_UPDATE     { role } — роли пространства (ADR-0026); ROLE_UPDATE и для каждой роли со сменившейся позицией
 ROLE_DELETE                   { workspace_id, role_id } — убрать role_id у всех участников; затем ROOM_PERMISSIONS_UPDATE по комнатам, где были её переопределения
