@@ -2,7 +2,7 @@ import * as DialogP from '@radix-ui/react-dialog';
 import { WorkspaceRole } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AtSign, Ellipsis, MessageCircle, Plus, X } from 'lucide-react';
+import { AtSign, Cake, Ellipsis, MessageCircle, Plus, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Avatar, avatarColor } from '../../components/Avatar';
 import { Logo } from '../../components/Logo';
@@ -14,7 +14,10 @@ import { fmt } from '../../lib/format';
 import { startDm } from '../../services/dms';
 import { LocalTime } from './LocalTime';
 import { BirthdayInfo } from './Birthday';
-import { isGuest, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
+import { isGuest, rolesOf, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
+import { useSession } from '../../stores/session';
+import { canEditMemberBirthday } from './members';
+import { MemberBirthdayDialog } from './MemberBirthdayDialog';
 import { requestMention } from '../chat/mentionRequest';
 import { useCanDm } from '../dm/canDm';
 import { promoteGuest, toggleMemberRole } from './actions';
@@ -153,6 +156,7 @@ export function ProfileDialog({
               <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
               <LocalTime userId={userId} variant="line" />
               <BirthdayInfo userId={userId} variant="line" />
+              <EditBirthday workspaceId={workspaceId} userId={userId} />
 
               <div className="mt-4 flex items-center gap-2">
                 {canDm ? (
@@ -218,6 +222,36 @@ export function ProfileDialog({
         </DialogP.Content>
       </DialogP.Portal>
     </DialogP.Root>
+  );
+}
+
+/**
+ * «Изменить день рождения» (docs/09 #77) under the date line, for who may set it
+ * (canEditMemberBirthday: MANAGE_NICKNAMES + hierarchy); a boolean selector, so presence or voice
+ * changes of the workspace do not re-render it.
+ */
+function EditBirthday({ workspaceId, userId }: { workspaceId: string; userId: string }): ReactNode {
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const allowed = useWorkspaces((s) => {
+    const e = s.byId[workspaceId];
+    const m = e?.members[userId];
+    return !!m && canEditMemberBirthday(rolesOf(e, me), rolesOf(e, userId), m, userId === me);
+  });
+  const [open, setOpen] = useState(false);
+  if (!allowed) return null;
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="profile-edit-birthday"
+        className="mt-1 flex items-center gap-1.5 rounded-[var(--radius-control)] text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+        onClick={() => setOpen(true)}
+      >
+        <Cake className="size-3.5" aria-hidden />
+        {t('birthday.edit')}
+      </button>
+      {open ? <MemberBirthdayDialog workspaceId={workspaceId} userId={userId} onClose={() => setOpen(false)} /> : null}
+    </>
   );
 }
 

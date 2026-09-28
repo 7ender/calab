@@ -1097,6 +1097,209 @@ func (x *UpcomingBirthday) GetInDays() uint32 {
 	return 0
 }
 
+// PATCH /api/workspaces/{id}/members/{userId}/birthday (docs/09 #77): an admin sets or clears
+// a member's birthday. MANAGE_NICKNAMES in the workspace and the kick hierarchy (the owner:
+// anyone; others: members whose highest role is below their own); a bot or a guest member → 403,
+// a bot token → 403 BOT_NOT_ALLOWED. The birthday is validated as in PATCH /api/me (→ 422);
+// day = 0 and month = 0, or no birthday, clears it. The member's own "hidden" flag stays as it
+// is: a hidden birthday still reaches nobody else (User.birthday, GET …/birthdays). USER_UPDATE
+// goes to the member (Me) and to their workspaces (User).
+type UpdateMemberBirthdayRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Birthday      *Birthday              `protobuf:"bytes,1,opt,name=birthday,proto3" json:"birthday,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateMemberBirthdayRequest) Reset() {
+	*x = UpdateMemberBirthdayRequest{}
+	mi := &file_calaba_v1_user_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateMemberBirthdayRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateMemberBirthdayRequest) ProtoMessage() {}
+
+func (x *UpdateMemberBirthdayRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateMemberBirthdayRequest.ProtoReflect.Descriptor instead.
+func (*UpdateMemberBirthdayRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *UpdateMemberBirthdayRequest) GetBirthday() *Birthday {
+	if x != nil {
+		return x.Birthday
+	}
+	return nil
+}
+
+type UpdateMemberBirthdayResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Birthday      *MemberBirthday        `protobuf:"bytes,1,opt,name=birthday,proto3" json:"birthday,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateMemberBirthdayResponse) Reset() {
+	*x = UpdateMemberBirthdayResponse{}
+	mi := &file_calaba_v1_user_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateMemberBirthdayResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateMemberBirthdayResponse) ProtoMessage() {}
+
+func (x *UpdateMemberBirthdayResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateMemberBirthdayResponse.ProtoReflect.Descriptor instead.
+func (*UpdateMemberBirthdayResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *UpdateMemberBirthdayResponse) GetBirthday() *MemberBirthday {
+	if x != nil {
+		return x.Birthday
+	}
+	return nil
+}
+
+// A member's birthday as an admin sees it: hidden ones too, marked.
+type MemberBirthday struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Birthday      *Birthday              `protobuf:"bytes,2,opt,name=birthday,proto3" json:"birthday,omitempty"` // unset = none
+	Hidden        bool                   `protobuf:"varint,3,opt,name=hidden,proto3" json:"hidden,omitempty"`    // hidden by the member: shown to nobody else but here
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemberBirthday) Reset() {
+	*x = MemberBirthday{}
+	mi := &file_calaba_v1_user_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemberBirthday) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemberBirthday) ProtoMessage() {}
+
+func (x *MemberBirthday) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemberBirthday.ProtoReflect.Descriptor instead.
+func (*MemberBirthday) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *MemberBirthday) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *MemberBirthday) GetBirthday() *Birthday {
+	if x != nil {
+		return x.Birthday
+	}
+	return nil
+}
+
+func (x *MemberBirthday) GetHidden() bool {
+	if x != nil {
+		return x.Hidden
+	}
+	return false
+}
+
+// GET /api/workspaces/{id}/members/birthdays (MANAGE_NICKNAMES, docs/09 #77, the table
+// "Members → Birthdays"): every member who has a birthday, hidden ones included (hidden =
+// true); bots and guests are left out.
+type ListMemberBirthdaysResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Birthdays     []*MemberBirthday      `protobuf:"bytes,1,rep,name=birthdays,proto3" json:"birthdays,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMemberBirthdaysResponse) Reset() {
+	*x = ListMemberBirthdaysResponse{}
+	mi := &file_calaba_v1_user_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMemberBirthdaysResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMemberBirthdaysResponse) ProtoMessage() {}
+
+func (x *ListMemberBirthdaysResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_user_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMemberBirthdaysResponse.ProtoReflect.Descriptor instead.
+func (*ListMemberBirthdaysResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_user_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListMemberBirthdaysResponse) GetBirthdays() []*MemberBirthday {
+	if x != nil {
+		return x.Birthdays
+	}
+	return nil
+}
+
 var File_calaba_v1_user_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_user_proto_rawDesc = "" +
@@ -1186,7 +1389,17 @@ const file_calaba_v1_user_proto_rawDesc = "" +
 	"\x10UpcomingBirthday\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12/\n" +
 	"\bbirthday\x18\x02 \x01(\v2\x13.calaba.v1.BirthdayR\bbirthday\x12\x17\n" +
-	"\ain_days\x18\x03 \x01(\rR\x06inDays*P\n" +
+	"\ain_days\x18\x03 \x01(\rR\x06inDays\"N\n" +
+	"\x1bUpdateMemberBirthdayRequest\x12/\n" +
+	"\bbirthday\x18\x01 \x01(\v2\x13.calaba.v1.BirthdayR\bbirthday\"U\n" +
+	"\x1cUpdateMemberBirthdayResponse\x125\n" +
+	"\bbirthday\x18\x01 \x01(\v2\x19.calaba.v1.MemberBirthdayR\bbirthday\"r\n" +
+	"\x0eMemberBirthday\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12/\n" +
+	"\bbirthday\x18\x02 \x01(\v2\x13.calaba.v1.BirthdayR\bbirthday\x12\x16\n" +
+	"\x06hidden\x18\x03 \x01(\bR\x06hidden\"V\n" +
+	"\x1bListMemberBirthdaysResponse\x127\n" +
+	"\tbirthdays\x18\x01 \x03(\v2\x19.calaba.v1.MemberBirthdayR\tbirthdays*P\n" +
 	"\aMicMode\x12\x18\n" +
 	"\x14MIC_MODE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fMIC_MODE_VAD\x10\x01\x12\x19\n" +
@@ -1207,29 +1420,33 @@ func file_calaba_v1_user_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_user_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_calaba_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_calaba_v1_user_proto_goTypes = []any{
-	(MicMode)(0),                  // 0: calaba.v1.MicMode
-	(*User)(nil),                  // 1: calaba.v1.User
-	(*Birthday)(nil),              // 2: calaba.v1.Birthday
-	(*UserSettings)(nil),          // 3: calaba.v1.UserSettings
-	(*Me)(nil),                    // 4: calaba.v1.Me
-	(*GetMeResponse)(nil),         // 5: calaba.v1.GetMeResponse
-	(*UpdateMeRequest)(nil),       // 6: calaba.v1.UpdateMeRequest
-	(*UpdateMeResponse)(nil),      // 7: calaba.v1.UpdateMeResponse
-	(*ChangePasswordRequest)(nil), // 8: calaba.v1.ChangePasswordRequest
-	(*ChangeEmailRequest)(nil),    // 9: calaba.v1.ChangeEmailRequest
-	(*UpdateStatusRequest)(nil),   // 10: calaba.v1.UpdateStatusRequest
-	(*UserNote)(nil),              // 11: calaba.v1.UserNote
-	(*PutUserNoteRequest)(nil),    // 12: calaba.v1.PutUserNoteRequest
-	(*UserNoteResponse)(nil),      // 13: calaba.v1.UserNoteResponse
-	(*ListBirthdaysResponse)(nil), // 14: calaba.v1.ListBirthdaysResponse
-	(*UpcomingBirthday)(nil),      // 15: calaba.v1.UpcomingBirthday
-	(*timestamppb.Timestamp)(nil), // 16: google.protobuf.Timestamp
+	(MicMode)(0),                         // 0: calaba.v1.MicMode
+	(*User)(nil),                         // 1: calaba.v1.User
+	(*Birthday)(nil),                     // 2: calaba.v1.Birthday
+	(*UserSettings)(nil),                 // 3: calaba.v1.UserSettings
+	(*Me)(nil),                           // 4: calaba.v1.Me
+	(*GetMeResponse)(nil),                // 5: calaba.v1.GetMeResponse
+	(*UpdateMeRequest)(nil),              // 6: calaba.v1.UpdateMeRequest
+	(*UpdateMeResponse)(nil),             // 7: calaba.v1.UpdateMeResponse
+	(*ChangePasswordRequest)(nil),        // 8: calaba.v1.ChangePasswordRequest
+	(*ChangeEmailRequest)(nil),           // 9: calaba.v1.ChangeEmailRequest
+	(*UpdateStatusRequest)(nil),          // 10: calaba.v1.UpdateStatusRequest
+	(*UserNote)(nil),                     // 11: calaba.v1.UserNote
+	(*PutUserNoteRequest)(nil),           // 12: calaba.v1.PutUserNoteRequest
+	(*UserNoteResponse)(nil),             // 13: calaba.v1.UserNoteResponse
+	(*ListBirthdaysResponse)(nil),        // 14: calaba.v1.ListBirthdaysResponse
+	(*UpcomingBirthday)(nil),             // 15: calaba.v1.UpcomingBirthday
+	(*UpdateMemberBirthdayRequest)(nil),  // 16: calaba.v1.UpdateMemberBirthdayRequest
+	(*UpdateMemberBirthdayResponse)(nil), // 17: calaba.v1.UpdateMemberBirthdayResponse
+	(*MemberBirthday)(nil),               // 18: calaba.v1.MemberBirthday
+	(*ListMemberBirthdaysResponse)(nil),  // 19: calaba.v1.ListMemberBirthdaysResponse
+	(*timestamppb.Timestamp)(nil),        // 20: google.protobuf.Timestamp
 }
 var file_calaba_v1_user_proto_depIdxs = []int32{
-	16, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	16, // 1: calaba.v1.User.status_expires_at:type_name -> google.protobuf.Timestamp
+	20, // 0: calaba.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	20, // 1: calaba.v1.User.status_expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 2: calaba.v1.User.birthday:type_name -> calaba.v1.Birthday
 	0,  // 3: calaba.v1.UserSettings.mic_mode:type_name -> calaba.v1.MicMode
 	1,  // 4: calaba.v1.Me.user:type_name -> calaba.v1.User
@@ -1238,15 +1455,19 @@ var file_calaba_v1_user_proto_depIdxs = []int32{
 	3,  // 7: calaba.v1.UpdateMeRequest.settings:type_name -> calaba.v1.UserSettings
 	2,  // 8: calaba.v1.UpdateMeRequest.birthday:type_name -> calaba.v1.Birthday
 	4,  // 9: calaba.v1.UpdateMeResponse.me:type_name -> calaba.v1.Me
-	16, // 10: calaba.v1.UserNote.updated_at:type_name -> google.protobuf.Timestamp
+	20, // 10: calaba.v1.UserNote.updated_at:type_name -> google.protobuf.Timestamp
 	11, // 11: calaba.v1.UserNoteResponse.note:type_name -> calaba.v1.UserNote
 	15, // 12: calaba.v1.ListBirthdaysResponse.birthdays:type_name -> calaba.v1.UpcomingBirthday
 	2,  // 13: calaba.v1.UpcomingBirthday.birthday:type_name -> calaba.v1.Birthday
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	2,  // 14: calaba.v1.UpdateMemberBirthdayRequest.birthday:type_name -> calaba.v1.Birthday
+	18, // 15: calaba.v1.UpdateMemberBirthdayResponse.birthday:type_name -> calaba.v1.MemberBirthday
+	2,  // 16: calaba.v1.MemberBirthday.birthday:type_name -> calaba.v1.Birthday
+	18, // 17: calaba.v1.ListMemberBirthdaysResponse.birthdays:type_name -> calaba.v1.MemberBirthday
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_user_proto_init() }
@@ -1263,7 +1484,7 @@ func file_calaba_v1_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_user_proto_rawDesc), len(file_calaba_v1_user_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageOn, birthdayLine, daysInMonth, formatBirthday, isBirthdayOn, isBirthdayToday } from './birthday';
+import { ageOn, birthdayLine, daysInMonth, formatBirthday, formatBirthdayField, formatBirthdayShort, isBirthdayOn, isBirthdayToday, parseBirthdayField } from './birthday';
 
 describe('birthdays (docs/09 #76)', () => {
   it('«today» is the person’s own calendar day, by their time zone', () => {
@@ -43,5 +43,29 @@ describe('birthdays (docs/09 #76)', () => {
     expect(birthdayLine({ day: 15, month: 3, year: 1996 }, { y: 2026, m: 9, d: 28 })).toBe('🎂 15 марта · 30 лет');
     expect(birthdayLine({ day: 1, month: 1, year: 2005 }, { y: 2026, m: 9, d: 28 })).toBe('🎂 1 января · 21 год');
     expect(birthdayLine({ day: 15, month: 3 }, { y: 2026, m: 9, d: 28 })).toBe('🎂 15 марта');
+  });
+});
+
+describe('the inline birthday field (docs/09 #77)', () => {
+  const now = new Date(2026, 8, 28, 12);
+  it('formats in the locale’s numeric order', () => {
+    expect(formatBirthdayField({ day: 5, month: 3, year: 1990 }, 'ru')).toBe('05.03.1990');
+    expect(formatBirthdayField({ day: 5, month: 3 }, 'ru')).toBe('05.03');
+    expect(formatBirthdayField({ day: 5, month: 3, year: 1990 }, 'en')).toBe('03/05/1990');
+    expect(formatBirthdayField({ day: 5, month: 3, year: 1990 }, 'zh-CN')).toBe('1990/03/05');
+    expect(formatBirthdayField(undefined, 'ru')).toBe('');
+    expect(formatBirthdayShort({ day: 30, month: 9 })).toBe('30 сент.');
+  });
+  it('parses what it formats, ISO and loose separators; rejects impossible dates', () => {
+    expect(parseBirthdayField('15.03.1990', now, 'ru')).toEqual({ day: 15, month: 3, year: 1990 });
+    expect(parseBirthdayField(' 15/3 ', now, 'ru')).toEqual({ day: 15, month: 3 });
+    expect(parseBirthdayField('03/15/1990', now, 'en')).toEqual({ day: 15, month: 3, year: 1990 });
+    expect(parseBirthdayField('1990-03-15', now, 'ru')).toEqual({ day: 15, month: 3, year: 1990 });
+    expect(parseBirthdayField('1990/03/15', now, 'zh-CN')).toEqual({ day: 15, month: 3, year: 1990 });
+    expect(parseBirthdayField('29.02', now, 'ru')).toEqual({ day: 29, month: 2 });
+    expect(parseBirthdayField('', now, 'ru')).toBeNull();
+    for (const bad of ['29.02.2023', '31.04', '15', '15.13', '1.1.1899', '1.1.2027', '30.09.2026', '1.1.90', 'abc']) {
+      expect(parseBirthdayField(bad, now, 'ru'), bad).toBe('invalid');
+    }
   });
 });

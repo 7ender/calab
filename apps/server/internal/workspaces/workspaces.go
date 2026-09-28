@@ -99,6 +99,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	h.emailRoutes(handle)
 	h.roleRoutes(handle)
 	h.banRoutes(handle)
+	h.birthdayRoutes(handle)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }

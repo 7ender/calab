@@ -37,6 +37,24 @@ func Validate(b *v1.Birthday, now time.Time) error {
 	return nil
 }
 
+// Columns turns a birthday of a request into the users.birthday_* values: nil, nil, nil for
+// no birthday or day = 0 and month = 0 without a year (clear it), else the validated date (see
+// Validate).
+func Columns(b *v1.Birthday, now time.Time) (day, month, year *int16, err error) {
+	if b == nil || (b.GetDay() == 0 && b.GetMonth() == 0 && b.Year == nil) {
+		return nil, nil, nil, nil
+	}
+	if err := Validate(b, now); err != nil {
+		return nil, nil, nil, err
+	}
+	d, m := int16(b.GetDay()), int16(b.GetMonth()) //nolint:gosec // validated
+	if b.Year != nil {
+		y := int16(b.GetYear()) //nolint:gosec // validated
+		year = &y
+	}
+	return &d, &m, year, nil
+}
+
 func daysIn(year int, m time.Month) int {
 	return time.Date(year, m+1, 0, 0, 0, 0, 0, time.UTC).Day()
 }

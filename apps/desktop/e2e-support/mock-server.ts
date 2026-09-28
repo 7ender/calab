@@ -149,6 +149,7 @@ import {
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
   ListBirthdaysResponseSchema,
+  ListMemberBirthdaysResponseSchema,
   ListMessagesResponseSchema,
   ListRoomInvitesResponseSchema,
   ListRoomsResponseSchema,
@@ -192,6 +193,8 @@ import {
   UpdateMeRequestSchema,
   UpdateMeResponseSchema,
   UpdateMemberRequestSchema,
+  UpdateMemberBirthdayRequestSchema,
+  UpdateMemberBirthdayResponseSchema,
   UpdateMemberResponseSchema,
   UpdateMessageRequestSchema,
   UpdateMessageResponseSchema,
@@ -401,6 +404,10 @@ export interface MockServer {
    * chat as the server's worker posts it (SYSTEM message, MESSAGE_CREATE) when `card` is set.
    */
   setBirthday(userId: string, b: { day: number; month: number; year?: number } | null, card?: { roomId: string }): void;
+  /** docs/09 #76: «Скрыть от других» of the user, as PATCH /api/me {birthdayHidden} (USER_UPDATE). */
+  setBirthdayHidden(userId: string, hidden: boolean): void;
+  /** The mock's «now» for date answers (GET …/birthdays): a visual test's page clock; null = real time. */
+  setClock(nowMs: number | null): void;
   /**
    * docs/09 #51: a user's own state of a DM, like PATCH /api/dms/{id}/state — archive / «Удалить
    * чат» (for them only) — and DM_STATE_UPDATE to their devices.
@@ -447,6 +454,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
+    setBirthdayHidden: (u, hidden) => impl.setBirthdayHidden(u, hidden),
+    setClock: (ms) => impl.setClock(ms),
     seedBots: () => impl.seedBots(),
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
@@ -797,6 +806,7 @@ class MockImpl {
     this.voiceSessions.clear();
     this.droppedSessions.clear();
     this.gatewayDownUntil = 0;
+    this.clockMs = null;
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
   }
 
@@ -2163,11 +2173,11 @@ class MockImpl {
       sendMsg(c.res, 200, ListMembersResponseSchema, { members: this.membersOf(ws.id).map((x) => this.memberOut(x)) });
     });
 
-    // docs/09 #76: birthdays in the next `days` days (the mock's today is the page clock's UTC day).
+    // docs/09 #76: birthdays in the next `days` days (the mock's today: setClock, else real time; UTC).
     this.route('GET', '/api/workspaces/:id/birthdays', (c) => {
       const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
       const days = Number(c.url.searchParams.get('days') ?? '7');
-      const now = new Date();
+      const now = new Date(this.clockMs ?? Date.now());
       const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
       const out = this.membersOf(ws.id).flatMap((m) => {
         const u = this.userRec(m.userId);
@@ -2180,6 +2190,37 @@ class MockImpl {
       });
       out.sort((a, b) => a.inDays - b.inDays);
       sendMsg(c.res, 200, ListBirthdaysResponseSchema, { birthdays: out });
+    });
+
+    // docs/09 #77: every member's birthday for the admin table (hidden ones marked), and an
+    // admin setting one (MANAGE_NICKNAMES = admins by default; not the owner by an admin).
+    this.route('GET', '/api/workspaces/:id/members/birthdays', (c) => {
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireAdmin(m);
+      const birthdays = this.membersOf(ws.id).flatMap((x) => {
+        const u = this.userRec(x.userId);
+        if (!u.user.birthday || u.user.isBot || x.role === WorkspaceRole.GUEST) return [];
+        return [{ userId: x.userId, birthday: u.user.birthday, hidden: u.birthdayHidden ?? false }];
+      });
+      sendMsg(c.res, 200, ListMemberBirthdaysResponseSchema, { birthdays });
+    });
+
+    this.route('PATCH', '/api/workspaces/:id/members/:userId/birthday', (c) => {
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireAdmin(m);
+      const target = this.member(ws.id, c.params[1] ?? '');
+      if (!target) throw notFound('member not found');
+      if (target.role === WorkspaceRole.OWNER && m.role !== WorkspaceRole.OWNER) throw forbidden('cannot act on a member at or above your highest role');
+      const u = this.userRec(target.userId);
+      if (u.user.isBot || target.role === WorkspaceRole.GUEST) throw forbidden('no birthday');
+      const b = parseBody(c, UpdateMemberBirthdayRequestSchema).birthday;
+      if (!b || (!b.day && !b.month)) delete u.user.birthday;
+      else if (b.month < 1 || b.month > 12 || b.day < 1 || b.day > 31) throw invalid('birthday.day', 'no such day in that month');
+      else u.user.birthday = create(BirthdaySchema, { day: b.day, month: b.month, ...(b.year !== undefined ? { year: b.year } : {}) });
+      this.emitUserUpdate(u);
+      sendMsg(c.res, 200, UpdateMemberBirthdayResponseSchema, {
+        birthday: { userId: u.user.id, birthday: u.user.birthday, hidden: u.birthdayHidden ?? false },
+      });
     });
 
     this.route('PATCH', '/api/workspaces/:id/members/:userId', (c) => {
@@ -4068,6 +4109,18 @@ class MockImpl {
       }
     }, ms);
     this.timers.add(timer);
+  }
+
+  private clockMs: number | null = null;
+
+  setClock(nowMs: number | null): void {
+    this.clockMs = nowMs;
+  }
+
+  setBirthdayHidden(userId: string, hidden: boolean): void {
+    const u = this.userRec(userId);
+    u.birthdayHidden = hidden;
+    this.emitUserUpdate(u);
   }
 
   setBirthday(userId: string, b: { day: number; month: number; year?: number } | null, card?: { roomId: string }): void {

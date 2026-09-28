@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/user.proto.
  */
 export const file_calaba_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIq0CCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJEg4KBmlzX2JvdBgKIAEoCBIlCghiaXJ0aGRheRgLIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheSJCCghCaXJ0aGRheRILCgNkYXkYASABKA0SDQoFbW9udGgYAiABKA0SEQoEeWVhchgDIAEoDUgAiAEBQgcKBV95ZWFyItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyLMAQoCTWUSHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg0KBWVtYWlsGAIgASgJEikKCHNldHRpbmdzGAMgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5ncxIVCg1pc19zdXBlcmFkbWluGAQgASgIEhYKDmVtYWlsX3ZlcmlmaWVkGAUgASgIEhUKDXBlbmRpbmdfZW1haWwYBiABKAkSDgoGbG9jYWxlGAcgASgJEhcKD2JpcnRoZGF5X2hpZGRlbhgIIAEoCCIqCg1HZXRNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIvECCg9VcGRhdGVNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLc3RhdHVzX3RleHQYAiABKAlIAYgBARIbCg5hdmF0YXJfZmlsZV9pZBgDIAEoCUgCiAEBEi4KCHNldHRpbmdzGAQgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5nc0gDiAEBEhUKCHRpbWV6b25lGAUgASgJSASIAQESEwoGbG9jYWxlGAYgASgJSAWIAQESJQoIYmlydGhkYXkYByABKAsyEy5jYWxhYmEudjEuQmlydGhkYXkSHAoPYmlydGhkYXlfaGlkZGVuGAggASgISAaIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfc3RhdHVzX3RleHRCEQoPX2F2YXRhcl9maWxlX2lkQgsKCV9zZXR0aW5nc0ILCglfdGltZXpvbmVCCQoHX2xvY2FsZUISChBfYmlydGhkYXlfaGlkZGVuIi0KEFVwZGF0ZU1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIkEKEkNoYW5nZUVtYWlsUmVxdWVzdBIRCgluZXdfZW1haWwYASABKAkSGAoQY3VycmVudF9wYXNzd29yZBgCIAEoCSJOChNVcGRhdGVTdGF0dXNSZXF1ZXN0EgwKBHRleHQYASABKAkSDQoFZW1vamkYAiABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAMgASgNIlwKCFVzZXJOb3RlEhIKCnN1YmplY3RfaWQYASABKAkSDAoEdGV4dBgCIAEoCRIuCgp1cGRhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIiChJQdXRVc2VyTm90ZVJlcXVlc3QSDAoEdGV4dBgBIAEoCSI1ChBVc2VyTm90ZVJlc3BvbnNlEiEKBG5vdGUYASABKAsyEy5jYWxhYmEudjEuVXNlck5vdGUiRwoVTGlzdEJpcnRoZGF5c1Jlc3BvbnNlEi4KCWJpcnRoZGF5cxgBIAMoCzIbLmNhbGFiYS52MS5VcGNvbWluZ0JpcnRoZGF5IlsKEFVwY29taW5nQmlydGhkYXkSDwoHdXNlcl9pZBgBIAEoCRIlCghiaXJ0aGRheRgCIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheRIPCgdpbl9kYXlzGAMgASgNKlAKB01pY01vZGUSGAoUTUlDX01PREVfVU5TUEVDSUZJRUQQABIQCgxNSUNfTU9ERV9WQUQQARIZChVNSUNfTU9ERV9QVVNIX1RPX1RBTEsQAkKXAQoNY29tLmNhbGFiYS52MUIJVXNlclByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIq0CCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJEg4KBmlzX2JvdBgKIAEoCBIlCghiaXJ0aGRheRgLIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheSJCCghCaXJ0aGRheRILCgNkYXkYASABKA0SDQoFbW9udGgYAiABKA0SEQoEeWVhchgDIAEoDUgAiAEBQgcKBV95ZWFyItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyLMAQoCTWUSHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg0KBWVtYWlsGAIgASgJEikKCHNldHRpbmdzGAMgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5ncxIVCg1pc19zdXBlcmFkbWluGAQgASgIEhYKDmVtYWlsX3ZlcmlmaWVkGAUgASgIEhUKDXBlbmRpbmdfZW1haWwYBiABKAkSDgoGbG9jYWxlGAcgASgJEhcKD2JpcnRoZGF5X2hpZGRlbhgIIAEoCCIqCg1HZXRNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIvECCg9VcGRhdGVNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLc3RhdHVzX3RleHQYAiABKAlIAYgBARIbCg5hdmF0YXJfZmlsZV9pZBgDIAEoCUgCiAEBEi4KCHNldHRpbmdzGAQgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5nc0gDiAEBEhUKCHRpbWV6b25lGAUgASgJSASIAQESEwoGbG9jYWxlGAYgASgJSAWIAQESJQoIYmlydGhkYXkYByABKAsyEy5jYWxhYmEudjEuQmlydGhkYXkSHAoPYmlydGhkYXlfaGlkZGVuGAggASgISAaIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfc3RhdHVzX3RleHRCEQoPX2F2YXRhcl9maWxlX2lkQgsKCV9zZXR0aW5nc0ILCglfdGltZXpvbmVCCQoHX2xvY2FsZUISChBfYmlydGhkYXlfaGlkZGVuIi0KEFVwZGF0ZU1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIkEKEkNoYW5nZUVtYWlsUmVxdWVzdBIRCgluZXdfZW1haWwYASABKAkSGAoQY3VycmVudF9wYXNzd29yZBgCIAEoCSJOChNVcGRhdGVTdGF0dXNSZXF1ZXN0EgwKBHRleHQYASABKAkSDQoFZW1vamkYAiABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAMgASgNIlwKCFVzZXJOb3RlEhIKCnN1YmplY3RfaWQYASABKAkSDAoEdGV4dBgCIAEoCRIuCgp1cGRhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIiChJQdXRVc2VyTm90ZVJlcXVlc3QSDAoEdGV4dBgBIAEoCSI1ChBVc2VyTm90ZVJlc3BvbnNlEiEKBG5vdGUYASABKAsyEy5jYWxhYmEudjEuVXNlck5vdGUiRwoVTGlzdEJpcnRoZGF5c1Jlc3BvbnNlEi4KCWJpcnRoZGF5cxgBIAMoCzIbLmNhbGFiYS52MS5VcGNvbWluZ0JpcnRoZGF5IlsKEFVwY29taW5nQmlydGhkYXkSDwoHdXNlcl9pZBgBIAEoCRIlCghiaXJ0aGRheRgCIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheRIPCgdpbl9kYXlzGAMgASgNIkQKG1VwZGF0ZU1lbWJlckJpcnRoZGF5UmVxdWVzdBIlCghiaXJ0aGRheRgBIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheSJLChxVcGRhdGVNZW1iZXJCaXJ0aGRheVJlc3BvbnNlEisKCGJpcnRoZGF5GAEgASgLMhkuY2FsYWJhLnYxLk1lbWJlckJpcnRoZGF5IlgKDk1lbWJlckJpcnRoZGF5Eg8KB3VzZXJfaWQYASABKAkSJQoIYmlydGhkYXkYAiABKAsyEy5jYWxhYmEudjEuQmlydGhkYXkSDgoGaGlkZGVuGAMgASgIIksKG0xpc3RNZW1iZXJCaXJ0aGRheXNSZXNwb25zZRIsCgliaXJ0aGRheXMYASADKAsyGS5jYWxhYmEudjEuTWVtYmVyQmlydGhkYXkqUAoHTWljTW9kZRIYChRNSUNfTU9ERV9VTlNQRUNJRklFRBAAEhAKDE1JQ19NT0RFX1ZBRBABEhkKFU1JQ19NT0RFX1BVU0hfVE9fVEFMSxACQpcBCg1jb20uY2FsYWJhLnYxQglVc2VyUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * Public profile, visible to members of shared workspaces.
@@ -577,6 +577,102 @@ export type UpcomingBirthday = Message<"calaba.v1.UpcomingBirthday"> & {
  */
 export const UpcomingBirthdaySchema: GenMessage<UpcomingBirthday> = /*@__PURE__*/
   messageDesc(file_calaba_v1_user, 14);
+
+/**
+ * PATCH /api/workspaces/{id}/members/{userId}/birthday (docs/09 #77): an admin sets or clears
+ * a member's birthday. MANAGE_NICKNAMES in the workspace and the kick hierarchy (the owner:
+ * anyone; others: members whose highest role is below their own); a bot or a guest member → 403,
+ * a bot token → 403 BOT_NOT_ALLOWED. The birthday is validated as in PATCH /api/me (→ 422);
+ * day = 0 and month = 0, or no birthday, clears it. The member's own "hidden" flag stays as it
+ * is: a hidden birthday still reaches nobody else (User.birthday, GET …/birthdays). USER_UPDATE
+ * goes to the member (Me) and to their workspaces (User).
+ *
+ * @generated from message calaba.v1.UpdateMemberBirthdayRequest
+ */
+export type UpdateMemberBirthdayRequest = Message<"calaba.v1.UpdateMemberBirthdayRequest"> & {
+  /**
+   * @generated from field: calaba.v1.Birthday birthday = 1;
+   */
+  birthday?: Birthday | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateMemberBirthdayRequest.
+ * Use `create(UpdateMemberBirthdayRequestSchema)` to create a new message.
+ */
+export const UpdateMemberBirthdayRequestSchema: GenMessage<UpdateMemberBirthdayRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 15);
+
+/**
+ * @generated from message calaba.v1.UpdateMemberBirthdayResponse
+ */
+export type UpdateMemberBirthdayResponse = Message<"calaba.v1.UpdateMemberBirthdayResponse"> & {
+  /**
+   * @generated from field: calaba.v1.MemberBirthday birthday = 1;
+   */
+  birthday?: MemberBirthday | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateMemberBirthdayResponse.
+ * Use `create(UpdateMemberBirthdayResponseSchema)` to create a new message.
+ */
+export const UpdateMemberBirthdayResponseSchema: GenMessage<UpdateMemberBirthdayResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 16);
+
+/**
+ * A member's birthday as an admin sees it: hidden ones too, marked.
+ *
+ * @generated from message calaba.v1.MemberBirthday
+ */
+export type MemberBirthday = Message<"calaba.v1.MemberBirthday"> & {
+  /**
+   * @generated from field: string user_id = 1;
+   */
+  userId: string;
+
+  /**
+   * unset = none
+   *
+   * @generated from field: calaba.v1.Birthday birthday = 2;
+   */
+  birthday?: Birthday | undefined;
+
+  /**
+   * hidden by the member: shown to nobody else but here
+   *
+   * @generated from field: bool hidden = 3;
+   */
+  hidden: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.MemberBirthday.
+ * Use `create(MemberBirthdaySchema)` to create a new message.
+ */
+export const MemberBirthdaySchema: GenMessage<MemberBirthday> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 17);
+
+/**
+ * GET /api/workspaces/{id}/members/birthdays (MANAGE_NICKNAMES, docs/09 #77, the table
+ * "Members → Birthdays"): every member who has a birthday, hidden ones included (hidden =
+ * true); bots and guests are left out.
+ *
+ * @generated from message calaba.v1.ListMemberBirthdaysResponse
+ */
+export type ListMemberBirthdaysResponse = Message<"calaba.v1.ListMemberBirthdaysResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.MemberBirthday birthdays = 1;
+   */
+  birthdays: MemberBirthday[];
+};
+
+/**
+ * Describes the message calaba.v1.ListMemberBirthdaysResponse.
+ * Use `create(ListMemberBirthdaysResponseSchema)` to create a new message.
+ */
+export const ListMemberBirthdaysResponseSchema: GenMessage<ListMemberBirthdaysResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 18);
 
 /**
  * @generated from enum calaba.v1.MicMode

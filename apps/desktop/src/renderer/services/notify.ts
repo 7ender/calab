@@ -80,7 +80,7 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   if (p.presence === PresenceStatus.DND) return;
   if (!(mention && p.notifyMentions) && !p.notifyAll) return;
   const author = memberName(workspaceId || null, m.authorId);
-  const body = systemPreview(m) || previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? t('notify.attachment') : '');
+  const body = systemPreview(m, author) || previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? t('notify.attachment') : '');
   try {
     // A DM is titled with its author alone (the chat is them).
     const n = new Notification(`${author}${room && !dm ? ` · ${roomLabel(room)}` : ''}`, { body, silent: true, tag: m.roomId });

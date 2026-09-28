@@ -6,7 +6,7 @@ import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { checkpoint, settle } from './harness';
+import { NOW, checkpoint, settle } from './harness';
 import { startPublisher } from './publisher';
 
 /**
@@ -79,6 +79,7 @@ const KEY = new Set([
   'voice-camera-pip',
   'voice-noise-popover',
   'main-members-toggled',
+  'main-members-birthday',
   'members-menu',
   'profile-dialog',
   'profile-menu',
@@ -99,6 +100,7 @@ const KEY = new Set([
   'settings-plan',
   'settings-gptunnel',
   'settings-members',
+  'settings-members-birthday',
   'settings-roles',
   'settings-role-edit',
   'admin-workspaces',
@@ -1107,6 +1109,31 @@ test('settings-members', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByRole('tab', { name: 'Участники' })).toBeVisible();
 });
 
+/**
+ * «Участники → Дни рождения» (docs/09 #77): the owner's table of every member's date, Борис's
+ * hidden by him (marked «скрыто пользователем»), Вера's typed in and saved on Enter.
+ */
+test('settings-members-birthday', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setBirthday(IDS.users.boris, { day: 3, month: 5, year: 1990 });
+  mock.setBirthdayHidden(IDS.users.boris, true);
+  mock.setBirthday(IDS.users.grigory, { day: 21, month: 11 });
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Участники' }).click();
+  await expect(dialog.getByRole('button', { name: 'Изменить день рождения: Борис Петров' })).toBeVisible();
+  await dialog.getByTestId('open-birthdays-table').click();
+  await expect(dialog.getByTestId('birthday-hidden')).toHaveText('скрыто пользователем');
+  const vera = dialog.getByRole('textbox', { name: 'День рождения: Вера Ким' });
+  await vera.fill('7.2.1995');
+  await vera.press('Enter');
+  await expect(vera).toHaveValue('07.02.1995');
+  await expect(dialog.getByRole('textbox', { name: 'День рождения: Борис Петров' })).toHaveValue('03.05.1990');
+  await checkpoint(shot, 'settings-members-birthday');
+});
+
 /** The fixture's custom roles (ADR-0026) given out: «Дизайн» to Вера and Григорий, «Модератор» to Григорий. */
 function giveFixtureRoles(mock: MockServer): void {
   mock.setMemberRoles(IDS.workspaces.main, IDS.users.vera, [IDS.roles.design]);
@@ -1644,6 +1671,24 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'chat-recording-card');
 });
 
+// docs/09 #76: «🎂 Дни рождения» above «В сети» in the members panel — Борис today (a member
+// row), Вера in 3 days under the opened «Скоро» (the mock's clock = the page clock, 15 January).
+test('main-members-birthday', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setClock(NOW.getTime());
+  mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 });
+  mock.setBirthday(IDS.users.vera, { day: 18, month: 1 });
+  const members = await membersList(win);
+  const section = members.getByTestId('members-birthdays');
+  await expect(section.getByRole('heading')).toHaveText('🎂 Дни рождения — 2');
+  await expect(section.getByRole('button', { name: /Борис Петров/ })).toBeVisible();
+  await section.getByTestId('members-birthdays-soon').click();
+  await expect(section.getByRole('button', { name: /Вера Ким · 18 янв\./ })).toBeVisible();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'main-members-birthday');
+});
+
 // docs/09 #76: Борис's birthday is today (the page clock: 15 January) — the server's card in
 // «общий» and 🎂 after his name in the members column; «15 января · 36 лет» in his profile card.
 test('chat-birthday-card', async ({ open, win, mock, shot }) => {
@@ -1651,7 +1696,7 @@ test('chat-birthday-card', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 }, { roomId: IDS.rooms.general });
   const card = win.getByTestId('birthday-card');
-  await expect(card).toContainText('Сегодня день рождения у Борис Петров!');
+  await expect(card).toContainText('Борис Петров — сегодня день рождения!');
   await expect(card).toContainText('15 января');
   const members = await membersList(win);
   const boris = members.getByRole('button', { name: /Борис Петров/ });

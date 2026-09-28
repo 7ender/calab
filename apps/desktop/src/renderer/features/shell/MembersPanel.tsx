@@ -1,6 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { WorkspaceRole, type WorkspaceMember } from '@calaba/protocol';
-import { MonitorUp, Video, Volume2 } from 'lucide-react';
+import { ChevronRight, MonitorUp, Video, Volume2 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
@@ -14,7 +15,10 @@ import { MemberContextMenu } from '../people/MemberContextMenu';
 import { BirthdayMark } from '../people/Birthday';
 import { MutedByMe } from '../../components/SpeakerIdentity';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
-import { groupMembers, nameOf } from '../people/members';
+import { groupMembers, isOnline, nameOf } from '../people/members';
+import { openProfile as openFullProfile } from '../people/actions';
+import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
+import { formatBirthdayShort } from '../../lib/birthday';
 import { NicknameDialog } from '../people/NicknameDialog';
 import { ProfileCard } from '../people/ProfileCard';
 
@@ -43,6 +47,9 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
   // Stable: a new closure per row each render defeated MemberRow's memo (every presence change
   // re-rendered every row).
   const openProfile = useCallback((userId: string | null, open: boolean) => setProfile(open ? userId : null), []);
+  // The birthday rows repeat people listed below: their own popover key, so only one opens.
+  const openBirthdayProfile = useCallback((userId: string | null, open: boolean) => setProfile(open && userId ? `${BDAY}${userId}` : null), []);
+  const birthdayOpen = profile?.startsWith(BDAY) ? profile.slice(BDAY.length) : null;
 
   const section = (key: 'on' | 'off' | 'bots', title: string, list: WorkspaceMember[]): ReactNode =>
     list.length > 0 ? (
@@ -78,6 +85,7 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
       }
       aria-label={t('shell.members')}
     >
+      <BirthdaysSection workspaceId={workspaceId} openId={birthdayOpen} onOpenProfile={openBirthdayProfile} />
       {section('on', t('members.online'), groups.online)}
       {section('off', t('members.offline'), groups.offline)}
       {section('bots', t('bots.section'), groups.bots)}
@@ -85,6 +93,106 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
     </aside>
   );
 }
+
+const BDAY = 'bday:';
+
+/**
+ * «🎂 Дни рождения — N» above «В сети» (docs/09 #76): today's people as ordinary member rows
+ * (avatar, name, 🎂, voice / status), then «Скоро» — the next 7 days, collapsed: name and a short
+ * date. Only when there is someone. Its own query subscription and selectors (ids → members,
+ * offline flags): presence or voice changes elsewhere do not re-render it.
+ */
+const BirthdaysSection = memo(function BirthdaysSection({
+  workspaceId,
+  openId,
+  onOpenProfile,
+}: {
+  workspaceId: string;
+  openId: string | null;
+  onOpenProfile: (userId: string | null, open: boolean) => void;
+}): ReactNode {
+  useLocale();
+  const upcoming = useUpcomingBirthdays(workspaceId);
+  const [soonOpen, setSoonOpen] = useState(false);
+  const list = upcoming ?? NONE;
+  // The people (bots have none; members who left are skipped) and whether they are offline.
+  const members = useWorkspaces(
+    useShallow((s) =>
+      list.map((b) => {
+        const m = s.byId[workspaceId]?.members[b.userId];
+        return m?.user && !m.user.isBot ? m : undefined;
+      }),
+    ),
+  );
+  const offline = useWorkspaces(
+    useShallow((s) => list.map((b) => !isOnline(s.presences[b.userId]?.status) && !s.byId[workspaceId]?.voice[b.userId]?.roomId)),
+  );
+  const today: { m: WorkspaceMember; off: boolean }[] = [];
+  const soon: { m: WorkspaceMember; label: string }[] = [];
+  list.forEach((b, i) => {
+    const m = members[i];
+    if (!m || !b.birthday) return;
+    if (b.inDays === 0) today.push({ m, off: offline[i] ?? false });
+    else soon.push({ m, label: formatBirthdayShort(b.birthday) });
+  });
+  if (today.length + soon.length === 0) return null;
+  return (
+    <section aria-labelledby="members-bday" className="mt-4 flex flex-col first:mt-0" data-testid="members-birthdays">
+      <h3 id="members-bday" className="px-2 pb-1 text-micro font-semibold uppercase tracking-wide text-faint">
+        🎂 {t('birthday.tableTitle')} — {today.length + soon.length}
+      </h3>
+      {today.length > 0 ? (
+        <ul className="flex flex-col gap-px">
+          {today.map(({ m, off }) => (
+            <li key={m.user?.id}>
+              <MemberRow workspaceId={workspaceId} member={m} offline={off} open={openId === m.user?.id} onOpenProfile={onOpenProfile} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {soon.length > 0 ? (
+        <>
+          <button
+            type="button"
+            aria-expanded={soonOpen}
+            data-testid="members-birthdays-soon"
+            className="flex h-7 w-full items-center gap-1 rounded-[var(--radius-row)] px-2 text-left text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+            onClick={() => setSoonOpen((v) => !v)}
+          >
+            <ChevronRight className={cx('size-3.5 shrink-0 transition-transform duration-[var(--motion-fast)]', soonOpen && 'rotate-90')} aria-hidden />
+            <span className="truncate">
+              {t('birthday.soon')} — {soon.length}
+            </span>
+          </button>
+          {soonOpen ? (
+            <ul className="flex flex-col gap-px">
+              {soon.map(({ m, label }) => {
+                const id = m.user?.id ?? '';
+                const name = nameOf(m);
+                return (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      aria-label={`${t('people.openProfile', { name })} · ${label}`}
+                      className="flex h-8 w-full items-center gap-2 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover"
+                      onClick={() => openFullProfile(workspaceId, id)}
+                    >
+                      <Avatar userId={id} name={name} fileId={m.user?.avatarFileId || undefined} size={20} />
+                      <span className="min-w-0 flex-1 truncate text-body">{name}</span>
+                      <span className="shrink-0 text-caption tabular-nums text-muted">{label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+});
+
+const NONE: never[] = [];
 
 /** One 42 px row; memoised so presence / speaking changes re-render only that row. */
 const MemberRow = memo(function MemberRow({

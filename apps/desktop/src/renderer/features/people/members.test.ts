@@ -17,7 +17,7 @@ import {
 } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import { legacyRoles, rolesOfMember } from '../../lib/roles';
-import { canRemoveMember, groupMembers, hasAnyAction, memberActions, type MenuContext } from './members';
+import { canEditMemberBirthday, canRemoveMember, groupMembers, hasAnyAction, memberActions, type MenuContext } from './members';
 
 const member = (id: string, name: string, role: WorkspaceRole, nickname = '', isGuest = false): WorkspaceMember =>
   create(WorkspaceMemberSchema, { workspaceId: 'w', role, nickname, user: create(UserSchema, { id, displayName: name, isGuest }) });
@@ -260,6 +260,31 @@ describe('memberActions', () => {
     expect(canRemoveMember(r(WorkspaceRole.ADMIN), r(WorkspaceRole.OWNER), { role: WorkspaceRole.OWNER }, false)).toBe(false);
     expect(canRemoveMember(r(WorkspaceRole.ADMIN), r(WorkspaceRole.MEMBER), { role: WorkspaceRole.MEMBER }, false)).toBe(true);
     expect(canRemoveMember(r(WorkspaceRole.MEMBER), r(WorkspaceRole.GUEST), { role: WorkspaceRole.GUEST }, false)).toBe(false);
+  });
+
+  it('canEditMemberBirthday (docs/09 #77): MANAGE_NICKNAMES + hierarchy; never bots, guests or oneself', () => {
+    const nick = create(RoleSchema, { id: 'r-nick', name: 'HR', position: 3, permissions: PERMISSION_BITS.MANAGE_NICKNAMES });
+    const senior = create(RoleSchema, { id: 'r-senior', name: 'Senior', position: 4, permissions: 0n });
+    const all = [...legacyRoles('w'), senior, nick];
+    const r = (role: WorkspaceRole, ...ids: string[]) => rolesOfMember(all, { role, roleIds: ids });
+    const t = (role: WorkspaceRole, isBot = false) => ({ role, user: create(UserSchema, { id: 't', isBot, isGuest: role === WorkspaceRole.GUEST }) });
+    // The owner: anyone but bots / guests / themself.
+    expect(canEditMemberBirthday(r(WorkspaceRole.OWNER), r(WorkspaceRole.ADMIN), t(WorkspaceRole.ADMIN), false)).toBe(true);
+    expect(canEditMemberBirthday(r(WorkspaceRole.OWNER), r(WorkspaceRole.OWNER), t(WorkspaceRole.OWNER), true)).toBe(false);
+    expect(canEditMemberBirthday(r(WorkspaceRole.OWNER), r(WorkspaceRole.MEMBER), t(WorkspaceRole.MEMBER, true), false)).toBe(false);
+    expect(canEditMemberBirthday(r(WorkspaceRole.OWNER), r(WorkspaceRole.GUEST), t(WorkspaceRole.GUEST), false)).toBe(false);
+    // An admin: members, not the owner.
+    expect(canEditMemberBirthday(r(WorkspaceRole.ADMIN), r(WorkspaceRole.MEMBER), t(WorkspaceRole.MEMBER), false)).toBe(true);
+    expect(canEditMemberBirthday(r(WorkspaceRole.ADMIN), r(WorkspaceRole.OWNER), t(WorkspaceRole.OWNER), false)).toBe(false);
+    // A custom role with MANAGE_NICKNAMES: only below it.
+    expect(canEditMemberBirthday(r(WorkspaceRole.MEMBER, 'r-nick'), r(WorkspaceRole.MEMBER), t(WorkspaceRole.MEMBER), false)).toBe(true);
+    expect(canEditMemberBirthday(r(WorkspaceRole.MEMBER, 'r-nick'), r(WorkspaceRole.MEMBER, 'r-senior'), t(WorkspaceRole.MEMBER), false)).toBe(false);
+    expect(canEditMemberBirthday(r(WorkspaceRole.MEMBER, 'r-nick'), r(WorkspaceRole.ADMIN), t(WorkspaceRole.ADMIN), false)).toBe(false);
+    // Without the right: no.
+    expect(canEditMemberBirthday(r(WorkspaceRole.MEMBER), r(WorkspaceRole.MEMBER), t(WorkspaceRole.MEMBER), false)).toBe(false);
+    // memberActions.birthday (the profile) follows it.
+    expect(memberActions(base({})).birthday).toBe(true);
+    expect(memberActions(base({ myRole: WorkspaceRole.MEMBER })).birthday).toBe(false);
   });
 
   it('room MUTE_MEMBERS grant: disconnect only; server mute/unmute need it workspace-wide', () => {
