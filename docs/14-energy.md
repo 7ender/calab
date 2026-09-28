@@ -188,13 +188,39 @@ CPU, % одного ядра, среднее / p95:
 
 CSV: `docs/energy/calab-h264-E-watch-video.csv`, `calab-vp8-E-watch-video.csv`, `calab-h264-F-stream-720p.csv`, `calab-av1-F-stream-720p.csv`.
 
+### Аппаратный H.264 на macOS (docs/09 #63)
+
+Разбор 28.09.2026, тот же M4, Electron 44.4.5 = Chromium 152.0.7977.130. **Аппаратный энкодер есть и работает без флагов**; OpenH264 в F — из-за профиля H.264, который выбирает LiveKit.
+
+- `app.getGPUFeatureStatus()` (= chrome://gpu): `video_encode: enabled`, `video_decode: enabled`, `gpu_compositing: enabled`. В `getGPUInfo('complete')` — ANGLE Metal, Apple M4.
+- Флаги не нужны и не помогают: `WebRtcHWEncoding`/`WebRtcHWH264Encoding` в Chromium 152 нет (есть только `--disable-webrtc-hw-encoding`), `MediaFoundation*` — только Windows, `--ignore-gpu-blocklist` ничего не меняет (M4 не в блок-листе). Entitlement или sandbox-исключение не нужны: VideoToolbox работает в GPU-процессе, и в loopback-тесте в sandbox-renderer'е он включается сразу.
+- Loopback `RTCPeerConnection`, 720p canvas, без LiveKit: при профилях **Baseline `42001f`, Main `4d001f`, High `64001f`** — `encoderImplementation: VideoToolbox`, `powerEfficientEncoder: true`. При **Constrained Baseline `42e01f`** — `OpenH264`.
+- Причина: на macOS Chromium не отдаёт Constrained Baseline аппаратному энкодеру. `IsH264ConstrainedBaselineProfileAvailableForAcceleratedEncoder()` возвращает `true` только на Windows/Linux/ChromeOS/Android (`third_party/blink/renderer/platform/peerconnection/webrtc_util.cc`), а `RTCVideoEncoderFactory::Create` сравнивает профиль строго (`IsSameCodec`, `rtc_video_encoder_factory.cc`).
+- LiveKit v1.13 регистрирует для H.264 только `42e01f` (packetization-mode 0 и 1) и High `640032` в этом порядке (`protocol/codecs.go` `VideoCodecsParameters`). Ответ издателю сервер упорядочивает по этому списку (`configureReceiverCodecs`, `pkg/rtc/transport.go`), поэтому договаривается `42e01f`, и получается OpenH264. Проверено на локальном LiveKit: `42e01f` → `OpenH264` на обоих слоях.
+- `encodingInfo` врёт не всегда: `video/H264` без параметров трактуется как `42e01f` → `powerEfficient: false`. С `;profile-level-id=64001f;packetization-mode=1` (и `42001f`, `4d001f`) → `true`.
+- Вторая ловушка — **нечётный размер слоя**. Аппаратный H.264 принимает только чётные размеры (`rtc_video_encoder.cc`, `InitEncode`). Экран 2560×1664 при пресете 720p даёт 1107×720, миниатюра — 553×360: этот слой уходит в OpenH264. Полевой триал `WebRTC-SimulcastEncoderAdapter-GetEncoderInfoOverride/requested_resolution_alignment:2,apply_alignment_to_all_simulcast_layers:true/` выравнивает слои (1104×720 / 552×360, оба VideoToolbox), но ломает AV1 simulcast в том же тесте (кодируется 1 кадр) — глобально его включать нельзя.
+
+CPU, % одного ядра, среднее / p95. Тест-страница с livekit-client 2.22.3 и параметрами `screenPublishOptions` (H.264, simulcast 1280×720 + 640×360, 15 к/с, `detail`), canvas 1280×720, локальный LiveKit v1.13, зритель `lk load-test --subscribers 1`, `energy-bench` 90 с, один прогон на вариант, от батареи:
+
+| Профиль на проводе | Энкодер | Всего | renderer | GPU |
+|---|---|---|---|---|
+| `42e01f` (как сейчас) | OpenH264 | 40,8 / 49,9 | 36,1 | 3,4 |
+| `64001f` (High, `42e01f` убран из `setCodecPreferences`) | VideoToolbox ×2 | **12,4 / 14,1** | 5,9 | 5,2 |
+
+Это не F: источник — canvas, а не захват экрана, и сервер локальный. Но разница энкодера ×6 по renderer'у переносится и на F. По оценке, F с аппаратным H.264 ≈ 12 %, в пределах цели ADR-0032. CSV: `docs/energy/probe-cb-F-stream-720p.csv`, `probe-high-F-stream-720p.csv`.
+
+Что нужно для включения (код не менялся, решение за лидом — docs/12, запись от 28.09):
+1. Договариваться о High (или Baseline/Main), а не Constrained Baseline. Для этого в `setCodecPreferences` издательского video-transceiver'а должен идти H.264 без `42e0xx`. livekit-client этого не умеет (codec preferences не ставит), так что нужен хук в создание transceiver'а или ответ сервера. Риск — зрители, которые не декодируют High в WebRTC (проверить Firefox и iOS Safari).
+2. `codecSelect.ts` — проба `encodingInfo` с тем же профилем (`video/H264;profile-level-id=64001f;packetization-mode=1`), иначе «Авто» H.264 не выберет.
+3. Чётные размеры обоих слоёв при H.264. Например, `applyConstraints` с шириной, кратной 4 (миниатюра = ÷2), или свой `scaleResolutionDownBy`. Полевой триал — нет, см. выше.
+
 ## Слабые машины
 
 Что при медленном CPU масштабируется хуже всего, по данным выше:
 
 1. **RNNoise (WASM, без SIMD)** — фиксированная работа 100 кадров/с. На M4 ≈ 7 % ядра, на 2–4-ядерном Intel кратно больше. Сделано: сон при закрытом гейте и отпущенном PTT. Осталось: SIMD-сборка; авто-выключение в режиме «Слабый компьютер» — встроенный NS Chromium дешевле.
 2. **Декодирование видео без аппаратного декодера**: AV1 и VP9 на старых Intel/Windows, VP8 везде. Сделано: скрытое окно не декодирует. Осталось: выбирать кодек по `decodingInfo(...).powerEfficient` у зрителей и `encodingInfo` у издателя; потолок просмотра 720p/15 в «Слабом компьютере».
-3. **Кодирование стрима и камеры** — программное даже на M4 (F ≈ 25 %). Сделано (ADR-0032): аппаратный энкодер выбирается по `encodingInfo`, где он есть; без него — AV1/VP9, программный H.264 дороже (см. «Кодек по железу»). Осталось: аппаратный энкодер WebRTC на macOS.
+3. **Кодирование стрима и камеры** — программное даже на M4 (F ≈ 25 %). Сделано (ADR-0032): аппаратный энкодер выбирается по `encodingInfo`, где он есть; без него — AV1/VP9, программный H.264 дороже (см. «Кодек по железу»). Осталось: аппаратный H.264 на macOS. Он есть, но LiveKit договаривается о Constrained Baseline, который Chromium на macOS кодирует только программно (см. «Аппаратный H.264 на macOS»).
 4. **backdrop-blur и тени при перерисовках** — 12 мест в renderer. На iGPU каждая перерисовка под размытием дорогая. Осталось: сплошной фон в «Слабом компьютере».
 5. **Таймеры и отчёты**: главный поток в звонке ≈ 10 мс/с JS. На слабом CPU это ≈ 3–5 %. Сделано: 50 → 10 отчётов/с во сне, один тик уровней.
 
