@@ -1,6 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import {
-  AUDIO_BITRATE_OPTIONS_KBPS,
+  AUDIO_TIERS_KBPS,
+  audioTierKbps,
   PERMISSION_BITS,
   PermissionTargetType,
   RoomMediaOverrideSchema,
@@ -17,6 +18,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
+import { audioTierLabel } from '../../lib/audioTierLabel';
 import { api } from '../../lib/api/endpoints';
 import { isAdminRole, mayManageWorkspace, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
@@ -234,11 +236,11 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
     <UserLimitCard roomId={roomId} />
     <Card title={t('card.voiceStream')} footer={t('room.mediaText')}>
       <Row label={t('media.bitrate')} hint={t('media.bitrateHint')}>
-        <Select aria-label={t('media.bitrate')} className="w-60" value={ov?.audioBitrateKbps ?? ''} onChange={(e) => apply({ bitrate: num(e.target.value) })}>
-          <option value="">{def(t('unit.kbps', { n: wsDefaults?.audioBitrateKbps ?? 32 }))}</option>
-          {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
+        <Select aria-label={t('media.bitrate')} className="w-60" value={ov?.audioBitrateKbps ? audioTierKbps(ov.audioBitrateKbps) : ''} onChange={(e) => apply({ bitrate: num(e.target.value) })}>
+          <option value="">{def(audioTierLabel(wsDefaults?.audioBitrateKbps ?? 32))}</option>
+          {AUDIO_TIERS_KBPS.map((b) => (
             <option key={b} value={b}>
-              {t('unit.kbps', { n: b })}
+              {audioTierLabel(b)}
             </option>
           ))}
         </Select>

@@ -1,4 +1,4 @@
-import { AUDIO_BITRATE_OPTIONS_KBPS } from '@calaba/protocol';
+import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppWindow, Bell, CircleUser, Info, Keyboard, Mic, MonitorSmartphone, Palette, Trash2, Upload, Wifi } from 'lucide-react';
@@ -11,6 +11,7 @@ import { SettingsWindow, type SettingsSection } from '../../components/SettingsW
 import { Badge, Button, Card, IconButton, Row, Segmented, Select, Slider, Spinner, Toggle, cx } from '../../components/ui';
 import { availableLocales, LOCALE_NAMES, t, type LocalePref, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
+import { audioTierLabel } from '../../lib/audioTierLabel';
 import { api, uploadAvatar } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { CHECK_IDS, runConnectionCheck, type CheckId, type CheckRow } from '../../lib/connCheck';
@@ -415,13 +416,13 @@ function VoiceTab(): ReactNode {
           <Select
             aria-label={t('voice.myBitrate')}
             className="w-60"
-            value={p.personalBitrateKbps ?? ''}
+            value={p.personalBitrateKbps ? audioTierKbps(p.personalBitrateKbps) : ''}
             onChange={(e) => p.setPrefs({ personalBitrateKbps: e.target.value === '' ? null : Number(e.target.value) })}
           >
             <option value="">{t('voice.myBitrateRoom')}</option>
-            {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
+            {AUDIO_TIERS_KBPS.map((b) => (
               <option key={b} value={b}>
-                ≤ {t('unit.kbps', { n: b })}
+                {t('voice.myBitrateCap', { v: audioTierLabel(b) })}
               </option>
             ))}
           </Select>

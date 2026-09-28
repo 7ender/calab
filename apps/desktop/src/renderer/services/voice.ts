@@ -32,6 +32,8 @@ import {
 } from '../lib/media/screenShare';
 import { pickPublishCodec } from '../lib/media/codecSelect';
 import { installH264ProfileHook } from '../lib/media/h264Publish';
+import { micTier, type OpusTier } from '../lib/media/opusTier';
+import { applyMicTier, installOpusTierHook } from '../lib/media/opusTierPublish';
 import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '../lib/media/echo';
 import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
@@ -279,7 +281,8 @@ class VoiceEngine {
     const gainFlips = s.echoMode !== p.echoMode && this.mic !== null && this.mic.duckable !== (this.mic.rnnoise || duckable(s.echoMode));
     if ((s.rnnoise !== p.rnnoise || s.micDeviceId !== p.micDeviceId || gainFlips) && this.mic) void this.restartMic();
     if (s.echoMode !== p.echoMode) this.applyDuck();
-    if ((s.red !== p.red || s.personalBitrateKbps !== p.personalBitrateKbps) && this.micTrack && this.room) void this.republishMic();
+    if (s.red !== p.red && this.micTrack && this.room) void this.republishMic();
+    if (s.personalBitrateKbps !== p.personalBitrateKbps) this.applyMicTier();
     if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers || s.deafUsers !== p.deafUsers || s.outputVolume !== p.outputVolume) this.applyVolumes();
     if (s.hiddenVideo !== p.hiddenVideo || s.saveTraffic !== p.saveTraffic) this.applyCameras();
     if (s.cameraDeviceId !== p.cameraDeviceId) void this.camera.setDevice(s.cameraDeviceId);
@@ -456,6 +459,8 @@ class VoiceEngine {
       // H.264 «Авто» = High on the wire (hardware on macOS): codec preferences set between
       // addTransceiver and the offer (lib/media/h264.ts, docs/02 «Кодек»). Lives as long as the Room.
       installH264ProfileHook(room.localParticipant, () => room.engine.pcManager?.publisher.getTransceivers());
+      // Voice tier on the wire: the mic's Opus bandwidth / bitrate / FEC in every answer (docs/02 «Битрейт»).
+      installOpusTierHook(room, () => this.micTier());
       annot.attach(room);
       this.wire(room);
       const relayOnly = useSession.getState().appInfo?.forceRelay === true;
@@ -554,7 +559,14 @@ class VoiceEngine {
     const me = useSession.getState().me?.user?.id ?? '';
     const roles = rolesOf(useWorkspaces.getState().byId[workspaceId], me);
     // Unknown room / member (a READY is being applied): keep what /join said.
-    if (!room || roles.length === 0) return;
+    if (!room) return;
+    // The room's voice tier (ROOM_UPDATE, or a workspace default change re-sent as one): live.
+    const kbps = room.media?.audioBitrateKbps;
+    if (kbps && kbps !== this.audioBitrateKbps) {
+      this.audioBitrateKbps = kbps;
+      this.applyMicTier();
+    }
+    if (roles.length === 0) return;
     const next = voiceCaps(roomPerms(roles, me, room), room);
     if (next.canStream !== canStream || next.canVideo !== canVideo) setVoice(next);
   }
@@ -1623,14 +1635,37 @@ class VoiceEngine {
     });
   }
 
+  /** The tier the mic publishes at: the room's, capped by the personal limit (UserSettings.audio_bitrate_kbps). */
+  private micTier(): OpusTier {
+    return micTier(this.audioBitrateKbps, prefs().personalBitrateKbps);
+  }
+
+  /**
+   * The room tier or the personal cap changed: re-apply to the published mic in place (bitrate via
+   * setParameters, bandwidth / FEC via a renegotiation, lib/media/opusTierPublish.ts). Not
+   * published (listen-only, muted before the first publish): the next publish reads the tier.
+   */
+  private applyMicTier(): void {
+    void this.queueMic(async () => {
+      const room = this.room;
+      const sender = this.micTrack?.sender;
+      if (!room || !sender) return;
+      try {
+        await applyMicTier(room, sender, this.micTier());
+      } catch (e) {
+        log.warn('voice tier: live apply failed', e);
+      }
+    });
+  }
+
   private micPublishOptions(): TrackPublishOptions {
     return {
       source: Track.Source.Microphone,
       dtx: AUDIO_PUBLISH_DEFAULTS.dtx,
       red: prefs().red,
       forceStereo: false,
-      // Room setting, optionally capped by the user's personal limit (UserSettings.audio_bitrate_kbps).
-      audioPreset: { maxBitrate: Math.min(this.audioBitrateKbps, prefs().personalBitrateKbps ?? Infinity) * 1000 },
+      // The tier's bitrate; its bandwidth / FEC come with the answer (installOpusTierHook).
+      audioPreset: { maxBitrate: this.micTier().kbps * 1000 },
     };
   }
 
@@ -1650,7 +1685,7 @@ class VoiceEngine {
     this.applyTransmit();
   }
 
-  /** RED and bitrate are negotiated at publish time → republish the same track. */
+  /** RED is negotiated at publish time → republish the same track. */
   private async republishMic(): Promise<void> {
     const room = this.room;
     const track = this.micTrack;
@@ -2318,7 +2353,7 @@ class VoiceEngine {
       rttMs: rtt,
       lossPct: loss,
       quality: qualityOf(rtt, loss),
-      stats: { totalOutKbps: out, totalInKbps: inn, pair, micKbps, screenOut, cameraOut, watching, rendererCpu, echo: { ...aec, corr: this.echo.lastCorr } },
+      stats: { totalOutKbps: out, totalInKbps: inn, pair, micKbps, micTierKbps: this.micTrack ? this.micTier().kbps : null, screenOut, cameraOut, watching, rendererCpu, echo: { ...aec, corr: this.echo.lastCorr } },
     });
   }
 
