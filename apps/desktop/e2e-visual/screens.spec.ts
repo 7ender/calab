@@ -1383,7 +1383,7 @@ test('voice-room-recording', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('voice-invite-row')).toHaveCount(0);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await win.mouse.move(0, 0);
-  await expect(card.getByTestId('room-rec')).toHaveAccessibleName('Идёт запись, 12:34');
+  await expect(card.getByTestId('room-rec')).toHaveAccessibleName('Идёт запись, 12:34. Запись включена: Борис Петров');
   await expect(win.getByTestId('voice-rec-pill')).toHaveAccessibleName(/Запись включена: Борис Петров/);
   await checkpoint(shot, 'voice-room-recording');
   // «…» now offers to stop it (after the shot: the timer must read 12:34 there).
