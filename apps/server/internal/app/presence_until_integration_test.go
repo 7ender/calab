@@ -123,3 +123,52 @@ func TestManualPresenceUntil(t *testing.T) {
 	set(v1.PresenceStatus_PRESENCE_STATUS_ONLINE, &timestamppb.Timestamp{})
 	others(v1.PresenceStatus_PRESENCE_STATUS_ONLINE)
 }
+
+// Temporary custom status (issue #17): the sweeper clears it when the time is up and tells
+// everyone — PRESENCE_UPDATE with the empty status to members, USER_UPDATE {me} to the owner.
+func TestCustomStatusExpiry(t *testing.T) {
+	o, bob, _, _ := setupTeam(t)
+	og, bg := dialGW(t), dialGW(t)
+	og.identify(o.token)
+	bg.identify(bob.token)
+	bob.must(200, "PATCH", "/api/me/status", &v1.UpdateStatusRequest{Text: "на обеде", Emoji: "🍔", ExpiresInSeconds: 1}, nil)
+	og.wait("PRESENCE_UPDATE with status", func(e *v1.DispatchEvent) bool {
+		p := e.GetPresenceUpdate().GetPresence()
+		return p.GetUserId() == bob.id && p.GetStatusText() == "на обеде"
+	})
+	bg.wait("USER_UPDATE me with status", func(e *v1.DispatchEvent) bool {
+		return e.GetUserUpdate().GetMe().GetUser().GetStatusText() == "на обеде"
+	})
+
+	// The sweeper runs every 15 s: within 40 s the status is gone for the other member...
+	deadline := time.Now().Add(40 * time.Second)
+	var cleared *v1.Presence
+	for cleared == nil && time.Now().Before(deadline) {
+		f, err := og.read(time.Until(deadline))
+		if err != nil {
+			t.Fatalf("waiting for the sweeper: %v", err)
+		}
+		if p := f.GetDispatch().GetPresenceUpdate().GetPresence(); p.GetUserId() == bob.id && p.GetStatusText() == "" {
+			cleared = p
+		}
+	}
+	if cleared == nil || cleared.GetStatusEmoji() != "" || cleared.GetStatusExpiresAt() != nil {
+		t.Fatalf("status not cleared for members: %v", cleared)
+	}
+	// ...for the owner's devices...
+	bg.wait("USER_UPDATE me without status", func(e *v1.DispatchEvent) bool {
+		u := e.GetUserUpdate().GetMe().GetUser()
+		return u != nil && u.GetStatusText() == "" && u.GetStatusEmoji() == "" && u.GetStatusExpiresAt() == nil
+	})
+	// ...and in the API and the row.
+	var gm v1.GetMeResponse
+	bob.must(200, "GET", "/api/me", nil, &gm)
+	if u := gm.GetMe().GetUser(); u.GetStatusText() != "" || u.GetStatusEmoji() != "" || u.GetStatusExpiresAt() != nil {
+		t.Fatalf("GET /api/me after expiry: %v", u)
+	}
+	var text, emoji string
+	var exp *time.Time
+	if err := testDB.Pool.QueryRow(ctx0, "SELECT status_text, status_emoji, status_expires_at FROM users WHERE id = $1", bob.id).Scan(&text, &emoji, &exp); err != nil || text != "" || emoji != "" || exp != nil {
+		t.Fatalf("db not cleared: %q %q %v %v", text, emoji, exp, err)
+	}
+}

@@ -116,6 +116,64 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const expireCustomStatuses = `-- name: ExpireCustomStatuses :many
+UPDATE users SET status_text = '', status_emoji = '', status_expires_at = NULL
+WHERE id IN (
+    SELECT id FROM users
+    WHERE status_expires_at IS NOT NULL AND status_expires_at <= now()
+    LIMIT 500
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden
+`
+
+// Clears temporary custom statuses that ran out (the presence sweeper, one instance at a
+// time) and returns the updated users, to announce the change.
+func (q *Queries) ExpireCustomStatuses(ctx context.Context) ([]User, error) {
+	rows, err := q.db.Query(ctx, expireCustomStatuses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.PasswordHash,
+			&i.DisplayName,
+			&i.AvatarFileID,
+			&i.StatusText,
+			&i.Settings,
+			&i.CreatedAt,
+			&i.DisabledAt,
+			&i.StatusEmoji,
+			&i.StatusExpiresAt,
+			&i.IsGuest,
+			&i.GuestExpiresAt,
+			&i.Timezone,
+			&i.EmailVerifiedAt,
+			&i.PendingEmail,
+			&i.Locale,
+			&i.PresenceStatus,
+			&i.PresenceUntil,
+			&i.IsBot,
+			&i.BirthdayDay,
+			&i.BirthdayMonth,
+			&i.BirthdayYear,
+			&i.BirthdayHidden,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const expireManualPresence = `-- name: ExpireManualPresence :many
 WITH ended AS (
     SELECT id, presence_status, presence_until FROM users
