@@ -653,14 +653,18 @@ test('dm-delete-confirm', async ({ open, win, shot }) => {
   await expect(win.locator('[data-message-id]')).toHaveCount(0);
 });
 
-test('dm-chat', async ({ open, win, shot }) => {
+test('dm-chat', async ({ open, win, mock, shot }) => {
   await open(DM_SEED);
   const list = await dmHome(win);
+  // docs/09 #92: Борис read «Да, после обеда.» (✓✓), not the answer below (✓).
+  mock.injectMessage({ roomId: IDS.dms.boris, authorId: IDS.users.anna, content: 'Посмотрела, пара замечаний в PR.' });
   await list.getByRole('button', { name: /Борис Петров/ }).click();
   await expect(win.getByTestId('dm-header')).toContainText('Борис Петров');
   await expect(win.locator('[data-message-id]').first()).toBeVisible();
-  // The pinned strip (Борис's checklist) and the whole history (4 messages) are in.
-  await expect(win.locator('[data-message-id]')).toHaveCount(4);
+  // The pinned strip (Борис's checklist) and the whole history (4 messages + the answer) are in.
+  await expect(win.locator('[data-message-id]')).toHaveCount(5);
+  await expect(win.getByLabel('Прочитано').filter({ visible: true })).toHaveCount(1);
+  await expect(win.getByLabel('Отправлено').filter({ visible: true })).toHaveCount(1);
   await settle(win);
   await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
   await settle(win);

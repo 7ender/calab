@@ -38,17 +38,17 @@ beforeEach(() => {
 });
 
 describe('chat.sendMessage', () => {
-  it('POST response first (✓), then the gateway echo (✓✓)', async () => {
+  it('POST response first (✓ — the server has it), then the gateway echo: one message', async () => {
     createMessage.mockImplementation((_r, b) => Promise.resolve({ message: server(b.nonce) }));
     await sendMessage('ws', ROOM, 'hi', [], undefined, 'n1');
     expect(items()).toHaveLength(1);
-    expect(items()[0]).toMatchObject({ status: 'sent', delivered: false });
+    expect(items()[0]).toMatchObject({ status: 'sent' });
     useMessages.getState().upsert(server('n1')); // echo
     expect(items()).toHaveLength(1);
-    expect(items()[0]?.delivered).toBe(true);
+    expect(items()[0]?.status).toBe('sent');
   });
 
-  it('echo before the POST response: one message, stays delivered', async () => {
+  it('echo before the POST response: one sent message', async () => {
     const d = deferred<{ message?: Message }>();
     createMessage.mockImplementation(() => d.promise);
     const p = sendMessage('ws', ROOM, 'hi', [], undefined, 'n2');
@@ -58,7 +58,7 @@ describe('chat.sendMessage', () => {
     d.resolve({ message: server('n2') });
     await p;
     expect(items()).toHaveLength(1);
-    expect(items()[0]).toMatchObject({ status: 'sent', delivered: true });
+    expect(items()[0]).toMatchObject({ status: 'sent' });
   });
 
   it('failed POST, then the echo arrives (server did store it): the failed copy is replaced', async () => {

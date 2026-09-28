@@ -75,6 +75,7 @@ type pauseMark struct{ _ byte }
 // up to resumeWindow.
 type Session struct {
 	id, user, asess uuid.UUID
+	bot             bool // a bot token (ADR-0031): no read receipts (docs/09 #92)
 	hub             *Hub
 
 	mu         sync.Mutex
@@ -99,9 +100,9 @@ type Session struct {
 	skip   map[uuid.UUID]bool // event ids already replayed from the buffer (takeover), until pending drains
 }
 
-func newSession(h *Hub, id, user, asess uuid.UUID) *Session {
+func newSession(h *Hub, id, user, asess uuid.UUID, bot bool) *Session {
 	s := &Session{
-		id: id, user: user, asess: asess, hub: h,
+		id: id, user: user, asess: asess, hub: h, bot: bot,
 		workspaces: map[uuid.UUID]bool{}, subscribed: map[uuid.UUID]bool{}, dmPeers: map[uuid.UUID]uuid.UUID{},
 		status: v1.PresenceStatus_PRESENCE_STATUS_ONLINE,
 		wq:     make(chan entry, bufferQueue),

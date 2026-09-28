@@ -13,7 +13,7 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.editedShort': 'editado',
   'chat.statusPending': 'Enviando',
   'chat.statusSent': 'Enviado',
-  'chat.statusDelivered': 'Entregado',
+  'chat.statusRead': 'Leído',
   'chat.attachment': 'Adjunto',
   'chat.openImage': 'Abrir imagen «{name}»',
   'chat.reactionLabel': 'Reacción {emoji}: {count}',

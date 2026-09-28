@@ -113,7 +113,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `POST /api/rooms/{id}/messages/{mid}/forward` | forward `{toRoomId}` → 201 `{message}` with `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` in the source, `SEND_MESSAGES` in the target |
 | `PUT · DELETE /api/messages/{id}/reactions/{emoji}` | reaction (URL-encoded emoji) → 204 | `SEND_MESSAGES` |
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | pins | `MANAGE_MESSAGES` / `VIEW_ROOM` |
-| `PUT /api/rooms/{id}/read` | read marker | `VIEW_ROOM` |
+| `PUT /api/rooms/{id}/read` | read marker (does not give people's messages the ✓✓ «read» mark; bots get no `READ_RECEIPT`) | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/messages/search?q=` · `GET /api/me/mentions` | search, mentions of the bot | `VIEW_ROOM` |
 | `POST /api/workspaces/{id}/files` · `POST /api/dms/{id}/files` | upload a file (multipart `file`) → `{file}` | `ATTACH_FILES` |
 | `GET /api/files/{id}` · `GET /api/files/{id}/thumbnail` | download a file | access to the room |

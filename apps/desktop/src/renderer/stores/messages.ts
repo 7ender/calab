@@ -16,11 +16,6 @@ export interface ChatMessage {
   key: string;
   msg: Message;
   status: SendStatus;
-  /**
-   * Own messages: `false` between the POST response (✓) and the gateway echo (✓✓, fanned
-   * out to the room). History and other people's messages are always delivered.
-   */
-  delivered?: boolean;
   uploads?: PendingUpload[];
   error?: string;
 }
@@ -44,7 +39,6 @@ const EMPTY: RoomMessages = { items: [], hasMoreBefore: true, hasMoreAfter: fals
 export interface UpsertOptions {
   /** REST responses carry a meaningful `Reaction.me`; events don't (proto/message.proto). */
   rest?: boolean;
-  delivered?: boolean;
 }
 
 interface MessagesState {
@@ -134,7 +128,7 @@ function updatePins(pins: Message[] | undefined, m: Message): Message[] | undefi
   return next.sort((a, b) => at(b) - at(a));
 }
 
-const sent = (m: Message, delivered = true): ChatMessage => ({ key: m.id, msg: m, status: 'sent', delivered });
+const sent = (m: Message): ChatMessage => ({ key: m.id, msg: m, status: 'sent' });
 
 /**
  * Merges the newest page (API order: newest first) into a room window after a re-IDENTIFY,
@@ -155,7 +149,7 @@ export function mergeLatest(r: RoomMessages, latestDesc: Message[], hasMore: boo
   const newestKnown = sentItems[sentItems.length - 1]?.msg.id ?? '';
   const prev = new Map(sentItems.map((c) => [c.msg.id, c]));
   // Keep reactions' `me` flags we knew (the page from REST carries them too; prefer the page).
-  const fresh = page.map((m) => ({ ...(prev.get(m.id) ?? sent(m)), msg: m, key: m.id, status: 'sent' as const, delivered: true }));
+  const fresh = page.map((m) => ({ ...(prev.get(m.id) ?? sent(m)), msg: m, key: m.id, status: 'sent' as const }));
   if (newestKnown && newestKnown < oldest && sentItems.length > 0) {
     return { ...r, items: [...fresh, ...pending], hasMoreBefore: hasMore, loaded: true, loading: false, error: null };
   }
@@ -223,22 +217,21 @@ export const useMessages = create<MessagesState>()((set) => ({
       if (!r?.loaded) return pinsPatch; // not open: fetched fresh when opened
       const idx = r.items.findIndex((c) => c.key === m.id || (m.nonce !== '' && c.status !== 'sent' && c.msg.nonce === m.nonce));
       const old = r.items[idx];
-      const delivered = (opts.delivered ?? true) || (old?.status === 'sent' && old.delivered !== false);
       const msg = opts.rest ? m : { ...m, reactions: mergeReactions(m.reactions, old?.msg.reactions) };
       let items: ChatMessage[];
       if (idx >= 0) {
         items = r.items.slice();
         if (old?.key === m.id) {
-          items[idx] = { key: m.id, msg, status: 'sent', delivered };
+          items[idx] = { key: m.id, msg, status: 'sent' };
         } else {
           items.splice(idx, 1);
-          items = insertSorted(items, { key: m.id, msg, status: 'sent', delivered });
+          items = insertSorted(items, { key: m.id, msg, status: 'sent' });
         }
       } else {
         // Viewing an older window: newer messages arrive when the user scrolls down / jumps to present.
         const lastSent = [...r.items].reverse().find((c) => c.status === 'sent');
         if (r.hasMoreAfter && (!lastSent || m.id > lastSent.msg.id)) return pinsPatch;
-        items = insertSorted(r.items, { key: m.id, msg, status: 'sent', delivered });
+        items = insertSorted(r.items, { key: m.id, msg, status: 'sent' });
       }
       return { ...pinsPatch, rooms: { ...s.rooms, [m.roomId]: { ...r, items } } };
     }),

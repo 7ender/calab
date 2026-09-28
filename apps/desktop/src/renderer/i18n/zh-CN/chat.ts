@@ -13,7 +13,7 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.editedShort': '已编辑',
   'chat.statusPending': '发送中',
   'chat.statusSent': '已发送',
-  'chat.statusDelivered': '已送达',
+  'chat.statusRead': '已读',
   'chat.attachment': '附件',
   'chat.openImage': '打开图片"{name}"',
   'chat.reactionLabel': '表情回应 {emoji}：{count}',

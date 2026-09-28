@@ -92,7 +92,7 @@ export async function sendSticker(workspaceId: string, roomId: string, sticker: 
   try {
     const res = await api.messages.create(roomId, { stickerId: sticker.id, replyToId: replyToId ?? '', nonce });
     if (res.message) {
-      useMessages.getState().upsert(res.message, { rest: true, delivered: false });
+      useMessages.getState().upsert(res.message, { rest: true });
       useRooms.getState().setLastMessage(roomId, res.message.id);
       useRooms.getState().setRead(roomId, res.message.id);
     }
