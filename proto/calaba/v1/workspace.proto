@@ -71,6 +71,18 @@ message WorkspaceMember {
   // All roles of the member (ADR-0026), built-in ones included: MEMBER (or GUEST) always,
   // ADMIN / OWNER for them, custom roles. `role` above is the highest built-in one.
   repeated string role_ids = 6;
+  // The member's badge (docs/09 #82): an id from the workspace's badges (WorkspaceSnapshot.badges,
+  // GET …/badges). Empty = none. Set by MANAGE_NICKNAMES; bots have none.
+  string badge_id = 7;
+}
+
+// A badge of the workspace's library (docs/09 #82): a small square picture an admin puts next to
+// a member's name (e.g. a partner's logo). At most 20 per workspace.
+message Badge {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3;    // 1..32 characters; the tooltip of the picture
+  string file_id = 4; // PNG / WebP / JPEG of this workspace, <= 128 KB, <= 256x256 (clients upload 64x64 WebP)
 }
 
 message Invite {
@@ -333,5 +345,49 @@ message SetMemberRolesRequest {
 }
 
 message SetMemberRolesResponse {
+  WorkspaceMember member = 1;
+}
+
+// ---- Member badges (docs/09 #82). The library needs MANAGE_WORKSPACE; assigning needs
+// MANAGE_NICKNAMES and a target below the caller's highest role (or the caller). Every change
+// goes to every member of the workspace: BADGE_CREATE / BADGE_UPDATE / BADGE_DELETE, and
+// WORKSPACE_MEMBER_UPDATE for the members whose badge changed. ----
+
+// GET /api/workspaces/{id}/badges (any member) → the library, in creation order.
+message ListBadgesResponse {
+  repeated Badge badges = 1;
+}
+
+// POST /api/workspaces/{id}/badges → 201. file_id: an image uploaded to this workspace
+// (POST /api/workspaces/{id}/files) — PNG / WebP / JPEG, at most 128 KB and 256x256, else 422
+// on file_id. 409 CONFLICT: 20 badges already.
+message CreateBadgeRequest {
+  string name = 1; // 1..32 characters after trimming
+  string file_id = 2;
+}
+
+message CreateBadgeResponse {
+  Badge badge = 1;
+}
+
+// PATCH /api/workspaces/{id}/badges/{badge_id}. Unset fields are left unchanged.
+// DELETE /api/workspaces/{id}/badges/{badge_id} → 204: the members that had it lose it
+// (WORKSPACE_MEMBER_UPDATE for each, then BADGE_DELETE).
+message UpdateBadgeRequest {
+  optional string name = 1;
+  optional string file_id = 2;
+}
+
+message UpdateBadgeResponse {
+  Badge badge = 1;
+}
+
+// PUT /api/workspaces/{id}/members/{user_id}/badge: badge_id of this workspace, "" clears.
+// 403 for a bot or a member at or above the caller's highest role. → WORKSPACE_MEMBER_UPDATE.
+message SetMemberBadgeRequest {
+  string badge_id = 1;
+}
+
+message SetMemberBadgeResponse {
   WorkspaceMember member = 1;
 }

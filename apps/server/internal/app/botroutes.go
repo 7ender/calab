@@ -80,6 +80,11 @@ var botRoutes = map[string]botAccess{
 	"GET /api/workspaces/{id}/birthdays":                   botAllow, // docs/09 #76
 	"GET /api/workspaces/{id}/members/birthdays":           botDeny,  // docs/09 #77: bots have no birthday
 	"PATCH /api/workspaces/{id}/members/{userId}/birthday": botDeny,
+	"GET /api/workspaces/{id}/badges":                      botAllow, // docs/09 #82: the library, read-only
+	"POST /api/workspaces/{id}/badges":                     botDeny,
+	"PATCH /api/workspaces/{id}/badges/{badgeId}":          botDeny,
+	"DELETE /api/workspaces/{id}/badges/{badgeId}":         botDeny,
+	"PUT /api/workspaces/{id}/members/{userId}/badge":      botDeny,
 	"PATCH /api/workspaces/{id}/members/{userId}":          botAllow,
 	"DELETE /api/workspaces/{id}/members/{userId}":         botAllow,
 	"POST /api/workspaces/{id}/members/{userId}/promote":   botAllow,

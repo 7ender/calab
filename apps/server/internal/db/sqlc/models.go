@@ -393,6 +393,15 @@ type WorkspaceAdminLog struct {
 	CreatedAt   time.Time
 }
 
+type WorkspaceBadge struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Name        string
+	FileID      uuid.UUID
+	Position    int16
+	CreatedAt   time.Time
+}
+
 type WorkspaceBan struct {
 	WorkspaceID uuid.UUID
 	UserID      uuid.UUID
@@ -432,6 +441,7 @@ type WorkspaceMember struct {
 	Role        string
 	Nickname    string
 	JoinedAt    time.Time
+	BadgeID     *uuid.UUID
 }
 
 type WorkspaceNotificationSetting struct {

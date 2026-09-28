@@ -180,6 +180,10 @@ message DispatchEvent {
     StickerPackCreate sticker_pack_create = 40;
     StickerPackUpdate sticker_pack_update = 41;
     StickerPackDelete sticker_pack_delete = 42;
+    // Member badges of the workspace (docs/09 #82); to every member of the workspace.
+    BadgeCreate badge_create = 43;
+    BadgeUpdate badge_update = 44;
+    BadgeDelete badge_delete = 45;
     // Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
     BotCreate bot_create = 60;
     BotUpdate bot_update = 61;
@@ -257,6 +261,8 @@ message WorkspaceSnapshot {
   // All roles of the workspace (ADR-0026), highest position first; members[].role_ids
   // refer to them.
   repeated Role roles = 10;
+  // The workspace's badge library (docs/09 #82); members[].badge_id refer to them.
+  repeated Badge badges = 11;
 }
 
 message Ready {
@@ -418,6 +424,20 @@ message StickerPackUpdate {
 message StickerPackDelete {
   string workspace_id = 1;
   string pack_id = 2;
+}
+
+message BadgeCreate {
+  Badge badge = 1;
+}
+
+message BadgeUpdate {
+  Badge badge = 1;
+}
+
+// The badge is gone; its members got WORKSPACE_MEMBER_UPDATE without it just before.
+message BadgeDelete {
+  string workspace_id = 1;
+  string badge_id = 2;
 }
 
 message WorkspaceMemberRemove {
