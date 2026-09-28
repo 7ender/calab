@@ -1,8 +1,8 @@
 import { WorkspaceRole, type PermissionBits, type RecordingCard as Card } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { AlertCircle, CheckCircle2, ExternalLink, FileText, Loader2, MoreHorizontal, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
-import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { AlertCircle, CheckCircle2, CornerUpLeft, ExternalLink, FileText, Loader2, MoreHorizontal, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { lazy, Suspense, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
@@ -14,6 +14,7 @@ import { platform } from '../../platform';
 import { deleteRecording, retryRecording } from '../../services/recording';
 import { usePlayer, type Track } from '../../stores/player';
 import { useSession } from '../../stores/session';
+import { useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import type { ChatMessage } from '../../stores/messages';
 import { menuBox, menuItem } from '../shell/menu';
@@ -35,10 +36,12 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   const deletedBy = useMemberName(workspaceId, card.deletedBy);
   const started = card.startedAt ? timestampDate(card.startedAt) : toDate(c.msg.createdAt);
   const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
+  const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const [busy, setBusy] = useState<RetryAction | null>(null);
   const [transcript, setTranscript] = useState(false);
   const title = `${t('rec.card.title')} · ${durationText(card.durationSec)}`;
+  const reply = useCallback(() => useUi.getState().setReply(c.msg.roomId, c.msg.id), [c.msg.roomId, c.msg.id]);
 
   if (card.deletedAt) {
     return (
@@ -60,6 +63,7 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   const retries = guest ? [] : retryActions(card);
   const audio = recordingAudio(card, c.msg.attachments);
   const mayDelete = mayDeleteRecording(card, me, { owner: role === WorkspaceRole.OWNER, manageMessages: can(perms, 'MANAGE_MESSAGES') });
+  const mayReply = c.status === 'sent' && can(perms, 'SEND_MESSAGES') && !suspended;
   const when = fmt.dateTime(started, 'short');
   const retry = (action: RetryAction): void => {
     setBusy(action);
@@ -68,7 +72,7 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   const track: Track | null = audio
     ? { fileId: audio.id, messageId: c.msg.id, roomId: c.msg.roomId, name: audio.name, title: t('rec.card.label'), subtitle: when }
     : null;
-  const hasActions = !!audio || card.hasTranscript || !!card.webUrl || retries.length > 0;
+  const hasActions = mayReply || !!audio || card.hasTranscript || !!card.webUrl || retries.length > 0;
 
   return (
     <article
@@ -109,6 +113,12 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
 
       {hasActions ? (
         <div className="flex flex-wrap gap-2">
+          {mayReply ? (
+            <Button size="sm" variant="secondary" onClick={reply} data-testid="recording-card-reply">
+              <CornerUpLeft className="size-3" aria-hidden />
+              {t('chat.reply')}
+            </Button>
+          ) : null}
           {track ? <ListenButton track={track} /> : null}
           {card.hasTranscript ? (
             <Button size="sm" variant="secondary" onClick={() => setTranscript(true)} data-testid="recording-card-transcript">

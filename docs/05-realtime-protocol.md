@@ -289,6 +289,7 @@ GET    /healthz  /readyz  /metrics     вне /api, Caddy наружу не пр
 ```
 GET    /gateway?v=1[&encoding=json]    WebSocket
 GET    /api/rooms/{id}/messages?before=|after=&limit=   ListMessagesResponse (VIEW_ROOM; before — новые→старые, after — старые→новые; limit 1..100, 50)
+GET    /api/rooms/{id}/messages/{messageId}             Message (без обёртки; VIEW_ROOM; 404: чужое/удалённое/очищенная история DM)
 POST   /api/rooms/{id}/messages        CreateMessageRequest → 201 | 200 при повторе nonce   (SEND_MESSAGES; вложения — ATTACH_FILES)
 PATCH  /api/messages/{id}              UpdateMessageRequest                (только автор)
 DELETE /api/messages/{id}              204                                 (автор или MANAGE_MESSAGES; мягкое удаление)

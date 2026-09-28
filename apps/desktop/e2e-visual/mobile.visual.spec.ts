@@ -306,7 +306,9 @@ test('m-chat-image', async ({ page }) => {
 test('m-chat-recording', async ({ page }) => {
   await signedIn(page);
   await expect(page.getByTestId('composer')).toBeVisible();
-  mock.injectRecordingCard({
+  await expect(page.locator('[data-message-id]').first()).toBeVisible();
+  await feedToBottom(page);
+  const recording = mock.injectRecordingCard({
     roomId: IDS.rooms.general,
     byUserId: IDS.users.boris,
     durationSec: 42 * 60 + 10,
@@ -314,6 +316,7 @@ test('m-chat-recording', async ({ page }) => {
     webUrl: `${MOCK_GPTUNNEL_WEB}/meetings/1`,
     result: true,
   });
+  await feedToBottom(page);
   const card = page.getByTestId('recording-card');
   await expect(card).toContainText('Релиз 0.7');
   await expect(card.getByRole('button', { name: 'Послушать запись' })).toBeVisible();
@@ -326,6 +329,12 @@ test('m-chat-recording', async ({ page }) => {
   await page.mouse.move(0, 0);
   await expectFeedFits(page);
   await checkpoint(page, 'm-chat-recording', { main: true });
+  await card.getByRole('button', { name: 'Ответить', exact: true }).tap();
+  const composer = page.getByTestId('composer');
+  await expect(composer).toContainText('Встреча записана · 42 мин');
+  await composer.getByRole('textbox').fill('Draft the meeting tasks');
+  await composer.getByRole('button', { name: 'Отправить', exact: true }).tap();
+  await expect.poll(() => mock.state.messages.get(IDS.rooms.general)?.find((m) => m.content === 'Draft the meeting tasks')?.replyToId).toBe(recording.id);
 });
 
 // Chat audio player on a phone (docs/08 «Медиа в чате»): the same player, 44 px targets; the web
