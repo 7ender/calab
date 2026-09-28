@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/user.proto.
  */
 export const file_calaba_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIoYCCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJEg4KBmlzX2JvdBgKIAEoCCLZAQoMVXNlclNldHRpbmdzEhkKEW5vaXNlX3N1cHByZXNzaW9uGAEgASgIEhwKFHVuc3RhYmxlX25ldHdvcmtfcmVkGAIgASgIEhgKDHB1c2hfdG9fdGFsaxgDIAEoCEICGAESGAoQcHVzaF90b190YWxrX2tleRgEIAEoCRIkCghtaWNfbW9kZRgFIAEoDjISLmNhbGFiYS52MS5NaWNNb2RlEh8KEmF1ZGlvX2JpdHJhdGVfa2JwcxgGIAEoDUgAiAEBQhUKE19hdWRpb19iaXRyYXRlX2ticHMiswEKAk1lEh0KBHVzZXIYASABKAsyDy5jYWxhYmEudjEuVXNlchINCgVlbWFpbBgCIAEoCRIpCghzZXR0aW5ncxgDIAEoCzIXLmNhbGFiYS52MS5Vc2VyU2V0dGluZ3MSFQoNaXNfc3VwZXJhZG1pbhgEIAEoCBIWCg5lbWFpbF92ZXJpZmllZBgFIAEoCBIVCg1wZW5kaW5nX2VtYWlsGAYgASgJEg4KBmxvY2FsZRgHIAEoCSIqCg1HZXRNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIpgCCg9VcGRhdGVNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLc3RhdHVzX3RleHQYAiABKAlIAYgBARIbCg5hdmF0YXJfZmlsZV9pZBgDIAEoCUgCiAEBEi4KCHNldHRpbmdzGAQgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5nc0gDiAEBEhUKCHRpbWV6b25lGAUgASgJSASIAQESEwoGbG9jYWxlGAYgASgJSAWIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfc3RhdHVzX3RleHRCEQoPX2F2YXRhcl9maWxlX2lkQgsKCV9zZXR0aW5nc0ILCglfdGltZXpvbmVCCQoHX2xvY2FsZSItChBVcGRhdGVNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIkcKFUNoYW5nZVBhc3N3b3JkUmVxdWVzdBIYChBjdXJyZW50X3Bhc3N3b3JkGAEgASgJEhQKDG5ld19wYXNzd29yZBgCIAEoCSJBChJDaGFuZ2VFbWFpbFJlcXVlc3QSEQoJbmV3X2VtYWlsGAEgASgJEhgKEGN1cnJlbnRfcGFzc3dvcmQYAiABKAkiTgoTVXBkYXRlU3RhdHVzUmVxdWVzdBIMCgR0ZXh0GAEgASgJEg0KBWVtb2ppGAIgASgJEhoKEmV4cGlyZXNfaW5fc2Vjb25kcxgDIAEoDSJcCghVc2VyTm90ZRISCgpzdWJqZWN0X2lkGAEgASgJEgwKBHRleHQYAiABKAkSLgoKdXBkYXRlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiIgoSUHV0VXNlck5vdGVSZXF1ZXN0EgwKBHRleHQYASABKAkiNQoQVXNlck5vdGVSZXNwb25zZRIhCgRub3RlGAEgASgLMhMuY2FsYWJhLnYxLlVzZXJOb3RlKlAKB01pY01vZGUSGAoUTUlDX01PREVfVU5TUEVDSUZJRUQQABIQCgxNSUNfTU9ERV9WQUQQARIZChVNSUNfTU9ERV9QVVNIX1RPX1RBTEsQAkKXAQoNY29tLmNhbGFiYS52MUIJVXNlclByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChRjYWxhYmEvdjEvdXNlci5wcm90bxIJY2FsYWJhLnYxIq0CCgRVc2VyEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIWCg5hdmF0YXJfZmlsZV9pZBgDIAEoCRITCgtzdGF0dXNfdGV4dBgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxzdGF0dXNfZW1vamkYBiABKAkSNQoRc3RhdHVzX2V4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGlzX2d1ZXN0GAggASgIEhAKCHRpbWV6b25lGAkgASgJEg4KBmlzX2JvdBgKIAEoCBIlCghiaXJ0aGRheRgLIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheSJCCghCaXJ0aGRheRILCgNkYXkYASABKA0SDQoFbW9udGgYAiABKA0SEQoEeWVhchgDIAEoDUgAiAEBQgcKBV95ZWFyItkBCgxVc2VyU2V0dGluZ3MSGQoRbm9pc2Vfc3VwcHJlc3Npb24YASABKAgSHAoUdW5zdGFibGVfbmV0d29ya19yZWQYAiABKAgSGAoMcHVzaF90b190YWxrGAMgASgIQgIYARIYChBwdXNoX3RvX3RhbGtfa2V5GAQgASgJEiQKCG1pY19tb2RlGAUgASgOMhIuY2FsYWJhLnYxLk1pY01vZGUSHwoSYXVkaW9fYml0cmF0ZV9rYnBzGAYgASgNSACIAQFCFQoTX2F1ZGlvX2JpdHJhdGVfa2JwcyLMAQoCTWUSHQoEdXNlchgBIAEoCzIPLmNhbGFiYS52MS5Vc2VyEg0KBWVtYWlsGAIgASgJEikKCHNldHRpbmdzGAMgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5ncxIVCg1pc19zdXBlcmFkbWluGAQgASgIEhYKDmVtYWlsX3ZlcmlmaWVkGAUgASgIEhUKDXBlbmRpbmdfZW1haWwYBiABKAkSDgoGbG9jYWxlGAcgASgJEhcKD2JpcnRoZGF5X2hpZGRlbhgIIAEoCCIqCg1HZXRNZVJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lIvECCg9VcGRhdGVNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLc3RhdHVzX3RleHQYAiABKAlIAYgBARIbCg5hdmF0YXJfZmlsZV9pZBgDIAEoCUgCiAEBEi4KCHNldHRpbmdzGAQgASgLMhcuY2FsYWJhLnYxLlVzZXJTZXR0aW5nc0gDiAEBEhUKCHRpbWV6b25lGAUgASgJSASIAQESEwoGbG9jYWxlGAYgASgJSAWIAQESJQoIYmlydGhkYXkYByABKAsyEy5jYWxhYmEudjEuQmlydGhkYXkSHAoPYmlydGhkYXlfaGlkZGVuGAggASgISAaIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfc3RhdHVzX3RleHRCEQoPX2F2YXRhcl9maWxlX2lkQgsKCV9zZXR0aW5nc0ILCglfdGltZXpvbmVCCQoHX2xvY2FsZUISChBfYmlydGhkYXlfaGlkZGVuIi0KEFVwZGF0ZU1lUmVzcG9uc2USGQoCbWUYASABKAsyDS5jYWxhYmEudjEuTWUiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIkEKEkNoYW5nZUVtYWlsUmVxdWVzdBIRCgluZXdfZW1haWwYASABKAkSGAoQY3VycmVudF9wYXNzd29yZBgCIAEoCSJOChNVcGRhdGVTdGF0dXNSZXF1ZXN0EgwKBHRleHQYASABKAkSDQoFZW1vamkYAiABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAMgASgNIlwKCFVzZXJOb3RlEhIKCnN1YmplY3RfaWQYASABKAkSDAoEdGV4dBgCIAEoCRIuCgp1cGRhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIiChJQdXRVc2VyTm90ZVJlcXVlc3QSDAoEdGV4dBgBIAEoCSI1ChBVc2VyTm90ZVJlc3BvbnNlEiEKBG5vdGUYASABKAsyEy5jYWxhYmEudjEuVXNlck5vdGUiRwoVTGlzdEJpcnRoZGF5c1Jlc3BvbnNlEi4KCWJpcnRoZGF5cxgBIAMoCzIbLmNhbGFiYS52MS5VcGNvbWluZ0JpcnRoZGF5IlsKEFVwY29taW5nQmlydGhkYXkSDwoHdXNlcl9pZBgBIAEoCRIlCghiaXJ0aGRheRgCIAEoCzITLmNhbGFiYS52MS5CaXJ0aGRheRIPCgdpbl9kYXlzGAMgASgNKlAKB01pY01vZGUSGAoUTUlDX01PREVfVU5TUEVDSUZJRUQQABIQCgxNSUNfTU9ERV9WQUQQARIZChVNSUNfTU9ERV9QVVNIX1RPX1RBTEsQAkKXAQoNY29tLmNhbGFiYS52MUIJVXNlclByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * Public profile, visible to members of shared workspaces.
@@ -82,6 +82,14 @@ export type User = Message<"calaba.v1.User"> & {
    * @generated from field: bool is_bot = 10;
    */
   isBot: boolean;
+
+  /**
+   * Birthday (docs/09 #76); unset = not given, or hidden by its owner (Me.birthday_hidden):
+   * a hidden birthday is sent to nobody but the owner (in Me.user).
+   *
+   * @generated from field: calaba.v1.Birthday birthday = 11;
+   */
+  birthday?: Birthday | undefined;
 };
 
 /**
@@ -90,6 +98,40 @@ export type User = Message<"calaba.v1.User"> & {
  */
 export const UserSchema: GenMessage<User> = /*@__PURE__*/
   messageDesc(file_calaba_v1_user, 0);
+
+/**
+ * A birthday: day and month always, the year only if the user gave it. 29 February is valid
+ * (celebrated on 28 February in other years).
+ *
+ * @generated from message calaba.v1.Birthday
+ */
+export type Birthday = Message<"calaba.v1.Birthday"> & {
+  /**
+   * 1..31
+   *
+   * @generated from field: uint32 day = 1;
+   */
+  day: number;
+
+  /**
+   * 1..12
+   *
+   * @generated from field: uint32 month = 2;
+   */
+  month: number;
+
+  /**
+   * @generated from field: optional uint32 year = 3;
+   */
+  year?: number | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.Birthday.
+ * Use `create(BirthdaySchema)` to create a new message.
+ */
+export const BirthdaySchema: GenMessage<Birthday> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 1);
 
 /**
  * Per-user settings synced across the user's devices (USER_UPDATE on change).
@@ -151,7 +193,7 @@ export type UserSettings = Message<"calaba.v1.UserSettings"> & {
  * Use `create(UserSettingsSchema)` to create a new message.
  */
 export const UserSettingsSchema: GenMessage<UserSettings> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 1);
+  messageDesc(file_calaba_v1_user, 2);
 
 /**
  * The authenticated user: public profile + private fields.
@@ -206,6 +248,13 @@ export type Me = Message<"calaba.v1.Me"> & {
    * @generated from field: string locale = 7;
    */
   locale: string;
+
+  /**
+   * The birthday (in user.birthday) is kept to the user: nobody else gets it, no card is posted.
+   *
+   * @generated from field: bool birthday_hidden = 8;
+   */
+  birthdayHidden: boolean;
 };
 
 /**
@@ -213,7 +262,7 @@ export type Me = Message<"calaba.v1.Me"> & {
  * Use `create(MeSchema)` to create a new message.
  */
 export const MeSchema: GenMessage<Me> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 2);
+  messageDesc(file_calaba_v1_user, 3);
 
 /**
  * GET /api/me
@@ -232,7 +281,7 @@ export type GetMeResponse = Message<"calaba.v1.GetMeResponse"> & {
  * Use `create(GetMeResponseSchema)` to create a new message.
  */
 export const GetMeResponseSchema: GenMessage<GetMeResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 3);
+  messageDesc(file_calaba_v1_user, 4);
 
 /**
  * PATCH /api/me. Unset fields are left unchanged; `settings`, when present, replaces all settings.
@@ -276,6 +325,19 @@ export type UpdateMeRequest = Message<"calaba.v1.UpdateMeRequest"> & {
    * @generated from field: optional string locale = 6;
    */
   locale?: string | undefined;
+
+  /**
+   * Birthday: day and month (a real date; with the year, if given, between 1900 and this
+   * year) → 422 otherwise; day = 0 and month = 0 clears it. Unset = unchanged.
+   *
+   * @generated from field: calaba.v1.Birthday birthday = 7;
+   */
+  birthday?: Birthday | undefined;
+
+  /**
+   * @generated from field: optional bool birthday_hidden = 8;
+   */
+  birthdayHidden?: boolean | undefined;
 };
 
 /**
@@ -283,7 +345,7 @@ export type UpdateMeRequest = Message<"calaba.v1.UpdateMeRequest"> & {
  * Use `create(UpdateMeRequestSchema)` to create a new message.
  */
 export const UpdateMeRequestSchema: GenMessage<UpdateMeRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 4);
+  messageDesc(file_calaba_v1_user, 5);
 
 /**
  * @generated from message calaba.v1.UpdateMeResponse
@@ -300,7 +362,7 @@ export type UpdateMeResponse = Message<"calaba.v1.UpdateMeResponse"> & {
  * Use `create(UpdateMeResponseSchema)` to create a new message.
  */
 export const UpdateMeResponseSchema: GenMessage<UpdateMeResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 5);
+  messageDesc(file_calaba_v1_user, 6);
 
 /**
  * PATCH /api/me/password → 204. The current password is required; every other session of
@@ -328,7 +390,7 @@ export type ChangePasswordRequest = Message<"calaba.v1.ChangePasswordRequest"> &
  * Use `create(ChangePasswordRequestSchema)` to create a new message.
  */
 export const ChangePasswordRequestSchema: GenMessage<ChangePasswordRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 6);
+  messageDesc(file_calaba_v1_user, 7);
 
 /**
  * PATCH /api/me/email → UpdateMeResponse (+ USER_UPDATE {me} to the user's devices).
@@ -356,7 +418,7 @@ export type ChangeEmailRequest = Message<"calaba.v1.ChangeEmailRequest"> & {
  * Use `create(ChangeEmailRequestSchema)` to create a new message.
  */
 export const ChangeEmailRequestSchema: GenMessage<ChangeEmailRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 7);
+  messageDesc(file_calaba_v1_user, 8);
 
 /**
  * PATCH /api/me/status — custom status. Empty text and emoji clear it. Announced to the
@@ -392,7 +454,7 @@ export type UpdateStatusRequest = Message<"calaba.v1.UpdateStatusRequest"> & {
  * Use `create(UpdateStatusRequestSchema)` to create a new message.
  */
 export const UpdateStatusRequestSchema: GenMessage<UpdateStatusRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 8);
+  messageDesc(file_calaba_v1_user, 9);
 
 /**
  * Private note about another user ("Note (only visible to you)", docs/09 item 20). Only the
@@ -428,7 +490,7 @@ export type UserNote = Message<"calaba.v1.UserNote"> & {
  * Use `create(UserNoteSchema)` to create a new message.
  */
 export const UserNoteSchema: GenMessage<UserNote> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 9);
+  messageDesc(file_calaba_v1_user, 10);
 
 /**
  * @generated from message calaba.v1.PutUserNoteRequest
@@ -447,7 +509,7 @@ export type PutUserNoteRequest = Message<"calaba.v1.PutUserNoteRequest"> & {
  * Use `create(PutUserNoteRequestSchema)` to create a new message.
  */
 export const PutUserNoteRequestSchema: GenMessage<PutUserNoteRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 10);
+  messageDesc(file_calaba_v1_user, 11);
 
 /**
  * @generated from message calaba.v1.UserNoteResponse
@@ -464,7 +526,57 @@ export type UserNoteResponse = Message<"calaba.v1.UserNoteResponse"> & {
  * Use `create(UserNoteResponseSchema)` to create a new message.
  */
 export const UserNoteResponseSchema: GenMessage<UserNoteResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_user, 11);
+  messageDesc(file_calaba_v1_user, 12);
+
+/**
+ * GET /api/workspaces/{id}/birthdays?days=7 (a member, not a guest): members whose birthday is
+ * within `days` days (1..31, default 7) of the caller's today (by the caller's time zone, UTC
+ * without one), soonest first. Hidden birthdays and bots are left out.
+ *
+ * @generated from message calaba.v1.ListBirthdaysResponse
+ */
+export type ListBirthdaysResponse = Message<"calaba.v1.ListBirthdaysResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.UpcomingBirthday birthdays = 1;
+   */
+  birthdays: UpcomingBirthday[];
+};
+
+/**
+ * Describes the message calaba.v1.ListBirthdaysResponse.
+ * Use `create(ListBirthdaysResponseSchema)` to create a new message.
+ */
+export const ListBirthdaysResponseSchema: GenMessage<ListBirthdaysResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 13);
+
+/**
+ * @generated from message calaba.v1.UpcomingBirthday
+ */
+export type UpcomingBirthday = Message<"calaba.v1.UpcomingBirthday"> & {
+  /**
+   * @generated from field: string user_id = 1;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: calaba.v1.Birthday birthday = 2;
+   */
+  birthday?: Birthday | undefined;
+
+  /**
+   * 0 = today
+   *
+   * @generated from field: uint32 in_days = 3;
+   */
+  inDays: number;
+};
+
+/**
+ * Describes the message calaba.v1.UpcomingBirthday.
+ * Use `create(UpcomingBirthdaySchema)` to create a new message.
+ */
+export const UpcomingBirthdaySchema: GenMessage<UpcomingBirthday> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_user, 14);
 
 /**
  * @generated from enum calaba.v1.MicMode

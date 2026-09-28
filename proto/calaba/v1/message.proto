@@ -55,7 +55,15 @@ enum MessageKind {
 message SystemMessage {
   oneof payload {
     RecordingCard recording = 1; // a meeting recording (ADR-0025)
+    BirthdayCard birthday = 2;   // docs/09 #76
   }
+}
+
+// "Today is <author>'s birthday!": posted once a day per workspace by the server at 09:00 of
+// the author's time zone (UTC without one) into the first text room of the workspace.
+message BirthdayCard {
+  uint32 day = 1;
+  uint32 month = 2;
 }
 
 message Reaction {
