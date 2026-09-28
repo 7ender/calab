@@ -103,7 +103,7 @@ export const ruChat = {
   // header search field (docs/09 #50): the entry to the ⌘K search
   // global search (⌘K)
   'search.title': 'Поиск',
-  'search.hint': 'Комнаты, участники и сообщения; стрелки — выбор, Enter — открыть',
+  'search.hint': 'Комнаты, участники и сообщения; стрелки — выбор, Enter — открыть или подключиться к голосовой, Shift+Enter — её чат',
   'search.placeholder': 'Найти комнату, человека или сообщение',
   'search.rooms': 'Комнаты',
   'search.members': 'Участники',
@@ -113,6 +113,12 @@ export const ruChat = {
   'search.searching': 'Ищу…',
   'search.empty': 'Ничего не найдено',
   'search.memberHint': 'сообщения участника',
+  'search.join': 'Подключиться',
+  'search.chat': 'Открыть чат',
+  'search.open': 'Открыть',
+  'search.actionOn': '{action}: {name}',
+  'search.hintVoice': 'Enter — подключиться · ⇧Enter — чат',
+  'search.hintOpen': 'Enter — открыть',
   // lightbox
   'lightbox.close': 'Закрыть',
   'lightbox.download': 'Скачать',

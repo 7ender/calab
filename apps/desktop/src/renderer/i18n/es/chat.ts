@@ -105,7 +105,7 @@ export const esChat: DictShape<typeof enChat> = {
   // header search field (docs/09 #50): the entry to the ⌘K search
   // global search (⌘K)
   'search.title': 'Buscar',
-  'search.hint': 'Salas, miembros y mensajes; flechas para elegir, Intro para abrir',
+  'search.hint': 'Salas, miembros y mensajes; flechas para elegir, Intro para abrir o unirse a una sala de voz, Mayús+Intro para su chat',
   'search.placeholder': 'Buscar una sala, persona o mensaje',
   'search.rooms': 'Salas',
   'search.members': 'Miembros',
@@ -115,6 +115,12 @@ export const esChat: DictShape<typeof enChat> = {
   'search.searching': 'Buscando…',
   'search.empty': 'No se encontró nada',
   'search.memberHint': 'mensajes de este miembro',
+  'search.join': 'Unirse',
+  'search.chat': 'Abrir chat',
+  'search.open': 'Abrir',
+  'search.actionOn': '{action}: {name}',
+  'search.hintVoice': 'Intro: unirse · ⇧Intro: chat',
+  'search.hintOpen': 'Intro: abrir',
   // lightbox
   'lightbox.close': 'Cerrar',
   'lightbox.download': 'Descargar',

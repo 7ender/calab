@@ -1,13 +1,17 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import { RoomType, type Message, type Room, type WorkspaceMember } from '@calaba/protocol';
-import { Hash, Search, Volume2, X } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Hash, MessageSquare, Phone, Search, Volume2, X } from 'lucide-react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Spinner, Tip, cx } from '../../components/ui';
+import { Button, IconButton, Spinner, Tip, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
 import { voice } from '../../services/voice';
+import { can, roomPerms } from '../../lib/permissions';
+import { joinOutcome } from '../../lib/voiceEntry';
+import { useSession } from '../../stores/session';
+import { toast } from '../../stores/toasts';
 import { HOME, sortedDms, useDms } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
@@ -20,6 +24,7 @@ import { previewText } from '../chat/mentionText';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
 import { roomLabel } from '../chat/roomLabel';
 import { systemPreview } from '../../lib/recording';
+import { keyAction, rowActions, type SwitcherAction, type SwitcherRowKind } from './quickSwitcherActions';
 
 type Item =
   | { kind: 'dm'; id: string; roomId: string; peerId: string; name: string }
@@ -115,17 +120,28 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     [dmItems, roomItems, memberItems, messages],
   );
   const cur = Math.min(sel, Math.max(0, items.length - 1));
+  // Grid row of each result (a section header takes the row above it).
+  const gridRows = useMemo(() => {
+    let r = 0;
+    return items.map((it, i) => {
+      if (needle && (i === 0 || items[i - 1]?.kind !== it.kind)) r += 1;
+      return (r += 1);
+    });
+  }, [items, needle]);
 
-  const go = (i: number): void => {
+  const go = (i: number, action?: SwitcherAction): void => {
     const it = items[i];
     if (!it) return;
+    const act = action ?? rowActions(rowKind(it, canConnectNow(it)))[0];
     if (it.kind === 'dm') {
       openRoom(HOME, it.roomId);
       onClose();
     } else if (it.kind === 'room') {
       const r = it.room;
       openRoom(r.workspaceId, r.id);
-      if (r.type === RoomType.VOICE && useVoice.getState().roomId !== r.id) void voice.join(r.id, r.workspaceId);
+      // «Подключиться» = a click on the room in the sidebar (same rights / limit checks);
+      // «Открыть чат» only opens its feed — a call elsewhere stays as it is (docs/09 #14, #66).
+      if (act === 'join') joinVoice(r);
       onClose();
     } else if (it.kind === 'member') {
       setAuthor(it.member);
@@ -139,6 +155,14 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
       onClose();
     }
   };
+  // Stable callbacks for the memoized rows: the latest go() through a ref.
+  const goRef = useRef(go);
+  useEffect(() => {
+    goRef.current = go;
+  });
+  const pick = useCallback((i: number, action?: SwitcherAction) => goRef.current(i, action), []);
+  const hover = useCallback((i: number) => setSel(i), []);
+
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -146,9 +170,10 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSel(Math.max(0, cur - 1));
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      go(cur);
+      const it = items[cur];
+      if (it) go(cur, keyAction(rowKind(it, canConnectNow(it)), e));
     } else if (e.key === 'Backspace' && !q && author) {
       setAuthor(null);
     }
@@ -200,63 +225,214 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
             />
             {busy ? <Spinner className="size-4" /> : null}
           </div>
-          <ul id="quick-switcher-list" role="listbox" aria-label={t('search.title')} className="min-h-0 overflow-y-auto p-1.5">
-            {items.length === 0 ? (
-              <li role="presentation" className="px-3 py-6 text-center text-body text-muted">
-                {busy ? t('search.searching') : author && !q.trim() ? t('search.memberHint') : t('search.empty')}
-              </li>
-            ) : null}
-            {items.map((it, i) => (
-              <Fragment key={it.id}>
-                {needle && (i === 0 || items[i - 1]?.kind !== it.kind) ? (
-                  <li role="presentation" className="px-3 pb-1 pt-2 text-caption font-semibold text-muted">
-                    {section(it.kind)}
-                  </li>
-                ) : null}
-                <li
-                  id={`qs-${it.id}`}
-                  role="option"
-                  aria-selected={i === cur}
-                  onMouseMove={() => i !== cur && setSel(i)}
-                  onClick={() => go(i)}
-                  className={cx(
-                    'flex w-full cursor-default items-center gap-2 rounded-[var(--radius-row)] px-3 text-left text-body',
-                    it.kind === 'message' ? 'py-1.5' : 'h-9',
-                    i === cur ? 'bg-accent-strong text-accent-fg' : 'text-fg',
-                  )}
-                >
-                  <Row it={it} selected={i === cur} q={q.trim()} workspaceName={(id) => workspaces[id]?.ws.name ?? ''} rooms={rooms} />
+          {/* A two-column grid: the listbox (display: contents) fills column 1 with its options;
+              each option's actions / Enter hint sit in column 2 on the same grid row — outside
+              the listbox, whose children may only be options (docs/09 #66). */}
+          <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_auto] content-start overflow-y-auto p-1.5">
+            <ul id="quick-switcher-list" role="listbox" aria-label={t('search.title')} className="contents">
+              {items.length === 0 ? (
+                <li role="presentation" className="col-span-full px-3 py-6 text-center text-body text-muted">
+                  {busy ? t('search.searching') : author && !q.trim() ? t('search.memberHint') : t('search.empty')}
                 </li>
-              </Fragment>
-            ))}
-          </ul>
+              ) : null}
+              {items.map((it, i) => (
+                <Fragment key={it.id}>
+                  {needle && (i === 0 || items[i - 1]?.kind !== it.kind) ? (
+                    <li role="presentation" className="col-span-full px-3 pb-1 pt-2 text-caption font-semibold text-muted" style={{ gridRow: (gridRows[i] ?? 1) - 1 }}>
+                      {section(it.kind)}
+                    </li>
+                  ) : null}
+                  <SwitcherOption
+                    it={it}
+                    index={i}
+                    row={gridRows[i] ?? 1}
+                    selected={i === cur}
+                    q={q.trim()}
+                    workspaceName={it.kind === 'room' ? (workspaces[it.room.workspaceId]?.ws.name ?? '') : ''}
+                    rooms={rooms}
+                    onPick={pick}
+                    onHover={hover}
+                  />
+                </Fragment>
+              ))}
+            </ul>
+            <div className="contents">
+              {items.map((it, i) => (
+                <SwitcherActions key={it.id} it={it} index={i} row={gridRows[i] ?? 1} selected={i === cur} onPick={pick} onHover={hover} />
+              ))}
+            </div>
+          </div>
         </DialogP.Content>
       </DialogP.Portal>
     </DialogP.Root>
   );
 }
 
-function Row({
+/** My CONNECT in a voice room (read at the moment of the action). */
+function canConnectNow(it: Item): boolean {
+  if (it.kind !== 'room' || it.room.type !== RoomType.VOICE) return false;
+  const me = useSession.getState().me?.user?.id ?? '';
+  return can(roomPerms(rolesOf(useWorkspaces.getState().byId[it.room.workspaceId], me), me, it.room), 'CONNECT');
+}
+
+function rowKind(it: Item, canConnect: boolean): SwitcherRowKind {
+  return it.kind === 'room' ? { kind: 'room', voice: it.room.type === RoomType.VOICE, canConnect } : { kind: it.kind };
+}
+
+/** The sidebar's click on a voice room (joinOutcome: CONNECT, the user limit, MOVE_MEMBERS). */
+function joinVoice(r: Room): void {
+  const entry = useWorkspaces.getState().byId[r.workspaceId];
+  const me = useSession.getState().me?.user?.id ?? '';
+  const perms = roomPerms(rolesOf(entry, me), me, r);
+  const people = Object.values(entry?.voice ?? {}).filter((v) => v.roomId === r.id).length;
+  const next = joinOutcome({
+    inRoom: useVoice.getState().roomId === r.id,
+    canConnect: can(perms, 'CONNECT'),
+    canMove: can(perms, 'MOVE_MEMBERS'),
+    people,
+    limit: r.userLimit,
+  });
+  if (next === 'full') toast.info(t('shell.roomFull'));
+  else if (next === 'join') void voice.join(r.id, r.workspaceId);
+}
+
+/** One result: the `option` (click = the primary action), column 1 of its grid row. */
+const SwitcherOption = memo(function SwitcherOption({
   it,
+  index,
+  row,
   selected,
   q,
   workspaceName,
   rooms,
+  onPick,
+  onHover,
 }: {
   it: Item;
+  index: number;
+  row: number;
   selected: boolean;
   q: string;
-  workspaceName: (id: string) => string;
+  workspaceName: string;
   rooms: Record<string, Room>;
+  onPick: (i: number, action?: SwitcherAction) => void;
+  onHover: (i: number) => void;
 }): ReactNode {
-  const sub = cx('shrink-0 truncate text-caption', selected ? 'text-accent-fg' : 'text-muted');
+  return (
+    <li
+      id={`qs-${it.id}`}
+      role="option"
+      aria-selected={selected}
+      style={{ gridRow: row }}
+      onMouseMove={selected ? undefined : () => onHover(index)}
+      onClick={() => onPick(index)}
+      className={cx(
+        'col-start-1 flex min-w-0 cursor-default items-center gap-2 rounded-l-[var(--radius-row)] pl-3 pr-2 text-left text-body text-fg',
+        it.kind === 'message' ? 'py-1.5' : 'h-9 mobile:h-12',
+        selected && 'bg-active',
+      )}
+    >
+      <RowBody it={it} q={q} workspaceName={workspaceName} rooms={rooms} />
+    </li>
+  );
+});
+
+/**
+ * The row's right end (docs/09 #66), column 2 of its grid row: on the selected row (hover or
+ * arrows) its action buttons, on the others the grey Enter hint. Phone: the buttons always,
+ * 44 px, no hint.
+ */
+const SwitcherActions = memo(function SwitcherActions({
+  it,
+  index,
+  row,
+  selected,
+  onPick,
+  onHover,
+}: {
+  it: Item;
+  index: number;
+  row: number;
+  selected: boolean;
+  onPick: (i: number, action?: SwitcherAction) => void;
+  onHover: (i: number) => void;
+}): ReactNode {
+  const canConnect = useCanConnect(it.kind === 'room' && it.room.type === RoomType.VOICE ? it.room : null);
+  const actions = rowActions(rowKind(it, canConnect));
+  const name = rowName(it);
+  return (
+    <div
+      style={{ gridRow: row }}
+      onMouseMove={selected ? undefined : () => onHover(index)}
+      className={cx('col-start-2 flex items-center justify-end gap-1 rounded-r-[var(--radius-row)] pr-1.5', selected && 'bg-active')}
+    >
+      <span aria-hidden className={cx('whitespace-nowrap pr-1.5 text-caption text-muted mobile:hidden', selected && 'hidden')}>
+        {actions[0] === 'join' ? t('search.hintVoice') : t('search.hintOpen')}
+      </span>
+      <span className={cx('items-center gap-1 mobile:flex', selected ? 'flex' : 'hidden')}>
+        {actions.map((a, n) =>
+          a === 'join' ? (
+            <Button
+              key={a}
+              size="sm"
+              aria-label={t('search.actionOn', { action: t('search.join'), name })}
+              onClick={() => onPick(index, a)}
+              className="mobile:size-11 mobile:rounded-full mobile:px-0"
+            >
+              <Phone className="size-3.5 mobile:size-5" aria-hidden />
+              <span className="mobile:hidden">{t('search.join')}</span>
+            </Button>
+          ) : a === 'chat' && n > 0 ? (
+            <IconButton
+              key={a}
+              size="sm"
+              label={t('search.actionOn', { action: t('search.chat'), name })}
+              onClick={() => onPick(index, a)}
+              className="size-6 rounded-full mobile:size-11"
+            >
+              <MessageSquare className="size-3.5 mobile:size-5" aria-hidden />
+            </IconButton>
+          ) : (
+            <Button
+              key={a}
+              size="sm"
+              variant="secondary"
+              aria-label={t('search.actionOn', { action: a === 'chat' ? t('search.chat') : t('search.open'), name })}
+              onClick={() => onPick(index, a)}
+              className="mobile:h-11 mobile:px-4"
+            >
+              {a === 'chat' ? t('search.chat') : t('search.open')}
+            </Button>
+          ),
+        )}
+      </span>
+    </div>
+  );
+});
+
+/** CONNECT in a voice room, reactive (a boolean selector: a role change re-renders only this row). */
+function useCanConnect(room: Room | null): boolean {
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  return useWorkspaces((s) => (room ? can(roomPerms(rolesOf(s.byId[room.workspaceId], me), me, room), 'CONNECT') : false));
+}
+
+/** The row's subject for the buttons' names («Подключиться: Созвон»). */
+function rowName(it: Item): string {
+  if (it.kind === 'dm') return it.name;
+  if (it.kind === 'room') return it.room.name;
+  if (it.kind === 'member') return it.member.nickname || it.member.user?.displayName || '';
+  return memberName(useRooms.getState().byId[it.msg.roomId]?.workspaceId ?? null, it.msg.authorId);
+}
+
+function RowBody({ it, q, workspaceName, rooms }: { it: Item; q: string; workspaceName: string; rooms: Record<string, Room> }): ReactNode {
+  const sub = 'shrink-0 truncate text-caption text-muted mobile:hidden';
   if (it.kind === 'dm') {
     const u = useWorkspaces.getState().users[it.peerId];
     return (
       <>
         <Avatar userId={it.peerId} name={it.name} fileId={u?.avatarFileId || undefined} size={20} />
         <span className="min-w-0 flex-1 truncate">
-          <Highlight text={it.name} q={q} selected={selected} />
+          <Highlight text={it.name} q={q} />
         </span>
         <span className={sub}>{t('search.dms')}</span>
       </>
@@ -267,11 +443,11 @@ function Row({
     const Icon = r.type === RoomType.VOICE ? Volume2 : Hash;
     return (
       <>
-        <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+        <Icon className="size-4 shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
         <span className="min-w-0 flex-1 truncate">
-          <Highlight text={r.name} q={q} selected={selected} />
+          <Highlight text={r.name} q={q} />
         </span>
-        <span className={sub}>{workspaceName(r.workspaceId)}</span>
+        <span className={sub}>{workspaceName}</span>
       </>
     );
   }
@@ -283,10 +459,10 @@ function Row({
       <>
         <Avatar userId={u?.id ?? ''} name={name} fileId={u?.avatarFileId || undefined} size={20} />
         <span className="flex min-w-0 flex-1 items-center gap-1">
-          <span className={cx('min-w-0 truncate', roleTextClass(it.member.role, selected ? 'inherit' : 'role', look))} style={roleTextStyle(it.member.role, selected ? 'inherit' : 'role', look)}>
-            <Highlight text={name} q={q} selected={selected} />
+          <span className={cx('min-w-0 truncate', roleTextClass(it.member.role, 'role', look))} style={roleTextStyle(it.member.role, 'role', look)}>
+            <Highlight text={name} q={q} />
           </span>
-          <RoleMark role={it.member.role} custom={look} tone={selected ? 'inherit' : 'role'} />
+          <RoleMark role={it.member.role} custom={look} tone="role" />
         </span>
         <span className={sub}>{t('search.memberHint')}</span>
       </>
@@ -305,13 +481,13 @@ function Row({
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex items-baseline gap-2">
           <span className="truncate font-semibold">{author}</span>
-          <span className={sub}>
+          <span className="shrink-0 truncate text-caption text-muted">
             {room ? `${roomLabel(room)} · ` : ''}
             {fmt.dayLabel(d)}, {fmt.time(d)}
           </span>
         </span>
         <span className="line-clamp-2 break-words">
-          <Highlight text={snippetAround(text, q)} q={q} selected={selected} />
+          <Highlight text={snippetAround(text, q)} q={q} />
         </span>
       </span>
     </>
@@ -326,13 +502,13 @@ export function snippetAround(text: string, q: string, span = 140): string {
   return `${start > 0 ? '…' : ''}${text.slice(start, start + span)}${start + span < text.length ? '…' : ''}`;
 }
 
-/** Hits: 600 weight + accent text (on the selected row the accent fill already marks it: inherit). */
-function Highlight({ text, q, selected }: { text: string; q: string; selected: boolean }): ReactNode {
+/** Hits: 600 weight + accent text (the selected row is a neutral fill: the accent stays readable). */
+function Highlight({ text, q }: { text: string; q: string }): ReactNode {
   const parts = splitHits(text, searchWords(q));
   if (parts.length === 1) return text;
   return parts.map((part, i) =>
     i % 2 === 1 ? (
-      <mark key={i} className={cx('bg-transparent font-semibold', selected ? 'text-inherit' : 'text-accent-text')}>
+      <mark key={i} className="bg-transparent font-semibold text-accent-text">
         {part}
       </mark>
     ) : (
