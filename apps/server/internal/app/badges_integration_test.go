@@ -63,6 +63,10 @@ func TestBadgesLibrary(t *testing.T) {
 	o.must(422, "POST", base, &v1.CreateBadgeRequest{Name: "Acme", FileId: txt.GetId()}, nil)
 	other := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
 	o.must(422, "POST", base, &v1.CreateBadgeRequest{Name: "Acme", FileId: badgePicture(t, o, other.GetId(), pngBytes(32, 32))}, nil)
+	// Someone else's picture of this workspace is refused: a badge makes its file readable by
+	// every member (e.g. an attachment of a restricted room must not leak that way).
+	bobPic := badgePicture(t, bob, wid, pngBytes(32, 32))
+	o.must(422, "POST", base, &v1.CreateBadgeRequest{Name: "Acme", FileId: bobPic}, nil)
 	o.must(422, "POST", base, &v1.CreateBadgeRequest{Name: "   ", FileId: pic}, nil)
 	o.must(422, "POST", base, &v1.CreateBadgeRequest{Name: "123456789012345678901234567890123", FileId: pic}, nil)
 
@@ -115,6 +119,11 @@ func TestBadgesLibrary(t *testing.T) {
 	bg.wait("BADGE_UPDATE", func(e *v1.DispatchEvent) bool { return e.GetBadgeUpdate().GetBadge().GetName() == name })
 	bob.must(403, "PATCH", base+"/"+acme.GetId(), &v1.UpdateBadgeRequest{Name: &name}, nil)
 	o.must(404, "PATCH", base+"/00000000-0000-0000-0000-000000000001", &v1.UpdateBadgeRequest{Name: &name}, nil)
+	o.must(422, "PATCH", base+"/"+acme.GetId(), &v1.UpdateBadgeRequest{FileId: &bobPic}, nil)
+	// A badge of another workspace is not reachable through this one.
+	foreign := newBadge(t, o, other.GetId(), "Other", badgePicture(t, o, other.GetId(), pngBytes(16, 16)))
+	o.must(404, "PATCH", base+"/"+foreign.GetId(), &v1.UpdateBadgeRequest{Name: &name}, nil)
+	o.must(404, "DELETE", base+"/"+foreign.GetId(), nil, nil)
 
 	// READY and the list carry the library.
 	var list v1.ListBadgesResponse

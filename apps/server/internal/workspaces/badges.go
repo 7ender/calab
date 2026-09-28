@@ -52,10 +52,12 @@ func badgeName(s string) (string, error) {
 	return n, nil
 }
 
-// badgeFile checks the picture: an image of this workspace (PNG / WebP / JPEG, ≤ 128 KB,
-// ≤ 256×256 as measured at upload).
-func badgeFile(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, raw string) (uuid.UUID, error) {
-	bad := httpx.Validation("fileId", "a PNG, WebP or JPEG image of this workspace, at most 128 KB and 256×256")
+// badgeFile checks the picture: an image the caller uploaded to this workspace (PNG / WebP /
+// JPEG, ≤ 128 KB, ≤ 256×256 as measured at upload), not a sticker's file. A badge makes its file
+// readable by every member (files.CanRead), so someone else's file (e.g. an attachment of a
+// restricted room) must not become one; a sticker's file is deleted with its sticker.
+func badgeFile(ctx context.Context, q *sqlc.Queries, wsID, caller uuid.UUID, raw string) (uuid.UUID, error) {
+	bad := httpx.Validation("fileId", "a PNG, WebP or JPEG image you uploaded to this workspace, at most 128 KB and 256×256")
 	id, err := uuid.Parse(raw)
 	if err != nil {
 		return uuid.Nil, bad
@@ -68,7 +70,7 @@ func badgeFile(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, raw string)
 		return uuid.Nil, err
 	}
 	switch {
-	case f.WorkspaceID == nil || *f.WorkspaceID != wsID:
+	case f.WorkspaceID == nil || *f.WorkspaceID != wsID || f.UploaderID != caller:
 		return uuid.Nil, bad
 	case f.Mime != "image/png" && f.Mime != "image/webp" && f.Mime != "image/jpeg":
 		return uuid.Nil, bad
@@ -76,6 +78,11 @@ func badgeFile(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, raw string)
 		return uuid.Nil, bad
 	case f.Width == nil || f.Height == nil || *f.Width < 1 || *f.Height < 1 || *f.Width > MaxBadgeSide || *f.Height > MaxBadgeSide:
 		return uuid.Nil, bad
+	}
+	if _, err := q.GetStickerFileWorkspace(ctx, id); err == nil {
+		return uuid.Nil, bad
+	} else if !db.IsNotFound(err) {
+		return uuid.Nil, err
 	}
 	return id, nil
 }
@@ -132,7 +139,7 @@ func (h *Handlers) createBadge(w http.ResponseWriter, r *http.Request) error {
 		if n >= MaxBadges {
 			return httpx.Conflict("a workspace has at most " + strconv.Itoa(MaxBadges) + " badges")
 		}
-		fileID, err := badgeFile(r.Context(), q, wsID, req.GetFileId())
+		fileID, err := badgeFile(r.Context(), q, wsID, uid(r), req.GetFileId())
 		if err != nil {
 			return err
 		}
@@ -170,7 +177,7 @@ func (h *Handlers) updateBadge(w http.ResponseWriter, r *http.Request) error {
 		p.Name = &n
 	}
 	if req.FileId != nil {
-		id, err := badgeFile(r.Context(), h.db.Q, wsID, req.GetFileId())
+		id, err := badgeFile(r.Context(), h.db.Q, wsID, uid(r), req.GetFileId())
 		if err != nil {
 			return err
 		}
