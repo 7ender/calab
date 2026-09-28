@@ -24,24 +24,27 @@ export function bweText(kbps: number | null | undefined): string {
 }
 
 /**
- * «H264 hw» for a codec seen in getStats: hw / sw per `encodingInfo` / `decodingInfo`
- * `powerEfficient` (ADR-0032; cached, so the 2 s stats tick costs nothing). null = no such track.
+ * «H264 High hw» for a codec seen in getStats: hw / sw per `encodingInfo` / `decodingInfo`
+ * `powerEfficient` of that codec and H.264 profile (ADR-0032; cached, so the 2 s stats tick costs
+ * nothing). null = no such track.
  */
-function useCodecHw(dir: CodecDirection, kind: PublishKind, name: string | undefined): string | null {
+function useCodecHw(dir: CodecDirection, kind: PublishKind, name: string | undefined, profileLabel: string | null | undefined): string | null {
   const codec = toPublishCodec(name);
-  const key = `${dir}:${kind}:${codec ?? ''}`;
+  // The probe knows two profiles: High (and its relatives) or Constrained Baseline.
+  const profile = profileLabel && profileLabel !== 'CB' ? 'high' : 'cb';
+  const key = `${dir}:${kind}:${codec ?? ''}:${profile}`;
   const [probed, setProbed] = useState<{ key: string; hw: boolean | null } | null>(null);
   useEffect(() => {
     if (!codec) return;
     let live = true;
-    void codecPowerEfficient(dir, kind, codec).then((hw) => {
+    void codecPowerEfficient(dir, kind, codec, profile).then((hw) => {
       if (live) setProbed({ key, hw });
     });
     return () => {
       live = false;
     };
-  }, [dir, kind, codec, key]);
-  return codec ? codecHwLabel(codec, probed?.key === key ? probed.hw : null) : null;
+  }, [dir, kind, codec, profile, key]);
+  return codec ? codecHwLabel(codec, probed?.key === key ? probed.hw : null, profileLabel) : null;
 }
 
 /** Dev media stats (Settings → Приложение → «Статистика медиа»): ICE path, RTT, bitrates, encoder/decoder. */
@@ -59,8 +62,8 @@ function StatsPanel(): ReactNode {
   const echoRisk = useVoice((s) => s.echoRisk);
   const ducking = useVoice((s) => s.ducking);
   const out = st?.screenOut[0] ?? st?.cameraOut[0];
-  const enc = useCodecHw('encode', st?.screenOut.length ? 'screen' : 'camera', out?.codec);
-  const dec = useCodecHw('decode', 'screen', st?.watching?.codec);
+  const enc = useCodecHw('encode', st?.screenOut.length ? 'screen' : 'camera', out?.codec, out?.profile);
+  const dec = useCodecHw('decode', 'screen', st?.watching?.codec, st?.watching?.profile);
   if (!st) return null;
   const p = st.pair;
   return (
@@ -88,13 +91,15 @@ function StatsPanel(): ReactNode {
       {st.rendererCpu !== null ? <div>renderer CPU {n(st.rendererCpu, 1)} % core</div> : null}
       {[...st.screenOut.map((l) => ['screen', l] as const), ...st.cameraOut.map((l) => ['cam', l] as const)].map(([kind, l], i) => (
         <div key={`${kind}-${l.rid ?? 'x'}-${i}`}>
-          {kind} {l.rid ?? 'svc'} {l.codec} {n(l.width)}×{n(l.height)}@{n(l.fps)} {n(l.kbps)}/{n(l.targetKbps)} kbps {l.encoder}
+          {kind} {l.rid ?? 'svc'} {l.codec}
+          {l.profile ? ` ${l.profile}` : ''} {n(l.width)}×{n(l.height)}@{n(l.fps)} {n(l.kbps)}/{n(l.targetKbps)} kbps {l.encoder}
           {l.active === false ? ' (off)' : ''} {l.qualityLimitation !== 'none' ? `lim:${l.qualityLimitation}` : ''}
         </div>
       ))}
       {st.watching ? (
         <div>
-          recv {n(st.watching.width)}×{n(st.watching.height)}@{n(st.watching.fps)} {n(st.watching.kbps)} kbps {st.watching.decoder}
+          recv {st.watching.codec}
+          {st.watching.profile ? ` ${st.watching.profile}` : ''} {n(st.watching.width)}×{n(st.watching.height)}@{n(st.watching.fps)} {n(st.watching.kbps)} kbps {st.watching.decoder}
         </div>
       ) : null}
     </div>

@@ -9,11 +9,18 @@
  * Chromium only H.264 / VP8 (plain simulcast) are used.
  * The user can pin AV1 («Качество текста») or H.264 («Совместимость») in the settings.
  *
+ * H.264 has two profiles here (lib/media/h264.ts, docs/02 «Кодек»): «Auto» probes and publishes
+ * **High** `64001f` — the profile Chromium on macOS gives to VideoToolbox (a bare `video/H264`
+ * probe means Constrained Baseline `42e01f`, which it never encodes in hardware, so «Auto» would
+ * never see the hardware encoder). «Совместимость» is Constrained Baseline, the profile every
+ * WebRTC decoder takes (software on macOS).
+ *
  * Results are cached for the session (per kind and preference): the probe is async and the
  * answer does not change while the app runs. Tests inject their own `mediaCapabilities`.
  */
 
 import { isChromium } from './cameraLogic';
+import { H264_CONTENT_TYPE, h264ProfileOf, type H264Profile } from './h264';
 
 export type PublishKind = 'screen' | 'camera';
 export type CodecPref = 'auto' | 'av1' | 'h264';
@@ -24,6 +31,8 @@ export interface CodecPick {
   codec: PublishCodec;
   /** Hardware encoder per `encodingInfo(...).powerEfficient`; null = unknown (no API / probe failed). */
   hw: boolean | null;
+  /** H.264 only: the profile to publish (High = setCodecPreferences hook, CB = LiveKit's default). */
+  profile?: H264Profile;
 }
 
 /** What the probe needs; injected in tests. */
@@ -33,6 +42,8 @@ export interface CodecEnv {
   encodable: ReadonlySet<PublishCodec>;
   /** VP9/AV1 rid simulcast with a per-rid scalabilityMode is unreliable outside Chromium (review L10). */
   chromium: boolean;
+  /** The runtime encodes H.264 High (profile_idc 0x64): not Firefox's OpenH264. */
+  h264High: boolean;
 }
 
 const MIME: Record<PublishCodec, string> = { h264: 'video/H264', av1: 'video/AV1', vp9: 'video/VP9', vp8: 'video/VP8' };
@@ -56,8 +67,9 @@ function defaultEnv(): CodecEnv {
   const caps = typeof RTCRtpSender !== 'undefined' ? (RTCRtpSender.getCapabilities('video')?.codecs ?? []) : [];
   const mimes = new Set(caps.map((c) => c.mimeType.toLowerCase()));
   const encodable = new Set((Object.keys(MIME) as PublishCodec[]).filter((k) => mimes.has(MIME[k].toLowerCase())));
+  const h264High = caps.some((c) => c.mimeType.toLowerCase() === 'video/h264' && ['high', 'constrained-high'].includes(h264ProfileOf(c.sdpFmtpLine) ?? ''));
   const nav = typeof navigator === 'undefined' ? undefined : navigator;
-  return { mediaCapabilities: nav?.mediaCapabilities ?? null, encodable, chromium: !nav || isChromium(nav.userAgent) };
+  return { mediaCapabilities: nav?.mediaCapabilities ?? null, encodable, chromium: !nav || isChromium(nav.userAgent), h264High };
 }
 
 let env: CodecEnv | null = null;
@@ -82,16 +94,21 @@ export function toPublishCodec(name: string | null | undefined): PublishCodec | 
   return n === 'h264' || n === 'av1' || n === 'vp9' || n === 'vp8' ? n : null;
 }
 
+/** The probe's contentType: H.264 with its profile (a bare `video/H264` means CB `42e01f`). */
+export function probeContentType(codec: PublishCodec, profile: H264Profile = 'cb'): string {
+  return codec === 'h264' ? H264_CONTENT_TYPE[profile] : MIME[codec];
+}
+
 /**
- * `powerEfficient` of encoding / decoding `codec` for WebRTC at `kind`'s size (cached).
- * null = unsupported, no API, or the probe threw.
+ * `powerEfficient` of encoding / decoding `codec` (H.264: of `profile`, default Constrained
+ * Baseline) for WebRTC at `kind`'s size (cached). null = unsupported, no API, or the probe threw.
  */
-export function codecPowerEfficient(dir: CodecDirection, kind: PublishKind, codec: PublishCodec): Promise<boolean | null> {
-  const key = `${dir}:${kind}:${codec}`;
+export function codecPowerEfficient(dir: CodecDirection, kind: PublishKind, codec: PublishCodec, profile?: H264Profile): Promise<boolean | null> {
+  const key = `${dir}:${kind}:${codec}:${codec === 'h264' ? (profile ?? 'cb') : ''}`;
   let p = probes.get(key);
   if (!p) {
     const mc = currentEnv().mediaCapabilities;
-    const video = { contentType: MIME[codec], ...PROBE[kind] };
+    const video = { contentType: probeContentType(codec, profile), ...PROBE[kind] };
     p = !mc
       ? Promise.resolve(null)
       : (dir === 'encode' ? mc.encodingInfo({ type: 'webrtc', video }) : mc.decodingInfo({ type: 'webrtc', video })).then(
@@ -107,13 +124,17 @@ async function pick(kind: PublishKind, pref: CodecPref): Promise<CodecPick> {
   const e = currentEnv();
   // Outside Chromium only codecs with plain simulcast (H.264, VP8) are safe to publish.
   const usable = (c: PublishCodec): boolean => e.encodable.has(c) && (e.chromium || c === 'h264' || c === 'vp8');
-  const hw = (c: PublishCodec): Promise<boolean | null> => codecPowerEfficient('encode', kind, c);
+  // «Auto» publishes H.264 as High where the runtime encodes it; «Совместимость» and the software
+  // fallback as Constrained Baseline (every decoder takes it).
+  const autoProfile: H264Profile = e.h264High ? 'high' : 'cb';
+  const hw = (c: PublishCodec, profile?: H264Profile): Promise<boolean | null> => codecPowerEfficient('encode', kind, c, profile);
+  const withProfile = (c: PublishCodec, profile: H264Profile): Pick<CodecPick, 'profile'> => (c === 'h264' ? { profile } : {});
 
-  if (pref !== 'auto' && usable(pref)) return { codec: pref, hw: await hw(pref) };
-  for (const c of HW_ORDER) if (usable(c) && (await hw(c)) === true) return { codec: c, hw: true };
+  if (pref !== 'auto' && usable(pref)) return { codec: pref, hw: await hw(pref, 'cb'), ...withProfile(pref, 'cb') };
+  for (const c of HW_ORDER) if (usable(c) && (await hw(c, autoProfile)) === true) return { codec: c, hw: true, ...withProfile(c, autoProfile) };
   // Nothing in hardware: the cheapest software encoder (see the module doc), H.264 outside Chromium.
   const fallback = SW_ORDER[kind].find(usable) ?? 'vp8';
-  return { codec: fallback, hw: e.encodable.has(fallback) ? await hw(fallback) : null };
+  return { codec: fallback, hw: e.encodable.has(fallback) ? await hw(fallback, 'cb') : null, ...withProfile(fallback, 'cb') };
 }
 
 /** The codec to publish `kind` with (ADR-0032), cached for the session. Never rejects. */
@@ -127,7 +148,8 @@ export function pickPublishCodec(kind: PublishKind, pref: CodecPref = 'auto'): P
   return p;
 }
 
-/** One side of the stats overlay's codec line: «H264 hw», «AV1 sw», «VP9 ?» (unknown). */
-export function codecHwLabel(codec: PublishCodec, hw: boolean | null): string {
-  return `${codec === 'h264' ? 'H264' : codec.toUpperCase()} ${hw === null ? '?' : hw ? 'hw' : 'sw'}`;
+/** One side of the stats overlay's codec line: «H264 High hw», «AV1 sw», «VP9 ?» (unknown). */
+export function codecHwLabel(codec: PublishCodec, hw: boolean | null, profileLabel?: string | null): string {
+  const name = codec === 'h264' ? `H264${profileLabel ? ` ${profileLabel}` : ''}` : codec.toUpperCase();
+  return `${name} ${hw === null ? '?' : hw ? 'hw' : 'sw'}`;
 }

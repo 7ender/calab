@@ -1,6 +1,8 @@
 import { LocalVideoTrack, Track, VideoPreset, createLocalVideoTrack, type TrackPublishOptions } from 'livekit-client';
 import { CAMERA_CPU_CAPTURE, CAMERA_DEFAULT_QUALITY, cameraCapture, cameraLayers, type CameraQuality } from './cameraLogic';
-import type { PublishCodec } from './codecSelect';
+import type { CodecPick, PublishCodec } from './codecSelect';
+import { layerSize, type H264Layout } from './h264';
+import { alignCaptureForH264, setH264Profile } from './h264Publish';
 
 /**
  * Webcam capture and publishing (docs/02 «Камера», ADR-0018). LiveKit-specific glue only; the
@@ -24,9 +26,15 @@ export async function captureCamera(deviceId: string | null, q: CameraQuality = 
   return track;
 }
 
-/** Publish options for a quality: its ladder, every layer ≤ the granted fps (ADR-0024). */
-export function cameraPublishOptions(q: CameraQuality = CAMERA_DEFAULT_QUALITY, codec: PublishCodec = 'vp9'): TrackPublishOptions {
+/**
+ * Publish options for a quality: its ladder, every layer ≤ the granted fps (ADR-0024).
+ * `layout` (H.264 only, `h264Layout` of the aligned capture): the lower layers are exactly capture /
+ * their integer scale, so all three are even (hardware H.264 takes nothing else).
+ */
+export function cameraPublishOptions(q: CameraQuality = CAMERA_DEFAULT_QUALITY, codec: PublishCodec = 'vp9', layout?: H264Layout | null): TrackPublishOptions {
   const [low, mid, top] = cameraLayers(q);
+  const lowSize = codec === 'h264' && layout ? layerSize(layout, 0) : low;
+  const midSize = codec === 'h264' && layout ? layerSize(layout, 1) : mid;
   return {
     source: Track.Source.Camera,
     videoCodec: codec,
@@ -35,9 +43,21 @@ export function cameraPublishOptions(q: CameraQuality = CAMERA_DEFAULT_QUALITY, 
     // VP8 / H.264: plain simulcast; VP9 / AV1: one L1T3 stream per rid (see the module doc).
     ...(codec === 'vp8' || codec === 'h264' ? {} : { scalabilityMode: 'L1T3' as const }),
     videoEncoding: { maxBitrate: top.maxBitrate, maxFramerate: top.fps },
-    videoSimulcastLayers: [new VideoPreset(low.width, low.height, low.maxBitrate, low.fps), new VideoPreset(mid.width, mid.height, mid.maxBitrate, mid.fps)],
+    videoSimulcastLayers: [new VideoPreset(lowSize.width, lowSize.height, low.maxBitrate, low.fps), new VideoPreset(midSize.width, midSize.height, mid.maxBitrate, mid.fps)],
     degradationPreference: 'balanced',
   };
+}
+
+/**
+ * `publishTrack` options for `pick` (ADR-0032). H.264: aligns the capture so every layer is even and
+ * marks the track for the High profile when the pick says so (lib/media/h264.ts).
+ */
+export async function preparePublish(track: LocalVideoTrack, q: CameraQuality, pick: CodecPick): Promise<TrackPublishOptions> {
+  const h264 = pick.codec === 'h264';
+  const [low, mid] = cameraLayers(q);
+  const layout = h264 ? await alignCaptureForH264(track.mediaStreamTrack, [low.height, mid.height], cameraCapture(q).fps) : null;
+  setH264Profile(track, h264 ? pick.profile : undefined);
+  return cameraPublishOptions(q, pick.codec, layout);
 }
 
 /**

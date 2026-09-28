@@ -30,6 +30,7 @@ import {
   type DesktopSource,
 } from '../lib/media/screenShare';
 import { pickPublishCodec } from '../lib/media/codecSelect';
+import { installH264ProfileHook } from '../lib/media/h264Publish';
 import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '../lib/media/echo';
 import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
@@ -401,6 +402,9 @@ class VoiceEngine {
         disconnectOnPageLeave: true,
       });
       this.room = room;
+      // H.264 «Авто» = High on the wire (hardware on macOS): codec preferences set between
+      // addTransceiver and the offer (lib/media/h264.ts, docs/02 «Кодек»). Lives as long as the Room.
+      installH264ProfileHook(room.localParticipant, () => room.engine.pcManager?.publisher.getTransceivers());
       annot.attach(room);
       this.wire(room);
       const relayOnly = useSession.getState().appInfo?.forceRelay === true;
@@ -1758,7 +1762,7 @@ class VoiceEngine {
       // 3) publish.
       const share = await startScreenShare(
         room.localParticipant,
-        { ...opts, preset, codec: (await codec).codec, ...(fps ? { fps } : {}) },
+        { ...opts, preset, codec: (await codec).codec, h264Profile: (await codec).profile, ...(fps ? { fps } : {}) },
         () => {
           if (this.screen === share) {
             this.screen = null;

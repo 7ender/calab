@@ -3,6 +3,8 @@
  * Bitrates are computed from byte counter deltas between 1 s samples.
  */
 
+import { h264ProfileLabel, h264ProfileOf } from './h264';
+
 export interface CandidatePairInfo {
   localType: string;
   remoteType: string;
@@ -26,6 +28,8 @@ export interface OutboundAudioStats {
 export interface OutboundVideoLayer {
   rid: string | null;
   codec: string;
+  /** H.264 profile on the wire («High», «CB»), null for other codecs. */
+  profile: string | null;
   encoder: string;
   powerEfficient: boolean | null;
   width: number | null;
@@ -52,6 +56,8 @@ export interface InboundAudioStats {
 export interface InboundVideoStats {
   kbps: number;
   codec: string;
+  /** H.264 profile on the wire («High», «CB»), null for other codecs. */
+  profile: string | null;
   decoder: string;
   powerEfficient: boolean | null;
   width: number | null;
@@ -113,6 +119,14 @@ function codecName(report: RTCStatsReport, codecId: unknown): string {
   const fmtp = c ? str(c['sdpFmtpLine']) : null;
   const name = mime ? mime.replace(/^(audio|video)\//, '') : '—';
   return fmtp && name.toLowerCase() === 'opus' && /useinbandfec=1/.test(fmtp) ? `${name} (FEC)` : name;
+}
+
+/** H.264 profile label of a stats codec (from its `sdpFmtpLine`); null for other codecs. */
+function codecProfile(report: RTCStatsReport, codecId: unknown): string | null {
+  const id = str(codecId);
+  const c = id ? (report.get(id) as AnyStats | undefined) : undefined;
+  if (!c || str(c['mimeType'])?.toLowerCase() !== 'video/h264') return null;
+  return h264ProfileLabel(h264ProfileOf(str(c['sdpFmtpLine'])));
 }
 
 export function candidatePair(report: RTCStatsReport): CandidatePairInfo | null {
@@ -193,6 +207,7 @@ export function outboundVideo(report: RTCStatsReport, rates: RateTracker, key: s
       return {
         rid: str(o['rid']),
         codec: codecName(report, o['codecId']),
+        profile: codecProfile(report, o['codecId']),
         encoder: str(o['encoderImplementation']) ?? '—',
         powerEfficient: bool(o['powerEfficientEncoder']),
         width: num(o['frameWidth']),
@@ -235,6 +250,7 @@ export function inboundVideo(report: RTCStatsReport, rates: RateTracker, key: st
   return {
     kbps: rates.kbps(`${key}:${i.id}`, i.timestamp, num(i['bytesReceived']) ?? 0),
     codec: codecName(report, i['codecId']),
+    profile: codecProfile(report, i['codecId']),
     decoder: str(i['decoderImplementation']) ?? '—',
     powerEfficient: bool(i['powerEfficientDecoder']),
     width: num(i['frameWidth']),

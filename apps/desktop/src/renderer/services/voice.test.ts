@@ -107,6 +107,8 @@ class FakeRoom {
     }),
     getTrackPublication: (source: string) => (source === 'microphone' && this.published.length ? {} : undefined),
     publishData: () => Promise.resolve(),
+    on: vi.fn(),
+    off: vi.fn(),
   };
   constructor() {
     FakeRoom.all.push(this);
@@ -143,6 +145,7 @@ vi.mock('livekit-client', () => ({
   Room: FakeRoom,
   LocalAudioTrack: FakeLocalAudioTrack,
   RoomEvent: names,
+  ParticipantEvent: names,
   ConnectionState: names,
   DisconnectReason: names,
   Track: { Source: { Microphone: 'microphone', ScreenShare: 'screen_share', ScreenShareAudio: 'screen_share_audio' }, Kind: { Audio: 'audio', Video: 'video' } },

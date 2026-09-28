@@ -23,6 +23,7 @@
     "e2e:web": "playwright test --config playwright.web.config.ts",
     "e2e:visual": "pnpm build:app && pnpm build:web && playwright test --config playwright.visual.config.ts",
     "screenshots:marketing": "playwright test --config playwright.marketing.config.ts",
+    "e2e:media": "playwright test --config playwright.media.config.ts",
     "e2e:visual:mobile": "pnpm build:web && playwright test --config playwright.mobile.config.ts",
     "e2e:visual:mobile:update": "pnpm build:web && playwright test --config playwright.mobile.config.ts --update-snapshots=all",
     "e2e:visual:update": "pnpm build:app && pnpm build:web && playwright test --config playwright.visual.config.ts --update-snapshots=all"

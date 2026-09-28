@@ -68,7 +68,7 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'video.codecH264': '兼容性（H.264）',
   'video.codecAutoHint': '显卡能编码时由显卡编码：你和观众的 CPU 占用更低',
   'video.codecAv1Hint': '文字更清晰，你和没有硬件解码的观众 CPU 占用更高',
-  'video.codecH264Hint': '任何电脑都能用显卡解码；小字稍欠清晰',
+  'video.codecH264Hint': 'H.264 基本配置：任何观众都能播放，但由处理器编码，负载高于“自动”',
   'video.card': '摄像头',
   'voiceUi.collapsePanel': '收起面板',
   'voiceUi.expandPanel': '展开面板',

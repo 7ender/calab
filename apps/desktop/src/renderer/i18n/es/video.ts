@@ -71,7 +71,7 @@ export const esVideo: DictShape<typeof enVideo> = {
   'video.codecH264': 'Compatibilidad (H.264)',
   'video.codecAutoHint': 'Codifica la tarjeta gráfica si puede: menos carga de CPU para ti y para quien mira',
   'video.codecAv1Hint': 'Texto más nítido, más carga de CPU para ti y para quien mira sin decodificador por hardware',
-  'video.codecH264Hint': 'Cualquier equipo lo decodifica con la tarjeta gráfica; el texto pequeño es algo menos nítido',
+  'video.codecH264Hint': 'Perfil básico de H.264: cualquier espectador lo reproduce, pero lo codifica el procesador, con más carga que «Automático»',
   'video.card': 'Cámara',
   'voiceUi.collapsePanel': 'Contraer panel',
   'voiceUi.expandPanel': 'Expandir panel',
