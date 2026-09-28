@@ -12,7 +12,7 @@ import (
 
 // Free plan limits of 28.09 (ADR-0024 «Пометка 2026-09-28»): 50 members (bots take a seat,
 // guests do not), voice up to «Нормальное» (16 kbps), one bot, one sticker pack; TEAM lifts
-// them.
+// them, ENTERPRISE has no limits at all.
 
 // fillSeats adds n plain members straight in the database (registering 50 users through the
 // API would only test registration).
@@ -179,4 +179,38 @@ func TestPlanFreeCounts(t *testing.T) {
 	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
 	createBot(t, o, wsID, "two")
 	createPack(t, o, wsID, "Two")
+}
+
+// ENTERPRISE (owner, 28.09): every check Free fails passes — members, bots, packs, voice tier.
+func TestPlanEnterpriseUnlimited(t *testing.T) {
+	withFreeLimits(t)
+	o := owner(t)
+	wsID := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	createBot(t, o, wsID, "one")
+	createPack(t, o, wsID, "One")
+	fillSeats(t, wsID, 48) // 50 with the owner and the bot: Free is full
+	st, e := o.apiErrBody("POST", "/api/workspaces/"+wsID+"/invites", &v1.CreateInviteRequest{})
+	wantPlanLimit(t, "free invite", st, e, 50, 50)
+
+	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Note: "enterprise"})
+	var gw v1.GetWorkspaceResponse
+	o.must(200, "GET", "/api/workspaces/"+wsID, nil, &gw)
+	if p := gw.GetWorkspace().GetPlan(); p.GetPlan() != v1.Plan_PLAN_ENTERPRISE || p.GetLimits().GetRoomMembers() != 0 ||
+		p.GetLimits().GetMembers() != 0 || p.GetLimits().GetBots() != 0 || p.GetLimits().GetStorageMb() != 0 ||
+		p.GetLimits().GetStreamMaxPreset() != v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED {
+		t.Fatalf("enterprise plan: %v", p)
+	}
+	fillSeats(t, wsID, 5)
+	o.must(201, "POST", "/api/workspaces/"+wsID+"/invites", &v1.CreateInviteRequest{}, nil)
+	createBot(t, o, wsID, "two")
+	createPack(t, o, wsID, "Two")
+	best := uint32(64)
+	o.must(200, "PATCH", "/api/workspaces/"+wsID, &v1.UpdateWorkspaceRequest{DefaultAudioBitrateKbps: &best}, nil)
+
+	// Setting limits for ENTERPRISE is refused (only CUSTOM stores them).
+	st, e = superadminUser(t).apiErrBody("PUT", "/api/admin/workspaces/"+wsID+"/plan",
+		&v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Limits: &v1.PlanLimits{RoomMembers: 3}})
+	if st != 422 {
+		t.Fatalf("enterprise with limits: %d %v", st, e)
+	}
 }

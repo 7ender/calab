@@ -29,6 +29,7 @@ const (
 	Plan_PLAN_FREE        Plan = 1 // limits from PLAN_FREE_LIMITS
 	Plan_PLAN_TEAM        Plan = 2 // limits from PLAN_TEAM_LIMITS
 	Plan_PLAN_CUSTOM      Plan = 3 // limits as stored for the workspace
+	Plan_PLAN_ENTERPRISE  Plan = 4 // no limits at all (like self-hosted), not configurable
 )
 
 // Enum value maps for Plan.
@@ -38,12 +39,14 @@ var (
 		1: "PLAN_FREE",
 		2: "PLAN_TEAM",
 		3: "PLAN_CUSTOM",
+		4: "PLAN_ENTERPRISE",
 	}
 	Plan_value = map[string]int32{
 		"PLAN_UNSPECIFIED": 0,
 		"PLAN_FREE":        1,
 		"PLAN_TEAM":        2,
 		"PLAN_CUSTOM":      3,
+		"PLAN_ENTERPRISE":  4,
 	}
 )
 
@@ -302,12 +305,13 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +
 	"\vvalid_until\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"validUntil\x12\x18\n" +
-	"\aexpired\x18\x04 \x01(\bR\aexpired*K\n" +
+	"\aexpired\x18\x04 \x01(\bR\aexpired*`\n" +
 	"\x04Plan\x12\x14\n" +
 	"\x10PLAN_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tPLAN_FREE\x10\x01\x12\r\n" +
 	"\tPLAN_TEAM\x10\x02\x12\x0f\n" +
-	"\vPLAN_CUSTOM\x10\x03B\x97\x01\n" +
+	"\vPLAN_CUSTOM\x10\x03\x12\x13\n" +
+	"\x0fPLAN_ENTERPRISE\x10\x04B\x97\x01\n" +
 	"\rcom.calaba.v1B\tPlanProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

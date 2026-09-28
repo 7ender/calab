@@ -797,6 +797,7 @@ describe('plans and the superadmin API (ADR-0024)', () => {
     const anna = await login();
     const path = `/api/admin/workspaces/${IDS.workspaces.design}/plan`;
     expect((await api(anna, path, { method: 'PUT', body: JSON.stringify({ plan: 'PLAN_TEAM', limits: { roomMembers: 3 }, note: '' }) })).status).toBe(422);
+    expect((await api(anna, path, { method: 'PUT', body: JSON.stringify({ plan: 'PLAN_ENTERPRISE', limits: { roomMembers: 3 }, note: '' }) })).status).toBe(422);
     const gw = await openGateway();
     await gw.next((f) => f.op === GatewayOpcode.HELLO);
     gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token: anna } } });

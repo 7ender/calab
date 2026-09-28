@@ -12,6 +12,7 @@ enum Plan {
   PLAN_FREE = 1;   // limits from PLAN_FREE_LIMITS
   PLAN_TEAM = 2;   // limits from PLAN_TEAM_LIMITS
   PLAN_CUSTOM = 3; // limits as stored for the workspace
+  PLAN_ENTERPRISE = 4; // no limits at all (like self-hosted), not configurable
 }
 
 // Effective limits of a workspace. 0 / UNSPECIFIED = no limit.

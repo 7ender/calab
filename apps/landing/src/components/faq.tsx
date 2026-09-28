@@ -13,6 +13,7 @@ const ORDER = [
   'limits',
   'roomLimit',
   'license',
+  'enterprise',
   'buyTeam',
 ] as const;
 

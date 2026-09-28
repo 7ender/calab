@@ -139,13 +139,14 @@ describe('admin CUSTOM form', () => {
   it('starts from the free limits unless the workspace is custom already', () => {
     const f = limitsFormFrom(Plan.FREE, undefined);
     expect(f.roomMembers).toBe(String(FREE_LIMITS.roomMembers));
-    expect(f.storageMb).toBe('1024');
+    expect(f.storageMb).toBe('5120');
     expect(f.streamMaxPreset).toBe(H720);
     expect(f).toMatchObject({ members: '50', bots: '1', stickerPacks: '1', audioTierMaxKbps: 16 });
     const custom = create(PlanLimitsSchema, { roomMembers: 12, storageMb: 5120n, streamMaxPreset: H1080 });
     expect(limitsFormFrom(Plan.CUSTOM, custom)).toMatchObject({ roomMembers: '12', storageMb: '5120', streamMaxPreset: H1080, cameraMaxFps: '0' });
     // Team → Custom: the free defaults, not Team's.
     expect(limitsFormFrom(Plan.TEAM, custom).roomMembers).toBe('5');
+    expect(limitsFormFrom(Plan.ENTERPRISE, custom).storageMb).toBe('5120');
   });
 
   it('validates whole numbers ≥ 0 (empty = 0 = no limit)', () => {
@@ -153,7 +154,7 @@ describe('admin CUSTOM form', () => {
     expect(limitsFromForm({ ...f, roomMembers: '' })).toMatchObject({ limits: { roomMembers: 0 } });
     expect(limitsFromForm({ ...f, streamMaxFps: '2.5' })).toEqual({ error: 'streamMaxFps' });
     expect(limitsFromForm({ ...f, members: '-1' })).toEqual({ error: 'members' });
-    expect(limitsFromForm(f)).toMatchObject({ limits: { storageMb: 1024n, cameraMaxPreset: H720, members: 50, bots: 1, stickerPacks: 1, audioTierMaxKbps: 16 } });
+    expect(limitsFromForm(f)).toMatchObject({ limits: { storageMb: 5120n, cameraMaxPreset: H720, members: 50, bots: 1, stickerPacks: 1, audioTierMaxKbps: 16 } });
     expect(limitsFromForm({ ...f, bots: '1001' })).toEqual({ error: 'bots' });
   });
 
@@ -161,6 +162,7 @@ describe('admin CUSTOM form', () => {
     const limits = limitsFormFrom(Plan.FREE, undefined);
     const team = setPlanBody({ plan: Plan.TEAM, limits, validUntil: '2026-12-31', note: '  счёт 42 ' });
     expect(team).toEqual({ body: { plan: Plan.TEAM, validUntil: new Date('2026-12-31T23:59:59Z'), note: 'счёт 42' } });
+    expect(setPlanBody({ plan: Plan.ENTERPRISE, limits, validUntil: '', note: '' })).toEqual({ body: { plan: Plan.ENTERPRISE, note: '' } });
     const custom = setPlanBody({ plan: Plan.CUSTOM, limits: { ...limits, roomMembers: '10' }, validUntil: '', note: '' });
     expect('body' in custom && custom.body.limits?.roomMembers).toBe(10);
     expect('body' in custom ? custom.body.validUntil : null).toBeUndefined();

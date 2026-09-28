@@ -17,7 +17,7 @@ export const FREE_LIMITS = {
   cameraMaxPreset: ScreenSharePreset.H720,
   cameraMaxFps: 15,
   streamsPerRoom: 1,
-  storageMb: 1024,
+  storageMb: 5 * 1024,
   members: 50,
   bots: 1,
   stickerPacks: 1,
@@ -41,6 +41,7 @@ export const PLAN_LABEL: Record<Plan, MessageKey> = {
   [Plan.FREE]: 'plan.name.free',
   [Plan.TEAM]: 'plan.name.team',
   [Plan.CUSTOM]: 'plan.name.custom',
+  [Plan.ENTERPRISE]: 'plan.name.enterprise',
 };
 
 /** The stored plan (UNSPECIFIED reads as FREE: the server's default when none was ever set). */
@@ -277,7 +278,7 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
 
 /** The admin form as a whole (features/admin): what PUT …/plan gets. */
 export interface PlanForm {
-  plan: Plan.FREE | Plan.TEAM | Plan.CUSTOM;
+  plan: Plan.FREE | Plan.TEAM | Plan.ENTERPRISE | Plan.CUSTOM;
   limits: LimitsForm;
   /** `<input type="date">` value; '' = no end date. */
   validUntil: string;
@@ -288,7 +289,7 @@ export const NOTE_MAX = 500;
 
 /**
  * The PUT /api/admin/workspaces/{id}/plan body from the form: limits only with CUSTOM (FREE and
- * TEAM take theirs from the server config), the end of the chosen day, the trimmed note. Returns
+ * TEAM take theirs from the server config, ENTERPRISE has none), the end of the chosen day, the trimmed note. Returns
  * the first invalid field instead when the CUSTOM numbers are wrong.
  */
 export function setPlanBody(f: PlanForm): { body: { plan: Plan; limits?: PlanLimitsInit; validUntil?: Date; note: string } } | { error: LimitsField } {
