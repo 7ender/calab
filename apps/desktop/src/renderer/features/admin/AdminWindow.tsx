@@ -135,7 +135,7 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
           }}
           className="mat-sheet anim-in fixed left-1/2 top-[max(46px,calc(50vh-320px))] z-[var(--z-modal)] flex h-[min(640px,calc(100vh-62px))] w-[min(920px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-[var(--radius-panel)] focus:outline-none mobile:inset-x-0 mobile:bottom-0 mobile:top-[calc(var(--safe-top)+8px)] mobile:h-auto mobile:w-full mobile:translate-x-0 mobile:flex-col mobile:rounded-b-none mobile:rounded-t-[16px]"
         >
-          <div className="mat-sidebar flex w-[300px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[280px] mobile:max-h-[45%] mobile:w-full mobile:border-b mobile:border-r-0">
+          <div className="mat-sheet-side flex w-[300px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[280px] mobile:max-h-[45%] mobile:w-full mobile:border-b mobile:border-r-0">
             <DialogP.Title className="flex items-center gap-2 px-2 pt-2 text-body font-semibold text-fg">
               <ShieldCheck className="size-4 text-accent" aria-hidden />
               {t('admin.title')}

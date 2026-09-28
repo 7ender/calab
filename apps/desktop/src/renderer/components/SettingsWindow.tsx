@@ -204,7 +204,7 @@ export function SettingsWindow({
           // Phone layout (ADR-0021): a full-height sheet; the section list becomes a row of pills on top.
         >
           <Tabs.Root value={tab} onValueChange={openSection} orientation="vertical" className="flex min-w-0 flex-1 mobile:flex-col">
-            <div className="mat-sidebar flex w-[220px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[200px] mobile:max-h-[45%] mobile:w-full mobile:border-b mobile:border-r-0">
+            <div className="mat-sheet-side flex w-[220px] shrink-0 flex-col gap-2 border-r border-line p-2 max-[1000px]:w-[200px] mobile:max-h-[45%] mobile:w-full mobile:border-b mobile:border-r-0">
               <DialogP.Title className="flex min-w-0 items-center gap-2 px-2 pt-2 text-body font-semibold text-fg">
                 {titleIcon}
                 <span className="min-w-0 truncate" title={title}>

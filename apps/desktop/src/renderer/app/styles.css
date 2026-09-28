@@ -22,11 +22,16 @@
   --color-bg: #1c1c1e; /* content (messages): always opaque */
   --color-bg-elevated: #2c2c2e; /* cards, inputs on content */
   --color-control-hover: #353538; /* pop-up button / field hover: a step lighter */
-  /* materials (docs/08): window (rail, title bar) < sidebar < content < popover, all opaque */
-  --color-rail: #0c0c0e;
-  --color-sidebar: #121214; /* ≈ 4 % (HSL lightness) darker than the content */
+  /* materials (docs/08): window (rail, title bar) < feed < content ≈ sidebar < popover, all opaque.
+     The sidebar is ≈ what the glass version composited to (docs/09 #86): a step lighter than the
+     feed (#161618, ≈ 4 % HSL lightness) and ≈ 2 % off the toolbar, so it reads as a column. */
+  --color-rail: #171719;
+  --color-sidebar: #202024;
   --color-toolbar: #1c1c1e; /* = content; the hairline (border-line) separates it */
   --color-popover: #2c2c30;
+  /* nav column inside a sheet (settings, admin): the sheet tone ≈ 3 % (HSL lightness) darker,
+     so it reads as part of the sheet, not as the app sidebar (docs/09 #86) */
+  --color-sheet-side: #242428;
   --color-popover-solid: var(--color-popover);
   --color-fill: rgb(118 118 128 / 24%);
   --color-fill-hover: rgb(118 118 128 / 32%);
@@ -175,6 +180,7 @@
   --color-sidebar: #f2f2f5; /* a light grey tint, ≈ 4.5 % (HSL lightness) off the white content */
   --color-toolbar: #ffffff;
   --color-popover: #f7f7f9;
+  --color-sheet-side: #efeff2; /* the sheet tone ≈ 3 % (HSL lightness) greyer */
   --color-fill: rgb(118 118 128 / 12%);
   --color-fill-hover: rgb(118 118 128 / 20%);
   --color-selection: rgb(0 0 0 / 7%);
@@ -322,6 +328,10 @@ body {
 /* ---- materials (docs/08, "Материалы"): solid colours only, never backdrop-filter ---- */
 .mat-sidebar {
   background: var(--color-sidebar);
+}
+/* A navigation column inside a modal sheet: a step off the sheet tone, hairline kept by the caller. */
+.mat-sheet-side {
+  background: var(--color-sheet-side);
 }
 .mat-rail {
   background: var(--color-rail);
