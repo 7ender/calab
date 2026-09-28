@@ -83,3 +83,23 @@ func TestNames(t *testing.T) {
 		t.Error("bad identity parsed")
 	}
 }
+
+func TestDMRoomName(t *testing.T) {
+	ws, room := uuid.New(), uuid.New()
+	if n := RoomName(room, room); n != "dm:"+room.String() || !IsDMRoomName(n) {
+		t.Fatalf("DM scope room name %q", n)
+	}
+	if w, r, ok := ParseRoomName("dm:" + room.String()); !ok || w != room || r != room {
+		t.Fatalf("parse dm: %v %v %v", w, r, ok)
+	}
+	if _, _, ok := ParseRoomName("dm:nope"); ok {
+		t.Fatal("malformed dm name parsed")
+	}
+	n := RoomName(ws, room)
+	if IsDMRoomName(n) || IsDM(ws, room) {
+		t.Fatalf("workspace room taken for a DM: %q", n)
+	}
+	if w, r, ok := ParseRoomName(n); !ok || w != ws || r != room {
+		t.Fatalf("parse ws: %v %v %v", w, r, ok)
+	}
+}

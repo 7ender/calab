@@ -115,7 +115,7 @@ func TestDirectMessages(t *testing.T) {
 	bob.must(403, "PATCH", "/api/messages/"+m.GetId(), &v1.UpdateMessageRequest{Content: "x"}, nil)
 	// Rooms / voice / links of a workspace do not apply.
 	bob.must(403, "PATCH", "/api/rooms/"+rid, &v1.UpdateRoomRequest{Topic: ptr("x")}, nil)
-	bob.must(403, "POST", "/api/rooms/"+rid+"/join", nil, nil)
+	bob.must(409, "POST", "/api/rooms/"+rid+"/join", nil, nil) // no active call (ADR-0034)
 	bob.must(403, "POST", "/api/rooms/"+rid+"/invites", &v1.CreateRoomInviteRequest{}, nil)
 	o.must(404, "GET", "/api/workspaces/"+wid+"/messages/search?q=hi&room_id="+rid, nil, nil)
 

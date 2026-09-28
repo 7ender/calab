@@ -14,6 +14,11 @@
 //	voice:workspaces             set   workspaces with any voice state (for reconcile)
 //	voice:started:<room_id>      string unix ms when the current call began (first connected device; pending ones do not count)
 //	voice:smuted:<workspace_id>  set   user ids server-muted by a moderator (kept until unmuted, across rejoins)
+//
+// A DM call (ADR-0034) is a voice session of a DM room, which has no workspace: its voice
+// scope is the DM room itself — the DM room id stands in for <workspace_id> in every key
+// above, and RoomName(id, id) is the LiveKit room "dm:<room_id>". A workspace id never equals
+// a room id, so wid == rid identifies a DM scope (IsDM).
 package voice
 
 import (
@@ -70,13 +75,32 @@ func ParseIdentity(id string) (userID, sessionID uuid.UUID, ok bool) {
 	return uid, sid, err1 == nil && err2 == nil
 }
 
-// RoomName is the LiveKit room name of a Calaba voice room.
+// RoomName is the LiveKit room name of a Calaba voice room; for a DM scope (workspaceID ==
+// roomID) it is DMRoomName.
 func RoomName(workspaceID, roomID uuid.UUID) string {
+	if IsDM(workspaceID, roomID) {
+		return DMRoomName(roomID)
+	}
 	return "ws_" + workspaceID.String() + "_room_" + roomID.String()
 }
 
-// ParseRoomName is the inverse of RoomName.
+// DMRoomName is the LiveKit room of a DM call (ADR-0034): "dm:<room_id>".
+func DMRoomName(roomID uuid.UUID) string { return dmPrefix + roomID.String() }
+
+const dmPrefix = "dm:"
+
+// IsDMRoomName reports a DM call's LiveKit room name.
+func IsDMRoomName(name string) bool { return strings.HasPrefix(name, dmPrefix) }
+
+// IsDM reports a DM voice scope: the DM room id is used as its workspace id.
+func IsDM(workspaceID, roomID uuid.UUID) bool { return workspaceID == roomID }
+
+// ParseRoomName is the inverse of RoomName; "dm:<room_id>" gives (room_id, room_id).
 func ParseRoomName(name string) (workspaceID, roomID uuid.UUID, ok bool) {
+	if id, found := strings.CutPrefix(name, dmPrefix); found {
+		rid, err := uuid.Parse(id)
+		return rid, rid, err == nil
+	}
 	rest, found := strings.CutPrefix(name, "ws_")
 	if !found {
 		return uuid.Nil, uuid.Nil, false
@@ -267,6 +291,13 @@ func (c Change) Changed() bool { return !Equal(c.Before, c.After) }
 
 var errLockTimeout = errors.New("voice: workspace lock timeout")
 
+// delInScopeScript deletes a device location (voice:sess) only if it starts with ARGV[1]
+// ("<scope id>/").
+var delInScopeScript = rueidis.NewLuaScript(`
+local v = redis.call('GET', KEYS[1])
+if v and string.sub(v, 1, #ARGV[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+return 0`)
+
 // unlockScript deletes the lock only if we still own it.
 var unlockScript = rueidis.NewLuaScript(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`)
 
@@ -329,8 +360,13 @@ func (s Store) UpdateLocked(ctx context.Context, wid, userID, sessionID uuid.UUI
 	field := Identity(userID, sessionID)
 	var cmds rueidis.Commands
 	if next == nil {
-		cmds = append(cmds, s.C.B().Hdel().Key(wsKey(wid)).Field(field).Build(),
-			s.C.B().Del().Key(sessKey(sessionID)).Build())
+		cmds = append(cmds, s.C.B().Hdel().Key(wsKey(wid)).Field(field).Build())
+		// The device's location goes only if it still points into this scope: a device that
+		// joined another scope meanwhile (a DM call after a workspace room, or another
+		// workspace) keeps its new location when the old room's participant_left arrives.
+		if err := delInScopeScript.Exec(ctx, s.C, []string{sessKey(sessionID)}, []string{wid.String() + "/"}).Error(); err != nil {
+			return Change{}, err
+		}
 	} else {
 		next.UserID, next.SessionID = userID, sessionID
 		if next.JoinedAt == 0 {

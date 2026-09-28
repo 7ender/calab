@@ -37,6 +37,46 @@ func (s *System) Post(ctx context.Context, workspaceID, roomID, author uuid.UUID
 	return m.ID, s.Created(ctx, workspaceID, m)
 }
 
+// PostDM writes a system message into a DM (e.g. a call card, ADR-0034) and publishes
+// MESSAGE_CREATE to both participants' user channels, as for any DM message. readers get their
+// read marker moved onto it in the same transaction (the author, and for most call outcomes
+// the peer too); READ_STATE_UPDATE follows for each of them.
+func (s *System) PostDM(ctx context.Context, roomID, author uuid.UUID, members, readers []uuid.UUID, payload *v1.SystemMessage) (sqlc.Message, error) {
+	raw, err := protojson.Marshal(payload)
+	if err != nil {
+		return sqlc.Message{}, err
+	}
+	var m sqlc.Message
+	err = s.h.db.Tx(ctx, func(q *sqlc.Queries) error {
+		var err error
+		if m, err = q.InsertSystemMessage(ctx, sqlc.InsertSystemMessageParams{RoomID: roomID, AuthorID: author, Payload: raw}); err != nil {
+			return err
+		}
+		for _, u := range readers {
+			if _, err := q.UpsertReadState(ctx, sqlc.UpsertReadStateParams{UserID: u, RoomID: roomID, LastReadMessageID: m.ID}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return m, err
+	}
+	out, err := s.h.details(ctx, []sqlc.Message{m}, uuid.Nil)
+	if err != nil {
+		return m, err
+	}
+	rooms.Publish(ctx, s.h.events, perm.RoomAccess{DM: true, Members: members}, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
+		MessageCreate: &v1.MessageCreate{Message: out[0]},
+	}})
+	for _, u := range readers {
+		s.h.events.User(ctx, u, &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{
+			ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: roomID.String(), LastReadMessageId: m.ID.String()}},
+		}})
+	}
+	return m, nil
+}
+
 // Created publishes MESSAGE_CREATE for a system message inserted by the caller (e.g. in its
 // own transaction, after the commit).
 func (s *System) Created(ctx context.Context, workspaceID uuid.UUID, m sqlc.Message) error {

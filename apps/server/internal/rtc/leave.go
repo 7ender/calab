@@ -31,15 +31,22 @@ func (s *Service) leave(w http.ResponseWriter, r *http.Request) error {
 		// No state here (already gone, or recorded elsewhere): only a lingering LiveKit
 		// connection of this device in the room may be left, e.g. a lost participant_joined
 		// after the pending state was rolled back.
-		room, err := s.getRoom(r.Context(), roomID)
+		row, err := s.db.Q.GetRoom(r.Context(), roomID)
+		if db.IsNotFound(err) {
+			httpx.NoContent(w)
+			return nil
+		}
 		if err != nil {
-			if db.IsNotFound(err) || httpx.AsError(err).Status == http.StatusNotFound {
-				httpx.NoContent(w)
-				return nil
-			}
 			return err
 		}
-		s.removeIdentities(r.Context(), voice.RoomName(room.WorkspaceID, roomID), []string{identity})
+		scope := roomID // a DM (one-to-one call): its own voice scope, LiveKit room "dm:<id>"
+		if row.WorkspaceID != nil {
+			scope = *row.WorkspaceID
+		} else if row.Type != "dm" {
+			httpx.NoContent(w)
+			return nil
+		}
+		s.removeIdentities(r.Context(), voice.RoomName(scope, roomID), []string{identity})
 		httpx.NoContent(w)
 		return nil
 	}
