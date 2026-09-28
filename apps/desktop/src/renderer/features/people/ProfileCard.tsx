@@ -19,6 +19,7 @@ import { useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
 import { openProfile } from './actions';
 import { LocalTime } from './LocalTime';
+import { BirthdayInfo } from './Birthday';
 
 const ROLE_KEY: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -109,6 +110,7 @@ export function ProfileCard({
           {t(ROLE_KEY[m.role])}
         </dd>
         {u.isBot ? null : <LocalTime userId={userId} variant="row" />}
+        {u.isBot ? null : <BirthdayInfo userId={userId} variant="row" />}
         {v?.roomId ? (
           <>
             <dt className="text-muted">{t('people.profile.voice')}</dt>

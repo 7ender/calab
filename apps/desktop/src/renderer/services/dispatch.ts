@@ -297,6 +297,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       applyBotEvent(e);
       return;
     case 'userUpdate':
+      // Another member's public profile (name, avatar, time zone, birthday — docs/09 #76).
+      if (e.value.user && e.value.user.id !== myUserId()) useWorkspaces.getState().upsertUser(e.value.user);
       if (e.value.me) {
         useSession.getState().set({ me: e.value.me });
         if (e.value.me.user) useWorkspaces.getState().upsertUser(e.value.me.user);

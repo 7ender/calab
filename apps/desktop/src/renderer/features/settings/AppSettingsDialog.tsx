@@ -40,6 +40,7 @@ import { SoundSettings } from '../people/SoundSettings';
 import { CameraPreview, useCameras } from '../voice/CameraPreview';
 import { StreamCodecSelect, streamCodecHint } from '../voice/StreamCodecSelect';
 import { MyStickersCard } from './MyStickersCard';
+import { BirthdaySettings } from './BirthdaySettings';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
@@ -171,6 +172,8 @@ function ProfileTab(): ReactNode {
           </Row>
         )}
       </Card>
+      {/* docs/09 #76; guests have no birthday (server: 403). */}
+      {u.isGuest ? null : <BirthdaySettings />}
       {credDialog === 'password' ? <ChangePasswordDialog onClose={() => setCredDialog(null)} /> : null}
       {credDialog === 'email' ? <ChangeEmailDialog onClose={() => setCredDialog(null)} /> : null}
       {credDialog === 'email-code' ? <ChangeEmailDialog mode="confirm" onClose={() => setCredDialog(null)} /> : null}

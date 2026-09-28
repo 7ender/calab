@@ -293,6 +293,8 @@ export interface UserRec {
   pendingEmail: string;
   /** Language of emails ('' = not set). */
   locale: string;
+  /** docs/09 #76: the birthday (user.birthday) is kept to its owner. */
+  birthdayHidden?: boolean;
 }
 
 /** A live email code (ADR-0023): the mock's code is always MOCK_EMAIL_CODE. */

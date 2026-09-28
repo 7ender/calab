@@ -13,6 +13,7 @@ import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { startDm } from '../../services/dms';
 import { LocalTime } from './LocalTime';
+import { BirthdayInfo } from './Birthday';
 import { isGuest, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { requestMention } from '../chat/mentionRequest';
 import { useCanDm } from '../dm/canDm';
@@ -151,6 +152,7 @@ export function ProfileDialog({
               {u.isBot ? <BotHandle botUserId={userId} /> : null}
               <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
               <LocalTime userId={userId} variant="line" />
+              <BirthdayInfo userId={userId} variant="line" />
 
               <div className="mt-4 flex items-center gap-2">
                 {canDm ? (

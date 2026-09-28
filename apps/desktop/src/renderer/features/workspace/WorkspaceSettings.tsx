@@ -38,6 +38,7 @@ import { BansTab } from './BansTab';
 import { RolesTab } from './RolesTab';
 import { StickersTab } from './StickersTab';
 import { BotsTab } from './BotsTab';
+import { UpcomingBirthdays } from './UpcomingBirthdays';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -296,6 +297,7 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
 
   return (
     <>
+      <UpcomingBirthdays workspaceId={workspaceId} />
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex min-w-48 flex-1 items-center">
           <Input aria-label={t('common.search')} placeholder={t('common.search')} value={q} onChange={(e) => setQ(e.target.value)} icon={<Search className="size-3.5" />} />

@@ -81,6 +81,8 @@ const KEY = new Set([
   'members-menu',
   'profile-dialog',
   'profile-menu',
+  'profile-birthday',
+  'chat-birthday-card',
   'chat-lightbox',
   'workspace-menu',
   'self-mic-menu',
@@ -741,6 +743,25 @@ test('profile-menu', async ({ open, win, mock, shot }) => {
     expect(hit, `${await item.textContent()} is on top`).toBe(true);
   }
   await checkpoint(shot, 'profile-menu', { keepPointer: true });
+});
+
+// docs/09 #76: «Профиль → День рождения» — day, month, the optional year, «Скрыть от других».
+test('profile-birthday', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await openSettingsTab(win, openAppSettings(win), 1);
+  const picker = win.getByTestId('birthday-picker');
+  await picker.scrollIntoViewIfNeeded();
+  await picker.getByRole('combobox', { name: 'Месяц' }).selectOption('3');
+  await picker.getByRole('combobox', { name: 'День' }).selectOption('15');
+  await picker.getByRole('combobox', { name: 'Год' }).selectOption('1996');
+  // Saved (PATCH /api/me): «Скрыть от других» and «Убрать» appear with a saved date.
+  await expect(win.getByRole('switch', { name: 'Скрыть от других' })).toBeVisible();
+  await expect(picker.getByRole('button', { name: 'Убрать' })).toBeVisible();
+  await expect(picker.getByRole('combobox', { name: 'День' })).toHaveValue('15');
+  await win.getByRole('switch', { name: 'Скрыть от других' }).scrollIntoViewIfNeeded();
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'profile-birthday');
 });
 
 test('quick-switcher', async ({ open, win, mock, shot }) => {
@@ -1554,6 +1575,28 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await win.mouse.move(0, 0);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'chat-recording-card');
+});
+
+// docs/09 #76: Борис's birthday is today (the page clock: 15 January) — the server's card in
+// «общий» and 🎂 after his name in the members column; «15 января · 36 лет» in his profile card.
+test('chat-birthday-card', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 }, { roomId: IDS.rooms.general });
+  const card = win.getByTestId('birthday-card');
+  await expect(card).toContainText('Сегодня день рождения у Борис Петров!');
+  await expect(card).toContainText('15 января');
+  const members = await membersList(win);
+  const boris = members.getByRole('button', { name: /Борис Петров/ });
+  await expect(boris.getByTestId('birthday-mark')).toBeVisible();
+  await boris.click();
+  await expect(win.getByTestId('birthday')).toHaveText('🎂 15 января · 36 лет');
+  await win.keyboard.press('Escape');
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await win.mouse.move(0, 0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'chat-birthday-card');
 });
 
 /** «Переговорка»'s chat with a done recording card carrying its result (docs/09 #47). */

@@ -70,6 +70,7 @@ import {
   PairGptunnelRequestSchema,
   PairGptunnelResponseSchema,
   RecordingCardSchema,
+  BirthdaySchema,
   RecordingStatus,
   RoomRecordingSchema,
   RoomRecordingState,
@@ -147,6 +148,7 @@ import {
   DmSummarySchema,
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
+  ListBirthdaysResponseSchema,
   ListMessagesResponseSchema,
   ListRoomInvitesResponseSchema,
   ListRoomsResponseSchema,
@@ -395,6 +397,11 @@ export interface MockServer {
   /** Moves a card on (MESSAGE_UPDATE), like the server's upload worker. */
   updateRecordingCard(messageId: string, patch: RecordingCardPatch): void;
   /**
+   * docs/09 #76: the user's birthday (USER_UPDATE), and «🎂 Сегодня день рождения у …» in the room
+   * chat as the server's worker posts it (SYSTEM message, MESSAGE_CREATE) when `card` is set.
+   */
+  setBirthday(userId: string, b: { day: number; month: number; year?: number } | null, card?: { roomId: string }): void;
+  /**
    * docs/09 #51: a user's own state of a DM, like PATCH /api/dms/{id}/state — archive / «Удалить
    * чат» (for them only) — and DM_STATE_UPDATE to their devices.
    */
@@ -432,6 +439,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setGptunnel: (ws, by) => impl.setGptunnel(ws, by),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
+    setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
     seedBots: () => impl.seedBots(),
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
@@ -1019,6 +1027,7 @@ class MockImpl {
       emailVerified: u.user.isGuest || u.emailVerified,
       pendingEmail: u.pendingEmail,
       locale: u.locale,
+      birthdayHidden: u.birthdayHidden ?? false,
     });
   }
 
@@ -1851,6 +1860,14 @@ class MockImpl {
       }
       if (b.statusText !== undefined) u.user.statusText = b.statusText;
       if (b.timezone !== undefined) u.user.timezone = b.timezone;
+      if (b.birthday) {
+        // docs/09 #76 (the server checks the date too); day = month = 0 clears.
+        const { day, month, year } = b.birthday;
+        if (!day && !month) delete u.user.birthday;
+        else if (month < 1 || month > 12 || day < 1 || day > 31) throw invalid('birthday.day', 'no such day in that month');
+        else u.user.birthday = create(BirthdaySchema, { day, month, ...(year !== undefined ? { year } : {}) });
+      }
+      if (b.birthdayHidden !== undefined) u.birthdayHidden = b.birthdayHidden;
       if (b.locale !== undefined) {
         const l = mailLocale(b.locale);
         if (l === null) throw invalid('locale', 'unsupported locale');
@@ -2131,6 +2148,25 @@ class MockImpl {
     this.route('GET', '/api/workspaces/:id/members', (c) => {
       const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
       sendMsg(c.res, 200, ListMembersResponseSchema, { members: this.membersOf(ws.id).map((x) => this.memberOut(x)) });
+    });
+
+    // docs/09 #76: birthdays in the next `days` days (the mock's today is the page clock's UTC day).
+    this.route('GET', '/api/workspaces/:id/birthdays', (c) => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      const days = Number(c.url.searchParams.get('days') ?? '7');
+      const now = new Date();
+      const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      const out = this.membersOf(ws.id).flatMap((m) => {
+        const u = this.userRec(m.userId);
+        const b = u.user.birthday;
+        if (!b || u.birthdayHidden) return [];
+        let next = Date.UTC(now.getUTCFullYear(), b.month - 1, b.day);
+        if (next < today) next = Date.UTC(now.getUTCFullYear() + 1, b.month - 1, b.day);
+        const inDays = Math.round((next - today) / 86_400_000);
+        return inDays < days ? [{ userId: m.userId, birthday: b, inDays }] : [];
+      });
+      out.sort((a, b) => a.inDays - b.inDays);
+      sendMsg(c.res, 200, ListBirthdaysResponseSchema, { birthdays: out });
     });
 
     this.route('PATCH', '/api/workspaces/:id/members/:userId', (c) => {
@@ -4002,6 +4038,29 @@ class MockImpl {
     this.timers.add(timer);
   }
 
+  setBirthday(userId: string, b: { day: number; month: number; year?: number } | null, card?: { roomId: string }): void {
+    const u = this.userRec(userId);
+    if (b) u.user.birthday = create(BirthdaySchema, b);
+    else delete u.user.birthday;
+    this.emitUserUpdate(u);
+    if (!b || !card) return;
+    const room = this.state.rooms.get(card.roomId);
+    if (!room) throw notFound('room not found');
+    const list = this.state.messages.get(room.id) ?? [];
+    const msg = create(MessageSchema, {
+      id: nextId(this.state, 'message'),
+      roomId: room.id,
+      authorId: userId,
+      content: '',
+      kind: MessageKind.SYSTEM,
+      system: { payload: { case: 'birthday', value: { day: b.day, month: b.month } } },
+      createdAt: tick(this.state),
+    });
+    list.push(msg);
+    this.state.messages.set(room.id, list);
+    this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+  }
+
   injectRecordingCard(a: {
     roomId: string;
     byUserId: string;
@@ -4411,7 +4470,7 @@ class MockImpl {
       recipient === u.user.id
         ? { event: { case: 'userUpdate', value: { me } } }
         : this.shareWorkspace(recipient, u.user.id)
-          ? { event: { case: 'userUpdate', value: { user: u.user } } }
+          ? { event: { case: 'userUpdate', value: { user: u.birthdayHidden ? { ...u.user, birthday: undefined } : u.user } } }
           : null,
     );
   }
