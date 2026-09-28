@@ -3,7 +3,7 @@ import log from 'electron-log/main';
 import electronUpdater from 'electron-updater';
 import { IPC, type UpdateStatus } from '../shared/ipc';
 import { downloadPage, feedUrl, httpsFeed } from '../shared/updateFeed';
-import { currentServerUrl } from './auth';
+import { currentServerUrl, refreshSettled } from './auth';
 import { forceQuit } from './appLifecycle';
 import { getSettings } from './settings';
 import { mainStrings } from './strings';
@@ -35,6 +35,9 @@ const SIGNED = (import.meta.env.MAIN_VITE_UPDATES_SIGNED ?? '') === '1';
 const BUILD_FEED = httpsFeed(import.meta.env.MAIN_VITE_UPDATE_FEED ?? '');
 /** Runtime notify-only override (testing another feed). */
 const FEED_OVERRIDE = process.env['CALABA_UPDATE_URL'] ?? '';
+
+/** How long «Перезапустить» waits for a token refresh in flight before quitting. */
+const INSTALL_SETTLE_MS = 3_000;
 
 let flow: UpdateFlow | null = null;
 /** Kept referenced: a garbage-collected Notification loses its click handler (review L5). */
@@ -77,6 +80,8 @@ function getFlow(): UpdateFlow {
     notify: notifyAvailable,
     log,
     beforeInstall: forceQuit,
+    // A refresh cut off by the quit would leave the rotated token's answer unread (docs/09 #89).
+    settle: () => refreshSettled(INSTALL_SETTLE_MS),
   });
   return flow;
 }

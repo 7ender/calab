@@ -7,16 +7,20 @@ import { refreshGate } from '../shared/refreshGate';
  *
  * - 2xx → new tokens (persisted);
  * - 401 → the session is gone: cleared, `onLoggedOut('expired')`;
- * - 409 → the server already rotated this refresh token for a request whose answer we never
- *   received (network cut mid-response). On desktop nobody else holds the token (single
- *   instance, single-flight here) and there is no cookie that could carry the new one, so a
- *   retry can never succeed — and a retry after the 30 s grace window counts as token reuse.
- *   Treated like 401 (review L1; the web client's 409 retry is correct there: cookie mode);
+ * - 409 → the previous refresh token within the server's 60 s grace window, but the rotation
+ *   could not be replayed. Normally a retry of a refresh whose answer was lost (network cut
+ *   mid-response, the app quit for an update) gets the same new token pair again (200,
+ *   docs/04 «Auth», docs/09 #89); a 409 means the server's replay entry is gone. Retried once
+ *   right away; a second 409 ends the session like 401 (the stale token cannot succeed and
+ *   after the window it would count as reuse anyway);
  * - network error / 5xx / 429 → transient: the session is kept, `null` is returned and the
  *   caller retries later. Never a logout (review H3). A transient failure is reused for a few
  *   seconds (shared/refreshGate.ts) so an outage does not turn every API call into a refresh POST
  *   (review N3); the request itself is bounded by AUTH_TIMEOUT_MS in auth.ts.
  *
+ * Nothing is persisted before the answer arrives: a refresh interrupted by quit / update
+ * leaves the previous refresh token on disk, and the next start retries it (restore() in
+ * auth.ts) — within the grace window the server answers with the pair it already issued.
  * A refresh racing a logout / login / revoke never resurrects or overwrites the newer state.
  */
 
@@ -53,6 +57,9 @@ export interface BrokerDeps {
 
 export const REFRESH_MARGIN_MS = 60_000;
 
+/** Pause before the single retry after a 409 (the server's replay entry may lag a moment). */
+export const CONFLICT_RETRY_MS = 250;
+
 export function toTokens(t: TokensJson): Tokens {
   return {
     accessToken: t.accessToken,
@@ -65,6 +72,8 @@ export function toTokens(t: TokensJson): Tokens {
 export class TokenBroker {
   private tokens: Tokens | null = null;
   private server = '';
+  /** The refresh request running now (for settled()). */
+  private inFlight: Promise<unknown> | null = null;
   private readonly gate = refreshGate(() => this.doRefresh(), {
     now: () => this.now(),
     // null with the session still there = transient (offline / 5xx); a cleared session is not cached.
@@ -127,12 +136,41 @@ export class TokenBroker {
     return this.gate.run();
   }
 
-  private async doRefresh(): Promise<Tokens | null> {
+  /** Resolves once no refresh is in flight (or after `timeoutMs`): quit / update waits for it. */
+  settled(timeoutMs: number): Promise<void> {
+    const running = this.inFlight;
+    if (!running) return Promise.resolve();
+    return new Promise((resolve) => {
+      const t = setTimeout(resolve, timeoutMs);
+      void running.finally(() => {
+        clearTimeout(t);
+        resolve();
+      });
+    });
+  }
+
+  private doRefresh(): Promise<Tokens | null> {
+    const p = this.refreshNow();
+    this.inFlight = p;
+    void p.finally(() => {
+      if (this.inFlight === p) this.inFlight = null;
+    });
+    return p;
+  }
+
+  private async refreshNow(): Promise<Tokens | null> {
     const current = this.tokens;
     if (!current) return null;
     let res: RefreshResponse;
     try {
       res = await this.deps.refresh(this.server, current.refreshToken);
+      if (res.status === 409 && this.tokens === current) {
+        // The rotation of this token could not be replayed right now: one more try.
+        this.deps.log?.info('refresh 409, retrying once', res.code ?? '');
+        await new Promise((r) => setTimeout(r, CONFLICT_RETRY_MS));
+        if (this.tokens !== current) return this.tokens;
+        res = await this.deps.refresh(this.server, current.refreshToken);
+      }
     } catch (e) {
       this.deps.log?.warn('refresh network error', e);
       return null; // offline: keep the session, the caller retries later
