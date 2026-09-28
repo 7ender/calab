@@ -162,6 +162,14 @@ func (h *Handlers) addMember(w http.ResponseWriter, r *http.Request) error {
 		if err := moderation.CheckBan(r.Context(), q, wsID, target, u.Email); err != nil {
 			return err
 		}
+		if _, err := q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: target}); err == nil {
+			return httpx.Conflict("already a member")
+		} else if !db.IsNotFound(err) {
+			return err
+		}
+		if err := h.limits.Plans.Check(r.Context(), q, wsID, plans.KindMembers, true); err != nil {
+			return err
+		}
 		m, err = q.AddMember(r.Context(), sqlc.AddMemberParams{WorkspaceID: wsID, UserID: target, Role: string(perm.RoleMember)})
 		if db.IsNotFound(err) { // ON CONFLICT DO NOTHING
 			return httpx.Conflict("already a member")
@@ -259,6 +267,10 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 	}
 	// A banned address (or account) is not invited again until the ban is lifted (item 32).
 	if err := moderation.CheckBan(r.Context(), h.db.Q, wsID, existing, &email); err != nil {
+		return err
+	}
+	// No seat left: the invitee could not join (ADR-0024). Checked before the mail goes out.
+	if err := h.limits.Plans.Check(r.Context(), h.db.Q, wsID, plans.KindMembers, false); err != nil {
 		return err
 	}
 	if err := take(r.Context(), h.email.Send, uid(r).String()); err != nil {
@@ -434,6 +446,18 @@ func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub ev
 				if errors.Is(err, moderation.ErrSuspended) {
 					continue
 				}
+				return err
+			}
+			// The plan has no seat left: the invitation stays pending (the link still works
+			// once a seat frees up, and joining by it explains the limit).
+			if _, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: ei.WorkspaceID, UserID: u.ID}); db.IsNotFound(err) {
+				if err := pl.Check(ctx, q, ei.WorkspaceID, plans.KindMembers, true); err != nil {
+					if httpx.IsPlanLimit(err) {
+						continue
+					}
+					return err
+				}
+			} else if err != nil {
 				return err
 			}
 			if err := q.AcceptEmailInvite(ctx, ei.ID); err != nil {

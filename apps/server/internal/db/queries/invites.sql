@@ -26,3 +26,7 @@ DELETE FROM workspace_invites WHERE id = $1 AND workspace_id = $2;
 -- name: CountWorkspaceMembers :one
 -- Members without guests (public invite preview).
 SELECT count(*)::integer FROM workspace_members WHERE workspace_id = $1 AND role <> 'guest';
+
+-- name: LockWorkspaceMembers :exec
+-- Serializes the plan's members check of one workspace between the count and the insert.
+SELECT pg_advisory_xact_lock(hashtext('calaba.members:' || sqlc.arg('workspace_id')::uuid::text));

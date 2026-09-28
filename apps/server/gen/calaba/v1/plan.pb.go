@@ -76,20 +76,21 @@ func (Plan) EnumDescriptor() ([]byte, []int) {
 
 // Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
 type PlanLimits struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	RoomMembers     uint32                 `protobuf:"varint,1,opt,name=room_members,json=roomMembers,proto3" json:"room_members,omitempty"`                                                // users in one voice room (guests and pending devices count)
-	StreamMaxPreset ScreenSharePreset      `protobuf:"varint,2,opt,name=stream_max_preset,json=streamMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"stream_max_preset,omitempty"` // highest screen share preset
-	StreamMaxFps    uint32                 `protobuf:"varint,3,opt,name=stream_max_fps,json=streamMaxFps,proto3" json:"stream_max_fps,omitempty"`                                           // screen share frame rate cap
-	CameraMaxPreset ScreenSharePreset      `protobuf:"varint,4,opt,name=camera_max_preset,json=cameraMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"camera_max_preset,omitempty"` // highest webcam resolution (H720 = 720p, H1080 = 1080p)
-	CameraMaxFps    uint32                 `protobuf:"varint,5,opt,name=camera_max_fps,json=cameraMaxFps,proto3" json:"camera_max_fps,omitempty"`                                           // webcam frame rate cap
-	StreamsPerRoom  uint32                 `protobuf:"varint,6,opt,name=streams_per_room,json=streamsPerRoom,proto3" json:"streams_per_room,omitempty"`                                     // screen shares at once in one room
-	StorageMb       uint64                 `protobuf:"varint,7,opt,name=storage_mb,json=storageMb,proto3" json:"storage_mb,omitempty"`                                                      // file storage of the workspace, MiB
-	Members         uint32                 `protobuf:"varint,8,opt,name=members,proto3" json:"members,omitempty"`                                                                           // workspace members (informational; guests do not count)
-	StickerPacks    uint32                 `protobuf:"varint,9,opt,name=sticker_packs,json=stickerPacks,proto3" json:"sticker_packs,omitempty"`                                             // live sticker packs of the workspace (ADR-0030)
-	Stickers        uint32                 `protobuf:"varint,10,opt,name=stickers,proto3" json:"stickers,omitempty"`                                                                        // live stickers over all packs of the workspace
-	Bots            uint32                 `protobuf:"varint,20,opt,name=bots,proto3" json:"bots,omitempty"`                                                                                // bots that are members of the workspace (ADR-0031)
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	RoomMembers      uint32                 `protobuf:"varint,1,opt,name=room_members,json=roomMembers,proto3" json:"room_members,omitempty"`                                                // users in one voice room (guests and pending devices count)
+	StreamMaxPreset  ScreenSharePreset      `protobuf:"varint,2,opt,name=stream_max_preset,json=streamMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"stream_max_preset,omitempty"` // highest screen share preset
+	StreamMaxFps     uint32                 `protobuf:"varint,3,opt,name=stream_max_fps,json=streamMaxFps,proto3" json:"stream_max_fps,omitempty"`                                           // screen share frame rate cap
+	CameraMaxPreset  ScreenSharePreset      `protobuf:"varint,4,opt,name=camera_max_preset,json=cameraMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"camera_max_preset,omitempty"` // highest webcam resolution (H720 = 720p, H1080 = 1080p)
+	CameraMaxFps     uint32                 `protobuf:"varint,5,opt,name=camera_max_fps,json=cameraMaxFps,proto3" json:"camera_max_fps,omitempty"`                                           // webcam frame rate cap
+	StreamsPerRoom   uint32                 `protobuf:"varint,6,opt,name=streams_per_room,json=streamsPerRoom,proto3" json:"streams_per_room,omitempty"`                                     // screen shares at once in one room
+	StorageMb        uint64                 `protobuf:"varint,7,opt,name=storage_mb,json=storageMb,proto3" json:"storage_mb,omitempty"`                                                      // file storage of the workspace, MiB
+	Members          uint32                 `protobuf:"varint,8,opt,name=members,proto3" json:"members,omitempty"`                                                                           // workspace members: bots count, guests do not (invites and joins stop at it)
+	StickerPacks     uint32                 `protobuf:"varint,9,opt,name=sticker_packs,json=stickerPacks,proto3" json:"sticker_packs,omitempty"`                                             // live sticker packs of the workspace (ADR-0030)
+	Stickers         uint32                 `protobuf:"varint,10,opt,name=stickers,proto3" json:"stickers,omitempty"`                                                                        // live stickers over all packs of the workspace
+	Bots             uint32                 `protobuf:"varint,20,opt,name=bots,proto3" json:"bots,omitempty"`                                                                                // bots that are members of the workspace (ADR-0031)
+	AudioTierMaxKbps uint32                 `protobuf:"varint,21,opt,name=audio_tier_max_kbps,json=audioTierMaxKbps,proto3" json:"audio_tier_max_kbps,omitempty"`                            // highest voice quality tier, kbps (8 | 16 | 32 | 64; docs/02 «Битрейт»)
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PlanLimits) Reset() {
@@ -199,6 +200,13 @@ func (x *PlanLimits) GetBots() uint32 {
 	return 0
 }
 
+func (x *PlanLimits) GetAudioTierMaxKbps() uint32 {
+	if x != nil {
+		return x.AudioTierMaxKbps
+	}
+	return 0
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -272,7 +280,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\xc7\x03\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\xf6\x03\n" +
 	"\n" +
 	"PlanLimits\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
@@ -287,7 +295,8 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\rsticker_packs\x18\t \x01(\rR\fstickerPacks\x12\x1a\n" +
 	"\bstickers\x18\n" +
 	" \x01(\rR\bstickers\x12\x12\n" +
-	"\x04bots\x18\x14 \x01(\rR\x04bots\"\xba\x01\n" +
+	"\x04bots\x18\x14 \x01(\rR\x04bots\x12-\n" +
+	"\x13audio_tier_max_kbps\x18\x15 \x01(\rR\x10audioTierMaxKbps\"\xba\x01\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +

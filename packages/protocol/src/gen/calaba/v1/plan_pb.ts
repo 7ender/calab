@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/plan.proto.
  */
 export const file_calaba_v1_plan: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvcGxhbi5wcm90bxIJY2FsYWJhLnYxIroCCgpQbGFuTGltaXRzEhQKDHJvb21fbWVtYmVycxgBIAEoDRI3ChFzdHJlYW1fbWF4X3ByZXNldBgCIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5zdHJlYW1fbWF4X2ZwcxgDIAEoDRI3ChFjYW1lcmFfbWF4X3ByZXNldBgEIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5jYW1lcmFfbWF4X2ZwcxgFIAEoDRIYChBzdHJlYW1zX3Blcl9yb29tGAYgASgNEhIKCnN0b3JhZ2VfbWIYByABKAQSDwoHbWVtYmVycxgIIAEoDRIVCg1zdGlja2VyX3BhY2tzGAkgASgNEhAKCHN0aWNrZXJzGAogASgNEgwKBGJvdHMYFCABKA0ilwEKDVdvcmtzcGFjZVBsYW4SHQoEcGxhbhgBIAEoDjIPLmNhbGFiYS52MS5QbGFuEiUKBmxpbWl0cxgCIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzEi8KC3ZhbGlkX3VudGlsGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdleHBpcmVkGAQgASgIKksKBFBsYW4SFAoQUExBTl9VTlNQRUNJRklFRBAAEg0KCVBMQU5fRlJFRRABEg0KCVBMQU5fVEVBTRACEg8KC1BMQU5fQ1VTVE9NEANClwEKDWNvbS5jYWxhYmEudjFCCVBsYW5Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_media]);
+  fileDesc("ChRjYWxhYmEvdjEvcGxhbi5wcm90bxIJY2FsYWJhLnYxItcCCgpQbGFuTGltaXRzEhQKDHJvb21fbWVtYmVycxgBIAEoDRI3ChFzdHJlYW1fbWF4X3ByZXNldBgCIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5zdHJlYW1fbWF4X2ZwcxgDIAEoDRI3ChFjYW1lcmFfbWF4X3ByZXNldBgEIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5jYW1lcmFfbWF4X2ZwcxgFIAEoDRIYChBzdHJlYW1zX3Blcl9yb29tGAYgASgNEhIKCnN0b3JhZ2VfbWIYByABKAQSDwoHbWVtYmVycxgIIAEoDRIVCg1zdGlja2VyX3BhY2tzGAkgASgNEhAKCHN0aWNrZXJzGAogASgNEgwKBGJvdHMYFCABKA0SGwoTYXVkaW9fdGllcl9tYXhfa2JwcxgVIAEoDSKXAQoNV29ya3NwYWNlUGxhbhIdCgRwbGFuGAEgASgOMg8uY2FsYWJhLnYxLlBsYW4SJQoGbGltaXRzGAIgASgLMhUuY2FsYWJhLnYxLlBsYW5MaW1pdHMSLwoLdmFsaWRfdW50aWwYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB2V4cGlyZWQYBCABKAgqSwoEUGxhbhIUChBQTEFOX1VOU1BFQ0lGSUVEEAASDQoJUExBTl9GUkVFEAESDQoJUExBTl9URUFNEAISDwoLUExBTl9DVVNUT00QA0KXAQoNY29tLmNhbGFiYS52MUIJUGxhblByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_media]);
 
 /**
  * Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
@@ -72,7 +72,7 @@ export type PlanLimits = Message<"calaba.v1.PlanLimits"> & {
   storageMb: bigint;
 
   /**
-   * workspace members (informational; guests do not count)
+   * workspace members: bots count, guests do not (invites and joins stop at it)
    *
    * @generated from field: uint32 members = 8;
    */
@@ -98,6 +98,13 @@ export type PlanLimits = Message<"calaba.v1.PlanLimits"> & {
    * @generated from field: uint32 bots = 20;
    */
   bots: number;
+
+  /**
+   * highest voice quality tier, kbps (8 | 16 | 32 | 64; docs/02 «Битрейт»)
+   *
+   * @generated from field: uint32 audio_tier_max_kbps = 21;
+   */
+  audioTierMaxKbps: number;
 };
 
 /**

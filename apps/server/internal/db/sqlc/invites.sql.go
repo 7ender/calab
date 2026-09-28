@@ -157,3 +157,13 @@ func (q *Queries) ListInvites(ctx context.Context, workspaceID uuid.UUID) ([]Wor
 	}
 	return items, nil
 }
+
+const lockWorkspaceMembers = `-- name: LockWorkspaceMembers :exec
+SELECT pg_advisory_xact_lock(hashtext('calaba.members:' || $1::uuid::text))
+`
+
+// Serializes the plan's members check of one workspace between the count and the insert.
+func (q *Queries) LockWorkspaceMembers(ctx context.Context, workspaceID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockWorkspaceMembers, workspaceID)
+	return err
+}

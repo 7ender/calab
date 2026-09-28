@@ -133,6 +133,7 @@ func (a *Admin) adminWorkspace(ctx context.Context, row sqlc.AdminWorkspaceDetai
 		Owner:     pbconv.User(row.User),
 		Usage: &v1.WorkspaceUsage{
 			Members: uint32(max(row.Members, 0)), Rooms: uint32(max(row.Rooms, 0)), //nolint:gosec // counts
+			Bots: uint32(max(row.Bots, 0)), StickerPacks: uint32(max(row.StickerPacks, 0)), //nolint:gosec // counts
 			StorageBytes: used, StorageMb: (used + 1<<20 - 1) >> 20,
 		},
 	}

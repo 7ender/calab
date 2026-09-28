@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/superadmin"
 )
 
@@ -28,7 +29,8 @@ func TestParseLimitsEnv(t *testing.T) {
 		t.Fatalf("defaults: %+v %+v %v", free, team, err)
 	}
 	if free.RoomMembers != 5 || free.StreamMaxPreset != h720 || free.StreamMaxFPS != 15 || free.CameraMaxFPS != 15 ||
-		free.StreamsPerRoom != 1 || free.StorageMB != 1024 || free.Members != 0 {
+		free.StreamsPerRoom != 1 || free.StorageMB != 1024 || free.Members != 50 || free.AudioMaxKbps != 16 ||
+		free.Bots != 1 || free.StickerPacks != 1 {
 		t.Fatalf("free defaults: %+v", free)
 	}
 	// Keys override one by one; 0 / "" = no limit; presets are case-insensitive.
@@ -46,7 +48,7 @@ func TestParseLimitsEnv(t *testing.T) {
 	}
 	for _, bad := range []string{
 		`{"room_members":-1}`, `{"stream_max_preset":"4k"}`, `{"unknown":1}`, `[1]`, `{"room_members":5} {}`,
-		`{"room_members":100000}`, `{"stream_max_fps":1000}`, `not json`,
+		`{"room_members":100000}`, `{"stream_max_fps":1000}`, `not json`, `{"audio_tier_max_kbps":24}`, `{"audio_tier_max_kbps":128}`,
 	} {
 		if _, err := ParseLimits(bad, DefaultFree); err == nil {
 			t.Errorf("%s: accepted", bad)
@@ -59,7 +61,7 @@ func TestParseLimitsEnv(t *testing.T) {
 
 func TestLimitsJSONRoundTrip(t *testing.T) {
 	l := Limits{RoomMembers: 7, StreamMaxPreset: orig, StreamMaxFPS: 30, CameraMaxPreset: h1080, CameraMaxFPS: 24,
-		StreamsPerRoom: 2, StorageMB: 5000, Members: 40, StickerPacks: 3, Stickers: 90, Bots: 3}
+		StreamsPerRoom: 2, StorageMB: 5000, Members: 40, StickerPacks: 3, Stickers: 90, Bots: 3, AudioMaxKbps: 32}
 	b, err := json.Marshal(l)
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +75,7 @@ func TestLimitsJSONRoundTrip(t *testing.T) {
 	}
 	// Unlimited limits serialize every key (a stored custom plan is complete).
 	b, _ = json.Marshal(Limits{})
-	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0}` {
+	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0}` {
 		t.Fatalf("zero limits: %s", b)
 	}
 }
@@ -106,11 +108,45 @@ func TestMediaCaps(t *testing.T) {
 		t.Fatalf("camera without caps: %v/%d", p, f)
 	}
 	m := free.CapMedia(&v1.RoomMediaSettings{AudioBitrateKbps: 64, MaxStreamPreset: orig, MaxStreams: 3, CameraLimit: 6})
-	if m.GetMaxStreamPreset() != h720 || m.GetMaxStreams() != 1 || m.GetAudioBitrateKbps() != 64 || m.GetCameraLimit() != 6 {
+	if m.GetMaxStreamPreset() != h720 || m.GetMaxStreams() != 1 || m.GetAudioBitrateKbps() != 16 || m.GetCameraLimit() != 6 {
 		t.Fatalf("capped media: %v", m)
 	}
-	if m := (Limits{}).CapMedia(&v1.RoomMediaSettings{MaxStreamPreset: orig, MaxStreams: 3}); m.GetMaxStreamPreset() != orig || m.GetMaxStreams() != 3 {
+	if m := (Limits{}).CapMedia(&v1.RoomMediaSettings{AudioBitrateKbps: 64, MaxStreamPreset: orig, MaxStreams: 3}); m.GetMaxStreamPreset() != orig || m.GetMaxStreams() != 3 || m.GetAudioBitrateKbps() != 64 {
 		t.Fatalf("uncapped media: %v", m)
+	}
+}
+
+// The voice tier cap (ADR-0024, owner 28.09: free = «Нормальное»): effective = min(room, plan).
+func TestAudioTierCap(t *testing.T) {
+	free := DefaultFree
+	for _, c := range []struct{ in, want uint32 }{{8, 8}, {16, 16}, {24, 16}, {32, 16}, {64, 16}, {0, 0}} {
+		if got := free.CapAudio(c.in); got != c.want {
+			t.Errorf("free CapAudio(%d) = %d, want %d", c.in, got, c.want)
+		}
+	}
+	if got := (Limits{}).CapAudio(64); got != 64 {
+		t.Errorf("unlimited CapAudio(64) = %d", got)
+	}
+	if !free.AudioAllowed(16) || !free.AudioAllowed(8) || free.AudioAllowed(32) || free.AudioAllowed(64) || !(Limits{}).AudioAllowed(64) {
+		t.Error("AudioAllowed")
+	}
+	s := &Service{}
+	s.load = func(context.Context, uuid.UUID) (*sqlc.WorkspacePlan, error) { return nil, nil }
+	s.free, s.now, s.cache = free, time.Now, map[uuid.UUID]cached{}
+	ctx, ws := context.Background(), uuid.New()
+	if err := s.CheckAudio(ctx, ws, 16, 32); err != nil {
+		t.Errorf("16 on free: %v", err)
+	}
+	if err := s.CheckAudio(ctx, ws, 32, 32); err != nil {
+		t.Errorf("unchanged stored 32 on free: %v", err)
+	}
+	err := s.CheckAudio(ctx, ws, 64, 32)
+	var he *httpx.Error
+	if !errors.As(err, &he) || he.Status != 409 || he.Reason != httpx.ReasonPlanLimit || he.Used != 64 || he.Limit != 16 {
+		t.Errorf("64 on free: %v", err)
+	}
+	if err := (*Service)(nil).CheckAudio(ctx, ws, 64, 0); err != nil {
+		t.Errorf("nil service: %v", err)
 	}
 }
 

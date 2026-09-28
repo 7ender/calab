@@ -16,6 +16,8 @@ message WorkspaceUsage {
   uint64 storage_mb = 3;   // stored files, MiB (rounded up)
   uint64 storage_bytes = 4;
   google.protobuf.Timestamp last_activity = 5; // newest message; unset = none
+  uint32 bots = 6;          // bots that are members (they count as members too)
+  uint32 sticker_packs = 7; // live sticker packs
 }
 
 // A workspace as the superadmin sees it.

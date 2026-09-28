@@ -20,6 +20,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 )
 
 // MaxOverrides caps permission overrides per room.
@@ -29,10 +30,22 @@ const MaxOverrides = 100
 type Handlers struct {
 	db     *db.DB
 	events events.Publisher
+	plans  *plans.Service // voice tier cap of the plan (ADR-0024); nil = none
 }
 
 // NewHandlers creates the room handlers.
 func NewHandlers(d *db.DB, ev events.Publisher) *Handlers { return &Handlers{db: d, events: ev} }
+
+// WithPlans makes room media settings respect the workspace plan's voice tier cap.
+func (h *Handlers) WithPlans(p *plans.Service) *Handlers { h.plans = p; return h }
+
+// storedAudio is a room's own voice bitrate (0 = the workspace default).
+func storedAudio(v *int32) uint32 {
+	if v == nil {
+		return 0
+	}
+	return uint32(max(*v, 0)) //nolint:gosec // DB CHECK bounds it
+}
 
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
 func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
@@ -278,6 +291,11 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if typ != "voice" && (media.audio != nil || media.preset != nil || media.streams != nil || media.cameras != nil) {
 		return httpx.Validation("mediaOverride", "media settings apply to voice rooms only")
 	}
+	if media.audio != nil {
+		if err := h.plans.CheckAudio(r.Context(), wsID, storedAudio(media.audio), 0); err != nil {
+			return err
+		}
+	}
 	category, err := parseCategory(r.Context(), h.db.Q, wsID, req.GetCategoryId())
 	if err != nil {
 		return err
@@ -481,6 +499,15 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		p.AudioBitrateKbps, p.MaxStreamPreset, p.MaxStreams, p.CameraLimit = m.audio, m.preset, m.streams, m.cameras
+		if m.audio != nil {
+			cur, err := h.db.Q.GetRoom(r.Context(), roomID)
+			if err != nil {
+				return err
+			}
+			if err := h.plans.CheckAudio(r.Context(), acc.WorkspaceID, storedAudio(m.audio), storedAudio(cur.AudioBitrateKbps)); err != nil {
+				return err
+			}
+		}
 	}
 	var pb *v1.Room
 	restrictedChanged := false
