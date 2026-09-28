@@ -51,6 +51,7 @@ export const enShell: DictShape<typeof ruShell> = {
   'shell.voiceStatus.failed': 'Couldn’t save the room status',
   'shell.voiceInvite': 'Invite to room',
   'shell.voiceInviteHint': 'Copy the room link',
+  'shell.create': 'Create',
   'shell.categoryCreate': 'Create category',
   'shell.categoryName': 'Category name',
   'shell.categoryRename': 'Rename category',
