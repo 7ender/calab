@@ -421,8 +421,10 @@ function StickerTarget({ sticker }: { sticker: NonNullable<Message['sticker']> }
  * The bubble is a Tab stop (tabIndex 0) only for the keyboard: a mouse press would focus it as
  * the nearest focusable ancestor of the text, and a later key press (Ctrl+C after selecting) then
  * turns that into :focus-visible and draws the ring. So a focus that a press put on the bubble
- * itself is dropped at once (blur, as if the bubble weren't focusable). preventDefault on
- * mousedown would do the same but also kill text selection; blur leaves the selection alone.
+ * itself is dropped when the button is released (blur, as if the bubble weren't focusable).
+ * Not in the focus handler itself: Chromium cancels the mousedown's default action — the start
+ * of a text selection — when a focus handler moves the focus (issue #13); preventDefault on
+ * mousedown would kill it too. A blur after the release leaves the selection alone.
  * Presses on the controls inside (reactions, links, the action bar) focus those as usual.
  */
 function useActionBar(enabled: boolean): {
@@ -485,7 +487,14 @@ function useActionBar(enabled: boolean): {
       onFocus: (e) => {
         const keyboard = (e.target as Element).matches(':focus-visible');
         if (pressing.current && !keyboard && e.target === e.currentTarget) {
-          e.currentTarget.blur();
+          const el = e.currentTarget;
+          const drop = (): void => {
+            window.removeEventListener('pointerup', drop);
+            window.removeEventListener('pointercancel', drop);
+            if (document.activeElement === el) el.blur();
+          };
+          window.addEventListener('pointerup', drop);
+          window.addEventListener('pointercancel', drop);
           return;
         }
         setFocused(keyboard);
