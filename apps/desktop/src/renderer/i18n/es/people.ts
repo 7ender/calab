@@ -204,6 +204,7 @@ export const esPeople: DictShape<typeof enPeople> = {
   'birthday.clear': 'Quitar',
   'birthday.today': 'Hoy es su cumpleaños',
   'birthday.card': '🎂 ¡Hoy es el cumpleaños de {name}!',
+  'birthday.cardTitle': '¡Hoy es día de cumpleaños!',
   'birthday.preview': '🎂 Cumpleaños',
   'birthday.edit': 'Cambiar cumpleaños',
   'birthday.editTitle': 'Cumpleaños del miembro',

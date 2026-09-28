@@ -204,6 +204,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'birthday.clear': 'Remove',
   'birthday.today': 'Birthday today',
   'birthday.card': '🎂 It’s {name}’s birthday today!',
+  'birthday.cardTitle': 'Birthday today!',
   'birthday.preview': '🎂 Birthday',
   'birthday.edit': 'Edit birthday',
   'birthday.editTitle': 'Member’s birthday',

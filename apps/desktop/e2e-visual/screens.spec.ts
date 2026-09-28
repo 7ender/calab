@@ -1701,7 +1701,9 @@ test('chat-birthday-card', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 }, { roomId: IDS.rooms.general });
   const card = win.getByTestId('birthday-card');
-  await expect(card).toContainText('Борис Петров — сегодня день рождения!');
+  await expect(card).toHaveAttribute('aria-label', '🎂 Борис Петров — сегодня день рождения!');
+  await expect(card).toContainText('Сегодня день рождения!');
+  await expect(card).toContainText('Борис Петров');
   await expect(card).toContainText('15 января');
   const members = await membersList(win);
   const boris = members.getByRole('button', { name: /Борис Петров/ });
