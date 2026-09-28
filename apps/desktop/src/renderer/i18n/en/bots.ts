@@ -30,6 +30,8 @@ export const enBots = {
   'bots.reissueTitle': 'Reissue the token of “{name}”?',
   'bots.reissueText': 'The old token stops working at once — the bot disconnects until you give it the new one.',
   'bots.revoke': 'Revoke token',
+  'bots.avatarRemove': 'Remove avatar',
+  'bots.avatarChange': 'Change the avatar of “{name}”',
   'bots.revokeTitle': 'Revoke the token of “{name}”?',
   'bots.revokeText': 'The bot disconnects and cannot sign in until you reissue the token.',
   'bots.revoked': 'Token revoked {date}',

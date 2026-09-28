@@ -33,6 +33,8 @@ export const ruBots = {
   'bots.reissueTitle': 'Перевыпустить токен «{name}»?',
   'bots.reissueText': 'Старый токен сразу перестанет работать — бот отключится, пока вы не вставите новый.',
   'bots.revoke': 'Отозвать токен',
+  'bots.avatarRemove': 'Убрать аватар',
+  'bots.avatarChange': 'Сменить аватар «{name}»',
   'bots.revokeTitle': 'Отозвать токен «{name}»?',
   'bots.revokeText': 'Бот отключится и не сможет войти, пока вы не перевыпустите токен.',
   'bots.revoked': 'Токен отозван {date}',

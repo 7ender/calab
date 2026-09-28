@@ -30,6 +30,8 @@ export const esBots = {
   'bots.reissueTitle': '¿Renovar el token de «{name}»?',
   'bots.reissueText': 'El token anterior deja de funcionar al instante: el bot se desconecta hasta que le des el nuevo.',
   'bots.revoke': 'Revocar token',
+  'bots.avatarRemove': 'Quitar avatar',
+  'bots.avatarChange': 'Cambiar el avatar de «{name}»',
   'bots.revokeTitle': '¿Revocar el token de «{name}»?',
   'bots.revokeText': 'El bot se desconecta y no podrá entrar hasta que renueves el token.',
   'bots.revoked': 'Token revocado {date}',

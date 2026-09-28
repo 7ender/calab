@@ -30,6 +30,8 @@ export const zhBots = {
   'bots.reissueTitle': '重新生成“{name}”的令牌？',
   'bots.reissueText': '旧令牌将立即失效，机器人会断开连接，直到你换上新令牌。',
   'bots.revoke': '吊销令牌',
+  'bots.avatarRemove': '移除头像',
+  'bots.avatarChange': '更换“{name}”的头像',
   'bots.revokeTitle': '吊销“{name}”的令牌？',
   'bots.revokeText': '机器人会断开连接，在你重新生成令牌前无法登录。',
   'bots.revoked': '令牌已于 {date} 吊销',

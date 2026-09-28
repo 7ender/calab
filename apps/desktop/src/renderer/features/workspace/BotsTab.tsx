@@ -1,9 +1,10 @@
 import type { Bot } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { CircleAlert, CircleCheck, CircleSlash, Copy, Ellipsis, KeyRound, Plus, RefreshCw, Trash2, TriangleAlert, UserPlus } from 'lucide-react';
+import { CircleAlert, CircleCheck, CircleSlash, Copy, Ellipsis, ImageMinus, KeyRound, Plus, RefreshCw, Trash2, TriangleAlert, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
+import { useImagePicker } from '../../components/AvatarPicker';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Empty, IconButton, Input, Modal, Row, Spinner, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
@@ -11,7 +12,7 @@ import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { botSlots, normalizeUsername, validBotUsername, webhookState } from '../../lib/bots';
 import { fmt } from '../../lib/format';
-import { loadWorkspaceBots } from '../../services/bots';
+import { botAvatarChanged, loadWorkspaceBots } from '../../services/bots';
 import { openPlanContact, planContact, reportPlanError } from '../../services/plan';
 import { useBots } from '../../stores/bots';
 import { toast } from '../../stores/toasts';
@@ -219,6 +220,16 @@ function AddCard({ workspaceId, full }: { workspaceId: string; full: boolean }):
 function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot; onIssued: (i: Issued) => void }): ReactNode {
   const u = bot.user;
   const owner = useWorkspaces((s) => (bot.ownerUserId ? (s.users[bot.ownerUserId]?.displayName ?? '') : ''));
+  // The avatar (docs/09 #87): the own profile's picker. The users store is the truth (USER_UPDATE
+  // also follows a bot's own POST /api/me/avatar, which sends no BOT_UPDATE).
+  const avatar = useWorkspaces((s) => s.users[bot.user?.id ?? '']?.avatarFileId ?? bot.user?.avatarFileId ?? '');
+  const picker = useImagePicker((f) => {
+    if (!u) return;
+    api.bots.setAvatar(workspaceId, u.id, f, f.name).then(
+      (r) => botAvatarChanged(workspaceId, r.bot),
+      (e: unknown) => toast.fail(e, t('err.ctx.upload')),
+    );
+  });
   if (!u) return null;
   const home = bot.workspaceId === workspaceId;
   const revoked = !!bot.revokedAt;
@@ -247,6 +258,11 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
       void loadWorkspaceBots(workspaceId); // revoked_at comes with BOT_UPDATE too; the list is the truth
     });
   };
+  const clearAvatar = async (): Promise<void> => {
+    await run(async () => {
+      botAvatarChanged(workspaceId, (await api.bots.clearAvatar(workspaceId, u.id)).bot);
+    });
+  };
   const remove = async (): Promise<void> => {
     const ok = home
       ? await confirmAction(t('bots.deleteTitle', { name }), t('bots.deleteText'), t('bots.delete'))
@@ -260,7 +276,16 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
 
   return (
     <div className="flex min-h-14 items-center gap-3 px-3 py-2" data-testid="bot-row">
-      <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={32} />
+      {home ? (
+        <Tip label={t('bots.avatarChange', { name })}>
+          <button type="button" className="shrink-0 rounded-full" aria-label={t('bots.avatarChange', { name })} onClick={picker.open} data-testid="bot-avatar">
+            <Avatar userId={u.id} name={name} fileId={avatar || undefined} size={32} />
+          </button>
+        </Tip>
+      ) : (
+        <Avatar userId={u.id} name={name} fileId={avatar || undefined} size={32} />
+      )}
+      {home ? picker.input : null}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-body font-medium" title={name}>
@@ -291,6 +316,15 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
                 <Dropdown.Item className={menuItem} disabled={revoked} onSelect={() => void revoke()}>
                   <KeyRound className="size-4" aria-hidden /> {t('bots.revoke')}
                 </Dropdown.Item>
+                <Dropdown.Separator className={menuSeparator} />
+                <Dropdown.Item className={menuItem} onSelect={picker.open} data-testid="bot-avatar-upload">
+                  <Upload className="size-4" aria-hidden /> {t('profile.avatar')}
+                </Dropdown.Item>
+                {avatar ? (
+                  <Dropdown.Item className={menuItem} onSelect={() => void clearAvatar()} data-testid="bot-avatar-remove">
+                    <ImageMinus className="size-4" aria-hidden /> {t('bots.avatarRemove')}
+                  </Dropdown.Item>
+                ) : null}
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()}>
                   <Trash2 className="size-4" aria-hidden /> {t('bots.delete')}

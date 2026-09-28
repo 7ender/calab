@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/bot.proto.
  */
 export const file_calaba_v1_bot: GenFile = /*@__PURE__*/
-  fileDesc("ChNjYWxhYmEvdjEvYm90LnByb3RvEgljYWxhYmEudjEiLwoKQm90Q29tbWFuZBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIuMBCgpCb3RXZWJob29rEgsKA3VybBgBIAEoCRIPCgdlbmFibGVkGAIgASgIEi8KC2Rpc2FibGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1mYWlsaW5nX3NpbmNlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpsYXN0X29rX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpsYXN0X2Vycm9yGAYgASgJEg8KB3BlbmRpbmcYByABKA0ivwIKA0JvdBIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISEAoIdXNlcm5hbWUYAiABKAkSFQoNb3duZXJfdXNlcl9pZBgDIAEoCRIUCgx3b3Jrc3BhY2VfaWQYBCABKAkSEwoLZGVzY3JpcHRpb24YBSABKAkSJwoIY29tbWFuZHMYBiADKAsyFS5jYWxhYmEudjEuQm90Q29tbWFuZBIUCgx0b2tlbl9wcmVmaXgYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKcmV2b2tlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoHd2ViaG9vaxgKIAEoCzIVLmNhbGFiYS52MS5Cb3RXZWJob29rIk8KEENyZWF0ZUJvdFJlcXVlc3QSFAoMZGlzcGxheV9uYW1lGAEgASgJEhAKCHVzZXJuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJIj8KEUNyZWF0ZUJvdFJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QSDQoFdG9rZW4YAiABKAkiMAoQTGlzdEJvdHNSZXNwb25zZRIcCgRib3RzGAEgAygLMg4uY2FsYWJhLnYxLkJvdCJFChdSZWlzc3VlQm90VG9rZW5SZXNwb25zZRIbCgNib3QYASABKAsyDi5jYWxhYmEudjEuQm90Eg0KBXRva2VuGAIgASgJIjYKDUFkZEJvdFJlcXVlc3QSEwoLYm90X3VzZXJfaWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkiLQoOQWRkQm90UmVzcG9uc2USGwoDYm90GAEgASgLMg4uY2FsYWJhLnYxLkJvdCIvChBHZXRCb3RNZVJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QiagoSVXBkYXRlQm90TWVSZXF1ZXN0EhkKDGRpc3BsYXlfbmFtZRgBIAEoCUgAiAEBEhgKC2Rlc2NyaXB0aW9uGAIgASgJSAGIAQFCDwoNX2Rpc3BsYXlfbmFtZUIOCgxfZGVzY3JpcHRpb24iQAoVU2V0Qm90Q29tbWFuZHNSZXF1ZXN0EicKCGNvbW1hbmRzGAEgAygLMhUuY2FsYWJhLnYxLkJvdENvbW1hbmQiQQoWU2V0Qm90Q29tbWFuZHNSZXNwb25zZRInCghjb21tYW5kcxgBIAMoCzIVLmNhbGFiYS52MS5Cb3RDb21tYW5kIjMKFFNldEJvdFdlYmhvb2tSZXF1ZXN0EgsKA3VybBgBIAEoCRIOCgZzZWNyZXQYAiABKAkiPAoSQm90V2ViaG9va1Jlc3BvbnNlEiYKB3dlYmhvb2sYASABKAsyFS5jYWxhYmEudjEuQm90V2ViaG9vayJhCg9Sb29tQm90Q29tbWFuZHMSEwoLYm90X3VzZXJfaWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSJwoIY29tbWFuZHMYAyADKAsyFS5jYWxhYmEudjEuQm90Q29tbWFuZCJHChtMaXN0Um9vbUJvdENvbW1hbmRzUmVzcG9uc2USKAoEYm90cxgBIAMoCzIaLmNhbGFiYS52MS5Sb29tQm90Q29tbWFuZHMiLwoXTGlzdEJsb2NrZWRCb3RzUmVzcG9uc2USFAoMYm90X3VzZXJfaWRzGAEgAygJIj4KCUJvdENyZWF0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSGwoDYm90GAIgASgLMg4uY2FsYWJhLnYxLkJvdCI+CglCb3RVcGRhdGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEhsKA2JvdBgCIAEoCzIOLmNhbGFiYS52MS5Cb3QiNgoJQm90RGVsZXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRITCgtib3RfdXNlcl9pZBgCIAEoCUKWAQoNY29tLmNhbGFiYS52MUIIQm90UHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_user]);
+  fileDesc("ChNjYWxhYmEvdjEvYm90LnByb3RvEgljYWxhYmEudjEiLwoKQm90Q29tbWFuZBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIuMBCgpCb3RXZWJob29rEgsKA3VybBgBIAEoCRIPCgdlbmFibGVkGAIgASgIEi8KC2Rpc2FibGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1mYWlsaW5nX3NpbmNlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpsYXN0X29rX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpsYXN0X2Vycm9yGAYgASgJEg8KB3BlbmRpbmcYByABKA0ivwIKA0JvdBIdCgR1c2VyGAEgASgLMg8uY2FsYWJhLnYxLlVzZXISEAoIdXNlcm5hbWUYAiABKAkSFQoNb3duZXJfdXNlcl9pZBgDIAEoCRIUCgx3b3Jrc3BhY2VfaWQYBCABKAkSEwoLZGVzY3JpcHRpb24YBSABKAkSJwoIY29tbWFuZHMYBiADKAsyFS5jYWxhYmEudjEuQm90Q29tbWFuZBIUCgx0b2tlbl9wcmVmaXgYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKcmV2b2tlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoHd2ViaG9vaxgKIAEoCzIVLmNhbGFiYS52MS5Cb3RXZWJob29rIk8KEENyZWF0ZUJvdFJlcXVlc3QSFAoMZGlzcGxheV9uYW1lGAEgASgJEhAKCHVzZXJuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJIj8KEUNyZWF0ZUJvdFJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QSDQoFdG9rZW4YAiABKAkiMAoQTGlzdEJvdHNSZXNwb25zZRIcCgRib3RzGAEgAygLMg4uY2FsYWJhLnYxLkJvdCJFChdSZWlzc3VlQm90VG9rZW5SZXNwb25zZRIbCgNib3QYASABKAsyDi5jYWxhYmEudjEuQm90Eg0KBXRva2VuGAIgASgJIjMKFFNldEJvdEF2YXRhclJlc3BvbnNlEhsKA2JvdBgBIAEoCzIOLmNhbGFiYS52MS5Cb3QiNgoNQWRkQm90UmVxdWVzdBITCgtib3RfdXNlcl9pZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCSItCg5BZGRCb3RSZXNwb25zZRIbCgNib3QYASABKAsyDi5jYWxhYmEudjEuQm90Ii8KEEdldEJvdE1lUmVzcG9uc2USGwoDYm90GAEgASgLMg4uY2FsYWJhLnYxLkJvdCJqChJVcGRhdGVCb3RNZVJlcXVlc3QSGQoMZGlzcGxheV9uYW1lGAEgASgJSACIAQESGAoLZGVzY3JpcHRpb24YAiABKAlIAYgBAUIPCg1fZGlzcGxheV9uYW1lQg4KDF9kZXNjcmlwdGlvbiJAChVTZXRCb3RDb21tYW5kc1JlcXVlc3QSJwoIY29tbWFuZHMYASADKAsyFS5jYWxhYmEudjEuQm90Q29tbWFuZCJBChZTZXRCb3RDb21tYW5kc1Jlc3BvbnNlEicKCGNvbW1hbmRzGAEgAygLMhUuY2FsYWJhLnYxLkJvdENvbW1hbmQiMwoUU2V0Qm90V2ViaG9va1JlcXVlc3QSCwoDdXJsGAEgASgJEg4KBnNlY3JldBgCIAEoCSI8ChJCb3RXZWJob29rUmVzcG9uc2USJgoHd2ViaG9vaxgBIAEoCzIVLmNhbGFiYS52MS5Cb3RXZWJob29rImEKD1Jvb21Cb3RDb21tYW5kcxITCgtib3RfdXNlcl9pZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRInCghjb21tYW5kcxgDIAMoCzIVLmNhbGFiYS52MS5Cb3RDb21tYW5kIkcKG0xpc3RSb29tQm90Q29tbWFuZHNSZXNwb25zZRIoCgRib3RzGAEgAygLMhouY2FsYWJhLnYxLlJvb21Cb3RDb21tYW5kcyIvChdMaXN0QmxvY2tlZEJvdHNSZXNwb25zZRIUCgxib3RfdXNlcl9pZHMYASADKAkiPgoJQm90Q3JlYXRlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIbCgNib3QYAiABKAsyDi5jYWxhYmEudjEuQm90Ij4KCUJvdFVwZGF0ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSGwoDYm90GAIgASgLMg4uY2FsYWJhLnYxLkJvdCI2CglCb3REZWxldGUSFAoMd29ya3NwYWNlX2lkGAEgASgJEhMKC2JvdF91c2VyX2lkGAIgASgJQpYBCg1jb20uY2FsYWJhLnYxQghCb3RQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_user]);
 
 /**
  * A command a bot understands, shown by the composer when "/" is typed.
@@ -283,6 +283,29 @@ export const ReissueBotTokenResponseSchema: GenMessage<ReissueBotTokenResponse> 
   messageDesc(file_calaba_v1_bot, 6);
 
 /**
+ * POST /api/workspaces/{id}/bots/{botId}/avatar — sets the bot's avatar from the multipart
+ * field "file" (an image ≤ 5 MB, like POST /api/me/avatar: 422 VALIDATION otherwise); DELETE
+ * of the same path removes it. Home workspace only: the bot's owner or MANAGE_WORKSPACE
+ * (403 elsewhere, 404 when the bot is not a member of {id}). Members see USER_UPDATE, the
+ * managers BOT_UPDATE (docs/09 #87).
+ *
+ * @generated from message calaba.v1.SetBotAvatarResponse
+ */
+export type SetBotAvatarResponse = Message<"calaba.v1.SetBotAvatarResponse"> & {
+  /**
+   * @generated from field: calaba.v1.Bot bot = 1;
+   */
+  bot?: Bot | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SetBotAvatarResponse.
+ * Use `create(SetBotAvatarResponseSchema)` to create a new message.
+ */
+export const SetBotAvatarResponseSchema: GenMessage<SetBotAvatarResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_bot, 7);
+
+/**
  * POST /api/workspaces/{id}/bots/add (MANAGE_WORKSPACE of that workspace): adds an existing
  * bot by id or username (member role). 409 CONFLICT: already a member or plan limit.
  *
@@ -307,7 +330,7 @@ export type AddBotRequest = Message<"calaba.v1.AddBotRequest"> & {
  * Use `create(AddBotRequestSchema)` to create a new message.
  */
 export const AddBotRequestSchema: GenMessage<AddBotRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 7);
+  messageDesc(file_calaba_v1_bot, 8);
 
 /**
  * @generated from message calaba.v1.AddBotResponse
@@ -324,7 +347,7 @@ export type AddBotResponse = Message<"calaba.v1.AddBotResponse"> & {
  * Use `create(AddBotResponseSchema)` to create a new message.
  */
 export const AddBotResponseSchema: GenMessage<AddBotResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 8);
+  messageDesc(file_calaba_v1_bot, 9);
 
 /**
  * GET /api/bots/me and PATCH /api/bots/me (bots only); also GET /api/bots/{id|username}, the
@@ -344,7 +367,7 @@ export type GetBotMeResponse = Message<"calaba.v1.GetBotMeResponse"> & {
  * Use `create(GetBotMeResponseSchema)` to create a new message.
  */
 export const GetBotMeResponseSchema: GenMessage<GetBotMeResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 9);
+  messageDesc(file_calaba_v1_bot, 10);
 
 /**
  * PATCH /api/bots/me: unset fields stay. → GetBotMeResponse.
@@ -372,7 +395,7 @@ export type UpdateBotMeRequest = Message<"calaba.v1.UpdateBotMeRequest"> & {
  * Use `create(UpdateBotMeRequestSchema)` to create a new message.
  */
 export const UpdateBotMeRequestSchema: GenMessage<UpdateBotMeRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 10);
+  messageDesc(file_calaba_v1_bot, 11);
 
 /**
  * PUT /api/bots/me/commands: replaces all commands (≤ 100, unique names).
@@ -391,7 +414,7 @@ export type SetBotCommandsRequest = Message<"calaba.v1.SetBotCommandsRequest"> &
  * Use `create(SetBotCommandsRequestSchema)` to create a new message.
  */
 export const SetBotCommandsRequestSchema: GenMessage<SetBotCommandsRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 11);
+  messageDesc(file_calaba_v1_bot, 12);
 
 /**
  * @generated from message calaba.v1.SetBotCommandsResponse
@@ -408,7 +431,7 @@ export type SetBotCommandsResponse = Message<"calaba.v1.SetBotCommandsResponse">
  * Use `create(SetBotCommandsResponseSchema)` to create a new message.
  */
 export const SetBotCommandsResponseSchema: GenMessage<SetBotCommandsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 12);
+  messageDesc(file_calaba_v1_bot, 13);
 
 /**
  * PUT /api/bots/me/webhook: https only, public addresses only; secret 16..256 characters signs
@@ -433,7 +456,7 @@ export type SetBotWebhookRequest = Message<"calaba.v1.SetBotWebhookRequest"> & {
  * Use `create(SetBotWebhookRequestSchema)` to create a new message.
  */
 export const SetBotWebhookRequestSchema: GenMessage<SetBotWebhookRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 13);
+  messageDesc(file_calaba_v1_bot, 14);
 
 /**
  * PUT and GET /api/bots/me/webhook.
@@ -452,7 +475,7 @@ export type BotWebhookResponse = Message<"calaba.v1.BotWebhookResponse"> & {
  * Use `create(BotWebhookResponseSchema)` to create a new message.
  */
 export const BotWebhookResponseSchema: GenMessage<BotWebhookResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 14);
+  messageDesc(file_calaba_v1_bot, 15);
 
 /**
  * Commands of the bots in a room (GET /api/rooms/{id}/bot-commands, VIEW_ROOM): composer hints.
@@ -481,7 +504,7 @@ export type RoomBotCommands = Message<"calaba.v1.RoomBotCommands"> & {
  * Use `create(RoomBotCommandsSchema)` to create a new message.
  */
 export const RoomBotCommandsSchema: GenMessage<RoomBotCommands> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 15);
+  messageDesc(file_calaba_v1_bot, 16);
 
 /**
  * @generated from message calaba.v1.ListRoomBotCommandsResponse
@@ -498,7 +521,7 @@ export type ListRoomBotCommandsResponse = Message<"calaba.v1.ListRoomBotCommands
  * Use `create(ListRoomBotCommandsResponseSchema)` to create a new message.
  */
 export const ListRoomBotCommandsResponseSchema: GenMessage<ListRoomBotCommandsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 16);
+  messageDesc(file_calaba_v1_bot, 17);
 
 /**
  * GET /api/me/blocked-bots; POST / DELETE /api/me/blocked-bots/{id} → 204 (people only). A
@@ -518,7 +541,7 @@ export type ListBlockedBotsResponse = Message<"calaba.v1.ListBlockedBotsResponse
  * Use `create(ListBlockedBotsResponseSchema)` to create a new message.
  */
 export const ListBlockedBotsResponseSchema: GenMessage<ListBlockedBotsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 17);
+  messageDesc(file_calaba_v1_bot, 18);
 
 /**
  * BOT_CREATE / BOT_UPDATE: a bot joined the workspace / changed (profile, commands, token,
@@ -543,7 +566,7 @@ export type BotCreate = Message<"calaba.v1.BotCreate"> & {
  * Use `create(BotCreateSchema)` to create a new message.
  */
 export const BotCreateSchema: GenMessage<BotCreate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 18);
+  messageDesc(file_calaba_v1_bot, 19);
 
 /**
  * @generated from message calaba.v1.BotUpdate
@@ -565,7 +588,7 @@ export type BotUpdate = Message<"calaba.v1.BotUpdate"> & {
  * Use `create(BotUpdateSchema)` to create a new message.
  */
 export const BotUpdateSchema: GenMessage<BotUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 19);
+  messageDesc(file_calaba_v1_bot, 20);
 
 /**
  * BOT_DELETE: the bot was deleted or removed from the workspace.
@@ -589,5 +612,5 @@ export type BotDelete = Message<"calaba.v1.BotDelete"> & {
  * Use `create(BotDeleteSchema)` to create a new message.
  */
 export const BotDeleteSchema: GenMessage<BotDelete> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_bot, 20);
+  messageDesc(file_calaba_v1_bot, 21);
 

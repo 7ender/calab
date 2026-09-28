@@ -121,6 +121,7 @@ import {
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
+  SetBotAvatarResponseSchema,
   RoomBotCommandsSchema,
   type Bot,
   type RoomBotCommands,
@@ -442,6 +443,8 @@ export interface MockServer {
    * delivering webhook, «Деплой» with a failing one) → WORKSPACE_MEMBER_ADD + BOT_CREATE.
    */
   seedBots(): void;
+  /** docs/09 #87: a picture avatar for a (seeded) bot, as «Загрузить аватар» in «Боты» sets it. */
+  setBotAvatar(botUserId: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): void;
   /** Full files (not thumbnails) wait until releaseFiles() or reset(): a slow download (the lightbox's loading state). */
   holdFiles(): void;
   releaseFiles(): void;
@@ -493,6 +496,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setBirthdayHidden: (u, hidden) => impl.setBirthdayHidden(u, hidden),
     setClock: (ms) => impl.setClock(ms),
     seedBots: () => impl.seedBots(),
+    setBotAvatar: (id, colors) => impl.setBotAvatar(id, colors),
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
     dropGateway: (ms) => impl.dropGateway(ms ?? 0),
@@ -1580,6 +1584,14 @@ class MockImpl {
       m.roleIds = [...roleIds];
     });
     this.toWorkspace(workspaceId, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
+  }
+
+  setBotAvatar(botUserId: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): void {
+    const u = this.state.users.get(botUserId);
+    if (!u?.user.isBot) throw new Error(`no bot ${botUserId}`);
+    const png = encodePng(64, 64, (x, y) => ((x - 0.5) ** 2 + (y - 0.5) ** 2 < 0.09 ? colors.fg : colors.bg));
+    u.user.avatarFileId = this.storeFile('', botUserId, { name: 'avatar.png', mime: 'image/png', bytes: png });
+    this.emitUserUpdate(u);
   }
 
   addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string {
@@ -3666,6 +3678,29 @@ class MockImpl {
       this.botUpdate(bot);
       noContent(c.res);
     });
+    // docs/09 #87: the avatar of a home bot, from «Боты» or its profile.
+    const botAvatar = (c: Ctx, fileId: string): void => {
+      const bot = homeBot(c);
+      const u = s().users.get(bot.userId);
+      if (!u) throw notFound('bot not found');
+      u.user.avatarFileId = fileId;
+      this.emitUserUpdate(u);
+      this.botUpdate(bot);
+      sendMsg(c.res, 200, SetBotAvatarResponseSchema, { bot: this.botOut(bot, true) });
+    };
+    const homeBot = (c: Ctx): BotRec => {
+      const { wsId } = botManager(c);
+      const bot = botIn(wsId, c.params[1] ?? '');
+      if (bot.workspaceId !== wsId) throw forbidden('the bot is managed in the workspace where it was created');
+      return bot;
+    };
+    this.route('POST', '/api/workspaces/:id/bots/:botId/avatar', async (c) => {
+      const bot = homeBot(c);
+      const f = await parseMultipartFile(c);
+      if (!f.mime.startsWith('image/')) throw invalid('file', 'must be a JPEG, PNG, GIF or WebP image');
+      botAvatar(c, this.storeFile('', bot.userId, f));
+    });
+    this.route('DELETE', '/api/workspaces/:id/bots/:botId/avatar', (c) => botAvatar(c, ''));
     this.route('GET', '/api/bots/:ref', (c) => {
       this.uid(c);
       const bot = this.botOut(findBot(c.params[0] ?? ''), false);

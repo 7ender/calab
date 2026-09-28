@@ -2,11 +2,12 @@ import type { Bot } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { Ban, Plus, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, type ReactNode } from 'react';
+import { AvatarButtons } from '../../components/AvatarPicker';
 import { Button, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { mayManageWorkspace } from '../../lib/permissions';
-import { loadBlockedBots, loadBotCard, setBotBlocked } from '../../services/bots';
+import { botAvatarChanged, loadBlockedBots, loadBotCard, loadWorkspaceBots, setBotBlocked } from '../../services/bots';
 import { reportPlanError } from '../../services/plan';
 import { useBots } from '../../stores/bots';
 import { useSession } from '../../stores/session';
@@ -18,7 +19,8 @@ import { menuBox, menuItem, menuLabel } from '../shell/menu';
  * A bot's profile (ADR-0031 §7, docs/08 «Боты»): its @username, description, «Команды» (what it
  * registered), «Владелец» (when the managers' list told us), «Добавить в пространство…» (to a
  * workspace where I have MANAGE_WORKSPACE and it is not yet) and «Заблокировать бота». Used by
- * the member card (ProfileCard) and the full profile (ProfileDialog). The server checks it all.
+ * the member card (ProfileCard) and the full profile (ProfileDialog); the full profile also has
+ * the avatar for the bot's managers (BotAvatarControls). The server checks it all.
  */
 
 /** The bot's card from the store, fetched once when first shown. */
@@ -135,5 +137,34 @@ export function BotActions({ botUserId, size = 'md' }: { botUserId: string; size
         </Button>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * «Загрузить аватар» / «Убрать аватар» for whoever manages the bot (docs/09 #87): its owner or
+ * MANAGE_WORKSPACE of its home workspace. The home workspace comes from the managers' bot list
+ * (the public card hides it), fetched once when I manage the workspace the profile is open in.
+ */
+export function BotAvatarControls({ workspaceId, botUserId }: { workspaceId: string; botUserId: string }): ReactNode {
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const manageHere = useWorkspaces((s) => mayManageWorkspace(rolesOf(s.byId[workspaceId], me)));
+  const listed = useBots((s) => workspaceId in s.byWorkspace);
+  const home = useBots((s) => s.cards[botUserId]?.workspaceId ?? '');
+  const owner = useBots((s) => s.cards[botUserId]?.ownerUserId ?? '');
+  const manageHome = useWorkspaces((s) => (home ? mayManageWorkspace(rolesOf(s.byId[home], me)) : false));
+  const avatar = useWorkspaces((s) => s.users[botUserId]?.avatarFileId ?? '');
+  useEffect(() => {
+    if (manageHere && !listed) void loadWorkspaceBots(workspaceId);
+  }, [manageHere, listed, workspaceId]);
+  if (!home || !(manageHome || (owner !== '' && owner === me))) return null;
+  return (
+    <AvatarButtons
+      hasAvatar={!!avatar}
+      size="sm"
+      removeLabel={t('bots.avatarRemove')}
+      testId="bot-profile-avatar"
+      onUpload={async (f) => botAvatarChanged(home, (await api.bots.setAvatar(home, botUserId, f, f.name)).bot)}
+      onRemove={async () => botAvatarChanged(home, (await api.bots.clearAvatar(home, botUserId)).bot)}
+    />
   );
 }

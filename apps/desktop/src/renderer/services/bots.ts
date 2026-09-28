@@ -21,6 +21,13 @@ export async function loadWorkspaceBots(workspaceId: string): Promise<void> {
   }
 }
 
+/** A bot's avatar changed (docs/09 #87): the managers' list and its user at once (USER_UPDATE follows). */
+export function botAvatarChanged(workspaceId: string, bot: Bot | undefined): void {
+  if (!bot?.user) return;
+  useBots.getState().upsert(workspaceId, bot);
+  useWorkspaces.getState().upsertUser(bot.user);
+}
+
 const cardLoads = new Map<string, Promise<Bot | null>>();
 
 /** A bot's public card (description, commands), once per session unless `force`. */

@@ -31,6 +31,7 @@ import (
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
+	"github.com/calaba/calaba/server/internal/profile"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/sealbox"
 	"github.com/calaba/calaba/server/internal/workspaces"
@@ -48,16 +49,23 @@ var (
 	commandRe  = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
 )
 
+// Avatars stores an uploaded avatar of a user (files.Service): the pipeline of
+// POST /api/me/avatar, which also publishes USER_UPDATE.
+type Avatars interface {
+	UploadAvatar(w http.ResponseWriter, r *http.Request, uid uuid.UUID) (sqlc.User, error)
+}
+
 // Service holds the bot use cases and the webhook worker.
 type Service struct {
-	db     *db.DB
-	redis  rueidis.Client
-	auth   *auth.Service
-	plans  *plans.Service
-	events events.Publisher
-	box    *sealbox.Box
-	hooks  hookCache
-	wh     webhookWorker
+	db      *db.DB
+	avatars Avatars
+	redis   rueidis.Client
+	auth    *auth.Service
+	plans   *plans.Service
+	events  events.Publisher
+	box     *sealbox.Box
+	hooks   hookCache
+	wh      webhookWorker
 }
 
 // New creates the service. SetEvents must be called before serving (the publisher wraps the
@@ -71,6 +79,9 @@ func New(d *db.DB, r rueidis.Client, a *auth.Service, pl *plans.Service, secret 
 // SetAuth sets the auth service (token changes); it is built after the publisher.
 func (s *Service) SetAuth(a *auth.Service) { s.auth = a }
 
+// SetAvatars sets the avatar store (the files service is built after the bots service).
+func (s *Service) SetAvatars(a Avatars) { s.avatars = a }
+
 // SetEvents sets the publisher of the service's own events (BOT_*, membership).
 func (s *Service) SetEvents(p events.Publisher) { s.events = p }
 
@@ -83,6 +94,8 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	handle("DELETE /api/workspaces/{id}/bots/{botId}", s.remove)
 	handle("POST /api/workspaces/{id}/bots/{botId}/token", s.reissue)
 	handle("DELETE /api/workspaces/{id}/bots/{botId}/token", s.revoke)
+	handle("POST /api/workspaces/{id}/bots/{botId}/avatar", s.setAvatar)
+	handle("DELETE /api/workspaces/{id}/bots/{botId}/avatar", s.clearAvatar)
 	handle("GET /api/bots/{ref}", s.profile)
 	handle("GET /api/bots/me", s.me)
 	handle("PATCH /api/bots/me", s.updateMe)
@@ -457,6 +470,43 @@ func (s *Service) revoke(w http.ResponseWriter, r *http.Request) error {
 	s.hooks.invalidate()
 	s.announce(r.Context(), b.UserID)
 	httpx.NoContent(w)
+	return nil
+}
+
+// setAvatar stores the multipart "file" as the bot's avatar (docs/09 #87); homeBot rules.
+func (s *Service) setAvatar(w http.ResponseWriter, r *http.Request) error {
+	b, err := s.homeBot(r)
+	if err != nil {
+		return err
+	}
+	if _, err := s.avatars.UploadAvatar(w, r, b.UserID); err != nil {
+		return err
+	}
+	return s.avatarChanged(w, r, b.UserID)
+}
+
+// clearAvatar removes the bot's avatar; the file is left to the orphan cleanup.
+func (s *Service) clearAvatar(w http.ResponseWriter, r *http.Request) error {
+	b, err := s.homeBot(r)
+	if err != nil {
+		return err
+	}
+	u, err := s.db.Q.UpdateUser(r.Context(), sqlc.UpdateUserParams{ID: b.UserID, SetAvatar: true})
+	if err != nil {
+		return err
+	}
+	profile.Publish(r.Context(), s.db.Q, s.events, u, true)
+	return s.avatarChanged(w, r, b.UserID)
+}
+
+// avatarChanged sends BOT_UPDATE (bot lists of the managers) and answers with the bot.
+func (s *Service) avatarChanged(w http.ResponseWriter, r *http.Request, id uuid.UUID) error {
+	s.announce(r.Context(), id)
+	pb, err := s.pb(r.Context(), id, true)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.SetBotAvatarResponse{Bot: pb})
 	return nil
 }
 
