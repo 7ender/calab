@@ -302,7 +302,7 @@ test('m-chat-image', async ({ page }) => {
 });
 
 // A done meeting recording on a phone (docs/09 #47): the card across the feed, the summary folded,
-// the actions wrap; 44 px targets.
+// the actions wrap; 44 px targets; the REC circle plays (#88), no «Готово» row.
 test('m-chat-recording', async ({ page }) => {
   await signedIn(page);
   await expect(page.getByTestId('composer')).toBeVisible();
@@ -316,7 +316,8 @@ test('m-chat-recording', async ({ page }) => {
   });
   const card = page.getByTestId('recording-card');
   await expect(card).toContainText('Релиз 0.7');
-  await expect(card.getByRole('button', { name: 'Послушать запись' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Слушать запись' })).toBeVisible();
+  await expect(card.getByTestId('recording-card-status')).toHaveCount(0);
   for (const b of await card.getByRole('button').all()) {
     const box = await b.boundingBox();
     expect(box && box.height, `${await b.textContent()}: tall enough to tap`).toBeGreaterThanOrEqual(32);
