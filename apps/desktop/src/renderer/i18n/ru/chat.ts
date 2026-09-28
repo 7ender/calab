@@ -135,6 +135,7 @@ export const ruChat = {
   'chat.forward': 'Переслать',
   'chat.fwd.from': 'Переслано от {name}',
   'chat.fwd.fromMeta': 'Переслано от {name} · {time}',
+  'chat.fwd.original': 'Оригинал: {time}',
   'chat.fwd.someone': 'участника',
   'chat.fwd.title': 'Переслать…',
   'chat.fwd.hint': 'Копия уйдёт от вашего имени с пометкой «Переслано»',

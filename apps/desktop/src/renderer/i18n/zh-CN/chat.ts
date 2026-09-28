@@ -137,6 +137,7 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.forward': '转发',
   'chat.fwd.from': '转发自 {name}',
   'chat.fwd.fromMeta': '转发自 {name} · {time}',
+  'chat.fwd.original': '原消息：{time}',
   'chat.fwd.someone': '成员',
   'chat.fwd.title': '转发…',
   'chat.fwd.hint': '副本将以你的名义发送，并标注「转发」',

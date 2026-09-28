@@ -1958,6 +1958,8 @@ test('chat-forwarded', async ({ open, win, mock, shot }) => {
   const lines = win.getByTestId('forward-line');
   await expect(lines).toHaveCount(2);
   await expect(lines.first()).toContainText('Переслано от Борис');
+  // The line's date is the copy's created_at (the forward time); the original's is in the tooltip.
+  await expect(lines.first().locator('span[title]')).toHaveAttribute('title', /\nОригинал: /);
   const card = win.getByTestId('recording-card');
   await expect(card.getByRole('button', { name: 'Полный транскрипт' })).toBeVisible();
   await feedAtBottom(win);
