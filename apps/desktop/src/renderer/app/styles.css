@@ -516,7 +516,10 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   animation: calaba-pulse 1.2s infinite;
 }
 
-/* REC (docs/09 #30): a soft, slow pulse of the red recording dot; still with reduced motion. */
+/* REC (docs/09 #30, #64): 3 soft pulses when the recording starts, then a still red dot — an
+   endless pulse kept the compositor drawing frames for the whole meeting (docs/14). RecDot adds
+   the class only in the first 6 s, with a negative delay, so a remount keeps the phase. Still
+   with reduced motion. */
 @keyframes calaba-rec {
   0%,
   100% {
@@ -526,11 +529,11 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
     opacity: 0.45;
   }
 }
-.rec-dot {
-  animation: calaba-rec 2s ease-in-out infinite;
+.rec-dot-pulse {
+  animation: calaba-rec 2s ease-in-out 3;
 }
 @media (prefers-reduced-motion: reduce) {
-  .rec-dot {
+  .rec-dot-pulse {
     animation: none;
   }
 }
@@ -569,8 +572,8 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   }
 }
 
-/* Window hidden / minimized (lib/windowVisibility.ts): endless animations (connect ring, typing
-   dots, REC) stop compositing frames nobody sees — docs/14-energy.md. */
+/* Window hidden / minimized (lib/windowVisibility.ts): the remaining long animations (connect
+   ring, typing dots, spinners) stop compositing frames nobody sees — docs/14-energy.md. */
 :root.window-hidden *,
 :root.window-hidden *::before,
 :root.window-hidden *::after {

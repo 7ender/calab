@@ -111,4 +111,8 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'rec.on': 'Recording',
   'rec.time': 'Recording, {time}',
   'rec.by': 'Recording started by {name}',
+  'rec.menu.title': 'Recording · {time}',
+  'rec.menu.by': 'Started by {name}',
+  'rec.menu.confirm': 'Stop recording?',
+  'rec.menu.confirmAction': 'Stop',
 };

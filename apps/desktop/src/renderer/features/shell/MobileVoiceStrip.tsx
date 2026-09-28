@@ -14,7 +14,7 @@ import { useConnectingRing, useVoiceStateOf } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { selectMicMode } from './micMenu';
-import { RecDot, useRecording } from '../voice/Recording';
+import { MobileRecDot, useRecording } from '../voice/Recording';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
 const round = 'grid size-10 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
@@ -44,7 +44,7 @@ export function MobileVoiceStrip(): ReactNode {
   // Still pending (optimistic join, docs/05) after 3 s: the «connecting» ring on my avatar.
   const mine = useVoiceStateOf(wsId ?? '', me?.id ?? '');
   const connectingRing = useConnectingRing(wsId, me?.id, mine?.pending ?? false);
-  const recording = useRecording(roomId) !== null;
+  const recording = useRecording(roomId);
   if (!roomId) return null;
   const connected = phase === 'connected';
   // While the PTT button is held the status line says so (the button itself is a 40 px circle).
@@ -63,23 +63,18 @@ export function MobileVoiceStrip(): ReactNode {
             <Avatar userId={me.id} name={me.displayName} fileId={me.avatarFileId || undefined} size={32} speaking={speaking && !muted} connecting={connectingRing} />
           </span>
         ) : null}
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 flex-col items-start justify-center self-stretch text-left"
-          onClick={() => wsId && openRoom(wsId, roomId)}
-          aria-live="polite"
-        >
-          <span className="flex max-w-full items-center gap-1.5">
+        {/* The whole text block opens the room (a full-size button under the text); the REC dot
+            sits above it as its own button — a menu trigger cannot nest inside a button. */}
+        <div className="relative flex min-w-0 flex-1 flex-col items-start justify-center self-stretch" aria-live="polite">
+          <button type="button" aria-label={room?.name ?? ''} className="absolute inset-0 rounded-[var(--radius-row)]" onClick={() => wsId && openRoom(wsId, roomId)} />
+          <span className="pointer-events-none flex max-w-full items-center gap-1">
             <span className={cx('min-w-0 truncate text-[13px] font-semibold leading-[18px]', connected ? 'text-ok' : 'text-warn')}>{phaseText}</span>
-            {/* Recording (docs/09 #30): the red dot only — the strip has no room for the timer. */}
-            {recording ? (
-              <span role="img" aria-label={t('rec.on')} data-testid="mobile-rec" className="flex">
-                <RecDot />
-              </span>
-            ) : null}
+            {/* Recording (docs/09 #30): the red dot only — the strip has no room for the timer; a tap
+                opens «Идёт запись · 12:34» / «Остановить запись» (docs/09 #64). */}
+            {recording ? <MobileRecDot roomId={roomId} workspaceId={wsId} rec={recording} className="pointer-events-auto -my-1 relative" /> : null}
           </span>
-          <span className="max-w-full truncate text-caption text-muted">{room?.name ?? ''}</span>
-        </button>
+          <span className="pointer-events-none max-w-full truncate text-caption text-muted">{room?.name ?? ''}</span>
+        </div>
         <button
           type="button"
           aria-label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}

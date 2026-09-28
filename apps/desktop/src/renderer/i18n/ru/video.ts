@@ -108,4 +108,8 @@ export const ruVideo = {
   'rec.on': 'Идёт запись',
   'rec.time': 'Идёт запись, {time}',
   'rec.by': 'Запись включена: {name}',
+  'rec.menu.title': 'Идёт запись · {time}',
+  'rec.menu.by': 'Начал: {name}',
+  'rec.menu.confirm': 'Остановить запись?',
+  'rec.menu.confirmAction': 'Остановить',
 } as const;

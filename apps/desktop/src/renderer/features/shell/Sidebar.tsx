@@ -1240,7 +1240,7 @@ function VoiceMember({
   // anyone, admins and the owner included; others only members below admins.
   const myRole = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const draggable = canMove && mayMoveVoice(myRole, role, isMe);
-  // «(+5 UTC)» when their time zone differs from mine (User.timezone).
+  // «+5 UTC» tag when their time zone differs from mine (User.timezone).
   const tz = useTimeZoneLabel(state.userId);
   // Pending (optimistic join, docs/05) for more than 3 s: the «connecting» ring.
   const connectingRing = useConnectingRing(workspaceId, state.userId, state.pending);

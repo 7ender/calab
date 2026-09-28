@@ -10,6 +10,7 @@ import {
   formatPairCode,
   pairCodeComplete,
   pairErrorKey,
+  recPulseDelay,
   recordingCardOf,
   retryActions,
   retryRefusalKey,
@@ -161,5 +162,18 @@ describe('chat card', () => {
     expect(durationText(3600)).toBe('1 ч');
     expect(durationText(65 * 60)).toBe('1 ч 5 мин');
     expect(systemPreview(card(RecordingStatus.DONE))).toBe('Встреча записана · 42 мин');
+  });
+});
+
+describe('recPulseDelay (docs/09 #64)', () => {
+  it('pulses only in the first 6 s, keeping the phase on a remount', () => {
+    expect(recPulseDelay(0)).toBe('-0ms');
+    expect(recPulseDelay(2500.4)).toBe('-2500ms');
+    expect(recPulseDelay(5999)).toBe('-5999ms');
+    expect(recPulseDelay(6000)).toBeNull();
+    expect(recPulseDelay(754_000)).toBeNull();
+  });
+  it('treats a start slightly in the future (clock skew) as just started', () => {
+    expect(recPulseDelay(-1500)).toBe('-0ms');
   });
 });
