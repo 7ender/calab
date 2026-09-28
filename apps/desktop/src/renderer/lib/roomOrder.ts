@@ -95,6 +95,15 @@ export function planCategoryMove(order: Array<{ id: string; position: number }>,
 }
 
 /**
+ * A just-created category goes to the top of the categories (owner, 28.09): placements for the
+ * existing categories in sidebar order plus the new one. The new one may already be among them
+ * (its CATEGORY_UPDATE event can beat the HTTP answer) — it is counted once.
+ */
+export function planNewCategoryFirst(order: Array<{ id: string; position: number }>, created: { id: string; position: number }): CategoryPlacement[] {
+  return planCategoryMove([...order.filter((c) => c.id !== created.id), created], created.id, 0);
+}
+
+/**
  * «Переместить вверх/вниз»: one step within the container; at its edge the room crosses into
  * the neighbouring container (end of the previous one / start of the next), like dragging past
  * a category header. null = already first/last in the whole list.

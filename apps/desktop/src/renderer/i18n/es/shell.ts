@@ -51,6 +51,7 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.voiceStatus.failed': 'No se pudo guardar el estado de la sala',
   'shell.voiceInvite': 'Invitar a la sala',
   'shell.voiceInviteHint': 'Copiar el enlace de la sala',
+  'shell.create': 'Crear',
   'shell.categoryCreate': 'Crear categoría',
   'shell.categoryName': 'Nombre de la categoría',
   'shell.categoryRename': 'Renombrar categoría',

@@ -51,6 +51,7 @@ export const zhShell: DictShape<typeof enShell> = {
   'shell.voiceStatus.failed': '房间状态保存失败',
   'shell.voiceInvite': '邀请加入房间',
   'shell.voiceInviteHint': '复制房间链接',
+  'shell.create': '创建',
   'shell.categoryCreate': '创建分类',
   'shell.categoryName': '分类名称',
   'shell.categoryRename': '重命名分类',

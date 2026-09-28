@@ -4,7 +4,7 @@ import { t } from '../i18n';
 import { api } from '../lib/api/endpoints';
 import { errorText } from '../lib/api/errors';
 import { log } from '../lib/log';
-import { planCategoryMove, planRoomMove, type CategoryPlacement, type Layout, type RoomPlacement, type RoomTarget } from '../lib/roomOrder';
+import { planCategoryMove, planNewCategoryFirst, planRoomMove, type CategoryPlacement, type Layout, type RoomPlacement, type RoomTarget } from '../lib/roomOrder';
 import { byPosition, groupRooms, roomsOfWorkspace, useRooms } from '../stores/rooms';
 import { toast } from '../stores/toasts';
 
@@ -84,4 +84,18 @@ export function moveRoomTo(workspaceId: string, roomId: string, to: RoomTarget):
 export function moveCategoryTo(workspaceId: string, categoryId: string, index: number): Promise<boolean> {
   const plan = planCategoryMove(workspaceCategories(workspaceId), categoryId, index);
   return commitOrder(workspaceId, [], plan);
+}
+
+/**
+ * Creates a category and puts it at the top of the categories (owner, 28.09) with one order
+ * batch, applied optimistically. A failed reorder leaves it where the server put it (toast).
+ */
+export async function createCategoryFirst(workspaceId: string, name: string): Promise<RoomCategory | undefined> {
+  const r = await api.categories.create(workspaceId, { name });
+  const cat = r.category;
+  if (!cat) return undefined;
+  const others = workspaceCategories(workspaceId);
+  useRooms.getState().upsertCategory(cat);
+  await commitOrder(workspaceId, [], planNewCategoryFirst(others, cat));
+  return cat;
 }
