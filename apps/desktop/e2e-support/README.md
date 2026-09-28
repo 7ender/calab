@@ -137,6 +137,8 @@ content: `@${IDS.users.anna} …` })` or `POST /__mock/message` with the same JS
 | `GET /__mock/voice` | — → `{ [userId]: { roomId, pending } }`: the voice states as the server holds them |
 | `POST /__mock/gateway/drop` | `{ downMs? }` — a gateway outage (`dropGateway`): sockets cut, new ones refused for `downMs`, sessions not resumable → clients re-IDENTIFY (fresh READY) |
 | `POST /__mock/presence` | `{ userId, status: "ONLINE" \| "IDLE" \| "DND" \| "OFFLINE" }` |
+| `POST /__mock/call/ring` | `{ fromUserId, toUserId }` → `{ call }` — a call in their DM (`ringCall`, ADR-0034): CALL_RING / CALL_STATE; MISSED after `MOCK_CALL_RING_MS` (45 s) |
+| `POST /__mock/call/action` | `{ callId, action: "accept" \| "decline" \| "cancel" \| "hangup", userId? }` → `{ call }` (`callAction`; default actor: the caller for cancel, else the callee) |
 | `POST /__mock/typing` | `{ roomId, userId }` |
 
 ## Voice

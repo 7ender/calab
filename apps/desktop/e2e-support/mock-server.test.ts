@@ -1,5 +1,7 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import {
+  CallOutcome,
+  CallState,
   GatewayFrameSchema,
   GatewayOpcode,
   MessageKind,
@@ -1045,5 +1047,85 @@ describe('meeting recording (ADR-0025)', () => {
     expect((await fetch(ws, { method: 'DELETE', headers: owner })).status).toBe(204);
     gw.ws.close();
     server.reset('data');
+  });
+});
+
+describe('one-to-one calls (ADR-0034)', () => {
+  type Gw = Awaited<ReturnType<typeof openGateway>>;
+  const api = async (token: string, path: string): Promise<Response> =>
+    fetch(`${server.url}${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}' });
+  async function identify(email: string): Promise<{ gw: Gw; token: string; ready: Extract<DispatchEvent['event'], { case: 'ready' }>['value'] }> {
+    const token = await login(email);
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } });
+    const ev = dispatchOf(await gw.next((f) => f.op === GatewayOpcode.DISPATCH))?.event;
+    if (ev?.case !== 'ready') throw new Error('expected READY');
+    return { gw, token, ready: ev.value };
+  }
+  const event = async (gw: Gw, pred: (e: DispatchEvent['event']) => boolean): Promise<DispatchEvent['event']> => {
+    const f = await gw.next((x) => {
+      const e = dispatchOf(x)?.event;
+      return e !== undefined && pred(e);
+    });
+    return dispatchOf(f)?.event ?? { case: undefined };
+  };
+
+  it('ring → accept → join → hangup: events, presence on_call, the DM session, the log card', async () => {
+    server.reset('data');
+    const anna = await identify('owner@calaba.test');
+    // No call: the DM cannot be joined.
+    const noCall = await api(anna.token, `/api/rooms/${IDS.dms.boris}/join`);
+    expect(noCall.status).toBe(409);
+    expect(((await noCall.json()) as { code: string }).code).toBe('ERROR_CODE_CALL_NOT_ACTIVE');
+    // Boris calls Anna (the helper the client's tests use): CALL_RING with the caller.
+    const call = server.ringCall(IDS.users.boris, IDS.users.anna);
+    const ring = await event(anna.gw, (e) => e.case === 'callRing');
+    expect(ring.case === 'callRing' && ring.value.caller?.id).toBe(IDS.users.boris);
+    expect(ring.case === 'callRing' && ring.value.call?.state).toBe(CallState.RINGING);
+    anna.gw.ws.close(1000);
+    const a2 = await identify('owner@calaba.test');
+    expect(a2.ready.call?.id).toBe(call.id); // READY.call after a reconnect
+
+    expect((await api(a2.token, `/api/calls/${call.id}/cancel`)).status).toBe(403); // the callee cannot cancel
+    const acc = await api(a2.token, `/api/calls/${call.id}/accept`);
+    expect(acc.status).toBe(200);
+    expect(((await acc.json()) as { call: { state: string } }).call.state).toBe('CALL_STATE_ACTIVE');
+    expect((await api(a2.token, `/api/calls/${call.id}/accept`)).status).toBe(409);
+    const pres = await event(a2.gw, (e) => e.case === 'presenceUpdate' && e.value.presence?.userId === IDS.users.anna);
+    expect(pres.case === 'presenceUpdate' && pres.value.presence?.onCall).toBe(true);
+
+    const join = await api(a2.token, `/api/rooms/${IDS.dms.boris}/join`);
+    expect(join.status).toBe(200);
+    expect(((await join.json()) as { canVideo: boolean }).canVideo).toBe(true);
+    const vs = await event(a2.gw, (e) => e.case === 'voiceStateUpdate' && e.value.state?.roomId === IDS.dms.boris);
+    expect(vs.case === 'voiceStateUpdate' && vs.value.state?.workspaceId).toBe('');
+
+    expect((await api(a2.token, `/api/calls/${call.id}/hangup`)).status).toBe(200);
+    await event(a2.gw, (e) => e.case === 'callState' && e.value.call?.state === CallState.ENDED);
+    const card = await event(a2.gw, (e) => e.case === 'messageCreate' && e.value.message?.roomId === IDS.dms.boris);
+    expect(card.case === 'messageCreate' && card.value.message?.kind).toBe(MessageKind.SYSTEM);
+    expect(card.case === 'messageCreate' && card.value.message?.system?.payload.case).toBe('call');
+    expect(server.state.voiceStates.get(IDS.users.anna)).toBeUndefined();
+    a2.gw.ws.close(1000);
+  });
+
+  it('BUSY / IN_CALL; decline and cancel by the right side only; cards in the DM log', async () => {
+    server.reset('data');
+    const anna = await login('owner@calaba.test');
+    const vera = await login('vera@calaba.test');
+    const call = server.ringCall(IDS.users.boris, IDS.users.anna);
+    const busy = await api(vera, `/api/dms/${IDS.dms.vera}/call`);
+    expect(busy.status).toBe(409);
+    expect(((await busy.json()) as { code: string }).code).toBe('ERROR_CODE_BUSY');
+    expect(() => server.ringCall(IDS.users.boris, IDS.users.vera)).toThrow(); // IN_CALL
+    expect((await api(anna, `/api/calls/${call.id}/decline`)).status).toBe(200);
+    const out = await api(anna, `/api/dms/${IDS.dms.vera}/call`);
+    expect(out.status).toBe(201);
+    const id = ((await out.json()) as { call: { id: string } }).call.id;
+    expect((await api(vera, `/api/calls/${id}/cancel`)).status).toBe(403);
+    expect((await api(anna, `/api/calls/${id}/cancel`)).status).toBe(200);
+    const cards = (server.state.messages.get(IDS.dms.vera) ?? []).flatMap((m) => (m.system?.payload.case === 'call' ? [m.system.payload.value.outcome] : []));
+    expect(cards).toEqual([CallOutcome.BUSY, CallOutcome.CANCELLED]);
   });
 });

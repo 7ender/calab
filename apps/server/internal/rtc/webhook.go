@@ -187,6 +187,9 @@ func (s *Service) setFlag(ctx context.Context, wid, rid, uid, sid uuid.UUID, fn 
 // exceeded. The limit check and the state write happen under the workspace voice lock, so
 // concurrent joins cannot all squeeze in. Rejected devices are removed from LiveKit.
 func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid.UUID, lkRoom string, p *Participant) error {
+	if voice.IsDM(wid, rid) {
+		return s.dmParticipantJoined(ctx, rid, uid, sid, lkRoom, p)
+	}
 	identity := p.Identity
 	reject := func(reason string) error {
 		slog.InfoContext(ctx, "voice join rejected", "identity", identity, "reason", reason)
@@ -279,15 +282,15 @@ func (s *Service) refreshStreaming(ctx context.Context, wid, rid, uid, sid uuid.
 }
 
 func (s *Service) publishStreamStop(ctx context.Context, wid, rid, uid uuid.UUID, trackSID string, reason v1.VoiceStreamStopReason) {
-	s.events.Workspace(ctx, wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStreamStop{VoiceStreamStop: &v1.VoiceStreamStop{
-		WorkspaceId: wid.String(), RoomId: rid.String(), UserId: uid.String(), TrackSid: trackSID, Reason: reason,
+	s.publishScope(ctx, wid, rid, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStreamStop{VoiceStreamStop: &v1.VoiceStreamStop{
+		WorkspaceId: scopeWS(wid, rid), RoomId: rid.String(), UserId: uid.String(), TrackSid: trackSID, Reason: reason,
 	}}})
 }
 
 // streamStarted enforces max_streams: a stream beyond the limit is muted server-side and the
 // publisher loses the screen share grant.
 func (s *Service) streamStarted(ctx context.Context, wid, rid, uid, sid uuid.UUID, identity string, t *Track) error {
-	_, media, err := s.roomInfo(ctx, rid)
+	_, media, err := s.scopeInfo(ctx, wid, rid)
 	if err != nil {
 		return err
 	}
@@ -309,14 +312,14 @@ func (s *Service) streamStarted(ctx context.Context, wid, rid, uid, sid uuid.UUI
 		if err := s.lk.MuteTrack(ctx, room, identity, t.Sid, true); err != nil && !IsNotFound(err) {
 			slog.WarnContext(ctx, "mute over-limit stream", "err", err)
 		}
-		if acc, err := perm.NewResolver(s.db.Q).Room(ctx, rid, uid); err == nil {
-			_ = s.pushGrant(ctx, room, identity, wid, uid, acc.Bits, false)
+		if bits, err := s.scopeBits(ctx, wid, rid, uid); err == nil {
+			_ = s.pushGrant(ctx, room, identity, wid, uid, bits, false)
 		}
 		s.publishStreamStop(ctx, wid, rid, uid, t.Sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_LIMIT_REACHED)
 		return nil
 	}
-	s.events.Workspace(ctx, wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStreamStart{VoiceStreamStart: &v1.VoiceStreamStart{
-		WorkspaceId: wid.String(), RoomId: rid.String(), UserId: uid.String(), TrackSid: t.Sid, Preset: preset,
+	s.publishScope(ctx, wid, rid, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStreamStart{VoiceStreamStart: &v1.VoiceStreamStart{
+		WorkspaceId: scopeWS(wid, rid), RoomId: rid.String(), UserId: uid.String(), TrackSid: t.Sid, Preset: preset,
 	}}})
 	return s.setFlag(ctx, wid, rid, uid, sid, func(n *voice.SessionState) { n.Streaming = true })
 }

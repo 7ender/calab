@@ -1,0 +1,82 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// One-to-one calls (ADR-0034, docs/04 «Звонки», docs/05 «Звонки»). A call is a voice session
+// of a DM room: LiveKit room "dm:<room_id>", only its two participants. The call itself lives
+// in Valkey (call:<id>, 24 h); its outcome stays in the DM as a system message
+// (SystemMessage.call, CallCard). Bots neither call nor answer (403 BOT_NOT_ALLOWED).
+
+// RINGING → ACTIVE → ENDED; RINGING → DECLINED | CANCELLED | MISSED. BUSY is never stored:
+// it is only the outcome of a call that could not ring (CallCard).
+enum CallState {
+  CALL_STATE_UNSPECIFIED = 0;
+  CALL_STATE_RINGING = 1;   // the callee's devices ring (45 s at most)
+  CALL_STATE_ACTIVE = 2;    // accepted: both sides join the DM's voice session
+  CALL_STATE_ENDED = 3;     // hung up (or lost: reason "lost")
+  CALL_STATE_DECLINED = 4;  // the callee declined
+  CALL_STATE_CANCELLED = 5; // the caller cancelled before an answer
+  CALL_STATE_MISSED = 6;    // no answer within 45 s
+  CALL_STATE_BUSY = 7;      // the callee was in another call (CallCard only)
+}
+
+message Call {
+  string id = 1;
+  string dm_room_id = 2;
+  string caller_id = 3;
+  string callee_id = 4;
+  CallState state = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp answered_at = 7; // unset until ACTIVE
+  google.protobuf.Timestamp ended_at = 8;    // unset while RINGING / ACTIVE
+  // ENDED: "hangup" (POST …/hangup) or "lost" (a side left the voice session and did not
+  // come back within 30 s, or never joined within 30 s of the answer). Empty otherwise.
+  string reason = 9;
+}
+
+// Outcome of a call in the DM log (CallCard.outcome).
+enum CallOutcome {
+  CALL_OUTCOME_UNSPECIFIED = 0;
+  CALL_OUTCOME_ENDED = 1;     // talked: duration_sec is set
+  CALL_OUTCOME_MISSED = 2;    // unread for the callee, notifies like a DM message
+  CALL_OUTCOME_DECLINED = 3;
+  CALL_OUTCOME_CANCELLED = 4;
+  CALL_OUTCOME_BUSY = 5;      // the callee was in another call; no call was made
+}
+
+// The call log line of a DM (SystemMessage.call): posted by the server when a call ends in
+// any way, author = the caller. Only a MISSED card counts as unread for the callee (and
+// takes the DM out of their archive); the other outcomes are read by both at once.
+message CallCard {
+  string caller_id = 1;
+  CallOutcome outcome = 2;
+  uint32 duration_sec = 3; // ENDED: answered → ended; 0 otherwise
+  google.protobuf.Timestamp started_at = 4; // when the call was placed
+  string call_id = 5; // empty for BUSY
+}
+
+// POST /api/dms/{id}/call (a participant of the DM, not a guest; the peer must be a person —
+// not a bot, guest or disabled account — sharing a workspace with the caller as full members)
+// → 201 StartCallResponse. The callee's devices get CALL_RING, both sides CALL_STATE.
+// Errors: 404 not a participant; 403 cannot call this peer; 409 IN_CALL — the caller already
+// has a call (ringing or active); 409 BUSY — the callee has one (no call is made, a BUSY card
+// goes into the DM); 429 too many calls.
+message StartCallRequest {}
+
+message StartCallResponse {
+  Call call = 1;
+}
+
+// POST /api/calls/{id}/accept   (the callee, RINGING) → ACTIVE; then both sides
+//                                POST /api/rooms/{dm_room_id}/join.
+// POST /api/calls/{id}/decline  (the callee, RINGING) → DECLINED.
+// POST /api/calls/{id}/cancel   (the caller, RINGING) → CANCELLED.
+// POST /api/calls/{id}/hangup   (either side, ACTIVE) → ENDED, reason "hangup".
+// → 200 CallActionResponse with the call as it is now; CALL_STATE to both sides. 404 unknown
+// call (or gone after 24 h) or not a participant; 403 the other side's action; 409 CONFLICT
+// the call is not in the state the action needs (e.g. a second accept, a hangup after the
+// end).
+message CallActionResponse {
+  Call call = 1;
+}

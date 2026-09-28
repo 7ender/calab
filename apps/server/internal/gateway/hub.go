@@ -894,6 +894,12 @@ func (h *Hub) publishPresence(ctx context.Context, user uuid.UUID) {
 	h.announcePresence(ctx, user, false)
 }
 
+// PresenceChanged announces the user's presence if it changed, e.g. Presence.on_call when a
+// one-to-one call is answered or ends (internal/calls).
+func (h *Hub) PresenceChanged(ctx context.Context, user uuid.UUID) {
+	h.announcePresence(context.WithoutCancel(ctx), user, false)
+}
+
 // StatusChanged announces a custom status change (PATCH /api/me/status) even if the
 // online status did not change.
 func (h *Hub) StatusChanged(ctx context.Context, user uuid.UUID) {

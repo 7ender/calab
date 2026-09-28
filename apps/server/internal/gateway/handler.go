@@ -18,6 +18,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/dms"
@@ -371,6 +372,12 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	ready := &v1.Ready{SessionId: s.id.String(), Me: pbconv.Me(u), PlanContact: h.cfg.PlanContact}
 	if m := manualFromDB(u.PresenceStatus, u.PresenceUntil, time.Now()); m.status != v1.PresenceStatus_PRESENCE_STATUS_UNSPECIFIED {
 		ready.Presence = m.self(uid)
+	}
+	// The user's ringing / active call (ADR-0034), so a reconnected client restores its UI.
+	if c, ok, err := (calls.Store{C: h.redis}).Current(ctx, uid); err != nil {
+		return nil, err
+	} else if ok {
+		ready.Call = c.Proto()
 	}
 	for _, w := range wss {
 		me, err := res.Member(ctx, w.ID, uid)

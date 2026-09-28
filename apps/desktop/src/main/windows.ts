@@ -10,7 +10,7 @@ const here = fileURLToPath(new URL('.', import.meta.url));
 const PRELOAD = join(here, '../preload/index.cjs');
 const RENDERER_HTML = join(here, '../renderer/index.html');
 /** The window layer (--color-rail in styles.css): the opaque window background per theme. */
-const WINDOW_BG = { dark: '#0c0c0e', light: '#e8e8ec' } as const;
+const WINDOW_BG = { dark: '#171719', light: '#e8e8ec' } as const;
 const windowBg = (): string => (nativeTheme.shouldUseDarkColors ? WINDOW_BG.dark : WINDOW_BG.light);
 
 let mainWindow: BrowserWindow | null = null;

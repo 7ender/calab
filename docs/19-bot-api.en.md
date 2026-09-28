@@ -65,6 +65,7 @@ Without the SDK — any language with HTTP and WebSocket: REST below, the gatewa
   bot management.
 - A bot sees only what `VIEW_ROOM` allows; restricted rooms (ADR-0029) apply to bots too.
 - A person can "Block bot" — the bot then cannot write to them in DMs (`403 BOT_BLOCKED`).
+- One-to-one calls (ADR-0034) are not for bots: a bot neither calls nor answers (`POST /api/dms/{id}/call`, `/api/calls/…` — `403 BOT_NOT_ALLOWED`), and a bot cannot be called.
 - Keep the webhook secret apart from the token; verify the signature of every delivery (see [Webhook](#webhook)).
 
 ## REST
