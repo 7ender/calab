@@ -230,12 +230,16 @@ export const zhCN: Dict = {
   'room.deleteConfirm': '"{name}"中的消息和文件将被删除，此操作无法撤销。',
 
   // media settings
-  'media.bitrate': '语音码率',
-  'media.bitrateHint': '16–24 适合弱网，32 为标准，48–64 为"录音室"音质',
+  'media.bitrate': '音质',
+  'media.bitrateHint': '低：弱网时节省流量；极佳：仅在使用好麦克风时才听得出区别',
   'media.maxPreset': '屏幕共享最高画质',
   'media.maxStreams': '同时共享数',
   'media.maxStreamsHint': '可同时共享屏幕的人数（0 表示禁止）',
   'media.default': '跟随工作区（{v}）',
+  'audioTier.8': '低',
+  'audioTier.16': '普通',
+  'audioTier.32': '良好',
+  'audioTier.64': '极佳',
   'media.inherit': '跟随工作区',
   'media.inheritHint': '工作区设置：{v}',
 
@@ -350,6 +354,7 @@ export const zhCN: Dict = {
   'voice.myBitrate': '我的语音音质',
   'voice.myBitrateHint': '在弱网环境（如漫游）下可调低，但不会超过房间的设置上限',
   'voice.myBitrateRoom': '跟随房间',
+  'voice.myBitrateCap': '不高于：{v}',
   'voice.aecNote': '回声消除和麦克风自动增益始终开启。',
 
   // streams

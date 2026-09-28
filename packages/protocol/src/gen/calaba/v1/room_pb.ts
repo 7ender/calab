@@ -60,7 +60,7 @@ export const RoomPermissionOverrideSchema: GenMessage<RoomPermissionOverride> = 
  */
 export type RoomMediaOverride = Message<"calaba.v1.RoomMediaOverride"> & {
   /**
-   * 16|24|32|48|64
+   * tiers 8|16|32|64 (24, 48: legacy)
    *
    * @generated from field: optional uint32 audio_bitrate_kbps = 1;
    */

@@ -939,7 +939,7 @@ type UpdateWorkspaceRequest struct {
 	Name                    *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
 	Visibility              *WorkspaceVisibility   `protobuf:"varint,3,opt,name=visibility,proto3,enum=calaba.v1.WorkspaceVisibility,oneof" json:"visibility,omitempty"`
 	IconFileId              *string                `protobuf:"bytes,4,opt,name=icon_file_id,json=iconFileId,proto3,oneof" json:"icon_file_id,omitempty"`                                           // "" clears
-	DefaultAudioBitrateKbps *uint32                `protobuf:"varint,5,opt,name=default_audio_bitrate_kbps,json=defaultAudioBitrateKbps,proto3,oneof" json:"default_audio_bitrate_kbps,omitempty"` // 16|24|32|48|64
+	DefaultAudioBitrateKbps *uint32                `protobuf:"varint,5,opt,name=default_audio_bitrate_kbps,json=defaultAudioBitrateKbps,proto3,oneof" json:"default_audio_bitrate_kbps,omitempty"` // tiers 8|16|32|64 (24, 48: legacy)
 	DefaultMaxStreamPreset  *ScreenSharePreset     `protobuf:"varint,6,opt,name=default_max_stream_preset,json=defaultMaxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset,oneof" json:"default_max_stream_preset,omitempty"`
 	DefaultMaxStreams       *uint32                `protobuf:"varint,7,opt,name=default_max_streams,json=defaultMaxStreams,proto3,oneof" json:"default_max_streams,omitempty"` // 0..10
 	AllowSelfNickname       *bool                  `protobuf:"varint,8,opt,name=allow_self_nickname,json=allowSelfNickname,proto3,oneof" json:"allow_self_nickname,omitempty"`

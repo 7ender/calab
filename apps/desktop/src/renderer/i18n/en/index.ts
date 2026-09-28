@@ -230,12 +230,16 @@ export const en: Dict = {
   'room.deleteConfirm': 'Messages and files in “{name}” will be deleted. This can’t be undone.',
 
   // media settings
-  'media.bitrate': 'Voice bitrate',
-  'media.bitrateHint': '16–24 for weak connections, 32 standard, 48–64 “studio” voice',
+  'media.bitrate': 'Sound quality',
+  'media.bitrateHint': 'Low saves traffic on a poor connection; Excellent is audible only with a good microphone',
   'media.maxPreset': 'Max screen share quality',
   'media.maxStreams': 'Simultaneous screen shares',
   'media.maxStreamsHint': 'How many people can share their screen at once (0 — not allowed)',
   'media.default': 'Workspace default ({v})',
+  'audioTier.8': 'Low',
+  'audioTier.16': 'Normal',
+  'audioTier.32': 'Good',
+  'audioTier.64': 'Excellent',
   'media.inherit': 'Workspace default',
   'media.inheritHint': 'Workspace: {v}',
 
@@ -350,6 +354,7 @@ export const en: Dict = {
   'voice.myBitrate': 'My voice quality',
   'voice.myBitrateHint': 'Lower it on a weak connection, e.g. when roaming. Never exceeds the room setting',
   'voice.myBitrateRoom': 'Room default',
+  'voice.myBitrateCap': 'At most: {v}',
   'voice.aecNote': 'Echo cancellation and automatic mic gain are always on.',
 
   // streams

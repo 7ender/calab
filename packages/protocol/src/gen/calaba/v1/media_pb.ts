@@ -19,7 +19,7 @@ export const file_calaba_v1_media: GenFile = /*@__PURE__*/
  */
 export type RoomMediaSettings = Message<"calaba.v1.RoomMediaSettings"> & {
   /**
-   * 16 | 24 | 32 | 48 | 64; default 32 (per-room, workspace default)
+   * tiers 8 | 16 | 32 | 64 (24, 48: legacy rows); default 32 (per-room, workspace default)
    *
    * @generated from field: uint32 audio_bitrate_kbps = 1;
    */
