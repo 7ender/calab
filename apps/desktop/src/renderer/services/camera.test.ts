@@ -35,7 +35,7 @@ vi.mock('../lib/media/camera', () => ({
     captured.push(t);
     return Promise.resolve(t);
   }),
-  cameraPublishOptions: () => ({ source: 'camera' }),
+  preparePublish: () => Promise.resolve({ source: 'camera' }),
   limitCameraForCpu: (...a: unknown[]) => limitCpu(...(a as [])),
   switchCameraDevice: (...a: unknown[]) => switchDevice(...(a as [])),
 }));

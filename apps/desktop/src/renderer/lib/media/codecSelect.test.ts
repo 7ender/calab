@@ -1,21 +1,34 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { codecHwLabel, codecPowerEfficient, pickPublishCodec, setCodecEnv, toPublishCodec, type PublishCodec } from './codecSelect';
+import { codecHwLabel, codecPowerEfficient, pickPublishCodec, probeContentType, setCodecEnv, toPublishCodec, type PublishCodec } from './codecSelect';
 
 type Info = { supported: boolean; smooth: boolean; powerEfficient: boolean };
 
-/** A fake `navigator.mediaCapabilities`: `hwEnc` / `hwDec` are the power-efficient codecs. */
-function fakeEnv(opts: { hwEnc?: PublishCodec[]; hwDec?: PublishCodec[]; encodable?: PublishCodec[]; chromium?: boolean; throws?: boolean } = {}) {
-  const codecOf = (ct: string): PublishCodec => ct.replace('video/', '').toLowerCase() as PublishCodec;
-  const info = (hw: PublishCodec[] | undefined) =>
+/** A power-efficient entry: a codec (H.264: every profile), or one H.264 profile only. */
+type Hw = PublishCodec | 'h264:high' | 'h264:cb';
+
+/**
+ * A fake `navigator.mediaCapabilities`: `hwEnc` / `hwDec` are the power-efficient codecs. Like
+ * Chromium on macOS, 'h264:high' = only High is hardware (Constrained Baseline is OpenH264).
+ */
+function fakeEnv(opts: { hwEnc?: Hw[]; hwDec?: Hw[]; encodable?: PublishCodec[]; chromium?: boolean; h264High?: boolean; throws?: boolean } = {}) {
+  const keyOf = (ct: string): string => {
+    const codec = ct.split(';')[0]?.replace('video/', '').toLowerCase() ?? '';
+    if (codec !== 'h264') return codec;
+    return /profile-level-id=64/.test(ct) ? 'h264:high' : 'h264:cb';
+  };
+  const info = (hw: Hw[] | undefined) =>
     vi.fn((cfg: { video?: { contentType: string } }): Promise<Info> => {
       if (opts.throws) return Promise.reject(new TypeError('bad config'));
-      return Promise.resolve({ supported: true, smooth: true, powerEfficient: (hw ?? []).includes(codecOf(cfg.video?.contentType ?? '')) });
+      const k = keyOf(cfg.video?.contentType ?? '');
+      const list: string[] = hw ?? [];
+      return Promise.resolve({ supported: true, smooth: true, powerEfficient: list.includes(k) || list.includes(k.split(':')[0] ?? '') });
     });
   const mc = { encodingInfo: info(opts.hwEnc), decodingInfo: info(opts.hwDec) };
   setCodecEnv({
     mediaCapabilities: mc as unknown as Pick<MediaCapabilities, 'encodingInfo' | 'decodingInfo'>,
     encodable: new Set(opts.encodable ?? ['h264', 'av1', 'vp9', 'vp8']),
     chromium: opts.chromium ?? true,
+    h264High: opts.h264High ?? true,
   });
   return mc;
 }
@@ -31,32 +44,60 @@ describe('pickPublishCodec (ADR-0032)', () => {
 
   it('hardware first in the order H.264 → AV1 → VP9', async () => {
     fakeEnv({ hwEnc: ['h264', 'av1'] });
-    expect(await pickPublishCodec('screen')).toEqual({ codec: 'h264', hw: true });
+    expect(await pickPublishCodec('screen')).toEqual({ codec: 'h264', hw: true, profile: 'high' });
     fakeEnv({ hwEnc: ['vp9', 'av1'] });
     expect(await pickPublishCodec('screen')).toEqual({ codec: 'av1', hw: true });
     fakeEnv({ hwEnc: ['vp9'] });
     expect(await pickPublishCodec('camera')).toEqual({ codec: 'vp9', hw: true });
   });
 
-  it('asks encodingInfo with type webrtc and the kind’s size', async () => {
+  it('asks encodingInfo with type webrtc, H.264 High and the kind’s size', async () => {
     const mc = fakeEnv();
+    const high = 'video/H264; profile-level-id=64001f; packetization-mode=1';
     await pickPublishCodec('screen');
     expect(mc.encodingInfo).toHaveBeenCalledWith({
       type: 'webrtc',
-      video: { contentType: 'video/H264', width: 1920, height: 1080, framerate: 15, bitrate: 2_000_000 },
+      video: { contentType: high, width: 1920, height: 1080, framerate: 15, bitrate: 2_000_000 },
     });
     await pickPublishCodec('camera');
     expect(mc.encodingInfo).toHaveBeenCalledWith({
       type: 'webrtc',
-      video: { contentType: 'video/H264', width: 1280, height: 720, framerate: 30, bitrate: 1_500_000 },
+      video: { contentType: high, width: 1280, height: 720, framerate: 30, bitrate: 1_500_000 },
     });
+  });
+
+  it('macOS Chromium: only High is hardware → «Auto» = H.264 High hw for the screen and the camera', async () => {
+    fakeEnv({ hwEnc: ['h264:high'] });
+    expect(await pickPublishCodec('screen')).toEqual({ codec: 'h264', hw: true, profile: 'high' });
+    expect(await pickPublishCodec('camera')).toEqual({ codec: 'h264', hw: true, profile: 'high' });
+  });
+
+  it('«Совместимость» = Constrained Baseline, probed as CB (software on macOS)', async () => {
+    const mc = fakeEnv({ hwEnc: ['h264:high'] });
+    expect(await pickPublishCodec('screen', 'h264')).toEqual({ codec: 'h264', hw: false, profile: 'cb' });
+    expect(mc.encodingInfo).toHaveBeenCalledWith({
+      type: 'webrtc',
+      video: { contentType: 'video/H264; profile-level-id=42e01f; packetization-mode=1', width: 1920, height: 1080, framerate: 15, bitrate: 2_000_000 },
+    });
+  });
+
+  it('no non-CB H.264 encoder (Firefox OpenH264): «Auto» probes and publishes Constrained Baseline', async () => {
+    fakeEnv({ hwEnc: ['h264:high'], h264High: false });
+    expect(await pickPublishCodec('screen')).toEqual({ codec: 'av1', hw: false });
+    fakeEnv({ hwEnc: ['h264:cb'], h264High: false });
+    expect(await pickPublishCodec('screen')).toEqual({ codec: 'h264', hw: true, profile: 'cb' });
+  });
+
+  it('the H.264 software fallback (outside Chromium) is Constrained Baseline', async () => {
+    fakeEnv({ hwEnc: [], chromium: false });
+    expect(await pickPublishCodec('screen')).toEqual({ codec: 'h264', hw: false, profile: 'cb' });
   });
 
   it('the setting wins when the runtime can encode it', async () => {
     fakeEnv({ hwEnc: ['h264'] });
     expect(await pickPublishCodec('screen', 'av1')).toEqual({ codec: 'av1', hw: false });
     fakeEnv({ hwEnc: ['av1'] });
-    expect(await pickPublishCodec('screen', 'h264')).toEqual({ codec: 'h264', hw: false });
+    expect(await pickPublishCodec('screen', 'h264')).toEqual({ codec: 'h264', hw: false, profile: 'cb' });
     fakeEnv({ encodable: ['h264', 'vp8'] });
     expect((await pickPublishCodec('screen', 'av1')).codec).toBe('h264');
   });
@@ -83,7 +124,7 @@ describe('pickPublishCodec (ADR-0032)', () => {
   });
 
   it('no mediaCapabilities or a throwing probe: the software fallback with hw unknown', async () => {
-    setCodecEnv({ mediaCapabilities: null, encodable: new Set(['h264', 'av1']), chromium: true });
+    setCodecEnv({ mediaCapabilities: null, encodable: new Set(['h264', 'av1']), chromium: true, h264High: true });
     expect(await pickPublishCodec('screen')).toEqual({ codec: 'av1', hw: null });
     fakeEnv({ throws: true });
     expect(await pickPublishCodec('camera')).toEqual({ codec: 'vp9', hw: null });
@@ -93,9 +134,12 @@ describe('pickPublishCodec (ADR-0032)', () => {
     const mc = fakeEnv({ hwEnc: [] });
     await pickPublishCodec('screen');
     await pickPublishCodec('screen');
-    await codecPowerEfficient('encode', 'screen', 'h264');
-    // H.264, AV1, VP9 probed once each; the fallback reuses the AV1 answer.
+    await codecPowerEfficient('encode', 'screen', 'h264', 'high');
+    // H.264 High, AV1, VP9 probed once each; the fallback reuses the AV1 answer.
     expect(mc.encodingInfo).toHaveBeenCalledTimes(3);
+    // Constrained Baseline is a separate probe.
+    await codecPowerEfficient('encode', 'screen', 'h264');
+    expect(mc.encodingInfo).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -114,6 +158,10 @@ describe('codecPowerEfficient / labels', () => {
     expect(toPublishCodec('opus')).toBeNull();
     expect(toPublishCodec(undefined)).toBeNull();
     expect(codecHwLabel('h264', true)).toBe('H264 hw');
+    expect(codecHwLabel('h264', true, 'High')).toBe('H264 High hw');
+    expect(codecHwLabel('h264', false, 'CB')).toBe('H264 CB sw');
+    expect(probeContentType('av1')).toBe('video/AV1');
+    expect(probeContentType('h264')).toBe('video/H264; profile-level-id=42e01f; packetization-mode=1');
     expect(codecHwLabel('av1', false)).toBe('AV1 sw');
     expect(codecHwLabel('vp9', null)).toBe('VP9 ?');
   });

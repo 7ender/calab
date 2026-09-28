@@ -13,6 +13,8 @@ import { publishOptionalAudio, type StreamAudioProblem } from './streamAudio';
 import { t } from '../../i18n';
 import { capFps } from '../plan';
 import type { PublishCodec } from './codecSelect';
+import { layerSize, type H264Layout, type H264Profile } from './h264';
+import { alignCaptureForH264, setH264Profile } from './h264Publish';
 
 export type { StreamAudioProblem } from './streamAudio';
 
@@ -43,9 +45,14 @@ export function screenBitrate(base: number, codec: ScreenCodec, hint: ScreenShar
   return codec === 'h264' && hint === 'detail' ? Math.round(base * H264_DETAIL_BITRATE_FACTOR) : base;
 }
 
-/** Publish options of a screen share at `fps` (already capped by the grant). Pure, unit-tested. */
-export function screenPublishOptions(codec: ScreenCodec, preset: ConcreteScreenSharePreset, hint: ScreenShareContentHint, fps: number): TrackPublishOptions {
+/**
+ * Publish options of a screen share at `fps` (already capped by the grant). Pure, unit-tested.
+ * `layout` (H.264 only, `h264Layout` of the aligned capture): the thumb is exactly capture / its
+ * integer scale, so both layers are even (hardware H.264 takes nothing else).
+ */
+export function screenPublishOptions(codec: ScreenCodec, preset: ConcreteScreenSharePreset, hint: ScreenShareContentHint, fps: number, layout?: H264Layout | null): TrackPublishOptions {
   const p = SCREEN_SHARE_PRESETS[preset];
+  const thumb = codec === 'h264' && layout ? layerSize(layout, 0) : THUMB_LAYER;
   return {
     source: Track.Source.ScreenShare,
     videoCodec: codec,
@@ -54,7 +61,7 @@ export function screenPublishOptions(codec: ScreenCodec, preset: ConcreteScreenS
     // VP8/H.264: plain simulcast (no scalabilityMode in libwebrtc); AV1/VP9 use L1T3 per simulcast layer.
     ...(codec === 'vp8' || codec === 'h264' ? {} : { scalabilityMode: 'L1T3' as const }),
     screenShareEncoding: { maxBitrate: screenBitrate(p.maxBitrate, codec, hint), maxFramerate: fps },
-    screenShareSimulcastLayers: [new VideoPreset(THUMB_LAYER.width, THUMB_LAYER.height, screenBitrate(THUMB_LAYER.maxBitrate, codec, hint), fps)],
+    screenShareSimulcastLayers: [new VideoPreset(thumb.width, thumb.height, screenBitrate(THUMB_LAYER.maxBitrate, codec, hint), fps)],
     degradationPreference: hint === 'detail' ? 'maintain-resolution' : 'balanced',
   };
 }
@@ -73,6 +80,8 @@ export interface ScreenShareOptions {
   systemAudio: boolean;
   /** Codec to publish with: `pickPublishCodec('screen', pref)` (ADR-0032). Default AV1. */
   codec?: ScreenCodec;
+  /** H.264 profile of that pick: High («Авто», hardware) or Constrained Baseline (default). */
+  h264Profile?: H264Profile;
   /**
    * Frame rate granted by /stream/request (the plan's stream_max_fps, ADR-0024): capture and
    * encoding never go above it. Unset / 0 = the preset's own.
@@ -172,8 +181,12 @@ export async function startScreenShare(
 
   // Encoder hint: 'detail' keeps text sharp (drops fps), 'motion' keeps fps.
   videoTrack.contentHint = opts.contentHint;
+  const codec = opts.codec ?? 'av1';
+  // H.264: even layers (hardware encoders take nothing else) and the profile (lib/media/h264.ts).
+  const layout = codec === 'h264' ? await alignCaptureForH264(videoTrack, [THUMB_LAYER.height], fps) : null;
   const video = new LocalVideoTrack(videoTrack, undefined, true);
-  const publishOpts = screenPublishOptions(opts.codec ?? 'av1', opts.preset, opts.contentHint, fps);
+  setH264Profile(video, codec === 'h264' ? opts.h264Profile : undefined);
+  const publishOpts = screenPublishOptions(codec, opts.preset, opts.contentHint, fps, layout);
   try {
     await lp.publishTrack(video, publishOpts);
   } catch (err) {

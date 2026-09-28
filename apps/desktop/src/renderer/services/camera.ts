@@ -4,7 +4,7 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
-import { applyCameraQuality, cameraPublishOptions, captureCamera, limitCameraForCpu, switchCameraDevice } from '../lib/media/camera';
+import { applyCameraQuality, captureCamera, limitCameraForCpu, preparePublish, switchCameraDevice } from '../lib/media/camera';
 import {
   CAMERA_DEFAULT_QUALITY,
   cameraNext,
@@ -136,7 +136,7 @@ export class CameraController {
       if (stale()) return;
       // 3) Publish.
       step = 'publish';
-      await room.localParticipant.publishTrack(track, cameraPublishOptions(this.quality, (await codec).codec));
+      await room.localParticipant.publishTrack(track, await preparePublish(track, this.quality, await codec));
       if (stale()) {
         await room.localParticipant.unpublishTrack(track, true).catch(() => undefined);
         return;
@@ -237,7 +237,7 @@ export class CameraController {
       await waitForGrant(room, LK_SOURCE_CAMERA);
       if (gen !== this.gen || this.track !== track) return;
       const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-      if (!pub || pub.track !== track) await room.localParticipant.publishTrack(track, cameraPublishOptions(this.quality, (await pickPublishCodec('camera')).codec));
+      if (!pub || pub.track !== track) await room.localParticipant.publishTrack(track, await preparePublish(track, this.quality, await pickPublishCodec('camera')));
       this.bump();
     } catch (err) {
       log.warn('camera restore after reconnect failed', err);

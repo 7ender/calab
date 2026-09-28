@@ -71,7 +71,7 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'video.codecH264': 'Compatibility (H.264)',
   'video.codecAutoHint': 'The graphics card encodes when it can: less CPU load for you and your viewers',
   'video.codecAv1Hint': 'Sharper text, more CPU load for you and for viewers without a hardware decoder',
-  'video.codecH264Hint': 'Every computer decodes it on the graphics card; small text is slightly less sharp',
+  'video.codecH264Hint': 'Basic H.264 profile: plays for any viewer, but the CPU encodes it — more load than “Auto”',
   'video.card': 'Camera',
   'voiceUi.collapsePanel': 'Collapse panel',
   'voiceUi.expandPanel': 'Expand panel',
