@@ -1,7 +1,7 @@
 import { WorkspaceRole, type PermissionBits, type RecordingCard as Card } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { AlertCircle, CheckCircle2, Copy, FileText, Loader2, MoreHorizontal, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Copy, FileText, Forward, Loader2, MoreHorizontal, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -10,6 +10,7 @@ import { Markdown } from '../../lib/markdown/Markdown';
 import { mayDeleteRecording, recordingAudio, summaryBlocks, summaryPlainText } from '../../lib/meetingResult';
 import { can } from '../../lib/permissions';
 import { cardStatus, durationText, retryActions, type RetryAction } from '../../lib/recording';
+import { openForward } from '../../services/forward';
 import { deleteRecording, retryRecording } from '../../services/recording';
 import { usePlayer, type Track } from '../../stores/player';
 import { toast } from '../../stores/toasts';
@@ -27,8 +28,10 @@ const RecordingTranscript = lazy(() => import('./RecordingTranscript'));
  * who started it and when, the status (Загрузка… / Обработка… / Готово / Ошибка: …); once done —
  * GPTunneL's summary (6 lines, «Показать всё»), «Послушать запись» (our copy of the audio, the
  * chat's player) and «Полный транскрипт» (no «Открыть в GPTunneL»: owner, 28.09, #80). A failed
- * card offers a retry (#40, not to guests); «…» → «Копировать самари» (#80) and «Удалить запись»
- * (who started it, the owner, MANAGE_MESSAGES).
+ * card offers a retry (#40, not to guests); «…» → «Переслать» (ADR-0033), «Копировать самари»
+ * (#80) and «Удалить запись» (who started it, the owner, MANAGE_MESSAGES). A forwarded copy
+ * (Message.forward) is the same card without the retry and delete actions: they belong to the
+ * recording's own room.
  * MESSAGE_UPDATE replaces the message: the card follows.
  */
 export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMessage; card: Card; workspaceId: string; perms: PermissionBits }): ReactNode {
@@ -58,9 +61,10 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   const status = cardStatus(card);
   const StatusIcon = status.tone === 'ok' ? CheckCircle2 : status.tone === 'error' ? AlertCircle : Loader2;
   const guest = role === WorkspaceRole.GUEST;
-  const retries = guest ? [] : retryActions(card);
+  const copy = !!c.msg.forward;
+  const retries = guest || copy ? [] : retryActions(card);
   const audio = recordingAudio(card, c.msg.attachments);
-  const mayDelete = mayDeleteRecording(card, me, { owner: role === WorkspaceRole.OWNER, manageMessages: can(perms, 'MANAGE_MESSAGES') });
+  const mayDelete = !copy && mayDeleteRecording(card, me, { owner: role === WorkspaceRole.OWNER, manageMessages: can(perms, 'MANAGE_MESSAGES') });
   const when = fmt.dateTime(started, 'short');
   const retry = (action: RetryAction): void => {
     setBusy(action);
@@ -101,12 +105,11 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
             <span className="min-w-0">{t(status.key)}</span>
           </span>
         </div>
-        {mayDelete || card.summary ? (
-          <CardMenu
-            onCopy={card.summary ? () => copySummary(card.summary) : undefined}
-            onDelete={mayDelete ? () => void deleteRecording(c.msg.roomId, card.recordingId) : undefined}
-          />
-        ) : null}
+        <CardMenu
+          onForward={c.status === 'sent' ? () => openForward(c.msg.roomId, c.msg.id) : undefined}
+          onCopy={card.summary ? () => copySummary(card.summary) : undefined}
+          onDelete={mayDelete ? () => void deleteRecording(c.msg.roomId, card.recordingId) : undefined}
+        />
       </div>
 
       {card.summary ? <Summary text={card.summary} /> : null}
@@ -148,8 +151,9 @@ function copySummary(text: string): void {
   );
 }
 
-/** «…» of the card: «Копировать самари» (#80), «Удалить запись» (docs/09 #50). */
-function CardMenu({ onCopy, onDelete }: { onCopy: (() => void) | undefined; onDelete: (() => void) | undefined }): ReactNode {
+/** «…» of the card: «Переслать» (ADR-0033), «Копировать самари» (#80), «Удалить запись» (docs/09 #50). */
+function CardMenu({ onForward, onCopy, onDelete }: { onForward: (() => void) | undefined; onCopy: (() => void) | undefined; onDelete: (() => void) | undefined }): ReactNode {
+  if (!onForward && !onCopy && !onDelete) return null;
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
@@ -159,6 +163,12 @@ function CardMenu({ onCopy, onDelete }: { onCopy: (() => void) | undefined; onDe
       </Dropdown.Trigger>
       <Dropdown.Portal>
         <Dropdown.Content align="end" sideOffset={4} collisionPadding={16} className={menuBox}>
+          {onForward ? (
+            <Dropdown.Item className={menuItem} onSelect={onForward} data-testid="recording-card-forward">
+              <Forward className="size-4" aria-hidden />
+              {t('chat.forward')}
+            </Dropdown.Item>
+          ) : null}
           {onCopy ? (
             <Dropdown.Item className={menuItem} onSelect={onCopy} data-testid="recording-card-copy-summary">
               <Copy className="size-4" aria-hidden />

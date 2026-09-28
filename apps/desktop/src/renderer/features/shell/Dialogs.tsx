@@ -6,6 +6,7 @@ import { CameraPreview } from '../voice/CameraPreview';
 import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
+import { ForwardDialog } from '../chat/ForwardDialog';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
 import { ProfileDialog } from '../people/ProfileDialog';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
@@ -49,6 +50,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'new-dm':
         node = <NewDmDialog onClose={close} />;
+        break;
+      case 'forward':
+        node = <ForwardDialog roomId={d.roomId} messageId={d.messageId} onClose={close} />;
         break;
       case 'room-invite':
         node = <InviteToRoomDialog roomId={d.roomId} onClose={close} />;

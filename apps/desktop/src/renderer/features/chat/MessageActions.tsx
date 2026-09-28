@@ -13,9 +13,9 @@ import { quickReactions } from './hoverIntent';
 import { canToggleReaction, reactionLimitReached } from './reactionLimit';
 
 /** Whether the bar has anything to offer (the same rules as the context menu, MessageMenu.tsx). */
-export function hasMessageActions(c: ChatMessage, own: boolean, perms: PermissionBits): boolean {
-  if (c.status !== 'sent') return false;
-  return can(perms, 'SEND_MESSAGES') || !!c.msg.content || can(perms, 'MANAGE_MESSAGES') || own;
+export function hasMessageActions(c: ChatMessage): boolean {
+  // «Переслать» (ADR-0033) is there for every sent message the reader sees.
+  return c.status === 'sent';
 }
 
 const btn =

@@ -320,8 +320,8 @@ export function Composer({
       // Edit my last message (Telegram / Discord habit).
       const items = useMessages.getState().rooms[room.id]?.items ?? [];
       const mine = [...items].reverse().find((c) => c.status === 'sent' && c.msg.authorId === me);
-      // A sticker message cannot be edited (ADR-0030): ↑ does nothing then.
-      if (mine && !mine.msg.sticker) {
+      // A sticker message (ADR-0030) or a forwarded copy (ADR-0033) cannot be edited: ↑ does nothing then.
+      if (mine && !mine.msg.sticker && !mine.msg.forward) {
         e.preventDefault();
         setEditing(mine.key);
       }

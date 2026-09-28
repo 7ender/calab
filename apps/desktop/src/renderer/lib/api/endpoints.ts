@@ -77,6 +77,8 @@ import {
   UpdateMessageRequestSchema,
   UpdateMessageResponseSchema,
   SetEmbedsHiddenRequestSchema,
+  ForwardMessageRequestSchema,
+  ForwardMessageResponseSchema,
   UpdateReadStateRequestSchema,
   UnfurlResponseSchema,
   UpdateRoomRequestSchema,
@@ -355,6 +357,9 @@ export const api = {
     update: (id: string, content: string) =>
       call('PATCH', `/api/messages/${id}`, UpdateMessageResponseSchema, body(UpdateMessageRequestSchema, { content })),
     remove: (id: string) => callEmpty('DELETE', `/api/messages/${id}`),
+    /** «Переслать» (ADR-0033): a copy of the message in `toRoomId`, by the caller, with `forward`. */
+    forward: (roomId: string, id: string, toRoomId: string) =>
+      call('POST', `/api/rooms/${roomId}/messages/${id}/forward`, ForwardMessageResponseSchema, body(ForwardMessageRequestSchema, { toRoomId })),
     markRead: (roomId: string, messageId: string) =>
       callEmpty('PUT', `/api/rooms/${roomId}/read`, body(UpdateReadStateRequestSchema, { messageId })),
     /** Full-text search in one room (newest first, cursor `before`). */

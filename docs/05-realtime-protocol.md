@@ -442,6 +442,7 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
   - Ставит участник текущего звонка (`CONNECT` и сейчас в комнате) или `MANAGE_ROOM`; пустая строка — очистить.
   - Сбрасывается сервером, когда комната пустеет, — в том же `ROOM_UPDATE`, что убирает `voice_started_at`. Проверка «в звонке» и запись идут под той же блокировкой voice-состояния, что и сброс, поэтому статус не переживает свой звонок.
   - Приходит в READY / WORKSPACE_CREATE и во всех `ROOM_UPDATE`.
+- **Пересылка** (ADR-0033): `POST /api/rooms/{id}/messages/{mid}/forward {to_room_id}` → `201 ForwardMessageResponse`, в цели — `MESSAGE_CREATE` с `Message.forward {author_id, room_id (пусто для DM), message_id, sent_at}`; упоминания копии не уведомляют. Копия карточки записи получает `MESSAGE_UPDATE` в своей комнате (DM — участникам) при каждом обновлении оригинала, включая удаление записи.
 - **Скрытые превью ссылок** (`Message.embeds_hidden`): автор (или `MANAGE_MESSAGES`) скрывает превью у своего сообщения, клиент их тогда не рендерит. Сообщение не помечается отредактированным. Все, кто видит комнату, получают `MESSAGE_UPDATE`.
 - **Категории.** `Room.category_id`, `WorkspaceSnapshot.categories`. События `CATEGORY_CREATE/UPDATE/DELETE` приходят всем участникам workspace; клиент скрывает категории без видимых ему комнат.
 
