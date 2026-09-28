@@ -73,7 +73,7 @@ ROOM_CREATE / UPDATE / DELETE
 ROOM_PERMISSIONS_UPDATE      { room_id, permissions[] }
 MESSAGE_CREATE / UPDATE / DELETE
 TYPING_START                  { room_id, user_id, timestamp } — только сессиям с SUBSCRIBE на комнату (см. опкод 6), показывать ~8 с
-PRESENCE_UPDATE               { user_id, status, last_seen }
+PRESENCE_UPDATE               { user_id, status, last_seen, on_call } — on_call: в звонке один на один (ADR-0034)
 VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming, joined_at, server_muted, camera }
 VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- для PiP-плитки
 VOICE_CAMERA_STOP             { room_id, user_id, track_sid, reason: LIMIT_REACHED | MODERATOR | ROOM_POLICY }   -- камеру остановил сервер
@@ -95,6 +95,8 @@ ROOM_RECORDING                { workspace_id, room_id, recording_id, state: ACTI
                                 stop_reason, stopped_by } — запись встречи началась / остановилась (ADR-0025)
 BOT_CREATE / BOT_UPDATE       { workspace_id, bot } — бот вступил / изменился (профиль, команды, токен, webhook; ADR-0031)
 BOT_DELETE                    { workspace_id, bot_user_id } — бот удалён или убран из пространства
+CALL_RING                     { call, caller: User } — звонок вызываемому (ADR-0034), всем его устройствам
+CALL_STATE                    { call } — звонок создан или сменил состояние, обоим участникам
 ```
 
 Фильтрация по получателю (выполняет gateway, без запросов в БД — у инстанса кэш комнат и ролей каждого workspace, обновляемый самими событиями):
@@ -104,7 +106,7 @@ BOT_DELETE                    { workspace_id, bot_user_id } — бот удал�
 - `VOICE_STATE_UPDATE` для невидимой получателю комнаты приходит с пустым `room_id` (пользователь выглядит не в голосе).
 - Вступление в workspace → `WORKSPACE_CREATE { snapshot }` на все устройства пользователя; выход/исключение/удаление → `WORKSPACE_DELETE`.
 - `VOICE_STREAM_STOP.reason`: `ENDED` | `LIMIT_REACHED` (превышен `max_streams`, трек заглушён сервером) | `MODERATOR`.
-- События DM-комнат (`MESSAGE_*`, `MESSAGE_REACTION_*`, `TYPING_START`) идут не в `ws:<id>`, а в `user:<id>` обоим участникам, с пустым `workspace_id`; `TYPING_START` DM — только сессиям получателя с `SUBSCRIBE` на комнату.
+- События DM-комнат (`MESSAGE_*`, `MESSAGE_REACTION_*`, `TYPING_START`) идут не в `ws:<id>`, а в `user:<id>` обоим участникам, с пустым `workspace_id`; `TYPING_START` DM — только сессиям получателя с `SUBSCRIBE` на комнату. Так же — голос звонка DM (`VOICE_STATE_UPDATE`, `VOICE_STREAM_*`, `VOICE_CAMERA_STOP` с `room_id` = DM, ADR-0034) и `CALL_RING`/`CALL_STATE`: в пространства они не попадают.
 
 Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; Go и TS типы генерируются из них.
 
@@ -150,6 +152,16 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
   - Место есть, LiveKit нет: цикл переподключения (1, 2, 4… с) пропускает ожидание и сразу делает `/join` с новым токеном; LiveKit, который сам переподключается ещё 5 с после возврата gateway, заменяется таким же `/join`.
   - Не в голосе: `/voice/leave`, не дошедший из-за сети, и запоздавший `/join` в комнату, которую я уже покинул, досылаются как `/voice/leave` этой комнаты.
   - Запросы места упорядочены: `/join` ждёт (до 3 с) незавершённые `/voice/leave` и предыдущий `/join`, чтобы старый не обогнал новый.
+
+## Звонки один на один (ADR-0034)
+
+- REST (контракт — `call.proto`): `POST /api/dms/{id}/call` → `201 {call}` (RINGING; `404` не участник, `403` нельзя звонить этому человеку — бот, гость, нет общего пространства полными участниками, `409 IN_CALL` у звонящего уже есть звонок, `409 BUSY` у вызываемого есть — звонка нет, в DM карточка BUSY, `429`). `POST /api/calls/{id}/accept` (вызываемый) · `/decline` (вызываемый) · `/cancel` (звонящий) — только RINGING; `/hangup` (любой) — только ACTIVE → `200 {call}`; `404` чужой/неизвестный звонок, `403` не та сторона, `409` не то состояние (второй accept, hangup после конца).
+- События: `CALL_RING {call, caller}` — устройствам вызываемого; `CALL_STATE {call}` — обоим на создании и каждом переходе (принятие/отклонение на одном устройстве закрывает входящий на остальных). Без ответа 45 с → `MISSED`; ACTIVE, где кто-то ≥ 30 с без устройства в сессии (вышел и не вернулся или так и не вошёл после ответа) → `ENDED`, `reason: "lost"`; hangup — `reason: "hangup"`.
+- `READY.call` — текущий RINGING/ACTIVE-звонок получателя (входящий или исходящий): после реконнекта клиент восстанавливает модалку / in-call UI. `RESUME` досылает пропущенные `CALL_*` из буфера.
+- **Голос** — `POST /api/rooms/{dm_room_id}/join` после ACTIVE (обе стороны; иначе `409 CALL_NOT_ACTIVE`): LiveKit-комната `dm:<room_id>`, токен сразу с `microphone`, `screen_share(+audio)`, `camera` (`can_speak/can_stream/can_video = true`, `plan_limits` нет, `media`: 48 кбит/с, до 1080p). Дальше как в комнате: pending и 15-секундное подтверждение, `PATCH /api/voice/self`, `/voice/leave`, `/stream/request` и `/camera/request` (отвечают сразу, grant уже есть), `/camera/stop`. `VOICE_STATE_UPDATE` звонка — `workspace_id` пуст, `room_id` = DM, только двум участникам. Конец звонка закрывает LiveKit-комнату (состояния снимаются).
+- `Presence.on_call` — пока звонок ACTIVE, `PRESENCE_UPDATE` во все пространства пользователя (с кем — не раскрывается); при невидимом/офлайн статусе не показывается.
+- Лог: на каждый конец — системное сообщение DM `system.call = CallCard {caller_id, outcome: ENDED | MISSED | DECLINED | CANCELLED | BUSY, duration_sec, started_at, call_id}`, автор — звонящий (`MESSAGE_CREATE` обоим). MISSED у вызываемого непрочитан и достаёт DM из архива (клиент: уведомление «Пропущенный звонок от X»); остальные исходы сразу прочитаны: `READ_STATE_UPDATE` следом звонящему и вызываемому (если у того в DM не было непрочитанного).
+- Боты не звонят и не принимают (`403 BOT_NOT_ALLOWED`), позвонить боту — `403`; карточки в DM с ботом не бывает.
 
 ## Запись встреч (ADR-0025)
 

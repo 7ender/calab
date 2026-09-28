@@ -26,6 +26,12 @@ import {
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   AdminGetWorkspaceResponseSchema,
+  CallActionResponseSchema,
+  CallOutcome,
+  CallSchema,
+  CallState,
+  StartCallResponseSchema,
+  type Call,
   BadgeSchema,
   CreateBadgeRequestSchema,
   CreateBadgeResponseSchema,
@@ -446,6 +452,16 @@ export interface MockServer {
    * a fresh READY. State changed meanwhile (setVoiceState…) reaches them only through that READY.
    */
   dropGateway(downMs?: number): void;
+  /**
+   * ADR-0034: `fromUserId` calls `toUserId` in their DM, as POST /api/dms/{id}/call — CALL_RING to
+   * the callee, CALL_STATE to both; MISSED after MOCK_CALL_RING_MS (default 45 s). Throws the API
+   * error (BUSY / IN_CALL …) like the route. Returns the ringing call.
+   */
+  ringCall(fromUserId: string, toUserId: string): Call;
+  /** ADR-0034: the callee answers (POST …/accept): ACTIVE, CALL_STATE to both, presence on_call. */
+  acceptCall(callId: string): Call;
+  /** ADR-0034: any call action on behalf of a participant (decline / cancel / hangup …). */
+  callAction(callId: string, byUserId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup'): Call;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -480,6 +496,9 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
     dropGateway: (ms) => impl.dropGateway(ms ?? 0),
+    ringCall: (from, to) => impl.ringCall(from, to),
+    acceptCall: (id) => impl.callTransition(id, impl.calleeOf(id), 'accept'),
+    callAction: (id, by, action) => impl.callTransition(id, by, action),
   };
 }
 
@@ -503,6 +522,8 @@ const RECORDING_STEP_MS = Number(process.env['MOCK_RECORDING_STEP_MS'] ?? 1500);
 const RECORDING_MAX_CONCURRENT = 3;
 /** Simulated LiveKit connect after /join: the pending voice state is cleared this much later. */
 const JOIN_CONNECT_MS = 250;
+/** ADR-0034: an unanswered call becomes MISSED after this (the server: 45 s). */
+const CALL_RING_MS = Number(process.env['MOCK_CALL_RING_MS'] ?? 45_000);
 /** ADR-0023: a new email code at most every 60 s; 5 attempts; a re-invite at most once a day. */
 const RESEND_MS = 60_000;
 const CODE_ATTEMPTS = 5;
@@ -771,6 +792,10 @@ class MockImpl {
   /** dropGateway(): gateway sessions that cannot be resumed, and the end of the outage (ms). */
   private readonly droppedSessions = new Set<string>();
   private gatewayDownUntil = 0;
+  /** One-to-one calls (ADR-0034): calls by id (finished ones stay) and each user's live call. */
+  private readonly calls = new Map<string, Call>();
+  private readonly userCall = new Map<string, string>();
+  private callSeq = 0;
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
@@ -782,6 +807,7 @@ class MockImpl {
     this.staticDir = opts.staticDir ? resolve(opts.staticDir) : null;
     this.log = opts.log ?? (() => undefined);
     this.registerRoutes();
+    this.registerCallRoutes();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -824,6 +850,9 @@ class MockImpl {
     this.releaseFiles();
     this.state = buildState(scenario);
     this.voiceSessions.clear();
+    this.calls.clear();
+    this.userCall.clear();
+    this.callSeq = 0;
     this.droppedSessions.clear();
     this.gatewayDownUntil = 0;
     this.clockMs = null;
@@ -1101,6 +1130,12 @@ class MockImpl {
     if (!p || p.status === PresenceStatus.INVISIBLE || p.status === PresenceStatus.OFFLINE || p.status === PresenceStatus.UNSPECIFIED) {
       return create(PresenceSchema, { userId, status: PresenceStatus.OFFLINE });
     }
+    // ADR-0034: «На звонке» while in an ACTIVE call (only with a visible status).
+    if (this.liveCall(userId)?.state === CallState.ACTIVE) {
+      const out = clone(PresenceSchema, p);
+      out.onCall = true;
+      return out;
+    }
     return p;
   }
 
@@ -1179,6 +1214,8 @@ class MockImpl {
             .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId)),
           // Guest accounts have no DMs (ADR-0020).
           dms: u.user.isGuest ? [] : this.dmsOf(u.user.id),
+          // ADR-0034: the user's ringing / active call.
+          ...(this.liveCall(u.user.id) ? { call: this.liveCall(u.user.id) } : {}),
         }),
       },
     });
@@ -1572,6 +1609,10 @@ class MockImpl {
   setPresence(userId: string, status: PresenceStatus): void {
     const prev = this.state.presences.get(userId);
     this.state.presences.set(userId, create(PresenceSchema, { userId, status, ...(prev?.lastSeen ? { lastSeen: prev.lastSeen } : {}) }));
+    this.announcePresence(userId);
+  }
+
+  private announcePresence(userId: string): void {
     const presence = this.presenceOut(userId);
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
@@ -1579,6 +1620,13 @@ class MockImpl {
   setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
+    // ADR-0034: a DM call's voice session — no workspace; its events go to the two participants.
+    const prevDm = prev?.roomId ? this.state.rooms.get(prev.roomId)?.type === RoomType.DM : false;
+    if (room?.type === RoomType.DM || (!room && prevDm)) {
+      this.setDmVoice(userId, room, prev, prevDm, patch);
+      return;
+    }
+    if (prevDm && prev) this.setDmVoice(userId, undefined, prev, true, {}); // a DM call → a workspace room
     const workspaceId = room?.workspaceId ?? prev?.workspaceId ?? '';
     if (!workspaceId) return;
     const sameRoom = prev?.roomId === roomId && !!roomId;
@@ -1620,6 +1668,232 @@ class MockImpl {
     }
     this.toWorkspace(workspaceId, (u) => ({ event: { case: 'voiceStateUpdate', value: { state: this.voiceOut(v, u) } } }));
     for (const r of timers) this.toWorkspace(r.workspaceId, { event: { case: 'roomUpdate', value: { room: this.roomOut(r) } } }, r.id);
+  }
+
+  // ------------------------------------------------ one-to-one calls (ADR-0034)
+  // Same rules as internal/calls: RINGING → ACTIVE → ENDED, RINGING → DECLINED | CANCELLED |
+  // MISSED; BUSY / IN_CALL are 409 (BUSY also leaves a card); a CallCard system message in the
+  // DM on every end (MISSED unread for the callee). Not simulated: the lost-connection end.
+
+  /** The user's RINGING / ACTIVE call. */
+  private liveCall(userId: string): Call | undefined {
+    const id = this.userCall.get(userId);
+    const c = id ? this.calls.get(id) : undefined;
+    return c && (c.state === CallState.RINGING || c.state === CallState.ACTIVE) ? c : undefined;
+  }
+
+  calleeOf(callId: string): string {
+    return this.calls.get(callId)?.calleeId ?? '';
+  }
+
+  private callNow(): Timestamp {
+    return timestampFromMs(this.clockMs ?? Date.now());
+  }
+
+  private publishCall(c: Call): void {
+    for (const u of [c.callerId, c.calleeId]) this.toUser(u, { event: { case: 'callState', value: { call: clone(CallSchema, c) } } });
+  }
+
+  /** 403 unless the peer may be called: a person sharing a workspace as a full member. */
+  private placeCall(from: string, dmId: string): Call {
+    const me = this.userRec(from);
+    const peerId = this.dmPeer(dmId, from);
+    if (!peerId) throw notFound('dm not found');
+    const peer = this.userRec(peerId);
+    if (me.user.isGuest || me.user.isBot) throw forbidden('cannot call');
+    if (peer.user.isBot || peer.user.isGuest || !this.shareAsMembers(from, peerId)) throw forbidden('this user cannot be called');
+    if (this.liveCall(from)) throw new HttpError(409, ErrorCode.IN_CALL, 'you are already in a call');
+    const call = create(CallSchema, { id: `00000000-0000-7000-80ff-${(++this.callSeq).toString(16).padStart(12, '0')}`, dmRoomId: dmId, callerId: from, calleeId: peerId, state: CallState.RINGING, createdAt: this.callNow() });
+    if (this.liveCall(peerId)) {
+      call.state = CallState.BUSY;
+      call.endedAt = call.createdAt;
+      this.postCallCard(call);
+      throw new HttpError(409, ErrorCode.BUSY, 'the user is in another call');
+    }
+    this.calls.set(call.id, call);
+    this.userCall.set(from, call.id);
+    this.userCall.set(peerId, call.id);
+    this.toUser(peerId, { event: { case: 'callRing', value: { call: clone(CallSchema, call), caller: me.user } } });
+    this.publishCall(call);
+    this.later(CALL_RING_MS, () => {
+      if (call.state === CallState.RINGING) this.finishCall(call, CallState.MISSED, '');
+    });
+    return call;
+  }
+
+  ringCall(fromUserId: string, toUserId: string): Call {
+    const dmId = [...this.state.dmMembers.entries()].find(([, pair]) => pair.includes(fromUserId) && pair.includes(toUserId))?.[0];
+    if (!dmId) throw notFound('no DM between these users');
+    return clone(CallSchema, this.placeCall(fromUserId, dmId));
+  }
+
+  callTransition(callId: string, by: string, action: 'accept' | 'decline' | 'cancel' | 'hangup'): Call {
+    const c = this.calls.get(callId);
+    if (!c || (by !== c.callerId && by !== c.calleeId)) throw notFound('call not found');
+    const side = { accept: c.calleeId, decline: c.calleeId, cancel: c.callerId, hangup: '' }[action];
+    if (side && by !== side) throw forbidden('only the other side of the call can do this');
+    const want = action === 'hangup' ? CallState.ACTIVE : CallState.RINGING;
+    if (c.state !== want) throw conflict('the call is not ' + (want === CallState.ACTIVE ? 'active' : 'ringing'));
+    if (action === 'accept') {
+      c.state = CallState.ACTIVE;
+      c.answeredAt = this.callNow();
+      this.publishCall(c);
+      this.announcePresence(c.callerId);
+      this.announcePresence(c.calleeId);
+    } else {
+      const next = { decline: CallState.DECLINED, cancel: CallState.CANCELLED, hangup: CallState.ENDED }[action];
+      this.finishCall(c, next, action === 'hangup' ? 'hangup' : '');
+    }
+    return clone(CallSchema, c);
+  }
+
+  private finishCall(c: Call, state: CallState, reason: string): void {
+    const wasActive = c.state === CallState.ACTIVE;
+    c.state = state;
+    c.reason = reason;
+    c.endedAt = this.callNow();
+    for (const u of [c.callerId, c.calleeId]) if (this.userCall.get(u) === c.id) this.userCall.delete(u);
+    this.publishCall(c);
+    this.postCallCard(c);
+    if (!wasActive) return;
+    for (const u of [c.callerId, c.calleeId]) {
+      if (this.state.voiceStates.get(u)?.roomId === c.dmRoomId) this.setVoice(u, '', {});
+      this.announcePresence(u);
+    }
+  }
+
+  /** The DM log line (SystemMessage.call): author = the caller; read at once except MISSED. */
+  private postCallCard(c: Call): void {
+    const room = this.state.rooms.get(c.dmRoomId);
+    if (!room) return;
+    const outcomes = new Map<CallState, CallOutcome>([
+      [CallState.ENDED, CallOutcome.ENDED],
+      [CallState.MISSED, CallOutcome.MISSED],
+      [CallState.DECLINED, CallOutcome.DECLINED],
+      [CallState.CANCELLED, CallOutcome.CANCELLED],
+      [CallState.BUSY, CallOutcome.BUSY],
+    ]);
+    const outcome = outcomes.get(c.state) ?? CallOutcome.UNSPECIFIED;
+    const durationSec =
+      c.state === CallState.ENDED && c.answeredAt && c.endedAt ? Math.floor((timestampMs(c.endedAt) - timestampMs(c.answeredAt)) / 1000) : 0;
+    const readers = [c.callerId];
+    const calleeRead = this.state.readStates.get(c.calleeId)?.get(room.id) ?? '';
+    if (c.state !== CallState.MISSED && this.readCounts(room.id, c.calleeId, calleeRead).unreadCount === 0) readers.push(c.calleeId);
+    const list = this.state.messages.get(room.id) ?? [];
+    const msg = create(MessageSchema, {
+      id: nextId(this.state, 'message'),
+      roomId: room.id,
+      authorId: c.callerId,
+      content: '',
+      kind: MessageKind.SYSTEM,
+      system: {
+        payload: {
+          case: 'call',
+          value: { callerId: c.callerId, outcome, durationSec, callId: c.state === CallState.BUSY ? '' : c.id, ...(c.createdAt ? { startedAt: c.createdAt } : {}) },
+        },
+      },
+      createdAt: tick(this.state),
+    });
+    list.push(msg);
+    this.state.messages.set(room.id, list);
+    for (const u of readers) {
+      const reads = this.state.readStates.get(u) ?? new Map<string, string>();
+      reads.set(room.id, msg.id);
+      this.state.readStates.set(u, reads);
+    }
+    if (c.state === CallState.MISSED && this.dmStateOf(c.calleeId, room.id).archivedAt) this.setDmState(c.calleeId, room.id, { archived: false });
+    this.toWorkspace('', { event: { case: 'messageCreate', value: { workspaceId: '', message: msg } } }, room.id);
+    for (const u of readers) this.toUser(u, { event: { case: 'readStateUpdate', value: { readState: { roomId: room.id, lastReadMessageId: msg.id } } } });
+  }
+
+  /** 409 CALL_NOT_ACTIVE unless `userId` is in the DM's ACTIVE call. */
+  private requireCall(dmId: string, userId: string): void {
+    const c = this.liveCall(userId);
+    if (c?.state !== CallState.ACTIVE || c.dmRoomId !== dmId) {
+      throw new HttpError(409, ErrorCode.CALL_NOT_ACTIVE, 'there is no active call of yours in this direct message');
+    }
+  }
+
+  /** POST /api/rooms/{dm}/join: the DM's voice session, for a participant of its ACTIVE call. */
+  private async joinCall(c: Ctx, room: Room, name: string, sessionId: string): Promise<void> {
+    const me = this.uid(c);
+    this.requireCall(room.id, me);
+    const identity = `${me}:${sessionId}`;
+    const token = await this.voiceToken(room, identity, name);
+    const cur = this.state.voiceStates.get(me);
+    const again = cur?.roomId === room.id && this.voiceSessions.get(me) === sessionId;
+    const pending = again ? cur.pending : true;
+    if (!again) {
+      this.setVoice(me, room.id, { muted: false, deafened: false, streaming: false, camera: false, pending: true });
+      this.voiceSessions.set(me, sessionId);
+      setTimeout(() => {
+        const v = this.state.voiceStates.get(me);
+        if (v?.roomId === room.id && v.pending && this.voiceSessions.get(me) === sessionId) this.setVoice(me, room.id, { pending: false });
+      }, JOIN_CONNECT_MS).unref();
+    }
+    sendMsg(c.res, 200, JoinVoiceResponseSchema, {
+      url: this.lk.url,
+      token,
+      identity,
+      media: { audioBitrateKbps: 48, maxStreamPreset: ScreenSharePreset.H1080, maxStreams: 4, cameraLimit: 4 },
+      canSpeak: true,
+      canStream: true,
+      canVideo: true,
+      pending,
+    });
+  }
+
+  /** setVoice for a DM call's session: workspace_id empty, to the two participants only. */
+  private setDmVoice(userId: string, room: Room | undefined, prev: VoiceState | undefined, prevDm: boolean, patch: Parameters<MockImpl['setVoice']>[2]): void {
+    if (room && prev?.roomId && !prevDm) this.setVoice(userId, '', {}); // leaves the workspace room first
+    const sameRoom = !!room && prev?.roomId === room.id;
+    const v = create(VoiceStateSchema, {
+      workspaceId: '',
+      userId,
+      roomId: room?.id ?? '',
+      muted: patch.muted ?? (sameRoom ? prev.muted : false),
+      deafened: patch.deafened ?? (sameRoom ? prev.deafened : false),
+      streaming: patch.streaming ?? (sameRoom ? prev.streaming : false),
+      camera: patch.camera ?? (sameRoom ? prev.camera : false),
+      pending: patch.pending ?? (sameRoom ? prev.pending : false),
+    });
+    const dmId = room?.id ?? (prevDm ? (prev?.roomId ?? '') : '');
+    if (room) this.state.voiceStates.set(userId, v);
+    else {
+      this.state.voiceStates.delete(userId);
+      this.voiceSessions.delete(userId);
+    }
+    if (prevDm && prev?.roomId && prev.roomId !== dmId) {
+      this.toWorkspace('', { event: { case: 'voiceStateUpdate', value: { state: create(VoiceStateSchema, { userId, roomId: '' }) } } }, prev.roomId);
+    }
+    if (dmId) this.toWorkspace('', { event: { case: 'voiceStateUpdate', value: { state: v } } }, dmId);
+  }
+
+  private registerCallRoutes(): void {
+    this.route('POST', '/api/dms/:id/call', (c) => {
+      const call = this.placeCall(this.uid(c), c.params[0] ?? '');
+      sendMsg(c.res, 201, StartCallResponseSchema, { call });
+    });
+    for (const action of ['accept', 'decline', 'cancel', 'hangup'] as const) {
+      this.route('POST', `/api/calls/:id/${action}`, (c) => {
+        const call = this.callTransition(c.params[0] ?? '', this.uid(c), action);
+        sendMsg(c.res, 200, CallActionResponseSchema, { call });
+      });
+    }
+    // Control endpoints (tests in another process): ringCall / callAction.
+    const ctl = (c: Ctx): Record<string, string> => (c.raw.length ? (JSON.parse(c.raw.toString('utf8')) as Record<string, string>) : {});
+    this.route('POST', '/__mock/call/ring', (c) => {
+      const b = ctl(c);
+      sendMsg(c.res, 200, StartCallResponseSchema, { call: this.ringCall(b['fromUserId'] ?? '', b['toUserId'] ?? '') });
+    });
+    this.route('POST', '/__mock/call/action', (c) => {
+      const b = ctl(c);
+      const id = b['callId'] ?? '';
+      const action = b['action'] as 'accept' | 'decline' | 'cancel' | 'hangup';
+      if (!['accept', 'decline', 'cancel', 'hangup'].includes(action)) throw invalid('action', 'accept | decline | cancel | hangup');
+      const by = b['userId'] || (action === 'cancel' ? (this.calls.get(id)?.callerId ?? '') : this.calleeOf(id));
+      sendMsg(c.res, 200, CallActionResponseSchema, { call: this.callTransition(id, by, action) });
+    });
   }
 
   // ------------------------------------------------ messages
@@ -3615,6 +3889,10 @@ class MockImpl {
       const { user, sessionId } = this.auth(c);
       const me = user.user.id;
       const room = this.roomFor(c.params[0] ?? '', me);
+      if (room.type === RoomType.DM) {
+        await this.joinCall(c, room, user.user.displayName, sessionId);
+        return;
+      }
       if (room.type !== RoomType.VOICE) throw conflict('not a voice room');
       this.requireActive(room.workspaceId);
       this.requireRoomPerm(room, me, CONNECT);
@@ -3671,6 +3949,13 @@ class MockImpl {
     this.route('POST', '/api/rooms/:id/camera/request', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
+      if (room.type === RoomType.DM) {
+        this.requireCall(room.id, me);
+        this.setVoice(me, room.id, { camera: true });
+        const b = parseBody(c, RequestCameraRequestSchema);
+        sendMsg(c.res, 200, RequestCameraResponseSchema, { preset: b.preset || ScreenSharePreset.H720, fps: b.fps });
+        return;
+      }
       this.requireRoomPerm(room, me, VIDEO);
       if (s().voiceStates.get(me)?.roomId !== room.id) throw conflict('not in this voice room');
       const limit = (room.media ?? DEFAULT_MEDIA).cameraLimit;
@@ -3693,6 +3978,14 @@ class MockImpl {
     this.route('POST', '/api/rooms/:id/stream/request', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
+      if (room.type === RoomType.DM) {
+        this.requireCall(room.id, me);
+        const b = parseBody(c, RequestStreamRequestSchema);
+        const preset = b.preset === ScreenSharePreset.UNSPECIFIED ? ScreenSharePreset.H1080 : Math.min(b.preset, ScreenSharePreset.H1080);
+        const own = Object.entries(SCREEN_SHARE_PRESETS).find(([k]) => Number(k) === preset)?.[1].fps ?? 0;
+        sendMsg(c.res, 200, RequestStreamResponseSchema, { preset, fps: b.fps > 0 ? Math.min(b.fps, own) : own });
+        return;
+      }
       this.requireRoomPerm(room, me, STREAM);
       if (s().voiceStates.get(me)?.roomId !== room.id) throw conflict('not in this voice room');
       const b = parseBody(c, RequestStreamRequestSchema);

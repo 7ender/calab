@@ -95,6 +95,9 @@ func (s *Service) requestCamera(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if acc.DM {
+		return s.requestDMMedia(w, r, roomID, false)
+	}
 	if !acc.Bits.Has(perm.Connect | perm.Video) {
 		return httpx.Forbidden("VIDEO required")
 	}
@@ -155,12 +158,18 @@ func (s *Service) stopOwnCamera(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	id := auth.MustFromContext(r.Context())
+	identity := voice.Identity(id.UserID, id.SessionID)
+	if acc.DM { // a call keeps the camera source; only the records and the flag go
+		s.dropCameras(r.Context(), roomID, id.SessionID, identity, nil, true)
+		_ = s.refreshCamera(r.Context(), roomID, roomID, id.UserID, id.SessionID, identity)
+		httpx.NoContent(w)
+		return nil
+	}
 	room, err := s.getRoom(r.Context(), roomID)
 	if err != nil {
 		return err
 	}
-	id := auth.MustFromContext(r.Context())
-	identity := voice.Identity(id.UserID, id.SessionID)
 	s.releaseCamera(r.Context(), room.WorkspaceID, roomID, id.UserID, id.SessionID, identity, acc.Bits, nil, 0)
 	httpx.NoContent(w)
 	return nil
@@ -266,15 +275,15 @@ func (s *Service) releaseCamera(ctx context.Context, wid, rid, uid, sid uuid.UUI
 }
 
 func (s *Service) publishCameraStop(ctx context.Context, wid, rid, uid uuid.UUID, trackSID string, reason v1.VoiceStreamStopReason) {
-	s.events.Workspace(ctx, wid, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceCameraStop{VoiceCameraStop: &v1.VoiceCameraStop{
-		WorkspaceId: wid.String(), RoomId: rid.String(), UserId: uid.String(), TrackSid: trackSID, Reason: reason,
+	s.publishScope(ctx, wid, rid, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceCameraStop{VoiceCameraStop: &v1.VoiceCameraStop{
+		WorkspaceId: scopeWS(wid, rid), RoomId: rid.String(), UserId: uid.String(), TrackSid: trackSID, Reason: reason,
 	}}})
 }
 
 // cameraStarted records a published webcam under camera_limit; an extra one is muted,
 // loses the grant and VOICE_CAMERA_STOP{LIMIT_REACHED} goes out.
 func (s *Service) cameraStarted(ctx context.Context, wid, rid, uid, sid uuid.UUID, identity string, t *Track) error {
-	_, media, err := s.roomInfo(ctx, rid)
+	_, media, err := s.scopeInfo(ctx, wid, rid)
 	if err != nil {
 		return err
 	}
@@ -294,11 +303,11 @@ func (s *Service) cameraStarted(ctx context.Context, wid, rid, uid, sid uuid.UUI
 		if err := s.lk.MuteTrack(ctx, room, identity, t.Sid, true); err != nil && !IsNotFound(err) {
 			slog.WarnContext(ctx, "mute over-limit camera", "err", err)
 		}
-		acc, err := perm.NewResolver(s.db.Q).Room(ctx, rid, uid)
+		bits, err := s.scopeBits(ctx, wid, rid, uid)
 		if err != nil {
-			acc = perm.RoomAccess{}
+			bits = 0
 		}
-		s.releaseCamera(ctx, wid, rid, uid, sid, identity, acc.Bits, nil, 0)
+		s.releaseCamera(ctx, wid, rid, uid, sid, identity, bits, nil, 0)
 		s.publishCameraStop(ctx, wid, rid, uid, t.Sid, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_LIMIT_REACHED)
 		return nil
 	}

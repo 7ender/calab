@@ -17,6 +17,7 @@ import (
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/bots"
 	"github.com/calaba/calaba/server/internal/buildinfo"
+	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -82,6 +83,8 @@ type App struct {
 	Bots *bots.Service
 	// Birthdays: the hourly birthday-card worker (docs/09 #76).
 	Birthdays *birthdays.Service
+	// Calls: one-to-one calls (ADR-0034) with their ring / lost timers.
+	Calls *calls.Service
 	// Routes: every registered route pattern (the bot route table test).
 	Routes []string
 }
@@ -101,6 +104,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Recording.Run(ctx)
 	go a.Bots.Run(ctx) // bot webhook deliveries
 	go a.Birthdays.Run(ctx, time.Hour)
+	go a.Calls.Run(ctx)
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -217,6 +221,14 @@ func New(d Deps) *App {
 
 	authSvc.OnBotRequest = hub.TouchBot
 
+	// One-to-one calls (ADR-0034): signalling here, media through rtc (DM voice sessions).
+	callSvc := calls.New(d.DB, d.Redis, pub, redisx.NewRateLimiter(d.Redis, "rl:call:", 10, 10)) // 10 at once, 10 per minute
+	callSvc.Presence = hub.PresenceChanged
+	if rtcSvc != nil {
+		rtcSvc.Calls = callSvc
+		callSvc.Media = rtcSvc
+	}
+
 	// Authenticated API routes: identity + the bot route table (ADR-0031) + fresh per-request
 	// permission resolver + the suspension guard (write routes of suspended workspaces,
 	// item 32).
@@ -270,6 +282,7 @@ func New(d Deps) *App {
 	botSvc.Routes(mux, private)
 	bdSvc := birthdays.New(d.DB, pub)
 	bdSvc.Routes(mux, private)
+	callSvc.Routes(mux, private)
 	if rtcSvc != nil {
 		rtcSvc.Routes(mux, private)
 	} else {
@@ -288,5 +301,5 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Routes: mux.patterns}
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Routes: mux.patterns}
 }

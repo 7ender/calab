@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/call.proto";
 import "calaba/v1/file.proto";
 import "calaba/v1/recording.proto";
 import "calaba/v1/sticker.proto";
@@ -70,6 +71,7 @@ message SystemMessage {
   oneof payload {
     RecordingCard recording = 1; // a meeting recording (ADR-0025)
     BirthdayCard birthday = 2;   // docs/09 #76
+    CallCard call = 3;           // a DM call log line (ADR-0034)
   }
 }
 

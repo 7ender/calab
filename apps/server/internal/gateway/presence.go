@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/calls"
 )
 
 // Presence keys (docs/05):
@@ -22,6 +23,8 @@ import (
 //	presence:users           zset user_id -> last touch (for the offline sweeper)
 //	presence:manual:<user_id> the user's manual status "<status>:<until unix ms, 0 = no end>",
 //	                         expiring at until (PXAT); the durable copy is users.presence_*
+//	call:oncall:<user_id>    set while the user is in an ACTIVE one-to-one call (internal/calls):
+//	                         Presence.on_call, shown only with a visible status
 
 // Session statuses combine by priority: manual statuses (dnd, invisible) always win over
 // automatic ones, so an AFK "idle" from one device never overrides a manual choice made on
@@ -178,15 +181,16 @@ func (p presenceStore) get(ctx context.Context, users []uuid.UUID) (map[uuid.UUI
 	if len(users) == 0 {
 		return out, nil
 	}
-	cmds := make(rueidis.Commands, 0, 3*len(users))
+	const per = 4 // commands per user
+	cmds := make(rueidis.Commands, 0, per*len(users))
 	for _, u := range users {
 		cmds = append(cmds, p.c.B().Hvals().Key(presKey(u)).Build(), p.c.B().Get().Key(presSeenKey(u)).Build(),
-			p.c.B().Get().Key(presManualKey(u)).Build())
+			p.c.B().Get().Key(presManualKey(u)).Build(), p.c.B().Exists().Key(calls.OnCallKey(u)).Build())
 	}
 	res := p.c.DoMulti(ctx, cmds...)
 	now := time.Now()
 	for i, u := range users {
-		vals, err := res[3*i].AsStrSlice()
+		vals, err := res[per*i].AsStrSlice()
 		if err != nil && !rueidis.IsRedisNil(err) {
 			return nil, err
 		}
@@ -196,7 +200,7 @@ func (p presenceStore) get(ctx context.Context, users []uuid.UUID) (map[uuid.UUI
 			sts = append(sts, v1.PresenceStatus(n)) //nolint:gosec // small enum
 		}
 		var m manualStatus
-		if v, err := res[3*i+2].ToString(); err == nil {
+		if v, err := res[per*i+2].ToString(); err == nil {
 			m = decodeManual(v)
 		} else if !rueidis.IsRedisNil(err) {
 			return nil, err
@@ -209,8 +213,12 @@ func (p presenceStore) get(ctx context.Context, users []uuid.UUID) (map[uuid.UUI
 		// Invisible (chosen on every session, or as the manual status) also hides last_seen.
 		hidden := (len(sts) > 0 && AggregateStatus(sts) == v1.PresenceStatus_PRESENCE_STATUS_OFFLINE) ||
 			(m.active(now) && m.status == v1.PresenceStatus_PRESENCE_STATUS_INVISIBLE)
-		if ms, err := res[3*i+1].AsInt64(); err == nil && !hidden {
+		if ms, err := res[per*i+1].AsInt64(); err == nil && !hidden {
 			pr.LastSeen = timestamppb.New(time.UnixMilli(ms))
+		}
+		// «На звонке» (ADR-0034) only with a visible status: offline / invisible hide it.
+		if n, err := res[per*i+3].AsInt64(); err == nil && n > 0 && st != v1.PresenceStatus_PRESENCE_STATUS_OFFLINE {
+			pr.OnCall = true
 		}
 		out[u] = pr
 	}
@@ -255,6 +263,9 @@ func (p presenceStore) changed(ctx context.Context, pr *v1.Presence) (bool, erro
 	cur := strconv.Itoa(int(pr.GetStatus()))
 	if pr.GetUntil() != nil {
 		cur += ":" + strconv.FormatInt(pr.GetUntil().AsTime().UnixMilli(), 10)
+	}
+	if pr.GetOnCall() {
+		cur += ":call"
 	}
 	prev, err := p.c.Do(ctx, p.c.B().Set().Key(presLastKey(u)).Value(cur).Get().Ex(30*24*time.Hour).Build()).ToString()
 	if err != nil && !rueidis.IsRedisNil(err) {

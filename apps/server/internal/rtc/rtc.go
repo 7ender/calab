@@ -63,6 +63,9 @@ type Service struct {
 	// OnEgress receives egress webhook events (meeting recording, ADR-0025); an error makes
 	// LiveKit redeliver the event.
 	OnEgress func(ctx context.Context, event string, info *EgressInfo) error
+	// Calls gates the voice session of a DM (one-to-one calls, ADR-0034, dm.go); nil = no
+	// calls: a DM cannot be joined.
+	Calls CallGate
 }
 
 // SetSFUMove overrides the detected move mode — tests, or ops after a LiveKit upgrade that
@@ -190,6 +193,9 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if acc.DM {
+		return s.joinDM(w, r, roomID)
+	}
 	if !acc.Bits.Has(perm.Connect) {
 		return httpx.Forbidden("CONNECT required")
 	}
@@ -284,6 +290,9 @@ func (s *Service) requestStream(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if acc.DM {
+		return s.requestDMMedia(w, r, roomID, true)
+	}
 	if !acc.Bits.Has(perm.Connect | perm.Stream) {
 		return httpx.Forbidden("STREAM required")
 	}
@@ -343,6 +352,9 @@ func (s *Service) serverMuted(ctx context.Context, wid, uid uuid.UUID) bool {
 // re-reading it after the push.
 func (s *Service) pushGrant(ctx context.Context, lkRoom, identity string, wid, uid uuid.UUID, bits perm.Bits, slot bool) error {
 	sm, cam := s.serverMuted(ctx, wid, uid), s.cameraHeld(ctx, lkRoom, identity)
+	if voice.IsDMRoomName(lkRoom) { // a call keeps its camera source (dm.go)
+		return s.lk.UpdatePermission(ctx, lkRoom, identity, Grant(bits, slot, true))
+	}
 	for range 3 {
 		b := bits
 		if sm {
@@ -374,6 +386,10 @@ func (s *Service) canSpeak(ctx context.Context, wid, uid uuid.UUID, bits perm.Bi
 }
 
 func (s *Service) publishVoice(ctx context.Context, wsID uuid.UUID, c voice.Change) {
+	if c.Changed() && (c.Before.GetRoomId() == wsID.String() || c.After.GetRoomId() == wsID.String()) {
+		s.publishDMVoice(ctx, wsID, c) // a DM session: its scope id is the room id (dm.go)
+		return
+	}
 	if c.Changed() {
 		s.events.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceStateUpdate{
 			VoiceStateUpdate: &v1.VoiceStateUpdate{State: c.After},
@@ -384,6 +400,9 @@ func (s *Service) publishVoice(ctx context.Context, wsID uuid.UUID, c voice.Chan
 // publishCalls runs under the workspace voice lock (voice.Store.OnCalls).
 func (s *Service) publishCalls(ctx context.Context, wsID uuid.UUID, rooms []uuid.UUID) {
 	for _, rid := range rooms {
+		if voice.IsDM(wsID, rid) {
+			continue // a DM call has no ROOM_UPDATE timer: Call.answered_at
+		}
 		s.publishCall(ctx, wsID, rid)
 	}
 }
