@@ -99,6 +99,7 @@ const KEY = new Set([
   'settings-plan',
   'settings-gptunnel',
   'settings-members',
+  'settings-members-birthday',
   'settings-roles',
   'settings-role-edit',
   'admin-workspaces',
@@ -1107,6 +1108,31 @@ test('settings-members', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByRole('tab', { name: 'Участники' })).toBeVisible();
 });
 
+/**
+ * «Участники → Дни рождения» (docs/09 #77): the owner's table of every member's date, Борис's
+ * hidden by him (marked «скрыто пользователем»), Вера's typed in and saved on Enter.
+ */
+test('settings-members-birthday', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setBirthday(IDS.users.boris, { day: 3, month: 5, year: 1990 });
+  mock.setBirthdayHidden(IDS.users.boris, true);
+  mock.setBirthday(IDS.users.grigory, { day: 21, month: 11 });
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Участники' }).click();
+  await expect(dialog.getByRole('button', { name: 'Изменить день рождения: Борис Петров' })).toBeVisible();
+  await dialog.getByTestId('open-birthdays-table').click();
+  await expect(dialog.getByTestId('birthday-hidden')).toHaveText('скрыто пользователем');
+  const vera = dialog.getByRole('textbox', { name: 'День рождения: Вера Ким' });
+  await vera.fill('7.2.1995');
+  await vera.press('Enter');
+  await expect(vera).toHaveValue('07.02.1995');
+  await expect(dialog.getByRole('textbox', { name: 'День рождения: Борис Петров' })).toHaveValue('03.05.1990');
+  await checkpoint(shot, 'settings-members-birthday');
+});
+
 /** The fixture's custom roles (ADR-0026) given out: «Дизайн» to Вера and Григорий, «Модератор» to Григорий. */
 function giveFixtureRoles(mock: MockServer): void {
   mock.setMemberRoles(IDS.workspaces.main, IDS.users.vera, [IDS.roles.design]);
@@ -1651,7 +1677,7 @@ test('chat-birthday-card', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 }, { roomId: IDS.rooms.general });
   const card = win.getByTestId('birthday-card');
-  await expect(card).toContainText('Сегодня день рождения у Борис Петров!');
+  await expect(card).toContainText('Борис Петров — сегодня день рождения!');
   await expect(card).toContainText('15 января');
   const members = await membersList(win);
   const boris = members.getByRole('button', { name: /Борис Петров/ });

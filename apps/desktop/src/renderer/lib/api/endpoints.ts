@@ -47,6 +47,7 @@ import {
   JoinWorkspaceResponseSchema,
   ListInvitesResponseSchema,
   ListBirthdaysResponseSchema,
+  ListMemberBirthdaysResponseSchema,
   ListMembersResponseSchema,
   ListMessagesResponseSchema,
   MoveMemberRequestSchema,
@@ -58,6 +59,8 @@ import {
   UpdateCategoryRequestSchema,
   UpdateCategoryResponseSchema,
   UpdateMeRequestSchema,
+  UpdateMemberBirthdayRequestSchema,
+  UpdateMemberBirthdayResponseSchema,
   UpdateMeResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberResponseSchema,
@@ -192,6 +195,11 @@ export const api = {
     members: (id: string) => call('GET', `/api/workspaces/${id}/members`, ListMembersResponseSchema),
     /** Members' birthdays in the next `days` days, soonest first (docs/09 #76). */
     birthdays: (id: string, days = 7) => call('GET', `/api/workspaces/${id}/birthdays?days=${days}`, ListBirthdaysResponseSchema),
+    /** Every member's birthday, hidden ones marked — the admin table (MANAGE_NICKNAMES, docs/09 #77). */
+    memberBirthdays: (id: string) => call('GET', `/api/workspaces/${id}/members/birthdays`, ListMemberBirthdaysResponseSchema),
+    /** Set (or, without a birthday, clear) a member's birthday; their «hidden» flag stays theirs. */
+    setMemberBirthday: (id: string, userId: string, init: MessageInitShape<typeof UpdateMemberBirthdayRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${id}/members/${userId}/birthday`, UpdateMemberBirthdayResponseSchema, body(UpdateMemberBirthdayRequestSchema, init)),
     updateMember: (id: string, userId: string, init: MessageInitShape<typeof UpdateMemberRequestSchema>) =>
       call('PATCH', `/api/workspaces/${id}/members/${userId}`, UpdateMemberResponseSchema, body(UpdateMemberRequestSchema, init)),
     removeMember: (id: string, userId: string) => callEmpty('DELETE', `/api/workspaces/${id}/members/${userId}`),

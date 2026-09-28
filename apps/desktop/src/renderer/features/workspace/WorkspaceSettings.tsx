@@ -6,7 +6,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, Bot as BotIcon, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -26,7 +26,9 @@ import { rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces'
 import { CommitInput } from '../settings/CommitInput';
 import { MAX_USES } from '../people/RoomLinkTab';
 import { ROLE_LABEL } from '../shell/MembersPanel';
-import { canRemoveMember, canRenameMember } from '../people/members';
+import { canEditMemberBirthday, canRemoveMember, canRenameMember } from '../people/members';
+import { MemberBirthdayDialog } from '../people/MemberBirthdayDialog';
+import { MemberBirthdaysTable } from './MemberBirthdaysTable';
 import { NickInline } from '../people/NickInline';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { PlanTab } from './PlanTab';
@@ -270,15 +272,21 @@ const FILTER_ROLE: Record<Exclude<RoleFilter, 'all'>, WorkspaceRole> = {
 /**
  * «Участники» (docs/09 #26): search (nickname or profile name) + role filter on top; each row —
  * the name in its role colour + RoleMark, editable in place for who may rename (NickInline; the
- * same right and API as «Изменить ник» in the member menu), the role select and «Исключить».
+ * same right and API as «Изменить ник» in the member menu), 🎂 «Изменить день рождения»
+ * (docs/09 #77), the role select and «Исключить». With MANAGE_NICKNAMES, «Дни рождения» opens
+ * the table of every member's date (MemberBirthdaysTable).
  */
 function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<RoleFilter>('all');
+  const [view, setView] = useState<'list' | 'birthdays'>('list');
+  const [birthdayOf, setBirthdayOf] = useState<string | null>(null);
   if (!entry) return null;
   const myRoles = rolesOf(entry, me);
+  const manageBirthdays = can(workspacePerms(myRoles), 'MANAGE_NICKNAMES');
+  if (view === 'birthdays' && manageBirthdays) return <MemberBirthdaysTable workspaceId={workspaceId} onBack={() => setView('list')} />;
   const owner = entry.role === WorkspaceRole.OWNER;
   const nameOf = (m: (typeof entry.members)[string]): string => m.nickname || m.user?.displayName || '';
   const needle = q.trim().toLowerCase();
@@ -315,6 +323,11 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
           <Input aria-label={t('common.search')} placeholder={t('common.search')} value={q} onChange={(e) => setQ(e.target.value)} icon={<Search className="size-3.5" />} />
         </label>
         <Segmented label={t('ws.filter.label')} value={filter} onChange={setFilter} options={ROLE_FILTERS.map((f) => ({ value: f.value, label: t(f.key) }))} />
+        {manageBirthdays ? (
+          <Button variant="secondary" onClick={() => setView('birthdays')} data-testid="open-birthdays-table">
+            <Cake className="size-4" aria-hidden /> {t('birthday.tableTitle')}
+          </Button>
+        ) : null}
       </div>
       {members.length === 0 ? (
         <Empty>{t('ws.filter.none')}</Empty>
@@ -328,6 +341,7 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
             // MANAGE_WORKSPACE, not the owner, admins only by the owner, below my top role (the server's outranks).
             const editable = canRemoveMember(myRoles, rolesOf(entry, u.id), m, u.id === me);
             const canNick = canRenameMember(rolesOf(entry, me), u.id === me, entry.ws.allowSelfNickname);
+            const canBirthday = canEditMemberBirthday(myRoles, rolesOf(entry, u.id), m, u.id === me);
             return (
               <div key={u.id} className="flex min-h-12 items-center gap-3 px-3 py-2" data-testid="ws-member-row">
                 <Avatar userId={u.id} name={name} fileId={u.avatarFileId || undefined} size={32} presence />
@@ -335,6 +349,13 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
                   <NickInline workspaceId={workspaceId} member={m} canEdit={canNick} />
                   <div className="truncate text-caption text-faint">{t('ws.joinedSince', { date: m.joinedAt ? fmt.shortDate(timestampDate(m.joinedAt)) : '—' })}</div>
                 </div>
+                {canBirthday ? (
+                  <IconButton label={t('birthday.editFor', { name })} className="text-muted hover:text-fg" onClick={() => setBirthdayOf(u.id)}>
+                    <Cake className="size-4" />
+                  </IconButton>
+                ) : manageBirthdays ? (
+                  <span className="w-8 shrink-0" aria-hidden />
+                ) : null}
                 {/* Role column: a fixed 176 px, so plain labels and pop-ups share one left edge. */}
                 {editable ? (
                   <Select aria-label={t('ws.role', { name })} className="w-44" value={m.role} onChange={(e) => void setRole(u.id, Number(e.target.value))}>
@@ -357,6 +378,7 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
           })}
         </Card>
       )}
+      {birthdayOf ? <MemberBirthdayDialog workspaceId={workspaceId} userId={birthdayOf} onClose={() => setBirthdayOf(null)} /> : null}
     </>
   );
 }

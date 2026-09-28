@@ -83,3 +83,51 @@ export function birthdayLine(b: BirthdayLike, today: Ymd): string {
   const age = ageOn(b, today);
   return `🎂 ${formatBirthday(b)}${age !== null && age >= 0 ? ` · ${formatAge(age)}` : ''}`;
 }
+
+/** Is the birthday a date the server accepts (birthdays.Validate): a real day, the year 1900..now, not in the future? */
+export function validBirthday(b: BirthdayLike, now: Date = new Date()): boolean {
+  if (!Number.isInteger(b.day) || !Number.isInteger(b.month) || b.month < 1 || b.month > 12) return false;
+  if (b.year !== undefined && (!Number.isInteger(b.year) || b.year < 1900 || b.year > now.getFullYear())) return false;
+  if (b.day < 1 || b.day > daysInMonth(b.month, b.year)) return false;
+  return b.year === undefined || new Date(b.year, b.month - 1, b.day) <= now;
+}
+
+type DatePart = 'd' | 'm' | 'y';
+
+/** The numeric date layout of a locale: the order of day / month / year and the separator («15.03.1990», “03/15/1990”, «1990/03/15»). */
+export function birthdayFieldLayout(locale: string = getLocale()): { order: DatePart[]; sep: string } {
+  const parts = new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }).formatToParts(new Date(Date.UTC(2000, 10, 22, 12)));
+  const order = parts.flatMap((p): DatePart[] => (p.type === 'day' ? ['d'] : p.type === 'month' ? ['m'] : p.type === 'year' ? ['y'] : []));
+  const sep = parts.find((p) => p.type === 'literal')?.value.trim() || '.';
+  return order.length === 3 ? { order, sep } : { order: ['d', 'm', 'y'], sep: '.' };
+}
+
+/** The birthday as the inline table field shows it: «15.03.1990», «15.03» without a year ('' for none). */
+export function formatBirthdayField(b: BirthdayLike | undefined, locale: string = getLocale()): string {
+  if (!b?.day || !b.month) return '';
+  const { order, sep } = birthdayFieldLayout(locale);
+  const v = { d: String(b.day).padStart(2, '0'), m: String(b.month).padStart(2, '0'), y: b.year ? String(b.year) : '' };
+  return order
+    .filter((p) => p !== 'y' || v.y)
+    .map((p) => v[p])
+    .join(sep);
+}
+
+/**
+ * The typed birthday of the inline field: null = cleared (empty), 'invalid' = not a date the
+ * server accepts. Any non-digit separates («15.03.1990», «15/3», «15 03 1990»); the parts follow
+ * the locale's order, and three parts starting with 4 digits read as ISO («1990-03-15»).
+ */
+export function parseBirthdayField(text: string, now: Date = new Date(), locale: string = getLocale()): BirthdayLike | null | 'invalid' {
+  if (!text.trim()) return null;
+  const nums = text.trim().split(/\D+/).filter(Boolean);
+  if (nums.length < 2 || nums.length > 3) return 'invalid';
+  let order = birthdayFieldLayout(locale).order;
+  if (nums.length === 3 && nums[0]?.length === 4) order = ['y', 'm', 'd'];
+  if (nums.length === 2) order = order.filter((p) => p !== 'y');
+  const v: Partial<Record<DatePart, string>> = {};
+  order.forEach((p, i) => (v[p] = nums[i]));
+  if (v.y !== undefined && v.y.length !== 4) return 'invalid';
+  const b: BirthdayLike = { day: Number(v.d), month: Number(v.m), ...(v.y === undefined ? {} : { year: Number(v.y) }) };
+  return validBirthday(b, now) ? b : 'invalid';
+}

@@ -301,7 +301,13 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'userUpdate':
       // Another member's public profile (name, avatar, time zone, birthday — docs/09 #76).
-      if (e.value.user && e.value.user.id !== myUserId()) useWorkspaces.getState().upsertUser(e.value.user);
+      if (e.value.user && e.value.user.id !== myUserId()) {
+        // A birthday set, cleared or hidden: the admin table (docs/09 #77) refetches if open.
+        const was = useWorkspaces.getState().users[e.value.user.id]?.birthday;
+        const now = e.value.user.birthday;
+        if (was?.day !== now?.day || was?.month !== now?.month || was?.year !== now?.year) void queryClient.invalidateQueries({ queryKey: ['member-birthdays'] });
+        useWorkspaces.getState().upsertUser(e.value.user);
+      }
       if (e.value.me) {
         useSession.getState().set({ me: e.value.me });
         if (e.value.me.user) useWorkspaces.getState().upsertUser(e.value.me.user);
