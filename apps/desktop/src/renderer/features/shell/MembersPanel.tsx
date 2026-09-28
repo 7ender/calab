@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { WorkspaceRole, type WorkspaceMember } from '@calaba/protocol';
-import { ChevronRight, MonitorUp, Video, Volume2 } from 'lucide-react';
+import { ChevronRight, MonitorUp, Phone, Video, Volume2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
@@ -22,6 +22,7 @@ import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
 import { formatBirthdayShort } from '../../lib/birthday';
 import { NicknameDialog } from '../people/NicknameDialog';
 import { ProfileCard } from '../people/ProfileCard';
+import { useOnCall } from '../call/CallBits';
 
 export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -219,6 +220,8 @@ const MemberRow = memo(function MemberRow({
   const roomName = useRooms((s) => (v?.roomId ? s.byId[v.roomId]?.name : undefined));
   const speaking = useVoice((s) => s.speaking[userId] ?? false);
   const look = useRoleLook(workspaceId, userId);
+  // In a one-to-one call (ADR-0034, Presence.on_call): a primitive per row.
+  const onCall = useOnCall(userId);
   const [renaming, setRenaming] = useState(false);
   if (!u) return null;
   const name = nameOf(m);
@@ -240,6 +243,13 @@ const MemberRow = memo(function MemberRow({
         <span className="truncate">{roomName ?? t('people.inVoice')}</span>
         {v.camera ? <Video className="size-3.5 shrink-0" aria-label={t('video.stateOn')} role="img" /> : null}
         <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} />
+      </>
+    );
+  else if (onCall)
+    second = (
+      <>
+        <Phone className="size-3.5 shrink-0 text-ok" aria-hidden />
+        <span className="truncate">{t('call.onCall')}</span>
       </>
     );
   else if (statusLine) second = <span className="truncate">{statusLine}</span>;
@@ -272,6 +282,7 @@ const MemberRow = memo(function MemberRow({
                 <MemberBadge workspaceId={workspaceId} userId={userId} className={offline ? 'opacity-60 grayscale' : undefined} />
                 <RoleMark role={m.role} custom={look} tone={offline ? 'muted' : 'role'} />
                 <BirthdayMark userId={userId} />
+                {onCall ? <Phone className="size-3.5 shrink-0 text-ok" role="img" aria-label={t('call.onCall')} /> : null}
                 {isGuest(m) ? <GuestBadge /> : null}
                 {u.isBot ? <BotBadge /> : null}
                 <MutedByMe userId={userId} className="size-3.5" />

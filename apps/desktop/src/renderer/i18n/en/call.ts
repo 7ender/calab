@@ -16,6 +16,7 @@ export const enCall: DictShape<typeof ruCall> = {
   'call.hangup': 'End',
   'call.inCall': 'Call',
   'call.panel': 'Call · {name}',
+  'call.voiceOnly': 'In a call the mic is voice-activated',
   'call.onCall': 'On a call',
   'call.busy': 'Busy',
   'call.alreadyInCall': 'You’re already in a call',

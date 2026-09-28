@@ -32,6 +32,8 @@ import { openProfile } from '../people/actions';
 import { birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
 import { RecordingCardView } from './RecordingCard';
 import { BirthdayCardView } from './BirthdayCard';
+import { CallLogRow } from '../call/CallBits';
+import { callCardOf } from '../../lib/callModel';
 import { ForwardLine, forwardSentMs } from './ForwardLine';
 import { mediaKind } from '../../lib/chatMedia';
 import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
@@ -122,8 +124,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
   useTimeFormat();
   const card = recordingCardOf(c.msg);
   const bday = birthdayCardOf(c.msg);
+  // A DM call log line (ADR-0034): one line like Telegram, on the caller's side.
+  const call = callCardOf(c.msg);
   return (
-    <div className={cx('px-4', meta.day || meta.isNew || card || bday ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={cx('px-4', meta.day || meta.isNew || card || bday || call ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
@@ -136,6 +140,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
       ) : bday ? (
         <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <BirthdayCardView authorId={c.msg.authorId} card={bday} workspaceId={workspaceId} />
+        </div>
+      ) : call ? (
+        <div className={cx('rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <CallLogRow card={call} at={c.msg.createdAt} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />

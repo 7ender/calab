@@ -22,6 +22,7 @@ import { voice } from '../../services/voice';
 import { isVoicePreview, joinOutcome } from '../../lib/voiceEntry';
 import { useDms } from '../../stores/dms';
 import { DmActionsMenu } from '../dm/DmActionsMenu';
+import { DmCallSlot, OnCallMark } from '../call/CallBits';
 import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
@@ -223,6 +224,7 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
         {name}
       </h1>
       {shared ? <RoleMark role={shared.role} label={`${t(shared.role === WorkspaceRole.OWNER ? 'role.owner' : 'role.admin')} · ${shared.workspace}`} /> : null}
+      <OnCallMark userId={peerId} />
       <span className={cx('flex min-w-0 flex-1 items-center gap-1.5 text-body', mobile && 'hidden')} aria-live="polite">
         <span className="text-faint" aria-hidden>
           •
@@ -244,6 +246,8 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
         </IconButton>
         {mobile ? null : <PinsButton workspaceId="" roomId={room.id} canManage />}
         <NotifyButton roomId={room.id} className={touch} />
+        {/* ADR-0034: the phone left of «⋯»; in this DM's call — «Звонок · 00:42» + «Завершить». */}
+        <DmCallSlot roomId={room.id} peerId={peerId} className={touch} />
         <DmActionsMenu roomId={room.id} className={touch} />
       </div>
     </header>

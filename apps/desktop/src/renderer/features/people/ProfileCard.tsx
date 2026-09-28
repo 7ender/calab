@@ -1,6 +1,6 @@
 import { PresenceStatus, WorkspaceRole } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { MessageCircle, MonitorUp, Pencil, UserRound, Volume2 } from 'lucide-react';
+import { MessageCircle, MonitorUp, Pencil, Phone, UserRound, Volume2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, Toggle } from '../../components/ui';
@@ -16,7 +16,9 @@ import { VolumeRow, useMemberActions } from './MemberContextMenu';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
 import { useVoice } from '../../stores/voice';
-import { useCanDm } from '../dm/canDm';
+import { useCanCall, useCanDm } from '../dm/canDm';
+import { useOnCall } from '../call/CallBits';
+import { startCall } from '../../services/call';
 import { startDm } from '../../services/dms';
 import { openProfile } from './actions';
 import { LocalTime } from './LocalTime';
@@ -62,6 +64,8 @@ export function ProfileCard({
   const actions = useMemberActions(workspaceId, userId);
   const localMuted = usePrefs((s) => !!s.mutedUsers[userId]);
   const canDm = useCanDm(workspaceId, userId);
+  const canCall = useCanCall(userId, workspaceId);
+  const onCall = useOnCall(userId);
   // Speaking ring while they talk in my call (docs/08 «Индикация речи»).
   const speaking = useVoice((st) => st.speaking[userId] ?? false);
   const u = m?.user;
@@ -88,23 +92,48 @@ export function ProfileCard({
           ) : null}
           <ProfileBadge workspaceId={workspaceId} userId={userId} />
           {/* A bot (ADR-0031): its @username instead of presence (bots are never «в сети» as people). */}
-          {u.isBot ? <BotHandle botUserId={userId} /> : <div className="text-caption text-muted">{t(presence ?? 'members.offline')}</div>}
+          {u.isBot ? (
+            <BotHandle botUserId={userId} />
+          ) : onCall ? (
+            // ADR-0034: «На звонке» (with whom is not disclosed) instead of the presence line.
+            <div className="flex items-center gap-1 text-caption text-muted">
+              <Phone className="size-3.5 shrink-0 text-ok" aria-hidden />
+              {t('call.onCall')}
+            </div>
+          ) : (
+            <div className="text-caption text-muted">{t(presence ?? 'members.offline')}</div>
+          )}
         </div>
       </div>
       {statusLine ? <p className="selectable break-words text-body">{statusLine}</p> : null}
       {u.isBot ? <BotDetails botUserId={userId} compact /> : null}
       {canDm ? (
-        // ADR-0020: the most direct next step from a profile.
-        <Button
-          className="w-full"
-          onClick={() => {
-            onClose?.();
-            void startDm(userId);
-          }}
-        >
-          <MessageCircle className="size-3.5" aria-hidden />
-          {t('dm.write')}
-        </Button>
+        // ADR-0020 / ADR-0034: the most direct next steps from a profile — «Написать», «Позвонить».
+        <div className="flex gap-2">
+          <Button
+            className="min-w-0 flex-1"
+            onClick={() => {
+              onClose?.();
+              void startDm(userId);
+            }}
+          >
+            <MessageCircle className="size-3.5" aria-hidden />
+            {t('dm.write')}
+          </Button>
+          {canCall ? (
+            <Button
+              variant="secondary"
+              className="min-w-0 flex-1"
+              onClick={() => {
+                onClose?.();
+                void startCall(userId);
+              }}
+            >
+              <Phone className="size-3.5" aria-hidden />
+              {t('call.call')}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-t border-line pt-3 text-caption">
         <dt className="text-muted">{t('people.profile.role')}</dt>

@@ -16,6 +16,7 @@ export const esCall: DictShape<typeof ruCall> = {
   'call.hangup': 'Colgar',
   'call.inCall': 'Llamada',
   'call.panel': 'Llamada · {name}',
+  'call.voiceOnly': 'En una llamada el micrófono se activa por voz',
   'call.onCall': 'En una llamada',
   'call.busy': 'Ocupado',
   'call.alreadyInCall': 'Ya estás en una llamada',

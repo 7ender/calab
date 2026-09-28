@@ -44,3 +44,13 @@ describe('keyAction', () => {
     expect(keyAction({ ...voice, canConnect: false }, { ...none, shiftKey: true })).toBe('chat');
   });
 });
+
+describe('call action (ADR-0034)', () => {
+  it('a person I may call gets it after the write action, as a button only', () => {
+    expect(rowActions({ kind: 'member', canDm: true, canCall: true })).toEqual(['filter', 'write', 'call']);
+    expect(rowActions({ kind: 'dm', canCall: true })).toEqual(['write', 'call']);
+    expect(rowActions({ kind: 'member', canDm: false, canCall: true })).toEqual(['filter']);
+    expect(keyAction({ kind: 'dm', canCall: true }, { ...none, shiftKey: true })).toBe('write');
+    expect(keyAction({ kind: 'member', canDm: true, canCall: true }, { ...none, shiftKey: true })).toBe('write');
+  });
+});

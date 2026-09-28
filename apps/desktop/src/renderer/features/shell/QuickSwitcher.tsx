@@ -25,7 +25,8 @@ import { searchWords, splitHits } from '../../lib/markdown/highlight';
 import { roomLabel } from '../chat/roomLabel';
 import { systemPreview } from '../../lib/recording';
 import { startDm } from '../../services/dms';
-import { canDmNow, useCanDm } from '../dm/canDm';
+import { canCallNow, canDmNow, useCanCall, useCanDm } from '../dm/canDm';
+import { startCall } from '../../services/call';
 import { keyAction, rowActions, type SwitcherAction, type SwitcherRowKind } from './quickSwitcherActions';
 
 type Item =
@@ -135,6 +136,12 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     const it = items[i];
     if (!it) return;
     const act = action ?? rowActions(rowKindNow(it))[0];
+    if (act === 'call') {
+      const peer = it.kind === 'dm' ? it.peerId : it.kind === 'member' ? (it.member.user?.id ?? '') : '';
+      onClose();
+      if (peer) void startCall(peer);
+      return;
+    }
     if (it.kind === 'dm') {
       openRoom(HOME, it.roomId);
       onClose();
@@ -281,15 +288,22 @@ function canConnectNow(it: Item): boolean {
   return can(roomPerms(rolesOf(useWorkspaces.getState().byId[it.room.workspaceId], me), me, it.room), 'CONNECT');
 }
 
-function rowKind(it: Item, canConnect: boolean, canDm: boolean): SwitcherRowKind {
+function rowKind(it: Item, canConnect: boolean, canDm: boolean, canCall: boolean): SwitcherRowKind {
   if (it.kind === 'room') return { kind: 'room', voice: it.room.type === RoomType.VOICE, canConnect };
-  if (it.kind === 'member') return { kind: 'member', canDm };
+  if (it.kind === 'member') return { kind: 'member', canDm, canCall };
+  if (it.kind === 'dm') return { kind: 'dm', canCall };
   return { kind: it.kind };
+}
+
+/** Whose row it is, for «Позвонить» (ADR-0034): a DM's peer or a member; '' otherwise. */
+function personOf(it: Item): string {
+  return it.kind === 'dm' ? it.peerId : it.kind === 'member' ? (it.member.user?.id ?? '') : '';
 }
 
 /** rowKind with the rights read at the moment of the action (keyboard). */
 function rowKindNow(it: Item): SwitcherRowKind {
-  return rowKind(it, canConnectNow(it), it.kind === 'member' && canDmNow(it.member.workspaceId, it.member.user?.id ?? ''));
+  const person = personOf(it);
+  return rowKind(it, canConnectNow(it), it.kind === 'member' && canDmNow(it.member.workspaceId, it.member.user?.id ?? ''), person !== '' && canCallNow(person));
 }
 
 /** The sidebar's click on a voice room (joinOutcome: CONNECT, the user limit, MOVE_MEMBERS). */
@@ -373,7 +387,8 @@ const SwitcherActions = memo(function SwitcherActions({
 }): ReactNode {
   const canConnect = useCanConnect(it.kind === 'room' && it.room.type === RoomType.VOICE ? it.room : null);
   const canDm = useCanDm(it.kind === 'member' ? it.member.workspaceId : '', it.kind === 'member' ? (it.member.user?.id ?? '') : '');
-  const actions = rowActions(rowKind(it, canConnect, canDm));
+  const canCall = useCanCall(personOf(it));
+  const actions = rowActions(rowKind(it, canConnect, canDm, canCall));
   const name = rowName(it);
   return (
     <div
@@ -387,7 +402,7 @@ const SwitcherActions = memo(function SwitcherActions({
     >
       {actions.map((a) => {
         const label = actionLabel(a);
-        const Icon = a === 'join' ? Phone : a === 'chat' ? MessageSquare : a === 'write' ? MessageCircle : null;
+        const Icon = a === 'join' || a === 'call' ? Phone : a === 'chat' ? MessageSquare : a === 'write' ? MessageCircle : null;
         return (
           <Button
             key={a}
@@ -410,6 +425,7 @@ function actionLabel(a: SwitcherAction): string {
   if (a === 'join') return t('search.join');
   if (a === 'chat') return t('search.chat');
   if (a === 'write') return t('dm.write');
+  if (a === 'call') return t('call.call');
   if (a === 'filter') return t('search.filter');
   return t('search.open');
 }

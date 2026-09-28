@@ -2,7 +2,7 @@ import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { CallOutcome, CallSchema, CallState, MessageKind, type Call } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { IDLE, callCardOf, callClock, callLogLine, callSince, reduceCall, type CallModel } from './callModel';
+import { IDLE, callCardOf, callClock, callLogLine, callSince, callTimer, reduceCall, type CallModel } from './callModel';
 
 const ME = 'me';
 const PEER = 'peer';
@@ -101,6 +101,10 @@ describe('call clock and log line', () => {
     expect(callClock(42)).toBe('0:42');
     expect(callClock(312)).toBe('5:12');
     expect(callClock(3723)).toBe('1:02:03');
+    expect(callTimer(42)).toBe('00:42');
+    expect(callTimer(312)).toBe('05:12');
+    expect(callTimer(754)).toBe('12:34');
+    expect(callTimer(3723)).toBe('1:02:03');
   });
 
   it('since: the answer for an active call, the placing otherwise', () => {

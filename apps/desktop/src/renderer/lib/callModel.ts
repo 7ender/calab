@@ -107,6 +107,12 @@ export function callClock(sec: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
+/** The running call timer: «00:42», «05:12», «1:02:03» (the DM header, docs/08 «Звонок»). */
+export function callTimer(sec: number): string {
+  const c = callClock(sec);
+  return c.length === 4 ? `0${c}` : c;
+}
+
 // ---------------------------------------------------------------- the DM call log (SystemMessage.call)
 
 /** The call card of a system message, if it is one. */

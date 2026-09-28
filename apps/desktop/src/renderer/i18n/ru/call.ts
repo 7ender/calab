@@ -16,6 +16,7 @@ export const ruCall = {
   'call.hangup': 'Завершить',
   'call.inCall': 'Звонок',
   'call.panel': 'Звонок · {name}',
+  'call.voiceOnly': 'В звонке микрофон включается голосом',
   'call.onCall': 'На звонке',
   'call.busy': 'Занято',
   'call.alreadyInCall': 'Вы уже в звонке',

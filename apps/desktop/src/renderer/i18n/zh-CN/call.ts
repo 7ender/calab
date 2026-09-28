@@ -16,6 +16,7 @@ export const zhCall: DictShape<typeof ruCall> = {
   'call.hangup': '挂断',
   'call.inCall': '通话',
   'call.panel': '通话 · {name}',
+  'call.voiceOnly': '通话中麦克风为语音激活',
   'call.onCall': '通话中',
   'call.busy': '忙线',
   'call.alreadyInCall': '你已在通话中',

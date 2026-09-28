@@ -551,6 +551,33 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   }
 }
 
+/* «Вызов…» (ADR-0034): three dots light up in turn while the call rings — finite (32 × 1.4 s ≈
+   the 45 s ring timeout), then still; none with reduced motion. */
+@keyframes calaba-call-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+.call-dots > span {
+  animation: calaba-call-dot 1.4s ease-in-out 32;
+}
+.call-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.call-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .call-dots > span {
+    animation: none;
+  }
+}
+
 /* Birthday card in the feed (docs/08 «Дни рождения», issue #18): a static gradient (solid
    material, no backdrop-filter); white text ≥ 4.5:1 on every stop. Sparkles (a few radial dots
    in ::after) and the cake «pop» play once on mount, ≤ 1.2 s; nothing with reduced motion. */
