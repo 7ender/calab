@@ -111,6 +111,7 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/workspaces/{id}/rooms/order":                 botAllow,
 	// messages
 	"GET /api/rooms/{id}/messages":                botAllow,
+	"GET /api/rooms/{id}/messages/{messageId}":    botAllow,
 	"POST /api/rooms/{id}/messages":               botAllow,
 	"POST /api/rooms/{id}/messages/{mid}/forward": botAllow, // ADR-0033
 	"PATCH /api/messages/{id}":                    botAllow,
@@ -172,7 +173,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/rooms/{id}/recording/stop":               botDeny,
 	"POST /api/rooms/{id}/recordings/{rid}/recheck":     botDeny,
 	"POST /api/rooms/{id}/recordings/{rid}/reupload":    botDeny,
-	"GET /api/rooms/{id}/recordings/{rid}/transcript":   botDeny,
+	"GET /api/rooms/{id}/recordings/{rid}/transcript":   botAllow,
 	"DELETE /api/rooms/{id}/recordings/{rid}":           botDeny,
 	// voice: a bot joins, listens and speaks through LiveKit like a person (ADR-0031 §5)
 	"POST /api/rooms/{id}/join":                        botAllow,

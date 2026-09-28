@@ -52,6 +52,7 @@ func NewHandlers(d *db.DB, ev events.Publisher, limiter *redisx.RateLimiter) *Ha
 // Routes registers authenticated routes; wrap must apply auth + perm resolver.
 func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.list)))
+	mux.Handle("GET /api/rooms/{id}/messages/{messageId}", wrap(httpx.HandlerFunc(h.get)))
 	mux.Handle("POST /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("POST /api/rooms/{id}/messages/{mid}/forward", wrap(httpx.HandlerFunc(h.forward)))
 	mux.Handle("PATCH /api/messages/{id}", wrap(httpx.HandlerFunc(h.update)))
@@ -214,6 +215,43 @@ func ParsePage(r *http.Request) (Page, error) {
 		return p, httpx.BadRequest("use either before or after")
 	}
 	return p, nil
+}
+
+// get resolves a reply target without paging through history. It uses the history read
+// policy, including the caller's cleared DM boundary, and returns the existing Message.
+func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
+	roomID, err := httpx.PathUUID(r, "id", "room")
+	if err != nil {
+		return err
+	}
+	acc, err := rooms.Access(r, roomID)
+	if err != nil {
+		return err
+	}
+	id, err := httpx.PathUUID(r, "messageId", "message")
+	if err != nil {
+		return err
+	}
+	since, err := h.clearedBefore(r, acc, roomID)
+	if err != nil {
+		return err
+	}
+	if since != nil && bytes.Compare(id[:], since[:]) <= 0 {
+		return httpx.NotFound("message")
+	}
+	m, err := h.db.Q.GetMessage(r.Context(), id)
+	if db.IsNotFound(err) || (err == nil && m.RoomID != roomID) {
+		return httpx.NotFound("message")
+	}
+	if err != nil {
+		return err
+	}
+	out, err := h.withDetails(r, []sqlc.Message{m})
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, out[0])
+	return nil
 }
 
 func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {

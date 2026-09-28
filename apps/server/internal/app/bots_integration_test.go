@@ -87,7 +87,7 @@ func TestBotRouteTable(t *testing.T) {
 		if !ok || !strings.HasPrefix(path, "/api/") || (access == "public" && p != "POST /api/auth/logout" && p != "POST /api/room-invites/{code}/join") {
 			continue
 		}
-		for _, name := range []string{"{id}", "{userId}", "{roleId}", "{inviteId}", "{rid}", "{botId}"} {
+		for _, name := range []string{"{id}", "{userId}", "{roleId}", "{inviteId}", "{rid}", "{botId}", "{messageId}"} {
 			path = strings.ReplaceAll(path, name, fake)
 		}
 		path = strings.NewReplacer("{code}", "nocode", "{emoji}", "%F0%9F%91%8D", "{ref}", "nobody_bot").Replace(path)

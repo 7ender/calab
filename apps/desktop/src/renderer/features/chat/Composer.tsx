@@ -8,6 +8,7 @@ import { fmt } from '../../lib/format';
 import { MENTION_EVENT, type MentionRequest } from './mentionRequest';
 import { applyMention, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, toWire } from '../../lib/mentions';
 import { can } from '../../lib/permissions';
+import { systemPreview } from '../../lib/recording';
 import { autoFocusAllowed, useMobile } from '../../lib/mobile';
 import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, sendMessage, type OutgoingFile } from '../../services/chat';
 import { useMessages } from '../../stores/messages';
@@ -379,7 +380,7 @@ export function Composer({
     <ContextBar
       icon={<CornerUpLeft className="size-4" aria-hidden />}
       title={t('chat.replyTo', { name: memberName(workspaceId, replyMsg.authorId) })}
-      text={snippet(workspaceId, replyMsg.content, t('chat.attachment'))}
+      text={systemPreview(replyMsg) || snippet(workspaceId, replyMsg.content, t('chat.attachment'))}
       onClose={() => setReply(room.id, undefined)}
     />
   ) : null;
