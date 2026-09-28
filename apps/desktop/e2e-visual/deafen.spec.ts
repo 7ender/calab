@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { IDS } from '../e2e-support/fixtures';
-import { startPublisher, type Publisher } from '../e2e-visual/publisher';
+import { startPublisher, type Publisher } from './publisher';
 
 /**
  * Deafen holds for a voice that arrives later (docs/09 #70, issues #11/#12, docs/02 «Deafen»):
@@ -50,13 +50,12 @@ test.afterAll(() => {
 
 /** Remote audio elements of the call (services/voice.ts puts them in #remote-audio-sink). */
 function remoteAudio(page: Page): Promise<Array<{ muted: boolean; volume: number; tracks: number }>> {
-  return page.evaluate(() =>
-    [...document.querySelectorAll<HTMLAudioElement>('#remote-audio-sink audio')].map((el) => ({
+  // A string, like the other web specs: this file is compiled without the DOM lib.
+  return page.evaluate<Array<{ muted: boolean; volume: number; tracks: number }>>(`[...document.querySelectorAll('#remote-audio-sink audio')].map((el) => ({
       muted: el.muted,
       volume: el.volume,
       tracks: el.srcObject instanceof MediaStream ? el.srcObject.getAudioTracks().length : 0,
-    })),
-  );
+    }))`);
 }
 
 test('deafen: a participant who joins later stays silent; undeafen restores sound and the mic', async ({ page, request }) => {
@@ -85,9 +84,7 @@ test('deafen: a participant who joins later stays silent; undeafen restores soun
     expect((await remoteAudio(page)).every((a) => a.muted)).toBe(true);
 
     // A write behind our back (LiveKit Room.startAudio sets muted = false) is undone.
-    await page.evaluate(() => {
-      for (const el of document.querySelectorAll<HTMLAudioElement>('#remote-audio-sink audio')) el.muted = false;
-    });
+    await page.evaluate(`for (const el of document.querySelectorAll('#remote-audio-sink audio')) el.muted = false;`);
     await expect.poll(async () => (await remoteAudio(page)).every((a) => a.muted)).toBe(true);
 
     // Undeafen: audible again; the mic is still off as before deafen.
