@@ -552,6 +552,9 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 			_ = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(m.Payload, out.System)
 		}
 	}
+	if m.ForwardSentAt != nil { // a forwarded copy (ADR-0033); Forward.room_id is filled by the caller
+		out.Forward = &v1.Forward{AuthorId: idp(m.ForwardAuthorID), MessageId: idp(m.ForwardedFrom), SentAt: tsp(m.ForwardSentAt)}
+	}
 	for i, f := range files {
 		out.Attachments[i] = File(f)
 	}

@@ -261,6 +261,10 @@ func (s *Service) attachAudio(ctx context.Context, rec sqlc.RoomRecording) (sqlc
 		if err := q.InsertAttachment(ctx, sqlc.InsertAttachmentParams{MessageID: *rec.MessageID, FileID: file.ID, Position: 0}); err != nil {
 			return err
 		}
+		// Copies forwarded before the audio was kept show it too (ADR-0033 §4).
+		if err := q.AttachToForwardedCopies(ctx, sqlc.AttachToForwardedCopiesParams{FileID: file.ID, MessageID: *rec.MessageID}); err != nil {
+			return err
+		}
 		upd, err = q.SetRecordingAudio(ctx, sqlc.SetRecordingAudioParams{ID: rec.ID, FileID: &file.ID})
 		return err
 	})
@@ -327,9 +331,41 @@ func (s *Service) roomRecording(r *http.Request) (sqlc.RoomRecording, perm.RoomA
 	return rec, acc, err
 }
 
+// visibleRecording returns the recording {rid} whose card the caller sees in the room {id}
+// (VIEW_ROOM): the room of the recording, or a room (a DM too) holding a live forwarded copy
+// of its card (ADR-0033 §4). 404 otherwise, and for a deleted one.
+func (s *Service) visibleRecording(r *http.Request) (sqlc.RoomRecording, error) {
+	roomID, err := httpx.PathUUID(r, "id", "room")
+	if err != nil {
+		return sqlc.RoomRecording{}, err
+	}
+	if _, err := rooms.Access(r, roomID); err != nil {
+		return sqlc.RoomRecording{}, err
+	}
+	rid, err := httpx.PathUUID(r, "rid", "recording")
+	if err != nil {
+		return sqlc.RoomRecording{}, err
+	}
+	rec, err := s.db.Q.GetRecording(r.Context(), rid)
+	if db.IsNotFound(err) || (err == nil && rec.DeletedAt != nil) {
+		return rec, httpx.NotFound("recording")
+	}
+	if err != nil || rec.RoomID == roomID {
+		return rec, err
+	}
+	if rec.MessageID == nil {
+		return rec, httpx.NotFound("recording")
+	}
+	ok, err := s.db.Q.RecordingVisibleInRoom(r.Context(), sqlc.RecordingVisibleInRoomParams{MessageID: *rec.MessageID, RoomID: roomID})
+	if err == nil && !ok {
+		err = httpx.NotFound("recording")
+	}
+	return rec, err
+}
+
 // transcript: GET /api/rooms/{id}/recordings/{rid}/transcript.
 func (s *Service) transcript(w http.ResponseWriter, r *http.Request) error {
-	rec, _, err := s.roomRecording(r)
+	rec, err := s.visibleRecording(r)
 	if err != nil {
 		return err
 	}

@@ -219,3 +219,29 @@ RETURNING *;
 -- name: UpdateSystemMessage :one
 UPDATE messages SET payload = $2 WHERE id = $1 AND kind = 'system' AND deleted_at IS NULL
 RETURNING *;
+
+-- name: UpdateForwardedSystemMessages :many
+-- The live forwarded copies of a recording card follow it (ADR-0033 §4).
+UPDATE messages SET payload = $2
+WHERE forwarded_from = $1 AND kind = 'system' AND deleted_at IS NULL
+RETURNING *;
+
+-- name: RoomAudience :one
+-- Who gets a room's events outside a request: its workspace, or a DM's two participants.
+SELECT r.workspace_id, (r.type = 'dm')::boolean AS dm,
+    array(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)::uuid[] AS dm_members
+FROM rooms r WHERE r.id = $1;
+
+-- name: AttachToForwardedCopies :exec
+-- The audio arrives after the card may have been forwarded: its live copies get it too.
+INSERT INTO message_attachments (message_id, file_id, position, forwarded)
+SELECT m.id, sqlc.arg('file_id')::uuid, 0, true FROM messages m
+WHERE m.forwarded_from = sqlc.arg('message_id')::uuid AND m.deleted_at IS NULL
+ON CONFLICT DO NOTHING;
+
+-- name: RecordingVisibleInRoom :one
+-- The card of the recording was forwarded into the room and that copy is live (ADR-0033 §4).
+SELECT EXISTS (
+    SELECT 1 FROM messages
+    WHERE forwarded_from = sqlc.arg('message_id')::uuid AND room_id = sqlc.arg('room_id')::uuid AND deleted_at IS NULL
+)::boolean;

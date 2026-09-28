@@ -168,3 +168,24 @@ LIMIT 50;
 -- name: SetEmbedsHidden :one
 UPDATE messages SET embeds_hidden = $2 WHERE id = $1 AND deleted_at IS NULL
 RETURNING *;
+
+-- name: InsertForwardedMessage :one
+-- A forwarded copy (ADR-0033): no nonce, reply or mentions; kind/payload copy a recording card.
+INSERT INTO messages (room_id, author_id, content, sticker_id, embeds_hidden, kind, payload,
+    forwarded_from, forward_author_id, forward_sent_at)
+VALUES (sqlc.arg('room_id'), sqlc.arg('author_id'), sqlc.arg('content'), sqlc.narg('sticker_id'),
+    sqlc.arg('embeds_hidden'), sqlc.arg('kind'), sqlc.narg('payload'),
+    sqlc.narg('forwarded_from'), sqlc.narg('forward_author_id'), sqlc.narg('forward_sent_at'))
+RETURNING *;
+
+-- name: CopyAttachments :exec
+-- The copy shows the same files as the source (no blob copy, no quota: ADR-0033 §3).
+INSERT INTO message_attachments (message_id, file_id, position, forwarded)
+SELECT sqlc.arg('to_id')::uuid, file_id, position, true FROM message_attachments
+WHERE message_id = sqlc.arg('from_id')::uuid;
+
+-- name: ForwardSources :many
+-- Rooms of original messages for Message.forward.room_id: a DM's is not disclosed.
+SELECT m.id, (CASE WHEN r.type = 'dm' THEN NULL ELSE m.room_id END)::uuid AS room_id
+FROM messages m JOIN rooms r ON r.id = m.room_id
+WHERE m.id = ANY(sqlc.arg('ids')::uuid[]);
