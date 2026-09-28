@@ -247,7 +247,7 @@ func TestReviewFixes(t *testing.T) {
 		t.Fatalf("race: %d cookie=%+v (want 200 with the same new cookie)", r.status, r.cookie)
 	}
 	sid, _, _ := strings.Cut(second, ".")
-	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key("auth:refresh_replay:"+sid).Build()).Error()
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("auth:refresh_replay:"+sid)).Build()).Error()
 	r = webPost(t, "/api/auth/refresh", nil, goodOrigin, first)
 	if r.status != 409 || r.cookie != nil {
 		t.Fatalf("race without replay: %d cookie=%+v (want 409 without Set-Cookie)", r.status, r.cookie)

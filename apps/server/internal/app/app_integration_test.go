@@ -703,7 +703,7 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 	if st != 200 {
 		t.Fatalf("refresh: %d", st)
 	}
-	if err := testRedis.Do(ctx, testRedis.B().Del().Key("auth:refresh_replay:"+lost.GetSessionId()).Build()).Error(); err != nil {
+	if err := testRedis.Do(ctx, testRedis.B().Del().Key(redisx.Key("auth:refresh_replay:"+lost.GetSessionId())).Build()).Error(); err != nil {
 		t.Fatal(err)
 	}
 	if _, st := refresh(c, t0); st != 409 {
