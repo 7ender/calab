@@ -608,8 +608,10 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 	o := owner(t)
 	email := mustEmail(t, o)
 	ctx := context.Background()
+	logins := 0
 	login := func() (*client, string) {
-		c := &client{t: t, ip: "10.0.2.2"}
+		logins++ // one IP per login: the per-IP login limit
+		c := &client{t: t, ip: fmt.Sprintf("10.0.2.%d", logins)}
 		var l v1.LoginResponse
 		c.must(200, "POST", "/api/auth/login", &v1.LoginRequest{Email: email, Password: "password123", DeviceName: "lost"}, &l)
 		return c, l.GetTokens().GetRefreshToken()
@@ -686,6 +688,71 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 	}
 	if _, st := refresh(c, lost.GetRefreshToken()); st != 200 {
 		t.Fatalf("session must survive a 409: %d", st)
+	}
+
+	// The session ends within the window (logout / revoke / disabled account): the old token
+	// must not resurrect it through the replay entry.
+	c, t0 = login()
+	lost, st = refresh(c, t0)
+	if st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	c.must(204, "POST", "/api/auth/logout", &v1.LogoutRequest{RefreshToken: lost.GetRefreshToken()}, nil)
+	if _, st := refresh(c, t0); st != 401 {
+		t.Fatalf("replay after logout: %d, want 401", st)
+	}
+	c, t0 = login()
+	lost, st = refresh(c, t0)
+	if st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	(&client{t: t, token: lost.GetAccessToken()}).must(204, "DELETE", "/api/me/sessions/"+lost.GetSessionId(), nil, nil)
+	if _, st := refresh(c, t0); st != 401 {
+		t.Fatalf("replay after session revoke: %d, want 401", st)
+	}
+	c, t0 = login()
+	lost, st = refresh(c, t0)
+	if st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	if _, err := testDB.Pool.Exec(ctx, "UPDATE users SET disabled_at = now() WHERE id = $1", o.id); err != nil {
+		t.Fatal(err)
+	}
+	_, st = refresh(c, t0)
+	if _, err := testDB.Pool.Exec(ctx, "UPDATE users SET disabled_at = NULL WHERE id = $1", o.id); err != nil {
+		t.Fatal(err)
+	}
+	if st != 401 {
+		t.Fatalf("replay for a disabled account: %d, want 401", st)
+	}
+	if _, st := refresh(c, lost.GetRefreshToken()); st != 401 {
+		t.Fatalf("the disabled account's session must be revoked: %d", st)
+	}
+
+	// The retry races the original (several API instances): one rotation, everyone gets the
+	// same new token (the row lock serializes; the replay entry is written before the commit).
+	c, t0 = login()
+	const n = 6
+	got := make([]string, n)
+	codes := make([]int, n)
+	done := make(chan int, n)
+	for i := range n {
+		go func() {
+			tok, st := refresh(&client{t: t, ip: c.ip}, t0)
+			got[i], codes[i] = tok.GetRefreshToken(), st
+			done <- i
+		}()
+	}
+	for range n {
+		<-done
+	}
+	for i := range n {
+		if codes[i] != 200 || got[i] != got[0] {
+			t.Fatalf("concurrent refresh %d: %d, token same=%v", i, codes[i], got[i] == got[0])
+		}
+	}
+	if _, st := refresh(c, got[0]); st != 200 {
+		t.Fatalf("the shared new token must work: %d", st)
 	}
 }
 
