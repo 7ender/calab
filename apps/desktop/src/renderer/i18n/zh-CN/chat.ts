@@ -105,7 +105,7 @@ export const zhChat: DictShape<typeof enChat> = {
   // header search field (docs/09 #50): the entry to the ⌘K search
   // global search (⌘K)
   'search.title': '搜索',
-  'search.hint': '房间、成员和消息；方向键选择，回车打开',
+  'search.hint': '房间、成员和消息；方向键选择，回车打开或加入语音房间，Shift+回车打开其聊天',
   'search.placeholder': '查找房间、用户或消息',
   'search.rooms': '房间',
   'search.members': '成员',
@@ -115,6 +115,12 @@ export const zhChat: DictShape<typeof enChat> = {
   'search.searching': '搜索中…',
   'search.empty': '未找到相关内容',
   'search.memberHint': '该成员发送的消息',
+  'search.join': '加入',
+  'search.chat': '打开聊天',
+  'search.open': '打开',
+  'search.actionOn': '{action}：{name}',
+  'search.hintVoice': '回车加入 · ⇧回车打开聊天',
+  'search.hintOpen': '回车打开',
   // lightbox
   'lightbox.close': '关闭',
   'lightbox.download': '下载',
