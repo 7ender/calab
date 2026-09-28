@@ -57,6 +57,8 @@ describe('describeError', () => {
     expect(v('emoji[4]', 'must be one emoji')).toMatchObject({ text: 'Нужна одна эмодзи', field: 'emoji', index: 4 });
     // Not indexed: the plain field texts, no index.
     expect(v('file', 'no sticker files').index).toBeUndefined();
+    // A replacement (PUT …/stickers/{sid}): plain `file`, no index.
+    expect(v('file', 'not a valid WebP sticker: more than 300 frames')).toEqual({ text: 'Больше 300 кадров', field: 'file', retry: false, generic: false });
     expect(v('files[1]', 'x').text).toBe('Проверьте введённые данные');
   });
 

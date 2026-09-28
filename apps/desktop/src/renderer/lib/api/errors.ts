@@ -75,8 +75,12 @@ const FIELD: Record<string, MessageKey> = {
   targetRoomId: 'err.field.targetRoom',
 };
 
-/** `file[3]` / `emoji[3]` of a multipart batch (POST /api/sticker-packs/{id}/stickers). */
-const INDEXED = /^(file|emoji)\[(\d+)\]$/;
+/**
+ * `file[3]` / `emoji[3]` of a multipart batch (POST /api/sticker-packs/{id}/stickers), or a plain
+ * `file` refused as a sticker (PUT …/stickers/{sid}: «not a valid WebP sticker: …»).
+ */
+const STICKER_FIELD = /^(file|emoji)(?:\[(\d+)\])?$/;
+const WEBP_REFUSAL = /not a valid WebP sticker/;
 
 /**
  * Why the server refused a sticker file — the reasons of ValidateWebP
@@ -89,12 +93,13 @@ const STICKER_FILE: ReadonlyArray<readonly [RegExp, MessageKey]> = [
   [/animation longer than/, 'stk.err.duration'],
 ];
 
-function indexedField(field: string, message: string): HumanError | null {
-  const m = INDEXED.exec(field);
+function stickerField(field: string, message: string): HumanError | null {
+  const m = STICKER_FIELD.exec(field);
   if (!m) return null;
-  const [, name = '', i = '0'] = m;
+  const [, name = '', i] = m;
+  if (i === undefined && !(name === 'file' && WEBP_REFUSAL.test(message))) return null;
   const key = name === 'emoji' ? 'stk.err.emoji' : (STICKER_FILE.find(([re]) => re.test(message))?.[1] ?? 'stk.err.notWebp');
-  return { text: t(key), field: name, index: Number(i), retry: false, generic: false };
+  return { text: t(key), field: name, ...(i !== undefined ? { index: Number(i) } : {}), retry: false, generic: false };
 }
 
 const generic = (): HumanError => ({ text: t('err.generic'), retry: true, generic: true });
@@ -127,8 +132,8 @@ export function describeError(e: unknown): HumanError {
   if (e instanceof ApiError) {
     if (e.code === 'ERROR_CODE_UNAVAILABLE') return e.status === 0 ? fromStatus(0) : { text: t('err.unavailable'), retry: true, generic: false };
     if (e.code === 'ERROR_CODE_VALIDATION') {
-      const indexed = e.field ? indexedField(e.field, e.message) : null;
-      if (indexed) return indexed;
+      const sticker = e.field ? stickerField(e.field, e.message) : null;
+      if (sticker) return sticker;
       const key = e.field ? FIELD[e.field] : undefined;
       return { text: t(key ?? 'err.validation'), ...(e.field ? { field: e.field } : {}), retry: false, generic: false };
     }

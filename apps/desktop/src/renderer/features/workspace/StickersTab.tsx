@@ -1,18 +1,20 @@
 import type { Sticker, StickerPack } from '@calaba/protocol';
-import { ChevronLeft, ChevronRight, Plus, Star, Trash2, Upload, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import { ChevronLeft, ChevronRight, Ellipsis, ImageUp, Plus, SmilePlus, Star, Trash2, Upload, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode, type RefObject } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Empty, IconButton, Input, Row, cx } from '../../components/ui';
+import { Button, Card, Empty, IconButton, Input, Row, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { describeError, errorText } from '../../lib/api/errors';
 import { fmt } from '../../lib/format';
-import { api, uploadStickers } from '../../lib/api/endpoints';
+import { api, replaceSticker, uploadStickers } from '../../lib/api/endpoints';
 import { STICKER_ACCEPT, prepareSticker, stickerFileKind, type PreparedSticker } from '../../lib/stickerPrepare';
 import { STICKER_BATCH, coverOf, stickerBox } from '../../lib/stickers';
 import { loadWorkspaceStickers } from '../../services/stickers';
 import { reportPlanError } from '../../services/plan';
 import { useStickers } from '../../stores/stickers';
 import { CommitInput } from '../settings/CommitInput';
+import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { StickerImage, StickerStill } from '../chat/stickers/StickerImage';
 
 /*
@@ -300,6 +302,7 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
           accept={STICKER_ACCEPT}
           multiple
           hidden
+          data-testid="sticker-file-input"
           onChange={(e) => {
             if (e.target.files) stage(e.target.files);
             e.target.value = '';
@@ -344,6 +347,7 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
                 onEmoji={(v) => run(async () => apply((await api.stickers.setEmoji(s.id, v)).pack))}
                 onCover={() => run(async () => apply((await api.stickers.update(pack.id, { coverStickerId: s.id })).pack))}
                 onDelete={() => run(async () => apply((await api.stickers.removeSticker(s.id)).pack))}
+                onReplaced={apply}
               />
             ))}
           </ul>
@@ -401,32 +405,106 @@ function StickerCell({
   onEmoji,
   onCover,
   onDelete,
+  onReplaced,
 }: {
   sticker: Sticker;
   cover: boolean;
   onEmoji: (v: string) => Promise<void>;
   onCover: () => Promise<void>;
   onDelete: () => Promise<void>;
+  onReplaced: (p: StickerPack | undefined) => void;
 }): ReactNode {
+  const file = useRef<HTMLInputElement>(null);
+  const emoji = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  // «Заменить файл»: the same preparation as an upload, then PUT …/stickers/{id} (id, emoji and
+  // position stay); a refusal shows under this sticker.
+  const replace = async (f: File): Promise<void> => {
+    setProblem(null);
+    const kind = stickerFileKind(f.name, f.type);
+    if (kind === 'gif' || kind === 'other') {
+      setProblem(t(kind === 'gif' ? 'stk.reject.gif' : 'stk.reject.unsupported'));
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await prepareSticker(f);
+      if (!r.ok) {
+        setProblem(t(`stk.reject.${r.reason}`));
+        return;
+      }
+      onReplaced((await replaceSticker(sticker.packId, sticker.id, { file: { blob: r.sticker.blob, name: r.sticker.name } })).pack);
+    } catch (e) {
+      const h = describeError(e);
+      setProblem(h.field === 'emoji' ? t('stk.err.emoji') : h.text);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <li className="group relative flex flex-col items-center gap-1 rounded-[var(--radius-card)] p-1 hover:bg-hover focus-within:bg-hover">
-      <StickerImage sticker={sticker} size={64} />
-      <EmojiField value={sticker.emoji} onCommit={(v) => void onEmoji(v)} />
+    <li className="group relative flex flex-col items-center gap-1 rounded-[var(--radius-card)] p-1 hover:bg-hover focus-within:bg-hover" data-testid="sticker-cell">
+      <span className={cx('grid place-items-center', busy && 'opacity-40')}>
+        <StickerImage sticker={sticker} size={64} />
+      </span>
+      {busy ? <Spinner className="absolute left-1/2 top-8 -translate-x-1/2 -translate-y-1/2" /> : null}
+      <EmojiField value={sticker.emoji} onCommit={(v) => void onEmoji(v)} inputRef={emoji} />
+      {problem ? (
+        <p role="alert" className="text-center text-caption text-danger-text" data-testid="sticker-item-error">
+          {problem}
+        </p>
+      ) : null}
       {cover ? (
         <span className="absolute left-1 top-1 grid size-5 place-items-center rounded-full bg-accent-strong text-accent-fg" title={t('stk.cover')}>
           <Star className="size-3" aria-label={t('stk.cover')} />
         </span>
       ) : null}
-      <div className="absolute right-0 top-0 flex opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 mobile:opacity-100">
-        {!cover ? (
-          <IconButton size="sm" label={t('stk.makeCover')} onClick={() => void onCover()}>
-            <Star className="size-3.5" aria-hidden />
+      <Dropdown.Root modal={false}>
+        <Dropdown.Trigger asChild>
+          <IconButton
+            size="sm"
+            label={t('stk.actions')}
+            className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 mobile:opacity-100"
+            data-testid="sticker-actions"
+          >
+            <Ellipsis className="size-3.5" aria-hidden />
           </IconButton>
-        ) : null}
-        <IconButton size="sm" label={t('stk.deleteSticker')} onClick={() => void onDelete()}>
-          <Trash2 className="size-3.5" aria-hidden />
-        </IconButton>
-      </div>
+        </Dropdown.Trigger>
+        <Dropdown.Portal>
+          <Dropdown.Content align="end" sideOffset={4} collisionPadding={16} className={menuBox}>
+            <Dropdown.Item className={menuItem} onSelect={() => file.current?.click()}>
+              <ImageUp className="size-4" aria-hidden /> {t('stk.replace')}
+            </Dropdown.Item>
+            <Dropdown.Item
+              className={menuItem}
+              // After the menu has closed and returned the focus to its trigger.
+              onSelect={() => setTimeout(() => emoji.current?.select(), 0)}
+            >
+              <SmilePlus className="size-4" aria-hidden /> {t('stk.editEmoji')}
+            </Dropdown.Item>
+            {!cover ? (
+              <Dropdown.Item className={menuItem} onSelect={() => void onCover()}>
+                <Star className="size-4" aria-hidden /> {t('stk.makeCover')}
+              </Dropdown.Item>
+            ) : null}
+            <Dropdown.Separator className={menuSeparator} />
+            <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void onDelete()}>
+              <Trash2 className="size-4" aria-hidden /> {t('stk.deleteSticker')}
+            </Dropdown.Item>
+          </Dropdown.Content>
+        </Dropdown.Portal>
+      </Dropdown.Root>
+      <input
+        ref={file}
+        type="file"
+        accept={STICKER_ACCEPT}
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) void replace(f);
+        }}
+      />
     </li>
   );
 }
@@ -435,7 +513,17 @@ function StickerCell({
  * One emoji for a sticker: a narrow field (paste or the OS emoji picker); staged files change on
  * input, saved stickers commit on Enter / blur. Invalid (text) — the server says so.
  */
-function EmojiField({ value, onChange, onCommit }: { value: string; onChange?: (v: string) => void; onCommit?: (v: string) => void }): ReactNode {
+function EmojiField({
+  value,
+  onChange,
+  onCommit,
+  inputRef,
+}: {
+  value: string;
+  onChange?: (v: string) => void;
+  onCommit?: (v: string) => void;
+  inputRef?: RefObject<HTMLInputElement | null>;
+}): ReactNode {
   const [v, setV] = useState(value);
   const [prev, setPrev] = useState(value);
   if (prev !== value) {
@@ -445,6 +533,7 @@ function EmojiField({ value, onChange, onCommit }: { value: string; onChange?: (
   const last = useMemo(() => lastGrapheme(v), [v]);
   return (
     <input
+      ref={inputRef}
       value={v}
       onChange={(e) => {
         const g = lastGrapheme(e.target.value) || e.target.value;

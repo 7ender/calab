@@ -2331,8 +2331,8 @@ test('sticker-picker', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('sticker-message')).toHaveCount(1);
 });
 
-// Workspace settings → «Стикеры» → the pack «Calab»: name, the WebP drop zone, the stickers with
-// their emoji (the first is the cover).
+// Workspace settings → «Стикеры» → the pack «Calab»: name, the drop zone, the stickers with their
+// emoji (the first is the cover) and the «⋯» menu of one of them open.
 test('settings-stickers', async ({ open, win, mock, shot }) => {
   await open();
   await win.emulateMedia({ reducedMotion: 'reduce' });
@@ -2346,6 +2346,10 @@ test('settings-stickers', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('sticker-pack-title')).toHaveText('Calab');
   await expect(dialog.getByTestId('sticker-pack-stickers').locator('[data-sticker]')).toHaveCount(3);
   await stillStickers(win, 1);
+  // «⋯» of the second sticker: «Заменить файл», «Изменить эмодзи», «Сделать обложкой», «Удалить».
+  await dialog.getByTestId('sticker-cell').nth(1).hover();
+  await dialog.getByTestId('sticker-cell').nth(1).getByTestId('sticker-actions').click();
+  await expect(win.getByRole('menuitem', { name: 'Заменить файл' })).toBeVisible();
   await checkpoint(shot, 'settings-stickers');
 });
 
@@ -2364,7 +2368,7 @@ test('settings-stickers-upload', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('sticker-pack-title')).toHaveText('Calab');
   const big = encodePng(1024, 1024, (u, v) => (Math.hypot(u - 0.5, v - 0.5) < 0.38 ? [255, 196, 45] : [58, 124, 246]));
   const slow = slowWebpAnimation(readFileSync(new URL('../e2e-support/fixtures/sticker-orbit.webp', import.meta.url)), 2000);
-  await dialog.locator('input[type=file]').setInputFiles([
+  await dialog.getByTestId('sticker-file-input').setInputFiles([
     { name: 'sun-1024.png', mimeType: 'image/png', buffer: big },
     { name: 'orbit-slow.webp', mimeType: 'image/webp', buffer: slow },
   ]);

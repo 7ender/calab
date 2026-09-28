@@ -76,7 +76,25 @@ describe('sticker packs (ADR-0030)', () => {
     slow.append('file', new Blob([slowWebpAnimation(orbit, 2000)], { type: 'image/webp' }), 'slow.webp');
     const r = await api(anna, `/api/sticker-packs/${pack.id}/stickers`, { method: 'POST', body: slow });
     expect(r.status).toBe(422);
-    expect(await r.json()).toMatchObject({ field: 'file[1]', message: expect.stringMatching(/animation longer than 10000 ms/) });
+    expect((await r.json()) as unknown).toMatchObject({ field: 'file[1]', message: expect.stringMatching(/animation longer than 10000 ms/) as unknown });
+  });
+
+  it('replaces a sticker in place (file and / or emoji)', async () => {
+    const anna = await login();
+    const orbit = readFileSync(new URL('./fixtures/sticker-orbit.webp', import.meta.url));
+    const put = (form: FormData) => api(anna, `/api/sticker-packs/${IDS.stickerPacks.calab}/stickers/${IDS.stickers.sun}`, { method: 'PUT', body: form });
+    const both = new FormData();
+    both.append('emoji', '🌀');
+    both.append('file', new Blob([orbit], { type: 'image/webp' }), 'new.webp');
+    const r = await put(both);
+    expect(r.status).toBe(200);
+    const pack = ((await r.json()) as { pack: { stickers: { id: string; emoji: string; animated?: boolean }[] } }).pack;
+    expect(pack.stickers[0]).toMatchObject({ id: IDS.stickers.sun, emoji: '🌀', animated: true });
+    const bad = new FormData();
+    bad.append('file', new Blob([slowWebpAnimation(orbit, 2000)], { type: 'image/webp' }), 'slow.webp');
+    const e = await put(bad);
+    expect(e.status).toBe(422);
+    expect((await e.json()) as unknown).toMatchObject({ field: 'file', message: expect.stringMatching(/animation longer/) as unknown });
   });
 
   it('mirrors the server WebP refusals', () => {

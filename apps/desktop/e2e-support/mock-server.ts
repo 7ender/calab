@@ -3260,6 +3260,32 @@ class MockImpl {
       this.packEvent(pack);
       sendMsg(c.res, 201, UploadStickersResponseSchema, { pack, added });
     });
+    // Replace a sticker's picture and / or emoji in place (same id and position).
+    this.route('PUT', '/api/sticker-packs/:id/stickers/:sid', async (c) => {
+      const me = this.uid(c);
+      const pack = this.packFor(c.params[0] ?? '', me, true);
+      const sticker = pack.stickers.find((x) => x.id === c.params[1]);
+      if (!sticker) throw notFound('sticker not found');
+      const type = c.req.headers['content-type'] ?? '';
+      if (!type.startsWith('multipart/form-data')) throw new HttpError(400, ErrorCode.BAD_REQUEST, 'multipart/form-data expected');
+      const form = await new Request('http://mock/upload', { method: 'POST', headers: { 'content-type': type }, body: new Uint8Array(c.raw) }).formData();
+      const rawEmoji = form.get('emoji');
+      const file = form.get('file');
+      if (rawEmoji === null && !(file instanceof File)) throw invalid('file', 'expected a "file" and / or an "emoji" field');
+      const emoji = typeof rawEmoji === 'string' ? rawEmoji.trim() : null;
+      if (emoji !== null && (!emoji || /^[ -~]+$/.test(emoji))) throw invalid('emoji', 'must be one emoji');
+      if (file instanceof File) {
+        const bytes = Buffer.from(await file.arrayBuffer());
+        const why = mockWebpProblem(bytes);
+        if (why) throw invalid('file', `not a valid WebP sticker: ${why}`);
+        const fileId = this.storeFile(pack.workspaceId, me, { name: file.name || 'sticker.webp', mime: 'image/webp', bytes });
+        Object.assign(sticker, { url: `/api/files/${fileId}`, animated: bytes.includes(Buffer.from('ANIM')), size: bytes.length });
+      }
+      if (emoji !== null) sticker.emoji = emoji;
+      pack.updatedAt = tick(s());
+      this.packEvent(pack);
+      sendMsg(c.res, 200, StickerPackResponseSchema, { pack });
+    });
     this.route('PATCH', '/api/stickers/:id', (c) => {
       const me = this.uid(c);
       const found = this.findSticker(c.params[0] ?? '');

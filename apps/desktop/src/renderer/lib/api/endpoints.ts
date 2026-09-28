@@ -121,6 +121,7 @@ import {
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
+  type StickerPackResponse,
   type UploadStickersResponse,
   type FileMeta,
   type ScreenSharePreset,
@@ -550,6 +551,19 @@ export function uploadStickers(
       xhr.send(form);
     }, reject);
   });
+}
+
+/**
+ * Replaces a sticker in place (same id and position): a new picture and / or emoji, multipart
+ * `file` / `emoji`; 422 field `file` / `emoji` names what the server refused.
+ */
+export async function replaceSticker(packId: string, stickerId: string, change: { file?: { blob: Blob; name: string }; emoji?: string }): Promise<StickerPackResponse> {
+  const form = new FormData();
+  if (change.emoji !== undefined) form.append('emoji', change.emoji);
+  if (change.file) form.append('file', change.file.blob, change.file.name);
+  const res = await platform.apiFetch(`/api/sticker-packs/${packId}/stickers/${stickerId}`, { method: 'PUT', body: form });
+  if (!res.ok) throw await toApiError(res);
+  return fromJson(StickerPackResponseSchema, (await res.json()) as JsonValue, { ignoreUnknownFields: true });
 }
 
 export async function uploadAvatar(file: Blob, name: string): Promise<void> {

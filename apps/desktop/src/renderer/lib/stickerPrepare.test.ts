@@ -99,20 +99,20 @@ describe('planSticker', () => {
 describe('encodeWithinLimit', () => {
   const blob = (size: number, type = 'image/webp'): Blob => new Blob([new Uint8Array(size)], { type });
   it('stops at the first quality that fits', async () => {
-    const encode = vi.fn(async (q: number) => blob(q > 0.8 ? 600 : 400));
+    const encode = vi.fn((q: number) => Promise.resolve(blob(q > 0.8 ? 600 : 400)));
     const out = await encodeWithinLimit(encode, 500);
     expect(out).toBeInstanceOf(Blob);
     expect(encode.mock.calls.map((c) => c[0])).toEqual([0.92, 0.85, 0.78]);
   });
   it('gives up below 0.7', async () => {
-    const encode = vi.fn(async () => blob(1000));
+    const encode = vi.fn(() => Promise.resolve(blob(1000)));
     expect(await encodeWithinLimit(encode, 500)).toBe('tooHeavy');
     expect(encode).toHaveBeenCalledTimes(QUALITY_STEPS.length);
     expect(QUALITY_STEPS.at(-1)).toBe(0.7);
   });
   it('reports a browser without WebP encoding', async () => {
-    expect(await encodeWithinLimit(async () => blob(10, 'image/png'))).toBe('noEncoder');
-    expect(await encodeWithinLimit(async () => null)).toBe('noEncoder');
+    expect(await encodeWithinLimit(() => Promise.resolve(blob(10, 'image/png')))).toBe('noEncoder');
+    expect(await encodeWithinLimit(() => Promise.resolve(null))).toBe('noEncoder');
   });
 });
 
@@ -122,15 +122,16 @@ describe('prepareSticker', () => {
     const calls: Array<[number, number, number]> = [];
     return {
       calls,
-      decode: async () => ({
-        width: w,
-        height: h,
-        encode: async (ew, eh, q) => {
-          calls.push([ew, eh, q]);
-          return new Blob([new Uint8Array(out)], { type: 'image/webp' });
-        },
-        close: () => {},
-      }),
+      decode: () =>
+        Promise.resolve({
+          width: w,
+          height: h,
+          encode: (ew: number, eh: number, q: number) => {
+            calls.push([ew, eh, q]);
+            return Promise.resolve(new Blob([new Uint8Array(out)], { type: 'image/webp' }));
+          },
+          close: () => {},
+        }),
     };
   };
   it('scales a 1024×1024 PNG down to a 512×512 WebP', async () => {
@@ -152,7 +153,7 @@ describe('prepareSticker', () => {
     expect(await prepareSticker(file(new Uint8Array(ascii('GIF89a\0\0\0\0')), 'a.gif'), codec(0, 0))).toMatchObject({ ok: false, reason: 'gif' });
   });
   it('reports a file that does not decode', async () => {
-    expect(await prepareSticker(file(png(10, 10), 'a.png'), { decode: async () => null })).toEqual({ ok: false, reason: 'broken' });
+    expect(await prepareSticker(file(png(10, 10), 'a.png'), { decode: () => Promise.resolve(null) })).toEqual({ ok: false, reason: 'broken' });
   });
   it('names the result .webp', () => {
     expect(webpName('Photo 1.JPG')).toBe('Photo 1.webp');
