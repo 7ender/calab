@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release runbook as one command (docs/06, "Релиз: runbook"). Builds, deploys and verifies ONE commit.
 #
-#   infra/docker/release.sh <commit>                 # default: preflight web deploy verify desktop
+#   infra/docker/release.sh <commit>                 # default: preflight web deploy verify desktop announce
 #   infra/docker/release.sh verify <commit>          # post-checks only (against what is deployed now)
 #   STEPS="deploy verify" infra/docker/release.sh <commit>   # a subset (order is always the canonical one)
 #
@@ -9,6 +9,8 @@
 #      APP_HOST (app.calab.ru) · ALIAS_HOST (meet.gptunnel.ru) · LANDING_HOST (calab.ru, empty = none)
 #      RELEASES_HOST (releases.calab.ru) · RTC_HOST (rtc.calab.ru) · WORK_DIR ($TMPDIR/calaba-release-$VERSION)
 #      GH_TOKEN (default: GITHUB_TOKEN from the root .env; for gh only)
+#      CALAB_RELEASE_BOT_TOKEN (default: from the root .env; announce only) · CALAB_API_URL (https://$APP_HOST)
+#      CALAB_RELEASE_ROOM (default in tools/release-announce.py)
 # Every HTTP check and the e2e go to STAND_IP directly (curl --resolve / forced browser DNS): local VPNs and
 # not-yet-propagated names cannot fake a result.
 #
@@ -37,6 +39,10 @@
 #              every file in them 200 with the size from the yml, sha512 recomputed ON the stand, latest/VERSION
 #              and the five latest/<stable name> files (stable versions only), the GitHub
 #              Release published (not a draft)
+#   announce   only when nothing failed and CALAB_RELEASE_BOT_TOKEN is set (else skipped): the bot posts the
+#              CHANGELOG section of $VERSION (from <commit>) into the «what's new» room —
+#              tools/release-announce.py; nonce release-$VERSION, so a re-run never double-posts. After
+#              `desktop` on purpose: the post links the GitHub Release and promises the auto-update feed
 #
 # Nothing here prints secrets: credentials are read over ssh into variables and used directly.
 set -euo pipefail
@@ -46,7 +52,7 @@ cd "$ROOT"
 if [[ "${1:-}" == verify ]]; then STEPS="verify"; shift; fi
 COMMIT_REF="${1:?usage: release.sh [verify] <commit>}"
 VERSION="${VERSION:-0.1.0}"
-STEPS="${STEPS:-preflight web deploy verify desktop}"
+STEPS="${STEPS:-preflight web deploy verify desktop announce}"
 HOST="${STAND_HOST:-root@141.105.69.177}"
 IP="${STAND_IP:-141.105.69.177}"
 D1="${APP_HOST:-app.calab.ru}"          # the app
@@ -57,6 +63,9 @@ REL="${RELEASES_HOST:-releases.calab.ru}"
 REPO="${RELEASE_REPO:-itrcz/calab}"
 if [[ -z "${GH_TOKEN:-}" && -f .env ]]; then   # gh only; never printed
   GH_TOKEN="$(sed -nE 's/^GITHUB_TOKEN=["'"'"']?([^"'"'"']*)["'"'"']?$/\1/p' .env | tail -1)"; export GH_TOKEN
+fi
+if [[ -z "${CALAB_RELEASE_BOT_TOKEN:-}" && -f .env ]]; then   # announce only; never printed
+  CALAB_RELEASE_BOT_TOKEN="$(sed -nE 's/^CALAB_RELEASE_BOT_TOKEN=["'"'"']?([^"'"'"']*)["'"'"']?$/\1/p' .env | tail -1)"
 fi
 rcurl() { # curl pinned to the stand IP for the host of the first https:// argument
   local a h=""; for a in "$@"; do [[ "$a" == https://* ]] && { h="${a#https://}"; h="${h%%/*}"; break; }; done
@@ -396,6 +405,25 @@ PY
     fi
     rel=$(gh release view "v$VERSION" --repo "$REPO" --json isDraft,isPrerelease,assets --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease) assets=\(.assets|length)"' 2>/dev/null || echo "absent")
     [[ "$rel" == draft=false* ]] && ok "GitHub Release v$VERSION: $rel" || bad "GitHub Release v$VERSION: $rel"
+  fi
+fi
+
+# --- announce: the release notes into the «what's new» room (a bot, docs/19) --------------------------
+if step announce; then
+  log "announce v$VERSION"
+  if [[ -z "${CALAB_RELEASE_BOT_TOKEN:-}" ]]; then
+    echo "announce: skipped, no CALAB_RELEASE_BOT_TOKEN"
+  elif (( FAILS )); then
+    log "NOT announcing: $FAILS check(s) failed"
+  else
+    mkdir -p "$(dirname "$WORK")"
+    git show "$COMMIT:CHANGELOG.md" > "$WORK.announce-CHANGELOG.md" 2>/dev/null || : > "$WORK.announce-CHANGELOG.md"
+    if out=$(CALAB_RELEASE_BOT_TOKEN="$CALAB_RELEASE_BOT_TOKEN" CALAB_API_URL="${CALAB_API_URL:-https://$D1}" \
+          python3 tools/release-announce.py "$VERSION" --changelog "$WORK.announce-CHANGELOG.md" 2>&1); then
+      ok "$out"
+    else
+      bad "announce: $out"
+    fi
   fi
 fi
 
