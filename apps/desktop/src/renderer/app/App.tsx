@@ -7,6 +7,7 @@ import { LinkLandingScreen } from '../features/auth/LinkLanding';
 import { OfflineScreen, TooManySessions } from '../features/auth/SessionScreens';
 import { AppShell } from '../features/shell/AppShell';
 import { Dialogs } from '../features/shell/Dialogs';
+import { CallLayer } from '../features/call/CallLayer';
 import { Toasts } from '../features/shell/Toasts';
 import { useLocale } from '../i18n';
 import { useTimeFormat } from '../lib/format';
@@ -83,6 +84,8 @@ export function App(): ReactNode {
       <TooltipP.Provider delayDuration={400} skipDelayDuration={300}>
         {screen}
         {status === 'authed' ? <Dialogs /> : null}
+        {/* One-to-one calls (ADR-0034): «Вызов…» / «Входящий звонок» over everything. */}
+        {status === 'authed' ? <CallLayer /> : null}
         <Toasts />
       </TooltipP.Provider>
     </QueryClientProvider>

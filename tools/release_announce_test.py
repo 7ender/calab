@@ -47,11 +47,11 @@ class RenderTest(unittest.TestCase):
     def test_message(self):
         self.assertEqual(ra.render("1.2.3", CHANGELOG), "\n\n".join([
             "🚀 **Calab 1.2.3** — 28 сентября 2026",
-            "✨ **Добавлено**\n• **Бейджи**: картинки рядом с именем.\n"
+            "✨ **Добавлено**\n\n• **Бейджи**: картинки рядом с именем.\n"
             "• **Пересылка**: в личные и комнаты, несколько получателей сразу.",
-            "🔧 **Изменено**\n• **Стикеры**: эмодзи из общего пикера.",
-            "🐞 **Исправлено**\n• **Звук**: не пропадает после сна.",
-            "📦 [Релиз 1.2.3 на GitHub](https://github.com/itrcz/calab/releases/tag/v1.2.3) · Обновление придёт само",
+            "🔧 **Изменено**\n\n• **Стикеры**: эмодзи из общего пикера.",
+            "🐞 **Исправлено**\n\n• **Звук**: не пропадает после сна.",
+            "Обновление придёт само",
         ]))
 
     def test_missing_version(self):
@@ -66,11 +66,83 @@ class RenderTest(unittest.TestCase):
         bullets = "\n".join(f"- **Пункт {i}**: " + "х" * 300 for i in range(30))
         msg = ra.render("2.0.0", f"## [2.0.0] — 2026-10-01\n\n### Добавлено\n{bullets}\n")
         self.assertLessEqual(len(msg), ra.MAX_CONTENT)
-        self.assertIn(ra.TRUNCATED, msg)
+        self.assertIn("…и ещё пунктов: ", msg)
         self.assertTrue(msg.endswith("Обновление придёт само"))
         for line in msg.split("\n"):
             if line.startswith("• "):
                 self.assertTrue(line.endswith("х" * 300))  # never cut mid-bullet
+
+
+class VersionsTest(unittest.TestCase):
+    def test_released_oldest_first(self):
+        text = CHANGELOG + "\n## [1.10.0] — 2026-10-02\n\n### Добавлено\n- x\n"
+        self.assertEqual(ra.released_versions(text), ["1.2.2", "1.2.3", "1.10.0"])
+
+    def test_every_released_version_renders(self):
+        for v in ra.released_versions(CHANGELOG):
+            self.assertTrue(ra.render(v, CHANGELOG).startswith(f"🚀 **Calab {v}**"))
+
+
+class FakeApi:
+    """Server side of POST (dedup by nonce, deleted nonce → 409), PATCH, list and DELETE."""
+
+    def __init__(self, msgs=None, deleted_nonces=(), forbidden=()):
+        self.msgs = list(msgs or [])  # newest first
+        self.deleted = set(deleted_nonces)
+        self.forbidden = set(forbidden)
+        self.log = []
+
+    def call(self, method, path, body=None):
+        self.log.append((method, path))
+        if method == "POST":
+            if body["nonce"] in self.deleted:
+                raise ra.HttpError("409", 409)
+            for m in self.msgs:
+                if m.get("nonce") == body["nonce"]:
+                    return 200, {"message": m}
+            m = {"id": f"m{len(self.log)}", "authorId": "bot", "content": body["content"], "nonce": body["nonce"]}
+            self.msgs.insert(0, m)
+            return 201, {"message": m}
+        if method == "PATCH":
+            mid = path.rsplit("/", 1)[1]
+            next(m for m in self.msgs if m["id"] == mid)["content"] = body["content"]
+            return 200, {}
+        if method == "GET":
+            return 200, {"messages": list(self.msgs), "hasMore": False}
+        if method == "DELETE":
+            mid = path.rsplit("/", 1)[1]
+            if mid in self.forbidden:
+                raise ra.HttpError("403", 403)
+            m = next(m for m in self.msgs if m["id"] == mid)
+            self.msgs.remove(m)
+            if m.get("nonce"):
+                self.deleted.add(m["nonce"])
+            return 204, {}
+        raise AssertionError(method)
+
+
+class AnnounceTest(unittest.TestCase):
+    def test_post_then_unchanged_then_updated(self):
+        api = FakeApi()
+        self.assertEqual(ra.announce(api, "r", "1.0.0", "a")[0], "posted")
+        self.assertEqual(ra.announce(api, "r", "1.0.0", "a")[0], "unchanged")
+        self.assertEqual(ra.announce(api, "r", "1.0.0", "b")[0], "updated")
+        self.assertEqual([m["content"] for m in api.msgs], ["b"])
+
+    def test_deleted_post_takes_next_nonce(self):
+        api = FakeApi(deleted_nonces={"release-1.0.0"})
+        state, _ = ra.announce(api, "r", "1.0.0", "a")
+        self.assertEqual(state, "posted")
+        self.assertEqual(api.msgs[0]["nonce"], "release-1.0.0-r2")
+        self.assertEqual(ra.announce(api, "r", "1.0.0", "a")[0], "unchanged")  # re-run finds the r2 post
+
+    def test_purge_counts_and_refusals(self):
+        api = FakeApi(msgs=[{"id": "b1", "authorId": "bot", "nonce": "release-1.0.0", "content": "x"},
+                            {"id": "o1", "authorId": "owner", "content": "#0.9"},
+                            {"id": "o2", "authorId": "owner", "content": "#0.8"}], forbidden={"o2"})
+        own, others, refused = ra.purge(api, "r", "bot")
+        self.assertEqual((own, others, [m["id"] for m in refused]), (1, 1, ["o2"]))
+        self.assertEqual(ra.announce(api, "r", "1.0.0", "x")[0], "posted")  # after purge: fresh post
 
 
 if __name__ == "__main__":

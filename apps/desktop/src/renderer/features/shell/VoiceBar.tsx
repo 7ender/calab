@@ -15,7 +15,9 @@ import { useUi } from '../../stores/ui';
 import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
 import { RecordingPill } from '../voice/Recording';
 import { MyStreamAnnot } from '../voice/Annotations';
-import { useWorkspaces } from '../../stores/workspaces';
+import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { dmPeer } from '../../stores/dms';
+import { openDm } from '../../services/dms';
 import { NoiseButton } from './NoisePopover';
 import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
 import { PRESET_LABEL, viewersText } from '../voice/streamFormat';
@@ -179,7 +181,10 @@ function useCameraLabel(roomId: string): { label: string; disabled: boolean } {
   const phase = useVoice((s) => s.camera);
   const connected = useVoice((s) => s.phase === 'connected');
   const canVideo = useVoice((s) => s.canVideo);
-  const limit = useRooms((s) => s.byId[roomId]?.media?.cameraLimit ?? 0);
+  // A one-to-one call (ADR-0034): cameras on for both, whatever the DM room carries.
+  const call = useVoice((s) => s.call);
+  const roomLimit = useRooms((s) => s.byId[roomId]?.media?.cameraLimit ?? 0);
+  const limit = call ? 2 : roomLimit;
   const wsId = useVoice((s) => s.workspaceId);
   const on = useWorkspaces((s) => Object.values((wsId ? s.byId[wsId]?.voice : undefined) ?? {}).filter((v) => v.roomId === roomId && v.camera).length);
   const block = cameraBlock({ connected, canVideo, limit, phase });
@@ -416,6 +421,9 @@ export function VoiceBar(): ReactNode {
   const serverMuted = useVoice((s) => s.serverMuted);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
   const wsName = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.name : undefined));
+  // A one-to-one call (ADR-0034): «Звонок · <имя>» instead of «Комната / Пространство».
+  const call = useVoice((s) => s.call);
+  const peerName = useMemberName(null, call && roomId ? dmPeer(roomId) : '');
   const devStats = usePrefs((s) => s.devStats);
   const saveTraffic = usePrefs((s) => s.saveTraffic);
   const anyVideo = useVoice((s) => s.cameras.length > 0 || s.camera === 'on');
@@ -429,11 +437,12 @@ export function VoiceBar(): ReactNode {
     phase === 'connected' ? t('voice.connected') : phase === 'reconnecting' ? t('voice.reconnecting') : phase === 'blocked' ? t('voice.blocked') : t('voice.connecting');
   const retry = offerRetry(phase, link.attempts);
   const host = link.blockedHost ?? link.rtcHost ?? '';
-  const full = t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
+  const full = call ? t('call.panel', { name: peerName }) : t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
   // Always «room / workspace» (Discord's «Room / Server»); truncated in the panel, the full path
-  // is in the tooltip.
+  // is in the tooltip. A call opens its DM.
   const goRoom = (): void => {
-    if (wsId) openRoom(wsId, roomId);
+    if (call) openDm(roomId);
+    else if (wsId) openRoom(wsId, roomId);
   };
 
   return (

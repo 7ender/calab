@@ -192,7 +192,10 @@ function MicMenu(): ReactNode {
 
 /** Mic ▾ «Режим»: two radio items, then the chosen mode's controls. */
 function MicModeSection({ cap }: { cap: PttCapture }): ReactNode {
-  const micMode = usePrefs((s) => s.micMode);
+  // A one-to-one call is voice activation only (ADR-0034): PTT off until it ends.
+  const call = useVoice((s) => s.call);
+  const chosen = usePrefs((s) => s.micMode);
+  const micMode = call ? 'voice' : chosen;
   const threshold = usePrefs((s) => s.thresholdDb);
   const binding = usePrefs((s) => s.pttBinding);
   const setPrefs = usePrefs((s) => s.setPrefs);
@@ -201,6 +204,7 @@ function MicModeSection({ cap }: { cap: PttCapture }): ReactNode {
   return (
     <>
       <Dropdown.Label className={menuLabel}>{t('shell.micMode')}</Dropdown.Label>
+      {call ? <div className="px-2 pb-1 text-caption text-muted">{t('call.voiceOnly')}</div> : null}
       <Dropdown.RadioGroup value={micMode} onValueChange={selectMicMode}>
         {/* Selecting a mode keeps the menu open: its controls appear right below. */}
         <Dropdown.RadioItem value="voice" className={radio} onSelect={(e) => e.preventDefault()} data-testid="mic-mode-voice">
@@ -209,7 +213,7 @@ function MicModeSection({ cap }: { cap: PttCapture }): ReactNode {
           </Dropdown.ItemIndicator>
           {t('shell.micModeVoice')}
         </Dropdown.RadioItem>
-        <Dropdown.RadioItem value="ptt" className={radio} onSelect={(e) => e.preventDefault()} data-testid="mic-mode-ptt">
+        <Dropdown.RadioItem value="ptt" className={radio} disabled={call} onSelect={(e) => e.preventDefault()} data-testid="mic-mode-ptt">
           <Dropdown.ItemIndicator className="absolute left-2">
             <Check className="size-3.5" />
           </Dropdown.ItemIndicator>

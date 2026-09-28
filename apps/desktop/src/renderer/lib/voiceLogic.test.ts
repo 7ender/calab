@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { meterUpdate, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, userVolumeCapped, withUserMuted, withUserVolume } from './voiceLogic';
+import { meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, userVolumeCapped, withUserMuted, withUserVolume } from './voiceLogic';
 
 describe('mute / deafen', () => {
   it('mute toggles; the mic button while deafened lifts deafen and turns the mic on (Discord)', () => {
@@ -140,5 +140,14 @@ describe('meterUpdate', () => {
     expect(meterUpdate({ ...base, meter: true })).toBe('level');
     expect(meterUpdate({ ...base, meter: true, last: 980 })).toBe('none');
     expect(meterUpdate({ ...base, meter: true, last: 980, open: true })).toBe('level');
+  });
+});
+
+describe('micModeFor (ADR-0034)', () => {
+  it('a call forces voice activation; otherwise the chosen mode', () => {
+    expect(micModeFor('ptt', true)).toBe('voice');
+    expect(micModeFor('voice', true)).toBe('voice');
+    expect(micModeFor('ptt', false)).toBe('ptt');
+    expect(micModeFor('voice', false)).toBe('voice');
   });
 });

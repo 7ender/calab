@@ -18,6 +18,10 @@
  *   npx tsx tools/perf-call.ts --seconds 0 --bench C --bench-seconds 90 --name after   # CPU of all app processes
  *   npx tsx tools/perf-call.ts --seconds 0 --no-emulate --no-stats --recording --bench C --bench-seconds 90 --name rec-after
  *
+ * `--dm-call`: a one-to-one call instead (ADR-0034): Борис calls, I accept in his DM (open, with the
+ * «Звонок · 00:42» header timer and the island); the same live events, typing and the voice state
+ * in that DM.
+ *
  * `--recording`: «Созвон» is being recorded (ROOM_RECORDING, Борис 12:34 ago) — the REC dot on the
  * card, the «Запись» pill in the island (docs/09 #64). A bench also samples WindowServer: the
  * compositor redraws blurred surfaces under an animated layer there, not in the app.
@@ -53,6 +57,7 @@ const CPU = argv.includes('--cpu');
 const SPEAKER = argv.includes('--speaker');
 const POPOVER = argv.includes('--popover');
 const RECORDING = argv.includes('--recording');
+const DM_CALL = argv.includes('--dm-call');
 const ROOT = resolve(import.meta.dirname, '..');
 const DESKTOP = resolve(ROOT, 'apps/desktop');
 process.env['MOCK_LIVEKIT_ROOM_PREFIX'] ||= `perfcall${PORT}_`;
@@ -323,10 +328,22 @@ async function main(): Promise<void> {
     mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false });
     for (const u of [IDS.users.boris, IDS.users.vera, IDS.users.grigory, IDS.users.dina]) mock.setPresence(u, PresenceStatus.ONLINE);
     for (let i = 0; i < 5; i++) mock.injectMessage({ roomId: IDS.rooms.general, authorId: i % 2 ? IDS.users.vera : IDS.users.boris, content: `perf call message ${i}` });
-    await aside.getByRole('button', { name: /Созвон/ }).first().click();
-    await page.getByText('Голос подключён').first().waitFor({ timeout: 30_000 });
-    await aside.getByRole('button', { name: /общий/ }).first().click();
-    await page.getByRole('heading', { name: 'общий' }).first().waitFor();
+    if (DM_CALL) {
+      // ADR-0034: Борис's DM open, he calls, I accept — the call's voice session in the DM.
+      mock.setVoiceState({ userId: IDS.users.boris, roomId: '' });
+      await page.getByTestId('rail-home').getByRole('button').click();
+      await page.getByTestId('dm-list').getByRole('button', { name: /Борис Петров/ }).click();
+      await page.getByTestId('dm-header').waitFor();
+      mock.ringCall(IDS.users.boris, IDS.users.anna);
+      await page.getByTestId('call-accept').click();
+      await page.getByTestId('dm-call-active').waitFor({ timeout: 15_000 });
+      await page.getByText('Голос подключён').first().waitFor({ timeout: 30_000 });
+    } else {
+      await aside.getByRole('button', { name: /Созвон/ }).first().click();
+      await page.getByText('Голос подключён').first().waitFor({ timeout: 30_000 });
+      await aside.getByRole('button', { name: /общий/ }).first().click();
+      await page.getByRole('heading', { name: 'общий' }).first().waitFor();
+    }
     await page.getByRole('button', { name: /^Качество связи/ }).first().waitFor({ timeout: 15_000 });
     const membersOpen = await page.getByRole('complementary').filter({ hasText: /В сети|Участники/ }).count();
 
@@ -345,8 +362,10 @@ async function main(): Promise<void> {
       let k = 0;
       timers.push(setInterval(() => mock.setPresence(IDS.users.grigory, k++ % 2 ? PresenceStatus.ONLINE : PresenceStatus.IDLE), 5000));
       let m = 0;
-      timers.push(setInterval(() => mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: m++ % 2 === 0, ...(BENCH === 'E' ? { camera: true } : {}) }), 10_000));
-      timers.push(setInterval(() => void fetch(`${mock.url}/__mock/typing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ roomId: IDS.rooms.general, userId: IDS.users.vera }) }), 4000));
+      const voiceRoom = DM_CALL ? IDS.dms.boris : IDS.rooms.call;
+      const typing = DM_CALL ? { roomId: IDS.dms.boris, userId: IDS.users.boris } : { roomId: IDS.rooms.general, userId: IDS.users.vera };
+      timers.push(setInterval(() => mock.setVoiceState({ userId: IDS.users.boris, roomId: voiceRoom, muted: m++ % 2 === 0, ...(BENCH === 'E' ? { camera: true } : {}) }), 10_000));
+      timers.push(setInterval(() => void fetch(`${mock.url}/__mock/typing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(typing) }), 4000));
     }
     // A real remote speaker: Chromium's fake microphone beeps once a second, so LiveKit's active
     // speakers and the level-driven rings flip on and off like in a conversation.

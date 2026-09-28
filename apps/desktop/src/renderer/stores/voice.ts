@@ -95,6 +95,11 @@ export interface VoiceStore {
    * shows me in the new room during that too.
    */
   joining: { roomId: string; workspaceId: string } | null;
+  /**
+   * The session is a one-to-one call's (ADR-0034): a DM room, `workspaceId` ''; the mic is voice
+   * activation only (no PTT button / hint), the panel names the peer instead of a room.
+   */
+  call: boolean;
   error: string | null;
   canSpeak: boolean;
   canStream: boolean;
@@ -163,6 +168,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   joinedAt: null,
   phase: 'idle',
   joining: null,
+  call: false,
   error: null,
   canSpeak: false,
   canStream: false,

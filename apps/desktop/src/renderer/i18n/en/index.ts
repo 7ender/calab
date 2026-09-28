@@ -2,6 +2,7 @@ import type { Dict } from '../types';
 import { enApp } from './app';
 import { enChat } from './chat';
 import { enDm } from './dm';
+import { enCall } from './call';
 import { enEcho } from './echo';
 import { enMedia } from './media';
 import { enMail } from './mail';
@@ -27,6 +28,7 @@ export const en: Dict = {
   ...enStickers,
   ...enBots,
   ...enDm,
+  ...enCall,
   ...enEcho,
   ...enMedia,
   ...enPlan,

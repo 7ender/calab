@@ -27,6 +27,8 @@ import {
   CreateInviteResponseSchema,
   CreateDmRequestSchema,
   CreateDmResponseSchema,
+  CallActionResponseSchema,
+  StartCallResponseSchema,
   ListDmCandidatesResponseSchema,
   UpdateDmStateRequestSchema,
   UpdateDmStateResponseSchema,
@@ -414,6 +416,15 @@ export const api = {
     /** My own state of a DM (docs/09 #51): archive / «Удалить чат» (for me only); 404 not a participant. */
     setState: (roomId: string, state: { archived?: boolean; cleared?: boolean }) =>
       call('PATCH', `/api/dms/${roomId}/state`, UpdateDmStateResponseSchema, body(UpdateDmStateRequestSchema, state)),
+  },
+  /**
+   * One-to-one calls (ADR-0034, docs/05 «Звонки»): place a call in a DM → RINGING (409 IN_CALL /
+   * BUSY, 403 cannot call this peer); accept / decline (the callee), cancel (the caller) while
+   * RINGING, hangup (either) while ACTIVE → the call as it is now (409 wrong state).
+   */
+  calls: {
+    start: (dmRoomId: string) => call('POST', `/api/dms/${dmRoomId}/call`, StartCallResponseSchema),
+    act: (callId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup') => call('POST', `/api/calls/${callId}/${action}`, CallActionResponseSchema),
   },
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
   unfurl: {

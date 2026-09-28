@@ -46,6 +46,14 @@ export function pttCue(on: boolean, s: SelfState, inCall: boolean): 'pttOn' | 'p
   return on ? 'pttOn' : 'pttOff';
 }
 
+/**
+ * The mic mode in force (ADR-0034): a one-to-one call is voice activation only, whatever the
+ * user chose — no PTT binding, no PTT hint; their choice comes back after the call.
+ */
+export function micModeFor(pref: 'voice' | 'ptt', call: boolean): 'voice' | 'ptt' {
+  return call ? 'voice' : pref;
+}
+
 export interface TransmitInput extends SelfState {
   canSpeak: boolean;
   mode: 'voice' | 'ptt';

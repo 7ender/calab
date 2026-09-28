@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { WorkspaceRole } from '@calaba/protocol';
-import { ArrowRightLeft, AtSign, Ban, MessageCircle, Check, ChevronRight, IdCard, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRightLeft, AtSign, Ban, MessageCircle, Phone, Check, ChevronRight, IdCard, LogOut, NotebookPen, Pencil, Shield, UserCheck, UserMinus, UserRound, UserX, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -18,8 +18,9 @@ import { requestMention } from '../chat/mentionRequest';
 import { memberActions, type MenuActions } from './members';
 import { roleName } from './MemberBits';
 import { NicknameDialog } from './NicknameDialog';
-import { useCanDm } from '../dm/canDm';
+import { useCanCall, useCanDm } from '../dm/canDm';
 import { startDm } from '../../services/dms';
+import { startCall } from '../../services/call';
 import { RoomSubmenuPicker } from '../workspace/RoomPicker';
 import { LocalTime } from './LocalTime';
 
@@ -91,13 +92,22 @@ export function MemberContextMenu({
 function OpenMemberMenu({ workspaceId, userId, onRename, inProfile }: { workspaceId: string; userId: string; onRename: () => void; inProfile: boolean }): ReactNode {
   const actions = useMemberActions(workspaceId, userId);
   const canDm = useCanDm(workspaceId, userId);
+  const canCall = useCanCall(userId, workspaceId);
   if (!actions) return null;
-  return <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} canDm={canDm} onRename={onRename} inProfile={inProfile} />;
+  return <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} canDm={canDm} canCall={canCall} onRename={onRename} inProfile={inProfile} />;
 }
 
 /** 40 px rows (Discord member menu), 15 px text. */
 const row = cx(menuItem, 'h-10 text-[15px]');
 const danger = 'text-danger-text data-[highlighted]:text-accent-fg';
+/**
+ * «Позвонить» / «Написать» (ADR-0034, the owner's request): two equal buttons across the top of
+ * the menu — icon over the label on the neutral fill, the accent when highlighted.
+ */
+const topAction = cx(
+  'flex h-14 min-w-0 flex-1 cursor-default flex-col items-center justify-center gap-1 rounded-[var(--radius-row)] bg-[var(--color-fill)] px-2 text-body font-medium text-fg outline-none',
+  'data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg',
+);
 
 /** Right-aligned 20 px rounded checkbox (Discord); the item's checked state fills it. */
 function MenuCheck({
@@ -150,6 +160,7 @@ function MemberMenuContent({
   userId,
   actions: a,
   canDm,
+  canCall,
   onRename,
   inProfile,
 }: {
@@ -157,6 +168,7 @@ function MemberMenuContent({
   userId: string;
   actions: MenuActions;
   canDm: boolean;
+  canCall: boolean;
   onRename: () => void;
   inProfile: boolean;
 }): ReactNode {
@@ -186,6 +198,20 @@ function MemberMenuContent({
         {name}
       </div>
       <LocalTime userId={userId} variant="menu" />
+      {canDm ? (
+        <div className="flex gap-1 px-1 pb-1 pt-0.5" data-testid="member-menu-top">
+          {canCall ? (
+            <ContextMenu.Item className={topAction} onSelect={() => void startCall(userId)}>
+              <Phone className="size-[18px]" aria-hidden />
+              <span className="max-w-full truncate">{t('call.call')}</span>
+            </ContextMenu.Item>
+          ) : null}
+          <ContextMenu.Item className={topAction} onSelect={() => void startDm(userId)}>
+            <MessageCircle className="size-[18px]" aria-hidden />
+            <span className="max-w-full truncate">{t('dm.write')}</span>
+          </ContextMenu.Item>
+        </div>
+      ) : null}
       {!inProfile ? (
         <ContextMenu.Item className={row} onSelect={() => openProfile(workspaceId, userId)}>
           <UserRound className="size-4" aria-hidden /> {t('people.menu.profile')}
@@ -194,11 +220,6 @@ function MemberMenuContent({
       <ContextMenu.Item className={row} onSelect={() => requestMention(userId, name)}>
         <AtSign className="size-4" aria-hidden /> {t('people.menu.mention')}
       </ContextMenu.Item>
-      {canDm ? (
-        <ContextMenu.Item className={row} onSelect={() => void startDm(userId)}>
-          <MessageCircle className="size-4" aria-hidden /> {t('dm.write')}
-        </ContextMenu.Item>
-      ) : null}
       <ContextMenu.Item className={row} onSelect={() => openProfile(workspaceId, userId, true)}>
         <NotebookPen className="size-4" aria-hidden />
         <span className="flex min-w-0 flex-col leading-[18px]">

@@ -12,6 +12,9 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useConnectingRing, useVoiceStateOf } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
+import { dmPeer } from '../../stores/dms';
+import { useMemberName } from '../../stores/workspaces';
+import { openDm } from '../../services/dms';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { selectMicMode } from './micMenu';
 import { MobileRecDot, useRecording } from '../voice/Recording';
@@ -34,7 +37,10 @@ export function MobileVoiceStrip(): ReactNode {
   const muted = useVoice((s) => s.muted);
   const serverMuted = useVoice((s) => s.serverMuted);
   const deafened = useVoice((s) => s.deafened);
-  const ptt = usePrefs((s) => s.micMode === 'ptt');
+  // A one-to-one call is voice activation only (ADR-0034): no PTT button there.
+  const call = useVoice((s) => s.call);
+  const ptt = usePrefs((s) => s.micMode === 'ptt') && !call;
+  const peerName = useMemberName(null, call && roomId ? dmPeer(roomId) : '');
   const onAir = useVoice((s) => s.pttDown && s.transmitting);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
   const me = useSession((s) => s.me?.user);
@@ -66,14 +72,19 @@ export function MobileVoiceStrip(): ReactNode {
         {/* The whole text block opens the room (a full-size button under the text); the REC dot
             sits above it as its own button — a menu trigger cannot nest inside a button. */}
         <div className="relative flex min-w-0 flex-1 flex-col items-start justify-center self-stretch" aria-live="polite">
-          <button type="button" aria-label={room?.name ?? ''} className="absolute inset-0 rounded-[var(--radius-row)]" onClick={() => wsId && openRoom(wsId, roomId)} />
+          <button
+            type="button"
+            aria-label={call ? t('call.panel', { name: peerName }) : (room?.name ?? '')}
+            className="absolute inset-0 rounded-[var(--radius-row)]"
+            onClick={() => (call ? openDm(roomId) : wsId && openRoom(wsId, roomId))}
+          />
           <span className="pointer-events-none flex max-w-full items-center gap-1">
             <span className={cx('min-w-0 truncate text-[13px] font-semibold leading-[18px]', connected ? 'text-ok' : 'text-warn')}>{phaseText}</span>
             {/* Recording (docs/09 #30): the red dot only — the strip has no room for the timer; a tap
                 opens «Идёт запись · 12:34» / «Остановить запись» (docs/09 #64). */}
             {recording ? <MobileRecDot roomId={roomId} workspaceId={wsId} rec={recording} className="pointer-events-auto -my-1 relative" /> : null}
           </span>
-          <span className="pointer-events-none max-w-full truncate text-caption text-muted">{room?.name ?? ''}</span>
+          <span className="pointer-events-none max-w-full truncate text-caption text-muted">{call ? t('call.panel', { name: peerName }) : (room?.name ?? '')}</span>
         </div>
         <button
           type="button"
@@ -94,7 +105,7 @@ export function MobileVoiceStrip(): ReactNode {
           {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
         </button>
         {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : null}
-        <MoreMenu />
+        {call ? null : <MoreMenu />}
         <button type="button" aria-label={t('voice.leave')} onClick={() => void voice.leave()} className={cx(round, 'bg-danger-fill text-white active:brightness-90')}>
           <Phone className="size-5 rotate-[135deg]" aria-hidden />
         </button>
