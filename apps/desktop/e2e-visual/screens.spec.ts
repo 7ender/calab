@@ -30,7 +30,8 @@ const ALL = process.env['CALABA_VISUAL_ALL'] === '1';
 
 /**
  * The local set (~25): one shot per screen family, no per-menu-item or per-tab shots. Settings:
- * 2 = «Голос и устройства», 3 = «Горячие клавиши», 8 = «Приложение» (language).
+ * 2 = «Голос и устройства», 3 = «Горячие клавиши», 8 = «Приложение» (language); «О программе» —
+ * `settings-about` (an available update, docs/09 #93).
  */
 const KEY = new Set([
   'auth-login',
@@ -94,6 +95,7 @@ const KEY = new Set([
   'settings-2',
   'settings-3',
   'settings-8',
+  'settings-about',
   'room-settings-1',
   'room-settings-restricted',
   'i18n-en-main-chat',
@@ -767,6 +769,29 @@ test('update-banner', async ({ open, win, mock, shot }) => {
   await win.evaluate(() => (window as unknown as { __calabaUpdateStatus?: (s: object) => void }).__calabaUpdateStatus?.({ state: 'downloaded', version: '0.1.1' }));
   await expect(win.getByTestId('update-banner')).toBeVisible();
   await checkpoint(shot, 'update-banner');
+});
+
+/**
+ * «О программе» with an available update (docs/09 #93): «Версия X» + «Скачать и установить 0.9.0»
+ * (faked status). The real app / Electron versions are masked — they change with every release.
+ */
+test('settings-about', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await openSettingsTab(win, openAppSettings(win), TABS.settings);
+  await win.evaluate(() =>
+    (window as unknown as { __calabaUpdateStatus?: (s: object) => void }).__calabaUpdateStatus?.({
+      state: 'available',
+      version: '0.9.0',
+      downloadPage: 'https://releases.calab.ru/',
+      installable: true,
+    }),
+  );
+  const dialog = win.getByRole('dialog');
+  await expect(dialog.getByTestId('update-install')).toHaveText('Скачать и установить 0.9.0');
+  await checkpoint(shot, 'settings-about', {
+    mask: [dialog.locator('[data-settings-label]', { hasText: /^Версия / }), dialog.getByText(/^Electron /)],
+  });
 });
 
 test('main-members-toggled', async ({ open, win, mock, shot }) => {

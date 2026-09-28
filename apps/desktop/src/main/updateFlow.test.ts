@@ -358,6 +358,76 @@ describe('update flow', () => {
     expect(t.flow.status().state).toBe('error');
   });
 
+  describe('«Скачать и установить» (docs/09 #93)', () => {
+    it('auto off: available is installable; download() → downloading (speed) → downloaded → install', async () => {
+      const t = setup({ auto: false });
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      expect(t.flow.status()).toEqual({ state: 'available', version: '0.1.1', downloadPage: PAGE, installable: true });
+      expect(t.updater.autoInstallOnAppQuit).toBe(false);
+      expect(t.flow.download()).toBe(true);
+      expect(t.updater.downloads).toBe(1);
+      expect(t.updater.autoInstallOnAppQuit).toBe(true);
+      expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.1', percent: 0 });
+      t.updater.emit('download-progress', { percent: 42.7, bytesPerSecond: 1_234_567.8 });
+      expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.1', percent: 42, bytesPerSecond: 1_234_568 });
+      expect(t.flow.download()).toBe(false); // already downloading
+      t.updater.finishDownload('0.1.1');
+      expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
+      // Re-reading the (still off) setting keeps install-on-quit for the requested download.
+      t.flow.applySettings();
+      expect(t.updater.autoInstallOnAppQuit).toBe(true);
+      expect(t.flow.install()).toBe(true);
+      expect(t.updater.installs).toEqual([[false, true]]);
+      expect(t.updater.downloads).toBe(1);
+    });
+
+    it('during a call: the user may download a deferred update now; the call end does not download again', async () => {
+      const t = setup();
+      t.flow.setInCall(true);
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      expect(t.flow.download()).toBe(true);
+      expect(t.updater.downloads).toBe(1);
+      t.flow.setInCall(false);
+      expect(t.updater.downloads).toBe(1);
+      expect(t.flow.status().state).toBe('downloading');
+    });
+
+    const notInstallable = [
+      ['unsigned macOS', { platform: 'darwin' }],
+      ['linux deb', { platform: 'linux' }],
+      ['server-derived feed', { buildFeed: null, notifyFeed: () => SERVER_FEED }],
+    ] as const;
+    for (const [name, env] of notInstallable) {
+      it(`${name}: not installable, download() refuses (only the download page)`, async () => {
+        const t = setup({ ...env, auto: false });
+        t.updater.next = { version: '0.1.1' };
+        await t.flow.check();
+        const s = t.flow.status();
+        expect(s.state).toBe('available');
+        expect(s.state === 'available' && s.installable).toBeFalsy();
+        expect(t.flow.download()).toBe(false);
+        expect(t.updater.downloads).toBe(0);
+        expect(t.updater.autoInstallOnAppQuit).toBe(false);
+      });
+    }
+
+    it('nothing available / error → download() refuses; a download error ends in error, retry = check', async () => {
+      const t = setup({ auto: false });
+      await t.flow.check();
+      expect(t.flow.download()).toBe(false);
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      expect(t.flow.download()).toBe(true);
+      t.updater.emit('error', new Error('sha512 mismatch'));
+      expect(t.flow.status().state).toBe('error');
+      expect(t.flow.download()).toBe(false);
+      await t.flow.check();
+      expect(t.flow.status()).toMatchObject({ state: 'available', installable: true });
+    });
+  });
+
   it('concurrent checks share one updater call', async () => {
     const t = setup();
     const [a, b] = await Promise.all([t.flow.check(), t.flow.check()]);
@@ -504,7 +574,7 @@ describe('update flow', () => {
       expect(t.updater.autoDownload).toBe(false);
       expect(t.updater.autoInstallOnAppQuit).toBe(true);
       expect(t.updater.downloads).toBe(0);
-      expect(t.flow.status()).toEqual({ state: 'available', version: '0.1.1' });
+      expect(t.flow.status()).toEqual({ state: 'available', version: '0.1.1', installable: true });
       expect(t.notified).toEqual([]); // auto mode: no «Скачать» notification
       t.flow.setInCall(true); // repeated state: nothing
       expect(t.updater.downloads).toBe(0);
