@@ -26,7 +26,6 @@ import urllib.parse
 import urllib.request
 
 MAX_CONTENT = 4000  # runes; apps/server/internal/messages MaxContent
-REPO_URL = "https://github.com/itrcz/calab"
 DEFAULT_API = "https://app.calab.ru"
 DEFAULT_ROOM = "Calab - что нового? ✨"
 
@@ -100,8 +99,7 @@ def render(version: str, changelog: str) -> str:
         raise AnnounceError(f"section [{version}] has nothing to announce")
 
     header = f"🚀 **Calab {version}**" + (f" — {date}" if date else "")
-    footer = (f"📦 [Релиз {version} на GitHub]({REPO_URL}/releases/tag/v{version}) · "
-              "Обновление придёт само")
+    footer = "Обновление придёт само"
 
     def build(limit: int | None) -> str:
         parts, n = [header], 0
