@@ -1,72 +1,157 @@
-import { Check } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Dict } from '@/i18n';
 import { APP_URL, CONTACT_EMAIL, repoFile } from '@/lib/site';
 import { Button, Section, SectionHeading } from './ui';
 
 const PLAN_IDS = ['free', 'team', 'enterprise', 'selfHosted'] as const;
-const TEAM_MAILTO = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Calab Team')}`;
-const ENTERPRISE_MAILTO = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Calab Enterprise')}`;
+type PlanId = (typeof PLAN_IDS)[number];
+type RowId = keyof Dict['pricing']['table']['rows'];
+const ROW_IDS = Object.keys({
+  room: 0,
+  members: 0,
+  audio: 0,
+  video: 0,
+  streams: 0,
+  files: 0,
+  bots: 0,
+  stickers: 0,
+  support: 0,
+  price: 0,
+} satisfies Record<RowId, 0>) as RowId[];
 
-// One entry per plan id, kept separate from the shared card markup below: each plan's CTA has a
-// different shape (Free: two buttons; Team/Enterprise/Self-hosted: one), so this reads t.free/t.team/…
-// directly instead of a generic `t[id]` union, which TS can't narrow from a sibling `id === …` check.
-const CTA: Record<(typeof PLAN_IDS)[number], (t: Dict['pricing']) => ReactNode> = {
+const mailto = (plan: string): string => `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Calab ${plan}`)}`;
+
+const CTA: Record<PlanId, (t: Dict['pricing']) => ReactNode> = {
   free: (t) => (
     <div className="flex gap-2">
-      <Button href={APP_URL} variant="secondary" size="card" className="min-w-0 flex-1">
-        {t.free.ctaWeb}
+      <Button href="#download" size="card" className="min-w-0 flex-1">
+        {t.cta.download}
       </Button>
-      <Button href="#download" variant="primary" size="card" className="min-w-0 flex-1">
-        {t.free.ctaDownload}
+      <Button href={APP_URL} variant="secondary" size="card" className="min-w-0 flex-1">
+        {t.cta.web}
       </Button>
     </div>
   ),
   team: (t) => (
-    <Button href={TEAM_MAILTO} variant="primary" className="w-full">
-      {t.team.cta}
+    <Button href={mailto('Team')} variant="secondary" className="w-full">
+      {t.cta.contact}
     </Button>
   ),
   enterprise: (t) => (
-    <Button href={ENTERPRISE_MAILTO} variant="primary" className="w-full">
-      {t.enterprise.cta}
+    <Button href={mailto('Enterprise')} variant="secondary" className="w-full">
+      {t.cta.contact}
     </Button>
   ),
   selfHosted: (t) => (
     <Button href={repoFile('COMMERCIAL-LICENSE.md')} variant="secondary" className="w-full">
-      {t.selfHosted.cta}
+      {t.cta.license}
     </Button>
   ),
 };
 
+/** A table value: '∞', '—' and '✓' are symbols for the eye and words for a screen reader. */
+function Cell({ value, t }: { value: string; t: Dict['pricing']['table'] }) {
+  const spoken = { '∞': t.unlimited, '—': t.no, '✓': t.yes }[value];
+  if (!spoken) return <>{value}</>;
+  return (
+    <>
+      <span aria-hidden="true" className={value === '∞' ? 'text-[19px] leading-none' : value === '—' ? 'text-fg-2' : 'text-accent'}>
+        {value}
+      </span>
+      <span className="sr-only">{spoken}</span>
+    </>
+  );
+}
+
+/**
+ * Plans (README «Тарифы», ADR-0024): four plan cards (Free is where to start) and one comparison
+ * table from md up; on phones the table would need a sideways scroll, so each card carries its own
+ * values in a native <details> instead (no JS).
+ */
 export function Pricing({ t }: { t: Dict['pricing'] }) {
+  const tb = t.table;
   return (
     <Section id="pricing" labelledBy="pricing-title">
       <SectionHeading id="pricing-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
-      <ul className="mx-auto mt-12 grid max-w-[1200px] gap-4 sm:mt-16 md:grid-cols-2 md:gap-6 xl:grid-cols-4">
-        {PLAN_IDS.map((id) => {
-          const plan = t[id];
+      <ul className="mt-12 grid gap-4 sm:mt-16 md:grid-cols-2 lg:grid-cols-4">
+        {PLAN_IDS.map((id, col) => {
+          const plan = t.plans[id];
+          const start = id === 'free';
           return (
-            <li key={id} className="flex flex-col rounded-[20px] border border-line bg-card p-6 sm:p-8">
+            <li
+              key={id}
+              className={
+                'relative flex flex-col rounded-[20px] border bg-card p-6 ' + (start ? 'border-2 border-accent' : 'border-line')
+              }
+            >
+              {start && (
+                <p className="absolute -top-3 left-6 rounded-full bg-accent-strong px-3 py-0.5 text-[13px] leading-5 font-semibold text-white">
+                  {t.startHere}
+                </p>
+              )}
               <h3 id={`plan-${id}`} className="text-[17px] leading-6 font-semibold">
                 {plan.name}
               </h3>
-              <p className="mt-2 text-[26px] leading-8 font-semibold tracking-tight">{plan.price}</p>
-              <p className="mt-1 text-[14px] leading-5 text-fg-2">{plan.note}</p>
-              <ul aria-labelledby={`plan-${id}`} className="mt-6 flex flex-col gap-3 text-[15px] leading-6">
-                {plan.items.map((it) => (
-                  <li key={it} className="flex gap-3">
-                    <Check aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-accent" strokeWidth={2} />
-                    <span>{it}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-auto pt-8">{CTA[id](t)}</div>
+              <p className="mt-1 text-[24px] leading-8 font-semibold tracking-tight">{plan.price}</p>
+              <p className="mt-1 text-[14px] leading-5 text-pretty text-fg-2">{plan.note}</p>
+              <details className="group mt-4 md:hidden">
+                <summary className="flex min-h-11 cursor-pointer items-center justify-between rounded-md text-[15px] font-medium text-accent-text">
+                  {tb.details}
+                  <ChevronDown aria-hidden="true" className="chevron size-5 motion-safe:transition-transform" strokeWidth={1.75} />
+                </summary>
+                <dl className="divide-y divide-line border-t border-line text-[15px] leading-6">
+                  {ROW_IDS.map((row) => (
+                    <div key={row} className="flex justify-between gap-4 py-2">
+                      <dt className="text-fg-2">{tb.rows[row]}</dt>
+                      <dd className="text-right font-medium">
+                        <Cell value={tb.cells[row][col] ?? ''} t={tb} />
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+              <div className="mt-auto pt-6">{CTA[id](t)}</div>
             </li>
           );
         })}
       </ul>
-      <p className="mx-auto mt-8 max-w-[720px] text-center text-[14px] leading-5 text-fg-2">
+      <div className="mt-8 hidden overflow-hidden rounded-[20px] border border-line md:block">
+        <table className="w-full table-fixed border-collapse text-[15px] leading-6">
+          <caption className="sr-only">{tb.caption}</caption>
+          <colgroup>
+            <col className="w-[24%]" />
+            <col span={4} />
+          </colgroup>
+          <thead className="bg-bg-alt">
+            <tr>
+              <th scope="col" className="px-4 py-3 text-left text-[13px] font-semibold tracking-wide text-fg-2 uppercase">
+                {tb.feature}
+              </th>
+              {PLAN_IDS.map((id) => (
+                <th key={id} scope="col" className={'px-4 py-3 text-left font-semibold' + (id === 'free' ? ' text-accent-text' : '')}>
+                  {t.plans[id].name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {ROW_IDS.map((row) => (
+              <tr key={row}>
+                <th scope="row" className="px-4 py-3 text-left align-top font-normal text-fg-2">
+                  {tb.rows[row]}
+                </th>
+                {tb.cells[row].map((v, col) => (
+                  <td key={PLAN_IDS[col]} className="px-4 py-3 align-top text-pretty">
+                    <Cell value={v} t={tb} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mx-auto mt-8 max-w-[760px] text-center text-[14px] leading-5 text-pretty text-fg-2">
         {t.license}{' '}
         <a href={repoFile('LICENSE')} className="link">
           {t.licenseLink}

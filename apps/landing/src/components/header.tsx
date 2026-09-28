@@ -17,7 +17,7 @@ export function Header({ t, locale, page = '' }: { t: Dict['header']; locale: Lo
     { href: REPO_URL, label: 'GitHub' },
   ];
   return (
-    <header className="glass sticky top-0 z-10 border-b border-line">
+    <header className="header-bar sticky top-0 z-10 border-b border-line">
       <a
         href="#main"
         className="sr-only rounded-md bg-card-raised text-[14px] shadow-window focus:not-sr-only focus:absolute focus:top-2 focus:left-4 focus:z-20 focus:px-4 focus:py-2"

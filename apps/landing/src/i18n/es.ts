@@ -2,9 +2,9 @@ import type { Dict } from './ru';
 
 const es: Dict = {
   meta: {
-    title: 'Calab — voz, chat y pantalla compartida para equipos',
+    title: 'Calab — voz, chat y llamadas para tu equipo, en tu propio servidor',
     description:
-      'Salas de voz, chat y pantalla compartida para tu equipo, en tu propio servidor. Sin eco ni ruido, pantalla compartida en AV1 desde 20 kbit/s, funciona detrás de VPN y cortafuegos. macOS, Windows, Linux y navegador.',
+      'Salas de voz, chat, llamadas y pantalla compartida para tu equipo, en tu propio servidor. Grabaciones de reuniones con transcripción y resumen, bots y API, funciona detrás de VPN y cortafuegos. macOS, Windows, Linux y navegador.',
     ogAlt: 'Calab — ventana de la aplicación con el chat de un equipo',
   },
   header: {
@@ -24,62 +24,79 @@ const es: Dict = {
     language: 'Idioma',
   },
   hero: {
-    tagline: 'Salas de voz, chat y pantalla compartida para tu equipo, en tu propio servidor',
+    title: 'Voz, chat y llamadas para tu equipo, en tu propio servidor',
+    benefits: ['Ligero como Discord', 'Tu servidor en un minuto', 'Reuniones grabadas con resumen'],
     download: 'Descargar',
     openWeb: 'Abrir en el navegador',
-    platforms: 'macOS, Windows, Linux y navegador',
-    shotAlt: 'Ventana de Calab: el espacio «Equipo Calab», la sala «general» con mensajes y miembros en línea',
+    trust: 'Código abierto (BSL 1.1) · macOS · Windows · Linux · web',
+    shotAlt: 'Ventana de Calab: el espacio «Команда Calab», la sala «общий» con mensajes, una sala de voz y miembros conectados',
+  },
+  why: {
+    title: 'Por qué Calab',
+    items: {
+      light: {
+        title: 'Ligero',
+        text: '0,05 % de CPU fuera de llamada y ≈ 7 % en voz (MacBook Air M4). Con la ventana oculta no decodifica vídeo.',
+      },
+      server: {
+        title: 'Tu propio servidor',
+        text: '{code} y en un minuto todo funciona. Tus datos se quedan contigo.',
+      },
+      network: {
+        title: 'Detrás de VPN y cortafuegos',
+        text: '¿UDP bloqueado? TURN/TLS por el puerto 443, como HTTPS normal.',
+      },
+      recording: {
+        title: 'Grabación de reuniones',
+        text: 'La transcripción y el resumen llegan como tarjeta al chat de la sala.',
+      },
+    },
   },
   features: {
     eyebrow: 'Funciones',
     title: 'Voz, pantalla y chat en una sola ventana',
-    lead: 'Entra en una sala con un clic y empieza a hablar. Todo lo demás, a mano.',
+    lead: 'Un clic para entrar en una sala y ya estás hablando. Todo lo demás, a mano.',
     items: {
       voice: {
         title: 'Voz sin eco ni ruido',
-        text: 'Activación por voz o pulsar para hablar. Supresión de ruido RNNoise y cancelación de eco AEC3: se oye limpio incluso sin auriculares. Opus a 16–64 kbit/s y alrededor de 1 kbit/s en silencio.',
-        alt: 'Elección del modo de micrófono: activación por voz o pulsar para hablar',
+        text: 'Activación por voz o pulsar para hablar, también en segundo plano. Supresión de ruido RNNoise y cancelación de eco AEC3: se oye limpio incluso sin auriculares.',
+        points: ['Niveles de calidad de Baja a Excelente', 'Opus a 16–64 kbit/s, unos 1 kbit/s en silencio', 'Reconexión sin salir de la sala'],
+        alt: 'Sala de voz «Переговорка»: habla Boris Petrov, está abierto el panel de supresión de ruido con RNNoise',
       },
       stream: {
-        title: 'Pantalla compartida en AV1',
-        text: '720p, 1080p o resolución original. El texto y el código estáticos ocupan 20–300 kbit/s, así que la pantalla se lee bien incluso con datos móviles. Hasta tres pantallas compartidas por sala.',
-        alt: 'Vera Kim comparte su pantalla con la etiqueta LIVE: una diapositiva «Versión 0.2» con una lista de tareas',
+        title: 'Pantalla compartida y cámara',
+        text: 'Comparte pantalla en AV1 o H.264 por hardware: codifica la tarjeta gráfica, no el procesador. Los espectadores pueden dibujar y señalar sobre la pantalla.',
+        points: ['720p, 1080p o resolución original', 'Una pantalla estática, 20–300 kbit/s', 'Cada espectador recibe la calidad de su conexión'],
+        alt: 'Vera Kim comparte pantalla con la etiqueta LIVE: una diapositiva «Релиз 0.2» con una lista de comprobación',
       },
       chat: {
-        title: 'Un chat como el de Telegram',
-        text: 'Archivos, reacciones, respuestas, mensajes fijados, menciones y búsqueda. Cada sala de voz tiene su propio chat.',
-        alt: 'Un mensaje con la vista previa de un enlace y, debajo, un mensaje con una imagen',
+        title: 'Chat como en Telegram',
+        text: 'Cada sala de voz tiene su chat. Respuestas, reacciones, reenvío, stickers, mensajes de voz, archivos con vista previa, fijados y búsqueda.',
+        points: ['Reenvío a varios chats a la vez', 'Paquetes de stickers del espacio, también animados', 'Mensajes de voz, música y vídeo con reproductor integrado'],
+        alt: 'Un mensaje con enlace y tarjeta de vista previa y, debajo, un mensaje con una imagen',
       },
       dm: {
-        title: 'Mensajes directos',
-        text: 'Conversaciones uno a uno con cualquier miembro de tus espacios compartidos, en su propia sección con contador de no leídos. El mismo chat: archivos, reacciones, mensajes fijados.',
-        alt: 'La lista de mensajes directos y una conversación con Borís Petrov: la lista de comprobación del lanzamiento y una invitación a una llamada',
+        title: 'Mensajes directos y llamadas',
+        text: 'Conversaciones uno a uno y llamadas con un clic: desde el menú del miembro, su perfil o la cabecera del chat. Las llamadas entrantes suenan y avisan.',
+        points: ['Cámara y pantalla compartida en la llamada', 'Llamadas perdidas y rechazadas en el chat', 'Archivo de conversaciones'],
+        alt: 'Una llamada en mensajes directos con Boris Petrov: «Звонок · 00:00» y el botón «Завершить»',
+      },
+      recording: {
+        title: 'Reuniones grabadas con resumen',
+        text: 'Graba en una sala de voz: al terminar llega al chat una tarjeta con el resumen, el audio y la transcripción completa. La transcripción la hace GPTunneL.',
+        points: ['Búsqueda por frases y salto con un clic', 'Temas y decisiones de la reunión en el resumen', 'Puedes reenviar la grabación o responder a ella'],
+        alt: 'La tarjeta «Встреча записана · 42 мин»: resumen con temas y decisiones, botones «Ответить» y «Полный транскрипт»',
+      },
+      bots: {
+        title: 'Bots y API',
+        text: 'Un bot es un miembro con token: escribe en el chat, responde a /comandos y habla en salas de voz. SDK en TypeScript, eventos por WebSocket o webhook.',
+        link: 'Más sobre la Bot API',
       },
       mobile: {
         title: 'En el teléfono',
-        text: 'La versión web se adapta a la pantalla del teléfono: salas y conversaciones en un panel lateral, voz y push-to-talk en la parte inferior. Se instala en la pantalla de inicio como una app.',
-        alt: 'Calab en un iPhone: el canal «общий» con mensajes y el campo de texto',
+        text: 'La versión web se adapta a la pantalla: salas en un panel lateral, voz y pulsar para hablar abajo. Se instala en la pantalla de inicio como una app.',
+        alt: 'Calab en un iPhone: la sala «общий» con mensajes y el campo de texto',
       },
-      roles: {
-        title: 'Roles, permisos y enlaces de invitado',
-        text: 'Permisos por espacio y por sala. Un invitado entra con un enlace, sin cuenta, y solo ve su sala.',
-        alt: 'Enlace para invitados: acceso sin cuenta, permisos del invitado y un enlace activo calab.ru/r/…',
-      },
-      network: {
-        title: 'Funciona detrás de VPN y cortafuegos',
-        text: 'Si UDP está bloqueado, el audio y el vídeo pasan a TCP y luego a TURN/TLS por el puerto 443, que parece tráfico HTTPS normal. Si se corta la conexión, se recupera sin salir de la sala.',
-        order: 'Orden de conexión',
-      },
-      server: {
-        title: 'Tu servidor, tus datos',
-        text: 'Caddy, LiveKit, una API en Go, Postgres y Valkey en un solo Docker Compose. Los mensajes, archivos y medios no salen de tu infraestructura. Kubernetes es el siguiente paso.',
-      },
-    },
-    inspiredTitle: 'Qué nos inspiró',
-    inspired: {
-      discord: 'La estructura: espacios, salas de voz y de texto, roles.',
-      telegram: 'Chats cómodos: respuestas, reacciones, archivos, búsqueda.',
-      zoom: 'Una conexión estable: se adapta a tu red y se reconecta sin sacarte de la sala.',
     },
   },
   how: {
@@ -139,67 +156,54 @@ const es: Dict = {
   pricing: {
     eyebrow: 'Precios',
     title: 'Free, Team, Enterprise o tu propio servidor',
-    lead: 'Empieza gratis con Free. ¿Necesitas más? Pasa a Team o a Enterprise sin ningún límite, o instala Calab en tu propio servidor.',
-    free: {
-      name: 'Free',
-      price: 'Gratis',
-      note: 'Para equipos de hasta 5 personas por sala',
-      items: [
-        'Hasta 5 personas en una misma sala de voz',
-        'Hasta 50 miembros por espacio',
-        'Calidad de llamada hasta Normal',
-        'Pantalla compartida y cámara hasta 720p, 15 fps',
-        '1 pantalla compartida por sala',
-        '5 GB de archivos por espacio',
-        '1 bot',
-        '1 paquete de stickers',
-      ],
-      ctaWeb: 'Versión web',
-      ctaDownload: 'Descargar',
+    lead: 'Empieza gratis. ¿Necesitas más? Team o Enterprise en la nube, o Calab en tu propio servidor.',
+    startHere: 'Empieza aquí',
+    plans: {
+      free: { name: 'Free', price: 'Gratis', note: 'Para equipos pequeños: hasta 5 personas por sala' },
+      team: { name: 'Team', price: 'Bajo consulta', note: 'Hasta 50 personas por sala, vídeo sin límites' },
+      enterprise: { name: 'Enterprise', price: 'Bajo consulta', note: 'Nube sin límites y soporte prioritario' },
+      selfHosted: { name: 'Self-hosted', price: 'Tu servidor', note: 'Tu infraestructura, licencia BSL 1.1' },
     },
-    team: {
-      name: 'Team',
-      price: 'Precio bajo consulta',
-      note: 'Sin límites de vídeo, hasta 50 personas por sala',
-      items: [
-        'Hasta 50 personas en una misma sala de voz',
-        'Miembros del espacio ilimitados',
-        'Cualquier calidad de llamada, hasta Excelente',
-        'Vídeo, pantalla compartida y cámara sin límite de calidad',
-        'Hasta 1 TB de archivos por espacio',
-        '20 bots',
-        'Paquetes de stickers ilimitados',
-        'Soporte',
-      ],
-      cta: 'Contactar',
+    cta: {
+      web: 'Versión web',
+      download: 'Descargar',
+      contact: 'Contactar',
+      license: 'Condiciones de la licencia',
     },
-    enterprise: {
-      name: 'Enterprise',
-      price: 'Precio bajo consulta',
-      note: 'Sin ningún límite, como tu propio servidor, en la nube',
-      items: [
-        'Salas de voz y miembros ilimitados',
-        'Cualquier calidad de llamada, hasta Excelente',
-        'Vídeo, pantalla compartida y cámara sin límite de calidad',
-        'Archivos ilimitados',
-        'Bots y paquetes de stickers ilimitados',
-        'Soporte prioritario',
-      ],
-      cta: 'Contactar',
-    },
-    selfHosted: {
-      name: 'Self-hosted',
-      price: 'Tu propio servidor',
-      note: 'Licencia Business Source License 1.1',
-      items: [
-        'Se ejecuta en tu propia infraestructura: tu código, tus datos',
-        'Gratis para uso no comercial, con «Powered by GPTunneL» en la interfaz',
-        'Uso comercial: licencia de GPTunneL, bajo consulta',
-      ],
-      cta: 'Condiciones de la licencia',
+    table: {
+      caption: 'Comparación de planes',
+      feature: 'Función',
+      details: 'Qué incluye',
+      unlimited: 'sin límite',
+      no: 'no',
+      yes: 'sí',
+      rows: {
+        room: 'Sala de voz',
+        members: 'Miembros del espacio',
+        audio: 'Calidad de audio',
+        video: 'Pantalla compartida y cámara',
+        streams: 'Pantallas compartidas por sala',
+        files: 'Archivos',
+        bots: 'Bots',
+        stickers: 'Paquetes de stickers',
+        support: 'Soporte',
+        price: 'Precio',
+      },
+      cells: {
+        room: ['hasta 5', 'hasta 50', '∞', '∞'],
+        members: ['hasta 50', '∞', '∞', '∞'],
+        audio: ['hasta Normal', 'cualquiera', 'cualquiera', 'cualquiera'],
+        video: ['720p, 15 fps', '∞', '∞', '∞'],
+        streams: ['1', '∞', '∞', '∞'],
+        files: ['5 GB', '1 TB', '∞', '∞'],
+        bots: ['1', '20', '∞', '∞'],
+        stickers: ['1', '∞', '∞', '∞'],
+        support: ['—', '✓', 'prioritario', '—'],
+        price: ['gratis', 'bajo consulta', 'bajo consulta', 'BSL 1.1; comercial bajo consulta'],
+      },
     },
     license:
-      'Calab se distribuye bajo la Business Source License 1.1. Cada versión pasa a la Apache License 2.0 cuatro años después de su publicación.',
+      'Self-hosted: gratis para uso no comercial, con «Powered by GPTunneL» en la interfaz; uso comercial con licencia de GPTunneL. Cada versión de Calab pasa a la Apache License 2.0 cuatro años después de su publicación.',
     licenseLink: 'Texto de la licencia',
   },
   faq: {
@@ -210,6 +214,10 @@ const es: Dict = {
         q: '¿Qué necesito para tener mi propio servidor?',
         a: 'Un host Linux con Docker, una IP pública y un dominio. Puertos abiertos: 80 y 443 (TCP y UDP), 7881/TCP y 7882/UDP. Para un equipo de hasta 30 personas, unos 4 vCPU y 8 GB de memoria; la cifra exacta depende de cuántas pantallas se compartan a la vez.',
       },
+      recording: {
+        q: '¿Qué es la grabación de reuniones y adónde va el audio?',
+        a: 'El espacio se conecta una vez a GPTunneL con un código en los ajustes. Después, cualquier miembro salvo los invitados puede grabar en una sala de voz; la grabación la hace el servidor. Al terminar, el audio se envía a GPTunneL para transcribirlo y al chat de la sala llega una tarjeta con el resumen y la transcripción completa; el audio se guarda como adjunto de la tarjeta 30 días. La grabación se puede desactivar en los ajustes de la sala.',
+      },
       traffic: {
         q: '¿Cuántos datos consume Calab?',
         a: 'La voz, 16–64 kbit/s por persona que habla (32 por defecto) y alrededor de 1 kbit/s en silencio. Compartir una pantalla estática, 20–300 kbit/s, con un máximo de 2 Mbit/s en 1080p. El servidor envía a cada espectador la calidad que admite su conexión.',
@@ -217,6 +225,10 @@ const es: Dict = {
       updates: {
         q: '¿Cómo se actualiza la aplicación?',
         a: 'La aplicación de escritorio se actualiza sola al iniciarse. La versión para macOS está firmada y notarizada por Apple; la de Windows aún no está firmada, por lo que SmartScreen puede mostrar una advertencia. La versión web siempre está al día.',
+      },
+      whatsNew: {
+        q: '¿Qué hay de nuevo en 0.8.0?',
+        a: 'Llamadas uno a uno en mensajes directos, niveles de calidad de audio, confirmaciones de lectura como en Telegram, el plan Enterprise y respuestas a la tarjeta de una reunión grabada. La lista completa, en el {changelog}.',
       },
       security: {
         q: '¿Cómo se protege la conexión?',
@@ -247,6 +259,7 @@ const es: Dict = {
         a: 'Escríbenos a {email}: normalmente activamos el plan en un día.',
       },
     },
+    changelogLink: 'registro de cambios',
   },
   footer: {
     navLabel: 'Documentos',

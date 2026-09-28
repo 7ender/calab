@@ -32,7 +32,7 @@ const shots = [
   // one-to-one call: the DM header «Звонок · 00:00 · Завершить» and the conversation
   { name: 'call', file: 'landing-call', native: true, crop: { left: 330, top: 38, width: 950, height: 600 } },
   // a done meeting recording: the card with the summary, «Ответить», «Полный транскрипт»
-  { name: 'recording', file: 'landing-recording', native: true, crop: { left: 330, top: 262, width: 720, height: 360 } },
+  { name: 'recording', file: 'landing-recording', native: true, crop: { left: 334, top: 276, width: 704, height: 344 } },
   // stream area only: streamer chip + LIVE and the shared screen
   { name: 'stream', file: 'stream', crop: { left: 344, top: 99, ...CROP } },
   // link preview + image message with a reaction

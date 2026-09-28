@@ -1,13 +1,15 @@
 import { ChevronDown } from 'lucide-react';
 import type { Dict } from '@/i18n';
 import { rich } from '@/lib/rich';
-import { CONTACT_EMAIL } from '@/lib/site';
+import { CONTACT_EMAIL, repoFile } from '@/lib/site';
 import { Section, SectionHeading } from './ui';
 
 const ORDER = [
   'server',
+  'recording',
   'traffic',
   'updates',
+  'whatsNew',
   'security',
   'firewall',
   'limits',
@@ -21,6 +23,11 @@ export function Faq({ t }: { t: Dict['faq'] }) {
   const email = (
     <a href={`mailto:${CONTACT_EMAIL}`} className="link">
       {CONTACT_EMAIL}
+    </a>
+  );
+  const changelog = (
+    <a href={repoFile('CHANGELOG.md')} className="link">
+      {t.changelogLink}
     </a>
   );
   return (
@@ -37,7 +44,7 @@ export function Faq({ t }: { t: Dict['faq'] }) {
                 strokeWidth={1.75}
               />
             </summary>
-            <p className="pb-5 text-[15px] leading-6 text-pretty text-fg-2">{rich(t.items[id].a, { email })}</p>
+            <p className="pb-5 text-[15px] leading-6 text-pretty text-fg-2">{rich(t.items[id].a, { email, changelog })}</p>
           </details>
         ))}
       </div>

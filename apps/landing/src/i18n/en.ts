@@ -2,9 +2,9 @@ import type { Dict } from './ru';
 
 const en: Dict = {
   meta: {
-    title: 'Calab — voice, chat and screen sharing for teams',
+    title: 'Calab — voice, chat and calls for your team, on your own server',
     description:
-      'Voice rooms, chat and screen sharing for your team, on your own server. No echo or noise, AV1 screen sharing from 20 kbps, works behind VPNs and firewalls. macOS, Windows, Linux and the browser.',
+      'Voice rooms, chat, calls and screen sharing for your team, on your own server. Meeting recordings with transcripts and summaries, bots and an API, works behind VPNs and firewalls. macOS, Windows, Linux and the browser.',
     ogAlt: 'Calab — the app window with a team chat',
   },
   header: {
@@ -24,62 +24,79 @@ const en: Dict = {
     language: 'Language',
   },
   hero: {
-    tagline: 'Voice rooms, chat and screen sharing for your team — on your own server',
+    title: 'Voice, chat and calls for your team — on your own server',
+    benefits: ['Light like Discord', 'Your own server in a minute', 'Meeting recordings with summaries'],
     download: 'Download',
     openWeb: 'Open in browser',
-    platforms: 'macOS, Windows, Linux and the browser',
-    shotAlt: 'The Calab window: the “Calab Team” workspace, the “general” room with messages and members online',
+    trust: 'Open source (BSL 1.1) · macOS · Windows · Linux · web',
+    shotAlt: 'The Calab window: the “Команда Calab” workspace, the “общий” room with messages, a voice room and members online',
+  },
+  why: {
+    title: 'Why Calab',
+    items: {
+      light: {
+        title: 'Light',
+        text: '0.05 % CPU outside a call, ≈ 7 % in voice (MacBook Air M4). A hidden window decodes no video.',
+      },
+      server: {
+        title: 'Your own server',
+        text: '{code} — and a minute later it all works. Your data stays with you.',
+      },
+      network: {
+        title: 'Behind VPNs and firewalls',
+        text: 'UDP blocked? TURN/TLS over port 443, just like regular HTTPS.',
+      },
+      recording: {
+        title: 'Meeting recordings',
+        text: 'The transcript and summary arrive as a card in the room chat.',
+      },
+    },
   },
   features: {
     eyebrow: 'Features',
     title: 'Voice, screen and chat in one window',
-    lead: 'Join a room in one click and start talking. Everything else is right there.',
+    lead: 'One click to join a room, and you’re talking. Everything else is right at hand.',
     items: {
       voice: {
         title: 'Voice without echo or noise',
-        text: 'Voice activation or push-to-talk. RNNoise noise suppression and AEC3 echo cancellation keep it clean even without headphones. Opus at 16–64 kbps, about 1 kbps during silence.',
-        alt: 'Choosing the microphone mode: voice activation or push-to-talk',
+        text: 'Voice activation or push-to-talk, even in the background. RNNoise noise suppression and AEC3 echo cancellation keep it clean, even without headphones.',
+        points: ['Quality levels from Low to Excellent', 'Opus at 16–64 kbps, about 1 kbps in pauses', 'Reconnects without leaving the room'],
+        alt: 'The “Переговорка” voice room: Boris Petrov is speaking, the RNNoise noise suppression popover is open',
       },
       stream: {
-        title: 'Screen sharing in AV1',
-        text: '720p, 1080p or native resolution. Static text and code take 20–300 kbps, so your screen stays readable even on mobile data. Up to three screen shares per room.',
-        alt: 'Vera Kim sharing her screen with a LIVE badge: a “Release 0.2” slide with a checklist',
+        title: 'Screen sharing and camera',
+        text: 'Share your screen in AV1 or hardware H.264 — the graphics card does the encoding, not the CPU. Viewers can draw and point on top of the stream.',
+        points: ['720p, 1080p or native resolution', 'A static screen takes 20–300 kbps', 'Each viewer gets the quality their connection allows'],
+        alt: 'Vera Kim sharing her screen with a LIVE badge: a “Релиз 0.2” slide with a checklist',
       },
       chat: {
-        title: 'Chat that feels like Telegram',
-        text: 'Files, reactions, replies, pins, mentions and search. Every voice room has its own chat.',
+        title: 'Chat like Telegram',
+        text: 'Every voice room has its own chat. Replies, reactions, forwarding, stickers, voice messages, files with previews, pins and search.',
+        points: ['Forward to several chats at once', 'Workspace sticker packs, animated too', 'Voice messages, music and video with a built-in player'],
         alt: 'A message with a link preview card, followed by a message with an image',
       },
       dm: {
-        title: 'Direct messages',
-        text: 'One-on-one conversations with anyone from your shared workspaces, in their own section with an unread counter. Same feed: files, reactions, pins.',
-        alt: 'The list of direct messages and a conversation with Boris Petrov: a release checklist and an invitation to a call',
+        title: 'Direct messages and calls',
+        text: 'One-on-one chats and a call in one click — from the member menu, the profile or the conversation header. Incoming calls ring and notify you.',
+        points: ['Camera and screen sharing in a call', 'Missed and declined calls in the feed', 'Conversation archive'],
+        alt: 'A call in direct messages with Boris Petrov: “Звонок · 00:00” and the “Завершить” button',
+      },
+      recording: {
+        title: 'Meeting recordings with summaries',
+        text: 'Start recording in a voice room — after the meeting a card with the summary, audio and full transcript lands in the chat. Transcription by GPTunneL.',
+        points: ['Search the transcript and jump to any line', 'Topics and decisions in the summary', 'Forward a recording or reply to it'],
+        alt: 'The “Встреча записана · 42 мин” card: a summary with topics and decisions, “Ответить” and “Полный транскрипт” buttons',
+      },
+      bots: {
+        title: 'Bots and API',
+        text: 'A bot is a member with a token: it writes in chat, answers /commands and talks in voice rooms. TypeScript SDK, events over WebSocket or webhook.',
+        link: 'More about the Bot API',
       },
       mobile: {
         title: 'On your phone',
-        text: 'The web app adapts to a phone screen: rooms and conversations in a drawer, voice and push-to-talk at the bottom. Add it to the home screen like an app.',
-        alt: 'Calab on an iPhone: the “общий” channel with messages and the message field',
+        text: 'The web app adapts to the screen: rooms in a drawer, voice and push-to-talk at the bottom. Add it to your home screen like an app.',
+        alt: 'Calab on an iPhone: the “общий” room with messages and the message field',
       },
-      roles: {
-        title: 'Roles, permissions and guest links',
-        text: 'Permissions at the workspace and room level. Guests join with a link, no account needed, and see only their room.',
-        alt: 'Guest link settings: joining without an account, guest permissions and an active calab.ru/r/… link',
-      },
-      network: {
-        title: 'Works behind VPNs and firewalls',
-        text: 'If UDP is blocked, media falls back to TCP and then to TURN/TLS on port 443, which looks like ordinary HTTPS. If the connection drops, it recovers without leaving the room.',
-        order: 'Connection fallback order',
-      },
-      server: {
-        title: 'Your server, your data',
-        text: 'Caddy, LiveKit, a Go API, Postgres and Valkey in a single Docker Compose file. Messages, files and media never leave your infrastructure. Kubernetes is next.',
-      },
-    },
-    inspiredTitle: 'What inspired us',
-    inspired: {
-      discord: 'Structure: workspaces, voice and text rooms, roles.',
-      telegram: 'Chats that just work: replies, reactions, files, search.',
-      zoom: 'A stable connection: adapts to your network and reconnects without dropping you.',
     },
   },
   how: {
@@ -138,69 +155,56 @@ const en: Dict = {
   },
   pricing: {
     eyebrow: 'Pricing',
-    title: 'Free, Team, Enterprise and your own server',
-    lead: 'Start for free with Free. Need more? Move to Team, or to Enterprise with no limits at all, or run Calab on your own server.',
-    free: {
-      name: 'Free',
-      price: 'Free',
-      note: 'For teams of up to 5 people per room',
-      items: [
-        'Up to 5 people in one voice room',
-        'Up to 50 members per workspace',
-        'Call quality up to Normal',
-        'Screen sharing and camera up to 720p, 15 fps',
-        '1 screen share per room',
-        '5 GB of files per workspace',
-        '1 bot',
-        '1 sticker pack',
-      ],
-      ctaWeb: 'Web app',
-      ctaDownload: 'Download',
+    title: 'Free, Team, Enterprise or your own server',
+    lead: 'Start for free. Need more? Team or Enterprise in the cloud, or Calab on your own server.',
+    startHere: 'Start here',
+    plans: {
+      free: { name: 'Free', price: 'Free', note: 'For small teams: up to 5 people per room' },
+      team: { name: 'Team', price: 'On request', note: 'Up to 50 people per room, unlimited video' },
+      enterprise: { name: 'Enterprise', price: 'On request', note: 'Cloud without limits and priority support' },
+      selfHosted: { name: 'Self-hosted', price: 'Your server', note: 'Your infrastructure, BSL 1.1 licence' },
     },
-    team: {
-      name: 'Team',
-      price: 'Price on request',
-      note: 'No video limits, up to 50 people per room',
-      items: [
-        'Up to 50 people in one voice room',
-        'Unlimited workspace members',
-        'Any call quality, up to Excellent',
-        'Video, screen sharing and camera without quality limits',
-        'Up to 1 TB of files per workspace',
-        '20 bots',
-        'Unlimited sticker packs',
-        'Support',
-      ],
-      cta: 'Contact us',
+    cta: {
+      web: 'Web app',
+      download: 'Download',
+      contact: 'Contact us',
+      license: 'Licence terms',
     },
-    enterprise: {
-      name: 'Enterprise',
-      price: 'Price on request',
-      note: 'No limits at all — like your own server, in the cloud',
-      items: [
-        'Unlimited voice rooms and members',
-        'Any call quality, up to Excellent',
-        'Video, screen sharing and camera without quality limits',
-        'Unlimited files',
-        'Unlimited bots and sticker packs',
-        'Priority support',
-      ],
-      cta: 'Contact us',
-    },
-    selfHosted: {
-      name: 'Self-hosted',
-      price: 'Your own server',
-      note: 'Business Source License 1.1',
-      items: [
-        'Runs on your own infrastructure — your code, your data',
-        'Free for non-commercial use, with “Powered by GPTunneL” in the interface',
-        'Commercial use — a GPTunneL license, on request',
-      ],
-      cta: 'License terms',
+    table: {
+      caption: 'Plan comparison',
+      feature: 'Feature',
+      details: 'What’s included',
+      unlimited: 'unlimited',
+      no: 'no',
+      yes: 'yes',
+      rows: {
+        room: 'Voice room',
+        members: 'Workspace members',
+        audio: 'Audio quality',
+        video: 'Screen sharing and camera',
+        streams: 'Screen shares per room',
+        files: 'Files',
+        bots: 'Bots',
+        stickers: 'Sticker packs',
+        support: 'Support',
+        price: 'Price',
+      },
+      cells: {
+        room: ['up to 5', 'up to 50', '∞', '∞'],
+        members: ['up to 50', '∞', '∞', '∞'],
+        audio: ['up to Normal', 'any', 'any', 'any'],
+        video: ['720p, 15 fps', '∞', '∞', '∞'],
+        streams: ['1', '∞', '∞', '∞'],
+        files: ['5 GB', '1 TB', '∞', '∞'],
+        bots: ['1', '20', '∞', '∞'],
+        stickers: ['1', '∞', '∞', '∞'],
+        support: ['—', '✓', 'priority', '—'],
+        price: ['free', 'on request', 'on request', 'BSL 1.1; commercial on request'],
+      },
     },
     license:
-      'Calab is distributed under the Business Source License 1.1. Each version converts to the Apache License 2.0 four years after its release.',
-    licenseLink: 'License text',
+      'Self-hosted: free for non-commercial use, with “Powered by GPTunneL” in the interface; commercial use under a GPTunneL licence. Every Calab version moves to the Apache License 2.0 four years after release.',
+    licenseLink: 'Licence text',
   },
   faq: {
     eyebrow: 'FAQ',
@@ -210,6 +214,10 @@ const en: Dict = {
         q: 'What do I need to run my own server?',
         a: 'A Linux host with Docker, a public IP and a domain. Open ports: 80 and 443 (TCP and UDP), 7881/TCP, 7882/UDP. A team of up to 30 people needs roughly 4 vCPUs and 8 GB of RAM; the exact figure depends on how many screens are shared at once.',
       },
+      recording: {
+        q: 'What are meeting recordings, and where does the audio go?',
+        a: 'A workspace connects to GPTunneL once, with a code in the settings. Then any member except guests can record in a voice room; the server does the recording. After the meeting the audio goes to GPTunneL for transcription, and a card with the summary and the full transcript arrives in the room chat; the audio is kept as the card’s attachment for 30 days. Recording can be disabled in the room settings.',
+      },
       traffic: {
         q: 'How much bandwidth does Calab use?',
         a: 'Voice takes 16–64 kbps per speaker (32 by default) and about 1 kbps during silence. Sharing a static screen takes 20–300 kbps, capped at 2 Mbps for 1080p. The server sends each viewer the quality their connection can handle.',
@@ -217,6 +225,10 @@ const en: Dict = {
       updates: {
         q: 'How does the app update?',
         a: 'The desktop app updates itself on launch. The macOS build is signed and notarized by Apple; the Windows build isn’t signed yet, so SmartScreen may show a warning. The web app is always up to date.',
+      },
+      whatsNew: {
+        q: 'What’s new in 0.8.0?',
+        a: 'One-on-one calls in direct messages, audio quality levels, Telegram-style read ticks, the Enterprise plan and replies to meeting recording cards. The full list is in the {changelog}.',
       },
       security: {
         q: 'How is the connection secured?',
@@ -247,6 +259,7 @@ const en: Dict = {
         a: 'Email us at {email} — we usually turn the plan on within a day.',
       },
     },
+    changelogLink: 'changelog',
   },
   footer: {
     navLabel: 'Documents',

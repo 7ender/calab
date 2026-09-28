@@ -6,6 +6,7 @@ import { Header } from '@/components/header';
 import { Hero } from '@/components/hero';
 import { HowItWorks } from '@/components/how';
 import { Pricing } from '@/components/pricing';
+import { Why } from '@/components/why';
 import { getDict, isLocale } from '@/i18n';
 import { notFound } from 'next/navigation';
 
@@ -18,7 +19,8 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
       <Header t={t.header} locale={locale} />
       <main id="main">
         <Hero t={t.hero} />
-        <Features t={t.features} />
+        <Why t={t.why} />
+        <Features t={t.features} locale={locale} />
         <HowItWorks t={t.how} />
         <Downloads t={t.downloads} />
         <Pricing t={t.pricing} />
