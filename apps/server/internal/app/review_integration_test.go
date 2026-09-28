@@ -231,7 +231,8 @@ func TestReviewFixes(t *testing.T) {
 	m := send(t, bob, rid, "short", "")
 	bob.must(422, "PATCH", "/api/messages/"+m.GetId(), &v1.UpdateMessageRequest{Content: strings.Repeat("x", 4001)}, nil)
 
-	// M1: web refresh race keeps the cookie (409, no Max-Age=-1).
+	// M1: web refresh race. The other tab with the old cookie gets the same new cookie
+	// (docs/09 #89); without the replay entry it is 409 and the cookie is kept (no Max-Age=-1).
 	email := mustEmail(t, o)
 	r := webPost(t, "/api/auth/login", &v1.LoginRequest{Email: email, Password: "password123"}, goodOrigin, "")
 	first := r.cookie.Value
@@ -239,9 +240,16 @@ func TestReviewFixes(t *testing.T) {
 	if r.status != 200 {
 		t.Fatalf("refresh: %d", r.status)
 	}
+	second := r.cookie.Value
 	r = webPost(t, "/api/auth/refresh", nil, goodOrigin, first) // the other tab, old cookie
+	if r.status != 200 || r.cookie == nil || r.cookie.Value != second {
+		t.Fatalf("race: %d cookie=%+v (want 200 with the same new cookie)", r.status, r.cookie)
+	}
+	sid, _, _ := strings.Cut(second, ".")
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key("auth:refresh_replay:"+sid).Build()).Error()
+	r = webPost(t, "/api/auth/refresh", nil, goodOrigin, first)
 	if r.status != 409 || r.cookie != nil {
-		t.Fatalf("race: %d cookie=%+v (want 409 without Set-Cookie)", r.status, r.cookie)
+		t.Fatalf("race without replay: %d cookie=%+v (want 409 without Set-Cookie)", r.status, r.cookie)
 	}
 
 	// Guest via room link.

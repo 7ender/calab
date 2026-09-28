@@ -52,6 +52,8 @@ class FakeTrack {
 
 class FakeLocalAudioTrack {
   isMuted = false;
+  /** The RTCRtpSender once published (the voice tier is applied to it live). */
+  sender = {};
   stopped = false;
   replaced: FakeTrack[] = [];
   /** Pending mute/unmute resolvers (tests settle them to simulate LiveKit's async lock). */
@@ -223,6 +225,12 @@ vi.mock('../lib/media/screenShare', () => ({
 /** ADR-0032: the codec comes from pickPublishCodec(kind, «Кодек стрима»). */
 const pickPublishCodec = vi.fn((_kind: string, pref: string) => Promise.resolve({ codec: pref === 'auto' ? 'h264' : pref, hw: false }));
 vi.mock('../lib/media/codecSelect', () => ({ pickPublishCodec: (k: string, p: string) => pickPublishCodec(k, p) }));
+/** The voice tier re-applied to the published mic (lib/media/opusTierPublish.ts). */
+const applyMicTier = vi.fn((_room: unknown, _sender: unknown, _tier: { kbps: number }) => Promise.resolve());
+vi.mock('../lib/media/opusTierPublish', () => ({
+  installOpusTierHook: () => () => undefined,
+  applyMicTier: (r: unknown, s: unknown, t: { kbps: number }) => applyMicTier(r, s, t),
+}));
 const playSound = vi.fn((_name: string) => undefined);
 vi.mock('../lib/sounds', () => ({ playSound: (name: string) => playSound(name) }));
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
@@ -1372,6 +1380,45 @@ describe('rights change during a call (docs/16)', () => {
     useVoice.setState({ canStream: false });
     voice.refreshRights();
     expect(useVoice.getState().canStream).toBe(false);
+  });
+});
+
+describe('voice tier (docs/02 «Битрейт»)', () => {
+  it('a room / personal tier change is applied to the published mic live, without a republish', async () => {
+    const { create } = await import('@bufbuild/protobuf');
+    const { RoomSchema, WorkspaceMemberSchema, WorkspaceRole, UserSchema } = await import('@calaba/protocol');
+    const { useSession } = await import('../stores/session');
+    const { useRooms } = await import('../stores/rooms');
+    const { useWorkspaces } = await import('../stores/workspaces');
+    const { legacyRoles } = await import('../lib/roles');
+    useSession.setState({ me: { user: { id: 'u1' } } } as never);
+    const me = create(WorkspaceMemberSchema, { workspaceId: 'ws', role: WorkspaceRole.MEMBER, roleIds: ['member'], user: create(UserSchema, { id: 'u1' }) });
+    useWorkspaces.setState({ byId: { ws: { ws: {} as never, role: WorkspaceRole.MEMBER, members: { u1: me }, roles: legacyRoles('ws'), badges: {}, voice: {} } } });
+    const room = (kbps: number) => create(RoomSchema, { id: 'A', workspaceId: 'ws', media: { audioBitrateKbps: kbps } });
+    useRooms.setState({ byId: { A: room(32) } });
+    await voice.join('A', 'ws');
+    const r = FakeRoom.all.at(-1);
+    await vi.waitFor(() => expect(r?.published.length).toBe(1));
+    const publishes = r?.localParticipant.publishTrack.mock.calls.length;
+    applyMicTier.mockClear();
+    voice.refreshRights(); // the same tier: nothing to do
+    // ROOM_UPDATE: the room goes «Низкое».
+    useRooms.setState({ byId: { A: room(8) } });
+    voice.refreshRights();
+    await vi.waitFor(() => expect(applyMicTier).toHaveBeenCalledTimes(1));
+    expect(applyMicTier.mock.calls[0]?.[2]).toMatchObject({ kbps: 8, maxPlaybackRate: 8000 });
+    // Back to «Отличное», my personal cap «Не выше: Нормальное» wins.
+    useRooms.setState({ byId: { A: room(64) } });
+    usePrefs.setState({ personalBitrateKbps: 16 });
+    voice.refreshRights();
+    await vi.waitFor(() => expect(applyMicTier.mock.calls.at(-1)?.[2]).toMatchObject({ kbps: 16 }));
+    // A legacy row (48) is the nearest tier, a tie going up.
+    usePrefs.setState({ personalBitrateKbps: null });
+    useRooms.setState({ byId: { A: room(48) } });
+    voice.refreshRights();
+    await vi.waitFor(() => expect(applyMicTier.mock.calls.at(-1)?.[2]).toMatchObject({ kbps: 64 }));
+    expect(r?.localParticipant.publishTrack.mock.calls.length).toBe(publishes); // no republish
+    await voice.leave();
   });
 });
 

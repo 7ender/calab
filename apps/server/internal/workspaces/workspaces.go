@@ -427,7 +427,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	mediaChanged := false
 	if req.DefaultAudioBitrateKbps != nil {
 		if !rooms.ValidAudioBitrate(req.GetDefaultAudioBitrateKbps()) {
-			return httpx.Validation("defaultAudioBitrateKbps", "audio bitrate must be one of 16, 24, 32, 48, 64")
+			return httpx.Validation("defaultAudioBitrateKbps", rooms.AudioBitrateError)
 		}
 		v := int32(req.GetDefaultAudioBitrateKbps()) //nolint:gosec // validated
 		p.DefaultAudioBitrateKbps, mediaChanged = &v, true

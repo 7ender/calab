@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { app, BrowserWindow, net, safeStorage } from 'electron';
@@ -49,7 +49,11 @@ function persist(serverUrl: string, tokens: Tokens | null): void {
     return;
   }
   const data: StoredSession = { serverUrl, refreshToken: tokens.refreshToken, sessionId: tokens.sessionId };
-  writeFileSync(storeFile(), safeStorage.encryptString(JSON.stringify(data)));
+  // Atomic: a quit / crash mid-write must leave the previous token, not a truncated file
+  // (an unreadable file = a login screen on the next start).
+  const tmp = `${storeFile()}.tmp`;
+  writeFileSync(tmp, safeStorage.encryptString(JSON.stringify(data)));
+  renameSync(tmp, storeFile());
 }
 
 function loadStored(): StoredSession | null {
@@ -66,7 +70,7 @@ function broadcast(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload);
 }
 
-/** Token state + refresh policy (tokenBroker.ts: single-flight, 401/409 end, rest transient). */
+/** Token state + refresh policy (tokenBroker.ts: single-flight, 401 / repeated 409 end, rest transient). */
 const broker = new TokenBroker({
   refresh: async (base, refreshToken) => {
     const res = await postJson(base, '/api/auth/refresh', { refreshToken });
@@ -128,6 +132,14 @@ function deviceName(): string {
 /** A valid access token (refreshed if it expires within a minute); null = none right now (logged out / offline). */
 export function getAccessToken(): Promise<string | null> {
   return broker.getAccessToken();
+}
+
+/**
+ * Waits (≤ timeoutMs) for a refresh in flight: quitting for an update in the middle of one
+ * would lose its answer — the next start then relies on the server's grace window.
+ */
+export function refreshSettled(timeoutMs: number): Promise<void> {
+  return broker.settled(timeoutMs);
 }
 
 /** Forced refresh (gateway close 4004 / an API 401); null = could not refresh now. */

@@ -243,6 +243,30 @@ describe('update flow', () => {
     expect(order).toEqual(['force', 'install']);
   });
 
+  it('install() waits for settle() (a token refresh in flight) before quitting, once (docs/09 #89)', async () => {
+    let release!: () => void;
+    const settled = new Promise<void>((r) => (release = r));
+    let settles = 0;
+    const t = setup({
+      settle: () => {
+        settles++;
+        return settled;
+      },
+    });
+    t.updater.next = { version: '0.1.1' };
+    await t.flow.check();
+    t.updater.finishDownload('0.1.1');
+    expect(t.flow.install()).toBe(true);
+    expect(t.flow.install()).toBe(true); // a second click while waiting
+    await Promise.resolve();
+    expect(t.updater.installs).toEqual([]);
+    release();
+    await settled;
+    await Promise.resolve();
+    expect(t.updater.installs).toEqual([[false, true]]);
+    expect(settles).toBe(1);
+  });
+
   it('install() without a downloaded update does nothing', async () => {
     const t = setup();
     await t.flow.check();

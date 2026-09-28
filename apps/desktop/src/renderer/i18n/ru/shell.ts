@@ -49,6 +49,7 @@ export const ruShell = {
   'shell.voiceStatus.failed': 'Не удалось сохранить статус комнаты',
   'shell.voiceInvite': 'Пригласить в комнату',
   'shell.voiceInviteHint': 'Скопировать ссылку на комнату',
+  'shell.create': 'Создать',
   'shell.categoryCreate': 'Создать категорию',
   'shell.categoryName': 'Название категории',
   'shell.categoryRename': 'Переименовать категорию',

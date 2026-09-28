@@ -170,7 +170,13 @@ func validLimit(limit uint32, roomType string) error {
 	return nil
 }
 
-var audioBitrates = map[uint32]bool{16: true, 24: true, 32: true, 48: true, 64: true}
+// audioBitrates are the voice quality tiers 8 | 16 | 32 | 64 kbps (docs/02 «Битрейт»); 24 and 48
+// predate the tiers and stay valid (older clients may still send them, the UI maps them to the
+// nearest tier).
+var audioBitrates = map[uint32]bool{8: true, 16: true, 24: true, 32: true, 48: true, 64: true}
+
+// AudioBitrateError is the validation message for a bitrate outside audioBitrates.
+const AudioBitrateError = "audio bitrate must be one of 8, 16, 32, 64"
 
 // ValidAudioBitrate reports whether kbps is an allowed voice bitrate.
 func ValidAudioBitrate(kbps uint32) bool { return audioBitrates[kbps] }
@@ -192,7 +198,7 @@ func mediaParams(o *v1.RoomMediaOverride, field string) (mediaDB, error) {
 	}
 	if o.AudioBitrateKbps != nil {
 		if !ValidAudioBitrate(o.GetAudioBitrateKbps()) {
-			return m, httpx.Validation(field+".audioBitrateKbps", "audio bitrate must be one of 16, 24, 32, 48, 64")
+			return m, httpx.Validation(field+".audioBitrateKbps", AudioBitrateError)
 		}
 		v := int32(o.GetAudioBitrateKbps()) //nolint:gosec // validated above
 		m.audio = &v

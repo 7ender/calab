@@ -58,6 +58,8 @@ export interface VoiceStats {
   totalInKbps: number;
   pair: CandidatePairInfo | null;
   micKbps: number | null;
+  /** The tier the mic publishes at (lib/media/opusTier.ts); null = no mic published. Absent in old fixtures. */
+  micTierKbps?: number | null;
   screenOut: OutboundVideoLayer[];
   cameraOut: OutboundVideoLayer[];
   watching: InboundVideoStats | null;

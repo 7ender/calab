@@ -74,7 +74,7 @@ import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows'
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { useMobile } from '../../lib/mobile';
 import { categoryDropAt, roomDropAt, stepTarget, type RoomTarget, type Slot } from '../../lib/roomOrder';
-import { moveCategoryTo, moveRoomTo, workspaceCategories, workspaceLayout } from '../../services/roomOrder';
+import { createCategoryFirst, moveCategoryTo, moveRoomTo, workspaceCategories, workspaceLayout } from '../../services/roomOrder';
 import { useLocalTimeTag } from '../../services/timezone';
 import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
 import { RoomRecBadge } from '../voice/Recording';
@@ -353,6 +353,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
           </Dropdown.Content>
         </Dropdown.Portal>
       </Dropdown.Root>
+      {manageRooms ? <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} /> : null}
       {admin ? (
         <Tip label={t('shell.invite')}>
           <button
@@ -366,6 +367,40 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
         </Tip>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * «+» in the column header (owner, 28.09), MANAGE_ROOM only: «Создать комнату» (the room dialog,
+ * text by default — it has the voice switch) and «Создать категорию» (goes on top).
+ */
+function CreateMenu({ workspaceId, onCreateCategory }: { workspaceId: string; onCreateCategory: () => void }): ReactNode {
+  const open = useUi((s) => s.openDialog);
+  return (
+    <Dropdown.Root modal={false}>
+      <Tip label={t('shell.create')}>
+        <Dropdown.Trigger asChild>
+          <button
+            type="button"
+            aria-label={t('shell.create')}
+            data-testid="sidebar-create"
+            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
+          >
+            <Plus className="size-[18px]" aria-hidden />
+          </button>
+        </Dropdown.Trigger>
+      </Tip>
+      <Dropdown.Portal>
+        <Dropdown.Content className={cx(menuBox, 'w-56')} sideOffset={4} align="end" collisionPadding={16}>
+          <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'room-create', workspaceId, voice: false })}>
+            <Hash className="size-4" /> {t('room.create')}
+          </Dropdown.Item>
+          <Dropdown.Item className={menuItem} onSelect={onCreateCategory}>
+            <FolderPlus className="size-4" /> {t('shell.categoryCreate')}
+          </Dropdown.Item>
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
   );
 }
 
@@ -587,8 +622,8 @@ function CategoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose
     if (!v) return;
     setBusy(true);
     try {
-      const r = await api.categories.create(workspaceId, { name: v });
-      if (r.category) useRooms.getState().upsertCategory(r.category);
+      // New categories go on top (owner, 28.09), optimistically, with one order batch.
+      await createCategoryFirst(workspaceId, v);
       onClose();
     } catch (e) {
       setError(errText(e));

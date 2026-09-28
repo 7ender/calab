@@ -87,6 +87,7 @@ const KEY = new Set([
   'chat-birthday-card',
   'chat-lightbox',
   'workspace-menu',
+  'sidebar-create-menu',
   'self-mic-menu',
   'self-status-menu',
   'self-custom-status',
@@ -1163,6 +1164,17 @@ test('workspace-menu', async ({ open, win, mock, shot }) => {
   await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
   await expect(win.getByRole('menu')).toBeVisible();
   await checkpoint(shot, 'workspace-menu');
+});
+
+/** «+» in the room column header (owner, 28.09): «Создать комнату» / «Создать категорию». */
+test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByTestId('sidebar-create').click();
+  const menu = win.getByRole('menu');
+  await expect(menu.getByRole('menuitem', { name: 'Создать комнату' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Создать категорию' })).toBeVisible();
+  await checkpoint(shot, 'sidebar-create-menu');
 });
 
 /** Settings windows: one test per section (left list = role «tab»), numbered like the snapshots. */

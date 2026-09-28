@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { categoryDropAt, moveRoom, planCategoryMove, planRoomMove, roomDropAt, stepTarget, type Layout, type Slot } from './roomOrder';
+import { categoryDropAt, moveRoom, planCategoryMove, planNewCategoryFirst, planRoomMove, roomDropAt, stepTarget, type Layout, type Slot } from './roomOrder';
 
 const layout: Layout = [
   { categoryId: null, rooms: ['a', 'b', 'c'] },
@@ -156,5 +156,29 @@ describe('categoryDropAt', () => {
     expect(categoryDropAt(sections, 120, 'Z')).toEqual({ index: 0, lineY: 110 });
     expect(categoryDropAt(sections, 250, 'X')).toEqual({ index: 1, lineY: 244 });
     expect(categoryDropAt(sections, 999, 'X')).toEqual({ index: 2, lineY: 300 });
+  });
+});
+
+describe('planNewCategoryFirst', () => {
+  const cats = [
+    { id: 'X', position: 0 },
+    { id: 'Y', position: 1 },
+  ];
+  it('puts the new category on top and shifts the others down', () => {
+    expect(planNewCategoryFirst(cats, { id: 'N', position: 2 })).toEqual([
+      { categoryId: 'N', position: 0 },
+      { categoryId: 'X', position: 1 },
+      { categoryId: 'Y', position: 2 },
+    ]);
+  });
+  it('counts the new category once when the store already has it', () => {
+    expect(planNewCategoryFirst([...cats, { id: 'N', position: 2 }], { id: 'N', position: 2 })).toEqual([
+      { categoryId: 'N', position: 0 },
+      { categoryId: 'X', position: 1 },
+      { categoryId: 'Y', position: 2 },
+    ]);
+  });
+  it('is a no-op for the first category of a workspace', () => {
+    expect(planNewCategoryFirst([], { id: 'N', position: 0 })).toEqual([]);
   });
 });
