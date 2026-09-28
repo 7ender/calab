@@ -1,5 +1,5 @@
 /**
- * Member time zones (User.timezone, IANA): «(+3 UTC)» after a name when that person's offset
+ * Member time zones (User.timezone, IANA): «+3 UTC» as a tiny tag after a name when that person's offset
  * from UTC differs from mine (Discord style). Pure, unit-tested; offsets are taken for the given
  * moment, so daylight saving time is right on both sides.
  */
@@ -32,14 +32,14 @@ export function utcOffsetMinutes(tz: string, at: Date): number | null {
   }
 }
 
-/** «(+3 UTC)», «(−3:30 UTC)», «(UTC)» — the true minus sign, minutes only when not whole hours. */
+/** «+3 UTC», «−3:30 UTC», «UTC» — the true minus sign, minutes only when not whole hours. */
 export function formatUtcOffset(minutes: number): string {
-  if (minutes === 0) return '(UTC)';
+  if (minutes === 0) return 'UTC';
   const sign = minutes > 0 ? '+' : '−';
   const abs = Math.abs(minutes);
   const h = Math.floor(abs / 60);
   const m = abs % 60;
-  return `(${sign}${h}${m ? `:${String(m).padStart(2, '0')}` : ''} UTC)`;
+  return `${sign}${h}${m ? `:${String(m).padStart(2, '0')}` : ''} UTC`;
 }
 
 /**
