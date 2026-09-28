@@ -158,3 +158,32 @@ message UpcomingBirthday {
   Birthday birthday = 2;
   uint32 in_days = 3; // 0 = today
 }
+
+// PATCH /api/workspaces/{id}/members/{userId}/birthday (docs/09 #77): an admin sets or clears
+// a member's birthday. MANAGE_NICKNAMES in the workspace and the kick hierarchy (the owner:
+// anyone; others: members whose highest role is below their own); a bot or a guest member → 403,
+// a bot token → 403 BOT_NOT_ALLOWED. The birthday is validated as in PATCH /api/me (→ 422);
+// day = 0 and month = 0, or no birthday, clears it. The member's own "hidden" flag stays as it
+// is: a hidden birthday still reaches nobody else (User.birthday, GET …/birthdays). USER_UPDATE
+// goes to the member (Me) and to their workspaces (User).
+message UpdateMemberBirthdayRequest {
+  Birthday birthday = 1;
+}
+
+message UpdateMemberBirthdayResponse {
+  MemberBirthday birthday = 1;
+}
+
+// A member's birthday as an admin sees it: hidden ones too, marked.
+message MemberBirthday {
+  string user_id = 1;
+  Birthday birthday = 2; // unset = none
+  bool hidden = 3;       // hidden by the member: shown to nobody else but here
+}
+
+// GET /api/workspaces/{id}/members/birthdays (MANAGE_NICKNAMES, docs/09 #77, the table
+// "Members → Birthdays"): every member who has a birthday, hidden ones included (hidden =
+// true); bots and guests are left out.
+message ListMemberBirthdaysResponse {
+  repeated MemberBirthday birthdays = 1;
+}

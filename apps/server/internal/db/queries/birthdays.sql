@@ -42,3 +42,10 @@ DELETE FROM birthday_greetings WHERE day < sqlc.arg('before')::date;
 SELECT u.id, u.birthday_day, u.birthday_month, u.birthday_year
 FROM workspace_members m JOIN users u ON u.id = m.user_id
 WHERE m.workspace_id = $1 AND u.birthday_day IS NOT NULL AND NOT u.birthday_hidden AND NOT u.is_bot;
+
+-- name: ListMemberBirthdays :many
+-- Every member's birthday, hidden ones included, for the admin table (docs/09 #77): bots and
+-- guests are left out.
+SELECT u.id, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden
+FROM workspace_members m JOIN users u ON u.id = m.user_id
+WHERE m.workspace_id = $1 AND u.birthday_day IS NOT NULL AND NOT u.is_bot AND m.role <> 'guest';

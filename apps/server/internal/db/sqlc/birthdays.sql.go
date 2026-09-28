@@ -131,6 +131,48 @@ func (q *Queries) ListBirthdayRooms(ctx context.Context, userID uuid.UUID) ([]Li
 	return items, nil
 }
 
+const listMemberBirthdays = `-- name: ListMemberBirthdays :many
+SELECT u.id, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden
+FROM workspace_members m JOIN users u ON u.id = m.user_id
+WHERE m.workspace_id = $1 AND u.birthday_day IS NOT NULL AND NOT u.is_bot AND m.role <> 'guest'
+`
+
+type ListMemberBirthdaysRow struct {
+	ID             uuid.UUID
+	BirthdayDay    *int16
+	BirthdayMonth  *int16
+	BirthdayYear   *int16
+	BirthdayHidden bool
+}
+
+// Every member's birthday, hidden ones included, for the admin table (docs/09 #77): bots and
+// guests are left out.
+func (q *Queries) ListMemberBirthdays(ctx context.Context, workspaceID uuid.UUID) ([]ListMemberBirthdaysRow, error) {
+	rows, err := q.db.Query(ctx, listMemberBirthdays, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMemberBirthdaysRow{}
+	for rows.Next() {
+		var i ListMemberBirthdaysRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.BirthdayDay,
+			&i.BirthdayMonth,
+			&i.BirthdayYear,
+			&i.BirthdayHidden,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWorkspaceBirthdays = `-- name: ListWorkspaceBirthdays :many
 SELECT u.id, u.birthday_day, u.birthday_month, u.birthday_year
 FROM workspace_members m JOIN users u ON u.id = m.user_id
