@@ -35,8 +35,8 @@ func TestReadReceiptsDM(t *testing.T) {
 	og, bg := dialGW(t), dialGW(t)
 	og.identify(o.token)
 	bg.identify(bob.token)
-	m1 := send(t, o, rid, "one", "rr-dm-1")
-	m2 := send(t, o, rid, "two", "rr-dm-2")
+	m1 := send(t, o, rid, "one", uniq("rr-dm-1-"))
+	m2 := send(t, o, rid, "two", uniq("rr-dm-2-"))
 
 	readUpTo(t, bob.client, rid, m1.GetId())
 	wantReceipt(t, og, "o", rid, m1.GetId())
@@ -54,16 +54,28 @@ func TestReadReceiptsDM(t *testing.T) {
 	}
 	readUpTo(t, bob.client, rid, m2.GetId())
 	wantReceipt(t, og, "o (2)", rid, m2.GetId())
-	var dl v1.ListDmsResponse
-	o.must(200, "GET", "/api/dms", nil, &dl)
-	if len(dl.GetDms()) != 1 || dl.GetDms()[0].GetPeerReadMessageId() != m2.GetId() {
-		t.Fatalf("GET /api/dms peer read: %v", &dl)
+	// o is the instance owner shared by every test (owner()): pick this DM out of their list.
+	if got := dmPeerRead(t, o, rid); got != m2.GetId() {
+		t.Fatalf("GET /api/dms peer read: %q, want %s", got, m2.GetId())
 	}
 	// The peer's summary shows o's marker: sending moved it to o's last message.
-	bob.must(200, "GET", "/api/dms", nil, &dl)
-	if dl.GetDms()[0].GetPeerReadMessageId() != m2.GetId() {
-		t.Fatalf("bob's peer read: %q", dl.GetDms()[0].GetPeerReadMessageId())
+	if got := dmPeerRead(t, bob, rid); got != m2.GetId() {
+		t.Fatalf("bob's peer read: %q, want %s", got, m2.GetId())
 	}
+}
+
+// dmPeerRead returns peer_read_message_id of the DM rid in u's GET /api/dms.
+func dmPeerRead(t *testing.T, u *user, rid string) string {
+	t.Helper()
+	var dl v1.ListDmsResponse
+	u.must(200, "GET", "/api/dms", nil, &dl)
+	for _, d := range dl.GetDms() {
+		if d.GetRoom().GetId() == rid {
+			return d.GetPeerReadMessageId()
+		}
+	}
+	t.Fatalf("GET /api/dms: no DM %s", rid)
+	return ""
 }
 
 // TestReadReceiptsRoom: in a workspace room the furthest marker of the others goes to the
@@ -80,9 +92,9 @@ func TestReadReceiptsRoom(t *testing.T) {
 	bg.identify(bob.token)
 	cg.identify(carol.token)
 	botg.identify(b.token)
-	m1 := send(t, o, rid, "one", "rr-1")
-	m2 := send(t, o, rid, "two", "rr-2")
-	m3 := send(t, o, rid, "three", "rr-3")
+	m1 := send(t, o, rid, "one", uniq("rr-1-"))
+	m2 := send(t, o, rid, "two", uniq("rr-2-"))
+	m3 := send(t, o, rid, "three", uniq("rr-3-"))
 
 	// Sending moved o's own marker to m3. Leading edge, at once: o (the furthest reader) gets
 	// the next furthest — bob's m1 — on his own channel, the others get o's m3.
@@ -109,7 +121,7 @@ func TestReadReceiptsRoom(t *testing.T) {
 	cg.quiet("READ_RECEIPT without a move", 300*time.Millisecond, receiptOf(rid))
 
 	// A bot's read: no event, and it does not count in READY.
-	m4 := send(t, o, rid, "four", "rr-4")
+	m4 := send(t, o, rid, "four", uniq("rr-4-"))
 	readUpTo(t, b.client, rid, m4.GetId())
 	og.quiet("READ_RECEIPT for a bot's read", 500*time.Millisecond, receiptOf(rid))
 	ready := dialGW(t).identify(o.token)
