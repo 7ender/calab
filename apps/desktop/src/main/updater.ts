@@ -27,7 +27,9 @@ import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlo
  * - Auto (build feed + «Автоматически обновлять» on + Windows / Linux AppImage / macOS built with
  *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, a «Calab X готова ·
  *   Перезапустить» banner in the bottom island and a tray item, install on restart or on quit.
- * - Otherwise notify only — «Доступна версия X — Скачать» opens `<server>/download/`.
+ * - Otherwise notify only — «Доступна версия X — Скачать» opens `<server>/download/`. When the
+ *   update is `installable` (build feed + a platform able to apply it, only the setting is off or
+ *   a call is running) «О программе» offers «Скачать и установить» — the same flow, on request.
  * - Errors go to the log (electron-log) only; the status turns 'error' for «О программе».
  */
 /** Build-time only: a runtime env must not change what gets installed silently. */
@@ -120,6 +122,11 @@ export function updateStatus(): UpdateStatus {
 /** «Перезапустить»: quit and install the downloaded update. */
 export function installUpdate(): boolean {
   return getFlow().install();
+}
+
+/** «Скачать и установить» in «О программе»: download an installable available update now. */
+export function downloadUpdate(): boolean {
+  return getFlow().download();
 }
 
 /** «Автоматически обновлять» changed. */

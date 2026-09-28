@@ -36,7 +36,8 @@ import { CommitInput } from './CommitInput';
 import { MicMeter } from './MicMeter';
 import { PttBinder } from './PttBinder';
 import { PttReleaseDelay, PttReleaseLink } from './PttReleaseDelay';
-import { deviceLabel, osLabel, updateLabel, voicePathLabel } from './format';
+import { AboutUpdateRow } from './AboutUpdateRow';
+import { deviceLabel, osLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
 import { SoundSettings } from '../people/SoundSettings';
 import { CameraPreview, useCameras } from '../voice/CameraPreview';
@@ -799,51 +800,22 @@ function DesktopAppCards({
 /** «О программе»: logo, version, updates (desktop), and the developer switches out of the way. */
 function AboutTab(): ReactNode {
   const info = useSession((s) => s.appInfo);
-  const update = useSession((s) => s.update);
   const devStats = usePrefs((s) => s.devStats);
   const setPrefs = usePrefs((s) => s.setPrefs);
-  const [checking, setChecking] = useState(false);
   const desktop = platform.kind === 'electron';
-  const line = updateLabel(update);
-  const check = async (): Promise<void> => {
-    setChecking(true);
-    try {
-      useSession.getState().set({ update: await platform.app.checkUpdates() });
-    } catch (e) {
-      // Update failures are not toasted: main logs them, the line below says «не удалось».
-      log.warn('update check failed', e);
-      useSession.getState().set({ update: { state: 'error', message: 'update check failed' } });
-    } finally {
-      setChecking(false);
-    }
-  };
+  const version = info?.version ?? '—';
   return (
     <>
       <div className="flex flex-col items-center gap-2 py-2 text-center">
         <Logo size={80} />
         <h3 className="text-title font-semibold">Calab</h3>
         <p className="text-body text-muted">{t('about.tagline')}</p>
-        <p className="selectable text-caption text-faint">{t('about.version', { v: info?.version ?? '—' })}</p>
+        {/* Desktop: the version heads the update row below (docs/09 #93). */}
+        {desktop ? null : <p className="selectable text-caption text-faint">{t('about.version', { v: version })}</p>}
       </div>
       {desktop ? (
         <Card title={t('about.updates')}>
-          <Row label={t('about.check')} hint={line ?? undefined}>
-            {update.state === 'available' && update.downloadPage ? (
-              <Button onClick={() => void platform.app.openExternal(update.downloadPage ?? '')}>{t('about.download')}</Button>
-            ) : null}
-            {update.state === 'downloaded' ? (
-              <Button onClick={() => void platform.app.installUpdate()}>{t('about.restart')}</Button>
-            ) : (
-              <Button
-                variant="secondary"
-                busy={checking || update.state === 'checking'}
-                disabled={update.state === 'downloading'}
-                onClick={() => void check()}
-              >
-                {t('app.checkBtn')}
-              </Button>
-            )}
-          </Row>
+          <AboutUpdateRow version={version} />
         </Card>
       ) : null}
       <LicenseCard />

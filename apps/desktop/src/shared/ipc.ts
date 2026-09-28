@@ -31,6 +31,8 @@ export const IPC = {
   appGetUpdateStatus: 'app:get-update-status',
   /** Restart now and install the downloaded update. */
   appInstallUpdate: 'app:install-update',
+  /** «Скачать и установить» in «О программе»: download an `installable` available update now. */
+  appDownloadUpdate: 'app:download-update',
   /** main → renderer */
   appUpdateStatus: 'app:update-status',
   /** renderer → main: the `online` event (main has none) — a throttled update check. */
@@ -259,9 +261,18 @@ export type UpdateStatus =
    * Notify-only (unsigned macOS, Linux without AppImage, «Автоматически обновлять» off):
    * `downloadPage` is the feed / download page the user opens.
    */
-  | { state: 'available'; version: string; downloadPage?: string }
-  /** Background download; `percent` is an integer 0–100. */
-  | { state: 'downloading'; version: string; percent: number }
+  | {
+      state: 'available';
+      version: string;
+      downloadPage?: string;
+      /**
+       * The update can be downloaded and installed in place (pinned build feed, platform able to
+       * apply it) — «Скачать и установить» in «О программе». Absent → only `downloadPage`.
+       */
+      installable?: true;
+    }
+  /** Download in progress; `percent` is an integer 0–100, `bytesPerSecond` once progress is known. */
+  | { state: 'downloading'; version: string; percent: number; bytesPerSecond?: number }
   /** Ready: installs on «Перезапустить» or on quit. */
   | { state: 'downloaded'; version: string }
   | { state: 'error'; message: string };

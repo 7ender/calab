@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deviceLabel, osLabel, updateLabel, voicePathLabel } from './format';
+import { deviceLabel, osLabel, updateAction, updateLabel, voicePathLabel } from './format';
 
 describe('settings format', () => {
   it('names operating systems', () => {
@@ -26,6 +26,24 @@ describe('settings format', () => {
     expect(updateLabel({ state: 'disabled' })).toBeNull();
     expect(updateLabel({ state: 'available', version: '1.2.0' })).toBe('Доступна версия 1.2.0');
     expect(updateLabel({ state: 'error', message: 'ENOTFOUND' })).not.toMatch(/ENOTFOUND/);
+    expect(updateLabel({ state: 'downloading', version: '1.2.0', percent: 42 })).toBe('Загружается версия 1.2.0 — 42 %');
+    expect(updateLabel({ state: 'downloading', version: '1.2.0', percent: 42, bytesPerSecond: 1.5 * 1024 * 1024 })).toBe(
+      'Загружается версия 1.2.0 — 42 % · 1,5 МБ/с',
+    );
+  });
+
+  it('picks the «О программе» update button by state (docs/09 #93)', () => {
+    expect(updateAction({ state: 'disabled' }, false)).toBe('check');
+    expect(updateAction({ state: 'none' }, false)).toBe('check');
+    expect(updateAction({ state: 'none' }, true)).toBe('checking');
+    expect(updateAction({ state: 'checking' }, false)).toBe('checking');
+    expect(updateAction({ state: 'available', version: '1', installable: true, downloadPage: 'https://x/' }, false)).toBe('install');
+    expect(updateAction({ state: 'available', version: '1', downloadPage: 'https://x/' }, false)).toBe('page');
+    expect(updateAction({ state: 'available', version: '1' }, false)).toBe('check');
+    expect(updateAction({ state: 'downloading', version: '1', percent: 3 }, false)).toBe('downloading');
+    expect(updateAction({ state: 'downloaded', version: '1' }, false)).toBe('restart');
+    expect(updateAction({ state: 'error', message: 'x' }, false)).toBe('retry');
+    expect(updateAction({ state: 'error', message: 'x' }, true)).toBe('checking');
   });
 });
 
