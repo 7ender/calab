@@ -21,9 +21,18 @@ const WEBP = { quality: 92, smartSubsample: true, effort: 6 };
 // Crops in window points (1440×871); multiplied by SCALE. Feature crops share one 660×400 aspect.
 const CROP = { width: 660, height: 400 };
 const shots = [
-  { name: 'hero', file: 'chat', suffix: '-shadow', crop: null },
-  // mode picker: step dots, title, VAD / PTT segmented control
-  { name: 'voice', file: 'onboarding', crop: { left: 390, top: 140, ...CROP } },
+  // hero: the whole window without the system shadow (the page draws a thin frame); a lower
+  // quality keeps the 2x file under 250 KB
+  { name: 'hero', file: 'chat', crop: null, webp: { quality: 80 } },
+  // Feature rows (landing v2, docs/09 #97): mock-driven 1280×800 pt captures from
+  // apps/desktop/e2e-marketing/landing.spec.ts, cropped to their subject at native size
+  // (`native`: no resize to the 660×400 card).
+  // voice: rooms column in a call (Борис speaking), the island and the noise popover
+  { name: 'voice', file: 'landing-voice', native: true, crop: { left: 4, top: 300, width: 660, height: 494 } },
+  // one-to-one call: the DM header «Звонок · 00:00 · Завершить» and the conversation
+  { name: 'call', file: 'landing-call', native: true, crop: { left: 330, top: 38, width: 950, height: 600 } },
+  // a done meeting recording: the card with the summary, «Ответить», «Полный транскрипт»
+  { name: 'recording', file: 'landing-recording', native: true, crop: { left: 330, top: 262, width: 720, height: 360 } },
   // stream area only: streamer chip + LIVE and the shared screen
   { name: 'stream', file: 'stream', crop: { left: 344, top: 99, ...CROP } },
   // link preview + image message with a reaction
@@ -44,13 +53,14 @@ for (const s of shots) {
     let img = sharp(file);
     if (s.crop) img = img.extract(scaled(s.crop));
     // Areas larger than a feature card are resampled once (Lanczos) to the card's 2x size.
-    if (s.crop && s.crop.width !== CROP.width) img = sharp(await img.png().toBuffer()).resize(CROP.width * SCALE, CROP.height * SCALE, { kernel: 'lanczos3' });
+    if (s.crop && !s.native && s.crop.width !== CROP.width) img = sharp(await img.png().toBuffer()).resize(CROP.width * SCALE, CROP.height * SCALE, { kernel: 'lanczos3' });
     const full = await img.png().toBuffer();
     const { width, height } = await sharp(full).metadata();
-    await sharp(full).webp(WEBP).toFile(join(out, `${s.name}-${theme}@2x.webp`));
+    const webp = { ...WEBP, ...s.webp };
+    await sharp(full).webp(webp).toFile(join(out, `${s.name}-${theme}@2x.webp`));
     await sharp(full)
       .resize(Math.round(width / SCALE), Math.round(height / SCALE), { kernel: 'lanczos3' })
-      .webp(WEBP)
+      .webp(webp)
       .toFile(join(out, `${s.name}-${theme}.webp`));
     console.log(`${s.name}-${theme}: ${width}×${height} @2x`);
   }
