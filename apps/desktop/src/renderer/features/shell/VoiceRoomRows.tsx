@@ -5,7 +5,7 @@ import { t } from '../../i18n';
 import { VOICE_STATUS_MAX, setVoiceStatus, useVoiceStatus } from '../../services/roomStatus';
 import { useVoice } from '../../stores/voice';
 import { useUi } from '../../stores/ui';
-import { inviteRowVisible, useNow } from './voiceFormat';
+import { inviteRowUntil, useDeadlinePassed } from './voiceFormat';
 
 /** How long the invite row's opacity fade runs before it unmounts (docs/09 #10). */
 const INVITE_FADE_MS = 300;
@@ -84,8 +84,10 @@ export function VoiceStatusLine({ roomId, canEdit, status }: { roomId: string; c
  */
 export function VoiceInviteRow({ roomId, full }: { roomId: string; full: boolean }): ReactNode {
   const joinedAt = useVoice((s) => (s.roomId === roomId ? s.joinedAt : null));
-  const now = useNow();
-  const show = inviteRowVisible(joinedAt, now, full);
+  // A timer to the end of the 30 s window, not the 1 s ticker (it ticked for the whole call).
+  const until = inviteRowUntil(joinedAt);
+  const passed = useDeadlinePassed(until);
+  const show = !full && until !== null && !passed;
   // Kept mounted through the fade (opacity transition), then removed — never an abrupt cut.
   // The rising edge is derived directly during render (React's "adjusting state" pattern, no
   // extra effect round trip); only the falling edge needs a timer, scheduled from the effect.
