@@ -136,6 +136,7 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.forward': 'Forward',
   'chat.fwd.from': 'Forwarded from {name}',
   'chat.fwd.fromMeta': 'Forwarded from {name} · {time}',
+  'chat.fwd.original': 'Original: {time}',
   'chat.fwd.someone': 'a member',
   'chat.fwd.title': 'Forward…',
   'chat.fwd.hint': 'The copy is sent on your behalf, marked «Forwarded»',

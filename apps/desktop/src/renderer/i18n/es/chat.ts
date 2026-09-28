@@ -136,6 +136,7 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.forward': 'Reenviar',
   'chat.fwd.from': 'Reenviado de {name}',
   'chat.fwd.fromMeta': 'Reenviado de {name} · {time}',
+  'chat.fwd.original': 'Original: {time}',
   'chat.fwd.someone': 'un miembro',
   'chat.fwd.title': 'Reenviar…',
   'chat.fwd.hint': 'La copia se envía en tu nombre, marcada como «Reenviado»',
