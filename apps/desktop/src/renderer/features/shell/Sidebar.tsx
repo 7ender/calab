@@ -45,13 +45,13 @@ import {
   Video,
   Volume2,
 } from 'lucide-react';
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
+import { Fragment, createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
-import { plural, t } from '../../i18n';
+import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, mayArrangeRooms, mayManageWorkspace, mayMoveMembersIn, mayMoveVoice, roomPerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
@@ -938,7 +938,11 @@ interface RowOrder {
   canDrag: boolean;
 }
 
-function TextRoomRow({
+/**
+ * Memoised: the list re-renders on every voice state (the voice rooms' participants), which
+ * text rooms do not show (docs/14 «Ререндеры в звонке»); a language switch still reaches it.
+ */
+const TextRoomRow = memo(function TextRoomRow({
   room,
   workspaceId,
   me,
@@ -948,6 +952,7 @@ function TextRoomRow({
   canOrder,
   canDrag,
 }: { room: Room; workspaceId: string; me: string; role: readonly Role[]; admin: boolean } & RowOrder): ReactNode {
+  useLocale();
   const active = useUi((s) => s.lastRoom[workspaceId] === room.id && s.activeWorkspaceId === workspaceId);
   const openRoom = useUi((s) => s.openRoom);
   const unread = useRooms((s) => showsUnread(room.id, s));
@@ -987,7 +992,7 @@ function TextRoomRow({
       </RoomMenu>
     </div>
   );
-}
+});
 
 function VoiceRoomRow({
   room,
