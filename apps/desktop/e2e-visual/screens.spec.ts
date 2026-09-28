@@ -1922,6 +1922,7 @@ type WithAudio = { __calabaAudio?: HTMLMediaElement };
 const catchPlayerAudio = (win: Page): Promise<void> =>
   win.evaluate(() => {
     const proto = HTMLMediaElement.prototype;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- re-bound with `.call(this)` below
     const play = proto.play;
     proto.play = function (this: HTMLMediaElement) {
       (window as unknown as WithAudio).__calabaAudio = this;
