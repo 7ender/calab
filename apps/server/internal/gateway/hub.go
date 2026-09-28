@@ -384,6 +384,16 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		h.toViewers(sessions, view, parseID(e.VoiceCameraStop.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_RoomRecording:
 		h.toViewers(sessions, view, parseID(e.RoomRecording.GetRoomId()), id, shared)
+	case *v1.DispatchEvent_ReadReceipt:
+		// Read receipts (docs/09 #92): to the room's viewers except the member whose own marker
+		// it is (except_user_id, stripped before delivery) and bots.
+		rid, except := parseID(e.ReadReceipt.GetRoomId()), parseID(e.ReadReceipt.GetExceptUserId())
+		enc := newEnc(withoutExcept(e.ReadReceipt))
+		for _, s := range sessions {
+			if !s.bot && s.user != except && view(rid, s.user) {
+				s.dispatchEnc(id, enc)
+			}
+		}
 	case *v1.DispatchEvent_TypingStart:
 		rid, typer := parseID(e.TypingStart.GetRoomId()), parseID(e.TypingStart.GetUserId())
 		for _, s := range sessions {
@@ -694,6 +704,15 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 		if cmd := e.MessageCreate.GetMessage().GetCommand(); cmd != nil && parseID(cmd.GetBotUserId()) != uid {
 			ev = withoutCommand(ev)
 		}
+	case *v1.DispatchEvent_ReadReceipt:
+		// Read receipts (docs/09 #92): never to bots.
+		enc := newEnc(withoutExcept(e.ReadReceipt))
+		for _, s := range sessions {
+			if !s.bot {
+				s.dispatchEnc(id, enc)
+			}
+		}
+		return
 	case *v1.DispatchEvent_TypingStart:
 		// DM typing (ADR-0020) comes on the recipient's user channel: only the sessions that
 		// subscribed to the room get it, as in workspace rooms.
@@ -1110,6 +1129,11 @@ func (h *Hub) Shutdown(ctx context.Context) {
 
 // withoutCommand returns a MESSAGE_CREATE without Message.command (ADR-0031): what everyone
 // but the addressed bot gets.
+// withoutExcept is a READ_RECEIPT as clients get it: without the internal except_user_id.
+func withoutExcept(pr *v1.PeerRead) *v1.DispatchEvent {
+	return &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadReceipt{ReadReceipt: &v1.PeerRead{RoomId: pr.GetRoomId(), LastReadMessageId: pr.GetLastReadMessageId()}}}
+}
+
 func withoutCommand(ev *v1.DispatchEvent) *v1.DispatchEvent {
 	mc := ev.GetMessageCreate()
 	m := proto.CloneOf(mc.GetMessage())
