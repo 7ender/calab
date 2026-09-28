@@ -2313,7 +2313,7 @@ test('chat-sticker', async ({ open, win, mock, shot }) => {
 });
 
 // The composer's «Стикеры» panel (Telegram Desktop): search, the strip of pack covers, my pack
-// «Calab» in 96 px tiles, the workspace's «Эмоции» to add; a pick sends the sticker and closes it.
+// «Calab» in 104 px tiles (4 a row), the workspace's «Эмоции» to add; a pick sends the sticker and closes it.
 test('sticker-picker', async ({ open, win, mock, shot }) => {
   await open();
   await win.emulateMedia({ reducedMotion: 'reduce' });
