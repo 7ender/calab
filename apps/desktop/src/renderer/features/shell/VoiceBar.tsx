@@ -75,8 +75,6 @@ function useDisplayedPhase(): VoicePhase {
 /** Connection quality: always visible while in voice; click → details (docs/08, «UX-правила»). */
 function QualityButton({ phase }: { phase: VoicePhase }): ReactNode {
   const quality = useVoice((s) => s.quality);
-  const rtt = useVoice((s) => s.rttMs);
-  const loss = useVoice((s) => s.lossPct);
   const q: LinkQuality = phase === 'connected' ? quality : 'poor';
   const open = useUi((s) => s.openDialog);
   if (phase === 'connecting') {
@@ -101,16 +99,7 @@ function QualityButton({ phase }: { phase: VoicePhase }): ReactNode {
       <Popover.Portal>
         <Popover.Content side="top" align="start" sideOffset={6} collisionPadding={8} aria-label={t('quality.title')} className={cx(popoverBox, 'w-64 p-3')}>
           <div className="mb-2 font-semibold">{t('quality.title')}</div>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-            <dt className="text-muted">{t('quality.state')}</dt>
-            <dd className={q === 'poor' ? 'text-danger-text' : 'text-fg'}>{t(Q_LABEL[q])}</dd>
-            <dt className="text-muted">{t('quality.rtt')}</dt>
-            <dd>{rtt === null ? '—' : t('unit.ms', { n: Math.round(rtt) })}</dd>
-            <dt className="text-muted">{t('quality.loss')}</dt>
-            <dd>{loss === null ? '—' : `${loss.toFixed(1)} %`}</dd>
-            <dt className="text-muted">{t('quality.path')}</dt>
-            <dd className="truncate">{voice.connectionPath() ?? '—'}</dd>
-          </dl>
+          <QualityDetails q={q} />
           <Popover.Close asChild>
             <Button size="sm" variant="secondary" className="mt-3" onClick={() => open({ kind: 'settings', tab: 'connection' })}>
               {t('conn.check')}
@@ -119,6 +108,27 @@ function QualityButton({ phase }: { phase: VoicePhase }): ReactNode {
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/**
+ * RTT / loss / path of the quality popover: mounted only while it is open, so the 2 s stats
+ * updates do not re-render the voice panel's signal button (docs/14 «Ререндеры в звонке»).
+ */
+function QualityDetails({ q }: { q: LinkQuality }): ReactNode {
+  const rtt = useVoice((s) => s.rttMs);
+  const loss = useVoice((s) => s.lossPct);
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+      <dt className="text-muted">{t('quality.state')}</dt>
+      <dd className={q === 'poor' ? 'text-danger-text' : 'text-fg'}>{t(Q_LABEL[q])}</dd>
+      <dt className="text-muted">{t('quality.rtt')}</dt>
+      <dd>{rtt === null ? '—' : t('unit.ms', { n: Math.round(rtt) })}</dd>
+      <dt className="text-muted">{t('quality.loss')}</dt>
+      <dd>{loss === null ? '—' : `${loss.toFixed(1)} %`}</dd>
+      <dt className="text-muted">{t('quality.path')}</dt>
+      <dd className="truncate">{voice.connectionPath() ?? '—'}</dd>
+    </dl>
   );
 }
 
