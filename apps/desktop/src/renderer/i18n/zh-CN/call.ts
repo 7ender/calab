@@ -6,7 +6,6 @@ export const zhCall: DictShape<typeof ruCall> = {
   'call.call': '通话',
   'call.callName': '呼叫 {name}',
   'call.calling': '正在呼叫',
-  'call.callingA11y': '正在呼叫…',
   'call.stripCalling': '正在呼叫 {name}',
   'call.expand': '显示通话',
   'call.cancel': '取消',

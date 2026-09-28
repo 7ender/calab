@@ -6,7 +6,6 @@ export const ruCall = {
   'call.call': 'Позвонить',
   'call.callName': 'Позвонить: {name}',
   'call.calling': 'Вызов',
-  'call.callingA11y': 'Вызов…',
   'call.stripCalling': 'Вызов: {name}',
   'call.expand': 'Показать вызов',
   'call.cancel': 'Отменить',

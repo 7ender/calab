@@ -121,6 +121,11 @@ const KEY = new Set([
   'chat-forwarded',
   'settings-badges',
   'chat-badge',
+  // One-to-one calls (ADR-0034).
+  'call-outgoing',
+  'call-incoming',
+  'dm-in-call',
+  'members-menu-call',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -671,6 +676,88 @@ test('dm-new', async ({ open, win, shot }) => {
   if (!d || !l) throw new Error('no dialog / list box');
   expect(Math.abs(d.y + d.height - (l.y + l.height) - 20)).toBeLessThanOrEqual(1);
   await checkpoint(shot, 'dm-new');
+});
+
+// ---------------------------------------------------------------- one-to-one calls (ADR-0034)
+
+/** Борис's DM open (the call screens start from it); returns its feed ready. */
+async function borisDm(page: Page): Promise<void> {
+  const list = await dmHome(page);
+  await list.getByRole('button', { name: /Борис Петров/ }).click();
+  await expect(page.getByTestId('dm-header')).toContainText('Борис Петров');
+  await expect(page.locator('[data-message-id]')).toHaveCount(4);
+  await settle(page);
+}
+
+test('call-outgoing', async ({ open, win, shot }) => {
+  await open(DM_SEED);
+  await borisDm(win);
+  // The phone left of «⋯» in the DM header → «Вызов…» over the chat.
+  await win.getByTestId('dm-call').click();
+  const modal = win.getByTestId('call-outgoing');
+  await expect(modal).toContainText('Борис Петров');
+  await expect(modal.getByRole('button', { name: 'Отменить' })).toBeFocused();
+  await settle(win);
+  await checkpoint(shot, 'call-outgoing');
+  // A click outside collapses it into the top strip; «Отменить» there ends the call → the log line.
+  await win.mouse.click(24, 300);
+  const strip = win.getByTestId('call-strip');
+  await expect(strip).toContainText('Вызов: Борис Петров');
+  await strip.getByRole('button', { name: 'Отменить' }).click();
+  await expect(strip).toHaveCount(0);
+  await expect(win.getByTestId('call-log').last()).toContainText('Отменённый звонок');
+});
+
+test('call-incoming', async ({ open, win, mock, shot }) => {
+  await open(DM_SEED);
+  await borisDm(win);
+  mock.ringCall(IDS.users.boris, IDS.users.anna);
+  const modal = win.getByTestId('call-incoming');
+  await expect(modal).toContainText('Входящий звонок');
+  await expect(modal.getByRole('button', { name: 'Принять' })).toBeFocused();
+  await settle(win);
+  await checkpoint(shot, 'call-incoming');
+  // «Отклонить»: the modal closes, the log says so (not red: only a missed call is).
+  await modal.getByRole('button', { name: 'Отклонить' }).click();
+  await expect(modal).toHaveCount(0);
+  await expect(win.getByTestId('call-log').last()).toContainText('Отклонённый звонок');
+});
+
+test('dm-in-call', async ({ open, win, mock, shot }) => {
+  await open(DM_SEED);
+  await borisDm(win);
+  mock.ringCall(IDS.users.boris, IDS.users.anna);
+  await win.getByTestId('call-accept').click();
+  // ACTIVE: the modal is gone, the header shows the call (the page clock is frozen: 00:00), the
+  // island «Голос подключён · Звонок · Борис Петров» (dev LiveKit), the mic on voice activation.
+  await expect(win.getByTestId('call-incoming')).toHaveCount(0);
+  await expect(win.getByTestId('dm-call-active')).toContainText('Звонок · 00:00');
+  await expect(win.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
+  await expect(win.getByRole('region', { name: 'Голосовое подключение' })).toContainText('Звонок · Борис Петров');
+  await win.keyboard.press(`${MOD}+Shift+m`);
+  await expect(win.getByRole('button', { name: 'Включить микрофон' }).first()).toBeVisible();
+  await expect(win.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 15_000 });
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await settle(win);
+  await checkpoint(shot, 'dm-in-call');
+  // «Завершить»: the call ends for both, the voice session with it, the log line «Входящий звонок».
+  await win.getByTestId('dm-call-hangup').click();
+  await expect(win.getByTestId('dm-call-active')).toHaveCount(0);
+  await expect(win.getByText('Голос подключён')).toHaveCount(0);
+  await expect(win.getByTestId('call-log').last()).toContainText('Входящий звонок');
+});
+
+test('members-menu-call', async ({ open, win, mock, shot }) => {
+  // The owner's request (ADR-0034): «Позвонить» and «Написать» as two equal buttons on top.
+  await open();
+  await mainWindow(win, mock);
+  const members = await membersList(win);
+  await members.getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
+  const top = win.getByRole('menu').getByTestId('member-menu-top');
+  await expect(top.getByRole('menuitem')).toHaveCount(2);
+  await expect(top.getByRole('menuitem').first()).toHaveText('Позвонить');
+  await top.getByRole('menuitem').first().hover();
+  await checkpoint(shot, 'members-menu-call', { keepPointer: true });
 });
 
 test('update-banner', async ({ open, win, mock, shot }) => {

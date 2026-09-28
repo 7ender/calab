@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { Avatar, avatarColor } from '../../components/Avatar';
 import { Logo } from '../../components/Logo';
 import { MediaImg, useMediaUrl } from '../../components/MediaImg';
-import { Button, cx } from '../../components/ui';
+import { Button, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
@@ -179,16 +179,24 @@ export function ProfileDialog({
                     {t('dm.write')}
                   </Button>
                 ) : null}
-                {canCall ? (
-                  <Button size="lg" variant="secondary" onClick={() => leave(() => void startCall(userId))}>
-                    <Phone className="size-4" aria-hidden />
-                    {t('call.call')}
-                  </Button>
-                ) : null}
                 <Button size="lg" variant="secondary" onClick={() => leave(() => requestMention(userId, name))}>
                   <AtSign className="size-4" aria-hidden />
                   {t('people.menu.mention')}
                 </Button>
+                {canCall ? (
+                  // ADR-0034: «Позвонить» — a round button like «…» (three labelled buttons do not fit 440).
+                  <Tip label={t('call.call')}>
+                    <button
+                      type="button"
+                      aria-label={t('call.call')}
+                      data-testid="profile-call"
+                      onClick={() => leave(() => void startCall(userId))}
+                      className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
+                    >
+                      <Phone className="size-4" aria-hidden />
+                    </button>
+                  </Tip>
+                ) : null}
                 <MoreButton workspaceId={workspaceId} userId={userId} />
               </div>
 

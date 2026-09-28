@@ -542,6 +542,17 @@ test('m-dm-chat', async ({ page }) => {
   await checkpoint(page, 'm-dm-chat', { main: true });
 });
 
+test('m-call-incoming', async ({ page }) => {
+  // ADR-0034: an incoming call on a phone — the whole screen, «Отклонить» / «Принять».
+  await signedIn(page);
+  mock.ringCall(IDS.users.boris, IDS.users.anna);
+  const modal = page.getByTestId('call-incoming');
+  await expect(modal).toContainText('Входящий звонок');
+  await checkpoint(page, 'm-call-incoming');
+  await modal.getByRole('button', { name: 'Отклонить' }).tap();
+  await expect(modal).toHaveCount(0);
+});
+
 test('m-settings', async ({ page }) => {
   await signedIn(page);
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();

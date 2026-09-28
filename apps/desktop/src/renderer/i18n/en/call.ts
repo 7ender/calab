@@ -6,7 +6,6 @@ export const enCall: DictShape<typeof ruCall> = {
   'call.call': 'Call',
   'call.callName': 'Call {name}',
   'call.calling': 'Calling',
-  'call.callingA11y': 'Calling…',
   'call.stripCalling': 'Calling {name}',
   'call.expand': 'Show the call',
   'call.cancel': 'Cancel',

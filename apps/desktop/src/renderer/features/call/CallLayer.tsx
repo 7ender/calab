@@ -98,8 +98,8 @@ function CallSheet({
 /** «Вызов» + three dots lighting up in turn (finite, styles.css `.call-dots`). */
 function Calling(): ReactNode {
   return (
-    <span aria-label={t('call.callingA11y')}>
-      <span aria-hidden>{t('call.calling')}</span>
+    <span>
+      {t('call.calling')}
       <span className="call-dots" aria-hidden>
         <span>.</span>
         <span>.</span>

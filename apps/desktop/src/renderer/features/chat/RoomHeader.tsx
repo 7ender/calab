@@ -23,6 +23,7 @@ import { isVoicePreview, joinOutcome } from '../../lib/voiceEntry';
 import { useDms } from '../../stores/dms';
 import { DmActionsMenu } from '../dm/DmActionsMenu';
 import { DmCallSlot, OnCallMark } from '../call/CallBits';
+import { useCall } from '../../stores/call';
 import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
 import { roomLabel } from './roomLabel';
@@ -206,6 +207,8 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
   const typing = useTypingText('', room.id);
   const searchOpen = useChatView((s) => s.searchRoom === room.id);
   const setSearch = useChatView((s) => s.setSearch);
+  // In this DM's call (ADR-0034) the call pill takes the presence line's place.
+  const inCall = useCall((s) => s.phase === 'active' && s.call?.dmRoomId === room.id);
   const presenceKey = status !== undefined ? PRESENCE_KEY[status] : undefined;
   const custom = [user?.statusEmoji, user?.statusText].filter(Boolean).join(' ');
   const sub = [t(presenceKey ?? 'members.offline'), custom].filter(Boolean).join(' · ');
@@ -225,7 +228,7 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
       </h1>
       {shared ? <RoleMark role={shared.role} label={`${t(shared.role === WorkspaceRole.OWNER ? 'role.owner' : 'role.admin')} · ${shared.workspace}`} /> : null}
       <OnCallMark userId={peerId} />
-      <span className={cx('flex min-w-0 flex-1 items-center gap-1.5 text-body', mobile && 'hidden')} aria-live="polite">
+      <span className={cx('flex min-w-0 flex-1 items-center gap-1.5 text-body', (mobile || inCall) && 'hidden')} aria-live="polite">
         <span className="text-faint" aria-hidden>
           •
         </span>
@@ -240,7 +243,7 @@ export function DmHeader({ room }: { room: Room }): ReactNode {
           </span>
         )}
       </span>
-      <div className={cx('no-drag flex shrink-0 items-center gap-0.5', mobile && 'ml-auto')}>
+      <div className={cx('no-drag flex shrink-0 items-center gap-0.5', (mobile || inCall) && 'ml-auto')}>
         <IconButton label={t('dm.searchIn')} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
           <Search className="size-[18px]" />
         </IconButton>
