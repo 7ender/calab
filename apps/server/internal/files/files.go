@@ -728,11 +728,46 @@ func (s *Service) thumbnail(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	side, ok := ThumbWidth(r.URL.Query().Get("w"))
+	if !ok {
+		return httpx.BadRequest("w must be 512 or 1024")
+	}
 	if f.ThumbnailKey == nil {
 		return httpx.NotFound("thumbnail")
 	}
 	name := strings.TrimSuffix(f.Name, path.Ext(f.Name)) + ".webp"
-	return s.serve(w, r, f, *f.ThumbnailKey, "image/webp", f.Sha256+"-t", name)
+	key, etag := *f.ThumbnailKey, f.Sha256+"-t"
+	// The 512 px thumbnail already has the original size when it fits: nothing to enlarge.
+	if side == ThumbLargeSide && (f.Width == nil || f.Height == nil || max(*f.Width, *f.Height) > ThumbMaxSide) {
+		key, etag = blob.LargeThumbKey(f.Key), f.Sha256+"-t1024"
+		if err := s.ensureLargeThumb(r.Context(), f, key); err != nil {
+			return err
+		}
+	}
+	return s.serve(w, r, f, key, "image/webp", etag, name)
+}
+
+// ensureLargeThumb makes the ThumbLargeSide thumbnail on first request and keeps it in the
+// store (not counted in the workspace quota, like the upload-time one). Concurrent first
+// requests may both encode; Put is atomic, so readers see one complete object either way.
+func (s *Service) ensureLargeThumb(ctx context.Context, f sqlc.File, key string) error {
+	if _, err := s.store.Stat(ctx, key); err == nil {
+		return nil
+	} else if !errors.Is(err, blob.ErrNotFound) {
+		return err
+	}
+	open := func() (io.ReadCloser, error) {
+		rc, _, err := s.store.Get(ctx, f.Key)
+		return rc, err
+	}
+	thumb, err := LargeThumbnail(ctx, open)
+	if errors.Is(err, blob.ErrNotFound) {
+		return httpx.NotFound("file")
+	}
+	if err != nil {
+		return err
+	}
+	return s.store.Put(context.WithoutCancel(ctx), key, bytes.NewReader(thumb), int64(len(thumb)), "image/webp")
 }
 
 // ValidateOwnImage checks that fileID is an image the user may use as an avatar
@@ -771,8 +806,6 @@ func DeleteBlobs(ctx context.Context, store blob.Store, keys []sqlc.ListWorkspac
 		if err := store.Delete(ctx, k.Key); err != nil {
 			slog.WarnContext(ctx, "delete blob", "key", k.Key, "err", err)
 		}
-		if k.ThumbnailKey != nil {
-			_ = store.Delete(ctx, *k.ThumbnailKey)
-		}
+		blob.DeleteThumbs(ctx, store, k.Key, k.ThumbnailKey)
 	}
 }

@@ -7,6 +7,7 @@ import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
+import { THUMB_LARGE, thumbWidthPath, wantsLargeThumb } from '../../lib/thumbs';
 import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse';
@@ -587,19 +588,45 @@ function ReplyQuote({ roomId, workspaceId, replyToId, padTop }: { roomId: string
  * taller than IMAGE_MAX_H px or (portrait) IMAGE_MAX_VH of the screen — proportions kept.
  */
 function imageBoxWidth(files: FileMeta[]): string {
-  if (files.length > 1) return `${IMAGE_MAX}px`;
+  const px = imageBoxPx(files);
   const f = files[0];
-  if (!f?.width || !f.height) return '320px';
+  if (files.length > 1 || !f?.width || !f.height) return `${px}px`;
+  return f.height > f.width ? `min(${px}px, calc(${IMAGE_MAX_VH}dvh * ${f.width} / ${f.height}))` : `${px}px`;
+}
+
+/** imageBoxWidth in px, at most (the dvh cap and a narrow screen only make it smaller). */
+function imageBoxPx(files: FileMeta[]): number {
+  if (files.length > 1) return IMAGE_MAX;
+  const f = files[0];
+  if (!f?.width || !f.height) return 320;
   const w = Math.min(IMAGE_MAX, f.width);
   const h = (w * f.height) / f.width;
-  const px = Math.max(200, Math.round(h > IMAGE_MAX_H ? (IMAGE_MAX_H * f.width) / f.height : w));
-  return f.height > f.width ? `min(${px}px, calc(${IMAGE_MAX_VH}dvh * ${f.width} / ${f.height}))` : `${px}px`;
+  return Math.max(200, Math.round(h > IMAGE_MAX_H ? (IMAGE_MAX_H * f.width) / f.height : w));
+}
+
+/** The chat thumbnail of an image, with the 1024 px one for 2× screens when it is sharper (docs/09 #62). */
+function Thumb({ f, boxW, boxH }: { f: FileMeta; boxW: number; boxH: number }): ReactNode {
+  const path = thumbnailPath(f.id);
+  const hi = wantsLargeThumb(f.width, f.height, boxW, boxH) ? thumbWidthPath(path, THUMB_LARGE) : undefined;
+  // 1× keeps the bare path (= w=512): the same URL as the lightbox placeholder, loaded once.
+  return (
+    <MediaImg
+      path={path}
+      hiDpiPath={hi}
+      alt={f.name}
+      loading="lazy"
+      decoding="async"
+      className="block size-full object-cover"
+      draggable={false}
+    />
+  );
 }
 
 function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: boolean; overlay: ReactNode }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const single = files.length === 1 ? files[0] : undefined;
   const aspect = single?.width && single.height ? `${single.width} / ${single.height}` : undefined;
+  const boxPx = single ? imageBoxPx(files) : (IMAGE_MAX - 2) / 2; // grid: square cells, gap-0.5
   return (
     <div className={cx('relative grid gap-0.5', files.length > 1 && 'grid-cols-2', padTop && 'pt-1.5')} style={{ width: '100%' }}>
       {files.map((f, index) => (
@@ -611,7 +638,7 @@ function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: bool
           className="block overflow-hidden bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] focus-visible:outline-offset-[-2px]"
           style={single ? { aspectRatio: aspect ?? '4 / 3', maxHeight: IMAGE_MAX_H, width: '100%' } : { aspectRatio: '1 / 1' }}
         >
-          <MediaImg path={thumbnailPath(f.id)} alt={f.name} loading="lazy" className="block size-full object-cover" draggable={false} />
+          <Thumb f={f} boxW={boxPx} boxH={single ? (single.width && single.height ? (boxPx * single.height) / single.width : boxPx * 0.75) : boxPx} />
         </button>
       ))}
       {overlay ? (

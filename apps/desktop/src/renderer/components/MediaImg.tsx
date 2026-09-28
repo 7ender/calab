@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ImgHTMLAttributes, type ReactNode } from 'react';
+import { densitySrcSet, pickByDensity } from '../lib/thumbs';
 import { platform } from '../platform';
 
 /**
@@ -30,8 +31,18 @@ export function useMediaUrl(path: string | null | undefined, onError?: () => voi
   return path ? url : undefined;
 }
 
-/** <img> for an API media path (files, thumbnails, avatars, icons). */
-export function MediaImg({ path, ...rest }: { path: string } & Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'>): ReactNode {
-  const src = useMediaUrl(path);
-  return src ? <img src={src} {...rest} /> : <span className={rest.className} aria-hidden />;
+/**
+ * <img> for an API media path (files, thumbnails, avatars, icons). `hiDpiPath` is the same
+ * picture for 2× screens: a 1x/2x srcset where URLs load directly (Electron), otherwise one of
+ * the two chosen by devicePixelRatio (web, blob URLs).
+ */
+export function MediaImg({
+  path,
+  hiDpiPath,
+  ...rest
+}: { path: string; hiDpiPath?: string } & Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'srcSet'>): ReactNode {
+  const direct = platform.directMedia;
+  const src = useMediaUrl(hiDpiPath && !direct ? pickByDensity(path, hiDpiPath, window.devicePixelRatio || 1) : path);
+  const srcSet = hiDpiPath && direct ? densitySrcSet(`${platform.apiBase}${path}`, `${platform.apiBase}${hiDpiPath}`) : undefined;
+  return src ? <img src={src} srcSet={srcSet} {...rest} /> : <span className={rest.className} aria-hidden />;
 }
