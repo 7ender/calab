@@ -2,6 +2,7 @@ import type { Dict } from '../types';
 import { esApp } from './app';
 import { esChat } from './chat';
 import { esDm } from './dm';
+import { esCall } from './call';
 import { esEcho } from './echo';
 import { esMedia } from './media';
 import { esMail } from './mail';
@@ -27,6 +28,7 @@ export const es: Dict = {
   ...esStickers,
   ...esBots,
   ...esDm,
+  ...esCall,
   ...esEcho,
   ...esMedia,
   ...esPlan,

@@ -2,12 +2,12 @@ import * as DialogP from '@radix-ui/react-dialog';
 import { WorkspaceRole } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AtSign, Cake, Ellipsis, MessageCircle, Plus, X } from 'lucide-react';
+import { AtSign, Cake, Ellipsis, MessageCircle, Phone, Plus, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Avatar, avatarColor } from '../../components/Avatar';
 import { Logo } from '../../components/Logo';
 import { MediaImg, useMediaUrl } from '../../components/MediaImg';
-import { Button, cx } from '../../components/ui';
+import { Button, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
@@ -19,7 +19,9 @@ import { useSession } from '../../stores/session';
 import { canEditMemberBirthday } from './members';
 import { MemberBirthdayDialog } from './MemberBirthdayDialog';
 import { requestMention } from '../chat/mentionRequest';
-import { useCanDm } from '../dm/canDm';
+import { useCanCall, useCanDm } from '../dm/canDm';
+import { useOnCall } from '../call/CallBits';
+import { startCall } from '../../services/call';
 import { promoteGuest, toggleMemberRole } from './actions';
 import { MemberPicker } from './MemberPicker';
 import type { PeoplePickItem, RolePickItem } from './memberPickItems';
@@ -94,6 +96,8 @@ export function ProfileDialog({
   const name = useMemberName(workspaceId, userId);
   const look = useRoleLook(workspaceId, userId);
   const canDm = useCanDm(workspaceId, userId);
+  const canCall = useCanCall(userId, workspaceId);
+  const onCall = useOnCall(userId);
   const u = m?.user;
   const banner = useBannerColor(userId, u?.avatarFileId || undefined);
   const content = useRef<HTMLDivElement>(null);
@@ -156,6 +160,13 @@ export function ProfileDialog({
               {u.isBot ? <BotHandle botUserId={userId} /> : null}
               <ProfileBadge workspaceId={workspaceId} userId={userId} />
               <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
+              {onCall ? (
+                // ADR-0034: in a one-to-one call now (with whom is not disclosed).
+                <div className="mt-1 flex items-center gap-1.5 text-body text-muted">
+                  <Phone className="size-4 shrink-0 text-ok" aria-hidden />
+                  {t('call.onCall')}
+                </div>
+              ) : null}
               <LocalTime userId={userId} variant="line" />
               <BirthdayInfo userId={userId} variant="line" />
               <EditBirthday workspaceId={workspaceId} userId={userId} />
@@ -172,6 +183,20 @@ export function ProfileDialog({
                   <AtSign className="size-4" aria-hidden />
                   {t('people.menu.mention')}
                 </Button>
+                {canCall ? (
+                  // ADR-0034: «Позвонить» — a round button like «…» (three labelled buttons do not fit 440).
+                  <Tip label={t('call.call')}>
+                    <button
+                      type="button"
+                      aria-label={t('call.call')}
+                      data-testid="profile-call"
+                      onClick={() => leave(() => void startCall(userId))}
+                      className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
+                    >
+                      <Phone className="size-4" aria-hidden />
+                    </button>
+                  </Tip>
+                ) : null}
                 <MoreButton workspaceId={workspaceId} userId={userId} />
               </div>
 

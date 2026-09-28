@@ -1,0 +1,36 @@
+import type { ruCall } from '../ru/call';
+import type { DictShape } from '../types';
+
+/** Simplified Chinese UI strings — one-to-one calls (ADR-0034, ADR-0022). Same keys and placeholders as ru. */
+export const zhCall: DictShape<typeof ruCall> = {
+  'call.call': '通话',
+  'call.callName': '呼叫 {name}',
+  'call.calling': '正在呼叫',
+  'call.stripCalling': '正在呼叫 {name}',
+  'call.expand': '显示通话',
+  'call.cancel': '取消',
+  'call.incoming': '来电',
+  'call.accept': '接听',
+  'call.decline': '拒绝',
+  'call.hangup': '挂断',
+  'call.inCall': '通话',
+  'call.panel': '通话 · {name}',
+  'call.voiceOnly': '通话中麦克风为语音激活',
+  'call.onCall': '通话中',
+  'call.busy': '忙线',
+  'call.alreadyInCall': '你已在通话中',
+  'call.forbidden': '无法呼叫此人',
+  'call.failed': '呼叫失败',
+  'call.declinedToast': '通话被拒绝',
+  'call.noAnswer': '无人接听',
+  'call.leaveRoomTitle': '离开房间并呼叫？',
+  'call.leaveRoomText': '你在语音房间 {room} 中。离开后才会开始通话。',
+  'call.notifyIncoming': '{name} 来电',
+  'call.log.outgoing': '呼出通话',
+  'call.log.incoming': '呼入通话',
+  'call.log.missed': '未接来电',
+  'call.log.declined': '已拒绝的通话',
+  'call.log.cancelled': '已取消的通话',
+  'call.log.busy': '忙线',
+  'call.log.call': '通话',
+};

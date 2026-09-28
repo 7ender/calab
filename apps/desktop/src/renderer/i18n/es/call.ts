@@ -1,0 +1,36 @@
+import type { ruCall } from '../ru/call';
+import type { DictShape } from '../types';
+
+/** Spanish UI strings — one-to-one calls (ADR-0034, ADR-0022). Same keys and placeholders as ru. */
+export const esCall: DictShape<typeof ruCall> = {
+  'call.call': 'Llamar',
+  'call.callName': 'Llamar a {name}',
+  'call.calling': 'Llamando',
+  'call.stripCalling': 'Llamando a {name}',
+  'call.expand': 'Mostrar la llamada',
+  'call.cancel': 'Cancelar',
+  'call.incoming': 'Llamada entrante',
+  'call.accept': 'Aceptar',
+  'call.decline': 'Rechazar',
+  'call.hangup': 'Colgar',
+  'call.inCall': 'Llamada',
+  'call.panel': 'Llamada · {name}',
+  'call.voiceOnly': 'En una llamada el micrófono se activa por voz',
+  'call.onCall': 'En una llamada',
+  'call.busy': 'Ocupado',
+  'call.alreadyInCall': 'Ya estás en una llamada',
+  'call.forbidden': 'No puedes llamar a esta persona',
+  'call.failed': 'No se pudo llamar',
+  'call.declinedToast': 'Llamada rechazada',
+  'call.noAnswer': 'Sin respuesta',
+  'call.leaveRoomTitle': '¿Salir de la sala y llamar?',
+  'call.leaveRoomText': 'Estás en la sala de voz {room}. La llamada empezará cuando salgas.',
+  'call.notifyIncoming': 'Llamada entrante de {name}',
+  'call.log.outgoing': 'Llamada saliente',
+  'call.log.incoming': 'Llamada entrante',
+  'call.log.missed': 'Llamada perdida',
+  'call.log.declined': 'Llamada rechazada',
+  'call.log.cancelled': 'Llamada cancelada',
+  'call.log.busy': 'Ocupado',
+  'call.log.call': 'Llamada',
+};

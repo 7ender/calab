@@ -1,4 +1,4 @@
-import { PresenceStatus, levelNotifies, type Message } from '@calaba/protocol';
+import { CallOutcome, PresenceStatus, levelNotifies, type Message } from '@calaba/protocol';
 import { chatSound } from '../lib/chatSound';
 import { mentionsMe } from '../lib/mentions';
 import { playSound } from '../lib/sounds';
@@ -15,6 +15,7 @@ import { previewText } from '../features/chat/mentionText';
 import { roomLabel } from '../features/chat/roomLabel';
 import { t } from '../i18n';
 import { systemPreview } from '../lib/recording';
+import { callCardOf } from '../lib/callModel';
 
 export { mentionsMe };
 
@@ -56,6 +57,10 @@ export function shouldNotify(m: Message, workspaceId: string, now = Date.now()):
  * (ADR-0020) notifies like a mention but never goes to the mentions inbox.
  */
 export function onIncomingMessage(m: Message, workspaceId: string, visible: boolean): void {
+  // A DM call log line (ADR-0034): only a missed call is news — unread, a sound, «Пропущенный
+  // звонок» from the caller; the other outcomes are read by both sides at once (the server).
+  const call = callCardOf(m);
+  if (call && call.outcome !== CallOutcome.MISSED) return;
   const myId = useSession.getState().me?.user?.id ?? '';
   const room = useRooms.getState().byId[m.roomId];
   const { dm, mention, notify } = shouldNotify(m, workspaceId);

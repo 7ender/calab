@@ -41,7 +41,7 @@ import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
 import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
-import { canSpeakFrom, isDeviceGone, meterUpdate, pttAllowed, pttCue, qualityOf, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue, qualityOf, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
@@ -210,6 +210,11 @@ class VoiceEngine {
   private leaveReq: Promise<void> | null = null;
   /** ICE servers LiveKit handed out at the last successful connect (TURN probe). */
   private iceServers: RTCIceServer[] = [];
+  /**
+   * A one-to-one call's voice session (ADR-0034): voice activation only — PTT unbound and
+   * ignored until the call's session ends (stores/voice `call` mirrors it for the UI).
+   */
+  private callMode = false;
   /** The seat of the last failed user join: a CSP report arriving after its teardown re-seats it as 'blocked'. */
   private failedSeat: { roomId: string; workspaceId: string; at: number } | null = null;
 
@@ -283,10 +288,26 @@ class VoiceEngine {
   private async syncPttBinding(): Promise<void> {
     const s = prefs();
     try {
-      await platform.ptt.setBinding(s.micMode === 'ptt' ? s.pttBinding : null);
+      await platform.ptt.setBinding(this.micMode() === 'ptt' ? s.pttBinding : null);
     } catch (e) {
       log.warn('ptt binding failed', e);
     }
+  }
+
+  /** The mic mode in force: the user's choice, voice activation during a call (ADR-0034). */
+  private micMode(): 'voice' | 'ptt' {
+    return micModeFor(prefs().micMode, this.callMode);
+  }
+
+  /** Enters / leaves a call's voice-only mic mode: the PTT binding and the transmit gate follow. */
+  private setCallMode(on: boolean): void {
+    if (this.callMode === on) return;
+    this.callMode = on;
+    if (this.ptt.pending) this.ptt.stop();
+    if (useVoice.getState().pttDown) setVoice({ pttDown: false });
+    setVoice({ call: on });
+    void this.syncPttBinding();
+    this.applyTransmit();
   }
 
   // ------------------------------------------------------------ join / leave
@@ -295,8 +316,12 @@ class VoiceEngine {
     return this.roomId;
   }
 
-  /** User intent: connect to a voice room (switches rooms; cancels a pending rejoin). */
-  async join(roomId: string, workspaceId: string): Promise<void> {
+  /**
+   * User intent: connect to a voice room (switches rooms; cancels a pending rejoin). `call`: the
+   * voice session of a one-to-one call (ADR-0034) — a DM room, `workspaceId` '' — with the mic on
+   * voice activation only.
+   */
+  async join(roomId: string, workspaceId: string, opts: { call?: boolean } = {}): Promise<void> {
     // A suspended workspace has no calls (docs/09 #32): say so instead of a 403 toast.
     if (useWorkspaces.getState().byId[workspaceId]?.ws.suspension) {
       toast.info(t('suspended.voice'));
@@ -309,7 +334,7 @@ class VoiceEngine {
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
     // call is still being torn down; connect() takes over with phase 'connecting'.
     if (!(this.roomId === roomId && this.room)) setVoice({ joining: { roomId, workspaceId } });
-    await this.connect(roomId, workspaceId, false);
+    await this.connect(roomId, workspaceId, false, undefined, undefined, opts.call === true);
   }
 
   /**
@@ -317,10 +342,11 @@ class VoiceEngine {
    * restarts now (the failed-attempt count goes on until a connect succeeds).
    */
   retry(): void {
-    const { roomId, workspaceId, phase } = useVoice.getState();
-    if (!roomId || !workspaceId) return;
+    const { roomId, workspaceId, phase, call } = useVoice.getState();
+    // A call's session has workspace '' (ADR-0034).
+    if (!roomId || workspaceId === null) return;
     if (phase === 'blocked') {
-      void this.join(roomId, workspaceId);
+      void this.join(roomId, workspaceId, { call });
       return;
     }
     if (phase === 'reconnecting') void this.rejoin(roomId, workspaceId);
@@ -339,7 +365,7 @@ class VoiceEngine {
     if (!rtcHost || rtcHost !== host) return;
     const v = useVoice.getState();
     const seat =
-      v.roomId && v.workspaceId
+      v.roomId && v.workspaceId !== null
         ? { roomId: v.roomId, workspaceId: v.workspaceId }
         : this.failedSeat && Date.now() - this.failedSeat.at < 10_000
           ? this.failedSeat
@@ -363,7 +389,7 @@ class VoiceEngine {
    * `keepServerMuted`: the moderator mute to carry over the teardown (a rejoin or a move's /join
    * fallback); teardown resets it, and until the new grant arrives the UI would show «not muted».
    */
-  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds, keepServerMuted?: boolean): Promise<void> {
+  private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds, keepServerMuted?: boolean, call?: boolean): Promise<void> {
     if (this.roomId === roomId && this.room) return;
     // The intent token is taken *before* the teardown (which awaits a network disconnect):
     // a leave() or a newer join during that window bumps it, and this call bails out, so the
@@ -378,6 +404,8 @@ class VoiceEngine {
     }
     if (this.room) await this.teardown(false, quiet);
     if (intent !== this.intentSeq) return;
+    // A fresh join decides the mic mode (a call: voice only); a reconnect / move keeps it.
+    if (call !== undefined) this.setCallMode(call);
     const seq = ++this.joinSeq;
     this.roomId = roomId;
     // A new call (not a reconnect of this one) may warn about echo again.
@@ -545,7 +573,8 @@ class VoiceEngine {
   private async rejoin(seatRoom?: string, seatWs?: string): Promise<void> {
     const roomId = seatRoom ?? this.roomId;
     const wsId = seatWs ?? useVoice.getState().workspaceId;
-    if (!roomId || !wsId) return;
+    // A call's session has workspace '' (ADR-0034): it reconnects like a room.
+    if (!roomId || wsId === null) return;
     const gen = ++this.rejoinGen;
     const stream = useVoice.getState().myStream;
     // The moderator mute outlives the reconnect: the server grants no SPEAK again, and until
@@ -731,8 +760,10 @@ class VoiceEngine {
     this.selfCheckTimer = window.setTimeout(() => {
       this.selfCheckTimer = null;
       const v = useVoice.getState();
+      // A call's session (ADR-0034) is not in any workspace's voice list: nothing to compare.
+      if (!v.workspaceId) return;
       const me = useSession.getState().me?.user?.id ?? '';
-      const shown = v.workspaceId ? useWorkspaces.getState().byId[v.workspaceId]?.voice[me]?.roomId : undefined;
+      const shown = useWorkspaces.getState().byId[v.workspaceId]?.voice[me]?.roomId;
       if (v.roomId && shown !== v.roomId && this.room?.state === ConnectionState.Connected) this.checkSeat();
     }, SEAT_SELF_GRACE_MS);
   }
@@ -867,6 +898,7 @@ class VoiceEngine {
     this.wanted.clear();
     this.announced = null;
     annot.detach();
+    if (!keepSeat) this.setCallMode(false);
     setVoice({
       ...(keepSeat ? {} : { roomId: null, workspaceId: null, joinedAt: null, phase: 'idle' as const, serverMuted: false, recording: null, link: { ...useVoice.getState().link, attempts: 0, blockedHost: null } }),
       transmitting: false,
@@ -1187,7 +1219,7 @@ class VoiceEngine {
     const me = this.myId() || null;
     // PTT: my ring is the gate itself (the release tail already applied) — off at once, without
     // the speaking hold. VAD keeps the hold: the gate flaps between words.
-    const instantOff = me && prefs().micMode === 'ptt' && !this.selfSpeaking ? new Set([me]) : undefined;
+    const instantOff = me && this.micMode() === 'ptt' && !this.selfSpeaking ? new Set([me]) : undefined;
     const remote = [...this.remoteSpeakers, ...this.levelSpeakers.identities()];
     this.speakers.update(speakingUserIds(remote, local, { userId: me, on: this.selfSpeaking && this.room !== null }), instantOff);
   }
@@ -1419,7 +1451,7 @@ class VoiceEngine {
     const mic = this.mic;
     if (!mic) return;
     const p = prefs();
-    mic.setDenoise(denoiseMode({ onAir: d.audioEnabled, meter: this.meterShown(), micMode: p.micMode, muted: d.livekitMuted }), wakeDbFor(p.thresholdDb));
+    mic.setDenoise(denoiseMode({ onAir: d.audioEnabled, meter: this.meterShown(), micMode: this.micMode(), muted: d.livekitMuted }), wakeDbFor(p.thresholdDb));
   }
 
   /** Pipeline builds / swaps run one at a time: concurrent builds leaked a capture (review M2). */
@@ -1642,7 +1674,7 @@ class VoiceEngine {
     } else if (update === 'gate') {
       setVoice({ gateOpen: open });
     }
-    if (open !== wasOpen && prefs().micMode === 'voice') this.applyTransmit();
+    if (open !== wasOpen && this.micMode() === 'voice') this.applyTransmit();
   }
 
   private decision(): ReturnType<typeof transmitDecision> {
@@ -1651,7 +1683,7 @@ class VoiceEngine {
       muted: v.muted,
       deafened: v.deafened,
       canSpeak: v.canSpeak,
-      mode: prefs().micMode,
+      mode: this.micMode(),
       gateOpen: this.gate.open,
       pttDown: v.pttDown,
     });
@@ -1726,6 +1758,8 @@ class VoiceEngine {
   }
 
   private onPtt(ev: PttEvent): void {
+    // A call is voice activation only (ADR-0034): the key (still bound a moment) does nothing.
+    if (this.callMode) return;
     // Muted / deafened: the key does nothing — no gate, no activation cue (#12).
     if (ev.down && !pttAllowed(useVoice.getState())) return;
     if (ev.down) {
@@ -2180,7 +2214,7 @@ class VoiceEngine {
     const on =
       this.room !== null &&
       this.mic !== null &&
-      duckWanted({ mode: p.echoMode, echoRisk: this.echo.risk, remoteActive: this.remoteTalk.active, micMode: p.micMode, pttDown: v.pttDown, deafened: v.deafened });
+      duckWanted({ mode: p.echoMode, echoRisk: this.echo.risk, remoteActive: this.remoteTalk.active, micMode: this.micMode(), pttDown: v.pttDown, deafened: v.deafened });
     this.mic?.setDuck(on);
     if (on !== v.ducking) setVoice({ ducking: on });
   }

@@ -25,3 +25,28 @@ export function canDmNow(workspaceId: string, userId: string): boolean {
   const ws = useWorkspaces.getState().byId[workspaceId];
   return canDmWith(useSession.getState().me?.user, ws?.role, ws?.members[userId]);
 }
+
+/**
+ * «Позвонить» (ADR-0034): whom I may write to, and a person — never a bot (the server answers
+ * 403 BOT_NOT_ALLOWED). With a workspace: that membership; without (a DM, ⌘K): any shared one.
+ */
+export function canCallWith(me: User | undefined, myRole: WorkspaceRole | undefined, target: WorkspaceMember | undefined): boolean {
+  return canDmWith(me, myRole, target) && target?.user?.isBot !== true && me?.isBot !== true;
+}
+
+/** canCallWith in any of my workspaces (or in `workspaceId`), at the moment of the action. */
+export function canCallNow(userId: string, workspaceId?: string): boolean {
+  const me = useSession.getState().me?.user;
+  const byId = useWorkspaces.getState().byId;
+  const entries = workspaceId ? [byId[workspaceId]] : Object.values(byId);
+  return entries.some((e) => e !== undefined && canCallWith(me, e.role, e.members[userId]));
+}
+
+/** canCallNow, reactive: a boolean selector (re-renders only when the answer flips). */
+export function useCanCall(userId: string, workspaceId?: string): boolean {
+  const me = useSession((s) => s.me?.user);
+  return useWorkspaces((s) => {
+    const entries = workspaceId ? [s.byId[workspaceId]] : Object.values(s.byId);
+    return entries.some((e) => e !== undefined && canCallWith(me, e.role, e.members[userId]));
+  });
+}
