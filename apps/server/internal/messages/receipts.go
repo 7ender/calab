@@ -14,6 +14,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // ReceiptWindow bounds READ_RECEIPT of a workspace room to one event per window (docs/09 #92).
@@ -35,7 +36,7 @@ func NewReceipts(d *db.DB, ev events.Publisher, r rueidis.Client) *Receipts {
 	return &Receipts{db: d, events: ev, redis: r, window: ReceiptWindow}
 }
 
-func receiptKey(room uuid.UUID) string { return "rr:" + room.String() }
+func receiptKey(room uuid.UUID) string { return redisx.Key("rr:" + room.String()) }
 
 // afterRead handles a read marker of reader (a person, not a bot) that moved to mark.
 func (rc *Receipts) afterRead(ctx context.Context, acc perm.RoomAccess, room, reader, mark uuid.UUID) {
