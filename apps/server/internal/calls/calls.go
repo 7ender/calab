@@ -59,7 +59,8 @@ type Service struct {
 	redis   rueidis.Client
 	events  events.Publisher
 	system  *messages.System
-	limiter *redisx.RateLimiter
+	limiter *redisx.RateLimiter // calls a user places, in all
+	perDM   *redisx.RateLimiter // calls a user places in one DM (ring spam)
 	// Media: set by the app when LiveKit is configured.
 	Media Media
 	// Presence announces a user's presence after on_call changed (the gateway).
@@ -69,9 +70,10 @@ type Service struct {
 	noTimers         atomic.Bool  // tests: only the sweeper settles calls
 }
 
-// New creates the call service; limiter bounds how many calls a user places.
-func New(d *db.DB, r rueidis.Client, ev events.Publisher, limiter *redisx.RateLimiter) *Service {
-	s := &Service{db: d, store: Store{C: r}, redis: r, events: ev, system: messages.NewSystem(d, ev), limiter: limiter}
+// New creates the call service; limiter bounds how many calls a user places in all, perDM
+// how many they place in one DM (keyed by caller and DM: re-ringing the same person).
+func New(d *db.DB, r rueidis.Client, ev events.Publisher, limiter, perDM *redisx.RateLimiter) *Service {
+	s := &Service{db: d, store: Store{C: r}, redis: r, events: ev, system: messages.NewSystem(d, ev), limiter: limiter, perDM: perDM}
 	s.SetTimeouts(DefaultRingTimeout, DefaultLostGrace, DefaultTick)
 	return s
 }
@@ -136,6 +138,11 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if err := s.limiter.Take(ctx, id.UserID.String()); err != nil {
+		return err
+	}
+	// Ring spam (cancel and call again, each ring a ringtone and a card for the callee) is
+	// bounded per DM, well below the overall limit.
+	if err := s.perDM.Take(ctx, id.UserID.String()+":"+roomID.String()); err != nil {
 		return err
 	}
 	now := time.Now()

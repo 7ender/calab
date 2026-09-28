@@ -379,6 +379,21 @@ func TestCallResume(t *testing.T) {
 	}
 }
 
+// TestCallRingSpam: cancelling and calling the same person again is bounded per DM (3 at
+// once, then one per 30 s: 429), well below the overall per-user limit, so other DMs still
+// ring and the callee can still call back.
+func TestCallRingSpam(t *testing.T) {
+	a, b, c, _ := callTeam(t)
+	ab := openDM(t, a.user, b.id, 201).GetRoom().GetId()
+	ac := openDM(t, a.user, c.id, 201).GetRoom().GetId()
+	for range 3 {
+		callAction(t, a.user, 200, startCall(t, a.user, ab).GetId(), "cancel")
+	}
+	a.must(429, "POST", "/api/dms/"+ab+"/call", nil, nil)
+	callAction(t, a.user, 200, startCall(t, a.user, ac).GetId(), "cancel")
+	callAction(t, b.user, 200, startCall(t, b.user, ab).GetId(), "cancel")
+}
+
 // TestCallBots: bots neither call nor answer, and cannot be called.
 func TestCallBots(t *testing.T) {
 	a, _, _, wsID := callTeam(t)

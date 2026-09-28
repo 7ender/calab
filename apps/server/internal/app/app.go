@@ -222,7 +222,9 @@ func New(d Deps) *App {
 	authSvc.OnBotRequest = hub.TouchBot
 
 	// One-to-one calls (ADR-0034): signalling here, media through rtc (DM voice sessions).
-	callSvc := calls.New(d.DB, d.Redis, pub, redisx.NewRateLimiter(d.Redis, "rl:call:", 10, 10)) // 10 at once, 10 per minute
+	callSvc := calls.New(d.DB, d.Redis, pub,
+		redisx.NewRateLimiter(d.Redis, "rl:call:", 10, 10),  // 10 at once, 10 per minute
+		redisx.NewRateLimiter(d.Redis, "rl:call:dm:", 3, 2)) // per DM: 3 at once, then one per 30 s
 	callSvc.Presence = hub.PresenceChanged
 	if rtcSvc != nil {
 		rtcSvc.Calls = callSvc
