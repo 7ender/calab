@@ -2,6 +2,7 @@ import { desktopCapturer, nativeImage, shell, systemPreferences, webContents, ty
 import log from 'electron-log/main';
 import { sameThumb, THUMB_DEFAULT, type ThumbRequest, type ThumbSize } from '../shared/captureThumb';
 import type { CaptureSelection, CaptureSource, ScreenAccess } from '../shared/ipc';
+import { loopbackDevice, systemAudioSupport as systemAudioSupportFor, type SystemAudioSupport } from './systemAudio';
 
 /**
  * Screen capture with our own picker (docs/02-media.md, "Захват").
@@ -17,22 +18,14 @@ const ARM_TTL_MS = 10_000;
 /** webContents whose `destroyed` we already listen to (one listener each, not one per pick). */
 const tracked = new Set<number>();
 
-/**
- * macOS system audio via ScreenCaptureKit needs Chromium features that
- * Electron does not enable by default. Must be applied before app ready.
- * Known issue: custom picker + audio on macOS (electron#52738) — the handler
- * falls back to video-only if Chromium rejects the audio request.
- */
-export const MAC_SYSTEM_AUDIO_FEATURES = ['MacLoopbackAudioForScreenShare', 'MacSckSystemAudioLoopbackOverride'];
+export { MAC_SYSTEM_AUDIO_FEATURES } from './systemAudio';
 
 export function macSystemAudioEnabled(): boolean {
   return process.platform === 'darwin' && process.env['CALABA_MAC_SYSTEM_AUDIO'] !== '0';
 }
 
-export function systemAudioSupport(): 'supported' | 'experimental' | 'unsupported' {
-  if (process.platform === 'win32') return 'supported';
-  if (macSystemAudioEnabled()) return 'experimental';
-  return 'unsupported';
+export function systemAudioSupport(): SystemAudioSupport {
+  return systemAudioSupportFor(process.platform, process.platform === 'darwin' ? process.getSystemVersion() : '', process.env);
 }
 
 /** CALABA_VISUAL_TEST=1: synthetic sources — no real screens in screenshots, no TCC prompt. */
@@ -187,10 +180,11 @@ export function installDisplayMediaHandler(ses: Session): void {
             return;
           }
           const wantAudio = sel.audio && request.audioRequested && systemAudioSupport() !== 'unsupported';
-          // 'loopbackWithMute' per docs/02-media.md rule 4; combined with the
-          // renderer-side `restrictOwnAudio` constraint to exclude our own
-          // output (other participants' voices) from the loopback.
-          callback(wantAudio ? { video: source, audio: 'loopbackWithMute' } : { video: source });
+          // Plain 'loopback' (docs/02-media.md rule 4, main/systemAudio.ts): with the renderer's
+          // `restrictOwnAudio` Chromium opens `loopbackWithoutChrome` — our own playback (other
+          // participants' voices) is excluded and stays audible locally. 'loopbackWithMute' would
+          // mute all local playback and ignore `restrictOwnAudio`.
+          callback(wantAudio ? { video: source, audio: loopbackDevice(process.platform) } : { video: source });
         })
         .catch(() => callback({}));
     },

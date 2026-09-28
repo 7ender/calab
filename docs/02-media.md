@@ -24,9 +24,19 @@
 2. **Смена устройства вывода — через `setSinkId` на тех же `<audio>`**, не пересоздавая пайплайн. После переключения — обязательный тест на эхо (есть исторические жалобы).
 3. **Нет двойной обработки.** RNNoise применяем к треку *после* AEC3 (AEC работает на уровне capture-устройства, RNNoise — в worklet поверх результата). Не отключаем встроенный AEC ради «своего». При включённом RNNoise встроенный `noiseSuppression` выключаем (два шумодава подряд дают «булькающий» голос); выключил RNNoise — встроенный включается обратно.
 4. **Системный звук при стриме экрана** — главный источник эха: loopback Windows захватывает и голоса участников. Стратегия:
-   - Electron `setDisplayMediaRequestHandler` с `audio: 'loopbackWithMute'`; в constraints `restrictOwnAudio: true` (исключает звук нашего же процесса) — проверить на Windows.
-   - macOS 13+: ScreenCaptureKit с `excludesCurrentProcessAudio` (флаги `MacLoopbackAudioForScreenShare`, `MacSckSystemAudioLoopbackOverride`). Известный баг с кастомным пикером (electron#52738) — тестировать.
-   - Если исключение не работает на платформе — системный звук по умолчанию выключен, включается с предупреждением.
+   - Electron `setDisplayMediaRequestHandler` с `audio: 'loopback'` (все платформы, `main/systemAudio.ts`), в constraints `restrictOwnAudio: true`. Chromium тогда открывает устройство `loopbackWithoutChrome`: захват всей системы **без процесса аудиосервиса Calab**. macOS 14.2+ — Core Audio process tap (фича `MacCatapLoopbackAudioForScreenShare`, по умолчанию включена, закрепляем явно), Windows 10 2004+ — process loopback `EXCLUDE_TARGET_PROCESS_TREE`. Голоса собеседников в стрим не попадают, ведущий их слышит.
+   - **`loopbackWithMute` не использовать никогда** (docs/09 #68): он глушит *весь* локальный вывод, пока идёт захват (macOS — tap с `CATapMuted`, Windows — `IAudioEndpointVolume::SetMute` на устройстве вывода), поэтому ведущий никого не слышит. Вдобавок с ним Chromium игнорирует `restrictOwnAudio`: устройство остаётся `loopbackWithMute`, наш звук попадает в захват.
+   - Замер 28.09 (macOS 27, Electron 44.4.5, тон 1 кГц, уровень полосы 1 кГц в захваченном треке через `AnalyserNode`, фон ≈ −80 дБ):
+
+     | Режим | тишина | наш `<audio>` | `afplay` извне | трек |
+     |---|---|---|---|---|
+     | `loopback` + `restrictOwnAudio` | −78 дБ | **−65…−69 дБ** (исключён) | **−33 дБ** (слышен) | `deviceId: loopbackWithoutChrome`, `restrictOwnAudio: true` |
+     | `loopbackWithMute` + `restrictOwnAudio` | −58…−85 дБ | −32 дБ (попадает) | −33 дБ | `deviceId: loopbackWithMute` |
+     | `loopback`, `restrictOwnAudio: false` | −83 дБ | −32 дБ | −52 дБ (Glass) | `deviceId: loopback` |
+     | `loopback` + restrict, `--disable-features=MacCatapLoopbackAudioForScreenShare` | −63 дБ | −32 дБ (попадает) | −34 дБ | ScreenCaptureKit, `restrictOwnAudio: false` |
+
+     Флагов `MacLoopbackAudioForScreenShare` / `MacSckSystemAudioLoopbackOverride` в Chromium 152 нет, прежний спайк (−11,7 дБFS «не исключается») мерил `loopbackWithMute`. После остановки стрима tap закрывается, наш тон в системном миксе снова −32 дБ (тот же уровень, что до захвата; сторонний наблюдатель-процесс). `<audio>`-элементы собеседников стрим не трогает.
+   - Проверка на лету: `ownAudioExcluded(track.getSettings())` (`restrictOwnAudio: true` или `deviceId: loopbackWithoutChrome`); если нет — предупреждение в лог. macOS < 14.2 (нет process taps → ScreenCaptureKit без исключения) — `systemAudioLoopback: 'experimental'`: звук по умолчанию выключен, в пикере предупреждение, что собеседники попадут в стрим. Linux — не поддерживается.
 5. **Опциональный OS-AEC** (macOS voice processing) — сравнить с AEC3 на тесте с 3 говорящими и колонками. Включается `CALABA_SYSTEM_AEC=1` (фича `EnforceSystemEchoCancellation`, см. «Эхо: колонки»), по умолчанию выключен.
 6. **Приглушение микрофона («Динамики») — только на входном пути:** GainNode стоит после AEC3 и RNNoise, перед публикацией. Выход не трогаем.
 
@@ -255,7 +265,7 @@
 
 ### Решения по открытым пунктам
 1. **`L1T3` vs `L2T3_KEY` для `detail`**: вопрос снят. С livekit-client 2.22 non-simulcast SVC для screen share всегда `L1T3` + `motion`. **Рекомендация: AV1 + simulcast(L1T3 на rid) для screen share**, это даёт настоящий низкий слой для превью и сохраняет `contentHint: detail`. Нужен новый ADR (поправка к ADR-0005) и пин livekit-server ≥ 1.13.7. Проверить на медленном канале (эмуляция потерь/полосы) и на Windows.
-2. **Системный звук на macOS**: захват через кастомный пикер + `loopbackWithMute` + `MacLoopbackAudioForScreenShare,MacSckSystemAudioLoopbackOverride` **работает** (баг electron#52738 на этой машине не воспроизвёлся: аудио-трек есть, внешний `afplay` ловится на −23 dBFS). Но **`restrictOwnAudio: true` не исключает звук нашего процесса**: тон из обычного `<audio>` приложения попадает в loopback на −11.7 dBFS (так же и с `--disable-features=AudioServiceOutOfProcess`). То есть голоса участников ушли бы обратно в комнату. По ADR-0004 системный звук на macOS **по умолчанию выключен**, в UI есть предупреждение. Windows (`loopbackWithMute` — mute ли это всего вывода у стримера?) не проверен.
+2. **Системный звук на macOS**: захват через кастомный пикер + `loopbackWithMute` + `MacLoopbackAudioForScreenShare,MacSckSystemAudioLoopbackOverride` **работает** (баг electron#52738 на этой машине не воспроизвёлся: аудио-трек есть, внешний `afplay` ловится на −23 dBFS). Но **`restrictOwnAudio: true` не исключает звук нашего процесса**: тон из обычного `<audio>` приложения попадает в loopback на −11.7 dBFS (так же и с `--disable-features=AudioServiceOutOfProcess`). То есть голоса участников ушли бы обратно в комнату. По ADR-0004 системный звук на macOS **по умолчанию выключен**, в UI есть предупреждение. Windows (`loopbackWithMute` — mute ли это всего вывода у стримера?) не проверен. **Пересмотрено 28.09 (docs/09 #68, п. 4 выше):** мерили `loopbackWithMute`, с которым `restrictOwnAudio` не применяется; с `loopback` наш звук исключается (−65 дБ против −32 дБ), macOS 14.2+ — `supported`.
 3. **Библиотека RNNoise**: `@timephy/rnnoise-wasm` (RNNoise 0.2, синхронный WASM для AudioWorklet), свой worklet берёт VAD-вероятность. `@sapphi-red/web-noise-suppressor` не подошёл, потому что его worklet отбрасывает VAD.
 
 ### Что спайк не смог проверить в одиночку
@@ -288,6 +298,6 @@
 
 ### Что проверяют только люди (по-прежнему открыто)
 - Эхо на 2–3 машинах с колонками, в том числе после смены устройства вывода посреди разговора.
-- Системный звук стрима на Windows: исключается ли звук участников и слышит ли сам стример звук при `loopbackWithMute`.
+- Системный звук стрима на Windows (`loopback` + process loopback): исключается ли звук участников на живой машине (по исходникам Chromium — да, Windows 10 2004+).
 - PTT на Windows, Linux X11 и Wayland GNOME.
 - Резкость текста у зрителя на медленном канале (AV1 simulcast), субъективное качество RNNoise.

@@ -104,6 +104,15 @@ function videoConstraints(preset: ConcreteScreenSharePreset, grantedFps?: number
   return c;
 }
 
+/**
+ * Whether Chromium honoured `restrictOwnAudio` for the loopback track: it reports the constraint
+ * back and switches the device to `loopbackWithoutChrome`. False on older macOS (no process taps,
+ * the ScreenCaptureKit fallback) — then the stream may carry participants' voices.
+ */
+export function ownAudioExcluded(settings: MediaTrackSettings & { restrictOwnAudio?: boolean }): boolean {
+  return settings.restrictOwnAudio === true || settings.deviceId === 'loopbackWithoutChrome';
+}
+
 async function captureDesktop(
   source: DesktopSource,
   preset: ConcreteScreenSharePreset,
@@ -112,8 +121,10 @@ async function captureDesktop(
   const video = videoConstraints(preset);
   if (systemAudio) {
     const audio: DisplayAudioConstraints = {
-      // Try to exclude our own output (other participants' voices) — rule 4.
-      // NOTE: measured ineffective on macOS (docs/02 spike results), hence the UI warning.
+      // Exclude our own output (other participants' voices) — echo rule 4. With the main
+      // process's plain 'loopback' Chromium opens `loopbackWithoutChrome`: a process tap without
+      // our audio service (macOS 14.2+, measured −65 dB vs −32 dB, docs/02) / process loopback
+      // (Windows). Local playback is never muted (docs/09 #68).
       restrictOwnAudio: true,
       suppressLocalAudioPlayback: false,
       echoCancellation: false,
@@ -123,7 +134,11 @@ async function captureDesktop(
     try {
       await platform.capture.selectSource({ sourceId: source.id, audio: true });
       const stream = await navigator.mediaDevices.getDisplayMedia({ video, audio });
-      if (stream.getAudioTracks().length > 0) return { stream, audioProblem: null };
+      const track = stream.getAudioTracks()[0];
+      if (track) {
+        if (!ownAudioExcluded(track.getSettings())) console.warn('[stream] system audio may include our own playback', track.getSettings());
+        return { stream, audioProblem: null };
+      }
       return { stream, audioProblem: { code: 'no-loopback', raw: null } };
     } catch (err) {
       // Known: custom picker + audio on macOS (electron#52738). Retry video-only.
