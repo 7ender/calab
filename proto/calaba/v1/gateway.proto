@@ -3,6 +3,7 @@ package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
 import "calaba/v1/bot.proto";
+import "calaba/v1/call.proto";
 import "calaba/v1/media.proto";
 import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
@@ -184,6 +185,9 @@ message DispatchEvent {
     BadgeCreate badge_create = 43;
     BadgeUpdate badge_update = 44;
     BadgeDelete badge_delete = 45;
+    // One-to-one calls (ADR-0034); to the participants' user channels only.
+    CallRing call_ring = 46;         // to the callee's devices: a call is ringing
+    CallStateUpdate call_state = 47; // to both sides: the call was placed or changed state
     // Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
     BotCreate bot_create = 60;
     BotUpdate bot_update = 61;
@@ -232,6 +236,9 @@ message Presence {
   // When a manual IDLE / DND ends (SetPresence.until); unset = no end, or not shown
   // (invisible users are OFFLINE to others, with no until).
   google.protobuf.Timestamp until = 7;
+  // In a one-to-one call now (ADR-0034, call ACTIVE); with whom is not disclosed. Changes
+  // come as PRESENCE_UPDATE to all the user's workspaces.
+  bool on_call = 8;
 }
 
 message ReadState {
@@ -284,6 +291,9 @@ message Ready {
   // status IDLE | DND | INVISIBLE as chosen (not as others see it) and `until` (unset = no
   // end). Unset = none (online / automatic). Changes arrive as USER_UPDATE.presence.
   Presence presence = 9;
+  // The recipient's current call (ADR-0034), RINGING or ACTIVE, incoming or outgoing; unset =
+  // none. After a reconnect the client restores the ringing / in-call UI from it.
+  Call call = 10;
 }
 
 // A direct message as seen by one participant (ADR-0020). In READY, GET /api/dms,
@@ -556,6 +566,19 @@ message DmStateUpdate {
   string room_id = 1;
   google.protobuf.Timestamp archived_at = 2; // unset = not archived
   string cleared_before_message_id = 3; // empty = never cleared
+}
+
+// A call to the recipient is ringing (ADR-0034): sent to every device of the callee, with
+// the caller's public profile. CALL_STATE follows for the same call on every change.
+message CallRing {
+  Call call = 1;
+  User caller = 2;
+}
+
+// A call of the recipient was placed or changed state (ADR-0034): to both participants' user
+// channels. Accepting / declining on one device ends the ringing on the others.
+message CallStateUpdate {
+  Call call = 1;
 }
 
 // The user's notification settings of a room changed (sent to the user's own devices only).

@@ -51,6 +51,10 @@ enum ErrorCode {
   ERROR_CODE_ALREADY_UPLOADED = 30;
   // 403: a bot writes to a person who blocked it (POST /api/me/blocked-bots/{id}, ADR-0031).
   ERROR_CODE_BOT_BLOCKED = 40;
+  // One-to-one calls (ADR-0034), all 409.
+  ERROR_CODE_BUSY = 41;            // POST /api/dms/{id}/call: the callee is in another call
+  ERROR_CODE_IN_CALL = 42;         // POST /api/dms/{id}/call: the caller already has a call
+  ERROR_CODE_CALL_NOT_ACTIVE = 43; // POST /api/rooms/{id}/join of a DM without an active call of the caller
 }
 
 // Error body of every non-2xx REST response.

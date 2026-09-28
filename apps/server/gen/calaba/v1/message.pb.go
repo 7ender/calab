@@ -403,6 +403,7 @@ type SystemMessage struct {
 	//
 	//	*SystemMessage_Recording
 	//	*SystemMessage_Birthday
+	//	*SystemMessage_Call
 	Payload       isSystemMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -463,6 +464,15 @@ func (x *SystemMessage) GetBirthday() *BirthdayCard {
 	return nil
 }
 
+func (x *SystemMessage) GetCall() *CallCard {
+	if x != nil {
+		if x, ok := x.Payload.(*SystemMessage_Call); ok {
+			return x.Call
+		}
+	}
+	return nil
+}
+
 type isSystemMessage_Payload interface {
 	isSystemMessage_Payload()
 }
@@ -475,9 +485,15 @@ type SystemMessage_Birthday struct {
 	Birthday *BirthdayCard `protobuf:"bytes,2,opt,name=birthday,proto3,oneof"` // docs/09 #76
 }
 
+type SystemMessage_Call struct {
+	Call *CallCard `protobuf:"bytes,3,opt,name=call,proto3,oneof"` // a DM call log line (ADR-0034)
+}
+
 func (*SystemMessage_Recording) isSystemMessage_Payload() {}
 
 func (*SystemMessage_Birthday) isSystemMessage_Payload() {}
+
+func (*SystemMessage_Call) isSystemMessage_Payload() {}
 
 // "Today is <author>'s birthday!": posted once a day per workspace by the server at 09:00 of
 // the author's time zone (UTC without one) into the first text room of the workspace.
@@ -1053,7 +1069,7 @@ var File_calaba_v1_message_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_message_proto_rawDesc = "" +
 	"\n" +
-	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\x1a\x17calaba/v1/sticker.proto\"\xe7\x05\n" +
+	"\x17calaba/v1/message.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/call.proto\x1a\x14calaba/v1/file.proto\x1a\x19calaba/v1/recording.proto\x1a\x17calaba/v1/sticker.proto\"\xe7\x05\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x1b\n" +
@@ -1084,10 +1100,11 @@ const file_calaba_v1_message_proto_rawDesc = "" +
 	"\x0eMessageCommand\x12\x1e\n" +
 	"\vbot_user_id\x18\x01 \x01(\tR\tbotUserId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
-	"\x04args\x18\x03 \x01(\tR\x04args\"\x8b\x01\n" +
+	"\x04args\x18\x03 \x01(\tR\x04args\"\xb6\x01\n" +
 	"\rSystemMessage\x128\n" +
 	"\trecording\x18\x01 \x01(\v2\x18.calaba.v1.RecordingCardH\x00R\trecording\x125\n" +
-	"\bbirthday\x18\x02 \x01(\v2\x17.calaba.v1.BirthdayCardH\x00R\bbirthdayB\t\n" +
+	"\bbirthday\x18\x02 \x01(\v2\x17.calaba.v1.BirthdayCardH\x00R\bbirthday\x12)\n" +
+	"\x04call\x18\x03 \x01(\v2\x13.calaba.v1.CallCardH\x00R\x04callB\t\n" +
 	"\apayload\"6\n" +
 	"\fBirthdayCard\x12\x10\n" +
 	"\x03day\x18\x01 \x01(\rR\x03day\x12\x14\n" +
@@ -1163,6 +1180,7 @@ var file_calaba_v1_message_proto_goTypes = []any{
 	(*timestamppb.Timestamp)(nil),  // 17: google.protobuf.Timestamp
 	(*Sticker)(nil),                // 18: calaba.v1.Sticker
 	(*RecordingCard)(nil),          // 19: calaba.v1.RecordingCard
+	(*CallCard)(nil),               // 20: calaba.v1.CallCard
 }
 var file_calaba_v1_message_proto_depIdxs = []int32{
 	16, // 0: calaba.v1.Message.attachments:type_name -> calaba.v1.FileMeta
@@ -1178,15 +1196,16 @@ var file_calaba_v1_message_proto_depIdxs = []int32{
 	17, // 10: calaba.v1.Forward.sent_at:type_name -> google.protobuf.Timestamp
 	19, // 11: calaba.v1.SystemMessage.recording:type_name -> calaba.v1.RecordingCard
 	5,  // 12: calaba.v1.SystemMessage.birthday:type_name -> calaba.v1.BirthdayCard
-	1,  // 13: calaba.v1.ListMessagesResponse.messages:type_name -> calaba.v1.Message
-	1,  // 14: calaba.v1.CreateMessageResponse.message:type_name -> calaba.v1.Message
-	1,  // 15: calaba.v1.UpdateMessageResponse.message:type_name -> calaba.v1.Message
-	1,  // 16: calaba.v1.ForwardMessageResponse.message:type_name -> calaba.v1.Message
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	20, // 13: calaba.v1.SystemMessage.call:type_name -> calaba.v1.CallCard
+	1,  // 14: calaba.v1.ListMessagesResponse.messages:type_name -> calaba.v1.Message
+	1,  // 15: calaba.v1.CreateMessageResponse.message:type_name -> calaba.v1.Message
+	1,  // 16: calaba.v1.UpdateMessageResponse.message:type_name -> calaba.v1.Message
+	1,  // 17: calaba.v1.ForwardMessageResponse.message:type_name -> calaba.v1.Message
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_message_proto_init() }
@@ -1194,12 +1213,14 @@ func file_calaba_v1_message_proto_init() {
 	if File_calaba_v1_message_proto != nil {
 		return
 	}
+	file_calaba_v1_call_proto_init()
 	file_calaba_v1_file_proto_init()
 	file_calaba_v1_recording_proto_init()
 	file_calaba_v1_sticker_proto_init()
 	file_calaba_v1_message_proto_msgTypes[3].OneofWrappers = []any{
 		(*SystemMessage_Recording)(nil),
 		(*SystemMessage_Birthday)(nil),
+		(*SystemMessage_Call)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
