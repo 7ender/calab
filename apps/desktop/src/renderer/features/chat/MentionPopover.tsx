@@ -6,8 +6,8 @@ import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { SPECIAL, type MentionCandidate } from '../../lib/mentions';
 import { can, roomPerms } from '../../lib/permissions';
-import { customLook } from '../../lib/roles';
-import { isGuest, rolesOf, useWorkspaces } from '../../stores/workspaces';
+import { customLook, rolesOfMember } from '../../lib/roles';
+import { isGuest, useWorkspaces } from '../../stores/workspaces';
 import { BotBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 
 export type MentionOption = { kind: 'member'; c: MentionCandidate; guest: boolean; role?: WorkspaceRole | undefined; custom?: Role | undefined } | { kind: 'special'; v: (typeof SPECIAL)[number] };
@@ -26,23 +26,24 @@ export interface Mentionables {
 
 /** Members of the workspace for the composer: names are nickname-aware (like memberName()). */
 export function useMentionables(workspaceId: string, room: Room, me: string): Mentionables {
-  const entry = useWorkspaces((s) => s.byId[workspaceId]);
+  // Members and roles, not the whole entry: that one changes on every voice state.
+  const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
+  const wsRoles = useWorkspaces((s) => s.byId[workspaceId]?.roles);
   return useMemo(() => {
-    const members = entry?.members;
     const out: Mentionables = { candidates: [], guests: new Set(), roles: new Map(), all: [] };
     for (const m of Object.values(members ?? {})) {
       const u = m.user;
       if (!u) continue;
       const name = m.nickname || u.displayName;
       out.all.push({ id: u.id, name });
-      const roles = rolesOf(entry, u.id);
+      const roles = wsRoles ? rolesOfMember(wsRoles, m) : [];
       if (u.id === me || !can(roomPerms(roles, u.id, room), 'VIEW_ROOM')) continue;
       if (isGuest(m)) out.guests.add(u.id);
       out.roles.set(u.id, { role: m.role, custom: customLook(roles) });
       out.candidates.push({ id: u.id, name, alt: m.nickname && m.nickname !== u.displayName ? [u.displayName] : [] });
     }
     return out;
-  }, [entry, me, room]);
+  }, [members, wsRoles, me, room]);
 }
 
 /**

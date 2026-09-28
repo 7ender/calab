@@ -16,9 +16,11 @@ import { useWorkspaces } from '../../stores/workspaces';
  */
 export function SuspendedBanner(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
-  const entry = useWorkspaces((s) => (wsId && wsId !== HOME ? s.byId[wsId] : undefined));
+  // ws and role, not the whole entry (it changes on every voice state).
+  const ws = useWorkspaces((s) => (wsId && wsId !== HOME ? s.byId[wsId]?.ws : undefined));
+  const role = useWorkspaces((s) => (wsId && wsId !== HOME ? s.byId[wsId]?.role : undefined));
   const hasContact = useSession((s) => !!s.planContact) && !!planContact();
-  const view = suspendedView(entry?.ws, entry?.role);
+  const view = suspendedView(ws, role);
   if (!view) return null;
   return (
     <section
