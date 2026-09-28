@@ -209,6 +209,7 @@ func New(d Deps) *App {
 	filesSvc := files.NewService(d.DB, d.Blob, pub, d.Config.MaxFileSizeMB<<20, d.Config.StorageMaxTotalBytes)
 	filesSvc.SetLimiter(redisx.NewRateLimiter(d.Redis, "rl:upload:", 30, 2)) // 30 at once, 120 per hour
 	filesSvc.SetPlans(planSvc)
+	botSvc.SetAvatars(filesSvc)
 	recSvc.SetFiles(filesSvc)
 	hub := gateway.New(gateway.Config{
 		HeartbeatInterval:  d.Config.HeartbeatInterval,

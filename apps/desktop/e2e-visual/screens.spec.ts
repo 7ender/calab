@@ -2869,11 +2869,14 @@ async function botsTab(win: Page, mock: MockServer): Promise<Locator> {
 }
 
 // «Боты»: create form, add by @username, the plan line, the list — «Погода» (webhook delivering)
-// and «Деплой» (webhook failing since 12:12, 7 queued), each with «…».
+// and «Деплой» (webhook failing since 12:12, 7 queued), each with «…»; «Погода» has a picture
+// avatar (docs/09 #87: set from this tab — the avatar is a button).
 test('settings-bots', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   const dialog = await botsTab(win, mock);
+  mock.setBotAvatar(IDS.bots.weather, { bg: [56, 132, 214], fg: [250, 204, 21] });
+  await expect(dialog.getByTestId('bot-row').filter({ hasText: 'Погода' }).locator('img')).toBeVisible();
   await expect(dialog.getByTestId('bot-status').filter({ hasText: 'HTTP 502' })).toBeVisible();
   await checkpoint(shot, 'settings-bots');
 });

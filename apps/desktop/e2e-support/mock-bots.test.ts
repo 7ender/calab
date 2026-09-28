@@ -78,4 +78,22 @@ describe('bots (ADR-0031)', () => {
     expect(full.status).toBe(409);
     expect(((await full.json()) as { reason?: string }).reason).toBe('PLAN_LIMIT');
   });
+
+  it('sets and clears a bot avatar (docs/09 #87); managers only, images only', async () => {
+    const anna = await login();
+    const path = `/api/workspaces/${IDS.workspaces.main}/bots/${IDS.bots.deploy}/avatar`;
+    const post = (token: string, type: string): Promise<Response> => {
+      const form = new FormData();
+      form.append('file', new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type }), 'a.png');
+      return fetch(`${server.url}${path}`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${token}` } });
+    };
+    const set = await post(anna, 'image/png');
+    expect(set.status).toBe(200);
+    const fileId = ((await set.json()) as { bot: { user: { avatarFileId?: string } } }).bot.user.avatarFileId;
+    expect(fileId).toBeTruthy();
+    expect((await post(anna, 'text/plain')).status).toBe(422);
+    expect((await post(await login('vera@calaba.test'), 'image/png')).status).toBe(403);
+    const cleared = (await (await api(anna, path, { method: 'DELETE' })).json()) as { bot: { user: { avatarFileId?: string } } };
+    expect(cleared.bot.user.avatarFileId ?? '').toBe('');
+  });
 });

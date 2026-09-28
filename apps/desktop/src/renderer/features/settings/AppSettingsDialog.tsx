@@ -1,10 +1,11 @@
 import { AUDIO_BITRATE_OPTIONS_KBPS } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppWindow, Bell, CircleUser, Info, Keyboard, Mic, MonitorSmartphone, Palette, Trash2, Upload, Wifi } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { AppWindow, Bell, CircleUser, Info, Keyboard, Mic, MonitorSmartphone, Palette, Trash2, Wifi } from 'lucide-react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
+import { AvatarButtons } from '../../components/AvatarPicker';
 import { confirmAction } from '../../components/Confirm';
 import { Logo } from '../../components/Logo';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
@@ -78,24 +79,15 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
 
 function ProfileTab(): ReactNode {
   const me = useSession((s) => s.me);
-  const [busyAvatar, setBusyAvatar] = useState(false);
   const [credDialog, setCredDialog] = useState<'password' | 'email' | 'email-code' | 'email-cancel' | null>(null);
-  const input = useRef<HTMLInputElement>(null);
   const update = async (init: Parameters<typeof api.me.update>[0]): Promise<void> => {
     const r = await api.me.update(init);
     if (r.me) useSession.getState().set({ me: r.me });
   };
   const setAvatar = async (f: File): Promise<void> => {
-    setBusyAvatar(true);
-    try {
-      await uploadAvatar(f, f.name);
-      const r = await api.me.get();
-      if (r.me) useSession.getState().set({ me: r.me });
-    } catch (e) {
-      toast.fail(e, t('err.ctx.upload'));
-    } finally {
-      setBusyAvatar(false);
-    }
+    await uploadAvatar(f, f.name);
+    const r = await api.me.get();
+    if (r.me) useSession.getState().set({ me: r.me });
   };
   const u = me?.user;
   if (!me || !u) return null;
@@ -105,28 +97,8 @@ function ProfileTab(): ReactNode {
         <Avatar userId={u.id} name={u.displayName} fileId={u.avatarFileId || undefined} size={64} />
         <div className="flex min-w-0 flex-col gap-2">
           <div className="truncate text-headline font-semibold">{u.displayName}</div>
-          <div className="flex gap-2">
-            <Button variant="secondary" busy={busyAvatar} onClick={() => input.current?.click()}>
-              <Upload className="size-4" aria-hidden /> {t('profile.avatar')}
-            </Button>
-            {u.avatarFileId ? (
-              <Button variant="destructive" onClick={() => void update({ avatarFileId: '' }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}>
-                {t('profile.removeAvatar')}
-              </Button>
-            ) : null}
-          </div>
+          <AvatarButtons hasAvatar={!!u.avatarFileId} onUpload={setAvatar} onRemove={() => update({ avatarFileId: '' })} />
         </div>
-        <input
-          ref={input}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void setAvatar(f);
-            e.target.value = '';
-          }}
-        />
       </div>
       <Card title={t('card.basics')}>
         <Row label={t('profile.name')}>

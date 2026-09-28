@@ -96,6 +96,8 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET /api/me` | аккаунт бота (`me.user.isBot = true`) | — |
 | `PATCH /api/me` | только `displayName`, `avatarFileId` | — |
 | `POST /api/me/avatar` | аватар (multipart `file`) | — |
+| `POST /api/workspaces/{id}/bots/{botId}/avatar` | аватар бота из интерфейса «Боты» (docs/09 #87): multipart `file`, как `POST /api/me/avatar` (не картинка — 422) → `{bot}`; боту — 403 `BOT_NOT_ALLOWED` | люди: владелец бота или `MANAGE_WORKSPACE` домашнего пространства |
+| `DELETE /api/workspaces/{id}/bots/{botId}/avatar` | убрать аватар бота → `{bot}`; бот не участник `{id}` — 404, не домашнее пространство — 403 | то же |
 | `GET /api/bots/me` · `PATCH /api/bots/me` | профиль бота: `{displayName?, description?}` | только боты |
 | `PUT /api/bots/me/commands` | заменить список команд `{commands: [{name, description}]}` | только боты |
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | только боты |

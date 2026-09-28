@@ -97,6 +97,8 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET /api/me` | the bot's account (`me.user.isBot = true`) | — |
 | `PATCH /api/me` | only `displayName`, `avatarFileId` | — |
 | `POST /api/me/avatar` | avatar (multipart `file`) | — |
+| `POST /api/workspaces/{id}/bots/{botId}/avatar` | the bot's avatar from the «Bots» UI (docs/09 #87): multipart `file`, like `POST /api/me/avatar` (not an image — 422) → `{bot}`; a bot gets 403 `BOT_NOT_ALLOWED` | people: the bot's owner or `MANAGE_WORKSPACE` of its home workspace |
+| `DELETE /api/workspaces/{id}/bots/{botId}/avatar` | remove the bot's avatar → `{bot}`; the bot not a member of `{id}` — 404, not its home workspace — 403 | same |
 | `GET /api/bots/me` · `PATCH /api/bots/me` | the bot's profile: `{displayName?, description?}` | bots only |
 | `PUT /api/bots/me/commands` | replace the command list `{commands: [{name, description}]}` | bots only |
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | bots only |

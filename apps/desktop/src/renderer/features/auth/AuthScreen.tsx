@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { ApiErrorJson } from '../../../shared/ipc';
-import { ChevronDown } from 'lucide-react';
 import { Logo } from '../../components/Logo';
 import { Button, Field, Input, PasswordInput, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
@@ -282,19 +281,21 @@ function LoginScreen(): ReactNode {
               {t('guest.back')}
             </button>
           ) : null}
-          {desktop ? (
-            // The server is set up once: a quiet disclosure, not a field everybody has to read.
+        </div>
+        {desktop ? (
+          // The server is set up once: a barely visible text link under the card, not a control
+          // everybody has to read. Stays a <button> for keyboard users (global focus-visible ring).
+          <div className="mt-3 flex justify-center">
             <button
               type="button"
               aria-expanded={showServer}
-              className="flex items-center gap-1 rounded-[var(--radius-control)] px-1 text-caption text-muted hover:text-fg"
+              className="rounded-[var(--radius-control)] px-1 text-caption text-muted opacity-70 hover:text-fg hover:underline hover:opacity-100 focus-visible:opacity-100"
               onClick={() => setShowServer(!showServer)}
             >
               {showServer ? t('auth.hideServer') : t('auth.otherServer')}
-              <ChevronDown className={cx('size-3.5 transition-transform duration-[var(--motion-fast)]', showServer ? 'rotate-180' : '')} aria-hidden />
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </form>
       {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}
       <AuthLegalFooter />

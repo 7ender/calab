@@ -574,10 +574,22 @@ func (s *Service) avatar(w http.ResponseWriter, r *http.Request) error {
 	} else if u.IsGuest {
 		return httpx.Forbidden("not available for guest accounts")
 	}
+	u, err := s.UploadAvatar(w, r, uid)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
+	return nil
+}
+
+// UploadAvatar reads the multipart "file" of r (an image ≤ MaxAvatarBytes; the client crops
+// and resizes it), stores it as the avatar of uid and publishes USER_UPDATE. It serves
+// POST /api/me/avatar and the bot avatar routes (docs/09 #87); the caller checks access.
+func (s *Service) UploadAvatar(w http.ResponseWriter, r *http.Request, uid uuid.UUID) (sqlc.User, error) {
 	st, err := s.receive(w, r, min(MaxAvatarBytes, s.maxBytes),
 		func(id uuid.UUID) string { return "users/" + uid.String() + "/" + id.String() }, acceptImage)
 	if err != nil {
-		return err
+		return sqlc.User{}, err
 	}
 	var u sqlc.User
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
@@ -592,12 +604,11 @@ func (s *Service) avatar(w http.ResponseWriter, r *http.Request) error {
 	})
 	if err != nil {
 		s.discard(st)
-		return err
+		return sqlc.User{}, err
 	}
 	// The previous avatar is now unreferenced and is removed by the orphan cleanup.
 	profile.Publish(r.Context(), s.db.Q, s.events, u, true)
-	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
-	return nil
+	return u, nil
 }
 
 // CanRead implements the download rule:
