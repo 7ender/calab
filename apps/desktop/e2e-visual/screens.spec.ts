@@ -3,7 +3,8 @@ import { create } from '@bufbuild/protobuf';
 import { Plan, RecordingStatus, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
-import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, type MockServer } from '../e2e-support/mock-server';
+import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
+import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
 import { checkpoint, settle } from './harness';
 import { startPublisher } from './publisher';
@@ -104,6 +105,7 @@ const KEY = new Set([
   'chat-sticker',
   'sticker-picker',
   'settings-stickers',
+  'settings-stickers-upload',
   'settings-bots',
   'settings-bot-token',
   'bot-profile',
@@ -2345,6 +2347,35 @@ test('settings-stickers', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('sticker-pack-stickers').locator('[data-sticker]')).toHaveCount(3);
   await stillStickers(win, 1);
   await checkpoint(shot, 'settings-stickers');
+});
+
+// The pack «Calab» with two files staged and «Загрузить» pressed: a 1024×1024 PNG prepared on the
+// client (512×512 WebP, «уменьшено до 512») and an animated WebP the server refused (12 s long) —
+// the reason on its card, the prepared one stays staged.
+test('settings-stickers-upload', async ({ open, win, mock, shot }) => {
+  await open();
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  await mainWindow(win, mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Стикеры' }).click();
+  await dialog.getByTestId('sticker-pack-row').filter({ hasText: 'Calab' }).click();
+  await expect(dialog.getByTestId('sticker-pack-title')).toHaveText('Calab');
+  const big = encodePng(1024, 1024, (u, v) => (Math.hypot(u - 0.5, v - 0.5) < 0.38 ? [255, 196, 45] : [58, 124, 246]));
+  const slow = slowWebpAnimation(readFileSync(new URL('../e2e-support/fixtures/sticker-orbit.webp', import.meta.url)), 2000);
+  await dialog.locator('input[type=file]').setInputFiles([
+    { name: 'sun-1024.png', mimeType: 'image/png', buffer: big },
+    { name: 'orbit-slow.webp', mimeType: 'image/webp', buffer: slow },
+  ]);
+  const items = dialog.getByTestId('sticker-staged-item');
+  await expect(items.and(win.locator('[data-state="ready"]'))).toHaveCount(2);
+  await expect(items.first().getByTestId('sticker-scaled')).toHaveText('уменьшено до 512');
+  await dialog.getByTestId('sticker-upload').click();
+  await expect(items.nth(1).getByTestId('sticker-item-error')).toHaveText('Анимация дольше 10 секунд');
+  await expect(items.first()).toHaveAttribute('data-state', 'ready');
+  await stillStickers(win, 2);
+  await checkpoint(shot, 'settings-stickers-upload');
 });
 
 // ---------------------------------------------------------------- bots (ADR-0031)

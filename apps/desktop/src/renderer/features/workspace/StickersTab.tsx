@@ -4,20 +4,23 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } 
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Empty, IconButton, Input, Row, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
-import { errorText } from '../../lib/api/errors';
+import { describeError, errorText } from '../../lib/api/errors';
+import { fmt } from '../../lib/format';
 import { api, uploadStickers } from '../../lib/api/endpoints';
-import { STICKER_BATCH, STICKER_MAX_ANIMATED, coverOf, looksLikeWebp } from '../../lib/stickers';
+import { STICKER_ACCEPT, prepareSticker, stickerFileKind, type PreparedSticker } from '../../lib/stickerPrepare';
+import { STICKER_BATCH, coverOf, stickerBox } from '../../lib/stickers';
 import { loadWorkspaceStickers } from '../../services/stickers';
 import { reportPlanError } from '../../services/plan';
 import { useStickers } from '../../stores/stickers';
 import { CommitInput } from '../settings/CommitInput';
-import { StickerImage } from '../chat/stickers/StickerImage';
+import { StickerImage, StickerStill } from '../chat/stickers/StickerImage';
 
 /*
  * Workspace settings → «Стикеры» (ADR-0030, docs/08 «Стикеры»), MANAGE_STICKERS: the packs
- * (cover, name, count) and «Новый пак»; a pack card — rename, drop WebP files in a batch (each
- * gets an emoji before the upload), the stickers with their emoji, «Сделать обложкой», delete.
- * Changes apply at once; the server validates every file (a refusal shows inline).
+ * (cover, name, count) and «Новый пак»; a pack card — rename, drop PNG / JPEG / WebP files in a
+ * batch (prepared by lib/stickerPrepare: scaled to 512, encoded to WebP; each gets an emoji before
+ * the upload), the stickers with their emoji, «Сделать обложкой», delete. Changes apply at once;
+ * the server validates every file (a refusal shows on that file's card).
  */
 
 const err = (e: unknown): string => errorText(e);
@@ -114,15 +117,23 @@ function PackList({ workspaceId, packs, loaded, onOpen }: { workspaceId: string;
   );
 }
 
-/** A file waiting for its emoji before the batch upload. */
+/** A file on its way to the pack: being prepared, ready (waiting for the upload) or refused. */
 interface Staged {
   key: string;
-  file: File;
+  /** Preview: the prepared WebP once ready, the original file before. */
   url: string;
   emoji: string;
+  /** An animated WebP: its preview stands still (docs/14 — the CPU budget of animations). */
+  animated?: boolean;
+  sticker?: PreparedSticker;
+  /** Refused by the client (prepare) or the server (`file[i]`): not uploaded. */
+  fileError?: string;
+  /** The server refused its emoji (`emoji[i]`): cleared by editing the emoji. */
+  emojiError?: string;
 }
 
 const DEFAULT_EMOJI = '🙂';
+const uploadable = (s: Staged): s is Staged & { sticker: PreparedSticker } => !!s.sticker && !s.fileError;
 
 function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: StickerPack; onBack: () => void }): ReactNode {
   const [error, setError] = useState<string | null>(null);
@@ -131,8 +142,27 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const cover = coverOf(pack)?.id;
-  // Object URLs of staged previews are released with the list.
-  useEffect(() => () => staged.forEach((s) => URL.revokeObjectURL(s.url)), [staged]);
+  // Object URLs of the previews: released when a card goes away (and on unmount).
+  const urls = useRef(new Set<string>());
+  const preview = (b: Blob): string => {
+    const u = URL.createObjectURL(b);
+    urls.current.add(u);
+    return u;
+  };
+  const release = (u: string): void => {
+    if (urls.current.delete(u)) URL.revokeObjectURL(u);
+  };
+  useEffect(() => {
+    const all = urls.current;
+    return () => all.forEach((u) => URL.revokeObjectURL(u));
+  }, []);
+  const patch = (key: string, f: (s: Staged) => Staged): void => setStaged((cur) => cur.map((x) => (x.key === key ? f(x) : x)));
+  const unstage = (key: string): void =>
+    setStaged((cur) => {
+      const gone = cur.find((x) => x.key === key);
+      if (gone) release(gone.url);
+      return cur.filter((x) => x.key !== key);
+    });
 
   const apply = (p: StickerPack | undefined): void => {
     if (p) useStickers.getState().upsert(p);
@@ -145,28 +175,64 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
       if (!reportPlanError(e, workspaceId)) setError(err(e));
     }
   };
+  // Files are prepared one by one in the background (scaled / encoded to WebP, docs/08
+  // «Стикеры»); a refusal stays on its card, the other cards are unaffected.
   const stage = (files: FileList | File[]): void => {
-    const next: Staged[] = [];
+    const next: Array<Staged & { file: File }> = [];
     const problems: string[] = [];
+    const room = STICKER_BATCH - staged.length;
     for (const f of Array.from(files)) {
-      if (!looksLikeWebp(f.name, f.type)) problems.push(t('stk.notWebp', { name: f.name }));
-      else if (f.size > STICKER_MAX_ANIMATED) problems.push(t('stk.tooBig', { name: f.name }));
-      else next.push({ key: `${f.name}-${f.size}-${f.lastModified}-${Math.random()}`, file: f, url: URL.createObjectURL(f), emoji: DEFAULT_EMOJI });
+      const kind = stickerFileKind(f.name, f.type);
+      if (kind === 'gif') problems.push(t('stk.gifDrop', { name: f.name }));
+      else if (kind === 'other') problems.push(t('stk.notImage', { name: f.name }));
+      else if (next.length < room) next.push({ key: `${f.name}-${f.size}-${f.lastModified}-${Math.random()}`, file: f, url: preview(f), emoji: DEFAULT_EMOJI });
     }
     setError(problems.length ? problems.join(' · ') : null);
-    setStaged((cur) => [...cur, ...next].slice(0, STICKER_BATCH));
+    if (!next.length) return;
+    setStaged((cur) => [...cur, ...next.map(({ file: _file, ...s }) => s)]);
+    void (async () => {
+      for (const s of next) {
+        const r = await prepareSticker(s.file);
+        if (!r.ok) {
+          patch(s.key, (x) => ({ ...x, animated: r.sniff?.animated, fileError: t(`stk.reject.${r.reason}`) }));
+          continue;
+        }
+        const url = r.sticker.blob === s.file ? s.url : preview(r.sticker.blob);
+        setStaged((cur) => {
+          if (!cur.some((x) => x.key === s.key)) {
+            release(url);
+            return cur;
+          }
+          if (url !== s.url) release(s.url);
+          return cur.map((x) => (x.key === s.key ? { ...x, url, animated: r.sticker.animated, sticker: r.sticker } : x));
+        });
+      }
+    })();
   };
+  const preparing = staged.some((s) => !s.sticker && !s.fileError);
+  const ready = staged.filter(uploadable);
   const upload = (): Promise<void> =>
     run(async () => {
+      const batch = ready;
       setProgress(0);
       try {
         const r = await uploadStickers(
           pack.id,
-          staged.map((s) => ({ file: s.file, name: s.file.name, emoji: s.emoji })),
+          batch.map((s) => ({ file: s.sticker.blob, name: s.sticker.name, emoji: s.emoji })),
           setProgress,
         );
         apply(r.pack);
-        setStaged([]);
+        const sent = new Set(batch.map((s) => s.key));
+        setStaged((cur) => {
+          for (const x of cur) if (sent.has(x.key)) release(x.url);
+          return cur.filter((x) => !sent.has(x.key));
+        });
+      } catch (e) {
+        // `file[i]` / `emoji[i]`: the reason goes on that card; the batch stays staged.
+        const h = describeError(e);
+        const bad = h.index !== undefined ? batch[h.index] : undefined;
+        if (!bad) throw e;
+        patch(bad.key, (x) => (h.field === 'emoji' ? { ...x, emojiError: h.text } : { ...x, fileError: h.text }));
       } finally {
         setProgress(null);
       }
@@ -231,7 +297,7 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
         <input
           ref={input}
           type="file"
-          accept="image/webp,.webp"
+          accept={STICKER_ACCEPT}
           multiple
           hidden
           onChange={(e) => {
@@ -245,23 +311,22 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
         <Card title={plural('stk.count', staged.length, { n: staged.length })}>
           <ul className="grid grid-cols-4 gap-2 p-3 mobile:grid-cols-3" data-testid="sticker-staged">
             {staged.map((s) => (
-              <li key={s.key} className="relative flex flex-col items-center gap-1">
-                <img src={s.url} alt="" className="size-16 object-contain" draggable={false} />
-                <EmojiField value={s.emoji} onChange={(v) => setStaged((cur) => cur.map((x) => (x.key === s.key ? { ...x, emoji: v } : x)))} />
-                <IconButton
-                  size="sm"
-                  label={t('stk.unstage')}
-                  className="absolute -right-1 -top-1"
-                  onClick={() => setStaged((cur) => cur.filter((x) => x.key !== s.key))}
-                >
-                  <X className="size-3.5" aria-hidden />
-                </IconButton>
-              </li>
+              <StagedCell
+                key={s.key}
+                item={s}
+                onEmoji={(v) => patch(s.key, (x) => ({ ...x, emoji: v, emojiError: undefined }))}
+                onRemove={() => unstage(s.key)}
+              />
             ))}
           </ul>
           <div className="flex items-center justify-end gap-2 px-3 pb-3">
             {progress !== null ? <span className="text-caption text-muted">{t('stk.uploading', { pct: Math.round(progress * 100) })}</span> : null}
-            <Button busy={progress !== null} disabled={staged.some((s) => !s.emoji.trim())} onClick={() => void upload()} data-testid="sticker-upload">
+            <Button
+              busy={progress !== null}
+              disabled={preparing || !ready.length || ready.some((s) => !s.emoji.trim() || s.emojiError)}
+              onClick={() => void upload()}
+              data-testid="sticker-upload"
+            >
               <Upload className="size-4" aria-hidden /> {t('stk.upload')}
             </Button>
           </div>
@@ -291,6 +356,42 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
         </Button>
       </div>
     </>
+  );
+}
+
+/** A staged file: preview, «512×512 · 84 КБ», «уменьшено до 512», its emoji or why it is refused. */
+function StagedCell({ item, onEmoji, onRemove }: { item: Staged; onEmoji: (v: string) => void; onRemove: () => void }): ReactNode {
+  const { sticker, fileError, emojiError } = item;
+  const problem = fileError ?? emojiError;
+  return (
+    <li className="relative flex min-w-0 flex-col items-center gap-1" data-testid="sticker-staged-item" data-state={fileError ? 'error' : sticker ? 'ready' : 'preparing'}>
+      <span className={cx('grid size-16 place-items-center', fileError && 'opacity-40')}>
+        {item.animated ? (
+          <StickerStill src={item.url} {...stickerBox({ width: sticker?.width ?? 0, height: sticker?.height ?? 0 }, 64)} />
+        ) : item.animated === undefined && !sticker && !fileError ? null : (
+          <img src={item.url} alt="" className="size-full object-contain" draggable={false} />
+        )}
+      </span>
+      {!fileError ? <EmojiField value={item.emoji} onChange={onEmoji} /> : null}
+      {sticker ? (
+        <span className="text-center text-caption text-muted tabular-nums">{t('stk.dims', { w: sticker.width, h: sticker.height, size: fmt.size(sticker.size) })}</span>
+      ) : !fileError ? (
+        <span className="text-caption text-muted">{t('stk.preparing')}</span>
+      ) : null}
+      {sticker?.scaled && !fileError ? (
+        <span className="inline-flex h-[15px] items-center rounded-full bg-hover px-1.5 text-[10px] font-semibold leading-none text-fg" data-testid="sticker-scaled">
+          {t('stk.scaled')}
+        </span>
+      ) : null}
+      {problem ? (
+        <p role="alert" className="text-center text-caption text-danger-text" data-testid="sticker-item-error">
+          {problem}
+        </p>
+      ) : null}
+      <IconButton size="sm" label={t('stk.unstage')} className="absolute -right-1 -top-1" onClick={onRemove}>
+        <X className="size-3.5" aria-hidden />
+      </IconButton>
+    </li>
   );
 }
 

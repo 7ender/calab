@@ -65,11 +65,5 @@ export function resolveRecent(ids: readonly string[], packs: readonly StickerPac
   return ids.map((id) => byId.get(id)).filter((s): s is Sticker => !!s);
 }
 
-/** Client-side check of a dropped file before the upload (the server validates for real). */
-export const STICKER_MAX_STATIC = 512 * 1024;
-export const STICKER_MAX_ANIMATED = 1024 * 1024;
+/** Stickers in one upload request (the server's MaxBatch); file limits — lib/stickerPrepare.ts. */
 export const STICKER_BATCH = 50;
-
-export function looksLikeWebp(name: string, type: string): boolean {
-  return type === 'image/webp' || /\.webp$/i.test(name);
-}
