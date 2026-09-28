@@ -5,7 +5,7 @@ import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { useChatView } from './chatView';
-import { EMOJI_GROUPS, searchEmoji } from './emoji';
+import { EMOJI_GROUPS, searchEmoji, typedEmoji } from './emoji';
 
 const COLS = 9;
 
@@ -34,6 +34,7 @@ export function EmojiPicker({
   canPick,
   hint,
   inModal = false,
+  side,
 }: {
   onPick: (emoji: string) => void;
   label: string;
@@ -53,6 +54,8 @@ export function EmojiPicker({
    * above). Radix nests the layers: Esc and outside clicks close the picker only.
    */
   inModal?: boolean;
+  /** Overrides the default side (e.g. a sticker's emoji chip in a modal opens the picker above it). */
+  side?: 'top' | 'bottom';
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const change = (v: boolean): void => {
@@ -66,7 +69,7 @@ export function EmojiPicker({
       </Tip>
       <Popover.Portal>
         <Popover.Content
-          side={inModal ? 'bottom' : 'top'}
+          side={side ?? (inModal ? 'bottom' : 'top')}
           align={inModal ? 'start' : 'end'}
           sideOffset={inModal ? 6 : 10}
           collisionPadding={16}
@@ -111,7 +114,8 @@ function PickerBody({ onPick, canPick, hint }: { onPick: (emoji: string) => void
     setActive(cur);
   }, []);
   const sections = useMemo(() => {
-    if (q.trim()) return [{ id: 'search', label: t('chat.emojiFound'), list: searchEmoji(q) }];
+    // A pasted / typed emoji (the OS emoji panel) is a result too: the manual-input fallback.
+    if (q.trim()) return [{ id: 'search', label: t('chat.emojiFound'), list: [...new Set([...typedEmoji(q), ...searchEmoji(q)])] }];
     return [...(recent.length ? [{ id: 'recent', label: t('chat.emojiRecent'), list: recent }] : []), ...EMOJI_GROUPS.map((g) => ({ ...g, label: t(g.label) }))];
   }, [q, recent]);
 
@@ -140,6 +144,14 @@ function PickerBody({ onPick, canPick, hint }: { onPick: (emoji: string) => void
             if (e.key === 'ArrowDown') {
               e.preventDefault();
               scroller.current?.querySelector<HTMLButtonElement>('button[data-emoji]')?.focus();
+            }
+            // Enter picks the first result (a pasted emoji comes first).
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && q.trim()) {
+              const first = sections[0]?.list[0];
+              if (first) {
+                e.preventDefault();
+                onPick(first);
+              }
             }
           }}
           placeholder={t('chat.emojiSearch')}

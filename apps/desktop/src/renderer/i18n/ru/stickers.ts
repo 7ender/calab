@@ -68,6 +68,10 @@ export const ruStickers = {
   'stk.animated': 'Анимированный',
   'stk.upload': 'Загрузить',
   'stk.unstage': 'Убрать файл',
+  'stk.selectFile': 'Выбрать файл',
+  'stk.selectAll': 'Выбрать все',
+  'stk.selectedCount': 'Выбрано: {n}',
+  'stk.applyEmoji': 'Применить эмодзи ко всем выбранным',
   'stk.planPacks': 'Тариф пространства: не больше {n} паков стикеров',
   'stk.planStickers': 'Тариф пространства: не больше {n} стикеров',
   // «Профиль → Мои стикеры»
