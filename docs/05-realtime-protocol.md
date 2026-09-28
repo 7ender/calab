@@ -89,6 +89,8 @@ DM_CREATE                     { dm: DmSummary } — обоим участник�
 DM_STATE_UPDATE               { room_id, archived_at, cleared_before_message_id } — своё состояние DM (архив / «Удалить чат»), только своим устройствам
 STICKER_PACK_CREATE / UPDATE  { pack } — пак пространства целиком (живые стикеры по порядку), всем участникам (ADR-0030)
 STICKER_PACK_DELETE           { workspace_id, pack_id } — пак удалён; стикеры в уже отправленных сообщениях остаются
+BADGE_CREATE / UPDATE         { badge } — бейдж библиотеки пространства (docs/09 #82), всем участникам; в READY — WorkspaceSnapshot.badges
+BADGE_DELETE                  { workspace_id, badge_id } — бейдж удалён; его участники перед этим получили WORKSPACE_MEMBER_UPDATE без badge_id
 ROOM_RECORDING                { workspace_id, room_id, recording_id, state: ACTIVE | STOPPED, by_user_id, since,
                                 stop_reason, stopped_by } — запись встречи началась / остановилась (ADR-0025)
 BOT_CREATE / BOT_UPDATE       { workspace_id, bot } — бот вступил / изменился (профиль, команды, токен, webhook; ADR-0031)

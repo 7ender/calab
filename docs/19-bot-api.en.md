@@ -101,6 +101,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | bots only |
 | `GET /api/workspaces` · `GET /api/workspaces/{id}` | the bot's workspaces | member |
 | `GET /api/workspaces/{id}/members` | members (`WorkspaceMember`; bots have `user.isBot`) | member |
+| `GET /api/workspaces/{id}/badges` | member badges: `WorkspaceMember.badge_id` refers to them; read-only, bots cannot manage badges | member |
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | rooms the bot can see | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | room categories | member |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | history (newest first, `limit ≤ 100`) | `VIEW_ROOM` |

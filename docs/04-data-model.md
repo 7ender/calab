@@ -25,7 +25,9 @@ workspaces          id, slug (unique), name, icon_file_id, visibility ('private'
                     storage_quota_bytes (10 GB), storage_used_bytes (0),
                     time_format ('auto'|'h24'|'h12', 'auto') — формат часов для всех времён в пространстве (docs/09 #73; PATCH — MANAGE_WORKSPACE)
 workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest' — старшая встроенная роль),
-                    nickname, joined_at            PK (workspace_id, user_id)
+                    nickname, joined_at,
+                    badge_id? → workspace_badges (ON DELETE SET NULL)   PK (workspace_id, user_id)
+workspace_badges    id, workspace_id, name (1..32), file_id → files, position, created_at   (docs/09 #82, ≤ 20 в пространстве)
 workspace_roles     id, workspace_id, name (1..32), color (0xRRGGBB, 0 = нет), position (UNIQUE в пространстве),
                     permissions bigint, builtin ('owner'|'admin'|'member'|'guest'|NULL), mentionable, created_at
 member_roles        workspace_id, user_id, role_id      PK (workspace_id, user_id, role_id)   (ADR-0026)
@@ -246,6 +248,12 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
   - файлы: квота = `min(storage_quota_bytes, storage_mb MiB)`; превышение → `413 FILE_QUOTA_EXCEEDED` c `used`/`limit` (байты), `reason = PLAN_LIMIT`, если упёрлись в план.
 - `Room.media` остаётся настройками комнаты (UI различает замок «комната» и замок «тариф»); эффективные лимиты плана — в `Workspace.plan.limits` и в ответе `/join` (`media` уже урезан планом, `plan_limits`).
 - Суперадмин — пользователь с email из `SUPERADMIN_EMAILS`; флаг не хранится, вычисляется из текущего email при каждом запросе (`Me.is_superadmin`).
+
+## Бейджи участников (docs/09 #82)
+
+- Библиотека пространства (`workspace_badges`, ≤ 20): название 1..32 + картинка — файл этого пространства (строка `files`, в квоте), PNG / WebP / JPEG ≤ 128 КБ и ≤ 256×256 (размеры сервер берёт из `files.width/height`, измеренных при загрузке). Клиент перед загрузкой обрезает картинку до квадрата и рисует 64×64 WebP (`lib/badgePrepare`). У участника — один бейдж (`workspace_members.badge_id`, `WorkspaceMember.badge_id`); бейдж — свойство членства в пространстве, в DM не показывается.
+- Права: библиотека (создать / переименовать / сменить картинку / удалить) — `MANAGE_WORKSPACE`; назначить / снять — `MANAGE_NICKNAMES` + иерархия `workspaces.outranks` (себе — можно), у ботов бейджа нет (403); список видят все участники (и гости), картинку бейджа читает любой участник пространства (`files.CanRead`, `IsWorkspaceBadge`). Бот-токен: управление — 403 `BOT_NOT_ALLOWED`, `GET …/badges` и `badge_id` у участника — читаются.
+- Доставка как у ролей (ADR-0026): `WorkspaceSnapshot.badges` в READY / WORKSPACE_CREATE, события `BADGE_CREATE` / `BADGE_UPDATE` / `BADGE_DELETE` всем участникам, смена бейджа участника — `WORKSPACE_MEMBER_UPDATE`. Удаление бейджа снимает его у всех (сначала `WORKSPACE_MEMBER_UPDATE` каждому, затем `BADGE_DELETE`); прежняя картинка без ссылок уходит с чисткой сирот (она пропускает живые картинки бейджей).
 
 ## Стикеры (ADR-0030)
 

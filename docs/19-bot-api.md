@@ -100,6 +100,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | только боты |
 | `GET /api/workspaces` · `GET /api/workspaces/{id}` | пространства бота | участник |
 | `GET /api/workspaces/{id}/members` | участники (`WorkspaceMember`, у ботов `user.isBot`) | участник |
+| `GET /api/workspaces/{id}/badges` | бейджи участников (docs/09 #82): `WorkspaceMember.badge_id` ссылается на них; только чтение — управлять бейджами бот не может | участник |
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | комнаты, которые бот видит | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | категории комнат | участник |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | история (новые первыми, `limit ≤ 100`) | `VIEW_ROOM` |
