@@ -50,7 +50,7 @@ export function PlanFullNote({ text, testId }: { text: string; testId?: string }
   );
 }
 
-/** Plan name as a pill (docs/08 «Тариф»): Free neutral, Team accent, Custom green. */
+/** Plan name as a pill (docs/08 «Тариф»): Free neutral, Team / Enterprise accent, Custom green. */
 export function PlanPill({ plan, className }: { plan: Plan; className?: string }): ReactNode {
   const kind = plan === Plan.UNSPECIFIED ? Plan.FREE : plan;
   return (
@@ -58,7 +58,7 @@ export function PlanPill({ plan, className }: { plan: Plan; className?: string }
       data-plan={Plan[kind]}
       className={cx(
         'inline-flex h-5 shrink-0 items-center rounded-full px-2 text-caption font-semibold',
-        kind === Plan.TEAM ? 'bg-accent-strong text-accent-fg' : kind === Plan.CUSTOM ? 'bg-ok-fill text-white' : 'bg-[var(--color-fill-hover)] text-fg',
+        kind === Plan.TEAM || kind === Plan.ENTERPRISE ? 'bg-accent-strong text-accent-fg' : kind === Plan.CUSTOM ? 'bg-ok-fill text-white' : 'bg-[var(--color-fill-hover)] text-fg',
         className,
       )}
     >

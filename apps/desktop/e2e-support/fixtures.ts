@@ -463,14 +463,16 @@ export const FREE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
   cameraMaxPreset: ScreenSharePreset.H720,
   cameraMaxFps: 15,
   streamsPerRoom: 1,
-  storageMb: 1024n,
+  storageMb: 5120n,
   members: 50,
   bots: 1,
   stickerPacks: 1,
   stickers: 200,
   audioTierMaxKbps: 16,
 });
-export const TEAM_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, { roomMembers: 50, bots: 20 });
+export const TEAM_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, { roomMembers: 50, bots: 20, storageMb: 1024n * 1024n });
+/** Enterprise (owner 28.09): no limits at all. */
+export const ENTERPRISE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {});
 
 export function effectiveMedia(ws: Workspace | undefined, o: RoomMediaOverride | undefined): RoomMediaSettings {
   const d = ws?.mediaDefaults ?? DEFAULT_MEDIA;

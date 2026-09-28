@@ -23,13 +23,13 @@ const (
 )
 
 func TestParseLimitsEnv(t *testing.T) {
-	// Empty = built-in defaults (ADR-0024: 5 in a room, 720p / 15 fps, 1 stream, 1 GiB).
+	// Empty = built-in defaults (ADR-0024: 5 in a room, 720p / 15 fps, 1 stream, 5 GiB; team 1 TiB).
 	free, team, err := Defaults("", "")
 	if err != nil || free != DefaultFree || team != DefaultTeam {
 		t.Fatalf("defaults: %+v %+v %v", free, team, err)
 	}
 	if free.RoomMembers != 5 || free.StreamMaxPreset != h720 || free.StreamMaxFPS != 15 || free.CameraMaxFPS != 15 ||
-		free.StreamsPerRoom != 1 || free.StorageMB != 1024 || free.Members != 50 || free.AudioMaxKbps != 16 ||
+		free.StreamsPerRoom != 1 || free.StorageMB != 5120 || team.StorageMB != 1<<20 || free.Members != 50 || free.AudioMaxKbps != 16 ||
 		free.Bots != 1 || free.StickerPacks != 1 {
 		t.Fatalf("free defaults: %+v", free)
 	}
@@ -171,8 +171,9 @@ func TestEffectiveAndExpiry(t *testing.T) {
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	f := &fakeRows{rows: map[uuid.UUID]*sqlc.WorkspacePlan{}}
 	s := testService(f, &now)
-	freeWS, teamWS, customWS := uuid.New(), uuid.New(), uuid.New()
+	freeWS, teamWS, customWS, entWS := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	until := now.Add(time.Hour)
+	f.rows[entWS] = &sqlc.WorkspacePlan{WorkspaceID: entWS, Plan: "enterprise"}
 	f.rows[teamWS] = &sqlc.WorkspacePlan{WorkspaceID: teamWS, Plan: "team", ValidUntil: &until}
 	custom, _ := json.Marshal(Limits{RoomMembers: 12, StorageMB: 42})
 	f.rows[customWS] = &sqlc.WorkspacePlan{WorkspaceID: customWS, Plan: "custom", Limits: custom}
@@ -186,6 +187,10 @@ func TestEffectiveAndExpiry(t *testing.T) {
 	}
 	if l, _ := s.Effective(ctx, customWS); l != (Limits{RoomMembers: 12, StorageMB: 42}) {
 		t.Fatalf("custom as stored: %+v", l)
+	}
+	// Enterprise: no limits at all, whatever the env defaults are.
+	if i, _ := s.Info(ctx, entWS); i.Plan != v1.Plan_PLAN_ENTERPRISE || i.Limits != (Limits{}) || s.PlanLimits(v1.Plan_PLAN_ENTERPRISE) != (Limits{}) {
+		t.Fatalf("enterprise: %+v", i)
 	}
 
 	// Cached for CacheTTL: a changed row is not read again...
@@ -247,7 +252,7 @@ func TestFillNilSafe(t *testing.T) {
 }
 
 func TestPlanDBMapping(t *testing.T) {
-	for _, p := range []v1.Plan{v1.Plan_PLAN_FREE, v1.Plan_PLAN_TEAM, v1.Plan_PLAN_CUSTOM} {
+	for _, p := range []v1.Plan{v1.Plan_PLAN_FREE, v1.Plan_PLAN_TEAM, v1.Plan_PLAN_CUSTOM, v1.Plan_PLAN_ENTERPRISE} {
 		s, ok := PlanToDB(p)
 		if !ok || PlanFromDB(s) != p {
 			t.Errorf("%v: %q %v", p, s, ok)

@@ -281,6 +281,7 @@ import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
   DEFAULT_MEDIA,
+  ENTERPRISE_PLAN_LIMITS,
   FREE_PLAN_LIMITS,
   IDS,
   TEAM_PLAN_LIMITS,
@@ -4315,12 +4316,19 @@ class MockImpl {
       const ws = s().workspaces.get(c.params[0] ?? '');
       if (!ws) throw notFound('workspace not found');
       const b = parseBody(c, AdminSetPlanRequestSchema);
-      if (b.plan !== Plan.FREE && b.plan !== Plan.TEAM && b.plan !== Plan.CUSTOM) throw invalid('plan', 'plan must be FREE, TEAM or CUSTOM');
+      if (b.plan !== Plan.FREE && b.plan !== Plan.TEAM && b.plan !== Plan.ENTERPRISE && b.plan !== Plan.CUSTOM) throw invalid('plan', 'plan must be FREE, TEAM, ENTERPRISE or CUSTOM');
       if (b.plan !== Plan.CUSTOM && b.limits) throw invalid('limits', 'limits only with CUSTOM');
       if (b.note.length > 500) throw invalid('note', 'note at most 500 characters');
       const now = tick(s());
       if (b.validUntil && timestampMs(b.validUntil) <= timestampMs(now)) throw invalid('validUntil', 'valid_until must be in the future');
-      const limits = b.plan === Plan.CUSTOM ? create(PlanLimitsSchema, b.limits ?? {}) : b.plan === Plan.TEAM ? TEAM_PLAN_LIMITS : FREE_PLAN_LIMITS;
+      const limits =
+        b.plan === Plan.CUSTOM
+          ? create(PlanLimitsSchema, b.limits ?? {})
+          : b.plan === Plan.TEAM
+            ? TEAM_PLAN_LIMITS
+            : b.plan === Plan.ENTERPRISE
+              ? ENTERPRISE_PLAN_LIMITS
+              : FREE_PLAN_LIMITS;
       ws.plan = create(WorkspacePlanSchema, { plan: b.plan, limits, ...(b.validUntil ? { validUntil: b.validUntil } : {}), expired: false });
       s().planMeta.set(ws.id, { note: b.note, updatedBy: me, updatedAt: now });
       const log = s().planLog.get(ws.id) ?? [];

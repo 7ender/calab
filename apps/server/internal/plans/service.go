@@ -97,8 +97,11 @@ func (s *Service) SetDefaults(free, team Limits) {
 func (s *Service) PlanLimits(p v1.Plan) Limits {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if p == v1.Plan_PLAN_TEAM {
+	switch p {
+	case v1.Plan_PLAN_TEAM:
 		return s.team
+	case v1.Plan_PLAN_ENTERPRISE:
+		return Enterprise
 	}
 	return s.free
 }
@@ -155,6 +158,8 @@ func (s *Service) resolveLocked(ctx context.Context, row *sqlc.WorkspacePlan, no
 	switch info.Plan {
 	case v1.Plan_PLAN_TEAM:
 		info.Limits = s.team
+	case v1.Plan_PLAN_ENTERPRISE:
+		info.Limits = Enterprise
 	case v1.Plan_PLAN_CUSTOM:
 		l, err := ParseLimits(string(row.Limits), Limits{})
 		if err != nil { // written by us, validated; fail safe to free if it is ever corrupt
@@ -241,7 +246,9 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
-var planToDB = map[v1.Plan]string{v1.Plan_PLAN_FREE: "free", v1.Plan_PLAN_TEAM: "team", v1.Plan_PLAN_CUSTOM: "custom"}
+var planToDB = map[v1.Plan]string{
+	v1.Plan_PLAN_FREE: "free", v1.Plan_PLAN_TEAM: "team", v1.Plan_PLAN_CUSTOM: "custom", v1.Plan_PLAN_ENTERPRISE: "enterprise",
+}
 
 // PlanToDB maps the enum to the DB text; ok=false for UNSPECIFIED / unknown.
 func PlanToDB(p v1.Plan) (string, bool) {

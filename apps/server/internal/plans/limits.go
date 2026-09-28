@@ -33,17 +33,19 @@ type Limits struct {
 // Built-in defaults; PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS override them key by key.
 var (
 	// DefaultFree (owner, 28.09): 5 in a room, 50 members, voice up to «Нормальное» (16 kbps),
-	// video up to 720p / 15 fps, one stream per room, 1 GiB of files, one sticker pack with 200
+	// video up to 720p / 15 fps, one stream per room, 5 GiB of files, one sticker pack with 200
 	// stickers, one bot.
 	DefaultFree = Limits{
 		RoomMembers: 5, Members: 50, AudioMaxKbps: 16,
 		StreamMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, StreamMaxFPS: 15,
 		CameraMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, CameraMaxFPS: 15,
-		StreamsPerRoom: 1, StorageMB: 1024, StickerPacks: 1, Stickers: 200, Bots: 1,
+		StreamsPerRoom: 1, StorageMB: 5 << 10, StickerPacks: 1, Stickers: 200, Bots: 1,
 	}
-	// DefaultTeam: 50 in a room, 20 bots, video and storage not limited by the plan (the
-	// workspace storage quota still applies).
-	DefaultTeam = Limits{RoomMembers: 50, Bots: 20}
+	// DefaultTeam: 50 in a room, 20 bots, 1 TiB of files (owner, 28.09); members, voice and
+	// video not limited by the plan.
+	DefaultTeam = Limits{RoomMembers: 50, Bots: 20, StorageMB: 1 << 20}
+	// Enterprise (owner, 28.09): no limits at all, like self-hosted. Fixed, not taken from env.
+	Enterprise = Limits{}
 )
 
 // Upper bounds of every limit (validation of env and admin input).

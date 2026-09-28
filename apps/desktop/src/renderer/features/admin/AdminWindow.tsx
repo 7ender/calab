@@ -226,7 +226,7 @@ function formFrom(a: AdminWorkspace): PlanForm {
   const p = a.workspace?.plan;
   const kind = planKind(p);
   return {
-    plan: kind === Plan.TEAM || kind === Plan.CUSTOM ? kind : Plan.FREE,
+    plan: kind === Plan.TEAM || kind === Plan.ENTERPRISE || kind === Plan.CUSTOM ? kind : Plan.FREE,
     limits: limitsFormFrom(kind, p?.limits),
     validUntil: inputFromDate(p?.validUntil ? timestampDate(p.validUntil) : null),
     note: a.planNote,
@@ -352,13 +352,14 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
 
           <Card title={t('admin.card.plan')} footer={a.planUpdatedAt ? t('admin.updated', { when: fmt.stamp(timestampDate(a.planUpdatedAt)) }) : undefined}>
             <Row label={t('admin.row.plan')}>
-              <Segmented<'FREE' | 'TEAM' | 'CUSTOM'>
+              <Segmented<'FREE' | 'TEAM' | 'ENTERPRISE' | 'CUSTOM'>
                 label={t('admin.row.plan')}
-                value={Plan[form.plan] as 'FREE' | 'TEAM' | 'CUSTOM'}
+                value={Plan[form.plan] as 'FREE' | 'TEAM' | 'ENTERPRISE' | 'CUSTOM'}
                 onChange={(v) => setForm({ ...form, plan: Plan[v] })}
                 options={[
                   { value: 'FREE', label: t('plan.name.free') },
                   { value: 'TEAM', label: t('plan.name.team') },
+                  { value: 'ENTERPRISE', label: t('plan.name.enterprise') },
                   { value: 'CUSTOM', label: t('plan.name.custom') },
                 ]}
               />

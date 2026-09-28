@@ -190,7 +190,7 @@ func (a *Admin) get(w http.ResponseWriter, r *http.Request) error {
 func (a *Admin) validatePlan(req *v1.AdminSetPlanRequest, now time.Time) (plan string, stored []byte, logged []byte, err error) {
 	plan, ok := PlanToDB(req.GetPlan())
 	if !ok {
-		return "", nil, nil, httpx.Validation("plan", "plan must be PLAN_FREE, PLAN_TEAM or PLAN_CUSTOM")
+		return "", nil, nil, httpx.Validation("plan", "plan must be PLAN_FREE, PLAN_TEAM, PLAN_ENTERPRISE or PLAN_CUSTOM")
 	}
 	var l Limits
 	if req.GetPlan() == v1.Plan_PLAN_CUSTOM {

@@ -251,6 +251,20 @@ func TestPlanStorageQuota(t *testing.T) {
 	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 1 || gw.GetWorkspace().GetPlan().GetPlan() != v1.Plan_PLAN_CUSTOM {
 		t.Fatalf("workspace plan: %v", gw.GetWorkspace().GetPlan())
 	}
+	// TEAM: 1 TiB (owner, 28.09) — the refused upload now fits; ENTERPRISE: no storage limit.
+	admin.must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM}, nil)
+	o.must(200, "GET", "/api/workspaces/"+ws.GetId(), nil, &gw)
+	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 1<<20 {
+		t.Fatalf("team storage: %v", gw.GetWorkspace().GetPlan())
+	}
+	if st, e := uploadRaw(t, o, ws.GetId(), part); st != 201 {
+		t.Fatalf("upload on team: %d %v", st, e)
+	}
+	admin.must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE}, nil)
+	o.must(200, "GET", "/api/workspaces/"+ws.GetId(), nil, &gw)
+	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 0 {
+		t.Fatalf("enterprise storage: %v", gw.GetWorkspace().GetPlan())
+	}
 }
 
 // Superadmin API: 404 for everyone else; search, detail, plan change (validated, logged,
