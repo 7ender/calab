@@ -93,6 +93,8 @@ class FakeRoom {
   published: FakeLocalAudioTrack[] = [];
   remoteParticipants = new Map();
   name = '';
+  /** ConnectionState (names proxy: the enum key). */
+  state = 'Connected';
   engine = {};
   localParticipant = {
     identity: 'u1:mine',
@@ -374,6 +376,77 @@ describe('VoiceEngine', () => {
     await settle();
     await voice.join('B', 'ws');
     expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected' });
+  });
+
+  // docs/09 #71 (issue #15): the server's record of this device follows the LiveKit connection.
+  describe('seat check', () => {
+    const res = { url: 'wss://lk', token: 't', canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } };
+
+    it('a superseded /join that lands late: the seat is re-asserted with a /join of the room I am in', async () => {
+      let answerA!: (v: unknown) => void;
+      joinVoice.mockImplementationOnce(() => new Promise((r) => (answerA = r)) as never);
+      const a = voice.join('A', 'ws');
+      await settle();
+      const b = voice.join('B', 'ws');
+      await vi.advanceTimersByTimeAsync(3000); // B waits (bounded) for the /join still in flight
+      await b;
+      expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected' });
+      expect(joinVoice.mock.calls).toEqual([['A'], ['B']]);
+      answerA({ ...res, pending: true }); // the server now holds me in A
+      await a;
+      await settle();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(leaveVoice.mock.calls).toEqual([['A']]);
+      expect(joinVoice.mock.calls).toEqual([['A'], ['B'], ['B']]);
+      expect(FakeRoom.all.filter((r) => r.disconnects.length === 0)).toHaveLength(1);
+    });
+
+    it('after a reconnect: the server lost me (pending /join) → re-seated with my mute state', async () => {
+      await voice.join('A', 'ws');
+      useVoice.setState({ muted: true });
+      updateSelf.mockClear();
+      joinVoice.mockResolvedValueOnce({ ...res, pending: true } as never);
+      voice.checkSeat();
+      await settle();
+      expect(joinVoice.mock.calls.at(-1)).toEqual(['A']);
+      expect(updateSelf).toHaveBeenCalledWith({ muted: true, deafened: false });
+      expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    });
+
+    it('after a reconnect: the server refuses the seat → out of voice with a toast', async () => {
+      const { ApiError } = await import('../lib/api/client');
+      const { toast } = await import('../stores/toasts');
+      await voice.join('A', 'ws');
+      joinVoice.mockRejectedValueOnce(new ApiError('ERROR_CODE_FORBIDDEN', 'no', 403));
+      voice.checkSeat();
+      await settle();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(useVoice.getState()).toMatchObject({ roomId: null, phase: 'idle' });
+      expect(leaveVoice).toHaveBeenCalledWith('A');
+      expect(toast.error).toHaveBeenCalledWith('Соединение с голосом потеряно');
+    });
+
+    it('a network error keeps the call (retried on the next reconnect)', async () => {
+      await voice.join('A', 'ws');
+      joinVoice.mockRejectedValueOnce(new Error('offline'));
+      voice.checkSeat();
+      await settle();
+      expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    });
+
+    it('a /voice/leave lost in the network is sent again by the next seat check', async () => {
+      await voice.join('A', 'ws');
+      leaveVoice.mockRejectedValueOnce(new Error('offline'));
+      await voice.leave();
+      await settle();
+      expect(leaveVoice).toHaveBeenCalledTimes(1);
+      voice.checkSeat();
+      await settle();
+      expect(leaveVoice.mock.calls).toEqual([['A'], ['A']]);
+      voice.checkSeat(); // delivered: nothing left to send
+      await settle();
+      expect(leaveVoice).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('a pending /join sends my mute / deafen before LiveKit connects', async () => {

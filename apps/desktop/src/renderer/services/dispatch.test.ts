@@ -30,7 +30,7 @@ vi.stubGlobal('window', globalThis);
 
 const onIncomingMessage = vi.fn<(...a: unknown[]) => void>();
 const loadMentions = vi.fn(() => Promise.resolve());
-vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn() } }));
+vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn(), checkSeat: vi.fn() } }));
 vi.mock('./chat', () => ({ resyncLoadedRooms: vi.fn(() => Promise.resolve()), resyncPins: vi.fn(() => Promise.resolve()) }));
 vi.mock('./mentions', () => ({ loadMentions: () => loadMentions() }));
 vi.mock('./notify', () => ({ onIncomingMessage: (...a: unknown[]) => {
@@ -142,6 +142,15 @@ describe('dispatch READY (re-IDENTIFY while the UI is up)', () => {
     expect(onIncomingMessage).toHaveBeenCalledTimes(1);
     applyDispatch(messageCreate('a', 101));
     expect(onIncomingMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('READY and RESUMED run the voice seat check (docs/09 #71)', async () => {
+    const { voice } = await import('./voice');
+    const check = vi.spyOn(voice, 'checkSeat');
+    check.mockClear();
+    applyDispatch(ready([room('a')]));
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'resumed', value: { replayed: 3 } } }));
+    expect(check).toHaveBeenCalledTimes(2);
   });
 });
 
