@@ -41,7 +41,7 @@ export const IPC = {
   appAttention: 'app:attention',
   /** Mentions + unread DM messages → Dock badge / badge count / tray tooltip (docs/09 item 22). */
   appSetBadge: 'app:set-badge',
-  /** Renderer theme → nativeTheme.themeSource (vibrancy follows the app theme). */
+  /** Renderer theme → nativeTheme.themeSource (the window background follows the app theme). */
   appSetTheme: 'app:set-theme',
   /** Renderer locale → the few strings main shows itself (tray, notifications, window titles; ADR-0022). */
   appSetStrings: 'app:set-strings',
@@ -197,7 +197,7 @@ export interface AppInfo {
   fakeMedia: boolean;
   /** Test flag CALABA_FORCE_RELAY=1: ICE relay-only (checks the TURN/TLS 443 path). */
   forceRelay: boolean;
-  /** Test flag CALABA_VISUAL_TEST=1: no native vibrancy, no animations (deterministic screenshots). */
+  /** Test flag CALABA_VISUAL_TEST=1: no animations (deterministic screenshots). */
   visualTest: boolean;
   systemAudioLoopback: 'supported' | 'experimental' | 'unsupported';
   micAccess: string;

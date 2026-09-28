@@ -155,7 +155,7 @@ function AuthorTarget({ workspaceId, userId, name, className, children }: { work
   );
 }
 
-/** Date / «new» pills: 24 px, 12/500, dense popover glass with a 0.5 px hairline (UX review). */
+/** Date / «new» pills: 24 px, 12/500, the opaque popover colour with a 0.5 px hairline (UX review). */
 const pill = 'mat-glass inline-flex h-6 items-center rounded-full px-2.5 text-caption font-medium';
 
 export function DatePill({ date, floating }: { date: Date; floating?: boolean }): ReactNode {
@@ -173,7 +173,7 @@ export function DatePill({ date, floating }: { date: Date; floating?: boolean })
   );
 }
 
-/** «Новые сообщения» (Telegram): accent text on the pill glass, hairlines to both sides. */
+/** «Новые сообщения» (Telegram): accent text on the pill, hairlines to both sides. */
 function NewMessagesPill(): ReactNode {
   const line = 'h-px flex-1 bg-[color-mix(in_srgb,var(--color-accent)_40%,transparent)]';
   return (

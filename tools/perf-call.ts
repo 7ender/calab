@@ -10,7 +10,8 @@
  * Prints JSON: commits/s, React render ms/s (selfBaseDuration), top components by time and by
  * count, what woke each one (parent / props / hook index / context) and which components
  * started the commits. `--bench C|E` then keeps the scenario running and samples CPU with
- * tools/energy-bench.py (E adds a remote 720p camera).
+ * tools/energy-bench.py (E adds a remote 720p camera; `--popover` also shows the camera grid of
+ * the call's room with its notification menu open over the tile) together with WindowServer (the macOS compositor).
  *
  *   CALABA_RENDERER_MINIFY=0 CALABA_REACT_PROFILING=1 pnpm -F @calaba/desktop build:app
  *   npx tsx tools/perf-call.ts [--port 39461] [--seconds 30] [--speaker] [--cpu] [--timeline] [--no-stats] [--no-emulate]
@@ -45,6 +46,7 @@ const STATS = !argv.includes('--no-stats');
 const EMULATE = !argv.includes('--no-emulate');
 const CPU = argv.includes('--cpu');
 const SPEAKER = argv.includes('--speaker');
+const POPOVER = argv.includes('--popover');
 const ROOT = resolve(import.meta.dirname, '..');
 const DESKTOP = resolve(ROOT, 'apps/desktop');
 process.env['MOCK_LIVEKIT_ROOM_PREFIX'] ||= `perfcall${PORT}_`;
@@ -339,6 +341,23 @@ async function main(): Promise<void> {
     // speakers and the level-driven rings flip on and off like in a conversation.
     if (EMULATE && SPEAKER) speaker = await startSpeaker(mock.url, IDS.users.boris, 'Борис Петров', IDS.rooms.call);
     await page.waitForTimeout(3000);
+    // A menu over the playing video (docs/09 #65): the call's own room (camera grid), with the
+    // room's notification menu dropped over the tile.
+    if (POPOVER) {
+      await aside.getByRole('button', { name: /Созвон/ }).first().click();
+      await page
+        .getByTestId('camera-video')
+        .first()
+        .waitFor({ timeout: 30_000 })
+        .catch(async (e: unknown) => {
+          if (process.env['PERF_CALL_SHOT']) await page.screenshot({ path: process.env['PERF_CALL_SHOT'] });
+          throw e;
+        });
+      await page.waitForTimeout(2000);
+      await page.getByRole('button', { name: /^Уведомления/ }).first().click();
+      await page.getByRole('menu', { name: 'Уведомления' }).waitFor();
+      if (process.env['PERF_CALL_SHOT']) await page.screenshot({ path: process.env['PERF_CALL_SHOT'] });
+    }
 
     const out: Record<string, unknown> = { membersOpen, stats: STATS, emulate: EMULATE, seconds: SECONDS };
     if (SECONDS > 0) {
@@ -432,7 +451,7 @@ async function main(): Promise<void> {
     if (BENCH) {
       const bundle = resolve(ROOT, 'node_modules/electron/dist/Electron.app');
       const outDir = opt('bench-out', join(tmpdir(), 'calaba-energy'));
-      const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, BENCH === 'E' ? 'E-watch-video' : 'C-voice-quiet', '--seconds', String(BENCH_SECONDS), '--out', outDir], {
+      const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, (BENCH === 'E' ? 'E-watch-video' : 'C-voice-quiet') + (POPOVER ? '-popover' : ''), '--seconds', String(BENCH_SECONDS), '--out', outDir, '--system', 'WindowServer'], {
         stdio: 'inherit',
       });
       if (r.status !== 0) process.exitCode = 1;

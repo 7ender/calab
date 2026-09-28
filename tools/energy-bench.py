@@ -13,6 +13,10 @@ dropped. Prints mean / p95 of the per-sample total (all processes) and per proce
 
     python3 tools/energy-bench.py /Applications/Discord.app discord idle-window --seconds 180
     python3 tools/energy-bench.py "$TMPDIR/calab/Calab.app" calab in-call-quiet
+    python3 tools/energy-bench.py "$TMPDIR/calab/Calab.app" calab in-call-quiet --system WindowServer
+
+`--system NAME` also samples system processes by exact name (e.g. WindowServer, the macOS
+compositor that pays for window vibrancy / blur): kind `sys:<name>`, excluded from the app total.
 
 Only processes alive when the run starts are sampled: set the scenario up first (join the call,
 hide the window), then start the run. Battery vs AC is recorded in the summary (`pmset -g batt`).
@@ -39,6 +43,12 @@ def processes(bundle: str) -> dict[int, str]:
             continue
         found[int(pid_s)] = kind_of(cmd)
     return found
+
+
+def system_pids(name: str) -> list[int]:
+    """pids of the processes whose executable name is exactly `name` (e.g. WindowServer)."""
+    out = subprocess.run(['pgrep', '-x', name], capture_output=True, text=True).stdout
+    return [int(x) for x in out.split()]
 
 
 def kind_of(cmd: str) -> str:
@@ -91,12 +101,16 @@ def main() -> int:
     ap.add_argument('--seconds', type=int, default=180)
     ap.add_argument('--interval', type=int, default=5)
     ap.add_argument('--out', default=os.path.join(ROOT, 'docs', 'energy'))
+    ap.add_argument('--system', action='append', default=[], help='also sample this system process by name (repeatable)')
     a = ap.parse_args()
 
     procs = processes(a.bundle)
     if not procs:
         print(f'no running process inside {a.bundle}', file=sys.stderr)
         return 1
+    for name in a.system:
+        for pid in system_pids(name):
+            procs[pid] = 'sys:' + name
     before = power_source()
     rows = sample(sorted(procs), a.seconds, a.interval)
     after = power_source()
@@ -112,9 +126,11 @@ def main() -> int:
     totals: dict[float, list[float]] = {}
     kinds: dict[str, dict[float, float]] = {}
     for t, pid, cpu, pw, _ in rows:
+        kind = procs.get(pid, 'other')
         tot = totals.setdefault(t, [0.0, 0.0])
-        tot[0] += cpu
-        tot[1] += pw
+        if not kind.startswith('sys:'):  # the app total: the app's own processes only
+            tot[0] += cpu
+            tot[1] += pw
         k = kinds.setdefault(procs.get(pid, 'other'), {})
         k[t] = k.get(t, 0.0) + cpu
     cpu = [v[0] for v in totals.values()]

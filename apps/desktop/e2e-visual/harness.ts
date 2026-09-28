@@ -8,7 +8,7 @@ import { startMockServer, type MockServer } from '../e2e-support/mock-server';
 /**
  * Harness for the design tests (docs/08, «Тесты дизайна»): the production renderer (out/)
  * against the deterministic mock API, with a fixed clock, fixed OS permission statuses
- * (CALABA_VISUAL_TEST=1), no native vibrancy and no animations.
+ * (CALABA_VISUAL_TEST=1), no animations.
  */
 
 export type Theme = 'dark' | 'light';

@@ -9,7 +9,9 @@ import { mainStrings } from './strings';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const PRELOAD = join(here, '../preload/index.cjs');
 const RENDERER_HTML = join(here, '../renderer/index.html');
-const BG = '#1e1f22';
+/** The window layer (--color-rail in styles.css): the opaque window background per theme. */
+const WINDOW_BG = { dark: '#0c0c0e', light: '#e8e8ec' } as const;
+const windowBg = (): string => (nativeTheme.shouldUseDarkColors ? WINDOW_BG.dark : WINDOW_BG.light);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -95,8 +97,8 @@ function chrome(): Partial<Electron.BrowserWindowConstructorOptions> {
 function overlayColors(): TitleBarOverlayOptions {
   // Same colours as the rail/title bar material (--color-rail, --color-label).
   return nativeTheme.shouldUseDarkColors
-    ? { color: '#1c1c1f', symbolColor: '#ececf0', height: TITLEBAR_HEIGHT }
-    : { color: '#e2e2e7', symbolColor: '#1d1d1f', height: TITLEBAR_HEIGHT };
+    ? { color: WINDOW_BG.dark, symbolColor: '#ececf0', height: TITLEBAR_HEIGHT }
+    : { color: WINDOW_BG.light, symbolColor: '#1d1d1f', height: TITLEBAR_HEIGHT };
 }
 
 function windowIcon(): { icon?: string } {
@@ -114,24 +116,25 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 600,
     title: 'Calab',
-    // macOS: native sidebar material (docs/08) — the renderer keeps content surfaces opaque.
-    // CALABA_VISUAL_TEST=1: opaque window so screenshots don't depend on the desktop behind it.
-    ...(process.platform === 'darwin' && process.env['CALABA_VISUAL_TEST'] !== '1'
-      ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const, backgroundColor: '#00000000' }
-      : { backgroundColor: BG }),
+    // Opaque, no vibrancy (docs/08 «Материалы», docs/09 #65): the compositor would re-blur the
+    // desktop behind the window on every frame. The colour follows the theme (below).
+    transparent: false,
+    backgroundColor: windowBg(),
     show: false,
     ...chrome(),
     ...windowIcon(),
     webPreferences: { ...webPreferences },
   });
   if (state?.maximized) win.maximize();
-  if (process.platform === 'win32') {
-    const recolor = (): void => {
-      if (!win.isDestroyed()) win.setTitleBarOverlay(overlayColors());
-    };
-    nativeTheme.on('updated', recolor);
-    win.on('closed', () => nativeTheme.off('updated', recolor));
-  }
+  // The renderer's theme drives nativeTheme.themeSource (IPC appSetTheme): recolour the window
+  // background (seen while resizing and before the first paint) and the Windows caption buttons.
+  const recolor = (): void => {
+    if (win.isDestroyed()) return;
+    win.setBackgroundColor(windowBg());
+    if (process.platform === 'win32') win.setTitleBarOverlay(overlayColors());
+  };
+  nativeTheme.on('updated', recolor);
+  win.on('closed', () => nativeTheme.off('updated', recolor));
   win.once('ready-to-show', () => win.show());
   // The page can't see it (backgroundThrottling: false pins document.visibilityState): tell it,
   // so it can stop decoding video nobody sees (lib/windowVisibility.ts, docs/14-energy.md).

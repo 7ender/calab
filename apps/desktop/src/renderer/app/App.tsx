@@ -30,10 +30,9 @@ function useTheme(): void {
   const os = useSession((s) => s.appInfo?.platform);
   const visualTest = useSession((s) => s.appInfo?.visualTest === true);
   useEffect(() => {
-    // macOS Electron: native vibrancy behind the sidebar + overlay scrollbars (docs/08).
+    // macOS: overlay scrollbars (docs/08).
     const root = document.documentElement;
     root.classList.toggle('mac', os === 'darwin' || /Mac OS X|Macintosh/.test(navigator.userAgent));
-    root.classList.toggle('vibrancy', platform.kind === 'electron' && os === 'darwin' && !visualTest);
     root.classList.toggle('test-stable', visualTest);
     // Visual tests only: sign out without relaunching the app (per-screen tests reset to the login).
     if (!visualTest) return;
@@ -43,7 +42,7 @@ function useTheme(): void {
     };
   }, [os, visualTest]);
   useEffect(() => {
-    platform.app.setTheme(theme); // the native material follows the app theme
+    platform.app.setTheme(theme); // the window background follows the app theme
     const apply = (): void => {
       const dark = theme === 'system' ? window.matchMedia('(prefers-color-scheme: dark)').matches : theme === 'dark';
       document.documentElement.dataset['theme'] = dark ? 'dark' : 'light';
