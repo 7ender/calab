@@ -165,6 +165,14 @@ export function applyDispatch(ev: DispatchEvent): void {
       useWorkspaces.getState().removeRole(e.value.workspaceId, e.value.roleId);
       voice.refreshRights();
       return;
+    // Member badges (docs/09 #82): members lose a deleted badge by WORKSPACE_MEMBER_UPDATE first.
+    case 'badgeCreate':
+    case 'badgeUpdate':
+      if (e.value.badge) useWorkspaces.getState().upsertBadge(e.value.badge);
+      return;
+    case 'badgeDelete':
+      useWorkspaces.getState().removeBadge(e.value.workspaceId, e.value.badgeId);
+      return;
     case 'workspaceMemberRemove':
       if (useWorkspaces.getState().users[e.value.userId]?.isBot) useBots.getState().dropCommands();
       useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId);

@@ -1,4 +1,5 @@
 import type {
+  Badge,
   Presence,
   Role,
   User,
@@ -22,6 +23,8 @@ export interface WorkspaceEntry {
    * the four built-ins with their legacy ids («member»…) stand in (lib/roles legacyRoles).
    */
   roles: Role[];
+  /** The badge library (docs/09 #82) by id, in the server's order; members[].badgeId refer to it. */
+  badges: Record<string, Badge>;
   /** userId → aggregated voice state (docs/05, "multiple devices"). */
   voice: Record<string, VoiceState>;
 }
@@ -45,6 +48,10 @@ interface WorkspacesState {
   removeRole: (workspaceId: string, roleId: string) => void;
   /** GET …/roles, PUT …/roles/order: the whole list. */
   setRoles: (workspaceId: string, roles: readonly Role[]) => void;
+  /** BADGE_CREATE / BADGE_UPDATE. */
+  upsertBadge: (b: Badge) => void;
+  /** BADGE_DELETE: the badge goes, and from every member that still shows it. */
+  removeBadge: (workspaceId: string, badgeId: string) => void;
   removeMember: (workspaceId: string, userId: string) => void;
   setPresence: (p: Presence) => void;
   setVoiceState: (v: VoiceState) => void;
@@ -101,7 +108,9 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
       for (const p of snap.presences) presences[p.userId] = p;
       const order = s.order.includes(ws.id) ? s.order : [...s.order, ws.id];
       const roles = snap.roles.length > 0 ? sortRoles(snap.roles) : legacyRoles(ws.id);
-      return { byId: { ...s.byId, [ws.id]: { ws, role: snap.role, members, roles, voice } }, order, presences, users };
+      const badges: Record<string, Badge> = {};
+      for (const b of snap.badges) badges[b.id] = b;
+      return { byId: { ...s.byId, [ws.id]: { ws, role: snap.role, members, roles, badges, voice } }, order, presences, users };
     }),
   remove: (id) =>
     set((s) => {
@@ -133,6 +142,22 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
       }),
     ),
   setRoles: (wsId, roles) => set((s) => withEntry(s, wsId, (e) => ({ ...e, roles: sortRoles(roles) }))),
+  upsertBadge: (b) => set((s) => withEntry(s, b.workspaceId, (e) => ({ ...e, badges: { ...e.badges, [b.id]: b } }))),
+  removeBadge: (wsId, badgeId) =>
+    set((s) =>
+      withEntry(s, wsId, (e) => {
+        if (!(badgeId in e.badges)) return e;
+        const badges = { ...e.badges };
+        delete badges[badgeId];
+        let members = e.members;
+        for (const [id, m] of Object.entries(e.members)) {
+          if (m.badgeId !== badgeId) continue;
+          if (members === e.members) members = { ...e.members };
+          members[id] = { ...m, badgeId: '' };
+        }
+        return { ...e, members, badges };
+      }),
+    ),
   removeMember: (wsId, userId) =>
     set((s) =>
       withEntry(s, wsId, (e) => {
@@ -219,4 +244,29 @@ export function useMemberRoles(wsId: string | null | undefined, userId: string):
  */
 export function useRoleLook(wsId: string | null | undefined, userId: string): Role | undefined {
   return useWorkspaces((st) => customLook(rolesOf(wsId ? st.byId[wsId] : undefined, userId)));
+}
+
+/**
+ * The member's badge (docs/09 #82) — a store object (stable selector result), undefined for none,
+ * a DM (no workspace) or a badge not (yet) in the library. Rows subscribe by id: a change of
+ * another member or of the workspace does not re-render them.
+ */
+export function useMemberBadge(wsId: string | null | undefined, userId: string): Badge | undefined {
+  return useWorkspaces((st) => memberBadge(wsId ? st.byId[wsId] : undefined, userId));
+}
+
+/** Non-reactive useMemberBadge(). */
+export function memberBadge(entry: WorkspaceEntry | undefined, userId: string): Badge | undefined {
+  const id = entry?.members[userId]?.badgeId;
+  return id ? entry.badges[id] : undefined;
+}
+
+const NO_BADGES: Badge[] = [];
+
+/** The library in the server's order (settings, the badge select); the same array while it is unchanged. */
+export function useBadgeList(wsId: string): Badge[] {
+  return useWorkspaces(useShallow((st) => {
+    const b = st.byId[wsId]?.badges;
+    return b ? Object.values(b) : NO_BADGES;
+  }));
 }

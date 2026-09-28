@@ -73,6 +73,13 @@ import {
   SetRoleOrderResponseSchema,
   SetMemberRolesRequestSchema,
   SetMemberRolesResponseSchema,
+  ListBadgesResponseSchema,
+  CreateBadgeRequestSchema,
+  CreateBadgeResponseSchema,
+  UpdateBadgeRequestSchema,
+  UpdateBadgeResponseSchema,
+  SetMemberBadgeRequestSchema,
+  SetMemberBadgeResponseSchema,
   UpdateStatusRequestSchema,
   UpdateMessageRequestSchema,
   UpdateMessageResponseSchema,
@@ -237,6 +244,23 @@ export const api = {
     /** The member's complete role set (ADR-0026; MANAGE_ROLES) → WORKSPACE_MEMBER_UPDATE. */
     setMemberRoles: (id: string, userId: string, roleIds: readonly string[]) =>
       call('PUT', `/api/workspaces/${id}/members/${userId}/roles`, SetMemberRolesResponseSchema, body(SetMemberRolesRequestSchema, { roleIds: [...roleIds] })),
+  },
+  /**
+   * Member badges (docs/09 #82): the library for any member; create / rename / delete with
+   * MANAGE_WORKSPACE; assigning with MANAGE_NICKNAMES (members below my top role, not bots).
+   */
+  badges: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/badges`, ListBadgesResponseSchema),
+    /** 201; 409 = 20 badges already; 422 = bad name / picture. */
+    create: (workspaceId: string, name: string, fileId: string) =>
+      call('POST', `/api/workspaces/${workspaceId}/badges`, CreateBadgeResponseSchema, body(CreateBadgeRequestSchema, { name, fileId })),
+    update: (workspaceId: string, badgeId: string, init: MessageInitShape<typeof UpdateBadgeRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/badges/${badgeId}`, UpdateBadgeResponseSchema, body(UpdateBadgeRequestSchema, init)),
+    /** 204: its members lose it (WORKSPACE_MEMBER_UPDATE each, then BADGE_DELETE). */
+    remove: (workspaceId: string, badgeId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/badges/${badgeId}`),
+    /** "" clears → WORKSPACE_MEMBER_UPDATE. */
+    setMember: (workspaceId: string, userId: string, badgeId: string) =>
+      call('PUT', `/api/workspaces/${workspaceId}/members/${userId}/badge`, SetMemberBadgeResponseSchema, body(SetMemberBadgeRequestSchema, { badgeId })),
   },
   /** Workspace roles (ADR-0026): list for any member; the rest MANAGE_ROLES, roles below my top one. */
   roles: {

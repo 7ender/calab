@@ -146,11 +146,22 @@ export async function encodeWithinLimit(encode: (quality: number) => Promise<Blo
   return 'tooHeavy';
 }
 
-/** A decoded picture: its natural size and an encoder of it scaled to `width` × `height`. */
+/** A source rectangle of a decoded picture (a square crop of a badge, lib/badgePrepare). */
+export interface Crop {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+}
+
+/**
+ * A decoded picture: its natural size and an encoder of it (or of its `crop`) scaled to
+ * `width` × `height`.
+ */
 export interface DecodedImage {
   width: number;
   height: number;
-  encode(width: number, height: number, quality: number): Promise<Blob | null>;
+  encode(width: number, height: number, quality: number, crop?: Crop): Promise<Blob | null>;
   close(): void;
 }
 
@@ -171,7 +182,7 @@ export const browserCodec: StickerCodec = {
     return {
       width: bmp.width,
       height: bmp.height,
-      encode(width, height, quality) {
+      encode(width, height, quality, crop) {
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -179,7 +190,8 @@ export const browserCodec: StickerCodec = {
         if (!ctx) return Promise.resolve(null);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(bmp, 0, 0, width, height);
+        if (crop) ctx.drawImage(bmp, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
+        else ctx.drawImage(bmp, 0, 0, width, height);
         return new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', quality));
       },
       close: () => bmp.close(),

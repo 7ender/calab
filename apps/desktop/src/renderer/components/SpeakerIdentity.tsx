@@ -6,6 +6,7 @@ import { Avatar } from './Avatar';
 import { cx } from './ui';
 import { t } from '../i18n';
 import { RoleMark, hasRoleMark, roleTextClass } from '../features/people/MemberBits';
+import { MemberBadge } from '../features/people/MemberBadge';
 import { BirthdayMark } from '../features/people/Birthday';
 
 /**
@@ -34,6 +35,7 @@ export function SpeakerIdentity({
   pending = false,
   suffix,
   role,
+  workspaceId,
 }: {
   userId: string;
   name: string;
@@ -45,6 +47,8 @@ export function SpeakerIdentity({
   suffix?: string | null;
   /** Workspace role: owner / admin names in the role colour + RoleMark (docs/09 #26). */
   role?: WorkspaceRole | undefined;
+  /** The room's workspace: the member's badge after the name (docs/09 #82). */
+  workspaceId?: string | undefined;
 }): ReactNode {
   return (
     <>
@@ -59,6 +63,7 @@ export function SpeakerIdentity({
         <span data-testid="speaker-name" className={cx('min-w-0 truncate transition-colors duration-100', speakerNameClass(talking && !pending, role))}>
           {name}
         </span>
+        <MemberBadge workspaceId={workspaceId} userId={userId} />
         {suffix ? (
           // Time zone as a tiny tag (owner, 28.09): present, but takes almost no room.
           <span className="inline-flex h-[14px] shrink-0 items-center rounded-full bg-hover px-1 text-[9px] font-medium leading-none tabular-nums text-muted">{suffix}</span>

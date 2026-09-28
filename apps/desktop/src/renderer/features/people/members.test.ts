@@ -17,7 +17,7 @@ import {
 } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import { legacyRoles, rolesOfMember } from '../../lib/roles';
-import { canEditMemberBirthday, canRemoveMember, groupMembers, hasAnyAction, memberActions, type MenuContext } from './members';
+import { canEditMemberBirthday, canRemoveMember, canSetMemberBadge, groupMembers, hasAnyAction, memberActions, type MenuContext } from './members';
 
 const member = (id: string, name: string, role: WorkspaceRole, nickname = '', isGuest = false): WorkspaceMember =>
   create(WorkspaceMemberSchema, { workspaceId: 'w', role, nickname, user: create(UserSchema, { id, displayName: name, isGuest }) });
@@ -285,6 +285,22 @@ describe('memberActions', () => {
     // memberActions.birthday (the profile) follows it.
     expect(memberActions(base({})).birthday).toBe(true);
     expect(memberActions(base({ myRole: WorkspaceRole.MEMBER })).birthday).toBe(false);
+  });
+
+  it('canSetMemberBadge (docs/09 #82): MANAGE_NICKNAMES + hierarchy (oneself too, guests too); never bots', () => {
+    const nick = create(RoleSchema, { id: 'r-nick', name: 'HR', position: 3, permissions: PERMISSION_BITS.MANAGE_NICKNAMES });
+    const senior = create(RoleSchema, { id: 'r-senior', name: 'Senior', position: 4, permissions: 0n });
+    const all = [...legacyRoles('w'), senior, nick];
+    const r = (role: WorkspaceRole, ...ids: string[]) => rolesOfMember(all, { role, roleIds: ids });
+    const t = (isBot = false) => ({ user: create(UserSchema, { id: 't', isBot }) });
+    expect(canSetMemberBadge(r(WorkspaceRole.OWNER), r(WorkspaceRole.ADMIN), t(), false)).toBe(true);
+    expect(canSetMemberBadge(r(WorkspaceRole.OWNER), r(WorkspaceRole.OWNER), t(), true)).toBe(true);
+    expect(canSetMemberBadge(r(WorkspaceRole.OWNER), r(WorkspaceRole.MEMBER), t(true), false)).toBe(false);
+    expect(canSetMemberBadge(r(WorkspaceRole.ADMIN), r(WorkspaceRole.GUEST), t(), false)).toBe(true);
+    expect(canSetMemberBadge(r(WorkspaceRole.ADMIN), r(WorkspaceRole.OWNER), t(), false)).toBe(false);
+    expect(canSetMemberBadge(r(WorkspaceRole.MEMBER, 'r-nick'), r(WorkspaceRole.MEMBER), t(), false)).toBe(true);
+    expect(canSetMemberBadge(r(WorkspaceRole.MEMBER, 'r-nick'), r(WorkspaceRole.MEMBER, 'r-senior'), t(), false)).toBe(false);
+    expect(canSetMemberBadge(r(WorkspaceRole.MEMBER), r(WorkspaceRole.MEMBER), t(), true)).toBe(false);
   });
 
   it('room MUTE_MEMBERS grant: disconnect only; server mute/unmute need it workspace-wide', () => {

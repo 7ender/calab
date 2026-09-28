@@ -11,6 +11,7 @@ import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores
 import { useVoice } from '../../stores/voice';
 import { isGuest, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
+import { MemberBadge } from '../people/MemberBadge';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { BirthdayMark } from '../people/Birthday';
 import { MutedByMe } from '../../components/SpeakerIdentity';
@@ -268,6 +269,7 @@ const MemberRow = memo(function MemberRow({
                 >
                   {name}
                 </span>
+                <MemberBadge workspaceId={workspaceId} userId={userId} className={offline ? 'opacity-60 grayscale' : undefined} />
                 <RoleMark role={m.role} custom={look} tone={offline ? 'muted' : 'role'} />
                 <BirthdayMark userId={userId} />
                 {isGuest(m) ? <GuestBadge /> : null}

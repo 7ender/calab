@@ -1,5 +1,6 @@
 import { create } from '@bufbuild/protobuf';
 import {
+  BadgeSchema,
   PERMISSION_BITS,
   PresenceSchema,
   RoleSchema,
@@ -14,7 +15,7 @@ import {
 import { beforeEach, describe, expect, it } from 'vitest';
 import { legacyRoles } from '../lib/roles';
 import { mayArrangeRooms, mayManageWorkspace, roomPerms, voiceCaps } from '../lib/permissions';
-import { rolesOf, useWorkspaces } from './workspaces';
+import { memberBadge, rolesOf, useWorkspaces } from './workspaces';
 
 const W = 'w1';
 const member = (id: string, role: WorkspaceRole, roleIds: string[] = []) =>
@@ -108,5 +109,46 @@ describe('custom status (owner, 27.09: it showed everywhere only after a reload)
     expect(useWorkspaces.getState().users['u1']).toBe(before);
     st.setPresence(create(PresenceSchema, { userId: 'nobody', statusText: 'x' }));
     expect(useWorkspaces.getState().users['nobody']).toBeUndefined();
+  });
+});
+
+describe('member badges in the store (docs/09 #82)', () => {
+  const acme = create(BadgeSchema, { id: 'b1', workspaceId: W, name: 'Acme', fileId: 'f1' });
+  const withBadge = (id: string, badgeId: string) => Object.assign(member(id, WorkspaceRole.MEMBER), { badgeId });
+
+  it('READY carries the library; the selector gives the member its badge object', () => {
+    const snap = snapshot(withBadge('me', 'b1'));
+    snap.badges = [acme];
+    snap.members.push(member('bob', WorkspaceRole.MEMBER));
+    useWorkspaces.getState().applySnapshot(snap);
+    const e = useWorkspaces.getState().byId[W];
+    expect(memberBadge(e, 'me')).toBe(e?.badges.b1);
+    expect(memberBadge(e, 'bob')).toBeUndefined();
+    expect(memberBadge(undefined, 'me')).toBeUndefined();
+  });
+
+  it('the selector result stays the same object when other members or badges change', () => {
+    const snap = snapshot(withBadge('me', 'b1'));
+    snap.badges = [acme];
+    useWorkspaces.getState().applySnapshot(snap);
+    const before = memberBadge(useWorkspaces.getState().byId[W], 'me');
+    useWorkspaces.getState().upsertMember(member('bob', WorkspaceRole.MEMBER));
+    useWorkspaces.getState().upsertBadge(create(BadgeSchema, { id: 'b2', workspaceId: W, name: 'Other', fileId: 'f2' }));
+    expect(memberBadge(useWorkspaces.getState().byId[W], 'me')).toBe(before);
+    // Renamed: a new object, the same id.
+    useWorkspaces.getState().upsertBadge(create(BadgeSchema, { id: 'b1', workspaceId: W, name: 'Acme Corp', fileId: 'f1' }));
+    expect(memberBadge(useWorkspaces.getState().byId[W], 'me')?.name).toBe('Acme Corp');
+    expect(Object.keys(useWorkspaces.getState().byId[W]?.badges ?? {})).toEqual(['b1', 'b2']);
+  });
+
+  it('BADGE_DELETE drops the badge and clears it from members still showing it', () => {
+    const snap = snapshot(withBadge('me', 'b1'));
+    snap.badges = [acme];
+    useWorkspaces.getState().applySnapshot(snap);
+    useWorkspaces.getState().removeBadge(W, 'b1');
+    const e = useWorkspaces.getState().byId[W];
+    expect(e?.badges).toEqual({});
+    expect(e?.members.me?.badgeId).toBe('');
+    expect(memberBadge(e, 'me')).toBeUndefined();
   });
 });

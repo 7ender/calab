@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 // Avatar's store / image imports pull in the platform layer (window); the row needs neither.
-vi.mock('../stores/workspaces', () => ({ useWorkspaces: () => undefined }));
+vi.mock('../stores/workspaces', () => ({ useWorkspaces: () => undefined, useMemberBadge: () => undefined }));
 vi.mock('./MediaImg', () => ({ MediaImg: () => null }));
 vi.mock('../platform', () => ({ platform: {} }));
 import { SpeakerIdentity, speakerNameClass } from './SpeakerIdentity';

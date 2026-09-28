@@ -26,6 +26,7 @@ import type { PeoplePickItem, RolePickItem } from './memberPickItems';
 import { roleColorCss } from '../../lib/roles';
 import { BotBadge, GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from './MemberBits';
 import { BotActions, BotDetails, BotHandle } from './BotProfile';
+import { EditBadge, ProfileBadge } from './ProfileBadge';
 import { MemberContextMenu, useMemberActions } from './MemberContextMenu';
 import { NOTE_MAX, createNoteSaver, type NoteSaveState, type NoteSaver } from './noteSaver';
 
@@ -153,10 +154,12 @@ export function ProfileDialog({
                 </div>
               ) : null}
               {u.isBot ? <BotHandle botUserId={userId} /> : null}
+              <ProfileBadge workspaceId={workspaceId} userId={userId} />
               <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
               <LocalTime userId={userId} variant="line" />
               <BirthdayInfo userId={userId} variant="line" />
               <EditBirthday workspaceId={workspaceId} userId={userId} />
+              <EditBadge workspaceId={workspaceId} userId={userId} />
 
               <div className="mt-4 flex items-center gap-2">
                 {canDm ? (

@@ -26,6 +26,15 @@ import {
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   AdminGetWorkspaceResponseSchema,
+  BadgeSchema,
+  CreateBadgeRequestSchema,
+  CreateBadgeResponseSchema,
+  ListBadgesResponseSchema,
+  SetMemberBadgeRequestSchema,
+  SetMemberBadgeResponseSchema,
+  UpdateBadgeRequestSchema,
+  UpdateBadgeResponseSchema,
+  type Badge,
   AdminPlanLogResponseSchema,
   AdminSearchWorkspacesResponseSchema,
   AdminSetPlanRequestSchema,
@@ -381,6 +390,10 @@ export interface MockServer {
   setRecording(roomId: string, rec: { byUserId: string; agoMs?: number; nowMs?: number } | null): void;
   /** ADR-0026: the member's custom roles (built-ins follow their role) → WORKSPACE_MEMBER_UPDATE (+ room visibility). */
   setMemberRoles(workspaceId: string, userId: string, roleIds: string[]): void;
+  /** docs/09 #82: a badge of the workspace library with a generated square picture → BADGE_CREATE; its id. */
+  addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string;
+  /** docs/09 #82: the member's badge ('' = none) → WORKSPACE_MEMBER_UPDATE. */
+  setMemberBadge(workspaceId: string, userId: string, badgeId: string): void;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
   /**
@@ -452,6 +465,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
     setMemberRoles: (w, u, ids) => impl.setMemberRoles(w, u, ids),
+    addBadge: (w, name, colors) => impl.addBadge(w, name, colors),
+    setMemberBadge: (w, u, id) => impl.setMemberBadge(w, u, id),
     stopCamera: (u, r) => impl.stopCamera(u, r),
     setEmailState: (u, st) => impl.setEmailState(u, st),
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
@@ -1067,6 +1082,7 @@ class MockImpl {
       roleIds: this.memberRoles(m).map((r) => r.id),
       nickname: m.nickname,
       joinedAt: m.joinedAt,
+      badgeId: m.badgeId ?? '',
     });
   }
 
@@ -1118,6 +1134,7 @@ class MockImpl {
         .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)),
       recordings: [...this.state.recordings.values()].filter((r) => r.workspaceId === wsId && rooms.some((x) => x.id === r.roomId)),
       roles: this.rolesOfWs(wsId),
+      badges: this.badgesOf(wsId),
     });
   }
 
@@ -1526,6 +1543,30 @@ class MockImpl {
       m.roleIds = [...roleIds];
     });
     this.toWorkspace(workspaceId, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
+  }
+
+  addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string {
+    const ws = this.state.workspaces.get(workspaceId);
+    if (!ws) throw new Error(`no workspace ${workspaceId}`);
+    // A 64×64 «logo»: a filled square with a centred disc (what the client uploads after its crop).
+    const png = encodePng(64, 64, (u, v) => ((u - 0.5) ** 2 + (v - 0.5) ** 2 < 0.09 ? colors.fg : colors.bg));
+    const fileId = this.storeFile(workspaceId, ws.ownerId, { name: 'badge.png', mime: 'image/png', bytes: png });
+    const badge = create(BadgeSchema, { id: nextId(this.state, 'badge'), workspaceId, name, fileId });
+    this.state.badges.set(badge.id, badge);
+    this.toWorkspace(workspaceId, { event: { case: 'badgeCreate', value: { badge } } });
+    return badge.id;
+  }
+
+  setMemberBadge(workspaceId: string, userId: string, badgeId: string): void {
+    const m = this.member(workspaceId, userId);
+    if (!m) throw new Error(`no member ${userId}`);
+    if (badgeId) m.badgeId = badgeId;
+    else delete m.badgeId;
+    this.toWorkspace(workspaceId, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
+  }
+
+  private badgesOf(wsId: string): Badge[] {
+    return [...this.state.badges.values()].filter((b) => b.workspaceId === wsId);
   }
 
   setPresence(userId: string, status: PresenceStatus): void {
@@ -2350,6 +2391,80 @@ class MockImpl {
       const member = this.memberOut(target);
       this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member } } });
       sendMsg(c.res, 200, UpdateMemberResponseSchema, { member });
+    });
+
+    // ---------------- member badges (docs/09 #82): the library with MANAGE_WORKSPACE, assigning with MANAGE_NICKNAMES
+    this.route('GET', '/api/workspaces/:id/badges', (c) => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      sendMsg(c.res, 200, ListBadgesResponseSchema, { badges: this.badgesOf(ws.id) });
+    });
+    const badgeName = (raw: string): string => {
+      const name = raw.trim();
+      if (!name || Array.from(name).length > 32) throw invalid('name', 'name must be 1..32 characters');
+      return name;
+    };
+    const badgeFile = (wsId: string, id: string): string => {
+      const f = s().files.get(id);
+      if (!f || f.meta.workspaceId !== wsId || !['image/png', 'image/webp', 'image/jpeg'].includes(f.meta.mime) || f.bytes.length > 128 * 1024) {
+        throw invalid('fileId', 'a PNG, WebP or JPEG image of this workspace, at most 128 KB');
+      }
+      return id;
+    };
+    const badgeManager = (c: Ctx): Workspace => {
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      if (!isAdminRole(m.role)) throw forbidden('MANAGE_WORKSPACE required');
+      return ws;
+    };
+    this.route('POST', '/api/workspaces/:id/badges', (c) => {
+      const ws = badgeManager(c);
+      const b = parseBody(c, CreateBadgeRequestSchema);
+      if (this.badgesOf(ws.id).length >= 20) throw conflict('a workspace has at most 20 badges');
+      const badge = create(BadgeSchema, { id: nextId(s(), 'badge'), workspaceId: ws.id, name: badgeName(b.name), fileId: badgeFile(ws.id, b.fileId) });
+      s().badges.set(badge.id, badge);
+      this.toWorkspace(ws.id, { event: { case: 'badgeCreate', value: { badge } } });
+      sendMsg(c.res, 201, CreateBadgeResponseSchema, { badge });
+    });
+    this.route('PATCH', '/api/workspaces/:id/badges/:badgeId', (c) => {
+      const ws = badgeManager(c);
+      const badge = s().badges.get(c.params[1] ?? '');
+      if (!badge || badge.workspaceId !== ws.id) throw notFound('badge not found');
+      const b = parseBody(c, UpdateBadgeRequestSchema);
+      if (b.name !== undefined) badge.name = badgeName(b.name);
+      if (b.fileId !== undefined) badge.fileId = badgeFile(ws.id, b.fileId);
+      this.toWorkspace(ws.id, { event: { case: 'badgeUpdate', value: { badge } } });
+      sendMsg(c.res, 200, UpdateBadgeResponseSchema, { badge });
+    });
+    this.route('DELETE', '/api/workspaces/:id/badges/:badgeId', (c) => {
+      const ws = badgeManager(c);
+      const badge = s().badges.get(c.params[1] ?? '');
+      if (!badge || badge.workspaceId !== ws.id) throw notFound('badge not found');
+      for (const m of this.membersOf(ws.id)) {
+        if (m.badgeId !== badge.id) continue;
+        delete m.badgeId;
+        this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
+      }
+      s().badges.delete(badge.id);
+      this.toWorkspace(ws.id, { event: { case: 'badgeDelete', value: { workspaceId: ws.id, badgeId: badge.id } } });
+      noContent(c.res);
+    });
+    this.route('PUT', '/api/workspaces/:id/members/:userId/badge', (c) => {
+      const me = this.uid(c);
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', me);
+      if (!has(workspacePermissions(this.memberRoles(caller)), PERMISSION_BITS.MANAGE_NICKNAMES)) throw forbidden('MANAGE_NICKNAMES required');
+      const targetId = c.params[1] === '@me' ? me : (c.params[1] ?? '');
+      const target = this.member(ws.id, targetId);
+      if (!target) throw notFound('member not found');
+      if (s().users.get(targetId)?.user.isBot) throw forbidden('bots have no badge');
+      if (targetId !== me && target.role === WorkspaceRole.OWNER) throw forbidden('the member is not below you');
+      const b = parseBody(c, SetMemberBadgeRequestSchema);
+      if (b.badgeId) {
+        const badge = s().badges.get(b.badgeId);
+        if (!badge || badge.workspaceId !== ws.id) throw invalid('badgeId', 'unknown badge');
+        target.badgeId = b.badgeId;
+      } else delete target.badgeId;
+      const member = this.memberOut(target);
+      this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member } } });
+      sendMsg(c.res, 200, SetMemberBadgeResponseSchema, { member });
     });
 
     // ---------------- roles (ADR-0026, docs/04 «Роли»): MANAGE_ROLES, roles below the caller's top one

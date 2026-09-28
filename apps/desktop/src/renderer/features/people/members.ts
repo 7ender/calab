@@ -184,6 +184,16 @@ export function canEditMemberBirthday(
   return actor.owner || (topRole(targetRoles)?.position ?? -1) < actor.top;
 }
 
+/**
+ * «Бейдж» of a member (docs/09 #82, server workspaces.setMemberBadge): MANAGE_NICKNAMES; my own,
+ * or a member whose most senior role is below mine (the owner: anyone). Bots have none.
+ */
+export function canSetMemberBadge(myRoles: readonly Role[], targetRoles: readonly Role[], target: Pick<WorkspaceMember, 'user'>, self: boolean): boolean {
+  const actor = roleActor(myRoles);
+  if (!can(actor.perms, 'MANAGE_NICKNAMES') || target.user?.isBot) return false;
+  return self || actor.owner || (topRole(targetRoles)?.position ?? -1) < actor.top;
+}
+
 export function memberActions(c: MenuContext): MenuActions {
   const userId = c.target.user?.id ?? '';
   const self = userId === c.meId;

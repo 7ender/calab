@@ -1309,7 +1309,7 @@ describe('rights change during a call (docs/16)', () => {
     const { legacyRoles } = await import('../lib/roles');
     useSession.setState({ me: { user: { id: 'u1' } } } as never);
     const me = create(WorkspaceMemberSchema, { workspaceId: 'ws', role: WorkspaceRole.MEMBER, roleIds: ['member'], user: create(UserSchema, { id: 'u1' }) });
-    useWorkspaces.setState({ byId: { ws: { ws: {} as never, role: WorkspaceRole.MEMBER, members: { u1: me }, roles: legacyRoles('ws'), voice: {} } } });
+    useWorkspaces.setState({ byId: { ws: { ws: {} as never, role: WorkspaceRole.MEMBER, members: { u1: me }, roles: legacyRoles('ws'), badges: {}, voice: {} } } });
     const room = (deny: bigint) =>
       create(RoomSchema, {
         id: 'A',

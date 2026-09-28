@@ -119,6 +119,8 @@ const KEY = new Set([
   'chat-bot-commands',
   'chat-forward-dialog',
   'chat-forwarded',
+  'settings-badges',
+  'chat-badge',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -1712,6 +1714,54 @@ test('chat-birthday-card', async ({ open, win, mock, shot }) => {
   await win.mouse.move(0, 0);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'chat-birthday-card');
+});
+
+/** Two badges of «Команда Calab» (docs/09 #82): «Acme» on Борис and Вера, «Globex» on Анна. */
+function giveFixtureBadges(mock: MockServer): void {
+  const acme = mock.addBadge(IDS.workspaces.main, 'Acme', { bg: [255, 159, 10], fg: [255, 255, 255] });
+  const globex = mock.addBadge(IDS.workspaces.main, 'Globex', { bg: [48, 209, 88], fg: [0, 64, 32] });
+  mock.setMemberBadge(IDS.workspaces.main, IDS.users.boris, acme);
+  mock.setMemberBadge(IDS.workspaces.main, IDS.users.vera, acme);
+  mock.setMemberBadge(IDS.workspaces.main, IDS.users.anna, globex);
+}
+
+/** Badge pictures loaded (they come from the file API like avatars). */
+async function badgesLoaded(page: Page): Promise<void> {
+  await page.waitForFunction(() => [...document.querySelectorAll('img[data-member-badge]')].every((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0));
+}
+
+// docs/09 #82: workspace settings → «Бейджи» — the library (picture 36, name, holders), «Добавить бейдж».
+test('settings-badges', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  giveFixtureBadges(mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Бейджи' }).click();
+  await expect(dialog.getByTestId('badge-row')).toHaveCount(2);
+  await expect(dialog.getByTestId('badge-row').first()).toContainText('У 2 участников');
+  await badgesLoaded(win);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'settings-badges');
+});
+
+// docs/09 #82: a 16 px badge after the author's name in the feed and after the names in the
+// members column (Борис and Вера — «Acme», Анна — «Globex»).
+test('chat-badge', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  giveFixtureBadges(mock);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.boris, content: 'Логотипы партнёров теперь видны рядом с именем' });
+  const members = await membersList(win);
+  await expect(members.locator('img[data-member-badge]')).not.toHaveCount(0);
+  await expect(win.locator('[data-message-id] img[data-member-badge][title="Acme"]').last()).toBeVisible();
+  await badgesLoaded(win);
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await win.mouse.move(0, 0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'chat-badge');
 });
 
 /** «Переговорка»'s chat with a done recording card carrying its result (docs/09 #47). */

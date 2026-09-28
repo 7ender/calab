@@ -41,6 +41,7 @@ import { useMobile } from '../../lib/mobile';
 import { StickerImage } from './stickers/StickerImage';
 import { StickerPackDialog } from './stickers/StickerPackDialog';
 import { BotBadge } from '../people/MemberBits';
+import { MemberBadge } from '../people/MemberBadge';
 import { highlightCommand } from '../../lib/botCommands';
 
 /** Widest image inside a bubble (docs/09 #36). */
@@ -307,6 +308,7 @@ function Bubble({
             <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="max-w-full truncate hover:underline">
               {name}
             </AuthorTarget>
+            <MemberBadge workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 inline-block align-[-3px]" />
             {authorBot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
           </div>
         ) : null}
