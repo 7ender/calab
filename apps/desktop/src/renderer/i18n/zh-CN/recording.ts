@@ -67,6 +67,7 @@ export const zhRecording: DictShape<typeof ruRecording> = {
   'rec.card.more': '显示全部',
   'rec.card.less': '收起',
   'rec.card.listen': '收听录音',
+  'rec.card.pause': '暂停',
   'rec.card.transcript': '完整转写',
   'rec.delete.item': '删除录音',
   'rec.delete.title': '删除会议录音？',
