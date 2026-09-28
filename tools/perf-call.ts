@@ -234,12 +234,14 @@ function silentWav(path: string): void {
  * or a 720p camera (a moving test pattern). No named functions inside `evaluate` (tsx would wrap
  * them in its `__name` helper, which the page does not have).
  */
-async function startSpeaker(userId: string, name: string, roomId: string, source: 'mic' | 'camera' = 'mic'): Promise<Browser> {
+async function startSpeaker(origin: string, userId: string, name: string, roomId: string, source: 'mic' | 'camera' = 'mic'): Promise<Browser> {
   const at = new AccessToken(process.env['MOCK_LIVEKIT_KEY'] ?? 'devkey', process.env['MOCK_LIVEKIT_SECRET'] ?? 'secret', { identity: `${userId}:${source === 'mic' ? 'speaker' : 'camera'}`, name, ttl: '10m' });
   at.addGrant({ roomJoin: true, room: `${livekitRoomPrefix()}${roomId}`, canPublish: true, canSubscribe: false });
   const token = await at.toJwt();
   const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio'] });
   const page = await browser.newPage();
+  // A secure context for getUserMedia: any page of the mock (localhost), not about:blank.
+  await page.goto(`${origin}/__mock/ids`);
   const umd = createRequire(import.meta.url).resolve('livekit-client');
   await page.addScriptTag({ path: umd.replace(/[^/]+$/, 'livekit-client.umd.js') });
   await page.evaluate(
@@ -322,7 +324,7 @@ async function main(): Promise<void> {
 
     if (BENCH === 'E') {
       mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false, camera: true });
-      publisher = await startSpeaker(IDS.users.boris, 'Борис Петров', IDS.rooms.call, 'camera');
+      publisher = await startSpeaker(mock.url, IDS.users.boris, 'Борис Петров', IDS.rooms.call, 'camera');
     }
 
     // Live events, like production.
@@ -335,7 +337,7 @@ async function main(): Promise<void> {
     }
     // A real remote speaker: Chromium's fake microphone beeps once a second, so LiveKit's active
     // speakers and the level-driven rings flip on and off like in a conversation.
-    if (EMULATE && SPEAKER) speaker = await startSpeaker(IDS.users.boris, 'Борис Петров', IDS.rooms.call);
+    if (EMULATE && SPEAKER) speaker = await startSpeaker(mock.url, IDS.users.boris, 'Борис Петров', IDS.rooms.call);
     await page.waitForTimeout(3000);
 
     const out: Record<string, unknown> = { membersOpen, stats: STATS, emulate: EMULATE, seconds: SECONDS };
