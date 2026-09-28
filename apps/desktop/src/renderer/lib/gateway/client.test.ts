@@ -249,6 +249,29 @@ describe('GatewayClient', () => {
     expect(bad.fatals).toEqual([]);
   });
 
+  it('network cut, then 4004 while refresh keeps failing: retries with backoff, never fatal (docs/09 #89)', async () => {
+    const refreshes: Array<string | null> = [null, null, null, 'tok2'];
+    const t = setup({ refreshToken: () => Promise.resolve(refreshes.length ? (refreshes.shift() ?? null) : 'tok2') });
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1));
+    s.serverClose(1006); // network drop
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await vi.advanceTimersByTimeAsync(backoffDelay(attempt, 0.5));
+      await handshake(t);
+      t.last().serverClose(GatewayCloseCode.AUTHENTICATION_FAILED); // stale access token
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.client.state.status).toBe('reconnecting');
+      expect(t.fatals).toEqual([]);
+    }
+    // Back online: the next attempt resumes the session with a token.
+    await vi.advanceTimersByTimeAsync(backoffDelay(3, 0.5));
+    const last = await handshake(t);
+    expect(last.sent[0]?.payload.case).toBe('resume');
+    expect(t.client.state.status).not.toBe('stopped');
+    expect(t.fatals).toEqual([]);
+  });
+
   it('repeated 4004 with a fresh token backs off instead of a tight loop', async () => {
     const t = setup();
     t.client.start();

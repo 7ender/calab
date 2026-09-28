@@ -59,11 +59,61 @@ describe('TokenBroker', () => {
     expect(t.persisted.at(-1)).toBeNull();
   });
 
-  it('409 (rotation answer lost) ends the session instead of retrying the stale token', async () => {
+  it('409 is retried once with the same token; success keeps the session (docs/09 #89)', async () => {
+    const answers: RefreshResponse[] = [{ status: 409, code: 'ERROR_CODE_CONFLICT' }, { status: 200, tokens: tokensJson(1) }];
+    const t = setup(() => Promise.resolve(answers.shift() ?? { status: 500 }));
+    expect(await t.broker.forceRefresh()).toBe('a1');
+    expect(t.spy).toHaveBeenCalledTimes(2);
+    expect(t.spy.mock.calls.map((c) => c[1])).toEqual(['r0', 'r0']);
+    expect(t.loggedOut).toEqual([]);
+    expect(t.persisted.at(-1)?.refreshToken).toBe('r1');
+  });
+
+  it('a second 409 ends the session', async () => {
     const t = setup(() => Promise.resolve({ status: 409, code: 'ERROR_CODE_CONFLICT' }));
     expect(await t.broker.forceRefresh()).toBeNull();
-    expect(t.spy).toHaveBeenCalledTimes(1);
+    expect(t.spy).toHaveBeenCalledTimes(2);
     expect(t.loggedOut).toEqual(['expired']);
+    expect(t.broker.hasSession).toBe(false);
+  });
+
+  it('409 then a network error stays transient', async () => {
+    let n = 0;
+    const t = setup(() => (n++ === 0 ? Promise.resolve({ status: 409 }) : Promise.reject(new TypeError('offline'))));
+    expect(await t.broker.forceRefresh()).toBeNull();
+    expect(t.broker.hasSession).toBe(true);
+    expect(t.loggedOut).toEqual([]);
+  });
+
+  it('an interrupted refresh persists nothing; the stored token is retried next time', async () => {
+    const d = deferred<RefreshResponse>();
+    const t = setup(() => d.promise);
+    const before = t.persisted.length;
+    const pending = t.broker.forceRefresh();
+    // The app quits here: nothing new was written, the disk still holds r0.
+    expect(t.persisted.length).toBe(before);
+    expect(t.persisted.at(-1)?.refreshToken).toBe('r0');
+    d.reject(new TypeError('net::ERR_ABORTED'));
+    expect(await pending).toBeNull();
+    expect(t.persisted.length).toBe(before);
+    expect(t.broker.current?.refreshToken).toBe('r0');
+  });
+
+  it('settled() waits for the refresh in flight, bounded by a timeout', async () => {
+    const d = deferred<RefreshResponse>();
+    const t = setup(() => d.promise);
+    await t.broker.settled(10); // nothing in flight
+    const pending = t.broker.forceRefresh();
+    let done = false;
+    const wait = t.broker.settled(5_000).then(() => (done = true));
+    await Promise.resolve();
+    expect(done).toBe(false);
+    d.resolve({ status: 200, tokens: tokensJson(1) });
+    await wait;
+    expect(await pending).toBe('a1');
+    const hung = setup(() => new Promise<RefreshResponse>(() => undefined));
+    void hung.broker.forceRefresh();
+    await hung.broker.settled(20); // resolves by the timeout
   });
 
   it('network error / 5xx keep the session (transient, review H3)', async () => {

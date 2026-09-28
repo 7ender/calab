@@ -571,9 +571,10 @@ func TestRefreshRotationAndReuseDetection(t *testing.T) {
 	if st != 200 {
 		t.Fatalf("second refresh: %d", st)
 	}
-	// Previous token inside the grace window: rejected, session kept.
-	if _, st := refresh(t1.GetRefreshToken()); st != 409 { // lost a race: retry with the current token
-		t.Fatalf("previous token: %d, want 409", st)
+	// Previous token inside the grace window while t2 is unused (the answer was lost):
+	// the same t2 again, session kept (docs/09 #89).
+	if again, st := refresh(t1.GetRefreshToken()); st != 200 || again.GetRefreshToken() != t2.GetRefreshToken() {
+		t.Fatalf("previous token: %d, want 200 with the same new token", st)
 	}
 	t3, st := refresh(t2.GetRefreshToken())
 	if st != 200 {
@@ -597,6 +598,94 @@ func TestRefreshRotationAndReuseDetection(t *testing.T) {
 	// Garbage tokens.
 	if _, st := refresh("not-a-token"); st != 401 {
 		t.Fatalf("garbage: %d", st)
+	}
+}
+
+// A refresh whose answer never reached the client (network cut, app quit for an update):
+// the retry with the old token gets the same new pair within the grace window; after the
+// window, or once the new token was used, it is reuse as before (docs/09 #89).
+func TestRefreshLostAnswerReplay(t *testing.T) {
+	o := owner(t)
+	email := mustEmail(t, o)
+	ctx := context.Background()
+	login := func() (*client, string) {
+		c := &client{t: t, ip: "10.0.2.2"}
+		var l v1.LoginResponse
+		c.must(200, "POST", "/api/auth/login", &v1.LoginRequest{Email: email, Password: "password123", DeviceName: "lost"}, &l)
+		return c, l.GetTokens().GetRefreshToken()
+	}
+	refresh := func(c *client, tok string) (*v1.AuthTokens, int) {
+		var r v1.RefreshResponse
+		st := c.do("POST", "/api/auth/refresh", &v1.RefreshRequest{RefreshToken: tok}, &r)
+		return r.GetTokens(), st
+	}
+	alive := func(tok *v1.AuthTokens, want int) {
+		t.Helper()
+		(&client{t: t, token: tok.GetAccessToken()}).must(want, "GET", "/api/me", nil, nil)
+	}
+
+	// Lost answer, retried within the window (twice): the same refresh token every time.
+	c, t0 := login()
+	lost, st := refresh(c, t0)
+	if st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	for i := range 2 {
+		again, st := refresh(c, t0)
+		if st != 200 || again.GetRefreshToken() != lost.GetRefreshToken() || again.GetSessionId() != lost.GetSessionId() {
+			t.Fatalf("retry %d: %d %v", i, st, again)
+		}
+		if !again.GetRefreshExpiresAt().AsTime().Equal(lost.GetRefreshExpiresAt().AsTime()) {
+			t.Fatalf("retry %d: the replay must not extend the session", i)
+		}
+		alive(again, 200)
+	}
+	next, st := refresh(c, lost.GetRefreshToken())
+	if st != 200 {
+		t.Fatalf("the replayed token must work: %d", st)
+	}
+	alive(next, 200)
+	// The replayed pair was used: the old token again is reuse → the session is revoked.
+	if _, st := refresh(c, t0); st != 401 {
+		t.Fatalf("t0 after the new token was used: %d, want 401", st)
+	}
+	if _, st := refresh(c, next.GetRefreshToken()); st != 401 {
+		t.Fatalf("session must be revoked after reuse: %d", st)
+	}
+	alive(next, 401)
+
+	// Lost answer, retried after the grace window: reuse as before (401, session revoked).
+	c, t0 = login()
+	lost, st = refresh(c, t0)
+	if st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	if _, err := testDB.Pool.Exec(ctx, "UPDATE sessions SET rotated_at = rotated_at - interval '2 minutes' WHERE id = $1",
+		lost.GetSessionId()); err != nil {
+		t.Fatal(err)
+	}
+	if _, st := refresh(c, t0); st != 401 {
+		t.Fatalf("retry after the window: %d, want 401", st)
+	}
+	if _, st := refresh(c, lost.GetRefreshToken()); st != 401 {
+		t.Fatalf("session must be revoked after a late replay: %d", st)
+	}
+
+	// Within the window but the replay entry is gone (Valkey flushed / evicted): 409, the
+	// session is kept and the new token still works.
+	c, t0 = login()
+	lost, st = refresh(c, t0)
+	if st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	if err := testRedis.Do(ctx, testRedis.B().Del().Key("auth:refresh_replay:"+lost.GetSessionId()).Build()).Error(); err != nil {
+		t.Fatal(err)
+	}
+	if _, st := refresh(c, t0); st != 409 {
+		t.Fatalf("no replay entry: %d, want 409", st)
+	}
+	if _, st := refresh(c, lost.GetRefreshToken()); st != 200 {
+		t.Fatalf("session must survive a 409: %d", st)
 	}
 }
 
