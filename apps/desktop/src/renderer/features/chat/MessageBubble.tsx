@@ -34,6 +34,7 @@ import { mediaKind } from '../../lib/chatMedia';
 import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
 import { VoiceAttachment } from './VoiceBubble';
 import { isVoice } from '../../lib/voiceNote';
+import { useMobile } from '../../lib/mobile';
 import { StickerImage } from './stickers/StickerImage';
 import { StickerPackDialog } from './stickers/StickerPackDialog';
 import { BotBadge } from '../people/MemberBits';
@@ -243,26 +244,30 @@ function Bubble({
     : { borderRadius: `${meta.first ? r : ri} ${r} ${r} ${tail ? '0' : ri}` };
   if (meta.last && !tail) Object.assign(radius, own ? { borderBottomRightRadius: r } : { borderBottomLeftRadius: r });
 
+  // A sticker message (Telegram Desktop): the picture alone, no bubble; the time + status and the
+  // reactions ride dark pills over its bottom-right corner, like on a lone image.
   const body = stickerMsg || stickerGone ? (
-    <div className={cx('flex flex-col gap-1', own ? 'items-end' : 'items-start')} data-testid="sticker-message">
+    <div className={cx('flex flex-col gap-1 py-1', own ? 'items-end' : 'items-start')} data-testid="sticker-message">
       {m.replyToId ? (
         <div className="max-w-[260px] overflow-hidden rounded-[var(--radius-bubble)] bg-[var(--bubble-bg)] pb-1.5 shadow-[var(--shadow-bubble)]">
           <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop />
         </div>
       ) : null}
-      {stickerMsg ? (
-        <StickerTarget sticker={stickerMsg} />
-      ) : (
-        <span className="grid size-[160px] place-items-center rounded-[var(--radius-card)] border border-dashed border-line text-caption text-muted">{t('stk.unavailable')}</span>
-      )}
-      {m.reactions.length ? (
-        <div className="flex flex-wrap gap-1">
+      <div className="relative">
+        {stickerMsg ? (
+          <StickerTarget sticker={stickerMsg} />
+        ) : (
+          <span className="grid size-[256px] place-items-center rounded-[var(--radius-card)] border border-dashed border-line text-caption text-muted mobile:size-[200px]">{t('stk.unavailable')}</span>
+        )}
+        <div className="pointer-events-none absolute bottom-1.5 right-1.5 flex max-w-[calc(100%-12px)] flex-wrap items-center justify-end gap-1">
           {m.reactions.map((re) => (
-            <ReactionChip key={re.emoji} roomId={roomId} m={m} emoji={re.emoji} count={re.count} me={re.me} canReact={c.status === 'sent'} />
+            <ReactionChip key={re.emoji} roomId={roomId} m={m} emoji={re.emoji} count={re.count} me={re.me} canReact={c.status === 'sent'} onMedia />
           ))}
+          <span className="rounded-full bg-[rgb(0_0_0/50%)] px-1.5 py-1 [--bubble-meta:var(--color-on-accent)]" data-testid="sticker-meta">
+            {metaNode}
+          </span>
         </div>
-      ) : null}
-      <span className="rounded-full bg-[var(--bubble-bg)] px-2 py-0.5 shadow-[var(--shadow-bubble)]">{metaNode}</span>
+      </div>
     </div>
   ) : sticker ? (
     <div className="flex flex-col items-end gap-1">
@@ -381,11 +386,12 @@ function Bubble({
 }
 
 /**
- * The sticker of a sticker message: 160 px, no background (docs/08 «Стикеры»). A click opens its
- * pack (Telegram: «Добавить пак»).
+ * The sticker of a sticker message: 256 px on the longer side (a phone: 200), no background, a
+ * light drop shadow (docs/08 «Стикеры»). A click opens its pack (Telegram: «Добавить пак»).
  */
 function StickerTarget({ sticker }: { sticker: NonNullable<Message['sticker']> }): ReactNode {
   const [open, setOpen] = useState(false);
+  const mobile = useMobile();
   return (
     <>
       <button
@@ -398,7 +404,7 @@ function StickerTarget({ sticker }: { sticker: NonNullable<Message['sticker']> }
           setOpen(true);
         }}
       >
-        <StickerImage sticker={sticker} size={160} />
+        <StickerImage sticker={sticker} size={mobile ? 200 : 256} className="[filter:drop-shadow(0_1px_3px_rgb(0_0_0/0.22))]" />
       </button>
       {open ? <StickerPackDialog sticker={sticker} onClose={() => setOpen(false)} /> : null}
     </>
@@ -528,7 +534,8 @@ function MetaInfo({ c, own }: { c: ChatMessage; own: boolean }): ReactNode {
   );
 }
 
-function ReactionChip({ roomId, m, emoji, count, me, canReact }: { roomId: string; m: Message; emoji: string; count: number; me: boolean; canReact: boolean }): ReactNode {
+/** `onMedia`: over a sticker — a dark translucent pill like the time next to it. */
+function ReactionChip({ roomId, m, emoji, count, me, canReact, onMedia = false }: { roomId: string; m: Message; emoji: string; count: number; me: boolean; canReact: boolean; onMedia?: boolean }): ReactNode {
   return (
     <button
       type="button"
@@ -537,14 +544,19 @@ function ReactionChip({ roomId, m, emoji, count, me, canReact }: { roomId: strin
       aria-label={t('chat.reactionLabel', { emoji, count })}
       onClick={() => void toggleReaction(roomId, m, emoji)}
       className={cx(
-        'inline-flex h-7 items-center gap-1 rounded-full px-2 text-body leading-none transition-colors duration-[var(--motion-fast)]',
-        me
-          ? 'bg-[var(--bubble-chip-bg)] text-[color:var(--bubble-chip-fg)]'
-          : 'bg-[color-mix(in_srgb,var(--bubble-accent)_14%,transparent)] text-fg hover:bg-[color-mix(in_srgb,var(--bubble-accent)_22%,transparent)]',
+        'inline-flex items-center gap-1 rounded-full leading-none transition-colors duration-[var(--motion-fast)]',
+        onMedia ? 'pointer-events-auto h-6 px-1.5 text-caption' : 'h-7 px-2 text-body',
+        onMedia
+          ? me
+            ? 'bg-accent-strong text-accent-fg'
+            : 'bg-[rgb(0_0_0/50%)] text-[color:var(--color-on-accent)] hover:bg-[rgb(0_0_0/62%)]'
+          : me
+            ? 'bg-[var(--bubble-chip-bg)] text-[color:var(--bubble-chip-fg)]'
+            : 'bg-[color-mix(in_srgb,var(--bubble-accent)_14%,transparent)] text-fg hover:bg-[color-mix(in_srgb,var(--bubble-accent)_22%,transparent)]',
       )}
     >
-      <span className="text-headline">{emoji}</span>
-      <span className="text-body font-semibold tabular-nums">{count}</span>
+      <span className={onMedia ? 'text-body' : 'text-headline'}>{emoji}</span>
+      <span className={cx('font-semibold tabular-nums', onMedia ? 'text-caption' : 'text-body')}>{count}</span>
     </button>
   );
 }

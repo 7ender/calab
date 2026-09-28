@@ -3,9 +3,7 @@ import type { DictShape } from '../types';
 
 /** Simplified Chinese UI strings — sticker packs (ADR-0030). Same keys as ru/stickers.ts. */
 export const zhStickers: DictShape<typeof enStickers> = {
-  'stk.tabEmoji': '表情',
   'stk.tabStickers': '贴纸',
-  'stk.tabs': '表情或贴纸',
   'stk.preview': '{emoji} 贴纸',
   'stk.search': '按表情搜索',
   'stk.recent': '最近使用',
@@ -13,6 +11,8 @@ export const zhStickers: DictShape<typeof enStickers> = {
   'stk.none': '没有找到',
   'stk.packs': '贴纸包',
   'stk.empty': '这里还没有贴纸。在下方添加贴纸包，或点击聊天中的贴纸。',
+  'stk.emptyAdd': '请在空间设置中添加贴纸包',
+  'stk.openSettings': '打开贴纸设置',
   'stk.available': '空间的贴纸包',
   'stk.add': '添加',
   'stk.addPack': '添加贴纸包',

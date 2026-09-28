@@ -1,8 +1,6 @@
 /** English UI strings — sticker packs (ADR-0030). Same keys as ru/stickers.ts. */
 export const enStickers = {
-  'stk.tabEmoji': 'Emoji',
   'stk.tabStickers': 'Stickers',
-  'stk.tabs': 'Emoji or stickers',
   'stk.preview': '{emoji} Sticker',
   'stk.search': 'Search by emoji',
   'stk.recent': 'Recent',
@@ -10,6 +8,8 @@ export const enStickers = {
   'stk.none': 'Nothing found',
   'stk.packs': 'Packs',
   'stk.empty': 'No stickers here yet. Add a pack below or click a sticker in the chat.',
+  'stk.emptyAdd': 'Add a pack in the workspace settings',
+  'stk.openSettings': 'Open sticker settings',
   'stk.available': 'Workspace packs',
   'stk.add': 'Add',
   'stk.addPack': 'Add pack',

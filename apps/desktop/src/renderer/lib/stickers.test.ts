@@ -29,6 +29,9 @@ describe('stickers (ADR-0030)', () => {
     expect(searchStickers(packs, '👍', () => []).map((s) => s.id)).toEqual(['a-2']);
     expect(searchStickers(packs, 'кот', (q) => (q === 'кот' ? ['😺'] : [])).map((s) => s.id)).toEqual(['a-1']);
     expect(searchStickers(packs, '  ', () => ['😺'])).toEqual([]);
+    // By pack name (case-insensitive), after the emoji matches, without duplicates.
+    const named = [create(StickerPackSchema, { id: 'cats', workspaceId: 'w1', name: 'Котики', stickers: [sticker('c-1', '😺'), sticker('c-2', '🙀')] }), ...packs];
+    expect(searchStickers(named, 'кот', (q) => (q === 'кот' ? ['😺'] : [])).map((s) => s.id)).toEqual(['c-1', 'a-1', 'c-2']);
   });
 
   it('cover, box, recent', () => {

@@ -29,7 +29,8 @@ export const bareEmoji = (e: string): string => e.replace(/[︎️]/g, '');
 
 /**
  * Stickers whose emoji is the query itself (an emoji typed or pasted) or one of the emojis the
- * query names («кот» → 🐱, via the emoji picker's keywords). Order: packs, then pack order.
+ * query names («кот» → 🐱, via the emoji picker's keywords), then the whole packs whose name
+ * contains the query. Order: packs, then pack order; no duplicates.
  */
 export function searchStickers(packs: readonly StickerPack[], q: string, emojiByName: (q: string) => string[]): Sticker[] {
   const needle = q.trim();
@@ -37,6 +38,12 @@ export function searchStickers(packs: readonly StickerPack[], q: string, emojiBy
   const wanted = new Set([bareEmoji(needle), ...emojiByName(needle).map(bareEmoji)]);
   const out: Sticker[] = [];
   for (const p of packs) for (const s of p.stickers) if (wanted.has(bareEmoji(s.emoji))) out.push(s);
+  const seen = new Set(out.map((s) => s.id));
+  const name = needle.toLocaleLowerCase();
+  for (const p of packs) {
+    if (!p.name.toLocaleLowerCase().includes(name)) continue;
+    for (const s of p.stickers) if (!seen.has(s.id)) out.push(s);
+  }
   return out;
 }
 

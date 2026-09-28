@@ -115,11 +115,16 @@ export function StickerStill({ src, width, height }: { src: string; width: numbe
   return <canvas ref={canvas} width={Math.round(width * dpr)} height={Math.round(height * dpr)} style={{ width, height }} aria-hidden data-sticker-still />;
 }
 
-export function StickerImage({ sticker, size, className }: { sticker: Sticker; size: number; className?: string }): ReactNode {
+/**
+ * `playing` given: the caller decides when an animated sticker plays (the picker — on hover /
+ * focus only) and the shared budget is not used; omitted: the budget above decides.
+ */
+export function StickerImage({ sticker, size, className, playing: forced }: { sticker: Sticker; size: number; className?: string; playing?: boolean }): ReactNode {
   const box = stickerBox(sticker, size);
   const src = useMediaUrl(sticker.url);
   const ref = useRef<HTMLSpanElement>(null);
-  const playing = usePlaying(ref, sticker.animated);
+  const budgeted = usePlaying(ref, sticker.animated && forced === undefined);
+  const playing = forced ?? budgeted;
   const label = t('stk.sticker', { emoji: sticker.emoji });
   return (
     <span

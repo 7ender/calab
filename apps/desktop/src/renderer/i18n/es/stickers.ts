@@ -3,9 +3,7 @@ import type { DictShape } from '../types';
 
 /** Spanish UI strings — sticker packs (ADR-0030). Same keys as ru/stickers.ts. */
 export const esStickers: DictShape<typeof enStickers> = {
-  'stk.tabEmoji': 'Emoji',
   'stk.tabStickers': 'Stickers',
-  'stk.tabs': 'Emoji o stickers',
   'stk.preview': '{emoji} Sticker',
   'stk.search': 'Buscar por emoji',
   'stk.recent': 'Recientes',
@@ -13,6 +11,8 @@ export const esStickers: DictShape<typeof enStickers> = {
   'stk.none': 'No se encontró nada',
   'stk.packs': 'Paquetes',
   'stk.empty': 'Aún no hay stickers. Añade un paquete abajo o haz clic en un sticker del chat.',
+  'stk.emptyAdd': 'Añade un paquete en los ajustes del espacio',
+  'stk.openSettings': 'Abrir ajustes de stickers',
   'stk.available': 'Paquetes de los espacios',
   'stk.add': 'Añadir',
   'stk.addPack': 'Añadir paquete',

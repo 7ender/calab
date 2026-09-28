@@ -3,9 +3,7 @@
  * messages, «Настройки пространства → Стикеры», «Мои стикеры». Same rules as ru.ts.
  */
 export const ruStickers = {
-  'stk.tabEmoji': 'Эмодзи',
   'stk.tabStickers': 'Стикеры',
-  'stk.tabs': 'Эмодзи или стикеры',
   'stk.preview': '{emoji} Стикер',
   'stk.search': 'Поиск по эмодзи',
   'stk.recent': 'Недавние',
@@ -13,6 +11,8 @@ export const ruStickers = {
   'stk.none': 'Ничего не нашлось',
   'stk.packs': 'Паки',
   'stk.empty': 'Здесь пока нет стикеров. Добавьте пак ниже или нажмите на стикер в чате.',
+  'stk.emptyAdd': 'Добавьте пак в настройках пространства',
+  'stk.openSettings': 'Открыть настройки стикеров',
   'stk.available': 'Паки пространств',
   'stk.add': 'Добавить',
   'stk.addPack': 'Добавить пак',

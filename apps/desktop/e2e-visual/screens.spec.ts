@@ -2312,15 +2312,15 @@ test('chat-sticker', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('sticker-pack-action')).toHaveText('Убрать из моих');
 });
 
-// The emoji panel's «Стикеры» tab: search, my pack «Calab», the workspace's «Эмоции» to add, the
-// pack covers along the bottom; a pick sends the sticker and closes the panel.
+// The composer's «Стикеры» panel (Telegram Desktop): search, the strip of pack covers, my pack
+// «Calab» in 96 px tiles, the workspace's «Эмоции» to add; a pick sends the sticker and closes it.
 test('sticker-picker', async ({ open, win, mock, shot }) => {
   await open();
   await win.emulateMedia({ reducedMotion: 'reduce' });
   await mainWindow(win, mock);
-  await win.getByRole('button', { name: 'Эмодзи' }).click();
-  const panel = win.getByTestId('emoji-picker');
-  await panel.getByRole('radio', { name: 'Стикеры' }).click();
+  await win.getByTestId('sticker-button').click();
+  const panel = win.getByTestId('sticker-panel');
+  await expect(panel.getByTestId('sticker-packs').locator('[aria-current="true"]')).toHaveAccessibleName('Calab');
   const grid = panel.getByTestId('sticker-grid');
   await expect(grid.locator('button[data-sticker-pick]')).toHaveCount(3);
   await expect(grid.getByRole('button', { name: 'Добавить' })).toBeVisible();

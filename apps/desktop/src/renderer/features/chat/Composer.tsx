@@ -18,6 +18,7 @@ import { sendSticker } from '../../services/stickers';
 import type { StickerPlace } from '../../lib/stickers';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from './EmojiPicker';
+import { StickerButton } from './stickers/StickerPicker';
 import { MentionPopover, optionKey, useMentionables, type MentionOption } from './MentionPopover';
 import { CommandPopover } from './CommandPopover';
 import { applyCommand, commandKey, commandQuery, filterCommands, type CommandOption } from '../../lib/botCommands';
@@ -500,7 +501,8 @@ export function Composer({
             className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint focus:outline-none focus-visible:outline-none"
             style={{ maxHeight: MAX_FIELD_H }}
           />
-          <EmojiPicker onPick={insert} label={t('chat.emoji')} stickers={stickers}>
+          {stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}
+          <EmojiPicker onPick={insert} label={t('chat.emoji')}>
             <IconButton tip={false} label={t('chat.emoji')} className="mb-1 rounded-full">
               <Smile className="size-5" />
             </IconButton>

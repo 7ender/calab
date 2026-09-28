@@ -24,7 +24,8 @@ interface StickersState {
   reset: () => void;
 }
 
-const RECENT_MAX = 16;
+/** «Недавние» of the sticker panel: the last 20 sent (kept on this device). */
+export const RECENT_MAX = 20;
 
 const replace = (list: StickerPack[], p: StickerPack): StickerPack[] => list.map((x) => (x.id === p.id ? p : x));
 
