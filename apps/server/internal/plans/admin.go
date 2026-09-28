@@ -133,6 +133,7 @@ func (a *Admin) adminWorkspace(ctx context.Context, row sqlc.AdminWorkspaceDetai
 		Owner:     pbconv.User(row.User),
 		Usage: &v1.WorkspaceUsage{
 			Members: uint32(max(row.Members, 0)), Rooms: uint32(max(row.Rooms, 0)), //nolint:gosec // counts
+			Bots: uint32(max(row.Bots, 0)), StickerPacks: uint32(max(row.StickerPacks, 0)), //nolint:gosec // counts
 			StorageBytes: used, StorageMb: (used + 1<<20 - 1) >> 20,
 		},
 	}
@@ -189,7 +190,7 @@ func (a *Admin) get(w http.ResponseWriter, r *http.Request) error {
 func (a *Admin) validatePlan(req *v1.AdminSetPlanRequest, now time.Time) (plan string, stored []byte, logged []byte, err error) {
 	plan, ok := PlanToDB(req.GetPlan())
 	if !ok {
-		return "", nil, nil, httpx.Validation("plan", "plan must be PLAN_FREE, PLAN_TEAM or PLAN_CUSTOM")
+		return "", nil, nil, httpx.Validation("plan", "plan must be PLAN_FREE, PLAN_TEAM, PLAN_ENTERPRISE or PLAN_CUSTOM")
 	}
 	var l Limits
 	if req.GetPlan() == v1.Plan_PLAN_CUSTOM {

@@ -1,5 +1,6 @@
 import type { UpdateStatus } from '../../../shared/ipc';
 import { t } from '../../i18n';
+import { fmt } from '../../lib/format';
 
 /** Human texts for the settings screens (docs/09 #10 of the UX review: no engineering jargon). */
 
@@ -53,7 +54,9 @@ export function updateLabel(u: UpdateStatus): string | null {
     case 'available':
       return t('about.updateAvailable', { v: u.version });
     case 'downloading':
-      return t('about.updateDownloading', { v: u.version, p: u.percent });
+      return u.bytesPerSecond
+        ? t('about.updateDownloadingSpeed', { v: u.version, p: u.percent, s: fmt.size(u.bytesPerSecond) })
+        : t('about.updateDownloading', { v: u.version, p: u.percent });
     case 'downloaded':
       return t('about.updateDownloaded', { v: u.version });
     case 'error':
@@ -61,3 +64,28 @@ export function updateLabel(u: UpdateStatus): string | null {
   }
 }
 
+
+/**
+ * The button of the «Версия X» row in «О программе» (docs/08 «О программе»), by update state:
+ * check · checking (busy) · install («Скачать и установить X») · page («Скачать», notify-only) ·
+ * downloading (disabled, progress bar) · restart («Перезапустить и обновить») · retry.
+ */
+export type UpdateAction = 'check' | 'checking' | 'install' | 'page' | 'downloading' | 'restart' | 'retry';
+
+export function updateAction(u: UpdateStatus, checking: boolean): UpdateAction {
+  switch (u.state) {
+    case 'checking':
+      return 'checking';
+    case 'available':
+      if (u.installable) return 'install';
+      return u.downloadPage ? 'page' : checking ? 'checking' : 'check';
+    case 'downloading':
+      return 'downloading';
+    case 'downloaded':
+      return 'restart';
+    case 'error':
+      return checking ? 'checking' : 'retry';
+    default:
+      return checking ? 'checking' : 'check';
+  }
+}

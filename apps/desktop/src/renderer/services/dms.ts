@@ -11,6 +11,7 @@ import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
+import { useReadReceipts } from '../stores/readReceipts';
 
 /**
  * Direct messages (ADR-0020, docs/05 «Личные сообщения»): the DM room goes into the rooms store
@@ -29,6 +30,7 @@ export function applyDm(dm: DmSummary, withReadState: boolean): void {
     rooms.setRead(room.id, dm.readState.lastReadMessageId);
     rooms.setCounts(room.id, dm.readState.unreadCount, dm.readState.mentionCount);
   }
+  if (dm.peerReadMessageId) useReadReceipts.getState().set(room.id, dm.peerReadMessageId);
   useDms.getState().upsert(dm);
 }
 

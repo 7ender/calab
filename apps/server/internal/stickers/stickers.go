@@ -202,8 +202,7 @@ func validEmoji(field, s string) (string, error) {
 
 // planLimit is 409 CONFLICT reason PLAN_LIMIT with the counter and the limit.
 func planLimit(what string, used, limit uint32) error {
-	return httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_CONFLICT, "the workspace plan allows "+fmt.Sprint(limit)+" "+what).
-		WithDetails(httpx.ReasonPlanLimit, uint64(used), uint64(limit))
+	return plans.LimitError(what, uint64(used), uint64(limit))
 }
 
 func (h *Handlers) limits(ctx context.Context, wsID uuid.UUID) (plans.Limits, error) {
@@ -283,24 +282,11 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if short, err = validShortName(short); err != nil {
 		return err
 	}
-	lim, err := h.limits(r.Context(), wsID)
-	if err != nil {
-		return err
-	}
 	me := uid(r)
 	var p sqlc.StickerPack
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		if err := q.LockWorkspaceStickers(r.Context(), wsID); err != nil {
+		if err := h.plans.Check(r.Context(), q, wsID, plans.KindStickerPacks, true); err != nil {
 			return err
-		}
-		if lim.StickerPacks > 0 {
-			n, err := q.CountWorkspaceStickerPacks(r.Context(), wsID)
-			if err != nil {
-				return err
-			}
-			if uint32(max(n, 0)) >= lim.StickerPacks { //nolint:gosec // count ≥ 0
-				return planLimit("sticker packs", uint32(max(n, 0)), lim.StickerPacks) //nolint:gosec // count ≥ 0
-			}
 		}
 		var err error
 		p, err = q.InsertStickerPack(r.Context(), sqlc.InsertStickerPackParams{WorkspaceID: wsID, Name: name, ShortName: short, CreatedBy: &me})

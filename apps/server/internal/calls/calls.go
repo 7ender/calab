@@ -18,6 +18,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -68,6 +69,10 @@ type Service struct {
 
 	ring, lost, tick atomic.Int64 // durations
 	noTimers         atomic.Bool  // tests: only the sweeper settles calls
+	// Tests: the periodic sweep (Run) is paused; sweepMu is held by Run around each sweep so
+	// that pausing waits for a sweep in flight.
+	noSweep atomic.Bool
+	sweepMu sync.Mutex
 }
 
 // New creates the call service; limiter bounds how many calls a user places in all, perDM
@@ -88,6 +93,14 @@ func (s *Service) SetTimeouts(ring, lost, tick time.Duration) {
 
 // SetInstanceTimers turns the per-instance timers on or off (tests of the sweeper fallback).
 func (s *Service) SetInstanceTimers(on bool) { s.noTimers.Store(!on) }
+
+// SetPeriodicSweep pauses or resumes the sweeps of Run (tests: a call settles only by the
+// instance timer, or only by an explicit Sweep). Pausing returns after a sweep in flight.
+func (s *Service) SetPeriodicSweep(on bool) {
+	s.noSweep.Store(!on)
+	s.sweepMu.Lock()
+	s.sweepMu.Unlock() //nolint:staticcheck // barrier: wait out a sweep in flight
+}
 
 func (s *Service) ringTimeout() time.Duration { return time.Duration(s.ring.Load()) }
 func (s *Service) lostGrace() time.Duration   { return time.Duration(s.lost.Load()) }
@@ -460,7 +473,11 @@ func (s *Service) Run(ctx context.Context) {
 		if s.redis.Do(ctx, lock).Error() != nil {
 			continue
 		}
-		s.Sweep(ctx)
+		s.sweepMu.Lock()
+		if !s.noSweep.Load() {
+			s.Sweep(ctx)
+		}
+		s.sweepMu.Unlock()
 	}
 }
 

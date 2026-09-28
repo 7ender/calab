@@ -1,10 +1,11 @@
 import { WorkspaceRole, type PermissionBits, type RecordingCard as Card } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { AlertCircle, CheckCircle2, Copy, CornerUpLeft, FileText, Forward, Loader2, MoreHorizontal, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, Copy, CornerUpLeft, FileText, Forward, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { lazy, Suspense, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { formatTime } from '../../lib/chatMedia';
 import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { mayDeleteRecording, recordingAudio, summaryBlocks, summaryPlainText } from '../../lib/meetingResult';
@@ -19,16 +20,17 @@ import { useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import type { ChatMessage } from '../../stores/messages';
 import { menuBox, menuItem } from '../shell/menu';
-import { AudioAttachment } from './MediaPlayer';
+import { useReportInView } from './MediaPlayer';
 
 const RecordingTranscript = lazy(() => import('./RecordingTranscript'));
 
 /**
  * The chat card of a meeting recording (ADR-0025, docs/08 «Запись встреч», docs/09 #47 / #50): a
  * system message across the whole feed (no bubble). The REC glyph, «Встреча записана · 42 мин»,
- * who started it and when, the status (Загрузка… / Обработка… / Готово / Ошибка: …); once done —
- * GPTunneL's summary (6 lines, «Показать всё»), «Послушать запись» (our copy of the audio, the
- * chat's player) and «Полный транскрипт» (no «Открыть в GPTunneL»: owner, 28.09, #80). A failed
+ * who started it and when, the status only while it matters (Загрузка… / Обработка… / Ошибка: …;
+ * no «Готово» row: owner, 28.09, #88); once done — GPTunneL's summary (6 lines, «Показать всё») and
+ * «Полный транскрипт» (no «Открыть в GPTunneL»: owner, 28.09, #80). With audio the REC circle is
+ * the play / pause control (the chat's player, #88; no inline player in the card). A failed
  * card offers a retry (#40, not to guests); «…» → «Переслать» (ADR-0033), «Копировать самари»
  * (#80) and «Удалить запись» (who started it, the owner, MANAGE_MESSAGES). A forwarded copy
  * (Message.forward) is the same card without the retry and delete actions: they belong to the
@@ -62,7 +64,7 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   }
 
   const status = cardStatus(card);
-  const StatusIcon = status.tone === 'ok' ? CheckCircle2 : status.tone === 'error' ? AlertCircle : Loader2;
+  const StatusIcon = status.tone === 'error' ? AlertCircle : Loader2;
   const guest = role === WorkspaceRole.GUEST;
   const copy = !!c.msg.forward;
   const retries = guest || copy ? [] : retryActions(card);
@@ -77,7 +79,7 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   const track: Track | null = audio
     ? { fileId: audio.id, messageId: c.msg.id, roomId: c.msg.roomId, name: audio.name, title: t('rec.card.label'), subtitle: when }
     : null;
-  const hasActions = mayReply || !!audio || card.hasTranscript || retries.length > 0;
+  const hasActions = mayReply || card.hasTranscript || retries.length > 0;
 
   return (
     <article
@@ -87,27 +89,33 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
       className="rec-card group/rec flex w-full flex-col gap-2.5 rounded-[var(--radius-card)] border border-line bg-[var(--color-card)] px-4 py-3 shadow-[var(--shadow-card)] mobile:px-3"
     >
       <div className="flex items-start gap-3">
-        <span
-          aria-hidden
-          className="grid size-9 shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-[10px] font-bold tracking-wide text-danger-text"
-        >
-          {t('rec.badge')}
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-body font-semibold text-fg">{title}</span>
-          <span className="truncate text-caption text-muted">{t('rec.card.meta', { name: by, time: when })}</span>
+        {track ? (
+          <PlayBadge track={track} />
+        ) : (
           <span
-            className={cx(
-              'mt-0.5 flex items-start gap-1.5 text-caption',
-              status.tone === 'ok' ? 'text-[var(--color-green-text)]' : status.tone === 'error' ? 'text-danger-text' : 'text-muted',
-            )}
-            data-testid="recording-card-status"
+            aria-hidden
+            className="grid size-10 shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-[10px] font-bold tracking-wide text-danger-text"
           >
-            {/* «Идёт запись…» / processing last minutes to hours: the spinner turns 10 times, then
-                stands (no endless animation, docs/08 «Движение», docs/09 #64). */}
-            <StatusIcon className={cx('mt-px size-3.5 shrink-0', status.tone === 'busy' && 'animate-spin [animation-iteration-count:10] motion-reduce:animate-none')} aria-hidden />
-            <span className="min-w-0">{t(status.key)}</span>
+            {t('rec.badge')}
           </span>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-body font-semibold text-fg">
+            {t('rec.card.title')} · {track ? <TrackTime track={track} durationSec={card.durationSec} /> : durationText(card.durationSec)}
+          </span>
+          <span className="truncate text-caption text-muted">{t('rec.card.meta', { name: by, time: when })}</span>
+          {/* Only while it matters (owner, 28.09, #88): no «Готово» row. */}
+          {status.tone === 'ok' ? null : (
+            <span
+              className={cx('mt-0.5 flex items-start gap-1.5 text-caption', status.tone === 'error' ? 'text-danger-text' : 'text-muted')}
+              data-testid="recording-card-status"
+            >
+              {/* «Идёт запись…» / processing last minutes to hours: the spinner turns 10 times, then
+                  stands (no endless animation, docs/08 «Движение», docs/09 #64). */}
+              <StatusIcon className={cx('mt-px size-3.5 shrink-0', status.tone === 'busy' && 'animate-spin [animation-iteration-count:10] motion-reduce:animate-none')} aria-hidden />
+              <span className="min-w-0">{t(status.key)}</span>
+            </span>
+          )}
         </div>
         <CardMenu
           onForward={c.status === 'sent' ? () => openForward(c.msg.roomId, c.msg.id) : undefined}
@@ -118,8 +126,6 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
 
       {card.summary ? <Summary text={card.summary} /> : null}
 
-      {audio && track ? <Listen track={track} file={audio} subtitle={when} /> : null}
-
       {hasActions ? (
         <div className="flex flex-wrap gap-2">
           {mayReply ? (
@@ -128,7 +134,6 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
               {t('chat.reply')}
             </Button>
           ) : null}
-          {track ? <ListenButton track={track} /> : null}
           {card.hasTranscript ? (
             <Button size="sm" variant="secondary" onClick={() => setTranscript(true)} data-testid="recording-card-transcript">
               <FileText className="size-3" aria-hidden />
@@ -265,25 +270,71 @@ function Summary({ text }: { text: string }): ReactNode {
 
 const sameTrack = (a: Track | null, b: Track): boolean => !!a && a.fileId === b.fileId && a.messageId === b.messageId;
 
-/** «Послушать запись»: starts the chat's player on the recording (hidden while it is the track). */
-function ListenButton({ track }: { track: Track }): ReactNode {
+/** Progress ring: r = 19 in the 40 px circle, 2 px stroke. */
+const RING_R = 19;
+const RING_C = 2 * Math.PI * RING_R;
+/** Ring steps (the store's position ticks ~4 Hz; the ring re-renders only when a step changes). */
+const RING_STEPS = 240;
+
+/**
+ * The REC circle as the recording's play / pause (owner, 28.09, docs/09 #88): the chat's player
+ * (`usePlayer`, one `<audio>`, docs/02), a thin progress ring while this track is active. Its own
+ * subscriptions (booleans; the ring is a leaf of its own): a tick never re-renders the card. It
+ * reports itself on screen like a message's player, so the mini-player shows only once the card
+ * scrolls away. A native button: Space / Enter toggle.
+ */
+function PlayBadge({ track }: { track: Track }): ReactNode {
   const active = usePlayer((s) => sameTrack(s.track, track));
-  if (active) return null;
+  const playing = usePlayer((s) => active && s.playing);
+  const ref = useRef<HTMLButtonElement>(null);
+  useReportInView(ref, active);
   return (
-    <Button size="sm" variant="primary" onClick={() => usePlayer.getState().toggle(track)} data-testid="recording-card-listen">
-      <Play className="size-3 fill-current" aria-hidden />
-      {t('rec.card.listen')}
-    </Button>
+    <button
+      ref={ref}
+      type="button"
+      onClick={() => usePlayer.getState().toggle(track)}
+      aria-label={playing ? t('rec.card.pause') : t('rec.card.listen')}
+      data-testid="recording-card-play"
+      data-playing={playing || undefined}
+      className="relative grid size-10 shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-danger-text transition-colors duration-[var(--motion-fast)] hover:bg-[color-mix(in_srgb,var(--color-danger)_26%,transparent)] focus-visible:outline-offset-2 active:bg-[color-mix(in_srgb,var(--color-danger)_32%,transparent)]"
+    >
+      {active ? <Ring track={track} /> : null}
+      {playing ? <Pause className="size-4 fill-current" aria-hidden /> : <Play className="ml-0.5 size-4 fill-current" aria-hidden />}
+    </button>
   );
 }
 
-/** The recording's player in the card while it is the chat's track (seek, speed, mini-player). */
-function Listen({ track, file, subtitle }: { track: Track; file: Parameters<typeof AudioAttachment>[0]['f']; subtitle: string }): ReactNode {
-  const active = usePlayer((s) => sameTrack(s.track, track));
-  if (!active) return null;
+/** The progress ring of the active track (a leaf: the only thing a position tick re-renders). */
+function Ring({ track }: { track: Track }): ReactNode {
+  const step = usePlayer((s) => (sameTrack(s.track, track) && s.duration > 0 ? Math.round(Math.min(1, s.position / s.duration) * RING_STEPS) : 0));
   return (
-    <div className="max-w-[420px]" data-testid="recording-card-player">
-      <AudioAttachment f={file} messageId={track.messageId} roomId={track.roomId} label={t('rec.card.label')} subtitle={subtitle} />
-    </div>
+    <svg aria-hidden viewBox="0 0 40 40" className="pointer-events-none absolute inset-0 size-full -rotate-90">
+      <circle cx="20" cy="20" r={RING_R} fill="none" strokeWidth="2" className="stroke-[color-mix(in_srgb,var(--color-danger)_28%,transparent)]" />
+      <circle
+        cx="20"
+        cy="20"
+        r={RING_R}
+        fill="none"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeDasharray={RING_C}
+        strokeDashoffset={RING_C * (1 - step / RING_STEPS)}
+        className="stroke-[var(--color-danger)]"
+      />
+    </svg>
   );
+}
+
+/**
+ * «42 мин» in the card's title; «2:14 / 5:12» while this track is active (a leaf: the selector
+ * returns the text, so it re-renders once a second at most), «Не удалось воспроизвести» on an error.
+ */
+function TrackTime({ track, durationSec }: { track: Track; durationSec: number }): ReactNode {
+  const text = usePlayer((s) => {
+    if (!sameTrack(s.track, track)) return null;
+    if (s.error) return t('media.error');
+    const total = s.duration > 0 ? s.duration : durationSec > 0 ? durationSec : Number.NaN;
+    return `${formatTime(s.position)} / ${formatTime(total)}`;
+  });
+  return text === null ? durationText(durationSec) : <span className="tabular-nums" data-testid="recording-card-time">{text}</span>;
 }

@@ -17,6 +17,9 @@ import type { UpdateStatus } from '../shared/ipc';
  *            opens the human download page. Everything else: no build-time feed (dev /
  *            self-built), a runtime feed override, unsigned macOS, Linux deb/other, or
  *            «Автоматически обновлять» off.
+ * - manual — notify, but the update is `installable` (build feed + a platform able to apply it;
+ *            only the setting is off, or a call defers it): «Скачать и установить» in «О программе»
+ *            calls download() — the same download / install-on-quit as auto, on the user's request.
  * Errors are logged and end in status 'error' (shown only in «О программе»); never thrown.
  *
  * Checks (docs/09 P1 #16): 10 s after start, then every hour (the period is shifted by a random
@@ -111,6 +114,11 @@ export function canAutoInstall(i: AutoInstallInput): boolean {
   return i.platform === 'win32' || (i.platform === 'linux' && i.appImage);
 }
 
+/** Whether an update from this feed could be installed in place at all (canAutoInstall, setting aside). */
+export function canInstall(i: Omit<AutoInstallInput, 'autoUpdate'>): boolean {
+  return canAutoInstall({ ...i, autoUpdate: true });
+}
+
 export interface UpdateFlow {
   /** Schedules the first check (+10 s) and the periodic one (every hour ± 5 min). Idempotent. */
   start(): void;
@@ -127,6 +135,11 @@ export interface UpdateFlow {
   check(): Promise<UpdateStatus>;
   /** «Перезапустить»: quit and install the downloaded update. false when nothing is downloaded. */
   install(): boolean;
+  /**
+   * «Скачать и установить»: download an `installable` available update now (also during a call —
+   * the user asked) and install it on quit. false when there is nothing to download.
+   */
+  download(): boolean;
   /** Re-reads the settings (autoUpdate / autoCheck toggled); may start a download of an available update. */
   applySettings(): void;
   status(): UpdateStatus;
@@ -137,6 +150,7 @@ interface VersionInfo {
 }
 interface Progress {
   percent: number;
+  bytesPerSecond: number;
 }
 
 export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): UpdateFlow {
@@ -155,6 +169,8 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   let lastCheckAt = 0;
   /** The feed last handed to the updater ('' before the first check). */
   let feed = '';
+  /** The user asked for a download («Скачать и установить»): install on quit even with auto off. */
+  let requested = false;
 
   const autoFor = (url: string): boolean =>
     canAutoInstall({
@@ -163,6 +179,14 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
       appImage: env.appImage,
       pinnedFeed: env.buildFeed !== null && url === env.buildFeed,
       autoUpdate: env.autoUpdate(),
+    });
+
+  const installableFrom = (url: string): boolean =>
+    canInstall({
+      platform: env.platform,
+      signed: env.signed,
+      appImage: env.appImage,
+      pinnedFeed: env.buildFeed !== null && url === env.buildFeed,
     });
 
   /** Feed for the next check: the build feed when there is one, else the notify-only feed. */
@@ -207,7 +231,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     // In a call nothing starts downloading (bandwidth / CPU belong to the call); an update that
     // is already downloading keeps going. Install-on-quit is unaffected.
     updater.autoDownload = on && !inCall;
-    updater.autoInstallOnAppQuit = on;
+    updater.autoInstallOnAppQuit = on || (requested && feed !== '' && installableFrom(feed));
   };
 
   const startDownload = (): void => {
@@ -238,21 +262,24 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     if (inCall && feed !== '' && autoFor(feed)) {
       // Auto mode, deferred: no notification, no download page — it downloads after the call.
       env.log.info('[update] download deferred until the call ends', version);
-      publish({ state: 'available', version });
+      publish({ state: 'available', version, installable: true });
       return;
     }
-    publish({ state: 'available', version, downloadPage: page });
+    publish({ state: 'available', version, downloadPage: page, ...(installableFrom(feed) ? { installable: true as const } : {}) });
     if (notified !== version && page) {
       notified = version;
       env.notify(version, page);
     }
   });
   on('download-progress', (a) => {
-    const raw = (a as Partial<Progress> | undefined)?.percent ?? 0;
+    const p = a as Partial<Progress> | undefined;
+    const raw = p?.percent ?? 0;
     const percent = Math.max(0, Math.min(100, Math.floor(Number.isFinite(raw) ? raw : 0)));
     // Progress fires many times a second: publish only when the integer percent changes.
     if (status.state === 'downloading' && status.percent === percent) return;
-    publish({ state: 'downloading', version: pendingVersion, percent });
+    const bps = p?.bytesPerSecond;
+    const speed = typeof bps === 'number' && Number.isFinite(bps) && bps >= 0 ? { bytesPerSecond: Math.round(bps) } : {};
+    publish({ state: 'downloading', version: pendingVersion, percent, ...speed });
   });
   on('update-downloaded', (a) => {
     const version = versionOf(a) || pendingVersion;
@@ -343,6 +370,15 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
       }
       installing = true;
       void env.settle().then(go, go);
+      return true;
+    },
+    download() {
+      if (status.state !== 'available' || !status.installable || feed === '' || !installableFrom(feed)) return false;
+      env.log.info('[update] download on request', status.version);
+      requested = true;
+      applyFlags();
+      publish({ state: 'downloading', version: status.version, percent: 0 });
+      startDownload();
       return true;
     },
     applySettings() {

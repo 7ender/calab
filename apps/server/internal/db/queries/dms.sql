@@ -40,6 +40,8 @@ SELECT EXISTS (
 -- (DmSummary.last_message): the client needs no history request per DM. The user's own
 -- dm_state (item 51): archived_at, and cleared_before — the preview and the unread count start
 -- after it (the DM stays listed; the client hides a cleared DM without newer messages).
+-- peer_read_message_id: the peer's read marker for read receipts (docs/09 #92; a primary-key
+-- probe; NULL for a bot peer).
 SELECT r.id AS room_id, r.created_at AS room_created_at,
        sqlc.embed(u),
        rs.last_read_message_id,
@@ -56,12 +58,14 @@ SELECT r.id AS room_id, r.created_at AS room_created_at,
              AND m.id > greatest(coalesce(rs.last_read_message_id, '00000000-0000-0000-0000-000000000000'::uuid),
                                  coalesce(ds.cleared_before, '00000000-0000-0000-0000-000000000000'::uuid))
            LIMIT 999) x)::integer AS unread_count,
-       ds.archived_at, ds.cleared_before
+       ds.archived_at, ds.cleared_before,
+       prs.last_read_message_id AS peer_read_message_id
 FROM dm_members me
 JOIN rooms r ON r.id = me.room_id AND r.archived_at IS NULL
 JOIN dm_members p ON p.room_id = me.room_id AND p.user_id <> me.user_id
 JOIN users u ON u.id = p.user_id
 LEFT JOIN read_states rs ON rs.user_id = me.user_id AND rs.room_id = r.id
+LEFT JOIN read_states prs ON prs.user_id = p.user_id AND prs.room_id = r.id AND NOT u.is_bot
 LEFT JOIN dm_state ds ON ds.user_id = me.user_id AND ds.room_id = r.id
 LEFT JOIN LATERAL (
     SELECT m.id, m.created_at, m.author_id, left(m.content, 200) AS preview,

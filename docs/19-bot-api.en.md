@@ -115,7 +115,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `POST /api/rooms/{id}/messages/{mid}/forward` | forward `{toRoomId}` → 201 `{message}` with `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` in the source, `SEND_MESSAGES` in the target |
 | `PUT · DELETE /api/messages/{id}/reactions/{emoji}` | reaction (URL-encoded emoji) → 204 | `SEND_MESSAGES` |
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | pins | `MANAGE_MESSAGES` / `VIEW_ROOM` |
-| `PUT /api/rooms/{id}/read` | read marker | `VIEW_ROOM` |
+| `PUT /api/rooms/{id}/read` | read marker (does not give people's messages the ✓✓ «read» mark; bots get no `READ_RECEIPT`) | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/messages/search?q=` · `GET /api/me/mentions` | search, mentions of the bot | `VIEW_ROOM` |
 | `POST /api/workspaces/{id}/files` · `POST /api/dms/{id}/files` | upload a file (multipart `file`) → `{file}` | `ATTACH_FILES` |
 | `GET /api/files/{id}` · `GET /api/files/{id}/thumbnail` | download a file | access to the room |
@@ -416,7 +416,7 @@ Go: `livekit/server-sdk-go` (`lksdk.ConnectToRoomWithToken(url, token, callbacks
 | File uploads | 30 at once, 120/h; size and quota per plan |
 | Message | ≤ 4000 characters, ≤ 20 attachments, `nonce` ≤ 64 |
 | Commands | ≤ 100, name ≤ 32, description ≤ 256 |
-| Bots per workspace | plan key `bots` (free 2, team 20) |
+| Bots per workspace | plan key `bots` (free 1, team 20); a bot also takes a member seat (`members`, free 50) |
 | Gateway | 1 socket per token, frame ≤ 64 KiB |
 
 Every error is an `ApiError`. `code` comes from `ErrorCode` (`ERROR_CODE_…`):

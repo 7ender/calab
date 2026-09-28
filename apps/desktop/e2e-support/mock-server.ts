@@ -281,6 +281,7 @@ import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
   DEFAULT_MEDIA,
+  ENTERPRISE_PLAN_LIMITS,
   FREE_PLAN_LIMITS,
   IDS,
   TEAM_PLAN_LIMITS,
@@ -374,6 +375,11 @@ export interface MockServer {
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   /** `attachments`: fixture file ids uploaded by the author (e.g. IDS.files.audio by Вера). */
   injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message;
+  /**
+   * `userId` read `roomId` up to `messageId` (docs/09 #92): READ_STATE_UPDATE to the reader,
+   * READ_RECEIPT to the others (e.g. the DM peer reads Анна's message → ✓✓). False = not moved.
+   */
+  markRead(userId: string, roomId: string, messageId: string): boolean;
   /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
   setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
@@ -480,6 +486,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     dispatch: (e) => impl.broadcast(create(DispatchEventSchema, e)),
     reset: (sc) => impl.reset(sc ?? impl.state.scenario),
     injectMessage: (a) => impl.injectMessage(a),
+    markRead: (u, roomId, messageId) => impl.markRead(u, roomId, messageId),
     setDmState: (u, roomId, patch) => impl.setDmState(u, roomId, patch),
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
@@ -948,6 +955,8 @@ class MockImpl {
       ...(out.lastMessageAt ? { lastMessageAt: out.lastMessageAt } : {}),
       ...(st.archivedAt ? { archivedAt: timestampFromMs(st.archivedAt) } : {}),
       clearedBeforeMessageId: st.clearedBefore,
+      // docs/09 #92: the peer's read marker (none for a bot peer).
+      peerReadMessageId: peer.isBot ? '' : (this.state.readStates.get(peer.id)?.get(roomId) ?? ''),
       // The list preview (server: the first 200 characters of the newest live message).
       ...(last
         ? {
@@ -1216,6 +1225,12 @@ class MockImpl {
           workspaceNotificationSettings: [...(this.state.wsNotifySettings.get(u.user.id)?.values() ?? [])]
             .filter((n) => wsIds.includes(n.workspaceId))
             .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId)),
+          // Read receipts of workspace rooms (docs/09 #92); DMs carry theirs in dms[].
+          peerReads: [...this.state.rooms.values()]
+            .filter((r) => r.type !== RoomType.DM && wsIds.includes(r.workspaceId) && this.canView(r, u.user.id))
+            .map((r) => ({ roomId: r.id, lastReadMessageId: this.peerRead(r.id, u.user.id) }))
+            .filter((pr) => pr.lastReadMessageId !== '')
+            .sort((a, b) => a.roomId.localeCompare(b.roomId)),
           // Guest accounts have no DMs (ADR-0020).
           dms: u.user.isGuest ? [] : this.dmsOf(u.user.id),
           // ADR-0034: the user's ringing / active call.
@@ -1974,6 +1989,45 @@ class MockImpl {
     if (peer && this.dmStateOf(peer, room.id).archivedAt) this.setDmState(peer, room.id, { archived: false });
     this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
     return msg;
+  }
+
+  /** Read receipts (docs/09 #92): the furthest read marker of the room's other people (bots' reads do not count); '' = none. */
+  private peerRead(roomId: string, userId: string): string {
+    let best = '';
+    for (const [u, reads] of this.state.readStates) {
+      if (u === userId || this.state.users.get(u)?.user.isBot) continue;
+      const id = reads.get(roomId) ?? '';
+      if (id > best) best = id;
+    }
+    return best;
+  }
+
+  /**
+   * `userId` read `roomId` up to `messageId` (PUT /api/rooms/{id}/read; tests: someone else reads).
+   * The marker only moves forward; the reader's devices get READ_STATE_UPDATE, everyone else
+   * whose «others read up to» moved gets READ_RECEIPT (the server's 3 s room throttle is not
+   * modelled). Bots' reads send no receipts, bots get none. False = the marker did not move.
+   */
+  markRead(userId: string, roomId: string, messageId: string): boolean {
+    const room = this.state.rooms.get(roomId);
+    const reads = this.state.readStates.get(userId) ?? new Map<string, string>();
+    if (!room || !(messageId > (reads.get(roomId) ?? ''))) return false;
+    const isBot = (u: string): boolean => this.state.users.get(u)?.user.isBot === true;
+    const before = new Map([...this.state.users.keys()].map((u) => [u, this.peerRead(roomId, u)]));
+    reads.set(roomId, messageId);
+    this.state.readStates.set(userId, reads);
+    this.toUser(userId, { event: { case: 'readStateUpdate', value: { readState: { roomId, lastReadMessageId: messageId, unreadCount: 0, mentionCount: 0 } } } });
+    if (isBot(userId)) return true;
+    this.toWorkspace(
+      room.workspaceId,
+      (u) => {
+        if (u === userId || isBot(u)) return null;
+        const now = this.peerRead(roomId, u);
+        return now > (before.get(u) ?? '') ? { event: { case: 'readReceipt', value: { roomId, lastReadMessageId: now } } } : null;
+      },
+      roomId,
+    );
+    return true;
   }
 
   injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message {
@@ -3300,13 +3354,7 @@ class MockImpl {
       const room = this.roomFor(c.params[0] ?? '', me);
       const b = parseBody(c, UpdateReadStateRequestSchema);
       if (!b.messageId) throw invalid('messageId', 'message id required');
-      const reads = s().readStates.get(me) ?? new Map<string, string>();
-      const cur = reads.get(room.id) ?? '';
-      if (b.messageId > cur) {
-        reads.set(room.id, b.messageId);
-        s().readStates.set(me, reads);
-        this.toUser(me, { event: { case: 'readStateUpdate', value: { readState: { roomId: room.id, lastReadMessageId: b.messageId, unreadCount: 0, mentionCount: 0 } } } });
-      }
+      this.markRead(me, room.id, b.messageId);
       noContent(c.res);
     });
 
@@ -4268,12 +4316,19 @@ class MockImpl {
       const ws = s().workspaces.get(c.params[0] ?? '');
       if (!ws) throw notFound('workspace not found');
       const b = parseBody(c, AdminSetPlanRequestSchema);
-      if (b.plan !== Plan.FREE && b.plan !== Plan.TEAM && b.plan !== Plan.CUSTOM) throw invalid('plan', 'plan must be FREE, TEAM or CUSTOM');
+      if (b.plan !== Plan.FREE && b.plan !== Plan.TEAM && b.plan !== Plan.ENTERPRISE && b.plan !== Plan.CUSTOM) throw invalid('plan', 'plan must be FREE, TEAM, ENTERPRISE or CUSTOM');
       if (b.plan !== Plan.CUSTOM && b.limits) throw invalid('limits', 'limits only with CUSTOM');
       if (b.note.length > 500) throw invalid('note', 'note at most 500 characters');
       const now = tick(s());
       if (b.validUntil && timestampMs(b.validUntil) <= timestampMs(now)) throw invalid('validUntil', 'valid_until must be in the future');
-      const limits = b.plan === Plan.CUSTOM ? create(PlanLimitsSchema, b.limits ?? {}) : b.plan === Plan.TEAM ? TEAM_PLAN_LIMITS : FREE_PLAN_LIMITS;
+      const limits =
+        b.plan === Plan.CUSTOM
+          ? create(PlanLimitsSchema, b.limits ?? {})
+          : b.plan === Plan.TEAM
+            ? TEAM_PLAN_LIMITS
+            : b.plan === Plan.ENTERPRISE
+              ? ENTERPRISE_PLAN_LIMITS
+              : FREE_PLAN_LIMITS;
       ws.plan = create(WorkspacePlanSchema, { plan: b.plan, limits, ...(b.validUntil ? { validUntil: b.validUntil } : {}), expired: false });
       s().planMeta.set(ws.id, { note: b.note, updatedBy: me, updatedAt: now });
       const log = s().planLog.get(ws.id) ?? [];
@@ -4368,6 +4423,11 @@ class MockImpl {
       const b = ctl(c);
       const msg = this.injectMessage({ roomId: str(b['roomId']), authorId: str(b['authorId']), content: str(b['content']), replyToId: str(b['replyToId']) });
       send(c.res, 201, JSON.stringify(toJson(MessageSchema, msg, JSON_WRITE)), 'application/json');
+    });
+    this.route('POST', '/__mock/read', (c) => {
+      const b = ctl(c);
+      this.markRead(str(b['userId']), str(b['roomId']), str(b['messageId']));
+      noContent(c.res);
     });
     this.route('POST', '/__mock/dispatch', (c) => {
       const ev = fromJson(DispatchEventSchema, JSON.parse(c.raw.toString('utf8')) as JsonValue, JSON_READ);
@@ -5085,6 +5145,8 @@ class MockImpl {
     const meta = this.state.planMeta.get(ws.id);
     const members = this.membersOf(ws.id).filter((m) => m.role !== WorkspaceRole.GUEST).length;
     const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === ws.id).length;
+    const bots = this.membersOf(ws.id).filter((m) => this.state.users.get(m.userId)?.user.isBot).length;
+    const stickerPacks = [...this.state.stickerPacks.values()].filter((p) => p.workspaceId === ws.id).length;
     let last: Timestamp | undefined;
     for (const r of this.state.rooms.values()) {
       if (r.workspaceId !== ws.id) continue;
@@ -5096,7 +5158,7 @@ class MockImpl {
       workspace: ws,
       ...(owner ? { owner: owner.user } : {}),
       ownerEmail: owner?.email ?? '',
-      usage: { members, rooms, storageMb: mb, storageBytes: ws.storageUsedBytes, ...(last ? { lastActivity: last } : {}) },
+      usage: { members, rooms, bots, stickerPacks, storageMb: mb, storageBytes: ws.storageUsedBytes, ...(last ? { lastActivity: last } : {}) },
       planNote: meta?.note ?? '',
       planUpdatedBy: meta?.updatedBy ?? '',
       ...(meta?.updatedAt ? { planUpdatedAt: meta.updatedAt } : {}),

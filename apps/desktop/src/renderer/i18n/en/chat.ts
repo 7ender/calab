@@ -13,7 +13,7 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.editedShort': 'edited',
   'chat.statusPending': 'Sending',
   'chat.statusSent': 'Sent',
-  'chat.statusDelivered': 'Delivered',
+  'chat.statusRead': 'Read',
   'chat.attachment': 'Attachment',
   'chat.openImage': 'Open image “{name}”',
   'chat.reactionLabel': 'Reaction {emoji}: {count}',

@@ -19,6 +19,7 @@ import (
 	lkauth "github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/twitchtv/twirp"
+	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/gptunnel/gptunneltest"
@@ -36,6 +37,8 @@ var (
 )
 
 // fakeEgress implements the Egress RPCs the server uses; the others are not expected.
+// Egresses leave it as copies (copyOf): twirp marshals a response after mu is released, while
+// the tests change the stored ones under mu and the app's recording worker lists them.
 type fakeEgress struct {
 	livekit.Egress
 	mu     sync.Mutex
@@ -61,7 +64,11 @@ func (f *fakeEgress) StartRoomCompositeEgress(_ context.Context, req *livekit.Ro
 		Status: livekit.EgressStatus_EGRESS_STARTING, StartedAt: time.Now().UnixNano()}
 	f.items[info.EgressId] = info
 	f.starts = append(f.starts, req)
-	return info, nil
+	return copyOf(info), nil
+}
+
+func copyOf(info *livekit.EgressInfo) *livekit.EgressInfo {
+	return proto.Clone(info).(*livekit.EgressInfo)
 }
 
 func (f *fakeEgress) StopEgress(_ context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
@@ -76,7 +83,7 @@ func (f *fakeEgress) StopEgress(_ context.Context, req *livekit.StopEgressReques
 		return nil, twirp.NewError(twirp.FailedPrecondition, "egress with status "+info.Status.String()+" cannot be stopped")
 	}
 	info.Status = livekit.EgressStatus_EGRESS_ENDING
-	return info, nil
+	return copyOf(info), nil
 }
 
 func (f *fakeEgress) ListEgress(_ context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error) {
@@ -88,20 +95,25 @@ func (f *fakeEgress) ListEgress(_ context.Context, req *livekit.ListEgressReques
 			(req.GetActive() && info.Status > livekit.EgressStatus_EGRESS_ENDING) {
 			continue
 		}
-		out.Items = append(out.Items, info)
+		out.Items = append(out.Items, copyOf(info))
 	}
 	return out, nil
 }
 
-// end marks an egress complete with its file and returns the info LiveKit would send.
+// end marks an egress complete with its 90 s file and returns the info LiveKit would send.
 func (f *fakeEgress) end(id string, size int64) *livekit.EgressInfo {
+	return f.endAfter(id, size, 90*time.Second)
+}
+
+// endAfter is end with a file of duration d.
+func (f *fakeEgress) endAfter(id string, size int64, d time.Duration) *livekit.EgressInfo {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	info := f.items[id]
 	info.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	info.EndedAt = time.Now().UnixNano()
-	info.FileResults = []*livekit.FileInfo{{Filename: "x.mp4", Size: size, Duration: int64(90 * time.Second)}}
-	return info
+	info.FileResults = []*livekit.FileInfo{{Filename: "x.mp4", Size: size, Duration: int64(d)}}
+	return copyOf(info)
 }
 
 func (f *fakeEgress) stopped(id string) bool {
@@ -512,10 +524,7 @@ func TestRecordingFailuresAndReconcile(t *testing.T) {
 	if err := os.WriteFile(local, []byte("mp4 bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ended = egFake.end(egressID, 9)
-	egFake.mu.Lock()
-	ended.FileResults[0].Duration = int64(4*time.Hour + time.Minute)
-	egFake.mu.Unlock()
+	ended = egFake.endAfter(egressID, 9, 4*time.Hour+time.Minute)
 	if st := webhook(t, &livekit.WebhookEvent{Event: "egress_ended", Id: uniq("EV_eg"), CreatedAt: time.Now().Unix(), EgressInfo: ended}, "secret"); st != 200 {
 		t.Fatalf("egress_ended: %d", st)
 	}
@@ -558,8 +567,8 @@ func TestRecordingAutoStop(t *testing.T) {
 		t.Helper()
 		id := lastEgress(t, rid)
 		egFake.mu.Lock()
-		info := egFake.items[id]
-		info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+		egFake.items[id].Status = livekit.EgressStatus_EGRESS_COMPLETE
+		info := copyOf(egFake.items[id])
 		egFake.mu.Unlock()
 		if st := webhook(t, &livekit.WebhookEvent{Event: "egress_ended", Id: uniq("EV_eg"), CreatedAt: time.Now().Unix(), EgressInfo: info}, "secret"); st != 200 {
 			t.Fatalf("egress_ended: %d", st)

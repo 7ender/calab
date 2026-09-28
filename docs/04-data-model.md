@@ -121,6 +121,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 
 - `messages.id` генерирует Postgres (`uuidv7()` в PG 18) в момент вставки → порядок id совпадает с порядком коммитов на одном сервере БД; курсорная пагинация и `before=<id>` работают без отдельного `created_at`-индекса. Клиентские часы в id не участвуют.
 - `nonce` — клиентский идентификатор optimistic-сообщения. `UNIQUE (author_id, nonce) WHERE nonce IS NOT NULL`: повторный `POST` с тем же `nonce` (ретрай после обрыва) не создаёт дубль, а возвращает уже существующее сообщение (`INSERT … ON CONFLICT DO NOTHING` → `SELECT`), `MESSAGE_CREATE` повторно не рассылается.
+- **Прочтение другими** (docs/09 #92): из `read_states` — в DM маркер собеседника, в комнате самый дальний маркер остальных людей (без ботов); отдельной таблицы нет. `PUT /api/rooms/{id}/read` сдвигает маркер (`AdvanceReadState` сообщает, сдвинулся ли) и шлёт `READ_RECEIPT` (docs/05); комнатный максимум — `TopRoomReads` по `read_states_room_id_idx` (строк не больше, чем участников, читавших комнату), в READY — `ListPeerReads`. Индекс по `last_read_message_id` не добавлен сознательно: он отключил бы HOT-обновления частого upsert маркера.
 - **Пересылка** (ADR-0033): `POST /api/rooms/{id}/messages/{mid}/forward {to_room_id}` — копия от пересылающего с `messages.forwarded_from` (всегда первоисточник), `forward_author_id`, `forward_sent_at` (→ `Message.forward`); вложения — строки `message_attachments.forwarded = true` на те же файлы (без квоты; уникальность файла — только среди непересланных), упоминания не пишутся, копию нельзя править (422 `MESSAGE_NOT_EDITABLE`); права — `VIEW_ROOM` в источнике (и из комнаты «только по списку»), `SEND_MESSAGES` в цели.
 
 ### Файлы
@@ -240,12 +241,27 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 
 ## Тарифы и лимиты пространств (ADR-0024)
 
-- `workspace_plans(workspace_id PK, plan free|team|custom, limits jsonb, valid_until, note, updated_by, updated_at)`; нет записи → `free`. `limits` хранится только у `custom` (как записано, 0 = без лимита); `free` / `team` берут лимиты из env `PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` (JSON поверх встроенных дефолтов, ключи ниже). Истёкший `valid_until` → лимиты `free`, запись остаётся (`Workspace.plan.expired = true`). Каждое изменение через admin API пишется в `workspace_plan_log` (кто, план, лимиты в силе на момент изменения, срок, заметка).
-- Ключи: `room_members` (5), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (1024), `members` (0 = ∞; пока информационный), `sticker_packs` (5) и `stickers` (200 на пространство, ADR-0030; упор — `409 CONFLICT, reason PLAN_LIMIT`), `bots` (2: ботов-участников пространства, ADR-0031; `409 CONFLICT`, `reason PLAN_LIMIT` при создании и добавлении). Team по умолчанию: 50 в комнате, 20 ботов, остальное без лимита.
+- `workspace_plans(workspace_id PK, plan free|team|enterprise|custom, limits jsonb, valid_until, note, updated_by, updated_at)`; нет записи → `free`. `limits` хранится только у `custom` (как записано, 0 = без лимита); `free` / `team` берут лимиты из env `PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` (JSON поверх встроенных дефолтов, ключи ниже); `enterprise` — без лимитов вовсе (`plans.Enterprise = Limits{}`, env не переопределяет). Истёкший `valid_until` → лимиты `free`, запись остаётся (`Workspace.plan.expired = true`). Каждое изменение через admin API пишется в `workspace_plan_log` (кто, план, лимиты в силе на момент изменения, срок, заметка).
+- Ключи (в скобках — Free, владелец 28.09): `room_members` (5), `members` (50: участники без гостей, боты считаются), `audio_tier_max_kbps` (16 = «Нормальное»; 0 | 8 | 16 | 32 | 64), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (5120 = 5 ГБ), `sticker_packs` (1) и `stickers` (200 на пространство, ADR-0030), `bots` (1: ботов-участников пространства, ADR-0031). Team по умолчанию: 50 в комнате, 20 ботов, `storage_mb` 1048576 (1 ТБ), остальное без лимита. Enterprise — всё 0 (без лимита).
+
+  | | Free | Team | Enterprise | Self-hosted |
+  |---|---|---|---|---|
+  | Голосовая комната | 5 | 50 | ∞ | ∞ |
+  | Участники пространства | 50 | ∞ | ∞ | ∞ |
+  | Качество звука | до «Нормальное» (16) | любое, до «Отличное» | любое | любое |
+  | Стрим и камера | 720p / 15 fps, 1 стрим на комнату | ∞ | ∞ | ∞ |
+  | Файлы | 5 ГБ | 1 ТБ | ∞ | ∞ |
+  | Боты | 1 | 20 | ∞ | ∞ |
+  | Стикерпаки | 1 (200 стикеров) | ∞ | ∞ | ∞ |
+  | Поддержка | — | поддержка | приоритетная | — |
+
+  Self-hosted — лимиты задаёт оператор своего сервера (`PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS`, план пространства через суперадмина).
 - Сервер (`internal/plans`, кэш 30 с, сброс при изменении на всех инстансах через Redis `plans:changed`) применяет лимиты **для всех, включая владельца** (это не биты прав):
   - вход в голосовую комнату (`/join`, webhook `participant_joined`, перемещение): мест `min(user_limit, room_members)`, pending-устройства и гости считаются; упор в лимит плана → `409 ROOM_FULL`, `reason = PLAN_LIMIT`, `used`/`limit`. `user_limit` комнаты по-прежнему не действует на `MOVE_MEMBERS`, лимит плана — действует;
   - стрим: пресет ≤ `min(max_stream_preset комнаты, stream_max_preset)`, стримов ≤ `min(max_streams, streams_per_room)` (и при выдаче слота, и в webhook), fps ≤ `stream_max_fps`; камера: пресет/fps ≤ `camera_max_*` (ответ `/camera/request`);
-  - файлы: квота = `min(storage_quota_bytes, storage_mb MiB)`; превышение → `413 FILE_QUOTA_EXCEEDED` c `used`/`limit` (байты), `reason = PLAN_LIMIT`, если упёрлись в план.
+  - файлы: квота = `min(storage_quota_bytes, storage_mb MiB)`; превышение → `413 FILE_QUOTA_EXCEEDED` c `used`/`limit` (байты), `reason = PLAN_LIMIT`, если упёрлись в план;
+  - участники, боты, стикерпаки — одна проверка `plans.Service.Check` (advisory-lock + счётчик в транзакции добавления) → `409 CONFLICT`, `reason = PLAN_LIMIT`, `used`/`limit`. Место занимают участники без гостей, бот — тоже; проверка на ссылке-приглашении и email-приглашении (заранее), входе/регистрации по коду, открытом пространстве, добавлении по поиску, создании/добавлении бота, повышении гостя; авто-принятие email-приглашения при нехватке мест ждёт;
+  - звук: уровень комнаты / дефолта пространства выше `audio_tier_max_kbps` → `409 CONFLICT PLAN_LIMIT` (кроме уже сохранённого значения); при входе `media.audio_bitrate_kbps = min(комната, план)`.
 - `Room.media` остаётся настройками комнаты (UI различает замок «комната» и замок «тариф»); эффективные лимиты плана — в `Workspace.plan.limits` и в ответе `/join` (`media` уже урезан планом, `plan_limits`).
 - Суперадмин — пользователь с email из `SUPERADMIN_EMAILS`; флаг не хранится, вычисляется из текущего email при каждом запросе (`Me.is_superadmin`).
 

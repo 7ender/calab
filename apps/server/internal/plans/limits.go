@@ -1,7 +1,7 @@
 // Package plans resolves the plan and effective limits of a workspace (ADR-0024) and serves
 // the superadmin API. Limits are enforced by the callers (rtc: room members, stream / camera
-// quality, streams per room; files: storage) for everyone in the workspace, independent of
-// roles.
+// quality, streams per room, voice tier; files: storage; Check: members, bots, sticker packs)
+// for everyone in the workspace, independent of roles.
 package plans
 
 import (
@@ -23,25 +23,29 @@ type Limits struct {
 	CameraMaxFPS    uint32
 	StreamsPerRoom  uint32
 	StorageMB       uint64
-	Members         uint32
+	Members         uint32 // members without guests; bots count (they take a seat)
 	StickerPacks    uint32 // live sticker packs of the workspace (ADR-0030)
 	Stickers        uint32 // live stickers over all its packs
 	Bots            uint32 // bots that are members of the workspace (ADR-0031)
+	AudioMaxKbps    uint32 // highest voice tier, kbps (docs/02 «Битрейт»)
 }
 
 // Built-in defaults; PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS override them key by key.
 var (
-	// DefaultFree: 5 in a room, video up to 720p / 15 fps, one stream per room, 1 GiB of files,
-	// 5 sticker packs with 200 stickers in all, 2 bots.
+	// DefaultFree (owner, 28.09): 5 in a room, 50 members, voice up to «Нормальное» (16 kbps),
+	// video up to 720p / 15 fps, one stream per room, 5 GiB of files, one sticker pack with 200
+	// stickers, one bot.
 	DefaultFree = Limits{
-		RoomMembers:     5,
+		RoomMembers: 5, Members: 50, AudioMaxKbps: 16,
 		StreamMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, StreamMaxFPS: 15,
 		CameraMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, CameraMaxFPS: 15,
-		StreamsPerRoom: 1, StorageMB: 1024, StickerPacks: 5, Stickers: 200, Bots: 2,
+		StreamsPerRoom: 1, StorageMB: 5 << 10, StickerPacks: 1, Stickers: 200, Bots: 1,
 	}
-	// DefaultTeam: 50 in a room, 20 bots, video and storage not limited by the plan (the
-	// workspace storage quota still applies).
-	DefaultTeam = Limits{RoomMembers: 50, Bots: 20}
+	// DefaultTeam: 50 in a room, 20 bots, 1 TiB of files (owner, 28.09); members, voice and
+	// video not limited by the plan.
+	DefaultTeam = Limits{RoomMembers: 50, Bots: 20, StorageMB: 1 << 20}
+	// Enterprise (owner, 28.09): no limits at all, like self-hosted. Fixed, not taken from env.
+	Enterprise = Limits{}
 )
 
 // Upper bounds of every limit (validation of env and admin input).
@@ -54,7 +58,11 @@ const (
 	maxStickerPacks   = 10_000
 	maxStickers       = 1_000_000
 	maxBots           = 1000
+	maxAudioKbps      = 64
 )
+
+// audioTiers are the voice tiers a plan may cap at (docs/02 «Битрейт»); 0 = no cap.
+var audioTiers = map[uint32]bool{0: true, 8: true, 16: true, 32: true, 64: true}
 
 var presetNames = map[string]v1.ScreenSharePreset{
 	"":         v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED,
@@ -87,6 +95,7 @@ type limitsJSON struct {
 	StickerPacks    *uint32 `json:"sticker_packs,omitempty"`
 	Stickers        *uint32 `json:"stickers,omitempty"`
 	Bots            *uint32 `json:"bots,omitempty"`
+	AudioMaxKbps    *uint32 `json:"audio_tier_max_kbps,omitempty"`
 }
 
 // ParseLimits applies a JSON object over base: keys present replace the base value, absent
@@ -119,6 +128,7 @@ func ParseLimits(raw string, base Limits) (Limits, error) {
 	setU32(&l.StickerPacks, j.StickerPacks)
 	setU32(&l.Stickers, j.Stickers)
 	setU32(&l.Bots, j.Bots)
+	setU32(&l.AudioMaxKbps, j.AudioMaxKbps)
 	if j.StorageMB != nil {
 		l.StorageMB = *j.StorageMB
 	}
@@ -151,6 +161,7 @@ func (l Limits) MarshalJSON() ([]byte, error) {
 		RoomMembers: &l.RoomMembers, StreamMaxPreset: &sp, StreamMaxFPS: &l.StreamMaxFPS,
 		CameraMaxPreset: &cp, CameraMaxFPS: &l.CameraMaxFPS, StreamsPerRoom: &l.StreamsPerRoom,
 		StorageMB: &l.StorageMB, Members: &l.Members, StickerPacks: &l.StickerPacks, Stickers: &l.Stickers, Bots: &l.Bots,
+		AudioMaxKbps: &l.AudioMaxKbps,
 	})
 	return bytes.TrimSpace(buf.Bytes()), err
 }
@@ -172,6 +183,9 @@ func (l Limits) Validate() error {
 	check(l.StickerPacks <= maxStickerPacks, "sticker_packs", maxStickerPacks)
 	check(l.Stickers <= maxStickers, "stickers", maxStickers)
 	check(l.Bots <= maxBots, "bots", maxBots)
+	if !audioTiers[l.AudioMaxKbps] {
+		errs = append(errs, fmt.Errorf("plan limits: audio_tier_max_kbps must be 0, 8, 16, 32 or %d", maxAudioKbps))
+	}
 	for name, p := range map[string]v1.ScreenSharePreset{"stream_max_preset": l.StreamMaxPreset, "camera_max_preset": l.CameraMaxPreset} {
 		if p < v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED || p > v1.ScreenSharePreset_SCREEN_SHARE_PRESET_ORIGINAL {
 			errs = append(errs, fmt.Errorf("plan limits: invalid %s", name))
@@ -186,6 +200,7 @@ func (l Limits) Proto() *v1.PlanLimits {
 		RoomMembers: l.RoomMembers, StreamMaxPreset: l.StreamMaxPreset, StreamMaxFps: l.StreamMaxFPS,
 		CameraMaxPreset: l.CameraMaxPreset, CameraMaxFps: l.CameraMaxFPS, StreamsPerRoom: l.StreamsPerRoom,
 		StorageMb: l.StorageMB, Members: l.Members, StickerPacks: l.StickerPacks, Stickers: l.Stickers, Bots: l.Bots,
+		AudioTierMaxKbps: l.AudioMaxKbps,
 	}
 }
 
@@ -195,6 +210,7 @@ func FromProto(p *v1.PlanLimits) Limits {
 		RoomMembers: p.GetRoomMembers(), StreamMaxPreset: p.GetStreamMaxPreset(), StreamMaxFPS: p.GetStreamMaxFps(),
 		CameraMaxPreset: p.GetCameraMaxPreset(), CameraMaxFPS: p.GetCameraMaxFps(), StreamsPerRoom: p.GetStreamsPerRoom(),
 		StorageMB: p.GetStorageMb(), Members: p.GetMembers(), StickerPacks: p.GetStickerPacks(), Stickers: p.GetStickers(), Bots: p.GetBots(),
+		AudioMaxKbps: p.GetAudioTierMaxKbps(),
 	}
 }
 
@@ -255,11 +271,22 @@ func (l Limits) Camera(wanted v1.ScreenSharePreset, wantedFPS uint32) (v1.Screen
 	return p, minNonZero(wantedFPS, l.CameraMaxFPS)
 }
 
-// CapMedia returns room media settings with the plan's caps applied (max_stream_preset,
-// max_streams). m is not modified.
+// AudioAllowed reports whether the plan lets a room / workspace be set to kbps.
+func (l Limits) AudioAllowed(kbps uint32) bool { return l.AudioMaxKbps == 0 || kbps <= l.AudioMaxKbps }
+
+// CapAudio lowers a voice bitrate to the plan's tier cap (0 kbps stays 0: "not set").
+func (l Limits) CapAudio(kbps uint32) uint32 {
+	if l.AudioMaxKbps > 0 && kbps > l.AudioMaxKbps {
+		return l.AudioMaxKbps
+	}
+	return kbps
+}
+
+// CapMedia returns room media settings with the plan's caps applied (audio_bitrate_kbps,
+// max_stream_preset, max_streams). m is not modified.
 func (l Limits) CapMedia(m *v1.RoomMediaSettings) *v1.RoomMediaSettings {
 	out := &v1.RoomMediaSettings{
-		AudioBitrateKbps: m.GetAudioBitrateKbps(), MaxStreamPreset: m.GetMaxStreamPreset(),
+		AudioBitrateKbps: l.CapAudio(m.GetAudioBitrateKbps()), MaxStreamPreset: m.GetMaxStreamPreset(),
 		MaxStreams: m.GetMaxStreams(), CameraLimit: m.GetCameraLimit(),
 	}
 	if out.MaxStreamPreset == v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED {

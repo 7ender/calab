@@ -272,39 +272,54 @@ func TestCallDeclineCancelBusy(t *testing.T) {
 	callAction(t, c.user, 200, next.GetId(), "cancel")
 }
 
+// callTimers sets the call timeouts for one test and pauses the periodic sweep (it fires every
+// 15 s and would race the path under test: a MISSED / lost end must come from exactly one
+// source); instanceTimers false leaves only an explicit Sweep. Restored on cleanup.
+func callTimers(t *testing.T, ring, lost time.Duration, instanceTimers bool) {
+	t.Helper()
+	testApp.Calls.SetPeriodicSweep(false)
+	testApp.Calls.SetInstanceTimers(instanceTimers)
+	testApp.Calls.SetTimeouts(ring, lost, calls.DefaultTick)
+	t.Cleanup(func() {
+		testApp.Calls.SetTimeouts(calls.DefaultRingTimeout, calls.DefaultLostGrace, calls.DefaultTick)
+		testApp.Calls.SetInstanceTimers(true)
+		testApp.Calls.SetPeriodicSweep(true)
+	})
+}
+
 // TestCallMissed: no answer → MISSED by the instance timer, and by the sweeper when that
 // timer is gone; the card is unread for the callee only.
 func TestCallMissed(t *testing.T) {
 	a, b, _, _ := callTeam(t)
 	dm := openDM(t, a.user, b.id, 201).GetRoom().GetId()
-	t.Cleanup(func() {
-		testApp.Calls.SetTimeouts(calls.DefaultRingTimeout, calls.DefaultLostGrace, calls.DefaultTick)
-		testApp.Calls.SetInstanceTimers(true)
+
+	t.Run("timer", func(t *testing.T) {
+		callTimers(t, time.Second, calls.DefaultLostGrace, true)
+		call := startCall(t, a.user, dm)
+		started := time.Now()
+		b.g.wait("CALL_STATE missed", callStateIs(call.GetId(), v1.CallState_CALL_STATE_MISSED))
+		if el := time.Since(started); el < 900*time.Millisecond {
+			t.Fatalf("missed after %v", el)
+		}
+		a.g.wait("MISSED card", callCard(dm, v1.CallOutcome_CALL_OUTCOME_MISSED))
+		b.must(409, "POST", "/api/calls/"+call.GetId()+"/accept", nil, nil)
+		if n := dmUnread(t, b.user, dm); n != 1 {
+			t.Fatalf("missed call unread for the callee: %d", n)
+		}
+		if n := dmUnread(t, a.user, dm); n != 0 {
+			t.Fatalf("missed call unread for the caller: %d", n)
+		}
 	})
 
-	testApp.Calls.SetTimeouts(time.Second, calls.DefaultLostGrace, calls.DefaultTick)
-	call := startCall(t, a.user, dm)
-	started := time.Now()
-	b.g.wait("CALL_STATE missed", callStateIs(call.GetId(), v1.CallState_CALL_STATE_MISSED))
-	if el := time.Since(started); el < 900*time.Millisecond {
-		t.Fatalf("missed after %v", el)
-	}
-	a.g.wait("MISSED card", callCard(dm, v1.CallOutcome_CALL_OUTCOME_MISSED))
-	b.must(409, "POST", "/api/calls/"+call.GetId()+"/accept", nil, nil)
-	if n := dmUnread(t, b.user, dm); n != 1 {
-		t.Fatalf("missed call unread for the callee: %d", n)
-	}
-	if n := dmUnread(t, a.user, dm); n != 0 {
-		t.Fatalf("missed call unread for the caller: %d", n)
-	}
-
-	// The instance that placed the call is gone (no timer): the sweeper settles it.
-	testApp.Calls.SetInstanceTimers(false)
-	call = startCall(t, a.user, dm)
-	time.Sleep(1200 * time.Millisecond)
-	b.g.quiet("MISSED without a sweep", 100*time.Millisecond, callStateIs(call.GetId(), v1.CallState_CALL_STATE_MISSED))
-	testApp.Calls.Sweep(context.Background())
-	b.g.wait("CALL_STATE missed (sweeper)", callStateIs(call.GetId(), v1.CallState_CALL_STATE_MISSED))
+	// The instance that placed the call is gone (no timer): only a sweep settles it.
+	t.Run("sweeper", func(t *testing.T) {
+		callTimers(t, time.Second, calls.DefaultLostGrace, false)
+		call := startCall(t, a.user, dm)
+		time.Sleep(1200 * time.Millisecond)
+		b.g.quiet("MISSED without a sweep", 100*time.Millisecond, callStateIs(call.GetId(), v1.CallState_CALL_STATE_MISSED))
+		testApp.Calls.Sweep(context.Background())
+		b.g.wait("CALL_STATE missed (sweeper)", callStateIs(call.GetId(), v1.CallState_CALL_STATE_MISSED))
+	})
 }
 
 // TestCallLost: an ACTIVE call whose participant left the session (or never joined) and did
@@ -313,8 +328,7 @@ func TestCallLost(t *testing.T) {
 	liveKitUp(t)
 	a, b, _, _ := callTeam(t)
 	dm := openDM(t, a.user, b.id, 201).GetRoom().GetId()
-	t.Cleanup(func() { testApp.Calls.SetTimeouts(calls.DefaultRingTimeout, calls.DefaultLostGrace, calls.DefaultTick) })
-	testApp.Calls.SetTimeouts(calls.DefaultRingTimeout, time.Second, calls.DefaultTick)
+	callTimers(t, calls.DefaultRingTimeout, time.Second, true)
 
 	call := startCall(t, a.user, dm)
 	callAction(t, b.user, 200, call.GetId(), "accept")

@@ -60,6 +60,10 @@ type Service struct {
 	// OnBotRequest runs for every authenticated bot request (presence of webhook-only bots).
 	// Optional; must not block.
 	OnBotRequest func(ctx context.Context, id Identity)
+	// CheckSeat refuses joining wsID by an invitation at registration when the workspace plan
+	// has no seat left (ADR-0024, plans.Check); called inside the registration transaction.
+	// Optional.
+	CheckSeat func(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error
 }
 
 // NewService wires the auth service.
@@ -346,6 +350,11 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			}
 		}
 		if inv != nil {
+			if s.CheckSeat != nil {
+				if err := s.CheckSeat(ctx, q, inv.WorkspaceID); err != nil {
+					return err
+				}
+			}
 			m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: inv.WorkspaceID, UserID: user.ID, Role: string(role)})
 			if err != nil {
 				return err

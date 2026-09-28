@@ -32,7 +32,7 @@ import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
 import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayBadge, setTrayState } from './tray';
-import { checkForUpdates, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
+import { checkForUpdates, downloadUpdate, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { isOwnPage, isShown } from './windows';
 
@@ -192,6 +192,7 @@ export function registerIpc(): void {
   handle(IPC.appCheckUpdates, () => checkForUpdates());
   handle(IPC.appGetUpdateStatus, () => updateStatus());
   handle(IPC.appInstallUpdate, () => installUpdate());
+  handle(IPC.appDownloadUpdate, () => downloadUpdate());
   handle(IPC.appNetworkOnline, () => updatesNudge('online'));
   handle(IPC.appLog, (_e, a) => {
     const r = obj(a);

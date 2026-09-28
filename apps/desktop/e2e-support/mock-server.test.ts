@@ -184,6 +184,26 @@ describe('mock server', () => {
     gw.ws.close(1000);
   });
 
+  it('read receipts (docs/09 #92): READY peer reads; another member reads → READ_RECEIPT', async () => {
+    const token = await login();
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token, device: { name: 'vitest', platform: 'test', appVersion: '0' } } } });
+    const ev = dispatchOf(await gw.next((f) => f.op === GatewayOpcode.DISPATCH))?.event;
+    if (ev?.case !== 'ready') throw new Error(`expected READY, got ${ev?.case}`);
+    // The fixture's other members read every room; DMs carry the peer's marker.
+    expect(ev.value.peerReads.find((p) => p.roomId === IDS.rooms.general)?.lastReadMessageId).not.toBe('');
+    expect(ev.value.peerReads.some((p) => p.roomId === IDS.dms.vera)).toBe(false);
+    expect(ev.value.dms.find((d) => d.room?.id === IDS.dms.vera)?.peerReadMessageId).not.toBe('');
+
+    const m = server.injectMessage({ roomId: IDS.dms.vera, authorId: IDS.users.anna, content: 'прочитаешь?' });
+    expect(server.markRead(IDS.users.vera, IDS.dms.vera, m.id)).toBe(true);
+    const rr = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'readReceipt'))?.event;
+    expect(rr?.case === 'readReceipt' && rr.value).toMatchObject({ roomId: IDS.dms.vera, lastReadMessageId: m.id });
+    expect(server.markRead(IDS.users.vera, IDS.dms.vera, m.id)).toBe(false); // did not move
+    gw.ws.close(1000);
+  });
+
   it('empty scenario: READY without workspaces', async () => {
     const empty = await startMockServer({ scenario: 'empty' });
     try {
@@ -777,6 +797,7 @@ describe('plans and the superadmin API (ADR-0024)', () => {
     const anna = await login();
     const path = `/api/admin/workspaces/${IDS.workspaces.design}/plan`;
     expect((await api(anna, path, { method: 'PUT', body: JSON.stringify({ plan: 'PLAN_TEAM', limits: { roomMembers: 3 }, note: '' }) })).status).toBe(422);
+    expect((await api(anna, path, { method: 'PUT', body: JSON.stringify({ plan: 'PLAN_ENTERPRISE', limits: { roomMembers: 3 }, note: '' }) })).status).toBe(422);
     const gw = await openGateway();
     await gw.next((f) => f.op === GatewayOpcode.HELLO);
     gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token: anna } } });

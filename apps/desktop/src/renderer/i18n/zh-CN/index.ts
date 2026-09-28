@@ -540,7 +540,6 @@ export const zhCN: Dict = {
   'onb.notifDeniedWeb':
     '浏览器不允许该网站发送通知——例如处于无痕模式，或此前已选择"阻止"。你可以在网站设置中允许（地址栏左侧的图标）。',
   'onb.start': '开始使用',
-  'app.checkBtn': '检查',
   'room.deleteBtn': '删除…',
   'ws.deleteBtn': '删除…',
   'ws.role': '角色：{name}',

@@ -222,28 +222,13 @@ func manager(r *http.Request, ownerOf *sqlc.Bot) (uuid.UUID, error) {
 	return uuid.Nil, httpx.Forbidden("MANAGE_WORKSPACE required")
 }
 
-var errPlanBots = httpx.Conflict("the workspace plan allows no more bots")
-
-// checkPlan refuses one more bot above the plan limit (under LockWorkspaceBots).
+// checkPlan refuses one more bot above the plan limits (ADR-0024): the bots limit and, as a
+// bot takes a seat, the members limit. Locks bots before members (joins take only the latter).
 func (s *Service) checkPlan(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error {
-	if err := q.LockWorkspaceBots(ctx, wsID.String()); err != nil {
+	if err := s.plans.Check(ctx, q, wsID, plans.KindBots, true); err != nil {
 		return err
 	}
-	lim, err := s.plans.Effective(ctx, wsID)
-	if err != nil {
-		return err
-	}
-	if lim.Bots == 0 {
-		return nil
-	}
-	n, err := q.CountWorkspaceBots(ctx, wsID)
-	if err != nil {
-		return err
-	}
-	if n >= int64(lim.Bots) {
-		return errPlanBots.WithDetails(httpx.ReasonPlanLimit, uint64(n), uint64(lim.Bots)) //nolint:gosec // counts
-	}
-	return nil
+	return s.plans.Check(ctx, q, wsID, plans.KindMembers, true)
 }
 
 func validateUsername(s string) (string, error) {

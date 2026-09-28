@@ -540,7 +540,6 @@ export const en: Dict = {
   'onb.notifDeniedWeb':
     'The browser doesn’t allow notifications for this site — for example, in incognito mode or if you chose “Block” before. You can allow them in site settings (the icon left of the address).',
   'onb.start': 'Get started',
-  'app.checkBtn': 'Check',
   'room.deleteBtn': 'Delete…',
   'ws.deleteBtn': 'Delete…',
   'ws.role': 'Role: {name}',

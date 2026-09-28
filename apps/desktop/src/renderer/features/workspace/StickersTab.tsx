@@ -13,6 +13,9 @@ import { STICKER_BATCH, coverOf, stickerBox } from '../../lib/stickers';
 import { loadWorkspaceStickers } from '../../services/stickers';
 import { reportPlanError } from '../../services/plan';
 import { useStickers } from '../../stores/stickers';
+import { useWorkspaces } from '../../stores/workspaces';
+import { atLimit } from '../../lib/plan';
+import { PlanFullNote } from './PlanTab';
 import { CommitInput } from '../settings/CommitInput';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { StickerImage, StickerStill } from '../chat/stickers/StickerImage';
@@ -46,6 +49,9 @@ function PackList({ workspaceId, packs, loaded, onOpen }: { workspaceId: string;
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The plan's sticker packs (owner 28.09: free = 1): «Создать» locks at the limit.
+  const limit = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.stickerPacks ?? 0);
+  const full = loaded && atLimit(packs.length, limit);
   const create = async (): Promise<void> => {
     const v = name.trim();
     if (!v) return;
@@ -84,10 +90,15 @@ function PackList({ workspaceId, packs, loaded, onOpen }: { workspaceId: string;
             className="min-w-0 flex-1"
             data-testid="sticker-pack-name"
           />
-          <Button type="submit" busy={busy} disabled={!name.trim()} data-testid="sticker-pack-create">
+          <Button type="submit" busy={busy} disabled={!name.trim() || full} data-testid="sticker-pack-create">
             <Plus className="size-4" aria-hidden /> {t('stk.create')}
           </Button>
         </form>
+        {full ? (
+          <div className="px-2 pb-2.5">
+            <PlanFullNote text={t('stk.planPacks', { n: limit })} testId="sticker-plan-full" />
+          </div>
+        ) : null}
         {error ? (
           <p role="alert" className="px-3 pb-2.5 text-caption text-danger-text">
             {error}

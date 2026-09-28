@@ -114,7 +114,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `POST /api/rooms/{id}/messages/{mid}/forward` | пересылка `{toRoomId}` → 201 `{message}` с `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` в источнике, `SEND_MESSAGES` в цели |
 | `PUT · DELETE /api/messages/{id}/reactions/{emoji}` | реакция (emoji в URL-кодировке) → 204 | `SEND_MESSAGES` |
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | закрепы | `MANAGE_MESSAGES` / `VIEW_ROOM` |
-| `PUT /api/rooms/{id}/read` | отметка прочтения | `VIEW_ROOM` |
+| `PUT /api/rooms/{id}/read` | отметка прочтения (не даёт людям ✓✓ «Прочитано»; `READ_RECEIPT` ботам не приходит) | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/messages/search?q=` · `GET /api/me/mentions` | поиск, упоминания бота | `VIEW_ROOM` |
 | `POST /api/workspaces/{id}/files` · `POST /api/dms/{id}/files` | загрузка файла (multipart `file`) → `{file}` | `ATTACH_FILES` |
 | `GET /api/files/{id}` · `GET /api/files/{id}/thumbnail` | скачать файл | доступ к комнате |
@@ -413,7 +413,7 @@ Go: `livekit/server-sdk-go` (`lksdk.ConnectToRoomWithToken(url, token, callbacks
 | Загрузки файлов | 30 сразу, 120/ч; размер и квота — по тарифу |
 | Сообщение | ≤ 4000 символов, ≤ 20 вложений, `nonce` ≤ 64 |
 | Команды | ≤ 100, имя ≤ 32, описание ≤ 256 |
-| Ботов в пространстве | ключ тарифа `bots` (free 2, team 20) |
+| Ботов в пространстве | ключ тарифа `bots` (free 1, team 20); бот занимает и место участника (`members`, free 50) |
 | Gateway | 1 сокет на токен, кадр ≤ 64 КиБ |
 
 Все ошибки — `ApiError`. `code` — из `ErrorCode` (`ERROR_CODE_…`):

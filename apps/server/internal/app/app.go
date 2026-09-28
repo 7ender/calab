@@ -180,6 +180,9 @@ func New(d Deps) *App {
 	}, d.DB, d.Redis, sender)
 
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)
+	authSvc.CheckSeat = func(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error {
+		return planSvc.Check(ctx, q, wsID, plans.KindMembers, true)
+	}
 	authSvc.Mail = mailSvc
 	botSvc.SetAuth(authSvc)
 	botPerSec, botMsgsPerMin := d.Config.BotLimits()
@@ -265,11 +268,12 @@ func New(d Deps) *App {
 		Lookup: redisx.NewRateLimiter(d.Redis, "rl:invite-lookup:", 20, 20), // 20 per minute
 		Send:   redisx.NewRateLimiter(d.Redis, "rl:invite-send:", 20, 0.5),  // 20 at once, 30 per hour
 	}).Routes(mux, private)
-	roomHandlers := rooms.NewHandlers(d.DB, pub)
+	roomHandlers := rooms.NewHandlers(d.DB, pub).WithPlans(planSvc)
 	roomHandlers.Routes(mux, private)
 	roomHandlers.CategoryRoutes(mux, private)
 	msgHandlers := messages.NewHandlers(d.DB, pub, msgLimiter)
 	msgHandlers.BotLimiter = redisx.NewRateLimiter(d.Redis, "rl:bot:msg:", botMsgsPerMin, float64(botMsgsPerMin))
+	msgHandlers.Receipts = messages.NewReceipts(d.DB, pub, d.Redis)
 	msgHandlers.Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
 	filesSvc.Routes(mux, private)

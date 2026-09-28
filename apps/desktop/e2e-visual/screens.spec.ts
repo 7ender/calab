@@ -30,7 +30,8 @@ const ALL = process.env['CALABA_VISUAL_ALL'] === '1';
 
 /**
  * The local set (~25): one shot per screen family, no per-menu-item or per-tab shots. Settings:
- * 2 = «Голос и устройства», 3 = «Горячие клавиши», 8 = «Приложение» (language).
+ * 2 = «Голос и устройства», 3 = «Горячие клавиши», 8 = «Приложение» (language); «О программе» —
+ * `settings-about` (an available update, docs/09 #93).
  */
 const KEY = new Set([
   'auth-login',
@@ -96,6 +97,7 @@ const KEY = new Set([
   'settings-2',
   'settings-3',
   'settings-8',
+  'settings-about',
   'room-settings-1',
   'room-settings-restricted',
   'i18n-en-main-chat',
@@ -652,14 +654,18 @@ test('dm-delete-confirm', async ({ open, win, shot }) => {
   await expect(win.locator('[data-message-id]')).toHaveCount(0);
 });
 
-test('dm-chat', async ({ open, win, shot }) => {
+test('dm-chat', async ({ open, win, mock, shot }) => {
   await open(DM_SEED);
   const list = await dmHome(win);
+  // docs/09 #92: Борис read «Да, после обеда.» (✓✓), not the answer below (✓).
+  mock.injectMessage({ roomId: IDS.dms.boris, authorId: IDS.users.anna, content: 'Посмотрела, пара замечаний в PR.' });
   await list.getByRole('button', { name: /Борис Петров/ }).click();
   await expect(win.getByTestId('dm-header')).toContainText('Борис Петров');
   await expect(win.locator('[data-message-id]').first()).toBeVisible();
-  // The pinned strip (Борис's checklist) and the whole history (4 messages) are in.
-  await expect(win.locator('[data-message-id]')).toHaveCount(4);
+  // The pinned strip (Борис's checklist) and the whole history (4 messages + the answer) are in.
+  await expect(win.locator('[data-message-id]')).toHaveCount(5);
+  await expect(win.getByLabel('Прочитано').filter({ visible: true })).toHaveCount(1);
+  await expect(win.getByLabel('Отправлено').filter({ visible: true })).toHaveCount(1);
   await settle(win);
   await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
   await settle(win);
@@ -769,6 +775,29 @@ test('update-banner', async ({ open, win, mock, shot }) => {
   await win.evaluate(() => (window as unknown as { __calabaUpdateStatus?: (s: object) => void }).__calabaUpdateStatus?.({ state: 'downloaded', version: '0.1.1' }));
   await expect(win.getByTestId('update-banner')).toBeVisible();
   await checkpoint(shot, 'update-banner');
+});
+
+/**
+ * «О программе» with an available update (docs/09 #93): «Версия X» + «Скачать и установить 0.9.0»
+ * (faked status). The real app / Electron versions are masked — they change with every release.
+ */
+test('settings-about', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await openSettingsTab(win, openAppSettings(win), TABS.settings);
+  await win.evaluate(() =>
+    (window as unknown as { __calabaUpdateStatus?: (s: object) => void }).__calabaUpdateStatus?.({
+      state: 'available',
+      version: '0.9.0',
+      downloadPage: 'https://releases.calab.ru/',
+      installable: true,
+    }),
+  );
+  const dialog = win.getByRole('dialog');
+  await expect(dialog.getByTestId('update-install')).toHaveText('Скачать и установить 0.9.0');
+  await checkpoint(shot, 'settings-about', {
+    mask: [dialog.locator('[data-settings-label]', { hasText: /^Версия / }), dialog.getByText(/^Electron /)],
+  });
 });
 
 test('main-members-toggled', async ({ open, win, mock, shot }) => {
@@ -1756,7 +1785,8 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   const cards = win.getByTestId('recording-card');
   await expect(cards).toHaveCount(4);
   await expect(cards.nth(0)).toContainText('Встреча записана · 42 мин');
-  await expect(cards.nth(0)).toContainText('Готово');
+  // No «Готово» row (owner, 28.09, docs/09 #88): the status shows only while it matters.
+  await expect(cards.nth(0).getByTestId('recording-card-status')).toHaveCount(0);
   // Across the feed (docs/09 #47): as wide as the message column, not a centred 440 px card.
   const feed = await win.locator('[data-virtuoso-scroller]').first().boundingBox();
   const box = await cards.nth(0).boundingBox();
@@ -1887,8 +1917,30 @@ async function doneCard(win: Page, mock: MockServer): Promise<Locator> {
   return card;
 }
 
-// A done recording (docs/09 #47): GPTunneL's summary folded to 6 lines («Показать всё»), «Послушать
-// запись» (our AAC-in-MP4 copy, the chat's player: it plays and seeks), «Полный транскрипт».
+type WithAudio = { __calabaAudio?: HTMLMediaElement };
+
+/** Keeps the chat player's `<audio>` (it is not in the DOM) so a test can put it at an exact second. */
+const catchPlayerAudio = (win: Page): Promise<void> =>
+  win.evaluate(() => {
+    const proto = HTMLMediaElement.prototype;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- re-bound with `.call(this)` below
+    const play = proto.play;
+    proto.play = function (this: HTMLMediaElement) {
+      (window as unknown as WithAudio).__calabaAudio = this;
+      return play.call(this);
+    };
+  });
+
+/** The chat player's (paused) `<audio>` at `sec`: the store follows its `timeupdate`. */
+const playerAt = (win: Page, sec: number): Promise<void> =>
+  win.evaluate((at) => {
+    const el = (window as unknown as WithAudio).__calabaAudio;
+    if (el) el.currentTime = at;
+  }, sec);
+
+// A done recording (docs/09 #47, #88): GPTunneL's summary folded to 6 lines («Показать всё»),
+// «Полный транскрипт», no «Готово» row; the REC circle plays our AAC-in-MP4 copy through the chat's
+// player — a progress ring on it and «0:02 / 0:06» in the title, no player in the card.
 test('chat-recording-done', async ({ open, win, mock, shot }) => {
   await open();
   const card = await doneCard(win, mock);
@@ -1897,6 +1949,8 @@ test('chat-recording-done', async ({ open, win, mock, shot }) => {
   await expect(summary.locator('strong, b').first()).toHaveText('0.7');
   await expect(card.getByTestId('recording-card-more')).toHaveText('Показать всё');
   await expect(card.getByRole('button', { name: 'Полный транскрипт' })).toBeVisible();
+  await expect(card.getByTestId('recording-card-status')).toHaveCount(0);
+  await expect(card).toContainText('Встреча записана · 42 мин');
   const reply = card.getByRole('button', { name: 'Ответить', exact: true });
   await reply.focus();
   await win.keyboard.press('Enter');
@@ -1904,19 +1958,26 @@ test('chat-recording-done', async ({ open, win, mock, shot }) => {
   await expect(composer).toContainText('Встреча записана · 42 мин');
   await expect(composer.getByRole('textbox')).toBeFocused();
   await composer.getByRole('button', { name: 'Отмена', exact: true }).click();
-  await card.getByRole('button', { name: 'Послушать запись' }).click();
-  const player = card.getByTestId('audio-player');
-  await expect(player).toHaveAttribute('data-playing', 'true');
-  await expect(player).toContainText('Запись встречи');
+  await catchPlayerAudio(win);
+  const play = card.getByTestId('recording-card-play');
+  await card.getByRole('button', { name: 'Слушать запись' }).click();
+  await expect(play).toHaveAttribute('data-playing', 'true');
+  await expect(card.getByTestId('audio-player')).toHaveCount(0);
   // AAC in MP4 decodes: the element reports the file's 6 s.
-  await expect(player).toContainText('0:06');
-  await player.getByRole('button', { name: 'Пауза' }).click();
-  await expect(player).not.toHaveAttribute('data-playing');
-  const seek = player.getByRole('slider', { name: 'Перемотка' });
-  await seek.focus();
-  await win.keyboard.press('Home');
-  await win.keyboard.press('ArrowRight');
-  await expect(seek).toHaveAttribute('aria-valuetext', '0:05 из 0:06');
+  const time = card.getByTestId('recording-card-time');
+  await expect(time).toContainText('/ 0:06');
+  await card.getByRole('button', { name: 'Пауза' }).click();
+  await expect(play).not.toHaveAttribute('data-playing');
+  // Keyboard: Space / Enter on the circle.
+  await play.focus();
+  await win.keyboard.press('Space');
+  await expect(play).toHaveAttribute('data-playing', 'true');
+  await win.keyboard.press('Enter');
+  await expect(play).not.toHaveAttribute('data-playing');
+  await playerAt(win, 2);
+  await expect(time).toHaveText('0:02 / 0:06');
+  // The card is on screen: its circle is the control, no mini-player.
+  await expect(win.getByTestId('mini-player')).toHaveCount(0);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await feedAtBottom(win);
   await win.mouse.move(0, 0);
@@ -1965,7 +2026,7 @@ test('chat-recording-reply-permissions', async ({ open, win, mock }) => {
   await open({ auth: 'out' });
 });
 
-// docs/09 #57: «Послушать запись» really plays — the chat's player is installed at startup, not by
+// docs/09 #57: «Слушать запись» (the REC circle, #88) really plays — the chat's player is installed at startup, not by
 // the first audio attachment on screen (the card's player mounts only once the track is active,
 // so the click used to go nowhere: «playing», no sound, the time stuck at 0:00). The audio is a
 // 64 s AAC with `moov` after `mdat`, like LiveKit Egress writes: Range requests for the tail first.
@@ -1979,12 +2040,15 @@ test('chat-recording-play', async ({ open, win, mock }) => {
   mock.state.files.set(IDS.files.meeting, { meta, bytes });
   mock.state.files.set(meta.id, { meta, bytes });
   const card = await doneCard(win, mock);
-  await card.getByRole('button', { name: 'Послушать запись' }).click();
-  const player = card.getByTestId('audio-player');
-  await expect(player).toHaveAttribute('data-playing', 'true');
-  await expect(player).toContainText('1:04');
-  const seek = player.getByRole('slider', { name: 'Перемотка' });
-  await expect.poll(async () => Number(await seek.getAttribute('aria-valuenow')), { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  await card.getByRole('button', { name: 'Слушать запись' }).click();
+  await expect(card.getByTestId('recording-card-play')).toHaveAttribute('data-playing', 'true');
+  const time = card.getByTestId('recording-card-time');
+  await expect(time).toContainText('/ 1:04');
+  const seconds = async (): Promise<number> => {
+    const [m, s] = ((await time.textContent()) ?? '').split(' / ')[0]?.split(':').map(Number) ?? [];
+    return (m ?? 0) * 60 + (s ?? 0);
+  };
+  await expect.poll(seconds, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
 });
 
 // «Полный транскрипт» (docs/09 #47): speakers, times, search that keeps the matching remarks, a
@@ -2009,7 +2073,7 @@ test('recording-transcript', async ({ open, win, mock, shot }) => {
   await dialog.getByRole('textbox', { name: 'Поиск по транскрипту' }).fill('');
   await rows.nth(0).click();
   await expect(rows.nth(0)).toHaveAttribute('aria-current', 'true');
-  await expect(card.getByTestId('audio-player')).toBeVisible();
+  await expect(card.getByTestId('recording-card-play')).toHaveAttribute('data-playing', 'true');
   await win.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 });

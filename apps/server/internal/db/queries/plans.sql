@@ -42,6 +42,8 @@ SELECT sqlc.embed(w), sqlc.embed(u),
     sb.email AS suspended_by_email,
     (SELECT count(*) FROM workspace_members m WHERE m.workspace_id = w.id AND m.role <> 'guest')::integer AS members,
     (SELECT count(*) FROM rooms r WHERE r.workspace_id = w.id AND r.archived_at IS NULL)::integer AS rooms,
+    (SELECT count(*) FROM workspace_members m JOIN users bu ON bu.id = m.user_id WHERE m.workspace_id = w.id AND bu.is_bot)::integer AS bots,
+    (SELECT count(*) FROM sticker_packs sp WHERE sp.workspace_id = w.id AND sp.deleted_at IS NULL)::integer AS sticker_packs,
     coalesce((SELECT max(lm.created_at) FROM rooms r
         CROSS JOIN LATERAL (SELECT m.created_at FROM messages m WHERE m.room_id = r.id ORDER BY m.id DESC LIMIT 1) lm
         WHERE r.workspace_id = w.id), 'epoch'::timestamptz)::timestamptz AS last_activity

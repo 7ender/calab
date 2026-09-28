@@ -429,6 +429,14 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		if !rooms.ValidAudioBitrate(req.GetDefaultAudioBitrateKbps()) {
 			return httpx.Validation("defaultAudioBitrateKbps", rooms.AudioBitrateError)
 		}
+		cur, err := h.db.Q.GetWorkspace(r.Context(), wsID)
+		if err != nil {
+			return err
+		}
+		// Above the plan's voice tier cap (ADR-0024); the stored value itself stays accepted.
+		if err := h.limits.Plans.CheckAudio(r.Context(), wsID, req.GetDefaultAudioBitrateKbps(), uint32(max(cur.DefaultAudioBitrateKbps, 0))); err != nil { //nolint:gosec // DB CHECK bounds it
+			return err
+		}
 		v := int32(req.GetDefaultAudioBitrateKbps()) //nolint:gosec // validated
 		p.DefaultAudioBitrateKbps, mediaChanged = &v, true
 	}
@@ -540,8 +548,15 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// join adds the caller as a member inside q. Already a member → existing row, added=false.
-func join(ctx context.Context, q *sqlc.Queries, wsID, userID uuid.UUID) (m sqlc.WorkspaceMember, added bool, err error) {
+// join adds the caller as a member inside q, within the plan's members limit. Already a
+// member → existing row, added=false.
+func join(ctx context.Context, q *sqlc.Queries, pl *plans.Service, wsID, userID uuid.UUID) (m sqlc.WorkspaceMember, added bool, err error) {
+	if m, err = q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: userID}); err == nil || !db.IsNotFound(err) {
+		return m, false, err
+	}
+	if err = pl.Check(ctx, q, wsID, plans.KindMembers, true); err != nil {
+		return m, false, err
+	}
 	m, err = q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: wsID, UserID: userID, Role: string(perm.RoleMember)})
 	if db.IsNotFound(err) { // ON CONFLICT DO NOTHING
 		m, err = q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: userID})
@@ -598,7 +613,15 @@ func (h *Handlers) joinOpen(w http.ResponseWriter, r *http.Request) error {
 	} else if err != nil {
 		return err
 	}
-	m, added, err := join(r.Context(), h.db.Q, wsID, uid(r))
+	var (
+		m     sqlc.WorkspaceMember
+		added bool
+	)
+	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		var err error
+		m, added, err = join(r.Context(), q, h.limits.Plans, wsID, uid(r))
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -710,6 +733,9 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if err := h.limits.Plans.Check(r.Context(), q, ws.ID, plans.KindMembers, true); err != nil {
+			return err
+		}
 		if _, err := q.ConsumeInvite(r.Context(), code); err != nil {
 			if db.IsNotFound(err) {
 				return auth.ErrInviteInvalid()
@@ -741,6 +767,10 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 func (h *Handlers) createInvite(w http.ResponseWriter, r *http.Request) error {
 	_, wsID, _, err := h.inviter(r)
 	if err != nil {
+		return err
+	}
+	// A link into a full workspace would only fail at the join: refuse it now (ADR-0024).
+	if err := h.limits.Plans.Check(r.Context(), h.db.Q, wsID, plans.KindMembers, false); err != nil {
 		return err
 	}
 	var req v1.CreateInviteRequest
@@ -1047,6 +1077,10 @@ func (h *Handlers) promote(w http.ResponseWriter, r *http.Request) error {
 	}
 	var m sqlc.WorkspaceMember
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		// A guest takes no seat, a member does (ADR-0024).
+		if err := h.limits.Plans.Check(r.Context(), q, wsID, plans.KindMembers, true); err != nil {
+			return err
+		}
 		var err error
 		m, err = q.PromoteGuest(r.Context(), sqlc.PromoteGuestParams{WorkspaceID: wsID, UserID: target})
 		if db.IsNotFound(err) {

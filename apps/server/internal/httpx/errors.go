@@ -29,6 +29,12 @@ type Error struct {
 // ReasonPlanLimit marks errors caused by a limit of the workspace plan (ADR-0024).
 const ReasonPlanLimit = "PLAN_LIMIT"
 
+// IsPlanLimit reports whether err is an API error with reason PLAN_LIMIT.
+func IsPlanLimit(err error) bool {
+	var e *Error
+	return errors.As(err, &e) && e.Reason == ReasonPlanLimit
+}
+
 // WithDetails returns a copy of e with ApiError.reason / used / limit set; errors.Is(copy, e)
 // holds.
 func (e *Error) WithDetails(reason string, used, limit uint64) *Error {

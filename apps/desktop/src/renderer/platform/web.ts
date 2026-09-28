@@ -481,6 +481,7 @@ export function createWebPlatform(): Platform {
       onUpdateStatus: noop,
       updateStatus: () => Promise.resolve({ state: 'disabled' }),
       installUpdate: () => Promise.resolve(false),
+      downloadUpdate: () => Promise.resolve(false),
       networkOnline: () => undefined,
       log: (level, message) => {
         (level === 'error' ? console.error : level === 'warn' ? console.warn : console.info)(message);

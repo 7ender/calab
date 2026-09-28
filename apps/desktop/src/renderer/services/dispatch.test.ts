@@ -5,6 +5,7 @@ import {
   MessageSchema,
   ReadySchema,
   MessageDeleteSchema,
+  PeerReadSchema,
   ReadStateSchema,
   ReadStateUpdateSchema,
   RoomSchema,
@@ -43,6 +44,7 @@ vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undef
 const { applyDispatch, TYPING_MS } = await import('./dispatch');
 const { useMessages } = await import('../stores/messages');
 const { useRooms } = await import('../stores/rooms');
+const { useReadReceipts } = await import('../stores/readReceipts');
 const { useTyping } = await import('../stores/typing');
 const { useInbox } = await import('../stores/inbox');
 const { useDms, HOME } = await import('../stores/dms');
@@ -133,6 +135,20 @@ describe('dispatch READY (re-IDENTIFY while the UI is up)', () => {
     );
     expect(useRooms.getState().unread['a']).toBe(0);
     expect(useRooms.getState().mentions['a']).toBeUndefined();
+  });
+
+  it('read receipts (docs/09 #92): READY replaces them, READ_RECEIPT only moves forward', () => {
+    useReadReceipts.getState().set('gone', id(3));
+    const r = ready([room('a'), room('b')]);
+    if (r.event.case === 'ready') r.event.value.peerReads = [create(PeerReadSchema, { roomId: 'a', lastReadMessageId: id(5) })];
+    applyDispatch(r);
+    expect(useReadReceipts.getState().byRoom).toEqual({ a: id(5) });
+    const receipt = (rid: string, n: number): DispatchEvent =>
+      create(DispatchEventSchema, { event: { case: 'readReceipt', value: create(PeerReadSchema, { roomId: rid, lastReadMessageId: id(n) }) } });
+    applyDispatch(receipt('a', 7));
+    applyDispatch(receipt('a', 6)); // stale
+    applyDispatch(receipt('b', 2));
+    expect(useReadReceipts.getState().byRoom).toEqual({ a: id(7), b: id(2) });
   });
 
   it('a replayed MESSAGE_CREATE counts once (no double badge / sound)', () => {

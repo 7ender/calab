@@ -1,6 +1,5 @@
 import { create } from '@bufbuild/protobuf';
 import {
-  AUDIO_TIERS_KBPS,
   audioTierKbps,
   PERMISSION_BITS,
   PermissionTargetType,
@@ -38,6 +37,9 @@ import { SettingsWindow, type SettingsSection } from '../../components/SettingsW
 import { UserLimitCard } from '../shell/UserLimitCard';
 import { RoomLinkTab } from '../people/RoomLinkTab';
 import { RoomAccessCard } from './RoomAccessCard';
+import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
+import { capAudioKbps } from '../../lib/plan';
+import { reportPlanError } from '../../services/plan';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -213,6 +215,7 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
   const ov = room?.mediaOverride;
   const wsDefaults = useWorkspaces((s) => (room ? s.byId[room.workspaceId]?.ws.mediaDefaults : undefined));
+  const audioCap = useWorkspaces((s) => (room ? (s.byId[room.workspaceId]?.ws.plan?.limits?.audioTierMaxKbps ?? 0) : 0));
   // media_override replaces the whole override: always send every field.
   const apply = (patch: { bitrate?: number | ''; preset?: number | ''; streams?: number | ''; cameras?: number | '' }): void => {
     const bitrate = patch.bitrate !== undefined ? patch.bitrate : (ov?.audioBitrateKbps ?? '');
@@ -226,7 +229,9 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
         ...(streams !== '' ? { maxStreams: streams } : {}),
         ...(cameras !== '' ? { cameraLimit: cameras } : {}),
       }),
-    }).catch((e: unknown) => toast.error(err(e)));
+    }).catch((e: unknown) => {
+      if (!reportPlanError(e, room?.workspaceId)) toast.error(err(e));
+    });
   };
   const num = (v: string): number | '' => (v === '' ? '' : Number(v));
   // «Как в пространстве (32 кбит/с)»: the inherited value right in the option.
@@ -235,14 +240,10 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
     <>
     <UserLimitCard roomId={roomId} />
     <Card title={t('card.voiceStream')} footer={t('room.mediaText')}>
-      <Row label={t('media.bitrate')} hint={t('media.bitrateHint')}>
+      <Row label={t('media.bitrate')} hint={<AudioTierHint cap={audioCap} />}>
         <Select aria-label={t('media.bitrate')} className="w-60" value={ov?.audioBitrateKbps ? audioTierKbps(ov.audioBitrateKbps) : ''} onChange={(e) => apply({ bitrate: num(e.target.value) })}>
-          <option value="">{def(audioTierLabel(wsDefaults?.audioBitrateKbps ?? 32))}</option>
-          {AUDIO_TIERS_KBPS.map((b) => (
-            <option key={b} value={b}>
-              {audioTierLabel(b)}
-            </option>
-          ))}
+          <option value="">{def(audioTierLabel(capAudioKbps(wsDefaults?.audioBitrateKbps ?? 32, audioCap)))}</option>
+          <AudioTierOptions cap={audioCap} />
         </Select>
       </Row>
       {/* Short options (240 px); the parameters and the inherited value go to the hint and titles. */}

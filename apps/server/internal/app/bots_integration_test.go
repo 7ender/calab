@@ -204,7 +204,9 @@ func TestBotLifecycle(t *testing.T) {
 	b.token = re.GetToken()
 	b.must(200, "GET", "/api/me", nil, nil)
 
-	// Plan limit (free: 2 bots in a workspace).
+	// Plan limit (a custom plan with 2 bots; the free plan's one bot: TestPlanFreeCounts).
+	superadminUser(t).must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_CUSTOM,
+		Limits: &v1.PlanLimits{Bots: 2}}, nil)
 	createBot(t, o, ws.GetId(), "second")
 	st, e := o.apiErrBody("POST", base, &v1.CreateBotRequest{DisplayName: "third", Username: strings.ReplaceAll(uniq("third_"), "-", "_")})
 	if st != 409 || e.GetReason() != "PLAN_LIMIT" || e.GetLimit() != 2 || e.GetUsed() != 2 {

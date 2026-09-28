@@ -18,7 +18,7 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={id} aria-labelledby={labelledBy} className={cx('py-20 sm:py-28', alt && 'surface-alt bg-bg-alt')}>
+    <section id={id} aria-labelledby={labelledBy} className={cx('py-16 sm:py-24', alt && 'surface-alt bg-bg-alt')}>
       <Container>{children}</Container>
     </section>
   );
@@ -69,7 +69,8 @@ export function Button({ href, children, variant = 'primary', size = 'md', class
 /**
  * Light/dark screenshot pair switched by prefers-color-scheme. Sources are 2x (Retina) captures;
  * `<name>-<theme>@2x.webp` is the full-resolution file, `<name>-<theme>.webp` a 1x Lanczos resample.
- * width/height are CSS pixels (half of the 2x pixel size).
+ * width/height are CSS pixels (half of the 2x pixel size). `sizes` (the rendered width): the browser then
+ * picks by width descriptors, so a phone doesn't fetch the 2x file of an image shown at a third of its size.
  */
 export function ThemedImage({
   name,
@@ -77,27 +78,37 @@ export function ThemedImage({
   width,
   height,
   priority,
+  eager,
+  sizes,
   className,
 }: {
   name: string;
   alt: string;
   width: number;
   height: number;
+  /** The LCP image: loaded eagerly with high fetch priority. */
   priority?: boolean;
+  /** Near the top of the page: loaded eagerly (a lazy image there stays empty during a fast scroll). */
+  eager?: boolean;
+  sizes?: string;
   className?: string;
 }) {
-  const set = (theme: 'dark' | 'light') => `/screens/${name}-${theme}.webp 1x, /screens/${name}-${theme}@2x.webp 2x`;
+  const set = (theme: 'dark' | 'light') =>
+    sizes
+      ? `/screens/${name}-${theme}.webp ${width}w, /screens/${name}-${theme}@2x.webp ${width * 2}w`
+      : `/screens/${name}-${theme}.webp 1x, /screens/${name}-${theme}@2x.webp 2x`;
   return (
     <picture>
-      <source srcSet={set('dark')} media="(prefers-color-scheme: dark)" />
+      <source srcSet={set('dark')} sizes={sizes} media="(prefers-color-scheme: dark)" />
       <img
         src={`/screens/${name}-light@2x.webp`}
         srcSet={set('light')}
+        sizes={sizes}
         alt={alt}
         width={width}
         height={height}
         decoding="async"
-        {...(priority ? { fetchPriority: 'high' as const } : { loading: 'lazy' as const })}
+        {...(priority ? { fetchPriority: 'high' as const } : eager ? {} : { loading: 'lazy' as const })}
         className={cx('block h-auto w-full', className)}
       />
     </picture>

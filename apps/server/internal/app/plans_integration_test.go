@@ -22,7 +22,7 @@ import (
 // Plans and limits (ADR-0024).
 
 const (
-	unlimitedPlan   = `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0,"sticker_packs":0,"stickers":0}`
+	unlimitedPlan   = `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0}`
 	superadminEmail = "it-admin@example.com"
 	// superadminEmail2 belongs to TestAdminGuardAndLimit only (it exhausts its rate limit).
 	superadminEmail2 = "it-admin2@example.com"
@@ -250,6 +250,20 @@ func TestPlanStorageQuota(t *testing.T) {
 	o.must(200, "GET", "/api/workspaces/"+ws.GetId(), nil, &gw)
 	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 1 || gw.GetWorkspace().GetPlan().GetPlan() != v1.Plan_PLAN_CUSTOM {
 		t.Fatalf("workspace plan: %v", gw.GetWorkspace().GetPlan())
+	}
+	// TEAM: 1 TiB (owner, 28.09) — the refused upload now fits; ENTERPRISE: no storage limit.
+	admin.must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM}, nil)
+	o.must(200, "GET", "/api/workspaces/"+ws.GetId(), nil, &gw)
+	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 1<<20 {
+		t.Fatalf("team storage: %v", gw.GetWorkspace().GetPlan())
+	}
+	if st, e := uploadRaw(t, o, ws.GetId(), part); st != 201 {
+		t.Fatalf("upload on team: %d %v", st, e)
+	}
+	admin.must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE}, nil)
+	o.must(200, "GET", "/api/workspaces/"+ws.GetId(), nil, &gw)
+	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 0 {
+		t.Fatalf("enterprise storage: %v", gw.GetWorkspace().GetPlan())
 	}
 }
 

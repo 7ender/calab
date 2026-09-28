@@ -335,11 +335,11 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		c.closeGraceful(4000, "try again")
 		return nil
 	}
-	if err := h.buf.create(ctx, gsid, id.UserID, id.SessionID, h.instance); err != nil {
+	if err := h.buf.create(ctx, gsid, id.UserID, id.SessionID, h.instance, id.IsBot); err != nil {
 		c.closeGraceful(4000, "try again")
 		return nil
 	}
-	s := newSession(h, gsid, id.UserID, id.SessionID)
+	s := newSession(h, gsid, id.UserID, id.SessionID, id.IsBot)
 	// Register first so that events published while READY is being built are queued.
 	h.register(s, wids)
 	for _, w := range wids {
@@ -426,6 +426,14 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 			RoomId: r.RoomID.String(), LastReadMessageId: marker,
 			UnreadCount: uint32(max(r.UnreadCount, 0)), MentionCount: uint32(max(r.MentionCount, 0)), //nolint:gosec // 0..999
 		})
+	}
+	// Read receipts of workspace rooms (docs/09 #92); DMs have theirs in dms[].
+	prs, err := h.db.Q.ListPeerReads(ctx, sqlc.ListPeerReadsParams{UserID: uid, RoomIds: visible})
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range prs {
+		ready.PeerReads = append(ready.PeerReads, &v1.PeerRead{RoomId: p.RoomID.String(), LastReadMessageId: p.LastReadMessageID.String()})
 	}
 	ns, err := h.db.Q.ListRoomNotificationSettings(ctx, sqlc.ListRoomNotificationSettingsParams{UserID: uid, RoomIds: append(visible, dmRooms...)})
 	if err != nil {
@@ -514,7 +522,7 @@ func (h *Hub) takeover(ctx context.Context, gsid uuid.UUID, meta sessMeta) *Sess
 	if err != nil {
 		return nil
 	}
-	s := newSession(h, gsid, meta.user, meta.asess)
+	s := newSession(h, gsid, meta.user, meta.asess, meta.bot)
 	h.register(s, wids) // events from now on are queued (s.ready=false)
 	for _, w := range wids {
 		h.ensureState(ctx, w)

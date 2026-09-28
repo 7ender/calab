@@ -29,7 +29,9 @@ type WorkspaceUsage struct {
 	Rooms         uint32                 `protobuf:"varint,2,opt,name=rooms,proto3" json:"rooms,omitempty"`                          // live rooms
 	StorageMb     uint64                 `protobuf:"varint,3,opt,name=storage_mb,json=storageMb,proto3" json:"storage_mb,omitempty"` // stored files, MiB (rounded up)
 	StorageBytes  uint64                 `protobuf:"varint,4,opt,name=storage_bytes,json=storageBytes,proto3" json:"storage_bytes,omitempty"`
-	LastActivity  *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_activity,json=lastActivity,proto3" json:"last_activity,omitempty"` // newest message; unset = none
+	LastActivity  *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_activity,json=lastActivity,proto3" json:"last_activity,omitempty"`  // newest message; unset = none
+	Bots          uint32                 `protobuf:"varint,6,opt,name=bots,proto3" json:"bots,omitempty"`                                     // bots that are members (they count as members too)
+	StickerPacks  uint32                 `protobuf:"varint,7,opt,name=sticker_packs,json=stickerPacks,proto3" json:"sticker_packs,omitempty"` // live sticker packs
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -97,6 +99,20 @@ func (x *WorkspaceUsage) GetLastActivity() *timestamppb.Timestamp {
 		return x.LastActivity
 	}
 	return nil
+}
+
+func (x *WorkspaceUsage) GetBots() uint32 {
+	if x != nil {
+		return x.Bots
+	}
+	return 0
+}
+
+func (x *WorkspaceUsage) GetStickerPacks() uint32 {
+	if x != nil {
+		return x.StickerPacks
+	}
+	return 0
 }
 
 // A workspace as the superadmin sees it.
@@ -672,14 +688,16 @@ var File_calaba_v1_admin_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x15calaba/v1/admin.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\x1a\x19calaba/v1/workspace.proto\"\xc5\x01\n" +
+	"\x15calaba/v1/admin.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\x1a\x19calaba/v1/workspace.proto\"\xfe\x01\n" +
 	"\x0eWorkspaceUsage\x12\x18\n" +
 	"\amembers\x18\x01 \x01(\rR\amembers\x12\x14\n" +
 	"\x05rooms\x18\x02 \x01(\rR\x05rooms\x12\x1d\n" +
 	"\n" +
 	"storage_mb\x18\x03 \x01(\x04R\tstorageMb\x12#\n" +
 	"\rstorage_bytes\x18\x04 \x01(\x04R\fstorageBytes\x12?\n" +
-	"\rlast_activity\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\flastActivity\"\x97\x03\n" +
+	"\rlast_activity\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\flastActivity\x12\x12\n" +
+	"\x04bots\x18\x06 \x01(\rR\x04bots\x12#\n" +
+	"\rsticker_packs\x18\a \x01(\rR\fstickerPacks\"\x97\x03\n" +
 	"\x0eAdminWorkspace\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x12%\n" +
 	"\x05owner\x18\x02 \x01(\v2\x0f.calaba.v1.UserR\x05owner\x12\x1f\n" +

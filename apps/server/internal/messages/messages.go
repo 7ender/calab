@@ -42,6 +42,8 @@ type Handlers struct {
 	// BotLimiter bounds the messages of one bot in all rooms and DMs (ADR-0031,
 	// BOT_MESSAGES_PER_MIN); nil = none.
 	BotLimiter *redisx.RateLimiter
+	// Receipts publishes READ_RECEIPT after reads (docs/09 #92); nil = none.
+	Receipts *Receipts
 }
 
 // NewHandlers creates the message handlers.
@@ -652,7 +654,8 @@ func (h *Handlers) read(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := rooms.Access(r, roomID); err != nil {
+	acc, err := rooms.Access(r, roomID)
+	if err != nil {
 		return err
 	}
 	var req v1.UpdateReadStateRequest
@@ -670,9 +673,13 @@ func (h *Handlers) read(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rs, err := h.db.Q.UpsertReadState(r.Context(), sqlc.UpsertReadStateParams{UserID: uid(r), RoomID: roomID, LastReadMessageID: mid})
+	rs, err := h.db.Q.AdvanceReadState(r.Context(), sqlc.AdvanceReadStateParams{UserID: uid(r), RoomID: roomID, MessageID: mid})
 	if err != nil {
 		return err
+	}
+	// Read receipts (docs/09 #92): only when the marker moved, never for a bot's reads.
+	if h.Receipts != nil && rs.Advanced && !auth.MustFromContext(r.Context()).IsBot {
+		h.Receipts.afterRead(r.Context(), acc, roomID, uid(r), rs.LastReadMessageID)
 	}
 	h.events.User(r.Context(), uid(r), &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{
 		ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: roomID.String(), LastReadMessageId: rs.LastReadMessageID.String()}},

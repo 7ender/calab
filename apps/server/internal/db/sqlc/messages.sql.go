@@ -31,6 +31,39 @@ func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (int64
 	return result.RowsAffected(), nil
 }
 
+const advanceReadState = `-- name: AdvanceReadState :one
+WITH prev AS (
+    SELECT p.last_read_message_id FROM read_states p
+    WHERE p.user_id = $1 AND p.room_id = $2
+)
+INSERT INTO read_states (user_id, room_id, last_read_message_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id, room_id) DO UPDATE
+    SET last_read_message_id = GREATEST(read_states.last_read_message_id, EXCLUDED.last_read_message_id)
+RETURNING read_states.last_read_message_id,
+    (NOT EXISTS (SELECT 1 FROM prev WHERE prev.last_read_message_id >= $3))::boolean AS advanced
+`
+
+type AdvanceReadStateParams struct {
+	UserID    uuid.UUID
+	RoomID    uuid.UUID
+	MessageID uuid.UUID
+}
+
+type AdvanceReadStateRow struct {
+	LastReadMessageID uuid.UUID
+	Advanced          bool
+}
+
+// UpsertReadState that also reports whether the marker moved (PUT /api/rooms/{id}/read:
+// read receipts are published only then; docs/09 #92). prev sees the row before the upsert.
+func (q *Queries) AdvanceReadState(ctx context.Context, arg AdvanceReadStateParams) (AdvanceReadStateRow, error) {
+	row := q.db.QueryRow(ctx, advanceReadState, arg.UserID, arg.RoomID, arg.MessageID)
+	var i AdvanceReadStateRow
+	err := row.Scan(&i.LastReadMessageID, &i.Advanced)
+	return i, err
+}
+
 const copyAttachments = `-- name: CopyAttachments :exec
 INSERT INTO message_attachments (message_id, file_id, position, forwarded)
 SELECT $1::uuid, file_id, position, true FROM message_attachments
@@ -492,6 +525,45 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 	return items, nil
 }
 
+const listPeerReads = `-- name: ListPeerReads :many
+SELECT DISTINCT ON (rs.room_id) rs.room_id, rs.last_read_message_id
+FROM read_states rs JOIN users u ON u.id = rs.user_id
+WHERE rs.room_id = ANY($1::uuid[]) AND rs.user_id <> $2::uuid AND NOT u.is_bot
+ORDER BY rs.room_id, rs.last_read_message_id DESC
+`
+
+type ListPeerReadsParams struct {
+	RoomIds []uuid.UUID
+	UserID  uuid.UUID
+}
+
+type ListPeerReadsRow struct {
+	RoomID            uuid.UUID
+	LastReadMessageID uuid.UUID
+}
+
+// READY (docs/09 #92): per given room, the furthest read marker of the other people (bots'
+// reads do not count); rooms nobody else read are absent.
+func (q *Queries) ListPeerReads(ctx context.Context, arg ListPeerReadsParams) ([]ListPeerReadsRow, error) {
+	rows, err := q.db.Query(ctx, listPeerReads, arg.RoomIds, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPeerReadsRow{}
+	for rows.Next() {
+		var i ListPeerReadsRow
+		if err := rows.Scan(&i.RoomID, &i.LastReadMessageID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPins = `-- name: ListPins :many
 SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at FROM messages
 WHERE room_id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL
@@ -876,6 +948,42 @@ func (q *Queries) SoftDeleteMessage(ctx context.Context, id uuid.UUID) (int64, e
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const topRoomReads = `-- name: TopRoomReads :many
+SELECT rs.user_id, rs.last_read_message_id
+FROM read_states rs JOIN users u ON u.id = rs.user_id
+WHERE rs.room_id = $1 AND NOT u.is_bot
+ORDER BY rs.last_read_message_id DESC
+LIMIT 3
+`
+
+type TopRoomReadsRow struct {
+	UserID            uuid.UUID
+	LastReadMessageID uuid.UUID
+}
+
+// The three furthest read markers of a room among people (bots' reads do not count): read
+// receipts of workspace rooms (docs/09 #92). A probe of read_states_room_id_idx over the
+// room's markers (one per member who ever read it) and a top-3 sort.
+func (q *Queries) TopRoomReads(ctx context.Context, roomID uuid.UUID) ([]TopRoomReadsRow, error) {
+	rows, err := q.db.Query(ctx, topRoomReads, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TopRoomReadsRow{}
+	for rows.Next() {
+		var i TopRoomReadsRow
+		if err := rows.Scan(&i.UserID, &i.LastReadMessageID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const unpinMessage = `-- name: UnpinMessage :one

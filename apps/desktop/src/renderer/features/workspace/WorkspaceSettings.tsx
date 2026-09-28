@@ -1,5 +1,4 @@
 import {
-  AUDIO_TIERS_KBPS,
   audioTierKbps,
   WorkspaceRole,
   WorkspaceVisibility,
@@ -16,7 +15,6 @@ import { SettingsWindow, type SettingsSection } from '../../components/SettingsW
 import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner, Toggle } from '../../components/ui';
 import { getLocale, t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
-import { audioTierLabel } from '../../lib/audioTierLabel';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { fmt, type TimeFormatPref } from '../../lib/format';
 import { workspaceInitials } from '../../lib/initials';
@@ -33,7 +31,8 @@ import { MemberBirthdayDialog } from '../people/MemberBirthdayDialog';
 import { MemberBirthdaysTable } from './MemberBirthdaysTable';
 import { NickInline } from '../people/NickInline';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
-import { PlanTab } from './PlanTab';
+import { PlanFullNote, PlanTab, useMembersCap } from './PlanTab';
+import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { GptunnelTab } from './GptunnelTab';
 import { reportPlanError } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
@@ -208,17 +207,16 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
 
 function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const md = useWorkspaces((s) => s.byId[workspaceId]?.ws.mediaDefaults);
+  const audioCap = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.audioTierMaxKbps ?? 0);
   const apply = (init: Parameters<typeof api.workspaces.update>[1]): void =>
-    void patchWorkspace(workspaceId, init).catch((e: unknown) => toast.error(err(e)));
+    void patchWorkspace(workspaceId, init).catch((e: unknown) => {
+      if (!reportPlanError(e, workspaceId)) toast.error(err(e));
+    });
   return (
     <Card title={t('card.defaults')} footer={t('ws.mediaText')}>
-      <Row label={t('media.bitrate')} hint={t('media.bitrateHint')}>
+      <Row label={t('media.bitrate')} hint={<AudioTierHint cap={audioCap} />}>
         <Select aria-label={t('media.bitrate')} className="w-60" value={audioTierKbps(md?.audioBitrateKbps ?? 32)} onChange={(e) => apply({ defaultAudioBitrateKbps: Number(e.target.value) })}>
-          {AUDIO_TIERS_KBPS.map((b) => (
-            <option key={b} value={b}>
-              {audioTierLabel(b)}
-            </option>
-          ))}
+          <AudioTierOptions cap={audioCap} />
         </Select>
       </Row>
       <Row label={t('media.maxPreset')} hint={presetDetail(md?.maxStreamPreset || 3)}>
@@ -405,11 +403,16 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
   const q = useQuery({ queryKey: ['invites', workspaceId], queryFn: () => api.workspaces.invites(workspaceId) });
   const [maxUses, setMaxUses] = useState(0);
   const [expires, setExpires] = useState(7 * 86400);
+  // The plan's members limit (owner 28.09: free = 50): no new links or invitations at the cap.
+  const cap = useMembersCap(workspaceId);
   const create = useMutation({
     mutationFn: () => api.workspaces.createInvite(workspaceId, { maxUses, expiresInSeconds: expires }),
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['invites', workspaceId] });
       if (r.invite) void navigator.clipboard.writeText(inviteLink(r.invite)).then(() => toast.success(t('invite.copied')));
+    },
+    onError: (e) => {
+      if (!reportPlanError(e, workspaceId)) toast.error(errorText(e));
     },
   });
   const revoke = useMutation({
@@ -420,8 +423,9 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
     <>
       {/* docs/09 #55: from a room, a guest without an account first (the card hides itself without MANAGE_ROOM). */}
       {roomId ? <RoomGuestInviteCard roomId={roomId} /> : null}
+      {cap.full ? <PlanFullNote text={t('plan.membersFull', { n: cap.limit })} testId="invite-plan-full" /> : null}
       {/* ADR-0023: by an exact address first; the links below stay for everyone else. */}
-      <EmailInviteCard workspaceId={workspaceId} />
+      <EmailInviteCard workspaceId={workspaceId} full={cap.full} />
       <EmailInvitesList workspaceId={workspaceId} />
       <Card title={t('invite.new')} footer={`${t('invite.createHint')} ${t('invite.hint')}`}>
         <Row label={t('invite.maxUses')}>
@@ -445,7 +449,7 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
         </Row>
       </Card>
       <div className="-mt-3 flex justify-end">
-        <Button busy={create.isPending} onClick={() => create.mutate()}>
+        <Button busy={create.isPending} disabled={cap.full} onClick={() => create.mutate()}>
           {t('invite.create')}
         </Button>
       </div>

@@ -11,7 +11,7 @@ export const ruChat = {
   'chat.editedShort': 'изм.',
   'chat.statusPending': 'Отправляется',
   'chat.statusSent': 'Отправлено',
-  'chat.statusDelivered': 'Доставлено',
+  'chat.statusRead': 'Прочитано',
   'chat.attachment': 'Вложение',
   'chat.openImage': 'Открыть изображение «{name}»',
   'chat.reactionLabel': 'Реакция {emoji}: {count}',

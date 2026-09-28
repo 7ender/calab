@@ -32,7 +32,7 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
   language (Русский · English · Español · 中文); with JS it saves the choice and keeps the current `#section`.
 - `404.html` is shared by all locales (English + links to each language). Caddy redirects unknown locale prefixes
   (`/de/`, `/pt-BR/…`) to `/en/` and `/ru` → `/ru/`.
-- **Known limitation:** screenshots in the hero and feature cards (and `og.png`) are Russian in every locale; alt texts
+- **Known limitation:** screenshots in the hero and feature rows (and `og.png`) are Russian in every locale; alt texts
   are translated. English captures — later (`docs/images/` + `pnpm assets`, per-locale names).
 
 ## Where it is served
@@ -46,7 +46,7 @@ in the browser, the version comes from `latest/VERSION`, never versioned file na
 ## Design
 
 Follows `docs/08-design.md`: system font stack, one accent (`#0A84FF`/`#007AFF`, white-on-accent fills use
-`#0071e3`), 4 px grid, glass only on the sticky header (solid with `prefers-reduced-transparency`), light/dark
+`#0071e3`), 4 px grid, solid materials only (no `backdrop-filter`, the sticky header too), light/dark
 via `prefers-color-scheme` only, motion only under `prefers-reduced-motion: no-preference`. Tokens live in
 `src/app/globals.css`. All components are server components except `download-primary.tsx` (OS detection + `latest/VERSION`); the FAQ uses native `<details>`, so the page works
 without JS (the Next runtime chunk still ships, ~100 kB).
@@ -58,12 +58,20 @@ Sources are the shared 2x (Retina) macOS window captures in `docs/images/` (also
 `screencapture -l` without shadow), `chat-{dark,light}-shadow@2x.png` for the hero and `mobile-dark@2x.png`
 (iPhone 14 in WebKit, 390 pt wide) for the «На телефоне» card — all from `pnpm -F @calaba/desktop screenshots:marketing`.
 
+Feature rows (landing v2): `landing-{voice,call,recording}-{dark,light}@2x.png` in `docs/images/` are 1280×800 pt
+captures of the mock-driven renderer (no packaged app, no `screencapture`) from
+`apps/desktop/e2e-marketing/landing.spec.ts`: `pnpm -F @calaba/desktop build:app`, then in `apps/desktop`
+`CALABA_VISUAL_MOCK_PORT=39370 MOCK_LIVEKIT_ROOM_PREFIX=landing_ pnpm exec playwright test --config playwright.marketing.config.ts -g landing`
+(dark; again with `CALABA_LANDING_THEME=light`), dev LiveKit running. `assets.mjs` crops them at native size.
+
 1. Replace the PNGs in `docs/images/` (keep names; PNG > 3 MB → `oxipng` / `pngquant --quality 90-100`).
 2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` writes `public/screens/<name>-<theme>@2x.webp` at full
    resolution (no downscale, WebP q92) plus a 1x Lanczos resample `<name>-<theme>.webp`; feature cards are crops
    (660×400 pt → 1320×800 px) whose offsets are in window points at the top of the script — check them when the
    app layout changes. The 1200×630 `public/og.png` is composed from the 2x chat capture.
-3. Pages use `srcset` 1x/2x with `width`/`height` in CSS pixels. Rebuild and commit `public/`.
+3. Pages use `srcset` (width descriptors + `sizes`) with `width`/`height` in CSS pixels (no layout shift); the hero
+   and the first two feature rows load eagerly. Keep every file under 250 KB. `assets` also rewrites `public/og.png`:
+   commit it only when the OG art should change. Rebuild and commit `public/`.
 
 ## TODO
 
