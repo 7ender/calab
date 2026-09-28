@@ -540,7 +540,6 @@ export const es: Dict = {
   'onb.notifDeniedWeb':
     'El navegador no permite notificaciones para este sitio — por ejemplo, en modo incógnito o si antes elegiste «Bloquear». Puedes permitirlas en los ajustes del sitio (el icono a la izquierda de la dirección).',
   'onb.start': 'Empezar',
-  'app.checkBtn': 'Comprobar',
   'room.deleteBtn': 'Eliminar…',
   'ws.deleteBtn': 'Eliminar…',
   'ws.role': 'Rol: {name}',

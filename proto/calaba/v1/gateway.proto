@@ -188,6 +188,9 @@ message DispatchEvent {
     // One-to-one calls (ADR-0034); to the participants' user channels only.
     CallRing call_ring = 46;         // to the callee's devices: a call is ringing
     CallStateUpdate call_state = 47; // to both sides: the call was placed or changed state
+    // Others read further (docs/09 #92): in a DM to the peer at once; in a workspace room to
+    // the members who can view it, at most one per room per 3 s. Never to bots.
+    PeerRead read_receipt = 48;
     // Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
     BotCreate bot_create = 60;
     BotUpdate bot_update = 61;
@@ -294,6 +297,21 @@ message Ready {
   // The recipient's current call (ADR-0034), RINGING or ACTIVE, incoming or outgoing; unset =
   // none. After a reconnect the client restores the ringing / in-call UI from it.
   Call call = 10;
+  // Read receipts of workspace rooms (docs/09 #92): how far the other members (bots excluded)
+  // read, for visible rooms someone else has read. DMs carry theirs in dms[].peer_read_message_id.
+  repeated PeerRead peer_reads = 11;
+}
+
+// How far others read a room (docs/09 #92): in a DM the peer's read marker, in a workspace
+// room the furthest marker among the other members (who read is not disclosed); bots' reads
+// do not count. In READY (Ready.peer_reads) and as READ_RECEIPT. Clients keep the maximum:
+// the recipient's own messages with id <= last_read_message_id show as read.
+message PeerRead {
+  string room_id = 1;
+  string last_read_message_id = 2;
+  // Server-internal routing, always empty for clients: the member whose own marker this is
+  // (the gateway does not deliver the event to them).
+  string except_user_id = 3;
 }
 
 // A direct message as seen by one participant (ADR-0020). In READY, GET /api/dms,
@@ -317,6 +335,9 @@ message DmSummary {
   // pins, last_message and read_state counts start after it). Empty = never cleared. A cleared
   // DM without last_message is hidden from the caller's list until a new message arrives.
   string cleared_before_message_id = 7;
+  // The peer's read marker (docs/09 #92): the caller's messages with id <= it are read. Empty =
+  // the peer never read the DM, or the peer is a bot. Updates come as READ_RECEIPT.
+  string peer_read_message_id = 8;
 }
 
 // Preview of a DM's newest live message (DmSummary.last_message).

@@ -20,7 +20,7 @@ if (!isWeb) installWindowVisibility(document, platform.window);
 
 void bootstrap();
 
-// The chat's audio player before any UI can start a track: «Послушать запись» on a recording card
+// The chat's audio player before any UI can start a track: the REC circle of a recording card
 // or a transcript remark plays with no audio attachment mounted yet (docs/09 #57). The element
 // itself is created on the first play.
 installPlayer();

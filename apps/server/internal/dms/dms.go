@@ -75,6 +75,9 @@ func Summary(row sqlc.ListDMsRow) *v1.DmSummary {
 	if row.ClearedBefore != nil {
 		out.ClearedBeforeMessageId = row.ClearedBefore.String()
 	}
+	if row.PeerReadMessageID != nil {
+		out.PeerReadMessageId = row.PeerReadMessageID.String()
+	}
 	if row.HasMessages {
 		room.LastMessageId = row.LastMessageID.String()
 		room.LastMessageAt = timestamppb.New(row.LastMessageAt)

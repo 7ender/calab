@@ -15,6 +15,7 @@ import { platform } from '../../platform';
 import { can } from '../../lib/permissions';
 import { retrySend, setEmbedsHidden, toggleReaction } from '../../services/chat';
 import { useMessages, type ChatMessage, type PendingUpload } from '../../stores/messages';
+import { useReadReceipt } from '../../stores/readReceipts';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -651,13 +652,24 @@ function MetaInfo({ c, own }: { c: ChatMessage; own: boolean }): ReactNode {
           <Clock3 className="size-3.5" aria-label={t('chat.statusPending')} />
         ) : c.status === 'failed' ? (
           <AlertCircle className="size-3.5 text-danger" aria-label={t('chat.failed')} />
-        ) : c.delivered === false ? (
-          <Check className="size-4" aria-label={t('chat.statusSent')} />
         ) : (
-          <CheckCheck className="size-4" aria-label={t('chat.statusDelivered')} />
+          <Ticks roomId={c.msg.roomId} messageId={c.msg.id} />
         )
       ) : null}
     </span>
+  );
+}
+
+/**
+ * docs/08 «Галочки» (docs/09 #92): ✓ — the server has the message, ✓✓ — someone else read it
+ * (the DM peer / another member). A leaf with a boolean selector: a READ_RECEIPT re-renders
+ * only the ticks it flips, not the bubble or the feed.
+ */
+function Ticks({ roomId, messageId }: { roomId: string; messageId: string }): ReactNode {
+  return useReadReceipt(roomId, messageId) ? (
+    <CheckCheck className="size-4" aria-label={t('chat.statusRead')} />
+  ) : (
+    <Check className="size-4" aria-label={t('chat.statusSent')} />
   );
 }
 

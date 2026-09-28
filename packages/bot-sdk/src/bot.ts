@@ -10,8 +10,10 @@ import {
   ForwardMessageRequestSchema,
   ForwardMessageResponseSchema,
   GetBotMeResponseSchema,
+  GetRecordingTranscriptResponseSchema,
   GetRoomResponseSchema,
   JoinVoiceResponseSchema,
+  MessageSchema,
   ListMembersResponseSchema,
   ListMessagesResponseSchema,
   ListRoomsResponseSchema,
@@ -34,6 +36,7 @@ import {
   type DispatchEvent,
   type DmSummary,
   type FileMeta,
+  type GetRecordingTranscriptResponse,
   type JoinVoiceResponse,
   type Message,
   type MessageDelete,
@@ -324,6 +327,22 @@ export class Bot extends Emitter<BotEvents> {
   async messages(roomId: string, q: { before?: string; after?: string; limit?: number } = {}): Promise<{ messages: Message[]; hasMore: boolean }> {
     const r = await this.rest.call(ListMessagesResponseSchema, 'GET', `/api/rooms/${enc(roomId)}/messages`, { query: q });
     return { messages: r.messages, hasMore: r.hasMore };
+  }
+
+  /**
+   * One message of a room by id (e.g. a `replyToId` target, a recording card), with the same access as
+   * history: VIEW_ROOM; 404 for a message of another room, a deleted one or one before a cleared DM mark.
+   */
+  async message(roomId: string, messageId: string): Promise<Message> {
+    return this.rest.call(MessageSchema, 'GET', `/api/rooms/${enc(roomId)}/messages/${enc(messageId)}`);
+  }
+
+  /**
+   * The full saved transcript of a meeting recording visible in the room (its card or a live forwarded
+   * copy, ADR-0033): `recordingId` of the card's `system.payload` (case `recording`). VIEW_ROOM; 404 while none.
+   */
+  async transcript(roomId: string, recordingId: string): Promise<GetRecordingTranscriptResponse> {
+    return this.rest.call(GetRecordingTranscriptResponseSchema, 'GET', `/api/rooms/${enc(roomId)}/recordings/${enc(recordingId)}/transcript`);
   }
 
   /** «… is typing» in a room for a few seconds (gateway; no-op when not connected). */

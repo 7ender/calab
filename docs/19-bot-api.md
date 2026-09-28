@@ -61,7 +61,7 @@ await bot.start();
   закрывается с `4000 replaced by a new session`). Запускайте один процесс на токен.
 - Боту **закрыты** пользовательские эндпоинты (`403 FORBIDDEN`, `reason: "BOT_NOT_ALLOWED"`): сессии, пароль, почта,
   подтверждение, статус и настройки профиля, заметки, создание/поиск/вступление в пространства, все инвайты и
-  гостевые ссылки, уведомления, архив DM, превью ссылок, запись встреч, суперадминка, управление ботами.
+  гостевые ссылки, уведомления, архив DM, превью ссылок, управление записью (старт/стоп/повтор/удаление), суперадминка, управление ботами.
 - Бот видит только то, что разрешает `VIEW_ROOM`; ограниченные комнаты (ADR-0029) действуют и на ботов.
 - Человек может «Заблокировать бота» — тогда бот не может писать ему в DM (`403 BOT_BLOCKED`).
 - Звонки один на один (ADR-0034) ботам недоступны: бот не звонит и не принимает (`POST /api/dms/{id}/call`, `/api/calls/…` — `403 BOT_NOT_ALLOWED`), позвонить боту нельзя.
@@ -107,12 +107,14 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | комнаты, которые бот видит | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | категории комнат | участник |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | история (новые первыми, `limit ≤ 100`) | `VIEW_ROOM` |
+| `GET /api/rooms/{id}/messages/{messageId}` | одно сообщение, `Message` без обёртки (SDK `message(roomId, messageId)`) | `VIEW_ROOM` |
+| `GET /api/rooms/{id}/recordings/{rid}/transcript` | полный сохранённый транскрипт (SDK `transcript(roomId, recordingId)`) | `VIEW_ROOM` |
 | `POST /api/rooms/{id}/messages` | сообщение `{content, attachmentIds, replyToId, nonce, stickerId}` → 201 | `SEND_MESSAGES` (+ `ATTACH_FILES`) |
 | `PATCH /api/messages/{id}` · `DELETE /api/messages/{id}` | правка своего / удаление | автор или `MANAGE_MESSAGES` |
 | `POST /api/rooms/{id}/messages/{mid}/forward` | пересылка `{toRoomId}` → 201 `{message}` с `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` в источнике, `SEND_MESSAGES` в цели |
 | `PUT · DELETE /api/messages/{id}/reactions/{emoji}` | реакция (emoji в URL-кодировке) → 204 | `SEND_MESSAGES` |
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | закрепы | `MANAGE_MESSAGES` / `VIEW_ROOM` |
-| `PUT /api/rooms/{id}/read` | отметка прочтения | `VIEW_ROOM` |
+| `PUT /api/rooms/{id}/read` | отметка прочтения (не даёт людям ✓✓ «Прочитано»; `READ_RECEIPT` ботам не приходит) | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/messages/search?q=` · `GET /api/me/mentions` | поиск, упоминания бота | `VIEW_ROOM` |
 | `POST /api/workspaces/{id}/files` · `POST /api/dms/{id}/files` | загрузка файла (multipart `file`) → `{file}` | `ATTACH_FILES` |
 | `GET /api/files/{id}` · `GET /api/files/{id}/thumbnail` | скачать файл | доступ к комнате |
@@ -124,6 +126,35 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | модерация голоса | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
 | стикеры: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | см. [Стикеры](#стикеры-по-api) | участник / `MANAGE_STICKERS` |
 | комнаты, категории, роли, участники, баны (`POST/PATCH/DELETE …`) | управление пространством | `MANAGE_ROOM`, `MANAGE_ROLES`, `MANAGE_WORKSPACE`, … |
+
+### Ответы на сообщения и транскрипты встреч
+
+`GET /api/rooms/{id}/messages/{messageId}` возвращает **HTTP 200 и сам `calaba.v1.Message`**,
+без `{message: …}` или `{messages: […]}`. Поля и детали совпадают с элементом истории:
+`id`, `roomId`, `authorId`, `content`, `replyToId`, `attachments`, `reactions` (`me` относительно
+вызывающего), времена, `kind`, `system`, `sticker`, `forward`. `command` не задан, как во всех REST-ответах.
+У карточки записи `kind: "MESSAGE_KIND_SYSTEM"` и `system.recording.recordingId`; последний id
+нужен для URL транскрипта. В команде, отправленной ответом на карточку, `replyToId` содержит id
+**сообщения** с карточкой, а не id записи.
+
+`404 NOT_FOUND`: комната недоступна, сообщение отсутствует/удалено, относится к другой комнате
+или находится на/до границы очищенной истории DM вызывающего. У второго участника DM история
+остаётся своей. Для чтения не нужны `SEND_MESSAGES` или подключение к голосу.
+
+`GET /api/rooms/{id}/recordings/{rid}/transcript` возвращает **HTTP 200** и существующий
+`GetRecordingTranscriptResponse` целиком, без пагинации:
+
+```json
+{"recordingId":"0192a100-0000-7000-8000-000000000001","language":"ru","segments":[{"speaker":0,"startMs":480,"endMs":6900,"text":"Первая реплика."},{"speaker":-1,"startMs":7200,"endMs":12050,"text":"Неизвестный спикер."}]}
+```
+
+`startMs` / `endMs` — JSON-числа, миллисекунды от начала записи; `speaker` — номер спикера
+распознавания от нуля или `-1`, если неизвестен. `language` может быть пустым. `404 NOT_FOUND`:
+комната недоступна, запись отсутствует/удалена, транскрипт ещё не сохранён или в комнате нет
+ни самой записи, ни живой пересланной копии её карточки (ADR-0033). В URL используйте `roomId`
+видимой карточки, в том числе пересланной. Удаление последней копии отзывает доступ к транскрипту
+через неё. Право `VIEW_ROOM` открывает боту **весь** сохранённый транскрипт, доступный через эту
+комнату, с учётом ограниченных комнат. Управление записью это право боту не открывает.
 
 ### Примеры
 
