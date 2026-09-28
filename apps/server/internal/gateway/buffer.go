@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
+
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // Session buffer in Redis (docs/05, RESUME):
@@ -86,8 +88,8 @@ type sessMeta struct {
 
 type bufferStore struct{ c rueidis.Client }
 
-func sessKey(g uuid.UUID) string { return "gw:sess:" + g.String() }
-func bufKey(g uuid.UUID) string  { return "gw:buf:" + g.String() }
+func sessKey(g uuid.UUID) string { return redisx.Key("gw:sess:" + g.String()) }
+func bufKey(g uuid.UUID) string  { return redisx.Key("gw:buf:" + g.String()) }
 
 func (b bufferStore) create(ctx context.Context, gsid, user, asess uuid.UUID, owner string) error {
 	res := b.c.DoMulti(ctx,

@@ -12,6 +12,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/voice"
 )
 
@@ -209,7 +210,7 @@ const joinGrace = 15 * time.Second
 // missed webhooks. Only one instance runs it per period (Redis lock). Redis state is
 // snapshotted before LiveKit is listed; fresh states are never removed (joinGrace).
 func (s *Service) Reconcile(ctx context.Context) error {
-	lock := s.redis.B().Set().Key("rtc:reconcile").Value("1").Nx().Ex(25 * time.Second).Build()
+	lock := s.redis.B().Set().Key(redisx.Key("rtc:reconcile")).Value("1").Nx().Ex(25 * time.Second).Build()
 	if err := s.redis.Do(ctx, lock).Error(); err != nil {
 		return nil //nolint:nilerr // another instance holds the lock (or Redis is down)
 	}

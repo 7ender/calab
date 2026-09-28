@@ -80,7 +80,7 @@ func (s *Service) proxied(u string) string {
 
 func cacheKey(u string) string {
 	h := sha256.Sum256([]byte(u))
-	return "unfurl:" + hex.EncodeToString(h[:])
+	return redisx.Key("unfurl:" + hex.EncodeToString(h[:]))
 }
 
 func (s *Service) limit(r *http.Request, kind string) error {

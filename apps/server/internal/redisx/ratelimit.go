@@ -32,7 +32,8 @@ redis.call('PEXPIRE', key, math.ceil(burst / rate) + 1000)
 return wait
 `)
 
-// RateLimiter is a Redis-backed token bucket limiter.
+// RateLimiter is a Redis-backed token bucket limiter: one bucket per key, stored under
+// Key(prefix + key).
 type RateLimiter struct {
 	c      rueidis.Client
 	prefix string
@@ -48,7 +49,7 @@ func NewRateLimiter(c rueidis.Client, prefix string, burst int, perMinute float6
 // Allow takes one token for key: ok=false with the wait until the next token when the
 // bucket is empty. Redis errors are returned.
 func (l *RateLimiter) Allow(ctx context.Context, key string) (ok bool, retryAfter time.Duration, err error) {
-	ms, err := tokenBucket.Exec(ctx, l.c, []string{l.prefix + key},
+	ms, err := tokenBucket.Exec(ctx, l.c, []string{Key(l.prefix + key)},
 		[]string{strconv.Itoa(l.burst), strconv.FormatFloat(l.perMs, 'g', -1, 64)}).AsInt64()
 	if err != nil {
 		return false, 0, err

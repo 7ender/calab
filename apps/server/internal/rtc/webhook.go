@@ -15,6 +15,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/voice"
 )
 
@@ -34,7 +35,7 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) error {
 	// retry is processed instead of being swallowed as a duplicate.
 	key := ""
 	if ev.ID != "" {
-		key = "rtc:wh:" + ev.ID
+		key = redisx.Key("rtc:wh:" + ev.ID)
 		set := s.redis.B().Set().Key(key).Value("1").Nx().Ex(24 * time.Hour).Build()
 		if err := s.redis.Do(r.Context(), set).Error(); rueidis.IsRedisNil(err) {
 			w.WriteHeader(http.StatusOK)

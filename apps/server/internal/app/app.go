@@ -134,6 +134,7 @@ func unfurlPolicy(d Deps) func(netip.Addr) bool {
 // PLAN_*_LIMITS panic here.
 func New(d Deps) *App {
 	superadmin.Configure(d.Config.SuperadminEmails)
+	redisx.SetKeyPrefix(d.Config.RedisKeyPrefix) // before any key or channel name is built
 	free, team, err := plans.Defaults(d.Config.PlanFreeLimits, d.Config.PlanTeamLimits)
 	if err != nil {
 		panic(err) // validated by config.Validate

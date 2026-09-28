@@ -585,7 +585,7 @@ func (s *Service) ListSessions(ctx context.Context, id Identity) (*v1.ListSessio
 // effective immediately: live access tokens are rejected and the gateway drops the sockets.
 func (s *Service) MarkRevoked(ctx context.Context, sids ...uuid.UUID) { s.afterRevokeMany(ctx, sids) }
 
-func revokedKey(sid uuid.UUID) string { return "auth:revoked:" + sid.String() }
+func revokedKey(sid uuid.UUID) string { return redisx.Key("auth:revoked:" + sid.String()) }
 
 // revokeBudget is the Redis time a revocation gets for its markers, and again for its
 // socket-close events. It is deliberately not taken from the request's shared post-commit

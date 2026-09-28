@@ -18,6 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/gptunnel"
 	"github.com/calaba/calaba/server/internal/pbconv"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rtc"
 	"github.com/calaba/calaba/server/internal/voice"
 )
@@ -129,7 +130,7 @@ return 0
 const lockKey = "rec:worker"
 
 func (s *Service) lock(ctx context.Context) bool {
-	n, err := lockScript.Exec(ctx, s.redis, []string{lockKey}, []string{s.token, fmt.Sprint(s.LockTTL.Milliseconds())}).AsInt64()
+	n, err := lockScript.Exec(ctx, s.redis, []string{redisx.Key(lockKey)}, []string{s.token, fmt.Sprint(s.LockTTL.Milliseconds())}).AsInt64()
 	if err != nil {
 		slog.WarnContext(ctx, "recording: worker lock", "err", err)
 		return false

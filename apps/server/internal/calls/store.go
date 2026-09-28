@@ -11,9 +11,10 @@ import (
 	"github.com/redis/rueidis"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
-// Valkey keys (docs/04 «Звонки»):
+// Valkey keys (docs/04 «Звонки»; inside the key namespace, redisx.Key):
 //
 //	call:<id>            string JSON Record, TTL 24 h (renewed on the answer)
 //	user_call:<user_id>  string id of the user's RINGING / ACTIVE call (busy check, READY.call)
@@ -27,14 +28,11 @@ import (
 // TTL bounds how long a call record lives.
 const TTL = 24 * time.Hour
 
-const (
-	ringingKey = "call:ringing"
-	activeKey  = "call:active"
-)
-
-func recKey(id uuid.UUID) string      { return "call:" + id.String() }
-func userKey(u uuid.UUID) string      { return "user_call:" + u.String() }
-func onCallKey(u uuid.UUID) string    { return "call:oncall:" + u.String() }
+func ringingKey() string              { return redisx.Key("call:ringing") }
+func activeKey() string               { return redisx.Key("call:active") }
+func recKey(id uuid.UUID) string      { return redisx.Key("call:" + id.String()) }
+func userKey(u uuid.UUID) string      { return redisx.Key("user_call:" + u.String()) }
+func onCallKey(u uuid.UUID) string    { return redisx.Key("call:oncall:" + u.String()) }
 func ttlSec() string                  { return strconv.FormatInt(int64(TTL/time.Second), 10) }
 func msStr(t time.Time) string        { return strconv.FormatInt(t.UnixMilli(), 10) }
 func idOf(s string) (uuid.UUID, bool) { id, err := uuid.Parse(s); return id, err == nil }
@@ -140,7 +138,7 @@ func (s Store) Start(ctx context.Context, r Record, deadline time.Time) (string,
 	if err != nil {
 		return "", err
 	}
-	return startScript.Exec(ctx, s.C, []string{recKey(r.ID), userKey(r.Caller), userKey(r.Callee), ringingKey},
+	return startScript.Exec(ctx, s.C, []string{recKey(r.ID), userKey(r.Caller), userKey(r.Callee), ringingKey()},
 		[]string{string(b), r.ID.String(), ttlSec(), msStr(deadline)}).ToString()
 }
 
@@ -172,7 +170,7 @@ func (s Store) Update(ctx context.Context, id uuid.UUID, fn func(Record) (Record
 			mode = "active"
 		}
 		n, err := casScript.Exec(ctx, s.C,
-			[]string{recKey(id), userKey(cur.Caller), userKey(cur.Callee), ringingKey, activeKey, onCallKey(cur.Caller), onCallKey(cur.Callee)},
+			[]string{recKey(id), userKey(cur.Caller), userKey(cur.Callee), ringingKey(), activeKey(), onCallKey(cur.Caller), onCallKey(cur.Callee)},
 			[]string{raw, string(b), id.String(), mode, ttlSec(), strconv.FormatInt(next.Answered, 10)}).AsInt64()
 		if err != nil {
 			return cur, cur, err
@@ -186,12 +184,12 @@ func (s Store) Update(ctx context.Context, id uuid.UUID, fn func(Record) (Record
 
 // DueRinging returns ringing calls whose deadline passed.
 func (s Store) DueRinging(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
-	return s.ids(ctx, s.C.B().Zrangebyscore().Key(ringingKey).Min("-inf").Max(msStr(now)).Limit(0, 500).Build())
+	return s.ids(ctx, s.C.B().Zrangebyscore().Key(ringingKey()).Min("-inf").Max(msStr(now)).Limit(0, 500).Build())
 }
 
 // ActiveIDs returns the ACTIVE calls (at most 1000 per sweep).
 func (s Store) ActiveIDs(ctx context.Context) ([]uuid.UUID, error) {
-	return s.ids(ctx, s.C.B().Zrange().Key(activeKey).Min("0").Max("999").Build())
+	return s.ids(ctx, s.C.B().Zrange().Key(activeKey()).Min("0").Max("999").Build())
 }
 
 func (s Store) ids(ctx context.Context, cmd rueidis.Completed) ([]uuid.UUID, error) {
@@ -211,6 +209,6 @@ func (s Store) ids(ctx context.Context, cmd rueidis.Completed) ([]uuid.UUID, err
 // Forget drops an id from the sweeper indexes (its record expired).
 func (s Store) Forget(ctx context.Context, id uuid.UUID) error {
 	return errors.Join(
-		s.C.Do(ctx, s.C.B().Zrem().Key(ringingKey).Member(id.String()).Build()).Error(),
-		s.C.Do(ctx, s.C.B().Zrem().Key(activeKey).Member(id.String()).Build()).Error())
+		s.C.Do(ctx, s.C.B().Zrem().Key(ringingKey()).Member(id.String()).Build()).Error(),
+		s.C.Do(ctx, s.C.B().Zrem().Key(activeKey()).Member(id.String()).Build()).Error())
 }

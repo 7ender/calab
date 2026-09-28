@@ -189,7 +189,7 @@ return 0
 const lockKey = "mail:worker"
 
 func (s *Service) lock(ctx context.Context) bool {
-	n, err := lockScript.Exec(ctx, s.redis, []string{lockKey},
+	n, err := lockScript.Exec(ctx, s.redis, []string{redisx.Key(lockKey)},
 		[]string{s.token, fmt.Sprint(s.LockTTL.Milliseconds())}).AsInt64()
 	if err != nil {
 		slog.WarnContext(ctx, "mail: worker lock", "err", err)

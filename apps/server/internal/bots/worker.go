@@ -20,6 +20,7 @@ import (
 
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // ---- the worker ----
@@ -35,7 +36,7 @@ return 0
 
 func (s *Service) lock(ctx context.Context) bool {
 	ttl := max(3*s.wh.opts.Poll, 10*time.Second)
-	n, err := lockScript.Exec(ctx, s.redis, []string{lockKey}, []string{s.wh.token, fmt.Sprint(ttl.Milliseconds())}).AsInt64()
+	n, err := lockScript.Exec(ctx, s.redis, []string{redisx.Key(lockKey)}, []string{s.wh.token, fmt.Sprint(ttl.Milliseconds())}).AsInt64()
 	if err != nil {
 		slog.WarnContext(ctx, "bot webhooks: worker lock", "err", err)
 		return false
