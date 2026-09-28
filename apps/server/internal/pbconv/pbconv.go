@@ -136,8 +136,24 @@ func User(u sqlc.User) *v1.User {
 		Timezone:     deref(u.Timezone),
 		IsBot:        u.IsBot,
 	}
+	if !u.BirthdayHidden { // a hidden birthday goes to its owner only (Me)
+		out.Birthday = Birthday(u.BirthdayDay, u.BirthdayMonth, u.BirthdayYear)
+	}
 	out.StatusText, out.StatusEmoji, out.StatusExpiresAt = Status(u)
 	return out
+}
+
+// Birthday converts the users.birthday_* columns (nil = no birthday).
+func Birthday(day, month, year *int16) *v1.Birthday {
+	if day == nil || month == nil {
+		return nil
+	}
+	b := &v1.Birthday{Day: uint32(*day), Month: uint32(*month)} //nolint:gosec // DB CHECK bounds them
+	if year != nil {
+		y := uint32(*year) //nolint:gosec // DB CHECK bounds it
+		b.Year = &y
+	}
+	return b
 }
 
 // Status returns the user's current custom status (empty once expired).
@@ -200,6 +216,8 @@ func Me(u sqlc.User) *v1.Me {
 	if u.Locale != nil {
 		me.Locale = *u.Locale
 	}
+	me.User.Birthday = Birthday(u.BirthdayDay, u.BirthdayMonth, u.BirthdayYear) // hidden or not
+	me.BirthdayHidden = u.BirthdayHidden
 	return me
 }
 

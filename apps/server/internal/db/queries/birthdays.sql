@@ -1,0 +1,44 @@
+-- name: ListBirthdayCandidates :many
+-- People whose month * 100 + day is one of the given dates (the worker passes the dates that
+-- are "today" somewhere on Earth); hidden birthdays, guests, bots and disabled accounts are out.
+SELECT id, timezone, birthday_day, birthday_month FROM users
+WHERE birthday_day IS NOT NULL AND NOT birthday_hidden AND NOT is_guest AND NOT is_bot AND disabled_at IS NULL
+  AND (birthday_month * 100 + birthday_day) = ANY(sqlc.arg('dates')::integer[]);
+
+-- name: ListBirthdayRooms :many
+-- Where a user's birthday card goes: every workspace they are a non-guest member of that is
+-- not suspended and has someone else (not a bot) in it, with its first text room in sidebar
+-- order (top level first, then categories by position); a room everyone can see (not private)
+-- is preferred. Workspaces without a text room are skipped.
+SELECT m.workspace_id, fr.id AS room_id
+FROM workspace_members m
+JOIN workspaces w ON w.id = m.workspace_id AND w.suspended_at IS NULL
+JOIN LATERAL (
+    SELECT r.id FROM rooms r
+    LEFT JOIN room_categories c ON c.id = r.category_id
+    WHERE r.workspace_id = m.workspace_id AND r.type = 'text' AND r.archived_at IS NULL
+    ORDER BY r.is_private, (r.category_id IS NOT NULL), c.position, r.position, r.id
+    LIMIT 1
+) fr ON true
+WHERE m.user_id = $1 AND m.role <> 'guest'
+  AND EXISTS (
+      SELECT 1 FROM workspace_members o JOIN users u ON u.id = o.user_id
+      WHERE o.workspace_id = m.workspace_id AND o.user_id <> m.user_id AND NOT u.is_bot);
+
+-- name: ClaimBirthdayGreeting :execrows
+-- One card per (user, workspace, the user's local date): 0 rows = already posted.
+INSERT INTO birthday_greetings (user_id, workspace_id, day) VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING;
+
+-- name: SetBirthdayGreetingMessage :exec
+UPDATE birthday_greetings SET message_id = $4 WHERE user_id = $1 AND workspace_id = $2 AND day = $3;
+
+-- name: DeleteOldBirthdayGreetings :execrows
+-- The dedup only needs the last few days.
+DELETE FROM birthday_greetings WHERE day < sqlc.arg('before')::date;
+
+-- name: ListWorkspaceBirthdays :many
+-- Members of a workspace with a visible birthday (GET /api/workspaces/{id}/birthdays).
+SELECT u.id, u.birthday_day, u.birthday_month, u.birthday_year
+FROM workspace_members m JOIN users u ON u.id = m.user_id
+WHERE m.workspace_id = $1 AND u.birthday_day IS NOT NULL AND NOT u.birthday_hidden AND NOT u.is_bot;

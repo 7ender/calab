@@ -15,6 +15,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -72,10 +73,10 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if cur, err := h.db.Q.GetUser(r.Context(), id.UserID); err != nil {
 		return err
-	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil) {
+	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil) {
 		return httpx.Forbidden("guests can only change their name and settings") // ADR-0016
 	}
-	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil) {
+	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil || req.Birthday != nil || req.BirthdayHidden != nil) {
 		return auth.ErrBotNotAllowed // ADR-0031: a bot changes only its name and avatar here
 	}
 	p := sqlc.UpdateUserParams{ID: id.UserID}
@@ -128,6 +129,21 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			p.Locale = &l
 		}
 	}
+	if b := req.GetBirthday(); b != nil { // docs/09 #76
+		p.SetBirthday = true
+		if b.GetDay() != 0 || b.GetMonth() != 0 || b.Year != nil {
+			if err := birthdays.Validate(b, time.Now()); err != nil {
+				return err
+			}
+			d, m := int16(b.GetDay()), int16(b.GetMonth()) //nolint:gosec // validated
+			p.BirthdayDay, p.BirthdayMonth = &d, &m
+			if b.Year != nil {
+				y := int16(b.GetYear()) //nolint:gosec // validated
+				p.BirthdayYear = &y
+			}
+		}
+	}
+	p.BirthdayHidden = req.BirthdayHidden
 	if req.Settings != nil {
 		st := req.GetSettings()
 		if st.AudioBitrateKbps != nil && !rooms.ValidAudioBitrate(st.GetAudioBitrateKbps()) {
@@ -146,7 +162,8 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	public := req.DisplayName != nil || req.StatusText != nil || req.AvatarFileId != nil || req.Timezone != nil
+	public := req.DisplayName != nil || req.StatusText != nil || req.AvatarFileId != nil || req.Timezone != nil ||
+		req.Birthday != nil || req.BirthdayHidden != nil
 	profile.Publish(r.Context(), h.db.Q, h.events, u, public)
 	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
 	return nil

@@ -19,7 +19,11 @@ UPDATE users SET
     avatar_file_id = CASE WHEN sqlc.arg('set_avatar')::boolean THEN sqlc.narg('avatar_file_id')::uuid ELSE avatar_file_id END,
     settings       = coalesce(sqlc.narg('settings'), settings),
     timezone       = CASE WHEN sqlc.arg('set_timezone')::boolean THEN sqlc.narg('timezone')::text ELSE timezone END,
-    locale         = CASE WHEN sqlc.arg('set_locale')::boolean THEN sqlc.narg('locale')::text ELSE locale END
+    locale         = CASE WHEN sqlc.arg('set_locale')::boolean THEN sqlc.narg('locale')::text ELSE locale END,
+    birthday_day    = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_day')::smallint ELSE birthday_day END,
+    birthday_month  = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_month')::smallint ELSE birthday_month END,
+    birthday_year   = CASE WHEN sqlc.arg('set_birthday')::boolean THEN sqlc.narg('birthday_year')::smallint ELSE birthday_year END,
+    birthday_hidden = coalesce(sqlc.narg('birthday_hidden')::boolean, birthday_hidden)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 

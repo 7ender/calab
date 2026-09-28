@@ -8,7 +8,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type BirthdayGreeting struct {
+	UserID      uuid.UUID
+	WorkspaceID uuid.UUID
+	Day         pgtype.Date
+	MessageID   *uuid.UUID
+	CreatedAt   time.Time
+}
 
 type Bot struct {
 	UserID              uuid.UUID
@@ -334,6 +343,10 @@ type User struct {
 	PresenceStatus  *int16
 	PresenceUntil   *time.Time
 	IsBot           bool
+	BirthdayDay     *int16
+	BirthdayMonth   *int16
+	BirthdayYear    *int16
+	BirthdayHidden  bool
 }
 
 type UserNote struct {
