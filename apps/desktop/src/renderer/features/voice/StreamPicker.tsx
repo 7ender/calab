@@ -2,12 +2,11 @@ import { ScreenSharePreset, clampStreamPreset, type ConcreteScreenSharePreset } 
 import * as DialogP from '@radix-ui/react-dialog';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { AppWindow, Lock, Monitor, MonitorUp, Settings2, TriangleAlert, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { thumbSizeFor, type ThumbRequest } from '../../../shared/captureThumb';
 import type { CaptureSource } from '../../../shared/ipc';
 import { Button, Segmented, Spinner, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { encodableCodecs } from '../../lib/media/screenShare';
 import { platform } from '../../platform';
 import { allowedStreamPreset } from '../../lib/plan';
 import { planToast } from '../../services/plan';
@@ -17,6 +16,7 @@ import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useVoice } from '../../stores/voice';
 import { useWorkspaces } from '../../stores/workspaces';
+import { StreamCodecSelect, streamCodecHint } from './StreamCodecSelect';
 import { pickerLayout, presetOptions, presetSummary, splitSources } from './streamFormat';
 
 // Room / workspace settings import these from here.
@@ -171,7 +171,6 @@ function SourceCard({ source, selected, onSelect, onStart }: { source: CaptureSo
 /** Stream picker (docs/09 #13, Discord-like): sources grid + preset bar. */
 export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   const roomId = useVoice((s) => s.roomId);
-  const codec = useVoice((s) => s.streamCodec);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
   const info = useSession((s) => s.appInfo);
   const prefs = usePrefs();
@@ -188,7 +187,6 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   // The saved choice, lowered to what the room and the plan allow (never a locked preset).
   const preset = allowedStreamPreset(clampStreamPreset(prefs.streamPreset, max), max, planMax);
   const loopback = info?.systemAudioLoopback ?? 'unsupported';
-  const available = useMemo(() => encodableCodecs(), []);
 
   const groups = splitSources(sources ?? []);
   const shown = tab === 'apps' ? groups.apps : groups.screens;
@@ -260,7 +258,6 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   const noThumbs = sources !== null && sources.length > 0 && sources.every((s) => !s.thumbnail);
   // Visual tests: synthetic sources, and the machine's real TCC state must not leak into shots.
   const denied = noThumbs || (!info?.visualTest && info?.screenAccess === 'denied');
-  const hasH264 = available.has('h264');
 
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
@@ -400,19 +397,10 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
               </div>
               {advanced ? (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[var(--radius-card)] bg-hover px-3 py-2" data-testid="stream-advanced">
-                  <span>{t('streamPick.compat')}</span>
-                  {/* Plain-language codec preference (review §3): «best» = auto (ADR-0012: AV1 → VP9 → VP8),
-                      «weak computers» = H.264, which the GPU can encode. Explicit codecs set earlier read as «best». */}
-                  <Segmented
-                    label={t('streamPick.compat')}
-                    value={codec === 'h264' ? 'light' : 'best'}
-                    onChange={(v) => useVoice.getState().set({ streamCodec: v === 'light' && hasH264 ? 'h264' : 'auto' })}
-                    options={[
-                      { value: 'best', label: t('streamPick.compatBest') },
-                      ...(hasH264 ? [{ value: 'light' as const, label: t('streamPick.compatLight') }] : []),
-                    ]}
-                  />
-                  <span className="basis-full text-[12px] text-muted">{codec === 'h264' && hasH264 ? t('streamPick.compatLightHint') : t('streamPick.compatBestHint')}</span>
+                  {/* The same «Кодек стрима» as settings → «Показ экрана» (ADR-0032). */}
+                  <span>{t('video.streamCodec')}</span>
+                  <StreamCodecSelect />
+                  <span className="basis-full text-[12px] text-muted">{streamCodecHint(prefs.streamCodec)}</span>
                 </div>
               ) : null}
               <div className="flex items-center gap-2">

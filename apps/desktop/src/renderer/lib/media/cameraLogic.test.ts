@@ -1,7 +1,7 @@
 import { ScreenSharePreset } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import { cameraCapture, cameraLayers, grantedCameraQuality } from './cameraLogic';
-import { CAMERA_LAYERS, CPU_LIMIT_SAMPLES, isChromium, cameraBlock, cameraWanted, cameraNext, camerasFull, cpuLimitStep, pickCameraCodec, type CameraEvent, type CameraPhase } from './cameraLogic';
+import { CAMERA_LAYERS, CPU_LIMIT_SAMPLES, isChromium, cameraBlock, cameraWanted, cameraNext, camerasFull, cpuLimitStep, type CameraEvent, type CameraPhase } from './cameraLogic';
 
 describe('camera layers (docs/09 #41)', () => {
   it('180p / 360p / 720p with 0.15 / 0.5 / 1.5 Mbps ceilings at 24–30 fps', () => {
@@ -30,17 +30,8 @@ describe('camera quality (ADR-0024)', () => {
   });
 });
 
-describe('pickCameraCodec', () => {
-  it('VP9, then AV1, then VP8', () => {
-    expect(pickCameraCodec(new Set(['vp8', 'vp9', 'av1', 'h264']))).toBe('vp9');
-    expect(pickCameraCodec(new Set(['vp8', 'av1']))).toBe('av1');
-    expect(pickCameraCodec(new Set(['vp8', 'h264']))).toBe('vp8');
-    expect(pickCameraCodec(new Set(['h264']))).toBe('h264');
-    expect(pickCameraCodec(new Set())).toBe('vp8');
-  });
-  it('outside Chromium (Firefox / Safari web): plain VP8 simulcast', () => {
-    expect(pickCameraCodec(new Set(['vp8', 'vp9', 'av1']), false)).toBe('vp8');
-    expect(pickCameraCodec(new Set(['h264']), false)).toBe('h264');
+describe('isChromium', () => {
+  it('Electron / Chrome yes, Firefox / Safari no', () => {
     expect(isChromium('Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/140.0 Electron/44.4.5 Safari/537.36')).toBe(true);
     expect(isChromium('Mozilla/5.0 (Macintosh; rv:143.0) Gecko/20100101 Firefox/143.0')).toBe(false);
     expect(isChromium('Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15')).toBe(false);

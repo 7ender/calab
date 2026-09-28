@@ -38,6 +38,7 @@ import { deviceLabel, osLabel, updateLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
 import { SoundSettings } from '../people/SoundSettings';
 import { CameraPreview, useCameras } from '../voice/CameraPreview';
+import { StreamCodecSelect, streamCodecHint } from '../voice/StreamCodecSelect';
 import { MyStickersCard } from './MyStickersCard';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
@@ -358,6 +359,12 @@ function VoiceTab(): ReactNode {
         </Row>
         <Row label={t('video.saveTraffic')} hint={t('video.saveTrafficHint')}>
           <Toggle label={t('video.saveTraffic')} checked={p.saveTraffic} onChange={(v) => p.setPrefs({ saveTraffic: v })} />
+        </Row>
+      </Card>
+
+      <Card title={t('video.screenCard')}>
+        <Row label={t('video.streamCodec')} hint={streamCodecHint(p.streamCodec)}>
+          <StreamCodecSelect />
         </Row>
       </Card>
 

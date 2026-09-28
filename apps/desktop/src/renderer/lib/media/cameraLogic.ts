@@ -70,21 +70,6 @@ export function grantedCameraQuality(wanted: ScreenSharePreset, granted: { prese
   return { height: p >= ScreenSharePreset.H1080 ? 1080 : 720, fps: granted?.fps ?? 0 };
 }
 
-export type CameraCodec = 'vp9' | 'av1' | 'vp8' | 'h264';
-
-/**
- * VP9 first: at 720p30 realtime its software encoder costs noticeably less CPU than AV1's while
- * the quality at 0.5–1.5 Mbps is close (ADR-0018). AV1 where VP9 is missing, VP8 last; the SFU
- * forwards whatever was published. Outside Chromium (Firefox, Safari — web client) VP9/AV1 rid
- * simulcast with a per-rid `scalabilityMode` is unreliable, so those get plain VP8 simulcast
- * (review L10).
- */
-export function pickCameraCodec(available: ReadonlySet<CameraCodec>, chromium = true): CameraCodec {
-  if (!chromium) return !available.has('vp8') && available.has('h264') ? 'h264' : 'vp8';
-  for (const c of ['vp9', 'av1', 'vp8'] as const) if (available.has(c)) return c;
-  return available.has('h264') ? 'h264' : 'vp8';
-}
-
 // ---------------------------------------------------------------- state machine
 
 /**

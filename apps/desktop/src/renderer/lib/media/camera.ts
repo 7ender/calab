@@ -1,23 +1,17 @@
 import { LocalVideoTrack, Track, VideoPreset, createLocalVideoTrack, type TrackPublishOptions } from 'livekit-client';
-import { CAMERA_CPU_CAPTURE, CAMERA_DEFAULT_QUALITY, cameraCapture, cameraLayers, isChromium, pickCameraCodec, type CameraCodec, type CameraQuality } from './cameraLogic';
+import { CAMERA_CPU_CAPTURE, CAMERA_DEFAULT_QUALITY, cameraCapture, cameraLayers, type CameraQuality } from './cameraLogic';
+import type { PublishCodec } from './codecSelect';
 
 /**
  * Webcam capture and publishing (docs/02 «Камера», ADR-0018). LiveKit-specific glue only; the
- * numbers and the codec choice are pure and unit-tested in cameraLogic.ts.
+ * numbers are pure and unit-tested in cameraLogic.ts, the codec comes from `pickPublishCodec`
+ * (lib/media/codecSelect.ts, ADR-0032: the hardware encoder in the order H.264 → AV1 → VP9;
+ * none in hardware → VP9, the cheapest software one).
  *
- * VP9 (AV1, then VP8 as fallbacks) with "SVC simulcast": `simulcast: true` + `L1T3` makes
- * livekit-client publish rid simulcast q/h/f, each rid its own L1T3 stream (livekit-server
- * > 1.13.6), so a 180p tile gets a real 180p stream and dynacast stops encoding the layers
- * nobody watches.
+ * rid simulcast q/h/f: H.264 / VP8 plain; VP9 / AV1 "SVC simulcast" (`simulcast: true` + `L1T3`,
+ * each rid its own L1T3 stream, livekit-server > 1.13.6). A 180p tile gets a real 180p stream
+ * and dynacast stops encoding the layers nobody watches.
  */
-
-/** Codecs this runtime can encode for WebRTC (RTCRtpSender capabilities). */
-export function encodableVideoCodecs(): Set<CameraCodec> {
-  const caps = typeof RTCRtpSender !== 'undefined' ? (RTCRtpSender.getCapabilities('video')?.codecs ?? []) : [];
-  const mimes = new Set(caps.map((c) => c.mimeType.toLowerCase()));
-  const all: CameraCodec[] = ['vp9', 'av1', 'vp8', 'h264'];
-  return new Set(all.filter((c) => mimes.has(`video/${c}`)));
-}
 
 /** Opens the camera (preview sheet or straight publish). `motion`: faces and gestures, keep fps. */
 export async function captureCamera(deviceId: string | null, q: CameraQuality = CAMERA_DEFAULT_QUALITY): Promise<LocalVideoTrack> {
@@ -31,10 +25,7 @@ export async function captureCamera(deviceId: string | null, q: CameraQuality = 
 }
 
 /** Publish options for a quality: its ladder, every layer ≤ the granted fps (ADR-0024). */
-export function cameraPublishOptions(
-  q: CameraQuality = CAMERA_DEFAULT_QUALITY,
-  codec: CameraCodec = pickCameraCodec(encodableVideoCodecs(), typeof navigator === 'undefined' || isChromium(navigator.userAgent)),
-): TrackPublishOptions {
+export function cameraPublishOptions(q: CameraQuality = CAMERA_DEFAULT_QUALITY, codec: PublishCodec = 'vp9'): TrackPublishOptions {
   const [low, mid, top] = cameraLayers(q);
   return {
     source: Track.Source.Camera,

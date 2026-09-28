@@ -14,6 +14,7 @@ import {
   type CameraEvent,
   type CameraQuality,
 } from '../lib/media/cameraLogic';
+import { pickPublishCodec } from '../lib/media/codecSelect';
 import { allowedCameraPreset } from '../lib/plan';
 import { workspacePlan } from './plan';
 import type { OutboundVideoLayer } from '../lib/media/stats';
@@ -129,11 +130,13 @@ export class CameraController {
         await applyCameraQuality(track, q).catch((e: unknown) => log.warn('camera: granted quality constraint failed', e));
       }
       this.quality = q;
+      // Codec by hardware (ADR-0032); cached after the first call, probed while the grant arrives.
+      const codec = pickPublishCodec('camera');
       await waitForGrant(room, LK_SOURCE_CAMERA);
       if (stale()) return;
       // 3) Publish.
       step = 'publish';
-      await room.localParticipant.publishTrack(track, cameraPublishOptions(this.quality));
+      await room.localParticipant.publishTrack(track, cameraPublishOptions(this.quality, (await codec).codec));
       if (stale()) {
         await room.localParticipant.unpublishTrack(track, true).catch(() => undefined);
         return;
@@ -234,7 +237,7 @@ export class CameraController {
       await waitForGrant(room, LK_SOURCE_CAMERA);
       if (gen !== this.gen || this.track !== track) return;
       const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-      if (!pub || pub.track !== track) await room.localParticipant.publishTrack(track, cameraPublishOptions(this.quality));
+      if (!pub || pub.track !== track) await room.localParticipant.publishTrack(track, cameraPublishOptions(this.quality, (await pickPublishCodec('camera')).codec));
       this.bump();
     } catch (err) {
       log.warn('camera restore after reconnect failed', err);

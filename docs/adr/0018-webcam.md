@@ -9,7 +9,7 @@
 - В Electron на macOS видео кодируется программно. AV1 в реальном времени на 720p30 заметно дороже VP9, а при 0,5–1,5 Мбит/с разница в качестве лица невелика. У стрима экрана аргумент за AV1 — инструменты для screen content, для камеры он не работает.
 
 ## Решение
-- **Кодек: VP9** (`pickCameraCodec`: VP9 → AV1 → VP8), без `backupCodec`. Вне Chromium (Firefox, Safari в веб-клиенте) — простой VP8 simulcast: rid-simulcast VP9/AV1 с `scalabilityMode` на каждом rid там ненадёжен.
+- **Кодек: VP9** (`pickCameraCodec`: VP9 → AV1 → VP8), без `backupCodec`. *Пересмотрено ADR-0032 (28.09): кодек выбирает `pickPublishCodec('camera')` — сначала аппаратный энкодер (H.264 → AV1 → VP9 по `encodingInfo().powerEfficient`), без аппаратного — по-прежнему VP9; вне Chromium — H.264, иначе VP8.* Вне Chromium (Firefox, Safari в веб-клиенте) — простой VP8 simulcast: rid-simulcast VP9/AV1 с `scalabilityMode` на каждом rid там ненадёжен.
 - **Слои: simulcast q/h/f = 320×180 / 640×360 / 1280×720**, потолки 0,15 / 0,5 / 1,5 Мбит/с, 24 / 30 / 30 fps, каждый слой L1T3. Захват 720p30, `contentHint: motion`, `degradationPreference: balanced`. Dynacast выключает у публикующего слои, которые никто не смотрит.
 - **Порядок включения:** захват → `POST …/camera/request` → ждём `camera` в grant → публикация. Захват идёт первым: отказ в разрешении ОС не должен занимать слот камеры. 409 → «Достигнут лимит камер». Выключение: unpublish → `…/camera/stop`. `VOICE_CAMERA_STOP` (лимит / модератор) → тост и локальная остановка. Если grant отозван без события, камера останавливается тихо.
 - **CPU:** `qualityLimitationReason: cpu` у исходящих слоёв камеры в трёх замерах подряд (раз в 2 с) → захват 640×360@24 до конца сессии, тост. Обратно автоматически не поднимаем: это давало бы колебания.

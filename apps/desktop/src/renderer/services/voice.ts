@@ -29,6 +29,7 @@ import {
   type CapturedScreen,
   type DesktopSource,
 } from '../lib/media/screenShare';
+import { pickPublishCodec } from '../lib/media/codecSelect';
 import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '../lib/media/echo';
 import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
@@ -1733,7 +1734,8 @@ class VoiceEngine {
     setVoice({ streamBusy: true });
     let captured: CapturedScreen | null = null;
     let step: 'screen' | 'stream' = 'screen';
-    const codec = useVoice.getState().streamCodec;
+    // Codec by hardware (ADR-0032) or the «Кодек стрима» setting; probed while capture / grant run.
+    const codec = pickPublishCodec('screen', usePrefs.getState().streamCodec);
     // Left / switched rooms during one of the awaits below: stop; `finally` releases the capture
     // (review N9).
     const stale = (): boolean => this.room !== room;
@@ -1756,7 +1758,7 @@ class VoiceEngine {
       // 3) publish.
       const share = await startScreenShare(
         room.localParticipant,
-        { ...opts, preset, codec, ...(fps ? { fps } : {}) },
+        { ...opts, preset, codec: (await codec).codec, ...(fps ? { fps } : {}) },
         () => {
           if (this.screen === share) {
             this.screen = null;

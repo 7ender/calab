@@ -10,6 +10,7 @@ import { persist } from 'zustand/middleware';
 import type { PttBinding } from '../../shared/ipc';
 import { PTT_RELEASE_DEFAULT_MS } from '../lib/pttRelease';
 import type { EchoMode } from '../lib/media/echo';
+import type { CodecPref } from '../lib/media/codecSelect';
 import type { CameraPreset } from '../lib/plan';
 import type { LocalePref } from '../i18n/types';
 import type { OpenChatSound } from '../lib/chatSound';
@@ -53,6 +54,8 @@ export interface Prefs {
   echoMode: EchoMode;
   streamPreset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
+  /** «Кодек стрима» (ADR-0032): auto = by hardware (H.264 unless AV1/VP9 is the hardware encoder). */
+  streamCodec: CodecPref;
   notifyMentions: boolean;
   notifyAll: boolean;
   /** Master switch for event sounds (docs/09 #29, «Звуки»). */
@@ -112,6 +115,7 @@ const DEFAULTS: Prefs = {
   echoMode: 'headphones',
   streamPreset: ScreenSharePreset.H1080,
   contentHint: 'detail',
+  streamCodec: 'auto',
   notifyMentions: true,
   notifyAll: false,
   voiceSounds: true,
