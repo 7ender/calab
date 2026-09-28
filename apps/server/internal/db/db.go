@@ -24,6 +24,14 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// uuidv7SQL creates public.uuidv7() for PostgreSQL < 18, see ensureUUIDv7.
+//
+//go:embed uuidv7.sql
+var uuidv7SQL string
+
+// uuidv7LockID is the pg_advisory_xact_lock key of ensureUUIDv7 ("calabau7"), not goose's key.
+const uuidv7LockID int64 = 0x63616c6162617537
+
 // DB bundles the pool and the sqlc queries bound to it.
 type DB struct {
 	Pool *pgxpool.Pool
@@ -76,8 +84,54 @@ func newProvider(d *DB) (*goose.Provider, error) {
 		goose.WithSessionLocker(locker))
 }
 
+// ensureUUIDv7 makes uuidv7() callable before the migrations run: the id DEFAULTs and some
+// queries call it, and it is built in only since PostgreSQL 18 (ADR-0037). On 17 it creates
+// public.uuidv7() (uuidv7.sql: the layout and ordering of the built-in) once per database.
+// On 18 nothing is created: the built-in lives in pg_catalog, which is searched first, so it
+// resolves even next to a public.uuidv7() kept from an upgrade (the DEFAULTs bound to that one
+// keep working). A database where uuidv7() resolves is never changed. Reports whether it
+// created the function.
+func (d *DB) ensureUUIDv7(ctx context.Context) (bool, error) {
+	// Reads pg_proc rather than only resolving the name: opening the catalog applies the pending
+	// cache invalidations, so a replica that waited for the lock below sees the function created
+	// meanwhile by another one (a bare to_regprocedure() would answer from its stale cache). Read
+	// committed, so that the check after the lock takes a new snapshot.
+	const exists = `SELECT EXISTS (SELECT FROM pg_catalog.pg_proc WHERE oid = to_regprocedure('uuidv7()'))`
+	var ok bool
+	if err := d.Pool.QueryRow(ctx, exists).Scan(&ok); err != nil {
+		return false, fmt.Errorf("uuidv7: %w", err)
+	}
+	if ok {
+		return false, nil
+	}
+	var version string
+	err := pgx.BeginTxFunc(ctx, d.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, uuidv7LockID); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, exists).Scan(&ok); err != nil || ok {
+			return err
+		}
+		if _, err := tx.Exec(ctx, uuidv7SQL); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT current_setting('server_version')`).Scan(&version)
+	})
+	if err != nil {
+		return false, fmt.Errorf("uuidv7: create public.uuidv7(): %w", err)
+	}
+	if ok {
+		return false, nil
+	}
+	slog.Info("created public.uuidv7(): no built-in uuidv7() before PostgreSQL 18", "server_version", version)
+	return true, nil
+}
+
 // Migrate applies all pending migrations under an advisory lock.
 func (d *DB) Migrate(ctx context.Context) error {
+	if _, err := d.ensureUUIDv7(ctx); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
 	p, err := newProvider(d)
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
@@ -94,6 +148,9 @@ func (d *DB) Migrate(ctx context.Context) error {
 
 // MigrateTo applies pending migrations up to and including version (data-migration tests).
 func (d *DB) MigrateTo(ctx context.Context, version int64) error {
+	if _, err := d.ensureUUIDv7(ctx); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
 	p, err := newProvider(d)
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
