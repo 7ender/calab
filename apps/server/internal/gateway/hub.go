@@ -25,6 +25,7 @@ import (
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
+	"github.com/calaba/calaba/server/internal/profile"
 	"github.com/calaba/calaba/server/internal/voice"
 )
 
@@ -935,6 +936,7 @@ func (h *Hub) sweepPresence(ctx context.Context) {
 			continue
 		}
 		h.expireManual(ctx)
+		h.expireCustomStatuses(ctx)
 		users, err := h.pres.stale(ctx)
 		if err != nil {
 			continue
@@ -960,6 +962,21 @@ func (h *Hub) expireManual(ctx context.Context) {
 		}
 		_ = h.pres.dropManual(ctx, r.ID, ended)
 		h.manualChanged(ctx, r.ID, manualStatus{})
+	}
+}
+
+// expireCustomStatuses clears temporary custom statuses whose time is up (docs/05
+// «Presence», issue #17): USER_UPDATE {me} to the owner's devices and {user} to the
+// workspaces (as PATCH /api/me/status does), and a PRESENCE_UPDATE with the empty status.
+func (h *Hub) expireCustomStatuses(ctx context.Context) {
+	users, err := h.db.Q.ExpireCustomStatuses(ctx)
+	if err != nil {
+		slog.Warn("gateway: expire custom statuses", "err", err)
+		return
+	}
+	for _, u := range users {
+		profile.Publish(ctx, h.db.Q, h.pub, u, true)
+		h.announcePresence(ctx, u.ID, true)
 	}
 }
 

@@ -1,3 +1,4 @@
+import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
@@ -73,6 +74,38 @@ export async function saveCustomStatus(s: { text: string; emoji: string; expires
     toast.fail(e, t('err.ctx.save'));
     return false;
   }
+}
+
+/** setTimeout's delay is a signed 32-bit ms count (~24.8 days); a 30-day status re-arms once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/**
+ * Calls `onExpire` once at `expiresAtMs` (issue #17): one pending setTimeout at a time, no
+ * interval. Returns the cancel function (for a React effect cleanup).
+ */
+export function scheduleStatusExpiry(expiresAtMs: number, onExpire: () => void, now: () => number = Date.now): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = (): void => {
+    const left = expiresAtMs - now();
+    timer = left > MAX_TIMER_MS ? setTimeout(arm, MAX_TIMER_MS) : setTimeout(onExpire, Math.max(0, left));
+  };
+  arm();
+  return () => clearTimeout(timer);
+}
+
+/**
+ * My temporary custom status ran out: clear it locally in `session.me` and `users[me]` (my
+ * cards in the member lists too) without waiting for the server's sweeper, which confirms
+ * with USER_UPDATE / PRESENCE_UPDATE (docs/05 «Presence»). False if it has not expired.
+ */
+export function clearExpiredStatus(nowMs: number = Date.now()): boolean {
+  const me = useSession.getState().me;
+  const u = me?.user;
+  if (!me || !u?.statusExpiresAt || timestampMs(u.statusExpiresAt) > nowMs) return false;
+  const user = { ...u, statusText: '', statusEmoji: '', statusExpiresAt: undefined };
+  useSession.getState().set({ me: { ...me, user } });
+  useWorkspaces.getState().upsertUser(user);
+  return true;
 }
 
 /**

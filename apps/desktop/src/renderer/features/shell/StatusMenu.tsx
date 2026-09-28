@@ -2,12 +2,20 @@ import { timestampMs } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { PresenceStatus } from '@calaba/protocol';
 import { Check, ChevronRight, Pencil, Smile, X } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar, StatusGlyph } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { fmt } from '../../lib/format';
-import { AFTER_SHORT, STATUS_PRESETS, applyCustomStatus, saveCustomStatus, type StatusChoice } from '../../services/customStatus';
+import {
+  AFTER_SHORT,
+  STATUS_PRESETS,
+  applyCustomStatus,
+  clearExpiredStatus,
+  saveCustomStatus,
+  scheduleStatusExpiry,
+  type StatusChoice,
+} from '../../services/customStatus';
 import { PRESENCE_DURATIONS, choosePresence } from '../../services/presenceTimer';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
@@ -40,6 +48,18 @@ export function useMyStatus(): PresenceStatus {
   const server = useWorkspaces((s) => s.presences[me]?.status);
   if (chosen !== PresenceStatus.ONLINE) return chosen;
   return server === PresenceStatus.IDLE ? PresenceStatus.IDLE : PresenceStatus.ONLINE;
+}
+
+/**
+ * Clears my temporary custom status the moment it expires (issue #17): one timer on
+ * `statusExpiresAt`, re-armed only when that changes (not on every render).
+ */
+export function useCustomStatusExpiry(): void {
+  const expiresAt = useSession((s) => {
+    const u = s.me?.user;
+    return u?.statusExpiresAt && (u.statusText || u.statusEmoji) ? timestampMs(u.statusExpiresAt) : null;
+  });
+  useEffect(() => (expiresAt === null ? undefined : scheduleStatusExpiry(expiresAt, () => clearExpiredStatus())), [expiresAt]);
 }
 
 /** «до 18:30» today, «до 30 сент., 18:30» later. */
