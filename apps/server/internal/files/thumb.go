@@ -15,12 +15,15 @@ import (
 	_ "golang.org/x/image/webp" // register decoder
 )
 
-// Thumbnail limits: the longer side is scaled to ThumbMaxSide; images above MaxPixels are
-// not decoded at all (decompression bombs, memory budget: a 24 MP RGBA image is ~96 MiB).
+// Thumbnail limits: the longer side is scaled to ThumbMaxSide (made at upload) or
+// ThumbLargeSide (lazily, for 2× displays); images above MaxPixels are not decoded at all
+// (decompression bombs, memory budget: a 24 MP RGBA image is ~96 MiB).
 const (
-	ThumbMaxSide = 512
-	MaxPixels    = 24_000_000
-	thumbQuality = 80
+	ThumbMaxSide      = 512
+	ThumbLargeSide    = 1024
+	MaxPixels         = 24_000_000
+	thumbQuality      = 80
+	thumbLargeQuality = 85
 )
 
 // ErrTooManyPixels means the image is too large to thumbnail.
@@ -38,6 +41,16 @@ func ImageConfig(r io.Reader) (image.Config, error) {
 // Thumbnail decodes an image (first frame for GIF), scales it so that the longer side is at
 // most ThumbMaxSide (never upscales) and encodes it as lossy WebP.
 func Thumbnail(ctx context.Context, open func() (io.ReadCloser, error)) ([]byte, error) {
+	return thumbnail(ctx, open, ThumbMaxSide, thumbQuality)
+}
+
+// LargeThumbnail is Thumbnail for ThumbLargeSide at a higher quality. An image smaller than
+// that keeps its own size (re-encoded as WebP, never upscaled).
+func LargeThumbnail(ctx context.Context, open func() (io.ReadCloser, error)) ([]byte, error) {
+	return thumbnail(ctx, open, ThumbLargeSide, thumbLargeQuality)
+}
+
+func thumbnail(ctx context.Context, open func() (io.ReadCloser, error), side, quality int) ([]byte, error) {
 	rc, err := open()
 	if err != nil {
 		return nil, err
@@ -66,23 +79,38 @@ func Thumbnail(ctx context.Context, open func() (io.ReadCloser, error)) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	w, h := ThumbSize(cfg.Width, cfg.Height)
+	w, h := FitSize(cfg.Width, cfg.Height, side)
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	draw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Src, nil)
 	var buf bytes.Buffer
-	if err := webp.Encode(&buf, dst, webp.Options{Quality: thumbQuality}); err != nil {
+	if err := webp.Encode(&buf, dst, webp.Options{Quality: quality}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
 // ThumbSize fits w×h into ThumbMaxSide×ThumbMaxSide keeping the aspect ratio.
-func ThumbSize(w, h int) (int, int) {
-	if w <= ThumbMaxSide && h <= ThumbMaxSide {
+func ThumbSize(w, h int) (int, int) { return FitSize(w, h, ThumbMaxSide) }
+
+// FitSize fits w×h into side×side keeping the aspect ratio; it never upscales.
+func FitSize(w, h, side int) (int, int) {
+	if w <= side && h <= side {
 		return w, h
 	}
 	if w >= h {
-		return ThumbMaxSide, max(1, h*ThumbMaxSide/w)
+		return side, max(1, h*side/w)
 	}
-	return max(1, w*ThumbMaxSide/h), ThumbMaxSide
+	return max(1, w*side/h), side
+}
+
+// ThumbWidth parses the ?w= of GET /api/files/{id}/thumbnail: absent means ThumbMaxSide
+// (older clients), otherwise exactly ThumbMaxSide or ThumbLargeSide.
+func ThumbWidth(q string) (int, bool) {
+	switch q {
+	case "", "512":
+		return ThumbMaxSide, true
+	case "1024":
+		return ThumbLargeSide, true
+	}
+	return 0, false
 }

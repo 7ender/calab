@@ -64,6 +64,22 @@ func ThumbKey(workspaceID, fileID uuid.UUID) string {
 	return FileKey(workspaceID, fileID) + ".thumb"
 }
 
+// LargeThumbKey is the key of the lazily made 1024 px thumbnail of the file stored under
+// fileKey (the 512 px one made at upload keeps its ThumbKey).
+func LargeThumbKey(fileKey string) string {
+	return fileKey + ".thumb1024"
+}
+
+// DeleteThumbs removes a file's thumbnails, best effort. The large one exists only for files
+// that have a thumbnail (thumbKey != nil).
+func DeleteThumbs(ctx context.Context, s Store, fileKey string, thumbKey *string) {
+	if thumbKey == nil {
+		return
+	}
+	_ = s.Delete(ctx, *thumbKey)
+	_ = s.Delete(ctx, LargeThumbKey(fileKey))
+}
+
 // ValidateKey accepts "/"-separated segments of [A-Za-z0-9._-], without empty, "." or ".."
 // segments, at most 256 bytes. This keeps keys portable across fs and S3 and rules out
 // path traversal in the fs driver.

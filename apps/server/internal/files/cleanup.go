@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 )
 
@@ -48,9 +49,7 @@ func (s *Service) CleanupOrphans(ctx context.Context) (int, error) {
 	// Rows are gone (committed) before blobs: a crash here leaks bytes, never dangling rows.
 	for _, f := range gone {
 		_ = s.store.Delete(ctx, f.Key)
-		if f.ThumbnailKey != nil {
-			_ = s.store.Delete(ctx, *f.ThumbnailKey)
-		}
+		blob.DeleteThumbs(ctx, s.store, f.Key, f.ThumbnailKey)
 		deleted++
 	}
 	return deleted, nil

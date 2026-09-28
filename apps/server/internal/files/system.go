@@ -101,8 +101,6 @@ func (s *Service) DeleteFile(ctx context.Context, id uuid.UUID) error {
 	// Rows first, blobs after (as the orphan cleanup): a crash leaks bytes, never dangling rows.
 	ctx = context.WithoutCancel(ctx)
 	_ = s.store.Delete(ctx, gone.Key)
-	if gone.ThumbnailKey != nil {
-		_ = s.store.Delete(ctx, *gone.ThumbnailKey)
-	}
+	blob.DeleteThumbs(ctx, s.store, gone.Key, gone.ThumbnailKey)
 	return nil
 }

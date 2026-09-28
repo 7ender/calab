@@ -64,3 +64,36 @@ func TestThumbSize(t *testing.T) {
 		}
 	}
 }
+
+func TestLargeThumbnail(t *testing.T) {
+	for _, c := range [][4]int{{2000, 1000, 1024, 512}, {800, 300, 800, 300}, {600, 3000, 204, 1024}} {
+		out, err := LargeThumbnail(context.Background(), opener(pngOf(c[0], c[1])))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := xwebp.DecodeConfig(bytes.NewReader(out))
+		if err != nil {
+			t.Fatalf("large thumbnail is not WebP: %v", err)
+		}
+		if cfg.Width != c[2] || cfg.Height != c[3] { // never upscaled
+			t.Errorf("%dx%d -> %dx%d, want %dx%d", c[0], c[1], cfg.Width, cfg.Height, c[2], c[3])
+		}
+	}
+}
+
+func TestFitSizeLarge(t *testing.T) {
+	for _, c := range [][4]int{{1024, 1024, 1024, 1024}, {700, 500, 700, 500}, {4096, 1024, 1024, 256}, {1, 5000, 1, 1024}} {
+		if w, h := FitSize(c[0], c[1], ThumbLargeSide); w != c[2] || h != c[3] {
+			t.Errorf("%dx%d -> %dx%d, want %dx%d", c[0], c[1], w, h, c[2], c[3])
+		}
+	}
+}
+
+func TestThumbWidth(t *testing.T) {
+	for q, want := range map[string]int{"": 512, "512": 512, "1024": 1024, "256": 0, "2048": 0, "1024 ": 0, "abc": 0} {
+		got, ok := ThumbWidth(q)
+		if ok != (want != 0) || got != want {
+			t.Errorf("ThumbWidth(%q) = %d, %v; want %d", q, got, ok, want)
+		}
+	}
+}
