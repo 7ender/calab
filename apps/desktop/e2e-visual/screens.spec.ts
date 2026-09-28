@@ -1632,7 +1632,7 @@ test('voice-room-chat-preview', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'voice-room-chat-preview');
 });
 
-// Meeting recording cards (ADR-0025) in «Переговорка»'s chat: done (42 мин, «Открыть в GPTunneL»),
+// Meeting recording cards (ADR-0025) in «Переговорка»'s chat: done (42 мин; no «Открыть в GPTunneL», #80),
 // still processing, failed for lack of balance before the upload («Отправить снова»), failed on
 // GPTunneL's side after it («Проверить снова», docs/09 #40) — system messages across the whole
 // feed (docs/09 #47), no bubble; «…» (the owner may delete, #50).
@@ -1659,7 +1659,7 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   expect(feed && box && box.width).toBeGreaterThan((feed?.width ?? 0) - 48);
   await expect(cards.nth(1)).toContainText('Обработка: расшифровка и саммари…');
   await expect(cards.nth(2)).toContainText('Ошибка: на балансе GPTunneL не хватает средств');
-  await expect(cards.nth(0).getByRole('button', { name: 'Открыть в GPTunneL' })).toBeVisible();
+  await expect(win.getByRole('button', { name: 'Открыть в GPTunneL' })).toHaveCount(0);
   await expect(cards.nth(2).getByRole('button', { name: 'Отправить снова' })).toBeVisible();
   await expect(cards.nth(2).getByRole('button', { name: 'Проверить снова' })).toHaveCount(0);
   await expect(cards.nth(3)).toContainText('Ошибка: сбой на стороне GPTunneL');
@@ -1763,6 +1763,19 @@ test('chat-recording-done', async ({ open, win, mock, shot }) => {
   await card.getByTestId('recording-card-more').click();
   await expect(summary).toContainText('Сколько дней хранить аудио');
   await expect(card.getByTestId('recording-card-more')).toHaveText('Свернуть');
+  // «Копировать самари» (#80): the corner button shows on the card's hover; the «…» menu item too.
+  const copy = card.getByTestId('recording-card-summary-copy');
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await win.mouse.move(0, 0);
+  await expect(copy).toHaveCSS('opacity', '0');
+  await card.hover();
+  await expect(copy).toHaveCSS('opacity', '1');
+  await copy.click();
+  // The text itself: summaryPlainText's unit test (the renderer may not read the clipboard).
+  await expect(win.getByText('Скопировано')).toBeVisible();
+  await card.getByTestId('recording-card-menu').click();
+  await expect(win.getByRole('menuitem', { name: 'Копировать самари' })).toBeVisible();
+  await win.keyboard.press('Escape');
 });
 
 // docs/09 #57: «Послушать запись» really plays — the chat's player is installed at startup, not by
@@ -1819,6 +1832,8 @@ test('recording-transcript', async ({ open, win, mock, shot }) => {
 test('chat-recording-delete', async ({ open, win, mock, shot }) => {
   await open();
   const card = await doneCard(win, mock);
+  // The feed pinned to the bottom: the shot must not depend on where the virtualized list settled.
+  await feedAtBottom(win);
   await card.getByTestId('recording-card-menu').click();
   await win.getByRole('menuitem', { name: 'Удалить запись' }).click();
   const dialog = win.getByRole('dialog', { name: 'Удалить запись встречи?' });

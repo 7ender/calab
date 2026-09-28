@@ -10,6 +10,7 @@ import {
   speakerNumber,
   stamp,
   summaryBlocks,
+  summaryPlainText,
   transcriptFileName,
   transcriptText,
 } from './meetingResult';
@@ -34,6 +35,21 @@ describe('summary blocks', () => {
       { t: 'h', text: 'A' },
       { t: 'li', text: 'b' },
     ]);
+  });
+});
+
+describe('summary plain text', () => {
+  it('headings, lists and inline markers as plain lines', () => {
+    const md =
+      '## **Темы**\r\n- Релиз **0.7** и __тесты__\n* `make gen` — _быстро_\n\n\n### Решения\n1. Выпускаем [план](https://x.test/p)\n2) в пятницу https://x.test/a\nПросто текст\nпродолжение\n\n';
+    expect(summaryPlainText(md)).toBe(
+      'Темы\n• Релиз 0.7 и тесты\n• make gen — быстро\n\nРешения\n1. Выпускаем план (https://x.test/p)\n2. в пятницу https://x.test/a\nПросто текст\nпродолжение',
+    );
+  });
+  it('mentions and empty input', () => {
+    expect(summaryPlainText('')).toBe('');
+    expect(summaryPlainText('  \n\n')).toBe('');
+    expect(summaryPlainText('Спасибо @everyone')).toBe('Спасибо @everyone');
   });
 });
 

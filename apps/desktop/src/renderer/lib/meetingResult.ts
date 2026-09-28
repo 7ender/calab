@@ -1,5 +1,6 @@
 import { RecordingStatus, type FileMeta, type RecordingCard, type TranscriptSegment } from '@calaba/protocol';
 import { mediaKind } from './chatMedia';
+import { parseMarkdown, type MdNode } from './markdown/parse';
 
 /**
  * The result of a recorded meeting in the chat card (docs/09 #47, docs/08 «Запись встреч»): the
@@ -58,6 +59,48 @@ export function summaryBlocks(md: string): SummaryBlock[] {
   }
   flush();
   return out;
+}
+
+/** Inline markdown-lite → plain text: markers dropped, a link keeps its address, mentions `@<v>`. */
+function inlinePlain(nodes: MdNode[]): string {
+  let out = '';
+  for (const n of nodes) {
+    if (n.t === 'text' || n.t === 'code' || n.t === 'codeblock') out += n.v;
+    else if (n.t === 'mention') out += `@${n.v}`;
+    else if (n.t === 'br') out += '\n';
+    else if (n.t === 'link') {
+      const text = inlinePlain(n.c);
+      out += text && text !== n.href ? `${text} (${n.href})` : n.href;
+    } else out += inlinePlain(n.c);
+  }
+  return out;
+}
+
+/**
+ * The summary as plain text for «Копировать самари» (owner, 28.09): line by line as GPTunneL wrote
+ * it, so it pastes cleanly into Telegram / notes — headings without `#` and bold, bullets as «• »,
+ * numbered items as «1. », inline `**` / `__` / `*` / `` ` `` markers stripped, links «text (url)»,
+ * mentions `@<id>`; runs of blank lines collapse into one.
+ */
+export function summaryPlainText(md: string): string {
+  const lines: string[] = [];
+  for (const raw of md.replace(/\r\n?/g, '\n').split('\n')) {
+    const line = raw.trim();
+    if (!line) {
+      if (lines.length && lines[lines.length - 1] !== '') lines.push('');
+      continue;
+    }
+    const plain = (s: string): string => inlinePlain(parseMarkdown(s)).trim();
+    const h = HEADING.exec(line);
+    const b = h ? null : BULLET.exec(line);
+    const n = h || b ? null : NUMBERED.exec(line);
+    if (h) lines.push(plain((h[1] ?? '').replace(/^\*\*(.*)\*\*$/, '$1')));
+    else if (b) lines.push(`• ${plain(b[1] ?? '')}`);
+    else if (n) lines.push(`${n[1] ?? ''}. ${plain(n[2] ?? '')}`);
+    else lines.push(plain(line));
+  }
+  while (lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------- card

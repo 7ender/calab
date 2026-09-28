@@ -1,18 +1,18 @@
 import { WorkspaceRole, type PermissionBits, type RecordingCard as Card } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { AlertCircle, CheckCircle2, ExternalLink, FileText, Loader2, MoreHorizontal, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Copy, FileText, Loader2, MoreHorizontal, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
-import { mayDeleteRecording, recordingAudio, summaryBlocks } from '../../lib/meetingResult';
+import { mayDeleteRecording, recordingAudio, summaryBlocks, summaryPlainText } from '../../lib/meetingResult';
 import { can } from '../../lib/permissions';
 import { cardStatus, durationText, retryActions, type RetryAction } from '../../lib/recording';
-import { platform } from '../../platform';
 import { deleteRecording, retryRecording } from '../../services/recording';
 import { usePlayer, type Track } from '../../stores/player';
+import { toast } from '../../stores/toasts';
 import { useSession } from '../../stores/session';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import type { ChatMessage } from '../../stores/messages';
@@ -26,8 +26,9 @@ const RecordingTranscript = lazy(() => import('./RecordingTranscript'));
  * system message across the whole feed (no bubble). The REC glyph, «Встреча записана · 42 мин»,
  * who started it and when, the status (Загрузка… / Обработка… / Готово / Ошибка: …); once done —
  * GPTunneL's summary (6 lines, «Показать всё»), «Послушать запись» (our copy of the audio, the
- * chat's player), «Полный транскрипт» and «Открыть в GPTunneL». A failed card offers a retry
- * (#40, not to guests); «…» → «Удалить запись» (who started it, the owner, MANAGE_MESSAGES).
+ * chat's player) and «Полный транскрипт» (no «Открыть в GPTunneL»: owner, 28.09, #80). A failed
+ * card offers a retry (#40, not to guests); «…» → «Копировать самари» (#80) and «Удалить запись»
+ * (who started it, the owner, MANAGE_MESSAGES).
  * MESSAGE_UPDATE replaces the message: the card follows.
  */
 export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMessage; card: Card; workspaceId: string; perms: PermissionBits }): ReactNode {
@@ -68,14 +69,14 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   const track: Track | null = audio
     ? { fileId: audio.id, messageId: c.msg.id, roomId: c.msg.roomId, name: audio.name, title: t('rec.card.label'), subtitle: when }
     : null;
-  const hasActions = !!audio || card.hasTranscript || !!card.webUrl || retries.length > 0;
+  const hasActions = !!audio || card.hasTranscript || retries.length > 0;
 
   return (
     <article
       aria-label={`${title}. ${t(status.key)}`}
       data-testid="recording-card"
       data-status={status.tone}
-      className="rec-card flex w-full flex-col gap-2.5 rounded-[var(--radius-card)] border border-line bg-[var(--color-card)] px-4 py-3 shadow-[var(--shadow-card)] mobile:px-3"
+      className="rec-card group/rec flex w-full flex-col gap-2.5 rounded-[var(--radius-card)] border border-line bg-[var(--color-card)] px-4 py-3 shadow-[var(--shadow-card)] mobile:px-3"
     >
       <div className="flex items-start gap-3">
         <span
@@ -100,7 +101,12 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
             <span className="min-w-0">{t(status.key)}</span>
           </span>
         </div>
-        {mayDelete ? <CardMenu onDelete={() => void deleteRecording(c.msg.roomId, card.recordingId)} /> : null}
+        {mayDelete || card.summary ? (
+          <CardMenu
+            onCopy={card.summary ? () => copySummary(card.summary) : undefined}
+            onDelete={mayDelete ? () => void deleteRecording(c.msg.roomId, card.recordingId) : undefined}
+          />
+        ) : null}
       </div>
 
       {card.summary ? <Summary text={card.summary} /> : null}
@@ -122,12 +128,6 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
               {t(a === 'recheck' ? 'rec.card.recheck' : 'rec.card.reupload')}
             </Button>
           ))}
-          {card.webUrl ? (
-            <Button size="sm" variant="secondary" onClick={() => void platform.app.openExternal(card.webUrl)}>
-              {t('rec.card.open')}
-              <ExternalLink className="size-3" aria-hidden />
-            </Button>
-          ) : null}
         </div>
       ) : null}
 
@@ -140,8 +140,16 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   );
 }
 
-/** «…» of the card: «Удалить запись» (docs/09 #50). */
-function CardMenu({ onDelete }: { onDelete: () => void }): ReactNode {
+/** «Копировать самари» (docs/09 #80): the summary as plain text, «Скопировано» toast. */
+function copySummary(text: string): void {
+  navigator.clipboard.writeText(summaryPlainText(text)).then(
+    () => toast.success(t('chat.copied')),
+    (e: unknown) => toast.fail(e),
+  );
+}
+
+/** «…» of the card: «Копировать самари» (#80), «Удалить запись» (docs/09 #50). */
+function CardMenu({ onCopy, onDelete }: { onCopy: (() => void) | undefined; onDelete: (() => void) | undefined }): ReactNode {
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
@@ -151,10 +159,18 @@ function CardMenu({ onDelete }: { onDelete: () => void }): ReactNode {
       </Dropdown.Trigger>
       <Dropdown.Portal>
         <Dropdown.Content align="end" sideOffset={4} collisionPadding={16} className={menuBox}>
-          <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={onDelete} data-testid="recording-card-delete">
-            <Trash2 className="size-4" aria-hidden />
-            {t('rec.delete.item')}
-          </Dropdown.Item>
+          {onCopy ? (
+            <Dropdown.Item className={menuItem} onSelect={onCopy} data-testid="recording-card-copy-summary">
+              <Copy className="size-4" aria-hidden />
+              {t('rec.card.copySummary')}
+            </Dropdown.Item>
+          ) : null}
+          {onDelete ? (
+            <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={onDelete} data-testid="recording-card-delete">
+              <Trash2 className="size-4" aria-hidden />
+              {t('rec.delete.item')}
+            </Dropdown.Item>
+          ) : null}
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>
@@ -181,10 +197,20 @@ function Summary({ text }: { text: string }): ReactNode {
   const blocks = summaryBlocks(text);
   const plain = (v: string): string => `@${v}`;
   return (
-    <section aria-label={t('rec.card.summary')} data-testid="recording-card-summary" className="border-t border-line pt-2.5">
+    <section aria-label={t('rec.card.summary')} data-testid="recording-card-summary" className="relative border-t border-line pt-2.5">
+      {/* «Копировать самари» (#80): on the card's hover / focus on desktop, always on a phone (no hover). */}
+      <IconButton
+        label={t('rec.card.copySummary')}
+        size="sm"
+        className="absolute right-0 top-1.5 z-[1] size-6 opacity-0 focus-visible:opacity-100 group-focus-within/rec:opacity-100 group-hover/rec:opacity-100 mobile:top-1 mobile:size-8 mobile:opacity-100"
+        onClick={() => copySummary(text)}
+        data-testid="recording-card-summary-copy"
+      >
+        <Copy className="size-3.5" aria-hidden />
+      </IconButton>
       <div
         ref={box}
-        className={cx('relative text-body leading-5 text-fg', !open && tall && 'overflow-hidden')}
+        className={cx('relative pr-7 text-body leading-5 text-fg mobile:pr-9', !open && tall && 'overflow-hidden')}
         style={!open && tall ? { maxHeight: FOLDED_PX, maskImage: 'linear-gradient(to bottom, #000 70%, transparent)' } : undefined}
       >
         {blocks.map((b, i) =>
