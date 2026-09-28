@@ -4,11 +4,12 @@ import type { Dict } from '@/i18n';
 import { APP_URL, CONTACT_EMAIL, repoFile } from '@/lib/site';
 import { Button, Section, SectionHeading } from './ui';
 
-const PLAN_IDS = ['free', 'team', 'selfHosted'] as const;
+const PLAN_IDS = ['free', 'team', 'enterprise', 'selfHosted'] as const;
 const TEAM_MAILTO = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Calab Team')}`;
+const ENTERPRISE_MAILTO = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Calab Enterprise')}`;
 
 // One entry per plan id, kept separate from the shared card markup below: each plan's CTA has a
-// different shape (Free: two buttons; Team/Self-hosted: one), so this reads t.free/t.team/t.selfHosted
+// different shape (Free: two buttons; Team/Enterprise/Self-hosted: one), so this reads t.free/t.team/…
 // directly instead of a generic `t[id]` union, which TS can't narrow from a sibling `id === …` check.
 const CTA: Record<(typeof PLAN_IDS)[number], (t: Dict['pricing']) => ReactNode> = {
   free: (t) => (
@@ -26,6 +27,11 @@ const CTA: Record<(typeof PLAN_IDS)[number], (t: Dict['pricing']) => ReactNode> 
       {t.team.cta}
     </Button>
   ),
+  enterprise: (t) => (
+    <Button href={ENTERPRISE_MAILTO} variant="primary" className="w-full">
+      {t.enterprise.cta}
+    </Button>
+  ),
   selfHosted: (t) => (
     <Button href={repoFile('COMMERCIAL-LICENSE.md')} variant="secondary" className="w-full">
       {t.selfHosted.cta}
@@ -37,7 +43,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
   return (
     <Section id="pricing" labelledBy="pricing-title">
       <SectionHeading id="pricing-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
-      <ul className="mx-auto mt-12 grid max-w-[1000px] gap-4 sm:mt-16 md:grid-cols-3 md:gap-6">
+      <ul className="mx-auto mt-12 grid max-w-[1200px] gap-4 sm:mt-16 md:grid-cols-2 md:gap-6 xl:grid-cols-4">
         {PLAN_IDS.map((id) => {
           const plan = t[id];
           return (
