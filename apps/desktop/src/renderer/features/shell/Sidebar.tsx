@@ -45,13 +45,13 @@ import {
   Video,
   Volume2,
 } from 'lucide-react';
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
+import { Fragment, createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
-import { plural, t } from '../../i18n';
+import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, mayArrangeRooms, mayManageWorkspace, mayMoveMembersIn, mayMoveVoice, roomPerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
@@ -269,19 +269,21 @@ function SidebarMenu({ workspaceId, onCreateCategory, children }: { workspaceId:
 // ---------------------------------------------------------------- header
 
 function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: string; onCreateCategory: () => void }): ReactNode {
-  const entry = useWorkspaces((s) => s.byId[workspaceId]);
+  // ws and role, not the whole entry (it changes on every voice state).
+  const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
+  const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const open = useUi((s) => s.openDialog);
   const hideMuted = useUi((s) => s.hideMuted);
   const setHideMuted = useUi((s) => s.setHideMuted);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
-  if (!entry) return null;
+  if (!ws) return null;
   // Invites and settings: MANAGE_WORKSPACE (the server's check), a custom role's included.
   const admin = mayManageWorkspace(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
 
   const leave = async (): Promise<void> => {
-    if (!(await confirmAction(t('ws.leave'), t('ws.leaveConfirm', { name: entry.ws.name }), t('ws.leave')))) return;
+    if (!(await confirmAction(t('ws.leave'), t('ws.leaveConfirm', { name: ws.name }), t('ws.leave')))) return;
     try {
       await api.workspaces.removeMember(workspaceId, '@me');
     } catch (e) {
@@ -296,9 +298,9 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
           <button
             type="button"
             className="group flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-left text-list font-semibold text-fg transition-colors duration-[var(--motion-fast)] hover:bg-hover data-[state=open]:bg-active"
-            title={entry.ws.name}
+            title={ws.name}
           >
-            <span className="min-w-0 flex-1 truncate">{entry.ws.name}</span>
+            <span className="min-w-0 flex-1 truncate">{ws.name}</span>
             <ChevronDown
               className="size-4 shrink-0 text-muted transition-transform duration-[var(--motion-fast)] group-data-[state=open]:rotate-180"
               aria-hidden
@@ -342,8 +344,8 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
             {/* The owner cannot leave (ownership is not transferable yet): shown, disabled, with the reason. */}
             <Dropdown.Item
               className={cx(menuItem, 'text-danger-text')}
-              disabled={entry.role === WorkspaceRole.OWNER}
-              title={entry.role === WorkspaceRole.OWNER ? t('shell.ownerCannotLeave') : undefined}
+              disabled={role === WorkspaceRole.OWNER}
+              title={role === WorkspaceRole.OWNER ? t('shell.ownerCannotLeave') : undefined}
               onSelect={() => void leave()}
             >
               <LogOut className="size-4" /> {t('ws.leave')}
@@ -936,7 +938,11 @@ interface RowOrder {
   canDrag: boolean;
 }
 
-function TextRoomRow({
+/**
+ * Memoised: the list re-renders on every voice state (the voice rooms' participants), which
+ * text rooms do not show (docs/14 «Ререндеры в звонке»); a language switch still reaches it.
+ */
+const TextRoomRow = memo(function TextRoomRow({
   room,
   workspaceId,
   me,
@@ -946,6 +952,7 @@ function TextRoomRow({
   canOrder,
   canDrag,
 }: { room: Room; workspaceId: string; me: string; role: readonly Role[]; admin: boolean } & RowOrder): ReactNode {
+  useLocale();
   const active = useUi((s) => s.lastRoom[workspaceId] === room.id && s.activeWorkspaceId === workspaceId);
   const openRoom = useUi((s) => s.openRoom);
   const unread = useRooms((s) => showsUnread(room.id, s));
@@ -985,7 +992,7 @@ function TextRoomRow({
       </RoomMenu>
     </div>
   );
-}
+});
 
 function VoiceRoomRow({
   room,

@@ -54,9 +54,12 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     resolve: {
-      alias: {
-        '@rnnoise-dist': rnnoiseDist,
-      },
+      alias: [
+        { find: '@rnnoise-dist', replacement: rnnoiseDist },
+        // CALABA_REACT_PROFILING=1: the profiling build of react-dom, so fibers carry
+        // actualDuration / selfBaseDuration for tools/perf-call.ts (docs/14 «Ререндеры в звонке»).
+        ...(process.env['CALABA_REACT_PROFILING'] === '1' ? [{ find: /^react-dom\/client$/, replacement: 'react-dom/profiling' }] : []),
+      ],
     },
     build: {
       // electron-vite leaves the renderer unminified: minifying the ~4.3 MB main chunk halves it

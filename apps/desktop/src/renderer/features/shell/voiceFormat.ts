@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 /** Call duration for the room list: «4:05», «1:02:03» (hours only when needed). */
 export function formatDuration(ms: number): string {
@@ -26,7 +26,29 @@ export const INVITE_ROW_MS = 30_000;
 /** Is the «Пригласить в комнату» row shown? Not while the room is full, only within the window,
  * and only when `joinedAt` is set (I am actually in this room). */
 export function inviteRowVisible(joinedAt: number | null, now: number, full: boolean): boolean {
-  return !full && joinedAt != null && now - joinedAt < INVITE_ROW_MS;
+  const until = inviteRowUntil(joinedAt);
+  return !full && until !== null && now < until;
+}
+
+/** When the invite row's window ends (ms epoch); null when I am not in the room. */
+export function inviteRowUntil(joinedAt: number | null): number | null {
+  return joinedAt == null ? null : joinedAt + INVITE_ROW_MS;
+}
+
+/**
+ * Whether `deadline` (ms epoch) has passed: one timer to the deadline, one re-render when it
+ * passes — not a 1 s tick for a component that only cares about a single moment (docs/14).
+ */
+export function useDeadlinePassed(deadline: number | null): boolean {
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      if (deadline === null) return () => undefined;
+      const id = window.setTimeout(cb, Math.max(0, deadline - Date.now()) + 1);
+      return () => window.clearTimeout(id);
+    },
+    [deadline],
+  );
+  return useSyncExternalStore(subscribe, () => deadline !== null && Date.now() >= deadline);
 }
 
 /** Parses the «Максимум участников» field: integer 0..99, anything else → null. */

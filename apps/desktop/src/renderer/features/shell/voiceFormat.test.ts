@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, inviteRowVisible, pad2, parseUserLimit, recordingTime } from './voiceFormat';
+import { formatDuration, inviteRowUntil, inviteRowVisible, pad2, parseUserLimit, recordingTime } from './voiceFormat';
 
 describe('formatDuration', () => {
   it('formats minutes and hours', () => {
@@ -30,6 +30,13 @@ describe('inviteRowVisible', () => {
     expect(inviteRowVisible(1000, 1000 + 31_000, false)).toBe(false); // 31 s
     expect(inviteRowVisible(1000, 1000, true)).toBe(false); // room at its limit
     expect(inviteRowVisible(null, 1000, false)).toBe(false); // not in this room
+  });
+
+  it('the window ends 30 s after the join (the one timer the row sets)', () => {
+    expect(inviteRowUntil(1000)).toBe(31_000);
+    expect(inviteRowUntil(null)).toBeNull();
+    expect(inviteRowVisible(1000, 30_999, false)).toBe(true);
+    expect(inviteRowVisible(1000, 31_000, false)).toBe(false);
   });
 });
 

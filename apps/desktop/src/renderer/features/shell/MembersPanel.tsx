@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { WorkspaceRole, type WorkspaceMember } from '@calaba/protocol';
 import { MonitorUp, Video, Volume2 } from 'lucide-react';
-import { memo, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { type MessageKey, t, useLocale } from '../../i18n';
@@ -39,6 +39,9 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
   const voice = useVoiceStates(workspaceId); // + me while connecting (optimistic join)
   const groups = useMemo(() => groupMembers(Object.values(members ?? {}), presences, voice), [members, presences, voice]);
   const [profile, setProfile] = useState<string | null>(null);
+  // Stable: a new closure per row each render defeated MemberRow's memo (every presence change
+  // re-rendered every row).
+  const openProfile = useCallback((userId: string | null, open: boolean) => setProfile(open ? userId : null), []);
 
   const section = (key: 'on' | 'off' | 'bots', title: string, list: WorkspaceMember[]): ReactNode =>
     list.length > 0 ? (
@@ -54,7 +57,7 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
                 member={m}
                 offline={key === 'off'}
                 open={profile === m.user?.id}
-                onOpenChange={(o) => setProfile(o ? (m.user?.id ?? null) : null)}
+                onOpenProfile={openProfile}
               />
             </li>
           ))}
@@ -88,18 +91,19 @@ const MemberRow = memo(function MemberRow({
   member: m,
   offline,
   open,
-  onOpenChange,
+  onOpenProfile,
 }: {
   workspaceId: string;
   member: WorkspaceMember;
   offline: boolean;
   open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onOpenProfile: (userId: string | null, open: boolean) => void;
 }): ReactNode {
   // Memo row: re-render on a language switch too (ADR-0022).
   useLocale();
   const u = m.user;
   const userId = u?.id ?? '';
+  const onOpenChange = useCallback((o: boolean) => onOpenProfile(u?.id ?? null, o), [onOpenProfile, u?.id]);
   const v = useVoiceStateOf(workspaceId, userId);
   const connectingRing = useConnectingRing(workspaceId, userId, v?.pending ?? false);
   const roomName = useRooms((s) => (v?.roomId ? s.byId[v.roomId]?.name : undefined));

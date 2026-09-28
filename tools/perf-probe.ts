@@ -66,15 +66,15 @@ const INIT = () => {
     onPostCommitFiberRoot() {},
     onCommitFiberRoot(_id: number, root: { current: F }) {
       const n = ++st.commits;
+      // Like React DevTools (didFiberRender): a child list that is the very one of the previous
+      // tree (`child === alternate.child`) was not cloned — nothing under it rendered, and its
+      // fibers keep stale PerformedWork flags from older renders, so it is not descended into
+      // (the old «object seen in the previous commit» test descended into such subtrees and
+      // counted phantom renders, docs/14 «Ререндеры в звонке»).
       const stack: F[] = [root.current];
       while (stack.length) {
-        const f = stack.pop() as F;
-        const prev = mark.get(f);
+        const f = stack.pop() as F & { alternate: F | null };
         mark.set(f, n);
-        if (prev === n - 1) {
-          if (f.sibling) stack.push(f.sibling);
-          continue;
-        }
         if (st.on && [0, 1, 11, 14, 15].includes(f.tag) && f.flags & 1) {
           const k = nameOf(f);
           if (k) st.renders[k] = (st.renders[k] ?? 0) + 1;
@@ -101,8 +101,8 @@ const INIT = () => {
             }
           }
         }
-        if (f.child) stack.push(f.child);
-        if (f.sibling) stack.push(f.sibling);
+        if (f.child && (!f.alternate || f.child !== f.alternate.child)) stack.push(f.child);
+        if (f.sibling && f !== root.current) stack.push(f.sibling);
       }
     },
   };

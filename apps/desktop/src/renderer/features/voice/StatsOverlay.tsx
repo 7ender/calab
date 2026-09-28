@@ -4,15 +4,39 @@ import { useVoice } from '../../stores/voice';
 
 const n = (v: number | null | undefined, d = 0): string => (v === null || v === undefined || !Number.isFinite(v) ? '—' : v.toFixed(d));
 
+/**
+ * Chromium's send-side bandwidth estimate (candidate pair `availableOutgoingBitrate`) is not a
+ * rate we send: with audio only there is nothing to probe with, and it reports its ceiling —
+ * 1 Gbit/s, shown as «out↑ 1000000 kbps». At or above this it is «no estimate».
+ */
+export const BWE_CEILING_KBPS = 100_000;
+
+/** A bitrate for the overlay: kbps, Mbps from 10 000 kbps, «—» when unknown. */
+export function rateText(kbps: number | null | undefined): string {
+  if (kbps === null || kbps === undefined || !Number.isFinite(kbps) || kbps < 0) return '—';
+  return kbps >= 10_000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${Math.round(kbps)} kbps`;
+}
+
+/** The send-side estimate, «—» while it is only the ceiling (see BWE_CEILING_KBPS). */
+export function bweText(kbps: number | null | undefined): string {
+  return kbps !== null && kbps !== undefined && kbps >= BWE_CEILING_KBPS ? '—' : rateText(kbps);
+}
+
 /** Dev media stats (Settings → Приложение → «Статистика медиа»): ICE path, RTT, bitrates, encoder/decoder. */
 export function StatsOverlay(): ReactNode {
+  // The stats subscriptions live in the panel: with the overlay off, the 2 s stats updates do
+  // not re-render anything here (docs/14 «Ререндеры в звонке»).
   const on = usePrefs((s) => s.devStats);
+  return on ? <StatsPanel /> : null;
+}
+
+function StatsPanel(): ReactNode {
   const st = useVoice((s) => s.stats);
   const rtt = useVoice((s) => s.rttMs);
   const loss = useVoice((s) => s.lossPct);
   const echoRisk = useVoice((s) => s.echoRisk);
   const ducking = useVoice((s) => s.ducking);
-  if (!on || !st) return null;
+  if (!st) return null;
   const p = st.pair;
   return (
     <div
@@ -23,10 +47,10 @@ export function StatsOverlay(): ReactNode {
         ICE: {p ? `${p.localType}→${p.remoteType} ${p.protocol}${p.relayProtocol ? `/relay-${p.relayProtocol}` : ''}` : '—'}
       </div>
       <div>
-        RTT {n(rtt)} ms · loss {n(loss, 1)} % · out↑ {n(p?.availableOutKbps)} kbps
+        RTT {n(rtt)} ms · loss {n(loss, 1)} % · bwe↑ {bweText(p?.availableOutKbps)}
       </div>
       <div>
-        total ↑{n(st.totalOutKbps)} ↓{n(st.totalInKbps)} kbps · mic {n(st.micKbps, 1)} kbps
+        out↑ {rateText(st.totalOutKbps)} · in↓ {rateText(st.totalInKbps)} · mic {n(st.micKbps, 1)} kbps
       </div>
       {st.echo ? (
         <div>
@@ -35,7 +59,7 @@ export function StatsOverlay(): ReactNode {
           {ducking ? ' · duck' : ''}
         </div>
       ) : null}
-      {st.rendererCpu !== null ?<div>renderer CPU {n(st.rendererCpu, 1)} % core</div> : null}
+      {st.rendererCpu !== null ? <div>renderer CPU {n(st.rendererCpu, 1)} % core</div> : null}
       {[...st.screenOut.map((l) => ['screen', l] as const), ...st.cameraOut.map((l) => ['cam', l] as const)].map(([kind, l], i) => (
         <div key={`${kind}-${l.rid ?? 'x'}-${i}`}>
           {kind} {l.rid ?? 'svc'} {l.codec} {n(l.width)}×{n(l.height)}@{n(l.fps)} {n(l.kbps)}/{n(l.targetKbps)} kbps {l.encoder}

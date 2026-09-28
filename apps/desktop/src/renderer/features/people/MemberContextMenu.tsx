@@ -68,22 +68,31 @@ export function MemberContextMenu({
   inProfile?: boolean;
   children: ReactElement;
 }): ReactNode {
-  const actions = useMemberActions(workspaceId, userId);
-  const canDm = useCanDm(workspaceId, userId);
+  // Only whether the member is known here (useMemberActions is null otherwise): the actions read
+  // the whole workspace entry, which changes on every voice state — computed when the menu opens
+  // (the portal mounts its content only while open), not in every wrapped row / avatar.
+  const known = useWorkspaces((s) => !!s.byId[workspaceId]?.members[userId]?.user);
   const [renaming, setRenaming] = useState(false);
   const dialog = renaming ? <NicknameDialog workspaceId={workspaceId} userId={userId} onClose={() => setRenaming(false)} /> : null;
-  if (!actions) return children;
+  if (!known) return children;
   return (
     <>
       <ContextMenu.Root modal={false}>
         <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
         <ContextMenu.Portal>
-          <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} canDm={canDm} onRename={() => setRenaming(true)} inProfile={inProfile} />
+          <OpenMemberMenu workspaceId={workspaceId} userId={userId} onRename={() => setRenaming(true)} inProfile={inProfile} />
         </ContextMenu.Portal>
       </ContextMenu.Root>
       {dialog}
     </>
   );
+}
+
+function OpenMemberMenu({ workspaceId, userId, onRename, inProfile }: { workspaceId: string; userId: string; onRename: () => void; inProfile: boolean }): ReactNode {
+  const actions = useMemberActions(workspaceId, userId);
+  const canDm = useCanDm(workspaceId, userId);
+  if (!actions) return null;
+  return <MemberMenuContent workspaceId={workspaceId} userId={userId} actions={actions} canDm={canDm} onRename={onRename} inProfile={inProfile} />;
 }
 
 /** 40 px rows (Discord member menu), 15 px text. */

@@ -21,14 +21,16 @@ import { menuBox, menuItem, menuSeparator } from './menu';
  * `children` is the rail button itself; `tip` its tooltip (the tooltip wraps the menu trigger).
  */
 export function RailContextMenu({ workspaceId, tip, children }: { workspaceId: string; tip: string; children: ReactNode }): ReactNode {
-  const entry = useWorkspaces((s) => s.byId[workspaceId]);
+  // ws and role, not the whole entry (it changes on every voice state).
+  const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
+  const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const open = useUi((s) => s.openDialog);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
-  if (!entry) return <Tip label={tip} side="right">{children}</Tip>;
+  if (!ws) return <Tip label={tip} side="right">{children}</Tip>;
   // Invites and settings: MANAGE_WORKSPACE (the server's check), a custom role's included.
   const admin = mayManageWorkspace(myRoles);
-  const owner = entry.role === WorkspaceRole.OWNER;
+  const owner = role === WorkspaceRole.OWNER;
 
   const markAllRead = (): void => {
     const { byId, readState, lastMessage, unread } = useRooms.getState();
@@ -38,7 +40,7 @@ export function RailContextMenu({ workspaceId, tip, children }: { workspaceId: s
     }
   };
   const leave = async (): Promise<void> => {
-    if (!(await confirmAction(t('ws.leave'), t('ws.leaveConfirm', { name: entry.ws.name }), t('ws.leave')))) return;
+    if (!(await confirmAction(t('ws.leave'), t('ws.leaveConfirm', { name: ws.name }), t('ws.leave')))) return;
     try {
       await api.workspaces.removeMember(workspaceId, '@me');
     } catch (e) {
