@@ -23,10 +23,10 @@ function fakeEnv(opts: { hwEnc?: PublishCodec[]; hwDec?: PublishCodec[]; encodab
 afterEach(() => setCodecEnv(null));
 
 describe('pickPublishCodec (ADR-0032)', () => {
-  it('no hardware encoder (M4 in Electron 44): H.264 anyway, marked sw', async () => {
+  it('no hardware encoder (M4 in Electron 44): the cheapest software one — AV1 screen, VP9 camera', async () => {
     fakeEnv({ hwEnc: [] });
-    expect(await pickPublishCodec('screen')).toEqual({ codec: 'h264', hw: false });
-    expect(await pickPublishCodec('camera')).toEqual({ codec: 'h264', hw: false });
+    expect(await pickPublishCodec('screen')).toEqual({ codec: 'av1', hw: false });
+    expect(await pickPublishCodec('camera')).toEqual({ codec: 'vp9', hw: false });
   });
 
   it('hardware first in the order H.264 → AV1 → VP9', async () => {
@@ -61,10 +61,13 @@ describe('pickPublishCodec (ADR-0032)', () => {
     expect((await pickPublishCodec('screen', 'av1')).codec).toBe('h264');
   });
 
-  it('no H.264 encoder: AV1 → VP9 for the screen, VP9 → AV1 for the camera, VP8 last', async () => {
-    fakeEnv({ encodable: ['av1', 'vp9', 'vp8'] });
-    expect((await pickPublishCodec('screen')).codec).toBe('av1');
-    expect((await pickPublishCodec('camera')).codec).toBe('vp9');
+  it('software fallbacks: AV1 → VP9 → H.264 (screen), VP9 → AV1 → H.264 (camera), VP8 last', async () => {
+    fakeEnv({ encodable: ['vp9', 'h264', 'vp8'] });
+    expect((await pickPublishCodec('screen')).codec).toBe('vp9');
+    fakeEnv({ encodable: ['av1', 'h264', 'vp8'] });
+    expect((await pickPublishCodec('camera')).codec).toBe('av1');
+    fakeEnv({ encodable: ['h264', 'vp8'] });
+    expect((await pickPublishCodec('screen')).codec).toBe('h264');
     fakeEnv({ encodable: ['vp8'] });
     expect((await pickPublishCodec('screen')).codec).toBe('vp8');
     fakeEnv({ encodable: [] });
@@ -79,11 +82,11 @@ describe('pickPublishCodec (ADR-0032)', () => {
     expect((await pickPublishCodec('camera')).codec).toBe('vp8');
   });
 
-  it('no mediaCapabilities or a throwing probe: H.264 with hw unknown', async () => {
+  it('no mediaCapabilities or a throwing probe: the software fallback with hw unknown', async () => {
     setCodecEnv({ mediaCapabilities: null, encodable: new Set(['h264', 'av1']), chromium: true });
-    expect(await pickPublishCodec('screen')).toEqual({ codec: 'h264', hw: null });
+    expect(await pickPublishCodec('screen')).toEqual({ codec: 'av1', hw: null });
     fakeEnv({ throws: true });
-    expect(await pickPublishCodec('screen')).toEqual({ codec: 'h264', hw: null });
+    expect(await pickPublishCodec('camera')).toEqual({ codec: 'vp9', hw: null });
   });
 
   it('is cached for the session: one probe per codec', async () => {
@@ -91,7 +94,7 @@ describe('pickPublishCodec (ADR-0032)', () => {
     await pickPublishCodec('screen');
     await pickPublishCodec('screen');
     await codecPowerEfficient('encode', 'screen', 'h264');
-    // H.264, AV1, VP9 probed once each; the fallback reuses the H.264 answer.
+    // H.264, AV1, VP9 probed once each; the fallback reuses the AV1 answer.
     expect(mc.encodingInfo).toHaveBeenCalledTimes(3);
   });
 });

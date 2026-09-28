@@ -19,7 +19,7 @@ export type { StreamAudioProblem } from './streamAudio';
 /**
  * Screen share publishing per ADR-0012 (refines ADR-0005), codec per ADR-0032: simulcast (a
  * 640×360 thumb layer + the preset), no backup codec. The codec comes from `pickPublishCodec`
- * (lib/media/codecSelect.ts): H.264 by default — hardware where the machine has it — AV1 on request.
+ * (lib/media/codecSelect.ts): the hardware encoder if there is one (H.264 → AV1 → VP9), else AV1.
  *
  * Why simulcast: livekit-client forces L1T3 + contentHint 'motion' on a
  * non-simulcast SVC screen share; its "SVC simulcast" path (livekit-server ≥
@@ -71,7 +71,7 @@ export interface ScreenShareOptions {
   preset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
   systemAudio: boolean;
-  /** Codec to publish with: `pickPublishCodec('screen', pref)` (ADR-0032). Default H.264. */
+  /** Codec to publish with: `pickPublishCodec('screen', pref)` (ADR-0032). Default AV1. */
   codec?: ScreenCodec;
   /**
    * Frame rate granted by /stream/request (the plan's stream_max_fps, ADR-0024): capture and
@@ -173,7 +173,7 @@ export async function startScreenShare(
   // Encoder hint: 'detail' keeps text sharp (drops fps), 'motion' keeps fps.
   videoTrack.contentHint = opts.contentHint;
   const video = new LocalVideoTrack(videoTrack, undefined, true);
-  const publishOpts = screenPublishOptions(opts.codec ?? 'h264', opts.preset, opts.contentHint, fps);
+  const publishOpts = screenPublishOptions(opts.codec ?? 'av1', opts.preset, opts.contentHint, fps);
   try {
     await lp.publishTrack(video, publishOpts);
   } catch (err) {

@@ -1,8 +1,12 @@
 /**
  * Publish codec by hardware (ADR-0032): ask `navigator.mediaCapabilities.encodingInfo` which
- * WebRTC encoder is `powerEfficient` (= hardware) and take the first of H.264 → AV1 → VP9; when
- * none is, H.264 anyway — it is the codec every platform decodes in hardware, so the viewers pay
- * the least, and libwebrtc's software H.264 is the cheapest encoder at the same resolution.
+ * WebRTC encoder is `powerEfficient` (= hardware) and take the first of H.264 → AV1 → VP9.
+ *
+ * When none is hardware, the cheapest SOFTWARE encoder, not H.264: measured on an M4 in Electron 44
+ * (docs/14 «Кодек по железу»), a 720p15 screen stream costs 38.7 % of a core with OpenH264 and
+ * 23.2 % with AV1 (libaom, screen-content tools) — so the screen keeps AV1 (ADR-0012) and the
+ * camera VP9 (ADR-0018). This amends ADR-0032 §1's «иначе H.264» (see the note there). Outside
+ * Chromium only H.264 / VP8 (plain simulcast) are used.
  * The user can pin AV1 («Качество текста») or H.264 («Совместимость») in the settings.
  *
  * Results are cached for the session (per kind and preference): the probe is async and the
@@ -41,6 +45,12 @@ const PROBE: Record<PublishKind, { width: number; height: number; framerate: num
 
 /** Hardware first, in this order (ADR-0032). */
 const HW_ORDER: readonly PublishCodec[] = ['h264', 'av1', 'vp9'];
+
+/** No hardware encoder: cheapest software encoder per kind (measured, docs/14), then plain-simulcast ones. */
+const SW_ORDER: Record<PublishKind, readonly PublishCodec[]> = {
+  screen: ['av1', 'vp9', 'h264', 'vp8'],
+  camera: ['vp9', 'av1', 'h264', 'vp8'],
+};
 
 function defaultEnv(): CodecEnv {
   const caps = typeof RTCRtpSender !== 'undefined' ? (RTCRtpSender.getCapabilities('video')?.codecs ?? []) : [];
@@ -101,8 +111,8 @@ async function pick(kind: PublishKind, pref: CodecPref): Promise<CodecPick> {
 
   if (pref !== 'auto' && usable(pref)) return { codec: pref, hw: await hw(pref) };
   for (const c of HW_ORDER) if (usable(c) && (await hw(c)) === true) return { codec: c, hw: true };
-  // Nothing in hardware: H.264 all the same (hardware decode everywhere, cheapest software encode).
-  const fallback = (['h264', ...(kind === 'screen' ? ['av1', 'vp9'] : ['vp9', 'av1']), 'vp8'] as PublishCodec[]).find(usable) ?? 'vp8';
+  // Nothing in hardware: the cheapest software encoder (see the module doc), H.264 outside Chromium.
+  const fallback = SW_ORDER[kind].find(usable) ?? 'vp8';
   return { codec: fallback, hw: e.encodable.has(fallback) ? await hw(fallback) : null };
 }
 
