@@ -1,10 +1,14 @@
 /**
- * ⌘K result actions (docs/09 #66): what a row does, so the click / Enter is never a surprise.
- * A voice room (I may connect): «Подключиться» (Enter) and «Открыть чат» (⇧Enter / ⌘Enter) —
- * the chat opens without joining the voice. Everything else — one «Открыть».
+ * ⌘K result actions (docs/09 #66, #83): what a row does. The row itself only selects — the
+ * actions are its buttons, and the keys do the same: Enter — the first one, ⇧Enter / ⌘Enter —
+ * the second one.
+ *   voice room (I may connect): «Подключиться», «Открыть чат» (the chat without joining);
+ *   voice room without CONNECT, text room: «Открыть чат»;
+ *   DM: «Написать»; member: «Сообщения» (filter by author) and «Написать» (if a DM is allowed);
+ *   message: «Открыть».
  */
 
-export type SwitcherAction = 'join' | 'chat' | 'open';
+export type SwitcherAction = 'join' | 'chat' | 'write' | 'filter' | 'open';
 
 /** The part of a row that decides its actions. */
 export interface SwitcherRowKind {
@@ -12,19 +16,26 @@ export interface SwitcherRowKind {
   voice?: boolean;
   /** CONNECT in that voice room: without it the only action is to read its chat. */
   canConnect?: boolean;
+  /** A member I may write to (canDmWith). */
+  canDm?: boolean;
 }
 
 const JOIN_CHAT: readonly SwitcherAction[] = ['join', 'chat'];
-const CHAT_ONLY: readonly SwitcherAction[] = ['chat'];
+const CHAT: readonly SwitcherAction[] = ['chat'];
+const WRITE: readonly SwitcherAction[] = ['write'];
+const FILTER_WRITE: readonly SwitcherAction[] = ['filter', 'write'];
+const FILTER: readonly SwitcherAction[] = ['filter'];
 const OPEN: readonly SwitcherAction[] = ['open'];
 
-/** The row's actions, the primary (Enter, click on the row) first. */
+/** The row's actions (its buttons), the Enter one first. */
 export function rowActions(r: SwitcherRowKind): readonly SwitcherAction[] {
-  if (r.kind === 'room' && r.voice) return r.canConnect ? JOIN_CHAT : CHAT_ONLY;
+  if (r.kind === 'room') return r.voice && r.canConnect ? JOIN_CHAT : CHAT;
+  if (r.kind === 'dm') return WRITE;
+  if (r.kind === 'member') return r.canDm ? FILTER_WRITE : FILTER;
   return OPEN;
 }
 
-/** Enter — the primary action; ⇧Enter or ⌘/Ctrl+Enter — the second one, if the row has it. */
+/** Enter — the first action; ⇧Enter or ⌘/Ctrl+Enter — the second one, if the row has it. */
 export function keyAction(r: SwitcherRowKind, keys: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }): SwitcherAction {
   const acts = rowActions(r);
   const second = keys.shiftKey || keys.metaKey || keys.ctrlKey;

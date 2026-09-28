@@ -8,11 +8,19 @@ describe('rowActions', () => {
   it('a voice room: join first, then its chat', () => {
     expect(rowActions(voice)).toEqual(['join', 'chat']);
   });
-  it('a voice room without CONNECT only opens its chat', () => {
+  it('a voice room without CONNECT and a text room only open the chat', () => {
     expect(rowActions({ ...voice, canConnect: false })).toEqual(['chat']);
+    expect(rowActions({ kind: 'room' })).toEqual(['chat']);
   });
-  it('text rooms, DMs, members and messages: one «Open»', () => {
-    for (const kind of ['room', 'dm', 'member', 'message'] as const) expect(rowActions({ kind })).toEqual(['open']);
+  it('a DM: «Написать»', () => {
+    expect(rowActions({ kind: 'dm' })).toEqual(['write']);
+  });
+  it('a member: the author filter, then «Написать» when a DM is allowed', () => {
+    expect(rowActions({ kind: 'member', canDm: true })).toEqual(['filter', 'write']);
+    expect(rowActions({ kind: 'member' })).toEqual(['filter']);
+  });
+  it('a message: one «Открыть»', () => {
+    expect(rowActions({ kind: 'message' })).toEqual(['open']);
   });
 });
 
@@ -23,11 +31,16 @@ describe('keyAction', () => {
     expect(keyAction(voice, { ...none, metaKey: true })).toBe('chat');
     expect(keyAction(voice, { ...none, ctrlKey: true })).toBe('chat');
   });
+  it('a member: Enter filters, ⇧Enter writes', () => {
+    expect(keyAction({ kind: 'member', canDm: true }, none)).toBe('filter');
+    expect(keyAction({ kind: 'member', canDm: true }, { ...none, shiftKey: true })).toBe('write');
+  });
   it('rows with one action ignore the modifier', () => {
-    expect(keyAction({ kind: 'room' }, none)).toBe('open');
-    expect(keyAction({ kind: 'room' }, { ...none, shiftKey: true })).toBe('open');
-    expect(keyAction({ kind: 'dm' }, { ...none, metaKey: true })).toBe('open');
-    expect(keyAction({ ...voice, canConnect: false }, none)).toBe('chat');
+    expect(keyAction({ kind: 'room' }, none)).toBe('chat');
+    expect(keyAction({ kind: 'room' }, { ...none, shiftKey: true })).toBe('chat');
+    expect(keyAction({ kind: 'dm' }, { ...none, metaKey: true })).toBe('write');
+    expect(keyAction({ kind: 'member' }, { ...none, shiftKey: true })).toBe('filter');
+    expect(keyAction({ kind: 'message' }, { ...none, shiftKey: true })).toBe('open');
     expect(keyAction({ ...voice, canConnect: false }, { ...none, shiftKey: true })).toBe('chat');
   });
 });

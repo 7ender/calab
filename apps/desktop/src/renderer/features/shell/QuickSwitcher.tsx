@@ -1,9 +1,9 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import { RoomType, type Message, type Room, type WorkspaceMember } from '@calaba/protocol';
-import { Hash, MessageSquare, Phone, Search, Volume2, X } from 'lucide-react';
+import { Hash, MessageCircle, MessageSquare, Phone, Search, Volume2, X } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Button, IconButton, Spinner, Tip, cx } from '../../components/ui';
+import { Button, Spinner, Tip, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
@@ -24,6 +24,8 @@ import { previewText } from '../chat/mentionText';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
 import { roomLabel } from '../chat/roomLabel';
 import { systemPreview } from '../../lib/recording';
+import { startDm } from '../../services/dms';
+import { canDmNow, useCanDm } from '../dm/canDm';
 import { keyAction, rowActions, type SwitcherAction, type SwitcherRowKind } from './quickSwitcherActions';
 
 type Item =
@@ -132,7 +134,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const go = (i: number, action?: SwitcherAction): void => {
     const it = items[i];
     if (!it) return;
-    const act = action ?? rowActions(rowKind(it, canConnectNow(it)))[0];
+    const act = action ?? rowActions(rowKindNow(it))[0];
     if (it.kind === 'dm') {
       openRoom(HOME, it.roomId);
       onClose();
@@ -144,6 +146,11 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
       if (act === 'join') joinVoice(r);
       onClose();
     } else if (it.kind === 'member') {
+      if (act === 'write') {
+        void startDm(it.member.user?.id ?? '');
+        onClose();
+        return;
+      }
       setAuthor(it.member);
       setQ('');
       setSel(0);
@@ -173,7 +180,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     } else if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
       const it = items[cur];
-      if (it) go(cur, keyAction(rowKind(it, canConnectNow(it)), e));
+      if (it) go(cur, keyAction(rowKindNow(it), e));
     } else if (e.key === 'Backspace' && !q && author) {
       setAuthor(null);
     }
@@ -226,8 +233,8 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
             {busy ? <Spinner className="size-4" /> : null}
           </div>
           {/* A two-column grid: the listbox (display: contents) fills column 1 with its options;
-              each option's actions / Enter hint sit in column 2 on the same grid row — outside
-              the listbox, whose children may only be options (docs/09 #66). */}
+              each option's action buttons sit in column 2 on the same grid row — outside the
+              listbox, whose children may only be options (docs/09 #66, #83). */}
           <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_auto] content-start overflow-y-auto p-1.5">
             <ul id="quick-switcher-list" role="listbox" aria-label={t('search.title')} className="contents">
               {items.length === 0 ? (
@@ -250,7 +257,6 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
                     q={q.trim()}
                     workspaceName={it.kind === 'room' ? (workspaces[it.room.workspaceId]?.ws.name ?? '') : ''}
                     rooms={rooms}
-                    onPick={pick}
                     onHover={hover}
                   />
                 </Fragment>
@@ -275,8 +281,15 @@ function canConnectNow(it: Item): boolean {
   return can(roomPerms(rolesOf(useWorkspaces.getState().byId[it.room.workspaceId], me), me, it.room), 'CONNECT');
 }
 
-function rowKind(it: Item, canConnect: boolean): SwitcherRowKind {
-  return it.kind === 'room' ? { kind: 'room', voice: it.room.type === RoomType.VOICE, canConnect } : { kind: it.kind };
+function rowKind(it: Item, canConnect: boolean, canDm: boolean): SwitcherRowKind {
+  if (it.kind === 'room') return { kind: 'room', voice: it.room.type === RoomType.VOICE, canConnect };
+  if (it.kind === 'member') return { kind: 'member', canDm };
+  return { kind: it.kind };
+}
+
+/** rowKind with the rights read at the moment of the action (keyboard). */
+function rowKindNow(it: Item): SwitcherRowKind {
+  return rowKind(it, canConnectNow(it), it.kind === 'member' && canDmNow(it.member.workspaceId, it.member.user?.id ?? ''));
 }
 
 /** The sidebar's click on a voice room (joinOutcome: CONNECT, the user limit, MOVE_MEMBERS). */
@@ -296,7 +309,10 @@ function joinVoice(r: Room): void {
   else if (next === 'join') void voice.join(r.id, r.workspaceId);
 }
 
-/** One result: the `option` (click = the primary action), column 1 of its grid row. */
+/**
+ * One result: the `option`, column 1 of its grid row. A click only selects it (docs/09 #83) —
+ * the actions are the row's buttons (and Enter / ⇧Enter).
+ */
 const SwitcherOption = memo(function SwitcherOption({
   it,
   index,
@@ -305,7 +321,6 @@ const SwitcherOption = memo(function SwitcherOption({
   q,
   workspaceName,
   rooms,
-  onPick,
   onHover,
 }: {
   it: Item;
@@ -315,7 +330,6 @@ const SwitcherOption = memo(function SwitcherOption({
   q: string;
   workspaceName: string;
   rooms: Record<string, Room>;
-  onPick: (i: number, action?: SwitcherAction) => void;
   onHover: (i: number) => void;
 }): ReactNode {
   return (
@@ -325,7 +339,7 @@ const SwitcherOption = memo(function SwitcherOption({
       aria-selected={selected}
       style={{ gridRow: row }}
       onMouseMove={selected ? undefined : () => onHover(index)}
-      onClick={() => onPick(index)}
+      onClick={selected ? undefined : () => onHover(index)}
       className={cx(
         'col-start-1 flex min-w-0 cursor-default items-center gap-2 rounded-l-[var(--radius-row)] pl-3 pr-2 text-left text-body text-fg',
         it.kind === 'message' ? 'py-1.5' : 'h-9 mobile:h-12',
@@ -338,9 +352,9 @@ const SwitcherOption = memo(function SwitcherOption({
 });
 
 /**
- * The row's right end (docs/09 #66), column 2 of its grid row: on the selected row (hover or
- * arrows) its action buttons, on the others the grey Enter hint. Phone: the buttons always,
- * 44 px, no hint.
+ * The row's right end (docs/09 #66, #83), column 2 of its grid row: the action buttons, with
+ * text. Shown on the selected row (hover or arrows) and while one of them has focus (Tab), so
+ * they stay in the tab order (opacity, not display); no Enter hint. Phone: always, 44 px.
  */
 const SwitcherActions = memo(function SwitcherActions({
   it,
@@ -358,57 +372,47 @@ const SwitcherActions = memo(function SwitcherActions({
   onHover: (i: number) => void;
 }): ReactNode {
   const canConnect = useCanConnect(it.kind === 'room' && it.room.type === RoomType.VOICE ? it.room : null);
-  const actions = rowActions(rowKind(it, canConnect));
+  const canDm = useCanDm(it.kind === 'member' ? it.member.workspaceId : '', it.kind === 'member' ? (it.member.user?.id ?? '') : '');
+  const actions = rowActions(rowKind(it, canConnect, canDm));
   const name = rowName(it);
   return (
     <div
       style={{ gridRow: row }}
       onMouseMove={selected ? undefined : () => onHover(index)}
-      className={cx('col-start-2 flex items-center justify-end gap-1 rounded-r-[var(--radius-row)] pr-1.5', selected && 'bg-active')}
+      onFocus={selected ? undefined : () => onHover(index)}
+      className={cx(
+        'col-start-2 flex items-center justify-end gap-1 rounded-r-[var(--radius-row)] pr-1.5 mobile:opacity-100',
+        selected ? 'bg-active' : 'opacity-0 focus-within:opacity-100',
+      )}
     >
-      <span aria-hidden className={cx('whitespace-nowrap pr-1.5 text-caption text-muted mobile:hidden', selected && 'hidden')}>
-        {actions[0] === 'join' ? t('search.hintVoice') : t('search.hintOpen')}
-      </span>
-      <span className={cx('items-center gap-1 mobile:flex', selected ? 'flex' : 'hidden')}>
-        {actions.map((a, n) =>
-          a === 'join' ? (
-            <Button
-              key={a}
-              size="sm"
-              aria-label={t('search.actionOn', { action: t('search.join'), name })}
-              onClick={() => onPick(index, a)}
-              className="mobile:size-11 mobile:rounded-full mobile:px-0"
-            >
-              <Phone className="size-3.5 mobile:size-5" aria-hidden />
-              <span className="mobile:hidden">{t('search.join')}</span>
-            </Button>
-          ) : a === 'chat' && n > 0 ? (
-            <IconButton
-              key={a}
-              size="sm"
-              label={t('search.actionOn', { action: t('search.chat'), name })}
-              onClick={() => onPick(index, a)}
-              className="size-6 rounded-full mobile:size-11"
-            >
-              <MessageSquare className="size-3.5 mobile:size-5" aria-hidden />
-            </IconButton>
-          ) : (
-            <Button
-              key={a}
-              size="sm"
-              variant="secondary"
-              aria-label={t('search.actionOn', { action: a === 'chat' ? t('search.chat') : t('search.open'), name })}
-              onClick={() => onPick(index, a)}
-              className="mobile:h-11 mobile:px-4"
-            >
-              {a === 'chat' ? t('search.chat') : t('search.open')}
-            </Button>
-          ),
-        )}
-      </span>
+      {actions.map((a) => {
+        const label = actionLabel(a);
+        const Icon = a === 'join' ? Phone : a === 'chat' ? MessageSquare : a === 'write' ? MessageCircle : null;
+        return (
+          <Button
+            key={a}
+            size="sm"
+            variant={a === 'join' ? 'primary' : 'secondary'}
+            aria-label={t('search.actionOn', { action: label, name })}
+            onClick={() => onPick(index, a)}
+            className={Icon ? 'mobile:size-11 mobile:rounded-full mobile:px-0' : 'mobile:h-11 mobile:px-4'}
+          >
+            {Icon ? <Icon className="size-3.5 mobile:size-5" aria-hidden /> : null}
+            <span className={Icon ? 'mobile:hidden' : undefined}>{label}</span>
+          </Button>
+        );
+      })}
     </div>
   );
 });
+
+function actionLabel(a: SwitcherAction): string {
+  if (a === 'join') return t('search.join');
+  if (a === 'chat') return t('search.chat');
+  if (a === 'write') return t('dm.write');
+  if (a === 'filter') return t('search.filter');
+  return t('search.open');
+}
 
 /** CONNECT in a voice room, reactive (a boolean selector: a role change re-renders only this row). */
 function useCanConnect(room: Room | null): boolean {

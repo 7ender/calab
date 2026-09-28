@@ -777,7 +777,7 @@ test('quick-switcher', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await win.keyboard.press(`${MOD}+k`);
   await expect(win.getByRole('dialog')).toBeVisible();
-  // docs/09 #66: the hovered voice room shows «Подключиться» + chat; other rows the Enter hint.
+  // docs/09 #66, #83: the hovered voice room shows «Подключиться» + «Открыть чат»; other rows no hint.
   const voiceRow = win.getByRole('option', { name: /Переговорка/ });
   await voiceRow.hover();
   await expect(win.getByRole('button', { name: 'Подключиться: Переговорка' })).toBeVisible();
