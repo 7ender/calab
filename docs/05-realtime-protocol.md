@@ -115,7 +115,7 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 ## Масштабирование gateway
 
 - Сессии/буферы в Redis; gateway-сессия живёт на инстансе-владельце (`gw:sess:<id>.owner`), пока подключена или ждёт RESUME. RESUME на другом инстансе забирает сессию: просит владельца отдать её (`gw:ctl:<instance>`), тот сбрасывает буфер и отпускает; мёртвого владельца (нет lease `gw:inst:<id>`) не ждут.
-- Fan-out через Redis pub/sub: каналы `ws:<workspaceId>`, `user:<userId>`, `session:revoked:<sessionId>`; инстанс подписан по шаблонам (`PSUBSCRIBE ws:* user:* …`) и держит карту `workspaceId → Set<session>`. Payload — 16-байтный id события + protobuf `DispatchEvent`; id нужен для дедупликации (presence публикуется во все общие workspace) и при передаче сессии между инстансами.
+- Fan-out через Redis pub/sub: каналы `ws:<workspaceId>`, `user:<userId>`, `session:revoked:<sessionId>`; инстанс подписан по шаблонам (`PSUBSCRIBE ws:* user:* …`; с `REDIS_KEY_PREFIX` все ключи и каналы начинаются с префикса, а шаблон один — `<префикс>*`, docs/06 «Общий Valkey») и держит карту `workspaceId → Set<session>`. Payload — 16-байтный id события + protobuf `DispatchEvent`; id нужен для дедупликации (presence публикуется во все общие workspace) и при передаче сессии между инстансами.
 - Разрыв подписки на pub/sub (Redis перезапущен) → события за это время потеряны → всем сессиям инстанса `INVALID_SESSION{false}`, клиенты делают `IDENTIFY`.
 - Требуется Redis ≥ 7.4 (HEXPIRE для per-session TTL в presence); сервер проверяет версию при старте.
 - Presence: см. раздел «Несколько устройств» ниже.

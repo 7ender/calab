@@ -36,6 +36,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // SessionState is the voice state of one device (LiveKit participant).
@@ -183,9 +184,9 @@ type Store struct {
 	OnCalls func(ctx context.Context, wid uuid.UUID, rooms []uuid.UUID)
 }
 
-func wsKey(wid uuid.UUID) string     { return "voice:ws:" + wid.String() }
-func sessKey(sid uuid.UUID) string   { return "voice:sess:" + sid.String() }
-func smutedKey(wid uuid.UUID) string { return "voice:smuted:" + wid.String() }
+func wsKey(wid uuid.UUID) string     { return redisx.Key("voice:ws:" + wid.String()) }
+func sessKey(sid uuid.UUID) string   { return redisx.Key("voice:sess:" + sid.String()) }
+func smutedKey(wid uuid.UUID) string { return redisx.Key("voice:smuted:" + wid.String()) }
 
 // ServerMuted reports whether a moderator muted userID in the workspace.
 func (s Store) ServerMuted(ctx context.Context, wid, userID uuid.UUID) (bool, error) {
@@ -238,14 +239,13 @@ func (s Store) States(ctx context.Context, wid uuid.UUID) ([]*v1.VoiceState, err
 	}
 	return out, nil
 }
-func streamsKey(rid uuid.UUID) string     { return "voice:streams:" + rid.String() }
-func streamReqKey(identity string) string { return "voice:streamreq:" + identity }
-func camerasKey(rid uuid.UUID) string     { return "voice:cameras:" + rid.String() }
-func cameraReqKey(identity string) string { return "voice:camreq:" + identity }
-func cameraOffKey(identity string) string { return "voice:camoff:" + identity }
-func startedKey(rid uuid.UUID) string     { return "voice:started:" + rid.String() }
-
-const workspacesKey = "voice:workspaces"
+func streamsKey(rid uuid.UUID) string     { return redisx.Key("voice:streams:" + rid.String()) }
+func streamReqKey(identity string) string { return redisx.Key("voice:streamreq:" + identity) }
+func camerasKey(rid uuid.UUID) string     { return redisx.Key("voice:cameras:" + rid.String()) }
+func cameraReqKey(identity string) string { return redisx.Key("voice:camreq:" + identity) }
+func cameraOffKey(identity string) string { return redisx.Key("voice:camoff:" + identity) }
+func startedKey(rid uuid.UUID) string     { return redisx.Key("voice:started:" + rid.String()) }
+func workspacesKey() string               { return redisx.Key("voice:workspaces") }
 
 // List returns all device sessions in a workspace.
 func (s Store) List(ctx context.Context, wid uuid.UUID) ([]SessionState, error) {
@@ -265,7 +265,7 @@ func (s Store) List(ctx context.Context, wid uuid.UUID) ([]SessionState, error) 
 
 // Workspaces returns workspaces that may have voice state.
 func (s Store) Workspaces(ctx context.Context) ([]uuid.UUID, error) {
-	ms, err := s.C.Do(ctx, s.C.B().Smembers().Key(workspacesKey).Build()).AsStrSlice()
+	ms, err := s.C.Do(ctx, s.C.B().Smembers().Key(workspacesKey()).Build()).AsStrSlice()
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +304,7 @@ var unlockScript = rueidis.NewLuaScript(`if redis.call('GET', KEYS[1]) == ARGV[1
 // WithLock runs fn holding the workspace's voice lock: all read-modify-write of voice
 // state (and checks that must be atomic with it, like user_limit) happen under it.
 func (s Store) WithLock(ctx context.Context, wid uuid.UUID, fn func() error) error {
-	key, token := "voice:lock:"+wid.String(), uuid.NewString()
+	key, token := redisx.Key("voice:lock:"+wid.String()), uuid.NewString()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		err := s.C.Do(ctx, s.C.B().Set().Key(key).Value(token).Nx().Px(5*time.Second).Build()).Error()
@@ -375,7 +375,7 @@ func (s Store) UpdateLocked(ctx context.Context, wid, userID, sessionID uuid.UUI
 		b, _ := json.Marshal(next)
 		cmds = append(cmds, s.C.B().Hset().Key(wsKey(wid)).FieldValue().FieldValue(field, string(b)).Build(),
 			s.C.B().Set().Key(sessKey(sessionID)).Value(wid.String()+"/"+next.RoomID.String()).Build(),
-			s.C.B().Sadd().Key(workspacesKey).Member(wid.String()).Build())
+			s.C.B().Sadd().Key(workspacesKey()).Member(wid.String()).Build())
 		rest = append(rest, *next)
 	}
 	// Call start per room: set when a room gains its first connected device, cleared when the
@@ -470,7 +470,7 @@ func (s Store) Forget(ctx context.Context, wid uuid.UUID) error {
 		if err != nil || n > 0 {
 			return err
 		}
-		return s.C.Do(ctx, s.C.B().Srem().Key(workspacesKey).Member(wid.String()).Build()).Error()
+		return s.C.Do(ctx, s.C.B().Srem().Key(workspacesKey()).Member(wid.String()).Build()).Error()
 	})
 }
 

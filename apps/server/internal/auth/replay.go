@@ -14,6 +14,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
+
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // Idempotent refresh (docs/09 #89): a client whose refresh answer was lost (network cut
@@ -33,7 +35,7 @@ const replayKeyInfo = "calaba/refresh-replay/v1"
 // the idempotency (the retry falls back to 409), never the refresh itself.
 const replayBudget = time.Second
 
-func replayRedisKey(sid uuid.UUID) string { return "auth:refresh_replay:" + sid.String() }
+func replayRedisKey(sid uuid.UUID) string { return redisx.Key("auth:refresh_replay:" + sid.String()) }
 
 func replayAEAD(prevSecret string) (cipher.AEAD, error) {
 	m := hmac.New(sha256.New, []byte(prevSecret))

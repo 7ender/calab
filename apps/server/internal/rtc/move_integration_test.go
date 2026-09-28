@@ -15,6 +15,8 @@ import (
 	"github.com/redis/rueidis"
 
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/redisx"
+	"github.com/calaba/calaba/server/internal/redisx/redistest"
 	"github.com/calaba/calaba/server/internal/voice"
 )
 
@@ -87,6 +89,15 @@ func testService(t *testing.T, lk LiveKit) (*Service, rueidis.Client) {
 	if err := rc.Do(context.Background(), rc.B().Flushdb().Build()).Error(); err != nil {
 		t.Fatal(err)
 	}
+	// The key namespace the app tests run in (process-wide; every test sets the same one), and
+	// no key of the test may escape it (docs/06 «Общий Valkey»).
+	prefix := redistest.Prefix()
+	redisx.SetKeyPrefix(prefix)
+	t.Cleanup(func() {
+		if foreign, err := redistest.Foreign(context.Background(), rc, prefix); err != nil || len(foreign) > 0 {
+			t.Errorf("keys outside the namespace %q: %q (%v)", prefix, foreign, err)
+		}
+	})
 	s := NewService(Config{}, nil, rc, lk, events.Nop{})
 	s.voice.OnCalls = nil // call-start announcements need Postgres; not under test here
 	return s, rc

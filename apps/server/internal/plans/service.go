@@ -13,6 +13,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // CacheTTL bounds how long an instance serves a plan it read: changes made on this instance
@@ -206,7 +207,7 @@ func (s *Service) Invalidate(ctx context.Context, wsID uuid.UUID) {
 	if s.redis == nil {
 		return
 	}
-	if err := s.redis.Do(ctx, s.redis.B().Publish().Channel(changedChannel).Message(wsID.String()).Build()).Error(); err != nil {
+	if err := s.redis.Do(ctx, s.redis.B().Publish().Channel(redisx.Channel(changedChannel)).Message(wsID.String()).Build()).Error(); err != nil {
 		slog.WarnContext(ctx, "publish plan change", "workspace", wsID, "err", err) // the TTL catches up
 	}
 }
@@ -229,7 +230,7 @@ func (s *Service) Run(ctx context.Context) {
 		s.cache = map[uuid.UUID]cached{}
 		s.gen++
 		s.mu.Unlock()
-		err := s.redis.Receive(ctx, s.redis.B().Subscribe().Channel(changedChannel).Build(), func(m rueidis.PubSubMessage) {
+		err := s.redis.Receive(ctx, s.redis.B().Subscribe().Channel(redisx.Channel(changedChannel)).Build(), func(m rueidis.PubSubMessage) {
 			if id, err := uuid.Parse(m.Message); err == nil {
 				s.drop(id)
 			}

@@ -12,9 +12,10 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/calls"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
-// Presence keys (docs/05):
+// Presence keys (docs/05; inside the key namespace, redisx.Key):
 //
 //	presence:<user_id>       hash gateway_session_id -> status (int), each field with its own
 //	                         TTL (HEXPIRE, Redis ≥ 7.4) of 2×heartbeat, renewed by heartbeats
@@ -142,14 +143,13 @@ type presenceStore struct {
 	ttl time.Duration
 }
 
-func presKey(u uuid.UUID) string     { return "presence:" + u.String() }
-func presLastKey(u uuid.UUID) string { return "presence:last:" + u.String() }
-func presSeenKey(u uuid.UUID) string { return "presence:seen:" + u.String() }
+func presKey(u uuid.UUID) string     { return redisx.Key("presence:" + u.String()) }
+func presLastKey(u uuid.UUID) string { return redisx.Key("presence:last:" + u.String()) }
+func presSeenKey(u uuid.UUID) string { return redisx.Key("presence:seen:" + u.String()) }
 func presManualKey(u uuid.UUID) string {
-	return "presence:manual:" + u.String()
+	return redisx.Key("presence:manual:" + u.String())
 }
-
-const presUsersKey = "presence:users"
+func presUsersKey() string { return redisx.Key("presence:users") }
 
 // set records a session's status and renews its TTL.
 func (p presenceStore) set(ctx context.Context, user, gsid uuid.UUID, st v1.PresenceStatus) error {
@@ -158,7 +158,7 @@ func (p presenceStore) set(ctx context.Context, user, gsid uuid.UUID, st v1.Pres
 		p.c.B().Hset().Key(presKey(user)).FieldValue().FieldValue(gsid.String(), strconv.Itoa(int(st))).Build(),
 		p.c.B().Hexpire().Key(presKey(user)).Seconds(int64(p.ttl.Seconds())).Fields().Numfields(1).Field(gsid.String()).Build(),
 		p.c.B().Expire().Key(presKey(user)).Seconds(int64(p.ttl.Seconds()) + 60).Build(),
-		p.c.B().Zadd().Key(presUsersKey).ScoreMember().ScoreMember(float64(now.UnixMilli()), user.String()).Build(),
+		p.c.B().Zadd().Key(presUsersKey()).ScoreMember().ScoreMember(float64(now.UnixMilli()), user.String()).Build(),
 	}
 	if st != v1.PresenceStatus_PRESENCE_STATUS_INVISIBLE {
 		cmds = append(cmds, p.c.B().Set().Key(presSeenKey(user)).Value(strconv.FormatInt(now.UnixMilli(), 10)).Ex(90*24*time.Hour).Build())
@@ -272,7 +272,7 @@ func (p presenceStore) changed(ctx context.Context, pr *v1.Presence) (bool, erro
 		return false, err
 	}
 	if pr.GetStatus() == v1.PresenceStatus_PRESENCE_STATUS_OFFLINE {
-		_ = p.c.Do(ctx, p.c.B().Zrem().Key(presUsersKey).Member(u.String()).Build()).Error()
+		_ = p.c.Do(ctx, p.c.B().Zrem().Key(presUsersKey()).Member(u.String()).Build()).Error()
 	}
 	return prev != cur, nil
 }
@@ -280,7 +280,7 @@ func (p presenceStore) changed(ctx context.Context, pr *v1.Presence) (bool, erro
 // stale returns users not touched for longer than the TTL (candidates for going offline).
 func (p presenceStore) stale(ctx context.Context) ([]uuid.UUID, error) {
 	upTo := strconv.FormatInt(time.Now().Add(-p.ttl).UnixMilli(), 10)
-	ms, err := p.c.Do(ctx, p.c.B().Zrangebyscore().Key(presUsersKey).Min("-inf").Max(upTo).Limit(0, 500).Build()).AsStrSlice()
+	ms, err := p.c.Do(ctx, p.c.B().Zrangebyscore().Key(presUsersKey()).Min("-inf").Max(upTo).Limit(0, 500).Build()).AsStrSlice()
 	if err != nil {
 		return nil, err
 	}

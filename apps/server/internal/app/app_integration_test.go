@@ -4,6 +4,8 @@
 //
 //	TEST_DATABASE_URL  admin URL of an existing database (default postgres://calaba:calaba@localhost:55432/calaba)
 //	TEST_REDIS_URL     default redis://localhost:56379/15 (the DB is flushed)
+//	TEST_REDIS_KEY_PREFIX  key namespace of the run (REDIS_KEY_PREFIX), default calab:, empty = none;
+//	                   after the run every key of the DB must be inside it (redistest.Foreign)
 //	TEST_LIVEKIT_URL / TEST_LIVEKIT_INTERNAL_URL  dev LiveKit (devkey/secret), default localhost:7880;
 //	                   rtc tests that need LiveKit are skipped when it is unreachable
 //
@@ -40,6 +42,7 @@ import (
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
+	"github.com/calaba/calaba/server/internal/redisx/redistest"
 	"github.com/calaba/calaba/server/internal/rtc"
 	"github.com/redis/rueidis"
 )
@@ -134,6 +137,7 @@ func run(m *testing.M) int {
 
 	cfg := &config.Config{
 		DatabaseURL:      u.String(),
+		RedisKeyPrefix:   redistest.Prefix(),
 		JWTSecret:        "integration-secret-integration-secret",
 		AccessTokenTTL:   15 * time.Minute,
 		RefreshTokenTTL:  720 * time.Hour,
@@ -201,7 +205,15 @@ func run(m *testing.M) int {
 	srv = httptest.NewServer(a.Handler)
 	defer srv.Close()
 	time.Sleep(200 * time.Millisecond) // pub/sub subscription established
-	return m.Run()
+	code := m.Run()
+	// Every key the run left in its DB must be inside the namespace: a name built without
+	// redisx.Key escapes it (docs/06 «Общий Valkey»). The harness's leases live in DB 0.
+	if foreign, err := redistest.Foreign(ctx, rc, cfg.RedisKeyPrefix, leaseKeyPrefix); err != nil || len(foreign) > 0 {
+		fmt.Fprintf(os.Stderr, "integration: %d keys outside the namespace %q (err %v), e.g. %q\n",
+			len(foreign), cfg.RedisKeyPrefix, err, foreign[:min(len(foreign), 20)])
+		code = max(code, 1)
+	}
+	return code
 }
 
 // ---- tiny client ----
@@ -691,7 +703,7 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 	if st != 200 {
 		t.Fatalf("refresh: %d", st)
 	}
-	if err := testRedis.Do(ctx, testRedis.B().Del().Key("auth:refresh_replay:"+lost.GetSessionId()).Build()).Error(); err != nil {
+	if err := testRedis.Do(ctx, testRedis.B().Del().Key(redisx.Key("auth:refresh_replay:"+lost.GetSessionId())).Build()).Error(); err != nil {
 		t.Fatal(err)
 	}
 	if _, st := refresh(c, t0); st != 409 {

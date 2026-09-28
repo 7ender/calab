@@ -24,6 +24,7 @@ import (
 	"github.com/calaba/calaba/server/internal/dms"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/workspaces"
 )
 
@@ -226,9 +227,11 @@ func (h *Hub) authenticate(c *conn, token string) (auth.Identity, bool) {
 	return id, false
 }
 
-func deviceKey(user uuid.UUID) string     { return "gw:user:" + user.String() }
-func asessKey(asess uuid.UUID) string     { return "gw:asess:" + asess.String() }
-func typingKey(r, u uuid.UUID) string     { return "gw:typing:" + r.String() + ":" + u.String() }
+func deviceKey(user uuid.UUID) string { return redisx.Key("gw:user:" + user.String()) }
+func asessKey(asess uuid.UUID) string { return redisx.Key("gw:asess:" + asess.String()) }
+func typingKey(r, u uuid.UUID) string {
+	return redisx.Key("gw:typing:" + r.String() + ":" + u.String())
+}
 func expiryScore(d time.Duration) float64 { return float64(time.Now().Add(d).UnixMilli()) }
 
 // claimScript atomically enforces the per-user device limit and binds the auth session

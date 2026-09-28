@@ -17,6 +17,7 @@ import (
 	"github.com/calaba/calaba/server/internal/app"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // instance is an extra app (own gateway hub) on the shared DB / Redis.
@@ -191,7 +192,7 @@ func TestReconcileAndWebhookRetry(t *testing.T) {
 
 	// Webhook failure (voice lock held beyond the 3 s wait) → retry of the same event works.
 	ev := whEvent("participant_joined", lkName, bj.GetIdentity(), nil)
-	_ = testRedis.Do(context.Background(), testRedis.B().Set().Key("voice:lock:"+wid).Value("x").Px(3500*time.Millisecond).Build()).Error()
+	_ = testRedis.Do(context.Background(), testRedis.B().Set().Key(redisx.Key("voice:lock:"+wid)).Value("x").Px(3500*time.Millisecond).Build()).Error()
 	if st := webhook(t, ev, "secret"); st < 500 {
 		t.Fatalf("webhook during lock: %d, want 5xx", st)
 	}
@@ -207,7 +208,7 @@ func TestReconcileAndWebhookRetry(t *testing.T) {
 	if !inVoice(t, o, bob.id, rid) {
 		t.Fatal("reconcile removed a fresh join")
 	}
-	key := "voice:ws:" + wid
+	key := redisx.Key("voice:ws:" + wid)
 	raw, _ := testRedis.Do(context.Background(), testRedis.B().Hget().Key(key).Field(bj.GetIdentity()).Build()).ToString()
 	var st map[string]any
 	if err := json.Unmarshal([]byte(raw), &st); err != nil {
@@ -246,7 +247,7 @@ func TestReviewFixes(t *testing.T) {
 		t.Fatalf("race: %d cookie=%+v (want 200 with the same new cookie)", r.status, r.cookie)
 	}
 	sid, _, _ := strings.Cut(second, ".")
-	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key("auth:refresh_replay:"+sid).Build()).Error()
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("auth:refresh_replay:"+sid)).Build()).Error()
 	r = webPost(t, "/api/auth/refresh", nil, goodOrigin, first)
 	if r.status != 409 || r.cookie != nil {
 		t.Fatalf("race without replay: %d cookie=%+v (want 409 without Set-Cookie)", r.status, r.cookie)

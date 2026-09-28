@@ -469,7 +469,7 @@ func (s *Service) Run(ctx context.Context) {
 		case <-t.C:
 		}
 		hold := max(time.Duration(s.tick.Load())-100*time.Millisecond, 50*time.Millisecond)
-		lock := s.redis.B().Set().Key("calls:sweep").Value("1").Nx().Px(hold).Build()
+		lock := s.redis.B().Set().Key(redisx.Key("calls:sweep")).Value("1").Nx().Px(hold).Build()
 		if s.redis.Do(ctx, lock).Error() != nil {
 			continue
 		}

@@ -3,7 +3,7 @@
 // (e.g. VIEW_ROOM). Payload = 16-byte event id (uuid) + binary calaba.v1.DispatchEvent;
 // the id lets the gateway deliver an event published to several channels only once.
 //
-// Channels:
+// Channels (inside the key namespace, redisx.Channel):
 //
 //	ws:<workspace_id>            events for all members of a workspace
 //	user:<user_id>               events for one user (all their sessions)
@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // Publisher sends events after the DB transaction that caused them has committed.
@@ -202,7 +203,8 @@ func (r Redis) SessionRevoked(ctx context.Context, id uuid.UUID) {
 	r.publish(context.WithoutCancel(ctx), RevokedChannel(id), nil)
 }
 
-// Channel names and prefixes (the gateway PSUBSCRIBEs to the prefixes + "*").
+// Channel kinds: a channel name inside the namespace starts with one of them. The gateway
+// subscribes to them all (kind + "*" each, or the whole namespace) and routes by kind.
 const (
 	WorkspacePrefix = "ws:"
 	UserPrefix      = "user:"
@@ -210,13 +212,13 @@ const (
 )
 
 // WorkspaceChannel is the channel of a workspace.
-func WorkspaceChannel(id uuid.UUID) string { return WorkspacePrefix + id.String() }
+func WorkspaceChannel(id uuid.UUID) string { return redisx.Channel(WorkspacePrefix + id.String()) }
 
 // UserChannel is the channel of a user.
-func UserChannel(id uuid.UUID) string { return UserPrefix + id.String() }
+func UserChannel(id uuid.UUID) string { return redisx.Channel(UserPrefix + id.String()) }
 
 // RevokedChannel is the revocation channel of an auth session.
-func RevokedChannel(id uuid.UUID) string { return RevokedPrefix + id.String() }
+func RevokedChannel(id uuid.UUID) string { return redisx.Channel(RevokedPrefix + id.String()) }
 
 // Nop discards events (tests, tools).
 type Nop struct{}

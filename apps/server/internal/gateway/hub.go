@@ -26,6 +26,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/profile"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/voice"
 )
 
@@ -82,8 +83,24 @@ func New(cfg Config, d *db.DB, r rueidis.Client, a *auth.Service, pub events.Pub
 
 func (h *Hub) sockets(d int64) { socketsGauge.Set(float64(h.nSockets.Add(d))) }
 
-func ctlChannel(instance string) string { return "gw:ctl:" + instance }
-func instKey(instance string) string    { return "gw:inst:" + instance }
+// ctlPrefix starts the name of every instance's control channel (ctlChannel).
+const ctlPrefix = "gw:ctl:"
+
+func ctlChannel(instance string) string { return redisx.Channel(ctlPrefix + instance) }
+func instKey(instance string) string    { return redisx.Key("gw:inst:" + instance) }
+
+// subscription is what the hub PSUBSCRIBEs to: the event channels of all workspaces, users
+// and auth sessions, and its own control channel. With a key namespace that is the single
+// pattern "<namespace>*": Valkey checks a PSUBSCRIBE pattern against the ACL literally (not as
+// a glob), so a user limited to &<namespace>* may subscribe to exactly that; onMessage drops
+// the namespace's other channels. Without a namespace: the historical per-kind patterns.
+func (h *Hub) subscription() rueidis.Completed {
+	if redisx.KeyPrefix() != "" {
+		return h.redis.B().Psubscribe().Pattern(redisx.Channel("*")).Build()
+	}
+	return h.redis.B().Psubscribe().Pattern(redisx.Channel(events.WorkspacePrefix+"*"),
+		redisx.Channel(events.UserPrefix+"*"), redisx.Channel(events.RevokedPrefix+"*"), ctlChannel(h.instance)).Build()
+}
 
 // Run subscribes to events and runs background loops until ctx is done.
 func (h *Hub) Run(ctx context.Context) {
@@ -92,8 +109,7 @@ func (h *Hub) Run(ctx context.Context) {
 	go h.sweepPresence(ctx)
 	first := true
 	for ctx.Err() == nil {
-		cmd := h.redis.B().Psubscribe().Pattern(events.WorkspacePrefix+"*", events.UserPrefix+"*",
-			events.RevokedPrefix+"*", ctlChannel(h.instance)).Build()
+		cmd := h.subscription()
 		if !first {
 			// Events published while we were not subscribed are lost: make clients resync.
 			h.invalidateAll()
@@ -124,10 +140,15 @@ func (h *Hub) lease(ctx context.Context) {
 
 func (h *Hub) onMessage(m rueidis.PubSubMessage) {
 	start := time.Now()
-	ch := m.Channel
+	ch, ok := redisx.ChannelName(m.Channel)
 	switch {
-	case strings.HasPrefix(ch, "gw:ctl:"):
-		h.onControl(m.Message)
+	case !ok:
+		return
+	case strings.HasPrefix(ch, ctlPrefix):
+		// With a namespace every instance hears all control channels: only its own is for it.
+		if ch == ctlPrefix+h.instance {
+			h.onControl(m.Message)
+		}
 		return
 	case strings.HasPrefix(ch, events.RevokedPrefix):
 		if sid, err := uuid.Parse(strings.TrimPrefix(ch, events.RevokedPrefix)); err == nil {
@@ -136,6 +157,8 @@ func (h *Hub) onMessage(m rueidis.PubSubMessage) {
 			}
 		}
 		return
+	case !strings.HasPrefix(ch, events.WorkspacePrefix) && !strings.HasPrefix(ch, events.UserPrefix):
+		return // another channel of the namespace (plans:changed, …)
 	}
 	id, ev, err := events.Decode([]byte(m.Message))
 	if err != nil {
@@ -956,7 +979,7 @@ func (h *Hub) sweepPresence(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		lock := h.redis.B().Set().Key("gw:presence:sweep").Value(h.instance).Nx().Ex(14 * time.Second).Build()
+		lock := h.redis.B().Set().Key(redisx.Key("gw:presence:sweep")).Value(h.instance).Nx().Ex(14 * time.Second).Build()
 		if h.redis.Do(ctx, lock).Error() != nil {
 			continue
 		}

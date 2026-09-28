@@ -37,6 +37,10 @@ type Config struct {
 
 	DatabaseURL string `env:"DATABASE_URL,required"`
 	RedisURL    string `env:"REDIS_URL,required"`
+	// Namespace of every Valkey key and pub/sub channel of the API, e.g. "calab:" — for a Valkey
+	// shared with other applications under an ACL user limited to ~<prefix>* &<prefix>*
+	// (docs/06 «Общий Valkey»). Empty = none: the historical names.
+	RedisKeyPrefix string `env:"REDIS_KEY_PREFIX"`
 
 	JWTSecret       string        `env:"JWT_SECRET,required"`
 	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
@@ -159,6 +163,9 @@ func (c *Config) Validate() error {
 	if len(c.JWTSecret) < 32 {
 		errs = append(errs, errors.New("JWT_SECRET must be at least 32 bytes"))
 	}
+	if !validKeyPrefix(c.RedisKeyPrefix) {
+		errs = append(errs, fmt.Errorf("REDIS_KEY_PREFIX must be empty or end with ':' and hold only letters, digits, '.', '_', '-' and ':' (at most 64 bytes), got %q", c.RedisKeyPrefix))
+	}
 	switch c.RegistrationMode {
 	case RegistrationOpen, RegistrationInvite:
 	default:
@@ -244,6 +251,26 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config: %w", err)
 	}
 	return nil
+}
+
+// validKeyPrefix: REDIS_KEY_PREFIX is empty or a plain name ending with ':'. No glob characters
+// (the gateway PSUBSCRIBEs to "<prefix>*", the ACL user gets ~<prefix>*), and the final ':'
+// keeps "calab:*" from also matching the keys of another application named "calabash".
+func validKeyPrefix(p string) bool {
+	if p == "" {
+		return true
+	}
+	if len(p) > 64 || !strings.HasSuffix(p, ":") {
+		return false
+	}
+	for _, r := range p {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', strings.ContainsRune("._-:", r):
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // AllowedOrigins returns the browser origins of the web client (scheme://host[:port]),

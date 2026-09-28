@@ -18,6 +18,7 @@ import (
 
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // Bot tokens (ADR-0031): "calab_bot_<bot user id>_<secret>", secret = 32 random bytes
@@ -81,7 +82,7 @@ func ParseBotToken(tok string) (id uuid.UUID, secret string, ok bool) {
 	return id, secret, true
 }
 
-func botAuthKey(id uuid.UUID) string { return "bot:auth:" + id.String() }
+func botAuthKey(id uuid.UUID) string { return redisx.Key("bot:auth:" + id.String()) }
 
 // botAuth is the cached current token of a bot: token id + sha256 of the secret, or none.
 type botAuth struct {
