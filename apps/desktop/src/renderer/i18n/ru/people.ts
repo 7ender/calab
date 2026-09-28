@@ -202,6 +202,7 @@ export const ruPeople = {
   'birthday.clear': 'Убрать',
   'birthday.today': 'Сегодня день рождения',
   'birthday.card': '🎂 {name} — сегодня день рождения!',
+  'birthday.cardTitle': 'Сегодня день рождения!',
   'birthday.preview': '🎂 День рождения',
   'birthday.edit': 'Изменить день рождения',
   'birthday.editTitle': 'День рождения участника',

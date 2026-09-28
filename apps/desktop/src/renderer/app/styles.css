@@ -42,6 +42,9 @@
   --color-accent-strong: #0071e3; /* filled primary buttons (white text ≥ 4.5:1) */
   --color-accent-text: #409cff; /* links / accent-coloured text on content */
   --color-on-accent: #ffffff;
+  /* warm second stop of the birthday card gradient (accent-strong → this; white text 8.9:1),
+     same in both themes */
+  --color-birthday-warm: #c2185b;
   --color-green: #30d158;
   --color-yellow: #ffd60a;
   --color-presence-idle: #ffd60a;
@@ -534,6 +537,63 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
 }
 @media (prefers-reduced-motion: reduce) {
   .rec-dot-pulse {
+    animation: none;
+  }
+}
+
+/* Birthday card in the feed (docs/08 «Дни рождения», issue #18): a static gradient (solid
+   material, no backdrop-filter); white text ≥ 4.5:1 on every stop. Sparkles (a few radial dots
+   in ::after) and the cake «pop» play once on mount, ≤ 1.2 s; nothing with reduced motion. */
+.birthday-card {
+  background: linear-gradient(115deg, var(--color-accent-strong) 0%, var(--color-birthday-warm) 100%);
+}
+.birthday-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(3px 3px at 12% 22%, #fff 60%, transparent 100%),
+    radial-gradient(2px 2px at 28% 78%, #ffe27a 60%, transparent 100%),
+    radial-gradient(3px 3px at 46% 18%, #ffe27a 60%, transparent 100%),
+    radial-gradient(2px 2px at 63% 70%, #fff 60%, transparent 100%),
+    radial-gradient(3px 3px at 78% 28%, #fff 60%, transparent 100%),
+    radial-gradient(2px 2px at 90% 64%, #ffe27a 60%, transparent 100%);
+  opacity: 0;
+  animation: calaba-sparkle 1.2s ease-out 1 both;
+}
+.birthday-cake {
+  animation: calaba-cake-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 1 both;
+}
+.birthday-name:focus-visible {
+  outline-color: #fff;
+}
+@keyframes calaba-sparkle {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+@keyframes calaba-cake-pop {
+  from {
+    transform: scale(0.6);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .birthday-card::after {
+    display: none;
+  }
+  .birthday-cake {
     animation: none;
   }
 }
