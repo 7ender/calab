@@ -72,7 +72,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `PUBLIC_APP_URLS` | — | все origin веб-клиента через запятую (`https://app.calab.ru,https://colaba.gptunnel.ai,…`); разрешённый список = `PUBLIC_APP_URL` + `PUBLIC_APP_URL_ALT` + этот; `PUBLIC_APP_URL` остаётся основным (ссылки) |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error`, JSON в stdout |
 | `MIGRATE_ON_START` | `true` | применять миграции при `serve` |
-| `STORAGE_DRIVER` / `STORAGE_PATH` | `fs` / `./data/files` (образ: `/data/files`) | хранилище файлов (ADR-0011); `s3` — позже |
+| `STORAGE_DRIVER` / `STORAGE_PATH` | `fs` / `./data/files` (образ: `/data/files`) | хранилище файлов (ADR-0011): `fs` — каталог, `s3` — бакет S3 (`STORAGE_S3_*`, docs/06 «Файлы в S3») |
 | `MAX_FILE_SIZE_MB` | `50` | лимит файла; поток обрывается при превышении → 413 |
 | `FFMPEG_PATH` / `FFPROBE_PATH` | `ffmpeg` / `ffprobe` (образ: статическая сборка 8.0 в `/usr/local/bin`) | HEIC → JPEG (`POST /api/files/convert`, нужен ffmpeg ≥ 7.1); не найдены → 501, клиент говорит «HEIC не поддерживается» |
 | `LIVEKIT_URL` | — | URL для клиентов (`wss://rtc.<domain>`, dev `ws://localhost:7880`) |

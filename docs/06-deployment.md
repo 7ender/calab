@@ -20,7 +20,7 @@
 
 Почему api в host network: API обращается к LiveKit (`127.0.0.1:7880`, signal слушает только loopback), а LiveKit шлёт webhook на `127.0.0.1:3000`. Из bridge-сети это требовало бы `host.docker.internal` и правил файрвола для `docker0`; в host network всё идёт по loopback, наружу API не торчит (слушает только 127.0.0.1).
 
-MinIO нет (ADR-0011): образ `minio/minio` удалён с Docker Hub, сторонние сборки не берём; файлы API пишет драйвером `fs` в volume `calaba_files_data`. Драйвер `s3` (Garage / Ceph RGW / облако) — позже, для k8s.
+MinIO нет (ADR-0011): образ `minio/minio` удалён с Docker Hub, сторонние сборки не берём; файлы API пишет драйвером `fs` в volume `calaba_files_data`. Драйвер `s3` (Yandex Object Storage / Garage / Ceph RGW) — для k8s и нескольких реплик API, см. «Файлы в S3: драйвер `s3`» ниже.
 
 Имя compose-проекта задано явно (`name: calaba`, dev — `calaba-dev`): контейнеры и volume называются `calaba-*`/`calaba_*`, `--remove-orphans` не заденет чужие проекты на общем хосте.
 
@@ -245,6 +245,31 @@ STEPS="preflight build" VERSION=0.1.0 infra/docker/release.sh <commit> # лок�
 ### Почта (ADR-0023)
 - `.env` стенда: `SMTP_HOST=mail.unne.ai`, `SMTP_PORT=465`, `SMTP_TLS=tls`, `SMTP_USER` = `SMTP_FROM`-адрес, `SMTP_PASSWORD`, `SMTP_FROM="Calab <noreply@calab.ru>"`. Проверка: регистрация → письмо с кодом; в логах API `mail sent` / `mail: giving up`.
 - **Владелец, DNS `calab.ru`**: SPF `v=spf1 include:<SPF почтового сервера mail.unne.ai> -all` (или `a:mail.unne.ai`); DKIM — TXT `<selector>._domainkey.calab.ru` с публичным ключом, которым подписывает mail.unne.ai; DMARC `_dmarc.calab.ru` → `v=DMARC1; p=quarantine; rua=mailto:<ящик отчётов>` (начать с `p=none` на неделю).
+
+### Файлы в S3: драйвер `s3` (ADR-0011)
+
+Несколько реплик API не могут делить том драйвера `fs`, поэтому в Kubernetes файлы лежат в бакете S3-совместимого хранилища: `STORAGE_DRIVER=s3`. Основная цель — Yandex Object Storage (`https://storage.yandexcloud.net`, регион `ru-central1`); подходят Garage, Ceph RGW и другие S3-совместимые хранилища (в CI драйвер проверяется против Garage). Compose-стенд остаётся на `fs`.
+
+| Переменная | По умолчанию | Что |
+|---|---|---|
+| `STORAGE_DRIVER` | `fs` | `s3` — файлы в бакете |
+| `STORAGE_S3_ENDPOINT` | — (обязательна) | адрес S3 API: `https://storage.yandexcloud.net`; Garage — `http(s)://<хост>:3900` |
+| `STORAGE_S3_REGION` | `us-east-1` | регион подписи SigV4: Yandex — `ru-central1`, Garage — `s3_region` из его конфига |
+| `STORAGE_S3_BUCKET` | — (обязательна) | бакет **без публичного доступа**: файлы отдаёт только API после проверки прав |
+| `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY` | — (обязательны) | статический ключ сервисного аккаунта; секрет — только в Secret кластера, не в git |
+| `STORAGE_S3_KEY_PREFIX` | — | общий бакет: все объекты под `<префикс>/` (сегменты `[A-Za-z0-9._-]` через `/`) |
+| `STORAGE_S3_FORCE_PATH_STYLE` | `true` | адреса `<endpoint>/<bucket>/<key>`; `false` — virtual-hosted (`<bucket>.<хост>/<key>`) |
+
+Переменные `S3_*` без `STORAGE_` — это бакет публичных релизов десктопа (Caddy, GitHub Actions), к файлам пользователей отношения не имеют.
+
+- **Права ключа:** чтение, запись и удаление объектов плюс список бакета; в Yandex Object Storage — роль `storage.editor`, выданная на сам бакет, а не на каталог. Без права на список S3 отвечает на отсутствующий объект 403, а не 404, и API считает это ошибкой, а не «файла нет».
+- **Старт:** API проверяет бакет (`HeadBucket`, до 10 с) и не стартует при неверном адресе, бакете или ключе. `/readyz` бакет не проверяет.
+- **Загрузка:** объект появляется только целиком: файл до 5 МиБ уходит одним `PutObject`, больше — multipart по 5 МиБ, две части параллельно (в памяти API до ~20 МиБ на идущую загрузку). Ошибка чтения или несовпадение размера отменяют multipart (`AbortMultipartUpload`). На случай падения пода посреди загрузки в бакете нужно правило жизненного цикла: удалять незавершённые multipart-загрузки через 1 день (`AbortIncompleteMultipartUpload`).
+- **Отдача:** метаданные — `HeadObject`, байты — `GetObject` с `Range` от нужного смещения и только при чтении: перемотка аудио и видео, докачка не качают объект с начала. Запросы одного чтения идут с `If-Match` по ETag: объект, заменённый посреди чтения, даёт ошибку, а не смесь двух версий.
+- **Квоты:** `STORAGE_MAX_TOTAL_BYTES` и квоты пространств считаются по размерам файлов в Postgres, а не по месту на диске или в бакете, поэтому для `fs` и `s3` одинаковы; миниатюры в них не входят.
+- **Бэкап:** `backup.sh` копирует только volume драйвера `fs`; бакет — версионированием или репликацией средствами хранилища (TODO владелец).
+- **Переезд с `fs`:** ключи те же (`<workspace_id>/<file_id>`, плюс `.thumb` и `.thumb1024`): скопировать содержимое `STORAGE_PATH` в бакет под префикс (`rclone copy /data/files <remote>:<bucket>/<префикс> --exclude '.tmp-*'`) и переключить `STORAGE_DRIVER`.
+- **Проверка:** `apps/server/internal/blob/testdata/garage.sh` поднимает Garage и печатает `TEST_S3_*`, затем `go test -tags integration ./internal/blob/`; в CI то же делает job `go integration tests`.
 
 ## Наблюдаемость
 
