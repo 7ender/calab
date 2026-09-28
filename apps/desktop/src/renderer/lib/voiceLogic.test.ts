@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, userVolumeCapped, withUserMuted, withUserVolume } from './voiceLogic';
+import { meterUpdate, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, userVolumeCapped, withUserMuted, withUserVolume } from './voiceLogic';
 
 describe('mute / deafen', () => {
   it('mute toggles; unmute while deafened also undeafens', () => {
@@ -94,5 +94,19 @@ describe('remote audio (per-user volume, «Заглушить для меня»)
     expect(withUserVolume({}, 'u2', 1.5)).toEqual({ u2: 1.5 });
     expect(withUserMuted({}, 'u1', true)).toEqual({ u1: true });
     expect(withUserMuted({ u1: true }, 'u1', false)).toEqual({});
+  });
+});
+
+describe('meterUpdate', () => {
+  const base = { open: false, wasOpen: false, meter: false, now: 1000, last: 0, intervalMs: 50 };
+  it('without a meter: nothing between gate edges, only the edge', () => {
+    expect(meterUpdate(base)).toBe('none');
+    expect(meterUpdate({ ...base, open: true })).toBe('gate');
+    expect(meterUpdate({ ...base, wasOpen: true })).toBe('gate');
+  });
+  it('with a meter: the level at most every interval, and on an edge at once', () => {
+    expect(meterUpdate({ ...base, meter: true })).toBe('level');
+    expect(meterUpdate({ ...base, meter: true, last: 980 })).toBe('none');
+    expect(meterUpdate({ ...base, meter: true, last: 980, open: true })).toBe('level');
   });
 });

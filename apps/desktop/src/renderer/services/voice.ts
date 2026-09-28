@@ -38,7 +38,7 @@ import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
 import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '../lib/remoteSpeaking';
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
-import { canSpeakFrom, isDeviceGone, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
+import { canSpeakFrom, isDeviceGone, meterUpdate, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
@@ -1191,7 +1191,14 @@ class VoiceEngine {
   /** A live mic meter is on screen (Settings → Голос): keep the level denoised and at full rate. */
   meterVisible(on: boolean): void {
     this.meters = Math.max(0, this.meters + (on ? 1 : -1));
+    // The store carries the level only while a meter shows it (onMicReport): start from now.
+    if (on) setVoice({ levelDb: this.lastMicDb, gateOpen: this.gate.open });
     this.applyDenoise();
+  }
+
+  /** A mic meter is on screen, or the mic test runs (its VAD readout). */
+  private meterShown(): boolean {
+    return this.meters > 0 || this.micTesting;
   }
 
   /**
@@ -1203,7 +1210,7 @@ class VoiceEngine {
     const mic = this.mic;
     if (!mic) return;
     const p = prefs();
-    mic.setDenoise(denoiseMode({ onAir: d.audioEnabled, meter: this.meters > 0 || this.micTesting, micMode: p.micMode, muted: d.livekitMuted }), wakeDbFor(p.thresholdDb));
+    mic.setDenoise(denoiseMode({ onAir: d.audioEnabled, meter: this.meterShown(), micMode: p.micMode, muted: d.livekitMuted }), wakeDbFor(p.thresholdDb));
   }
 
   /** Pipeline builds / swaps run one at a time: concurrent builds leaked a capture (review M2). */
@@ -1419,9 +1426,12 @@ class VoiceEngine {
     const wasOpen = this.gate.open;
     const open = this.gate.push({ db, vad });
     const now = performance.now();
-    if (open !== wasOpen || now - this.lastMeterPush >= METER_UI_INTERVAL_MS) {
+    const update = meterUpdate({ open, wasOpen, meter: this.meterShown(), now, last: this.lastMeterPush, intervalMs: METER_UI_INTERVAL_MS });
+    if (update === 'level') {
       this.lastMeterPush = now;
       setVoice({ levelDb: db, vad, gateOpen: open });
+    } else if (update === 'gate') {
+      setVoice({ gateOpen: open });
     }
     if (open !== wasOpen && prefs().micMode === 'voice') this.applyTransmit();
   }

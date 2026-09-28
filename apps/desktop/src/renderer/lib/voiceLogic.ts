@@ -129,3 +129,15 @@ export function withUserMuted(map: Readonly<Record<string, true>>, userId: strin
   else delete next[userId];
   return next;
 }
+
+/**
+ * What one mic level report writes to the voice store (docs/14 «Ререндеры в звонке»). The level
+ * and VAD are read only by a mic meter on screen (Settings → Голос, onboarding): with one shown
+ * they go at most every `intervalMs` (and on a gate edge); without it only the gate edge is
+ * written. Every write wakes every useVoice selector, so an unseen 20/s level is pure cost.
+ */
+export function meterUpdate(a: { open: boolean; wasOpen: boolean; meter: boolean; now: number; last: number; intervalMs: number }): 'none' | 'gate' | 'level' {
+  const edge = a.open !== a.wasOpen;
+  if (a.meter && (edge || a.now - a.last >= a.intervalMs)) return 'level';
+  return edge ? 'gate' : 'none';
+}
