@@ -6,7 +6,7 @@ vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({}), subscribe: () =>
 const { IDLE_MS, retentionAction } = await import('./retention');
 
 const msg = (id: string): Message => ({ id, roomId: 'r', nonce: '' }) as unknown as Message;
-const sentItem = (id: string): ChatMessage => ({ key: id, msg: msg(id), status: 'sent', delivered: true });
+const sentItem = (id: string): ChatMessage => ({ key: id, msg: msg(id), status: 'sent' });
 const win = (n: number, extra: Partial<RoomMessages> = {}): RoomMessages => ({
   items: Array.from({ length: n }, (_, i) => sentItem(`m${String(i).padStart(4, '0')}`)),
   hasMoreBefore: false,

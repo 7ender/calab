@@ -324,7 +324,7 @@ export async function sendMessage(
       nonce,
     });
     if (res.message) {
-      useMessages.getState().upsert(res.message, { rest: true, delivered: false });
+      useMessages.getState().upsert(res.message, { rest: true });
       useRooms.getState().setLastMessage(roomId, res.message.id);
       useRooms.getState().setRead(roomId, res.message.id);
     }

@@ -13,6 +13,7 @@ import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
+import { useReadReceipts } from '../stores/readReceipts';
 import { useRoomLink } from '../features/people/roomLink';
 import { onUpdateStatus } from '../features/shell/updateBannerState';
 import { queryClient } from '../lib/queryClient';
@@ -180,6 +181,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useRooms.getState().reset();
   useMessages.getState().reset();
   useTyping.getState().reset();
+  useReadReceipts.getState().reset();
   useInbox.getState().reset();
   useDms.getState().reset();
   useStickers.getState().reset();

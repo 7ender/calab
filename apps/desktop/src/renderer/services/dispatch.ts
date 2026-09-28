@@ -7,6 +7,7 @@ import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
 import { toast } from '../stores/toasts';
 import { mayMentionAll } from '../lib/permissions';
+import { useReadReceipts } from '../stores/readReceipts';
 import { useRooms } from '../stores/rooms';
 import { useTyping } from '../stores/typing';
 import { myUserId, useSession } from '../stores/session';
@@ -65,6 +66,9 @@ export function applyDispatch(ev: DispatchEvent): void {
       const prevMentions = rooms.mentions;
       ws.reset();
       rooms.reset();
+      // Read receipts (docs/09 #92): workspace rooms here, DMs with their summaries (applyDm).
+      useReadReceipts.getState().reset();
+      for (const pr of r.peerReads) useReadReceipts.getState().set(pr.roomId, pr.lastReadMessageId);
       rooms.setNotifyAll(r.notificationSettings);
       rooms.setWsNotifyAll(r.workspaceNotificationSettings);
       for (const snap of r.workspaces) {
@@ -294,6 +298,9 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'workspaceNotificationUpdate':
       if (e.value.settings) useRooms.getState().setWsNotify(e.value.settings);
+      return;
+    case 'readReceipt':
+      if (e.value.lastReadMessageId) useReadReceipts.getState().set(e.value.roomId, e.value.lastReadMessageId);
       return;
     case 'readStateUpdate':
       if (e.value.readState) useRooms.getState().setRead(e.value.readState.roomId, e.value.readState.lastReadMessageId);

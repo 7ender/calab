@@ -52,15 +52,15 @@ describe('messages store', () => {
     expect(useMessages.getState().rooms['other']).toBeUndefined();
   });
 
-  it('own messages: ✓ after the POST response, ✓✓ after the gateway echo (either order)', () => {
+  it('own messages: the POST response and the gateway echo (either order) leave one sent message', () => {
     const s = useMessages.getState();
     s.addPending('r', { key: 'local:n3', msg: msg('', 'n3'), status: 'pending' });
-    s.upsert(msg('0006', 'n3'), { rest: true, delivered: false });
-    expect(useMessages.getState().rooms['r']?.items.at(-1)?.delivered).toBe(false);
+    s.upsert(msg('0006', 'n3'), { rest: true });
     s.upsert(msg('0006', 'n3'));
-    expect(useMessages.getState().rooms['r']?.items.at(-1)?.delivered).toBe(true);
-    s.upsert(msg('0006', 'n3'), { rest: true, delivered: false }); // late POST response
-    expect(useMessages.getState().rooms['r']?.items.at(-1)?.delivered).toBe(true);
+    s.upsert(msg('0006', 'n3'), { rest: true }); // late POST response
+    const own = useMessages.getState().rooms['r']?.items.filter((c) => c.msg.nonce === 'n3');
+    expect(own).toHaveLength(1);
+    expect(own?.[0]).toMatchObject({ key: '0006', status: 'sent' });
   });
 
   it('an older window ignores new messages beyond its end; appendPage grows it', () => {
