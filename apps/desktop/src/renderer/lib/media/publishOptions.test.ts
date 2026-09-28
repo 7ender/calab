@@ -4,7 +4,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { cameraPublishOptions } from './camera';
 
 vi.mock('../../platform', () => ({ platform: {} }));
-import { H264_DETAIL_BITRATE_FACTOR, screenBitrate, screenPublishOptions } from './screenShare';
+import { H264_DETAIL_BITRATE_FACTOR, ownAudioExcluded, screenBitrate, screenPublishOptions } from './screenShare';
+
+/** docs/09 #68: Chromium reports whether our own playback is excluded from the loopback track. */
+describe('ownAudioExcluded', () => {
+  it('true for loopbackWithoutChrome / restrictOwnAudio honoured, false for a plain or muted loopback', () => {
+    expect(ownAudioExcluded({ deviceId: 'loopbackWithoutChrome', restrictOwnAudio: true })).toBe(true);
+    expect(ownAudioExcluded({ deviceId: 'loopback', restrictOwnAudio: false })).toBe(false);
+    expect(ownAudioExcluded({ deviceId: 'loopbackWithMute' })).toBe(false);
+  });
+});
 
 /** The `publishTrack` arguments per codec (ADR-0032): what LiveKit gets for the stream and the camera. */
 describe('screen share publish options', () => {
