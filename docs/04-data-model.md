@@ -8,7 +8,8 @@ PostgreSQL 18, `pgx` + `sqlc` + `goose` (миграции). Все id — `uuid 
 users               id, email (unique, citext), password_hash (argon2id), display_name,
                     avatar_file_id, status_text, settings (jsonb, UserSettings),
                     created_at, disabled_at, timezone? (IANA, «+3 UTC» у участников),
-                    email_verified_at?, pending_email? (новый адрес до кода), locale? (en|ru|es|zh-CN, язык писем)
+                    email_verified_at?, pending_email? (новый адрес до кода), locale? (en|ru|es|zh-CN, язык писем),
+                    birthday_day?/birthday_month? (вместе), birthday_year?, birthday_hidden (docs/09 #76)
 email_codes         user_id, purpose ('verify'|'change'|'reset'), code_hash (argon2id), expires_at,
                     attempts, created_at   PK (user_id, purpose) — один живой код на цель (ADR-0023)
 mail_outbox         id, to_addr, template, locale, params (AES-GCM, ключ из JWT_SECRET; NULL после отправки),
@@ -67,6 +68,8 @@ message_reactions   message_id, emoji, user_id, created_at      PK (message_id, 
                     messages += pinned_at?, pinned_by?;  users += status_emoji, status_expires_at?
                     поиск: GIN по выражению to_tsvector('russian', content) || to_tsvector('simple', content)
 user_notes          author_id, subject_id, text (1..1000), updated_at   PK (author_id, subject_id) — личная заметка о человеке
+birthday_greetings  user_id, workspace_id, day (местная дата именинника), message_id?, created_at
+                    PK (user_id, workspace_id, day) — дедуп карточки дня рождения (docs/09 #76)
 dm_members          room_id, user_id, created_at                PK (room_id, user_id) — ровно два участника DM (ADR-0020)
 dm_state            user_id, room_id, archived_at, cleared_before  PK (user_id, room_id), FK → dm_members — своё состояние DM: архив, «Удалить чат» до id (docs/09 #51)
                     rooms += dm_key? (unique: least(a,b) || ':' || greatest(a,b));
@@ -137,6 +140,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 
 - «Участник с» — без новых полей: регистрация `users.created_at` (`User.created_at`) и вступление в пространство `workspace_members.joined_at` (`WorkspaceMember.joined_at`).
 - Личные заметки `user_notes`: одна на пару (автор, о ком), видит и меняет только автор (`GET/PUT/DELETE /api/users/{id}/note`, docs/05). Писать можно о себе и о тех, с кем есть общее пространство (любая роль) или DM, иначе `404`. Пустой текст удаляет заметку. При анонимизации гостя удаляются его заметки и заметки о нём. Роли меняются `PUT …/members/{userId}/roles` (или legacy `PATCH …/members/{userId} {role}`; см. «Роли workspace» ниже).
+- **День рождения** (docs/09 #76, как в Telegram): `users.birthday_day/month` (обязательны вместе), `birthday_year` (по желанию, 1900..текущий, дата не в будущем), `birthday_hidden`. 29 февраля допустимо (в невисокосный год празднуется 28 февраля). `User.birthday {day, month, year?}` видят все, кому приходит `User` (участники общих пространств, DM); скрытый — только сам владелец (`Me.user.birthday` + `Me.birthday_hidden`). Гости и боты день рождения не задают. Карточка «🎂 Сегодня день рождения у …» — раз в день на (человек, пространство), дедуп `birthday_greetings` по местной дате именинника (строки старше 3 дней удаляются).
 
 ## Роли workspace (ADR-0026)
 
