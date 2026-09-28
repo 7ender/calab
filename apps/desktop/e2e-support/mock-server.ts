@@ -503,6 +503,47 @@ function mailLocale(tag: string): string | null {
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
 const invalid = (field: string, what: string): HttpError => new HttpError(422, ErrorCode.VALIDATION, what, field);
+
+/**
+ * The refusals of the server's ValidateWebP (apps/server/internal/stickers/webp.go) that the
+ * client maps to texts — signature, canvas size, frames / duration, bytes — on a light chunk walk.
+ */
+export function mockWebpProblem(b: Buffer): string | null {
+  if (b.length < 20 || b.subarray(0, 4).toString('latin1') !== 'RIFF' || b.subarray(8, 12).toString('latin1') !== 'WEBP') return 'missing RIFF/WEBP signature';
+  let animated = false;
+  let frames = 0;
+  let durationMs = 0;
+  for (let off = 12; off + 8 <= b.length; ) {
+    const id = b.subarray(off, off + 4).toString('latin1');
+    const size = b.readUInt32LE(off + 4);
+    const p = off + 8;
+    if (id === 'VP8X' && size >= 10 && p + 10 <= b.length) {
+      animated = ((b[p] ?? 0) & 0x02) !== 0;
+      const w = b.readUIntLE(p + 4, 3) + 1;
+      const h = b.readUIntLE(p + 7, 3) + 1;
+      if (w > 512 || h > 512) return `canvas ${w}x${h} is larger than 512`;
+    } else if (id === 'ANMF' && size >= 16 && p + 16 <= b.length) {
+      frames++;
+      durationMs += b.readUIntLE(p + 12, 3);
+      if (frames > 300) return 'more than 300 frames';
+      if (durationMs > 10_000) return 'animation longer than 10000 ms';
+    }
+    off = p + size + (size & 1);
+  }
+  const limit = animated ? 1 << 20 : 512 << 10;
+  return b.length > limit ? `file is larger than ${limit >> 10} KB` : null;
+}
+
+/** A copy of an animated WebP with every frame lasting `frameMs` (a too long animation for tests). */
+export function slowWebpAnimation(src: Buffer, frameMs: number): Buffer {
+  const b = Buffer.from(src);
+  for (let off = 12; off + 8 <= b.length; ) {
+    const size = b.readUInt32LE(off + 4);
+    if (b.subarray(off, off + 4).toString('latin1') === 'ANMF' && size >= 16) b.writeUIntLE(frameMs, off + 8 + 12, 3);
+    off += 8 + size + (size & 1);
+  }
+  return b;
+}
 /** The server's messages.MaxReactionsPerUser. */
 const MAX_REACTIONS_PER_USER = 3;
 const conflict = (what: string, field = ''): HttpError => new HttpError(409, ErrorCode.CONFLICT, what, field);
@@ -3208,9 +3249,9 @@ class MockImpl {
         const bytes = Buffer.from(await f.arrayBuffer());
         const emoji = (emojis[i] ?? '').trim();
         if (!emoji || /^[ -~]+$/.test(emoji)) throw invalid(`emoji[${i}]`, 'must be one emoji');
-        if (bytes.subarray(0, 4).toString('latin1') !== 'RIFF' || bytes.subarray(8, 12).toString('latin1') !== 'WEBP') throw invalid(`file[${i}]`, 'not a valid WebP sticker');
+        const why = mockWebpProblem(bytes);
+        if (why) throw invalid(`file[${i}]`, `not a valid WebP sticker: ${why}`);
         const animated = bytes.includes(Buffer.from('ANIM'));
-        if (bytes.length > (animated ? 1 << 20 : 512 << 10)) throw invalid(`file[${i}]`, 'file too large');
         const fileId = this.storeFile(pack.workspaceId, me, { name: f.name || 'sticker.webp', mime: 'image/webp', bytes });
         added.push(create(StickerSchema, { id: nextId(s(), 'sticker'), packId: pack.id, emoji, url: `/api/files/${fileId}`, width: 160, height: 160, animated, size: bytes.length }));
       }
@@ -3218,6 +3259,32 @@ class MockImpl {
       pack.updatedAt = tick(s());
       this.packEvent(pack);
       sendMsg(c.res, 201, UploadStickersResponseSchema, { pack, added });
+    });
+    // Replace a sticker's picture and / or emoji in place (same id and position).
+    this.route('PUT', '/api/sticker-packs/:id/stickers/:sid', async (c) => {
+      const me = this.uid(c);
+      const pack = this.packFor(c.params[0] ?? '', me, true);
+      const sticker = pack.stickers.find((x) => x.id === c.params[1]);
+      if (!sticker) throw notFound('sticker not found');
+      const type = c.req.headers['content-type'] ?? '';
+      if (!type.startsWith('multipart/form-data')) throw new HttpError(400, ErrorCode.BAD_REQUEST, 'multipart/form-data expected');
+      const form = await new Request('http://mock/upload', { method: 'POST', headers: { 'content-type': type }, body: new Uint8Array(c.raw) }).formData();
+      const rawEmoji = form.get('emoji');
+      const file = form.get('file');
+      if (rawEmoji === null && !(file instanceof File)) throw invalid('file', 'expected a "file" and / or an "emoji" field');
+      const emoji = typeof rawEmoji === 'string' ? rawEmoji.trim() : null;
+      if (emoji !== null && (!emoji || /^[ -~]+$/.test(emoji))) throw invalid('emoji', 'must be one emoji');
+      if (file instanceof File) {
+        const bytes = Buffer.from(await file.arrayBuffer());
+        const why = mockWebpProblem(bytes);
+        if (why) throw invalid('file', `not a valid WebP sticker: ${why}`);
+        const fileId = this.storeFile(pack.workspaceId, me, { name: file.name || 'sticker.webp', mime: 'image/webp', bytes });
+        Object.assign(sticker, { url: `/api/files/${fileId}`, animated: bytes.includes(Buffer.from('ANIM')), size: bytes.length });
+      }
+      if (emoji !== null) sticker.emoji = emoji;
+      pack.updatedAt = tick(s());
+      this.packEvent(pack);
+      sendMsg(c.res, 200, StickerPackResponseSchema, { pack });
     });
     this.route('PATCH', '/api/stickers/:id', (c) => {
       const me = this.uid(c);

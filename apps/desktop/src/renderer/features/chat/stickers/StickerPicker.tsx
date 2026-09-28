@@ -1,36 +1,84 @@
+import * as Popover from '@radix-ui/react-popover';
 import { WorkspaceRole, type Sticker, type StickerPack } from '@calaba/protocol';
-import { Clock3, Search } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Button, Spinner, Tip, cx } from '../../../components/ui';
+import { Clock3, Search, Sticker as StickerIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { Button, IconButton, Spinner, Tip, cx } from '../../../components/ui';
 import { plural, t } from '../../../i18n';
-import { autoFocusAllowed } from '../../../lib/mobile';
+import { autoFocusAllowed, useMobile } from '../../../lib/mobile';
+import { can, workspacePerms } from '../../../lib/permissions';
 import { coverOf, packUsable, resolveRecent, searchStickers, type StickerPlace } from '../../../lib/stickers';
+import { useMediaQuery } from '../../../lib/useMediaQuery';
 import { installPack, loadMyStickers } from '../../../services/stickers';
 import { useSession } from '../../../stores/session';
 import { useStickers } from '../../../stores/stickers';
-import { useWorkspaces } from '../../../stores/workspaces';
+import { useUi } from '../../../stores/ui';
+import { useMemberRoles, useWorkspaces } from '../../../stores/workspaces';
 import { searchEmoji } from '../emoji';
 import { StickerImage } from './StickerImage';
 
 const COLS = 5;
-const CELL = 64;
-const IMG = 56;
+/** Desktop tiles: 5 × 96 px (Telegram Desktop); phones: the sheet's width / 5. */
+const CELL = 96;
+const IMG = 80;
+const CELL_MOBILE = 72;
+const IMG_MOBILE = 60;
 
 /**
- * «Стикеры» tab of the emoji panel (ADR-0030, docs/08 «Стикеры»): search by emoji, recent,
- * my packs in my order (only those usable here), pack covers along the bottom. With nothing
- * usable: the packs of my workspaces to add. Grids render when their section nears the view.
+ * The composer's «Стикеры» button and panel (ADR-0030, docs/08 «Стикеры», like Telegram
+ * Desktop): search by emoji or pack name, a strip of pack covers («Недавние» first; a click
+ * scrolls to the pack, the pack under the top edge is highlighted), 5 large tiles a row. A click
+ * sends at once and closes the panel; Shift+click sends and keeps it open. Animated stickers
+ * stand on their first frame and play only on hover / focus (docs/14). On a phone the popover
+ * is a bottom sheet (app/styles.css).
  */
-export function StickerPicker({ place, onSend }: { place: StickerPlace; onSend: (s: Sticker) => void }): ReactNode {
+export function StickerButton({ place, onSend }: { place: StickerPlace; onSend: (s: Sticker) => void }): ReactNode {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen} modal={false}>
+      <Tip label={t('stk.tabStickers')}>
+        <Popover.Trigger asChild>
+          <IconButton tip={false} label={t('stk.tabStickers')} className="mb-1 rounded-full" data-testid="sticker-button">
+            <StickerIcon className="size-5" />
+          </IconButton>
+        </Popover.Trigger>
+      </Tip>
+      <Popover.Portal>
+        <Popover.Content
+          side="top"
+          align="end"
+          sideOffset={10}
+          collisionPadding={16}
+          aria-label={t('stk.tabStickers')}
+          data-testid="sticker-panel"
+          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(440px,var(--radix-popover-content-available-height))] w-[506px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-[min(75dvh,560px)]"
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          <StickerPanel
+            place={place}
+            onSend={(s, keepOpen) => {
+              onSend(s);
+              if (!keepOpen) setOpen(false);
+            }}
+            onClose={() => setOpen(false)}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; onSend: (s: Sticker, keepOpen: boolean) => void; onClose: () => void }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const loaded = useStickers((s) => s.loaded);
   const installed = useStickers((s) => s.installed);
   const available = useStickers((s) => s.available);
   const recentIds = useStickers((s) => s.recent);
   const byId = useWorkspaces((s) => s.byId);
+  const mobile = useMobile();
   const [q, setQ] = useState('');
   const [active, setActive] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const strip = useRef<HTMLElement>(null);
   useEffect(() => {
     void loadMyStickers();
   }, []);
@@ -43,10 +91,18 @@ export function StickerPicker({ place, onSend }: { place: StickerPlace; onSend: 
     () => available.filter((p) => p.stickers.length > 0 && packUsable(p, place, me, (ws, u) => byId[ws]?.members[u]?.role)),
     [available, place, me, byId],
   );
-  const recent = useMemo(() => resolveRecent(recentIds, usable).slice(0, COLS * 2), [recentIds, usable]);
+  const recent = useMemo(() => resolveRecent(recentIds, usable), [recentIds, usable]);
   const found = useMemo(() => (q.trim() ? searchStickers(usable, q, searchEmoji) : null), [q, usable]);
   // A guest of this workspace only looks at stickers (ADR-0030 §4).
   const guestHere = 'workspaceId' in place && byId[place.workspaceId]?.role === WorkspaceRole.GUEST;
+  const firstId = recent.length ? 'recent' : (usable[0]?.id ?? null);
+  const current = active ?? firstId;
+
+  // The highlighted cover stays in view in the strip.
+  useEffect(() => {
+    if (!current) return;
+    strip.current?.querySelector<HTMLElement>(`[data-pack-tab="${current}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [current]);
 
   const onScroll = (): void => {
     const el = scroller.current;
@@ -60,6 +116,7 @@ export function StickerPicker({ place, onSend }: { place: StickerPlace; onSend: 
   const jump = (id: string): void => {
     const el = scroller.current?.querySelector<HTMLElement>(`section[data-pack="${id}"]`);
     if (scroller.current && el) scroller.current.scrollTo({ top: el.offsetTop - scroller.current.offsetTop });
+    setActive(id);
   };
   const onGridKey = (e: KeyboardEvent<HTMLDivElement>): void => {
     const buttons = Array.from(scroller.current?.querySelectorAll<HTMLButtonElement>('button[data-sticker-pick]') ?? []);
@@ -71,6 +128,8 @@ export function StickerPicker({ place, onSend }: { place: StickerPlace; onSend: 
     next?.focus();
     next?.scrollIntoView({ block: 'nearest' });
   };
+  const size = mobile ? { cell: CELL_MOBILE, img: IMG_MOBILE } : { cell: CELL, img: IMG };
+  const grid = (list: readonly Sticker[]): ReactNode => <Grid stickers={list} onSend={onSend} {...size} />;
 
   if (guestHere) return <Note>{t('stk.guest')}</Note>;
   if (!loaded) {
@@ -80,49 +139,72 @@ export function StickerPicker({ place, onSend }: { place: StickerPlace; onSend: 
       </div>
     );
   }
-  const nothing = usable.length === 0;
+  if (usable.length === 0) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3" data-testid="sticker-grid">
+        {addable.length ? (
+          <div className="flex flex-col gap-3">
+            <p className="px-1 text-center text-body text-muted">{t('stk.empty')}</p>
+            <Available packs={addable} />
+          </div>
+        ) : (
+          <EmptyHint place={place} noneHere={available.length + installed.length > 0} onClose={onClose} />
+        )}
+      </div>
+    );
+  }
   return (
     <>
-      {!nothing ? (
-        <div className="flex items-center gap-2 border-b border-line px-3">
-          <Search className="size-4 shrink-0 text-faint" aria-hidden />
-          <input
-            autoFocus={autoFocusAllowed()}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                scroller.current?.querySelector<HTMLButtonElement>('button[data-sticker-pick]')?.focus();
-              }
-            }}
-            placeholder={t('stk.search')}
-            aria-label={t('stk.search')}
-            data-testid="sticker-search"
-            className="h-10 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
-          />
-        </div>
+      <div className="flex shrink-0 items-center gap-2 border-b border-line px-3">
+        <Search className="size-4 shrink-0 text-faint" aria-hidden />
+        <input
+          autoFocus={autoFocusAllowed()}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              scroller.current?.querySelector<HTMLButtonElement>('button[data-sticker-pick]')?.focus();
+            }
+          }}
+          placeholder={t('stk.search')}
+          aria-label={t('stk.search')}
+          data-testid="sticker-search"
+          className="h-10 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+        />
+      </div>
+      {!found ? (
+        <nav ref={strip} className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2 py-1.5" aria-label={t('stk.packs')} data-testid="sticker-packs">
+          {recent.length ? (
+            <PackTab id="recent" label={t('stk.recent')} active={current === 'recent'} onClick={() => jump('recent')}>
+              <Clock3 className="size-5" aria-hidden />
+            </PackTab>
+          ) : null}
+          {usable.map((p) => {
+            const c = coverOf(p);
+            return (
+              <PackTab key={p.id} id={p.id} label={p.name} active={current === p.id} onClick={() => jump(p.id)}>
+                {c ? <StickerImage sticker={c} size={28} playing={false} /> : null}
+              </PackTab>
+            );
+          })}
+        </nav>
       ) : null}
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-3 pb-2" onScroll={onScroll} onKeyDown={onGridKey} data-testid="sticker-grid">
-        {nothing ? (
-          <div className="flex flex-col gap-3 py-3">
-            <p className="px-1 text-center text-body text-muted">{addable.length === 0 && available.length + installed.length > 0 ? t('stk.noneHere') : t('stk.empty')}</p>
-            {addable.length ? <Available packs={addable} /> : null}
-          </div>
-        ) : found ? (
-          <Section id="search" label={t('stk.found')}>
-            {found.length === 0 ? <p className="px-1 py-4 text-center text-body text-muted">{t('stk.none')}</p> : <Grid stickers={found} onSend={onSend} />}
+        {found ? (
+          <Section id="search" label={t('stk.found')} cell={size.cell}>
+            {found.length === 0 ? <p className="px-1 py-4 text-center text-body text-muted">{t('stk.none')}</p> : grid(found)}
           </Section>
         ) : (
           <>
             {recent.length ? (
-              <Section id="recent" label={t('stk.recent')}>
-                <Grid stickers={recent} onSend={onSend} />
+              <Section id="recent" label={t('stk.recent')} cell={size.cell}>
+                {grid(recent)}
               </Section>
             ) : null}
             {usable.map((p) => (
-              <Section key={p.id} id={p.id} label={p.name} lazyRows={Math.ceil(p.stickers.length / COLS)}>
-                <Grid stickers={p.stickers} onSend={onSend} />
+              <Section key={p.id} id={p.id} label={p.name} cell={size.cell} lazyRows={Math.ceil(p.stickers.length / COLS)}>
+                {grid(p.stickers)}
               </Section>
             ))}
             {addable.length ? (
@@ -134,24 +216,6 @@ export function StickerPicker({ place, onSend }: { place: StickerPlace; onSend: 
           </>
         )}
       </div>
-      {!nothing && !found ? (
-        <nav className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-line px-3 py-1" aria-label={t('stk.packs')}>
-          {recent.length ? (
-            <PackTab label={t('stk.recent')} active={(active ?? 'recent') === 'recent'} onClick={() => jump('recent')}>
-              <Clock3 className="size-5" aria-hidden />
-            </PackTab>
-          ) : null}
-          {usable.map((p, i) => {
-            const c = coverOf(p);
-            const on = active ? active === p.id : !recent.length && i === 0;
-            return (
-              <PackTab key={p.id} label={p.name} active={on} onClick={() => jump(p.id)}>
-                {c ? <StickerImage sticker={c} size={24} /> : null}
-              </PackTab>
-            );
-          })}
-        </nav>
-      ) : null}
     </>
   );
 }
@@ -160,8 +224,38 @@ function Note({ children }: { children: ReactNode }): ReactNode {
   return <p className="grid flex-1 place-items-center px-6 text-center text-body text-muted">{children}</p>;
 }
 
+/**
+ * No packs to show: «Добавьте пак в настройках пространства», with a button to «Стикеры» of
+ * the workspace settings for whoever holds MANAGE_STICKERS there (in a room; a DM has no one
+ * workspace to point at).
+ */
+function EmptyHint({ place, noneHere, onClose }: { place: StickerPlace; noneHere: boolean; onClose: () => void }): ReactNode {
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const wsId = 'workspaceId' in place ? place.workspaceId : null;
+  const roles = useMemberRoles(wsId, me);
+  const manage = !!wsId && can(workspacePerms(roles), 'MANAGE_STICKERS');
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center" data-testid="sticker-empty">
+      <StickerIcon className="size-8 text-faint" aria-hidden />
+      <p className="text-body text-muted">{noneHere ? t('stk.noneHere') : t('stk.emptyAdd')}</p>
+      {manage && wsId ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            onClose();
+            useUi.getState().openDialog({ kind: 'workspace-settings', workspaceId: wsId, tab: 'stickers' });
+          }}
+        >
+          {t('stk.openSettings')}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /** A pack's section: its grid renders once it nears the view (a placeholder of its height before). */
-function Section({ id, label, lazyRows, children }: { id: string; label: string; lazyRows?: number; children: ReactNode }): ReactNode {
+function Section({ id, label, cell, lazyRows, children }: { id: string; label: string; cell: number; lazyRows?: number; children: ReactNode }): ReactNode {
   const ref = useRef<HTMLElement>(null);
   const [seen, setSeen] = useState(lazyRows === undefined || typeof IntersectionObserver === 'undefined');
   useEffect(() => {
@@ -179,29 +273,43 @@ function Section({ id, label, lazyRows, children }: { id: string; label: string;
   return (
     <section ref={ref} data-pack={id} aria-label={label} className="-mx-3 px-3">
       <h3 className="sticky top-0 z-[1] -mx-3 truncate bg-[var(--color-popover-solid)] px-3 pb-1 pt-2 text-caption font-semibold text-muted">{label}</h3>
-      {seen ? children : <div style={{ height: (lazyRows ?? 1) * CELL }} aria-hidden />}
+      {seen ? children : <div style={{ height: (lazyRows ?? 1) * cell }} aria-hidden />}
     </section>
   );
 }
 
-function Grid({ stickers, onSend }: { stickers: readonly Sticker[]; onSend: (s: Sticker) => void }): ReactNode {
+function Grid({ stickers, onSend, cell, img }: { stickers: readonly Sticker[]; onSend: (s: Sticker, keepOpen: boolean) => void; cell: number; img: number }): ReactNode {
   return (
     <div className="grid grid-cols-5">
       {stickers.map((s, i) => (
-        <button
-          key={`${s.id}-${i}`}
-          type="button"
-          data-sticker-pick
-          tabIndex={i === 0 ? 0 : -1}
-          onClick={() => onSend(s)}
-          aria-label={t('stk.sticker', { emoji: s.emoji })}
-          className="grid w-full min-w-0 place-items-center rounded-[var(--radius-card)] hover:bg-hover focus-visible:bg-hover focus-visible:outline-offset-[-2px]"
-          style={{ height: CELL }}
-        >
-          <StickerImage sticker={s} size={IMG} />
-        </button>
+        <Tile key={`${s.id}-${i}`} sticker={s} first={i === 0} cell={cell} img={img} onPick={(keep) => onSend(s, keep)} />
       ))}
     </div>
+  );
+}
+
+/** One tile: grows a little under the pointer; an animated sticker plays only then (or on focus). */
+function Tile({ sticker, first, cell, img, onPick }: { sticker: Sticker; first: boolean; cell: number; img: number; onPick: (keepOpen: boolean) => void }): ReactNode {
+  const [hot, setHot] = useState(false);
+  const reduce = useMediaQuery('(prefers-reduced-motion: reduce)');
+  return (
+    <button
+      type="button"
+      data-sticker-pick
+      tabIndex={first ? 0 : -1}
+      onClick={(e: MouseEvent) => onPick(e.shiftKey)}
+      onPointerEnter={() => setHot(true)}
+      onPointerLeave={() => setHot(false)}
+      onFocus={() => setHot(true)}
+      onBlur={() => setHot(false)}
+      aria-label={t('stk.sticker', { emoji: sticker.emoji })}
+      className="group grid w-full min-w-0 place-items-center rounded-[var(--radius-card)] hover:bg-hover focus-visible:bg-hover focus-visible:outline-offset-[-2px]"
+      style={{ height: cell }}
+    >
+      <span className="grid place-items-center transition-transform duration-[var(--motion-fast)] motion-safe:group-hover:scale-[1.08] motion-safe:group-focus-visible:scale-[1.08]">
+        <StickerImage sticker={sticker} size={img} playing={sticker.animated && hot && !reduce} />
+      </span>
+    </button>
   );
 }
 
@@ -213,7 +321,7 @@ function Available({ packs }: { packs: readonly StickerPack[] }): ReactNode {
         const c = coverOf(p);
         return (
           <li key={p.id} className="flex items-center gap-3 rounded-[var(--radius-row)] px-1 py-1">
-            {c ? <StickerImage sticker={c} size={36} /> : <span className="size-9" />}
+            {c ? <StickerImage sticker={c} size={36} playing={false} /> : <span className="size-9" />}
             <div className="min-w-0 flex-1">
               <p className="truncate text-body font-medium text-fg">{p.name}</p>
               <p className="text-caption text-muted">{plural('stk.count', p.stickers.length, { n: p.stickers.length })}</p>
@@ -236,18 +344,21 @@ function Available({ packs }: { packs: readonly StickerPack[] }): ReactNode {
   );
 }
 
-function PackTab({ label, active, onClick, children }: { label: string; active: boolean; onClick: () => void; children: ReactNode }): ReactNode {
+function PackTab({ id, label, active, onClick, children }: { id: string; label: string; active: boolean; onClick: () => void; children: ReactNode }): ReactNode {
   return (
     <Tip label={label}>
       <button
         type="button"
         aria-label={label}
         aria-current={active || undefined}
+        data-pack-tab={id}
         onClick={onClick}
-        className={cx('relative grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] hover:bg-hover hover:text-fg', active ? 'text-accent' : 'text-muted')}
+        className={cx(
+          'relative grid size-9 shrink-0 place-items-center rounded-[var(--radius-icon)] hover:bg-hover hover:text-fg',
+          active ? 'bg-[var(--color-fill)] text-accent' : 'text-muted',
+        )}
       >
         {children}
-        {active ? <span className="absolute inset-x-1.5 -bottom-1 h-0.5 rounded-full bg-accent" aria-hidden /> : null}
       </button>
     </Tip>
   );

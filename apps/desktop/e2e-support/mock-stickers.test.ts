@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { IDS, startMockServer, type MockServer } from './mock-server';
+import { IDS, mockWebpProblem, slowWebpAnimation, startMockServer, type MockServer } from './mock-server';
 
 // Sticker packs in the mock (ADR-0030): pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts
 
@@ -67,5 +67,43 @@ describe('sticker packs (ADR-0030)', () => {
     bad.append('emoji', '📄');
     bad.append('file', new Blob(['<html>'], { type: 'image/webp' }), 'x.webp');
     expect((await api(anna, `/api/sticker-packs/${pack.id}/stickers`, { method: 'POST', body: bad })).status).toBe(422);
+    // The server's reasons, with the index of the bad file (the client maps them to texts).
+    const orbit = readFileSync(new URL('./fixtures/sticker-orbit.webp', import.meta.url));
+    const slow = new FormData();
+    slow.append('emoji', '🌀');
+    slow.append('file', new Blob([orbit], { type: 'image/webp' }), 'ok.webp');
+    slow.append('emoji', '🐢');
+    slow.append('file', new Blob([slowWebpAnimation(orbit, 2000)], { type: 'image/webp' }), 'slow.webp');
+    const r = await api(anna, `/api/sticker-packs/${pack.id}/stickers`, { method: 'POST', body: slow });
+    expect(r.status).toBe(422);
+    expect((await r.json()) as unknown).toMatchObject({ field: 'file[1]', message: expect.stringMatching(/animation longer than 10000 ms/) as unknown });
+  });
+
+  it('replaces a sticker in place (file and / or emoji)', async () => {
+    const anna = await login();
+    const orbit = readFileSync(new URL('./fixtures/sticker-orbit.webp', import.meta.url));
+    const put = (form: FormData) => api(anna, `/api/sticker-packs/${IDS.stickerPacks.calab}/stickers/${IDS.stickers.sun}`, { method: 'PUT', body: form });
+    const both = new FormData();
+    both.append('emoji', '🌀');
+    both.append('file', new Blob([orbit], { type: 'image/webp' }), 'new.webp');
+    const r = await put(both);
+    expect(r.status).toBe(200);
+    const pack = ((await r.json()) as { pack: { stickers: { id: string; emoji: string; animated?: boolean }[] } }).pack;
+    expect(pack.stickers[0]).toMatchObject({ id: IDS.stickers.sun, emoji: '🌀', animated: true });
+    const bad = new FormData();
+    bad.append('file', new Blob([slowWebpAnimation(orbit, 2000)], { type: 'image/webp' }), 'slow.webp');
+    const e = await put(bad);
+    expect(e.status).toBe(422);
+    expect((await e.json()) as unknown).toMatchObject({ field: 'file', message: expect.stringMatching(/animation longer/) as unknown });
+  });
+
+  it('mirrors the server WebP refusals', () => {
+    const orbit = readFileSync(new URL('./fixtures/sticker-orbit.webp', import.meta.url));
+    expect(mockWebpProblem(orbit)).toBeNull();
+    expect(mockWebpProblem(slowWebpAnimation(orbit, 2000))).toMatch(/animation longer/);
+    const big = Buffer.from(orbit);
+    big.writeUIntLE(1023, 12 + 8 + 4, 3);
+    expect(mockWebpProblem(big)).toBe('canvas 1024x160 is larger than 512');
+    expect(mockWebpProblem(Buffer.from('<html>'))).toMatch(/signature/);
   });
 });

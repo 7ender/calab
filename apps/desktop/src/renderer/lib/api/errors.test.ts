@@ -40,6 +40,28 @@ describe('describeError', () => {
     expect(describeError(api('ERROR_CODE_VALIDATION', 422)).field).toBeUndefined();
   });
 
+  it('maps a refused sticker of a batch (file[i] / emoji[i]) to its index and a clear reason', () => {
+    const v = (field: string, message: string) => describeError(new ApiError('ERROR_CODE_VALIDATION', message, 422, field));
+    expect(v('file[2]', 'not a valid WebP sticker: canvas 1024x1024 is larger than 512')).toEqual({
+      text: 'Больше 512×512 — уменьшите картинку',
+      field: 'file',
+      index: 2,
+      retry: false,
+      generic: false,
+    });
+    expect(v('file[0]', 'not a valid WebP sticker: size 600x20 is outside 1..512').text).toMatch(/512×512/);
+    expect(v('file[0]', 'not a valid WebP sticker: file is larger than 512 KB').text).toMatch(/^Слишком тяжёлый/);
+    expect(v('file[0]', 'not a valid WebP sticker: more than 300 frames').text).toBe('Больше 300 кадров');
+    expect(v('file[0]', 'not a valid WebP sticker: animation longer than 10000 ms').text).toBe('Анимация дольше 10 секунд');
+    expect(v('file[0]', 'not a valid WebP sticker: missing RIFF/WEBP signature').text).toBe('Файл повреждён или это не WebP');
+    expect(v('emoji[4]', 'must be one emoji')).toMatchObject({ text: 'Нужна одна эмодзи', field: 'emoji', index: 4 });
+    // Not indexed: the plain field texts, no index.
+    expect(v('file', 'no sticker files').index).toBeUndefined();
+    // A replacement (PUT …/stickers/{sid}): plain `file`, no index.
+    expect(v('file', 'not a valid WebP sticker: more than 300 frames')).toEqual({ text: 'Больше 300 кадров', field: 'file', retry: false, generic: false });
+    expect(v('files[1]', 'x').text).toBe('Проверьте введённые данные');
+  });
+
   it('falls back to the HTTP status for unknown codes', () => {
     expect(describeError(api('ERROR_CODE_UNSPECIFIED', 404)).text).toMatch(/Не найдено/);
     expect(describeError(api('ERROR_CODE_UNSPECIFIED', 502)).retry).toBe(true);

@@ -11,6 +11,8 @@ export interface HumanError {
   text: string;
   /** Offending field (ERROR_CODE_VALIDATION), for inline errors next to the input. */
   field?: string;
+  /** Batch uploads (stickers): `file[i]` / `emoji[i]` → field `file` / `emoji`, index `i`. */
+  index?: number;
   /** A retry of the same request may succeed (network, 5xx, rate limit). */
   retry: boolean;
   /** No specific reason is known: the text is the generic «Не получилось…». */
@@ -73,6 +75,33 @@ const FIELD: Record<string, MessageKey> = {
   targetRoomId: 'err.field.targetRoom',
 };
 
+/**
+ * `file[3]` / `emoji[3]` of a multipart batch (POST /api/sticker-packs/{id}/stickers), or a plain
+ * `file` refused as a sticker (PUT …/stickers/{sid}: «not a valid WebP sticker: …»).
+ */
+const STICKER_FIELD = /^(file|emoji)(?:\[(\d+)\])?$/;
+const WEBP_REFUSAL = /not a valid WebP sticker/;
+
+/**
+ * Why the server refused a sticker file — the reasons of ValidateWebP
+ * (apps/server/internal/stickers/webp.go); anything else there is a broken / non-WebP file.
+ */
+const STICKER_FILE: ReadonlyArray<readonly [RegExp, MessageKey]> = [
+  [/canvas \d+x\d+ is larger than|size \d+x\d+ is outside/, 'stk.err.side'],
+  [/file is larger than|too large/, 'stk.err.weight'],
+  [/more than \d+ frames/, 'stk.err.frames'],
+  [/animation longer than/, 'stk.err.duration'],
+];
+
+function stickerField(field: string, message: string): HumanError | null {
+  const m = STICKER_FIELD.exec(field);
+  if (!m) return null;
+  const [, name = '', i] = m;
+  if (i === undefined && !(name === 'file' && WEBP_REFUSAL.test(message))) return null;
+  const key = name === 'emoji' ? 'stk.err.emoji' : (STICKER_FILE.find(([re]) => re.test(message))?.[1] ?? 'stk.err.notWebp');
+  return { text: t(key), field: name, ...(i !== undefined ? { index: Number(i) } : {}), retry: false, generic: false };
+}
+
 const generic = (): HumanError => ({ text: t('err.generic'), retry: true, generic: true });
 
 function fromStatus(status: number): HumanError {
@@ -103,6 +132,8 @@ export function describeError(e: unknown): HumanError {
   if (e instanceof ApiError) {
     if (e.code === 'ERROR_CODE_UNAVAILABLE') return e.status === 0 ? fromStatus(0) : { text: t('err.unavailable'), retry: true, generic: false };
     if (e.code === 'ERROR_CODE_VALIDATION') {
+      const sticker = e.field ? stickerField(e.field, e.message) : null;
+      if (sticker) return sticker;
       const key = e.field ? FIELD[e.field] : undefined;
       return { text: t(key ?? 'err.validation'), ...(e.field ? { field: e.field } : {}), retry: false, generic: false };
     }

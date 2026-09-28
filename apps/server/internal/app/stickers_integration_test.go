@@ -429,3 +429,119 @@ func TestStickerInstalledHiddenPacks(t *testing.T) {
 	// The hidden pack cannot be named in the order either.
 	mem.must(422, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p1.GetId(), p2.GetId(), q.GetId()}}, nil)
 }
+
+// replaceSticker sends PUT /api/sticker-packs/{id}/stickers/{sid}: a "file" and / or an "emoji"
+// (an empty value leaves the part out).
+func replaceSticker(t *testing.T, u *user, packID, stickerID, emoji string, file []byte) (int, *v1.StickerPackResponse, *v1.ApiError) {
+	t.Helper()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	if emoji != "" {
+		_ = mw.WriteField("emoji", emoji)
+	}
+	if file != nil {
+		fw, _ := mw.CreateFormFile("file", "new.webp")
+		_, _ = fw.Write(file)
+	}
+	_ = mw.Close()
+	req, _ := http.NewRequestWithContext(context.Background(), "PUT", srv.URL+"/api/sticker-packs/"+packID+"/stickers/"+stickerID, &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+u.token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	var out v1.StickerPackResponse
+	var e v1.ApiError
+	if resp.StatusCode < 300 {
+		if err := protojson.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("decode %s: %v", raw, err)
+		}
+	} else {
+		_ = protojson.Unmarshal(raw, &e)
+	}
+	return resp.StatusCode, &out, &e
+}
+
+// TestStickerReplace: MANAGE_STICKERS replaces a sticker's picture and / or emoji in place (same
+// id and position, messages follow); a bad file is 422 on "file" and changes nothing; the old
+// file is deleted at once.
+func TestStickerReplace(t *testing.T) {
+	ws, room, a := stickerTeam(t)
+	o, mgr := a["owner"], a["mgr"]
+	p := createPack(t, o, ws.GetId(), "Swap")
+	sun, gem, orbit := stickerFixture(t, "sun.webp"), stickerFixture(t, "gem.webp"), stickerFixture(t, "orbit.webp")
+	_, up, _ := uploadStickers(t, o, p.GetId(), stickerFile{"☀️", "sun.webp", sun}, stickerFile{"💎", "gem.webp", gem})
+	s0, s1 := up.GetAdded()[0], up.GetAdded()[1]
+	var cr v1.CreateMessageResponse
+	a["member"].must(201, "POST", "/api/rooms/"+room+"/messages", &v1.CreateMessageRequest{StickerId: s0.GetId(), Nonce: uniq("n")}, &cr)
+
+	// Permissions: members and guests 403, outsiders and other packs' stickers 404.
+	for name, want := range map[string]int{"member": 403, "guest": 403} {
+		if st, _, _ := replaceSticker(t, a[name], p.GetId(), s0.GetId(), "", orbit); st != want {
+			t.Errorf("replace as %s: %d, want %d", name, st, want)
+		}
+	}
+	if st, _, _ := replaceSticker(t, outsider(t), p.GetId(), s0.GetId(), "", orbit); st != 404 {
+		t.Errorf("outsider replace: %d", st)
+	}
+	other := createPack(t, o, ws.GetId(), "Other")
+	if st, _, _ := replaceSticker(t, o, other.GetId(), s0.GetId(), "", orbit); st != 404 {
+		t.Errorf("sticker of another pack: %d", st)
+	}
+
+	// Invalid: a too large canvas, not a WebP, a text emoji, nothing at all — 422, no change.
+	for name, c := range map[string]struct {
+		emoji string
+		file  []byte
+		field string
+	}{
+		"big":   {"", stickerFixture(t, "big.webp"), "file"},
+		"html":  {"", []byte("<!doctype html>"), "file"},
+		"emoji": {"abc", orbit, "emoji"},
+		"empty": {"", nil, "file"},
+	} {
+		st, _, e := replaceSticker(t, mgr, p.GetId(), s0.GetId(), c.emoji, c.file)
+		if st != 422 || e.GetField() != c.field {
+			t.Errorf("%s: %d %v", name, st, e)
+		}
+	}
+	var pr v1.StickerPackResponse
+	o.must(200, "GET", "/api/sticker-packs/"+p.GetId(), nil, &pr)
+	if got := pr.GetPack().GetStickers()[0]; got.GetUrl() != s0.GetUrl() || got.GetEmoji() != "☀️" || got.GetAnimated() {
+		t.Fatalf("after rejected replacements: %v", got)
+	}
+
+	// The picture and the emoji: same id and position, the new file, the old one gone.
+	st, res, e := replaceSticker(t, mgr, p.GetId(), s0.GetId(), "🌀", orbit)
+	if st != 200 {
+		t.Fatalf("replace: %d %v", st, e)
+	}
+	got := res.GetPack().GetStickers()
+	if got[0].GetId() != s0.GetId() || got[1].GetId() != s1.GetId() || !got[0].GetAnimated() || got[0].GetEmoji() != "🌀" ||
+		got[0].GetUrl() == s0.GetUrl() || int(got[0].GetSize()) != len(orbit) {
+		t.Fatalf("replaced: %v", got)
+	}
+	var h v1.ListMessagesResponse
+	a["member"].must(200, "GET", "/api/rooms/"+room+"/messages", nil, &h)
+	var shown *v1.Sticker
+	for _, m := range h.GetMessages() {
+		if m.GetId() == cr.GetMessage().GetId() {
+			shown = m.GetSticker()
+		}
+	}
+	if shown.GetUrl() != got[0].GetUrl() {
+		t.Fatalf("message sticker after replace: %v", shown)
+	}
+	if st := o.do("GET", s0.GetUrl(), nil, nil); st != 404 {
+		t.Fatalf("old file after replace: %d", st)
+	}
+
+	// The emoji alone.
+	st, res, e = replaceSticker(t, mgr, p.GetId(), s1.GetId(), "🔷", nil)
+	if st != 200 || res.GetPack().GetStickers()[1].GetEmoji() != "🔷" || res.GetPack().GetStickers()[1].GetUrl() != s1.GetUrl() {
+		t.Fatalf("emoji only: %d %v %v", st, res, e)
+	}
+}

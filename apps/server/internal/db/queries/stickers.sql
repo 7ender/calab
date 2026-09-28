@@ -92,6 +92,11 @@ WHERE s.id = $1 AND s.deleted_at IS NULL;
 -- name: UpdateStickerEmoji :exec
 UPDATE stickers SET emoji = $2 WHERE id = $1 AND deleted_at IS NULL;
 
+-- name: ReplaceStickerFile :execrows
+-- A new picture for the sticker (same id, emoji, position); the old file may become an orphan.
+UPDATE stickers SET file_id = $2, width = $3, height = $4, animated = $5
+WHERE id = $1 AND deleted_at IS NULL;
+
 -- name: DeleteStickerIfUnreferenced :execrows
 DELETE FROM stickers s WHERE s.id = $1
   AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.sticker_id = s.id);

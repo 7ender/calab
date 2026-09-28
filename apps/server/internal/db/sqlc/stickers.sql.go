@@ -541,6 +541,34 @@ func (q *Queries) NextStickerPosition(ctx context.Context, packID uuid.UUID) (in
 	return column_1, err
 }
 
+const replaceStickerFile = `-- name: ReplaceStickerFile :execrows
+UPDATE stickers SET file_id = $2, width = $3, height = $4, animated = $5
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type ReplaceStickerFileParams struct {
+	ID       uuid.UUID
+	FileID   uuid.UUID
+	Width    int32
+	Height   int32
+	Animated bool
+}
+
+// A new picture for the sticker (same id, emoji, position); the old file may become an orphan.
+func (q *Queries) ReplaceStickerFile(ctx context.Context, arg ReplaceStickerFileParams) (int64, error) {
+	result, err := q.db.Exec(ctx, replaceStickerFile,
+		arg.ID,
+		arg.FileID,
+		arg.Width,
+		arg.Height,
+		arg.Animated,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setStickerPositions = `-- name: SetStickerPositions :exec
 UPDATE stickers s SET position = o.ord::integer - 1
 FROM unnest($2::uuid[]) WITH ORDINALITY AS o(id, ord)

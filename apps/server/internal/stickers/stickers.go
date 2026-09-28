@@ -72,6 +72,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	handle("PATCH /api/sticker-packs/{id}", h.update)
 	handle("DELETE /api/sticker-packs/{id}", h.delete)
 	handle("POST /api/sticker-packs/{id}/stickers", h.upload)
+	handle("PUT /api/sticker-packs/{id}/stickers/{sid}", h.replaceSticker)
 	handle("PATCH /api/stickers/{id}", h.updateSticker)
 	handle("DELETE /api/stickers/{id}", h.deleteSticker)
 	handle("GET /api/me/sticker-packs", h.mine)
@@ -508,11 +509,17 @@ func (h *Handlers) readBatch(w http.ResponseWriter, r *http.Request, wsID uuid.U
 }
 
 func (h *Handlers) receive(ctx context.Context, part *multipart.Part, wsID uuid.UUID, i int, rawEmoji string) (received, error) {
-	field := fmt.Sprintf("file[%d]", i)
 	em, err := validEmoji(fmt.Sprintf("emoji[%d]", i), rawEmoji)
 	if err != nil {
 		return received{}, err
 	}
+	rec, err := h.storeFile(ctx, part, wsID, fmt.Sprintf("file[%d]", i))
+	rec.emoji = em
+	return rec, err
+}
+
+// storeFile reads one sticker file part, validates it (422 on `field`) and puts it in the blob store.
+func (h *Handlers) storeFile(ctx context.Context, part *multipart.Part, wsID uuid.UUID, field string) (received, error) {
 	data, err := io.ReadAll(io.LimitReader(part, MaxAnimatedBytes+1))
 	if err != nil {
 		var mbe *http.MaxBytesError
@@ -532,7 +539,7 @@ func (h *Handlers) receive(ctx context.Context, part *multipart.Part, wsID uuid.
 	if err != nil {
 		return received{}, err
 	}
-	rec := received{id: id, key: blob.FileKey(wsID, id), name: files.SanitizeName(part.FileName()), emoji: em,
+	rec := received{id: id, key: blob.FileKey(wsID, id), name: files.SanitizeName(part.FileName()),
 		size: int64(len(data)), sha: sha256Hex(data), info: info}
 	if !strings.HasSuffix(strings.ToLower(rec.name), ".webp") {
 		rec.name = "sticker.webp"
@@ -640,6 +647,155 @@ func (h *Handlers) upload(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.Write(w, http.StatusCreated, &v1.UploadStickersResponse{Pack: pb, Added: added})
 	return nil
+}
+
+// replaceSticker: PUT /api/sticker-packs/{id}/stickers/{sid} — multipart with a new "file" (the
+// same checks as an upload) and / or "emoji". The sticker keeps its id and position, so messages
+// that show it show the new picture; the old file is deleted once no sticker uses it.
+func (h *Handlers) replaceSticker(w http.ResponseWriter, r *http.Request) error {
+	p, err := h.loadPack(r)
+	if err != nil {
+		return err
+	}
+	sid, err := httpx.PathUUID(r, "sid", "sticker")
+	if err != nil {
+		return err
+	}
+	old, err := h.db.Q.GetSticker(r.Context(), sid)
+	if db.IsNotFound(err) || (err == nil && old.Sticker.PackID != p.ID) {
+		return httpx.NotFound("sticker")
+	}
+	if err != nil {
+		return err
+	}
+	if h.limiter != nil {
+		if err := h.limiter.Take(r.Context(), p.WorkspaceID.String()+":"+uid(r).String()); err != nil {
+			return err
+		}
+	}
+	rec, rawEmoji, err := h.readReplacement(w, r, p.WorkspaceID)
+	var recs []received
+	if rec != nil {
+		recs = []received{*rec}
+	}
+	if err != nil {
+		h.discard(recs)
+		return err
+	}
+	var em string
+	if rawEmoji != nil {
+		if em, err = validEmoji("emoji", *rawEmoji); err != nil {
+			h.discard(recs)
+			return err
+		}
+	}
+	if rec == nil && rawEmoji == nil {
+		return httpx.Validation("file", `expected a "file" and / or an "emoji" field`)
+	}
+	me := uid(r)
+	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		if err := q.LockWorkspaceStickers(r.Context(), p.WorkspaceID); err != nil {
+			return err
+		}
+		cur, err := q.GetSticker(r.Context(), sid)
+		if db.IsNotFound(err) || (err == nil && cur.Sticker.PackID != p.ID) {
+			return httpx.NotFound("sticker")
+		}
+		if err != nil {
+			return err
+		}
+		if rec != nil {
+			if err := h.files.ReserveWorkspace(r.Context(), q, p.WorkspaceID, rec.size); err != nil {
+				return err
+			}
+			ws := p.WorkspaceID
+			wd, ht := int32(rec.info.Width), int32(rec.info.Height) //nolint:gosec // 1..512
+			if _, err := q.InsertFile(r.Context(), sqlc.InsertFileParams{
+				ID: rec.id, WorkspaceID: &ws, UploaderID: me, Key: rec.key, Name: rec.name, Mime: "image/webp",
+				Size: rec.size, Width: &wd, Height: &ht, Sha256: rec.sha,
+			}); err != nil {
+				return err
+			}
+			if _, err := q.ReplaceStickerFile(r.Context(), sqlc.ReplaceStickerFileParams{
+				ID: sid, FileID: rec.id, Width: wd, Height: ht, Animated: rec.info.Animated,
+			}); err != nil {
+				return err
+			}
+		}
+		if rawEmoji != nil {
+			if err := q.UpdateStickerEmoji(r.Context(), sqlc.UpdateStickerEmojiParams{ID: sid, Emoji: em}); err != nil {
+				return err
+			}
+		}
+		return q.TouchStickerPack(r.Context(), p.ID)
+	})
+	if err != nil {
+		h.discard(recs)
+		return err
+	}
+	if rec != nil {
+		h.dropStickerFile(r.Context(), old.Sticker.FileID)
+	}
+	pb, err := h.publishUpdate(r, p.ID)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.StickerPackResponse{Pack: pb})
+	return nil
+}
+
+// readReplacement reads the multipart body of a replacement: at most one "file" (validated and
+// stored) and an "emoji" field (returned raw, nil when absent).
+func (h *Handlers) readReplacement(w http.ResponseWriter, r *http.Request, wsID uuid.UUID) (*received, *string, error) {
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadDeadline))
+	r.Body = http.MaxBytesReader(w, r.Body, MaxAnimatedBytes+64<<10)
+	mr, err := r.MultipartReader()
+	if err != nil {
+		return nil, nil, httpx.BadRequest(`expected multipart/form-data with "file" and / or "emoji" fields`)
+	}
+	var (
+		rec   *received
+		emoji *string
+	)
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return rec, nil, httpx.BadRequest("malformed multipart body")
+		}
+		switch part.FormName() {
+		case "emoji":
+			b, _ := io.ReadAll(io.LimitReader(part, maxEmojiField+1))
+			e := string(b)
+			emoji = &e
+		case "file":
+			if rec != nil {
+				_ = part.Close()
+				return rec, nil, httpx.Validation("file", "one file per replacement")
+			}
+			got, err := h.storeFile(r.Context(), part, wsID, "file")
+			_ = part.Close()
+			if err != nil {
+				return rec, nil, err
+			}
+			rec = &got
+		}
+		_ = part.Close()
+	}
+	return rec, emoji, nil
+}
+
+// dropStickerFile deletes a replaced sticker's file when no sticker uses it any more (messages
+// point at stickers, not files). A failure only leaves it to the orphan cleanup.
+func (h *Handlers) dropStickerFile(ctx context.Context, fileID uuid.UUID) {
+	if _, err := h.db.Q.GetStickerFileWorkspace(ctx, fileID); !db.IsNotFound(err) {
+		return
+	}
+	if err := h.files.DeleteFile(ctx, fileID); err != nil {
+		slog.WarnContext(ctx, "delete replaced sticker file", "file", fileID, "err", err)
+	}
 }
 
 // loadSticker returns a live sticker after checking that the caller manages its workspace.
