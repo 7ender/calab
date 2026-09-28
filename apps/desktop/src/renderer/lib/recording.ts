@@ -220,3 +220,16 @@ export function systemPreview(m: Pick<Message, 'kind' | 'system'> & { sticker?: 
   if (!card) return '';
   return card.deletedAt ? t('rec.card.deleted') : t('rec.card.preview', { duration: durationText(card.durationSec) });
 }
+
+/** 3 pulses × 2 s of a fresh REC dot (`.rec-dot-pulse`, styles.css; docs/09 #64). */
+export const REC_PULSE_MS = 6000;
+
+/**
+ * How far into the start pulse a REC dot mounted `ageMs` after the recording started is — the
+ * negative delay that keeps a remounted dot (hover, a list re-render) in phase instead of pulsing
+ * anew — or null once the pulse is over: a still dot, no animation at all.
+ */
+export function recPulseDelay(ageMs: number): string | null {
+  const age = Math.max(0, ageMs);
+  return age < REC_PULSE_MS ? `-${Math.round(age)}ms` : null;
+}

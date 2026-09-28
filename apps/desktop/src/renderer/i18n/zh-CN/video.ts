@@ -108,4 +108,8 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'rec.on': '正在录制',
   'rec.time': '正在录制，{time}',
   'rec.by': '由 {name} 开启录制',
+  'rec.menu.title': '正在录制 · {time}',
+  'rec.menu.by': '由 {name} 开启',
+  'rec.menu.confirm': '停止录制？',
+  'rec.menu.confirmAction': '停止',
 } as const;

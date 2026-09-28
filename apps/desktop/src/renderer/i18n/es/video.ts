@@ -111,4 +111,8 @@ export const esVideo: DictShape<typeof enVideo> = {
   'rec.on': 'Grabación en curso',
   'rec.time': 'Grabación en curso, {time}',
   'rec.by': 'Grabación iniciada por {name}',
+  'rec.menu.title': 'Grabando · {time}',
+  'rec.menu.by': 'Iniciada por {name}',
+  'rec.menu.confirm': '¿Detener la grabación?',
+  'rec.menu.confirmAction': 'Detener',
 } as const;

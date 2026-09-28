@@ -94,7 +94,9 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
             )}
             data-testid="recording-card-status"
           >
-            <StatusIcon className={cx('mt-px size-3.5 shrink-0', status.tone === 'busy' && 'animate-spin motion-reduce:animate-none')} aria-hidden />
+            {/* «Идёт запись…» / processing last minutes to hours: the spinner turns 10 times, then
+                stands (no endless animation, docs/08 «Движение», docs/09 #64). */}
+            <StatusIcon className={cx('mt-px size-3.5 shrink-0', status.tone === 'busy' && 'animate-spin [animation-iteration-count:10] motion-reduce:animate-none')} aria-hidden />
             <span className="min-w-0">{t(status.key)}</span>
           </span>
         </div>

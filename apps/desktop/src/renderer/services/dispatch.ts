@@ -27,7 +27,8 @@ import { voice } from './voice';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
 
-const TYPING_MS = 8000;
+/** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
+export const TYPING_MS = 5000;
 
 /**
  * Web `/admin` (ADR-0024): a superadmin gets «Администрирование» open once READY is in; anyone

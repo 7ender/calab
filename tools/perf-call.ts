@@ -15,6 +15,11 @@
  *   CALABA_RENDERER_MINIFY=0 CALABA_REACT_PROFILING=1 pnpm -F @calaba/desktop build:app
  *   npx tsx tools/perf-call.ts [--port 39461] [--seconds 30] [--speaker] [--cpu] [--timeline] [--no-stats] [--no-emulate]
  *   npx tsx tools/perf-call.ts --seconds 0 --bench C --bench-seconds 90 --name after   # CPU of all app processes
+ *   npx tsx tools/perf-call.ts --seconds 0 --no-emulate --no-stats --recording --bench C --bench-seconds 90 --name rec-after
+ *
+ * `--recording`: «Созвон» is being recorded (ROOM_RECORDING, Борис 12:34 ago) — the REC dot on the
+ * card, the «Запись» pill in the island (docs/09 #64). A bench also samples WindowServer: the
+ * compositor redraws blurred surfaces under an animated layer there, not in the app.
  *
  * Heavy for the machine: run it under `nice -n 19`, one run at a time.
  *
@@ -45,6 +50,7 @@ const STATS = !argv.includes('--no-stats');
 const EMULATE = !argv.includes('--no-emulate');
 const CPU = argv.includes('--cpu');
 const SPEAKER = argv.includes('--speaker');
+const RECORDING = argv.includes('--recording');
 const ROOT = resolve(import.meta.dirname, '..');
 const DESKTOP = resolve(ROOT, 'apps/desktop');
 process.env['MOCK_LIVEKIT_ROOM_PREFIX'] ||= `perfcall${PORT}_`;
@@ -322,6 +328,11 @@ async function main(): Promise<void> {
     await page.getByRole('button', { name: /^Качество связи/ }).first().waitFor({ timeout: 15_000 });
     const membersOpen = await page.getByRole('complementary').filter({ hasText: /В сети|Участники/ }).count();
 
+    if (RECORDING) {
+      mock.setRecording(IDS.rooms.call, { byUserId: IDS.users.boris, agoMs: 754_000 });
+      await page.getByTestId('voice-rec-pill').first().waitFor({ timeout: 15_000 });
+    }
+
     if (BENCH === 'E') {
       mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false, camera: true });
       publisher = await startSpeaker(mock.url, IDS.users.boris, 'Борис Петров', IDS.rooms.call, 'camera');
@@ -432,7 +443,7 @@ async function main(): Promise<void> {
     if (BENCH) {
       const bundle = resolve(ROOT, 'node_modules/electron/dist/Electron.app');
       const outDir = opt('bench-out', join(tmpdir(), 'calaba-energy'));
-      const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, BENCH === 'E' ? 'E-watch-video' : 'C-voice-quiet', '--seconds', String(BENCH_SECONDS), '--out', outDir], {
+      const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet', '--seconds', String(BENCH_SECONDS), '--out', outDir, '--with', 'WindowServer'], {
         stdio: 'inherit',
       });
       if (r.status !== 0) process.exitCode = 1;

@@ -57,6 +57,7 @@ const KEY = new Set([
   'dm-chat',
   'voice-room-status',
   'voice-room-recording',
+  'voice-room-recording-menu',
   'chat-recording-card',
   'chat-recording-done',
   'chat-recording-play',
@@ -1391,6 +1392,47 @@ test('voice-room-recording', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('room-menu-record')).toHaveText('Остановить запись');
   await win.keyboard.press('Escape');
   await expect(win.getByTestId('room-menu-record')).toHaveCount(0);
+});
+
+// The REC pill is a menu (docs/09 #64): «Идёт запись · 12:34», «Начал: Борис Петров» (a label,
+// not an item) and «Остановить запись» for a member (not a guest). The shot: the menu open from
+// the keyboard. Then the one-line confirmation («Остановить запись? · Остановить») takes the
+// focus, Escape backs out, and the second choice stops it — the pill goes.
+test('voice-room-recording-menu', async ({ open, win, mock, shot }) => {
+  await open();
+  await inVoiceWithStatus(win, mock);
+  const nowMs = await win.evaluate(() => Date.now());
+  mock.setRecording(RECORDING_FIXTURE.roomId, { byUserId: RECORDING_FIXTURE.byUserId, agoMs: RECORDING_FIXTURE.agoMs, nowMs });
+  await expect(win.getByTestId('toast')).toContainText('Началась запись встречи');
+  await win.evaluate(() => (window as unknown as { __calabaJoinedAt?: (ms: number) => void }).__calabaJoinedAt?.(Date.now() - 60_000));
+  await expect(win.getByTestId('voice-invite-row')).toHaveCount(0);
+  const pill = win.getByTestId('voice-rec-pill');
+  await expect(pill).toHaveAccessibleName(/Запись включена: Борис Петров/);
+  await pill.focus();
+  await win.keyboard.press('Enter');
+  const menu = win.getByTestId('rec-menu');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByTestId('rec-menu-title')).toContainText('Идёт запись · 12:34');
+  await expect(menu.getByTestId('rec-menu-title')).toContainText('Начал: Борис Петров');
+  const stop = menu.getByRole('menuitem', { name: 'Остановить запись' });
+  await expect(stop).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveCount(1); // the header is not an item
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'voice-room-recording-menu');
+  // First choice: the same line asks; the menu stays open, the focus on the question.
+  await stop.focus();
+  await win.keyboard.press('Enter');
+  const confirm = menu.getByTestId('rec-menu-stop-confirm');
+  await expect(confirm).toHaveText(/Остановить запись\?\s*Остановить/);
+  await expect(confirm).toBeFocused();
+  await win.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(pill).toBeFocused();
+  // Reopened, the confirmation is gone; stop for real.
+  await win.keyboard.press('Enter');
+  await menu.getByRole('menuitem', { name: 'Остановить запись' }).click();
+  await menu.getByTestId('rec-menu-stop-confirm').click();
+  await expect(pill).toHaveCount(0);
 });
 
 // Speaking indication (docs/08): Борис talks — green ring + bright name in the sidebar row

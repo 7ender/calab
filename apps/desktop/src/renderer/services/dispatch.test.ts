@@ -38,7 +38,7 @@ vi.mock('./profile', () => ({ applyUserSettings: vi.fn() }));
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined } } }));
 
-const { applyDispatch } = await import('./dispatch');
+const { applyDispatch, TYPING_MS } = await import('./dispatch');
 const { useMessages } = await import('../stores/messages');
 const { useRooms } = await import('../stores/rooms');
 const { useTyping } = await import('../stores/typing');
@@ -156,8 +156,8 @@ describe('dispatch TYPING_START', () => {
     );
     const until = useTyping.getState().rooms['a']?.['other'];
     expect(until).toBeDefined();
-    expect(until).toBeLessThanOrEqual(Date.now() + 8000);
-    await vi.advanceTimersByTimeAsync(8100);
+    expect(until).toBeLessThanOrEqual(Date.now() + TYPING_MS);
+    await vi.advanceTimersByTimeAsync(TYPING_MS + 100);
     expect(useTyping.getState().rooms['a']?.['other']).toBeUndefined();
   });
 });
