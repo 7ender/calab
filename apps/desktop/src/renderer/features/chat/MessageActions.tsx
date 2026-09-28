@@ -23,7 +23,7 @@ const btn =
 
 /**
  * Hover action bar of a message (docs/09 #47): quick reactions + picker, reply, «Ещё…» — the
- * last opens the very same context menu as a right click. Popover glass, 28 px. Reactions and
+ * last opens the very same context menu as a right click. Opaque popover, 28 px. Reactions and
  * reply follow SEND_MESSAGES, like the menu.
  */
 export function MessageActions({

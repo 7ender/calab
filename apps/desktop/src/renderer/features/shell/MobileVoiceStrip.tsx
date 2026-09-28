@@ -22,7 +22,7 @@ const idle = 'bg-[var(--color-fill)] text-fg active:bg-[var(--color-fill-hover)]
 const off = 'bg-[color-mix(in_srgb,var(--color-danger)_16%,transparent)] text-danger';
 
 /**
- * Phone voice strip (ADR-0021, Discord mobile): one 56 px glass bar at the bottom of the screen
+ * Phone voice strip (ADR-0021, Discord mobile): one 56 px solid bar at the bottom of the screen
  * while in voice — «Голос подключён · Комната» (tap = open the voice room), mute, deafen, the
  * push-to-talk hold button (PTT mic mode), «Ещё» (mic mode switch) and hang up. The full panel (camera, stream, devices)
  * stays in the navigation drawer's bottom island.

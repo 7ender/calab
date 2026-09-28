@@ -61,7 +61,7 @@ function useToastPlacement(active: boolean): ToastPlacement | null {
 }
 
 /**
- * Toast stack (docs/09 #16, docs/08 «Тосты»): glass (mat-popover), bottom-centre of the chat
+ * Toast stack (docs/09 #16, docs/08 «Тосты»): opaque mat-popover, bottom-centre of the chat
  * column 16 px above the composer, ≤ 480 px wide, growing upwards, newest at
  * the bottom. Each toast hides after TOAST_MS; the countdown pauses while the pointer or
  * keyboard focus is in the stack and while the window is hidden (a toast raised in the

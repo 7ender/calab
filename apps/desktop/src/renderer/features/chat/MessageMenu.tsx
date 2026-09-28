@@ -16,7 +16,7 @@ import { useChatView } from './chatView';
 import { QUICK_REACTIONS } from './emoji';
 import { canToggleReaction } from './reactionLimit';
 
-/** macOS menu look (popover glass, 28 px rows, accent highlight). */
+/** macOS menu look (opaque popover, 28 px rows, accent highlight). */
 export const menuBox = 'mat-popover anim-in z-[var(--z-popover)] min-w-56 rounded-[var(--radius-card)] p-1';
 export const menuItem =
   'flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-body text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg';

@@ -13,20 +13,21 @@
 /*
  * Design tokens (docs/08-design.md): macOS / Apple HIG. Components use only these
  * variables (through the Tailwind theme below) — no raw colours or sizes.
- * Dark is the default; light via <html data-theme="light">. On macOS Electron the
- * window has native vibrancy (<html class="vibrancy">): sidebar surfaces become
- * transparent tints over the system material.
+ * Dark is the default; light via <html data-theme="light">. Every material is a solid
+ * colour — no backdrop-filter, no window vibrancy (docs/08 «Материалы», docs/09 #65): the
+ * compositor would re-blur what is behind on every frame of an animation or video.
  */
 :root {
   /* ---- colour: neutral cool grey scale + one accent + semantics ---- */
   --color-bg: #1c1c1e; /* content (messages): always opaque */
   --color-bg-elevated: #2c2c2e; /* cards, inputs on content */
   --color-control-hover: #353538; /* pop-up button / field hover: a step lighter */
-  --color-sidebar: rgb(38 38 42 / 88%);
-  --color-rail: rgb(28 28 31 / 92%);
-  --color-toolbar: rgb(30 30 32 / 78%);
-  --color-popover: rgb(44 44 48 / 90%); /* opaque enough that content behind never bleeds through as colour */
-  --color-popover-solid: #2c2c30;
+  /* materials (docs/08): window (rail, title bar) < sidebar < content < popover, all opaque */
+  --color-rail: #0c0c0e;
+  --color-sidebar: #121214; /* ≈ 4 % (HSL lightness) darker than the content */
+  --color-toolbar: #1c1c1e; /* = content; the hairline (border-line) separates it */
+  --color-popover: #2c2c30;
+  --color-popover-solid: var(--color-popover);
   --color-fill: rgb(118 118 128 / 24%);
   --color-fill-hover: rgb(118 118 128 / 32%);
   --color-selection: rgb(255 255 255 / 10%);
@@ -128,14 +129,11 @@
   --radius-card: 8px;
   --radius-panel: 12px;
 
-  /* ---- shadow / blur (materials) ---- */
+  /* ---- shadow (materials) ---- */
   --shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 35%), 0 2px 6px rgb(0 0 0 / 25%);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 25%);
   /* the bottom island of the room column: hairline edge + soft lift */
   --shadow-island: 0 0 0 1px var(--color-separator), 0 4px 14px rgb(0 0 0 / 28%);
-  --blur-sidebar: blur(20px) saturate(180%);
-  --blur-toolbar: blur(12px) saturate(160%);
-  --blur-popover: blur(20px) saturate(180%);
 
   /* ---- layers ---- */
   --z-sticky: 10;
@@ -170,11 +168,10 @@
   --color-bg: #ffffff;
   --color-bg-elevated: #ffffff;
   --color-control-hover: #f5f5f7;
-  --color-sidebar: rgb(236 236 240 / 88%);
-  --color-rail: rgb(226 226 231 / 92%);
-  --color-toolbar: rgb(250 250 252 / 80%);
-  --color-popover: rgb(250 250 252 / 92%);
-  --color-popover-solid: #f7f7f9;
+  --color-rail: #e8e8ec;
+  --color-sidebar: #f2f2f5; /* a light grey tint, ≈ 4.5 % (HSL lightness) off the white content */
+  --color-toolbar: #ffffff;
+  --color-popover: #f7f7f9;
   --color-fill: rgb(118 118 128 / 12%);
   --color-fill-hover: rgb(118 118 128 / 20%);
   --color-selection: rgb(0 0 0 / 7%);
@@ -236,35 +233,6 @@
   --shadow-card: 0 1px 2px rgb(0 0 0 / 8%);
   --shadow-island: 0 0 0 1px var(--color-separator), 0 4px 14px rgb(0 0 0 / 10%);
   color-scheme: light;
-}
-
-/* macOS Electron: the window shows the native sidebar material through these surfaces. */
-/* The tint is strong enough that text stays ≥ 4.5:1 whatever the native material shows (an
-   inactive window, or a material still in the other appearance right after a theme switch,
-   rendered light behind dark text): 85 % of the theme colour over the worst case. */
-:root.vibrancy {
-  --color-sidebar: rgb(30 30 32 / 85%);
-  --color-rail: rgb(20 20 22 / 88%);
-}
-:root.vibrancy[data-theme='light'] {
-  --color-sidebar: rgb(246 246 248 / 85%);
-  --color-rail: rgb(232 232 236 / 88%);
-}
-
-/* Reduced transparency: every material becomes solid. */
-@media (prefers-reduced-transparency: reduce) {
-  :root {
-    --color-sidebar: #26262a;
-    --color-rail: #1c1c1f;
-    --color-toolbar: #1e1e20;
-    --color-popover: var(--color-popover-solid);
-  }
-  :root[data-theme='light'] {
-    --color-sidebar: #ececf0;
-    --color-rail: #e2e2e7;
-    --color-toolbar: #fafafc;
-    --color-popover: var(--color-popover-solid);
-  }
 }
 
 @theme inline {
@@ -347,25 +315,16 @@ body {
   user-select: none;
   overflow: hidden;
 }
-:root.vibrancy body {
-  background: transparent; /* the window's vibrancy shows through the sidebar */
-}
 
-/* ---- materials (docs/08, "Материалы") ---- */
+/* ---- materials (docs/08, "Материалы"): solid colours only, never backdrop-filter ---- */
 .mat-sidebar {
   background: var(--color-sidebar);
-  -webkit-backdrop-filter: var(--blur-sidebar);
-  backdrop-filter: var(--blur-sidebar);
 }
 .mat-rail {
   background: var(--color-rail);
-  -webkit-backdrop-filter: var(--blur-sidebar);
-  backdrop-filter: var(--blur-sidebar);
 }
 .mat-toolbar {
   background: var(--color-toolbar);
-  -webkit-backdrop-filter: var(--blur-toolbar);
-  backdrop-filter: var(--blur-toolbar);
 }
 /* macOS pop-up button chevron (↕, 10 px, 8 px from the right edge). In CSS, not a Tailwind
    arbitrary value: the SVG has spaces, which a class attribute would split. */
@@ -388,39 +347,20 @@ body {
 body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   z-index: var(--z-modal-popover) !important;
 }
+/* Menus, popovers, toasts, the video PiP: opaque, the same shadow as a sheet. (`dense` on a
+   popover is a leftover of the glass era — every popover is opaque now.) */
 .mat-popover {
   background: var(--color-popover);
-  -webkit-backdrop-filter: var(--blur-popover);
-  backdrop-filter: var(--blur-popover);
   border: 1px solid var(--color-border-popover);
   box-shadow: var(--shadow-popover);
 }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .mat-popover {
-    background: var(--color-popover-solid);
-  }
-}
-/* Dense glass (CHAT-SHELL): the popover material, nearly opaque — for glass that sits over
-   busy content (date pills over bubbles, the quick switcher, the mention list), so nothing behind
-   bleeds through; 0.5 px hairline. */
+/* Small pills over the feed (date / «new» pills): the popover colour, 0.5 px hairline. */
 .mat-glass {
-  background: color-mix(in srgb, var(--color-popover-solid) 90%, transparent);
-  -webkit-backdrop-filter: var(--blur-popover);
-  backdrop-filter: var(--blur-popover);
+  background: var(--color-popover);
   box-shadow: 0 0 0 0.5px var(--color-border-popover), var(--shadow-card);
 }
-/* The same density for full popovers over busy content: `mat-popover dense`. */
-.mat-popover.dense {
-  background: color-mix(in srgb, var(--color-popover-solid) 90%, transparent);
-}
-@media (prefers-reduced-transparency: reduce) {
-  .mat-glass,
-  .mat-popover.dense {
-    background: var(--color-popover-solid);
-  }
-}
 /* Auth backdrop (docs/09 #19): two soft, static tints of the accent and an identity colour
-   over the content colour — deterministic for screenshots; text sits on the glass card. */
+   over the content colour — deterministic for screenshots; text sits on the card. */
 .auth-backdrop {
   background:
     radial-gradient(60% 55% at 15% 0%, color-mix(in srgb, var(--color-accent) 22%, transparent), transparent 70%),

@@ -34,7 +34,7 @@ import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayBadge, setTrayState } from './tray';
 import { checkForUpdates, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
-import { getMainWindow, isOwnPage, isShown } from './windows';
+import { isOwnPage, isShown } from './windows';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
 
@@ -226,14 +226,8 @@ export function registerIpc(): void {
   handle(IPC.appSetTheme, (_e, a) => {
     if (a !== 'dark' && a !== 'light' && a !== 'system') return;
     if (nativeTheme.themeSource === a) return;
+    // nativeTheme 'updated' recolours the window background (windows.ts).
     nativeTheme.themeSource = a;
-    // Re-apply the sidebar material so it follows the new appearance right away (it could stay
-    // in the old appearance until the next window activation).
-    if (process.platform === 'darwin' && !VISUAL_TEST) {
-      const w = getMainWindow();
-      w?.setVibrancy(null);
-      w?.setVibrancy('sidebar');
-    }
   });
   handle(IPC.systemPermissions, (): PermissionStatus =>
     // Visual tests: fixed statuses so screenshots don't depend on the machine's TCC state.

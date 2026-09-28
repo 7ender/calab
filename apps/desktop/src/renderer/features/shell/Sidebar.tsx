@@ -1427,7 +1427,7 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
   return (
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={onStart} onDragMove={onMove} onDragOver={onOver} onDragEnd={onEnd} onDragCancel={reset}>
       <DropLineCtx.Provider value={line}>{children}</DropLineCtx.Provider>
-      {/* In <body>: the sidebar island (backdrop-filter) is a containing block for position:fixed
+      {/* In <body>: the sidebar island (overflow, transforms) is a containing block for position:fixed
           and clips its overflow — the chip would land offset and cut off at the island's edge. */}
       {createPortal(<DragOverlay dropAnimation={null}>{dragged ? <DragChip data={dragged} /> : null}</DragOverlay>, document.body)}
     </DndContext>
