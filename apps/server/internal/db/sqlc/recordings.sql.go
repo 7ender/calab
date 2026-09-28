@@ -13,6 +13,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const attachToForwardedCopies = `-- name: AttachToForwardedCopies :exec
+INSERT INTO message_attachments (message_id, file_id, position, forwarded)
+SELECT m.id, $1::uuid, 0, true FROM messages m
+WHERE m.forwarded_from = $2::uuid AND m.deleted_at IS NULL
+ON CONFLICT DO NOTHING
+`
+
+type AttachToForwardedCopiesParams struct {
+	FileID    uuid.UUID
+	MessageID uuid.UUID
+}
+
+// The audio arrives after the card may have been forwarded: its live copies get it too.
+func (q *Queries) AttachToForwardedCopies(ctx context.Context, arg AttachToForwardedCopiesParams) error {
+	_, err := q.db.Exec(ctx, attachToForwardedCopies, arg.FileID, arg.MessageID)
+	return err
+}
+
 const claimRecordingJobs = `-- name: ClaimRecordingJobs :many
 UPDATE room_recordings SET next_at = now() + $1::interval
 WHERE id IN (
@@ -547,7 +565,7 @@ func (q *Queries) InsertRecording(ctx context.Context, arg InsertRecordingParams
 const insertSystemMessage = `-- name: InsertSystemMessage :one
 INSERT INTO messages (room_id, author_id, content, kind, payload)
 VALUES ($1, $2, '', 'system', $3)
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at
 `
 
 type InsertSystemMessageParams struct {
@@ -575,6 +593,9 @@ func (q *Queries) InsertSystemMessage(ctx context.Context, arg InsertSystemMessa
 		&i.Kind,
 		&i.Payload,
 		&i.StickerID,
+		&i.ForwardedFrom,
+		&i.ForwardAuthorID,
+		&i.ForwardSentAt,
 	)
 	return i, err
 }
@@ -1323,6 +1344,26 @@ func (q *Queries) RecheckRecording(ctx context.Context, id uuid.UUID) (RoomRecor
 	return i, err
 }
 
+const recordingVisibleInRoom = `-- name: RecordingVisibleInRoom :one
+SELECT EXISTS (
+    SELECT 1 FROM messages
+    WHERE forwarded_from = $1::uuid AND room_id = $2::uuid AND deleted_at IS NULL
+)::boolean
+`
+
+type RecordingVisibleInRoomParams struct {
+	MessageID uuid.UUID
+	RoomID    uuid.UUID
+}
+
+// The card of the recording was forwarded into the room and that copy is live (ADR-0033 §4).
+func (q *Queries) RecordingVisibleInRoom(ctx context.Context, arg RecordingVisibleInRoomParams) (bool, error) {
+	row := q.db.QueryRow(ctx, recordingVisibleInRoom, arg.MessageID, arg.RoomID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const retryRecording = `-- name: RetryRecording :exec
 UPDATE room_recordings SET attempts = attempts + 1, next_at = $2, error = $3, updated_at = now()
 WHERE id = $1 AND status IN ('uploading', 'processing')
@@ -1427,6 +1468,26 @@ func (q *Queries) RevokeIntegration(ctx context.Context, arg RevokeIntegrationPa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const roomAudience = `-- name: RoomAudience :one
+SELECT r.workspace_id, (r.type = 'dm')::boolean AS dm,
+    array(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)::uuid[] AS dm_members
+FROM rooms r WHERE r.id = $1
+`
+
+type RoomAudienceRow struct {
+	WorkspaceID *uuid.UUID
+	Dm          bool
+	DmMembers   []uuid.UUID
+}
+
+// Who gets a room's events outside a request: its workspace, or a DM's two participants.
+func (q *Queries) RoomAudience(ctx context.Context, id uuid.UUID) (RoomAudienceRow, error) {
+	row := q.db.QueryRow(ctx, roomAudience, id)
+	var i RoomAudienceRow
+	err := row.Scan(&i.WorkspaceID, &i.Dm, &i.DmMembers)
+	return i, err
 }
 
 const setRecordingAudio = `-- name: SetRecordingAudio :one
@@ -1590,9 +1651,60 @@ func (q *Queries) SetRecordingResult(ctx context.Context, arg SetRecordingResult
 	return i, err
 }
 
+const updateForwardedSystemMessages = `-- name: UpdateForwardedSystemMessages :many
+UPDATE messages SET payload = $2
+WHERE forwarded_from = $1 AND kind = 'system' AND deleted_at IS NULL
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at
+`
+
+type UpdateForwardedSystemMessagesParams struct {
+	ForwardedFrom *uuid.UUID
+	Payload       []byte
+}
+
+// The live forwarded copies of a recording card follow it (ADR-0033 §4).
+func (q *Queries) UpdateForwardedSystemMessages(ctx context.Context, arg UpdateForwardedSystemMessagesParams) ([]Message, error) {
+	rows, err := q.db.Query(ctx, updateForwardedSystemMessages, arg.ForwardedFrom, arg.Payload)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.AuthorID,
+			&i.Content,
+			&i.ReplyToID,
+			&i.Nonce,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.PinnedAt,
+			&i.PinnedBy,
+			&i.EmbedsHidden,
+			&i.Kind,
+			&i.Payload,
+			&i.StickerID,
+			&i.ForwardedFrom,
+			&i.ForwardAuthorID,
+			&i.ForwardSentAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateSystemMessage = `-- name: UpdateSystemMessage :one
 UPDATE messages SET payload = $2 WHERE id = $1 AND kind = 'system' AND deleted_at IS NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at
 `
 
 type UpdateSystemMessageParams struct {
@@ -1619,6 +1731,9 @@ func (q *Queries) UpdateSystemMessage(ctx context.Context, arg UpdateSystemMessa
 		&i.Kind,
 		&i.Payload,
 		&i.StickerID,
+		&i.ForwardedFrom,
+		&i.ForwardAuthorID,
+		&i.ForwardSentAt,
 	)
 	return i, err
 }

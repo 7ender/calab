@@ -121,14 +121,17 @@ export async function startDm(userId: string): Promise<boolean> {
  * shows the error on its own row.
  */
 export async function sendDmText(userId: string, content: string): Promise<void> {
-  let roomId = dmWith(userId)?.roomId;
-  if (!roomId) {
-    const res = await api.dms.create(userId);
-    if (!res.dm?.room) throw new Error('no dm in the answer');
-    applyDm(res.dm, true);
-    roomId = res.dm.room.id;
-  }
-  await api.messages.create(roomId, { content, nonce: crypto.randomUUID() });
+  await api.messages.create(await ensureDm(userId), { content, nonce: crypto.randomUUID() });
+}
+
+/** The DM room with the user, created when needed (POST /api/dms is get-or-create). Throws on failure. */
+export async function ensureDm(userId: string): Promise<string> {
+  const known = dmWith(userId)?.roomId;
+  if (known) return known;
+  const res = await api.dms.create(userId);
+  if (!res.dm?.room) throw new Error('no dm in the answer');
+  applyDm(res.dm, true);
+  return res.dm.room.id;
 }
 
 /**

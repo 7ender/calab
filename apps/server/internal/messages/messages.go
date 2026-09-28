@@ -53,6 +53,7 @@ func NewHandlers(d *db.DB, ev events.Publisher, limiter *redisx.RateLimiter) *Ha
 func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.list)))
 	mux.Handle("POST /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.create)))
+	mux.Handle("POST /api/rooms/{id}/messages/{mid}/forward", wrap(httpx.HandlerFunc(h.forward)))
 	mux.Handle("PATCH /api/messages/{id}", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("DELETE /api/messages/{id}", wrap(httpx.HandlerFunc(h.delete)))
 	mux.Handle("PUT /api/rooms/{id}/read", wrap(httpx.HandlerFunc(h.read)))
@@ -88,7 +89,40 @@ func withAttachments(ctx context.Context, q *sqlc.Queries, ms []sqlc.Message) ([
 	for i, m := range ms {
 		out[i] = pbconv.Message(m, files[m.ID])
 	}
+	if err := withForwardRooms(ctx, q, out); err != nil {
+		return nil, err
+	}
 	return out, withStickers(ctx, q, ms, out)
+}
+
+// withForwardRooms fills Forward.room_id of forwarded copies (ADR-0033) in one query; a DM's
+// room is not disclosed.
+func withForwardRooms(ctx context.Context, q *sqlc.Queries, out []*v1.Message) error {
+	var ids []uuid.UUID
+	for _, m := range out {
+		if id, err := uuid.Parse(m.GetForward().GetMessageId()); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := q.ForwardSources(ctx, ids)
+	if err != nil {
+		return err
+	}
+	by := make(map[string]string, len(rows))
+	for _, r := range rows {
+		if r.RoomID != uuid.Nil {
+			by[r.ID.String()] = r.RoomID.String()
+		}
+	}
+	for _, m := range out {
+		if f := m.GetForward(); f != nil {
+			f.RoomId = by[f.GetMessageId()]
+		}
+	}
+	return nil
 }
 
 // withStickers fills Message.sticker of sticker messages (ADR-0030) in one query; deleted
@@ -348,19 +382,8 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	isBot := auth.MustFromContext(r.Context()).IsBot
 	if isBot {
-		if acc.DM { // ADR-0031: a person may block a bot; only people of shared workspaces
-			for _, u := range acc.Members {
-				if u != uid(r) {
-					if err := dms.CheckBotDM(r.Context(), h.db.Q, uid(r), u); err != nil {
-						return err
-					}
-				}
-			}
-		}
-		if h.BotLimiter != nil {
-			if err := h.BotLimiter.Take(r.Context(), uid(r).String()); err != nil {
-				return err
-			}
+		if err := h.botSend(r.Context(), uid(r), acc); err != nil {
+			return err
 		}
 	}
 	var replyTo *uuid.UUID
@@ -509,6 +532,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if m.StickerID != nil {
 		return httpx.Forbidden("sticker messages cannot be edited")
+	}
+	if m.ForwardSentAt != nil {
+		return errNotEditable
 	}
 	var req v1.UpdateMessageRequest
 	if err := httpx.Decode(w, r, &req); err != nil {

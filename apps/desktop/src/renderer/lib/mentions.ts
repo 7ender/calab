@@ -11,9 +11,10 @@ import { mentionTargets, parseMarkdown } from './markdown/parse';
  * True when a message mentions me (docs/05, «Упоминания»): `@<my id>`, or `@everyone` /
  * `@here` from an author holding MENTION_EVERYONE in that room (the server ignores them
  * otherwise). Never for my own messages; code spans / blocks don't count (the renderer's parser).
+ * Never for a forwarded copy either (ADR-0033 §3: someone else's text notifies nobody by @).
  */
-export function mentionsMe(m: { content: string; authorId: string }, myId: string, authorMayMentionAll = true): boolean {
-  if (!myId || m.authorId === myId || !m.content.includes('@')) return false;
+export function mentionsMe(m: { content: string; authorId: string; forward?: unknown }, myId: string, authorMayMentionAll = true): boolean {
+  if (!myId || m.authorId === myId || m.forward || !m.content.includes('@')) return false;
   const { users, everyone } = mentionTargets(parseMarkdown(m.content));
   return users.includes(myId.toLowerCase()) || (everyone && authorMayMentionAll);
 }

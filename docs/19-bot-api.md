@@ -105,6 +105,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | история (новые первыми, `limit ≤ 100`) | `VIEW_ROOM` |
 | `POST /api/rooms/{id}/messages` | сообщение `{content, attachmentIds, replyToId, nonce, stickerId}` → 201 | `SEND_MESSAGES` (+ `ATTACH_FILES`) |
 | `PATCH /api/messages/{id}` · `DELETE /api/messages/{id}` | правка своего / удаление | автор или `MANAGE_MESSAGES` |
+| `POST /api/rooms/{id}/messages/{mid}/forward` | пересылка `{toRoomId}` → 201 `{message}` с `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` в источнике, `SEND_MESSAGES` в цели |
 | `PUT · DELETE /api/messages/{id}/reactions/{emoji}` | реакция (emoji в URL-кодировке) → 204 | `SEND_MESSAGES` |
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | закрепы | `MANAGE_MESSAGES` / `VIEW_ROOM` |
 | `PUT /api/rooms/{id}/read` | отметка прочтения | `VIEW_ROOM` |

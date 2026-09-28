@@ -37,6 +37,20 @@ message Message {
   // room. Set only in MESSAGE_CREATE (gateway and webhook) delivered to that bot; everyone
   // else, REST responses included, gets the plain message.
   MessageCommand command = 30;
+  // A forwarded copy (ADR-0033): a new message of this room by author_id, copied from another
+  // message. Unset for an ordinary message. It cannot be edited (422, reason
+  // MESSAGE_NOT_EDITABLE); a copy of a recording card follows the original card (MESSAGE_UPDATE).
+  Forward forward = 17;
+}
+
+// Where a forwarded message comes from (ADR-0033). A copy of a copy points at the original.
+message Forward {
+  string author_id = 1; // author of the original message
+  // Room of the original message; empty when it is a DM or the original is gone (deleted
+  // for good). The room may be hidden from the reader: clients show only the author and date.
+  string room_id = 2;
+  string message_id = 3; // the original message; empty when it is gone
+  google.protobuf.Timestamp sent_at = 4; // when the original was sent
 }
 
 // A command addressed to a bot: "/name args" or "/name@username args".
@@ -104,12 +118,28 @@ message CreateMessageResponse {
   Message message = 1;
 }
 
-// PATCH /api/messages/{id} (author only; not a sticker message)
+// PATCH /api/messages/{id} (author only; not a sticker message; not a forwarded copy: 422
+// VALIDATION, reason MESSAGE_NOT_EDITABLE)
 message UpdateMessageRequest {
   string content = 1;
 }
 
 message UpdateMessageResponse {
+  Message message = 1;
+}
+
+// POST /api/rooms/{id}/messages/{mid}/forward (ADR-0033): copies the message {mid} of the room
+// {id} (VIEW_ROOM there; 404 for a deleted or hidden message) into to_room_id as a new message
+// of the caller (SEND_MESSAGES there; ATTACH_FILES for a message with attachments; a DM: its
+// participant) → 201 ForwardMessageResponse, MESSAGE_CREATE with `forward`. Copied: content,
+// sticker, embeds_hidden, attachments (the same files, no quota) and a recording card. Not
+// copied: reactions, pin, reply, mentions (a copy notifies nobody by @). 422 reason
+// NOT_FORWARDABLE: a bot command or a system message other than a recording card.
+message ForwardMessageRequest {
+  string to_room_id = 1;
+}
+
+message ForwardMessageResponse {
   Message message = 1;
 }
 

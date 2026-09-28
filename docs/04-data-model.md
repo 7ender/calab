@@ -119,6 +119,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 
 - `messages.id` генерирует Postgres (`uuidv7()` в PG 18) в момент вставки → порядок id совпадает с порядком коммитов на одном сервере БД; курсорная пагинация и `before=<id>` работают без отдельного `created_at`-индекса. Клиентские часы в id не участвуют.
 - `nonce` — клиентский идентификатор optimistic-сообщения. `UNIQUE (author_id, nonce) WHERE nonce IS NOT NULL`: повторный `POST` с тем же `nonce` (ретрай после обрыва) не создаёт дубль, а возвращает уже существующее сообщение (`INSERT … ON CONFLICT DO NOTHING` → `SELECT`), `MESSAGE_CREATE` повторно не рассылается.
+- **Пересылка** (ADR-0033): `POST /api/rooms/{id}/messages/{mid}/forward {to_room_id}` — копия от пересылающего с `messages.forwarded_from` (всегда первоисточник), `forward_author_id`, `forward_sent_at` (→ `Message.forward`); вложения — строки `message_attachments.forwarded = true` на те же файлы (без квоты; уникальность файла — только среди непересланных), упоминания не пишутся, копию нельзя править (422 `MESSAGE_NOT_EDITABLE`); права — `VIEW_ROOM` в источнике (и из комнаты «только по списку»), `SEND_MESSAGES` в цели.
 
 ### Файлы
 
@@ -264,6 +265,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - **Кто пишет**: участник пространства (не гость) с `VIEW_ROOM | CONNECT` в голосовой комнате, где идёт звонок и `allow_recording = true` (выключает `MANAGE_WORKSPACE`; выключение останавливает идущую запись). Одна запись на комнату, не больше `RECORDING_MAX_CONCURRENT` на сервер (под `pg_advisory_xact_lock`).
 - **Жизнь записи** (`room_recordings.status`): `pending` (строка до старта egress) → `recording` (egress идёт; стоп — `stopped_at`/`stop_reason`, строка остаётся `recording`, пока egress не отдаст файл) → `uploading` (файл на томе, очередь) → `processing` (загружено, GPTunneL распознаёт; `web_url`) → `done` (файл удалён) | `failed` (`error`). Авто-стоп: 3 ч 58 мин (GPTunneL принимает ≤ 4 ч / ≤ 4 ГБ; сверх — `failed: too_large` без загрузки), звонок пуст 2 мин, комната запретила запись. Файлы `failed` удаляются через 7 дней (janitor), бесхозные `.mp4` — через 8.
 - **Воркер**: один на кластер (блокировка Valkey `rec:worker`), очередь — строки `uploading|processing` с `next_at` (захват сдвигает `next_at` на аренду 15 мин). Загрузка — кусками 8 МБ с `Content-Range`, докачка по `Upload-Offset`/409/HEAD, ретраи с backoff 30 с → 30 мин ≤ 24 ч; опрос статуса 20 с → 5 мин ≤ 2 ч (`timeout`). Reconcile (раз в 15 с): строки без живого egress забираются (файл есть → загрузка, нет → `failed`), `pending` старше 2 мин падают, наши egress без строки останавливаются.
+- **Пересланная карточка** (ADR-0033 §4): копия — тоже `kind = system` с тем же `payload`; `System.Update` обновляет и живые копии (`forwarded_from = message_id`), сохранённое аудио прикрепляется и к ним; транскрипт отдаётся и в комнате с живой копией (`RecordingVisibleInRoom`); удалить/повторить — только из комнаты записи.
 
 ## Auth (MVP)
 

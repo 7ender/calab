@@ -1,6 +1,6 @@
 import type { PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Copy, CornerUpLeft, Link2, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Copy, CornerUpLeft, Forward, Link2, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { cx } from '../../components/ui';
@@ -8,6 +8,7 @@ import { t } from '../../i18n';
 import { can, mayPin } from '../../lib/permissions';
 import { firstLink, parseMarkdown } from '../../lib/markdown/parse';
 import { deleteMessage, setEmbedsHidden, setPinned, toggleReaction } from '../../services/chat';
+import { openForward } from '../../services/forward';
 import { useRooms } from '../../stores/rooms';
 import type { ChatMessage } from '../../stores/messages';
 import { toast } from '../../stores/toasts';
@@ -101,6 +102,9 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
             <Copy className="size-4" aria-hidden /> {t('chat.copy')}
           </ContextMenu.Item>
         ) : null}
+        <ContextMenu.Item className={menuItem} onSelect={() => openForward(roomId, m.id)} data-testid="message-forward">
+          <Forward className="size-4" aria-hidden /> {t('chat.forward')}
+        </ContextMenu.Item>
         {canPin ? (
           <ContextMenu.Item className={menuItem} onSelect={() => void setPinned(m, !pinned)}>
             {pinned ? <PinOff className="size-4" aria-hidden /> : <Pin className="size-4" aria-hidden />}
@@ -112,7 +116,7 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
             <Link2 className="size-4" aria-hidden /> {t('chat.embedShow')}
           </ContextMenu.Item>
         ) : null}
-        {own && !m.sticker ? (
+        {own && !m.sticker && !m.forward ? (
           <ContextMenu.Item className={menuItem} onSelect={() => useUi.getState().setEditing(c.key)}>
             <Pencil className="size-4" aria-hidden /> {t('chat.edit')}
           </ContextMenu.Item>

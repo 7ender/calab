@@ -48,6 +48,7 @@ console.log(`${ready.me?.user?.displayName} is online in ${ready.workspaces.leng
 | `send(roomId, text \| { text?, stickerId?, files?, replyTo?, nonce? })` | `files`: `{ name, data }` (uploaded first) or ids of uploaded files |
 | `reply(message \| command, content)` | answers in the same room as a reply |
 | `edit(id, text)`, `deleteMessage(id)`, `react(id, emoji)`, `unreact(id, emoji)` | |
+| `forward(roomId, messageId, toRoomId)` | a copy into another room or DM with `forward` (ADR-0033) → `Message` |
 | `messages(roomId, { before?, after?, limit? })`, `typing(roomId)` | history; «is typing» |
 | `upload(roomId, file)` | into the room's workspace (or the DM) → `FileMeta` |
 | `dm(userId)` | open / find a DM with a member of a shared workspace → `DmSummary` (send to `dm.room.id`) |
