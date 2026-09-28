@@ -49,3 +49,6 @@ getStats энкодер H.264 — `OpenH264`. Стрим 720p15 на той же
 камера — VP9 (ADR-0018); вне Chromium — H.264/VP8. Аппаратный H.264 (Windows Media Foundation,
 Intel/NVIDIA) по-прежнему выбирается первым. Если лид решит иначе — откат одной строкой `SW_ORDER`
 в `lib/media/codecSelect.ts`.
+
+## Пометка (2026-09-28, docs/09 #63)
+Аппаратный H.264 (VideoToolbox) в Electron 44 на M4 **есть без флагов**. OpenH264 выбирается потому, что LiveKit договаривается о Constrained Baseline `42e01f`, а Chromium на macOS отдаёт аппаратному энкодеру только Baseline, Main и High. `encodingInfo('video/H264')` без параметров спрашивает именно про `42e01f`, поэтому `powerEfficient: false`. С профилем High на проводе публикация 720p (тест-страница, локальный LiveKit) — 12,4 % вместо 40,8 %. Нужны три правки: High в `setCodecPreferences` издателя, проба `encodingInfo` с этим профилем и чётные размеры слоёв. Они меняют совместимость с зрителями, поэтому решение за лидом (docs/14 «Аппаратный H.264 на macOS», docs/12).
