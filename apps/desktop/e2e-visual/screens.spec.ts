@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
-import { Plan, RecordingStatus, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
+import { PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { NOW, checkpoint, settle } from './harness';
+import { NOW, checkpoint, login, settle } from './harness';
 import { startPublisher } from './publisher';
 
 /**
@@ -62,6 +62,7 @@ const KEY = new Set([
   'voice-room-recording-menu',
   'chat-recording-card',
   'chat-recording-done',
+  'chat-recording-reply-permissions',
   'chat-recording-play',
   'recording-transcript',
   'chat-recording-delete',
@@ -1950,6 +1951,13 @@ test('chat-recording-done', async ({ open, win, mock, shot }) => {
   await expect(card.getByRole('button', { name: 'Полный транскрипт' })).toBeVisible();
   await expect(card.getByTestId('recording-card-status')).toHaveCount(0);
   await expect(card).toContainText('Встреча записана · 42 мин');
+  const reply = card.getByRole('button', { name: 'Ответить', exact: true });
+  await reply.focus();
+  await win.keyboard.press('Enter');
+  const composer = win.getByTestId('composer');
+  await expect(composer).toContainText('Встреча записана · 42 мин');
+  await expect(composer.getByRole('textbox')).toBeFocused();
+  await composer.getByRole('button', { name: 'Отмена', exact: true }).click();
   await catchPlayerAudio(win);
   const play = card.getByTestId('recording-card-play');
   await card.getByRole('button', { name: 'Слушать запись' }).click();
@@ -1990,6 +1998,32 @@ test('chat-recording-done', async ({ open, win, mock, shot }) => {
   await card.getByTestId('recording-card-menu').click();
   await expect(win.getByRole('menuitem', { name: 'Копировать самари' })).toBeVisible();
   await win.keyboard.press('Escape');
+  await reply.click();
+  await composer.getByRole('textbox').fill('Draft the meeting tasks');
+  await composer.getByRole('textbox').press('Enter');
+  const cardID = await card.evaluate((el) => el.closest('[data-message-id]')?.getAttribute('data-message-id'));
+  expect(cardID).toBeTruthy();
+  await expect.poll(() => mock.state.messages.get(IDS.rooms.meeting)?.find((m) => m.content === 'Draft the meeting tasks')?.replyToId).toBe(cardID);
+  suspendInMock(mock, IDS.workspaces.main, 'Read only');
+  await expect(reply).toHaveCount(0);
+});
+
+test('chat-recording-reply-permissions', async ({ open, win, mock }) => {
+  await open({ auth: 'out' });
+  const room = mock.state.rooms.get(IDS.rooms.general);
+  if (!room) throw new Error('missing room');
+  room.permissionOverrides.push(create(RoomPermissionOverrideSchema, {
+    targetType: PermissionTargetType.USER, targetId: IDS.users.vera, deny: PERMISSION_BITS.SEND_MESSAGES,
+  }));
+  mock.injectRecordingCard({ roomId: room.id, byUserId: IDS.users.boris, durationSec: 60, status: RecordingStatus.DONE });
+  await login(win, 'vera@calaba.test');
+  await win.locator('aside').getByRole('button', { name: /общий/ }).first().click();
+  const card = win.getByTestId('recording-card');
+  await expect(card).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Ответить', exact: true })).toHaveCount(0);
+  // The Electron token broker survives fixture resets: restore the signed-out state so
+  // later screens use their normal owner account.
+  await open({ auth: 'out' });
 });
 
 // docs/09 #57: «Слушать запись» (the REC circle, #88) really plays — the chat's player is installed at startup, not by

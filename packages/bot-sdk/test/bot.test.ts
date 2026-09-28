@@ -150,6 +150,26 @@ describe('rest', () => {
     expect(srv.requests[0]?.json).toMatchObject({ toRoomId: 'r-2' });
   });
 
+  it('reads a reply target and the full transcript of its recording card', async () => {
+    srv.route(`GET /api/rooms/${TEXT_ROOM}/messages/m-rec`, {
+      status: 200,
+      json: { id: 'm-rec', roomId: TEXT_ROOM, kind: 'MESSAGE_KIND_SYSTEM', system: { recording: { recordingId: 'rec-1', hasTranscript: true } } },
+    });
+    srv.route(`GET /api/rooms/${TEXT_ROOM}/recordings/rec-1/transcript`, {
+      status: 200,
+      json: { recordingId: 'rec-1', language: 'ru', segments: [{ speaker: 0, startMs: 480, endMs: 6900, text: 'Первая реплика.' }] },
+    });
+    const bot = newBot();
+    const card = await bot.message(TEXT_ROOM, 'm-rec');
+    const p = card.system?.payload;
+    const rid = p?.case === 'recording' ? p.value.recordingId : '';
+    expect(rid).toBe('rec-1');
+    const tr = await bot.transcript(TEXT_ROOM, rid);
+    expect(tr.segments[0]?.text).toBe('Первая реплика.');
+    expect(tr.segments[0]?.startMs).toBe(480);
+    await expect(bot.message(TEXT_ROOM, 'gone')).rejects.toMatchObject({ status: 404 });
+  });
+
   it('retries 429 after Retry-After with the same nonce', async () => {
     let calls = 0;
     const waits: number[] = [];

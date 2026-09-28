@@ -61,7 +61,7 @@ Without the SDK — any language with HTTP and WebSocket: REST below, the gatewa
   closed with `4000 replaced by a new session`). Run one process per token.
 - Endpoints for people are **closed** to bots (`403 FORBIDDEN`, `reason: "BOT_NOT_ALLOWED"`): sessions, password,
   email, verification, status and profile settings, notes, creating / discovering / joining workspaces, all
-  invitations and guest links, notification settings, DM archive, link previews, meeting recording, superadmin,
+  invitations and guest links, notification settings, DM archive, link previews, recording controls (start/stop/retry/delete), superadmin,
   bot management.
 - A bot sees only what `VIEW_ROOM` allows; restricted rooms (ADR-0029) apply to bots too.
 - A person can "Block bot" — the bot then cannot write to them in DMs (`403 BOT_BLOCKED`).
@@ -108,6 +108,8 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | rooms the bot can see | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | room categories | member |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | history (newest first, `limit ≤ 100`) | `VIEW_ROOM` |
+| `GET /api/rooms/{id}/messages/{messageId}` | one message, bare `Message` (no wrapper; SDK `message(roomId, messageId)`) | `VIEW_ROOM` |
+| `GET /api/rooms/{id}/recordings/{rid}/transcript` | full saved transcript (SDK `transcript(roomId, recordingId)`) | `VIEW_ROOM` |
 | `POST /api/rooms/{id}/messages` | a message `{content, attachmentIds, replyToId, nonce, stickerId}` → 201 | `SEND_MESSAGES` (+ `ATTACH_FILES`) |
 | `PATCH /api/messages/{id}` · `DELETE /api/messages/{id}` | edit own / delete | author or `MANAGE_MESSAGES` |
 | `POST /api/rooms/{id}/messages/{mid}/forward` | forward `{toRoomId}` → 201 `{message}` with `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` in the source, `SEND_MESSAGES` in the target |
@@ -125,6 +127,35 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | voice moderation | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
 | stickers: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | see [Stickers](#stickers-over-the-api) | member / `MANAGE_STICKERS` |
 | rooms, categories, roles, members, bans (`POST/PATCH/DELETE …`) | workspace management | `MANAGE_ROOM`, `MANAGE_ROLES`, `MANAGE_WORKSPACE`, … |
+
+### Reply targets and meeting transcripts
+
+`GET /api/rooms/{id}/messages/{messageId}` returns **HTTP 200 with the bare `calaba.v1.Message`**,
+not `{message: …}` or `{messages: […]}`. Its fields and detail loading match a history item:
+`id`, `roomId`, `authorId`, `content`, `replyToId`, `attachments`, `reactions` (`me` relative to the
+caller), timestamps, `kind`, `system`, `sticker` and `forward`. `command` is unset, as in all REST responses.
+A recording card has `kind: "MESSAGE_KIND_SYSTEM"` and `system.recording.recordingId`; use that id
+in the transcript URL. A command replying to a card has `replyToId` pointing to the card's **message** id.
+
+The lookup returns `404 NOT_FOUND` for inaccessible rooms, a missing/deleted message, a message
+from another room, or a message at/before the caller's cleared DM history marker. A DM's other
+participant keeps their own history. No `SEND_MESSAGES` or voice connection is required to read.
+
+`GET /api/rooms/{id}/recordings/{rid}/transcript` returns **HTTP 200** with the existing
+`GetRecordingTranscriptResponse` shape, in full, without pagination:
+
+```json
+{"recordingId":"0192a100-0000-7000-8000-000000000001","language":"en","segments":[{"speaker":0,"startMs":480,"endMs":6900,"text":"First segment."},{"speaker":-1,"startMs":7200,"endMs":12050,"text":"Unknown speaker."}]}
+```
+
+`startMs` / `endMs` are JSON numbers in milliseconds from the recording start; `speaker` is a
+zero-based recognition label, or `-1` if unknown. `language` can be empty. `404 NOT_FOUND` means
+the room is inaccessible, the recording is missing/deleted, no transcript is saved yet, or the
+room has neither the original recording nor a live forwarded copy of its card (ADR-0033).
+Use the visible card's `roomId` in the URL, including for a forwarded card. Removing the only
+forwarded copy revokes its transcript access. Granting a bot `VIEW_ROOM` exposes the **whole**
+saved transcript available through that room, including restricted-room access rules; it does
+not grant recording controls.
 
 ### Examples
 
