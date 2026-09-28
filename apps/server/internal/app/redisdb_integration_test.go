@@ -15,6 +15,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/rueidis"
+
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // Several integration runs of this package may share one dev Redis (teammates, `go test ./...`
@@ -34,6 +36,9 @@ const (
 	leaseTTL   = 2 * time.Minute
 	leaseEvery = 30 * time.Second
 	leaseWait  = 10 * time.Minute // a whole run of the package takes ~1.5 min
+
+	// leaseKeyPrefix names the lease keys (DB 0): harness keys, outside the app's namespace.
+	leaseKeyPrefix = "calaba:it:db:"
 )
 
 // leaseCandidates: the DB of TEST_REDIS_URL first (15 by default, as before), then 15..1
@@ -95,7 +100,7 @@ func leaseRedisDB(ctx context.Context, base string) (string, func(), error) {
 		return "", nil, err
 	}
 	token := uuid.NewString()
-	key := func(n int) string { return "calaba:it:db:" + strconv.Itoa(n) }
+	key := func(n int) string { return leaseKeyPrefix + strconv.Itoa(n) }
 
 	deadline := time.Now().Add(leaseWait)
 	for {
@@ -166,7 +171,7 @@ func holdReconcileLock(ctx context.Context, c rueidis.Client) {
 	hold := func() {
 		reconcileHold.Lock()
 		defer reconcileHold.Unlock()
-		_ = c.Do(context.Background(), c.B().Set().Key("rtc:reconcile").Value("integration-tests").Ex(time.Minute).Build()).Error()
+		_ = c.Do(context.Background(), c.B().Set().Key(redisx.Key("rtc:reconcile")).Value("integration-tests").Ex(time.Minute).Build()).Error()
 	}
 	hold()
 	go func() {
@@ -192,7 +197,7 @@ func runReconcile(t *testing.T) {
 	t.Helper()
 	reconcileHold.Lock()
 	defer reconcileHold.Unlock()
-	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key("rtc:reconcile").Build()).Error()
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rtc:reconcile")).Build()).Error()
 	if err := testApp.RTC.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}

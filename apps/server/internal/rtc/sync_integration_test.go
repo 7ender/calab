@@ -14,6 +14,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // recPub records what SyncPublisher hands to the real publisher.
@@ -67,7 +68,7 @@ func TestWorkspaceEventsCallStartsBatched(t *testing.T) {
 
 	busy, idle, text := uuid.New(), uuid.New(), uuid.New()
 	start := time.Now().Add(-7 * time.Minute).Truncate(time.Millisecond)
-	if err := rc.Do(context.Background(), rc.B().Set().Key("voice:started:"+busy.String()).
+	if err := rc.Do(context.Background(), rc.B().Set().Key(redisx.Key("voice:started:"+busy.String())).
 		Value(strconv.FormatInt(start.UnixMilli(), 10)).Build()).Error(); err != nil {
 		t.Fatal(err)
 	}

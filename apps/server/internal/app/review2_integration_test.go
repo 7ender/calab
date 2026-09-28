@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // R1: RESUME on the same hub while events keep flowing: replayed and live frames arrive in
@@ -101,10 +102,10 @@ func TestReleaseNotConfirmedForGoneSession(t *testing.T) {
 	a, b := newInstance(t), newInstance(t)
 	g := dialAt(t, a.srv.URL)
 	ready := g.identify(bob.token)
-	owner, _ := testRedis.Do(context.Background(), testRedis.B().Hget().Key("gw:sess:"+ready.GetSessionId()).Field("owner").Build()).ToString()
+	owner, _ := testRedis.Do(context.Background(), testRedis.B().Hget().Key(redisx.Key("gw:sess:"+ready.GetSessionId())).Field("owner").Build()).ToString()
 	a.app.Gateway.Shutdown(context.Background())
 	// Simulate the race of review R2: the owner field still names A (alive) after its release.
-	_ = testRedis.Do(context.Background(), testRedis.B().Hset().Key("gw:sess:"+ready.GetSessionId()).FieldValue().FieldValue("owner", owner).Build()).Error()
+	_ = testRedis.Do(context.Background(), testRedis.B().Hset().Key(redisx.Key("gw:sess:"+ready.GetSessionId())).FieldValue().FieldValue("owner", owner).Build()).Error()
 	g2 := dialAt(t, b.srv.URL)
 	g2.send(&v1.GatewayFrame{Op: v1.GatewayOpcode_GATEWAY_OPCODE_RESUME, Payload: &v1.GatewayFrame_Resume{Resume: &v1.Resume{
 		Token: bob.token, SessionId: ready.GetSessionId(), Seq: g.last}}})

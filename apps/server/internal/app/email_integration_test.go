@@ -17,6 +17,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 const mailWait = 10 * time.Second
@@ -395,10 +396,10 @@ func TestMailOutboxRetries(t *testing.T) {
 	ctx := context.Background()
 	// Take the worker lock away from the app's worker for the duration of the test.
 	set := func(v string) {
-		_ = testRedis.Do(ctx, testRedis.B().Set().Key("mail:worker").Value(v).Ex(time.Minute).Build()).Error()
+		_ = testRedis.Do(ctx, testRedis.B().Set().Key(redisx.Key("mail:worker")).Value(v).Ex(time.Minute).Build()).Error()
 	}
 	set("outbox-test")
-	t.Cleanup(func() { _ = testRedis.Do(ctx, testRedis.B().Del().Key("mail:worker").Build()).Error() })
+	t.Cleanup(func() { _ = testRedis.Do(ctx, testRedis.B().Del().Key(redisx.Key("mail:worker")).Build()).Error() })
 	time.Sleep(300 * time.Millisecond) // a batch the app worker may be in finishes
 
 	fake := mail.NewFake()

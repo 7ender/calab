@@ -14,6 +14,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rtc"
 )
 
@@ -206,7 +207,7 @@ func cameraPublished(t *testing.T, roomName, identity, sid string) {
 
 func reconcileNow(t *testing.T) {
 	t.Helper()
-	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key("rtc:reconcile").Build()).Error()
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rtc:reconcile")).Build()).Error()
 	if err := testApp.RTC.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +215,7 @@ func reconcileNow(t *testing.T) {
 
 func cameraRecords(t *testing.T, rid string) map[string]string {
 	t.Helper()
-	m, err := testRedis.Do(context.Background(), testRedis.B().Hgetall().Key("voice:cameras:"+rid).Build()).AsStrMap()
+	m, err := testRedis.Do(context.Background(), testRedis.B().Hgetall().Key(redisx.Key("voice:cameras:"+rid)).Build()).AsStrMap()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +286,7 @@ func TestCameraLifecycle(t *testing.T) {
 	uid := strings.SplitN(bi, ":", 2)[0]
 	put := func(track string, started int64) {
 		v := fmt.Sprintf(`{"i":%q,"u":%q,"s":%d}`, bi, uid, started)
-		if err := testRedis.Do(context.Background(), testRedis.B().Hset().Key("voice:cameras:"+rid).FieldValue().FieldValue(track, v).Build()).Error(); err != nil {
+		if err := testRedis.Do(context.Background(), testRedis.B().Hset().Key(redisx.Key("voice:cameras:"+rid)).FieldValue().FieldValue(track, v).Build()).Error(); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -299,7 +300,7 @@ func TestCameraLifecycle(t *testing.T) {
 	if _, ok := recs["TR_ghost_old"]; ok {
 		t.Fatal("old record without a track kept")
 	}
-	_ = testRedis.Do(context.Background(), testRedis.B().Hdel().Key("voice:cameras:"+rid).Field("TR_ghost_young").Build()).Error()
+	_ = testRedis.Do(context.Background(), testRedis.B().Hdel().Key(redisx.Key("voice:cameras:"+rid)).Field("TR_ghost_young").Build()).Error()
 
 	// The camera grant survives a resync (permission change) and a stream stop.
 	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
@@ -337,7 +338,7 @@ func TestCameraLifecycle(t *testing.T) {
 	if len(cameraRecords(t, rid)) != 0 {
 		t.Fatal("camera records left after participant_left")
 	}
-	for _, k := range []string{"voice:camreq:" + bi, "voice:camoff:" + bi} {
+	for _, k := range []string{redisx.Key("voice:camreq:" + bi), redisx.Key("voice:camoff:" + bi)} {
 		if n, _ := testRedis.Do(context.Background(), testRedis.B().Exists().Key(k).Build()).AsInt64(); n != 0 {
 			t.Fatalf("%s left after participant_left", k)
 		}
@@ -440,7 +441,7 @@ func TestCameraAppLevelMove(t *testing.T) {
 	if len(cameraRecords(t, a)) != 0 || len(cameraRecords(t, b)) != 0 {
 		t.Fatal("camera records left after an app-level move")
 	}
-	if n, _ := testRedis.Do(context.Background(), testRedis.B().Exists().Key("voice:camreq:"+bi).Build()).AsInt64(); n != 0 {
+	if n, _ := testRedis.Do(context.Background(), testRedis.B().Exists().Key(redisx.Key("voice:camreq:"+bi)).Build()).AsInt64(); n != 0 {
 		t.Fatal("camera reservation left after an app-level move")
 	}
 
@@ -476,7 +477,7 @@ func TestCameraStopSurvivesReconnect(t *testing.T) {
 		webhook(t, ev, "secret")
 	}
 	blocked := func() bool {
-		n, _ := testRedis.Do(context.Background(), testRedis.B().Exists().Key("voice:camoff:"+bi).Build()).AsInt64()
+		n, _ := testRedis.Do(context.Background(), testRedis.B().Exists().Key(redisx.Key("voice:camoff:"+bi)).Build()).AsInt64()
 		return n == 1
 	}
 
