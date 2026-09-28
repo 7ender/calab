@@ -23,8 +23,6 @@ import type { LinkQuality } from '../lib/voiceLogic';
 export type StageMode = 'pip' | 'expanded' | 'popout';
 /** Viewer's cap on a stream's simulcast layer ('auto' = adaptive stream decides). */
 export type StreamQuality = 'auto' | 'high' | 'medium' | 'low';
-/** Screen-share codec override from the picker's advanced settings ('auto' = ADR-0012 choice). */
-export type StreamCodecChoice = 'auto' | 'av1' | 'vp9' | 'h264' | 'vp8';
 
 /** A stream in my room: a remote one, or my own (`local`, docs/09 #18a). */
 export interface RemoteStream {
@@ -146,7 +144,6 @@ export interface VoiceStore {
   streamQuality: Record<string, StreamQuality>;
   /** streamer userId → volume 0…1 of the stream's audio element (element.volume, no WebAudio). */
   streamVolume: Record<string, number>;
-  streamCodec: StreamCodecChoice;
   myStream: MyStream | null;
   streamBusy: boolean;
   stats: VoiceStats | null;
@@ -195,7 +192,6 @@ export const useVoice = create<VoiceStore>()((set) => ({
   stage: 'pip',
   streamQuality: {},
   streamVolume: {},
-  streamCodec: 'auto',
   myStream: null,
   streamBusy: false,
   stats: null,

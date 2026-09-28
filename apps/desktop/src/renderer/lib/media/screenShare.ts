@@ -12,41 +12,51 @@ import { platform } from '../../platform';
 import { publishOptionalAudio, type StreamAudioProblem } from './streamAudio';
 import { t } from '../../i18n';
 import { capFps } from '../plan';
+import type { PublishCodec } from './codecSelect';
 
 export type { StreamAudioProblem } from './streamAudio';
 
 /**
- * Screen share publishing per ADR-0012 (refines ADR-0005):
- * AV1 + simulcast, every rid encoded as L1T3, no backup codec.
+ * Screen share publishing per ADR-0012 (refines ADR-0005), codec per ADR-0032: simulcast (a
+ * 640×360 thumb layer + the preset), no backup codec. The codec comes from `pickPublishCodec`
+ * (lib/media/codecSelect.ts): H.264 by default — hardware where the machine has it — AV1 on request.
  *
  * Why simulcast: livekit-client forces L1T3 + contentHint 'motion' on a
  * non-simulcast SVC screen share; its "SVC simulcast" path (livekit-server ≥
  * 1.13.7) keeps our contentHint and gives viewers a real 640×360 layer for
  * the PiP tile, while dynacast stops encoding the full layer nobody watches.
+ * H.264 has no SVC: plain rid simulcast with the same two layers; livekit-client leaves
+ * contentHint alone on that path (it only rewrites it for non-simulcast SVC).
  */
 const THUMB_LAYER = { width: 640, height: 360, maxBitrate: 250_000 };
 
-export type ScreenCodec = 'av1' | 'vp9' | 'h264' | 'vp8';
+/**
+ * Text in H.264 needs more bits than in AV1 for the same sharpness (ADR-0032 §4, docs/02):
+ * «detail» streams get +40 % on both layers' caps.
+ */
+export const H264_DETAIL_BITRATE_FACTOR = 1.4;
 
-const MIME: Record<ScreenCodec, string> = { av1: 'video/av1', vp9: 'video/vp9', h264: 'video/h264', vp8: 'video/vp8' };
+export type ScreenCodec = PublishCodec;
 
-/** Codecs this runtime can encode for WebRTC (RTCRtpSender capabilities). */
-export function encodableCodecs(): Set<ScreenCodec> {
-  const caps = typeof RTCRtpSender !== 'undefined' ? (RTCRtpSender.getCapabilities('video')?.codecs ?? []) : [];
-  const mimes = new Set(caps.map((c) => c.mimeType.toLowerCase()));
-  return new Set((Object.keys(MIME) as ScreenCodec[]).filter((k) => mimes.has(MIME[k])));
+/** A layer's bitrate cap for this codec and content (ADR-0032 §4). */
+export function screenBitrate(base: number, codec: ScreenCodec, hint: ScreenShareContentHint): number {
+  return codec === 'h264' && hint === 'detail' ? Math.round(base * H264_DETAIL_BITRATE_FACTOR) : base;
 }
 
-/**
- * AV1 per ADR-0012. Browsers without an AV1 WebRTC encoder (Firefox, Safari — web
- * client, ADR-0015) fall back to VP9, then VP8; the SFU forwards whatever was published.
- * `preferred` (picker → «Дополнительно») wins when this runtime can encode it.
- */
-export function pickScreenCodec(preferred: ScreenCodec | 'auto' = 'auto', available: Set<ScreenCodec> = encodableCodecs()): ScreenCodec {
-  if (preferred !== 'auto' && available.has(preferred)) return preferred;
-  if (available.has('av1')) return 'av1';
-  if (available.has('vp9')) return 'vp9';
-  return 'vp8';
+/** Publish options of a screen share at `fps` (already capped by the grant). Pure, unit-tested. */
+export function screenPublishOptions(codec: ScreenCodec, preset: ConcreteScreenSharePreset, hint: ScreenShareContentHint, fps: number): TrackPublishOptions {
+  const p = SCREEN_SHARE_PRESETS[preset];
+  return {
+    source: Track.Source.ScreenShare,
+    videoCodec: codec,
+    backupCodec: false,
+    simulcast: true,
+    // VP8/H.264: plain simulcast (no scalabilityMode in libwebrtc); AV1/VP9 use L1T3 per simulcast layer.
+    ...(codec === 'vp8' || codec === 'h264' ? {} : { scalabilityMode: 'L1T3' as const }),
+    screenShareEncoding: { maxBitrate: screenBitrate(p.maxBitrate, codec, hint), maxFramerate: fps },
+    screenShareSimulcastLayers: [new VideoPreset(THUMB_LAYER.width, THUMB_LAYER.height, screenBitrate(THUMB_LAYER.maxBitrate, codec, hint), fps)],
+    degradationPreference: hint === 'detail' ? 'maintain-resolution' : 'balanced',
+  };
 }
 
 export interface DesktopSource {
@@ -61,8 +71,8 @@ export interface ScreenShareOptions {
   preset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
   systemAudio: boolean;
-  /** Codec override (default 'auto' = ADR-0012). */
-  codec?: ScreenCodec | 'auto';
+  /** Codec to publish with: `pickPublishCodec('screen', pref)` (ADR-0032). Default H.264. */
+  codec?: ScreenCodec;
   /**
    * Frame rate granted by /stream/request (the plan's stream_max_fps, ADR-0024): capture and
    * encoding never go above it. Unset / 0 = the preset's own.
@@ -153,9 +163,8 @@ export async function startScreenShare(
   onEnded: () => void,
   captured?: CapturedScreen,
 ): Promise<ActiveScreenShare> {
-  const preset = SCREEN_SHARE_PRESETS[opts.preset];
   // Never encode above the frame rate the server granted (the plan's cap, ADR-0024).
-  const fps = capFps(preset.fps, opts.fps);
+  const fps = capFps(SCREEN_SHARE_PRESETS[opts.preset].fps, opts.fps);
   const cap = captured ?? (await captureDesktop(opts.source, opts.preset, opts.systemAudio));
   const videoTrack = cap.stream.getVideoTracks()[0];
   if (!videoTrack) throw new Error('getDisplayMedia returned no video track');
@@ -164,20 +173,7 @@ export async function startScreenShare(
   // Encoder hint: 'detail' keeps text sharp (drops fps), 'motion' keeps fps.
   videoTrack.contentHint = opts.contentHint;
   const video = new LocalVideoTrack(videoTrack, undefined, true);
-  const codec = pickScreenCodec(opts.codec ?? 'auto');
-  const publishOpts: TrackPublishOptions = {
-    source: Track.Source.ScreenShare,
-    videoCodec: codec,
-    backupCodec: false,
-    simulcast: true,
-    // VP8/H.264: plain simulcast (no scalabilityMode in libwebrtc); AV1/VP9 use L1T3 per simulcast layer.
-    ...(codec === 'vp8' || codec === 'h264' ? {} : { scalabilityMode: 'L1T3' as const }),
-    screenShareEncoding: { maxBitrate: preset.maxBitrate, maxFramerate: fps },
-    screenShareSimulcastLayers: [
-      new VideoPreset(THUMB_LAYER.width, THUMB_LAYER.height, THUMB_LAYER.maxBitrate, fps),
-    ],
-    degradationPreference: opts.contentHint === 'detail' ? 'maintain-resolution' : 'balanced',
-  };
+  const publishOpts = screenPublishOptions(opts.codec ?? 'h264', opts.preset, opts.contentHint, fps);
   try {
     await lp.publishTrack(video, publishOpts);
   } catch (err) {

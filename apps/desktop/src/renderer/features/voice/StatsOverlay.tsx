@@ -1,8 +1,30 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { codecHwLabel, codecPowerEfficient, toPublishCodec, type CodecDirection, type PublishKind } from '../../lib/media/codecSelect';
 import { usePrefs } from '../../stores/prefs';
 import { useVoice } from '../../stores/voice';
 
 const n = (v: number | null | undefined, d = 0): string => (v === null || v === undefined || !Number.isFinite(v) ? '—' : v.toFixed(d));
+
+/**
+ * «H264 hw» for a codec seen in getStats: hw / sw per `encodingInfo` / `decodingInfo`
+ * `powerEfficient` (ADR-0032; cached, so the 2 s stats tick costs nothing). null = no such track.
+ */
+function useCodecHw(dir: CodecDirection, kind: PublishKind, name: string | undefined): string | null {
+  const codec = toPublishCodec(name);
+  const key = `${dir}:${kind}:${codec ?? ''}`;
+  const [probed, setProbed] = useState<{ key: string; hw: boolean | null } | null>(null);
+  useEffect(() => {
+    if (!codec) return;
+    let live = true;
+    void codecPowerEfficient(dir, kind, codec).then((hw) => {
+      if (live) setProbed({ key, hw });
+    });
+    return () => {
+      live = false;
+    };
+  }, [dir, kind, codec, key]);
+  return codec ? codecHwLabel(codec, probed?.key === key ? probed.hw : null) : null;
+}
 
 /** Dev media stats (Settings → Приложение → «Статистика медиа»): ICE path, RTT, bitrates, encoder/decoder. */
 export function StatsOverlay(): ReactNode {
@@ -12,6 +34,9 @@ export function StatsOverlay(): ReactNode {
   const loss = useVoice((s) => s.lossPct);
   const echoRisk = useVoice((s) => s.echoRisk);
   const ducking = useVoice((s) => s.ducking);
+  const out = st?.screenOut[0] ?? st?.cameraOut[0];
+  const enc = useCodecHw('encode', st?.screenOut.length ? 'screen' : 'camera', out?.codec);
+  const dec = useCodecHw('decode', 'screen', st?.watching?.codec);
   if (!on || !st) return null;
   const p = st.pair;
   return (
@@ -35,6 +60,7 @@ export function StatsOverlay(): ReactNode {
           {ducking ? ' · duck' : ''}
         </div>
       ) : null}
+      {enc || dec ? <div data-testid="media-stats-codec">{[enc && `enc ${enc}`, dec && `dec ${dec}`].filter(Boolean).join(' · ')}</div> : null}
       {st.rendererCpu !== null ?<div>renderer CPU {n(st.rendererCpu, 1)} % core</div> : null}
       {[...st.screenOut.map((l) => ['screen', l] as const), ...st.cameraOut.map((l) => ['cam', l] as const)].map(([kind, l], i) => (
         <div key={`${kind}-${l.rid ?? 'x'}-${i}`}>

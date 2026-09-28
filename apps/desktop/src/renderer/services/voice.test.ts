@@ -154,9 +154,15 @@ vi.mock('livekit-client', () => ({
 const joinVoice = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }));
 const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean }) => Promise.resolve());
 const leaveVoice = vi.fn((_roomId: string) => Promise.resolve());
+const requestStream = vi.fn((_roomId: string, preset: number) => Promise.resolve({ preset, fps: 0 }));
 vi.mock('../lib/api/endpoints', () => ({
   api: {
-    voice: { join: (id: string) => joinVoice(id), leave: (id: string) => leaveVoice(id), updateSelf: (b: { muted?: boolean; deafened?: boolean }) => updateSelf(b) },
+    voice: {
+      join: (id: string) => joinVoice(id),
+      leave: (id: string) => leaveVoice(id),
+      updateSelf: (b: { muted?: boolean; deafened?: boolean }) => updateSelf(b),
+      requestStream: (id: string, preset: number) => requestStream(id, preset),
+    },
     me: { update: () => Promise.resolve({}) },
   },
 }));
@@ -201,7 +207,17 @@ vi.mock('../lib/media/micPipeline', () => ({
     }),
   },
 }));
-vi.mock('../lib/media/screenShare', () => ({ applyPreset: vi.fn(), captureScreen: vi.fn(), startScreenShare: vi.fn() }));
+const startScreenShare = vi.fn((..._a: unknown[]) =>
+  Promise.resolve({ video: { sid: 'TR_screen', mediaStreamTrack: {} }, audio: null, audioProblem: null, sourceName: 'Screen', stop: () => Promise.resolve() }),
+);
+vi.mock('../lib/media/screenShare', () => ({
+  applyPreset: vi.fn(),
+  captureScreen: vi.fn(() => Promise.resolve({ stream: { getTracks: () => [] }, audioProblem: null })),
+  startScreenShare: (...a: unknown[]) => startScreenShare(...a),
+}));
+/** ADR-0032: the codec comes from pickPublishCodec(kind, «Кодек стрима»). */
+const pickPublishCodec = vi.fn((_kind: string, pref: string) => Promise.resolve({ codec: pref === 'auto' ? 'h264' : pref, hw: false }));
+vi.mock('../lib/media/codecSelect', () => ({ pickPublishCodec: (k: string, p: string) => pickPublishCodec(k, p) }));
 vi.mock('../lib/sounds', () => ({ playSound: () => undefined }));
 vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
 const announce = vi.fn();
@@ -1118,5 +1134,22 @@ describe('own stream (docs/09 #18a)', () => {
     expect(v.streams).toEqual([]);
     expect(v.watching).toBeNull();
     expect(voice.streamVideo('TR_mine')).toBeNull();
+  });
+});
+
+describe('stream codec (ADR-0032)', () => {
+  it('publishes with the codec pickPublishCodec chose for the «Кодек стрима» setting', async () => {
+    await voice.join('A', 'ws');
+    await settle();
+    const source = { id: 'screen:1', name: 'Screen' };
+    for (const [pref, codec] of [['auto', 'h264'], ['av1', 'av1'], ['h264', 'h264']] as const) {
+      usePrefs.setState({ streamCodec: pref });
+      startScreenShare.mockClear();
+      pickPublishCodec.mockClear();
+      await voice.startStream({ source, preset: 2, contentHint: 'detail', systemAudio: false });
+      expect(pickPublishCodec).toHaveBeenCalledWith('screen', pref);
+      expect(startScreenShare).toHaveBeenCalledTimes(1);
+      expect(startScreenShare.mock.calls[0]?.[1]).toMatchObject({ codec, preset: 2, contentHint: 'detail' });
+    }
   });
 });
