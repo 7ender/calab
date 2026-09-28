@@ -81,7 +81,7 @@ func (ScreenSharePreset) EnumDescriptor() ([]byte, []int) {
 // Effective per-room media settings (workspace defaults already applied).
 type RoomMediaSettings struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	AudioBitrateKbps uint32                 `protobuf:"varint,1,opt,name=audio_bitrate_kbps,json=audioBitrateKbps,proto3" json:"audio_bitrate_kbps,omitempty"` // 16 | 24 | 32 | 48 | 64; default 32 (per-room, workspace default)
+	AudioBitrateKbps uint32                 `protobuf:"varint,1,opt,name=audio_bitrate_kbps,json=audioBitrateKbps,proto3" json:"audio_bitrate_kbps,omitempty"` // tiers 8 | 16 | 32 | 64 (24, 48: legacy rows); default 32 (per-room, workspace default)
 	MaxStreamPreset  ScreenSharePreset      `protobuf:"varint,2,opt,name=max_stream_preset,json=maxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"max_stream_preset,omitempty"`
 	MaxStreams       uint32                 `protobuf:"varint,3,opt,name=max_streams,json=maxStreams,proto3" json:"max_streams,omitempty"`
 	CameraLimit      uint32                 `protobuf:"varint,4,opt,name=camera_limit,json=cameraLimit,proto3" json:"camera_limit,omitempty"` // webcams at once in the room, 0..25; 0 = cameras off; default 6

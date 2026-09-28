@@ -140,7 +140,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if req.Settings != nil {
 		st := req.GetSettings()
 		if st.AudioBitrateKbps != nil && !rooms.ValidAudioBitrate(st.GetAudioBitrateKbps()) {
-			return httpx.Validation("settings.audioBitrateKbps", "audio bitrate must be one of 16, 24, 32, 48, 64")
+			return httpx.Validation("settings.audioBitrateKbps", rooms.AudioBitrateError)
 		}
 		b, err := pbconv.EncodeSettings(st)
 		if err != nil {

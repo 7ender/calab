@@ -19,10 +19,25 @@ export const SCREEN_SHARE_PRESETS: Record<
 
 export const DEFAULT_SCREEN_SHARE_PRESET: ConcreteScreenSharePreset = ScreenSharePreset.H1080;
 
-/** Allowed voice bitrates (kbps): a room setting with a workspace default. */
-export const AUDIO_BITRATE_OPTIONS_KBPS = [16, 24, 32, 48, 64] as const;
-export type AudioBitrateKbps = (typeof AUDIO_BITRATE_OPTIONS_KBPS)[number];
-export const DEFAULT_AUDIO_BITRATE_KBPS: AudioBitrateKbps = 32;
+/**
+ * Voice quality tiers (kbps): a room setting with a workspace default, shown as words only
+ * («Низкое / Нормальное / Хорошее / Отличное», docs/02 «Битрейт»). Each tier also caps the Opus
+ * bandwidth (8 → telephone, 16 → wideband, 32 → super-wideband, 64 → fullband).
+ */
+export const AUDIO_TIERS_KBPS = [8, 16, 32, 64] as const;
+export type AudioTierKbps = (typeof AUDIO_TIERS_KBPS)[number];
+export const DEFAULT_AUDIO_BITRATE_KBPS: AudioTierKbps = 32;
+
+/**
+ * The tier of a stored bitrate. Rows from before the tiers may hold 24 or 48: they map to the
+ * nearest tier, a tie going up (24 → 32, 48 → 64) so an old room never sounds worse than it did.
+ */
+export function audioTierKbps(kbps: number): AudioTierKbps {
+  if (!Number.isFinite(kbps) || kbps <= 0) return DEFAULT_AUDIO_BITRATE_KBPS;
+  let best: AudioTierKbps = AUDIO_TIERS_KBPS[0];
+  for (const t of AUDIO_TIERS_KBPS) if (Math.abs(t - kbps) <= Math.abs(best - kbps)) best = t;
+  return best;
+}
 
 /**
  * Opus in-band FEC stays on (libwebrtc default). RED is off by default:

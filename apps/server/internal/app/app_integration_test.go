@@ -525,6 +525,17 @@ func TestPermissionsFlow(t *testing.T) {
 	}
 	bad := uint32(33)
 	o.must(422, "PATCH", "/api/rooms/"+vID, &v1.UpdateRoomRequest{MediaOverride: &v1.RoomMediaOverride{AudioBitrateKbps: &bad}}, nil)
+	// The «telephone» tier (8 kbps, migration 00036) is valid for a room and a workspace default.
+	tel := uint32(8)
+	o.must(200, "PATCH", "/api/rooms/"+vID, &v1.UpdateRoomRequest{MediaOverride: &v1.RoomMediaOverride{AudioBitrateKbps: &tel}}, &upd)
+	if upd.GetRoom().GetMedia().GetAudioBitrateKbps() != 8 {
+		t.Fatalf("8 kbps room override: %v", upd.GetRoom().GetMedia())
+	}
+	o.must(200, "PATCH", "/api/workspaces/"+ws.GetId(), &v1.UpdateWorkspaceRequest{DefaultAudioBitrateKbps: &tel}, nil)
+	o.must(200, "PATCH", "/api/rooms/"+vID, &v1.UpdateRoomRequest{MediaOverride: &v1.RoomMediaOverride{}}, &upd)
+	if upd.GetRoom().GetMedia().GetAudioBitrateKbps() != 8 {
+		t.Fatalf("8 kbps workspace default: %v", upd.GetRoom().GetMedia())
+	}
 
 	// Kicking a member drops their user overrides and access.
 	o.must(204, "DELETE", "/api/workspaces/"+ws.GetId()+"/members/"+alice.id, nil, nil)

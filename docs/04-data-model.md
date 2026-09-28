@@ -40,7 +40,7 @@ email_invites       id, workspace_id, email (citext), role ('member'|'admin'), i
 rooms               id, workspace_id? (NULL только у DM), type ('voice'|'text'|'dm'), name, topic,
                     position, category_id?, is_private, restricted (только при is_private, ADR-0029),
                     -- медиа-настройки комнаты (для voice), NULL = дефолт workspace:
-                    audio_bitrate_kbps?  (16|24|32|48|64),
+                    audio_bitrate_kbps?  (8|16|32|64; 24, 48 legacy),
                     max_stream_preset?   ('economy'|'h720'|'h1080'|'original'),
                     max_streams?         (0..10),
                     created_at, archived_at
