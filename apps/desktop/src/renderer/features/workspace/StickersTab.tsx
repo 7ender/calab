@@ -1,7 +1,7 @@
 import type { Sticker, StickerPack } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { ChevronLeft, ChevronRight, Ellipsis, ImageUp, Plus, SmilePlus, Star, Trash2, Upload, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode, type RefObject } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Empty, IconButton, Input, Row, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
@@ -16,6 +16,8 @@ import { useStickers } from '../../stores/stickers';
 import { CommitInput } from '../settings/CommitInput';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { StickerImage, StickerStill } from '../chat/stickers/StickerImage';
+import { EmojiPicker } from '../chat/EmojiPicker';
+import { applyEmojiTo, suggestStickerEmoji } from './stickerEmoji';
 
 /*
  * Workspace settings → «Стикеры» (ADR-0030, docs/08 «Стикеры»), MANAGE_STICKERS: the packs
@@ -134,12 +136,18 @@ interface Staged {
   emojiError?: string;
 }
 
-const DEFAULT_EMOJI = '🙂';
+const without = (s: ReadonlySet<string>, keys: Iterable<string>): ReadonlySet<string> => {
+  const out = new Set(s);
+  for (const k of keys) out.delete(k);
+  return out.size === s.size ? s : out;
+};
 const uploadable = (s: Staged): s is Staged & { sticker: PreparedSticker } => !!s.sticker && !s.fileError;
 
 function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: StickerPack; onBack: () => void }): ReactNode {
   const [error, setError] = useState<string | null>(null);
   const [staged, setStaged] = useState<Staged[]>([]);
+  // «Применить эмодзи ко всем выбранным» (docs/09 #79): checkbox or ⌘ / Ctrl-click on a card.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [progress, setProgress] = useState<number | null>(null);
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -151,20 +159,32 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
     urls.current.add(u);
     return u;
   };
-  const release = (u: string): void => {
+  const release = useCallback((u: string): void => {
     if (urls.current.delete(u)) URL.revokeObjectURL(u);
-  };
+  }, []);
   useEffect(() => {
     const all = urls.current;
     return () => all.forEach((u) => URL.revokeObjectURL(u));
   }, []);
   const patch = (key: string, f: (s: Staged) => Staged): void => setStaged((cur) => cur.map((x) => (x.key === key ? f(x) : x)));
-  const unstage = (key: string): void =>
-    setStaged((cur) => {
-      const gone = cur.find((x) => x.key === key);
-      if (gone) release(gone.url);
-      return cur.filter((x) => x.key !== key);
-    });
+  // Stable callbacks for the memoised cards: a pick re-renders only its own card.
+  const unstage = useCallback(
+    (key: string): void => {
+      setStaged((cur) => {
+        const gone = cur.find((x) => x.key === key);
+        if (gone) release(gone.url);
+        return cur.filter((x) => x.key !== key);
+      });
+      setSelected((cur) => without(cur, [key]));
+    },
+    [release],
+  );
+  const setEmoji = useCallback((key: string, emoji: string): void => setStaged((cur) => applyEmojiTo(cur, new Set([key]), emoji)), []);
+  const toggle = useCallback((key: string): void => setSelected((cur) => (cur.has(key) ? without(cur, [key]) : new Set([...cur, key]))), []);
+  const selectable = staged.filter((s) => !s.fileError);
+  const picked = selectable.filter((s) => selected.has(s.key));
+  const allPicked = selectable.length > 0 && picked.length === selectable.length;
+  const applyToSelected = (emoji: string): void => setStaged((cur) => applyEmojiTo(cur, new Set(picked.map((s) => s.key)), emoji));
 
   const apply = (p: StickerPack | undefined): void => {
     if (p) useStickers.getState().upsert(p);
@@ -187,7 +207,7 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
       const kind = stickerFileKind(f.name, f.type);
       if (kind === 'gif') problems.push(t('stk.gifDrop', { name: f.name }));
       else if (kind === 'other') problems.push(t('stk.notImage', { name: f.name }));
-      else if (next.length < room) next.push({ key: `${f.name}-${f.size}-${f.lastModified}-${Math.random()}`, file: f, url: preview(f), emoji: DEFAULT_EMOJI });
+      else if (next.length < room) next.push({ key: `${f.name}-${f.size}-${f.lastModified}-${Math.random()}`, file: f, url: preview(f), emoji: suggestStickerEmoji(f.name) });
     }
     setError(problems.length ? problems.join(' · ') : null);
     if (!next.length) return;
@@ -229,6 +249,7 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
           for (const x of cur) if (sent.has(x.key)) release(x.url);
           return cur.filter((x) => !sent.has(x.key));
         });
+        setSelected((cur) => without(cur, sent));
       } catch (e) {
         // `file[i]` / `emoji[i]`: the reason goes on that card; the batch stays staged.
         const h = describeError(e);
@@ -312,14 +333,31 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
 
       {staged.length ? (
         <Card title={plural('stk.count', staged.length, { n: staged.length })}>
+          {staged.length > 1 ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 pt-3" data-testid="sticker-staged-bar">
+              <label className="flex cursor-pointer items-center gap-2 text-body">
+                <input
+                  type="checkbox"
+                  checked={allPicked}
+                  disabled={!selectable.length}
+                  onChange={() => setSelected(allPicked ? new Set() : new Set(selectable.map((s) => s.key)))}
+                  data-testid="sticker-select-all"
+                  className="size-4 cursor-pointer rounded-[4px] accent-[var(--color-accent-strong)]"
+                />
+                {t('stk.selectAll')}
+              </label>
+              {picked.length ? <span className="text-caption text-muted tabular-nums">{t('stk.selectedCount', { n: picked.length })}</span> : null}
+              <span className="flex-1" />
+              <EmojiPicker label={t('stk.applyEmoji')} onPick={applyToSelected} closeOnPick inModal side="top">
+                <Button variant="secondary" size="sm" disabled={!picked.length} data-testid="sticker-apply-emoji">
+                  <SmilePlus className="size-4" aria-hidden /> {t('stk.applyEmoji')}
+                </Button>
+              </EmojiPicker>
+            </div>
+          ) : null}
           <ul className="grid grid-cols-4 gap-2 p-3 mobile:grid-cols-3" data-testid="sticker-staged">
             {staged.map((s) => (
-              <StagedCell
-                key={s.key}
-                item={s}
-                onEmoji={(v) => patch(s.key, (x) => ({ ...x, emoji: v, emojiError: undefined }))}
-                onRemove={() => unstage(s.key)}
-              />
+              <StagedCell key={s.key} item={s} selectable={staged.length > 1} selected={selected.has(s.key)} onEmoji={setEmoji} onRemove={unstage} onToggle={toggle} />
             ))}
           </ul>
           <div className="flex items-center justify-end gap-2 px-3 pb-3">
@@ -363,12 +401,55 @@ function PackCard({ workspaceId, pack, onBack }: { workspaceId: string; pack: St
   );
 }
 
-/** A staged file: preview, «512×512 · 84 КБ», «уменьшено до 512», its emoji or why it is refused. */
-function StagedCell({ item, onEmoji, onRemove }: { item: Staged; onEmoji: (v: string) => void; onRemove: () => void }): ReactNode {
-  const { sticker, fileError, emojiError } = item;
+/**
+ * A staged file: preview, «512×512 · 84 КБ», «уменьшено до 512», its emoji or why it is refused.
+ * In a batch a checkbox (or ⌘ / Ctrl-click on the card) selects it for «Применить ко всем».
+ */
+const StagedCell = memo(function StagedCell({
+  item,
+  selectable,
+  selected,
+  onEmoji,
+  onRemove,
+  onToggle,
+}: {
+  item: Staged;
+  selectable: boolean;
+  selected: boolean;
+  onEmoji: (key: string, v: string) => void;
+  onRemove: (key: string) => void;
+  onToggle: (key: string) => void;
+}): ReactNode {
+  const { key, sticker, fileError, emojiError } = item;
   const problem = fileError ?? emojiError;
+  const canSelect = selectable && !fileError;
   return (
-    <li className="relative flex min-w-0 flex-col items-center gap-1" data-testid="sticker-staged-item" data-state={fileError ? 'error' : sticker ? 'ready' : 'preparing'}>
+    <li
+      className={cx(
+        'relative flex min-w-0 flex-col items-center gap-1 rounded-[var(--radius-card)] p-1',
+        selected && canSelect && 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] outline-2 outline-accent',
+      )}
+      data-testid="sticker-staged-item"
+      data-state={fileError ? 'error' : sticker ? 'ready' : 'preparing'}
+      data-selected={(selected && canSelect) || undefined}
+      onClickCapture={(e) => {
+        if (!canSelect || !(e.metaKey || e.ctrlKey)) return;
+        // ⌘ / Ctrl-click anywhere on the card toggles it (and does not open the picker).
+        e.preventDefault();
+        e.stopPropagation();
+        onToggle(key);
+      }}
+    >
+      {canSelect ? (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggle(key)}
+          aria-label={t('stk.selectFile')}
+          data-testid="sticker-staged-select"
+          className="absolute left-1 top-1 z-[1] size-4 cursor-pointer rounded-[4px] accent-[var(--color-accent-strong)]"
+        />
+      ) : null}
       <span className={cx('grid size-16 place-items-center', fileError && 'opacity-40')}>
         {item.animated ? (
           <StickerStill src={item.url} {...stickerBox({ width: sticker?.width ?? 0, height: sticker?.height ?? 0 }, 64)} />
@@ -376,7 +457,7 @@ function StagedCell({ item, onEmoji, onRemove }: { item: Staged; onEmoji: (v: st
           <img src={item.url} alt="" className="size-full object-contain" draggable={false} />
         )}
       </span>
-      {!fileError ? <EmojiField value={item.emoji} onChange={onEmoji} /> : null}
+      {!fileError ? <EmojiField value={item.emoji} onPick={(v) => onEmoji(key, v)} /> : null}
       {sticker ? (
         <span className="text-center text-caption text-muted tabular-nums">{t('stk.dims', { w: sticker.width, h: sticker.height, size: fmt.size(sticker.size) })}</span>
       ) : !fileError ? (
@@ -392,12 +473,12 @@ function StagedCell({ item, onEmoji, onRemove }: { item: Staged; onEmoji: (v: st
           {problem}
         </p>
       ) : null}
-      <IconButton size="sm" label={t('stk.unstage')} className="absolute -right-1 -top-1" onClick={onRemove}>
+      <IconButton size="sm" label={t('stk.unstage')} className="absolute -right-1 -top-1" onClick={() => onRemove(key)}>
         <X className="size-3.5" aria-hidden />
       </IconButton>
     </li>
   );
-}
+});
 
 function StickerCell({
   sticker,
@@ -415,7 +496,7 @@ function StickerCell({
   onReplaced: (p: StickerPack | undefined) => void;
 }): ReactNode {
   const file = useRef<HTMLInputElement>(null);
-  const emoji = useRef<HTMLInputElement>(null);
+  const emoji = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   // «Заменить файл»: the same preparation as an upload, then PUT …/stickers/{id} (id, emoji and
@@ -448,7 +529,7 @@ function StickerCell({
         <StickerImage sticker={sticker} size={64} />
       </span>
       {busy ? <Spinner className="absolute left-1/2 top-8 -translate-x-1/2 -translate-y-1/2" /> : null}
-      <EmojiField value={sticker.emoji} onCommit={(v) => void onEmoji(v)} inputRef={emoji} />
+      <EmojiField value={sticker.emoji} onPick={(v) => void onEmoji(v)} chipRef={emoji} />
       {problem ? (
         <p role="alert" className="text-center text-caption text-danger-text" data-testid="sticker-item-error">
           {problem}
@@ -477,8 +558,8 @@ function StickerCell({
             </Dropdown.Item>
             <Dropdown.Item
               className={menuItem}
-              // After the menu has closed and returned the focus to its trigger.
-              onSelect={() => setTimeout(() => emoji.current?.select(), 0)}
+              // After the menu has closed and returned the focus to its trigger: open the picker.
+              onSelect={() => setTimeout(() => emoji.current?.click(), 0)}
             >
               <SmilePlus className="size-4" aria-hidden /> {t('stk.editEmoji')}
             </Dropdown.Item>
@@ -510,57 +591,23 @@ function StickerCell({
 }
 
 /**
- * One emoji for a sticker: a narrow field (paste or the OS emoji picker); staged files change on
- * input, saved stickers commit on Enter / blur. Invalid (text) — the server says so.
+ * One emoji for a sticker (docs/09 #79): a 28 px chip with the current emoji; a click (Enter /
+ * Space) opens the shared EmojiPicker above it, a pick sets the emoji and closes it, Esc closes.
+ * Typing by hand stays as a fallback — the picker's search accepts a pasted emoji. The settings
+ * sheet is a modal: the picker takes the --z-modal-popover layer (styles.css).
  */
-function EmojiField({
-  value,
-  onChange,
-  onCommit,
-  inputRef,
-}: {
-  value: string;
-  onChange?: (v: string) => void;
-  onCommit?: (v: string) => void;
-  inputRef?: RefObject<HTMLInputElement | null>;
-}): ReactNode {
-  const [v, setV] = useState(value);
-  const [prev, setPrev] = useState(value);
-  if (prev !== value) {
-    setPrev(value);
-    setV(value);
-  }
-  const last = useMemo(() => lastGrapheme(v), [v]);
+function EmojiField({ value, onPick, chipRef }: { value: string; onPick: (v: string) => void; chipRef?: RefObject<HTMLButtonElement | null> }): ReactNode {
   return (
-    <input
-      ref={inputRef}
-      value={v}
-      onChange={(e) => {
-        const g = lastGrapheme(e.target.value) || e.target.value;
-        setV(g);
-        onChange?.(g);
-      }}
-      onBlur={() => {
-        if (onCommit && last && last !== value) onCommit(last);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        if (e.key === 'Escape' && v !== value) {
-          e.preventDefault();
-          e.stopPropagation();
-          setV(value);
-        }
-      }}
-      aria-label={t('stk.emojiFor')}
-      className="h-7 w-12 rounded-full bg-[var(--color-fill)] text-center text-[16px] focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
-    />
+    <EmojiPicker label={t('stk.emojiFor')} onPick={(e) => e !== value && onPick(e)} closeOnPick inModal side="top">
+      <button
+        ref={chipRef}
+        type="button"
+        aria-label={t('stk.emojiFor')}
+        data-testid="sticker-emoji"
+        className="grid size-7 place-items-center rounded-full bg-[var(--color-fill)] text-[16px] leading-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent data-[state=open]:outline-2 data-[state=open]:outline-accent"
+      >
+        {value}
+      </button>
+    </EmojiPicker>
   );
-}
-
-/** The last grapheme typed / pasted (an emoji may be several code points). */
-function lastGrapheme(s: string): string {
-  const seg = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
-  if (!seg) return s.slice(-2);
-  const parts = Array.from(seg.segment(s), (x) => x.segment);
-  return parts.at(-1) ?? '';
 }

@@ -112,6 +112,7 @@ const KEY = new Set([
   'sticker-picker',
   'settings-stickers',
   'settings-stickers-upload',
+  'settings-stickers-emoji',
   'settings-bots',
   'settings-bot-token',
   'bot-profile',
@@ -2582,6 +2583,28 @@ test('settings-stickers-upload', async ({ open, win, mock, shot }) => {
   await expect(items.first()).toHaveAttribute('data-state', 'ready');
   await stillStickers(win, 2);
   await checkpoint(shot, 'settings-stickers-upload');
+});
+
+// The pack «Calab», the emoji chip of the last sticker clicked (docs/09 #79): the shared emoji
+// picker opens above the chip, over the settings sheet (--z-modal-popover).
+test('settings-stickers-emoji', async ({ open, win, mock, shot }) => {
+  await open();
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  await mainWindow(win, mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Стикеры' }).click();
+  await dialog.getByTestId('sticker-pack-row').filter({ hasText: 'Calab' }).click();
+  await expect(dialog.getByTestId('sticker-pack-stickers').locator('[data-sticker]')).toHaveCount(3);
+  await stillStickers(win, 1);
+  const chip = dialog.getByTestId('sticker-cell').last().getByTestId('sticker-emoji');
+  await chip.scrollIntoViewIfNeeded();
+  await chip.click();
+  const picker = win.getByTestId('emoji-picker');
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole('textbox')).toBeFocused();
+  await checkpoint(shot, 'settings-stickers-emoji');
 });
 
 // ---------------------------------------------------------------- bots (ADR-0031)
