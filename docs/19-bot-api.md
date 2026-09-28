@@ -105,8 +105,8 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | комнаты, которые бот видит | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | категории комнат | участник |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | история (новые первыми, `limit ≤ 100`) | `VIEW_ROOM` |
-| `GET /api/rooms/{id}/messages/{messageId}` | одно сообщение, `Message` без обёртки | `VIEW_ROOM` |
-| `GET /api/rooms/{id}/recordings/{rid}/transcript` | полный сохранённый транскрипт | `VIEW_ROOM` |
+| `GET /api/rooms/{id}/messages/{messageId}` | одно сообщение, `Message` без обёртки (SDK `message(roomId, messageId)`) | `VIEW_ROOM` |
+| `GET /api/rooms/{id}/recordings/{rid}/transcript` | полный сохранённый транскрипт (SDK `transcript(roomId, recordingId)`) | `VIEW_ROOM` |
 | `POST /api/rooms/{id}/messages` | сообщение `{content, attachmentIds, replyToId, nonce, stickerId}` → 201 | `SEND_MESSAGES` (+ `ATTACH_FILES`) |
 | `PATCH /api/messages/{id}` · `DELETE /api/messages/{id}` | правка своего / удаление | автор или `MANAGE_MESSAGES` |
 | `POST /api/rooms/{id}/messages/{mid}/forward` | пересылка `{toRoomId}` → 201 `{message}` с `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` в источнике, `SEND_MESSAGES` в цели |

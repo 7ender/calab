@@ -4,6 +4,7 @@ package app_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -52,6 +53,25 @@ func TestBotRecordingTranscriptAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.must(404, "GET", path, nil, nil)
+
+	// Restricted room (ADR-0029): only a personal allow opens its recording to the bot, as for people.
+	var cr v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+ws.GetId()+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "secret", IsPrivate: true}, &cr)
+	secret := cr.GetRoom().GetId()
+	on := true
+	o.must(200, "PATCH", "/api/rooms/"+secret, &v1.UpdateRoomRequest{Restricted: &on}, nil)
+	var secretRec string
+	if err := testDB.Pool.QueryRow(ctx, `INSERT INTO room_recordings
+		(workspace_id, room_id, started_by, status, result_state, transcript_json)
+		VALUES ($1, $2, $3, 'done', 'ready', $4) RETURNING id`, ws.GetId(), secret, o.id,
+		`[{"speaker":0,"start":0,"end":1,"text":"Secret."}]`).Scan(&secretRec); err != nil {
+		t.Fatal(err)
+	}
+	secretPath := "/api/rooms/" + secret + "/recordings/" + secretRec + "/transcript"
+	b.must(404, "GET", secretPath, nil, nil)
+	o.must(200, "PUT", "/api/rooms/"+secret+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: append(slices.Clone(cr.GetRoom().GetPermissionOverrides()),
+		userOv(b.id, perm.ViewRoom, 0))}, nil)
+	b.must(200, "GET", secretPath, nil, nil)
 }
 
 // A point lookup returns the full existing Message, with the same caller-relative details

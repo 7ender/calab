@@ -106,8 +106,8 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | rooms the bot can see | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | room categories | member |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | history (newest first, `limit ≤ 100`) | `VIEW_ROOM` |
-| `GET /api/rooms/{id}/messages/{messageId}` | one message, bare `Message` (no wrapper) | `VIEW_ROOM` |
-| `GET /api/rooms/{id}/recordings/{rid}/transcript` | full saved transcript | `VIEW_ROOM` |
+| `GET /api/rooms/{id}/messages/{messageId}` | one message, bare `Message` (no wrapper; SDK `message(roomId, messageId)`) | `VIEW_ROOM` |
+| `GET /api/rooms/{id}/recordings/{rid}/transcript` | full saved transcript (SDK `transcript(roomId, recordingId)`) | `VIEW_ROOM` |
 | `POST /api/rooms/{id}/messages` | a message `{content, attachmentIds, replyToId, nonce, stickerId}` → 201 | `SEND_MESSAGES` (+ `ATTACH_FILES`) |
 | `PATCH /api/messages/{id}` · `DELETE /api/messages/{id}` | edit own / delete | author or `MANAGE_MESSAGES` |
 | `POST /api/rooms/{id}/messages/{mid}/forward` | forward `{toRoomId}` → 201 `{message}` with `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` in the source, `SEND_MESSAGES` in the target |

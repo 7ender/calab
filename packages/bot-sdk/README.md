@@ -50,6 +50,8 @@ console.log(`${ready.me?.user?.displayName} is online in ${ready.workspaces.leng
 | `edit(id, text)`, `deleteMessage(id)`, `react(id, emoji)`, `unreact(id, emoji)` | |
 | `forward(roomId, messageId, toRoomId)` | a copy into another room or DM with `forward` (ADR-0033) → `Message` |
 | `messages(roomId, { before?, after?, limit? })`, `typing(roomId)` | history; «is typing» |
+| `message(roomId, messageId)` | one message by id (e.g. a `replyToId` target) with history access → `Message` |
+| `transcript(roomId, recordingId)` | full saved transcript of a recording card visible in the room (incl. a forwarded copy) → `{ recordingId, language, segments }` |
 | `upload(roomId, file)` | into the room's workspace (or the DM) → `FileMeta` |
 | `dm(userId)` | open / find a DM with a member of a shared workspace → `DmSummary` (send to `dm.room.id`) |
 | `commands([{ name, description }])` | replaces the bot's commands (composer hints on `/`) |
