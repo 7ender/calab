@@ -8,7 +8,7 @@ import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { THUMB_LARGE, thumbWidthPath, wantsLargeThumb } from '../../lib/thumbs';
-import { fmt, toDate } from '../../lib/format';
+import { fmt, toDate, useTimeFormat } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse';
 import { platform } from '../../platform';
@@ -73,8 +73,9 @@ export interface RowProps {
 
 /** One feed row: optional date / «new» pills, avatar column (others), the bubble. */
 export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, roomId, perms, highlighted }: RowProps): ReactNode {
-  // Memo row: re-render on a language switch too (ADR-0022).
+  // Memo row: re-render on a language / clock format switch too (ADR-0022, docs/09 #73).
   useLocale();
+  useTimeFormat();
   const m = c.msg;
   const author = useWorkspaces((s) => s.users[m.authorId]);
   const name = memberName(workspaceId, m.authorId);
@@ -113,6 +114,7 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
  */
 export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, highlighted }: Pick<RowProps, 'c' | 'meta' | 'workspaceId' | 'perms' | 'highlighted'>): ReactNode {
   useLocale();
+  useTimeFormat();
   const card = recordingCardOf(c.msg);
   return (
     <div className={cx('px-4', meta.day || meta.isNew || card ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
