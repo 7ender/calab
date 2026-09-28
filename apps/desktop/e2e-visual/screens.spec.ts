@@ -778,7 +778,7 @@ test('quick-switcher', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await win.keyboard.press(`${MOD}+k`);
   await expect(win.getByRole('dialog')).toBeVisible();
-  // docs/09 #66: the hovered voice room shows «Подключиться» + chat; other rows the Enter hint.
+  // docs/09 #66, #83: the hovered voice room shows «Подключиться» + «Открыть чат»; other rows no hint.
   const voiceRow = win.getByRole('option', { name: /Переговорка/ });
   await voiceRow.hover();
   await expect(win.getByRole('button', { name: 'Подключиться: Переговорка' })).toBeVisible();
@@ -1702,7 +1702,9 @@ test('chat-birthday-card', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 }, { roomId: IDS.rooms.general });
   const card = win.getByTestId('birthday-card');
-  await expect(card).toContainText('Борис Петров — сегодня день рождения!');
+  await expect(card).toHaveAttribute('aria-label', '🎂 Борис Петров — сегодня день рождения!');
+  await expect(card).toContainText('Сегодня день рождения!');
+  await expect(card).toContainText('Борис Петров');
   await expect(card).toContainText('15 января');
   const members = await membersList(win);
   const boris = members.getByRole('button', { name: /Борис Петров/ });
@@ -1992,6 +1994,8 @@ test('chat-forwarded', async ({ open, win, mock, shot }) => {
   const lines = win.getByTestId('forward-line');
   await expect(lines).toHaveCount(2);
   await expect(lines.first()).toContainText('Переслано от Борис');
+  // The line's date is the copy's created_at (the forward time); the original's is in the tooltip.
+  await expect(lines.first().locator('span[title]')).toHaveAttribute('title', /\nОригинал: /);
   const card = win.getByTestId('recording-card');
   await expect(card.getByRole('button', { name: 'Полный транскрипт' })).toBeVisible();
   await feedAtBottom(win);

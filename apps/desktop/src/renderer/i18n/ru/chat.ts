@@ -103,7 +103,7 @@ export const ruChat = {
   // header search field (docs/09 #50): the entry to the ⌘K search
   // global search (⌘K)
   'search.title': 'Поиск',
-  'search.hint': 'Комнаты, участники и сообщения; стрелки — выбор, Enter — открыть или подключиться к голосовой, Shift+Enter — её чат',
+  'search.hint': 'Комнаты, участники и сообщения; стрелки — выбор, Enter — первая кнопка строки (подключиться, открыть чат, написать), Shift+Enter — вторая',
   'search.placeholder': 'Найти комнату, человека или сообщение',
   'search.rooms': 'Комнаты',
   'search.members': 'Участники',
@@ -116,9 +116,8 @@ export const ruChat = {
   'search.join': 'Подключиться',
   'search.chat': 'Открыть чат',
   'search.open': 'Открыть',
+  'search.filter': 'Сообщения',
   'search.actionOn': '{action}: {name}',
-  'search.hintVoice': 'Enter — подключиться · ⇧Enter — чат',
-  'search.hintOpen': 'Enter — открыть',
   // lightbox
   'lightbox.close': 'Закрыть',
   'lightbox.download': 'Скачать',
@@ -135,6 +134,7 @@ export const ruChat = {
   'chat.forward': 'Переслать',
   'chat.fwd.from': 'Переслано от {name}',
   'chat.fwd.fromMeta': 'Переслано от {name} · {time}',
+  'chat.fwd.original': 'Оригинал: {time}',
   'chat.fwd.someone': 'участника',
   'chat.fwd.title': 'Переслать…',
   'chat.fwd.hint': 'Копия уйдёт от вашего имени с пометкой «Переслано»',

@@ -129,7 +129,7 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
       {card ? (
         <div className={cx('flex flex-col gap-1 rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           {c.msg.forward ? (
-            <ForwardLine authorId={c.msg.forward.authorId} sentAtMs={forwardSentMs(c.msg.forward.sentAt)} workspaceId={workspaceId} className="px-1 text-muted" />
+            <ForwardLine authorId={c.msg.forward.authorId} forwardedAtMs={forwardSentMs(c.msg.createdAt)} sentAtMs={forwardSentMs(c.msg.forward.sentAt)} workspaceId={workspaceId} className="px-1 text-muted" />
           ) : null}
           <RecordingCardView c={c} card={card} workspaceId={workspaceId} perms={perms} />
         </div>
@@ -266,7 +266,7 @@ function Bubble({
   // reactions ride dark pills over its bottom-right corner, like on a lone image.
   const body = stickerMsg || stickerGone ? (
     <div className={cx('flex flex-col gap-1 py-1', own ? 'items-end' : 'items-start')} data-testid="sticker-message">
-      {fwd ? <ForwardLine authorId={fwd.authorId} sentAtMs={forwardSentMs(fwd.sentAt)} workspaceId={workspaceId} className="max-w-[256px] text-muted" /> : null}
+      {fwd ? <ForwardLine authorId={fwd.authorId} forwardedAtMs={forwardSentMs(m.createdAt)} sentAtMs={forwardSentMs(fwd.sentAt)} workspaceId={workspaceId} className="max-w-[256px] text-muted" /> : null}
       {m.replyToId ? (
         <div className="max-w-[260px] overflow-hidden rounded-[var(--radius-bubble)] bg-[var(--bubble-bg)] pb-1.5 shadow-[var(--shadow-bubble)]">
           <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop />
@@ -315,6 +315,7 @@ function Bubble({
         {fwd ? (
           <ForwardLine
             authorId={fwd.authorId}
+            forwardedAtMs={forwardSentMs(m.createdAt)}
             sentAtMs={forwardSentMs(fwd.sentAt)}
             workspaceId={workspaceId}
             className={cx('px-3 text-[color:var(--bubble-meta)]', showName ? 'pt-0.5' : 'pt-1.5')}

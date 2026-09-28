@@ -105,7 +105,7 @@ export const zhChat: DictShape<typeof enChat> = {
   // header search field (docs/09 #50): the entry to the ⌘K search
   // global search (⌘K)
   'search.title': '搜索',
-  'search.hint': '房间、成员和消息；方向键选择，回车打开或加入语音房间，Shift+回车打开其聊天',
+  'search.hint': '房间、成员和消息；方向键选择，回车执行该行第一个按钮（加入、打开聊天、发消息），Shift+回车执行第二个',
   'search.placeholder': '查找房间、用户或消息',
   'search.rooms': '房间',
   'search.members': '成员',
@@ -118,9 +118,8 @@ export const zhChat: DictShape<typeof enChat> = {
   'search.join': '加入',
   'search.chat': '打开聊天',
   'search.open': '打开',
+  'search.filter': '消息',
   'search.actionOn': '{action}：{name}',
-  'search.hintVoice': '回车加入 · ⇧回车打开聊天',
-  'search.hintOpen': '回车打开',
   // lightbox
   'lightbox.close': '关闭',
   'lightbox.download': '下载',
@@ -137,6 +136,7 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.forward': '转发',
   'chat.fwd.from': '转发自 {name}',
   'chat.fwd.fromMeta': '转发自 {name} · {time}',
+  'chat.fwd.original': '原消息：{time}',
   'chat.fwd.someone': '成员',
   'chat.fwd.title': '转发…',
   'chat.fwd.hint': '副本将以你的名义发送，并标注「转发」',

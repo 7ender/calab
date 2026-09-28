@@ -204,6 +204,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'birthday.clear': '移除',
   'birthday.today': '今天过生日',
   'birthday.card': '🎂 今天是 {name} 的生日！',
+  'birthday.cardTitle': '今天过生日！',
   'birthday.preview': '🎂 生日',
   'birthday.edit': '修改生日',
   'birthday.editTitle': '成员生日',
