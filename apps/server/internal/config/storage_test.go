@@ -27,7 +27,7 @@ func TestStorageS3(t *testing.T) {
 
 	t.Setenv("STORAGE_S3_ENDPOINT", "https://storage.yandexcloud.net")
 	t.Setenv("STORAGE_S3_REGION", "ru-central1")
-	t.Setenv("STORAGE_S3_BUCKET", "calab-files")
+	t.Setenv("STORAGE_S3_BUCKET", "files-bucket")
 	t.Setenv("STORAGE_S3_ACCESS_KEY_ID", "key-id")
 	t.Setenv("STORAGE_S3_SECRET_ACCESS_KEY", "top-secret-value")
 	t.Setenv("STORAGE_S3_KEY_PREFIX", "calab/")
@@ -36,7 +36,7 @@ func TestStorageS3(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.StorageS3Bucket != "calab-files" || c.StorageS3Region != "ru-central1" || c.StorageS3KeyPrefix != "calab/" || c.StorageS3ForcePathStyle {
+	if c.StorageS3Bucket != "files-bucket" || c.StorageS3Region != "ru-central1" || c.StorageS3KeyPrefix != "calab/" || c.StorageS3ForcePathStyle {
 		t.Fatalf("parsed: %q %q %q %v", c.StorageS3Bucket, c.StorageS3Region, c.StorageS3KeyPrefix, c.StorageS3ForcePathStyle)
 	}
 
