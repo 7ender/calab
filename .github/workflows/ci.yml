@@ -154,6 +154,10 @@ jobs:
           sudo docker cp "$id:/ffprobe" /usr/local/bin/ffprobe
           docker rm "$id" >/dev/null
           ffmpeg -hide_banner -version | head -1
+      # blob s3 driver (ADR-0011): single-node Garage (image pinned in the script), bucket + random key → TEST_S3_*
+      - name: start Garage (S3)
+        timeout-minutes: 3   # pull + start take ~3 s; a hung registry must not hold the required job
+        run: internal/blob/testdata/garage.sh >> "$GITHUB_ENV"
       - run: go test -race -tags integration -count=1 ./...
         env:
           TEST_DATABASE_URL: postgres://calaba:calaba@localhost:5432/calaba
