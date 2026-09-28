@@ -131,4 +131,8 @@ describe('mentionsMe', () => {
     expect(mentionsMe({ content: `\`@${ME}\` \`\`\`\n@here\n\`\`\``, authorId: OTHER }, ME)).toBe(false);
     expect(mentionsMe({ content: `mail@${ME}`, authorId: OTHER }, ME)).toBe(false);
   });
+
+  it('never for a forwarded copy (ADR-0033: someone else’s text notifies nobody)', () => {
+    expect(mentionsMe({ content: `@${ME} @here`, authorId: OTHER, forward: { authorId: OTHER } }, ME)).toBe(false);
+  });
 });

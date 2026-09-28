@@ -9,6 +9,7 @@ import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { setVoice, useVoice } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { MemberBadge } from '../people/MemberBadge';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import type { Box } from './StreamArea';
 import { PIP_SHADOW, WELCOME_ROW, pipSize } from './streamFormat';
@@ -118,6 +119,7 @@ function TileName({ userId, wsId, small }: { userId: string; wsId: string | null
       <span className="min-w-0 truncate" title={label}>
         {label}
       </span>
+      {small ? null : <MemberBadge workspaceId={wsId} userId={userId} />}
       {/* Streaming right now (Discord shows LIVE on the tile too). */}
       {live ? <Badge tone="danger">{t('shell.live')}</Badge> : null}
     </span>

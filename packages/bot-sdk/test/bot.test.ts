@@ -141,6 +141,15 @@ describe('rest', () => {
     expect(b?.json).toMatchObject({ content: 'pong', replyToId: 'orig' });
   });
 
+  it('forwards a message into another room (ADR-0033)', async () => {
+    srv.route(`POST /api/rooms/${TEXT_ROOM}/messages/m-1/forward`, { status: 201, json: { message: { id: 'copy', roomId: 'r-2', forward: { authorId: 'u-1', messageId: 'm-1' } } } });
+    const bot = newBot();
+    const m = await bot.forward(TEXT_ROOM, 'm-1', 'r-2');
+    expect(m.id).toBe('copy');
+    expect(m.forward?.messageId).toBe('m-1');
+    expect(srv.requests[0]?.json).toMatchObject({ toRoomId: 'r-2' });
+  });
+
   it('retries 429 after Retry-After with the same nonce', async () => {
     let calls = 0;
     const waits: number[] = [];

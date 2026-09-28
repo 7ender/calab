@@ -129,3 +129,49 @@ func TestGetMessageDMClearedHistory(t *testing.T) {
 	o.must(200, "GET", path+fresh.GetId(), nil, nil)
 	b.must(200, "GET", path+before.GetId(), nil, nil) // the other participant keeps history
 }
+
+// A forwarded recording grants its readers access to that copy's transcript, not the
+// source room or message. Removing the only copy revokes both point lookup and transcript.
+func TestBotForwardedRecordingRead(t *testing.T) {
+	o, _, ws, room := setupTeam(t)
+	b := createBot(t, o, ws.GetId(), "forward_reader")
+	rid := room.GetId()
+	target := textRoom(t, o, ws.GetId(), "forwarded", false)
+	var messageID, recID string
+	ctx := context.Background()
+	if err := testDB.Pool.QueryRow(ctx, `INSERT INTO messages (room_id, author_id, content, kind, payload)
+		VALUES ($1, $2, '', 'system', $3) RETURNING id`, rid, o.id,
+		`{"recording":{"status":"RECORDING_STATUS_DONE","summary":"Summary","hasTranscript":true}}`).Scan(&messageID); err != nil {
+		t.Fatal(err)
+	}
+	if err := testDB.Pool.QueryRow(ctx, `INSERT INTO room_recordings
+		(workspace_id, room_id, started_by, status, result_state, message_id, transcript_json)
+		VALUES ($1, $2, $3, 'done', 'ready', $4, $5) RETURNING id`, ws.GetId(), rid, o.id, messageID,
+		`[{"speaker":0,"start":0,"end":1,"text":"Full forwarded transcript."}]`).Scan(&recID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testDB.Pool.Exec(ctx, `UPDATE messages SET payload = jsonb_set(payload, '{recording,recordingId}', to_jsonb($2::text)) WHERE id = $1`, messageID, recID); err != nil {
+		t.Fatal(err)
+	}
+	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
+		userOv(b.id, 0, perm.ViewRoom),
+	}}, nil)
+	path := "/api/rooms/" + target + "/recordings/" + recID + "/transcript"
+	b.must(404, "GET", path, nil, nil)
+	cp := forwardMsg(t, o, rid, messageID, target, 201)
+	var got v1.Message
+	b.must(200, "GET", "/api/rooms/"+target+"/messages/"+cp.GetId(), nil, &got)
+	if got.GetForward().GetMessageId() != messageID || got.GetSystem().GetRecording().GetRecordingId() != recID {
+		t.Fatalf("forwarded recording lookup: %v", &got)
+	}
+	var transcript v1.GetRecordingTranscriptResponse
+	b.must(200, "GET", path, nil, &transcript)
+	if len(transcript.GetSegments()) != 1 || transcript.GetSegments()[0].GetText() != "Full forwarded transcript." {
+		t.Fatalf("forwarded transcript: %v", &transcript)
+	}
+	b.must(404, "GET", "/api/rooms/"+rid+"/messages/"+messageID, nil, nil)
+	b.must(404, "GET", "/api/rooms/"+rid+"/recordings/"+recID+"/transcript", nil, nil)
+	o.must(204, "DELETE", "/api/messages/"+cp.GetId(), nil, nil)
+	b.must(404, "GET", "/api/rooms/"+target+"/messages/"+cp.GetId(), nil, nil)
+	b.must(404, "GET", path, nil, nil)
+}

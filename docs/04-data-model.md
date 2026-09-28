@@ -25,7 +25,9 @@ workspaces          id, slug (unique), name, icon_file_id, visibility ('private'
                     storage_quota_bytes (10 GB), storage_used_bytes (0),
                     time_format ('auto'|'h24'|'h12', 'auto') — формат часов для всех времён в пространстве (docs/09 #73; PATCH — MANAGE_WORKSPACE)
 workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest' — старшая встроенная роль),
-                    nickname, joined_at            PK (workspace_id, user_id)
+                    nickname, joined_at,
+                    badge_id? → workspace_badges (ON DELETE SET NULL)   PK (workspace_id, user_id)
+workspace_badges    id, workspace_id, name (1..32), file_id → files, position, created_at   (docs/09 #82, ≤ 20 в пространстве)
 workspace_roles     id, workspace_id, name (1..32), color (0xRRGGBB, 0 = нет), position (UNIQUE в пространстве),
                     permissions bigint, builtin ('owner'|'admin'|'member'|'guest'|NULL), mentionable, created_at
 member_roles        workspace_id, user_id, role_id      PK (workspace_id, user_id, role_id)   (ADR-0026)
@@ -119,6 +121,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 
 - `messages.id` генерирует Postgres (`uuidv7()` в PG 18) в момент вставки → порядок id совпадает с порядком коммитов на одном сервере БД; курсорная пагинация и `before=<id>` работают без отдельного `created_at`-индекса. Клиентские часы в id не участвуют.
 - `nonce` — клиентский идентификатор optimistic-сообщения. `UNIQUE (author_id, nonce) WHERE nonce IS NOT NULL`: повторный `POST` с тем же `nonce` (ретрай после обрыва) не создаёт дубль, а возвращает уже существующее сообщение (`INSERT … ON CONFLICT DO NOTHING` → `SELECT`), `MESSAGE_CREATE` повторно не рассылается.
+- **Пересылка** (ADR-0033): `POST /api/rooms/{id}/messages/{mid}/forward {to_room_id}` — копия от пересылающего с `messages.forwarded_from` (всегда первоисточник), `forward_author_id`, `forward_sent_at` (→ `Message.forward`); вложения — строки `message_attachments.forwarded = true` на те же файлы (без квоты; уникальность файла — только среди непересланных), упоминания не пишутся, копию нельзя править (422 `MESSAGE_NOT_EDITABLE`); права — `VIEW_ROOM` в источнике (и из комнаты «только по списку»), `SEND_MESSAGES` в цели.
 
 ### Файлы
 
@@ -246,6 +249,12 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - `Room.media` остаётся настройками комнаты (UI различает замок «комната» и замок «тариф»); эффективные лимиты плана — в `Workspace.plan.limits` и в ответе `/join` (`media` уже урезан планом, `plan_limits`).
 - Суперадмин — пользователь с email из `SUPERADMIN_EMAILS`; флаг не хранится, вычисляется из текущего email при каждом запросе (`Me.is_superadmin`).
 
+## Бейджи участников (docs/09 #82)
+
+- Библиотека пространства (`workspace_badges`, ≤ 20): название 1..32 + картинка — файл этого пространства, загруженный самим администратором (не чужой — бейдж делает файл читаемым всем участникам; не файл стикера; строка `files`, в квоте), PNG / WebP / JPEG ≤ 128 КБ и ≤ 256×256 (размеры сервер берёт из `files.width/height`, измеренных при загрузке). Клиент перед загрузкой обрезает картинку до квадрата и рисует 64×64 WebP (`lib/badgePrepare`). У участника — один бейдж (`workspace_members.badge_id`, `WorkspaceMember.badge_id`); бейдж — свойство членства в пространстве, в DM не показывается.
+- Права: библиотека (создать / переименовать / сменить картинку / удалить) — `MANAGE_WORKSPACE`; назначить / снять — `MANAGE_NICKNAMES` + иерархия `workspaces.outranks` (себе — можно), у ботов бейджа нет (403); список видят все участники (и гости), картинку бейджа читает любой участник пространства (`files.CanRead`, `IsWorkspaceBadge`). Бот-токен: управление — 403 `BOT_NOT_ALLOWED`, `GET …/badges` и `badge_id` у участника — читаются.
+- Доставка как у ролей (ADR-0026): `WorkspaceSnapshot.badges` в READY / WORKSPACE_CREATE, события `BADGE_CREATE` / `BADGE_UPDATE` / `BADGE_DELETE` всем участникам, смена бейджа участника — `WORKSPACE_MEMBER_UPDATE`. Удаление бейджа снимает его у всех (сначала `WORKSPACE_MEMBER_UPDATE` каждому, затем `BADGE_DELETE`); прежняя картинка без ссылок уходит с чисткой сирот (она пропускает живые картинки бейджей).
+
 ## Стикеры (ADR-0030)
 
 - Пак принадлежит пространству; стикер — WebP-файл пространства (строка `files`, ключ `<workspace>/<file_id>`, в квоте хранения, без превью) + эмодзи для поиска. Сервер разбирает контейнер сам (`internal/stickers.ValidateWebP`): `RIFF`/`WEBP`, размер RIFF = файлу, только известные чанки, стороны 1..512, анимация — `VP8X` + `ANIM` + 1..300 `ANMF` в пределах canvas, ≤ 10 с; ≤ 512 КБ статичный, ≤ 1 МБ анимированный; ≤ 120 стикеров в паке, ≤ 50 за загрузку, ≤ 50 установленных паков у пользователя.
@@ -264,6 +273,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - **Кто пишет**: участник пространства (не гость) с `VIEW_ROOM | CONNECT` в голосовой комнате, где идёт звонок и `allow_recording = true` (выключает `MANAGE_WORKSPACE`; выключение останавливает идущую запись). Одна запись на комнату, не больше `RECORDING_MAX_CONCURRENT` на сервер (под `pg_advisory_xact_lock`).
 - **Жизнь записи** (`room_recordings.status`): `pending` (строка до старта egress) → `recording` (egress идёт; стоп — `stopped_at`/`stop_reason`, строка остаётся `recording`, пока egress не отдаст файл) → `uploading` (файл на томе, очередь) → `processing` (загружено, GPTunneL распознаёт; `web_url`) → `done` (файл удалён) | `failed` (`error`). Авто-стоп: 3 ч 58 мин (GPTunneL принимает ≤ 4 ч / ≤ 4 ГБ; сверх — `failed: too_large` без загрузки), звонок пуст 2 мин, комната запретила запись. Файлы `failed` удаляются через 7 дней (janitor), бесхозные `.mp4` — через 8.
 - **Воркер**: один на кластер (блокировка Valkey `rec:worker`), очередь — строки `uploading|processing` с `next_at` (захват сдвигает `next_at` на аренду 15 мин). Загрузка — кусками 8 МБ с `Content-Range`, докачка по `Upload-Offset`/409/HEAD, ретраи с backoff 30 с → 30 мин ≤ 24 ч; опрос статуса 20 с → 5 мин ≤ 2 ч (`timeout`). Reconcile (раз в 15 с): строки без живого egress забираются (файл есть → загрузка, нет → `failed`), `pending` старше 2 мин падают, наши egress без строки останавливаются.
+- **Пересланная карточка** (ADR-0033 §4): копия — тоже `kind = system` с тем же `payload`; `System.Update` обновляет и живые копии (`forwarded_from = message_id`), сохранённое аудио прикрепляется и к ним; транскрипт отдаётся и в комнате с живой копией (`RecordingVisibleInRoom`); удалить/повторить — только из комнаты записи.
 
 ## Auth (MVP)
 

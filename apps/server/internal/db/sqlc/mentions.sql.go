@@ -117,7 +117,7 @@ WITH ids AS (
        AND ($4::uuid IS NULL OR e.message_id < $4::uuid)
      ORDER BY e.message_id DESC LIMIT $1)
 )
-SELECT m.id, m.room_id, m.author_id, m.content, m.reply_to_id, m.nonce, m.created_at, m.edited_at, m.deleted_at, m.pinned_at, m.pinned_by, m.embeds_hidden, m.kind, m.payload, m.sticker_id FROM messages m
+SELECT m.id, m.room_id, m.author_id, m.content, m.reply_to_id, m.nonce, m.created_at, m.edited_at, m.deleted_at, m.pinned_at, m.pinned_by, m.embeds_hidden, m.kind, m.payload, m.sticker_id, m.forwarded_from, m.forward_author_id, m.forward_sent_at FROM messages m
 JOIN ids ON ids.id = m.id
 WHERE m.deleted_at IS NULL
 ORDER BY m.id DESC
@@ -163,6 +163,9 @@ func (q *Queries) ListMentions(ctx context.Context, arg ListMentionsParams) ([]M
 			&i.Kind,
 			&i.Payload,
 			&i.StickerID,
+			&i.ForwardedFrom,
+			&i.ForwardAuthorID,
+			&i.ForwardSentAt,
 		); err != nil {
 			return nil, err
 		}

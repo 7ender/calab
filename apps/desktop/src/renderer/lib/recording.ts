@@ -219,11 +219,12 @@ export function durationText(sec: number): string {
  * One line for a system message wherever a message is previewed (pins, search, reply quote,
  * notification, DM list): «Встреча записана · 42 мин», and «😀 Стикер» for a sticker message.
  * '' = a plain message (use its content); an unknown system payload also previews as ''.
+ * With the author's name (a notification), a birthday card previews as the card's own line.
  */
-export function systemPreview(m: Pick<Message, 'kind' | 'system'> & { sticker?: Message['sticker']; content?: string }): string {
+export function systemPreview(m: Pick<Message, 'kind' | 'system'> & { sticker?: Message['sticker']; content?: string }, authorName?: string): string {
   // A sticker message (ADR-0030) previews as «😀 Стикер» too; one whose sticker is gone has no content.
   if (m.sticker) return stickerPreview(m.sticker.emoji);
-  if (birthdayCardOf(m)) return t('birthday.preview');
+  if (birthdayCardOf(m)) return authorName ? t('birthday.card', { name: authorName }) : t('birthday.preview');
   const card = recordingCardOf(m);
   if (!card) return '';
   return card.deletedAt ? t('rec.card.deleted') : t('rec.card.preview', { duration: durationText(card.durationSec) });

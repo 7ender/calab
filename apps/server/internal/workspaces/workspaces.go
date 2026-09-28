@@ -99,6 +99,8 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	h.emailRoutes(handle)
 	h.roleRoutes(handle)
 	h.banRoutes(handle)
+	h.birthdayRoutes(handle)
+	h.badgeRoutes(handle)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -147,6 +149,10 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	if err != nil {
 		return nil, err
 	}
+	badges, err := q.ListWorkspaceBadges(ctx, ws.ID)
+	if err != nil {
+		return nil, err
+	}
 	var allowed map[uuid.UUID]bool
 	if role == perm.RoleGuest {
 		if allowed, err = guestVisibleUsers(ctx, q, ws.ID, userID); err != nil {
@@ -182,7 +188,8 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 		}
 	}
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
-		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles)}, nil
+		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
+		Badges: pbconv.Badges(badges)}, nil
 }
 
 // MemberPB loads a member's role ids and converts the membership row.

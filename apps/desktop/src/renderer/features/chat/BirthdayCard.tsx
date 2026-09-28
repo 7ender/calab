@@ -6,17 +6,18 @@ import { useMemberName } from '../../stores/workspaces';
 import { openProfile } from '../people/actions';
 
 /**
- * «🎂 Сегодня день рождения у <имя>!» (docs/09 #76): a system card the server posts at 09:00 of
+ * «🎂 <имя> — сегодня день рождения!» (docs/09 #76): a system card the server posts at 09:00 of
  * the person's zone into the workspace's first text room. Same frame as the recording card
  * (docs/08 «Запись встреч»); the name opens the profile.
  */
 export function BirthdayCardView({ authorId, card, workspaceId }: { authorId: string; card: Card; workspaceId: string }): ReactNode {
   const name = useMemberName(workspaceId, authorId);
   const text = t('birthday.card', { name });
-  const [before, after] = text.split(name, 2) as [string, string | undefined];
+  // The line starts with 🎂 (previews, notifications); the card has the cake in its circle.
+  const [before, after] = text.replace(/^🎂\s*/u, '').split(name, 2) as [string, string | undefined];
   return (
     <article
-      aria-label={`🎂 ${text}`}
+      aria-label={text}
       data-testid="birthday-card"
       className="flex w-full items-center gap-3 rounded-[var(--radius-card)] border border-line bg-[var(--color-card)] px-4 py-3 shadow-[var(--shadow-card)] mobile:px-3"
     >

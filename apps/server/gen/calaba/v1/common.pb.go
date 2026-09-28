@@ -185,7 +185,9 @@ type ApiError struct {
 	// (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED); "REACTION_LIMIT" = CONFLICT on adding a
 	// reaction when the caller already has `limit` different emojis on the message;
 	// "OWNER_ONLY" = FORBIDDEN, only the workspace owner may do this (ADR-0029: a room's
-	// restricted flag). Absent otherwise.
+	// restricted flag); "MESSAGE_NOT_EDITABLE" = VALIDATION on editing a forwarded copy and
+	// "NOT_FORWARDABLE" = VALIDATION on forwarding a bot command or a system message that is
+	// not a recording card (ADR-0033). Absent otherwise.
 	Reason *string `protobuf:"bytes,4,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
 	// The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
 	// the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;

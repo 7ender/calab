@@ -104,6 +104,8 @@ export interface MenuActions {
   /** Voice rooms the target can be moved to (empty = no «Переместить в…»). */
   moveTargets: Room[];
   rename: boolean;
+  /** «Изменить день рождения» in the profile (docs/09 #77): canEditMemberBirthday. Not a menu item. */
+  birthday: boolean;
   /**
    * «Роли ›» (ADR-0026): a checkbox per role I may give or take (docs/04 «Назначение»), plus the
    * target's roles I may not touch (shown checked, disabled); null = no submenu.
@@ -165,6 +167,33 @@ export function canRemoveMember(myRoles: readonly Role[], targetRoles: readonly 
   return actor.owner || (topRole(targetRoles)?.position ?? -1) < actor.top;
 }
 
+/**
+ * «Изменить день рождения» of another member (docs/09 #77, server workspaces.setMemberBirthday):
+ * MANAGE_NICKNAMES and the kick hierarchy — the owner reaches anyone, everyone else only members
+ * whose most senior role is below theirs (so never the owner, an admin only by the owner). Bots
+ * and guests have no birthday; my own is set in the profile settings.
+ */
+export function canEditMemberBirthday(
+  myRoles: readonly Role[],
+  targetRoles: readonly Role[],
+  target: Pick<WorkspaceMember, 'role' | 'user'>,
+  self: boolean,
+): boolean {
+  const actor = roleActor(myRoles);
+  if (self || !can(actor.perms, 'MANAGE_NICKNAMES') || target.role === WorkspaceRole.GUEST || target.user?.isBot || target.user?.isGuest) return false;
+  return actor.owner || (topRole(targetRoles)?.position ?? -1) < actor.top;
+}
+
+/**
+ * «Бейдж» of a member (docs/09 #82, server workspaces.setMemberBadge): MANAGE_NICKNAMES; my own,
+ * or a member whose most senior role is below mine (the owner: anyone). Bots have none.
+ */
+export function canSetMemberBadge(myRoles: readonly Role[], targetRoles: readonly Role[], target: Pick<WorkspaceMember, 'user'>, self: boolean): boolean {
+  const actor = roleActor(myRoles);
+  if (!can(actor.perms, 'MANAGE_NICKNAMES') || target.user?.isBot) return false;
+  return self || actor.owner || (topRole(targetRoles)?.position ?? -1) < actor.top;
+}
+
 export function memberActions(c: MenuContext): MenuActions {
   const userId = c.target.user?.id ?? '';
   const self = userId === c.meId;
@@ -206,6 +235,7 @@ export function memberActions(c: MenuContext): MenuActions {
     stopCamera: moderate && !!c.targetVoice?.camera,
     moveTargets,
     rename: canRenameMember(myRoles, self, c.allowSelfNickname),
+    birthday: canEditMemberBirthday(myRoles, targetRoles, c.target, self),
     roles: roleToggles(all, myRoles, targetRoles, self, guest),
     promote: manage && guest && !self,
     removeGuest: removable && guest,

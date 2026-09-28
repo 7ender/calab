@@ -101,6 +101,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | bots only |
 | `GET /api/workspaces` · `GET /api/workspaces/{id}` | the bot's workspaces | member |
 | `GET /api/workspaces/{id}/members` | members (`WorkspaceMember`; bots have `user.isBot`) | member |
+| `GET /api/workspaces/{id}/badges` | member badges: `WorkspaceMember.badge_id` refers to them; read-only, bots cannot manage badges | member |
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | rooms the bot can see | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | room categories | member |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | history (newest first, `limit ≤ 100`) | `VIEW_ROOM` |
@@ -108,6 +109,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET /api/rooms/{id}/recordings/{rid}/transcript` | full saved transcript | `VIEW_ROOM` |
 | `POST /api/rooms/{id}/messages` | a message `{content, attachmentIds, replyToId, nonce, stickerId}` → 201 | `SEND_MESSAGES` (+ `ATTACH_FILES`) |
 | `PATCH /api/messages/{id}` · `DELETE /api/messages/{id}` | edit own / delete | author or `MANAGE_MESSAGES` |
+| `POST /api/rooms/{id}/messages/{mid}/forward` | forward `{toRoomId}` → 201 `{message}` with `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` in the source, `SEND_MESSAGES` in the target |
 | `PUT · DELETE /api/messages/{id}/reactions/{emoji}` | reaction (URL-encoded emoji) → 204 | `SEND_MESSAGES` |
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | pins | `MANAGE_MESSAGES` / `VIEW_ROOM` |
 | `PUT /api/rooms/{id}/read` | read marker | `VIEW_ROOM` |
@@ -128,7 +130,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 `GET /api/rooms/{id}/messages/{messageId}` returns **HTTP 200 with the bare `calaba.v1.Message`**,
 not `{message: …}` or `{messages: […]}`. Its fields and detail loading match a history item:
 `id`, `roomId`, `authorId`, `content`, `replyToId`, `attachments`, `reactions` (`me` relative to the
-caller), timestamps, `kind`, `system` and `sticker`. `command` is unset, as in all REST responses.
+caller), timestamps, `kind`, `system`, `sticker` and `forward`. `command` is unset, as in all REST responses.
 A recording card has `kind: "MESSAGE_KIND_SYSTEM"` and `system.recording.recordingId`; use that id
 in the transcript URL. A command replying to a card has `replyToId` pointing to the card's **message** id.
 
@@ -145,9 +147,12 @@ participant keeps their own history. No `SEND_MESSAGES` or voice connection is r
 
 `startMs` / `endMs` are JSON numbers in milliseconds from the recording start; `speaker` is a
 zero-based recognition label, or `-1` if unknown. `language` can be empty. `404 NOT_FOUND` means
-the room is inaccessible, the recording belongs to another room, it is missing/deleted, or no
-transcript is saved yet. Granting a bot `VIEW_ROOM` exposes the **whole** saved transcript in that
-room, including restricted-room access rules; it does not grant recording controls.
+the room is inaccessible, the recording is missing/deleted, no transcript is saved yet, or the
+room has neither the original recording nor a live forwarded copy of its card (ADR-0033).
+Use the visible card's `roomId` in the URL, including for a forwarded card. Removing the only
+forwarded copy revokes its transcript access. Granting a bot `VIEW_ROOM` exposes the **whole**
+saved transcript available through that room, including restricted-room access rules; it does
+not grant recording controls.
 
 ### Examples
 

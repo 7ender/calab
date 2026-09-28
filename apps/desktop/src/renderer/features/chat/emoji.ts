@@ -89,8 +89,8 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
 
 /** Russian (and a few English) search words for the most used emoji. */
 const KEYWORDS: Record<string, string> = {
-  '😀': 'улыбка smile радость',
-  '😂': 'смех слёзы lol ржу',
+  '😀': 'улыбка smile радость happy grin',
+  '😂': 'смех слёзы lol ржу laugh joy',
   '🤣': 'смех катаюсь rofl',
   '😊': 'улыбка румянец',
   '😍': 'любовь влюблён глаза сердца',
@@ -109,9 +109,9 @@ const KEYWORDS: Record<string, string> = {
   '🥳': 'праздник вечеринка party',
   '🤯': 'взрыв мозга',
   '😬': 'неловко',
-  '👍': 'лайк да ок класс like yes',
+  '👍': 'лайк да ок класс like yes thumbs thumbsup',
   '👎': 'дизлайк нет no',
-  '👏': 'аплодисменты браво хлопаю',
+  '👏': 'аплодисменты браво хлопаю clap',
   '🙏': 'спасибо пожалуйста молюсь please thanks',
   '👌': 'ок окей ok',
   '✌️': 'мир победа',
@@ -127,8 +127,8 @@ const KEYWORDS: Record<string, string> = {
   '🔥': 'огонь fire круто',
   '✨': 'искры блеск',
   '⭐': 'звезда star',
-  '🎉': 'праздник поздравляю хлопушка party',
-  '🎂': 'торт день рождения',
+  '🎉': 'праздник поздравляю хлопушка party tada',
+  '🎂': 'торт день рождения cake birthday',
   '🎁': 'подарок gift',
   '✅': 'готово галочка done',
   '❌': 'крест нет отмена',
@@ -147,9 +147,9 @@ const KEYWORDS: Record<string, string> = {
   '📅': 'календарь дата',
   '⏰': 'будильник время',
   '🤖': 'робот бот robot',
-  '💩': 'какашка',
-  '👻': 'привидение призрак',
-  '🎧': 'наушники',
+  '💩': 'какашка poop',
+  '👻': 'привидение призрак ghost',
+  '🎧': 'наушники headphones music',
   '🎮': 'игра геймпад game',
   '🐱': 'кот кошка cat',
   '🐶': 'собака пёс dog',
@@ -161,4 +161,26 @@ export function searchEmoji(q: string): string[] {
   const out: string[] = [];
   for (const [e, words] of Object.entries(KEYWORDS)) if (words.split(' ').some((w) => w.startsWith(needle))) out.push(e);
   return out;
+}
+
+/** Whole-word index of KEYWORDS: the first emoji a word names («fire» → 🔥, «кот» → 🐱). */
+let byWord: Map<string, string> | null = null;
+export function emojiForWord(word: string): string | undefined {
+  if (!byWord) {
+    byWord = new Map();
+    for (const [e, words] of Object.entries(KEYWORDS)) for (const w of words.split(' ')) if (w && !byWord.has(w)) byWord.set(w, e);
+  }
+  return byWord.get(word.toLowerCase());
+}
+
+const PICTO = /\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/u;
+
+/** The emoji typed or pasted into a text: the picker's search accepts the emoji itself. */
+export function typedEmoji(s: string): string[] {
+  if (!PICTO.test(s)) return [];
+  const parts =
+    typeof Intl !== 'undefined' && 'Segmenter' in Intl
+      ? Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s), (x) => x.segment)
+      : Array.from(s);
+  return [...new Set(parts.filter((g) => PICTO.test(g)))];
 }

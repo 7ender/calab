@@ -40,7 +40,9 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
    * (ADR-0024; ROOM_FULL, FILE_QUOTA_EXCEEDED); "REACTION_LIMIT" = CONFLICT on adding a
    * reaction when the caller already has `limit` different emojis on the message;
    * "OWNER_ONLY" = FORBIDDEN, only the workspace owner may do this (ADR-0029: a room's
-   * restricted flag). Absent otherwise.
+   * restricted flag); "MESSAGE_NOT_EDITABLE" = VALIDATION on editing a forwarded copy and
+   * "NOT_FORWARDABLE" = VALIDATION on forwarding a bot command or a system message that is
+   * not a recording card (ADR-0033). Absent otherwise.
    *
    * @generated from field: optional string reason = 4;
    */

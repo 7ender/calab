@@ -7,6 +7,8 @@ import {
   CreateMessageRequestSchema,
   CreateMessageResponseSchema,
   CreateStickerPackRequestSchema,
+  ForwardMessageRequestSchema,
+  ForwardMessageResponseSchema,
   GetBotMeResponseSchema,
   GetRoomResponseSchema,
   JoinVoiceResponseSchema,
@@ -282,6 +284,18 @@ export class Bot extends Emitter<BotEvents> {
     const m = 'message' in to && typeof to.message === 'object' ? to.message : (to as Message);
     const o: SendOptions = typeof content === 'string' ? { text: content } : content;
     return this.send(m.roomId, { ...o, replyTo: o.replyTo ?? m.id });
+  }
+
+  /**
+   * Forwards a message of `roomId` into `toRoomId` (a room or a DM, ADR-0033): a copy by the bot
+   * with `forward` (the original's author and time); files are the same, mentions do not notify.
+   */
+  async forward(roomId: string, messageId: string, toRoomId: string): Promise<Message> {
+    const r = await this.rest.call(ForwardMessageResponseSchema, 'POST', `/api/rooms/${enc(roomId)}/messages/${enc(messageId)}/forward`, {
+      json: Rest.body(ForwardMessageRequestSchema, { toRoomId }),
+    });
+    if (!r.message) throw new Error('forward: empty response');
+    return r.message;
   }
 
   /** Edits the bot's own message. */

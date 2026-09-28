@@ -88,6 +88,18 @@ FROM ended
 WHERE u.id = ended.id
 RETURNING ended.id, ended.presence_status, ended.presence_until;
 
+-- name: ExpireCustomStatuses :many
+-- Clears temporary custom statuses that ran out (the presence sweeper, one instance at a
+-- time) and returns the updated users, to announce the change.
+UPDATE users SET status_text = '', status_emoji = '', status_expires_at = NULL
+WHERE id IN (
+    SELECT id FROM users
+    WHERE status_expires_at IS NOT NULL AND status_expires_at <= now()
+    LIMIT 500
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING *;
+
 -- name: ListManualPresence :many
 -- Live manual statuses, to restore Valkey at startup.
 SELECT id, presence_status, presence_until FROM users

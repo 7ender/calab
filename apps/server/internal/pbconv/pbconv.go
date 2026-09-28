@@ -331,7 +331,22 @@ func Member(m sqlc.WorkspaceMember, u sqlc.User, roleIDs []uuid.UUID) *v1.Worksp
 		Nickname:    m.Nickname,
 		JoinedAt:    ts(m.JoinedAt),
 		RoleIds:     perm.IDStrings(roleIDs),
+		BadgeId:     idp(m.BadgeID),
 	}
+}
+
+// Badge converts a workspace badge row (docs/09 #82).
+func Badge(b sqlc.WorkspaceBadge) *v1.Badge {
+	return &v1.Badge{Id: b.ID.String(), WorkspaceId: b.WorkspaceID.String(), Name: b.Name, FileId: b.FileID.String()}
+}
+
+// Badges converts badge rows.
+func Badges(rows []sqlc.WorkspaceBadge) []*v1.Badge {
+	out := make([]*v1.Badge, len(rows))
+	for i, b := range rows {
+		out[i] = Badge(b)
+	}
+	return out
 }
 
 // Role converts a workspace role row.
@@ -551,6 +566,9 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 		if len(m.Payload) > 0 {
 			_ = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(m.Payload, out.System)
 		}
+	}
+	if m.ForwardSentAt != nil { // a forwarded copy (ADR-0033); Forward.room_id is filled by the caller
+		out.Forward = &v1.Forward{AuthorId: idp(m.ForwardAuthorID), MessageId: idp(m.ForwardedFrom), SentAt: tsp(m.ForwardSentAt)}
 	}
 	for i, f := range files {
 		out.Attachments[i] = File(f)

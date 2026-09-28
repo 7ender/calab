@@ -32,6 +32,7 @@ import { openProfile } from '../people/actions';
 import { birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
 import { RecordingCardView } from './RecordingCard';
 import { BirthdayCardView } from './BirthdayCard';
+import { ForwardLine, forwardSentMs } from './ForwardLine';
 import { mediaKind } from '../../lib/chatMedia';
 import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
 import { VoiceAttachment } from './VoiceBubble';
@@ -40,6 +41,7 @@ import { useMobile } from '../../lib/mobile';
 import { StickerImage } from './stickers/StickerImage';
 import { StickerPackDialog } from './stickers/StickerPackDialog';
 import { BotBadge } from '../people/MemberBits';
+import { MemberBadge } from '../people/MemberBadge';
 import { highlightCommand } from '../../lib/botCommands';
 
 /** Widest image inside a bubble (docs/09 #36). */
@@ -125,7 +127,10 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
-        <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+        <div className={cx('flex flex-col gap-1 rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          {c.msg.forward ? (
+            <ForwardLine authorId={c.msg.forward.authorId} sentAtMs={forwardSentMs(c.msg.forward.sentAt)} workspaceId={workspaceId} className="px-1 text-muted" />
+          ) : null}
           <RecordingCardView c={c} card={card} workspaceId={workspaceId} perms={perms} />
         </div>
       ) : bday ? (
@@ -225,7 +230,7 @@ function Bubble({
   // Hidden previews (Message.embeds_hidden) are not rendered at all, for everyone.
   const link = useMemo(() => (m.embedsHidden ? null : firstLink(nodes)), [nodes, m.embedsHidden]);
   const canHideEmbed = c.status === 'sent' && (own || can(perms, 'MANAGE_MESSAGES'));
-  const bar = useActionBar(hasMessageActions(c, own, perms));
+  const bar = useActionBar(hasMessageActions(c));
   const images = m.attachments.filter(isImage);
   const files = m.attachments.filter((f) => !isImage(f));
   // Videos are full-bleed boxes like images; audio players and other files are rows (docs/08 «Медиа в чате»).
@@ -237,9 +242,11 @@ function Bubble({
   // (its workspace was deleted) keeps an empty body — a placeholder stands in.
   const stickerMsg = m.sticker ?? null;
   const stickerGone = !stickerMsg && !hasText && !m.attachments.length && !uploads.length;
-  const sticker = hasText && !images.length && !files.length && !uploads.length && !m.replyToId && !m.reactions.length && isEmojiOnly(m.content);
+  // A forwarded copy (ADR-0033) keeps its bubble: the «Переслано от» line needs one.
+  const fwd = m.forward;
+  const sticker = hasText && !fwd && !images.length && !files.length && !uploads.length && !m.replyToId && !m.reactions.length && isEmojiOnly(m.content);
   const showName = !own && meta.first && !sticker;
-  const imageOnly = images.length > 0 && !hasText && !files.length && !m.replyToId && !showName && !m.reactions.length;
+  const imageOnly = images.length > 0 && !hasText && !files.length && !m.replyToId && !showName && !fwd && !m.reactions.length;
   // A lone voice message carries the time in its own last line (Telegram).
   const voiceOnly = rows.length === 1 && !!rows[0] && isVoice(rows[0]) && c.status === 'sent' && !hasText && !images.length && !videos.length && !m.reactions.length;
   const width = images.length ? imageBoxWidth(images) : videos.length ? VIDEO_WIDTH : undefined;
@@ -259,6 +266,7 @@ function Bubble({
   // reactions ride dark pills over its bottom-right corner, like on a lone image.
   const body = stickerMsg || stickerGone ? (
     <div className={cx('flex flex-col gap-1 py-1', own ? 'items-end' : 'items-start')} data-testid="sticker-message">
+      {fwd ? <ForwardLine authorId={fwd.authorId} sentAtMs={forwardSentMs(fwd.sentAt)} workspaceId={workspaceId} className="max-w-[256px] text-muted" /> : null}
       {m.replyToId ? (
         <div className="max-w-[260px] overflow-hidden rounded-[var(--radius-bubble)] bg-[var(--bubble-bg)] pb-1.5 shadow-[var(--shadow-bubble)]">
           <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop />
@@ -300,15 +308,24 @@ function Bubble({
             <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="max-w-full truncate hover:underline">
               {name}
             </AuthorTarget>
+            <MemberBadge workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 inline-block align-[-3px]" />
             {authorBot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
           </div>
         ) : null}
+        {fwd ? (
+          <ForwardLine
+            authorId={fwd.authorId}
+            sentAtMs={forwardSentMs(fwd.sentAt)}
+            workspaceId={workspaceId}
+            className={cx('px-3 text-[color:var(--bubble-meta)]', showName ? 'pt-0.5' : 'pt-1.5')}
+          />
+        ) : null}
         {m.replyToId ? <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop={!showName} /> : null}
         {images.length ? (
-          <ImageGrid files={images} padTop={showName || !!m.replyToId} overlay={imageOnly ? metaNode : null} />
+          <ImageGrid files={images} padTop={showName || !!m.replyToId || !!fwd} overlay={imageOnly ? metaNode : null} />
         ) : null}
         {videos.length ? (
-          <div className={cx('flex flex-col gap-0.5', (showName || !!m.replyToId || images.length > 0) && 'pt-1.5')}>
+          <div className={cx('flex flex-col gap-0.5', (showName || !!m.replyToId || !!fwd || images.length > 0) && 'pt-1.5')}>
             {videos.map((f) => (
               <VideoAttachment key={f.id} f={f} />
             ))}
@@ -316,7 +333,7 @@ function Bubble({
         ) : null}
         {uploads.length ? <Uploads uploads={uploads} /> : null}
         {hasText ? (
-          <div className="selectable whitespace-pre-wrap break-words px-3 pb-1.5 pt-1.5 text-list leading-5 [overflow-wrap:anywhere]">
+          <div className={cx('selectable whitespace-pre-wrap break-words px-3 pb-1.5 text-list leading-5 [overflow-wrap:anywhere]', fwd ? 'pt-0.5' : 'pt-1.5')}>
             <Markdown text={shown} mention={mention} highlight={highlight} />
             {!link && !files.length && !m.reactions.length ? (
               // Reserve room for the time on the last line (it is drawn absolutely, Telegram-style).
@@ -332,7 +349,7 @@ function Bubble({
           </div>
         ) : null}
         {rows.length ? (
-          <div className={cx('flex flex-col gap-1 px-3 pb-1', hasText || showName || m.replyToId ? 'pt-0.5' : 'pt-2')}>
+          <div className={cx('flex flex-col gap-1 px-3 pb-1', hasText || showName || m.replyToId || fwd ? 'pt-0.5' : 'pt-2')}>
             {rows.map((f) =>
               isVoice(f) && c.status === 'sent' ? (
                 <VoiceAttachment key={f.id} f={f} messageId={m.id} roomId={roomId} author={name} meta={voiceOnly ? metaNode : undefined} />

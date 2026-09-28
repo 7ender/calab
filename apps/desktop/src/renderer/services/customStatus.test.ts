@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { create } from '@bufbuild/protobuf';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
+import { MeSchema, UserSchema } from '@calaba/protocol';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { STATUS_PRESETS, pushRecentStatus, type StatusChoice } from './customStatus';
 
 const setStatus = vi.fn((_s: { text: string; emoji: string; expiresInSeconds: number }) => Promise.resolve({ me: undefined }));
@@ -7,7 +10,9 @@ vi.mock('../stores/toasts', () => ({ toast: { fail: vi.fn(), info: vi.fn(), erro
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined } } }));
 vi.mock('./gateway', () => ({ setPresence: vi.fn() }));
 
-const { applyCustomStatus } = await import('./customStatus');
+const { applyCustomStatus, clearExpiredStatus, scheduleStatusExpiry } = await import('./customStatus');
+const { useSession } = await import('../stores/session');
+const { useWorkspaces } = await import('../stores/workspaces');
 const { usePrefs } = await import('../stores/prefs');
 const { t } = await import('../i18n');
 
@@ -66,5 +71,54 @@ describe('applyCustomStatus', () => {
     setStatus.mockRejectedValueOnce(new Error('offline'));
     expect(await applyCustomStatus(c('Не сохранится'))).toBe(false);
     expect(usePrefs.getState().recentStatuses).toEqual([]);
+  });
+});
+
+describe('temporary status expiry (issue #17)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('scheduleStatusExpiry fires once at the expiry with one pending timer, and cancels', () => {
+    vi.useFakeTimers({ now: 0 });
+    const done = vi.fn();
+    scheduleStatusExpiry(60_000, done);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(59_999);
+    expect(done).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    // Already expired → on the next tick; cancelled before it → never.
+    const late = vi.fn();
+    scheduleStatusExpiry(-5, late);
+    vi.advanceTimersByTime(0);
+    expect(late).toHaveBeenCalledTimes(1);
+    const never = vi.fn();
+    scheduleStatusExpiry(1000, never)();
+    vi.advanceTimersByTime(5000);
+    expect(never).not.toHaveBeenCalled();
+  });
+
+  it('a 30-day status re-arms past the 32-bit timer limit instead of firing early', () => {
+    vi.useFakeTimers({ now: 0 });
+    const done = vi.fn();
+    const month = 30 * 24 * 3600_000;
+    scheduleStatusExpiry(month, done);
+    vi.advanceTimersByTime(2 ** 31);
+    expect(done).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(month - 2 ** 31);
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it('clearExpiredStatus empties my status in the session and in users[me] only once expired', () => {
+    const user = create(UserSchema, { id: 'me', displayName: 'Me', statusText: 'На обеде', statusEmoji: '🍽️', statusExpiresAt: timestampFromMs(10_000) });
+    useSession.getState().set({ me: create(MeSchema, { user }) });
+    useWorkspaces.getState().upsertUser(user);
+    expect(clearExpiredStatus(9_999)).toBe(false);
+    expect(useSession.getState().me?.user?.statusText).toBe('На обеде');
+    expect(clearExpiredStatus(10_000)).toBe(true);
+    expect(useSession.getState().me?.user).toMatchObject({ id: 'me', displayName: 'Me', statusText: '', statusEmoji: '', statusExpiresAt: undefined });
+    expect(useWorkspaces.getState().users['me']).toMatchObject({ statusText: '', statusEmoji: '', statusExpiresAt: undefined });
+    expect(clearExpiredStatus(20_000)).toBe(false); // nothing left to clear
   });
 });

@@ -131,16 +131,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if b := req.GetBirthday(); b != nil { // docs/09 #76
 		p.SetBirthday = true
-		if b.GetDay() != 0 || b.GetMonth() != 0 || b.Year != nil {
-			if err := birthdays.Validate(b, time.Now()); err != nil {
-				return err
-			}
-			d, m := int16(b.GetDay()), int16(b.GetMonth()) //nolint:gosec // validated
-			p.BirthdayDay, p.BirthdayMonth = &d, &m
-			if b.Year != nil {
-				y := int16(b.GetYear()) //nolint:gosec // validated
-				p.BirthdayYear = &y
-			}
+		var err error
+		if p.BirthdayDay, p.BirthdayMonth, p.BirthdayYear, err = birthdays.Columns(b, time.Now()); err != nil {
+			return err
 		}
 	}
 	p.BirthdayHidden = req.BirthdayHidden

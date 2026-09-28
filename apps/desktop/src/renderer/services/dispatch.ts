@@ -1,4 +1,4 @@
-import { VoiceStreamStopReason, type DispatchEvent, type Message, type WorkspaceSnapshot } from '@calaba/protocol';
+import { VoiceStreamStopReason, type Birthday, type DispatchEvent, type Message, type WorkspaceSnapshot } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { syncTimeZone } from './timezone';
 import { log } from '../lib/log';
@@ -165,6 +165,14 @@ export function applyDispatch(ev: DispatchEvent): void {
       useWorkspaces.getState().removeRole(e.value.workspaceId, e.value.roleId);
       voice.refreshRights();
       return;
+    // Member badges (docs/09 #82): members lose a deleted badge by WORKSPACE_MEMBER_UPDATE first.
+    case 'badgeCreate':
+    case 'badgeUpdate':
+      if (e.value.badge) useWorkspaces.getState().upsertBadge(e.value.badge);
+      return;
+    case 'badgeDelete':
+      useWorkspaces.getState().removeBadge(e.value.workspaceId, e.value.badgeId);
+      return;
     case 'workspaceMemberRemove':
       if (useWorkspaces.getState().users[e.value.userId]?.isBot) useBots.getState().dropCommands();
       useWorkspaces.getState().removeMember(e.value.workspaceId, e.value.userId);
@@ -301,8 +309,15 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'userUpdate':
       // Another member's public profile (name, avatar, time zone, birthday — docs/09 #76).
-      if (e.value.user && e.value.user.id !== myUserId()) useWorkspaces.getState().upsertUser(e.value.user);
+      if (e.value.user && e.value.user.id !== myUserId()) {
+        // A birthday set, cleared or hidden: the upcoming list (members panel) and the admin
+        // table (docs/09 #77) refetch — only the mounted ones.
+        if (birthdayChanged(useWorkspaces.getState().users[e.value.user.id]?.birthday, e.value.user.birthday)) invalidateBirthdays();
+        useWorkspaces.getState().upsertUser(e.value.user);
+      }
       if (e.value.me) {
+        const was = useSession.getState().me;
+        if (birthdayChanged(was?.user?.birthday, e.value.me.user?.birthday) || was?.birthdayHidden !== e.value.me.birthdayHidden) invalidateBirthdays();
         useSession.getState().set({ me: e.value.me });
         if (e.value.me.user) useWorkspaces.getState().upsertUser(e.value.me.user);
         if (e.value.me.settings) applyUserSettings(e.value.me.settings);
@@ -314,6 +329,14 @@ export function applyDispatch(ev: DispatchEvent): void {
 }
 
 /** Recently applied MESSAGE_CREATE ids: a replay (RESUME / events queued behind READY) counts once. */
+const birthdayChanged = (a: Birthday | undefined, b: Birthday | undefined): boolean => a?.day !== b?.day || a?.month !== b?.month || a?.year !== b?.year;
+
+/** Birthday lists (docs/09 #76, #77): only mounted queries refetch, the rest turn stale. */
+function invalidateBirthdays(): void {
+  void queryClient.invalidateQueries({ queryKey: ['birthdays'] });
+  void queryClient.invalidateQueries({ queryKey: ['member-birthdays'] });
+}
+
 const seenMessages = new Set<string>();
 const SEEN_MAX = 1000;
 

@@ -61,6 +61,7 @@ import {
   type WorkspaceNotificationSettings,
   type RoomPermissionOverride,
   type RoomRecording,
+  type Badge,
   type Session,
   type User,
   type UserSettings,
@@ -83,7 +84,7 @@ import { avatarPicture, cardPicture, encodePng } from './png';
 export type Scenario = 'data' | 'empty' | 'marketing';
 export const SCENARIOS: readonly Scenario[] = ['data', 'empty', 'marketing'];
 
-const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9, sticker: 10, stickerPack: 11 } as const;
+const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9, sticker: 10, stickerPack: 11, badge: 12 } as const;
 export type IdKind = keyof typeof KIND;
 
 export function mockId(kind: IdKind, n: number): string {
@@ -347,6 +348,8 @@ export interface MemberRec {
   /** Custom roles (ADR-0026); the built-ins follow `role`. */
   roleIds?: string[];
   nickname: string;
+  /** Member badge (docs/09 #82): an id of `MockState.badges`; unset = none. */
+  badgeId?: string;
   joinedAt: Timestamp;
 }
 
@@ -408,6 +411,8 @@ export interface MockState {
    * («member»…: the fixture's room overrides stay valid); created lazily for new workspaces.
    */
   roles: Map<string, Role[]>;
+  /** Member badges (docs/09 #82) by id, in creation order; empty until MockServer.addBadge(). */
+  badges: Map<string, Badge>;
   /** Email codes (ADR-0023): `verify:<userId>` (also the email change) and `reset:<email>`. */
   emailCodes: Map<string, EmailCodeRec>;
   /** Pending invitations by email, by id. */
@@ -707,6 +712,7 @@ export function buildState(scenario: Scenario): MockState {
     suspendedBy: new Map(),
     bans: new Map(),
     roles: new Map(),
+    badges: new Map(),
     emailCodes: new Map(),
     emailInvites: new Map(),
     gptunnel: new Map(),
@@ -716,7 +722,7 @@ export function buildState(scenario: Scenario): MockState {
     userStickerPacks: new Map(),
     bots: new Map(),
     blockedBots: new Map(),
-    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100 },
+    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100, badge: 0x100 },
     clock: 0,
   };
   if (scenario === 'marketing') return buildMarketingState(s);

@@ -33,13 +33,14 @@ WHERE ma.file_id = $1;
 SELECT EXISTS (SELECT 1 FROM workspaces WHERE icon_file_id = $1);
 
 -- name: ListOrphanFiles :many
--- Not attached, not an avatar, icon or sticker (ADR-0030), older than the cutoff.
+-- Not attached, not an avatar, icon, sticker (ADR-0030) or badge (docs/09 #82), older than the cutoff.
 SELECT * FROM files f
 WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500;
 
@@ -67,4 +68,5 @@ SELECT ((SELECT coalesce(sum(storage_used_bytes), 0) FROM workspaces)
 SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
-  AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id);
+  AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id);

@@ -6,7 +6,7 @@ import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { checkpoint, login, settle } from './harness';
+import { NOW, checkpoint, login, settle } from './harness';
 import { startPublisher } from './publisher';
 
 /**
@@ -80,6 +80,7 @@ const KEY = new Set([
   'voice-camera-pip',
   'voice-noise-popover',
   'main-members-toggled',
+  'main-members-birthday',
   'members-menu',
   'profile-dialog',
   'profile-menu',
@@ -100,6 +101,7 @@ const KEY = new Set([
   'settings-plan',
   'settings-gptunnel',
   'settings-members',
+  'settings-members-birthday',
   'settings-roles',
   'settings-role-edit',
   'admin-workspaces',
@@ -111,10 +113,15 @@ const KEY = new Set([
   'sticker-picker',
   'settings-stickers',
   'settings-stickers-upload',
+  'settings-stickers-emoji',
   'settings-bots',
   'settings-bot-token',
   'bot-profile',
   'chat-bot-commands',
+  'chat-forward-dialog',
+  'chat-forwarded',
+  'settings-badges',
+  'chat-badge',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -1108,6 +1115,31 @@ test('settings-members', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByRole('tab', { name: 'Участники' })).toBeVisible();
 });
 
+/**
+ * «Участники → Дни рождения» (docs/09 #77): the owner's table of every member's date, Борис's
+ * hidden by him (marked «скрыто пользователем»), Вера's typed in and saved on Enter.
+ */
+test('settings-members-birthday', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setBirthday(IDS.users.boris, { day: 3, month: 5, year: 1990 });
+  mock.setBirthdayHidden(IDS.users.boris, true);
+  mock.setBirthday(IDS.users.grigory, { day: 21, month: 11 });
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Участники' }).click();
+  await expect(dialog.getByRole('button', { name: 'Изменить день рождения: Борис Петров' })).toBeVisible();
+  await dialog.getByTestId('open-birthdays-table').click();
+  await expect(dialog.getByTestId('birthday-hidden')).toHaveText('скрыто пользователем');
+  const vera = dialog.getByRole('textbox', { name: 'День рождения: Вера Ким' });
+  await vera.fill('7.2.1995');
+  await vera.press('Enter');
+  await expect(vera).toHaveValue('07.02.1995');
+  await expect(dialog.getByRole('textbox', { name: 'День рождения: Борис Петров' })).toHaveValue('03.05.1990');
+  await checkpoint(shot, 'settings-members-birthday');
+});
+
 /** The fixture's custom roles (ADR-0026) given out: «Дизайн» to Вера and Григорий, «Модератор» to Григорий. */
 function giveFixtureRoles(mock: MockServer): void {
   mock.setMemberRoles(IDS.workspaces.main, IDS.users.vera, [IDS.roles.design]);
@@ -1605,7 +1637,7 @@ test('voice-room-chat-preview', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'voice-room-chat-preview');
 });
 
-// Meeting recording cards (ADR-0025) in «Переговорка»'s chat: done (42 мин, «Открыть в GPTunneL»),
+// Meeting recording cards (ADR-0025) in «Переговорка»'s chat: done (42 мин; no «Открыть в GPTunneL», #80),
 // still processing, failed for lack of balance before the upload («Отправить снова»), failed on
 // GPTunneL's side after it («Проверить снова», docs/09 #40) — system messages across the whole
 // feed (docs/09 #47), no bubble; «…» (the owner may delete, #50).
@@ -1632,7 +1664,7 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   expect(feed && box && box.width).toBeGreaterThan((feed?.width ?? 0) - 48);
   await expect(cards.nth(1)).toContainText('Обработка: расшифровка и саммари…');
   await expect(cards.nth(2)).toContainText('Ошибка: на балансе GPTunneL не хватает средств');
-  await expect(cards.nth(0).getByRole('button', { name: 'Открыть в GPTunneL' })).toBeVisible();
+  await expect(win.getByRole('button', { name: 'Открыть в GPTunneL' })).toHaveCount(0);
   await expect(cards.nth(2).getByRole('button', { name: 'Отправить снова' })).toBeVisible();
   await expect(cards.nth(2).getByRole('button', { name: 'Проверить снова' })).toHaveCount(0);
   await expect(cards.nth(3)).toContainText('Ошибка: сбой на стороне GPTunneL');
@@ -1645,6 +1677,24 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'chat-recording-card');
 });
 
+// docs/09 #76: «🎂 Дни рождения» above «В сети» in the members panel — Борис today (a member
+// row), Вера in 3 days under the opened «Скоро» (the mock's clock = the page clock, 15 January).
+test('main-members-birthday', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setClock(NOW.getTime());
+  mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 });
+  mock.setBirthday(IDS.users.vera, { day: 18, month: 1 });
+  const members = await membersList(win);
+  const section = members.getByTestId('members-birthdays');
+  await expect(section.getByRole('heading')).toHaveText('🎂 Дни рождения — 2');
+  await expect(section.getByRole('button', { name: /Борис Петров/ })).toBeVisible();
+  await section.getByTestId('members-birthdays-soon').click();
+  await expect(section.getByRole('button', { name: /Вера Ким · 18 янв\./ })).toBeVisible();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'main-members-birthday');
+});
+
 // docs/09 #76: Борис's birthday is today (the page clock: 15 January) — the server's card in
 // «общий» and 🎂 after his name in the members column; «15 января · 36 лет» in his profile card.
 test('chat-birthday-card', async ({ open, win, mock, shot }) => {
@@ -1652,7 +1702,7 @@ test('chat-birthday-card', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 }, { roomId: IDS.rooms.general });
   const card = win.getByTestId('birthday-card');
-  await expect(card).toContainText('Сегодня день рождения у Борис Петров!');
+  await expect(card).toContainText('Борис Петров — сегодня день рождения!');
   await expect(card).toContainText('15 января');
   const members = await membersList(win);
   const boris = members.getByRole('button', { name: /Борис Петров/ });
@@ -1665,6 +1715,54 @@ test('chat-birthday-card', async ({ open, win, mock, shot }) => {
   await win.mouse.move(0, 0);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'chat-birthday-card');
+});
+
+/** Two badges of «Команда Calab» (docs/09 #82): «Acme» on Борис and Вера, «Globex» on Анна. */
+function giveFixtureBadges(mock: MockServer): void {
+  const acme = mock.addBadge(IDS.workspaces.main, 'Acme', { bg: [255, 159, 10], fg: [255, 255, 255] });
+  const globex = mock.addBadge(IDS.workspaces.main, 'Globex', { bg: [48, 209, 88], fg: [0, 64, 32] });
+  mock.setMemberBadge(IDS.workspaces.main, IDS.users.boris, acme);
+  mock.setMemberBadge(IDS.workspaces.main, IDS.users.vera, acme);
+  mock.setMemberBadge(IDS.workspaces.main, IDS.users.anna, globex);
+}
+
+/** Badge pictures loaded (they come from the file API like avatars). */
+async function badgesLoaded(page: Page): Promise<void> {
+  await page.waitForFunction(() => [...document.querySelectorAll('img[data-member-badge]')].every((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0));
+}
+
+// docs/09 #82: workspace settings → «Бейджи» — the library (picture 36, name, holders), «Добавить бейдж».
+test('settings-badges', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  giveFixtureBadges(mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Бейджи' }).click();
+  await expect(dialog.getByTestId('badge-row')).toHaveCount(2);
+  await expect(dialog.getByTestId('badge-row').first()).toContainText('У 2 участников');
+  await badgesLoaded(win);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'settings-badges');
+});
+
+// docs/09 #82: a 16 px badge after the author's name in the feed and after the names in the
+// members column (Борис and Вера — «Acme», Анна — «Globex»).
+test('chat-badge', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  giveFixtureBadges(mock);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.boris, content: 'Логотипы партнёров теперь видны рядом с именем' });
+  const members = await membersList(win);
+  await expect(members.locator('img[data-member-badge]')).not.toHaveCount(0);
+  await expect(win.locator('[data-message-id] img[data-member-badge][title="Acme"]').last()).toBeVisible();
+  await badgesLoaded(win);
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await win.mouse.move(0, 0);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'chat-badge');
 });
 
 /** «Переговорка»'s chat with a done recording card carrying its result (docs/09 #47). */
@@ -1725,6 +1823,19 @@ test('chat-recording-done', async ({ open, win, mock, shot }) => {
   await card.getByTestId('recording-card-more').click();
   await expect(summary).toContainText('Сколько дней хранить аудио');
   await expect(card.getByTestId('recording-card-more')).toHaveText('Свернуть');
+  // «Копировать самари» (#80): the corner button shows on the card's hover; the «…» menu item too.
+  const copy = card.getByTestId('recording-card-summary-copy');
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await win.mouse.move(0, 0);
+  await expect(copy).toHaveCSS('opacity', '0');
+  await card.hover();
+  await expect(copy).toHaveCSS('opacity', '1');
+  await copy.click();
+  // The text itself: summaryPlainText's unit test (the renderer may not read the clipboard).
+  await expect(win.getByText('Скопировано')).toBeVisible();
+  await card.getByTestId('recording-card-menu').click();
+  await expect(win.getByRole('menuitem', { name: 'Копировать самари' })).toBeVisible();
+  await win.keyboard.press('Escape');
   await reply.click();
   await composer.getByRole('textbox').fill('Draft the meeting tasks');
   await composer.getByRole('textbox').press('Enter');
@@ -1807,6 +1918,8 @@ test('recording-transcript', async ({ open, win, mock, shot }) => {
 test('chat-recording-delete', async ({ open, win, mock, shot }) => {
   await open();
   const card = await doneCard(win, mock);
+  // The feed pinned to the bottom: the shot must not depend on where the virtualized list settled.
+  await feedAtBottom(win);
   await card.getByTestId('recording-card-menu').click();
   await win.getByRole('menuitem', { name: 'Удалить запись' }).click();
   const dialog = win.getByRole('dialog', { name: 'Удалить запись встречи?' });
@@ -1834,6 +1947,62 @@ const feedTo = (win: Page, where: 'top' | 'bottom'): Promise<void> =>
   win.locator('[data-virtuoso-scroller]').first().evaluate((el, w) => el.scrollTo({ top: w === 'top' ? 0 : el.scrollHeight }), where);
 
 /** The feed at its bottom and at rest (the floating date pill faded out). */
+// ADR-0033: «Переслать» in the message menu → the target picker: «Личные» (people) and the rooms
+// with the right to send; a pick becomes a chip and a check mark, «Переслать» sends and toasts.
+test('chat-forward-dialog', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал' }).click({ button: 'right' });
+  await win.getByRole('menuitem', { name: 'Переслать' }).click();
+  const dialog = win.getByRole('dialog', { name: 'Переслать…' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Личные')).toBeVisible();
+  await dialog.getByRole('option', { name: /#разработка/ }).click();
+  await expect(dialog.getByTestId('forward-chips')).toContainText('#разработка');
+  await expect(dialog.getByTestId('forward-send')).toBeEnabled();
+  await settle(win);
+  await checkpoint(shot, 'chat-forward-dialog');
+  await dialog.getByTestId('forward-send').click();
+  await expect(dialog).toHaveCount(0);
+  await expect(win.getByText('Переслано в 1 чат')).toBeVisible();
+  const copy = (mock.state.messages.get(IDS.rooms.dev) ?? []).at(-1);
+  expect(copy?.forward?.authorId).toBeTruthy();
+});
+
+// ADR-0033: copies in the feed — «↪ Переслано от <имя> · <дата>» over a text message and over a
+// forwarded recording card (no retry / delete there: they belong to the recording's own room).
+test('chat-forwarded', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const sentAtMs = Date.parse('2026-01-14T16:05:00Z');
+  mock.injectMessage({
+    roomId: IDS.rooms.general,
+    authorId: IDS.users.vera,
+    content: 'Итоги релиза: всё выкатили, мониторинг зелёный.',
+    forward: { authorId: IDS.users.boris, sentAtMs, roomId: IDS.rooms.dev },
+  });
+  mock.injectRecordingCard({
+    roomId: IDS.rooms.general,
+    byUserId: IDS.users.boris,
+    durationSec: 42 * 60 + 10,
+    status: RecordingStatus.DONE,
+    result: true,
+    forward: { by: IDS.users.vera, authorId: IDS.users.boris, sentAtMs, roomId: IDS.rooms.meeting },
+  });
+  const lines = win.getByTestId('forward-line');
+  await expect(lines).toHaveCount(2);
+  await expect(lines.first()).toContainText('Переслано от Борис');
+  const card = win.getByTestId('recording-card');
+  await expect(card.getByRole('button', { name: 'Полный транскрипт' })).toBeVisible();
+  await feedAtBottom(win);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'chat-forwarded');
+  await card.getByTestId('recording-card-menu').click();
+  await expect(win.getByRole('menuitem', { name: 'Переслать' })).toBeVisible();
+  await expect(win.getByRole('menuitem', { name: 'Удалить запись' })).toHaveCount(0);
+  await win.keyboard.press('Escape');
+});
+
 async function feedAtBottom(win: Page): Promise<void> {
   for (let i = 0; i < 2; i++) {
     await feedTo(win, 'bottom');
@@ -2571,6 +2740,28 @@ test('settings-stickers-upload', async ({ open, win, mock, shot }) => {
   await expect(items.first()).toHaveAttribute('data-state', 'ready');
   await stillStickers(win, 2);
   await checkpoint(shot, 'settings-stickers-upload');
+});
+
+// The pack «Calab», the emoji chip of the last sticker clicked (docs/09 #79): the shared emoji
+// picker opens above the chip, over the settings sheet (--z-modal-popover).
+test('settings-stickers-emoji', async ({ open, win, mock, shot }) => {
+  await open();
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  await mainWindow(win, mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Стикеры' }).click();
+  await dialog.getByTestId('sticker-pack-row').filter({ hasText: 'Calab' }).click();
+  await expect(dialog.getByTestId('sticker-pack-stickers').locator('[data-sticker]')).toHaveCount(3);
+  await stillStickers(win, 1);
+  const chip = dialog.getByTestId('sticker-cell').last().getByTestId('sticker-emoji');
+  await chip.scrollIntoViewIfNeeded();
+  await chip.click();
+  const picker = win.getByTestId('emoji-picker');
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole('textbox')).toBeFocused();
+  await checkpoint(shot, 'settings-stickers-emoji');
 });
 
 // ---------------------------------------------------------------- bots (ADR-0031)

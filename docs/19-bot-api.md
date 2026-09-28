@@ -100,6 +100,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | только боты |
 | `GET /api/workspaces` · `GET /api/workspaces/{id}` | пространства бота | участник |
 | `GET /api/workspaces/{id}/members` | участники (`WorkspaceMember`, у ботов `user.isBot`) | участник |
+| `GET /api/workspaces/{id}/badges` | бейджи участников (docs/09 #82): `WorkspaceMember.badge_id` ссылается на них; только чтение — управлять бейджами бот не может | участник |
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | комнаты, которые бот видит | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | категории комнат | участник |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | история (новые первыми, `limit ≤ 100`) | `VIEW_ROOM` |
@@ -107,6 +108,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET /api/rooms/{id}/recordings/{rid}/transcript` | полный сохранённый транскрипт | `VIEW_ROOM` |
 | `POST /api/rooms/{id}/messages` | сообщение `{content, attachmentIds, replyToId, nonce, stickerId}` → 201 | `SEND_MESSAGES` (+ `ATTACH_FILES`) |
 | `PATCH /api/messages/{id}` · `DELETE /api/messages/{id}` | правка своего / удаление | автор или `MANAGE_MESSAGES` |
+| `POST /api/rooms/{id}/messages/{mid}/forward` | пересылка `{toRoomId}` → 201 `{message}` с `forward` (ADR-0033; SDK `forward(roomId, messageId, toRoomId)`) | `VIEW_ROOM` в источнике, `SEND_MESSAGES` в цели |
 | `PUT · DELETE /api/messages/{id}/reactions/{emoji}` | реакция (emoji в URL-кодировке) → 204 | `SEND_MESSAGES` |
 | `PUT · DELETE /api/messages/{id}/pin` · `GET /api/rooms/{id}/pins` | закрепы | `MANAGE_MESSAGES` / `VIEW_ROOM` |
 | `PUT /api/rooms/{id}/read` | отметка прочтения | `VIEW_ROOM` |
@@ -127,7 +129,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 `GET /api/rooms/{id}/messages/{messageId}` возвращает **HTTP 200 и сам `calaba.v1.Message`**,
 без `{message: …}` или `{messages: […]}`. Поля и детали совпадают с элементом истории:
 `id`, `roomId`, `authorId`, `content`, `replyToId`, `attachments`, `reactions` (`me` относительно
-вызывающего), времена, `kind`, `system`, `sticker`. `command` не задан, как во всех REST-ответах.
+вызывающего), времена, `kind`, `system`, `sticker`, `forward`. `command` не задан, как во всех REST-ответах.
 У карточки записи `kind: "MESSAGE_KIND_SYSTEM"` и `system.recording.recordingId`; последний id
 нужен для URL транскрипта. В команде, отправленной ответом на карточку, `replyToId` содержит id
 **сообщения** с карточкой, а не id записи.
@@ -145,9 +147,11 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 
 `startMs` / `endMs` — JSON-числа, миллисекунды от начала записи; `speaker` — номер спикера
 распознавания от нуля или `-1`, если неизвестен. `language` может быть пустым. `404 NOT_FOUND`:
-комната недоступна, запись чужой комнаты, отсутствует/удалена или транскрипт ещё не сохранён.
-Право `VIEW_ROOM` открывает боту **весь** сохранённый транскрипт комнаты с учётом ограниченных
-комнат. Управление записью это право боту не открывает.
+комната недоступна, запись отсутствует/удалена, транскрипт ещё не сохранён или в комнате нет
+ни самой записи, ни живой пересланной копии её карточки (ADR-0033). В URL используйте `roomId`
+видимой карточки, в том числе пересланной. Удаление последней копии отзывает доступ к транскрипту
+через неё. Право `VIEW_ROOM` открывает боту **весь** сохранённый транскрипт, доступный через эту
+комнату, с учётом ограниченных комнат. Управление записью это право боту не открывает.
 
 ### Примеры
 

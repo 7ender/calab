@@ -15,7 +15,7 @@ import { PttReleaseDelay } from '../settings/PttReleaseDelay';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { MenuSliderItem } from './MenuSliderItem';
 import { selectMicMode, swallowMenuKey } from './micMenu';
-import { STATUS_KEY, StatusMenu, useMyStatus } from './StatusMenu';
+import { STATUS_KEY, StatusMenu, useCustomStatusExpiry, useMyStatus } from './StatusMenu';
 import { AppSettingsWindow } from './lazyWindows';
 
 /** Self panel (docs/09 #6): avatar + status, name, mic / headphones with device pickers, settings. */
@@ -30,6 +30,7 @@ export function SelfPanel(): ReactNode {
   const speaking = useVoice((s) => (me?.user ? (s.speaking[me.user.id] ?? false) : false));
   const open = useUi((s) => s.openDialog);
   const status = useMyStatus();
+  useCustomStatusExpiry();
   const user = me?.user;
   if (!user) return null;
   const statusName = t(STATUS_KEY[status] ?? 'presence.online');

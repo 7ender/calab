@@ -110,3 +110,24 @@ func TestCandidateKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestColumns(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	for _, clear := range []*v1.Birthday{nil, {}} {
+		if d, m, y, err := Columns(clear, now); d != nil || m != nil || y != nil || err != nil {
+			t.Errorf("clear %v: %v %v %v %v", clear, d, m, y, err)
+		}
+	}
+	d, m, y, err := Columns(&v1.Birthday{Day: 15, Month: 3, Year: yr(1990)}, now)
+	if err != nil || *d != 15 || *m != 3 || *y != 1990 {
+		t.Errorf("15.03.1990: %v %v %v %v", d, m, y, err)
+	}
+	if _, _, y, err := Columns(&v1.Birthday{Day: 1, Month: 1}, now); y != nil || err != nil {
+		t.Errorf("no year: %v %v", y, err)
+	}
+	for _, bad := range []*v1.Birthday{{Day: 30, Month: 2}, {Year: yr(1990)}} {
+		if _, _, _, err := Columns(bad, now); err == nil {
+			t.Errorf("%v accepted", bad)
+		}
+	}
+}

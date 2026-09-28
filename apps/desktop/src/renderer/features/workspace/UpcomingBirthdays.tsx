@@ -1,11 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/ui';
 import { plural, t } from '../../i18n';
-import { api } from '../../lib/api/endpoints';
 import { formatBirthday } from '../../lib/birthday';
 import { useWorkspaces } from '../../stores/workspaces';
+import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
 
 /** «Сегодня» / «Завтра» / «Через 3 дня». */
 export function whenLabel(inDays: number): string {
@@ -20,9 +19,9 @@ export function whenLabel(inDays: number): string {
  * only when there is someone: an empty section would only push the member list down.
  */
 export function UpcomingBirthdays({ workspaceId }: { workspaceId: string }): ReactNode {
-  const q = useQuery({ queryKey: ['birthdays', workspaceId], queryFn: () => api.workspaces.birthdays(workspaceId, 7), staleTime: 5 * 60_000 });
+  const upcoming = useUpcomingBirthdays(workspaceId);
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
-  const list = (q.data?.birthdays ?? []).filter((b) => b.birthday && members?.[b.userId]?.user);
+  const list = (upcoming ?? []).filter((b) => b.birthday && members?.[b.userId]?.user);
   if (list.length === 0) return null;
   return (
     <Card title={t('birthday.upcoming')} footer={t('birthday.upcomingHint')}>

@@ -78,6 +78,13 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/workspaces/{id}/invites/email/{inviteId}": botDeny,
 	"GET /api/workspaces/{id}/members":                     botAllow,
 	"GET /api/workspaces/{id}/birthdays":                   botAllow, // docs/09 #76
+	"GET /api/workspaces/{id}/members/birthdays":           botDeny,  // docs/09 #77: bots have no birthday
+	"PATCH /api/workspaces/{id}/members/{userId}/birthday": botDeny,
+	"GET /api/workspaces/{id}/badges":                      botAllow, // docs/09 #82: the library, read-only
+	"POST /api/workspaces/{id}/badges":                     botDeny,
+	"PATCH /api/workspaces/{id}/badges/{badgeId}":          botDeny,
+	"DELETE /api/workspaces/{id}/badges/{badgeId}":         botDeny,
+	"PUT /api/workspaces/{id}/members/{userId}/badge":      botDeny,
 	"PATCH /api/workspaces/{id}/members/{userId}":          botAllow,
 	"DELETE /api/workspaces/{id}/members/{userId}":         botAllow,
 	"POST /api/workspaces/{id}/members/{userId}/promote":   botAllow,
@@ -106,6 +113,7 @@ var botRoutes = map[string]botAccess{
 	"GET /api/rooms/{id}/messages":                botAllow,
 	"GET /api/rooms/{id}/messages/{messageId}":    botAllow,
 	"POST /api/rooms/{id}/messages":               botAllow,
+	"POST /api/rooms/{id}/messages/{mid}/forward": botAllow, // ADR-0033
 	"PATCH /api/messages/{id}":                    botAllow,
 	"DELETE /api/messages/{id}":                   botAllow,
 	"PUT /api/rooms/{id}/read":                    botAllow,

@@ -47,6 +47,7 @@ import {
   JoinWorkspaceResponseSchema,
   ListInvitesResponseSchema,
   ListBirthdaysResponseSchema,
+  ListMemberBirthdaysResponseSchema,
   ListMembersResponseSchema,
   ListMessagesResponseSchema,
   MoveMemberRequestSchema,
@@ -58,6 +59,8 @@ import {
   UpdateCategoryRequestSchema,
   UpdateCategoryResponseSchema,
   UpdateMeRequestSchema,
+  UpdateMemberBirthdayRequestSchema,
+  UpdateMemberBirthdayResponseSchema,
   UpdateMeResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberResponseSchema,
@@ -70,10 +73,19 @@ import {
   SetRoleOrderResponseSchema,
   SetMemberRolesRequestSchema,
   SetMemberRolesResponseSchema,
+  ListBadgesResponseSchema,
+  CreateBadgeRequestSchema,
+  CreateBadgeResponseSchema,
+  UpdateBadgeRequestSchema,
+  UpdateBadgeResponseSchema,
+  SetMemberBadgeRequestSchema,
+  SetMemberBadgeResponseSchema,
   UpdateStatusRequestSchema,
   UpdateMessageRequestSchema,
   UpdateMessageResponseSchema,
   SetEmbedsHiddenRequestSchema,
+  ForwardMessageRequestSchema,
+  ForwardMessageResponseSchema,
   UpdateReadStateRequestSchema,
   UnfurlResponseSchema,
   UpdateRoomRequestSchema,
@@ -192,6 +204,11 @@ export const api = {
     members: (id: string) => call('GET', `/api/workspaces/${id}/members`, ListMembersResponseSchema),
     /** Members' birthdays in the next `days` days, soonest first (docs/09 #76). */
     birthdays: (id: string, days = 7) => call('GET', `/api/workspaces/${id}/birthdays?days=${days}`, ListBirthdaysResponseSchema),
+    /** Every member's birthday, hidden ones marked — the admin table (MANAGE_NICKNAMES, docs/09 #77). */
+    memberBirthdays: (id: string) => call('GET', `/api/workspaces/${id}/members/birthdays`, ListMemberBirthdaysResponseSchema),
+    /** Set (or, without a birthday, clear) a member's birthday; their «hidden» flag stays theirs. */
+    setMemberBirthday: (id: string, userId: string, init: MessageInitShape<typeof UpdateMemberBirthdayRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${id}/members/${userId}/birthday`, UpdateMemberBirthdayResponseSchema, body(UpdateMemberBirthdayRequestSchema, init)),
     updateMember: (id: string, userId: string, init: MessageInitShape<typeof UpdateMemberRequestSchema>) =>
       call('PATCH', `/api/workspaces/${id}/members/${userId}`, UpdateMemberResponseSchema, body(UpdateMemberRequestSchema, init)),
     removeMember: (id: string, userId: string) => callEmpty('DELETE', `/api/workspaces/${id}/members/${userId}`),
@@ -227,6 +244,23 @@ export const api = {
     /** The member's complete role set (ADR-0026; MANAGE_ROLES) → WORKSPACE_MEMBER_UPDATE. */
     setMemberRoles: (id: string, userId: string, roleIds: readonly string[]) =>
       call('PUT', `/api/workspaces/${id}/members/${userId}/roles`, SetMemberRolesResponseSchema, body(SetMemberRolesRequestSchema, { roleIds: [...roleIds] })),
+  },
+  /**
+   * Member badges (docs/09 #82): the library for any member; create / rename / delete with
+   * MANAGE_WORKSPACE; assigning with MANAGE_NICKNAMES (members below my top role, not bots).
+   */
+  badges: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/badges`, ListBadgesResponseSchema),
+    /** 201; 409 = 20 badges already; 422 = bad name / picture. */
+    create: (workspaceId: string, name: string, fileId: string) =>
+      call('POST', `/api/workspaces/${workspaceId}/badges`, CreateBadgeResponseSchema, body(CreateBadgeRequestSchema, { name, fileId })),
+    update: (workspaceId: string, badgeId: string, init: MessageInitShape<typeof UpdateBadgeRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/badges/${badgeId}`, UpdateBadgeResponseSchema, body(UpdateBadgeRequestSchema, init)),
+    /** 204: its members lose it (WORKSPACE_MEMBER_UPDATE each, then BADGE_DELETE). */
+    remove: (workspaceId: string, badgeId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/badges/${badgeId}`),
+    /** "" clears → WORKSPACE_MEMBER_UPDATE. */
+    setMember: (workspaceId: string, userId: string, badgeId: string) =>
+      call('PUT', `/api/workspaces/${workspaceId}/members/${userId}/badge`, SetMemberBadgeResponseSchema, body(SetMemberBadgeRequestSchema, { badgeId })),
   },
   /** Workspace roles (ADR-0026): list for any member; the rest MANAGE_ROLES, roles below my top one. */
   roles: {
@@ -347,6 +381,9 @@ export const api = {
     update: (id: string, content: string) =>
       call('PATCH', `/api/messages/${id}`, UpdateMessageResponseSchema, body(UpdateMessageRequestSchema, { content })),
     remove: (id: string) => callEmpty('DELETE', `/api/messages/${id}`),
+    /** «Переслать» (ADR-0033): a copy of the message in `toRoomId`, by the caller, with `forward`. */
+    forward: (roomId: string, id: string, toRoomId: string) =>
+      call('POST', `/api/rooms/${roomId}/messages/${id}/forward`, ForwardMessageResponseSchema, body(ForwardMessageRequestSchema, { toRoomId })),
     markRead: (roomId: string, messageId: string) =>
       callEmpty('PUT', `/api/rooms/${roomId}/read`, body(UpdateReadStateRequestSchema, { messageId })),
     /** Full-text search in one room (newest first, cursor `before`). */

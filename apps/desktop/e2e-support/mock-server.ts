@@ -26,6 +26,15 @@ import {
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   AdminGetWorkspaceResponseSchema,
+  BadgeSchema,
+  CreateBadgeRequestSchema,
+  CreateBadgeResponseSchema,
+  ListBadgesResponseSchema,
+  SetMemberBadgeRequestSchema,
+  SetMemberBadgeResponseSchema,
+  UpdateBadgeRequestSchema,
+  UpdateBadgeResponseSchema,
+  type Badge,
   AdminPlanLogResponseSchema,
   AdminSearchWorkspacesResponseSchema,
   AdminSetPlanRequestSchema,
@@ -70,6 +79,7 @@ import {
   PairGptunnelRequestSchema,
   PairGptunnelResponseSchema,
   RecordingCardSchema,
+  ForwardSchema,
   BirthdaySchema,
   RecordingStatus,
   RoomRecordingSchema,
@@ -118,6 +128,8 @@ import {
   CreateRoomInviteRequestSchema,
   CreateRoomInviteResponseSchema,
   CreateMessageResponseSchema,
+  ForwardMessageRequestSchema,
+  ForwardMessageResponseSchema,
   CreateRoomRequestSchema,
   CreateRoomResponseSchema,
   CreateWorkspaceRequestSchema,
@@ -149,6 +161,7 @@ import {
   ListInvitesResponseSchema,
   ListMembersResponseSchema,
   ListBirthdaysResponseSchema,
+  ListMemberBirthdaysResponseSchema,
   ListMessagesResponseSchema,
   ListRoomInvitesResponseSchema,
   ListRoomsResponseSchema,
@@ -192,6 +205,8 @@ import {
   UpdateMeRequestSchema,
   UpdateMeResponseSchema,
   UpdateMemberRequestSchema,
+  UpdateMemberBirthdayRequestSchema,
+  UpdateMemberBirthdayResponseSchema,
   UpdateMemberResponseSchema,
   UpdateMessageRequestSchema,
   UpdateMessageResponseSchema,
@@ -351,7 +366,7 @@ export interface MockServer {
   reset(scenario?: Scenario): void;
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   /** `attachments`: fixture file ids uploaded by the author (e.g. IDS.files.audio by Вера). */
-  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string }): Message;
+  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message;
   /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
   setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
@@ -375,6 +390,10 @@ export interface MockServer {
   setRecording(roomId: string, rec: { byUserId: string; agoMs?: number; nowMs?: number } | null): void;
   /** ADR-0026: the member's custom roles (built-ins follow their role) → WORKSPACE_MEMBER_UPDATE (+ room visibility). */
   setMemberRoles(workspaceId: string, userId: string, roleIds: string[]): void;
+  /** docs/09 #82: a badge of the workspace library with a generated square picture → BADGE_CREATE; its id. */
+  addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string;
+  /** docs/09 #82: the member's badge ('' = none) → WORKSPACE_MEMBER_UPDATE. */
+  setMemberBadge(workspaceId: string, userId: string, badgeId: string): void;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
   /**
@@ -393,6 +412,8 @@ export interface MockServer {
     fileGone?: boolean;
     /** DONE with the result (docs/09 #47): the fixture summary, a transcript, the audio attachment. */
     result?: boolean;
+    /** A forwarded copy (ADR-0033): posted by `by`, marked «Переслано от» `authorId`. */
+    forward?: MockForward & { by: string };
   }): Message;
   /** Moves a card on (MESSAGE_UPDATE), like the server's upload worker. */
   updateRecordingCard(messageId: string, patch: RecordingCardPatch): void;
@@ -401,6 +422,10 @@ export interface MockServer {
    * chat as the server's worker posts it (SYSTEM message, MESSAGE_CREATE) when `card` is set.
    */
   setBirthday(userId: string, b: { day: number; month: number; year?: number } | null, card?: { roomId: string }): void;
+  /** docs/09 #76: «Скрыть от других» of the user, as PATCH /api/me {birthdayHidden} (USER_UPDATE). */
+  setBirthdayHidden(userId: string, hidden: boolean): void;
+  /** The mock's «now» for date answers (GET …/birthdays): a visual test's page clock; null = real time. */
+  setClock(nowMs: number | null): void;
   /**
    * docs/09 #51: a user's own state of a DM, like PATCH /api/dms/{id}/state — archive / «Удалить
    * чат» (for them only) — and DM_STATE_UPDATE to their devices.
@@ -440,6 +465,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
     setMemberRoles: (w, u, ids) => impl.setMemberRoles(w, u, ids),
+    addBadge: (w, name, colors) => impl.addBadge(w, name, colors),
+    setMemberBadge: (w, u, id) => impl.setMemberBadge(w, u, id),
     stopCamera: (u, r) => impl.stopCamera(u, r),
     setEmailState: (u, st) => impl.setEmailState(u, st),
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
@@ -447,6 +474,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
+    setBirthdayHidden: (u, hidden) => impl.setBirthdayHidden(u, hidden),
+    setClock: (ms) => impl.setClock(ms),
     seedBots: () => impl.seedBots(),
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
@@ -797,6 +826,7 @@ class MockImpl {
     this.voiceSessions.clear();
     this.droppedSessions.clear();
     this.gatewayDownUntil = 0;
+    this.clockMs = null;
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
   }
 
@@ -1052,6 +1082,7 @@ class MockImpl {
       roleIds: this.memberRoles(m).map((r) => r.id),
       nickname: m.nickname,
       joinedAt: m.joinedAt,
+      badgeId: m.badgeId ?? '',
     });
   }
 
@@ -1103,6 +1134,7 @@ class MockImpl {
         .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)),
       recordings: [...this.state.recordings.values()].filter((r) => r.workspaceId === wsId && rooms.some((x) => x.id === r.roomId)),
       roles: this.rolesOfWs(wsId),
+      badges: this.badgesOf(wsId),
     });
   }
 
@@ -1513,6 +1545,30 @@ class MockImpl {
     this.toWorkspace(workspaceId, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
   }
 
+  addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string {
+    const ws = this.state.workspaces.get(workspaceId);
+    if (!ws) throw new Error(`no workspace ${workspaceId}`);
+    // A 64×64 «logo»: a filled square with a centred disc (what the client uploads after its crop).
+    const png = encodePng(64, 64, (u, v) => ((u - 0.5) ** 2 + (v - 0.5) ** 2 < 0.09 ? colors.fg : colors.bg));
+    const fileId = this.storeFile(workspaceId, ws.ownerId, { name: 'badge.png', mime: 'image/png', bytes: png });
+    const badge = create(BadgeSchema, { id: nextId(this.state, 'badge'), workspaceId, name, fileId });
+    this.state.badges.set(badge.id, badge);
+    this.toWorkspace(workspaceId, { event: { case: 'badgeCreate', value: { badge } } });
+    return badge.id;
+  }
+
+  setMemberBadge(workspaceId: string, userId: string, badgeId: string): void {
+    const m = this.member(workspaceId, userId);
+    if (!m) throw new Error(`no member ${userId}`);
+    if (badgeId) m.badgeId = badgeId;
+    else delete m.badgeId;
+    this.toWorkspace(workspaceId, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
+  }
+
+  private badgesOf(wsId: string): Badge[] {
+    return [...this.state.badges.values()].filter((b) => b.workspaceId === wsId);
+  }
+
   setPresence(userId: string, status: PresenceStatus): void {
     const prev = this.state.presences.get(userId);
     this.state.presences.set(userId, create(PresenceSchema, { userId, status, ...(prev?.lastSeen ? { lastSeen: prev.lastSeen } : {}) }));
@@ -1592,7 +1648,16 @@ class MockImpl {
     sendMsg(c.res, 200, ListMessagesResponseSchema, { messages: hits.slice(0, limit).map((m) => this.msgOut(m, me)), hasMore: hits.length > limit });
   }
 
-  private createMessage(room: Room, authorId: string, content: string, replyToId: string, nonce: string, attachmentIds: string[], sticker?: Sticker): Message {
+  private createMessage(
+    room: Room,
+    authorId: string,
+    content: string,
+    replyToId: string,
+    nonce: string,
+    attachmentIds: string[],
+    sticker?: Sticker,
+    forward?: MockForward,
+  ): Message {
     const attachments = attachmentIds.map((id) => {
       const f = this.state.files.get(id);
       if (!f || f.meta.uploaderId !== authorId) throw invalid('attachmentIds', `unknown attachment ${id}`);
@@ -1610,6 +1675,7 @@ class MockImpl {
       nonce,
       createdAt: tick(this.state),
       ...(sticker ? { sticker } : {}),
+      ...(forward ? { forward: forwardOf(forward) } : {}),
     });
     list.push(msg);
     this.state.messages.set(room.id, list);
@@ -1624,11 +1690,11 @@ class MockImpl {
     return msg;
   }
 
-  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string }): Message {
+  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
     const sticker = a.stickerId ? (this.findSticker(a.stickerId)?.sticker ?? this.state.deletedStickers.get(a.stickerId)) : undefined;
-    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? [], sticker);
+    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? [], sticker, a.forward);
   }
 
   // ------------------------------------------------ sticker packs (ADR-0030)
@@ -2163,11 +2229,11 @@ class MockImpl {
       sendMsg(c.res, 200, ListMembersResponseSchema, { members: this.membersOf(ws.id).map((x) => this.memberOut(x)) });
     });
 
-    // docs/09 #76: birthdays in the next `days` days (the mock's today is the page clock's UTC day).
+    // docs/09 #76: birthdays in the next `days` days (the mock's today: setClock, else real time; UTC).
     this.route('GET', '/api/workspaces/:id/birthdays', (c) => {
       const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
       const days = Number(c.url.searchParams.get('days') ?? '7');
-      const now = new Date();
+      const now = new Date(this.clockMs ?? Date.now());
       const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
       const out = this.membersOf(ws.id).flatMap((m) => {
         const u = this.userRec(m.userId);
@@ -2180,6 +2246,37 @@ class MockImpl {
       });
       out.sort((a, b) => a.inDays - b.inDays);
       sendMsg(c.res, 200, ListBirthdaysResponseSchema, { birthdays: out });
+    });
+
+    // docs/09 #77: every member's birthday for the admin table (hidden ones marked), and an
+    // admin setting one (MANAGE_NICKNAMES = admins by default; not the owner by an admin).
+    this.route('GET', '/api/workspaces/:id/members/birthdays', (c) => {
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireAdmin(m);
+      const birthdays = this.membersOf(ws.id).flatMap((x) => {
+        const u = this.userRec(x.userId);
+        if (!u.user.birthday || u.user.isBot || x.role === WorkspaceRole.GUEST) return [];
+        return [{ userId: x.userId, birthday: u.user.birthday, hidden: u.birthdayHidden ?? false }];
+      });
+      sendMsg(c.res, 200, ListMemberBirthdaysResponseSchema, { birthdays });
+    });
+
+    this.route('PATCH', '/api/workspaces/:id/members/:userId/birthday', (c) => {
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireAdmin(m);
+      const target = this.member(ws.id, c.params[1] ?? '');
+      if (!target) throw notFound('member not found');
+      if (target.role === WorkspaceRole.OWNER && m.role !== WorkspaceRole.OWNER) throw forbidden('cannot act on a member at or above your highest role');
+      const u = this.userRec(target.userId);
+      if (u.user.isBot || target.role === WorkspaceRole.GUEST) throw forbidden('no birthday');
+      const b = parseBody(c, UpdateMemberBirthdayRequestSchema).birthday;
+      if (!b || (!b.day && !b.month)) delete u.user.birthday;
+      else if (b.month < 1 || b.month > 12 || b.day < 1 || b.day > 31) throw invalid('birthday.day', 'no such day in that month');
+      else u.user.birthday = create(BirthdaySchema, { day: b.day, month: b.month, ...(b.year !== undefined ? { year: b.year } : {}) });
+      this.emitUserUpdate(u);
+      sendMsg(c.res, 200, UpdateMemberBirthdayResponseSchema, {
+        birthday: { userId: u.user.id, birthday: u.user.birthday, hidden: u.birthdayHidden ?? false },
+      });
     });
 
     this.route('PATCH', '/api/workspaces/:id/members/:userId', (c) => {
@@ -2294,6 +2391,80 @@ class MockImpl {
       const member = this.memberOut(target);
       this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member } } });
       sendMsg(c.res, 200, UpdateMemberResponseSchema, { member });
+    });
+
+    // ---------------- member badges (docs/09 #82): the library with MANAGE_WORKSPACE, assigning with MANAGE_NICKNAMES
+    this.route('GET', '/api/workspaces/:id/badges', (c) => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      sendMsg(c.res, 200, ListBadgesResponseSchema, { badges: this.badgesOf(ws.id) });
+    });
+    const badgeName = (raw: string): string => {
+      const name = raw.trim();
+      if (!name || Array.from(name).length > 32) throw invalid('name', 'name must be 1..32 characters');
+      return name;
+    };
+    const badgeFile = (wsId: string, id: string): string => {
+      const f = s().files.get(id);
+      if (!f || f.meta.workspaceId !== wsId || !['image/png', 'image/webp', 'image/jpeg'].includes(f.meta.mime) || f.bytes.length > 128 * 1024) {
+        throw invalid('fileId', 'a PNG, WebP or JPEG image of this workspace, at most 128 KB');
+      }
+      return id;
+    };
+    const badgeManager = (c: Ctx): Workspace => {
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      if (!isAdminRole(m.role)) throw forbidden('MANAGE_WORKSPACE required');
+      return ws;
+    };
+    this.route('POST', '/api/workspaces/:id/badges', (c) => {
+      const ws = badgeManager(c);
+      const b = parseBody(c, CreateBadgeRequestSchema);
+      if (this.badgesOf(ws.id).length >= 20) throw conflict('a workspace has at most 20 badges');
+      const badge = create(BadgeSchema, { id: nextId(s(), 'badge'), workspaceId: ws.id, name: badgeName(b.name), fileId: badgeFile(ws.id, b.fileId) });
+      s().badges.set(badge.id, badge);
+      this.toWorkspace(ws.id, { event: { case: 'badgeCreate', value: { badge } } });
+      sendMsg(c.res, 201, CreateBadgeResponseSchema, { badge });
+    });
+    this.route('PATCH', '/api/workspaces/:id/badges/:badgeId', (c) => {
+      const ws = badgeManager(c);
+      const badge = s().badges.get(c.params[1] ?? '');
+      if (!badge || badge.workspaceId !== ws.id) throw notFound('badge not found');
+      const b = parseBody(c, UpdateBadgeRequestSchema);
+      if (b.name !== undefined) badge.name = badgeName(b.name);
+      if (b.fileId !== undefined) badge.fileId = badgeFile(ws.id, b.fileId);
+      this.toWorkspace(ws.id, { event: { case: 'badgeUpdate', value: { badge } } });
+      sendMsg(c.res, 200, UpdateBadgeResponseSchema, { badge });
+    });
+    this.route('DELETE', '/api/workspaces/:id/badges/:badgeId', (c) => {
+      const ws = badgeManager(c);
+      const badge = s().badges.get(c.params[1] ?? '');
+      if (!badge || badge.workspaceId !== ws.id) throw notFound('badge not found');
+      for (const m of this.membersOf(ws.id)) {
+        if (m.badgeId !== badge.id) continue;
+        delete m.badgeId;
+        this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
+      }
+      s().badges.delete(badge.id);
+      this.toWorkspace(ws.id, { event: { case: 'badgeDelete', value: { workspaceId: ws.id, badgeId: badge.id } } });
+      noContent(c.res);
+    });
+    this.route('PUT', '/api/workspaces/:id/members/:userId/badge', (c) => {
+      const me = this.uid(c);
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', me);
+      if (!has(workspacePermissions(this.memberRoles(caller)), PERMISSION_BITS.MANAGE_NICKNAMES)) throw forbidden('MANAGE_NICKNAMES required');
+      const targetId = c.params[1] === '@me' ? me : (c.params[1] ?? '');
+      const target = this.member(ws.id, targetId);
+      if (!target) throw notFound('member not found');
+      if (s().users.get(targetId)?.user.isBot) throw forbidden('bots have no badge');
+      if (targetId !== me && target.role === WorkspaceRole.OWNER) throw forbidden('the member is not below you');
+      const b = parseBody(c, SetMemberBadgeRequestSchema);
+      if (b.badgeId) {
+        const badge = s().badges.get(b.badgeId);
+        if (!badge || badge.workspaceId !== ws.id) throw invalid('badgeId', 'unknown badge');
+        target.badgeId = b.badgeId;
+      } else delete target.badgeId;
+      const member = this.memberOut(target);
+      this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member } } });
+      sendMsg(c.res, 200, SetMemberBadgeResponseSchema, { member });
     });
 
     // ---------------- roles (ADR-0026, docs/04 «Роли»): MANAGE_ROLES, roles below the caller's top one
@@ -2760,6 +2931,37 @@ class MockImpl {
       }
       const message = this.createMessage(room, me, b.content, b.replyToId, b.nonce, b.attachmentIds, sticker);
       sendMsg(c.res, 201, CreateMessageResponseSchema, { message });
+    });
+
+    // ADR-0033: a copy of the message in another room / DM, by the caller, with `forward`.
+    this.route('POST', '/api/rooms/:id/messages/:mid/forward', (c) => {
+      const me = this.uid(c);
+      const src = this.roomFor(c.params[0] ?? '', me);
+      const orig = (s().messages.get(src.id) ?? []).find((m) => m.id === c.params[1]);
+      if (!orig) throw notFound('message not found');
+      const b = parseBody(c, ForwardMessageRequestSchema);
+      const room = this.roomFor(b.toRoomId, me);
+      this.requireActive(room.workspaceId);
+      this.requireRoomPerm(room, me, SEND_MESSAGES);
+      const fwd = orig.forward ?? { authorId: orig.authorId, roomId: src.type === RoomType.DM ? '' : src.id, messageId: orig.id, sentAt: orig.createdAt };
+      const message = create(MessageSchema, {
+        id: nextId(this.state, 'message'),
+        roomId: room.id,
+        authorId: me,
+        content: orig.content,
+        attachments: orig.attachments,
+        kind: orig.kind,
+        ...(orig.system ? { system: orig.system } : {}),
+        ...(orig.sticker ? { sticker: orig.sticker } : {}),
+        embedsHidden: orig.embedsHidden,
+        forward: fwd,
+        createdAt: tick(this.state),
+      });
+      const list = s().messages.get(room.id) ?? [];
+      list.push(message);
+      s().messages.set(room.id, list);
+      this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message } } }, room.id);
+      sendMsg(c.res, 201, ForwardMessageResponseSchema, { message });
     });
 
     this.route('PATCH', '/api/messages/:id', (c) => {
@@ -4070,6 +4272,18 @@ class MockImpl {
     this.timers.add(timer);
   }
 
+  private clockMs: number | null = null;
+
+  setClock(nowMs: number | null): void {
+    this.clockMs = nowMs;
+  }
+
+  setBirthdayHidden(userId: string, hidden: boolean): void {
+    const u = this.userRec(userId);
+    u.birthdayHidden = hidden;
+    this.emitUserUpdate(u);
+  }
+
   setBirthday(userId: string, b: { day: number; month: number; year?: number } | null, card?: { roomId: string }): void {
     const u = this.userRec(userId);
     if (b) u.user.birthday = create(BirthdaySchema, b);
@@ -4105,6 +4319,8 @@ class MockImpl {
     fileGone?: boolean;
     /** DONE with the result (docs/09 #47): summary, transcript, audio attachment. */
     result?: boolean;
+    /** A forwarded copy of the card (ADR-0033): posted by `authorId`, marked «Переслано от». */
+    forward?: MockForward & { by: string };
   }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
@@ -4126,12 +4342,13 @@ class MockImpl {
     const msg = create(MessageSchema, {
       id: nextId(this.state, 'message'),
       roomId: room.id,
-      authorId: a.byUserId,
+      authorId: a.forward?.by ?? a.byUserId,
       content: '',
       kind: MessageKind.SYSTEM,
       system: { payload: { case: 'recording', value: card } },
       attachments: a.result ? this.recordingAudio() : [],
       createdAt,
+      ...(a.forward ? { forward: forwardOf(a.forward) } : {}),
     });
     list.push(msg);
     this.state.messages.set(room.id, list);
@@ -4610,4 +4827,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     console.error(e);
     process.exit(1);
   });
+}
+
+/** A forwarded copy in the mock feed (ADR-0033): the original's author and time. */
+export interface MockForward {
+  authorId: string;
+  sentAtMs: number;
+  roomId?: string;
+  messageId?: string;
+}
+
+function forwardOf(f: MockForward): MessageInitShape<typeof ForwardSchema> {
+  return { authorId: f.authorId, roomId: f.roomId ?? '', messageId: f.messageId ?? '', sentAt: timestampFromMs(f.sentAtMs) };
 }

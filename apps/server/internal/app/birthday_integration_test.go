@@ -9,6 +9,7 @@ import (
 	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 func bday(day, month uint32, year ...uint32) *v1.UpdateMeRequest {
@@ -281,4 +282,114 @@ func TestBirthdaysUpcoming(t *testing.T) {
 	}
 	outsider(t).must(404, "GET", "/api/workspaces/"+wid+"/birthdays", nil, nil)
 	guest.must(403, "GET", "/api/workspaces/"+wid+"/birthdays", nil, nil)
+}
+
+// TestBirthdayByAdmin (docs/09 #77): PATCH …/members/{id}/birthday needs MANAGE_NICKNAMES and
+// the kick hierarchy (a custom role reaches only members below it, an admin not the owner);
+// bots and guests have no birthday; USER_UPDATE goes out; a birthday its owner hid stays hidden
+// from everyone else (READY, GET …/birthdays) while the admin table shows it marked.
+func TestBirthdayByAdmin(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	alice := register(t, invite(t, o, wid))
+	carol := register(t, invite(t, o, wid))
+	dave := register(t, invite(t, o, wid))
+	admin := v1.WorkspaceRole_WORKSPACE_ROLE_ADMIN
+	o.must(200, "PATCH", "/api/workspaces/"+wid+"/members/"+carol.id, &v1.UpdateMemberRequest{Role: &admin}, nil)
+	nicks := newRole(t, o, wid, "Nicks", perm.ManageNicknames)
+	if st, _ := setMemberRoles(o, wid, dave.id, nicks.GetId()); st != 200 {
+		t.Fatalf("give the role: %d", st)
+	}
+	path := func(uid string) string { return "/api/workspaces/" + wid + "/members/" + uid + "/birthday" }
+	list := "/api/workspaces/" + wid + "/members/birthdays"
+	// Far from today: the real-time worker of the test server never posts a card for it.
+	d := time.Now().AddDate(0, 0, 150)
+	day, month := uint32(d.Day()), uint32(d.Month()) //nolint:gosec // test
+	set := func(day, month uint32, year ...uint32) *v1.UpdateMemberBirthdayRequest {
+		return &v1.UpdateMemberBirthdayRequest{Birthday: bday(day, month, year...).GetBirthday()}
+	}
+
+	// Rights and hierarchy.
+	bob.must(403, "PATCH", path(alice.id), set(day, month), nil) // no MANAGE_NICKNAMES
+	bob.must(403, "GET", list, nil, nil)
+	dave.must(403, "PATCH", path(carol.id), set(day, month), nil) // an admin is above the custom role
+	dave.must(403, "PATCH", path(o.id), set(day, month), nil)
+	carol.must(403, "PATCH", path(o.id), set(day, month), nil) // the owner is above an admin
+	o.must(200, "PATCH", path(carol.id), set(day, month), nil)
+	o.must(404, "PATCH", path("00000000-0000-0000-0000-000000000001"), set(day, month), nil)
+	dave.must(422, "PATCH", path(bob.id), set(30, 2), nil)
+
+	// Set by the custom role: USER_UPDATE to the workspace (User) and to bob (Me).
+	ag, bg := dialGW(t), dialGW(t)
+	ag.identify(alice.token)
+	bg.identify(bob.token)
+	var resp v1.UpdateMemberBirthdayResponse
+	dave.must(200, "PATCH", path(bob.id), set(day, month, 1991), &resp)
+	if b := resp.GetBirthday(); b.GetUserId() != bob.id || b.GetBirthday().GetDay() != day || b.GetBirthday().GetYear() != 1991 || b.GetHidden() {
+		t.Fatalf("response: %v", b)
+	}
+	ag.wait("USER_UPDATE with bob's birthday", func(e *v1.DispatchEvent) bool {
+		u := e.GetUserUpdate().GetUser()
+		return u.GetId() == bob.id && u.GetBirthday().GetDay() == day && u.GetBirthday().GetMonth() == month
+	})
+	bg.wait("USER_UPDATE {me} with the birthday", func(e *v1.DispatchEvent) bool {
+		return e.GetUserUpdate().GetMe().GetUser().GetBirthday().GetYear() == 1991
+	})
+
+	// Hidden by bob: an admin still changes it (200), it stays hidden for others.
+	bob.must(200, "PATCH", "/api/me", hideBirthday(true), nil)
+	o.must(200, "PATCH", path(bob.id), set(day, month), &resp)
+	if !resp.GetBirthday().GetHidden() || resp.GetBirthday().GetBirthday().Year != nil {
+		t.Fatalf("hidden response: %v", resp.GetBirthday())
+	}
+	if u := memberUser(t, alice, wid, bob.id); u.Birthday != nil {
+		t.Fatalf("hidden birthday in READY: %v", u.GetBirthday())
+	}
+	var up v1.ListBirthdaysResponse
+	alice.must(200, "GET", "/api/workspaces/"+wid+"/birthdays?days=31", nil, &up)
+	for _, b := range up.GetBirthdays() {
+		if b.GetUserId() == bob.id {
+			t.Fatal("hidden birthday in GET …/birthdays")
+		}
+	}
+	var me v1.GetMeResponse
+	bob.must(200, "GET", "/api/me", nil, &me)
+	if !me.GetMe().GetBirthdayHidden() || me.GetMe().GetUser().GetBirthday().GetDay() != day || me.GetMe().GetUser().GetBirthday().Year != nil {
+		t.Fatalf("bob's own: %v", me.GetMe())
+	}
+	var tbl v1.ListMemberBirthdaysResponse
+	dave.must(200, "GET", list, nil, &tbl)
+	got := map[string]*v1.MemberBirthday{}
+	for _, b := range tbl.GetBirthdays() {
+		got[b.GetUserId()] = b
+	}
+	if b := got[bob.id]; b == nil || !b.GetHidden() || b.GetBirthday().GetMonth() != month {
+		t.Fatalf("admin table, bob: %v", b)
+	}
+	if b := got[carol.id]; b == nil || b.GetHidden() {
+		t.Fatalf("admin table, carol: %v", b)
+	}
+	if got[alice.id] != nil {
+		t.Fatal("alice has no birthday")
+	}
+
+	// Clear: an empty body.
+	o.must(200, "PATCH", path(bob.id), &v1.UpdateMemberBirthdayRequest{}, &resp)
+	if resp.GetBirthday().Birthday != nil {
+		t.Fatalf("not cleared: %v", resp.GetBirthday())
+	}
+
+	// Bots: no birthday for them, and a bot token may not set one (BOT_NOT_ALLOWED).
+	b := createBot(t, o, wid, "Bday")
+	o.must(403, "PATCH", path(b.id), set(day, month), nil)
+	b.must(403, "PATCH", path(bob.id), set(day, month), nil)
+	if reason, _ := errReason(b.client); reason != "BOT_NOT_ALLOWED" {
+		t.Fatalf("bot token: reason %q", reason)
+	}
+	b.must(403, "GET", list, nil, nil)
+
+	// Guests: none either.
+	guest := v1.WorkspaceRole_WORKSPACE_ROLE_GUEST
+	o.must(200, "PATCH", "/api/workspaces/"+wid+"/members/"+alice.id, &v1.UpdateMemberRequest{Role: &guest}, nil)
+	o.must(403, "PATCH", path(alice.id), set(day, month), nil)
 }

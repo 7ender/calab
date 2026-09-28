@@ -15,6 +15,10 @@
 | Исключить / забанить / встроенная роль | `MANAGE_WORKSPACE` ws + иерархия: не владельца, админа — только владелец, цель ниже моей старшей роли | `workspaces.outranks` | `canRemoveMember` |
 | Гость → участник | `MANAGE_WORKSPACE` ws | `promote` | `memberActions.promote` |
 | Ник другого | `MANAGE_NICKNAMES` ws (иерархии нет, docs/12) | `updateMember` | `canRenameMember` |
+| День рождения другого (docs/09 #77), таблица с датами (скрытые — с пометкой) | `MANAGE_NICKNAMES` ws + иерархия `workspaces.outranks`; цель — не бот и не гость; бот-токен — 403; флаг «скрыть» не меняется | `workspaces.setMemberBirthday`, `listMemberBirthdays` | `canEditMemberBirthday` |
+| Бейджи (docs/09 #82): создать / переименовать / сменить картинку / удалить | `MANAGE_WORKSPACE` ws; бот-токен — 403 | `workspaces.createBadge`, `updateBadge`, `deleteBadge` | `BadgesTab` (`mayManageWorkspace`) |
+| Бейдж участника: назначить / снять | `MANAGE_NICKNAMES` ws + иерархия `workspaces.outranks` (себе — можно); цель — не бот; бот-токен — 403 | `workspaces.setMemberBadge` | `canSetMemberBadge` |
+| Список бейджей, картинка бейджа | участник пространства (и гость) | `workspaces.listBadges`, `files.CanRead` (`IsWorkspaceBadge`) | — |
 | Роли: создать / править / порядок / удалить | `MANAGE_ROLES` ws, только ниже своей старшей | `roles.go` (`above`, `checkGrant`) | `canCreateRole`, `canEditRole`, `editableBits` |
 | Назначить / снять роль | `MANAGE_ROLES` ws; `admin` — только владелец | `setMemberRoles` | `canAssignRole`, `roleToggles` |
 | Стикерпаки: создать / править / загрузить / удалить (ADR-0030) | `MANAGE_STICKERS` ws | `stickers.manager` | вкладка «Стикеры» (`can(ws,'MANAGE_STICKERS')`) |
@@ -31,6 +35,7 @@
 | Статус звонка | в звонке + `CONNECT`, или `MANAGE_ROOM` room | `setVoiceStatus` | `useStatusLine` |
 | Запись встречи | не гость, `VIEW_ROOM` + `CONNECT`, `allow_recording` | `recording.participant` | `roomMenuGroups` (`record`) |
 | Саммари, аудио, транскрипт записи (docs/09 #47) | `VIEW_ROOM` room (карточка — сообщение комнаты; аудио — вложение; ограниченная — только допущенные) | `files.CanRead`, `recording.transcript` | — |
+| Переслать сообщение / карточку записи (ADR-0033) | `VIEW_ROOM` в источнике (restricted — можно), `SEND_MESSAGES` в цели (+ `ATTACH_FILES` для вложений; DM — участник); копия даёт читателям цели файлы и транскрипт, её удаление — отзывает | `messages.forward`, `files.CanRead`, `recording.visibleRecording` | MessageMenu, ForwardDialog |
 | Удалить запись встречи (docs/09 #50) | запустивший, владелец (`owner_id`) или `MANAGE_MESSAGES` room (+ `VIEW_ROOM`) | `recording.remove` | `mayDeleteRecording` |
 | Создать бота, список ботов (ADR-0031) | `MANAGE_WORKSPACE` ws (владелец — всегда), подтверждённый email; тариф `bots` | `bots.create`, `bots.list` (`manager`) | — (клиент, фаза 1b) |
 | Перевыпустить / отозвать токен, удалить бота | в «домашнем» пространстве: владелец бота или `MANAGE_WORKSPACE` ws | `bots.homeBot`, `bots.remove` | — |

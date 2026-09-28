@@ -11,6 +11,7 @@ import { useSession } from '../../stores/session';
 import { isGuest, useMemberName, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
 import { BotActions, BotDetails, BotHandle } from './BotProfile';
+import { ProfileBadge } from './ProfileBadge';
 import { VolumeRow, useMemberActions } from './MemberContextMenu';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -85,6 +86,7 @@ export function ProfileCard({
               {u.displayName}
             </div>
           ) : null}
+          <ProfileBadge workspaceId={workspaceId} userId={userId} />
           {/* A bot (ADR-0031): its @username instead of presence (bots are never «в сети» as people). */}
           {u.isBot ? <BotHandle botUserId={userId} /> : <div className="text-caption text-muted">{t(presence ?? 'members.offline')}</div>}
         </div>

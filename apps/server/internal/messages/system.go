@@ -10,6 +10,8 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/rooms"
 )
 
 // System posts and updates system messages (kind 'system', ADR-0025): cards the server
@@ -49,25 +51,53 @@ func (s *System) Created(ctx context.Context, workspaceID uuid.UUID, m sqlc.Mess
 }
 
 // Update replaces the payload of a system message and publishes MESSAGE_UPDATE. A deleted
-// message stays deleted (no error).
+// message stays deleted (no error). Its live forwarded copies (ADR-0033 §4) follow it, each
+// with MESSAGE_UPDATE to its own room — also when the original itself was deleted.
 func (s *System) Update(ctx context.Context, workspaceID, messageID uuid.UUID, payload *v1.SystemMessage) error {
 	raw, err := protojson.Marshal(payload)
 	if err != nil {
 		return err
 	}
 	m, err := s.h.db.Q.UpdateSystemMessage(ctx, sqlc.UpdateSystemMessageParams{ID: messageID, Payload: raw})
-	if db.IsNotFound(err) {
-		return nil
+	switch {
+	case db.IsNotFound(err):
+	case err != nil:
+		return err
+	default:
+		if err := s.publishUpdate(ctx, perm.RoomAccess{WorkspaceID: workspaceID}, m); err != nil {
+			return err
+		}
 	}
+	copies, err := s.h.db.Q.UpdateForwardedSystemMessages(ctx, sqlc.UpdateForwardedSystemMessagesParams{ForwardedFrom: &messageID, Payload: raw})
 	if err != nil {
 		return err
 	}
+	for _, c := range copies {
+		aud, err := s.h.db.Q.RoomAudience(ctx, c.RoomID)
+		if db.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		acc := perm.RoomAccess{DM: aud.Dm, Members: aud.DmMembers}
+		if aud.WorkspaceID != nil {
+			acc.WorkspaceID = *aud.WorkspaceID
+		}
+		if err := s.publishUpdate(ctx, acc, c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *System) publishUpdate(ctx context.Context, acc perm.RoomAccess, m sqlc.Message) error {
 	out, err := s.h.details(ctx, []sqlc.Message{m}, uuid.Nil)
 	if err != nil {
 		return err
 	}
-	s.h.events.Workspace(ctx, workspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
-		MessageUpdate: &v1.MessageUpdate{WorkspaceId: workspaceID.String(), Message: forEvent(out[0])},
+	rooms.Publish(ctx, s.h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
+		MessageUpdate: &v1.MessageUpdate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: forEvent(out[0])},
 	}})
 	return nil
 }

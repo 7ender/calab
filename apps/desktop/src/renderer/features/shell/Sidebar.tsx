@@ -1276,7 +1276,7 @@ function VoiceMember({
       data-speaking={talking || undefined}
       data-pending={state.pending || undefined}
     >
-      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={talking} pending={connectingRing} suffix={tz} role={role} />
+      <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={talking} pending={connectingRing} suffix={tz} role={role} workspaceId={workspaceId} />
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>
           {t('shell.live')}
