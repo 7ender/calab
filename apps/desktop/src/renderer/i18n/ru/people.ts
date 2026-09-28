@@ -210,6 +210,7 @@ export const ruPeople = {
   'birthday.hiddenByUser': 'скрыто пользователем',
   'birthday.hiddenByUserHint': 'Участник скрыл дату: другие её не видят, поздравления в чате не будет',
   'birthday.tableTitle': 'Дни рождения',
+  'birthday.soon': 'Скоро',
   'birthday.tableHint': 'Дата в формате {example}, год можно не указывать. Сохраняется по Enter или при выходе из поля; пустое поле убирает дату',
   'birthday.fieldLabel': 'День рождения: {name}',
   'birthday.fieldInvalid': 'Такой даты нет',

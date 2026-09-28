@@ -406,6 +406,8 @@ export interface MockServer {
   setBirthday(userId: string, b: { day: number; month: number; year?: number } | null, card?: { roomId: string }): void;
   /** docs/09 #76: «Скрыть от других» of the user, as PATCH /api/me {birthdayHidden} (USER_UPDATE). */
   setBirthdayHidden(userId: string, hidden: boolean): void;
+  /** The mock's «now» for date answers (GET …/birthdays): a visual test's page clock; null = real time. */
+  setClock(nowMs: number | null): void;
   /**
    * docs/09 #51: a user's own state of a DM, like PATCH /api/dms/{id}/state — archive / «Удалить
    * чат» (for them only) — and DM_STATE_UPDATE to their devices.
@@ -453,6 +455,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
     setBirthdayHidden: (u, hidden) => impl.setBirthdayHidden(u, hidden),
+    setClock: (ms) => impl.setClock(ms),
     seedBots: () => impl.seedBots(),
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
@@ -803,6 +806,7 @@ class MockImpl {
     this.voiceSessions.clear();
     this.droppedSessions.clear();
     this.gatewayDownUntil = 0;
+    this.clockMs = null;
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
   }
 
@@ -2169,11 +2173,11 @@ class MockImpl {
       sendMsg(c.res, 200, ListMembersResponseSchema, { members: this.membersOf(ws.id).map((x) => this.memberOut(x)) });
     });
 
-    // docs/09 #76: birthdays in the next `days` days (the mock's today is the page clock's UTC day).
+    // docs/09 #76: birthdays in the next `days` days (the mock's today: setClock, else real time; UTC).
     this.route('GET', '/api/workspaces/:id/birthdays', (c) => {
       const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
       const days = Number(c.url.searchParams.get('days') ?? '7');
-      const now = new Date();
+      const now = new Date(this.clockMs ?? Date.now());
       const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
       const out = this.membersOf(ws.id).flatMap((m) => {
         const u = this.userRec(m.userId);
@@ -4105,6 +4109,12 @@ class MockImpl {
       }
     }, ms);
     this.timers.add(timer);
+  }
+
+  private clockMs: number | null = null;
+
+  setClock(nowMs: number | null): void {
+    this.clockMs = nowMs;
   }
 
   setBirthdayHidden(userId: string, hidden: boolean): void {

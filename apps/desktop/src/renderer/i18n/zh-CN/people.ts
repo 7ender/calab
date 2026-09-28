@@ -212,6 +212,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'birthday.hiddenByUser': '用户已隐藏',
   'birthday.hiddenByUserHint': '成员隐藏了日期：其他人看不到，聊天中也不会出现祝福',
   'birthday.tableTitle': '生日',
+  'birthday.soon': '即将到来',
   'birthday.tableHint': '日期格式为 {example}，年份可不填。按 Enter 或离开输入框时保存；清空即移除日期',
   'birthday.fieldLabel': '生日：{name}',
   'birthday.fieldInvalid': '没有这个日期',

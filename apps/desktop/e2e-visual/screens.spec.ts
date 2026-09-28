@@ -6,7 +6,7 @@ import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { checkpoint, settle } from './harness';
+import { NOW, checkpoint, settle } from './harness';
 import { startPublisher } from './publisher';
 
 /**
@@ -79,6 +79,7 @@ const KEY = new Set([
   'voice-camera-pip',
   'voice-noise-popover',
   'main-members-toggled',
+  'main-members-birthday',
   'members-menu',
   'profile-dialog',
   'profile-menu',
@@ -1668,6 +1669,24 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await win.mouse.move(0, 0);
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'chat-recording-card');
+});
+
+// docs/09 #76: «🎂 Дни рождения» above «В сети» in the members panel — Борис today (a member
+// row), Вера in 3 days under the opened «Скоро» (the mock's clock = the page clock, 15 January).
+test('main-members-birthday', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setClock(NOW.getTime());
+  mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 });
+  mock.setBirthday(IDS.users.vera, { day: 18, month: 1 });
+  const members = await membersList(win);
+  const section = members.getByTestId('members-birthdays');
+  await expect(section.getByRole('heading')).toHaveText('🎂 Дни рождения — 2');
+  await expect(section.getByRole('button', { name: /Борис Петров/ })).toBeVisible();
+  await section.getByTestId('members-birthdays-soon').click();
+  await expect(section.getByRole('button', { name: /Вера Ким · 18 янв\./ })).toBeVisible();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'main-members-birthday');
 });
 
 // docs/09 #76: Борис's birthday is today (the page clock: 15 January) — the server's card in

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageOn, birthdayLine, daysInMonth, formatBirthday, formatBirthdayField, isBirthdayOn, isBirthdayToday, parseBirthdayField } from './birthday';
+import { ageOn, birthdayLine, daysInMonth, formatBirthday, formatBirthdayField, formatBirthdayShort, isBirthdayOn, isBirthdayToday, parseBirthdayField } from './birthday';
 
 describe('birthdays (docs/09 #76)', () => {
   it('«today» is the person’s own calendar day, by their time zone', () => {
@@ -54,6 +54,7 @@ describe('the inline birthday field (docs/09 #77)', () => {
     expect(formatBirthdayField({ day: 5, month: 3, year: 1990 }, 'en')).toBe('03/05/1990');
     expect(formatBirthdayField({ day: 5, month: 3, year: 1990 }, 'zh-CN')).toBe('1990/03/05');
     expect(formatBirthdayField(undefined, 'ru')).toBe('');
+    expect(formatBirthdayShort({ day: 30, month: 9 })).toBe('30 сент.');
   });
   it('parses what it formats, ISO and loose separators; rejects impossible dates', () => {
     expect(parseBirthdayField('15.03.1990', now, 'ru')).toEqual({ day: 15, month: 3, year: 1990 });

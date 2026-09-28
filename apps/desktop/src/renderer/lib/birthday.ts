@@ -75,6 +75,12 @@ export function formatBirthday(b: BirthdayLike): string {
   return new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(d);
 }
 
+/** «30 сент.» / “Sep 30” — the short form of a list (the members panel's «Скоро»). */
+export function formatBirthdayShort(b: BirthdayLike): string {
+  const d = new Date(Date.UTC(2000, b.month - 1, b.day, 12));
+  return new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(d);
+}
+
 /** «30 лет» / “30 years old”. */
 export const formatAge = (n: number): string => plural('birthday.age', n);
 

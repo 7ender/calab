@@ -212,6 +212,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'birthday.hiddenByUser': 'hidden by the user',
   'birthday.hiddenByUserHint': 'The member hid the date: others don’t see it, and there is no greeting in the chat',
   'birthday.tableTitle': 'Birthdays',
+  'birthday.soon': 'Soon',
   'birthday.tableHint': 'Date as {example}, the year is optional. Saved on Enter or when you leave the field; an empty field removes the date',
   'birthday.fieldLabel': 'Birthday: {name}',
   'birthday.fieldInvalid': 'No such date',

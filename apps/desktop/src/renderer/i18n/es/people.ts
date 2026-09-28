@@ -212,6 +212,7 @@ export const esPeople: DictShape<typeof enPeople> = {
   'birthday.hiddenByUser': 'oculto por el usuario',
   'birthday.hiddenByUserHint': 'El miembro ocultó la fecha: los demás no la ven y no habrá felicitación en el chat',
   'birthday.tableTitle': 'Cumpleaños',
+  'birthday.soon': 'Pronto',
   'birthday.tableHint': 'Fecha como {example}, el año es opcional. Se guarda con Enter o al salir del campo; un campo vacío quita la fecha',
   'birthday.fieldLabel': 'Cumpleaños: {name}',
   'birthday.fieldInvalid': 'Esa fecha no existe',
