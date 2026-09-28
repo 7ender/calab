@@ -13,15 +13,16 @@ By submitting a contribution you (a) certify that you have the right to submit i
 1. Fork, branch from `main`.
 2. `pnpm install && make gen` — generated code (`apps/server/gen`, `packages/protocol/src/gen`) is committed; CI fails on drift.
 3. Run the checks you touched:
-   - server: `cd apps/server && go vet ./... && golangci-lint run && go test -race ./...`, `make test-integration` (needs `pnpm infra:dev`);
+   - server: `make lint` (from the repo root — it runs golangci-lint with the repo config) and `cd apps/server && go test -race ./...`; `make test-integration` (needs `pnpm infra:dev`);
    - desktop: `pnpm -F @calaba/desktop typecheck lint test`, `e2e:visual` when UI changes (update snapshots deliberately).
-4. Open a PR with a short description, screenshots for UI changes, and the commands you ran.
+4. Open a PR (the template asks for the checks you ran, screenshots for UI changes and the CLA checkbox). CI runs on every PR; a maintainer reviews — security-sensitive paths (auth, permissions, tokens, protocol) get a second review.
 
 ## Style
 - Go: `gofmt`, `golangci-lint` config in `.golangci.yml`.
 - TypeScript: strict, ESLint config in `apps/desktop`.
 - Commit messages in English, imperative mood.
-- UI strings in Russian go to `apps/desktop/src/renderer/i18n/ru.ts`.
+- UI strings live in `apps/desktop/src/renderer/i18n/<locale>/*.ts` (ru, en, es, zh-CN — add all four).
+- Performance rules apply to every UI change: no `backdrop-filter`, no infinite animations, re-renders under control (see `CLAUDE.md` → «Производительность», `docs/14-energy.md`).
 
 ## Reporting bugs
 Use GitHub Issues. For security issues see `SECURITY.md`.
