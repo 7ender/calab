@@ -8,7 +8,7 @@ import { expect, test, type Page } from '@playwright/test';
 async function toNotificationsStep(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByLabel('Email').fill('owner@calaba.test');
-  await page.getByLabel('Пароль').fill('password123');
+  await page.getByLabel('Пароль', { exact: true }).fill('password123');
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   await expect(page.getByTestId('onboarding-mic')).toBeVisible();
   await page.getByRole('button', { name: 'Позже' }).click();

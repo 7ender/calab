@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from 'react';
-import { Button, Field, Input } from '../../components/ui';
+import { Button, Field, Input, PasswordInput } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { CodeInput, ResendButton, useCodeFlow } from './VerifyEmail';
@@ -111,7 +111,7 @@ export function ForgotPassword({
             ) : null}
           </label>
           <Field label={t('cred.newPassword')} hint={t('auth.passwordHint')} error={errors.password}>
-            <Input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className="h-8" />
+            <PasswordInput required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className="h-8" />
           </Field>
           {errors.form ? (
             <p className="text-body text-danger-text" role="alert">

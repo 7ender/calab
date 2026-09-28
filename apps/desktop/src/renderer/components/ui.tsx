@@ -2,7 +2,7 @@ import * as DialogP from '@radix-ui/react-dialog';
 import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
-import { ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
 import { cloneElement, forwardRef, isValidElement, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
@@ -225,6 +225,49 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
         {icon}
       </span>
       {field}
+    </span>
+  );
+});
+
+/** What the password field's eye shows: the input type and the button's label / pressed state. */
+export function passwordToggle(visible: boolean): { type: 'text' | 'password'; label: string; pressed: boolean } {
+  return { type: visible ? 'text' : 'password', label: t(visible ? 'auth.hidePassword' : 'auth.showPassword'), pressed: visible };
+}
+
+/**
+ * Password field with a «show password» eye (docs/09 #75): a 28×28 button inside the field at the
+ * end (40×40 on phones) switches `type` between password and text. The input stays first in the
+ * `Field` label (it is the labelled control) and keeps `autoComplete`/`name`, so password managers
+ * and Enter-to-submit work as before; the button is `type="button"` and does not take the focus
+ * from the field on a click. `visible`/`onVisibleChange` make it controlled (tests).
+ */
+export const PasswordInput = forwardRef<
+  HTMLInputElement,
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { visible?: boolean; onVisibleChange?: (v: boolean) => void }
+>(function PasswordInput({ className, visible: controlled, onVisibleChange, ...rest }, ref) {
+  const [own, setOwn] = useState(false);
+  const visible = controlled ?? own;
+  const toggle = passwordToggle(visible);
+  return (
+    <span className="relative flex w-full min-w-0 items-center">
+      <Input ref={ref} {...rest} type={toggle.type} className={cx('pr-7 mobile:pr-10', className)} />
+      <button
+        type="button"
+        aria-label={toggle.label}
+        aria-pressed={toggle.pressed}
+        title={toggle.label}
+        data-testid="password-toggle"
+        disabled={rest.disabled}
+        className="absolute right-0 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-[var(--radius-control)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg disabled:opacity-40 mobile:size-10"
+        // Keep the caret in the field on a click; Tab still reaches the button.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          setOwn(!visible);
+          onVisibleChange?.(!visible);
+        }}
+      >
+        {visible ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+      </button>
     </span>
   );
 });

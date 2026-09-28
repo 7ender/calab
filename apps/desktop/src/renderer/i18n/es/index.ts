@@ -59,6 +59,8 @@ export const es: Dict = {
   'auth.name': 'Nombre',
   'auth.password': 'Contraseña',
   'auth.passwordHint': 'Al menos 8 caracteres',
+  'auth.showPassword': 'Mostrar contraseña',
+  'auth.hidePassword': 'Ocultar contraseña',
   'auth.invite': 'Código de invitación',
   'auth.inviteHint': 'Necesario si el servidor solo acepta invitaciones',
   'auth.login': 'Iniciar sesión',

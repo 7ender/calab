@@ -59,7 +59,7 @@ async function open(page: Page, path: string, prefs: Record<string, unknown> = {
 async function signIn(page: Page, prefs: Record<string, unknown> = {}): Promise<void> {
   await open(page, '/', prefs);
   await page.getByLabel('Email').fill('owner@calaba.test');
-  await page.getByLabel('Пароль').fill(PASSWORD);
+  await page.getByLabel('Пароль', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Войти', exact: true }).tap();
 }
 

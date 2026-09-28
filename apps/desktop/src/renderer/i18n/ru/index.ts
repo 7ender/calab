@@ -57,6 +57,8 @@ export const ru = {
   'auth.name': 'Имя',
   'auth.password': 'Пароль',
   'auth.passwordHint': 'Не меньше 8 символов',
+  'auth.showPassword': 'Показать пароль',
+  'auth.hidePassword': 'Скрыть пароль',
   'auth.invite': 'Код приглашения',
   'auth.inviteHint': 'Нужен, если сервер принимает только по приглашению',
   'auth.login': 'Войти',

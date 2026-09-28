@@ -42,7 +42,7 @@ async function signIn(browser: Browser, baseURL: string | undefined, who: { logi
   });
   await page.goto('/');
   await page.getByLabel('Email').fill(who.login);
-  await page.getByLabel('Пароль').fill(who.password);
+  await page.getByLabel('Пароль', { exact: true }).fill(who.password);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   // First run on this device: onboarding (docs/08) — skip it, it has its own visual tests.
   const skip = page.getByRole('button', { name: 'Пропустить настройку' });

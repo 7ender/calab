@@ -120,7 +120,7 @@ for (const theme of ['dark', 'light'] as const) {
 
       // ---- sign in → onboarding «Как включать микрофон»
       await page.getByLabel('Email').fill('owner@calaba.test');
-      await page.getByLabel('Пароль').fill('password123');
+      await page.getByLabel('Пароль', { exact: true }).fill('password123');
       await page.getByRole('button', { name: 'Войти', exact: true }).click();
       await page.getByRole('button', { name: 'Разрешить микрофон' }).click();
       await page.getByRole('button', { name: 'Слышно хорошо' }).click();
@@ -221,7 +221,7 @@ test('marketing mobile', async () => {
     await page.evaluate(() => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru' }, version: 1 })));
     await page.goto(mock.url);
     await page.getByLabel('Email').fill('owner@calaba.test');
-    await page.getByLabel('Пароль').fill('password123');
+    await page.getByLabel('Пароль', { exact: true }).fill('password123');
     await page.getByRole('button', { name: 'Войти', exact: true }).tap();
     await expect(page.getByTestId('mobile-shell')).toBeVisible();
     await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();

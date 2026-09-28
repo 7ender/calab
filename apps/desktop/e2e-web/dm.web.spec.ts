@@ -15,7 +15,7 @@ async function signIn(browser: Browser, baseURL: string | undefined, email: stri
   const page = await ctx.newPage();
   await page.goto('/');
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Пароль').fill('password123');
+  await page.getByLabel('Пароль', { exact: true }).fill('password123');
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   const skip = page.getByRole('button', { name: 'Пропустить настройку' });
   const rail = page.getByRole('navigation', { name: 'Пространства' });
