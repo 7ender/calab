@@ -1,0 +1,36 @@
+import type { ruCall } from '../ru/call';
+import type { DictShape } from '../types';
+
+/** English UI strings — one-to-one calls (ADR-0034, ADR-0022). Same keys and placeholders as ru. */
+export const enCall: DictShape<typeof ruCall> = {
+  'call.call': 'Call',
+  'call.callName': 'Call {name}',
+  'call.calling': 'Calling',
+  'call.callingA11y': 'Calling…',
+  'call.stripCalling': 'Calling {name}',
+  'call.expand': 'Show the call',
+  'call.cancel': 'Cancel',
+  'call.incoming': 'Incoming call',
+  'call.accept': 'Accept',
+  'call.decline': 'Decline',
+  'call.hangup': 'End',
+  'call.inCall': 'Call',
+  'call.panel': 'Call · {name}',
+  'call.onCall': 'On a call',
+  'call.busy': 'Busy',
+  'call.alreadyInCall': 'You’re already in a call',
+  'call.forbidden': 'You can’t call this person',
+  'call.failed': 'Couldn’t place the call',
+  'call.declinedToast': 'Call declined',
+  'call.noAnswer': 'No answer',
+  'call.leaveRoomTitle': 'Leave the room and call?',
+  'call.leaveRoomText': 'You’re in the voice room {room}. The call starts once you leave it.',
+  'call.notifyIncoming': 'Incoming call from {name}',
+  'call.log.outgoing': 'Outgoing call',
+  'call.log.incoming': 'Incoming call',
+  'call.log.missed': 'Missed call',
+  'call.log.declined': 'Declined call',
+  'call.log.cancelled': 'Cancelled call',
+  'call.log.busy': 'Busy',
+  'call.log.call': 'Call',
+};

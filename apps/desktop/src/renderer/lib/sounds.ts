@@ -1,6 +1,9 @@
 import { prefs } from '../stores/prefs';
 // New-message cue (docs/09 P1 #13): pre-rendered by scripts/gen-sounds.mjs, bundled as an asset.
 import messageWavUrl from '../../../resources/sounds/message.wav?url';
+// One-to-one call ringing (ADR-0034): our own tones from tools/gen-call-sounds.mjs.
+import callIncomingUrl from '../../../resources/sounds/call-incoming.wav?url';
+import callOutgoingUrl from '../../../resources/sounds/call-outgoing.wav?url';
 
 /**
  * UI event sounds (docs/09 #29). Short (≤ 300 ms) tones synthesised once into WAV blobs (the new
@@ -251,3 +254,62 @@ export function playSound(name: SoundName, opts: PlayOptions = {}): void {
   if (sink) void el.setSinkId(sink).then(play, play);
   else play();
 }
+
+// ---------------------------------------------------------------- call ringing (ADR-0034)
+
+/** `call-incoming` — the ringtone; `call-outgoing` — the ring-back the caller hears. */
+export type RingName = 'call-incoming' | 'call-outgoing';
+
+/** One ring of each file, then this pause (the files carry no silence: ≤ 50 KB each). */
+export const RINGS: Record<RingName, { url: string; pauseMs: number }> = {
+  'call-incoming': { url: callIncomingUrl, pauseMs: 1000 },
+  'call-outgoing': { url: callOutgoingUrl, pauseMs: 3000 },
+};
+
+/** A call rings 45 s at most (the server's timeout): the ringer stops by itself after it. */
+export const RING_MAX_MS = 45_000;
+
+let ringing: { name: RingName; el: HTMLAudioElement; timer: number | null; stopAt: number } | null = null;
+
+/**
+ * Rings `name` over and over (one plain <audio>, the output device, the sound volume — docs/02
+ * echo rule 1) until stopRing() or RING_MAX_MS. The same ring again is a no-op; another one
+ * replaces it. Timers only while ringing (docs/14: nothing ticks when idle).
+ */
+export function startRing(name: RingName, maxMs = RING_MAX_MS): void {
+  if (ringing?.name === name) return;
+  stopRing();
+  const p = prefs();
+  const el = new Audio(RINGS[name].url);
+  el.volume = Math.max(0, Math.min(1, p.soundVolume));
+  const r = { name, el, timer: null as number | null, stopAt: Date.now() + maxMs };
+  ringing = r;
+  const play = (): void => {
+    if (ringing !== r) return;
+    if (Date.now() >= r.stopAt) {
+      stopRing();
+      return;
+    }
+    void el.play().catch(() => undefined);
+  };
+  el.onended = () => {
+    if (ringing === r) r.timer = window.setTimeout(play, RINGS[name].pauseMs);
+  };
+  const sink = p.outputDeviceId;
+  if (sink) void el.setSinkId(sink).then(play, play);
+  else play();
+}
+
+/** Stops the ringing (if any). */
+export function stopRing(): void {
+  const r = ringing;
+  if (!r) return;
+  ringing = null;
+  if (r.timer !== null) window.clearTimeout(r.timer);
+  r.el.onended = null;
+  r.el.pause();
+  r.el.removeAttribute('src');
+}
+
+/** What rings now (tests, the call service). */
+export const currentRing = (): RingName | null => ringing?.name ?? null;

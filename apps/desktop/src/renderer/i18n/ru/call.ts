@@ -1,0 +1,37 @@
+/**
+ * Russian UI strings — one-to-one calls (ADR-0034). Same rules as ru.ts: flat dotted keys,
+ * `{param}` placeholders, short, verb-first, no exclamation marks (docs/08).
+ */
+export const ruCall = {
+  'call.call': 'Позвонить',
+  'call.callName': 'Позвонить: {name}',
+  'call.calling': 'Вызов',
+  'call.callingA11y': 'Вызов…',
+  'call.stripCalling': 'Вызов: {name}',
+  'call.expand': 'Показать вызов',
+  'call.cancel': 'Отменить',
+  'call.incoming': 'Входящий звонок',
+  'call.accept': 'Принять',
+  'call.decline': 'Отклонить',
+  'call.hangup': 'Завершить',
+  'call.inCall': 'Звонок',
+  'call.panel': 'Звонок · {name}',
+  'call.onCall': 'На звонке',
+  'call.busy': 'Занято',
+  'call.alreadyInCall': 'Вы уже в звонке',
+  'call.forbidden': 'Этому человеку нельзя позвонить',
+  'call.failed': 'Не удалось позвонить',
+  'call.declinedToast': 'Звонок отклонён',
+  'call.noAnswer': 'Нет ответа',
+  'call.leaveRoomTitle': 'Выйти из комнаты и позвонить?',
+  'call.leaveRoomText': 'Вы в голосовой комнате {room}. Звонок начнётся после выхода из неё.',
+  'call.notifyIncoming': 'Входящий звонок от {name}',
+  // the DM call log (SystemMessage.call), one line like Telegram
+  'call.log.outgoing': 'Исходящий звонок',
+  'call.log.incoming': 'Входящий звонок',
+  'call.log.missed': 'Пропущенный звонок',
+  'call.log.declined': 'Отклонённый звонок',
+  'call.log.cancelled': 'Отменённый звонок',
+  'call.log.busy': 'Занято',
+  'call.log.call': 'Звонок',
+} as const;

@@ -24,6 +24,7 @@ import { applyStickerEvent } from './stickers';
 import { applyBotEvent } from './bots';
 import { useBots } from '../stores/bots';
 import { voice } from './voice';
+import { onCallRing, onCallState, onReadyCall } from './call';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
 
@@ -103,6 +104,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       openAdminRoute(r.me?.isSuperadmin === true);
       // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
       voice.checkSeat();
+      // ADR-0034: the ringing / in-call UI as the server has it now.
+      onReadyCall(r.call);
       return;
     }
     case 'resumed':
@@ -306,6 +309,13 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'botUpdate':
     case 'botDelete':
       applyBotEvent(e);
+      return;
+    // One-to-one calls (ADR-0034): the ringing modal, the in-call state, other devices' answers.
+    case 'callRing':
+      onCallRing(e.value.call, e.value.caller);
+      return;
+    case 'callState':
+      onCallState(e.value.call);
       return;
     case 'userUpdate':
       // Another member's public profile (name, avatar, time zone, birthday — docs/09 #76).

@@ -233,10 +233,12 @@ vi.mock('./mediaErrors', () => ({
   humanMediaError: () => ({ text: 'err', action: null }),
   reportMediaError: () => reportMediaError(),
 }));
+/** platform.ptt.setBinding: the binding the engine asks main for (null = unbound). */
+const setBinding = vi.fn((_b: unknown) => Promise.resolve({}));
 vi.mock('../platform', () => ({
   platform: {
     kind: 'web',
-    ptt: { onEvent: () => () => undefined, setBinding: () => Promise.resolve({}) },
+    ptt: { onEvent: () => () => undefined, setBinding: (b: unknown) => setBinding(b) },
     tray: { setState: () => undefined },
     system: { metrics: () => Promise.resolve({ rendererCpu: null }) },
     app: { log: () => undefined },
@@ -1053,6 +1055,41 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       expect(playSound.mock.calls.map((c) => c[0])).toEqual(['deafen']);
       usePrefs.getState().setPrefs({ micMode: 'voice' });
     });
+  });
+
+  it('a one-to-one call is voice activation only: PTT unbound and ignored, the choice back after (ADR-0034)', async () => {
+    const binding = { kind: 'key' as const, code: 66, label: 'F8', mode: 'hold' as const };
+    usePrefs.getState().setPrefs({ micMode: 'ptt', pttReleaseMs: 0, pttBinding: binding });
+    await settle();
+    expect(setBinding).toHaveBeenLastCalledWith(binding);
+    await voice.join('dm-1', '', { call: true });
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ call: true, workspaceId: '', phase: 'connected' });
+    expect(setBinding).toHaveBeenLastCalledWith(null);
+    expect(usePrefs.getState().micMode).toBe('ptt'); // the user's choice is untouched
+    // The key does nothing; the VAD gate decides (closed here: nothing on air yet).
+    const hold = (down: boolean): void => (voice as unknown as { onPtt(ev: { down: boolean }): void }).onPtt({ down });
+    hold(true);
+    await settle();
+    expect(useVoice.getState().pttDown).toBe(false);
+    // The VAD gate decides, not a key.
+    expect((voice as unknown as { micMode(): string }).micMode()).toBe('voice');
+    await voice.leave();
+    await settle();
+    expect(useVoice.getState().call).toBe(false);
+    expect(setBinding).toHaveBeenLastCalledWith(binding);
+    usePrefs.getState().setPrefs({ micMode: 'voice', pttBinding: null });
+  });
+
+  it('a room join after a call restores the chosen mic mode; a call reconnect keeps voice only', async () => {
+    usePrefs.getState().setPrefs({ micMode: 'ptt', pttBinding: { kind: 'key', code: 66, label: 'F8', mode: 'hold' } });
+    await voice.join('dm-1', '', { call: true });
+    await settle();
+    expect(useVoice.getState().call).toBe(true);
+    await voice.join('A', 'ws');
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ call: false, roomId: 'A' });
+    usePrefs.getState().setPrefs({ micMode: 'voice', pttBinding: null });
   });
 
   it('applies to every audio element of the person: on subscribe, on change, after a reconnect', async () => {
