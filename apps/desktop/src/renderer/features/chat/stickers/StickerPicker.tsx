@@ -2,6 +2,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { WorkspaceRole, type Sticker, type StickerPack } from '@calaba/protocol';
 import { Clock3, Search, Sticker as StickerIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Button, IconButton, Spinner, Tip, cx } from '../../../components/ui';
 import { plural, t } from '../../../i18n';
 import { autoFocusAllowed, useMobile } from '../../../lib/mobile';
@@ -16,17 +17,23 @@ import { useMemberRoles, useWorkspaces } from '../../../stores/workspaces';
 import { searchEmoji } from '../emoji';
 import { StickerImage } from './StickerImage';
 
-const COLS = 5;
-/** Desktop tiles: 5 × 96 px (Telegram Desktop); phones: the sheet's width / 5. */
-const CELL = 96;
-const IMG = 80;
-const CELL_MOBILE = 72;
-const IMG_MOBILE = 60;
+const COLS = 4;
+/** Desktop tiles: 4 × 104 px (Telegram Desktop); phones: the sheet's width / 4. */
+const CELL = 104;
+/** The sticker sits in its tile with this inset on every side. */
+const INSET = 6;
+/** The grid's side padding (px-3 on each side). */
+const GRID_PAD = 24;
+/** The enlarged preview over a hovered tile, and the hover delay before it shows. */
+const PREVIEW = 200;
+const PREVIEW_DELAY_MS = 250;
+/** The pack covers in the strip. */
+const COVER = 36;
 
 /**
  * The composer's «Стикеры» button and panel (ADR-0030, docs/08 «Стикеры», like Telegram
  * Desktop): search by emoji or pack name, a strip of pack covers («Недавние» first; a click
- * scrolls to the pack, the pack under the top edge is highlighted), 5 large tiles a row. A click
+ * scrolls to the pack, the pack under the top edge is highlighted), 4 large tiles a row (a 200 px preview over the hovered one). A click
  * sends at once and closes the panel; Shift+click sends and keeps it open. Animated stickers
  * stand on their first frame and play only on hover / focus (docs/14). On a phone the popover
  * is a bottom sheet (app/styles.css).
@@ -50,7 +57,7 @@ export function StickerButton({ place, onSend }: { place: StickerPlace; onSend: 
           collisionPadding={16}
           aria-label={t('stk.tabStickers')}
           data-testid="sticker-panel"
-          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(440px,var(--radix-popover-content-available-height))] w-[506px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-[min(75dvh,560px)]"
+          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(520px,var(--radix-popover-content-available-height))] w-[460px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-[min(75dvh,560px)]"
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <StickerPanel
@@ -75,6 +82,7 @@ export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; 
   const recentIds = useStickers((s) => s.recent);
   const byId = useWorkspaces((s) => s.byId);
   const mobile = useMobile();
+  const sheetWidth = useWindowWidth(mobile);
   const [q, setQ] = useState('');
   const [active, setActive] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -128,7 +136,9 @@ export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; 
     next?.focus();
     next?.scrollIntoView({ block: 'nearest' });
   };
-  const size = mobile ? { cell: CELL_MOBILE, img: IMG_MOBILE } : { cell: CELL, img: IMG };
+  // The sheet spans the screen on a phone: its width over 4 columns.
+  const cell = mobile ? Math.max(56, Math.floor((sheetWidth - GRID_PAD) / COLS)) : CELL;
+  const size = { cell, img: cell - 2 * INSET, preview: !mobile };
   const grid = (list: readonly Sticker[]): ReactNode => <Grid stickers={list} onSend={onSend} {...size} />;
 
   if (guestHere) return <Note>{t('stk.guest')}</Note>;
@@ -177,14 +187,14 @@ export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; 
         <nav ref={strip} className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2 py-1.5" aria-label={t('stk.packs')} data-testid="sticker-packs">
           {recent.length ? (
             <PackTab id="recent" label={t('stk.recent')} active={current === 'recent'} onClick={() => jump('recent')}>
-              <Clock3 className="size-5" aria-hidden />
+              <Clock3 className="size-6" aria-hidden />
             </PackTab>
           ) : null}
           {usable.map((p) => {
             const c = coverOf(p);
             return (
               <PackTab key={p.id} id={p.id} label={p.name} active={current === p.id} onClick={() => jump(p.id)}>
-                {c ? <StickerImage sticker={c} size={28} playing={false} /> : null}
+                {c ? <StickerImage sticker={c} size={COVER} playing={false} /> : null}
               </PackTab>
             );
           })}
@@ -278,38 +288,94 @@ function Section({ id, label, cell, lazyRows, children }: { id: string; label: s
   );
 }
 
-function Grid({ stickers, onSend, cell, img }: { stickers: readonly Sticker[]; onSend: (s: Sticker, keepOpen: boolean) => void; cell: number; img: number }): ReactNode {
+/** The window's width while `on` (the phone sheet spans it); 0 otherwise. */
+function useWindowWidth(on: boolean): number {
+  const [w, setW] = useState(() => (on && typeof window !== 'undefined' ? window.innerWidth : 0));
+  useEffect(() => {
+    if (!on) return;
+    const sync = (): void => setW(window.innerWidth);
+    sync();
+    window.addEventListener('resize', sync);
+    return () => window.removeEventListener('resize', sync);
+  }, [on]);
+  return w;
+}
+
+function Grid({ stickers, onSend, cell, img, preview }: { stickers: readonly Sticker[]; onSend: (s: Sticker, keepOpen: boolean) => void; cell: number; img: number; preview: boolean }): ReactNode {
   return (
-    <div className="grid grid-cols-5">
+    <div className="grid grid-cols-4">
       {stickers.map((s, i) => (
-        <Tile key={`${s.id}-${i}`} sticker={s} first={i === 0} cell={cell} img={img} onPick={(keep) => onSend(s, keep)} />
+        <Tile key={`${s.id}-${i}`} sticker={s} first={i === 0} cell={cell} img={img} preview={preview} onPick={(keep) => onSend(s, keep)} />
       ))}
     </div>
   );
 }
 
-/** One tile: grows a little under the pointer; an animated sticker plays only then (or on focus). */
-function Tile({ sticker, first, cell, img, onPick }: { sticker: Sticker; first: boolean; cell: number; img: number; onPick: (keepOpen: boolean) => void }): ReactNode {
+/**
+ * One tile: grows to 1.12 under the pointer; an animated sticker plays only then (or on focus).
+ * On a pointer that hovers (desktop) a 200 px preview rises over the tile after 250 ms.
+ */
+function Tile({ sticker, first, cell, img, preview, onPick }: { sticker: Sticker; first: boolean; cell: number; img: number; preview: boolean; onPick: (keepOpen: boolean) => void }): ReactNode {
   const [hot, setHot] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const timer = useRef<number | undefined>(undefined);
   const reduce = useMediaQuery('(prefers-reduced-motion: reduce)');
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const hide = (): void => {
+    window.clearTimeout(timer.current);
+    setAnchor(null);
+  };
   return (
     <button
       type="button"
       data-sticker-pick
       tabIndex={first ? 0 : -1}
-      onClick={(e: MouseEvent) => onPick(e.shiftKey)}
-      onPointerEnter={() => setHot(true)}
-      onPointerLeave={() => setHot(false)}
+      onClick={(e: MouseEvent) => {
+        hide();
+        onPick(e.shiftKey);
+      }}
+      onPointerEnter={(e) => {
+        setHot(true);
+        if (!preview || e.pointerType !== 'mouse') return;
+        const el = e.currentTarget;
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setAnchor(el.getBoundingClientRect()), PREVIEW_DELAY_MS);
+      }}
+      onPointerLeave={() => {
+        setHot(false);
+        hide();
+      }}
+      onWheel={hide}
       onFocus={() => setHot(true)}
       onBlur={() => setHot(false)}
       aria-label={t('stk.sticker', { emoji: sticker.emoji })}
       className="group grid w-full min-w-0 place-items-center rounded-[var(--radius-card)] hover:bg-hover focus-visible:bg-hover focus-visible:outline-offset-[-2px]"
       style={{ height: cell }}
     >
-      <span className="grid place-items-center transition-transform duration-[var(--motion-fast)] motion-safe:group-hover:scale-[1.08] motion-safe:group-focus-visible:scale-[1.08]">
+      <span className="grid place-items-center transition-transform duration-[var(--motion-fast)] motion-safe:group-hover:scale-[1.12] motion-safe:group-focus-visible:scale-[1.12]">
         <StickerImage sticker={sticker} size={img} playing={sticker.animated && hot && !reduce} />
       </span>
+      {anchor ? <Preview sticker={sticker} anchor={anchor} playing={sticker.animated && !reduce} /> : null}
     </button>
+  );
+}
+
+/** The enlarged sticker over the hovered tile (under it when the top is too close), in a portal. */
+function Preview({ sticker, anchor, playing }: { sticker: Sticker; anchor: DOMRect; playing: boolean }): ReactNode {
+  const gap = 8;
+  const above = anchor.top - PREVIEW - gap >= 8;
+  const top = above ? anchor.top - PREVIEW - gap : anchor.bottom + gap;
+  const left = Math.max(8, Math.min(window.innerWidth - PREVIEW - 8, anchor.left + anchor.width / 2 - PREVIEW / 2));
+  return createPortal(
+    <div
+      className="anim-in pointer-events-none fixed z-[var(--z-tooltip)] grid place-items-center drop-shadow-[0_4px_16px_rgb(0_0_0/0.35)]"
+      style={{ top, left, width: PREVIEW, height: PREVIEW }}
+      data-testid="sticker-preview"
+      aria-hidden
+    >
+      <StickerImage sticker={sticker} size={PREVIEW} playing={playing} />
+    </div>,
+    document.body,
   );
 }
 
@@ -354,7 +420,7 @@ function PackTab({ id, label, active, onClick, children }: { id: string; label: 
         data-pack-tab={id}
         onClick={onClick}
         className={cx(
-          'relative grid size-9 shrink-0 place-items-center rounded-[var(--radius-icon)] hover:bg-hover hover:text-fg',
+          'relative grid size-11 shrink-0 place-items-center rounded-[var(--radius-icon)] hover:bg-hover hover:text-fg',
           active ? 'bg-[var(--color-fill)] text-accent' : 'text-muted',
         )}
       >
