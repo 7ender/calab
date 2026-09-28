@@ -10,7 +10,7 @@
  * Prints JSON: commits/s, React render ms/s (selfBaseDuration), top components by time and by
  * count, what woke each one (parent / props / hook index / context) and which components
  * started the commits. `--bench C|E` then keeps the scenario running and samples CPU with
- * tools/energy-bench.py (E adds a remote 720p camera publisher).
+ * tools/energy-bench.py (E adds a remote 720p camera).
  *
  *   CALABA_RENDERER_MINIFY=0 CALABA_REACT_PROFILING=1 pnpm -F @calaba/desktop build:app
  *   npx tsx tools/perf-call.ts [--port 39461] [--seconds 30] [--speaker] [--cpu] [--timeline] [--no-stats] [--no-emulate]
@@ -30,7 +30,6 @@ import { AccessToken } from 'livekit-server-sdk';
 import { PresenceStatus } from '../packages/protocol/src/gen/calaba/v1/gateway_pb';
 import { IDS } from '../apps/desktop/e2e-support/fixtures';
 import { livekitRoomPrefix, startMockServer } from '../apps/desktop/e2e-support/mock-server';
-import { startPublisher, type Publisher } from '../apps/desktop/e2e-visual/publisher';
 
 const argv = process.argv;
 const opt = (name: string, def: string): string => {
@@ -230,9 +229,13 @@ function silentWav(path: string): void {
   writeFileSync(path, b);
 }
 
-/** A second participant publishing Chromium's fake microphone (a beep every second). */
-async function startSpeaker(userId: string, name: string, roomId: string): Promise<Browser> {
-  const at = new AccessToken(process.env['MOCK_LIVEKIT_KEY'] ?? 'devkey', process.env['MOCK_LIVEKIT_SECRET'] ?? 'secret', { identity: `${userId}:speaker`, name, ttl: '10m' });
+/**
+ * A second participant publishing Chromium's fake devices: the microphone (a beep every second)
+ * or a 720p camera (a moving test pattern). No named functions inside `evaluate` (tsx would wrap
+ * them in its `__name` helper, which the page does not have).
+ */
+async function startSpeaker(userId: string, name: string, roomId: string, source: 'mic' | 'camera' = 'mic'): Promise<Browser> {
+  const at = new AccessToken(process.env['MOCK_LIVEKIT_KEY'] ?? 'devkey', process.env['MOCK_LIVEKIT_SECRET'] ?? 'secret', { identity: `${userId}:${source === 'mic' ? 'speaker' : 'camera'}`, name, ttl: '10m' });
   at.addGrant({ roomJoin: true, room: `${livekitRoomPrefix()}${roomId}`, canPublish: true, canSubscribe: false });
   const token = await at.toJwt();
   const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio'] });
@@ -240,13 +243,14 @@ async function startSpeaker(userId: string, name: string, roomId: string): Promi
   const umd = createRequire(import.meta.url).resolve('livekit-client');
   await page.addScriptTag({ path: umd.replace(/[^/]+$/, 'livekit-client.umd.js') });
   await page.evaluate(
-    async ({ url, token }) => {
+    async ({ url, token, camera }) => {
       const LK = (window as unknown as { LivekitClient: typeof import('livekit-client') }).LivekitClient;
       const room = new LK.Room();
       await room.connect(url, token);
-      await room.localParticipant.setMicrophoneEnabled(true);
+      if (camera) await room.localParticipant.setCameraEnabled(true, { resolution: LK.VideoPresets.h720.resolution });
+      else await room.localParticipant.setMicrophoneEnabled(true);
     },
-    { url: process.env['MOCK_LIVEKIT_URL'] ?? 'ws://127.0.0.1:7880', token },
+    { url: process.env['MOCK_LIVEKIT_URL'] ?? 'ws://127.0.0.1:7880', token, camera: source === 'camera' },
   );
   return browser;
 }
@@ -274,7 +278,7 @@ async function main(): Promise<void> {
   const wav = join(userData, 'silence.wav');
   silentWav(wav);
   const timers: NodeJS.Timeout[] = [];
-  let publisher: Publisher | null = null;
+  let publisher: Browser | null = null;
   let speaker: Browser | null = null;
   let app: ElectronApplication | null = null;
   try {
@@ -295,9 +299,12 @@ async function main(): Promise<void> {
     app = l.app;
     const page = l.page;
     const cdp = await page.context().newCDPSession(page);
-    await cdp.send('Page.enable');
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `var __name = (f) => f; (${INIT.toString()})()` });
-    await page.reload();
+    // The profiler hook only for a profile: a CPU bench (--seconds 0) measures the app as shipped.
+    if (SECONDS > 0) {
+      await cdp.send('Page.enable');
+      await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `var __name = (f) => f; (${INIT.toString()})()` });
+      await page.reload();
+    }
     const aside = page.locator('aside').first();
     await aside.waitFor({ timeout: 30_000 });
 
@@ -315,7 +322,7 @@ async function main(): Promise<void> {
 
     if (BENCH === 'E') {
       mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false, camera: true });
-      publisher = await startPublisher({ userId: IDS.users.boris, name: 'Борис Петров', roomId: IDS.rooms.call, source: 'camera' });
+      publisher = await startSpeaker(IDS.users.boris, 'Борис Петров', IDS.rooms.call, 'camera');
     }
 
     // Live events, like production.
@@ -430,7 +437,7 @@ async function main(): Promise<void> {
     }
   } finally {
     for (const t of timers) clearInterval(t);
-    await publisher?.stop().catch(() => undefined);
+    await publisher?.close().catch(() => undefined);
     await speaker?.close().catch(() => undefined);
     await app?.close().catch(() => undefined);
     await mock.close();
