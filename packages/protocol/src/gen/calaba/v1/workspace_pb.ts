@@ -484,7 +484,7 @@ export type UpdateWorkspaceRequest = Message<"calaba.v1.UpdateWorkspaceRequest">
   iconFileId?: string | undefined;
 
   /**
-   * 16|24|32|48|64
+   * tiers 8|16|32|64 (24, 48: legacy)
    *
    * @generated from field: optional uint32 default_audio_bitrate_kbps = 5;
    */

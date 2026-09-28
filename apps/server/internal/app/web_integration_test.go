@@ -115,6 +115,10 @@ func TestWebCookieAuth(t *testing.T) {
 		t.Fatalf("same-origin refresh: %d %s", r.status, r.body)
 	}
 	c3 := r.cookie
+	// The answer with c3 was lost: the browser resends c2 → the same c3 again (docs/09 #89).
+	if r := webPost(t, "/api/auth/refresh", nil, goodOrigin, c2.Value); r.status != 200 || r.cookie == nil || r.cookie.Value != c3.Value {
+		t.Fatalf("lost-answer cookie refresh: %d %s", r.status, r.body)
+	}
 	// The access token works as a normal bearer; bearer requests are not origin-checked.
 	var rr2 v1.RefreshResponse
 	_ = protojson.Unmarshal(r.body, &rr2)

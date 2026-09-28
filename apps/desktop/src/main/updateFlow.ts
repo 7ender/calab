@@ -72,6 +72,11 @@ export interface UpdateFlowEnv {
    * the windows before `before-quit`, so the flag must be set here.
    */
   beforeInstall?: () => void;
+  /**
+   * Awaited before quitAndInstall: a token refresh in flight finishes (bounded) so its answer
+   * is not lost with the old process (docs/09 #89). Optional; absent → install at once.
+   */
+  settle?: () => Promise<void>;
 }
 
 export const FIRST_CHECK_MS = 10_000;
@@ -144,6 +149,8 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   let periodic: ReturnType<typeof setInterval> | null = null;
   let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
   let inCall = false;
+  /** install() is waiting for settle(): a second click does not queue a second quit. */
+  let installing = false;
   /** Date.now() when the last updater check started (0 = never). */
   let lastCheckAt = 0;
   /** The feed last handed to the updater ('' before the first check). */
@@ -323,10 +330,19 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     check,
     install() {
       if (status.state !== 'downloaded') return false;
+      if (installing) return true;
       env.log.info('[update] quit and install', status.version);
-      env.beforeInstall?.();
-      // Not silent (Windows shows the installer progress), relaunch after install.
-      updater.quitAndInstall(false, true);
+      const go = (): void => {
+        env.beforeInstall?.();
+        // Not silent (Windows shows the installer progress), relaunch after install.
+        updater.quitAndInstall(false, true);
+      };
+      if (!env.settle) {
+        go();
+        return true;
+      }
+      installing = true;
+      void env.settle().then(go, go);
       return true;
     },
     applySettings() {

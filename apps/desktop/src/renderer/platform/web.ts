@@ -81,7 +81,11 @@ function postAuth(path: string, body: unknown, bearer?: string): Promise<Respons
   });
 }
 
-/** 409 on /api/auth/refresh = another refresh of the same session won the race: just retry. */
+/**
+ * 409 on /api/auth/refresh = another refresh of the same session won the race and the server
+ * could not replay it (normally an old cookie within 60 s just gets the same new cookie again,
+ * docs/09 #89): retry, the cookie may already hold the new token. Still 409 → transient.
+ */
 const REFRESH_CONFLICT_RETRIES = 3;
 
 /**

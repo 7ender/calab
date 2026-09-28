@@ -255,7 +255,7 @@ func (x *RoomPermissionOverride) GetDeny() uint64 {
 // Per-room media override; an unset field means "use the workspace default".
 type RoomMediaOverride struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	AudioBitrateKbps *uint32                `protobuf:"varint,1,opt,name=audio_bitrate_kbps,json=audioBitrateKbps,proto3,oneof" json:"audio_bitrate_kbps,omitempty"` // 16|24|32|48|64
+	AudioBitrateKbps *uint32                `protobuf:"varint,1,opt,name=audio_bitrate_kbps,json=audioBitrateKbps,proto3,oneof" json:"audio_bitrate_kbps,omitempty"` // tiers 8|16|32|64 (24, 48: legacy)
 	MaxStreamPreset  *ScreenSharePreset     `protobuf:"varint,2,opt,name=max_stream_preset,json=maxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset,oneof" json:"max_stream_preset,omitempty"`
 	MaxStreams       *uint32                `protobuf:"varint,3,opt,name=max_streams,json=maxStreams,proto3,oneof" json:"max_streams,omitempty"`    // 0..10
 	CameraLimit      *uint32                `protobuf:"varint,4,opt,name=camera_limit,json=cameraLimit,proto3,oneof" json:"camera_limit,omitempty"` // 0..25 (0 = cameras off)

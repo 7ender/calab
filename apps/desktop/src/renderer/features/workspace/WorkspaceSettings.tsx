@@ -1,5 +1,6 @@
 import {
-  AUDIO_BITRATE_OPTIONS_KBPS,
+  AUDIO_TIERS_KBPS,
+  audioTierKbps,
   WorkspaceRole,
   WorkspaceVisibility,
   type Invite,
@@ -15,6 +16,7 @@ import { SettingsWindow, type SettingsSection } from '../../components/SettingsW
 import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner, Toggle } from '../../components/ui';
 import { getLocale, t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
+import { audioTierLabel } from '../../lib/audioTierLabel';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { fmt, type TimeFormatPref } from '../../lib/format';
 import { workspaceInitials } from '../../lib/initials';
@@ -211,10 +213,10 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
   return (
     <Card title={t('card.defaults')} footer={t('ws.mediaText')}>
       <Row label={t('media.bitrate')} hint={t('media.bitrateHint')}>
-        <Select aria-label={t('media.bitrate')} className="w-60" value={md?.audioBitrateKbps ?? 32} onChange={(e) => apply({ defaultAudioBitrateKbps: Number(e.target.value) })}>
-          {AUDIO_BITRATE_OPTIONS_KBPS.map((b) => (
+        <Select aria-label={t('media.bitrate')} className="w-60" value={audioTierKbps(md?.audioBitrateKbps ?? 32)} onChange={(e) => apply({ defaultAudioBitrateKbps: Number(e.target.value) })}>
+          {AUDIO_TIERS_KBPS.map((b) => (
             <option key={b} value={b}>
-              {t('unit.kbps', { n: b })}
+              {audioTierLabel(b)}
             </option>
           ))}
         </Select>

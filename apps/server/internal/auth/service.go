@@ -32,8 +32,10 @@ import (
 )
 
 // refreshGrace: presenting the *previous* refresh token within this window after a
-// rotation is treated as a benign concurrent refresh (401 without revoking), not reuse.
-const refreshGrace = 30 * time.Second
+// rotation is not reuse: it is a retry whose answer was lost, or a concurrent refresh (another
+// tab). While the new token is unused the retry gets the same new token again (replay.go);
+// otherwise 409 without revoking. After the window it is reuse: the session is revoked.
+const refreshGrace = 60 * time.Second
 
 // Service implements the auth use cases.
 type Service struct {
@@ -133,9 +135,10 @@ var (
 	errRegistrationClosed = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_REGISTRATION_CLOSED, "registration requires an invite")
 	errInviteEmail        = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH,
 		"this invitation was sent to another email address: use that address")
-	// errRefreshRace: the previous refresh token was presented within the grace window
-	// right after a rotation (another tab / request won). The session is intact: retry with
-	// the current token (web: the cookie already holds it). Must not clear the cookie.
+	// errRefreshRace: the previous refresh token was presented within the grace window, but
+	// the rotation cannot be replayed (the new token was already used, or Valkey lost the
+	// replay entry). The session is intact: retry with the current token (web: the cookie
+	// already holds it). Must not clear the cookie.
 	errRefreshRace = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_CONFLICT, "refresh token was just rotated; retry with the current one")
 )
 
@@ -412,7 +415,8 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 }
 
 // Refresh rotates the refresh token of a session. Replaying a rotated token revokes the
-// session (reuse detection), except within refreshGrace of the last rotation.
+// session (reuse detection), except the previous token within refreshGrace of the last
+// rotation: it gets the same new token again while that one is unused (a lost answer), else 409.
 func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client) (*v1.RefreshResponse, error) {
 	sid, secret, ok := ParseRefreshToken(req.GetRefreshToken())
 	if !ok {
@@ -435,17 +439,25 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 		if sess.RevokedAt != nil || !now.Before(sess.ExpiresAt) {
 			return errInvalidRefresh
 		}
+		replay := "" // the new secret handed out again (lost answer), no rotation
 		if subtle.ConstantTimeCompare(presented, sess.RefreshTokenHash) != 1 {
 			if sess.PrevRefreshTokenHash != nil && sess.RotatedAt != nil &&
 				now.Sub(*sess.RotatedAt) < refreshGrace &&
 				subtle.ConstantTimeCompare(presented, sess.PrevRefreshTokenHash) == 1 {
-				return errRefreshRace // lost a race with a concurrent refresh; keep the session
+				// The answer to the rotation was lost (or another tab won the race): hand out the
+				// same new refresh token while it is unused; a fresh access token is harmless.
+				next, ok := s.loadReplay(ctx, sess.ID, secret, sess.RefreshTokenHash)
+				if !ok {
+					return errRefreshRace // no replay entry (Valkey down / new token used): keep the session
+				}
+				replay = next
+			} else {
+				if _, err := q.RevokeSession(ctx, sess.ID); err != nil {
+					return err
+				}
+				revoked = true
+				return nil // commit the revocation
 			}
-			if _, err := q.RevokeSession(ctx, sess.ID); err != nil {
-				return err
-			}
-			revoked = true
-			return nil // commit the revocation
 		}
 		user, err := q.GetUser(ctx, sess.UserID)
 		if err != nil {
@@ -457,6 +469,10 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 			}
 			revoked = true
 			return nil
+		}
+		if replay != "" {
+			tokens, err = s.tokenPair(sess, replay)
+			return err
 		}
 		ttl := s.refresh
 		if user.IsGuest && user.GuestExpiresAt != nil { // promoted guests get normal sessions
@@ -479,6 +495,8 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 		if err != nil {
 			return err
 		}
+		// Before the commit, under the row lock: a retry right after the commit finds it.
+		s.storeReplay(ctx, sess.ID, secret, newSecret)
 		tokens, err = s.tokenPair(sess, newSecret)
 		return err
 	})

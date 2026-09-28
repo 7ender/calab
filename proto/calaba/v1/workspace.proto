@@ -129,7 +129,7 @@ message UpdateWorkspaceRequest {
   optional string name = 2;
   optional WorkspaceVisibility visibility = 3;
   optional string icon_file_id = 4; // "" clears
-  optional uint32 default_audio_bitrate_kbps = 5; // 16|24|32|48|64
+  optional uint32 default_audio_bitrate_kbps = 5; // tiers 8|16|32|64 (24, 48: legacy)
   optional ScreenSharePreset default_max_stream_preset = 6;
   optional uint32 default_max_streams = 7; // 0..10
   optional bool allow_self_nickname = 8;

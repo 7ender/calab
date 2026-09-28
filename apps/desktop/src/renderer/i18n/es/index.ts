@@ -230,12 +230,16 @@ export const es: Dict = {
   'room.deleteConfirm': 'Los mensajes y archivos de «{name}» se eliminarán. Esto no se puede deshacer.',
 
   // media settings
-  'media.bitrate': 'Tasa de bits de voz',
-  'media.bitrateHint': '16–24 para conexiones débiles, 32 estándar, 48–64 voz «de estudio»',
+  'media.bitrate': 'Calidad del sonido',
+  'media.bitrateHint': 'Baja ahorra datos con mala conexión; Excelente solo se nota con un buen micrófono',
   'media.maxPreset': 'Calidad máxima de pantalla compartida',
   'media.maxStreams': 'Pantallas compartidas simultáneas',
   'media.maxStreamsHint': 'Cuántas personas pueden compartir pantalla a la vez (0 — no permitido)',
   'media.default': 'Predeterminado del espacio ({v})',
+  'audioTier.8': 'Baja',
+  'audioTier.16': 'Normal',
+  'audioTier.32': 'Buena',
+  'audioTier.64': 'Excelente',
   'media.inherit': 'Predeterminado del espacio',
   'media.inheritHint': 'En el espacio: {v}',
 
@@ -350,6 +354,7 @@ export const es: Dict = {
   'voice.myBitrate': 'Calidad de mi voz',
   'voice.myBitrateHint': 'Bájala con una conexión débil, por ejemplo en roaming. Nunca supera el ajuste de la sala',
   'voice.myBitrateRoom': 'Predeterminado de la sala',
+  'voice.myBitrateCap': 'Como máximo: {v}',
   'voice.aecNote': 'La cancelación de eco y el control automático del micrófono siempre están activos.',
 
   // streams
