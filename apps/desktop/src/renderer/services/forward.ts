@@ -1,4 +1,4 @@
-import { t } from '../i18n';
+import { plural, t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
@@ -45,6 +45,6 @@ export function reportForward(r: ForwardResult): void {
     toast.error(t('chat.fwd.notForwardable'));
     return;
   }
-  if (r.sent > 0) toast.success(t('chat.fwd.done', { n: r.sent }));
+  if (r.sent > 0) toast.success(plural('chat.fwd.done', r.sent));
   for (const name of r.failed) toast.error(t('chat.fwd.failed', { name }));
 }

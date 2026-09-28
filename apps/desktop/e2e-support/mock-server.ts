@@ -70,6 +70,7 @@ import {
   PairGptunnelRequestSchema,
   PairGptunnelResponseSchema,
   RecordingCardSchema,
+  ForwardSchema,
   BirthdaySchema,
   RecordingStatus,
   RoomRecordingSchema,
@@ -118,6 +119,8 @@ import {
   CreateRoomInviteRequestSchema,
   CreateRoomInviteResponseSchema,
   CreateMessageResponseSchema,
+  ForwardMessageRequestSchema,
+  ForwardMessageResponseSchema,
   CreateRoomRequestSchema,
   CreateRoomResponseSchema,
   CreateWorkspaceRequestSchema,
@@ -354,7 +357,7 @@ export interface MockServer {
   reset(scenario?: Scenario): void;
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   /** `attachments`: fixture file ids uploaded by the author (e.g. IDS.files.audio by Вера). */
-  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string }): Message;
+  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message;
   /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
   setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
@@ -396,6 +399,8 @@ export interface MockServer {
     fileGone?: boolean;
     /** DONE with the result (docs/09 #47): the fixture summary, a transcript, the audio attachment. */
     result?: boolean;
+    /** A forwarded copy (ADR-0033): posted by `by`, marked «Переслано от» `authorId`. */
+    forward?: MockForward & { by: string };
   }): Message;
   /** Moves a card on (MESSAGE_UPDATE), like the server's upload worker. */
   updateRecordingCard(messageId: string, patch: RecordingCardPatch): void;
@@ -1602,7 +1607,16 @@ class MockImpl {
     sendMsg(c.res, 200, ListMessagesResponseSchema, { messages: hits.slice(0, limit).map((m) => this.msgOut(m, me)), hasMore: hits.length > limit });
   }
 
-  private createMessage(room: Room, authorId: string, content: string, replyToId: string, nonce: string, attachmentIds: string[], sticker?: Sticker): Message {
+  private createMessage(
+    room: Room,
+    authorId: string,
+    content: string,
+    replyToId: string,
+    nonce: string,
+    attachmentIds: string[],
+    sticker?: Sticker,
+    forward?: MockForward,
+  ): Message {
     const attachments = attachmentIds.map((id) => {
       const f = this.state.files.get(id);
       if (!f || f.meta.uploaderId !== authorId) throw invalid('attachmentIds', `unknown attachment ${id}`);
@@ -1620,6 +1634,7 @@ class MockImpl {
       nonce,
       createdAt: tick(this.state),
       ...(sticker ? { sticker } : {}),
+      ...(forward ? { forward: forwardOf(forward) } : {}),
     });
     list.push(msg);
     this.state.messages.set(room.id, list);
@@ -1634,11 +1649,11 @@ class MockImpl {
     return msg;
   }
 
-  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string }): Message {
+  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
     const sticker = a.stickerId ? (this.findSticker(a.stickerId)?.sticker ?? this.state.deletedStickers.get(a.stickerId)) : undefined;
-    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? [], sticker);
+    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? [], sticker, a.forward);
   }
 
   // ------------------------------------------------ sticker packs (ADR-0030)
@@ -2801,6 +2816,37 @@ class MockImpl {
       }
       const message = this.createMessage(room, me, b.content, b.replyToId, b.nonce, b.attachmentIds, sticker);
       sendMsg(c.res, 201, CreateMessageResponseSchema, { message });
+    });
+
+    // ADR-0033: a copy of the message in another room / DM, by the caller, with `forward`.
+    this.route('POST', '/api/rooms/:id/messages/:mid/forward', (c) => {
+      const me = this.uid(c);
+      const src = this.roomFor(c.params[0] ?? '', me);
+      const orig = (s().messages.get(src.id) ?? []).find((m) => m.id === c.params[1]);
+      if (!orig) throw notFound('message not found');
+      const b = parseBody(c, ForwardMessageRequestSchema);
+      const room = this.roomFor(b.toRoomId, me);
+      this.requireActive(room.workspaceId);
+      this.requireRoomPerm(room, me, SEND_MESSAGES);
+      const fwd = orig.forward ?? { authorId: orig.authorId, roomId: src.type === RoomType.DM ? '' : src.id, messageId: orig.id, sentAt: orig.createdAt };
+      const message = create(MessageSchema, {
+        id: nextId(this.state, 'message'),
+        roomId: room.id,
+        authorId: me,
+        content: orig.content,
+        attachments: orig.attachments,
+        kind: orig.kind,
+        ...(orig.system ? { system: orig.system } : {}),
+        ...(orig.sticker ? { sticker: orig.sticker } : {}),
+        embedsHidden: orig.embedsHidden,
+        forward: fwd,
+        createdAt: tick(this.state),
+      });
+      const list = s().messages.get(room.id) ?? [];
+      list.push(message);
+      s().messages.set(room.id, list);
+      this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message } } }, room.id);
+      sendMsg(c.res, 201, ForwardMessageResponseSchema, { message });
     });
 
     this.route('PATCH', '/api/messages/:id', (c) => {
@@ -4158,6 +4204,8 @@ class MockImpl {
     fileGone?: boolean;
     /** DONE with the result (docs/09 #47): summary, transcript, audio attachment. */
     result?: boolean;
+    /** A forwarded copy of the card (ADR-0033): posted by `authorId`, marked «Переслано от». */
+    forward?: MockForward & { by: string };
   }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
@@ -4179,12 +4227,13 @@ class MockImpl {
     const msg = create(MessageSchema, {
       id: nextId(this.state, 'message'),
       roomId: room.id,
-      authorId: a.byUserId,
+      authorId: a.forward?.by ?? a.byUserId,
       content: '',
       kind: MessageKind.SYSTEM,
       system: { payload: { case: 'recording', value: card } },
       attachments: a.result ? this.recordingAudio() : [],
       createdAt,
+      ...(a.forward ? { forward: forwardOf(a.forward) } : {}),
     });
     list.push(msg);
     this.state.messages.set(room.id, list);
@@ -4663,4 +4712,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     console.error(e);
     process.exit(1);
   });
+}
+
+/** A forwarded copy in the mock feed (ADR-0033): the original's author and time. */
+export interface MockForward {
+  authorId: string;
+  sentAtMs: number;
+  roomId?: string;
+  messageId?: string;
+}
+
+function forwardOf(f: MockForward): MessageInitShape<typeof ForwardSchema> {
+  return { authorId: f.authorId, roomId: f.roomId ?? '', messageId: f.messageId ?? '', sentAt: timestampFromMs(f.sentAtMs) };
 }

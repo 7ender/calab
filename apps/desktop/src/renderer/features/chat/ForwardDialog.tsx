@@ -41,13 +41,14 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
   const byId = useRooms((s) => s.byId);
   const workspaces = useWorkspaces((s) => s.byId);
   const order = useWorkspaces((s) => s.order);
-  const me = useSession((s) => s.me?.user);
+  const myId = useSession((s) => s.me?.user?.id ?? '');
+  const noDms = useSession((s) => !s.me?.user || s.me.user.isGuest);
+  const srcWs = src?.workspaceId ?? '';
   const [q, setQ] = useState<string | null>(null);
   const [found, setFound] = useState<{ q: string; users: User[] } | null>(null);
   const [selected, setSelected] = useState<ForwardItem[]>([]);
   const [sending, setSending] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const noDms = !me || me.isGuest;
 
   useEffect(() => {
     if (q === null || noDms) return;
@@ -65,8 +66,7 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
 
   // The room groups: the source room's workspace, or (from a DM) every workspace in rail order.
   const roomGroups = useMemo(() => {
-    const myId = me?.id ?? '';
-    const ids = src?.workspaceId ? [src.workspaceId] : order;
+    const ids = srcWs ? [srcWs] : order;
     const rooms = Object.values(byId);
     return ids.flatMap((wsId) => {
       const e = workspaces[wsId];
@@ -79,9 +79,9 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
       );
       return items.length ? [{ id: wsId, label: ids.length > 1 ? e.ws.name : t('chat.fwd.rooms'), items }] : [];
     });
-  }, [src?.workspaceId, order, byId, workspaces, me?.id]);
+  }, [srcWs, order, byId, workspaces, myId]);
 
-  const people = useMemo(() => (noDms ? [] : userItems((found?.users ?? []).filter((u) => u.id !== me?.id), sharedRole)), [found, noDms, me?.id]);
+  const people = useMemo(() => (noDms ? [] : userItems((found?.users ?? []).filter((u) => u.id !== myId), sharedRole)), [found, noDms, myId]);
   const groups = useMemo(() => forwardGroups(people, roomGroups, q ?? '', t('chat.fwd.people')), [people, roomGroups, q]);
   const loading = !noDms && (found === null || found.q !== q);
   const onQuery = useCallback((next: string) => setQ(next), []);
@@ -158,7 +158,12 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
             inputRef={input}
             autoFocus={false}
             renderItem={(item, active) => {
-              const mark = isSelected(selected, item) ? <Check className={cx('size-4 shrink-0', active ? '' : 'text-accent-text')} aria-label={t('chat.fwd.picked')} /> : null;
+              const mark = isSelected(selected, item) ? (
+                <>
+                  <Check className={cx('size-4 shrink-0', active ? '' : 'text-accent-text')} aria-hidden />
+                  <span className="sr-only">{t('chat.fwd.picked')}</span>
+                </>
+              ) : null;
               return item.kind === 'room' ? <RoomRow item={item} active={active} trailing={mark} /> : <MemberPickRow item={item} active={active} trailing={mark} />;
             }}
           />

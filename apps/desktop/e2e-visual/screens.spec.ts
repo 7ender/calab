@@ -117,6 +117,8 @@ const KEY = new Set([
   'settings-bot-token',
   'bot-profile',
   'chat-bot-commands',
+  'chat-forward-dialog',
+  'chat-forwarded',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -1861,6 +1863,62 @@ const feedTo = (win: Page, where: 'top' | 'bottom'): Promise<void> =>
   win.locator('[data-virtuoso-scroller]').first().evaluate((el, w) => el.scrollTo({ top: w === 'top' ? 0 : el.scrollHeight }), where);
 
 /** The feed at its bottom and at rest (the floating date pill faded out). */
+// ADR-0033: «Переслать» in the message menu → the target picker: «Личные» (people) and the rooms
+// with the right to send; a pick becomes a chip and a check mark, «Переслать» sends and toasts.
+test('chat-forward-dialog', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByTestId('message-bubble').filter({ hasText: 'Готово, выдал' }).click({ button: 'right' });
+  await win.getByRole('menuitem', { name: 'Переслать' }).click();
+  const dialog = win.getByRole('dialog', { name: 'Переслать…' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Личные')).toBeVisible();
+  await dialog.getByRole('option', { name: /#разработка/ }).click();
+  await expect(dialog.getByTestId('forward-chips')).toContainText('#разработка');
+  await expect(dialog.getByTestId('forward-send')).toBeEnabled();
+  await settle(win);
+  await checkpoint(shot, 'chat-forward-dialog');
+  await dialog.getByTestId('forward-send').click();
+  await expect(dialog).toHaveCount(0);
+  await expect(win.getByText('Переслано в 1 чат')).toBeVisible();
+  const copy = (mock.state.messages.get(IDS.rooms.dev) ?? []).at(-1);
+  expect(copy?.forward?.authorId).toBeTruthy();
+});
+
+// ADR-0033: copies in the feed — «↪ Переслано от <имя> · <дата>» over a text message and over a
+// forwarded recording card (no retry / delete there: they belong to the recording's own room).
+test('chat-forwarded', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const sentAtMs = Date.parse('2026-01-14T16:05:00Z');
+  mock.injectMessage({
+    roomId: IDS.rooms.general,
+    authorId: IDS.users.vera,
+    content: 'Итоги релиза: всё выкатили, мониторинг зелёный.',
+    forward: { authorId: IDS.users.boris, sentAtMs, roomId: IDS.rooms.dev },
+  });
+  mock.injectRecordingCard({
+    roomId: IDS.rooms.general,
+    byUserId: IDS.users.boris,
+    durationSec: 42 * 60 + 10,
+    status: RecordingStatus.DONE,
+    result: true,
+    forward: { by: IDS.users.vera, authorId: IDS.users.boris, sentAtMs, roomId: IDS.rooms.meeting },
+  });
+  const lines = win.getByTestId('forward-line');
+  await expect(lines).toHaveCount(2);
+  await expect(lines.first()).toContainText('Переслано от Борис');
+  const card = win.getByTestId('recording-card');
+  await expect(card.getByRole('button', { name: 'Полный транскрипт' })).toBeVisible();
+  await feedAtBottom(win);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'chat-forwarded');
+  await card.getByTestId('recording-card-menu').click();
+  await expect(win.getByRole('menuitem', { name: 'Переслать' })).toBeVisible();
+  await expect(win.getByRole('menuitem', { name: 'Удалить запись' })).toHaveCount(0);
+  await win.keyboard.press('Escape');
+});
+
 async function feedAtBottom(win: Page): Promise<void> {
   for (let i = 0; i < 2; i++) {
     await feedTo(win, 'bottom');
