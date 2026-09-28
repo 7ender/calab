@@ -94,7 +94,7 @@ export async function login(page: Page, email = 'owner@calaba.test'): Promise<vo
   // The test window takes the OS focus: a key typed on this machine meanwhile lands in the field
   // (seen: «password123н»). Check the values right before submitting, re-fill if they drifted.
   const emailField = page.getByLabel('Email');
-  const password = page.getByLabel('Пароль');
+  const password = page.getByLabel('Пароль', { exact: true });
   await expect(async () => {
     await emailField.fill(email);
     await password.fill(PASSWORD);

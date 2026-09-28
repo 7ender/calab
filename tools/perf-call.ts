@@ -299,7 +299,7 @@ async function main(): Promise<void> {
       await p.evaluate((stats) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru', devStats: stats }, version: 1 })), STATS);
       await p.reload();
       await p.getByLabel('Email').fill('owner@calaba.test');
-      await p.getByLabel('Пароль').fill('password123');
+      await p.getByLabel('Пароль', { exact: true }).fill('password123');
       await p.getByRole('button', { name: 'Войти', exact: true }).click();
       await p.locator('aside').first().waitFor({ timeout: 30_000 });
       await p.waitForTimeout(1000);

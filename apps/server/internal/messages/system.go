@@ -32,14 +32,20 @@ func (s *System) Post(ctx context.Context, workspaceID, roomID, author uuid.UUID
 	if err != nil {
 		return uuid.Nil, err
 	}
+	return m.ID, s.Created(ctx, workspaceID, m)
+}
+
+// Created publishes MESSAGE_CREATE for a system message inserted by the caller (e.g. in its
+// own transaction, after the commit).
+func (s *System) Created(ctx context.Context, workspaceID uuid.UUID, m sqlc.Message) error {
 	out, err := s.h.details(ctx, []sqlc.Message{m}, uuid.Nil)
 	if err != nil {
-		return m.ID, err
+		return err
 	}
 	s.h.events.Workspace(ctx, workspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
 		MessageCreate: &v1.MessageCreate{WorkspaceId: workspaceID.String(), Message: out[0]},
 	}})
-	return m.ID, nil
+	return nil
 }
 
 // Update replaces the payload of a system message and publishes MESSAGE_UPDATE. A deleted

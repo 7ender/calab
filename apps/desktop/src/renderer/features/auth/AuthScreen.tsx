@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { ApiErrorJson } from '../../../shared/ipc';
 import { ChevronDown } from 'lucide-react';
 import { Logo } from '../../components/Logo';
-import { Button, Field, Input, cx } from '../../components/ui';
+import { Button, Field, Input, PasswordInput, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { toast } from '../../stores/toasts';
@@ -221,8 +221,7 @@ function LoginScreen(): ReactNode {
           ) : null}
           <div className="relative">
             <Field label={t('auth.password')} error={fieldErr('password')} hint={mode === 'register' ? t('auth.passwordHint') : undefined}>
-              <Input
-                type="password"
+              <PasswordInput
                 required
                 minLength={mode === 'register' ? 8 : 1}
                 value={password}

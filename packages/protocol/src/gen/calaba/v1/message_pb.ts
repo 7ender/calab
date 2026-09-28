@@ -18,7 +18,7 @@ import type { Message as Message$1 } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/message.proto.
  */
 export const file_calaba_v1_message: GenFile = /*@__PURE__*/
-  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIpkECgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkSFQoNZW1iZWRzX2hpZGRlbhgNIAEoCBIkCgRraW5kGA4gASgOMhYuY2FsYWJhLnYxLk1lc3NhZ2VLaW5kEigKBnN5c3RlbRgPIAEoCzIYLmNhbGFiYS52MS5TeXN0ZW1NZXNzYWdlEiMKB3N0aWNrZXIYECABKAsyEi5jYWxhYmEudjEuU3RpY2tlchIqCgdjb21tYW5kGB4gASgLMhkuY2FsYWJhLnYxLk1lc3NhZ2VDb21tYW5kIkEKDk1lc3NhZ2VDb21tYW5kEhMKC2JvdF91c2VyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEYXJncxgDIAEoCSJJCg1TeXN0ZW1NZXNzYWdlEi0KCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5SZWNvcmRpbmdDYXJkSABCCQoHcGF5bG9hZCI0CghSZWFjdGlvbhINCgVlbW9qaRgBIAEoCRINCgVjb3VudBgCIAEoDRIKCgJtZRgDIAEoCCJOChRMaXN0TWVzc2FnZXNSZXNwb25zZRIkCghtZXNzYWdlcxgBIAMoCzISLmNhbGFiYS52MS5NZXNzYWdlEhAKCGhhc19tb3JlGAIgASgIIncKFENyZWF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkSFgoOYXR0YWNobWVudF9pZHMYAiADKAkSEwoLcmVwbHlfdG9faWQYAyABKAkSDQoFbm9uY2UYBCABKAkSEgoKc3RpY2tlcl9pZBgFIAEoCSI8ChVDcmVhdGVNZXNzYWdlUmVzcG9uc2USIwoHbWVzc2FnZRgBIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIicKFFVwZGF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkiPAoVVXBkYXRlTWVzc2FnZVJlc3BvbnNlEiMKB21lc3NhZ2UYASABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSIoChZTZXRFbWJlZHNIaWRkZW5SZXF1ZXN0Eg4KBmhpZGRlbhgBIAEoCCIsChZVcGRhdGVSZWFkU3RhdGVSZXF1ZXN0EhIKCm1lc3NhZ2VfaWQYASABKAkqRAoLTWVzc2FnZUtpbmQSHAoYTUVTU0FHRV9LSU5EX1VOU1BFQ0lGSUVEEAASFwoTTUVTU0FHRV9LSU5EX1NZU1RFTRABQpoBCg1jb20uY2FsYWJhLnYxQgxNZXNzYWdlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_file, file_calaba_v1_recording, file_calaba_v1_sticker]);
+  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIpkECgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkSFQoNZW1iZWRzX2hpZGRlbhgNIAEoCBIkCgRraW5kGA4gASgOMhYuY2FsYWJhLnYxLk1lc3NhZ2VLaW5kEigKBnN5c3RlbRgPIAEoCzIYLmNhbGFiYS52MS5TeXN0ZW1NZXNzYWdlEiMKB3N0aWNrZXIYECABKAsyEi5jYWxhYmEudjEuU3RpY2tlchIqCgdjb21tYW5kGB4gASgLMhkuY2FsYWJhLnYxLk1lc3NhZ2VDb21tYW5kIkEKDk1lc3NhZ2VDb21tYW5kEhMKC2JvdF91c2VyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEYXJncxgDIAEoCSJ2Cg1TeXN0ZW1NZXNzYWdlEi0KCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5SZWNvcmRpbmdDYXJkSAASKwoIYmlydGhkYXkYAiABKAsyFy5jYWxhYmEudjEuQmlydGhkYXlDYXJkSABCCQoHcGF5bG9hZCIqCgxCaXJ0aGRheUNhcmQSCwoDZGF5GAEgASgNEg0KBW1vbnRoGAIgASgNIjQKCFJlYWN0aW9uEg0KBWVtb2ppGAEgASgJEg0KBWNvdW50GAIgASgNEgoKAm1lGAMgASgIIk4KFExpc3RNZXNzYWdlc1Jlc3BvbnNlEiQKCG1lc3NhZ2VzGAEgAygLMhIuY2FsYWJhLnYxLk1lc3NhZ2USEAoIaGFzX21vcmUYAiABKAgidwoUQ3JlYXRlTWVzc2FnZVJlcXVlc3QSDwoHY29udGVudBgBIAEoCRIWCg5hdHRhY2htZW50X2lkcxgCIAMoCRITCgtyZXBseV90b19pZBgDIAEoCRINCgVub25jZRgEIAEoCRISCgpzdGlja2VyX2lkGAUgASgJIjwKFUNyZWF0ZU1lc3NhZ2VSZXNwb25zZRIjCgdtZXNzYWdlGAEgASgLMhIuY2FsYWJhLnYxLk1lc3NhZ2UiJwoUVXBkYXRlTWVzc2FnZVJlcXVlc3QSDwoHY29udGVudBgBIAEoCSI8ChVVcGRhdGVNZXNzYWdlUmVzcG9uc2USIwoHbWVzc2FnZRgBIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIigKFlNldEVtYmVkc0hpZGRlblJlcXVlc3QSDgoGaGlkZGVuGAEgASgIIiwKFlVwZGF0ZVJlYWRTdGF0ZVJlcXVlc3QSEgoKbWVzc2FnZV9pZBgBIAEoCSpECgtNZXNzYWdlS2luZBIcChhNRVNTQUdFX0tJTkRfVU5TUEVDSUZJRUQQABIXChNNRVNTQUdFX0tJTkRfU1lTVEVNEAFCmgEKDWNvbS5jYWxhYmEudjFCDE1lc3NhZ2VQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_file, file_calaba_v1_recording, file_calaba_v1_sticker]);
 
 /**
  * @generated from message calaba.v1.Message
@@ -197,6 +197,14 @@ export type SystemMessage = Message$1<"calaba.v1.SystemMessage"> & {
      */
     value: RecordingCard;
     case: "recording";
+  } | {
+    /**
+     * docs/09 #76
+     *
+     * @generated from field: calaba.v1.BirthdayCard birthday = 2;
+     */
+    value: BirthdayCard;
+    case: "birthday";
   } | { case: undefined; value?: undefined };
 };
 
@@ -206,6 +214,31 @@ export type SystemMessage = Message$1<"calaba.v1.SystemMessage"> & {
  */
 export const SystemMessageSchema: GenMessage<SystemMessage> = /*@__PURE__*/
   messageDesc(file_calaba_v1_message, 2);
+
+/**
+ * "Today is <author>'s birthday!": posted once a day per workspace by the server at 09:00 of
+ * the author's time zone (UTC without one) into the first text room of the workspace.
+ *
+ * @generated from message calaba.v1.BirthdayCard
+ */
+export type BirthdayCard = Message$1<"calaba.v1.BirthdayCard"> & {
+  /**
+   * @generated from field: uint32 day = 1;
+   */
+  day: number;
+
+  /**
+   * @generated from field: uint32 month = 2;
+   */
+  month: number;
+};
+
+/**
+ * Describes the message calaba.v1.BirthdayCard.
+ * Use `create(BirthdayCardSchema)` to create a new message.
+ */
+export const BirthdayCardSchema: GenMessage<BirthdayCard> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 3);
 
 /**
  * @generated from message calaba.v1.Reaction
@@ -234,7 +267,7 @@ export type Reaction = Message$1<"calaba.v1.Reaction"> & {
  * Use `create(ReactionSchema)` to create a new message.
  */
 export const ReactionSchema: GenMessage<Reaction> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 3);
+  messageDesc(file_calaba_v1_message, 4);
 
 /**
  * GET /api/rooms/{id}/messages?before=&after=&limit= (VIEW_ROOM). Newest first for `before`.
@@ -260,7 +293,7 @@ export type ListMessagesResponse = Message$1<"calaba.v1.ListMessagesResponse"> &
  * Use `create(ListMessagesResponseSchema)` to create a new message.
  */
 export const ListMessagesResponseSchema: GenMessage<ListMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 4);
+  messageDesc(file_calaba_v1_message, 5);
 
 /**
  * POST /api/rooms/{id}/messages (SEND_MESSAGES; ATTACH_FILES if attachments).
@@ -306,7 +339,7 @@ export type CreateMessageRequest = Message$1<"calaba.v1.CreateMessageRequest"> &
  * Use `create(CreateMessageRequestSchema)` to create a new message.
  */
 export const CreateMessageRequestSchema: GenMessage<CreateMessageRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 5);
+  messageDesc(file_calaba_v1_message, 6);
 
 /**
  * @generated from message calaba.v1.CreateMessageResponse
@@ -323,7 +356,7 @@ export type CreateMessageResponse = Message$1<"calaba.v1.CreateMessageResponse">
  * Use `create(CreateMessageResponseSchema)` to create a new message.
  */
 export const CreateMessageResponseSchema: GenMessage<CreateMessageResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 6);
+  messageDesc(file_calaba_v1_message, 7);
 
 /**
  * PATCH /api/messages/{id} (author only; not a sticker message)
@@ -342,7 +375,7 @@ export type UpdateMessageRequest = Message$1<"calaba.v1.UpdateMessageRequest"> &
  * Use `create(UpdateMessageRequestSchema)` to create a new message.
  */
 export const UpdateMessageRequestSchema: GenMessage<UpdateMessageRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 7);
+  messageDesc(file_calaba_v1_message, 8);
 
 /**
  * @generated from message calaba.v1.UpdateMessageResponse
@@ -359,7 +392,7 @@ export type UpdateMessageResponse = Message$1<"calaba.v1.UpdateMessageResponse">
  * Use `create(UpdateMessageResponseSchema)` to create a new message.
  */
 export const UpdateMessageResponseSchema: GenMessage<UpdateMessageResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 8);
+  messageDesc(file_calaba_v1_message, 9);
 
 /**
  * PUT /api/messages/{id}/embeds-hidden (author, or MANAGE_MESSAGES) → UpdateMessageResponse;
@@ -379,7 +412,7 @@ export type SetEmbedsHiddenRequest = Message$1<"calaba.v1.SetEmbedsHiddenRequest
  * Use `create(SetEmbedsHiddenRequestSchema)` to create a new message.
  */
 export const SetEmbedsHiddenRequestSchema: GenMessage<SetEmbedsHiddenRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 9);
+  messageDesc(file_calaba_v1_message, 10);
 
 /**
  * PUT /api/rooms/{id}/read (VIEW_ROOM). Moves the read marker forward only; 204.
@@ -398,7 +431,7 @@ export type UpdateReadStateRequest = Message$1<"calaba.v1.UpdateReadStateRequest
  * Use `create(UpdateReadStateRequestSchema)` to create a new message.
  */
 export const UpdateReadStateRequestSchema: GenMessage<UpdateReadStateRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_message, 10);
+  messageDesc(file_calaba_v1_message, 11);
 
 /**
  * @generated from enum calaba.v1.MessageKind

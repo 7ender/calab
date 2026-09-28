@@ -1,5 +1,5 @@
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { MessageKind, RecordingStatus, RoomRecordingState, type Message, type RecordingCard, type RoomRecording } from '@calaba/protocol';
+import { MessageKind, RecordingStatus, RoomRecordingState, type BirthdayCard, type Message, type RecordingCard, type RoomRecording } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
 import { stickerPreview } from './stickers';
 
@@ -118,6 +118,13 @@ export function stopReasonKey(reason: string): MessageKey {
 
 // ---------------------------------------------------------------- chat card
 
+/** The birthday card of a system message, if it is one (docs/09 #76). */
+export function birthdayCardOf(m: Pick<Message, 'kind' | 'system'>): BirthdayCard | null {
+  if (m.kind !== MessageKind.SYSTEM) return null;
+  const p = m.system?.payload;
+  return p?.case === 'birthday' ? p.value : null;
+}
+
 /** The recording card of a system message, if it is one. */
 export function recordingCardOf(m: Pick<Message, 'kind' | 'system'>): RecordingCard | null {
   if (m.kind !== MessageKind.SYSTEM) return null;
@@ -216,6 +223,7 @@ export function durationText(sec: number): string {
 export function systemPreview(m: Pick<Message, 'kind' | 'system'> & { sticker?: Message['sticker']; content?: string }): string {
   // A sticker message (ADR-0030) previews as «😀 Стикер» too; one whose sticker is gone has no content.
   if (m.sticker) return stickerPreview(m.sticker.emoji);
+  if (birthdayCardOf(m)) return t('birthday.preview');
   const card = recordingCardOf(m);
   if (!card) return '';
   return card.deletedAt ? t('rec.card.deleted') : t('rec.card.preview', { duration: durationText(card.durationSec) });

@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Button, Field, Input, Modal } from '../../components/ui';
+import { Button, Field, Input, Modal, PasswordInput } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { useSession } from '../../stores/session';
@@ -99,13 +99,13 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }): Reac
   return (
     <CredentialSheet first={first} title={t('cred.passwordTitle')} description={t('cred.passwordText')} busy={busy} error={errors.form} onClose={onClose} onSubmit={() => void submit()}>
       <Field label={t('cred.newPassword')} hint={t('cred.newPasswordHint')} error={errors.next}>
-        <Input ref={first} type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} aria-invalid={errors.next ? true : undefined} />
+        <PasswordInput ref={first} autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} aria-invalid={errors.next ? true : undefined} />
       </Field>
       <Field label={t('cred.confirm')} error={errors.confirm}>
-        <Input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={errors.confirm ? true : undefined} />
+        <PasswordInput autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={errors.confirm ? true : undefined} />
       </Field>
       <Field label={t('cred.current')} error={errors.current}>
-        <Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} aria-invalid={errors.current ? true : undefined} />
+        <PasswordInput autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} aria-invalid={errors.current ? true : undefined} />
       </Field>
     </CredentialSheet>
   );
@@ -204,9 +204,8 @@ export function ChangeEmailDialog({ onClose, mode = 'change' }: { onClose: () =>
         </Field>
       )}
       <Field label={t('cred.current')} error={errors.current}>
-        <Input
+        <PasswordInput
           ref={cancel ? first : undefined}
-          type="password"
           autoComplete="current-password"
           value={current}
           onChange={(e) => setCurrent(e.target.value)}

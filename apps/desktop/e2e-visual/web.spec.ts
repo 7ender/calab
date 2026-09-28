@@ -34,7 +34,7 @@ for (const theme of THEMES) {
         await page.evaluate((t) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: t, onboarded: true, locale: 'ru' }, version: 1 })), theme);
         await page.reload();
         await page.getByLabel('Email').fill('owner@calaba.test');
-        await page.getByLabel('Пароль').fill(PASSWORD);
+        await page.getByLabel('Пароль', { exact: true }).fill(PASSWORD);
         await page.getByRole('button', { name: 'Войти', exact: true }).click();
         await page.locator('aside').getByRole('button', { name: /общий/ }).first().click();
         await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
@@ -176,7 +176,7 @@ test('web link card: room preview, «always in the app», signed in', async ({ p
     await card.getByRole('button', { name: 'Продолжить в браузере' }).click();
     await page.getByRole('button', { name: 'Войти', exact: true }).click(); // guest screen → login
     await page.getByLabel('Email').fill('owner@calaba.test');
-    await page.getByLabel('Пароль').fill(PASSWORD);
+    await page.getByLabel('Пароль', { exact: true }).fill(PASSWORD);
     await page.getByRole('button', { name: 'Войти', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Войти в комнату «Созвон» пространства «Команда Calab»?' })).toBeVisible();
     await page.goto(`${mock.url}/join/calaba-team-2026?visual-test`);
@@ -206,7 +206,7 @@ test('web room header stays inside the chat at 1200–1320 with a 320 px room co
     });
     await page.reload();
     await page.getByLabel('Email').fill('owner@calaba.test');
-    await page.getByLabel('Пароль').fill(PASSWORD);
+    await page.getByLabel('Пароль', { exact: true }).fill(PASSWORD);
     await page.getByRole('button', { name: 'Войти', exact: true }).click();
     // A short text room, the longest name (it truncates), voice rooms.
     for (const [room, width] of ['общий', 'очень-длинное-название-комнаты-для-проверки-обрезки', 'Созвон', 'Переговорка'].flatMap((r) => [1200, 1220, 1260, 1320, 1440].map((w) => [r, w] as const))) {

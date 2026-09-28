@@ -19,6 +19,17 @@ message User {
   // A bot account (ADR-0031): show a "BOT" badge; clients list bots in their own section, not
   // among people online / offline.
   bool is_bot = 10;
+  // Birthday (docs/09 #76); unset = not given, or hidden by its owner (Me.birthday_hidden):
+  // a hidden birthday is sent to nobody but the owner (in Me.user).
+  Birthday birthday = 11;
+}
+
+// A birthday: day and month always, the year only if the user gave it. 29 February is valid
+// (celebrated on 28 February in other years).
+message Birthday {
+  uint32 day = 1;   // 1..31
+  uint32 month = 2; // 1..12
+  optional uint32 year = 3;
 }
 
 enum MicMode {
@@ -60,6 +71,8 @@ message Me {
   string pending_email = 6;
   // Language of emails: "en" | "ru" | "es" | "zh-CN"; empty = not set (English).
   string locale = 7;
+  // The birthday (in user.birthday) is kept to the user: nobody else gets it, no card is posted.
+  bool birthday_hidden = 8;
 }
 
 // GET /api/me
@@ -77,6 +90,10 @@ message UpdateMeRequest {
   // Language of emails (ADR-0023): a BCP 47 tag mapped to "en" | "ru" | "es" | "zh-CN";
   // "" clears (English). Unsupported languages → 422.
   optional string locale = 6;
+  // Birthday: day and month (a real date; with the year, if given, between 1900 and this
+  // year) → 422 otherwise; day = 0 and month = 0 clears it. Unset = unchanged.
+  Birthday birthday = 7;
+  optional bool birthday_hidden = 8;
 }
 
 message UpdateMeResponse {
@@ -127,4 +144,17 @@ message PutUserNoteRequest {
 
 message UserNoteResponse {
   UserNote note = 1;
+}
+
+// GET /api/workspaces/{id}/birthdays?days=7 (a member, not a guest): members whose birthday is
+// within `days` days (1..31, default 7) of the caller's today (by the caller's time zone, UTC
+// without one), soonest first. Hidden birthdays and bots are left out.
+message ListBirthdaysResponse {
+  repeated UpcomingBirthday birthdays = 1;
+}
+
+message UpcomingBirthday {
+  string user_id = 1;
+  Birthday birthday = 2;
+  uint32 in_days = 3; // 0 = today
 }

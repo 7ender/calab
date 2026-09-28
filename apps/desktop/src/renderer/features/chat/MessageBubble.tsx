@@ -29,8 +29,9 @@ import { PreviewRuns } from './PreviewRuns';
 import { MessageMenu } from './MessageMenu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { openProfile } from '../people/actions';
-import { recordingCardOf, systemPreview } from '../../lib/recording';
+import { birthdayCardOf, recordingCardOf, systemPreview } from '../../lib/recording';
 import { RecordingCardView } from './RecordingCard';
+import { BirthdayCardView } from './BirthdayCard';
 import { mediaKind } from '../../lib/chatMedia';
 import { AudioAttachment, VIDEO_WIDTH, VideoAttachment } from './MediaPlayer';
 import { VoiceAttachment } from './VoiceBubble';
@@ -118,13 +119,18 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
   useLocale();
   useTimeFormat();
   const card = recordingCardOf(c.msg);
+  const bday = birthdayCardOf(c.msg);
   return (
-    <div className={cx('px-4', meta.day || meta.isNew || card ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={cx('px-4', meta.day || meta.isNew || card || bday ? 'pt-2' : '')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(c.msg.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       {card ? (
         <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
           <RecordingCardView c={c} card={card} workspaceId={workspaceId} perms={perms} />
+        </div>
+      ) : bday ? (
+        <div className={cx('flex rounded-[var(--radius-card)]', highlighted && 'row-highlight')}>
+          <BirthdayCardView authorId={c.msg.authorId} card={bday} workspaceId={workspaceId} />
         </div>
       ) : (
         <div className="h-px" aria-hidden />

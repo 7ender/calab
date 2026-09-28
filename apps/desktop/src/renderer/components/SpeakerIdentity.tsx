@@ -6,6 +6,7 @@ import { Avatar } from './Avatar';
 import { cx } from './ui';
 import { t } from '../i18n';
 import { RoleMark, hasRoleMark, roleTextClass } from '../features/people/MemberBits';
+import { BirthdayMark } from '../features/people/Birthday';
 
 /**
  * Name colour of a voice participant (docs/08 «Индикация речи», Discord): primary while they
@@ -63,6 +64,7 @@ export function SpeakerIdentity({
           <span className="inline-flex h-[14px] shrink-0 items-center rounded-full bg-hover px-1 text-[9px] font-medium leading-none tabular-nums text-muted">{suffix}</span>
         ) : null}
         <RoleMark role={role} />
+        <BirthdayMark userId={userId} />
       </span>
       <MutedByMe userId={userId} />
     </>

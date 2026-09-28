@@ -77,6 +77,7 @@ var botRoutes = map[string]botAccess{
 	"GET /api/workspaces/{id}/invites/email":               botDeny,
 	"DELETE /api/workspaces/{id}/invites/email/{inviteId}": botDeny,
 	"GET /api/workspaces/{id}/members":                     botAllow,
+	"GET /api/workspaces/{id}/birthdays":                   botAllow, // docs/09 #76
 	"PATCH /api/workspaces/{id}/members/{userId}":          botAllow,
 	"DELETE /api/workspaces/{id}/members/{userId}":         botAllow,
 	"POST /api/workspaces/{id}/members/{userId}/promote":   botAllow,

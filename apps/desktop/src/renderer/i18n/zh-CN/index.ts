@@ -59,6 +59,8 @@ export const zhCN: Dict = {
   'auth.name': '姓名',
   'auth.password': '密码',
   'auth.passwordHint': '至少 8 个字符',
+  'auth.showPassword': '显示密码',
+  'auth.hidePassword': '隐藏密码',
   'auth.invite': '邀请码',
   'auth.inviteHint': '如果服务器仅限邀请注册，则需要此项',
   'auth.login': '登录',

@@ -13,6 +13,7 @@ import (
 	"github.com/redis/rueidis"
 
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/bots"
 	"github.com/calaba/calaba/server/internal/buildinfo"
@@ -79,6 +80,8 @@ type App struct {
 	Recording *recording.Service
 	// Bots: bots and the Bot API (ADR-0031), with the webhook worker.
 	Bots *bots.Service
+	// Birthdays: the hourly birthday-card worker (docs/09 #76).
+	Birthdays *birthdays.Service
 	// Routes: every registered route pattern (the bot route table test).
 	Routes []string
 }
@@ -97,6 +100,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Mail.Run(ctx) // returns at once without mail
 	go a.Recording.Run(ctx)
 	go a.Bots.Run(ctx) // bot webhook deliveries
+	go a.Birthdays.Run(ctx, time.Hour)
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -264,6 +268,8 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
 	recSvc.Routes(mux, private)
 	botSvc.Routes(mux, private)
+	bdSvc := birthdays.New(d.DB, pub)
+	bdSvc.Routes(mux, private)
 	if rtcSvc != nil {
 		rtcSvc.Routes(mux, private)
 	} else {
@@ -282,5 +288,5 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Routes: mux.patterns}
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Routes: mux.patterns}
 }

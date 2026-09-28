@@ -43,13 +43,13 @@ test('register → workspace → room → message → voice', async () => {
   const password = process.env['CALABA_PASSWORD'];
   if (login && password) {
     await page.getByLabel('Email').fill(login);
-    await page.getByLabel('Пароль').fill(password);
+    await page.getByLabel('Пароль', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Войти', exact: true }).click();
   } else {
     await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
     await page.getByLabel('Email').fill(`e2e-${id}@example.com`);
     await page.getByLabel('Имя').fill(`E2E ${id}`);
-    await page.getByLabel('Пароль').fill('password-e2e-123');
+    await page.getByLabel('Пароль', { exact: true }).fill('password-e2e-123');
     const invite = process.env['CALABA_INVITE'];
     if (invite) await page.getByLabel('Код приглашения').fill(invite);
     await page.getByRole('button', { name: 'Зарегистрироваться' }).last().click();

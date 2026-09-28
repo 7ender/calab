@@ -11,6 +11,7 @@ import { useVoice } from '../../stores/voice';
 import { isGuest, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 import { MemberContextMenu } from '../people/MemberContextMenu';
+import { BirthdayMark } from '../people/Birthday';
 import { MutedByMe } from '../../components/SpeakerIdentity';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { groupMembers, nameOf } from '../people/members';
@@ -160,6 +161,7 @@ const MemberRow = memo(function MemberRow({
                   {name}
                 </span>
                 <RoleMark role={m.role} custom={look} tone={offline ? 'muted' : 'role'} />
+                <BirthdayMark userId={userId} />
                 {isGuest(m) ? <GuestBadge /> : null}
                 {u.isBot ? <BotBadge /> : null}
                 <MutedByMe userId={userId} className="size-3.5" />

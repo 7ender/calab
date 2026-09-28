@@ -1870,3 +1870,10 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 4. Бот: `PUT /api/bots/me/commands {"commands":[{"name":"roll"}]}`; человек пишет `/roll 2d6` → в gateway бота `MESSAGE_CREATE.message.command {name:"roll", args:"2d6"}`, у людей поля нет.
 5. Webhook: `PUT /api/bots/me/webhook {"url":"https://<публичный хост>/hook","secret":"<16+ символов>"}` → на хост приходит POST с `X-Calab-Signature: sha256=…` (проверить HMAC тела); `http://` и приватные адреса → 422.
 6. `POST …/bots/{botId}/token` → старый токен 401 сразу, сокет бота закрыт 4010; `DELETE …/bots/{botId}` → бот пропал из участников и звонка.
+
+## Показать пароль и дни рождения (docs/09 #75, #76)
+1. `pnpm -F @calaba/desktop test -- PasswordInput birthday` — ok (глаз: type/aria-pressed; «сегодня» по поясу, 29 февраля, возраст).
+2. `cd apps/server && go test ./internal/birthdays && TEST_DATABASE_URL=… TEST_REDIS_URL=redis://localhost:56379/4 go test -race -tags integration -run 'Birthday' ./internal/app` — ok (PATCH/валидация/скрытие, воркер: 09:00 по поясу, дедуп, UTC без пояса; `GET …/birthdays`).
+3. `pnpm -F @calaba/desktop e2e:visual -g "auth-login|profile-birthday|chat-birthday-card"` — зелёные.
+4. Вручную: вход — глаз в поле пароля показывает/прячет, Enter входит; «Профиль → День рождения» 15 / март / 1996 — у коллеги в профиле «🎂 15 марта · 30 лет»; «Скрыть от других» — строка у коллеги пропала.
+5. Сегодняшняя дата + локальное время ≥ 09:00 → в течение часа (или после рестарта сервера) в первой текстовой комнате карточка «🎂 Сегодня день рождения у …!», у имени в списке участников и в голосе 🎂; «Настройки пространства → Участники» — «Ближайшие дни рождения».

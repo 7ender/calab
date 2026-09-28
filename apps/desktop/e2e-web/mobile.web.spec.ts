@@ -78,7 +78,7 @@ async function signIn(page: Page, prefs: Record<string, unknown> = {}): Promise<
   await page.evaluate(`localStorage.setItem('calaba-prefs', ${JSON.stringify(JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru', ...prefs }, version: 1 }))})`);
   await page.reload();
   await page.getByLabel('Email').fill('owner@calaba.test');
-  await page.getByLabel('Пароль').fill(PASSWORD);
+  await page.getByLabel('Пароль', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   await expect(page.getByTestId('mobile-shell')).toBeVisible();
 }
@@ -277,7 +277,7 @@ test('phone: onboarding and the join card fit the screen', async ({ page }) => {
   await page.evaluate(`localStorage.setItem('calaba-prefs', ${JSON.stringify(JSON.stringify({ state: { theme: 'dark', onboarded: false, locale: 'ru' }, version: 1 }))})`);
   await page.reload();
   await page.getByLabel('Email').fill('owner@calaba.test');
-  await page.getByLabel('Пароль').fill(PASSWORD);
+  await page.getByLabel('Пароль', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Пропустить настройку' })).toBeVisible();
   await expectNoHorizontalScroll(page, 'onboarding');

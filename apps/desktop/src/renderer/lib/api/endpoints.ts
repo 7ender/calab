@@ -46,6 +46,7 @@ import {
   JoinVoiceResponseSchema,
   JoinWorkspaceResponseSchema,
   ListInvitesResponseSchema,
+  ListBirthdaysResponseSchema,
   ListMembersResponseSchema,
   ListMessagesResponseSchema,
   MoveMemberRequestSchema,
@@ -189,6 +190,8 @@ export const api = {
         body(UpdateWorkspaceNotificationSettingsRequestSchema, init),
       ),
     members: (id: string) => call('GET', `/api/workspaces/${id}/members`, ListMembersResponseSchema),
+    /** Members' birthdays in the next `days` days, soonest first (docs/09 #76). */
+    birthdays: (id: string, days = 7) => call('GET', `/api/workspaces/${id}/birthdays?days=${days}`, ListBirthdaysResponseSchema),
     updateMember: (id: string, userId: string, init: MessageInitShape<typeof UpdateMemberRequestSchema>) =>
       call('PATCH', `/api/workspaces/${id}/members/${userId}`, UpdateMemberResponseSchema, body(UpdateMemberRequestSchema, init)),
     removeMember: (id: string, userId: string) => callEmpty('DELETE', `/api/workspaces/${id}/members/${userId}`),

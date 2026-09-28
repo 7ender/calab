@@ -48,7 +48,7 @@ async function signUpFromLink(page: Page, code: string, email: string | null): P
     await field.fill(`link-${Date.now().toString(36)}@example.com`);
   }
   await page.getByLabel('Имя').fill('Новичок');
-  await page.getByLabel('Пароль').fill('password-web-123');
+  await page.getByLabel('Пароль', { exact: true }).fill('password-web-123');
   await page.getByRole('button', { name: 'Зарегистрироваться' }).last().click();
 }
 
