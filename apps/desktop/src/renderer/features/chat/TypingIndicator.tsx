@@ -8,18 +8,27 @@ const NONE: Record<string, number> = {};
 /** «Bob печатает…» for the room header (Telegram shows it instead of the subtitle); '' when nobody types. */
 export function useTypingText(workspaceId: string, roomId: string): string {
   const typing = useTyping((s) => s.rooms[roomId] ?? NONE);
-  // Expired entries are removed by the dispatcher; the tick only re-filters between events.
+  // Expired entries are removed by the dispatcher (a timer per TYPING_START); this only re-filters
+  // at the next expiry in case that timer is late. One wake-up per expiry, not a 1 s tick: the
+  // tick re-rendered the whole room header every second while anyone typed (docs/14).
   const [now, setNow] = useState(() => Date.now());
-  const active = Object.keys(typing).length > 0;
+  const next = nextExpiry(typing, now);
   useEffect(() => {
-    if (!active) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [active]);
+    if (next === null) return;
+    const id = window.setTimeout(() => setNow(Date.now()), Math.max(0, next - Date.now()) + 1);
+    return () => window.clearTimeout(id);
+  }, [next]);
   const who = Object.entries(typing)
     .filter(([, until]) => until > now)
     .map(([uid]) => memberName(workspaceId, uid));
   return typingText(who);
+}
+
+/** The earliest expiry still in the future of `now`, or null when nobody types. */
+export function nextExpiry(typing: Record<string, number>, now: number): number | null {
+  let next: number | null = null;
+  for (const until of Object.values(typing)) if (until > now && (next === null || until < next)) next = until;
+  return next;
 }
 
 export function typingText(who: string[]): string {
