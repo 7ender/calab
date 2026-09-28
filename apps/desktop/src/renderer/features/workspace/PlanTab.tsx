@@ -1,15 +1,54 @@
-import { Plan, WorkspaceRole, type PlanLimits } from '@calaba/protocol';
+import { Plan, WorkspaceRole, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { ExternalLink, TriangleAlert } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Button, Card, Row, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { audioTierLabel } from '../../lib/audioTierLabel';
 import { fmt } from '../../lib/format';
-import { PLAN_LABEL, contactHref, countText, planKind, planUsage, storageText, videoLimitText } from '../../lib/plan';
+import { PLAN_LABEL, atLimit, contactHref, countText, planKind, planUsage, storageText, videoLimitText } from '../../lib/plan';
 import { platform } from '../../platform';
-import { openPlanContact } from '../../services/plan';
+import { openPlanContact, planContact } from '../../services/plan';
+import { loadWorkspaceStickers } from '../../services/stickers';
 import { useSession } from '../../stores/session';
+import { useStickers } from '../../stores/stickers';
 import { useWorkspaces } from '../../stores/workspaces';
+
+/** Members that take a seat: everyone but guests (bots count, ADR-0024). */
+const seats = (members: Record<string, WorkspaceMember> | undefined): number => {
+  let n = 0;
+  for (const m of Object.values(members ?? {})) if (m.role !== WorkspaceRole.GUEST) n++;
+  return n;
+};
+
+/**
+ * The plan's members limit of a workspace against its seats (owner 28.09: free = 50): `full`
+ * locks the invite controls. Primitive selectors only: a presence or voice change re-renders nothing.
+ */
+export function useMembersCap(workspaceId: string): { full: boolean; limit: number } {
+  const limit = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.members ?? 0);
+  const used = useWorkspaces((s) => (limit > 0 ? seats(s.byId[workspaceId]?.members) : 0));
+  return { full: atLimit(used, limit), limit };
+}
+
+/**
+ * Why a create / invite control is off (a plan limit reached): a warning line with «Связаться»
+ * when a contact is configured (docs/08 «Тариф»).
+ */
+export function PlanFullNote({ text, testId }: { text: string; testId?: string }): ReactNode {
+  const contact = planContact();
+  return (
+    <p role="note" className="flex flex-wrap items-center gap-x-1.5 gap-y-1 px-1 text-caption text-muted" data-testid={testId}>
+      <TriangleAlert className="size-3.5 shrink-0 text-warn" aria-hidden />
+      <span>{text}</span>
+      {contact ? (
+        <button type="button" className="font-medium text-accent-text hover:underline" onClick={openPlanContact}>
+          {t('plan.contactShort')}
+        </button>
+      ) : null}
+    </p>
+  );
+}
 
 /** Plan name as a pill (docs/08 «Тариф»): Free neutral, Team accent, Custom green. */
 export function PlanPill({ plan, className }: { plan: Plan; className?: string }): ReactNode {
@@ -56,15 +95,21 @@ interface LimitRow {
   meter?: { used: number; limit: number };
 }
 
-function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof planUsage>, storageUsed: bigint): LimitRow[] {
+function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof planUsage>, storageUsed: bigint, packs: number | undefined): LimitRow[] {
   const l = limits;
   const storageLimitBytes = Number(l?.storageMb ?? 0n) * 1024 * 1024;
+  const counted = (label: string, used: number, limit: number): LimitRow => ({ label, used: fmt.number(used), max: countText(limit), meter: { used, limit } });
   return [
     { label: t('plan.limit.roomMembers'), used: fmt.number(usage.roomPeak), max: countText(l?.roomMembers ?? 0) },
-    { label: t('plan.limit.members'), used: fmt.number(usage.members), max: countText(l?.members ?? 0) },
+    counted(t('plan.limit.members'), usage.members, l?.members ?? 0),
+    { label: t('plan.limit.audio'), used: '—', max: l?.audioTierMaxKbps ? audioTierLabel(l.audioTierMaxKbps) : t('plan.unlimited') },
     { label: t('plan.limit.streams'), used: fmt.number(usage.streamPeak), max: countText(l?.streamsPerRoom ?? 0) },
     { label: t('plan.limit.stream'), used: '—', max: videoLimitText(l?.streamMaxPreset ?? 0, l?.streamMaxFps ?? 0) },
     { label: t('plan.limit.camera'), used: '—', max: videoLimitText(l?.cameraMaxPreset ?? 0, l?.cameraMaxFps ?? 0) },
+    counted(t('plan.limit.bots'), usage.bots, l?.bots ?? 0),
+    packs === undefined
+      ? { label: t('plan.limit.stickerPacks'), used: '—', max: countText(l?.stickerPacks ?? 0) }
+      : counted(t('plan.limit.stickerPacks'), packs, l?.stickerPacks ?? 0),
     {
       label: t('plan.limit.storage'),
       used: fmt.size(storageUsed),
@@ -82,15 +127,19 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
 export function PlanTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const contact = useSession((s) => contactHref(s.planContact));
+  const packs = useStickers((s) => s.byWorkspace[workspaceId]?.length);
+  useEffect(() => {
+    void loadWorkspaceStickers(workspaceId);
+  }, [workspaceId]);
   const plan = entry?.ws.plan;
   if (!entry || !plan) return null;
   const kind = planKind(plan);
   const until = plan.validUntil ? timestampDate(plan.validUntil) : null;
   const usage = planUsage(
     Object.values(entry.voice),
-    Object.values(entry.members).map((m) => ({ guest: m.role === WorkspaceRole.GUEST })),
+    Object.values(entry.members).map((m) => ({ guest: m.role === WorkspaceRole.GUEST, bot: !!m.user?.isBot })),
   );
-  const rows = limitRows(plan.limits, usage, entry.ws.storageUsedBytes);
+  const rows = limitRows(plan.limits, usage, entry.ws.storageUsedBytes, packs);
   const pricing = import.meta.env.VITE_PRICING_URL;
   return (
     <>

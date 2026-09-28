@@ -464,8 +464,11 @@ export const FREE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
   cameraMaxFps: 15,
   streamsPerRoom: 1,
   storageMb: 1024n,
-  members: 0,
-  bots: 2,
+  members: 50,
+  bots: 1,
+  stickerPacks: 1,
+  stickers: 200,
+  audioTierMaxKbps: 16,
 });
 export const TEAM_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, { roomMembers: 50, bots: 20 });
 

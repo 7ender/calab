@@ -64,8 +64,13 @@ import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
 import { humanMediaError, reportMediaError } from './mediaErrors';
 import { reportPlanError } from './plan';
-import { capFps } from '../lib/plan';
+import { capAudioKbps, capFps } from '../lib/plan';
 import { sameBinding } from './profile';
+
+/** A room's voice tier lowered to the workspace plan's cap (`audio_tier_max_kbps`; the server caps /join the same way). */
+function planAudio(workspaceId: string, kbps: number): number {
+  return capAudioKbps(kbps, useWorkspaces.getState().byId[workspaceId]?.ws.plan?.limits?.audioTierMaxKbps);
+}
 
 /**
  * One voice connection (LiveKit room) of this device. Rules that must not be
@@ -542,7 +547,7 @@ class VoiceEngine {
       canSpeak: true,
       // The camera needs /camera/request in the target anyway (the server re-checks VIDEO + limit).
       ...voiceCaps(roomPerms(role, me, room), room),
-      media: { audioBitrateKbps: room?.media?.audioBitrateKbps || this.audioBitrateKbps },
+      media: { audioBitrateKbps: planAudio(workspaceId, room?.media?.audioBitrateKbps || this.audioBitrateKbps) },
     };
   }
 
@@ -560,8 +565,9 @@ class VoiceEngine {
     const roles = rolesOf(useWorkspaces.getState().byId[workspaceId], me);
     // Unknown room / member (a READY is being applied): keep what /join said.
     if (!room) return;
-    // The room's voice tier (ROOM_UPDATE, or a workspace default change re-sent as one): live.
-    const kbps = room.media?.audioBitrateKbps;
+    // The room's voice tier (ROOM_UPDATE, or a workspace default change re-sent as one): live,
+    // capped by the plan as the server caps /join (ADR-0024, owner 28.09).
+    const kbps = room.media?.audioBitrateKbps ? planAudio(workspaceId, room.media.audioBitrateKbps) : 0;
     if (kbps && kbps !== this.audioBitrateKbps) {
       this.audioBitrateKbps = kbps;
       this.applyMicTier();

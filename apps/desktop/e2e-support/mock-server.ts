@@ -5085,6 +5085,8 @@ class MockImpl {
     const meta = this.state.planMeta.get(ws.id);
     const members = this.membersOf(ws.id).filter((m) => m.role !== WorkspaceRole.GUEST).length;
     const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === ws.id).length;
+    const bots = this.membersOf(ws.id).filter((m) => this.state.users.get(m.userId)?.user.isBot).length;
+    const stickerPacks = [...this.state.stickerPacks.values()].filter((p) => p.workspaceId === ws.id).length;
     let last: Timestamp | undefined;
     for (const r of this.state.rooms.values()) {
       if (r.workspaceId !== ws.id) continue;
@@ -5096,7 +5098,7 @@ class MockImpl {
       workspace: ws,
       ...(owner ? { owner: owner.user } : {}),
       ownerEmail: owner?.email ?? '',
-      usage: { members, rooms, storageMb: mb, storageBytes: ws.storageUsedBytes, ...(last ? { lastActivity: last } : {}) },
+      usage: { members, rooms, bots, stickerPacks, storageMb: mb, storageBytes: ws.storageUsedBytes, ...(last ? { lastActivity: last } : {}) },
       planNote: meta?.note ?? '',
       planUpdatedBy: meta?.updatedBy ?? '',
       ...(meta?.updatedAt ? { planUpdatedAt: meta.updatedAt } : {}),

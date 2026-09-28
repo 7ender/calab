@@ -382,7 +382,7 @@ Go: `livekit/server-sdk-go` (`lksdk.ConnectToRoomWithToken(url, token, callbacks
 | Загрузки файлов | 30 сразу, 120/ч; размер и квота — по тарифу |
 | Сообщение | ≤ 4000 символов, ≤ 20 вложений, `nonce` ≤ 64 |
 | Команды | ≤ 100, имя ≤ 32, описание ≤ 256 |
-| Ботов в пространстве | ключ тарифа `bots` (free 2, team 20) |
+| Ботов в пространстве | ключ тарифа `bots` (free 1, team 20); бот занимает и место участника (`members`, free 50) |
 | Gateway | 1 сокет на токен, кадр ≤ 64 КиБ |
 
 Все ошибки — `ApiError`. `code` — из `ErrorCode` (`ERROR_CODE_…`):

@@ -9,7 +9,7 @@ import { fmt } from './format';
  * In PlanLimits 0 / UNSPECIFIED = no limit.
  */
 
-/** Built-in FREE limits (docs/04 «Тарифы»): the defaults of the admin CUSTOM form. */
+/** Built-in FREE limits (docs/04 «Тарифы», owner 28.09): the defaults of the admin CUSTOM form. */
 export const FREE_LIMITS = {
   roomMembers: 5,
   streamMaxPreset: ScreenSharePreset.H720,
@@ -18,8 +18,23 @@ export const FREE_LIMITS = {
   cameraMaxFps: 15,
   streamsPerRoom: 1,
   storageMb: 1024,
-  members: 0,
+  members: 50,
+  bots: 1,
+  stickerPacks: 1,
+  audioTierMaxKbps: 16,
 } as const;
+
+/** Voice tiers the admin form offers as the plan cap; 0 = no cap. */
+export const AUDIO_CAP_OPTIONS = [0, 8, 16, 32, 64] as const;
+
+/** A voice tier above the plan's cap (`audio_tier_max_kbps`, 0 / undefined = none) is locked. */
+export const audioTierLocked = (kbps: number, planMax: number | undefined): boolean => !!planMax && kbps > planMax;
+
+/** The tier the mic may use: the room's, lowered to the plan's cap (docs/02 «Битрейт»). */
+export const capAudioKbps = (kbps: number, planMax: number | undefined): number => (planMax && kbps > planMax ? planMax : kbps);
+
+/** A counted limit (members, bots, sticker packs; 0 = none) is reached. */
+export const atLimit = (used: number, limit: number | undefined): boolean => !!limit && used >= limit;
 
 export const PLAN_LABEL: Record<Plan, MessageKey> = {
   [Plan.UNSPECIFIED]: 'plan.name.free',
@@ -141,12 +156,19 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     const key: MessageKey = plan === Plan.FREE || plan === Plan.UNSPECIFIED ? 'plan.toast.roomFree' : 'plan.toast.room';
     return { text: n > 0 ? t(key, { n }) : t('plan.toast.roomAny'), contact: true };
   }
-  // Sticker packs / stickers (ADR-0030) and bots (ADR-0031) over the plan: 409 CONFLICT, reason
-  // PLAN_LIMIT; the message tells which limit.
+  // Members, voice quality (owner 28.09), sticker packs / stickers (ADR-0030) and bots
+  // (ADR-0031) over the plan: 409 CONFLICT, reason PLAN_LIMIT; the message tells which limit.
   if (e.code === 'ERROR_CODE_CONFLICT' && byPlan) {
     const n = x.limit ?? 0;
     const msg = e.message ?? '';
-    const key: MessageKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
+    if (/\bvoice\b/i.test(msg)) return { text: t('plan.paidOnly'), contact: true };
+    const key: MessageKey = /\bmembers?\b/i.test(msg)
+      ? 'plan.membersFull'
+      : /\bbots?\b/i.test(msg)
+        ? 'bots.planLimit'
+        : /pack/i.test(msg)
+          ? 'stk.planPacks'
+          : 'stk.planStickers';
     return { text: t(key, { n }), contact: true };
   }
   if (e.code === 'ERROR_CODE_FILE_QUOTA_EXCEEDED') {
@@ -169,6 +191,10 @@ export interface LimitsForm {
   streamsPerRoom: string;
   storageMb: string;
   members: string;
+  bots: string;
+  stickerPacks: string;
+  /** A tier (8 | 16 | 32 | 64) or 0 = no cap. */
+  audioTierMaxKbps: number;
 }
 
 /**
@@ -186,17 +212,22 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
     streamsPerRoom: String(src ? src.streamsPerRoom : FREE_LIMITS.streamsPerRoom),
     storageMb: String(src ? src.storageMb : FREE_LIMITS.storageMb),
     members: String(src ? src.members : FREE_LIMITS.members),
+    bots: String(src ? src.bots : FREE_LIMITS.bots),
+    stickerPacks: String(src ? src.stickerPacks : FREE_LIMITS.stickerPacks),
+    audioTierMaxKbps: src ? src.audioTierMaxKbps : FREE_LIMITS.audioTierMaxKbps,
   };
 }
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
-const MAX: Record<'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members', number> = {
+const MAX: Record<'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks', number> = {
   roomMembers: 10_000,
   streamMaxFps: 120,
   cameraMaxFps: 120,
   streamsPerRoom: 100,
   storageMb: 100 * 1024 * 1024,
   members: 1_000_000,
+  bots: 1000,
+  stickerPacks: 10_000,
 };
 
 export type LimitsField = keyof typeof MAX;
@@ -210,6 +241,9 @@ export interface PlanLimitsInit {
   streamsPerRoom: number;
   storageMb: bigint;
   members: number;
+  bots: number;
+  stickerPacks: number;
+  audioTierMaxKbps: number;
 }
 
 /**
@@ -234,6 +268,9 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
       streamsPerRoom: out.streamsPerRoom ?? 0,
       storageMb: BigInt(out.storageMb ?? 0),
       members: out.members ?? 0,
+      bots: out.bots ?? 0,
+      stickerPacks: out.stickerPacks ?? 0,
+      audioTierMaxKbps: f.audioTierMaxKbps,
     },
   };
 }
@@ -287,12 +324,13 @@ export function inputFromDate(d: Date | null): string {
 
 /**
  * «Сейчас» of the «Тариф» tab from the workspace's live data: the fullest voice room, the most
- * streams in one room, members without guests (guests do not count against the plan).
+ * streams in one room, members without guests (guests do not count against the plan; bots do),
+ * bots among them.
  */
 export function planUsage(
   voice: ReadonlyArray<{ roomId: string; streaming: boolean }>,
-  members: ReadonlyArray<{ guest: boolean }>,
-): { roomPeak: number; streamPeak: number; members: number } {
+  members: ReadonlyArray<{ guest: boolean; bot?: boolean }>,
+): { roomPeak: number; streamPeak: number; members: number; bots: number } {
   const people = new Map<string, number>();
   const streams = new Map<string, number>();
   for (const v of voice) {
@@ -301,5 +339,5 @@ export function planUsage(
     if (v.streaming) streams.set(v.roomId, (streams.get(v.roomId) ?? 0) + 1);
   }
   const peak = (m: Map<string, number>): number => Math.max(0, ...m.values());
-  return { roomPeak: peak(people), streamPeak: peak(streams), members: members.filter((m) => !m.guest).length };
+  return { roomPeak: peak(people), streamPeak: peak(streams), members: members.filter((m) => !m.guest).length, bots: members.filter((m) => m.bot).length };
 }

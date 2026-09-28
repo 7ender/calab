@@ -10,7 +10,9 @@ import { plural, t, type MessageKey } from '../../i18n';
 import { adminApi } from '../../lib/api/endpoints';
 import { errorText } from '../../lib/api/errors';
 import { fmt } from '../../lib/format';
+import { audioTierLabel } from '../../lib/audioTierLabel';
 import {
+  AUDIO_CAP_OPTIONS,
   NOTE_MAX,
   PLAN_LABEL,
   inputFromDate,
@@ -42,7 +44,13 @@ const KEY = { search: (q: string) => ['admin', 'search', q] as const, ws: (id: s
 
 const usageLine = (a: AdminWorkspace): string => {
   const u = a.usage;
-  return [plural('admin.nMembers', u?.members ?? 0), plural('admin.nRooms', u?.rooms ?? 0), fmt.size(u?.storageBytes ?? 0n)].join(' · ');
+  return [
+    plural('admin.nMembers', u?.members ?? 0),
+    plural('admin.nRooms', u?.rooms ?? 0),
+    ...(u?.bots ? [plural('admin.nBots', u.bots)] : []),
+    ...(u?.stickerPacks ? [plural('admin.nPacks', u.stickerPacks)] : []),
+    fmt.size(u?.storageBytes ?? 0n),
+  ].join(' · ');
 };
 
 const activityLine = (a: AdminWorkspace): string =>
@@ -210,6 +218,8 @@ const FIELD_LABEL: Record<LimitsField, MessageKey> = {
   streamMaxFps: 'admin.limit.streamFps',
   cameraMaxFps: 'admin.limit.cameraFps',
   storageMb: 'admin.limit.storageMb',
+  bots: 'plan.limit.bots',
+  stickerPacks: 'plan.limit.stickerPacks',
 };
 
 function formFrom(a: AdminWorkspace): PlanForm {
@@ -394,6 +404,22 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
               <NumberField field="cameraMaxFps" form={form.limits} onChange={setLimits} />
               <NumberField field="storageMb" form={form.limits} onChange={setLimits} />
               <NumberField field="members" form={form.limits} onChange={setLimits} />
+              <Row label={t('admin.limit.audio')}>
+                <Select
+                  aria-label={t('admin.limit.audio')}
+                  className="w-44"
+                  value={form.limits.audioTierMaxKbps}
+                  onChange={(e) => setLimits({ ...form.limits, audioTierMaxKbps: Number(e.target.value) })}
+                >
+                  {AUDIO_CAP_OPTIONS.map((k) => (
+                    <option key={k} value={k}>
+                      {k === 0 ? t('plan.unlimited') : audioTierLabel(k)}
+                    </option>
+                  ))}
+                </Select>
+              </Row>
+              <NumberField field="bots" form={form.limits} onChange={setLimits} />
+              <NumberField field="stickerPacks" form={form.limits} onChange={setLimits} />
             </Card>
           ) : null}
 

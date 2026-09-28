@@ -385,7 +385,7 @@ Go: `livekit/server-sdk-go` (`lksdk.ConnectToRoomWithToken(url, token, callbacks
 | File uploads | 30 at once, 120/h; size and quota per plan |
 | Message | ≤ 4000 characters, ≤ 20 attachments, `nonce` ≤ 64 |
 | Commands | ≤ 100, name ≤ 32, description ≤ 256 |
-| Bots per workspace | plan key `bots` (free 2, team 20) |
+| Bots per workspace | plan key `bots` (free 1, team 20); a bot also takes a member seat (`members`, free 50) |
 | Gateway | 1 socket per token, frame ≤ 64 KiB |
 
 Every error is an `ApiError`. `code` comes from `ErrorCode` (`ERROR_CODE_…`):

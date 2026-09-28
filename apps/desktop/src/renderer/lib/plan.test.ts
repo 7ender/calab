@@ -5,6 +5,9 @@ import { ApiError, toApiError } from './api/client';
 import {
   FREE_LIMITS,
   allowedCameraPreset,
+  atLimit,
+  audioTierLocked,
+  capAudioKbps,
   allowedStreamPreset,
   cameraPresetLock,
   capFps,
@@ -105,6 +108,31 @@ describe('planErrorNotice (toasts on API errors)', () => {
     const bots = new ApiError('ERROR_CODE_CONFLICT', 'the workspace plan allows no more bots', 409, undefined, { reason: 'PLAN_LIMIT', used: 2, limit: 2 });
     expect(planErrorNotice(bots, Plan.FREE)).toEqual({ text: 'По тарифу пространства — до 2 ботов', contact: true });
   });
+
+  it('409 CONFLICT PLAN_LIMIT about members / voice quality (owner 28.09)', () => {
+    const members = new ApiError('ERROR_CODE_CONFLICT', 'the workspace plan allows 50 members', 409, undefined, { reason: 'PLAN_LIMIT', used: 50, limit: 50 });
+    expect(planErrorNotice(members, Plan.FREE)).toEqual({ text: 'Достигнут лимит участников (50) — свяжитесь с нами', contact: true });
+    const voice = new ApiError('ERROR_CODE_CONFLICT', 'the workspace plan allows 16 kbps of voice quality', 409, undefined, { reason: 'PLAN_LIMIT', used: 32, limit: 16 });
+    expect(planErrorNotice(voice, Plan.FREE)).toEqual({ text: 'Доступно в платном тарифе', contact: true });
+  });
+});
+
+describe('voice tier and counted limits (owner 28.09)', () => {
+  it('tiers above the plan cap are locked; 0 / undefined = none', () => {
+    expect([8, 16, 32, 64].filter((k) => audioTierLocked(k, 16))).toEqual([32, 64]);
+    expect(audioTierLocked(64, 0)).toBe(false);
+    expect(audioTierLocked(64, undefined)).toBe(false);
+    expect(capAudioKbps(32, 16)).toBe(16);
+    expect(capAudioKbps(8, 16)).toBe(8);
+    expect(capAudioKbps(64, 0)).toBe(64);
+  });
+
+  it('at the limit when used ≥ limit; no limit never', () => {
+    expect(atLimit(50, 50)).toBe(true);
+    expect(atLimit(49, 50)).toBe(false);
+    expect(atLimit(1000, 0)).toBe(false);
+    expect(atLimit(1000, undefined)).toBe(false);
+  });
 });
 
 describe('admin CUSTOM form', () => {
@@ -113,6 +141,7 @@ describe('admin CUSTOM form', () => {
     expect(f.roomMembers).toBe(String(FREE_LIMITS.roomMembers));
     expect(f.storageMb).toBe('1024');
     expect(f.streamMaxPreset).toBe(H720);
+    expect(f).toMatchObject({ members: '50', bots: '1', stickerPacks: '1', audioTierMaxKbps: 16 });
     const custom = create(PlanLimitsSchema, { roomMembers: 12, storageMb: 5120n, streamMaxPreset: H1080 });
     expect(limitsFormFrom(Plan.CUSTOM, custom)).toMatchObject({ roomMembers: '12', storageMb: '5120', streamMaxPreset: H1080, cameraMaxFps: '0' });
     // Team → Custom: the free defaults, not Team's.
@@ -124,7 +153,8 @@ describe('admin CUSTOM form', () => {
     expect(limitsFromForm({ ...f, roomMembers: '' })).toMatchObject({ limits: { roomMembers: 0 } });
     expect(limitsFromForm({ ...f, streamMaxFps: '2.5' })).toEqual({ error: 'streamMaxFps' });
     expect(limitsFromForm({ ...f, members: '-1' })).toEqual({ error: 'members' });
-    expect(limitsFromForm(f)).toMatchObject({ limits: { storageMb: 1024n, cameraMaxPreset: H720 } });
+    expect(limitsFromForm(f)).toMatchObject({ limits: { storageMb: 1024n, cameraMaxPreset: H720, members: 50, bots: 1, stickerPacks: 1, audioTierMaxKbps: 16 } });
+    expect(limitsFromForm({ ...f, bots: '1001' })).toEqual({ error: 'bots' });
   });
 
   it('PUT body: limits only with CUSTOM, end of the chosen day, trimmed note', () => {
@@ -149,7 +179,7 @@ describe('planUsage', () => {
       { roomId: 'b', streaming: false },
       { roomId: '', streaming: false },
     ];
-    expect(planUsage(voice, [{ guest: false }, { guest: true }, { guest: false }])).toEqual({ roomPeak: 3, streamPeak: 2, members: 2 });
-    expect(planUsage([], [])).toEqual({ roomPeak: 0, streamPeak: 0, members: 0 });
+    expect(planUsage(voice, [{ guest: false }, { guest: true }, { guest: false, bot: true }])).toEqual({ roomPeak: 3, streamPeak: 2, members: 2, bots: 1 });
+    expect(planUsage([], [])).toEqual({ roomPeak: 0, streamPeak: 0, members: 0, bots: 0 });
   });
 });

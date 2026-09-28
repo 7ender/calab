@@ -10,12 +10,16 @@ import { ApiError } from '../../lib/api/client';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
+import { planErrorNotice, planKind } from '../../lib/plan';
+import { workspacePlan } from '../../services/plan';
 import { toast } from '../../stores/toasts';
 import { useWorkspaces } from '../../stores/workspaces';
 import { EmailLookup, type LookupState } from './emailLookup';
 
-/** A failed add / invitation: 429 of «the same address < 24 h ago» names the wait. */
-function sendError(e: unknown): string {
+/** A failed add / invitation: 429 of «the same address < 24 h ago» names the wait; the plan's members limit its own text. */
+function sendError(e: unknown, workspaceId: string): string {
+  const plan = planErrorNotice(e, planKind(workspacePlan(workspaceId)));
+  if (plan) return plan.text;
   if (e instanceof ApiError) {
     if (e.status === 409) return t('mail.invite.already');
     if (e.status === 429) {
@@ -32,7 +36,7 @@ function sendError(e: unknown): string {
  * почту» (a single-use link for 7 days, bound to the address). Below — the pending invitations
  * with «Отозвать». The links by code stay as they are.
  */
-export function EmailInviteCard({ workspaceId }: { workspaceId: string }): ReactNode {
+export function EmailInviteCard({ workspaceId, full = false }: { workspaceId: string; full?: boolean }): ReactNode {
   const owner = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.OWNER);
   const qc = useQueryClient();
   const [value, setValue] = useState('');
@@ -102,7 +106,7 @@ export function EmailInviteCard({ workspaceId }: { workspaceId: string }): React
               {state.member ? (
                 <Badge>{t('mail.invite.member')}</Badge>
               ) : (
-                <Button busy={add.isPending} onClick={() => add.mutate(state.user.id)}>
+                <Button busy={add.isPending} disabled={full} onClick={() => add.mutate(state.user.id)}>
                   {t('mail.invite.add')}
                 </Button>
               )}
@@ -117,7 +121,7 @@ export function EmailInviteCard({ workspaceId }: { workspaceId: string }): React
                   <option value={WorkspaceRole.ADMIN}>{t('role.admin')}</option>
                 </Select>
               ) : null}
-              <Button busy={invite.isPending} onClick={() => invite.mutate(state.email)}>
+              <Button busy={invite.isPending} disabled={full} onClick={() => invite.mutate(state.email)}>
                 {t('mail.invite.send')}
               </Button>
             </div>
@@ -129,7 +133,7 @@ export function EmailInviteCard({ workspaceId }: { workspaceId: string }): React
           ) : null}
           {failure ? (
             <p className="mt-2 text-caption text-danger-text" role="alert">
-              {sendError(failure)}
+              {sendError(failure, workspaceId)}
             </p>
           ) : null}
         </div>

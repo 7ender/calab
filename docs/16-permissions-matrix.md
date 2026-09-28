@@ -10,7 +10,7 @@
 | Переопределения комнаты | `MANAGE_ROOM` room; не-админ — только свои биты | `rooms.validateOverrides` | вкладка «Права» |
 | `allow_recording` комнаты | `MANAGE_ROOM` room + `MANAGE_WORKSPACE` ws | `rooms.update` | `mayManageWorkspace` |
 | Ссылка-приглашение в комнату (гости) | `MANAGE_ROOM` room; не-админ — не шире своих | `guests.manage` | `roomMenuGroups` (voice + canManage) |
-| Настройки, медиа, инвайты, email-инвайты, баны, GPTunneL | `MANAGE_WORKSPACE` ws | `requireManage`, `recording` | `mayManageWorkspace` |
+| Настройки, медиа, инвайты, email-инвайты, баны, GPTunneL | `MANAGE_WORKSPACE` ws; тариф: `members` (инвайты, вход), `audio_tier_max_kbps` (медиа) | `requireManage`, `recording`, `plans.Check` | `mayManageWorkspace`, `useMembersCap` |
 | Пригласить админом по email | владелец | `createEmailInvite` | `EmailInvite` (owner) |
 | Исключить / забанить / встроенная роль | `MANAGE_WORKSPACE` ws + иерархия: не владельца, админа — только владелец, цель ниже моей старшей роли | `workspaces.outranks` | `canRemoveMember` |
 | Гость → участник | `MANAGE_WORKSPACE` ws | `promote` | `memberActions.promote` |
