@@ -39,6 +39,7 @@
 | Удалить запись встречи (docs/09 #50) | запустивший, владелец (`owner_id`) или `MANAGE_MESSAGES` room (+ `VIEW_ROOM`) | `recording.remove` | `mayDeleteRecording` |
 | Создать бота, список ботов (ADR-0031) | `MANAGE_WORKSPACE` ws (владелец — всегда), подтверждённый email; тариф `bots` | `bots.create`, `bots.list` (`manager`) | — (клиент, фаза 1b) |
 | Перевыпустить / отозвать токен, удалить бота | в «домашнем» пространстве: владелец бота или `MANAGE_WORKSPACE` ws | `bots.homeBot`, `bots.remove` | — |
+| Аватар бота: загрузить / убрать (docs/09 #87) | в «домашнем» пространстве: владелец бота или `MANAGE_WORKSPACE` ws (бот не участник — 404, чужое пространство — 403); бот-токен — 403 | `bots.setAvatar`, `bots.clearAvatar` (`homeBot`) | `BotsTab` (строки своих ботов), `BotAvatarControls` (`mayManageWorkspace` домашнего или владелец) |
 | Добавить / убрать бота в другом пространстве | `MANAGE_WORKSPACE` ws этого пространства | `bots.add`, `bots.remove` | — |
 | Бот: любое действие | те же биты, что у человека (роли + переопределения; встроенная роль всегда `member`) + маршрут `allow` в `internal/app/botroutes.go`, иначе `403 BOT_NOT_ALLOWED` | `botGate` (`auth.NoBots`) + обработчик | — |
 | Бот: писать в DM | общее пространство (не гость) и не заблокирован собеседником (`403 BOT_BLOCKED`) | `dms.create`, `messages.create` (`CheckBotBlocked`) | — |

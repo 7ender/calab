@@ -25,7 +25,7 @@ import { MemberPicker } from './MemberPicker';
 import type { PeoplePickItem, RolePickItem } from './memberPickItems';
 import { roleColorCss } from '../../lib/roles';
 import { BotBadge, GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from './MemberBits';
-import { BotActions, BotDetails, BotHandle } from './BotProfile';
+import { BotActions, BotAvatarControls, BotDetails, BotHandle } from './BotProfile';
 import { EditBadge, ProfileBadge } from './ProfileBadge';
 import { MemberContextMenu, useMemberActions } from './MemberContextMenu';
 import { NOTE_MAX, createNoteSaver, type NoteSaveState, type NoteSaver } from './noteSaver';
@@ -180,6 +180,7 @@ export function ProfileDialog({
                 <div className="mt-4 flex flex-col gap-3">
                   <BotDetails botUserId={userId} />
                   <BotActions botUserId={userId} />
+                  <BotAvatarControls workspaceId={workspaceId} botUserId={userId} />
                 </div>
               ) : null}
 

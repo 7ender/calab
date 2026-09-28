@@ -72,6 +72,15 @@ message ReissueBotTokenResponse {
   string token = 2;
 }
 
+// POST /api/workspaces/{id}/bots/{botId}/avatar — sets the bot's avatar from the multipart
+// field "file" (an image ≤ 5 MB, like POST /api/me/avatar: 422 VALIDATION otherwise); DELETE
+// of the same path removes it. Home workspace only: the bot's owner or MANAGE_WORKSPACE
+// (403 elsewhere, 404 when the bot is not a member of {id}). Members see USER_UPDATE, the
+// managers BOT_UPDATE (docs/09 #87).
+message SetBotAvatarResponse {
+  Bot bot = 1;
+}
+
 // POST /api/workspaces/{id}/bots/add (MANAGE_WORKSPACE of that workspace): adds an existing
 // bot by id or username (member role). 409 CONFLICT: already a member or plan limit.
 message AddBotRequest {

@@ -134,6 +134,7 @@ import {
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
+  SetBotAvatarResponseSchema,
   type StickerPackResponse,
   type UploadStickersResponse,
   type FileMeta,
@@ -364,6 +365,13 @@ export const api = {
       call('POST', `/api/workspaces/${workspaceId}/bots/${botUserId}/token`, ReissueBotTokenResponseSchema),
     /** 204: no token until «Перевыпустить». */
     revoke: (workspaceId: string, botUserId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/bots/${botUserId}/token`),
+    /** {bot}: the avatar from the same picker as the own profile's (docs/09 #87); 422 not an image. */
+    setAvatar: async (workspaceId: string, botUserId: string, file: Blob, name: string) =>
+      fromJson(SetBotAvatarResponseSchema, (await postAvatar(`/api/workspaces/${workspaceId}/bots/${botUserId}/avatar`, file, name)) as JsonValue, {
+        ignoreUnknownFields: true,
+      }),
+    /** {bot} without the avatar. */
+    clearAvatar: (workspaceId: string, botUserId: string) => call('DELETE', `/api/workspaces/${workspaceId}/bots/${botUserId}/avatar`, SetBotAvatarResponseSchema),
     /** The public card by id or username (no owner / home workspace). */
     get: (ref: string, signal?: AbortSignal) => call('GET', `/api/bots/${encodeURIComponent(ref)}`, GetBotMeResponseSchema, undefined, signal),
     /** Commands of the bots that can view the room (composer hints). */
@@ -606,11 +614,17 @@ export async function replaceSticker(packId: string, stickerId: string, change: 
   return fromJson(StickerPackResponseSchema, (await res.json()) as JsonValue, { ignoreUnknownFields: true });
 }
 
-export async function uploadAvatar(file: Blob, name: string): Promise<void> {
+/** Multipart `file` to an avatar route (own profile or a bot); the parsed JSON response. */
+async function postAvatar(path: string, file: Blob, name: string): Promise<unknown> {
   const form = new FormData();
   form.append('file', file, name);
-  const res = await platform.apiFetch('/api/me/avatar', { method: 'POST', body: form });
+  const res = await platform.apiFetch(path, { method: 'POST', body: form });
   if (!res.ok) throw await toApiError(res);
+  return res.json();
+}
+
+export async function uploadAvatar(file: Blob, name: string): Promise<void> {
+  await postAvatar('/api/me/avatar', file, name);
 }
 
 /** URL usable in <img src>: main attaches the bearer token. */
