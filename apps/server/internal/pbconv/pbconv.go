@@ -524,6 +524,7 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		UserLimit:           uint32(max(r.UserLimit, 0)),
 		VoiceStatus:         deref(r.VoiceStatus),
 		AllowRecording:      r.AllowRecording,
+		GuestApproval:       r.GuestApproval,
 	}
 }
 

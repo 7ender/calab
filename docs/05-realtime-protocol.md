@@ -113,9 +113,13 @@ EVENT_RSVP                    { workspace_id, event_id, attendee, counts, event 
 EVENT_REMINDER                { event (вхождение), occurrence_at, minutes } — напоминание, в user:<id>
 ROOM_EVENT_ACTIVE             { workspace_id, room_id, event (вхождение) } — за 15 мин до начала и до конца: значок встречи у комнаты
 ROOM_EVENT_ENDED              { workspace_id, room_id, event_id, occurrence_at } — вхождение закончилось, отменено или перенесено
+ROOM_ADMISSION_REQUEST        { admission: RoomAdmission } — гость стучится в комнату (ADR-0040), решающим
+ROOM_ADMISSION_DECIDED        { admission } — ADMITTED | DECLINED (no_answer — никто не ответил за 30 мин) | CANCELLED (гость
+                                передумал): решающим (user — только id) и гостю в user:<id> (с room_name / workspace_name)
 ```
 
 Фильтрация по получателю (выполняет gateway, без запросов в БД — у инстанса кэш комнат и ролей каждого workspace, обновляемый самими событиями):
+- `ROOM_ADMISSION_*` (ADR-0040) — решающим: `MANAGE_ROOM` в комнате или автор ссылки (`admission.invite_created_by`, не гость). Гость получает `ROOM_ADMISSION_DECIDED` в `user:<id>`; после `ADMITTED` комната приходит обычным `ROOM_CREATE` (из `ROOM_PERMISSIONS_UPDATE`) — порядок между этими двумя событиями не гарантирован.
 - `BOT_*` — участникам с `MANAGE_WORKSPACE` и владельцу бота (ему `BOT_UPDATE` приходит и в `user:<id>`). `MESSAGE_CREATE` с `Message.command` — команда остаётся только у адресованного бота, остальные получают обычное сообщение (и в DM).
 - `MESSAGE_*`, `VOICE_STREAM_*`, `ROOM_RECORDING` — только тем, у кого `VIEW_ROOM` в комнате; `TYPING_START` — кроме того только сессиям, подписанным на комнату через `SUBSCRIBE` (и не самому печатающему).
 - `ROOM_UPDATE` / `ROOM_PERMISSIONS_UPDATE` / `WORKSPACE_MEMBER_UPDATE` (смена ролей) / `ROLE_UPDATE` / `ROLE_DELETE` (права, порядок, удаление роли — для всех её держателей) пересчитывают видимость: доступ появился → получатель видит `ROOM_CREATE` с комнатой (голосовая с идущим звонком — с `voice_started_at`, за ней `VOICE_STATE_UPDATE` каждого участника: раньше их состояния приходили ему без комнаты), пропал → `ROOM_DELETE` (клиент убирает и голосовые состояния этой комнаты), остался → исходное событие. Смена `Room.restricted` (ADR-0029) — `ROOM_UPDATE` и следом `ROOM_PERMISSIONS_UPDATE` с теми же переопределениями (пересчёт грантов звонка).
@@ -210,20 +214,20 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 ```
 GET    /api/workspaces/{id}/events?from=&to=   RFC 3339, окно ≤ 62 дня → ListCalendarEventsResponse { events: вхождения по началу }
 POST   /api/workspaces/{id}/events             CreateCalendarEventRequest → 201 CalendarEventResponse (не гость, не бот)
-GET    /api/events/{id}                        серия (отменённая — с cancelled_at, для ссылки /e/<id>); не видна — 404
+GET    /api/events/{id}                        серия (отменённая — с cancelled_at, для ссылки /e/<id>); не видна — 404; гость — текущее вхождение активной встречи видимой комнаты без участников, иначе 404
 PATCH  /api/events/{id}                        UpdateCalendarEventRequest → CalendarEventResponse (организатор / MANAGE_ROOM / MANAGE_WORKSPACE)
 DELETE /api/events/{id}[?occurrence=<RFC 3339>] 204: отмена встречи (письмо CANCEL) или одного вхождения серии (EVENT_UPDATE, письмо с EXDATE)
 PUT    /api/events/{id}/rsvp                   { status: ACCEPTED | DECLINED | MAYBE } → CalendarEventResponse (только участник)
 GET    /api/me/events/today?tz=                сегодняшние предстоящие встречи (не отклонённые) во всех пространствах → { count, events }
-GET    /api/event-rsvp?t=                      публично: встреча по подписанной ссылке внешнего участника → EventRsvpTokenResponse
-POST   /api/event-rsvp { token }               публично: сохранить ответ ссылки (идемпотентно); после конца — 410 EVENT_OVER; битая — 404
+GET    /api/event-rsvp?t=                      публично: встреча по view- или answer-токену внешнего участника → EventRsvpTokenResponse (описание, комната, my_status, три answer-токена, guest_url + окно, повтор, почта организатора; без других участников)
+POST   /api/event-rsvp { token }               публично: сохранить ответ answer-токена (идемпотентно); view-токен — 400; после конца — 410 EVENT_OVER; битая — 404
 ```
 
 - Ошибки: `422` — название 1..120, описание ≤ 4000, конец > начала и ≤ 7 дней, неизвестная `tz`, комната не голосовая/чужая/невидимая, участник не из пространства / бот / гость, > 100 участников или > 20 внешних адресов, `repeat_until` раньше начала; гость — `403`; внешние адреса без подтверждённой почты — `403 EMAIL_NOT_VERIFIED`; 30 изменений сразу, 120 в час на пользователя — `429`.
 - Вхождение в списке: `occurrence_at` = его начало, `starts_at`/`ends_at` — его время, `recording_id` — запись этого вхождения; `my_status`, `can_edit`, `counts` посчитаны для вызывающего. Повтор серии: `EventRepeat` (день / неделя / две недели / месяц — месяцы без такого числа пропускаются) + `repeat_until`; разворачивается в зоне `tz` (время на часах сохраняется при переходе на летнее время).
-- Письма (ADR-0023, outbox): при создании — `event_invite` каждому участнику с подтверждённой почтой и внешним адресам; при изменении времени/комнаты/названия/описания/повтора — `event_update` всем (SEQUENCE + 1), добавленным — `event_invite`, удалённым — `event_cancel`; при отмене — `event_cancel`. Вложение `invite.ics` (и `text/calendar; method=…` в alternative): `UID=<id>@calab`, `SEQUENCE`, `DTSTART/DTEND` в UTC (повторяющаяся встреча в зоне с DST — `TZID` + `VTIMEZONE`), `RRULE`, `EXDATE`, `ORGANIZER`, `ATTENDEE` с `ROLE=REQ/OPT-PARTICIPANT`, `URL=https://<APP_HOST>/e/<id>`; `Reply-To` — почта организатора. Внешним — ссылки ответа и гостевая ссылка в комнату. Лимит писем на адрес (`MAIL_PER_ADDRESS_PER_HOUR`) действует: сверх него письмо не уходит (в логе).
+- Письма (ADR-0023, outbox): при создании — `event_invite` каждому участнику с подтверждённой почтой и внешним адресам; при изменении времени/комнаты/названия/описания/повтора — `event_update` всем (SEQUENCE + 1), добавленным — `event_invite`, удалённым — `event_cancel`; при отмене — `event_cancel`. Вложение `invite.ics` (и `text/calendar; method=…` в alternative): `UID=<id>@calab`, `SEQUENCE`, `DTSTART/DTEND` в UTC (повторяющаяся встреча в зоне с DST — `TZID` + `VTIMEZONE`), `RRULE`, `EXDATE`, `ORGANIZER`, `ATTENDEE` с `ROLE=REQ/OPT-PARTICIPANT`, `URL=https://<APP_HOST>/e/<id>` (внешним — `/e/<id>?t=<view-токен>`, как и кнопка письма; срок — конец встречи/серии + 1 ч); `Reply-To` — подтверждённая почта организатора. Внешним — ссылки ответа и гостевая ссылка в комнату; их `invite.ics` — только `ORGANIZER` и свой `ATTENDEE`, «Участники» — имена коллег и свой адрес. Лимит писем встреч на адрес — свой (`MAIL_EVENTS_PER_ADDRESS_PER_HOUR`, 10; коды и приглашения его не делят): сверх него письмо не уходит (в логе).
 - Напоминания: метёлка раз в 30 с на каждом инстансе; вхождения ближайших 25 ч; каждому участнику (и организатору), кто не отклонил и остаётся участником пространства, по его `event_reminders` (окно отправки — 2 мин после момента напоминания); при DND — только если `event_reminders_dnd`. `ROOM_EVENT_ACTIVE` — один раз на вхождение (и сразу при создании/переносе внутрь окна), `ROOM_EVENT_ENDED` — по окончании (до часа спустя), при отмене и переносе.
-- `READY` / `WORKSPACE_CREATE`: `WorkspaceSnapshot.active_events` — активные сейчас вхождения видимых комнат (гостям пусто).
+- `READY` / `WORKSPACE_CREATE`: `WorkspaceSnapshot.active_events` — активные сейчас вхождения видимых комнат (гостям — без участников, записи и прав; `ROOM_EVENT_ACTIVE/ENDED` гостям комнаты — так же; `EVENT_*` гостям не уходят).
 - Настройки напоминаний: `PATCH /api/me { eventReminders: { minutes: [...], dnd } }` (≤ 5 различных из 5/10/15/30/60/120/1440, иначе `422`); в `Me.settings.event_reminders` / `event_reminders_dnd` (по убыванию; по умолчанию `[60, 5]`, да).
 - Запись: запись, которую организатор начал в комнате встречи в окне [начало − 15 мин; конец), привязывается к вхождению — `recording_id` в списке и повторный `ROOM_EVENT_ACTIVE`.
 - Ссылка `/e/<id>` — страница веб-клиента (SPA, как `/r/<code>`); `/e/<id>/rsvp?t=` — страница ответа внешнего участника.
@@ -387,8 +391,14 @@ POST   /api/workspaces/{id}/members/{userId}/promote   гость → member (MA
 POST   /api/rooms/{id}/invites                 CreateRoomInviteRequest → 201 RoomInvite   (MANAGE_ROOM)
 GET    /api/rooms/{id}/invites                 активные ссылки;  DELETE /api/rooms/{id}/invites/{inviteId} — отзыв
 GET    /api/room-invites/{code}                превью для страницы /r/<code> (без auth)
-POST   /api/room-invites/{code}/join           JoinRoomInviteRequest{nickname} → {roomId, workspaceId[, tokens, me]}
+POST   /api/room-invites/{code}/join           JoinRoomInviteRequest{nickname} → {roomId, workspaceId[, tokens, me][, admission]}
+PATCH  /api/rooms/{id}/invites/{inviteId}      UpdateRoomInviteRequest{requireApproval | inheritApproval} → {invite}   (MANAGE_ROOM)
+GET    /api/rooms/{id}/admissions              ожидающие стуки (ADR-0040): MANAGE_ROOM — все, автор ссылки — по своим ссылкам
+POST   /api/rooms/{id}/admissions/{userId}     DecideRoomAdmissionRequest{status ADMITTED|DECLINED, displayName?, badgeId?} → {admission}
+DELETE /api/rooms/{id}/admissions/me           гость отменяет ожидание → 204
 ```
+
+- **Подтверждение входа гостей (ADR-0040).** `PATCH /api/rooms/{id} {guestApproval}` (MANAGE_ROOM) — `Room.guest_approval`; ссылка: `CreateRoomInviteRequest.require_approval` / PATCH выше (`RoomInvite.require_approval` не задан — как у комнаты); превью — `requires_approval` (итоговое). Если подтверждение нужно, join отвечает `admission` (`PENDING`): гость — член пространства `guest` без комнаты (READY: пространство без неё, `Ready.pending_admissions[]` — свои `PENDING` и `DECLINED` за последние 10 мин), история и LiveKit-токен комнаты — `404`. Повторный join во время ожидания — тот же стук, использование не тратится. Решающим — `WorkspaceSnapshot.admissions[]` в READY. `POST …/admissions/{userId}`: `displayName` 1..40 — только гостевому аккаунту (иначе 422), пишется в `users.display_name` (`USER_UPDATE`); `badgeId` (`""` — снять) — из библиотеки пространства (`WORKSPACE_MEMBER_UPDATE`); не ожидает — `404`, не решающий — `403`, бот — `403 BOT_NOT_ALLOWED` (боты — только `GET`). Отклонение снимает членство гостя без других комнат (`WORKSPACE_MEMBER_REMOVE`, гостю `WORKSPACE_DELETE`). Стук: `429` с `reason` `ADMISSION_DECLINED` (≤ 10 мин после отклонения человеком) или `ADMISSION_QUEUE_FULL` (50 ожидающих, `used`/`limit`).
 
 - Публичные пути — `/api/room-invites/…`, а не `/api/rooms/invites/…`: второй вариант конфликтует в `net/http.ServeMux` с `/api/rooms/{id}/invites` (путь `/api/rooms/invites/invites` подходит под оба шаблона, и mux паникует).
 - **Перемещение** (ADR-0019). Проверки прав и лимитов прежние. Voice-state устройства сразу записывается в целевую комнату (все получают `VOICE_STATE_UPDATE`). Дальше зависит от LiveKit:

@@ -103,6 +103,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Files.RunCleanup(ctx, time.Hour)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
 	go a.Guests.RunCleanup(ctx, time.Hour)
+	go a.Guests.RunAdmissions(ctx, guests.AdmissionSweep)
 	go a.Plans.Run(ctx)
 	if a.RTC != nil {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)
@@ -184,7 +185,8 @@ func New(d Deps) *App {
 		panic(err) // config.Validate checks the SMTP settings first
 	}
 	mailSvc := mail.New(mail.Config{
-		PerAddressPerHour: d.Config.MailPerAddressPerHour, PerHour: d.Config.MailPerHour, Secret: []byte(d.Config.JWTSecret),
+		PerAddressPerHour: d.Config.MailPerAddressPerHour, EventsPerAddressPerHour: d.Config.MailEventsPerAddressPerHour,
+		PerHour: d.Config.MailPerHour, Secret: []byte(d.Config.JWTSecret),
 	}, d.DB, d.Redis, sender)
 
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)

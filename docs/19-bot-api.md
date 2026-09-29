@@ -126,6 +126,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `POST /api/rooms/{id}/stream/request` · `…/camera/request` · `…/camera/stop` | стрим экрана, камера | `STREAM` / `VIDEO` |
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | своё mute/deafen, статус звонка | в звонке |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | модерация голоса | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
+| `GET /api/rooms/{id}/admissions` | гости, ожидающие подтверждения входа (ADR-0040); пустить/отклонить — 403 `BOT_NOT_ALLOWED` | `MANAGE_ROOM` |
 | `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | календарь (ADR-0038): встречи в видимых боту комнатах; только чтение (создавать, менять, отвечать — 403 `BOT_NOT_ALLOWED`), адреса внешних участников боту не показываются | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | саундборд (ADR-0036): список звуков; проиграть звук всем в звонке (`builtin:<имя>` или id звука; 1 в 2 с на бота, 5 в 10 с на комнату) | бот в звонке комнаты; управление звуками — 403 |
 | стикеры: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | см. [Стикеры](#стикеры-по-api) | участник / `MANAGE_STICKERS` |

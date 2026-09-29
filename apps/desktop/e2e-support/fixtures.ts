@@ -71,6 +71,7 @@ import {
   type Workspace,
 } from '@calaba/protocol';
 import { buildMarketingState } from './fixtures-marketing';
+import type { AdmissionRec } from './mock-admissions';
 import { avatarPicture, cardPicture, encodePng } from './png';
 
 /**
@@ -383,6 +384,8 @@ export interface MockState {
   invites: Map<string, Invite>;
   /** Room links (ADR-0016), by id. */
   roomInvites: Map<string, RoomInvite>;
+  /** Waiting guest knocks (ADR-0040), by admissionKey(roomId, userId). */
+  admissions: Map<string, AdmissionRec>;
   /** DM rooms (type DM, no workspace): roomId → the two participants (ADR-0020). */
   dmMembers: Map<string, [string, string]>;
   /** Notes shelves (ADR-0039): room id → owner and emoji (name and position live on the room). */
@@ -720,6 +723,7 @@ export function buildState(scenario: Scenario): MockState {
     presences: new Map(),
     invites: new Map(),
     roomInvites: new Map(),
+    admissions: new Map(),
     reactions: new Map(),
     files: new Map(),
     sessions: new Map(),

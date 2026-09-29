@@ -525,6 +525,19 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	case *v1.DispatchEvent_EventCreate, *v1.DispatchEvent_EventUpdate, *v1.DispatchEvent_EventDelete,
 		*v1.DispatchEvent_EventRsvp, *v1.DispatchEvent_RoomEventActive, *v1.DispatchEvent_RoomEventEnded:
 		h.routeCalendar(st, sessions, view, id, ev)
+	case *v1.DispatchEvent_RoomAdmissionRequest, *v1.DispatchEvent_RoomAdmissionDecided:
+		// Guest admission (ADR-0040): to the room's deciders — MANAGE_ROOM there, or the
+		// author of the link the guest came by. The guest gets DECIDED on their user channel.
+		a := ev.GetRoomAdmissionRequest().GetAdmission()
+		if a == nil {
+			a = ev.GetRoomAdmissionDecided().GetAdmission()
+		}
+		rid, author := parseID(a.GetRoomId()), parseID(a.GetInviteCreatedBy())
+		for _, s := range sessions {
+			if st.bits(rid, s.user).Has(perm.ManageRoom) || (author != uuid.Nil && s.user == author && st.role(s.user) != perm.RoleGuest) {
+				s.dispatchEnc(id, shared)
+			}
+		}
 	default: // categories and other workspace-wide events
 		h.toAll(sessions, id, shared)
 	}

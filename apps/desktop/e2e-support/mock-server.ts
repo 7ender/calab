@@ -171,6 +171,12 @@ import {
   InviteSchema,
   JoinRoomInviteRequestSchema,
   JoinRoomInviteResponseSchema,
+  ListRoomAdmissionsResponseSchema,
+  DecideRoomAdmissionRequestSchema,
+  DecideRoomAdmissionResponseSchema,
+  UpdateRoomInviteRequestSchema,
+  UpdateRoomInviteResponseSchema,
+  RoomAdmissionStatus,
   JoinVoiceResponseSchema,
   JoinWorkspaceResponseSchema,
   ListCategoriesResponseSchema,
@@ -296,6 +302,7 @@ import {
   type WorkspaceNotificationSettings,
   type RoomCategory,
   type RoomInvite,
+  type RoomAdmission,
   type Session,
   type VoiceState,
   type WorkspaceMember,
@@ -351,19 +358,23 @@ import {
 } from './fixtures';
 import { MARKETING_UNFURLS } from './fixtures-marketing';
 import {
+  ACTIVE_BEFORE_MS,
   REMINDER_CHOICES,
   activeOccurrence,
   counts,
+  eventForGuest,
   eventOut,
   involves,
   occurrences,
   parseRsvpToken,
   rsvpToken,
+  viewToken,
   type CalEventRec,
   type EmailView,
   type Occurrence,
 } from './mock-calendar';
 import { cardPicture, encodePng, pngSize } from './png';
+import { admissionKey, admissionOutcome, deciderView, guestView, requiresApproval, type AdmissionRec } from './mock-admissions';
 
 export {
   IDS,
@@ -576,6 +587,29 @@ export interface MockServer {
   setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void;
   /** The answer link token of an external attendee (the page /e/<id>/rsvp?t=…). */
   eventRsvpToken(eventId: string, email: string, status: AttendeeStatus): string;
+  /** ADR-0040: the room's «Подтверждение входа гостей» (ROOM_UPDATE), as PATCH /api/rooms/{id}. */
+  setGuestApproval(roomId: string, on: boolean): void;
+  /**
+   * ADR-0040: a new guest account `nickname` knocks on `roomId` (as a link join with approval):
+   * `guest` membership without the room, the knock, ROOM_ADMISSION_REQUEST to the deciders.
+   * Returns the guest's user id. `inviteId`: the link used (default: none, the author is Анна).
+   */
+  knock(roomId: string, nickname: string, inviteId?: string): string;
+  /**
+   * ADR-0040: decides a waiting knock like POST …/admissions/{userId} by `byUserId` (default
+   * Анна): `admitted` gives the room (ROOM_CREATE), `declined` / `no_answer` (the server's 30-min
+   * sweep) drop the membership when the guest has no other room; `cancelled` = the guest withdrew.
+   * ROOM_ADMISSION_DECIDED to the deciders and the guest.
+   */
+  decideAdmission(roomId: string, userId: string, status: 'admitted' | 'declined' | 'no_answer' | 'cancelled', byUserId?: string): void;
+  /** The view token of an external attendee: the meeting link of its mail, /e/<id>?t=… (no answers). */
+  eventViewToken(eventId: string, email: string): string;
+  /**
+   * The guest link of an external attendee into the meeting's room (made on first call, like
+   * the server's: single use, from 15 minutes before the next occurrence until 1 h after it).
+   * Returns the absolute /r/<code> URL; GET /api/event-rsvp then carries it as guest_url.
+   */
+  eventGuestLink(eventId: string, email: string): string;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -626,6 +660,11 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
     setEventRecording: (id, at, rec) => impl.setEventRecording(id, at, rec),
     eventRsvpToken: (id, email, st) => rsvpToken(id, email, st),
+    setGuestApproval: (roomId, on) => impl.setGuestApproval(roomId, on),
+    knock: (roomId, nickname, inviteId) => impl.knock(roomId, nickname, inviteId),
+    decideAdmission: (roomId, userId, status, by) => impl.decideAdmission(roomId, userId, status, by),
+    eventViewToken: (id, email) => viewToken(id, email),
+    eventGuestLink: (id, email) => impl.eventGuestLink(id, email),
   };
 }
 
@@ -938,6 +977,7 @@ class MockImpl {
     this.registerRoutes();
     this.registerCallRoutes();
     this.calendarRoutes();
+    this.admissionRoutes();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -1351,7 +1391,7 @@ class MockImpl {
       badges: this.badgesOf(wsId),
       backgrounds: this.backgroundsOf(wsId),
       sounds: this.soundsOf(wsId),
-      activeEvents: m && m.role !== WorkspaceRole.GUEST ? this.activeEvents(wsId, userId) : [],
+      activeEvents: m ? this.activeEvents(wsId, userId) : [],
     });
   }
 
@@ -1378,7 +1418,8 @@ class MockImpl {
           sessionId: conn.gatewaySessionId,
           me: this.me(u),
           planContact: MOCK_PLAN_CONTACT,
-          workspaces: wsIds.map((w) => this.snapshot(w, u.user.id)),
+          workspaces: wsIds.map((w) => this.withAdmissions(this.snapshot(w, u.user.id), u.user.id)),
+          pendingAdmissions: this.ownAdmissions(u.user.id),
           // Every visible room (server contract): never read → empty marker.
           readStates: [...this.state.rooms.values()]
             .filter((r) => (wsIds.includes(r.workspaceId) || r.type === RoomType.DM || r.type === RoomType.NOTES) && this.canView(r, u.user.id))
@@ -3579,6 +3620,7 @@ class MockImpl {
         if (b.restricted && !room.isPrivate) throw invalid('restricted', 'only private rooms can be restricted');
         room.restricted = b.restricted;
       }
+      if (b.guestApproval !== undefined) room.guestApproval = b.guestApproval; // ADR-0040
       this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
       if (b.allowRecording === false && s().recordings.has(room.id)) this.stopRecording(room, 'disabled', '');
       sendMsg(c.res, 200, UpdateRoomResponseSchema, { room });
@@ -4682,11 +4724,26 @@ class MockImpl {
         allowMessages: b.allowMessages ?? true,
         allowFiles: b.allowFiles ?? false,
         allowStream: b.allowStream ?? false,
+        ...(b.requireApproval !== undefined ? { requireApproval: b.requireApproval } : {}),
         ...(expiresIn ? { expiresAt: timestampFromMs(timestampMs(at) + expiresIn * 1000) } : {}),
         createdAt: at,
       });
       s().roomInvites.set(id, invite);
       sendMsg(c.res, 201, CreateRoomInviteResponseSchema, { invite });
+    });
+    // ADR-0040: the link's approval setting (inherit_approval = back to the room's).
+    this.route('PATCH', '/api/rooms/:id/invites/:inviteId', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      const inv = s().roomInvites.get(c.params[1] ?? '');
+      if (inv?.roomId !== room.id) throw notFound('invite not found');
+      const b = parseBody(c, UpdateRoomInviteRequestSchema);
+      if (b.inheritApproval && b.requireApproval !== undefined) throw invalid('requireApproval', 'requireApproval and inheritApproval exclude each other');
+      if (!b.inheritApproval && b.requireApproval === undefined) throw invalid('requireApproval', 'nothing to change');
+      if (b.inheritApproval) delete inv.requireApproval;
+      else inv.requireApproval = b.requireApproval;
+      sendMsg(c.res, 200, UpdateRoomInviteResponseSchema, { invite: inv });
     });
     this.route('DELETE', '/api/rooms/:id/invites/:inviteId', (c) => {
       const me = this.uid(c);
@@ -4707,6 +4764,7 @@ class MockImpl {
         workspaceIconFileId: ws.iconFileId,
         allowGuests: inv.allowGuests,
         ...(inv.expiresAt ? { expiresAt: inv.expiresAt } : {}),
+        requiresApproval: requiresApproval(room.guestApproval, inv.requireApproval),
       });
     });
     // With a bearer: join as the current user; without one (allow_guests): a guest account.
@@ -4714,8 +4772,8 @@ class MockImpl {
       const { inv, room, ws } = roomInvite(c.params[0] ?? '');
       const b = parseBody(c, JoinRoomInviteRequestSchema);
       if ((c.req.headers.authorization ?? '').startsWith('Bearer ')) {
-        this.grantRoomLink(inv, this.uid(c));
-        sendMsg(c.res, 200, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id });
+        const admission = this.joinByLink(inv, this.uid(c));
+        sendMsg(c.res, 200, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id, ...(admission ? { admission } : {}) });
         return;
       }
       if (!inv.allowGuests) throw new HttpError(401, ErrorCode.UNAUTHENTICATED, 'sign in to use this link');
@@ -4738,8 +4796,14 @@ class MockImpl {
       s().sessions.set(id, [
         create(SessionSchema, { id: sessionId, deviceName: b.deviceName || 'Guest', ip: '192.0.2.10', userAgent: 'mock', createdAt: at, lastSeenAt: at, expiresAt: FAR_FUTURE }),
       ]);
-      this.grantRoomLink(inv, id);
-      sendMsg(c.res, 201, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id, tokens: this.tokensJson(c, sessionId), me: this.me(rec) });
+      const admission = this.joinByLink(inv, id);
+      sendMsg(c.res, 201, JoinRoomInviteResponseSchema, {
+        roomId: room.id,
+        workspaceId: ws.id,
+        tokens: this.tokensJson(c, sessionId),
+        me: this.me(rec),
+        ...(admission ? { admission } : {}),
+      });
     });
 
     // ---------------- mock control (tests; no auth)
@@ -5526,33 +5590,220 @@ class MockImpl {
     if (!room) return;
     const existing = this.member(inv.workspaceId, userId);
     if (existing && this.canView(room, userId)) return;
+    inv.uses += 1;
+    if (!existing) this.addGuestMember(inv.workspaceId, userId);
+    this.grantOverride(room, userId, inv);
+  }
+
+  /** A new `guest` member: WORKSPACE_CREATE to them, WORKSPACE_MEMBER_ADD to the others. */
+  private addGuestMember(wsId: string, userId: string): void {
+    const m: MemberRec = { workspaceId: wsId, userId, role: WorkspaceRole.GUEST, nickname: '', joinedAt: tick(this.state) };
+    this.state.members.push(m);
+    const member = this.memberOut(m);
+    this.fanout((u) =>
+      u === userId
+        ? { event: { case: 'workspaceCreate', value: { snapshot: this.snapshot(wsId, userId) } } }
+        : this.member(wsId, u)
+          ? { event: { case: 'workspaceMemberAdd', value: { member } } }
+          : null,
+    );
+  }
+
+  /** The user override a link grants (its rights; no link = a default link's) → ROOM_PERMISSIONS_UPDATE. */
+  private grantOverride(room: Room, userId: string, inv: RoomInvite | undefined): void {
     const allow =
       VIEW_ROOM |
       CONNECT |
-      (inv.allowSpeak ? SPEAK : 0n) |
-      (inv.allowMessages ? SEND_MESSAGES : 0n) |
-      (inv.allowFiles ? ATTACH_FILES : 0n) |
-      (inv.allowStream ? STREAM : 0n);
+      ((inv?.allowSpeak ?? true) ? SPEAK : 0n) |
+      ((inv?.allowMessages ?? true) ? SEND_MESSAGES : 0n) |
+      (inv?.allowFiles ? ATTACH_FILES : 0n) |
+      (inv?.allowStream ? STREAM : 0n);
     const before = clone(RoomSchema, room); // create() would return the same instance
     room.permissionOverrides = [
       ...room.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.USER && o.targetId === userId)),
       create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: userId, allow, deny: 0n }),
     ];
-    inv.uses += 1;
-    if (!existing) {
-      const m: MemberRec = { workspaceId: inv.workspaceId, userId, role: WorkspaceRole.GUEST, nickname: '', joinedAt: tick(this.state) };
-      this.state.members.push(m);
-      const member = this.memberOut(m);
-      this.fanout((u) =>
-        u === userId
-          ? { event: { case: 'workspaceCreate', value: { snapshot: this.snapshot(inv.workspaceId, userId) } } }
-          : this.member(inv.workspaceId, u)
-            ? { event: { case: 'workspaceMemberAdd', value: { member } } }
-            : null,
-      );
-    }
     this.emitRoomChange(before, room, {
       event: { case: 'roomPermissionsUpdate', value: { workspaceId: room.workspaceId, roomId: room.id, permissions: room.permissionOverrides } },
+    });
+  }
+
+  // ------------------------------------------------ guest admission (ADR-0040)
+
+  /**
+   * A link join (ADR-0016) that may wait (ADR-0040): guests on a link requiring approval (its
+   * own setting, else the room's) become `guest` without the room and knock. Returns the guest's
+   * view of the knock, or undefined when the join granted the room (or nothing changed).
+   */
+  private joinByLink(inv: RoomInvite, userId: string): RoomAdmission | undefined {
+    const room = this.state.rooms.get(inv.roomId);
+    const ws = this.state.workspaces.get(inv.workspaceId);
+    if (!room || !ws) return undefined;
+    const existing = this.member(inv.workspaceId, userId);
+    if (existing && this.canView(room, userId)) return undefined;
+    const wait = requiresApproval(room.guestApproval, inv.requireApproval) && (!existing || existing.role === WorkspaceRole.GUEST);
+    if (!wait) {
+      this.grantRoomLink(inv, userId);
+      return undefined;
+    }
+    const cur = this.state.admissions.get(admissionKey(room.id, userId));
+    if (cur) return guestView(cur, room.name, ws.name); // knocking again while waiting
+    inv.uses += 1;
+    if (!existing) this.addGuestMember(inv.workspaceId, userId);
+    return this.addKnock(room, userId, inv.id, inv.createdBy);
+  }
+
+  private addKnock(room: Room, userId: string, inviteId: string, inviteCreatedBy: string): RoomAdmission {
+    const a: AdmissionRec = { roomId: room.id, workspaceId: room.workspaceId, userId, inviteId, inviteCreatedBy, requestedAt: tick(this.state) };
+    this.state.admissions.set(admissionKey(room.id, userId), a);
+    const out = deciderView(a, this.state.users.get(userId)?.user);
+    this.fanout((u) => (this.decides(a, u) ? { event: { case: 'roomAdmissionRequest', value: { admission: out } } } : null));
+    return guestView(a, room.name, this.state.workspaces.get(room.workspaceId)?.name ?? '');
+  }
+
+  /** Deciders of a knock: MANAGE_ROOM in the room, or the link's author (not a guest). */
+  private decides(a: AdmissionRec, userId: string): boolean {
+    const m = this.member(a.workspaceId, userId);
+    const room = this.state.rooms.get(a.roomId);
+    if (!m || !room) return false;
+    return has(this.perms(room, userId), MANAGE_ROOM) || (userId === a.inviteCreatedBy && m.role !== WorkspaceRole.GUEST);
+  }
+
+  /** READY: the user's own waiting knocks (declines are not kept by the mock). */
+  private ownAdmissions(userId: string): RoomAdmission[] {
+    return [...this.state.admissions.values()]
+      .filter((a) => a.userId === userId)
+      .map((a) => guestView(a, this.state.rooms.get(a.roomId)?.name ?? '', this.state.workspaces.get(a.workspaceId)?.name ?? ''));
+  }
+
+  /** READY: the knocks the recipient decides, in each workspace snapshot. */
+  private withAdmissions(snap: WorkspaceSnapshot, userId: string): WorkspaceSnapshot {
+    const wsId = snap.workspace?.id ?? '';
+    snap.admissions = [...this.state.admissions.values()]
+      .filter((a) => a.workspaceId === wsId && this.decides(a, userId))
+      .map((a) => deciderView(a, this.state.users.get(a.userId)?.user));
+    return snap;
+  }
+
+  setGuestApproval(roomId: string, on: boolean): void {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw new Error(`no room ${roomId}`);
+    room.guestApproval = on;
+    this.toWorkspace(room.workspaceId, { event: { case: 'roomUpdate', value: { room: this.roomOut(room) } } }, room.id);
+  }
+
+  knock(roomId: string, nickname: string, inviteId?: string): string {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw new Error(`no room ${roomId}`);
+    const id = nextId(this.state, 'user');
+    const at = tick(this.state);
+    this.state.users.set(id, {
+      user: create(UserSchema, { id, displayName: nickname, avatarFileId: '', statusText: '', createdAt: at, isGuest: true }),
+      email: '',
+      password: '',
+      settings: defaultSettings(),
+      emailVerified: true,
+      pendingEmail: '',
+      locale: '',
+    });
+    this.state.presences.set(id, create(PresenceSchema, { userId: id, status: PresenceStatus.ONLINE, lastSeen: at }));
+    this.addGuestMember(room.workspaceId, id);
+    const inv = inviteId ? this.state.roomInvites.get(inviteId) : undefined;
+    this.addKnock(room, id, inv?.id ?? '', inv?.createdBy ?? IDS.users.anna);
+    return id;
+  }
+
+  decideAdmission(roomId: string, userId: string, status: 'admitted' | 'declined' | 'no_answer' | 'cancelled', byUserId: string = IDS.users.anna): void {
+    const key = admissionKey(roomId, userId);
+    const a = this.state.admissions.get(key);
+    const room = this.state.rooms.get(roomId);
+    if (!a || !room) throw new Error(`no knock of ${userId} on ${roomId}`);
+    const outcome = admissionOutcome(status, byUserId, tick(this.state));
+    // Deciders are computed before the knock goes (the link's author may decide it).
+    const deciders = new Set([...this.conns].map((c) => c.userId).filter((u): u is string => !!u && this.decides(a, u)));
+    this.state.admissions.delete(key);
+    if (status === 'admitted') this.grantOverride(room, userId, this.state.roomInvites.get(a.inviteId));
+    const dv = deciderView(a, create(UserSchema, { id: userId }), outcome);
+    this.fanout((u) => (deciders.has(u) ? { event: { case: 'roomAdmissionDecided', value: { admission: dv } } } : null));
+    this.toUser(userId, {
+      event: { case: 'roomAdmissionDecided', value: { admission: guestView(a, room.name, this.state.workspaces.get(a.workspaceId)?.name ?? '', outcome) } },
+    });
+    if (status !== 'admitted') this.dropIdleGuest(a.workspaceId, userId);
+  }
+
+  /** A guest membership with no room left (no personal override, no other knock) goes. */
+  private dropIdleGuest(wsId: string, userId: string): void {
+    const m = this.member(wsId, userId);
+    if (m?.role !== WorkspaceRole.GUEST) return;
+    const hasRoom = [...this.state.rooms.values()].some(
+      (r) => r.workspaceId === wsId && r.permissionOverrides.some((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId),
+    );
+    const knocks = [...this.state.admissions.values()].some((x) => x.workspaceId === wsId && x.userId === userId);
+    if (hasRoom || knocks) return;
+    this.toUser(userId, { event: { case: 'workspaceDelete', value: { workspaceId: wsId } } });
+    this.state.members = this.state.members.filter((x) => x !== m);
+    this.toWorkspace(wsId, { event: { case: 'workspaceMemberRemove', value: { workspaceId: wsId, userId } } });
+  }
+
+  private admissionRoutes(): void {
+    const s = (): MockState => this.state;
+    const knockOf = (roomId: string, userId: string): AdmissionRec => {
+      const a = s().admissions.get(admissionKey(roomId, userId));
+      if (!a) throw notFound('admission not found');
+      return a;
+    };
+    // MANAGE_ROOM in the room, or the author of one of its links (a member, not a guest).
+    const deciderRoom = (roomId: string, me: string): Room => {
+      const room = s().rooms.get(roomId);
+      const m = room ? this.member(room.workspaceId, me) : undefined;
+      if (!room || room.type === RoomType.DM || !m) throw notFound('room not found');
+      const author = m.role !== WorkspaceRole.GUEST && [...s().roomInvites.values()].some((i) => i.roomId === room.id && i.createdBy === me);
+      if (!has(this.perms(room, me), MANAGE_ROOM) && !author) {
+        if (!this.canView(room, me)) throw notFound('room not found');
+        throw forbidden('MANAGE_ROOM required');
+      }
+      return room;
+    };
+    this.route('GET', '/api/rooms/:id/admissions', (c) => {
+      const me = this.uid(c);
+      const room = deciderRoom(c.params[0] ?? '', me);
+      const admissions = [...s().admissions.values()]
+        .filter((a) => a.roomId === room.id && this.decides(a, me))
+        .sort((a, b) => timestampMs(a.requestedAt) - timestampMs(b.requestedAt))
+        .map((a) => deciderView(a, s().users.get(a.userId)?.user));
+      sendMsg(c.res, 200, ListRoomAdmissionsResponseSchema, { admissions });
+    });
+    this.route('POST', '/api/rooms/:id/admissions/:userId', (c) => {
+      const me = this.uid(c);
+      if (s().users.get(me)?.user.isBot) throw new HttpError(403, ErrorCode.FORBIDDEN, 'not available for bots', '', { reason: 'BOT_NOT_ALLOWED' });
+      const room = deciderRoom(c.params[0] ?? '', me);
+      const target = c.params[1] ?? '';
+      const b = parseBody(c, DecideRoomAdmissionRequestSchema);
+      const admit = b.status === RoomAdmissionStatus.ADMITTED;
+      if (!admit && b.status !== RoomAdmissionStatus.DECLINED) throw invalid('status', 'status must be ADMITTED or DECLINED');
+      const name = admit && b.displayName !== undefined ? b.displayName.trim() : undefined;
+      if (name !== undefined && (!name || Array.from(name).length > 40)) throw invalid('displayName', 'name must be 1..40 characters');
+      const a = knockOf(room.id, target);
+      if (!this.decides(a, me)) throw forbidden('MANAGE_ROOM required');
+      const guest = s().users.get(target);
+      if (name !== undefined && !guest?.user.isGuest) throw invalid('displayName', 'only a guest account can be renamed');
+      if (admit && b.badgeId && !this.badgesOf(room.workspaceId).some((x) => x.id === b.badgeId)) throw invalid('badgeId', 'unknown badge');
+      if (name !== undefined && guest) {
+        guest.user.displayName = name;
+        const user = guest.user;
+        this.fanout((u) => (u === target || this.shareWorkspace(u, target) ? { event: { case: 'userUpdate', value: { user } } } : null));
+      }
+      if (admit && b.badgeId !== undefined) this.setMemberBadge(room.workspaceId, target, b.badgeId);
+      this.decideAdmission(room.id, target, admit ? 'admitted' : 'declined', me);
+      const outcome = admissionOutcome(admit ? 'admitted' : 'declined', me, tick(s()));
+      sendMsg(c.res, 200, DecideRoomAdmissionResponseSchema, { admission: deciderView(a, guest?.user, outcome) });
+    });
+    this.route('DELETE', '/api/rooms/:id/admissions/me', (c) => {
+      const me = this.uid(c);
+      const roomId = c.params[0] ?? '';
+      knockOf(roomId, me);
+      this.decideAdmission(roomId, me, 'cancelled', me);
+      noContent(c.res);
     });
   }
 
@@ -5571,11 +5822,42 @@ class MockImpl {
     return { view: bot ? 'none' : inv || canEdit ? 'full' : 'masked', canEdit };
   }
 
+  /** A guest of the workspace who can view the meeting's room (ADR-0038 «Диплинки для приглашённых»). */
+  private calGuestSees(rec: CalEventRec, userId: string): boolean {
+    const m = this.member(rec.ev.workspaceId, userId);
+    const room = rec.ev.roomId ? this.state.rooms.get(rec.ev.roomId) : undefined;
+    return !!m && m.role === WorkspaceRole.GUEST && !!room && !rec.ev.cancelledAt && this.canView(room, userId);
+  }
+
+  /** The event for a member; a guest who sees its room → 403, anyone else → 404. */
   private calRec(id: string, userId: string): { rec: CalEventRec; view: EmailView; canEdit: boolean } {
     const rec = this.calEvents.get(id);
     const v = rec ? this.calView(rec, userId) : null;
+    if (rec && !v && this.calGuestSees(rec, userId)) throw forbidden('the calendar is not available for guests');
     if (!rec || !v) throw notFound('event not found');
     return { rec, ...v };
+  }
+
+  eventGuestLink(eventId: string, email: string): string {
+    const rec = this.calEvents.get(eventId);
+    const addr = email.trim().toLowerCase();
+    if (!rec?.ev.roomId || !rec.ev.attendees.some((a) => a.email === addr)) throw notFound('external attendee of a meeting with a room not found');
+    rec.guestLinks ??= new Map();
+    let inv = this.state.roomInvites.get(rec.guestLinks.get(addr) ?? '');
+    if (!inv) {
+      if (!this.state.rooms.has(rec.ev.roomId)) throw notFound('room not found');
+      const occ = occurrences(rec, this.calNow(), Infinity)[0] ?? { startMs: timestampMs(rec.ev.startsAt ?? timestampFromMs(0)), endMs: timestampMs(rec.ev.endsAt ?? timestampFromMs(0)) };
+      const id = nextId(this.state, 'invite');
+      inv = create(RoomInviteSchema, {
+        id, roomId: rec.ev.roomId, workspaceId: rec.ev.workspaceId, code: `mock-meet-${id.slice(-4)}`, createdBy: rec.ev.organizerId,
+        maxUses: 1, uses: 0, allowGuests: true, allowSpeak: true, allowMessages: true, allowFiles: false, allowStream: false,
+        notBefore: timestampFromMs(occ.startMs - ACTIVE_BEFORE_MS), expiresAt: timestampFromMs(occ.endMs + 3_600_000), eventId: rec.ev.id,
+        createdAt: tick(this.state),
+      });
+      this.state.roomInvites.set(id, inv);
+      rec.guestLinks.set(addr, id);
+    }
+    return `${this.url}/r/${inv.code}`;
   }
 
   /** EVENT_* to everyone who may see the event, each with their view of the addresses. */
@@ -5591,6 +5873,9 @@ class MockImpl {
     const ev = rec.ev;
     this.fanout((u) => {
       const room = this.state.rooms.get(ev.roomId);
+      if (this.calGuestSees(rec, u)) {
+        return { event: { case: 'roomEventActive', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, event: eventForGuest(eventOut(rec, occ, 'none', '', false)) } } };
+      }
       const v = this.calView(rec, u);
       if (!room || !v || !this.canView(room, u)) return null;
       return { event: { case: 'roomEventActive', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, event: eventOut(rec, occ, v.view, '', false) } } };
@@ -5602,7 +5887,7 @@ class MockImpl {
     this.fanout((u) => {
       const room = this.state.rooms.get(ev.roomId);
       const m = this.member(ev.workspaceId, u);
-      if (!room || !m || m.role === WorkspaceRole.GUEST || !this.canView(room, u)) return null;
+      if (!room || !m || !this.canView(room, u)) return null; // guests of the room too
       return { event: { case: 'roomEventEnded', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, eventId: ev.id, occurrenceAt: timestampFromMs(occ.startMs) } } };
     });
   }
@@ -5740,7 +6025,7 @@ class MockImpl {
     rec.recordings.set(occurrenceAtMs, recordingId);
   }
 
-  /** Meetings active now in the rooms a member sees (WorkspaceSnapshot.active_events). */
+  /** Meetings active now in the rooms a member sees (WorkspaceSnapshot.active_events); guests: without attendees. */
   private activeEvents(wsId: string, userId: string): CalendarEvent[] {
     const now = this.calNow();
     const out: CalendarEvent[] = [];
@@ -5749,7 +6034,8 @@ class MockImpl {
       const v = this.calView(rec, userId);
       const room = this.state.rooms.get(rec.ev.roomId);
       const occ = activeOccurrence(rec, now);
-      if (v && occ && room && this.canView(room, userId)) out.push(eventOut(rec, occ, v.view, userId, v.canEdit));
+      if (occ && this.calGuestSees(rec, userId)) out.push(eventForGuest(eventOut(rec, occ, 'none', '', false)));
+      else if (v && occ && room && this.canView(room, userId)) out.push(eventOut(rec, occ, v.view, userId, v.canEdit));
     }
     return out;
   }
@@ -5800,6 +6086,14 @@ class MockImpl {
 
     this.route('GET', '/api/events/:id', (c) => {
       const me = this.uid(c);
+      const g = this.calEvents.get(c.params[0] ?? '');
+      if (g && this.calGuestSees(g, me)) {
+        // A guest: the occurrence active now in a room it sees, without attendees; else 404.
+        const occ = activeOccurrence(g, this.calNow());
+        if (!occ) throw notFound('event not found');
+        sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventForGuest(eventOut(g, occ, 'none', '', false)) });
+        return;
+      }
       const { rec, view, canEdit } = this.calRec(c.params[0] ?? '', me);
       sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(rec, null, view, me, canEdit) });
     });
@@ -5916,23 +6210,36 @@ class MockImpl {
     });
 
     // External attendees' answer page (/e/<id>/rsvp?t=…): preview and answer, no login.
-    const byToken = (tok: string): { rec: CalEventRec; a: CalendarEventAttendee; status: AttendeeStatus } => {
+    // The meeting link of that mail (/e/<id>?t=<view token>) opens the same page; a view token
+    // answers nothing (POST → 400), the page answers with the response's answer tokens.
+    const endedAt = (rec: CalEventRec): number => {
+      const last = occurrences(rec, 0, Infinity).at(-1);
+      return rec.ev.repeat === EventRepeat.UNSPECIFIED && last ? last.endMs : Infinity;
+    };
+    const byToken = (tok: string): { rec: CalEventRec; a: CalendarEventAttendee; status: AttendeeStatus; view: boolean } => {
       const t = parseRsvpToken(tok);
       const rec = t ? this.calEvents.get(t.eventId) : undefined;
       const a = rec?.ev.attendees.find((x) => x.email && x.email === t?.email);
       if (!t || !rec || !a) throw notFound('invitation not found');
-      const occ = occurrences(rec, 0, Infinity).at(-1);
-      if (rec.ev.repeat === EventRepeat.UNSPECIFIED && occ && occ.endMs <= this.calNow()) {
-        throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
-      }
-      return { rec, a, status: t.status };
+      if (endedAt(rec) + (t.view ? 3_600_000 : 0) <= this.calNow()) throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
+      return { rec, a, status: t.status, view: t.view };
     };
     const rsvpOut = (rec: CalEventRec, a: CalendarEventAttendee, status: AttendeeStatus): MessageInitShape<typeof EventRsvpTokenResponseSchema> => {
       const occ = occurrences(rec, this.calNow(), Infinity)[0] ?? { startMs: ms(rec.ev.startsAt), endMs: ms(rec.ev.endsAt) };
+      const org = this.state.users.get(rec.ev.organizerId);
+      const open = !rec.ev.cancelledAt && this.calNow() < endedAt(rec);
+      const inv = this.state.roomInvites.get(rec.guestLinks?.get(a.email) ?? '');
       return {
         eventId: rec.ev.id, title: rec.ev.title, startsAt: timestampFromMs(occ.startMs), endsAt: timestampFromMs(occ.endMs), allDay: rec.ev.allDay,
-        tz: rec.ev.tz, organizerName: this.state.users.get(rec.ev.organizerId)?.user.displayName ?? '',
+        tz: rec.ev.tz, organizerName: org?.user.displayName ?? '',
         workspaceName: this.state.workspaces.get(rec.ev.workspaceId)?.name ?? '', status, email: a.email, cancelled: !!rec.ev.cancelledAt,
+        description: rec.ev.description, roomName: rec.ev.roomId ? (this.state.rooms.get(rec.ev.roomId)?.name ?? '') : '', myStatus: a.status,
+        acceptToken: open ? rsvpToken(rec.ev.id, a.email, AttendeeStatus.ACCEPTED) : '',
+        maybeToken: open ? rsvpToken(rec.ev.id, a.email, AttendeeStatus.MAYBE) : '',
+        declineToken: open ? rsvpToken(rec.ev.id, a.email, AttendeeStatus.DECLINED) : '',
+        ...(inv && rec.ev.roomId ? { guestUrl: `${this.url}/r/${inv.code}`, guestFrom: inv.notBefore, guestUntil: inv.expiresAt } : {}),
+        repeat: rec.ev.repeat, ...(rec.ev.repeatUntil ? { repeatUntil: rec.ev.repeatUntil } : {}),
+        organizerEmail: org?.emailVerified ? org.email : '',
       };
     };
     this.route('GET', '/api/event-rsvp', (c) => {
@@ -5940,7 +6247,8 @@ class MockImpl {
       sendMsg(c.res, 200, EventRsvpTokenResponseSchema, rsvpOut(rec, a, status));
     });
     this.route('POST', '/api/event-rsvp', (c) => {
-      const { rec, a, status } = byToken(parseBody(c, EventRsvpTokenRequestSchema).token);
+      const { rec, a, status, view } = byToken(parseBody(c, EventRsvpTokenRequestSchema).token);
+      if (view) throw new HttpError(400, ErrorCode.BAD_REQUEST, 'a view token cannot answer: use an answer token');
       if (rec.ev.cancelledAt) throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
       if (a.status !== status) {
         a.status = status;

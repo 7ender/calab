@@ -5,6 +5,7 @@ import "google/protobuf/timestamp.proto";
 import "calaba/v1/bot.proto";
 import "calaba/v1/call.proto";
 import "calaba/v1/event.proto";
+import "calaba/v1/invite.proto";
 import "calaba/v1/media.proto";
 import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
@@ -222,10 +223,14 @@ message DispatchEvent {
     CalendarEventReminder event_reminder = 67;
     RoomEventActive room_event_active = 68;
     RoomEventEnded room_event_ended = 69;
+    // Guest admission (ADR-0040): REQUEST to the room's deciders (MANAGE_ROOM there, or the
+    // author of the link); DECIDED to the deciders and, on its user channel, to the guest.
+    RoomAdmissionRequest room_admission_request = 70;
+    RoomAdmissionDecided room_admission_decided = 71;
     // Notes shelves (ADR-0039); to the owner's user channel only (all their devices).
-    NotesCreate notes_create = 70;
-    NotesUpdate notes_update = 71;
-    NotesDelete notes_delete = 72;
+    NotesCreate notes_create = 72;
+    NotesUpdate notes_update = 73;
+    NotesDelete notes_delete = 74;
   }
 }
 
@@ -309,8 +314,11 @@ message WorkspaceSnapshot {
   // The workspace's soundboard (ADR-0036), in library order.
   repeated Sound sounds = 13;
   // Meetings in visible rooms from 15 minutes before their start until their end (ADR-0038
-  // §6): the room badge after a (re)connect. Empty for guests.
+  // §6): the room badge after a (re)connect. Guests get them without attendees.
   repeated CalendarEvent active_events = 14;
+  // Pending guest knocks (ADR-0040) on rooms where the recipient decides: MANAGE_ROOM in the
+  // room, or the author of the link. Filled in READY only.
+  repeated RoomAdmission admissions = 15;
 }
 
 message Ready {
@@ -338,8 +346,22 @@ message Ready {
   // Read receipts of workspace rooms (docs/09 #92): how far the other members (bots excluded)
   // read, for visible rooms someone else has read. DMs carry theirs in dms[].peer_read_message_id.
   repeated PeerRead peer_reads = 11;
+  // The recipient's own knocks (ADR-0040): PENDING (the client shows the waiting screen
+  // instead of the room) and DECLINED ones for 10 minutes after the decision.
+  repeated RoomAdmission pending_admissions = 12;
   // The user's notes shelves (ADR-0039) by position; empty for bots and guest accounts.
-  repeated NotesShelf notes = 12;
+  repeated NotesShelf notes = 13;
+}
+
+// A guest knocks on a room (ADR-0040); to the room's deciders.
+message RoomAdmissionRequest {
+  RoomAdmission admission = 1;
+}
+
+// A knock was decided, cancelled by the guest or declined for want of an answer (ADR-0040).
+// To the deciders (admission.user carries the id only) and to the guest.
+message RoomAdmissionDecided {
+  RoomAdmission admission = 1;
 }
 
 // How far others read a room (docs/09 #92): in a DM the peer's read marker, in a workspace

@@ -14,14 +14,19 @@ import (
 // RSVP tokens (ADR-0038 «Дополнение»): an external attendee answers from the invitation mail
 // without an account. The token is the capability: base64url(event id ‖ status ‖ expiry ‖
 // email ‖ HMAC-SHA256 truncated to 128 bits). A key of its own is derived from JWT_SECRET.
+// Status `view` (the meeting link of the mail, «Диплинки для приглашённых») opens the page
+// only: answers need an answer token.
 
 var (
 	errTokenInvalid = errors.New("calendar: rsvp token invalid")
 	errTokenExpired = errors.New("calendar: rsvp token expired")
 )
 
-// statusCodes: one byte per answer in the token.
-var statusCodes = map[string]byte{StatusAccepted: 1, StatusDeclined: 2, StatusMaybe: 3}
+// statusView: the claim of a view token (not an attendee status).
+const statusView = "view"
+
+// statusCodes: one byte per answer (or view) in the token.
+var statusCodes = map[string]byte{StatusAccepted: 1, StatusDeclined: 2, StatusMaybe: 3, statusView: 4}
 
 type rsvpClaims struct {
 	Event  uuid.UUID

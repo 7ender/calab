@@ -1934,5 +1934,22 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 | C.16 | Настоящий внешний почтовый ящик (не Mailpit) получает письма из C.1/C.2/C.3 → открыть `invite.ics` в Apple Calendar (macOS/iOS) и импортировать в Google Calendar | Оба показывают тему, время в зоне получателя, комнату/ссылку, организатора и участников; повтор после C.2 обновляет то же событие (`UID` тот же, `SEQUENCE` больше — не дубликат); `.ics` из C.3 (`CANCEL`) убирает событие из календаря получателя |
 | C.17 | curl с Bearer разных ролей: member создаёт встречу без комнаты (ок); другой member правит чужую (403); admin с `MANAGE_WORKSPACE` правит чужую встречу с комнатой без `MANAGE_ROOM` (ок); организатор комнаты с `MANAGE_ROOM` правит встречу в своей комнате (ок); гость → `GET .../events` (403 или пустой список — календарь гостям не виден); бот-токен → `GET .../events` 200 (`botAllow`), `POST .../events` → 403 `BOT_NOT_ALLOWED` | Сервер отклоняет/пропускает точно по правам ADR-0038 п. 2, а не только клиент прячет UI |
 | C.18 | curl `POST .../events`: 101 участник, 21 внешний адрес, `title` 121 символ, `description` 4001 символ | Каждый — отказ (422/аналог) на превышении лимита (100 участников, 20 внешних, 120/4000 символов), не молчаливая обрезка |
+| C.19 | Внешний адрес без аккаунта (встреча с комнатой, организатор с `MANAGE_ROOM`): в письме нажать ссылку на встречу (`/e/<id>?t=…`) в приватном окне до окна и за 10 мин до начала | Страница встречи без входа: название, время в зоне браузера, описание, комната, свой ответ и кнопки «Приму / Может быть / Отклоню» (ответ сохраняется, у организатора обновляется статус); до окна — «ссылка станет активной за 15 минут до начала», в окне — «Присоединиться» ведёт в комнату гостем; других участников на странице нет; `curl -X POST /api/event-rsvp` с токеном из этой ссылки → 400 |
+| C.20 | Внешний из C.19 вошёл в комнату гостем; кликнуть `https://<APP_HOST>/e/<id>` у него; затем организатор меняет название и отменяет встречу | У гостя у комнаты значок встречи и карточка (название, время, описание, счётчики — без списка участников и без RSVP); ссылка `/e/<id>` открывает эту карточку; правка приходит сразу, после отмены значок пропадает, `/e/<id>` — «Встреча не найдена»; календарь (иконка, день) гостю недоступен |
 
 Автотесты: `docs/20-calendar-testing.md` (Go-интеграционные `internal/app/events_*_integration_test.go`, unit десктопа, Playwright e2e против мока, прод-smoke).
+
+## Подтверждение входа гостей (1.0.0)
+
+Сервер (ADR-0040; клиент — отдельная задача, до него — curl + `wscat`/devtools). Owner `owner@calaba.test`, member `bob@calaba.test`; голосовая комната `voice` пространства «Team».
+
+| # | Сценарий | Ожидается |
+|---|---|---|
+| G.1 | Owner: `PATCH /api/rooms/{voice} {guestApproval:true}`, ссылка без `requireApproval`; превью `GET /api/room-invites/{code}` | `Room.guestApproval = true` (`ROOM_UPDATE`), `requiresApproval: true` в превью |
+| G.2 | Аноним по ссылке с ником «Гость» | `201` + `admission.status = PENDING`; у owner `ROOM_ADMISSION_REQUEST`, у bob — нет; READY гостя: `pendingAdmissions[0]` с `roomName`, комнаты `voice` нет; `GET /api/rooms/{voice}/messages` и `POST …/join` — `404` |
+| G.3 | Owner: `POST /api/rooms/{voice}/admissions/{guest} {status: ADMITTED, displayName: "Анна (Ромашка)", badgeId}` | `200`; гость получает `ROOM_ADMISSION_DECIDED ADMITTED` и `ROOM_CREATE`, права = биты ссылки; имя и бейдж в списке участников |
+| G.4 | Второй гость стучит → owner `DECLINED`; гость стучит снова | Гостю `DECIDED DECLINED` и `WORKSPACE_DELETE` (членство снято); повторный стук ≤ 10 мин — `429 ADMISSION_DECLINED` |
+| G.5 | Третий гость стучит и ждёт 30 мин (или `DELETE /api/rooms/{voice}/admissions/me`) | Через ≤ 30,5 мин `DECIDED DECLINED` с `noAnswer: true`, стучать можно сразу; отмена — `204`, решающим `DECIDED CANCELLED` |
+| G.6 | Ссылка с `requireApproval:false` в той же комнате; bob → `POST …/admissions/{guest}`; бот-токен → `GET` / `POST` admissions | Гость входит сразу; bob — `403`; бот: `GET` по правам, `POST` — `403 BOT_NOT_ALLOWED` |
+
+Автотесты: `go test -tags integration ./internal/app -run GuestAdmission`, unit `internal/guests/admissions_test.go`, мок `e2e-support/mock-admissions.test.ts`.

@@ -23,6 +23,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/dms"
+	"github.com/calaba/calaba/server/internal/guests"
 	"github.com/calaba/calaba/server/internal/notes"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -435,6 +436,13 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		}
 		h.fillLive(ctx, w.ID, snap)
 		ready.Workspaces = append(ready.Workspaces, snap)
+	}
+	// Guest admission (ADR-0040): the recipient's own knocks, and the knocks they decide.
+	if ready.PendingAdmissions, err = guests.OwnAdmissions(ctx, h.db.Q, uid); err != nil {
+		return nil, err
+	}
+	if err := guests.FillAdmissions(ctx, h.db.Q, uid, ready.Workspaces); err != nil {
+		return nil, err
 	}
 	// Meetings around now in the visible rooms (ADR-0038 §6): one query for all workspaces.
 	if err := calendar.FillActive(ctx, h.db.Q, uid, u.IsBot, ready.Workspaces, time.Now()); err != nil {

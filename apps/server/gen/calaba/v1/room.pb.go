@@ -360,7 +360,10 @@ type Room struct {
 	// Private rooms only (ADR-0029): «Только по списку». ADMINISTRATOR gives no bypass here:
 	// admins see the room only through an allow VIEW_ROOM override (by role or personally),
 	// the workspace owner always does. Changed with PATCH /api/rooms/{id} restricted.
-	Restricted    bool `protobuf:"varint,19,opt,name=restricted,proto3" json:"restricted,omitempty"`
+	Restricted bool `protobuf:"varint,19,opt,name=restricted,proto3" json:"restricted,omitempty"`
+	// Guests arriving by a link of the room wait for a decision (ADR-0040); a link may
+	// override it (RoomInvite.require_approval). Changed with PATCH /api/rooms/{id}.
+	GuestApproval bool `protobuf:"varint,20,opt,name=guest_approval,json=guestApproval,proto3" json:"guest_approval,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -524,6 +527,13 @@ func (x *Room) GetAllowRecording() bool {
 func (x *Room) GetRestricted() bool {
 	if x != nil {
 		return x.Restricted
+	}
+	return false
+}
+
+func (x *Room) GetGuestApproval() bool {
+	if x != nil {
+		return x.GuestApproval
 	}
 	return false
 }
@@ -1526,6 +1536,7 @@ type UpdateRoomRequest struct {
 	// Private rooms only (ADR-0029). Only the workspace owner (Workspace.owner_id) may change
 	// it: anyone else gets 403 FORBIDDEN with reason OWNER_ONLY.
 	Restricted    *bool `protobuf:"varint,8,opt,name=restricted,proto3,oneof" json:"restricted,omitempty"`
+	GuestApproval *bool `protobuf:"varint,9,opt,name=guest_approval,json=guestApproval,proto3,oneof" json:"guest_approval,omitempty"` // ADR-0040
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1612,6 +1623,13 @@ func (x *UpdateRoomRequest) GetAllowRecording() bool {
 func (x *UpdateRoomRequest) GetRestricted() bool {
 	if x != nil && x.Restricted != nil {
 		return *x.Restricted
+	}
+	return false
+}
+
+func (x *UpdateRoomRequest) GetGuestApproval() bool {
+	if x != nil && x.GuestApproval != nil {
+		return *x.GuestApproval
 	}
 	return false
 }
@@ -1927,7 +1945,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x13_audio_bitrate_kbpsB\x14\n" +
 	"\x12_max_stream_presetB\x0e\n" +
 	"\f_max_streamsB\x0f\n" +
-	"\r_camera_limit\"\xaf\x06\n" +
+	"\r_camera_limit\"\xd6\x06\n" +
 	"\x04Room\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12'\n" +
@@ -1954,7 +1972,8 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x0fallow_recording\x18\x12 \x01(\bR\x0eallowRecording\x12\x1e\n" +
 	"\n" +
 	"restricted\x18\x13 \x01(\bR\n" +
-	"restricted\"\xa4\x01\n" +
+	"restricted\x12%\n" +
+	"\x0eguest_approval\x18\x14 \x01(\bR\rguestApproval\"\xa4\x01\n" +
 	"\x18RoomNotificationSettings\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x122\n" +
 	"\x05level\x18\x02 \x01(\x0e2\x1c.calaba.v1.NotificationLevelR\x05level\x12;\n" +
@@ -2037,7 +2056,7 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x05rooms\x18\x01 \x03(\v2\x0f.calaba.v1.RoomR\x05rooms\"X\n" +
 	"\x0fGetRoomResponse\x12#\n" +
 	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room\x12 \n" +
-	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\xc4\x03\n" +
+	"\vpermissions\x18\x02 \x01(\x04R\vpermissions\"\x83\x04\n" +
 	"\x11UpdateRoomRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x19\n" +
 	"\x05topic\x18\x02 \x01(\tH\x01R\x05topic\x88\x01\x01\x12\x1f\n" +
@@ -2050,7 +2069,8 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x0fallow_recording\x18\a \x01(\bH\x06R\x0eallowRecording\x88\x01\x01\x12#\n" +
 	"\n" +
 	"restricted\x18\b \x01(\bH\aR\n" +
-	"restricted\x88\x01\x01B\a\n" +
+	"restricted\x88\x01\x01\x12*\n" +
+	"\x0eguest_approval\x18\t \x01(\bH\bR\rguestApproval\x88\x01\x01B\a\n" +
 	"\x05_nameB\b\n" +
 	"\x06_topicB\v\n" +
 	"\t_positionB\x11\n" +
@@ -2058,7 +2078,8 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\f_category_idB\r\n" +
 	"\v_user_limitB\x12\n" +
 	"\x10_allow_recordingB\r\n" +
-	"\v_restricted\"2\n" +
+	"\v_restrictedB\x11\n" +
+	"\x0f_guest_approval\"2\n" +
 	"\x18UpdateVoiceStatusRequest\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\"9\n" +
 	"\x12UpdateRoomResponse\x12#\n" +
