@@ -208,7 +208,8 @@ export function AssigneeMenu({
   ...shell
 }: MenuShell & { workspaceId: string; boardId: string; value: readonly string[]; onToggle: (userId: string) => void; onNone: () => void }): ReactNode {
   const [open, setOpen] = useOpen(shell);
-  const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
+  // Only while open: a closed menu on every card must not re-render on presence / voice changes.
+  const members = useWorkspaces((s) => (open ? s.byId[workspaceId]?.members : undefined));
   const counts = useAssigneeCounts(boardId, open);
   const openDialog = useUi((s) => s.openDialog);
   const groups = useMemo((): Array<PickerGroup<Choice>> => {

@@ -21,6 +21,9 @@
  * `--calendar`: the day view (ADR-0038) open during the call (members column beside it); run ≥ 70 s so
  * the «now» line's minute tick falls inside the window.
  *
+ * `--boards`: the kanban (ADR-0042) open during the call; Борис renames CAL-2 every 3 s (TASK_UPDATE to
+ * the board): one TaskCard per event should render.
+ *
  * `--dm-call`: a one-to-one call instead (ADR-0034): Борис calls, I accept in his DM (open, with the
  * «Звонок · 00:42» header timer and the island); the same live events, typing and the voice state
  * in that DM.
@@ -92,6 +95,8 @@ const RECORDING = argv.includes('--recording');
 const DM_CALL = argv.includes('--dm-call');
 /** `--calendar`: in the call, the day view (ADR-0038) is open instead of «общий» — its «now» line ticks once a minute. */
 const CALENDAR = argv.includes('--calendar');
+/** `--boards`: the kanban (ADR-0042) open during the call; another user renames a task every 3 s (TASK_UPDATE). */
+const BOARDS = argv.includes('--boards');
 /** `--viewer` (K): a second participant watches my camera at full size, so the encoder runs (dynacast). */
 const VIEWER = argv.includes('--viewer') || BENCH === 'F';
 /** F: what the stream shows — a still code page or one scrolling 30×/s. */
@@ -468,6 +473,11 @@ async function main(): Promise<void> {
       await page.getByTestId('now-line').waitFor({ timeout: 15_000 });
       await page.getByTestId('event-block').filter({ hasText: 'Ревью' }).waitFor({ timeout: 15_000 });
     }
+    if (BOARDS) {
+      await page.getByTestId('boards-button').click();
+      await page.getByTestId('kanban').waitFor({ timeout: 15_000 });
+      await page.getByTestId('task-card').first().waitFor({ timeout: 15_000 });
+    }
     await page.getByRole('button', { name: /^Качество связи/ }).first().waitFor({ timeout: 15_000 });
     const membersOpen = await page.getByRole('complementary').filter({ hasText: /В сети|Участники/ }).count();
 
@@ -549,6 +559,11 @@ async function main(): Promise<void> {
       const typing = DM_CALL ? { roomId: IDS.dms.boris, userId: IDS.users.boris } : { roomId: IDS.rooms.general, userId: IDS.users.vera };
       timers.push(setInterval(() => mock.setVoiceState({ userId: IDS.users.boris, roomId: voiceRoom, muted: m++ % 2 === 0, ...(BENCH === 'E' ? { camera: true } : {}) }), 10_000));
       timers.push(setInterval(() => void fetch(`${mock.url}/__mock/typing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(typing) }), 4000));
+      if (BOARDS) {
+        const cal2 = mock.boards.taskByKey('CAL-2')?.task.id ?? '';
+        let n = 0;
+        timers.push(setInterval(() => mock.updateTaskAs(IDS.users.boris, cal2, { title: `Тёмная тема ${++n}` }), 3000));
+      }
     }
     // A real remote speaker: Chromium's fake microphone beeps once a second, so LiveKit's active
     // speakers and the level-driven rings flip on and off like in a conversation.
