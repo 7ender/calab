@@ -132,6 +132,48 @@ func TestExpandAcrossDST(t *testing.T) {
 	}
 }
 
+// A series started long ago expands like a brute-force walk from its first occurrence: the
+// skip-ahead never drops occurrences (a 23 h "period" lost a daily meeting's occurrences
+// after ~7 weeks), across DST, for multi-day meetings and all four repeats.
+func TestExpandOldSeriesMatchesBruteForce(t *testing.T) {
+	brute := func(s Series, from, to time.Time) []Occurrence {
+		var out []Occurrence
+		for n := 0; n < 100000; n++ {
+			o, ok := s.nth(n)
+			if !ok {
+				continue
+			}
+			if !o.Start.Before(to) {
+				break
+			}
+			if o.End.After(from) {
+				out = append(out, o)
+			}
+		}
+		return out
+	}
+	for _, zone := range []string{"UTC", "Europe/Berlin", "America/New_York", "Australia/Lord_Howe"} {
+		loc := mustLoc(t, zone)
+		for _, rep := range []v1.EventRepeat{v1.EventRepeat_EVENT_REPEAT_DAILY, v1.EventRepeat_EVENT_REPEAT_WEEKLY,
+			v1.EventRepeat_EVENT_REPEAT_BIWEEKLY, v1.EventRepeat_EVENT_REPEAT_MONTHLY} {
+			for _, dur := range []time.Duration{30 * time.Minute, 50 * time.Hour, 7 * 24 * time.Hour} {
+				start := time.Date(2021, 1, 31, 23, 30, 0, 0, loc)
+				s := Series{Start: start.UTC(), End: start.Add(dur).UTC(), Loc: loc, Rule: Rule{Repeat: rep}}
+				for _, from := range []time.Time{
+					time.Date(2021, 3, 20, 0, 0, 0, 0, loc), time.Date(2026, 9, 1, 0, 0, 0, 0, loc),
+					time.Date(2031, 10, 26, 1, 0, 0, 0, loc), time.Date(2034, 2, 28, 12, 0, 0, 0, loc),
+				} {
+					to := from.Add(MaxListWindow)
+					got, want := starts(s.Between(from, to), loc), starts(brute(s, from, to), loc)
+					if strings.Join(got, ",") != strings.Join(want, ",") {
+						t.Errorf("%s %v %v from %v: got %d occurrences, want %d", zone, rep, dur, from, len(got), len(want))
+					}
+				}
+			}
+		}
+	}
+}
+
 // parseICS is a minimal RFC 5545 reader for the tests: CRLF lines of ≤ 75 octets, unfolding,
 // balanced BEGIN / END, NAME[;PARAMS]:VALUE. It returns the properties of the VEVENT.
 func parseICS(t *testing.T, s string) map[string][]string {
