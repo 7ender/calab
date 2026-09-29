@@ -79,6 +79,7 @@ const KEY = new Set([
   'voice-pip',
   'voice-camera-grid',
   'voice-camera-pip',
+  'camera-preview',
   'voice-noise-popover',
   'main-members-toggled',
   'main-members-birthday',
