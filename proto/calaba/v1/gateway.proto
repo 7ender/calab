@@ -195,6 +195,9 @@ message DispatchEvent {
     BackgroundCreate background_create = 49;
     BackgroundUpdate background_update = 50;
     BackgroundDelete background_delete = 51;
+    // This device was taken out of voice by the server (docs/05 "Несколько устройств"); to the
+    // user's channel, acted upon only by the device whose auth session is session_id.
+    VoiceDisconnected voice_disconnected = 52;
     // Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
     BotCreate bot_create = 60;
     BotUpdate bot_update = 61;
@@ -403,6 +406,24 @@ message VoiceMoved {
   string token = 6;      // join token for the target room (same identity)
   string session_id = 7; // auth session (device) the token is for
   string identity = 8;   // LiveKit identity "<user_id>:<session_id>"
+}
+
+// Why the server took a device out of voice (VOICE_DISCONNECTED).
+enum VoiceDisconnectReason {
+  VOICE_DISCONNECT_REASON_UNSPECIFIED = 0;
+  // The user joined voice (a room or a call) from another device: one device in voice at a time.
+  VOICE_DISCONNECT_REASON_OTHER_DEVICE = 1;
+}
+
+// To the user's devices: the server disconnected the device whose auth session is session_id
+// from voice (its LiveKit participant is removed, its voice state cleared; VOICE_STATE_UPDATE
+// follows). That device leaves voice without a reconnect attempt; other devices ignore it.
+// A one-to-one call is not ended by it.
+message VoiceDisconnected {
+  string workspace_id = 1; // empty for a one-to-one call (DM room)
+  string room_id = 2;
+  string session_id = 3;
+  VoiceDisconnectReason reason = 4;
 }
 
 // Sent after a successful RESUME, following the replayed events.

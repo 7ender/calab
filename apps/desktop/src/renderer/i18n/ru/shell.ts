@@ -214,6 +214,7 @@ export const ruShell = {
   'mediaErr.voice.lost': 'Не удалось вернуться в голосовую комнату',
   'mediaErr.voice.desync': 'Соединение с голосом потеряно',
   'mediaErr.voice.kicked': 'Модератор отключил вас от голосовой комнаты',
+  'mediaErr.voice.otherDevice': 'Вы подключились с другого устройства',
   'mediaErr.voice.duplicate': 'Вы подключились к голосу с этого устройства в другом окне',
   'mediaErr.voice.closed': 'Голосовая комната закрыта',
   'mediaErr.voice.moved': 'Вас переместили в «{room}»',

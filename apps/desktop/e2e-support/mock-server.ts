@@ -247,6 +247,7 @@ import {
   UserSchema,
   UserSettingsSchema,
   VoiceStateSchema,
+  VoiceDisconnectReason,
   VoiceStreamStopReason,
   WorkspaceMemberSchema,
   WorkspaceRole,
@@ -1896,12 +1897,26 @@ class MockImpl {
     }
   }
 
+  /**
+   * One device in voice at a time (docs/05 «Несколько устройств»): a /join from another session
+   * of the user tells the device in voice VOICE_DISCONNECTED{OTHER_DEVICE}; the join that follows
+   * moves the (per-user) voice state. The mock's LiveKit connection of that device is left to it.
+   */
+  private takeOverVoice(userId: string, sessionId: string): void {
+    const prev = this.voiceSessions.get(userId);
+    const roomId = this.state.voiceStates.get(userId)?.roomId;
+    if (!prev || prev === sessionId || !roomId) return;
+    const workspaceId = this.state.rooms.get(roomId)?.workspaceId ?? '';
+    this.toUser(userId, { event: { case: 'voiceDisconnected', value: { workspaceId, roomId, sessionId: prev, reason: VoiceDisconnectReason.OTHER_DEVICE } } });
+  }
+
   /** POST /api/rooms/{dm}/join: the DM's voice session, for a participant of its ACTIVE call. */
   private async joinCall(c: Ctx, room: Room, name: string, sessionId: string): Promise<void> {
     const me = this.uid(c);
     this.requireCall(room.id, me);
     const identity = `${me}:${sessionId}`;
     const token = await this.voiceToken(room, identity, name);
+    this.takeOverVoice(me, sessionId);
     const cur = this.state.voiceStates.get(me);
     const again = cur?.roomId === room.id && this.voiceSessions.get(me) === sessionId;
     const pending = again ? cur.pending : true;
@@ -4096,6 +4111,7 @@ class MockImpl {
       // Optimistic join (docs/05): the device is recorded as pending at once; a repeated /join
       // of the same device changes nothing. The mock has no LiveKit webhooks: participant_joined
       // is simulated JOIN_CONNECT_MS later.
+      this.takeOverVoice(me, sessionId);
       const cur = s().voiceStates.get(me);
       const again = cur?.roomId === room.id && this.voiceSessions.get(me) === sessionId;
       const pending = again ? cur.pending : true;

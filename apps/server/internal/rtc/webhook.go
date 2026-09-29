@@ -210,6 +210,9 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 			return reject("session revoked")
 		}
 	}
+	if s.superseded(ctx, wid, rid, sid) {
+		return reject("the user joined voice from another device")
+	}
 	acc, err := perm.NewResolver(s.db.Q).Room(ctx, rid, uid)
 	if errors.Is(err, perm.ErrNoRoom) {
 		return reject("no access to the room")
