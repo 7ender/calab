@@ -474,7 +474,7 @@ func TestPermissionsFlow(t *testing.T) {
 		}
 	}
 
-	member := perm.ViewRoom | perm.SendMessages | perm.AttachFiles | perm.Connect | perm.Speak | perm.Stream | perm.Video
+	member := perm.RoleDefaults[perm.RoleMember] // board bits (ADR-0042) pass through room rules like other role bits
 	cases := []struct {
 		who    string
 		u      *user
