@@ -673,7 +673,8 @@ function useDragController({
   };
 
   const onGridDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    if (e.button !== 0 || press.current || e.target !== e.currentTarget) return;
+    // A press that closes the open meeting dialog (a click outside it) does not start another one.
+    if (e.button !== 0 || press.current || e.target !== e.currentTarget || useUi.getState().dialog) return;
     press.current = {
       kind: 'grid',
       key: null,

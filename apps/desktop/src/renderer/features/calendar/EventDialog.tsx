@@ -82,6 +82,9 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A series' first start is needed to move it by the occurrence's shift: saving waits for it.
+  const seriesPending = !!editing && editing.repeat !== EventRepeat.UNSPECIFIED && seriesStart === undefined;
+
   const set = (patch: Partial<EventDraft>): void => {
     setD((x) => ({ ...x, ...patch }));
     setErrors((e) => {
@@ -149,7 +152,7 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
           <Button variant="secondary" onClick={() => void close()}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={() => void save()} busy={busy} data-testid="event-save">
+          <Button onClick={() => void save()} busy={busy || seriesPending} data-testid="event-save">
             {editing ? t('common.save') : t('common.create')}
           </Button>
         </>
