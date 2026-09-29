@@ -1,8 +1,9 @@
-import { memo, type ReactNode } from 'react';
+import { memo, useEffect, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { t, useLocale } from '../../i18n';
 import { useUi } from '../../stores/ui';
 import { AdmissionRow } from './AdmissionRow';
+import { dismissKnockToast } from './services/admissions';
 import { useAdmissions } from './stores/admissions';
 
 const NONE: string[] = [];
@@ -17,6 +18,10 @@ export const AdmissionsGroup = memo(function AdmissionsGroup({ workspaceId }: { 
   useLocale();
   const roomId = useUi((s) => (s.activeWorkspaceId === workspaceId ? (s.lastRoom[workspaceId] ?? '') : ''));
   const ids = useAdmissions(useShallow((s) => (roomId ? (s.byRoom[roomId]?.map((a) => a.user?.id ?? '') ?? NONE) : NONE)));
+  // The group is on screen: its knocks need no toast over it (the floating panel sits right there).
+  useEffect(() => {
+    for (const id of ids) dismissKnockToast(roomId, id);
+  }, [roomId, ids]);
   if (!roomId || ids.length === 0) return null;
   return (
     <section aria-labelledby="members-admissions" className="mt-4 flex flex-col first:mt-0" data-testid="members-admissions">

@@ -140,6 +140,8 @@ const KEY = new Set([
   'call-incoming',
   'dm-in-call',
   'members-menu-call',
+  // Guest admission (ADR-0040).
+  'members-admissions',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -894,6 +896,45 @@ test('members-menu', async ({ open, win, mock, shot }) => {
   await expect(roles.getByRole('menuitemcheckbox')).toHaveCount(3);
   await expect(roles.getByRole('menuitemcheckbox', { name: 'Администратор' })).toBeChecked();
   await checkpoint(shot, 'members-menu', { keepPointer: true });
+});
+
+/**
+ * Guest admission (ADR-0040): a guest knocks on «общий» → the decider gets the toast and the knock
+ * counter on the room row; the members panel shows «Ожидают подтверждения — 1» on top (the toast
+ * goes: the group is on screen). Then: rename inline, pick a badge, «Пустить» → the row is gone.
+ */
+test('members-admissions', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  giveFixtureBadges(mock);
+  const guest = mock.knock(IDS.rooms.general, 'Гость Ромашка');
+  const toast = win.getByTestId('knock-toast');
+  await expect(toast).toContainText('Гость Ромашка');
+  await expect(toast).toContainText('просит войти в «общий»');
+  await expect(toast.getByRole('button', { name: 'Пустить Гость Ромашка' })).toBeVisible();
+  const counter = win.locator('aside').first().getByTestId('room-knocks');
+  await expect(counter).toHaveAccessibleName('Ожидают подтверждения: 1');
+  const members = await membersList(win);
+  const group = members.getByTestId('members-admissions');
+  await expect(group).toContainText('Ожидают подтверждения — 1');
+  await expect(toast).toHaveCount(0);
+  await badgesLoaded(win);
+  await checkpoint(shot, 'members-admissions');
+
+  const row = group.getByTestId('admission-row');
+  await row.getByRole('button', { name: 'Изменить имя гостя: Гость Ромашка' }).click();
+  const field = row.getByRole('textbox', { name: 'Имя гостя' });
+  await field.fill('Анна (Ромашка)');
+  await field.press('Enter');
+  await expect(row.getByRole('button', { name: 'Изменить имя гостя: Анна (Ромашка)' })).toBeVisible();
+  await row.getByTestId('admission-badge').click();
+  await win.getByRole('menuitemradio', { name: 'Acme' }).click();
+  await expect(row.getByTestId('admission-badge')).toHaveAccessibleName('Бейдж: Acme');
+  await row.getByRole('button', { name: 'Пустить Анна (Ромашка)' }).click();
+  await expect(group).toHaveCount(0);
+  await expect(counter).toHaveCount(0);
+  await expect.poll(() => mock.state.users.get(guest)?.user.displayName).toBe('Анна (Ромашка)');
+  await expect(members.getByRole('button', { name: /Анна \(Ромашка\)/ })).toBeVisible();
 });
 
 test('profile-dialog', async ({ open, win, mock, shot }) => {

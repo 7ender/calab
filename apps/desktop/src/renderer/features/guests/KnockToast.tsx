@@ -13,7 +13,7 @@ const MAX = 3;
 
 /**
  * «<Имя> просит войти в <комната>» (ADR-0040 §3, docs/08 «Подтверждение входа гостей»): a card per
- * live knock with «Пустить» / «Отклонить», top right under the title bar (the chat toasts keep the
+ * live knock with «Пустить» / «Отклонить», top right under the room header, over the feed (the chat toasts keep the
  * bottom); on phones a banner under the top bar. It stays until decided (here, in the group or by
  * another decider) or closed — a decision is asked for, it must not slip away on a timer.
  */
@@ -24,7 +24,7 @@ export function KnockToasts(): ReactNode {
   return (
     <section
       aria-label={t('adm.knockRegion')}
-      className="pointer-events-none fixed right-4 top-[calc(var(--titlebar-height)+12px)] z-[var(--z-toast)] flex w-[340px] flex-col gap-2 [:root.web_&]:top-[calc(var(--titlebar-height-web)+12px)] mobile:left-4 mobile:right-4 mobile:top-[calc(var(--safe-top)+56px)] mobile:w-auto mobile:[:root.web_&]:top-[calc(var(--safe-top)+56px)]"
+      className="pointer-events-none fixed right-4 top-[calc(var(--titlebar-height)+56px)] z-[var(--z-toast)] flex w-[340px] flex-col gap-2 [:root.web_&]:top-[calc(var(--titlebar-height-web)+56px)] mobile:left-4 mobile:right-4 mobile:top-[calc(var(--safe-top)+56px)] mobile:w-auto mobile:[:root.web_&]:top-[calc(var(--safe-top)+56px)]"
       data-testid="knock-toasts"
     >
       {shown.map((key) => (

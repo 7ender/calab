@@ -212,6 +212,21 @@ test('m-join', async ({ page }) => {
   await checkpoint(page, 'm-join');
 });
 
+// Guest admission (ADR-0040): a room with approval — the guest's waiting screen on the phone.
+test('m-guest-waiting', async ({ page }) => {
+  mock.setGuestApproval(IDS.rooms.call, true);
+  await open(page, '/r/call-guest-link');
+  await page.getByTestId('link-landing').getByRole('button', { name: 'Продолжить в браузере' }).tap();
+  await expect(page.getByTestId('approval-note')).toContainText('Комната требует подтверждения организатора');
+  await page.getByLabel('Ваше имя').fill('Гость Ромашка');
+  await page.getByRole('button', { name: 'Войти как гость' }).tap();
+  const waiting = page.getByTestId('guest-waiting');
+  await expect(waiting.getByText('Ожидаем подтверждения организатора…')).toBeVisible();
+  await expect(waiting.getByRole('button', { name: 'Отменить' })).toBeVisible();
+  await insets(page);
+  await checkpoint(page, 'm-guest-waiting');
+});
+
 // ---------------------------------------------------------------- onboarding
 
 test('m-onboarding', async ({ page }) => {
