@@ -1,6 +1,6 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type SyntheticEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { useMediaUrl } from '../../components/MediaImg';
 import { CloseButton, IconButton, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -8,18 +8,22 @@ import { filePath, thumbnailPath } from '../../lib/api/endpoints';
 import { platform } from '../../platform';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
-import { dimsOf, fitFrame, lightboxLayers, stepImage, type Dims, type LightboxImage, type LoadState } from '../../lib/lightbox';
+import { dimsOf, fitFrame, isTap, lightboxLayers, stepImage, type Dims, type LightboxImage, type LoadState } from '../../lib/lightbox';
 
 const onDark = 'text-[color:var(--color-on-accent)] hover:bg-[rgb(255_255_255/14%)] hover:text-[color:var(--color-on-accent)]';
 
 /**
  * Full-window image viewer (issue #7): opens at once with the chat thumbnail and a spinner over it,
  * the full file replaces it when loaded, fitted whole into the window (never cropped or zoomed).
- * Name + download + close; ←/→ step through the images of the message; click outside or Esc closes.
+ * Name + download + close; ←/→ step through the images of the message; a click outside, a click on
+ * the image itself (not the end of a drag, docs/09 #132) or Esc closes.
  */
 export function Lightbox({ images, index: start, onClose }: { images: LightboxImage[]; index: number; onClose: () => void }): ReactNode {
   const [index, setIndex] = useState(start);
   const os = useSession((s) => s.appInfo?.platform);
+  // Where the press began: a drag from the image released over the backdrop is not a backdrop click
+  // (the click then targets their common ancestor).
+  const pressedOn = useRef<EventTarget | null>(null);
   const img = images[index] ?? images[0];
   if (!img) return null;
   const step = (delta: -1 | 1): void => {
@@ -27,7 +31,7 @@ export function Lightbox({ images, index: start, onClose }: { images: LightboxIm
     if (next !== null) setIndex(next);
   };
   const closeOnBackdrop = (e: MouseEvent): void => {
-    if (e.target === e.currentTarget) onClose();
+    if (e.target === e.currentTarget && pressedOn.current === e.target) onClose();
   };
   const download = (): void =>
     void platform.files.download({ fileId: img.fileId, name: img.name }).then(
@@ -53,6 +57,9 @@ export function Lightbox({ images, index: start, onClose }: { images: LightboxIm
             if (!gallery || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
             e.preventDefault();
             step(e.key === 'ArrowLeft' ? -1 : 1);
+          }}
+          onPointerDownCapture={(e) => {
+            pressedOn.current = e.target;
           }}
           onClick={closeOnBackdrop}
         >
@@ -84,7 +91,7 @@ export function Lightbox({ images, index: start, onClose }: { images: LightboxIm
                 <ChevronLeft className="size-6" />
               </IconButton>
             ) : null}
-            <ImageStage key={img.fileId} img={img} onBackdrop={closeOnBackdrop} />
+            <ImageStage key={img.fileId} img={img} onBackdrop={closeOnBackdrop} onClose={onClose} />
             {gallery ? (
               <IconButton label={t('lightbox.next')} onClick={() => step(1)} disabled={index === images.length - 1} className={cx('z-[1] mr-2 shrink-0', onDark)}>
                 <ChevronRight className="size-6" />
@@ -101,7 +108,15 @@ export function Lightbox({ images, index: start, onClose }: { images: LightboxIm
  * One image: a frame sized to the image fitted into the stage (a size container, so the frame's
  * width can use cqw/cqh), the thumbnail under a spinner until the full file has loaded.
  */
-function ImageStage({ img, onBackdrop }: { img: LightboxImage; onBackdrop: (e: MouseEvent) => void }): ReactNode {
+function ImageStage({
+  img,
+  onBackdrop,
+  onClose,
+}: {
+  img: LightboxImage;
+  onBackdrop: (e: MouseEvent) => void;
+  onClose: () => void;
+}): ReactNode {
   const [thumb, setThumb] = useState<LoadState>('loading');
   const [full, setFull] = useState<LoadState>('loading');
   const [thumbAspect, setThumbAspect] = useState<Dims | null>(null);
@@ -111,6 +126,16 @@ function ImageStage({ img, onBackdrop }: { img: LightboxImage; onBackdrop: (e: M
   const known = dimsOf(img.width, img.height) ?? natural;
   const frame = fitFrame(known ?? thumbAspect, !!known);
   const layers = lightboxLayers(thumb, full);
+  // A click on the image closes like the backdrop; a press that moved (a drag) does not.
+  const down = useRef<{ x: number; y: number } | null>(null);
+  const onFrameDown = (e: PointerEvent): void => {
+    down.current = e.isPrimary ? { x: e.clientX, y: e.clientY } : null;
+  };
+  const onFrameClick = (e: MouseEvent): void => {
+    const from = down.current;
+    down.current = null;
+    if (e.button === 0 && from && isTap(from, { x: e.clientX, y: e.clientY })) onClose();
+  };
 
   const onThumb = (e: SyntheticEvent<HTMLImageElement>): void => {
     setThumbAspect(dimsOf(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight));
@@ -151,7 +176,9 @@ function ImageStage({ img, onBackdrop }: { img: LightboxImage; onBackdrop: (e: M
       <div
         data-testid="lightbox-frame"
         data-state={full}
-        className={cx('relative overflow-hidden', frame && 'rounded-[var(--radius-card)] shadow-[var(--shadow-popover)]')}
+        onPointerDown={onFrameDown}
+        onClick={onFrameClick}
+        className={cx('relative cursor-zoom-out overflow-hidden', frame && 'rounded-[var(--radius-card)] shadow-[var(--shadow-popover)]')}
         style={frame ?? { width: '100cqw', height: '100cqh' }}
       >
         {thumbSrc ? (
