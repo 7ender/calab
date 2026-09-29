@@ -136,6 +136,11 @@ func (h *Handlers) register(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if resp.GetSimilarAccount() {
+		// Only the hint: nothing was created (check_similar_account, docs/09 #119).
+		httpx.Write(w, http.StatusOK, resp)
+		return nil
+	}
 	if isWeb(r) {
 		setRefreshCookie(w, resp.GetTokens())
 	}

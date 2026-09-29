@@ -258,6 +258,16 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			return nil, errRegistrationClosed
 		}
 	}
+	if req.GetCheckSimilarAccount() {
+		// Before hashing: the hint costs no password work. Nothing is created on a hit.
+		similar, err := s.similarAccount(ctx, email, code)
+		if err != nil {
+			return nil, err
+		}
+		if similar {
+			return &v1.RegisterResponse{SimilarAccount: true}, nil
+		}
+	}
 	hash, err := HashPassword(ctx, req.GetPassword())
 	if err != nil {
 		return nil, err
@@ -719,6 +729,39 @@ func (s *Service) revokedReason(ctx context.Context, sid uuid.UUID) (string, boo
 }
 
 // inviteLive: not expired and not used up.
+// similarAccount reports another account with the same local part at a sibling domain of the
+// same organisation (docs/09 #119, HasSimilarAccount): kv@gptunnel.ai signing up while
+// kv@gptunnel.ru exists. Only for a sign-up that could go through: with invite-only
+// registration the code must be live, so the hint is no oracle for arbitrary visitors. The
+// exact address is left to the usual 409. The other address itself is never returned.
+func (s *Service) similarAccount(ctx context.Context, email, code string) (bool, error) {
+	at := strings.LastIndexByte(email, '@')
+	local, domain := email[:at], email[at+1:]
+	dot := strings.LastIndexByte(domain, '.')
+	if strings.ContainsRune(local, '@') || dot <= 0 {
+		return false, nil
+	}
+	var ws *uuid.UUID
+	if code != "" {
+		i, err := s.db.Q.GetInviteByCode(ctx, code)
+		switch {
+		case err == nil && inviteLive(i, s.now()):
+			ws = &i.WorkspaceID
+		case err != nil && !db.IsNotFound(err):
+			return false, err
+		}
+	}
+	if ws == nil && s.mode == config.RegistrationInvite {
+		return false, nil
+	}
+	if _, err := s.db.Q.GetUserByEmail(ctx, &email); err == nil {
+		return false, nil // taken: the sign-up answers 409 as before
+	} else if !db.IsNotFound(err) {
+		return false, err
+	}
+	return s.db.Q.HasSimilarAccount(ctx, sqlc.HasSimilarAccountParams{Email: email, Local: local, DomainName: domain[:dot], WorkspaceID: ws})
+}
+
 func inviteLive(i sqlc.WorkspaceInvite, now time.Time) bool {
 	return (i.ExpiresAt == nil || now.Before(*i.ExpiresAt)) && (i.MaxUses == 0 || i.Uses < i.MaxUses)
 }

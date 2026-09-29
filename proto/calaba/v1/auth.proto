@@ -39,11 +39,20 @@ message RegisterRequest {
   // Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
   // Registration sends a verification code to `email` (ADR-0023, ADR-0027).
   string locale = 6;
+  // Opt-in similar-address check (docs/09 #119). When set and another account has the same
+  // local part at a sibling domain of the same organisation (same name, different last label:
+  // kv@gptunnel.ai vs kv@gptunnel.ru; or a domain of the invite's workspace email invitations),
+  // nothing is created: the response carries only similar_account = true. The client asks the
+  // user and repeats the request without the flag to create the account anyway.
+  bool check_similar_account = 7;
 }
 
 message RegisterResponse {
   AuthTokens tokens = 1;
   Me me = 2;
+  // Set only for check_similar_account (then tokens and me are empty). Never names the other
+  // address.
+  bool similar_account = 3;
 }
 
 // POST /api/auth/login
