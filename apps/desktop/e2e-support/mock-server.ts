@@ -3985,7 +3985,7 @@ class MockImpl {
       shelfOwner(user);
       const b = parseBody(c, CreateNotesRequestSchema);
       const name = b.name.trim();
-      if (!name || [...name].length > 40) throw invalid('name', 'name must be 1 to 40 characters');
+      if (!name || Array.from(name).length > 40) throw invalid('name', 'name must be 1 to 40 characters');
       const id = this.addShelf(user.user.id, name, b.emoji.trim());
       sendMsg(c.res, 201, CreateNotesResponseSchema, { shelf: this.shelfOut(id, user.user.id) ?? undefined });
     });
@@ -3998,7 +3998,7 @@ class MockImpl {
       const sh = s().shelves.get(room.id);
       if (b.name !== undefined) {
         const name = b.name.trim();
-        if (!name || [...name].length > 40) throw invalid('name', 'name must be 1 to 40 characters');
+        if (!name || Array.from(name).length > 40) throw invalid('name', 'name must be 1 to 40 characters');
         room.name = name;
       }
       if (b.emoji !== undefined && sh) sh.emoji = b.emoji.trim();
