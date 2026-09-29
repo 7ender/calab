@@ -18,6 +18,7 @@ import { openDm } from '../../services/dms';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { selectMicMode } from './micMenu';
 import { MobileRecDot, useRecording } from '../voice/Recording';
+import { SoundboardButton } from '../voice/Soundboard';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
 const round = 'grid size-10 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
@@ -105,6 +106,8 @@ export function MobileVoiceStrip(): ReactNode {
           {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
         </button>
         {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : null}
+        {/* Soundboard (ADR-0036): the same panel as the island's, as a bottom sheet. */}
+        {call ? null : <SoundboardButton testId="mobile-soundboard-button" className={cx(round, idle, 'disabled:opacity-40 data-[state=open]:bg-[var(--color-fill-hover)]')} />}
         {call ? null : <MoreMenu />}
         <button type="button" aria-label={t('voice.leave')} onClick={() => void voice.leave()} className={cx(round, 'bg-danger-fill text-white active:brightness-90')}>
           <Phone className="size-5 rotate-[135deg]" aria-hidden />

@@ -96,6 +96,14 @@ export interface Prefs {
   afkMinutes: number;
   /** The viewer's last stream layout per voice room (docs/09 #56): PiP or expanded stage. */
   streamStage: Record<string, 'pip' | 'expanded'>;
+  /** «Громкость звуков» of the soundboard (ADR-0036), 0..2; × the headphones ▾ volume, element.volume caps at 1. */
+  soundboardVolume: number;
+  /** «Не воспроизводить звуки других»: only my own presses play. */
+  soundboardMuteOthers: boolean;
+  /** Starred sounds (ids: `builtin:<id>` or a workspace sound id), in the order starred. */
+  soundboardFavorites: string[];
+  /** Presses per sound id on this device («Часто используемые»). */
+  soundboardUsage: Record<string, number>;
 }
 
 const DEFAULTS: Prefs = {
@@ -140,6 +148,10 @@ const DEFAULTS: Prefs = {
   onboarded: false,
   onboardingStep: '',
   afkMinutes: 10,
+  soundboardVolume: 1,
+  soundboardMuteOthers: false,
+  soundboardFavorites: [],
+  soundboardUsage: {},
 };
 
 interface PrefsState extends Prefs {

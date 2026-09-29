@@ -1,4 +1,9 @@
 import {
+  CreateSoundRequestSchema,
+  ListSoundsResponseSchema,
+  PlaySoundRequestSchema,
+  SoundResponseSchema,
+  UpdateSoundRequestSchema,
   AdminGetWorkspaceResponseSchema,
   AdminPlanLogResponseSchema,
   AdminSearchWorkspacesResponseSchema,
@@ -284,6 +289,20 @@ export const api = {
       call('PATCH', `/api/workspaces/${workspaceId}/backgrounds/${backgroundId}`, UpdateBackgroundResponseSchema, body(UpdateBackgroundRequestSchema, { name })),
     /** 204 → BACKGROUND_DELETE. */
     remove: (workspaceId: string, backgroundId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/backgrounds/${backgroundId}`),
+  },
+  /** Soundboard (ADR-0036): the library for any member; managing needs MANAGE_STICKERS. */
+  sounds: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sounds`, ListSoundsResponseSchema),
+    /** 201; fileId = my upload to this workspace (MP3 / Ogg / WAV ≤ 2 MB, the server makes the clip); 409 = 50 already; 422 = bad name / emoji / file. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateSoundRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sounds`, SoundResponseSchema, body(CreateSoundRequestSchema, init)),
+    /** Rename, emoji, a new clip (fileId) or a new place (position). */
+    update: (workspaceId: string, soundId: string, init: MessageInitShape<typeof UpdateSoundRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/sounds/${soundId}`, SoundResponseSchema, body(UpdateSoundRequestSchema, init)),
+    /** 204 → SOUND_DELETE. */
+    remove: (workspaceId: string, soundId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/sounds/${soundId}`),
+    /** 204: everyone in the call plays it; 403 = not in the call; 429 = 1 per 2 s per user, 5 per 10 s per room. */
+    play: (roomId: string, soundId: string) => callEmpty('POST', `/api/rooms/${roomId}/sounds/play`, body(PlaySoundRequestSchema, { soundId })),
   },
   /** Workspace roles (ADR-0026): list for any member; the rest MANAGE_ROLES, roles below my top one. */
   roles: {

@@ -609,6 +609,26 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   }
 }
 
+/* Soundboard (ADR-0036): after a press every tile locks for 2 s; a hairline runs out meanwhile —
+   a finite animation (the duration is set inline), none with reduced motion or a hidden window. */
+@keyframes calaba-snd-cooldown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.snd-cooldown {
+  transform-origin: left;
+  animation: calaba-snd-cooldown 2s linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .snd-cooldown {
+    animation: none;
+  }
+}
+
 /* Birthday surface (docs/08 «Дни рождения», issue #18): one static gradient (solid material, no
    backdrop-filter) for the chat card and the members panel plate; white text ≥ 4.5:1 on every
    stop. The feed card adds sparkles (a few radial dots in ::after) and the cake «pop», once on
