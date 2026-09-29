@@ -115,7 +115,7 @@ function NavDrawer({ workspaceId, open, onOpenChange }: { workspaceId: string; o
   return (
     <DialogP.Root open={open} onOpenChange={onOpenChange}>
       <DialogP.Portal>
-        <DialogP.Overlay className="anim-fade fixed inset-0 z-[var(--z-modal)] bg-scrim" />
+        <DialogP.Overlay className="no-drag anim-fade fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content
           aria-modal="true"
           aria-describedby={undefined}
@@ -152,7 +152,7 @@ function MembersDrawer({ workspaceId, open, onOpenChange }: { workspaceId: strin
   return (
     <DialogP.Root open={open} onOpenChange={onOpenChange}>
       <DialogP.Portal>
-        <DialogP.Overlay className="anim-fade fixed inset-0 z-[var(--z-modal)] bg-scrim" />
+        <DialogP.Overlay className="no-drag anim-fade fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content
           aria-modal="true"
           aria-describedby={undefined}

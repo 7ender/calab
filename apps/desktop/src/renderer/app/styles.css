@@ -416,6 +416,17 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
 .drag select {
   -webkit-app-region: no-drag;
 }
+/* Layers above the window (dialogs, popovers, menus, their scrims — `no-drag` on each
+   DialogP.Overlay): the OS hit-tests drag regions before the page, regardless of z-order, so a
+   dialog's «×» over the room header's drag strip ate the click (docs/09 #105). A later no-drag
+   region cuts the earlier drag ones; a `.drag` row inside a layer (the lightbox) adds its own back. */
+[role='dialog'],
+[role='alertdialog'],
+[role='menu'],
+[role='listbox'],
+[data-radix-popper-content-wrapper] {
+  -webkit-app-region: no-drag;
+}
 
 /* Native overlay scrollbars on macOS; thin neutral ones elsewhere. */
 :root:not(.mac) ::-webkit-scrollbar {

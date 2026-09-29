@@ -1,6 +1,6 @@
-import { CircleAlert, CircleCheck, Info, X } from 'lucide-react';
+import { CircleAlert, CircleCheck, Info } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { IconButton, cx } from '../../components/ui';
+import { CloseButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import type { DeviceSwitch } from '../../lib/deviceSwitch';
 import { useMobile } from '../../lib/mobile';
@@ -175,9 +175,7 @@ function ToastItem({ toast: x, paused }: { toast: Toast; paused: boolean }): Rea
           </button>
         ) : null}
       </div>
-      <IconButton label={t('toast.close')} size="sm" className="size-6" onClick={() => dismiss(x.id)}>
-        <X className="size-4" aria-hidden />
-      </IconButton>
+      <CloseButton label={t('toast.close')} shortcut="" className="size-6" onClick={() => dismiss(x.id)} />
     </div>
   );
 }

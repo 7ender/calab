@@ -1,7 +1,7 @@
-import { LayoutGrid, Maximize2, MessageCircle, MicOff, Pin, VideoOff, X } from 'lucide-react';
+import { LayoutGrid, Maximize2, MessageCircle, MicOff, Pin, VideoOff } from 'lucide-react';
 import { forwardRef, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Badge, IconButton, cx } from '../../components/ui';
+import { Badge, CloseButton, IconButton, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
@@ -344,9 +344,7 @@ export function CameraPip({ box, wsId }: { box: Box; wsId: string | null }): Rea
         <IconButton size="sm" label={t('video.expand')} className="text-white hover:bg-white/15 hover:text-white" onClick={() => voice.showVideo()}>
           <Maximize2 className="size-4" aria-hidden />
         </IconButton>
-        <IconButton size="sm" label={t('video.close')} className="text-white hover:bg-white/15 hover:text-white" onClick={() => setVoice({ videoPip: false })}>
-          <X className="size-4" aria-hidden />
-        </IconButton>
+        <CloseButton label={t('video.close')} shortcut="" className="text-white hover:bg-white/15 hover:text-white" onClick={() => setVoice({ videoPip: false })} />
       </span>
     </div>
   );

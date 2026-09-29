@@ -2,7 +2,7 @@ import { RoomType, type PermissionBits, type Room, type Sticker } from '@calaba/
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { IconButton, Tip, cx } from '../../components/ui';
+import { CLOSE_HIT, CloseButton, IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { MENTION_EVENT, type MentionRequest } from './mentionRequest';
@@ -569,9 +569,7 @@ function ContextBar({ icon, title, text, onClose }: { icon: ReactNode; title: st
         <div className="truncate text-body font-semibold text-accent-text">{title}</div>
         <div className="truncate text-body text-muted">{text}</div>
       </div>
-      <IconButton label={t('common.cancel')} size="sm" className="rounded-full" onClick={onClose}>
-        <X className="size-4" />
-      </IconButton>
+      <CloseButton label={t('common.cancel')} shortcut="" className="rounded-full" onClick={onClose} />
     </div>
   );
 }
@@ -604,7 +602,7 @@ function AttachmentGrid({ files, setFiles }: { files: OutgoingFile[]; setFiles: 
           <Tip label={t('chat.removeAttachment', { name: f.name })}>
             <button
               type="button"
-              className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-[rgb(0_0_0/55%)] text-[color:var(--color-on-accent)] hover:bg-[rgb(0_0_0/70%)]"
+              className={cx(CLOSE_HIT, 'absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-[rgb(0_0_0/55%)] text-[color:var(--color-on-accent)] hover:bg-[rgb(0_0_0/70%)]')}
               aria-label={t('chat.removeAttachment', { name: f.name })}
               onClick={() => setFiles(files.filter((_, j) => j !== i))}
             >

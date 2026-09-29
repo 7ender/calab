@@ -1,7 +1,7 @@
-import { CircleArrowUp, X } from 'lucide-react';
+import { CircleArrowUp } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import type { UpdateStatus } from '../../../shared/ipc';
-import { Button, IconButton } from '../../components/ui';
+import { Button, CloseButton } from '../../components/ui';
 import { t } from '../../i18n';
 import { platform } from '../../platform';
 import { useSession } from '../../stores/session';
@@ -39,9 +39,7 @@ export function UpdateBanner(): ReactNode {
       <Button size="sm" aria-label={t('update.restartHint', { v: version })} onClick={() => void platform.app.installUpdate()}>
         {t('update.restart')}
       </Button>
-      <IconButton label={t('update.dismiss')} size="sm" className="size-6" onClick={() => useSession.getState().set({ updateDismissed: true })}>
-        <X className="size-4" aria-hidden />
-      </IconButton>
+      <CloseButton label={t('update.dismiss')} shortcut="" className="size-6" onClick={() => useSession.getState().set({ updateDismissed: true })} />
     </div>
   );
 }

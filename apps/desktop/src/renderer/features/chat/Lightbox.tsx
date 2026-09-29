@@ -1,8 +1,8 @@
 import * as DialogP from '@radix-ui/react-dialog';
-import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { useMediaUrl } from '../../components/MediaImg';
-import { IconButton, Spinner, cx } from '../../components/ui';
+import { CloseButton, IconButton, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { filePath, thumbnailPath } from '../../lib/api/endpoints';
 import { platform } from '../../platform';
@@ -40,7 +40,7 @@ export function Lightbox({ images, index: start, onClose }: { images: LightboxIm
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
-        <DialogP.Overlay className="anim-in fixed inset-0 z-[var(--z-modal)] bg-[rgb(0_0_0/82%)]" />
+        <DialogP.Overlay className="no-drag anim-in fixed inset-0 z-[var(--z-modal)] bg-[rgb(0_0_0/82%)]" />
         <DialogP.Content aria-modal="true"
           data-testid="lightbox"
           className="anim-in fixed inset-0 z-[var(--z-modal)] flex flex-col focus:outline-none"
@@ -75,9 +75,7 @@ export function Lightbox({ images, index: start, onClose }: { images: LightboxIm
               <Download className="size-5" />
             </IconButton>
             <DialogP.Close asChild>
-              <IconButton label={t('lightbox.close')} className={onDark}>
-                <X className="size-5" />
-              </IconButton>
+              <CloseButton label={t('lightbox.close')} size="md" className={onDark} />
             </DialogP.Close>
           </div>
           <div className="relative flex min-h-0 flex-1 items-center" onClick={closeOnBackdrop}>

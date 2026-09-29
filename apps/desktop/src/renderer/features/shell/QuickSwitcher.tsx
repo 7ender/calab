@@ -199,7 +199,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
-        <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
+        <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content aria-modal="true"
           aria-label={t('search.title')}
           data-layout-anchor="top" // Spotlight-like: anchored near the top, not centred
