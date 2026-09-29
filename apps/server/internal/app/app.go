@@ -300,6 +300,8 @@ func New(d Deps) *App {
 	msgHandlers.Receipts = messages.NewReceipts(d.DB, pub, d.Redis)
 	boardSvc := boards.New(d.DB, pub, planSvc, filesSvc)
 	boardSvc.PublicURL = d.Config.PublicAppURL
+	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60) // 60 at once, one per second
+	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60) // ⌘K: 30 at once, one per second
 	msgHandlers.TaskHook = boardSvc.TaskHook
 	msgHandlers.Routes(mux, private)
 	boardSvc.Routes(mux, private)

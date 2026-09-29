@@ -754,3 +754,52 @@ func TestBoardPlanLimit(t *testing.T) {
 		t.Fatalf("reason %q", reason)
 	}
 }
+
+// TestBoardSecurityReview: findings of the 1.1.0 security review (docs/21 «Security-ревью»).
+func TestBoardSecurityReview(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	pub := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Открытая", Key: "OPN"}, 201)
+	priv := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Закрытая", Key: "CLS", IsPrivate: true}, 201)
+
+	// A board icon is readable by every member: a manager cannot make someone else's file (here
+	// an attachment of a private board's task) the icon of a board they manage.
+	_, secretFile, _ := upload(t, o, "/api/boards/"+priv.GetId()+"/files", "secret.png", pngBytes(8, 8))
+	createTask(t, o, priv.GetId(), &v1.CreateTaskRequest{Title: "тайна", AttachmentIds: []string{secretFile.GetId()}}, 201)
+	if fileStatus(t, bob, secretFile.GetId()) != 404 {
+		t.Fatal("a private board's file is readable by a member who does not see the board")
+	}
+	setBoardPerms(o, pub.GetId(), 200, userOv(bob.id, perm.ManageBoard, 0))
+	stolen := secretFile.GetId()
+	bob.must(422, "PATCH", "/api/boards/"+pub.GetId(), &v1.UpdateBoardRequest{IconFileId: &stolen}, nil)
+	if fileStatus(t, bob, secretFile.GetId()) != 404 {
+		t.Fatal("someone else's file became readable through a board icon")
+	}
+	_, bobs, _ := upload(t, bob, "/api/boards/"+pub.GetId()+"/files", "bob.png", pngBytes(8, 8))
+	createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Чужая иконка", IconFileId: bobs.GetId()}, 422)
+	// Own uploads work, and another manager may send the current icon again.
+	mine := bobs.GetId()
+	bob.must(200, "PATCH", "/api/boards/"+pub.GetId(), &v1.UpdateBoardRequest{IconFileId: &mine}, nil)
+	o.must(200, "PATCH", "/api/boards/"+pub.GetId(), &v1.UpdateBoardRequest{IconFileId: &mine}, nil)
+
+	// Rate limits: ⌘K task search and task creation are per-user budgets (429 when spent).
+	limited := func(what string, do func() int) {
+		t.Helper()
+		for range 200 {
+			switch st := do(); st {
+			case 429:
+				return
+			case 200, 201:
+			default:
+				t.Fatalf("%s: status %d", what, st)
+			}
+		}
+		t.Fatalf("%s is not rate limited", what)
+	}
+	limited("task search", func() int {
+		return bob.do("GET", "/api/workspaces/"+wid+"/tasks/search?q=x", nil, nil)
+	})
+	limited("task create", func() int {
+		return bob.do("POST", "/api/boards/"+pub.GetId()+"/tasks", &v1.CreateTaskRequest{Title: "спам"}, nil)
+	})
+}

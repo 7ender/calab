@@ -145,6 +145,9 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) error {
 	if n := utf8.RuneCountInString(q); n < 1 || n > maxTextQuery {
 		return httpx.Validation("q", "q must be 1..200 characters")
 	}
+	if err := take(r, s.SearchLimit); err != nil {
+		return err
+	}
 	limit := DefaultSearchSize
 	if l := r.URL.Query().Get("limit"); l != "" {
 		n, err := strconv.Atoi(l)
