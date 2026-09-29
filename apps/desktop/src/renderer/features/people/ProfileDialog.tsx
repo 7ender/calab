@@ -26,10 +26,10 @@ import { promoteGuest, toggleMemberRole } from './actions';
 import { MemberPicker } from './MemberPicker';
 import type { PeoplePickItem, RolePickItem } from './memberPickItems';
 import { roleColorCss } from '../../lib/roles';
-import { BotBadge, GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from './MemberBits';
+import { BotBadge, GuestBadge, roleName, roleTextClass, roleTextStyle } from './MemberBits';
 import { BotActions, BotAvatarControls, BotDetails, BotHandle } from './BotProfile';
 import { EditBadge } from './ProfileBadge';
-import { MemberBadge } from './MemberBadge';
+import { BadgeOrRoleMark } from './MemberBadge';
 import { MemberContextMenu, useMemberActions } from './MemberContextMenu';
 import { NOTE_MAX, createNoteSaver, type NoteSaveState, type NoteSaver } from './noteSaver';
 
@@ -150,8 +150,7 @@ export function ProfileDialog({
                   {name}
                 </DialogP.Title>
                 {/* 20 px inline after the name, no text line (docs/08 «Бейдж»); its name is the tooltip. */}
-                <MemberBadge workspaceId={workspaceId} userId={userId} size={20} />
-                <RoleMark role={m.role} custom={look} />
+                <BadgeOrRoleMark workspaceId={workspaceId} userId={userId} role={m.role} custom={look} size={20} />
                 {isGuest(m) ? <GuestBadge /> : null}
                 {u.isBot ? <BotBadge /> : null}
               </div>
