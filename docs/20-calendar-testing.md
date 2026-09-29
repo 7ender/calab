@@ -1,7 +1,7 @@
 # 20 — Календарь: автоматическая матрица тестов (ADR-0038, 1.0.0)
 
 Главная фича релиза 1.0.0 — тестируется тщательно, по всем каналам. Ручные сценарии — `TESTING.md`
-«Календарь и встречи (1.0.0)», C.1–C.20. Этот файл — какой автотест (или его отсутствие) стоит за
+«Календарь и встречи (1.0.0)», C.1–C.21. Этот файл — какой автотест (или его отсутствие) стоит за
 каждым C.n, чтобы имплементирующие агенты писали тест одновременно с кодом, а не «потом».
 
 Столбцы: **(a)** Go-интеграционные (`internal/app/events_*_integration_test.go`) · **(b)** десктоп unit
@@ -12,26 +12,27 @@
 
 | C.n | Сценарий | (a) Go integration | (b) desktop unit | (c) Playwright | (d) прод-smoke | (e) только вручную |
 |---|---|---|---|---|---|---|
-| C.1 | Создание (комната/участники/описание/запись) | `TestEventCreate` | `stores/events.test.ts`, `CreateEventDialog.test.tsx` | `calendar-create-dialog`, `calendar-day` (visual) | создать через API, проверить 201 + `event_attendees` | — |
-| C.2 | Правка времени → письмо + `SEQUENCE+1` | `TestEventUpdateSequence` (парсит сгенерированный `.ics`) | — | `calendar-event-card` обновляется без реконнекта (мок `EVENT_UPDATE`) | PATCH, проверить рост `SEQUENCE` через API (если отдаётся) | вид письма в реальном ящике — разово глазами (не за каждый релиз) |
+| C.1 | Создание (комната/участники/описание/запись) | `TestEventCreate` | `lib/calendar/events.test.ts`, `lib/calendar/draft.test.ts` (модель диалога) | `calendar-day.spec.ts` (создание → блок, тело POST), `calendar-dialog`, `calendar-day` (visual) | создать через API, проверить 201 + `event_attendees` | — |
+| C.2 | Правка времени → письмо + `SEQUENCE+1` | `TestEventUpdateSequence` (парсит сгенерированный `.ics`) | — | `calendar-day.spec.ts` (перенос → PATCH, блок на новом месте) | PATCH, проверить рост `SEQUENCE` через API (если отдаётся) | вид письма в реальном ящике — разово глазами (не за каждый релиз) |
 | C.3 | Отмена → письмо `CANCEL` | `TestEventCancel` | — | карточка пропадает из дня (мок `EVENT_DELETE`) | DELETE, проверить `cancelled_at` | — |
-| C.4 | RSVP из приложения (3 статуса) | `TestEventRSVP` | `EventCard.test.tsx` (кнопки/состояния) | `calendar-rsvp.spec.ts` (клик по каждому статусу, счётчики) | — (полностью покрыто a–c) | — |
+| C.4 | RSVP из приложения (3 статуса) | `TestEventRSVP` | `lib/calendar/events.test.ts` (редьюсер RSVP) | `calendar-rsvp.spec.ts` (клик по каждому статусу, счётчики) | — (полностью покрыто a–c) | — |
 | C.5 | RSVP по ссылке из письма (внешний, 3 статуса) | `TestEventRSVPExternalToken` (accept/decline/maybe, идемпотентность) | — | гап — публичная RSVP-страница не в моке (см. «Пробелы») | — | клик по реальной ссылке (Mailpit/внешний ящик) — логика уже покрыта (a), это проверка вёрстки страницы подтверждения |
 | C.6 | Просроченная RSVP-ссылка → 410 | `TestEventRSVPExternalToken` (кейс `expired`) | — | — | — | — |
 | C.7 | Напоминания 5/15/60, DND, «Перейти в комнату» | `TestEventReminders` (дедуп `event_reminders_sent`, окно 25 ч, DND-флаг) | `lib/calendar/reminders.test.ts`, обработчик действия уведомления | `calendar-reminder.spec.ts` (мок `EVENT_REMINDER` → in-app баннер/тост, клик по действию подключает к голосу) | — | реальное системное уведомление ОС (текст, тайминг, клик из Notification Center/Action Center) — раз на релиз на каждой ОС |
-| C.8 | Значок комнаты за 15 мин → карточка → вход | `TestRoomEventBadge` (`ROOM_EVENT_ACTIVE`/`ENDED` тайминг) | — | `room-event-badge` (visual) + функциональный клик «Перейти» | — | — |
+| C.8 | Значок комнаты за 15 мин → карточка → вход | `TestRoomEventBadge` (`ROOM_EVENT_ACTIVE`/`ENDED` тайминг) | — | `calendar-day.spec.ts` (значок по `ROOM_EVENT_ACTIVE` → карточка, `ENDED` убирает) | — | — |
 | C.9 | Запись предлагается организатору, привязывается к встрече | расширяет `TestRecording*` (3.19) + `TestEventRecordingLink` (`events.recording_id`) | мок-сценарий предложения записи (описание паттерна — R.1–R.4) | `chat-recording-card` с привязкой к событию (visual) | — | — |
 | C.10 | Повтор день/неделя/2 недели/месяц + `until` | `TestEventRecurrenceExpand`, `TestEventException` (отмена одного вхождения) | — (клиент вхождения не разворачивает — считает сервер, ADR-0038 п. 1) | `calendar-day` с несколькими вхождениями (visual) | — | — |
 | C.11 | DST-переход (Europe/Berlin) | `TestEventRecurrenceDST` (фиксированные часы, вхождения до/после 25.10.2026) | — | — | — | — |
 | C.12 | Часовые пояса организатор +3 / участник +7 | тривиально — сервер хранит UTC, без спец-теста | `lib/calendar/formatLocalTime.test.ts` | `calendar-tz.spec.ts` (два `BrowserContext` с разным `timezoneId`, сверка отображаемого времени) | — | — |
 | C.13 | Гостевая ссылка внешнего участника (окно, `restricted`) | `TestEventGuestLink` (окно `[-15 мин; конец]`, `restricted`-комната) | — | — | — | точная формулировка экрана «ссылка ещё не активна» — глазами один раз после реализации |
-| C.14 | Мобильный веб: день + карточка | — | — | `mobile.visual.spec.ts`: `m-calendar-day`, `m-calendar-event-card` | — | — |
-| C.15 | Deep link `/e/<id>` из письма | — | `lib/deepLink.test.ts` (маршрут `/e/<id>`, как `/join/`/`/r/`) | `calendar-deep-link.spec.ts` (веб: без входа → карточка встречи) | GET `/e/<id>` на стенде → 200/карточка | диалог ОС «Открыть Calab?» и переход на передний план (десктоп) — как W14, вручную |
+| C.14 | Мобильный веб: день + карточка | — | — | `mobile.visual.spec.ts`: `m-calendar-day` (+ карточка на весь экран) | — | — |
+| C.15 | Deep link `/e/<id>` из письма | — | `services/links.test.ts` (маршрут `/e/<id>`, как `/join/`/`/r/`) | `calendar-deep-link.spec.ts` (веб: без входа → карточка встречи) | GET `/e/<id>` на стенде → 200/карточка | диалог ОС «Открыть Calab?» и переход на передний план (десктоп) — как W14, вручную |
 | C.16 | `.ics` в Apple Calendar и Google Calendar | — | — | — | — | полностью: сторонние приложения не автоматизируем; проверка раз на релиз с реальным внешним ящиком |
 | C.17 | Права: участник/организатор/админ/гость/бот | `TestEventPermissions` (таблица действие × кто, по образцу `permissions_matrix_integration_test.go`) | — | — | — | — |
 | C.18 | Лимиты (100/20/120/4000) | `TestEventLimits` | — | — | — | — |
-| C.19 | Диплинк внешнего `/e/<id>?t=` (view-токен → страница, ответ, гостевая ссылка с окном) | `TestEventDeepLinks` (письмо/`.ics` с `?t=`, GET по view- и answer-токену, POST view → 400, answer-токены из ответа, `guest_from/until`), unit `TestRSVPToken` (статус `view`) | — | страница `/e/<id>?t=` против мока (`server.eventViewToken`, `server.eventGuestLink`), пишет клиентская задача | — | клик по ссылке из реального письма — вместе с C.5 |
-| C.20 | Гость комнаты видит активную встречу | `TestEventDeepLinks` (READY `active_events` без участников, `GET /api/events/{id}` 200 в окне / 404 вне, 403 на список/RSVP/правку, `ROOM_EVENT_ACTIVE/ENDED` гостю), unit `TestEventForGuest` | — | `mock-calendar.test.ts` (гость по ссылке встречи: карточка, READY, 403/404); клиентский спек — клиентская задача | — | — |
+| C.19 | Диплинк внешнего `/e/<id>?t=` (view-токен → страница, ответ, гостевая ссылка с окном) | `TestEventDeepLinks` (письмо/`.ics` с `?t=`, GET по view- и answer-токену, POST view → 400, answer-токены из ответа, `guest_from/until`), unit `TestRSVPToken` (статус `view`) | — | `calendar-public.spec.ts` (страница `/e/<id>?t=` против мока: `eventViewToken`, `eventGuestLink`), эталоны `calendar-public`, `m-calendar-public` | — | клик по ссылке из реального письма — вместе с C.5 |
+| C.20 | Гость комнаты видит активную встречу | `TestEventDeepLinks` (READY `active_events` без участников, `GET /api/events/{id}` 200 в окне / 404 вне, 403 на список/RSVP/правку, `ROOM_EVENT_ACTIVE/ENDED` гостю), unit `TestEventForGuest` | — | `mock-calendar.test.ts` (гость по ссылке встречи: карточка, READY, 403/404); `calendar-public.spec.ts` (гость: значок, карточка без участников) | — | — |
+| C.21 | Дневной вид: перенос, растяжение, «весь день», другой день, выделение диапазона, меню блока, клавиши, бросок участника / комнаты | — | `lib/calendar/drag.test.ts`, `layout.test.ts` | `calendar-day.spec.ts` (перенос → PATCH, растяжение, бросок на день мини-месяца, чужая не двигается, клавиши) | — | бросок участника / комнаты из списков (нативный HTML5 d&d Playwright воспроизводит ненадёжно) — вручную |
 
 ## (a) Go-интеграционные
 
@@ -50,13 +51,25 @@
 
 ## (b) Десктоп unit (vitest)
 
-`stores/events.test.ts` (обработка `EVENT_CREATE/UPDATE/DELETE/RSVP`, `my_status`, счётчики), `features/calendar/CreateEventDialog.test.tsx`, `features/calendar/EventCard.test.tsx` (кнопки RSVP, бейджи статусов участников), `lib/calendar/reminders.test.ts` (обработчик `EVENT_REMINDER` → системное уведомление + действие), `lib/calendar/formatLocalTime.test.ts` (форматирование времени в зоне смотрящего), `lib/deepLink.test.ts` (расширение существующих тестов `/join/`/`/r/` маршрутом `/e/<id>`).
+Реализовано (клиент, 29.09; компоненты в проекте без component-тестов — вся логика вынесена в чистые модули `apps/desktop/src/renderer/lib/calendar/`):
+- `events.test.ts` — редьюсер `EVENT_CREATE/UPDATE/DELETE/RSVP` (ответ на всех вхождениях, `my_status` → строки участников, внешний по адресу, отменённое вхождение уходит, одиночная встреча переезжает сразу, серия — перезапрос), окно списка, дни, значки комнат `ROOM_EVENT_ACTIVE/ENDED` (C.1–C.4, C.8, C.10).
+- `formatLocalTime.test.ts` — время в зоне смотрящего (Москва 15:00 / Красноярск 19:00), через полночь, «весь день» по дате организатора, ключи дней, сетка месяца от первого дня недели локали (C.12).
+- `reminders.test.ts` — чипы напоминаний (до 5, порядок, отказ шестому), текст «Через 15 минут: Планёрка · Переговорка», «Не беспокоить» (C.7).
+- `draft.test.ts` — модель диалога: проверки (название, конец после начала, ≤ 20 внешних), адреса, тело POST, PATCH только изменённого, сдвиг серии, поля ошибок 422 (C.1, C.2, C.18).
+- `layout.test.ts` — раскладка пересекающихся встреч дня (колонки кластера, минимальная высота, обрезка по суткам); `drag.test.ts` — перенос/растяжение/выделение с шагом 15 мин (d&d, владелец 29.09).
+- `services/links.test.ts` — `/e/<id>` и `calab://e/<id>` (не страница ответа `/e/<id>/rsvp`) (C.15).
 
 ## (c) Playwright против мока (`apps/desktop/e2e-visual`)
 
-Визуальные (в `screens.spec.ts` `KEY`, дефолт `dark-960`): `calendar-mini` (мини-календарь месяца), `calendar-day`, `calendar-create-dialog`, `calendar-event-card`, `calendar-event-card-external` (карточка со статусами внешнего участника), `room-event-badge`; мобильные (`mobile.visual.spec.ts`): `m-calendar-day`, `m-calendar-event-card`.
+Визуальные (реализовано, по одному эталону, `dark-960` / iPhone 14): `calendar-mini` (иконка с числом и мини-месяц), `calendar-day` (дневной вид + карточка), `calendar-dialog` (диалог с чипами, внешним адресом, комнатой, повтором) — `screens.spec.ts` `KEY`; `calendar-public` (публичная страница, web 960) — `web.spec.ts`; мобильные `m-calendar-day` (+ карточка на весь экран без снимка), `m-calendar-public` — `mobile.visual.spec.ts`.
 
-Функциональные (свои файлы, по образцу `birthday-congratulate.spec.ts`/`resume-voice.spec.ts`): `calendar-rsvp.spec.ts` (C.4 — все три статуса), `calendar-reminder.spec.ts` (C.7 — мок шлёт `EVENT_REMINDER`, проверка баннера и действия «Перейти в комнату», без реального системного уведомления), `calendar-tz.spec.ts` (C.12 — два `BrowserContext` с разным `timezoneId`), `calendar-deep-link.spec.ts` (C.15 — веб-путь `/e/<id>` без входа).
+Функциональные (реализовано: веб-сборка + мок в Chromium, пояс Москвы, проект `calendar` в `playwright.visual.config.ts`, помощники `calendarWeb.ts`; `pnpm build:web && playwright test --config playwright.visual.config.ts --project calendar`):
+- `calendar-day.spec.ts` — C.1 создание → блок в дне выбран, тело POST, число в иконке; d&d: перенос на 2 ч → тело PATCH, нижний край → новое окончание, бросок на день мини-месяца → PATCH на тот день; чужая встреча не двигается (и в меню нет «Изменить»); C.8 значок комнаты по `ROOM_EVENT_ACTIVE` → карточка, `ENDED` убирает; клавиши →, T, N, Esc.
+- `calendar-rsvp.spec.ts` — C.4 три ответа (тело PUT, нажатая кнопка, счётчики), ответ другого участника по `EVENT_RSVP` без перезагрузки.
+- `calendar-reminder.spec.ts` — C.7 `EVENT_REMINDER` → `Notification` (заглушка) с текстом и тост «Перейти в комнату» → комната и `POST …/join`.
+- `calendar-tz.spec.ts` — C.12 два контекста (`Europe/Moscow` / `Asia/Krasnoyarsk`): 15:00 / 19:00, карточка, пояс в диалоге.
+- `calendar-deep-link.spec.ts` — C.15 `/e/<id>` без сессии → вход → день с карточкой; неизвестный id → «Встреча не найдена».
+- `calendar-public.spec.ts` — C.19 страница `/e/<id>?t=` без аккаунта (нет чужих участников, «Приму» → POST с answer-токеном, ссылка ещё не активна), в окне «Присоединиться» → `/r/<code>`, ссылка ответа `/e/<id>/rsvp?t=` применяется при открытии; C.20 гость: `/e/<id>` → комната с карточкой (счётчики без списка, без ответа и правки), значок у комнаты, иконки календаря нет.
 
 ## (d) Прод-smoke после деплоя
 
