@@ -59,7 +59,10 @@ interface BoardsUiState {
   /** A card menu asked for by a hotkey (S, A, P, L, D…) on the focused card; the card opens it. */
   menu: { taskId: string; kind: CardMenu; seq: number } | null;
   /** «Новая задача» (C, «+»): board, status of the column, parent. */
-  createFor: { boardId: string; statusId?: string; parentId?: string } | null;
+  createFor: { boardId: string; statusId?: string; parentId?: string; fromMessage?: { id: string; text: string } } | null;
+  /** «Создать задачу» from a message: the board last used for it, per workspace. */
+  lastBoard: Record<string, string>;
+  setLastBoard: (workspaceId: string, boardId: string) => void;
   /** Board settings dialog; `boardId` '' = create a board of `workspaceId`. */
   settingsFor: { boardId: string; workspaceId: string; tab?: string } | null;
   filterOpen: boolean;
@@ -100,6 +103,8 @@ export const useBoardsUi = create<BoardsUiState>()(
       selected: {},
       menu: null,
       createFor: null,
+      lastBoard: {},
+      setLastBoard: (wsId, boardId) => set((s) => (s.lastBoard[wsId] === boardId ? {} : { lastBoard: { ...s.lastBoard, [wsId]: boardId } })),
       settingsFor: null,
       filterOpen: false,
       helpOpen: false,
@@ -132,7 +137,7 @@ export const useBoardsUi = create<BoardsUiState>()(
     {
       name: 'calaba-boards-ui',
       version: 1,
-      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope }),
+      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, lastBoard: s.lastBoard }),
     },
   ),
 );

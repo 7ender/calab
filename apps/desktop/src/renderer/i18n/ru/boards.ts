@@ -33,6 +33,8 @@ export const ruBoards = {
   'boards.view.kanban': 'Канбан',
   'boards.view.list': 'Список',
   'boards.view.timeline': 'Таймлайн',
+  'boards.fromMessage': 'Создать задачу',
+  'boards.card.board': '{key} · открытых задач: {n}',
   'boards.tl.zoom': 'Масштаб',
   'boards.tl.week': 'Неделя',
   'boards.tl.month': 'Месяц',

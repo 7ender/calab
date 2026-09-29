@@ -31,6 +31,8 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.view.kanban': '看板视图',
   'boards.view.list': '列表',
   'boards.view.timeline': '时间线',
+  'boards.fromMessage': '创建任务',
+  'boards.card.board': '{key} · 未完成任务：{n}',
   'boards.tl.zoom': '缩放',
   'boards.tl.week': '周',
   'boards.tl.month': '月',

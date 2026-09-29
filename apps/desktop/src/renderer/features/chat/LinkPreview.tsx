@@ -7,6 +7,7 @@ import { t } from '../../i18n';
 import { isSafeHref } from '../../lib/markdown/parse';
 import { platform } from '../../platform';
 import { unfurl } from '../../services/chat';
+import { TaskLinkCard } from '../boards/TaskLinkCard';
 import { hostOf, siteColor, siteKey } from './siteColor';
 
 /** Server-proxied images only: never load third-party hosts from the client (proto/unfurl.proto). */
@@ -29,6 +30,8 @@ export function LinkPreview({ url, onHide }: { url: string; onHide?: (() => void
     };
   }, [url]);
   if (!card) return null;
+  // Our own /t/ and /b/ links (ADR-0042): the task / board card, opened in the app.
+  if (card.task || card.board) return <TaskLinkCard res={card} href={url} />;
   const href = card.url && isSafeHref(card.url) ? card.url : url;
   const image = card.imageUrl && isProxied(card.imageUrl) ? card.imageUrl : '';
   const site = card.siteName || hostOf(href);

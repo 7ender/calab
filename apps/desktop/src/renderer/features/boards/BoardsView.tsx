@@ -14,7 +14,6 @@ import { useMemberRoles } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
 import { BoardHeader } from './BoardHeader';
 import { BoardSettingsHost } from './BoardSettings';
-import { CreateTaskDialog } from './CreateTaskDialog';
 import { FilterChips } from './FilterBar';
 import { HotkeysSheet } from './HotkeysSheet';
 import { Kanban } from './Kanban';
@@ -57,7 +56,6 @@ export function BoardsView({ workspaceId, wide, mobile = false }: { workspaceId:
         {boardId === MY_TASKS ? <MyTasks workspaceId={workspaceId} /> : <Board boardId={boardId} workspaceId={workspaceId} />}
       </section>
       {taskId ? <TaskPanel taskId={taskId} floating={!wide} page={mobile} /> : null}
-      <CreateTaskDialog />
       <BoardSettingsHost />
       <HotkeysSheet />
     </div>

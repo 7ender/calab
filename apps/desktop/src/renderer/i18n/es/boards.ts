@@ -31,6 +31,8 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.view.kanban': 'Kanban',
   'boards.view.list': 'Lista',
   'boards.view.timeline': 'Cronología',
+  'boards.fromMessage': 'Crear tarea',
+  'boards.card.board': '{key} · tareas abiertas: {n}',
   'boards.tl.zoom': 'Escala',
   'boards.tl.week': 'Semana',
   'boards.tl.month': 'Mes',

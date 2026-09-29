@@ -1,6 +1,6 @@
-import type { PermissionBits } from '@calaba/protocol';
+import { RoomType, type PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Copy, CornerUpLeft, Forward, Link2, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Copy, CornerUpLeft, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { cx } from '../../components/ui';
@@ -10,6 +10,10 @@ import { firstLink, parseMarkdown } from '../../lib/markdown/parse';
 import { deleteMessage, setEmbedsHidden, setPinned, toggleReaction } from '../../services/chat';
 import { openForward } from '../../services/forward';
 import { useRooms } from '../../stores/rooms';
+import { useBoards, workspaceBoards } from '../../stores/boards';
+import { useBoardsUi } from '../../stores/boardsUi';
+import { boardForMessage } from '../boards/CreateTaskDialog';
+import { CREATE_TASKS, hasBit } from '../boards/model';
 import type { ChatMessage } from '../../stores/messages';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -105,6 +109,7 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
         <ContextMenu.Item className={menuItem} onSelect={() => openForward(roomId, m.id)} data-testid="message-forward">
           <Forward className="size-4" aria-hidden /> {t('chat.forward')}
         </ContextMenu.Item>
+        {m.content && c.status === 'sent' ? <CreateTaskItem roomId={roomId} messageId={m.id} text={m.content} /> : null}
         {canPin ? (
           <ContextMenu.Item className={menuItem} onSelect={() => void setPinned(m, !pinned)}>
             {pinned ? <PinOff className="size-4" aria-hidden /> : <Pin className="size-4" aria-hidden />}
@@ -131,5 +136,28 @@ export function MessageMenu({ c, own, roomId, perms }: { c: ChatMessage; own: bo
         ) : null}
       </ContextMenu.Content>
     </ContextMenu.Portal>
+  );
+}
+
+/**
+ * «Создать задачу» (ADR-0042 §5): a workspace room's message → the create dialog with its first
+ * line as the title and `from_message_id` (the server adds the quote and the link). Shown when
+ * the viewer may create tasks on some board of the room's workspace.
+ */
+function CreateTaskItem({ roomId, messageId, text }: { roomId: string; messageId: string; text: string }): ReactNode {
+  const wsId = useRooms((s) => {
+    const r = s.byId[roomId];
+    return r && r.type !== RoomType.TASK ? r.workspaceId : '';
+  });
+  const can = useBoards((s) => (wsId ? workspaceBoards(s.boards, wsId).some((b) => hasBit(b.permissions, CREATE_TASKS)) : false));
+  if (!can) return null;
+  return (
+    <ContextMenu.Item
+      className={menuItem}
+      onSelect={() => useBoardsUi.getState().openCreate({ boardId: boardForMessage(wsId), fromMessage: { id: messageId, text } })}
+      data-testid="message-create-task"
+    >
+      <ListPlus className="size-4" aria-hidden /> {t('boards.fromMessage')}
+    </ContextMenu.Item>
   );
 }
