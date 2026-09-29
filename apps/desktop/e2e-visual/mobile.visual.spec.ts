@@ -4,6 +4,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { RecordingStatus } from '@calaba/protocol';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
+import { DAY, seedDay } from './calendarWeb';
 
 /**
  * Mobile web (ADR-0021) in Playwright's WebKit — the engine of iOS Safari — on iPhone
@@ -459,6 +460,37 @@ test('m-members', async ({ page }) => {
   await page.getByRole('button', { name: 'Участники' }).tap();
   await expect(page.getByTestId('mobile-members').getByRole('complementary', { name: 'Участники' })).toBeVisible();
   await checkpoint(page, 'm-members');
+});
+
+// Calendar (ADR-0038 §7): drawer → the header's calendar icon → a day, full screen; the meeting card
+// replaces it full screen (← back).
+test('m-calendar-day', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  seedDay(mock);
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('calendar-button').tap();
+  await nav.locator(`[data-cal-day="${DAY}"]`).tap();
+  await expect(nav).toHaveCount(0);
+  await expect(page.getByTestId('day-view')).toBeVisible();
+  await expect(page.getByTestId('now-line')).toBeVisible();
+  await checkpoint(page, 'm-calendar-day');
+  await page.getByTestId('event-block').filter({ hasText: 'Планёрка' }).tap();
+  await expect(page.getByTestId('event-panel').getByTestId('event-title')).toHaveText('Планёрка');
+  await checkpoint(page, 'm-calendar-event-card', { snapshot: false });
+  await page.getByRole('button', { name: 'Назад' }).tap();
+  await expect(page.getByTestId('day-view')).toBeVisible();
+});
+
+// The public meeting page of an invited address (ADR-0038 «Диплинки для приглашённых»), no account.
+test('m-calendar-public', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  const id = seedDay(mock);
+  mock.eventGuestLink(id, 'ext@example.com');
+  await open(page, `/e/${id}?t=${encodeURIComponent(mock.eventViewToken(id, 'ext@example.com'))}`);
+  await expect(page.getByTestId('event-public').getByTestId('event-title')).toHaveText('Планёрка');
+  await checkpoint(page, 'm-calendar-public');
 });
 
 // The composer's «Стикеры» panel as a bottom sheet (ADR-0030): the pack strip, my pack, «Эмоции»

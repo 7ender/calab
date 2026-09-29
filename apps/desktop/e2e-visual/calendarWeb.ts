@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test as base, type Page } from '@playwright/test';
+import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
 import { IDS, startMockServer, type AddEventArgs, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD } from './harness';
 
@@ -50,6 +51,24 @@ export async function openDay(page: Page, day = DAY): Promise<void> {
   if (!(await mini.isVisible())) await page.getByTestId('calendar-button').click();
   await mini.locator(`[data-cal-day="${day}"]`).click();
   await expect(page.getByTestId('day-view')).toBeVisible();
+}
+
+/**
+ * A full day for the calendar screens (NOW's day, Moscow): an all-day release, a daily stand-up,
+ * «Обед» I declined, «Планёрка» (Борис's, my answer pending) overlapping my «Ревью дизайна», and a
+ * meeting tomorrow (a dot in the mini month). Returns «Планёрка»'s id.
+ */
+export function seedDay(mock: MockServer): string {
+  const W = IDS.workspaces.main;
+  const U = IDS.users;
+  const at = (iso: string): number => Date.parse(iso);
+  mock.addEvent({ workspaceId: W, title: 'Релиз 1.0', startMs: at('2026-01-14T21:00:00Z'), endMs: at('2026-01-15T21:00:00Z'), allDay: true, tz: 'Europe/Moscow', attendees: [{ userId: U.boris, status: AttendeeStatus.ACCEPTED }] });
+  mock.addEvent({ workspaceId: W, title: 'Стендап', startMs: at('2026-01-13T07:00:00Z'), endMs: at('2026-01-13T07:15:00Z'), roomId: IDS.rooms.call, repeat: EventRepeat.DAILY, attendees: [{ userId: U.boris, status: AttendeeStatus.ACCEPTED }, { userId: U.vera }] });
+  mock.addEvent({ workspaceId: W, organizerId: U.vera, title: 'Обед с командой', startMs: at('2026-01-15T09:00:00Z'), endMs: at('2026-01-15T10:00:00Z'), attendees: [{ userId: U.anna, status: AttendeeStatus.DECLINED }, { userId: U.boris, status: AttendeeStatus.ACCEPTED }] });
+  const id = planerka(mock, { attendees: [{ userId: U.anna }, { userId: U.vera, required: false, status: AttendeeStatus.MAYBE }, { userId: U.grigory, status: AttendeeStatus.ACCEPTED }, { email: 'ext@example.com', required: false }] });
+  mock.addEvent({ workspaceId: W, title: 'Ревью дизайна', startMs: AT_15 + HOUR / 2, endMs: AT_15 + 1.5 * HOUR, attendees: [{ userId: U.boris, status: AttendeeStatus.ACCEPTED }] });
+  mock.addEvent({ workspaceId: W, title: 'Ретро', startMs: at('2026-01-20T13:00:00Z'), endMs: at('2026-01-20T14:00:00Z'), roomId: IDS.rooms.meeting });
+  return id;
 }
 
 /** «Планёрка» 15:00–16:00 MSK in «Переговорка», organized by Борис, Анна invited (optional external too). */

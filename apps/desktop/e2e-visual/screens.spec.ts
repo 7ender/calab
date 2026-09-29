@@ -6,7 +6,8 @@ import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { checkpoint, login, settle } from './harness';
+import { NOW, checkpoint, login, settle } from './harness';
+import { DAY, seedDay } from './calendarWeb';
 import { startPublisher } from './publisher';
 
 /**
@@ -140,6 +141,10 @@ const KEY = new Set([
   'call-incoming',
   'dm-in-call',
   'members-menu-call',
+  // Calendar (ADR-0038 §7).
+  'calendar-mini',
+  'calendar-day',
+  'calendar-dialog',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -3234,4 +3239,62 @@ test('chat-bot-commands', async ({ open, win, mock, shot }) => {
   await field.press('Enter');
   await expect(field).toHaveValue('/help ');
   await expect(popover).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------- calendar (ADR-0038 §7)
+
+/** The calendar screens: a full day of meetings (calendarWeb.seedDay), the mock's clock at NOW. */
+async function calendarDay(win: Page, mock: MockServer): Promise<void> {
+  mock.setClock(NOW.getTime());
+  seedDay(mock);
+  await win.getByTestId('calendar-button').click();
+  await expect(win.getByTestId('mini-calendar')).toBeVisible();
+}
+
+/** The header icon with today's count and the mini month under it (dots, today, the chat beside). */
+test('calendar-mini', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await calendarDay(win, mock);
+  await expect(win.getByTestId('calendar-count')).toHaveText('3');
+  await expect(win.locator('[data-cal-day="2026-01-20"]')).toHaveAccessibleName(/есть встречи/);
+  await checkpoint(shot, 'calendar-mini');
+});
+
+/** The day view with the red «now» line, overlapping blocks, the all-day row and the selected meeting's card. */
+test('calendar-day', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await calendarDay(win, mock);
+  await win.locator(`[data-cal-day="${DAY}"]`).click();
+  await expect(win.getByTestId('day-view')).toBeVisible();
+  await expect(win.getByTestId('now-line')).toBeVisible();
+  await win.getByTestId('event-block').filter({ hasText: 'Планёрка' }).click();
+  const card = win.getByTestId('event-panel');
+  await expect(card.getByTestId('event-title')).toHaveText('Планёрка');
+  await expect(card.getByTestId('event-attendee')).toHaveCount(5);
+  await checkpoint(shot, 'calendar-day');
+});
+
+/** «+ Встреча»: the dialog filled in — attendee chips (one optional, one external), a room, a repeat. */
+test('calendar-dialog', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await calendarDay(win, mock);
+  await win.locator(`[data-cal-day="${DAY}"]`).click();
+  await win.getByTestId('day-new-event').click();
+  const dialog = win.getByTestId('event-dialog');
+  await dialog.getByTestId('event-title-input').fill('Разбор релиза');
+  await dialog.getByTestId('event-room').selectOption({ label: 'Переговорка' });
+  await dialog.getByTestId('event-add-people').click();
+  await win.getByTestId('event-member-picker').getByRole('option', { name: /Борис/ }).click();
+  await dialog.getByTestId('event-add-people').click();
+  await win.getByTestId('event-member-picker').getByRole('option', { name: /Вера/ }).click();
+  await dialog.getByRole('button', { name: /Сделать необязательным: Вера/ }).click();
+  await dialog.getByTestId('event-email').fill('ext@example.com');
+  await dialog.getByRole('button', { name: 'Добавить', exact: true }).click();
+  await dialog.getByTestId('event-repeat').selectOption({ label: 'Каждую неделю' });
+  await expect(dialog.getByTestId('event-chip')).toHaveCount(3);
+  await dialog.getByTestId('event-title-input').blur();
+  await checkpoint(shot, 'calendar-dialog');
 });

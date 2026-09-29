@@ -67,7 +67,7 @@ test('a guest of the room: the meeting badge and its card, counts without the li
   const id = planerka(mock, { startMs: start, endMs: start + HOUR });
   await signIn(page, mock, `/e/${id}`, 'dina@calaba.test');
   // /e/<id> of a guest: the room, with the card open on its header badge.
-  await expect(page.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Переговорка' }).first()).toBeVisible();
   const card = page.getByTestId('room-event-card');
   await expect(card.getByTestId('event-title')).toHaveText('Планёрка');
   await expect(card.getByTestId('event-counts')).toBeVisible();

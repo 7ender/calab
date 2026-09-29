@@ -84,7 +84,8 @@ test('drag onto a day of the mini calendar moves the meeting there', async ({ pa
 
 test('a meeting of someone else does not move; the card and the menu offer no edit', async ({ page, mock }) => {
   planerka(mock);
-  await signIn(page, mock);
+  // Вера: an attendee without MANAGE_ROOM in «Переговорка» (Анна, the owner, may change it).
+  await signIn(page, mock, '/', 'vera@calaba.test');
   await openDay(page);
   let patched = false;
   page.on('request', (r) => {

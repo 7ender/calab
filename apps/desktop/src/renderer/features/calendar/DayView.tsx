@@ -344,9 +344,8 @@ function BlockMenu({ occKey, editable, children }: { occKey: string; editable: b
 
 /** All-day meetings above the grid; a drop target that makes a dragged meeting all-day. */
 function AllDayRow({ keys, day, onDown }: { keys: readonly string[]; day: string; onDown: BlockDown }): ReactNode {
+  // Always there (Apple Calendar): a stable grid under a drag, and a visible drop target.
   const dropping = useDayDrag((s) => s.allDay && !s.locked && s.mode === 'move');
-  const dragging = useDayDrag((s) => s.mode === 'move' && !s.locked);
-  if (!keys.length && !dragging) return null;
   return (
     <div
       data-cal-allday={day}

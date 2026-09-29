@@ -33,6 +33,6 @@ test('EVENT_REMINDER → notification + toast; «Перейти в комнат�
   await expect(toast).toBeVisible();
   const join = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/api/rooms/${IDS.rooms.meeting}/join`));
   await page.getByRole('button', { name: 'Перейти в комнату' }).click();
-  await expect(page.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Переговорка' }).first()).toBeVisible();
   await join;
 });
