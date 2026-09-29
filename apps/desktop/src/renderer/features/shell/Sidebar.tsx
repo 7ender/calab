@@ -123,7 +123,7 @@ interface DropRoom {
 }
 
 /**
- * Room column (docs/09 #4, P1 #19): workspace header with ▾ menu and «invite»; rooms as one flat
+ * Room column (docs/09 #4, P1 #19): workspace header with ▾ menu, the calendar and «+» (#135); rooms as one flat
  * list in `position` order, then user categories (collapsible) — no built-in sections. Rooms and
  * categories are dragged to a new place with MANAGE_ROOM (accent line, Esc cancels); voice
  * participants between voice rooms with MOVE_MEMBERS. Then the voice panel and the self panel.
