@@ -143,7 +143,7 @@ export function SearchPanel({ roomId }: { roomId: string }): ReactNode {
         onKeyDown={onKey}
         placeholder={t('chat.searchPlaceholder')}
         aria-label={t('chat.searchPlaceholder')}
-        className="selectable h-8 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+        className="selectable h-8 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint"
       />
       {busy ? <Spinner className="size-4" /> : null}
       {results ? (

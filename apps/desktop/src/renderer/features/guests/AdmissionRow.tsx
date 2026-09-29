@@ -60,7 +60,7 @@ export const AdmissionRow = memo(function AdmissionRow({ workspaceId, roomId, us
               }
             }}
             onBlur={save}
-            className="selectable h-6 min-w-0 flex-1 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-body text-fg focus-visible:outline-offset-0 mobile:h-8"
+            className="selectable h-6 min-w-0 flex-1 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-body text-fg mobile:h-8"
           />
         ) : (
           <button

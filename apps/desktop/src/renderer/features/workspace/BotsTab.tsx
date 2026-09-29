@@ -431,7 +431,7 @@ function TokenDialog({ issued, onClose }: { issued: Issued; onClose: () => void 
           value={issued.token}
           aria-label={t('bots.token')}
           spellCheck={false}
-          className="selectable w-full resize-none break-all rounded-[var(--radius-card)] border border-line bg-[var(--color-code)] px-2.5 py-2 font-mono text-caption leading-[18px] focus:border-accent focus:outline-none"
+          className="selectable w-full resize-none break-all rounded-[var(--radius-card)] border border-line bg-[var(--color-code)] px-2.5 py-2 font-mono text-caption leading-[18px]"
           onFocus={(e) => e.currentTarget.select()}
           data-testid="bot-token"
         />
