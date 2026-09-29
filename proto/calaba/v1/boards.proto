@@ -1,0 +1,616 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "calaba/v1/file.proto";
+import "calaba/v1/message.proto";
+import "calaba/v1/room.proto";
+
+// Task boards (ADR-0042, docs/04 «Доски задач»): kanban / list / timeline of a workspace.
+//
+// Access: a board is computed like a room (computePermissions with the board's overrides,
+// BOARD_ONLY bits): VIEW_BOARD sees the board, its tasks and comments and may comment;
+// CREATE_TASKS creates tasks and edits the ones it created or is assigned to; EDIT_TASKS edits,
+// moves and archives any task and moderates comments; MANAGE_BOARD manages statuses, labels,
+// milestones, settings, access and the board's archive. A private board (is_private) is seen
+// only by those with VIEW_BOARD from an override (a role's or their own); ADMINISTRATOR sees
+// everything. Guests never see boards. A board the caller cannot see answers 404.
+//
+// Comments are messages of the task's hidden room (Task.room_id, Room.type TASK): the room
+// endpoints (/api/rooms/{room_id}/messages…, reactions, pins, read state, files through
+// POST /api/boards/{id}/files) work as in a chat; the room is not in READY rooms or room lists.
+// Its permissions come from the board: VIEW_BOARD → VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES,
+// EDIT_TASKS adds MANAGE_MESSAGES; an archived task's room is read-only.
+//
+// Dates without a time (start_on, due_on, milestone due_on) are "YYYY-MM-DD"; empty = none.
+// Colors are 0xRRGGBB.
+
+enum BoardStatusType {
+  BOARD_STATUS_TYPE_UNSPECIFIED = 0;
+  BOARD_STATUS_TYPE_BACKLOG = 1;
+  BOARD_STATUS_TYPE_UNSTARTED = 2; // «Todo»
+  BOARD_STATUS_TYPE_STARTED = 3;   // the first move into it sets Task.started_at
+  BOARD_STATUS_TYPE_COMPLETED = 4; // sets completed_at / completed_by
+  BOARD_STATUS_TYPE_CANCELLED = 5; // sets completed_at / completed_by
+}
+
+// TASK_PRIORITY_NONE is the zero value on purpose (Linear «No priority»); the DB stores 0..4.
+enum TaskPriority {
+  TASK_PRIORITY_NONE = 0;
+  TASK_PRIORITY_LOW = 1;
+  TASK_PRIORITY_MEDIUM = 2;
+  TASK_PRIORITY_HIGH = 3;
+  TASK_PRIORITY_URGENT = 4;
+}
+
+enum BoardViewKind {
+  BOARD_VIEW_KIND_UNSPECIFIED = 0;
+  BOARD_VIEW_KIND_KANBAN = 1;
+  BOARD_VIEW_KIND_LIST = 2;
+  BOARD_VIEW_KIND_TIMELINE = 3;
+}
+
+// A relation is stored once: task_id BLOCKS related_id; RELATES and DUPLICATES read both ways.
+enum TaskRelationKind {
+  TASK_RELATION_KIND_UNSPECIFIED = 0;
+  TASK_RELATION_KIND_BLOCKS = 1;
+  TASK_RELATION_KIND_RELATES = 2;
+  TASK_RELATION_KIND_DUPLICATES = 3;
+}
+
+// The status template of a new board (ADR-0042 §5).
+enum BoardTemplate {
+  BOARD_TEMPLATE_UNSPECIFIED = 0; // = SIMPLE
+  BOARD_TEMPLATE_SIMPLE = 1;      // Todo / В работе / Готово
+  BOARD_TEMPLATE_DEVELOPMENT = 2; // Backlog / Todo / В работе / Ревью / Готово / Отменено
+  BOARD_TEMPLATE_EMPTY = 3;       // one status «Todo» (a board needs a default status)
+}
+
+message BoardStatus {
+  string id = 1;
+  string name = 2; // 1..32 characters
+  BoardStatusType type = 3;
+  uint32 color = 4;
+  int32 position = 5; // column order, ascending
+  bool is_default = 6; // exactly one per board: new tasks without status_id get it
+}
+
+message BoardLabel {
+  string id = 1;
+  string name = 2; // 1..32 characters, unique per board (case-insensitive)
+  uint32 color = 3;
+  int32 position = 4;
+}
+
+message BoardMilestone {
+  string id = 1;
+  string name = 2; // 1..60 characters
+  string due_on = 3;
+  int32 position = 4;
+}
+
+// A saved view (ADR-0042 §3): shared ones are seen by everyone who sees the board and edited
+// with MANAGE_BOARD; personal ones only by their author.
+message BoardView {
+  string id = 1;
+  string name = 2; // 1..40 characters
+  BoardViewKind kind = 3;
+  TaskFilter filter = 4;
+  // "" | "status" | "assignee" | "priority" | "label" | "milestone" (≤ 32 characters, not
+  // interpreted by the server).
+  string group_by = 5;
+  // "updated" | "due" | "priority" | "key" | "manual", optionally with "-" for descending
+  // (≤ 32 characters, not interpreted by the server).
+  string sort = 6;
+  bool shared = 7;
+  string created_by = 8;
+  int32 position = 9;
+  string board_id = 10;
+}
+
+message Board {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3;         // 1..60 characters
+  string key = 4;          // 2..6 of A–Z0–9 starting with a letter, unique in the workspace; «FNG»
+  string emoji = 5;        // one emoji or empty
+  string icon_file_id = 6; // an image of the workspace; empty = none
+  string description = 7;  // ≤ 2000 characters
+  bool is_private = 8;
+  int32 position = 9; // order in the boards list, ascending
+  uint32 auto_archive_days = 10; // completed / cancelled tasks older than this are archived; 0 = never
+  // The recipient's effective bits on the board (READY, REST; in BOARD_* events recomputed per
+  // recipient by the gateway).
+  uint64 permissions = 11;
+  uint32 open_tasks = 12;    // live tasks not in a completed / cancelled status
+  uint32 my_open_tasks = 13; // of them assigned to the recipient (0 in BOARD_* events: keep the known value)
+  string created_by = 14;
+  google.protobuf.Timestamp created_at = 15;
+  google.protobuf.Timestamp archived_at = 16; // set = in the archive (only in ?archived=1 lists)
+  repeated BoardStatus statuses = 17; // by position
+  repeated BoardLabel labels = 18;    // by position
+  repeated BoardMilestone milestones = 19; // by position
+  // Shared views and the recipient's own (REST; READY and BOARD_* events carry shared ones only).
+  repeated BoardView views = 20;
+  // The board's access overrides (like Room.permission_overrides): role / user allow and deny
+  // of the board bits.
+  repeated RoomPermissionOverride permission_overrides = 21;
+  bool key_locked = 22;         // the key can no longer change: the board has had a task
+  string default_view_id = 23;  // a shared view opened by default; empty = kanban without filter
+}
+
+message TaskAssignee {
+  string user_id = 1;
+  bool is_lead = 2; // exactly one lead when the list is not empty
+  string note = 3;  // «за что отвечает», ≤ 120 characters
+  string assigned_by = 4;
+  google.protobuf.Timestamp assigned_at = 5;
+}
+
+// Requested assignee (POST /tasks, PUT /tasks/{id}/assignees).
+message TaskAssigneeInput {
+  string user_id = 1; // a member of the workspace who sees the board (bots too), not a guest
+  bool is_lead = 2;
+  string note = 3;
+}
+
+message TaskRelation {
+  string task_id = 1;    // the blocking side for BLOCKS
+  string related_id = 2;
+  TaskRelationKind kind = 3;
+}
+
+message Task {
+  string id = 1;
+  string board_id = 2;
+  uint32 number = 3;     // per board, from 1
+  string key = 4;        // board key + "-" + number: "FNG-12" (follows the board on a move)
+  string title = 5;      // 1..200 characters
+  string description = 6; // markdown-lite, ≤ 20000 characters
+  string status_id = 7;
+  TaskPriority priority = 8;
+  repeated TaskAssignee assignees = 9; // the lead first
+  string created_by = 10;              // a user or a bot
+  uint32 estimate = 11;                // 1..21; 0 = none
+  string start_on = 12;
+  string due_on = 13;
+  string parent_id = 14;               // one level of subtasks
+  string milestone_id = 15;
+  double position = 16;                // order within the status (fractional; ascending)
+  string room_id = 17;                 // the hidden comment room (Room.type TASK)
+  repeated string label_ids = 18;
+  uint32 subtask_count = 19;           // live subtasks
+  uint32 subtask_done = 20;            // of them in a completed / cancelled status
+  uint32 comment_count = 21;           // live messages of the task room
+  uint32 attachment_count = 22;
+  repeated TaskRelation relations = 23; // both directions
+  // The recipient's subscription (REST, and TASK_UPDATE on the recipient's user channel;
+  // see viewer_state).
+  bool subscribed = 24;
+  bool muted = 25;
+  google.protobuf.Timestamp created_at = 26;
+  google.protobuf.Timestamp updated_at = 27;
+  google.protobuf.Timestamp started_at = 28;   // first move into a STARTED status
+  google.protobuf.Timestamp completed_at = 29; // in a COMPLETED / CANCELLED status since then
+  string completed_by = 30;
+  google.protobuf.Timestamp archived_at = 31;
+  string workspace_id = 32;
+  repeated FileMeta attachments = 33; // GET /tasks/{id} only (others: attachment_count)
+  // The recipient has something unseen in the task (a notification by their task level):
+  // cleared by PUT /api/tasks/{id}/read.
+  bool unread = 34;
+  // subscribed / muted / unread are the recipient's: true in REST answers and in TASK_UPDATE on
+  // the recipient's user channel; false in board broadcasts (TASK_CREATE / TASK_UPDATE on the
+  // workspace channel) — keep the known values then.
+  bool viewer_state = 35;
+}
+
+// One entry of the task journal (ADR-0042 §1): written on every change, never edited.
+// kind: "created" | "status" | "assignees" | "priority" | "labels" | "dates" | "estimate" |
+// "parent" | "milestone" | "relation" | "title" | "description" | "archived" | "restored" |
+// "moved_board" | "attachments". before / after hold the changed fields
+// (e.g. {"status_id": "…", "status_type": "started"}, {"assignees": [{"user_id": …}]}).
+message TaskActivity {
+  string id = 1;
+  string task_id = 2;
+  string actor_id = 3; // a user or a bot
+  string kind = 4;
+  google.protobuf.Struct before = 5;
+  google.protobuf.Struct after = 6;
+  google.protobuf.Timestamp created_at = 7;
+  string board_id = 8;
+}
+
+// The task feed: comments (messages of the task room) and journal entries in one timeline.
+message TaskActivityItem {
+  oneof item {
+    Message message = 1;
+    TaskActivity activity = 2;
+  }
+}
+
+// Filter fields (ADR-0042 §3). Values by field:
+// STATUS: status ids. STATUS_TYPE: "backlog" | "unstarted" | "started" | "completed" |
+// "cancelled". ASSIGNEE / LEAD / CREATOR / SUBSCRIBER: user ids or "me". PRIORITY: "0".."4"
+// (or none | low | medium | high | urgent). ESTIMATE: number (or values). LABEL / MILESTONE /
+// PARENT: ids. RELATION: "blocks" | "blocked" | "relates" | "duplicates". CREATED_AT /
+// UPDATED_AT: from / to. START_ON / DUE_ON: values "YYYY-MM-DD" (BETWEEN: two), else from / to
+// (their UTC date). Date values may be relative (saved views): "today", "week_start",
+// "week_end" (Monday..Sunday), "month_end", "-7d" / "+14d" (days from today), today in the
+// caller's profile zone. HAS_ATTACHMENTS / HAS_COMMENTS / ARCHIVED: IS "true" | "false" (or
+// NOT_EMPTY / EMPTY). TEXT: CONTAINS values[0] (title and description words, or the key).
+enum TaskField {
+  TASK_FIELD_UNSPECIFIED = 0;
+  TASK_FIELD_STATUS = 1;
+  TASK_FIELD_STATUS_TYPE = 2;
+  TASK_FIELD_ASSIGNEE = 3;
+  TASK_FIELD_LEAD = 4;
+  TASK_FIELD_CREATOR = 5;
+  TASK_FIELD_PRIORITY = 6;
+  TASK_FIELD_ESTIMATE = 7;
+  TASK_FIELD_LABEL = 8;
+  TASK_FIELD_MILESTONE = 9;
+  TASK_FIELD_PARENT = 10;
+  TASK_FIELD_RELATION = 11;
+  TASK_FIELD_SUBSCRIBER = 12;
+  TASK_FIELD_CREATED_AT = 13;
+  TASK_FIELD_UPDATED_AT = 14;
+  TASK_FIELD_START_ON = 15;
+  TASK_FIELD_DUE_ON = 16;
+  TASK_FIELD_HAS_ATTACHMENTS = 17;
+  TASK_FIELD_HAS_COMMENTS = 18;
+  TASK_FIELD_TEXT = 19;
+  TASK_FIELD_ARCHIVED = 20;
+}
+
+// Operations. IS / ANY_OF: one of values (LABEL IS: all of values); IS_NOT / NONE_OF: none of
+// values; EMPTY / NOT_EMPTY: the field is unset / set; BEFORE / AFTER / BETWEEN: dates and
+// times (BEFORE < to, else from; AFTER ≥ from, else to; BETWEEN [from, to]); GT / LT: number
+// (ESTIMATE, PRIORITY); CONTAINS: TEXT.
+enum TaskOp {
+  TASK_OP_UNSPECIFIED = 0;
+  TASK_OP_IS = 1;
+  TASK_OP_IS_NOT = 2;
+  TASK_OP_ANY_OF = 3;
+  TASK_OP_NONE_OF = 4;
+  TASK_OP_EMPTY = 5;
+  TASK_OP_NOT_EMPTY = 6;
+  TASK_OP_BEFORE = 7;
+  TASK_OP_AFTER = 8;
+  TASK_OP_BETWEEN = 9;
+  TASK_OP_GT = 10;
+  TASK_OP_LT = 11;
+  TASK_OP_CONTAINS = 12;
+}
+
+message TaskCondition {
+  TaskField field = 1;
+  TaskOp op = 2;
+  repeated string values = 3; // ≤ 100
+  google.protobuf.Timestamp from = 4;
+  google.protobuf.Timestamp to = 5;
+  int32 number = 6;
+}
+
+// ≤ 30 conditions; all must hold, or any one with `any`. An unsupported field / op pair is 422.
+message TaskFilter {
+  repeated TaskCondition conditions = 1;
+  bool any = 2;
+}
+
+// ---- boards ----
+
+// GET /api/workspaces/{id}/boards[?archived=1] — the boards the caller sees, by position
+// (archived ones instead with archived=1, MANAGE_BOARD on them). Guests: 403.
+message ListBoardsResponse {
+  repeated Board boards = 1;
+}
+
+// POST /api/workspaces/{id}/boards → 201 BoardResponse (MANAGE_WORKSPACE). The creator gets a
+// user override with every board bit. ≤ 50 boards per workspace and the plan's max_boards
+// (409 CONFLICT, reason "PLAN_LIMIT" / "BOARD_LIMIT").
+message CreateBoardRequest {
+  string name = 1;
+  string key = 2; // empty = derived from the name
+  string emoji = 3;
+  bool is_private = 4;
+  string description = 5;
+  BoardTemplate template = 6;
+  string icon_file_id = 7;
+}
+
+// Answer of every board route that changes the board (statuses, labels, milestones,
+// permissions, position): the board as the caller sees it. BOARD_UPDATE goes to its viewers.
+message BoardResponse {
+  Board board = 1;
+}
+
+// PATCH /api/boards/{id} (MANAGE_BOARD). key only while the board had no task (409 otherwise).
+// is_private true makes the members' role lose VIEW_BOARD (an override), false drops that deny.
+message UpdateBoardRequest {
+  optional string name = 1;
+  optional string key = 2;
+  optional string emoji = 3;
+  optional string icon_file_id = 4;
+  optional string description = 5;
+  optional bool is_private = 6;
+  optional uint32 auto_archive_days = 7; // 0..3650
+  optional string default_view_id = 8;   // a shared view of the board; "" = none
+}
+
+// PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
+// (BOARD_UPDATE for each board that moved).
+message SetBoardPositionRequest {
+  int32 position = 1;
+}
+
+// GET / PUT /api/boards/{id}/permissions (MANAGE_BOARD; PUT: people only). Like room overrides:
+// ≤ 100 targets, only board bits (VIEW_BOARD, CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD), a
+// non-administrator may only grant / remove bits they hold on the board.
+message SetBoardPermissionsRequest {
+  repeated RoomPermissionOverride overrides = 1;
+}
+
+message BoardPermissionsResponse {
+  repeated RoomPermissionOverride overrides = 1;
+  Board board = 2;
+}
+
+// POST /api/boards/{id}/statuses (MANAGE_BOARD, ≤ 20) → BoardResponse.
+message CreateBoardStatusRequest {
+  string name = 1;
+  BoardStatusType type = 2; // UNSPECIFIED = UNSTARTED
+  uint32 color = 3;
+  optional int32 position = 4; // unset = last
+  bool is_default = 5;
+}
+
+// PATCH /api/boards/{id}/statuses/{sid} → BoardResponse. DELETE …/{sid}?move_to=<sid> moves its
+// tasks (archived ones too) to move_to; the default status cannot be deleted (make another the
+// default first).
+message UpdateBoardStatusRequest {
+  optional string name = 1;
+  optional BoardStatusType type = 2;
+  optional uint32 color = 3;
+  optional int32 position = 4; // new index; others shift
+  optional bool is_default = 5; // only true: the previous default loses it
+}
+
+// POST /api/boards/{id}/labels (MANAGE_BOARD, ≤ 50) → BoardResponse. CREATE_TASKS may create a
+// label too (the on-the-fly «Создать лейбл» of the picker); editing / deleting needs MANAGE_BOARD.
+message CreateBoardLabelRequest {
+  string name = 1;
+  uint32 color = 2;
+  optional int32 position = 3;
+}
+
+message UpdateBoardLabelRequest {
+  optional string name = 1;
+  optional uint32 color = 2;
+  optional int32 position = 3;
+}
+
+// POST /api/boards/{id}/milestones (MANAGE_BOARD, ≤ 50) → BoardResponse.
+message CreateBoardMilestoneRequest {
+  string name = 1;
+  string due_on = 2;
+  optional int32 position = 3;
+}
+
+message UpdateBoardMilestoneRequest {
+  optional string name = 1;
+  optional string due_on = 2; // "" = none
+  optional int32 position = 3;
+}
+
+// ---- tasks ----
+
+// GET /api/boards/{id}/tasks?filter=<TaskFilter JSON>&archived=1&updated_after=<RFC 3339>&
+// cursor=&limit= — ≤ 500 per page (default 500), by status then position; next_cursor empty =
+// the last page. Archived tasks only with archived=1 (then only them) or an ARCHIVED condition.
+message ListTasksResponse {
+  repeated Task tasks = 1;
+  string next_cursor = 2;
+}
+
+// POST /api/boards/{id}/tasks → 201 TaskResponse (CREATE_TASKS). status_id empty = the default
+// status; after_task_id: place after that task of the same status (empty = last).
+// from_message_id: «Создать задачу из сообщения» — a message the caller can see (404
+// otherwise); the description gets its quote and link. attachment_ids: unattached uploads of
+// the caller (POST /api/boards/{id}/files), ≤ 20. ≤ 5000 live tasks per board (409 CONFLICT,
+// reason "BOARD_TASK_LIMIT"), ≤ 200 subtasks per parent.
+message CreateTaskRequest {
+  string title = 1;
+  string description = 2;
+  string status_id = 3;
+  TaskPriority priority = 4;
+  repeated TaskAssigneeInput assignees = 5;
+  repeated string label_ids = 6;
+  string start_on = 7;
+  string due_on = 8;
+  uint32 estimate = 9;
+  string parent_id = 10;
+  string milestone_id = 11;
+  string after_task_id = 12;
+  string from_message_id = 13;
+  repeated string attachment_ids = 14;
+}
+
+// POST /tasks (201), GET /tasks/{id}, PATCH, archive / restore, relations, subscription,
+// assignees, GET /api/t/{key}. subtasks / related / parent: GET and the key lookup only.
+message TaskResponse {
+  Task task = 1;
+  repeated Task subtasks = 2; // live subtasks by position
+  repeated Task related = 3;  // the other sides of task.relations that the caller can see
+  Task parent = 4;
+  Board board = 5;            // GET /api/t/{key} only
+  Room room = 6;              // the task room (type TASK): GET /tasks/{id} and GET /api/t/{key}
+}
+
+// PATCH /api/tasks/{id} → TaskResponse. Unset fields are unchanged. CREATE_TASKS may edit tasks
+// it created or is assigned to; EDIT_TASKS any. status_id with after_task_id / before_task_id =
+// a kanban move (position between the neighbours; neither = last). board_id moves the task to
+// another board (MANAGE_BOARD on both; a new number, activity "moved_board"; statuses by type,
+// labels by name, milestone dropped).
+message UpdateTaskRequest {
+  optional string title = 1;
+  optional string description = 2;
+  optional string status_id = 3;
+  optional TaskPriority priority = 4;
+  optional uint32 estimate = 5;     // 0 = none
+  optional string start_on = 6;     // "" = none
+  optional string due_on = 7;       // "" = none
+  optional string parent_id = 8;    // "" = none
+  optional string milestone_id = 9; // "" = none
+  bool set_labels = 10;             // replace label_ids
+  repeated string label_ids = 11;
+  string after_task_id = 12;
+  string before_task_id = 13;
+  optional string board_id = 14;
+  bool set_attachments = 15;        // replace the description's attachments
+  repeated string attachment_ids = 16;
+}
+
+// PUT /api/tasks/{id}/assignees (the full list, ≤ 10; exactly one is_lead when not empty) →
+// TaskResponse. New assignees are subscribed and notified.
+message SetAssigneesRequest {
+  repeated TaskAssigneeInput assignees = 1;
+}
+
+// PUT /api/tasks/{id}/relations → TaskResponse; DELETE /api/tasks/{id}/relations?related_id=
+// &kind= removes one. A task of the same workspace the caller sees; not itself.
+message SetTaskRelationRequest {
+  string related_id = 1;
+  TaskRelationKind kind = 2;
+}
+
+// PUT /api/tasks/{id}/subscription (VIEW_BOARD) → TaskResponse. muted false = subscribed with
+// notifications, true = «Отписаться» (auto-subscription does not bring it back).
+message SetTaskSubscriptionRequest {
+  bool muted = 1;
+}
+
+// GET /api/tasks/{id}/activity?before=<id>&limit= (≤ 100, default 50): comments and journal
+// entries, newest first; before = the id of the oldest item seen (message or activity id).
+message TaskActivityPage {
+  repeated TaskActivityItem items = 1;
+  bool has_more = 2;
+}
+
+// GET /api/boards/{id}/activity?since=&until=&actor=&kind=&cursor= (MANAGE_BOARD or
+// EDIT_TASKS) — the journal oldest first, ≤ 1000 per page; &format=csv streams all of it as
+// CSV (id, created_at, task_key, actor_id, kind, before, after).
+message BoardActivityResponse {
+  repeated TaskActivity activities = 1;
+  string next_cursor = 2;
+}
+
+// GET /api/me/tasks?workspace_id=&scope=assigned|lead|created|subscribed&open=1&cursor= — the
+// caller's tasks on boards they see, newest update first, ≤ 200 per page.
+message MyTasksResponse {
+  repeated Task tasks = 1;
+  string next_cursor = 2;
+}
+
+// GET /api/workspaces/{id}/tasks/search?q=&limit= (≤ 50, default 20) — ⌘K: live tasks of all
+// boards the caller sees, by key (FNG-12, FNG) and words of title / description.
+message SearchTasksResponse {
+  repeated Task tasks = 1;
+}
+
+// ---- views ----
+
+// GET /api/boards/{id}/views — shared views and the caller's own, by position.
+message ListBoardViewsResponse {
+  repeated BoardView views = 1;
+}
+
+// POST /api/boards/{id}/views (VIEW_BOARD; shared: MANAGE_BOARD) → 201 BoardViewResponse.
+// ≤ 30 views per board.
+message CreateBoardViewRequest {
+  string name = 1;
+  BoardViewKind kind = 2;
+  TaskFilter filter = 3;
+  string group_by = 4;
+  string sort = 5;
+  bool shared = 6;
+  optional int32 position = 7;
+}
+
+// PATCH /api/boards/{id}/views/{vid} (author of a personal view; MANAGE_BOARD for a shared one)
+// → BoardViewResponse; DELETE → 204.
+message UpdateBoardViewRequest {
+  optional string name = 1;
+  optional BoardViewKind kind = 2;
+  TaskFilter filter = 3; // set = replace
+  optional string group_by = 4;
+  optional string sort = 5;
+  optional bool shared = 6;
+  optional int32 position = 7;
+}
+
+message BoardViewResponse {
+  BoardView view = 1;
+}
+
+// ---- gateway events (docs/05; to the board's viewers, like room events) ----
+
+message BoardCreate {
+  Board board = 1;
+}
+
+// The board, its statuses / labels / milestones / shared views, access or archive changed; the
+// client recomputes its permissions from Board.permissions. A board the recipient no longer
+// sees arrives as BOARD_DELETE, a newly visible one as BOARD_CREATE.
+message BoardUpdate {
+  Board board = 1;
+}
+
+message BoardDelete {
+  string workspace_id = 1;
+  string board_id = 2;
+  bool purged = 3; // false = archived (restorable by MANAGE_BOARD)
+}
+
+message TaskCreate {
+  Task task = 1;
+}
+
+// TASK_UPDATE: the full task without the feed (position and assignees included). On the
+// workspace channel to the board's viewers; on a user channel with the recipient's
+// viewer_state, and `notice` when the change notifies them (their task level, ADR-0042 §4).
+message TaskUpdate {
+  Task task = 1;
+  TaskNotice notice = 2;
+}
+
+// Why a task notifies its recipient: the client shows a system notification.
+message TaskNotice {
+  TaskNoticeKind kind = 1;
+  string actor_id = 2;
+  string message_id = 3; // COMMENT / MENTIONED in a comment
+  string activity_id = 4;
+}
+
+enum TaskNoticeKind {
+  TASK_NOTICE_KIND_UNSPECIFIED = 0;
+  TASK_NOTICE_KIND_ASSIGNED = 1;  // added to the assignees or made the lead
+  TASK_NOTICE_KIND_MENTIONED = 2; // @<user_id> in the description or a comment
+  TASK_NOTICE_KIND_COMMENT = 3;   // a comment in a task the recipient is subscribed to
+  TASK_NOTICE_KIND_STATUS = 4;    // the status of a task the recipient is subscribed to changed
+}
+
+// The task was archived (purged false) or deleted with its board.
+message TaskDelete {
+  string workspace_id = 1;
+  string board_id = 2;
+  string task_id = 3;
+  bool purged = 4;
+}
+
+// One new journal entry (TASK_ACTIVITY).
+message TaskActivityAppend {
+  string workspace_id = 1;
+  TaskActivity activity = 2;
+}

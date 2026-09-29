@@ -126,6 +126,8 @@ func roomTypeFromDB(s string) v1.RoomType {
 		return v1.RoomType_ROOM_TYPE_DM
 	case "notes":
 		return v1.RoomType_ROOM_TYPE_NOTES
+	case "task":
+		return v1.RoomType_ROOM_TYPE_TASK
 	}
 	return v1.RoomType_ROOM_TYPE_TEXT
 }
@@ -657,6 +659,7 @@ func RoomNotificationSettings(s sqlc.RoomNotificationSetting) *v1.RoomNotificati
 func WorkspaceNotificationSettings(s sqlc.WorkspaceNotificationSetting) *v1.WorkspaceNotificationSettings {
 	return &v1.WorkspaceNotificationSettings{
 		WorkspaceId: s.WorkspaceID.String(), MutedUntil: tsp(s.MutedUntil),
-		Level: notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
+		Level:     notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
+		TaskLevel: notifications.LevelFromDB(s.TaskLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL),
 	}
 }

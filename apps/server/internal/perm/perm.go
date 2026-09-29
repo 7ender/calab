@@ -27,9 +27,18 @@ const (
 	Video           Bits = 1 << 14 // publish a webcam in voice rooms
 	ManageRoles     Bits = 1 << 15 // workspace-level: manage and assign roles below one's own (ADR-0026)
 	ManageStickers  Bits = 1 << 16 // workspace-level: manage the workspace's sticker packs (ADR-0030)
+	// Board bits (ADR-0042): apply to task boards only (BoardOnly).
+	ViewBoard   Bits = 1 << 17 // see a board, its tasks and comments; comment; subscribe
+	CreateTasks Bits = 1 << 18 // create tasks; edit own and assigned ones
+	EditTasks   Bits = 1 << 19 // edit, move, archive any task; moderate comments
+	ManageBoard Bits = 1 << 20 // statuses, labels, milestones, settings, access, archive
 
-	All Bits = ManageStickers<<1 - 1
+	All Bits = ManageBoard<<1 - 1
 )
+
+// BoardOnly are the bits of task boards (ADR-0042): board overrides touch only them, room
+// overrides never do.
+const BoardOnly = ViewBoard | CreateTasks | EditTasks | ManageBoard
 
 // Role is a built-in workspace role as stored in workspace_members.role and
 // workspace_roles.builtin.
@@ -58,7 +67,7 @@ const (
 var RoleDefaults = map[Role]Bits{
 	RoleOwner:  Administrator,
 	RoleAdmin:  Administrator,
-	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video,
+	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks,
 	// Guests see only rooms with an explicit VIEW_ROOM allow override.
 	RoleGuest: Connect | Speak,
 }

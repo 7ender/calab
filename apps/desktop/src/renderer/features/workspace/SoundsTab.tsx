@@ -100,7 +100,7 @@ function EmojiChip({ value, onPick }: { value: string; onPick: (v: string) => vo
         type="button"
         aria-label={t('snd.emoji')}
         data-testid="sound-emoji"
-        className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--color-fill)] text-[16px] leading-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent data-[state=open]:outline-2 data-[state=open]:outline-accent"
+        className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--color-fill)] text-[16px] leading-none hover:bg-hover data-[state=open]:bg-hover"
       >
         {value || DEFAULT_EMOJI}
       </button>

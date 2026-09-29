@@ -19,6 +19,72 @@ type BirthdayGreeting struct {
 	CreatedAt   time.Time
 }
 
+type Board struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	Name            string
+	Key             string
+	Emoji           string
+	IconFileID      *uuid.UUID
+	Description     string
+	IsPrivate       bool
+	Position        int32
+	NextNumber      int32
+	AutoArchiveDays int32
+	DefaultViewID   *uuid.UUID
+	CreatedBy       *uuid.UUID
+	CreatedAt       time.Time
+	ArchivedAt      *time.Time
+}
+
+type BoardLabel struct {
+	ID       uuid.UUID
+	BoardID  uuid.UUID
+	Name     string
+	Color    int32
+	Position int32
+}
+
+type BoardMilestone struct {
+	ID       uuid.UUID
+	BoardID  uuid.UUID
+	Name     string
+	DueOn    pgtype.Date
+	Position int32
+}
+
+type BoardPermission struct {
+	BoardID    uuid.UUID
+	TargetType string
+	TargetID   string
+	Allow      int64
+	Deny       int64
+}
+
+type BoardStatus struct {
+	ID        uuid.UUID
+	BoardID   uuid.UUID
+	Name      string
+	Type      string
+	Color     int32
+	Position  int32
+	IsDefault bool
+}
+
+type BoardView struct {
+	ID        uuid.UUID
+	BoardID   uuid.UUID
+	Name      string
+	Kind      string
+	Filter    []byte
+	GroupBy   string
+	Sort      string
+	Shared    bool
+	CreatedBy uuid.UUID
+	Position  int32
+	CreatedAt time.Time
+}
+
 type Bot struct {
 	UserID              uuid.UUID
 	OwnerUserID         uuid.UUID
@@ -434,6 +500,77 @@ type StickerPack struct {
 	DeletedAt      *time.Time
 }
 
+type Task struct {
+	ID          uuid.UUID
+	BoardID     uuid.UUID
+	Number      int32
+	Title       string
+	Description string
+	StatusID    uuid.UUID
+	Priority    int16
+	CreatedBy   *uuid.UUID
+	Estimate    *int16
+	StartOn     pgtype.Date
+	DueOn       pgtype.Date
+	ParentID    *uuid.UUID
+	MilestoneID *uuid.UUID
+	Position    float64
+	RoomID      uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	StartedAt   *time.Time
+	CompletedAt *time.Time
+	CompletedBy *uuid.UUID
+	ArchivedAt  *time.Time
+}
+
+type TaskActivity struct {
+	ID        uuid.UUID
+	TaskID    uuid.UUID
+	BoardID   uuid.UUID
+	ActorID   *uuid.UUID
+	Kind      string
+	Before    []byte
+	After     []byte
+	CreatedAt time.Time
+}
+
+type TaskAssignee struct {
+	TaskID     uuid.UUID
+	UserID     uuid.UUID
+	IsLead     bool
+	Note       string
+	AssignedBy *uuid.UUID
+	AssignedAt time.Time
+}
+
+type TaskAttachment struct {
+	TaskID   uuid.UUID
+	FileID   uuid.UUID
+	Position int16
+}
+
+type TaskLabel struct {
+	TaskID  uuid.UUID
+	LabelID uuid.UUID
+}
+
+type TaskRelation struct {
+	TaskID    uuid.UUID
+	RelatedID uuid.UUID
+	Kind      string
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+}
+
+type TaskSubscriber struct {
+	TaskID     uuid.UUID
+	UserID     uuid.UUID
+	Muted      bool
+	NotifiedAt *time.Time
+	SeenAt     *time.Time
+}
+
 type User struct {
 	ID                uuid.UUID
 	Email             *string
@@ -576,6 +713,7 @@ type WorkspaceNotificationSetting struct {
 	WorkspaceID uuid.UUID
 	Level       string
 	MutedUntil  *time.Time
+	TaskLevel   string
 }
 
 type WorkspacePlan struct {

@@ -29,6 +29,7 @@ message PlanLimits {
   uint32 stickers = 10;                    // live stickers over all packs of the workspace
   uint32 bots = 20;                        // bots that are members of the workspace (ADR-0031)
   uint32 audio_tier_max_kbps = 21;         // highest voice quality tier, kbps (8 | 16 | 32 | 64; docs/02 «Битрейт»)
+  uint32 boards = 22;                      // live task boards of the workspace (ADR-0042); 0 = no plan limit (≤ 50 always)
 }
 
 // The plan of a workspace as members see it (Workspace.plan).

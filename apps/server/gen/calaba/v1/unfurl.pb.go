@@ -25,13 +25,18 @@ const (
 // server's image proxy (GET /api/unfurl/image?...), so clients never contact third-party
 // hosts directly and users' IP addresses are not exposed.
 type UnfurlResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"` // canonical URL (og:url or the final URL after redirects)
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	SiteName      string                 `protobuf:"bytes,4,opt,name=site_name,json=siteName,proto3" json:"site_name,omitempty"`
-	ImageUrl      string                 `protobuf:"bytes,5,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`       // proxied, empty if none
-	FaviconUrl    string                 `protobuf:"bytes,6,opt,name=favicon_url,json=faviconUrl,proto3" json:"favicon_url,omitempty"` // proxied, empty if none
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Url         string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"` // canonical URL (og:url or the final URL after redirects)
+	Title       string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	SiteName    string                 `protobuf:"bytes,4,opt,name=site_name,json=siteName,proto3" json:"site_name,omitempty"`
+	ImageUrl    string                 `protobuf:"bytes,5,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`       // proxied, empty if none
+	FaviconUrl  string                 `protobuf:"bytes,6,opt,name=favicon_url,json=faviconUrl,proto3" json:"favicon_url,omitempty"` // proxied, empty if none
+	// Own links (ADR-0042): an https://<app host>/t/<KEY-N> or /b/<board id> link is answered from
+	// the database by the caller's rights, never fetched: task (with board: key, name, statuses) or
+	// board only; 404 when the caller cannot see it. title / description are filled as for any card.
+	Task          *Task  `protobuf:"bytes,7,opt,name=task,proto3" json:"task,omitempty"`
+	Board         *Board `protobuf:"bytes,8,opt,name=board,proto3" json:"board,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -108,11 +113,25 @@ func (x *UnfurlResponse) GetFaviconUrl() string {
 	return ""
 }
 
+func (x *UnfurlResponse) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+func (x *UnfurlResponse) GetBoard() *Board {
+	if x != nil {
+		return x.Board
+	}
+	return nil
+}
+
 var File_calaba_v1_unfurl_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_unfurl_proto_rawDesc = "" +
 	"\n" +
-	"\x16calaba/v1/unfurl.proto\x12\tcalaba.v1\"\xb5\x01\n" +
+	"\x16calaba/v1/unfurl.proto\x12\tcalaba.v1\x1a\x16calaba/v1/boards.proto\"\x82\x02\n" +
 	"\x0eUnfurlResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -120,7 +139,9 @@ const file_calaba_v1_unfurl_proto_rawDesc = "" +
 	"\tsite_name\x18\x04 \x01(\tR\bsiteName\x12\x1b\n" +
 	"\timage_url\x18\x05 \x01(\tR\bimageUrl\x12\x1f\n" +
 	"\vfavicon_url\x18\x06 \x01(\tR\n" +
-	"faviconUrlB\x99\x01\n" +
+	"faviconUrl\x12#\n" +
+	"\x04task\x18\a \x01(\v2\x0f.calaba.v1.TaskR\x04task\x12&\n" +
+	"\x05board\x18\b \x01(\v2\x10.calaba.v1.BoardR\x05boardB\x99\x01\n" +
 	"\rcom.calaba.v1B\vUnfurlProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -139,13 +160,17 @@ func file_calaba_v1_unfurl_proto_rawDescGZIP() []byte {
 var file_calaba_v1_unfurl_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_calaba_v1_unfurl_proto_goTypes = []any{
 	(*UnfurlResponse)(nil), // 0: calaba.v1.UnfurlResponse
+	(*Task)(nil),           // 1: calaba.v1.Task
+	(*Board)(nil),          // 2: calaba.v1.Board
 }
 var file_calaba_v1_unfurl_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: calaba.v1.UnfurlResponse.task:type_name -> calaba.v1.Task
+	2, // 1: calaba.v1.UnfurlResponse.board:type_name -> calaba.v1.Board
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_unfurl_proto_init() }
@@ -153,6 +178,7 @@ func file_calaba_v1_unfurl_proto_init() {
 	if File_calaba_v1_unfurl_proto != nil {
 		return
 	}
+	file_calaba_v1_boards_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -32,6 +32,8 @@ type wsState struct {
 	// and only under the write lock (the fan-out path); dropped per room by setRoom/delRoom
 	// and entirely by member and role changes.
 	viewers map[uuid.UUID]map[uuid.UUID]bool
+	// Task boards and task rooms (ADR-0042, boards.go).
+	boardState
 }
 
 // setMember stores a member's built-in role and role ids (mu held).
@@ -200,14 +202,20 @@ func loadState(ctx context.Context, q *sqlc.Queries, wid uuid.UUID) (*wsState, e
 	for _, m := range members {
 		st.setMember(m.UserID, perm.Role(m.Role), perm.IDStrings(m.RoleIds))
 	}
+	if err := loadBoards(ctx, q, wid, st); err != nil {
+		return nil, err
+	}
 	return st, nil
 }
 
 // bits must be called with mu held (read).
 func (s *wsState) bits(roomID, userID uuid.UUID) perm.Bits {
 	m, ok := s.members[userID]
-	if !ok || s.rooms[roomID] == nil {
+	if !ok {
 		return 0
+	}
+	if s.rooms[roomID] == nil {
+		return s.taskRoomBits(roomID, userID) // a task's comment room, or nothing
 	}
 	t, ok := s.targets[roomID]
 	if !ok {

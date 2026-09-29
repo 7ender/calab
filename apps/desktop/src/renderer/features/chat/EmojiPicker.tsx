@@ -179,7 +179,7 @@ function PickerBody({ onPick, canPick, hint }: { onPick: (emoji: string) => void
           }}
           placeholder={t('chat.emojiSearch')}
           aria-label={t('chat.emojiSearch')}
-          className="h-10 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+          className="h-10 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint"
         />
       </div>
       {hint ? (

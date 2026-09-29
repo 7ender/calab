@@ -51,7 +51,7 @@ SELECT w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created
     p.note AS plan_note, p.updated_by AS plan_updated_by, p.updated_at AS plan_updated_at,
     sb.email AS suspended_by_email,
     (SELECT count(*) FROM workspace_members m WHERE m.workspace_id = w.id AND m.role <> 'guest')::integer AS members,
-    (SELECT count(*) FROM rooms r WHERE r.workspace_id = w.id AND r.archived_at IS NULL)::integer AS rooms,
+    (SELECT count(*) FROM rooms r WHERE r.workspace_id = w.id AND r.archived_at IS NULL AND r.type <> 'task')::integer AS rooms,
     (SELECT count(*) FROM workspace_members m JOIN users bu ON bu.id = m.user_id WHERE m.workspace_id = w.id AND bu.is_bot)::integer AS bots,
     (SELECT count(*) FROM sticker_packs sp WHERE sp.workspace_id = w.id AND sp.deleted_at IS NULL)::integer AS sticker_packs,
     coalesce((SELECT max(lm.created_at) FROM rooms r

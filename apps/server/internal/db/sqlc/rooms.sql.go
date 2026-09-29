@@ -69,7 +69,7 @@ INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
 VALUES ($1::uuid, $2, $3, $4,
         coalesce($5::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
-                  WHERE workspace_id = $1::uuid AND archived_at IS NULL)),
+                  WHERE workspace_id = $1::uuid AND archived_at IS NULL AND type <> 'task')),
         $6, $7, $8,
         $9, $10, $11, $12)
 RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval
@@ -431,7 +431,7 @@ func (q *Queries) ListRoomOverrides(ctx context.Context, roomID uuid.UUID) ([]Ro
 
 const listRooms = `-- name: ListRooms :many
 SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval FROM rooms
-WHERE workspace_id = $1::uuid AND archived_at IS NULL
+WHERE workspace_id = $1::uuid AND archived_at IS NULL AND type <> 'task'
 ORDER BY position, id
 `
 

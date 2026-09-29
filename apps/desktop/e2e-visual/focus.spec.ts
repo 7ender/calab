@@ -22,16 +22,17 @@ async function tabWalk(page: Page, max: number): Promise<Stop[]> {
       const cs = getComputedStyle(el);
       const outline = cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) >= 1;
       const shadow = cs.boxShadow !== 'none' && /\d+px \d+px 0px \d+px/.test(cs.boxShadow); // ring-style spread
-      // A composite control may draw the ring on its box (e.g. the composer: focus-within).
-      const box = el.closest('[data-focus-box]');
-      let boxRing = false;
-      if (box) {
-        const probe = document.createElement('span');
-        probe.style.color = 'var(--color-accent)';
-        document.body.appendChild(probe);
-        boxRing = getComputedStyle(box).borderTopColor === getComputedStyle(probe).color;
-        probe.remove();
-      }
+      // A text field marks focus with its border (docs/08 «Фокус»); a composite control may draw
+      // it on its box (the composer: focus-within border; the island's mic + ▾: one outline).
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--color-focus)';
+      document.body.appendChild(probe);
+      const focusColor = getComputedStyle(probe).color;
+      probe.remove();
+      const box = el.closest('[data-focus-box]') ?? el;
+      const bs = getComputedStyle(box);
+      const boxRing =
+        (parseFloat(bs.borderTopWidth) >= 1 && bs.borderTopColor === focusColor) || (box !== el && bs.outlineStyle !== 'none' && parseFloat(bs.outlineWidth) >= 1);
       // A shaped element (a chat bubble with its tail) draws the ring on its shape child as a
       // stack of drop-shadows that follow the outline instead of a rectangular outline.
       const shape = el.querySelector(':scope > [data-focus-shape]');

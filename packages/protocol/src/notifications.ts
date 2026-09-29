@@ -18,6 +18,41 @@ export function effectiveNotificationLevel(
   return !workspace || workspace === NotificationLevel.INHERIT ? NotificationLevel.MENTIONS : workspace;
 }
 
+/** What happened in a task, as far as notifications are concerned (ADR-0042 §4). */
+export type TaskNotifyKind = 'assigned' | 'mentioned' | 'comment' | 'status';
+
+/** One task change by someone else, as seen by one recipient. */
+export interface TaskNotifyFacts {
+  kind: TaskNotifyKind;
+  /** The workspace's «Задачи» level (WorkspaceNotificationSettings.taskLevel); unset = ALL. */
+  level?: NotificationLevel;
+  /** The recipient has a subscription (auto or manual). */
+  subscribed: boolean;
+  /** «Отписаться». */
+  muted: boolean;
+  /** The workspace's muted_until is in the future. */
+  workspaceMuted: boolean;
+}
+
+/**
+ * Whether a task change notifies the recipient (Go notifications.TaskNotifies): nothing with
+ * NONE or a muted workspace; assignments and mentions with ALL and MENTIONS, even unsubscribed;
+ * comments and status changes with ALL, to subscribers who did not mute the task.
+ */
+export function taskNotifies(f: TaskNotifyFacts): boolean {
+  const level = !f.level ? NotificationLevel.ALL : f.level;
+  if (f.workspaceMuted || level === NotificationLevel.NONE) return false;
+  switch (f.kind) {
+    case 'assigned':
+    case 'mentioned':
+      return level === NotificationLevel.ALL || level === NotificationLevel.MENTIONS;
+    case 'comment':
+    case 'status':
+      return level === NotificationLevel.ALL && f.subscribed && !f.muted;
+  }
+  return false;
+}
+
 /** Facts about one incoming message from someone else, as seen by its recipient. */
 export interface NotifyFacts {
   dm: boolean;

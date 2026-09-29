@@ -116,7 +116,7 @@ function PackList({ workspaceId, packs, loaded, onOpen }: { workspaceId: string;
                 key={p.id}
                 type="button"
                 onClick={() => onOpen(p.id)}
-                className="flex min-h-12 w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent"
+                className="flex min-h-12 w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-hover"
                 data-testid="sticker-pack-row"
               >
                 {c ? <StickerImage sticker={c} size={36} /> : <span className="size-9 rounded-[var(--radius-card)] bg-[var(--color-fill)]" aria-hidden />}
@@ -615,7 +615,7 @@ function EmojiField({ value, onPick, chipRef }: { value: string; onPick: (v: str
         type="button"
         aria-label={t('stk.emojiFor')}
         data-testid="sticker-emoji"
-        className="grid size-7 place-items-center rounded-full bg-[var(--color-fill)] text-[16px] leading-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent data-[state=open]:outline-2 data-[state=open]:outline-accent"
+        className="grid size-7 place-items-center rounded-full bg-[var(--color-fill)] text-[16px] leading-none hover:bg-hover data-[state=open]:bg-hover"
       >
         {value}
       </button>

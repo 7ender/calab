@@ -96,6 +96,11 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 }
 
 const deleteUserOverridesInWorkspace = `-- name: DeleteUserOverridesInWorkspace :exec
+WITH boards_gone AS (
+    DELETE FROM board_permissions bp USING boards bb
+    WHERE bp.board_id = bb.id AND bb.workspace_id = $1::uuid
+      AND bp.target_type = 'user' AND bp.target_id = $2::text
+)
 DELETE FROM room_permissions rp
 USING rooms r
 WHERE rp.room_id = r.id AND r.workspace_id = $1::uuid
@@ -107,6 +112,7 @@ type DeleteUserOverridesInWorkspaceParams struct {
 	UserID      string
 }
 
+// A member leaves: their room overrides and board overrides (ADR-0042) go.
 func (q *Queries) DeleteUserOverridesInWorkspace(ctx context.Context, arg DeleteUserOverridesInWorkspaceParams) error {
 	_, err := q.db.Exec(ctx, deleteUserOverridesInWorkspace, arg.WorkspaceID, arg.UserID)
 	return err

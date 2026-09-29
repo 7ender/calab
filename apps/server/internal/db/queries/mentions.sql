@@ -55,10 +55,15 @@ SELECT s.* FROM room_notification_settings s
 WHERE s.user_id = sqlc.arg('user_id')::uuid AND s.room_id = ANY(sqlc.arg('room_ids')::uuid[]);
 
 -- name: UpsertWorkspaceNotificationSettings :one
-INSERT INTO workspace_notification_settings (user_id, workspace_id, level, muted_until)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (user_id, workspace_id) DO UPDATE SET level = EXCLUDED.level, muted_until = EXCLUDED.muted_until
+INSERT INTO workspace_notification_settings (user_id, workspace_id, level, muted_until, task_level)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (user_id, workspace_id) DO UPDATE SET level = EXCLUDED.level, muted_until = EXCLUDED.muted_until, task_level = EXCLUDED.task_level
 RETURNING *;
+
+-- name: GetWorkspaceTaskLevel :one
+-- The stored «Задачи» level of the user in the workspace ('all' without a row, ADR-0042).
+SELECT coalesce((SELECT s.task_level FROM workspace_notification_settings s
+    WHERE s.user_id = $1 AND s.workspace_id = $2), 'all')::text;
 
 -- name: DeleteWorkspaceNotificationSettings :exec
 DELETE FROM workspace_notification_settings WHERE user_id = $1 AND workspace_id = $2;

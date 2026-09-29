@@ -1960,3 +1960,32 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 | G.6 | Ссылка с `requireApproval:false` в той же комнате; bob → `POST …/admissions/{guest}`; бот-токен → `GET` / `POST` admissions | Гость входит сразу; bob — `403`; бот: `GET` по правам, `POST` — `403 BOT_NOT_ALLOWED` |
 
 Автотесты: `go test -tags integration ./internal/app -run GuestAdmission`, unit `internal/guests/admissions_test.go`, мок `e2e-support/mock-admissions.test.ts`.
+
+## Доски задач (1.1.0)
+
+Сервер (ADR-0042; клиент — своя ветка, до него — curl + devtools). Owner `owner@calaba.test`, member `bob@calaba.test`, пространство «Team»; матрица автотестов — `docs/21-boards-testing.md`.
+
+| # | Сценарий | Ожидается |
+|---|---|---|
+| K.1 | Owner: `POST /api/workspaces/{id}/boards {name:"Fintech Next Gen", template: DEVELOPMENT}`, второй с тем же названием, третий с `key:"1X"` | `201`, ключ `FNG` и 6 статусов; второй — `FNG2`; `422`; bob — `403` |
+| K.2 | Bob: `GET …/boards`, `PATCH /api/boards/{id}` | Видит доску с битами `VIEW_BOARD \| CREATE_TASKS`; правка — `403` |
+| K.3 | Приватная доска; owner даёт bob `VIEW_BOARD` лично, потом роли, потом снимает | Без доступа — `404` и нет в списке; с доступом bob получает `BOARD_CREATE` без перезахода, после снятия — `BOARD_DELETE` |
+| K.4 | Гость комнаты: `GET …/boards`, `GET /api/boards/{id}`, `GET /api/rooms/{task.roomId}/messages` | `403`, `404`, `404`; в READY досок нет |
+| K.5 | Бот-токен: список, `POST …/tasks` с ботом-исполнителем, `PUT …/permissions`, `DELETE …?purge=1` | `200`, `201`, `403 BOT_NOT_ALLOWED` ×2 |
+| K.6 | Три задачи (вторая «после первой»), два `isLead` в исполнителях, подзадача подзадачи | `FNG-1..3`, позиции по порядку; `422`; `422` |
+| K.7 | `PATCH {statusId, beforeTaskId}` 100 раз между двумя соседями | Порядок верный, колонка перенумерована (позиции шагом 1024) |
+| K.8 | Задачу в «В работе», затем в «Готово», затем обратно в Todo | `startedAt` один раз; `completedAt/completedBy` ставятся и снимаются |
+| K.9 | Bob правит чужую задачу, свою, назначенную на себя; с `EDIT_TASKS` — чужую | `403`, `200`, `200`, `200` |
+| K.10 | `GET /api/tasks/{id}/activity`, `GET /api/boards/{id}/activity?format=csv` | Записи журнала и комментарии одной лентой (новые первыми); CSV с ключами задач; bob — `403` |
+| K.11 | Комментарий в `task.roomId`: реакция, закреп (owner), поиск `?q=`, файл через `POST /api/boards/{id}/files`, пересылка из/в задачу | Всё как в чате; bob закрепить не может (`403`); комнаты задачи нет в READY и `GET …/rooms` |
+| K.12 | `GET …/tasks?filter=` «мои», «просрочено» (`DUE_ON BEFORE today`), «без исполнителя», текст, `any` | Ровно подходящие задачи; битый фильтр — `422` |
+| K.13 | Виды: общий (owner), личный (bob), вид по умолчанию | Bob — общий `403`; личный видит только bob; `defaultViewId` — только общий |
+| K.14 | `GET /api/me/tasks?scope=lead&open=1`, `GET …/tasks/search?q=FNG-1`, `GET /api/t/fng-1` | Свои задачи; точное совпадение первым; задача с доской и комнатой |
+| K.15 | «Создать задачу из сообщения» из общей комнаты и из приватной, которую bob не видит | Описание начинается с цитаты и ссылки `/m/<room>/<message>`; `404` |
+| K.16 | `PATCH {boardId}` bob и owner (MANAGE_BOARD на обеих) | Bob — `403`; новый ключ `OTH-1`, запись `moved_board`, старая доска получает `TASK_DELETE` |
+| K.17 | Архивировать / восстановить задачу; завершённую 31 день назад — ждать метёлку (или `auto_archive_days`) | Нет в списке, есть в `?archived=1`, комната только для чтения; метёлка архивирует, журнал `archived {auto:true}` |
+| K.18 | Назначить bob, прокомментировать, сменить статус; bob: «Задачи» = «Упоминания», затем «Отписаться» | `TASK_UPDATE` с `notice` ASSIGNED / COMMENT / STATUS в `user:<bob>`, `unreadTaskIds` в READY, `PUT …/read` снимает; при «Упоминания» — только `@bob`; отписка глушит комментарии |
+| K.19 | В чате ссылка `https://<APP_HOST>/t/FNG-1` и `/b/<id>`; от bob — на приватную | `GET /api/unfurl` — карточка задачи/доски без HTTP-запроса; невидимое — `404` |
+| K.20 | Тариф Free: четвёртая доска; удалить статус без `move_to` и дефолтный | `409 PLAN_LIMIT`; `422`; `409` |
+
+Автотесты: `go test -tags integration ./internal/app -run 'Board|Task'`, unit `internal/boards`, векторы `pnpm -F @calaba/protocol test`.

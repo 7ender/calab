@@ -180,7 +180,7 @@ export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; 
           placeholder={t('stk.search')}
           aria-label={t('stk.search')}
           data-testid="sticker-search"
-          className="h-10 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+          className="h-10 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint"
         />
       </div>
       {!found ? (

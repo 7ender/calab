@@ -58,6 +58,24 @@ func (q *Queries) DeleteWorkspaceNotificationSettings(ctx context.Context, arg D
 	return err
 }
 
+const getWorkspaceTaskLevel = `-- name: GetWorkspaceTaskLevel :one
+SELECT coalesce((SELECT s.task_level FROM workspace_notification_settings s
+    WHERE s.user_id = $1 AND s.workspace_id = $2), 'all')::text
+`
+
+type GetWorkspaceTaskLevelParams struct {
+	UserID      uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+// The stored «Задачи» level of the user in the workspace ('all' without a row, ADR-0042).
+func (q *Queries) GetWorkspaceTaskLevel(ctx context.Context, arg GetWorkspaceTaskLevelParams) (string, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceTaskLevel, arg.UserID, arg.WorkspaceID)
+	var column_1 string
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const insertEveryoneMention = `-- name: InsertEveryoneMention :exec
 INSERT INTO message_everyone_mentions (message_id, room_id) VALUES ($1, $2)
 ON CONFLICT DO NOTHING
@@ -214,7 +232,7 @@ func (q *Queries) ListRoomNotificationSettings(ctx context.Context, arg ListRoom
 }
 
 const listWorkspaceNotificationSettings = `-- name: ListWorkspaceNotificationSettings :many
-SELECT s.user_id, s.workspace_id, s.level, s.muted_until FROM workspace_notification_settings s
+SELECT s.user_id, s.workspace_id, s.level, s.muted_until, s.task_level FROM workspace_notification_settings s
 JOIN workspace_members m ON m.workspace_id = s.workspace_id AND m.user_id = s.user_id
 WHERE s.user_id = $1
 `
@@ -234,6 +252,7 @@ func (q *Queries) ListWorkspaceNotificationSettings(ctx context.Context, userID 
 			&i.WorkspaceID,
 			&i.Level,
 			&i.MutedUntil,
+			&i.TaskLevel,
 		); err != nil {
 			return nil, err
 		}
@@ -277,10 +296,10 @@ func (q *Queries) UpsertRoomNotificationSettings(ctx context.Context, arg Upsert
 }
 
 const upsertWorkspaceNotificationSettings = `-- name: UpsertWorkspaceNotificationSettings :one
-INSERT INTO workspace_notification_settings (user_id, workspace_id, level, muted_until)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (user_id, workspace_id) DO UPDATE SET level = EXCLUDED.level, muted_until = EXCLUDED.muted_until
-RETURNING user_id, workspace_id, level, muted_until
+INSERT INTO workspace_notification_settings (user_id, workspace_id, level, muted_until, task_level)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (user_id, workspace_id) DO UPDATE SET level = EXCLUDED.level, muted_until = EXCLUDED.muted_until, task_level = EXCLUDED.task_level
+RETURNING user_id, workspace_id, level, muted_until, task_level
 `
 
 type UpsertWorkspaceNotificationSettingsParams struct {
@@ -288,6 +307,7 @@ type UpsertWorkspaceNotificationSettingsParams struct {
 	WorkspaceID uuid.UUID
 	Level       string
 	MutedUntil  *time.Time
+	TaskLevel   string
 }
 
 func (q *Queries) UpsertWorkspaceNotificationSettings(ctx context.Context, arg UpsertWorkspaceNotificationSettingsParams) (WorkspaceNotificationSetting, error) {
@@ -296,6 +316,7 @@ func (q *Queries) UpsertWorkspaceNotificationSettings(ctx context.Context, arg U
 		arg.WorkspaceID,
 		arg.Level,
 		arg.MutedUntil,
+		arg.TaskLevel,
 	)
 	var i WorkspaceNotificationSetting
 	err := row.Scan(
@@ -303,6 +324,7 @@ func (q *Queries) UpsertWorkspaceNotificationSettings(ctx context.Context, arg U
 		&i.WorkspaceID,
 		&i.Level,
 		&i.MutedUntil,
+		&i.TaskLevel,
 	)
 	return i, err
 }

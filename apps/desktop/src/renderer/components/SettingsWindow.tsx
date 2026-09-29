@@ -256,12 +256,12 @@ export function SettingsWindow({
                       results.current?.querySelector<HTMLElement>('button')?.focus();
                     }
                   }}
-                  className="selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-7 pr-2 mobile:h-10 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted focus-visible:outline-offset-0 [&::-webkit-search-cancel-button]:hidden"
+                  className="selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-7 pr-2 mobile:h-10 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
                 />
               </label>
               ) : null}
               {searching ? (
-                <nav ref={results} aria-label={t('settings.searchResults')} className="flex min-h-0 flex-col gap-px overflow-y-auto" onKeyDown={arrowNav}>
+                <nav ref={results} aria-label={t('settings.searchResults')} className="-m-1 flex min-h-0 flex-col gap-px overflow-y-auto p-1" onKeyDown={arrowNav}>
                   {groups.length === 0 ? <p className="px-2 py-2 text-body text-muted">{t('settings.searchNone')}</p> : null}
                   {groups.map((g) => {
                     const s = sections.find((x) => x.id === g.section);
@@ -310,7 +310,7 @@ export function SettingsWindow({
                   })}
                 </nav>
               ) : (
-                <Tabs.List aria-label={title} className="flex min-h-0 flex-col gap-px overflow-y-auto mobile:flex-row mobile:gap-1.5 mobile:overflow-x-auto mobile:overflow-y-hidden">
+                <Tabs.List aria-label={title} className="-m-1 flex min-h-0 flex-col gap-px overflow-y-auto p-1 mobile:flex-row mobile:gap-1.5 mobile:overflow-x-auto mobile:overflow-y-hidden">
                   {sections.map((s) => (
                     <Tabs.Trigger
                       key={s.id}

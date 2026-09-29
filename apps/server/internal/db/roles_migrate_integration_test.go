@@ -104,7 +104,8 @@ func TestMigration21Roles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string][2]int64{"owner": {1001, 1024}, "admin": {1000, 1024}, "member": {1, 16503}, "guest": {0, 48}}
+	// member: 16503 from 00021, plus VIEW_BOARD | CREATE_TASKS from 00046 (ADR-0042).
+	want := map[string][2]int64{"owner": {1001, 1024}, "admin": {1000, 1024}, "member": {1, 409719}, "guest": {0, 48}}
 	for rows.Next() {
 		var bi string
 		var id uuid.UUID

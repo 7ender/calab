@@ -231,7 +231,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       // Phones: a field is focused only by a tap (iOS would scroll to it and raise the keyboard).
       autoFocus={autoFocus && autoFocusAllowed()}
       className={cx(
-        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:h-10 mobile:px-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus-visible:outline-offset-0 disabled:opacity-50',
+        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:h-10 mobile:px-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint disabled:opacity-50',
         icon ? 'pl-7 mobile:pl-9' : null,
         className,
       )}
@@ -299,7 +299,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
       className={cx(
         // macOS pop-up button: no native chevron; our own ↕ chevron (10 px) sits 8 px from the right edge,
         // the text keeps clear of it (pr-7) and long values end with an ellipsis.
-        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-body text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] focus-visible:outline-offset-0 disabled:opacity-50 disabled:hover:bg-elev',
+        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-body text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] disabled:opacity-50 disabled:hover:bg-elev',
         'select-chevron',
         className,
       )}
@@ -380,8 +380,9 @@ export function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={cx(
             // nowrap: «Push-to-talk» must never break at its hyphen. Selected = a raised, lighter
-            // segment (macOS), in dark too — not a darker «pressed» one.
-            'h-6 whitespace-nowrap rounded-full px-3 text-control font-medium transition-colors duration-[var(--motion-fast)]',
+            // segment (macOS), in dark too — not a darker «pressed» one. Focus ring at offset 0: it
+            // fills the track's 2 px padding instead of spilling onto the neighbours.
+            'h-6 whitespace-nowrap rounded-full px-3 text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
             value === o.value ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
           )}
         >
@@ -429,7 +430,7 @@ export function Slider({
       <SliderP.Track className="relative h-1 grow rounded-full bg-[var(--color-fill-hover)]">
         <SliderP.Range className="absolute h-full rounded-full bg-accent" />
       </SliderP.Track>
-      <SliderP.Thumb aria-label={pointerOnly ? undefined : label} tabIndex={pointerOnly ? -1 : undefined} className="block size-4 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/35%)] focus-visible:outline-2 focus-visible:outline-accent" />
+      <SliderP.Thumb aria-label={pointerOnly ? undefined : label} tabIndex={pointerOnly ? -1 : undefined} className="block size-4 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/35%)]" />
     </SliderP.Root>
   );
 }
@@ -645,7 +646,7 @@ export function Stepper({
     if (next !== value) onCommit(next);
   };
   return (
-    <span className="inline-flex h-7 w-20 shrink-0 items-stretch overflow-hidden rounded-[var(--radius-control)] border border-line bg-elev shadow-[var(--shadow-card)] focus-within:outline focus-within:outline-2 focus-within:outline-accent">
+    <span className="inline-flex h-7 w-20 shrink-0 items-stretch overflow-hidden rounded-[var(--radius-control)] border border-line bg-elev shadow-[var(--shadow-card)] has-[:focus-visible]:border-focus" data-focus-box>
       <input
         ref={input}
         id={id}
