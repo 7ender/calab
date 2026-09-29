@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
@@ -64,14 +65,11 @@ func (s *Service) roomSignals(ctx context.Context, before, after *bundle) {
 
 // FillActive sets WorkspaceSnapshot.active_events of the user's snapshots: the meetings active
 // at now in the rooms each snapshot shows (its permissions map). One query for all of them;
-// guests' snapshots stay empty.
+// guests get the meetings of the rooms they see without attendees («Диплинки для приглашённых»).
 func FillActive(ctx context.Context, q *sqlc.Queries, user uuid.UUID, bot bool, snaps []*v1.WorkspaceSnapshot, now time.Time) error {
 	ids := make([]uuid.UUID, 0, len(snaps))
 	bySnap := make(map[uuid.UUID]*v1.WorkspaceSnapshot, len(snaps))
 	for _, s := range snaps {
-		if s.GetRole() == v1.WorkspaceRole_WORKSPACE_ROLE_GUEST {
-			continue
-		}
 		id, err := uuid.Parse(s.GetWorkspace().GetId())
 		if err != nil {
 			continue
@@ -102,6 +100,10 @@ func FillActive(ctx context.Context, q *sqlc.Queries, user uuid.UUID, bot bool, 
 			continue
 		}
 		s := bySnap[b.ev.WorkspaceID]
+		if s.GetRole() == v1.WorkspaceRole_WORKSPACE_ROLE_GUEST {
+			s.ActiveEvents = append(s.ActiveEvents, pbconv.EventForGuest(b.proto(&o, nil)))
+			continue
+		}
 		rooms := map[uuid.UUID]perm.Bits{*b.ev.RoomID: perm.Bits(s.GetPermissions()[b.ev.RoomID.String()])}
 		v := &viewer{user: user, bot: bot, rooms: rooms}
 		s.ActiveEvents = append(s.ActiveEvents, b.proto(&o, v))

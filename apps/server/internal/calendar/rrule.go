@@ -147,19 +147,21 @@ func (s Series) nth(n int) (Occurrence, bool) {
 	return Occurrence{st.UTC(), st.Add(s.End.Sub(s.Start)).UTC()}, true
 }
 
-// period is a lower bound of the time between two occurrences (DST can shorten a day by 1 h).
-func (s Series) period() time.Duration {
+// stepDays is the number of calendar days between two occurrences of a daily / weekly series.
+func (s Series) stepDays() int {
 	switch s.Rule.Repeat {
-	case v1.EventRepeat_EVENT_REPEAT_DAILY:
-		return 23 * time.Hour
 	case v1.EventRepeat_EVENT_REPEAT_WEEKLY:
-		return 7*24*time.Hour - time.Hour
+		return 7
 	case v1.EventRepeat_EVENT_REPEAT_BIWEEKLY:
-		return 14*24*time.Hour - time.Hour
-	case v1.EventRepeat_EVENT_REPEAT_MONTHLY:
-		return 28*24*time.Hour - time.Hour
+		return 14
 	}
-	return 0
+	return 1
+}
+
+// civilDay numbers the calendar day of t (in its location).
+func civilDay(t time.Time) int {
+	y, m, d := t.Date()
+	return int(time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Unix() / 86400)
 }
 
 // Between returns the live occurrences overlapping [from, to) (end > from, start < to), in
@@ -173,16 +175,20 @@ func (s Series) Between(from, to time.Time) []Occurrence {
 		}
 		return out
 	}
-	// Skip ahead: occurrence n starts at least n periods after the first one. Start a few
-	// periods early so no occurrence overlapping `from` is missed.
+	// Skip ahead by calendar days / months (exact, whatever the age of the series): occurrence
+	// n starts on the n-th step's local date, so every occurrence before the chosen n starts at
+	// least a day before from − duration and cannot overlap [from, to).
 	n := 0
 	if gap := from.Sub(s.End); gap > 0 {
-		n = max(int(gap/s.period())-2, 0)
 		if s.Rule.Repeat == v1.EventRepeat_EVENT_REPEAT_MONTHLY {
 			// Months are 28–31 days: skip by calendar months instead.
 			fy, fm, _ := from.In(s.Loc).Date()
 			sy, sm, _ := s.Start.In(s.Loc).Date()
 			n = max((fy-sy)*12+int(fm-sm)-2, 0)
+		} else {
+			ref := from.Add(-s.End.Sub(s.Start)).In(s.Loc)
+			days := civilDay(ref) - civilDay(s.Start.In(s.Loc))
+			n = max(days/s.stepDays()-1, 0)
 		}
 	}
 	for steps := 0; steps < maxOccurrences*3 && len(out) < maxOccurrences; steps, n = steps+1, n+1 {

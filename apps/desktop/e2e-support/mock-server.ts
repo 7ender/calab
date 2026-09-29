@@ -344,14 +344,17 @@ import {
 } from './fixtures';
 import { MARKETING_UNFURLS } from './fixtures-marketing';
 import {
+  ACTIVE_BEFORE_MS,
   REMINDER_CHOICES,
   activeOccurrence,
   counts,
+  eventForGuest,
   eventOut,
   involves,
   occurrences,
   parseRsvpToken,
   rsvpToken,
+  viewToken,
   type CalEventRec,
   type EmailView,
   type Occurrence,
@@ -567,6 +570,14 @@ export interface MockServer {
   setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void;
   /** The answer link token of an external attendee (the page /e/<id>/rsvp?t=…). */
   eventRsvpToken(eventId: string, email: string, status: AttendeeStatus): string;
+  /** The view token of an external attendee: the meeting link of its mail, /e/<id>?t=… (no answers). */
+  eventViewToken(eventId: string, email: string): string;
+  /**
+   * The guest link of an external attendee into the meeting's room (made on first call, like
+   * the server's: single use, from 15 minutes before the next occurrence until 1 h after it).
+   * Returns the absolute /r/<code> URL; GET /api/event-rsvp then carries it as guest_url.
+   */
+  eventGuestLink(eventId: string, email: string): string;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -616,6 +627,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
     setEventRecording: (id, at, rec) => impl.setEventRecording(id, at, rec),
     eventRsvpToken: (id, email, st) => rsvpToken(id, email, st),
+    eventViewToken: (id, email) => viewToken(id, email),
+    eventGuestLink: (id, email) => impl.eventGuestLink(id, email),
   };
 }
 
@@ -1295,7 +1308,7 @@ class MockImpl {
       badges: this.badgesOf(wsId),
       backgrounds: this.backgroundsOf(wsId),
       sounds: this.soundsOf(wsId),
-      activeEvents: m && m.role !== WorkspaceRole.GUEST ? this.activeEvents(wsId, userId) : [],
+      activeEvents: m ? this.activeEvents(wsId, userId) : [],
     });
   }
 
@@ -5448,11 +5461,42 @@ class MockImpl {
     return { view: bot ? 'none' : inv || canEdit ? 'full' : 'masked', canEdit };
   }
 
+  /** A guest of the workspace who can view the meeting's room (ADR-0038 «Диплинки для приглашённых»). */
+  private calGuestSees(rec: CalEventRec, userId: string): boolean {
+    const m = this.member(rec.ev.workspaceId, userId);
+    const room = rec.ev.roomId ? this.state.rooms.get(rec.ev.roomId) : undefined;
+    return !!m && m.role === WorkspaceRole.GUEST && !!room && !rec.ev.cancelledAt && this.canView(room, userId);
+  }
+
+  /** The event for a member; a guest who sees its room → 403, anyone else → 404. */
   private calRec(id: string, userId: string): { rec: CalEventRec; view: EmailView; canEdit: boolean } {
     const rec = this.calEvents.get(id);
     const v = rec ? this.calView(rec, userId) : null;
+    if (rec && !v && this.calGuestSees(rec, userId)) throw forbidden('the calendar is not available for guests');
     if (!rec || !v) throw notFound('event not found');
     return { rec, ...v };
+  }
+
+  eventGuestLink(eventId: string, email: string): string {
+    const rec = this.calEvents.get(eventId);
+    const addr = email.trim().toLowerCase();
+    if (!rec?.ev.roomId || !rec.ev.attendees.some((a) => a.email === addr)) throw notFound('external attendee of a meeting with a room not found');
+    rec.guestLinks ??= new Map();
+    let inv = this.state.roomInvites.get(rec.guestLinks.get(addr) ?? '');
+    if (!inv) {
+      if (!this.state.rooms.has(rec.ev.roomId)) throw notFound('room not found');
+      const occ = occurrences(rec, this.calNow(), Infinity)[0] ?? { startMs: timestampMs(rec.ev.startsAt ?? timestampFromMs(0)), endMs: timestampMs(rec.ev.endsAt ?? timestampFromMs(0)) };
+      const id = nextId(this.state, 'invite');
+      inv = create(RoomInviteSchema, {
+        id, roomId: rec.ev.roomId, workspaceId: rec.ev.workspaceId, code: `mock-meet-${id.slice(-4)}`, createdBy: rec.ev.organizerId,
+        maxUses: 1, uses: 0, allowGuests: true, allowSpeak: true, allowMessages: true, allowFiles: false, allowStream: false,
+        notBefore: timestampFromMs(occ.startMs - ACTIVE_BEFORE_MS), expiresAt: timestampFromMs(occ.endMs + 3_600_000), eventId: rec.ev.id,
+        createdAt: tick(this.state),
+      });
+      this.state.roomInvites.set(id, inv);
+      rec.guestLinks.set(addr, id);
+    }
+    return `${this.url}/r/${inv.code}`;
   }
 
   /** EVENT_* to everyone who may see the event, each with their view of the addresses. */
@@ -5468,6 +5512,9 @@ class MockImpl {
     const ev = rec.ev;
     this.fanout((u) => {
       const room = this.state.rooms.get(ev.roomId);
+      if (this.calGuestSees(rec, u)) {
+        return { event: { case: 'roomEventActive', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, event: eventForGuest(eventOut(rec, occ, 'none', '', false)) } } };
+      }
       const v = this.calView(rec, u);
       if (!room || !v || !this.canView(room, u)) return null;
       return { event: { case: 'roomEventActive', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, event: eventOut(rec, occ, v.view, '', false) } } };
@@ -5479,7 +5526,7 @@ class MockImpl {
     this.fanout((u) => {
       const room = this.state.rooms.get(ev.roomId);
       const m = this.member(ev.workspaceId, u);
-      if (!room || !m || m.role === WorkspaceRole.GUEST || !this.canView(room, u)) return null;
+      if (!room || !m || !this.canView(room, u)) return null; // guests of the room too
       return { event: { case: 'roomEventEnded', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, eventId: ev.id, occurrenceAt: timestampFromMs(occ.startMs) } } };
     });
   }
@@ -5617,7 +5664,7 @@ class MockImpl {
     rec.recordings.set(occurrenceAtMs, recordingId);
   }
 
-  /** Meetings active now in the rooms a member sees (WorkspaceSnapshot.active_events). */
+  /** Meetings active now in the rooms a member sees (WorkspaceSnapshot.active_events); guests: without attendees. */
   private activeEvents(wsId: string, userId: string): CalendarEvent[] {
     const now = this.calNow();
     const out: CalendarEvent[] = [];
@@ -5626,7 +5673,8 @@ class MockImpl {
       const v = this.calView(rec, userId);
       const room = this.state.rooms.get(rec.ev.roomId);
       const occ = activeOccurrence(rec, now);
-      if (v && occ && room && this.canView(room, userId)) out.push(eventOut(rec, occ, v.view, userId, v.canEdit));
+      if (occ && this.calGuestSees(rec, userId)) out.push(eventForGuest(eventOut(rec, occ, 'none', '', false)));
+      else if (v && occ && room && this.canView(room, userId)) out.push(eventOut(rec, occ, v.view, userId, v.canEdit));
     }
     return out;
   }
@@ -5677,6 +5725,14 @@ class MockImpl {
 
     this.route('GET', '/api/events/:id', (c) => {
       const me = this.uid(c);
+      const g = this.calEvents.get(c.params[0] ?? '');
+      if (g && this.calGuestSees(g, me)) {
+        // A guest: the occurrence active now in a room it sees, without attendees; else 404.
+        const occ = activeOccurrence(g, this.calNow());
+        if (!occ) throw notFound('event not found');
+        sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventForGuest(eventOut(g, occ, 'none', '', false)) });
+        return;
+      }
       const { rec, view, canEdit } = this.calRec(c.params[0] ?? '', me);
       sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(rec, null, view, me, canEdit) });
     });
@@ -5793,23 +5849,36 @@ class MockImpl {
     });
 
     // External attendees' answer page (/e/<id>/rsvp?t=…): preview and answer, no login.
-    const byToken = (tok: string): { rec: CalEventRec; a: CalendarEventAttendee; status: AttendeeStatus } => {
+    // The meeting link of that mail (/e/<id>?t=<view token>) opens the same page; a view token
+    // answers nothing (POST → 400), the page answers with the response's answer tokens.
+    const endedAt = (rec: CalEventRec): number => {
+      const last = occurrences(rec, 0, Infinity).at(-1);
+      return rec.ev.repeat === EventRepeat.UNSPECIFIED && last ? last.endMs : Infinity;
+    };
+    const byToken = (tok: string): { rec: CalEventRec; a: CalendarEventAttendee; status: AttendeeStatus; view: boolean } => {
       const t = parseRsvpToken(tok);
       const rec = t ? this.calEvents.get(t.eventId) : undefined;
       const a = rec?.ev.attendees.find((x) => x.email && x.email === t?.email);
       if (!t || !rec || !a) throw notFound('invitation not found');
-      const occ = occurrences(rec, 0, Infinity).at(-1);
-      if (rec.ev.repeat === EventRepeat.UNSPECIFIED && occ && occ.endMs <= this.calNow()) {
-        throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
-      }
-      return { rec, a, status: t.status };
+      if (endedAt(rec) + (t.view ? 3_600_000 : 0) <= this.calNow()) throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
+      return { rec, a, status: t.status, view: t.view };
     };
     const rsvpOut = (rec: CalEventRec, a: CalendarEventAttendee, status: AttendeeStatus): MessageInitShape<typeof EventRsvpTokenResponseSchema> => {
       const occ = occurrences(rec, this.calNow(), Infinity)[0] ?? { startMs: ms(rec.ev.startsAt), endMs: ms(rec.ev.endsAt) };
+      const org = this.state.users.get(rec.ev.organizerId);
+      const open = !rec.ev.cancelledAt && this.calNow() < endedAt(rec);
+      const inv = this.state.roomInvites.get(rec.guestLinks?.get(a.email) ?? '');
       return {
         eventId: rec.ev.id, title: rec.ev.title, startsAt: timestampFromMs(occ.startMs), endsAt: timestampFromMs(occ.endMs), allDay: rec.ev.allDay,
-        tz: rec.ev.tz, organizerName: this.state.users.get(rec.ev.organizerId)?.user.displayName ?? '',
+        tz: rec.ev.tz, organizerName: org?.user.displayName ?? '',
         workspaceName: this.state.workspaces.get(rec.ev.workspaceId)?.name ?? '', status, email: a.email, cancelled: !!rec.ev.cancelledAt,
+        description: rec.ev.description, roomName: rec.ev.roomId ? (this.state.rooms.get(rec.ev.roomId)?.name ?? '') : '', myStatus: a.status,
+        acceptToken: open ? rsvpToken(rec.ev.id, a.email, AttendeeStatus.ACCEPTED) : '',
+        maybeToken: open ? rsvpToken(rec.ev.id, a.email, AttendeeStatus.MAYBE) : '',
+        declineToken: open ? rsvpToken(rec.ev.id, a.email, AttendeeStatus.DECLINED) : '',
+        ...(inv && rec.ev.roomId ? { guestUrl: `${this.url}/r/${inv.code}`, guestFrom: inv.notBefore, guestUntil: inv.expiresAt } : {}),
+        repeat: rec.ev.repeat, ...(rec.ev.repeatUntil ? { repeatUntil: rec.ev.repeatUntil } : {}),
+        organizerEmail: org?.emailVerified ? org.email : '',
       };
     };
     this.route('GET', '/api/event-rsvp', (c) => {
@@ -5817,7 +5886,8 @@ class MockImpl {
       sendMsg(c.res, 200, EventRsvpTokenResponseSchema, rsvpOut(rec, a, status));
     });
     this.route('POST', '/api/event-rsvp', (c) => {
-      const { rec, a, status } = byToken(parseBody(c, EventRsvpTokenRequestSchema).token);
+      const { rec, a, status, view } = byToken(parseBody(c, EventRsvpTokenRequestSchema).token);
+      if (view) throw new HttpError(400, ErrorCode.BAD_REQUEST, 'a view token cannot answer: use an answer token');
       if (rec.ev.cancelledAt) throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
       if (a.status !== status) {
         a.status = status;

@@ -125,6 +125,8 @@ type Config struct {
 	// Mail limits: per recipient address and for the whole server, per hour.
 	MailPerAddressPerHour int `env:"MAIL_PER_ADDRESS_PER_HOUR" envDefault:"3"`
 	MailPerHour           int `env:"MAIL_PER_HOUR" envDefault:"200"`
+	// Meeting mail (invitations, changes, cancellations) per address: a bucket of its own.
+	MailEventsPerAddressPerHour int `env:"MAIL_EVENTS_PER_ADDRESS_PER_HOUR" envDefault:"10"`
 
 	// Bot API limits per bot (ADR-0031): requests per second (burst = one second's worth) and
 	// messages per minute. 0 = the default.
@@ -235,8 +237,8 @@ func (c *Config) Validate() error {
 				errs = append(errs, fmt.Errorf("SMTP_HOST: bad port %q", p))
 			}
 		}
-		if c.MailPerAddressPerHour < 1 || c.MailPerHour < 1 {
-			errs = append(errs, errors.New("MAIL_PER_ADDRESS_PER_HOUR and MAIL_PER_HOUR must be >= 1"))
+		if c.MailPerAddressPerHour < 1 || c.MailPerHour < 1 || c.MailEventsPerAddressPerHour < 1 {
+			errs = append(errs, errors.New("MAIL_PER_ADDRESS_PER_HOUR, MAIL_EVENTS_PER_ADDRESS_PER_HOUR and MAIL_PER_HOUR must be >= 1"))
 		}
 	}
 	if Origin(c.GPTunnelAPIURL) == "" {

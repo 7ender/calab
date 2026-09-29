@@ -17,6 +17,8 @@ import (
 // attendee links to the web page /e/<id>/rsvp?t=<token>; the page shows the meeting
 // (GET /api/event-rsvp?t=…) and stores the answer (POST /api/event-rsvp). Not a GET that
 // changes state: mail scanners open links in mail, they would answer for the attendee.
+// The meeting link of that mail is /e/<id>?t=<view token> («Диплинки для приглашённых»): the
+// same page, which answers with the answer tokens of the response.
 
 var errEventOver = httpx.Coded(http.StatusGone, v1.ErrorCode_ERROR_CODE_EVENT_OVER, "the meeting is over")
 
@@ -55,32 +57,69 @@ func (s *Service) claimsOf(r *http.Request, tok string) (*bundle, sqlc.EventAtte
 	return nil, none, c, httpx.NotFound("invitation") // no longer invited
 }
 
-func (s *Service) rsvpResponse(r *http.Request, b *bundle, c rsvpClaims, status string) *v1.EventRsvpTokenResponse {
+var errViewToken = httpx.BadRequest("a view token cannot answer: use an answer token")
+
+// rsvpResponse describes b to the external attendee a (ADR-0038 «Диплинки для приглашённых»):
+// the meeting, its own stored answer, fresh answer tokens and its guest link. No other
+// attendee is listed.
+func (s *Service) rsvpResponse(r *http.Request, b *bundle, a sqlc.EventAttendee, c rsvpClaims) *v1.EventRsvpTokenResponse {
+	ctx := r.Context()
+	now := s.Now()
 	out := &v1.EventRsvpTokenResponse{
-		EventId: b.ev.ID.String(), Title: b.ev.Title, AllDay: b.ev.AllDay, Tz: b.ev.Tz, Status: statusProto(status),
-		Email: c.Email, Cancelled: b.ev.CancelledAt != nil,
+		EventId: b.ev.ID.String(), Title: b.ev.Title, AllDay: b.ev.AllDay, Tz: b.ev.Tz, Email: c.Email,
+		Cancelled: b.ev.CancelledAt != nil, Description: b.ev.Description, MyStatus: statusProto(a.Status),
+		Repeat: b.series.Rule.Repeat,
 	}
-	occ, ok := b.series.Next(s.Now(), lookAhead)
+	if c.Status != statusView {
+		out.Status = statusProto(c.Status)
+	}
+	if u := b.series.Rule.Until; u != nil {
+		out.RepeatUntil = timestamppb.New(*u)
+	}
+	occ, ok := b.series.Next(now, lookAhead)
 	if !ok {
 		occ = Occurrence{b.series.Start, b.series.End}
 	}
 	out.StartsAt, out.EndsAt = timestamppb.New(occ.Start), timestamppb.New(occ.End)
-	if u, err := s.db.Q.GetUser(r.Context(), b.ev.OrganizerID); err == nil {
-		out.OrganizerName = u.DisplayName
+	if exp := s.tokenExpiry(b); b.ev.CancelledAt == nil && now.Before(exp) {
+		sign := func(st string) string {
+			return signRSVP(s.key, rsvpClaims{Event: b.ev.ID, Status: st, Email: c.Email, Exp: exp})
+		}
+		out.AcceptToken, out.MaybeToken, out.DeclineToken = sign(StatusAccepted), sign(StatusMaybe), sign(StatusDeclined)
 	}
-	if ws, err := s.db.Q.GetWorkspace(r.Context(), b.ev.WorkspaceID); err == nil {
+	if u, err := s.db.Q.GetUser(ctx, b.ev.OrganizerID); err == nil {
+		out.OrganizerName = u.DisplayName
+		if u.Email != nil && u.EmailVerifiedAt != nil { // already in its invite.ics / Reply-To
+			out.OrganizerEmail = *u.Email
+		}
+	}
+	if ws, err := s.db.Q.GetWorkspace(ctx, b.ev.WorkspaceID); err == nil {
 		out.WorkspaceName = ws.Name
+	}
+	if b.ev.RoomID != nil {
+		if room, err := s.db.Q.GetRoom(ctx, *b.ev.RoomID); err == nil {
+			out.RoomName = room.Name
+		}
+		if inv, ok := s.usableLink(ctx, b, a); ok {
+			out.GuestUrl = s.guestURL(inv.Code)
+			if inv.NotBefore != nil {
+				out.GuestFrom = timestamppb.New(*inv.NotBefore)
+			}
+			if inv.ExpiresAt != nil {
+				out.GuestUntil = timestamppb.New(*inv.ExpiresAt)
+			}
+		}
 	}
 	return out
 }
 
 // publicPreview: GET /api/event-rsvp?t=<token>.
 func (s *Service) publicPreview(w http.ResponseWriter, r *http.Request) error {
-	b, _, c, err := s.claimsOf(r, r.URL.Query().Get("t"))
+	b, a, c, err := s.claimsOf(r, r.URL.Query().Get("t"))
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, s.rsvpResponse(r, b, c, c.Status))
+	httpx.Write(w, http.StatusOK, s.rsvpResponse(r, b, a, c))
 	return nil
 }
 
@@ -94,6 +133,9 @@ func (s *Service) publicAnswer(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if c.Status == statusView {
+		return errViewToken
+	}
 	if b.ev.CancelledAt != nil {
 		return errEventOver
 	}
@@ -106,7 +148,8 @@ func (s *Service) publicAnswer(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		s.publishRSVP(r.Context(), b, upd)
+		a = upd
 	}
-	httpx.Write(w, http.StatusOK, s.rsvpResponse(r, b, c, c.Status))
+	httpx.Write(w, http.StatusOK, s.rsvpResponse(r, b, a, c))
 	return nil
 }

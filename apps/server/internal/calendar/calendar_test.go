@@ -1,6 +1,10 @@
 package calendar
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -129,6 +133,57 @@ func TestExpandAcrossDST(t *testing.T) {
 	o := occ[0]
 	if !o.Active(o.Start.Add(-15*time.Minute)) || o.Active(o.Start.Add(-16*time.Minute)) || o.Active(o.End) {
 		t.Error("active window")
+	}
+}
+
+// A series started long ago expands like a brute-force walk from its first occurrence: the
+// skip-ahead never drops occurrences (a 23 h "period" lost a daily meeting's occurrences
+// after ~7 weeks), across DST, for multi-day meetings and all four repeats.
+func TestExpandOldSeriesMatchesBruteForce(t *testing.T) {
+	brute := func(s Series, from, to time.Time) []Occurrence {
+		var out []Occurrence
+		for n := 0; n < 100000; n++ {
+			o, ok := s.nth(n)
+			if !ok {
+				continue
+			}
+			if !o.Start.Before(to) {
+				break
+			}
+			if o.End.After(from) {
+				out = append(out, o)
+			}
+		}
+		return out
+	}
+	for _, zone := range []string{"UTC", "Europe/Berlin", "America/New_York", "Australia/Lord_Howe"} {
+		loc := mustLoc(t, zone)
+		for _, rep := range []v1.EventRepeat{v1.EventRepeat_EVENT_REPEAT_DAILY, v1.EventRepeat_EVENT_REPEAT_WEEKLY,
+			v1.EventRepeat_EVENT_REPEAT_BIWEEKLY, v1.EventRepeat_EVENT_REPEAT_MONTHLY} {
+			for _, dur := range []time.Duration{30 * time.Minute, 50 * time.Hour, 7 * 24 * time.Hour} {
+				start := time.Date(2021, 1, 31, 23, 30, 0, 0, loc)
+				s := Series{Start: start.UTC(), End: start.Add(dur).UTC(), Loc: loc, Rule: Rule{Repeat: rep}}
+				for _, from := range []time.Time{
+					time.Date(2021, 3, 20, 0, 0, 0, 0, loc), time.Date(2026, 9, 1, 0, 0, 0, 0, loc),
+					time.Date(2031, 10, 26, 1, 0, 0, 0, loc), time.Date(2034, 2, 28, 12, 0, 0, 0, loc),
+				} {
+					to := from.Add(MaxListWindow)
+					got, want := starts(s.Between(from, to), loc), starts(brute(s, from, to), loc)
+					if strings.Join(got, ",") != strings.Join(want, ",") {
+						t.Errorf("%s %v %v from %v: got %d occurrences, want %d", zone, rep, dur, from, len(got), len(want))
+					}
+				}
+			}
+		}
+	}
+}
+
+// TEXT escaping: the separators and line breaks are escaped, other control characters (a CR
+// alone could end the content line) are dropped.
+func TestICSText(t *testing.T) {
+	in := "a;b,c\\d\r\nnext\rX\x00\x0bY\tZ\x7f"
+	if got, want := icsText(in), `a\;b\,c\\d\nnextXY`+"\tZ"; got != want {
+		t.Errorf("icsText = %q, want %q", got, want)
 	}
 }
 
@@ -268,6 +323,34 @@ func TestRSVPToken(t *testing.T) {
 	}
 	if _, err := verifyRSVP(key, "", now); err != errTokenInvalid {
 		t.Errorf("empty: %v", err)
+	}
+	// A view token (the meeting link of the mail) round-trips with its own status and differs
+	// from every answer token of the same address.
+	v := c
+	v.Status = statusView
+	vt := signRSVP(key, v)
+	if got, err := verifyRSVP(key, vt, now); err != nil || got.Status != statusView || got.Email != c.Email {
+		t.Fatalf("view: %+v %v", got, err)
+	}
+	seen := map[string]bool{vt: true}
+	for _, st := range []string{StatusAccepted, StatusDeclined, StatusMaybe} {
+		a := c
+		a.Status = st
+		at := signRSVP(key, a)
+		if seen[at] {
+			t.Errorf("%s token equals another", st)
+		}
+		seen[at] = true
+	}
+	// An unknown status byte is invalid even with a valid signature.
+	raw, _ := base64.RawURLEncoding.DecodeString(vt)
+	body := raw[:len(raw)-macLen]
+	body[16] = 9
+	m := hmac.New(sha256.New, key)
+	m.Write(body)
+	forged := base64.RawURLEncoding.EncodeToString(m.Sum(slices.Clone(body))[:len(body)+macLen])
+	if _, err := verifyRSVP(key, forged, now); err != errTokenInvalid {
+		t.Errorf("unknown status: %v", err)
 	}
 }
 

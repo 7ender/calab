@@ -81,9 +81,12 @@ const MaxRetry = 24 * time.Hour
 
 // Config of the service.
 type Config struct {
-	PerAddressPerHour int    // MAIL_PER_ADDRESS_PER_HOUR (3)
-	PerHour           int    // MAIL_PER_HOUR (200), server-wide
-	Secret            []byte // seals params at rest (derived key); JWT_SECRET
+	PerAddressPerHour int // MAIL_PER_ADDRESS_PER_HOUR (3)
+	// EventsPerAddressPerHour: meeting mail (event_*) per address, a bucket of its own so that
+	// invitations never use up the budget of codes (MAIL_EVENTS_PER_ADDRESS_PER_HOUR, 10).
+	EventsPerAddressPerHour int
+	PerHour                 int    // MAIL_PER_HOUR (200), server-wide
+	Secret                  []byte // seals params at rest (derived key); JWT_SECRET
 }
 
 // Service queues and delivers mail.
@@ -93,6 +96,7 @@ type Service struct {
 	sender  Sender
 	box     *sealbox.Box
 	perAddr *redisx.RateLimiter
+	evAddr  *redisx.RateLimiter // meeting mail (event_*) per address
 	global  *redisx.RateLimiter
 	wake    chan struct{}
 	token   string // this instance's lock token
@@ -110,9 +114,14 @@ var ErrDisabled = httpx.Coded(http.StatusServiceUnavailable, v1.ErrorCode_ERROR_
 // New creates the service. sender nil = mail disabled (Enabled() false, Enqueue fails).
 func New(cfg Config, d *db.DB, r rueidis.Client, sender Sender) *Service {
 	perAddr, perHour := max(cfg.PerAddressPerHour, 1), max(cfg.PerHour, 1)
+	evAddr := cfg.EventsPerAddressPerHour
+	if evAddr <= 0 {
+		evAddr = 10
+	}
 	return &Service{
 		db: d, redis: r, sender: sender, box: sealbox.New("calaba/mail-outbox/v1", cfg.Secret),
 		perAddr: redisx.NewRateLimiter(r, "rl:mail-addr:", perAddr, float64(perAddr)/60),
+		evAddr:  redisx.NewRateLimiter(r, "rl:mail-event-addr:", evAddr, float64(evAddr)/60),
 		global:  redisx.NewRateLimiter(r, "rl:mail-server:", perHour, float64(perHour)/60),
 		wake:    make(chan struct{}, 1),
 		token:   uuid.NewString(),
@@ -133,7 +142,11 @@ func (s *Service) Enqueue(ctx context.Context, q *sqlc.Queries, m Mail) error {
 	if _, ok := templates[m.Template]; !ok {
 		return fmt.Errorf("mail: unknown template %q", m.Template)
 	}
-	if err := s.perAddr.Take(ctx, strings.ToLower(m.To)); err != nil {
+	lim := s.perAddr
+	if isEventTemplate(m.Template) {
+		lim = s.evAddr
+	}
+	if err := lim.Take(ctx, strings.ToLower(m.To)); err != nil {
 		return err
 	}
 	sealed, err := s.seal(m.Params)

@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -15,6 +16,8 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/pbconv"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // occurrenceRow is one occurrence of a list, for sorting.
@@ -78,7 +81,8 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 }
 
 // event loads the event of the path for the caller: 404 when it does not exist or they cannot
-// see it.
+// see it. A guest of the workspace who can view the event's room gets the bundle with
+// errGuest (403 unless the caller serves them, see get).
 func (s *Service) event(r *http.Request, q *sqlc.Queries) (*bundle, *viewer, error) {
 	id, err := httpx.PathUUID(r, "id", "event")
 	if err != nil {
@@ -92,6 +96,9 @@ func (s *Service) event(r *http.Request, q *sqlc.Queries) (*bundle, *viewer, err
 		return nil, nil, err
 	}
 	v, err := requestViewer(r, ev.WorkspaceID, q)
+	if errors.Is(err, errGuest) {
+		return s.guestEvent(r, q, ev)
+	}
 	if err != nil {
 		if httpx.AsError(err) != nil {
 			return nil, nil, httpx.NotFound("event")
@@ -108,9 +115,38 @@ func (s *Service) event(r *http.Request, q *sqlc.Queries) (*bundle, *viewer, err
 	return b, v, nil
 }
 
-// get: GET /api/events/{id} — the series (a cancelled event too, with cancelled_at).
+// guestEvent: a guest (ADR-0016) reaches a meeting only through a room it can view
+// («Диплинки для приглашённых»): the bundle and errGuest then, else 404.
+func (s *Service) guestEvent(r *http.Request, q *sqlc.Queries, ev sqlc.Event) (*bundle, *viewer, error) {
+	if ev.RoomID == nil || ev.CancelledAt != nil {
+		return nil, nil, httpx.NotFound("event")
+	}
+	acc, err := perm.FromContext(r.Context()).Room(r.Context(), *ev.RoomID, auth.MustFromContext(r.Context()).UserID)
+	if errors.Is(err, perm.ErrNoRoom) || (err == nil && !acc.Bits.Has(perm.ViewRoom)) {
+		return nil, nil, httpx.NotFound("event")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	b, err := loadOne(r.Context(), q, ev)
+	if err != nil {
+		return nil, nil, err
+	}
+	return b, nil, errGuest
+}
+
+// get: GET /api/events/{id} — the series (a cancelled event too, with cancelled_at). A guest
+// gets the occurrence active now in a room it can view, without attendees; else 404.
 func (s *Service) get(w http.ResponseWriter, r *http.Request) error {
 	b, v, err := s.event(r, s.db.Q)
+	if errors.Is(err, errGuest) {
+		o, ok := activeOcc(b, s.Now())
+		if !ok {
+			return httpx.NotFound("event")
+		}
+		httpx.Write(w, http.StatusOK, &v1.CalendarEventResponse{Event: pbconv.EventForGuest(b.proto(&o, nil))})
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -489,6 +525,11 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	if !v.canEdit(before) {
 		return httpx.Forbidden("only the organizer or a room manager may cancel the meeting")
 	}
+	// Each cancelled occurrence mails every attendee and grows the EXDATE list: same budget as
+	// the other changes.
+	if err := s.writes.Take(ctx, auth.MustFromContext(ctx).UserID.String()); err != nil {
+		return err
+	}
 	wsID := before.ev.WorkspaceID
 	if occStr := r.URL.Query().Get("occurrence"); occStr != "" {
 		occ, err := time.Parse(time.RFC3339, occStr)
@@ -571,6 +612,9 @@ func (s *Service) rsvp(w http.ResponseWriter, r *http.Request) error {
 	}
 	if _, ok := b.attendee(me); !ok {
 		return httpx.Forbidden("only attendees answer")
+	}
+	if err := s.writes.Take(ctx, me.String()); err != nil { // every answer is a workspace broadcast
+		return err
 	}
 	a, err := s.db.Q.SetEventAttendeeStatus(ctx, sqlc.SetEventAttendeeStatusParams{EventID: b.ev.ID, UserID: &me, Status: status})
 	if err != nil {
