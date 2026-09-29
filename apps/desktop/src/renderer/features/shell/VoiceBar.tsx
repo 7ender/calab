@@ -7,7 +7,9 @@ import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
 import { Badge, Button, Tip, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
 import { BUILTIN_BACKGROUNDS } from '../../lib/media/background/images';
-import type { BackgroundKind } from '../../lib/media/background/logic';
+import { isWorkspaceImage, workspaceImageId, type BackgroundKind } from '../../lib/media/background/logic';
+import { thumbnailPath } from '../../lib/api/endpoints';
+import { MediaImg } from '../../components/MediaImg';
 import { backgroundAvailable } from '../../services/cameraBackground';
 import { useCustomBackgrounds } from '../voice/BackgroundPicker';
 import { setCameraEffects } from '../voice/CameraAppearance';
@@ -21,7 +23,7 @@ import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../sto
 import { RecordingPill } from '../voice/Recording';
 import { SoundChip, SoundboardButton } from '../voice/Soundboard';
 import { MyStreamAnnot } from '../voice/Annotations';
-import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { useBackgroundList, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { dmPeer } from '../../stores/dms';
 import { openDm } from '../../services/dms';
 import { NoiseButton } from './NoisePopover';
@@ -337,8 +339,9 @@ export function CameraMenu(): ReactNode {
 
 /**
  * Camera ▾ «Фон» (ADR-0035 §5): the quick picks of the preview's section, without a preview — no
- * blur / light / strong, and «Картинка ▸» with the built-in and the user's pictures. Applied to the
- * live camera at once (services/voice.ts follows prefs.cameraBackground).
+ * blur / light / strong, «Фоны пространства ▸» (the addendum: the voice room's workspace, else the
+ * open one; live from the store, docs/09 #121) and «Картинка ▸» with the built-in and the user's
+ * pictures. Applied to the live camera at once (services/voice.ts follows prefs.cameraBackground).
  */
 function CameraBackgroundItems(): ReactNode {
   const kind = usePrefs((s) => s.cameraBackground.kind);
@@ -346,6 +349,10 @@ function CameraBackgroundItems(): ReactNode {
   const setPrefs = usePrefs((s) => s.setPrefs);
   const locale = useLocale();
   const { list } = useCustomBackgrounds();
+  const voiceWs = useVoice((s) => s.workspaceId);
+  const activeWs = useUi((s) => s.activeWorkspaceId);
+  const workspace = useBackgroundList(voiceWs || activeWs);
+  const wsChosen = kind === 'image' && isWorkspaceImage(imageId);
   const blur: Array<[BackgroundKind, MessageKey]> = [
     ['none', 'video.bg.none'],
     ['blur-light', 'video.bg.blurLightFull'],
@@ -364,9 +371,33 @@ function CameraBackgroundItems(): ReactNode {
           <span className="flex-1">{t(label)}</span>
         </Dropdown.Item>
       ))}
+      {workspace.length > 0 ? (
+        <Dropdown.Sub>
+          <Dropdown.SubTrigger className={cx(menuItem, 'relative pl-7 data-[state=open]:not-data-[highlighted]:bg-hover')} data-testid="camera-bg-workspace-menu">
+            {wsChosen ? <Check className="absolute left-2 size-3.5" aria-hidden /> : null}
+            <span className="flex-1">{t('video.bg.workspace')}</span>
+            <ChevronRight className="size-3.5 opacity-70" aria-hidden />
+          </Dropdown.SubTrigger>
+          <Dropdown.Portal>
+            <Dropdown.SubContent className={cx(menuBox, 'w-56')} sideOffset={6} alignOffset={-4} collisionPadding={16}>
+              {workspace.map((b) => {
+                const id = workspaceImageId(b.id);
+                const on = kind === 'image' && imageId === id;
+                return (
+                  <Dropdown.Item key={b.id} role="menuitemradio" aria-checked={on} className={cx(menuItem, 'relative pl-7')} onSelect={() => setPrefs({ cameraBackground: { kind: 'image', imageId: id } })}>
+                    {on ? <Check className="absolute left-2 size-3.5" aria-hidden /> : null}
+                    <MediaImg path={thumbnailPath(b.fileId)} alt="" className="h-[18px] w-8 shrink-0 rounded-[3px] object-cover" draggable={false} data-wsbg-thumb />
+                    <span className="flex-1 truncate">{b.name}</span>
+                  </Dropdown.Item>
+                );
+              })}
+            </Dropdown.SubContent>
+          </Dropdown.Portal>
+        </Dropdown.Sub>
+      ) : null}
       <Dropdown.Sub>
         <Dropdown.SubTrigger className={cx(menuItem, 'relative pl-7 data-[state=open]:not-data-[highlighted]:bg-hover')} data-testid="camera-bg-pictures">
-          {kind === 'image' ? <Check className="absolute left-2 size-3.5" aria-hidden /> : null}
+          {kind === 'image' && !wsChosen ? <Check className="absolute left-2 size-3.5" aria-hidden /> : null}
           <span className="flex-1">{t('video.bg.pictures')}</span>
           <ChevronRight className="size-3.5 opacity-70" aria-hidden />
         </Dropdown.SubTrigger>
