@@ -1,7 +1,7 @@
-import { RoomType, type PermissionBits, type Room } from '@calaba/protocol';
+import { RoomType, type PermissionBits, type Room, type Sticker } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
@@ -20,6 +20,8 @@ import type { StickerPlace } from '../../lib/stickers';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from './EmojiPicker';
 import { StickerButton } from './stickers/StickerPicker';
+import { StickerSuggest, type StickerSuggestHandle } from './stickers/StickerSuggest';
+import { singleEmoji } from '../../lib/stickerSuggest';
 import { MentionPopover, optionKey, useMentionables, type MentionOption } from './MentionPopover';
 import { CommandPopover } from './CommandPopover';
 import { applyCommand, commandKey, commandQuery, filterCommands, type CommandOption } from '../../lib/botCommands';
@@ -244,6 +246,23 @@ export function Composer({
         }
       : undefined;
 
+  // Stickers by emoji (docs/08 «Композер — подсказка стикеров»): exactly one emoji in the field →
+  // the strip above it. It gets only the emoji and stable callbacks, so typing does not re-render it.
+  const suggestRef = useRef<StickerSuggestHandle>(null);
+  const [suggestOff, setSuggestOff] = useState<string | null>(null);
+  if (suggestOff !== null && suggestOff !== text) setSuggestOff(null);
+  const suggestEmoji = stickers && files.length === 0 && !voice.active && suggestOff !== text ? singleEmoji(text) : null;
+  const latest = useRef({ text, send: stickers?.onSend });
+  useLayoutEffect(() => {
+    latest.current = { text, send: stickers?.onSend };
+  });
+  const onSuggestSend = useCallback((s: Sticker) => {
+    latest.current.send?.(s);
+    setText('');
+    setMentions(NO_MENTIONS);
+  }, []);
+  const onSuggestDismiss = useCallback(() => setSuggestOff(latest.current.text), []);
+
   const send = (): void => {
     const content = wire(trimMessage(text));
     if (content.length > MAX_CONTENT) return;
@@ -264,6 +283,7 @@ export function Composer({
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (suggestEmoji && suggestRef.current?.onKey(e)) return;
     if (cmdPopover && !e.nativeEvent.isComposing) {
       const o = cmdOptions[cmdIdx];
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -394,6 +414,8 @@ export function Composer({
           <CommandPopover id={cmdListId} options={cmdOptions} sel={cmdIdx} onPick={pickCommand} onHover={setSel} />
         ) : popover ? (
           <MentionPopover id={listId} options={options} sel={selIdx} onPick={pick} onHover={setSel} />
+        ) : suggestEmoji && stickerPlace ? (
+          <StickerSuggest key={suggestEmoji} ref={suggestRef} emoji={suggestEmoji} place={stickerPlace} me={me} onSend={onSuggestSend} onDismiss={onSuggestDismiss} />
         ) : null}
         {voice.strip}
         <div
