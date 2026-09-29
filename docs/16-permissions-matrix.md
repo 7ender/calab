@@ -48,6 +48,8 @@
 | Гостевая ссылка встречи для внешнего | делается от имени организатора, если у него `MANAGE_ROOM` room (не шире его прав) | `calendar.linkBits` | `event.guest_links` |
 | Саммари, аудио, транскрипт записи (docs/09 #47) | `VIEW_ROOM` room (карточка — сообщение комнаты; аудио — вложение; ограниченная — только допущенные) | `files.CanRead`, `recording.transcript` | — |
 | Переслать сообщение / карточку записи (ADR-0033) | `VIEW_ROOM` в источнике (restricted — можно), `SEND_MESSAGES` в цели (+ `ATTACH_FILES` для вложений; DM — участник); копия даёт читателям цели файлы и транскрипт, её удаление — отзывает | `messages.forward`, `files.CanRead`, `recording.visibleRecording` | MessageMenu, ForwardDialog |
+| «Заметки» (ADR-0039): полки — создать (≤ 20) / переименовать / эмодзи / порядок / удалить; сообщения, файлы, закрепы, поиск в полке; пересылка в полку и из неё | владелец полки (набор DM); чужая полка — 404; боты и гостевые аккаунты — 403; файлы — личная квота (`413 PERSONAL_QUOTA`); голос/звонок в полке — 404 | `notes.*`, `perm.Resolver` (`Notes`), `files.uploadDM`, `rtc` | `NotesSection`, `NotesHeader`, ForwardDialog |
+| Личная квота пользователя (ADR-0039) | суперадмин (`SUPERADMIN_EMAILS`), остальным — 404 | `plans.Admin.setStorageQuota` | — |
 | Удалить запись встречи (docs/09 #50) | запустивший, владелец (`owner_id`) или `MANAGE_MESSAGES` room (+ `VIEW_ROOM`) | `recording.remove` | `mayDeleteRecording` |
 | Создать бота, список ботов (ADR-0031) | `MANAGE_WORKSPACE` ws (владелец — всегда), подтверждённый email; тариф `bots` | `bots.create`, `bots.list` (`manager`) | — (клиент, фаза 1b) |
 | Перевыпустить / отозвать токен, удалить бота | в «домашнем» пространстве: владелец бота или `MANAGE_WORKSPACE` ws | `bots.homeBot`, `bots.remove` | — |

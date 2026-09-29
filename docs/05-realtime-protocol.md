@@ -49,7 +49,7 @@
 ## Жизненный цикл
 
 1. Открыли сокет → `HELLO { heartbeat_interval_ms }`.
-2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль (старшая встроенная), видимые комнаты, участники с `role_ids`, `roles` — все роли пространства от старшей к младшей (ADR-0026), voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states (с `unread_count` / `mention_count`), notification_settings, workspace_notification_settings, dms[] (DmSummary, см. «Личные сообщения»), peer_reads[] (`PeerRead {room_id, last_read_message_id}` — докуда прочитали другие, по видимым комнатам пространств, где кто-то читал; DM — в `dms[].peer_read_message_id`; docs/09 #92) }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
+2. `IDENTIFY` → сервер валидирует access-token (отозванная сессия → `4010`) → `READY` (DISPATCH, `seq = 1`): `{ session_id, me, workspaces[] (WorkspaceSnapshot: workspace, роль (старшая встроенная), видимые комнаты, участники с `role_ids`, `roles` — все роли пространства от старшей к младшей (ADR-0026), voice_states, presences, permissions — биты прав пользователя по каждой видимой комнате), read_states (с `unread_count` / `mention_count`), notification_settings, workspace_notification_settings, dms[] (DmSummary, см. «Личные сообщения»), notes[] (NotesShelf — полки «Заметок» по position, ADR-0039; ботам и гостям пусто), peer_reads[] (`PeerRead {room_id, last_read_message_id}` — докуда прочитали другие, по видимым комнатам пространств, где кто-то читал; DM — в `dms[].peer_read_message_id`; docs/09 #92) }`. События, пришедшие пока строился READY, отправляются сразу после него (возможен дубль уже учтённого в READY — события идемпотентны).
 3. Клиент шлёт `HEARTBEAT` каждые `heartbeat_interval` (~41 с) с jitter; нет `ACK` за 2 интервала → закрыть и переподключиться.
 4. Обрыв → переподключение с экспоненциальным backoff (1s → 30s, jitter) → `RESUME { token, session_id, seq }` (token — свежий access JWT):
    - сервер держит буфер событий сессии в Redis (последние ~5 мин / 1000 событий) → досылает пропущенное по порядку, затем событие `RESUMED { replayed }`;
@@ -89,6 +89,8 @@ CATEGORY_CREATE / UPDATE / DELETE
 MESSAGE_REACTION_ADD / REMOVE { workspace_id, room_id, message_id, user_id, emoji }
 DM_CREATE                     { dm: DmSummary } — обоим участникам нового DM, каждому со своим peer
 DM_STATE_UPDATE               { room_id, archived_at, cleared_before_message_id } — своё состояние DM (архив / «Удалить чат»), только своим устройствам
+NOTES_CREATE / NOTES_UPDATE    { shelf: NotesShelf } — полка создана / переименована, сменила эмодзи или место (UPDATE для каждой сдвинутой), всем устройствам владельца (ADR-0039)
+NOTES_DELETE                  { room_id } — полка удалена со всеми сообщениями, всем устройствам владельца
 STICKER_PACK_CREATE / UPDATE  { pack } — пак пространства целиком (живые стикеры по порядку), всем участникам (ADR-0030)
 STICKER_PACK_DELETE           { workspace_id, pack_id } — пак удалён; стикеры в уже отправленных сообщениях остаются
 BADGE_CREATE / UPDATE         { badge } — бейдж библиотеки пространства (docs/09 #82), всем участникам; в READY — WorkspaceSnapshot.badges
@@ -435,6 +437,10 @@ GET    /api/dms                                        ListDmsResponse{dms[]} (�
 GET    /api/dms/candidates?q=                          ListDmCandidatesResponse{users[]} (≤ 20)
 POST   /api/dms/{id}/files                             multipart, поле "file" → 201 UploadFileResponse (участник DM; вложение для DM)
 PATCH  /api/dms/{id}/state                             UpdateDmStateRequest{archived?, cleared} → UpdateDmStateResponse{dm} (участник; иначе 404)
+GET    /api/notes                                      ListNotesResponse{shelves[], storage} (полки по position, ≤ 20; личная квота)
+POST   /api/notes                                      CreateNotesRequest{name, emoji} → 201 CreateNotesResponse{shelf} (409 NOTES_LIMIT на 21-ю)
+PATCH  /api/notes/{id}                                 UpdateNotesRequest{name?, emoji?, position?} → UpdateNotesResponse{shelf} (чужая — 404)
+DELETE /api/notes/{id}                                 204 (со всеми сообщениями; чужая — 404)
 PATCH  /api/me/status                                  UpdateStatusRequest{text, emoji, expiresInSeconds} → UpdateMeResponse
 GET    /api/users/{id}/note                            UserNoteResponse{note} — моя заметка о человеке (пустой text = нет)
 PUT    /api/users/{id}/note                            PutUserNoteRequest{text ≤ 1000} → UserNoteResponse (пустой text удаляет)
@@ -454,6 +460,7 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
   - Вложения DM грузятся через `POST /api/dms/{id}/files` (файл без пространства, в квоту workspace не входит); файл пространства к DM не прикрепить и наоборот (`422`). Скачивание — участникам DM.
   - Ссылка `/dm/<id>` на чужую / несуществующую переписку — после READY (и перечитывания `GET /api/dms`) клиент показывает ошибку «Переписка по ссылке недоступна», «Личные» остаются без выбранной переписки.
   - Presence и профиль peer приходят через общие пространства; если общего пространства больше нет, DM остаётся, но `PRESENCE_UPDATE` / `USER_UPDATE` peer не приходят (профиль — из `DmSummary.peer` при следующем READY).
+- **Заметки** (ADR-0039). Полка — комната `type = NOTES` без `workspace_id`, единственный участник — владелец; сообщения, файлы (`POST /api/dms/{id}/files`, личная квота: `413 FILE_QUOTA_EXCEEDED`, `reason = PERSONAL_QUOTA`), реакции, закрепы, read-state, поиск (`GET /api/rooms/{id}/messages?q=`) — те же эндпоинты, события — по `user:<id>` владельцу с пустым `workspace_id`. Пересылка (ADR-0033) — в обе стороны без новых правил; копия из полки не раскрывает её (`Forward.room_id` пустой). `NotesShelf { room (name, position, last_message_*), emoji, last_message }`. Голос/звонки/стрим/камера в полке — `404`; боты и гостевые аккаунты — `403` на `/api/notes*`. Суперадмин: `GET|PUT /api/admin/users/{id}/storage-quota {quota_bytes?}` → `UserStorageQuota {quota_bytes, used_bytes, is_default}` (без `quota_bytes` — вернуть к `DEFAULT_PERSONAL_QUOTA_BYTES`).
 - **Гости** (`role = guest`) видят участников, presence, voice-state и события о людях только из тех комнат, которые видят сами (READY, `GET …/members`, gateway). Когда общая комната появляется или пропадает, гость получает синтетические `WORKSPACE_MEMBER_ADD` (+ `PRESENCE_UPDATE`) / `WORKSPACE_MEMBER_REMOVE`.
 - **Камеры** (v0.2).
   - Право `VIDEO` (1<<14; у member по умолчанию есть, у guest — нет). Лимит — `RoomMediaSettings.camera_limit`: 0..25, 0 — камеры в комнате выключены. Default workspace — 6 (`UpdateWorkspaceRequest.default_camera_limit`), override комнаты — `RoomMediaOverride.camera_limit`. `JoinVoiceResponse.can_video` = VIDEO и лимит > 0.

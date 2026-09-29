@@ -1,8 +1,9 @@
 import type { PermissionBits } from '@calaba/protocol';
-import { CornerUpLeft, Ellipsis, SmilePlus } from 'lucide-react';
-import { useMemo, type MouseEvent, type ReactNode } from 'react';
+import { CornerUpLeft, Ellipsis, GripVertical, SmilePlus } from 'lucide-react';
+import { useMemo, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { MESSAGE_MIME, encodeDragged, setDraggedMessage } from '../../lib/messageDrag';
 import { can } from '../../lib/permissions';
 import { toggleReaction } from '../../services/chat';
 import type { ChatMessage } from '../../stores/messages';
@@ -57,6 +58,24 @@ export function MessageActions({
     );
   };
 
+  // Drag by the grip (docs/05 «Заметки»): onto a notes shelf or a chat row → forwarded there. The
+  // bar stays up for the drag (its source must stay mounted for dragend), like with the picker.
+  const dragStart = (e: DragEvent<HTMLSpanElement>): void => {
+    const d = { roomId, messageId: m.id };
+    setDraggedMessage(d);
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData(MESSAGE_MIME, encodeDragged(d));
+    if (m.content) e.dataTransfer.setData('text/plain', m.content);
+    const ghost = dragGhost(m.content);
+    e.dataTransfer.setDragImage(ghost, 14, 14);
+    window.setTimeout(() => ghost.remove(), 0);
+    onPickerOpenChange(true);
+  };
+  const dragEnd = (): void => {
+    setDraggedMessage(null);
+    onPickerOpenChange(false);
+  };
+
   return (
     <div
       role="group"
@@ -64,6 +83,11 @@ export function MessageActions({
       data-testid="message-actions"
       className="mat-popover anim-in pointer-events-auto flex h-7 shrink-0 select-none items-center gap-0.5 rounded-[var(--radius-card)] px-0.5"
     >
+      <Tip label={t('notes.drag')}>
+        <span draggable onDragStart={dragStart} onDragEnd={dragEnd} aria-hidden data-testid="message-drag" className={cx(btn, 'cursor-grab active:cursor-grabbing')}>
+          <GripVertical className="size-4" />
+        </span>
+      </Tip>
       {canSend ? (
         <>
           {quick.map((e) => {
@@ -122,4 +146,15 @@ export function MessageActions({
       </Tip>
     </div>
   );
+}
+
+/** The drag image of a message: a small opaque chip with the start of its text (in the DOM for one frame). */
+function dragGhost(content: string): HTMLElement {
+  const el = document.createElement('div');
+  const text = content.replace(/\s+/g, ' ').trim();
+  el.textContent = `💬 ${text ? (text.length > 48 ? `${text.slice(0, 48)}…` : text) : t('notes.dragGhost')}`;
+  el.className = 'mat-popover rounded-[var(--radius-row)] px-2.5 py-1.5 text-caption text-fg';
+  Object.assign(el.style, { position: 'fixed', top: '-1000px', left: '0', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' });
+  document.body.appendChild(el);
+  return el;
 }

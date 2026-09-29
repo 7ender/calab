@@ -1,4 +1,5 @@
-import type { FileMeta, Message, PermissionBits } from '@calaba/protocol';
+import { RoomType, type FileMeta, type Message, type PermissionBits } from '@calaba/protocol';
+import { useRooms } from '../../stores/rooms';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AlertCircle, Check, CheckCheck, Clock3, Download, FileText, RotateCw } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode } from 'react';
@@ -666,7 +667,11 @@ function MetaInfo({ c, own }: { c: ChatMessage; own: boolean }): ReactNode {
  * only the ticks it flips, not the bubble or the feed.
  */
 function Ticks({ roomId, messageId }: { roomId: string; messageId: string }): ReactNode {
-  return useReadReceipt(roomId, messageId) ? (
+  const read = useReadReceipt(roomId, messageId);
+  // A notes shelf (ADR-0039) has no readers: no ticks at all.
+  const shelf = useRooms((s) => s.byId[roomId]?.type === RoomType.NOTES);
+  if (shelf) return null;
+  return read ? (
     <CheckCheck className="size-4" aria-label={t('chat.statusRead')} />
   ) : (
     <Check className="size-4" aria-label={t('chat.statusSent')} />

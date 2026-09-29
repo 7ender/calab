@@ -1,4 +1,9 @@
 import {
+  CreateNotesRequestSchema,
+  CreateNotesResponseSchema,
+  ListNotesResponseSchema,
+  UpdateNotesRequestSchema,
+  UpdateNotesResponseSchema,
   GetVersionResponseSchema,
   CreateSoundRequestSchema,
   ListSoundsResponseSchema,
@@ -466,6 +471,18 @@ export const api = {
     /** My own state of a DM (docs/09 #51): archive / «Удалить чат» (for me only); 404 not a participant. */
     setState: (roomId: string, state: { archived?: boolean; cleared?: boolean }) =>
       call('PATCH', `/api/dms/${roomId}/state`, UpdateDmStateResponseSchema, body(UpdateDmStateRequestSchema, state)),
+  },
+  /**
+   * Notes shelves (ADR-0039): personal rooms; messages use the room endpoints, uploads go to
+   * `/api/dms/{id}/files` (uploadPath) and count against the personal quota. 409 NOTES_LIMIT
+   * at 20; 404 not mine; 403 bots / guest accounts.
+   */
+  notes: {
+    list: () => call('GET', '/api/notes', ListNotesResponseSchema),
+    create: (name: string, emoji: string) => call('POST', '/api/notes', CreateNotesResponseSchema, body(CreateNotesRequestSchema, { name, emoji })),
+    update: (roomId: string, p: { name?: string; emoji?: string; position?: number }) =>
+      call('PATCH', `/api/notes/${roomId}`, UpdateNotesResponseSchema, body(UpdateNotesRequestSchema, p)),
+    remove: (roomId: string) => callEmpty('DELETE', `/api/notes/${roomId}`),
   },
   /**
    * One-to-one calls (ADR-0034, docs/05 «Звонки»): place a call in a DM → RINGING (409 IN_CALL /

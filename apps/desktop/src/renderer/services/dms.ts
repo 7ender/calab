@@ -6,6 +6,7 @@ import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { HOME, dmWith, isDm, useDms } from '../stores/dms';
 import { useMessages } from '../stores/messages';
+import { useNotes } from '../stores/notes';
 import { useRooms } from '../stores/rooms';
 import { useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
@@ -195,18 +196,20 @@ const previewLoading = new Set<string>();
  * preview comes with DmSummary.last_message (no request per DM when the list opens).
  */
 export async function refreshDmPreview(roomId: string): Promise<void> {
-  if (useDms.getState().preview[roomId] !== undefined || previewLoading.has(roomId)) return;
+  // A notes shelf (ADR-0039) keeps its preview the same way.
+  const store = useDms.getState().byRoom[roomId] ? useDms : useNotes;
+  if (store.getState().preview[roomId] !== undefined || previewLoading.has(roomId)) return;
   const loaded = useMessages.getState().rooms[roomId];
   if (loaded?.loaded && !loaded.hasMoreAfter) {
     const newest = [...loaded.items].reverse().find((c) => c.status === 'sent')?.msg;
-    useDms.getState().setPreview(roomId, newest ?? null);
+    store.getState().setPreview(roomId, newest ?? null);
     return;
   }
   previewLoading.add(roomId);
   try {
     const res = await api.messages.list(roomId, { limit: 1 });
     // A live message may have landed meanwhile: it is the newer preview then.
-    if (useDms.getState().preview[roomId] === undefined) useDms.getState().setPreview(roomId, res.messages[0] ?? null);
+    if (store.getState().preview[roomId] === undefined) store.getState().setPreview(roomId, res.messages[0] ?? null);
   } catch (e) {
     log.warn('dm preview failed', roomId, e);
   } finally {

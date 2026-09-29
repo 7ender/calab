@@ -151,6 +151,7 @@ func run(m *testing.M) int {
 		WorkspaceCreatesPerHour:    1000,
 		StorageMaxTotalBytes:       1 << 40,
 		DefaultWorkspaceQuotaBytes: 10 << 30,
+		DefaultPersonalQuotaBytes:  1 << 30,
 		PublicAppURLAlt:            "https://app.example.ru",
 		PublicAppURLs:              []string{"https://app.example.com", "https://alias.example.org"},
 		AuthRateBurst:              5,

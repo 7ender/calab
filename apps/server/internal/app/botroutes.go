@@ -138,6 +138,11 @@ var botRoutes = map[string]botAccess{
 	"GET /api/dms/candidates":   botAllow,
 	"PATCH /api/dms/{id}/state": botDeny,
 	"POST /api/dms/{id}/files":  botAllow,
+	// notes shelves (ADR-0039 §3): people only
+	"GET /api/notes":         botDeny,
+	"POST /api/notes":        botDeny,
+	"PATCH /api/notes/{id}":  botDeny,
+	"DELETE /api/notes/{id}": botDeny,
 	// one-to-one calls (ADR-0034 §7): bots neither call nor answer
 	"POST /api/dms/{id}/call":         botDeny,
 	"POST /api/calls/{id}/accept":     botDeny,
@@ -179,6 +184,8 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/admin/workspaces/{id}/plan":               botDeny,
 	"GET /api/admin/workspaces/{id}/plan/log":           botDeny,
 	"PUT /api/admin/workspaces/{id}/suspension":         botDeny,
+	"GET /api/admin/users/{id}/storage-quota":           botDeny,
+	"PUT /api/admin/users/{id}/storage-quota":           botDeny,
 	"GET /api/unfurl":                                   botDeny,
 	"GET /api/unfurl/image":                             botDeny,
 	"GET /api/workspaces/{id}/integrations/gptunnel":    botDeny,

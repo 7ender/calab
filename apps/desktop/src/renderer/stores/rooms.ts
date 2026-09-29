@@ -247,7 +247,8 @@ type NotifyState = Pick<RoomsState, 'byId' | 'notify' | 'wsNotify'>;
 /** The settings that decide for a room now (docs/05 «Уведомления», docs/09 item 22). */
 export function effectiveNotify(roomId: string, s: NotifyState, now = Date.now()): EffectiveNotify {
   const r = s.byId[roomId];
-  const dm = r?.type === RoomType.DM;
+  // A notes shelf (ADR-0039) has no workspace either: its own settings only.
+  const dm = r?.type === RoomType.DM || r?.type === RoomType.NOTES;
   const room = roomNotify(s.notify[roomId], now);
   const workspace = dm || !r ? workspaceNotify(undefined) : workspaceNotify(s.wsNotify[r.workspaceId], now);
   const level = effectiveNotificationLevel(room.level, workspace.level, dm);

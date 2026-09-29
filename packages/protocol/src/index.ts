@@ -12,6 +12,7 @@ export * from './gen/calaba/v1/gateway_pb.js';
 export * from './gen/calaba/v1/invite_pb.js';
 export * from './gen/calaba/v1/media_pb.js';
 export * from './gen/calaba/v1/message_pb.js';
+export * from './gen/calaba/v1/notes_pb.js';
 export * from './gen/calaba/v1/permissions_pb.js';
 export * from './gen/calaba/v1/plan_pb.js';
 export * from './gen/calaba/v1/recording_pb.js';

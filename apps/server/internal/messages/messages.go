@@ -304,7 +304,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 // clearedBefore is the caller's «Удалить чат» mark in a DM (docs/09 item 51): they see only
 // messages after it. nil = the whole history (never cleared, or not a DM).
 func (h *Handlers) clearedBefore(r *http.Request, acc perm.RoomAccess, roomID uuid.UUID) (*uuid.UUID, error) {
-	if !acc.DM {
+	if !acc.DM || acc.Notes { // a notes shelf is never cleared (ADR-0039)
 		return nil, nil
 	}
 	id, err := h.db.Q.GetDMClearedBefore(r.Context(), sqlc.GetDMClearedBeforeParams{UserID: uid(r), RoomID: roomID})
@@ -513,7 +513,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if sticker != nil {
 		pb.Sticker = pbconv.Sticker(sticker.Sticker, sticker.FileSize)
 	}
-	if acc.DM { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
+	if acc.DM && !acc.Notes { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
 		states, err := h.db.Q.UnarchiveDMForRecipients(r.Context(), sqlc.UnarchiveDMForRecipientsParams{RoomID: roomID, AuthorID: uid(r)})
 		if err != nil {
 			return err

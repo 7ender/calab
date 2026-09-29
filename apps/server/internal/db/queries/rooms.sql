@@ -61,7 +61,7 @@ VALUES ($1, $2, $3, $4, $5);
 -- Everything needed to compute a user's permissions in a room, in one round trip. Workspace
 -- rooms: the membership (role NULL = not a member), the member's roles lowest position first
 -- (ADR-0026) with each role's override in this room (0/0 = none) and the user override. DMs
--- (workspace_id NULL): the two participants. suspended: the workspace is suspended (item 32).
+-- and notes shelves (workspace_id NULL): the participants (a shelf: its owner). suspended: the workspace is suspended (item 32).
 -- restricted: ADMINISTRATOR gives no bypass in the room (ADR-0029).
 SELECT r.workspace_id,
        r.type,
@@ -73,7 +73,7 @@ SELECT r.workspace_id,
        coalesce(mr.allows, '{}')::bigint[] AS role_allows,
        coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
-       (CASE WHEN r.type = 'dm' THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
+       (CASE WHEN r.type IN ('dm', 'notes') THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
              ELSE '{}'::uuid[] END)::uuid[] AS dm_members,
        (w.suspended_at IS NOT NULL)::boolean AS suspended
 FROM rooms r

@@ -3,6 +3,7 @@ import { MeSchema } from '@calaba/protocol';
 import type { AuthSession, LogoutReason } from '../../shared/ipc';
 import { log } from '../lib/log';
 import { useDms } from '../stores/dms';
+import { useNotes } from '../stores/notes';
 import { useStickers } from '../stores/stickers';
 import { useBots } from '../stores/bots';
 import { useInbox } from '../stores/inbox';
@@ -194,6 +195,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useReadReceipts.getState().reset();
   useInbox.getState().reset();
   useDms.getState().reset();
+  useNotes.getState().reset();
   useStickers.getState().reset();
   useBots.getState().reset();
   resetChatCaches();

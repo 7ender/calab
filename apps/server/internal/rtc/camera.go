@@ -95,6 +95,9 @@ func (s *Service) requestCamera(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if acc.Notes { // a notes shelf has no voice (ADR-0039)
+		return httpx.NotFound("room")
+	}
 	if acc.DM {
 		return s.requestDMMedia(w, r, roomID, false)
 	}
