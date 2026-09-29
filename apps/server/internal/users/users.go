@@ -75,11 +75,11 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if cur, err := h.db.Q.GetUser(r.Context(), id.UserID); err != nil {
 		return err
-	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil) {
+	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil) {
 		return httpx.Forbidden("guests can only change their name and settings") // ADR-0016
 	}
 	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil || req.Birthday != nil ||
-		req.BirthdayHidden != nil || req.EventReminders != nil) {
+		req.BirthdayHidden != nil || req.EventReminders != nil || req.WorkHours != nil) {
 		return auth.ErrBotNotAllowed // ADR-0031: a bot changes only its name and avatar here
 	}
 	p := sqlc.UpdateUserParams{ID: id.UserID}
@@ -158,6 +158,14 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
+	var workStart, workEnd int16
+	var workDays []int16
+	if wh := req.GetWorkHours(); wh != nil { // ADR-0041
+		var err error
+		if workStart, workEnd, workDays, err = calendar.ValidateWorkHours(wh); err != nil {
+			return err
+		}
+	}
 	u, err := h.db.Q.UpdateUser(r.Context(), p)
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("avatarFileId", "file not found")
@@ -168,6 +176,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if er := req.GetEventReminders(); er != nil {
 		if u, err = h.db.Q.SetUserEventReminders(r.Context(), sqlc.SetUserEventRemindersParams{
 			ID: id.UserID, EventReminders: reminders, EventRemindersDnd: er.GetDnd(),
+		}); err != nil {
+			return err
+		}
+	}
+	if req.GetWorkHours() != nil {
+		if u, err = h.db.Q.SetUserWorkHours(r.Context(), sqlc.SetUserWorkHoursParams{
+			ID: id.UserID, WorkStartMin: workStart, WorkEndMin: workEnd, WorkDays: workDays,
 		}); err != nil {
 			return err
 		}

@@ -129,6 +129,31 @@ type BotWebhookDelivery struct {
 	Error       string
 }
 
+type CaldavAccount struct {
+	UserID       uuid.UUID
+	Url          string
+	Username     string
+	SecretEnc    []byte
+	Calendars    []byte
+	CalendarHref *string
+	Import       bool
+	Push         bool
+	LastSyncAt   *time.Time
+	LastError    string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type CaldavPush struct {
+	UserID    uuid.UUID
+	EventID   uuid.UUID
+	Gen       int64
+	Attempts  int32
+	NextAt    time.Time
+	Error     string
+	CreatedAt time.Time
+}
+
 type DmMember struct {
 	RoomID    uuid.UUID
 	UserID    uuid.UUID
@@ -218,6 +243,14 @@ type EventRoomSignal struct {
 	OccurrenceAt time.Time
 	Kind         string
 	SentAt       time.Time
+}
+
+type ExternalBusy struct {
+	UserID   uuid.UUID
+	Uid      string
+	StartsAt time.Time
+	EndsAt   time.Time
+	AllDay   bool
 }
 
 type File struct {
@@ -566,6 +599,9 @@ type User struct {
 	EventReminders    []int16
 	EventRemindersDnd bool
 	StorageQuotaBytes *int64
+	WorkStartMin      int16
+	WorkEndMin        int16
+	WorkDays          []int16
 }
 
 type UserNote struct {

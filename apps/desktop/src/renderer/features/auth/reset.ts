@@ -6,14 +6,45 @@ import { codeComplete, isEmail } from './emailCode';
 
 /**
  * «Забыли пароль?» (ADR-0023) without React: the checks of the two steps and the texts of the
- * failures. The server answers `forgot` with 204 whether or not the address has an account, and
- * `reset` with the same CODE_INVALID for a wrong code and an unknown address (no enumeration).
+ * failures. The server answers `forgot` the same whether or not the address has an account (bar
+ * the similar-address hint, docs/09 #137), and `reset` with the same CODE_INVALID for a wrong
+ * code and an unknown address (no enumeration).
  */
 export interface ResetErrors {
   email?: string;
   code?: string;
   password?: string;
   form?: string;
+}
+
+/**
+ * The address as it is sent: no spaces or invisible characters (pasted from a mail client /
+ * messenger), lower case — the lookup ignores case anyway, and the confirmation line shows
+ * exactly this, so a typo is visible.
+ */
+export function normalizeForgotEmail(s: string): string {
+  return s.replace(/[\s\u200b-\u200d\u2060\ufeff]+/g, '').toLowerCase();
+}
+
+/** The forgot-password card: which step, the address the code went to, the similar-address hint. */
+export interface ForgotView {
+  step: 'email' | 'code';
+  /** The normalised address of the last request (the confirmation line and `reset` use it). */
+  sent: string;
+  /** No account at `sent`, but one at a sibling domain (docs/09 #137). */
+  similar: boolean;
+}
+
+export const forgotInitial: ForgotView = { step: 'email', sent: '', similar: false };
+
+/** The server accepted the request for `email` (always the same answer, bar the hint). */
+export function forgotSent(email: string, similarAccount: boolean): ForgotView {
+  return { step: 'code', sent: email, similar: similarAccount };
+}
+
+/** «Изменить адрес»: back to the field, the hint gone until the next request. */
+export function forgotEdit(v: ForgotView): ForgotView {
+  return { ...v, step: 'email', similar: false };
 }
 
 export function forgotErrors(email: string): ResetErrors {

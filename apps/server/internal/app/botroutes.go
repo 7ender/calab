@@ -231,15 +231,22 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/bots/me/webhook":                     botAllow,
 	"GET /api/rooms/{id}/bot-commands":                botAllow,
 	// calendar (ADR-0038): bots read meetings (no external addresses), people change them
-	"GET /api/workspaces/{id}/events":  botAllow,
-	"POST /api/workspaces/{id}/events": botDeny,
-	"GET /api/events/{id}":             botAllow,
-	"PATCH /api/events/{id}":           botDeny,
-	"DELETE /api/events/{id}":          botDeny,
-	"PUT /api/events/{id}/rsvp":        botDeny, // bots are never attendees
-	"GET /api/me/events/today":         botDeny,
-	"GET /api/event-rsvp":              botPublic, // signed answer links of external attendees; refuses bot tokens
-	"POST /api/event-rsvp":             botPublic,
+	"GET /api/workspaces/{id}/events":            botAllow,
+	"POST /api/workspaces/{id}/events":           botDeny,
+	"GET /api/events/{id}":                       botAllow,
+	"PATCH /api/events/{id}":                     botDeny,
+	"DELETE /api/events/{id}":                    botDeny,
+	"PUT /api/events/{id}/rsvp":                  botDeny, // bots are never attendees
+	"GET /api/me/events/today":                   botDeny,
+	"GET /api/workspaces/{id}/freebusy":          botDeny, // ADR-0041 §5: people only
+	"POST /api/workspaces/{id}/freebusy/suggest": botDeny,
+	"GET /api/me/caldav":                         botDeny,
+	"POST /api/me/caldav":                        botDeny,
+	"PUT /api/me/caldav":                         botDeny,
+	"DELETE /api/me/caldav":                      botDeny,
+	"POST /api/me/caldav/sync":                   botDeny,
+	"GET /api/event-rsvp":                        botPublic, // signed answer links of external attendees; refuses bot tokens
+	"POST /api/event-rsvp":                       botPublic,
 	// task boards (ADR-0042 §3): bots work like people within their board bits; access and the
 	// final delete (DELETE ?purge=1, refused by the handler) are for people
 	"GET /api/workspaces/{id}/boards":          botAllow,

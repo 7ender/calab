@@ -198,7 +198,8 @@ func run(m *testing.M) int {
 		UnfurlAllowAddr: func(netip.Addr) bool { return true }, // test pages are served on loopback
 		Mail:            testMail,
 		Egress:          rtc.NewEgress(egressURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret),
-		BotWebhooks:     botWebhookOptions})
+		BotWebhooks:     botWebhookOptions,
+		CalDAV:          calDAVOptions})
 	a.Recording.Tick, a.Recording.PollMin = 100*time.Millisecond, 50*time.Millisecond
 	a.Recording.ResultBackoff = []time.Duration{50 * time.Millisecond, 50 * time.Millisecond}
 	a.Mail.Poll = 200 * time.Millisecond

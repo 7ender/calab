@@ -26,7 +26,7 @@ type ICSPerson struct {
 type ICSEvent struct {
 	UID         string // <event id>@calab
 	Sequence    int
-	Method      string
+	Method      string // "" = none (a CalDAV object)
 	Series      Series
 	Title       string
 	Description string
@@ -50,7 +50,9 @@ func BuildICS(e ICSEvent) string {
 	line("VERSION:2.0")
 	line("PRODID:-//Calab//Calendar//EN")
 	line("CALSCALE:GREGORIAN")
-	line("METHOD:" + e.Method)
+	if e.Method != "" { // a CalDAV object resource has no METHOD (RFC 4791 §4.1)
+		line("METHOD:" + e.Method)
+	}
 	var tzid string
 	if !s.AllDay && s.Rule.Repeat != 0 {
 		if vtz, ok := vtimezone(s.Loc, s.Start); ok {
@@ -109,7 +111,9 @@ func BuildICS(e ICSEvent) string {
 	} else {
 		line("STATUS:CONFIRMED")
 	}
-	line("ORGANIZER;CN=" + icsParam(e.Organizer.Name) + ":mailto:" + e.Organizer.Email)
+	if e.Organizer.Email != "" {
+		line("ORGANIZER;CN=" + icsParam(e.Organizer.Name) + ":mailto:" + e.Organizer.Email)
+	}
 	for _, a := range e.Attendees {
 		role := "REQ-PARTICIPANT"
 		if a.Optional {

@@ -116,10 +116,18 @@ message VerifyEmailResponse {
   repeated string joined_workspace_ids = 2;
 }
 
-// POST /api/auth/password/forgot (no auth) → always 204, whether or not the address has an
-// account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
+// POST /api/auth/password/forgot (no auth) → 200 ForgotPasswordResponse, whether or not the
+// address has an account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
 message ForgotPasswordRequest {
   string email = 1;
+}
+
+message ForgotPasswordResponse {
+  // True only when the exact address has no account but one with the same local part exists at
+  // a sibling domain of the same organisation (docs/09 #119, #137: kv@gptunnel.ai vs
+  // kv@gptunnel.ru). False when the exact account exists, so the answer does not reveal it.
+  // Never names the other address.
+  bool similar_account = 1;
 }
 
 // POST /api/auth/password/reset (no auth) → 204. Sets the new password, marks the email

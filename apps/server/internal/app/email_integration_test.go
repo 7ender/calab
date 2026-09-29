@@ -169,8 +169,8 @@ func TestPasswordReset(t *testing.T) {
 	newClient(t).must(200, "POST", "/api/auth/login", &v1.LoginRequest{Email: u.email, Password: "password123"}, &second)
 
 	anon := newClient(t)
-	anon.must(204, "POST", "/api/auth/password/forgot", &v1.ForgotPasswordRequest{Email: "nobody-" + uniq("x") + "@example.com"}, nil)
-	anon.must(204, "POST", "/api/auth/password/forgot", &v1.ForgotPasswordRequest{Email: strings.ToUpper(u.email[:1]) + u.email[1:]}, nil)
+	anon.must(200, "POST", "/api/auth/password/forgot", &v1.ForgotPasswordRequest{Email: "nobody-" + uniq("x") + "@example.com"}, nil)
+	anon.must(200, "POST", "/api/auth/password/forgot", &v1.ForgotPasswordRequest{Email: strings.ToUpper(u.email[:1]) + u.email[1:]}, nil)
 	code := nthMail(t, 1, mail.TemplatePasswordReset, u.email).Params["code"]
 
 	wrong := "123123"

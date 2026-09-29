@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../lib/api/client';
-import { forgotErrors, forgotFailure, resetErrors, resetFailure } from './reset';
+import { forgotEdit, forgotErrors, forgotFailure, forgotInitial, forgotSent, normalizeForgotEmail, resetErrors, resetFailure } from './reset';
 
 vi.mock('../../platform', () => ({ platform: { kind: 'web', apiBase: '', apiFetch: vi.fn() } }));
 
@@ -26,5 +26,20 @@ describe('forgot password', () => {
     expect(resetFailure(new ApiError('ERROR_CODE_CODE_INVALID', 'wrong or expired code', 422))).toEqual({ code: 'Неверный или устаревший код' });
     expect(resetFailure(new ApiError('ERROR_CODE_VALIDATION', 'x', 422, 'password')).password).toBeTruthy();
     expect(resetFailure(new ApiError('ERROR_CODE_RATE_LIMITED', 'x', 429)).form).toBeTruthy();
+  });
+});
+
+describe('forgot password: address and similar-domain hint (docs/09 #137)', () => {
+  it('normalises the address before sending', () => {
+    expect(normalizeForgotEmail('  Kv@GPTunnel.AI \n')).toBe('kv@gptunnel.ai');
+    expect(normalizeForgotEmail('kv\u200b@gptunnel .ai')).toBe('kv@gptunnel.ai');
+  });
+
+  it('shows the hint only when the server says so, and «Изменить адрес» goes back to the field', () => {
+    expect(forgotInitial).toEqual({ step: 'email', sent: '', similar: false });
+    expect(forgotSent('kv@gptunnel.ai', false)).toEqual({ step: 'code', sent: 'kv@gptunnel.ai', similar: false });
+    const hinted = forgotSent('kv@gptunnel.ai', true);
+    expect(hinted).toEqual({ step: 'code', sent: 'kv@gptunnel.ai', similar: true });
+    expect(forgotEdit(hinted)).toEqual({ step: 'email', sent: 'kv@gptunnel.ai', similar: false });
   });
 });

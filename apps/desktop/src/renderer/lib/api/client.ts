@@ -120,6 +120,8 @@ export async function call<Res extends DescMessage>(
   signal?: AbortSignal,
 ): Promise<MessageShape<Res>> {
   const res = await send(method, path, body, signal);
+  // An older server may still answer 204 for an endpoint that grew a body (e.g. password/forgot).
+  if (res.status === 204) return create(resSchema);
   const json = (await res.json()) as JsonValue;
   return fromJson(resSchema, json, JSON_OPTS);
 }
