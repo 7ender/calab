@@ -179,7 +179,9 @@ export function Composer({
   // «Упомянуть» from a member menu (mentionRequest.ts): append `@name ` and focus the field.
   // A request for a given room (birthday «Поздравить») waits for that room's composer.
   const roomIdRef = useRef(room.id);
-  roomIdRef.current = room.id;
+  useEffect(() => {
+    roomIdRef.current = room.id;
+  }, [room.id]);
   const applyMentionRequest = useCallback((d: MentionRequest): void => {
     setText((cur) => {
       const next = `${cur && !/\s$/.test(cur) ? `${cur} ` : cur}@${d.name} `;
