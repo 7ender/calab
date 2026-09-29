@@ -46,6 +46,10 @@
   --color-accent: #0a84ff; /* icons, toggles, focus ring, selection */
   --color-accent-strong: #0071e3; /* filled primary buttons (white text ≥ 4.5:1) */
   --color-accent-text: #409cff; /* links / accent-coloured text on content */
+  /* keyboard focus ring and focused-field border (docs/08 «Фокус»): the accent, ≥ 3:1 on every
+     material it sits on — dark: sidebar 4.5, sheet/popover 3.8, content 4.7, rail 4.9;
+     light (#007aff): sidebar 3.6, popover 3.8, content 4.0, rail 3.3 */
+  --color-focus: var(--color-accent);
   --color-on-accent: #ffffff;
   /* warm second stop of the birthday card gradient (accent-strong → this; white text 8.9:1),
      same in both themes */
@@ -260,6 +264,7 @@
   --color-accent-strong: var(--color-accent-strong);
   --color-accent-text: var(--color-accent-text);
   --color-accent-fg: var(--color-on-accent);
+  --color-focus: var(--color-focus);
   --color-ok: var(--color-green);
   --color-warn: var(--color-yellow);
   --color-danger: var(--color-red);
@@ -470,8 +475,11 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   background: transparent;
 }
 
-/* Keyboard focus is always visible: 2 px accent ring. In the base layer so a component
-   that draws its own focus indication (e.g. the composer box) can opt out with a utility. */
+/* Focus (docs/08 «Фокус», docs/09 #138): one ring, keyboard only. A mouse or touch press never
+   leaves an outline — Chromium keeps :focus-visible false for a click and for a programmatic
+   focus that follows one (Radix returning focus to a menu / dialog trigger); Tab shows it.
+   Text fields match :focus-visible on a click too, so they mark focus with their border instead
+   of an outer ring (below, unlayered: it has to beat the `border-line` utility). */
 @layer base {
   /* Hover backgrounds fade in 100 ms (docs/09 #22); a component's own transition utility wins. */
   button,
@@ -485,17 +493,22 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
       background-color var(--motion-hover) ease-out,
       color var(--motion-hover) ease-out;
   }
-  :focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 1px;
-  }
-  :focus:not(:focus-visible) {
+  *:focus {
     outline: none;
   }
+  /* The outline follows the element's own border-radius. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}
+:is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea, select):focus-visible {
+  outline: none;
+  border-color: var(--color-focus);
 }
 /* Keyboard-focusable scrollers (message list): inset ring; beats the library's inline style. */
 [data-virtuoso-scroller]:focus-visible {
-  outline: 2px solid var(--color-accent) !important;
+  outline: 2px solid var(--color-focus) !important;
   outline-offset: -2px;
 }
 
@@ -799,8 +812,8 @@ svg.lucide {
 }
 .bubble-in:focus-visible > [data-focus-shape],
 .bubble-out:focus-visible > [data-focus-shape] {
-  filter: drop-shadow(2px 0 0 var(--color-accent)) drop-shadow(-2px 0 0 var(--color-accent))
-    drop-shadow(0 2px 0 var(--color-accent)) drop-shadow(0 -2px 0 var(--color-accent));
+  filter: drop-shadow(2px 0 0 var(--color-focus)) drop-shadow(-2px 0 0 var(--color-focus))
+    drop-shadow(0 2px 0 var(--color-focus)) drop-shadow(0 -2px 0 var(--color-focus));
 }
 /* Syntax runs in code blocks (lib/markdown/syntax.ts): colours only from theme tokens. */
 .syn-comment {

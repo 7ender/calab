@@ -76,7 +76,7 @@ export function RoomSubmenuPicker({ rooms, onSelect, itemClass }: { rooms: reado
             aria-label={t('picker.searchRooms')}
             placeholder={t('picker.searchRooms')}
             autoComplete="off"
-            className="selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-7 pr-2 text-body text-fg placeholder:text-faint focus-visible:outline-offset-0 [&::-webkit-search-cancel-button]:hidden"
+            className="selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-7 pr-2 text-body text-fg placeholder:text-faint [&::-webkit-search-cancel-button]:hidden"
           />
         </div>
       ) : null}
