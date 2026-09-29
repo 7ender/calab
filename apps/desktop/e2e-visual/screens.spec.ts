@@ -148,6 +148,12 @@ const KEY = new Set([
   'calendar-dialog',
   // Guest admission (ADR-0040).
   'members-admissions',
+  // Task boards (ADR-0042 §5).
+  'boards-kanban',
+  'boards-task',
+  'boards-list',
+  'boards-filter',
+  'boards-settings',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -3378,4 +3384,75 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('event-chip')).toHaveCount(3);
   await dialog.getByTestId('event-title-input').blur();
   await checkpoint(shot, 'calendar-dialog');
+});
+
+// ---------------------------------------------------------------- task boards (ADR-0042 §5)
+
+/** Boards mode on «Разработка» (CAL, the mock's seeded board), the clock at NOW. */
+async function boardsMode(win: Page, mock: MockServer): Promise<void> {
+  mock.setClock(NOW.getTime());
+  await win.getByTestId('boards-button').click();
+  await expect(win.getByTestId('kanban')).toBeVisible();
+  await expect(win.getByTestId('task-card').filter({ hasText: 'CAL-3' })).toBeVisible();
+}
+
+/** The kanban: the boards column, statuses with counts, cards with every chip (overdue CAL-3). */
+test('boards-kanban', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await checkpoint(shot, 'boards-kanban');
+});
+
+/** The task panel over the board (960: floating): properties, two assignees, relations, comments. */
+test('boards-task', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
+  await expect(panel.locator('[data-message-id]')).toHaveCount(2);
+  await checkpoint(shot, 'boards-task');
+});
+
+/** The list grouped by status, two rows selected: the bulk actions bar. */
+test('boards-list', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('view-list').click();
+  const rows = win.getByTestId('list-row');
+  await rows.filter({ hasText: 'CAL-2' }).getByTestId('row-select').click();
+  await rows.filter({ hasText: 'CAL-4' }).getByTestId('row-select').click();
+  await expect(win.getByTestId('bulk-bar')).toBeVisible();
+  await checkpoint(shot, 'boards-list');
+});
+
+/** «Фильтр» open over a filtered board: the «Мои» chip on, a label condition, the field list. */
+test('boards-filter', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('quick-mine').click();
+  await win.getByTestId('filter-button').click();
+  await win.getByTestId('filter-fields').getByRole('option', { name: 'Лейблы' }).click();
+  await win.getByTestId('filter-values').getByRole('option', { name: /Фича/ }).click();
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('filter-chip')).toHaveCount(2);
+  await win.getByTestId('filter-button').click();
+  await expect(win.getByTestId('filter-fields')).toBeVisible();
+  await checkpoint(shot, 'boards-filter');
+});
+
+/** Board settings → «Статусы»: the development template's six statuses. */
+test('boards-settings', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Статусы' }).click();
+  await expect(win.getByTestId('statuses-editor').locator('[data-settings-row]')).toHaveCount(6);
+  await checkpoint(shot, 'boards-settings');
 });

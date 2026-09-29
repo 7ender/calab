@@ -1,11 +1,11 @@
 import { create } from '@bufbuild/protobuf';
 import { BoardStatusType, BoardTemplate, PermissionTargetType, RoomPermissionOverrideSchema, WorkspaceRole, type Board, type BoardStatus } from '@calaba/protocol';
-import { Archive, ChevronDown, ChevronUp, Diamond, Plus, Settings2, ShieldCheck, Tag, Trash2, CircleDot } from 'lucide-react';
+import { Archive, ChevronDown, ChevronUp, Diamond, Plus, Settings2, ShieldCheck, Star, Tag, Trash2, CircleDot } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
-import { Button, Card, Field, Input, Modal, Row, Select, Switch, cx } from '../../components/ui';
+import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { compactDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { isFullRole } from '../../lib/roles';
@@ -161,13 +161,17 @@ function StatusesTab({ board }: { board: Board }): ReactNode {
               ))}
             </Select>
             <span className="flex-1" />
-            {s.isDefault ? (
-              <span className="text-caption text-muted">{t('boards.defaultStatus')}</span>
-            ) : (
-              <button type="button" className="text-caption text-accent-text hover:underline" onClick={() => void updateStatus(board.id, s.id, { isDefault: true })}>
-                {t('boards.makeDefault')}
+            <Tip label={s.isDefault ? t('boards.defaultStatus') : t('boards.makeDefault')}>
+              <button
+                type="button"
+                aria-pressed={s.isDefault}
+                aria-label={s.isDefault ? t('boards.defaultStatus') : t('boards.makeDefault')}
+                onClick={() => !s.isDefault && void updateStatus(board.id, s.id, { isDefault: true })}
+                className={cx('grid size-6 place-items-center rounded-full hover:bg-hover', s.isDefault ? 'text-[var(--color-role-owner)]' : 'text-faint hover:text-fg')}
+              >
+                <Star className="size-3.5" fill={s.isDefault ? 'currentColor' : 'none'} aria-hidden />
               </button>
-            )}
+            </Tip>
             <button type="button" aria-label={t('boards.moveUp')} disabled={i === 0} onClick={() => void moveStatus(board.id, s.id, i - 1)} className="grid size-6 place-items-center rounded-full text-muted hover:bg-hover disabled:opacity-30">
               <ChevronUp className="size-4" aria-hidden />
             </button>

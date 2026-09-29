@@ -106,11 +106,9 @@ export const TaskCard = memo(function TaskCard({
   const chip = 'inline-flex h-5 max-w-full items-center gap-1 rounded-full border border-line px-1.5 text-micro text-muted transition-colors duration-[var(--motion-fast)] hover:border-[var(--color-fill-hover)] hover:text-fg';
 
   const card = (
-    <div
-      role="button"
-      tabIndex={-1}
+    <article
       aria-label={`${task.key} ${task.title}`}
-      aria-pressed={open}
+      data-open={open || undefined}
       data-testid="task-card"
       data-task={id}
       data-key={task.key}
@@ -202,9 +200,9 @@ export const TaskCard = memo(function TaskCard({
             {task.commentCount}
           </span>
         ) : null}
-        {task.unread ? <span className="ml-auto size-2 rounded-full bg-accent" aria-label={t('boards.unread')} /> : null}
+        {task.unread ? <span role="img" className="ml-auto size-2 rounded-full bg-accent" aria-label={t('boards.unread')} /> : null}
       </div>
-    </div>
+    </article>
   );
 
   return <TaskContextMenu task={task} canEdit={canEdit} canArchive={mayArchiveTask(task, perms, me)} manage={hasBit(perms, MANAGE_BOARD)}>{card}</TaskContextMenu>;

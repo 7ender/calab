@@ -5,6 +5,8 @@ import type { MatchCtx } from '../../lib/boards/filter';
 import { useBoards } from '../../stores/boards';
 import { useSession } from '../../stores/session';
 import { useToday } from '../calendar/MiniCalendar';
+import { useMobile } from '../../lib/mobile';
+import { useBoardsUi, type ViewKind } from '../../stores/boardsUi';
 
 const NONE: BoardStatus[] = [];
 
@@ -21,4 +23,11 @@ export function useMatchCtx(boardId: string): MatchCtx {
     for (const s of statuses) map[s.id] = { type: s.type };
     return { me, statuses: map, today };
   }, [me, statuses, today]);
+}
+
+/** The board's view: the viewer's choice, else kanban (a phone: the list, ADR-0042 §5). */
+export function useViewKind(boardId: string): ViewKind {
+  const mobile = useMobile();
+  const kind = useBoardsUi((s) => s.prefs[boardId]?.kind);
+  return kind ?? (mobile ? 'list' : 'kanban');
 }

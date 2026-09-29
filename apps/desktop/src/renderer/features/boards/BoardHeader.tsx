@@ -14,7 +14,9 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 import { FilterButton, QuickChips } from './FilterBar';
 import { exportCsv } from './exportCsv';
 import { hasBit, CREATE_TASKS, MANAGE_BOARD } from './model';
-import { useMatchCtx } from './useBoardView';
+import { useMatchCtx, useViewKind } from './useBoardView';
+import { NavButton } from '../shell/MobileShell';
+import { useMobile } from '../../lib/mobile';
 
 const KINDS: ReadonlyArray<{ kind: ViewKind; label: 'boards.view.kanban' | 'boards.view.list' | 'boards.view.timeline'; icon: typeof Columns3; key: string }> = [
   { kind: 'kanban', label: 'boards.view.kanban', icon: Columns3, key: '1' },
@@ -31,20 +33,48 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
   const name = useBoards((s) => s.boards[boardId]?.name ?? '');
   const emoji = useBoards((s) => s.boards[boardId]?.emoji ?? '');
   const perms = useBoards((s) => s.boards[boardId]?.permissions);
-  const kind = useBoardsUi((s) => prefsOf(s, boardId).kind);
-  const setPrefs = useBoardsUi((s) => s.setPrefs);
   const manage = hasBit(perms, MANAGE_BOARD);
+  const mobile = useMobile();
   return (
     <div className="shrink-0">
-      <header className="flex h-12 items-center gap-2 border-b border-line pl-4 pr-2 mobile:pl-2" data-testid="board-header">
+      <header className="flex h-12 items-center gap-2 border-b border-line pl-4 pr-2 mobile:pl-1" data-testid="board-header">
+        {mobile ? <NavButton /> : null}
         <span className="shrink-0 text-headline leading-none" aria-hidden>
           {emoji || '📋'}
         </span>
         <h1 className="min-w-0 truncate text-headline font-semibold" title={name}>
           {name}
         </h1>
-        <ViewsMenu boardId={boardId} />
+        {mobile ? null : <ViewsMenu boardId={boardId} />}
         <span className="flex-1" />
+        {mobile ? null : <ViewSwitch boardId={boardId} />}
+        {hasBit(perms, CREATE_TASKS) ? (
+          <Tip label={t('boards.newTask')} shortcut="C">
+            <Button size="md" aria-label={t('boards.newTask')} className="ml-1 mobile:min-w-10 mobile:px-2.5" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
+              <Plus className="size-4" aria-hidden />
+              <span className="mobile:hidden">{t('boards.task')}</span>
+            </Button>
+          </Tip>
+        ) : null}
+        <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} />
+      </header>
+      <div className="flex h-10 items-center gap-1.5 px-3 mobile:overflow-x-auto" data-testid="filter-row">
+        <FilterButton boardId={boardId} workspaceId={workspaceId} />
+        <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
+        <QuickChips boardId={boardId} />
+        <span className="flex-1" />
+        {mobile ? <ViewSwitch boardId={boardId} /> : null}
+        <DisplayMenu boardId={boardId} />
+      </div>
+    </div>
+  );
+}
+
+/** `Канбан | Список | Таймлайн` (1 / 2 / 3); on a phone icons only, in the filter row. */
+function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
+  const kind = useViewKind(boardId);
+  const setPrefs = useBoardsUi((s) => s.setPrefs);
+  return (
         <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex shrink-0 rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="view-switch">
           {KINDS.map((k) => (
             <Tip key={k.kind} label={t(k.label)} shortcut={k.key}>
@@ -66,24 +96,6 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
             </Tip>
           ))}
         </div>
-        {hasBit(perms, CREATE_TASKS) ? (
-          <Tip label={t('boards.newTask')} shortcut="C">
-            <Button size="md" className="ml-1 mobile:px-2.5" onClick={() => useBoardsUi.getState().openCreate({ boardId })} data-testid="new-task">
-              <Plus className="size-4" aria-hidden />
-              <span className="mobile:hidden">{t('boards.task')}</span>
-            </Button>
-          </Tip>
-        ) : null}
-        <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} />
-      </header>
-      <div className="flex h-10 items-center gap-1.5 px-3 mobile:overflow-x-auto" data-testid="filter-row">
-        <FilterButton boardId={boardId} workspaceId={workspaceId} />
-        <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
-        <QuickChips boardId={boardId} />
-        <span className="flex-1" />
-        <DisplayMenu boardId={boardId} />
-      </div>
-    </div>
   );
 }
 
@@ -215,19 +227,20 @@ const SORTS: ReadonlyArray<{ v: SortBy; label: 'boards.sort.manual' | 'boards.so
 /** «Отображение»: grouping and sort (the list), «Показывать завершённые». */
 function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
   const prefs = useBoardsUi((s) => prefsOf(s, boardId));
+  const kind = useViewKind(boardId);
   const set = (p: Partial<BoardPrefs>): void => useBoardsUi.getState().setPrefs(boardId, p);
   const sel = 'h-7 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-control text-fg';
   return (
     <Popover.Root modal={false}>
       <Popover.Trigger asChild>
-        <button type="button" className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="display-menu">
+        <button type="button" aria-label={t('boards.display')} className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-control text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="display-menu">
           <SlidersHorizontal className="size-3.5" aria-hidden />
           <span className="mobile:hidden">{t('boards.display')}</span>
         </button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={4} collisionPadding={8} className="mat-popover anim-in z-[var(--z-popover)] flex w-[280px] flex-col gap-3 rounded-[var(--radius-card)] p-3 text-body">
-          {prefs.kind === 'list' ? (
+          {kind === 'list' ? (
             <>
               <label className="flex items-center justify-between gap-3">
                 <span className="text-muted">{t('boards.groupBy')}</span>
@@ -276,7 +289,7 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
-        <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="board-more">
+        <button type="button" aria-label={t('boards.more')} className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-10" data-testid="board-more">
           <Ellipsis className="size-[18px]" aria-hidden />
         </button>
       </Dropdown.Trigger>

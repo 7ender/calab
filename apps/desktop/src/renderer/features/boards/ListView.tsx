@@ -253,8 +253,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
   return (
     <TaskContextMenu task={task} canEdit={canEdit} canArchive={mayArchiveTask(task, perms, me)} manage={false}>
       <div
-        role="row"
-        aria-selected={selected}
+        data-selected={selected || undefined}
         data-testid="list-row"
         data-task={id}
         data-key={task.key}
@@ -283,7 +282,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
             <PriorityIcon priority={task.priority} />
           </button>
         </PriorityMenu>
-        <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted">{task.key}</span>
+        <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted mobile:hidden">{task.key}</span>
         <StatusMenu boardId={boardId} value={task.statusId} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...req('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.status')} data-testid="row-status">
             <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
@@ -331,7 +330,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
           align="end"
           {...req('assignee')}
         >
-          <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'h-6 min-w-6 px-0.5')} aria-label={t('boards.f.assignee')}>
+          <button type="button" onClick={stop} disabled={!canEdit} className="flex h-6 min-w-6 shrink-0 items-center rounded-[var(--radius-icon)] px-0.5 hover:bg-hover disabled:hover:bg-transparent" aria-label={t('boards.f.assignee')}>
             {task.assignees[0] ? <MemberAvatar workspaceId={workspaceId} userId={task.assignees[0].userId} size={20} /> : <UserRound className="size-4 text-faint" aria-hidden />}
             {task.assignees.length > 1 ? <span className="pl-0.5 text-micro text-muted">+{task.assignees.length - 1}</span> : null}
           </button>
@@ -350,7 +349,7 @@ function BulkBar({ boardId, workspaceId }: { boardId: string; workspaceId: strin
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-4" data-testid="bulk-bar">
       <div className="mat-popover pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full px-2 py-1 shadow-[var(--shadow-popover)]">
-        <span className="px-2 text-control font-medium tabular-nums">{plural('boards.selectedN', sel.length)}</span>
+        <span className="whitespace-nowrap px-2 text-control font-medium tabular-nums">{plural('boards.selectedN', sel.length)}</span>
         <StatusMenu boardId={boardId} value="" onPick={(statusId) => void bulkUpdate(sel, { statusId })}>
           <button type="button" className={btn} data-testid="bulk-status">
             {t('boards.f.status')} <ChevronDown className="size-3.5" aria-hidden />

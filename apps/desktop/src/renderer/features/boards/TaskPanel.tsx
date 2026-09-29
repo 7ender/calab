@@ -143,25 +143,25 @@ function PanelHeader({ task, boardName, perms, onClose, wide, mobile }: { task: 
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line pl-2 pr-2" data-testid="task-panel-header">
       {mobile ? (
-        <IconButton label={t('shell.back')} onClick={onClose}>
+        <IconButton label={t('shell.back')} onClick={onClose} className="mobile:size-10">
           <ArrowLeft className="size-5" aria-hidden />
         </IconButton>
       ) : null}
       <span className="min-w-0 truncate pl-2 text-caption text-muted">{boardName}</span>
       <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />
-      <button type="button" onClick={() => copyTaskLink(task.key)} className="shrink-0 rounded-[var(--radius-icon)] px-1 text-caption font-medium tabular-nums text-fg hover:bg-hover" title={t('boards.copyLink')} data-testid="panel-key">
+      <button type="button" onClick={() => copyTaskLink(task.key)} className="shrink-0 rounded-[var(--radius-icon)] px-1 text-caption font-medium tabular-nums text-fg hover:bg-hover mobile:h-10" title={t('boards.copyLink')} data-testid="panel-key">
         {task.key}
       </button>
       <span className="flex-1" />
-      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} data-testid="panel-subscribe">
+      <IconButton label={subscribed ? t('boards.unsubscribe') : t('boards.subscribe')} active={subscribed} onClick={() => void setSubscription(task.id, subscribed)} className="mobile:size-10" data-testid="panel-subscribe">
         {subscribed ? <Bell className="size-4" aria-hidden /> : <BellOff className="size-4" aria-hidden />}
       </IconButton>
-      <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)}>
+      <IconButton label={t('boards.copyLink')} onClick={() => copyTaskLink(task.key)} className="mobile:size-10">
         <Link2 className="size-4" aria-hidden />
       </IconButton>
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.more')} className="grid size-8 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="panel-more">
+          <button type="button" aria-label={t('boards.more')} className="grid size-8 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active mobile:size-10" data-testid="panel-more">
             <Ellipsis className="size-4" aria-hidden />
           </button>
         </Dropdown.Trigger>
@@ -381,7 +381,7 @@ function DescriptionEditor({ task, canEdit }: { task: Task; canEdit: boolean }):
 function Prop({ label, children, testId }: { label: string; children: ReactNode; testId?: string }): ReactNode {
   return (
     <div className="flex min-h-8 items-start gap-3" data-testid={testId}>
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted">{label}</span>
+      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-[88px]">{label}</span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">{children}</div>
     </div>
   );
@@ -528,7 +528,7 @@ function Assignees({ task, canEdit, req }: { task: Task; canEdit: boolean; req: 
   };
   return (
     <div className={cx('flex min-h-8 items-start gap-3 rounded-[var(--radius-row)]', over && 'ring-2 ring-accent')} onDragOver={onDragOver} onDragLeave={() => setOver(false)} onDrop={onDrop} data-testid="prop-assignees">
-      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted">{t('boards.assignees')}</span>
+      <span className="w-[104px] shrink-0 pt-1.5 text-caption text-muted mobile:w-[88px]">{t('boards.assignees')}</span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         {task.assignees.map((a) => (
           <AssigneeRow key={a.userId} task={task} userId={a.userId} lead={a.isLead} note={a.note} canEdit={canEdit} />
@@ -563,7 +563,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
     if (v.trim() !== note) void setAssignees(task.id, setNote(drafts, userId, v));
   };
   return (
-    <div className="group/as flex min-h-8 items-center gap-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]" data-testid="assignee-row" data-user={userId}>
+    <div className="group/as flex min-h-8 flex-wrap items-center gap-x-2 rounded-[var(--radius-row)] px-1 hover:bg-[color-mix(in_srgb,var(--color-fill)_40%,transparent)]" data-testid="assignee-row" data-user={userId}>
       <MemberAvatar workspaceId={task.workspaceId} userId={userId} size={20} />
       <span className="min-w-0 max-w-[40%] shrink truncate text-control font-medium">{name}</span>
       <Tip label={lead ? t('boards.lead') : t('boards.makeLead')}>
@@ -595,7 +595,7 @@ const AssigneeRow = memo(function AssigneeRow({ task, userId, lead, note, canEdi
         }}
         placeholder={canEdit ? t('boards.notePlaceholder') : ''}
         aria-label={t('boards.noteOf', { name })}
-        className="selectable h-7 min-w-0 flex-1 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg"
+        className="selectable h-7 min-w-[140px] flex-1 rounded-[var(--radius-row)] bg-transparent px-1.5 text-caption text-muted outline-none placeholder:text-faint focus:bg-elev focus:text-fg"
         data-testid="assignee-note"
       />
       {canEdit ? (

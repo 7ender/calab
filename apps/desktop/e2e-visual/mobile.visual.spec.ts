@@ -508,6 +508,32 @@ test('m-calendar-public', async ({ page }) => {
   await checkpoint(page, 'm-calendar-public');
 });
 
+// Task boards on a phone (ADR-0042 §5): boards in the drawer, the list by default, the task full screen.
+test('m-boards-list', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('boards-button').tap();
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await expect(nav).toHaveCount(0);
+  await expect(page.getByTestId('list-view')).toBeVisible();
+  await checkpoint(page, 'm-boards-list');
+});
+
+test('m-boards-task', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('boards-button').tap();
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).tap();
+  const panel = page.getByTestId('task-panel');
+  await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
+  await checkpoint(page, 'm-boards-task');
+});
+
 // The composer's «Стикеры» panel as a bottom sheet (ADR-0030): the pack strip, my pack, «Эмоции»
 // to add; animated stickers stand on their first frame (they play only on hover).
 test('m-sticker-picker', async ({ page }) => {

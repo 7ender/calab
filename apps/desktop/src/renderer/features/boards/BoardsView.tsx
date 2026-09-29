@@ -8,7 +8,7 @@ import { mayManageWorkspace } from '../../lib/permissions';
 import { ensureBoardTasks, loadBoard, loadMyTasks, useTaskDetails } from '../../services/boards';
 import type { TaskScope } from '../../services/boardsApi';
 import { useBoards, workspaceBoards } from '../../stores/boards';
-import { MY_TASKS, prefsOf, useBoardsUi } from '../../stores/boardsUi';
+import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
@@ -22,6 +22,9 @@ import { EmptyBoard, ListRow, ListView } from './ListView';
 import { hasBit, CREATE_TASKS } from './model';
 import { TaskPanel } from './TaskPanel';
 import { useBoardHotkeys } from './useBoardHotkeys';
+import { NavButton } from '../shell/MobileShell';
+import { useMobile } from '../../lib/mobile';
+import { useViewKind } from './useBoardView';
 
 /** The board shown for a workspace: the remembered one if it still exists, else the first, else «Мои задачи». */
 export function useActiveBoard(workspaceId: string): string {
@@ -61,7 +64,7 @@ export function BoardsView({ workspaceId, wide, mobile = false }: { workspaceId:
 }
 
 function Board({ boardId, workspaceId }: { boardId: string; workspaceId: string }): ReactNode {
-  const kind = useBoardsUi((s) => prefsOf(s, boardId).kind);
+  const kind = useViewKind(boardId);
   const load = useBoards((s) => s.load[boardId]);
   return (
     <>
@@ -118,6 +121,7 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const admin = mayManageWorkspace(useMemberRoles(workspaceId, me));
   const anyBoard = useBoards((s) => workspaceBoards(s.boards, workspaceId).length > 0);
+  const mobile = useMobile();
   useEffect(() => {
     void loadMyTasks(workspaceId, scope);
   }, [workspaceId, scope]);
@@ -151,13 +155,14 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
   }, [groups]);
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2" data-testid="my-tasks-header">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line pl-4 pr-2 mobile:pl-1" data-testid="my-tasks-header">
+        {mobile ? <NavButton /> : null}
         <Inbox className="size-[18px] text-muted" aria-hidden />
         <h1 className="min-w-0 flex-1 truncate text-headline font-semibold">{t('boards.myTasks')}</h1>
         {boards.length ? (
           <Dropdown.Root modal={false}>
             <Dropdown.Trigger asChild>
-              <Button data-testid="my-new-task">
+              <Button aria-label={t('boards.newTask')} className="mobile:min-w-10" data-testid="my-new-task">
                 <Plus className="size-4" aria-hidden /> <span className="mobile:hidden">{t('boards.task')}</span>
               </Button>
             </Dropdown.Trigger>

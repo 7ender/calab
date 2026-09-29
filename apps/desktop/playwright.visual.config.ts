@@ -70,6 +70,13 @@ export default defineConfig<VisualOptions>({
       testMatch: /calendar-[a-z-]+\.spec\.ts/,
       use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
     },
+    // Task boards (ADR-0042, docs/21): kanban, d&d, the panel, filter, views, list — behaviour
+    // only, the web build in Chromium.
+    {
+      name: 'boards',
+      testMatch: /boards-[a-z-]+\.spec\.ts/,
+      use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
+    },
     // A room switch never hangs in «Подключение…» (docs/09 #131): behaviour only, web build + dev LiveKit.
     { name: 'voice-switch', testMatch: /voice-switch\.spec\.ts/ },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only
