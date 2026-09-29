@@ -28,6 +28,7 @@ workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest
                     nickname, joined_at,
                     badge_id? → workspace_badges (ON DELETE SET NULL)   PK (workspace_id, user_id)
 workspace_badges    id, workspace_id, name (1..32), file_id → files, position, created_at   (docs/09 #82, ≤ 20 в пространстве)
+workspace_backgrounds id, workspace_id, name (1..40), file_id → files, position, created_at (ADR-0035, ≤ 20 в пространстве)
 workspace_roles     id, workspace_id, name (1..32), color (0xRRGGBB, 0 = нет), position (UNIQUE в пространстве),
                     permissions bigint, builtin ('owner'|'admin'|'member'|'guest'|NULL), mentionable, created_at
 member_roles        workspace_id, user_id, role_id      PK (workspace_id, user_id, role_id)   (ADR-0026)
@@ -270,6 +271,13 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - Библиотека пространства (`workspace_badges`, ≤ 20): название 1..32 + картинка — файл этого пространства, загруженный самим администратором (не чужой — бейдж делает файл читаемым всем участникам; не файл стикера; строка `files`, в квоте), PNG / WebP / JPEG ≤ 128 КБ и ≤ 256×256 (размеры сервер берёт из `files.width/height`, измеренных при загрузке). Клиент перед загрузкой обрезает картинку до квадрата и рисует 64×64 WebP (`lib/badgePrepare`). У участника — один бейдж (`workspace_members.badge_id`, `WorkspaceMember.badge_id`); бейдж — свойство членства в пространстве, в DM не показывается.
 - Права: библиотека (создать / переименовать / сменить картинку / удалить) — `MANAGE_WORKSPACE`; назначить / снять — `MANAGE_NICKNAMES` + иерархия `workspaces.outranks` (себе — можно), у ботов бейджа нет (403); список видят все участники (и гости), картинку бейджа читает любой участник пространства (`files.CanRead`, `IsWorkspaceBadge`). Бот-токен: управление — 403 `BOT_NOT_ALLOWED`, `GET …/badges` и `badge_id` у участника — читаются.
 - Доставка как у ролей (ADR-0026): `WorkspaceSnapshot.badges` в READY / WORKSPACE_CREATE, события `BADGE_CREATE` / `BADGE_UPDATE` / `BADGE_DELETE` всем участникам, смена бейджа участника — `WORKSPACE_MEMBER_UPDATE`. Удаление бейджа снимает его у всех (сначала `WORKSPACE_MEMBER_UPDATE` каждому, затем `BADGE_DELETE`); прежняя картинка без ссылок уходит с чисткой сирот (она пропускает живые картинки бейджей).
+
+## Фоны пространства (ADR-0035, дополнение 29.09)
+
+- Фоны камеры, которые админ добавляет для всех (`workspace_backgrounds`, ≤ 20, без лимита тарифа): название 1..40 + файл. Источник — своя загрузка в это пространство (правило бейджей: не чужой файл, не стикер), JPEG / PNG / WebP ≤ 10 МБ; клиент заранее режет его до 16:9 1280×720 WebP (тот же `prepareUpload`, что у своих картинок), а сервер всё равно делает **новый** файл сам: центр 16:9 → 1280×720 WebP + миниатюра 320×180 (`files.PrepareBackground`, отдаётся `GET /api/files/{id}/thumbnail`), резервирует его в квоте хранения пространства (413 при нехватке). Исходная загрузка остаётся неприкреплённой и уходит с чисткой сирот.
+- Права: список и картинка — любой участник, гости тоже (`files.CanRead`, `IsWorkspaceBackground`, как иконка); создать / переименовать / удалить — `MANAGE_WORKSPACE`; бот-токен — 403 `BOT_NOT_ALLOWED` на всех маршрутах (у ботов нет камеры).
+- Доставка: `WorkspaceSnapshot.backgrounds` в READY / WORKSPACE_CREATE, события `BACKGROUND_CREATE` / `BACKGROUND_UPDATE` / `BACKGROUND_DELETE` всем участникам. Удаление убирает только строку: картинка без ссылок уходит с чисткой сирот (живые фоны она пропускает), выбор у пользователей сбрасывает клиент.
+- Клиент: выбор — настройка устройства `cameraBackground.imageId = ws:<id>`; картинка скачивается один раз и лежит в IndexedDB (`calaba-workspace-backgrounds`, последние 3). Если выбранного фона больше нет (BACKGROUND_DELETE, пространство покинуто/удалено, нет после READY) — выбор сбрасывается на «Нет».
 
 ## Стикеры (ADR-0030)
 

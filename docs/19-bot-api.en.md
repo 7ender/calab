@@ -62,7 +62,7 @@ Without the SDK — any language with HTTP and WebSocket: REST below, the gatewa
 - Endpoints for people are **closed** to bots (`403 FORBIDDEN`, `reason: "BOT_NOT_ALLOWED"`): sessions, password,
   email, verification, status and profile settings, notes, creating / discovering / joining workspaces, all
   invitations and guest links, notification settings, DM archive, link previews, recording controls (start/stop/retry/delete), superadmin,
-  bot management.
+  bot management, workspace camera backgrounds (`/api/workspaces/{id}/backgrounds…`, ADR-0035 — bots have no camera).
 - A bot sees only what `VIEW_ROOM` allows; restricted rooms (ADR-0029) apply to bots too.
 - A person can "Block bot" — the bot then cannot write to them in DMs (`403 BOT_BLOCKED`).
 - One-to-one calls (ADR-0034) are not for bots: a bot neither calls nor answers (`POST /api/dms/{id}/call`, `/api/calls/…` — `403 BOT_NOT_ALLOWED`), and a bot cannot be called.
