@@ -25,8 +25,10 @@ import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlo
  *   renderer's `online` event). «Проверять обновления автоматически» off → only «Проверить».
  * - During a call / stream (tray state inVoice) a found update is not downloaded until it ends.
  * - Auto (build feed + «Автоматически обновлять» on + Windows / Linux AppImage / macOS built with
- *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, a «Calab X готова ·
- *   Перезапустить» banner in the bottom island and a tray item, install on restart or on quit.
+ *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, an accent bar under the
+ *   title bar («Доступна версия X — обновление уже загружено · Перезапустить и обновить», docs/09
+ *   #125) and a tray item, install on restart or on quit (autoInstallOnAppQuit). A pending
+ *   download is re-validated against the feed before install and every 6 h (updateFlow.ts).
  * - Otherwise notify only — «Доступна версия X — Скачать» opens `<server>/download/`. When the
  *   update is `installable` (build feed + a platform able to apply it, only the setting is off or
  *   a call is running) «О программе» offers «Скачать и установить» — the same flow, on request.
@@ -72,6 +74,7 @@ function getFlow(): UpdateFlow {
     platform: process.platform,
     signed: SIGNED,
     appImage: Boolean(process.env['APPIMAGE']),
+    currentVersion: app.getVersion(),
     autoUpdate: () => getSettings().autoUpdate,
     autoCheck: () => getSettings().autoCheckUpdates,
     // Dev (unpackaged) builds never check; an override replaces the pinned feed (notify-only).
@@ -119,9 +122,12 @@ export function updateStatus(): UpdateStatus {
   return getFlow().status();
 }
 
-/** «Перезапустить»: quit and install the downloaded update. */
-export function installUpdate(): boolean {
-  return getFlow().install();
+/**
+ * «Перезапустить» (bar, «О программе», tray): re-check the feed, then quit and install the
+ * downloaded update; `afterCall` during a call — «Перезапустить после звонка», installs when it ends.
+ */
+export function installUpdate(afterCall = false): boolean {
+  return getFlow().install({ afterCall });
 }
 
 /** «Скачать и установить» in «О программе»: download an installable available update now. */

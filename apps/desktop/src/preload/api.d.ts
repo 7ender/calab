@@ -60,8 +60,11 @@ export interface CalabaApi {
     onUpdateStatus(cb: (s: UpdateStatus) => void): Unsubscribe;
     /** Current update status (after a renderer reload). */
     updateStatus(): Promise<UpdateStatus>;
-    /** «Перезапустить»: quit and install the downloaded update; false when none is downloaded. */
-    installUpdate(): Promise<boolean>;
+    /**
+     * «Перезапустить»: quit and install the downloaded update (main re-checks the feed first);
+     * `afterCall` during a call: when the call ends. false when none is downloaded.
+     */
+    installUpdate(afterCall?: boolean): Promise<boolean>;
     /** «Скачать и установить»: download an `installable` available update; false when there is none. */
     downloadUpdate(): Promise<boolean>;
     /** The window's `online` event: main runs a throttled update check (main has no such event). */
