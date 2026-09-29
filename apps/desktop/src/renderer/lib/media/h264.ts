@@ -152,3 +152,40 @@ export function layerSize(l: H264Layout, i: number): { width: number; height: nu
   const s = l.scales[i] ?? 1;
   return { width: l.width / s, height: l.height / s };
 }
+
+/**
+ * An H.264 layer on the wire with an odd size (outbound-rtp `frameWidth` / `frameHeight`): the
+ * hardware encoder refuses it and libwebrtc silently encodes it with OpenH264 (+5 % of a core for
+ * a 1080p screen's thumb on M4, docs/14 «Стрим экрана: захват»). Happens when the capture changes
+ * its size after `alignCaptureForH264` pinned it: a shared window's content rect settles after the
+ * first frames, and a source smaller than the pin is not upscaled to it.
+ */
+export function hasOddH264Layer(layers: ReadonlyArray<{ codec: string; width: number | null; height: number | null; active?: boolean | null }>): boolean {
+  return layers.some((l) => l.codec.toLowerCase() === 'h264' && l.active !== false && ((l.width ?? 0) % 2 === 1 || (l.height ?? 0) % 2 === 1));
+}
+
+/**
+ * A `scaleResolutionDownBy` for a lower layer that gives even sides on a `width × height` capture,
+ * its short side close to `layerShort` (within 8 %); null = none (or no downscale needed).
+ * libwebrtc rounds `side / scale` (`encoder_stream_factory.cc`), older code truncated: a side
+ * counts as even only when both agree (fraction < 0.5 and an even floor). Fixing the layer's scale
+ * instead of re-cropping the capture: a new `exact` constraint on a window capture makes
+ * ScreenCaptureKit refit the content and shrink the frame again (seen: 1770 → 1594 → 1464 wide).
+ */
+export function evenLayerScale(width: number, height: number, layerShort: number): number | null {
+  const short = Math.min(width, height);
+  if (!(width > 0 && height > 0 && layerShort > 0) || short <= layerShort) return null;
+  const even = (v: number): boolean => {
+    const f = Math.floor(v);
+    return f > 0 && f % 2 === 0 && v - f < 0.5;
+  };
+  const target = Math.round(layerShort / 2) * 2;
+  for (let d = 0; d <= layerShort * 0.08; d += 2) {
+    for (const t of d === 0 ? [target] : [target - d, target + d]) {
+      if (t <= 0 || t >= short) continue;
+      const scale = short / t;
+      if (even(width / scale) && even(height / scale)) return scale;
+    }
+  }
+  return null;
+}

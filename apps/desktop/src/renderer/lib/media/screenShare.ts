@@ -13,8 +13,9 @@ import { publishOptionalAudio, type StreamAudioProblem } from './streamAudio';
 import { t } from '../../i18n';
 import { capFps } from '../plan';
 import type { PublishCodec } from './codecSelect';
-import { layerSize, type H264Layout, type H264Profile } from './h264';
+import { evenLayerScale, layerSize, type H264Layout, type H264Profile } from './h264';
 import { alignCaptureForH264, setH264Profile } from './h264Publish';
+import { log } from '../log';
 
 export type { StreamAudioProblem } from './streamAudio';
 
@@ -91,6 +92,12 @@ export interface ScreenShareOptions {
 
 export interface ActiveScreenShare {
   video: LocalVideoTrack;
+  /**
+   * H.264: after the capture changed size and left the thumb layer odd (`hasOddH264Layer`, OpenH264
+   * in software), gives that layer a scale with even sides (`evenLayerScale`) — the capture itself
+   * is not touched. False when nothing was changed.
+   */
+  realign(): Promise<boolean>;
   audio: LocalAudioTrack | null;
   audioProblem: StreamAudioProblem;
   sourceName: string;
@@ -237,7 +244,30 @@ export async function startScreenShare(
     void stop().then(onEnded);
   });
 
+  let realigning = false;
+  const realign = async (): Promise<boolean> => {
+    const sender = video.sender;
+    if (codec !== 'h264' || !sender || realigning || stopped) return false;
+    const { width = 0, height = 0 } = videoTrack.getSettings();
+    const scale = evenLayerScale(width, height, THUMB_LAYER.height);
+    const params = sender.getParameters();
+    const thumb = params.encodings.find((e) => e.rid === 'q');
+    if (!scale || !thumb || thumb.scaleResolutionDownBy === scale) return false;
+    thumb.scaleResolutionDownBy = scale;
+    realigning = true;
+    try {
+      await sender.setParameters(params);
+      return true;
+    } catch (err) {
+      // Raced livekit-client's dynacast update (a stale transaction): the next stats tick retries.
+      log.warn('stream: could not rescale the thumb layer', err);
+      return false;
+    } finally {
+      realigning = false;
+    }
+  };
+
   // Web: the browser picked the source; its label is the best name we have.
   const sourceName = opts.source.name || videoTrack.label || t('common.screen');
-  return { video, audio, audioProblem, sourceName, stop };
+  return { video, audio, audioProblem, sourceName, stop, realign };
 }

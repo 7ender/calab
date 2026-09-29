@@ -2,10 +2,10 @@ import { ScreenSharePreset } from '@calaba/protocol';
 import { ParticipantEvent, type LocalParticipant, type Track } from 'livekit-client';
 import { EventEmitter } from 'events';
 import { describe, expect, it, vi } from 'vitest';
-import { h264Layout, h264ProfileLabel, h264ProfileOf, layerSize, preferH264High } from './h264';
+import { evenLayerScale, h264Layout, h264ProfileLabel, h264ProfileOf, hasOddH264Layer, layerSize, preferH264High } from './h264';
 
 vi.mock('../../platform', () => ({ platform: {} }));
-import { alignCaptureForH264, applyH264High, installH264ProfileHook, setH264Profile } from './h264Publish';
+import { alignCaptureForH264, applyH264High, installH264ProfileHook, realFrameSize, setH264Profile } from './h264Publish';
 import { screenPublishOptions } from './screenShare';
 import { cameraPublishOptions } from './camera';
 
@@ -171,14 +171,85 @@ describe('even H.264 layers', () => {
     const track = { getSettings: () => settings, applyConstraints } as unknown as MediaStreamTrack;
     expect(await alignCaptureForH264(track, [360], 15)).toEqual({ width: 1104, height: 720, scales: [2] });
     expect(applyConstraints).toHaveBeenCalledWith({ width: { exact: 1104 }, height: { exact: 720 }, resizeMode: 'crop-and-scale', frameRate: { ideal: 15, max: 15 } });
-    // Aligned already: no constraint change.
+    // Aligned already: pinned all the same (a later resize of the source must not make it odd).
     expect(await alignCaptureForH264(track, [360], 15)).toEqual({ width: 1104, height: 720, scales: [2] });
-    expect(applyConstraints).toHaveBeenCalledTimes(1);
+    expect(applyConstraints).toHaveBeenCalledTimes(2);
+  });
+
+  it('aligns to the first frame, not to the requested size the settings report before it (docs/14)', async () => {
+    // getDisplayMedia at the 1080p preset reports 1920×1080 until ScreenCaptureKit delivers 1658×1078.
+    let settings = { width: 1920, height: 1080 };
+    const applyConstraints = vi.fn((c: MediaTrackConstraints) => {
+      settings = { width: (c.width as ConstrainULongRange).exact ?? 0, height: (c.height as ConstrainULongRange).exact ?? 0 };
+      return Promise.resolve();
+    });
+    const track = { getSettings: () => settings, applyConstraints } as unknown as MediaStreamTrack;
+    const close = vi.fn();
+    const grab = vi.fn(() => Promise.resolve({ width: 1658, height: 1078, close }));
+    const l = await alignCaptureForH264(track, [360], 15, grab);
+    expect(l).toEqual({ width: 1656, height: 1074, scales: [3] });
+    if (l) expect(layerSize(l, 0)).toEqual({ width: 552, height: 358 });
+    expect(close).toHaveBeenCalled();
+  });
+
+  it('realFrameSize: no frame in time or a failing grab → the settings', async () => {
+    vi.useFakeTimers();
+    try {
+      const track = { getSettings: () => ({ width: 1280, height: 720 }) } as unknown as MediaStreamTrack;
+      const pending = realFrameSize(track, () => new Promise(() => undefined), 1500);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(await pending).toEqual({ width: 1280, height: 720 });
+      expect(await realFrameSize(track, () => Promise.reject(new Error('ended')))).toEqual({ width: 1280, height: 720 });
+      expect(await realFrameSize(track, null)).toEqual({ width: 1280, height: 720 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a capture that ignores the constraint: null (publish with the nominal layers)', async () => {
     const track = { getSettings: () => ({ width: 1107, height: 720 }), applyConstraints: () => Promise.resolve() } as unknown as MediaStreamTrack;
     expect(await alignCaptureForH264(track, [360], 15)).toBeNull();
+  });
+});
+
+describe('hasOddH264Layer (the stream watchdog, docs/14 «Стрим экрана: захват»)', () => {
+  const layer = (codec: string, width: number | null, height: number | null, active: boolean | null = true) => ({ codec, width, height, active });
+  it('an odd active H.264 layer (a window capture that settled at 1762×1070: thumb 587×356)', () => {
+    expect(hasOddH264Layer([layer('H264', 1762, 1070), layer('H264', 587, 356)])).toBe(true);
+    expect(hasOddH264Layer([layer('H264', 1770, 1074), layer('H264', 590, 358)])).toBe(false);
+  });
+  it('not for other codecs, paused layers or layers without a size yet', () => {
+    expect(hasOddH264Layer([layer('AV1', 1107, 720)])).toBe(false);
+    expect(hasOddH264Layer([layer('H264', 553, 359, false)])).toBe(false);
+    expect(hasOddH264Layer([layer('H264', null, null)])).toBe(false);
+    expect(hasOddH264Layer([])).toBe(false);
+  });
+});
+
+describe('evenLayerScale (a thumb scale with even sides, docs/14 «Стрим экрана: захват»)', () => {
+  const sides = (w: number, h: number, s: number): [number, number] => [w / s, h / s];
+  const isEven = (v: number) => Math.floor(v) % 2 === 0 && v - Math.floor(v) < 0.5;
+  it('a window capture that settled at 1762×1070 (×3 would be 587×357): even and near 360', () => {
+    const s = evenLayerScale(1762, 1070, 360);
+    expect(s).not.toBeNull();
+    const [w, h] = sides(1762, 1070, s ?? 1);
+    expect(isEven(w) && isEven(h)).toBe(true);
+    expect(Math.abs(Math.min(w, h) - 360)).toBeLessThanOrEqual(30);
+  });
+  it('every capture size gets one, within 8 % of the layer', () => {
+    for (let w = 700; w <= 3000; w += 22) {
+      for (let h = 500; h <= 1700; h += 26) {
+        const s = evenLayerScale(w, h, 360);
+        if (s === null) continue;
+        const [a, b] = sides(w, h, s);
+        expect(isEven(a) && isEven(b)).toBe(true);
+        expect(Math.abs(Math.min(a, b) - 360)).toBeLessThanOrEqual(360 * 0.08 + 1);
+      }
+    }
+  });
+  it('no downscale needed or no size: null', () => {
+    expect(evenLayerScale(640, 360, 360)).toBeNull();
+    expect(evenLayerScale(0, 0, 360)).toBeNull();
   });
 });
 

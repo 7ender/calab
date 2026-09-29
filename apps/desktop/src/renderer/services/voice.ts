@@ -31,6 +31,7 @@ import {
   type DesktopSource,
 } from '../lib/media/screenShare';
 import { pickPublishCodec } from '../lib/media/codecSelect';
+import { hasOddH264Layer } from '../lib/media/h264';
 import { installH264ProfileHook } from '../lib/media/h264Publish';
 import { micTier, type OpusTier } from '../lib/media/opusTier';
 import { applyMicTier, installOpusTierHook } from '../lib/media/opusTierPublish';
@@ -2314,6 +2315,13 @@ class VoiceEngine {
     this.camera.onStats(cameraOut);
     const screenReport = await this.screen?.video.getRTCStatsReport();
     const screenOut = screenReport ? outboundVideo(screenReport, this.rates, 'screen') : [];
+    // A capture that changed size after publishing left an H.264 layer odd → OpenH264 (docs/14).
+    if (hasOddH264Layer(screenOut)) {
+      const was = screenOut.map((l) => `${l.width}x${l.height}`);
+      void this.screen?.realign().then((ok) => {
+        if (ok) log.info('stream: odd H.264 layer, rescaled the thumb', { was });
+      });
+    }
     if (screenReport) {
       note(screenReport);
       pair ??= candidatePair(screenReport);

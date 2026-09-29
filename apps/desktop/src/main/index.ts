@@ -69,7 +69,10 @@ log.info('chromium features', { enable: features, disable: echo.disable });
 // Test/automation only: synthetic mic (beep), no OS permission prompts.
 if (process.env['CALABA_FAKE_MEDIA'] === '1') {
   app.commandLine.appendSwitch('use-fake-device-for-media-stream');
-  app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
+  // The fake UI also swaps getDisplayMedia for Chromium's fake screen (`screen:-3:0`), whatever
+  // source our picker armed. CALABA_REAL_SCREEN=1 (tools/perf-call.ts --bench F) keeps the fake
+  // mic but captures the real screen / window; permissions go through our own handler anyway.
+  if (process.env['CALABA_REAL_SCREEN'] !== '1') app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
 }
 
 registerApiScheme();

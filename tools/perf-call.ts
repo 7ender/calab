@@ -29,6 +29,14 @@
  * waits 30 s for bandwidth estimation. The encoder (implementation, fps per layer) is printed before
  * and after the run: check that both variants being compared encode the same.
  *
+ * `--bench F --content static|moving [--source window|screen] [--preset 720|1080] [--hint detail|motion]`:
+ * I stream my screen (docs/14 «Стрим экрана: захват»), real capture (ScreenCaptureKit, no fake
+ * device for video): `window` (default) shares a Chromium window this script opens — a code
+ * editor page that stays still (`static`) or scrolls 30 times a second (`moving`) — so the content
+ * is the same on every run; `screen` shares the whole main display as it is. A viewer watches the
+ * top layer (`--viewer` is implied). Needs Screen Recording for the terminal that runs it (TCC
+ * attributes a child Electron to it). Capture / encoder rates are printed before and after the run.
+ *
  * `--recording`: «Созвон» is being recorded (ROOM_RECORDING, Борис 12:34 ago) — the REC dot on the
  * card, the «Запись» pill in the island (docs/09 #64). A bench also samples WindowServer: the
  * compositor redraws blurred surfaces under an animated layer there, not in the app.
@@ -68,7 +76,16 @@ const POPOVER = argv.includes('--popover');
 const RECORDING = argv.includes('--recording');
 const DM_CALL = argv.includes('--dm-call');
 /** `--viewer` (K): a second participant watches my camera at full size, so the encoder runs (dynacast). */
-const VIEWER = argv.includes('--viewer');
+const VIEWER = argv.includes('--viewer') || BENCH === 'F';
+/** F: what the stream shows — a still code page or one scrolling 30×/s. */
+const CONTENT = opt('content', 'static');
+/** F: a window of this script (controlled content) or the whole main display. */
+const SOURCE = opt('source', 'window');
+/** F: the stream preset (720 / 1080) and the content hint (the picker's «Текст» / «Видео»). */
+const PRESET = opt('preset', '1080');
+const HINT = opt('hint', 'detail');
+/** F `--source window`: share another window by its name instead (e.g. a Finder window). */
+const WINDOW_NAME = opt('window-name', '');
 const ROOT = resolve(import.meta.dirname, '..');
 const DESKTOP = resolve(ROOT, 'apps/desktop');
 process.env['MOCK_LIVEKIT_ROOM_PREFIX'] ||= `perfcall${PORT}_`;
@@ -309,13 +326,36 @@ async function startSpeaker(origin: string, userId: string, name: string, roomId
   return browser;
 }
 
+const CONTENT_TITLE = 'Calab bench content';
+
+/**
+ * F: a code editor page in a Chromium window of its own (1280×800, dark, monospace): still, or
+ * scrolled by 4 px 30 times a second (`moving`). Occluded windows keep painting (Playwright's
+ * `--disable-backgrounding-occluded-windows`), so the app window may cover it.
+ */
+async function openContent(moving: boolean): Promise<Browser> {
+  // `--content-size WxH`: another window size (points), e.g. one whose capture needs H.264 alignment.
+  const browser = await chromium.launch({ headless: false, args: ['--mute-audio', '--window-position=40,40', `--window-size=${opt('content-size', '1280x800').replace('x', ',')}`] });
+  const page = await browser.newPage({ viewport: null });
+  const lines = Array.from({ length: 400 }, (_, i) => {
+    const n = String(i + 1).padStart(4, ' ');
+    const code = ['func handle(w http.ResponseWriter, r *http.Request) {', '\tctx := r.Context()', '\tuser, err := auth.FromContext(ctx)', '\tif err != nil {', '\t\thttp.Error(w, "unauthorized", http.StatusUnauthorized)', '\t\treturn', '\t}', '\trows, err := db.Query(ctx, `SELECT id, name FROM rooms WHERE ws = $1`, user.WS)', '}', ''][i % 10];
+    return `<div><span style="color:#6e7681">${n}</span>  ${code.replace(/</g, '&lt;')}</div>`;
+  }).join('');
+  await page.setContent(
+    `<!doctype html><title>${CONTENT_TITLE}</title><style>html,body{margin:0;height:100%;background:#1e1f22;color:#d4d4d8;font:14px/20px Menlo,monospace}#s{height:100%;overflow:hidden;white-space:pre;padding:8px 16px}</style><div id="s">${lines}</div>` +
+      (moving ? `<script>const s=document.getElementById('s');setInterval(()=>{s.scrollTop=(s.scrollTop+4)%(s.scrollHeight-s.clientHeight)},33)</script>` : ''),
+  );
+  return browser;
+}
+
 async function launch(url: string, userData: string, wav: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
     // K: the fake camera delivers GPU buffers like a real macOS camera (IOSurface, zero-copy capture);
     // without it every frame is copied from CPU memory into WebGL and the background looks dearer.
     args: ['.', '--lang=ru', '--mute-audio', `--use-file-for-fake-audio-capture=${wav}`, '--disable-features=AudioServiceOutOfProcess', ...(BENCH === 'K' ? ['--video-capture-use-gpu-memory-buffer'] : [])],
     cwd: DESKTOP,
-    env: { ...process.env, CALABA_SERVER_URL: url, CALABA_USER_DATA: userData, CALABA_MULTI_INSTANCE: '1', CALABA_FAKE_MEDIA: '1', ELECTRON_RENDERER_URL: '', LANG: 'ru_RU.UTF-8' },
+    env: { ...process.env, CALABA_SERVER_URL: url, CALABA_USER_DATA: userData, CALABA_MULTI_INSTANCE: '1', CALABA_FAKE_MEDIA: '1', ELECTRON_RENDERER_URL: '', LANG: 'ru_RU.UTF-8', ...(BENCH === 'F' ? { CALABA_REAL_SCREEN: '1' } : {}) },
   });
   const page = await app.firstWindow();
   await app.evaluate(({ BrowserWindow }) => {
@@ -337,13 +377,16 @@ async function main(): Promise<void> {
   let publisher: Browser | null = null;
   let speaker: Browser | null = null;
   let viewer: Browser | null = null;
+  let content: Browser | null = null;
   let app: ElectronApplication | null = null;
   try {
     // Sign in once, then relaunch with the hook installed from the first script.
     {
       const l = await launch(mock.url, userData, wav);
       const p = l.page;
-      await p.evaluate((stats) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru', devStats: stats }, version: 1 })), STATS);
+      // F: the stream preset and content hint the picker starts with.
+      const stream = BENCH === 'F' ? { streamPreset: PRESET === 'eco' ? 1 : PRESET === '720' ? 2 : 3, contentHint: HINT } : {};
+      await p.evaluate(({ stats, stream }) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru', devStats: stats, ...stream }, version: 1 })), { stats: STATS, stream });
       await p.reload();
       await p.getByLabel('Email').fill('owner@calaba.test');
       await p.getByLabel('Пароль', { exact: true }).fill('password123');
@@ -362,8 +405,8 @@ async function main(): Promise<void> {
       await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `var __name = (f) => f; (${INIT.toString()})()` });
       await page.reload();
     }
-    // K: keep the peer connections reachable, to report what the encoder really does.
-    if (BENCH === 'K') {
+    // K / F: keep the peer connections reachable, to report what the encoder really does.
+    if (BENCH === 'K' || BENCH === 'F') {
       await cdp.send('Page.enable');
       await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
         source: `(() => { const P = window.RTCPeerConnection; window.__pcs = []; window.RTCPeerConnection = function (...a) { const pc = new P(...a); window.__pcs.push(pc); return pc; }; window.RTCPeerConnection.prototype = P.prototype; })()`,
@@ -419,6 +462,47 @@ async function main(): Promise<void> {
         viewer = await startViewer(IDS.rooms.call);
         await page.waitForTimeout(30_000);
       }
+    }
+    if (BENCH === 'F') {
+      page.on('console', (m) => {
+        if (/h264|stream|capture/i.test(m.text())) process.stdout.write(`console: ${m.text().slice(0, 300)}\n`);
+      });
+      // The content: a Chromium window of its own (not the app's processes), then my stream of it.
+      if (SOURCE === 'window' && !WINDOW_NAME) content = await openContent(CONTENT === 'moving');
+      await page.getByRole('button', { name: 'Показать экран' }).first().click();
+      const picker = page.getByTestId('stream-picker');
+      await picker.getByTestId('stream-source').first().waitFor({ timeout: 15_000 });
+      if (SOURCE === 'window') {
+        await picker.getByRole('radio', { name: 'Приложения' }).click();
+        await picker.getByRole('button', { name: new RegExp(`^${WINDOW_NAME || CONTENT_TITLE}`) }).first().click({ force: true });
+      } else {
+        await picker.getByTestId('stream-source').first().getByRole('button').first().click({ force: true });
+      }
+      // A forced click lands on the card's hover «Стримить» (starts at once); else «Начать стрим».
+      if (await picker.isVisible()) await page.getByRole('button', { name: 'Начать стрим' }).click({ timeout: 3000 }).catch(() => undefined);
+      await page.getByRole('button', { name: 'Остановить показ' }).first().waitFor({ timeout: 20_000 });
+      // `--no-viewer`: nobody watches — dynacast pauses the encoder (capture and preview only).
+      if (!argv.includes('--no-viewer')) viewer = await startViewer(IDS.rooms.call);
+      await page.waitForTimeout(30_000);
+      // `--fps N` (experiment): the capture's frame rate lowered after publishing.
+      const fpsCap = Number(opt('fps', '0'));
+      if (fpsCap > 0)
+        await page.evaluate(async (fps) => {
+          for (const pc of (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs ?? [])
+            for (const x of pc.getSenders()) if (x.track?.kind === 'video') await x.track.applyConstraints({ ...x.track.getConstraints(), frameRate: { max: fps } });
+        }, fpsCap);
+      // `--overlay` (screen): the presenter's annotation overlay open, as after a viewer's first stroke.
+      if (argv.includes('--overlay'))
+        process.stdout.write(
+          `overlay: ${await page.evaluate(async () => {
+            type Api = { capture: { listSources(t: unknown): Promise<Array<{ id: string; kind: string; displayId: string }>> }; annotOverlay: { open(t: unknown): Promise<boolean> } };
+            const api = (window as unknown as { calaba: Api }).calaba;
+            const s = (await api.capture.listSources({ screen: { width: 8, height: 8 }, window: { width: 8, height: 8 } })).find((x) => x.kind === 'screen');
+            return s ? api.annotOverlay.open({ sourceId: s.id, displayId: s.displayId }) : false;
+          })}\n`,
+        );
+      // `--hide`: the app window closed to the tray while streaming (the usual case: I show another app).
+      if (argv.includes('--hide')) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.hide());
     }
     if (BENCH === 'E') {
       mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false, camera: true });
@@ -547,39 +631,66 @@ async function main(): Promise<void> {
     process.stdout.write(`{\n${Object.entries(out).map(([k, v]) => ` ${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(',\n')}\n}\n`);
 
     const encoder = async (): Promise<void> => {
-      const enc = async (): Promise<Record<string, { frames: number; impl: string; w: number; limit: string }>> =>
+      type Enc = { frames: number; impl: string; w: number; limit: string; bytes?: number; pkts?: number };
+      const enc = async (): Promise<Record<string, Enc>> =>
         page.evaluate(async () => {
-          const o: Record<string, { frames: number; impl: string; w: number; limit: string }> = {};
+          const o: Record<string, { frames: number; impl: string; w: number; limit: string; bytes?: number; pkts?: number }> = {};
           for (const pc of (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs ?? []) {
             const st = await pc.getStats();
             st.forEach((r: Record<string, unknown>) => {
-              if (r['type'] === 'outbound-rtp' && r['kind'] === 'video') o[String(r['rid'] ?? r['ssrc'])] = { frames: Number(r['framesEncoded'] ?? 0), impl: String(r['encoderImplementation'] ?? ''), w: Number(r['frameWidth'] ?? 0), limit: String(r['qualityLimitationReason'] ?? '') };
+              if (r['type'] === 'outbound-rtp' && r['kind'] === 'video') o[String(r['rid'] ?? r['ssrc'])] = { frames: Number(r['framesEncoded'] ?? 0), impl: String(r['encoderImplementation'] ?? ''), w: Number(r['frameWidth'] ?? 0), limit: String(r['qualityLimitationReason'] ?? ''), bytes: Number(r['bytesSent'] ?? 0) + Number(r['headerBytesSent'] ?? 0), pkts: Number(r['packetsSent'] ?? 0) };
+              if (r['type'] === 'candidate-pair' && r['nominated']) o[`pair-${String(r['id'])}`] = { frames: 0, impl: 'pair', w: 0, limit: '', bytes: Number(r['bytesSent'] ?? 0), pkts: Number(r['packetsSent'] ?? 0) };
+              // What the capturer delivers (frames into the track), before any encoder.
+              if (r['type'] === 'media-source' && r['kind'] === 'video') o[`src-${String(r['id'])}`] = { frames: Number(r['frames'] ?? 0), impl: 'capture', w: Number(r['width'] ?? 0), limit: `${String(r['width'] ?? '')}x${String(r['height'] ?? '')}` };
             });
           }
           return o;
         });
       const a = await enc();
+      if (BENCH === 'F') {
+        const tracks = await page.evaluate(() =>
+          ((window as unknown as { __pcs: RTCPeerConnection[] }).__pcs ?? []).flatMap((pc) =>
+            pc.getSenders().flatMap((x) => (x.track?.kind === 'video' ? [{ hint: x.track.contentHint, ...x.track.getSettings() }] : [])),
+          ),
+        );
+        process.stdout.write(`track: ${JSON.stringify(tracks)}\n`);
+        if (process.env['DBG_ALIGN']) {
+          const r = await page.evaluate(async () => {
+            const t = ((window as unknown as { __pcs: RTCPeerConnection[] }).__pcs ?? []).flatMap((pc) => pc.getSenders().map((x) => x.track)).find((x) => x?.kind === 'video');
+            if (!t) return 'no track';
+            const s = t.getSettings();
+            try {
+              await t.applyConstraints({ width: { exact: 1638 }, height: { exact: 1068 }, resizeMode: 'crop-and-scale', frameRate: { ideal: 15, max: 15 } } as MediaTrackConstraints);
+              return `ok ${JSON.stringify(s)} -> ${JSON.stringify(t.getSettings())} caps ${JSON.stringify(t.getCapabilities())}`;
+            } catch (e) {
+              return `err ${String((e as Error).name)} ${String((e as { constraint?: string }).constraint)} ${String(e)} caps ${JSON.stringify(t.getCapabilities())} constraints ${JSON.stringify(t.getConstraints())}`;
+            }
+          });
+          process.stdout.write(`align: ${r}\n`);
+        }
+      }
       await page.waitForTimeout(5000);
       const b = await enc();
-      process.stdout.write(`encoder: ${JSON.stringify(Object.fromEntries(Object.entries(b).map(([k, v]) => [k, { ...v, fps: round((v.frames - (a[k]?.frames ?? 0)) / 5) }])))}\n`);
+      process.stdout.write(`encoder: ${JSON.stringify(Object.fromEntries(Object.entries(b).map(([k, v]) => [k, { ...v, fps: round((v.frames - (a[k]?.frames ?? 0)) / 5), kbps: round((((v.bytes ?? 0) - (a[k]?.bytes ?? 0)) * 8) / 5000), pps: round(((v.pkts ?? 0) - (a[k]?.pkts ?? 0)) / 5) }])))}\n`);
     };
     // K: what the encoder does (dynacast pauses every layer while nobody watches) before and after.
-    if (BENCH === 'K') await encoder();
+    if (BENCH === 'K' || BENCH === 'F') await encoder();
     if (BENCH) {
       const bundle = resolve(ROOT, 'node_modules/electron/dist/Electron.app');
       const outDir = opt('bench-out', join(tmpdir(), 'calaba-energy'));
-      const scenario = (BENCH === 'K' ? `K-camera-720p15-bg-${BG}` : BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '');
-      const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, scenario, '--seconds', String(BENCH_SECONDS), '--out', outDir, '--with', 'WindowServer'], {
+      const scenario = (BENCH === 'F' ? `F-stream-${PRESET}p-${SOURCE}-${CONTENT}-${HINT}` : BENCH === 'K' ? `K-camera-720p15-bg-${BG}` : BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '');
+      const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, scenario, '--seconds', String(BENCH_SECONDS), '--out', outDir, '--with', 'WindowServer', ...(BENCH === 'F' ? ['--with', 'replayd'] : [])], {
         stdio: 'inherit',
       });
       if (r.status !== 0) process.exitCode = 1;
-      if (BENCH === 'K') await encoder();
+      if (BENCH === 'K' || BENCH === 'F') await encoder();
     }
   } finally {
     for (const t of timers) clearInterval(t);
     await publisher?.close().catch(() => undefined);
     await speaker?.close().catch(() => undefined);
     await viewer?.close().catch(() => undefined);
+    await content?.close().catch(() => undefined);
     await app?.close().catch(() => undefined);
     await mock.close();
     rmSync(userData, { recursive: true, force: true });
