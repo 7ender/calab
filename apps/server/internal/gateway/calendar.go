@@ -9,8 +9,9 @@ import (
 )
 
 // routeCalendar delivers the calendar events of a workspace (ADR-0038) as each recipient
-// should see them (st.mu held). Guests get none. EVENT_* go to the organizer, the attendees and
-// the viewers of the meeting's room; ROOM_EVENT_* to the room's viewers. External attendees'
+// should see them (st.mu held). EVENT_* go to the organizer, the attendees and the viewers of
+// the meeting's room, never to guests; ROOM_EVENT_* to the room's viewers, guests included
+// (without attendees, ADR-0038 «Диплинки для приглашённых»). External attendees'
 // addresses are in full for those involved and those who may edit the meeting, masked for other
 // viewers and removed for bots.
 func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid uuid.UUID) bool, id uuid.UUID, ev *v1.DispatchEvent) {
@@ -51,11 +52,18 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 		rid := parseID(x.RoomEventEnded.GetRoomId())
 		shared := newEnc(ev)
 		for _, s := range sessions {
-			if st.role(s.user) != perm.RoleGuest && view(rid, s.user) {
+			if view(rid, s.user) {
 				s.dispatchEnc(id, shared)
 			}
 		}
 		return
+	}
+	var guestEnc *encEvent // ROOM_EVENT_ACTIVE for guests: without attendees
+	guest := func() *encEvent {
+		if guestEnc == nil {
+			guestEnc = newEnc(wrap(pbconv.EventForGuest(e), pbconv.EmailsNone))
+		}
+		return guestEnc
 	}
 	rid := parseID(e.GetRoomId())
 	involved := map[uuid.UUID]bool{parseID(e.GetOrganizerId()): true}
@@ -77,6 +85,9 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 	}
 	for _, s := range sessions {
 		if st.role(s.user) == perm.RoleGuest {
+			if roomOnly && rid != uuid.Nil && view(rid, s.user) {
+				s.dispatchEnc(id, guest())
+			}
 			continue
 		}
 		inv := involved[s.user] && !s.bot

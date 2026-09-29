@@ -58,3 +58,19 @@ func EventForViewer(ev *v1.CalendarEvent, view EmailView) *v1.CalendarEvent {
 	}
 	return out
 }
+
+// EventForGuest returns a copy of ev as a guest of the workspace (ADR-0016) sees the meeting
+// active in a room they can view (ADR-0038 «Диплинки для приглашённых»): no attendees (counts
+// only), no recording, no rights and no guest-link state.
+func EventForGuest(ev *v1.CalendarEvent) *v1.CalendarEvent {
+	if ev == nil {
+		return nil
+	}
+	out := proto.CloneOf(ev)
+	out.Attendees = nil
+	out.RecordingId = ""
+	out.MyStatus = v1.AttendeeStatus_ATTENDEE_STATUS_UNSPECIFIED
+	out.CanEdit = false
+	out.GuestLinks = false
+	return out
+}

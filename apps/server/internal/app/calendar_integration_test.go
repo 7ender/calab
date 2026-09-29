@@ -613,3 +613,109 @@ func TestEventBotsReadOnly(t *testing.T) {
 		}
 	}
 }
+
+// Deep links for invited people (ADR-0038 «Диплинки для приглашённых»): the external attendee's
+// mail links the meeting with a view token; a guest who joined the room sees the active meeting.
+func TestEventDeepLinks(t *testing.T) {
+	c := calSetup(t)
+	wsID := c.ws.GetId()
+	partner := uniq("deep") + "@outside.org"
+	start := time.Now().Add(10 * time.Minute).Truncate(time.Second)
+	ev := createEvent(t, c.o, wsID, &v1.CreateCalendarEventRequest{Title: "Демо", Description: "**Повестка**", StartsAt: ts(start),
+		EndsAt: ts(start.Add(time.Hour)), Tz: "UTC", RoomId: c.voice.GetId(),
+		Attendees: []*v1.CalendarEventAttendeeInput{att(c.bob.id, true), ext(partner)}})
+	base := "https://app.example.com/e/" + ev.GetId()
+
+	// The external mail: main link and invite.ics URL carry the view token; the member's do not.
+	m := waitMail(t, partner, mail.TemplateEventInvite, 1)
+	if !strings.HasPrefix(m.Params["url"], base+"?t=") || !strings.Contains(unfoldICS(m.Calendar), "URL:"+m.Params["url"]) {
+		t.Fatalf("external meeting link: %q\n%s", m.Params["url"], unfoldICS(m.Calendar))
+	}
+	bm := waitMail(t, c.bob.email, mail.TemplateEventInvite, 1)
+	if bm.Params["url"] != base || !strings.Contains(unfoldICS(bm.Calendar), "URL:"+base+"\r\n") {
+		t.Fatalf("member meeting link: %q", bm.Params["url"])
+	}
+	view, _ := url.QueryUnescape(strings.SplitN(m.Params["url"], "?t=", 2)[1])
+
+	// GET with the view token: the page, the answer tokens and the guest window.
+	anon := &client{t: t, ip: "10.9.2.1"}
+	var pg v1.EventRsvpTokenResponse
+	anon.must(200, "GET", "/api/event-rsvp?t="+url.QueryEscape(view), nil, &pg)
+	if pg.GetStatus() != v1.AttendeeStatus_ATTENDEE_STATUS_UNSPECIFIED || pg.GetMyStatus() != v1.AttendeeStatus_ATTENDEE_STATUS_PENDING ||
+		pg.GetDescription() != "**Повестка**" || pg.GetRoomName() != c.voice.GetName() || pg.GetEmail() != partner ||
+		pg.GetOrganizerEmail() != c.o.email || pg.GetRepeat() != v1.EventRepeat_EVENT_REPEAT_UNSPECIFIED || pg.GetRepeatUntil() != nil {
+		t.Fatalf("view page: %v", &pg)
+	}
+	if pg.GetAcceptToken() == "" || pg.GetMaybeToken() == "" || pg.GetDeclineToken() == "" || pg.GetAcceptToken() == view {
+		t.Fatalf("answer tokens: %v", &pg)
+	}
+	if pg.GetGuestUrl() != m.Params["guest_url"] || !pg.GetGuestFrom().AsTime().Equal(start.Add(-15*time.Minute)) ||
+		!pg.GetGuestUntil().AsTime().Equal(start.Add(2*time.Hour)) {
+		t.Fatalf("guest window: %q %v %v", pg.GetGuestUrl(), pg.GetGuestFrom().AsTime(), pg.GetGuestUntil().AsTime())
+	}
+	// POST with the view token → 400; the answer token of the page answers.
+	anon.must(400, "POST", "/api/event-rsvp", &v1.EventRsvpTokenRequest{Token: view}, nil)
+	var ans v1.EventRsvpTokenResponse
+	anon.must(200, "POST", "/api/event-rsvp", &v1.EventRsvpTokenRequest{Token: pg.GetAcceptToken()}, &ans)
+	if ans.GetStatus() != v1.AttendeeStatus_ATTENDEE_STATUS_ACCEPTED || ans.GetMyStatus() != v1.AttendeeStatus_ATTENDEE_STATUS_ACCEPTED {
+		t.Fatalf("answer: %v", &ans)
+	}
+	// An answer token of the mail: status = its answer, my_status = the stored one.
+	decline, _ := url.QueryUnescape(strings.SplitN(m.Params["rsvp_decline"], "?t=", 2)[1])
+	anon.must(200, "GET", "/api/event-rsvp?t="+url.QueryEscape(decline), nil, &pg)
+	if pg.GetStatus() != v1.AttendeeStatus_ATTENDEE_STATUS_DECLINED || pg.GetMyStatus() != v1.AttendeeStatus_ATTENDEE_STATUS_ACCEPTED || pg.GetMaybeToken() == "" {
+		t.Fatalf("answer-token page: %v", &pg)
+	}
+
+	// The partner joins the room with the guest link: a guest of the workspace.
+	var joined v1.JoinRoomInviteResponse
+	code := strings.TrimPrefix(m.Params["guest_url"], "https://app.example.com/r/")
+	(&client{t: t, ip: "10.9.2.2"}).must(201, "POST", "/api/room-invites/"+code+"/join", &v1.JoinRoomInviteRequest{Nickname: "Partner"}, &joined)
+	guest := &user{client: &client{t: t, token: joined.GetTokens().GetAccessToken(), ip: "10.9.2.3"}, id: joined.GetMe().GetUser().GetId()}
+	if guest.token == "" {
+		t.Fatalf("no guest account: %v", &joined)
+	}
+	gg := dialGW(t)
+	defer func() { _ = gg.ws.CloseNow() }()
+	var active *v1.CalendarEvent
+	for _, s := range gg.identify(guest.token).GetWorkspaces() {
+		for _, e := range s.GetActiveEvents() {
+			if e.GetId() == ev.GetId() {
+				active = e
+			}
+		}
+	}
+	if active == nil || len(active.GetAttendees()) != 0 || active.GetDescription() != "**Повестка**" || active.GetCounts().GetAccepted() != 2 {
+		t.Fatalf("guest snapshot: %v", active)
+	}
+	var card v1.CalendarEventResponse
+	guest.must(200, "GET", "/api/events/"+ev.GetId(), nil, &card)
+	if e := card.GetEvent(); len(e.GetAttendees()) != 0 || e.GetCanEdit() || !e.GetOccurrenceAt().AsTime().Equal(start) || e.GetCounts() == nil {
+		t.Fatalf("guest card: %v", e)
+	}
+	guest.must(403, "GET", "/api/workspaces/"+wsID+"/events?from="+url.QueryEscape(start.Format(time.RFC3339))+"&to="+url.QueryEscape(start.Add(time.Hour).Format(time.RFC3339)), nil, nil)
+	guest.must(403, "PUT", "/api/events/"+ev.GetId()+"/rsvp", &v1.RsvpCalendarEventRequest{Status: v1.AttendeeStatus_ATTENDEE_STATUS_MAYBE}, nil)
+	guest.must(403, "PATCH", "/api/events/"+ev.GetId(), &v1.UpdateCalendarEventRequest{}, nil)
+
+	// A meeting of the room outside its window, and one without a room: 404 for the guest.
+	later := createEvent(t, c.o, wsID, &v1.CreateCalendarEventRequest{Title: "Потом", StartsAt: ts(start.Add(48 * time.Hour)),
+		EndsAt: ts(start.Add(49 * time.Hour)), Tz: "UTC", RoomId: c.voice.GetId()})
+	guest.must(404, "GET", "/api/events/"+later.GetId(), nil, nil)
+	noRoom := createEvent(t, c.o, wsID, &v1.CreateCalendarEventRequest{Title: "Без комнаты", StartsAt: ts(start), EndsAt: ts(start.Add(time.Hour)), Tz: "UTC"})
+	guest.must(404, "GET", "/api/events/"+noRoom.GetId(), nil, nil)
+	gg.quiet("EVENT_CREATE for a guest", 300*time.Millisecond, func(e *v1.DispatchEvent) bool { return e.GetEventCreate() != nil })
+
+	// A change of the active meeting reaches the guest as ROOM_EVENT_ACTIVE without attendees;
+	// the cancel as ROOM_EVENT_ENDED, then the card is gone.
+	title := "Демо v2"
+	c.o.must(200, "PATCH", "/api/events/"+ev.GetId(), &v1.UpdateCalendarEventRequest{Title: &title}, nil)
+	up := gg.wait("ROOM_EVENT_ACTIVE for a guest", func(e *v1.DispatchEvent) bool {
+		return e.GetRoomEventActive().GetEvent().GetTitle() == title
+	})
+	if len(up.GetRoomEventActive().GetEvent().GetAttendees()) != 0 {
+		t.Fatalf("guest ROOM_EVENT_ACTIVE with attendees: %v", up)
+	}
+	c.o.must(204, "DELETE", "/api/events/"+ev.GetId(), nil, nil)
+	gg.wait("ROOM_EVENT_ENDED for a guest", func(e *v1.DispatchEvent) bool { return e.GetRoomEventEnded().GetEventId() == ev.GetId() })
+	guest.must(404, "GET", "/api/events/"+ev.GetId(), nil, nil)
+}

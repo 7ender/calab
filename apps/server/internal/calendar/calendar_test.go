@@ -1,6 +1,10 @@
 package calendar
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -319,6 +323,34 @@ func TestRSVPToken(t *testing.T) {
 	}
 	if _, err := verifyRSVP(key, "", now); err != errTokenInvalid {
 		t.Errorf("empty: %v", err)
+	}
+	// A view token (the meeting link of the mail) round-trips with its own status and differs
+	// from every answer token of the same address.
+	v := c
+	v.Status = statusView
+	vt := signRSVP(key, v)
+	if got, err := verifyRSVP(key, vt, now); err != nil || got.Status != statusView || got.Email != c.Email {
+		t.Fatalf("view: %+v %v", got, err)
+	}
+	seen := map[string]bool{vt: true}
+	for _, st := range []string{StatusAccepted, StatusDeclined, StatusMaybe} {
+		a := c
+		a.Status = st
+		at := signRSVP(key, a)
+		if seen[at] {
+			t.Errorf("%s token equals another", st)
+		}
+		seen[at] = true
+	}
+	// An unknown status byte is invalid even with a valid signature.
+	raw, _ := base64.RawURLEncoding.DecodeString(vt)
+	body := raw[:len(raw)-macLen]
+	body[16] = 9
+	m := hmac.New(sha256.New, key)
+	m.Write(body)
+	forged := base64.RawURLEncoding.EncodeToString(m.Sum(slices.Clone(body))[:len(body)+macLen])
+	if _, err := verifyRSVP(key, forged, now); err != errTokenInvalid {
+		t.Errorf("unknown status: %v", err)
 	}
 }
 
