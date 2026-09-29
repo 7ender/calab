@@ -21,7 +21,8 @@
   --color-accent-tint: rgb(0 122 255 / 0.1);
   --color-code: #e8e8ed;
   --shadow-window: 0 1px 2px rgb(0 0 0 / 0.06), 0 24px 64px rgb(0 0 0 / 0.14);
-  --hero-glow: rgb(0 122 255 / 0.1);
+  --hero-glow: rgb(0 122 255 / 0.12);
+  --color-shot-edge: rgb(0 0 0 / 0.14);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -39,7 +40,8 @@
     --color-accent-tint: rgb(10 132 255 / 0.16);
     --color-code: #2c2c2f;
     --shadow-window: 0 1px 2px rgb(0 0 0 / 0.4), 0 24px 64px rgb(0 0 0 / 0.5);
-    --hero-glow: rgb(10 132 255 / 0.16);
+    --hero-glow: rgb(10 132 255 / 0.2);
+    --color-shot-edge: rgb(255 255 255 / 0.12);
   }
 }
 
@@ -98,15 +100,29 @@ body {
 }
 
 .hero-bg {
-  background: radial-gradient(60% 50% at 50% 0%, var(--hero-glow), transparent 70%);
+  background: radial-gradient(70% 55% at 50% 0%, var(--hero-glow), transparent 75%);
 }
 
 /*
- * Hero screenshot: the whole window (1440×869 pt, aspect 1.657) scaled to fit under the header, the
- * headline and the buttons on a laptop screen (1440×900: ≈ 800 px wide), never narrower than 720 px.
+ * Screenshots (landing v3): the app is always dark, so its frame is too — a solid near-black
+ * window edge, a hairline and a soft shadow in both page themes (docs/08: solid materials).
  */
+.shot-frame {
+  background: #1c1c1e;
+  border: 1px solid var(--color-shot-edge);
+  box-shadow: var(--shadow-window);
+}
+
+/* Hero window: never taller than the viewport under the header on a laptop, never narrower than 720 px. */
 .hero-shot {
-  max-width: min(100%, max(720px, calc((100svh - 456px) * 1.657)));
+  max-width: min(100%, max(720px, calc((100svh - 120px) * 1.6)));
+}
+
+/* The guest's waiting card on the app's own background (#1c1c1e, the capture blends in), no blur. */
+.guest-stage {
+  background: #1c1c1e;
+  border: 1px solid var(--color-shot-edge);
+  box-shadow: var(--shadow-window);
 }
 
 /* Cards on the alternate (grey) section background: white in light theme. */

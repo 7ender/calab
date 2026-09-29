@@ -1,44 +1,46 @@
+import { ArrowRight } from 'lucide-react';
 import type { Dict, Locale } from '@/i18n';
 import { APP_URL } from '@/lib/site';
-import { Button, Container, ThemedImage } from './ui';
+import { Button, Container, Frame, Screen } from './ui';
 
+/**
+ * Landing v3 hero: a «new in 1.1» pill, a one-line promise, the lead, two actions, then the product
+ * itself — the whole window during a planning meeting (stream on the stage, cameras, rooms), in the
+ * page's language. The screenshot is the LCP element: 1x ≈ 80 KB, fetched with high priority.
+ */
 export function Hero({ t, locale }: { t: Dict['hero']; locale: Locale }) {
   return (
-    <section id="top" aria-labelledby="hero-title" className="hero-bg overflow-hidden pt-10 pb-16 sm:pt-14 sm:pb-20">
+    <section id="top" aria-labelledby="hero-title" className="hero-bg overflow-hidden pt-12 pb-16 sm:pt-20 sm:pb-24">
       <Container className="text-center">
+        <a
+          href="#boards"
+          className="inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-card px-4 py-1.5 text-[14px] leading-5 font-medium text-fg hover:border-accent motion-safe:transition-colors"
+        >
+          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-accent" />
+          <span className="truncate">{t.badge}</span>
+          <ArrowRight aria-hidden="true" className="size-4 shrink-0 text-fg-2" strokeWidth={2} />
+        </a>
         <h1
           id="hero-title"
-          className="mx-auto max-w-[960px] text-[36px] leading-[44px] font-bold tracking-tight text-balance sm:text-[48px] sm:leading-[56px]"
+          className="mx-auto mt-6 max-w-[900px] text-[40px] leading-[48px] font-bold tracking-tight text-balance sm:text-[64px] sm:leading-[72px]"
         >
           {t.title}
         </h1>
-        <ul className="mx-auto mt-4 flex max-w-[960px] flex-col items-center justify-center gap-x-3 gap-y-1 sm:flex-row sm:flex-wrap text-[17px] leading-7 text-fg-2 sm:text-[19px]">
-          {t.benefits.map((b, i) => (
-            <li key={b} className="flex items-center gap-3">
-              {i > 0 && (
-                <span aria-hidden="true" className="hidden text-fg-2/60 sm:inline">
-                  ·
-                </span>
-              )}
-              {b}
-            </li>
-          ))}
-        </ul>
+        <p className="mx-auto mt-5 max-w-[680px] text-[18px] leading-7 text-pretty text-fg-2 sm:text-[21px] sm:leading-8">{t.lead}</p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Button href="#download" className="w-full max-w-[280px] sm:w-auto">
+          <Button href="#download" size="lg" className="w-full max-w-[280px] sm:w-auto">
             {t.download}
           </Button>
-          <Button href={APP_URL} variant="secondary" className="w-full max-w-[280px] sm:w-auto">
+          <Button href={APP_URL} variant="secondary" size="lg" className="w-full max-w-[280px] sm:w-auto">
             {t.openWeb}
           </Button>
         </div>
         <p className="mt-4 text-[14px] leading-5 text-fg-2">{t.trust}</p>
       </Container>
-      <Container className="mt-10">
-        {/* The whole window, scaled (never cropped) so it fits a 1440×900 viewport under the header and text. */}
-        <div className="hero-shot mx-auto overflow-hidden rounded-[12px] border border-line bg-card shadow-window">
-          <ThemedImage name="hero" locale={locale} width={1440} height={869} priority sizes="(min-width: 768px) 800px, 100vw" alt={t.shotAlt} />
-        </div>
+      <Container className="mt-12 sm:mt-16">
+        <Frame className="hero-shot mx-auto">
+          <Screen name="voice" locale={locale} priority sizes="(min-width: 1232px) 1152px, calc(100vw - 32px)" alt={t.shotAlt} />
+        </Frame>
       </Container>
     </section>
   );

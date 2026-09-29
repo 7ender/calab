@@ -10,7 +10,7 @@ pnpm -F @calaba/landing dev        # http://localhost:3000
 pnpm -F @calaba/landing build      # → apps/landing/out (index.html, ru/ en/ es/ zh/, 404.html, robots.txt, sitemap.xml, manifest)
 pnpm -F @calaba/landing lint
 pnpm -F @calaba/landing typecheck
-pnpm -F @calaba/landing assets     # regenerate public/screens/*.webp and public/og.png
+pnpm -F @calaba/landing assets     # regenerate public/screens/<lang>/*.webp and public/og/<lang>.png
 ```
 
 Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server -d apps/landing/out`).
@@ -32,8 +32,9 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
   language (Русский · English · Español · 中文); with JS it saves the choice and keeps the current `#section`.
 - `404.html` is shared by all locales (English + links to each language). Caddy redirects unknown locale prefixes
   (`/de/`, `/pt-BR/…`) to `/en/` and `/ru` → `/ru/`.
-- Screenshots follow the page: `ThemedImage` takes the locale and loads `<name>-<locale>-<theme>` (the app UI in that
-  language; mock people, rooms and messages stay Russian). `og.png` is Russian for every locale.
+- Screenshots follow the page: `Screen` (`components/ui.tsx`) loads `public/screens/<lang>/<name>` — the app UI *and*
+  its team (names, rooms, chat, meetings, board) in that language, dark theme in both page themes. OpenGraph image per
+  locale: `public/og/<lang>.png`. The home page carries schema.org `SoftwareApplication` JSON-LD in its language.
 
 ## Where it is served
 
@@ -47,35 +48,38 @@ in the browser, the version comes from `latest/VERSION`, never versioned file na
 
 Follows `docs/08-design.md`: system font stack, one accent (`#0A84FF`/`#007AFF`, white-on-accent fills use
 `#0071e3`), 4 px grid, solid materials only (no `backdrop-filter`, the sticky header too), light/dark
-via `prefers-color-scheme` only, motion only under `prefers-reduced-motion: no-preference`. Tokens live in
-`src/app/globals.css`. All components are server components except `download-primary.tsx` (OS detection + `latest/VERSION`); the FAQ uses native `<details>`, so the page works
-without JS (the Next runtime chunk still ships, ~100 kB).
+via `prefers-color-scheme` only, motion only under `prefers-reduced-motion: no-preference`, no infinite animations.
+Tokens live in `src/app/globals.css`. Landing v3 (docs/09 #139): hero with the whole app window, then sections in
+the order voice/video → chat → calendar → boards → notes → guests → bots → self-hosted → pricing → download → FAQ.
+Screenshots sit in a solid dark `.shot-frame` (the app is dark in every shot). All components are server components
+except `download-primary.tsx` (OS detection + `latest/VERSION`) and the language switcher; the FAQ uses native
+`<details>`, so the page works without JS (the Next runtime chunk still ships, ~100 kB).
+
+Performance: the hero shot is preloaded with its `srcset` and `fetchpriority=high` (phone 720 w ≈ 30 KB, 1x ≈ 80 KB,
+2x ≈ 170 KB); every other shot is lazy with `sizes`, so phones fetch the `-720` files. Lighthouse on the built page
+(served compressed, as Caddy does): mobile 99 / 100 / 100 / 100 (perf / a11y / best practices / SEO), desktop 100.
 
 ## Updating screenshots
 
-Every screenshot is captured in each UI language (docs/09 #110). The scene is set up once in Russian (the test's
-selectors), then the app switches language live (visual-test hook `__calabaLocale`) and each locale is captured.
+Every scene is captured per language with that language's team (docs/09 #139).
 
-1. Captures — `apps/desktop/e2e-marketing/landing.spec.ts`, the mock-driven renderer (`out/`, no packaged app) at
-   1440 pt wide, 2x on a Retina Mac; dev LiveKit running (`pnpm infra:dev`), one Playwright/Electron run at a time:
+1. Captures — `apps/desktop/e2e-marketing/landing.spec.ts`: the production web build (`dist-web`) served by the mock
+   API, Chromium at 1440×900 CSS px, device scale 2, dark. Data per language: `e2e-marketing/copy.ts`; pictures
+   (avatars, camera frames, the shared slide, the chat mockup, emoji stickers) are drawn by Chromium (`art.ts`);
+   the scene data is set on the mock before sign-in (`seed.ts`). Dev LiveKit running (`pnpm infra:dev`) for the voice
+   and call scenes; one Playwright run at a time:
    ```sh
-   pnpm -F @calaba/desktop build:app && pnpm -F @calaba/desktop build:web   # web: the phone shot
+   pnpm -F @calaba/desktop build:web
    cd apps/desktop
-   CALABA_VISUAL_MOCK_PORT=39370 MOCK_LIVEKIT_ROOM_PREFIX=landing_ pnpm exec playwright test --config playwright.marketing.config.ts -g landing
-   CALABA_LANDING_THEME=light CALABA_VISUAL_MOCK_PORT=39370 MOCK_LIVEKIT_ROOM_PREFIX=landing_ pnpm exec playwright test --config playwright.marketing.config.ts -g landing
+   CALABA_VISUAL_MOCK_PORT=5224 MOCK_LIVEKIT_ROOM_PREFIX=landing_ pnpm exec playwright test --config playwright.marketing.config.ts landing
    ```
-   `CALABA_LANDING_LOCALES=ru,en` narrows the languages, `-g "landing chat"` one scene. Raw full-window PNGs land in
-   `apps/landing/shots/<shot>-<locale>-<theme>@2x.png` (git-ignored, ~0.3 MB each). Scenes: `hero` (in voice, badges),
-   `voice` (+ noise popover), `stream`, `camera` (blur, workspace backgrounds), `chat` (forwarded message),
-   `call` (1:1 call), `recording` (card playing), `badges` (README only, ru), `mobile` (iPhone 14 in WebKit).
-2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` crops (offsets in window points at the top of the script —
-   check them when the app layout changes; the CSS sizes in `hero.tsx`/`features.tsx` equal the crops), draws the
-   traffic lights on the hero, writes `public/screens/<name>-<locale>-<theme>@2x.webp` at full resolution plus a 1x
-   Lanczos resample, each ≤ 250 KB (quality steps down from 90 until it fits); a locale without captures gets the
-   English files. Also `docs/images/readme/*.webp` (README: ru, dark, whole window, ≤ 400 KB) and `public/og.png`
-   (from the ru dark hero: commit it only when the OG art should change).
-3. Pages use `srcset` (width descriptors + `sizes`) with `width`/`height` in CSS pixels (no layout shift); the hero
-   and the first two feature rows load eagerly. Rebuild and commit `public/screens` and `docs/images/readme`.
+   `CALABA_LANDING_LOCALES=ru,en` narrows the languages, `-g "landing kanban"` one scene. Raw PNGs land in
+   `apps/landing/shots/<scene>-<locale>@2x.png` (git-ignored). Scenes: `voice` (hero: stream + cameras), `chat`,
+   `call`, `calendar`, `findtime`, `kanban`, `timeline`, `task`, `notes`, `guest`.
+2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` crops (CSS px at the top of the script, equal to
+   `src/lib/screens.ts`), writes `public/screens/<lang>/<name>@2x.webp`, `<name>.webp` (1x) and `<name>-720.webp`
+   (phones), each ≤ 300 KB, and `public/og/<lang>.png` (1200×630). The READMEs (`README*.md`) use the same files.
+3. Rebuild and commit `public/screens` and `public/og`.
 
 ## TODO
 

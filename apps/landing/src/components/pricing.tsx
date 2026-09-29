@@ -16,6 +16,9 @@ const ROW_IDS = Object.keys({
   files: 0,
   bots: 0,
   stickers: 0,
+  boards: 0,
+  calendar: 0,
+  caldav: 0,
   support: 0,
   price: 0,
 } satisfies Record<RowId, 0>) as RowId[];
