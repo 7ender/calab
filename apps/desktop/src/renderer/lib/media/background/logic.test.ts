@@ -57,7 +57,7 @@ describe('hasHardwareBlur', () => {
   });
 });
 
-describe('segmentStep: ≤ 12 fps of a 15 fps camera', () => {
+describe('segmentStep: the rate budget of a 15 fps camera', () => {
   const run = (fps: number, cameraFps: number, frames: number): number => {
     let tokens = 0;
     let n = 0;
@@ -68,9 +68,14 @@ describe('segmentStep: ≤ 12 fps of a 15 fps camera', () => {
     }
     return n;
   };
-  it('15 fps camera, 12 fps budget → 12 segmentations a second', () => expect(run(SEG_FPS, 15, 150)).toBeGreaterThanOrEqual(118));
-  it('never above the budget', () => expect(run(SEG_FPS, 15, 150)).toBeLessThanOrEqual(121));
-  it('30 fps camera → still 12', () => expect(run(SEG_FPS, 30, 300)).toBeLessThanOrEqual(121));
+  it('15 fps camera, 12 fps budget → 12 segmentations a second', () => expect(run(12, 15, 150)).toBeGreaterThanOrEqual(118));
+  it('never above the budget', () => expect(run(12, 15, 150)).toBeLessThanOrEqual(121));
+  it('the default (8) at 15 fps → 8 a second', () => {
+    expect(SEG_FPS).toBeLessThanOrEqual(12);
+    expect(run(SEG_FPS, 15, 150)).toBeGreaterThanOrEqual(SEG_FPS * 10 - 2);
+    expect(run(SEG_FPS, 15, 150)).toBeLessThanOrEqual(SEG_FPS * 10 + 1);
+  });
+  it('30 fps camera → still the budget', () => expect(run(SEG_FPS, 30, 300)).toBeLessThanOrEqual(SEG_FPS * 10 + 1));
   it('software fallback → 6', () => expect(run(SEG_FPS_SOFTWARE, 15, 150)).toBeLessThanOrEqual(61));
   it('a long pause gives at most one extra frame, not a burst', () => {
     const a = segmentStep(0, 10_000, SEG_FPS);

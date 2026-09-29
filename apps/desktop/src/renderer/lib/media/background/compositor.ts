@@ -7,10 +7,11 @@ import { BLUR_DOWNSCALE, BLUR_MAX_RADIUS, MASK_MIN_COVERAGE, coverUv, gaussianKe
  * Per segmentation (≤ 12/s): the MediaPipe mask (scaled to the frame by MediaPipe) → `raw` at 256×144 (+ mipmaps: its 1×1 level is
  * the person's share of the frame) → temporal EMA into `ema` (a nearly empty mask keeps the
  * previous one while the hold is allowed — decided per pixel from the 1×1 level, no readback).
- * Per camera frame: frame → ¼ size (4 bilinear taps = 4×4 box) → joint bilateral smoothing of the
- * mask guided by that frame's luma (edges follow the picture, less halo) → for blur: background
- * premultiplied by (1 − mask) so the person does not bleed into it, separable Gaussian H + V at ¼
- * size → composite at full size: mix(background, camera, smoothstep(mask)).
+ * Per camera frame: joint bilateral smoothing of the mask at ¼ size guided by the frame's luma
+ * (edges follow the picture, less halo) → for blur: separable Gaussian at ¼ size, H straight from the
+ * frame with the background premultiplied by (1 − mask) so the person does not bleed into it, then
+ * V → composite at full size: mix(background, camera, smoothstep(mask)). 2 passes for a picture,
+ * 4 for blur (docs/14 «Фон камеры»: render passes are what the GPU process pays for).
  *
  * Every texture keeps the picture's top row first (uploads without FLIP_Y); only the last pass,
  * into the canvas, flips. GL state is set completely before each pass: MediaPipe shares the context.
@@ -57,32 +58,23 @@ void main() {
   o = vec4(m, 0.0, 0.0, 1.0);
 }`;
 
-/** Full frame → ¼ size: four bilinear taps one source texel off the centre = a 4×4 box. */
-const FS_DOWN = `${HEAD}
-uniform sampler2D u_src;
-uniform vec2 u_texel;
-void main() {
-  vec3 c = texture(u_src, v_uv + vec2(-u_texel.x, -u_texel.y)).rgb
-         + texture(u_src, v_uv + vec2( u_texel.x, -u_texel.y)).rgb
-         + texture(u_src, v_uv + vec2(-u_texel.x,  u_texel.y)).rgb
-         + texture(u_src, v_uv + vec2( u_texel.x,  u_texel.y)).rgb;
-  o = vec4(c * 0.25, 1.0);
-}`;
-
-/** Joint bilateral 5×5 at ¼ size: mask taps weighted by distance and by the frame's luma difference. */
+/**
+ * Joint bilateral 5×5 at ¼ size: mask taps weighted by distance and by the camera picture's luma
+ * difference (read straight from the full frame, one bilinear tap each), so the edge follows it.
+ */
 const FS_REFINE = `${HEAD}
 uniform sampler2D u_mask;
-uniform sampler2D u_small;
+uniform sampler2D u_frame;
 uniform vec2 u_step;
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
 void main() {
-  float lc = dot(texture(u_small, v_uv).rgb, LUMA);
+  float lc = dot(texture(u_frame, v_uv).rgb, LUMA);
   float sum = 0.0;
   float wsum = 0.0;
   for (int y = -2; y <= 2; y++) {
     for (int x = -2; x <= 2; x++) {
       vec2 uv = v_uv + vec2(float(x), float(y)) * u_step;
-      float dl = dot(texture(u_small, uv).rgb, LUMA) - lc;
+      float dl = dot(texture(u_frame, uv).rgb, LUMA) - lc;
       float w = exp(-float(x * x + y * y) / 4.5 - dl * dl / 0.0128);
       sum += w * texture(u_mask, uv).r;
       wsum += w;
@@ -91,15 +83,34 @@ void main() {
   o = vec4(sum / wsum, 0.0, 0.0, 1.0);
 }`;
 
-/** Background only, premultiplied by its weight (1 − mask): the blur then ignores the person. */
-const FS_PREMUL = `${HEAD}
-uniform sampler2D u_small;
+/**
+ * Horizontal Gaussian at ¼ size straight from the full frame, background only: each tap is the
+ * frame (two bilinear taps one texel apart = a 2×4 box) premultiplied by its weight (1 − mask), so
+ * the person does not bleed into the blur.
+ */
+const FS_BLUR_H = `${HEAD}
+uniform sampler2D u_frame;
 uniform sampler2D u_mask;
+uniform vec2 u_dir;
+uniform vec2 u_texel;
+uniform float u_w[${BLUR_MAX_RADIUS + 1}];
+uniform int u_r;
+vec4 bgAt(vec2 uv) {
+  float b = 1.0 - texture(u_mask, uv).r;
+  vec3 c = 0.5 * (texture(u_frame, uv - vec2(0.0, u_texel.y)).rgb + texture(u_frame, uv + vec2(0.0, u_texel.y)).rgb);
+  return vec4(c * b, b);
+}
 void main() {
-  float b = 1.0 - texture(u_mask, v_uv).r;
-  o = vec4(texture(u_small, v_uv).rgb * b, b);
+  vec4 c = bgAt(v_uv) * u_w[0];
+  for (int i = 1; i <= ${BLUR_MAX_RADIUS}; i++) {
+    if (i > u_r) break;
+    vec2 d = u_dir * float(i);
+    c += (bgAt(v_uv + d) + bgAt(v_uv - d)) * u_w[i];
+  }
+  o = c;
 }`;
 
+/** Vertical Gaussian at ¼ size over the premultiplied background. */
 const FS_BLUR = `${HEAD}
 uniform sampler2D u_src;
 uniform vec2 u_dir;
@@ -120,7 +131,6 @@ const FS_OUT = `${HEAD}
 uniform sampler2D u_frame;
 uniform sampler2D u_mask;
 uniform sampler2D u_bg;
-uniform sampler2D u_small;
 uniform int u_mode;
 uniform vec2 u_bgScale;
 uniform vec2 u_bgOffset;
@@ -132,7 +142,7 @@ void main() {
   vec3 bg;
   if (u_mode == 1) {
     vec4 b = texture(u_bg, uv);
-    bg = mix(texture(u_small, uv).rgb, b.rgb / max(b.a, 0.001), clamp(b.a * 6.0, 0.0, 1.0));
+    bg = mix(fg, b.rgb / max(b.a, 0.001), clamp(b.a * 6.0, 0.0, 1.0));
   } else {
     bg = texture(u_bg, uv * u_bgScale + u_bgOffset).rgb;
   }
@@ -162,11 +172,10 @@ const EDGE: [number, number] = [0.3, 0.7];
 export class Compositor {
   readonly gl: WebGL2RenderingContext;
   private readonly vao: WebGLVertexArrayObject;
-  private readonly progs: Record<'maskIn' | 'ema' | 'down' | 'refine' | 'premul' | 'blur' | 'out', Program>;
+  private readonly progs: Record<'maskIn' | 'ema' | 'refine' | 'blurH' | 'blur' | 'out', Program>;
   private frame: WebGLTexture | null = null;
   private frameW = 0;
   private frameH = 0;
-  private small: Target | null = null;
   private refined: Target | null = null;
   private blurA: Target | null = null;
   private blurB: Target | null = null;
@@ -181,6 +190,7 @@ export class Compositor {
   private readonly pbo: WebGLBuffer;
   private fence: WebGLSync | null = null;
   private readonly px = new Uint8Array(4);
+  private coverageFb: WebGLFramebuffer | null = null;
   /** Flip the MediaPipe mask vertically (its texture origin), set once by the worker. */
   flipMask = false;
 
@@ -200,11 +210,10 @@ export class Compositor {
     this.progs = {
       maskIn: this.program(FS_MASK_IN, ['u_src', 'u_flip']),
       ema: this.program(FS_EMA, ['u_raw', 'u_prev', 'u_alpha', 'u_hold', 'u_top', 'u_min']),
-      down: this.program(FS_DOWN, ['u_src', 'u_texel']),
-      refine: this.program(FS_REFINE, ['u_mask', 'u_small', 'u_step']),
-      premul: this.program(FS_PREMUL, ['u_small', 'u_mask']),
+      refine: this.program(FS_REFINE, ['u_mask', 'u_frame', 'u_step']),
+      blurH: this.program(FS_BLUR_H, ['u_frame', 'u_mask', 'u_dir', 'u_texel', 'u_w', 'u_r']),
       blur: this.program(FS_BLUR, ['u_src', 'u_dir', 'u_w', 'u_r']),
-      out: this.program(FS_OUT, ['u_frame', 'u_mask', 'u_bg', 'u_small', 'u_mode', 'u_bgScale', 'u_bgOffset', 'u_edge']),
+      out: this.program(FS_OUT, ['u_frame', 'u_mask', 'u_bg', 'u_mode', 'u_bgScale', 'u_bgOffset', 'u_edge']),
     };
     this.pbo = gl.createBuffer();
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
@@ -278,10 +287,9 @@ export class Compositor {
     this.frameH = h;
     if (this.frame) gl.deleteTexture(this.frame);
     this.frame = this.texture(w, h);
-    for (const t of [this.small, this.refined, this.blurA, this.blurB]) this.drop(t);
+    for (const t of [this.refined, this.blurA, this.blurB]) this.drop(t);
     const sw = Math.max(1, Math.ceil(w / BLUR_DOWNSCALE));
     const sh = Math.max(1, Math.ceil(h / BLUR_DOWNSCALE));
-    this.small = this.target(sw, sh);
     this.refined = this.target(sw, sh);
     this.blurA = this.target(sw, sh);
     this.blurB = this.target(sw, sh);
@@ -349,6 +357,8 @@ export class Compositor {
     const th = Math.max(1, Math.round((mh * tw) / mw));
     if (!this.raw || this.raw.w !== tw || this.raw.h !== th) {
       for (const t of [this.raw, this.emaA, this.emaB]) this.drop(t);
+      if (this.coverageFb) this.gl.deleteFramebuffer(this.coverageFb);
+      this.coverageFb = null;
       this.raw = this.target(tw, th, true);
       this.emaA = this.target(tw, th);
       this.emaB = this.target(tw, th);
@@ -387,14 +397,16 @@ export class Compositor {
   private readCoverageAsync(): void {
     const gl = this.gl;
     if (!this.raw || this.fence) return;
-    const fb = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.raw.tex, this.rawTop);
+    if (!this.coverageFb) {
+      this.coverageFb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.coverageFb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.raw.tex, this.rawTop);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.coverageFb);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, 0);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.deleteFramebuffer(fb);
     this.fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
     gl.flush();
   }
@@ -416,49 +428,43 @@ export class Compositor {
   /** Renders the uploaded frame with the effect into the canvas. Needs a mask (`ready`). */
   render(mode: ComposeMode): void {
     const gl = this.gl;
-    const { small, refined, blurA, blurB, emaA, frame } = this;
-    if (!small || !refined || !blurA || !blurB || !emaA || !frame) return;
+    const { refined, blurA, blurB, emaA, frame } = this;
+    if (!refined || !blurA || !blurB || !emaA || !frame) return;
     this.setup();
-    const { down, refine, premul, blur, out } = this.progs;
-    this.pass(small, down);
-    this.bind(0, frame, down.u['u_src']);
-    gl.uniform2f(down.u['u_texel'] ?? null, 1 / this.frameW, 1 / this.frameH);
-    this.draw();
-
+    const { refine, blurH, blur, out } = this.progs;
+    // 2 passes for a picture, 4 for blur: every render pass costs the GPU process CPU time.
     this.pass(refined, refine);
     this.bind(0, emaA.tex, refine.u['u_mask']);
-    this.bind(1, small.tex, refine.u['u_small']);
-    gl.uniform2f(refine.u['u_step'] ?? null, 1 / small.w, 1 / small.h);
+    this.bind(1, frame, refine.u['u_frame']);
+    gl.uniform2f(refine.u['u_step'] ?? null, 1 / refined.w, 1 / refined.h);
     this.draw();
 
     let bg: WebGLTexture | null = this.image;
     if (mode.kind === 'blur') {
-      this.pass(blurA, premul);
-      this.bind(0, small.tex, premul.u['u_small']);
-      this.bind(1, refined.tex, premul.u['u_mask']);
-      this.draw();
       const k = gaussianKernel(mode.sigma);
       const w = new Float32Array(BLUR_MAX_RADIUS + 1);
       w.set(k);
-      for (const [src, dst, dx, dy] of [
-        [blurA, blurB, 1 / small.w, 0],
-        [blurB, blurA, 0, 1 / small.h],
-      ] as const) {
-        this.pass(dst, blur);
-        this.bind(0, src.tex, blur.u['u_src']);
-        gl.uniform2f(blur.u['u_dir'] ?? null, dx, dy);
-        gl.uniform1fv(blur.u['u_w'] ?? null, w);
-        gl.uniform1i(blur.u['u_r'] ?? null, k.length - 1);
-        this.draw();
-      }
+      this.pass(blurB, blurH);
+      this.bind(0, frame, blurH.u['u_frame']);
+      this.bind(1, refined.tex, blurH.u['u_mask']);
+      gl.uniform2f(blurH.u['u_dir'] ?? null, 1 / refined.w, 0);
+      gl.uniform2f(blurH.u['u_texel'] ?? null, 1 / this.frameW, 1 / this.frameH);
+      gl.uniform1fv(blurH.u['u_w'] ?? null, w);
+      gl.uniform1i(blurH.u['u_r'] ?? null, k.length - 1);
+      this.draw();
+      this.pass(blurA, blur);
+      this.bind(0, blurB.tex, blur.u['u_src']);
+      gl.uniform2f(blur.u['u_dir'] ?? null, 0, 1 / refined.h);
+      gl.uniform1fv(blur.u['u_w'] ?? null, w);
+      gl.uniform1i(blur.u['u_r'] ?? null, k.length - 1);
+      this.draw();
       bg = blurA.tex;
     }
 
     this.pass(null, out);
     this.bind(0, frame, out.u['u_frame']);
     this.bind(1, refined.tex, out.u['u_mask']);
-    this.bind(2, bg ?? small.tex, out.u['u_bg']);
-    this.bind(3, small.tex, out.u['u_small']);
+    this.bind(2, bg ?? frame, out.u['u_bg']);
     gl.uniform1i(out.u['u_mode'] ?? null, mode.kind === 'blur' || !this.image ? 1 : 2);
     const c = coverUv(this.imageAspect, this.frameW / this.frameH);
     gl.uniform2f(out.u['u_bgScale'] ?? null, c.scale[0], c.scale[1]);
@@ -469,7 +475,8 @@ export class Compositor {
 
   destroy(): void {
     const gl = this.gl;
-    for (const t of [this.small, this.refined, this.blurA, this.blurB, this.raw, this.emaA, this.emaB]) this.drop(t);
+    for (const t of [this.refined, this.blurA, this.blurB, this.raw, this.emaA, this.emaB]) this.drop(t);
+    if (this.coverageFb) gl.deleteFramebuffer(this.coverageFb);
     if (this.frame) gl.deleteTexture(this.frame);
     if (this.image) gl.deleteTexture(this.image);
     if (this.fence) gl.deleteSync(this.fence);

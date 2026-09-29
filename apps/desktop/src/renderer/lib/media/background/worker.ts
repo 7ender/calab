@@ -30,6 +30,10 @@ let lastSegTs = -1;
 let lastGoodAt: number | null = null;
 let pendingImage: ImageBitmap | null = null;
 let stopped = false;
+let segCtx: OffscreenCanvasRenderingContext2D | null = null;
+/** The selfie landscape model's input. */
+const SEG_WIDTH = 256;
+const SEG_HEIGHT = 144;
 const stats = { frames: 0, segs: 0, ms: 0, since: 0 };
 
 function count(ms: number, segmented: boolean): void {
@@ -104,7 +108,11 @@ async function handle(frame: VideoFrame): Promise<void> {
       lastSegTs = segTs;
       const c = comp;
       segmented = true;
-      seg.segment(frame, segTs, (tex, mw, mh) => c.pushMask(tex, mw, mh, alpha, maskHoldAllowed(lastGoodAt, now)));
+      // The model's own input size (ADR §2): scaled once here instead of MediaPipe uploading
+      // the full frame and scaling its mask back up to it.
+      if (seg.small) segCtx ??= new OffscreenCanvas(SEG_WIDTH, SEG_HEIGHT).getContext('2d', { alpha: false, desynchronized: true });
+      segCtx?.drawImage(frame, 0, 0, SEG_WIDTH, SEG_HEIGHT);
+      seg.segment(segCtx ? segCtx.canvas : frame, segTs, (tex, mw, mh) => c.pushMask(tex, mw, mh, alpha, maskHoldAllowed(lastGoodAt, now)));
     }
     if (comp.ready) {
       comp.render(mode === 'image' ? { kind: 'image' } : { kind: 'blur', sigma: blurSigma(mode, frame.displayHeight) });

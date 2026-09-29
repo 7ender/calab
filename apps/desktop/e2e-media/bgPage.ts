@@ -41,9 +41,10 @@ async function source(picture: string | null): Promise<MediaStreamTrack> {
   return t;
 }
 
-async function start(kind: BackgroundKind, imageId: string | null, picture: string | null): Promise<void> {
+async function start(kind: BackgroundKind | 'raw', imageId: string | null, picture: string | null): Promise<void> {
   const raw = await source(picture);
   track = new LocalVideoTrack(raw, undefined, true);
+  if (kind === 'raw') return; // benchmarks: the camera without a processor
   const image = kind === 'image' ? await loadBackgroundBitmap(imageId ?? BUILTIN_BACKGROUNDS[0]?.id) : null;
   processor = createBackgroundProcessor(kind, image, (s) => {
     status = s;
@@ -69,6 +70,16 @@ async function setMode(kind: BackgroundKind, imageId: string | null): Promise<vo
   processor?.setMode(kind, image);
 }
 
+/** Shows the (processed) camera on the page like the self-view tile (benchmarks). */
+function show(): void {
+  const v = document.createElement('video');
+  v.muted = true;
+  v.autoplay = true;
+  v.style.cssText = 'width:640px;height:360px';
+  document.body.appendChild(v);
+  track?.attach(v);
+}
+
 /** The processed output as a JPEG data URL (what the others receive), for eyes and debugging. */
 async function look(): Promise<string> {
   const t = processor?.processedTrack;
@@ -91,4 +102,4 @@ async function stop(): Promise<void> {
   track?.stop();
 }
 
-(window as unknown as { __bg: unknown }).__bg = { start, publish, setMode, look, stop, status: () => status, stats: () => processor?.lastStats ?? null, backgrounds: () => BUILTIN_BACKGROUNDS.map((b) => b.id) };
+(window as unknown as { __bg: unknown }).__bg = { start, show, publish, setMode, look, stop, status: () => status, stats: () => processor?.lastStats ?? null, backgrounds: () => BUILTIN_BACKGROUNDS.map((b) => b.id) };

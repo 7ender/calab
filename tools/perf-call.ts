@@ -277,7 +277,9 @@ async function startSpeaker(origin: string, userId: string, name: string, roomId
 
 async function launch(url: string, userData: string, wav: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
-    args: ['.', '--lang=ru', '--mute-audio', `--use-file-for-fake-audio-capture=${wav}`, '--disable-features=AudioServiceOutOfProcess'],
+    // K: the fake camera delivers GPU buffers like a real macOS camera (IOSurface, zero-copy capture);
+    // without it every frame is copied from CPU memory into WebGL and the background looks dearer.
+    args: ['.', '--lang=ru', '--mute-audio', `--use-file-for-fake-audio-capture=${wav}`, '--disable-features=AudioServiceOutOfProcess', ...(BENCH === 'K' ? ['--video-capture-use-gpu-memory-buffer'] : [])],
     cwd: DESKTOP,
     env: { ...process.env, CALABA_SERVER_URL: url, CALABA_USER_DATA: userData, CALABA_MULTI_INSTANCE: '1', CALABA_FAKE_MEDIA: '1', ELECTRON_RENDERER_URL: '', LANG: 'ru_RU.UTF-8' },
   });

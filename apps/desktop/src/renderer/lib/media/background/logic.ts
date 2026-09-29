@@ -62,15 +62,20 @@ export function hasHardwareBlur(supported: Record<string, unknown> | undefined, 
 
 // ------------------------------------------------------------------ budget (ADR §2)
 
-/** Segmentation rate with the GPU delegate, and without it (software WebGL / CPU delegate). */
-export const SEG_FPS = 12;
+/**
+ * Segmentation rate with the GPU delegate, and without it (software WebGL / CPU delegate). ADR-0035
+ * allows ≤ 12; 8 is the measured compromise on M4 (docs/14 «Фон камеры»): 12 → 8 saves ≈ 2 % of a
+ * core, the mask still follows a moving head (EMA + edge smoothing hide the steps).
+ */
+export const SEG_FPS = 8;
 export const SEG_FPS_SOFTWARE = 6;
 /** Token bucket cap: after a pause at most one extra segmentation, no burst. */
 const SEG_TOKENS_MAX = 2;
 
 /**
  * Whether this camera frame is segmented: a token bucket filled at `fps` per second, so a
- * 15 fps camera at 12 fps segments 4 frames of 5 (a plain «every n-th frame» gives 7.5).
+ * 15 fps camera at 12 fps segments 4 frames of 5 (a plain «every n-th frame» gives 7.5) and at
+ * 8 fps 8 frames of 15.
  */
 export function segmentStep(tokens: number, dtMs: number, fps: number): { run: boolean; tokens: number } {
   const t = Math.min(SEG_TOKENS_MAX, tokens + (Math.max(0, dtMs) * fps) / 1000);
@@ -79,7 +84,8 @@ export function segmentStep(tokens: number, dtMs: number, fps: number): { run: b
 
 /**
  * Temporal smoothing of the mask: the weight of the new mask for `dtMs` since the previous one
- * (time constant `tauMs`). 12 fps → ≈ 0.75: flicker on the edge fades, a moving hand lags ≈ 1 frame.
+ * (time constant `tauMs`). 12 fps → ≈ 0.75, 8 fps → ≈ 0.88: flicker on the edge fades, a moving
+ * hand lags ≈ 1 frame.
  */
 export const EMA_TAU_MS = 60;
 export function emaAlpha(dtMs: number, tauMs = EMA_TAU_MS): number {

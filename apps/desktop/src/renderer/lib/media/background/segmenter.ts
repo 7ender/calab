@@ -14,8 +14,10 @@ import modelUrl from '../../../../../resources/mediapipe/selfie_segmenter_landsc
 export interface Segmenter {
   /** false = the CPU delegate (or a software GL): segment less often. */
   readonly gpu: boolean;
+  /** The segmenter takes a model-size input (256×144) without resizing the shared canvas. */
+  readonly small: boolean;
   /** Segments `frame`; `onMask` runs synchronously with a texture valid only inside it. */
-  segment(frame: VideoFrame, timestampMs: number, onMask: (tex: WebGLTexture, w: number, h: number) => void): void;
+  segment(frame: TexImageSource, timestampMs: number, onMask: (tex: WebGLTexture, w: number, h: number) => void): void;
   close(): void;
 }
 
@@ -39,8 +41,14 @@ export async function createSegmenter(canvas: OffscreenCanvas): Promise<Segmente
     gpu = false;
     seg = await make('CPU');
   }
+  // Our input is the 256×144 model-size picture, the canvas is the compositor's full-size output:
+  // MediaPipe must not resize it to the input (GraphRunner.setAutoResizeCanvas, `g` in 1.0.1 — pinned).
+  const resize = (seg as unknown as { g?: { setAutoResizeCanvas?: (on: boolean) => void } }).g?.setAutoResizeCanvas;
+  const small = typeof resize === 'function';
+  if (small) resize.call((seg as unknown as { g: unknown }).g, false);
   return {
     gpu,
+    small,
     segment(frame, ts, onMask) {
       seg.segmentForVideo(frame, ts, (result) => {
         const mask = result.confidenceMasks?.[0];
