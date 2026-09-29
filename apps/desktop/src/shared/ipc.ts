@@ -65,6 +65,12 @@ export const IPC = {
   /** main → renderer */
   trayAction: 'tray:action',
 
+  // ---- macOS application / Dock menu (shared/menu.ts) ----
+  /** renderer → main: MenuState (voice summary, workspaces, capabilities, shortcut labels). */
+  menuState: 'menu:state',
+  /** main → renderer: a MenuAction id chosen in the menu bar / Dock menu. */
+  menuAction: 'menu:action',
+
   // ---- files ----
   filesDownload: 'files:download',
   filesProgress: 'files:progress',
@@ -230,6 +236,54 @@ export interface MainStrings {
   /** One-time tray balloon / notification after the first close-to-tray (Windows/Linux). */
   trayHintTitle: string;
   trayHintBody: string;
+  /** macOS application / Dock menu (docs/08 «Меню macOS», main/menuModel.ts). */
+  menuAbout: string;
+  menuCheckUpdates: string;
+  menuSettings: string;
+  menuServices: string;
+  menuHide: string;
+  menuHideOthers: string;
+  menuShowAll: string;
+  menuQuit: string;
+  menuFile: string;
+  menuNewMessage: string;
+  menuCreateRoom: string;
+  menuInvite: string;
+  menuCloseWindow: string;
+  menuEdit: string;
+  menuUndo: string;
+  menuRedo: string;
+  menuCut: string;
+  menuCopy: string;
+  menuPaste: string;
+  menuPasteMatch: string;
+  menuDelete: string;
+  menuSelectAll: string;
+  menuEmoji: string;
+  menuView: string;
+  menuSearch: string;
+  menuMembers: string;
+  menuDms: string;
+  menuZoomIn: string;
+  menuZoomOut: string;
+  menuZoomReset: string;
+  menuFullScreen: string;
+  menuDevelop: string;
+  menuDevTools: string;
+  menuReload: string;
+  menuVoice: string;
+  menuCamera: string;
+  menuShareScreen: string;
+  menuLeave: string;
+  menuWindow: string;
+  menuMinimize: string;
+  menuZoom: string;
+  menuFront: string;
+  menuHelp: string;
+  menuWhatsNew: string;
+  menuShortcuts: string;
+  menuDocs: string;
+  menuReportIssue: string;
 }
 
 export const MAIN_STRING_KEYS = [
@@ -249,6 +303,53 @@ export const MAIN_STRING_KEYS = [
   'quitCancel',
   'trayHintTitle',
   'trayHintBody',
+  'menuAbout',
+  'menuCheckUpdates',
+  'menuSettings',
+  'menuServices',
+  'menuHide',
+  'menuHideOthers',
+  'menuShowAll',
+  'menuQuit',
+  'menuFile',
+  'menuNewMessage',
+  'menuCreateRoom',
+  'menuInvite',
+  'menuCloseWindow',
+  'menuEdit',
+  'menuUndo',
+  'menuRedo',
+  'menuCut',
+  'menuCopy',
+  'menuPaste',
+  'menuPasteMatch',
+  'menuDelete',
+  'menuSelectAll',
+  'menuEmoji',
+  'menuView',
+  'menuSearch',
+  'menuMembers',
+  'menuDms',
+  'menuZoomIn',
+  'menuZoomOut',
+  'menuZoomReset',
+  'menuFullScreen',
+  'menuDevelop',
+  'menuDevTools',
+  'menuReload',
+  'menuVoice',
+  'menuCamera',
+  'menuShareScreen',
+  'menuLeave',
+  'menuWindow',
+  'menuMinimize',
+  'menuZoom',
+  'menuFront',
+  'menuHelp',
+  'menuWhatsNew',
+  'menuShortcuts',
+  'menuDocs',
+  'menuReportIssue',
 ] as const satisfies ReadonlyArray<keyof MainStrings>;
 
 export type PowerEvent = 'suspend' | 'resume' | 'lock-screen' | 'unlock-screen';

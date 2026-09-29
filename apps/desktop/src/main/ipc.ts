@@ -32,6 +32,8 @@ import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
 import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayBadge, setTrayState } from './tray';
+import { setMenuState } from './appMenu';
+import { parseMenuState } from '../shared/menu';
 import { checkForUpdates, downloadUpdate, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { isOwnPage, isShown } from './windows';
@@ -278,6 +280,9 @@ export function registerIpc(): void {
     // A call / stream in progress: an update does not start downloading until it ends.
     setUpdateInCall(inVoice);
   });
+
+  // ---- macOS menu ----
+  handle(IPC.menuState, (_e, a) => setMenuState(parseMenuState(a)));
 
   // ---- files ----
   handle(IPC.filesDownload, (_e, a) => {

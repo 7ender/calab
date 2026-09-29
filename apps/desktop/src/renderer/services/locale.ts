@@ -1,4 +1,4 @@
-import type { MainStrings } from '../../shared/ipc';
+import { MAIN_STRING_KEYS, type MainStrings } from '../../shared/ipc';
 import { detectLocale, resolveLocale, setLocale, subscribeLocale, t, type Locale } from '../i18n';
 import { log } from '../lib/log';
 import { platform } from '../platform';
@@ -32,25 +32,9 @@ async function apply(pref: ReturnType<typeof prefs>['locale']): Promise<void> {
   }
 }
 
+/** Every MainStrings key is `main.<key>` in the dictionaries (tray, notifications, macOS menu). */
 function pushMainStrings(): void {
-  const s: MainStrings = {
-    trayOpen: t('main.trayOpen'),
-    trayMute: t('main.trayMute'),
-    trayDeafen: t('main.trayDeafen'),
-    trayDisconnect: t('main.trayDisconnect'),
-    trayQuit: t('main.trayQuit'),
-    trayInVoice: t('main.trayInVoice'),
-    trayInVoiceMuted: t('main.trayInVoiceMuted'),
-    updateAvailable: t('main.updateAvailable'),
-    trayRestartUpdate: t('main.trayRestartUpdate'),
-    streamWindow: t('main.streamWindow'),
-    quitInCall: t('main.quitInCall'),
-    quitInCallDetail: t('main.quitInCallDetail'),
-    quitConfirm: t('main.quitConfirm'),
-    quitCancel: t('main.quitCancel'),
-    trayHintTitle: t('main.trayHintTitle'),
-    trayHintBody: t('main.trayHintBody'),
-  };
+  const s = Object.fromEntries(MAIN_STRING_KEYS.map((k) => [k, t(`main.${k}`)])) as MainStrings;
   platform.app.setStrings(s);
 }
 
