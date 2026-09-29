@@ -92,6 +92,7 @@ type PlanLimits struct {
 	Stickers         uint32                 `protobuf:"varint,10,opt,name=stickers,proto3" json:"stickers,omitempty"`                                                                        // live stickers over all packs of the workspace
 	Bots             uint32                 `protobuf:"varint,20,opt,name=bots,proto3" json:"bots,omitempty"`                                                                                // bots that are members of the workspace (ADR-0031)
 	AudioTierMaxKbps uint32                 `protobuf:"varint,21,opt,name=audio_tier_max_kbps,json=audioTierMaxKbps,proto3" json:"audio_tier_max_kbps,omitempty"`                            // highest voice quality tier, kbps (8 | 16 | 32 | 64; docs/02 «Битрейт»)
+	Boards           uint32                 `protobuf:"varint,22,opt,name=boards,proto3" json:"boards,omitempty"`                                                                            // live task boards of the workspace (ADR-0042); 0 = no plan limit (≤ 50 always)
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -210,6 +211,13 @@ func (x *PlanLimits) GetAudioTierMaxKbps() uint32 {
 	return 0
 }
 
+func (x *PlanLimits) GetBoards() uint32 {
+	if x != nil {
+		return x.Boards
+	}
+	return 0
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -283,7 +291,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\xf6\x03\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\x8e\x04\n" +
 	"\n" +
 	"PlanLimits\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
@@ -299,7 +307,8 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\bstickers\x18\n" +
 	" \x01(\rR\bstickers\x12\x12\n" +
 	"\x04bots\x18\x14 \x01(\rR\x04bots\x12-\n" +
-	"\x13audio_tier_max_kbps\x18\x15 \x01(\rR\x10audioTierMaxKbps\"\xba\x01\n" +
+	"\x13audio_tier_max_kbps\x18\x15 \x01(\rR\x10audioTierMaxKbps\x12\x16\n" +
+	"\x06boards\x18\x16 \x01(\rR\x06boards\"\xba\x01\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +

@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/boards.proto";
 import "calaba/v1/bot.proto";
 import "calaba/v1/call.proto";
 import "calaba/v1/event.proto";
@@ -231,6 +232,16 @@ message DispatchEvent {
     NotesCreate notes_create = 72;
     NotesUpdate notes_update = 73;
     NotesDelete notes_delete = 74;
+    // Task boards (ADR-0042): to the board's viewers (BOARD_* per recipient with their
+    // Board.permissions); TASK_UPDATE also on a user channel with the recipient's viewer_state.
+    // Comments are MESSAGE_* / MESSAGE_REACTION_* of the task rooms, to the board's viewers.
+    BoardCreate board_create = 75;
+    BoardUpdate board_update = 76;
+    BoardDelete board_delete = 77;
+    TaskCreate task_create = 78;
+    TaskUpdate task_update = 79;
+    TaskDelete task_delete = 80;
+    TaskActivityAppend task_activity = 81;
   }
 }
 
@@ -319,6 +330,12 @@ message WorkspaceSnapshot {
   // Pending guest knocks (ADR-0040) on rooms where the recipient decides: MANAGE_ROOM in the
   // room, or the author of the link. Filled in READY only.
   repeated RoomAdmission admissions = 15;
+  // Task boards the recipient sees (ADR-0042), by position, with statuses, labels, milestones
+  // and shared views; empty for guests.
+  repeated Board boards = 16;
+  // Tasks with something unseen for the recipient (Task.unread; ≤ 999): the badge on the
+  // boards icon. Changes come as TASK_UPDATE on the user channel.
+  repeated string unread_task_ids = 17;
 }
 
 message Ready {

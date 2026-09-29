@@ -10,6 +10,7 @@ enum RoomType {
   ROOM_TYPE_TEXT = 2;
   ROOM_TYPE_DM = 3;    // direct message (ADR-0020): no workspace, two participants
   ROOM_TYPE_NOTES = 4; // notes shelf (ADR-0039): no workspace, only its owner
+  ROOM_TYPE_TASK = 5;  // comments of a task (ADR-0042): hidden, access from the task's board
 }
 
 enum PermissionTargetType {
@@ -115,6 +116,9 @@ message WorkspaceNotificationSettings {
   string workspace_id = 1;
   NotificationLevel level = 2; // ALL | MENTIONS | NONE
   google.protobuf.Timestamp muted_until = 3; // unset = not muted; in the past = no longer muted
+  // Task notifications of the workspace's boards (ADR-0042 §4, «Задачи»): ALL (default) |
+  // MENTIONS (assigned to me, @me) | NONE. The workspace mute silences them too.
+  NotificationLevel task_level = 4;
 }
 
 // PUT /api/workspaces/{id}/notifications (member). Replaces the caller's settings for the
@@ -123,6 +127,8 @@ message WorkspaceNotificationSettings {
 message UpdateWorkspaceNotificationSettingsRequest {
   NotificationLevel level = 1;
   google.protobuf.Timestamp muted_until = 2; // at most 1 year ahead
+  // ALL | MENTIONS | NONE; unset = keep the stored task level (older clients).
+  optional NotificationLevel task_level = 3;
 }
 
 message UpdateWorkspaceNotificationSettingsResponse {
