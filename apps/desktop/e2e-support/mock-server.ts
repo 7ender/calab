@@ -88,6 +88,7 @@ import {
   CreateEmailInviteResponseSchema,
   EmailInviteSchema,
   ForgotPasswordRequestSchema,
+  ForgotPasswordResponseSchema,
   InviteLookupRequestSchema,
   InviteLookupResponseSchema,
   ListEmailInvitesResponseSchema,
@@ -5471,9 +5472,17 @@ class MockImpl {
     this.route('POST', '/api/auth/password/forgot', (c) => {
       const email = parseBody(c, ForgotPasswordRequestSchema).email.trim().toLowerCase();
       if (!EMAIL_RE.test(email)) throw invalid('email', 'invalid email address');
-      const u = [...s().users.values()].find((x) => x.email === email && !x.user.isGuest);
+      const users = [...s().users.values()];
+      const u = users.find((x) => x.email === email && !x.user.isGuest);
       if (u) s().emailCodes.set(`reset:${email}`, { attempts: 0, sentAtMs: Date.now() });
-      noContent(c.res); // always 204: no account enumeration
+      // Same answer whether or not the address has an account, except the hint (docs/09 #137):
+      // no exact account, but the same login at a sibling domain (owner@calaba.ru ↔ owner@calaba.test).
+      const at = email.lastIndexOf('@');
+      const name = (e: string): string => e.slice(e.lastIndexOf('@') + 1).replace(/\.[^.]*$/, '');
+      const similarAccount =
+        !users.some((x) => x.email === email) &&
+        users.some((x) => !x.user.isGuest && x.email.slice(0, x.email.lastIndexOf('@')) === email.slice(0, at) && name(x.email) === name(email));
+      sendMsg(c.res, 200, ForgotPasswordResponseSchema, { similarAccount });
     });
 
     this.route('POST', '/api/auth/password/reset', (c) => {

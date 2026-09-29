@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/auth.proto.
  */
 export const file_calaba_v1_auth: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkioQEKD1JlZ2lzdGVyUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEwoLaW52aXRlX2NvZGUYBCABKAkSEwoLZGV2aWNlX25hbWUYBSABKAkSDgoGbG9jYWxlGAYgASgJEh0KFWNoZWNrX3NpbWlsYXJfYWNjb3VudBgHIAEoCCJtChBSZWdpc3RlclJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lEhcKD3NpbWlsYXJfYWNjb3VudBgDIAEoCCJECgxMb2dpblJlcXVlc3QSDQoFZW1haWwYASABKAkSEAoIcGFzc3dvcmQYAiABKAkSEwoLZGV2aWNlX25hbWUYAyABKAkiUQoNTG9naW5SZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIZCgJtZRgCIAEoCzINLmNhbGFiYS52MS5NZSInCg5SZWZyZXNoUmVxdWVzdBIVCg1yZWZyZXNoX3Rva2VuGAEgASgJIjgKD1JlZnJlc2hSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucyI8Cg1Mb2dvdXRSZXF1ZXN0EhQKDGFsbF9zZXNzaW9ucxgBIAEoCBIVCg1yZWZyZXNoX3Rva2VuGAIgASgJIjwKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEiQKCHNlc3Npb25zGAEgAygLMhIuY2FsYWJhLnYxLlNlc3Npb24iIgoSVmVyaWZ5RW1haWxSZXF1ZXN0EgwKBGNvZGUYASABKAkiTgoTVmVyaWZ5RW1haWxSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZRIcChRqb2luZWRfd29ya3NwYWNlX2lkcxgCIAMoCSImChVGb3Jnb3RQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkiRQoUUmVzZXRQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkSDAoEY29kZRgCIAEoCRIQCghwYXNzd29yZBgDIAEoCUKXAQoNY29tLmNhbGFiYS52MUIJQXV0aFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_user]);
+  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkioQEKD1JlZ2lzdGVyUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEwoLaW52aXRlX2NvZGUYBCABKAkSEwoLZGV2aWNlX25hbWUYBSABKAkSDgoGbG9jYWxlGAYgASgJEh0KFWNoZWNrX3NpbWlsYXJfYWNjb3VudBgHIAEoCCJtChBSZWdpc3RlclJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lEhcKD3NpbWlsYXJfYWNjb3VudBgDIAEoCCJECgxMb2dpblJlcXVlc3QSDQoFZW1haWwYASABKAkSEAoIcGFzc3dvcmQYAiABKAkSEwoLZGV2aWNlX25hbWUYAyABKAkiUQoNTG9naW5SZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIZCgJtZRgCIAEoCzINLmNhbGFiYS52MS5NZSInCg5SZWZyZXNoUmVxdWVzdBIVCg1yZWZyZXNoX3Rva2VuGAEgASgJIjgKD1JlZnJlc2hSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucyI8Cg1Mb2dvdXRSZXF1ZXN0EhQKDGFsbF9zZXNzaW9ucxgBIAEoCBIVCg1yZWZyZXNoX3Rva2VuGAIgASgJIjwKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEiQKCHNlc3Npb25zGAEgAygLMhIuY2FsYWJhLnYxLlNlc3Npb24iIgoSVmVyaWZ5RW1haWxSZXF1ZXN0EgwKBGNvZGUYASABKAkiTgoTVmVyaWZ5RW1haWxSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZRIcChRqb2luZWRfd29ya3NwYWNlX2lkcxgCIAMoCSImChVGb3Jnb3RQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkiMQoWRm9yZ290UGFzc3dvcmRSZXNwb25zZRIXCg9zaW1pbGFyX2FjY291bnQYASABKAgiRQoUUmVzZXRQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkSDAoEY29kZRgCIAEoCRIQCghwYXNzd29yZBgDIAEoCUKXAQoNY29tLmNhbGFiYS52MUIJQXV0aFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_user]);
 
 /**
  * A login session = one device. Each session has its own rotating refresh token.
@@ -402,8 +402,8 @@ export const VerifyEmailResponseSchema: GenMessage<VerifyEmailResponse> = /*@__P
   messageDesc(file_calaba_v1_auth, 11);
 
 /**
- * POST /api/auth/password/forgot (no auth) → always 204, whether or not the address has an
- * account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
+ * POST /api/auth/password/forgot (no auth) → 200 ForgotPasswordResponse, whether or not the
+ * address has an account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
  *
  * @generated from message calaba.v1.ForgotPasswordRequest
  */
@@ -420,6 +420,28 @@ export type ForgotPasswordRequest = Message<"calaba.v1.ForgotPasswordRequest"> &
  */
 export const ForgotPasswordRequestSchema: GenMessage<ForgotPasswordRequest> = /*@__PURE__*/
   messageDesc(file_calaba_v1_auth, 12);
+
+/**
+ * @generated from message calaba.v1.ForgotPasswordResponse
+ */
+export type ForgotPasswordResponse = Message<"calaba.v1.ForgotPasswordResponse"> & {
+  /**
+   * True only when the exact address has no account but one with the same local part exists at
+   * a sibling domain of the same organisation (docs/09 #119, #137: kv@gptunnel.ai vs
+   * kv@gptunnel.ru). False when the exact account exists, so the answer does not reveal it.
+   * Never names the other address.
+   *
+   * @generated from field: bool similar_account = 1;
+   */
+  similarAccount: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.ForgotPasswordResponse.
+ * Use `create(ForgotPasswordResponseSchema)` to create a new message.
+ */
+export const ForgotPasswordResponseSchema: GenMessage<ForgotPasswordResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_auth, 13);
 
 /**
  * POST /api/auth/password/reset (no auth) → 204. Sets the new password, marks the email
@@ -451,5 +473,5 @@ export type ResetPasswordRequest = Message<"calaba.v1.ResetPasswordRequest"> & {
  * Use `create(ResetPasswordRequestSchema)` to create a new message.
  */
 export const ResetPasswordRequestSchema: GenMessage<ResetPasswordRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 13);
+  messageDesc(file_calaba_v1_auth, 14);
 

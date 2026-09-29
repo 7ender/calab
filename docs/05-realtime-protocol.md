@@ -320,7 +320,7 @@ PATCH  /api/me/password                ChangePasswordRequest{currentPassword, ne
 PATCH  /api/me/email                   ChangeEmailRequest{newEmail, currentPassword} → UpdateMeResponse (me.pendingEmail; код на новый адрес); 409 — адрес занят
 POST   /api/auth/verify/send           → 204: код на pendingEmail или email; 409 — уже подтверждён; без SMTP — помечает подтверждённым
 POST   /api/auth/verify                VerifyEmailRequest{code} → VerifyEmailResponse{me, joinedWorkspaceIds}; 422 CODE_INVALID | CODE_EXPIRED
-POST   /api/auth/password/forgot       ForgotPasswordRequest{email} → 204 всегда (без auth; 503 без SMTP)
+POST   /api/auth/password/forgot       ForgotPasswordRequest{email} → 200 ForgotPasswordResponse{similar_account} (без auth; 503 без SMTP)
 POST   /api/auth/password/reset        ResetPasswordRequest{email, code, password} → 204, все сессии отозваны; 422 CODE_INVALID
 POST   /api/workspaces                 CreateWorkspaceRequest → 201         (создатель — owner)
 GET    /api/workspaces                 ListWorkspacesResponse               (мои)
