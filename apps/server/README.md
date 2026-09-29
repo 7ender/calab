@@ -58,7 +58,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `REDIS_URL` | — (обязательна) | `redis://host:port/db`, с паролем — `redis://:pass@host:port/db` (спецсимволы в пароле URL-кодировать); **Valkey ≥ 9.0** (или Redis ≥ 7.4): HEXPIRE для presence |
 | `REDIS_KEY_PREFIX` | пусто | пространство имён всех ключей и каналов pub/sub API в Valkey, например `calab:` (буквы, цифры, `._-:`, в конце `:`): для Valkey, общего с другими приложениями, под ACL-пользователем `~calab:* &calab:*` (docs/06 «Общий Valkey»); пусто — прежние имена |
 | `JWT_SECRET` | — (обязательна, ≥ 32 байт) | подпись access JWT (HS256) |
-| `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL` | `15m` / `720h` | время жизни access JWT / сессии (скользящее) |
+| `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL` | `24h` / `8760h` | время жизни access JWT / сессии (скользящее, 1 год); отзыв мгновенный при любых сроках (docs/04 «Auth») |
 | `REGISTRATION_MODE` | `invite` | `open` \| `invite` (без кода — только первый пользователь сервера) |
 | `AUTH_RATE_BURST` / `AUTH_RATE_PER_MINUTE` | `10` / `10` | token bucket по IP на login и register |
 | `LOGIN_ACCOUNT_ATTEMPTS` | `10` | попыток входа на один email за 15 мин с любых IP (429 + `Retry-After`) |

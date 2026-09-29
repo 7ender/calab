@@ -190,6 +190,9 @@ func (h *Hub) loop(c *conn, s *Session) {
 		case *v1.GatewayFrame_Heartbeat:
 			c.sendFrame(&v1.GatewayFrame{Payload: &v1.GatewayFrame_HeartbeatAck{HeartbeatAck: &v1.HeartbeatAck{}}})
 			h.touch(s)
+			if h.sessionRevoked(s) {
+				return
+			}
 		case *v1.GatewayFrame_SetPresence:
 			if p.SetPresence.GetUntil() != nil {
 				h.setManualPresence(s.user, p.SetPresence.GetStatus(), p.SetPresence.GetUntil())
@@ -225,6 +228,33 @@ func (h *Hub) authenticate(c *conn, token string) (auth.Identity, bool) {
 		c.closeGraceful(4000, "try again")
 	}
 	return id, false
+}
+
+// sessionRevoked rechecks the auth session of a live socket (on its heartbeat) and closes it
+// with 4010 when the session was revoked. The socket event of a revocation closes it at
+// once; this catches a revocation whose marker and event were both lost (Valkey refused
+// them), within sessionRecheck + a heartbeat (docs/04 «Auth»). The check is the REST one:
+// a cached marker read plus at most one DB read per minute per session and instance. A
+// dependency error keeps the socket (already authenticated; a Postgres blip must not drop
+// every socket at once). Bot tokens have no session row: their revocation is the marker +
+// event (BotTokenChanged).
+func (h *Hub) sessionRevoked(s *Session) bool {
+	if s.bot {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := h.auth.CheckSession(ctx, s.asess)
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, auth.ErrSessionRevoked):
+		h.destroy(s, 4010, revokedCloseReason(auth.RevokedReason(err)))
+		return true
+	default:
+		slog.Warn("gateway: session recheck failed", "session_id", s.asess, "err", err)
+		return false
+	}
 }
 
 // revokedCloseReason is the 4010 close reason: "session revoked", with ": <REASON>" when the

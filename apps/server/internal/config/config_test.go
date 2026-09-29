@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAllowedOrigins(t *testing.T) {
@@ -36,5 +37,44 @@ func TestPublicAppURLs(t *testing.T) {
 	t.Setenv("PUBLIC_APP_URLS", "https://ok.example, calab.ru")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "PUBLIC_APP_URLS") {
 		t.Fatalf("bad entry accepted: %v", err)
+	}
+}
+
+// Token lifetimes: 24 h / 1 year by default (owner, 2026-09-29), tightened via env,
+// access ≥ 1m and refresh ≥ access.
+func TestTokenTTLs(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x@localhost/x")
+	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
+	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AccessTokenTTL != 24*time.Hour || c.RefreshTokenTTL != 8760*time.Hour {
+		t.Fatalf("defaults: access %v refresh %v", c.AccessTokenTTL, c.RefreshTokenTTL)
+	}
+	// Set but empty (a compose/.env line without a value) = the default, not a parse error.
+	t.Setenv("ACCESS_TOKEN_TTL", "")
+	t.Setenv("REFRESH_TOKEN_TTL", "")
+	if c, err = Load(); err != nil {
+		t.Fatalf("empty TTLs: %v", err)
+	}
+	if c.AccessTokenTTL != 24*time.Hour || c.RefreshTokenTTL != 8760*time.Hour {
+		t.Fatalf("empty TTLs: access %v refresh %v", c.AccessTokenTTL, c.RefreshTokenTTL)
+	}
+	t.Setenv("ACCESS_TOKEN_TTL", "15m")
+	t.Setenv("REFRESH_TOKEN_TTL", "720h")
+	if c, err = Load(); err != nil {
+		t.Fatal(err)
+	}
+	if c.AccessTokenTTL != 15*time.Minute || c.RefreshTokenTTL != 720*time.Hour {
+		t.Fatalf("tightened: access %v refresh %v", c.AccessTokenTTL, c.RefreshTokenTTL)
+	}
+	for _, bad := range [][2]string{{"30s", "720h"}, {"48h", "24h"}} {
+		t.Setenv("ACCESS_TOKEN_TTL", bad[0])
+		t.Setenv("REFRESH_TOKEN_TTL", bad[1])
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "ACCESS_TOKEN_TTL") {
+			t.Fatalf("%v accepted: %v", bad, err)
+		}
 	}
 }
