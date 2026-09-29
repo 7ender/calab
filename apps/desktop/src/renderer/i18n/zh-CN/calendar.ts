@@ -168,6 +168,7 @@ export const zhCalendar: DictShape<typeof ruCalendar> = {
   'fb.busyAt': "{name}：{time} 忙碌",
   'fb.busyAllDay': "{name}：全天忙碌",
   'fb.busyExternalAt': "{name}：{time} 忙碌 · 外部日历",
+  'fb.gridLabel': "按成员查看空闲情况",
   'fb.freeWindow': "所有人空闲 {time}",
   'fb.duration': "时长",
   'fb.min': "{n} 分钟",

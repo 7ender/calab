@@ -168,6 +168,7 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   'fb.busyAt': "{name}: busy {time}",
   'fb.busyAllDay': "{name}: busy all day",
   'fb.busyExternalAt': "{name}: busy {time} · external calendar",
+  'fb.gridLabel': "Availability by person",
   'fb.freeWindow': "Everyone is free {time}",
   'fb.duration': "Duration",
   'fb.min': "{n} min",

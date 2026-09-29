@@ -91,19 +91,25 @@ export function FindTimePane({ workspaceId }: { workspaceId: string }): ReactNod
   return (
     <section className="mat-content relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('fb.find')} data-testid="find-time">
       <header className={cx('mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2', mobile && 'pl-1')}>
-        {mobile ? <NavButton /> : null}
-        <IconButton label={t('cal.prevDay')} shortcut="←" onClick={() => ctl.setDay(addDays(day, -1))} className={touch}>
-          <ChevronLeft className="size-[18px]" />
-        </IconButton>
-        <IconButton label={t('cal.nextDay')} shortcut="→" onClick={() => ctl.setDay(addDays(day, 1))} className={touch}>
-          <ChevronRight className="size-[18px]" />
-        </IconButton>
+        {mobile ? (
+          // Phone: the list covers two weeks from today — no day to page through.
+          <NavButton />
+        ) : (
+          <>
+            <IconButton label={t('cal.prevDay')} shortcut="←" onClick={() => ctl.setDay(addDays(day, -1))}>
+              <ChevronLeft className="size-[18px]" />
+            </IconButton>
+            <IconButton label={t('cal.nextDay')} shortcut="→" onClick={() => ctl.setDay(addDays(day, 1))}>
+              <ChevronRight className="size-[18px]" />
+            </IconButton>
+          </>
+        )}
         <h1 className="ml-1 flex min-w-0 flex-1 items-baseline gap-2 truncate text-list font-semibold">
           <span className="shrink-0">{t('fb.find')}</span>
-          <span className="truncate font-normal text-muted first-letter:uppercase">{mobile ? formatShortDay(dayStart(day)) : formatLongDay(dayStart(day))}</span>
+          {mobile ? null : <span className="truncate font-normal text-muted first-letter:uppercase">{formatLongDay(dayStart(day))}</span>}
         </h1>
-        {day !== today ? (
-          <Button variant="secondary" size={mobile ? 'md' : 'sm'} onClick={() => ctl.setDay(today)}>
+        {day !== today && !mobile ? (
+          <Button variant="secondary" size="sm" onClick={() => ctl.setDay(today)}>
             {t('cal.today')}
           </Button>
         ) : null}
@@ -322,7 +328,7 @@ function AvailabilityGrid({ ctl, onPick, highlight }: { ctl: FindCtl; onPick: (s
           <ColumnHead key={u} workspaceId={workspaceId} userId={u} color={personColor(i)} />
         ))}
       </div>
-      <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      <div ref={scroller} tabIndex={0} role="region" aria-label={t('fb.gridLabel')} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
         <div className="relative flex" style={{ height: 24 * HOUR_PX + 16 }}>
           <HourScale />
           <div className="relative mr-2 mt-2 flex flex-1" style={{ height: 24 * HOUR_PX }}>
@@ -483,11 +489,18 @@ const FreeOverlay = memo(function FreeOverlay({ ctl, onPick, highlight }: { ctl:
         <div
           key={w.start}
           role="button"
-          tabIndex={-1}
+          tabIndex={0}
           aria-label={t('fb.freeWindow', { time: `${formatTime(w.start)} – ${formatTime(w.end)}` })}
           data-testid="free-window"
           onPointerDown={(e) => onDown(e, w)}
-          className="pointer-events-auto absolute inset-x-0 cursor-copy rounded-[4px] border border-[color-mix(in_srgb,var(--color-green)_55%,transparent)] bg-[color-mix(in_srgb,var(--color-green)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-green)_24%,transparent)]"
+          onKeyDown={(e) => {
+            // Keyboard: the window's first slot of the duration.
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            const start = Math.ceil(w.start / (15 * MIN)) * 15 * MIN;
+            onPick({ start, end: start + durationMin * MIN });
+          }}
+          className="pointer-events-auto absolute inset-x-0 cursor-copy rounded-[4px] outline-none focus-visible:ring-2 focus-visible:ring-accent border border-[color-mix(in_srgb,var(--color-green)_55%,transparent)] bg-[color-mix(in_srgb,var(--color-green)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-green)_24%,transparent)]"
           style={{ top: y(w.start), height: Math.max(4, y(w.end) - y(w.start)) }}
         />
       ))}

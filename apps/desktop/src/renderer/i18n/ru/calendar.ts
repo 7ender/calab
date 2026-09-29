@@ -173,6 +173,7 @@ export const ruCalendar = {
   'fb.busyAt': "{name}: занято {time}",
   'fb.busyAllDay': "{name}: занято весь день",
   'fb.busyExternalAt': "{name}: занято {time} · внешний календарь",
+  'fb.gridLabel': "Занятость по людям",
   'fb.freeWindow': "Все свободны {time}",
   'fb.duration': "Длительность",
   'fb.min': "{n} мин",

@@ -1346,6 +1346,9 @@ test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
   const menu = win.getByRole('menu');
   await expect(menu.getByRole('menuitem', { name: 'Создать комнату' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Создать категорию' })).toBeVisible();
+  // docs/09 #135: the header's only «+» also adds a meeting and, last, invites to the workspace.
+  await expect(menu.getByRole('menuitem')).toHaveText(['Создать комнату', 'Создать категорию', 'Добавить встречу', 'Пригласить в пространство']);
+  await expect(win.locator('aside').getByRole('button', { name: 'Пригласить людей' })).toHaveCount(0);
   await checkpoint(shot, 'sidebar-create-menu');
 });
 
