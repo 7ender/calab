@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { candidateType, httpRow, iceRow, splitTurn, wsRow } from './connCheck';
+import { candidateType, httpRow, iceRow, splitTurn, voiceProbeLine, wsRow } from './connCheck';
 
 describe('connection check verdicts (Settings → Соединение, 0.2.1)', () => {
   it('HTTP: API needs 2xx; RTC any answer is reachable; CSP and network errors fail', () => {
@@ -58,5 +58,15 @@ describe('connection check verdicts (Settings → Соединение, 0.2.1)',
     expect(candidateType({ candidate: 'candidate:1 1 udp 2 1.2.3.4 5 typ relay raddr 0.0.0.0 rport 0' })).toBe('relay');
     expect(candidateType({ candidate: 'candidate:1 1 udp 2 1.2.3.4 5 typ host' })).toBe('host');
     expect(candidateType(null)).toBeNull();
+  });
+});
+
+describe('the live voice line of the check (docs/09 #131)', () => {
+  it('connected with the signal RTT, stuck / reconnecting with the seconds, nothing when not in voice', () => {
+    expect(voiceProbeLine({ phase: 'connected', stuckMs: null, rttMs: 31.2 })).toEqual({ text: 'подключён, RTT 31 мс', ok: true });
+    expect(voiceProbeLine({ phase: 'connected', stuckMs: null, rttMs: null })).toEqual({ text: 'подключён', ok: true });
+    expect(voiceProbeLine({ phase: 'connecting', stuckMs: 45_200, rttMs: null })).toEqual({ text: 'зависло на подключении 45 с', ok: false });
+    expect(voiceProbeLine({ phase: 'reconnecting', stuckMs: 3_000, rttMs: null })?.text).toBe('переподключение 3 с');
+    expect(voiceProbeLine({ phase: 'idle', stuckMs: null, rttMs: null })).toBeNull();
   });
 });
