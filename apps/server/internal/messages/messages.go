@@ -44,6 +44,9 @@ type Handlers struct {
 	BotLimiter *redisx.RateLimiter
 	// Receipts publishes READ_RECEIPT after reads (docs/09 #92); nil = none.
 	Receipts *Receipts
+	// TaskHook runs after a message is posted (or forwarded) into a task's comment room
+	// (ADR-0042): subscriptions, notifications, TASK_UPDATE; nil = none.
+	TaskHook func(ctx context.Context, acc perm.RoomAccess, msg sqlc.Message)
 }
 
 // NewHandlers creates the message handlers.
@@ -532,6 +535,9 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
 		MessageCreate: &v1.MessageCreate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: ev},
 	}})
+	if acc.Task && h.TaskHook != nil {
+		h.TaskHook(r.Context(), acc, msg)
+	}
 	h.events.User(r.Context(), uid(r), &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{
 		ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: roomID.String(), LastReadMessageId: msg.ID.String()}},
 	}})

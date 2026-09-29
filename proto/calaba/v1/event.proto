@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/user.proto";
 
 // Workspace calendar and meetings (ADR-0038). Messages are named CalendarEvent* (not Event*):
 // a TS export named `Event` would shadow the DOM Event type in every module importing it.
@@ -218,6 +219,115 @@ message EventRsvpTokenResponse {
   EventRepeat repeat = 21;
   google.protobuf.Timestamp repeat_until = 22;
   string organizer_email = 23; // only a confirmed address, else empty
+}
+
+// ---- free / busy and finding a time (ADR-0041) ----
+
+// What makes a person busy.
+enum BusyKind {
+  BUSY_KIND_UNSPECIFIED = 0;
+  BUSY_KIND_MEETING = 1;  // a Calab meeting they organize or attend (answer not «declined»)
+  BUSY_KIND_EXTERNAL = 2; // their connected CalDAV calendar (never with a title or an id)
+}
+
+// One busy interval (an occurrence; intervals of a person may overlap).
+message BusyInterval {
+  google.protobuf.Timestamp starts_at = 1;
+  google.protobuf.Timestamp ends_at = 2;
+  // The meeting, only when the caller may see it in this workspace (ADR-0038 §2); empty =
+  // just «busy».
+  string event_id = 3;
+  BusyKind kind = 4;
+  // An all-day meeting / external event: busy from midnight to midnight of the person's zone.
+  bool all_day = 5;
+}
+
+message FreeBusyUser {
+  string user_id = 1;
+  string timezone = 2; // IANA zone of the person, "UTC" without one
+  WorkHours work_hours = 3;
+  repeated BusyInterval busy = 4; // overlapping [from, to), earliest first
+}
+
+// GET /api/workspaces/{id}/freebusy?users=<id,id,…>&from=<RFC 3339>&to=<RFC 3339> — busy
+// intervals of ≤ 20 members of the workspace (not guests or bots) in a window of ≤ 14 days.
+// Members only: guests and bots → 403; a user who is not a member → 422 (field users).
+// Meetings of every workspace of the person count (no id outside this one). 60 per minute.
+message FreeBusyResponse {
+  repeated FreeBusyUser users = 1; // in the order asked
+}
+
+// POST /api/workspaces/{id}/freebusy/suggest → SuggestSlotsResponse: up to 10 earliest
+// windows of duration_min (5..1440) on a 15-minute grid inside [from, to) (≤ 14 days; not
+// before now) where every person is free and, with room_id, the room has no other meeting.
+// within_work_hours: only where the working hours of all of them intersect; 409
+// NO_COMMON_HOURS when they do not intersect in the window at all. 30 per minute.
+message SuggestSlotsRequest {
+  repeated string users = 1; // 1..20 members, as in freebusy
+  uint32 duration_min = 2;
+  google.protobuf.Timestamp from = 3;
+  google.protobuf.Timestamp to = 4;
+  bool within_work_hours = 5;
+  string room_id = 6; // a voice room of the workspace the caller can see; empty = none
+}
+
+message Slot {
+  google.protobuf.Timestamp starts_at = 1;
+  google.protobuf.Timestamp ends_at = 2;
+}
+
+message SuggestSlotsResponse {
+  repeated Slot slots = 1; // earliest first; empty = no common free window
+}
+
+// ---- the user's CalDAV calendar (ADR-0041 §4) ----
+//
+// One account per user (not guests or bots: 403). The password (an app-specific password) is
+// stored encrypted and never returned. Every answer is CalDavAccountResponse:
+// GET /api/me/caldav → the account (absent = not connected).
+// POST /api/me/caldav ConnectCalDavRequest → discovery (https only, public addresses, 10 s,
+// no redirects) and the account with its calendars; 422 url / password when the server
+// cannot be used; 5 per hour. Connecting again with the same URL and username keeps the
+// chosen calendar.
+// PUT /api/me/caldav UpdateCalDavRequest → the account; 404 without one; 422 for a calendar
+// not in calendars.
+// DELETE /api/me/caldav → 204; the imported busy time is removed.
+// POST /api/me/caldav/sync → the account after an import now; 422 without a calendar or with
+// import off; once per minute.
+// Import (every CALDAV_SYNC_INTERVAL, default 15 min) keeps only the times of events of
+// −1…+30 days. Push puts the user's meetings into the calendar as <calendar_href><event id>.ics.
+
+message CalDavCalendar {
+  string href = 1; // absolute URL of the collection
+  string name = 2;
+  string color = 3; // "#RRGGBB" or empty
+}
+
+message CalDavAccount {
+  string url = 1;
+  string username = 2;
+  string calendar_href = 3; // the chosen calendar (one of calendars); empty = none yet
+  bool import = 4; // import busy time (default true)
+  bool push = 5;   // put the user's meetings into the calendar (default false)
+  google.protobuf.Timestamp last_sync_at = 6;
+  string last_error = 7; // of the last import or push; empty = fine
+  repeated CalDavCalendar calendars = 8; // event calendars found at connection
+}
+
+message CalDavAccountResponse {
+  CalDavAccount account = 1;
+}
+
+message ConnectCalDavRequest {
+  string url = 1; // https URL of the server or the principal
+  string username = 2;
+  string password = 3;
+}
+
+message UpdateCalDavRequest {
+  string calendar_href = 1;
+  bool import = 2;
+  bool push = 3;
 }
 
 // ---- gateway (docs/05) ----

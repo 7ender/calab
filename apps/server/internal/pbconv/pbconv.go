@@ -126,6 +126,8 @@ func roomTypeFromDB(s string) v1.RoomType {
 		return v1.RoomType_ROOM_TYPE_DM
 	case "notes":
 		return v1.RoomType_ROOM_TYPE_NOTES
+	case "task":
+		return v1.RoomType_ROOM_TYPE_TASK
 	}
 	return v1.RoomType_ROOM_TYPE_TEXT
 }
@@ -221,6 +223,7 @@ func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
 	s = NormalizeSettings(proto.CloneOf(s))
 	// Meeting reminders live in their own columns (users.event_reminders*, ADR-0038 §5).
 	s.EventReminders, s.EventRemindersDnd = nil, false
+	s.WorkHours = nil // users.work_* columns (ADR-0041)
 	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(s)
 }
 
@@ -241,6 +244,11 @@ func Me(u sqlc.User) *v1.Me {
 		settings.EventReminders = append(settings.EventReminders, uint32(max(m, 0))) //nolint:gosec // ≤ 1440
 	}
 	settings.EventRemindersDnd = u.EventRemindersDnd
+	settings.WorkHours = &v1.WorkHours{StartMin: uint32(max(u.WorkStartMin, 0)), EndMin: uint32(max(u.WorkEndMin, 0)), //nolint:gosec // ≤ 1440
+		Days: make([]uint32, 0, len(u.WorkDays))}
+	for _, d := range u.WorkDays {
+		settings.WorkHours.Days = append(settings.WorkHours.Days, uint32(max(d, 0))) //nolint:gosec // 1..7
+	}
 	me := &v1.Me{User: User(u), Email: email, Settings: settings,
 		EmailVerified: u.IsGuest || u.EmailVerifiedAt != nil,                 // guests have no email to verify
 		IsSuperadmin:  u.EmailVerifiedAt != nil && superadmin.IsPtr(u.Email)} // an unverified address proves nothing
@@ -651,6 +659,7 @@ func RoomNotificationSettings(s sqlc.RoomNotificationSetting) *v1.RoomNotificati
 func WorkspaceNotificationSettings(s sqlc.WorkspaceNotificationSetting) *v1.WorkspaceNotificationSettings {
 	return &v1.WorkspaceNotificationSettings{
 		WorkspaceId: s.WorkspaceID.String(), MutedUntil: tsp(s.MutedUntil),
-		Level: notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
+		Level:     notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
+		TaskLevel: notifications.LevelFromDB(s.TaskLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL),
 	}
 }

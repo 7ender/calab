@@ -336,6 +336,10 @@ export const PERM_LABEL: Record<PermissionName, MessageKey> = {
   VIDEO: 'perm.VIDEO',
   MANAGE_ROLES: 'perm.MANAGE_ROLES',
   MANAGE_STICKERS: 'perm.MANAGE_STICKERS',
+  VIEW_BOARD: 'perm.VIEW_BOARD',
+  CREATE_TASKS: 'perm.CREATE_TASKS',
+  EDIT_TASKS: 'perm.EDIT_TASKS',
+  MANAGE_BOARD: 'perm.MANAGE_BOARD',
 };
 
 function targetKey(o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string {

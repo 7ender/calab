@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -269,21 +271,65 @@ func (s *Service) verified(ctx context.Context, u sqlc.User) []uuid.UUID {
 	return nil
 }
 
-// ForgotPassword mails a reset code if email belongs to an account with a password. It
-// runs in the background: the caller answers 204 at once, whether the account exists or
-// not, and timing does not tell either.
-func (s *Service) ForgotPassword(ctx context.Context, email string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+// ForgotPassword mails a reset code if email belongs to an account with a password. The
+// mail goes out in the background; the answer is the same whether the account exists or not,
+// except for the similar-address hint (docs/09 #137): true only when the exact address has no
+// account but a sibling-domain one does (kv@gptunnel.ai vs kv@gptunnel.ru, the same lookup as
+// the sign-up hint, #119). Both lookups always run, so timing does not tell an existing
+// account either. Every stop is logged without the address (domain + hash + client IP) so a
+// "the code never came" report can be traced.
+func (s *Service) ForgotPassword(ctx context.Context, email, ip string) (similar bool, err error) {
+	u, err := s.db.Q.GetUserByEmail(ctx, &email)
+	if err != nil && !db.IsNotFound(err) {
+		return false, err
+	}
+	found := err == nil
+	similar, err = similarAccount(ctx, s.db.Q, email, nil)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		slog.InfoContext(ctx, "password reset: no account",
+			"domain", emailDomain(email), "email_hash", emailHash(email), "ip", ip, "similar_account", similar)
+		return similar, nil
+	}
+	if reason := resetIneligible(u); reason != "" {
+		slog.InfoContext(ctx, "password reset: account not eligible", "user_id", u.ID, "reason", reason)
+		return false, nil
+	}
+	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	go func() {
 		defer cancel()
-		u, err := s.db.Q.GetUserByEmail(ctx, &email)
-		if err != nil || u.IsGuest || u.PasswordHash == nil || u.DisabledAt != nil || u.Email == nil {
-			return
-		}
-		if err := s.sendCode(ctx, u, purposeReset, *u.Email, nil); err != nil {
-			slog.InfoContext(ctx, "password reset code not sent", "user_id", u.ID, "err", err)
+		if err := s.sendCode(bg, u, purposeReset, *u.Email, nil); err != nil {
+			slog.InfoContext(bg, "password reset code not sent", "user_id", u.ID, "err", err)
 		}
 	}()
+	return false, nil
+}
+
+// resetIneligible names why an existing account gets no reset code ("" = it does).
+func resetIneligible(u sqlc.User) string {
+	switch {
+	case u.IsGuest:
+		return "guest"
+	case u.DisabledAt != nil:
+		return "disabled"
+	case u.PasswordHash == nil || u.Email == nil:
+		return "no_password"
+	}
+	return ""
+}
+
+// emailDomain is the lower-cased part after the last @ (logs: never the full address).
+func emailDomain(email string) string {
+	return strings.ToLower(email[strings.LastIndexByte(email, '@')+1:])
+}
+
+// emailHash is the first 8 hex digits of sha256 of the trimmed, lower-cased address: enough
+// to match a user's report against the logs without storing the address.
+func emailHash(email string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
+	return hex.EncodeToString(sum[:4])
 }
 
 // ResetPassword sets a new password with a reset code, marks the email verified (the code
@@ -399,8 +445,11 @@ func (h *Handlers) forgotPassword(w http.ResponseWriter, r *http.Request) error 
 	if !h.svc.mailOn() {
 		return mail.ErrDisabled
 	}
-	h.svc.ForgotPassword(r.Context(), email)
-	httpx.NoContent(w)
+	similar, err := h.svc.ForgotPassword(r.Context(), email, httpx.ClientIP(r.Context()))
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.ForgotPasswordResponse{SimilarAccount: similar})
 	return nil
 }
 

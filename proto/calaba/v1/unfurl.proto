@@ -1,6 +1,8 @@
 syntax = "proto3";
 package calaba.v1;
 
+import "calaba/v1/boards.proto";
+
 // GET /api/unfurl?url= — link preview (OpenGraph / Twitter card). Image URLs point to the
 // server's image proxy (GET /api/unfurl/image?...), so clients never contact third-party
 // hosts directly and users' IP addresses are not exposed.
@@ -11,4 +13,9 @@ message UnfurlResponse {
   string site_name = 4;
   string image_url = 5;    // proxied, empty if none
   string favicon_url = 6;  // proxied, empty if none
+  // Own links (ADR-0042): an https://<app host>/t/<KEY-N> or /b/<board id> link is answered from
+  // the database by the caller's rights, never fetched: task (with board: key, name, statuses) or
+  // board only; 404 when the caller cannot see it. title / description are filled as for any card.
+  Task task = 7;
+  Board board = 8;
 }

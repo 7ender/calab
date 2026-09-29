@@ -1,0 +1,479 @@
+-- Task boards (ADR-0042). Task lists with filters are built dynamically in internal/boards
+-- (TaskFilter → SQL); everything else is here.
+
+-- name: GetBoardAccess :one
+-- Everything needed to compute a user's board bits, in one round trip: the membership (role
+-- NULL = not a member), the member's roles lowest position first with each role's board
+-- override (0/0 = none) and the user's own override.
+SELECT b.workspace_id,
+       b.is_private,
+       (b.archived_at IS NOT NULL)::boolean AS archived,
+       m.role,
+       coalesce(mr.ids, '{}')::uuid[] AS role_ids,
+       coalesce(mr.positions, '{}')::integer[] AS role_positions,
+       coalesce(mr.perms, '{}')::bigint[] AS role_permissions,
+       coalesce(mr.allows, '{}')::bigint[] AS role_allows,
+       coalesce(mr.denies, '{}')::bigint[] AS role_denies,
+       uo.allow AS user_allow, uo.deny AS user_deny,
+       (w.suspended_at IS NOT NULL)::boolean AS suspended
+FROM boards b
+JOIN workspaces w ON w.id = b.workspace_id
+LEFT JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = sqlc.arg('user_id')
+LEFT JOIN LATERAL (
+    SELECT array_agg(wr.id ORDER BY wr.position) AS ids,
+           array_agg(wr.position ORDER BY wr.position) AS positions,
+           array_agg(wr.permissions ORDER BY wr.position) AS perms,
+           array_agg(coalesce(bo.allow, 0) ORDER BY wr.position) AS allows,
+           array_agg(coalesce(bo.deny, 0) ORDER BY wr.position) AS denies
+    FROM member_roles x
+    JOIN workspace_roles wr ON wr.id = x.role_id
+    LEFT JOIN board_permissions bo ON bo.board_id = b.id AND bo.target_type = 'role' AND bo.target_id = wr.id::text
+    WHERE x.workspace_id = m.workspace_id AND x.user_id = m.user_id
+) mr ON true
+LEFT JOIN board_permissions uo ON uo.board_id = b.id AND uo.target_type = 'user' AND uo.target_id = sqlc.arg('user_id')::text
+WHERE b.id = sqlc.arg('board_id');
+
+-- name: GetTaskRoomRef :one
+-- The task and board of a task room (perm.Resolver: RoomAccess.Task).
+SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived
+FROM tasks t WHERE t.room_id = $1;
+
+-- name: ListWorkspaceTaskRooms :many
+-- The comment rooms of the tasks on live boards of a workspace (the gateway's task room map).
+SELECT t.id, t.room_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS archived
+FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL;
+
+-- name: ListBoards :many
+SELECT * FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = sqlc.arg('archived')::boolean
+ORDER BY position, id;
+
+-- name: GetBoard :one
+SELECT * FROM boards WHERE id = $1;
+
+-- name: GetBoardForUpdate :one
+SELECT * FROM boards WHERE id = $1 FOR UPDATE;
+
+-- name: LockBoards :exec
+-- Serializes board creation / ordering of one workspace (count limit, positions).
+SELECT pg_advisory_xact_lock(hashtext('calaba.boards:' || sqlc.arg('workspace_id')::text));
+
+-- name: CountBoards :one
+SELECT count(*)::integer FROM boards WHERE workspace_id = $1 AND archived_at IS NULL;
+
+-- name: CountAllBoards :one
+-- Live and archived: the hard cap of 50 (ADR-0042 §6).
+SELECT count(*)::integer FROM boards WHERE workspace_id = $1;
+
+-- name: CreateBoard :one
+INSERT INTO boards (workspace_id, name, key, emoji, icon_file_id, description, is_private, position, created_by)
+VALUES (sqlc.arg('workspace_id'), sqlc.arg('name'), sqlc.arg('key'), sqlc.arg('emoji'), sqlc.narg('icon_file_id'),
+        sqlc.arg('description'), sqlc.arg('is_private'),
+        (SELECT coalesce(max(position) + 1, 0) FROM boards WHERE workspace_id = sqlc.arg('workspace_id')),
+        sqlc.arg('created_by'))
+RETURNING *;
+
+-- name: BoardKeyTaken :one
+SELECT EXISTS (SELECT 1 FROM boards WHERE workspace_id = $1 AND key = $2)::boolean;
+
+-- name: UpdateBoard :one
+UPDATE boards SET
+    name              = coalesce(sqlc.narg('name'), name),
+    key               = coalesce(sqlc.narg('key'), key),
+    emoji             = coalesce(sqlc.narg('emoji'), emoji),
+    icon_file_id      = CASE WHEN sqlc.arg('set_icon')::boolean THEN sqlc.narg('icon_file_id')::uuid ELSE icon_file_id END,
+    description       = coalesce(sqlc.narg('description'), description),
+    is_private        = coalesce(sqlc.narg('is_private'), is_private),
+    auto_archive_days = coalesce(sqlc.narg('auto_archive_days'), auto_archive_days),
+    default_view_id   = CASE WHEN sqlc.arg('set_default_view')::boolean THEN sqlc.narg('default_view_id')::uuid ELSE default_view_id END
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
+-- name: SetBoardPosition :exec
+UPDATE boards SET position = $2 WHERE id = $1;
+
+-- name: SetBoardArchived :one
+UPDATE boards SET archived_at = CASE WHEN sqlc.arg('archived')::boolean THEN now() ELSE NULL END
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
+-- name: NextTaskNumber :one
+-- Takes the next task number of a board (the row lock serializes concurrent creates).
+UPDATE boards SET next_number = next_number + 1 WHERE id = $1 RETURNING next_number - 1;
+
+-- name: DeleteBoardTaskRooms :exec
+-- Purge: the comment rooms of the board's tasks (their messages cascade). Called after the
+-- board (and so its tasks) is deleted, with the room ids read before.
+DELETE FROM rooms WHERE id = ANY(sqlc.arg('ids')::uuid[]) AND type = 'task';
+
+-- name: BoardTaskRoomIDs :many
+SELECT room_id FROM tasks WHERE board_id = $1;
+
+-- name: DeleteBoard :execrows
+DELETE FROM boards WHERE id = $1;
+
+-- name: ListBoardOverrides :many
+SELECT * FROM board_permissions WHERE board_id = $1 ORDER BY target_type, target_id;
+
+-- name: ListWorkspaceBoardOverrides :many
+SELECT bp.* FROM board_permissions bp JOIN boards b ON b.id = bp.board_id
+WHERE b.workspace_id = $1
+ORDER BY bp.board_id, bp.target_type, bp.target_id;
+
+-- name: DeleteBoardOverrides :exec
+DELETE FROM board_permissions WHERE board_id = $1;
+
+-- name: InsertBoardOverride :exec
+INSERT INTO board_permissions (board_id, target_type, target_id, allow, deny)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (board_id, target_type, target_id) DO UPDATE SET allow = EXCLUDED.allow, deny = EXCLUDED.deny;
+
+-- name: DeleteBoardOverride :exec
+DELETE FROM board_permissions WHERE board_id = $1 AND target_type = $2 AND target_id = $3;
+
+-- name: BoardOpenCounts :many
+-- Live tasks not in a finished status per board, and of them assigned to the user.
+SELECT t.board_id, count(*)::integer AS open,
+    (count(*) FILTER (WHERE EXISTS (SELECT 1 FROM task_assignees a WHERE a.task_id = t.id AND a.user_id = sqlc.arg('user_id')::uuid)))::integer AS mine
+FROM tasks t JOIN board_statuses st ON st.id = t.status_id
+WHERE t.board_id = ANY(sqlc.arg('board_ids')::uuid[]) AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
+GROUP BY t.board_id;
+
+-- ---- statuses, labels, milestones ----
+
+-- name: ListBoardStatuses :many
+SELECT * FROM board_statuses WHERE board_id = ANY(sqlc.arg('board_ids')::uuid[]) ORDER BY board_id, position, id;
+
+-- name: CreateBoardStatus :one
+INSERT INTO board_statuses (board_id, name, type, color, position, is_default)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING *;
+
+-- name: UpdateBoardStatus :one
+UPDATE board_statuses SET
+    name  = coalesce(sqlc.narg('name'), name),
+    type  = coalesce(sqlc.narg('type'), type),
+    color = coalesce(sqlc.narg('color'), color)
+WHERE id = sqlc.arg('id') AND board_id = sqlc.arg('board_id')
+RETURNING *;
+
+-- name: SetBoardStatusPosition :exec
+UPDATE board_statuses SET position = $2 WHERE id = $1;
+
+-- name: SetDefaultBoardStatus :exec
+-- Call ClearDefaultBoardStatus first (the partial unique index allows one default per board).
+UPDATE board_statuses SET is_default = true WHERE id = $1 AND board_id = $2;
+
+-- name: ClearDefaultBoardStatus :exec
+UPDATE board_statuses SET is_default = false WHERE board_id = $1 AND is_default;
+
+-- name: MoveStatusTasks :many
+-- Moves every task of a status (archived ones too) to another status of the board, at the end.
+UPDATE tasks t SET status_id = sqlc.arg('to_id'), updated_at = now(),
+    position = coalesce((SELECT max(x.position) FROM tasks x WHERE x.status_id = sqlc.arg('to_id')), 0) + 1024 * t.number
+WHERE t.status_id = sqlc.arg('from_id')
+RETURNING t.id;
+
+-- name: DeleteBoardStatus :execrows
+DELETE FROM board_statuses WHERE id = $1 AND board_id = $2;
+
+-- name: ListBoardLabels :many
+SELECT * FROM board_labels WHERE board_id = ANY(sqlc.arg('board_ids')::uuid[]) ORDER BY board_id, position, id;
+
+-- name: CreateBoardLabel :one
+INSERT INTO board_labels (board_id, name, color, position) VALUES ($1, $2, $3, $4) RETURNING *;
+
+-- name: UpdateBoardLabel :one
+UPDATE board_labels SET
+    name  = coalesce(sqlc.narg('name'), name),
+    color = coalesce(sqlc.narg('color'), color)
+WHERE id = sqlc.arg('id') AND board_id = sqlc.arg('board_id')
+RETURNING *;
+
+-- name: SetBoardLabelPosition :exec
+UPDATE board_labels SET position = $2 WHERE id = $1;
+
+-- name: DeleteBoardLabel :execrows
+DELETE FROM board_labels WHERE id = $1 AND board_id = $2;
+
+-- name: ListBoardMilestones :many
+SELECT * FROM board_milestones WHERE board_id = ANY(sqlc.arg('board_ids')::uuid[]) ORDER BY board_id, position, id;
+
+-- name: CreateBoardMilestone :one
+INSERT INTO board_milestones (board_id, name, due_on, position) VALUES ($1, $2, $3, $4) RETURNING *;
+
+-- name: UpdateBoardMilestone :one
+UPDATE board_milestones SET
+    name   = coalesce(sqlc.narg('name'), name),
+    due_on = CASE WHEN sqlc.arg('set_due')::boolean THEN sqlc.narg('due_on')::date ELSE due_on END
+WHERE id = sqlc.arg('id') AND board_id = sqlc.arg('board_id')
+RETURNING *;
+
+-- name: SetBoardMilestonePosition :exec
+UPDATE board_milestones SET position = $2 WHERE id = $1;
+
+-- name: DeleteBoardMilestone :execrows
+DELETE FROM board_milestones WHERE id = $1 AND board_id = $2;
+
+-- ---- views ----
+
+-- name: ListBoardViews :many
+-- Shared views of the boards and the user's own (user_id NULL: shared only).
+SELECT * FROM board_views
+WHERE board_id = ANY(sqlc.arg('board_ids')::uuid[])
+  AND (shared OR created_by = sqlc.narg('user_id')::uuid)
+ORDER BY board_id, position, id;
+
+-- name: GetBoardView :one
+SELECT * FROM board_views WHERE id = $1 AND board_id = $2;
+
+-- name: CountBoardViews :one
+SELECT count(*)::integer FROM board_views WHERE board_id = $1;
+
+-- name: CreateBoardView :one
+INSERT INTO board_views (board_id, name, kind, filter, group_by, sort, shared, created_by, position)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+        coalesce(sqlc.narg('position')::integer, (SELECT coalesce(max(position) + 1, 0) FROM board_views WHERE board_id = $1)))
+RETURNING *;
+
+-- name: UpdateBoardView :one
+UPDATE board_views SET
+    name     = coalesce(sqlc.narg('name'), name),
+    kind     = coalesce(sqlc.narg('kind'), kind),
+    filter   = coalesce(sqlc.narg('filter'), filter),
+    group_by = coalesce(sqlc.narg('group_by'), group_by),
+    sort     = coalesce(sqlc.narg('sort'), sort),
+    shared   = coalesce(sqlc.narg('shared'), shared),
+    position = coalesce(sqlc.narg('position'), position)
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
+-- name: DeleteBoardView :execrows
+DELETE FROM board_views WHERE id = $1 AND board_id = $2;
+
+-- ---- tasks ----
+
+-- name: CountLiveTasks :one
+SELECT count(*)::integer FROM tasks WHERE board_id = $1 AND archived_at IS NULL;
+
+-- name: CountLiveSubtasks :one
+SELECT count(*)::integer FROM tasks WHERE parent_id = $1 AND archived_at IS NULL;
+
+-- name: BoardHasTasks :one
+SELECT (next_number > 1)::boolean FROM boards WHERE id = $1;
+
+-- name: CreateTaskRoom :one
+INSERT INTO rooms (workspace_id, type, name, position) VALUES ($1, 'task', $2, 0) RETURNING id;
+
+-- name: InsertTask :one
+INSERT INTO tasks (board_id, number, title, description, status_id, priority, created_by, estimate,
+                   start_on, due_on, parent_id, milestone_id, position, room_id, started_at, completed_at, completed_by)
+VALUES (sqlc.arg('board_id'), sqlc.arg('number'), sqlc.arg('title'), sqlc.arg('description'), sqlc.arg('status_id'),
+        sqlc.arg('priority'), sqlc.arg('created_by'), sqlc.narg('estimate'), sqlc.narg('start_on'), sqlc.narg('due_on'),
+        sqlc.narg('parent_id'), sqlc.narg('milestone_id'), sqlc.arg('position'), sqlc.arg('room_id'),
+        sqlc.narg('started_at'), sqlc.narg('completed_at'), sqlc.narg('completed_by'))
+RETURNING id;
+
+-- name: GetTaskRow :one
+SELECT * FROM tasks WHERE id = $1;
+
+-- name: GetTaskRowForUpdate :one
+SELECT * FROM tasks WHERE id = $1 FOR UPDATE;
+
+-- name: GetTaskByNumber :one
+SELECT t.* FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = $1 AND b.key = $2 AND t.number = $3 AND b.archived_at IS NULL;
+
+-- name: UpdateTaskFields :exec
+-- Writes the whole mutable row (internal/boards computes the new values).
+UPDATE tasks SET
+    title = sqlc.arg('title'), description = sqlc.arg('description'), status_id = sqlc.arg('status_id'),
+    priority = sqlc.arg('priority'), estimate = sqlc.narg('estimate'), start_on = sqlc.narg('start_on'),
+    due_on = sqlc.narg('due_on'), parent_id = sqlc.narg('parent_id'), milestone_id = sqlc.narg('milestone_id'),
+    position = sqlc.arg('position'), started_at = sqlc.narg('started_at'), completed_at = sqlc.narg('completed_at'),
+    completed_by = sqlc.narg('completed_by'), updated_at = now()
+WHERE id = sqlc.arg('id');
+
+-- name: MoveTaskToBoard :exec
+UPDATE tasks SET board_id = sqlc.arg('board_id'), number = sqlc.arg('number'), status_id = sqlc.arg('status_id'),
+    milestone_id = NULL, parent_id = NULL, position = sqlc.arg('position'), updated_at = now()
+WHERE id = sqlc.arg('id');
+
+-- name: DetachSubtasks :exec
+UPDATE tasks SET parent_id = NULL, updated_at = now() WHERE parent_id = $1;
+
+-- name: TouchTask :exec
+UPDATE tasks SET updated_at = now() WHERE id = $1;
+
+-- name: SetTaskArchived :exec
+UPDATE tasks SET archived_at = CASE WHEN sqlc.arg('archived')::boolean THEN now() ELSE NULL END, updated_at = now()
+WHERE id = sqlc.arg('id');
+
+-- name: StatusPositions :many
+-- Live tasks of a status by position (the neighbours of a kanban move, renormalisation).
+SELECT id, position FROM tasks WHERE status_id = $1 AND archived_at IS NULL ORDER BY position, id;
+
+-- name: MaxStatusPosition :one
+SELECT coalesce(max(position), 0)::double precision FROM tasks WHERE status_id = $1 AND archived_at IS NULL;
+
+-- name: SetTaskPosition :exec
+UPDATE tasks SET position = $2 WHERE id = $1;
+
+-- name: ListTaskAssignees :many
+SELECT * FROM task_assignees WHERE task_id = ANY(sqlc.arg('task_ids')::uuid[])
+ORDER BY task_id, is_lead DESC, assigned_at, user_id;
+
+-- name: DeleteTaskAssignees :exec
+DELETE FROM task_assignees WHERE task_id = $1;
+
+-- name: InsertTaskAssignee :exec
+INSERT INTO task_assignees (task_id, user_id, is_lead, note, assigned_by, assigned_at)
+VALUES ($1, $2, $3, $4, $5, $6);
+
+-- name: ListTaskLabelIDs :many
+SELECT task_id, label_id FROM task_labels WHERE task_id = ANY(sqlc.arg('task_ids')::uuid[]);
+
+-- name: DeleteTaskLabels :exec
+DELETE FROM task_labels WHERE task_id = $1;
+
+-- name: InsertTaskLabels :exec
+INSERT INTO task_labels (task_id, label_id) SELECT sqlc.arg('task_id'), unnest(sqlc.arg('label_ids')::uuid[]);
+
+-- name: ListTaskRelations :many
+SELECT task_id, related_id, kind FROM task_relations
+WHERE task_id = ANY(sqlc.arg('task_ids')::uuid[]) OR related_id = ANY(sqlc.arg('task_ids')::uuid[]);
+
+-- name: InsertTaskRelation :execrows
+INSERT INTO task_relations (task_id, related_id, kind, created_by) VALUES ($1, $2, $3, $4)
+ON CONFLICT DO NOTHING;
+
+-- name: DeleteTaskRelation :execrows
+-- relates / duplicates read both ways: either direction is removed.
+DELETE FROM task_relations
+WHERE kind = sqlc.arg('kind') AND ((task_id = sqlc.arg('a') AND related_id = sqlc.arg('b'))
+    OR (kind <> 'blocks' AND task_id = sqlc.arg('b') AND related_id = sqlc.arg('a')));
+
+-- name: TaskCounts :many
+-- Per task: live subtasks and finished ones, live comments, attachments.
+SELECT t.id,
+    (SELECT count(*) FROM tasks s WHERE s.parent_id = t.id AND s.archived_at IS NULL)::integer AS subtasks,
+    (SELECT count(*) FROM tasks s JOIN board_statuses st ON st.id = s.status_id
+        WHERE s.parent_id = t.id AND s.archived_at IS NULL AND st.type IN ('completed', 'cancelled'))::integer AS subtasks_done,
+    (SELECT count(*) FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL)::integer AS comments,
+    (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments
+FROM tasks t WHERE t.id = ANY(sqlc.arg('task_ids')::uuid[]);
+
+-- name: ListTaskAttachments :many
+SELECT f.* FROM task_attachments a JOIN files f ON f.id = a.file_id WHERE a.task_id = $1 ORDER BY a.position;
+
+-- name: TaskAttachmentIDs :many
+SELECT file_id FROM task_attachments WHERE task_id = $1 ORDER BY position;
+
+-- name: DeleteTaskAttachments :exec
+DELETE FROM task_attachments WHERE task_id = $1;
+
+-- name: InsertTaskAttachment :exec
+INSERT INTO task_attachments (task_id, file_id, position) VALUES ($1, $2, $3);
+
+-- name: FilesAttachable :many
+-- Uploads of the user in the workspace that are neither attached to a message nor to another
+-- task (task_id's own ones count as free).
+SELECT f.id FROM files f
+WHERE f.id = ANY(sqlc.arg('ids')::uuid[]) AND f.uploader_id = sqlc.arg('user_id') AND f.workspace_id = sqlc.arg('workspace_id')::uuid
+  AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id AND ta.task_id <> sqlc.arg('task_id')::uuid);
+
+-- ---- subscriptions, notifications ----
+
+-- name: ListTaskSubscribers :many
+SELECT * FROM task_subscribers WHERE task_id = $1;
+
+-- name: ListViewerSubscriptions :many
+SELECT * FROM task_subscribers WHERE user_id = $1 AND task_id = ANY(sqlc.arg('task_ids')::uuid[]);
+
+-- name: Subscribe :exec
+-- Auto-subscription: keeps an existing row (a muted one stays muted).
+INSERT INTO task_subscribers (task_id, user_id) SELECT sqlc.arg('task_id'), unnest(sqlc.arg('user_ids')::uuid[])
+ON CONFLICT DO NOTHING;
+
+-- name: SetSubscription :one
+INSERT INTO task_subscribers (task_id, user_id, muted) VALUES ($1, $2, $3)
+ON CONFLICT (task_id, user_id) DO UPDATE SET muted = EXCLUDED.muted
+RETURNING *;
+
+-- name: MarkNotified :exec
+UPDATE task_subscribers SET notified_at = now() WHERE task_id = $1 AND user_id = ANY(sqlc.arg('user_ids')::uuid[]);
+
+-- name: MarkTaskSeen :one
+-- Returns whether the task was unread.
+WITH old AS (
+    SELECT (o.notified_at IS NOT NULL AND (o.seen_at IS NULL OR o.notified_at > o.seen_at)) AS unread
+    FROM task_subscribers o WHERE o.task_id = sqlc.arg('task_id') AND o.user_id = sqlc.arg('user_id')
+), upd AS (
+    UPDATE task_subscribers u SET seen_at = now() WHERE u.task_id = sqlc.arg('task_id') AND u.user_id = sqlc.arg('user_id')
+)
+SELECT coalesce((SELECT old.unread FROM old), false)::boolean;
+
+-- name: UnreadTaskIDs :many
+-- Tasks with something unseen for the user on live boards of the workspace (≤ 999); the caller
+-- keeps those on boards the user sees.
+SELECT t.id, t.board_id FROM task_subscribers s
+JOIN tasks t ON t.id = s.task_id AND t.archived_at IS NULL
+JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL AND b.workspace_id = sqlc.arg('workspace_id')
+WHERE s.user_id = sqlc.arg('user_id') AND s.notified_at IS NOT NULL AND (s.seen_at IS NULL OR s.notified_at > s.seen_at)
+ORDER BY s.notified_at DESC
+LIMIT 999;
+
+-- name: GetTaskLevel :many
+-- The users' task notification level and workspace mute in the workspace ('all' when unset).
+SELECT u.id::uuid AS user_id, coalesce(s.task_level, 'all')::text AS task_level,
+    (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted
+FROM unnest(sqlc.arg('user_ids')::uuid[]) AS u (id)
+LEFT JOIN workspace_notification_settings s ON s.user_id = u.id AND s.workspace_id = sqlc.arg('workspace_id');
+
+-- ---- activity ----
+
+-- name: InsertTaskActivity :one
+INSERT INTO task_activity (task_id, board_id, actor_id, kind, before, after)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING *;
+
+-- name: ListTaskActivity :many
+SELECT * FROM task_activity WHERE task_id = sqlc.arg('task_id')
+  AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
+ORDER BY id DESC LIMIT sqlc.arg('lim');
+
+-- name: ListTaskRoomMessages :many
+SELECT * FROM messages WHERE room_id = sqlc.arg('room_id') AND deleted_at IS NULL
+  AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
+ORDER BY id DESC LIMIT sqlc.arg('lim');
+
+-- name: ListBoardActivity :many
+SELECT a.*, b.key AS board_key, t.number AS task_number FROM task_activity a
+JOIN tasks t ON t.id = a.task_id
+JOIN boards b ON b.id = t.board_id
+WHERE a.board_id = sqlc.arg('board_id')
+  AND (sqlc.narg('since')::timestamptz IS NULL OR a.created_at >= sqlc.narg('since')::timestamptz)
+  AND (sqlc.narg('until')::timestamptz IS NULL OR a.created_at < sqlc.narg('until')::timestamptz)
+  AND (sqlc.narg('actor')::uuid IS NULL OR a.actor_id = sqlc.narg('actor')::uuid)
+  AND (sqlc.narg('kind')::text IS NULL OR a.kind = sqlc.narg('kind')::text)
+  AND (sqlc.narg('after_id')::uuid IS NULL OR a.id > sqlc.narg('after_id')::uuid)
+ORDER BY a.id
+LIMIT sqlc.arg('lim');
+
+-- ---- sweeper ----
+
+-- name: DueAutoArchive :many
+-- Live tasks finished longer ago than their board's auto_archive_days (0 = never), oldest first.
+SELECT t.id, t.board_id, b.workspace_id FROM tasks t
+JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL AND b.auto_archive_days > 0
+JOIN board_statuses st ON st.id = t.status_id AND st.type IN ('completed', 'cancelled')
+WHERE t.archived_at IS NULL AND t.completed_at IS NOT NULL
+  AND t.completed_at < now() - make_interval(days => b.auto_archive_days)
+ORDER BY t.completed_at
+LIMIT sqlc.arg('lim');
+
+-- name: ArchiveTasks :many
+UPDATE tasks SET archived_at = now(), updated_at = now()
+WHERE id = ANY(sqlc.arg('ids')::uuid[]) AND archived_at IS NULL
+RETURNING id, board_id;

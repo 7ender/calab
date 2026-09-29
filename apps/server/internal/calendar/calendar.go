@@ -69,6 +69,12 @@ type Service struct {
 	Presence func(ctx context.Context, users []uuid.UUID) (map[uuid.UUID]v1.PresenceStatus, error)
 	// Now is the clock (tests move it).
 	Now func() time.Time
+	// FreeBusyLimit / SuggestLimit: per-user budgets of freebusy and suggest (ADR-0041 §5);
+	// nil = unlimited.
+	FreeBusyLimit, SuggestLimit *redisx.RateLimiter
+	// Changed is told after a meeting changed for the users involved before or after the change
+	// (their CalDAV push, ADR-0041 §4); nil = nobody listens.
+	Changed func(ctx context.Context, eventID uuid.UUID, users []uuid.UUID)
 }
 
 // New creates the service. m may be disabled (no SMTP): no mail is sent then.
@@ -86,6 +92,8 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("DELETE /api/events/{id}", wrap(httpx.HandlerFunc(s.remove)))
 	mux.Handle("PUT /api/events/{id}/rsvp", wrap(httpx.HandlerFunc(s.rsvp)))
 	mux.Handle("GET /api/me/events/today", wrap(httpx.HandlerFunc(s.today)))
+	mux.Handle("GET /api/workspaces/{id}/freebusy", wrap(httpx.HandlerFunc(s.freeBusy)))
+	mux.Handle("POST /api/workspaces/{id}/freebusy/suggest", wrap(httpx.HandlerFunc(s.suggest)))
 	mux.Handle("GET /api/event-rsvp", httpx.HandlerFunc(s.publicPreview))
 	mux.Handle("POST /api/event-rsvp", httpx.HandlerFunc(s.publicAnswer))
 }

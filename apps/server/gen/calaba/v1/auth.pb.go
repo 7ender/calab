@@ -782,8 +782,8 @@ func (x *VerifyEmailResponse) GetJoinedWorkspaceIds() []string {
 	return nil
 }
 
-// POST /api/auth/password/forgot (no auth) → always 204, whether or not the address has an
-// account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
+// POST /api/auth/password/forgot (no auth) → 200 ForgotPasswordResponse, whether or not the
+// address has an account: if it has, a reset code is mailed to it. 503: the server has no SMTP.
 type ForgotPasswordRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
@@ -828,6 +828,54 @@ func (x *ForgotPasswordRequest) GetEmail() string {
 	return ""
 }
 
+type ForgotPasswordResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// True only when the exact address has no account but one with the same local part exists at
+	// a sibling domain of the same organisation (docs/09 #119, #137: kv@gptunnel.ai vs
+	// kv@gptunnel.ru). False when the exact account exists, so the answer does not reveal it.
+	// Never names the other address.
+	SimilarAccount bool `protobuf:"varint,1,opt,name=similar_account,json=similarAccount,proto3" json:"similar_account,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ForgotPasswordResponse) Reset() {
+	*x = ForgotPasswordResponse{}
+	mi := &file_calaba_v1_auth_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForgotPasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForgotPasswordResponse) ProtoMessage() {}
+
+func (x *ForgotPasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_auth_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForgotPasswordResponse.ProtoReflect.Descriptor instead.
+func (*ForgotPasswordResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ForgotPasswordResponse) GetSimilarAccount() bool {
+	if x != nil {
+		return x.SimilarAccount
+	}
+	return false
+}
+
 // POST /api/auth/password/reset (no auth) → 204. Sets the new password, marks the email
 // verified and revokes every session of the account (sign in again). 422 CODE_INVALID for a
 // wrong / expired code or an unknown address (indistinguishable on purpose); 422 VALIDATION
@@ -843,7 +891,7 @@ type ResetPasswordRequest struct {
 
 func (x *ResetPasswordRequest) Reset() {
 	*x = ResetPasswordRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[13]
+	mi := &file_calaba_v1_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -855,7 +903,7 @@ func (x *ResetPasswordRequest) String() string {
 func (*ResetPasswordRequest) ProtoMessage() {}
 
 func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[13]
+	mi := &file_calaba_v1_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -868,7 +916,7 @@ func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ResetPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{13}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ResetPasswordRequest) GetEmail() string {
@@ -956,7 +1004,9 @@ const file_calaba_v1_auth_proto_rawDesc = "" +
 	"\x02me\x18\x01 \x01(\v2\r.calaba.v1.MeR\x02me\x120\n" +
 	"\x14joined_workspace_ids\x18\x02 \x03(\tR\x12joinedWorkspaceIds\"-\n" +
 	"\x15ForgotPasswordRequest\x12\x14\n" +
-	"\x05email\x18\x01 \x01(\tR\x05email\"\\\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\"A\n" +
+	"\x16ForgotPasswordResponse\x12'\n" +
+	"\x0fsimilar_account\x18\x01 \x01(\bR\x0esimilarAccount\"\\\n" +
 	"\x14ResetPasswordRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x1a\n" +
@@ -976,38 +1026,39 @@ func file_calaba_v1_auth_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_auth_proto_rawDescData
 }
 
-var file_calaba_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_calaba_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_calaba_v1_auth_proto_goTypes = []any{
-	(*Session)(nil),               // 0: calaba.v1.Session
-	(*AuthTokens)(nil),            // 1: calaba.v1.AuthTokens
-	(*RegisterRequest)(nil),       // 2: calaba.v1.RegisterRequest
-	(*RegisterResponse)(nil),      // 3: calaba.v1.RegisterResponse
-	(*LoginRequest)(nil),          // 4: calaba.v1.LoginRequest
-	(*LoginResponse)(nil),         // 5: calaba.v1.LoginResponse
-	(*RefreshRequest)(nil),        // 6: calaba.v1.RefreshRequest
-	(*RefreshResponse)(nil),       // 7: calaba.v1.RefreshResponse
-	(*LogoutRequest)(nil),         // 8: calaba.v1.LogoutRequest
-	(*ListSessionsResponse)(nil),  // 9: calaba.v1.ListSessionsResponse
-	(*VerifyEmailRequest)(nil),    // 10: calaba.v1.VerifyEmailRequest
-	(*VerifyEmailResponse)(nil),   // 11: calaba.v1.VerifyEmailResponse
-	(*ForgotPasswordRequest)(nil), // 12: calaba.v1.ForgotPasswordRequest
-	(*ResetPasswordRequest)(nil),  // 13: calaba.v1.ResetPasswordRequest
-	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
-	(*Me)(nil),                    // 15: calaba.v1.Me
+	(*Session)(nil),                // 0: calaba.v1.Session
+	(*AuthTokens)(nil),             // 1: calaba.v1.AuthTokens
+	(*RegisterRequest)(nil),        // 2: calaba.v1.RegisterRequest
+	(*RegisterResponse)(nil),       // 3: calaba.v1.RegisterResponse
+	(*LoginRequest)(nil),           // 4: calaba.v1.LoginRequest
+	(*LoginResponse)(nil),          // 5: calaba.v1.LoginResponse
+	(*RefreshRequest)(nil),         // 6: calaba.v1.RefreshRequest
+	(*RefreshResponse)(nil),        // 7: calaba.v1.RefreshResponse
+	(*LogoutRequest)(nil),          // 8: calaba.v1.LogoutRequest
+	(*ListSessionsResponse)(nil),   // 9: calaba.v1.ListSessionsResponse
+	(*VerifyEmailRequest)(nil),     // 10: calaba.v1.VerifyEmailRequest
+	(*VerifyEmailResponse)(nil),    // 11: calaba.v1.VerifyEmailResponse
+	(*ForgotPasswordRequest)(nil),  // 12: calaba.v1.ForgotPasswordRequest
+	(*ForgotPasswordResponse)(nil), // 13: calaba.v1.ForgotPasswordResponse
+	(*ResetPasswordRequest)(nil),   // 14: calaba.v1.ResetPasswordRequest
+	(*timestamppb.Timestamp)(nil),  // 15: google.protobuf.Timestamp
+	(*Me)(nil),                     // 16: calaba.v1.Me
 }
 var file_calaba_v1_auth_proto_depIdxs = []int32{
-	14, // 0: calaba.v1.Session.created_at:type_name -> google.protobuf.Timestamp
-	14, // 1: calaba.v1.Session.last_seen_at:type_name -> google.protobuf.Timestamp
-	14, // 2: calaba.v1.Session.expires_at:type_name -> google.protobuf.Timestamp
-	14, // 3: calaba.v1.AuthTokens.access_expires_at:type_name -> google.protobuf.Timestamp
-	14, // 4: calaba.v1.AuthTokens.refresh_expires_at:type_name -> google.protobuf.Timestamp
+	15, // 0: calaba.v1.Session.created_at:type_name -> google.protobuf.Timestamp
+	15, // 1: calaba.v1.Session.last_seen_at:type_name -> google.protobuf.Timestamp
+	15, // 2: calaba.v1.Session.expires_at:type_name -> google.protobuf.Timestamp
+	15, // 3: calaba.v1.AuthTokens.access_expires_at:type_name -> google.protobuf.Timestamp
+	15, // 4: calaba.v1.AuthTokens.refresh_expires_at:type_name -> google.protobuf.Timestamp
 	1,  // 5: calaba.v1.RegisterResponse.tokens:type_name -> calaba.v1.AuthTokens
-	15, // 6: calaba.v1.RegisterResponse.me:type_name -> calaba.v1.Me
+	16, // 6: calaba.v1.RegisterResponse.me:type_name -> calaba.v1.Me
 	1,  // 7: calaba.v1.LoginResponse.tokens:type_name -> calaba.v1.AuthTokens
-	15, // 8: calaba.v1.LoginResponse.me:type_name -> calaba.v1.Me
+	16, // 8: calaba.v1.LoginResponse.me:type_name -> calaba.v1.Me
 	1,  // 9: calaba.v1.RefreshResponse.tokens:type_name -> calaba.v1.AuthTokens
 	0,  // 10: calaba.v1.ListSessionsResponse.sessions:type_name -> calaba.v1.Session
-	15, // 11: calaba.v1.VerifyEmailResponse.me:type_name -> calaba.v1.Me
+	16, // 11: calaba.v1.VerifyEmailResponse.me:type_name -> calaba.v1.Me
 	12, // [12:12] is the sub-list for method output_type
 	12, // [12:12] is the sub-list for method input_type
 	12, // [12:12] is the sub-list for extension type_name
@@ -1027,7 +1078,7 @@ func file_calaba_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_auth_proto_rawDesc), len(file_calaba_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -66,6 +66,9 @@ enum ErrorCode {
   // 409: POST /api/room-invites/{code}/join before the link's not_before (a meeting's guest
   // link works from 15 minutes before the meeting).
   ERROR_CODE_INVITE_NOT_YET_VALID = 51;
+  // 409: POST /api/workspaces/{id}/freebusy/suggest with within_work_hours when the working
+  // hours of the people do not intersect in the window (ADR-0041): offer to turn the flag off.
+  ERROR_CODE_NO_COMMON_HOURS = 52;
 }
 
 // Error body of every non-2xx REST response.

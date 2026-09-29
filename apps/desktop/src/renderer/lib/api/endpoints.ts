@@ -129,6 +129,7 @@ import {
   VerifyEmailRequestSchema,
   VerifyEmailResponseSchema,
   ForgotPasswordRequestSchema,
+  ForgotPasswordResponseSchema,
   ResetPasswordRequestSchema,
   InviteLookupRequestSchema,
   InviteLookupResponseSchema,
@@ -184,8 +185,9 @@ export const api = {
     sendVerification: () => callEmpty('POST', '/api/auth/verify/send'),
     /** 422 CODE_INVALID (message: attempts left) | CODE_EXPIRED. */
     verify: (code: string) => call('POST', '/api/auth/verify', VerifyEmailResponseSchema, body(VerifyEmailRequestSchema, { code })),
-    /** No session needed; always 204 (503 = the server sends no mail). */
-    forgotPassword: (email: string) => callEmpty('POST', '/api/auth/password/forgot', body(ForgotPasswordRequestSchema, { email })),
+    /** No session needed; same answer whether or not the address has an account, except similarAccount (docs/09 #137). 503 = no mail. */
+    forgotPassword: (email: string) =>
+      call('POST', '/api/auth/password/forgot', ForgotPasswordResponseSchema, body(ForgotPasswordRequestSchema, { email })),
     /** 204, every session revoked (sign in again); 422 CODE_INVALID for a wrong code or address. */
     resetPassword: (init: MessageInitShape<typeof ResetPasswordRequestSchema>) =>
       callEmpty('POST', '/api/auth/password/reset', body(ResetPasswordRequestSchema, init)),
