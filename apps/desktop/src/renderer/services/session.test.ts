@@ -11,9 +11,10 @@ describe('session end notices', () => {
     const banner = logoutBannerKey('reset');
     expect(toast).toBe('session.resetToast');
     expect(banner).toBe('auth.reset');
-    expect(ru[toast!]).toContain('обрыва связи');
-    expect(ru[banner!]).not.toContain('другом устройстве');
-    expect(en[banner!]).toContain('connection loss');
+    if (!toast || !banner) throw new Error('keys expected');
+    expect(ru[toast]).toContain('обрыва связи');
+    expect(ru[banner]).not.toContain('другом устройстве');
+    expect(en[banner]).toContain('connection loss');
   });
 
   it('revoked keeps «on another device», expired says expired, logout says nothing', () => {

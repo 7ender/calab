@@ -26,7 +26,6 @@ import {
   WAKE_RESET_MIN_MS,
   backoffDelay,
   gatewayUrl,
-  type GatewayFatal,
   type GatewayStatus,
   type SocketLike,
 } from './client';

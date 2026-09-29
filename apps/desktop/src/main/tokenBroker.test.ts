@@ -191,7 +191,11 @@ describe('TokenBroker', () => {
   it('a network error (the 15 s abort) is retried once at once over a fresh connection', async () => {
     const abort = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
     const answers: Array<() => Promise<RefreshResponse>> = [() => Promise.reject(abort), () => Promise.resolve({ status: 200, tokens: tokensJson(1) })];
-    const t = setup(() => answers.shift()!());
+    const t = setup(() => {
+      const next = answers.shift();
+      if (!next) throw new Error('no scripted answer left');
+      return next();
+    });
     expect(await t.broker.forceRefresh()).toBe('a1');
     expect(t.spy.mock.calls.map((c) => [c[1], c[2]])).toEqual([
       ['r0', false],
