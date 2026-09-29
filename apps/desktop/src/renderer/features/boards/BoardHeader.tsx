@@ -58,7 +58,7 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
         ) : null}
         <BoardMoreMenu boardId={boardId} workspaceId={workspaceId} manage={manage} />
       </header>
-      <div className="flex h-10 items-center gap-1.5 px-3 mobile:overflow-x-auto" data-testid="filter-row">
+      <div className="flex h-10 min-w-0 items-center gap-1.5 overflow-x-auto px-3" data-testid="filter-row">
         <FilterButton boardId={boardId} workspaceId={workspaceId} />
         <span className="h-4 w-px shrink-0 bg-line" aria-hidden />
         <QuickChips boardId={boardId} />

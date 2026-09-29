@@ -614,7 +614,7 @@ function TaskLine({ id }: { id: string }): ReactNode {
   const status = useBoards((s) => (x ? s.boards[x.boardId]?.statuses.find((st) => st.id === x.statusId) : undefined));
   if (!x) return null;
   return (
-    <button type="button" onClick={() => useBoardsUi.getState().openTask(id)} className="flex h-8 min-w-0 items-center gap-2 rounded-[var(--radius-row)] px-2 text-left text-control hover:bg-hover" data-testid="task-line">
+    <button type="button" onClick={() => useBoardsUi.getState().openTask(id)} className="flex h-8 w-full min-w-0 items-center gap-2 rounded-[var(--radius-row)] px-2 text-left text-control hover:bg-hover" data-testid="task-line">
       <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
       <span className="shrink-0 text-caption tabular-nums text-muted">{x.key}</span>
       <span className={cx('min-w-0 flex-1 truncate', doneType(status?.type) && 'text-muted line-through')}>{x.title}</span>
