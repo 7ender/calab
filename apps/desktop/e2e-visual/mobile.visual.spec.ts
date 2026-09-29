@@ -515,6 +515,7 @@ test('m-calendar-findtime', async ({ page }) => {
   await expect(pane.getByTestId('person-chip')).toHaveCount(2);
   await expect(pane.getByTestId('find-slot')).not.toHaveCount(0);
   await expect(pane.getByTestId('availability')).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(page, 'm-calendar-findtime');
 });
 

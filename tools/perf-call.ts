@@ -479,7 +479,6 @@ async function main(): Promise<void> {
         await picker.getByRole('option', { name: /Вера/ }).click();
         await page.keyboard.press('Escape');
         await page.getByTestId('busy-column').nth(2).waitFor({ timeout: 15_000 });
-        await page.getByTestId('find-slot').first().waitFor({ timeout: 15_000 });
       }
     }
     await page.getByRole('button', { name: /^Качество связи/ }).first().waitFor({ timeout: 15_000 });

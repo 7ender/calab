@@ -2,7 +2,7 @@ import { WorkspaceRole } from '@calaba/protocol';
 import { Plus, X } from 'lucide-react';
 import { memo, useMemo, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Button, IconButton, cx } from '../../components/ui';
+import { IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { MAX_PEOPLE, personColor } from '../../lib/calendar/people';
 import { myUserId } from '../../stores/session';
@@ -55,7 +55,7 @@ export function PeopleBar({
 
   return (
     <div
-      className={cx('flex min-w-0 flex-1 items-center gap-1.5 rounded-full', over && 'outline outline-2 outline-offset-2 outline-accent')}
+      className={cx('flex min-w-0 flex-1 items-center gap-2 rounded-full', over && 'outline outline-2 outline-offset-2 outline-accent')}
       onDragOver={(e: DragEvent) => {
         if (dragKind(e.dataTransfer) !== 'user') return;
         e.preventDefault();
@@ -73,16 +73,21 @@ export function PeopleBar({
       }}
       data-testid={testId}
     >
-      <ul aria-label={t('fb.people')} className={cx('flex min-w-0 items-center gap-1.5', wrap ? 'flex-wrap' : 'scrollbar-none overflow-x-auto')}>
+      <ul aria-label={t('fb.people')} className={cx('flex min-w-0 items-center gap-2', wrap ? 'flex-wrap' : 'scrollbar-none overflow-x-auto')}>
         {people.map((id, i) => (
           <PersonChip key={id} workspaceId={workspaceId} userId={id} color={personColor(i)} onRemove={onRemove} />
         ))}
         <li className="shrink-0">
           <MemberPicker open={picking} onOpenChange={setPicking} groups={groups} onSelect={(it) => it.kind === 'member' && add(it.userId)} placeholder={t('picker.searchPeople')} label={t('fb.addPeople')} testId={`${testId}-picker`}>
-            <Button variant="secondary" size="sm" data-testid={`${testId}-add`}>
+            {/* A ghost chip: the same 28 px pill as the people, dashed. */}
+            <button
+              type="button"
+              data-testid={`${testId}-add`}
+              className="flex h-7 items-center gap-1 rounded-full border border-dashed border-[var(--color-label-tertiary)] pl-2 pr-2.5 text-caption font-medium text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
+            >
               <Plus className="size-3.5" aria-hidden />
               {people.length ? t('fb.addShort') : t('fb.addPeople')}
-            </Button>
+            </button>
           </MemberPicker>
         </li>
       </ul>
@@ -102,11 +107,12 @@ const PersonChip = memo(function PersonChip({ workspaceId, userId, color, onRemo
   const avatar = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]?.user?.avatarFileId ?? '');
   const label = userId === myUserId() ? t('fb.me') : name;
   return (
-    <li className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-[var(--color-fill)] pl-0.5 pr-0.5 text-caption" data-testid="person-chip" data-user={userId}>
-      <span className="grid size-6 place-items-center rounded-full" style={{ boxShadow: `inset 0 0 0 2px ${color}` }}>
+    <li className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-[var(--color-fill)] pl-1 pr-0.5 text-caption" data-testid="person-chip" data-user={userId}>
+      {/* Avatar 20 with its column colour as a 2 px ring. */}
+      <span className="grid size-5 place-items-center rounded-full" style={{ boxShadow: `0 0 0 2px ${color}` }}>
         <Avatar userId={userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
       </span>
-      <span className="max-w-32 truncate pl-0.5 text-fg" title={name}>
+      <span className="max-w-32 truncate pl-1 text-fg" title={name}>
         {label}
       </span>
       <button type="button" onClick={() => onRemove(userId)} aria-label={t('fb.remove', { name })} className="grid size-6 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg">

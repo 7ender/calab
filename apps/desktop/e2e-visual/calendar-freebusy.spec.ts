@@ -85,7 +85,9 @@ test('find a time: slots from suggest, a slot → the dialog prefilled → the m
   await page.keyboard.press('Escape');
   await pane.getByRole('radio', { name: '60 мин' }).click();
   await expect(pane.getByTestId('busy-column')).toHaveCount(2);
-  const slots = pane.getByTestId('find-slot');
+  // 1280 with the members column: the centre is narrow — «Ближайшие окна» is the toolbar's popover.
+  await pane.getByTestId('find-slots-toggle').click();
+  const slots = page.getByTestId('find-slot');
   // 13:30 is too late for an hour before 14:00; the next common hour: 15:00–16:00 (Борис ends at 17:00 MSK).
   await expect(slots.first()).toContainText('15:00 – 16:00');
   await expect(pane.getByTestId('free-window').first()).toBeVisible();
@@ -120,7 +122,8 @@ test('find a time from the dialog hands the slot back; a conflict warns; NO_COMM
   await dialog.getByTestId('event-find').click();
   const find = page.getByTestId('find-time-dialog');
   await expect(find.getByTestId('person-chip')).toHaveCount(2);
-  await find.getByTestId('find-slot').first().click();
+  await find.getByTestId('find-slots-toggle').click();
+  await page.getByTestId('find-slot').first().click();
   await expect(find).toHaveCount(0);
   // 30 minutes after Борис is free (16:00 MSK).
   await expect(dialog.getByTestId('event-start')).toHaveValue(String(16 * 60));
@@ -132,7 +135,8 @@ test('find a time from the dialog hands the slot back; a conflict warns; NO_COMM
   const again = page.getByTestId('find-time-dialog');
   await expect(again.getByTestId('find-no-hours')).toBeVisible();
   await again.getByRole('button', { name: 'Искать и вне рабочих часов' }).click();
-  await expect(again.getByTestId('find-slot').first()).toBeVisible();
+  await again.getByTestId('find-slots-toggle').click();
+  await expect(page.getByTestId('find-slot').first()).toBeVisible();
 });
 
 test('CalDAV: connect → pick a calendar → busy time from it in my day view', async ({ page, mock }) => {

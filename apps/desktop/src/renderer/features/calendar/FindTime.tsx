@@ -1,10 +1,11 @@
-import { ChevronLeft, ChevronRight, CalendarSearch, X } from 'lucide-react';
+import * as Popover from '@radix-ui/react-popover';
+import { ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
-import { Button, IconButton, Input, Modal, Segmented, Spinner, Switch, cx } from '../../components/ui';
+import { Button, IconButton, Input, Modal, Segmented, Spinner, Toggle, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
-import { freeWindows, subtractIntervals, workIntervals, type Interval } from '../../lib/calendar/freebusy';
+import { freeWindows, mergeIntervals, subtractIntervals, workIntervals, type Interval } from '../../lib/calendar/freebusy';
 import { freebusyApi, noCommonHours } from '../../lib/calendar/freebusyApi';
 import { addPeople, personColor } from '../../lib/calendar/people';
 import { addDays, dayEnd, dayKey, dayStart, formatLongDay, formatShortDay, formatTime } from '../../lib/calendar/time';
@@ -14,6 +15,7 @@ import { entryKey, useFreeBusy } from '../../stores/freebusy';
 import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { popoverBox } from '../shell/menu';
 import { NavButton } from '../shell/MobileShell';
 import { useNow } from '../shell/voiceFormat';
 import { newEvent } from './actions';
@@ -23,18 +25,21 @@ import { PeopleBar } from './PeopleBar';
 
 /*
  * «Подобрать время» (ADR-0041 §3, Apple Calendar «Доступность»): chips of people, the duration
- * and «в рабочие часы»; a column of busy time per person (their colour; grey outside their work
+ * and «в рабочие часы»; a column of busy time per person (their colour; muted outside their work
  * hours; an external calendar's busy time hatched), the common free windows green, «Ближайшие
- * окна» from the server's suggest. A click on a window or a drag over a green area picks the time:
- * the meeting dialog opens prefilled (from the day view) or takes it back (from the dialog).
- * The columns are memo leaves selecting one person's day as a primitive: a voice / presence event
- * re-renders none of them (tools/perf-call.ts).
+ * окна» from the server's suggest — a narrow column beside the grid when the pane is wide, else a
+ * popover from the toolbar (the grid keeps the width, owner 29.09). A click on a window or a drag
+ * over a green area picks the time: the meeting dialog opens prefilled (from the day view) or takes
+ * it back (from the dialog). The columns are memo leaves selecting one person's day as a primitive:
+ * a voice / presence event re-renders none of them (tools/perf-call.ts --findtime).
  */
 
 export const DURATIONS = [30, 45, 60, 90] as const;
 const MIN = 60_000;
 /** Suggestions look two weeks ahead (the free / busy window). */
 const SUGGEST_SPAN = 14 * 86_400_000;
+/** Below this pane width «Ближайшие окна» is a popover, not a column. */
+const SLOTS_COLUMN_MIN = 1100;
 
 /** The controls' state and its setters — from the store (day view) or local (the dialog). */
 export interface FindCtl {
@@ -59,7 +64,8 @@ export function FindTimePane({ workspaceId }: { workspaceId: string }): ReactNod
   const day = useUi((s) => s.calDay) ?? today;
   const find = useFreeBusy((s) => s.find);
   const mobile = useMobile();
-  const [highlight, setHighlight] = useState<Interval | null>(null);
+  const section = useRef<HTMLElement>(null);
+  const wide = useWiderThan(section, SLOTS_COLUMN_MIN);
   const ctl = useMemo<FindCtl | null>(() => {
     if (!find) return null;
     const fb = useFreeBusy.getState;
@@ -76,6 +82,7 @@ export function FindTimePane({ workspaceId }: { workspaceId: string }): ReactNod
       setDay: (d) => useUi.getState().openCalendarDay(d),
     };
   }, [find, workspaceId, day]);
+  const slots = useSlots(ctl);
 
   const close = useCallback(() => useFreeBusy.getState().setFind(null), []);
   useFindKeys(day, close);
@@ -86,51 +93,74 @@ export function FindTimePane({ workspaceId }: { workspaceId: string }): ReactNod
     useUi.getState().openCalendarDay(dayKey(slot.start));
     newEvent(workspaceId, { start: slot.start, end: slot.end, attendees: ctl.users.filter((u) => u !== me) });
   };
-  const touch = mobile ? 'size-10 rounded-full' : undefined;
 
   return (
-    <section className="mat-content relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('fb.find')} data-testid="find-time">
-      <header className={cx('mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2', mobile && 'pl-1')}>
-        {mobile ? (
-          // Phone: the list covers two weeks from today — no day to page through.
-          <NavButton />
-        ) : (
-          <>
-            <IconButton label={t('cal.prevDay')} shortcut="←" onClick={() => ctl.setDay(addDays(day, -1))}>
-              <ChevronLeft className="size-[18px]" />
-            </IconButton>
-            <IconButton label={t('cal.nextDay')} shortcut="→" onClick={() => ctl.setDay(addDays(day, 1))}>
-              <ChevronRight className="size-[18px]" />
-            </IconButton>
-          </>
-        )}
-        <h1 className="ml-1 flex min-w-0 flex-1 items-baseline gap-2 truncate text-list font-semibold">
-          <span className="shrink-0">{t('fb.find')}</span>
-          {mobile ? null : <span className="truncate font-normal text-muted first-letter:uppercase">{formatLongDay(dayStart(day))}</span>}
-        </h1>
-        {day !== today && !mobile ? (
-          <Button variant="secondary" size="sm" onClick={() => ctl.setDay(today)}>
-            {t('cal.today')}
-          </Button>
-        ) : null}
-        <IconButton label={t('fb.closeFind')} shortcut="Esc" onClick={close} className={touch} data-testid="find-close">
+    <section ref={section} className="mat-content relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('fb.find')} data-testid="find-time">
+      <header className={cx('mat-toolbar flex h-12 shrink-0 items-center gap-3 border-b border-line pl-4 pr-2', mobile && 'gap-1 pl-1')}>
+        {mobile ? <NavButton /> : null}
+        <h1 className="shrink-0 text-list font-semibold">{t('fb.find')}</h1>
+        {/* Phone: the list covers two weeks from today — no day to page through. */}
+        {mobile ? null : <DayNav day={day} today={today} setDay={ctl.setDay} />}
+        <span className="flex-1" />
+        {!mobile && !wide ? <SlotsPopover slots={slots} onPick={pick} /> : null}
+        <IconButton label={t('fb.closeFind')} shortcut="Esc" onClick={close} className={mobile ? 'size-10 rounded-full' : undefined} data-testid="find-close">
           <X className="size-[18px]" />
         </IconButton>
       </header>
       <FindControls ctl={ctl} wrap={mobile} />
+      <NoCommonHours ctl={ctl} slots={slots} />
       {mobile ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <SlotList ctl={ctl} onPick={pick} />
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <SlotPanel slots={slots} onPick={pick} next={false} />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <AvailabilityGrid ctl={ctl} onPick={pick} highlight={highlight} />
-          <aside className="flex w-64 shrink-0 flex-col border-l border-line" aria-label={t('fb.slots')}>
-            <SlotList ctl={ctl} onPick={pick} onShow={setHighlight} />
-          </aside>
+          <AvailabilityGrid ctl={ctl} onPick={pick} highlight={slots.shown} />
+          {wide ? (
+            <aside className="w-60 shrink-0 overflow-y-auto border-l border-line p-3" aria-label={t('fb.slots')}>
+              <SlotPanel slots={slots} onPick={pick} next />
+            </aside>
+          ) : null}
         </div>
       )}
     </section>
+  );
+}
+
+/** Whether the element is at least `min` px wide (a ResizeObserver: only on resizes, not per frame). */
+function useWiderThan(ref: React.RefObject<HTMLElement | null>, min: number): boolean {
+  const [wide, setWide] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = (): void => setWide(el.clientWidth >= min);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref, min]);
+  return wide;
+}
+
+/** ‹ «Четверг, 15 января» › and «Сегодня» — the day, secondary to the title. */
+function DayNav({ day, today, setDay }: { day: string; today: string; setDay: (d: string) => void }): ReactNode {
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <IconButton label={t('cal.prevDay')} shortcut="←" size="sm" onClick={() => setDay(addDays(day, -1))}>
+        <ChevronLeft className="size-4" />
+      </IconButton>
+      <span className="min-w-0 truncate text-control text-muted first-letter:uppercase" aria-live="polite" data-testid="find-day">
+        {formatLongDay(dayStart(day))}
+      </span>
+      <IconButton label={t('cal.nextDay')} shortcut="→" size="sm" onClick={() => setDay(addDays(day, 1))}>
+        <ChevronRight className="size-4" />
+      </IconButton>
+      {day !== today ? (
+        <Button variant="ghost" size="sm" onClick={() => setDay(today)} className="ml-1">
+          {t('cal.today')}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -163,7 +193,8 @@ function useFindKeys(day: string, close: () => void): void {
 
 /**
  * «Подобрать время» next to the meeting dialog's times: the same controls on local state,
- * prefilled with me and the attendees; a picked slot goes back to the dialog.
+ * prefilled with me and the attendees; a picked slot goes back to the dialog. The sheet is
+ * narrower than the slots column's threshold: «Ближайшие окна» is the toolbar's popover.
  */
 export function FindTimeDialog({
   workspaceId,
@@ -181,11 +212,11 @@ export function FindTimeDialog({
   onClose: () => void;
 }): ReactNode {
   const mobile = useMobile();
+  const today = useToday();
   const [users, setUsers] = useState<readonly string[]>(initUsers);
   const [durationMin, setDuration] = useState(initDuration);
   const [workHours, setWorkHours] = useState(true);
   const [day, setDay] = useState(initDay);
-  const [highlight, setHighlight] = useState<Interval | null>(null);
   const ctl = useMemo<FindCtl>(
     () => ({
       workspaceId,
@@ -201,31 +232,21 @@ export function FindTimeDialog({
     }),
     [workspaceId, users, durationMin, workHours, day],
   );
+  const slots = useSlots(ctl);
   const pick = (slot: Interval): void => onPick(slot, users);
   return (
     <Modal open onClose={onClose} title={t('fb.find')} wide fill>
-      <div className="-mx-5 -mt-4 flex min-h-0 flex-1 flex-col" data-testid="find-time-dialog">
-        <FindControls ctl={ctl} wrap />
+      <div className="-mx-5 -mb-5 -mt-4 flex min-h-0 flex-1 flex-col border-t border-line" data-testid="find-time-dialog">
+        <FindControls ctl={ctl} wrap lead={mobile ? null : <DayNav day={day} today={today} setDay={setDay} />} trail={mobile ? null : <SlotsPopover slots={slots} onPick={pick} />} />
+        <NoCommonHours ctl={ctl} slots={slots} />
         {mobile ? (
-          <SlotList ctl={ctl} onPick={pick} />
+          <div className="p-3">
+            <SlotPanel slots={slots} onPick={pick} next={false} />
+          </div>
         ) : (
-          <>
-            <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line px-3">
-              <IconButton label={t('cal.prevDay')} onClick={() => setDay((d) => addDays(d, -1))}>
-                <ChevronLeft className="size-[18px]" />
-              </IconButton>
-              <IconButton label={t('cal.nextDay')} onClick={() => setDay((d) => addDays(d, 1))}>
-                <ChevronRight className="size-[18px]" />
-              </IconButton>
-              <span className="ml-1 truncate text-control font-semibold first-letter:uppercase">{formatLongDay(dayStart(day))}</span>
-            </div>
-            <div className="flex h-[min(420px,calc(100vh-340px))] min-h-[240px]">
-              <AvailabilityGrid ctl={ctl} onPick={pick} highlight={highlight} />
-              <aside className="flex w-56 shrink-0 flex-col border-l border-line" aria-label={t('fb.slots')}>
-                <SlotList ctl={ctl} onPick={pick} onShow={setHighlight} />
-              </aside>
-            </div>
-          </>
+          <div className="flex h-[min(440px,calc(100vh-300px))] min-h-[240px]">
+            <AvailabilityGrid ctl={ctl} onPick={pick} highlight={slots.shown} />
+          </div>
         )}
       </div>
     </Modal>
@@ -234,7 +255,12 @@ export function FindTimeDialog({
 
 // ---------------------------------------------------------------- controls
 
-function FindControls({ ctl, wrap }: { ctl: FindCtl; wrap: boolean }): ReactNode {
+/**
+ * Two rows under a hairline (docs/08): the people's chips with `trail` right-aligned (the
+ * dialog's «Ближайшие окна ▾»); then `lead` (the dialog's day), the duration and, on the right,
+ * «В рабочие часы».
+ */
+function FindControls({ ctl, wrap, lead, trail }: { ctl: FindCtl; wrap: boolean; lead?: ReactNode; trail?: ReactNode }): ReactNode {
   const preset = (DURATIONS as readonly number[]).includes(ctl.durationMin);
   const [custom, setCustom] = useState(!preset);
   const [text, setText] = useState(String(ctl.durationMin));
@@ -245,44 +271,203 @@ function FindControls({ ctl, wrap }: { ctl: FindCtl; wrap: boolean }): ReactNode
     else setText(String(ctl.durationMin));
   };
   return (
-    // Two lines: the people (they may be many) above the duration and «в рабочие часы».
-    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-3 py-2" data-testid="find-controls">
-      <div className="flex w-full min-w-0 items-center">
+    <div className="flex shrink-0 flex-col gap-3 border-b border-line px-4 py-3" data-testid="find-controls">
+      <div className="flex min-w-0 items-start gap-4">
         <PeopleBar workspaceId={ctl.workspaceId} people={ctl.users} onAdd={ctl.addUsers} onRemove={ctl.removeUser} wrap={wrap} testId="find-people" />
+        {trail ? <div className="shrink-0">{trail}</div> : null}
       </div>
-      <div className="flex items-center gap-2">
-        <Segmented
-          label={t('fb.duration')}
-          value={value}
-          options={[...DURATIONS.map((m) => ({ value: String(m), label: t('fb.min', { n: m }) })), { value: 'custom', label: t('fb.custom') }]}
-          onChange={(v) => {
-            if (v === 'custom') {
-              setCustom(true);
-              setText(String(ctl.durationMin));
-              return;
-            }
-            setCustom(false);
-            ctl.setDuration(Number(v));
-          }}
-        />
-        {custom ? (
-          <Input
-            type="number"
-            min={15}
-            max={480}
-            step={15}
-            value={text}
-            aria-label={t('fb.customMin')}
-            onChange={(e) => setText(e.target.value)}
-            onBlur={(e) => commit(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && commit((e.target as HTMLInputElement).value)}
-            className="w-20"
-            data-testid="find-custom"
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {lead}
+        <div className="flex items-center gap-2">
+          <Segmented
+            label={t('fb.duration')}
+            value={value}
+            options={[...DURATIONS.map((m) => ({ value: String(m), label: t('fb.min', { n: m }) })), { value: 'custom', label: t('fb.custom') }]}
+            onChange={(v) => {
+              if (v === 'custom') {
+                setCustom(true);
+                setText(String(ctl.durationMin));
+                return;
+              }
+              setCustom(false);
+              ctl.setDuration(Number(v));
+            }}
           />
-        ) : null}
+          {custom ? (
+            <Input
+              type="number"
+              min={15}
+              max={480}
+              step={15}
+              value={text}
+              aria-label={t('fb.customMin')}
+              onChange={(e) => setText(e.target.value)}
+              onBlur={(e) => commit(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && commit((e.target as HTMLInputElement).value)}
+              className="w-20"
+              data-testid="find-custom"
+            />
+          ) : null}
+        </div>
+        <label className="ml-auto flex items-center gap-2 text-body">
+          <span>{t('fb.workHours')}</span>
+          <Toggle label={t('fb.workHours')} checked={ctl.workHours} onChange={ctl.setWorkHours} />
+        </label>
       </div>
-      <Switch label={t('fb.workHours')} checked={ctl.workHours} onChange={ctl.setWorkHours} />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- «Ближайшие окна»
+
+interface Slots {
+  slots: Interval[];
+  status: 'idle' | 'loading' | 'ok' | 'hours' | 'fail';
+  /** The slot «Следующее окно» stepped to (outlined on the grid), -1 = none. */
+  cursor: number;
+  shown: Interval | null;
+  next: () => void;
+}
+
+/** The server's nearest windows (≤ 10) from the shown day on, asked again when anything changes. */
+function useSlots(ctl: FindCtl | null): Slots {
+  const workspaceId = ctl?.workspaceId ?? '';
+  const users = ctl?.users ?? [];
+  const durationMin = ctl?.durationMin ?? 30;
+  const workHours = ctl?.workHours ?? true;
+  const day = ctl?.day ?? '';
+  const [res, setRes] = useState<{ key: string; slots: Interval[]; status: 'ok' | 'hours' | 'fail' } | null>(null);
+  const [cursor, setCursor] = useState<{ key: string; i: number }>({ key: '', i: -1 });
+  // Busy time changes (EVENT_*, a new window loaded) ask the server again.
+  const version = useFreeBusy((s) => s.rev);
+  const baseKey = `${workspaceId}|${users.join(',')}|${durationMin}|${workHours ? 1 : 0}`;
+  const reqKey = `${baseKey}|${day}|${version}`;
+
+  useEffect(() => {
+    if (!users.length || !workspaceId) return;
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => {
+      const start = Math.max(Math.ceil(Date.now() / (15 * MIN)) * 15 * MIN, dayStart(day));
+      freebusyApi.suggest(workspaceId, { users, durationMin, from: start, to: start + SUGGEST_SPAN, withinWorkHours: workHours }, ac.signal).then(
+        (slots) => setRes({ key: reqKey, slots: slots.slice(0, 10), status: 'ok' }),
+        (e: unknown) => {
+          if (!ac.signal.aborted) setRes({ key: reqKey, slots: [], status: noCommonHours(e) ? 'hours' : 'fail' });
+        },
+      );
+    }, 250);
+    return () => {
+      ac.abort();
+      window.clearTimeout(timer);
+    };
+  }, [reqKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const slots = users.length ? (res?.slots ?? []) : [];
+  const status: Slots['status'] = !users.length ? 'idle' : !res || res.key !== reqKey ? 'loading' : res.status;
+  // The cursor belongs to one query (people, duration, hours): a new one starts over.
+  const i = cursor.key === baseKey ? cursor.i : -1;
+  const shown = slots[i] ?? null;
+  const next = (): void => {
+    const n = i + 1 < slots.length ? i + 1 : 0;
+    const slot = slots[n];
+    if (!slot || !ctl) return;
+    setCursor({ key: baseKey, i: n });
+    const d = dayKey(slot.start);
+    if (d !== day) ctl.setDay(d);
+  };
+  return { slots, status, cursor: i, shown, next };
+}
+
+/**
+ * The list: compact rows (weekday + date left, time right, 36 px, 6 px apart), «Следующее окно»
+ * right under it (content width, right-aligned) when `next` — where there is a grid to step on.
+ */
+function SlotPanel({ slots, onPick, next }: { slots: Slots; onPick: (slot: Interval) => void; next: boolean }): ReactNode {
+  const { status, slots: list, cursor } = slots;
+  return (
+    <div className="flex flex-col gap-2" data-testid="find-slots">
+      <div className="flex h-6 items-center justify-between gap-2">
+        <h2 className="text-control font-semibold">{t('fb.slots')}</h2>
+        {status === 'loading' ? <Spinner className="size-4" /> : null}
+      </div>
+      {status === 'idle' ? <p className="text-caption text-muted">{t('fb.addSomeone')}</p> : null}
+      {status === 'hours' ? <p className="text-caption text-muted">{t('fb.noSlots')}</p> : null}
+      {status === 'fail' ? <p className="text-caption text-danger-text">{t('fb.failed')}</p> : null}
+      {status === 'ok' && list.length === 0 ? <p className="text-caption text-muted">{t('fb.noSlots')}</p> : null}
+      {list.length ? (
+        <ul className="flex flex-col gap-1.5">
+          {list.map((s, i) => (
+            <li key={s.start}>
+              <button
+                type="button"
+                onClick={() => onPick(s)}
+                aria-pressed={i === cursor}
+                className={cx(
+                  'flex h-9 w-full items-center justify-between gap-2 rounded-[8px] px-3 text-left transition-colors duration-[var(--motion-fast)]',
+                  i === cursor ? 'bg-accent-strong text-accent-fg' : 'bg-[var(--color-fill)] text-fg hover:bg-[var(--color-fill-hover)]',
+                )}
+                data-testid="find-slot"
+              >
+                <span className={cx('min-w-0 truncate text-caption first-letter:uppercase', i === cursor ? '' : 'text-muted')}>{formatShortDay(s.start)}</span>
+                <span className="shrink-0 text-body font-medium tabular-nums">
+                  {formatTime(s.start)} – {formatTime(s.end)}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {next && list.length ? (
+        <Button variant="secondary" size="sm" className="self-end" onClick={slots.next} data-testid="find-next">
+          {t('fb.next')}
+          <ChevronRight className="size-3.5" aria-hidden />
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** 409 NO_COMMON_HOURS under the toolbar — seen whatever shows the list — with the way out. */
+function NoCommonHours({ ctl, slots }: { ctl: FindCtl; slots: Slots }): ReactNode {
+  if (slots.status !== 'hours') return null;
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-[var(--color-fill)] px-4 py-2" role="alert" data-testid="find-no-hours">
+      <p className="min-w-0 flex-1 text-caption text-fg">{t('fb.noCommonHours')}</p>
+      <Button size="sm" variant="secondary" onClick={() => ctl.setWorkHours(false)}>
+        {t('fb.anyHours')}
+      </Button>
+    </div>
+  );
+}
+
+/** A narrow pane: «Ближайшие окна ▾» in the toolbar opens the same list over the grid. */
+function SlotsPopover({ slots, onPick }: { slots: Slots; onPick: (slot: Interval) => void }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const count = slots.slots.length;
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <Button variant="secondary" size="sm" data-testid="find-slots-toggle">
+          {t('fb.slots')}
+          {count ? <span className="tabular-nums text-muted">{count}</span> : null}
+          <ChevronDown className="size-3.5" aria-hidden />
+        </Button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content align="end" sideOffset={6} collisionPadding={16} className={cx(popoverBox, 'max-h-[var(--radix-popover-content-available-height)] w-72 overflow-y-auto p-3')} onOpenAutoFocus={(e) => e.preventDefault()}
+          // A picked slot opens the meeting dialog: the focus must not jump back to the trigger (a non-modal dialog closes on focus outside).
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          <SlotPanel
+            slots={slots}
+            onPick={(s) => {
+              setOpen(false);
+              onPick(s);
+            }}
+            next
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -325,7 +510,7 @@ function AvailabilityGrid({ ctl, onPick, highlight }: { ctl: FindCtl; onPick: (s
       <div className="flex shrink-0 border-b border-line pr-2">
         <div className={cx(GUTTER, 'shrink-0')} />
         {users.map((u, i) => (
-          <ColumnHead key={u} workspaceId={workspaceId} userId={u} color={personColor(i)} />
+          <ColumnHead key={u} workspaceId={workspaceId} userId={u} day={day} color={personColor(i)} />
         ))}
       </div>
       <div ref={scroller} tabIndex={0} role="region" aria-label={t('fb.gridLabel')} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
@@ -345,15 +530,23 @@ function AvailabilityGrid({ ctl, onPick, highlight }: { ctl: FindCtl; onPick: (s
   );
 }
 
-const ColumnHead = memo(function ColumnHead({ workspaceId, userId, color }: { workspaceId: string; userId: string; color: string }): ReactNode {
+const ColumnHead = memo(function ColumnHead({ workspaceId, userId, day, color }: { workspaceId: string; userId: string; day: string; color: string }): ReactNode {
   const name = useMemberName(workspaceId, userId);
+  const from = dayStart(day);
+  const to = dayEnd(day);
+  const allDay = useFreeBusy((s) => s.entries[entryKey(workspaceId, userId)]?.busy.some((b) => b.allDay && b.start < to && b.end > from) ?? false);
   const avatar = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]?.user?.avatarFileId ?? '');
   return (
-    <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 border-l border-line px-1 py-1.5" title={name}>
+    <div className="flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 border-l border-line px-1.5" title={name}>
       <span className="grid size-6 shrink-0 place-items-center rounded-full" style={{ boxShadow: `inset 0 0 0 2px ${color}` }}>
         <Avatar userId={userId} name={name} {...(avatar ? { fileId: avatar } : {})} size={20} />
       </span>
       <span className="min-w-0 truncate text-caption font-medium">{userId === myUserId() ? t('fb.me') : name}</span>
+      {allDay ? (
+        <span className="shrink-0 rounded-full px-1.5 text-micro font-medium leading-4 text-fg" style={{ background: `color-mix(in srgb, ${color} 28%, transparent)` }} title={t('fb.busyAllDay', { name })} data-testid="busy-all-day">
+          {t('cal.allDayRow')}
+        </span>
+      ) : null}
     </div>
   );
 });
@@ -365,7 +558,13 @@ const BusyColumn = memo(function BusyColumn({ workspaceId, userId, day, color }:
   const sig = useFreeBusy((s) => busySignature(s.entries[entryKey(workspaceId, userId)], from, to));
   const hoursSig = useFreeBusy((s) => hoursSignature(s.entries[entryKey(workspaceId, userId)]));
   const name = useMemberName(workspaceId, userId);
-  const busy = useMemo(() => parseBusySignature(sig), [sig]);
+  // Overlapping meetings of one person are one block (the column says «busy», not what).
+  const busy = useMemo(() => {
+    const list = parseBusySignature(sig);
+    const merge = (kind: 'meeting' | 'external'): Array<{ start: number; end: number; kind: typeof kind; allDay: false; eventId: string }> =>
+      mergeIntervals(list.filter((b) => b.kind === kind && !b.allDay)).map((i) => ({ ...i, kind, allDay: false, eventId: '' }));
+    return [...merge('external'), ...merge('meeting')];
+  }, [sig]);
   const off = useMemo(() => {
     const h = parseHoursSignature(hoursSig);
     return h ? subtractIntervals([{ start: from, end: to }], workIntervals(h.workHours, h.timezone, from, to)) : [];
@@ -374,35 +573,21 @@ const BusyColumn = memo(function BusyColumn({ workspaceId, userId, day, color }:
   return (
     <div className="relative min-w-0 flex-1 border-l border-line" data-testid="busy-column" data-user={userId}>
       {off.map((o) => (
-        <div key={o.start} aria-hidden className="absolute inset-x-0 bg-[color-mix(in_srgb,var(--color-label-tertiary)_16%,transparent)]" style={{ top: y(o.start), height: y(o.end) - y(o.start) }} />
+        <div key={o.start} aria-hidden className="absolute inset-x-0 bg-[color-mix(in_srgb,var(--color-label-tertiary)_10%,transparent)]" style={{ top: y(o.start), height: y(o.end) - y(o.start) }} />
       ))}
       {busy.map((b) => {
         const external = b.kind === 'external';
-        if (b.allDay) {
-          // All day: busy (the server counts it) but a wash, not a wall — the hours stay readable.
-          return (
-            <div
-              key={`${b.start}-${b.end}-${b.kind}-${b.eventId}`}
-              role="img"
-              aria-label={t('fb.busyAllDay', { name })}
-              data-testid="busy-cell"
-              data-kind="all-day"
-              className="absolute inset-x-0"
-              style={{ top: y(b.start), height: y(b.end) - y(b.start), background: `color-mix(in srgb, ${color} 12%, transparent)` }}
-            />
-          );
-        }
         return (
           <div
-            key={`${b.start}-${b.end}-${b.kind}-${b.eventId}`}
+            key={`${b.start}-${b.end}-${b.kind}`}
             role="img"
             aria-label={t(external ? 'fb.busyExternalAt' : 'fb.busyAt', { name, time: `${formatTime(b.start)} – ${formatTime(b.end)}` })}
             data-testid="busy-cell"
             data-kind={b.kind}
-            className="absolute inset-x-0.5 rounded-[4px] border-l-[3px]"
+            className="absolute inset-x-1 rounded-[6px] border-l-[3px]"
             style={{
               top: y(b.start) + 1,
-              height: Math.max(6, y(b.end) - y(b.start) - 2),
+              height: Math.max(8, y(b.end) - y(b.start) - 2),
               borderColor: color,
               background: external
                 ? `repeating-linear-gradient(135deg, color-mix(in srgb, ${color} 18%, transparent) 0 6px, color-mix(in srgb, ${color} 42%, transparent) 6px 9px)`
@@ -500,7 +685,7 @@ const FreeOverlay = memo(function FreeOverlay({ ctl, onPick, highlight }: { ctl:
             const start = Math.ceil(w.start / (15 * MIN)) * 15 * MIN;
             onPick({ start, end: start + durationMin * MIN });
           }}
-          className="pointer-events-auto absolute inset-x-0 cursor-copy rounded-[4px] outline-none focus-visible:ring-2 focus-visible:ring-accent border border-[color-mix(in_srgb,var(--color-green)_55%,transparent)] bg-[color-mix(in_srgb,var(--color-green)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-green)_24%,transparent)]"
+          className="pointer-events-auto absolute inset-x-0.5 cursor-copy rounded-[6px] border border-[color-mix(in_srgb,var(--color-green)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-green)_12%,transparent)] outline-none hover:bg-[color-mix(in_srgb,var(--color-green)_20%,transparent)] focus-visible:ring-2 focus-visible:ring-accent"
           style={{ top: y(w.start), height: Math.max(4, y(w.end) - y(w.start)) }}
         />
       ))}
@@ -518,100 +703,3 @@ const FreeOverlay = memo(function FreeOverlay({ ctl, onPick, highlight }: { ctl:
     </div>
   );
 });
-
-// ---------------------------------------------------------------- «Ближайшие окна»
-
-/** The server's nearest windows (≤ 10) from the shown day on; «Следующее окно» steps through them on the grid. */
-function SlotList({ ctl, onPick, onShow }: { ctl: FindCtl; onPick: (slot: Interval) => void; onShow?: (slot: Interval | null) => void }): ReactNode {
-  const { workspaceId, users, durationMin, workHours, day } = ctl;
-  const [res, setRes] = useState<{ key: string; slots: Interval[]; status: 'ok' | 'hours' | 'fail' } | null>(null);
-  const [cursor, setCursor] = useState(-1);
-  // Busy time changes (EVENT_*, a new window loaded) ask the server again.
-  const version = useFreeBusy((s) => s.rev);
-  const reqKey = `${workspaceId}|${users.join(',')}|${durationMin}|${workHours ? 1 : 0}|${day}|${version}`;
-
-  useEffect(() => {
-    if (!users.length) return;
-    const ac = new AbortController();
-    const timer = window.setTimeout(() => {
-      const start = Math.max(Math.ceil(Date.now() / (15 * MIN)) * 15 * MIN, dayStart(day));
-      freebusyApi.suggest(workspaceId, { users, durationMin, from: start, to: start + SUGGEST_SPAN, withinWorkHours: workHours }, ac.signal).then(
-        (slots) => {
-          setRes({ key: reqKey, slots: slots.slice(0, 10), status: 'ok' });
-          setCursor(-1);
-        },
-        (e: unknown) => {
-          if (!ac.signal.aborted) setRes({ key: reqKey, slots: [], status: noCommonHours(e) ? 'hours' : 'fail' });
-        },
-      );
-    }, 250);
-    return () => {
-      ac.abort();
-      window.clearTimeout(timer);
-    };
-  }, [reqKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const state = !users.length
-    ? { slots: [] as Interval[], status: 'idle' as const }
-    : { slots: res?.slots ?? [], status: !res || res.key !== reqKey ? ('loading' as const) : res.status };
-
-  const next = (): void => {
-    const i = cursor + 1 < state.slots.length ? cursor + 1 : 0;
-    const slot = state.slots[i];
-    if (!slot) return;
-    setCursor(i);
-    const d = dayKey(slot.start);
-    if (d !== day) ctl.setDay(d);
-    onShow?.(slot);
-  };
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="find-slots">
-      <div className="flex h-10 shrink-0 items-center justify-between gap-2 px-3">
-        <h2 className="text-control font-semibold">{t('fb.slots')}</h2>
-        {state.status === 'loading' ? <Spinner className="size-4" /> : null}
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {state.status === 'idle' ? <p className="px-1 text-caption text-muted">{t('fb.addSomeone')}</p> : null}
-        {state.status === 'hours' ? (
-          <div className="flex flex-col items-start gap-2 rounded-[var(--radius-card)] bg-[var(--color-fill)] p-3" role="alert" data-testid="find-no-hours">
-            <p className="text-caption text-fg">{t('fb.noCommonHours')}</p>
-            <Button size="sm" variant="secondary" onClick={() => ctl.setWorkHours(false)}>
-              {t('fb.anyHours')}
-            </Button>
-          </div>
-        ) : null}
-        {state.status === 'fail' ? <p className="px-1 text-caption text-danger-text">{t('fb.failed')}</p> : null}
-        {state.status === 'ok' && state.slots.length === 0 ? <p className="px-1 text-caption text-muted">{t('fb.noSlots')}</p> : null}
-        <ul className="flex flex-col gap-1">
-          {state.slots.map((s, i) => (
-            <li key={s.start}>
-              <button
-                type="button"
-                onClick={() => onPick(s)}
-                onMouseEnter={() => onShow && dayKey(s.start) === day && onShow(s)}
-                className={cx(
-                  'flex h-11 w-full flex-col justify-center rounded-[var(--radius-row)] px-2.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
-                  i === cursor && 'bg-active',
-                )}
-                data-testid="find-slot"
-              >
-                <span className="text-caption text-muted first-letter:uppercase">{formatShortDay(s.start)}</span>
-                <span className="text-body font-medium tabular-nums">
-                  {formatTime(s.start)} – {formatTime(s.end)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-      {onShow && state.slots.length ? (
-        <div className="shrink-0 border-t border-line p-2">
-          <Button variant="secondary" size="sm" className="w-full" onClick={next} data-testid="find-next">
-            <CalendarSearch className="size-3.5" aria-hidden />
-            {t('fb.next')}
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-}

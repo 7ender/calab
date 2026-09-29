@@ -3392,6 +3392,7 @@ test('calendar-filter', async ({ open, win, mock, shot }) => {
   await win.keyboard.press('Escape');
   await expect(win.getByTestId('person-chip')).toHaveCount(2);
   await expect(win.getByTestId('busy-block')).toHaveCount(2);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'calendar-filter');
 });
 
@@ -3409,9 +3410,13 @@ test('calendar-findtime', async ({ open, win, mock, shot }) => {
   await picker.getByRole('option', { name: /Вера/ }).click();
   await win.keyboard.press('Escape');
   await expect(pane.getByTestId('busy-column')).toHaveCount(3);
-  await expect(pane.getByTestId('find-slot')).not.toHaveCount(0);
-  await pane.getByTestId('find-next').click();
+  // 960: «Ближайшие окна» is the toolbar's popover (the grid keeps the width); «Следующее окно» outlines one.
+  await pane.getByTestId('find-slots-toggle').click();
+  await expect(win.getByTestId('find-slot')).not.toHaveCount(0);
+  await win.getByTestId('find-next').click();
   await expect(pane.getByTestId('find-selection')).toBeVisible();
+  // No focus ring from the mouse: the toolbar's last pressed control loses the focus before the shot.
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(shot, 'calendar-findtime');
 });
 
