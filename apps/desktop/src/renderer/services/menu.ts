@@ -49,7 +49,7 @@ export function menuSummary(): MenuState {
     signedIn,
     voice: voiceSummary(),
     workspaces: ws.order.flatMap((id) => {
-      const name = ws.byId[id]?.ws?.name;
+      const name = ws.byId[id]?.ws.name;
       return name === undefined ? [] : [{ id, name }];
     }),
     activeWorkspaceId: entry ? active : null,

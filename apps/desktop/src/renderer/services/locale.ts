@@ -34,7 +34,7 @@ async function apply(pref: ReturnType<typeof prefs>['locale']): Promise<void> {
 
 /** Every MainStrings key is `main.<key>` in the dictionaries (tray, notifications, macOS menu). */
 function pushMainStrings(): void {
-  const s = Object.fromEntries(MAIN_STRING_KEYS.map((k) => [k, t(`main.${k}`)])) as MainStrings;
+  const s = Object.fromEntries(MAIN_STRING_KEYS.map((k) => [k, t(`main.${k}`)])) as unknown as MainStrings;
   platform.app.setStrings(s);
 }
 
