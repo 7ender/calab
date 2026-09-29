@@ -293,6 +293,20 @@ import {
   type VoiceState,
   type WorkspaceMember,
   type WorkspaceSnapshot,
+  AttendeeStatus,
+  CalendarEventAttendeeSchema,
+  CalendarEventResponseSchema,
+  CalendarEventSchema,
+  CreateCalendarEventRequestSchema,
+  EventRepeat,
+  EventRsvpTokenRequestSchema,
+  EventRsvpTokenResponseSchema,
+  ListCalendarEventsResponseSchema,
+  RsvpCalendarEventRequestSchema,
+  TodayCalendarEventsResponseSchema,
+  UpdateCalendarEventRequestSchema,
+  type CalendarEvent,
+  type CalendarEventAttendee,
 } from '@calaba/protocol';
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
@@ -329,6 +343,19 @@ import {
   SCENARIOS,
 } from './fixtures';
 import { MARKETING_UNFURLS } from './fixtures-marketing';
+import {
+  REMINDER_CHOICES,
+  activeOccurrence,
+  counts,
+  eventOut,
+  involves,
+  occurrences,
+  parseRsvpToken,
+  rsvpToken,
+  type CalEventRec,
+  type EmailView,
+  type Occurrence,
+} from './mock-calendar';
 import { cardPicture, encodePng, pngSize } from './png';
 
 export {
@@ -378,6 +405,26 @@ export interface MockServerOptions {
 }
 
 type EventInit = MessageInitShape<typeof DispatchEventSchema>;
+
+/** addEvent(): a meeting as its organizer creates it (ADR-0038); times in ms (UTC). */
+export interface AddEventArgs {
+  workspaceId: string;
+  /** Default: Анна. */
+  organizerId?: string;
+  title: string;
+  description?: string;
+  startMs: number;
+  endMs: number;
+  allDay?: boolean;
+  tz?: string;
+  /** A voice room of the workspace ('' / unset = none). */
+  roomId?: string;
+  record?: boolean;
+  repeat?: EventRepeat;
+  repeatUntilMs?: number;
+  /** Members (userId) or external addresses (email); `status` sets an answer right away. */
+  attendees?: { userId?: string; email?: string; required?: boolean; status?: AttendeeStatus }[];
+}
 
 export interface MockServer {
   url: string;
@@ -504,6 +551,22 @@ export interface MockServer {
   acceptCall(callId: string): Call;
   /** ADR-0034: any call action on behalf of a participant (decline / cancel / hangup …). */
   callAction(callId: string, byUserId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup'): Call;
+  /**
+   * ADR-0038: a meeting, as POST /api/workspaces/{id}/events by `organizerId` (validated the same
+   * way) → EVENT_CREATE, and ROOM_EVENT_ACTIVE when it is within 15 minutes of its start (the
+   * mock's clock: setClock, else real time). Returns the series.
+   */
+  addEvent(a: AddEventArgs): CalendarEvent;
+  /** ADR-0038: `userId` answers (PUT /api/events/{id}/rsvp) → EVENT_RSVP. */
+  rsvp(eventId: string, userId: string, status: AttendeeStatus): CalendarEvent;
+  /** ADR-0038 §5: EVENT_REMINDER to `userId` (default occurrence: the next one). */
+  emitReminder(eventId: string, userId: string, minutes: number, occurrenceAtMs?: number): void;
+  /** ADR-0038 §6: the room badge of an occurrence starts (ROOM_EVENT_ACTIVE) or ends (ROOM_EVENT_ENDED). */
+  setEventActive(eventId: string, active: boolean, occurrenceAtMs?: number): void;
+  /** ADR-0038 §6: an occurrence's recording (shown in lists / the card; no event is sent). */
+  setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void;
+  /** The answer link token of an external attendee (the page /e/<id>/rsvp?t=…). */
+  eventRsvpToken(eventId: string, email: string, status: AttendeeStatus): string;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -547,6 +610,12 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     ringCall: (from, to) => impl.ringCall(from, to),
     acceptCall: (id) => impl.callTransition(id, impl.calleeOf(id), 'accept'),
     callAction: (id, by, action) => impl.callTransition(id, by, action),
+    addEvent: (a) => impl.addEvent(a),
+    rsvp: (id, u, st) => impl.rsvpEvent(id, u, st),
+    emitReminder: (id, u, min, at) => impl.emitReminder(id, u, min, at),
+    setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
+    setEventRecording: (id, at, rec) => impl.setEventRecording(id, at, rec),
+    eventRsvpToken: (id, email, st) => rsvpToken(id, email, st),
   };
 }
 
@@ -844,6 +913,8 @@ class MockImpl {
   private readonly calls = new Map<string, Call>();
   private readonly userCall = new Map<string, string>();
   private callSeq = 0;
+  /** Meetings (ADR-0038) by id; cancelled ones stay (cancelled_at). */
+  private readonly calEvents = new Map<string, CalEventRec>();
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
@@ -856,6 +927,7 @@ class MockImpl {
     this.log = opts.log ?? (() => undefined);
     this.registerRoutes();
     this.registerCallRoutes();
+    this.calendarRoutes();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -901,6 +973,7 @@ class MockImpl {
     this.calls.clear();
     this.userCall.clear();
     this.callSeq = 0;
+    this.calEvents.clear();
     this.droppedSessions.clear();
     this.gatewayDownUntil = 0;
     this.clockMs = null;
@@ -1222,6 +1295,7 @@ class MockImpl {
       badges: this.badgesOf(wsId),
       backgrounds: this.backgroundsOf(wsId),
       sounds: this.soundsOf(wsId),
+      activeEvents: m && m.role !== WorkspaceRole.GUEST ? this.activeEvents(wsId, userId) : [],
     });
   }
 
@@ -2410,8 +2484,19 @@ class MockImpl {
         if (b.avatarFileId && !s().files.has(b.avatarFileId)) throw invalid('avatarFileId', 'unknown file');
         u.user.avatarFileId = b.avatarFileId;
       }
+      if (b.eventReminders) {
+        // ADR-0038 §5: ≤ 5 distinct values of REMINDER_CHOICES, largest first.
+        const mins = [...new Set(b.eventReminders.minutes)];
+        if (mins.some((x) => !REMINDER_CHOICES.includes(x))) throw invalid('eventReminders.minutes', 'reminders are 5, 10, 15, 30, 60, 120 or 1440 minutes');
+        if (mins.length > 5) throw invalid('eventReminders.minutes', 'at most 5 reminders');
+        u.settings.eventReminders = mins.sort((x, y) => y - x);
+        u.settings.eventRemindersDnd = b.eventReminders.dnd;
+      }
       if (b.settings) {
         const st = create(UserSettingsSchema, b.settings);
+        // Meeting reminders are stored apart: a settings replace keeps them (user.proto).
+        st.eventReminders = u.settings.eventReminders;
+        st.eventRemindersDnd = u.settings.eventRemindersDnd;
         if (st.micMode === MicMode.UNSPECIFIED) st.micMode = MicMode.VAD;
         // The server keeps the deprecated flag in sync with mic_mode (user.proto).
         // eslint-disable-next-line @typescript-eslint/no-deprecated
@@ -5345,6 +5430,401 @@ class MockImpl {
     }
     this.emitRoomChange(before, room, {
       event: { case: 'roomPermissionsUpdate', value: { workspaceId: room.workspaceId, roomId: room.id, permissions: room.permissionOverrides } },
+    });
+  }
+
+  // ------------------------------------------------ calendar (ADR-0038)
+
+  /** How `userId` sees `rec` in its workspace: null = not at all (guests, strangers, other rooms). */
+  private calView(rec: CalEventRec, userId: string): { view: EmailView; canEdit: boolean } | null {
+    const ev = rec.ev;
+    const m = this.member(ev.workspaceId, userId);
+    if (!m || m.role === WorkspaceRole.GUEST) return null;
+    const bot = this.state.users.get(userId)?.user.isBot ?? false;
+    const room = ev.roomId ? this.state.rooms.get(ev.roomId) : undefined;
+    const inv = !bot && involves(ev, userId);
+    if (!inv && !(room && this.canView(room, userId))) return null;
+    const canEdit = !bot && (ev.organizerId === userId || (room ? has(this.perms(room, userId), MANAGE_ROOM) : isAdminRole(m.role)));
+    return { view: bot ? 'none' : inv || canEdit ? 'full' : 'masked', canEdit };
+  }
+
+  private calRec(id: string, userId: string): { rec: CalEventRec; view: EmailView; canEdit: boolean } {
+    const rec = this.calEvents.get(id);
+    const v = rec ? this.calView(rec, userId) : null;
+    if (!rec || !v) throw notFound('event not found');
+    return { rec, ...v };
+  }
+
+  /** EVENT_* to everyone who may see the event, each with their view of the addresses. */
+  private calPublish(rec: CalEventRec, kind: 'eventCreate' | 'eventUpdate' | 'eventDelete'): void {
+    this.fanout((u) => {
+      const v = this.calView(rec, u);
+      if (!v) return null;
+      return { event: { case: kind, value: { event: eventOut(rec, null, v.view, '', false) } } };
+    });
+  }
+
+  private calActive(rec: CalEventRec, occ: Occurrence): void {
+    const ev = rec.ev;
+    this.fanout((u) => {
+      const room = this.state.rooms.get(ev.roomId);
+      const v = this.calView(rec, u);
+      if (!room || !v || !this.canView(room, u)) return null;
+      return { event: { case: 'roomEventActive', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, event: eventOut(rec, occ, v.view, '', false) } } };
+    });
+  }
+
+  private calEnded(rec: CalEventRec, occ: Occurrence): void {
+    const ev = rec.ev;
+    this.fanout((u) => {
+      const room = this.state.rooms.get(ev.roomId);
+      const m = this.member(ev.workspaceId, u);
+      if (!room || !m || m.role === WorkspaceRole.GUEST || !this.canView(room, u)) return null;
+      return { event: { case: 'roomEventEnded', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, eventId: ev.id, occurrenceAt: timestampFromMs(occ.startMs) } } };
+    });
+  }
+
+  private calNow(): number {
+    return this.clockMs ?? Date.now();
+  }
+
+  /** Validates a request's timing / room / attendees like the server (calendar/input.go, simplified). */
+  private calCheck(wsId: string, me: string, f: { title: string; description: string; startMs: number; endMs: number; roomId: string; repeatUntilMs: number },
+    attendees: readonly { userId: string; email: string; required: boolean }[]): CalendarEventAttendee[] {
+    const title = f.title.trim();
+    if (!title || Array.from(title).length > 120) throw invalid('title', 'title must be 1..120 characters');
+    if (Array.from(f.description).length > 4000) throw invalid('description', 'description must be at most 4000 characters');
+    if (!f.startMs || !f.endMs) throw invalid('startsAt', 'startsAt and endsAt are required');
+    if (f.endMs <= f.startMs) throw invalid('endsAt', 'endsAt must be after startsAt');
+    if (f.endMs - f.startMs > 7 * 86_400_000 + 3_600_000) throw invalid('endsAt', 'a meeting lasts at most 7 days');
+    if (f.repeatUntilMs && f.repeatUntilMs < f.startMs) throw invalid('repeatUntil', 'repeatUntil must not be before startsAt');
+    if (f.roomId) {
+      const room = this.state.rooms.get(f.roomId);
+      if (!room || room.workspaceId !== wsId || !this.canView(room, me)) throw invalid('roomId', 'no such room in this workspace');
+      if (room.type !== RoomType.VOICE) throw invalid('roomId', 'a meeting room must be a voice room');
+    }
+    const out: CalendarEventAttendee[] = [];
+    const seen = new Set<string>();
+    let externals = 0;
+    for (const a of attendees) {
+      if (a.userId && a.email) throw invalid('attendees', 'an attendee is a user or an email, not both');
+      if (a.userId) {
+        const u = this.state.users.get(a.userId);
+        const m = this.member(wsId, a.userId);
+        if (!u || !m || u.user.isBot || m.role === WorkspaceRole.GUEST) throw invalid('attendees', 'attendees must be members of the workspace (not bots or guests)');
+      } else {
+        if (!/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(a.email.trim())) throw invalid('attendees', 'invalid email address');
+        externals++;
+      }
+      const key = a.userId ? `u:${a.userId}` : `e:${a.email.trim().toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(create(CalendarEventAttendeeSchema, { userId: a.userId, email: a.userId ? '' : a.email.trim().toLowerCase(), required: a.required, status: AttendeeStatus.PENDING }));
+    }
+    if (externals > 20) throw invalid('attendees', 'at most 20 external email addresses');
+    if (out.length + (out.some((a) => a.userId === me) ? 0 : 1) > 100) throw invalid('attendees', 'at most 100 attendees');
+    return out;
+  }
+
+  /** Creates a meeting (POST …/events and addEvent()): EVENT_CREATE, ROOM_EVENT_ACTIVE when active now. */
+  addEvent(a: AddEventArgs): CalendarEvent {
+    const organizer = a.organizerId ?? IDS.users.anna;
+    const attendees = this.calCheck(a.workspaceId, organizer,
+      { title: a.title, description: a.description ?? '', startMs: a.startMs, endMs: a.endMs, roomId: a.roomId ?? '', repeatUntilMs: a.repeatUntilMs ?? 0 },
+      (a.attendees ?? []).map((x) => ({ userId: x.userId ?? '', email: x.email ?? '', required: x.required ?? true })));
+    const nowMs = this.calNow();
+    for (const [i, x] of (a.attendees ?? []).entries()) {
+      const at = attendees[i];
+      if (at && x.status !== undefined) {
+        at.status = x.status;
+        at.respondedAt = timestampFromMs(nowMs);
+      }
+    }
+    const me = attendees.find((x) => x.userId === organizer);
+    if (me) {
+      me.status = AttendeeStatus.ACCEPTED;
+      me.required = true;
+    } else {
+      attendees.unshift(create(CalendarEventAttendeeSchema, { userId: organizer, required: true, status: AttendeeStatus.ACCEPTED, respondedAt: timestampFromMs(nowMs) }));
+    }
+    const id = nextId(this.state, 'event');
+    const ev = create(CalendarEventSchema, {
+      id, workspaceId: a.workspaceId, roomId: a.roomId ?? '', title: a.title.trim(), description: a.description ?? '',
+      startsAt: timestampFromMs(a.startMs), endsAt: timestampFromMs(a.endMs), allDay: a.allDay ?? false, tz: a.tz ?? 'UTC',
+      organizerId: organizer, record: a.record ?? false, repeat: a.repeat ?? EventRepeat.UNSPECIFIED,
+      ...(a.repeatUntilMs ? { repeatUntil: timestampFromMs(a.repeatUntilMs) } : {}),
+      attendees, createdAt: timestampFromMs(nowMs), updatedAt: timestampFromMs(nowMs),
+    });
+    const rec: CalEventRec = { ev, exceptions: new Set(), recordings: new Map() };
+    this.calEvents.set(id, rec);
+    this.calPublish(rec, 'eventCreate');
+    const occ = activeOccurrence(rec, nowMs);
+    if (occ) this.calActive(rec, occ);
+    return eventOut(rec, null, 'full', '', false);
+  }
+
+  /** An attendee's answer (PUT …/rsvp and rsvp()): EVENT_RSVP to everyone who sees the event. */
+  rsvpEvent(eventId: string, userId: string, status: AttendeeStatus): CalendarEvent {
+    const rec = this.calEvents.get(eventId);
+    if (!rec || rec.ev.cancelledAt) throw notFound('event not found');
+    const a = rec.ev.attendees.find((x) => x.userId === userId);
+    if (!a) throw forbidden('only attendees answer');
+    if (![AttendeeStatus.ACCEPTED, AttendeeStatus.DECLINED, AttendeeStatus.MAYBE].includes(status)) throw invalid('status', 'status must be ACCEPTED, DECLINED or MAYBE');
+    a.status = status;
+    a.respondedAt = timestampFromMs(this.calNow());
+    this.calRsvpEvent(rec, a);
+    return eventOut(rec, null, 'full', userId, false);
+  }
+
+  private calRsvpEvent(rec: CalEventRec, a: CalendarEventAttendee): void {
+    this.fanout((u) => {
+      const v = this.calView(rec, u);
+      if (!v) return null;
+      const out = eventOut(rec, null, v.view, '', false);
+      const attendee = out.attendees.find((x) => (a.userId ? x.userId === a.userId : x.email && (v.view === 'full' ? x.email === a.email : true))) ?? a;
+      return { event: { case: 'eventRsvp', value: { workspaceId: rec.ev.workspaceId, eventId: rec.ev.id, attendee, counts: counts(rec.ev.attendees), event: out } } };
+    });
+  }
+
+  /** EVENT_REMINDER to one user (the server's sweeper, `minutes` before the occurrence). */
+  emitReminder(eventId: string, userId: string, minutes: number, occurrenceAtMs?: number): void {
+    const rec = this.calEvents.get(eventId);
+    if (!rec) throw notFound('event not found');
+    const first = occurrences(rec, occurrenceAtMs ?? this.calNow(), Infinity)[0];
+    const occ = occurrenceAtMs !== undefined ? { startMs: occurrenceAtMs, endMs: occurrenceAtMs + (first ? first.endMs - first.startMs : 0) } : first;
+    if (!occ) throw notFound('no occurrence ahead');
+    const v = this.calView(rec, userId);
+    this.toUser(userId, {
+      event: { case: 'eventReminder', value: { event: eventOut(rec, occ, v?.view ?? 'full', userId, v?.canEdit ?? false), occurrenceAt: timestampFromMs(occ.startMs), minutes } },
+    });
+  }
+
+  /** ROOM_EVENT_ACTIVE (true) / ROOM_EVENT_ENDED (false) of an occurrence, like the sweeper. */
+  setEventActive(eventId: string, active: boolean, occurrenceAtMs?: number): void {
+    const rec = this.calEvents.get(eventId);
+    if (!rec?.ev.roomId) throw notFound('event with a room not found');
+    const first = occurrences(rec, occurrenceAtMs ?? this.calNow() - 86_400_000, Infinity)[0];
+    if (!first) throw notFound('no occurrence');
+    const occ = occurrenceAtMs !== undefined ? { startMs: occurrenceAtMs, endMs: occurrenceAtMs + first.endMs - first.startMs } : first;
+    if (active) this.calActive(rec, occ);
+    else this.calEnded(rec, occ);
+  }
+
+  /** The recording of an occurrence (the organizer started it in the meeting window, ADR-0038 §6). */
+  setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void {
+    const rec = this.calEvents.get(eventId);
+    if (!rec) throw notFound('event not found');
+    rec.recordings.set(occurrenceAtMs, recordingId);
+  }
+
+  /** Meetings active now in the rooms a member sees (WorkspaceSnapshot.active_events). */
+  private activeEvents(wsId: string, userId: string): CalendarEvent[] {
+    const now = this.calNow();
+    const out: CalendarEvent[] = [];
+    for (const rec of this.calEvents.values()) {
+      if (rec.ev.workspaceId !== wsId) continue;
+      const v = this.calView(rec, userId);
+      const room = this.state.rooms.get(rec.ev.roomId);
+      const occ = activeOccurrence(rec, now);
+      if (v && occ && room && this.canView(room, userId)) out.push(eventOut(rec, occ, v.view, userId, v.canEdit));
+    }
+    return out;
+  }
+
+  private calendarRoutes(): void {
+    const ms = (t: Timestamp | undefined): number => (t ? timestampMs(t) : 0);
+    const viewer = (wsId: string, userId: string): void => {
+      const { m } = this.workspaceFor(wsId, userId);
+      if (m.role === WorkspaceRole.GUEST) throw forbidden('the calendar is not available for guests');
+    };
+    const notBot = (userId: string): void => {
+      if (this.state.users.get(userId)?.user.isBot) throw new HttpError(403, ErrorCode.FORBIDDEN, 'not available for bots', '', { reason: 'BOT_NOT_ALLOWED' });
+    };
+
+    this.route('GET', '/api/workspaces/:id/events', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      viewer(wsId, me);
+      const from = Date.parse(c.url.searchParams.get('from') ?? '');
+      const to = Date.parse(c.url.searchParams.get('to') ?? '');
+      if (Number.isNaN(from) || Number.isNaN(to)) throw invalid('from', 'from and to are RFC 3339 times');
+      if (to <= from || to - from > 62 * 86_400_000) throw invalid('to', 'to must be after from, at most 62 days later');
+      const rows: { rec: CalEventRec; occ: Occurrence; v: { view: EmailView; canEdit: boolean } }[] = [];
+      for (const rec of this.calEvents.values()) {
+        if (rec.ev.workspaceId !== wsId || rec.ev.cancelledAt) continue;
+        const v = this.calView(rec, me);
+        if (!v) continue;
+        for (const occ of occurrences(rec, from, to)) rows.push({ rec, occ, v });
+      }
+      rows.sort((a, b) => a.occ.startMs - b.occ.startMs || a.occ.endMs - b.occ.endMs);
+      sendMsg(c.res, 200, ListCalendarEventsResponseSchema, { events: rows.map((r) => eventOut(r.rec, r.occ, r.v.view, me, r.v.canEdit)) });
+    });
+
+    this.route('POST', '/api/workspaces/:id/events', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const wsId = c.params[0] ?? '';
+      viewer(wsId, me);
+      const b = parseBody(c, CreateCalendarEventRequestSchema);
+      const created = this.addEvent({
+        workspaceId: wsId, organizerId: me, title: b.title, description: b.description, startMs: ms(b.startsAt), endMs: ms(b.endsAt),
+        allDay: b.allDay, tz: b.tz || 'UTC', record: b.record, roomId: b.roomId, repeat: b.repeat, repeatUntilMs: ms(b.repeatUntil),
+        attendees: b.attendees.map((x) => ({ userId: x.userId, email: x.email, required: x.required })),
+      });
+      const { rec, canEdit } = this.calRec(created.id, me);
+      sendMsg(c.res, 201, CalendarEventResponseSchema, { event: eventOut(rec, null, 'full', me, canEdit) });
+    });
+
+    this.route('GET', '/api/events/:id', (c) => {
+      const me = this.uid(c);
+      const { rec, view, canEdit } = this.calRec(c.params[0] ?? '', me);
+      sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(rec, null, view, me, canEdit) });
+    });
+
+    this.route('PATCH', '/api/events/:id', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec, canEdit } = this.calRec(c.params[0] ?? '', me);
+      if (rec.ev.cancelledAt) throw notFound('event not found');
+      if (!canEdit) throw forbidden('only the organizer or a room manager may change the meeting');
+      const b = parseBody(c, UpdateCalendarEventRequestSchema);
+      const ev = rec.ev;
+      const next = {
+        title: b.title ?? ev.title, description: b.description ?? ev.description,
+        startMs: b.startsAt ? ms(b.startsAt) : ms(ev.startsAt), endMs: b.endsAt ? ms(b.endsAt) : ms(ev.endsAt),
+        roomId: b.roomId ?? ev.roomId, repeatUntilMs: b.clearRepeatUntil ? 0 : b.repeatUntil ? ms(b.repeatUntil) : ms(ev.repeatUntil),
+      };
+      const organizer = ev.organizerId;
+      const wanted = b.setAttendees
+        ? this.calCheck(ev.workspaceId, me, next, b.attendees.map((x) => ({ userId: x.userId, email: x.email, required: x.required })))
+        : this.calCheck(ev.workspaceId, me, next, []);
+      const before = eventOut(rec, null, 'full', '', false);
+      const hadActive = activeOccurrence(rec, this.calNow());
+      let removed = false;
+      if (b.setAttendees) {
+        const keep = new Map(ev.attendees.map((a) => [a.userId ? `u:${a.userId}` : `e:${a.email}`, a]));
+        const out: CalendarEventAttendee[] = [];
+        if (!wanted.some((a) => a.userId === organizer)) out.push(keep.get(`u:${organizer}`) ?? create(CalendarEventAttendeeSchema, { userId: organizer, required: true, status: AttendeeStatus.ACCEPTED }));
+        for (const w of wanted) {
+          const old = keep.get(w.userId ? `u:${w.userId}` : `e:${w.email}`);
+          out.push(old ? Object.assign(old, { required: w.userId === organizer ? true : w.required }) : w);
+        }
+        removed = ev.attendees.some((a) => !out.includes(a));
+        ev.attendees = out;
+      }
+      const significant = next.title.trim() !== ev.title || next.description !== ev.description || next.startMs !== ms(ev.startsAt) ||
+        next.endMs !== ms(ev.endsAt) || next.roomId !== ev.roomId || (b.repeat !== undefined && b.repeat !== ev.repeat) || next.repeatUntilMs !== ms(ev.repeatUntil);
+      const roomChanged = next.roomId !== ev.roomId;
+      Object.assign(ev, {
+        title: next.title.trim(), description: next.description, startsAt: timestampFromMs(next.startMs), endsAt: timestampFromMs(next.endMs),
+        roomId: next.roomId, allDay: b.allDay ?? ev.allDay, tz: b.tz ?? ev.tz, record: b.record ?? ev.record, repeat: b.repeat ?? ev.repeat,
+        updatedAt: timestampFromMs(this.calNow()), sequence: ev.sequence + (significant || removed ? 1 : 0),
+      });
+      if (next.repeatUntilMs) ev.repeatUntil = timestampFromMs(next.repeatUntilMs);
+      else delete ev.repeatUntil;
+      if (roomChanged || removed) {
+        const old: CalEventRec = { ev: before, exceptions: rec.exceptions, recordings: rec.recordings };
+        this.fanout((u) => {
+          const v = this.calView(old, u);
+          return v ? { event: { case: 'eventDelete', value: { event: eventOut(old, null, v.view, '', false) } } } : null;
+        });
+      }
+      this.calPublish(rec, 'eventUpdate');
+      const nowActive = activeOccurrence(rec, this.calNow());
+      if (hadActive && (!nowActive || nowActive.startMs !== hadActive.startMs || roomChanged)) this.calEnded({ ...rec, ev: before }, hadActive);
+      if (nowActive) this.calActive(rec, nowActive);
+      const { canEdit: ce } = this.calRec(ev.id, me);
+      sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(rec, null, 'full', me, ce) });
+    });
+
+    this.route('DELETE', '/api/events/:id', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec, canEdit } = this.calRec(c.params[0] ?? '', me);
+      if (rec.ev.cancelledAt) throw notFound('event not found');
+      if (!canEdit) throw forbidden('only the organizer or a room manager may cancel the meeting');
+      const active = activeOccurrence(rec, this.calNow());
+      const occStr = c.url.searchParams.get('occurrence');
+      if (occStr) {
+        const at = Date.parse(occStr);
+        const all = rec.ev.repeat === EventRepeat.UNSPECIFIED ? [] : occurrences({ ...rec, exceptions: new Set() }, at, at + 1);
+        if (Number.isNaN(at) || !all.some((o) => o.startMs === at)) throw invalid('occurrence', 'not an occurrence of this series');
+        if (!rec.exceptions.has(at)) {
+          rec.exceptions.add(at);
+          rec.ev.sequence += 1;
+          this.calPublish(rec, 'eventUpdate');
+          if (active?.startMs === at) this.calEnded(rec, active);
+        }
+        noContent(c.res);
+        return;
+      }
+      rec.ev.cancelledAt = timestampFromMs(this.calNow());
+      rec.ev.sequence += 1;
+      this.calPublish(rec, 'eventDelete');
+      if (active) this.calEnded(rec, active);
+      noContent(c.res);
+    });
+
+    this.route('PUT', '/api/events/:id/rsvp', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec, canEdit } = this.calRec(c.params[0] ?? '', me);
+      this.rsvpEvent(rec.ev.id, me, parseBody(c, RsvpCalendarEventRequestSchema).status);
+      sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(rec, null, 'full', me, canEdit) });
+    });
+
+    this.route('GET', '/api/me/events/today', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const now = this.calNow();
+      const d = new Date(now);
+      const dayEnd = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); // the mock's day is UTC
+      const rows: { rec: CalEventRec; occ: Occurrence; v: { view: EmailView; canEdit: boolean } }[] = [];
+      for (const rec of this.calEvents.values()) {
+        if (rec.ev.cancelledAt || !involves(rec.ev, me)) continue;
+        if (rec.ev.attendees.find((a) => a.userId === me)?.status === AttendeeStatus.DECLINED) continue;
+        const v = this.calView(rec, me);
+        if (!v) continue;
+        for (const occ of occurrences(rec, now, dayEnd)) rows.push({ rec, occ, v });
+      }
+      rows.sort((a, b) => a.occ.startMs - b.occ.startMs);
+      const events = rows.map((r) => eventOut(r.rec, r.occ, r.v.view, me, r.v.canEdit));
+      sendMsg(c.res, 200, TodayCalendarEventsResponseSchema, { count: events.length, events });
+    });
+
+    // External attendees' answer page (/e/<id>/rsvp?t=…): preview and answer, no login.
+    const byToken = (tok: string): { rec: CalEventRec; a: CalendarEventAttendee; status: AttendeeStatus } => {
+      const t = parseRsvpToken(tok);
+      const rec = t ? this.calEvents.get(t.eventId) : undefined;
+      const a = rec?.ev.attendees.find((x) => x.email && x.email === t?.email);
+      if (!t || !rec || !a) throw notFound('invitation not found');
+      const occ = occurrences(rec, 0, Infinity).at(-1);
+      if (rec.ev.repeat === EventRepeat.UNSPECIFIED && occ && occ.endMs <= this.calNow()) {
+        throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
+      }
+      return { rec, a, status: t.status };
+    };
+    const rsvpOut = (rec: CalEventRec, a: CalendarEventAttendee, status: AttendeeStatus): MessageInitShape<typeof EventRsvpTokenResponseSchema> => {
+      const occ = occurrences(rec, this.calNow(), Infinity)[0] ?? { startMs: ms(rec.ev.startsAt), endMs: ms(rec.ev.endsAt) };
+      return {
+        eventId: rec.ev.id, title: rec.ev.title, startsAt: timestampFromMs(occ.startMs), endsAt: timestampFromMs(occ.endMs), allDay: rec.ev.allDay,
+        tz: rec.ev.tz, organizerName: this.state.users.get(rec.ev.organizerId)?.user.displayName ?? '',
+        workspaceName: this.state.workspaces.get(rec.ev.workspaceId)?.name ?? '', status, email: a.email, cancelled: !!rec.ev.cancelledAt,
+      };
+    };
+    this.route('GET', '/api/event-rsvp', (c) => {
+      const { rec, a, status } = byToken(c.url.searchParams.get('t') ?? '');
+      sendMsg(c.res, 200, EventRsvpTokenResponseSchema, rsvpOut(rec, a, status));
+    });
+    this.route('POST', '/api/event-rsvp', (c) => {
+      const { rec, a, status } = byToken(parseBody(c, EventRsvpTokenRequestSchema).token);
+      if (rec.ev.cancelledAt) throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
+      if (a.status !== status) {
+        a.status = status;
+        a.respondedAt = timestampFromMs(this.calNow());
+        this.calRsvpEvent(rec, a);
+      }
+      sendMsg(c.res, 200, EventRsvpTokenResponseSchema, rsvpOut(rec, a, status));
     });
   }
 

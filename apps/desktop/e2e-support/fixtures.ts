@@ -86,7 +86,7 @@ import { avatarPicture, cardPicture, encodePng } from './png';
 export type Scenario = 'data' | 'empty' | 'marketing';
 export const SCENARIOS: readonly Scenario[] = ['data', 'empty', 'marketing'];
 
-const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9, sticker: 10, stickerPack: 11, badge: 12, background: 13, sound: 14 } as const;
+const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9, sticker: 10, stickerPack: 11, badge: 12, background: 13, sound: 14, event: 15 } as const;
 export type IdKind = keyof typeof KIND;
 
 export function mockId(kind: IdKind, n: number): string {
@@ -499,6 +499,8 @@ export function defaultSettings(): UserSettings {
     pushToTalk: false,
     pushToTalkKey: '',
     micMode: MicMode.VAD,
+    eventReminders: [60, 5], // ADR-0038 §5 defaults
+    eventRemindersDnd: true,
   });
 }
 
@@ -738,7 +740,7 @@ export function buildState(scenario: Scenario): MockState {
     userStickerPacks: new Map(),
     bots: new Map(),
     blockedBots: new Map(),
-    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100, badge: 0x100, background: 0x100, sound: 0x100 },
+    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100, badge: 0x100, background: 0x100, sound: 0x100, event: 0x100 },
     clock: 0,
   };
   if (scenario === 'marketing') return buildMarketingState(s);
