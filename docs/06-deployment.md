@@ -255,6 +255,23 @@ STEPS="preflight build" VERSION=0.1.0 infra/docker/release.sh <commit> # лок�
 
 Не использовать: private/serverless кластеры (NAT ломает WebRTC), LB перед 7881.
 
+### Образ API и выкатка в прод (`.github/workflows/images.yml`)
+
+После зелёного `ci` релизного тега `v*` workflow `images` собирает `apps/server/Dockerfile` на том же коммите
+(версия сервера — тег, как у `release.sh`) и пушит
+образ в прод-реестр. Ключей в GitHub нет: OIDC-токен job'а меняется на короткий IAM-токен сервисного
+аккаунта, которому разрешён только пуш в репозитории calab этого реестра. Затем workflow создаёт GitHub
+Deployment `calab-prod` с digest образа в payload.
+
+- В кластер workflow не ходит. Выкатку делает кластер сам: забирает заявку, проверяет её и меняет образ по
+  digest. Не раскаталось — возвращает прежний образ. Принимаются только заявки, созданные этим workflow
+  для коммитов из `main`.
+- Статус и история — вкладка Deployments репо. Откат — перезапуск старого успешного прогона `images`.
+- `YC_REGISTRY` и `YC_CI_SA_ID` — секреты репо: публичные логи их маскируют. Это не ключи, но внутренние id в
+  открытых логах не нужны.
+- Сервер выкатывается по релизу, веб пока выкатывается отдельно.
+- Прогоны идут строго по одному (`concurrency`), поэтому заявки создаются в порядке коммитов.
+
 ### Почта (ADR-0023)
 - `.env` стенда: `SMTP_HOST=mail.unne.ai`, `SMTP_PORT=465`, `SMTP_TLS=tls`, `SMTP_USER` = `SMTP_FROM`-адрес, `SMTP_PASSWORD`, `SMTP_FROM="Calab <noreply@calab.ru>"`. Проверка: регистрация → письмо с кодом; в логах API `mail sent` / `mail: giving up`.
 - **Владелец, DNS `calab.ru`**: SPF `v=spf1 include:<SPF почтового сервера mail.unne.ai> -all` (или `a:mail.unne.ai`); DKIM — TXT `<selector>._domainkey.calab.ru` с публичным ключом, которым подписывает mail.unne.ai; DMARC `_dmarc.calab.ru` → `v=DMARC1; p=quarantine; rua=mailto:<ящик отчётов>` (начать с `p=none` на неделю).
