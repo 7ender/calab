@@ -229,7 +229,7 @@ const createBotUser = `-- name: CreateBotUser :one
 
 INSERT INTO users (email, password_hash, display_name, settings, is_bot, email_verified_at)
 VALUES (NULL, NULL, $1, $2, true, now())
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes
 `
 
 type CreateBotUserParams struct {
@@ -269,6 +269,7 @@ func (q *Queries) CreateBotUser(ctx context.Context, arg CreateBotUserParams) (U
 		&i.BirthdayHidden,
 		&i.EventReminders,
 		&i.EventRemindersDnd,
+		&i.StorageQuotaBytes,
 	)
 	return i, err
 }
@@ -430,7 +431,7 @@ func (q *Queries) GetBotAuth(ctx context.Context, userID uuid.UUID) (GetBotAuthR
 }
 
 const getBotByUsername = `-- name: GetBotByUsername :one
-SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd FROM bots b JOIN users u ON u.id = b.user_id WHERE b.username = $1
+SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes FROM bots b JOIN users u ON u.id = b.user_id WHERE b.username = $1
 `
 
 type GetBotByUsernameRow struct {
@@ -484,6 +485,7 @@ func (q *Queries) GetBotByUsername(ctx context.Context, username string) (GetBot
 		&i.User.BirthdayHidden,
 		&i.User.EventReminders,
 		&i.User.EventRemindersDnd,
+		&i.User.StorageQuotaBytes,
 	)
 	return i, err
 }
@@ -517,7 +519,7 @@ func (q *Queries) GetBotForUpdate(ctx context.Context, userID uuid.UUID) (Bot, e
 }
 
 const getBotWithUser = `-- name: GetBotWithUser :one
-SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd FROM bots b JOIN users u ON u.id = b.user_id WHERE b.user_id = $1
+SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes FROM bots b JOIN users u ON u.id = b.user_id WHERE b.user_id = $1
 `
 
 type GetBotWithUserRow struct {
@@ -571,6 +573,7 @@ func (q *Queries) GetBotWithUser(ctx context.Context, userID uuid.UUID) (GetBotW
 		&i.User.BirthdayHidden,
 		&i.User.EventReminders,
 		&i.User.EventRemindersDnd,
+		&i.User.StorageQuotaBytes,
 	)
 	return i, err
 }
@@ -737,7 +740,7 @@ func (q *Queries) ListWorkspaceBotIDs(ctx context.Context, workspaceID uuid.UUID
 }
 
 const listWorkspaceBots = `-- name: ListWorkspaceBots :many
-SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd FROM workspace_members m
+SELECT b.user_id, b.owner_user_id, b.workspace_id, b.username, b.description, b.token_id, b.token_hash, b.token_prefix, b.webhook_url, b.webhook_secret_enc, b.webhook_disabled_at, b.webhook_failing_since, b.webhook_last_ok_at, b.webhook_last_error, b.created_at, b.revoked_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes FROM workspace_members m
 JOIN bots b ON b.user_id = m.user_id
 JOIN users u ON u.id = b.user_id
 WHERE m.workspace_id = $1
@@ -802,6 +805,7 @@ func (q *Queries) ListWorkspaceBots(ctx context.Context, workspaceID uuid.UUID) 
 			&i.User.BirthdayHidden,
 			&i.User.EventReminders,
 			&i.User.EventRemindersDnd,
+			&i.User.StorageQuotaBytes,
 		); err != nil {
 			return nil, err
 		}

@@ -58,6 +58,7 @@ const KEY = new Set([
   'dm-archive',
   'dm-delete-confirm',
   'dm-chat',
+  'notes-shelf',
   'voice-room-status',
   'voice-room-recording',
   'voice-room-recording-menu',
@@ -698,6 +699,29 @@ test('dm-chat', async ({ open, win, mock, shot }) => {
   await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
   await settle(win);
   await checkpoint(shot, 'dm-chat');
+});
+
+/**
+ * «Заметки» (ADR-0039): three shelves above the DMs (emoji, name, the last note), «Идеи» open —
+ * its header («Только для вас»), a note and a note forwarded from Борис, the shelf's composer.
+ */
+test('notes-shelf', async ({ open, win, mock, shot }) => {
+  await open(DM_SEED);
+  await dmHome(win);
+  const ideas = mock.addShelf(IDS.users.anna, 'Идеи', '💡');
+  const links = mock.addShelf(IDS.users.anna, 'Ссылки', '🔗');
+  mock.addShelf(IDS.users.anna, 'Черновики', '');
+  mock.injectMessage({ roomId: links, authorId: IDS.users.anna, content: 'https://calab.ru/docs' });
+  mock.injectMessage({ roomId: ideas, authorId: IDS.users.anna, content: 'Тёмная тема для лендинга — показать на планёрке' });
+  mock.injectMessage({ roomId: ideas, authorId: IDS.users.anna, content: 'Релиз 0.9 — в пятницу, после ревью', forward: { authorId: IDS.users.boris, sentAtMs: Date.parse('2026-01-14T16:05:00Z') } });
+  const shelves = win.getByTestId('notes-shelf');
+  await expect(shelves).toHaveCount(3);
+  await shelves.filter({ hasText: 'Идеи' }).getByRole('button').first().click();
+  await expect(win.getByTestId('notes-header-bar')).toContainText('Идеи');
+  await expect(win.locator('[data-message-id]')).toHaveCount(2);
+  await expect(shelves.filter({ hasText: 'Черновики' })).toContainText('Перетащите сюда сообщения или файлы');
+  await settle(win);
+  await checkpoint(shot, 'notes-shelf');
 });
 
 test('dm-new', async ({ open, win, shot }) => {

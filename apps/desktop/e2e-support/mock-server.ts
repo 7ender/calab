@@ -182,6 +182,12 @@ import {
   ListCategoriesResponseSchema,
   ListDmCandidatesResponseSchema,
   ListDmsResponseSchema,
+  ListNotesResponseSchema,
+  CreateNotesRequestSchema,
+  CreateNotesResponseSchema,
+  UpdateNotesRequestSchema,
+  UpdateNotesResponseSchema,
+  NotesShelfSchema,
   CreateDmRequestSchema,
   CreateDmResponseSchema,
   UpdateDmStateRequestSchema,
@@ -286,6 +292,7 @@ import {
   type Role,
   type DispatchEvent,
   type DmSummary,
+  type NotesShelf,
   type GatewayFrame,
   type Me,
   type FileMeta,
@@ -529,6 +536,8 @@ export interface MockServer {
    * чат» (for them only) — and DM_STATE_UPDATE to their devices.
    */
   setDmState(userId: string, roomId: string, patch: { archived?: boolean; cleared?: boolean }): void;
+  /** ADR-0039: a notes shelf of `userId`, as POST /api/notes (NOTES_CREATE to their devices). Returns its room id. */
+  addShelf(userId: string, name: string, emoji: string): string;
   /**
    * ADR-0031: the two bots of «Команда Calab» join it (IDS.bots — «Погода» with commands and a
    * delivering webhook, «Деплой» with a failing one) → WORKSPACE_MEMBER_ADD + BOT_CREATE.
@@ -618,6 +627,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     injectMessage: (a) => impl.injectMessage(a),
     markRead: (u, roomId, messageId) => impl.markRead(u, roomId, messageId),
     setDmState: (u, roomId, patch) => impl.setDmState(u, roomId, patch),
+    addShelf: (u, name, emoji) => impl.addShelf(u, name, emoji),
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
     setMemberRoles: (w, u, ids) => impl.setMemberRoles(w, u, ids),
@@ -1065,6 +1075,10 @@ class MockImpl {
     if (room.type === RoomType.DM) {
       return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.dmPeer(room.id, userId) !== null } });
     }
+    // A notes shelf (ADR-0039): the DM set for its owner only.
+    if (room.type === RoomType.NOTES) {
+      return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.state.shelves.get(room.id)?.ownerId === userId } });
+    }
     const m = this.member(room.workspaceId, userId);
     // ADR-0029: in a restricted room admins count as members; the owner (owner_id) has everything.
     const owner = this.state.workspaces.get(room.workspaceId)?.ownerId === userId;
@@ -1162,6 +1176,48 @@ class MockImpl {
       .map((id) => this.dmOut(id, userId))
       .filter((d): d is DmSummary => d !== null)
       .sort((a, b) => at(b) - at(a));
+  }
+
+  /** A notes shelf as its owner sees it (ADR-0039), or null when not theirs. */
+  private shelfOut(roomId: string, userId: string): NotesShelf | null {
+    const room = this.state.rooms.get(roomId);
+    const sh = this.state.shelves.get(roomId);
+    if (!room || !sh || sh.ownerId !== userId) return null;
+    const last = this.state.messages.get(roomId)?.at(-1);
+    return create(NotesShelfSchema, {
+      room: this.roomOut(room),
+      emoji: sh.emoji,
+      ...(last
+        ? {
+            lastMessage: {
+              id: last.id,
+              authorId: last.authorId,
+              content: last.content.slice(0, 200),
+              attachmentCount: last.attachments.length,
+              ...(last.createdAt ? { createdAt: last.createdAt } : {}),
+              stickerEmoji: last.sticker?.emoji ?? '',
+            },
+          }
+        : {}),
+    });
+  }
+
+  /** The user's shelves by position. */
+  private notesOf(userId: string): NotesShelf[] {
+    return [...this.state.shelves.keys()]
+      .map((id) => this.shelfOut(id, userId))
+      .filter((n): n is NotesShelf => n !== null)
+      .sort((a, b) => (a.room?.position ?? 0) - (b.room?.position ?? 0) || (a.room?.id ?? '').localeCompare(b.room?.id ?? ''));
+  }
+
+  addShelf(userId: string, name: string, emoji: string): string {
+    if (this.notesOf(userId).length >= 20) throw new HttpError(409, ErrorCode.CONFLICT, 'at most 20 notes shelves', '', { reason: 'NOTES_LIMIT', used: 20n, limit: 20n });
+    const id = nextId(this.state, 'room');
+    this.state.rooms.set(id, create(RoomSchema, { id, workspaceId: '', type: RoomType.NOTES, name, position: this.notesOf(userId).length, createdAt: tick(this.state) }));
+    this.state.shelves.set(id, { ownerId: userId, emoji });
+    const shelf = this.shelfOut(id, userId);
+    if (shelf) this.toUser(userId, { event: { case: 'notesCreate', value: { shelf } } });
+    return id;
   }
 
   /** @everyone / @here count as mentions only from authors with MENTION_EVERYONE in the room. */
@@ -1366,7 +1422,7 @@ class MockImpl {
           pendingAdmissions: this.ownAdmissions(u.user.id),
           // Every visible room (server contract): never read → empty marker.
           readStates: [...this.state.rooms.values()]
-            .filter((r) => (wsIds.includes(r.workspaceId) || r.type === RoomType.DM) && this.canView(r, u.user.id))
+            .filter((r) => (wsIds.includes(r.workspaceId) || r.type === RoomType.DM || r.type === RoomType.NOTES) && this.canView(r, u.user.id))
             .map((r): [string, string] => [r.id, reads.get(r.id) ?? ''])
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([roomId, lastReadMessageId]) => create(ReadStateSchema, { roomId, lastReadMessageId, ...this.readCounts(roomId, u.user.id, lastReadMessageId) })),
@@ -1387,6 +1443,8 @@ class MockImpl {
             .sort((a, b) => a.roomId.localeCompare(b.roomId)),
           // Guest accounts have no DMs (ADR-0020).
           dms: u.user.isGuest ? [] : this.dmsOf(u.user.id),
+          // Notes shelves (ADR-0039): people only.
+          notes: u.user.isGuest || u.user.isBot ? [] : this.notesOf(u.user.id),
           // ADR-0034: the user's ringing / active call.
           ...(this.liveCall(u.user.id) ? { call: this.liveCall(u.user.id) } : {}),
         }),
@@ -1500,7 +1558,7 @@ class MockImpl {
     this.fanout((u) => {
       const r = roomId ? this.state.rooms.get(roomId) : undefined;
       // DM rooms (no workspace): the participants' user channels (docs/05).
-      if (r?.type === RoomType.DM) {
+      if (r?.type === RoomType.DM || r?.type === RoomType.NOTES) {
         if (!this.canView(r, u)) return null;
       } else {
         if (!this.member(wsId, u)) return null;
@@ -2292,6 +2350,7 @@ class MockImpl {
       return !!m && m.role !== WorkspaceRole.GUEST;
     };
     if (room.type === RoomType.DM) return (this.state.dmMembers.get(room.id) ?? []).every(full);
+    if (room.type === RoomType.NOTES) return full(this.state.shelves.get(room.id)?.ownerId ?? '');
     return room.workspaceId === pack.workspaceId && full(userId);
   }
 
@@ -3656,7 +3715,7 @@ class MockImpl {
       const room = this.roomFor(b.toRoomId, me);
       this.requireActive(room.workspaceId);
       this.requireRoomPerm(room, me, SEND_MESSAGES);
-      const fwd = orig.forward ?? { authorId: orig.authorId, roomId: src.type === RoomType.DM ? '' : src.id, messageId: orig.id, sentAt: orig.createdAt };
+      const fwd = orig.forward ?? { authorId: orig.authorId, roomId: src.type === RoomType.DM || src.type === RoomType.NOTES ? '' : src.id, messageId: orig.id, sentAt: orig.createdAt };
       const message = create(MessageSchema, {
         id: nextId(this.state, 'message'),
         roomId: room.id,
@@ -3839,7 +3898,7 @@ class MockImpl {
       const { room, list, index } = this.findMessage(c.params[0] ?? '');
       if (!this.canView(room, me)) throw notFound('message not found');
       // Both DM participants may pin (docs/04); rooms need MANAGE_MESSAGES.
-      if (room.type !== RoomType.DM) this.requireRoomPerm(room, me, MANAGE_MESSAGES);
+      if (room.type !== RoomType.DM && room.type !== RoomType.NOTES) this.requireRoomPerm(room, me, MANAGE_MESSAGES);
       const msg = list[index];
       if (!msg) throw notFound('message not found');
       if (on === !!msg.pinnedAt) {
@@ -3907,6 +3966,70 @@ class MockImpl {
     const noGuest = (u: UserRec): void => {
       if (u.user.isGuest) throw forbidden('guests have no direct messages');
     };
+    // Notes shelves (ADR-0039): people only; another user's shelf is 404.
+    const shelfOwner = (u: UserRec): void => {
+      if (u.user.isGuest || u.user.isBot) throw forbidden('notes are not available for guest accounts and bots');
+    };
+    const myShelf = (roomId: string, me: string): Room => {
+      const room = s().rooms.get(roomId);
+      if (!room || s().shelves.get(roomId)?.ownerId !== me) throw notFound('notes not found');
+      return room;
+    };
+    this.route('GET', '/api/notes', (c) => {
+      const { user } = this.auth(c);
+      shelfOwner(user);
+      sendMsg(c.res, 200, ListNotesResponseSchema, { shelves: this.notesOf(user.user.id), storage: { quotaBytes: 1n << 30n, usedBytes: 0n, isDefault: true } });
+    });
+    this.route('POST', '/api/notes', (c) => {
+      const { user } = this.auth(c);
+      shelfOwner(user);
+      const b = parseBody(c, CreateNotesRequestSchema);
+      const name = b.name.trim();
+      if (!name || Array.from(name).length > 40) throw invalid('name', 'name must be 1 to 40 characters');
+      const id = this.addShelf(user.user.id, name, b.emoji.trim());
+      sendMsg(c.res, 201, CreateNotesResponseSchema, { shelf: this.shelfOut(id, user.user.id) ?? undefined });
+    });
+    this.route('PATCH', '/api/notes/:id', (c) => {
+      const { user } = this.auth(c);
+      shelfOwner(user);
+      const me = user.user.id;
+      const room = myShelf(c.params[0] ?? '', me);
+      const b = parseBody(c, UpdateNotesRequestSchema);
+      const sh = s().shelves.get(room.id);
+      if (b.name !== undefined) {
+        const name = b.name.trim();
+        if (!name || Array.from(name).length > 40) throw invalid('name', 'name must be 1 to 40 characters');
+        room.name = name;
+      }
+      if (b.emoji !== undefined && sh) sh.emoji = b.emoji.trim();
+      const moved = new Set([room.id]);
+      if (b.position !== undefined) {
+        const order = this.notesOf(me).map((n) => n.room?.id ?? '').filter((id) => id !== room.id);
+        order.splice(Math.min(b.position, order.length), 0, room.id);
+        order.forEach((id, i) => {
+          const r = s().rooms.get(id);
+          if (r && r.position !== i) {
+            r.position = i;
+            moved.add(id);
+          }
+        });
+      }
+      for (const id of moved) {
+        const shelf = this.shelfOut(id, me);
+        if (shelf) this.toUser(me, { event: { case: 'notesUpdate', value: { shelf } } });
+      }
+      sendMsg(c.res, 200, UpdateNotesResponseSchema, { shelf: this.shelfOut(room.id, me) ?? undefined });
+    });
+    this.route('DELETE', '/api/notes/:id', (c) => {
+      const { user } = this.auth(c);
+      shelfOwner(user);
+      const room = myShelf(c.params[0] ?? '', user.user.id);
+      s().rooms.delete(room.id);
+      s().shelves.delete(room.id);
+      s().messages.delete(room.id);
+      this.toUser(user.user.id, { event: { case: 'notesDelete', value: { roomId: room.id } } });
+      noContent(c.res);
+    });
     this.route('GET', '/api/dms', (c) => {
       const { user } = this.auth(c);
       noGuest(user);
@@ -3969,7 +4092,7 @@ class MockImpl {
     this.route('POST', '/api/dms/:id/files', async (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
-      if (room.type !== RoomType.DM) throw notFound('dm not found');
+      if (room.type !== RoomType.DM && room.type !== RoomType.NOTES) throw notFound('dm not found');
       const f = await parseMultipartFile(c);
       if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
       const id = this.storeFile('', me, f, parseVoice(c, f));

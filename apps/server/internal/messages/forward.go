@@ -127,7 +127,7 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	pb := out[0]
-	if dst.DM { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
+	if dst.DM && !dst.Notes { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
 		states, err := h.db.Q.UnarchiveDMForRecipients(ctx, sqlc.UnarchiveDMForRecipientsParams{RoomID: toID, AuthorID: me})
 		if err != nil {
 			return err

@@ -35,7 +35,10 @@ type RoomAccess struct {
 	Member Member
 	// DM rooms (ADR-0020): the two participants. They get the room's events on their user
 	// channels instead of a workspace channel.
+	// Notes shelves (ADR-0039) are DM rooms too (DM true, Members = the owner only); Notes
+	// marks them where a DM means two people (calls, voice, archive).
 	DM      bool
+	Notes   bool
 	Members []uuid.UUID
 	// Suspended: the workspace is suspended by a superadmin (read-only; item 32).
 	Suspended bool
@@ -126,9 +129,9 @@ func (r *Resolver) Room(ctx context.Context, roomID, userID uuid.UUID) (RoomAcce
 			acc = RoomAccess{}
 		case err != nil:
 			return RoomAccess{}, fmt.Errorf("perm: load room access: %w", err)
-		case row.Type == "dm":
+		case row.Type == "dm" || row.Type == "notes":
 			if slices.Contains(row.DmMembers, userID) {
-				acc = RoomAccess{Bits: ComputeDM(true), DM: true, Members: row.DmMembers}
+				acc = RoomAccess{Bits: ComputeDM(true), DM: true, Notes: row.Type == "notes", Members: row.DmMembers}
 			}
 		case row.WorkspaceID != nil && row.Role != nil:
 			// The query returns the roles lowest position first, each with its override

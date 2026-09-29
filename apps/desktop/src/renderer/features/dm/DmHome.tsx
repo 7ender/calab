@@ -3,13 +3,14 @@ import type { ReactNode } from 'react';
 import { Button } from '../../components/ui';
 import { t } from '../../i18n';
 import { HOME, isDm } from '../../stores/dms';
+import { isNotes } from '../../stores/notes';
 import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 
-/** The DM open in «Личные»: the remembered one while it exists (no automatic pick, as Discord Home). */
+/** The DM or notes shelf open in «Личные»: the remembered one while it exists (no automatic pick, as Discord Home). */
 export function useActiveDm(): string | undefined {
   const remembered = useUi((s) => s.lastRoom[HOME]);
-  const valid = useRooms((s) => !!remembered && isDm(s.byId[remembered]));
+  const valid = useRooms((s) => !!remembered && (isDm(s.byId[remembered]) || isNotes(s.byId[remembered])));
   return valid ? remembered : undefined;
 }
 

@@ -144,7 +144,7 @@ func (q *Queries) IsBanned(ctx context.Context, arg IsBannedParams) (bool, error
 }
 
 const listBans = `-- name: ListBans :many
-SELECT b.workspace_id, b.user_id, b.email, b.reason, b.banned_by, b.created_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd
+SELECT b.workspace_id, b.user_id, b.email, b.reason, b.banned_by, b.created_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes
 FROM workspace_bans b
 JOIN users u ON u.id = b.user_id
 WHERE b.workspace_id = $1
@@ -198,6 +198,7 @@ func (q *Queries) ListBans(ctx context.Context, workspaceID uuid.UUID) ([]ListBa
 			&i.User.BirthdayHidden,
 			&i.User.EventReminders,
 			&i.User.EventRemindersDnd,
+			&i.User.StorageQuotaBytes,
 		); err != nil {
 			return nil, err
 		}

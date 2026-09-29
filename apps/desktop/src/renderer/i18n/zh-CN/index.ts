@@ -2,6 +2,7 @@ import type { Dict } from '../types';
 import { zhApp } from './app';
 import { zhChat } from './chat';
 import { zhDm } from './dm';
+import { zhNotes } from './notes';
 import { zhCall } from './call';
 import { zhEcho } from './echo';
 import { zhMedia } from './media';
@@ -32,6 +33,7 @@ export const zhCN: Dict = {
   ...zhBots,
   ...zhGuests,
   ...zhDm,
+  ...zhNotes,
   ...zhCall,
   ...zhEcho,
   ...zhMedia,

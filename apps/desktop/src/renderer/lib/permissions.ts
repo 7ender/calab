@@ -21,8 +21,8 @@ import {
  */
 
 export function roomPerms(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): PermissionBits {
-  // A DM (ADR-0020): the fixed set; the client only knows DMs it takes part in.
-  if (room?.type === RoomType.DM) return computePermissions({ dm: { participant: true } });
+  // A DM (ADR-0020) or my notes shelf (ADR-0039): the fixed set; the client only knows its own.
+  if (room?.type === RoomType.DM || room?.type === RoomType.NOTES) return computePermissions({ dm: { participant: true } });
   if (!room || !roles || roles.length === 0) return 0n;
   // ADR-0029: in a restricted room admins count as members; the owner (built-in owner role) has all.
   return computeMemberRoomPermissions(roles, userId, room.permissionOverrides, room.restricted);
@@ -90,9 +90,9 @@ export function voiceCaps(perms: PermissionBits, room: Pick<Room, 'media'> | und
   return { canStream: can(perms, 'STREAM'), canVideo: can(perms, 'VIDEO') && (room?.media?.cameraLimit ?? 0) > 0 };
 }
 
-/** Pin / unpin: MANAGE_MESSAGES, or either participant of a DM (by room type, docs/04). */
+/** Pin / unpin: MANAGE_MESSAGES, or either participant of a DM / the owner of a shelf (by room type, docs/04). */
 export function mayPin(perms: PermissionBits, room: Pick<Room, 'type'> | undefined): boolean {
-  return can(perms, 'MANAGE_MESSAGES') || room?.type === RoomType.DM;
+  return can(perms, 'MANAGE_MESSAGES') || room?.type === RoomType.DM || room?.type === RoomType.NOTES;
 }
 
 /** May this author's @everyone / @here in the room notify people (MENTION_EVERYONE)? */

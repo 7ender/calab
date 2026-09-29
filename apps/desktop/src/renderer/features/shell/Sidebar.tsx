@@ -76,6 +76,10 @@ import { errorText } from '../../lib/api/errors';
 import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { useMobile } from '../../lib/mobile';
+import { useChatDrop } from '../chat/useChatDrop';
+import { applyChatDrop } from '../notes/dropActions';
+import type { DropAction, DropTarget } from '../../lib/messageDrag';
+import { roomLabel } from '../chat/roomLabel';
 import { categoryDropAt, roomDropAt, stepTarget, type RoomTarget, type Slot } from '../../lib/roomOrder';
 import { createCategoryFirst, moveCategoryTo, moveRoomTo, workspaceCategories, workspaceLayout } from '../../services/roomOrder';
 import { useLocalTimeTag } from '../../services/timezone';
@@ -916,6 +920,16 @@ function RoomOrderItems({ room }: { room: Room }): ReactNode {
   );
 }
 
+/**
+ * A room row as a target of a dragged message (docs/05 «Заметки»): forwarded into the room
+ * (ADR-0033) when I may send there. Native drag events — not dnd-kit's pointer drags of this list.
+ */
+function useMessageDrop(room: Room, canSend: boolean): ReturnType<typeof useChatDrop> {
+  const target = useMemo<DropTarget | null>(() => (canSend ? { kind: 'room', roomId: room.id, files: false, canSend } : null), [room.id, canSend]);
+  const onDrop = useCallback((a: DropAction, files: File[]) => applyChatDrop(a, files, roomLabel(room), false), [room]);
+  return useChatDrop(target, onDrop);
+}
+
 /** A room row as a drag source (MANAGE_ROOM, desktop layout); the drop place is measured by `data-room-slot`. */
 function useRoomDrag(room: Room, enabled: boolean): ReturnType<typeof useDraggable> {
   return useDraggable({
@@ -967,6 +981,9 @@ function MentionBadge({ n }: { n: number }): ReactNode {
   );
 }
 
+/** A row under a dragged message it would be forwarded to (the accent tint, as the shelves). */
+const MSG_DROP = 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]';
+
 interface RowOrder {
   /** Container the row is shown in ('' = top level), for the drop measurement. */
   container: string;
@@ -998,10 +1015,11 @@ const TextRoomRow = memo(function TextRoomRow({
   const perms = roomPerms(role, me, room);
   const bright = active || unread;
   const { setNodeRef, listeners, isDragging } = useRoomDrag(room, canDrag);
+  const [msgOver, msgDrop] = useMessageDrop(room, can(perms, 'SEND_MESSAGES'));
   return (
-    <div ref={setNodeRef} {...(canDrag ? listeners : {})} data-room-slot={room.id} data-slot-category={container} className={cx(isDragging && 'opacity-40')}>
+    <div ref={setNodeRef} {...(canDrag ? listeners : {})} {...msgDrop} data-room-slot={room.id} data-slot-category={container} className={cx(isDragging && 'opacity-40')}>
       <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
-        <div className={cx(rowBox, active ? 'bg-active' : 'hover:bg-hover')}>
+        <div className={cx(rowBox, msgOver ? MSG_DROP : active ? 'bg-active' : 'hover:bg-hover')} data-over={msgOver || undefined}>
           <UnreadPill show={unread && !active} />
           <button
             type="button"
@@ -1077,6 +1095,7 @@ function VoiceRoomRow({
   // Only a participant drag highlights a room (a dragged room shows the accent line instead).
   const dropOk = isOver && canMove && dragData?.type === 'member' && dragData.fromRoomId !== room.id;
   const { setNodeRef: setDragRef, listeners: dragListeners, isDragging } = useRoomDrag(room, canDrag);
+  const [msgOver, msgDrop] = useMessageDrop(room, can(perms, 'SEND_MESSAGES'));
   const refs = useCallback(
     (node: HTMLDivElement | null) => {
       setNodeRef(node);
@@ -1097,9 +1116,10 @@ function VoiceRoomRow({
       ref={refs}
       data-room-slot={room.id}
       data-slot-category={container}
+      {...msgDrop}
       className={cx(
         'rounded-[var(--radius-card)] transition-colors duration-[var(--motion-fast)]',
-        dropOk && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] outline outline-1 outline-accent',
+        (dropOk || msgOver) && 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] outline outline-1 outline-accent',
         isDragging && 'opacity-40',
       )}
     >

@@ -9,5 +9,7 @@ import { memberName } from '../../stores/workspaces';
  */
 export function roomLabel(room: Pick<Room, 'name' | 'type'> & { id?: string }): string {
   if (room.type === RoomType.DM) return room.id ? memberName(null, dmPeer(room.id)) : '';
+  // A notes shelf (ADR-0039): «Идеи», like a voice room.
+  if (room.type === RoomType.NOTES) return `«${room.name}»`;
   return room.type === RoomType.VOICE ? `«${room.name}»` : `#${room.name}`;
 }

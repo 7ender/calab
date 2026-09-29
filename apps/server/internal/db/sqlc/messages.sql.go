@@ -102,7 +102,7 @@ func (q *Queries) DetachMessageFiles(ctx context.Context, messageID uuid.UUID) e
 }
 
 const forwardSources = `-- name: ForwardSources :many
-SELECT m.id, (CASE WHEN r.type = 'dm' THEN NULL ELSE m.room_id END)::uuid AS room_id
+SELECT m.id, (CASE WHEN r.workspace_id IS NULL THEN NULL ELSE m.room_id END)::uuid AS room_id
 FROM messages m JOIN rooms r ON r.id = m.room_id
 WHERE m.id = ANY($1::uuid[])
 `
@@ -112,7 +112,7 @@ type ForwardSourcesRow struct {
 	RoomID uuid.UUID
 }
 
-// Rooms of original messages for Message.forward.room_id: a DM's is not disclosed.
+// Rooms of original messages for Message.forward.room_id: a DM's or a notes shelf's is not disclosed.
 func (q *Queries) ForwardSources(ctx context.Context, ids []uuid.UUID) ([]ForwardSourcesRow, error) {
 	rows, err := q.db.Query(ctx, forwardSources, ids)
 	if err != nil {

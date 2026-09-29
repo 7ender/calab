@@ -45,7 +45,9 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
    * not a recording card (ADR-0033); SESSION_REVOKED: why the session ended (see there);
    * "ADMISSION_DECLINED" = RATE_LIMITED on a room link knock within 10 minutes of a decline
    * by the organizer, "ADMISSION_QUEUE_FULL" = RATE_LIMITED when 50 guests already wait for
-   * the room (ADR-0040). Absent otherwise.
+   * the room (ADR-0040); "NOTES_LIMIT" = CONFLICT on creating a 21st notes shelf and
+   * "PERSONAL_QUOTA" = FILE_QUOTA_EXCEEDED of the uploader's personal quota in a shelf
+   * (ADR-0039). Absent otherwise.
    *
    * @generated from field: optional string reason = 4;
    */
@@ -55,7 +57,8 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
    * The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
    * the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;
    * REACTION_LIMIT — the caller's different emojis on the message and the per-user cap (3).
-   * ADMISSION_QUEUE_FULL — the waiting guests and the cap (50).
+   * ADMISSION_QUEUE_FULL — the waiting guests and the cap (50). NOTES_LIMIT — the caller's
+   * shelves and the cap (20).
    * Absent when not meaningful.
    *
    * @generated from field: optional uint64 used = 5;

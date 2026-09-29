@@ -1,4 +1,4 @@
-import { RoomType, type DmSummary, type Message, type Room } from '@calaba/protocol';
+import { RoomType, type DmLastMessage, type DmSummary, type Message, type Room } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { create } from 'zustand';
 import { systemPreview } from '../lib/recording';
@@ -79,7 +79,11 @@ export function previewOf(m: Message): DmPreview {
 
 /** The summary's preview (DmSummary.last_message; content ≤ 200 characters); null = no messages. */
 function summaryPreview(dm: DmSummary): DmPreview | null {
-  const m = dm.lastMessage;
+  return lastMessagePreview(dm.lastMessage);
+}
+
+/** A list preview from DmLastMessage (DMs and notes shelves, ADR-0039); null = no messages. */
+export function lastMessagePreview(m: DmLastMessage | undefined): DmPreview | null {
   if (!m?.id) return null;
   // A sticker (ADR-0030) previews as «😀 Стикер» (its content is empty).
   const content = m.stickerEmoji ? stickerPreview(m.stickerEmoji) : m.content;
@@ -87,7 +91,7 @@ function summaryPreview(dm: DmSummary): DmPreview | null {
 }
 
 /** The newer of two previews (message ids are time-ordered uuidv7): a live event may be ahead of a summary. */
-function newer(a: DmPreview | null | undefined, b: DmPreview | null): DmPreview | null {
+export function newer(a: DmPreview | null | undefined, b: DmPreview | null): DmPreview | null {
   if (!a) return b;
   if (!b) return a;
   return a.messageId > b.messageId ? a : b;
