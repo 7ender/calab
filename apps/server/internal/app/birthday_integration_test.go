@@ -256,7 +256,11 @@ func TestBirthdaysUpcoming(t *testing.T) {
 	carol, dave, eve, guest := register(t, code), register(t, code), register(t, code), register(t, code)
 	guestRole := v1.WorkspaceRole_WORKSPACE_ROLE_GUEST
 	o.must(200, "PATCH", "/api/workspaces/"+wid+"/members/"+guest.id, &v1.UpdateMemberRequest{Role: &guestRole}, nil)
-	// o has no time zone: today is UTC's. Stay clear of midnight UTC.
+	// Pin the shared owner to UTC: TestBirthdaysGreet leaves it in Moscow, and between 21:00 and
+	// 24:00 UTC the caller's «today» would then be a day ahead of this test's (CI, 2026-09-29).
+	utc := "UTC"
+	o.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{Timezone: &utc}, nil)
+	// Today is UTC's. Stay clear of midnight UTC.
 	today := time.Now().UTC()
 	if today.Hour() == 23 && today.Minute() > 55 {
 		time.Sleep(6 * time.Minute)
