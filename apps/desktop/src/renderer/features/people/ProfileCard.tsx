@@ -11,7 +11,7 @@ import { useSession } from '../../stores/session';
 import { isGuest, useMemberName, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
 import { BotActions, BotDetails, BotHandle } from './BotProfile';
-import { ProfileBadge } from './ProfileBadge';
+import { MemberBadge } from './MemberBadge';
 import { VolumeRow, useMemberActions } from './MemberContextMenu';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -81,6 +81,8 @@ export function ProfileCard({
             <h3 className={`truncate text-headline font-semibold ${roleTextClass(m.role, 'role', look)}`} style={roleTextStyle(m.role, 'role', look)} title={name}>
               {name}
             </h3>
+            {/* The badge inline after the name, as in lists (docs/08 «Бейдж»); its name is the tooltip. */}
+            <MemberBadge workspaceId={workspaceId} userId={userId} />
             <RoleMark role={m.role} custom={look} />
             {isGuest(m) ? <GuestBadge /> : null}
             {u.isBot ? <BotBadge /> : null}
@@ -90,7 +92,6 @@ export function ProfileCard({
               {u.displayName}
             </div>
           ) : null}
-          <ProfileBadge workspaceId={workspaceId} userId={userId} />
           {/* A bot (ADR-0031): its @username instead of presence (bots are never «в сети» as people). */}
           {u.isBot ? (
             <BotHandle botUserId={userId} />
@@ -109,7 +110,8 @@ export function ProfileCard({
       {u.isBot ? <BotDetails botUserId={userId} compact /> : null}
       {canDm ? (
         // ADR-0020 / ADR-0034: the most direct next steps from a profile — «Написать», «Позвонить».
-        <div className="flex gap-2">
+        // 16 px from the header block (12 gap + 4), like the card's padding (docs/08 «Карточка участника»).
+        <div className="mt-1 flex gap-2">
           <Button
             className="min-w-0 flex-1"
             onClick={() => {
