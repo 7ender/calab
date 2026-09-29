@@ -63,6 +63,8 @@ export default defineConfig<VisualOptions>({
     { name: 'resume-voice', testMatch: /resume-voice\.spec\.ts/ },
     // Deafen holds for late voices (docs/09 #70): behaviour only, web build + dev LiveKit.
     { name: 'deafen', testMatch: /deafen\.spec\.ts/ },
+    // A room switch never hangs in «Подключение…» (docs/09 #131): behaviour only, web build + dev LiveKit.
+    { name: 'voice-switch', testMatch: /voice-switch\.spec\.ts/ },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only
     // web.spec.ts, where everything but the dark-960 join card is skipped (see above).
     { name: 'misc', testMatch: ALL_CONFIGS ? /(focus|web)\.spec\.ts/ : /web\.spec\.ts/ },
