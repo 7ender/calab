@@ -374,7 +374,8 @@ export const zhCN: Dict = {
   'stream.systemAudioNo': '此操作系统不支持',
   'stream.systemAudioMac':
     'macOS：其他人的语音也会被共享出去（产生回声）。请仅在佩戴耳机且房间内无人说话时开启。',
-  'stream.systemAudioWin': 'Calab 自身的音频不会被采集',
+  'stream.systemAudioWin10': 'Windows 10：其他人的语音也会被共享出去——只有 Windows 11 能排除 Calab 自身的声音。请仅在房间内无人说话时开启。',
+  'stream.systemAudioWin':'Calab 自身的音频不会被采集',
   'stream.noScreenAccess': 'macOS 未授予屏幕录制权限——请在"屏幕录制"中允许 Calab 并重启应用。',
   'stream.webPicker': '点击"开始共享"后，浏览器会显示自己的选择窗口：整个屏幕、某个窗口或某个标签页。',
   'stream.expand': '展开',

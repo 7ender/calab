@@ -374,7 +374,9 @@ export const en: Dict = {
   'stream.systemAudioNo': 'Not supported on this OS',
   'stream.systemAudioMac':
     'macOS: other people’s voices will get into the screen share too (echo). Turn it on only with headphones and when nobody in the room is talking.',
-  'stream.systemAudioWin': 'Calab’s own audio is excluded from capture',
+  'stream.systemAudioWin10':
+    'Windows 10: other people’s voices will get into the screen share too — only Windows 11 can leave Calab’s sound out. Turn it on only when nobody in the room is talking.',
+  'stream.systemAudioWin':'Calab’s own audio is excluded from capture',
   'stream.noScreenAccess': 'macOS didn’t grant screen recording access — allow Calab in “Screen Recording” and restart the app.',
   'stream.webPicker': 'After “Start sharing”, your browser will ask what to share: the entire screen, a window or a tab.',
   'stream.expand': 'Expand',

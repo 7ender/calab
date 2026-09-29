@@ -129,6 +129,25 @@ export function ownAudioExcluded(settings: MediaTrackSettings & { restrictOwnAud
   return settings.restrictOwnAudio === true || settings.deviceId === 'loopbackWithoutChrome';
 }
 
+/**
+ * getDisplayMedia() audio constraints for a desktop stream's system audio. The same on macOS and
+ * Windows: exclude our own output (other participants' voices) — echo rule 4. With the main
+ * process's plain 'loopback' Chromium opens `loopbackWithoutChrome`: a Core Audio process tap
+ * without our audio service (macOS 14.2+, measured −65 dB vs −32 dB, docs/02) / WASAPI process
+ * loopback `EXCLUDE_TARGET_PROCESS_TREE` (Windows 11; Chromium 152 drops the constraint on
+ * Windows 10, main reports 'experimental' there, docs/09 #122). Local playback is never muted
+ * (docs/09 #68); no processing on music/game sound.
+ */
+export function systemAudioConstraints(): DisplayAudioConstraints {
+  return {
+    restrictOwnAudio: true,
+    suppressLocalAudioPlayback: false,
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+  };
+}
+
 async function captureDesktop(
   source: DesktopSource,
   preset: ConcreteScreenSharePreset,
@@ -136,17 +155,7 @@ async function captureDesktop(
 ): Promise<CapturedScreen> {
   const video = videoConstraints(preset);
   if (systemAudio) {
-    const audio: DisplayAudioConstraints = {
-      // Exclude our own output (other participants' voices) — echo rule 4. With the main
-      // process's plain 'loopback' Chromium opens `loopbackWithoutChrome`: a process tap without
-      // our audio service (macOS 14.2+, measured −65 dB vs −32 dB, docs/02) / process loopback
-      // (Windows). Local playback is never muted (docs/09 #68).
-      restrictOwnAudio: true,
-      suppressLocalAudioPlayback: false,
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    };
+    const audio = systemAudioConstraints();
     try {
       await platform.capture.selectSource({ sourceId: source.id, audio: true });
       const stream = await navigator.mediaDevices.getDisplayMedia({ video, audio });

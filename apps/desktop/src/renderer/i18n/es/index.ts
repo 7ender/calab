@@ -374,7 +374,9 @@ export const es: Dict = {
   'stream.systemAudioNo': 'No compatible con este sistema operativo',
   'stream.systemAudioMac':
     'macOS: las voces de otras personas también se incluirán en la pantalla compartida (eco). Actívalo solo con auriculares y cuando nadie en la sala esté hablando.',
-  'stream.systemAudioWin': 'El audio propio de Calab se excluye de la captura',
+  'stream.systemAudioWin10':
+    'Windows 10: las voces de otras personas también se incluirán en la pantalla compartida; solo Windows 11 puede excluir el sonido de Calab. Actívalo solo cuando nadie en la sala esté hablando.',
+  'stream.systemAudioWin':'El audio propio de Calab se excluye de la captura',
   'stream.noScreenAccess': 'macOS no concedió acceso a la grabación de pantalla — permite Calab en «Grabación de pantalla» y reinicia la app.',
   'stream.webPicker': 'Después de «Empezar a compartir», tu navegador te preguntará qué compartir: toda la pantalla, una ventana o una pestaña.',
   'stream.expand': 'Expandir',
