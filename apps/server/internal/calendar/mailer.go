@@ -3,6 +3,7 @@ package calendar
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -61,11 +62,12 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 	if !ok {
 		occ = Occurrence{b.series.Start, b.series.End}
 	}
-	ics := BuildICS(s.icsEvent(b, method, users, org, roomName))
-	var names []string
+	ics := BuildICS(s.icsEvent(b, method, users, org, roomName, ""))
+	var names, members []string
 	for _, a := range b.att {
 		if a.UserID != nil {
 			names = append(names, users[*a.UserID].DisplayName)
+			members = append(members, users[*a.UserID].DisplayName)
 		} else {
 			names = append(names, deref(a.Email))
 		}
@@ -91,13 +93,21 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 				locale = *org.Locale
 			}
 		}
+		attendees, invite := strings.Join(names, ", "), ics
+		if a.UserID == nil {
+			// An outside recipient sees colleagues by name only and no other outside address:
+			// its invite.ics lists the organizer and its own line (RFC 5546 needs no more).
+			own := deref(a.Email)
+			attendees = strings.Join(append(slices.Clone(members), own), ", ")
+			invite = BuildICS(s.icsEvent(b, method, users, org, roomName, own))
+		}
 		date, when := formatWhen(locale, occ, b.ev.AllDay, loc)
 		p := mail.Params{
 			"title": b.ev.Title, "date": date, "when": when, "organizer": org.DisplayName, "url": s.eventURL(b.ev.ID),
-			"room": roomName, "repeat": repeatText(locale, b.series.Rule.Repeat), "attendees": strings.Join(names, ", "),
-			mail.ParamICS: ics, mail.ParamICSMethod: method,
+			"room": roomName, "repeat": repeatText(locale, b.series.Rule.Repeat), "attendees": attendees,
+			mail.ParamICS: invite, mail.ParamICSMethod: method,
 		}
-		if org.Email != nil {
+		if org.Email != nil && org.EmailVerifiedAt != nil { // an unconfirmed address proves nothing
 			p[mail.ParamReplyTo] = *org.Email
 		}
 		if a.UserID == nil && method == MethodRequest {
@@ -138,7 +148,8 @@ func (s *Service) tokenExpiry(b *bundle) time.Time {
 	return s.Now().Add(365 * 24 * time.Hour)
 }
 
-func (s *Service) icsEvent(b *bundle, method string, users map[uuid.UUID]sqlc.ListEventUsersRow, org sqlc.ListEventUsersRow, roomName string) ICSEvent {
+// icsEvent describes b for invite.ics; only != "" keeps that external attendee's line alone.
+func (s *Service) icsEvent(b *bundle, method string, users map[uuid.UUID]sqlc.ListEventUsersRow, org sqlc.ListEventUsersRow, roomName, only string) ICSEvent {
 	e := ICSEvent{
 		UID: b.ev.ID.String() + "@calab", Sequence: int(b.ev.Sequence), Method: method, Series: b.series,
 		Title: b.ev.Title, Description: b.ev.Description, URL: s.eventURL(b.ev.ID), Stamp: s.Now(),
@@ -148,6 +159,9 @@ func (s *Service) icsEvent(b *bundle, method string, users map[uuid.UUID]sqlc.Li
 		e.Location = "Calab: " + roomName
 	}
 	for _, a := range b.att {
+		if only != "" && deref(a.Email) != only {
+			continue
+		}
 		p := ICSPerson{Optional: !a.Required, PartStat: PartStat(a.Status)}
 		if a.UserID != nil {
 			u := users[*a.UserID]

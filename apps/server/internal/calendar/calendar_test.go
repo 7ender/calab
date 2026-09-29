@@ -174,6 +174,15 @@ func TestExpandOldSeriesMatchesBruteForce(t *testing.T) {
 	}
 }
 
+// TEXT escaping: the separators and line breaks are escaped, other control characters (a CR
+// alone could end the content line) are dropped.
+func TestICSText(t *testing.T) {
+	in := "a;b,c\\d\r\nnext\rX\x00\x0bY\tZ\x7f"
+	if got, want := icsText(in), `a\;b\,c\\d\nnextXY`+"\tZ"; got != want {
+		t.Errorf("icsText = %q, want %q", got, want)
+	}
+}
+
 // parseICS is a minimal RFC 5545 reader for the tests: CRLF lines of ≤ 75 octets, unfolding,
 // balanced BEGIN / END, NAME[;PARAMS]:VALUE. It returns the properties of the VEVENT.
 func parseICS(t *testing.T, s string) map[string][]string {

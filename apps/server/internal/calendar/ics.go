@@ -143,10 +143,17 @@ func PartStat(status string) string {
 	return "NEEDS-ACTION"
 }
 
-// icsText escapes a TEXT value (RFC 5545 §3.3.11).
+// icsText escapes a TEXT value (RFC 5545 §3.3.11); control characters other than the line
+// break and the tab are dropped (TEXT excludes them).
 func icsText(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
-	return strings.NewReplacer(`\`, `\\`, ";", `\;`, ",", `\,`, "\n", `\n`, "\r", "").Replace(s)
+	s = strings.Map(func(r rune) rune {
+		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+	return strings.NewReplacer(`\`, `\\`, ";", `\;`, ",", `\,`, "\n", `\n`).Replace(s)
 }
 
 // icsParam quotes a parameter value; DQUOTE and control characters are dropped.

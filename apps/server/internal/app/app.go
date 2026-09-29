@@ -182,7 +182,8 @@ func New(d Deps) *App {
 		panic(err) // config.Validate checks the SMTP settings first
 	}
 	mailSvc := mail.New(mail.Config{
-		PerAddressPerHour: d.Config.MailPerAddressPerHour, PerHour: d.Config.MailPerHour, Secret: []byte(d.Config.JWTSecret),
+		PerAddressPerHour: d.Config.MailPerAddressPerHour, EventsPerAddressPerHour: d.Config.MailEventsPerAddressPerHour,
+		PerHour: d.Config.MailPerHour, Secret: []byte(d.Config.JWTSecret),
 	}, d.DB, d.Redis, sender)
 
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)

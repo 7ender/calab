@@ -489,6 +489,11 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	if !v.canEdit(before) {
 		return httpx.Forbidden("only the organizer or a room manager may cancel the meeting")
 	}
+	// Each cancelled occurrence mails every attendee and grows the EXDATE list: same budget as
+	// the other changes.
+	if err := s.writes.Take(ctx, auth.MustFromContext(ctx).UserID.String()); err != nil {
+		return err
+	}
 	wsID := before.ev.WorkspaceID
 	if occStr := r.URL.Query().Get("occurrence"); occStr != "" {
 		occ, err := time.Parse(time.RFC3339, occStr)
@@ -571,6 +576,9 @@ func (s *Service) rsvp(w http.ResponseWriter, r *http.Request) error {
 	}
 	if _, ok := b.attendee(me); !ok {
 		return httpx.Forbidden("only attendees answer")
+	}
+	if err := s.writes.Take(ctx, me.String()); err != nil { // every answer is a workspace broadcast
+		return err
 	}
 	a, err := s.db.Q.SetEventAttendeeStatus(ctx, sqlc.SetEventAttendeeStatusParams{EventID: b.ev.ID, UserID: &me, Status: status})
 	if err != nil {

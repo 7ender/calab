@@ -281,6 +281,7 @@ func TestEventMailAndGuestLinks(t *testing.T) {
 	c := calSetup(t)
 	wsID := c.ws.GetId()
 	partner := uniq("partner") + "@outside.org"
+	rival := uniq("rival") + "@elsewhere.org" // another outside attendee: partner must not see this address
 	unverified := register(t, invite(t, c.o, wsID))
 	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE users SET email_verified_at = NULL WHERE id = $1", unverified.id); err != nil {
 		t.Fatal(err)
@@ -289,7 +290,7 @@ func TestEventMailAndGuestLinks(t *testing.T) {
 	// The owner (MANAGE_ROOM) invites: the external attendee gets a guest link.
 	ev := createEvent(t, c.o, wsID, &v1.CreateCalendarEventRequest{Title: "Демо; клиент", Description: "Повестка", StartsAt: ts(start),
 		EndsAt: ts(start.Add(time.Hour)), Tz: "Europe/Moscow", RoomId: c.voice.GetId(),
-		Attendees: []*v1.CalendarEventAttendeeInput{att(c.bob.id, true), att(unverified.id, false), ext(partner)}})
+		Attendees: []*v1.CalendarEventAttendeeInput{att(c.bob.id, true), att(unverified.id, false), ext(partner), ext(rival)}})
 	if !ev.GetGuestLinks() {
 		t.Fatalf("guest links: %v", ev)
 	}
@@ -302,6 +303,11 @@ func TestEventMailAndGuestLinks(t *testing.T) {
 			t.Errorf("ics: no %q in\n%s", want, ics)
 		}
 	}
+	// Outside recipients: the organizer and their own line only, colleagues by name.
+	if strings.Contains(ics, c.bob.email) || strings.Contains(ics, rival) || strings.Contains(m.Params["attendees"], rival) ||
+		!strings.Contains(m.Params["attendees"], partner) {
+		t.Errorf("external invite leaks addresses: %q\n%s", m.Params["attendees"], ics)
+	}
 	if m.CalendarMethod != "REQUEST" || m.ReplyTo != c.o.email || !strings.Contains(m.Subject, "Демо; клиент") {
 		t.Errorf("mail: %q %q %q", m.CalendarMethod, m.ReplyTo, m.Subject)
 	}
@@ -312,6 +318,9 @@ func TestEventMailAndGuestLinks(t *testing.T) {
 	bm := waitMail(t, c.bob.email, mail.TemplateEventInvite, 1)
 	if bm.Params["guest_url"] != "" || bm.Params["rsvp_accept"] != "" {
 		t.Error("members get no guest / answer links")
+	}
+	if bi := unfoldICS(bm.Calendar); !strings.Contains(bi, "mailto:"+partner) || !strings.Contains(bi, "mailto:"+rival) || !strings.Contains(bi, "mailto:"+c.bob.email) {
+		t.Errorf("member invite lists every attendee: %s", bi)
 	}
 	time.Sleep(300 * time.Millisecond)
 	if n := testMail.Count(func(m mail.Message) bool { return m.To == unverified.email && m.Template == mail.TemplateEventInvite }); n != 0 {
@@ -415,6 +424,20 @@ func TestEventMailAndGuestLinks(t *testing.T) {
 	if m4 := waitMail(t, partner4, mail.TemplateEventInvite, 1); m4.Params["guest_url"] != "" || m4.Params["rsvp_maybe"] == "" {
 		t.Errorf("no-link mail: %v", m4.Params)
 	}
+}
+
+// Meeting mail has a per-address bucket of its own: a burst of invitations neither drops the
+// fourth one nor uses up the colleague's budget for codes (MAIL_PER_ADDRESS_PER_HOUR = 3).
+func TestEventMailOwnBucket(t *testing.T) {
+	c := calSetup(t)
+	start := time.Now().Add(48 * time.Hour).Truncate(time.Minute)
+	for i := range 4 {
+		createEvent(t, c.o, c.ws.GetId(), &v1.CreateCalendarEventRequest{Title: "Серия " + string(rune('A'+i)), StartsAt: ts(start),
+			EndsAt: ts(start.Add(time.Hour)), Tz: "UTC", Attendees: []*v1.CalendarEventAttendeeInput{att(c.carol.id, true)}})
+	}
+	waitMail(t, c.carol.email, mail.TemplateEventInvite, 4)
+	newClient(t).must(204, "POST", "/api/auth/password/forgot", &v1.ForgotPasswordRequest{Email: c.carol.email}, nil)
+	nthMail(t, 1, mail.TemplatePasswordReset, c.carol.email)
 }
 
 func TestEventRemindersAndRoomBadge(t *testing.T) {

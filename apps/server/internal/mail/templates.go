@@ -28,6 +28,11 @@ const (
 	TemplateEventCancel Template = "event_cancel"
 )
 
+// isEventTemplate: meeting mail, limited per address by a bucket of its own.
+func isEventTemplate(t Template) bool {
+	return t == TemplateEventInvite || t == TemplateEventUpdate || t == TemplateEventCancel
+}
+
 // Raw params (not template values): an iCalendar attachment and a Reply-To address. They are
 // not cleaned or clipped like template values.
 const (
