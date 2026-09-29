@@ -589,6 +589,9 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 	if err := writable(acc); err != nil {
 		return err
 	}
+	if err := take(r, s.CreateLimit); err != nil {
+		return err
+	}
 	var req v1.CreateTaskRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err

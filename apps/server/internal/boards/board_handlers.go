@@ -89,8 +89,11 @@ func validColor(c uint32) (int32, error) {
 	return int32(c), nil //nolint:gosec // ≤ 0xFFFFFF
 }
 
-// iconFile checks an icon upload: an image of the workspace.
-func (s *Service) iconFile(ctx context.Context, wsID uuid.UUID, raw string) (*uuid.UUID, error) {
+// iconFile checks an icon upload: an image of the workspace uploaded by the caller (or the
+// board's current icon, cur). A board icon is readable by every member of the workspace
+// (files.CanRead: IsWorkspaceIcon), so someone else's file — e.g. an attachment of a room or a
+// private board the members do not see — must not become one (security review 1.1.0).
+func (s *Service) iconFile(ctx context.Context, wsID, me uuid.UUID, cur *uuid.UUID, raw string) (*uuid.UUID, error) {
 	if raw == "" {
 		return nil, nil
 	}
@@ -99,8 +102,9 @@ func (s *Service) iconFile(ctx context.Context, wsID uuid.UUID, raw string) (*uu
 		return nil, httpx.Validation("iconFileId", "invalid file id")
 	}
 	f, err := s.db.Q.GetFile(ctx, id)
-	if db.IsNotFound(err) || (err == nil && (f.WorkspaceID == nil || *f.WorkspaceID != wsID || !strings.HasPrefix(f.Mime, "image/"))) {
-		return nil, httpx.Validation("iconFileId", "an image uploaded to this workspace is required")
+	if db.IsNotFound(err) || (err == nil && (f.WorkspaceID == nil || *f.WorkspaceID != wsID || !strings.HasPrefix(f.Mime, "image/") ||
+		(f.UploaderID != me && (cur == nil || *cur != id)))) {
+		return nil, httpx.Validation("iconFileId", "an image you uploaded to this workspace is required")
 	}
 	return &id, err
 }
@@ -250,7 +254,7 @@ func (s *Service) createBoard(w http.ResponseWriter, r *http.Request) error {
 	} else if !ValidKey(key) {
 		return httpx.Validation("key", "key must be 2..6 letters A–Z or digits, starting with a letter")
 	}
-	icon, err := s.iconFile(r.Context(), wsID, req.GetIconFileId())
+	icon, err := s.iconFile(r.Context(), wsID, uid(r), nil, req.GetIconFileId())
 	if err != nil {
 		return err
 	}
@@ -350,7 +354,11 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 	}
 	if req.IconFileId != nil {
 		p.SetIcon = true
-		if p.IconFileID, err = s.iconFile(r.Context(), acc.WorkspaceID, req.GetIconFileId()); err != nil {
+		cur, err := s.db.Q.GetBoard(r.Context(), id)
+		if err != nil {
+			return err
+		}
+		if p.IconFileID, err = s.iconFile(r.Context(), acc.WorkspaceID, uid(r), cur.IconFileID, req.GetIconFileId()); err != nil {
 			return err
 		}
 	}
