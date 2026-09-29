@@ -383,16 +383,28 @@ test('auth-register', async ({ open, win, shot }) => {
 
 // ---------------------------------------------------------------- email (ADR-0023)
 
-/** «Забыли пароль?» → the code step: code field with the resend timer, new password. */
+/**
+ * «Забыли пароль?» → the code step: code field with the resend timer, new password. The address
+ * is normalised and shown; a sibling-domain account (owner@calaba.test for .ru) adds the yellow
+ * hint with «Изменить адрес» (docs/09 #137).
+ */
 test('auth-forgot', async ({ open, win, shot }) => {
   await open({ auth: 'out' });
   await win.getByRole('button', { name: 'Забыли пароль?' }).click();
-  await win.getByLabel('Email').fill('owner@calaba.test');
+  await win.getByLabel('Email').fill('  Owner@Calaba.ru ');
   await win.getByRole('button', { name: 'Отправить код' }).click();
   await expect(win.getByTestId('forgot-code')).toBeVisible();
-  await expect(win.getByText('Если owner@calaba.test зарегистрирован, мы отправили на него код.')).toBeVisible();
+  await expect(win.getByText('Если аккаунт существует, мы отправили код на owner@calaba.ru.')).toBeVisible();
+  await expect(win.getByTestId('forgot-similar')).toContainText('есть похожий на другом домене');
   await win.getByRole('textbox', { name: 'Код из письма' }).fill('123456');
   await checkpoint(shot, 'auth-forgot');
+  // «Изменить адрес» → back to the field with the sent address; the exact one gets no hint.
+  await win.getByRole('button', { name: 'Изменить адрес' }).click();
+  await expect(win.getByLabel('Email')).toHaveValue('owner@calaba.ru');
+  await win.getByLabel('Email').fill('owner@calaba.test');
+  await win.getByRole('button', { name: 'Отправить код' }).click();
+  await expect(win.getByText('Если аккаунт существует, мы отправили код на owner@calaba.test.')).toBeVisible();
+  await expect(win.getByTestId('forgot-similar')).toHaveCount(0);
 });
 
 /** The unverified account: the bar over the main window, a wrong code answered inline. */

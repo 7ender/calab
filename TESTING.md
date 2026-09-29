@@ -1814,7 +1814,7 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 Руками (`pnpm infra:dev` поднимает Mailpit: письма на http://localhost:8025; `make dev-server` шлёт в него):
 1. Регистрация → письмо «Код подтверждения: NNNNNN» (язык — по `Accept-Language`/`locale`); до кода `POST /api/workspaces` → 403 `EMAIL_NOT_VERIFIED`; `POST /api/auth/verify {code}` → `emailVerified: true`, создание работает.
 2. 5 неверных кодов → `CODE_INVALID` ×4, затем `CODE_EXPIRED`; `verify/send` раньше 60 с → 429.
-3. `password/forgot` (свой и чужой адрес) → 204 оба, письмо только своему; `password/reset` → 204, все устройства разлогинены, вход с новым паролем.
+3. `password/forgot` (свой и чужой адрес) → 200 оба (`similar_account` только для того же логина на другом домене, docs/09 #137), письмо только своему; `password/reset` → 204, все устройства разлогинены, вход с новым паролем.
 4. `invites/lookup` своего участника → `member: true`; неизвестного → `{}`; `invites/email` → письмо со ссылкой `/join/<code>`, шагами и кодом текстом; регистрация по ней → код подтверждения → в пространстве (ADR-0027); повтор приглашения < 24 ч → 429.
 5. Письма: светлая/тёмная тема клиента, подвал «Powered by GPTunneL · calab.ru».
 

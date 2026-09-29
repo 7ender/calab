@@ -947,10 +947,16 @@ describe('email (ADR-0023)', () => {
     server.reset('data');
   });
 
-  it('password reset: forgot is always 204; reset revokes sessions; the new password signs in', async () => {
+  it('password reset: forgot answers the same bar the similar hint; reset revokes sessions; the new password signs in', async () => {
     const old = await login('vera@calaba.test');
-    expect((await call(null, 'POST', '/api/auth/password/forgot', { email: 'nobody@calaba.test' })).status).toBe(204);
-    expect((await call(null, 'POST', '/api/auth/password/forgot', { email: 'vera@calaba.test' })).status).toBe(204);
+    const forgot = async (email: string): Promise<unknown> => {
+      const r = await call(null, 'POST', '/api/auth/password/forgot', { email });
+      expect(r.status).toBe(200);
+      return r.json();
+    };
+    expect(await forgot('nobody@calaba.test')).toEqual({ similarAccount: false });
+    expect(await forgot('vera@calaba.ru')).toEqual({ similarAccount: true });
+    expect(await forgot('vera@calaba.test')).toEqual({ similarAccount: false });
     expect(await codeOf(await call(null, 'POST', '/api/auth/password/reset', { email: 'vera@calaba.test', code: '999999', password: 'brandnew123' }))).toBe(
       'ERROR_CODE_CODE_INVALID',
     );
