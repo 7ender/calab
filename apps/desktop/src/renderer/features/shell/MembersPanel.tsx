@@ -16,7 +16,7 @@ import { MemberContextMenu } from '../people/MemberContextMenu';
 import { BirthdayMark } from '../people/Birthday';
 import { MutedByMe } from '../../components/SpeakerIdentity';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
-import { groupMembers, isOnline, nameOf } from '../people/members';
+import { groupMembers, nameOf } from '../people/members';
 import { openProfile as openFullProfile } from '../people/actions';
 import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
 import { cardDueAt, formatBirthdayShort, greetZone } from '../../lib/birthday';
