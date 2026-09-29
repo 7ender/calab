@@ -129,7 +129,7 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
   const placed = useRef('');
   const scrollToToday = useCallback(() => {
     const el = scroller.current;
-    if (el) el.scrollLeft = Math.max(0, (today - origin - (zoom === 'week' ? 2 : zoom === 'month' ? 6 : 21)) * px);
+    if (el) el.scrollLeft = Math.max(0, (today - origin - (zoom === 'week' ? 4 : zoom === 'month' ? 6 : 21)) * px);
   }, [today, origin, zoom, px]);
   useLayoutEffect(() => {
     const k = `${boardId}|${zoom}`;
@@ -325,10 +325,15 @@ const Scale = memo(function Scale({ origin, px, left, d0, d1, zoom, head, width,
     const iso = isoDay(d);
     const x = left + (d - origin) * px;
     if (iso.endsWith('-01') || d === d0) {
+      // The month spans its days; its name sticks to the scale's left edge while it is in view.
+      const date = new Date(d * 86_400_000);
+      const next = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1) / 86_400_000;
       months.push(
-        <span key={`m${d}`} className="absolute top-0 flex h-5 items-center whitespace-nowrap pl-1.5 text-caption font-semibold capitalize text-fg" style={{ left: x }}>
-          {mf.format(new Date(d * 86_400_000))}
-        </span>,
+        <div key={`m${d}`} className="absolute top-0 h-5" style={{ left: x, width: (Math.min(next, d1 + 1) - d) * px }}>
+          <span className="sticky flex h-5 w-fit items-center whitespace-nowrap px-1.5 text-caption font-semibold capitalize text-fg" style={{ left }}>
+            {mf.format(date)}
+          </span>
+        </div>,
       );
     }
     const monday = new Date(d * 86_400_000).getUTCDay() === 1;
@@ -459,6 +464,11 @@ const TimelineRow = memo(function TimelineRow({
         <span className="shrink-0 text-caption tabular-nums text-muted">{task.key}</span>
         <span className="min-w-0 truncate text-fg">{task.title}</span>
       </button>
+      {box.width < 40 ? (
+        <span className="pointer-events-none absolute top-1 flex h-6 max-w-64 items-center truncate text-caption text-muted" style={{ left: left + box.left + Math.max(box.width, 6) + 6 }}>
+          {task.title}
+        </span>
+      ) : null}
       <div
         role="button"
         tabIndex={0}
