@@ -13,6 +13,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/redisx"
 )
@@ -134,9 +135,10 @@ func TestRevocationIsInstantWithLongAccessTTL(t *testing.T) {
 	dead("disabled account", gd, start)
 }
 
-// A revocation whose Valkey marker was lost (Valkey refused the SET at logout) is still
-// caught: the DB recheck (auth/sessioncheck.go) rejects the token at the latest after a
-// minute — here at once, since the token was never checked before.
+// A revocation whose Valkey marker (and socket event) was lost — Valkey refused the SET at
+// logout — is still caught: the DB recheck (auth/sessioncheck.go) rejects the token at the
+// latest a minute later, and the gateway, which rechecks on every heartbeat, closes the
+// socket with 4010. Here the minute is skipped by dropping the cached confirmations.
 func TestRevocationWithoutMarkerFallsBackToDB(t *testing.T) {
 	o := owner(t)
 	email := mustEmail(t, o)
@@ -144,10 +146,54 @@ func TestRevocationWithoutMarkerFallsBackToDB(t *testing.T) {
 	var l v1.LoginResponse
 	c.must(200, "POST", "/api/auth/login", &v1.LoginRequest{Email: email, Password: "password123", DeviceName: "lost-marker"}, &l)
 	c.token = l.GetTokens().GetAccessToken()
+	g := dialGW(t)
+	g.identify(c.token)
+	c.must(200, "GET", "/api/me", nil, nil) // confirmed by the DB, cached for a minute
 	if _, err := testDB.Q.RevokeSession(context.Background(), sqlc.RevokeSessionParams{ID: uuid.MustParse(l.GetTokens().GetSessionId()), Reason: auth.RevokeLogout}); err != nil {
 		t.Fatal(err) // DB only: no marker, no socket event
 	}
+	auth.ForgetSessionChecks() // the minute has passed
 	c.must(401, "GET", "/api/me", nil, nil)
+	g.send(&v1.GatewayFrame{Op: v1.GatewayOpcode_GATEWAY_OPCODE_HEARTBEAT, Payload: &v1.GatewayFrame_Heartbeat{Heartbeat: &v1.Heartbeat{}}})
+	if st, why := g.closeFrame(); st != 4010 || why != "session revoked: LOGOUT" {
+		t.Fatalf("socket after a lost marker: %d %q, want 4010 \"session revoked: LOGOUT\"", st, why)
+	}
+}
+
+// Postgres unreachable: a session the DB has not confirmed within the last minute is not let
+// through on the marker alone (the marker may have been lost) — fail closed, not revoked.
+func TestRevocationCheckWithPostgresDown(t *testing.T) {
+	ctx := context.Background()
+	deadDB, err := db.Connect(ctx, testDB.Pool.Config().ConnString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadDB.Pool.Close() // every query now fails
+	svc := auth.NewService(testCfg, deadDB, testRedis, nil)
+
+	uid := uuid.MustParse(owner(t).id)
+	s, err := testDB.Q.CreateSession(ctx, sqlc.CreateSessionParams{UserID: uid, RefreshTokenHash: []byte("x"), ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := svc.Tokens().Issue(uid, s.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AuthenticateToken(ctx, tok); err == nil || errors.Is(err, auth.ErrSessionRevoked) || errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("unconfirmed session with Postgres down: %v, want a dependency error", err)
+	}
+	// Confirmed by the DB a moment ago (another instance's view is the same): passes.
+	if _, err := testApp.Auth.AuthenticateToken(ctx, tok); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AuthenticateToken(ctx, tok); err != nil {
+		t.Fatalf("recently confirmed session with Postgres down: %v", err)
+	}
+	auth.ForgetSessionChecks()
+	if _, err := svc.AuthenticateToken(ctx, tok); err == nil {
+		t.Fatal("unconfirmed session with Postgres down let through")
+	}
 }
 
 // Valkey unreachable: the marker cannot be read, the DB decides — live sessions keep

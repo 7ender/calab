@@ -53,6 +53,15 @@ func TestTokenTTLs(t *testing.T) {
 	if c.AccessTokenTTL != 24*time.Hour || c.RefreshTokenTTL != 8760*time.Hour {
 		t.Fatalf("defaults: access %v refresh %v", c.AccessTokenTTL, c.RefreshTokenTTL)
 	}
+	// Set but empty (a compose/.env line without a value) = the default, not a parse error.
+	t.Setenv("ACCESS_TOKEN_TTL", "")
+	t.Setenv("REFRESH_TOKEN_TTL", "")
+	if c, err = Load(); err != nil {
+		t.Fatalf("empty TTLs: %v", err)
+	}
+	if c.AccessTokenTTL != 24*time.Hour || c.RefreshTokenTTL != 8760*time.Hour {
+		t.Fatalf("empty TTLs: access %v refresh %v", c.AccessTokenTTL, c.RefreshTokenTTL)
+	}
 	t.Setenv("ACCESS_TOKEN_TTL", "15m")
 	t.Setenv("REFRESH_TOKEN_TTL", "720h")
 	if c, err = Load(); err != nil {

@@ -21,7 +21,8 @@ import (
 // at the moment of the revocation (outage, budget exhausted); before, the tokens then lived
 // until they expired — up to ACCESS_TOKEN_TTL, which is 24 h since 2026-09-29. Now they die
 // within sessionRecheck. It also keeps REST working while Valkey reads fail: the DB answers
-// instead (both unavailable → fail closed, 503).
+// instead. A session the DB cannot confirm (Postgres error, cache entry expired) fails
+// closed (503).
 const sessionRecheck = time.Minute
 
 // liveSessions remembers sessions the DB confirmed as not revoked, until the recheck time.
@@ -65,28 +66,49 @@ func (c *liveCache) drop(sid uuid.UUID) {
 	c.mu.Unlock()
 }
 
+// CheckSession is checkSession for callers outside the package: the gateway rechecks a
+// live socket's session on every heartbeat (hub), so a revocation whose marker and socket
+// event were both lost still closes the socket within sessionRecheck + a heartbeat.
+func (s *Service) CheckSession(ctx context.Context, sid uuid.UUID) error {
+	return s.checkSession(ctx, sid)
+}
+
+// ForgetSessionChecks drops every cached DB confirmation, as if sessionRecheck had passed
+// for all sessions (integration tests of the lost-marker path).
+func ForgetSessionChecks() {
+	liveSessions.mu.Lock()
+	clear(liveSessions.until)
+	liveSessions.mu.Unlock()
+}
+
 // checkSession rejects an access token whose session was revoked: a RevokedError
-// (errors.Is ErrSessionRevoked) with the reason, or a
-// dependency error when neither Valkey nor Postgres can tell (fail closed).
+// (errors.Is ErrSessionRevoked) with the reason, or a dependency error when it cannot be
+// told (fail closed). A revoked session passes for at most sessionRecheck after its
+// revocation when the marker is missing (lost SET, Valkey unreadable) — never longer: the
+// cache entry is stamped with the time taken before the DB read that confirmed it, and a
+// DB error is not a confirmation.
 func (s *Service) checkSession(ctx context.Context, sid uuid.UUID) error {
 	reason, revoked, rerr := s.revokedReason(ctx, sid)
 	if rerr == nil && revoked {
 		return &RevokedError{Reason: reason}
 	}
 	now := s.now()
-	if rerr == nil && liveSessions.fresh(sid, now) {
+	if liveSessions.fresh(sid, now) {
+		// Valkey unreadable included: a revocation it could not mark is bounded by the
+		// cache entry (≤ sessionRecheck), and the DB is not hit on every request.
 		return nil
 	}
 	sess, err := s.db.Q.GetSession(ctx, sid)
 	switch {
 	case db.IsNotFound(err):
 		return ErrSessionRevoked // deleted with its user
-	case err != nil && rerr != nil:
-		return rerr
 	case err != nil:
-		// Postgres blip: the marker (checked above) is authoritative for instant revocation.
-		slog.WarnContext(ctx, "session recheck failed", "session_id", sid, "err", err)
-		return nil
+		// Neither a confirmation nor a refusal: fail closed (503), both for a Postgres blip
+		// alone (the marker may have been lost) and with Valkey down too.
+		if rerr != nil {
+			slog.WarnContext(ctx, "revocation marker unreadable", "session_id", sid, "err", rerr)
+		}
+		return err
 	case sess.RevokedAt != nil:
 		liveSessions.drop(sid)
 		return &RevokedError{Reason: deref(sess.RevokedReason)}
