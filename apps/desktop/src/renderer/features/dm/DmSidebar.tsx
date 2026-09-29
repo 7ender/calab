@@ -36,7 +36,7 @@ export function DmSidebar(): ReactNode {
   const open = useUi((s) => s.openDialog);
 
   return (
-    <aside className="mat-sidebar flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
+    <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
       <div className="flex h-12 shrink-0 items-center border-b border-line px-2.5">
         <button
           type="button"
