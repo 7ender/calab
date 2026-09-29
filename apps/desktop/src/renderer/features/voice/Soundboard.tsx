@@ -5,6 +5,7 @@ import { memo, useMemo, useState, type ReactNode } from 'react';
 import { IconButton, Input, Tip, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
 import { builtinBoard, builtinSound } from '../../lib/builtinSounds';
+import { autoFocusAllowed } from '../../lib/phone';
 import { boardSections, isBuiltin, type BoardSound, type SectionId } from '../../lib/soundboard';
 import { pressSound, previewSound, toggleFavorite } from '../../services/soundboard';
 import { usePrefs } from '../../stores/prefs';
@@ -71,6 +72,8 @@ function SoundboardContent({ onClose }: { onClose: () => void }): ReactNode {
         collisionPadding={16}
         aria-label={t('snd.title')}
         data-testid="soundboard"
+        // A phone focuses a field only by a tap (docs/08 «Мобильный веб»): no keyboard on open.
+        onOpenAutoFocus={(e) => (autoFocusAllowed() ? undefined : e.preventDefault())}
         className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(440px,var(--radix-popover-content-available-height))] w-[360px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-[min(70dvh,520px)]"
       >
         <SoundboardPanel onSettings={onClose} />
@@ -152,7 +155,9 @@ const SoundTile = memo(function SoundTile({ sound, favorite, locked }: { sound: 
         onClick={locked ? undefined : () => void pressSound(sound.id)}
         title={sound.name}
         className={cx(
-          'flex h-10 w-full min-w-0 items-center gap-2 rounded-[var(--radius-card)] bg-[var(--color-fill)] pl-2.5 pr-14 text-left text-body text-fg transition-colors duration-[var(--motion-fast)]',
+          'flex h-10 w-full min-w-0 items-center gap-2 rounded-[var(--radius-card)] bg-[var(--color-fill)] pl-2.5 text-left text-body text-fg transition-colors duration-[var(--motion-fast)] group-focus-within:pr-14 group-hover:pr-14 mobile:pr-14',
+          // The name keeps the width the ▶ / ☆ buttons do not need: they show on hover (a starred one keeps its ★).
+          favorite ? 'pr-8' : 'pr-2.5',
           locked ? 'cursor-default opacity-50' : 'hover:bg-[var(--color-fill-hover)] active:bg-[var(--color-fill-hover)]',
         )}
       >
