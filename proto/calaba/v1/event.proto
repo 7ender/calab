@@ -86,9 +86,10 @@ message CalendarEvent {
   google.protobuf.Timestamp created_at = 21;
   google.protobuf.Timestamp updated_at = 22;
   uint32 sequence = 23; // iCalendar SEQUENCE: +1 on every change mailed to the attendees
-  // External attendees get a guest link to the room only when the organizer may create room
-  // links (MANAGE_ROOM in the room, ADR-0016). False with externals and a room = they got the
-  // invitation without a link: the client says so («гостевая ссылка недоступна»).
+  // Every external attendee got a guest link to the room (ADR-0016). Links are made only when
+  // the organizer may create room links (MANAGE_ROOM in the room, the workspace not suspended).
+  // False with a room and external attendees = they were invited without a link: the client
+  // says so («гостевая ссылка недоступна»).
   bool guest_links = 24;
   // The client's rights on this event (computed for the caller; false in gateway events).
   bool can_edit = 25;
@@ -214,6 +215,7 @@ message CalendarEventRsvp {
   string event_id = 2;
   CalendarEventAttendee attendee = 3;
   CalendarEventCounts counts = 4;
+  CalendarEvent event = 5; // the series after the answer (as in EVENT_UPDATE)
 }
 
 // EVENT_REMINDER: to one attendee's devices (user channel), `minutes` before the occurrence

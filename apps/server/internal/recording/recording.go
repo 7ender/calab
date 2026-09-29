@@ -93,6 +93,9 @@ type Service struct {
 	KeepAudio     time.Duration   // audio attachments of done recordings (RECORDING_KEEP_DAYS, 30 days)
 	ResultBackoff []time.Duration // waits between result attempts; past the last one it gives up
 	Now           func() time.Time
+	// OnStarted is told about every recording that started (the calendar links it to the
+	// room's meeting, ADR-0038 §6); nil = nobody.
+	OnStarted func(ctx context.Context, rec sqlc.RoomRecording)
 }
 
 // New creates the service. eg nil = recording unavailable (start answers 503).
@@ -463,6 +466,9 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) error {
 	slog.InfoContext(ctx, "recording started", "recording", upd.ID, "room", room.ID, "egress", info.EgressID, "by", me)
 	pb := pbconv.RoomRecording(upd)
 	s.publish(ctx, pb)
+	if s.OnStarted != nil {
+		s.OnStarted(context.WithoutCancel(ctx), upd)
+	}
 	httpx.Write(w, http.StatusOK, &v1.StartRecordingResponse{Recording: pb})
 	return nil
 }

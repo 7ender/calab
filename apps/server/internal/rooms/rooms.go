@@ -76,6 +76,20 @@ func VisibleIDs(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.
 	return out, nil
 }
 
+// VisibleBits returns the member's effective bits in every room they can see (ADR-0038: which
+// meetings they see and may edit), without the last-message lookup.
+func VisibleBits(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member) (map[uuid.UUID]perm.Bits, error) {
+	rs, err := visible(ctx, q, ws, m, false)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]perm.Bits, len(rs))
+	for _, r := range rs {
+		out[uuid.MustParse(r.GetId())] = perm.ComputeIn(m, r.GetRestricted(), pbconv.ProtoOverrideTargets(r.GetPermissionOverrides()))
+	}
+	return out, nil
+}
+
 func visible(ctx context.Context, q *sqlc.Queries, ws sqlc.Workspace, m perm.Member, withLast bool) ([]*v1.Room, error) {
 	rows, err := q.ListRooms(ctx, ws.ID)
 	if err != nil {

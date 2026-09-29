@@ -17,6 +17,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -197,9 +198,27 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 			recordings = append(recordings, pbconv.RoomRecording(rec))
 		}
 	}
+	// Meetings around now in the visible rooms (ADR-0038 §6); guests see no calendar.
+	var active []*v1.CalendarEvent
+	if role != perm.RoleGuest {
+		roomBits := make(map[uuid.UUID]perm.Bits, len(bits))
+		for id, b := range bits {
+			roomBits[uuid.MustParse(id)] = perm.Bits(b)
+		}
+		isBot := false
+		for _, m := range ms {
+			if m.User.ID == userID {
+				isBot = m.User.IsBot
+			}
+		}
+		if active, err = calendar.ActiveEvents(ctx, q, ws.ID, userID, me.Workspace(), roomBits, isBot, time.Now()); err != nil {
+			return nil, err
+		}
+	}
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
-		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds)}, nil
+		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds),
+		ActiveEvents: active}, nil
 }
 
 // MemberPB loads a member's role ids and converts the membership row.

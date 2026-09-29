@@ -316,9 +316,10 @@ type CalendarEvent struct {
 	CreatedAt            *timestamppb.Timestamp   `protobuf:"bytes,21,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt            *timestamppb.Timestamp   `protobuf:"bytes,22,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Sequence             uint32                   `protobuf:"varint,23,opt,name=sequence,proto3" json:"sequence,omitempty"` // iCalendar SEQUENCE: +1 on every change mailed to the attendees
-	// External attendees get a guest link to the room only when the organizer may create room
-	// links (MANAGE_ROOM in the room, ADR-0016). False with externals and a room = they got the
-	// invitation without a link: the client says so («гостевая ссылка недоступна»).
+	// Every external attendee got a guest link to the room (ADR-0016). Links are made only when
+	// the organizer may create room links (MANAGE_ROOM in the room, the workspace not suspended).
+	// False with a room and external attendees = they were invited without a link: the client
+	// says so («гостевая ссылка недоступна»).
 	GuestLinks bool `protobuf:"varint,24,opt,name=guest_links,json=guestLinks,proto3" json:"guest_links,omitempty"`
 	// The client's rights on this event (computed for the caller; false in gateway events).
 	CanEdit       bool `protobuf:"varint,25,opt,name=can_edit,json=canEdit,proto3" json:"can_edit,omitempty"`
@@ -1371,6 +1372,7 @@ type CalendarEventRsvp struct {
 	EventId       string                 `protobuf:"bytes,2,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	Attendee      *CalendarEventAttendee `protobuf:"bytes,3,opt,name=attendee,proto3" json:"attendee,omitempty"`
 	Counts        *CalendarEventCounts   `protobuf:"bytes,4,opt,name=counts,proto3" json:"counts,omitempty"`
+	Event         *CalendarEvent         `protobuf:"bytes,5,opt,name=event,proto3" json:"event,omitempty"` // the series after the answer (as in EVENT_UPDATE)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1429,6 +1431,13 @@ func (x *CalendarEventRsvp) GetAttendee() *CalendarEventAttendee {
 func (x *CalendarEventRsvp) GetCounts() *CalendarEventCounts {
 	if x != nil {
 		return x.Counts
+	}
+	return nil
+}
+
+func (x *CalendarEventRsvp) GetEvent() *CalendarEvent {
+	if x != nil {
+		return x.Event
 	}
 	return nil
 }
@@ -1743,12 +1752,13 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\x13CalendarEventUpdate\x12.\n" +
 	"\x05event\x18\x01 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\"E\n" +
 	"\x13CalendarEventDelete\x12.\n" +
-	"\x05event\x18\x01 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\"\xc7\x01\n" +
+	"\x05event\x18\x01 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\"\xf7\x01\n" +
 	"\x11CalendarEventRsvp\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x19\n" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12<\n" +
 	"\battendee\x18\x03 \x01(\v2 .calaba.v1.CalendarEventAttendeeR\battendee\x126\n" +
-	"\x06counts\x18\x04 \x01(\v2\x1e.calaba.v1.CalendarEventCountsR\x06counts\"\xa2\x01\n" +
+	"\x06counts\x18\x04 \x01(\v2\x1e.calaba.v1.CalendarEventCountsR\x06counts\x12.\n" +
+	"\x05event\x18\x05 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\"\xa2\x01\n" +
 	"\x15CalendarEventReminder\x12.\n" +
 	"\x05event\x18\x01 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\x12?\n" +
 	"\roccurrence_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\foccurrenceAt\x12\x18\n" +
@@ -1853,15 +1863,16 @@ var file_calaba_v1_event_proto_depIdxs = []int32{
 	4,  // 33: calaba.v1.CalendarEventDelete.event:type_name -> calaba.v1.CalendarEvent
 	2,  // 34: calaba.v1.CalendarEventRsvp.attendee:type_name -> calaba.v1.CalendarEventAttendee
 	3,  // 35: calaba.v1.CalendarEventRsvp.counts:type_name -> calaba.v1.CalendarEventCounts
-	4,  // 36: calaba.v1.CalendarEventReminder.event:type_name -> calaba.v1.CalendarEvent
-	21, // 37: calaba.v1.CalendarEventReminder.occurrence_at:type_name -> google.protobuf.Timestamp
-	4,  // 38: calaba.v1.RoomEventActive.event:type_name -> calaba.v1.CalendarEvent
-	21, // 39: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
-	40, // [40:40] is the sub-list for method output_type
-	40, // [40:40] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	4,  // 36: calaba.v1.CalendarEventRsvp.event:type_name -> calaba.v1.CalendarEvent
+	4,  // 37: calaba.v1.CalendarEventReminder.event:type_name -> calaba.v1.CalendarEvent
+	21, // 38: calaba.v1.CalendarEventReminder.occurrence_at:type_name -> google.protobuf.Timestamp
+	4,  // 39: calaba.v1.RoomEventActive.event:type_name -> calaba.v1.CalendarEvent
+	21, // 40: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
+	41, // [41:41] is the sub-list for method output_type
+	41, // [41:41] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_event_proto_init() }

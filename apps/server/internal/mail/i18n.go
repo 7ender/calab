@@ -17,7 +17,14 @@ type texts struct {
 	Steps     []string
 	CodeHint  string
 	CodeLabel string
+	// Meetings: labelled rows (shown when their param is set) and secondary link buttons
+	// (shown when their param is an http(s) URL).
+	Details []detail
+	Actions []action
 }
+
+type detail struct{ Label, Param string }
+type action struct{ Label, Param string }
 
 var dict = map[string]map[Template]texts{
 	LocaleEN: {

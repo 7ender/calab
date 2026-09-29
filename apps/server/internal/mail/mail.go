@@ -40,6 +40,12 @@ type Message struct {
 	HTML     string
 	Template Template
 	Params   Params
+	// ReplyTo: the Reply-To address ("" = none).
+	ReplyTo string
+	// Calendar: an iCalendar invitation (ADR-0038 §4) sent as text/calendar with
+	// CalendarMethod (REQUEST | CANCEL) and attached as invite.ics; "" = none.
+	Calendar       string
+	CalendarMethod string
 }
 
 // Sender delivers a rendered message (SMTP in production, Fake in tests).

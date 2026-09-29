@@ -17,6 +17,7 @@ import (
 	"github.com/calaba/calaba/server/internal/blob"
 	"github.com/calaba/calaba/server/internal/bots"
 	"github.com/calaba/calaba/server/internal/buildinfo"
+	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
@@ -87,6 +88,8 @@ type App struct {
 	Birthdays *birthdays.Service
 	// Calls: one-to-one calls (ADR-0034) with their ring / lost timers.
 	Calls *calls.Service
+	// Calendar: meetings (ADR-0038) with the reminder / room badge sweeper.
+	Calendar *calendar.Service
 	// Routes: every registered route pattern (the bot route table test).
 	Routes []string
 }
@@ -107,6 +110,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Bots.Run(ctx) // bot webhook deliveries
 	go a.Birthdays.Run(ctx, time.Hour)
 	go a.Calls.Run(ctx)
+	go a.Calendar.Run(ctx, calendar.Tick)
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -295,6 +299,13 @@ func New(d Deps) *App {
 	bdSvc := birthdays.New(d.DB, pub)
 	bdSvc.Routes(mux, private)
 	callSvc.Routes(mux, private)
+	calSvc := calendar.New(calendar.Config{PublicURL: d.Config.PublicAppURL, Secret: []byte(d.Config.JWTSecret), MailFrom: d.Config.SMTPFrom},
+		d.DB, pub, mailSvc,
+		redisx.NewRateLimiter(d.Redis, "rl:event-write:", 30, 2), // 30 at once, 120 per hour
+		redisx.NewRateLimiter(d.Redis, "rl:event-rsvp:", 30, 30)) // signed answer links: 30 per minute per IP
+	calSvc.Presence = hub.Statuses
+	recSvc.OnStarted = calSvc.RecordingStarted
+	calSvc.Routes(mux, private)
 	if rtcSvc != nil {
 		rtcSvc.Routes(mux, private)
 	} else {
@@ -313,5 +324,5 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Routes: mux.patterns}
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, Routes: mux.patterns}
 }

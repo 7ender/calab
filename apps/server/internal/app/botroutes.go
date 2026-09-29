@@ -218,6 +218,16 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/bots/me/webhook":                        botAllow,
 	"DELETE /api/bots/me/webhook":                     botAllow,
 	"GET /api/rooms/{id}/bot-commands":                botAllow,
+	// calendar (ADR-0038): bots read meetings (no external addresses), people change them
+	"GET /api/workspaces/{id}/events":  botAllow,
+	"POST /api/workspaces/{id}/events": botDeny,
+	"GET /api/events/{id}":             botAllow,
+	"PATCH /api/events/{id}":           botDeny,
+	"DELETE /api/events/{id}":          botDeny,
+	"PUT /api/events/{id}/rsvp":        botDeny, // bots are never attendees
+	"GET /api/me/events/today":         botDeny,
+	"GET /api/event-rsvp":              botPublic, // signed answer links of external attendees; refuses bot tokens
+	"POST /api/event-rsvp":             botPublic,
 }
 
 // botGate lets bot identities through only on botAllow routes (by the matched pattern).

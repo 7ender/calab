@@ -216,7 +216,10 @@ func NormalizeSettings(s *v1.UserSettings) *v1.UserSettings {
 
 // EncodeSettings stores settings with every field explicit, so a stored false stays false.
 func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
-	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(NormalizeSettings(s))
+	s = NormalizeSettings(proto.CloneOf(s))
+	// Meeting reminders live in their own columns (users.event_reminders*, ADR-0038 §5).
+	s.EventReminders, s.EventRemindersDnd = nil, false
+	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(s)
 }
 
 // DefaultSettings are the settings of a new user.
@@ -230,7 +233,13 @@ func Me(u sqlc.User) *v1.Me {
 	if u.Email != nil {
 		email = *u.Email
 	}
-	me := &v1.Me{User: User(u), Email: email, Settings: Settings(u.Settings),
+	settings := Settings(u.Settings)
+	settings.EventReminders = make([]uint32, 0, len(u.EventReminders))
+	for _, m := range u.EventReminders {
+		settings.EventReminders = append(settings.EventReminders, uint32(max(m, 0))) //nolint:gosec // ≤ 1440
+	}
+	settings.EventRemindersDnd = u.EventRemindersDnd
+	me := &v1.Me{User: User(u), Email: email, Settings: settings,
 		EmailVerified: u.IsGuest || u.EmailVerifiedAt != nil,                 // guests have no email to verify
 		IsSuperadmin:  u.EmailVerifiedAt != nil && superadmin.IsPtr(u.Email)} // an unverified address proves nothing
 	if u.PendingEmail != nil {

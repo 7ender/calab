@@ -522,6 +522,9 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		for _, s := range sessions {
 			h.leaveWorkspace(s, wid)
 		}
+	case *v1.DispatchEvent_EventCreate, *v1.DispatchEvent_EventUpdate, *v1.DispatchEvent_EventDelete,
+		*v1.DispatchEvent_EventRsvp, *v1.DispatchEvent_RoomEventActive, *v1.DispatchEvent_RoomEventEnded:
+		h.routeCalendar(st, sessions, view, id, ev)
 	default: // categories and other workspace-wide events
 		h.toAll(sessions, id, shared)
 	}
@@ -941,6 +944,20 @@ func (h *Hub) publishPresence(ctx context.Context, user uuid.UUID) {
 // one-to-one call is answered or ends (internal/calls).
 func (h *Hub) PresenceChanged(ctx context.Context, user uuid.UUID) {
 	h.announcePresence(context.WithoutCancel(ctx), user, false)
+}
+
+// Statuses returns users' aggregated presence status (as others see it; a manual DND
+// included), e.g. meeting reminders that respect DND (ADR-0038 §5).
+func (h *Hub) Statuses(ctx context.Context, users []uuid.UUID) (map[uuid.UUID]v1.PresenceStatus, error) {
+	ps, err := h.pres.get(ctx, users)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]v1.PresenceStatus, len(ps))
+	for u, p := range ps {
+		out[u] = p.GetStatus()
+	}
+	return out, nil
 }
 
 // StatusChanged announces a custom status change (PATCH /api/me/status) even if the

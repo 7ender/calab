@@ -40,6 +40,8 @@ const (
 	cleanupBatchSize = 200
 )
 
+var errNotYetValid = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_INVITE_NOT_YET_VALID, "the link works from 15 minutes before the meeting")
+
 // Service serves room links and guest lifecycle.
 type Service struct {
 	db      *db.DB
@@ -108,6 +110,12 @@ func toProto(i sqlc.RoomInvite, wsID uuid.UUID) *v1.RoomInvite {
 	}
 	if i.ExpiresAt != nil {
 		out.ExpiresAt = timestamppb.New(*i.ExpiresAt)
+	}
+	if i.NotBefore != nil {
+		out.NotBefore = timestamppb.New(*i.NotBefore)
+	}
+	if i.EventID != nil {
+		out.EventId = i.EventID.String()
 	}
 	return out
 }
@@ -253,6 +261,9 @@ func (s *Service) preview(w http.ResponseWriter, r *http.Request) error {
 	if row.RoomInvite.ExpiresAt != nil {
 		out.ExpiresAt = timestamppb.New(*row.RoomInvite.ExpiresAt)
 	}
+	if row.RoomInvite.NotBefore != nil {
+		out.NotBefore = timestamppb.New(*row.RoomInvite.NotBefore)
+	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
 }
@@ -336,6 +347,10 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	var req v1.JoinRoomInviteRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
+	}
+	// A meeting's guest link (ADR-0038) works from 15 minutes before the meeting.
+	if nb := row.RoomInvite.NotBefore; nb != nil && time.Now().Before(*nb) {
+		return errNotYetValid
 	}
 	resp := &v1.JoinRoomInviteResponse{RoomId: row.Room.ID.String(), WorkspaceId: row.Workspace.ID.String()}
 

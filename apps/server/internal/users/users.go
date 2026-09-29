@@ -5,6 +5,7 @@ package users
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/birthdays"
+	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -73,10 +75,11 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if cur, err := h.db.Q.GetUser(r.Context(), id.UserID); err != nil {
 		return err
-	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil) {
+	} else if cur.IsGuest && (req.StatusText != nil || req.AvatarFileId != nil || req.Birthday != nil || req.BirthdayHidden != nil || req.EventReminders != nil) {
 		return httpx.Forbidden("guests can only change their name and settings") // ADR-0016
 	}
-	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil || req.Birthday != nil || req.BirthdayHidden != nil) {
+	if id.IsBot && (req.StatusText != nil || req.Settings != nil || req.Timezone != nil || req.Locale != nil || req.Birthday != nil ||
+		req.BirthdayHidden != nil || req.EventReminders != nil) {
 		return auth.ErrBotNotAllowed // ADR-0031: a bot changes only its name and avatar here
 	}
 	p := sqlc.UpdateUserParams{ID: id.UserID}
@@ -148,6 +151,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.Settings = b
 	}
+	var reminders []int16
+	if er := req.GetEventReminders(); er != nil { // ADR-0038 §5
+		var err error
+		if reminders, err = eventReminders(er.GetMinutes()); err != nil {
+			return err
+		}
+	}
 	u, err := h.db.Q.UpdateUser(r.Context(), p)
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("avatarFileId", "file not found")
@@ -155,11 +165,37 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if er := req.GetEventReminders(); er != nil {
+		if u, err = h.db.Q.SetUserEventReminders(r.Context(), sqlc.SetUserEventRemindersParams{
+			ID: id.UserID, EventReminders: reminders, EventRemindersDnd: er.GetDnd(),
+		}); err != nil {
+			return err
+		}
+	}
 	public := req.DisplayName != nil || req.StatusText != nil || req.AvatarFileId != nil || req.Timezone != nil ||
 		req.Birthday != nil || req.BirthdayHidden != nil
 	profile.Publish(r.Context(), h.db.Q, h.events, u, public)
 	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
 	return nil
+}
+
+// eventReminders validates meeting reminder minutes: ≤ 5 distinct values of
+// calendar.ReminderChoices, stored largest first.
+func eventReminders(in []uint32) ([]int16, error) {
+	out := make([]int16, 0, len(in))
+	for _, m := range in {
+		if !slices.Contains(calendar.ReminderChoices, int(m)) { //nolint:gosec // compared, not converted back
+			return nil, httpx.Validation("eventReminders.minutes", "reminders are 5, 10, 15, 30, 60, 120 or 1440 minutes")
+		}
+		if !slices.Contains(out, int16(m)) { //nolint:gosec // ≤ 1440
+			out = append(out, int16(m)) //nolint:gosec // ≤ 1440
+		}
+	}
+	if len(out) > 5 {
+		return nil, httpx.Validation("eventReminders.minutes", "at most 5 reminders")
+	}
+	slices.SortFunc(out, func(a, b int16) int { return int(b) - int(a) })
+	return out, nil
 }
 
 // Custom status limits.
