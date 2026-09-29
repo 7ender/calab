@@ -33,7 +33,7 @@ type vector struct {
 		Private bool `json:"private"`
 		Guest   bool `json:"guest"`
 	} `json:"board"`
-	Expected    Bits `json:"expected"`
+	Expected Bits `json:"expected"`
 }
 
 func loadVectors(t *testing.T) []vector {

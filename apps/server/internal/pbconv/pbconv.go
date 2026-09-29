@@ -126,6 +126,8 @@ func roomTypeFromDB(s string) v1.RoomType {
 		return v1.RoomType_ROOM_TYPE_DM
 	case "notes":
 		return v1.RoomType_ROOM_TYPE_NOTES
+	case "task":
+		return v1.RoomType_ROOM_TYPE_TASK
 	}
 	return v1.RoomType_ROOM_TYPE_TEXT
 }

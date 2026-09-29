@@ -24,6 +24,8 @@ var ErrNoRoom = errors.New("perm: room not accessible")
 type Store interface {
 	GetMemberAccess(ctx context.Context, arg sqlc.GetMemberAccessParams) (sqlc.GetMemberAccessRow, error)
 	GetRoomAccess(ctx context.Context, arg sqlc.GetRoomAccessParams) (sqlc.GetRoomAccessRow, error)
+	GetBoardAccess(ctx context.Context, arg sqlc.GetBoardAccessParams) (sqlc.GetBoardAccessRow, error)
+	GetTaskRoomRef(ctx context.Context, roomID uuid.UUID) (sqlc.GetTaskRoomRefRow, error)
 }
 
 // RoomAccess is a user's resolved access to a room.
@@ -44,6 +46,11 @@ type RoomAccess struct {
 	Suspended bool
 	// Restricted: the room is restricted (ADR-0029): ADMINISTRATOR gives no bypass in it.
 	Restricted bool
+	// Task: the hidden comment room of a task (ADR-0042); Bits come from the board
+	// (TaskRoom), room overrides do not apply. TaskID / BoardID name them.
+	Task    bool
+	TaskID  uuid.UUID
+	BoardID uuid.UUID
 }
 
 // ok reports a resolved access (the zero value = no access).
@@ -58,11 +65,12 @@ type Resolver struct {
 	mu      sync.Mutex
 	members map[key]Member     // (workspace, user) -> member; Role "" = not a member
 	rooms   map[key]RoomAccess // (room, user) -> access; zero value = no access
+	boards  map[key]BoardAccess
 }
 
 // NewResolver returns an empty resolver.
 func NewResolver(s Store) *Resolver {
-	return &Resolver{store: s, members: map[key]Member{}, rooms: map[key]RoomAccess{}}
+	return &Resolver{store: s, members: map[key]Member{}, rooms: map[key]RoomAccess{}, boards: map[key]BoardAccess{}}
 }
 
 // RoleList zips the parallel role arrays of a query row.
@@ -129,6 +137,10 @@ func (r *Resolver) Room(ctx context.Context, roomID, userID uuid.UUID) (RoomAcce
 			acc = RoomAccess{}
 		case err != nil:
 			return RoomAccess{}, fmt.Errorf("perm: load room access: %w", err)
+		case row.Type == "task":
+			if acc, err = r.taskRoom(ctx, roomID, userID); err != nil {
+				return RoomAccess{}, err
+			}
 		case row.Type == "dm" || row.Type == "notes":
 			if slices.Contains(row.DmMembers, userID) {
 				acc = RoomAccess{Bits: ComputeDM(true), DM: true, Notes: row.Type == "notes", Members: row.DmMembers}
@@ -169,6 +181,7 @@ func (r *Resolver) Invalidate() {
 	r.mu.Lock()
 	clear(r.members)
 	clear(r.rooms)
+	clear(r.boards)
 	r.mu.Unlock()
 }
 

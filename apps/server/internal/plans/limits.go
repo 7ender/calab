@@ -28,6 +28,7 @@ type Limits struct {
 	Stickers        uint32 // live stickers over all its packs
 	Bots            uint32 // bots that are members of the workspace (ADR-0031)
 	AudioMaxKbps    uint32 // highest voice tier, kbps (docs/02 «Битрейт»)
+	Boards          uint32 // task boards of the workspace, live and archived (ADR-0042)
 }
 
 // Built-in defaults; PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS override them key by key.
@@ -39,7 +40,7 @@ var (
 		RoomMembers: 5, Members: 50, AudioMaxKbps: 16,
 		StreamMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, StreamMaxFPS: 15,
 		CameraMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, CameraMaxFPS: 15,
-		StreamsPerRoom: 1, StorageMB: 5 << 10, StickerPacks: 1, Stickers: 200, Bots: 1,
+		StreamsPerRoom: 1, StorageMB: 5 << 10, StickerPacks: 1, Stickers: 200, Bots: 1, Boards: 3,
 	}
 	// DefaultTeam: 50 in a room, 20 bots, 1 TiB of files (owner, 28.09); members, voice and
 	// video not limited by the plan.
@@ -59,6 +60,7 @@ const (
 	maxStickers       = 1_000_000
 	maxBots           = 1000
 	maxAudioKbps      = 64
+	maxBoards         = 50 // the hard cap of ADR-0042 §6
 )
 
 // audioTiers are the voice tiers a plan may cap at (docs/02 «Битрейт»); 0 = no cap.
@@ -96,6 +98,7 @@ type limitsJSON struct {
 	Stickers        *uint32 `json:"stickers,omitempty"`
 	Bots            *uint32 `json:"bots,omitempty"`
 	AudioMaxKbps    *uint32 `json:"audio_tier_max_kbps,omitempty"`
+	Boards          *uint32 `json:"boards,omitempty"`
 }
 
 // ParseLimits applies a JSON object over base: keys present replace the base value, absent
@@ -129,6 +132,7 @@ func ParseLimits(raw string, base Limits) (Limits, error) {
 	setU32(&l.Stickers, j.Stickers)
 	setU32(&l.Bots, j.Bots)
 	setU32(&l.AudioMaxKbps, j.AudioMaxKbps)
+	setU32(&l.Boards, j.Boards)
 	if j.StorageMB != nil {
 		l.StorageMB = *j.StorageMB
 	}
@@ -161,7 +165,7 @@ func (l Limits) MarshalJSON() ([]byte, error) {
 		RoomMembers: &l.RoomMembers, StreamMaxPreset: &sp, StreamMaxFPS: &l.StreamMaxFPS,
 		CameraMaxPreset: &cp, CameraMaxFPS: &l.CameraMaxFPS, StreamsPerRoom: &l.StreamsPerRoom,
 		StorageMB: &l.StorageMB, Members: &l.Members, StickerPacks: &l.StickerPacks, Stickers: &l.Stickers, Bots: &l.Bots,
-		AudioMaxKbps: &l.AudioMaxKbps,
+		AudioMaxKbps: &l.AudioMaxKbps, Boards: &l.Boards,
 	})
 	return bytes.TrimSpace(buf.Bytes()), err
 }
@@ -183,6 +187,7 @@ func (l Limits) Validate() error {
 	check(l.StickerPacks <= maxStickerPacks, "sticker_packs", maxStickerPacks)
 	check(l.Stickers <= maxStickers, "stickers", maxStickers)
 	check(l.Bots <= maxBots, "bots", maxBots)
+	check(l.Boards <= maxBoards, "boards", maxBoards)
 	if !audioTiers[l.AudioMaxKbps] {
 		errs = append(errs, fmt.Errorf("plan limits: audio_tier_max_kbps must be 0, 8, 16, 32 or %d", maxAudioKbps))
 	}
@@ -200,7 +205,7 @@ func (l Limits) Proto() *v1.PlanLimits {
 		RoomMembers: l.RoomMembers, StreamMaxPreset: l.StreamMaxPreset, StreamMaxFps: l.StreamMaxFPS,
 		CameraMaxPreset: l.CameraMaxPreset, CameraMaxFps: l.CameraMaxFPS, StreamsPerRoom: l.StreamsPerRoom,
 		StorageMb: l.StorageMB, Members: l.Members, StickerPacks: l.StickerPacks, Stickers: l.Stickers, Bots: l.Bots,
-		AudioTierMaxKbps: l.AudioMaxKbps,
+		AudioTierMaxKbps: l.AudioMaxKbps, Boards: l.Boards,
 	}
 }
 
@@ -210,7 +215,7 @@ func FromProto(p *v1.PlanLimits) Limits {
 		RoomMembers: p.GetRoomMembers(), StreamMaxPreset: p.GetStreamMaxPreset(), StreamMaxFPS: p.GetStreamMaxFps(),
 		CameraMaxPreset: p.GetCameraMaxPreset(), CameraMaxFPS: p.GetCameraMaxFps(), StreamsPerRoom: p.GetStreamsPerRoom(),
 		StorageMB: p.GetStorageMb(), Members: p.GetMembers(), StickerPacks: p.GetStickerPacks(), Stickers: p.GetStickers(), Bots: p.GetBots(),
-		AudioMaxKbps: p.GetAudioTierMaxKbps(),
+		AudioMaxKbps: p.GetAudioTierMaxKbps(), Boards: p.GetBoards(),
 	}
 }
 
