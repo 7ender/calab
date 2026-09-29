@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/binary"
 	"math"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -49,11 +48,6 @@ func soundUpload(t *testing.T, u *user, wsID, name, mime string, data []byte) st
 		t.Fatalf("upload %s: %d", name, st)
 	}
 	return f.GetId()
-}
-
-func hasFFmpeg() bool {
-	_, err := exec.LookPath("ffmpeg")
-	return err == nil
 }
 
 // insertSound adds a library row straight to the database (tests of play and of the limit do
@@ -106,18 +100,18 @@ func TestSoundsLibrary(t *testing.T) {
 	b.must(403, "POST", base, create("Tss", "🥁", src), nil)
 	b.must(200, "GET", base, nil, nil)
 
-	if !hasFFmpeg() {
-		o.must(503, "POST", base, create("Tss", "🥁", src), nil)
-		t.Skip("no ffmpeg on this host: conversion is not tested")
+	gb := dialGW(t)
+	gb.identify(bob.token)
+	var cr v1.SoundResponse
+	// Conversion needs ffmpeg ≥ 7.1 with ffprobe on the host (the api image and CI have 8.0).
+	if st := o.do("POST", base, create(" Ba dum tss ", "🥁", src), &cr); st == 503 {
+		t.Skip("no ffmpeg ≥ 7.1 on this host: conversion is not tested")
+	} else if st != 201 {
+		t.Fatalf("create: %d", st)
 	}
 	// A file that only looks like audio.
 	junk := soundUpload(t, o, wid, "junk.wav", "audio/wav", append([]byte("RIFF\x24\x00\x00\x00WAVE"), bytes.Repeat([]byte{7}, 300)...))
 	o.must(422, "POST", base, create("Tss", "🥁", junk), nil)
-
-	gb := dialGW(t)
-	gb.identify(bob.token)
-	var cr v1.SoundResponse
-	o.must(201, "POST", base, create(" Ba dum tss ", "🥁", src), &cr)
 	tss := cr.GetSound()
 	if tss.GetName() != "Ba dum tss" || tss.GetEmoji() != "🥁" || tss.GetWorkspaceId() != wid || tss.GetFileId() == src ||
 		tss.GetDurationMs() < 950 || tss.GetDurationMs() > 1050 || tss.GetPosition() != 0 {

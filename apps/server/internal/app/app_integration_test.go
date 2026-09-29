@@ -153,7 +153,9 @@ func run(m *testing.M) int {
 		PublicAppURLs:              []string{"https://app.example.com", "https://alias.example.org"},
 		AuthRateBurst:              5,
 		AuthRatePerMinute:          1,
-		MaxFileSizeMB:              1, // small, so the size limit is testable
+		MaxFileSizeMB:              1,        // small, so the size limit is testable
+		FFmpegPath:                 "ffmpeg", // HEIC conversion: tested when ffmpeg ≥ 7.1 is on PATH
+		FFprobePath:                "ffprobe",
 		StorageDriver:              "fs",
 		StoragePath:                storageDir,
 		HeartbeatInterval:          41 * time.Second,
@@ -177,7 +179,6 @@ func run(m *testing.M) int {
 		RecordingMaxConcurrent: 2,
 		RecordingsPath:         recordDir,
 		RecordingEgressDir:     "/out",
-		FFmpegPath:             "ffmpeg", // soundboard (ADR-0036); its tests skip conversion without one
 	}
 	cfg.TrustedProxies = mustPrefixes("127.0.0.1/32", "::1/128")
 	if err := cfg.Validate(); err != nil {

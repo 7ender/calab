@@ -57,6 +57,7 @@ const api: CalabaApi = {
     download: (a) => ipcRenderer.invoke(IPC.filesDownload, a),
     onProgress: (cb) => on(IPC.filesProgress, cb),
     pathOf: (f) => webUtils.getPathForFile(f),
+    decodeImage: (bytes, maxSide) => ipcRenderer.invoke(IPC.filesDecodeImage, { bytes, maxSide }),
   },
   capture: {
     listSources: (thumbs) => ipcRenderer.invoke(IPC.captureListSources, thumbs),

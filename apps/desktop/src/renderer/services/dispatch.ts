@@ -296,6 +296,10 @@ export function applyDispatch(ev: DispatchEvent): void {
       // user was looking at the room they were moved out of.
       if (voice.onMoved(e.value) && activeRoomId() === e.value.fromRoomId) useUi.getState().openRoom(e.value.workspaceId, e.value.toRoomId);
       return;
+    case 'voiceDisconnected':
+      // The user joined voice on another device (docs/05 «Несколько устройств»): this one leaves.
+      voice.onServerDisconnect(e.value);
+      return;
     case 'voiceStateUpdate':
       if (e.value.state) {
         useWorkspaces.getState().setVoiceState(e.value.state);

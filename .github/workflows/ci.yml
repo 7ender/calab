@@ -139,8 +139,13 @@ jobs:
             livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3 --dev --bind 0.0.0.0
           for _ in $(seq 1 30); do curl -sf http://localhost:7880 >/dev/null && exit 0; sleep 1; done
           docker logs livekit; exit 1   # never run the integration tests against a LiveKit that did not start
-      - name: ffmpeg (soundboard conversion, ADR-0036; the api image has its own static build)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+      - name: ffmpeg 8.0 — the api image's static build (HEIC conversion, soundboard ADR-0036); apt has 6.x
+        run: |
+          id=$(docker create mwader/static-ffmpeg:8.0@sha256:415a41fa3167b890b9703d20bd0f00bf1e9dab8a4b6c27fef1445b2bf5f1ab4a)
+          sudo docker cp "$id:/ffmpeg" /usr/local/bin/ffmpeg
+          sudo docker cp "$id:/ffprobe" /usr/local/bin/ffprobe
+          docker rm "$id" >/dev/null
+          ffmpeg -hide_banner -version | head -1
       - run: go test -race -tags integration -count=1 ./...
         env:
           TEST_DATABASE_URL: postgres://calaba:calaba@localhost:5432/calaba

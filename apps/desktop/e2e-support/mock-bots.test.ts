@@ -68,15 +68,20 @@ describe('bots (ADR-0031)', () => {
   });
 
   it('adds a bot to another workspace by username; the plan limit answers 409 PLAN_LIMIT', async () => {
-    const vera = await login('vera@calaba.test'); // owner of «Дизайн» (Free: 2 bots)
+    const vera = await login('vera@calaba.test'); // owner of «Дизайн» (Free: 1 bot, docs/09 #95; no bots yet)
     const add = (username: string): Promise<Response> =>
       api(vera, `/api/workspaces/${IDS.workspaces.design}/bots/add`, { method: 'POST', body: JSON.stringify({ username }) });
-    expect((await add('weather_bot')).status).toBe(201);
-    expect((await add('weather_bot')).status).toBe(409);
-    expect((await add('deploy_bot')).status).toBe(201);
+    const reason = async (r: Response): Promise<string | undefined> => ((await r.json()) as { reason?: string }).reason;
+    expect((await add('weather_bot')).status).toBe(201); // under the limit
+    const again = await add('weather_bot'); // already a member: a plain conflict, not the plan
+    expect(again.status).toBe(409);
+    expect(await reason(again)).toBeUndefined();
+    const capped = await add('deploy_bot'); // at the cap
+    expect(capped.status).toBe(409);
+    expect(await reason(capped)).toBe('PLAN_LIMIT');
     const full = await api(vera, `/api/workspaces/${IDS.workspaces.design}/bots`, { method: 'POST', body: JSON.stringify({ displayName: 'Ещё', username: 'more_bot' }) });
     expect(full.status).toBe(409);
-    expect(((await full.json()) as { reason?: string }).reason).toBe('PLAN_LIMIT');
+    expect(await reason(full)).toBe('PLAN_LIMIT');
   });
 
   it('sets and clears a bot avatar (docs/09 #87); managers only, images only', async () => {

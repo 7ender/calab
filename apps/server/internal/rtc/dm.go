@@ -102,8 +102,14 @@ func (s *Service) joinDM(w http.ResponseWriter, r *http.Request, roomID uuid.UUI
 	if err != nil {
 		return err
 	}
-	pending, joinedAt, err := s.recordPending(ctx, wsRoom{Room: row, WorkspaceID: roomID}, id.UserID, id.SessionID, admission{})
-	if err != nil {
+	var (
+		pending  bool
+		joinedAt int64
+	)
+	if err := s.joinExclusive(ctx, id.UserID, id.SessionID, func() (err error) {
+		pending, joinedAt, err = s.recordPending(ctx, wsRoom{Room: row, WorkspaceID: roomID}, id.UserID, id.SessionID, admission{})
+		return err
+	}); err != nil {
 		return err
 	}
 	if pending {
@@ -126,6 +132,9 @@ func (s *Service) dmParticipantJoined(ctx context.Context, rid, uid, sid uuid.UU
 		} else if revoked {
 			reason = "session revoked"
 		}
+	}
+	if reason == "" && s.superseded(ctx, rid, rid, sid) {
+		reason = "the user joined voice from another device"
 	}
 	if reason == "" {
 		ok, err := s.inCall(ctx, rid, uid)

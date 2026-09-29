@@ -81,9 +81,13 @@ type Config struct {
 	MaxDevicesPerUser int           `env:"GATEWAY_MAX_SESSIONS_PER_USER" envDefault:"5"`
 
 	// File bytes (ADR-0011): fs = local directory; s3 is planned.
-	StorageDriver  string `env:"STORAGE_DRIVER" envDefault:"fs"`
-	StoragePath    string `env:"STORAGE_PATH" envDefault:"./data/files"`
-	MaxFileSizeMB  int64  `env:"MAX_FILE_SIZE_MB" envDefault:"50"`
+	StorageDriver string `env:"STORAGE_DRIVER" envDefault:"fs"`
+	StoragePath   string `env:"STORAGE_PATH" envDefault:"./data/files"`
+	MaxFileSizeMB int64  `env:"MAX_FILE_SIZE_MB" envDefault:"50"`
+	// HEIC → JPEG for clients without a HEIF decoder (POST /api/files/convert); ffmpeg ≥ 7.1.
+	// Not found → the endpoint answers 501 and the client says HEIC is not supported.
+	FFmpegPath     string `env:"FFMPEG_PATH" envDefault:"ffmpeg"`
+	FFprobePath    string `env:"FFPROBE_PATH" envDefault:"ffprobe"`
 	MigrateOnStart bool   `env:"MIGRATE_ON_START" envDefault:"true"`
 
 	// Plans (ADR-0024). JSON limits over the built-in defaults, e.g.
@@ -114,10 +118,6 @@ type Config struct {
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
-	// Soundboard uploads (ADR-0036) are converted to Ogg/Opus by this ffmpeg binary (the api
-	// image ships a minimal static build at /usr/local/bin/ffmpeg); a name is looked up in PATH.
-	// Without it, adding a workspace sound answers 503.
-	FFmpegPath string `env:"FFMPEG_PATH" envDefault:"ffmpeg"`
 
 	// Mail limits: per recipient address and for the whole server, per hour.
 	MailPerAddressPerHour int `env:"MAIL_PER_ADDRESS_PER_HOUR" envDefault:"3"`

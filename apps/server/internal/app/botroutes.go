@@ -147,6 +147,8 @@ var botRoutes = map[string]botAccess{
 	"POST /api/workspaces/{id}/files": botAllow,
 	"GET /api/files/{id}":             botAllow,
 	"GET /api/files/{id}/thumbnail":   botAllow,
+	// HEIC → JPEG helper for clients without a HEIF decoder (docs/02): not part of the bot API
+	"POST /api/files/convert": botDeny,
 	// stickers (ADR-0030, ADR-0031 §3): a bot sends stickers, installs packs for itself and,
 	// with MANAGE_STICKERS, manages the packs of the workspace (the handlers check the right)
 	"GET /api/workspaces/{id}/sticker-packs":     botAllow,

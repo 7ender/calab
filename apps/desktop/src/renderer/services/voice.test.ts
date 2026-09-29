@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { VoiceDisconnectReason } from '@calaba/protocol';
 
 /**
  * VoiceEngine with LiveKit, the API and the mic pipeline mocked (review test gaps: H1 room
@@ -1484,5 +1485,85 @@ describe('stream codec (ADR-0032)', () => {
       expect(startScreenShare).toHaveBeenCalledTimes(1);
       expect(startScreenShare.mock.calls[0]?.[1]).toMatchObject({ codec, preset: 2, contentHint: 'detail' });
     }
+  });
+});
+
+describe('VOICE_DISCONNECTED (docs/05 «Несколько устройств»)', () => {
+  const ev = (over: Partial<Parameters<Engine['onServerDisconnect']>[0]> = {}): Parameters<Engine['onServerDisconnect']>[0] => ({
+    roomId: 'A',
+    sessionId: 'mine',
+    reason: VoiceDisconnectReason.OTHER_DEVICE,
+    ...over,
+  });
+  beforeEach(async () => {
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ sessionId: 'mine' });
+  });
+  const toasts = async (): Promise<string[]> => {
+    const { toast } = await import('../stores/toasts');
+    return vi.mocked(toast.info).mock.calls.map((c) => c[0]);
+  };
+
+  it('my device: out of voice at once, the island idle, a toast, no reconnect attempt', async () => {
+    await voice.join('A', 'ws');
+    expect(voice.onServerDisconnect(ev())).toBe(true);
+    await settle();
+    const v = useVoice.getState();
+    expect(v.phase).toBe('idle');
+    expect(v.roomId).toBeNull();
+    expect(voice.currentRoomId).toBeNull();
+    expect(voice.takenOverRoom).toBe('A');
+    expect(await toasts()).toEqual(['Вы подключились с другого устройства']);
+    // LiveKit dropping the (already torn down) room afterwards changes nothing.
+    FakeRoom.all[0]?.emit('Disconnected', 'PARTICIPANT_REMOVED');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice).toHaveBeenCalledTimes(1);
+    expect(useVoice.getState().phase).toBe('idle');
+    expect(await toasts()).toEqual(['Вы подключились с другого устройства']);
+    // The next own join clears the mark.
+    await voice.join('B', 'ws');
+    expect(voice.takenOverRoom).toBeNull();
+  });
+
+  it('another device of mine, or a room I already left: ignored', async () => {
+    await voice.join('A', 'ws');
+    expect(voice.onServerDisconnect(ev({ sessionId: 'other' }))).toBe(false);
+    expect(voice.onServerDisconnect(ev({ roomId: 'B' }))).toBe(false);
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A' });
+    expect(voice.takenOverRoom).toBeNull();
+  });
+
+  it('LiveKit removal first: the event within the grace decides — no moderator toast, no rejoin', async () => {
+    await voice.join('A', 'ws');
+    FakeRoom.all[0]?.emit('Disconnected', 'PARTICIPANT_REMOVED');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(voice.onServerDisconnect(ev())).toBe(true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(useVoice.getState().phase).toBe('idle');
+    expect(await toasts()).toEqual(['Вы подключились с другого устройства']);
+    expect(joinVoice).toHaveBeenCalledTimes(1);
+  });
+
+  it('LiveKit removal without the event: a moderator — the toast and the leave after the grace', async () => {
+    await voice.join('A', 'ws');
+    FakeRoom.all[0]?.emit('Disconnected', 'PARTICIPANT_REMOVED');
+    await settle();
+    expect(await toasts()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(useVoice.getState().phase).toBe('idle');
+    expect(await toasts()).toEqual(['Модератор отключил вас от голосовой комнаты']);
+    expect(voice.takenOverRoom).toBeNull();
+  });
+
+  it('during a reconnect cycle: the cycle stops, nothing rejoins', async () => {
+    await voice.join('A', 'ws');
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await settle();
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    expect(voice.onServerDisconnect(ev())).toBe(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice).toHaveBeenCalledTimes(1);
+    expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
   });
 });

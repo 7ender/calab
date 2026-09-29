@@ -42,23 +42,8 @@ var (
 // IsBadAudio reports a source that is not a usable audio file (422, not a server error).
 func IsBadAudio(err error) bool { return errors.Is(err, errBadAudio) }
 
-// One conversion at a time bounds CPU and memory: sounds are added rarely and take ~0.2 s.
-var soundSlot = make(chan struct{}, 1)
-
-// SetFFmpeg sets the ffmpeg binary (FFMPEG_PATH): a path, or a name looked up in PATH. An
-// empty or missing one leaves sounds unavailable (ErrNoFFmpeg).
-func (s *Service) SetFFmpeg(path string) {
-	s.ffmpeg = ""
-	if path == "" {
-		return
-	}
-	if p, err := exec.LookPath(path); err == nil {
-		s.ffmpeg = p
-	}
-}
-
-// HasFFmpeg reports whether sounds can be converted.
-func (s *Service) HasFFmpeg() bool { return s.ffmpeg != "" }
+// The ffmpeg of the HEIC converter (convert.go: FFMPEG_PATH, found at start) makes the clips, in
+// its single slot — one ffmpeg at a time bounds CPU and memory; sounds take ~0.2 s.
 
 // SniffAudio reports whether head starts an Ogg stream, a RIFF/WAVE file or an MP3 (an ID3v2
 // tag or an MPEG audio frame sync). It is a cheap filter before ffmpeg, not a validation.
@@ -134,7 +119,7 @@ func (s *Service) PrepareSound(ctx context.Context, src sqlc.File) (*PreparedFil
 	if src.WorkspaceID == nil || src.Size > MaxSoundSourceBytes {
 		return nil, 0, errBadAudio
 	}
-	if s.ffmpeg == "" {
+	if s.conv == nil {
 		return nil, 0, ErrNoFFmpeg
 	}
 	rc, _, err := s.store.Get(ctx, src.Key)
@@ -174,12 +159,14 @@ func (s *Service) PrepareSound(ctx context.Context, src sqlc.File) (*PreparedFil
 // convertSound runs ffmpeg on data in a private temp dir, in the single conversion slot, within
 // soundTimeout. A failing conversion is errBadAudio (the input is what fails, as a rule).
 func (s *Service) convertSound(ctx context.Context, data []byte) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(ctx, soundTimeout)
+	defer cancel()
 	select {
-	case soundSlot <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	case s.conv.slot <- struct{}{}:
+	case <-cctx.Done():
+		return nil, cctx.Err()
 	}
-	defer func() { <-soundSlot }()
+	defer func() { <-s.conv.slot }()
 	dir, err := os.MkdirTemp("", "calaba-sound-")
 	if err != nil {
 		return nil, err
@@ -189,9 +176,7 @@ func (s *Service) convertSound(ctx context.Context, data []byte) ([]byte, error)
 	if err := os.WriteFile(in, data, 0o600); err != nil {
 		return nil, err
 	}
-	cctx, cancel := context.WithTimeout(ctx, soundTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(cctx, s.ffmpeg, SoundArgs(in, out)...) //nolint:gosec // FFMPEG_PATH is operator configuration
+	cmd := exec.CommandContext(cctx, s.conv.ffmpeg, SoundArgs(in, out)...) //nolint:gosec // FFMPEG_PATH is operator configuration
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

@@ -19,7 +19,17 @@ const act = vi.fn((_id: string, _a: string): Promise<unknown> => Promise.resolve
 vi.mock('../lib/api/endpoints', () => ({ api: { calls: { start: (id: string) => start(id), act: (id: string, a: string) => act(id, a) } } }));
 const join = vi.fn((_r: string, _w: string, _o?: unknown) => Promise.resolve());
 const leave = vi.fn(() => Promise.resolve());
-vi.mock('./voice', () => ({ voice: { join: (r: string, w: string, o?: unknown) => join(r, w, o), leave: () => leave() } }));
+/** voice.takenOverRoom: the room the server took this device out of for another device. */
+const voiceState = { takenOverRoom: null as string | null };
+vi.mock('./voice', () => ({
+  voice: {
+    join: (r: string, w: string, o?: unknown) => join(r, w, o),
+    leave: () => leave(),
+    get takenOverRoom() {
+      return voiceState.takenOverRoom;
+    },
+  },
+}));
 const startRing = vi.fn((_n: string) => undefined);
 const stopRing = vi.fn(() => undefined);
 vi.mock('../lib/sounds', () => ({ startRing: (n: string) => startRing(n), stopRing: () => stopRing() }));
@@ -55,6 +65,7 @@ beforeEach(() => {
   setCall({ ...IDLE, peerId: '', since: null, collapsed: false, busy: false });
   useVoice.setState({ roomId: null, workspaceId: null, call: false });
   usePrefs.getState().setPrefs({ presence: PresenceStatus.ONLINE });
+  voiceState.takenOverRoom = null;
 });
 
 describe('call service', () => {
@@ -102,6 +113,19 @@ describe('call service', () => {
     await flush();
     expect(act).toHaveBeenCalledWith('c1', 'hangup');
     expect(useCall.getState().phase).toBe('idle');
+  });
+
+  it('taken out for another device of mine (VOICE_DISCONNECTED): the call is let go here, not hung up', async () => {
+    applyCallEvent({ kind: 'placed', call: outgoing(CallState.RINGING) });
+    applyCallEvent({ kind: 'state', call: outgoing(CallState.ACTIVE) });
+    useVoice.setState({ roomId: 'dm1', workspaceId: '', call: true });
+    voiceState.takenOverRoom = 'dm1';
+    useVoice.setState({ roomId: null, workspaceId: null, call: false });
+    await flush();
+    expect(act).not.toHaveBeenCalled();
+    expect(leave).not.toHaveBeenCalled();
+    expect(useCall.getState().phase).toBe('idle');
+    expect(stopRing).toHaveBeenCalled();
   });
 
   it('startCall: opens the DM, places the call, rings back; declined → toast', async () => {

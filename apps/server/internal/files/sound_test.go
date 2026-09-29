@@ -99,11 +99,11 @@ func wav(seconds float64) []byte {
 // TestConvertSound runs the real ffmpeg (skipped without one): a WAV becomes an Ogg/Opus clip
 // cut to 5 s; a file that only looks like audio is errBadAudio.
 func TestConvertSound(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
+	ff, err := exec.LookPath("ffmpeg")
+	if err != nil {
 		t.Skip("no ffmpeg on this host")
 	}
-	s := &Service{}
-	s.SetFFmpeg("ffmpeg")
+	s := &Service{conv: &Converter{ffmpeg: ff, slot: make(chan struct{}, 1)}}
 	for _, c := range []struct {
 		seconds  float64
 		min, max int64

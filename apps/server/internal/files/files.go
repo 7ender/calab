@@ -42,8 +42,10 @@ import (
 	"github.com/calaba/calaba/server/internal/redisx"
 )
 
-// MaxAvatarBytes caps avatar uploads (they are user-scoped and not quota-counted).
-const MaxAvatarBytes = 5 << 20
+// MaxAvatarBytes caps avatar uploads (they are user-scoped and not quota-counted). Clients
+// after 0.8.0 upload a 512×512 WebP (≈ 30–80 KB; JPEG fallback ≈ 100 KB), never the original
+// photo (docs/02 «Изображения»); older clients sending a phone photo get 413 and must update.
+const MaxAvatarBytes = 512 << 10
 
 // Voice messages (docs/09 #43, docs/02 «Голосовые сообщения»): Ogg/Opus mono ~24 kbit/s,
 // ≤ 5 min (≈ 0.9 MB); the byte cap leaves room for VBR peaks and the Ogg overhead.
@@ -66,7 +68,7 @@ type Service struct {
 	maxTotal int64               // server-wide cap on stored bytes (STORAGE_MAX_TOTAL_BYTES)
 	limiter  *redisx.RateLimiter // uploads per user
 	plans    *plans.Service      // workspace plan storage limit (ADR-0024); nil = none
-	ffmpeg   string              // soundboard conversion (ADR-0036); "" = unavailable
+	conv     *Converter          // HEIC → JPEG (POST /api/files/convert); nil = 501
 }
 
 // SetPlans sets the plan resolver (storage_mb caps the workspace quota).
@@ -129,6 +131,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("POST /api/workspaces/{id}/files", wrap(httpx.HandlerFunc(s.upload)))
 	mux.Handle("POST /api/dms/{id}/files", wrap(httpx.HandlerFunc(s.uploadDM)))
 	mux.Handle("POST /api/me/avatar", wrap(httpx.HandlerFunc(s.avatar)))
+	mux.Handle("POST /api/files/convert", wrap(httpx.HandlerFunc(s.convert)))
 	mux.Handle("GET /api/files/{id}", wrap(httpx.HandlerFunc(s.download)))
 	mux.Handle("GET /api/files/{id}/thumbnail", wrap(httpx.HandlerFunc(s.thumbnail)))
 }
@@ -175,8 +178,11 @@ func (s *Service) quota(ctx context.Context, ws sqlc.Workspace) (quotaLimit, int
 }
 
 func tooLarge(limit int64) error {
-	return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_TOO_LARGE,
-		fmt.Sprintf("file exceeds %d MB", limit>>20))
+	size := fmt.Sprintf("%d MB", limit>>20)
+	if limit < 1<<20 {
+		size = fmt.Sprintf("%d KB", limit>>10)
+	}
+	return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_TOO_LARGE, "file exceeds "+size)
 }
 
 // limitHash counts and hashes bytes and fails once more than limit bytes were read.
