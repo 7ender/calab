@@ -28,26 +28,30 @@ export function WorkspaceRail(): ReactNode {
   const order = useWorkspaces((s) => s.order);
   const open = useUi((s) => s.openDialog);
 
+  // The wrapper carries the island fade (styles.css `.island-fade`): a pseudo-element inside the
+  // scroller would scroll away with the icons.
   return (
-    <nav
-      className="flex w-[var(--rail-width)] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden pt-3"
-      // The bottom island (AppShell) spans the rail too: the icons end above it.
-      style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
-      aria-label={t('ws.list')}
-    >
-      <HomeItem />
-      <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden />
-      {order.map((id) => (
-        <RailItem key={id} id={id} />
-      ))}
-      {order.length ? <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden /> : null}
-      <RailAction label={t('ws.create')} onClick={() => open({ kind: 'create-workspace' })}>
-        <Plus className="size-6" strokeWidth={1.75} />
-      </RailAction>
-      <RailAction label={t('shell.explore')} onClick={() => open({ kind: 'join-workspace' })}>
-        <Compass className="size-6" strokeWidth={1.75} />
-      </RailAction>
-    </nav>
+    <div className="island-fade island-fade-rail flex w-[var(--rail-width)] shrink-0 flex-col">
+      <nav
+        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden pt-3"
+        // The bottom island (AppShell) spans the rail too: the icons end above it.
+        style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
+        aria-label={t('ws.list')}
+      >
+        <HomeItem />
+        <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden />
+        {order.map((id) => (
+          <RailItem key={id} id={id} />
+        ))}
+        {order.length ? <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden /> : null}
+        <RailAction label={t('ws.create')} onClick={() => open({ kind: 'create-workspace' })}>
+          <Plus className="size-6" strokeWidth={1.75} />
+        </RailAction>
+        <RailAction label={t('shell.explore')} onClick={() => open({ kind: 'join-workspace' })}>
+          <Compass className="size-6" strokeWidth={1.75} />
+        </RailAction>
+      </nav>
+    </div>
   );
 }
 

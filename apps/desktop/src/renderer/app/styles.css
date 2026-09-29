@@ -339,6 +339,26 @@ body {
 .mat-toolbar {
   background: var(--color-toolbar);
 }
+/* Solid fade under the bottom island (docs/08 «Нижний островок»): the rail and the room / DM
+   column end in their own colour below and beside the island, so no scrolled row shows in the
+   8 px margins around it. `--island-height` is published by BottomIsland on the shared parent;
+   without an island the fade collapses to 0. Plain gradient, no backdrop-filter; z 1 keeps it
+   over the list and under the island (z-sticky). */
+.island-fade {
+  position: relative;
+}
+.island-fade::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: calc(var(--island-height, -16px) + 16px);
+  background: linear-gradient(to top, var(--island-fade-color, var(--color-sidebar)) 70%, transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+.island-fade-rail {
+  --island-fade-color: var(--color-rail);
+}
 /* macOS pop-up button chevron (↕, 10 px, 8 px from the right edge). In CSS, not a Tailwind
    arbitrary value: the SVG has spaces, which a class attribute would split. */
 .select-chevron {
