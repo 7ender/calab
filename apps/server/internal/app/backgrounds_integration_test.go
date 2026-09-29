@@ -4,6 +4,7 @@ package app_test
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -169,4 +170,35 @@ func TestBackgroundsLibrary(t *testing.T) {
 		t.Fatalf("deleted background's picture for a member: %d", st)
 	}
 	o.must(201, "POST", base, &v1.CreateBackgroundRequest{Name: "20th again", FileId: small}, nil)
+
+	// Orphan cleanup (security review): live background pictures stay, the deleted one's picture
+	// and the source uploads go, and the workspace quota equals the bytes of its files.
+	ctx := context.Background()
+	if _, err := testDB.Pool.Exec(ctx, "UPDATE files SET created_at = now() - interval '25 hours' WHERE workspace_id = $1", wid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testApp.Files.CleanupOrphans(ctx); err != nil {
+		t.Fatal(err)
+	}
+	bob.must(200, "GET", base, nil, &list)
+	if n := len(list.GetBackgrounds()); n != 20 {
+		t.Fatalf("after cleanup: %d", n)
+	}
+	for _, b := range list.GetBackgrounds() {
+		if st := fileStatus(t, bob, b.GetFileId()); st != 200 {
+			t.Fatalf("live background %s after cleanup: %d", b.GetId(), st)
+		}
+	}
+	for _, id := range []string{pic, src, small} {
+		if st := fileStatus(t, o, id); st != 404 {
+			t.Fatalf("orphan %s after cleanup: %d", id, st)
+		}
+	}
+	var used, sum int64
+	if err := testDB.Pool.QueryRow(ctx, "SELECT storage_used_bytes, (SELECT coalesce(sum(size), 0)::bigint FROM files WHERE workspace_id = $1) FROM workspaces WHERE id = $1", wid).Scan(&used, &sum); err != nil {
+		t.Fatal(err)
+	}
+	if used != sum {
+		t.Fatalf("workspace quota %d, files %d", used, sum)
+	}
 }
