@@ -24,6 +24,9 @@
 | Роли: создать / править / порядок / удалить | `MANAGE_ROLES` ws, только ниже своей старшей | `roles.go` (`above`, `checkGrant`) | `canCreateRole`, `canEditRole`, `editableBits` |
 | Назначить / снять роль | `MANAGE_ROLES` ws; `admin` — только владелец | `setMemberRoles` | `canAssignRole`, `roleToggles` |
 | Стикерпаки: создать / править / загрузить / удалить (ADR-0030) | `MANAGE_STICKERS` ws | `stickers.manager` | вкладка «Стикеры» (`can(ws,'MANAGE_STICKERS')`) |
+| Саундборд пространства (ADR-0036): добавить / изменить (название, эмодзи, файл, порядок) / удалить | `MANAGE_STICKERS` ws («Стикеры и звуки»); исходный файл — своя загрузка в это пространство (не стикер, бейдж, фон или звук); бот-токен — 403 | `sounds.manager` | вкладка «Звуки» (`can(ws,'MANAGE_STICKERS')`) |
+| Список звуков, клип звука | участник пространства (и гость), бот | `sounds.list`, `files.CanRead` (`IsWorkspaceSound`) | поповер «Звуки» |
+| Проиграть звук в комнату | подключён к звонку этой комнаты (человек, гость или бот); серверный мьют не мешает; 1 / 2 с на пользователя, 5 / 10 с на комнату | `sounds.play` | кнопка «Звуки» в островке (только в голосе) |
 | Установить пак, отправить стикер | не гость пространства пака; в комнате — `SEND_MESSAGES` room, в DM — оба не гости | `stickers.install`, `messages.sticker` | `packUsable` |
 | Удалить workspace | владелец | `workspaces.delete` | вкладка «Опасная зона» |
 | Читать, писать, реакции | `VIEW_ROOM`, `SEND_MESSAGES` room | `messages` | Composer, MessageActions |

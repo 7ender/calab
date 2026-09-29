@@ -125,6 +125,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `POST /api/rooms/{id}/stream/request` · `…/camera/request` · `…/camera/stop` | screen share, camera | `STREAM` / `VIDEO` |
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | own mute/deafen, call status | in the call |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | voice moderation | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
+| `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call; managing sounds — 403 |
 | stickers: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | see [Stickers](#stickers-over-the-api) | member / `MANAGE_STICKERS` |
 | rooms, categories, roles, members, bans (`POST/PATCH/DELETE …`) | workspace management | `MANAGE_ROOM`, `MANAGE_ROLES`, `MANAGE_WORKSPACE`, … |
 
@@ -233,6 +234,7 @@ JSON frames (`?encoding=json`):
 | `dmCreate` | a new DM with the bot |
 | `typingStart` | "is typing" — only for rooms in `SUBSCRIBE { roomIds }` |
 | `stickerPackCreate/Update/Delete` | the workspace's sticker packs |
+| `soundCreate/Update/Delete` · `soundPlay` | the workspace's soundboard; `soundPlay` only while the bot is in the room's call |
 | `botCreate/Update/Delete` | the workspace's bots — only with `MANAGE_WORKSPACE` |
 
 A bot can also send `TYPING { roomId }` ("is typing", at most once per 3 s per room), `SUBSCRIBE { roomIds }`

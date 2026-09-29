@@ -43,20 +43,39 @@ export function SoundboardButton({ className, testId = 'soundboard-button' }: { 
           </button>
         </Popover.Trigger>
       </Tip>
-      <Popover.Portal>
-        <Popover.Content
-          side="top"
-          align="start"
-          sideOffset={8}
-          collisionPadding={16}
-          aria-label={t('snd.title')}
-          data-testid="soundboard"
-          className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(440px,var(--radix-popover-content-available-height))] w-[360px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-[min(70dvh,520px)]"
-        >
-          <SoundboardPanel onSettings={() => setOpen(false)} />
-        </Popover.Content>
-      </Popover.Portal>
+      <SoundboardContent onClose={() => setOpen(false)} />
     </Popover.Root>
+  );
+}
+
+/**
+ * The same panel opened from elsewhere (the phone strip's «Ещё» in push-to-talk mode, where the
+ * strip has no room for one more button): anchored to `children`.
+ */
+export function SoundboardAnchored({ open, onOpenChange, children }: { open: boolean; onOpenChange: (v: boolean) => void; children: ReactNode }): ReactNode {
+  return (
+    <Popover.Root open={open} onOpenChange={onOpenChange} modal={false}>
+      <Popover.Anchor asChild>{children}</Popover.Anchor>
+      <SoundboardContent onClose={() => onOpenChange(false)} />
+    </Popover.Root>
+  );
+}
+
+function SoundboardContent({ onClose }: { onClose: () => void }): ReactNode {
+  return (
+    <Popover.Portal>
+      <Popover.Content
+        side="top"
+        align="start"
+        sideOffset={8}
+        collisionPadding={16}
+        aria-label={t('snd.title')}
+        data-testid="soundboard"
+        className="mat-popover dense anim-in z-[var(--z-popover)] flex h-[min(440px,var(--radix-popover-content-available-height))] w-[360px] flex-col overflow-hidden rounded-[var(--radius-panel)] mobile:h-[min(70dvh,520px)]"
+      >
+        <SoundboardPanel onSettings={onClose} />
+      </Popover.Content>
+    </Popover.Portal>
   );
 }
 
