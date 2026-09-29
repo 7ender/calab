@@ -1,5 +1,5 @@
 import type { PermissionBits, Room } from '@calaba/protocol';
-import { ArrowDown, Hash, Volume2 } from 'lucide-react';
+import { ArrowDown, Hash, NotebookText, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { MessageKind, RoomType } from '@calaba/protocol';
@@ -19,6 +19,7 @@ import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
 import { Avatar } from '../../components/Avatar';
 import { useDms } from '../../stores/dms';
+import { useNotes } from '../../stores/notes';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 
 const START_INDEX = 1_000_000;
@@ -352,6 +353,7 @@ const FALLBACK_META: RowMeta = { day: false, isNew: false, first: true, last: tr
 /** Top of the history: what this room is (a DM: who it is with, ADR-0020). */
 function HistoryStart({ room }: { room: Room }): ReactNode {
   if (room.type === RoomType.DM) return <DmHistoryStart roomId={room.id} />;
+  if (room.type === RoomType.NOTES) return <NotesHistoryStart room={room} />;
   const voice = room.type === RoomType.VOICE;
   const Icon = voice ? Volume2 : Hash;
   return (
@@ -361,6 +363,21 @@ function HistoryStart({ room }: { room: Room }): ReactNode {
       </span>
       <div className="mt-2 text-headline font-semibold">{voice ? t('chat.welcomeVoiceTitle', { name: room.name }) : t('chat.welcomeTitle', { name: room.name })}</div>
       <div className="text-body text-muted">{t('chat.historyStart')}</div>
+    </div>
+  );
+}
+
+/** A notes shelf's start (ADR-0039): its emoji and name, «only you see it», the drag-and-drop hint. */
+function NotesHistoryStart({ room }: { room: Room }): ReactNode {
+  const emoji = useNotes((s) => s.byRoom[room.id]?.emoji ?? '');
+  const name = useNotes((s) => s.byRoom[room.id]?.name ?? room.name);
+  return (
+    <div className="flex flex-col items-center px-4 pb-2 pt-8 text-center">
+      <span className="grid size-14 place-items-center rounded-[var(--radius-card)] bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-[28px] leading-none text-accent-text">
+        {emoji || <NotebookText className="size-7" strokeWidth={1.5} aria-hidden />}
+      </span>
+      <div className="mt-2 text-headline font-semibold">{name}</div>
+      <div className="max-w-sm text-body text-muted">{t('notes.welcomeText')}</div>
     </div>
   );
 }

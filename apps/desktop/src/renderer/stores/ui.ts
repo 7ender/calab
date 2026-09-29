@@ -160,7 +160,7 @@ function here(s: Pick<UiState, 'activeWorkspaceId' | 'lastRoom'>): Loc | null {
 /** A history entry is still reachable: the room exists (or the entry is workspace-only). */
 function reachable(l: Loc): boolean {
   const rooms = useRooms.getState().byId;
-  if (l.ws === HOME) return !l.room || rooms[l.room]?.type === RoomType.DM;
+  if (l.ws === HOME) return !l.room || rooms[l.room]?.type === RoomType.DM || rooms[l.room]?.type === RoomType.NOTES;
   if (l.room) return rooms[l.room]?.workspaceId === l.ws;
   return Object.values(rooms).some((r) => r.workspaceId === l.ws);
 }

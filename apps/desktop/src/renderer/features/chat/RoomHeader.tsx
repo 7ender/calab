@@ -374,7 +374,7 @@ function Topic({ topic }: { topic: string }): ReactNode {
   );
 }
 
-function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; roomId: string; canManage: boolean }): ReactNode {
+export function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; roomId: string; canManage: boolean }): ReactNode {
   const pins = useMessages((s) => s.pins[roomId] ?? NO_PINS);
   const jump = useChatView((s) => s.requestJump);
   const [open, setOpen] = useState(false);

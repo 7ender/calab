@@ -14,6 +14,9 @@ export interface RoomPickItem extends PickerItem {
   /** `#общий` / «Переговорка» (roomLabel). */
   name: string;
   voice: boolean;
+  /** A notes shelf of mine (ADR-0039): the «Заметки» group, its emoji as the icon. */
+  notes?: boolean;
+  emoji?: string;
 }
 
 export type ForwardItem = MemberPickItem | RoomPickItem;
@@ -43,25 +46,36 @@ export function toggleTarget(sel: readonly ForwardItem[], item: ForwardItem, max
   return { next: [...sel, item], full: false };
 }
 
-/** Rooms I may forward into, in sidebar order; DMs are the people group. */
+/** Rooms I may forward into, in sidebar order; DMs are the people group, shelves the notes group. */
 export function roomItems(rooms: readonly Room[], maySend: (r: Room) => boolean, label: (r: Room) => string): RoomPickItem[] {
   return rooms
-    .filter((r) => r.type !== RoomType.DM && maySend(r))
+    .filter((r) => r.type !== RoomType.DM && r.type !== RoomType.NOTES && maySend(r))
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
     .map((r) => ({ kind: 'room', id: r.id, roomId: r.id, name: label(r), voice: r.type === RoomType.VOICE, search: [r.name] }));
 }
 
+/** My shelves as targets (ADR-0039), in list order; the source shelf itself is left out. */
+export function shelfItems(shelves: ReadonlyArray<{ roomId: string; name: string; emoji: string }>, sourceRoomId: string): RoomPickItem[] {
+  return shelves
+    .filter((e) => e.roomId !== sourceRoomId)
+    .map((e) => ({ kind: 'room', id: e.roomId, roomId: e.roomId, name: e.name, voice: false, notes: true, emoji: e.emoji, search: [e.name] }));
+}
+
 /**
- * The picker's groups: «Личные» (the server's answer to the query, as is) and the room groups
- * (filtered here — the picker runs in server mode and does not filter). Empty groups drop out.
+ * The picker's groups: «Заметки» first (my shelves, filtered here), «Личные» (the server's answer
+ * to the query, as is) and the room groups (filtered here — the picker runs in server mode and
+ * does not filter). Empty groups drop out.
  */
 export function forwardGroups(
   people: readonly MemberPickItem[],
   rooms: ReadonlyArray<{ id: string; label: string; items: readonly RoomPickItem[] }>,
   query: string,
   peopleLabel: string,
+  notes?: { label: string; items: readonly RoomPickItem[] },
 ): Array<PickerGroup<ForwardItem>> {
   const out: Array<PickerGroup<ForwardItem>> = [];
+  const shelves = notes ? filterItems(notes.items, query) : [];
+  if (notes && shelves.length) out.push({ id: 'notes', label: notes.label, items: shelves });
   if (people.length) out.push({ id: 'people', label: peopleLabel, items: people });
   for (const g of rooms) {
     const items = filterItems(g.items, query);
