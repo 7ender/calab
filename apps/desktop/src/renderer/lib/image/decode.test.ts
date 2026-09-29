@@ -7,7 +7,7 @@ const ftyp = (...brands: string[]): Uint8Array => {
   for (const b of brands) for (const c of b) head.push(c.charCodeAt(0));
   return new Uint8Array([...head, ...new Array<number>(16).fill(0)]);
 };
-const heic = (): Blob => new Blob([ftyp('heic', '\0\0\0\0', 'mif1', 'heic')], { type: '' });
+const heic = (): Blob => new Blob([new Uint8Array(ftyp('heic', '\0\0\0\0', 'mif1', 'heic'))], { type: '' });
 const png = (): Blob => new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array<number>(24).fill(0)])], { type: 'image/png' });
 
 const img = (w = 10, h = 10): Decoded => ({ width: w, height: h, close: vi.fn() });

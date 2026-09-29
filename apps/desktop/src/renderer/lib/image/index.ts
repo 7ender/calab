@@ -29,7 +29,7 @@ const decodeDeps: DecodeDeps<ImageBitmap> = {
     ? {
         native: async (b: Blob, maxSide: number) => {
           const jpeg = await platform.files.decodeImage(await b.arrayBuffer(), maxSide).catch(() => null);
-          return jpeg ? new Blob([jpeg], { type: 'image/jpeg' }) : null;
+          return jpeg ? new Blob([new Uint8Array(jpeg)], { type: 'image/jpeg' }) : null;
         },
       }
     : {}),

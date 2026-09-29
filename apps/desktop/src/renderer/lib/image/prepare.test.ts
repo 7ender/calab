@@ -59,6 +59,7 @@ describe('prepareAvatar', () => {
     expect(out.name).toBe('IMG_1234.webp');
     expect(out.blob.type).toBe('image/webp');
     expect(enc.calls[0]).toEqual([{ sx: 504, sy: 0, sw: 3024, sh: 3024 }, 512, 512, 'image/webp', 0.85]);
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- spy reference, not a call
     expect(img.close).toHaveBeenCalled();
   });
   it('JPEG fallback keeps the .jpg name', async () => {
@@ -80,6 +81,7 @@ describe('prepareAttachment', () => {
     const out = await prepareAttachment(heic(), 'IMG_0001.HEIC', deps(img), enc);
     expect(out.name).toBe('IMG_0001.jpg');
     expect(enc.calls[0]).toEqual([{ sx: 0, sy: 0, sw: 8064, sh: 6048 }, 4096, 3072, 'image/jpeg', 0.9]);
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- spy reference, not a call
     expect(img.close).toHaveBeenCalled();
     const small = fakeEncoder();
     await prepareAttachment(heic(), 'a.heic', deps(fakeImage(1200, 900)), small);
