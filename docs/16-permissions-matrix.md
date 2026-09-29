@@ -39,6 +39,11 @@
 | Аннотации на стриме | `SPEAK` (клиент; data-канал, docs/12) | — | `annot.canAnnotate` |
 | Статус звонка | в звонке + `CONNECT`, или `MANAGE_ROOM` room | `setVoiceStatus` | `useStatusLine` |
 | Запись встречи | не гость, `VIEW_ROOM` + `CONNECT`, `allow_recording` | `recording.participant` | `roomMenuGroups` (`record`) |
+| Календарь (ADR-0038): видеть встречу | не гость; организатор, участник встречи или `VIEW_ROOM` в её комнате; бот — только чтение, без адресов внешних | `calendar.viewer.sees` | — |
+| Создать встречу | не гость, не бот; комната — голосовая, видимая; внешние адреса — подтверждённая почта | `calendar.create`, `checkRoom` | — |
+| Изменить / отменить встречу (и вхождение) | организатор; иначе `MANAGE_ROOM` room встречи, без комнаты — `MANAGE_WORKSPACE` ws; бот — 403 | `calendar.viewer.canEdit` | `event.can_edit` |
+| Ответить на встречу | участник встречи; внешний — подписанной ссылкой без входа | `calendar.rsvp`, `calendar.publicAnswer` | — |
+| Гостевая ссылка встречи для внешнего | делается от имени организатора, если у него `MANAGE_ROOM` room (не шире его прав) | `calendar.linkBits` | `event.guest_links` |
 | Саммари, аудио, транскрипт записи (docs/09 #47) | `VIEW_ROOM` room (карточка — сообщение комнаты; аудио — вложение; ограниченная — только допущенные) | `files.CanRead`, `recording.transcript` | — |
 | Переслать сообщение / карточку записи (ADR-0033) | `VIEW_ROOM` в источнике (restricted — можно), `SEND_MESSAGES` в цели (+ `ATTACH_FILES` для вложений; DM — участник); копия даёт читателям цели файлы и транскрипт, её удаление — отзывает | `messages.forward`, `files.CanRead`, `recording.visibleRecording` | MessageMenu, ForwardDialog |
 | Удалить запись встречи (docs/09 #50) | запустивший, владелец (`owner_id`) или `MANAGE_MESSAGES` room (+ `VIEW_ROOM`) | `recording.remove` | `mayDeleteRecording` |

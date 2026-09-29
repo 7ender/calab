@@ -104,6 +104,13 @@ BOT_CREATE / BOT_UPDATE       { workspace_id, bot } — бот вступил / 
 BOT_DELETE                    { workspace_id, bot_user_id } — бот удалён или убран из пространства
 CALL_RING                     { call, caller: User } — звонок вызываемому (ADR-0034), всем его устройствам
 CALL_STATE                    { call } — звонок создан или сменил состояние, обоим участникам
+EVENT_CREATE / EVENT_UPDATE   { event: CalendarEvent } — встреча создана / изменена (ADR-0038); серия, без my_status
+EVENT_DELETE                  { event } — встреча отменена (cancelled_at задан) или ушла из поля зрения получателя
+                                (другая комната, удалён из участников; cancelled_at пуст — за ним EVENT_UPDATE тем, кто её видит)
+EVENT_RSVP                    { workspace_id, event_id, attendee, counts, event } — участник ответил
+EVENT_REMINDER                { event (вхождение), occurrence_at, minutes } — напоминание, в user:<id>
+ROOM_EVENT_ACTIVE             { workspace_id, room_id, event (вхождение) } — за 15 мин до начала и до конца: значок встречи у комнаты
+ROOM_EVENT_ENDED              { workspace_id, room_id, event_id, occurrence_at } — вхождение закончилось, отменено или перенесено
 ```
 
 Фильтрация по получателю (выполняет gateway, без запросов в БД — у инстанса кэш комнат и ролей каждого workspace, обновляемый самими событиями):
@@ -112,6 +119,7 @@ CALL_STATE                    { call } — звонок создан или см
 - `ROOM_UPDATE` / `ROOM_PERMISSIONS_UPDATE` / `WORKSPACE_MEMBER_UPDATE` (смена ролей) / `ROLE_UPDATE` / `ROLE_DELETE` (права, порядок, удаление роли — для всех её держателей) пересчитывают видимость: доступ появился → получатель видит `ROOM_CREATE` с комнатой (голосовая с идущим звонком — с `voice_started_at`, за ней `VOICE_STATE_UPDATE` каждого участника: раньше их состояния приходили ему без комнаты), пропал → `ROOM_DELETE` (клиент убирает и голосовые состояния этой комнаты), остался → исходное событие. Смена `Room.restricted` (ADR-0029) — `ROOM_UPDATE` и следом `ROOM_PERMISSIONS_UPDATE` с теми же переопределениями (пересчёт грантов звонка).
 - `READ_RECEIPT` (docs/09 #92): публикуется `PUT /api/rooms/{id}/read`, только если маркер сдвинулся и не бот. DM — сразу собеседнику (`user:<id>`). Комната — если чьё-то «прочитали другие» выросло (маркер читателя дальше второго по дальности маркера остальных; `TopRoomReads`: индекс `read_states_room_id_idx` + top-3), не чаще раза в 3 с на комнату (Redis `rr:<room>`: первое событие сразу, одно завершающее в конце окна с текущими маркерами). В `ws:<id>` уходит самый дальний маркер с внутренним `except_user_id` (его владелец): gateway не шлёт событие ему и ботам и вырезает поле; владельцу — второй по дальности в `user:<id>`. Чтения ботов не считаются, ботам события не приходят. Клиент хранит максимум.
 - `VOICE_STATE_UPDATE` для невидимой получателю комнаты приходит с пустым `room_id` (пользователь выглядит не в голосе).
+- `EVENT_*` (ADR-0038) — организатору, участникам встречи и тем, кто видит её комнату; гостям — никогда. Адреса внешних участников: полностью — вовлечённым и тем, кто может менять встречу (`MANAGE_ROOM` в комнате / `MANAGE_WORKSPACE` без комнаты), остальным — маской `a***@домен`, ботам — пусто. `ROOM_EVENT_*` — видящим комнату, кроме гостей.
 - Вступление в workspace → `WORKSPACE_CREATE { snapshot }` на все устройства пользователя; выход/исключение/удаление → `WORKSPACE_DELETE`.
 - `VOICE_STREAM_STOP.reason`: `ENDED` | `LIMIT_REACHED` (превышен `max_streams`, трек заглушён сервером) | `MODERATOR`.
 - События DM-комнат (`MESSAGE_*`, `MESSAGE_REACTION_*`, `TYPING_START`) идут не в `ws:<id>`, а в `user:<id>` обоим участникам, с пустым `workspace_id`; `TYPING_START` DM — только сессиям получателя с `SUBSCRIBE` на комнату. Так же — голос звонка DM (`VOICE_STATE_UPDATE`, `VOICE_STREAM_*`, `VOICE_CAMERA_STOP` с `room_id` = DM, ADR-0034) и `CALL_RING`/`CALL_STATE`: в пространства они не попадают.
@@ -194,6 +202,29 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 - `PATCH /api/me` `{ birthday: {day, month, year?} }` — задать (`422` на несуществующую дату, год вне 1900..текущий или в будущем; `{day: 0, month: 0}` — очистить), `{ birthdayHidden }` — скрыть/показать; гостям и ботам — `403`. Изменение — `USER_UPDATE` в пространства (`User.birthday` без скрытого) и `{me}` на свои устройства.
 - Воркер раз в час (и при старте, на каждом инстансе — карточку «забирает» вставка в `birthday_greetings`): у кого сегодня день рождения и местное время ≥ 09:00 — в каждое его пространство (не гость, не приостановлено, есть кто-то ещё кроме ботов) системное сообщение в первую текстовую комнату по порядку сайдбара, публичные раньше приватных: `Message.kind = SYSTEM`, `system.birthday = BirthdayCard {day, month}`, автор — именинник, `MESSAGE_CREATE`. Уведомления, звук и счётчики — как у обычного сообщения по правилам комнаты (клиент, `notify.ts`); самому имениннику — как своё. Скрытый день рождения карточки не получает. Пояс «сегодня» и 09:00 — `birthdays.GreetZone`: `User.timezone` именинника, нет — пояс владельца пространства (`Workspace.owner_id`; команда в Москве получает открытку в 09:00 МСК, не в 12:00), нет и его — UTC; неизвестное имя пояса = не задан. Клиент повторяет правило (`lib/birthday.ts` `greetZone`) для подсказки «Открытка в чате появится в …» на плашке панели участников.
 - `GET /api/workspaces/{id}/birthdays?days=7` (участник не гость; гость — `403`, не участник — `404`; `days` 1..31, иначе `422`) → `ListBirthdaysResponse { birthdays: [{user_id, birthday, in_days}] }` — ближайшие дни рождения участников по «сегодня» вызывающего (его пояс, иначе UTC), по возрастанию `in_days`; скрытые и боты не входят.
+
+## Календарь (ADR-0038)
+
+```
+GET    /api/workspaces/{id}/events?from=&to=   RFC 3339, окно ≤ 62 дня → ListCalendarEventsResponse { events: вхождения по началу }
+POST   /api/workspaces/{id}/events             CreateCalendarEventRequest → 201 CalendarEventResponse (не гость, не бот)
+GET    /api/events/{id}                        серия (отменённая — с cancelled_at, для ссылки /e/<id>); не видна — 404
+PATCH  /api/events/{id}                        UpdateCalendarEventRequest → CalendarEventResponse (организатор / MANAGE_ROOM / MANAGE_WORKSPACE)
+DELETE /api/events/{id}[?occurrence=<RFC 3339>] 204: отмена встречи (письмо CANCEL) или одного вхождения серии (EVENT_UPDATE, письмо с EXDATE)
+PUT    /api/events/{id}/rsvp                   { status: ACCEPTED | DECLINED | MAYBE } → CalendarEventResponse (только участник)
+GET    /api/me/events/today?tz=                сегодняшние предстоящие встречи (не отклонённые) во всех пространствах → { count, events }
+GET    /api/event-rsvp?t=                      публично: встреча по подписанной ссылке внешнего участника → EventRsvpTokenResponse
+POST   /api/event-rsvp { token }               публично: сохранить ответ ссылки (идемпотентно); после конца — 410 EVENT_OVER; битая — 404
+```
+
+- Ошибки: `422` — название 1..120, описание ≤ 4000, конец > начала и ≤ 7 дней, неизвестная `tz`, комната не голосовая/чужая/невидимая, участник не из пространства / бот / гость, > 100 участников или > 20 внешних адресов, `repeat_until` раньше начала; гость — `403`; внешние адреса без подтверждённой почты — `403 EMAIL_NOT_VERIFIED`; 30 изменений сразу, 120 в час на пользователя — `429`.
+- Вхождение в списке: `occurrence_at` = его начало, `starts_at`/`ends_at` — его время, `recording_id` — запись этого вхождения; `my_status`, `can_edit`, `counts` посчитаны для вызывающего. Повтор серии: `EventRepeat` (день / неделя / две недели / месяц — месяцы без такого числа пропускаются) + `repeat_until`; разворачивается в зоне `tz` (время на часах сохраняется при переходе на летнее время).
+- Письма (ADR-0023, outbox): при создании — `event_invite` каждому участнику с подтверждённой почтой и внешним адресам; при изменении времени/комнаты/названия/описания/повтора — `event_update` всем (SEQUENCE + 1), добавленным — `event_invite`, удалённым — `event_cancel`; при отмене — `event_cancel`. Вложение `invite.ics` (и `text/calendar; method=…` в alternative): `UID=<id>@calab`, `SEQUENCE`, `DTSTART/DTEND` в UTC (повторяющаяся встреча в зоне с DST — `TZID` + `VTIMEZONE`), `RRULE`, `EXDATE`, `ORGANIZER`, `ATTENDEE` с `ROLE=REQ/OPT-PARTICIPANT`, `URL=https://<APP_HOST>/e/<id>`; `Reply-To` — почта организатора. Внешним — ссылки ответа и гостевая ссылка в комнату. Лимит писем на адрес (`MAIL_PER_ADDRESS_PER_HOUR`) действует: сверх него письмо не уходит (в логе).
+- Напоминания: метёлка раз в 30 с на каждом инстансе; вхождения ближайших 25 ч; каждому участнику (и организатору), кто не отклонил и остаётся участником пространства, по его `event_reminders` (окно отправки — 2 мин после момента напоминания); при DND — только если `event_reminders_dnd`. `ROOM_EVENT_ACTIVE` — один раз на вхождение (и сразу при создании/переносе внутрь окна), `ROOM_EVENT_ENDED` — по окончании (до часа спустя), при отмене и переносе.
+- `READY` / `WORKSPACE_CREATE`: `WorkspaceSnapshot.active_events` — активные сейчас вхождения видимых комнат (гостям пусто).
+- Настройки напоминаний: `PATCH /api/me { eventReminders: { minutes: [...], dnd } }` (≤ 5 различных из 5/10/15/30/60/120/1440, иначе `422`); в `Me.settings.event_reminders` / `event_reminders_dnd` (по убыванию; по умолчанию `[60, 5]`, да).
+- Запись: запись, которую организатор начал в комнате встречи в окне [начало − 15 мин; конец), привязывается к вхождению — `recording_id` в списке и повторный `ROOM_EVENT_ACTIVE`.
+- Ссылка `/e/<id>` — страница веб-клиента (SPA, как `/r/<code>`); `/e/<id>/rsvp?t=` — страница ответа внешнего участника.
 
 ## Боты (ADR-0031)
 
