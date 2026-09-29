@@ -249,11 +249,9 @@ test(`landing camera ${theme}`, async ({ open, win, mock }) => {
   await everyLocale(win, 'camera');
 });
 
-// ---- chat: a forwarded message, the sticker strip over the composer (😂 typed).
+// ---- chat: a forwarded message over an ordinary composer (the mock's stickers are placeholder shapes).
 test(`landing chat ${theme}`, async ({ open, win, mock }) => {
   await open();
-  await win.emulateMedia({ reducedMotion: 'reduce' });
-  mock.seedLaughStickers();
   await general(win);
   mock.injectMessage({
     roomId: IDS.rooms.general,
@@ -261,18 +259,15 @@ test(`landing chat ${theme}`, async ({ open, win, mock }) => {
     content: 'Итоги релиза: всё выкатили, мониторинг зелёный.',
     forward: { authorId: IDS.users.boris, sentAtMs: Date.parse('2026-01-14T16:05:00Z'), roomId: IDS.rooms.dev },
   });
-  // The sticker strip lies over the feed's last row: a short line under the forwarded message.
   mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.boris, content: 'Отлично!' });
   await expect(win.getByTestId('forward-line')).toHaveCount(1);
   await feedBottom(win);
-  const field = win.getByRole('textbox', { name: /^Сообщение в/ });
-  await field.fill('😂');
-  const strip = win.getByTestId('sticker-suggest');
-  await expect(strip.locator('[data-sticker-suggest]')).toHaveCount(3);
-  await expect(win.locator('[data-sticker-still]:not([data-drawn])')).toHaveCount(0);
+  // Memoized feed rows keep the forward line's language after a live switch: re-open the room.
   await everyLocale(win, 'chat', async () => {
+    await win.locator('aside').getByRole('button', { name: /разработка/ }).first().click();
+    await general(win);
+    await expect(win.getByTestId('forward-line')).toHaveCount(1);
     await feedBottom(win);
-    await expect(strip.locator('[data-sticker-suggest]')).toHaveCount(3);
   });
 });
 

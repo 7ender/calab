@@ -74,7 +74,7 @@ const en: Dict = {
         title: 'Chat like Telegram',
         text: 'Every voice room has its own chat. Replies, reactions, forwarding, stickers, voice messages, files with previews, pins and search.',
         points: ['Forward to several chats at once', 'Workspace sticker packs, animated too', 'Voice messages, music and video with a built-in player'],
-        alt: 'A forwarded message (“Forwarded from Борис Петров”) and sticker suggestions above the message field',
+        alt: 'The channel feed with a forwarded message (“Forwarded from Борис Петров”) and the message field',
       },
       dm: {
         title: 'Direct messages and calls',

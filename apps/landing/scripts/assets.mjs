@@ -37,7 +37,7 @@ const shots = [
   { name: 'stream', file: 'stream', crop: { left: 334, top: 92, width: 862, height: 656 } },
   // camera: «Проверьте камеру» with «Фон» (light blur) and the workspace pictures
   { name: 'camera', file: 'camera', crop: { left: 272, top: 178, width: 896, height: 514 } },
-  // chat: a forwarded message and the sticker strip over the composer
+  // chat: the feed with a forwarded message and the composer
   { name: 'chat', file: 'chat', crop: { left: 331, top: 392, width: 868, height: 477 } },
   // one-to-one call: the DM header «Звонок · 00:00 · Завершить» and the conversation
   { name: 'call', file: 'call', crop: { left: 330, top: 36, width: 1110, height: 620 } },

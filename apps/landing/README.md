@@ -66,7 +66,7 @@ selectors), then the app switches language live (visual-test hook `__calabaLocal
    ```
    `CALABA_LANDING_LOCALES=ru,en` narrows the languages, `-g "landing chat"` one scene. Raw full-window PNGs land in
    `apps/landing/shots/<shot>-<locale>-<theme>@2x.png` (git-ignored, ~0.3 MB each). Scenes: `hero` (in voice, badges),
-   `voice` (+ noise popover), `stream`, `camera` (blur, workspace backgrounds), `chat` (forwarded + sticker strip),
+   `voice` (+ noise popover), `stream`, `camera` (blur, workspace backgrounds), `chat` (forwarded message),
    `call` (1:1 call), `recording` (card playing), `badges` (README only, ru), `mobile` (iPhone 14 in WebKit).
 2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` crops (offsets in window points at the top of the script —
    check them when the app layout changes; the CSS sizes in `hero.tsx`/`features.tsx` equal the crops), draws the

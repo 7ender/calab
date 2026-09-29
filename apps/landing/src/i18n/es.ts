@@ -74,7 +74,7 @@ const es: Dict = {
         title: 'Chat como en Telegram',
         text: 'Cada sala de voz tiene su chat. Respuestas, reacciones, reenvío, stickers, mensajes de voz, archivos con vista previa, fijados y búsqueda.',
         points: ['Reenvío a varios chats a la vez', 'Paquetes de stickers del espacio, también animados', 'Mensajes de voz, música y vídeo con reproductor integrado'],
-        alt: 'Un mensaje reenviado de Борис Петров y sugerencias de stickers sobre el campo de texto',
+        alt: 'El canal con un mensaje reenviado de Борис Петров y el campo de texto',
       },
       dm: {
         title: 'Mensajes directos y llamadas',
