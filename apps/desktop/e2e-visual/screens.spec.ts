@@ -1024,7 +1024,8 @@ test('profile-birthday', async ({ open, win, mock, shot }) => {
   await picker.getByRole('combobox', { name: 'Год' }).selectOption('1996');
   // Saved (PATCH /api/me): «Скрыть от других» and «Убрать» appear with a saved date.
   await expect(win.getByRole('switch', { name: 'Скрыть от других' })).toBeVisible();
-  await expect(picker.getByRole('button', { name: 'Убрать' })).toBeVisible();
+  // «Убрать» sits beside the picker (the admin's dialog reuses the picker without it, #77).
+  await expect(picker.locator('..').getByRole('button', { name: 'Убрать' })).toBeVisible();
   await expect(picker.getByRole('combobox', { name: 'День' })).toHaveValue('15');
   await win.getByRole('switch', { name: 'Скрыть от других' }).scrollIntoViewIfNeeded();
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
