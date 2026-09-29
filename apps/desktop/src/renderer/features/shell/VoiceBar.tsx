@@ -10,6 +10,7 @@ import { BUILTIN_BACKGROUNDS } from '../../lib/media/background/images';
 import type { BackgroundKind } from '../../lib/media/background/logic';
 import { backgroundAvailable } from '../../services/cameraBackground';
 import { useCustomBackgrounds } from '../voice/BackgroundPicker';
+import { setCameraEffects } from '../voice/CameraAppearance';
 import { mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -317,6 +318,8 @@ export function CameraMenu(): ReactNode {
         <>
           <Dropdown.Separator className={menuSeparator} />
           <CameraBackgroundItems />
+          <Dropdown.Separator className={menuSeparator} />
+          <CameraEffectsItems />
         </>
       ) : null}
       <Dropdown.Separator className={menuSeparator} />
@@ -382,6 +385,32 @@ function CameraBackgroundItems(): ReactNode {
           </Dropdown.SubContent>
         </Dropdown.Portal>
       </Dropdown.Sub>
+    </>
+  );
+}
+
+/**
+ * Camera ▾ «Внешний вид» (ADR-0035 addendum): the preview's two switches; the touch-up strength
+ * stays what was set in the preview (default 40). Applied to the live camera at once.
+ */
+function CameraEffectsItems(): ReactNode {
+  const touchUp = usePrefs((s) => s.cameraEffects.touchUp);
+  const lowLight = usePrefs((s) => s.cameraEffects.lowLight);
+  return (
+    <>
+      <Dropdown.Label className={menuLabel}>{t('video.fx.title')}</Dropdown.Label>
+      <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={touchUp} onCheckedChange={(v) => setCameraEffects({ touchUp: v })} data-testid="camera-fx-touchup">
+        <Dropdown.ItemIndicator className="absolute left-2">
+          <Check className="size-3.5" />
+        </Dropdown.ItemIndicator>
+        {t('video.fx.touchUp')}
+      </Dropdown.CheckboxItem>
+      <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={lowLight} onCheckedChange={(v) => setCameraEffects({ lowLight: v })} data-testid="camera-fx-lowlight">
+        <Dropdown.ItemIndicator className="absolute left-2">
+          <Check className="size-3.5" />
+        </Dropdown.ItemIndicator>
+        {t('video.fx.lowLight')}
+      </Dropdown.CheckboxItem>
     </>
   );
 }

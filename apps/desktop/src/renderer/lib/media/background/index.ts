@@ -1,9 +1,11 @@
 import type { Track, TrackProcessor, VideoProcessorOptions } from 'livekit-client';
+import type { WorkerEffects } from './effects';
 import { BACKGROUND_PROCESSOR, type BackgroundKind } from './logic';
 import type { FromWorker, ToWorker, WorkerState } from './protocol';
 
 /**
- * The camera background as a LiveKit track processor (ADR-0035 §1): `LocalVideoTrack.setProcessor`
+ * The camera background and appearance effects as a LiveKit track processor (ADR-0035 §1 and the
+ * «эффекты внешности» addendum): `LocalVideoTrack.setProcessor`
  * swaps the published and the locally shown track for `processedTrack`. This module is a lazy
  * chunk (services/cameraBackground.ts imports it on the first effect); the worker, MediaPipe, the
  * WASM and the model load only when a frame needs the effect.
@@ -40,7 +42,10 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
   constructor(
     private mode: BackgroundKind,
     private image: ImageBitmap | null,
+    private effects: WorkerEffects,
     private readonly onStatus: (s: BackgroundStatus) => void,
+    /** The picture's id for `image` (services/cameraBackground.ts: an effect change does not reload it). */
+    private picture: string | null = null,
   ) {}
 
   private send(msg: ToWorker, transfer: Transferable[] = []): void {
@@ -66,7 +71,7 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
     const readable = new MediaStreamTrackProcessor<VideoFrame>({ track: opts.track, maxBufferSize: 2 }).readable;
     const image = this.image;
     this.image = null; // transferred
-    this.send({ type: 'init', readable, writable: generator.writable, mode: this.mode, image }, image ? [readable, generator.writable, image] : [readable, generator.writable]);
+    this.send({ type: 'init', readable, writable: generator.writable, mode: this.mode, image, effects: this.effects }, image ? [readable, generator.writable, image] : [readable, generator.writable]);
     return Promise.resolve();
   }
 
@@ -78,14 +83,26 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
     return Promise.resolve();
   }
 
-  /** Another effect or picture, without restarting anything. */
-  setMode(mode: BackgroundKind, image: ImageBitmap | null): void {
+  /** Another background or picture, without restarting anything. */
+  setMode(mode: BackgroundKind, image: ImageBitmap | null, picture: string | null = null): void {
     this.mode = mode;
+    this.picture = mode === 'image' ? picture : null;
     this.send({ type: 'mode', mode, image }, image ? [image] : []);
+  }
+
+  /** «Улучшить внешность» / «Низкая освещённость» (the slider sends many: nothing reloads). */
+  setEffects(effects: WorkerEffects): void {
+    this.effects = effects;
+    this.send({ type: 'effects', effects });
   }
 
   get currentMode(): BackgroundKind {
     return this.mode;
+  }
+
+  /** The id of the picture in use (`image` mode), else null. */
+  get currentPicture(): string | null {
+    return this.picture;
   }
 
   destroy(): Promise<void> {
@@ -103,6 +120,6 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
   }
 }
 
-export function createBackgroundProcessor(mode: BackgroundKind, image: ImageBitmap | null, onStatus: (s: BackgroundStatus) => void): BackgroundProcessor {
-  return new BackgroundProcessor(mode, image, onStatus);
+export function createBackgroundProcessor(mode: BackgroundKind, image: ImageBitmap | null, effects: WorkerEffects, onStatus: (s: BackgroundStatus) => void, picture: string | null = null): BackgroundProcessor {
+  return new BackgroundProcessor(mode, image, effects, onStatus, picture);
 }

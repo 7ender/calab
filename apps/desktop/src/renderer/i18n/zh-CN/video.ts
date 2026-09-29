@@ -51,6 +51,14 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'video.bg.workspace': '空间背景',
   'video.bg.builtin': '通用',
 
+  // camera appearance effects (ADR-0035 addendum)
+  'video.fx.title': '外观',
+  'video.fx.touchUp': '美化外观',
+  'video.fx.strength': '强度',
+  'video.fx.strengthLabel': '美化强度',
+  'video.fx.lowLight': '弱光调整',
+  'video.fx.lowLightHint': '房间较暗时提亮画面',
+
   // toasts
   'video.limit': '已达摄像头上限',
   'video.forbidden': '你没有权限在此房间使用摄像头',
