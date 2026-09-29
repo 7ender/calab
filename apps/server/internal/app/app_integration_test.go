@@ -139,8 +139,8 @@ func run(m *testing.M) int {
 		DatabaseURL:      u.String(),
 		RedisKeyPrefix:   redistest.Prefix(),
 		JWTSecret:        "integration-secret-integration-secret",
-		AccessTokenTTL:   15 * time.Minute,
-		RefreshTokenTTL:  720 * time.Hour,
+		AccessTokenTTL:   24 * time.Hour, // the defaults (config.go): revocation must not lean on expiry
+		RefreshTokenTTL:  8760 * time.Hour,
 		RegistrationMode: config.RegistrationInvite,
 		PublicAppURL:     "https://app.example.com",
 		// Abuse limits are exercised separately (TestAbuseLimits) with small values.

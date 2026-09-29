@@ -29,6 +29,7 @@ MinIO нет (ADR-0011): образ `minio/minio` удалён с Docker Hub, с
 ### Конфигурация и деплой
 
 - Секреты — в `infra/docker/.env` на хосте (не в репо), шаблон — `.env.example`.
+- **Сроки токенов**: `ACCESS_TOKEN_TTL` (по умолчанию `24h`) и `REFRESH_TOKEN_TTL` (`8760h` = 1 год, скользящий: каждый refresh продлевает) — в `.env`, compose передаёт их api. Отзыв сессии мгновенный при любых сроках (docs/04 «Auth»); свой сервер со строгими требованиями может ужесточить, напр. `ACCESS_TOKEN_TTL=15m`, `REFRESH_TOKEN_TTL=720h` (валидация: access ≥ 1m, refresh ≥ access).
 - LiveKit-конфиг — шаблон `infra/docker/livekit/livekit.yaml.tpl`. В нём подставляются **только** `${DOMAIN}` и `${LIVEKIT_API_KEY}` (`envsubst '${DOMAIN} ${LIVEKIT_API_KEY}'`) → `livekit.gen.yaml` (в `.gitignore`). Ключ/секрет LiveKit приходят через env `LIVEKIT_KEYS`, в файл не пишутся.
 - `deploy.sh [сервисы…]` — загружает `.env`, рендерит `livekit.gen.yaml`, выполняет `docker compose up -d --build --remove-orphans [сервисы…]`. Если отрендеренный конфиг LiveKit изменился — перезапускает `livekit` (bind-mount: compose сам изменения содержимого не замечает). Caddyfile вшит в образ → подхватывается через `--build`.
 - **`SYNC_REF=<ref>`** — деплоить закоммиченное состояние (чистый `git archive`), а не рабочее дерево; обязательно, когда в дереве чужая незакоммиченная работа (иначе она уедет на стенд). Артефакты веба/релизов (не в git) берутся из рабочего дерева. Пример: `SYNC_REF=HEAD SKIP_WEB=1 SKIP_RELEASES=1 infra/docker/sync.sh api`.

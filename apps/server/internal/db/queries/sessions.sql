@@ -21,6 +21,12 @@ UPDATE sessions SET
 WHERE id = $1
 RETURNING *;
 
+-- name: TouchSession :exec
+-- "Last activity" of a session between refreshes (access tokens live 24 h): bumped by the
+-- periodic session recheck (auth/sessioncheck.go), at most every 5 minutes.
+UPDATE sessions SET last_seen_at = now()
+WHERE id = $1 AND revoked_at IS NULL AND last_seen_at < now() - interval '5 minutes';
+
 -- name: RevokeSession :execrows
 UPDATE sessions SET revoked_at = now()
 WHERE id = $1 AND revoked_at IS NULL;
