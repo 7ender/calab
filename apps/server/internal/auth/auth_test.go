@@ -15,7 +15,7 @@ var secret = []byte("0123456789abcdef0123456789abcdef")
 func TestAccessTokenRoundTrip(t *testing.T) {
 	tk := NewTokens(secret, 15*time.Minute)
 	uid, sid := uuid.New(), uuid.New()
-	s, exp, err := tk.Issue(uid, sid)
+	s, exp, err := tk.Issue(uid, sid, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,13 +34,13 @@ func TestAccessTokenRoundTrip(t *testing.T) {
 func TestAccessTokenRejects(t *testing.T) {
 	tk := NewTokens(secret, 15*time.Minute)
 	uid, sid := uuid.New(), uuid.New()
-	good, _, _ := tk.Issue(uid, sid)
+	good, _, _ := tk.Issue(uid, sid, 0)
 
 	expired := NewTokens(secret, 15*time.Minute)
 	expired.now = func() time.Time { return time.Now().Add(-time.Hour) }
-	old, _, _ := expired.Issue(uid, sid)
+	old, _, _ := expired.Issue(uid, sid, 0)
 
-	other, _, _ := NewTokens([]byte("another-secret-another-secret-xx"), time.Minute).Issue(uid, sid)
+	other, _, _ := NewTokens([]byte("another-secret-another-secret-xx"), time.Minute).Issue(uid, sid, 0)
 
 	// alg=none and a different HMAC alg must be rejected.
 	none, _ := jwt.NewWithClaims(jwt.SigningMethodNone, Claims{SessionID: sid.String(),

@@ -329,13 +329,13 @@ func (s *Service) ResetPassword(ctx context.Context, email, code, password strin
 		if u, err = q.SetEmailVerified(ctx, u.ID); err != nil {
 			return err
 		}
-		revoked, err = q.RevokeAllUserSessions(ctx, u.ID)
+		revoked, err = q.RevokeAllUserSessions(ctx, sqlc.RevokeAllUserSessionsParams{UserID: u.ID, Reason: RevokePasswordChanged})
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	s.afterRevokeMany(ctx, revoked)
+	s.afterRevokeMany(ctx, revoked, RevokePasswordChanged)
 	if !wasVerified && s.OnEmailVerified != nil {
 		s.OnEmailVerified(ctx, u)
 	}

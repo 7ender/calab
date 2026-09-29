@@ -14,6 +14,7 @@ import type {
 } from '../../shared/ipc';
 import { PttGate } from '../../shared/pttGate';
 import { mouseName } from '../../shared/pttKeys';
+import { logoutReasonFromRefresh } from '../../shared/logoutReason';
 import { AUTH_TIMEOUT_MS, refreshGate } from '../../shared/refreshGate';
 import type { GuestJoin, Platform } from './types';
 
@@ -83,8 +84,9 @@ function postAuth(path: string, body: unknown, bearer?: string): Promise<Respons
 
 /**
  * 409 on /api/auth/refresh = another refresh of the same session won the race and the server
- * could not replay it (normally an old cookie within 60 s just gets the same new cookie again,
- * docs/09 #89): retry, the cookie may already hold the new token. Still 409 → transient.
+ * could not replay it (normally an old cookie gets the same new cookie again while the new one
+ * is unused, docs/09 #89, #123): retry, the cookie may already hold the new token. Still 409 →
+ * transient.
  */
 const REFRESH_CONFLICT_RETRIES = 3;
 
@@ -111,7 +113,12 @@ async function doRefresh(): Promise<string | null> {
       }
       if (res.status === 401 || res.status === 400 || res.status === 403) {
         const hadSession = access !== null;
-        clear(hadSession ? 'expired' : null);
+        let reason: LogoutReason = 'expired';
+        if (res.status === 401) {
+          const body = (await res.json().catch(() => ({}))) as { code?: string; reason?: string };
+          reason = logoutReasonFromRefresh(body.code, body.reason);
+        }
+        clear(hadSession ? reason : null);
         return null;
       }
       return null; // 5xx / rate limit: keep the session, retry later

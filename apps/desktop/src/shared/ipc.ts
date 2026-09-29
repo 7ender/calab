@@ -134,6 +134,8 @@ export interface ApiErrorJson {
   code: string;
   message: string;
   field?: string;
+  /** ApiError.reason, when the server gives one (e.g. SESSION_REVOKED: REUSE). */
+  reason?: string;
   status: number;
 }
 
@@ -159,7 +161,8 @@ export interface RegisterArgs extends LoginArgs {
   locale?: string;
 }
 
-export type LogoutReason = 'logout' | 'expired' | 'revoked';
+/** 'reset' = ended by reuse detection (after a connection loss), shared/logoutReason.ts. */
+export type LogoutReason = 'logout' | 'expired' | 'revoked' | 'reset';
 
 // ---------------------------------------------------------------- app
 

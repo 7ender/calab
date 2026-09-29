@@ -220,11 +220,21 @@ func (h *Hub) authenticate(c *conn, token string) (auth.Identity, bool) {
 	case errors.Is(err, auth.ErrInvalidToken):
 		c.closeGraceful(4004, "authentication failed")
 	case errors.Is(err, auth.ErrSessionRevoked):
-		c.closeGraceful(4010, "session revoked")
+		c.closeGraceful(4010, revokedCloseReason(auth.RevokedReason(err)))
 	default:
 		c.closeGraceful(4000, "try again")
 	}
 	return id, false
+}
+
+// revokedCloseReason is the 4010 close reason: "session revoked", with ": <REASON>" when the
+// reason is known (clients tell a reuse revocation from an explicit one, gateway.proto).
+func revokedCloseReason(reason string) string {
+	const base = "session revoked"
+	if reason == "" || len(reason) > 32 || strings.ContainsFunc(reason, func(r rune) bool { return (r < 'A' || r > 'Z') && r != '_' }) {
+		return base
+	}
+	return base + ": " + reason
 }
 
 func deviceKey(user uuid.UUID) string { return redisx.Key("gw:user:" + user.String()) }

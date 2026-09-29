@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, net, safeStorage } from 'electron';
+import { app, BrowserWindow, net, safeStorage, session, type Session } from 'electron';
 import log from 'electron-log/main';
 import {
   IPC,
@@ -72,10 +72,11 @@ function broadcast(channel: string, payload: unknown): void {
 
 /** Token state + refresh policy (tokenBroker.ts: single-flight, 401 / repeated 409 end, rest transient). */
 const broker = new TokenBroker({
-  refresh: async (base, refreshToken) => {
-    const res = await postJson(base, '/api/auth/refresh', { refreshToken });
+  refresh: async (base, refreshToken, fresh) => {
+    const res = await postJson(base, '/api/auth/refresh', { refreshToken }, undefined, fresh ? await freshSession() : undefined);
     if (res.ok) return { status: res.status, tokens: ((await res.json()) as { tokens: TokensJson }).tokens };
-    return { status: res.status, code: (await readError(res)).code };
+    const err = await readError(res);
+    return { status: res.status, code: err.code, ...(err.reason ? { reason: err.reason } : {}) };
   },
   persist,
   onLoggedOut: (reason) => broadcast(IPC.authLoggedOut, reason),
@@ -89,6 +90,7 @@ async function readError(res: Response): Promise<ApiErrorJson> {
       code: body.code ?? 'ERROR_CODE_UNSPECIFIED',
       message: body.message ?? res.statusText,
       ...(body.field ? { field: body.field } : {}),
+      ...(typeof body.reason === 'string' && body.reason ? { reason: body.reason } : {}),
       status: res.status,
     };
   } catch {
@@ -100,8 +102,24 @@ function networkError(err: unknown): ApiErrorJson {
   return { code: 'ERROR_CODE_UNAVAILABLE', message: err instanceof Error ? err.message : String(err), status: 0 };
 }
 
-async function postJson(base: string, path: string, body: unknown, access?: string): Promise<Response> {
-  return net.fetch(`${base}${path}`, {
+/**
+ * The retry of a refresh that failed on the network (incident 29.09: two refreshes aborted by
+ * AUTH_TIMEOUT_MS while reading the answer, while the gateway socket stayed alive — a stalled
+ * pooled connection). Chromium keeps a socket pool per session and `net.fetch` has no
+ * per-request "new connection" switch, so the retry goes through a separate in-memory session
+ * (own network context, own pool; system proxy / VPN settings as the default one) whose pooled
+ * connections are closed first: it always opens a new TCP/TLS connection. Only the auth POST
+ * uses it; the default session (gateway socket, LiveKit, API calls) is left alone.
+ */
+let authRetrySession: Session | null = null;
+async function freshSession(): Promise<Session> {
+  authRetrySession ??= session.fromPartition('calaba-auth-retry', { cache: false });
+  await authRetrySession.closeAllConnections();
+  return authRetrySession;
+}
+
+async function postJson(base: string, path: string, body: unknown, access?: string, via?: Session): Promise<Response> {
+  return (via ?? net).fetch(`${base}${path}`, {
     method: 'POST',
     // Bounded: a black-holed refresh would otherwise hang every API call behind the broker (review N3).
     signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
@@ -136,7 +154,7 @@ export function getAccessToken(): Promise<string | null> {
 
 /**
  * Waits (≤ timeoutMs) for a refresh in flight: quitting for an update in the middle of one
- * would lose its answer — the next start then relies on the server's grace window.
+ * would lose its answer — the next start then relies on the server's replay (docs/04 «Auth»).
  */
 export function refreshSettled(timeoutMs: number): Promise<void> {
   return broker.settled(timeoutMs);

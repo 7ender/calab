@@ -2769,7 +2769,8 @@ export enum GatewayCloseCode {
   SESSION_TIMED_OUT = 4009,
 
   /**
-   * do not reconnect; login screen
+   * Do not reconnect; login screen. The close reason is "session revoked" or "session revoked:
+   * <REASON>" with the ApiError.reason of ERROR_CODE_SESSION_REVOKED (REUSE, LOGOUT_ALL, ...).
    *
    * @generated from enum value: GATEWAY_CLOSE_CODE_SESSION_REVOKED = 4010;
    */

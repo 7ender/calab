@@ -26,7 +26,6 @@ import {
   WAKE_RESET_MIN_MS,
   backoffDelay,
   gatewayUrl,
-  type GatewayFatal,
   type GatewayStatus,
   type SocketLike,
 } from './client';
@@ -92,7 +91,7 @@ function setup(
 ) {
   const sockets: FakeSocket[] = [];
   const events: Array<{ seq: bigint; kind: string | undefined }> = [];
-  const fatals: GatewayFatal[] = [];
+  const fatals: string[] = [];
   const statuses: string[] = [];
   const client = new GatewayClient({
     url: () => 'ws://x/gateway?v=1',
@@ -110,7 +109,7 @@ function setup(
       statuses.push(s);
       opts.onStatus?.(s);
     },
-    onFatal: (k) => fatals.push(k),
+    onFatal: (k, r) => fatals.push(r ? `${k}:${r}` : k),
     random: () => 0.5,
   });
   const last = (): FakeSocket => {
@@ -360,10 +359,26 @@ describe('GatewayClient', () => {
     t.client.start();
     const s = await handshake(t);
     s.deliver(ready(1));
-    s.serverClose(GatewayCloseCode.SESSION_REVOKED);
+    s.serverClose(GatewayCloseCode.SESSION_REVOKED, 'session revoked');
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(t.fatals).toEqual(['revoked']);
+    expect(t.fatals).toEqual(['revoked:revoked']);
     expect(t.sockets).toHaveLength(1);
+  });
+
+  it('4010 reason: REUSE → reset (after a connection loss), LOGOUT_ALL → revoked (docs/09 #123)', async () => {
+    for (const [reason, want] of [
+      ['session revoked: REUSE', 'revoked:reset'],
+      ['session revoked: LOGOUT_ALL', 'revoked:revoked'],
+      ['session revoked: GUEST_EXPIRED', 'revoked:expired'],
+    ] as const) {
+      const t = setup();
+      t.client.start();
+      const s = await handshake(t);
+      s.deliver(ready(1));
+      s.serverClose(GatewayCloseCode.SESSION_REVOKED, reason);
+      expect(t.fatals).toEqual([want]);
+      t.client.stop();
+    }
   });
 
   it('4008 before READY = too many sessions (no retry loop); after READY = backoff + RESUME', async () => {

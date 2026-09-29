@@ -233,7 +233,7 @@ func TestReviewFixes(t *testing.T) {
 	bob.must(422, "PATCH", "/api/messages/"+m.GetId(), &v1.UpdateMessageRequest{Content: strings.Repeat("x", 4001)}, nil)
 
 	// M1: web refresh race. The other tab with the old cookie gets the same new cookie
-	// (docs/09 #89); without the replay entry it is 409 and the cookie is kept (no Max-Age=-1).
+	// (docs/09 #89); without the seal it is 409 and the cookie is kept (no Max-Age=-1).
 	email := mustEmail(t, o)
 	r := webPost(t, "/api/auth/login", &v1.LoginRequest{Email: email, Password: "password123"}, goodOrigin, "")
 	first := r.cookie.Value
@@ -247,7 +247,10 @@ func TestReviewFixes(t *testing.T) {
 		t.Fatalf("race: %d cookie=%+v (want 200 with the same new cookie)", r.status, r.cookie)
 	}
 	sid, _, _ := strings.Cut(second, ".")
-	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("auth:refresh_replay:"+sid)).Build()).Error()
+	// A rotation from before migration 00040 (no seal).
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE sessions SET replay_seal = NULL WHERE id = $1", sid); err != nil {
+		t.Fatal(err)
+	}
 	r = webPost(t, "/api/auth/refresh", nil, goodOrigin, first)
 	if r.status != 409 || r.cookie != nil {
 		t.Fatalf("race without replay: %d cookie=%+v (want 409 without Set-Cookie)", r.status, r.cookie)

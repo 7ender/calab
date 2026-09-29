@@ -32,6 +32,7 @@ import { recheckTimeZone, resetTimeZoneSync } from './timezone';
 import { voice } from './voice';
 import { platform } from '../platform';
 import { t } from '../i18n';
+import { logoutToastKey } from './logoutNotice';
 
 const OFFLINE_RETRY_MS = 30_000;
 
@@ -140,12 +141,14 @@ export function beginSession(s: AuthSession): void {
 }
 
 function connectGateway(): void {
-  startGateway((kind) => {
+  startGateway((kind, reason) => {
     if (kind === 'too-many-sessions') useSession.getState().set({ tooManySessions: true });
     else {
-      // 'revoked'. An expired session is ended by platform.auth.onLoggedOut, not by the gateway.
+      // 'revoked' (4010) with the server's reason: reuse after a connection loss → 'reset',
+      // an explicit revocation elsewhere → 'revoked'. An expired session is ended by
+      // platform.auth.onLoggedOut, not by the gateway.
       void platform.auth.revoked();
-      void endSession('revoked');
+      void endSession(reason ?? 'revoked');
     }
   });
 }
@@ -201,6 +204,6 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useRoomLink.setState({ code: null, preferLogin: false });
   useUi.getState().openDialog(null);
   useSession.getState().set({ status: 'anon', me: null, sessionId: '', ready: false, gateway: 'idle', loggedOutReason: reason });
-  if (reason === 'revoked') toast.info(t('session.revokedToast'));
-  else if (reason === 'expired') toast.info(t('session.expiredToast'));
+  const notice = logoutToastKey(reason);
+  if (notice) toast.info(t(notice));
 }

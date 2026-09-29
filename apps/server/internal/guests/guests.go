@@ -472,7 +472,7 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 		if err := q.DeleteNotesAbout(ctx, uid); err != nil { // by and about the guest
 			return err
 		}
-		if sessions, err = q.RevokeAllUserSessions(ctx, uid); err != nil {
+		if sessions, err = q.RevokeAllUserSessions(ctx, sqlc.RevokeAllUserSessionsParams{UserID: uid, Reason: auth.RevokeGuestExpired}); err != nil {
 			return err
 		}
 		return q.AnonymizeGuest(ctx, uid)
@@ -487,7 +487,7 @@ func (s *Service) removeGuest(ctx context.Context, uid uuid.UUID) error {
 		_ = s.store.Delete(ctx, f.Key)
 		blob.DeleteThumbs(ctx, s.store, f.Key, f.ThumbnailKey)
 	}
-	s.auth.MarkRevoked(ctx, sessions...) // access tokens die now, gateway closes with 4010 (own budget)
+	s.auth.MarkRevoked(ctx, auth.RevokeGuestExpired, sessions...) // access tokens die now, gateway closes with 4010 (own budget)
 	for _, w := range wids {
 		s.events.Workspace(ctx, w, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceMemberRemove{
 			WorkspaceMemberRemove: &v1.WorkspaceMemberRemove{WorkspaceId: w.String(), UserId: uid.String()},

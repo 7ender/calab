@@ -7,6 +7,7 @@ import { isAway } from './afk';
 import { applyDispatch } from './dispatch';
 import { platform } from '../platform';
 import { applyServerPresence } from './presenceTimer';
+import type { LogoutReason } from '../../shared/ipc';
 
 let client: GatewayClient | null = null;
 /** Rooms we want typing/read-state for (SUBSCRIBE replaces the set; resent after READY/RESUMED). */
@@ -28,7 +29,7 @@ function installWake(): void {
   window.addEventListener('online', () => client?.wake());
 }
 
-export function startGateway(onFatal: (kind: GatewayFatal) => void): void {
+export function startGateway(onFatal: (kind: GatewayFatal, reason?: LogoutReason) => void): void {
   stopGateway();
   installWake();
   const s = useSession.getState();

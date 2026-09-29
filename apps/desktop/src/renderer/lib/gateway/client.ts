@@ -15,6 +15,8 @@ import {
   type DispatchEvent,
   type GatewayFrame,
 } from '@calaba/protocol';
+import type { LogoutReason } from '../../../shared/ipc';
+import { logoutReasonFromClose } from '../../../shared/logoutReason';
 
 /**
  * WS gateway client (docs/05-realtime-protocol.md). Pure logic with injected
@@ -60,7 +62,11 @@ export interface GatewayDeps {
   createSocket(url: string): SocketLike;
   onDispatch(ev: DispatchEvent, seq: bigint): void;
   onStatus(s: GatewayStatus): void;
-  onFatal(kind: GatewayFatal): void;
+  /**
+   * `revoked` comes with the logout reason from the 4010 close reason (REUSE → 'reset', …,
+   * shared/logoutReason.ts); `too-many-sessions` without one.
+   */
+  onFatal(kind: GatewayFatal, reason?: LogoutReason): void;
   log?(msg: string): void;
   /** Random source for jitter (tests inject a constant). */
   random?: () => number;
@@ -555,7 +561,8 @@ export class GatewayClient {
       case GatewayCloseCode.SESSION_REVOKED:
         this.stopped = true;
         this.setStatus('stopped');
-        this.deps.onFatal('revoked');
+        this.log(`revoked: ${reason || '(no reason)'}`);
+        this.deps.onFatal('revoked', logoutReasonFromClose(reason));
         return;
       case GatewayCloseCode.RATE_LIMITED:
         // 4008 also means «send queue overflow» / «rate limited» (a slow consumer, e.g. a big
