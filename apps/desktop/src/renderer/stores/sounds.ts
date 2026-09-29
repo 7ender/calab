@@ -18,14 +18,15 @@ export interface SoundChip {
 interface SoundsState {
   /** Workspace id → its sounds in library order (position). */
   byWs: Record<string, Sound[]>;
-  /** Until when (epoch ms) my presses are locked (PRESS_COOLDOWN_MS after a press). */
-  cooldownUntil: number;
+  /** My presses are locked (PRESS_COOLDOWN_MS after a press, longer after a 429): until when and for how long. */
+  cooldown: { until: number; ms: number } | null;
   chip: SoundChip | null;
   setWorkspace: (workspaceId: string, sounds: readonly Sound[]) => void;
   upsert: (s: Sound) => void;
   remove: (workspaceId: string, soundId: string) => void;
   dropWorkspace: (workspaceId: string) => void;
-  setCooldown: (until: number) => void;
+  /** Locks the presses for `ms`; the lock lifts by itself. */
+  lock: (ms: number) => void;
   showChip: (c: Omit<SoundChip, 'key'>) => void;
   /** Hides the chip if it is still the one with `key`. */
   hideChip: (key: number) => void;
@@ -37,7 +38,7 @@ let chipSeq = 0;
 
 export const useSounds = create<SoundsState>()((set) => ({
   byWs: {},
-  cooldownUntil: 0,
+  cooldown: null,
   chip: null,
   setWorkspace: (wsId, sounds) => set((s) => ({ byWs: { ...s.byWs, [wsId]: ordered([...sounds]) } })),
   upsert: (x) =>
@@ -58,7 +59,11 @@ export const useSounds = create<SoundsState>()((set) => ({
       delete byWs[wsId];
       return { byWs };
     }),
-  setCooldown: (until) => set({ cooldownUntil: until }),
+  lock: (ms) => {
+    const until = Date.now() + ms;
+    set({ cooldown: { until, ms } });
+    setTimeout(() => set((s) => (s.cooldown?.until === until ? { cooldown: null } : s)), ms);
+  },
   showChip: (c) => set({ chip: { ...c, key: ++chipSeq } }),
   hideChip: (key) => set((s) => (s.chip?.key === key ? { chip: null } : s)),
   reset: () => set({ byWs: {}, chip: null }),

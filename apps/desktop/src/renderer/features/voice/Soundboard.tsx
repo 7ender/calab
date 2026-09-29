@@ -1,7 +1,7 @@
 import type { Sound } from '@calaba/protocol';
 import * as Popover from '@radix-ui/react-popover';
 import { Music, Play, Search, Settings, Star } from 'lucide-react';
-import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
 import { IconButton, Input, Tip, cx } from '../../components/ui';
 import { t, useLocale, type MessageKey } from '../../i18n';
 import { builtinBoard, builtinSound } from '../../lib/builtinSounds';
@@ -96,7 +96,8 @@ function SoundboardPanel({ onSettings }: { onSettings: () => void }): ReactNode 
     [locale, workspace, favorites, usage, query],
   );
   const fav = useMemo(() => new Set(favorites), [favorites]);
-  const locked = useLocked();
+  const cooldown = useSounds((s) => s.cooldown);
+  const locked = cooldown !== null;
   return (
     <>
       <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
@@ -122,7 +123,7 @@ function SoundboardPanel({ onSettings }: { onSettings: () => void }): ReactNode 
       </div>
       {/* The 2 s lock after a press: a hairline that runs out (a finite transition, none with reduced motion). */}
       <div className="h-0.5 shrink-0 overflow-hidden" aria-hidden>
-        {locked ? <div key={locked} className="snd-cooldown h-full bg-accent" style={{ animationDuration: `${Math.max(0, locked - Date.now())}ms` }} /> : null}
+        {cooldown ? <div key={cooldown.until} className="snd-cooldown h-full bg-accent" style={{ animationDuration: `${cooldown.ms}ms` }} /> : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" role="group" aria-busy={locked ? true : undefined} data-testid="soundboard-sections">
         {sections.length === 0 ? <p className="py-6 text-center text-caption text-muted">{t('snd.none')}</p> : null}
@@ -131,7 +132,7 @@ function SoundboardPanel({ onSettings }: { onSettings: () => void }): ReactNode 
             <h3 className="pb-1.5 pt-3 text-micro font-semibold uppercase tracking-wide text-muted">{t(SECTION_TITLE[sec.id])}</h3>
             <div className="grid grid-cols-2 gap-1.5">
               {sec.sounds.map((s) => (
-                <SoundTile key={s.id} sound={s} favorite={fav.has(s.id)} locked={locked !== 0} />
+                <SoundTile key={s.id} sound={s} favorite={fav.has(s.id)} locked={locked} />
               ))}
             </div>
           </section>
@@ -139,19 +140,6 @@ function SoundboardPanel({ onSettings }: { onSettings: () => void }): ReactNode 
       </div>
     </>
   );
-}
-
-/** The end of the current press cooldown (0 = free); re-renders once when it runs out. */
-function useLocked(): number {
-  const until = useSounds((s) => s.cooldownUntil);
-  const [, setTick] = useState(0);
-  const left = until - Date.now();
-  useEffect(() => {
-    if (left <= 0) return;
-    const id = setTimeout(() => setTick((n) => n + 1), left);
-    return () => clearTimeout(id);
-  }, [until, left]);
-  return left > 0 ? until : 0;
 }
 
 /** One sound: the tile plays it to the call; ▶ (hover / focus) plays it only for me; ☆ stars it. */

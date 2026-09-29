@@ -28,7 +28,7 @@ export function soundNameFromFile(file: string): string {
     .replace(/\.[^.]*$/u, '')
     .replace(/[_-]+/g, ' ')
     .trim();
-  return [...base].slice(0, NAME_MAX).join('') || 'sound';
+  return Array.from(base).slice(0, NAME_MAX).join('') || 'sound';
 }
 
 const seconds = (ms: number): string => t('snd.seconds', { n: (ms / 1000).toLocaleString(getLocale(), { maximumFractionDigits: 1 }) });

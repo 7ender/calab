@@ -81,17 +81,15 @@ export function toggleFavorite(soundId: string): void {
  */
 export async function pressSound(soundId: string): Promise<void> {
   const { roomId, phase } = useVoice.getState();
-  const now = Date.now();
-  if (!roomId || phase !== 'connected' || now < useSounds.getState().cooldownUntil) return;
-  useSounds.getState().setCooldown(now + PRESS_COOLDOWN_MS);
+  if (!roomId || phase !== 'connected' || useSounds.getState().cooldown) return;
+  useSounds.getState().lock(PRESS_COOLDOWN_MS);
   const usage = prefs().soundboardUsage;
   usePrefs.getState().setPrefs({ soundboardUsage: { ...usage, [soundId]: (usage[soundId] ?? 0) + 1 } });
   try {
     await api.sounds.play(roomId, soundId);
   } catch (e) {
     if (e instanceof ApiError && e.status === 429) {
-      const wait = (e.extra.retryAfter ?? 2) * 1000;
-      useSounds.getState().setCooldown(Date.now() + wait);
+      useSounds.getState().lock((e.extra.retryAfter ?? 2) * 1000);
       toast.info(t('snd.tooFast'));
     } else if (e instanceof ApiError && e.status === 404) toast.info(t('snd.gone'));
     else toast.error(t('snd.failed'));
