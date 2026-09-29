@@ -7,7 +7,7 @@ import { t, useLocale } from '../../i18n';
 import { CLICK_DURATION, DRAG_THRESHOLD_PX, createRange, minutesAt, moveRange, resizeRange, type Range } from '../../lib/calendar/drag';
 import { dayKeys, daySignature, keyEventId, myStatusOf, parseSignature, type SigItem } from '../../lib/calendar/events';
 import { layoutDay } from '../../lib/calendar/layout';
-import { addDays, atMinutes, dayEnd, dayKey, dayStart, eventSpan, formatLongDay, formatMinutes, formatRange, formatTime, monthOf } from '../../lib/calendar/time';
+import { addDays, atMinutes, dayEnd, dayKey, dayStart, eventSpan, formatLongDay, formatMinutes, formatRange, formatShortDay, formatTime, monthOf } from '../../lib/calendar/time';
 import { addPeople } from '../../lib/calendar/people';
 import { useMobile } from '../../lib/mobile';
 import { calendarAvailable, canEditEvent, copyEventLink, ensureMonth, eventOf, moveOccurrence } from '../../services/calendar';
@@ -182,7 +182,8 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
   const open = useUi((s) => s.openCalendarDay);
   const close = useUi((s) => s.closeCalendar);
   const [sheet, setSheet] = useState(false);
-  const title = formatLongDay(dayStart(day));
+  // Phone: the short date («чт, 15 янв.») leaves room for «Люди», «Подобрать время» and «+».
+  const title = mobile ? formatShortDay(dayStart(day)) : formatLongDay(dayStart(day));
   const touch = mobile ? 'size-10 rounded-full' : undefined;
   return (
     <header className={cx('mat-toolbar flex h-12 shrink-0 items-center gap-1 border-b border-line pl-3 pr-2', mobile && 'pl-1')}>

@@ -146,6 +146,10 @@ const KEY = new Set([
   'calendar-mini',
   'calendar-day',
   'calendar-dialog',
+  // Free / busy, find a time, Settings → Календарь (ADR-0041).
+  'calendar-filter',
+  'calendar-findtime',
+  'settings-calendar',
   // Guest admission (ADR-0040).
   'members-admissions',
 ]);
@@ -202,7 +206,7 @@ async function membersList(page: Page): Promise<Locator> {
 }
 
 /** App settings tabs in order (AppSettingsDialog); «О программе» (last) is `settings-about`. */
-const SETTINGS_TABS = ['general', 'profile', 'voice', 'hotkeys', 'notifications', 'connection', 'sessions'] as const;
+const SETTINGS_TABS = ['general', 'profile', 'voice', 'hotkeys', 'notifications', 'calendar', 'connection', 'sessions'] as const;
 /** 1-based position of an app settings tab, for openSettingsTab. */
 const appTab = (id: (typeof SETTINGS_TABS)[number]): number => SETTINGS_TABS.indexOf(id) + 1;
 
@@ -1346,7 +1350,7 @@ test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
 });
 
 /** Settings windows: one test per section (left list = role «tab»), numbered like the snapshots. */
-const TABS = { 'workspace-settings': 6, 'room-settings': 3, settings: 8, 'voice-room-settings': 4 } as const;
+const TABS = { 'workspace-settings': 6, 'room-settings': 3, settings: 9, 'voice-room-settings': 4 } as const;
 
 for (let i = 1; i <= TABS['workspace-settings']; i++) {
   test(`workspace-settings-${i}`, async ({ open, win, mock, shot }) => {
@@ -1628,6 +1632,8 @@ const openAppSettings = (page: Page) => async (): Promise<void> => {
 };
 
 SETTINGS_TABS.forEach((id, i) => {
+  // «Календарь» loads its CalDAV state first: its own test below.
+  if (id === 'calendar') return;
   test(`settings-${id}`, async ({ open, win, mock, shot }) => {
     await open();
     await mainWindow(win, mock);
@@ -3311,6 +3317,16 @@ test('chat-bot-commands', async ({ open, win, mock, shot }) => {
 
 // ---------------------------------------------------------------- calendar (ADR-0038 §7)
 
+/**
+ * Free / busy of the calendar screens (ADR-0041): Борис's meeting with Григорий (no room — Анна
+ * cannot see it) 16:00–17:00, Вера's external calendar 17:00–18:00 MSK.
+ */
+function freeBusyDay(mock: MockServer): void {
+  const at = (iso: string): number => Date.parse(iso);
+  mock.addEvent({ workspaceId: IDS.workspaces.main, organizerId: IDS.users.boris, title: 'Секрет', startMs: at('2026-01-15T13:00:00Z'), endMs: at('2026-01-15T14:00:00Z'), attendees: [{ userId: IDS.users.grigory }] });
+  mock.setBusy(IDS.users.vera, [{ startMs: at('2026-01-15T14:00:00Z'), endMs: at('2026-01-15T15:00:00Z') }]);
+}
+
 /** The calendar screens: a full day of meetings (calendarWeb.seedDay), the mock's clock at NOW. */
 async function calendarDay(win: Page, mock: MockServer): Promise<void> {
   mock.setClock(NOW.getTime());
@@ -3319,11 +3335,12 @@ async function calendarDay(win: Page, mock: MockServer): Promise<void> {
   await expect(win.getByTestId('mini-calendar')).toBeVisible();
 }
 
-/** The header icon with today's count and the mini month under it (dots, today, the chat beside). */
+/** The header icon with today's count: today's day view at once, the mini month under the header (ADR-0041 §3). */
 test('calendar-mini', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await calendarDay(win, mock);
+  await expect(win.getByTestId('day-view')).toBeVisible();
   await expect(win.getByTestId('calendar-count')).toHaveText('3');
   await expect(win.locator('[data-cal-day="2026-01-20"]')).toHaveAccessibleName(/есть встречи/);
   await checkpoint(shot, 'calendar-mini');
@@ -3342,6 +3359,54 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
   await expect(card.getByTestId('event-title')).toHaveText('Планёрка');
   await expect(card.getByTestId('event-attendee')).toHaveCount(5);
   await checkpoint(shot, 'calendar-day');
+});
+
+/**
+ * «Люди» (ADR-0041 §3): Борис and Вера chosen — their meetings, grey «Занято · Борис Петров» for his
+ * meeting Анна cannot see, Вера's external calendar hatched; my own meetings without them hidden.
+ */
+test('calendar-filter', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  freeBusyDay(mock);
+  await calendarDay(win, mock);
+  await win.getByTestId('people-filter-add').click();
+  const picker = win.getByTestId('people-filter-picker');
+  await picker.getByRole('option', { name: /Борис/ }).click();
+  await picker.getByRole('option', { name: /Вера/ }).click();
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('person-chip')).toHaveCount(2);
+  await expect(win.getByTestId('busy-block')).toHaveCount(2);
+  await checkpoint(shot, 'calendar-filter');
+});
+
+/** «Подобрать время»: columns of Анна, Борис, Вера (work hours grey, external hatched), green windows, «Ближайшие окна». */
+test('calendar-findtime', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  freeBusyDay(mock);
+  await calendarDay(win, mock);
+  await win.getByTestId('day-find').click();
+  const pane = win.getByTestId('find-time');
+  await pane.getByTestId('find-people-add').click();
+  const picker = win.getByTestId('find-people-picker');
+  await picker.getByRole('option', { name: /Борис/ }).click();
+  await picker.getByRole('option', { name: /Вера/ }).click();
+  await win.keyboard.press('Escape');
+  await expect(pane.getByTestId('busy-column')).toHaveCount(3);
+  await expect(pane.getByTestId('find-slot')).not.toHaveCount(0);
+  await pane.getByTestId('find-next').click();
+  await expect(pane.getByTestId('find-selection')).toBeVisible();
+  await checkpoint(shot, 'calendar-findtime');
+});
+
+/** Settings → Календарь: work hours, the reminders link, the CalDAV connect form with the providers' addresses. */
+test('settings-calendar', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await openSettingsTab(win, openAppSettings(win), appTab('calendar'));
+  await expect(win.getByTestId('caldav-connect')).toBeVisible();
+  await checkpoint(shot, 'settings-calendar');
 });
 
 /** «+ Встреча»: the dialog filled in — attendee chips (one optional, one external), a room, a repeat. */

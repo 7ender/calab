@@ -413,7 +413,7 @@ function CreateMenu({
         </Dropdown.Trigger>
       </Tip>
       <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'w-56')} sideOffset={4} align="end" collisionPadding={16}>
+        <Dropdown.Content className={cx(menuBox, 'w-64')} sideOffset={4} align="end" collisionPadding={16}>
           {rooms ? (
             <>
               <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'room-create', workspaceId, voice: false })}>

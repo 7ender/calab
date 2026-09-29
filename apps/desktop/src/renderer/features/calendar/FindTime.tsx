@@ -100,7 +100,7 @@ export function FindTimePane({ workspaceId }: { workspaceId: string }): ReactNod
         </IconButton>
         <h1 className="ml-1 flex min-w-0 flex-1 items-baseline gap-2 truncate text-list font-semibold">
           <span className="shrink-0">{t('fb.find')}</span>
-          <span className="truncate font-normal text-muted first-letter:uppercase">{formatLongDay(dayStart(day))}</span>
+          <span className="truncate font-normal text-muted first-letter:uppercase">{mobile ? formatShortDay(dayStart(day)) : formatLongDay(dayStart(day))}</span>
         </h1>
         {day !== today ? (
           <Button variant="secondary" size={mobile ? 'md' : 'sm'} onClick={() => ctl.setDay(today)}>
@@ -239,8 +239,9 @@ function FindControls({ ctl, wrap }: { ctl: FindCtl; wrap: boolean }): ReactNode
     else setText(String(ctl.durationMin));
   };
   return (
-    <div className={cx('flex shrink-0 items-center gap-x-3 gap-y-2 border-b border-line px-3 py-2', wrap && 'flex-wrap')} data-testid="find-controls">
-      <div className={cx('flex min-w-0 items-center', wrap ? 'w-full' : 'flex-1')}>
+    // Two lines: the people (they may be many) above the duration and «в рабочие часы».
+    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-3 py-2" data-testid="find-controls">
+      <div className="flex w-full min-w-0 items-center">
         <PeopleBar workspaceId={ctl.workspaceId} people={ctl.users} onAdd={ctl.addUsers} onRemove={ctl.removeUser} wrap={wrap} testId="find-people" />
       </div>
       <div className="flex items-center gap-2">
@@ -371,6 +372,20 @@ const BusyColumn = memo(function BusyColumn({ workspaceId, userId, day, color }:
       ))}
       {busy.map((b) => {
         const external = b.kind === 'external';
+        if (b.allDay) {
+          // All day: busy (the server counts it) but a wash, not a wall — the hours stay readable.
+          return (
+            <div
+              key={`${b.start}-${b.end}-${b.kind}-${b.eventId}`}
+              role="img"
+              aria-label={t('fb.busyAllDay', { name })}
+              data-testid="busy-cell"
+              data-kind="all-day"
+              className="absolute inset-x-0"
+              style={{ top: y(b.start), height: y(b.end) - y(b.start), background: `color-mix(in srgb, ${color} 12%, transparent)` }}
+            />
+          );
+        }
         return (
           <div
             key={`${b.start}-${b.end}-${b.kind}-${b.eventId}`}
