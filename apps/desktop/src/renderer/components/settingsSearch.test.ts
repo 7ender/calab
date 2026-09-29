@@ -25,6 +25,12 @@ describe('normalize', () => {
 });
 
 describe('searchSettings', () => {
+  it('matches a section by its keywords and badge (docs/09 #125)', () => {
+    const about = [{ id: 'about', label: 'О программе', keywords: 'обновление обновить версия', badge: 'Обновление' }];
+    expect(searchSettings(about, [], 'обновление')).toEqual([{ section: 'about', sectionHit: true, rows: [] }]);
+    expect(searchSettings([{ id: 'about', label: 'О программе' }], [], 'обновление')).toEqual([]);
+  });
+
   it('returns nothing for an empty query', () => {
     expect(searchSettings(sections, entries, '   ')).toEqual([]);
   });

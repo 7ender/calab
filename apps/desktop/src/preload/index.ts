@@ -34,7 +34,7 @@ const api: CalabaApi = {
     checkUpdates: () => ipcRenderer.invoke(IPC.appCheckUpdates),
     onUpdateStatus: (cb) => on(IPC.appUpdateStatus, cb),
     updateStatus: () => ipcRenderer.invoke(IPC.appGetUpdateStatus),
-    installUpdate: () => ipcRenderer.invoke(IPC.appInstallUpdate),
+    installUpdate: (afterCall) => ipcRenderer.invoke(IPC.appInstallUpdate, afterCall === true),
     downloadUpdate: () => ipcRenderer.invoke(IPC.appDownloadUpdate),
     networkOnline: () => void ipcRenderer.invoke(IPC.appNetworkOnline),
     log: (level, message) => void ipcRenderer.invoke(IPC.appLog, { level, message }),

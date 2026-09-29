@@ -194,7 +194,7 @@ export function registerIpc(): void {
   handle(IPC.appTakeDeepLink, () => takePendingDeepLink());
   handle(IPC.appCheckUpdates, () => checkForUpdates());
   handle(IPC.appGetUpdateStatus, () => updateStatus());
-  handle(IPC.appInstallUpdate, () => installUpdate());
+  handle(IPC.appInstallUpdate, (_e, afterCall) => installUpdate(afterCall === true));
   handle(IPC.appDownloadUpdate, () => downloadUpdate());
   handle(IPC.appNetworkOnline, () => updatesNudge('online'));
   handle(IPC.appLog, (_e, a) => {

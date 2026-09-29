@@ -164,6 +164,7 @@ import {
   GatewayOpcode,
   GetInviteResponseSchema,
   GetMeResponseSchema,
+  GetVersionResponseSchema,
   GetRoomInviteResponseSchema,
   GetRoomResponseSchema,
   GetWorkspaceResponseSchema,
@@ -2372,6 +2373,11 @@ class MockImpl {
 
     this.emailRoutes();
     this.recordingRoutes();
+
+    // ---------------- version (public; the web compares its bundle, docs/09 #125)
+    this.route('GET', '/api/version', (c) => {
+      sendMsg(c.res, 200, GetVersionResponseSchema, { version: this.state.serverVersion, commit: 'mock', license: 'BUSL-1.1', product: 'Calab' });
+    });
 
     // ---------------- me
     this.route('GET', '/api/me', (c) => {

@@ -1,11 +1,10 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { SelfPanel } from './SelfPanel';
-import { UpdateBanner } from './UpdateBanner';
 import { VoiceBar } from './VoiceBar';
 
 /**
- * Bottom island (docs/08 «Нижний островок», Discord reference): «Голос подключён», the update
- * notice and the self panel as one floating block across the whole left part — from the rail's
+ * Bottom island (docs/08 «Нижний островок», Discord reference): «Голос подключён» and
+ * the self panel as one floating block across the whole left part — from the rail's
  * left edge to the room column's right edge, 8 px in, radius 12, on the window layer. The rail
  * and the room list end above it: its height is published as `--island-height` on the parent
  * (their bottom padding).
@@ -32,8 +31,6 @@ export function BottomIsland(): ReactNode {
       style={{ width: 'calc(var(--rail-width) + var(--sidebar-width) - 16px)' }}
     >
       <VoiceBar />
-      {/* «Обновление X готово — Перезапустить», right above the self panel. */}
-      <UpdateBanner />
       <SelfPanel />
     </div>
   );
