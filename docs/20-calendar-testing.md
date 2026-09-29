@@ -33,17 +33,16 @@
 
 ## (a) Go-интеграционные
 
-Новые файлы в `apps/server/internal/app/`, каждый — свой `TEST_PG_URL`/`TEST_REDIS_URL` (см. «Параллельные интеграционные прогоны» в TESTING.md):
-- `events_crud_integration_test.go` — `TestEventCreate`, `TestEventUpdateSequence`, `TestEventCancel` (C.1–C.3; парсит байты сгенерированного `invite.ics`: `UID`, `SEQUENCE`, `METHOD`).
-- `events_rsvp_integration_test.go` — `TestEventRSVP` (C.4), `TestEventRSVPExternalToken` (C.5–C.6: accept/decline/maybe, идемпотентный повтор, `expired` → 410).
-- `events_reminders_integration_test.go` — `TestEventReminders` (C.7: метёлка, дедуп, DND).
-- `events_room_integration_test.go` — `TestRoomEventBadge` (C.8), `TestEventRecordingLink` (C.9).
-- `events_recurrence_integration_test.go` — `TestEventRecurrenceExpand`, `TestEventException` (C.10), `TestEventRecurrenceDST` (C.11, часы теста зафиксированы до/после 25.10.2026 Europe/Berlin).
-- `events_guest_link_integration_test.go` — `TestEventGuestLink` (C.13).
-- `events_permissions_integration_test.go` — `TestEventPermissions` (C.17).
-- `events_limits_integration_test.go` — `TestEventLimits` (C.18).
+Реализовано (сервер, 29.09) — `apps/server/internal/app/calendar_integration_test.go` (`-run 'Event'`) и unit
+`apps/server/internal/calendar/*_test.go`, `internal/mail/events_test.go`:
+- `TestEventCRUDAndPermissions` — C.1, C.3, C.4, C.17: валидация (название, время, зона, текстовая комната, гость/чужой как участник, адреса, > 20 внешних), гость → 403, `EVENT_CREATE/RSVP/UPDATE/DELETE` в gateway (гостю — нет), маска адресов для не вовлечённых, RSVP только участником, правка организатором/`MANAGE_ROOM` (участник → 403), удаление из списка → `EVENT_DELETE` прежнего состояния, встреча без комнаты видна только участникам, `GET /api/me/events/today` (отклонённые не считаются), отмена (`cancelled_at`).
+- `TestEventRecurringAndException` — C.10: еженедельная серия с `until`, 3 вхождения в `Europe/Moscow`, отмена одного вхождения (`?occurrence=`), `cancelled_occurrences`, `SEQUENCE + 1`.
+- `TestEventMailAndGuestLinks` — C.1–C.3, C.5, C.6, C.13: письма (`event_invite/update/cancel`), разбор `invite.ics` (`METHOD`, `UID`, `SEQUENCE` 0 → 1 → 2, `ATTENDEE … mailto:`, `ORGANIZER`, `URL`, `DTSTART` в UTC), `Reply-To`, нет письма на неподтверждённый адрес; гостевая ссылка: окно `[начало − 15 мин; конец + 1 ч]`, до окна `409 INVITE_NOT_YET_VALID`, одноразовая, переносится со встречей, отзывается при удалении внешнего; подписанный ответ (preview, POST идемпотентен, битый токен → 404, прошедшая встреча → `410 EVENT_OVER`, удалённый из списка → 404); без `MANAGE_ROOM` у организатора — `guest_links = false`, ссылки нет.
+- `TestEventRemindersAndRoomBadge` — C.7, C.8, C.9: настройки напоминаний (валидация, `settings`-замена их не затирает, умолчания 60/5), метёлка с заданным временем (`Calendar.Sweep(ctx, now)`): `EVENT_REMINDER{minutes}`, DND-флаг, дедуп, отклонивший не получает; `ROOM_EVENT_ACTIVE` / `ENDED`, сразу при создании в окне, `active_events` в READY (гостю пусто), привязка записи организатора к вхождению (`recording_id`), чужая запись не привязывается, отмена активной → `ENDED`.
+- `TestEventBotsReadOnly` — C.17 (боты): чтение без адресов внешних, изменения → 403 `BOT_NOT_ALLOWED`; `TestBotRouteTable` — маршруты календаря в таблице.
+- Unit: C.10–C.11 `TestExpandDailyWeeklyUntil`, `TestExpandMonthlySkipsShortMonths`, `TestExpandAcrossDST` (Europe/Berlin, 29.03 и 25.10.2026); C.16 (формат) `TestBuildICS` (минимальный RFC 5545-парсер: складка строк ≤ 75 октетов, BEGIN/END, экранирование, `VTIMEZONE` для серии в DST-зоне, `VALUE=DATE`); C.5 `TestRSVPToken`; C.18 `TestInputLimits` (120/4000, 101 участник, 21 внешний, дубли, синтаксис адреса); письмо `TestEventInviteMIME` (multipart/mixed, inline `text/calendar; method=REQUEST`, `invite.ics`, Reply-To, длинные подписанные ссылки не обрезаются).
 
-Прогон в цикле разработки — по пакету/файлу, как везде (`go test -tags integration -run 'TestEvent' ./internal/app/`); полный `internal/app` — один раз перед мержем ветки календаря (правило 7 в CLAUDE.md).
+Прогон: `go test -tags integration -run 'Event' ./internal/app/` (+ `go test ./internal/calendar/ ./internal/mail/`).
 
 ## (b) Десктоп unit (vitest)
 
@@ -64,5 +63,5 @@
 - **C.16 целиком** — открытие `.ics` в Apple Calendar и Google Calendar не автоматизируется (сторонние приложения, нет API в CI); ручная проверка раз на релиз с настоящим внешним ящиком.
 - **C.5, C.13, C.15** — сам факт «письмо дошло, ссылка кликается, ОС спрашивает «Открыть Calab?»» проверяется только вручную; серверная и клиентская логика за ссылками покрыта (a)/(b)/(c) отдельно.
 - **C.7** — точный вид и время появления нативного уведомления ОС (macOS/Windows/Linux) и его клик — вручную на каждой ОС; в моке проверяется только внутренняя логика (получено ли `EVENT_REMINDER`, дошло ли действие до подключения к голосу).
-- **Публичная RSVP-страница (C.5) в Playwright-моке** — на момент написания плана мок API не поднимает неавторизованный HTTP-маршрут RSVP; если это добавят в мок, `calendar-rsvp-external.spec.ts` закрывает этот пробел — до тех пор это раздел «вручную» в TESTING.md C.5.
+- **Публичная RSVP-страница (C.5) в Playwright-моке** — мок поднимает `GET/POST /api/event-rsvp` (токен — `server.eventRsvpToken(id, email, status)`), страницу `/e/<id>/rsvp?t=` пишет клиентская задача. Ранее: мок API не поднимал неавторизованный HTTP-маршрут RSVP; если это добавят в мок, `calendar-rsvp-external.spec.ts` закрывает этот пробел — до тех пор это раздел «вручную» в TESTING.md C.5.
 - Точный путь/формат RSVP- и гостевой ссылки зависит от дополнения к ADR-0038 (внешние участники), которое дописывается параллельно; если оно разойдётся с предположениями здесь и в TESTING.md C.5/C.6/C.13 — поправить оба файла вместе с реализацией, а не считать тест устаревшим.
