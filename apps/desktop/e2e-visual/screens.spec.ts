@@ -158,6 +158,9 @@ const KEY = new Set([
   'boards-list',
   'boards-filter',
   'boards-settings',
+  // Timeline and task cards in chat (ADR-0042 §5, 1.1.0).
+  'boards-timeline',
+  'chat-task-card',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -3528,4 +3531,32 @@ test('boards-settings', async ({ open, win, mock, shot }) => {
   await win.getByRole('tab', { name: 'Статусы' }).click();
   await expect(win.getByTestId('statuses-editor').locator('[data-settings-row]')).toHaveCount(6);
   await checkpoint(shot, 'boards-settings');
+});
+
+/** The timeline (3), month scale: today line, weekends, CAL-3 → CAL-4 late-blocker marker, «Без дат». */
+test('boards-timeline', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.keyboard.press('3');
+  const tl = win.getByTestId('timeline');
+  await expect(tl.getByTestId('timeline-row')).toHaveCount(4);
+  await expect(tl.locator('[data-testid=timeline-row]').filter({ hasText: 'CAL-4' }).getByTestId('bar-blocked')).toBeVisible();
+  await expect(tl.getByTestId('timeline-today-line')).toBeVisible();
+  await checkpoint(shot, 'boards-timeline');
+});
+
+/** A /t/CAL-3 link in chat: the task card (key, title, status, assignees, overdue due date). */
+test('chat-task-card', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setClock(NOW.getTime());
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.boris, content: 'Кто возьмёт? https://calab.test/t/CAL-3' });
+  const card = win.getByTestId('task-link-card');
+  await expect(card).toContainText('CAL-3');
+  await expect(card).toContainText('В работе');
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await settle(win);
+  await checkpoint(shot, 'chat-task-card');
 });

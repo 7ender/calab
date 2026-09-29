@@ -247,7 +247,7 @@ export function unfurl(url: string): Promise<UnfurlResponse | null> {
   const hit = unfurlCache.get(url);
   if (hit) return hit;
   const p = api.unfurl.get(url).then(
-    (r) => (r.title || r.description || r.imageUrl ? r : null),
+    (r) => (r.title || r.description || r.imageUrl || r.task || r.board ? r : null),
     () => null,
   );
   unfurlCache.set(url, p);

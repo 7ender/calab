@@ -29,6 +29,7 @@ import { whenIdle } from '../../lib/lazyPreload';
 import { MembersPanel } from './MembersPanel';
 import { DayView } from '../calendar/DayView';
 import { BoardsView } from '../boards/BoardsView';
+import { CreateTaskDialog } from '../boards/CreateTaskDialog';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
@@ -115,6 +116,7 @@ export function AppShell(): ReactNode {
         ) : (
           <Welcome />
         )}
+        {ready ? <CreateTaskDialog /> : null}
       </MobileShell>
     );
   }
@@ -184,6 +186,7 @@ export function AppShell(): ReactNode {
           <Welcome />
         )}
         {ready && (home || (hasWs && wsId)) ? <BottomIsland /> : null}
+        {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>
   );

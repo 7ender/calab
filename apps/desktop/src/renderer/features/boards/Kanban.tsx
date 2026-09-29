@@ -410,7 +410,7 @@ function ColumnHeader({
     useBoardsUi.getState().setPrefs(boardId, { hidden: [...p.hidden, status.id] });
   };
   return (
-    <header className={cx('flex h-10 shrink-0 items-center gap-2 pl-3 pr-1.5', manage && 'cursor-grab active:cursor-grabbing')} onPointerDown={(e) => onPointerDown(e, status.id)} data-testid="column-header">
+    <div className={cx('flex h-10 shrink-0 items-center gap-2 pl-3 pr-1.5', manage && 'cursor-grab active:cursor-grabbing')} onPointerDown={(e) => onPointerDown(e, status.id)} data-testid="column-header">
       <StatusIcon type={status.type} color={status.color} />
       {editing ? (
         <InlineName
@@ -437,7 +437,7 @@ function ColumnHeader({
       <span className="flex-1" />
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
-          <button type="button" aria-label={t('boards.columnMenu')} className="grid size-7 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="column-menu">
+          <button type="button" aria-label={t('boards.columnMenu')} className="grid size-7 place-items-center mobile:size-10 rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active" data-testid="column-menu">
             <Ellipsis className="size-4" aria-hidden />
           </button>
         </Dropdown.Trigger>
@@ -505,13 +505,13 @@ function ColumnHeader({
       </Dropdown.Root>
       {canCreate ? (
         <Tip label={t('boards.addTaskTo', { status: status.name })}>
-          <button type="button" onClick={onAdd} aria-label={t('boards.addTaskTo', { status: status.name })} className="grid size-7 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="column-add">
+          <button type="button" onClick={onAdd} aria-label={t('boards.addTaskTo', { status: status.name })} className="grid size-7 place-items-center mobile:size-10 rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="column-add">
             <Plus className="size-4" aria-hidden />
           </button>
         </Tip>
       ) : null}
       {deleting ? <DeleteStatusDialog boardId={boardId} status={status} statuses={statuses} onClose={() => setDeleting(false)} /> : null}
-    </header>
+    </div>
   );
 }
 

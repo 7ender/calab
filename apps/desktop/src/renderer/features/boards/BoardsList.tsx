@@ -1,12 +1,14 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Archive, Ellipsis, Inbox, Link2, Lock, Plus, Settings, Shield, SquareKanban } from 'lucide-react';
+import type { Board } from '@calaba/protocol';
+import { Archive, ArchiveRestore, ChevronRight, Ellipsis, Inbox, Link2, Lock, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../components/Confirm';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { mayManageWorkspace } from '../../lib/permissions';
-import { boardLink, copyText, moveBoard, openBoard, removeBoard } from '../../services/boards';
+import { boardLink, copyText, listArchivedBoards, moveBoard, openBoard, removeBoard, restoreBoard } from '../../services/boards';
+import { DeleteBoardDialog } from './BoardSettings';
 import { unreadCount, useBoards, workspaceBoards } from '../../stores/boards';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
@@ -23,6 +25,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
   const ids = useBoards(useShallow((s) => workspaceBoards(s.boards, workspaceId).map((b) => b.id)));
   const me = useSession((s) => s.me?.user?.id ?? '');
   const admin = mayManageWorkspace(useMemberRoles(workspaceId, me));
+  const manageAny = useBoards((s) => workspaceBoards(s.boards, workspaceId).some((b) => hasBit(b.permissions, MANAGE_BOARD)));
   const list = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<string | null>(null);
   const [line, setLine] = useState<number | null>(null);
@@ -140,6 +143,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
           </p>
         )
       ) : null}
+      {admin || manageAny ? <ArchivedBoards workspaceId={workspaceId} live={ids.length} /> : null}
       {line !== null ? <div aria-hidden className="pointer-events-none absolute inset-x-3 z-10 h-0.5 rounded-full bg-accent" style={{ top: Math.max(0, line - 1) }} /> : null}
     </div>
   );
@@ -228,3 +232,79 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
     </div>
   );
 });
+
+/**
+ * «Архив» under the boards (ADR-0042 §3, MANAGE_BOARD): the archived boards the viewer manages
+ * (shown only when there are some; refetched when a board is archived / restored) —
+ * «Восстановить» brings one back, the bin deletes it for good after the key is typed.
+ */
+function ArchivedBoards({ workspaceId, live }: { workspaceId: string; live: number }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<Board[]>([]);
+  const [purge, setPurge] = useState<Board | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void listArchivedBoards(workspaceId).then((l) => {
+      if (alive) setList(l);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [workspaceId, live]);
+  const drop = (id: string): void => setList((l) => l.filter((b) => b.id !== id));
+  if (!list.length && !purge) return null;
+  return (
+    <div className="pt-3" data-testid="boards-archive">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex h-7 w-full items-center gap-1 rounded-[var(--radius-row)] pl-1 pr-2 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted hover:bg-hover hover:text-fg"
+        data-testid="boards-archive-toggle"
+      >
+        <ChevronRight className={cx('size-3.5 transition-transform duration-[var(--motion-fast)]', open && 'rotate-90')} aria-hidden />
+        {t('boards.archiveSection')}
+        <span className="font-normal tabular-nums">{list.length}</span>
+      </button>
+      {open ? (
+        <div className="flex flex-col gap-px pt-0.5">
+            {list.map((b) => (
+              <div key={b.id} className="group/arch flex h-8 items-center gap-2 rounded-[var(--radius-row)] pl-2 pr-1 text-list text-muted hover:bg-hover" data-testid="archived-board">
+                <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none opacity-60" aria-hidden>
+                  {b.emoji || <SquareKanban className="size-[18px]" />}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{b.name}</span>
+                <Tip label={t('boards.restoreBoard')}>
+                  <button
+                    type="button"
+                    aria-label={t('boards.restoreBoard')}
+                    onClick={() =>
+                      void restoreBoard(b.id).then((r) => {
+                        if (r) drop(b.id);
+                      })
+                    }
+                    className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] hover:bg-hover hover:text-fg"
+                    data-testid="board-restore"
+                  >
+                    <ArchiveRestore className="size-4" aria-hidden />
+                  </button>
+                </Tip>
+                <Tip label={t('boards.deleteBoard')}>
+                  <button
+                    type="button"
+                    aria-label={t('boards.deleteBoard')}
+                    onClick={() => setPurge(b)}
+                    className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] hover:bg-hover hover:text-danger-text"
+                    data-testid="board-purge"
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </button>
+                </Tip>
+              </div>
+            ))}
+        </div>
+      ) : null}
+      {purge ? <DeleteBoardDialog board={purge} onClose={() => setPurge(null)} onDone={() => drop(purge.id)} /> : null}
+    </div>
+  );
+}

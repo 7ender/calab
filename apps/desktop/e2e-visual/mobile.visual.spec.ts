@@ -555,6 +555,21 @@ test('m-boards-task', async ({ page }) => {
   await checkpoint(page, 'm-boards-task');
 });
 
+// The kanban on a phone: columns a screen wide, swiped horizontally with snap (ADR-0042 §5).
+test('m-boards-kanban', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('boards-button').tap();
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('view-kanban').tap();
+  const kanban = page.getByTestId('kanban');
+  await expect(kanban.getByTestId('kanban-column').first()).toBeVisible();
+  await expect(kanban).toHaveCSS('scroll-snap-type', /x mandatory/);
+  await checkpoint(page, 'm-boards-kanban');
+});
+
 // The composer's «Стикеры» panel as a bottom sheet (ADR-0030): the pack strip, my pack, «Эмоции»
 // to add; animated stickers stand on their first frame (they play only on hover).
 test('m-sticker-picker', async ({ page }) => {

@@ -416,7 +416,7 @@ function DangerTab({ board, onDone }: { board: Board; onDone: () => void }): Rea
 }
 
 /** Deleting for good: type the board key to confirm (ADR-0042 §5). */
-function DeleteBoardDialog({ board, onClose, onDone }: { board: Board; onClose: () => void; onDone: () => void }): ReactNode {
+export function DeleteBoardDialog({ board, onClose, onDone }: { board: Board; onClose: () => void; onDone: () => void }): ReactNode {
   const [v, setV] = useState('');
   const [busy, setBusy] = useState(false);
   return (

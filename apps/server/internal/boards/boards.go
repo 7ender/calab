@@ -31,6 +31,11 @@ type Uploader interface {
 	UploadInto(w http.ResponseWriter, r *http.Request, wsID uuid.UUID) error
 }
 
+// Limiter is a per-key rate limit (redisx.RateLimiter): Take answers 429 when the budget is out.
+type Limiter interface {
+	Take(ctx context.Context, key string) error
+}
+
 // Service serves the boards API.
 type Service struct {
 	db    *db.DB
@@ -39,6 +44,9 @@ type Service struct {
 	files Uploader
 	// PublicURL is PUBLIC_APP_URL: links to messages in «Создать задачу из сообщения».
 	PublicURL string
+	// CreateLimit / SearchLimit: per-user budgets of task creation and of ⌘K task search
+	// (security review 1.1.0; comments are messages under the message limit). nil = none.
+	CreateLimit, SearchLimit Limiter
 	// Now is the clock (tests move it).
 	Now func() time.Time
 }
@@ -97,6 +105,14 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
 
 func isBot(r *http.Request) bool { return auth.MustFromContext(r.Context()).IsBot }
+
+// take spends one unit of a per-user budget (nil = unlimited).
+func take(r *http.Request, l Limiter) error {
+	if l == nil {
+		return nil
+	}
+	return l.Take(r.Context(), uid(r).String())
+}
 
 // tx runs fn in a transaction with both the sqlc queries and the raw transaction (dynamic SQL).
 func (s *Service) tx(ctx context.Context, fn func(q *sqlc.Queries, tx pgx.Tx) error) error {

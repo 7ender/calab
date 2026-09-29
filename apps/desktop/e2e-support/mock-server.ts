@@ -4024,8 +4024,28 @@ class MockImpl {
     });
 
     this.route('GET', '/api/unfurl', (c) => {
-      this.uid(c);
+      const me = this.uid(c);
       const url = c.url.searchParams.get('url') ?? '';
+      // Own links (ADR-0042): /t/<KEY-N> and /b/<id> from the boards, 404 when not visible.
+      const ownTask = /\/t\/([A-Za-z][A-Za-z0-9]{1,5}-[0-9]+)\/?$/.exec(url);
+      const ownBoard = /\/b\/([0-9a-f-]{36})\/?$/.exec(url);
+      if (ownTask?.[1] || ownBoard?.[1]) {
+        try {
+          if (ownTask?.[1]) {
+            const rec = this.boards.tasks.get(this.boards.byKey(ownTask[1], me));
+            if (!rec) throw new Error('gone');
+            const task = this.boards.taskOut(rec, me, false);
+            const board = this.boards.getBoard(task.boardId, me);
+            sendMsg(c.res, 200, UnfurlResponseSchema, { url, title: `${task.key} ${task.title}`, siteName: board.name, task, board });
+          } else {
+            const board = this.boards.getBoard(ownBoard?.[1] ?? '', me);
+            sendMsg(c.res, 200, UnfurlResponseSchema, { url, title: board.name, board });
+          }
+        } catch {
+          throw notFound('preview not found');
+        }
+        return;
+      }
       const card = UNFURLS[url] ?? MARKETING_UNFURLS[url];
       if (!card) throw notFound('preview not found');
       sendMsg(c.res, 200, UnfurlResponseSchema, {
@@ -6343,6 +6363,7 @@ class MockImpl {
       b().removeBoard(c.params[0] ?? '', me, q(c, 'purge') === '1');
       noContent(c.res);
     });
+    this.boardRoute('POST', '/api/boards/:id/restore', (c, me) => sendMsg(c.res, 200, BoardResponseSchema, { board: b().restoreBoard(c.params[0] ?? '', me) }));
     this.boardRoute('PUT', '/api/boards/:id/position', (c, me) => {
       const r = parseBody(c, SetBoardPositionRequestSchema);
       sendMsg(c.res, 200, BoardResponseSchema, { board: b().moveBoard(c.params[0] ?? '', me, r.position) });

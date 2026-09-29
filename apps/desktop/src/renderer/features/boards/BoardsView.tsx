@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { GanttChart, Inbox, Plus, SquareKanban } from 'lucide-react';
+import { Inbox, Plus, SquareKanban } from 'lucide-react';
 import { useCallback, useEffect, useMemo, type MouseEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, Segmented, Spinner, cx } from '../../components/ui';
@@ -14,13 +14,13 @@ import { useMemberRoles } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
 import { BoardHeader } from './BoardHeader';
 import { BoardSettingsHost } from './BoardSettings';
-import { CreateTaskDialog } from './CreateTaskDialog';
 import { FilterChips } from './FilterBar';
 import { HotkeysSheet } from './HotkeysSheet';
 import { Kanban } from './Kanban';
 import { EmptyBoard, ListRow, ListView } from './ListView';
 import { hasBit, CREATE_TASKS } from './model';
 import { TaskPanel } from './TaskPanel';
+import { Timeline } from './Timeline';
 import { useBoardHotkeys } from './useBoardHotkeys';
 import { NavButton } from '../shell/MobileShell';
 import { useMobile } from '../../lib/mobile';
@@ -56,7 +56,6 @@ export function BoardsView({ workspaceId, wide, mobile = false }: { workspaceId:
         {boardId === MY_TASKS ? <MyTasks workspaceId={workspaceId} /> : <Board boardId={boardId} workspaceId={workspaceId} />}
       </section>
       {taskId ? <TaskPanel taskId={taskId} floating={!wide} page={mobile} /> : null}
-      <CreateTaskDialog />
       <BoardSettingsHost />
       <HotkeysSheet />
     </div>
@@ -76,7 +75,7 @@ function Board({ boardId, workspaceId }: { boardId: string; workspaceId: string 
         ) : kind === 'list' ? (
           <ListView boardId={boardId} workspaceId={workspaceId} />
         ) : (
-          <TimelineSoon />
+          <Timeline boardId={boardId} workspaceId={workspaceId} />
         )
       ) : load === 'error' ? (
         <div className="grid flex-1 place-items-center">
@@ -90,17 +89,6 @@ function Board({ boardId, workspaceId }: { boardId: string; workspaceId: string 
         </div>
       )}
     </>
-  );
-}
-
-/** The timeline slot (ADR-0042 §5 «Таймлайн»: the follow-up task). */
-function TimelineSoon(): ReactNode {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center" data-testid="timeline-soon">
-      <GanttChart className="size-10 text-muted" strokeWidth={1.25} aria-hidden />
-      <div className="text-headline font-semibold">{t('boards.timelineSoon')}</div>
-      <p className="max-w-sm text-body text-muted">{t('boards.timelineSoonText')}</p>
-    </div>
   );
 }
 
