@@ -258,6 +258,21 @@ test('m-chat', async ({ page }) => {
   await checkpoint(page, 'm-chat-multiline', { main: true, snapshot: false });
 });
 
+/**
+ * docs/09 #125: the server (GET /api/version at READY) is newer than the loaded bundle — the accent
+ * bar under the top with «Обновить страницу» (the web has no updater).
+ */
+test('m-update-bar', async ({ page }) => {
+  mock.state.serverVersion = '99.0.0';
+  await signedIn(page);
+  const bar = page.getByTestId('update-bar');
+  await expect(bar).toContainText('Доступна версия 99.0.0');
+  await expect(bar.getByRole('button', { name: 'Обновить страницу' })).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'Позже' })).toBeVisible();
+  await feedToBottom(page);
+  await checkpoint(page, 'm-update-bar', { main: true });
+});
+
 /** The feed never scrolls sideways and nothing in it pokes past the screen (issue #9). */
 async function expectFeedFits(page: Page): Promise<void> {
   const wide = await page.locator('[data-virtuoso-scroller]').first().evaluate((el) => {
