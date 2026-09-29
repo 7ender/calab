@@ -20,6 +20,8 @@ interface CalendarState {
   series: Readonly<Record<string, CalendarEvent>>;
   /** Recording prompts answered («Начать» / «Не сейчас»), per occurrence key: once each. */
   prompted: Readonly<Record<string, true>>;
+  /** A room whose header badge opens its meeting card (a guest's /e/<id>); cleared when it closes. */
+  badgeOpen: string | null;
   reset: () => void;
 }
 
@@ -30,5 +32,6 @@ export const useCalendar = create<CalendarState>()((set) => ({
   todayCount: 0,
   series: {},
   prompted: {},
-  reset: () => set({ occ: {}, active: {}, months: {}, todayCount: 0, series: {} }),
+  badgeOpen: null,
+  reset: () => set({ occ: {}, active: {}, months: {}, todayCount: 0, series: {}, badgeOpen: null }),
 }));

@@ -87,7 +87,7 @@ export function RoomHeader({
       <h1 data-header-name className={cx('min-w-0 max-w-[40%] truncate text-list font-semibold', mobile && 'max-w-none flex-1')} title={room.name}>
         {room.name}
       </h1>
-      {voiceRoom && !mobile ? <RoomEventBadge roomId={room.id} variant="header" /> : null}
+      {voiceRoom ? <RoomEventBadge roomId={room.id} variant="header" compact={mobile} /> : null}
       {preview ? <VoicePreviewBar workspaceId={workspaceId} room={room} perms={perms} /> : null}
       {mobile ? null : typing ? (
         <span data-header-fill className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-accent-text" aria-live="polite">

@@ -28,6 +28,7 @@ import { installMenu } from './menu';
 import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway, wakeGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
 import { showLinkLanding } from './linkLanding';
+import { takeEventPage } from './eventPage';
 import { watchSyncedPrefs } from './profile';
 import { recheckTimeZone, resetTimeZoneSync } from './timezone';
 import { voice } from './voice';
@@ -94,7 +95,10 @@ export async function bootstrap(): Promise<void> {
 
   // Web /join/<code>, /r/<code>: the «open in the app / continue in the browser» card (docs/09 #53)
   // is set up before the status leaves 'booting', so the login screen never flashes first.
-  const webLink = platform.kind === 'web' ? await platform.app.takeDeepLink() : null;
+  // Web /e/<id>?t=… (a meeting link of an invited address, ADR-0038): the public meeting page, not
+  // the in-app card — the token says who answers, not the session.
+  const eventPage = takeEventPage();
+  const webLink = platform.kind === 'web' && !eventPage ? await platform.app.takeDeepLink() : null;
   const landed = webLink !== null && showLinkLanding(webLink);
 
   try {

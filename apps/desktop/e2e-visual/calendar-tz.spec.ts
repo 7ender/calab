@@ -1,5 +1,3 @@
-import { IDS } from '../e2e-support/mock-server';
-import { NOW } from './harness';
 import { expect, openDay, planerka, signIn, test } from './calendarWeb';
 
 /**
@@ -24,8 +22,6 @@ test('the same meeting on each viewer’s own clock', async ({ browser, mock }) 
     // The dialog says whose clock its times are on.
     await b.getByTestId('event-edit').click();
     await expect(b.getByTestId('event-dialog')).toContainText('Asia/Krasnoyarsk');
-    void IDS;
-    void NOW;
   } finally {
     await moscow.close();
     await krasnoyarsk.close();

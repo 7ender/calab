@@ -324,6 +324,15 @@ async function showEventById(id: string): Promise<void> {
     const r = await api.calendar.get(id);
     const series = r.event;
     if (!series || series.cancelledAt) throw new ApiError('ERROR_CODE_NOT_FOUND', 'cancelled', 404);
+    if (!calendarAvailable(series.workspaceId)) {
+      // A guest of the room (ADR-0038 «Диплинки для приглашённых»): no calendar — the room, with its
+      // meeting card open on the badge (the server answers only while the meeting is active).
+      if (!series.roomId) throw new ApiError('ERROR_CODE_NOT_FOUND', 'no room', 404);
+      const roomId = series.roomId;
+      useCalendar.setState((s) => ({ active: withActive(s.active, roomId, series), badgeOpen: roomId }));
+      useUi.getState().openRoom(series.workspaceId, roomId);
+      return;
+    }
     useCalendar.setState((s) => ({ series: { ...s.series, [id]: series } }));
     let target: CalendarEvent = series;
     if (series.repeat !== EventRepeat.UNSPECIFIED) {

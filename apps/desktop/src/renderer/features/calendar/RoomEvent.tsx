@@ -18,10 +18,17 @@ import { EventCard } from './EventCard';
  * ends, the room row (and the room header) show «Планёрка в 15:00»; a click opens the meeting card
  * as a popover. Its own subscription by room id: nothing else re-renders when a meeting starts.
  */
-export const RoomEventBadge = memo(function RoomEventBadge({ roomId, variant }: { roomId: string; variant: 'row' | 'header' }): ReactNode {
+export const RoomEventBadge = memo(function RoomEventBadge({ roomId, variant, compact = false }: { roomId: string; variant: 'row' | 'header'; compact?: boolean }): ReactNode {
   useLocale();
   const ev = useCalendar((s) => roomMeeting(s.active, roomId));
-  const [open, setOpen] = useState(false);
+  const [openLocal, setOpenLocal] = useState(false);
+  // A guest's /e/<id> (services/calendar.ts): the header badge of the room opens its card.
+  const requested = useCalendar((s) => variant === 'header' && s.badgeOpen === roomId);
+  const open = openLocal || requested;
+  const setOpen = (o: boolean): void => {
+    setOpenLocal(o);
+    if (!o && requested) useCalendar.setState({ badgeOpen: null });
+  };
   if (!ev) return null;
   const time = formatTime(eventSpan(ev).start);
   const text = t('cal.badge', { title: ev.title, time });
@@ -34,11 +41,11 @@ export const RoomEventBadge = memo(function RoomEventBadge({ roomId, variant }: 
           data-testid="room-event-badge"
           className={cx(
             'no-drag flex min-w-0 items-center gap-1 rounded-full text-caption font-medium text-accent-text transition-colors duration-[var(--motion-fast)] hover:bg-hover',
-            variant === 'row' ? 'ml-[26px] mr-2 h-5 max-w-[calc(100%-34px)] px-1.5' : 'h-7 max-w-[40%] shrink px-2',
+            variant === 'row' ? 'ml-[26px] mr-2 h-5 max-w-[calc(100%-34px)] px-1.5' : compact ? 'size-10 shrink-0 justify-center' : 'h-7 max-w-[40%] shrink px-2',
           )}
         >
-          <CalendarDays className="size-3.5 shrink-0" aria-hidden />
-          <span className="truncate">{text}</span>
+          <CalendarDays className={compact ? 'size-5 shrink-0' : 'size-3.5 shrink-0'} aria-hidden />
+          {compact ? null : <span className="truncate">{text}</span>}
         </button>
       </Popover.Trigger>
       <Popover.Portal>

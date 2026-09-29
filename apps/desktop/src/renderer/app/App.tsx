@@ -15,6 +15,8 @@ import { usePrefs } from '../stores/prefs';
 import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
 import { useLinkLanding } from '../services/linkLanding';
+import { useEventPage } from '../services/eventPage';
+import { EventPublicPage } from '../features/calendar/EventPublicPage';
 import { logout } from '../services/session';
 import { useSession } from '../stores/session';
 
@@ -70,6 +72,7 @@ export function App(): ReactNode {
   const status = useSession((s) => s.status);
   const tooMany = useSession((s) => s.tooManySessions);
   const landing = useLinkLanding((s) => s.link);
+  const eventPage = useEventPage((s) => s.page);
   let screen: ReactNode;
   if (status === 'booting')
     screen = (
@@ -77,6 +80,8 @@ export function App(): ReactNode {
         <Spinner className="size-8" />
       </div>
     );
+  // Web /e/<id>?t=…: the public meeting page of an invited address, signed in or not (ADR-0038).
+  else if (eventPage) screen = <EventPublicPage page={eventPage} />;
   // Web /join/<code>, /r/<code>: the link card first, signed in or not (docs/09 #53).
   else if (landing) screen = <LinkLandingScreen link={landing} />;
   else if (status === 'anon') screen = <AuthScreen />;
