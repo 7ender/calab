@@ -19,10 +19,7 @@
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="docs/images/chat-light-shadow@2x.png">
-    <img src="docs/images/chat-dark-shadow@2x.png" width="880" alt="Calab — чат и голосовая комната">
-  </picture>
+  <img src="docs/images/readme/chat.webp" width="880" alt="Calab — канал «общий» во время звонка: бейджи участников, говорящий в голосовой комнате, статус комнаты">
 </p>
 
 ---
@@ -32,6 +29,23 @@
 Calab — корпоративный мессенджер, в котором главное — **голос**. Зашёл в комнату — сразу слышишь коллег; рядом чат с файлами и реакциями; в любой момент можно показать экран. Всё работает на вашем сервере: один `docker compose up`, PostgreSQL и LiveKit внутри, никаких внешних сервисов и подписок.
 
 Рассчитан на команды до 20–30 человек одновременно в голосе и до 3 стримов в комнате (MVP); масштабируется через Kubernetes.
+
+## Скриншоты
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/readme/stream.webp" alt="Голосовая комната со стримом экрана"><br><sub>Голосовая комната: стрим экрана на сцене, говорящие в списке, статус комнаты</sub></td>
+    <td width="50%"><img src="docs/images/readme/call.webp" alt="Звонок в личных сообщениях"><br><sub>Личные сообщения: звонок один на один — таймер и «Завершить» в шапке</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/readme/recording.webp" alt="Карточка записи встречи с саммари"><br><sub>Запись встречи: карточка с плеером, саммари GPTunneL, «Ответить» и «Полный транскрипт»</sub></td>
+    <td><img src="docs/images/readme/camera.webp" alt="Проверка камеры с размытием фона"><br><sub>Камера: проверка перед включением, размытие фона и фоны пространства</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/readme/badges.webp" alt="Настройки пространства — бейджи"><br><sub>Настройки пространства: бейджи участников</sub></td>
+    <td align="center"><img src="docs/images/readme/mobile.webp" width="220" alt="Мобильная веб-версия на iPhone"><br><sub>Веб-версия на телефоне: канал «общий»</sub></td>
+  </tr>
+</table>
 
 ## Чем вдохновлялись
 
@@ -69,15 +83,6 @@ Calab — корпоративный мессенджер, в котором г�
 - **Личные сообщения** — отдельный раздел в рейле со счётчиком непрочитанных; переписка с любым участником общих пространств, та же лента, что в комнатах (файлы, реакции, закрепы).
 - **Мобильная версия** веб-клиента: одна колонка, комнаты и переписки в шторке, голос и push-to-talk внизу экрана; ставится на главный экран телефона.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="docs/images/dm-light@2x.png">
-    <img src="docs/images/dm-dark@2x.png" width="640" alt="Личные сообщения: список переписок и диалог с Борисом Петровым">
-  </picture>
-  &nbsp;
-  <img src="docs/images/mobile-dark@2x.png" width="226" alt="Calab на iPhone: канал «общий» в мобильной версии">
-</p>
-
 ### 🏢 Пространства и права
 - Пространства с категориями комнат, текстовые и голосовые комнаты, приватные комнаты.
 - Роли **owner / admin / member / guest** и 14 битов прав с переопределением на каждую комнату (просмотр, писать, файлы, подключаться, говорить, стримить, упоминать всех, модерация, управление…); открытые и закрытые пространства, инвайт-ссылки с лимитом и сроком.
@@ -99,13 +104,6 @@ Calab — корпоративный мессенджер, в котором г�
 - **Docker Compose** с харднингом контейнеров (read-only, без capabilities), автоматические сертификаты Let's Encrypt, ежедневные бэкапы с проверенным восстановлением, Prometheus-метрики.
 - Единый образ API ~20 MB, ~40 MB RAM в простое; READY-снапшот для 100 комнат — 6 мс.
 - **Desktop + Web** из одного кода: Electron для macOS (Apple Silicon / Intel), Windows, Linux (AppImage / deb) и браузерная версия на `app.<домен>`; автообновление с `/download/`.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="docs/images/stream-light@2x.png">
-    <img src="docs/images/stream-dark@2x.png" width="880" alt="Стрим экрана в голосовой комнате">
-  </picture>
-</p>
 
 ## Архитектура
 

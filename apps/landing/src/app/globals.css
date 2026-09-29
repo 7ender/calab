@@ -102,11 +102,11 @@ body {
 }
 
 /*
- * Hero screenshot: the whole window (1440×871 pt, aspect 1.653) scaled to fit under the header, the
+ * Hero screenshot: the whole window (1440×869 pt, aspect 1.657) scaled to fit under the header, the
  * headline and the buttons on a laptop screen (1440×900: ≈ 800 px wide), never narrower than 720 px.
  */
 .hero-shot {
-  max-width: min(100%, max(720px, calc((100svh - 456px) * 1.653)));
+  max-width: min(100%, max(720px, calc((100svh - 456px) * 1.657)));
 }
 
 /* Cards on the alternate (grey) section background: white in light theme. */

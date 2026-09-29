@@ -1,22 +1,23 @@
 import { ArrowRight, AudioLines, Bot, Check, FileText, MessagesSquare, MonitorUp, PhoneCall, Smartphone, type LucideIcon } from 'lucide-react';
 import type { Dict, Locale } from '@/i18n';
 import { localePath } from '@/i18n/locales';
-import { Section, SectionHeading, ThemedImage } from './ui';
+import { Section, SectionHeading, ThemedImage, cx } from './ui';
 
 type RowId = 'voice' | 'stream' | 'chat' | 'dm' | 'recording';
 
 /**
  * Feature rows (landing v2, docs/09 #97): text 40 % / screenshot 60 %, alternating sides, stacked on
  * phones. Each screenshot keeps its own aspect (no empty frames); width/height are CSS pixels (half the
- * 2x file) so nothing shifts while it loads. The first two rows load eagerly. Screenshots stay Russian
- * in every locale for now (apps/landing/README.md, known limitation).
+ * 2x file, = the crop in scripts/assets.mjs) so nothing shifts while it loads. The first two rows load
+ * eagerly. Screenshots show the app in the page's language (docs/09 #110). The stream row carries the
+ * camera preview (background blur) as an inset over its bottom corner.
  */
-const ROWS: { id: RowId; icon: LucideIcon; shot: string; width: number; height: number }[] = [
-  { id: 'voice', icon: AudioLines, shot: 'voice', width: 660, height: 494 },
-  { id: 'stream', icon: MonitorUp, shot: 'stream', width: 660, height: 400 },
-  { id: 'chat', icon: MessagesSquare, shot: 'chat', width: 660, height: 400 },
-  { id: 'dm', icon: PhoneCall, shot: 'call', width: 950, height: 600 },
-  { id: 'recording', icon: FileText, shot: 'recording', width: 704, height: 344 },
+const ROWS: { id: RowId; icon: LucideIcon; shot: string; width: number; height: number; inset?: { shot: string; width: number; height: number } }[] = [
+  { id: 'voice', icon: AudioLines, shot: 'voice', width: 720, height: 569 },
+  { id: 'stream', icon: MonitorUp, shot: 'stream', width: 862, height: 656, inset: { shot: 'camera', width: 896, height: 514 } },
+  { id: 'chat', icon: MessagesSquare, shot: 'chat', width: 868, height: 477 },
+  { id: 'dm', icon: PhoneCall, shot: 'call', width: 1110, height: 620 },
+  { id: 'recording', icon: FileText, shot: 'recording', width: 868, height: 346 },
 ];
 
 export function Features({ t, locale }: { t: Dict['features']; locale: Locale }) {
@@ -42,8 +43,15 @@ export function Features({ t, locale }: { t: Dict['features']; locale: Locale })
                 </ul>
               </div>
               <div className={i % 2 === 1 ? 'md:order-1 md:col-span-3' : 'md:col-span-3'}>
-                <div className="overflow-hidden rounded-[12px] border border-line bg-card shadow-window">
-                  <ThemedImage name={r.shot} alt={item.alt} width={r.width} height={r.height} eager={i < 2} sizes="(min-width: 768px) 640px, 100vw" />
+                <div className={r.inset ? 'relative pb-[18%] sm:pb-[22%]' : undefined}>
+                  <div className={cx('overflow-hidden rounded-[12px] border border-line bg-card shadow-window', r.inset && 'w-[88%]')}>
+                    <ThemedImage name={r.shot} locale={locale} alt={item.alt} width={r.width} height={r.height} eager={i < 2} sizes="(min-width: 768px) 640px, 100vw" />
+                  </div>
+                  {r.inset && 'insetAlt' in item ? (
+                    <div className="absolute right-0 bottom-0 w-[62%] overflow-hidden rounded-[12px] border border-line bg-card shadow-window">
+                      <ThemedImage name={r.inset.shot} locale={locale} alt={item.insetAlt} width={r.inset.width} height={r.inset.height} eager={i < 2} sizes="(min-width: 768px) 400px, 62vw" />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </li>
@@ -76,7 +84,7 @@ export function Features({ t, locale }: { t: Dict['features']; locale: Locale })
           </div>
           {/* The phone art runs off the card's bottom edge: only its top half is shown. */}
           <div className="mt-auto h-[200px] overflow-hidden sm:h-[220px]">
-            <ThemedImage name="mobile" alt={t.items.mobile.alt} width={660} height={400} sizes="(min-width: 768px) 480px, 100vw" className="mx-auto max-w-[480px]" />
+            <ThemedImage name="mobile" locale={locale} alt={t.items.mobile.alt} width={660} height={400} sizes="(min-width: 768px) 480px, 100vw" className="mx-auto max-w-[480px]" />
           </div>
         </li>
       </ul>

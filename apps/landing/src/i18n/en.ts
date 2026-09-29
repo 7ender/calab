@@ -68,24 +68,25 @@ const en: Dict = {
         text: 'Share your screen in AV1 or hardware H.264 — the graphics card does the encoding, not the CPU. Viewers can draw and point on top of the stream.',
         points: ['720p, 1080p or native resolution', 'A static screen takes 20–300 kbps', 'Each viewer gets the quality their connection allows'],
         alt: 'Vera Kim sharing her screen with a LIVE badge: a “Релиз 0.2” slide with a checklist',
+        insetAlt: 'Camera check before turning it on: the background is blurred (“Light”), workspace and built-in backgrounds below',
       },
       chat: {
         title: 'Chat like Telegram',
         text: 'Every voice room has its own chat. Replies, reactions, forwarding, stickers, voice messages, files with previews, pins and search.',
         points: ['Forward to several chats at once', 'Workspace sticker packs, animated too', 'Voice messages, music and video with a built-in player'],
-        alt: 'A message with a link preview card, followed by a message with an image',
+        alt: 'A forwarded message (“Forwarded from Борис Петров”) and sticker suggestions above the message field',
       },
       dm: {
         title: 'Direct messages and calls',
         text: 'One-on-one chats and a call in one click — from the member menu, the profile or the conversation header. Incoming calls ring and notify you.',
         points: ['Camera and screen sharing in a call', 'Missed and declined calls in the feed', 'Conversation archive'],
-        alt: 'A call in direct messages with Boris Petrov: “Звонок · 00:00” and the “Завершить” button',
+        alt: 'A call in direct messages with Boris Petrov: the call timer and the “End” button in the header',
       },
       recording: {
         title: 'Meeting recordings with summaries',
         text: 'Start recording in a voice room — after the meeting a card with the summary, audio and full transcript lands in the chat. Transcription by GPTunneL.',
         points: ['Search the transcript and jump to any line', 'Topics and decisions in the summary', 'Forward a recording or reply to it'],
-        alt: 'The “Встреча записана · 42 мин” card: a summary with topics and decisions, “Ответить” and “Полный транскрипт” buttons',
+        alt: 'A meeting recording card: the play button with progress, a summary with topics and decisions, “Reply” and “Full transcript” buttons',
       },
       bots: {
         title: 'Bots and API',

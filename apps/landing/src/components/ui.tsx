@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
+import type { Locale } from '@/i18n/locales';
 
-const cx = (...c: (string | false | undefined)[]): string => c.filter(Boolean).join(' ');
+export const cx = (...c: (string | false | undefined)[]): string => c.filter(Boolean).join(' ');
 
 export function Container({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={cx('mx-auto w-full max-w-[1120px] px-4 sm:px-6', className)}>{children}</div>;
@@ -67,13 +68,15 @@ export function Button({ href, children, variant = 'primary', size = 'md', class
 }
 
 /**
- * Light/dark screenshot pair switched by prefers-color-scheme. Sources are 2x (Retina) captures;
- * `<name>-<theme>@2x.webp` is the full-resolution file, `<name>-<theme>.webp` a 1x Lanczos resample.
+ * Light/dark screenshot pair switched by prefers-color-scheme, in the page's language. Sources are 2x
+ * (Retina) captures; `<name>-<locale>-<theme>@2x.webp` is the full-resolution file, `….webp` a 1x
+ * Lanczos resample (`pnpm assets` writes all four locales, English where a locale has no capture).
  * width/height are CSS pixels (half of the 2x pixel size). `sizes` (the rendered width): the browser then
  * picks by width descriptors, so a phone doesn't fetch the 2x file of an image shown at a third of its size.
  */
 export function ThemedImage({
   name,
+  locale,
   alt,
   width,
   height,
@@ -83,6 +86,8 @@ export function ThemedImage({
   className,
 }: {
   name: string;
+  /** The page's locale: the screenshot shows the app UI in that language (`<name>-<locale>-<theme>`). */
+  locale: Locale;
   alt: string;
   width: number;
   height: number;
@@ -93,15 +98,14 @@ export function ThemedImage({
   sizes?: string;
   className?: string;
 }) {
+  const file = (theme: 'dark' | 'light') => `/screens/${name}-${locale}-${theme}`;
   const set = (theme: 'dark' | 'light') =>
-    sizes
-      ? `/screens/${name}-${theme}.webp ${width}w, /screens/${name}-${theme}@2x.webp ${width * 2}w`
-      : `/screens/${name}-${theme}.webp 1x, /screens/${name}-${theme}@2x.webp 2x`;
+    sizes ? `${file(theme)}.webp ${width}w, ${file(theme)}@2x.webp ${width * 2}w` : `${file(theme)}.webp 1x, ${file(theme)}@2x.webp 2x`;
   return (
     <picture>
       <source srcSet={set('dark')} sizes={sizes} media="(prefers-color-scheme: dark)" />
       <img
-        src={`/screens/${name}-light@2x.webp`}
+        src={`${file('light')}@2x.webp`}
         srcSet={set('light')}
         sizes={sizes}
         alt={alt}

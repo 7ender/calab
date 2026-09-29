@@ -9,7 +9,7 @@ import { AppShell } from '../features/shell/AppShell';
 import { Dialogs } from '../features/shell/Dialogs';
 import { CallLayer } from '../features/call/CallLayer';
 import { Toasts } from '../features/shell/Toasts';
-import { useLocale } from '../i18n';
+import { useLocale, type Locale } from '../i18n';
 import { useTimeFormat } from '../lib/format';
 import { usePrefs } from '../stores/prefs';
 import { queryClient } from '../lib/queryClient';
@@ -24,6 +24,8 @@ declare global {
   interface Window {
     /** Visual tests only (CALABA_VISUAL_TEST): sign out, back to the login screen. */
     __calabaLogout?: () => Promise<void>;
+    /** Visual / marketing tests only: switch the UI language live (landing shots per locale). */
+    __calabaLocale?: (locale: Locale) => void;
   }
 }
 
@@ -39,8 +41,10 @@ function useTheme(): void {
     // Visual tests only: sign out without relaunching the app (per-screen tests reset to the login).
     if (!visualTest) return;
     window.__calabaLogout = () => logout();
+    window.__calabaLocale = (locale) => usePrefs.getState().setPrefs({ locale });
     return () => {
       delete window.__calabaLogout;
+      delete window.__calabaLocale;
     };
   }, [os, visualTest]);
   useEffect(() => {

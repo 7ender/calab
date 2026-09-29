@@ -18,7 +18,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
     <>
       <Header t={t.header} locale={locale} />
       <main id="main">
-        <Hero t={t.hero} />
+        <Hero t={t.hero} locale={locale} />
         <Why t={t.why} />
         <Features t={t.features} locale={locale} />
         <HowItWorks t={t.how} />

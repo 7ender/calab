@@ -32,8 +32,8 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
   language (Русский · English · Español · 中文); with JS it saves the choice and keeps the current `#section`.
 - `404.html` is shared by all locales (English + links to each language). Caddy redirects unknown locale prefixes
   (`/de/`, `/pt-BR/…`) to `/en/` and `/ru` → `/ru/`.
-- **Known limitation:** screenshots in the hero and feature rows (and `og.png`) are Russian in every locale; alt texts
-  are translated. English captures — later (`docs/images/` + `pnpm assets`, per-locale names).
+- Screenshots follow the page: `ThemedImage` takes the locale and loads `<name>-<locale>-<theme>` (the app UI in that
+  language; mock people, rooms and messages stay Russian). `og.png` is Russian for every locale.
 
 ## Where it is served
 
@@ -53,25 +53,29 @@ without JS (the Next runtime chunk still ships, ~100 kB).
 
 ## Updating screenshots
 
-Sources are the shared 2x (Retina) macOS window captures in `docs/images/` (also used by the root README):
-`chat`, `stream`, `settings`, `onboarding`, `dm` as `<name>-{dark,light}@2x.png` (2880×1742, window 1440×871 pt,
-`screencapture -l` without shadow), `chat-{dark,light}-shadow@2x.png` for the hero and `mobile-dark@2x.png`
-(iPhone 14 in WebKit, 390 pt wide) for the «На телефоне» card — all from `pnpm -F @calaba/desktop screenshots:marketing`.
+Every screenshot is captured in each UI language (docs/09 #110). The scene is set up once in Russian (the test's
+selectors), then the app switches language live (visual-test hook `__calabaLocale`) and each locale is captured.
 
-Feature rows (landing v2): `landing-{voice,call,recording}-{dark,light}@2x.png` in `docs/images/` are 1280×800 pt
-captures of the mock-driven renderer (no packaged app, no `screencapture`) from
-`apps/desktop/e2e-marketing/landing.spec.ts`: `pnpm -F @calaba/desktop build:app`, then in `apps/desktop`
-`CALABA_VISUAL_MOCK_PORT=39370 MOCK_LIVEKIT_ROOM_PREFIX=landing_ pnpm exec playwright test --config playwright.marketing.config.ts -g landing`
-(dark; again with `CALABA_LANDING_THEME=light`), dev LiveKit running. `assets.mjs` crops them at native size.
-
-1. Replace the PNGs in `docs/images/` (keep names; PNG > 3 MB → `oxipng` / `pngquant --quality 90-100`).
-2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` writes `public/screens/<name>-<theme>@2x.webp` at full
-   resolution (no downscale, WebP q92) plus a 1x Lanczos resample `<name>-<theme>.webp`; feature cards are crops
-   (660×400 pt → 1320×800 px) whose offsets are in window points at the top of the script — check them when the
-   app layout changes. The 1200×630 `public/og.png` is composed from the 2x chat capture.
+1. Captures — `apps/desktop/e2e-marketing/landing.spec.ts`, the mock-driven renderer (`out/`, no packaged app) at
+   1440 pt wide, 2x on a Retina Mac; dev LiveKit running (`pnpm infra:dev`), one Playwright/Electron run at a time:
+   ```sh
+   pnpm -F @calaba/desktop build:app && pnpm -F @calaba/desktop build:web   # web: the phone shot
+   cd apps/desktop
+   CALABA_VISUAL_MOCK_PORT=39370 MOCK_LIVEKIT_ROOM_PREFIX=landing_ pnpm exec playwright test --config playwright.marketing.config.ts -g landing
+   CALABA_LANDING_THEME=light CALABA_VISUAL_MOCK_PORT=39370 MOCK_LIVEKIT_ROOM_PREFIX=landing_ pnpm exec playwright test --config playwright.marketing.config.ts -g landing
+   ```
+   `CALABA_LANDING_LOCALES=ru,en` narrows the languages, `-g "landing chat"` one scene. Raw full-window PNGs land in
+   `apps/landing/shots/<shot>-<locale>-<theme>@2x.png` (git-ignored, ~0.3 MB each). Scenes: `hero` (in voice, badges),
+   `voice` (+ noise popover), `stream`, `camera` (blur, workspace backgrounds), `chat` (forwarded + sticker strip),
+   `call` (1:1 call), `recording` (card playing), `badges` (README only, ru), `mobile` (iPhone 14 in WebKit).
+2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` crops (offsets in window points at the top of the script —
+   check them when the app layout changes; the CSS sizes in `hero.tsx`/`features.tsx` equal the crops), draws the
+   traffic lights on the hero, writes `public/screens/<name>-<locale>-<theme>@2x.webp` at full resolution plus a 1x
+   Lanczos resample, each ≤ 250 KB (quality steps down from 90 until it fits); a locale without captures gets the
+   English files. Also `docs/images/readme/*.webp` (README: ru, dark, whole window, ≤ 400 KB) and `public/og.png`
+   (from the ru dark hero: commit it only when the OG art should change).
 3. Pages use `srcset` (width descriptors + `sizes`) with `width`/`height` in CSS pixels (no layout shift); the hero
-   and the first two feature rows load eagerly. Keep every file under 250 KB. `assets` also rewrites `public/og.png`:
-   commit it only when the OG art should change. Rebuild and commit `public/`.
+   and the first two feature rows load eagerly. Rebuild and commit `public/screens` and `docs/images/readme`.
 
 ## TODO
 

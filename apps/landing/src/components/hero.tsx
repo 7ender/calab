@@ -1,8 +1,8 @@
-import type { Dict } from '@/i18n';
+import type { Dict, Locale } from '@/i18n';
 import { APP_URL } from '@/lib/site';
 import { Button, Container, ThemedImage } from './ui';
 
-export function Hero({ t }: { t: Dict['hero'] }) {
+export function Hero({ t, locale }: { t: Dict['hero']; locale: Locale }) {
   return (
     <section id="top" aria-labelledby="hero-title" className="hero-bg overflow-hidden pt-10 pb-16 sm:pt-14 sm:pb-20">
       <Container className="text-center">
@@ -37,7 +37,7 @@ export function Hero({ t }: { t: Dict['hero'] }) {
       <Container className="mt-10">
         {/* The whole window, scaled (never cropped) so it fits a 1440×900 viewport under the header and text. */}
         <div className="hero-shot mx-auto overflow-hidden rounded-[12px] border border-line bg-card shadow-window">
-          <ThemedImage name="hero" width={1440} height={871} priority sizes="(min-width: 768px) 800px, 100vw" alt={t.shotAlt} />
+          <ThemedImage name="hero" locale={locale} width={1440} height={869} priority sizes="(min-width: 768px) 800px, 100vw" alt={t.shotAlt} />
         </div>
       </Container>
     </section>

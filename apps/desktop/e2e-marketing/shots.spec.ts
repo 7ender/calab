@@ -8,7 +8,8 @@ import { NOW } from '../e2e-visual/harness';
 import { startPublisher } from '../e2e-visual/publisher';
 
 /**
- * README / landing screenshots (docs/09 #52): the packaged app (vibrancy, the system window frame
+ * Packaged-app window captures (docs/09 #52). No longer the README / landing source: those come from
+ * landing.spec.ts per UI language (docs/09 #110); kept for real-frame shots on demand. The packaged app (vibrancy, the system window frame
  * and shadow), mock data, captured by the window server with `screencapture -l` at the display's
  * native 2x. No resizing, no 1x copies. `<name>-<theme>@2x.png` has no shadow (exact window size);
  * `chat-<theme>-shadow@2x.png` keeps the system shadow for the hero.
