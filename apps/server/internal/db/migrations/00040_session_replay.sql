@@ -18,6 +18,11 @@ ALTER TABLE sessions
     ADD COLUMN replay_seal     bytea,
     ADD COLUMN revoked_reason  text;
 
+-- Rotations older than the 0.8.0 grace window (60 s) count as used, as 0.8.0 treated them: a
+-- previous token presented now is reuse, not an endless 409 (no seal to replay from).
+UPDATE sessions SET refresh_used_at = rotated_at
+WHERE rotated_at IS NOT NULL AND rotated_at < now() - interval '60 seconds';
+
 -- +goose Down
 ALTER TABLE sessions
     DROP COLUMN refresh_gen,

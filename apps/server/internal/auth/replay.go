@@ -130,7 +130,14 @@ func (u *usedGens) remember(sid uuid.UUID, gen int64) {
 		u.m.Clear()
 		u.n.Store(0)
 	}
-	u.m.Store(sid, gen)
+	// Keep the highest generation: a late request with an older access token (whose UPDATE
+	// was a no-op) must not make the current generation look unmarked again.
+	for {
+		v, loaded := u.m.LoadOrStore(sid, gen)
+		if !loaded || v.(int64) >= gen || u.m.CompareAndSwap(sid, v, gen) {
+			return
+		}
+	}
 }
 
 // markGenUsed records the first use of the access token's refresh generation: from now on

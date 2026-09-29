@@ -158,7 +158,7 @@ func (q *Queries) ListActiveSessions(ctx context.Context, userID uuid.UUID) ([]S
 }
 
 const markRefreshGenUsed = `-- name: MarkRefreshGenUsed :exec
-UPDATE sessions SET refresh_used_at = now()
+UPDATE sessions SET refresh_used_at = now(), replay_seal = NULL
 WHERE id = $1 AND refresh_gen = $2 AND refresh_used_at IS NULL AND revoked_at IS NULL
 `
 
@@ -168,13 +168,14 @@ type MarkRefreshGenUsedParams struct {
 }
 
 // The first use of refresh generation refresh_gen (an access token minted for it was presented).
+// The seal is not needed any more: the previous token is reuse from now on.
 func (q *Queries) MarkRefreshGenUsed(ctx context.Context, arg MarkRefreshGenUsedParams) error {
 	_, err := q.db.Exec(ctx, markRefreshGenUsed, arg.ID, arg.RefreshGen)
 	return err
 }
 
 const revokeAllUserSessions = `-- name: RevokeAllUserSessions :many
-UPDATE sessions SET revoked_at = now(), revoked_reason = $2::text
+UPDATE sessions SET revoked_at = now(), revoked_reason = $2::text, replay_seal = NULL
 WHERE user_id = $1 AND revoked_at IS NULL
 RETURNING id
 `
@@ -205,7 +206,7 @@ func (q *Queries) RevokeAllUserSessions(ctx context.Context, arg RevokeAllUserSe
 }
 
 const revokeOtherUserSessions = `-- name: RevokeOtherUserSessions :many
-UPDATE sessions SET revoked_at = now(), revoked_reason = $3::text
+UPDATE sessions SET revoked_at = now(), revoked_reason = $3::text, replay_seal = NULL
 WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL
 RETURNING id
 `
@@ -237,7 +238,7 @@ func (q *Queries) RevokeOtherUserSessions(ctx context.Context, arg RevokeOtherUs
 }
 
 const revokeSession = `-- name: RevokeSession :execrows
-UPDATE sessions SET revoked_at = now(), revoked_reason = $2::text
+UPDATE sessions SET revoked_at = now(), revoked_reason = $2::text, replay_seal = NULL
 WHERE id = $1 AND revoked_at IS NULL
 `
 
@@ -255,7 +256,7 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) (i
 }
 
 const revokeUserSession = `-- name: RevokeUserSession :execrows
-UPDATE sessions SET revoked_at = now(), revoked_reason = $3::text
+UPDATE sessions SET revoked_at = now(), revoked_reason = $3::text, replay_seal = NULL
 WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
 `
 

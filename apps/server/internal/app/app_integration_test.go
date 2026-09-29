@@ -730,6 +730,48 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 	revokedAs(c, lost.GetRefreshToken(), "REUSE", "new token after reuse")
 	alive(lost, 401)
 
+	// Security review #123: an access token of the previous generation keeps working until it
+	// expires but does not mark the new generation used (the claim "rg" is signed and compared
+	// with the session's current generation); the first gateway IDENTIFY with the new access
+	// token does, and clears the seal.
+	logins++
+	c = &client{t: t, ip: fmt.Sprintf("10.0.2.%d", logins)}
+	var l v1.LoginResponse
+	c.must(200, "POST", "/api/auth/login", &v1.LoginRequest{Email: email, Password: "password123", DeviceName: "lost"}, &l)
+	t0 = l.GetTokens().GetRefreshToken()
+	lost, st = refresh(c, t0)
+	if st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	alive(l.GetTokens(), 200) // gen 1 access token: still valid, marks nothing
+	if again, st := refresh(c, t0); st != 200 || again.GetRefreshToken() != lost.GetRefreshToken() {
+		t.Fatalf("old-generation access token must not mark the new one used: %d", st)
+	}
+	sealOf := func(sid string) (bool, bool) {
+		t.Helper()
+		var seal []byte
+		var used *time.Time
+		if err := testDB.Pool.QueryRow(ctx, "SELECT replay_seal, refresh_used_at FROM sessions WHERE id = $1", sid).Scan(&seal, &used); err != nil {
+			t.Fatal(err)
+		}
+		return seal != nil, used != nil
+	}
+	if sealed, used := sealOf(lost.GetSessionId()); !sealed || used {
+		t.Fatalf("before use: sealed=%v used=%v", sealed, used)
+	}
+	g := dialGW(t)
+	g.identify(lost.GetAccessToken())
+	if sealed, used := sealOf(lost.GetSessionId()); sealed || !used {
+		t.Fatalf("after IDENTIFY: sealed=%v used=%v, want the seal cleared and used", sealed, used)
+	}
+	revokedAs(c, t0, "REUSE", "old token after IDENTIFY with the new access token")
+	if st, reason := g.closeFrame(); st != 4010 || reason != "session revoked: REUSE" {
+		t.Fatalf("reuse: close %d %q, want 4010 \"session revoked: REUSE\"", st, reason)
+	}
+	if sealed, _ := sealOf(lost.GetSessionId()); sealed {
+		t.Fatal("revoked session keeps its seal")
+	}
+
 	// Legacy rotation (before migration 00040: no seal) with the new token unused: 409, the
 	// session is kept and the new token still works.
 	c, t0 = login()
@@ -756,6 +798,9 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 	}
 	c.must(204, "POST", "/api/auth/logout", &v1.LogoutRequest{RefreshToken: lost.GetRefreshToken()}, nil)
 	revokedAs(c, t0, "LOGOUT", "replay after logout")
+	if sealed, _ := sealOf(lost.GetSessionId()); sealed {
+		t.Fatal("logout must clear the seal")
+	}
 	c, t0 = login()
 	lost, st = refresh(c, t0)
 	if st != 200 {

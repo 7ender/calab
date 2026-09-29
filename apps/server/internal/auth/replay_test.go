@@ -65,6 +65,10 @@ func TestRefreshGenClaimAndUsedCache(t *testing.T) {
 	if !u.seen(sid, 7) || !u.seen(sid, 6) || u.seen(sid, 8) {
 		t.Fatal("seen: wrong generations")
 	}
+	u.remember(sid, 6) // a late request with an older access token
+	if !u.seen(sid, 7) {
+		t.Fatal("an older generation overwrote the marked one")
+	}
 }
 
 // The replay entry opens only with the previous secret and the same session id, never

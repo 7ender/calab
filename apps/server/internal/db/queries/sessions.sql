@@ -27,19 +27,20 @@ RETURNING *;
 
 -- name: MarkRefreshGenUsed :exec
 -- The first use of refresh generation refresh_gen (an access token minted for it was presented).
-UPDATE sessions SET refresh_used_at = now()
+-- The seal is not needed any more: the previous token is reuse from now on.
+UPDATE sessions SET refresh_used_at = now(), replay_seal = NULL
 WHERE id = $1 AND refresh_gen = $2 AND refresh_used_at IS NULL AND revoked_at IS NULL;
 
 -- name: RevokeSession :execrows
-UPDATE sessions SET revoked_at = now(), revoked_reason = sqlc.arg(reason)::text
+UPDATE sessions SET revoked_at = now(), revoked_reason = sqlc.arg(reason)::text, replay_seal = NULL
 WHERE id = $1 AND revoked_at IS NULL;
 
 -- name: RevokeUserSession :execrows
-UPDATE sessions SET revoked_at = now(), revoked_reason = sqlc.arg(reason)::text
+UPDATE sessions SET revoked_at = now(), revoked_reason = sqlc.arg(reason)::text, replay_seal = NULL
 WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL;
 
 -- name: RevokeAllUserSessions :many
-UPDATE sessions SET revoked_at = now(), revoked_reason = sqlc.arg(reason)::text
+UPDATE sessions SET revoked_at = now(), revoked_reason = sqlc.arg(reason)::text, replay_seal = NULL
 WHERE user_id = $1 AND revoked_at IS NULL
 RETURNING id;
 
@@ -49,6 +50,6 @@ WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
 ORDER BY last_seen_at DESC;
 
 -- name: RevokeOtherUserSessions :many
-UPDATE sessions SET revoked_at = now(), revoked_reason = sqlc.arg(reason)::text
+UPDATE sessions SET revoked_at = now(), revoked_reason = sqlc.arg(reason)::text, replay_seal = NULL
 WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL
 RETURNING id;
