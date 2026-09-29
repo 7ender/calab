@@ -89,6 +89,10 @@ var botRoutes = map[string]botAccess{
 	"POST /api/workspaces/{id}/backgrounds":                botDeny,
 	"PATCH /api/workspaces/{id}/backgrounds/{bgId}":        botDeny,
 	"DELETE /api/workspaces/{id}/backgrounds/{bgId}":       botDeny,
+	"GET /api/workspaces/{id}/sounds":                      botAllow, // ADR-0036: a bot in a call may play sounds
+	"POST /api/workspaces/{id}/sounds":                     botDeny,  // the library is managed by people
+	"PATCH /api/workspaces/{id}/sounds/{soundId}":          botDeny,
+	"DELETE /api/workspaces/{id}/sounds/{soundId}":         botDeny,
 	"PATCH /api/workspaces/{id}/members/{userId}":          botAllow,
 	"DELETE /api/workspaces/{id}/members/{userId}":         botAllow,
 	"POST /api/workspaces/{id}/members/{userId}/promote":   botAllow,
@@ -143,6 +147,8 @@ var botRoutes = map[string]botAccess{
 	"POST /api/workspaces/{id}/files": botAllow,
 	"GET /api/files/{id}":             botAllow,
 	"GET /api/files/{id}/thumbnail":   botAllow,
+	// HEIC → JPEG helper for clients without a HEIF decoder (docs/02): not part of the bot API
+	"POST /api/files/convert": botDeny,
 	// stickers (ADR-0030, ADR-0031 §3): a bot sends stickers, installs packs for itself and,
 	// with MANAGE_STICKERS, manages the packs of the workspace (the handlers check the right)
 	"GET /api/workspaces/{id}/sticker-packs":     botAllow,
@@ -194,6 +200,7 @@ var botRoutes = map[string]botAccess{
 	"POST /api/rooms/{id}/voice/{userId}/disconnect":   botAllow,
 	"POST /api/rooms/{id}/voice/{userId}/stop-stream":  botAllow,
 	"POST /api/rooms/{id}/voice/{userId}/move":         botAllow,
+	"POST /api/rooms/{id}/sounds/play":                 botAllow, // ADR-0036, a bot in the call
 	// bots: management is for people; /api/bots/me is for bots (the handlers check that)
 	"POST /api/workspaces/{id}/bots":                  botDeny,
 	"GET /api/workspaces/{id}/bots":                   botDeny,

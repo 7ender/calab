@@ -29,6 +29,7 @@ workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest
                     badge_id? → workspace_badges (ON DELETE SET NULL)   PK (workspace_id, user_id)
 workspace_badges    id, workspace_id, name (1..32), file_id → files, position, created_at   (docs/09 #82, ≤ 20 в пространстве)
 workspace_backgrounds id, workspace_id, name (1..40), file_id → files, position, created_at (ADR-0035, ≤ 20 в пространстве)
+workspace_sounds    id, workspace_id, name (1..32), emoji (≤ 64 байт, '' = нет), file_id → files, duration_ms (1..5000), position, created_at (ADR-0036, ≤ 50 в пространстве)
 workspace_roles     id, workspace_id, name (1..32), color (0xRRGGBB, 0 = нет), position (UNIQUE в пространстве),
                     permissions bigint, builtin ('owner'|'admin'|'member'|'guest'|NULL), mentionable, created_at
 member_roles        workspace_id, user_id, role_id      PK (workspace_id, user_id, role_id)   (ADR-0026)
@@ -131,7 +132,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 - `files.id` — uuid v7, но генерирует его **приложение**, а не Postgres: ключ объекта нужен до вставки строки (пишем байты → затем строка + квота в одной транзакции; ошибка → объект удаляется).
 - Тип файла определяется по содержимому (sniffing); заявленный клиентом тип используется, только если sniffing неинформативен, и никогда — чтобы объявить изображение или активный контент (HTML/SVG/JS). Изображения (JPEG/PNG/GIF/WebP) отдаются `inline`, всё остальное — `attachment`, с `nosniff` и `CSP: sandbox`.
 - Для изображений сервер делает превью (≤ 512 px по большей стороне, WebP q80, чистый Go — libwebp, транслированный из WASM, без cgo) вторым объектом → `thumbnail_key`; в payload сообщения — `thumbnail_url`. Изображения > 24 Мпикс превью не получают (бюджет памяти), размеры (`width`/`height`) пишутся всегда.
-- Лимиты: файл ≤ 50 MB (`MAX_FILE_SIZE_MB`), аватар ≤ 5 MB, ≤ 20 вложений на сообщение, квота workspace `storage_quota_bytes` (по умолчанию 10 GB; тариф может её ужесточить — `storage_mb`, ADR-0024); `storage_used_bytes` увеличивается в той же транзакции, что и вставка в `files` (атомарно с проверкой квоты), уменьшается при удалении. Аватары (`workspace_id IS NULL`) в квоту не входят.
+- Лимиты: файл ≤ 50 MB (`MAX_FILE_SIZE_MB`), аватар ≤ 512 KB (клиент шлёт WebP 512×512, docs/02 «Изображения»; до 29.09 — 5 MB), ≤ 20 вложений на сообщение, квота workspace `storage_quota_bytes` (по умолчанию 10 GB; тариф может её ужесточить — `storage_mb`, ADR-0024); `storage_used_bytes` увеличивается в той же транзакции, что и вставка в `files` (атомарно с проверкой квоты), уменьшается при удалении. Аватары (`workspace_id IS NULL`) в квоту не входят.
 - Файл прикрепляется максимум к одному сообщению (права на файл = права на комнату этого сообщения). Удаление сообщения открепляет вложения; не прикреплённые более 24 ч файлы (кроме аватаров/иконок) удаляет фоновая чистка раз в час.
 
 ### Личные сообщения (ADR-0020)
@@ -193,7 +194,7 @@ export const Permission = {
   MENTION_EVERYONE: 1n << 13n,  // @everyone / @here (у member по умолчанию нет)
   VIDEO:            1n << 14n,  // веб-камера в voice (у member по умолчанию есть)
   MANAGE_ROLES:     1n << 15n,  // свои роли ниже своей старшей и их назначение (только уровень workspace, ADR-0026)
-  MANAGE_STICKERS:  1n << 16n,  // стикерпаки пространства (только уровень workspace, ADR-0030)
+  MANAGE_STICKERS:  1n << 16n,  // «Стикеры и звуки»: стикерпаки и саундборд пространства (только уровень workspace, ADR-0030, ADR-0036)
 } as const;
 ```
 
@@ -278,6 +279,13 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - Права: список и картинка — любой участник, гости тоже (`files.CanRead`, `IsWorkspaceBackground`, как иконка); создать / переименовать / удалить — `MANAGE_WORKSPACE`; бот-токен — 403 `BOT_NOT_ALLOWED` на всех маршрутах (у ботов нет камеры).
 - Доставка: `WorkspaceSnapshot.backgrounds` в READY / WORKSPACE_CREATE, события `BACKGROUND_CREATE` / `BACKGROUND_UPDATE` / `BACKGROUND_DELETE` всем участникам. Удаление убирает только строку: картинка без ссылок уходит с чисткой сирот (живые фоны она пропускает), выбор у пользователей сбрасывает клиент.
 - Клиент: выбор — настройка устройства `cameraBackground.imageId = ws:<id>`; картинка скачивается один раз и лежит в IndexedDB (`calaba-workspace-backgrounds`, последние 3). Если выбранного фона больше нет (BACKGROUND_DELETE, пространство покинуто/удалено, нет после READY) — выбор сбрасывается на «Нет».
+
+## Саундборд (ADR-0036)
+
+- Библиотека пространства (`workspace_sounds`, ≤ 50, без лимита тарифа): название 1..32, эмодзи (одна или пусто), клип, длительность, порядок. Источник — своя загрузка в это пространство (правило бейджей: не чужой файл; не стикер, бейдж, фон или клип другого звука), MP3 / Ogg / WAV ≤ 2 МБ; сервер делает из неё **новый** файл сам (`files.PrepareSound`: `ffmpeg` → Ogg/Opus 48 кГц моно, −16 LUFS, ≤ 5 с; длительность — по гранулам последней страницы Ogg) и резервирует его в квоте хранения (413). Исходная загрузка остаётся неприкреплённой и уходит с чисткой сирот; без `ffmpeg` добавление отвечает 503.
+- Права: список и клип — любой участник, гости тоже (`files.CanRead`, `IsWorkspaceSound`); создать / изменить (название, эмодзи, файл, позиция) / удалить — `MANAGE_STICKERS` («Стикеры и звуки», без нового бита); бот-токен: `GET …/sounds` и play — можно, управление — 403 `BOT_NOT_ALLOWED`.
+- Проиграть: `POST /api/rooms/{id}/sounds/play` — вызывающий подключён к звонку этой комнаты (голосовое состояние, не «подключается»), звук — `builtin:<имя>` или звук пространства комнаты; 1 нажатие в 2 с на пользователя и 5 в 10 с на комнату (429). В DM-звонках звуков нет (422).
+- Доставка: `WorkspaceSnapshot.sounds` в READY / WORKSPACE_CREATE, `SOUND_CREATE` / `SOUND_UPDATE` (перенос — каждому сдвинутому) / `SOUND_DELETE` всем участникам; `SOUND_PLAY` — только тем, кто в звонке. Удаление убирает строку, клип без ссылок уходит с чисткой сирот. Избранное и «Часто используемые» — настройки устройства.
 
 ## Стикеры (ADR-0030)
 

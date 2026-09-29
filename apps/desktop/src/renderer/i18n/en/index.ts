@@ -16,6 +16,7 @@ import { enPlan } from './plan';
 import { enShell } from './shell';
 import { enVideo } from './video';
 import { enStickers } from './stickers';
+import { enSounds } from './sounds';
 import { enBots } from './bots';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
@@ -26,6 +27,7 @@ export const en: Dict = {
   ...enApp,
   ...enVideo,
   ...enStickers,
+  ...enSounds,
   ...enBots,
   ...enDm,
   ...enCall,

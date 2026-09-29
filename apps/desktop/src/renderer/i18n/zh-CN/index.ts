@@ -16,6 +16,7 @@ import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
 import { zhStickers } from './stickers';
+import { zhSounds } from './sounds';
 import { zhBots } from './bots';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
@@ -26,6 +27,7 @@ export const zhCN: Dict = {
   ...zhApp,
   ...zhVideo,
   ...zhStickers,
+  ...zhSounds,
   ...zhBots,
   ...zhDm,
   ...zhCall,

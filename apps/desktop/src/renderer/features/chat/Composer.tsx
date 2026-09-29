@@ -34,6 +34,8 @@ import { roomLabel } from './roomLabel';
 import { menuBox, menuItem } from './MessageMenu';
 import { useVoiceRecorder } from './VoiceRecorder';
 import { voiceFileName } from '../../lib/voiceNote';
+import { IMAGE_ACCEPT } from '../../lib/image';
+import { namedHeif } from '../../lib/image/decode';
 import { voiceSupported, type VoiceResult } from '../../services/voiceRecorder';
 
 const drafts = new Map<string, string>();
@@ -45,7 +47,9 @@ const MAX_FIELD_H = 6 * 20 + 16;
 
 export function toOutgoing(f: File): OutgoingFile {
   const name = f.name || `image-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-  return { file: f, name, ...(f.type.startsWith('image/') ? { previewUrl: URL.createObjectURL(f) } : {}) };
+  // HEIC has no preview in Chromium: a file chip until it is converted to JPEG on send.
+  const preview = f.type.startsWith('image/') && !namedHeif(name, f.type);
+  return { file: f, name, ...(preview ? { previewUrl: URL.createObjectURL(f) } : {}) };
 }
 
 /** Telegram-like composer (docs/09 #37): rounded field, 📎 left, emoji + round send right. */
@@ -468,7 +472,7 @@ export function Composer({
             <input
               ref={cameraInput}
               type="file"
-              accept="image/*,video/*"
+              accept={`${IMAGE_ACCEPT},video/*`}
               capture="environment"
               hidden
               data-testid="composer-camera-input"
@@ -481,7 +485,7 @@ export function Composer({
           <input
             ref={imageInput}
             type="file"
-            accept="image/*"
+            accept={IMAGE_ACCEPT}
             multiple
             hidden
             onChange={(e) => {

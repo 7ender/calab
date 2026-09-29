@@ -10,6 +10,7 @@ import { BUILTIN_BACKGROUNDS } from '../../lib/media/background/images';
 import type { BackgroundKind } from '../../lib/media/background/logic';
 import { backgroundAvailable } from '../../services/cameraBackground';
 import { useCustomBackgrounds } from '../voice/BackgroundPicker';
+import { setCameraEffects } from '../voice/CameraAppearance';
 import { mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -18,6 +19,7 @@ import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
 import { RecordingPill } from '../voice/Recording';
+import { SoundChip, SoundboardButton } from '../voice/Soundboard';
 import { MyStreamAnnot } from '../voice/Annotations';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { dmPeer } from '../../stores/dms';
@@ -316,6 +318,8 @@ export function CameraMenu(): ReactNode {
         <>
           <Dropdown.Separator className={menuSeparator} />
           <CameraBackgroundItems />
+          <Dropdown.Separator className={menuSeparator} />
+          <CameraEffectsItems />
         </>
       ) : null}
       <Dropdown.Separator className={menuSeparator} />
@@ -381,6 +385,32 @@ function CameraBackgroundItems(): ReactNode {
           </Dropdown.SubContent>
         </Dropdown.Portal>
       </Dropdown.Sub>
+    </>
+  );
+}
+
+/**
+ * Camera ▾ «Внешний вид» (ADR-0035 addendum): the preview's two switches; the touch-up strength
+ * stays what was set in the preview (default 40). Applied to the live camera at once.
+ */
+function CameraEffectsItems(): ReactNode {
+  const touchUp = usePrefs((s) => s.cameraEffects.touchUp);
+  const lowLight = usePrefs((s) => s.cameraEffects.lowLight);
+  return (
+    <>
+      <Dropdown.Label className={menuLabel}>{t('video.fx.title')}</Dropdown.Label>
+      <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={touchUp} onCheckedChange={(v) => setCameraEffects({ touchUp: v })} data-testid="camera-fx-touchup">
+        <Dropdown.ItemIndicator className="absolute left-2">
+          <Check className="size-3.5" />
+        </Dropdown.ItemIndicator>
+        {t('video.fx.touchUp')}
+      </Dropdown.CheckboxItem>
+      <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={lowLight} onCheckedChange={(v) => setCameraEffects({ lowLight: v })} data-testid="camera-fx-lowlight">
+        <Dropdown.ItemIndicator className="absolute left-2">
+          <Check className="size-3.5" />
+        </Dropdown.ItemIndicator>
+        {t('video.fx.lowLight')}
+      </Dropdown.CheckboxItem>
     </>
   );
 }
@@ -539,6 +569,8 @@ export function VoiceBar(): ReactNode {
       {/* A recording (docs/09 #30): the red «● Запись · 12:34» pill on a line under the header,
           aligned with its text (36 px square + 8 px); who started it — in the tooltip. */}
       <RecordingPill roomId={roomId} workspaceId={wsId} className="mt-1 pl-11" />
+      {/* Soundboard (ADR-0036): «🥁 Ba dum tss · Илья» for 2 s after a sound played in the call. */}
+      {call ? null : <SoundChip className="mt-1 pl-11" />}
 
       {phase === 'reconnecting' || phase === 'blocked' ? (
         // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it
@@ -565,9 +597,10 @@ export function VoiceBar(): ReactNode {
         </div>
       ) : null}
 
-      {/* Three equal 36 px buttons 10 px apart across the island (docs/09 #12): camera ▾, screen,
-          more. Noise suppression lives in the header's popover and in Settings. */}
-      <div className="mt-2 grid grid-cols-3 gap-2.5">
+      {/* Equal 36 px buttons 10 px apart across the island (docs/09 #12): camera ▾, screen,
+          sounds (ADR-0036; not in a one-to-one call), more. Noise suppression lives in the
+          header's popover and in Settings. */}
+      <div className={cx('mt-2 grid gap-2.5', call ? 'grid-cols-3' : 'grid-cols-4')}>
         <CameraButton roomId={roomId} />
         {myStream ? (
           <PanelButton label={t('shell.stopShare')} active onClick={() => void voice.stopStream()}>
@@ -578,6 +611,7 @@ export function VoiceBar(): ReactNode {
             <MonitorUp className="size-5" aria-hidden />
           </PanelButton>
         )}
+        {call ? null : <SoundboardButton className={cx(panelBtn(false), 'data-[state=open]:bg-[var(--color-fill-hover)]')} />}
         <Dropdown.Root modal={false}>
           <Tip label={t('shell.more')}>
             <Dropdown.Trigger asChild>

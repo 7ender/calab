@@ -77,6 +77,7 @@ PRESENCE_UPDATE               { user_id, status, last_seen, on_call } — on_cal
 VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming, joined_at, server_muted, camera }
 VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- для PiP-плитки
 VOICE_CAMERA_STOP             { room_id, user_id, track_sid, reason: LIMIT_REACHED | MODERATOR | ROOM_POLICY }   -- камеру остановил сервер
+VOICE_DISCONNECTED            { workspace_id, room_id, session_id, reason: OTHER_DEVICE } — только своим устройствам: устройство session_id выведено из голоса, т. к. пользователь вошёл с другого («Несколько устройств»)
 READ_STATE_UPDATE
 READ_RECEIPT                  { room_id, last_read_message_id } — докуда прочитали другие (docs/09 #92): в DM — собеседник, в комнате — самый дальний маркер остальных людей (кто — не раскрывается)
 ROOM_NOTIFICATION_UPDATE      { settings: { room_id, level, muted_until } } — только своим устройствам
@@ -94,6 +95,9 @@ BADGE_CREATE / UPDATE         { badge } — бейдж библиотеки пр
 BADGE_DELETE                  { workspace_id, badge_id } — бейдж удалён; его участники перед этим получили WORKSPACE_MEMBER_UPDATE без badge_id
 BACKGROUND_CREATE / UPDATE    { background } — фон камеры пространства (ADR-0035), всем участникам; в READY — WorkspaceSnapshot.backgrounds
 BACKGROUND_DELETE             { workspace_id, background_id } — фон удалён; клиенты, выбравшие его, сбрасывают фон на «Нет»
+SOUND_CREATE / UPDATE         { sound } — звук саундборда пространства (ADR-0036), всем участникам; в READY — WorkspaceSnapshot.sounds; перенос — UPDATE каждому сдвинутому
+SOUND_DELETE                  { workspace_id, sound_id } — звук удалён
+SOUND_PLAY                    { room_id, sound_id, user_id, at } — кто-то в звонке нажал звук (`builtin:<имя>` или id звука): только тем, кто в звонке комнаты (их user-каналы), нажавшему тоже; клиент играет клип сам через <audio>, опоздание > 3 с — пропускает
 ROOM_RECORDING                { workspace_id, room_id, recording_id, state: ACTIVE | STOPPED, by_user_id, since,
                                 stop_reason, stopped_by } — запись встречи началась / остановилась (ADR-0025)
 BOT_CREATE / BOT_UPDATE       { workspace_id, bot } — бот вступил / изменился (профиль, команды, токен, webhook; ADR-0031)
@@ -128,8 +132,12 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 Пользователь может быть одновременно залогинен на нескольких устройствах (каждое — своя `sessions`-запись и свой gateway-сокет).
 
 **Voice:**
-- LiveKit participant identity = `<user_id>:<session_id>`. Один пользователь может быть в комнате с двух устройств одновременно — LiveKit их не выкидывает друг другом.
-- `voice_states` в Redis хранятся по сессии; наружу `VOICE_STATE_UPDATE` отдаётся **агрегированно по пользователю**: пользователь «в комнате», если в ней хотя бы одна его сессия; `muted`/`deafened`/`streaming` — от сессии в этой комнате (если их несколько — `streaming` = любая стримит, `muted` = все замьючены).
+- LiveKit participant identity = `<user_id>:<session_id>`.
+- **В голосе — одно устройство** (владелец, 29.09; вход, чат и presence остаются многоустройственными). `POST /api/rooms/{id}/join` с устройства B (комната любого пространства или звонок один на один) под пользовательской блокировкой `voice:ulock:<user_id>` записывает B (pending) и выводит из голоса все прочие устройства пользователя (активные сессии из `sessions` → `voice:sess:*`): каждому — `VOICE_DISCONNECTED{workspace_id, room_id, session_id, reason: OTHER_DEVICE}` в канал пользователя (действует только устройство с этим `session_id`), затем `RemoveParticipant`, снятие voice state и `VOICE_STATE_UPDATE`. Устройство помечается `voice:superseded:<session_id>` = `<scope>/<room>` (15 мин, снимается его собственным `/join`): его поздний `participant_joined` и reconcile в этой комнате отклоняются (удаляется из LiveKit), так что старый токен не возвращает его. Та же сессия (повторный `/join`, реконнект, перемещение модератором по ADR-0019) никого не выводит. Два устройства, входящие одновременно, упорядочены блокировкой — выигрывает последнее.
+  - Клиент A по `VOICE_DISCONNECTED`: выходит из голоса без попытки переподключения (цикл rejoin останавливается), островок — в idle, тост «Вы подключились с другого устройства». `PARTICIPANT_REMOVED` от LiveKit ждёт это событие 500 мс, прежде чем считать отключение модераторским.
+  - Звонок один на один: вывод устройства из сессии звонка **не завершает звонок** — A не шлёт hangup, а «отпускает» звонок, как принятый на другом устройстве. Если B вошёл в сам звонок, звонок продолжается с B; если B ушёл в комнату пространства, пользователь покинул сессию звонка — сервер завершает звонок по правилу «потерян 30 с» (ADR-0034).
+  - Если `/join` B не дошёл до LiveKit (сеть, отказ), A остаётся вне голоса — принято: пользователь сам зашёл с B.
+- `voice_states` в Redis хранятся по сессии; наружу `VOICE_STATE_UPDATE` отдаётся **агрегированно по пользователю**: пользователь в комнате своего последнего вошедшего устройства; `muted`/`deafened`/`streaming` — от сессии в этой комнате (кратковременно, пока A выводится, их может быть две: `streaming` = любая стримит, `muted` = все замьючены).
 
 **Presence:**
 - Redis-хэш `presence:<user_id>`: поле на каждую gateway-сессию (`<session_id>` → `status`) со своим TTL (HEXPIRE) = 2 × `heartbeat_interval`, продлевается каждым heartbeat; `presence:seen:<user_id>` — `last_seen`. Сессия умерла без закрытия → её поле истекает; sweeper (раз в 15 с, один инстанс) публикует OFFLINE, когда у пользователя не осталось живых сессий.
@@ -483,6 +491,8 @@ GET    /api/unfurl/image?url=&sig=                     прокси картин
 - Баны (`MANAGE_WORKSPACE`): `GET /api/workspaces/{id}/bans` → `ListBansResponse` (новые сверху), `POST /api/workspaces/{id}/bans {user_id, reason ≤ 500}` → `201 CreateBanResponse` (участник исключается: `WORKSPACE_MEMBER_REMOVE` всем, `WORKSPACE_DELETE` ему; можно забанить и не-участника), `DELETE /api/workspaces/{id}/bans/{user_id}` → 204 (404, если бана нет). `WORKSPACE_BAN_ADD {ban}` / `WORKSPACE_BAN_REMOVE {workspace_id, user_id}` — только owner / admin. Забаненному (по аккаунту или адресу) — `403 BANNED` на вход по инвайту, в открытое пространство, добавление, email-приглашение, регистрацию по инвайту и ссылку в комнату.
 
 Файлы: хранилище (ADR-0011, `blob.Store`) наружу не публикуется, загрузка и скачивание идут только через API. Лимиты — 50 MB на файл (`MAX_FILE_SIZE_MB`, иначе `413`), 20 вложений на сообщение, квота workspace (`min(storage_quota_bytes, план storage_mb)`, по умолчанию 10 GB; превышение → `ERROR_CODE_FILE_QUOTA_EXCEEDED`). Для `image/*` сервер генерирует превью (≤ 512 px, WebP), в сообщении приходит `thumbnail_url`. `?w=1024` — превью ≤ 1024 px (WebP q85) для 2×-экранов: делается лениво при первом запросе и кэшируется в хранилище рядом (`<key>.thumb1024`, удаляется вместе с файлом), без увеличения (оригинал ≤ 512 — отдаётся превью 512, до 1024 — свой размер), в квоту не входит; без `w` — 512, как раньше.
+
+HEIC → JPEG (docs/02 «Изображения: клиентское сжатие и HEIC»): `POST /api/files/convert?to=jpeg`, multipart `file` — только HEIF (`415`), ≤ 25 MB (`413`), ответ — байты `image/jpeg` ≤ 4096 px с применённой ориентацией, ничего не сохраняется; `501` — на сервере нет ffmpeg ≥ 7.1, `503` — занято дольше 20 с, `422` — не декодируется.
 
 Голосовые сообщения (docs/09 #43): та же загрузка (`POST /api/workspaces/{id}/files` или `/api/dms/{id}/files`, те же права и квота) с `?voice_duration_ms=<1..300000>&voice_waveform=<base64url без паддинга, ≤ 100 байт 0..255>`. Сервер требует объявленный тип части `audio/ogg` и начало `OggS` + `OpusHead`, хранит как `audio/ogg`, лимит `min(MAX_FILE_SIZE_MB, 1,5 MB)`; иначе `422` / `413`. В `FileMeta.voice {duration_ms, waveform}` (proto `VoiceInfo`) — длительность и волна, посчитанные клиентом при записи; у остальных файлов поле не задано. Без параметров тот же `.ogg` — обычное аудио-вложение.
 

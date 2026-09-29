@@ -1,4 +1,9 @@
 import {
+  CreateSoundRequestSchema,
+  ListSoundsResponseSchema,
+  PlaySoundRequestSchema,
+  SoundResponseSchema,
+  UpdateSoundRequestSchema,
   AdminGetWorkspaceResponseSchema,
   AdminPlanLogResponseSchema,
   AdminSearchWorkspacesResponseSchema,
@@ -284,6 +289,20 @@ export const api = {
       call('PATCH', `/api/workspaces/${workspaceId}/backgrounds/${backgroundId}`, UpdateBackgroundResponseSchema, body(UpdateBackgroundRequestSchema, { name })),
     /** 204 → BACKGROUND_DELETE. */
     remove: (workspaceId: string, backgroundId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/backgrounds/${backgroundId}`),
+  },
+  /** Soundboard (ADR-0036): the library for any member; managing needs MANAGE_STICKERS. */
+  sounds: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sounds`, ListSoundsResponseSchema),
+    /** 201; fileId = my upload to this workspace (MP3 / Ogg / WAV ≤ 2 MB, the server makes the clip); 409 = 50 already; 422 = bad name / emoji / file. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateSoundRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/sounds`, SoundResponseSchema, body(CreateSoundRequestSchema, init)),
+    /** Rename, emoji, a new clip (fileId) or a new place (position). */
+    update: (workspaceId: string, soundId: string, init: MessageInitShape<typeof UpdateSoundRequestSchema>) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/sounds/${soundId}`, SoundResponseSchema, body(UpdateSoundRequestSchema, init)),
+    /** 204 → SOUND_DELETE. */
+    remove: (workspaceId: string, soundId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/sounds/${soundId}`),
+    /** 204: everyone in the call plays it; 403 = not in the call; 429 = 1 per 2 s per user, 5 per 10 s per room. */
+    play: (roomId: string, soundId: string) => callEmpty('POST', `/api/rooms/${roomId}/sounds/play`, body(PlaySoundRequestSchema, { soundId })),
   },
   /** Workspace roles (ADR-0026): list for any member; the rest MANAGE_ROLES, roles below my top one. */
   roles: {
@@ -656,6 +675,20 @@ async function postAvatar(path: string, file: Blob, name: string): Promise<unkno
 
 export async function uploadAvatar(file: Blob, name: string): Promise<void> {
   await postAvatar('/api/me/avatar', file, name);
+}
+
+/**
+ * HEIC → JPEG on the server (POST /api/files/convert?to=jpeg, docs/02 «Изображения»): the
+ * last rung of the decode ladder (lib/image/decode). null when the server cannot convert it
+ * (501 no ffmpeg, 415 not HEIF, 422 undecodable); other failures (network, 413, 429) throw.
+ */
+export async function convertImage(file: Blob, name: string): Promise<Blob | null> {
+  const form = new FormData();
+  form.append('file', file, name);
+  const res = await platform.apiFetch('/api/files/convert?to=jpeg', { method: 'POST', body: form });
+  if (res.status === 501 || res.status === 415 || res.status === 422) return null;
+  if (!res.ok) throw await toApiError(res);
+  return res.blob();
 }
 
 /** URL usable in <img src>: main attaches the bearer token. */

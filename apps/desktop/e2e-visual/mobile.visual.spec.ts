@@ -514,6 +514,22 @@ test('m-voice', async ({ page }) => {
   await checkpoint(page, 'm-voice-drawer', { snapshot: false });
 });
 
+// Soundboard (ADR-0036): the strip's «Звуки» opens the island's panel as a bottom sheet (voice
+// activation mode; in push-to-talk mode it is «Ещё → Звуки»).
+test('m-voice-soundboard', async ({ page }) => {
+  mock.addSound(IDS.workspaces.main, 'Фанфары', '🎺');
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await page.getByTestId('mobile-nav').locator('aside button', { hasText: 'Созвон' }).first().tap();
+  const strip = page.getByTestId('mobile-voice-strip');
+  await expect(strip.getByTestId('mobile-soundboard-button')).toBeEnabled({ timeout: 30_000 });
+  await strip.getByTestId('mobile-soundboard-button').tap();
+  const board = page.getByTestId('soundboard');
+  await expect(board.getByRole('region', { name: 'Стандартные' }).getByTestId('sound-tile')).toHaveCount(6);
+  await expect(board.getByRole('region', { name: 'Звуки пространства' }).getByTestId('sound-tile')).toHaveCount(1);
+  await checkpoint(page, 'm-voice-soundboard');
+});
+
 test('m-dm-list', async ({ page }) => {
   await signedIn(page);
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();

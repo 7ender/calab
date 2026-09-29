@@ -402,8 +402,39 @@ function VoiceTab(): ReactNode {
         </Row>
       </Card>
 
+      <SoundboardCard />
+
       <PermissionsCard />
     </>
+  );
+}
+
+/**
+ * «Звуки в комнату» (ADR-0036 §3): the soundboard's own volume (0–200 %: × the headphones ▾
+ * volume, the element caps at 100 % — no WebAudio gain, docs/02) and «Не воспроизводить звуки
+ * других». «Слабый компьютер» does not change it.
+ */
+function SoundboardCard(): ReactNode {
+  const volume = usePrefs((s) => s.soundboardVolume);
+  const muteOthers = usePrefs((s) => s.soundboardMuteOthers);
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const pct = Math.round(volume * 100);
+  return (
+    <Card title={t('snd.card')}>
+      <div className="flex flex-col gap-2 px-3 py-3" data-settings-row>
+        <div className="flex justify-between text-body">
+          <span data-settings-label data-settings-hint={t('snd.volumeHint')}>
+            {t('snd.volume')}
+          </span>
+          <span className="tabular-nums text-muted">{pct} %</span>
+        </div>
+        <Slider label={t('snd.volume')} value={pct} min={0} max={200} step={5} onChange={(v) => setPrefs({ soundboardVolume: v / 100 })} />
+        <span className="text-caption text-faint">{t('snd.volumeHint')}</span>
+      </div>
+      <Row label={t('snd.muteOthers')} hint={t('snd.muteOthersHint')}>
+        <Toggle label={t('snd.muteOthers')} checked={muteOthers} onChange={(v) => setPrefs({ soundboardMuteOthers: v })} />
+      </Row>
+    </Card>
   );
 }
 

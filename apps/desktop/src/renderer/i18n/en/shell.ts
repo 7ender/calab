@@ -215,6 +215,7 @@ export const enShell: DictShape<typeof ruShell> = {
   'mediaErr.voice.lost': 'Couldn’t rejoin the voice room',
   'mediaErr.voice.desync': 'Voice connection lost',
   'mediaErr.voice.kicked': 'A moderator disconnected you from the voice room',
+  'mediaErr.voice.otherDevice': 'You joined from another device',
   'mediaErr.voice.duplicate': 'You joined voice from this device in another window',
   'mediaErr.voice.closed': 'The voice room was closed',
   'mediaErr.voice.moved': 'You were moved to “{room}”',

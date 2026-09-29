@@ -1,4 +1,5 @@
 import { t, type MessageKey } from '../../i18n';
+import { ImageError } from '../image/errors';
 import { ApiError } from './client';
 
 /**
@@ -48,6 +49,12 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_ALREADY_UPLOADED: { key: 'rec.retry.alreadyUploaded' },
   ERROR_CODE_WORKSPACE_SUSPENDED: { key: 'err.suspended' },
   ERROR_CODE_BANNED: { key: 'err.banned' },
+};
+
+const IMAGE_ERR: Record<ImageError['reason'], MessageKey> = {
+  heicUnsupported: 'img.err.heicUnsupported',
+  broken: 'img.err.broken',
+  noEncoder: 'img.err.noEncoder',
 };
 
 /** ERROR_CODE_VALIDATION `field` (protojson name, see apps/server Validation(...)) → text. */
@@ -141,6 +148,8 @@ export function describeError(e: unknown): HumanError {
     if (c) return { text: t(c.key), retry: c.retry ?? false, generic: false };
     return fromStatus(e.status);
   }
+  // A picture that cannot be opened / encoded (lib/image): HEIC with no decoder, a broken file.
+  if (e instanceof ImageError) return { text: t(IMAGE_ERR[e.reason]), retry: false, generic: false };
   if (isAbort(e)) return { text: t('err.cancelled'), retry: false, generic: false };
   if (isNetworkError(e)) return fromStatus(0);
   return generic();

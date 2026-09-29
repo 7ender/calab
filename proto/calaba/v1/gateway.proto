@@ -9,6 +9,7 @@ import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
 import "calaba/v1/recording.proto";
 import "calaba/v1/room.proto";
+import "calaba/v1/sound.proto";
 import "calaba/v1/sticker.proto";
 import "calaba/v1/user.proto";
 import "calaba/v1/workspace.proto";
@@ -195,6 +196,15 @@ message DispatchEvent {
     BackgroundCreate background_create = 49;
     BackgroundUpdate background_update = 50;
     BackgroundDelete background_delete = 51;
+    // This device was taken out of voice by the server (docs/05 "Несколько устройств"); to the
+    // user's channel, acted upon only by the device whose auth session is session_id.
+    VoiceDisconnected voice_disconnected = 52;
+    // Soundboard (ADR-0036): the library to every member of the workspace; SOUND_PLAY to the
+    // users in the voice call of the room only (their user channels).
+    SoundCreate sound_create = 53;
+    SoundUpdate sound_update = 54;
+    SoundDelete sound_delete = 55;
+    SoundPlay sound_play = 56;
     // Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
     BotCreate bot_create = 60;
     BotUpdate bot_update = 61;
@@ -279,6 +289,8 @@ message WorkspaceSnapshot {
   repeated Badge badges = 11;
   // The workspace's camera backgrounds (ADR-0035), in creation order.
   repeated WorkspaceBackground backgrounds = 12;
+  // The workspace's soundboard (ADR-0036), in library order.
+  repeated Sound sounds = 13;
 }
 
 message Ready {
@@ -405,6 +417,24 @@ message VoiceMoved {
   string identity = 8;   // LiveKit identity "<user_id>:<session_id>"
 }
 
+// Why the server took a device out of voice (VOICE_DISCONNECTED).
+enum VoiceDisconnectReason {
+  VOICE_DISCONNECT_REASON_UNSPECIFIED = 0;
+  // The user joined voice (a room or a call) from another device: one device in voice at a time.
+  VOICE_DISCONNECT_REASON_OTHER_DEVICE = 1;
+}
+
+// To the user's devices: the server disconnected the device whose auth session is session_id
+// from voice (its LiveKit participant is removed, its voice state cleared; VOICE_STATE_UPDATE
+// follows). That device leaves voice without a reconnect attempt; other devices ignore it.
+// A one-to-one call is not ended by it.
+message VoiceDisconnected {
+  string workspace_id = 1; // empty for a one-to-one call (DM room)
+  string room_id = 2;
+  string session_id = 3;
+  VoiceDisconnectReason reason = 4;
+}
+
 // Sent after a successful RESUME, following the replayed events.
 message Resumed {
   uint32 replayed = 1; // number of events re-sent from the session buffer
@@ -489,6 +519,30 @@ message BackgroundUpdate {
 message BackgroundDelete {
   string workspace_id = 1;
   string background_id = 2;
+}
+
+message SoundCreate {
+  Sound sound = 1;
+}
+
+// A sound was renamed, got another emoji or clip, or moved (then every moved sound comes).
+message SoundUpdate {
+  Sound sound = 1;
+}
+
+message SoundDelete {
+  string workspace_id = 1;
+  string sound_id = 2;
+}
+
+// Someone in the call pressed a sound (POST /api/rooms/{id}/sounds/play). Each client in the
+// call plays the clip itself through an <audio> element; one that gets the event more than 3 s
+// after `at` (its own clock) skips it.
+message SoundPlay {
+  string room_id = 1;
+  string sound_id = 2; // "builtin:<name>" or a Sound.id of the room's workspace
+  string user_id = 3;  // who pressed it
+  google.protobuf.Timestamp at = 4;
 }
 
 message WorkspaceMemberRemove {

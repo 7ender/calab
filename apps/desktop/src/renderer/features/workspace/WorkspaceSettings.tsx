@@ -6,7 +6,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
+import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -17,6 +17,7 @@ import { getLocale, t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { fmt, type TimeFormatPref } from '../../lib/format';
+import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
 import { workspaceInitials } from '../../lib/initials';
 import { can, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
 import { inviteUrl } from '../../services/links';
@@ -39,6 +40,7 @@ import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat'
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
 import { BansTab } from './BansTab';
+import { SoundsTab } from './SoundsTab';
 import { RolesTab } from './RolesTab';
 import { StickersTab } from './StickersTab';
 import { BadgesTab } from './BadgesTab';
@@ -94,6 +96,8 @@ export function WorkspaceSettingsDialog({
     // «Фоны камеры» (ADR-0035 addendum): MANAGE_WORKSPACE, like the server.
     ...(admin ? [{ id: 'backgrounds', label: t('wsbg.tab'), icon: Wallpaper, content: <BackgroundsTab workspaceId={workspaceId} /> }] : []),
     ...(manageStickers ? [{ id: 'stickers', label: t('stk.tab'), icon: Sticker, content: <StickersTab workspaceId={workspaceId} /> }] : []),
+    // Soundboard (ADR-0036): the same right as stickers («Стикеры и звуки»).
+    ...(manageStickers ? [{ id: 'sounds', label: t('snd.tab'), icon: Music, content: <SoundsTab workspaceId={workspaceId} /> }] : []),
     // «Боты» (ADR-0031): MANAGE_WORKSPACE, like the server's bot management.
     ...(admin ? [{ id: 'bots', label: t('bots.tab'), icon: BotIcon, content: <BotsTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
@@ -140,7 +144,9 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const setIcon = async (f: File): Promise<void> => {
     setUploading(true);
     try {
-      const meta = await uploadFile(uploadPath(workspaceId, ''), f, f.name, () => undefined).promise;
+      // A 256×256 WebP (JPEG fallback), never the picked original (docs/02 «Изображения»).
+      const icon = await avatarFile(f, ICON_SIDE);
+      const meta = await uploadFile(uploadPath(workspaceId, ''), icon, icon.name, () => undefined).promise;
       await patchWorkspace(workspaceId, { iconFileId: meta.id });
     } catch (e) {
       if (!reportPlanError(e, workspaceId)) toast.error(err(e));
@@ -159,7 +165,7 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
         <input
           ref={input}
           type="file"
-          accept="image/*"
+          accept={IMAGE_ACCEPT}
           hidden
           onChange={(e) => {
             const f = e.target.files?.[0];

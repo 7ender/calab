@@ -54,6 +54,14 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'video.bg.workspace': 'Workspace backgrounds',
   'video.bg.builtin': 'Common',
 
+  // camera appearance effects (ADR-0035 addendum)
+  'video.fx.title': 'Appearance',
+  'video.fx.touchUp': 'Touch up my appearance',
+  'video.fx.strength': 'Strength',
+  'video.fx.strengthLabel': 'Touch-up strength',
+  'video.fx.lowLight': 'Adjust for low light',
+  'video.fx.lowLightHint': 'Brightens the picture when the room is dark',
+
   // toasts
   'video.limit': 'Camera limit reached',
   'video.forbidden': 'You don’t have permission to use the camera in this room',

@@ -82,6 +82,7 @@ const KEY = new Set([
   'voice-camera-pip',
   'camera-preview',
   'voice-noise-popover',
+  'voice-soundboard',
   'main-members-toggled',
   'main-members-birthday',
   'members-menu',
@@ -129,6 +130,7 @@ const KEY = new Set([
   'chat-forwarded',
   'settings-badges',
   'settings-backgrounds',
+  'settings-sounds',
   'chat-badge',
   // One-to-one calls (ADR-0034).
   'call-outgoing',
@@ -1780,6 +1782,34 @@ test('voice-noise-popover', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'voice-noise-popover');
 });
 
+// Soundboard (ADR-0036, docs/08 «Саундборд»): Борис pressed «Ба-дум-тсс» — the chip under the
+// island's header for 2 s; then «Звуки» (the island's 4th button) opens the popover over the chat:
+// search, «Избранное» (one starred), «Звуки пространства» (two), «Стандартные» (the six built-in).
+test('voice-soundboard', async ({ open, win, mock, shot }) => {
+  await open();
+  mock.addSound(IDS.workspaces.main, 'Фанфары', '🎺');
+  mock.addSound(IDS.workspaces.main, 'Ну и ну', '😮');
+  await inVoiceWithStatus(win, mock);
+  mock.playSound(IDS.rooms.meeting, IDS.users.boris, 'builtin:ba_dum_tss');
+  const chip = win.getByTestId('sound-chip');
+  await expect(chip).toHaveText(/Ба-дум-тсс · Борис Петров/);
+  await expect(chip).toHaveCount(0, { timeout: 5000 });
+  await win.getByTestId('soundboard-button').click();
+  const board = win.getByTestId('soundboard');
+  await expect(board).toBeVisible();
+  await expect(board.getByRole('region', { name: 'Звуки пространства' }).getByTestId('sound-tile')).toHaveCount(2);
+  await expect(board.getByRole('region', { name: 'Стандартные' }).getByTestId('sound-tile')).toHaveCount(6);
+  await board.getByRole('button', { name: 'В избранное: «Клаксон»' }).click();
+  await expect(board.getByRole('region', { name: 'Избранное' }).getByTestId('sound-tile')).toHaveCount(1);
+  // Search narrows to one «Результаты» section.
+  await board.getByTestId('soundboard-search').fill('кряк');
+  await expect(board.getByRole('region', { name: 'Результаты' }).getByTestId('sound-tile')).toHaveCount(1);
+  await board.getByTestId('soundboard-search').fill('');
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'voice-soundboard');
+});
+
 // A voice room's chat without joining it (docs/09 #14): in a call in «Созвон», the «чат» hover
 // action on «Переговорка» (Борис, Вера inside) opens its feed with «Вы не в голосе» + «Войти в
 // голос»; the call in «Созвон» stays. (Not the other way round: «Созвон»'s history has an inline
@@ -1952,6 +1982,22 @@ test('settings-backgrounds', async ({ open, win, mock, shot }) => {
   await backgroundThumbsLoaded(win);
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'settings-backgrounds');
+});
+
+// Workspace settings → «Звуки» (ADR-0036, MANAGE_STICKERS): two sounds with ▶, emoji, name in
+// place, duration, «Заменить файл», up / down, delete; «Добавить звук» at the top.
+test('settings-sounds', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.addSound(IDS.workspaces.main, 'Фанфары', '🎺');
+  mock.addSound(IDS.workspaces.main, 'Ну и ну', '😮');
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Звуки' }).click();
+  await expect(dialog.getByTestId('sound-row')).toHaveCount(2);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'settings-sounds');
 });
 
 // docs/09 #82: a 16 px badge after the author's name in the feed and after the names in the

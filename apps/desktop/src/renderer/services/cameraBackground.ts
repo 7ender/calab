@@ -5,6 +5,7 @@ import { isMobileNow } from '../lib/mobile';
 import { cameraSource } from '../lib/media/camera';
 import type { BackgroundProcessor } from '../lib/media/background';
 import { loadBackgroundBitmap } from '../lib/media/background/images';
+import { DEFAULT_CAMERA_EFFECTS, NO_WORKER_EFFECTS, effectsActive, workerEffects, type CameraEffects } from '../lib/media/background/effects';
 import {
   BACKGROUND_PROCESSOR,
   NO_BACKGROUND,
@@ -20,10 +21,14 @@ import { setCameraBg } from '../stores/cameraBg';
 import { findBackground } from '../stores/workspaces';
 
 /**
- * Applies the camera background (ADR-0035) to a camera track — the preview's or the published one:
+ * Applies the camera background (ADR-0035) and the appearance effects (its addendum) to a camera
+ * track — the preview's or the published one:
  *   off      → no processor, the camera's own blur off;
  *   hardware → `backgroundBlur: true` on the capture (Windows Studio Effects), no processor;
  *   pipeline → our processor (lazy chunk lib/media/background), its mode switched in place.
+ * «Улучшить внешность» / «Низкая освещённость» always run in our processor (no system API does
+ * touch-up), with the background «Нет» or the system blur too. No background and no effect: no
+ * processor at all — the camera passes untouched.
  * Calls are serialized: quick clicks in the picker apply in order, the last one wins.
  */
 
@@ -59,38 +64,51 @@ export function dropStaleWorkspaceBackground(): void {
 
 let chain: Promise<void> = Promise.resolve();
 
-export function applyCameraBackground(track: LocalVideoTrack, bg: CameraBackground): Promise<void> {
+export function applyCameraBackground(track: LocalVideoTrack, bg: CameraBackground, fx: CameraEffects = DEFAULT_CAMERA_EFFECTS): Promise<void> {
   chain = chain.then(
-    () => apply(track, bg),
-    () => apply(track, bg),
+    () => apply(track, bg, fx),
+    () => apply(track, bg, fx),
   );
   return chain.catch((err: unknown) => log.warn('camera background failed', err));
 }
 
-async function apply(track: LocalVideoTrack, bg: CameraBackground): Promise<void> {
+async function apply(track: LocalVideoTrack, bg: CameraBackground, fx: CameraEffects): Promise<void> {
   const src = cameraSource(track);
   if (src.readyState === 'ended') return;
   const md = navigator.mediaDevices as MediaDevices | undefined;
   const hw = hasHardwareBlur(md?.getSupportedConstraints() as Record<string, unknown> | undefined, src.getCapabilities() as Record<string, unknown> | undefined);
-  const path = backgroundPath(bg, { supported: backgroundAvailable(), hardwareBlur: hw });
+  const supported = backgroundAvailable();
+  const path = backgroundPath(bg, { supported, hardwareBlur: hw });
   if (hw) await src.applyConstraints({ backgroundBlur: path === 'hardware' }).catch((e: unknown) => log.warn('backgroundBlur constraint failed', e));
+  const effects = supported && effectsActive(fx) ? workerEffects(fx) : null;
   const current = track.getProcessor();
   const ours = current?.name === BACKGROUND_PROCESSOR ? (current as BackgroundProcessor) : null;
-  if (path !== 'pipeline') {
+  const stop = async (): Promise<void> => {
     if (ours) await track.stopProcessor(false);
     setCameraBg({ state: 'idle', software: false, hardware: path === 'hardware' });
+  };
+  let kind = path === 'pipeline' ? bg.kind : 'none';
+  if (kind === 'none' && !effects) return stop();
+  const picture = kind === 'image' ? (bg.imageId ?? null) : null;
+  const fxOut = effects ?? NO_WORKER_EFFECTS;
+  // Only the effects changed (a slider drag): nothing to reload.
+  if (ours && ours.currentMode === kind && ours.currentPicture === picture) {
+    ours.setEffects(fxOut);
+    setCameraBg({ hardware: path === 'hardware' });
     return;
   }
-  const image = bg.kind === 'image' ? await loadBackgroundBitmap(bg.imageId, (id) => findBackground(id)?.fileId) : null;
-  if (bg.kind === 'image' && !image) {
-    // The picture is gone (removed upload, a replaced built-in set): the raw camera.
-    if (ours) await track.stopProcessor(false);
-    setCameraBg({ state: 'idle', hardware: false });
-    return;
+  let image = kind === 'image' ? await loadBackgroundBitmap(bg.imageId, (id) => findBackground(id)?.fileId) : null;
+  if (kind === 'image' && !image) {
+    // The picture is gone (removed upload, a replaced built-in set): the raw camera (with the effects).
+    if (!effects) return stop();
+    kind = 'none';
+    image = null;
   }
-  setCameraBg({ hardware: false });
+  setCameraBg({ hardware: path === 'hardware' });
   if (ours) {
-    ours.setMode(bg.kind, image);
+    ours.setMode(kind, image, picture);
+    ours.setEffects(fxOut);
+    if (kind === 'none') setCameraBg({ state: 'ready', software: false });
     return;
   }
   const { createBackgroundProcessor } = await import('../lib/media/background');
@@ -99,9 +117,10 @@ async function apply(track: LocalVideoTrack, bg: CameraBackground): Promise<void
     image?.close();
     return;
   }
-  setCameraBg({ state: 'loading' });
+  // The appearance effects need no model: nothing to wait for («Загружаем фон…» only for a background).
+  setCameraBg({ state: kind === 'none' ? 'ready' : 'loading', software: false });
   await track.setProcessor(
-    createBackgroundProcessor(bg.kind, image, (s) => setCameraBg({ state: s.state, software: s.software })),
+    createBackgroundProcessor(kind, image, fxOut, (s) => setCameraBg({ state: s.state, software: s.software }), picture),
     true,
   );
 }

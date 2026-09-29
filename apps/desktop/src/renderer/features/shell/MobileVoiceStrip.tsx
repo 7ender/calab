@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, Ellipsis, Headphones, HeadphoneOff, Mic, MicOff, Phone, Radio, Settings } from 'lucide-react';
+import { Check, Ellipsis, Headphones, HeadphoneOff, Mic, MicOff, Music, Phone, Radio, Settings } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
@@ -18,6 +18,7 @@ import { openDm } from '../../services/dms';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { selectMicMode } from './micMenu';
 import { MobileRecDot, useRecording } from '../voice/Recording';
+import { SoundboardAnchored, SoundboardButton } from '../voice/Soundboard';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
 const round = 'grid size-10 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
@@ -51,6 +52,8 @@ export function MobileVoiceStrip(): ReactNode {
   const mine = useVoiceStateOf(wsId ?? '', me?.id ?? '');
   const connectingRing = useConnectingRing(wsId, me?.id, mine?.pending ?? false);
   const recording = useRecording(roomId);
+  const [sounds, setSounds] = useState(false);
+  const openSounds = useCallback(() => setSounds(true), []);
   if (!roomId) return null;
   const connected = phase === 'connected';
   // While the PTT button is held the status line says so (the button itself is a 40 px circle).
@@ -105,7 +108,20 @@ export function MobileVoiceStrip(): ReactNode {
           {deafened ? <HeadphoneOff className="size-5" aria-hidden /> : <Headphones className="size-5" aria-hidden />}
         </button>
         {ptt ? <PttHoldButton disabled={!connected || muted || deafened} /> : null}
-        {call ? null : <MoreMenu />}
+        {/* Soundboard (ADR-0036): the island's panel as a bottom sheet — a button of the strip, or
+            «Ещё → Звуки» in push-to-talk mode (the strip has no room for one more 40 px button). */}
+        {call ? null : ptt ? (
+          <SoundboardAnchored open={sounds} onOpenChange={setSounds}>
+            <span className="flex shrink-0">
+              <MoreMenu onSounds={connected ? openSounds : undefined} />
+            </span>
+          </SoundboardAnchored>
+        ) : (
+          <>
+            <SoundboardButton testId="mobile-soundboard-button" className={cx(round, idle, 'disabled:opacity-40 data-[state=open]:bg-[var(--color-fill-hover)]')} />
+            <MoreMenu />
+          </>
+        )}
         <button type="button" aria-label={t('voice.leave')} onClick={() => void voice.leave()} className={cx(round, 'bg-danger-fill text-white active:brightness-90')}>
           <Phone className="size-5 rotate-[135deg]" aria-hidden />
         </button>
@@ -114,10 +130,11 @@ export function MobileVoiceStrip(): ReactNode {
   );
 }
 
-/** «Ещё»: the mic mode (docs/09 #28 — voice activation / push-to-talk) and «Настройки голоса». */
-function MoreMenu(): ReactNode {
+/** «Ещё»: the mic mode (docs/09 #28 — voice activation / push-to-talk), «Звуки» (push-to-talk mode) and «Настройки голоса». */
+function MoreMenu({ onSounds }: { onSounds?: (() => void) | undefined }): ReactNode {
   const micMode = usePrefs((s) => s.micMode);
   const openDialog = useUi((s) => s.openDialog);
+  const soundsPicked = useRef(false);
   const radio = cx(menuItem, 'relative h-10 pl-8');
   return (
     <Dropdown.Root modal={false}>
@@ -127,7 +144,33 @@ function MoreMenu(): ReactNode {
         </button>
       </Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'w-64')} side="top" align="end" sideOffset={10} collisionPadding={12}>
+        <Dropdown.Content
+          className={cx(menuBox, 'w-64')}
+          side="top"
+          align="end"
+          sideOffset={10}
+          collisionPadding={12}
+          // «Звуки» opens the sheet: focus must not jump back to «Ещё» (it would close the sheet).
+          onCloseAutoFocus={(e) => (soundsPicked.current ? e.preventDefault() : undefined)}
+        >
+          {onSounds ? (
+            <>
+              <Dropdown.Item
+                className={cx(menuItem, 'h-10')}
+                data-testid="mobile-voice-sounds"
+                onSelect={() => {
+                  soundsPicked.current = true;
+                  requestAnimationFrame(() => {
+                    soundsPicked.current = false;
+                    onSounds();
+                  });
+                }}
+              >
+                <Music className="size-4" aria-hidden /> {t('snd.button')}
+              </Dropdown.Item>
+              <Dropdown.Separator className={menuSeparator} />
+            </>
+          ) : null}
           <Dropdown.Label className={menuLabel}>{t('voice.mode')}</Dropdown.Label>
           <Dropdown.RadioGroup value={micMode} onValueChange={selectMicMode}>
             <Dropdown.RadioItem value="voice" className={radio} data-testid="mobile-mic-mode-voice">

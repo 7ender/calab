@@ -1,10 +1,16 @@
 /**
- * Camera background worker (ADR-0035 §1–2, §6). Camera frames arrive on a transferred
- * MediaStreamTrackProcessor stream and leave on a transferred MediaStreamTrackGenerator stream; the
- * UI thread takes no part per frame. Until the model is loaded, and for «none», frames pass through
- * untouched (no GL). Segmentation at SEG_FPS (8/s; 6/s without a GPU delegate), compositing on every frame.
+ * Camera background and appearance worker (ADR-0035 §1–2, §6 and the «эффекты внешности»
+ * addendum). Camera frames arrive on a transferred MediaStreamTrackProcessor stream and leave on a
+ * transferred MediaStreamTrackGenerator stream; the UI thread takes no part per frame.
+ *
+ * A frame passes through untouched (no GL, no canvas) unless it needs work: a background (once the
+ * model is loaded — segmentation at SEG_FPS, 8/s; 6/s without a GPU delegate), «Улучшить
+ * внешность», or «Низкая освещённость» while the room is dark. The low-light meter reads the frame
+ * at 256×144 once a second on the CPU (a histogram, effects.ts); a bright room stays pass-through.
+ * The appearance effects need no model: the compositor alone, created on the first frame.
  */
 import { Compositor } from './compositor';
+import { METER_HEIGHT, METER_INTERVAL_MS, METER_WIDTH, NO_WORKER_EFFECTS, denoiseAmount, exposureDecision, exposureRamp, histogramMean, lumaHistogram, type WorkerEffects } from './effects';
 import { SEG_FPS, SEG_FPS_SOFTWARE, blurSigma, emaAlpha, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
 import type { FromWorker, ToWorker, WorkerMode } from './protocol';
 import { createSegmenter, type Segmenter } from './segmenter';
@@ -17,11 +23,15 @@ interface WorkerScope {
 const scope = self as unknown as WorkerScope;
 
 let mode: WorkerMode = 'none';
+let fx: WorkerEffects = NO_WORKER_EFFECTS;
 let writer: WritableStreamDefaultWriter<VideoFrame> | null = null;
 let reader: ReadableStreamDefaultReader<VideoFrame> | null = null;
 let comp: Compositor | null = null;
+/** No WebGL2 context: nothing can be rendered, every frame passes through. */
+let glFailed = false;
 let seg: Segmenter | null = null;
 let loading: Promise<void> | null = null;
+/** The segmenter could not start: no background (the appearance effects still work). */
 let failed = false;
 let segFps = SEG_FPS;
 let tokens = 0;
@@ -31,36 +41,58 @@ let lastGoodAt: number | null = null;
 let pendingImage: ImageBitmap | null = null;
 let stopped = false;
 let segCtx: OffscreenCanvasRenderingContext2D | null = null;
+/** Low light: the meter's canvas (CPU-backed, read once a second), its state, the curve in use. */
+let meterCtx: OffscreenCanvasRenderingContext2D | null = null;
+let lastMeterTs = -Infinity;
+let meanLuma = -1;
+let exposureOn = false;
+let gammaTarget = 1;
+let gamma = 1;
 /** The selfie landscape model's input. */
 const SEG_WIDTH = 256;
 const SEG_HEIGHT = 144;
-const stats = { frames: 0, segs: 0, ms: 0, since: 0 };
+const stats = { frames: 0, rendered: 0, segs: 0, ms: 0, since: 0 };
 
-function count(ms: number, segmented: boolean): void {
+function count(ms: number, rendered: boolean, segmented: boolean): void {
   const now = performance.now();
   if (!stats.since) stats.since = now;
   stats.frames++;
   stats.ms += ms;
+  if (rendered) stats.rendered++;
   if (segmented) stats.segs++;
   if (now - stats.since >= 5000) {
-    post({ type: 'stats', frames: stats.frames, segs: stats.segs, msPerFrame: stats.ms / stats.frames, seconds: (now - stats.since) / 1000 });
-    Object.assign(stats, { frames: 0, segs: 0, ms: 0, since: now });
+    post({ type: 'stats', frames: stats.frames, rendered: stats.rendered, segs: stats.segs, msPerFrame: stats.ms / stats.frames, seconds: (now - stats.since) / 1000, mean: meanLuma, gamma });
+    Object.assign(stats, { frames: 0, rendered: 0, segs: 0, ms: 0, since: now });
   }
 }
 
 const post = (m: FromWorker): void => scope.postMessage(m);
 
-/** GL + MediaPipe, once, on the first frame that needs an effect. */
+/** The GL half, once (no model): the appearance effects need only this. */
+function compositor(): Compositor | null {
+  if (comp || glFailed) return comp;
+  try {
+    comp = new Compositor(new OffscreenCanvas(16, 16));
+    comp.setImage(pendingImage);
+  } catch (err) {
+    glFailed = true;
+    console.warn('camera effects: WebGL2 unavailable', err);
+    post({ type: 'state', state: 'failed', error: String(err) });
+  }
+  return comp;
+}
+
+/** MediaPipe, once, on the first frame that needs a background. */
 function load(): Promise<void> {
   loading ??= (async () => {
     post({ type: 'state', state: 'loading' });
     try {
-      comp = new Compositor(new OffscreenCanvas(16, 16));
-      const software = comp.software;
-      seg = await createSegmenter(comp.canvas);
+      const c = compositor();
+      if (!c) throw new Error('webgl2 unavailable');
+      const software = c.software;
+      seg = await createSegmenter(c.canvas);
       if (stopped) return;
       if (!seg.gpu || software) segFps = SEG_FPS_SOFTWARE;
-      comp.setImage(pendingImage);
       post({ type: 'state', state: 'ready', software: !seg.gpu || software });
     } catch (err) {
       failed = true;
@@ -77,51 +109,82 @@ function setImage(image: ImageBitmap | null): void {
   comp?.setImage(image);
 }
 
+/** Low light (effects.ts): the frame's mean luma at 256×144, once a second → the curve's target. */
+function meter(frame: VideoFrame, ts: number): void {
+  if (ts - lastMeterTs < METER_INTERVAL_MS && ts >= lastMeterTs) return;
+  lastMeterTs = ts;
+  try {
+    meterCtx ??= new OffscreenCanvas(METER_WIDTH, METER_HEIGHT).getContext('2d', { alpha: false, willReadFrequently: true });
+    if (!meterCtx) return;
+    meterCtx.drawImage(frame, 0, 0, METER_WIDTH, METER_HEIGHT);
+    meanLuma = histogramMean(lumaHistogram(meterCtx.getImageData(0, 0, METER_WIDTH, METER_HEIGHT).data));
+    const d = exposureDecision(meanLuma, exposureOn);
+    exposureOn = d.active;
+    gammaTarget = d.gamma;
+  } catch (err) {
+    console.warn('camera effects: low-light meter failed', err);
+  }
+}
+
 async function handle(frame: VideoFrame): Promise<void> {
   const w = writer;
   if (!w) {
     frame.close();
     return;
   }
-  if (mode === 'none' || failed || !seg || !comp) {
-    if (mode !== 'none' && !failed) void load();
-    await w.write(frame); // passes through; the sink owns (and closes) it
-    return;
-  }
   const t0 = performance.now();
-  let segmented = false;
   const ts = frame.timestamp / 1000; // µs → ms
   const dt = lastFrameTs < 0 ? 1000 / 15 : ts - lastFrameTs;
   lastFrameTs = ts;
+  if (fx.lowLight) meter(frame, ts);
+  gamma = exposureRamp(gamma, fx.lowLight ? gammaTarget : 1, dt);
+
+  const wantBg = mode !== 'none' && !failed && !glFailed;
+  if (wantBg && !seg) void load();
+  const bgOn = wantBg && !!seg;
+  const lift = gamma < 1;
+  const effectsOn = fx.touchUp > 0 || lift;
+  const c = (bgOn || effectsOn) && !glFailed ? compositor() : null;
+  if (!c) {
+    // Passes through; the sink owns (and closes) it.
+    count(performance.now() - t0, false, false);
+    await w.write(frame);
+    return;
+  }
+
+  let segmented = false;
   let out: VideoFrame | null = null;
   try {
-    comp.resize(frame.displayWidth, frame.displayHeight);
-    comp.upload(frame);
-    const step = segmentStep(tokens, dt, segFps);
-    tokens = step.tokens;
-    if (step.run || !comp.ready) {
-      const coverage = comp.takeCoverage();
-      const now = performance.now();
-      if (coverage !== null && coverage >= MASK_MIN_COVERAGE) lastGoodAt = now;
-      const segTs = Math.max(ts, lastSegTs + 1);
-      const alpha = emaAlpha(lastSegTs < 0 ? 0 : segTs - lastSegTs);
-      lastSegTs = segTs;
-      const c = comp;
-      segmented = true;
-      // The model's own input size (ADR §2): scaled once here instead of MediaPipe uploading
-      // the full frame and scaling its mask back up to it.
-      if (seg.small) segCtx ??= new OffscreenCanvas(SEG_WIDTH, SEG_HEIGHT).getContext('2d', { alpha: false, desynchronized: true });
-      segCtx?.drawImage(frame, 0, 0, SEG_WIDTH, SEG_HEIGHT);
-      seg.segment(segCtx ? segCtx.canvas : frame, segTs, (tex, mw, mh) => c.pushMask(tex, mw, mh, alpha, maskHoldAllowed(lastGoodAt, now)));
+    c.resize(frame.displayWidth, frame.displayHeight);
+    c.upload(frame);
+    if (bgOn && seg) {
+      const step = segmentStep(tokens, dt, segFps);
+      tokens = step.tokens;
+      if (step.run || !c.ready) {
+        const coverage = c.takeCoverage();
+        const now = performance.now();
+        if (coverage !== null && coverage >= MASK_MIN_COVERAGE) lastGoodAt = now;
+        const segTs = Math.max(ts, lastSegTs + 1);
+        const alpha = emaAlpha(lastSegTs < 0 ? 0 : segTs - lastSegTs);
+        lastSegTs = segTs;
+        segmented = true;
+        // The model's own input size (ADR §2): scaled once here instead of MediaPipe uploading
+        // the full frame and scaling its mask back up to it.
+        if (seg.small) segCtx ??= new OffscreenCanvas(SEG_WIDTH, SEG_HEIGHT).getContext('2d', { alpha: false, desynchronized: true });
+        segCtx?.drawImage(frame, 0, 0, SEG_WIDTH, SEG_HEIGHT);
+        seg.segment(segCtx ? segCtx.canvas : frame, segTs, (tex, mw, mh) => c.pushMask(tex, mw, mh, alpha, maskHoldAllowed(lastGoodAt, now)));
+      }
     }
-    if (comp.ready) {
-      comp.render(mode === 'image' ? { kind: 'image' } : { kind: 'blur', sigma: blurSigma(mode, frame.displayHeight) });
-      out = new VideoFrame(comp.canvas, { timestamp: frame.timestamp, alpha: 'discard' });
+    const bg = bgOn && c.ready ? (mode === 'image' ? ({ kind: 'image' } as const) : ({ kind: 'blur', sigma: blurSigma(mode === 'blur-light' ? 'blur-light' : 'blur-strong', frame.displayHeight) } as const)) : null;
+    // A background still waiting for its first mask and no effect: the camera as is.
+    if (bg || effectsOn) {
+      c.render({ bg, touchUp: fx.touchUp, touchRange: fx.touchRange, gamma, denoise: denoiseAmount(gamma) });
+      out = new VideoFrame(c.canvas, { timestamp: frame.timestamp, alpha: 'discard' });
     }
   } catch (err) {
     console.warn('camera background: frame failed, passing through', err);
   }
-  count(performance.now() - t0, segmented);
+  count(performance.now() - t0, !!out, segmented);
   if (out) {
     frame.close();
     await w.write(out);
@@ -157,7 +220,18 @@ function switchSource(readable: ReadableStream<VideoFrame>): void {
   reader = null;
   void old?.cancel().catch(() => undefined);
   lastFrameTs = -1;
+  lastMeterTs = -Infinity;
   void pump(readable);
+}
+
+function setEffects(next: WorkerEffects): void {
+  // Low light switched on: measure on the next frame, not up to a second later.
+  if (next.lowLight && !fx.lowLight) lastMeterTs = -Infinity;
+  if (!next.lowLight) {
+    exposureOn = false;
+    gammaTarget = 1;
+  }
+  fx = next;
 }
 
 scope.onmessage = (e: MessageEvent<ToWorker>) => {
@@ -166,6 +240,7 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
     case 'init':
       writer = m.writable.getWriter();
       mode = m.mode;
+      setEffects(m.effects);
       setImage(m.image);
       if (mode !== 'none') void load();
       switchSource(m.readable);
@@ -177,6 +252,9 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
       mode = m.mode;
       setImage(m.image);
       if (mode !== 'none') void load();
+      break;
+    case 'effects':
+      setEffects(m.effects);
       break;
     case 'stop':
       stopped = true;
