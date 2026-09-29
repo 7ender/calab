@@ -2482,16 +2482,16 @@ test('voice-room-pending', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'voice-room-pending');
 });
 
-// «Только вошёл» (owner, 29.09; docs/08): Григорий joined 2 s ago by the page's fixed clock — a
-// 6 px muted-accent dot left of his avatar (10 s window; the frozen clock keeps it in the shot).
-// Борис and Вера have no joined_at in the fixture: no dot.
+// «Только вошёл» (owner, 29.09; docs/08): Вера (already in the room, the row above the voice
+// panel) gets joined_at 2 s ago by the page's fixed clock — a 6 px muted-accent dot left of her
+// avatar (10 s window; the frozen clock keeps it in the shot). Борис has no joined_at: no dot.
 test('voice-room-joined', async ({ open, win, mock, shot }) => {
   await open();
   await inVoice(win, mock);
   const now = await win.evaluate(() => Date.now());
-  mock.setVoiceState({ userId: IDS.users.grigory, roomId: IDS.rooms.meeting, joinedAtMs: now - 2_000 });
+  mock.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.meeting, joinedAtMs: now - 2_000 });
   const sidebar = win.locator('aside').first();
-  await expect(sidebar.getByRole('listitem', { name: /Григорий/ }).getByTestId('just-joined-dot')).toHaveAttribute('data-shown', 'true');
+  await expect(sidebar.getByRole('listitem', { name: /Вера/ }).getByTestId('just-joined-dot')).toHaveAttribute('data-shown', 'true');
   await expect(sidebar.getByRole('listitem', { name: /Борис Петров/ }).getByTestId('just-joined-dot')).toHaveCount(0);
   await checkpoint(shot, 'voice-room-joined');
 });
