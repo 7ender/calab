@@ -108,14 +108,51 @@ export function comboLabel(c: Combo, mac: boolean): string {
   return `Ctrl+${c.alt ? 'Alt+' : ''}${c.shift ? 'Shift+' : ''}${keyName(c.code)}`;
 }
 
+const ACCEL_KEYS: Record<string, string> = {
+  Space: 'Space',
+  Enter: 'Enter',
+  Backspace: 'Backspace',
+  Tab: 'Tab',
+  Slash: '/',
+  Backslash: '\\',
+  Period: '.',
+  Comma: ',',
+  Semicolon: ';',
+  Quote: "'",
+  BracketLeft: '[',
+  BracketRight: ']',
+  Minus: '-',
+  Equal: '=',
+  Backquote: '`',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+};
+
+/**
+ * The combo as an Electron accelerator («Command+Shift+M»): the macOS menu shows the rebindable
+ * shortcuts next to their items (shared/menu.ts `MenuState.hotkeys`). '' when Electron has no
+ * name for the key.
+ */
+export function comboAccelerator(c: Combo, mac: boolean): string {
+  const letter = /^(?:Key|Digit)(.)$/.exec(c.code)?.[1];
+  const num = /^Numpad(\d)$/.exec(c.code)?.[1];
+  const key = letter ?? (num ? `num${num}` : /^F\d{1,2}$/.test(c.code) ? c.code : ACCEL_KEYS[c.code]);
+  if (!key) return '';
+  return `${mac ? 'Command' : 'Control'}+${c.alt ? 'Alt+' : ''}${c.shift ? 'Shift+' : ''}${key}`;
+}
+
 /**
  * Combos the system or the app already uses: clipboard/undo/select-all, quit/close/hide/
- * minimise, the room-history keys, in-room search (⌘F), settings (⌘,), reload.
+ * minimise, the room-history keys, in-room search (⌘F), settings (⌘,), reload, and the macOS
+ * menu's own keys (shared/menu.ts MENU_ACCELERATORS): new message (⌘N), workspaces (⌘1…⌘9).
  */
 const RESERVED: Array<{ code: string; shift?: boolean }> = [
   { code: 'KeyC' }, { code: 'KeyV' }, { code: 'KeyX' }, { code: 'KeyA' }, { code: 'KeyZ' }, { code: 'KeyZ', shift: true },
   { code: 'KeyQ' }, { code: 'KeyW' }, { code: 'KeyH' }, { code: 'KeyM' }, { code: 'KeyR' }, { code: 'KeyF' },
-  { code: 'Comma' }, { code: 'BracketLeft' }, { code: 'BracketRight' },
+  { code: 'Comma' }, { code: 'BracketLeft' }, { code: 'BracketRight' }, { code: 'KeyN' },
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => ({ code: `Digit${d}` })),
 ];
 
 /**

@@ -131,7 +131,7 @@
 Как проверить, что всё активно (`chrome://media-internals` в приложении нет):
 1. `logs/main.log`: `chromium features { enable: [ChromeWideEchoCancellation, WebRtcAudioNeuralResidualEchoEstimation, …] }`.
 2. Тот же `logs/main.log`: `[renderer] [mic] capture settings {"echoCancellation":true,"autoGainControl":true,…}`.
-3. Dev-статистика (Настройки → Приложение → «Статистика медиа»), строка `aec erl … erle … dB · echo r …`. `erl`/`erle` — `media-source` из `RTCRtpSender.getStats()`. Chromium заполняет их только когда публикуется сам трек getUserMedia, то есть при выключенном шумоподавлении в режиме «Наушники». С RNNoise там «—». `echo r` — корреляция детектора (ниже), считается всегда.
+3. Dev-статистика (Настройки → О программе → «Статистика медиа»), строка `aec erl … erle … dB · echo r …`. `erl`/`erle` — `media-source` из `RTCRtpSender.getStats()`. Chromium заполняет их только когда публикуется сам трек getUserMedia, то есть при выключенном шумоподавлении в режиме «Наушники». С RNNoise там «—». `echo r` — корреляция детектора (ниже), считается всегда.
 4. Нейросетевой оценщик: запуск с `--enable-logging=stderr --v=0`. Строки `Failed to initialize neural residual echo estimator` быть не должно.
 
 **Детектор «собеседник слышит себя»** (`lib/media/echo.ts`, `EchoRiskDetector`, unit-тесты на синтетике). Каждые 50 мс: уровень удалённых голосов — RFC 6464 `audioLevel` из `RTCRtpReceiver.getSynchronizationSources()` × `element.volume` (без WebAudio на remote). Плюс уровень моего микрофона после AEC/RNNoise и признак «в эфире». Раз в 2 с (вместе с getStats) — два независимых признака:

@@ -1,7 +1,7 @@
-import { LayoutGrid, Maximize2, MessageCircle, MicOff, Pin, VideoOff, X } from 'lucide-react';
+import { LayoutGrid, Maximize2, MessageCircle, MicOff, Pin, VideoOff } from 'lucide-react';
 import { forwardRef, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { Badge, IconButton, cx } from '../../components/ui';
+import { Badge, CloseButton, IconButton, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
@@ -11,6 +11,8 @@ import { setVoice, useVoice } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { MemberBadge } from '../people/MemberBadge';
 import { MemberContextMenu } from '../people/MemberContextMenu';
+import { joinedAtMs } from '../../lib/justJoined';
+import { JustJoinedDot } from './JustJoinedDot';
 import type { Box } from './StreamArea';
 import { PIP_SHADOW, WELCOME_ROW, pipSize } from './streamFormat';
 import { layoutTiles, selectTiles, type TilePerson } from './tileLayout';
@@ -94,9 +96,15 @@ function CameraVideo({ userId, wsId, avatarSize, fit = 'cover' }: { userId: stri
 function AvatarFill({ userId, wsId, size }: { userId: string; wsId: string | null; size: number }): ReactNode {
   const name = useMemberName(wsId, userId);
   const avatar = useWorkspaces((s) => s.users[userId]?.avatarFileId);
+  // A primitive (ms) per tile: other voice changes in the room don't re-render it.
+  const joinedAt = useWorkspaces((s) => (wsId ? joinedAtMs(s.byId[wsId]?.voice[userId]?.joinedAt) : 0));
   return (
     <span className="pointer-events-none absolute inset-0 grid place-items-center bg-[var(--color-tile-bg)]" aria-hidden data-testid="tile-avatar">
-      <Avatar userId={userId} name={name} fileId={avatar || undefined} size={size} />
+      <span className="relative flex">
+        <Avatar userId={userId} name={name} fileId={avatar || undefined} size={size} />
+        {/* «Только вошёл»: 6 px left of the avatar, vertically centred. */}
+        <JustJoinedDot joinedAt={joinedAt} className="absolute right-[calc(100%+6px)] top-1/2 -translate-y-1/2" />
+      </span>
     </span>
   );
 }
@@ -344,9 +352,7 @@ export function CameraPip({ box, wsId }: { box: Box; wsId: string | null }): Rea
         <IconButton size="sm" label={t('video.expand')} className="text-white hover:bg-white/15 hover:text-white" onClick={() => voice.showVideo()}>
           <Maximize2 className="size-4" aria-hidden />
         </IconButton>
-        <IconButton size="sm" label={t('video.close')} className="text-white hover:bg-white/15 hover:text-white" onClick={() => setVoice({ videoPip: false })}>
-          <X className="size-4" aria-hidden />
-        </IconButton>
+        <CloseButton label={t('video.close')} shortcut="" className="text-white hover:bg-white/15 hover:text-white" onClick={() => setVoice({ videoPip: false })} />
       </span>
     </div>
   );

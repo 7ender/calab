@@ -226,6 +226,24 @@ func TestBirthdayWorker(t *testing.T) {
 	if n := len(birthdayCards(t, o, general, carol.id)); n != 1 {
 		t.Fatalf("UTC noon: %d cards, want 1", n)
 	}
+
+	// Without a zone of one's own, the workspace owner's zone decides: a Moscow team gets the
+	// card at 09:00 MSK (06:00 UTC), not at 09:00 UTC.
+	msk := "Europe/Moscow"
+	o.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{Timezone: &msk}, nil)
+	dave := register(t, invite(t, o, wid))
+	v := time.Now().AddDate(0, 0, 250).UTC()
+	dave.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{Birthday: &v1.Birthday{Day: uint32(v.Day()), Month: uint32(v.Month())}}, nil) //nolint:gosec // test
+	for _, c := range []struct {
+		hour, want int
+	}{{5, 0}, {6, 1}} { // 08:xx MSK: not yet; 09:xx MSK: the card
+		if _, err := testApp.Birthdays.Greet(ctx, time.Date(v.Year(), v.Month(), v.Day(), c.hour, 30, 0, 0, time.UTC)); err != nil {
+			t.Fatal(err)
+		}
+		if n := len(birthdayCards(t, o, general, dave.id)); n != c.want {
+			t.Fatalf("%02d:30 UTC with an owner in Moscow: %d cards, want %d", c.hour, n, c.want)
+		}
+	}
 }
 
 // TestBirthdaysUpcoming: GET /api/workspaces/{id}/birthdays?days= lists members' birthdays in

@@ -6,7 +6,7 @@ import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { NOW, checkpoint, login, settle } from './harness';
+import { checkpoint, login, settle } from './harness';
 import { startPublisher } from './publisher';
 
 /**
@@ -29,9 +29,9 @@ import { startPublisher } from './publisher';
 const ALL = process.env['CALABA_VISUAL_ALL'] === '1';
 
 /**
- * The local set (~25): one shot per screen family, no per-menu-item or per-tab shots. Settings:
- * 2 = «Голос и устройства», 3 = «Горячие клавиши», 8 = «Приложение» (language); «О программе» —
- * `settings-about` (an available update, docs/09 #93).
+ * The local set (~25): one shot per screen family, no per-menu-item or per-tab shots. Settings
+ * (named by tab id): «Основное» (theme, language), «Голос и устройства», «Горячие клавиши»;
+ * «О программе» — `settings-about` (an available update, docs/09 #93).
  */
 const KEY = new Set([
   'auth-login',
@@ -75,6 +75,7 @@ const KEY = new Set([
   'chat-voice-bubble',
   'voice-room-speaking',
   'voice-room-pending',
+  'voice-room-joined',
   'voice-stream',
   'voice-pip',
   'voice-camera-grid',
@@ -84,6 +85,7 @@ const KEY = new Set([
   'main-members-toggled',
   'main-members-birthday',
   'members-menu',
+  'members-profile-switch',
   'profile-dialog',
   'profile-menu',
   'profile-birthday',
@@ -95,9 +97,9 @@ const KEY = new Set([
   'self-status-menu',
   'self-custom-status',
   'quick-switcher',
-  'settings-2',
-  'settings-3',
-  'settings-8',
+  'settings-general',
+  'settings-voice',
+  'settings-hotkeys',
   'settings-about',
   'room-settings-1',
   'room-settings-restricted',
@@ -115,6 +117,7 @@ const KEY = new Set([
   'workspace-suspended',
   'chat-sticker',
   'sticker-picker',
+  'chat-sticker-suggest',
   'settings-stickers',
   'settings-stickers-upload',
   'settings-stickers-emoji',
@@ -183,6 +186,11 @@ async function membersList(page: Page): Promise<Locator> {
   if (!(await members.isVisible())) await page.getByRole('button', { name: 'Участники' }).click();
   return members;
 }
+
+/** App settings tabs in order (AppSettingsDialog); «О программе» (last) is `settings-about`. */
+const SETTINGS_TABS = ['general', 'profile', 'voice', 'hotkeys', 'notifications', 'connection', 'sessions'] as const;
+/** 1-based position of an app settings tab, for openSettingsTab. */
+const appTab = (id: (typeof SETTINGS_TABS)[number]): number => SETTINGS_TABS.indexOf(id) + 1;
 
 async function openSettingsTab(page: Page, opener: () => Promise<void>, index: number): Promise<void> {
   await opener();
@@ -812,10 +820,39 @@ test('main-members-toggled', async ({ open, win, mock, shot }) => {
 test('members-profile', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
+  giveFixtureBadges(mock);
+  const members = await membersList(win);
+  await members.getByRole('button', { name: /Борис Петров/ }).click();
+  const card = win.getByRole('dialog', { name: 'Борис Петров' });
+  await expect(card).toBeVisible();
+  // docs/09 #108: the badge inline after the name (no text line), its name as the tooltip.
+  await expect(card.locator('h3 ~ img[data-member-badge][title="Acme"]')).toBeVisible();
+  await badgesLoaded(win);
+  await checkpoint(shot, 'members-profile');
+});
+
+// docs/09 #108: with a card open, a click on another row moves the card there (it used to vanish
+// right after switching). Behaviour only, no screenshot — so it runs in the local set.
+test('members-profile-switch', async ({ open, win, mock }) => {
+  await open();
+  await mainWindow(win, mock);
   const members = await membersList(win);
   await members.getByRole('button', { name: /Борис Петров/ }).click();
   await expect(win.getByRole('dialog', { name: 'Борис Петров' })).toBeVisible();
-  await checkpoint(shot, 'members-profile');
+  await members.getByRole('button', { name: /Вера Ким/ }).click();
+  const vera = win.getByRole('dialog', { name: 'Вера Ким' });
+  await expect(vera).toBeVisible();
+  await expect(win.getByRole('dialog', { name: 'Борис Петров' })).toHaveCount(0);
+  // Still there after the old card's close settled (the bug closed it within a frame or two).
+  await win.waitForTimeout(300);
+  await expect(vera).toBeVisible();
+  await expect(vera.getByRole('heading', { name: 'Вера Ким' })).toBeVisible();
+  // And back: a third click on the first row moves it again; Esc closes.
+  await members.getByRole('button', { name: /Борис Петров/ }).click();
+  await expect(win.getByRole('dialog', { name: 'Борис Петров' })).toBeVisible();
+  await expect(vera).toHaveCount(0);
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('dialog', { name: 'Борис Петров' })).toHaveCount(0);
 });
 
 test('members-menu', async ({ open, win, mock, shot }) => {
@@ -836,11 +873,15 @@ test('profile-dialog', async ({ open, win, mock, shot }) => {
   // docs/09 #20: «Профиль» from the member menu — banner, member since, role chips, the note saved.
   await open();
   await mainWindow(win, mock);
+  giveFixtureBadges(mock);
   const members = await membersList(win);
   await members.getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
   await win.getByRole('menuitem', { name: 'Профиль' }).click();
   const dialog = win.getByTestId('profile-dialog');
   await expect(dialog).toBeVisible();
+  // docs/09 #108: the 20 px badge right after the name, no text line.
+  await expect(dialog.locator('h2 ~ img[data-member-badge][title="Acme"]')).toBeVisible();
+  await badgesLoaded(win);
   const note = dialog.getByTestId('profile-note');
   await expect(note).toBeEditable();
   await note.fill('Ведёт релизы, спросить про стенд');
@@ -876,7 +917,7 @@ test('profile-menu', async ({ open, win, mock, shot }) => {
 test('profile-birthday', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  await openSettingsTab(win, openAppSettings(win), 1);
+  await openSettingsTab(win, openAppSettings(win), appTab('profile'));
   const picker = win.getByTestId('birthday-picker');
   await picker.scrollIntoViewIfNeeded();
   await picker.getByRole('combobox', { name: 'Месяц' }).selectOption('3');
@@ -1205,7 +1246,7 @@ test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
 });
 
 /** Settings windows: one test per section (left list = role «tab»), numbered like the snapshots. */
-const TABS = { 'workspace-settings': 6, 'room-settings': 3, settings: 9, 'voice-room-settings': 4 } as const;
+const TABS = { 'workspace-settings': 6, 'room-settings': 3, settings: 8, 'voice-room-settings': 4 } as const;
 
 for (let i = 1; i <= TABS['workspace-settings']; i++) {
   test(`workspace-settings-${i}`, async ({ open, win, mock, shot }) => {
@@ -1486,14 +1527,14 @@ const openAppSettings = (page: Page) => async (): Promise<void> => {
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
 };
 
-for (let i = 1; i <= TABS.settings; i++) {
-  test(`settings-${i}`, async ({ open, win, mock, shot }) => {
+SETTINGS_TABS.forEach((id, i) => {
+  test(`settings-${id}`, async ({ open, win, mock, shot }) => {
     await open();
     await mainWindow(win, mock);
-    await openSettingsTab(win, openAppSettings(win), i);
-    await checkpoint(shot, `settings-${i}`);
+    await openSettingsTab(win, openAppSettings(win), i + 1);
+    await checkpoint(shot, `settings-${id}`);
   });
-}
+});
 
 async function settingsSearch(page: Page): Promise<Locator> {
   await openSettingsTab(page, openAppSettings(page), TABS.settings);
@@ -1536,7 +1577,7 @@ test('settings-profile-password', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   // Profile → «Изменить пароль…»: the sheet over the settings window (current password required).
-  await openSettingsTab(win, openAppSettings(win), 1);
+  await openSettingsTab(win, openAppSettings(win), appTab('profile'));
   await win.getByRole('button', { name: 'Изменить пароль…' }).click();
   await expect(win.getByRole('dialog', { name: 'Смена пароля' })).toBeVisible();
   await checkpoint(shot, 'settings-profile-password');
@@ -1544,7 +1585,7 @@ test('settings-profile-password', async ({ open, win, mock, shot }) => {
 
 /** The pop-up button itself (owner bug: chevron flush right): a long value ends with «…» before the ↕. */
 async function longSelect(page: Page): Promise<Locator> {
-  await openSettingsTab(page, openAppSettings(page), 2);
+  await openSettingsTab(page, openAppSettings(page), appTab('voice'));
   const select = page.getByRole('dialog').getByRole('combobox', { name: 'Микрофон' });
   await select.evaluate((el: HTMLSelectElement) => {
     // The value is React-controlled: change the text of the selected option instead.
@@ -1807,18 +1848,25 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'chat-recording-card');
 });
 
-// docs/09 #76: «🎂 Дни рождения» above «В сети» in the members panel — Борис today (a member
-// row), Вера in 3 days under the opened «Скоро» (the mock's clock = the page clock, 15 January).
+// docs/09 #76, #100: the birthday plate at the top of the members panel — Борис today (avatar,
+// name, «Поздравить», and — at 06:30 MSK = 08:30 in his Yekaterinburg — «Открытка в
+// чате появится в 07:00» of my Moscow clock), Вера in 3 days under the opened «Скоро» (the mock's clock = the page
+// clock, 15 January).
 test('main-members-birthday', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  mock.setClock(NOW.getTime());
+  const morning = new Date('2026-01-15T06:30:00+03:00');
+  await win.clock.setFixedTime(morning);
+  mock.setClock(morning.getTime());
   mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 });
   mock.setBirthday(IDS.users.vera, { day: 18, month: 1 });
   const members = await membersList(win);
   const section = members.getByTestId('members-birthdays');
-  await expect(section.getByRole('heading')).toHaveText('🎂 Дни рождения — 2');
-  await expect(section.getByRole('button', { name: /Борис Петров/ })).toBeVisible();
+  const plate = section.getByTestId('members-birthday-plate');
+  await expect(plate.getByRole('heading')).toContainText('Сегодня день рождения!');
+  await expect(plate.getByRole('button', { name: 'Профиль Борис Петров' })).toBeVisible();
+  await expect(plate.getByTestId('members-birthday-congratulate')).toHaveText('Поздравить');
+  await expect(plate.getByTestId('members-birthday-hint')).toHaveText('Открытка в чате появится в 07:00');
   await section.getByTestId('members-birthdays-soon').click();
   await expect(section.getByRole('button', { name: /Вера Ким · 18 янв\./ })).toBeVisible();
   await win.mouse.move(0, 0);
@@ -2469,6 +2517,20 @@ test('voice-room-pending', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'voice-room-pending');
 });
 
+// «Только вошёл» (owner, 29.09; docs/08): Вера (already in the room, the row above the voice
+// panel) gets joined_at 2 s ago by the page's fixed clock — a 6 px muted-accent dot left of her
+// avatar (10 s window; the frozen clock keeps it in the shot). Борис has no joined_at: no dot.
+test('voice-room-joined', async ({ open, win, mock, shot }) => {
+  await open();
+  await inVoice(win, mock);
+  const now = await win.evaluate(() => Date.now());
+  mock.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.meeting, joinedAtMs: now - 2_000 });
+  const sidebar = win.locator('aside').first();
+  await expect(sidebar.getByRole('listitem', { name: /Вера/ }).getByTestId('just-joined-dot')).toHaveAttribute('data-shown', 'true');
+  await expect(sidebar.getByRole('listitem', { name: /Борис Петров/ }).getByTestId('just-joined-dot')).toHaveCount(0);
+  await checkpoint(shot, 'voice-room-joined');
+});
+
 test('toast-device', async ({ open, win, mock, shot }) => {
   await open();
   await inVoice(win, mock);
@@ -2857,6 +2919,34 @@ test('sticker-picker', async ({ open, win, mock, shot }) => {
   await grid.getByRole('button', { name: 'Стикер 💎' }).click();
   await expect(panel).toHaveCount(0);
   await expect(win.getByTestId('sticker-message')).toHaveCount(1);
+});
+
+// Stickers by emoji above the field (docs/08 «Композер — подсказка стикеров», like Telegram): 😂
+// typed → the three 😂 of «Смех» in 64 px tiles; → highlights the first, Enter sends it and
+// clears the field; typing more text or Esc hides the strip.
+test('chat-sticker-suggest', async ({ open, win, mock, shot }) => {
+  await open(); // resets the mock: the pack is seeded after it, before the client loads its packs
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  mock.seedLaughStickers();
+  await mainWindow(win, mock);
+  const field = win.getByRole('textbox', { name: /^Сообщение в/ });
+  await field.fill('😂');
+  const strip = win.getByTestId('sticker-suggest');
+  await expect(strip.locator('[data-sticker-suggest]')).toHaveCount(3);
+  await field.press('ArrowRight');
+  await expect(strip.getByRole('option', { selected: true })).toHaveCount(1);
+  await stillStickers(win, 1);
+  await checkpoint(shot, 'chat-sticker-suggest');
+  await field.press('Escape');
+  await expect(strip).toHaveCount(0);
+  await field.fill('😂 ок');
+  await expect(strip).toHaveCount(0);
+  await field.fill('😂');
+  await field.press('ArrowRight');
+  await field.press('Enter');
+  await expect(win.getByTestId('sticker-message')).toHaveCount(1);
+  await expect(field).toHaveValue('');
+  await expect(strip).toHaveCount(0);
 });
 
 // Workspace settings → «Стикеры» → the pack «Calab»: name, the drop zone, the stickers with their

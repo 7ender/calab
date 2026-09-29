@@ -62,8 +62,9 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// Greet posts the birthday cards due at now (on the birthday, from 09:00 of the owner's zone,
-// UTC without one) that are not posted yet; it returns how many it posted.
+// Greet posts the birthday cards due at now that are not posted yet: on the birthday, from
+// GreetAt o'clock of the zone GreetZone picks for that workspace (the celebrant's, else the
+// workspace owner's, else UTC). It returns how many it posted.
 func (s *Service) Greet(ctx context.Context, now time.Time) (int, error) {
 	people, err := s.db.Q.ListBirthdayCandidates(ctx, candidateKeys(now))
 	if err != nil {
@@ -75,14 +76,29 @@ func (s *Service) Greet(ctx context.Context, now time.Time) (int, error) {
 		if p.BirthdayDay == nil || p.BirthdayMonth == nil {
 			continue
 		}
-		local := now.In(Zone(p.Timezone))
-		if local.Hour() < GreetAt || !IsToday(int(*p.BirthdayDay), int(*p.BirthdayMonth), local) {
+		day, month := int(*p.BirthdayDay), int(*p.BirthdayMonth)
+		// With a zone of their own the answer is the same for every workspace: skip the rooms
+		// query when it is not time yet.
+		if loc, ok := loadZone(p.Timezone); ok && !due(day, month, now.In(loc)) {
 			continue
 		}
-		n, err := s.greet(ctx, p.ID, local)
-		posted += n
+		rooms, err := s.db.Q.ListBirthdayRooms(ctx, p.ID)
 		if err != nil {
 			errs = append(errs, err)
+			continue
+		}
+		for _, r := range rooms {
+			local := now.In(GreetZone(p.Timezone, r.OwnerTimezone))
+			if !due(day, month, local) {
+				continue
+			}
+			ok, err := s.greet(ctx, p.ID, r, local)
+			if ok {
+				posted++
+			}
+			if err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 	// The dedup needs only the last days (a zone is at most a day away from UTC).
@@ -92,50 +108,40 @@ func (s *Service) Greet(ctx context.Context, now time.Time) (int, error) {
 	return posted, errors.Join(errs...)
 }
 
-// greet posts the card of userID's birthday (on local's date) into each shared workspace.
-func (s *Service) greet(ctx context.Context, userID uuid.UUID, local time.Time) (int, error) {
-	rooms, err := s.db.Q.ListBirthdayRooms(ctx, userID)
-	if err != nil {
-		return 0, err
-	}
+// due reports whether the card of the birthday is due at local: its day, from GreetAt o'clock.
+func due(day, month int, local time.Time) bool {
+	return local.Hour() >= GreetAt && IsToday(day, month, local)
+}
+
+// greet posts the card of userID's birthday (on local's date) into room r unless it is posted
+// already; it reports whether it posted.
+func (s *Service) greet(ctx context.Context, userID uuid.UUID, r sqlc.ListBirthdayRoomsRow, local time.Time) (bool, error) {
 	day := pgtype.Date{Time: time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC), Valid: true}
 	payload, err := protojson.Marshal(&v1.SystemMessage{Payload: &v1.SystemMessage_Birthday{Birthday: &v1.BirthdayCard{
 		Day: uint32(local.Day()), Month: uint32(local.Month()), //nolint:gosec // calendar values
 	}}})
 	if err != nil {
-		return 0, err
+		return false, err
 	}
-	posted := 0
-	var errs []error
-	for _, r := range rooms {
-		var msg sqlc.Message
-		claimed := false
-		err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
-			n, err := q.ClaimBirthdayGreeting(ctx, sqlc.ClaimBirthdayGreetingParams{UserID: userID, WorkspaceID: r.WorkspaceID, Day: day})
-			if err != nil || n == 0 {
-				return err
-			}
-			if msg, err = q.InsertSystemMessage(ctx, sqlc.InsertSystemMessageParams{RoomID: r.RoomID, AuthorID: userID, Payload: payload}); err != nil {
-				return err
-			}
-			claimed = true
-			return q.SetBirthdayGreetingMessage(ctx, sqlc.SetBirthdayGreetingMessageParams{
-				UserID: userID, WorkspaceID: r.WorkspaceID, Day: day, MessageID: &msg.ID,
-			})
+	var msg sqlc.Message
+	claimed := false
+	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		n, err := q.ClaimBirthdayGreeting(ctx, sqlc.ClaimBirthdayGreetingParams{UserID: userID, WorkspaceID: r.WorkspaceID, Day: day})
+		if err != nil || n == 0 {
+			return err
+		}
+		if msg, err = q.InsertSystemMessage(ctx, sqlc.InsertSystemMessageParams{RoomID: r.RoomID, AuthorID: userID, Payload: payload}); err != nil {
+			return err
+		}
+		claimed = true
+		return q.SetBirthdayGreetingMessage(ctx, sqlc.SetBirthdayGreetingMessageParams{
+			UserID: userID, WorkspaceID: r.WorkspaceID, Day: day, MessageID: &msg.ID,
 		})
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if !claimed {
-			continue
-		}
-		posted++
-		if err := s.system.Created(ctx, r.WorkspaceID, msg); err != nil {
-			errs = append(errs, err)
-		}
+	})
+	if err != nil || !claimed {
+		return false, err
 	}
-	return posted, errors.Join(errs...)
+	return true, s.system.Created(ctx, r.WorkspaceID, msg)
 }
 
 // upcoming: GET /api/workspaces/{id}/birthdays?days=7.

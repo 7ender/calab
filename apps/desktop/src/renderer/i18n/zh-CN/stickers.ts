@@ -21,6 +21,7 @@ export const zhStickers: DictShape<typeof enStickers> = {
   'stk.guest': '访客不能发送贴纸',
   'stk.noneHere': '你所在空间的贴纸包在此聊天中不可用',
   'stk.sticker': '贴纸 {emoji}',
+  'stk.suggest': '{emoji} 贴纸',
   'stk.unavailable': '贴纸不可用',
   'stk.packGone': '此贴纸包已删除',
   'stk.count': { other: '{n} 个贴纸' },

@@ -1,9 +1,9 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Maximize2, MessageCircle, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX, X } from 'lucide-react';
+import { Check, ChevronDown, Maximize2, MessageCircle, Minimize, Minimize2, MonitorPlay, Fullscreen, SquareArrowOutUpRight, Video, Volume2, VolumeX } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
-import { Badge, IconButton, Slider, cx } from '../../components/ui';
+import { Badge, CloseButton, IconButton, Slider, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { platform } from '../../platform';
 import { useMediaQuery } from '../../lib/useMediaQuery';
@@ -366,9 +366,7 @@ function Pip({ stream, others, wsId, box }: { stream: RemoteStream; others: numb
         <IconButton size="sm" label={t('stream.expand')} className={overlayBtn} onClick={() => voice.setStage('expanded')}>
           <Maximize2 className="size-4" aria-hidden />
         </IconButton>
-        <IconButton size="sm" label={t('stream.close')} className={overlayBtn} onClick={() => voice.watch(null)}>
-          <X className="size-4" aria-hidden />
-        </IconButton>
+        <CloseButton label={t('stream.close')} shortcut="" className={overlayBtn} onClick={() => voice.watch(null)} />
       </span>
     </div>
   );
@@ -556,9 +554,7 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
           <IconButton size="sm" label={t('stream.fullscreen')} className={overlayBtn} onClick={() => mainFs().request()}>
             <Fullscreen className="size-4" aria-hidden />
           </IconButton>
-          <IconButton size="sm" label={t('stream.close')} className={overlayBtn} onClick={() => voice.watch(null)}>
-            <X className="size-4" aria-hidden />
-          </IconButton>
+          <CloseButton label={t('stream.close')} shortcut="" className={overlayBtn} onClick={() => voice.watch(null)} />
         </div>
       </div>
       {/* The stream is the main picture; other streams and the cameras line up underneath (docs/09 #42). */}

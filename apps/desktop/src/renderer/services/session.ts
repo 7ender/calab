@@ -22,6 +22,7 @@ import { resetDmCaches } from './dms';
 import { startMessageRetention } from './retention';
 import { startAppBadge } from './badge';
 import { startRecordingSync } from './recording';
+import { installMenu } from './menu';
 import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway, wakeGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
 import { showLinkLanding } from './linkLanding';
@@ -82,6 +83,7 @@ export async function bootstrap(): Promise<void> {
   startMessageRetention();
   startAppBadge();
   startRecordingSync();
+  installMenu();
 
   // Web /join/<code>, /r/<code>: the «open in the app / continue in the browser» card (docs/09 #53)
   // is set up before the status leaves 'booting', so the login screen never flashes first.

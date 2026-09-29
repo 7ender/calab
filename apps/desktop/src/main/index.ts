@@ -13,6 +13,7 @@ import { installRendererCsp } from './csp';
 import { applyDevDockIcon } from './icons';
 import { resetPttGate, shutdownPtt } from './ptt';
 import { createTray } from './tray';
+import { installAppMenu } from './appMenu';
 import { startUpdates } from './updater';
 import {
   createMainWindow,
@@ -108,6 +109,7 @@ void app.whenReady().then(() => {
   registerIpc();
   createMainWindow();
   createTray();
+  installAppMenu();
 
   const initialLink = findDeepLink(process.argv);
   if (initialLink) handleDeepLink(initialLink);

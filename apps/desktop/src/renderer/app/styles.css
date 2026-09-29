@@ -416,6 +416,17 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
 .drag select {
   -webkit-app-region: no-drag;
 }
+/* Layers above the window (dialogs, popovers, menus, their scrims — `no-drag` on each
+   DialogP.Overlay): the OS hit-tests drag regions before the page, regardless of z-order, so a
+   dialog's «×» over the room header's drag strip ate the click (docs/09 #105). A later no-drag
+   region cuts the earlier drag ones; a `.drag` row inside a layer (the lightbox) adds its own back. */
+[role='dialog'],
+[role='alertdialog'],
+[role='menu'],
+[role='listbox'],
+[data-radix-popper-content-wrapper] {
+  -webkit-app-region: no-drag;
+}
 
 /* Native overlay scrollbars on macOS; thin neutral ones elsewhere. */
 :root:not(.mac) ::-webkit-scrollbar {
@@ -578,11 +589,13 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   }
 }
 
-/* Birthday card in the feed (docs/08 «Дни рождения», issue #18): a static gradient (solid
-   material, no backdrop-filter); white text ≥ 4.5:1 on every stop. Sparkles (a few radial dots
-   in ::after) and the cake «pop» play once on mount, ≤ 1.2 s; nothing with reduced motion. */
-.birthday-card {
+/* Birthday surface (docs/08 «Дни рождения», issue #18): one static gradient (solid material, no
+   backdrop-filter) for the chat card and the members panel plate; white text ≥ 4.5:1 on every
+   stop. The feed card adds sparkles (a few radial dots in ::after) and the cake «pop», once on
+   mount, ≤ 1.2 s; nothing with reduced motion. The panel plate stays still. */
+.birthday-surface {
   background: linear-gradient(115deg, var(--color-accent-strong) 0%, var(--color-birthday-warm) 100%);
+  color: #fff;
 }
 .birthday-card::after {
   content: '';
@@ -602,7 +615,7 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
 .birthday-cake {
   animation: calaba-cake-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 1 both;
 }
-.birthday-name:focus-visible {
+.birthday-surface :focus-visible {
   outline-color: #fff;
 }
 @keyframes calaba-sparkle {

@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { AtSign, ChevronLeft, ChevronRight, CircleHelp, Hash, Inbox, Search, Volume2 } from 'lucide-react';
+import { AtSign, ChevronLeft, ChevronRight, CircleHelp, Hash, Inbox, Search, Settings, Volume2 } from 'lucide-react';
 import type { Message } from '@calaba/protocol';
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
@@ -24,11 +24,12 @@ import { usePreviewText } from '../chat/mentionText';
 import { bindingLabel } from '../settings/PttBinder';
 import { popoverBox } from './menu';
 import { systemPreview } from '../../lib/recording';
+import { AppSettingsWindow } from './lazyWindows';
 
 /**
  * Window title bar (docs/09 #1): 38 px across the whole window, drag region in Electron.
  * Left: 80 px kept empty for the macOS traffic lights (hiddenInset at 12,12), then ← → room
- * history. Centre: the workspace name. Right: search (opens the quick switcher), mentions,
+ * history. Centre: the workspace name. Right: search (opens the quick switcher), mentions, settings,
  * shortcuts help; on Windows the native caption buttons (Window Controls Overlay) take the
  * space given by env(titlebar-area-*).
  * Web (docs/09 #46): a compact 30 px toolbar — no window chrome, so no reserved inset and no
@@ -99,6 +100,16 @@ export function TitleBar(): ReactNode {
           </kbd>
         </button>
         <InboxButton />
+        <IconButton
+          size="sm"
+          label={t('settings.title')}
+          onPointerEnter={() => void AppSettingsWindow.preload()}
+          onFocus={() => void AppSettingsWindow.preload()}
+          onClick={() => open({ kind: 'settings' })}
+          className="size-7"
+        >
+          <Settings className="size-[18px]" />
+        </IconButton>
         <HelpButton />
       </div>
     </header>

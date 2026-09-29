@@ -21,6 +21,7 @@ export const esStickers: DictShape<typeof enStickers> = {
   'stk.guest': 'Los invitados no pueden enviar stickers',
   'stk.noneHere': 'Los paquetes de tus espacios no están disponibles en este chat',
   'stk.sticker': 'Sticker {emoji}',
+  'stk.suggest': 'Stickers {emoji}',
   'stk.unavailable': 'Sticker no disponible',
   'stk.packGone': 'Este paquete se eliminó',
   'stk.count': { one: '{n} sticker', many: '{n} stickers', other: '{n} stickers' },

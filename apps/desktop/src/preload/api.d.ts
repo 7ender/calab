@@ -26,6 +26,7 @@ import type {
   UpdateStatus,
 } from '../shared/ipc';
 import type { ThumbRequest } from '../shared/captureThumb';
+import type { MenuAction, MenuState } from '../shared/menu';
 import type { AnnotOverlayEvent, AnnotOverlayTarget } from '../shared/annot';
 
 type Unsubscribe = () => void;
@@ -80,6 +81,11 @@ export interface CalabaApi {
   tray: {
     setState(s: TrayState): void;
     onAction(cb: (a: TrayAction) => void): Unsubscribe;
+  };
+  /** macOS application / Dock menu (shared/menu.ts); a no-op elsewhere. */
+  menu: {
+    setState(s: MenuState): void;
+    onAction(cb: (a: MenuAction) => void): Unsubscribe;
   };
   files: {
     /** Saves an attachment to ~/Downloads, reveals it, resolves with the path. */

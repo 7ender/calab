@@ -49,6 +49,10 @@ const api: CalabaApi = {
     setState: (s) => void ipcRenderer.invoke(IPC.trayState, s),
     onAction: (cb) => on(IPC.trayAction, cb),
   },
+  menu: {
+    setState: (s) => void ipcRenderer.invoke(IPC.menuState, s),
+    onAction: (cb) => on(IPC.menuAction, cb),
+  },
   files: {
     download: (a) => ipcRenderer.invoke(IPC.filesDownload, a),
     onProgress: (cb) => on(IPC.filesProgress, cb),

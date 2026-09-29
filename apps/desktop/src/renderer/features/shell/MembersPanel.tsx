@@ -1,25 +1,30 @@
 import * as Popover from '@radix-ui/react-popover';
-import { WorkspaceRole, type WorkspaceMember } from '@calaba/protocol';
+import { WorkspaceRole, type UpcomingBirthday, type WorkspaceMember } from '@calaba/protocol';
 import { ChevronRight, MonitorUp, Phone, Video, Volume2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
-import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { type MessageKey, t, useLocale } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
-import { isGuest, useRoleLook, useWorkspaces } from '../../stores/workspaces';
+import { isGuest, useMemberName, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 import { MemberBadge } from '../people/MemberBadge';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { BirthdayMark } from '../people/Birthday';
 import { MutedByMe } from '../../components/SpeakerIdentity';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
-import { groupMembers, isOnline, nameOf } from '../people/members';
+import { JustJoinedDot } from '../voice/JustJoinedDot';
+import { joinedAtMs } from '../../lib/justJoined';
+import { groupMembers, nameOf } from '../people/members';
 import { openProfile as openFullProfile } from '../people/actions';
 import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
-import { formatBirthdayShort } from '../../lib/birthday';
+import { cardDueAt, formatBirthdayShort, greetZone } from '../../lib/birthday';
+import { fmt } from '../../lib/format';
+import { startDm } from '../../services/dms';
+import { useCanDm } from '../dm/canDm';
 import { NicknameDialog } from '../people/NicknameDialog';
 import { ProfileCard } from '../people/ProfileCard';
 import { useOnCall } from '../call/CallBits';
@@ -47,11 +52,9 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
   const groups = useMemo(() => groupMembers(Object.values(members ?? {}), presences, voice), [members, presences, voice]);
   const [profile, setProfile] = useState<string | null>(null);
   // Stable: a new closure per row each render defeated MemberRow's memo (every presence change
-  // re-rendered every row).
-  const openProfile = useCallback((userId: string | null, open: boolean) => setProfile(open ? userId : null), []);
-  // The birthday rows repeat people listed below: their own popover key, so only one opens.
-  const openBirthdayProfile = useCallback((userId: string | null, open: boolean) => setProfile(open && userId ? `${BDAY}${userId}` : null), []);
-  const birthdayOpen = profile?.startsWith(BDAY) ? profile.slice(BDAY.length) : null;
+  // re-rendered every row). A row closes only its own card: a late close from the previous row
+  // (Radix dismiss / close focus) must not wipe the card another row just opened.
+  const openProfile = useCallback((userId: string | null, open: boolean) => setProfile((cur) => (open ? userId : cur === userId ? null : cur)), []);
 
   const section = (key: 'on' | 'off' | 'bots', title: string, list: WorkspaceMember[]): ReactNode =>
     list.length > 0 ? (
@@ -87,7 +90,7 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
       }
       aria-label={t('shell.members')}
     >
-      <BirthdaysSection workspaceId={workspaceId} openId={birthdayOpen} onOpenProfile={openBirthdayProfile} />
+      <BirthdaysSection workspaceId={workspaceId} />
       {section('on', t('members.online'), groups.online)}
       {section('off', t('members.offline'), groups.offline)}
       {section('bots', t('bots.section'), groups.bots)}
@@ -96,28 +99,19 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
   );
 }
 
-const BDAY = 'bday:';
-
 /**
- * «🎂 Дни рождения — N» above «В сети» (docs/09 #76): today's people as ordinary member rows
- * (avatar, name, 🎂, voice / status), then «Скоро» — the next 7 days, collapsed: name and a short
- * date. Only when there is someone. Its own query subscription and selectors (ids → members,
- * offline flags): presence or voice changes elsewhere do not re-render it.
+ * Birthdays above «В сети» (docs/09 #76, #100; docs/08 «Панель участников — дни рождения»):
+ * today's people on a festive plate at the very top (the chat card's gradient + 🎂, one plate
+ * with a row per person), then «Скоро» — the next 7 days, collapsed: name and a short date. Only
+ * when there is someone. Its own query subscription and a useShallow slice of the members by id:
+ * presence or voice changes elsewhere do not re-render it.
  */
-const BirthdaysSection = memo(function BirthdaysSection({
-  workspaceId,
-  openId,
-  onOpenProfile,
-}: {
-  workspaceId: string;
-  openId: string | null;
-  onOpenProfile: (userId: string | null, open: boolean) => void;
-}): ReactNode {
+const BirthdaysSection = memo(function BirthdaysSection({ workspaceId }: { workspaceId: string }): ReactNode {
   useLocale();
   const upcoming = useUpcomingBirthdays(workspaceId);
   const [soonOpen, setSoonOpen] = useState(false);
   const list = upcoming ?? NONE;
-  // The people (bots have none; members who left are skipped) and whether they are offline.
+  // The people (bots have none; members who left are skipped).
   const members = useWorkspaces(
     useShallow((s) =>
       list.map((b) => {
@@ -126,32 +120,41 @@ const BirthdaysSection = memo(function BirthdaysSection({
       }),
     ),
   );
-  const offline = useWorkspaces(
-    useShallow((s) => list.map((b) => !isOnline(s.presences[b.userId]?.status) && !s.byId[workspaceId]?.voice[b.userId]?.roomId)),
-  );
-  const today: { m: WorkspaceMember; off: boolean }[] = [];
+  const today: UpcomingBirthday[] = [];
   const soon: { m: WorkspaceMember; label: string }[] = [];
   list.forEach((b, i) => {
     const m = members[i];
     if (!m || !b.birthday) return;
-    if (b.inDays === 0) today.push({ m, off: offline[i] ?? false });
+    if (b.inDays === 0) today.push(b);
     else soon.push({ m, label: formatBirthdayShort(b.birthday) });
   });
   if (today.length + soon.length === 0) return null;
   return (
     <section aria-labelledby="members-bday" className="mt-4 flex flex-col first:mt-0" data-testid="members-birthdays">
-      <h3 id="members-bday" className="px-2 pb-1 text-micro font-semibold uppercase tracking-wide text-faint">
-        🎂 {t('birthday.tableTitle')} — {today.length + soon.length}
-      </h3>
       {today.length > 0 ? (
-        <ul className="flex flex-col gap-px">
-          {today.map(({ m, off }) => (
-            <li key={m.user?.id}>
-              <MemberRow workspaceId={workspaceId} member={m} offline={off} open={openId === m.user?.id} onOpenProfile={onOpenProfile} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
+        <div
+          data-testid="members-birthday-plate"
+          className="birthday-surface mb-2 flex flex-col gap-2 rounded-[var(--radius-card)] px-3 py-2.5 shadow-[var(--shadow-card)]"
+        >
+          <h3 id="members-bday" className="flex items-center gap-2 text-body font-semibold">
+            <span aria-hidden className="text-[22px] leading-none">
+              🎂
+            </span>
+            <span className="min-w-0">{t('birthday.cardTitle')}</span>
+          </h3>
+          <ul className="flex flex-col gap-2">
+            {today.map((b) => (
+              <li key={b.userId}>
+                <PlateRow workspaceId={workspaceId} userId={b.userId} day={b.birthday?.day ?? 0} month={b.birthday?.month ?? 0} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <h3 id="members-bday" className="px-2 pb-1 text-micro font-semibold uppercase tracking-wide text-faint">
+          🎂 {t('birthday.tableTitle')} — {soon.length}
+        </h3>
+      )}
       {soon.length > 0 ? (
         <>
           <button
@@ -194,6 +197,73 @@ const BirthdaysSection = memo(function BirthdaysSection({
   );
 });
 
+/**
+ * One celebrant on the plate: avatar 28 · **name** (opens the profile) · «Поздравить» (opens the
+ * DM: canDmWith — not for myself, a guest or a guest role), and before the chat card is posted a
+ * quiet «Открытка в чате появится в 09:00». Primitive props and selectors by id.
+ */
+const PlateRow = memo(function PlateRow({ workspaceId, userId, day, month }: { workspaceId: string; userId: string; day: number; month: number }): ReactNode {
+  useLocale();
+  const name = useMemberName(workspaceId, userId);
+  const avatarFileId = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]?.user?.avatarFileId || undefined);
+  const canDm = useCanDm(workspaceId, userId);
+  return (
+    // The panel is 240 px: name and hint get the full width, the button goes under them.
+    <div className="flex min-w-0 items-start gap-2" data-testid="members-birthday-today">
+      <Avatar userId={userId} name={name} fileId={avatarFileId} size={28} />
+      <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+        <button
+          type="button"
+          aria-label={t('people.openProfile', { name })}
+          className="w-full min-w-0 truncate rounded-[var(--radius-control)] text-left text-body font-semibold leading-[18px] hover:underline"
+          onClick={() => openFullProfile(workspaceId, userId)}
+        >
+          {name}
+        </button>
+        <CardHint workspaceId={workspaceId} userId={userId} day={day} month={month} />
+        {canDm ? (
+          <button
+            type="button"
+            aria-label={t('birthday.congratulateName', { name })}
+            data-testid="members-birthday-congratulate"
+            className="mt-1 h-6 rounded-[var(--radius-control)] bg-white px-2.5 text-caption font-semibold text-[color:var(--color-accent-strong)] transition-colors duration-[var(--motion-fast)] hover:bg-white/90"
+            onClick={() => void startDm(userId)}
+          >
+            {t('birthday.congratulate')}
+          </button>
+        ) : null}
+      </span>
+    </div>
+  );
+});
+
+/**
+ * «Открытка в чате появится в 09:00» while the server has not posted the card yet (the same rule:
+ * 09:00 of greetZone — the celebrant's zone, else the owner's, else UTC — shown in my local
+ * time). One timeout to that moment hides it; no ticking.
+ */
+function CardHint({ workspaceId, userId, day, month }: { workspaceId: string; userId: string; day: number; month: number }): ReactNode {
+  const tz = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]?.user?.timezone);
+  const ownerTz = useWorkspaces((s) => {
+    const e = s.byId[workspaceId];
+    return e ? e.members[e.ws.ownerId]?.user?.timezone : undefined;
+  });
+  const [, setPassed] = useState(0);
+  const due = cardDueAt({ day, month }, greetZone(tz, ownerTz));
+  const dueMs = due?.getTime() ?? 0;
+  useEffect(() => {
+    if (!dueMs) return undefined;
+    const id = window.setTimeout(() => setPassed((n) => n + 1), Math.max(0, dueMs - Date.now()) + 1000);
+    return () => window.clearTimeout(id);
+  }, [dueMs]);
+  if (!due) return null;
+  return (
+    <span className="text-caption leading-4" data-testid="members-birthday-hint">
+      {t('birthday.cardAt', { time: fmt.time(due) })}
+    </span>
+  );
+}
+
 const NONE: never[] = [];
 
 /** One 42 px row; memoised so presence / speaking changes re-render only that row. */
@@ -223,6 +293,22 @@ const MemberRow = memo(function MemberRow({
   // In a one-to-one call (ADR-0034, Presence.on_call): a primitive per row.
   const onCall = useOnCall(userId);
   const [renaming, setRenaming] = useState(false);
+  // A press on another member row moves the card there (docs/08 «Карточка участника»): not an
+  // outside click — that row's own click opens its card, which closes this one via `open`. The
+  // close must then not return focus to this row's trigger (Radix does on a non-outside close):
+  // that focus would land outside the new card and dismiss it at once.
+  const switching = useRef(false);
+  const onInteractOutside = useCallback((e: Event) => {
+    const row = (e.target as Element | null)?.closest('[data-member-row]');
+    if (row && row.getAttribute('data-member-row') !== userId) {
+      switching.current = true;
+      e.preventDefault();
+    }
+  }, [userId]);
+  const onCloseAutoFocus = useCallback((e: Event) => {
+    if (switching.current) e.preventDefault();
+    switching.current = false;
+  }, []);
   if (!u) return null;
   const name = nameOf(m);
   const statusLine = [u.statusEmoji, u.statusText].filter(Boolean).join(' ');
@@ -261,12 +347,15 @@ const MemberRow = memo(function MemberRow({
           <button
             type="button"
             aria-label={t('people.openProfile', { name })}
+            data-member-row={userId}
             title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
             className={cx(
-              'flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+              'relative flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
               open && 'bg-active',
             )}
           >
+            {/* «Только вошёл» in voice: in the 8 px row padding, 2 px left of the 32 px avatar. */}
+            {v?.roomId ? <JustJoinedDot joinedAt={joinedAtMs(v.joinedAt)} className="absolute left-0 top-1/2 -translate-y-1/2" /> : null}
             {/* Offline: grey, faded avatar + secondary text — never opacity on text (≥ 4.5:1). */}
             <span className={cx('flex shrink-0', offline && 'opacity-60 grayscale')}>
               <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={32} presence speaking={speaking && !v?.muted} connecting={connectingRing} />
@@ -300,6 +389,8 @@ const MemberRow = memo(function MemberRow({
           collisionPadding={16}
           className="mat-popover dense anim-in z-[var(--z-popover)] rounded-[var(--radius-panel)] text-fg focus:outline-none"
           aria-label={name}
+          onInteractOutside={onInteractOutside}
+          onCloseAutoFocus={onCloseAutoFocus}
         >
           <ProfileCard
             workspaceId={workspaceId}

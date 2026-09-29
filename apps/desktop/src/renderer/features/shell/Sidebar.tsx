@@ -68,6 +68,8 @@ import { joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
+import { JustJoinedDot } from '../voice/JustJoinedDot';
+import { joinedAtMs } from '../../lib/justJoined';
 import { moveMember } from '../people/actions';
 import { errorText } from '../../lib/api/errors';
 import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
@@ -673,7 +675,7 @@ function UnreadPill({ show }: { show: boolean }): ReactNode {
 
 /**
  * Text room hover actions (invite, settings — no «chat»: the row itself opens it). Same 18 px
- * icons / 10 px gap as the voice rooms' CardActions, so the two lists don't look inconsistent
+ * icons / 2 px gap as the voice rooms' CardActions, so the two lists don't look inconsistent
  * (owner, Discord reference); by permission, no reserved space when one is missing.
  */
 function RoomActions({ room, canInvite, canSettings, active }: { room: Room; canInvite: boolean; canSettings: boolean; active: boolean }): ReactNode {
@@ -681,7 +683,7 @@ function RoomActions({ room, canInvite, canSettings, active }: { room: Room; can
   if (!canInvite && !canSettings) return null;
   const btn = 'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
   return (
-    <span className={cx('shrink-0 items-center gap-2.5', active ? 'flex' : 'hidden group-hover/row:flex group-focus-within/row:flex')}>
+    <span className={cx('shrink-0 items-center gap-0.5', active ? 'flex' : 'hidden group-hover/row:flex group-focus-within/row:flex')}>
       {canInvite ? (
         <Tip label={t('shell.invite')}>
           <button
@@ -940,7 +942,7 @@ function CardActions({ room, workspaceId }: { room: Room; workspaceId: string })
     e.currentTarget.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left, clientY: r.bottom + 4 }));
   };
   return (
-    <span className="hidden shrink-0 items-center gap-2.5 group-focus-within/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
+    <span className="hidden shrink-0 items-center gap-0.5 group-focus-within/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
       <Tip label={t('shell.roomChat')}>
         <button type="button" className={btn} aria-label={t('shell.roomChatOf', { name: room.name })} onClick={() => openRoom(workspaceId, room.id)}>
           <MessageCircle className="size-[18px]" aria-hidden />
@@ -1303,7 +1305,7 @@ function VoiceMember({
       className={cx(
         // Discord (2x reference): 28 px rows, 24 px avatars (speaking ring inside) starting where
         // the room name starts (8 + 18 + 6 = 32 px), 8 px to the 14 px name.
-        'group/member flex h-7 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+        'group/member relative flex h-7 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}
@@ -1311,6 +1313,8 @@ function VoiceMember({
       data-speaking={talking || undefined}
       data-pending={state.pending || undefined}
     >
+      {/* «Только вошёл»: 6 px dot 4 px left of the 24 px avatar (32 px), outside the flex flow. */}
+      <JustJoinedDot joinedAt={joinedAtMs(state.joinedAt)} className="absolute left-[22px] top-1/2 -translate-y-1/2" />
       <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={talking} pending={connectingRing} suffix={tz} role={role} workspaceId={workspaceId} />
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>

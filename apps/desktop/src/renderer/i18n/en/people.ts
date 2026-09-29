@@ -222,6 +222,9 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'birthday.upcomingNone': 'No birthdays in the next 7 days',
   'birthday.whenToday': 'Today',
   'birthday.whenTomorrow': 'Tomorrow',
+  'birthday.congratulate': 'Congratulate',
+  'birthday.congratulateName': 'Congratulate {name}: send a direct message',
+  'birthday.cardAt': 'The card appears in the chat at {time}',
   'birthday.age': { one: '{n} year old', other: '{n} years old' },
   'birthday.inDays': { one: 'In {n} day', other: 'In {n} days' },
 };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_HOTKEYS, comboFromEvent, comboLabel, comboProblem, effectiveHotkeys, matchesCombo, validHotkeys, type Combo } from './shortcuts';
+import { MENU_ACCELERATORS } from '../../shared/menu';
+import { DEFAULT_HOTKEYS, comboAccelerator, comboFromEvent, comboLabel, comboProblem, effectiveHotkeys, matchesCombo, validHotkeys, type Combo } from './shortcuts';
 
 const ev = (code: string, key: string, mods: { meta?: boolean; ctrl?: boolean; shift?: boolean; alt?: boolean } = {}) => ({
   code,
@@ -43,6 +44,29 @@ describe('in-window shortcuts', () => {
     expect(comboProblem('search', { code: 'KeyM', shift: true, alt: false }, all, true)).toEqual({ conflict: 'mute' });
     expect(comboProblem('search', { code: 'KeyJ', shift: false, alt: false }, all, true)).toBeNull();
     expect(comboProblem('mute', { code: 'KeyQ', shift: false, alt: true }, all, true)).toBeNull(); // ⌘⌥Q is free
+  });
+
+  it('accelerators for the macOS menu match the bindings', () => {
+    expect(comboAccelerator(DEFAULT_HOTKEYS.search, true)).toBe('Command+K');
+    expect(comboAccelerator(DEFAULT_HOTKEYS.mute, true)).toBe('Command+Shift+M');
+    expect(comboAccelerator(DEFAULT_HOTKEYS.deafen, true)).toBe('Command+Shift+D');
+    expect(comboAccelerator({ code: 'Slash', shift: false, alt: true }, true)).toBe('Command+Alt+/');
+    expect(comboAccelerator({ code: 'Numpad3', shift: false, alt: false }, false)).toBe('Control+num3');
+    expect(comboAccelerator({ code: 'F5', shift: true, alt: false }, true)).toBe('Command+Shift+F5');
+    expect(comboAccelerator({ code: 'IntlRo', shift: false, alt: false }, true)).toBe('');
+  });
+
+  it('the menu-only accelerators (⌘N, ⌘,, ⌘1…⌘9) cannot be taken by a rebindable shortcut', () => {
+    const all = effectiveHotkeys({}, true);
+    const fixed = [MENU_ACCELERATORS.newMessage, MENU_ACCELERATORS.settings, ...[0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => MENU_ACCELERATORS.workspace(i) ?? '')];
+    expect(MENU_ACCELERATORS.workspace(9)).toBeUndefined();
+    for (const a of fixed) {
+      const key = a.replace('CommandOrControl+', '');
+      const code = key === ',' ? 'Comma' : /^\d$/.test(key) ? `Digit${key}` : `Key${key}`;
+      expect(comboProblem('search', { code, shift: false, alt: false }, all, true)).toBe('reserved');
+    }
+    // …and the defaults do not collide with them.
+    for (const c of Object.values(DEFAULT_HOTKEYS)) expect(fixed).not.toContain(comboAccelerator(c, true).replace('Command+', 'CommandOrControl+'));
   });
 
   it('off macOS refuses Alt combos (Ctrl+Alt = AltGr on many layouts)', () => {

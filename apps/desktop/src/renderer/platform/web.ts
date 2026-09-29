@@ -508,6 +508,7 @@ export function createWebPlatform(): Platform {
       },
       onAction: noop,
     },
+    menu: { setState: () => undefined, onAction: noop },
     files: { download, onProgress: noop, pathOf: (f) => f.name },
     capture: {
       // The browser shows its own picker on getDisplayMedia().

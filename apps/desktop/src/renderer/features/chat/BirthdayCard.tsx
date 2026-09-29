@@ -8,7 +8,7 @@ import { openProfile } from '../people/actions';
 
 /**
  * «Сегодня день рождения!» (docs/09 #76, #84 / issue #18): a system card the server posts at
- * 09:00 of the person's zone into the workspace's first text room. A festive full-width card:
+ * 09:00 of the person's zone (else the workspace owner's, else UTC) into the first text room. A festive full-width card:
  * static accent → raspberry gradient (`.birthday-card`, white text ≥ 4.5:1 in both themes), a
  * large 🎂, the title, then avatar + **name** (opens the profile) · date. The sparkles and the cake
  * «pop» run once on mount (≤ 1.2 s, none with prefers-reduced-motion) — no loops.
@@ -21,7 +21,7 @@ export const BirthdayCardView = memo(function BirthdayCardView({ authorId, card,
     <article
       aria-label={t('birthday.card', { name })}
       data-testid="birthday-card"
-      className="birthday-card relative flex w-full items-center gap-4 overflow-hidden rounded-[var(--radius-card)] px-5 py-4 text-white shadow-[var(--shadow-card)] mobile:gap-3 mobile:px-3 mobile:py-3"
+      className="birthday-surface birthday-card relative flex w-full items-center gap-4 overflow-hidden rounded-[var(--radius-card)] px-5 py-4 shadow-[var(--shadow-card)] mobile:gap-3 mobile:px-3 mobile:py-3"
     >
       <span aria-hidden className="birthday-cake shrink-0 text-[36px] leading-none mobile:text-[30px]">
         🎂
@@ -32,7 +32,7 @@ export const BirthdayCardView = memo(function BirthdayCardView({ authorId, card,
           <Avatar userId={authorId} name={name} fileId={avatarFileId} size={20} />
           <button
             type="button"
-            className="birthday-name min-w-0 truncate rounded-[var(--radius-control)] font-semibold hover:underline"
+            className="min-w-0 truncate rounded-[var(--radius-control)] font-semibold hover:underline"
             onClick={() => (workspaceId ? openProfile(workspaceId, authorId) : undefined)}
           >
             {name}

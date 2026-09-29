@@ -461,6 +461,23 @@ test('m-sticker-picker', async ({ page }) => {
   await expect(page.getByTestId('sticker-message')).toHaveCount(1);
 });
 
+// Stickers by emoji above the field (docs/08 «Композер — подсказка стикеров»): 😂 typed → the
+// three 😂 of «Смех» in 56 px tiles; a tap sends one and clears the field.
+test('m-chat-sticker-suggest', async ({ page }) => {
+  mock.seedLaughStickers();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await signedIn(page);
+  const field = page.getByRole('textbox', { name: /^Сообщение в/ });
+  await field.fill('😂');
+  const strip = page.getByTestId('sticker-suggest');
+  await expect(strip.locator('[data-sticker-suggest]')).toHaveCount(3);
+  await expect(page.locator('[data-sticker-still][data-drawn]')).toHaveCount(1);
+  await checkpoint(page, 'm-chat-sticker-suggest');
+  await strip.locator('[data-sticker-suggest]').first().tap();
+  await expect(page.getByTestId('sticker-message')).toHaveCount(1);
+  await expect(field).toHaveValue('');
+});
+
 test('m-sheet', async ({ page }) => {
   await signedIn(page);
   await page.getByRole('button', { name: 'Прикрепить файл' }).tap();

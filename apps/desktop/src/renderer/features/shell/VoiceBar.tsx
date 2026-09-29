@@ -623,15 +623,24 @@ export function VoiceBar(): ReactNode {
       {myStream ? (
         <div className="mt-2 flex items-center gap-2 rounded-[var(--radius-row)] bg-hover px-2 py-1.5 text-[12px]" data-testid="my-stream">
           <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1.5">
+            <span className="flex min-w-0 items-center gap-1.5">
               <Badge tone="danger">{t('shell.live')}</Badge>
-              <span className="flex items-center gap-1 text-fg" aria-label={viewersText(myStream.viewers)}>
+              <span className="flex shrink-0 items-center gap-1 text-fg" aria-label={viewersText(myStream.viewers)}>
                 <Eye className="size-3.5 text-muted" aria-hidden />
                 {viewersText(myStream.viewers)}
               </span>
-            </span>
-            <span className="mt-0.5 block truncate text-muted" title={myStream.sourceName}>
-              {myStream.sourceName}
+              {/* The source as a tiny tag in the corner (owner, 29.09), not a line of its own —
+                  the same pill as the speaker time-zone tag. */}
+              {myStream.sourceName ? (
+                <Tip label={myStream.sourceName}>
+                  <span
+                    data-testid="my-stream-source"
+                    className="ml-auto inline-flex h-[14px] min-w-0 max-w-[120px] items-center rounded-full bg-hover px-1 text-[9px] font-medium leading-none text-muted"
+                  >
+                    <span className="min-w-0 truncate">{myStream.sourceName}</span>
+                  </span>
+                </Tip>
+              ) : null}
             </span>
             {myStream.audioError ? <span className="mt-0.5 block text-muted">{myStream.audioError}</span> : null}
             <MyStreamAnnot />

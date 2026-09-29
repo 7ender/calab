@@ -21,6 +21,7 @@ export const ruStickers = {
   'stk.guest': 'Гости не отправляют стикеры',
   'stk.noneHere': 'Паки ваших пространств в этом чате недоступны',
   'stk.sticker': 'Стикер {emoji}',
+  'stk.suggest': 'Стикеры {emoji}',
   'stk.unavailable': 'Стикер недоступен',
   'stk.packGone': 'Этот пак удалён',
   'stk.count': { one: '{n} стикер', few: '{n} стикера', many: '{n} стикеров', other: '{n} стикера' },

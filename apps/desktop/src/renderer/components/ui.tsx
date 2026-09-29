@@ -96,6 +96,26 @@ export const IconButton = forwardRef<
   return tip ? <Tip label={label} shortcut={shortcut}>{btn}</Tip> : btn;
 });
 
+/**
+ * The «×» of a dialog, sheet, panel or card (docs/08 «Модалки — кнопка закрытия», docs/09 #105):
+ * one component so every close box is hit the same way — above its neighbours (`relative z-10`),
+ * a hit area ≥ 32 px even at 28 px (`before:` inset), the glyph transparent to the pointer.
+ * `label` defaults to «Закрыть»; works under `DialogP.Close asChild` (forwards ref and props).
+ */
+export const CloseButton = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & { label?: string; shortcut?: string; tip?: boolean; size?: 'sm' | 'md'; iconClassName?: string }
+>(function CloseButton({ label, shortcut = 'Esc', size = 'sm', className, iconClassName, ...rest }, ref) {
+  return (
+    <IconButton ref={ref} label={label ?? t('common.close')} shortcut={shortcut} size={size} className={cx(CLOSE_HIT, className)} {...rest}>
+      <X className={cx(size === 'sm' ? 'size-4' : 'size-5', iconClassName)} strokeWidth={1.75} aria-hidden />
+    </IconButton>
+  );
+});
+
+/** The close box's hit area (exported for the few that keep their own markup). */
+export const CLOSE_HIT = "relative z-10 before:absolute before:-inset-1 before:content-[''] [&>svg]:pointer-events-none";
+
 type TipProps = {
   label: ReactNode;
   shortcut?: string | undefined;
@@ -494,7 +514,7 @@ export function Modal({
   return (
     <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
-        <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
+        <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content aria-modal="true"
           onOpenAutoFocus={(e) => {
             // Phones: the sheet itself takes the focus — no field focused (and no keyboard) until a tap.
@@ -515,7 +535,8 @@ export function Modal({
           )}
         >
           <div className="flex items-start justify-between gap-4 px-5 pt-5">
-            <div className="min-w-0">
+            {/* A flex sibling, never under the «×»: the title wraps before it (docs/09 #105). */}
+            <div className="min-w-0 flex-1">
               <DialogP.Title className="text-headline font-semibold">{title}</DialogP.Title>
               {description ? (
                 <DialogP.Description className="mt-1 text-body text-muted">{description}</DialogP.Description>
@@ -524,9 +545,7 @@ export function Modal({
               )}
             </div>
             {closeButton ? (
-              <IconButton label={t('common.close')} shortcut="Esc" size="sm" className="-mr-1 -mt-1" onClick={onClose}>
-                <X className="size-4" strokeWidth={1.75} />
-              </IconButton>
+              <CloseButton className="-mr-1 -mt-1" onClick={onClose} />
             ) : null}
           </div>
           <div className={cx('min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4', fill && 'flex flex-col')}>{children}</div>

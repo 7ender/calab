@@ -380,8 +380,12 @@ export interface MockServer {
    * READ_RECEIPT to the others (e.g. the DM peer reads Анна's message → ✓✓). False = not moved.
    */
   markRead(userId: string, roomId: string, messageId: string): boolean;
-  /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
-  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean }): void;
+  /**
+   * Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE.
+   * `joinedAtMs`: VoiceState.joined_at (client clock — a visual test's page clock is fixed); kept
+   * within the same room, none by default.
+   */
+  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
   setPresence(userId: string, status: PresenceStatus): void;
   /**
@@ -449,6 +453,12 @@ export interface MockServer {
    * delivering webhook, «Деплой» with a failing one) → WORKSPACE_MEMBER_ADD + BOT_CREATE.
    */
   seedBots(): void;
+  /**
+   * docs/08 «Композер — подсказка стикеров»: a pack «Смех» of «Команда Calab» with three 😂
+   * stickers (the last animated), installed by Анна after «Calab». Call before the client loads
+   * its packs (the first emoji typed or the picker opened).
+   */
+  seedLaughStickers(): void;
   /** docs/09 #87: a picture avatar for a (seeded) bot, as «Загрузить аватар» in «Боты» sets it. */
   setBotAvatar(botUserId: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): void;
   /** Full files (not thumbnails) wait until releaseFiles() or reset(): a slow download (the lightbox's loading state). */
@@ -503,6 +513,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setBirthdayHidden: (u, hidden) => impl.setBirthdayHidden(u, hidden),
     setClock: (ms) => impl.setClock(ms),
     seedBots: () => impl.seedBots(),
+    seedLaughStickers: () => impl.seedLaughStickers(),
     setBotAvatar: (id, colors) => impl.setBotAvatar(id, colors),
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
@@ -1552,6 +1563,19 @@ class MockImpl {
     return b;
   }
 
+  seedLaughStickers(): void {
+    const s = this.state;
+    const packId = nextId(s, 'stickerPack');
+    const at = tick(s);
+    const files = [IDS.files.stickerSun, IDS.files.stickerGem, IDS.files.stickerOrbit];
+    const stickers = files.map((fileId, i) =>
+      create(StickerSchema, { id: nextId(s, 'sticker'), packId, emoji: '😂', url: `/api/files/${fileId}`, width: 160, height: 160, animated: i === 2, size: s.files.get(fileId)?.bytes.length ?? 0 }),
+    );
+    const pack = create(StickerPackSchema, { id: packId, workspaceId: IDS.workspaces.main, name: 'Смех', shortName: 'laughs', stickers, createdBy: IDS.users.anna, createdAt: at, updatedAt: at });
+    s.stickerPacks.set(packId, pack);
+    s.userStickerPacks.set(IDS.users.anna, [...(s.userStickerPacks.get(IDS.users.anna) ?? []), packId]);
+  }
+
   seedBots(): void {
     const ws = IDS.workspaces.main;
     const weather = this.newBot({
@@ -1644,7 +1668,7 @@ class MockImpl {
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
 
-  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean }): void {
+  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
     // ADR-0034: a DM call's voice session — no workspace; its events go to the two participants.
@@ -1667,6 +1691,7 @@ class MockImpl {
       serverMuted: patch.serverMuted ?? (sameRoom ? prev.serverMuted : false),
       camera: patch.camera ?? (sameRoom ? prev.camera : false),
       pending: patch.pending ?? (sameRoom ? prev.pending : false),
+      joinedAt: patch.joinedAtMs !== undefined ? timestampFromMs(patch.joinedAtMs) : sameRoom ? prev.joinedAt : undefined,
     });
     // Moving to another workspace's room: tell the old workspace the user left.
     if (prev?.roomId && prev.workspaceId !== workspaceId) {

@@ -9,10 +9,12 @@ WHERE birthday_day IS NOT NULL AND NOT birthday_hidden AND NOT is_guest AND NOT 
 -- Where a user's birthday card goes: every workspace they are a non-guest member of that is
 -- not suspended and has someone else (not a bot) in it, with its first text room in sidebar
 -- order (top level first, then categories by position); a room everyone can see (not private)
--- is preferred. Workspaces without a text room are skipped.
-SELECT m.workspace_id, fr.id AS room_id
+-- is preferred. Workspaces without a text room are skipped. owner_timezone: the workspace
+-- owner's zone, the fallback of the greeting time when the user has none (birthdays.GreetZone).
+SELECT m.workspace_id, fr.id AS room_id, ow.timezone AS owner_timezone
 FROM workspace_members m
 JOIN workspaces w ON w.id = m.workspace_id AND w.suspended_at IS NULL
+JOIN users ow ON ow.id = w.owner_id
 JOIN LATERAL (
     SELECT r.id FROM rooms r
     LEFT JOIN room_categories c ON c.id = r.category_id
