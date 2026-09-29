@@ -489,7 +489,6 @@ type Task struct {
 	CompletedAt *time.Time
 	CompletedBy *uuid.UUID
 	ArchivedAt  *time.Time
-	Search      interface{}
 }
 
 type TaskActivity struct {

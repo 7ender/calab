@@ -6,7 +6,7 @@
 -- board_statuses     columns with a type (backlog … cancelled); one is_default per board.
 -- board_labels, board_milestones, board_views (saved views; filter = TaskFilter JSON).
 -- tasks              room_id: the task's hidden comment room (rooms.type 'task'); position: a
---                    fractional order within the status; search: words of title + description.
+--                    fractional order within the status.
 -- task_assignees     ≤ 10, exactly one is_lead when any.
 -- task_labels, task_relations (blocks stored once), task_attachments (files of the description).
 -- task_activity      the immutable journal (analytics later): removed only with the board.
@@ -136,7 +136,6 @@ CREATE TABLE tasks (
     completed_at timestamptz,
     completed_by uuid REFERENCES users (id) ON DELETE SET NULL,
     archived_at  timestamptz,
-    search       tsvector GENERATED ALWAYS AS (to_tsvector('simple', title || ' ' || description)) STORED,
     UNIQUE (board_id, number),
     CHECK (parent_id IS NULL OR parent_id <> id)
 );
@@ -146,7 +145,8 @@ CREATE INDEX tasks_parent_idx ON tasks (parent_id) WHERE parent_id IS NOT NULL;
 CREATE INDEX tasks_status_idx ON tasks (status_id);
 CREATE INDEX tasks_milestone_idx ON tasks (milestone_id) WHERE milestone_id IS NOT NULL;
 CREATE INDEX tasks_created_by_idx ON tasks (created_by);
-CREATE INDEX tasks_search_idx ON tasks USING gin (search);
+-- Words of title + description (TaskFilter TEXT, search): the expression must match internal/boards.
+CREATE INDEX tasks_search_idx ON tasks USING gin (to_tsvector('simple', title || ' ' || description));
 -- The auto-archive sweeper: finished live tasks by completion time.
 CREATE INDEX tasks_completed_idx ON tasks (completed_at) WHERE archived_at IS NULL AND completed_at IS NOT NULL;
 

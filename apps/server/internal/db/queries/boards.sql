@@ -38,6 +38,12 @@ WHERE b.id = sqlc.arg('board_id');
 SELECT t.id AS task_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS task_archived
 FROM tasks t WHERE t.room_id = $1;
 
+-- name: ListWorkspaceTaskRooms :many
+-- The comment rooms of the tasks on live boards of a workspace (the gateway's task room map).
+SELECT t.id, t.room_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS archived
+FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL;
+
 -- name: ListBoards :many
 SELECT * FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = sqlc.arg('archived')::boolean
 ORDER BY position, id;
@@ -125,15 +131,13 @@ ON CONFLICT (board_id, target_type, target_id) DO UPDATE SET allow = EXCLUDED.al
 -- name: DeleteBoardOverride :exec
 DELETE FROM board_permissions WHERE board_id = $1 AND target_type = $2 AND target_id = $3;
 
--- name: DeleteUserBoardOverridesInWorkspace :exec
-DELETE FROM board_permissions bp USING boards b
-WHERE bp.board_id = b.id AND b.workspace_id = sqlc.arg('workspace_id')::uuid
-  AND bp.target_type = 'user' AND bp.target_id = sqlc.arg('user_id')::text;
-
--- name: DeleteRoleBoardOverrides :exec
-DELETE FROM board_permissions bp USING boards b
-WHERE bp.board_id = b.id AND b.workspace_id = sqlc.arg('workspace_id')::uuid
-  AND bp.target_type = 'role' AND bp.target_id = sqlc.arg('role_id')::text;
+-- name: BoardOpenCounts :many
+-- Live tasks not in a finished status per board, and of them assigned to the user.
+SELECT t.board_id, count(*)::integer AS open,
+    (count(*) FILTER (WHERE EXISTS (SELECT 1 FROM task_assignees a WHERE a.task_id = t.id AND a.user_id = sqlc.arg('user_id')::uuid)))::integer AS mine
+FROM tasks t JOIN board_statuses st ON st.id = t.status_id
+WHERE t.board_id = ANY(sqlc.arg('board_ids')::uuid[]) AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
+GROUP BY t.board_id;
 
 -- ---- statuses, labels, milestones ----
 
@@ -422,7 +426,7 @@ LIMIT 999;
 
 -- name: GetTaskLevel :many
 -- The users' task notification level and workspace mute in the workspace ('all' when unset).
-SELECT u.id AS user_id, coalesce(s.task_level, 'all')::text AS task_level,
+SELECT u.id::uuid AS user_id, coalesce(s.task_level, 'all')::text AS task_level,
     (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted
 FROM unnest(sqlc.arg('user_ids')::uuid[]) AS u (id)
 LEFT JOIN workspace_notification_settings s ON s.user_id = u.id AND s.workspace_id = sqlc.arg('workspace_id');

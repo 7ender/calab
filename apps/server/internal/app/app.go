@@ -16,6 +16,7 @@ import (
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/boards"
 	"github.com/calaba/calaba/server/internal/bots"
 	"github.com/calaba/calaba/server/internal/buildinfo"
 	"github.com/calaba/calaba/server/internal/calendar"
@@ -92,6 +93,9 @@ type App struct {
 	Calls *calls.Service
 	// Calendar: meetings (ADR-0038) with the reminder / room badge sweeper.
 	Calendar *calendar.Service
+	// Boards: task boards (ADR-0042) with the auto-archive sweeper.
+	Boards *boards.Service
+	redis  rueidis.Client
 	// Routes: every registered route pattern (the bot route table test).
 	Routes []string
 }
@@ -114,6 +118,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Birthdays.Run(ctx, time.Hour)
 	go a.Calls.Run(ctx)
 	go a.Calendar.Run(ctx, calendar.Tick)
+	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -286,7 +291,11 @@ func New(d Deps) *App {
 	msgHandlers := messages.NewHandlers(d.DB, pub, msgLimiter)
 	msgHandlers.BotLimiter = redisx.NewRateLimiter(d.Redis, "rl:bot:msg:", botMsgsPerMin, float64(botMsgsPerMin))
 	msgHandlers.Receipts = messages.NewReceipts(d.DB, pub, d.Redis)
+	boardSvc := boards.New(d.DB, pub, planSvc, filesSvc)
+	boardSvc.PublicURL = d.Config.PublicAppURL
+	msgHandlers.TaskHook = boardSvc.TaskHook
 	msgHandlers.Routes(mux, private)
+	boardSvc.Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
 	notes.NewHandlers(d.DB, pub, d.Config.DefaultPersonalQuotaBytes).Routes(mux, private)
 	filesSvc.Routes(mux, private)
@@ -303,8 +312,10 @@ func New(d Deps) *App {
 		return qt.Proto(), err
 	}
 	admin.Routes(mux, private)
-	unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
-		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
+	unfurlSvc := unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
+		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)})
+	unfurlSvc.Internal = boardSvc.Unfurl(d.Config.AllowedOrigins()) // own /t/ and /b/ links (ADR-0042)
+	unfurlSvc.Routes(mux, private)
 	recSvc.Routes(mux, private)
 	botSvc.Routes(mux, private)
 	bdSvc := birthdays.New(d.DB, pub)
@@ -335,5 +346,5 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, Routes: mux.patterns}
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, Boards: boardSvc, redis: d.Redis, Routes: mux.patterns}
 }

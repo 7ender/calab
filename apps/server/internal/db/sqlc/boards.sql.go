@@ -71,6 +71,46 @@ func (q *Queries) BoardKeyTaken(ctx context.Context, arg BoardKeyTakenParams) (b
 	return column_1, err
 }
 
+const boardOpenCounts = `-- name: BoardOpenCounts :many
+SELECT t.board_id, count(*)::integer AS open,
+    (count(*) FILTER (WHERE EXISTS (SELECT 1 FROM task_assignees a WHERE a.task_id = t.id AND a.user_id = $1::uuid)))::integer AS mine
+FROM tasks t JOIN board_statuses st ON st.id = t.status_id
+WHERE t.board_id = ANY($2::uuid[]) AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
+GROUP BY t.board_id
+`
+
+type BoardOpenCountsParams struct {
+	UserID   uuid.UUID
+	BoardIds []uuid.UUID
+}
+
+type BoardOpenCountsRow struct {
+	BoardID uuid.UUID
+	Open    int32
+	Mine    int32
+}
+
+// Live tasks not in a finished status per board, and of them assigned to the user.
+func (q *Queries) BoardOpenCounts(ctx context.Context, arg BoardOpenCountsParams) ([]BoardOpenCountsRow, error) {
+	rows, err := q.db.Query(ctx, boardOpenCounts, arg.UserID, arg.BoardIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BoardOpenCountsRow{}
+	for rows.Next() {
+		var i BoardOpenCountsRow
+		if err := rows.Scan(&i.BoardID, &i.Open, &i.Mine); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const boardTaskRoomIDs = `-- name: BoardTaskRoomIDs :many
 SELECT room_id FROM tasks WHERE board_id = $1
 `
@@ -488,22 +528,6 @@ func (q *Queries) DeleteBoardView(ctx context.Context, arg DeleteBoardViewParams
 	return result.RowsAffected(), nil
 }
 
-const deleteRoleBoardOverrides = `-- name: DeleteRoleBoardOverrides :exec
-DELETE FROM board_permissions bp USING boards b
-WHERE bp.board_id = b.id AND b.workspace_id = $1::uuid
-  AND bp.target_type = 'role' AND bp.target_id = $2::text
-`
-
-type DeleteRoleBoardOverridesParams struct {
-	WorkspaceID uuid.UUID
-	RoleID      string
-}
-
-func (q *Queries) DeleteRoleBoardOverrides(ctx context.Context, arg DeleteRoleBoardOverridesParams) error {
-	_, err := q.db.Exec(ctx, deleteRoleBoardOverrides, arg.WorkspaceID, arg.RoleID)
-	return err
-}
-
 const deleteTaskAssignees = `-- name: DeleteTaskAssignees :exec
 DELETE FROM task_assignees WHERE task_id = $1
 `
@@ -550,22 +574,6 @@ func (q *Queries) DeleteTaskRelation(ctx context.Context, arg DeleteTaskRelation
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const deleteUserBoardOverridesInWorkspace = `-- name: DeleteUserBoardOverridesInWorkspace :exec
-DELETE FROM board_permissions bp USING boards b
-WHERE bp.board_id = b.id AND b.workspace_id = $1::uuid
-  AND bp.target_type = 'user' AND bp.target_id = $2::text
-`
-
-type DeleteUserBoardOverridesInWorkspaceParams struct {
-	WorkspaceID uuid.UUID
-	UserID      string
-}
-
-func (q *Queries) DeleteUserBoardOverridesInWorkspace(ctx context.Context, arg DeleteUserBoardOverridesInWorkspaceParams) error {
-	_, err := q.db.Exec(ctx, deleteUserBoardOverridesInWorkspace, arg.WorkspaceID, arg.UserID)
-	return err
 }
 
 const detachSubtasks = `-- name: DetachSubtasks :exec
@@ -816,7 +824,7 @@ func (q *Queries) GetBoardView(ctx context.Context, arg GetBoardViewParams) (Boa
 }
 
 const getTaskByNumber = `-- name: GetTaskByNumber :one
-SELECT t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by, t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at, t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, t.search FROM tasks t JOIN boards b ON b.id = t.board_id
+SELECT t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by, t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at, t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at FROM tasks t JOIN boards b ON b.id = t.board_id
 WHERE b.workspace_id = $1 AND b.key = $2 AND t.number = $3 AND b.archived_at IS NULL
 `
 
@@ -851,13 +859,12 @@ func (q *Queries) GetTaskByNumber(ctx context.Context, arg GetTaskByNumberParams
 		&i.CompletedAt,
 		&i.CompletedBy,
 		&i.ArchivedAt,
-		&i.Search,
 	)
 	return i, err
 }
 
 const getTaskLevel = `-- name: GetTaskLevel :many
-SELECT u.id AS user_id, coalesce(s.task_level, 'all')::text AS task_level,
+SELECT u.id::uuid AS user_id, coalesce(s.task_level, 'all')::text AS task_level,
     (s.muted_until IS NOT NULL AND s.muted_until > now())::boolean AS muted
 FROM unnest($1::uuid[]) AS u (id)
 LEFT JOIN workspace_notification_settings s ON s.user_id = u.id AND s.workspace_id = $2
@@ -869,7 +876,7 @@ type GetTaskLevelParams struct {
 }
 
 type GetTaskLevelRow struct {
-	UserID    interface{}
+	UserID    uuid.UUID
 	TaskLevel string
 	Muted     bool
 }
@@ -915,7 +922,7 @@ func (q *Queries) GetTaskRoomRef(ctx context.Context, roomID uuid.UUID) (GetTask
 }
 
 const getTaskRow = `-- name: GetTaskRow :one
-SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, search FROM tasks WHERE id = $1
+SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at FROM tasks WHERE id = $1
 `
 
 func (q *Queries) GetTaskRow(ctx context.Context, id uuid.UUID) (Task, error) {
@@ -943,13 +950,12 @@ func (q *Queries) GetTaskRow(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.CompletedAt,
 		&i.CompletedBy,
 		&i.ArchivedAt,
-		&i.Search,
 	)
 	return i, err
 }
 
 const getTaskRowForUpdate = `-- name: GetTaskRowForUpdate :one
-SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, search FROM tasks WHERE id = $1 FOR UPDATE
+SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at FROM tasks WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetTaskRowForUpdate(ctx context.Context, id uuid.UUID) (Task, error) {
@@ -977,7 +983,6 @@ func (q *Queries) GetTaskRowForUpdate(ctx context.Context, id uuid.UUID) (Task, 
 		&i.CompletedAt,
 		&i.CompletedBy,
 		&i.ArchivedAt,
-		&i.Search,
 	)
 	return i, err
 }
@@ -1781,6 +1786,45 @@ func (q *Queries) ListWorkspaceBoardOverrides(ctx context.Context, workspaceID u
 			&i.TargetID,
 			&i.Allow,
 			&i.Deny,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkspaceTaskRooms = `-- name: ListWorkspaceTaskRooms :many
+SELECT t.id, t.room_id, t.board_id, (t.archived_at IS NOT NULL)::boolean AS archived
+FROM tasks t JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = $1 AND b.archived_at IS NULL
+`
+
+type ListWorkspaceTaskRoomsRow struct {
+	ID       uuid.UUID
+	RoomID   uuid.UUID
+	BoardID  uuid.UUID
+	Archived bool
+}
+
+// The comment rooms of the tasks on live boards of a workspace (the gateway's task room map).
+func (q *Queries) ListWorkspaceTaskRooms(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceTaskRoomsRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceTaskRooms, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkspaceTaskRoomsRow{}
+	for rows.Next() {
+		var i ListWorkspaceTaskRoomsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.BoardID,
+			&i.Archived,
 		); err != nil {
 			return nil, err
 		}
