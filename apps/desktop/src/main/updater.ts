@@ -5,6 +5,7 @@ import { IPC, type UpdateStatus } from '../shared/ipc';
 import { downloadPage, feedUrl, httpsFeed } from '../shared/updateFeed';
 import { currentServerUrl, refreshSettled } from './auth';
 import { forceQuit } from './appLifecycle';
+import { prepareRestart } from './resumeVoice';
 import { getSettings } from './settings';
 import { mainStrings } from './strings';
 import { setTrayUpdate } from './tray';
@@ -88,6 +89,8 @@ function getFlow(): UpdateFlow {
     beforeInstall: forceQuit,
     // A refresh cut off by the quit would leave the rotated token's answer unread (docs/09 #89).
     settle: () => refreshSettled(INSTALL_SETTLE_MS),
+    // Back into the same room / call after the relaunch (docs/09 #126, main/resumeVoice.ts).
+    prepareRestart,
   });
   return flow;
 }

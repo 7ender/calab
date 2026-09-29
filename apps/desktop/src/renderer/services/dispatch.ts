@@ -26,6 +26,7 @@ import { applyBotEvent } from './bots';
 import { useBots } from '../stores/bots';
 import { voice } from './voice';
 import { onCallRing, onCallState, onReadyCall } from './call';
+import { resumeVoiceAfterReady } from './resumeVoice';
 import { checkWebVersion } from './webVersion';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
@@ -117,6 +118,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       voice.checkSeat();
       // ADR-0034: the ringing / in-call UI as the server has it now.
       onReadyCall(r.call);
+      // The first READY after a restart for an update: back into the same room / call (docs/09 #126).
+      resumeVoiceAfterReady(r.call);
       // Web: a server newer than this bundle → «Обновить страницу» (docs/09 #125).
       void checkWebVersion();
       return;

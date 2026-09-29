@@ -27,12 +27,15 @@ export const IDLE: CallModel = { call: null, phase: 'idle', own: null };
 /**
  * `ring` / `state`: CALL_RING / CALL_STATE; `ready`: READY.call after a (re)connect — `call`
  * null = none; `placed`: POST …/call answered here; `accepting`: «Принять» pressed here (before
- * the request); `answer`: a call action's REST answer; `failed`: an action on the call failed
+ * the request); `resume`: the call this device was in before a restart for an update (READY.call,
+ * docs/09 #126) — taken again here; `answer`: a call action's REST answer; `failed`: an action on the call failed
  * with 404 / 409 — the call is gone for this device.
  */
 export type CallEvent =
   | { kind: 'ring' | 'state' | 'placed' | 'answer'; call: Call }
   | { kind: 'ready'; call: Call | null }
+  /** Back in the call after a restart for an update (docs/09 #126): this device takes it again. */
+  | { kind: 'resume'; call: Call }
   | { kind: 'accepting'; callId: string }
   | { kind: 'failed'; callId: string };
 
@@ -62,6 +65,11 @@ export function reduceCall(m: CallModel, ev: CallEvent, me: string): CallModel {
       return apply(m, ev.call, me, true);
     case 'placed':
       return apply({ ...m, own: ev.call.id }, ev.call, me, false);
+    case 'resume': {
+      // Only an ACTIVE call of mine is taken again; anything else leaves the model as it is.
+      const next = apply({ ...m, own: ev.call.id }, ev.call, me, true);
+      return next.phase === 'active' ? next : m;
+    }
     default:
       return apply(m, ev.call, me, false);
   }

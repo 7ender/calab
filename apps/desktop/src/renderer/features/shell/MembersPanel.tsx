@@ -10,8 +10,8 @@ import { greetingRoomId, useRooms } from '../../stores/rooms';
 import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 import { isGuest, useMemberName, useRoleLook, useWorkspaces } from '../../stores/workspaces';
-import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
-import { MemberBadge } from '../people/MemberBadge';
+import { BotBadge, GuestBadge, roleTextClass, roleTextStyle } from '../people/MemberBits';
+import { BadgeOrRoleMark } from '../people/MemberBadge';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { BirthdayMark } from '../people/Birthday';
 import { MutedByMe } from '../../components/SpeakerIdentity';
@@ -372,8 +372,7 @@ const MemberRow = memo(function MemberRow({
                 >
                   {name}
                 </span>
-                <MemberBadge workspaceId={workspaceId} userId={userId} className={offline ? 'opacity-60 grayscale' : undefined} />
-                <RoleMark role={m.role} custom={look} tone={offline ? 'muted' : 'role'} />
+                <BadgeOrRoleMark workspaceId={workspaceId} userId={userId} role={m.role} custom={look} tone={offline ? 'muted' : 'role'} badgeClassName={offline ? 'opacity-60 grayscale' : undefined} />
                 <BirthdayMark userId={userId} />
                 {onCall ? <Phone className="size-3.5 shrink-0 text-ok" role="img" aria-label={t('call.onCall')} /> : null}
                 {isGuest(m) ? <GuestBadge /> : null}

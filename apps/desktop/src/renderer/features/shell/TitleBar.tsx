@@ -4,16 +4,14 @@ import type { Message } from '@calaba/protocol';
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Empty, IconButton, Spinner, Tip, cx } from '../../components/ui';
-import { MediaImg } from '../../components/MediaImg';
 import { t } from '../../i18n';
-import { api, thumbnailPath } from '../../lib/api/endpoints';
-import { workspaceInitials } from '../../lib/initials';
+import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
 import { loadMentions } from '../../services/mentions';
 import { NAV_SHORTCUTS, shortcutHelp, useHotkeyLabel } from '../../services/hotkeys';
 import { platform } from '../../platform';
 import { usePrefs } from '../../stores/prefs';
-import { HOME, isDm } from '../../stores/dms';
+import { isDm } from '../../stores/dms';
 import { useInbox } from '../../stores/inbox';
 import { idAfter, isVoice, useRooms } from '../../stores/rooms';
 import { selectUpdatePending, useSession } from '../../stores/session';
@@ -29,7 +27,7 @@ import { AppSettingsWindow } from './lazyWindows';
 /**
  * Window title bar (docs/09 #1): 38 px across the whole window, drag region in Electron.
  * Left: 80 px kept empty for the macOS traffic lights (hiddenInset at 12,12), then ← → room
- * history. Centre: the workspace name. Right: search (opens the quick switcher), mentions, settings,
+ * history. Centre: the product name «Calab» (docs/09 #127). Right: search (opens the quick switcher), mentions, settings,
  * shortcuts help; on Windows the native caption buttons (Window Controls Overlay) take the
  * space given by env(titlebar-area-*).
  * Web (docs/09 #46): a compact 30 px toolbar — no window chrome, so no reserved inset and no
@@ -41,11 +39,7 @@ export function TitleBar(): ReactNode {
   const electron = platform.kind === 'electron';
   const web = !electron;
   const mac = electron && os === 'darwin';
-  const wsId = useUi((s) => s.activeWorkspaceId);
-  const ws = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws : undefined));
   const searchKeys = useHotkeyLabel('search');
-  const home = wsId === HOME;
-  const title = home ? t('dm.home') : (ws?.name ?? 'Calab');
   const back = useUi(canGoBack);
   const fwd = useUi(canGoForward);
   const goBack = useUi((s) => s.goBack);
@@ -76,13 +70,9 @@ export function TitleBar(): ReactNode {
         </IconButton>
       </div>
 
-      <div className="flex min-w-0 max-w-[40vw] items-center justify-center gap-2 text-body font-semibold text-fg" title={title}>
-        {ws ? (
-          <span className="grid size-4 shrink-0 place-items-center overflow-hidden rounded-[4px] bg-hover text-[8px] font-bold text-muted" aria-hidden>
-            {ws.iconFileId ? <MediaImg path={thumbnailPath(ws.iconFileId)} alt="" className="size-full object-cover" /> : workspaceInitials(ws.name)}
-          </span>
-        ) : null}
-        <span className="truncate">{title}</span>
+      {/* The product name only (owner, 29.09; docs/09 #127): the workspace is already named in the rail and sidebar. */}
+      <div className="flex min-w-0 items-center justify-center text-body font-semibold text-fg" data-testid="titlebar-title">
+        Calab
       </div>
 
       <div className="flex min-w-0 items-center justify-end gap-1 pr-2">

@@ -15,6 +15,7 @@ import { resetPttGate, shutdownPtt } from './ptt';
 import { createTray } from './tray';
 import { installAppMenu } from './appMenu';
 import { startUpdates } from './updater';
+import { loadResumeVoice } from './resumeVoice';
 import {
   createMainWindow,
   getMainWindow,
@@ -109,6 +110,9 @@ void app.whenReady().then(() => {
   // before the renderer re-applies it for a binding that still wants it.
   void recoverCapsRemap();
   handleApiScheme();
+  // The voice seat left by a restart for an update (docs/09 #126): read and deleted now, so only
+  // this launch sees it.
+  loadResumeVoice();
   registerIpc();
   createMainWindow();
   createTray();

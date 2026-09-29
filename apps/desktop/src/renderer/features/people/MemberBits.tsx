@@ -80,6 +80,16 @@ export function roleTextStyle(role: WorkspaceRole | undefined, tone: RoleTone = 
 export const hasRoleMark = (role: WorkspaceRole | undefined): boolean => role === WorkspaceRole.OWNER || role === WorkspaceRole.ADMIN;
 
 /**
+ * What follows a member's name (owner, 29.09, docs/08 «Бейдж заменяет цветную метку роли»): the
+ * badge replaces the role mark (never both); no badge — the role mark (crown / shield / custom
+ * dot) or nothing. The name keeps its role colour either way.
+ */
+export function nameMarkKind(hasBadge: boolean, role: WorkspaceRole | undefined, custom?: RoleLook): 'badge' | 'role' | null {
+  if (hasBadge) return 'badge';
+  return hasRoleMark(role) || custom ? 'role' : null;
+}
+
+/**
  * The one role mark next to a name (docs/09 #26, docs/08 «Роли в списках»): a crown for the
  * owner, a 14 px shield for admins, in the role colour; the tooltip (and accessible name) is the
  * role — «Владелец» / «Администратор» — or `label` when the context needs more (the DM header

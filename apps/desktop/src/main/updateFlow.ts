@@ -91,6 +91,12 @@ export interface UpdateFlowEnv {
    * is not lost with the old process (docs/09 #89). Optional; absent → install at once.
    */
   settle?: () => Promise<void>;
+  /**
+   * Awaited right before quitAndInstall, once the install is certain (after the re-check): the
+   * renderer hands over its voice seat so the relaunched app rejoins it (docs/09 #126). Must be
+   * bounded and never reject. Not called for install-on-quit (no relaunch).
+   */
+  prepareRestart?: () => Promise<void>;
 }
 
 export const FIRST_CHECK_MS = 10_000;
@@ -427,10 +433,15 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
         return;
       }
       installing = true;
-      env.log.info('[update] quit and install', status.version);
-      env.beforeInstall?.();
-      // Not silent (Windows shows the installer progress), relaunch after install.
-      updater.quitAndInstall(false, true);
+      const version = status.version;
+      const quit = (): void => {
+        env.log.info('[update] quit and install', version);
+        env.beforeInstall?.();
+        // Not silent (Windows shows the installer progress), relaunch after install.
+        updater.quitAndInstall(false, true);
+      };
+      if (env.prepareRestart) void env.prepareRestart().catch(() => undefined).then(quit);
+      else quit();
     };
     const fresh = !recheck || Date.now() - lastCheckAt < INSTALL_FRESH_MS;
     const waits: Array<Promise<unknown>> = [];

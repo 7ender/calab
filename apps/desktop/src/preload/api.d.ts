@@ -26,6 +26,7 @@ import type {
   UpdateStatus,
 } from '../shared/ipc';
 import type { ThumbRequest } from '../shared/captureThumb';
+import type { ResumeVoice, ResumeVoiceSeat } from '../shared/resumeVoice';
 import type { MenuAction, MenuState } from '../shared/menu';
 import type { AnnotOverlayEvent, AnnotOverlayTarget } from '../shared/annot';
 
@@ -67,6 +68,12 @@ export interface CalabaApi {
     installUpdate(afterCall?: boolean): Promise<boolean>;
     /** «Скачать и установить»: download an `installable` available update; false when there is none. */
     downloadUpdate(): Promise<boolean>;
+    /** Main is about to restart for an update: answer with setResumeVoice (docs/09 #126). */
+    onPrepareRestart(cb: () => void): Unsubscribe;
+    /** The answer to onPrepareRestart: the voice seat to take again after the relaunch, or null. */
+    setResumeVoice(seat: ResumeVoiceSeat | null): Promise<void>;
+    /** The seat left by the restart for an update, once per app run (null otherwise). */
+    takeResumeVoice(): Promise<ResumeVoice | null>;
     /** The window's `online` event: main runs a throttled update check (main has no such event). */
     networkOnline(): void;
     log(level: 'info' | 'warn' | 'error', message: string): void;

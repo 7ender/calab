@@ -147,7 +147,9 @@ var (
 	errInvalidRefresh     = httpx.Coded(http.StatusUnauthorized, v1.ErrorCode_ERROR_CODE_INVALID_REFRESH_TOKEN, "invalid refresh token")
 	errInviteInvalid      = httpx.Coded(http.StatusNotFound, v1.ErrorCode_ERROR_CODE_INVITE_INVALID, "invite is invalid, expired or used up")
 	errRegistrationClosed = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_REGISTRATION_CLOSED, "registration requires an invite")
-	errInviteEmail        = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH,
+	// errSimilarAccount rolls back a sign-up that hit the similar-account hint (docs/09 #119).
+	errSimilarAccount = errors.New("similar account")
+	errInviteEmail    = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH,
 		"this invitation was sent to another email address: use that address")
 	// errRefreshRace: the previous refresh token was presented while the new one is unused,
 	// but the rotation cannot be replayed (it happened before migration 00040: no seal). The session is intact: retry with the current token (web: the cookie
@@ -382,9 +384,25 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			}
 			joined = &m
 		}
+		if req.GetCheckSimilarAccount() {
+			// Last, once every other check passed (docs/09 #119): the hint answers only a
+			// sign-up that would have gone through, at the same cost (password hash, invite,
+			// seats, bans), and a miss creates the account — so it is no cheaper oracle than the
+			// exact-address 409. A hit rolls everything back.
+			similar, err := similarAccount(ctx, q, email, gate)
+			if err != nil {
+				return err
+			}
+			if similar {
+				return errSimilarAccount
+			}
+		}
 		tokens, err = s.newSession(ctx, q, user.ID, c)
 		return err
 	})
+	if errors.Is(err, errSimilarAccount) {
+		return &v1.RegisterResponse{SimilarAccount: true}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -716,6 +734,22 @@ func (s *Service) revokedReason(ctx context.Context, sid uuid.UUID) (string, boo
 		v = ""
 	}
 	return v, true, nil
+}
+
+// similarAccount reports another account with the same local part at a sibling domain of the
+// same organisation (docs/09 #119, HasSimilarAccount): kv@gptunnel.ai signing up while
+// kv@gptunnel.ru exists. ws is the workspace whose invite let the sign-up in (its email
+// invitations' domains count as the organisation's). Runs inside the sign-up transaction after
+// the account row was inserted, so the exact address is already the usual 409 and the query
+// skips it. The other address itself is never returned.
+func similarAccount(ctx context.Context, q *sqlc.Queries, email string, ws *uuid.UUID) (bool, error) {
+	at := strings.LastIndexByte(email, '@')
+	local, domain := email[:at], email[at+1:]
+	dot := strings.LastIndexByte(domain, '.')
+	if dot <= 0 {
+		return false, nil
+	}
+	return q.HasSimilarAccount(ctx, sqlc.HasSimilarAccountParams{Email: email, Local: local, DomainName: domain[:dot], WorkspaceID: ws})
 }
 
 // inviteLive: not expired and not used up.

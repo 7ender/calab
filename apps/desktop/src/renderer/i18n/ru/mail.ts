@@ -35,6 +35,11 @@ export const ruMail = {
   'mail.err.resetInvalid': 'Неверный или устаревший код',
   // forgot password
   'mail.forgot.link': 'Забыли пароль?',
+  'mail.forgot.failed': 'Неверный email или пароль.',
+  'mail.forgot.recover': 'Восстановить пароль?',
+  'mail.similar.text': 'Похоже, у вас уже есть аккаунт на этой почте с другим доменом — не хотите войти в него?',
+  'mail.similar.login': 'Войти',
+  'mail.similar.create': 'Всё равно создать',
   'mail.forgot.title': 'Восстановление пароля',
   'mail.forgot.text': 'Введите email аккаунта — пришлём код для нового пароля.',
   'mail.forgot.sent': 'Если {email} зарегистрирован, мы отправили на него код.',

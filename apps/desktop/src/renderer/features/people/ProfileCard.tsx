@@ -9,9 +9,9 @@ import { t, type MessageKey } from '../../i18n';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { isGuest, useMemberName, useRoleLook, useWorkspaces } from '../../stores/workspaces';
-import { BotBadge, GuestBadge, RoleMark, roleTextClass, roleTextStyle } from './MemberBits';
+import { BotBadge, GuestBadge, roleTextClass, roleTextStyle } from './MemberBits';
 import { BotActions, BotDetails, BotHandle } from './BotProfile';
-import { MemberBadge } from './MemberBadge';
+import { BadgeOrRoleMark } from './MemberBadge';
 import { VolumeRow, useMemberActions } from './MemberContextMenu';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -82,8 +82,7 @@ export function ProfileCard({
               {name}
             </h3>
             {/* The badge inline after the name, as in lists (docs/08 «Бейдж»); its name is the tooltip. */}
-            <MemberBadge workspaceId={workspaceId} userId={userId} />
-            <RoleMark role={m.role} custom={look} />
+            <BadgeOrRoleMark workspaceId={workspaceId} userId={userId} role={m.role} custom={look} />
             {isGuest(m) ? <GuestBadge /> : null}
             {u.isBot ? <BotBadge /> : null}
           </div>

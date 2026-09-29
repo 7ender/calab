@@ -5,8 +5,8 @@ import { usePrefs } from '../stores/prefs';
 import { Avatar } from './Avatar';
 import { cx } from './ui';
 import { t } from '../i18n';
-import { RoleMark, hasRoleMark, roleTextClass } from '../features/people/MemberBits';
-import { MemberBadge } from '../features/people/MemberBadge';
+import { hasRoleMark, roleTextClass } from '../features/people/MemberBits';
+import { BadgeOrRoleMark } from '../features/people/MemberBadge';
 import { BirthdayMark } from '../features/people/Birthday';
 
 /**
@@ -45,7 +45,7 @@ export function SpeakerIdentity({
   pending?: boolean;
   /** Muted tail after the name (the time-zone label). */
   suffix?: string | null;
-  /** Workspace role: owner / admin names in the role colour + RoleMark (docs/09 #26). */
+  /** Workspace role: owner / admin names in the role colour + RoleMark, unless the member has a badge (docs/09 #26, #129). */
   role?: WorkspaceRole | undefined;
   /** The room's workspace: the member's badge after the name (docs/09 #82). */
   workspaceId?: string | undefined;
@@ -63,12 +63,12 @@ export function SpeakerIdentity({
         <span data-testid="speaker-name" className={cx('min-w-0 truncate transition-colors duration-100', speakerNameClass(talking && !pending, role))}>
           {name}
         </span>
-        <MemberBadge workspaceId={workspaceId} userId={userId} />
+        {/* The badge replaces the role mark (owner, 29.09, docs/08 «Бейдж»). */}
+        <BadgeOrRoleMark workspaceId={workspaceId} userId={userId} role={role} />
         {suffix ? (
           // Time zone as a tiny tag (owner, 28.09): present, but takes almost no room.
           <span className="inline-flex h-[14px] shrink-0 items-center rounded-full bg-hover px-1 text-[9px] font-medium leading-none tabular-nums text-muted">{suffix}</span>
         ) : null}
-        <RoleMark role={role} />
         <BirthdayMark userId={userId} />
       </span>
       <MutedByMe userId={userId} />

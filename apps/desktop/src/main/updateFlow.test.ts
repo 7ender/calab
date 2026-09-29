@@ -270,6 +270,33 @@ describe('update flow', () => {
     expect(settles).toBe(1);
   });
 
+  it('install() hands the voice seat over (prepareRestart) before quitting, once (docs/09 #126)', async () => {
+    let release!: () => void;
+    const prepared = new Promise<void>((r) => (release = r));
+    const order: string[] = [];
+    const t = setup({
+      prepareRestart: () => {
+        order.push('prepare');
+        return prepared;
+      },
+      beforeInstall: () => order.push('force'),
+    });
+    t.updater.next = { version: '0.1.1' };
+    await t.flow.check();
+    t.updater.finishDownload('0.1.1');
+    expect(t.flow.install()).toBe(true);
+    expect(t.flow.install()).toBe(true); // a second click while the renderer answers
+    await Promise.resolve();
+    expect(order).toEqual(['prepare']);
+    expect(t.updater.installs).toEqual([]);
+    release();
+    await prepared;
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order).toEqual(['prepare', 'force']);
+    expect(t.updater.installs).toEqual([[false, true]]);
+  });
+
   it('install() without a downloaded update does nothing', async () => {
     const t = setup();
     await t.flow.check();
