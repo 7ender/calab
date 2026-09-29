@@ -169,7 +169,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 | `owner` | 1001 | `ADMINISTRATOR` | только цвет/`mentionable`; снять/выдать нельзя; единственный, кто удаляет workspace |
 | `admin` | 1000 | `ADMINISTRATOR` | цвет/`mentionable`; выдаёт и снимает только владелец |
 | свои роли | 2 … | заданные | имя, цвет, права, порядок; удаляются |
-| `member` | 1 | `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO` | права; есть у каждого не-гостя |
+| `member` | 1 | `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, VIEW_BOARD, CREATE_TASKS` (биты досок — миграция 00046, ADR-0042) | права; есть у каждого не-гостя |
 | `guest` | 0 | `CONNECT, SPEAK` (комнаты — только с явным `allow VIEW_ROOM`) | права в пределах `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO` |
 
 - Встроенные роли участника следуют `workspace_members.role` (триггер): `owner` → owner + member, `admin` → admin + member, `member` → member, `guest` → guest. Поле `role` остаётся «старшей встроенной ролью» для клиентов до 0.6.0 (`WorkspaceMember.role`); свои роли назначаются отдельно (`member_roles`) и переживают смену встроенной. Имена встроенных ролей — ключи (`owner` …), клиент показывает локализованные.
@@ -206,6 +206,11 @@ export const Permission = {
   VIDEO:            1n << 14n,  // веб-камера в voice (у member по умолчанию есть)
   MANAGE_ROLES:     1n << 15n,  // свои роли ниже своей старшей и их назначение (только уровень workspace, ADR-0026)
   MANAGE_STICKERS:  1n << 16n,  // «Стикеры и звуки»: стикерпаки и саундборд пространства (только уровень workspace, ADR-0030, ADR-0036)
+  // Доски задач (ADR-0042): только для досок (BOARD_ONLY), в переопределениях комнат игнорируются
+  VIEW_BOARD:       1n << 17n,  // видеть доску, задачи, комментарии; комментировать; подписываться
+  CREATE_TASKS:     1n << 18n,  // создавать задачи; править свои и назначенные на себя
+  EDIT_TASKS:       1n << 19n,  // править, двигать, архивировать любые задачи; модерация комментариев
+  MANAGE_BOARD:     1n << 20n,  // статусы, лейблы, вехи, настройки, доступ, архив доски
 } as const;
 ```
 
@@ -235,6 +240,8 @@ if !(perms & VIEW_ROOM) → 0
 
 **DM (ADR-0020).** Роли и overrides не применяются: `computePermissions({dm: {participant}})` (Go: `perm.ComputeDM`) даёт участнику фиксированный набор `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES` (= 7), остальным — 0 (тест-векторы `roomType: "dm"` в `proto/testdata/permissions.json`). Остальные пункты ADR ложатся на правила, а не на биты: чтение истории — `VIEW_ROOM`, реакции — `SEND_MESSAGES`, правка/удаление своих сообщений — право автора везде, закреп в DM разрешён обоим участникам по типу комнаты. `MANAGE_MESSAGES`, `MENTION_EVERYONE`, модерации и голоса в DM нет.
 
+**Доски (ADR-0042).** Та же функция с переопределениями доски: `computePermissions({roles, roleOverrides, userOverride, board: {private, guest}})` (Go: `perm.ComputeBoard` / `ComputeBoardIn`). Порядок тот же (`ADMINISTRATOR` → всё; роли снизу вверх, затем пользователь), но переопределения трогают только `BOARD_ONLY` (`VIEW_BOARD | CREATE_TASKS | EDIT_TASKS | MANAGE_BOARD`), а переопределения комнат, наоборот, биты досок игнорируют (`ROOM_ONLY` их не содержит). Приватная доска сначала снимает `VIEW_BOARD` из прав ролей — видят только те, кому его дало переопределение (роль или лично; прочие биты досок — из ролей); без `VIEW_BOARD` — 0; гость (старшая встроенная роль `guest`) — всегда 0. Векторы `board` в `proto/testdata/permissions.json`. Комната задачи: `perm.TaskRoom` / `taskRoomPermissions` — `VIEW_BOARD` → `VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES` (у архивной задачи — только `VIEW_ROOM`), `EDIT_TASKS` → `+ MANAGE_MESSAGES`.
+
 ## Маппинг прав → LiveKit grant
 
 При выдаче токена на вход в voice-комнату:
@@ -255,7 +262,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 ## Тарифы и лимиты пространств (ADR-0024)
 
 - `workspace_plans(workspace_id PK, plan free|team|enterprise|custom, limits jsonb, valid_until, note, updated_by, updated_at)`; нет записи → `free`. `limits` хранится только у `custom` (как записано, 0 = без лимита); `free` / `team` берут лимиты из env `PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` (JSON поверх встроенных дефолтов, ключи ниже); `enterprise` — без лимитов вовсе (`plans.Enterprise = Limits{}`, env не переопределяет). Истёкший `valid_until` → лимиты `free`, запись остаётся (`Workspace.plan.expired = true`). Каждое изменение через admin API пишется в `workspace_plan_log` (кто, план, лимиты в силе на момент изменения, срок, заметка).
-- Ключи (в скобках — Free, владелец 28.09): `room_members` (5), `members` (50: участники без гостей, боты считаются), `audio_tier_max_kbps` (16 = «Нормальное»; 0 | 8 | 16 | 32 | 64), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (5120 = 5 ГБ), `sticker_packs` (1) и `stickers` (200 на пространство, ADR-0030), `bots` (1: ботов-участников пространства, ADR-0031). Team по умолчанию: 50 в комнате, 20 ботов, `storage_mb` 1048576 (1 ТБ), остальное без лимита. Enterprise — всё 0 (без лимита).
+- Ключи (в скобках — Free, владелец 28.09): `room_members` (5), `members` (50: участники без гостей, боты считаются), `audio_tier_max_kbps` (16 = «Нормальное»; 0 | 8 | 16 | 32 | 64), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (5120 = 5 ГБ), `sticker_packs` (1) и `stickers` (200 на пространство, ADR-0030), `bots` (1: ботов-участников пространства, ADR-0031), `boards` (3: досок задач, живых и в архиве, ADR-0042; жёсткий предел — 50). Team по умолчанию: 50 в комнате, 20 ботов, `storage_mb` 1048576 (1 ТБ), остальное без лимита. Enterprise — всё 0 (без лимита).
 
   | | Free | Team | Enterprise | Self-hosted |
   |---|---|---|---|---|
@@ -266,6 +273,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
   | Файлы | 5 ГБ | 1 ТБ | ∞ | ∞ |
   | Боты | 1 | 20 | ∞ | ∞ |
   | Стикерпаки | 1 (200 стикеров) | ∞ | ∞ | ∞ |
+  | Доски задач | 3 | ∞ (≤ 50) | ∞ (≤ 50) | ∞ (≤ 50) |
   | Поддержка | — | поддержка | приоритетная | — |
 
   Self-hosted — лимиты задаёт оператор своего сервера (`PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS`, план пространства через суперадмина).
@@ -273,7 +281,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
   - вход в голосовую комнату (`/join`, webhook `participant_joined`, перемещение): мест `min(user_limit, room_members)`, pending-устройства и гости считаются; упор в лимит плана → `409 ROOM_FULL`, `reason = PLAN_LIMIT`, `used`/`limit`. `user_limit` комнаты по-прежнему не действует на `MOVE_MEMBERS`, лимит плана — действует;
   - стрим: пресет ≤ `min(max_stream_preset комнаты, stream_max_preset)`, стримов ≤ `min(max_streams, streams_per_room)` (и при выдаче слота, и в webhook), fps ≤ `stream_max_fps`; камера: пресет/fps ≤ `camera_max_*` (ответ `/camera/request`);
   - файлы: квота = `min(storage_quota_bytes, storage_mb MiB)`; превышение → `413 FILE_QUOTA_EXCEEDED` c `used`/`limit` (байты), `reason = PLAN_LIMIT`, если упёрлись в план;
-  - участники, боты, стикерпаки — одна проверка `plans.Service.Check` (advisory-lock + счётчик в транзакции добавления) → `409 CONFLICT`, `reason = PLAN_LIMIT`, `used`/`limit`. Место занимают участники без гостей, бот — тоже; проверка на ссылке-приглашении и email-приглашении (заранее), входе/регистрации по коду, открытом пространстве, добавлении по поиску, создании/добавлении бота, повышении гостя; авто-принятие email-приглашения при нехватке мест ждёт;
+  - участники, боты, стикерпаки, доски — одна проверка `plans.Service.Check` (advisory-lock + счётчик в транзакции добавления) → `409 CONFLICT`, `reason = PLAN_LIMIT`, `used`/`limit`. Место занимают участники без гостей, бот — тоже; проверка на ссылке-приглашении и email-приглашении (заранее), входе/регистрации по коду, открытом пространстве, добавлении по поиску, создании/добавлении бота, повышении гостя; авто-принятие email-приглашения при нехватке мест ждёт;
   - звук: уровень комнаты / дефолта пространства выше `audio_tier_max_kbps` → `409 CONFLICT PLAN_LIMIT` (кроме уже сохранённого значения); при входе `media.audio_bitrate_kbps = min(комната, план)`.
 - `Room.media` остаётся настройками комнаты (UI различает замок «комната» и замок «тариф»); эффективные лимиты плана — в `Workspace.plan.limits` и в ответе `/join` (`media` уже урезан планом, `plan_limits`).
 - Суперадмин — пользователь с email из `SUPERADMIN_EMAILS`; флаг не хранится, вычисляется из текущего email при каждом запросе (`Me.is_superadmin`).
@@ -335,6 +343,14 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - `users.event_reminders smallint[]` (по умолчанию `{60,5}`, ≤ 5 значений из 5/10/15/30/60/120/1440) и `event_reminders_dnd` (напоминать при «Не беспокоить», по умолчанию да) — отдельно от `settings` jsonb: `PATCH /api/me {settings}` их не затирает.
 - `room_invites.not_before` / `event_id` — гостевая ссылка встречи работает с 15 минут до начала.
 - Видимость: не гость видит встречу, если он организатор/участник или видит её комнату (`VIEW_ROOM`); встречу без комнаты — только её участники. Менять/отменять — организатор, иначе `MANAGE_ROOM` в комнате встречи, без комнаты — `MANAGE_WORKSPACE`. Гости календаря не видят; боты только читают (без адресов внешних).
+
+## Доски задач (ADR-0042, миграция 00046)
+- `boards` — доска пространства: `name` 1..60, `key` 2..6 `A–Z0–9` с буквы (уникален в пространстве, пустой → из названия: инициалы слов или 3 буквы, кириллица транслитерируется, занятый → суффикс цифрой), `emoji`, `icon_file_id`, `description` ≤ 2000, `is_private`, `position`, `next_number` (нумерация задач; ключ нельзя менять после первой задачи), `auto_archive_days` (30; 0 — никогда), `default_view_id`, `archived_at`. Создатель получает `board_permissions` user-allow всех битов доски. Шаблоны статусов: «Простая» (Todo / В работе / Готово), «Разработка» (+ Backlog, Ревью, Отменено), «Пустая» (Todo).
+- `board_permissions` (как `room_permissions`), `board_statuses` (`type backlog|unstarted|started|completed|cancelled`, ровно один `is_default`; удаление — с `move_to`, у default — нельзя), `board_labels` (имя уникально без регистра), `board_milestones`, `board_views` (`filter` — `TaskFilter` protojson, `shared` / личные). Лимиты: 50 досок (живые + архив), 20 статусов, 50 лейблов и вех, 30 видов, 5000 живых задач (`409 BOARD_TASK_LIMIT`), 200 подзадач, 10 исполнителей, 20 вложений.
+- `tasks` — `number` (UNIQUE `(board_id, number)`, ключ `KEY-N`), `title` 1..200, `description` ≤ 20000, `status_id`, `priority` 0..4, `estimate` 1..21, `start_on`/`due_on` (date), `parent_id` (один уровень), `milestone_id`, `position` (double: вставка — середина соседей, конец — +1024; зазор < 1e-6 → перенумерация колонки шагом 1024), `room_id` → `rooms.type = 'task'` (скрытая комната комментариев, `workspace_id` доски: файлы в квоте пространства; не в списках комнат, READY и поиске пространства), `started_at` (первый вход в `started`), `completed_at`/`completed_by` (пока в `completed|cancelled`), `archived_at`. Поиск — GIN по `to_tsvector('simple', title || ' ' || description)` и ключ (`FNG-12` — точно, `FNG` — префикс ключа доски).
+- `task_assignees` (≤ 10, ровно один `is_lead`, если есть; `note` ≤ 120, `assigned_by/at`), `task_labels`, `task_relations` (`blocks` хранится один раз, `relates`/`duplicates` читаются в обе стороны), `task_attachments` (файлы описания; сироты-очистка их не трогает, `FileRooms` даёт комнату задачи).
+- `task_activity` — неизменяемый журнал: `kind created|status|assignees|priority|labels|dates|estimate|parent|milestone|relation|title|description|attachments|archived|restored|moved_board`, `before`/`after` jsonb, `actor_id` (человек или бот; `NULL` — метёлка автоархива), удаляется только с доской.
+- `task_subscribers (task_id, user_id, muted, notified_at, seen_at)`: автор, исполнители, комментаторы и упомянутые подписываются сами; «Отписаться» = `muted`; непрочитано = `notified_at > seen_at`. Уровень уведомлений «Задачи» — `workspace_notification_settings.task_level` (`all` по умолчанию | `mentions` | `none`), правило `notifications.TaskNotifies` / `taskNotifies` (векторы `task` в `proto/testdata/notifications.json`): назначение и упоминание — при `all`/`mentions`, даже без подписки; комментарий и смена статуса — при `all` подписчикам без `muted`; mute пространства глушит всё.
 
 ## Auth (MVP)
 
