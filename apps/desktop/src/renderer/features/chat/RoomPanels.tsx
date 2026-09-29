@@ -1,7 +1,7 @@
 import { RoomType, type Message, type PermissionBits, type Room } from '@calaba/protocol';
-import { ChevronDown, ChevronUp, Hash, Pin, Search, Settings, UserPlus, Volume2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Hash, Pin, Search, Settings, UserPlus, Volume2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Button, IconButton, Spinner, cx } from '../../components/ui';
+import { Button, CloseButton, IconButton, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, mayManageWorkspace } from '../../lib/permissions';
@@ -156,9 +156,7 @@ export function SearchPanel({ roomId }: { roomId: string }): ReactNode {
       <IconButton label={t('chat.searchNewer')} size="sm" disabled={!total || i <= 0} onClick={() => go(i - 1)}>
         <ChevronDown className="size-4" />
       </IconButton>
-      <IconButton label={t('chat.searchClose')} size="sm" onClick={() => setSearch(null)}>
-        <X className="size-4" />
-      </IconButton>
+      <CloseButton label={t('chat.searchClose')} shortcut="" onClick={() => setSearch(null)} />
     </div>
   );
 }

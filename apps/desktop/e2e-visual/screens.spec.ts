@@ -84,6 +84,7 @@ const KEY = new Set([
   'main-members-toggled',
   'main-members-birthday',
   'members-menu',
+  'members-profile-switch',
   'profile-dialog',
   'profile-menu',
   'profile-birthday',
@@ -818,10 +819,39 @@ test('main-members-toggled', async ({ open, win, mock, shot }) => {
 test('members-profile', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
+  giveFixtureBadges(mock);
+  const members = await membersList(win);
+  await members.getByRole('button', { name: /Борис Петров/ }).click();
+  const card = win.getByRole('dialog', { name: 'Борис Петров' });
+  await expect(card).toBeVisible();
+  // docs/09 #108: the badge inline after the name (no text line), its name as the tooltip.
+  await expect(card.locator('h3 ~ img[data-member-badge][title="Acme"]')).toBeVisible();
+  await badgesLoaded(win);
+  await checkpoint(shot, 'members-profile');
+});
+
+// docs/09 #108: with a card open, a click on another row moves the card there (it used to vanish
+// right after switching). Behaviour only, no screenshot — so it runs in the local set.
+test('members-profile-switch', async ({ open, win, mock }) => {
+  await open();
+  await mainWindow(win, mock);
   const members = await membersList(win);
   await members.getByRole('button', { name: /Борис Петров/ }).click();
   await expect(win.getByRole('dialog', { name: 'Борис Петров' })).toBeVisible();
-  await checkpoint(shot, 'members-profile');
+  await members.getByRole('button', { name: /Вера Ким/ }).click();
+  const vera = win.getByRole('dialog', { name: 'Вера Ким' });
+  await expect(vera).toBeVisible();
+  await expect(win.getByRole('dialog', { name: 'Борис Петров' })).toHaveCount(0);
+  // Still there after the old card's close settled (the bug closed it within a frame or two).
+  await win.waitForTimeout(300);
+  await expect(vera).toBeVisible();
+  await expect(vera.getByRole('heading', { name: 'Вера Ким' })).toBeVisible();
+  // And back: a third click on the first row moves it again; Esc closes.
+  await members.getByRole('button', { name: /Борис Петров/ }).click();
+  await expect(win.getByRole('dialog', { name: 'Борис Петров' })).toBeVisible();
+  await expect(vera).toHaveCount(0);
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('dialog', { name: 'Борис Петров' })).toHaveCount(0);
 });
 
 test('members-menu', async ({ open, win, mock, shot }) => {
@@ -842,11 +872,15 @@ test('profile-dialog', async ({ open, win, mock, shot }) => {
   // docs/09 #20: «Профиль» from the member menu — banner, member since, role chips, the note saved.
   await open();
   await mainWindow(win, mock);
+  giveFixtureBadges(mock);
   const members = await membersList(win);
   await members.getByRole('button', { name: /Борис Петров/ }).click({ button: 'right' });
   await win.getByRole('menuitem', { name: 'Профиль' }).click();
   const dialog = win.getByTestId('profile-dialog');
   await expect(dialog).toBeVisible();
+  // docs/09 #108: the 20 px badge right after the name, no text line.
+  await expect(dialog.locator('h2 ~ img[data-member-badge][title="Acme"]')).toBeVisible();
+  await badgesLoaded(win);
   const note = dialog.getByTestId('profile-note');
   await expect(note).toBeEditable();
   await note.fill('Ведёт релизы, спросить про стенд');

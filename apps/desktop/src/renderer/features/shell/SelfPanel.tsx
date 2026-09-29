@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactN
 import { Avatar } from '../../components/Avatar';
 import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { useMobile } from '../../lib/mobile';
 import { useHotkeyLabel } from '../../services/hotkeys';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -18,7 +19,10 @@ import { selectMicMode, swallowMenuKey } from './micMenu';
 import { STATUS_KEY, StatusMenu, useCustomStatusExpiry, useMyStatus } from './StatusMenu';
 import { AppSettingsWindow } from './lazyWindows';
 
-/** Self panel (docs/09 #6): avatar + status, name, mic / headphones with device pickers, settings. */
+/**
+ * Self panel (docs/09 #6): avatar + status, name, mic / headphones with device pickers. The settings
+ * gear is in the title bar (docs/09 #102); only the phone drawer keeps it here.
+ */
 export function SelfPanel(): ReactNode {
   const me = useSession((s) => s.me);
   const muted = useVoice((s) => s.muted);
@@ -29,6 +33,7 @@ export function SelfPanel(): ReactNode {
   const inVoice = useVoice((s) => s.roomId !== null);
   const speaking = useVoice((s) => (me?.user ? (s.speaking[me.user.id] ?? false) : false));
   const open = useUi((s) => s.openDialog);
+  const mobile = useMobile();
   const status = useMyStatus();
   useCustomStatusExpiry();
   const user = me?.user;
@@ -43,8 +48,8 @@ export function SelfPanel(): ReactNode {
   return (
     // Bottom island across the rail + room column (Discord 2x reference): 52 px, 32 px avatar with a
     // 12 px status dot overlapping it, 14 px semibold name / 13 px status
-    // that fades out when long; controls ≤ 134 px (mic ▾ 40, headphones ▾ 40, gear 32, 6 px
-    // apart, 10 px from the edge), so the name keeps ≥ 110 px.
+    // that fades out when long; controls flush right (mic ▾ 44, headphones ▾ 44, 6 px apart, 10 px
+    // from the edge; + the gear 32 on the phone), so the name keeps the rest.
     <div className="flex h-[52px] shrink-0 items-center gap-1 pl-2 pr-2.5">
       <StatusMenu>
         <button
@@ -70,7 +75,7 @@ export function SelfPanel(): ReactNode {
         </button>
       </StatusMenu>
 
-      {/* The three controls, 6 px apart. */}
+      {/* The controls, 6 px apart. */}
       <span className="flex shrink-0 items-center gap-1.5">
         <SplitButton
           label={serverMuted ? t('voiceUi.serverMuted') : muted ? t('voice.unmute') : t('voice.mute')}
@@ -92,15 +97,19 @@ export function SelfPanel(): ReactNode {
         >
           {deafened ? <HeadphoneOff className="size-5" /> : <Headphones className="size-5" />}
         </SplitButton>
-        <IconButton
-          className="size-8"
-          label={t('settings.title')}
-          onPointerEnter={() => void AppSettingsWindow.preload()}
-          onFocus={() => void AppSettingsWindow.preload()}
-          onClick={() => open({ kind: 'settings' })}
-        >
-          <Settings className="size-5" />
-        </IconButton>
+        {/* Phone: the drawer keeps the settings entry (the mobile top bar has no right cluster);
+            on the desktop / wide web the gear lives in the title bar (docs/09 #102). */}
+        {mobile ? (
+          <IconButton
+            className="size-8"
+            label={t('settings.title')}
+            onPointerEnter={() => void AppSettingsWindow.preload()}
+            onFocus={() => void AppSettingsWindow.preload()}
+            onClick={() => open({ kind: 'settings' })}
+          >
+            <Settings className="size-5" />
+          </IconButton>
+        ) : null}
       </span>
     </div>
   );
@@ -125,10 +134,10 @@ function SplitButton({
   children: ReactNode;
 }): ReactNode {
   return (
-    // One 40 px split control (Discord): the 20 px icon and the ▾ next to it share one hover background;
-    // the ▾ is always visible — the device menu is one click away.
+    // One 44 px split control (Discord): the 20 px icon and the ▾ next to it share one hover pill, 6 px
+    // inside it on both ends (docs/09 #102); the ▾ is always visible — the device menu is one click away.
     <div className="group/split flex h-8 shrink-0 items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover">
-      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="h-8 w-[26px] rounded-r-none hover:bg-transparent">
+      <IconButton label={label} shortcut={shortcut} danger={danger} onClick={onClick} className="h-8 w-[26px] rounded-r-none pl-1.5 hover:bg-transparent">
         {children}
       </IconButton>
       <Dropdown.Root modal={false}>
@@ -137,7 +146,7 @@ function SplitButton({
           <button
             type="button"
             aria-label={menuName}
-            className="grid h-8 w-[14px] place-items-center rounded-r-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
+            className="grid h-8 w-[18px] place-items-center rounded-r-[var(--radius-icon)] pl-0.5 pr-1.5 text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg data-[state=open]:text-fg"
           >
             <ChevronDown className="size-2.5 shrink-0" strokeWidth={2.75} aria-hidden />
           </button>

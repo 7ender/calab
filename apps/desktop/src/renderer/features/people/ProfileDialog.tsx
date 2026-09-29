@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { Avatar, avatarColor } from '../../components/Avatar';
 import { Logo } from '../../components/Logo';
 import { MediaImg, useMediaUrl } from '../../components/MediaImg';
-import { Button, Tip, cx } from '../../components/ui';
+import { Button, CLOSE_HIT, Tip, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
@@ -28,7 +28,8 @@ import type { PeoplePickItem, RolePickItem } from './memberPickItems';
 import { roleColorCss } from '../../lib/roles';
 import { BotBadge, GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from './MemberBits';
 import { BotActions, BotAvatarControls, BotDetails, BotHandle } from './BotProfile';
-import { EditBadge, ProfileBadge } from './ProfileBadge';
+import { EditBadge } from './ProfileBadge';
+import { MemberBadge } from './MemberBadge';
 import { MemberContextMenu, useMemberActions } from './MemberContextMenu';
 import { NOTE_MAX, createNoteSaver, type NoteSaveState, type NoteSaver } from './noteSaver';
 
@@ -117,7 +118,7 @@ export function ProfileDialog({
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
-        <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
+        <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content
           ref={content}
           aria-modal="true"
@@ -148,6 +149,8 @@ export function ProfileDialog({
                 <DialogP.Title className={cx('min-w-0 truncate text-title font-semibold leading-tight', roleTextClass(m.role, 'role', look))} style={roleTextStyle(m.role, 'role', look)} title={name}>
                   {name}
                 </DialogP.Title>
+                {/* 20 px inline after the name, no text line (docs/08 «Бейдж»); its name is the tooltip. */}
+                <MemberBadge workspaceId={workspaceId} userId={userId} size={20} />
                 <RoleMark role={m.role} custom={look} />
                 {isGuest(m) ? <GuestBadge /> : null}
                 {u.isBot ? <BotBadge /> : null}
@@ -158,7 +161,6 @@ export function ProfileDialog({
                 </div>
               ) : null}
               {u.isBot ? <BotHandle botUserId={userId} /> : null}
-              <ProfileBadge workspaceId={workspaceId} userId={userId} />
               <DialogP.Description className={statusLine ? 'selectable mt-1 break-words text-body' : 'sr-only'}>{statusLine || name}</DialogP.Description>
               {onCall ? (
                 // ADR-0034: in a one-to-one call now (with whom is not disclosed).
@@ -244,9 +246,9 @@ export function ProfileDialog({
           </div>
           <DialogP.Close
             aria-label={t('common.close')}
-            className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-scrim text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
+            className={cx(CLOSE_HIT, 'absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-scrim text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent')}
           >
-            <X className="size-4" strokeWidth={1.75} />
+            <X className="size-4" strokeWidth={1.75} aria-hidden />
           </DialogP.Close>
         </DialogP.Content>
       </DialogP.Portal>
@@ -361,7 +363,7 @@ function RoleChips({ workspaceId, userId }: { workspaceId: string; userId: strin
               <button
                 type="button"
                 aria-label={t('people.profile.removeRole', { role: label })}
-                className="-mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+                className={cx(CLOSE_HIT, '-mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent')}
                 onClick={() => void toggleMemberRole(workspaceId, userId, r, false)}
               >
                 <X className="size-3.5" aria-hidden />

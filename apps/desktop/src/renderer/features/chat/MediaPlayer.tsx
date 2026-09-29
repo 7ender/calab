@@ -1,7 +1,7 @@
 import type { FileMeta } from '@calaba/protocol';
 import { Download, Film, Maximize, Pause, PictureInPicture2, Play, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from 'react';
-import { Tip, cx } from '../../components/ui';
+import { CLOSE_HIT, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { filePath } from '../../lib/api/endpoints';
 import { SEEK_STEP, formatTime, rateLabel, seekPosition, trackInfo } from '../../lib/chatMedia';
@@ -308,7 +308,7 @@ export function MiniPlayer({ roomId }: { roomId: string }): ReactNode {
           type="button"
           onClick={() => usePlayer.getState().close()}
           aria-label={t('media.close')}
-          className="grid size-8 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg mobile:size-11"
+          className={cx(CLOSE_HIT, 'grid size-8 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg mobile:size-11')}
         >
           <X className="size-4" aria-hidden />
         </button>

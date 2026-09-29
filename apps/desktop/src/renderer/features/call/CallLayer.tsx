@@ -72,7 +72,7 @@ function CallSheet({
   return (
     <DialogP.Root open>
       <DialogP.Portal>
-        <DialogP.Overlay className="fixed inset-0 z-[var(--z-toast)] bg-scrim" />
+        <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-toast)] bg-scrim" />
         <DialogP.Content
           aria-modal="true"
           data-testid={testId}

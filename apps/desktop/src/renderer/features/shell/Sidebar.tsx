@@ -675,7 +675,7 @@ function UnreadPill({ show }: { show: boolean }): ReactNode {
 
 /**
  * Text room hover actions (invite, settings — no «chat»: the row itself opens it). Same 18 px
- * icons / 10 px gap as the voice rooms' CardActions, so the two lists don't look inconsistent
+ * icons / 2 px gap as the voice rooms' CardActions, so the two lists don't look inconsistent
  * (owner, Discord reference); by permission, no reserved space when one is missing.
  */
 function RoomActions({ room, canInvite, canSettings, active }: { room: Room; canInvite: boolean; canSettings: boolean; active: boolean }): ReactNode {
@@ -683,7 +683,7 @@ function RoomActions({ room, canInvite, canSettings, active }: { room: Room; can
   if (!canInvite && !canSettings) return null;
   const btn = 'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
   return (
-    <span className={cx('shrink-0 items-center gap-2.5', active ? 'flex' : 'hidden group-hover/row:flex group-focus-within/row:flex')}>
+    <span className={cx('shrink-0 items-center gap-0.5', active ? 'flex' : 'hidden group-hover/row:flex group-focus-within/row:flex')}>
       {canInvite ? (
         <Tip label={t('shell.invite')}>
           <button
@@ -942,7 +942,7 @@ function CardActions({ room, workspaceId }: { room: Room; workspaceId: string })
     e.currentTarget.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left, clientY: r.bottom + 4 }));
   };
   return (
-    <span className="hidden shrink-0 items-center gap-2.5 group-focus-within/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
+    <span className="hidden shrink-0 items-center gap-0.5 group-focus-within/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
       <Tip label={t('shell.roomChat')}>
         <button type="button" className={btn} aria-label={t('shell.roomChatOf', { name: room.name })} onClick={() => openRoom(workspaceId, room.id)}>
           <MessageCircle className="size-[18px]" aria-hidden />
