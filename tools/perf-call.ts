@@ -29,6 +29,10 @@
  * waits 30 s for bandwidth estimation. The encoder (implementation, fps per layer) is printed before
  * and after the run: check that both variants being compared encode the same.
  *
+ * `--fx touchup|lowlight|touchup+lowlight` (K) also turns on «Улучшить внешность» (strength 40) /
+ * «Низкая освещённость» in the same sheet; the scenario name gets `-fx-<fx>`. `--fake-video <y4m>`: the
+ * fake camera plays a file instead (a dark room: the low-light curve is on).
+ *
  * `--recording`: «Созвон» is being recorded (ROOM_RECORDING, Борис 12:34 ago) — the REC dot on the
  * card, the «Запись» pill in the island (docs/09 #64). A bench also samples WindowServer: the
  * compositor redraws blurred surfaces under an animated layer there, not in the app.
@@ -59,6 +63,10 @@ const BENCH = opt('bench', '');
 const BENCH_SECONDS = Number(opt('bench-seconds', '120'));
 /** `--bench K`: my own camera 720p15 (Chromium's fake device) with `--bg none|blur-light|blur-strong|image` (ADR-0035). */
 const BG = opt('bg', 'none');
+/** `--fx touchup|lowlight|touchup+lowlight` (K): the camera's «Внешний вид» switches (ADR-0035 addendum). */
+const FX = opt('fx', '');
+/** `--fake-video <file.y4m>` (K): the fake camera plays this file (e.g. a dark room for «Низкая освещённость»). */
+const FAKE_VIDEO = opt('fake-video', '');
 const NAME = opt('name', 'run');
 const STATS = !argv.includes('--no-stats');
 const EMULATE = !argv.includes('--no-emulate');
@@ -313,7 +321,7 @@ async function launch(url: string, userData: string, wav: string): Promise<{ app
   const app = await electron.launch({
     // K: the fake camera delivers GPU buffers like a real macOS camera (IOSurface, zero-copy capture);
     // without it every frame is copied from CPU memory into WebGL and the background looks dearer.
-    args: ['.', '--lang=ru', '--mute-audio', `--use-file-for-fake-audio-capture=${wav}`, '--disable-features=AudioServiceOutOfProcess', ...(BENCH === 'K' ? ['--video-capture-use-gpu-memory-buffer'] : [])],
+    args: ['.', '--lang=ru', '--mute-audio', `--use-file-for-fake-audio-capture=${wav}`, '--disable-features=AudioServiceOutOfProcess', ...(BENCH === 'K' ? ['--video-capture-use-gpu-memory-buffer'] : []), ...(FAKE_VIDEO ? [`--use-file-for-fake-video-capture=${FAKE_VIDEO}`] : [])],
     cwd: DESKTOP,
     env: { ...process.env, CALABA_SERVER_URL: url, CALABA_USER_DATA: userData, CALABA_MULTI_INSTANCE: '1', CALABA_FAKE_MEDIA: '1', ELECTRON_RENDERER_URL: '', LANG: 'ru_RU.UTF-8' },
   });
@@ -410,6 +418,9 @@ async function main(): Promise<void> {
       if (BG === 'blur-light') await section.getByRole('radio', { name: 'Лёгкое' }).click();
       if (BG === 'blur-strong') await section.getByRole('radio', { name: 'Сильное' }).click();
       if (BG === 'image') await section.getByRole('radio', { name: 'Графит' }).click();
+      const fx = page.getByTestId('camera-fx');
+      if (FX.includes('touchup')) await fx.getByRole('switch', { name: 'Улучшить внешность' }).click();
+      if (FX.includes('lowlight')) await fx.getByRole('switch', { name: 'Низкая освещённость' }).click();
       await page.waitForTimeout(2000);
       await page.getByTestId('camera-preview-enable').click();
       await page.getByTestId('camera-button').and(page.locator('[aria-pressed="true"]')).waitFor({ timeout: 15_000 });
@@ -568,7 +579,7 @@ async function main(): Promise<void> {
     if (BENCH) {
       const bundle = resolve(ROOT, 'node_modules/electron/dist/Electron.app');
       const outDir = opt('bench-out', join(tmpdir(), 'calaba-energy'));
-      const scenario = (BENCH === 'K' ? `K-camera-720p15-bg-${BG}` : BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '');
+      const scenario = (BENCH === 'K' ? `K-camera-720p15-bg-${BG}${FX ? `-fx-${FX}` : ''}` : BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '');
       const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, scenario, '--seconds', String(BENCH_SECONDS), '--out', outDir, '--with', 'WindowServer'], {
         stdio: 'inherit',
       });

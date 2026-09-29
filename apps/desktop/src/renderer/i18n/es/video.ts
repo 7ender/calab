@@ -54,6 +54,14 @@ export const esVideo: DictShape<typeof enVideo> = {
   'video.bg.workspace': 'Fondos del espacio',
   'video.bg.builtin': 'Comunes',
 
+  // camera appearance effects (ADR-0035 addendum)
+  'video.fx.title': 'Apariencia',
+  'video.fx.touchUp': 'Retocar mi apariencia',
+  'video.fx.strength': 'Intensidad',
+  'video.fx.strengthLabel': 'Intensidad del retoque',
+  'video.fx.lowLight': 'Ajustar para poca luz',
+  'video.fx.lowLightHint': 'Aclara la imagen cuando la habitación está oscura',
+
   // toasts
   'video.limit': 'Límite de cámaras alcanzado',
   'video.forbidden': 'No tienes permiso para usar la cámara en esta sala',

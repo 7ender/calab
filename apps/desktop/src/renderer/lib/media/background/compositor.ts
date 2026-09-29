@@ -13,6 +13,10 @@ import { BLUR_DOWNSCALE, BLUR_MAX_RADIUS, MASK_MIN_COVERAGE, coverUv, gaussianKe
  * V → composite at full size: mix(background, camera, smoothstep(mask)). 2 passes for a picture,
  * 4 for blur (docs/14 «Фон камеры»: render passes are what the GPU process pays for).
  *
+ * Appearance effects (effects.ts), with or without a background: touch-up = a bilateral of the frame
+ * at ¼ size + a skin-tone, contrast-guarded blend in the last pass; low light = a curve and a light
+ * denoise in the last pass (no pass of its own).
+ *
  * Every texture keeps the picture's top row first (uploads without FLIP_Y); only the last pass,
  * into the canvas, flips. GL state is set completely before each pass: MediaPipe shares the context.
  */
@@ -126,27 +130,108 @@ void main() {
   o = c;
 }`;
 
-/** Into the canvas (flipped): the camera over the blurred frame or the picture. */
+/**
+ * «Улучшить внешность» (effects.ts): an edge-preserving 5×5 bilateral of the frame at ¼ size, straight
+ * from the full frame — every tap is a bilinear 2×2 box (taps sit on texel corners, `u_step` apart),
+ * weighted by distance and by luma difference to the centre, so eyes, brows and hair do not smear.
+ */
+const FS_SMOOTH = `${HEAD}
+uniform sampler2D u_frame;
+uniform vec2 u_texel;
+uniform float u_step;
+uniform float u_range;
+const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+void main() {
+  float lc = dot(texture(u_frame, v_uv).rgb, LUMA);
+  float k = 0.5 / (u_range * u_range);
+  vec3 sum = vec3(0.0);
+  float wsum = 0.0;
+  for (int y = -2; y <= 2; y++) {
+    for (int x = -2; x <= 2; x++) {
+      vec3 c = texture(u_frame, v_uv + vec2(float(x), float(y)) * u_step * u_texel).rgb;
+      float dl = dot(c, LUMA) - lc;
+      float w = exp(-float(x * x + y * y) / 4.5 - dl * dl * k);
+      sum += c * w;
+      wsum += w;
+    }
+  }
+  o = vec4(sum / wsum, 1.0);
+}`;
+
+/**
+ * Into the canvas (flipped). Per pixel, uniform-switched (no extra passes): low-light denoise →
+ * touch-up (the smoothed picture on skin-toned pixels whose local contrast is small; with a
+ * background also only on the person) → low-light curve → the camera over the blurred frame or
+ * the picture (`u_mode` 0: no background).
+ */
 const FS_OUT = `${HEAD}
 uniform sampler2D u_frame;
 uniform sampler2D u_mask;
 uniform sampler2D u_bg;
+uniform sampler2D u_smooth;
 uniform int u_mode;
 uniform vec2 u_bgScale;
 uniform vec2 u_bgOffset;
 uniform vec2 u_edge;
+uniform vec2 u_texel;
+uniform float u_touch;
+uniform float u_range;
+uniform float u_gamma;
+uniform float u_denoise;
+const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+/** Skin tones in YCbCr (Chai & Ngan ranges, soft edges), not in deep shadow. */
+float skin(vec3 c) {
+  float y = dot(c, LUMA);
+  float cb = 0.5 - 0.168736 * c.r - 0.331264 * c.g + 0.5 * c.b;
+  float cr = 0.5 + 0.5 * c.r - 0.418688 * c.g - 0.081312 * c.b;
+  float a = smoothstep(0.27, 0.31, cb) * (1.0 - smoothstep(0.50, 0.54, cb));
+  float b = smoothstep(0.50, 0.54, cr) * (1.0 - smoothstep(0.68, 0.72, cr));
+  return a * b * smoothstep(0.06, 0.14, y);
+}
+/** The low-light curve on luma (keeps colour) blended with a per-channel one (does not clip). */
+vec3 lift(vec3 c) {
+  float y = max(dot(c, LUMA), 1e-4);
+  vec3 byLuma = c * (pow(y, u_gamma) / y);
+  return clamp(mix(pow(c, vec3(u_gamma)), byLuma, 0.5), 0.0, 1.0);
+}
 void main() {
   vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
   vec3 fg = texture(u_frame, uv).rgb;
-  float m = smoothstep(u_edge.x, u_edge.y, texture(u_mask, uv).r);
+  if (u_denoise > 0.0) {
+    float lc = dot(fg, LUMA);
+    vec3 s = fg;
+    float ws = 1.0;
+    vec2 d[4] = vec2[4](vec2(1.5, 0.5), vec2(-0.5, 1.5), vec2(-1.5, -0.5), vec2(0.5, -1.5));
+    for (int i = 0; i < 4; i++) {
+      vec3 n = texture(u_frame, uv + d[i] * u_texel).rgb;
+      float dl = dot(n, LUMA) - lc;
+      float w = exp(-dl * dl * 200.0);
+      s += n * w;
+      ws += w;
+    }
+    fg = mix(fg, s / ws, u_denoise);
+  }
+  float m = u_mode == 0 ? 1.0 : smoothstep(u_edge.x, u_edge.y, texture(u_mask, uv).r);
+  if (u_touch > 0.0) {
+    vec3 sm = texture(u_smooth, uv).rgb;
+    float dl = abs(dot(fg, LUMA) - dot(sm, LUMA));
+    float keep = 1.0 - smoothstep(0.5 * u_range, 1.5 * u_range, dl);
+    fg = mix(fg, sm, u_touch * skin(sm) * keep * m);
+  }
+  vec3 cam = u_gamma < 1.0 ? lift(fg) : fg;
+  if (u_mode == 0) {
+    o = vec4(cam, 1.0);
+    return;
+  }
   vec3 bg;
   if (u_mode == 1) {
     vec4 b = texture(u_bg, uv);
     bg = mix(fg, b.rgb / max(b.a, 0.001), clamp(b.a * 6.0, 0.0, 1.0));
+    if (u_gamma < 1.0) bg = lift(bg);
   } else {
     bg = texture(u_bg, uv * u_bgScale + u_bgOffset).rgb;
   }
-  o = vec4(mix(bg, fg, m), 1.0);
+  o = vec4(mix(bg, cam, m), 1.0);
 }`;
 
 interface Program {
@@ -163,6 +248,17 @@ interface Target {
 
 export type ComposeMode = { kind: 'blur'; sigma: number } | { kind: 'image' };
 
+/** One frame's work: the background (null = none, no mask needed) and the appearance effects (effects.ts). */
+export interface RenderOpts {
+  bg: ComposeMode | null;
+  /** Touch-up amount 0..1 (0 = off) and its bilateral range (luma). */
+  touchUp: number;
+  touchRange: number;
+  /** Low-light curve exponent (1 = off) and denoise 0..1. */
+  gamma: number;
+  denoise: number;
+}
+
 /** Width of the working mask: the selfie landscape model's input (256×144). */
 const MASK_WIDTH = 256;
 
@@ -172,13 +268,14 @@ const EDGE: [number, number] = [0.3, 0.7];
 export class Compositor {
   readonly gl: WebGL2RenderingContext;
   private readonly vao: WebGLVertexArrayObject;
-  private readonly progs: Record<'maskIn' | 'ema' | 'refine' | 'blurH' | 'blur' | 'out', Program>;
+  private readonly progs: Record<'maskIn' | 'ema' | 'refine' | 'blurH' | 'blur' | 'smooth' | 'out', Program>;
   private frame: WebGLTexture | null = null;
   private frameW = 0;
   private frameH = 0;
   private refined: Target | null = null;
   private blurA: Target | null = null;
   private blurB: Target | null = null;
+  private smooth: Target | null = null;
   private raw: Target | null = null;
   private emaA: Target | null = null;
   private emaB: Target | null = null;
@@ -213,7 +310,8 @@ export class Compositor {
       refine: this.program(FS_REFINE, ['u_mask', 'u_frame', 'u_step']),
       blurH: this.program(FS_BLUR_H, ['u_frame', 'u_mask', 'u_dir', 'u_texel', 'u_w', 'u_r']),
       blur: this.program(FS_BLUR, ['u_src', 'u_dir', 'u_w', 'u_r']),
-      out: this.program(FS_OUT, ['u_frame', 'u_mask', 'u_bg', 'u_mode', 'u_bgScale', 'u_bgOffset', 'u_edge']),
+      smooth: this.program(FS_SMOOTH, ['u_frame', 'u_texel', 'u_step', 'u_range']),
+      out: this.program(FS_OUT, ['u_frame', 'u_mask', 'u_bg', 'u_smooth', 'u_mode', 'u_bgScale', 'u_bgOffset', 'u_edge', 'u_texel', 'u_touch', 'u_range', 'u_gamma', 'u_denoise']),
     };
     this.pbo = gl.createBuffer();
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
@@ -287,7 +385,8 @@ export class Compositor {
     this.frameH = h;
     if (this.frame) gl.deleteTexture(this.frame);
     this.frame = this.texture(w, h);
-    for (const t of [this.refined, this.blurA, this.blurB]) this.drop(t);
+    for (const t of [this.refined, this.blurA, this.blurB, this.smooth]) this.drop(t);
+    this.smooth = null;
     const sw = Math.max(1, Math.ceil(w / BLUR_DOWNSCALE));
     const sh = Math.max(1, Math.ceil(h / BLUR_DOWNSCALE));
     this.refined = this.target(sw, sh);
@@ -389,6 +488,7 @@ export class Compositor {
     this.hasMask = true;
   }
 
+  /** A mask is there: a background can be rendered. */
   get ready(): boolean {
     return this.hasMask && !!this.frame;
   }
@@ -425,23 +525,42 @@ export class Compositor {
     return (this.px[0] ?? 0) / 255;
   }
 
-  /** Renders the uploaded frame with the effect into the canvas. Needs a mask (`ready`). */
-  render(mode: ComposeMode): void {
+  /**
+   * Renders the uploaded frame into the canvas. A background needs a mask (`ready`); the
+   * appearance effects do not. Passes: touch-up alone 2, low light alone 1; a background adds its
+   * own (picture 2, blur 4), touch-up one more at ¼ size, low light none (docs/14: every render
+   * pass costs the GPU process CPU time).
+   */
+  render(opts: RenderOpts): void {
     const gl = this.gl;
     const { refined, blurA, blurB, emaA, frame } = this;
-    if (!refined || !blurA || !blurB || !emaA || !frame) return;
+    if (!refined || !blurA || !blurB || !frame) return;
+    const bgMode = opts.bg && emaA ? opts.bg : null;
     this.setup();
-    const { refine, blurH, blur, out } = this.progs;
-    // 2 passes for a picture, 4 for blur: every render pass costs the GPU process CPU time.
-    this.pass(refined, refine);
-    this.bind(0, emaA.tex, refine.u['u_mask']);
-    this.bind(1, frame, refine.u['u_frame']);
-    gl.uniform2f(refine.u['u_step'] ?? null, 1 / refined.w, 1 / refined.h);
-    this.draw();
+    const { refine, blurH, blur, smooth, out } = this.progs;
+
+    if (bgMode && emaA) {
+      this.pass(refined, refine);
+      this.bind(0, emaA.tex, refine.u['u_mask']);
+      this.bind(1, frame, refine.u['u_frame']);
+      gl.uniform2f(refine.u['u_step'] ?? null, 1 / refined.w, 1 / refined.h);
+      this.draw();
+    }
+
+    if (opts.touchUp > 0) {
+      this.smooth ??= this.target(refined.w, refined.h);
+      this.pass(this.smooth, smooth);
+      this.bind(0, frame, smooth.u['u_frame']);
+      gl.uniform2f(smooth.u['u_texel'] ?? null, 1 / this.frameW, 1 / this.frameH);
+      // 2 px apart in 720p: 5 taps of 2×2 cover 10×10 pixels (pores, small blemishes).
+      gl.uniform1f(smooth.u['u_step'] ?? null, Math.max(1, (2 * this.frameH) / 720));
+      gl.uniform1f(smooth.u['u_range'] ?? null, Math.max(0.01, opts.touchRange));
+      this.draw();
+    }
 
     let bg: WebGLTexture | null = this.image;
-    if (mode.kind === 'blur') {
-      const k = gaussianKernel(mode.sigma);
+    if (bgMode?.kind === 'blur') {
+      const k = gaussianKernel(bgMode.sigma);
       const w = new Float32Array(BLUR_MAX_RADIUS + 1);
       w.set(k);
       this.pass(blurB, blurH);
@@ -465,17 +584,23 @@ export class Compositor {
     this.bind(0, frame, out.u['u_frame']);
     this.bind(1, refined.tex, out.u['u_mask']);
     this.bind(2, bg ?? frame, out.u['u_bg']);
-    gl.uniform1i(out.u['u_mode'] ?? null, mode.kind === 'blur' || !this.image ? 1 : 2);
+    this.bind(3, this.smooth?.tex ?? frame, out.u['u_smooth']);
+    gl.uniform1i(out.u['u_mode'] ?? null, !bgMode ? 0 : bgMode.kind === 'blur' || !this.image ? 1 : 2);
     const c = coverUv(this.imageAspect, this.frameW / this.frameH);
     gl.uniform2f(out.u['u_bgScale'] ?? null, c.scale[0], c.scale[1]);
     gl.uniform2f(out.u['u_bgOffset'] ?? null, c.offset[0], c.offset[1]);
     gl.uniform2f(out.u['u_edge'] ?? null, EDGE[0], EDGE[1]);
+    gl.uniform2f(out.u['u_texel'] ?? null, 1 / this.frameW, 1 / this.frameH);
+    gl.uniform1f(out.u['u_touch'] ?? null, opts.touchUp > 0 && this.smooth ? opts.touchUp : 0);
+    gl.uniform1f(out.u['u_range'] ?? null, Math.max(0.01, opts.touchRange));
+    gl.uniform1f(out.u['u_gamma'] ?? null, opts.gamma);
+    gl.uniform1f(out.u['u_denoise'] ?? null, opts.denoise);
     this.draw();
   }
 
   destroy(): void {
     const gl = this.gl;
-    for (const t of [this.refined, this.blurA, this.blurB, this.raw, this.emaA, this.emaB]) this.drop(t);
+    for (const t of [this.refined, this.blurA, this.blurB, this.smooth, this.raw, this.emaA, this.emaB]) this.drop(t);
     if (this.coverageFb) gl.deleteFramebuffer(this.coverageFb);
     if (this.frame) gl.deleteTexture(this.frame);
     if (this.image) gl.deleteTexture(this.image);

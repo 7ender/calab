@@ -1,3 +1,4 @@
+import type { WorkerEffects } from './effects';
 import type { BackgroundKind } from './logic';
 
 /** Messages between the processor (main thread, index.ts) and the worker (worker.ts). */
@@ -7,11 +8,13 @@ export type WorkerMode = BackgroundKind;
 
 export type ToWorker =
   /** First source: the camera frames in, the processed frames out (transferred streams). */
-  | { type: 'init'; readable: ReadableStream<VideoFrame>; writable: WritableStream<VideoFrame>; mode: WorkerMode; image: ImageBitmap | null }
+  | { type: 'init'; readable: ReadableStream<VideoFrame>; writable: WritableStream<VideoFrame>; mode: WorkerMode; image: ImageBitmap | null; effects: WorkerEffects }
   /** The camera was restarted (device switch): a new source, same output. */
   | { type: 'source'; readable: ReadableStream<VideoFrame> }
   /** Another effect / picture (the old bitmap is closed by the worker). */
   | { type: 'mode'; mode: WorkerMode; image: ImageBitmap | null }
+  /** «Улучшить внешность» / «Низкая освещённость» changed (effects.ts): no reload of anything. */
+  | { type: 'effects'; effects: WorkerEffects }
   | { type: 'stop' };
 
 export type WorkerState =
@@ -23,5 +26,9 @@ export type WorkerState =
 
 export type FromWorker =
   | { type: 'state'; state: WorkerState; software?: boolean; error?: string }
-  /** Every 5 s while the effect runs: frames out, segmentations, worker ms per frame (e2e / bench). */
-  | { type: 'stats'; frames: number; segs: number; msPerFrame: number; seconds: number };
+  /**
+   * Every 5 s while the processor runs: frames out, frames rendered on the GPU (the rest passed
+   * through), segmentations, worker ms per frame; the low-light meter's last mean luma (0..1, -1 =
+   * not measured) and the curve in use (1 = none). For e2e and benchmarks.
+   */
+  | { type: 'stats'; frames: number; rendered: number; segs: number; msPerFrame: number; seconds: number; mean: number; gamma: number };
