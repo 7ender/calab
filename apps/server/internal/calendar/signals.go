@@ -62,32 +62,51 @@ func (s *Service) roomSignals(ctx context.Context, before, after *bundle) {
 	}
 }
 
-// ActiveEvents returns the meetings active at now in the rooms a member sees (roomBits: bits of
-// the visible rooms), for WorkspaceSnapshot.active_events. Guests get none (the caller skips
-// them).
-func ActiveEvents(ctx context.Context, q *sqlc.Queries, wsID, user uuid.UUID, wsBits perm.Bits, roomBits map[uuid.UUID]perm.Bits, bot bool, now time.Time) ([]*v1.CalendarEvent, error) {
-	evs, err := q.ListRoomEventsNear(ctx, sqlc.ListRoomEventsNearParams{WorkspaceID: wsID, From: &now, To: now.Add(ActiveBefore + time.Second)})
+// FillActive sets WorkspaceSnapshot.active_events of the user's snapshots: the meetings active
+// at now in the rooms each snapshot shows (its permissions map). One query for all of them;
+// guests' snapshots stay empty.
+func FillActive(ctx context.Context, q *sqlc.Queries, user uuid.UUID, bot bool, snaps []*v1.WorkspaceSnapshot, now time.Time) error {
+	ids := make([]uuid.UUID, 0, len(snaps))
+	bySnap := make(map[uuid.UUID]*v1.WorkspaceSnapshot, len(snaps))
+	for _, s := range snaps {
+		if s.GetRole() == v1.WorkspaceRole_WORKSPACE_ROLE_GUEST {
+			continue
+		}
+		id, err := uuid.Parse(s.GetWorkspace().GetId())
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+		bySnap[id] = s
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	evs, err := q.ListRoomEventsNear(ctx, sqlc.ListRoomEventsNearParams{WorkspaceIds: ids, From: &now, To: now.Add(ActiveBefore + time.Second)})
 	if err != nil || len(evs) == 0 {
-		return nil, err
+		return err
 	}
 	kept := evs[:0]
 	for _, e := range evs {
-		if roomBits[*e.RoomID].Has(perm.ViewRoom) {
+		if perm.Bits(bySnap[e.WorkspaceID].GetPermissions()[e.RoomID.String()]).Has(perm.ViewRoom) {
 			kept = append(kept, e)
 		}
 	}
 	bs, err := load(ctx, q, kept)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	v := &viewer{user: user, bot: bot, ws: wsBits, rooms: roomBits}
-	var out []*v1.CalendarEvent
 	for _, b := range bs {
-		if o, ok := activeOcc(b, now); ok {
-			out = append(out, b.proto(&o, v))
+		o, ok := activeOcc(b, now)
+		if !ok {
+			continue
 		}
+		s := bySnap[b.ev.WorkspaceID]
+		rooms := map[uuid.UUID]perm.Bits{*b.ev.RoomID: perm.Bits(s.GetPermissions()[b.ev.RoomID.String()])}
+		v := &viewer{user: user, bot: bot, rooms: rooms}
+		s.ActiveEvents = append(s.ActiveEvents, b.proto(&o, v))
 	}
-	return out, nil
+	return nil
 }
 
 // RecordingStarted links a recording to the meeting occurrence of its room (ADR-0038 §6): the

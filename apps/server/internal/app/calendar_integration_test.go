@@ -101,7 +101,9 @@ func TestEventCRUDAndPermissions(t *testing.T) {
 		"guest invitee": func(r *v1.CreateCalendarEventRequest) { r.Attendees = append(r.Attendees, att(c.gus.id, true)) },
 		"stranger":      func(r *v1.CreateCalendarEventRequest) { r.Attendees = append(r.Attendees, att(uuid.NewString(), true)) },
 		"bad email":     func(r *v1.CreateCalendarEventRequest) { r.Attendees = append(r.Attendees, ext("not an email")) },
-		"both":          func(r *v1.CreateCalendarEventRequest) { r.Attendees = append(r.Attendees, &v1.CalendarEventAttendeeInput{UserId: c.o.id, Email: "a@b.cd"}) },
+		"both": func(r *v1.CreateCalendarEventRequest) {
+			r.Attendees = append(r.Attendees, &v1.CalendarEventAttendeeInput{UserId: c.o.id, Email: "a@b.cd"})
+		},
 		"21 externals": func(r *v1.CreateCalendarEventRequest) {
 			for i := range 21 {
 				r.Attendees = append(r.Attendees, ext("x"+string(rune('a'+i))+"@outside.org"))

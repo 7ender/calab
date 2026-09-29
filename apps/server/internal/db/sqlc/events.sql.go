@@ -705,21 +705,21 @@ func (q *Queries) ListReminderTargets(ctx context.Context, eventIds []uuid.UUID)
 
 const listRoomEventsNear = `-- name: ListRoomEventsNear :many
 SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at FROM events
-WHERE workspace_id = $1 AND cancelled_at IS NULL AND room_id IS NOT NULL
+WHERE workspace_id = ANY($1::uuid[]) AND cancelled_at IS NULL AND room_id IS NOT NULL
   AND starts_at < $2 AND (until_at IS NULL OR until_at > $3)
 ORDER BY starts_at, id
 `
 
 type ListRoomEventsNearParams struct {
-	WorkspaceID uuid.UUID
-	To          time.Time
-	From        *time.Time
+	WorkspaceIds []uuid.UUID
+	To           time.Time
+	From         *time.Time
 }
 
-// Live events with a room in the workspace that may have an occurrence around now (the room
-// badge of the snapshot, ADR-0038 §6).
+// Live events with a room in the workspaces that may have an occurrence around now (the room
+// badge of the snapshots of a READY, ADR-0038 §6).
 func (q *Queries) ListRoomEventsNear(ctx context.Context, arg ListRoomEventsNearParams) ([]Event, error) {
-	rows, err := q.db.Query(ctx, listRoomEventsNear, arg.WorkspaceID, arg.To, arg.From)
+	rows, err := q.db.Query(ctx, listRoomEventsNear, arg.WorkspaceIds, arg.To, arg.From)
 	if err != nil {
 		return nil, err
 	}

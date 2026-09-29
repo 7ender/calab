@@ -44,10 +44,10 @@ WHERE e.cancelled_at IS NULL
 ORDER BY e.starts_at, e.id;
 
 -- name: ListRoomEventsNear :many
--- Live events with a room in the workspace that may have an occurrence around now (the room
--- badge of the snapshot, ADR-0038 §6).
+-- Live events with a room in the workspaces that may have an occurrence around now (the room
+-- badge of the snapshots of a READY, ADR-0038 §6).
 SELECT * FROM events
-WHERE workspace_id = $1 AND cancelled_at IS NULL AND room_id IS NOT NULL
+WHERE workspace_id = ANY(sqlc.arg('workspace_ids')::uuid[]) AND cancelled_at IS NULL AND room_id IS NOT NULL
   AND starts_at < sqlc.arg('to') AND (until_at IS NULL OR until_at > sqlc.arg('from'))
 ORDER BY starts_at, id;
 

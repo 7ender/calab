@@ -18,6 +18,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -433,6 +434,10 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		}
 		h.fillLive(ctx, w.ID, snap)
 		ready.Workspaces = append(ready.Workspaces, snap)
+	}
+	// Meetings around now in the visible rooms (ADR-0038 §6): one query for all workspaces.
+	if err := calendar.FillActive(ctx, h.db.Q, uid, u.IsBot, ready.Workspaces, time.Now()); err != nil {
+		return nil, err
 	}
 	// Read state with unread / mention counts for every room the user can see now (also
 	// rooms never opened: review 4 M1).

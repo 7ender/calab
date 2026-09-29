@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"strings"
@@ -198,27 +199,11 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 			recordings = append(recordings, pbconv.RoomRecording(rec))
 		}
 	}
-	// Meetings around now in the visible rooms (ADR-0038 §6); guests see no calendar.
-	var active []*v1.CalendarEvent
-	if role != perm.RoleGuest {
-		roomBits := make(map[uuid.UUID]perm.Bits, len(bits))
-		for id, b := range bits {
-			roomBits[uuid.MustParse(id)] = perm.Bits(b)
-		}
-		isBot := false
-		for _, m := range ms {
-			if m.User.ID == userID {
-				isBot = m.User.IsBot
-			}
-		}
-		if active, err = calendar.ActiveEvents(ctx, q, ws.ID, userID, me.Workspace(), roomBits, isBot, time.Now()); err != nil {
-			return nil, err
-		}
-	}
+	// active_events (ADR-0038 §6) are filled by the caller with calendar.FillActive: one query
+	// for all the snapshots of a READY.
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
-		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds),
-		ActiveEvents: active}, nil
+		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds)}, nil
 }
 
 // MemberPB loads a member's role ids and converts the membership row.
@@ -251,6 +236,13 @@ func AnnounceJoin(ctx context.Context, q *sqlc.Queries, pl *plans.Service, pub e
 		return
 	}
 	if snap, err := Snapshot(ctx, q, pl, ws, m.UserID, me); err == nil {
+		isBot := false
+		if u, err := q.GetUser(ctx, m.UserID); err == nil {
+			isBot = u.IsBot
+		}
+		if err := calendar.FillActive(ctx, q, m.UserID, isBot, []*v1.WorkspaceSnapshot{snap}, time.Now()); err != nil {
+			slog.WarnContext(ctx, "workspace snapshot: meetings", "err", err)
+		}
 		pub.User(ctx, m.UserID, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceCreate{
 			WorkspaceCreate: &v1.WorkspaceCreate{Snapshot: snap},
 		}})
