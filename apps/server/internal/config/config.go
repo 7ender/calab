@@ -81,6 +81,9 @@ type Config struct {
 	// (e.g. 198.18.0.0/15). Loopback and link-local stay blocked regardless. Never set in prod.
 	UnfurlAllowCIDRs []netip.Prefix `env:"UNFURL_ALLOW_CIDRS"`
 
+	// CalDAV (ADR-0041 §4): how often the busy time of a user's connected calendar is imported.
+	CalDAVSyncInterval time.Duration `env:"CALDAV_SYNC_INTERVAL" envDefault:"15m"`
+
 	// Gateway.
 	HeartbeatInterval time.Duration `env:"GATEWAY_HEARTBEAT_INTERVAL" envDefault:"41s"`
 	MaxDevicesPerUser int           `env:"GATEWAY_MAX_SESSIONS_PER_USER" envDefault:"5"`
@@ -248,6 +251,9 @@ func (c *Config) Validate() error {
 	}
 	if Origin(c.GPTunnelWebURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_WEB_URL must be an absolute http(s) URL, got %q", c.GPTunnelWebURL))
+	}
+	if c.CalDAVSyncInterval != 0 && (c.CalDAVSyncInterval < time.Minute || c.CalDAVSyncInterval > 24*time.Hour) {
+		errs = append(errs, fmt.Errorf("CALDAV_SYNC_INTERVAL must be between 1m and 24h, got %s", c.CalDAVSyncInterval))
 	}
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
