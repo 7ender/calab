@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { EMPTY_FILTER, type FilterState } from '../lib/boards/filter';
+import type { TimelineGroup, Zoom } from '../lib/boards/timeline';
 
 /**
  * Boards mode UI state (ADR-0042 §5): whether the column shows boards instead of rooms, the open
@@ -22,6 +23,9 @@ export interface BoardPrefs {
   showCompleted: boolean;
   /** Status ids hidden from the kanban («Скрытые» strip on the right). */
   hidden: string[];
+  /** Timeline: the scale and the grouping (older stored prefs lack them: see DEFAULT_PREFS). */
+  zoom?: Zoom;
+  tlGroup?: TimelineGroup;
 }
 
 export const DEFAULT_PREFS: BoardPrefs = {

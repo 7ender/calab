@@ -1364,7 +1364,7 @@ export class BoardsMock {
         estimate: 3,
         milestoneId: milestone,
       });
-      this.createTask(b, anna, { ...base, title: 'Карточки задач в чате (unfurl)', statusId: st('В работе'), priority: TaskPriority.HIGH, labelIds: [lb('Фича')], assignees: [lead(anna)], dueOn: '2026-01-15', estimate: 5, milestoneId: milestone });
+      this.createTask(b, anna, { ...base, title: 'Карточки задач в чате (unfurl)', statusId: st('В работе'), priority: TaskPriority.HIGH, labelIds: [lb('Фича')], assignees: [lead(anna)], startOn: '2026-01-13', dueOn: '2026-01-15', estimate: 5, milestoneId: milestone });
       this.createTask(b, anna, { ...base, title: 'Подзадача: воспроизвести на стенде', statusId: st('Todo'), parentId: t3.task.id, assignees: [lead(boris)] });
       this.createTask(b, anna, { ...base, title: 'Ревью: права досок и приватные доски', statusId: st('Ревью'), priority: TaskPriority.HIGH, assignees: [lead(grigory, 'Security-ревью')], dueOn: '2026-01-22' });
       this.createTask(b, anna, { ...base, title: 'Горячие клавиши досок', statusId: st('Готово'), priority: TaskPriority.MEDIUM, labelIds: [lb('Фича')], assignees: [lead(anna)] });
