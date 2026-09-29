@@ -6,7 +6,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users } from 'lucide-react';
+import { Award, AudioLines, Ban, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -42,6 +42,7 @@ import { BansTab } from './BansTab';
 import { RolesTab } from './RolesTab';
 import { StickersTab } from './StickersTab';
 import { BadgesTab } from './BadgesTab';
+import { BackgroundsTab } from './BackgroundsTab';
 import { BotsTab } from './BotsTab';
 import { UpcomingBirthdays } from './UpcomingBirthdays';
 
@@ -90,6 +91,8 @@ export function WorkspaceSettingsDialog({
     ...(manageRoles ? [{ id: 'roles', label: t('roles.tab'), icon: Shield, content: <RolesTab workspaceId={workspaceId} /> }] : []),
     // «Бейджи» (docs/09 #82): the library needs MANAGE_WORKSPACE, like the server.
     ...(admin ? [{ id: 'badges', label: t('badges.tab'), icon: Award, content: <BadgesTab workspaceId={workspaceId} /> }] : []),
+    // «Фоны камеры» (ADR-0035 addendum): MANAGE_WORKSPACE, like the server.
+    ...(admin ? [{ id: 'backgrounds', label: t('wsbg.tab'), icon: Wallpaper, content: <BackgroundsTab workspaceId={workspaceId} /> }] : []),
     ...(manageStickers ? [{ id: 'stickers', label: t('stk.tab'), icon: Sticker, content: <StickersTab workspaceId={workspaceId} /> }] : []),
     // «Боты» (ADR-0031): MANAGE_WORKSPACE, like the server's bot management.
     ...(admin ? [{ id: 'bots', label: t('bots.tab'), icon: BotIcon, content: <BotsTab workspaceId={workspaceId} /> }] : []),

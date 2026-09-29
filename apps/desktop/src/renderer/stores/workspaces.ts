@@ -5,6 +5,7 @@ import type {
   User,
   VoiceState,
   Workspace,
+  WorkspaceBackground,
   WorkspaceMember,
   WorkspaceSnapshot,
 } from '@calaba/protocol';
@@ -25,6 +26,8 @@ export interface WorkspaceEntry {
   roles: Role[];
   /** The badge library (docs/09 #82) by id, in the server's order; members[].badgeId refer to it. */
   badges: Record<string, Badge>;
+  /** Camera backgrounds of the workspace (ADR-0035) by id, in the server's order. */
+  backgrounds: Record<string, WorkspaceBackground>;
   /** userId → aggregated voice state (docs/05, "multiple devices"). */
   voice: Record<string, VoiceState>;
 }
@@ -52,6 +55,10 @@ interface WorkspacesState {
   upsertBadge: (b: Badge) => void;
   /** BADGE_DELETE: the badge goes, and from every member that still shows it. */
   removeBadge: (workspaceId: string, badgeId: string) => void;
+  /** BACKGROUND_CREATE / BACKGROUND_UPDATE. */
+  upsertBackground: (b: WorkspaceBackground) => void;
+  /** BACKGROUND_DELETE. */
+  removeBackground: (workspaceId: string, backgroundId: string) => void;
   removeMember: (workspaceId: string, userId: string) => void;
   setPresence: (p: Presence) => void;
   setVoiceState: (v: VoiceState) => void;
@@ -110,7 +117,9 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
       const roles = snap.roles.length > 0 ? sortRoles(snap.roles) : legacyRoles(ws.id);
       const badges: Record<string, Badge> = {};
       for (const b of snap.badges) badges[b.id] = b;
-      return { byId: { ...s.byId, [ws.id]: { ws, role: snap.role, members, roles, badges, voice } }, order, presences, users };
+      const backgrounds: Record<string, WorkspaceBackground> = {};
+      for (const b of snap.backgrounds) backgrounds[b.id] = b;
+      return { byId: { ...s.byId, [ws.id]: { ws, role: snap.role, members, roles, badges, backgrounds, voice } }, order, presences, users };
     }),
   remove: (id) =>
     set((s) => {
@@ -156,6 +165,16 @@ export const useWorkspaces = create<WorkspacesState>()((set) => ({
           members[id] = { ...m, badgeId: '' };
         }
         return { ...e, members, badges };
+      }),
+    ),
+  upsertBackground: (b) => set((s) => withEntry(s, b.workspaceId, (e) => ({ ...e, backgrounds: { ...e.backgrounds, [b.id]: b } }))),
+  removeBackground: (wsId, id) =>
+    set((s) =>
+      withEntry(s, wsId, (e) => {
+        if (!(id in e.backgrounds)) return e;
+        const backgrounds = { ...e.backgrounds };
+        delete backgrounds[id];
+        return { ...e, backgrounds };
       }),
     ),
   removeMember: (wsId, userId) =>
@@ -269,4 +288,25 @@ export function useBadgeList(wsId: string): Badge[] {
     const b = st.byId[wsId]?.badges;
     return b ? Object.values(b) : NO_BADGES;
   }));
+}
+
+const NO_BACKGROUNDS: WorkspaceBackground[] = [];
+
+/** Camera backgrounds of the workspace (ADR-0035) in the server's order; the same array while unchanged. */
+export function useBackgroundList(wsId: string | null | undefined): WorkspaceBackground[] {
+  return useWorkspaces(
+    useShallow((st) => {
+      const b = wsId ? st.byId[wsId]?.backgrounds : undefined;
+      return b ? Object.values(b) : NO_BACKGROUNDS;
+    }),
+  );
+}
+
+/** A camera background of any of my workspaces by id (non-reactive). */
+export function findBackground(id: string): WorkspaceBackground | undefined {
+  for (const e of Object.values(useWorkspaces.getState().byId)) {
+    const b = e.backgrounds[id];
+    if (b) return b;
+  }
+  return undefined;
 }

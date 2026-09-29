@@ -51,6 +51,8 @@ export const esVideo: DictShape<typeof enVideo> = {
   'video.bg.badType': 'Elige una imagen JPEG, PNG o WebP',
   'video.bg.tooBig': 'La imagen pesa más de 10 MB',
   'video.bg.uploadFailed': 'No se pudo abrir la imagen',
+  'video.bg.workspace': 'Fondos del espacio',
+  'video.bg.builtin': 'Comunes',
 
   // toasts
   'video.limit': 'Límite de cámaras alcanzado',

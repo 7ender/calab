@@ -5,8 +5,19 @@ import { isMobileNow } from '../lib/mobile';
 import { cameraSource } from '../lib/media/camera';
 import type { BackgroundProcessor } from '../lib/media/background';
 import { loadBackgroundBitmap } from '../lib/media/background/images';
-import { BACKGROUND_PROCESSOR, backgroundPath, backgroundSupported, hasHardwareBlur, type BackgroundEnv, type CameraBackground } from '../lib/media/background/logic';
+import {
+  BACKGROUND_PROCESSOR,
+  NO_BACKGROUND,
+  backgroundPath,
+  backgroundSupported,
+  hasHardwareBlur,
+  staleWorkspaceChoice,
+  type BackgroundEnv,
+  type CameraBackground,
+} from '../lib/media/background/logic';
+import { usePrefs } from '../stores/prefs';
 import { setCameraBg } from '../stores/cameraBg';
+import { findBackground } from '../stores/workspaces';
 
 /**
  * Applies the camera background (ADR-0035) to a camera track — the preview's or the published one:
@@ -36,6 +47,16 @@ export function backgroundAvailable(): boolean {
   return backgroundSupported(backgroundEnv());
 }
 
+/**
+ * A chosen workspace background that is gone — deleted by an admin (BACKGROUND_DELETE), the
+ * workspace left or deleted, missing after a reload (READY) — falls back to «Нет» (ADR-0035
+ * addendum); the live camera follows the preference.
+ */
+export function dropStaleWorkspaceBackground(): void {
+  const bg = usePrefs.getState().cameraBackground;
+  if (staleWorkspaceChoice(bg, (id) => !!findBackground(id))) usePrefs.getState().setPrefs({ cameraBackground: NO_BACKGROUND });
+}
+
 let chain: Promise<void> = Promise.resolve();
 
 export function applyCameraBackground(track: LocalVideoTrack, bg: CameraBackground): Promise<void> {
@@ -60,7 +81,7 @@ async function apply(track: LocalVideoTrack, bg: CameraBackground): Promise<void
     setCameraBg({ state: 'idle', software: false, hardware: path === 'hardware' });
     return;
   }
-  const image = bg.kind === 'image' ? await loadBackgroundBitmap(bg.imageId) : null;
+  const image = bg.kind === 'image' ? await loadBackgroundBitmap(bg.imageId, (id) => findBackground(id)?.fileId) : null;
   if (bg.kind === 'image' && !image) {
     // The picture is gone (removed upload, a replaced built-in set): the raw camera.
     if (ours) await track.stopProcessor(false);

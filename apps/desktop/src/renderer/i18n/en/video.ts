@@ -51,6 +51,8 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'video.bg.badType': 'Choose a JPEG, PNG or WebP picture',
   'video.bg.tooBig': 'The picture is larger than 10 MB',
   'video.bg.uploadFailed': 'Couldn’t open the picture',
+  'video.bg.workspace': 'Workspace backgrounds',
+  'video.bg.builtin': 'Common',
 
   // toasts
   'video.limit': 'Camera limit reached',

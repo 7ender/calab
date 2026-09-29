@@ -28,6 +28,7 @@ import { voice } from './voice';
 import { onCallRing, onCallState, onReadyCall } from './call';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
+import { dropStaleWorkspaceBackground } from './cameraBackground';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -105,6 +106,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
       ensureActiveWorkspace();
+      dropStaleWorkspaceBackground();
       openAdminRoute(r.me?.isSuperadmin === true);
       // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
       voice.checkSeat();
@@ -144,6 +146,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();
+      dropStaleWorkspaceBackground();
       return;
     }
     case 'workspaceMemberAdd':
@@ -179,6 +182,15 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'badgeDelete':
       useWorkspaces.getState().removeBadge(e.value.workspaceId, e.value.badgeId);
+      return;
+    // Camera backgrounds of the workspace (ADR-0035 addendum): a deleted chosen one resets to «Нет».
+    case 'backgroundCreate':
+    case 'backgroundUpdate':
+      if (e.value.background) useWorkspaces.getState().upsertBackground(e.value.background);
+      return;
+    case 'backgroundDelete':
+      useWorkspaces.getState().removeBackground(e.value.workspaceId, e.value.backgroundId);
+      dropStaleWorkspaceBackground();
       return;
     case 'workspaceMemberRemove':
       if (useWorkspaces.getState().users[e.value.userId]?.isBot) useBots.getState().dropCommands();

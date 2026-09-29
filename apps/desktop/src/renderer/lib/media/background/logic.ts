@@ -5,7 +5,10 @@
 
 export type BackgroundKind = 'none' | 'blur-light' | 'blur-strong' | 'image';
 
-/** prefs.cameraBackground: `imageId` is a built-in id (manifest.json) or `custom:<id>` (IndexedDB). */
+/**
+ * prefs.cameraBackground: `imageId` is a built-in id (manifest.json), `custom:<id>` (IndexedDB) or
+ * `ws:<background id>` (a workspace's background, ADR-0035 addendum).
+ */
 export interface CameraBackground {
   kind: BackgroundKind;
   imageId?: string;
@@ -19,6 +22,21 @@ export const BACKGROUND_PROCESSOR = 'calab-background';
 /** Custom pictures live in IndexedDB under this id prefix. */
 export const CUSTOM_PREFIX = 'custom:';
 export const isCustomImage = (id: string | undefined): boolean => !!id && id.startsWith(CUSTOM_PREFIX);
+
+/** A workspace's background (the server's list, by its id). */
+export const WORKSPACE_PREFIX = 'ws:';
+export const isWorkspaceImage = (id: string | undefined): boolean => !!id && id.startsWith(WORKSPACE_PREFIX);
+export const workspaceImageId = (backgroundId: string): string => `${WORKSPACE_PREFIX}${backgroundId}`;
+/** The background id of a `ws:` choice ('' for any other). */
+export const workspaceBackgroundOf = (id: string | undefined): string => (id?.startsWith(WORKSPACE_PREFIX) ? id.slice(WORKSPACE_PREFIX.length) : '');
+
+/**
+ * Whether a choice points at a workspace background that is gone (deleted by an admin, the
+ * workspace left): it then falls back to none. `exists` looks the id up in the workspaces store.
+ */
+export function staleWorkspaceChoice(bg: CameraBackground, exists: (backgroundId: string) => boolean): boolean {
+  return bg.kind === 'image' && isWorkspaceImage(bg.imageId) && !exists(workspaceBackgroundOf(bg.imageId));
+}
 
 // ------------------------------------------------------------------ path (ADR §3, §5)
 
@@ -167,4 +185,18 @@ export function coverCrop(w: number, h: number, aspect = BG_WIDTH / BG_HEIGHT): 
   }
   const sh = Math.round(w / aspect);
   return { sx: 0, sy: Math.floor((h - sh) / 2), sw: w, sh };
+}
+
+// ------------------------------------------------------------------ workspace backgrounds (addendum)
+
+/** A workspace background's name: 1..40 characters (server workspaces.maxBackgroundNameLen). */
+export const WORKSPACE_BACKGROUND_NAME_MAX = 40;
+
+/** A default name from the file name: without the extension and control characters, at most 40 characters. */
+export function nameFromFile(fileName: string): string {
+  const base = Array.from(fileName.replace(/\.[^.]+$/, ''))
+    .map((c) => (c.charCodeAt(0) < 0x20 || c === '\u007f' ? ' ' : c))
+    .join('')
+    .trim();
+  return Array.from(base).slice(0, WORKSPACE_BACKGROUND_NAME_MAX).join('').trim();
 }

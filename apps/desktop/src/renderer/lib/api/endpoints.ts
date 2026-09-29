@@ -76,6 +76,11 @@ import {
   SetMemberRolesRequestSchema,
   SetMemberRolesResponseSchema,
   ListBadgesResponseSchema,
+  ListBackgroundsResponseSchema,
+  CreateBackgroundRequestSchema,
+  CreateBackgroundResponseSchema,
+  UpdateBackgroundRequestSchema,
+  UpdateBackgroundResponseSchema,
   CreateBadgeRequestSchema,
   CreateBadgeResponseSchema,
   UpdateBadgeRequestSchema,
@@ -264,6 +269,21 @@ export const api = {
     /** "" clears → WORKSPACE_MEMBER_UPDATE. */
     setMember: (workspaceId: string, userId: string, badgeId: string) =>
       call('PUT', `/api/workspaces/${workspaceId}/members/${userId}/badge`, SetMemberBadgeResponseSchema, body(SetMemberBadgeRequestSchema, { badgeId })),
+  },
+  /**
+   * Camera backgrounds of a workspace (ADR-0035 addendum): the list for any member; create / rename
+   * / delete with MANAGE_WORKSPACE. `fileId` is my upload of this workspace; the server makes the
+   * 1280×720 WebP (its thumbnail 320×180) as a new file.
+   */
+  backgrounds: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/backgrounds`, ListBackgroundsResponseSchema),
+    /** 201; 409 = 20 already; 413 = storage quota; 422 = bad name / picture. */
+    create: (workspaceId: string, name: string, fileId: string) =>
+      call('POST', `/api/workspaces/${workspaceId}/backgrounds`, CreateBackgroundResponseSchema, body(CreateBackgroundRequestSchema, { name, fileId })),
+    rename: (workspaceId: string, backgroundId: string, name: string) =>
+      call('PATCH', `/api/workspaces/${workspaceId}/backgrounds/${backgroundId}`, UpdateBackgroundResponseSchema, body(UpdateBackgroundRequestSchema, { name })),
+    /** 204 → BACKGROUND_DELETE. */
+    remove: (workspaceId: string, backgroundId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/backgrounds/${backgroundId}`),
   },
   /** Workspace roles (ADR-0026): list for any member; the rest MANAGE_ROLES, roles below my top one. */
   roles: {

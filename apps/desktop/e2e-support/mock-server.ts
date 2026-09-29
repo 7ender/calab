@@ -41,6 +41,13 @@ import {
   UpdateBadgeRequestSchema,
   UpdateBadgeResponseSchema,
   type Badge,
+  WorkspaceBackgroundSchema,
+  ListBackgroundsResponseSchema,
+  CreateBackgroundRequestSchema,
+  CreateBackgroundResponseSchema,
+  UpdateBackgroundRequestSchema,
+  UpdateBackgroundResponseSchema,
+  type WorkspaceBackground,
   AdminPlanLogResponseSchema,
   AdminSearchWorkspacesResponseSchema,
   AdminSetPlanRequestSchema,
@@ -411,6 +418,8 @@ export interface MockServer {
   addBadge(workspaceId: string, name: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): string;
   /** docs/09 #82: the member's badge ('' = none) → WORKSPACE_MEMBER_UPDATE. */
   setMemberBadge(workspaceId: string, userId: string, badgeId: string): void;
+  /** ADR-0035 addendum: a camera background of the workspace with a generated 16:9 picture (a diagonal gradient) → BACKGROUND_CREATE; its id. */
+  addBackground(workspaceId: string, name: string, colors: { from: [number, number, number]; to: [number, number, number] }): string;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
   /**
@@ -503,6 +512,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setMemberRoles: (w, u, ids) => impl.setMemberRoles(w, u, ids),
     addBadge: (w, name, colors) => impl.addBadge(w, name, colors),
     setMemberBadge: (w, u, id) => impl.setMemberBadge(w, u, id),
+    addBackground: (w, name, colors) => impl.addBackground(w, name, colors),
     stopCamera: (u, r) => impl.stopCamera(u, r),
     setEmailState: (u, st) => impl.setEmailState(u, st),
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
@@ -1194,6 +1204,7 @@ class MockImpl {
       recordings: [...this.state.recordings.values()].filter((r) => r.workspaceId === wsId && rooms.some((x) => x.id === r.roomId)),
       roles: this.rolesOfWs(wsId),
       badges: this.badgesOf(wsId),
+      backgrounds: this.backgroundsOf(wsId),
     });
   }
 
@@ -1651,6 +1662,25 @@ class MockImpl {
     if (badgeId) m.badgeId = badgeId;
     else delete m.badgeId;
     this.toWorkspace(workspaceId, { event: { case: 'workspaceMemberUpdate', value: { member: this.memberOut(m) } } });
+  }
+
+  addBackground(workspaceId: string, name: string, colors: { from: [number, number, number]; to: [number, number, number] }): string {
+    const ws = this.state.workspaces.get(workspaceId);
+    if (!ws) throw new Error(`no workspace ${workspaceId}`);
+    const mix = (a: number, b: number, k: number): number => Math.round(a + (b - a) * k);
+    const png = encodePng(320, 180, (u, v) => {
+      const k = (u + v) / 2;
+      return [mix(colors.from[0], colors.to[0], k), mix(colors.from[1], colors.to[1], k), mix(colors.from[2], colors.to[2], k)];
+    });
+    const fileId = this.storeFile(workspaceId, ws.ownerId, { name: 'background.png', mime: 'image/png', bytes: png });
+    const background = create(WorkspaceBackgroundSchema, { id: nextId(this.state, 'background'), workspaceId, name, fileId });
+    this.state.backgrounds.set(background.id, background);
+    this.toWorkspace(workspaceId, { event: { case: 'backgroundCreate', value: { background } } });
+    return background.id;
+  }
+
+  private backgroundsOf(wsId: string): WorkspaceBackground[] {
+    return [...this.state.backgrounds.values()].filter((b) => b.workspaceId === wsId);
   }
 
   private badgesOf(wsId: string): Badge[] {
@@ -2756,6 +2786,53 @@ class MockImpl {
       const member = this.memberOut(target);
       this.toWorkspace(ws.id, { event: { case: 'workspaceMemberUpdate', value: { member } } });
       sendMsg(c.res, 200, UpdateMemberResponseSchema, { member });
+    });
+
+    // ---------------- camera backgrounds of a workspace (ADR-0035 addendum): the list for members, the rest MANAGE_WORKSPACE.
+    // The server makes a new 1280×720 WebP from the upload; the mock keeps the uploaded file.
+    this.route('GET', '/api/workspaces/:id/backgrounds', (c) => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      sendMsg(c.res, 200, ListBackgroundsResponseSchema, { backgrounds: this.backgroundsOf(ws.id) });
+    });
+    const backgroundName = (raw: string): string => {
+      const name = raw.trim();
+      if (!name || Array.from(name).length > 40) throw invalid('name', 'name must be 1..40 characters');
+      return name;
+    };
+    const backgroundManager = (c: Ctx): Workspace => {
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      if (!isAdminRole(m.role)) throw forbidden('MANAGE_WORKSPACE required');
+      return ws;
+    };
+    this.route('POST', '/api/workspaces/:id/backgrounds', (c) => {
+      const ws = backgroundManager(c);
+      const b = parseBody(c, CreateBackgroundRequestSchema);
+      if (this.backgroundsOf(ws.id).length >= 20) throw conflict('a workspace has at most 20 camera backgrounds');
+      const f = s().files.get(b.fileId);
+      if (!f || f.meta.workspaceId !== ws.id || f.meta.uploaderId !== this.uid(c) || !['image/png', 'image/webp', 'image/jpeg'].includes(f.meta.mime) || f.bytes.length > 10 * 1024 * 1024) {
+        throw invalid('fileId', 'a JPEG, PNG or WebP image you uploaded to this workspace, at most 10 MB');
+      }
+      const background = create(WorkspaceBackgroundSchema, { id: nextId(s(), 'background'), workspaceId: ws.id, name: backgroundName(b.name), fileId: b.fileId });
+      s().backgrounds.set(background.id, background);
+      this.toWorkspace(ws.id, { event: { case: 'backgroundCreate', value: { background } } });
+      sendMsg(c.res, 201, CreateBackgroundResponseSchema, { background });
+    });
+    this.route('PATCH', '/api/workspaces/:id/backgrounds/:bgId', (c) => {
+      const ws = backgroundManager(c);
+      const background = s().backgrounds.get(c.params[1] ?? '');
+      if (!background || background.workspaceId !== ws.id) throw notFound('background not found');
+      const b = parseBody(c, UpdateBackgroundRequestSchema);
+      if (b.name !== undefined) background.name = backgroundName(b.name);
+      this.toWorkspace(ws.id, { event: { case: 'backgroundUpdate', value: { background } } });
+      sendMsg(c.res, 200, UpdateBackgroundResponseSchema, { background });
+    });
+    this.route('DELETE', '/api/workspaces/:id/backgrounds/:bgId', (c) => {
+      const ws = backgroundManager(c);
+      const background = s().backgrounds.get(c.params[1] ?? '');
+      if (!background || background.workspaceId !== ws.id) throw notFound('background not found');
+      s().backgrounds.delete(background.id);
+      this.toWorkspace(ws.id, { event: { case: 'backgroundDelete', value: { workspaceId: ws.id, backgroundId: background.id } } });
+      noContent(c.res);
     });
 
     // ---------------- member badges (docs/09 #82): the library with MANAGE_WORKSPACE, assigning with MANAGE_NICKNAMES

@@ -14,6 +14,11 @@ import {
   SEG_FPS,
   SEG_FPS_SOFTWARE,
   uploadProblem,
+  isWorkspaceImage,
+  nameFromFile,
+  staleWorkspaceChoice,
+  workspaceBackgroundOf,
+  workspaceImageId,
   type BackgroundEnv,
 } from './logic';
 
@@ -139,5 +144,36 @@ describe('uploads: 16:9 crop and limits', () => {
     const narrow = coverUv(16 / 9, 4 / 3);
     expect(narrow.scale[0]).toBeCloseTo(0.75);
     expect(narrow.offset[0]).toBeCloseTo(0.125);
+  });
+});
+
+describe('workspace backgrounds (ADR-0035 addendum)', () => {
+  it('ids round-trip through the ws: prefix', () => {
+    const id = workspaceImageId('0190-abc');
+    expect(isWorkspaceImage(id)).toBe(true);
+    expect(workspaceBackgroundOf(id)).toBe('0190-abc');
+    expect(isWorkspaceImage('custom:1')).toBe(false);
+    expect(isWorkspaceImage('bg-01')).toBe(false);
+    expect(workspaceBackgroundOf('bg-01')).toBe('');
+  });
+
+  it('only a chosen workspace background that is gone is stale', () => {
+    const known = new Set(['a']);
+    const exists = (id: string): boolean => known.has(id);
+    expect(staleWorkspaceChoice({ kind: 'image', imageId: 'ws:a' }, exists)).toBe(false);
+    expect(staleWorkspaceChoice({ kind: 'image', imageId: 'ws:b' }, exists)).toBe(true);
+    expect(staleWorkspaceChoice({ kind: 'image', imageId: 'bg-01' }, exists)).toBe(false);
+    expect(staleWorkspaceChoice({ kind: 'image', imageId: 'custom:x' }, exists)).toBe(false);
+    expect(staleWorkspaceChoice({ kind: 'blur-light' }, exists)).toBe(false);
+    expect(staleWorkspaceChoice({ kind: 'none' }, exists)).toBe(false);
+  });
+});
+
+describe('nameFromFile', () => {
+  it('drops the extension and control characters, keeps 40 characters', () => {
+    expect(nameFromFile('Office.jpg')).toBe('Office');
+    expect(nameFromFile('  logo.final.png ')).toBe('logo.final');
+    expect(nameFromFile('a\u0001b.webp')).toBe('a b');
+    expect(nameFromFile(`${'я'.repeat(50)}.png`)).toBe('я'.repeat(40));
   });
 });

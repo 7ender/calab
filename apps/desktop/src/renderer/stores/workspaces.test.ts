@@ -7,6 +7,7 @@ import {
   RoomSchema,
   UserSchema,
   VoiceStateSchema,
+  WorkspaceBackgroundSchema,
   WorkspaceMemberSchema,
   WorkspaceRole,
   WorkspaceSchema,
@@ -15,7 +16,7 @@ import {
 import { beforeEach, describe, expect, it } from 'vitest';
 import { legacyRoles } from '../lib/roles';
 import { mayArrangeRooms, mayManageWorkspace, roomPerms, voiceCaps } from '../lib/permissions';
-import { memberBadge, rolesOf, useWorkspaces } from './workspaces';
+import { findBackground, memberBadge, rolesOf, useWorkspaces } from './workspaces';
 
 const W = 'w1';
 const member = (id: string, role: WorkspaceRole, roleIds: string[] = []) =>
@@ -150,5 +151,33 @@ describe('member badges in the store (docs/09 #82)', () => {
     expect(e?.badges).toEqual({});
     expect(e?.members.me?.badgeId).toBe('');
     expect(memberBadge(e, 'me')).toBeUndefined();
+  });
+});
+
+describe('workspace camera backgrounds in the store (ADR-0035 addendum)', () => {
+  const office = create(WorkspaceBackgroundSchema, { id: 'bg1', workspaceId: W, name: 'Office', fileId: 'f1' });
+
+  it('READY carries them; create / rename / delete follow the events', () => {
+    const snap = snapshot(member('me', WorkspaceRole.MEMBER));
+    snap.backgrounds = [office];
+    useWorkspaces.getState().applySnapshot(snap);
+    expect(findBackground('bg1')?.fileId).toBe('f1');
+    useWorkspaces.getState().upsertBackground(create(WorkspaceBackgroundSchema, { id: 'bg2', workspaceId: W, name: 'Logo', fileId: 'f2' }));
+    useWorkspaces.getState().upsertBackground(create(WorkspaceBackgroundSchema, { id: 'bg1', workspaceId: W, name: 'Open space', fileId: 'f1' }));
+    const e = useWorkspaces.getState().byId[W];
+    expect(Object.values(e?.backgrounds ?? {}).map((b) => b.name)).toEqual(['Open space', 'Logo']);
+    useWorkspaces.getState().removeBackground(W, 'bg1');
+    expect(findBackground('bg1')).toBeUndefined();
+    expect(findBackground('bg2')?.name).toBe('Logo');
+  });
+
+  it('a background of an unknown workspace is ignored; a left workspace takes its backgrounds', () => {
+    useWorkspaces.getState().upsertBackground(create(WorkspaceBackgroundSchema, { id: 'bgX', workspaceId: 'nope', name: 'X', fileId: 'fX' }));
+    expect(findBackground('bgX')).toBeUndefined();
+    const snap = snapshot(member('me', WorkspaceRole.MEMBER));
+    snap.backgrounds = [office];
+    useWorkspaces.getState().applySnapshot(snap);
+    useWorkspaces.getState().remove(W);
+    expect(findBackground('bg1')).toBeUndefined();
   });
 });

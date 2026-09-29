@@ -1,12 +1,14 @@
 import manifest from '../../../assets/backgrounds/manifest.json';
 import type { Locale } from '../../../i18n/types';
-import { BG_HEIGHT, BG_THUMB_HEIGHT, BG_THUMB_WIDTH, BG_WIDTH, CUSTOM_PREFIX, coverCrop, isCustomImage } from './logic';
+import { BG_HEIGHT, BG_THUMB_HEIGHT, BG_THUMB_WIDTH, BG_WIDTH, CUSTOM_PREFIX, coverCrop, isCustomImage, isWorkspaceImage, workspaceBackgroundOf } from './logic';
+import { workspaceBackgroundBlob } from './workspaceCache';
 
 /**
  * Background pictures (ADR-0035 §4): the built-in set is data — assets/backgrounds/manifest.json +
  * its WebP files (tools/gen-backgrounds.mjs, or the owner's photos via tools/import-backgrounds.mjs),
  * so swapping the pictures needs no code change. Custom ones are the user's uploads, kept on this
- * device only (IndexedDB, desktop and web), never sent to the server.
+ * device only (IndexedDB, desktop and web), never sent to the server. Workspace ones (the addendum)
+ * are the server's files, cached on the device once chosen (workspaceCache.ts).
  */
 
 interface ManifestEntry {
@@ -110,11 +112,17 @@ export async function prepareUpload(file: Blob): Promise<{ full: Blob; thumb: Bl
   }
 }
 
-/** The picture of a choice, decoded for the worker (null: not found — the choice falls back to none). */
-export async function loadBackgroundBitmap(id: string | undefined): Promise<ImageBitmap | null> {
+/**
+ * The picture of a choice, decoded for the worker (null: not found — the choice falls back to none).
+ * `workspaceFile` resolves a workspace background's id to its file id (the workspaces store).
+ */
+export async function loadBackgroundBitmap(id: string | undefined, workspaceFile?: (backgroundId: string) => string | undefined): Promise<ImageBitmap | null> {
   try {
     let blob: Blob | undefined;
-    if (isCustomImage(id)) {
+    if (isWorkspaceImage(id)) {
+      const fileId = workspaceFile?.(workspaceBackgroundOf(id));
+      if (fileId) blob = await workspaceBackgroundBlob(fileId);
+    } else if (isCustomImage(id)) {
       const rec = await tx<CustomBackground | undefined>('readonly', (s) => s.get(id ?? '') as IDBRequest<CustomBackground | undefined>);
       blob = rec?.full;
     } else {

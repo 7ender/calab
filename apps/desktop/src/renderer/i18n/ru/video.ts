@@ -48,6 +48,8 @@ export const ruVideo = {
   'video.bg.badType': 'Нужна картинка JPEG, PNG или WebP',
   'video.bg.tooBig': 'Картинка больше 10 МБ',
   'video.bg.uploadFailed': 'Не удалось открыть картинку',
+  'video.bg.workspace': 'Фоны пространства',
+  'video.bg.builtin': 'Общие',
 
   // toasts
   'video.limit': 'Достигнут лимит камер',

@@ -128,6 +128,7 @@ const KEY = new Set([
   'chat-forward-dialog',
   'chat-forwarded',
   'settings-badges',
+  'settings-backgrounds',
   'chat-badge',
   // One-to-one calls (ADR-0034).
   'call-outgoing',
@@ -1927,6 +1928,32 @@ test('settings-badges', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'settings-badges');
 });
 
+/** Two camera backgrounds of «Команда Calab» (ADR-0035 addendum): «Офис» and «Логотип». */
+function giveFixtureBackgrounds(mock: MockServer): void {
+  mock.addBackground(IDS.workspaces.main, 'Офис', { from: [44, 62, 80], to: [189, 195, 199] });
+  mock.addBackground(IDS.workspaces.main, 'Логотип', { from: [10, 132, 255], to: [94, 92, 230] });
+}
+
+/** Workspace background thumbnails loaded (from the file API like avatars). */
+async function backgroundThumbsLoaded(page: Page): Promise<void> {
+  await page.waitForFunction(() => [...document.querySelectorAll('img[data-wsbg-thumb]')].every((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0));
+}
+
+// ADR-0035 addendum: workspace settings → «Фоны камеры» — the list (16:9 thumbnail, name, delete), «Добавить фон».
+test('settings-backgrounds', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  giveFixtureBackgrounds(mock);
+  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Фоны камеры' }).click();
+  await expect(dialog.getByTestId('wsbg-row')).toHaveCount(2);
+  await backgroundThumbsLoaded(win);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'settings-backgrounds');
+});
+
 // docs/09 #82: a 16 px badge after the author's name in the feed and after the names in the
 // members column (Борис and Вера — «Acme», Анна — «Globex»).
 test('chat-badge', async ({ open, win, mock, shot }) => {
@@ -2597,9 +2624,13 @@ test('camera-preview', async ({ open, win, mock, shot }) => {
   await open();
   await inVoiceWithStatus(win, mock);
   await hideCameraPixels(win);
+  // ADR-0035 addendum: «Фоны пространства» above the built-in pictures.
+  giveFixtureBackgrounds(mock);
   // First start: the «Проверьте камеру» sheet with the mirrored preview.
   await win.getByTestId('camera-button').click();
   await expect(win.getByTestId('camera-preview-enable')).toBeEnabled({ timeout: 15_000 });
+  await expect(win.getByTestId('camera-bg-workspace').getByRole('radio')).toHaveCount(2);
+  await backgroundThumbsLoaded(win);
   await checkpoint(shot, 'camera-preview');
 });
 

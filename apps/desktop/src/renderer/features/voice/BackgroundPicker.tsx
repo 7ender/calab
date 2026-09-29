@@ -1,13 +1,18 @@
 import { Loader2, Plus, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { MediaImg } from '../../components/MediaImg';
 import { Segmented, Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { BUILTIN_BACKGROUNDS, addCustomBackground, listCustomBackgrounds, prepareUpload, removeCustomBackground } from '../../lib/media/background/images';
-import { MAX_CUSTOM_BACKGROUNDS, UPLOAD_TYPES, uploadProblem, type BackgroundKind, type CameraBackground } from '../../lib/media/background/logic';
+import { MAX_CUSTOM_BACKGROUNDS, UPLOAD_TYPES, uploadProblem, workspaceImageId, type BackgroundKind, type CameraBackground } from '../../lib/media/background/logic';
+import { thumbnailPath } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
 import { useCameraBg } from '../../stores/cameraBg';
 import { usePrefs } from '../../stores/prefs';
 import { toast } from '../../stores/toasts';
+import { useUi } from '../../stores/ui';
+import { useVoice } from '../../stores/voice';
+import { useBackgroundList } from '../../stores/workspaces';
 
 /** The user's pictures as thumbnail object URLs (revoked on change / unmount). */
 export function useCustomBackgrounds(): { list: { id: string; url: string }[]; reload: () => void } {
@@ -37,7 +42,8 @@ export function useCustomBackgrounds(): { list: { id: string; url: string }[]; r
 const same = (a: CameraBackground, kind: BackgroundKind, imageId?: string): boolean => a.kind === kind && (kind !== 'image' || a.imageId === imageId);
 
 /**
- * «Фон» in the camera preview (ADR-0035 §5, docs/08 «Превью камеры»): blur chips, the built-in
+ * «Фон» in the camera preview (ADR-0035 §5, docs/08 «Превью камеры»): blur chips, the workspace's
+ * backgrounds (the addendum: the voice room's workspace, else the open one), then the built-in
  * pictures and the user's own in a 4-column grid, «+ Свой». The choice is a device preference and
  * applies at once — to the preview and to the live camera.
  */
@@ -50,6 +56,9 @@ export function BackgroundPicker(): ReactNode {
   const failed = useCameraBg((s) => s.state === 'failed');
   const locale = useLocale();
   const { list, reload } = useCustomBackgrounds();
+  const voiceWs = useVoice((s) => s.workspaceId);
+  const activeWs = useUi((s) => s.activeWorkspaceId);
+  const workspace = useBackgroundList(voiceWs || activeWs);
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
@@ -99,7 +108,21 @@ export function BackgroundPicker(): ReactNode {
           { value: 'blur-strong', label: t('video.bg.blurStrong') },
         ]}
       />
-      <div role="radiogroup" aria-label={t('video.bg.pictureList')} className="mt-3 grid grid-cols-4 gap-2">
+      {workspace.length > 0 ? (
+        <>
+          <h4 id="camera-bg-ws" className="mb-1.5 mt-3 text-caption text-muted">
+            {t('video.bg.workspace')}
+          </h4>
+          <div role="radiogroup" aria-labelledby="camera-bg-ws" className="grid grid-cols-4 gap-2" data-testid="camera-bg-workspace">
+            {workspace.map((b) => {
+              const id = workspaceImageId(b.id);
+              return <Thumb key={b.id} id={id} path={thumbnailPath(b.fileId)} label={b.name} selected={same(current, 'image', id)} onChoose={choose} />;
+            })}
+          </div>
+          <h4 className="mb-1.5 mt-3 text-caption text-muted">{t('video.bg.builtin')}</h4>
+        </>
+      ) : null}
+      <div role="radiogroup" aria-label={t('video.bg.pictureList')} className={cx('grid grid-cols-4 gap-2', workspace.length === 0 && 'mt-3')}>
         {BUILTIN_BACKGROUNDS.map((b) => (
           <Thumb key={b.id} id={b.id} url={b.thumbUrl} label={b.name(locale)} selected={same(current, 'image', b.id)} onChoose={choose} />
         ))}
@@ -141,13 +164,17 @@ export function BackgroundPicker(): ReactNode {
 const Thumb = memo(function Thumb({
   id,
   url,
+  path,
   label,
   selected,
   onChoose,
   onRemove,
 }: {
   id: string;
-  url: string;
+  /** A local picture (built-in asset, object URL) … */
+  url?: string;
+  /** … or an API media path (a workspace background's thumbnail). */
+  path?: string;
   label: string;
   selected: boolean;
   onChoose: (bg: CameraBackground) => void;
@@ -167,7 +194,7 @@ const Thumb = memo(function Thumb({
           selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-[var(--color-popover)]' : 'ring-1 ring-[var(--color-border-popover)] hover:ring-2 hover:ring-[var(--color-fill-hover)]',
         )}
       >
-        <img src={url} alt="" draggable={false} className="size-full object-cover" />
+        {path ? <MediaImg path={path} alt="" draggable={false} data-wsbg-thumb className="size-full object-cover" /> : <img src={url} alt="" draggable={false} className="size-full object-cover" />}
       </button>
       {onRemove ? (
         <button

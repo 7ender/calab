@@ -48,6 +48,8 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'video.bg.badType': '请选择 JPEG、PNG 或 WebP 图片',
   'video.bg.tooBig': '图片超过 10 MB',
   'video.bg.uploadFailed': '无法打开图片',
+  'video.bg.workspace': '空间背景',
+  'video.bg.builtin': '通用',
 
   // toasts
   'video.limit': '已达摄像头上限',
