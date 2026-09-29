@@ -27,6 +27,28 @@ export const ruVideo = {
   'video.preview.enable': 'Включить камеру',
   'video.preview.done': 'Готово',
 
+  // camera background (ADR-0035)
+  'video.bg.title': 'Фон',
+  'video.bg.none': 'Нет',
+  'video.bg.blurLight': 'Лёгкое',
+  'video.bg.blurStrong': 'Сильное',
+  'video.bg.blurLightFull': 'Лёгкое размытие',
+  'video.bg.blurStrongFull': 'Сильное размытие',
+  'video.bg.pictures': 'Картинка',
+  'video.bg.pictureList': 'Картинки фона',
+  'video.bg.add': 'Свой',
+  'video.bg.addHint': 'Своя картинка: JPEG, PNG или WebP до 10 МБ, хранится только на этом устройстве',
+  'video.bg.custom': 'Своя картинка {n}',
+  'video.bg.remove': 'Удалить картинку',
+  'video.bg.loading': 'Загружаем фон…',
+  'video.bg.software': 'На этом компьютере фон нагружает процессор',
+  'video.bg.system': 'Размытие системное: его делает камера',
+  'video.bg.failed': 'Фон недоступен на этом компьютере',
+  'video.bg.limit': 'Не больше {n} своих картинок — удалите одну',
+  'video.bg.badType': 'Нужна картинка JPEG, PNG или WebP',
+  'video.bg.tooBig': 'Картинка больше 10 МБ',
+  'video.bg.uploadFailed': 'Не удалось открыть картинку',
+
   // toasts
   'video.limit': 'Достигнут лимит камер',
   'video.forbidden': 'Нет права включать камеру в этой комнате',

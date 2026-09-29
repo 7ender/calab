@@ -30,6 +30,28 @@ export const esVideo: DictShape<typeof enVideo> = {
   'video.preview.enable': 'Activar cámara',
   'video.preview.done': 'Listo',
 
+  // camera background (ADR-0035)
+  'video.bg.title': 'Fondo',
+  'video.bg.none': 'Ninguno',
+  'video.bg.blurLight': 'Suave',
+  'video.bg.blurStrong': 'Intenso',
+  'video.bg.blurLightFull': 'Desenfoque suave',
+  'video.bg.blurStrongFull': 'Desenfoque intenso',
+  'video.bg.pictures': 'Imagen',
+  'video.bg.pictureList': 'Imágenes de fondo',
+  'video.bg.add': 'Subir',
+  'video.bg.addHint': 'Tu imagen: JPEG, PNG o WebP de hasta 10 MB, solo se guarda en este dispositivo',
+  'video.bg.custom': 'Tu imagen {n}',
+  'video.bg.remove': 'Quitar imagen',
+  'video.bg.loading': 'Cargando fondo…',
+  'video.bg.software': 'En este ordenador el fondo carga el procesador',
+  'video.bg.system': 'Desenfoque del sistema: lo hace la cámara',
+  'video.bg.failed': 'El fondo no está disponible en este ordenador',
+  'video.bg.limit': 'Hasta {n} imágenes propias: quita una primero',
+  'video.bg.badType': 'Elige una imagen JPEG, PNG o WebP',
+  'video.bg.tooBig': 'La imagen pesa más de 10 MB',
+  'video.bg.uploadFailed': 'No se pudo abrir la imagen',
+
   // toasts
   'video.limit': 'Límite de cámaras alcanzado',
   'video.forbidden': 'No tienes permiso para usar la cámara en esta sala',

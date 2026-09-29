@@ -22,6 +22,9 @@
  * «Звонок · 00:42» header timer and the island); the same live events, typing and the voice state
  * in that DM.
  *
+ * `--bench K --bg none|blur-light|blur-strong|image`: my own camera 720p15 (Chromium's fake device)
+ * turned on through «Проверьте камеру» with that background (ADR-0035, docs/14 «Фон камеры»).
+ *
  * `--recording`: «Созвон» is being recorded (ROOM_RECORDING, Борис 12:34 ago) — the REC dot on the
  * card, the «Запись» pill in the island (docs/09 #64). A bench also samples WindowServer: the
  * compositor redraws blurred surfaces under an animated layer there, not in the app.
@@ -50,6 +53,8 @@ const PORT = Number(opt('port', '39461'));
 const SECONDS = Number(opt('seconds', '30'));
 const BENCH = opt('bench', '');
 const BENCH_SECONDS = Number(opt('bench-seconds', '120'));
+/** `--bench K`: my own camera 720p15 (Chromium's fake device) with `--bg none|blur-light|blur-strong|image` (ADR-0035). */
+const BG = opt('bg', 'none');
 const NAME = opt('name', 'run');
 const STATS = !argv.includes('--no-stats');
 const EMULATE = !argv.includes('--no-emulate');
@@ -352,6 +357,19 @@ async function main(): Promise<void> {
       await page.getByTestId('voice-rec-pill').first().waitFor({ timeout: 15_000 });
     }
 
+    if (BENCH === 'K') {
+      // My camera through the first-start sheet, with the background picked there (bg-03 for `image`).
+      await page.getByTestId('camera-button').click();
+      await page.getByTestId('camera-preview-enable').waitFor({ timeout: 15_000 });
+      const section = page.getByTestId('camera-bg');
+      if (BG === 'blur-light') await section.getByRole('radio', { name: 'Лёгкое' }).click();
+      if (BG === 'blur-strong') await section.getByRole('radio', { name: 'Сильное' }).click();
+      if (BG === 'image') await section.getByRole('radio', { name: 'Графит' }).click();
+      await page.waitForTimeout(2000);
+      await page.getByTestId('camera-preview-enable').click();
+      await page.getByTestId('camera-button').and(page.locator('[aria-pressed="true"]')).waitFor({ timeout: 15_000 });
+      await page.waitForTimeout(5000);
+    }
     if (BENCH === 'E') {
       mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false, camera: true });
       publisher = await startSpeaker(mock.url, IDS.users.boris, 'Борис Петров', IDS.rooms.call, 'camera');
@@ -481,7 +499,7 @@ async function main(): Promise<void> {
     if (BENCH) {
       const bundle = resolve(ROOT, 'node_modules/electron/dist/Electron.app');
       const outDir = opt('bench-out', join(tmpdir(), 'calaba-energy'));
-      const scenario = (BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '');
+      const scenario = (BENCH === 'K' ? `K-camera-720p15-bg-${BG}` : BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '');
       const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, scenario, '--seconds', String(BENCH_SECONDS), '--out', outDir, '--with', 'WindowServer'], {
         stdio: 'inherit',
       });

@@ -30,6 +30,28 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'video.preview.enable': 'Turn on camera',
   'video.preview.done': 'Done',
 
+  // camera background (ADR-0035)
+  'video.bg.title': 'Background',
+  'video.bg.none': 'None',
+  'video.bg.blurLight': 'Light',
+  'video.bg.blurStrong': 'Strong',
+  'video.bg.blurLightFull': 'Light blur',
+  'video.bg.blurStrongFull': 'Strong blur',
+  'video.bg.pictures': 'Picture',
+  'video.bg.pictureList': 'Background pictures',
+  'video.bg.add': 'Upload',
+  'video.bg.addHint': 'Your picture: JPEG, PNG or WebP up to 10 MB, kept on this device only',
+  'video.bg.custom': 'Your picture {n}',
+  'video.bg.remove': 'Remove picture',
+  'video.bg.loading': 'Loading background…',
+  'video.bg.software': 'The background loads the processor on this computer',
+  'video.bg.system': 'System blur: done by the camera',
+  'video.bg.failed': 'Background is not available on this computer',
+  'video.bg.limit': 'Up to {n} pictures of your own — remove one first',
+  'video.bg.badType': 'Choose a JPEG, PNG or WebP picture',
+  'video.bg.tooBig': 'The picture is larger than 10 MB',
+  'video.bg.uploadFailed': 'Couldn’t open the picture',
+
   // toasts
   'video.limit': 'Camera limit reached',
   'video.forbidden': 'You don’t have permission to use the camera in this room',

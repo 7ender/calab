@@ -27,6 +27,28 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'video.preview.enable': '开启摄像头',
   'video.preview.done': '完成',
 
+  // camera background (ADR-0035)
+  'video.bg.title': '背景',
+  'video.bg.none': '无',
+  'video.bg.blurLight': '轻度',
+  'video.bg.blurStrong': '强烈',
+  'video.bg.blurLightFull': '轻度虚化',
+  'video.bg.blurStrongFull': '强烈虚化',
+  'video.bg.pictures': '图片',
+  'video.bg.pictureList': '背景图片',
+  'video.bg.add': '上传',
+  'video.bg.addHint': '自定义图片：JPEG、PNG 或 WebP，最大 10 MB，仅保存在本设备',
+  'video.bg.custom': '自定义图片 {n}',
+  'video.bg.remove': '删除图片',
+  'video.bg.loading': '正在加载背景…',
+  'video.bg.software': '在这台电脑上，背景效果会占用处理器',
+  'video.bg.system': '系统虚化：由摄像头完成',
+  'video.bg.failed': '这台电脑无法使用背景效果',
+  'video.bg.limit': '最多 {n} 张自定义图片，请先删除一张',
+  'video.bg.badType': '请选择 JPEG、PNG 或 WebP 图片',
+  'video.bg.tooBig': '图片超过 10 MB',
+  'video.bg.uploadFailed': '无法打开图片',
+
   // toasts
   'video.limit': '已达摄像头上限',
   'video.forbidden': '你没有权限在此房间使用摄像头',

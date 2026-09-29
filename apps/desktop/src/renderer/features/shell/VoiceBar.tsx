@@ -1,11 +1,15 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Check, ChevronDown, Ellipsis, Eye, Loader2, Lock, MessageCircle, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Ellipsis, Eye, Loader2, Lock, MessageCircle, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DisplayedPhase, offerRetry } from '../../lib/voiceLink';
 import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
 import { Badge, Button, Tip, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { t, useLocale, type MessageKey } from '../../i18n';
+import { BUILTIN_BACKGROUNDS } from '../../lib/media/background/images';
+import type { BackgroundKind } from '../../lib/media/background/logic';
+import { backgroundAvailable } from '../../services/cameraBackground';
+import { useCustomBackgrounds } from '../voice/BackgroundPicker';
 import { mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
 import { voice } from '../../services/voice';
 import { usePrefs } from '../../stores/prefs';
@@ -308,6 +312,12 @@ export function CameraMenu(): ReactNode {
       {devices !== null && list.length === 0 ? <div className="px-2 py-1 text-caption text-muted">{t('video.noDevices')}</div> : null}
       <Dropdown.Separator className={menuSeparator} />
       <CameraQualityItems />
+      {backgroundAvailable() ? (
+        <>
+          <Dropdown.Separator className={menuSeparator} />
+          <CameraBackgroundItems />
+        </>
+      ) : null}
       <Dropdown.Separator className={menuSeparator} />
       {phase === 'off' ? (
         <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'camera-preview' })}>
@@ -318,6 +328,60 @@ export function CameraMenu(): ReactNode {
         <Settings className="size-4" /> {t('shell.voiceSettings')}
       </Dropdown.Item>
     </Dropdown.Content>
+  );
+}
+
+/**
+ * Camera ▾ «Фон» (ADR-0035 §5): the quick picks of the preview's section, without a preview — no
+ * blur / light / strong, and «Картинка ▸» with the built-in and the user's pictures. Applied to the
+ * live camera at once (services/voice.ts follows prefs.cameraBackground).
+ */
+function CameraBackgroundItems(): ReactNode {
+  const kind = usePrefs((s) => s.cameraBackground.kind);
+  const imageId = usePrefs((s) => s.cameraBackground.imageId);
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const locale = useLocale();
+  const { list } = useCustomBackgrounds();
+  const blur: Array<[BackgroundKind, MessageKey]> = [
+    ['none', 'video.bg.none'],
+    ['blur-light', 'video.bg.blurLightFull'],
+    ['blur-strong', 'video.bg.blurStrongFull'],
+  ];
+  const pictures = [
+    ...BUILTIN_BACKGROUNDS.map((b) => ({ id: b.id, url: b.thumbUrl, label: b.name(locale) })),
+    ...list.map((c, i) => ({ id: c.id, url: c.url, label: t('video.bg.custom', { n: i + 1 }) })),
+  ];
+  return (
+    <>
+      <Dropdown.Label className={menuLabel}>{t('video.bg.title')}</Dropdown.Label>
+      {blur.map(([k, label]) => (
+        <Dropdown.Item key={k} role="menuitemradio" aria-checked={kind === k} className={cx(menuItem, 'relative pl-7')} onSelect={() => setPrefs({ cameraBackground: { kind: k } })}>
+          {kind === k ? <Check className="absolute left-2 size-3.5" aria-hidden /> : null}
+          <span className="flex-1">{t(label)}</span>
+        </Dropdown.Item>
+      ))}
+      <Dropdown.Sub>
+        <Dropdown.SubTrigger className={cx(menuItem, 'relative pl-7 data-[state=open]:not-data-[highlighted]:bg-hover')} data-testid="camera-bg-pictures">
+          {kind === 'image' ? <Check className="absolute left-2 size-3.5" aria-hidden /> : null}
+          <span className="flex-1">{t('video.bg.pictures')}</span>
+          <ChevronRight className="size-3.5 opacity-70" aria-hidden />
+        </Dropdown.SubTrigger>
+        <Dropdown.Portal>
+          <Dropdown.SubContent className={cx(menuBox, 'w-56')} sideOffset={6} alignOffset={-4} collisionPadding={16}>
+            {pictures.map((p) => {
+              const on = kind === 'image' && imageId === p.id;
+              return (
+                <Dropdown.Item key={p.id} role="menuitemradio" aria-checked={on} className={cx(menuItem, 'relative pl-7')} onSelect={() => setPrefs({ cameraBackground: { kind: 'image', imageId: p.id } })}>
+                  {on ? <Check className="absolute left-2 size-3.5" aria-hidden /> : null}
+                  <img src={p.url} alt="" className="h-[18px] w-8 shrink-0 rounded-[3px] object-cover" draggable={false} />
+                  <span className="flex-1 truncate">{p.label}</span>
+                </Dropdown.Item>
+              );
+            })}
+          </Dropdown.SubContent>
+        </Dropdown.Portal>
+      </Dropdown.Sub>
+    </>
   );
 }
 
