@@ -55,6 +55,8 @@ export default defineConfig<VisualOptions>({
     { name: 'selection', testMatch: /selection\.spec\.ts/ },
     // A dialog's «×» hit at its icon centre, clear of window drag regions (docs/09 #105): behaviour only.
     { name: 'modal-close', testMatch: /modal-close\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    // A mouse click leaves no focus outline, Tab shows the ring (docs/08 «Фокус», docs/09 #138): behaviour only.
+    { name: 'focus-pointer', testMatch: /focus-pointer\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     // «Поздравить» → the greeting room with a ready mention (docs/09 #120): behaviour only.
     { name: 'birthday-congratulate', testMatch: /birthday-congratulate\.spec\.ts/, use: { theme: 'dark', size: { width: 1440, height: 800 } } },
     // The emoji picker's list scrolls in the composer and inside a modal sheet (docs/09 #118): behaviour only.

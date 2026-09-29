@@ -304,6 +304,7 @@ import {
   VoiceInfoSchema,
   UserSchema,
   UserSettingsSchema,
+  WorkHoursSchema,
   VoiceStateSchema,
   VoiceDisconnectReason,
   VoiceStreamStopReason,
@@ -397,7 +398,14 @@ import {
 import { MARKETING_UNFURLS } from './fixtures-marketing';
 import {
   ACTIVE_BEFORE_MS,
+  DEFAULT_WORK_HOURS,
   REMINDER_CHOICES,
+  davOut,
+  meetingBusy,
+  slotsOf,
+  type CalDavRec,
+  type Span,
+  type WorkHoursRec,
   activeOccurrence,
   counts,
   eventForGuest,
@@ -412,6 +420,7 @@ import {
   type Occurrence,
 } from './mock-calendar';
 import { cardPicture, encodePng, pngSize } from './png';
+import { freeWindows, intersectIntervals, workIntervals } from '../src/renderer/lib/calendar/freebusy';
 import { admissionKey, admissionOutcome, deciderView, guestView, requiresApproval, type AdmissionRec } from './mock-admissions';
 
 export {
@@ -623,6 +632,12 @@ export interface MockServer {
   setEventActive(eventId: string, active: boolean, occurrenceAtMs?: number): void;
   /** ADR-0038 §6: an occurrence's recording (shown in lists / the card; no event is sent). */
   setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void;
+  /** ADR-0041: `userId`'s busy time from an external calendar (free / busy kind EXTERNAL), replacing it. */
+  setBusy(userId: string, intervals: readonly Span[]): void;
+  /** ADR-0041: `userId`'s work hours (default 10:00–19:00 Mon–Fri in their zone; the mock's default zone is Moscow). */
+  setWorkHours(userId: string, wh: WorkHoursRec): void;
+  /** ADR-0041 §4: what the fake CalDAV server holds for `userId`: a sync with import on copies it to their external busy time (default: 11:00–12:00 MSK of the clock's day). */
+  setCalDavRemote(userId: string, intervals: readonly Span[]): void;
   /** The answer link token of an external attendee (the page /e/<id>/rsvp?t=…). */
   eventRsvpToken(eventId: string, email: string, status: AttendeeStatus): string;
   /** ADR-0040: the room's «Подтверждение входа гостей» (ROOM_UPDATE), as PATCH /api/rooms/{id}. */
@@ -700,6 +715,9 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     rsvp: (id, u, st) => impl.rsvpEvent(id, u, st),
     emitReminder: (id, u, min, at) => impl.emitReminder(id, u, min, at),
     setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
+    setBusy: (u, list) => impl.calExternal.set(u, [...list]),
+    setWorkHours: (u, wh) => impl.calWorkHours.set(u, { ...wh, days: [...wh.days] }),
+    setCalDavRemote: (u, list) => impl.calDavRemote.set(u, [...list]),
     setEventRecording: (id, at, rec) => impl.setEventRecording(id, at, rec),
     eventRsvpToken: (id, email, st) => rsvpToken(id, email, st),
     setGuestApproval: (roomId, on) => impl.setGuestApproval(roomId, on),
@@ -1012,6 +1030,11 @@ class MockImpl {
   private readonly calEvents = new Map<string, CalEventRec>();
   /** Task boards (ADR-0042); rebuilt with the state. */
   boards: BoardsMock;
+  /** Free / busy (ADR-0041): work hours, external busy time, CalDAV accounts and the fake remote calendars, by user. */
+  readonly calWorkHours = new Map<string, WorkHoursRec>();
+  readonly calExternal = new Map<string, Span[]>();
+  readonly calDav = new Map<string, CalDavRec>();
+  readonly calDavRemote = new Map<string, Span[]>();
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
@@ -1026,6 +1049,7 @@ class MockImpl {
     this.registerRoutes();
     this.registerCallRoutes();
     this.calendarRoutes();
+    this.freeBusyRoutes();
     this.admissionRoutes();
     this.boardRoutes();
     this.seedBoards();
@@ -1077,6 +1101,10 @@ class MockImpl {
     this.userCall.clear();
     this.callSeq = 0;
     this.calEvents.clear();
+    this.calWorkHours.clear();
+    this.calExternal.clear();
+    this.calDav.clear();
+    this.calDavRemote.clear();
     this.droppedSessions.clear();
     this.gatewayDownUntil = 0;
     this.clockMs = null;
@@ -1367,7 +1395,8 @@ class MockImpl {
     return create(MeSchema, {
       user: u.user,
       email: u.email,
-      settings: u.settings,
+      // ADR-0041: work hours are kept apart (calWorkHours), like the reminders on the server.
+      settings: { ...clone(UserSettingsSchema, u.settings), workHours: create(WorkHoursSchema, this.workHoursOf(u.user.id)) },
       isSuperadmin: this.state.superadmins.has(u.user.id),
       // Guests have no email: always «verified» (user.proto).
       emailVerified: u.user.isGuest || u.emailVerified,
@@ -2620,6 +2649,14 @@ class MockImpl {
     this.route('PATCH', '/api/me', (c) => {
       const u = this.auth(c).user;
       const b = parseBody(c, UpdateMeRequestSchema);
+      // ADR-0041: work_hours (validated like the server; guests and bots 403).
+      if (b.workHours) {
+        if (u.user.isGuest || u.user.isBot) throw forbidden('work hours are not for guests and bots');
+        const wh = { startMin: b.workHours.startMin, endMin: b.workHours.endMin, days: [...new Set(b.workHours.days)].sort((x, y) => x - y) };
+        if (wh.startMin % 15 || wh.endMin % 15 || wh.startMin < 0 || wh.endMin > 1440 || wh.endMin <= wh.startMin) throw invalid('workHours', 'work hours are 15-minute steps, end after start');
+        if (!wh.days.length || wh.days.some((d) => d < 1 || d > 7)) throw invalid('workHours.days', 'days are 1..7, at least one');
+        this.calWorkHours.set(u.user.id, wh);
+      }
       if (b.displayName !== undefined) {
         if (!b.displayName.trim()) throw invalid('displayName', 'display name required');
         u.user.displayName = b.displayName.trim();
@@ -5871,6 +5908,151 @@ class MockImpl {
       const roomId = c.params[0] ?? '';
       knockOf(roomId, me);
       this.decideAdmission(roomId, me, 'cancelled', me);
+      noContent(c.res);
+    });
+  }
+
+  // ------------------------------------------------ free / busy, find a time, CalDAV (ADR-0041)
+
+  private workHoursOf(userId: string): WorkHoursRec {
+    return this.calWorkHours.get(userId) ?? DEFAULT_WORK_HOURS;
+  }
+
+  /** The mock's zone of a user: User.timezone, else Moscow (the visual tests' zone). */
+  private zoneOf(userId: string): string {
+    return this.state.users.get(userId)?.user.timezone || 'Europe/Moscow';
+  }
+
+  /** One person's busy time for `viewer` (ADR-0041 §1): event_id only for meetings the viewer sees. */
+  private busyOf(wsId: string, userId: string, viewer: string, fromMs: number, toMs: number): Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean }> {
+    const iso = (t: number): string => new Date(t).toISOString();
+    const out: Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean }> = [];
+    for (const o of meetingBusy(this.calEvents.values(), wsId, userId, fromMs, toMs)) {
+      const seen = !!this.calView(o.rec, viewer);
+      out.push({ startsAt: iso(o.startMs), endsAt: iso(o.endMs), ...(seen ? { eventId: o.rec.ev.id } : {}), kind: 'BUSY_KIND_MEETING', allDay: o.rec.ev.allDay });
+    }
+    for (const x of this.calExternal.get(userId) ?? []) {
+      if (x.endMs > fromMs && x.startMs < toMs) out.push({ startsAt: iso(x.startMs), endsAt: iso(x.endMs), kind: 'BUSY_KIND_EXTERNAL', allDay: false });
+    }
+    return out.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  }
+
+  private freeBusyRoutes(): void {
+    const DAY = 86_400_000;
+    const asker = (wsId: string, me: string): void => {
+      const { m } = this.workspaceFor(wsId, me);
+      if (m.role === WorkspaceRole.GUEST || this.state.users.get(me)?.user.isBot) throw forbidden('free / busy is not available for guests and bots');
+    };
+    const people = (wsId: string, ids: readonly string[]): string[] => {
+      const list = [...new Set(ids.filter(Boolean))];
+      if (!list.length || list.length > 20) throw invalid('users', '1..20 users');
+      for (const u of list) {
+        const m = this.member(wsId, u);
+        if (!m || m.role === WorkspaceRole.GUEST || this.state.users.get(u)?.user.isBot) throw invalid('users', 'users must be members of the workspace');
+      }
+      return list;
+    };
+    const span = (from: number, to: number): void => {
+      if (Number.isNaN(from) || Number.isNaN(to) || to <= from || to - from > 14 * DAY) throw invalid('to', 'from / to: RFC 3339, to after from, at most 14 days');
+    };
+
+    this.route('GET', '/api/workspaces/:id/freebusy', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      asker(wsId, me);
+      const list = people(wsId, (c.url.searchParams.get('users') ?? '').split(','));
+      const from = Date.parse(c.url.searchParams.get('from') ?? '');
+      const to = Date.parse(c.url.searchParams.get('to') ?? '');
+      span(from, to);
+      const users = list.map((u) => ({ userId: u, timezone: this.zoneOf(u), workHours: this.workHoursOf(u), busy: this.busyOf(wsId, u, me, from, to) }));
+      send(c.res, 200, JSON.stringify({ users }), 'application/json');
+    });
+
+    this.route('POST', '/api/workspaces/:id/freebusy/suggest', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      asker(wsId, me);
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { users?: string[]; durationMin?: unknown; from?: string; to?: string; withinWorkHours?: boolean; roomId?: string };
+      const list = people(wsId, b.users ?? []);
+      const dur = Number(b.durationMin ?? 0);
+      if (!(dur >= 15 && dur <= 480) || dur % 15) throw invalid('durationMin', 'duration is 15..480 minutes in 15-minute steps');
+      const from = Date.parse(b.from ?? '');
+      const to = Date.parse(b.to ?? '');
+      span(from, to);
+      const toSpans = (x: ReturnType<MockImpl['busyOf']>): Array<{ start: number; end: number }> => x.map((i) => ({ start: Date.parse(i.startsAt), end: Date.parse(i.endsAt) }));
+      const busy = list.map((u) => toSpans(this.busyOf(wsId, u, me, from, to)));
+      if (b.roomId) {
+        const roomBusy: Array<{ start: number; end: number }> = [];
+        for (const rec of this.calEvents.values()) {
+          if (rec.ev.roomId !== b.roomId || rec.ev.cancelledAt) continue;
+          for (const o of occurrences(rec, from, to)) roomBusy.push({ start: o.startMs, end: o.endMs });
+        }
+        busy.push(roomBusy);
+      }
+      let work: Array<Array<{ start: number; end: number }>> | null = null;
+      if (b.withinWorkHours) {
+        work = list.map((u) => workIntervals(this.workHoursOf(u), this.zoneOf(u), from, to));
+        let common: Array<{ start: number; end: number }> = [{ start: from, end: to }];
+        for (const w of work) common = intersectIntervals(common, w);
+        if (!common.length) throw new HttpError(409, ErrorCode.NO_COMMON_HOURS, 'the work hours of these people never overlap');
+      }
+      const slots = slotsOf(freeWindows({ from, to, busy, work, minMinutes: dur }), dur);
+      send(c.res, 200, JSON.stringify({ slots: slots.map((x) => ({ startsAt: new Date(x.startMs).toISOString(), endsAt: new Date(x.endMs).toISOString() })) }), 'application/json');
+    });
+
+    // CalDAV (ADR-0041 §4): one fake account per user; any https address «discovers» two calendars,
+    // an address with «fail» answers 422 like a server that refused the login.
+    const davUser = (c: Ctx): string => {
+      const u = this.auth(c).user;
+      if (u.user.isGuest || u.user.isBot) throw forbidden('CalDAV is not for guests and bots');
+      return u.user.id;
+    };
+    const syncDav = (userId: string, a: CalDavRec): void => {
+      a.lastSyncAt = this.calNow();
+      a.lastError = '';
+      if (!a.import) return;
+      const clock = this.calNow();
+      const day = new Date(clock);
+      day.setUTCHours(8, 0, 0, 0); // 11:00 MSK
+      this.calExternal.set(userId, [...(this.calDavRemote.get(userId) ?? [{ startMs: day.getTime(), endMs: day.getTime() + 3_600_000 }])]);
+    };
+    this.route('GET', '/api/me/caldav', (c) => {
+      send(c.res, 200, JSON.stringify(davOut(this.calDav.get(davUser(c)))), 'application/json');
+    });
+    this.route('POST', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { url?: string; username?: string; password?: string };
+      const url = (b.url ?? '').trim();
+      if (!/^https:\/\/[^\s/]+/.test(url)) throw invalid('url', 'the address must be https');
+      if (!b.username || !b.password) throw invalid('username', 'login and password are required');
+      if (url.includes('fail')) throw invalid('password', 'the server refused the login');
+      const a: CalDavRec = { url, username: b.username, calendarHref: '', import: false, push: false, lastSyncAt: null, lastError: '' };
+      this.calDav.set(me, a);
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('PUT', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      const a = this.calDav.get(me);
+      if (!a) throw notFound('no CalDAV account');
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { calendarHref?: string; import?: boolean; push?: boolean };
+      if (b.calendarHref !== undefined) a.calendarHref = b.calendarHref;
+      a.import = !!b.import;
+      a.push = !!b.push;
+      if (!a.import) this.calExternal.delete(me);
+      else if (a.calendarHref) syncDav(me, a);
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('POST', '/api/me/caldav/sync', (c) => {
+      const me = davUser(c);
+      const a = this.calDav.get(me);
+      if (!a) throw notFound('no CalDAV account');
+      syncDav(me, a);
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('DELETE', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      this.calDav.delete(me);
+      this.calExternal.delete(me);
       noContent(c.res);
     });
   }

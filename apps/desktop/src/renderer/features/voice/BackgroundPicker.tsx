@@ -135,7 +135,7 @@ export function BackgroundPicker(): ReactNode {
             aria-disabled={full || busy}
             onClick={() => !full && !busy && input.current?.click()}
             className={cx(
-              'flex aspect-video items-center justify-center gap-1 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-popover)] text-footnote text-muted outline-none transition-colors duration-[var(--motion-fast)] focus-visible:ring-2 focus-visible:ring-accent',
+              'flex aspect-video items-center justify-center gap-1 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-popover)] text-footnote text-muted transition-colors duration-[var(--motion-fast)]',
               full ? 'opacity-50' : 'hover:bg-hover hover:text-fg',
             )}
             data-testid="camera-bg-add"
@@ -190,7 +190,7 @@ const Thumb = memo(function Thumb({
         title={label}
         onClick={() => onChoose({ kind: 'image', imageId: id })}
         className={cx(
-          'block aspect-video w-full overflow-hidden rounded-[var(--radius-card)] outline-none focus-visible:ring-2 focus-visible:ring-accent',
+          'block aspect-video w-full overflow-hidden rounded-[var(--radius-card)]',
           selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-[var(--color-popover)]' : 'ring-1 ring-[var(--color-border-popover)] hover:ring-2 hover:ring-[var(--color-fill-hover)]',
         )}
       >

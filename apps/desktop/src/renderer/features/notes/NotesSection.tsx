@@ -381,7 +381,7 @@ function ShelfForm({
         placeholder={t('notes.name')}
         aria-label={t('notes.name')}
         data-testid="notes-name"
-        className="h-8 min-w-0 flex-1 rounded-[var(--radius-control)] border border-line bg-[var(--color-bg)] px-2 text-body text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+        className="h-8 min-w-0 flex-1 rounded-[var(--radius-control)] border border-line bg-[var(--color-bg)] px-2 text-body text-fg placeholder:text-faint"
       />
       <Tip label={t('notes.save')}>
         <button

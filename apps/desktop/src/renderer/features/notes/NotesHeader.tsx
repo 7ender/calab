@@ -131,7 +131,7 @@ function RenameField({ initial, onDone }: { initial: string; onDone: (name: stri
       onKeyDown={onKey}
       onBlur={() => finish(value)}
       aria-label={t('notes.name')}
-      className="no-drag h-8 w-[min(280px,50%)] min-w-0 rounded-[var(--radius-control)] border border-accent bg-[var(--color-bg)] px-2 text-list font-semibold text-fg focus:outline-none"
+      className="no-drag h-8 w-[min(280px,50%)] min-w-0 rounded-[var(--radius-control)] border border-accent bg-[var(--color-bg)] px-2 text-list font-semibold text-fg"
     />
   );
 }

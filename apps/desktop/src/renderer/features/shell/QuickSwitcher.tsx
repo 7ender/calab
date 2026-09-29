@@ -248,7 +248,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
               aria-activedescendant={items[cur] ? `qs-${items[cur].id}` : undefined}
               placeholder={t('search.placeholder')}
               aria-label={t('search.placeholder')}
-              className="h-12 min-w-0 flex-1 bg-transparent text-headline text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+              className="h-12 min-w-0 flex-1 bg-transparent text-headline text-fg placeholder:text-faint"
             />
             {busy ? <Spinner className="size-4" /> : null}
           </div>

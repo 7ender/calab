@@ -1,5 +1,5 @@
 import { EventRepeat, RoomType, WorkspaceRole } from '@calaba/protocol';
-import { Mail, Plus, X } from 'lucide-react';
+import { CalendarSearch, Mail, Plus, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -24,7 +24,7 @@ import {
   type DraftErrors,
   type EventDraft,
 } from '../../lib/calendar/draft';
-import { eventSpan, formatMinutes, viewerZone } from '../../lib/calendar/time';
+import { dayKey, dayStart, eventSpan, formatMinutes, viewerZone } from '../../lib/calendar/time';
 import { useMobile } from '../../lib/mobile';
 import { createEvent, eventOf, updateEvent } from '../../services/calendar';
 import { roomsOfWorkspace, useRooms } from '../../stores/rooms';
@@ -37,6 +37,8 @@ import { memberItems } from '../people/memberPickItems';
 import { MemberPicker } from '../people/MemberPicker';
 import { REPEAT_LABEL } from './EventCard';
 import { dragKind, dragPayload, useRoomDropHover } from './dragState';
+import { AvailabilityStrip } from './AvailabilityStrip';
+import { FindTimeDialog } from './FindTime';
 
 const REPEATS = [EventRepeat.UNSPECIFIED, EventRepeat.DAILY, EventRepeat.WEEKLY, EventRepeat.BIWEEKLY, EventRepeat.MONTHLY] as const;
 /** 00:00 … 23:45. */
@@ -57,9 +59,16 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
     if (editing) return draftOf(editing);
     const copy = init?.copyOf ? eventOf(init.copyOf) : undefined;
     if (copy) return copyDraft(copy);
-    return newDraft(init ?? {});
+    // «Подобрать время» hands over the chosen people; I am the organizer, not an attendee.
+    const me = myUserId();
+    return newDraft({ ...init, attendees: (init?.attendees ?? []).filter((u) => u !== me) });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [d, setD] = useState<EventDraft>(initial);
+  const [finding, setFinding] = useState(false);
+  const meId = myUserId();
+  // Member attendees as a stable list (the availability strip's people).
+  const memberKey = d.attendees.map((a) => a.userId).filter(Boolean).join(',');
+  const memberIds = useMemo(() => (memberKey ? memberKey.split(',') : []), [memberKey]);
   const [errors, setErrors] = useState<DraftErrors>({});
   const [general, setGeneral] = useState<string | null>(null);
   // Server texts per field (a 422 with `field`), shown like the local checks.
@@ -205,9 +214,33 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
                 ))}
               </Select>
             </Field>
-            <p className="col-span-2 -mt-1 text-caption text-faint">{t('cal.f.zone', { zone })}</p>
+            <div className="col-span-2 -mt-1 flex items-center justify-between gap-2">
+              <p className="min-w-0 text-caption text-faint">{t('cal.f.zone', { zone })}</p>
+              <Button variant="ghost" size="sm" onClick={() => setFinding(true)} data-testid="event-find">
+                <CalendarSearch className="size-3.5" aria-hidden />
+                {t('fb.find')}
+              </Button>
+            </div>
+            <AvailabilityStrip workspaceId={workspaceId} users={memberIds} day={d.day} start={d.start} end={d.end} eventId={editing?.id ?? ''} />
           </div>
         )}
+        {finding ? (
+          <FindTimeDialog
+            workspaceId={workspaceId}
+            users={meId ? [meId, ...memberIds] : memberIds}
+            durationMin={Math.max(15, d.end - d.start)}
+            day={d.day}
+            onClose={() => setFinding(false)}
+            onPick={(slot, users) => {
+              const day = dayKey(slot.start);
+              const start = Math.round((slot.start - dayStart(day)) / 60_000);
+              const me = myUserId();
+              const attendees = users.filter((u) => u !== me).reduce((list, u) => addMember(list, u), d.attendees);
+              set({ day, start, end: start + Math.round((slot.end - slot.start) / 60_000), attendees });
+              setFinding(false);
+            }}
+          />
+        ) : null}
         <RoomField workspaceId={workspaceId} value={d.roomId} onChange={(roomId) => set({ roomId })} />
         <AttendeesField workspaceId={workspaceId} draft={d} onChange={(attendees) => set({ attendees })} error={err('attendees')} />
         <Field label={t('cal.f.description')} error={err('description')}>
