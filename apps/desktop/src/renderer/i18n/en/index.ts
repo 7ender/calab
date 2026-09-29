@@ -18,6 +18,7 @@ import { enVideo } from './video';
 import { enStickers } from './stickers';
 import { enSounds } from './sounds';
 import { enBots } from './bots';
+import { enGuests } from './guests';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
 export const en: Dict = {
@@ -29,6 +30,7 @@ export const en: Dict = {
   ...enStickers,
   ...enSounds,
   ...enBots,
+  ...enGuests,
   ...enDm,
   ...enCall,
   ...enEcho,

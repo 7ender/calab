@@ -33,6 +33,7 @@ import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
 import { applySnapshotSounds, useSounds } from '../stores/sounds';
 import { onSoundPlay } from './soundboard';
+import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -112,6 +113,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
       ensureActiveWorkspace();
+      // Guest admission (ADR-0040): knocks I decide, my own waiting screen.
+      applyReadyAdmissions(r);
       dropStaleWorkspaceBackground();
       openAdminRoute(r.me?.isSuperadmin === true);
       // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
@@ -362,6 +365,10 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'callState':
       onCallState(e.value.call);
+      return;
+    case 'roomAdmissionRequest':
+    case 'roomAdmissionDecided':
+      onAdmissionEvent(e);
       return;
     case 'userUpdate':
       // Another member's public profile (name, avatar, time zone, birthday — docs/09 #76).

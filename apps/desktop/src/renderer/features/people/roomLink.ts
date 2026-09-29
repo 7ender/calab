@@ -14,6 +14,7 @@ import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { reusableInvite } from './inviteChoice';
+import { knockError, waitFor } from '../guests/services/admissions';
 
 /**
  * Room links (ADR-0016): shared as `https://<server>/r/<code>`; `calab://r/<code>` is the internal
@@ -34,7 +35,7 @@ export const useRoomLink = create<RoomLinkState>()(() => ({ code: null, preferLo
 export function roomLinkError(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.is('ERROR_CODE_INVITE_INVALID') || e.status === 404 || e.status === 410) return t('people.link.invalid');
-    if (e.is('ERROR_CODE_RATE_LIMITED')) return t('auth.err.rate');
+    if (e.is('ERROR_CODE_RATE_LIMITED')) return e.reason === 'ADMISSION_DECLINED' || e.reason === 'ADMISSION_QUEUE_FULL' ? knockError(e) : t('auth.err.rate');
     if (e.is('ERROR_CODE_UNAUTHENTICATED')) return t('people.link.needAccount');
     if (e.is('ERROR_CODE_UNAVAILABLE')) return t('people.link.unreachable');
   }
@@ -63,7 +64,7 @@ export async function confirmAndJoinRoomLink(code: string): Promise<boolean> {
   }
   const ok = await confirmAction(
     t('core.link.title', { room: preview.roomName, workspace: preview.workspaceName }),
-    t(preview.roomType === RoomType.VOICE ? 'core.link.textVoice' : 'core.link.text'),
+    t(preview.requiresApproval ? 'adm.confirmText' : preview.roomType === RoomType.VOICE ? 'core.link.textVoice' : 'core.link.text'),
     t('core.link.join'),
     'primary',
   );
@@ -74,6 +75,8 @@ export async function confirmAndJoinRoomLink(code: string): Promise<boolean> {
 export async function joinRoomLink(code: string): Promise<boolean> {
   try {
     const r = await api.roomInvites.join(code);
+    // ADR-0040: the room waits for the organizer's approval — the waiting screen, not the room.
+    if (r.admission && waitFor(r.admission, code)) return true;
     openWhenReady(r.workspaceId, r.roomId);
     return true;
   } catch (e) {

@@ -40,7 +40,7 @@ export interface CalabaApi {
     login(args: LoginArgs): Promise<IpcResult<AuthSession>>;
     register(args: RegisterArgs): Promise<IpcResult<AuthSession>>;
     /** Guest sign-in by a room link (ADR-0016): creates a guest account, keeps its session like a login. */
-    guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string }>>;
+    guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string; admission?: unknown }>>;
     logout(allSessions: boolean): Promise<void>;
     /** Fresh access JWT for the gateway IDENTIFY (null = logged out / offline). */
     accessToken(): Promise<string | null>;

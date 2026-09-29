@@ -57,6 +57,7 @@ import { can, mayArrangeRooms, mayManageWorkspace, mayMoveMembersIn, mayMoveVoic
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
 import { setRoomNotifications, setWorkspaceNotifications } from '../../services/mentions';
+import { KnockBadge } from '../guests/KnockBadge';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -1022,6 +1023,7 @@ const TextRoomRow = memo(function TextRoomRow({
             </span>
           </button>
           <span className="flex shrink-0 items-center gap-1 pr-2.5">
+            <KnockBadge roomId={room.id} />
             <MentionBadge n={mentions} />
             <RoomActions room={room} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} active={active} />
           </span>
@@ -1146,6 +1148,7 @@ function VoiceRoomRow({
                 </span>
               </button>
               <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-2.5')}>
+                <KnockBadge roomId={room.id} />
                 <MentionBadge n={mentions} />
                 {/* Hover / focus swaps the timer and N/M for the actions (Discord; «чат» is always there,
                     docs/09 #14), so the name keeps ≥ 120 px. On the card the timer stays green on the name line. */}

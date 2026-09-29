@@ -28,6 +28,7 @@ import { congratulate } from '../people/congratulate';
 import { NicknameDialog } from '../people/NicknameDialog';
 import { ProfileCard } from '../people/ProfileCard';
 import { useOnCall } from '../call/CallBits';
+import { AdmissionsGroup } from '../guests/AdmissionsGroup';
 
 export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -90,6 +91,7 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
       }
       aria-label={t('shell.members')}
     >
+      <AdmissionsGroup workspaceId={workspaceId} />
       <BirthdaysSection workspaceId={workspaceId} />
       {section('on', t('members.online'), groups.online)}
       {section('off', t('members.offline'), groups.offline)}

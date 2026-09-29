@@ -251,19 +251,20 @@ export function register(args: RegisterArgs): Promise<IpcResult<AuthSession>> {
  * POST /api/room-invites/{code}/join {nickname} without a session → the server creates a
  * guest account and returns tokens like a login; the refresh token is kept in main as usual.
  */
-export async function guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string }>> {
+export async function guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string; admission?: unknown }>> {
   const base = normalizeServerUrl(currentServerUrl());
   const bad = insecure(base);
   if (bad) return bad;
   try {
     const res = await postJson(base, `/api/room-invites/${encodeURIComponent(code)}/join`, { nickname, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown };
+    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown; admission?: unknown };
     if (!data.tokens) return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
     const tokens = toTokens(data.tokens);
     broker.set(base, tokens);
     const me = data.me ?? (await fetchMe());
-    return { ok: true, data: { session: { serverUrl: base, sessionId: tokens.sessionId, me }, roomId: data.roomId, workspaceId: data.workspaceId } };
+    // ADR-0040: a knock that waits for the organizer travels to the renderer as JSON.
+    return { ok: true, data: { session: { serverUrl: base, sessionId: tokens.sessionId, me }, roomId: data.roomId, workspaceId: data.workspaceId, ...(data.admission ? { admission: data.admission } : {}) } };
   } catch (e) {
     return { ok: false, error: networkError(e) };
   }
