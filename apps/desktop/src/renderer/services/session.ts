@@ -15,7 +15,8 @@ import { useUi } from '../stores/ui';
 import { useWorkspaces } from '../stores/workspaces';
 import { useReadReceipts } from '../stores/readReceipts';
 import { useRoomLink } from '../features/people/roomLink';
-import { onUpdateStatus } from '../features/shell/updateBannerState';
+import { nagOnStart } from '../features/shell/updateBarModel';
+import { usePrefs } from '../stores/prefs';
 import { queryClient } from '../lib/queryClient';
 import { resetChatCaches } from './chat';
 import { resetDmCaches } from './dms';
@@ -63,10 +64,10 @@ export async function bootstrap(): Promise<void> {
     if (useSession.getState().status === 'offline') void retryConnect();
   });
   watchOffline();
-  platform.app.onUpdateStatus((update) => useSession.getState().set(onUpdateStatus(update)));
+  platform.app.onUpdateStatus((update) => useSession.getState().set({ update }));
   // A reloaded renderer (server switch) must still show a downloaded update.
   void platform.app.updateStatus().then(
-    (update) => useSession.getState().set(onUpdateStatus(update)),
+    (update) => useSession.getState().set({ update }),
     () => undefined,
   );
   platform.tray.onAction((a) => {
@@ -77,6 +78,10 @@ export async function bootstrap(): Promise<void> {
 
   const [appInfo, settings] = await Promise.all([platform.app.info(), platform.app.getSettings()]);
   useSession.getState().set({ appInfo, settings, serverUrl: settings.serverUrl });
+  // The update bar's «Позже» lasts until the next start at most; an updated app forgets it (docs/09 #125).
+  const nag = usePrefs.getState().updateNag;
+  const nagNow = nagOnStart(nag, appInfo.version);
+  if (nagNow !== nag) usePrefs.getState().setPrefs({ updateNag: nagNow });
 
   voice.init();
   watchSyncedPrefs();

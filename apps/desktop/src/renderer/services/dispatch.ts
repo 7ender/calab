@@ -26,6 +26,7 @@ import { applyBotEvent } from './bots';
 import { useBots } from '../stores/bots';
 import { voice } from './voice';
 import { onCallRing, onCallState, onReadyCall } from './call';
+import { checkWebVersion } from './webVersion';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
@@ -116,6 +117,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       voice.checkSeat();
       // ADR-0034: the ringing / in-call UI as the server has it now.
       onReadyCall(r.call);
+      // Web: a server newer than this bundle → «Обновить страницу» (docs/09 #125).
+      void checkWebVersion();
       return;
     }
     case 'resumed':

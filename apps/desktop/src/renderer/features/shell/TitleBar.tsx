@@ -16,7 +16,7 @@ import { usePrefs } from '../../stores/prefs';
 import { HOME, isDm } from '../../stores/dms';
 import { useInbox } from '../../stores/inbox';
 import { idAfter, isVoice, useRooms } from '../../stores/rooms';
-import { useSession } from '../../stores/session';
+import { selectUpdatePending, useSession } from '../../stores/session';
 import { canGoBack, canGoForward, useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from '../chat/chatView';
@@ -100,19 +100,32 @@ export function TitleBar(): ReactNode {
           </kbd>
         </button>
         <InboxButton />
-        <IconButton
-          size="sm"
-          label={t('settings.title')}
-          onPointerEnter={() => void AppSettingsWindow.preload()}
-          onFocus={() => void AppSettingsWindow.preload()}
-          onClick={() => open({ kind: 'settings' })}
-          className="size-7"
-        >
-          <Settings className="size-[18px]" />
-        </IconButton>
+        <SettingsButton />
         <HelpButton />
       </div>
     </header>
+  );
+}
+
+/**
+ * The gear; an accent dot while an update waits (docs/09 #125) — a click then opens «О программе».
+ * Its own leaf: the boolean selector re-renders only the button.
+ */
+function SettingsButton(): ReactNode {
+  const open = useUi((s) => s.openDialog);
+  const update = useSession(selectUpdatePending);
+  return (
+    <IconButton
+      size="sm"
+      label={update ? t('update.settingsDot') : t('settings.title')}
+      onPointerEnter={() => void AppSettingsWindow.preload()}
+      onFocus={() => void AppSettingsWindow.preload()}
+      onClick={() => open(update ? { kind: 'settings', tab: 'about' } : { kind: 'settings' })}
+      className="relative size-7"
+    >
+      <Settings className="size-[18px]" />
+      {update ? <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-accent ring-2 ring-[var(--color-rail)]" data-testid="settings-update-dot" aria-hidden /> : null}
+    </IconButton>
   );
 }
 

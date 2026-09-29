@@ -14,6 +14,22 @@ export interface SettingsSection {
   content: ReactNode;
   /** Red label (e.g. «Удалить пространство»). */
   destructive?: boolean;
+  /** A small accent pill after the label (e.g. «Обновление» on «О программе», docs/09 #125). */
+  badge?: string;
+  /** Extra words the search matches the section by (e.g. «обновление» for «О программе»). */
+  keywords?: string;
+}
+
+/** The section's accent pill (list and search results). */
+function SectionBadge({ text }: { text: string }): ReactNode {
+  return (
+    <span
+      className="ml-auto shrink-0 rounded-full bg-accent-strong px-1.5 text-[10px] font-semibold leading-4 text-accent-fg group-data-[state=active]:bg-white group-data-[state=active]:text-[var(--color-accent-strong)]"
+      data-testid="settings-section-badge"
+    >
+      {text}
+    </span>
+  );
 }
 
 /** Opens another section of the enclosing settings window (a cross-link between sections). */
@@ -257,6 +273,7 @@ export function SettingsWindow({
                         >
                           <s.icon className="size-4 shrink-0" aria-hidden />
                           <span className="min-w-0 truncate">{s.label}</span>
+                          {s.badge ? <SectionBadge text={s.badge} /> : null}
                         </button>
                         {g.rows.map((r) => (
                           <button
@@ -292,13 +309,14 @@ export function SettingsWindow({
                       key={s.id}
                       value={s.id}
                       className={cx(
-                        'flex h-8 shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body mobile:h-9 mobile:gap-1.5 mobile:rounded-full mobile:px-3',
+                        'group flex h-8 shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body mobile:h-9 mobile:gap-1.5 mobile:rounded-full mobile:px-3',
                         'hover:bg-hover data-[state=active]:bg-accent-strong data-[state=active]:text-accent-fg data-[state=active]:hover:bg-accent-strong',
                         s.destructive ? 'text-danger-text' : 'text-fg',
                       )}
                     >
                       <s.icon className="size-4 shrink-0" aria-hidden />
                       <span className="min-w-0 truncate">{s.label}</span>
+                      {s.badge ? <SectionBadge text={s.badge} /> : null}
                     </Tabs.Trigger>
                   ))}
                 </Tabs.List>

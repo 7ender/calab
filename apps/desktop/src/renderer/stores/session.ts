@@ -2,6 +2,7 @@ import type { Me } from '@calaba/protocol';
 import { create } from 'zustand';
 import type { AppInfo, AppSettings, LogoutReason, UpdateStatus } from '../../shared/ipc';
 import type { GatewayStatus } from '../lib/gateway/client';
+import { hasPendingUpdate, type UpdateInput } from '../features/shell/updateBarModel';
 
 export type AuthStatus = 'booting' | 'anon' | 'authed' | 'offline';
 
@@ -23,8 +24,8 @@ export interface SessionState {
   appInfo: AppInfo | null;
   settings: AppSettings | null;
   update: UpdateStatus;
-  /** The update banner was closed; the next status from main shows it again (features/shell/updateBannerState.ts). */
-  updateDismissed: boolean;
+  /** Web: the server's version (GET /api/version at READY) when newer than this bundle; '' = none. */
+  webVersion: string;
   set: (patch: Partial<SessionState>) => void;
 }
 
@@ -42,8 +43,19 @@ export const useSession = create<SessionState>()((set) => ({
   appInfo: null,
   settings: null,
   update: { state: 'disabled' },
-  updateDismissed: false,
+  webVersion: '',
   set: (patch) => set(patch),
 }));
 
 export const myUserId = (): string => useSession.getState().me?.user?.id ?? '';
+
+/** The update bar's input (features/shell/updateBarModel.ts) from the session. */
+export const updateInputOf = (s: SessionState): UpdateInput => ({
+  update: s.update,
+  webVersion: s.webVersion,
+  appVersion: s.appInfo?.version ?? '',
+  autoUpdate: s.settings?.autoUpdate === true,
+});
+
+/** Selector: an update is waiting (gear dot, «Обновление» badge) — a boolean, cheap to subscribe. */
+export const selectUpdatePending = (s: SessionState): boolean => hasPendingUpdate(updateInputOf(s));

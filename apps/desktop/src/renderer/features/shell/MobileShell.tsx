@@ -16,6 +16,7 @@ import { Sidebar } from './Sidebar';
 import { WorkspaceRail } from './WorkspaceRail';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
+import { UpdateBar } from './UpdateBar';
 
 /** A horizontal swipe longer than this (and mostly horizontal) opens / closes a drawer. */
 const SWIPE_PX = 56;
@@ -71,6 +72,8 @@ export function MobileShell({
           {t('gateway.reconnecting')}
         </div>
       ) : null}
+      {/* Web: «Доступна версия X · Обновить страницу» when the server is newer (docs/09 #125). */}
+      <UpdateBar />
       <VerifyBanner />
       <SuspendedBanner />
       <main className="mat-content relative flex min-h-0 flex-1 flex-col">

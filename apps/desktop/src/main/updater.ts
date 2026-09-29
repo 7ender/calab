@@ -48,7 +48,8 @@ let flow: UpdateFlow | null = null;
 let notification: Notification | null = null;
 
 function broadcast(s: UpdateStatus): void {
-  setTrayUpdate(s.state === 'downloaded' ? s.version : null, installUpdate);
+  // The tray item never cuts a call short: during one it installs when the call ends.
+  setTrayUpdate(s.state === 'downloaded' ? s.version : null, () => installUpdate(true));
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.appUpdateStatus, s);
 }
 
