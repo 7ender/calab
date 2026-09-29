@@ -191,16 +191,14 @@ export function onEventUpdate(ev: CalendarEvent): void {
   if (series[ev.id]) useCalendar.setState({ series: { ...series, [ev.id]: ev } });
   // A room's badge follows the meeting's title / attendees (its times: ROOM_EVENT_*).
   useCalendar.setState((s) => {
-    let changed = false;
+    if (!Object.values(s.active).some((list) => list.some((e) => e.id === ev.id))) return s;
     const active: Record<string, readonly CalendarEvent[]> = {};
     for (const [room, list] of Object.entries(s.active)) {
-      active[room] = list.map((e) => {
-        if (e.id !== ev.id) return e;
-        changed = true;
-        return { ...ev, startsAt: e.startsAt, endsAt: e.endsAt, occurrenceAt: e.occurrenceAt, recordingId: e.recordingId, canEdit: e.canEdit };
-      });
+      active[room] = list.map((e) =>
+        e.id === ev.id ? { ...ev, startsAt: e.startsAt, endsAt: e.endsAt, occurrenceAt: e.occurrenceAt, recordingId: e.recordingId, canEdit: e.canEdit } : e,
+      );
     }
-    return changed ? { active } : s;
+    return { active };
   });
   refreshToday();
 }
@@ -222,11 +220,9 @@ export function onEventRsvp(v: CalendarEventRsvp): void {
   useCalendar.setState((s) => {
     const occ = applyRsvp(s.occ, v.eventId, a, v.counts);
     const one = s.series[v.eventId];
+    const activeChanged = Object.values(s.active).some((list) => list.some((e) => e.id === v.eventId));
     const active: Record<string, readonly CalendarEvent[]> = {};
-    let activeChanged = false;
-    for (const [room, list] of Object.entries(s.active)) {
-      active[room] = list.map((e) => (e.id === v.eventId ? ((activeChanged = true), withAnswer(e, a, v.counts)) : e));
-    }
+    if (activeChanged) for (const [room, list] of Object.entries(s.active)) active[room] = list.map((e) => (e.id === v.eventId ? withAnswer(e, a, v.counts) : e));
     return {
       occ,
       ...(one ? { series: { ...s.series, [v.eventId]: withAnswer(one, a, v.counts) } } : {}),

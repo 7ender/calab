@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { SelfPanel } from './SelfPanel';
 import { VoiceBar } from './VoiceBar';
+import { MeetingRecordPrompt } from '../calendar/RoomEvent';
 
 /**
  * Bottom island (docs/08 «Нижний островок», Discord reference): «Голос подключён» and
@@ -30,6 +31,7 @@ export function BottomIsland(): ReactNode {
       className="mat-toolbar absolute bottom-2 left-2 z-[var(--z-sticky)] flex flex-col divide-y divide-line overflow-hidden rounded-[var(--radius-panel)] shadow-[var(--shadow-island)]"
       style={{ width: 'calc(var(--rail-width) + var(--sidebar-width) - 16px)' }}
     >
+      <MeetingRecordPrompt />
       <VoiceBar />
       <SelfPanel />
     </div>

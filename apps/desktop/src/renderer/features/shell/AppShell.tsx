@@ -26,6 +26,8 @@ import { HOME } from '../../stores/dms';
 import { OnboardingLazy, preloadWindows } from './lazyWindows';
 import { whenIdle } from '../../lib/lazyPreload';
 import { MembersPanel } from './MembersPanel';
+import { DayView } from '../calendar/DayView';
+import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
 import { Sidebar } from './Sidebar';
 import { TitleBar } from './TitleBar';
@@ -49,6 +51,8 @@ export function AppShell(): ReactNode {
   const columnOpen = useUi((s) => s.membersPanel);
   const overlayOpen = useUi((s) => s.membersOverlay);
   const width = useUi((s) => s.sidebarWidth);
+  const calDay = useUi((s) => (home ? null : s.calDay));
+  const calEvent = useUi((s) => s.calEvent);
 
   // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
@@ -85,7 +89,14 @@ export function AppShell(): ReactNode {
             <DmPick />
           )
         ) : ws ? (
-          roomId ? (
+          calDay ? (
+            // Calendar on a phone (ADR-0038 §7): the day full screen, a meeting full screen over it.
+            calEvent ? (
+              <EventPanel occ={calEvent} page />
+            ) : (
+              <DayView workspaceId={ws} />
+            )
+          ) : roomId ? (
             <ChatPane key={roomId} workspaceId={ws} roomId={roomId} />
           ) : (
             <NoRoom workspaceId={ws} />
@@ -135,9 +146,21 @@ export function AppShell(): ReactNode {
             <Sidebar workspaceId={wsId} />
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
-              {roomId ? <ChatPane key={roomId} workspaceId={wsId} roomId={roomId} /> : <NoRoom workspaceId={wsId} />}
-              {roomId && wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
-              {roomId && !wide && overlayOpen ? <MembersPanel workspaceId={wsId} floating /> : null}
+              {calDay ? (
+                // Calendar (ADR-0038 §7): the day instead of the room, the selected meeting instead of the
+                // members (a column from 1200 px, floating below); no meeting selected — the members, so
+                // one can be dragged into a meeting.
+                <>
+                  <DayView workspaceId={wsId} />
+                  {calEvent ? <EventPanel occ={calEvent} floating={!wide} /> : wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
+                </>
+              ) : (
+                <>
+                  {roomId ? <ChatPane key={roomId} workspaceId={wsId} roomId={roomId} /> : <NoRoom workspaceId={wsId} />}
+                  {roomId && wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
+                  {roomId && !wide && overlayOpen ? <MembersPanel workspaceId={wsId} floating /> : null}
+                </>
+              )}
             </div>
           </div>
         ) : (

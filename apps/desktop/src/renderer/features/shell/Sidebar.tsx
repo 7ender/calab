@@ -45,7 +45,7 @@ import {
   Video,
   Volume2,
 } from 'lucide-react';
-import { Fragment, createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
+import { Fragment, createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
@@ -82,6 +82,9 @@ import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
 import { RoomRecBadge } from '../voice/Recording';
 import { useRecordings } from '../../stores/recordings';
 import { startRecording, stopRecording } from '../../services/recording';
+import { CalendarButton, MiniCalendar } from '../calendar/MiniCalendar';
+import { RoomEventBadge } from '../calendar/RoomEvent';
+import { DRAG_ROOM, dropRoomAt } from '../calendar/dragState';
 
 export { menuBox, menuItem };
 
@@ -134,6 +137,9 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const listRef = useRef<HTMLDivElement>(null);
   const [catDialog, setCatDialog] = useState(false);
   const myRoles = useMemberRoles(workspaceId, me);
+  // The mini calendar under the header (ADR-0038 §7); guests see no calendar.
+  const miniCal = useUi((s) => s.miniCal);
+  const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
   // Workspace invites (rows' «Пригласить»): MANAGE_WORKSPACE, a custom role's included.
   const admin = mayManageWorkspace(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
@@ -153,6 +159,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   return (
     <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
+      {miniCal && !guest ? <MiniCalendar workspaceId={workspaceId} /> : null}
       <SidebarDnd workspaceId={workspaceId} listRef={listRef}>
         <SidebarMenu workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)}>
           {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}
@@ -355,6 +362,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
           </Dropdown.Content>
         </Dropdown.Portal>
       </Dropdown.Root>
+      <CalendarButton workspaceId={workspaceId} />
       {manageRooms ? <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} /> : null}
       {admin ? (
         <Tip label={t('shell.invite')}>
@@ -1101,8 +1109,19 @@ function VoiceRoomRow({
         isDragging && 'opacity-40',
       )}
     >
-      {/* The drag handle is the room line / card only: participants below drag themselves. */}
-      <div {...(canDrag ? dragListeners : {})}>
+      {/* The drag handle is the room line / card only: participants below drag themselves. Without
+          the right to reorder, the row is a native drag of the room (onto a meeting's room field). */}
+      <div
+        {...(canDrag
+          ? dragListeners
+          : {
+              draggable: true,
+              onDragStart: (e: ReactDragEvent) => {
+                e.dataTransfer.setData(DRAG_ROOM, room.id);
+                e.dataTransfer.effectAllowed = 'copy';
+              },
+            })}
+      >
         <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
           {/* With a status line the room is one raised two-line card (Discord): name + status. */}
           <div
@@ -1170,6 +1189,8 @@ function VoiceRoomRow({
           </div>
         </RoomMenu>
       </div>
+      {/* A meeting here within 15 minutes / now (ADR-0038 §6): «Планёрка в 15:00» → its card. */}
+      <RoomEventBadge roomId={room.id} variant="row" />
       {people.length > 0 ? (
         <ul className="flex flex-col gap-px pb-1 pt-0.5" aria-label={room.name}>
           {people.map((v) => (
@@ -1441,6 +1462,10 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
     const drop = target.current;
     reset();
     if (d?.type === 'room') {
+      // Released over the meeting dialog's room field or a meeting card (ADR-0038, owner 29.09): a
+      // voice room becomes the meeting's room there, the list keeps its order.
+      const ev = e.activatorEvent as PointerEvent | MouseEvent;
+      if (d.voice && dropRoomAt(ev.clientX + e.delta.x, ev.clientY + e.delta.y, d.roomId)) return;
       if (drop?.room) void moveRoomTo(workspaceId, d.roomId, drop.room);
       return;
     }

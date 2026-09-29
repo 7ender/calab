@@ -491,6 +491,8 @@ export function Modal({
   closeButton = true,
   initialFocus,
   fill = false,
+  nonModal = false,
+  keepOpen,
 }: {
   open: boolean;
   onClose: () => void;
@@ -510,12 +512,23 @@ export function Modal({
    * window. Without it the body scrolls as a whole.
    */
   fill?: boolean;
+  /**
+   * No scrim, the rest of the window stays usable (the meeting dialog: members and voice rooms are
+   * dragged into it, owner 29.09). A click outside still closes it through `onClose`, except on
+   * what `keepOpen` accepts (a drag source, another dialog).
+   */
+  nonModal?: boolean;
+  keepOpen?: (target: Element) => boolean;
 }): ReactNode {
   return (
-    <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()} modal={!nonModal}>
       <DialogP.Portal>
-        <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />
-        <DialogP.Content aria-modal="true"
+        {nonModal ? null : <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />}
+        <DialogP.Content aria-modal={nonModal ? undefined : 'true'}
+          onInteractOutside={(e) => {
+            const target = e.target instanceof Element ? e.target : null;
+            if (target && keepOpen?.(target)) e.preventDefault();
+          }}
           onOpenAutoFocus={(e) => {
             // Phones: the sheet itself takes the focus — no field focused (and no keyboard) until a tap.
             if (!autoFocusAllowed()) {
@@ -530,6 +543,7 @@ export function Modal({
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
             wide ? 'max-w-[880px]' : 'max-w-[440px]',
+            nonModal && 'no-drag shadow-[var(--shadow-popover)]',
             // Phone layout (ADR-0021): a bottom sheet — full width, from the bottom edge, above the home indicator.
             'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
           )}

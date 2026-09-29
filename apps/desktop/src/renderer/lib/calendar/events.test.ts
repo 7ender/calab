@@ -1,4 +1,4 @@
-import { create } from '@bufbuild/protobuf';
+import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, CalendarEventAttendeeSchema, CalendarEventCountsSchema, CalendarEventSchema, EventRepeat, type CalendarEvent } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
@@ -9,7 +9,7 @@ const T0 = Date.parse('2026-01-15T12:00:00Z');
 const ME = 'u-me';
 const BOB = 'u-bob';
 
-function ev(id: string, start: number, extra: Partial<CalendarEvent> = {}): CalendarEvent {
+function ev(id: string, start: number, extra: MessageInitShape<typeof CalendarEventSchema> = {}): CalendarEvent {
   return create(CalendarEventSchema, {
     id,
     workspaceId: 'ws',

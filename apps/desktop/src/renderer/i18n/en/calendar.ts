@@ -27,6 +27,7 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   'cal.dragHint': 'Drag to move; drag the bottom edge to change the length',
   'cal.card': 'Meeting',
   'cal.closeCard': 'Close meeting',
+  'cal.back': 'Back',
   'cal.go': 'Go',
   'cal.goRoom': 'Go to {room}',
   'cal.noRoom': 'No room',

@@ -44,6 +44,7 @@ import { CameraPreview, useCameras } from '../voice/CameraPreview';
 import { StreamCodecSelect, streamCodecHint } from '../voice/StreamCodecSelect';
 import { MyStickersCard } from './MyStickersCard';
 import { BirthdaySettings } from './BirthdaySettings';
+import { RemindersCard } from '../calendar/RemindersCard';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
@@ -512,6 +513,7 @@ function NotificationsTab(): ReactNode {
           </Button>
         </Row>
       </Card>
+      <RemindersCard />
       <SoundSettings />
     </>
   );

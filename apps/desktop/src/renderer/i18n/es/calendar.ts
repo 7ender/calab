@@ -27,6 +27,7 @@ export const esCalendar: DictShape<typeof ruCalendar> = {
   'cal.dragHint': 'Arrastra para mover; el borde inferior cambia la duración',
   'cal.card': 'Reunión',
   'cal.closeCard': 'Cerrar reunión',
+  'cal.back': 'Atrás',
   'cal.go': 'Ir',
   'cal.goRoom': 'Ir a {room}',
   'cal.noRoom': 'Sin sala',

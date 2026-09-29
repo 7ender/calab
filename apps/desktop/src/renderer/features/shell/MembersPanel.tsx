@@ -28,6 +28,7 @@ import { congratulate } from '../people/congratulate';
 import { NicknameDialog } from '../people/NicknameDialog';
 import { ProfileCard } from '../people/ProfileCard';
 import { useOnCall } from '../call/CallBits';
+import { DRAG_USER } from '../calendar/dragState';
 
 export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -352,6 +353,12 @@ const MemberRow = memo(function MemberRow({
             type="button"
             aria-label={t('people.openProfile', { name })}
             data-member-row={userId}
+            // A member dragged onto a meeting (the dialog's attendees, the card — ADR-0038, owner 29.09).
+            draggable={!u.isBot && !isGuest(m)}
+            onDragStart={(e) => {
+              e.dataTransfer.setData(DRAG_USER, userId);
+              e.dataTransfer.effectAllowed = 'copy';
+            }}
             title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
             className={cx(
               'relative flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',

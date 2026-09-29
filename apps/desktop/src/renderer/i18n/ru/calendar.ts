@@ -28,6 +28,7 @@ export const ruCalendar = {
   // the card
   'cal.card': 'Встреча',
   'cal.closeCard': 'Закрыть встречу',
+  'cal.back': 'Назад',
   'cal.go': 'Перейти',
   'cal.goRoom': 'Перейти в комнату {room}',
   'cal.noRoom': 'Без комнаты',

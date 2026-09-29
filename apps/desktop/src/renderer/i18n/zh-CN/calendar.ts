@@ -27,6 +27,7 @@ export const zhCalendar: DictShape<typeof ruCalendar> = {
   'cal.dragHint': '拖动以移动；拖动下边缘以更改时长',
   'cal.card': '会议',
   'cal.closeCard': '关闭会议',
+  'cal.back': '返回',
   'cal.go': '前往',
   'cal.goRoom': '前往 {room}',
   'cal.noRoom': '无房间',

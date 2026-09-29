@@ -8,7 +8,7 @@ import {
   type CalendarEventAttendee,
   type CalendarEventCounts,
 } from '@calaba/protocol';
-import { eventSpan, occurrenceMs } from './time';
+import { dayEnd, dayStart, eventDays, eventSpan, occurrenceMs } from './time';
 
 /*
  * The client's copy of the calendar (ADR-0038): occurrences as the server lists them (the client
@@ -156,6 +156,59 @@ export function keysIn(occ: OccMap, workspaceId: string, from: number, to: numbe
     .filter(([, ev]) => ev.workspaceId === workspaceId && overlaps(ev, from, to))
     .sort(([ka, a], [kb, b]) => eventSpan(a).start - eventSpan(b).start || eventSpan(b).end - eventSpan(a).end || (ka < kb ? -1 : 1))
     .map(([k]) => k);
+}
+
+/**
+ * The occurrences of one day of the viewer's calendar: timed ones overlapping its local
+ * [00:00, 24:00), all-day ones on that date of the organizer's calendar. Earliest first.
+ */
+export function dayKeys(occ: OccMap, workspaceId: string, day: string): string[] {
+  const from = dayStart(day);
+  const to = dayEnd(day);
+  return Object.entries(occ)
+    .filter(([, ev]) => ev.workspaceId === workspaceId && (ev.allDay ? eventDays(ev).includes(day) : overlaps(ev, from, to)))
+    .sort(([ka, a], [kb, b]) => eventSpan(a).start - eventSpan(b).start || eventSpan(b).end - eventSpan(a).end || (ka < kb ? -1 : 1))
+    .map(([k]) => k);
+}
+
+/** Day keys (viewer's zone; all-day meetings — the organizer's dates) with a meeting in [from, to): the mini calendar's dots. */
+export function busyDays(occ: OccMap, workspaceId: string, from: number, to: number, tz?: string): string[] {
+  const days = new Set<string>();
+  for (const ev of Object.values(occ)) {
+    if (ev.workspaceId !== workspaceId || !overlaps(ev, from, to)) continue;
+    for (const d of eventDays(ev, tz)) days.add(d);
+  }
+  return [...days].sort();
+}
+
+/** The timed / all-day split of a day's keys, with each timed one's span: a primitive signature for the layout. */
+export function daySignature(occ: OccMap, keys: readonly string[]): string {
+  return keys
+    .map((k) => {
+      const ev = occ[k];
+      if (!ev) return '';
+      const { start, end } = eventSpan(ev);
+      return `${k}~${ev.allDay ? 'a' : 't'}~${start}~${end}`;
+    })
+    .join('|');
+}
+
+export interface SigItem {
+  key: string;
+  allDay: boolean;
+  start: number;
+  end: number;
+}
+
+export function parseSignature(sig: string): SigItem[] {
+  if (!sig) return [];
+  return sig
+    .split('|')
+    .filter(Boolean)
+    .map((s) => {
+      const [key = '', kind, start, end] = s.split('~');
+      return { key, allDay: kind === 'a', start: Number(start), end: Number(end) };
+    });
 }
 
 // ---------------------------------------------------------------- rooms' active meetings
