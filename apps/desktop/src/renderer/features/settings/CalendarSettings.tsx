@@ -1,16 +1,16 @@
 import { ChevronRight, RefreshCw, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { useSettingsNav } from '../../components/SettingsWindow';
 import { Button, Card, Field, Input, PasswordInput, Row, Select, Spinner, Toggle, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
-import { DEFAULT_WORK_HOURS, type WorkHours } from '../../lib/calendar/freebusy';
-import { freebusyApi, type CalDavAccount } from '../../lib/calendar/freebusyApi';
+import type { WorkHours } from '../../lib/calendar/freebusy';
+import { freebusyApi, workHoursOf, type CalDavAccount } from '../../lib/calendar/freebusyApi';
 import { formatMinutes, viewerZone, weekStart } from '../../lib/calendar/time';
 import { WORK_ENDS, WORK_STARTS, toggleWeekday, validateWorkHours, weekdayOrder, withStart } from '../../lib/calendar/workHours';
 import { dateTimeFormat } from '../../lib/format';
-import { loadCalDav, loadMyWorkHours, saveMyWorkHours, setCalDav } from '../../services/freebusy';
+import { loadCalDav, saveMyWorkHours, setCalDav } from '../../services/freebusy';
 import { useFreeBusy } from '../../stores/freebusy';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -32,12 +32,11 @@ export function CalendarTab(): ReactNode {
 
 function WorkHoursCard(): ReactNode {
   const locale = useLocale();
-  const saved = useFreeBusy((s) => s.myWorkHours);
+  // Me.settings.work_hours (the default until set); a change shows at once, the saved Me follows.
+  const stored = useSession((s) => s.me?.settings?.workHours);
+  const saved = useMemo(() => workHoursOf(stored), [stored]);
   const [draft, setDraft] = useState<WorkHours | null>(null);
-  useEffect(() => {
-    void loadMyWorkHours();
-  }, []);
-  const wh = draft ?? saved ?? DEFAULT_WORK_HOURS;
+  const wh = draft ?? saved;
   const error = validateWorkHours(wh);
   const change = (next: WorkHours): void => {
     setDraft(next);
@@ -48,7 +47,7 @@ function WorkHoursCard(): ReactNode {
   return (
     <Card title={t('fb.wh.title')} footer={t('fb.wh.hint', { zone: viewerZone() })}>
       <Row label={t('fb.wh.start')}>
-        <Select value={wh.startMin} onChange={(e) => change(withStart(wh, Number(e.target.value)))} aria-label={t('fb.wh.start')} data-testid="wh-start" disabled={!saved}>
+        <Select value={wh.startMin} onChange={(e) => change(withStart(wh, Number(e.target.value)))} aria-label={t('fb.wh.start')} data-testid="wh-start">
           {WORK_STARTS.map((m) => (
             <option key={m} value={m}>
               {formatMinutes(m)}
@@ -57,7 +56,7 @@ function WorkHoursCard(): ReactNode {
         </Select>
       </Row>
       <Row label={t('fb.wh.end')}>
-        <Select value={wh.endMin} onChange={(e) => change({ ...wh, endMin: Number(e.target.value) })} aria-label={t('fb.wh.end')} data-testid="wh-end" disabled={!saved}>
+        <Select value={wh.endMin} onChange={(e) => change({ ...wh, endMin: Number(e.target.value) })} aria-label={t('fb.wh.end')} data-testid="wh-end">
           {WORK_ENDS.map((m) => (
             <option key={m} value={m}>
               {m === 1440 ? '24:00' : formatMinutes(m)}
@@ -76,7 +75,7 @@ function WorkHoursCard(): ReactNode {
                 key={d}
                 type="button"
                 aria-pressed={on}
-                disabled={!saved}
+               
                 onClick={() => change({ ...wh, days: toggleWeekday(wh.days, d) })}
                 className={cx(
                   'h-7 min-w-9 rounded-full px-2 text-control font-medium transition-colors duration-[var(--motion-fast)] disabled:opacity-40',

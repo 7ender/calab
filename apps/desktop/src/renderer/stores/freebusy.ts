@@ -34,8 +34,6 @@ interface FreeBusyState {
   /** The day view's filter: workspace → selected user ids (≤ 20). */
   people: PeopleMap;
   find: FindState | null;
-  /** Mine, once Settings → Календарь has read them (null = not loaded). */
-  myWorkHours: WorkHours | null;
   /** undefined = not loaded; null = none. */
   caldav: CalDavAccount | null | undefined;
   dispatchPeople: (a: PeopleAction) => void;
@@ -54,7 +52,6 @@ export const useFreeBusy = create<FreeBusyState>()(
       rev: 0,
       people: {},
       find: null,
-      myWorkHours: null,
       caldav: undefined,
       dispatchPeople: (a) => set((s) => {
         const people = peopleReducer(s.people, a);
@@ -62,7 +59,7 @@ export const useFreeBusy = create<FreeBusyState>()(
       }),
       setFind: (find) => set({ find }),
       patchFind: (p) => set((s) => (s.find ? { find: { ...s.find, ...p } } : s)),
-      reset: () => set({ entries: {}, chunks: {}, find: null, myWorkHours: null, caldav: undefined }),
+      reset: () => set({ entries: {}, chunks: {}, find: null, caldav: undefined }),
     }),
     {
       name: 'calaba-cal-people',

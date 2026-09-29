@@ -91,7 +91,7 @@ describe('free / busy (ADR-0041)', () => {
     server.setWorkHours(IDS.users.vera, { startMin: 20 * 60, endMin: 22 * 60, days: [1, 2, 3, 4, 5] });
     const none = await api(anna, `/api/workspaces/${W}/freebusy/suggest`, { method: 'POST', body });
     expect(none.status).toBe(409);
-    expect(((await none.json()) as { reason?: string }).reason).toBe('NO_COMMON_HOURS');
+    expect(((await none.json()) as { code?: string }).code).toBe('ERROR_CODE_NO_COMMON_HOURS');
     const any = await api(anna, `/api/workspaces/${W}/freebusy/suggest`, { method: 'POST', body: { ...body, withinWorkHours: false } });
     expect(any.status).toBe(200);
   });

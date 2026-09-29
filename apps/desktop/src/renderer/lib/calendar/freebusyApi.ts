@@ -1,21 +1,32 @@
-import { platform } from '../../platform';
-import { ApiError, toApiError } from '../api/client';
+import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
+import {
+  BusyKind,
+  CalDavAccountResponseSchema,
+  ConnectCalDavRequestSchema,
+  FreeBusyResponseSchema,
+  SuggestSlotsRequestSchema,
+  SuggestSlotsResponseSchema,
+  UpdateCalDavRequestSchema,
+  type CalDavAccountResponse,
+  type FreeBusyUser as WireUser,
+  type WorkHours as WireWorkHours,
+} from '@calaba/protocol';
+import { api } from '../api/endpoints';
+import { ApiError, body, call, callEmpty, qs } from '../api/client';
 import { DEFAULT_WORK_HOURS, type Interval, type WorkHours } from './freebusy';
 
 /*
- * The free / busy, find-a-time and CalDAV endpoints of ADR-0041 (§1, §2, §4) as the client uses
- * them. INTERIM: the protobuf contract (FreeBusy*, SuggestSlots*, CalDav*, UserSettings.work_hours)
- * lands with the server branch; until it is generated this one module reads the protojson by hand
- * and maps it to the view types below. The swap is local to this file: `call(…, <Schema>)` and the
- * same mapping — nothing else in the client touches the wire.
+ * The free / busy, find-a-time and CalDAV endpoints of ADR-0041 (§1, §2, §4) through the generated
+ * contract (event.proto FreeBusy* / SuggestSlots* / CalDav*, user.proto WorkHours), mapped to the
+ * client's view types in plain milliseconds (what the grid, the store and the pure math use).
  */
 
-export type BusyKind = 'meeting' | 'external';
+export type BusyKindName = 'meeting' | 'external';
 
 export interface BusyInterval extends Interval {
   /** Set only when the viewer may see that meeting (ADR-0041 §1, ADR-0038 §2). */
   eventId: string;
-  kind: BusyKind;
+  kind: BusyKindName;
   allDay: boolean;
 }
 
@@ -52,81 +63,36 @@ export interface SuggestInit {
   roomId?: string;
 }
 
-type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+const ms = (t: Timestamp | undefined): number => (t ? timestampMs(t) : 0);
 
-async function json(method: Method, path: string, body?: unknown, signal?: AbortSignal): Promise<unknown> {
-  let res: Response;
-  try {
-    res = await platform.apiFetch(path, {
-      method,
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      ...(signal ? { signal } : {}),
-    });
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err;
-    throw new ApiError('ERROR_CODE_UNAVAILABLE', err instanceof Error ? err.message : String(err), 0);
-  }
-  if (!res.ok) throw await toApiError(res);
-  if (res.status === 204) return {};
-  const text = await res.text();
-  return text ? (JSON.parse(text) as unknown) : {};
+export function workHoursOf(w: WireWorkHours | undefined): WorkHours {
+  if (!w || w.endMin <= w.startMin) return DEFAULT_WORK_HOURS;
+  return { startMin: w.startMin, endMin: w.endMin, days: [...new Set(w.days.filter((d) => d >= 1 && d <= 7))].sort((a, b) => a - b) };
 }
 
-type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj => (v && typeof v === 'object' ? (v as Obj) : {});
-const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const num = (v: unknown, d = 0): number => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() && Number.isFinite(Number(v)) ? Number(v) : d);
-const ms = (v: unknown): number => {
-  const t = Date.parse(str(v));
-  return Number.isNaN(t) ? 0 : t;
-};
-
-function workHoursOf(v: unknown): WorkHours {
-  const o = obj(v);
-  if (!('startMin' in o) && !('endMin' in o) && !('days' in o)) return DEFAULT_WORK_HOURS;
-  const days = arr(o['days'])
-    .map((d) => num(d))
-    .filter((d) => d >= 1 && d <= 7);
-  return { startMin: num(o['startMin']), endMin: num(o['endMin']), days: [...new Set(days)].sort((a, b) => a - b) };
-}
-
-function kindOf(v: unknown): BusyKind {
-  // BusyKind: BUSY_KIND_MEETING = 1, BUSY_KIND_EXTERNAL = 2.
-  return v === 'BUSY_KIND_EXTERNAL' || v === 2 ? 'external' : 'meeting';
-}
-
-function userOf(v: unknown): FreeBusyUser {
-  const o = obj(v);
+function userOf(u: WireUser): FreeBusyUser {
   return {
-    userId: str(o['userId']),
-    timezone: str(o['timezone']) || 'UTC',
-    workHours: workHoursOf(o['workHours']),
-    busy: arr(o['busy'])
-      .map((b) => {
-        const x = obj(b);
-        return { start: ms(x['startsAt']), end: ms(x['endsAt']), eventId: str(x['eventId']), kind: kindOf(x['kind']), allDay: x['allDay'] === true };
-      })
+    userId: u.userId,
+    timezone: u.timezone || 'UTC',
+    workHours: workHoursOf(u.workHours),
+    busy: u.busy
+      .map((b) => ({ start: ms(b.startsAt), end: ms(b.endsAt), eventId: b.eventId, kind: b.kind === BusyKind.EXTERNAL ? ('external' as const) : ('meeting' as const), allDay: b.allDay }))
       .filter((b) => b.end > b.start),
   };
 }
 
-function accountOf(v: unknown): CalDavAccount | null {
-  const a = obj(obj(v)['account']);
-  if (!str(a['url'])) return null;
+function accountOf(r: CalDavAccountResponse): CalDavAccount | null {
+  const a = r.account;
+  if (!a?.url) return null;
   return {
-    url: str(a['url']),
-    username: str(a['username']),
-    calendarHref: str(a['calendarHref']),
-    import: a['import'] === true,
-    push: a['push'] === true,
-    lastSyncAt: a['lastSyncAt'] ? ms(a['lastSyncAt']) || null : null,
-    lastError: str(a['lastError']),
-    calendars: arr(a['calendars']).map((c) => {
-      const x = obj(c);
-      return { href: str(x['href']), name: str(x['name']), color: str(x['color']) };
-    }),
+    url: a.url,
+    username: a.username,
+    calendarHref: a.calendarHref,
+    import: a.import,
+    push: a.push,
+    lastSyncAt: a.lastSyncAt ? ms(a.lastSyncAt) : null,
+    lastError: a.lastError,
+    calendars: a.calendars.map((c) => ({ href: c.href, name: c.name, color: c.color })),
   };
 }
 
@@ -135,37 +101,35 @@ const iso = (t: number): string => new Date(t).toISOString();
 export const freebusyApi = {
   /** GET …/freebusy: ≤ 20 people, a window ≤ 14 days; 403 for guests and bots. */
   async get(workspaceId: string, users: readonly string[], from: number, to: number, signal?: AbortSignal): Promise<FreeBusyUser[]> {
-    const q = new URLSearchParams({ users: users.join(','), from: iso(from), to: iso(to) });
-    return arr(obj(await json('GET', `/api/workspaces/${workspaceId}/freebusy?${q.toString()}`, undefined, signal))['users']).map(userOf);
+    const r = await call('GET', `/api/workspaces/${workspaceId}/freebusy${qs({ users: users.join(','), from: iso(from), to: iso(to) })}`, FreeBusyResponseSchema, undefined, signal);
+    return r.users.map(userOf);
   },
   /** POST …/freebusy/suggest: ≤ 10 nearest windows; 409 NO_COMMON_HOURS (see `noCommonHours`). */
   async suggest(workspaceId: string, s: SuggestInit, signal?: AbortSignal): Promise<Interval[]> {
-    const body = { users: s.users, durationMin: s.durationMin, from: iso(s.from), to: iso(s.to), withinWorkHours: s.withinWorkHours, ...(s.roomId ? { roomId: s.roomId } : {}) };
-    return arr(obj(await json('POST', `/api/workspaces/${workspaceId}/freebusy/suggest`, body, signal))['slots'])
-      .map((x) => ({ start: ms(obj(x)['startsAt']), end: ms(obj(x)['endsAt']) }))
-      .filter((x) => x.end > x.start);
+    const req = body(SuggestSlotsRequestSchema, {
+      users: [...s.users],
+      durationMin: s.durationMin,
+      from: timestampFromMs(s.from),
+      to: timestampFromMs(s.to),
+      withinWorkHours: s.withinWorkHours,
+      roomId: s.roomId ?? '',
+    });
+    const r = await call('POST', `/api/workspaces/${workspaceId}/freebusy/suggest`, SuggestSlotsResponseSchema, req, signal);
+    return r.slots.map((x) => ({ start: ms(x.startsAt), end: ms(x.endsAt) })).filter((x) => x.end > x.start);
   },
-  /** My work hours (Me.settings.work_hours; the default until set). */
-  async myWorkHours(): Promise<WorkHours> {
-    return workHoursOf(obj(obj(obj(await json('GET', '/api/me'))['me'])['settings'])['workHours']);
-  },
-  /** PATCH /api/me {work_hours}: the saved value. */
-  async saveWorkHours(wh: WorkHours): Promise<WorkHours> {
-    const r = await json('PATCH', '/api/me', { workHours: { startMin: wh.startMin, endMin: wh.endMin, days: wh.days } });
-    const got = obj(obj(obj(r)['me'])['settings'])['workHours'];
-    return got ? workHoursOf(got) : wh;
-  },
+  /** PATCH /api/me {work_hours}: the updated Me. */
+  saveWorkHours: (wh: WorkHours) => api.me.update({ workHours: { startMin: wh.startMin, endMin: wh.endMin, days: [...wh.days] } }),
   caldav: {
     /** null = no account. */
-    get: async (): Promise<CalDavAccount | null> => accountOf(await json('GET', '/api/me/caldav')),
-    /** Connects (the server discovers the calendars); 422 with a reason on a bad address / login. */
-    connect: async (url: string, username: string, password: string): Promise<CalDavAccount | null> => accountOf(await json('POST', '/api/me/caldav', { url, username, password })),
-    update: async (p: { calendarHref: string; import: boolean; push: boolean }): Promise<CalDavAccount | null> => accountOf(await json('PUT', '/api/me/caldav', p)),
-    remove: async (): Promise<void> => {
-      await json('DELETE', '/api/me/caldav');
-    },
+    get: async (): Promise<CalDavAccount | null> => accountOf(await call('GET', '/api/me/caldav', CalDavAccountResponseSchema)),
+    /** Connects (the server discovers the calendars); 422 url / password when it cannot be used. */
+    connect: async (url: string, username: string, password: string): Promise<CalDavAccount | null> =>
+      accountOf(await call('POST', '/api/me/caldav', CalDavAccountResponseSchema, body(ConnectCalDavRequestSchema, { url, username, password }))),
+    update: async (p: { calendarHref: string; import: boolean; push: boolean }): Promise<CalDavAccount | null> =>
+      accountOf(await call('PUT', '/api/me/caldav', CalDavAccountResponseSchema, body(UpdateCalDavRequestSchema, p))),
+    remove: (): Promise<void> => callEmpty('DELETE', '/api/me/caldav'),
     /** A manual sync (≤ 1 a minute: 429). */
-    sync: async (): Promise<CalDavAccount | null> => accountOf(await json('POST', '/api/me/caldav/sync')),
+    sync: async (): Promise<CalDavAccount | null> => accountOf(await call('POST', '/api/me/caldav/sync', CalDavAccountResponseSchema)),
   },
 };
 

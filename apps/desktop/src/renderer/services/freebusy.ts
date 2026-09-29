@@ -1,10 +1,10 @@
 import { t } from '../i18n';
-import { chunkOf, chunksIn, CHUNK_MS, replaceBusy, type WorkHours } from '../lib/calendar/freebusy';
+import { chunksIn, CHUNK_MS, replaceBusy, type WorkHours } from '../lib/calendar/freebusy';
 import { freebusyApi, type BusyInterval, type CalDavAccount } from '../lib/calendar/freebusyApi';
 import { MAX_PEOPLE } from '../lib/calendar/people';
 import { log } from '../lib/log';
 import { entryKey, useFreeBusy, type FbEntry } from '../stores/freebusy';
-import { myUserId } from '../stores/session';
+import { myUserId, useSession } from '../stores/session';
 import { toast } from '../stores/toasts';
 
 /**
@@ -122,31 +122,16 @@ export function parseHoursSignature(sig: string): { timezone: string; workHours:
   return { timezone: tz, workHours: { startMin: Number(s), endMin: Number(e), days: d ? d.split(',').map(Number) : [] } };
 }
 
-/** The chunk of «now» and the next: what the dialog's strip and the day view need first. */
-export const windowAround = (ms: number): [number, number] => [chunkOf(ms) * CHUNK_MS, (chunkOf(ms) + 1) * CHUNK_MS];
-
 // ---------------------------------------------------------------- work hours, CalDAV
 
-export async function loadMyWorkHours(): Promise<void> {
-  try {
-    const wh = await freebusyApi.myWorkHours();
-    useFreeBusy.setState({ myWorkHours: wh });
-  } catch (e) {
-    log.warn('freebusy: work hours failed', e);
-  }
-}
-
-/** Saves at once; the previous value comes back on an error. */
+/** PATCH /api/me work_hours; the saved Me goes to the session (Me.settings.work_hours), my busy windows are asked again. */
 export async function saveMyWorkHours(wh: WorkHours): Promise<boolean> {
-  const before = fb().myWorkHours;
-  useFreeBusy.setState({ myWorkHours: wh });
   try {
-    const saved = await freebusyApi.saveWorkHours(wh);
-    useFreeBusy.setState({ myWorkHours: saved });
+    const r = await freebusyApi.saveWorkHours(wh);
+    if (r.me) useSession.getState().set({ me: r.me });
     invalidateMe();
     return true;
   } catch (e) {
-    useFreeBusy.setState({ myWorkHours: before });
     toast.fail(e, t('err.ctx.save'));
     return false;
   }

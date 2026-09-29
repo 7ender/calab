@@ -267,6 +267,7 @@ import {
   VoiceInfoSchema,
   UserSchema,
   UserSettingsSchema,
+  WorkHoursSchema,
   VoiceStateSchema,
   VoiceDisconnectReason,
   VoiceStreamStopReason,
@@ -1339,7 +1340,8 @@ class MockImpl {
     return create(MeSchema, {
       user: u.user,
       email: u.email,
-      settings: u.settings,
+      // ADR-0041: work hours are kept apart (calWorkHours), like the reminders on the server.
+      settings: { ...clone(UserSettingsSchema, u.settings), workHours: create(WorkHoursSchema, this.workHoursOf(u.user.id)) },
       isSuperadmin: this.state.superadmins.has(u.user.id),
       // Guests have no email: always «verified» (user.proto).
       emailVerified: u.user.isGuest || u.emailVerified,
@@ -2582,18 +2584,16 @@ class MockImpl {
 
     // ---------------- me
     this.route('GET', '/api/me', (c) => {
-      const u = this.auth(c).user;
-      this.sendMe(c.res, toJson(GetMeResponseSchema, create(GetMeResponseSchema, { me: this.me(u) }), JSON_WRITE), u.user.id);
+      sendMsg(c.res, 200, GetMeResponseSchema, { me: this.me(this.auth(c).user) });
     });
 
     this.route('PATCH', '/api/me', (c) => {
       const u = this.auth(c).user;
       const b = parseBody(c, UpdateMeRequestSchema);
-      // ADR-0041: work_hours (not in the generated UpdateMeRequest yet: read from the raw body).
-      const rawWh = c.raw.length ? (JSON.parse(c.raw.toString('utf8')) as { workHours?: { startMin?: unknown; endMin?: unknown; days?: unknown[] } }).workHours : undefined;
-      if (rawWh) {
+      // ADR-0041: work_hours (validated like the server; guests and bots 403).
+      if (b.workHours) {
         if (u.user.isGuest || u.user.isBot) throw forbidden('work hours are not for guests and bots');
-        const wh = { startMin: Number(rawWh.startMin ?? 0), endMin: Number(rawWh.endMin ?? 0), days: [...new Set((rawWh.days ?? []).map(Number))].sort((x, y) => x - y) };
+        const wh = { startMin: b.workHours.startMin, endMin: b.workHours.endMin, days: [...new Set(b.workHours.days)].sort((x, y) => x - y) };
         if (wh.startMin % 15 || wh.endMin % 15 || wh.startMin < 0 || wh.endMin > 1440 || wh.endMin <= wh.startMin) throw invalid('workHours', 'work hours are 15-minute steps, end after start');
         if (!wh.days.length || wh.days.some((d) => d < 1 || d > 7)) throw invalid('workHours.days', 'days are 1..7, at least one');
         this.calWorkHours.set(u.user.id, wh);
@@ -2641,7 +2641,7 @@ class MockImpl {
         u.settings = st;
       }
       this.emitUserUpdate(u);
-      this.sendMe(c.res, toJson(UpdateMeResponseSchema, create(UpdateMeResponseSchema, { me: this.me(u) }), JSON_WRITE), u.user.id);
+      sendMsg(c.res, 200, UpdateMeResponseSchema, { me: this.me(u) });
     });
 
     this.route('PATCH', '/api/me/status', (c) => {
@@ -5846,13 +5846,6 @@ class MockImpl {
 
   // ------------------------------------------------ free / busy, find a time, CalDAV (ADR-0041)
 
-  /** A Me response with `settings.workHours` (Me.settings.work_hours, before the generated field exists). */
-  private sendMe(res: ServerResponse, json: JsonValue, userId: string): void {
-    const me = (json as { me?: { settings?: Record<string, unknown> } }).me;
-    if (me) me.settings = { ...(me.settings ?? {}), workHours: this.workHoursOf(userId) };
-    send(res, 200, JSON.stringify(json), 'application/json');
-  }
-
   private workHoursOf(userId: string): WorkHoursRec {
     return this.calWorkHours.get(userId) ?? DEFAULT_WORK_HOURS;
   }
@@ -5933,7 +5926,7 @@ class MockImpl {
         work = list.map((u) => workIntervals(this.workHoursOf(u), this.zoneOf(u), from, to));
         let common: Array<{ start: number; end: number }> = [{ start: from, end: to }];
         for (const w of work) common = intersectIntervals(common, w);
-        if (!common.length) throw new HttpError(409, ErrorCode.CONFLICT, 'the work hours of these people never overlap', '', { reason: 'NO_COMMON_HOURS' });
+        if (!common.length) throw new HttpError(409, ErrorCode.NO_COMMON_HOURS, 'the work hours of these people never overlap');
       }
       const slots = slotsOf(freeWindows({ from, to, busy, work, minMinutes: dur }), dur);
       send(c.res, 200, JSON.stringify({ slots: slots.map((x) => ({ startsAt: new Date(x.startMs).toISOString(), endsAt: new Date(x.endMs).toISOString() })) }), 'application/json');
