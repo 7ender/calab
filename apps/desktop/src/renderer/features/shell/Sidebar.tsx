@@ -89,7 +89,7 @@ import { useRecordings } from '../../stores/recordings';
 import { startRecording, stopRecording } from '../../services/recording';
 import { CalendarButton, MiniCalendar } from '../calendar/MiniCalendar';
 import { RoomEventBadge } from '../calendar/RoomEvent';
-import { DRAG_ROOM, dropRoomAt } from '../calendar/dragState';
+import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
 
 export { menuBox, menuItem };
 
@@ -1418,6 +1418,8 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
     };
   }, [dragged, blocked]);
 
+  // The pointer is over a meeting's room drop target (ADR-0038): see onMove.
+  const overRoomTarget = useRef(false);
   const measure = useCallback((): void => {
     const el = listRef.current;
     const d = draggedRef.current;
@@ -1428,6 +1430,12 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
       return { top: r.top - box.top + el.scrollTop, bottom: r.bottom - box.top + el.scrollTop };
     };
     const y = pointerY.current - box.top + el.scrollTop;
+    if (d.type === 'room' && overRoomTarget.current) {
+      // Over a meeting's room field / card: the drop goes there, no insertion line in the list.
+      target.current = null;
+      setLine(null);
+      return;
+    }
     if (d.type === 'room') {
       const slots: Slot[] = [...el.querySelectorAll<HTMLElement>('[data-room-slot],[data-cat-header]')].map((n) =>
         n.dataset.roomSlot !== undefined
@@ -1454,6 +1462,8 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
   }, [dragged, listRef, measure]);
 
   const reset = (): void => {
+    overRoomTarget.current = false;
+    hoverRoomAt(null);
     draggedRef.current = null;
     target.current = null;
     setDragged(null);
@@ -1472,6 +1482,8 @@ function SidebarDnd({ workspaceId, listRef, children }: { workspaceId: string; l
   const onMove = (e: DragMoveEvent): void => {
     const ev = e.activatorEvent as PointerEvent | MouseEvent;
     pointerY.current = ev.clientY + e.delta.y;
+    const d = draggedRef.current;
+    if (d?.type === 'room' && d.voice) overRoomTarget.current = hoverRoomAt(ev.clientX + e.delta.x, pointerY.current);
     measure();
   };
   const onOver = (e: DragOverEvent): void => {

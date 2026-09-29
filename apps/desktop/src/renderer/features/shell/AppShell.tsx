@@ -53,6 +53,9 @@ export function AppShell(): ReactNode {
   const width = useUi((s) => s.sidebarWidth);
   const calDay = useUi((s) => (home ? null : s.calDay));
   const calEvent = useUi((s) => s.calEvent);
+  // The meeting dialog is open: from 1200 px the members column stands beside it (instead of the
+  // card) so a member can be dragged in — also while editing a selected meeting.
+  const eventDialog = useUi((s) => s.dialog?.kind === 'event');
 
   // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
@@ -149,10 +152,14 @@ export function AppShell(): ReactNode {
               {calDay ? (
                 // Calendar (ADR-0038 §7): the day instead of the room, the selected meeting instead of the
                 // members (a column from 1200 px, floating below); no meeting selected — the members, so
-                // one can be dragged into a meeting.
+                // one can be dragged into a meeting (and while the meeting dialog is open).
                 <>
                   <DayView workspaceId={wsId} />
-                  {calEvent ? <EventPanel occ={calEvent} floating={!wide} /> : wide && columnOpen ? <MembersPanel workspaceId={wsId} /> : null}
+                  {calEvent && !(wide && eventDialog) ? (
+                    <EventPanel occ={calEvent} floating={!wide} />
+                  ) : wide && (columnOpen || eventDialog) ? (
+                    <MembersPanel workspaceId={wsId} />
+                  ) : null}
                 </>
               ) : (
                 <>

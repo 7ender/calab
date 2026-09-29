@@ -18,7 +18,7 @@ import { useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
 import { cancelWithConfirm, duplicateEvent, editEvent } from './actions';
-import { dragKind, dragPayload } from './dragState';
+import { dragKind, dragPayload, useRoomDropHover } from './dragState';
 
 const RecordingTranscript = lazy(() => import('../chat/RecordingTranscript'));
 
@@ -358,8 +358,11 @@ function CancelButton({ ev, occ }: { ev: CalendarEvent; occ: string }): ReactNod
  * `calab-drop-room`) → the meeting's room. Editors only.
  */
 function useDropTarget(key: string, editable: boolean): { over: boolean; props: Record<string, unknown> } {
-  const [over, setOver] = useState(false);
+  const [native, setOver] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  // The room list's own drag (not a native one) over the card: highlighted the same way.
+  const hovered = useRoomDropHover((s) => editable && s.el !== null && s.el === ref.current);
+  const over = native || hovered;
   useEffect(() => {
     const el = ref.current;
     if (!el || !editable) return;

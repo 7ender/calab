@@ -36,7 +36,7 @@ import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { memberItems } from '../people/memberPickItems';
 import { MemberPicker } from '../people/MemberPicker';
 import { REPEAT_LABEL } from './EventCard';
-import { dragKind, dragPayload } from './dragState';
+import { dragKind, dragPayload, useRoomDropHover } from './dragState';
 
 const REPEATS = [EventRepeat.UNSPECIFIED, EventRepeat.DAILY, EventRepeat.WEEKLY, EventRepeat.BIWEEKLY, EventRepeat.MONTHLY] as const;
 /** 00:00 … 23:45. */
@@ -252,8 +252,11 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
 function RoomField({ workspaceId, value, onChange }: { workspaceId: string; value: string; onChange: (roomId: string) => void }): ReactNode {
   const byId = useRooms((s) => s.byId);
   const rooms = useMemo(() => roomsOfWorkspace(byId, workspaceId).filter((r) => r.type === RoomType.VOICE), [byId, workspaceId]);
-  const [over, setOver] = useState(false);
+  const [native, setOver] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // The room list's own drag (not a native one) over the field: highlighted the same way.
+  const hovered = useRoomDropHover((s) => s.el !== null && s.el === ref.current);
+  const over = native || hovered;
   const cb = useRef(onChange);
   useEffect(() => {
     cb.current = onChange;

@@ -59,12 +59,32 @@ export function dragKind(dt: DataTransfer | null): 'user' | 'room' | null {
  * drop target (`[data-drop-room]`): the target gets a `calab-drop-room` event with the room id.
  */
 export function dropRoomAt(x: number, y: number, roomId: string): boolean {
-  // elementsFromPoint: the drag chip (DragOverlay) may be the topmost element under the pointer.
-  const el = document
-    .elementsFromPoint(x, y)
-    .map((n) => n.closest<HTMLElement>('[data-drop-room]'))
-    .find((n): n is HTMLElement => !!n);
+  const el = roomTargetAt(x, y);
+  useRoomDropHover.setState({ el: null });
   if (!el) return false;
   el.dispatchEvent(new CustomEvent('calab-drop-room', { detail: roomId, bubbles: false }));
   return true;
+}
+
+/** The room drop target under a point. elementsFromPoint: the drag chip (DragOverlay) may be the topmost element there. */
+function roomTargetAt(x: number, y: number): HTMLElement | null {
+  return (
+    document
+      .elementsFromPoint(x, y)
+      .map((n) => n.closest<HTMLElement>('[data-drop-room]'))
+      .find((n): n is HTMLElement => !!n) ?? null
+  );
+}
+
+/**
+ * The room drop target the room list's drag is over (a leaf store): the target highlights itself
+ * like under a native drag, and the list hides its insertion line — the drop goes to the target.
+ */
+export const useRoomDropHover = create<{ el: HTMLElement | null }>()(() => ({ el: null }));
+
+/** While the room list drags a voice room: marks the drop target under the pointer (null = none). Returns whether there is one. */
+export function hoverRoomAt(x: number | null, y = 0): boolean {
+  const el = x === null ? null : roomTargetAt(x, y);
+  if (useRoomDropHover.getState().el !== el) useRoomDropHover.setState({ el });
+  return !!el;
 }

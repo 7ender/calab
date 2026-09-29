@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test';
 import { IDS } from '../e2e-support/mock-server';
 import { AT_15, DAY, HOUR, expect, openDay, planerka, signIn, test } from './calendarWeb';
 
@@ -138,4 +139,74 @@ test('keyboard: → next day, T today, N new meeting', async ({ page, mock }) =>
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('event-dialog')).toHaveCount(0);
   await expect(page.locator(`[data-cal-day="${DAY}"]`)).toHaveAttribute('aria-current', 'date');
+});
+
+test('the card: Esc closes it (focus back on the block), another day closes it, a click on the grid first deselects', async ({ page, mock }) => {
+  planerka(mock);
+  await signIn(page, mock);
+  await openDay(page);
+  const block = page.getByTestId('event-block').filter({ hasText: 'Планёрка' });
+  const panel = page.getByTestId('event-panel');
+  await block.click();
+  await expect(panel).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await expect(block).toBeFocused();
+  await expect(block).toHaveAttribute('aria-pressed', 'false');
+
+  // Another day: the card of a meeting not on it goes.
+  await block.click();
+  await expect(panel).toBeVisible();
+  await page.getByRole('button', { name: 'Следующий день' }).click();
+  await expect(panel).toHaveCount(0);
+  await page.getByRole('button', { name: 'Предыдущий день' }).click();
+
+  // With a meeting selected, a click on the empty grid closes the card; the next one creates.
+  await block.click();
+  await expect(panel).toBeVisible();
+  const scroller = page.getByTestId('day-scroller');
+  await scroller.evaluate((el) => (el.scrollTop = 18 * 48));
+  const box = await scroller.boundingBox();
+  if (!box) throw new Error('no scroller');
+  const at = { x: box.x + 120, y: box.y + 100 };
+  await page.mouse.click(at.x, at.y);
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId('event-dialog')).toHaveCount(0);
+  await page.mouse.click(at.x, at.y);
+  await expect(page.getByTestId('event-dialog')).toBeVisible();
+});
+
+test('editing a selected meeting: the members column is back for a drag; a room dragged from the list highlights the field', async ({ page, mock }) => {
+  planerka(mock, { organizerId: IDS.users.anna, attendees: [] });
+  await signIn(page, mock);
+  await openDay(page);
+  await page.getByTestId('event-block').filter({ hasText: 'Планёрка' }).click();
+  await page.getByTestId('event-panel').getByRole('button', { name: 'Изменить' }).click();
+  const dialog = page.getByTestId('event-dialog');
+  await expect(dialog).toBeVisible();
+  const members = page.getByRole('complementary', { name: 'Участники' });
+  await expect(members).toBeVisible();
+  await expect(page.getByTestId('event-panel')).toHaveCount(0);
+
+  const drag = async (from: Locator, to: Locator, during?: () => Promise<void>): Promise<void> => {
+    const a = await from.boundingBox();
+    const b = await to.boundingBox();
+    if (!a || !b) throw new Error('drag: no boxes');
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(a.x + a.width / 2 + 10, a.y + a.height / 2 + 5, { steps: 3 });
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 10 });
+    await during?.();
+    await page.mouse.up();
+  };
+  await drag(members.getByRole('button', { name: /Вера Ким/ }).first(), dialog.getByTestId('event-attendees'));
+  await expect(dialog.getByTestId('event-chip').filter({ hasText: 'Вера Ким' })).toHaveCount(1);
+
+  // The room list's own drag (dnd-kit): the field lights up like under a native drag.
+  const field = dialog.locator('[data-drop-room]');
+  await drag(page.locator('aside').first().getByRole('button', { name: /Созвон/ }).first(), dialog.getByTestId('event-room'), async () => {
+    await expect(field).toHaveClass(/outline-accent/);
+  });
+  await expect(dialog.getByTestId('event-room')).toHaveValue(IDS.rooms.call);
+  await expect(field).not.toHaveClass(/outline-accent/);
 });
