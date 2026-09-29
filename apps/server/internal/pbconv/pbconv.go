@@ -349,6 +349,20 @@ func Badges(rows []sqlc.WorkspaceBadge) []*v1.Badge {
 	return out
 }
 
+// Background converts a workspace camera background row (ADR-0035).
+func Background(b sqlc.WorkspaceBackground) *v1.WorkspaceBackground {
+	return &v1.WorkspaceBackground{Id: b.ID.String(), WorkspaceId: b.WorkspaceID.String(), Name: b.Name, FileId: b.FileID.String()}
+}
+
+// Backgrounds converts camera background rows.
+func Backgrounds(rows []sqlc.WorkspaceBackground) []*v1.WorkspaceBackground {
+	out := make([]*v1.WorkspaceBackground, len(rows))
+	for i, b := range rows {
+		out[i] = Background(b)
+	}
+	return out
+}
+
 // Role converts a workspace role row.
 func Role(r sqlc.WorkspaceRole) *v1.Role {
 	out := &v1.Role{

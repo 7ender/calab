@@ -85,6 +85,17 @@ message Badge {
   string file_id = 4; // PNG / WebP / JPEG of this workspace, <= 128 KB, <= 256x256 (clients upload 64x64 WebP)
 }
 
+// A camera background of the workspace (ADR-0035, «фоны пространства»): a picture an admin adds
+// for everyone's camera preview. At most 20 per workspace.
+message WorkspaceBackground {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3; // 1..40 characters
+  // A 1280x720 WebP made by the server from the admin's upload; its thumbnail
+  // (GET /api/files/{id}/thumbnail) is 320x180. Readable by the members of the workspace.
+  string file_id = 4;
+}
+
 message Invite {
   string id = 1;
   string workspace_id = 2;
@@ -390,4 +401,38 @@ message SetMemberBadgeRequest {
 
 message SetMemberBadgeResponse {
   WorkspaceMember member = 1;
+}
+
+// ---- Camera backgrounds of the workspace (ADR-0035). The list is for any member (guests too);
+// the rest needs MANAGE_WORKSPACE. Every change goes to every member of the workspace:
+// BACKGROUND_CREATE / BACKGROUND_UPDATE / BACKGROUND_DELETE. ----
+
+// GET /api/workspaces/{id}/backgrounds → the workspace's backgrounds, in creation order.
+message ListBackgroundsResponse {
+  repeated WorkspaceBackground backgrounds = 1;
+}
+
+// POST /api/workspaces/{id}/backgrounds → 201. file_id: an image the caller uploaded to this
+// workspace (POST /api/workspaces/{id}/files), JPEG / PNG / WebP, at most 10 MB, not a sticker,
+// else 422 on file_id. The server makes a new file from it (1280x720 WebP, centre crop, and a
+// 320x180 thumbnail), counted in the workspace's storage quota (413 when full); the upload itself
+// stays unattached. 409 CONFLICT: 20 backgrounds already.
+message CreateBackgroundRequest {
+  string name = 1; // 1..40 characters after trimming
+  string file_id = 2;
+}
+
+message CreateBackgroundResponse {
+  WorkspaceBackground background = 1;
+}
+
+// PATCH /api/workspaces/{id}/backgrounds/{background_id}: rename. Unset fields are left unchanged.
+// DELETE /api/workspaces/{id}/backgrounds/{background_id} → 204, then BACKGROUND_DELETE (clients
+// that chose it fall back to no background).
+message UpdateBackgroundRequest {
+  optional string name = 1;
+}
+
+message UpdateBackgroundResponse {
+  WorkspaceBackground background = 1;
 }

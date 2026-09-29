@@ -85,6 +85,10 @@ var botRoutes = map[string]botAccess{
 	"PATCH /api/workspaces/{id}/badges/{badgeId}":          botDeny,
 	"DELETE /api/workspaces/{id}/badges/{badgeId}":         botDeny,
 	"PUT /api/workspaces/{id}/members/{userId}/badge":      botDeny,
+	"GET /api/workspaces/{id}/backgrounds":                 botDeny, // ADR-0035: bots have no camera
+	"POST /api/workspaces/{id}/backgrounds":                botDeny,
+	"PATCH /api/workspaces/{id}/backgrounds/{bgId}":        botDeny,
+	"DELETE /api/workspaces/{id}/backgrounds/{bgId}":       botDeny,
 	"PATCH /api/workspaces/{id}/members/{userId}":          botAllow,
 	"DELETE /api/workspaces/{id}/members/{userId}":         botAllow,
 	"POST /api/workspaces/{id}/members/{userId}/promote":   botAllow,

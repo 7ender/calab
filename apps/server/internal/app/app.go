@@ -267,7 +267,7 @@ func New(d Deps) *App {
 		Mail: mailSvc, PublicURL: d.Config.PublicAppURL,
 		Lookup: redisx.NewRateLimiter(d.Redis, "rl:invite-lookup:", 20, 20), // 20 per minute
 		Send:   redisx.NewRateLimiter(d.Redis, "rl:invite-send:", 20, 0.5),  // 20 at once, 30 per hour
-	}).Routes(mux, private)
+	}).WithFiles(filesSvc).Routes(mux, private)
 	roomHandlers := rooms.NewHandlers(d.DB, pub).WithPlans(planSvc)
 	roomHandlers.Routes(mux, private)
 	roomHandlers.CategoryRoutes(mux, private)

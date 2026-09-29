@@ -191,6 +191,10 @@ message DispatchEvent {
     // Others read further (docs/09 #92): in a DM to the peer at once; in a workspace room to
     // the members who can view it, at most one per room per 3 s. Never to bots.
     PeerRead read_receipt = 48;
+    // Camera backgrounds of the workspace (ADR-0035); to every member of the workspace.
+    BackgroundCreate background_create = 49;
+    BackgroundUpdate background_update = 50;
+    BackgroundDelete background_delete = 51;
     // Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
     BotCreate bot_create = 60;
     BotUpdate bot_update = 61;
@@ -273,6 +277,8 @@ message WorkspaceSnapshot {
   repeated Role roles = 10;
   // The workspace's badge library (docs/09 #82); members[].badge_id refer to them.
   repeated Badge badges = 11;
+  // The workspace's camera backgrounds (ADR-0035), in creation order.
+  repeated WorkspaceBackground backgrounds = 12;
 }
 
 message Ready {
@@ -469,6 +475,20 @@ message BadgeUpdate {
 message BadgeDelete {
   string workspace_id = 1;
   string badge_id = 2;
+}
+
+message BackgroundCreate {
+  WorkspaceBackground background = 1;
+}
+
+message BackgroundUpdate {
+  WorkspaceBackground background = 1;
+}
+
+// The background is gone; clients that chose it fall back to no background.
+message BackgroundDelete {
+  string workspace_id = 1;
+  string background_id = 2;
 }
 
 message WorkspaceMemberRemove {

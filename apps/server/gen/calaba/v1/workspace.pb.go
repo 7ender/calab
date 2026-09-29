@@ -584,6 +584,78 @@ func (x *Badge) GetFileId() string {
 	return ""
 }
 
+// A camera background of the workspace (ADR-0035, «фоны пространства»): a picture an admin adds
+// for everyone's camera preview. At most 20 per workspace.
+type WorkspaceBackground struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"` // 1..40 characters
+	// A 1280x720 WebP made by the server from the admin's upload; its thumbnail
+	// (GET /api/files/{id}/thumbnail) is 320x180. Readable by the members of the workspace.
+	FileId        string `protobuf:"bytes,4,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkspaceBackground) Reset() {
+	*x = WorkspaceBackground{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkspaceBackground) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkspaceBackground) ProtoMessage() {}
+
+func (x *WorkspaceBackground) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkspaceBackground.ProtoReflect.Descriptor instead.
+func (*WorkspaceBackground) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *WorkspaceBackground) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *WorkspaceBackground) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *WorkspaceBackground) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *WorkspaceBackground) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
 type Invite struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -600,7 +672,7 @@ type Invite struct {
 
 func (x *Invite) Reset() {
 	*x = Invite{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[5]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -612,7 +684,7 @@ func (x *Invite) String() string {
 func (*Invite) ProtoMessage() {}
 
 func (x *Invite) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[5]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -625,7 +697,7 @@ func (x *Invite) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Invite.ProtoReflect.Descriptor instead.
 func (*Invite) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Invite) GetId() string {
@@ -696,7 +768,7 @@ type CreateWorkspaceRequest struct {
 
 func (x *CreateWorkspaceRequest) Reset() {
 	*x = CreateWorkspaceRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[6]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -708,7 +780,7 @@ func (x *CreateWorkspaceRequest) String() string {
 func (*CreateWorkspaceRequest) ProtoMessage() {}
 
 func (x *CreateWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[6]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -721,7 +793,7 @@ func (x *CreateWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*CreateWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateWorkspaceRequest) GetSlug() string {
@@ -754,7 +826,7 @@ type CreateWorkspaceResponse struct {
 
 func (x *CreateWorkspaceResponse) Reset() {
 	*x = CreateWorkspaceResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[7]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -766,7 +838,7 @@ func (x *CreateWorkspaceResponse) String() string {
 func (*CreateWorkspaceResponse) ProtoMessage() {}
 
 func (x *CreateWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[7]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -779,7 +851,7 @@ func (x *CreateWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*CreateWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{7}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CreateWorkspaceResponse) GetWorkspace() *Workspace {
@@ -799,7 +871,7 @@ type ListWorkspacesResponse struct {
 
 func (x *ListWorkspacesResponse) Reset() {
 	*x = ListWorkspacesResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[8]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +883,7 @@ func (x *ListWorkspacesResponse) String() string {
 func (*ListWorkspacesResponse) ProtoMessage() {}
 
 func (x *ListWorkspacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[8]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +896,7 @@ func (x *ListWorkspacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkspacesResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkspacesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{8}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListWorkspacesResponse) GetWorkspaces() []*Workspace {
@@ -844,7 +916,7 @@ type DiscoverWorkspacesResponse struct {
 
 func (x *DiscoverWorkspacesResponse) Reset() {
 	*x = DiscoverWorkspacesResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[9]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -856,7 +928,7 @@ func (x *DiscoverWorkspacesResponse) String() string {
 func (*DiscoverWorkspacesResponse) ProtoMessage() {}
 
 func (x *DiscoverWorkspacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[9]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -869,7 +941,7 @@ func (x *DiscoverWorkspacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverWorkspacesResponse.ProtoReflect.Descriptor instead.
 func (*DiscoverWorkspacesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{9}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DiscoverWorkspacesResponse) GetWorkspaces() []*Workspace {
@@ -890,7 +962,7 @@ type GetWorkspaceResponse struct {
 
 func (x *GetWorkspaceResponse) Reset() {
 	*x = GetWorkspaceResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[10]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -902,7 +974,7 @@ func (x *GetWorkspaceResponse) String() string {
 func (*GetWorkspaceResponse) ProtoMessage() {}
 
 func (x *GetWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[10]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -915,7 +987,7 @@ func (x *GetWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*GetWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{10}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetWorkspaceResponse) GetWorkspace() *Workspace {
@@ -951,7 +1023,7 @@ type UpdateWorkspaceRequest struct {
 
 func (x *UpdateWorkspaceRequest) Reset() {
 	*x = UpdateWorkspaceRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[11]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -963,7 +1035,7 @@ func (x *UpdateWorkspaceRequest) String() string {
 func (*UpdateWorkspaceRequest) ProtoMessage() {}
 
 func (x *UpdateWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[11]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -976,7 +1048,7 @@ func (x *UpdateWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*UpdateWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{11}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UpdateWorkspaceRequest) GetSlug() string {
@@ -1058,7 +1130,7 @@ type UpdateWorkspaceResponse struct {
 
 func (x *UpdateWorkspaceResponse) Reset() {
 	*x = UpdateWorkspaceResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[12]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1070,7 +1142,7 @@ func (x *UpdateWorkspaceResponse) String() string {
 func (*UpdateWorkspaceResponse) ProtoMessage() {}
 
 func (x *UpdateWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[12]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1083,7 +1155,7 @@ func (x *UpdateWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*UpdateWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{12}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UpdateWorkspaceResponse) GetWorkspace() *Workspace {
@@ -1104,7 +1176,7 @@ type JoinWorkspaceResponse struct {
 
 func (x *JoinWorkspaceResponse) Reset() {
 	*x = JoinWorkspaceResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[13]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1116,7 +1188,7 @@ func (x *JoinWorkspaceResponse) String() string {
 func (*JoinWorkspaceResponse) ProtoMessage() {}
 
 func (x *JoinWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[13]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1129,7 +1201,7 @@ func (x *JoinWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*JoinWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{13}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *JoinWorkspaceResponse) GetWorkspace() *Workspace {
@@ -1157,7 +1229,7 @@ type CreateInviteRequest struct {
 
 func (x *CreateInviteRequest) Reset() {
 	*x = CreateInviteRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[14]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1169,7 +1241,7 @@ func (x *CreateInviteRequest) String() string {
 func (*CreateInviteRequest) ProtoMessage() {}
 
 func (x *CreateInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[14]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1182,7 +1254,7 @@ func (x *CreateInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInviteRequest.ProtoReflect.Descriptor instead.
 func (*CreateInviteRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{14}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CreateInviteRequest) GetMaxUses() uint32 {
@@ -1208,7 +1280,7 @@ type CreateInviteResponse struct {
 
 func (x *CreateInviteResponse) Reset() {
 	*x = CreateInviteResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[15]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1220,7 +1292,7 @@ func (x *CreateInviteResponse) String() string {
 func (*CreateInviteResponse) ProtoMessage() {}
 
 func (x *CreateInviteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[15]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1233,7 +1305,7 @@ func (x *CreateInviteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInviteResponse.ProtoReflect.Descriptor instead.
 func (*CreateInviteResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{15}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CreateInviteResponse) GetInvite() *Invite {
@@ -1253,7 +1325,7 @@ type ListInvitesResponse struct {
 
 func (x *ListInvitesResponse) Reset() {
 	*x = ListInvitesResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[16]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1265,7 +1337,7 @@ func (x *ListInvitesResponse) String() string {
 func (*ListInvitesResponse) ProtoMessage() {}
 
 func (x *ListInvitesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[16]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1278,7 +1350,7 @@ func (x *ListInvitesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvitesResponse.ProtoReflect.Descriptor instead.
 func (*ListInvitesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{16}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListInvitesResponse) GetInvites() []*Invite {
@@ -1298,7 +1370,7 @@ type ListMembersResponse struct {
 
 func (x *ListMembersResponse) Reset() {
 	*x = ListMembersResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[17]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1310,7 +1382,7 @@ func (x *ListMembersResponse) String() string {
 func (*ListMembersResponse) ProtoMessage() {}
 
 func (x *ListMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[17]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1323,7 +1395,7 @@ func (x *ListMembersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMembersResponse.ProtoReflect.Descriptor instead.
 func (*ListMembersResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{17}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListMembersResponse) GetMembers() []*WorkspaceMember {
@@ -1347,7 +1419,7 @@ type UpdateMemberRequest struct {
 
 func (x *UpdateMemberRequest) Reset() {
 	*x = UpdateMemberRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[18]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1359,7 +1431,7 @@ func (x *UpdateMemberRequest) String() string {
 func (*UpdateMemberRequest) ProtoMessage() {}
 
 func (x *UpdateMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[18]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1372,7 +1444,7 @@ func (x *UpdateMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMemberRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMemberRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{18}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UpdateMemberRequest) GetRole() WorkspaceRole {
@@ -1398,7 +1470,7 @@ type UpdateMemberResponse struct {
 
 func (x *UpdateMemberResponse) Reset() {
 	*x = UpdateMemberResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[19]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1410,7 +1482,7 @@ func (x *UpdateMemberResponse) String() string {
 func (*UpdateMemberResponse) ProtoMessage() {}
 
 func (x *UpdateMemberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[19]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1423,7 +1495,7 @@ func (x *UpdateMemberResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMemberResponse.ProtoReflect.Descriptor instead.
 func (*UpdateMemberResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{19}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UpdateMemberResponse) GetMember() *WorkspaceMember {
@@ -1458,7 +1530,7 @@ type GetInviteResponse struct {
 
 func (x *GetInviteResponse) Reset() {
 	*x = GetInviteResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[20]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1470,7 +1542,7 @@ func (x *GetInviteResponse) String() string {
 func (*GetInviteResponse) ProtoMessage() {}
 
 func (x *GetInviteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[20]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1483,7 +1555,7 @@ func (x *GetInviteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInviteResponse.ProtoReflect.Descriptor instead.
 func (*GetInviteResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{20}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetInviteResponse) GetWorkspace() *Workspace {
@@ -1525,7 +1597,7 @@ type InviteLookupRequest struct {
 
 func (x *InviteLookupRequest) Reset() {
 	*x = InviteLookupRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[21]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1537,7 +1609,7 @@ func (x *InviteLookupRequest) String() string {
 func (*InviteLookupRequest) ProtoMessage() {}
 
 func (x *InviteLookupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[21]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1550,7 +1622,7 @@ func (x *InviteLookupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InviteLookupRequest.ProtoReflect.Descriptor instead.
 func (*InviteLookupRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{21}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *InviteLookupRequest) GetEmail() string {
@@ -1571,7 +1643,7 @@ type InviteLookupResponse struct {
 
 func (x *InviteLookupResponse) Reset() {
 	*x = InviteLookupResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[22]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1583,7 +1655,7 @@ func (x *InviteLookupResponse) String() string {
 func (*InviteLookupResponse) ProtoMessage() {}
 
 func (x *InviteLookupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[22]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1596,7 +1668,7 @@ func (x *InviteLookupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InviteLookupResponse.ProtoReflect.Descriptor instead.
 func (*InviteLookupResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{22}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *InviteLookupResponse) GetUser() *User {
@@ -1626,7 +1698,7 @@ type AddMemberRequest struct {
 
 func (x *AddMemberRequest) Reset() {
 	*x = AddMemberRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[23]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1638,7 +1710,7 @@ func (x *AddMemberRequest) String() string {
 func (*AddMemberRequest) ProtoMessage() {}
 
 func (x *AddMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[23]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1651,7 +1723,7 @@ func (x *AddMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddMemberRequest.ProtoReflect.Descriptor instead.
 func (*AddMemberRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{23}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *AddMemberRequest) GetUserId() string {
@@ -1670,7 +1742,7 @@ type AddMemberResponse struct {
 
 func (x *AddMemberResponse) Reset() {
 	*x = AddMemberResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[24]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1682,7 +1754,7 @@ func (x *AddMemberResponse) String() string {
 func (*AddMemberResponse) ProtoMessage() {}
 
 func (x *AddMemberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[24]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1695,7 +1767,7 @@ func (x *AddMemberResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddMemberResponse.ProtoReflect.Descriptor instead.
 func (*AddMemberResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{24}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AddMemberResponse) GetMember() *WorkspaceMember {
@@ -1722,7 +1794,7 @@ type EmailInvite struct {
 
 func (x *EmailInvite) Reset() {
 	*x = EmailInvite{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[25]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1734,7 +1806,7 @@ func (x *EmailInvite) String() string {
 func (*EmailInvite) ProtoMessage() {}
 
 func (x *EmailInvite) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[25]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1747,7 +1819,7 @@ func (x *EmailInvite) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EmailInvite.ProtoReflect.Descriptor instead.
 func (*EmailInvite) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{25}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *EmailInvite) GetId() string {
@@ -1822,7 +1894,7 @@ type CreateEmailInviteRequest struct {
 
 func (x *CreateEmailInviteRequest) Reset() {
 	*x = CreateEmailInviteRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[26]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1834,7 +1906,7 @@ func (x *CreateEmailInviteRequest) String() string {
 func (*CreateEmailInviteRequest) ProtoMessage() {}
 
 func (x *CreateEmailInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[26]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1847,7 +1919,7 @@ func (x *CreateEmailInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEmailInviteRequest.ProtoReflect.Descriptor instead.
 func (*CreateEmailInviteRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{26}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateEmailInviteRequest) GetEmail() string {
@@ -1873,7 +1945,7 @@ type CreateEmailInviteResponse struct {
 
 func (x *CreateEmailInviteResponse) Reset() {
 	*x = CreateEmailInviteResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[27]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1885,7 +1957,7 @@ func (x *CreateEmailInviteResponse) String() string {
 func (*CreateEmailInviteResponse) ProtoMessage() {}
 
 func (x *CreateEmailInviteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[27]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1898,7 +1970,7 @@ func (x *CreateEmailInviteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEmailInviteResponse.ProtoReflect.Descriptor instead.
 func (*CreateEmailInviteResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{27}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CreateEmailInviteResponse) GetInvite() *EmailInvite {
@@ -1919,7 +1991,7 @@ type ListEmailInvitesResponse struct {
 
 func (x *ListEmailInvitesResponse) Reset() {
 	*x = ListEmailInvitesResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[28]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1931,7 +2003,7 @@ func (x *ListEmailInvitesResponse) String() string {
 func (*ListEmailInvitesResponse) ProtoMessage() {}
 
 func (x *ListEmailInvitesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[28]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1944,7 +2016,7 @@ func (x *ListEmailInvitesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEmailInvitesResponse.ProtoReflect.Descriptor instead.
 func (*ListEmailInvitesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{28}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ListEmailInvitesResponse) GetInvites() []*EmailInvite {
@@ -1969,7 +2041,7 @@ type CreateBanRequest struct {
 
 func (x *CreateBanRequest) Reset() {
 	*x = CreateBanRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[29]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1981,7 +2053,7 @@ func (x *CreateBanRequest) String() string {
 func (*CreateBanRequest) ProtoMessage() {}
 
 func (x *CreateBanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[29]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1994,7 +2066,7 @@ func (x *CreateBanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBanRequest.ProtoReflect.Descriptor instead.
 func (*CreateBanRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{29}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *CreateBanRequest) GetUserId() string {
@@ -2020,7 +2092,7 @@ type CreateBanResponse struct {
 
 func (x *CreateBanResponse) Reset() {
 	*x = CreateBanResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[30]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2032,7 +2104,7 @@ func (x *CreateBanResponse) String() string {
 func (*CreateBanResponse) ProtoMessage() {}
 
 func (x *CreateBanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[30]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2045,7 +2117,7 @@ func (x *CreateBanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBanResponse.ProtoReflect.Descriptor instead.
 func (*CreateBanResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{30}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *CreateBanResponse) GetBan() *WorkspaceBan {
@@ -2066,7 +2138,7 @@ type ListBansResponse struct {
 
 func (x *ListBansResponse) Reset() {
 	*x = ListBansResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[31]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2078,7 +2150,7 @@ func (x *ListBansResponse) String() string {
 func (*ListBansResponse) ProtoMessage() {}
 
 func (x *ListBansResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[31]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2091,7 +2163,7 @@ func (x *ListBansResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBansResponse.ProtoReflect.Descriptor instead.
 func (*ListBansResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{31}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ListBansResponse) GetBans() []*WorkspaceBan {
@@ -2111,7 +2183,7 @@ type ListRolesResponse struct {
 
 func (x *ListRolesResponse) Reset() {
 	*x = ListRolesResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[32]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2123,7 +2195,7 @@ func (x *ListRolesResponse) String() string {
 func (*ListRolesResponse) ProtoMessage() {}
 
 func (x *ListRolesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[32]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2136,7 +2208,7 @@ func (x *ListRolesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRolesResponse.ProtoReflect.Descriptor instead.
 func (*ListRolesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{32}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ListRolesResponse) GetRoles() []*Role {
@@ -2161,7 +2233,7 @@ type CreateRoleRequest struct {
 
 func (x *CreateRoleRequest) Reset() {
 	*x = CreateRoleRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[33]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2173,7 +2245,7 @@ func (x *CreateRoleRequest) String() string {
 func (*CreateRoleRequest) ProtoMessage() {}
 
 func (x *CreateRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[33]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2186,7 +2258,7 @@ func (x *CreateRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRoleRequest.ProtoReflect.Descriptor instead.
 func (*CreateRoleRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{33}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CreateRoleRequest) GetName() string {
@@ -2226,7 +2298,7 @@ type CreateRoleResponse struct {
 
 func (x *CreateRoleResponse) Reset() {
 	*x = CreateRoleResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[34]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2238,7 +2310,7 @@ func (x *CreateRoleResponse) String() string {
 func (*CreateRoleResponse) ProtoMessage() {}
 
 func (x *CreateRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[34]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2251,7 +2323,7 @@ func (x *CreateRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRoleResponse.ProtoReflect.Descriptor instead.
 func (*CreateRoleResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{34}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CreateRoleResponse) GetRole() *Role {
@@ -2276,7 +2348,7 @@ type UpdateRoleRequest struct {
 
 func (x *UpdateRoleRequest) Reset() {
 	*x = UpdateRoleRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[35]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2288,7 +2360,7 @@ func (x *UpdateRoleRequest) String() string {
 func (*UpdateRoleRequest) ProtoMessage() {}
 
 func (x *UpdateRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[35]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2301,7 +2373,7 @@ func (x *UpdateRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRoleRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRoleRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{35}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *UpdateRoleRequest) GetName() string {
@@ -2341,7 +2413,7 @@ type UpdateRoleResponse struct {
 
 func (x *UpdateRoleResponse) Reset() {
 	*x = UpdateRoleResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[36]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2353,7 +2425,7 @@ func (x *UpdateRoleResponse) String() string {
 func (*UpdateRoleResponse) ProtoMessage() {}
 
 func (x *UpdateRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[36]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2366,7 +2438,7 @@ func (x *UpdateRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRoleResponse.ProtoReflect.Descriptor instead.
 func (*UpdateRoleResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{36}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *UpdateRoleResponse) GetRole() *Role {
@@ -2387,7 +2459,7 @@ type SetRoleOrderRequest struct {
 
 func (x *SetRoleOrderRequest) Reset() {
 	*x = SetRoleOrderRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[37]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2399,7 +2471,7 @@ func (x *SetRoleOrderRequest) String() string {
 func (*SetRoleOrderRequest) ProtoMessage() {}
 
 func (x *SetRoleOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[37]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2412,7 +2484,7 @@ func (x *SetRoleOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRoleOrderRequest.ProtoReflect.Descriptor instead.
 func (*SetRoleOrderRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{37}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *SetRoleOrderRequest) GetRoleIds() []string {
@@ -2431,7 +2503,7 @@ type SetRoleOrderResponse struct {
 
 func (x *SetRoleOrderResponse) Reset() {
 	*x = SetRoleOrderResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[38]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2443,7 +2515,7 @@ func (x *SetRoleOrderResponse) String() string {
 func (*SetRoleOrderResponse) ProtoMessage() {}
 
 func (x *SetRoleOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[38]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2456,7 +2528,7 @@ func (x *SetRoleOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRoleOrderResponse.ProtoReflect.Descriptor instead.
 func (*SetRoleOrderResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{38}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SetRoleOrderResponse) GetRoles() []*Role {
@@ -2481,7 +2553,7 @@ type SetMemberRolesRequest struct {
 
 func (x *SetMemberRolesRequest) Reset() {
 	*x = SetMemberRolesRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[39]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2493,7 +2565,7 @@ func (x *SetMemberRolesRequest) String() string {
 func (*SetMemberRolesRequest) ProtoMessage() {}
 
 func (x *SetMemberRolesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[39]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2506,7 +2578,7 @@ func (x *SetMemberRolesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetMemberRolesRequest.ProtoReflect.Descriptor instead.
 func (*SetMemberRolesRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{39}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SetMemberRolesRequest) GetRoleIds() []string {
@@ -2525,7 +2597,7 @@ type SetMemberRolesResponse struct {
 
 func (x *SetMemberRolesResponse) Reset() {
 	*x = SetMemberRolesResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[40]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2537,7 +2609,7 @@ func (x *SetMemberRolesResponse) String() string {
 func (*SetMemberRolesResponse) ProtoMessage() {}
 
 func (x *SetMemberRolesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[40]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2550,7 +2622,7 @@ func (x *SetMemberRolesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetMemberRolesResponse.ProtoReflect.Descriptor instead.
 func (*SetMemberRolesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{40}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SetMemberRolesResponse) GetMember() *WorkspaceMember {
@@ -2570,7 +2642,7 @@ type ListBadgesResponse struct {
 
 func (x *ListBadgesResponse) Reset() {
 	*x = ListBadgesResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[41]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2582,7 +2654,7 @@ func (x *ListBadgesResponse) String() string {
 func (*ListBadgesResponse) ProtoMessage() {}
 
 func (x *ListBadgesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[41]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2595,7 +2667,7 @@ func (x *ListBadgesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBadgesResponse.ProtoReflect.Descriptor instead.
 func (*ListBadgesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{41}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ListBadgesResponse) GetBadges() []*Badge {
@@ -2618,7 +2690,7 @@ type CreateBadgeRequest struct {
 
 func (x *CreateBadgeRequest) Reset() {
 	*x = CreateBadgeRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[42]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2630,7 +2702,7 @@ func (x *CreateBadgeRequest) String() string {
 func (*CreateBadgeRequest) ProtoMessage() {}
 
 func (x *CreateBadgeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[42]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2643,7 +2715,7 @@ func (x *CreateBadgeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBadgeRequest.ProtoReflect.Descriptor instead.
 func (*CreateBadgeRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{42}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *CreateBadgeRequest) GetName() string {
@@ -2669,7 +2741,7 @@ type CreateBadgeResponse struct {
 
 func (x *CreateBadgeResponse) Reset() {
 	*x = CreateBadgeResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[43]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2681,7 +2753,7 @@ func (x *CreateBadgeResponse) String() string {
 func (*CreateBadgeResponse) ProtoMessage() {}
 
 func (x *CreateBadgeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[43]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2694,7 +2766,7 @@ func (x *CreateBadgeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBadgeResponse.ProtoReflect.Descriptor instead.
 func (*CreateBadgeResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{43}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *CreateBadgeResponse) GetBadge() *Badge {
@@ -2717,7 +2789,7 @@ type UpdateBadgeRequest struct {
 
 func (x *UpdateBadgeRequest) Reset() {
 	*x = UpdateBadgeRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[44]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2729,7 +2801,7 @@ func (x *UpdateBadgeRequest) String() string {
 func (*UpdateBadgeRequest) ProtoMessage() {}
 
 func (x *UpdateBadgeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[44]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2742,7 +2814,7 @@ func (x *UpdateBadgeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBadgeRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBadgeRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{44}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *UpdateBadgeRequest) GetName() string {
@@ -2768,7 +2840,7 @@ type UpdateBadgeResponse struct {
 
 func (x *UpdateBadgeResponse) Reset() {
 	*x = UpdateBadgeResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[45]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2780,7 +2852,7 @@ func (x *UpdateBadgeResponse) String() string {
 func (*UpdateBadgeResponse) ProtoMessage() {}
 
 func (x *UpdateBadgeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[45]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2793,7 +2865,7 @@ func (x *UpdateBadgeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBadgeResponse.ProtoReflect.Descriptor instead.
 func (*UpdateBadgeResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{45}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *UpdateBadgeResponse) GetBadge() *Badge {
@@ -2814,7 +2886,7 @@ type SetMemberBadgeRequest struct {
 
 func (x *SetMemberBadgeRequest) Reset() {
 	*x = SetMemberBadgeRequest{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[46]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2826,7 +2898,7 @@ func (x *SetMemberBadgeRequest) String() string {
 func (*SetMemberBadgeRequest) ProtoMessage() {}
 
 func (x *SetMemberBadgeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[46]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2839,7 +2911,7 @@ func (x *SetMemberBadgeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetMemberBadgeRequest.ProtoReflect.Descriptor instead.
 func (*SetMemberBadgeRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{46}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SetMemberBadgeRequest) GetBadgeId() string {
@@ -2858,7 +2930,7 @@ type SetMemberBadgeResponse struct {
 
 func (x *SetMemberBadgeResponse) Reset() {
 	*x = SetMemberBadgeResponse{}
-	mi := &file_calaba_v1_workspace_proto_msgTypes[47]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2870,7 +2942,7 @@ func (x *SetMemberBadgeResponse) String() string {
 func (*SetMemberBadgeResponse) ProtoMessage() {}
 
 func (x *SetMemberBadgeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_workspace_proto_msgTypes[47]
+	mi := &file_calaba_v1_workspace_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2883,12 +2955,249 @@ func (x *SetMemberBadgeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetMemberBadgeResponse.ProtoReflect.Descriptor instead.
 func (*SetMemberBadgeResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{47}
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *SetMemberBadgeResponse) GetMember() *WorkspaceMember {
 	if x != nil {
 		return x.Member
+	}
+	return nil
+}
+
+// GET /api/workspaces/{id}/backgrounds → the workspace's backgrounds, in creation order.
+type ListBackgroundsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Backgrounds   []*WorkspaceBackground `protobuf:"bytes,1,rep,name=backgrounds,proto3" json:"backgrounds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBackgroundsResponse) Reset() {
+	*x = ListBackgroundsResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBackgroundsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBackgroundsResponse) ProtoMessage() {}
+
+func (x *ListBackgroundsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBackgroundsResponse.ProtoReflect.Descriptor instead.
+func (*ListBackgroundsResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *ListBackgroundsResponse) GetBackgrounds() []*WorkspaceBackground {
+	if x != nil {
+		return x.Backgrounds
+	}
+	return nil
+}
+
+// POST /api/workspaces/{id}/backgrounds → 201. file_id: an image the caller uploaded to this
+// workspace (POST /api/workspaces/{id}/files), JPEG / PNG / WebP, at most 10 MB, not a sticker,
+// else 422 on file_id. The server makes a new file from it (1280x720 WebP, centre crop, and a
+// 320x180 thumbnail), counted in the workspace's storage quota (413 when full); the upload itself
+// stays unattached. 409 CONFLICT: 20 backgrounds already.
+type CreateBackgroundRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // 1..40 characters after trimming
+	FileId        string                 `protobuf:"bytes,2,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateBackgroundRequest) Reset() {
+	*x = CreateBackgroundRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateBackgroundRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateBackgroundRequest) ProtoMessage() {}
+
+func (x *CreateBackgroundRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateBackgroundRequest.ProtoReflect.Descriptor instead.
+func (*CreateBackgroundRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *CreateBackgroundRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateBackgroundRequest) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+type CreateBackgroundResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Background    *WorkspaceBackground   `protobuf:"bytes,1,opt,name=background,proto3" json:"background,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateBackgroundResponse) Reset() {
+	*x = CreateBackgroundResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateBackgroundResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateBackgroundResponse) ProtoMessage() {}
+
+func (x *CreateBackgroundResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateBackgroundResponse.ProtoReflect.Descriptor instead.
+func (*CreateBackgroundResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *CreateBackgroundResponse) GetBackground() *WorkspaceBackground {
+	if x != nil {
+		return x.Background
+	}
+	return nil
+}
+
+// PATCH /api/workspaces/{id}/backgrounds/{background_id}: rename. Unset fields are left unchanged.
+// DELETE /api/workspaces/{id}/backgrounds/{background_id} → 204, then BACKGROUND_DELETE (clients
+// that chose it fall back to no background).
+type UpdateBackgroundRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateBackgroundRequest) Reset() {
+	*x = UpdateBackgroundRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateBackgroundRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateBackgroundRequest) ProtoMessage() {}
+
+func (x *UpdateBackgroundRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateBackgroundRequest.ProtoReflect.Descriptor instead.
+func (*UpdateBackgroundRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *UpdateBackgroundRequest) GetName() string {
+	if x != nil && x.Name != nil {
+		return *x.Name
+	}
+	return ""
+}
+
+type UpdateBackgroundResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Background    *WorkspaceBackground   `protobuf:"bytes,1,opt,name=background,proto3" json:"background,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateBackgroundResponse) Reset() {
+	*x = UpdateBackgroundResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateBackgroundResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateBackgroundResponse) ProtoMessage() {}
+
+func (x *UpdateBackgroundResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateBackgroundResponse.ProtoReflect.Descriptor instead.
+func (*UpdateBackgroundResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *UpdateBackgroundResponse) GetBackground() *WorkspaceBackground {
+	if x != nil {
+		return x.Background
 	}
 	return nil
 }
@@ -2941,6 +3250,11 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\brole_ids\x18\x06 \x03(\tR\aroleIds\x12\x19\n" +
 	"\bbadge_id\x18\a \x01(\tR\abadgeId\"g\n" +
 	"\x05Badge\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x17\n" +
+	"\afile_id\x18\x04 \x01(\tR\x06fileId\"u\n" +
+	"\x13WorkspaceBackground\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x17\n" +
@@ -3112,7 +3426,23 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x15SetMemberBadgeRequest\x12\x19\n" +
 	"\bbadge_id\x18\x01 \x01(\tR\abadgeId\"L\n" +
 	"\x16SetMemberBadgeResponse\x122\n" +
-	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member*|\n" +
+	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\"[\n" +
+	"\x17ListBackgroundsResponse\x12@\n" +
+	"\vbackgrounds\x18\x01 \x03(\v2\x1e.calaba.v1.WorkspaceBackgroundR\vbackgrounds\"F\n" +
+	"\x17CreateBackgroundRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n" +
+	"\afile_id\x18\x02 \x01(\tR\x06fileId\"Z\n" +
+	"\x18CreateBackgroundResponse\x12>\n" +
+	"\n" +
+	"background\x18\x01 \x01(\v2\x1e.calaba.v1.WorkspaceBackgroundR\n" +
+	"background\";\n" +
+	"\x17UpdateBackgroundRequest\x12\x17\n" +
+	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01B\a\n" +
+	"\x05_name\"Z\n" +
+	"\x18UpdateBackgroundResponse\x12>\n" +
+	"\n" +
+	"background\x18\x01 \x01(\v2\x1e.calaba.v1.WorkspaceBackgroundR\n" +
+	"background*|\n" +
 	"\x13WorkspaceVisibility\x12$\n" +
 	" WORKSPACE_VISIBILITY_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cWORKSPACE_VISIBILITY_PRIVATE\x10\x01\x12\x1d\n" +
@@ -3139,7 +3469,7 @@ func file_calaba_v1_workspace_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_workspace_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_calaba_v1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_calaba_v1_workspace_proto_goTypes = []any{
 	(WorkspaceVisibility)(0),           // 0: calaba.v1.WorkspaceVisibility
 	(TimeFormat)(0),                    // 1: calaba.v1.TimeFormat
@@ -3148,116 +3478,125 @@ var file_calaba_v1_workspace_proto_goTypes = []any{
 	(*WorkspaceBan)(nil),               // 4: calaba.v1.WorkspaceBan
 	(*WorkspaceMember)(nil),            // 5: calaba.v1.WorkspaceMember
 	(*Badge)(nil),                      // 6: calaba.v1.Badge
-	(*Invite)(nil),                     // 7: calaba.v1.Invite
-	(*CreateWorkspaceRequest)(nil),     // 8: calaba.v1.CreateWorkspaceRequest
-	(*CreateWorkspaceResponse)(nil),    // 9: calaba.v1.CreateWorkspaceResponse
-	(*ListWorkspacesResponse)(nil),     // 10: calaba.v1.ListWorkspacesResponse
-	(*DiscoverWorkspacesResponse)(nil), // 11: calaba.v1.DiscoverWorkspacesResponse
-	(*GetWorkspaceResponse)(nil),       // 12: calaba.v1.GetWorkspaceResponse
-	(*UpdateWorkspaceRequest)(nil),     // 13: calaba.v1.UpdateWorkspaceRequest
-	(*UpdateWorkspaceResponse)(nil),    // 14: calaba.v1.UpdateWorkspaceResponse
-	(*JoinWorkspaceResponse)(nil),      // 15: calaba.v1.JoinWorkspaceResponse
-	(*CreateInviteRequest)(nil),        // 16: calaba.v1.CreateInviteRequest
-	(*CreateInviteResponse)(nil),       // 17: calaba.v1.CreateInviteResponse
-	(*ListInvitesResponse)(nil),        // 18: calaba.v1.ListInvitesResponse
-	(*ListMembersResponse)(nil),        // 19: calaba.v1.ListMembersResponse
-	(*UpdateMemberRequest)(nil),        // 20: calaba.v1.UpdateMemberRequest
-	(*UpdateMemberResponse)(nil),       // 21: calaba.v1.UpdateMemberResponse
-	(*GetInviteResponse)(nil),          // 22: calaba.v1.GetInviteResponse
-	(*InviteLookupRequest)(nil),        // 23: calaba.v1.InviteLookupRequest
-	(*InviteLookupResponse)(nil),       // 24: calaba.v1.InviteLookupResponse
-	(*AddMemberRequest)(nil),           // 25: calaba.v1.AddMemberRequest
-	(*AddMemberResponse)(nil),          // 26: calaba.v1.AddMemberResponse
-	(*EmailInvite)(nil),                // 27: calaba.v1.EmailInvite
-	(*CreateEmailInviteRequest)(nil),   // 28: calaba.v1.CreateEmailInviteRequest
-	(*CreateEmailInviteResponse)(nil),  // 29: calaba.v1.CreateEmailInviteResponse
-	(*ListEmailInvitesResponse)(nil),   // 30: calaba.v1.ListEmailInvitesResponse
-	(*CreateBanRequest)(nil),           // 31: calaba.v1.CreateBanRequest
-	(*CreateBanResponse)(nil),          // 32: calaba.v1.CreateBanResponse
-	(*ListBansResponse)(nil),           // 33: calaba.v1.ListBansResponse
-	(*ListRolesResponse)(nil),          // 34: calaba.v1.ListRolesResponse
-	(*CreateRoleRequest)(nil),          // 35: calaba.v1.CreateRoleRequest
-	(*CreateRoleResponse)(nil),         // 36: calaba.v1.CreateRoleResponse
-	(*UpdateRoleRequest)(nil),          // 37: calaba.v1.UpdateRoleRequest
-	(*UpdateRoleResponse)(nil),         // 38: calaba.v1.UpdateRoleResponse
-	(*SetRoleOrderRequest)(nil),        // 39: calaba.v1.SetRoleOrderRequest
-	(*SetRoleOrderResponse)(nil),       // 40: calaba.v1.SetRoleOrderResponse
-	(*SetMemberRolesRequest)(nil),      // 41: calaba.v1.SetMemberRolesRequest
-	(*SetMemberRolesResponse)(nil),     // 42: calaba.v1.SetMemberRolesResponse
-	(*ListBadgesResponse)(nil),         // 43: calaba.v1.ListBadgesResponse
-	(*CreateBadgeRequest)(nil),         // 44: calaba.v1.CreateBadgeRequest
-	(*CreateBadgeResponse)(nil),        // 45: calaba.v1.CreateBadgeResponse
-	(*UpdateBadgeRequest)(nil),         // 46: calaba.v1.UpdateBadgeRequest
-	(*UpdateBadgeResponse)(nil),        // 47: calaba.v1.UpdateBadgeResponse
-	(*SetMemberBadgeRequest)(nil),      // 48: calaba.v1.SetMemberBadgeRequest
-	(*SetMemberBadgeResponse)(nil),     // 49: calaba.v1.SetMemberBadgeResponse
-	(*timestamppb.Timestamp)(nil),      // 50: google.protobuf.Timestamp
-	(*RoomMediaSettings)(nil),          // 51: calaba.v1.RoomMediaSettings
-	(*WorkspacePlan)(nil),              // 52: calaba.v1.WorkspacePlan
-	(*User)(nil),                       // 53: calaba.v1.User
-	(WorkspaceRole)(0),                 // 54: calaba.v1.WorkspaceRole
-	(ScreenSharePreset)(0),             // 55: calaba.v1.ScreenSharePreset
-	(*Role)(nil),                       // 56: calaba.v1.Role
+	(*WorkspaceBackground)(nil),        // 7: calaba.v1.WorkspaceBackground
+	(*Invite)(nil),                     // 8: calaba.v1.Invite
+	(*CreateWorkspaceRequest)(nil),     // 9: calaba.v1.CreateWorkspaceRequest
+	(*CreateWorkspaceResponse)(nil),    // 10: calaba.v1.CreateWorkspaceResponse
+	(*ListWorkspacesResponse)(nil),     // 11: calaba.v1.ListWorkspacesResponse
+	(*DiscoverWorkspacesResponse)(nil), // 12: calaba.v1.DiscoverWorkspacesResponse
+	(*GetWorkspaceResponse)(nil),       // 13: calaba.v1.GetWorkspaceResponse
+	(*UpdateWorkspaceRequest)(nil),     // 14: calaba.v1.UpdateWorkspaceRequest
+	(*UpdateWorkspaceResponse)(nil),    // 15: calaba.v1.UpdateWorkspaceResponse
+	(*JoinWorkspaceResponse)(nil),      // 16: calaba.v1.JoinWorkspaceResponse
+	(*CreateInviteRequest)(nil),        // 17: calaba.v1.CreateInviteRequest
+	(*CreateInviteResponse)(nil),       // 18: calaba.v1.CreateInviteResponse
+	(*ListInvitesResponse)(nil),        // 19: calaba.v1.ListInvitesResponse
+	(*ListMembersResponse)(nil),        // 20: calaba.v1.ListMembersResponse
+	(*UpdateMemberRequest)(nil),        // 21: calaba.v1.UpdateMemberRequest
+	(*UpdateMemberResponse)(nil),       // 22: calaba.v1.UpdateMemberResponse
+	(*GetInviteResponse)(nil),          // 23: calaba.v1.GetInviteResponse
+	(*InviteLookupRequest)(nil),        // 24: calaba.v1.InviteLookupRequest
+	(*InviteLookupResponse)(nil),       // 25: calaba.v1.InviteLookupResponse
+	(*AddMemberRequest)(nil),           // 26: calaba.v1.AddMemberRequest
+	(*AddMemberResponse)(nil),          // 27: calaba.v1.AddMemberResponse
+	(*EmailInvite)(nil),                // 28: calaba.v1.EmailInvite
+	(*CreateEmailInviteRequest)(nil),   // 29: calaba.v1.CreateEmailInviteRequest
+	(*CreateEmailInviteResponse)(nil),  // 30: calaba.v1.CreateEmailInviteResponse
+	(*ListEmailInvitesResponse)(nil),   // 31: calaba.v1.ListEmailInvitesResponse
+	(*CreateBanRequest)(nil),           // 32: calaba.v1.CreateBanRequest
+	(*CreateBanResponse)(nil),          // 33: calaba.v1.CreateBanResponse
+	(*ListBansResponse)(nil),           // 34: calaba.v1.ListBansResponse
+	(*ListRolesResponse)(nil),          // 35: calaba.v1.ListRolesResponse
+	(*CreateRoleRequest)(nil),          // 36: calaba.v1.CreateRoleRequest
+	(*CreateRoleResponse)(nil),         // 37: calaba.v1.CreateRoleResponse
+	(*UpdateRoleRequest)(nil),          // 38: calaba.v1.UpdateRoleRequest
+	(*UpdateRoleResponse)(nil),         // 39: calaba.v1.UpdateRoleResponse
+	(*SetRoleOrderRequest)(nil),        // 40: calaba.v1.SetRoleOrderRequest
+	(*SetRoleOrderResponse)(nil),       // 41: calaba.v1.SetRoleOrderResponse
+	(*SetMemberRolesRequest)(nil),      // 42: calaba.v1.SetMemberRolesRequest
+	(*SetMemberRolesResponse)(nil),     // 43: calaba.v1.SetMemberRolesResponse
+	(*ListBadgesResponse)(nil),         // 44: calaba.v1.ListBadgesResponse
+	(*CreateBadgeRequest)(nil),         // 45: calaba.v1.CreateBadgeRequest
+	(*CreateBadgeResponse)(nil),        // 46: calaba.v1.CreateBadgeResponse
+	(*UpdateBadgeRequest)(nil),         // 47: calaba.v1.UpdateBadgeRequest
+	(*UpdateBadgeResponse)(nil),        // 48: calaba.v1.UpdateBadgeResponse
+	(*SetMemberBadgeRequest)(nil),      // 49: calaba.v1.SetMemberBadgeRequest
+	(*SetMemberBadgeResponse)(nil),     // 50: calaba.v1.SetMemberBadgeResponse
+	(*ListBackgroundsResponse)(nil),    // 51: calaba.v1.ListBackgroundsResponse
+	(*CreateBackgroundRequest)(nil),    // 52: calaba.v1.CreateBackgroundRequest
+	(*CreateBackgroundResponse)(nil),   // 53: calaba.v1.CreateBackgroundResponse
+	(*UpdateBackgroundRequest)(nil),    // 54: calaba.v1.UpdateBackgroundRequest
+	(*UpdateBackgroundResponse)(nil),   // 55: calaba.v1.UpdateBackgroundResponse
+	(*timestamppb.Timestamp)(nil),      // 56: google.protobuf.Timestamp
+	(*RoomMediaSettings)(nil),          // 57: calaba.v1.RoomMediaSettings
+	(*WorkspacePlan)(nil),              // 58: calaba.v1.WorkspacePlan
+	(*User)(nil),                       // 59: calaba.v1.User
+	(WorkspaceRole)(0),                 // 60: calaba.v1.WorkspaceRole
+	(ScreenSharePreset)(0),             // 61: calaba.v1.ScreenSharePreset
+	(*Role)(nil),                       // 62: calaba.v1.Role
 }
 var file_calaba_v1_workspace_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.Workspace.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	50, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
-	51, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
-	52, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
+	56, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
+	57, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
+	58, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
 	3,  // 4: calaba.v1.Workspace.suspension:type_name -> calaba.v1.WorkspaceSuspension
 	1,  // 5: calaba.v1.Workspace.time_format:type_name -> calaba.v1.TimeFormat
-	50, // 6: calaba.v1.WorkspaceSuspension.at:type_name -> google.protobuf.Timestamp
-	53, // 7: calaba.v1.WorkspaceBan.user:type_name -> calaba.v1.User
-	50, // 8: calaba.v1.WorkspaceBan.created_at:type_name -> google.protobuf.Timestamp
-	53, // 9: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
-	54, // 10: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
-	50, // 11: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
-	50, // 12: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
-	50, // 13: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
+	56, // 6: calaba.v1.WorkspaceSuspension.at:type_name -> google.protobuf.Timestamp
+	59, // 7: calaba.v1.WorkspaceBan.user:type_name -> calaba.v1.User
+	56, // 8: calaba.v1.WorkspaceBan.created_at:type_name -> google.protobuf.Timestamp
+	59, // 9: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
+	60, // 10: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
+	56, // 11: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
+	56, // 12: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
+	56, // 13: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 14: calaba.v1.CreateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
 	2,  // 15: calaba.v1.CreateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	2,  // 16: calaba.v1.ListWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
 	2,  // 17: calaba.v1.DiscoverWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
 	2,  // 18: calaba.v1.GetWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
-	54, // 19: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
+	60, // 19: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
 	0,  // 20: calaba.v1.UpdateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	55, // 21: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
+	61, // 21: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
 	1,  // 22: calaba.v1.UpdateWorkspaceRequest.time_format:type_name -> calaba.v1.TimeFormat
 	2,  // 23: calaba.v1.UpdateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	2,  // 24: calaba.v1.JoinWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	5,  // 25: calaba.v1.JoinWorkspaceResponse.member:type_name -> calaba.v1.WorkspaceMember
-	7,  // 26: calaba.v1.CreateInviteResponse.invite:type_name -> calaba.v1.Invite
-	7,  // 27: calaba.v1.ListInvitesResponse.invites:type_name -> calaba.v1.Invite
+	8,  // 26: calaba.v1.CreateInviteResponse.invite:type_name -> calaba.v1.Invite
+	8,  // 27: calaba.v1.ListInvitesResponse.invites:type_name -> calaba.v1.Invite
 	5,  // 28: calaba.v1.ListMembersResponse.members:type_name -> calaba.v1.WorkspaceMember
-	54, // 29: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
+	60, // 29: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
 	5,  // 30: calaba.v1.UpdateMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
 	2,  // 31: calaba.v1.GetInviteResponse.workspace:type_name -> calaba.v1.Workspace
-	50, // 32: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	53, // 33: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
+	56, // 32: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	59, // 33: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
 	5,  // 34: calaba.v1.AddMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
-	54, // 35: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
-	50, // 36: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
-	50, // 37: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
-	50, // 38: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
-	54, // 39: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
-	27, // 40: calaba.v1.CreateEmailInviteResponse.invite:type_name -> calaba.v1.EmailInvite
-	27, // 41: calaba.v1.ListEmailInvitesResponse.invites:type_name -> calaba.v1.EmailInvite
+	60, // 35: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
+	56, // 36: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
+	56, // 37: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
+	56, // 38: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
+	60, // 39: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
+	28, // 40: calaba.v1.CreateEmailInviteResponse.invite:type_name -> calaba.v1.EmailInvite
+	28, // 41: calaba.v1.ListEmailInvitesResponse.invites:type_name -> calaba.v1.EmailInvite
 	4,  // 42: calaba.v1.CreateBanResponse.ban:type_name -> calaba.v1.WorkspaceBan
 	4,  // 43: calaba.v1.ListBansResponse.bans:type_name -> calaba.v1.WorkspaceBan
-	56, // 44: calaba.v1.ListRolesResponse.roles:type_name -> calaba.v1.Role
-	56, // 45: calaba.v1.CreateRoleResponse.role:type_name -> calaba.v1.Role
-	56, // 46: calaba.v1.UpdateRoleResponse.role:type_name -> calaba.v1.Role
-	56, // 47: calaba.v1.SetRoleOrderResponse.roles:type_name -> calaba.v1.Role
+	62, // 44: calaba.v1.ListRolesResponse.roles:type_name -> calaba.v1.Role
+	62, // 45: calaba.v1.CreateRoleResponse.role:type_name -> calaba.v1.Role
+	62, // 46: calaba.v1.UpdateRoleResponse.role:type_name -> calaba.v1.Role
+	62, // 47: calaba.v1.SetRoleOrderResponse.roles:type_name -> calaba.v1.Role
 	5,  // 48: calaba.v1.SetMemberRolesResponse.member:type_name -> calaba.v1.WorkspaceMember
 	6,  // 49: calaba.v1.ListBadgesResponse.badges:type_name -> calaba.v1.Badge
 	6,  // 50: calaba.v1.CreateBadgeResponse.badge:type_name -> calaba.v1.Badge
 	6,  // 51: calaba.v1.UpdateBadgeResponse.badge:type_name -> calaba.v1.Badge
 	5,  // 52: calaba.v1.SetMemberBadgeResponse.member:type_name -> calaba.v1.WorkspaceMember
-	53, // [53:53] is the sub-list for method output_type
-	53, // [53:53] is the sub-list for method input_type
-	53, // [53:53] is the sub-list for extension type_name
-	53, // [53:53] is the sub-list for extension extendee
-	0,  // [0:53] is the sub-list for field type_name
+	7,  // 53: calaba.v1.ListBackgroundsResponse.backgrounds:type_name -> calaba.v1.WorkspaceBackground
+	7,  // 54: calaba.v1.CreateBackgroundResponse.background:type_name -> calaba.v1.WorkspaceBackground
+	7,  // 55: calaba.v1.UpdateBackgroundResponse.background:type_name -> calaba.v1.WorkspaceBackground
+	56, // [56:56] is the sub-list for method output_type
+	56, // [56:56] is the sub-list for method input_type
+	56, // [56:56] is the sub-list for extension type_name
+	56, // [56:56] is the sub-list for extension extendee
+	0,  // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_workspace_proto_init() }
@@ -3269,18 +3608,19 @@ func file_calaba_v1_workspace_proto_init() {
 	file_calaba_v1_permissions_proto_init()
 	file_calaba_v1_plan_proto_init()
 	file_calaba_v1_user_proto_init()
-	file_calaba_v1_workspace_proto_msgTypes[11].OneofWrappers = []any{}
-	file_calaba_v1_workspace_proto_msgTypes[18].OneofWrappers = []any{}
-	file_calaba_v1_workspace_proto_msgTypes[26].OneofWrappers = []any{}
-	file_calaba_v1_workspace_proto_msgTypes[35].OneofWrappers = []any{}
-	file_calaba_v1_workspace_proto_msgTypes[44].OneofWrappers = []any{}
+	file_calaba_v1_workspace_proto_msgTypes[12].OneofWrappers = []any{}
+	file_calaba_v1_workspace_proto_msgTypes[19].OneofWrappers = []any{}
+	file_calaba_v1_workspace_proto_msgTypes[27].OneofWrappers = []any{}
+	file_calaba_v1_workspace_proto_msgTypes[36].OneofWrappers = []any{}
+	file_calaba_v1_workspace_proto_msgTypes[45].OneofWrappers = []any{}
+	file_calaba_v1_workspace_proto_msgTypes[52].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_workspace_proto_rawDesc), len(file_calaba_v1_workspace_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   48,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

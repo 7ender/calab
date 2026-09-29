@@ -51,42 +51,53 @@ func LargeThumbnail(ctx context.Context, open func() (io.ReadCloser, error)) ([]
 }
 
 func thumbnail(ctx context.Context, open func() (io.ReadCloser, error), side, quality int) ([]byte, error) {
+	var out []byte
+	err := withDecoded(ctx, open, func(src image.Image) error {
+		w, h := FitSize(src.Bounds().Dx(), src.Bounds().Dy(), side)
+		dst := image.NewRGBA(image.Rect(0, 0, w, h))
+		draw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Src, nil)
+		var buf bytes.Buffer
+		if err := webp.Encode(&buf, dst, webp.Options{Quality: quality}); err != nil {
+			return err
+		}
+		out = buf.Bytes()
+		return nil
+	})
+	return out, err
+}
+
+// withDecoded checks the header (at most MaxPixels), then decodes the image in the single decode
+// slot and runs fn with it (still in the slot: the scaled copies count in the memory budget).
+func withDecoded(ctx context.Context, open func() (io.ReadCloser, error), fn func(image.Image) error) error {
 	rc, err := open()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	cfg, _, err := image.DecodeConfig(rc)
 	_ = rc.Close()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > MaxPixels {
-		return nil, ErrTooManyPixels
+		return ErrTooManyPixels
 	}
 	select {
 	case thumbSlot <- struct{}{}:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
 	defer func() { <-thumbSlot }()
 
 	rc, err = open()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	src, _, err := image.Decode(rc)
 	_ = rc.Close()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	w, h := FitSize(cfg.Width, cfg.Height, side)
-	dst := image.NewRGBA(image.Rect(0, 0, w, h))
-	draw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Src, nil)
-	var buf bytes.Buffer
-	if err := webp.Encode(&buf, dst, webp.Options{Quality: quality}); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return fn(src)
 }
 
 // ThumbSize fits w×h into ThumbMaxSide×ThumbMaxSide keeping the aspect ratio.

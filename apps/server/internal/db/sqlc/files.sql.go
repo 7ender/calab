@@ -214,11 +214,13 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500
 `
 
-// Not attached, not an avatar, icon, sticker (ADR-0030) or badge (docs/09 #82), older than the cutoff.
+// Not attached, not an avatar, icon, sticker (ADR-0030), badge (docs/09 #82) or camera background
+// (ADR-0035), older than the cutoff.
 func (q *Queries) ListOrphanFiles(ctx context.Context, createdAt time.Time) ([]File, error) {
 	rows, err := q.db.Query(ctx, listOrphanFiles, createdAt)
 	if err != nil {
@@ -360,6 +362,7 @@ WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)
 `
 
 type UnattachedBytesByUploaderParams struct {
