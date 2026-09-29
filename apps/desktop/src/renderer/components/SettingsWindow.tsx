@@ -20,14 +20,21 @@ export interface SettingsSection {
   keywords?: string;
 }
 
-/** The section's accent pill (list and search results). */
-function SectionBadge({ text }: { text: string }): ReactNode {
+/**
+ * A section's name in the list / search results; with a badge, its accent pill goes under the
+ * name (the phone's pill row keeps it beside). White on the selected (accent) row.
+ */
+function SectionLabel({ label, badge }: { label: string; badge: string | undefined }): ReactNode {
+  if (!badge) return <span className="min-w-0 truncate">{label}</span>;
   return (
-    <span
-      className="ml-auto shrink-0 rounded-full bg-accent-strong px-1.5 text-[10px] font-semibold leading-4 text-accent-fg group-data-[state=active]:bg-white group-data-[state=active]:text-[var(--color-accent-strong)]"
-      data-testid="settings-section-badge"
-    >
-      {text}
+    <span className="flex min-w-0 flex-col items-start gap-0.5 mobile:flex-row mobile:items-center mobile:gap-1.5">
+      <span className="min-w-0 max-w-full truncate">{label}</span>
+      <span
+        className="shrink-0 rounded-full bg-accent-strong px-1.5 text-[10px] font-semibold leading-4 text-accent-fg group-data-[state=active]:bg-white group-data-[state=active]:text-[var(--color-accent-strong)]"
+        data-testid="settings-section-badge"
+      >
+        {badge}
+      </span>
     </span>
   );
 }
@@ -266,14 +273,14 @@ export function SettingsWindow({
                           onClick={() => openSection(s.id)}
                           aria-current={tab === s.id && !hit ? 'true' : undefined}
                           className={cx(
-                            'flex h-8 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover',
+                            'flex items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover',
+                            s.badge ? 'min-h-8 py-1' : 'h-8',
                             tab === s.id && !hit ? 'bg-active' : '',
                             s.destructive ? 'text-danger-text' : 'text-fg',
                           )}
                         >
                           <s.icon className="size-4 shrink-0" aria-hidden />
-                          <span className="min-w-0 truncate">{s.label}</span>
-                          {s.badge ? <SectionBadge text={s.badge} /> : null}
+                          <SectionLabel label={s.label} badge={s.badge} />
                         </button>
                         {g.rows.map((r) => (
                           <button
@@ -309,14 +316,15 @@ export function SettingsWindow({
                       key={s.id}
                       value={s.id}
                       className={cx(
-                        'group flex h-8 shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body mobile:h-9 mobile:gap-1.5 mobile:rounded-full mobile:px-3',
+                        'group flex shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body mobile:h-9 mobile:gap-1.5 mobile:rounded-full mobile:px-3',
+                        // A badged row takes a second line for its pill: the 200 px column has no room beside the label.
+                        s.badge ? 'min-h-8 py-1 mobile:py-0' : 'h-8',
                         'hover:bg-hover data-[state=active]:bg-accent-strong data-[state=active]:text-accent-fg data-[state=active]:hover:bg-accent-strong',
                         s.destructive ? 'text-danger-text' : 'text-fg',
                       )}
                     >
                       <s.icon className="size-4 shrink-0" aria-hidden />
-                      <span className="min-w-0 truncate">{s.label}</span>
-                      {s.badge ? <SectionBadge text={s.badge} /> : null}
+                      <SectionLabel label={s.label} badge={s.badge} />
                     </Tabs.Trigger>
                   ))}
                 </Tabs.List>
