@@ -177,6 +177,7 @@ func run(m *testing.M) int {
 		RecordingMaxConcurrent: 2,
 		RecordingsPath:         recordDir,
 		RecordingEgressDir:     "/out",
+		FFmpegPath:             "ffmpeg", // soundboard (ADR-0036); its tests skip conversion without one
 	}
 	cfg.TrustedProxies = mustPrefixes("127.0.0.1/32", "::1/128")
 	if err := cfg.Validate(); err != nil {

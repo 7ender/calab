@@ -50,11 +50,14 @@ var blocked = map[string]scope{
 	"POST /api/workspaces/{id}/files":             scopeWorkspace,
 	// sticker packs (ADR-0030); the pack / sticker routes check the suspension themselves
 	"POST /api/workspaces/{id}/sticker-packs": scopeWorkspace,
+	// soundboard (ADR-0036); PATCH / DELETE check the suspension themselves
+	"POST /api/workspaces/{id}/sounds": scopeWorkspace,
 	// voice, streams, cameras, recording
 	"POST /api/rooms/{id}/join":                        scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/move":         scopeRoom,
 	"POST /api/rooms/{id}/stream/request":              scopeRoom,
 	"POST /api/rooms/{id}/camera/request":              scopeRoom,
+	"POST /api/rooms/{id}/sounds/play":                 scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/allow-camera": scopeRoom,
 	"POST /api/rooms/{id}/recording/start":             scopeRoom,
 	"POST /api/rooms/{id}/recordings/{rid}/recheck":    scopeRoom,

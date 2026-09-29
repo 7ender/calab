@@ -354,6 +354,21 @@ func Background(b sqlc.WorkspaceBackground) *v1.WorkspaceBackground {
 	return &v1.WorkspaceBackground{Id: b.ID.String(), WorkspaceId: b.WorkspaceID.String(), Name: b.Name, FileId: b.FileID.String()}
 }
 
+// Sound converts a soundboard row (ADR-0036).
+func Sound(s sqlc.WorkspaceSound) *v1.Sound {
+	return &v1.Sound{Id: s.ID.String(), WorkspaceId: s.WorkspaceID.String(), Name: s.Name, Emoji: s.Emoji,
+		FileId: s.FileID.String(), DurationMs: uint32(max(s.DurationMs, 0)), Position: uint32(max(s.Position, 0))} //nolint:gosec // non-negative
+}
+
+// Sounds converts soundboard rows.
+func Sounds(rows []sqlc.WorkspaceSound) []*v1.Sound {
+	out := make([]*v1.Sound, len(rows))
+	for i, s := range rows {
+		out[i] = Sound(s)
+	}
+	return out
+}
+
 // Backgrounds converts camera background rows.
 func Backgrounds(rows []sqlc.WorkspaceBackground) []*v1.WorkspaceBackground {
 	out := make([]*v1.WorkspaceBackground, len(rows))

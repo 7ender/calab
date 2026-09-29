@@ -114,6 +114,10 @@ type Config struct {
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
+	// Soundboard uploads (ADR-0036) are converted to Ogg/Opus by this ffmpeg binary (the api
+	// image ships a minimal static build at /usr/local/bin/ffmpeg); a name is looked up in PATH.
+	// Without it, adding a workspace sound answers 503.
+	FFmpegPath string `env:"FFMPEG_PATH" envDefault:"ffmpeg"`
 
 	// Mail limits: per recipient address and for the whole server, per hour.
 	MailPerAddressPerHour int `env:"MAIL_PER_ADDRESS_PER_HOUR" envDefault:"3"`
