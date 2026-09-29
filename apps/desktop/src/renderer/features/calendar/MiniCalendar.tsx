@@ -21,9 +21,10 @@ export function useToday(): string {
 
 /**
  * Calendar icon in the room column header (ADR-0038 §7): the number of my upcoming meetings of
- * today (hidden at 0); a click opens the mini month under the header. Not for guests.
+ * today (hidden at 0); a click opens the mini month under the header. Not for guests. Memo: the
+ * header re-renders with the room list on every voice state (tools/perf-call.ts --calendar).
  */
-export function CalendarButton({ workspaceId }: { workspaceId: string }): ReactNode {
+export const CalendarButton = memo(function CalendarButton({ workspaceId }: { workspaceId: string }): ReactNode {
   const count = useCalendar((s) => s.todayCount);
   const open = useUi((s) => s.miniCal);
   const toggle = useUi((s) => s.toggleMiniCal);
@@ -57,7 +58,7 @@ export function CalendarButton({ workspaceId }: { workspaceId: string }): ReactN
       </button>
     </Tip>
   );
-}
+});
 
 /**
  * The mini month under the column header (Apple Calendar): dots on days with meetings, today
