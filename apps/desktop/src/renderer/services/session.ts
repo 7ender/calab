@@ -5,6 +5,7 @@ import { log } from '../lib/log';
 import { useDms } from '../stores/dms';
 import { useStickers } from '../stores/stickers';
 import { useBots } from '../stores/bots';
+import { useCalendar } from '../stores/calendar';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
 import { useTyping } from '../stores/typing';
@@ -196,6 +197,8 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useDms.getState().reset();
   useStickers.getState().reset();
   useBots.getState().reset();
+  useCalendar.getState().reset();
+  useUi.getState().closeCalendar();
   resetChatCaches();
   resetDmCaches();
   resetTimeZoneSync();

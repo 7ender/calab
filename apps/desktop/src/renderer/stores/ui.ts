@@ -29,7 +29,22 @@ export type Dialog =
   /** Member profile (docs/09 #20); `note` focuses «Заметка» («Добавить заметку» in the member menu). */
   | { kind: 'profile'; workspaceId: string; userId: string; note?: boolean }
   /** «Администрирование» (superadmins, ADR-0024); the web shows it at /admin. */
-  | { kind: 'admin'; workspaceId?: string };
+  | { kind: 'admin'; workspaceId?: string }
+  /**
+   * Create / edit a meeting (ADR-0038 §7). `eventKey`: the occurrence edited (its series is
+   * changed); `draft`: prefilled values of a new one (a range selected on the grid, «Дублировать»).
+   */
+  | { kind: 'event'; workspaceId: string; eventKey?: string; draft?: EventDraftInit };
+
+/** Prefill of the meeting dialog (features/calendar/EventDialog.tsx). */
+export interface EventDraftInit {
+  start?: number;
+  end?: number;
+  allDay?: boolean;
+  roomId?: string;
+  /** Copy everything else from this occurrence («Дублировать»). */
+  copyOf?: string;
+}
 
 interface UiState {
   /** The open workspace, or HOME (stores/dms.ts) for «Личные» — the DM list (ADR-0020). */
@@ -74,6 +89,22 @@ interface UiState {
    */
   notifyMenuReq: number;
   requestNotifyMenu: () => void;
+  /**
+   * Calendar (ADR-0038 §7), not persisted: the mini month under the column header, and the day
+   * shown in the centre instead of the room (`YYYY-MM-DD`, the viewer's zone) with the selected
+   * occurrence (`<event id>@<start ms>`) in the right panel. Opening a room closes the day view —
+   * the room it covered is still `lastRoom`, so closing returns there.
+   */
+  miniCal: boolean;
+  /** The mini calendar's month (`YYYY-MM`); null = the day view's / this month. */
+  calMonth: string | null;
+  calDay: string | null;
+  calEvent: string | null;
+  toggleMiniCal: (open?: boolean) => void;
+  setCalMonth: (month: string | null) => void;
+  openCalendarDay: (day: string, eventKey?: string | null) => void;
+  selectCalEvent: (key: string | null) => void;
+  closeCalendar: () => void;
 }
 
 /** Window width from which the members list is a column instead of a floating panel (docs/08: chat keeps ≥ ~600 px). */
@@ -101,13 +132,27 @@ export const useUi = create<UiState>()(
       setHideMuted: (hideMuted) => set({ hideMuted }),
       notifyMenuReq: 0,
       requestNotifyMenu: () => set((s) => ({ dialog: null, notifyMenuReq: s.notifyMenuReq + 1 })),
+      miniCal: false,
+      calMonth: null,
+      calDay: null,
+      calEvent: null,
+      toggleMiniCal: (open) => set((s) => ({ miniCal: open ?? !s.miniCal })),
+      setCalMonth: (calMonth) => set({ calMonth }),
+      openCalendarDay: (day, eventKey) =>
+        set((s) => ({ calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), navDrawer: false, membersOverlay: false, editing: null })),
+      selectCalEvent: (calEvent) => set({ calEvent }),
+      closeCalendar: () => set({ calDay: null, calEvent: null }),
       setWorkspace: (id) =>
         set((s) => ({
+          calDay: null,
+          calEvent: null,
           activeWorkspaceId: id,
           history: id ? pushLoc(s.history, here(s), { ws: id, room: s.lastRoom[id] ?? null }) : s.history,
         })),
       openRoom: (wsId, roomId) =>
         set((s) => ({
+          calDay: null,
+          calEvent: null,
           activeWorkspaceId: wsId,
           lastRoom: { ...s.lastRoom, [wsId]: roomId },
           editing: null,
@@ -170,6 +215,8 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
   if (!r) return {};
   const { ws, room } = r.to;
   return {
+    calDay: null,
+    calEvent: null,
     history: r.history,
     activeWorkspaceId: ws,
     lastRoom: room ? { ...s.lastRoom, [ws]: room } : s.lastRoom,

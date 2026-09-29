@@ -7,8 +7,10 @@ vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => u
 vi.mock('../features/people/roomLink', () => ({ openRoomLink: () => undefined }));
 const checkDmLink = vi.hoisted(() => vi.fn());
 vi.mock('./dms', () => ({ checkDmLink }));
+const openEventLink = vi.hoisted(() => vi.fn());
+vi.mock('./calendar', () => ({ openEventLink }));
 
-const { INVITE_EXAMPLE_CODE, handleDeepLink, inviteUrl, joinPlaceholder, parseDmLink, parseInviteCode, parseRoomInviteCode, roomInviteUrl } = await import('./links');
+const { INVITE_EXAMPLE_CODE, handleDeepLink, inviteUrl, joinPlaceholder, parseDmLink, parseEventLink, parseInviteCode, parseRoomInviteCode, roomInviteUrl } = await import('./links');
 
 describe('DM links (ADR-0020)', () => {
   const ID = '00000000-0000-7000-8003-000000000021';
@@ -24,6 +26,23 @@ describe('DM links (ADR-0020)', () => {
     expect(openRoom).toHaveBeenCalledWith('@me', ID);
     // Someone else's id: a clear error once signed in (services/dms.ts checkDmLink).
     await vi.waitFor(() => expect(checkDmLink).toHaveBeenCalledWith(ID));
+  });
+});
+
+describe('meeting links (ADR-0038)', () => {
+  const ID = '00000000-0000-7000-8010-000000000001';
+  it('parses https://<server>/e/<id> and calab://e/<id>, not the answer page', () => {
+    expect(parseEventLink(`https://app.calab.ru/e/${ID}`)).toBe(ID);
+    expect(parseEventLink(`https://app.calab.ru/e/${ID.toUpperCase()}/?utm=mail`)).toBe(ID);
+    expect(parseEventLink(`calab://e/${ID}`)).toBe(ID);
+    expect(parseEventLink(`https://app.calab.ru/e/${ID}/rsvp?t=x`)).toBeNull();
+    expect(parseEventLink('https://app.calab.ru/e/abcd1234')).toBeNull();
+    expect(parseEventLink(`https://app.calab.ru/dm/${ID}`)).toBeNull();
+  });
+  it('opens the meeting card (after sign-in if need be)', async () => {
+    handleDeepLink(`https://app.calab.ru/e/${ID}`);
+    await vi.waitFor(() => expect(openEventLink).toHaveBeenCalledWith(ID));
+    expect(openRoom).not.toHaveBeenCalledWith('@me', ID);
   });
 });
 

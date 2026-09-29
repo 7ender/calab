@@ -33,6 +33,18 @@ import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
 import { applySnapshotSounds, useSounds } from '../stores/sounds';
 import { onSoundPlay } from './soundboard';
+import {
+  applySnapshotEvents,
+  dropWorkspaceEvents,
+  onCalendarReady,
+  onEventCreate,
+  onEventDelete,
+  onEventReminder,
+  onEventRsvp,
+  onEventUpdate,
+  onRoomEventActive,
+  onRoomEventEnded,
+} from './calendar';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -112,6 +124,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
       ensureActiveWorkspace();
+      // Calendar (ADR-0038): rooms' active meetings, listed months again, today's count, a pending /e/<id>.
+      onCalendarReady(r.workspaces);
       dropStaleWorkspaceBackground();
       openAdminRoute(r.me?.isSuperadmin === true);
       // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
@@ -137,6 +151,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       applySnapshotExtras(snap);
       applySnapshotSounds(snap);
       applySnapshotRecordings(snap);
+      applySnapshotEvents(snap);
       ensureActiveWorkspace();
       return;
     }
@@ -155,6 +170,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       useRooms.getState().removeWorkspace(id);
       useSounds.getState().dropWorkspace(id);
       dropRecordings((_room, rec) => rec.workspaceId === id);
+      dropWorkspaceEvents(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();
@@ -362,6 +378,28 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'callState':
       onCallState(e.value.call);
+      return;
+    // Workspace calendar (ADR-0038): lists, cards, room badges, reminders.
+    case 'eventCreate':
+      if (e.value.event) onEventCreate(e.value.event);
+      return;
+    case 'eventUpdate':
+      if (e.value.event) onEventUpdate(e.value.event);
+      return;
+    case 'eventDelete':
+      if (e.value.event) onEventDelete(e.value.event);
+      return;
+    case 'eventRsvp':
+      onEventRsvp(e.value);
+      return;
+    case 'eventReminder':
+      onEventReminder(e.value);
+      return;
+    case 'roomEventActive':
+      onRoomEventActive(e.value);
+      return;
+    case 'roomEventEnded':
+      onRoomEventEnded(e.value);
       return;
     case 'userUpdate':
       // Another member's public profile (name, avatar, time zone, birthday — docs/09 #76).

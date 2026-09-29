@@ -1,0 +1,186 @@
+import { clone } from '@bufbuild/protobuf';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
+import {
+  AttendeeStatus,
+  CalendarEventSchema,
+  EventRepeat,
+  type CalendarEvent,
+  type CalendarEventAttendee,
+  type CalendarEventCounts,
+} from '@calaba/protocol';
+import { eventSpan, occurrenceMs } from './time';
+
+/*
+ * The client's copy of the calendar (ADR-0038): occurrences as the server lists them (the client
+ * never expands repeats — ADR-0038 §1), keyed `<event id>@<occurrence start ms>`, and what the
+ * gateway events do to them. Pure: the store (stores/calendar.ts) keeps the result.
+ */
+
+export type OccMap = Readonly<Record<string, CalendarEvent>>;
+
+export const occKey = (ev: Pick<CalendarEvent, 'id' | 'occurrenceAt' | 'startsAt'>): string => `${ev.id}@${occurrenceMs(ev)}`;
+
+/** Event id of an occurrence key. */
+export const keyEventId = (key: string): string => key.slice(0, key.lastIndexOf('@'));
+
+/** My answer: `my_status` from the lists, else my row in `attendees` (gateway payloads). */
+export function myStatusOf(ev: Pick<CalendarEvent, 'myStatus' | 'attendees'>, me: string): AttendeeStatus {
+  if (ev.myStatus !== AttendeeStatus.UNSPECIFIED) return ev.myStatus;
+  return ev.attendees.find((a) => a.userId === me)?.status ?? AttendeeStatus.UNSPECIFIED;
+}
+
+export const isAttendee = (ev: Pick<CalendarEvent, 'attendees'>, me: string): boolean => ev.attendees.some((a) => a.userId === me);
+
+const overlaps = (ev: CalendarEvent, from: number, to: number): boolean => {
+  const { start, end } = eventSpan(ev);
+  return start < to && Math.max(end, start + 1) > from;
+};
+
+/**
+ * A list response for [from, to) of a workspace replaces what we held for that window: the
+ * occurrences overlapping it are dropped, the listed ones put in.
+ */
+export function replaceWindow(occ: OccMap, workspaceId: string, from: number, to: number, list: readonly CalendarEvent[]): OccMap {
+  const next: Record<string, CalendarEvent> = {};
+  for (const [k, ev] of Object.entries(occ)) if (ev.workspaceId !== workspaceId || !overlaps(ev, from, to)) next[k] = ev;
+  for (const ev of list) next[occKey(ev)] = ev;
+  return next;
+}
+
+/** Fields of the series every occurrence shares (not its times, recording, my answer or rights). */
+function withSeries(o: CalendarEvent, series: CalendarEvent): CalendarEvent {
+  const out = clone(CalendarEventSchema, series);
+  out.startsAt = o.startsAt;
+  out.endsAt = o.endsAt;
+  out.occurrenceAt = o.occurrenceAt;
+  out.recordingId = o.recordingId;
+  out.canEdit = o.canEdit;
+  out.myStatus = AttendeeStatus.UNSPECIFIED; // the attendees carry it now
+  return out;
+}
+
+const cancelledSet = (series: CalendarEvent): Set<number> => new Set(series.cancelledOccurrences.map((ts) => timestampMs(ts)));
+
+export interface Applied {
+  occ: OccMap;
+  /** The change needs the windows of the workspace listed again (a series' times, a new series). */
+  refetch: boolean;
+}
+
+/**
+ * EVENT_CREATE: a single meeting goes straight in (its only occurrence); a series is expanded by
+ * the server — refetch.
+ */
+export function applyCreate(occ: OccMap, series: CalendarEvent): Applied {
+  if (series.repeat !== EventRepeat.UNSPECIFIED) return { occ, refetch: true };
+  const one = clone(CalendarEventSchema, series);
+  if (one.startsAt) one.occurrenceAt = one.startsAt;
+  return { occ: { ...occ, [occKey(one)]: one }, refetch: false };
+}
+
+/**
+ * EVENT_UPDATE: every held occurrence of the series takes the new shared fields at once; a single
+ * meeting also its new time. A series is listed again (its times may have moved — only the server
+ * expands it), and so is a meeting we did not hold. Occurrences cancelled one by one
+ * (`cancelled_occurrences`) leave.
+ */
+export function applyUpdate(occ: OccMap, series: CalendarEvent): Applied {
+  const single = series.repeat === EventRepeat.UNSPECIFIED;
+  const next: Record<string, CalendarEvent> = {};
+  const cancelled = cancelledSet(series);
+  let held = false;
+  let wasSeries = false;
+  for (const [k, o] of Object.entries(occ)) {
+    if (o.id !== series.id) {
+      next[k] = o;
+      continue;
+    }
+    held = true;
+    if (o.repeat !== EventRepeat.UNSPECIFIED) wasSeries = true;
+    if (cancelled.has(occurrenceMs(o))) continue;
+    const one = withSeries(o, series);
+    if (single && o.repeat === EventRepeat.UNSPECIFIED) {
+      one.startsAt = series.startsAt;
+      one.endsAt = series.endsAt;
+      if (series.startsAt) one.occurrenceAt = series.startsAt;
+      next[occKey(one)] = one;
+    } else next[k] = one;
+  }
+  if (!held) return applyCreate(occ, series);
+  return { occ: next, refetch: !single || wasSeries };
+}
+
+/** EVENT_DELETE: the meeting is cancelled (or no longer visible to me): every occurrence leaves. */
+export function applyDelete(occ: OccMap, eventId: string): OccMap {
+  let changed = false;
+  const next: Record<string, CalendarEvent> = {};
+  for (const [k, o] of Object.entries(occ)) {
+    if (o.id === eventId) changed = true;
+    else next[k] = o;
+  }
+  return changed ? next : occ;
+}
+
+const sameAttendee = (a: CalendarEventAttendee, b: CalendarEventAttendee): boolean => (a.userId ? a.userId === b.userId : !!a.email && a.email === b.email);
+
+/**
+ * EVENT_RSVP: the attendee's new answer and the counts on every held occurrence (and on a series /
+ * active meeting passed the same way). Unchanged map when the event is not held.
+ */
+export function applyRsvp(occ: OccMap, eventId: string, attendee: CalendarEventAttendee, counts: CalendarEventCounts | undefined): OccMap {
+  let changed = false;
+  const next: Record<string, CalendarEvent> = { ...occ };
+  for (const [k, o] of Object.entries(occ)) {
+    if (o.id !== eventId) continue;
+    changed = true;
+    next[k] = withAnswer(o, attendee, counts);
+  }
+  return changed ? next : occ;
+}
+
+/** One event with an attendee's answer (the RSVP reducer for a single object). */
+export function withAnswer(o: CalendarEvent, attendee: CalendarEventAttendee, counts: CalendarEventCounts | undefined): CalendarEvent {
+  const one = clone(CalendarEventSchema, o);
+  const i = one.attendees.findIndex((a) => sameAttendee(a, attendee));
+  if (i >= 0) one.attendees[i] = attendee;
+  else one.attendees.push(attendee);
+  if (counts) one.counts = counts;
+  // my_status (lists) is a copy of my row; the rows are current now — myStatusOf reads them.
+  one.myStatus = AttendeeStatus.UNSPECIFIED;
+  return one;
+}
+
+/** Occurrence keys of a workspace overlapping [from, to), earliest first (the day view). */
+export function keysIn(occ: OccMap, workspaceId: string, from: number, to: number): string[] {
+  return Object.entries(occ)
+    .filter(([, ev]) => ev.workspaceId === workspaceId && overlaps(ev, from, to))
+    .sort(([ka, a], [kb, b]) => eventSpan(a).start - eventSpan(b).start || eventSpan(b).end - eventSpan(a).end || (ka < kb ? -1 : 1))
+    .map(([k]) => k);
+}
+
+// ---------------------------------------------------------------- rooms' active meetings
+
+/** Meetings active per room (ROOM_EVENT_ACTIVE / ENDED, WorkspaceSnapshot.active_events). */
+export type ActiveMap = Readonly<Record<string, readonly CalendarEvent[]>>;
+
+export function withActive(map: ActiveMap, roomId: string, ev: CalendarEvent): ActiveMap {
+  const k = occKey(ev);
+  const list = (map[roomId] ?? []).filter((e) => occKey(e) !== k);
+  list.push(ev);
+  list.sort((a, b) => occurrenceMs(a) - occurrenceMs(b));
+  return { ...map, [roomId]: list };
+}
+
+export function withoutActive(map: ActiveMap, roomId: string, eventId: string, occurrenceAt: number | null): ActiveMap {
+  const list = map[roomId];
+  if (!list) return map;
+  const rest = list.filter((e) => e.id !== eventId || (occurrenceAt !== null && occurrenceMs(e) !== occurrenceAt));
+  if (rest.length === list.length) return map;
+  const next = { ...map };
+  if (rest.length) next[roomId] = rest;
+  else delete next[roomId];
+  return next;
+}
+
+/** The meeting a room's badge shows: the earliest active one. */
+export const roomMeeting = (map: ActiveMap, roomId: string): CalendarEvent | undefined => map[roomId]?.[0];

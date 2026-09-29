@@ -58,6 +58,9 @@ function dtf(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
   return f;
 }
 
+/** A cached `Intl.DateTimeFormat` of the current locale and clock format (calendar, lib/calendar). */
+export const dateTimeFormat = (options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat => dtf(options);
+
 const rtfCache = new Map<string, Intl.RelativeTimeFormat>();
 
 function rtf(): Intl.RelativeTimeFormat {

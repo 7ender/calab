@@ -101,7 +101,24 @@ function openDmLink(roomId: string): void {
   }
 }
 
+/**
+ * Meeting links (ADR-0038): `https://<server>/e/<id>` (the invitation mail) and `calab://e/<id>`.
+ * The answer page of external attendees (`/e/<id>/rsvp?t=…`) is not this link.
+ */
+export function parseEventLink(input: string): string | null {
+  const s = input.trim();
+  const ID = '([0-9a-fA-F-]{36})';
+  const m = new RegExp(`^${SCHEME}://e/${ID}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/e/${ID}/?(?:[?#].*)?$`).exec(s);
+  return m?.[1]?.toLowerCase() ?? null;
+}
+
 export function handleDeepLink(url: string): void {
+  const ev = parseEventLink(url);
+  if (ev) {
+    // Loaded lazily, like the DM check: links.ts stays free of the API / platform graph.
+    void import('./calendar').then((m) => m.openEventLink(ev)).catch(() => undefined);
+    return;
+  }
   const dm = parseDmLink(url);
   if (dm) {
     openDmLink(dm);
