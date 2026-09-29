@@ -6363,6 +6363,7 @@ class MockImpl {
       b().removeBoard(c.params[0] ?? '', me, q(c, 'purge') === '1');
       noContent(c.res);
     });
+    this.boardRoute('POST', '/api/boards/:id/restore', (c, me) => sendMsg(c.res, 200, BoardResponseSchema, { board: b().restoreBoard(c.params[0] ?? '', me) }));
     this.boardRoute('PUT', '/api/boards/:id/position', (c, me) => {
       const r = parseBody(c, SetBoardPositionRequestSchema);
       sendMsg(c.res, 200, BoardResponseSchema, { board: b().moveBoard(c.params[0] ?? '', me, r.position) });

@@ -682,6 +682,28 @@ export async function moveBoard(workspaceId: string, boardId: string, index: num
   }
 }
 
+/** The workspace's archived boards (those the viewer manages: the server lists only them). */
+export async function listArchivedBoards(workspaceId: string): Promise<Board[]> {
+  try {
+    return (await boardsApi.list(workspaceId, true)).boards;
+  } catch (e) {
+    toast.fail(e);
+    return [];
+  }
+}
+
+/** Back from the archive (MANAGE_BOARD): the board returns to the list. */
+export async function restoreBoard(boardId: string): Promise<Board | null> {
+  try {
+    const r = await boardsApi.restore(boardId);
+    if (r.board) useBoards.getState().upsertBoard(r.board);
+    return r.board ?? null;
+  } catch (e) {
+    boardFail(e);
+    return null;
+  }
+}
+
 /** Archive (restorable) or delete for good (`purge`). */
 export async function removeBoard(boardId: string, purge: boolean): Promise<boolean> {
   try {

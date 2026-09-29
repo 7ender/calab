@@ -611,6 +611,15 @@ export class BoardsMock {
     this.host.fanout((u) => (seen.has(u) ? { event: { case: 'boardDelete', value: { workspaceId: rec.board.workspaceId, boardId: id, purged: purge } } } : null));
   }
 
+  /** POST /boards/{id}/restore (MANAGE_BOARD): back in the list; BOARD_CREATE to its viewers. */
+  restoreBoard(id: string, userId: string): Board {
+    const rec = this.boardFor(id, userId);
+    this.need(rec, userId, MANAGE_BOARD);
+    delete rec.board.archivedAt;
+    this.host.fanout((u) => (this.perms(rec.board, u) ? { event: { case: 'boardCreate', value: { board: this.boardOut(rec, u, { event: true }) } } } : null));
+    return this.boardOut(rec, userId, { personal: true });
+  }
+
   moveBoard(id: string, userId: string, index: number): Board {
     const rec = this.boardFor(id, userId);
     this.need(rec, userId, MANAGE_BOARD);
