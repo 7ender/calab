@@ -153,7 +153,9 @@ func run(m *testing.M) int {
 		PublicAppURLs:              []string{"https://app.example.com", "https://alias.example.org"},
 		AuthRateBurst:              5,
 		AuthRatePerMinute:          1,
-		MaxFileSizeMB:              1, // small, so the size limit is testable
+		MaxFileSizeMB:              1,        // small, so the size limit is testable
+		FFmpegPath:                 "ffmpeg", // HEIC conversion: tested when ffmpeg ≥ 7.1 is on PATH
+		FFprobePath:                "ffprobe",
 		StorageDriver:              "fs",
 		StoragePath:                storageDir,
 		HeartbeatInterval:          41 * time.Second,

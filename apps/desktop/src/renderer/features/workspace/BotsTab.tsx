@@ -5,6 +5,7 @@ import { CircleAlert, CircleCheck, CircleSlash, Copy, Ellipsis, ImageMinus, KeyR
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { useImagePicker } from '../../components/AvatarPicker';
+import { avatarFile } from '../../lib/image';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Empty, IconButton, Input, Modal, Row, Spinner, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
@@ -225,7 +226,7 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
   const avatar = useWorkspaces((s) => s.users[bot.user?.id ?? '']?.avatarFileId ?? bot.user?.avatarFileId ?? '');
   const picker = useImagePicker((f) => {
     if (!u) return;
-    api.bots.setAvatar(workspaceId, u.id, f, f.name).then(
+    avatarFile(f).then((a) => api.bots.setAvatar(workspaceId, u.id, a, a.name)).then(
       (r) => botAvatarChanged(workspaceId, r.bot),
       (e: unknown) => toast.fail(e, t('err.ctx.upload')),
     );

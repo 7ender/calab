@@ -94,6 +94,11 @@ export interface CalabaApi {
     onProgress(cb: (p: DownloadProgress) => void): Unsubscribe;
     /** Absolute path of a dropped/picked File (for display only). */
     pathOf(file: File): string;
+    /**
+     * A picture Chromium cannot decode (HEIC) as JPEG ≤ `maxSide`, decoded by the OS (macOS
+     * always, Windows with the HEIF extension); null when it cannot (Linux, the web).
+     */
+    decodeImage(bytes: ArrayBuffer, maxSide: number): Promise<Uint8Array | null>;
   };
   capture: {
     /** Thumbnails at `thumbs` (device px per kind, shared/captureThumb); main clamps them. */

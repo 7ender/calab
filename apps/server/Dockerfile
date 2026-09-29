@@ -14,6 +14,10 @@ RUN CGO_ENABLED=0 go build -trimpath -tags nodynamic \
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=build /out/server /server
+# ffmpeg + ffprobe 8.0 (static, no shared libs — fits distroless) for HEIC → JPEG
+# (POST /api/files/convert, docs/02 «Изображения») and later the soundboard (ADR-0036).
+# A separate executable run as a subprocess (FFMPEG_PATH / FFPROBE_PATH); this build is GPL.
+COPY --from=mwader/static-ffmpeg:8.0@sha256:415a41fa3167b890b9703d20bd0f00bf1e9dab8a4b6c27fef1445b2bf5f1ab4a /ffmpeg /ffprobe /usr/local/bin/
 # License terms travel with the binary (BUSL-1.1: LICENSE, NOTICE with the attribution
 # requirement, commercial terms) plus the licenses of bundled Go modules.
 COPY LICENSE NOTICE COMMERCIAL-LICENSE.md /

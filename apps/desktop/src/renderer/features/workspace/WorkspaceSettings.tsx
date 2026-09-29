@@ -17,6 +17,7 @@ import { getLocale, t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
 import { fmt, type TimeFormatPref } from '../../lib/format';
+import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
 import { workspaceInitials } from '../../lib/initials';
 import { can, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
 import { inviteUrl } from '../../services/links';
@@ -140,7 +141,9 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const setIcon = async (f: File): Promise<void> => {
     setUploading(true);
     try {
-      const meta = await uploadFile(uploadPath(workspaceId, ''), f, f.name, () => undefined).promise;
+      // A 256×256 WebP (JPEG fallback), never the picked original (docs/02 «Изображения»).
+      const icon = await avatarFile(f, ICON_SIDE);
+      const meta = await uploadFile(uploadPath(workspaceId, ''), icon, icon.name, () => undefined).promise;
       await patchWorkspace(workspaceId, { iconFileId: meta.id });
     } catch (e) {
       if (!reportPlanError(e, workspaceId)) toast.error(err(e));
@@ -159,7 +162,7 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
         <input
           ref={input}
           type="file"
-          accept="image/*"
+          accept={IMAGE_ACCEPT}
           hidden
           onChange={(e) => {
             const f = e.target.files?.[0];

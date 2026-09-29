@@ -28,6 +28,7 @@ import { takePendingDeepLink } from './deeplink';
 import { fullscreenFor } from './fullscreen';
 import { systemLocales } from './systemLocales';
 import { downloadFile } from './downloads';
+import { decodeImageNative } from './imageDecode';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
 import { parseMainStrings, setMainStrings } from './strings';
@@ -290,6 +291,7 @@ export function registerIpc(): void {
     const args: DownloadArgs = { fileId: str(r['fileId'], 64), name: str(r['name'], 512) };
     return downloadFile(args);
   });
+  handle(IPC.filesDecodeImage, (_e, a) => decodeImageNative(a));
 
   // ---- media ----
   handle(IPC.captureListSources, (_e, req) => listSources(parseThumbRequest(req)));
