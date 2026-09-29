@@ -2629,7 +2629,7 @@ type WorkspaceSnapshot struct {
 	// The workspace's soundboard (ADR-0036), in library order.
 	Sounds []*Sound `protobuf:"bytes,13,rep,name=sounds,proto3" json:"sounds,omitempty"`
 	// Meetings in visible rooms from 15 minutes before their start until their end (ADR-0038
-	// §6): the room badge after a (re)connect. Empty for guests.
+	// §6): the room badge after a (re)connect. Guests get them without attendees.
 	ActiveEvents  []*CalendarEvent `protobuf:"bytes,14,rep,name=active_events,json=activeEvents,proto3" json:"active_events,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

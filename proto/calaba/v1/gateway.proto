@@ -305,7 +305,7 @@ message WorkspaceSnapshot {
   // The workspace's soundboard (ADR-0036), in library order.
   repeated Sound sounds = 13;
   // Meetings in visible rooms from 15 minutes before their start until their end (ADR-0038
-  // §6): the room badge after a (re)connect. Empty for guests.
+  // §6): the room badge after a (re)connect. Guests get them without attendees.
   repeated CalendarEvent active_events = 14;
 }
 
